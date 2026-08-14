@@ -79,6 +79,12 @@ public class PatientDomainService {
             patient.setBirthDate(item.getBirthDate());
             patient.setIdCard(this.normalizeIdCard(item.getIdCard()));
             patient.setPhone(item.getPhone());
+            // 建档可选写入地址全文（挂号读卡）；仅非空时落库，不拆省市区
+            if (StringUtils.isNotEmpty(item.getAddress())) {
+                Address registerAddress = new Address();
+                registerAddress.setText(item.getAddress().trim());
+                patient.setAddress(registerAddress);
+            }
             patient.setTempFlag(item.getTempFlag());
             patient.setOrganizationId(item.getOrganizationId());
             patient.assertRegisterRequiredFields();
@@ -228,6 +234,44 @@ public class PatientDomainService {
         patientRepository.saveAll(toSave);
         for (Patient patient : toSave) {
             domainEventPublisher.publish(new PatientPhoneModifiedEvent(patient.getId(), patient.getPhone()));
+        }
+    }
+
+    /**
+     * 更新患者地址全文（仅写 {@code Address.text}，保留已有省市区拆分字段）。
+     *
+     * @param command 命令
+     */
+    public void updatePatientAddress(UpdatePatientAddressCommand command) {
+        List<UpdatePatientAddressCommand.UpdatePatientAddressItemCommand> items = command.resolveItems();
+        this.assertBatchSize(items.size());
+        Map<Long, Patient> patientMap = loadPatientMap(
+            CommandBatchUtil.extractIds(items, UpdatePatientAddressCommand.UpdatePatientAddressItemCommand::getPatientId));
+        List<Patient> toSave = new ArrayList<>();
+        for (UpdatePatientAddressCommand.UpdatePatientAddressItemCommand item : items) {
+            Patient patient = this.requirePatient(patientMap, item.getPatientId());
+            patient.assertAddressUpdatable();
+            // Gate：地址全文为空则拒绝，避免空串覆盖主档
+            if (StringUtils.isEmpty(item.getAddress())) {
+                throw new BusinessException(ErrorCodeConstants.PATIENT_INVALID_ARGUMENT, "地址不能为空");
+            }
+            String trimmedAddress = item.getAddress().trim();
+            Address address = patient.getAddress();
+            // Pre：无嵌入地址时新建；有则只改 text，不触碰省市区
+            if (address == null) {
+                address = new Address();
+            }
+            address.setText(trimmedAddress);
+            patient.setAddress(address);
+            toSave.add(patient);
+        }
+        patientRepository.saveAll(toSave);
+        for (Patient patient : toSave) {
+            String addressText = null;
+            if (patient.getAddress() != null) {
+                addressText = patient.getAddress().getText();
+            }
+            domainEventPublisher.publish(new PatientAddressModifiedEvent(patient.getId(), addressText));
         }
     }
 

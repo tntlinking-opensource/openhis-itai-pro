@@ -11,6 +11,7 @@ import com.openhis.health.application.inpatient.nursestation.temperaturesheet.dt
 import com.openhis.health.application.inpatient.nursestation.temperaturesheet.dto.TemperatureSheetPaginationDto;
 import com.openhis.health.application.inpatient.nursestation.temperaturesheet.dto.TemperatureSheetTemperaturePointDto;
 import com.openhis.health.application.inpatient.nursestation.temperaturesheet.mapper.TemperatureSheetMapper;
+import com.openhis.health.application.inpatient.nursestation.temperaturesheet.request.DeleteNurseStationTemperatureSheetRequest;
 import com.openhis.health.application.inpatient.nursestation.temperaturesheet.request.GetNurseStationTemperatureSheetDataRequest;
 import com.openhis.health.application.inpatient.nursestation.temperaturesheet.request.GetNurseStationTemperatureSheetPrintDataRequest;
 import com.openhis.health.application.inpatient.nursestation.temperaturesheet.request.LoadNurseStationTemperatureSheetInitRequest;
@@ -25,11 +26,13 @@ import com.openhis.health.domain.administration.encounter.queries.model.Inpatien
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.domain.clinical.procedure.entity.Procedure;
 import com.openhis.health.domain.clinical.procedure.service.ProcedureQueryService;
+import com.openhis.health.domain.diagnosis.vitalsign.command.DeleteVitalSignByIdCommand;
 import com.openhis.health.domain.diagnosis.vitalsign.command.SaveVitalSignCommand;
 import com.openhis.health.domain.diagnosis.vitalsign.enums.VitalSignTypeEnum;
 import com.openhis.health.domain.diagnosis.vitalsign.queries.model.VitalSignDetailRowQueryModel;
 import com.openhis.health.domain.diagnosis.vitalsign.queries.model.VitalSignHeaderQueryModel;
 import com.openhis.health.domain.diagnosis.vitalsign.queries.model.VitalSignTemperaturePointQueryModel;
+import com.openhis.health.domain.diagnosis.vitalsign.queries.model.VitalSignWithDetailsQueryModel;
 import com.openhis.health.domain.diagnosis.vitalsign.service.VitalSignDomainService;
 import com.openhis.health.domain.diagnosis.vitalsign.service.VitalSignQueryService;
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
@@ -57,12 +60,12 @@ import java.util.List;
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
 /**
- * 住院护士站体温单应用编排（IF-IP-TMP-01～04，AS-IP-NUR-007）。
+ * 住院护士站体温单应用编排（IF-IP-TMP-01～05，AS-IP-NUR-007）。
  *
  * <p>职责边界：</p>
  * <ul>
  *   <li>读侧：曲线仅主表体温；网格读主表+明细；派生住院/周次/术后天数。</li>
- *   <li>写侧：按记录时点 upsert 三测单；22:00 槽合并补充记录。</li>
+ *   <li>写侧：按记录时点 upsert 三测单；22:00 槽合并补充记录；按时点逻辑删除。</li>
  * </ul>
  *
  * <p>接入说明：由 AppServiceControllerRegistrar 动态注册为
@@ -247,6 +250,66 @@ public class NurseStationTemperatureSheetAppService {
         // Asm：返回下一槽供前端聚焦
         String nextTimeSlot = temperatureSheetRecordedAtResolver.resolveNextTimeSlot(request.getTimeSlot());
         return temperatureSheetMapper.toSaveResponse(savedId, busNo, nextTimeSlot);
+    }
+
+    /**
+     * IF-IP-TMP-05：删除一条体温单主表（含明细逻辑删除）。
+     *
+     * @param request 主表 id 与就诊
+     * @throws BusinessException EX-IP-TMP-102、301、302
+     */
+    public void deleteNurseStationTemperatureSheet(DeleteNurseStationTemperatureSheetRequest request) {
+        // Gate：可见性（BR-IP-TMP-001）
+        nurseStationEncounterVisibilityResolver.assertVisible(
+            request.getEncounterId(),
+            request.getPatientId(),
+            InpatientNurseStationConstants.EX_IP_TMP_102,
+            "请先选择患者");
+        // Pre：校验记录属当前就诊且类型为体温单
+        VitalSignWithDetailsQueryModel existing =
+            vitalSignQueryService.getWithDetailsById(request.getVitalSignId());
+        // 业务分支：主表不存在则视为已删或无效 id
+        if (existing == null || existing.getHeader() == null) {
+            throw new BusinessException(
+                InpatientNurseStationConstants.EX_IP_TMP_301,
+                "记录不存在，请刷新");
+        }
+        VitalSignHeaderQueryModel header = existing.getHeader();
+        // 业务分支：记录须属当前就诊，防止跨就诊误删
+        if (!request.getEncounterId().equals(header.getEncounterId())) {
+            throw new BusinessException(
+                InpatientNurseStationConstants.EX_IP_TMP_301,
+                "记录不存在，请刷新");
+        }
+        // 业务分支：仅体温单类型允许本接口删除
+        if (!VitalSignTypeEnum.TEMPERATURE_SHEET.getCode().equals(header.getTypeEnum())) {
+            throw new BusinessException(
+                InpatientNurseStationConstants.EX_IP_TMP_301,
+                "记录不存在，请刷新");
+        }
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
+            InpatientNurseStationConstants.EX_IP_TMP_302,
+            "请重新登录后再删除");
+        DeleteVitalSignByIdCommand command = new DeleteVitalSignByIdCommand();
+        command.setId(request.getVitalSignId());
+        command.setOperatorId(operatorId);
+        try {
+            // Cmd：逻辑删除主表及明细
+            vitalSignDomainService.deleteVitalSignById(command);
+        } catch (BusinessException ex) {
+            // 业务分支：领域 NOT_FOUND 映射为应用 301
+            if (ErrorCodeConstants.VITAL_SIGN_NOT_FOUND.equals(ex.getErrorCode())) {
+                throw new BusinessException(
+                    InpatientNurseStationConstants.EX_IP_TMP_301,
+                    "记录不存在，请刷新");
+            }
+            throw ex;
+        } catch (Exception ex) {
+            log.error("temperature sheet delete failed, vitalSignId={}", request.getVitalSignId(), ex);
+            throw new BusinessException(
+                InpatientNurseStationConstants.EX_IP_TMP_302,
+                "删除失败，请稍后重试");
+        }
     }
 
     /**

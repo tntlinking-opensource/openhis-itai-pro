@@ -19,7 +19,7 @@ import com.openhis.health.domain.mrms.caserecord.service.CaseRecordDomainService
 import com.openhis.health.domain.share.constants.MrmsErrorCodes;
 import com.openhis.health.domain.share.enums.BorrowRequestType;
 import com.openhis.health.domain.share.enums.CaseRecordStatus;
-import com.openhis.health.application.mrms.support.MrmsOperatorResolver;
+import com.openhis.health.application.shared.validator.MrmsOperatorResolver;
 import com.openhis.health.application.shared.validator.PageWindowGate;
 import com.openhis.whale.core.application.dto.PagedResult;
 import com.openhis.whale.core.application.exception.BusinessException;

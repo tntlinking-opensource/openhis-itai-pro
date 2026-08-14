@@ -15,6 +15,8 @@ import com.openhis.chs.domain.settlement.service.ChargeBatchLifecycle;
 import com.openhis.chs.domain.settlement.support.FeeUploadResultApplier;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -127,6 +129,17 @@ public class YbClinicFeeUploadDomainService {
     }
 
     /**
+     * 按批次标记费用上传已撤销（独立事务，与 2205 平台副作用对齐）。
+     *
+     * @param chrgBchno 收费批次号
+     * @param tenantId  租户 ID
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void markRevokedByChrgBchnoInNewTx(String chrgBchno, Long tenantId) {
+        markRevokedByChrgBchno(chrgBchno, tenantId, false);
+    }
+
+    /**
      * 将指定收费批次下的费用上传行标记为结算撤销（含已结算行）。
      *
      * @param chrgBchno 收费批次号
@@ -139,6 +152,10 @@ public class YbClinicFeeUploadDomainService {
     /**
      * 按撤销类型更新收费批次下费用上传行状态。
      *
+     * <p>普通 2205（{@code includeSettled=false}）只处理 {@code UPLOADED} 行，跳过他患
+     * {@code SETTLED} 占同 {@code chrg_bchno} 的行，避免批次号碰撞时本地收口抛
+     * 「已参与正式结算的费用明细不可 2205 撤销」阻断重试。</p>
+     *
      * @param chrgBchno       收费批次号
      * @param tenantId        租户 ID
      * @param includeSettled  是否同时处理已结算行（结算撤销场景）
@@ -147,8 +164,16 @@ public class YbClinicFeeUploadDomainService {
         if (isEmpty(chrgBchno)) {
             return;
         }
-        List<YbClinicFeeUpload> rows = clinicFeeUploadRepository
-            .findAllByChrgBchnoAndTenantIdAndIsDeletedFalse(chrgBchno.trim(), tenantId);
+        List<YbClinicFeeUpload> rows;
+        if (includeSettled) {
+            rows = clinicFeeUploadRepository
+                .findAllByChrgBchnoAndTenantIdAndIsDeletedFalse(chrgBchno.trim(), tenantId);
+        } else {
+            // Pre：仅 UPLOADED，避开同批次号下他患已 SETTLED 行
+            rows = clinicFeeUploadRepository
+                .findAllByChrgBchnoAndUploadStatusAndTenantIdAndIsDeletedFalse(
+                    chrgBchno.trim(), YbFeeUploadStatus.UPLOADED, tenantId);
+        }
         for (YbClinicFeeUpload row : rows) {
             if (includeSettled) {
                 chargeBatchLifecycle.markClinicFeeSettleRevoked(row);

@@ -31,6 +31,18 @@ public class UpsertNationalCatalogRowCommand {
     private LocalDateTime updtTime;
     private String rawJson;
 
+    /** 1301 最小包装数量（规范第 42 列） */
+    private String minPacCnt;
+
+    /** 1301 最小包装单位（规范第 43 列） */
+    private String minPacunt;
+
+    /** 1301 最小制剂单位（规范第 44 列） */
+    private String minPrepunt;
+
+    /** 1301 最小计价单位（规范第 49 列） */
+    private String minPrcunt;
+
     /** 1301 文件查询号（与游last_file_qury_no 一致） */
     private String sourceFileQuryNo;
 

@@ -42,6 +42,7 @@ import com.openhis.health.domain.administration.invoice.entity.Invoice;
 import com.openhis.health.domain.administration.invoice.query.InvoiceQueryCommand;
 import com.openhis.health.domain.administration.organization.entity.Organization;
 import com.openhis.health.domain.administration.patient.command.RegisterPatientCommand;
+import com.openhis.health.domain.administration.patient.command.UpdatePatientAddressCommand;
 import com.openhis.health.domain.administration.patient.command.UpdatePatientPhoneCommand;
 import com.openhis.health.domain.administration.patient.entity.Patient;
 import com.openhis.health.domain.administration.patient.queries.DuplicatePatientCheckQuery;
@@ -313,6 +314,15 @@ public interface OutpatientRegistrationMapper {
      * @return 更新手机号命令
      */
     UpdatePatientPhoneCommand toUpdatePatientPhoneCommand(Long patientId, String phone);
+
+    /**
+     * 将复用患者主键与读卡/表单地址全文映射为更新地址命令。
+     *
+     * @param patientId 既有患者主键
+     * @param address 地址全文（须非空）
+     * @return 更新地址命令
+     */
+    UpdatePatientAddressCommand toUpdatePatientAddressCommand(Long patientId, String address);
 
     /**
      * 将预结算请求映射为收费项创建命令。

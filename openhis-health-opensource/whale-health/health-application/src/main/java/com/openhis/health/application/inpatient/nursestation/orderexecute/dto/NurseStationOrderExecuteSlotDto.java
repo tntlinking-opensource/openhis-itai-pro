@@ -56,11 +56,11 @@ public class NurseStationOrderExecuteSlotDto {
     /**
      * 待执行槽位建议的实际执行时分（写路径 {@code actualTime} 默认值）。
      *
-     * <p>开嘱日<strong>首次</strong> pending 槽为开嘱时刻（BR-IP-EXE-032）；
+     * <p>开嘱日<strong>首次</strong> pending 槽为开立时刻延后两分钟（BR-IP-EXE-032）；
      * 已停嘱时停嘱日<strong>末</strong> pending 槽为停嘱时刻（对称易用，同槽开嘱优先）；
      * 其余 pending 为空，前端/写路径回落 {@link #planTime}（BR-IP-EXE-030）。</p>
      */
-    @Schema(description = "待执行建议实际执行时分；首次槽=开嘱，停嘱日末槽=停嘱")
+    @Schema(description = "待执行建议实际执行时分；首次槽=开立+2分钟，停嘱日末槽=停嘱")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     private LocalDateTime defaultActualTime;
 

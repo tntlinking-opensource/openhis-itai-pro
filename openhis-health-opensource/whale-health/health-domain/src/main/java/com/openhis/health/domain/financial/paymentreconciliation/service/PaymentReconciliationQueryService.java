@@ -14,6 +14,8 @@ import com.openhis.health.domain.financial.paymentreconciliation.repository.Paym
 import com.openhis.health.domain.financial.paymentreconciliation.repository.PaymentReconciliationRepository;
 import com.openhis.health.domain.financial.paymentreconciliation.repository.PaymentYbSettlementRepository;
 import com.openhis.health.domain.financial.cashiersettlement.queries.PreviewCashierSettlementQuery;
+import com.openhis.health.domain.financial.cashiersettlement.queries.model.CashierSettlementMountedPaymentBundle;
+import com.openhis.health.domain.financial.cashiersettlement.queries.model.CashierSettlementSummaryPaymentBundle;
 import com.openhis.health.domain.financial.cashiersettlement.queries.model.PreviewCashierSettlementQueryModel;
 import com.openhis.health.domain.financial.cashiersettlement.queries.model.UnsettledPaymentPreviewItemQueryModel;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
@@ -23,11 +25,13 @@ import com.openhis.health.domain.administration.chargeitem.query.PractitionerWor
 import com.openhis.health.domain.share.constants.PractitionerWorkloadConstants;
 import com.openhis.health.domain.share.constants.OutpatientFeeDetailConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.enums.CashierSettlementType;
 import com.openhis.health.domain.share.enums.PaymentKind;
 import com.openhis.health.domain.share.enums.PaymentStatus;
 import com.openhis.health.domain.share.financial.DailySettlementRefundPaymentRules;
 import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
+import com.openhis.health.domain.share.utils.IdInQueryChunkSupport;
 import com.openhis.whale.core.application.exception.BusinessException;
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.Predicate;
@@ -117,6 +121,38 @@ public class PaymentReconciliationQueryService {
             result.add(toQueryModel(payment));
         }
         this.attachYbSettlements(result);
+        return result;
+    }
+
+    /**
+     * 按就诊主键集合批量列出支付流水（药房日结挂载净收入等；禁止逐就诊 {@link #findPaymentsByEncounter}）。
+     *
+     * <p>不挂载医保结算子表（调用方仅需 payment 头净额字段时更轻）。</p>
+     *
+     * @param encounterIds 就诊主键集合
+     * @return 流水读模型列表；入参空时返回空列表
+     */
+    public List<PaymentReconciliationQueryModel> findPaymentsByEncounterIds(Collection<Long> encounterIds) {
+        if (encounterIds == null || encounterIds.isEmpty()) {
+            return List.of();
+        }
+        LinkedHashSet<Long> distinctIds = new LinkedHashSet<>();
+        for (Long encounterId : encounterIds) {
+            if (encounterId != null) {
+                distinctIds.add(encounterId);
+            }
+        }
+        if (distinctIds.isEmpty()) {
+            return List.of();
+        }
+        List<PaymentReconciliation> payments = this.paymentRepository.findByEncounterIdIn(distinctIds);
+        List<PaymentReconciliationQueryModel> result = new ArrayList<>();
+        for (PaymentReconciliation payment : payments) {
+            if (payment == null || Boolean.TRUE.equals(payment.getIsDeleted())) {
+                continue;
+            }
+            result.add(this.toQueryModel(payment));
+        }
         return result;
     }
 
@@ -396,7 +432,7 @@ public class PaymentReconciliationQueryService {
     /**
      * 批量读取支付流水经办人（{@code enterer_id}），供挂号列表回显收费人。
      *
-     * <p>口径与结算写侧一致：正式收费成功后写入的经办人，与 {@code adm_charge_item.performer_id} 同源（BR-OPC-016）。</p>
+     * <p>口径与结算写侧一致：正式收费成功后写入的经办人，与 {@code adm_charge_item.enterer_id} 同源（BR-OPC-016）。</p>
      *
      * @param paymentIds 支付流水主键集合；空集合时返回空 Map
      * @return 支付流水主键 → entererId；无经办人或主键为空时不写入该键
@@ -576,8 +612,7 @@ public class PaymentReconciliationQueryService {
      */
     public List<UnsettledPaymentPreviewItemQueryModel> previewPaymentsForCashierSettlementSummary(
         PreviewCashierSettlementQuery query) {
-        List<PaymentReconciliation> rows = this.findPaymentsForCashierSettlementSummary(query);
-        return this.toUnsettledPreviewItems(rows);
+        return this.loadPaymentsForCashierSettlementSummary(query).getPreviewItems();
     }
 
     /**
@@ -589,13 +624,28 @@ public class PaymentReconciliationQueryService {
      */
     public List<PaymentReconciliationQueryModel> findPaymentQueryModelsForCashierSettlementSummary(
         PreviewCashierSettlementQuery query) {
+        return this.loadPaymentsForCashierSettlementSummary(query).getPaymentModels();
+    }
+
+    /**
+     * 一次装载日结展示窗 payment（含已交账预览行 + 读模型），避免展示窗双扫。
+     *
+     * @param query 交账类型、科室/location 范围、可选 enterer 软筛与业务日窗
+     * @return 预览行与读模型
+     * @throws BusinessException 查询条件非法
+     */
+    public CashierSettlementSummaryPaymentBundle loadPaymentsForCashierSettlementSummary(
+        PreviewCashierSettlementQuery query) {
         List<PaymentReconciliation> rows = this.findPaymentsForCashierSettlementSummary(query);
-        List<PaymentReconciliationQueryModel> result = new ArrayList<>();
+        CashierSettlementSummaryPaymentBundle bundle = new CashierSettlementSummaryPaymentBundle();
+        bundle.setPreviewItems(this.toUnsettledPreviewItems(rows));
+        List<PaymentReconciliationQueryModel> paymentModels = new ArrayList<>();
         for (PaymentReconciliation payment : rows) {
-            result.add(this.toQueryModel(payment));
+            paymentModels.add(this.toQueryModel(payment));
         }
-        this.attachYbSettlements(result);
-        return result;
+        this.attachYbSettlements(paymentModels);
+        bundle.setPaymentModels(paymentModels);
+        return bundle;
     }
 
     /**
@@ -606,21 +656,7 @@ public class PaymentReconciliationQueryService {
      */
     public List<PaymentReconciliationQueryModel> findPaymentQueryModelsByCashierSettlementId(
         Long cashierSettlementId) {
-        if (cashierSettlementId == null) {
-            return List.of();
-        }
-        List<PaymentReconciliation> rows =
-            this.paymentRepository.findByCashierSettlementIdAndIsDeletedFalse(cashierSettlementId);
-        List<PaymentReconciliationQueryModel> result = new ArrayList<>();
-        for (PaymentReconciliation payment : rows) {
-            // 跳过空行，避免 NPE
-            if (payment == null) {
-                continue;
-            }
-            result.add(this.toQueryModel(payment));
-        }
-        this.attachYbSettlements(result);
-        return result;
+        return this.loadMountedPaymentsByCashierSettlementId(cashierSettlementId).getPaymentModels();
     }
 
     /**
@@ -631,12 +667,35 @@ public class PaymentReconciliationQueryService {
      */
     public List<UnsettledPaymentPreviewItemQueryModel> previewPaymentsByCashierSettlementId(
         Long cashierSettlementId) {
+        return this.loadMountedPaymentsByCashierSettlementId(cashierSettlementId).getPreviewItems();
+    }
+
+    /**
+     * 一次装载交账头挂载 payment（预览行 + 读模型），避免头表双扫。
+     *
+     * @param cashierSettlementId 交账头主键
+     * @return 预览行与读模型；主键空时为空集合
+     */
+    public CashierSettlementMountedPaymentBundle loadMountedPaymentsByCashierSettlementId(
+        Long cashierSettlementId) {
+        CashierSettlementMountedPaymentBundle bundle = new CashierSettlementMountedPaymentBundle();
         if (cashierSettlementId == null) {
-            return List.of();
+            return bundle;
         }
         List<PaymentReconciliation> rows =
             this.paymentRepository.findByCashierSettlementIdAndIsDeletedFalse(cashierSettlementId);
-        return this.toUnsettledPreviewItems(rows);
+        bundle.setPreviewItems(this.toUnsettledPreviewItems(rows));
+        List<PaymentReconciliationQueryModel> paymentModels = new ArrayList<>();
+        for (PaymentReconciliation payment : rows) {
+            // 跳过空行，避免 NPE
+            if (payment == null) {
+                continue;
+            }
+            paymentModels.add(this.toQueryModel(payment));
+        }
+        this.attachYbSettlements(paymentModels);
+        bundle.setPaymentModels(paymentModels);
+        return bundle;
     }
 
     /**
@@ -791,25 +850,20 @@ public class PaymentReconciliationQueryService {
         if (paymentIds == null || paymentIds.isEmpty()) {
             return payEnumByPaymentId;
         }
-        LinkedHashSet<Long> distinct = new LinkedHashSet<>();
-        for (Long paymentId : paymentIds) {
-            if (paymentId != null) {
-                distinct.add(paymentId);
-            }
-        }
-        if (distinct.isEmpty()) {
-            return payEnumByPaymentId;
-        }
-        List<PaymentRecDetail> details = detailRepository.findAllByReconciliationIdIn(distinct);
-        for (PaymentRecDetail detail : details) {
-            if (detail == null || detail.getReconciliationId() == null) {
+        // Pre：复用分批明细加载，禁止超长 reconciliationId IN
+        Map<Long, List<PaymentRecDetail>> detailsByPaymentId =
+            this.loadPaymentRecDetailsGroupedByPaymentId(paymentIds);
+        for (Map.Entry<Long, List<PaymentRecDetail>> entry : detailsByPaymentId.entrySet()) {
+            List<PaymentRecDetail> details = entry.getValue();
+            if (details == null || details.isEmpty()) {
                 continue;
             }
-            if (payEnumByPaymentId.containsKey(detail.getReconciliationId())) {
-                continue;
-            }
-            if (StringUtils.isNotEmpty(detail.getPayEnum())) {
-                payEnumByPaymentId.put(detail.getReconciliationId(), detail.getPayEnum().trim());
+            for (PaymentRecDetail detail : details) {
+                if (detail == null || StringUtils.isEmpty(detail.getPayEnum())) {
+                    continue;
+                }
+                payEnumByPaymentId.put(entry.getKey(), detail.getPayEnum().trim());
+                break;
             }
         }
         return payEnumByPaymentId;
@@ -826,26 +880,22 @@ public class PaymentReconciliationQueryService {
         if (paymentIds == null || paymentIds.isEmpty()) {
             return Collections.emptyMap();
         }
-        LinkedHashSet<Long> distinct = new LinkedHashSet<>();
-        for (Long paymentId : paymentIds) {
-            if (paymentId != null) {
-                distinct.add(paymentId);
-            }
-        }
-        if (distinct.isEmpty()) {
-            return Collections.emptyMap();
-        }
-        List<PaymentRecDetail> details = detailRepository.findAllByReconciliationIdIn(distinct);
-        for (PaymentRecDetail detail : details) {
-            if (detail == null || detail.getReconciliationId() == null) {
+        // Pre：复用分批明细加载，禁止超长 reconciliationId IN
+        Map<Long, List<PaymentRecDetail>> detailsByPaymentId =
+            this.loadPaymentRecDetailsGroupedByPaymentId(paymentIds);
+        for (Map.Entry<Long, List<PaymentRecDetail>> entry : detailsByPaymentId.entrySet()) {
+            List<PaymentRecDetail> details = entry.getValue();
+            if (details == null) {
                 continue;
             }
-            if (StringUtils.isEmpty(detail.getPayEnum())) {
-                continue;
+            for (PaymentRecDetail detail : details) {
+                if (detail == null || StringUtils.isEmpty(detail.getPayEnum())) {
+                    continue;
+                }
+                codesByPaymentId
+                    .computeIfAbsent(entry.getKey(), ignored -> new LinkedHashSet<>())
+                    .add(detail.getPayEnum().trim());
             }
-            codesByPaymentId
-                .computeIfAbsent(detail.getReconciliationId(), ignored -> new LinkedHashSet<>())
-                .add(detail.getPayEnum().trim());
         }
         Map<Long, List<String>> result = new LinkedHashMap<>();
         for (Map.Entry<Long, LinkedHashSet<String>> entry : codesByPaymentId.entrySet()) {
@@ -861,30 +911,83 @@ public class PaymentReconciliationQueryService {
      * @return 明细读模型列表
      */
     public List<PaymentRecDetailQueryModel> listPaymentRecDetailsByPaymentId(Long paymentId) {
-        List<PaymentRecDetail> details = detailRepository.findByReconciliationId(paymentId);
-        List<PaymentRecDetailQueryModel> result = new ArrayList<>();
-        for (PaymentRecDetail detail : details) {
-            PaymentRecDetailQueryModel item = new PaymentRecDetailQueryModel();
-            item.setId(detail.getId());
-            item.setReconciliationId(detail.getReconciliationId());
-            item.setPredecessorId(detail.getPredecessorId());
-            item.setTargetEnum(detail.getTargetEnum());
-            item.setAccountId(detail.getAccountId());
-            item.setAccountCode(detail.getAccountCode());
-            item.setPayEnum(detail.getPayEnum());
-            item.setPayLevelEnum(detail.getPayLevelEnum());
-            item.setAmount(detail.getAmount());
-            item.setReturnAmount(detail.getReturnAmount());
-            item.setChargeAmount(detail.getChargeAmount());
-            item.setPayTransNo(detail.getPayTransNo());
-            item.setPayTransText(detail.getPayTransText());
-            item.setPayTransDate(detail.getPayTransDate());
-            item.setBeforeBalance(detail.getBeforeBalance());
-            item.setAfterBalance(detail.getAfterBalance());
-            item.setResultEnum(detail.getResultEnum());
-            result.add(item);
+        if (paymentId == null) {
+            return List.of();
+        }
+        Map<Long, List<PaymentRecDetailQueryModel>> grouped =
+            this.mapPaymentRecDetailsByPaymentIds(List.of(paymentId));
+        List<PaymentRecDetailQueryModel> details = grouped.get(paymentId);
+        return details == null ? List.of() : details;
+    }
+
+    /**
+     * 按 payment 主键集合批量加载渠道明细读模型（日结/交账现算；分批 IN，避免 N+1）。
+     *
+     * @param paymentIds 支付头主键集合
+     * @return paymentId → 明细列表（无明细的 id 映射空列表）
+     */
+    public Map<Long, List<PaymentRecDetailQueryModel>> mapPaymentRecDetailsByPaymentIds(
+        Collection<Long> paymentIds) {
+        Map<Long, List<PaymentRecDetailQueryModel>> result = new LinkedHashMap<>();
+        if (paymentIds == null || paymentIds.isEmpty()) {
+            return result;
+        }
+        Set<Long> distinctIds = new LinkedHashSet<>();
+        for (Long paymentId : paymentIds) {
+            if (paymentId != null) {
+                distinctIds.add(paymentId);
+                result.put(paymentId, new ArrayList<>());
+            }
+        }
+        if (distinctIds.isEmpty()) {
+            return result;
+        }
+        Map<Long, List<PaymentRecDetail>> entityGrouped =
+            this.loadPaymentRecDetailsGroupedByPaymentId(distinctIds);
+        for (Map.Entry<Long, List<PaymentRecDetail>> entry : entityGrouped.entrySet()) {
+            List<PaymentRecDetailQueryModel> models = new ArrayList<>();
+            if (entry.getValue() != null) {
+                for (PaymentRecDetail detail : entry.getValue()) {
+                    PaymentRecDetailQueryModel item = this.toPaymentRecDetailQueryModel(detail);
+                    if (item != null) {
+                        models.add(item);
+                    }
+                }
+            }
+            result.put(entry.getKey(), models);
         }
         return result;
+    }
+
+    /**
+     * 将支付明细实体转为读模型。
+     *
+     * @param detail 明细实体
+     * @return 读模型；实体空时 null
+     */
+    private PaymentRecDetailQueryModel toPaymentRecDetailQueryModel(PaymentRecDetail detail) {
+        if (detail == null) {
+            return null;
+        }
+        PaymentRecDetailQueryModel item = new PaymentRecDetailQueryModel();
+        item.setId(detail.getId());
+        item.setReconciliationId(detail.getReconciliationId());
+        item.setPredecessorId(detail.getPredecessorId());
+        item.setTargetEnum(detail.getTargetEnum());
+        item.setAccountId(detail.getAccountId());
+        item.setAccountCode(detail.getAccountCode());
+        item.setPayEnum(detail.getPayEnum());
+        item.setPayLevelEnum(detail.getPayLevelEnum());
+        item.setAmount(detail.getAmount());
+        item.setReturnAmount(detail.getReturnAmount());
+        item.setChargeAmount(detail.getChargeAmount());
+        item.setPayTransNo(detail.getPayTransNo());
+        item.setPayTransText(detail.getPayTransText());
+        item.setPayTransDate(detail.getPayTransDate());
+        item.setBeforeBalance(detail.getBeforeBalance());
+        item.setAfterBalance(detail.getAfterBalance());
+        item.setResultEnum(detail.getResultEnum());
+        return item;
     }
 
     /**
@@ -931,7 +1034,10 @@ public class PaymentReconciliationQueryService {
         if (paymentIds == null || paymentIds.isEmpty()) {
             return result;
         }
-        List<PaymentRecStatic> staticRows = this.recStaticRepository.findAllByReconciliationIdInAndIsDeletedFalse(paymentIds);
+        // Pre：fin_payment_rec_static reconciliationId IN 分批
+        List<PaymentRecStatic> staticRows = IdInQueryChunkSupport.loadByIdInChunks(
+            paymentIds,
+            chunkIds -> this.recStaticRepository.findAllByReconciliationIdInAndIsDeletedFalse(chunkIds));
         for (PaymentRecStatic staticRow : staticRows) {
             if (staticRow == null || staticRow.getReconciliationId() == null) {
                 continue;
@@ -1182,8 +1288,17 @@ public class PaymentReconciliationQueryService {
         if (paymentIds.isEmpty()) {
             return;
         }
-        List<PaymentYbSettlement> rows = ybSettlementRepository
-            .findAllByReconciliationIdInAndIsDeletedFalseOrderByReconciliationIdAscCreatedAtAsc(paymentIds);
+        List<Long> idList = new ArrayList<>(paymentIds);
+        int chunkSize = GeneralSharedConstants.ID_IN_QUERY_CHUNK_SIZE;
+        List<PaymentYbSettlement> rows = new ArrayList<>();
+        // Pre：payment 量大时分批 IN，避免单次超长
+        for (int fromIndex = 0; fromIndex < idList.size(); fromIndex += chunkSize) {
+            int toIndex = Math.min(fromIndex + chunkSize, idList.size());
+            rows.addAll(
+                ybSettlementRepository
+                    .findAllByReconciliationIdInAndIsDeletedFalseOrderByReconciliationIdAscCreatedAtAsc(
+                        idList.subList(fromIndex, toIndex)));
+        }
         Map<Long, List<PaymentYbSettlement>> grouped = new HashMap<>();
         for (PaymentYbSettlement row : rows) {
             if (row == null || row.getReconciliationId() == null) {
@@ -1581,8 +1696,19 @@ public class PaymentReconciliationQueryService {
             }
             models.add(this.toQueryModel(payment));
         }
-        // 挂载已确认医保关联，供 ybFundAndAcctTotal 计算（BR-OP-FDT-011）
-        this.attachYbSettlements(models);
+        boolean skipYbFund = Boolean.TRUE.equals(query.getSkipYbFundAmountAttach());
+        Map<Long, List<PaymentRecDetail>> detailsByPaymentId = Map.of();
+        // Pre：汇总不读医保分摊列时跳过 YB/明细挂载；明细页批量预取 PaymentRecDetail，禁止按 payment N+1
+        if (!skipYbFund) {
+            this.attachYbSettlements(models);
+            LinkedHashSet<Long> paymentIdsForDetails = new LinkedHashSet<>();
+            for (PaymentReconciliation payment : payments) {
+                if (payment != null && payment.getId() != null) {
+                    paymentIdsForDetails.add(payment.getId());
+                }
+            }
+            detailsByPaymentId = this.loadPaymentRecDetailsGroupedByPaymentId(paymentIdsForDetails);
+        }
         Map<Long, PaymentReconciliationQueryModel> modelByPaymentId = new HashMap<>();
         for (PaymentReconciliationQueryModel model : models) {
             if (model != null && model.getId() != null) {
@@ -1595,7 +1721,11 @@ public class PaymentReconciliationQueryService {
                 continue;
             }
             PaymentReconciliationQueryModel paymentModel = modelByPaymentId.get(payment.getId());
-            BigDecimal ybFundAndAcctTotal = this.resolveOutpatientFeeDetailYbFundAndAcctTotal(payment, paymentModel);
+            BigDecimal ybFundAndAcctTotal = BigDecimal.ZERO;
+            if (!skipYbFund) {
+                ybFundAndAcctTotal = this.resolveOutpatientFeeDetailYbFundAndAcctTotal(
+                    payment, paymentModel, detailsByPaymentId.get(payment.getId()));
+            }
             OutpatientFeeDetailPaymentScopeQueryModel paymentScope = new OutpatientFeeDetailPaymentScopeQueryModel();
             paymentScope.setPaymentId(payment.getId());
             paymentScope.setEncounterId(payment.getEncounterId());
@@ -1702,6 +1832,9 @@ public class PaymentReconciliationQueryService {
 
     /**
      * 工作量 payment 筛选规格：bill_date 闭区间 + kind + SUCCESS/REFUNDED（BR-RPT-WKL-002）。
+     *
+     * <p>若 query 已写入 {@code resolvedEncounterScope}，叠加 {@code encounter_id IN}，
+     * 与内存二次收窄同口径，减少日窗内无关流水加载。</p>
      */
     private Specification<PaymentReconciliation> buildPractitionerWorkloadPaymentSpecification(
         PractitionerWorkloadPageQuery query) {
@@ -1709,6 +1842,7 @@ public class PaymentReconciliationQueryService {
         LocalDateTime windowEndExclusive = query.getBillDateTo().plusDays(1).atStartOfDay();
         List<PaymentKind> allowedKinds = this.resolvePractitionerWorkloadPaymentKinds(query.getEncounterScope());
         List<PaymentStatus> allowedStatuses = Arrays.asList(PaymentStatus.SUCCESS, PaymentStatus.REFUNDED);
+        List<Long> resolvedEncounterScope = query.getResolvedEncounterScope();
         return (root, criteriaQuery, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
@@ -1716,6 +1850,10 @@ public class PaymentReconciliationQueryService {
             predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(allowedStatuses));
             predicates.add(cb.greaterThanOrEqualTo(root.get(FieldNameConstants.BILL_DATE), windowStart));
             predicates.add(cb.lessThan(root.get(FieldNameConstants.BILL_DATE), windowEndExclusive));
+            // Pre：就诊 scope 已解析时下推 SQL，与 BR-RPT-WKL-003 内存过滤一致
+            if (resolvedEncounterScope != null && !resolvedEncounterScope.isEmpty()) {
+                predicates.add(root.get(FieldNameConstants.ENCOUNTER_ID).in(resolvedEncounterScope));
+            }
             return cb.and(predicates.toArray(new Predicate[0]));
         };
     }
@@ -1814,11 +1952,18 @@ public class PaymentReconciliationQueryService {
     /**
      * 计算 payment 级医保基金+个账合计：有已确认医保关联时 {@code tendered − 自付子明细合计}，否则 0。
      *
-     * <p>禁止从 {@code PaymentRecDetail.pay_enum} 推断医保（BR-OP-FDT-011）。</p>
+     * <p>禁止从 {@code PaymentRecDetail.pay_enum} 推断医保（BR-OP-FDT-011）。
+     * 自付明细须由调用方批量预取后传入，禁止本方法内按 payment 打库。</p>
+     *
+     * @param payment              支付头
+     * @param paymentModel         已挂载 YB 的读模型
+     * @param preloadedRecDetails  本 payment 的 PaymentRecDetail；可空
+     * @return 医保基金+个账合计
      */
     private BigDecimal resolveOutpatientFeeDetailYbFundAndAcctTotal(
         PaymentReconciliation payment,
-        PaymentReconciliationQueryModel paymentModel) {
+        PaymentReconciliationQueryModel paymentModel,
+        List<PaymentRecDetail> preloadedRecDetails) {
         if (payment == null || paymentModel == null) {
             return BigDecimal.ZERO;
         }
@@ -1831,18 +1976,46 @@ public class PaymentReconciliationQueryService {
             return BigDecimal.ZERO;
         }
         BigDecimal selfPayTotal = BigDecimal.ZERO;
-        List<PaymentRecDetail> details = detailRepository.findByReconciliationId(payment.getId());
-        for (PaymentRecDetail detail : details) {
-            if (detail == null || detail.getAmount() == null) {
-                continue;
+        if (preloadedRecDetails != null) {
+            for (PaymentRecDetail detail : preloadedRecDetails) {
+                if (detail == null || detail.getAmount() == null) {
+                    continue;
+                }
+                selfPayTotal = selfPayTotal.add(detail.getAmount());
             }
-            selfPayTotal = selfPayTotal.add(detail.getAmount());
         }
         BigDecimal ybTotal = tendered.subtract(selfPayTotal);
         if (ybTotal.compareTo(BigDecimal.ZERO) < 0) {
             return BigDecimal.ZERO;
         }
         return ybTotal;
+    }
+
+    /**
+     * 按 payment 主键集合批量加载 PaymentRecDetail 并按 reconciliationId 分组（费用明细医保分摊）。
+     *
+     * @param paymentIds 支付头主键
+     * @return paymentId → 明细行；无命中不含键
+     */
+    private Map<Long, List<PaymentRecDetail>> loadPaymentRecDetailsGroupedByPaymentId(
+        Collection<Long> paymentIds) {
+        Map<Long, List<PaymentRecDetail>> detailsByPaymentId = new HashMap<>();
+        if (paymentIds == null || paymentIds.isEmpty()) {
+            return detailsByPaymentId;
+        }
+        // Pre：reconciliationId IN 分批，避免费用明细大窗超时
+        List<PaymentRecDetail> allDetails = IdInQueryChunkSupport.loadByIdInChunks(
+            paymentIds,
+            chunkIds -> detailRepository.findAllByReconciliationIdIn(chunkIds));
+        for (PaymentRecDetail detail : allDetails) {
+            if (detail == null || detail.getReconciliationId() == null) {
+                continue;
+            }
+            detailsByPaymentId
+                .computeIfAbsent(detail.getReconciliationId(), ignored -> new ArrayList<>())
+                .add(detail);
+        }
+        return detailsByPaymentId;
     }
 
     /**

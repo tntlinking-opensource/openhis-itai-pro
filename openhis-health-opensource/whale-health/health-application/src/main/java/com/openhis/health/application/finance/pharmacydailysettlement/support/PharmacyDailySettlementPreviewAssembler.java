@@ -58,7 +58,24 @@ public class PharmacyDailySettlementPreviewAssembler {
         boolean inpatientMode) {
         PharmacyDailySettlementPricingSupport.PharmacyDailySettlementPurchaseSaleSnapshot snapshot =
             this.pharmacyDailySettlementPricingSupport.buildPurchaseSaleSnapshot(summaryDispenses, inpatientMode);
+        return this.assembleCategoryRows(snapshot, categoryLabelByCode);
+    }
+
+    /**
+     * 由已算好的进/售快照装配固定四行大类汇总（与品规共用一次读价）。
+     *
+     * @param snapshot            进/售汇总快照
+     * @param categoryLabelByCode medication_category_code → 展示名；可空
+     * @return 固定四行大类汇总
+     */
+    public List<PharmacyDailySettlementCategoryRowDto> assembleCategoryRows(
+        PharmacyDailySettlementPricingSupport.PharmacyDailySettlementPurchaseSaleSnapshot snapshot,
+        Map<String, String> categoryLabelByCode) {
         List<PharmacyDailySettlementCategoryRowDto> rows = new ArrayList<>();
+        PharmacyDailySettlementPricingSupport.PharmacyDailySettlementPurchaseSaleSnapshot safeSnapshot = snapshot;
+        if (safeSnapshot == null) {
+            safeSnapshot = new PharmacyDailySettlementPricingSupport.PharmacyDailySettlementPurchaseSaleSnapshot();
+        }
         for (String[] fixedRow : FIXED_CATEGORY_ROWS) {
             String categoryCode = fixedRow[0];
             String defaultLabel = fixedRow[1];
@@ -66,7 +83,7 @@ public class PharmacyDailySettlementPreviewAssembler {
             row.setCategoryCode(categoryCode);
             row.setCategoryLabel(this.resolveCategoryLabel(categoryCode, defaultLabel, categoryLabelByCode));
             PharmacyDailySettlementPricingSupport.CategoryPurchaseSaleBucket bucket =
-                snapshot.getCategoryBuckets().get(categoryCode);
+                safeSnapshot.getCategoryBuckets().get(categoryCode);
             if (bucket != null) {
                 row.setNetQuantity(this.orZero(bucket.getNetQuantity()));
                 row.setPurchaseAmount(this.orZero(bucket.getPurchaseAmount()));
@@ -93,7 +110,21 @@ public class PharmacyDailySettlementPreviewAssembler {
         boolean inpatientMode) {
         PharmacyDailySettlementPricingSupport.PharmacyDailySettlementPurchaseSaleSnapshot snapshot =
             this.pharmacyDailySettlementPricingSupport.buildPurchaseSaleSnapshot(summaryDispenses, inpatientMode);
+        return this.assembleProductRows(snapshot);
+    }
+
+    /**
+     * 由已算好的进/售快照装配品规汇总行（与大类共用一次读价）。
+     *
+     * @param snapshot 进/售汇总快照
+     * @return 品规汇总行
+     */
+    public List<PharmacyDailySettlementProductRowDto> assembleProductRows(
+        PharmacyDailySettlementPricingSupport.PharmacyDailySettlementPurchaseSaleSnapshot snapshot) {
         List<PharmacyDailySettlementProductRowDto> rows = new ArrayList<>();
+        if (snapshot == null) {
+            return rows;
+        }
         for (PharmacyDailySettlementPricingSupport.ProductPurchaseSaleBucket bucket
             : snapshot.getProductBuckets().values()) {
             if (bucket == null || bucket.getMedicationId() == null) {
@@ -128,14 +159,31 @@ public class PharmacyDailySettlementPreviewAssembler {
         List<MedicationDispense> unsettledDispenses,
         boolean inpatientMode,
         Map<String, String> unitLabels) {
+        return this.toDispenseItems(unsettledDispenses, inpatientMode, unitLabels, null);
+    }
+
+    /**
+     * 未交账发药实体 → 弹窗明细 DTO；可复用主区进/售快照行价。
+     *
+     * @param unsettledDispenses 未交账发药实体（顺序即弹窗顺序）
+     * @param inpatientMode      住院药房日结时为 true
+     * @param unitLabels         unit_code → 展示文案；可空
+     * @param purchaseSaleSnapshot 主区进/售快照；可空
+     * @return 待交明细
+     */
+    public List<PharmacyDailySettlementDispenseItemDto> toDispenseItems(
+        List<MedicationDispense> unsettledDispenses,
+        boolean inpatientMode,
+        Map<String, String> unitLabels,
+        PharmacyDailySettlementPricingSupport.PharmacyDailySettlementPurchaseSaleSnapshot purchaseSaleSnapshot) {
         List<PharmacyDailySettlementDispenseItemDto> items = new ArrayList<>();
         if (unsettledDispenses == null || unsettledDispenses.isEmpty()) {
             return items;
         }
-        // Pre：批量读进/售与品规展示（与主区同口径）
+        // Pre：优先复用主区快照行价，避免二次批号读价
         Map<Long, PharmacyDailySettlementHandoverLineEnrichment> enrichments =
             this.pharmacyDailySettlementPricingSupport.buildHandoverLineEnrichments(
-                unsettledDispenses, inpatientMode);
+                unsettledDispenses, inpatientMode, purchaseSaleSnapshot);
         for (MedicationDispense dispense : unsettledDispenses) {
             if (dispense == null || dispense.getId() == null) {
                 continue;

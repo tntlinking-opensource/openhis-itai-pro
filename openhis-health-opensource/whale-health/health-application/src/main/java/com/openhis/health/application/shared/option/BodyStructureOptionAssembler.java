@@ -6,16 +6,20 @@ package com.openhis.health.application.shared.option;
 
 import com.openhis.health.domain.diagnosis.bodystructure.queries.model.BodyStructureTreeQueryModel;
 import com.openhis.health.domain.share.enums.PublicationStatus;
+import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import com.openhis.whale.core.application.dto.OptionDto;
+import com.openhis.whale.core.application.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 身体部位主数据与 {@link OptionDto} 树形下拉的只读装配器。
  *
- * <p>供医生站申请单、基础数据维护等场景复用；停用节点不可新引用，但其启用子节点可上提展示。</p>
+ * <p>供医生站申请单、基础数据维护等场景复用；停用节点不可新引用，但其启用子节点可上提展示。
+ * 出参携带拼音/五笔检索码，供前端部位下拉做名称/编码/拼音/五笔模糊过滤。</p>
  */
 public final class BodyStructureOptionAssembler {
 
@@ -63,7 +67,11 @@ public final class BodyStructureOptionAssembler {
                 value = String.valueOf(node.getId());
             }
             long sort = sortCursor.next();
-            result.add(new OptionDto(sort, value, node.getName(), node.getBusNo(), childOptions));
+            OptionDto option = new OptionDto(sort, value, node.getName(), node.getBusNo(), childOptions);
+            // 透出检索码；库中为空或误写成名称时按名称现算，保证前端拼音模糊可用
+            option.setPyStr(resolvePyStr(node));
+            option.setWbStr(resolveWbStr(node));
+            result.add(option);
             return result;
         }
         // 停用节点不可新引用，但其启用子节点仍应出现在下拉中
@@ -89,6 +97,42 @@ public final class BodyStructureOptionAssembler {
             result.addAll(mapActiveSubtree(child, sortCursor));
         }
         return result;
+    }
+
+    /**
+     * 解析拼音检索码：优先库值；空或与名称相同（历史误写）时按名称现算。
+     *
+     * @param node 部位树节点
+     * @return 拼音码；名称为空且库值不可用时返回库值或 null
+     */
+    private static String resolvePyStr(BodyStructureTreeQueryModel node) {
+        String stored = node.getPyStr();
+        // 库值有效且非「误写成名称」时直接复用
+        if (StringUtils.isNotEmpty(stored) && !Objects.equals(stored, node.getName())) {
+            return stored;
+        }
+        if (StringUtils.isEmpty(node.getName())) {
+            return stored;
+        }
+        return SearchCodeUtil.toPyStr(node.getName());
+    }
+
+    /**
+     * 解析五笔检索码：优先库值；空或与名称相同（历史误写）时按名称现算。
+     *
+     * @param node 部位树节点
+     * @return 五笔码；名称为空且库值不可用时返回库值或 null
+     */
+    private static String resolveWbStr(BodyStructureTreeQueryModel node) {
+        String stored = node.getWbStr();
+        // 库值有效且非「误写成名称」时直接复用
+        if (StringUtils.isNotEmpty(stored) && !Objects.equals(stored, node.getName())) {
+            return stored;
+        }
+        if (StringUtils.isEmpty(node.getName())) {
+            return stored;
+        }
+        return SearchCodeUtil.toWbStr(node.getName());
     }
 
     /**

@@ -9,6 +9,7 @@ import com.openhis.health.domain.share.constants.ConsumableUsageReportConstants;
 import com.openhis.health.domain.share.constants.DoctorStationOrderCatalogConstants;
 import com.openhis.health.domain.share.constants.NurseWorkloadConstants;
 import com.openhis.health.domain.share.utils.KeywordExactFirstOrderSupport;
+import com.openhis.health.domain.share.utils.IdInQueryChunkSupport;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
@@ -38,6 +39,7 @@ import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -359,6 +361,159 @@ public class DeviceDispenseQueryService {
         }
         List<DeviceDispenseListModel> rows = this.selectByRequestIdList(List.of(deviceReqId));
         return this.pickPrimaryDispenseRow(rows);
+    }
+
+    /**
+     * 批量解析各耗材请求主发放客户可见时刻（{@code dispense_time} 优先，否则 {@code prepare_time}）。
+     *
+     * <p>与护士划价列表/改时展示轴一致（AS-IP-NUR-005：耗材发放时间 = recorded 轴）。</p>
+     *
+     * @param deviceReqIds 耗材请求主键集合
+     * @return 请求 id → 展示时刻；无主发放或时刻皆空时不入 Map
+     */
+    public Map<Long, LocalDateTime> mapPrimaryDisplayTimeByDeviceReqIds(Collection<Long> deviceReqIds) {
+        Map<Long, LocalDateTime> timeByReqId = new HashMap<>();
+        Map<Long, DeviceDispense> primaryByReqId = this.mapPrimaryDispenseEntityByDeviceReqIds(deviceReqIds);
+        for (Map.Entry<Long, DeviceDispense> entry : primaryByReqId.entrySet()) {
+            DeviceDispense row = entry.getValue();
+            if (row == null) {
+                continue;
+            }
+            LocalDateTime displayTime = row.getDispenseTime();
+            // 未发仅拣配：展示 prepare_time
+            if (displayTime == null) {
+                displayTime = row.getPrepareTime();
+            }
+            if (displayTime != null) {
+                timeByReqId.put(entry.getKey(), displayTime);
+            }
+        }
+        return timeByReqId;
+    }
+
+    /**
+     * 按主发放客户可见时刻左闭右开窗解析耗材请求主键（住院费用明细待结业务日轴）。
+     *
+     * @param displayFromInclusive 展示时刻起（含）
+     * @param displayToExclusive   展示时刻止（不含）
+     * @return deviceReqId → 展示时刻；窗非法或无命中时返回空 Map
+     */
+    public Map<Long, LocalDateTime> mapPrimaryDisplayTimeByDisplayTimeWindow(
+        LocalDateTime displayFromInclusive,
+        LocalDateTime displayToExclusive) {
+        Map<Long, LocalDateTime> timeByReqId = new HashMap<>();
+        if (displayFromInclusive == null || displayToExclusive == null) {
+            return timeByReqId;
+        }
+        if (!displayFromInclusive.isBefore(displayToExclusive)) {
+            return timeByReqId;
+        }
+        Specification<DeviceDispense> specification = (root, criteriaQuery, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            jakarta.persistence.criteria.Predicate dispenseInWindow = cb.and(
+                cb.isNotNull(root.get(FieldNameConstants.DISPENSE_TIME)),
+                cb.greaterThanOrEqualTo(root.get(FieldNameConstants.DISPENSE_TIME), displayFromInclusive),
+                cb.lessThan(root.get(FieldNameConstants.DISPENSE_TIME), displayToExclusive));
+            jakarta.persistence.criteria.Predicate prepareInWindow = cb.and(
+                cb.isNull(root.get(FieldNameConstants.DISPENSE_TIME)),
+                cb.isNotNull(root.get(FieldNameConstants.PREPARE_TIME)),
+                cb.greaterThanOrEqualTo(root.get(FieldNameConstants.PREPARE_TIME), displayFromInclusive),
+                cb.lessThan(root.get(FieldNameConstants.PREPARE_TIME), displayToExclusive));
+            predicates.add(cb.or(dispenseInWindow, prepareInWindow));
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+        List<DeviceDispense> candidates = this.deviceDispenseRepository.findAll(specification);
+        LinkedHashSet<Long> deviceReqIds = new LinkedHashSet<>();
+        for (DeviceDispense row : candidates) {
+            if (row != null && row.getDeviceReqId() != null) {
+                deviceReqIds.add(row.getDeviceReqId());
+            }
+        }
+        if (deviceReqIds.isEmpty()) {
+            return timeByReqId;
+        }
+        Map<Long, LocalDateTime> primaryDisplayByReqId = this.mapPrimaryDisplayTimeByDeviceReqIds(deviceReqIds);
+        for (Map.Entry<Long, LocalDateTime> entry : primaryDisplayByReqId.entrySet()) {
+            LocalDateTime displayTime = entry.getValue();
+            if (displayTime == null) {
+                continue;
+            }
+            if (displayTime.isBefore(displayFromInclusive) || !displayTime.isBefore(displayToExclusive)) {
+                continue;
+            }
+            timeByReqId.put(entry.getKey(), displayTime);
+        }
+        return timeByReqId;
+    }
+
+    /**
+     * 批量解析各耗材请求主发放主键（改时写路径锚定）。
+     *
+     * @param deviceReqIds 耗材请求主键集合
+     * @return 请求 id → 主发放 id
+     */
+    public Map<Long, Long> mapPrimaryDispenseIdByDeviceReqIds(Collection<Long> deviceReqIds) {
+        Map<Long, Long> idByReqId = new HashMap<>();
+        Map<Long, DeviceDispense> primaryByReqId = this.mapPrimaryDispenseEntityByDeviceReqIds(deviceReqIds);
+        for (Map.Entry<Long, DeviceDispense> entry : primaryByReqId.entrySet()) {
+            DeviceDispense row = entry.getValue();
+            if (row == null || row.getId() == null) {
+                continue;
+            }
+            idByReqId.put(entry.getKey(), row.getId());
+        }
+        return idByReqId;
+    }
+
+    /**
+     * 按请求批量选取主发放实体（已发/已配优先，同档取 id 最小）。
+     *
+     * @param deviceReqIds 耗材请求主键集合
+     * @return 请求 id → 主发放实体
+     */
+    private Map<Long, DeviceDispense> mapPrimaryDispenseEntityByDeviceReqIds(Collection<Long> deviceReqIds) {
+        Map<Long, DeviceDispense> primaryByReqId = new HashMap<>();
+        if (deviceReqIds == null || deviceReqIds.isEmpty()) {
+            return primaryByReqId;
+        }
+        List<Long> distinctIds = new ArrayList<>();
+        for (Long deviceReqId : deviceReqIds) {
+            if (deviceReqId != null) {
+                distinctIds.add(deviceReqId);
+            }
+        }
+        if (distinctIds.isEmpty()) {
+            return primaryByReqId;
+        }
+        List<DeviceDispense> rows = deviceDispenseRepository.findByDeviceReqIdIn(distinctIds);
+        Map<Long, List<DeviceDispense>> rowsByReqId = new HashMap<>();
+        for (DeviceDispense row : rows) {
+            if (row == null || row.getDeviceReqId() == null) {
+                continue;
+            }
+            rowsByReqId.computeIfAbsent(row.getDeviceReqId(), ignored -> new ArrayList<>()).add(row);
+        }
+        for (Map.Entry<Long, List<DeviceDispense>> entry : rowsByReqId.entrySet()) {
+            DeviceDispense primary = null;
+            int primaryRank = -1;
+            for (DeviceDispense row : entry.getValue()) {
+                if (row == null || row.getId() == null) {
+                    continue;
+                }
+                int rank = this.resolveDispenseStatusRank(row.getStatusEnum());
+                if (primary == null
+                    || rank > primaryRank
+                    || (rank == primaryRank && row.getId() < primary.getId())) {
+                    primary = row;
+                    primaryRank = rank;
+                }
+            }
+            if (primary != null) {
+                primaryByReqId.put(entry.getKey(), primary);
+            }
+        }
+        return primaryByReqId;
     }
 
     /**
@@ -722,7 +877,9 @@ public class DeviceDispenseQueryService {
     }
 
     /**
-     * 批量按主键加载耗材发放聚合行（报表进价批号解析；单次 IN 查询）。
+     * 批量按主键加载耗材发放聚合行（报表进价批号解析）。
+     *
+     * <p>主键过多时按 {@link com.openhis.health.domain.share.constants.GeneralSharedConstants#ID_IN_QUERY_CHUNK_SIZE} 分批 IN。</p>
      *
      * @param ids 发放单主键集合
      * @return 未软删实体列表；空入参返回空表
@@ -731,7 +888,9 @@ public class DeviceDispenseQueryService {
         if (ids == null || ids.isEmpty()) {
             return List.of();
         }
-        List<DeviceDispense> rows = this.deviceDispenseRepository.findByIdIn(new ArrayList<>(ids));
+        List<DeviceDispense> rows = IdInQueryChunkSupport.loadByIdInChunks(
+            ids,
+            chunkIds -> this.deviceDispenseRepository.findByIdIn(new ArrayList<>(chunkIds)));
         List<DeviceDispense> result = new ArrayList<>();
         for (DeviceDispense row : rows) {
             if (row != null && !Boolean.TRUE.equals(row.getIsDeleted())) {
@@ -744,6 +903,8 @@ public class DeviceDispenseQueryService {
     /**
      * 按耗材申请主键集合批量加载发放单（签发后迁移费用草稿用，AS-OP-DOR-003 IF-DOR-15）。
      *
+     * <p>主键过多时按分批 IN，避免超长参数。</p>
+     *
      * @param deviceReqIds 耗材申请主键集合
      * @return 发放单实体列表
      */
@@ -751,8 +912,9 @@ public class DeviceDispenseQueryService {
         if (deviceReqIds == null || deviceReqIds.isEmpty()) {
             return List.of();
         }
-        List<Long> idList = new ArrayList<>(deviceReqIds);
-        return deviceDispenseRepository.findByDeviceReqIdIn(idList);
+        return IdInQueryChunkSupport.loadByIdInChunks(
+            deviceReqIds,
+            chunkIds -> deviceDispenseRepository.findByDeviceReqIdIn(new ArrayList<>(chunkIds)));
     }
 
     /**
@@ -857,7 +1019,7 @@ public class DeviceDispenseQueryService {
      * @return 明细分页；业务时间倒序
      */
     public Page<NurseConsumableWorkloadDetailQueryModel> pageNurseConsumableWorkloadDetail(NurseWorkloadPageQuery query) {
-        // Pre：候选集按业务时间倒序后内存分页
+        // Pre：候选集排序后仅物化当前页
         List<DeviceDispense> rows = this.listNurseConsumableWorkloadCandidateDispenses(query);
         rows.sort(Comparator.comparing(
             row -> this.resolveNurseConsumableBusinessTime(row, query.getDeviceAutoInventoryDeductEnabled()),
@@ -873,10 +1035,45 @@ public class DeviceDispenseQueryService {
             return new PageImpl<>(Collections.emptyList(), pageable, rows.size());
         }
         int toIndex = Math.min(fromIndex + pageSize, rows.size());
-        List<DeviceDispense> pageSlice = rows.subList(fromIndex, toIndex);
+        List<NurseConsumableWorkloadDetailQueryModel> pageModels =
+            this.toNurseConsumableWorkloadDetailModels(rows.subList(fromIndex, toIndex), query);
+        Pageable pageable = PageRequest.of(springIndex, pageSize);
+        return new PageImpl<>(pageModels, pageable, rows.size());
+    }
+
+    /**
+     * 护士耗材使用量明细全量列表（汇总页脚金额 / 卡片分桶复用；与分页同口径）。
+     *
+     * @param query 预解析 scope
+     * @return 按业务时间倒序的明细
+     */
+    public List<NurseConsumableWorkloadDetailQueryModel> listNurseConsumableWorkloadDetail(NurseWorkloadPageQuery query) {
+        List<DeviceDispense> rows = this.listNurseConsumableWorkloadCandidateDispenses(query);
+        rows.sort(Comparator.comparing(
+            row -> this.resolveNurseConsumableBusinessTime(row, query.getDeviceAutoInventoryDeductEnabled()),
+            Comparator.nullsLast(Comparator.reverseOrder())));
+        return this.toNurseConsumableWorkloadDetailModels(rows, query);
+    }
+
+    /**
+     * 将耗材发放切片装配为明细读模型（hvcm / 业务时间 / 归属护士）。
+     *
+     * @param dispenseSlice 已排序的发放切片
+     * @param query         含 hvcm enrich map 与扣库开关
+     * @return 明细读模型
+     */
+    private List<NurseConsumableWorkloadDetailQueryModel> toNurseConsumableWorkloadDetailModels(
+        List<DeviceDispense> dispenseSlice,
+        NurseWorkloadPageQuery query) {
+        if (dispenseSlice == null || dispenseSlice.isEmpty()) {
+            return Collections.emptyList();
+        }
         Map<Long, Boolean> hvcmByDeviceDefId = this.resolveHvcmFlagByDeviceDefId(query);
-        List<NurseConsumableWorkloadDetailQueryModel> models = new ArrayList<>();
-        for (DeviceDispense row : pageSlice) {
+        List<NurseConsumableWorkloadDetailQueryModel> models = new ArrayList<>(dispenseSlice.size());
+        for (DeviceDispense row : dispenseSlice) {
+            if (row == null) {
+                continue;
+            }
             NurseConsumableWorkloadDetailQueryModel model = new NurseConsumableWorkloadDetailQueryModel();
             model.setDispenseId(row.getId());
             model.setDeviceReqId(row.getDeviceReqId());
@@ -891,8 +1088,7 @@ public class DeviceDispenseQueryService {
                 this.resolveNurseConsumableAttributedPractitionerId(row, query.getDeviceAutoInventoryDeductEnabled()));
             models.add(model);
         }
-        Pageable pageable = PageRequest.of(springIndex, pageSize);
-        return new PageImpl<>(models, pageable, rows.size());
+        return models;
     }
 
     /**
@@ -1087,9 +1283,11 @@ public class DeviceDispenseQueryService {
     }
 
     /**
-     * 耗材使用报表患者侧净汇总（按患者/科室/库位/品规；DM-WKF-007 §6.2.24）。
+     * 耗材使用报表患者侧净汇总（按耗材房/品规/科室/患者；DM-WKF-007 §6.2.24）。
      *
-     * <p>不做药品类型式主汇总（AS-RPT-005/006）。科室维须预写 {@code organizationIdByEncounterId}。</p>
+     * <p>领域分桶支持 LOCATION / ITEM / DEPARTMENT / PATIENT；类型（CATEGORY）由应用层
+     * 先 ITEM 汇总再按 DeviceDefinition.categoryCode 分桶。科室维须预写
+     * {@code organizationIdByEncounterId}。缺省维 = LOCATION（对齐耗材房默认）。</p>
      *
      * @param query 筛选 + summaryDimension
      * @return 净汇总行
@@ -1108,8 +1306,9 @@ public class DeviceDispenseQueryService {
         Sort sort = Sort.by(Sort.Order.desc(FieldNameConstants.DISPENSE_TIME));
         List<DeviceDispense> rows = deviceDispenseRepository.findAll(specification, sort);
         String dimension = StringUtils.trimToNull(query.getSummaryDimension());
+        // Gate：未传维回落耗材房，与 init 默认 LOCATION 一致
         if (dimension == null) {
-            dimension = ConsumableUsageReportConstants.SUMMARY_DIMENSION_PATIENT;
+            dimension = ConsumableUsageReportConstants.SUMMARY_DIMENSION_LOCATION;
         }
         Map<Long, Long> orgByEncounter = query.getOrganizationIdByEncounterId();
         if (orgByEncounter == null) {
@@ -1140,7 +1339,7 @@ public class DeviceDispenseQueryService {
     }
 
     /**
-     * 构建耗材使用报表规约：已发/已退 + 时间窗 + 库位/品规/就诊 scope。
+     * 构建耗材使用报表规约：已发/已退（可按记录类型收窄）+ 时间窗 + 库位/品规/执行人/就诊 scope。
      *
      * @param query 筛选
      * @return JPA 规约
@@ -1150,11 +1349,9 @@ public class DeviceDispenseQueryService {
         return (root, cq, cb) -> {
             List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
             predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
-            // 报表事实：已完成发药 ∪ 已退药（与库房期初期末明细耗材列同精神）
-            predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(
-                DispenseStatus.COMPLETED.getCode(),
-                DispenseStatus.PART_COMPLETED.getCode(),
-                DispenseStatus.REFUNDED.getCode()));
+            // 报表事实：按记录类型收窄已发 / 已退（空或 ALL = 并集）
+            predicates.add(root.get(FieldNameConstants.STATUS_ENUM)
+                .in(this.resolveConsumableUsageStatusCodes(query.getRecordTypeCode())));
             if (query.getBusinessTimeFrom() != null || query.getBusinessTimeTo() != null) {
                 // 有时间窗时 dispense_time 必非空
                 predicates.add(cb.isNotNull(root.get(FieldNameConstants.DISPENSE_TIME)));
@@ -1185,6 +1382,10 @@ public class DeviceDispenseQueryService {
                         root.get(FieldNameConstants.DEVICE_DEF_ID).in(query.getResolvedDeviceDefIds()));
                 }
             }
+            // 执行人（发耗材人）精确筛
+            if (query.getPerformerId() != null) {
+                predicates.add(cb.equal(root.get(FieldNameConstants.PERFORMER_ID), query.getPerformerId()));
+            }
             if (query.getResolvedEncounterScope() != null) {
                 if (query.getResolvedEncounterScope().isEmpty()) {
                     predicates.add(cb.disjunction());
@@ -1195,6 +1396,33 @@ public class DeviceDispenseQueryService {
             }
             return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
         };
+    }
+
+    /**
+     * 按记录类型解析耗材报表纳入的发放状态码。
+     *
+     * @param recordTypeCode ALL / DISPENSE / REFUND；空视为全部
+     * @return 状态 code 列表（非空）
+     */
+    private List<String> resolveConsumableUsageStatusCodes(String recordTypeCode) {
+        String normalized = StringUtils.trimToNull(recordTypeCode);
+        List<String> codes = new ArrayList<>();
+        // 仅退发：REFUNDED
+        if (ConsumableUsageReportConstants.RECORD_TYPE_REFUND.equals(normalized)) {
+            codes.add(DispenseStatus.REFUNDED.getCode());
+            return codes;
+        }
+        // 仅发放：已完成 / 部分完成
+        if (ConsumableUsageReportConstants.RECORD_TYPE_DISPENSE.equals(normalized)) {
+            codes.add(DispenseStatus.COMPLETED.getCode());
+            codes.add(DispenseStatus.PART_COMPLETED.getCode());
+            return codes;
+        }
+        // 全部（含未知码回落）：已发 ∪ 已退
+        codes.add(DispenseStatus.COMPLETED.getCode());
+        codes.add(DispenseStatus.PART_COMPLETED.getCode());
+        codes.add(DispenseStatus.REFUNDED.getCode());
+        return codes;
     }
 
     /**

@@ -100,8 +100,12 @@ public class MedicationDto {
     @Schema(description = "生产厂商文本", example = "某某制药厂")
     private String manufacturerText;
 
-    /** 销售参考价（维护态 {@code SALE}，元/包装单位）。 */
-    @Schema(description = "销售参考价（元/包装单位）", example = "12.50", type = "number", format = "double")
+    /**
+     * 销售参考价（维护态 {@code SALE}，元/包装单位）。
+     *
+     * <p>列表展示：中药饮片（分类码 {@code 4}）按 3 位小数 format，其余 2 位；落库仍为 6 位。</p>
+     */
+    @Schema(description = "销售参考价（元/包装单位；中药 UI 可 3 位）", example = "12.50", type = "number", format = "double")
     private BigDecimal retailPrice;
 
     /**

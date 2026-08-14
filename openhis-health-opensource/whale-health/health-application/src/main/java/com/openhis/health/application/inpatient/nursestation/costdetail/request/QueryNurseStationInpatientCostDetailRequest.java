@@ -71,4 +71,11 @@ public class QueryNurseStationInpatientCostDetailRequest {
      */
     @Schema(description = "项目关键字：名称或院内编码模糊（可选）")
     private String keyword;
+
+    /**
+     * 费用清单打印：成对剔除冲销留痕（原正向行 + refund_id 冲销行均不进入结果；
+     * 冲销行可在查询日期窗外，仍剔除窗内已被冲销的原行）。页面 Tab 不传，保持留痕可见。
+     */
+    @Schema(description = "是否成对剔除冲销留痕（费用清单打印用；默认 false）")
+    private Boolean excludeOffsetPairs;
 }

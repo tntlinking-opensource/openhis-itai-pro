@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS "public"."med_medication_definition" (
     "stock_unit_code" varchar(255),
     "method_code" varchar(255),
     "rate_code" varchar(255),
-    "dose" numeric(18,2),
+    "dose" numeric(18,6),
     "min_unit" numeric(18,2),
     "max_unit" numeric(18,2),
     "usage_limit" numeric(18,2),
@@ -220,7 +220,7 @@ CREATE TABLE IF NOT EXISTS "public"."med_medication_dispense" (
     "dosage_instruction" varchar(255),
     "method_code" varchar(255),
     "frequency_code" varchar(255),
-    "dose" numeric(18,2),
+    "dose" numeric(18,6),
     "dose_unit_code" varchar(255),
     "max_unit" numeric(18,2),
     "support_info" varchar(255),
@@ -334,10 +334,10 @@ CREATE TABLE IF NOT EXISTS "public"."med_medication_request" (
     "unit_code" varchar(255) NOT NULL,
     "method_code" varchar(255) NOT NULL,
     "rate_code" varchar(255) NOT NULL,
-    "dose" numeric(18,2),
+    "dose" numeric(18,6),
     "dose_unit_code" varchar(255),
-    "max_dose" numeric(18,2),
-    "first_dose" numeric(18,2),
+    "max_dose" numeric(18,6),
+    "first_dose" numeric(18,6),
     "first_dose_unit_code" varchar(255),
     "first_duration" varchar(255),
     "dispense_interval" varchar(255),
@@ -352,6 +352,8 @@ CREATE TABLE IF NOT EXISTS "public"."med_medication_request" (
     "encounter_diagnosis_ids" varchar(2000),
     "performer_check_id" int8,
     "check_time" timestamptz(6),
+    "stop_performer_check_id" int8,
+    "stop_check_time" timestamptz(6),
     "effective_dose_end" timestamptz(6),
     "stop_time" timestamptz(6),
     "stopper_id" int8,
@@ -434,6 +436,8 @@ COMMENT ON COLUMN med_medication_request.contract_id IS '合同标识';
 COMMENT ON COLUMN med_medication_request.encounter_diagnosis_ids IS '绑定就诊诊断主键 CSV（有序，首位为主诊断 adm_encounter_diagnosis.id）';
 COMMENT ON COLUMN med_medication_request.performer_check_id IS 'performercheck标识';
 COMMENT ON COLUMN med_medication_request.check_time IS 'check时间';
+COMMENT ON COLUMN med_medication_request.stop_performer_check_id IS '停嘱校对人（护士 Practitioner）；空表示停嘱待校或未停嘱';
+COMMENT ON COLUMN med_medication_request.stop_check_time IS '停嘱校对时间；与 stop_performer_check_id 成对';
 COMMENT ON COLUMN med_medication_request.effective_dose_end IS '服药计划结束时间';
 COMMENT ON COLUMN med_medication_request.stop_time IS '停嘱时间';
 COMMENT ON COLUMN med_medication_request.stopper_id IS '停嘱人（医务人员主键）';

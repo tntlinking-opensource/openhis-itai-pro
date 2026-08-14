@@ -12,6 +12,7 @@ import com.openhis.health.domain.clinical.procedure.service.ProcedureQueryServic
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.enums.GenerateSource;
+import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseQueryService;
 import lombok.RequiredArgsConstructor;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
@@ -20,15 +21,18 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
- * 住院护士站费用明细读组装：收费明细 + 执行记录业务时间（B.6.1 跨 clinical 编排）。
+ * 住院护士站费用明细读组装：收费明细 + 客户可见业务时间（B.6.1 跨 clinical 编排）。
  *
- * <p>双轨：过滤/倒序锚定 Procedure/账单 {@code occurrence_time}；页面展示优先
- * {@code recorded_time}（AS-IP-NUR-006 / BR-IP-ORD-030⑥）。</p>
+ * <p>用户轴（进窗 / 排序 / 列展示同一时刻）：有 Procedure → 净剩 {@code recorded_time}；
+ * 护士划价耗材 → 发放展示时刻；滚费无 Procedure 展示轴 → {@code occurrence_time}。
+ * {@code occurrence_time} 仅后端逻辑/排障，不对用户过滤或展示（AS-IP-NUR-006 / BR-IP-PRC-030）。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -36,6 +40,7 @@ public class InpatientNurseStationCostDetailLoader {
 
     private final ChargeItemQueryService chargeItemQueryService;
     private final ProcedureQueryService procedureQueryService;
+    private final DeviceDispenseQueryService deviceDispenseQueryService;
 
     /**
      * 住院护士站费用明细候选行（DM-ADM-011 §6.2.15；AS-IP-NUR-006 IF-IP-CDT-02）。
@@ -62,38 +67,57 @@ public class InpatientNurseStationCostDetailLoader {
         }
         cmd.setExcludeSupersededSettledLines(true);
         List<ChargeItem> candidates = this.chargeItemQueryService.listChargeItemsByEncounterId(cmd);
-        Map<Long, LocalDateTime> netProcedureOccurrenceById =
-            this.procedureQueryService.mapNetCompletedOccurrenceTimeByEncounterId(cmd.getEncounterId());
         Map<Long, LocalDateTime> netProcedureRecordedById =
             this.procedureQueryService.mapNetCompletedRecordedTimeByEncounterId(cmd.getEncounterId());
+        // Pre：护士划价诊疗按 Request 取 recorded；耗材按发放展示时刻（与 IF-IP-PRC-05/07 同轴）
+        Set<Long> nursePricingServiceReqIds = new HashSet<>();
+        Set<Long> nursePricingDeviceReqIds = new HashSet<>();
+        for (ChargeItem chargeItem : candidates) {
+            if (chargeItem == null) {
+                continue;
+            }
+            if (!GenerateSource.NURSE_PRICING.getCode().equals(chargeItem.getGenerateSourceEnum())) {
+                continue;
+            }
+            if (chargeItem.getServiceId() == null) {
+                continue;
+            }
+            if (TableNameConstants.WKF_SERVICE_REQUEST.equals(chargeItem.getServiceTable())) {
+                nursePricingServiceReqIds.add(chargeItem.getServiceId());
+            } else if (TableNameConstants.WKF_DEVICE_REQUEST.equals(chargeItem.getServiceTable())) {
+                nursePricingDeviceReqIds.add(chargeItem.getServiceId());
+            }
+        }
+        Map<Long, LocalDateTime> nursePricingRecordedByServiceReqId =
+            this.procedureQueryService.mapNetCompletedRecordedTimeByServiceRequestIds(
+                List.of(cmd.getEncounterId()), nursePricingServiceReqIds);
+        Map<Long, LocalDateTime> deviceDisplayTimeByReqId =
+            this.deviceDispenseQueryService.mapPrimaryDisplayTimeByDeviceReqIds(nursePricingDeviceReqIds);
         List<InpatientNurseStationCostDetailChargeRow> rows = new ArrayList<>();
         for (ChargeItem chargeItem : candidates) {
             if (chargeItem == null) {
                 continue;
             }
-            Optional<LocalDateTime> businessDateTimeOpt =
-                this.resolveInpatientNurseStationCostDetailBusinessDateTimeForDateRange(
-                    chargeItem,
-                    netProcedureOccurrenceById,
-                    cmd.getBusinessDateFrom(),
-                    cmd.getBusinessDateTo());
-            if (businessDateTimeOpt.isEmpty()) {
+            Optional<LocalDateTime> customerTimeOpt = this.resolveCustomerVisibleBusinessTime(
+                chargeItem,
+                netProcedureRecordedById,
+                nursePricingRecordedByServiceReqId,
+                deviceDisplayTimeByReqId);
+            if (customerTimeOpt.isEmpty()) {
                 continue;
             }
-            // 过滤/倒序：逻辑轴 = occurrence（计划点）
-            LocalDateTime businessDateTime = businessDateTimeOpt.get();
-            LocalDate businessDate = businessDateTime.toLocalDate();
-            if (businessDate.isBefore(cmd.getBusinessDateFrom())) {
+            LocalDateTime customerTime = customerTimeOpt.get();
+            LocalDate customerDate = customerTime.toLocalDate();
+            // 进窗：用户轴日期 ∈ [from, to]
+            if (customerDate.isBefore(cmd.getBusinessDateFrom())) {
                 continue;
             }
-            if (businessDate.isAfter(cmd.getBusinessDateTo())) {
+            if (customerDate.isAfter(cmd.getBusinessDateTo())) {
                 continue;
             }
-            // 展示轴：医嘱执行优先 recorded；划价/滚费与逻辑轴相同
-            LocalDateTime displayDateTime = this.resolveDisplayDateTime(
-                chargeItem, businessDateTime, netProcedureRecordedById);
+            // 列与排序同源：businessDateTime / displayDateTime 均为客户可见时刻
             rows.add(new InpatientNurseStationCostDetailChargeRow(
-                chargeItem, businessDateTime, displayDateTime));
+                chargeItem, customerTime, customerTime));
         }
         rows.sort(Comparator.comparing(InpatientNurseStationCostDetailChargeRow::getBusinessDateTime).reversed());
         return rows;
@@ -113,78 +137,66 @@ public class InpatientNurseStationCostDetailLoader {
     }
 
     /**
-     * 解析页面展示时刻：医嘱执行路径取净剩 Procedure.recorded_time，否则回落逻辑业务时间。
+     * 解析客户可见业务时刻（进窗 / 排序 / 列展示同一值）。
      *
-     * @param chargeItem              收费明细
-     * @param businessDateTime        逻辑业务时间（occurrence）
-     * @param netProcedureRecordedById 就诊下净完成 Procedure 登记时刻
-     * @return 展示时刻（非空）
-     */
-    private LocalDateTime resolveDisplayDateTime(
-        ChargeItem chargeItem,
-        LocalDateTime businessDateTime,
-        Map<Long, LocalDateTime> netProcedureRecordedById) {
-        // 划价/滚费无 Procedure 双轨，展示与逻辑同源
-        if (GenerateSource.NURSE_PRICING.getCode().equals(chargeItem.getGenerateSourceEnum())
-            || GenerateSource.AUTO_ROLL_FEES.getCode().equals(chargeItem.getGenerateSourceEnum())) {
-            return businessDateTime;
-        }
-        Long procedureId = chargeItem.getProcedureId();
-        if (procedureId == null || netProcedureRecordedById == null) {
-            return businessDateTime;
-        }
-        LocalDateTime recordedTime = netProcedureRecordedById.get(procedureId);
-        if (recordedTime != null) {
-            return recordedTime;
-        }
-        return businessDateTime;
-    }
-
-    /**
-     * 按 AS-IP-NUR-006 规则解析单行<strong>逻辑</strong>业务发生时刻（过滤轴：划价/滚费 occurrence；医嘱净完成 occurrence）。
+     * <p>有 Procedure → 净剩 {@code recorded_time}；护士划价耗材 → 发放展示；滚费 → occurrence。
+     * 无法解析时 empty（静默跳过，不对用户回落 occurrence）。</p>
      *
-     * @param chargeItem                 收费明细
-     * @param netProcedureOccurrenceById 就诊下净完成 Procedure 发生时刻
-     * @param businessDateFrom           业务日下限（含）
-     * @param businessDateTo             业务日上限（含）
-     * @return 命中区间内的逻辑业务时刻；区间外或无法解析时 empty
+     * @param chargeItem                         收费明细
+     * @param netProcedureRecordedById           就诊净剩 Procedure → recorded
+     * @param nursePricingRecordedByServiceReqId 护士划价诊疗 Request → recorded
+     * @param deviceDisplayTimeByReqId           护士划价耗材 Request → 发放展示
+     * @return 客户可见时刻；无法解析时 empty
      */
-    private Optional<LocalDateTime> resolveInpatientNurseStationCostDetailBusinessDateTimeForDateRange(
+    private Optional<LocalDateTime> resolveCustomerVisibleBusinessTime(
         ChargeItem chargeItem,
-        Map<Long, LocalDateTime> netProcedureOccurrenceById,
-        LocalDate businessDateFrom,
-        LocalDate businessDateTo) {
-        // 护士划价与住院滚费均锚定账单 occurrence_time（BR-IP-CDT-003；无 procedure_id）
-        if (GenerateSource.NURSE_PRICING.getCode().equals(chargeItem.getGenerateSourceEnum())
-            || GenerateSource.AUTO_ROLL_FEES.getCode().equals(chargeItem.getGenerateSourceEnum())) {
+        Map<Long, LocalDateTime> netProcedureRecordedById,
+        Map<Long, LocalDateTime> nursePricingRecordedByServiceReqId,
+        Map<Long, LocalDateTime> deviceDisplayTimeByReqId) {
+        // 滚费：无 Procedure 客户轴，用账单 occurrence（落账日 00:00）
+        if (GenerateSource.AUTO_ROLL_FEES.getCode().equals(chargeItem.getGenerateSourceEnum())) {
             if (chargeItem.getOccurrenceTime() == null) {
                 throw new IllegalArgumentException(
                     "bill occurrence_time missing, chargeItemId=" + chargeItem.getId()
                         + ", generateSource=" + chargeItem.getGenerateSourceEnum());
             }
-            LocalDate billDate = chargeItem.getOccurrenceTime().toLocalDate();
-            if (billDate.isBefore(businessDateFrom) || billDate.isAfter(businessDateTo)) {
-                return Optional.empty();
-            }
             return Optional.of(chargeItem.getOccurrenceTime());
         }
+        // 护士划价耗材：无 Procedure，客户轴 = 发放/拣配展示时刻
+        if (GenerateSource.NURSE_PRICING.getCode().equals(chargeItem.getGenerateSourceEnum())
+            && TableNameConstants.WKF_DEVICE_REQUEST.equals(chargeItem.getServiceTable())) {
+            if (deviceDisplayTimeByReqId != null && chargeItem.getServiceId() != null) {
+                LocalDateTime dispenseDisplay = deviceDisplayTimeByReqId.get(chargeItem.getServiceId());
+                if (dispenseDisplay != null) {
+                    return Optional.of(dispenseDisplay);
+                }
+            }
+            return Optional.empty();
+        }
+        // 优先本行 Procedure.recorded（禁止同 Request 兄弟行串日）
         Long procedureId = chargeItem.getProcedureId();
-        if (procedureId == null) {
+        if (procedureId != null && netProcedureRecordedById != null) {
+            LocalDateTime recordedTime = netProcedureRecordedById.get(procedureId);
+            if (recordedTime != null) {
+                return Optional.of(recordedTime);
+            }
+            // 已对冲或无 recorded：不对用户回落 occurrence，静默跳过
+            return Optional.empty();
+        }
+        // 护士划价诊疗缺 procedure_id：按 ServiceRequest 取净剩 recorded
+        if (GenerateSource.NURSE_PRICING.getCode().equals(chargeItem.getGenerateSourceEnum())
+            && TableNameConstants.WKF_SERVICE_REQUEST.equals(chargeItem.getServiceTable())
+            && nursePricingRecordedByServiceReqId != null
+            && chargeItem.getServiceId() != null) {
+            LocalDateTime recordedByRequest = nursePricingRecordedByServiceReqId.get(chargeItem.getServiceId());
+            if (recordedByRequest != null) {
+                return Optional.of(recordedByRequest);
+            }
+        }
+        // 医嘱路径缺 procedure_id：数据不完整
+        if (!GenerateSource.NURSE_PRICING.getCode().equals(chargeItem.getGenerateSourceEnum())) {
             throw new IllegalArgumentException(
                 "order charge missing procedure_id, chargeItemId=" + chargeItem.getId());
-        }
-        LocalDateTime occurrenceTime = netProcedureOccurrenceById.get(procedureId);
-        if (occurrenceTime != null) {
-            return Optional.of(occurrenceTime);
-        }
-        LocalDateTime billOccurrenceTime = chargeItem.getOccurrenceTime();
-        if (billOccurrenceTime != null) {
-            LocalDate billDate = billOccurrenceTime.toLocalDate();
-            if (!billDate.isBefore(businessDateFrom) && !billDate.isAfter(businessDateTo)) {
-                throw new IllegalArgumentException(
-                    "charge procedure is not net completed, chargeItemId=" + chargeItem.getId()
-                        + ", procedureId=" + procedureId);
-            }
         }
         return Optional.empty();
     }

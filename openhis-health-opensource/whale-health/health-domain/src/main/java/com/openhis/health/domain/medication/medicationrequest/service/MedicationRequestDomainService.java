@@ -93,6 +93,8 @@ public class MedicationRequestDomainService {
         request.setUnitCode(command.getUnitCode());
         request.setMethodCode(command.getMethodCode());
         request.setRateCode(command.getRateCode());
+        // Pre：输液滴速（术语 speed_code）；非输液药可空，与列表 speedCode/speedName 回显对齐。
+        request.setSpeedCode(command.getSpeedCode());
         request.setFirstDose(command.getFirstDose());
         request.setFirstDoseUnitCode(command.getFirstDoseUnitCode());
         if (command.getSortNumber() != null) {
@@ -171,6 +173,11 @@ public class MedicationRequestDomainService {
         if (command.getRateCode() != null && !command.getRateCode().equals(request.getRateCode())) {
             request.setRateCode(command.getRateCode());
             changedFields.add(FieldNameConstants.RATE_CODE);
+        }
+        // Pre：滴速非空才覆盖（含空串清空），与备注变更口径一致，便于非输液改用法时清掉旧滴速。
+        if (command.getSpeedCode() != null && !Objects.equals(command.getSpeedCode(), request.getSpeedCode())) {
+            request.setSpeedCode(command.getSpeedCode());
+            changedFields.add(FieldNameConstants.SPEED_CODE);
         }
         if (command.getFirstDose() != null && !command.getFirstDose().equals(request.getFirstDose())) {
             request.setFirstDose(command.getFirstDose());
@@ -344,6 +351,54 @@ public class MedicationRequestDomainService {
         // 状态迁移：仅写开立或停嘱列（实体内校验种类与门禁）。
         request.changeBusinessTime(command.getTimeKind(), command.getNewTime());
         // 持久化：列更新无独立领域事件时仍先落库供读侧刷新。
+        medicationRequestRepository.save(request);
+    }
+
+    /**
+     * 停嘱校对：仅写 {@code stop_performer_check_id}/{@code stop_check_time}，状态仍为 STOPPED。
+     *
+     * @param command 停嘱校对命令
+     */
+    public void verifyStopMedicationOrder(VerifyStopMedicationOrderCommand command) {
+        if (command == null || command.getId() == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT,
+                "停嘱校对时 id 不能为空");
+        }
+        if (command.getStopPerformerCheckId() == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT,
+                "停嘱校对时 stopPerformerCheckId 不能为空");
+        }
+        // 加载：按主键取药品申请聚合根。
+        MedicationRequest request = this.mustGet(command.getId());
+        LocalDateTime stopCheckTime = command.getStopCheckTime();
+        // 校对时刻未传则取当前系统时间。
+        if (stopCheckTime == null) {
+            stopCheckTime = LocalDateTime.now();
+        }
+        // 状态迁移：仅写停嘱校对痕迹，不改 STOPPED。
+        request.markStopChecked(command.getStopPerformerCheckId(), stopCheckTime);
+        // 持久化：痕迹落库供待校列表与取消停嘱门禁读取。
+        medicationRequestRepository.save(request);
+    }
+
+    /**
+     * 取消停嘱校对：清空停嘱校对痕迹，状态仍为 STOPPED（逆流程解锁医生取消停嘱）。
+     *
+     * @param command 取消停嘱校对命令
+     */
+    public void cancelVerifyStopMedicationOrder(CancelVerifyStopMedicationOrderCommand command) {
+        if (command == null || command.getId() == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT,
+                "取消停嘱校对时 id 不能为空");
+        }
+        // 加载：按主键取药品申请聚合根。
+        MedicationRequest request = this.mustGet(command.getId());
+        // 状态迁移：清空停嘱校对人/时间，不改 STOPPED。
+        request.clearStopChecked();
+        // 持久化：清空后医生取消停嘱门禁可通过。
         medicationRequestRepository.save(request);
     }
 
@@ -681,6 +736,39 @@ public class MedicationRequestDomainService {
         for (MedicationRequest request : entities) {
             this.assertHerbalMedicationRequestPath(request);
             request.setSufferingFlag(Boolean.FALSE);
+        }
+        medicationRequestRepository.saveAll(entities);
+    }
+
+    /**
+     * 补充代煎费前：将方内饮片行 {@code sufferingFlag} 置为是（允许已签发态）。
+     *
+     * @param command 方内行主键与操作人
+     * @throws BusinessException 行不存在或非中药路径时
+     */
+    public void markSufferingFlagForDecoctionSupplement(MarkHerbalSufferingFlagCommand command) {
+        if (command == null || command.getMedicationRequestIds() == null || command.getMedicationRequestIds().isEmpty()) {
+            return;
+        }
+        if (command.getOperatorId() == null) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT, "补充代煎时操作人不能为空");
+        }
+        LinkedHashSet<Long> distinctIds = new LinkedHashSet<>();
+        for (Long id : command.getMedicationRequestIds()) {
+            if (id != null) {
+                distinctIds.add(id);
+            }
+        }
+        if (distinctIds.isEmpty()) {
+            return;
+        }
+        List<MedicationRequest> entities = medicationRequestRepository.findByIdIn(new ArrayList<>(distinctIds));
+        if (entities.size() != distinctIds.size()) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_NOT_FOUND, "补充代煎时药品申请不存在");
+        }
+        for (MedicationRequest request : entities) {
+            this.assertHerbalMedicationRequestPath(request);
+            request.setSufferingFlag(Boolean.TRUE);
         }
         medicationRequestRepository.saveAll(entities);
     }
@@ -1109,8 +1197,10 @@ public class MedicationRequestDomainService {
         out.setReqOpenedTime(LocalDateTime.now());
         out.setReqAuthoredTime(null);
         out.setStopTime(null);
-        // 复制/退药重开新行不得继承源行停嘱人。
+        // 复制/退药重开新行不得继承源行停嘱人与停嘱校对痕迹。
         out.setStopperId(null);
+        out.setStopPerformerCheckId(null);
+        out.setStopCheckTime(null);
         out.setIsDeleted(Boolean.FALSE);
         out.initDraft();
         return out;

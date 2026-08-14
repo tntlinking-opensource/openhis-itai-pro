@@ -47,7 +47,7 @@ public interface InpatientDoctorStationDiagnosisMapper {
     void validateInpatientEncounterClassImp(InpatientEncounterContextQueryModel snapshot);
 
     /**
-     * Gate：校验就诊处于医生站可写状态（IN_PROGRESS 或 ON_HOLD）。
+     * Gate：校验住院就诊上下文可用于维护诊断（仅要求读模型存在；允许后补，不按在院状态拦截）。
      *
      * @param snapshot 住院信息读模型快照
      */

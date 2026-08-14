@@ -26,6 +26,7 @@ import com.openhis.health.domain.financial.contract.service.ContractQueryService
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentRecDetailQueryModel;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentReconciliationQueryModel;
 import com.openhis.health.domain.financial.paymentreconciliation.service.PaymentReconciliationQueryService;
+import com.openhis.health.domain.share.constants.DoctorStationTcmConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.OutpatientChargeConstants;
 import com.openhis.health.domain.share.enums.AdministrativeGender;
@@ -234,10 +235,15 @@ public class ChargeReceiptPrintAssembler {
                     .setClrWay(StringUtils.trimToNull(record.getClrWay()))
                     .setClrType(StringUtils.trimToNull(record.getClrType()))
                     .setPoolPropSelfpay(record.getPoolPropSelfpay())
+                    .setCvlservFlag(StringUtils.trimToNull(record.getCvlservFlag()))
                     .setBalc(record.getBalc());
             } else if (record.getBalc() != null) {
                 // 多笔时余额取最后一笔非空值
                 setlinfo.setBalc(record.getBalc());
+            }
+            // 公务员标志多笔时保留首笔非空（标识类字段不求和）
+            if (setlinfo.getCvlservFlag() == null) {
+                setlinfo.setCvlservFlag(StringUtils.trimToNull(record.getCvlservFlag()));
             }
             setlinfo.setMedfeeSumamt(sumNullable(setlinfo.getMedfeeSumamt(), record.getMedfeeSumamt()));
             setlinfo.setFulamtOwnpayAmt(sumNullable(setlinfo.getFulamtOwnpayAmt(), record.getFulamtOwnpayAmt()));
@@ -452,6 +458,9 @@ public class ChargeReceiptPrintAssembler {
     /**
      * 收费项 → 小票明细行（含目录名、数量单位与收费类别展示）。
      *
+     * <p>中草药明细合并为一行「中药费」：不打印单味药名与剂量，金额为各味药合计；
+     * 代煎费、西药/中成药等非中草药行仍逐项展示。合并行插在首条中草药原位置。</p>
+     *
      * @param chargeItems 收费项列表
      * @return 打印明细行
      */
@@ -474,12 +483,24 @@ public class ChargeReceiptPrintAssembler {
         Map<String, ProductDefinitionDisplayDto> productMap = loadProductMapForChargeItems(chargeItems);
 
         List<ChargeReceiptChargeLineDto> result = new ArrayList<>();
+        List<BigDecimal> herbalAmounts = new ArrayList<>();
+        int herbalInsertIndex = -1;
         for (ChargeItem line : chargeItems) {
             if (line == null) {
                 continue;
             }
             ChargeItemDefinition definition = definitionById.get(line.getDefinitionId());
             ProductDefinitionDisplayDto product = resolveProductForChargeItem(line, productMap);
+            // 中草药：累计金额，跳过逐味明细（剂量不进小票）
+            if (isHerbalTcmChargeItem(line, product)) {
+                if (herbalInsertIndex < 0) {
+                    herbalInsertIndex = result.size();
+                }
+                if (line.getTotalPrice() != null) {
+                    herbalAmounts.add(line.getTotalPrice());
+                }
+                continue;
+            }
             ChargeReceiptChargeLineDto row = new ChargeReceiptChargeLineDto();
             row.setItemName(firstNonBlank(
                 resolveChargeLineDisplayName(line, definition, product),
@@ -490,7 +511,41 @@ public class ChargeReceiptPrintAssembler {
             row.setChargeCategoryText(resolveChrgitmLvCategoryText(product));
             result.add(row);
         }
+        if (herbalInsertIndex >= 0) {
+            ChargeReceiptChargeLineDto herbalSummary = new ChargeReceiptChargeLineDto();
+            herbalSummary.setItemName(OutpatientChargeConstants.CHARGE_RECEIPT_MERGED_TCM_FEE_ITEM_NAME);
+            // 合并行不展示数量/剂量与甲乙类（多味可能不一致）
+            herbalSummary.setQuantityText("");
+            herbalSummary.setAmountText(formatAmountText(MonetaryAmountSupport.sumThenSettle(herbalAmounts)));
+            herbalSummary.setChargeCategoryText("");
+            int insertAt = herbalInsertIndex;
+            if (insertAt > result.size()) {
+                insertAt = result.size();
+            }
+            result.add(insertAt, herbalSummary);
+        }
         return result;
+    }
+
+    /**
+     * 判定收费项是否为应合并进小票「中药费」的中草药明细。
+     *
+     * <p>优先 {@code ChargeItem.tcmFlag=true}；否则以产品目录
+     * {@code medication_category_code=4}（{@link DoctorStationTcmConstants#HERBAL_CATEGORY_CODE}）识别。
+     * 代煎诊疗项目非中草药分类，不纳入合并。</p>
+     *
+     * @param line    收费项
+     * @param product 产品目录展示（可 null）
+     * @return 应合并为「中药费」时 {@code true}
+     */
+    private boolean isHerbalTcmChargeItem(ChargeItem line, ProductDefinitionDisplayDto product) {
+        if (line != null && Boolean.TRUE.equals(line.getTcmFlag())) {
+            return true;
+        }
+        if (product == null || StringUtils.isEmpty(product.getCategoryCode())) {
+            return false;
+        }
+        return DoctorStationTcmConstants.HERBAL_CATEGORY_CODE.equals(product.getCategoryCode().trim());
     }
 
     /**
@@ -664,8 +719,11 @@ public class ChargeReceiptPrintAssembler {
     /**
      * 按支付子明细与医保快照回填小票各渠道金额（含 totalAmount 现金回落）。
      *
-     * <p>起付线取 2207 回执 {@code act_pay_dedc}；个账余额优先取回执 {@code balc}，
-     * 再回落支付明细 {@code afterBalance}（门诊收费通常不写 afterBalance）。</p>
+     * <p>起付线取 2207 回执 {@code act_pay_dedc}；公务员待遇/补助取回执
+     * {@code cvlserv_flag}/{@code cvlserv_pay}；个账余额优先取回执 {@code balc}，
+     * 再回落支付明细 {@code afterBalance}（门诊收费通常不写 afterBalance）。
+     * 「现金支付」仅取本笔 {@code CASH} 渠道；仅当本笔无微信/支付宝/银行卡时，
+     * 才回落本笔结算 {@code psn_cash_pay} 或挂号医保快照个人现金，避免扫码收费被挂号现金污染。</p>
      *
      * @param slip               收费小票 DTO
      * @param payment            支付读模型
@@ -700,19 +758,35 @@ public class ChargeReceiptPrintAssembler {
 
         BigDecimal settlementActPayDedc = null;
         BigDecimal settlementBalc = null;
+        String settlementCvlservFlag = null;
+        BigDecimal settlementCvlservPay = null;
+        BigDecimal settlementHifpPay = null;
+        BigDecimal settlementOthPay = null;
+        BigDecimal settlementFundPaySumamt = null;
+        BigDecimal settlementPsnCashPay = null;
         if (payment != null && payment.getId() != null) {
             SettlementPrintAmounts settlementAmounts = resolveSettlementPrintAmounts(payment.getId());
             settlementActPayDedc = settlementAmounts.actPayDedc;
             settlementBalc = settlementAmounts.balc;
+            settlementCvlservFlag = settlementAmounts.cvlservFlag;
+            settlementCvlservPay = settlementAmounts.cvlservPay;
+            settlementHifpPay = settlementAmounts.hifpPay;
+            settlementOthPay = settlementAmounts.othPay;
+            settlementFundPaySumamt = settlementAmounts.fundPaySumamt;
+            settlementPsnCashPay = settlementAmounts.psnCashPay;
         }
         BigDecimal accountBalance = firstNonNull(settlementBalc, accountBalanceFromDetail);
 
-        BigDecimal pooling = channelAmounts.get(PaymentChannel.INSURANCE_FUND.getCode());
+        BigDecimal channelFund = channelAmounts.get(PaymentChannel.INSURANCE_FUND.getCode());
         BigDecimal snapshotFund = null;
         if (insuranceSnapshot != null) {
             snapshotFund = insuranceSnapshot.getYbFundPaySumamt();
         }
-        BigDecimal fund = firstNonNull(pooling, snapshotFund);
+        // 基金合计：优先正式回执 fund_pay_sumamt，再渠道/快照
+        BigDecimal fund = firstNonNull(settlementFundPaySumamt, firstNonNull(channelFund, snapshotFund));
+        // 真正统筹：hifp_pay；无回执时不拿基金总额顶替，避免与基金行重复
+        BigDecimal pooling = settlementHifpPay;
+        BigDecimal othPay = settlementOthPay;
         BigDecimal snapshotAcct = null;
         if (insuranceSnapshot != null) {
             snapshotAcct = insuranceSnapshot.getYbAcctPay();
@@ -724,12 +798,15 @@ public class ChargeReceiptPrintAssembler {
         if (insuranceSnapshot != null) {
             snapshotCash = insuranceSnapshot.getYbPsnCashPay();
         }
-        BigDecimal cash = firstNonNull(
-            channelAmounts.get(PaymentChannel.CASH.getCode()),
-            snapshotCash);
+        BigDecimal cash = channelAmounts.get(PaymentChannel.CASH.getCode());
         BigDecimal wechat = channelAmounts.get(PaymentChannel.WECHAT.getCode());
         BigDecimal alipay = channelAmounts.get(PaymentChannel.ALIPAY.getCode());
         BigDecimal bankCard = channelAmounts.get(PaymentChannel.BANK_CARD.getCode());
+        // 本笔已有微信/支付宝/银行卡时，禁止用挂号医保快照个人现金污染「现金支付」
+        // （典型误显：收费扫码 10 元，小票却带出挂号个人现金 5 元）
+        if (cash == null && wechat == null && alipay == null && bankCard == null) {
+            cash = firstNonNull(settlementPsnCashPay, snapshotCash);
+        }
 
         if (cash == null && wechat == null && alipay == null && bankCard == null
             && fund == null && acct == null && totalAmount != null) {
@@ -745,8 +822,12 @@ public class ChargeReceiptPrintAssembler {
 
         slip.setPoolingPayText(formatAmountText(pooling));
         slip.setFundPayText(formatAmountText(fund));
+        slip.setOthPayText(formatAmountText(othPay));
         slip.setAccountPayText(formatAmountText(acct));
         slip.setDeductibleLineText(formatAmountText(settlementActPayDedc));
+        // 公务员待遇/补助：仅小票展示透传，不参与渠道金额合计
+        slip.setCvlservFlagText(formatCvlservFlagText(settlementCvlservFlag));
+        slip.setCvlservPayText(formatAmountText(settlementCvlservPay));
         slip.setCashPayText(formatAmountText(cash));
         slip.setWechatPayText(formatAmountText(wechat));
         slip.setAlipayPayText(formatAmountText(alipay));
@@ -754,13 +835,13 @@ public class ChargeReceiptPrintAssembler {
     }
 
     /**
-     * 从支付单下未撤销的 2207 正式结算回执汇总小票起付线与个账余额。
+     * 从支付单下未撤销的 2207 正式结算回执汇总小票起付线、公务员字段与个账余额。
      *
-     * <p>多笔时 {@code act_pay_dedc} 求和；{@code balc} 取最后一笔非空值（与
-     * {@link #fillSettlementSetlinfo} 口径一致）。</p>
+     * <p>多笔时 {@code act_pay_dedc}/{@code cvlserv_pay} 求和；{@code cvlserv_flag}
+     * 取首笔非空；{@code balc} 取最后一笔非空值（与 {@link #fillSettlementSetlinfo} 口径一致）。</p>
      *
      * @param paymentId 支付主键
-     * @return 起付线/余额；扩展未启用或无回执时字段为 null
+     * @return 起付线/公务员/余额；扩展未启用或无回执时字段为 null
      */
     private SettlementPrintAmounts resolveSettlementPrintAmounts(Long paymentId) {
         SettlementPrintAmounts amounts = new SettlementPrintAmounts();
@@ -777,6 +858,18 @@ public class ChargeReceiptPrintAssembler {
                 continue;
             }
             amounts.actPayDedc = sumNullable(amounts.actPayDedc, record.getActPayDedc());
+            amounts.cvlservPay = sumNullable(amounts.cvlservPay, record.getCvlservPay());
+            amounts.hifpPay = sumNullable(amounts.hifpPay, record.getHifpPay());
+            amounts.othPay = sumNullable(amounts.othPay, record.getOthPay());
+            amounts.fundPaySumamt = sumNullable(amounts.fundPaySumamt, record.getFundPaySumamt());
+            amounts.psnCashPay = sumNullable(amounts.psnCashPay, record.getPsnCashPay());
+            // 公务员标志多笔时保留首笔非空
+            if (amounts.cvlservFlag == null) {
+                String flag = StringUtils.trimToNull(record.getCvlservFlag());
+                if (flag != null) {
+                    amounts.cvlservFlag = flag;
+                }
+            }
             if (record.getBalc() != null) {
                 amounts.balc = record.getBalc();
             }
@@ -784,9 +877,34 @@ public class ChargeReceiptPrintAssembler {
         return amounts;
     }
 
-    /** 小票用结算回执金额（起付线 + 个账余额）。 */
+    /**
+     * 公务员标志 → 小票展示文案。
+     *
+     * <p>仅认平台字典：{@code 1}→是 / {@code 0}→否；空或非 0/1 一律空串，禁止臆造。</p>
+     *
+     * @param flag 平台 {@code cvlserv_flag}
+     * @return 展示文案
+     */
+    private static String formatCvlservFlagText(String flag) {
+        String value = StringUtils.trimToEmpty(flag);
+        if ("1".equals(value)) {
+            return "是";
+        }
+        if ("0".equals(value)) {
+            return "否";
+        }
+        return "";
+    }
+
+    /** 小票用结算回执字段（起付线 + 公务员 + 统筹/其他分项 + 个人现金 + 个账余额）。 */
     private static final class SettlementPrintAmounts {
         private BigDecimal actPayDedc;
+        private String cvlservFlag;
+        private BigDecimal cvlservPay;
+        private BigDecimal hifpPay;
+        private BigDecimal othPay;
+        private BigDecimal fundPaySumamt;
+        private BigDecimal psnCashPay;
         private BigDecimal balc;
     }
 

@@ -255,13 +255,18 @@ public class DocumentAppService {
     /**
      * 软删除文书 → {@code POST /api/app/document/delete}
      *
-     * @param request 含 documentId
+     * @param request 含 documentId（LongValueRequest.value）
      */
     public void delete(@Valid LongValueRequest request) {
         // Gate：id 为空则 noop
         if (request == null || request.getValue() == null) {
             return;
         }
+        // Pre：加载未删文书
+        Document doc = documentManager.findById(request.getValue())
+                .orElseThrow(() -> new EntityNotFoundException("文书", request.getValue()));
+        // Gate：锁定/归档不可删；仅创建者可删（病程/会诊他人可编但不可替删）
+        assertCanDeleteDocument(doc);
         // Cmd：软删文书
         documentManager.softDelete(request.getValue());
     }
@@ -703,6 +708,17 @@ public class DocumentAppService {
         }
     }
 
+    /** 删除闸门：锁定/归档不可删；始终仅创建者可删（不套用多人可编辑放行） */
+    private void assertCanDeleteDocument(Document doc) {
+        if (DocumentManager.STATUS_LOCKED.equals(doc.getStatus())
+                || DocumentManager.STATUS_ARCHIVED.equals(doc.getStatus())) {
+            throw new ValidationException("文书已锁定或归档，不可删除");
+        }
+        if (!isEditableByCurrentUser(doc)) {
+            throw new ValidationException("仅创建者可删除该文书");
+        }
+    }
+
     private DocumentSummaryDto toSummaryDto(Document doc) {
         return toSummaryDto(doc, new HashMap<>(), new HashMap<>());
     }
@@ -728,6 +744,9 @@ public class DocumentAppService {
         dto.setDeptName(resolveDeptName(doc.getEncounterId(), deptNameByEncounter));
         Long saverId = doc.getUpdatedBy() != null ? doc.getUpdatedBy() : doc.getCreatedBy();
         dto.setSavedByName(resolveUserDisplayName(saverId, userNameById));
+        // Asm：列表已加载 content，就地提取主诉，不额外查库
+        dto.setChiefComplaint(
+                documentStructureManager.extractPlainTextByDataItemName(doc.getContent(), "chiefComplaint"));
         return dto;
     }
 

@@ -123,4 +123,38 @@ public class UploadLogDomainService {
         record.setUpdatedBy(operatorId);
         caseRecordRepository.save(record);
     }
+
+    /**
+     * 回写病案主档结算清单上传状态（4101A/4102）。
+     *
+     * @param caseRecordId 病案主档主键
+     * @param settleUploadStatusCode {@code 0}/{@code 1}/{@code 2}
+     * @param setlListId 平台清单流水号，可为 null（保留原值时传 null 且 clearSetlListId=false）
+     * @param clearSetlListId 是否清空 setl_list_id
+     * @param errorMessage 错误摘要
+     * @param operatorId 操作人
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void updateCaseRecordSettleUploadStatus(
+            Long caseRecordId,
+            String settleUploadStatusCode,
+            String setlListId,
+            boolean clearSetlListId,
+            String errorMessage,
+            Long operatorId) {
+        CaseRecord record = caseRecordRepository.findByIdAndIsDeletedFalse(caseRecordId)
+                .orElseThrow(() -> new EntityNotFoundException("病案主档", caseRecordId));
+        record.setSettleUploadStatusCode(trimToNull(settleUploadStatusCode));
+        // 成功回写清单号；撤回审核时按需清空
+        if (clearSetlListId) {
+            record.setSetlListId(null);
+        } else if (trimToNull(setlListId) != null) {
+            record.setSetlListId(trimToNull(setlListId));
+        }
+        record.setSettleUploadAt(LocalDateTime.now());
+        record.setSettleUploadError(trimToNull(errorMessage));
+        record.setUpdatedAt(LocalDateTime.now());
+        record.setUpdatedBy(operatorId);
+        caseRecordRepository.save(record);
+    }
 }

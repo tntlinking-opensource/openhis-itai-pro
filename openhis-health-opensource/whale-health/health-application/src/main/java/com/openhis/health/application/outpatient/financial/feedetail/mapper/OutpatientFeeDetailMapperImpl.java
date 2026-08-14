@@ -44,7 +44,8 @@ public class OutpatientFeeDetailMapperImpl implements OutpatientFeeDetailMapper 
         OutpatientFeeDetailPageQuery query = new OutpatientFeeDetailPageQuery();
         PageQueryBinder.bind(request, query);
         this.applyFilterFields(query, request.getDateFrom(), request.getDateTo(),
-            request.getRegistrationDepartmentId(), request.getFeeCategoryCodes(), request.getSubCategoryCodes(),
+            request.getRegistrationDepartmentId(), request.getRequestingOrgId(),
+            request.getFeeCategoryCodes(), request.getSubCategoryCodes(),
             request.getPatientKeyword(), request.getProductNameKeyword(), request.getProductCodeKeyword(),
             request.getCashierId(), request.getTradeDirection(), request.getFeeNatureContractNo());
         return query;
@@ -62,7 +63,8 @@ public class OutpatientFeeDetailMapperImpl implements OutpatientFeeDetailMapper 
         query.setPageNo(1);
         query.setPageSize(OutpatientFeeDetailConstants.EXPORT_MAX_ROWS);
         this.applyFilterFields(query, request.getDateFrom(), request.getDateTo(),
-            request.getRegistrationDepartmentId(), request.getFeeCategoryCodes(), request.getSubCategoryCodes(),
+            request.getRegistrationDepartmentId(), request.getRequestingOrgId(),
+            request.getFeeCategoryCodes(), request.getSubCategoryCodes(),
             request.getPatientKeyword(), request.getProductNameKeyword(), request.getProductCodeKeyword(),
             request.getCashierId(), request.getTradeDirection(), request.getFeeNatureContractNo());
         return query;
@@ -163,8 +165,13 @@ public class OutpatientFeeDetailMapperImpl implements OutpatientFeeDetailMapper 
             row.setPatientName(block.getPatientName());
             row.setBusNo(block.getBusNo());
             row.setRegistrationDepartmentName(block.getRegistrationDepartmentName());
-            row.setFeeNatureDisplay(block.getFeeNatureDisplay());
             row.setMedTypeDisplay(block.getMedTypeDisplay());
+        }
+        // 费用性质优先行级账单账户；缺省回落块级首行
+        if (StringUtils.isNotEmpty(line.getFeeNatureDisplay())) {
+            row.setFeeNatureDisplay(line.getFeeNatureDisplay());
+        } else if (block != null) {
+            row.setFeeNatureDisplay(block.getFeeNatureDisplay());
         }
         row.setFeeCategoryDisplay(line.getFeeCategoryDisplay());
         row.setSubCategoryDisplay(line.getSubCategoryDisplay());
@@ -174,6 +181,7 @@ public class OutpatientFeeDetailMapperImpl implements OutpatientFeeDetailMapper 
         row.setQuantityValue(line.getQuantityValue());
         row.setQuantityUnitDisplay(line.getQuantityUnitDisplay());
         row.setOrderingDoctorName(line.getOrderingDoctorName());
+        row.setPerformerName(line.getPerformerName());
         row.setCashierName(line.getCashierName());
         row.setBillDate(line.getBillDate());
         row.setInsuranceLevelDisplay(line.getInsuranceLevelDisplay());
@@ -212,24 +220,26 @@ public class OutpatientFeeDetailMapperImpl implements OutpatientFeeDetailMapper 
     /**
      * 将 HTTP 筛选字段写入领域 Query（dateFrom/To 转 billDate 闭区间，**BR-OP-FDT-001/003**）。
      *
-     * @param query                   目标领域 Query
-     * @param dateFrom                结算日起（yyyy-MM-dd）
-     * @param dateTo                  结算日止（yyyy-MM-dd）
-     * @param registrationDepartmentId 挂号科室
-     * @param feeCategoryCodes        费用大类多选
-     * @param subCategoryCodes        细分类多选
-     * @param patientKeyword          患者关键字
-     * @param productNameKeyword      项目名称关键字
-     * @param productCodeKeyword      项目编码关键字
-     * @param cashierId               收费人
-     * @param tradeDirection          收退 Tab
-     * @param feeNatureContractNo     费用性质合同 bus_no
+     * @param query                    目标领域 Query
+     * @param dateFrom                 结算日起（yyyy-MM-dd）
+     * @param dateTo                   结算日止（yyyy-MM-dd）
+     * @param registrationDepartmentId 挂号科室（遗留）
+     * @param requestingOrgId          开立科室（账单 requesting_org_id）
+     * @param feeCategoryCodes         费用大类多选
+     * @param subCategoryCodes         细分类多选
+     * @param patientKeyword           患者关键字
+     * @param productNameKeyword       项目名称关键字
+     * @param productCodeKeyword       项目编码关键字
+     * @param cashierId                收费人
+     * @param tradeDirection           收退 Tab
+     * @param feeNatureContractNo      费用性质合同 bus_no
      */
     private void applyFilterFields(
         OutpatientFeeDetailPageQuery query,
         String dateFrom,
         String dateTo,
         Long registrationDepartmentId,
+        Long requestingOrgId,
         List<String> feeCategoryCodes,
         List<String> subCategoryCodes,
         String patientKeyword,
@@ -245,6 +255,7 @@ public class OutpatientFeeDetailMapperImpl implements OutpatientFeeDetailMapper 
             query.setBillDateTo(LocalDate.parse(dateTo.trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER));
         }
         query.setRegistrationDepartmentId(registrationDepartmentId);
+        query.setRequestingOrgId(requestingOrgId);
         query.setFeeCategoryCodes(feeCategoryCodes);
         query.setSubCategoryCodes(subCategoryCodes);
         query.setPatientKeyword(trimToNull(patientKeyword));

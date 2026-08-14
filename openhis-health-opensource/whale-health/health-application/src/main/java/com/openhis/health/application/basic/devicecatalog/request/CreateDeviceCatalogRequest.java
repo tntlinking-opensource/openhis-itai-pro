@@ -66,7 +66,7 @@ public class CreateDeviceCatalogRequest {
     private String modelNumber;
     /** 是否高值耗材。 */
     private Boolean hvcmFlag;
-    /** 是否为收费耗材标记。 */
+    /** 收费耗材标记（true=收费；界面「不收费耗材」勾选对应 false）。 */
     private Boolean chargeableFlag;
     /** 病案结算类型编码（术语 mr_settlement_type_code）。 */
     private String mrSettlementTypeCode;

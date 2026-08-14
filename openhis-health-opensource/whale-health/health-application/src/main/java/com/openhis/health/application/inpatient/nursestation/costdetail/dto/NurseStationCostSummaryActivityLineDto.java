@@ -37,13 +37,13 @@ public class NurseStationCostSummaryActivityLineDto {
     private LocalDateTime activityDateTime;
 
     /**
-     * 页面展示时间（医嘱执行 = recorded_time；划价/滚费 = 同 activityDateTime）。
+     * 页面展示时间（与 activityDateTime 同源：recorded / 发放 / 滚费 occurrence）。
      */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     @Schema(description = "展示时间（执行/划价事实时刻）")
     private LocalDateTime displayDateTime;
 
-    /** 操作人展示名（划价取 enterer，执行取 performer）。 */
+    /** 操作人展示名（划价/执行均取 ChargeItem.performer_id；enterer_* 为收费人）。 */
     @Schema(description = "操作人展示名")
     private String operatorName;
 

@@ -77,4 +77,40 @@ public class SettledPaymentBriefDto {
      */
     @Schema(description = "是否可召回")
     private Boolean recallEnabled;
+
+    /** 是否已关联医保正式结算回执（2303/2304 分项可展示）。 */
+    @Schema(description = "是否已医保结算")
+    private Boolean insuranceSettled;
+
+    /** 医疗费总额（医保 setlinfo.medfee_sumamt）。 */
+    @Schema(description = "医疗费总额")
+    private BigDecimal ybMedfeeSumamt;
+
+    /** 基金支付合计。 */
+    @Schema(description = "基金支付合计")
+    private BigDecimal ybFundPaySumamt;
+
+    /** 基本医保统筹基金支出。 */
+    @Schema(description = "基本医保统筹")
+    private BigDecimal ybHifpPay;
+
+    /** 其他支出。 */
+    @Schema(description = "其他支出")
+    private BigDecimal ybOthPay;
+
+    /** 个人账户支出。 */
+    @Schema(description = "个人账户支付")
+    private BigDecimal ybAcctPay;
+
+    /** 个人现金支出。 */
+    @Schema(description = "个人现金支付")
+    private BigDecimal ybPsnCashPay;
+
+    /** 实际支付起付线。 */
+    @Schema(description = "起付线")
+    private BigDecimal ybActPayDedc;
+
+    /** 公务员医疗补助资金支出。 */
+    @Schema(description = "公务员医疗补助")
+    private BigDecimal ybCvlservPay;
 }

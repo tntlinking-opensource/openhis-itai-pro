@@ -53,15 +53,24 @@ public class OutpatientRegistrationDetailRowDto {
     @Schema(description = "挂号科室名称")
     private String organizationName;
 
-    /** 挂号医生主键。 */
+    /** 挂号医生主键（兼容字段；明细不再展示/导出）。 */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "挂号医生主键")
+    @Schema(description = "挂号医生主键（兼容；明细不展示）")
     private Long registrationDoctorId;
 
-    /** 挂号医生姓名。 */
-    @Excel(name = "挂号医生", sort = 4)
-    @Schema(description = "挂号医生姓名")
+    /** 挂号医生姓名（兼容字段；明细不再展示/导出）。 */
+    @Schema(description = "挂号医生姓名（兼容；明细不展示）")
     private String registrationDoctorName;
+
+    /** 接诊医生主键（活动 ADMITTER；未接诊可空）。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "接诊医生主键")
+    private Long admitterDoctorId;
+
+    /** 接诊医生姓名（活动 ADMITTER；未接诊可空）。 */
+    @Excel(name = "接诊医生", sort = 4)
+    @Schema(description = "接诊医生姓名")
+    private String admitterDoctorName;
 
     /** 号源类型主键。 */
     @JsonSerialize(using = ToStringSerializer.class)

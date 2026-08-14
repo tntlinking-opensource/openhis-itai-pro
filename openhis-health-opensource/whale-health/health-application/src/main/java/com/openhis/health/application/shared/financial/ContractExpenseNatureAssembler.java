@@ -31,7 +31,7 @@ import java.util.Set;
  * 不再依赖 {@code fin_payment_yb_settlement} 是否存在。</p>
  *
  * <p>处方笺 / 发药 slip / 医嘱列表「费用性质」分类文案与 AS-OP-PHA-005 口径一致
- * （{@link ContractCategory} → 自费/公费/省医保/市医保/职工医保）。</p>
+ * （{@link ContractCategory} → 自费/公费/省医保/市医保/工伤保险）。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -75,15 +75,33 @@ public class ContractExpenseNatureAssembler {
     }
 
     /**
-     * {@link ContractCategory} code → 费用性质分类中文文案（与门诊处方查询同表）。
+     * 合同 {@code category_enum} → 费用性质分类中文文案（与门诊处方查询同表）。
+     *
+     * <p>主数据常见两套码并存：{@link ChargeTypeCategory}（{@code 1}～{@code 4}）与
+     * {@link ContractCategory}（{@code SELF_CHARGE} 等）；须同时识别，否则医嘱列表
+     * {@code feeNatureText} 恒空。</p>
      *
      * @param categoryCode 合同 {@code category_enum}；空或未知返回 {@code null}
-     * @return 分类文案
+     * @return 分类文案（自费/公费/省医保/市医保/工伤保险）
      */
     public String resolveCategoryText(String categoryCode) {
         if (StringUtils.isEmpty(categoryCode)) {
             return null;
         }
+        // ChargeTypeCategory：财务合约维护页/库内常见数字码
+        if (ChargeTypeCategory.SELF_PAY.getCode().equals(categoryCode)) {
+            return OutpatientPharmacyPrescriptionQueryConstants.CONTRACT_CATEGORY_SELF_CHARGE_LABEL;
+        }
+        if (ChargeTypeCategory.PUBLIC_PAY.getCode().equals(categoryCode)) {
+            return OutpatientPharmacyPrescriptionQueryConstants.CONTRACT_CATEGORY_PUBLIC_CHARGE_LABEL;
+        }
+        if (ChargeTypeCategory.PROVINCIAL_INSURANCE.getCode().equals(categoryCode)) {
+            return OutpatientPharmacyPrescriptionQueryConstants.CONTRACT_CATEGORY_PROVINCIAL_INSURANCE_LABEL;
+        }
+        if (ChargeTypeCategory.MUNICIPAL_INSURANCE.getCode().equals(categoryCode)) {
+            return OutpatientPharmacyPrescriptionQueryConstants.CONTRACT_CATEGORY_MUNICIPAL_INSURANCE_LABEL;
+        }
+        // ContractCategory：历史/部分域仍用枚举名 code
         if (ContractCategory.SELF_CHARGE.getCode().equals(categoryCode)) {
             return OutpatientPharmacyPrescriptionQueryConstants.CONTRACT_CATEGORY_SELF_CHARGE_LABEL;
         }
@@ -150,6 +168,83 @@ public class ContractExpenseNatureAssembler {
             return false;
         }
         return flag;
+    }
+
+    /**
+     * 批量解析合同业务号是否工伤费用性质。
+     *
+     * @param contractBusNos payment {@code contract_no} 集合，允许含空白
+     * @return 业务号 → 是否工伤；未命中主数据时不在 Map 中
+     */
+    public Map<String, Boolean> mapWorkInjuryFlagByContractBusNoIn(Collection<String> contractBusNos) {
+        if (contractBusNos == null || contractBusNos.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        LinkedHashSet<String> unique = new LinkedHashSet<>();
+        for (String busNo : contractBusNos) {
+            String normalized = trimToNull(busNo);
+            if (normalized != null) {
+                unique.add(normalized);
+            }
+        }
+        if (unique.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<String, Boolean> result = new HashMap<>(unique.size() * 2);
+        for (Contract contract : this.contractQueryService.findAllContractEntitiesByBusNoIn(unique)) {
+            if (contract == null || StringUtils.isEmpty(contract.getBusNo())) {
+                continue;
+            }
+            result.put(contract.getBusNo().trim(), this.isWorkInjuryContract(contract));
+        }
+        return result;
+    }
+
+    /**
+     * 判定单条合同是否工伤费用性质。
+     *
+     * @param contractBusNo payment {@code contract_no}；空白时非工伤
+     * @return 是否工伤
+     */
+    public boolean isWorkInjuryContractBusNo(String contractBusNo) {
+        String normalized = trimToNull(contractBusNo);
+        if (normalized == null) {
+            return false;
+        }
+        Map<String, Boolean> flags = this.mapWorkInjuryFlagByContractBusNoIn(Collections.singletonList(normalized));
+        Boolean flag = flags.get(normalized);
+        return Boolean.TRUE.equals(flag);
+    }
+
+    /**
+     * 合同 {@code category_enum} 是否工伤（含历史数字码 {@code 5}）。
+     *
+     * @param categoryCode 合同分类码；空时 false
+     * @return 是否工伤
+     */
+    public boolean isWorkInjuryCategoryEnum(String categoryCode) {
+        String normalized = trimToNull(categoryCode);
+        if (normalized == null) {
+            return false;
+        }
+        if (ContractCategory.WORKER_INSURANCE.getCode().equals(normalized)) {
+            return true;
+        }
+        // 与博思票面 / 开户路径历史码对齐
+        return "5".equals(normalized);
+    }
+
+    /**
+     * 判定合同实体是否工伤费用性质（按 category，不依赖 yb_flag）。
+     *
+     * @param contract 合同实体
+     * @return 是否工伤
+     */
+    public boolean isWorkInjuryContract(Contract contract) {
+        if (contract == null) {
+            return false;
+        }
+        return this.isWorkInjuryCategoryEnum(contract.getCategoryEnum());
     }
 
     /**

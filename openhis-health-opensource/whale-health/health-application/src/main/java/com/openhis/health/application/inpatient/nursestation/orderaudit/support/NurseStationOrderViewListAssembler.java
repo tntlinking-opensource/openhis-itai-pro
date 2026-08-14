@@ -10,7 +10,9 @@ import com.openhis.health.application.shared.advice.SkinTestCompanionDisplaySupp
 import com.openhis.health.application.shared.advice.InpatientEntrustOrderGateSupport;
 import com.openhis.health.application.shared.advice.OrderCatalogDisplayAssembler;
 import com.openhis.health.application.shared.advice.OrderRequestCatalogWarmAssembler;
+import com.openhis.health.application.shared.product.MedicationDailyDoseDisplayAssembler;
 import com.openhis.health.application.shared.product.MedicationDosageDisplayAssembler;
+import com.openhis.health.application.shared.product.MedicationPackageSplitQuantityDisplayAssembler;
 import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
 import com.openhis.health.application.shared.advice.OrderRequestCatalogWarmContext;
 import com.openhis.health.application.inpatient.nursestation.orderaudit.dto.NurseStationOrderViewDisplayContext;
@@ -118,6 +120,10 @@ public class NurseStationOrderViewListAssembler {
                     if (row.getStopperId() != null) {
                         index.getPractitionerIds().add(row.getStopperId());
                     }
+                    // 停嘱校对人：与开嘱校对人同解析链
+                    if (row.getStopPerformerCheckId() != null) {
+                        index.getPractitionerIds().add(row.getStopPerformerCheckId());
+                    }
                 }
             }
         }
@@ -141,6 +147,9 @@ public class NurseStationOrderViewListAssembler {
                     if (row.getStopperId() != null) {
                         index.getPractitionerIds().add(row.getStopperId());
                     }
+                    if (row.getStopPerformerCheckId() != null) {
+                        index.getPractitionerIds().add(row.getStopPerformerCheckId());
+                    }
                 }
             }
         }
@@ -157,6 +166,9 @@ public class NurseStationOrderViewListAssembler {
                 }
                 if (order.getStopperId() != null) {
                     index.getPractitionerIds().add(order.getStopperId());
+                }
+                if (order.getStopPerformerCheckId() != null) {
+                    index.getPractitionerIds().add(order.getStopPerformerCheckId());
                 }
                 if (order.getMedicationId() != null) {
                     index.getMedDefIds().add(order.getMedicationId());
@@ -190,6 +202,10 @@ public class NurseStationOrderViewListAssembler {
         ctx.setMethodLabelByCode(
             terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.METHOD_CODE));
         ctx.setRateLabelByCode(frequencyOptionLoader.buildRateLabelMap());
+        ctx.setTimesPerDayByRateCode(frequencyOptionLoader.buildTimesPerDayMap());
+        // Pre：输液滴速术语（与医生站列表 speedName 同源）
+        ctx.setSpeedLabelByCode(
+            terminologyOptionLoader.buildLabelMap(DoctorStationAdviceConstants.TERMINOLOGY_SPEED_CODE_SYSTEM_NAME));
         ctx.setDoseUnitLabelByCode(
             terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.DOSE_UNIT));
         ctx.setPractitionerNameById(this.loadPractitionerNames(index.getPractitionerIds()));
@@ -362,14 +378,45 @@ public class NurseStationOrderViewListAssembler {
         ProductDefinitionDisplayDto medProduct = ctx.getProductByKey().get(
             ProductDefinitionKeyUtil.buildCompositeKey(
                 TableNameConstants.MED_MEDICATION_DEFINITION, medDefId));
+        // 包装装量后缀：1片x100（前端与规格拼成 5mg1片x100）；包装单位展示供摆药总量
+        if (medProduct != null) {
+            core.setPartPercent(medProduct.getPackageUnitRatio());
+            core.setPackageSplitRatioText(
+                MedicationPackageSplitQuantityDisplayAssembler.buildPackageSplitRatioText(medProduct));
+            String packageUnitDisplay = StringUtils.firstNonBlank(
+                medProduct.getPackageUnitCodeDictText(),
+                ProductDefinitionCatalogUnitBandsAssembler.resolveUnitDisplayName(
+                    null, medProduct.getPackageUnitCode(), medProduct));
+            core.setPackageUnitDisplay(packageUnitDisplay);
+        }
         if (medDetail != null) {
             core.setDosageDisplay(this.formatDosageDisplay(medDetail.getDose(), medDetail.getDoseUnitCode(),
                 ctx.getDoseUnitLabelByCode(), medDetail.getQuantity(), medDetail.getUnitCode(),
                 ctx.getUnitLabelByCode(), medProduct));
+            // 临时/出院带药：quantity 为开立总量，供摆药/用药单总量列；长期不填（避免单次用量被误当总量）
+            core.setQuantityDisplay(this.buildOrderTotalQuantityDisplay(
+                therapyCode,
+                medDetail.getQuantity(),
+                medDetail.getUnitCode(),
+                ctx.getUnitLabelByCode(),
+                medProduct));
+            // 长期药日剂量：单次拆零量 × 每日次数 →「每日三片」
+            core.setDailyDoseDisplay(this.buildDailyDoseDisplay(
+                medDetail.getDose(),
+                medDetail.getDoseUnitCode(),
+                medDetail.getRateCode(),
+                therapyCode,
+                ctx.getDoseUnitLabelByCode(),
+                ctx.getTimesPerDayByRateCode(),
+                medProduct));
             core.setUsageDisplay(OrderCatalogDisplayAssembler.resolveCategoryDisplay(
                 ctx.getMethodLabelByCode(), medDetail.getMethodCode()));
             core.setFrequencyDisplay(OrderCatalogDisplayAssembler.resolveCategoryDisplay(
                 ctx.getRateLabelByCode(), medDetail.getRateCode()));
+            // 输液滴速：医生站开立写入 speed_code，护士校对/执行扩展行回显
+            core.setSpeedCode(medDetail.getSpeedCode());
+            core.setSpeedDisplay(OrderCatalogDisplayAssembler.resolveCategoryDisplay(
+                ctx.getSpeedLabelByCode(), medDetail.getSpeedCode()));
             // 开立/签发分列同名字段；开立空时展示回落签发（存量兼容）。
             LocalDateTime medOpened = medDetail.getReqOpenedTime();
             if (medOpened == null) {
@@ -386,6 +433,10 @@ public class NurseStationOrderViewListAssembler {
             core.setStopperId(medDetail.getStopperId());
             core.setStopperName(ctx.getPractitionerNameById().get(medDetail.getStopperId()));
             core.setPerformerCheckName(ctx.getPractitionerNameById().get(medDetail.getPerformerCheckId()));
+            // 停嘱校对痕迹：与开嘱校对人同姓名解析链
+            core.setStopPerformerCheckId(medDetail.getStopPerformerCheckId());
+            core.setStopCheckTime(medDetail.getStopCheckTime());
+            core.setStopCheckerName(ctx.getPractitionerNameById().get(medDetail.getStopPerformerCheckId()));
             Long medEncounterId = medDetail.getEncounterId();
             if (medEncounterId == null) {
                 medEncounterId = order.getEncounterId();
@@ -414,7 +465,13 @@ public class NurseStationOrderViewListAssembler {
             core.setRequesterName(ctx.getPractitionerNameById().get(order.getMedRequesterId()));
             core.setStopperId(order.getStopperId());
             core.setStopperName(ctx.getPractitionerNameById().get(order.getStopperId()));
+            core.setStopPerformerCheckId(order.getStopPerformerCheckId());
+            core.setStopCheckTime(order.getStopCheckTime());
+            core.setStopCheckerName(ctx.getPractitionerNameById().get(order.getStopPerformerCheckId()));
         }
+        // Asm：停嘱待校标记（STOPPED + 长期 + 未写停嘱校对痕迹）
+        core.setStopAuditPending(this.resolveStopAuditPending(
+            core.getStatusEnum(), core.getTherapyEnum(), core.getStopPerformerCheckId()));
         return core;
     }
 
@@ -493,6 +550,10 @@ public class NurseStationOrderViewListAssembler {
             core.setStopperId(svcDetail.getStopperId());
             core.setStopperName(ctx.getPractitionerNameById().get(svcDetail.getStopperId()));
             core.setPerformerCheckName(ctx.getPractitionerNameById().get(svcDetail.getPerformerCheckId()));
+            // 停嘱校对痕迹：与开嘱校对人同姓名解析链
+            core.setStopPerformerCheckId(svcDetail.getStopPerformerCheckId());
+            core.setStopCheckTime(svcDetail.getStopCheckTime());
+            core.setStopCheckerName(ctx.getPractitionerNameById().get(svcDetail.getStopPerformerCheckId()));
             Long svcEncounterId = svcDetail.getEncounterId();
             if (svcEncounterId == null) {
                 svcEncounterId = order.getEncounterId();
@@ -515,7 +576,13 @@ public class NurseStationOrderViewListAssembler {
             core.setRequesterName(ctx.getPractitionerNameById().get(order.getRequesterId()));
             core.setStopperId(order.getStopperId());
             core.setStopperName(ctx.getPractitionerNameById().get(order.getStopperId()));
+            core.setStopPerformerCheckId(order.getStopPerformerCheckId());
+            core.setStopCheckTime(order.getStopCheckTime());
+            core.setStopCheckerName(ctx.getPractitionerNameById().get(order.getStopPerformerCheckId()));
         }
+        // Asm：停嘱待校标记（STOPPED + 长期 + 未写停嘱校对痕迹）
+        core.setStopAuditPending(this.resolveStopAuditPending(
+            core.getStatusEnum(), core.getTherapyEnum(), core.getStopPerformerCheckId()));
         // Asm：嘱托行展示名优先正文，禁止只显示目录名「嘱托」（BR-IP-ORD-028④）
         String entrustContent = null;
         if (svcDetail != null) {
@@ -799,6 +866,30 @@ public class NurseStationOrderViewListAssembler {
     }
 
     /**
+     * 是否停嘱待校：STOPPED 且长期且尚未写停嘱校对痕迹。
+     *
+     * @param statusEnum           请求状态 code
+     * @param therapyEnum          长临 code
+     * @param stopPerformerCheckId 停嘱校对人；空表示尚未停嘱校对
+     * @return true 表示停嘱待校；否则 false
+     */
+    private Boolean resolveStopAuditPending(
+        String statusEnum,
+        String therapyEnum,
+        Long stopPerformerCheckId) {
+        if (!RequestStatus.STOPPED.getCode().equals(statusEnum)) {
+            return Boolean.FALSE;
+        }
+        if (!TherapyType.LONG_TERM.getCode().equals(therapyEnum)) {
+            return Boolean.FALSE;
+        }
+        if (stopPerformerCheckId != null) {
+            return Boolean.FALSE;
+        }
+        return Boolean.TRUE;
+    }
+
+    /**
      * 药嘱剂量展示：优先 dose+计量单位（必要时括号附最小单位），回落 quantity+unit。
      */
     private String formatDosageDisplay(
@@ -815,6 +906,63 @@ public class NurseStationOrderViewListAssembler {
                 dose, doseUnitCode, doseUnitLabelByCode, productRow);
         }
         return this.formatQuantityUnitDisplay(quantity, unitCode, unitLabelByCode, productRow);
+    }
+
+    /**
+     * 开立总量展示：仅临时/出院带药（BR-MRQ-009 总量语义）；长期返回 null。
+     *
+     * @param therapyCode         长临 code
+     * @param quantity            申请 quantity
+     * @param unitCode            申请 unit_code
+     * @param unitLabelByCode     单位术语
+     * @param productRow          药品目录（单位回落）
+     * @return 如 {@code 1盒}；非总量 therapy 或数量空时 null
+     */
+    private String buildOrderTotalQuantityDisplay(
+        String therapyCode,
+        BigDecimal quantity,
+        String unitCode,
+        Map<String, String> unitLabelByCode,
+        ProductDefinitionDisplayDto productRow) {
+        String therapy = StringUtils.trimToEmpty(therapyCode);
+        if (!TherapyType.TEMPORARY.getCode().equals(therapy)
+            && !TherapyType.DISCHARGE_MEDICATION.getCode().equals(therapy)) {
+            return null;
+        }
+        return this.formatQuantityUnitDisplay(quantity, unitCode, unitLabelByCode, productRow);
+    }
+
+    /**
+     * 长期药日剂量友好文案（每日三片）；非长期或无法解析每日次数时返回 null。
+     */
+    private String buildDailyDoseDisplay(
+        BigDecimal dose,
+        String doseUnitCode,
+        String rateCode,
+        String therapyCode,
+        Map<String, String> doseUnitLabelByCode,
+        Map<String, Integer> timesPerDayByRateCode,
+        ProductDefinitionDisplayDto productRow
+    ) {
+        if (!TherapyType.LONG_TERM.getCode().equals(StringUtils.trimToEmpty(therapyCode))) {
+            return null;
+        }
+        Integer timesPerDay = null;
+        if (timesPerDayByRateCode != null && StringUtils.isNotEmpty(rateCode)) {
+            timesPerDay = timesPerDayByRateCode.get(rateCode);
+        }
+        MedicationDosageDisplayAssembler.MedicationDosageDisplayResult dosageResult =
+            MedicationDosageDisplayAssembler.build(dose, doseUnitCode, doseUnitLabelByCode, productRow);
+        BigDecimal perDoseQty = dosageResult.getSplitDose();
+        String perDoseUnit = dosageResult.getSplitDoseUnitName();
+        if (perDoseQty == null) {
+            perDoseQty = dose;
+            if (StringUtils.isEmpty(perDoseUnit)) {
+                perDoseUnit = ProductDefinitionCatalogUnitBandsAssembler.resolveDoseUnitDisplayName(
+                    doseUnitLabelByCode, doseUnitCode, productRow);
+            }
+        }
+        return MedicationDailyDoseDisplayAssembler.buildDailyDoseDisplay(perDoseQty, perDoseUnit, timesPerDay);
     }
 
     /**

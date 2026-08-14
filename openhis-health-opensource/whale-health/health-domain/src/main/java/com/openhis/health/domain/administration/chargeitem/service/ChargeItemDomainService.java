@@ -167,9 +167,9 @@ public class ChargeItemDomainService {
             if (item.getPerformedAt() != null) {
                 row.setOccurrenceTime(item.getPerformedAt());
             }
+            // 执行激活不写 enterer_*（收费人）；命令携带的执行护士可落 performer_id 供费用明细「操作人」展示
             if (item.getPerformerId() != null) {
-                row.setEntererId(item.getPerformerId());
-                row.setEnteredDate(row.getOccurrenceTime());
+                row.setPerformerId(item.getPerformerId());
             }
             row.setStatusEnum(ChargeItemStatus.PENDING_SETTLEMENT.getCode());
             toSave.add(row);
@@ -658,8 +658,8 @@ public class ChargeItemDomainService {
      *
      * @param src        原正向待结算护士划价行
      * @param busNo      冲销行业务流水号
-     * @param operatorId 操作人（录入人）
-     * @param now        冲销发生时刻（写入 occurrence/entered）
+     * @param operatorId 冲销操作人（写入 performer_id；非收费人）
+     * @param now        冲销发生时刻（写入 occurrence）
      * @return 可落库的冲销行实体
      */
     private ChargeItem cloneChargeItemForNursePricingOffset(
@@ -700,7 +700,12 @@ public class ChargeItemDomainService {
         row.setDispenseId(src.getDispenseId());
         row.setPrescriptionNo(src.getPrescriptionNo());
         row.setParentId(src.getParentId());
-        row.setPerformerId(src.getPerformerId());
+        // 操作人：冲销护士优先；否则沿用源行 performer（非 enterer 收费人）
+        if (operatorId != null) {
+            row.setPerformerId(operatorId);
+        } else {
+            row.setPerformerId(src.getPerformerId());
+        }
         row.setPerformingOrgId(src.getPerformingOrgId());
         row.setCostOrgId(src.getCostOrgId());
         row.setOrgId(src.getOrgId());
@@ -714,10 +719,7 @@ public class ChargeItemDomainService {
         row.setRefundId(src.getId());
         row.setStatusEnum(ChargeItemStatus.PENDING_SETTLEMENT.getCode());
         row.setBusNo(busNo);
-        if (operatorId != null) {
-            row.setEntererId(operatorId);
-            row.setEnteredDate(now);
-        }
+        // 冲销新行待再结算：enterer_* 留空，待 settle 写入收费人/收费时间
         row.assertPersistableNewRow();
         return row;
     }
@@ -762,13 +764,14 @@ public class ChargeItemDomainService {
     }
 
     /**
-     * 门诊结算收费明细，状态迁移至已结算（statusEnum=SETTLED），落库收款人并发布 SETTLED 事件。
+     * 门诊结算收费明细，状态迁移至已结算（statusEnum=SETTLED），落库收费人/收费时间并发布 SETTLED 事件。
      *
-     * <p>收款人写入 {@code adm_charge_item.performer_id}（{@code adm_practitioner.id}），与
-     * {@code fin_payment_reconciliation.enterer_id} 及 IF-OPC-03 列表读口径一致（BR-OPC-016）。</p>
+     * <p>收费人/收费时间写入 {@code enterer_id}/{@code entered_date}（{@code adm_practitioner.id} +
+     * 与 payment {@code bill_date} 同值的 {@code billDate}，**BR-OPC-016**）。
+     * <strong>不再</strong>将收款人写入 {@code performer_id}。</p>
      *
-     * @param cmd 批量收费明细主键命令，须含非空 {@code operatorId}（收款人医务人员主键）
-     * @throws BusinessException 入参为空或缺少收款人
+     * @param cmd 批量收费明细主键命令，须含非空 {@code operatorId}（收费人医务人员主键）
+     * @throws BusinessException 入参为空或缺少收费人
      */
     @Transactional
     public void settleChargeItems(BatchChargeItemIdsCommand cmd) {
@@ -781,7 +784,7 @@ public class ChargeItemDomainService {
         if (cashierPractitionerId == null) {
             throw new BusinessException(
                 ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT,
-                "门诊收费结算须携带收款人（operatorId）");
+                "门诊收费结算须携带收费人（operatorId）");
         }
         // Pre：批量加载目标明细，确认记录存在且仍处于 PLANNED（与 preSettleChargeItems 对称，GAP-FIN-003）。
         Map<Long, ChargeItem> map = this.loadMap(ids);
@@ -802,7 +805,8 @@ public class ChargeItemDomainService {
         }
         for (ChargeItem row : toSettle) {
             row.setStatusEnum(ChargeItemStatus.SETTLED.getCode());
-            row.setPerformerId(cashierPractitionerId);
+            // Cmd：收费人/收费时间落 enterer_*（与 payment.enterer_id / bill_date 同源）
+            this.applyCashierStamp(row, cashierPractitionerId, cmd.getBillDate());
         }
         repository.saveAll(toSettle);
         // Event：SETTLED 为批量粒度事件，以首条 ID 代表整批次发布一次。
@@ -810,12 +814,13 @@ public class ChargeItemDomainService {
     }
 
     /**
-     * 挂号退费，状态迁移至已退款（statusEnum=REFUNDED），并发布 REGISTRATION_REFUNDED 事件。
+     * 挂号退费，状态迁移至已退款（statusEnum=REFUNDED），覆盖收费人/收费时间并发布 REGISTRATION_REFUNDED 事件。
      *
-     * @param cmd 批量收费明细主键命令
+     * @param cmd 批量收费明细主键命令（须含退费操作人；{@code billDate} 可选）
      */
     public void returnRegistrationRefundChargeItems(BatchChargeItemIdsCommand cmd) {
-        this.batchUpdateStatus(cmd, ChargeItemStatus.REFUNDED, ChargeItemEventType.REGISTRATION_REFUNDED);
+        this.batchUpdateStatusWithCashierStamp(
+            cmd, ChargeItemStatus.REFUNDED, ChargeItemEventType.REGISTRATION_REFUNDED);
     }
 
     /**
@@ -964,23 +969,30 @@ public class ChargeItemDomainService {
     }
 
     /**
-     * 完成门诊账单退款，状态迁移至已退款（statusEnum=REFUNDED），并发布 OUTPATIENT_BILL_REFUND_COMPLETED 事件。
+     * 完成门诊账单退款，状态迁移至已退款（statusEnum=REFUNDED），覆盖收费人/收费时间并发布 OUTPATIENT_BILL_REFUND_COMPLETED 事件。
      *
-     * @param cmd 批量收费明细主键命令
+     * @param cmd 批量收费明细主键命令（须含退费操作人；{@code billDate} 可选）
      */
     public void completeOutpatientBillRefund(BatchChargeItemIdsCommand cmd) {
-        this.batchUpdateStatus(cmd, ChargeItemStatus.REFUNDED, ChargeItemEventType.OUTPATIENT_BILL_REFUND_COMPLETED);
+        this.batchUpdateStatusWithCashierStamp(
+            cmd, ChargeItemStatus.REFUNDED, ChargeItemEventType.OUTPATIENT_BILL_REFUND_COMPLETED);
     }
 
     /**
-     * 结算住院收费项目，状态迁移至已结算（statusEnum=SETTLED），并发布 INPATIENT_ITEMS_SETTLED 事件。
+     * 结算住院收费项目，状态迁移至已结算（statusEnum=SETTLED），落库收费人/收费时间并发布 INPATIENT_ITEMS_SETTLED 事件。
      *
-     * @param cmd 批量收费明细主键命令
+     * @param cmd 批量收费明细主键命令，须含非空 {@code operatorId}（收费人医务人员主键）
      */
     public void settleInpatientChargeItems(BatchChargeItemIdsCommand cmd) {
         List<Long> ids = this.extractIds(cmd);
         if (ids.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "收费明细批量入参不能为空");
+        }
+        Long cashierPractitionerId = cmd.getOperatorId();
+        if (cashierPractitionerId == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT,
+                "住院收费结算须携带收费人（operatorId）");
         }
         Map<Long, ChargeItem> map = this.loadMap(ids);
         for (Long id : ids) {
@@ -1000,6 +1012,8 @@ public class ChargeItemDomainService {
         }
         for (ChargeItem row : toSettle) {
             row.setStatusEnum(ChargeItemStatus.SETTLED.getCode());
+            // Cmd：住院结算同样落 enterer_* 为收费人/收费时间
+            this.applyCashierStamp(row, cashierPractitionerId, cmd.getBillDate());
         }
         repository.saveAll(toSettle);
         this.publishByType(ChargeItemEventType.INPATIENT_ITEMS_SETTLED, ids.get(0), ids);
@@ -1082,12 +1096,13 @@ public class ChargeItemDomainService {
     }
 
     /**
-     * 完成住院账单退款，状态迁移至已退款（statusEnum=REFUNDED），并发布 INPATIENT_BILL_REFUND_COMPLETED 事件。
+     * 完成住院账单退款，状态迁移至已退款（statusEnum=REFUNDED），覆盖收费人/收费时间并发布 INPATIENT_BILL_REFUND_COMPLETED 事件。
      *
-     * @param cmd 批量收费明细主键命令
+     * @param cmd 批量收费明细主键命令（须含退费操作人；{@code billDate} 可选）
      */
     public void completeInpatientBillRefund(BatchChargeItemIdsCommand cmd) {
-        this.batchUpdateStatus(cmd, ChargeItemStatus.REFUNDED, ChargeItemEventType.INPATIENT_BILL_REFUND_COMPLETED);
+        this.batchUpdateStatusWithCashierStamp(
+            cmd, ChargeItemStatus.REFUNDED, ChargeItemEventType.INPATIENT_BILL_REFUND_COMPLETED);
     }
 
     /**
@@ -1198,10 +1213,10 @@ public class ChargeItemDomainService {
             }
             row.setOrgId(item.getOrgId());
             row.setRequestingOrgId(item.getRequestingOrgId());
-            // 开立人：预结算/工作站传入操作者时写入，开立时刻与费用发生时刻对齐（DM entered_date）。
-            if (cmd.getOperatorId() != null) {
-                row.setEntererId(cmd.getOperatorId());
-                row.setEnteredDate(row.getOccurrenceTime());
+            // 创建不写 enterer_*：收费人/收费时间仅 settle / 退费完成时落库；开单医生在 Request.requester_id
+            // 护士划价/滚费/执行计费：操作人落 performer_id（非收费人），供护士站费用明细「操作人」展示
+            if (cmd.getOperatorId() != null && this.isNurseOperatorPerformerEvent(eventType)) {
+                row.setPerformerId(cmd.getOperatorId());
             }
             // 生成来源与收费上下文：命令可覆盖，否则按事件类型补全 DM 存储码。
             this.fillGenerateAndContext(row, item, eventType);
@@ -1338,6 +1353,89 @@ public class ChargeItemDomainService {
      * @param eventType 事件类型
      * @throws BusinessException ID 列表为空
      */
+    /**
+     * 创建事件是否应将命令操作人写入 {@code performer_id}（划价/滚费/执行计费操作人，非收费人）。
+     *
+     * @param eventType 创建事件类型
+     * @return 护士操作人事件时 true
+     */
+    private boolean isNurseOperatorPerformerEvent(ChargeItemEventType eventType) {
+        if (eventType == ChargeItemEventType.NURSE_PRICING_CREATED) {
+            return true;
+        }
+        if (eventType == ChargeItemEventType.AUTO_ROLL_CREATED) {
+            return true;
+        }
+        return eventType == ChargeItemEventType.ACTIVATED_BY_EXECUTION;
+    }
+
+    /**
+     * 结算/退费完成：将收费人与收费时间写入 {@code enterer_id}/{@code entered_date}。
+     *
+     * @param row                     收费明细行
+     * @param cashierPractitionerId   收费人 {@code adm_practitioner.id}
+     * @param billDate                与 payment {@code bill_date} 同值；空则取当前时刻
+     */
+    private void applyCashierStamp(ChargeItem row, Long cashierPractitionerId, LocalDateTime billDate) {
+        row.setEntererId(cashierPractitionerId);
+        if (billDate != null) {
+            row.setEnteredDate(billDate);
+        } else {
+            row.setEnteredDate(LocalDateTime.now());
+        }
+    }
+
+    /**
+     * 退费终态推进并覆盖收费人/收费时间（与结算同源 enterer_* 口径）。
+     *
+     * @param cmd       须含非空 {@code operatorId}（退费操作人）
+     * @param status    目标状态（通常 REFUNDED）
+     * @param eventType 领域事件类型
+     */
+    private void batchUpdateStatusWithCashierStamp(
+        BatchChargeItemIdsCommand cmd,
+        ChargeItemStatus status,
+        ChargeItemEventType eventType) {
+        Long cashierPractitionerId = cmd.getOperatorId();
+        if (cashierPractitionerId == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT,
+                "退费完成须携带收费人（operatorId）");
+        }
+        // Pre：从批量命令中提取收费明细 ID 列表。
+        List<Long> ids = this.extractIds(cmd);
+        if (ids.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "收费明细批量入参不能为空");
+        }
+        // Pre：批量加载目标明细，确认记录存在。
+        Map<Long, ChargeItem> map = this.loadMap(ids);
+        List<ChargeItem> toSave = new ArrayList<>();
+        for (Long id : ids) {
+            ChargeItem r = require(map, id);
+            r.setStatusEnum(status.getCode());
+            // Cmd：退费操作人覆盖 enterer_*，便于按收费人/收费时间筛退费事实
+            this.applyCashierStamp(r, cashierPractitionerId, cmd.getBillDate());
+            toSave.add(r);
+        }
+        repository.saveAll(toSave);
+        // Event：与 batchUpdateStatus 同口径发布
+        for (ChargeItem r : toSave) {
+            if (!eventType.isBatchEvent()) {
+                if (eventType == ChargeItemEventType.REGISTRATION_REFUNDED) {
+                    ChargeItemDomainEvents.RegistrationChargeItemRefundedEvent refundEvent =
+                        new ChargeItemDomainEvents.RegistrationChargeItemRefundedEvent(r.getId());
+                    refundEvent.setEncounterId(r.getEncounterId());
+                    domainEventPublisher.publish(refundEvent);
+                } else {
+                    this.publishByType(eventType, r.getId(), ids);
+                }
+            }
+        }
+        if (eventType.isBatchEvent() && !ids.isEmpty()) {
+            this.publishByType(eventType, ids.get(0), ids);
+        }
+    }
+
     private void batchUpdateStatus(BatchChargeItemIdsCommand cmd, ChargeItemStatus status, ChargeItemEventType eventType) {
         // Pre：从批量命令中提取收费明细 ID 列表。
         List<Long> ids = this.extractIds(cmd);
@@ -1538,10 +1636,7 @@ public class ChargeItemDomainService {
         row.setRefundId(src.getId());
         row.setStatusEnum(ChargeItemStatus.PENDING_SETTLEMENT.getCode());
         row.setBusNo(busNo);
-        if (operatorId != null) {
-            row.setEntererId(operatorId);
-            row.setEnteredDate(src.getOccurrenceTime());
-        }
+        // 反结再生行待再结算：enterer_* 留空，待 settleInpatientChargeItems 写入
         row.assertPersistableNewRow();
         return row;
     }

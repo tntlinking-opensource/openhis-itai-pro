@@ -53,6 +53,13 @@ public class InpatientPatientMedicationUsageDispenseRow {
     /** 计划发药时刻（筛选与排序轴）。 */
     private LocalDateTime plannedDispenseTime;
 
+    /**
+     * 关联执行记录主键 {@code procedure_id}；可空。
+     *
+     * <p>有值时可挂接 Procedure.recorded_time 作为客户可见执行时刻（展示轴；过滤仍用 planned）。</p>
+     */
+    private Long procedureId;
+
     /** 汇总发药单号；可空，仅展示、不参与本查询分桶。 */
     private String summaryNo;
 

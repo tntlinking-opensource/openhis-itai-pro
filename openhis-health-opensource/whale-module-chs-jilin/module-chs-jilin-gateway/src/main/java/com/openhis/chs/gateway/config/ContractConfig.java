@@ -28,7 +28,7 @@ public class ContractConfig {
     private String clientId;
     private String fixmedinsCode;
     private String fixmedinsName;
-    /** 医保网关根地址，如 http://chs-gateway.example:20215（与 path 拼接；若已配完整 URL 则优先用下方 *\_url） */
+    /** 医保网关根地址，如 http://ddjk.jlhs.gov.cn:20215（与 path 拼接；若已配完整 URL 则优先用下方 *\_url） */
     private String baseUrl;
     /** OAuth Token 完整地址，如 /auth/oauth/token */
     private String tokenUrl;
@@ -36,7 +36,7 @@ public class ContractConfig {
     private String callServiceUrl;
     /** 文件上传下载完整地址，如 /mbs/fsi/api/fileupload */
     private String fileUploadUrl;
-    /** 读卡服务主机（无协议），如 chs-gateway.example */
+    /** 读卡服务主机（无协议），如 ddjk.jlhs.gov.cn */
     private String cardReaderHost;
     /** 读卡服务端口，如 20215 */
     private Integer cardReaderPort;

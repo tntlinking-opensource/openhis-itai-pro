@@ -114,6 +114,10 @@ public class MedicationRequestListQueryModel {
     private LocalDateTime stopTime;
     /** 停嘱人主键（{@code stopper_id}；未停 null）。 */
     private Long stopperId;
+    /** 停嘱校对人主键（{@code stop_performer_check_id}；未停嘱校对 null）。 */
+    private Long stopPerformerCheckId;
+    /** 停嘱校对时间（{@code stop_check_time}）。 */
+    private LocalDateTime stopCheckTime;
     /** 是否中医相关（付数等场景）。 */
     private Boolean tcmFlag;
     /** 治疗类型枚举编码（持久化 therapy_enum，与 {@code TherapyType#getCode()} 对齐）。 */

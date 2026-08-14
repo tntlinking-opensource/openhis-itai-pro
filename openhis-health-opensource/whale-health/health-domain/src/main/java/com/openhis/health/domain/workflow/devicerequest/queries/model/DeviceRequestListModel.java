@@ -70,4 +70,8 @@ public class DeviceRequestListModel {
     private Long packageId;
     /** 绑定就诊诊断主键有序串（持久化 {@code wkf_device_request.encounter_diagnosis_ids}；有序，首位为主诊断）。 */
     private String encounterDiagnosisIds;
+    /**
+     * 费用性质合同业务号（{@code wkf_device_request.contract_code}；与合同 {@code bus_no} 对齐，供列表反查 contractId）。
+     */
+    private String contractCode;
 }

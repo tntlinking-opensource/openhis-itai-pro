@@ -7,6 +7,7 @@ package com.openhis.chs.bridge.audit.invoker;
 import com.openhis.chs.bridge.inpatient.assembler.InpatientSettleCommandAssembler;
 import com.openhis.chs.bridge.inpatient.invoker.Ip2401Invoker;
 import com.openhis.chs.bridge.outpatient.assembler.OutpatientSettleCommandAssembler;
+import com.openhis.chs.bridge.outpatient.context.ChsOutpatientInsuranceContextLoader;
 import com.openhis.chs.bridge.outpatient.invoker.Op2201Invoker;
 import com.openhis.chs.domain.audit.access.Audit3101Invoker;
 import com.openhis.chs.domain.audit.access.DetailAuditGateInvoker;
@@ -29,7 +30,6 @@ import com.openhis.chs.domain.outpatient.command.OpPreSettleCommand;
 import com.openhis.chs.domain.outpatient.entity.YbClinicPreSettle;
 import com.openhis.chs.domain.outpatient.entity.YbEncounterPlatformMap;
 import com.openhis.chs.domain.outpatient.entity.YbPersonCache;
-import com.openhis.chs.domain.outpatient.loader.OpPreSettleContextLoader;
 import com.openhis.chs.domain.outpatient.service.YbClinicPreSettleQueryService;
 import com.openhis.chs.domain.outpatient.service.YbPersonCacheDomainService;
 import com.openhis.chs.domain.share.constants.ChsDetailAuditConstants;
@@ -43,6 +43,8 @@ import com.openhis.health.domain.administration.encounter.service.EncounterQuery
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.util.StringUtils;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -66,7 +68,9 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class DetailAuditGateInvokerImpl implements DetailAuditGateInvoker {
 
-    private final OpPreSettleContextLoader opPreSettleContextLoader;
+    private static final Logger log = LoggerFactory.getLogger(DetailAuditGateInvokerImpl.class);
+
+    private final ChsOutpatientInsuranceContextLoader opPreSettleContextLoader;
     private final IpSettleContextLoader ipSettleContextLoader;
     private final Op2201Invoker op2201Invoker;
     private final Ip2401Invoker ip2401Invoker;
@@ -87,6 +91,7 @@ public class DetailAuditGateInvokerImpl implements DetailAuditGateInvoker {
      */
     @Override
     public DetailAuditGateResult analyzeOp(DetailAuditOpGateCommand command) {
+        long gateStartNanos = System.nanoTime();
         // Gate：就诊与触发场景必填
         if (command == null || command.getEncounterId() == null) {
             throw new BusinessException(ChsErrorCodes.AUDIT_PARAM_INVALID, "encounterId 不能为空");
@@ -108,16 +113,27 @@ public class DetailAuditGateInvokerImpl implements DetailAuditGateInvoker {
         partial.setInsutype(command.getInsutype());
         partial.setMdtrtCertType(command.getMdtrtCertType());
         partial.setMdtrtCertNo(command.getMdtrtCertNo());
-        // Pre：签发固定普门 11；结算按勾选明细 med_type（慢病用慢病）
+        // Pre：签发固定普门 11；结算按勾选明细 med_type（慢病用慢病）；收费项只装载一次供 enrich 复用
+        List<ChargeItem> settleChargeItems = null;
         if (settleAudit) {
-            partial.setMedType(this.resolveSettleAuditMedType(command.getChargeItemIds()));
+            settleChargeItems = this.loadChargeItemsForSettleAudit(command.getChargeItemIds());
+            partial.setMedType(this.resolveSettleAuditMedTypeFromItems(settleChargeItems));
         } else {
             partial.setMedType(MedType.GENERAL_OUTPATIENT.getCode());
         }
-        OpPreSettleCommand enriched = opPreSettleContextLoader.enrichPreSettle(partial);
+        long enrichStartNanos = System.nanoTime();
+        OpPreSettleCommand enriched;
+        // Pre：结算路径复用已装载收费项，避免 enrich 再扫一遍
+        if (settleChargeItems != null) {
+            enriched = opPreSettleContextLoader.enrichPreSettle(partial, settleChargeItems);
+        } else {
+            enriched = opPreSettleContextLoader.enrichPreSettle(partial);
+        }
+        long enrichMs = (System.nanoTime() - enrichStartNanos) / 1_000_000L;
         Long tenantId = OutpatientSettleCommandAssembler.resolveTenantId(enriched.getTenantId());
         // Pre：签发常缺参保地/人员编号 — 投影前从预结算/人缓存补齐（禁止 adm_vs）
         this.backfillOpInsuredFields(enriched, tenantId);
+        long mdtrtStartNanos = System.nanoTime();
         String mdtrtId;
         if (settleAudit) {
             // Pre：结算审核按当前 med_type 找/补 map（可读卡凭证；无则人缓存主凭证）
@@ -138,6 +154,7 @@ public class DetailAuditGateInvokerImpl implements DetailAuditGateInvoker {
             }
             mdtrtId = mapped.getMdtrtId();
         }
+        long mdtrtMs = (System.nanoTime() - mdtrtStartNanos) / 1_000_000L;
         // Pre：map 无 psn 时再从预结算补一次
         this.backfillOpInsuredFields(enriched, tenantId);
         AuditFeeSnapshot snap = AuditFeeSnapshotProjector.fromOpPreSettle(enriched);
@@ -149,7 +166,20 @@ public class DetailAuditGateInvokerImpl implements DetailAuditGateInvoker {
         }
         this.assertOpPatientRequired(snap);
         // Cmd/Asm：出站 3101 并封装门禁结果
-        return invoke3101(snap, trigScen, command.getSyscode(), busNo, command.getContractId(), mdtrtId);
+        long platformStartNanos = System.nanoTime();
+        DetailAuditGateResult result =
+            invoke3101(snap, trigScen, command.getSyscode(), busNo, command.getContractId(), mdtrtId);
+        long platformMs = (System.nanoTime() - platformStartNanos) / 1_000_000L;
+        long totalMs = (System.nanoTime() - gateStartNanos) / 1_000_000L;
+        log.info(
+            "detail-audit op gate timing: encounterId={} trigScen={} enrichMs={} mdtrtMs={} platform3101Ms={} totalMs={}",
+            command.getEncounterId(),
+            trigScen,
+            enrichMs,
+            mdtrtMs,
+            platformMs,
+            totalMs);
+        return result;
     }
 
     /**
@@ -160,6 +190,7 @@ public class DetailAuditGateInvokerImpl implements DetailAuditGateInvoker {
      */
     @Override
     public DetailAuditGateResult analyzeIp(DetailAuditIpGateCommand command) {
+        long gateStartNanos = System.nanoTime();
         // Gate：就诊必填
         if (command == null || command.getEncounterId() == null) {
             throw new BusinessException(ChsErrorCodes.AUDIT_PARAM_INVALID, "encounterId 不能为空");
@@ -181,19 +212,38 @@ public class DetailAuditGateInvokerImpl implements DetailAuditGateInvoker {
         partial.setInsutype(command.getInsutype());
         partial.setMdtrtCertType(command.getMdtrtCertType());
         partial.setMdtrtCertNo(command.getMdtrtCertNo());
+        long enrichStartNanos = System.nanoTime();
         IpSettleContext enriched = ipSettleContextLoader.enrichPreSettle(partial);
+        long enrichMs = (System.nanoTime() - enrichStartNanos) / 1_000_000L;
         // enrich 未带回 busNo 时用门禁解析结果回填，供 2401/签到
         if (StringUtils.isEmpty(enriched.getContractBusNo())) {
             enriched.setContractBusNo(busNo);
         }
         Long tenantId = InpatientSettleCommandAssembler.resolveTenantId(enriched.getTenantId());
+        long mdtrtStartNanos = System.nanoTime();
         InvokeContext invokeContext = InpatientSettleCommandAssembler.buildInvokeContext(enriched);
         String mdtrtId = ip2401Invoker.resolveOrRegister(busNo, enriched, invokeContext, tenantId);
+        long mdtrtMs = (System.nanoTime() - mdtrtStartNanos) / 1_000_000L;
         AuditFeeSnapshot snap = AuditFeeSnapshotProjector.fromIpSettle(enriched);
         fillInstitution(snap, busNo, enriched.getInsuplcAdmdvs(), command.getMedinsType(), command.getMedinsLv());
         snap.setMdtrtId(mdtrtId);
+        // Gate：住院 3101 患者/就诊必填与门诊同检，缺 brdy 等本地拦截，避免平台「出生日期不能为空」
+        this.assertOpPatientRequired(snap);
         // Cmd/Asm：出站 3101
-        return invoke3101(snap, trigScen, command.getSyscode(), busNo, command.getContractId(), mdtrtId);
+        long platformStartNanos = System.nanoTime();
+        DetailAuditGateResult result =
+            invoke3101(snap, trigScen, command.getSyscode(), busNo, command.getContractId(), mdtrtId);
+        long platformMs = (System.nanoTime() - platformStartNanos) / 1_000_000L;
+        long totalMs = (System.nanoTime() - gateStartNanos) / 1_000_000L;
+        log.info(
+            "detail-audit ip gate timing: encounterId={} trigScen={} enrichMs={} mdtrtMs={} platform3101Ms={} totalMs={}",
+            command.getEncounterId(),
+            trigScen,
+            enrichMs,
+            mdtrtMs,
+            platformMs,
+            totalMs);
+        return result;
     }
 
     /**
@@ -291,20 +341,33 @@ public class DetailAuditGateInvokerImpl implements DetailAuditGateInvoker {
     }
 
     /**
-     * 结算审核：从勾选收费项绑定诊断解析唯一 med_type（缺省 11；跨类型拒绝）。
-     *
-     * <p>同 med_type、不同 diseCodg 仍算一次就诊，不拆拒绝。</p>
+     * 结算审核：按 ids 装载收费项（空列表返回空，不抛错）。
      *
      * @param chargeItemIds 勾选收费项
-     * @return 平台 med_type
+     * @return 收费项列表；ids 空时 empty
      */
-    private String resolveSettleAuditMedType(List<Long> chargeItemIds) {
+    private List<ChargeItem> loadChargeItemsForSettleAudit(List<Long> chargeItemIds) {
         if (chargeItemIds == null || chargeItemIds.isEmpty()) {
-            return MedType.GENERAL_OUTPATIENT.getCode();
+            return List.of();
         }
         ChargeItemQueryCommand query = new ChargeItemQueryCommand();
         query.setIds(chargeItemIds);
-        List<ChargeItem> chargeItems = chargeItemQueryService.loadChargeItemsByIds(query);
+        return chargeItemQueryService.loadChargeItemsByIds(query);
+    }
+
+    /**
+     * 结算审核：从已装载收费项绑定诊断解析唯一 med_type（跨类型拒绝）。
+     *
+     * <p>同 med_type、不同 diseCodg 仍算一次就诊，不拆拒绝。
+     * 未绑定诊断的行不参与计数，与收费预结算 BR-OPC-002 继承口径一致。</p>
+     *
+     * @param chargeItems 已装载收费项
+     * @return 平台 med_type
+     */
+    private String resolveSettleAuditMedTypeFromItems(List<ChargeItem> chargeItems) {
+        if (chargeItems == null || chargeItems.isEmpty()) {
+            return MedType.GENERAL_OUTPATIENT.getCode();
+        }
         LinkedHashSet<Long> dxIds = new LinkedHashSet<>();
         for (ChargeItem item : chargeItems) {
             this.collectEncounterDiagnosisIdsFromIds(item.getEncounterDiagnosisIds(), dxIds);
@@ -313,14 +376,15 @@ public class DetailAuditGateInvokerImpl implements DetailAuditGateInvoker {
         LinkedHashSet<String> medTypes = new LinkedHashSet<>();
         for (ChargeItem item : chargeItems) {
             Long primaryDxId = this.firstEncounterDiagnosisIdFromIds(item.getEncounterDiagnosisIds());
-            String medType = MedType.GENERAL_OUTPATIENT.getCode();
-            if (primaryDxId != null) {
-                String mapped = medTypeByDxId.get(primaryDxId);
-                if (StringUtils.isNotEmpty(mapped)) {
-                    medType = mapped.trim();
-                }
+            // 无诊断绑定：不单独计为普通门诊（并入同批已绑诊断的唯一 med_type）
+            if (primaryDxId == null) {
+                continue;
             }
-            medTypes.add(medType);
+            String mapped = medTypeByDxId.get(primaryDxId);
+            if (StringUtils.isEmpty(mapped)) {
+                continue;
+            }
+            medTypes.add(mapped.trim());
             if (medTypes.size() > 1) {
                 throw new BusinessException(
                     ChsErrorCodes.AUDIT_PARAM_INVALID,
@@ -333,6 +397,12 @@ public class DetailAuditGateInvokerImpl implements DetailAuditGateInvoker {
         return medTypes.iterator().next();
     }
 
+    /**
+     * 从 encounter_diagnosis_ids 文本收集诊断主键。
+     *
+     * @param idsText 逗号分隔 ids
+     * @param target  目标集合
+     */
     private void collectEncounterDiagnosisIdsFromIds(String idsText, Set<Long> target) {
         if (StringUtils.isEmpty(idsText) || target == null) {
             return;
@@ -353,6 +423,12 @@ public class DetailAuditGateInvokerImpl implements DetailAuditGateInvoker {
         }
     }
 
+    /**
+     * 取 encounter_diagnosis_ids 文本中第一个合法诊断主键。
+     *
+     * @param idsText 逗号分隔 ids
+     * @return 首个合法 Long；无则 null
+     */
     private Long firstEncounterDiagnosisIdFromIds(String idsText) {
         if (StringUtils.isEmpty(idsText)) {
             return null;
@@ -474,7 +550,7 @@ public class DetailAuditGateInvokerImpl implements DetailAuditGateInvoker {
         if (trimmed.length() < 1 || trimmed.length() > 10) {
             return false;
         }
-        // 拒绝定点机构码（如 H00000000000）
+        // 拒绝定点机构码（如 H22010402403）
         if (trimmed.regionMatches(true, 0, "H", 0, 1)) {
             return false;
         }

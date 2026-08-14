@@ -67,10 +67,11 @@ public class InventoryOpeningTraceGateSupport {
                 continue;
             }
             this.assertLineBasics(line, openingTypeCode);
-            String uniqueKey = this.buildLineUniqueKey(line.getItemTable(), line.getItemId(), line.getLotNumber());
+            String uniqueKey = this.buildLineUniqueKey(
+                line.getItemTable(), line.getItemId(), line.getLotNumber(), line.getSupplierId());
             if (lineKeys.contains(uniqueKey)) {
                 throw new BusinessException(ErrorCodeConstants.BAS_INV_OPN_002,
-                    "同单禁止重复品批：" + uniqueKey);
+                    "同单禁止重复品批供应商：" + uniqueKey);
             }
             lineKeys.add(uniqueKey);
             // productsByKey 保留入参兼容调用方预加载；码数硬 Gate 已取消
@@ -97,9 +98,10 @@ public class InventoryOpeningTraceGateSupport {
             if (line == null) {
                 continue;
             }
-            String uniqueKey = this.buildLineUniqueKey(line.getItemTable(), line.getItemId(), line.getLotNumber());
+            String uniqueKey = this.buildLineUniqueKey(
+                line.getItemTable(), line.getItemId(), line.getLotNumber(), line.getSupplierId());
             if (lineKeys.contains(uniqueKey)) {
-                throw new BusinessException(ErrorCodeConstants.BAS_INV_OPN_008, "同单品批重复");
+                throw new BusinessException(ErrorCodeConstants.BAS_INV_OPN_008, "同单品批供应商重复");
             }
             lineKeys.add(uniqueKey);
             String traceRaw = line.getTraceNo();
@@ -233,14 +235,17 @@ public class InventoryOpeningTraceGateSupport {
     }
 
     /**
-     * 组装单内品批唯一键 {@code itemTable|itemId|lotNumber}。
+     * 组装单内品批供应商唯一键 {@code itemTable|itemId|lotNumber|supplierId}。
      *
-     * @param itemTable  物品表
-     * @param itemId     物品主键
-     * @param lotNumber  批号
+     * <p>同批号不同供应商允许两行；与库存五元组入账口径一致。</p>
+     *
+     * @param itemTable   物品表
+     * @param itemId      物品主键
+     * @param lotNumber   批号
+     * @param supplierId  供应商
      * @return 唯一键
      */
-    private String buildLineUniqueKey(String itemTable, Long itemId, String lotNumber) {
+    private String buildLineUniqueKey(String itemTable, Long itemId, String lotNumber, Long supplierId) {
         String table = "";
         if (itemTable != null) {
             table = itemTable.trim();
@@ -249,6 +254,6 @@ public class InventoryOpeningTraceGateSupport {
         if (lotNumber != null) {
             lot = lotNumber.trim();
         }
-        return table + "|" + itemId + "|" + lot;
+        return table + "|" + itemId + "|" + lot + "|" + supplierId;
     }
 }

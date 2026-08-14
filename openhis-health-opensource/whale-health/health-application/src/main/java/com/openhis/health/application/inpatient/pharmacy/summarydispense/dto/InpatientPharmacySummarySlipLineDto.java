@@ -95,15 +95,21 @@ public class InpatientPharmacySummarySlipLineDto {
     private String splitUnitCode;
 
     /**
-     * 追溯码主档贴码单位（cus_trace_number；非目录）。
+     * 追溯码贴码单位（优先主档；无主档时回落药典）。
      */
-    @Schema(description = "追溯码主档贴码单位")
+    @Schema(description = "追溯码贴码单位（主档优先，否则药典）")
     private String traceUnitCode;
 
     /**
-     * 追溯码主档贴码比例快照（1 码对应拆零量）。
+     * 追溯码贴码单位展示文案（{@code UNIT_CODE}；扫码弹窗药品明细列用）。
      */
-    @Schema(description = "追溯码主档贴码比例快照")
+    @Schema(description = "追溯码贴码单位展示文案")
+    private String traceUnitCodeText;
+
+    /**
+     * 追溯码贴码比例（优先主档；无主档时回落药典；1 码单位 = N 拆零）。
+     */
+    @Schema(description = "追溯码贴码比例（1码=N拆零；主档优先否则药典）")
     private BigDecimal traceUnitRatio;
 
     /**

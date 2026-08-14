@@ -96,8 +96,8 @@ public interface InpatientRegistrationConstants {
         return toEncounterStatusCode(registrationListStatus) != null;
     }
 
-    /** 门诊转住院默认入院方式码（与 {@code ter_concept} {@code in_way_code} code=1 对齐）。 */
-    String DEFAULT_IN_WAY_CODE_OUTPATIENT_TRANSFER = "1";
+    /** 门诊转住院默认入院途径码（与医保 adm_way / {@code in_way_code} code=2「门诊」对齐）。 */
+    String DEFAULT_IN_WAY_CODE_OUTPATIENT_TRANSFER = "2";
 
     /** 登记必填项缺失（AS-IP-FIN-001 IF-IP-REG-03）。 */
     String EX_IP_REG_001 = "EX-IP-REG-001";

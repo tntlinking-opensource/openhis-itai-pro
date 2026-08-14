@@ -20,7 +20,14 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
@@ -35,12 +42,56 @@ import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 @RequiredArgsConstructor
 public class CaseRecordQueryService {
 
+    /** 前端「未上传」筛选项：对应主档上传状态为空。 */
+    private static final String UPLOAD_STATUS_NONE = "none";
+
+    /** 已出院：{@code dscg_time} 非空。 */
+    private static final String DISCHARGED_YES = "1";
+
+    /** 未出院：{@code dscg_time} 为空。 */
+    private static final String DISCHARGED_NO = "0";
+
     private final CaseRecordRepository caseRecordRepository;
+
+    /**
+     * 按租户 + 就诊主键集合批量映射主档（仅本聚合 {@link CaseRecordRepository}）。
+     *
+     * <p>用于首页列表以住院就诊为数据源时 left join 回填病案号/状态/上传态；无档就诊不出现在 Map。</p>
+     *
+     * @param tenantId     租户
+     * @param encounterIds 就诊主键集合；空则返回空 Map
+     * @return encounterId → 未删除主档
+     */
+    public Map<Long, CaseRecord> mapByEncounterIds(Long tenantId, Collection<Long> encounterIds) {
+        if (tenantId == null || encounterIds == null || encounterIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Set<Long> idSet = new LinkedHashSet<>();
+        for (Long encounterId : encounterIds) {
+            // 跳过空主键，避免 IN 含 null
+            if (encounterId != null) {
+                idSet.add(encounterId);
+            }
+        }
+        if (idSet.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<CaseRecord> records =
+                caseRecordRepository.findByTenantIdAndEncounterIdInAndIsDeletedFalse(tenantId, idSet);
+        Map<Long, CaseRecord> result = new HashMap<>(records.size());
+        for (CaseRecord record : records) {
+            // 同就诊多档理论上不应出现；后写覆盖前写，便于排查脏数据
+            if (record != null && record.getEncounterId() != null) {
+                result.put(record.getEncounterId(), record);
+            }
+        }
+        return result;
+    }
 
     /**
      * 分页检索病案列表，返回列表行 QueryModel（含列表冗余摘要字段）。
      *
-     * @param query 租户、关键字、状态、科室、出院区间等过滤条件
+     * @param query 租户、关键字、状态、科室、入/出院区间、出院标记、4401 上传状态等过滤条件
      * @param pageable 分页与排序（由应用层传入）
      * @return 分页 QueryModel
      */
@@ -50,13 +101,14 @@ public class CaseRecordQueryService {
             predicates.add(cb.equal(root.get("isDeleted"), false));
             predicates.add(cb.equal(root.get("tenantId"), query.getTenantId()));
             String kw = trimToNull(query.getKeyword());
-            // 关键字：姓名/住院号/病案号任一模糊匹配
+            // 关键字：姓名/住院号/病案号/证件号任一模糊匹配
             if (kw != null) {
                 String pattern = "%" + kw.toLowerCase() + "%";
                 Predicate nameLike = cb.like(cb.lower(root.get("psnName")), pattern);
                 Predicate iptLike = cb.like(cb.lower(root.get("iptNo")), pattern);
                 Predicate medLike = cb.like(cb.lower(root.get("medcasno")), pattern);
-                predicates.add(cb.or(nameLike, iptLike, medLike));
+                Predicate certLike = cb.like(cb.lower(root.get("certno")), pattern);
+                predicates.add(cb.or(nameLike, iptLike, medLike, certLike));
             }
             List<CaseRecordStatus> statuses = normalizeStatusCodes(query.getStatusCode(), query.getStatusCodes());
             // 状态过滤：单值 eq / 多值 in
@@ -76,6 +128,14 @@ public class CaseRecordQueryService {
             if (query.getAttendingPractitionerId() != null) {
                 predicates.add(cb.equal(root.get("atddrPractitionerId"), query.getAttendingPractitionerId()));
             }
+            // 入院日起（含当日，主档冗余 adm_time）
+            if (query.getAdmFrom() != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("admTime"), query.getAdmFrom()));
+            }
+            // 入院日止（含当日）
+            if (query.getAdmTo() != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get("admTime"), query.getAdmTo()));
+            }
             // 出院日起（含当日）
             if (query.getDscgFrom() != null) {
                 predicates.add(cb.greaterThanOrEqualTo(root.get("dscgTime"), query.getDscgFrom()));
@@ -84,6 +144,25 @@ public class CaseRecordQueryService {
             if (query.getDscgTo() != null) {
                 predicates.add(cb.lessThanOrEqualTo(root.get("dscgTime"), query.getDscgTo()));
             }
+            String dischargedCode = trimToNull(query.getDischargedCode());
+            // 是否出院：1=已出院，0=未出院
+            if (DISCHARGED_YES.equals(dischargedCode)) {
+                predicates.add(cb.isNotNull(root.get("dscgTime")));
+            } else if (DISCHARGED_NO.equals(dischargedCode)) {
+                predicates.add(cb.isNull(root.get("dscgTime")));
+            }
+            String uploadFilter = trimToNull(query.getChsUploadStatusCode());
+            // 4401 上传状态：none=未上传（null/空串）；其余精确匹配
+            if (uploadFilter != null) {
+                if (UPLOAD_STATUS_NONE.equals(uploadFilter)) {
+                    Predicate nullStatus = cb.isNull(root.get("chsUploadStatusCode"));
+                    Predicate emptyStatus = cb.equal(root.get("chsUploadStatusCode"), "");
+                    predicates.add(cb.or(nullStatus, emptyStatus));
+                } else {
+                    predicates.add(cb.equal(root.get("chsUploadStatusCode"), uploadFilter));
+                }
+            }
+            // 二期：settleUploadStatus / settledCode 仅占位接收，本期不下推结算过滤
             return cb.and(predicates.toArray(new Predicate[0]));
         };
         return caseRecordRepository.findAll(spec, pageable).map(this::toListItemQueryModel);
@@ -102,6 +181,7 @@ public class CaseRecordQueryService {
         model.setPsnName(record.getPsnName());
         model.setIptNo(record.getIptNo());
         model.setGendCode(record.getGendCode());
+        model.setCertno(record.getCertno());
         model.setAdmTime(record.getAdmTime());
         model.setDscgTime(record.getDscgTime());
         model.setAdmCatyName(record.getAdmCatyName());
@@ -109,11 +189,17 @@ public class CaseRecordQueryService {
         model.setChfdrName(record.getChfdrName());
         model.setMainDiagName(record.getMainDiagName());
         model.setStatusCode(record.getStatusCode());
+        model.setChsUploadStatusCode(record.getChsUploadStatusCode());
+        model.setSettleUploadStatusCode(record.getSettleUploadStatusCode());
         return model;
     }
 
     /**
      * 将单状态或多状态入参归一为枚举列表；非法 code 静默忽略。
+     *
+     * @param statusCode  单状态 code；多状态为空时回落使用
+     * @param statusCodes 多状态 code 列表，优先
+     * @return 去重后的合法状态枚举列表，可能为空
      */
     private List<CaseRecordStatus> normalizeStatusCodes(String statusCode, List<String> statusCodes) {
         List<CaseRecordStatus> normalized = new ArrayList<>();
@@ -176,6 +262,21 @@ public class CaseRecordQueryService {
             return cb.and(predicates.toArray(new Predicate[0]));
         };
         return caseRecordRepository.findAll(spec, pageable);
+    }
+
+    /**
+     * 按租户 + 病案号精确查未删除主档。
+     *
+     * @param tenantId 租户
+     * @param medcasno 院内病案号
+     * @return 主档；未命中 empty
+     */
+    public Optional<CaseRecord> findOptionalByMedcasno(Long tenantId, String medcasno) {
+        String no = trimToNull(medcasno);
+        if (tenantId == null || no == null) {
+            return Optional.empty();
+        }
+        return caseRecordRepository.findByTenantIdAndMedcasnoAndIsDeletedFalse(tenantId, no);
     }
 
 }

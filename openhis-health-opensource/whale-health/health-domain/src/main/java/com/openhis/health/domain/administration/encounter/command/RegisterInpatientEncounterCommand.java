@@ -40,6 +40,10 @@ public class RegisterInpatientEncounterCommand extends BatchCommand<RegisterInpa
         private LocalDateTime registerTime;
         /** 费用性质业务编码（{@code fin_contract.bus_no}，登记时写入就诊账户）。 */
         private String contractNo;
+        /**
+         * 险种类型码（310 职工 / 390 城乡居民等）：登记开医保户时写入 {@code adm_account.insutype}。
+         */
+        private String insutype;
         /** 入院来源编码。 */
         private String admitSourceCode;
         /** 入院途径编码。 */

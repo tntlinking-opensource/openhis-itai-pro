@@ -20,7 +20,7 @@ import java.util.List;
 /**
  * 参保地（1101）与费用性质医保通道（adm_vs）匹配与推荐。
  *
- * <p>吉林规则：2299→省医保(3)/229900；2201→市医保(4)/220199。</p>
+ * <p>规则：2201→市医保(4)/220199；其余有效参保地（省内异地/省本级/省外）→省医保(3)/229900。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -201,35 +201,31 @@ public class RegisterContractMatchResolver {
     }
 
     /**
-     * 吉林规则：参保地前缀推断首选费用类别（2299 省医保，2201 市医保）。
+     * 按参保地前缀推断首选费用类别。
      *
-     * @param insu 归一化参保地编码
-     * @return 类别 code；无法推断则 null
+     * <p>2201→市医保；其余有效参保地（含省内异地、省外）→省医保通道。</p>
+     *
+     * @param insu 归一化参保地编码（调用方已保证长度 ≥4）
+     * @return 类别 code
      */
     private static String inferPreferredCategory(String insu) {
-        if (insu.startsWith("2299")) {
-            return ChargeTypeCategory.PROVINCIAL_INSURANCE.getCode();
-        }
         if (insu.startsWith("2201")) {
             return ChargeTypeCategory.MUNICIPAL_INSURANCE.getCode();
         }
-        return null;
+        return ChargeTypeCategory.PROVINCIAL_INSURANCE.getCode();
     }
 
     /**
-     * 吉林规则：参保地前缀推断首选 adm_vs（229900 / 220199）。
+     * 按参保地前缀推断首选 adm_vs（220199 / 229900）。
      *
-     * @param insu 归一化参保地编码
-     * @return adm_vs；无法推断则 null
+     * @param insu 归一化参保地编码（调用方已保证长度 ≥4）
+     * @return adm_vs
      */
     private static String inferPreferredAdmVs(String insu) {
-        if (insu.startsWith("2299")) {
-            return "229900";
-        }
         if (insu.startsWith("2201")) {
             return "220199";
         }
-        return null;
+        return "229900";
     }
 
     /**

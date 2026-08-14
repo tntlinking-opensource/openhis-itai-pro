@@ -36,6 +36,17 @@ public class TcmRxHeaderDto {
     @Schema(description = "绑定的中医病证组号")
     private String tcmSyndromeGroup;
 
+    /** 方头绑定就诊诊断有序 ids 串（取组内首行；供前端多选回显）。 */
+    @Schema(description = "方头绑定就诊诊断有序 ids 串")
+    private String encounterDiagnosisIds;
+
+    /**
+     * 历史引用用病证组（含病名/证候目录主键）。
+     * <p>IF-IP-TCM-39 历史 detail 附带；跨就诊复用时前端据此落到本次就诊。</p>
+     */
+    @Schema(description = "历史引用用病证组（含病名/证候目录主键）")
+    private List<TcmDiagnosisGroupRowDto> reuseDiagnosisGroups = new ArrayList<>();
+
     /** 中药付数。 */
     @Schema(description = "中药付数")
     private BigDecimal chineseHerbsDoseQuantity;

@@ -20,6 +20,11 @@ public class SettleInpatientPaymentCommand {
     private String outcomeEnum;
     /** 本轮落账关联的医保结算凭证行。 */
     private List<PaymentYbSettlementItemCommand> ybSettlements;
+    /**
+     * 正式结算落账明细（对齐门诊）：含医保统筹/个账 + 个人现金；
+     * 非空时覆盖草稿占位明细。
+     */
+    private List<PaymentDetailItemCommand> payReceiptDetails;
     /** 账单业务时间（住院结算日）。 */
     private LocalDateTime billDate;
 }

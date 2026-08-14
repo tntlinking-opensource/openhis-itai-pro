@@ -20,8 +20,9 @@ import com.openhis.chs.gateway.scheme.inventory.model.InvPlatformQueryInput;
 import com.openhis.chs.gateway.scheme.inventory.model.InvPurcinfo;
 import com.openhis.chs.gateway.scheme.inventory.model.InvSelinfo;
 import com.openhis.chs.domain.inventory.command.InvUploadLineCommand;
-import com.openhis.chs.domain.share.enums.InvChgType;
 import com.openhis.chs.domain.inventory.queries.QueryPlatformInvQuery;
+import com.openhis.chs.domain.share.constants.ChsInventoryConstants;
+import com.openhis.chs.domain.share.enums.InvChgType;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -234,7 +235,8 @@ public final class InvPlatformInputAssembler {
         setIfNotBlank(purcinfo::setSplerPmtno, line.getSplerPmtno());
         setIfNotBlank(purcinfo::setManuLotnum, line.getManuLotnum());
         setIfNotBlank(purcinfo::setProdentpName, line.getProdentpName());
-        setIfNotBlank(purcinfo::setAprvno, line.getAprvno());
+        // aprvno 平台必填：空则占位，防止中药无国药准字导致 3503/3504 拒收
+        purcinfo.setAprvno(resolveAprvnoOrDefault(line.getAprvno()));
         setIfNotBlank(purcinfo::setManuDate, line.getManuDate());
         setIfNotBlank(purcinfo::setExpyEnd, line.getExpyEnd());
         if (line.getFinlTrnsPric() != null) {
@@ -271,5 +273,20 @@ public final class InvPlatformInputAssembler {
         if (isNotEmpty(value)) {
             setter.accept(value.trim());
         }
+    }
+
+    /**
+     * 批准文号出站：有值用行上值，空则 {@link ChsInventoryConstants#DEFAULT_APRVNO}。
+     *
+     * @param aprvno 行上批准文号
+     * @return 非空批准文号
+     */
+    private static String resolveAprvnoOrDefault(String aprvno) {
+        // 业务/Loader 已写入真实准字号
+        if (isNotEmpty(aprvno)) {
+            return aprvno.trim();
+        }
+        // 中药饮片等无准字：平台必填占位
+        return ChsInventoryConstants.DEFAULT_APRVNO;
     }
 }

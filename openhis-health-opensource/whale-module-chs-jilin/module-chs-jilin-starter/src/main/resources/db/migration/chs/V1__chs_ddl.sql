@@ -1,4 +1,8 @@
--- Squashed chs DDL (V1–V12)
+-- Squashed chs DDL (final state through former V12, 2026-08).
+-- Folded: former V2 notice tables, V4 invoke_log indexes, V6 pg_trgm + picker indexes,
+-- V7 detail audit, V8 institution catalog match, V9 retail/upload/diff columns,
+-- V10 retail/upload/diff backfill, V11 national catalog pack fields + backfill,
+-- V12 fund_pay_type VARCHAR(16).
 
 -- from V1__yb_catalog_download_cursor.sql
 -- yb_catalog_download_cursor（建表）
@@ -178,6 +182,10 @@ CREATE TABLE IF NOT EXISTS yb_national_catalog_item (
     source_line_no      INTEGER,
     prodentp_name       VARCHAR(200),
     updt_time           TIMESTAMP,
+    min_pac_cnt         VARCHAR(20),
+    min_pacunt          VARCHAR(30),
+    min_prepunt         VARCHAR(30),
+    min_prcunt          VARCHAR(50),
 
     created_at          TIMESTAMP    NOT NULL,
     updated_at          TIMESTAMP,
@@ -234,6 +242,10 @@ COMMENT ON COLUMN yb_national_catalog_item.source_file_qury_no IS '1301 来源�
 COMMENT ON COLUMN yb_national_catalog_item.source_line_no IS '1301 TXT 行号（从 1 起）；NULL 表示 1312 等非文件行';
 COMMENT ON COLUMN yb_national_catalog_item.prodentp_name IS '1301 生产企业名称（TXT 第 54 列）';
 COMMENT ON COLUMN yb_national_catalog_item.updt_time IS 'updt时间';
+COMMENT ON COLUMN yb_national_catalog_item.min_pac_cnt IS '1301 最小包装数量（规范第42列 / raw_json 下标41）';
+COMMENT ON COLUMN yb_national_catalog_item.min_pacunt IS '1301 最小包装单位（规范第43列 / raw_json 下标42）';
+COMMENT ON COLUMN yb_national_catalog_item.min_prepunt IS '1301 最小制剂单位（规范第44列 / raw_json 下标43）';
+COMMENT ON COLUMN yb_national_catalog_item.min_prcunt IS '1301 最小计价单位（规范第49列 / raw_json 下标48）';
 COMMENT ON COLUMN yb_national_catalog_item.created_at IS '创建时间';
 COMMENT ON COLUMN yb_national_catalog_item.updated_at IS '最后更新时间';
 COMMENT ON COLUMN yb_national_catalog_item.created_by IS '创建人';
@@ -384,6 +396,9 @@ CREATE TABLE IF NOT EXISTS yb_clinic_pre_settle (
     overlmt_selfpay NUMERIC(18, 2),
     preselfpay_amt NUMERIC(18, 2),
     inscp_scp_amt NUMERIC(18, 2),
+    retail_medfee_sumamt NUMERIC(16, 2),
+    upload_medfee_sumamt NUMERIC(16, 2),
+    retail_upload_diff_amt NUMERIC(16, 2),
 
     tenant_id               BIGINT       NOT NULL,
     account_id BIGINT
@@ -459,7 +474,10 @@ CREATE TABLE IF NOT EXISTS yb_settlement_record (
     tenant_id               BIGINT       NOT NULL,
     account_id BIGINT,
     encounter_class VARCHAR(8) NOT NULL DEFAULT 'AMB',
-    status VARCHAR(16) NOT NULL DEFAULT 'CONFIRMED'
+    status VARCHAR(16) NOT NULL DEFAULT 'CONFIRMED',
+    retail_medfee_sumamt NUMERIC(16, 2),
+    upload_medfee_sumamt NUMERIC(16, 2),
+    retail_upload_diff_amt NUMERIC(16, 2)
 );
 
 CREATE INDEX IF NOT EXISTS idx_yb_settlement_record_payment
@@ -531,6 +549,9 @@ COMMENT ON COLUMN yb_clinic_pre_settle.deleted_at IS '删除时间';
 COMMENT ON COLUMN yb_clinic_pre_settle.deleted_by IS '删除人';
 COMMENT ON COLUMN yb_clinic_pre_settle.tenant_id IS '租户标识';
 COMMENT ON COLUMN yb_clinic_pre_settle.account_id IS '账户标识';
+COMMENT ON COLUMN yb_clinic_pre_settle.retail_medfee_sumamt IS '院内收费合计（charge_item.total_price）';
+COMMENT ON COLUMN yb_clinic_pre_settle.upload_medfee_sumamt IS '2204 上传明细合计（pric×cnt）';
+COMMENT ON COLUMN yb_clinic_pre_settle.retail_upload_diff_amt IS '零售−上传分差（retail−upload）';
 
 COMMENT ON TABLE yb_settlement_record IS '医保 settlement record';
 COMMENT ON COLUMN yb_settlement_record.id IS '主键';
@@ -557,6 +578,9 @@ COMMENT ON COLUMN yb_settlement_record.tenant_id IS '租户标识';
 COMMENT ON COLUMN yb_settlement_record.account_id IS '账户标识';
 COMMENT ON COLUMN yb_settlement_record.encounter_class IS '就诊class';
 COMMENT ON COLUMN yb_settlement_record.status IS '状态';
+COMMENT ON COLUMN yb_settlement_record.retail_medfee_sumamt IS '院内收费合计（charge_item.total_price）';
+COMMENT ON COLUMN yb_settlement_record.upload_medfee_sumamt IS '费用上传明细合计（pric×cnt）';
+COMMENT ON COLUMN yb_settlement_record.retail_upload_diff_amt IS '零售−上传分差（retail−upload）；日结勾稽';
 
 -- from V6__yb_inpatient_settle.sql
 -- 住院医保结算 Wave 1：预结算快照、费用上传跟踪
@@ -636,6 +660,9 @@ CREATE TABLE IF NOT EXISTS yb_inpatient_pre_settle (
     overlmt_selfpay NUMERIC(18, 2),
     preselfpay_amt NUMERIC(18, 2),
     inscp_scp_amt NUMERIC(18, 2),
+    retail_medfee_sumamt NUMERIC(16, 2),
+    upload_medfee_sumamt NUMERIC(16, 2),
+    retail_upload_diff_amt NUMERIC(16, 2),
 
     tenant_id               BIGINT       NOT NULL,
     account_id BIGINT
@@ -691,6 +718,9 @@ COMMENT ON COLUMN yb_inpatient_pre_settle.deleted_at IS '删除时间';
 COMMENT ON COLUMN yb_inpatient_pre_settle.deleted_by IS '删除人';
 COMMENT ON COLUMN yb_inpatient_pre_settle.tenant_id IS '租户标识';
 COMMENT ON COLUMN yb_inpatient_pre_settle.account_id IS '账户标识';
+COMMENT ON COLUMN yb_inpatient_pre_settle.retail_medfee_sumamt IS '院内收费合计（charge_item.total_price）';
+COMMENT ON COLUMN yb_inpatient_pre_settle.upload_medfee_sumamt IS '2301 上传明细合计（pric×cnt）';
+COMMENT ON COLUMN yb_inpatient_pre_settle.retail_upload_diff_amt IS '零售−上传分差（retail−upload）';
 
 -- from V7__yb_reconciliation_clear.sql
 -- Wave 3：吉林对账清算本地记录（3201 / 3203A）
@@ -1196,10 +1226,19 @@ CREATE INDEX IF NOT EXISTS idx_yb_invoke_log_msgid
     ON yb_invoke_log (msgid, tenant_id)
     WHERE is_deleted = FALSE;
 
+-- from former V4__yb_invoke_log_page_index.sql
+CREATE INDEX IF NOT EXISTS idx_yb_invoke_log_tenant_created
+    ON yb_invoke_log (tenant_id, created_at DESC)
+    WHERE is_deleted = FALSE;
+
+CREATE INDEX IF NOT EXISTS idx_yb_invoke_log_tenant_infno_created
+    ON yb_invoke_log (tenant_id, infno, created_at DESC)
+    WHERE is_deleted = FALSE;
+
 CREATE TABLE IF NOT EXISTS yb_settlement_fund_detail (
     id                      BIGINT       NOT NULL PRIMARY KEY,
     settlement_record_id    BIGINT       NOT NULL,
-    fund_pay_type           VARCHAR(6),
+    fund_pay_type           VARCHAR(16),
     fund_pay_type_name      VARCHAR(128),
     inscp_scp_amt           NUMERIC(18, 2),
     crt_payb_lmt_amt        NUMERIC(18, 2),
@@ -1295,7 +1334,7 @@ COMMENT ON COLUMN yb_invoke_log.tenant_id IS '租户标识';
 COMMENT ON TABLE yb_settlement_fund_detail IS '2207/2304 setldetail 基金分项明细';
 COMMENT ON COLUMN yb_settlement_fund_detail.id IS '主键';
 COMMENT ON COLUMN yb_settlement_fund_detail.settlement_record_id IS '结算记录标识';
-COMMENT ON COLUMN yb_settlement_fund_detail.fund_pay_type IS '基金支付类型';
+COMMENT ON COLUMN yb_settlement_fund_detail.fund_pay_type IS '基金支付类型（国家码，最长 16）';
 COMMENT ON COLUMN yb_settlement_fund_detail.fund_pay_type_name IS '基金支付类型名称';
 COMMENT ON COLUMN yb_settlement_fund_detail.inscp_scp_amt IS '符合政策范围金额';
 COMMENT ON COLUMN yb_settlement_fund_detail.crt_payb_lmt_amt IS '本次可支付限额金额';
@@ -1393,3 +1432,721 @@ COMMENT ON COLUMN yb_settlement_record.clr_type IS '清算类别';
 COMMENT ON COLUMN yb_settlement_record.fund_breakdown_json IS '基金分项JSON';
 
 COMMENT ON COLUMN yb_settlement_reversal.invoke_log_id IS '调用日志标识';
+
+-- ===========================================================================
+-- Folded from former incrementals (V2, V6, V7, V8, V10, V11 backfill)
+-- ===========================================================================
+
+-- from former V2__yb_catalog_notice.sql
+-- CHS Flyway V2：医保文件通知（AS-CHS-CAT-005 M1）
+
+CREATE TABLE IF NOT EXISTS yb_catalog_notice_doc (
+    id                      BIGINT       NOT NULL PRIMARY KEY,
+    contract_id             BIGINT,
+    doc_kind                VARCHAR(32)  NOT NULL,
+    category                VARCHAR(32)  NOT NULL,
+    title                   VARCHAR(256),
+    source_filename         VARCHAR(512),
+    source_file_hash        VARCHAR(64)  NOT NULL,
+    canonical_pack_uri      VARCHAR(1024) NOT NULL,
+    source_file_uri         VARCHAR(1024),
+    notice_date             DATE,
+    effective_date          DATE,
+    parse_status            VARCHAR(32)  NOT NULL,
+    apply_status            VARCHAR(32)  NOT NULL,
+    sheet_summary_json      TEXT,
+    error_message           VARCHAR(1024),
+    imported_by             BIGINT,
+    imported_at             TIMESTAMP,
+    applied_by              BIGINT,
+    applied_at              TIMESTAMP,
+    line_count              INT          NOT NULL DEFAULT 0,
+
+    created_at              TIMESTAMP    NOT NULL,
+    updated_at              TIMESTAMP,
+    created_by              BIGINT,
+    updated_by              BIGINT,
+    is_deleted              BOOLEAN      NOT NULL DEFAULT FALSE,
+    deleted_at              TIMESTAMP,
+    deleted_by              BIGINT,
+    tenant_id               BIGINT       NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_yb_cat_notice_doc_hash
+    ON yb_catalog_notice_doc (tenant_id, source_file_hash)
+    WHERE is_deleted = FALSE;
+
+CREATE INDEX IF NOT EXISTS ix_yb_cat_notice_doc_list
+    ON yb_catalog_notice_doc (tenant_id, doc_kind, category, apply_status, imported_at DESC NULLS LAST, id DESC)
+    WHERE is_deleted = FALSE;
+
+COMMENT ON TABLE yb_catalog_notice_doc IS '医保文件通知-文件头';
+COMMENT ON COLUMN yb_catalog_notice_doc.source_file_hash IS '标准落地包内容 SHA-256，租户内去重';
+COMMENT ON COLUMN yb_catalog_notice_doc.canonical_pack_uri IS '标准落地包存储位置（必留）';
+COMMENT ON COLUMN yb_catalog_notice_doc.doc_kind IS 'CATALOG_DELTA / PAYMENT_MAP';
+COMMENT ON COLUMN yb_catalog_notice_doc.parse_status IS 'PENDING/PARSED/PARSE_FAILED/PARTIAL';
+COMMENT ON COLUMN yb_catalog_notice_doc.apply_status IS 'NOT_APPLIED/APPLIED/REVOKED';
+
+CREATE TABLE IF NOT EXISTS yb_catalog_notice_line (
+    id                      BIGINT       NOT NULL PRIMARY KEY,
+    doc_id                  BIGINT       NOT NULL,
+    action                  VARCHAR(32)  NOT NULL,
+    list_type               VARCHAR(30),
+    hilist_code             VARCHAR(64),
+    project_code            VARCHAR(64),
+    hilist_name             VARCHAR(512),
+    begin_date              DATE,
+    end_date                DATE,
+    change_fields           VARCHAR(512),
+    chrgitm_lv              VARCHAR(8),
+    lmt_used_flag           VARCHAR(8),
+    lmt_scope               VARCHAR(512),
+    price_limit_amt         NUMERIC(18, 4),
+    overlmt_dspo_way        VARCHAR(8),
+    dual_channel_flag       VARCHAR(8),
+    payload_json            TEXT,
+    sheet_name              VARCHAR(128),
+    row_no                  INT,
+    match_status            VARCHAR(32),
+    apply_result            VARCHAR(32),
+    line_status             VARCHAR(32)  NOT NULL DEFAULT 'ACTIVE',
+    warning_message         VARCHAR(1024),
+
+    created_at              TIMESTAMP    NOT NULL,
+    updated_at              TIMESTAMP,
+    created_by              BIGINT,
+    updated_by              BIGINT,
+    is_deleted              BOOLEAN      NOT NULL DEFAULT FALSE,
+    deleted_at              TIMESTAMP,
+    deleted_by              BIGINT,
+    tenant_id               BIGINT       NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ix_yb_cat_notice_line_doc_action
+    ON yb_catalog_notice_line (doc_id, action)
+    WHERE is_deleted = FALSE;
+
+CREATE INDEX IF NOT EXISTS ix_yb_cat_notice_line_hilist
+    ON yb_catalog_notice_line (tenant_id, hilist_code)
+    WHERE is_deleted = FALSE;
+
+CREATE INDEX IF NOT EXISTS ix_yb_cat_notice_line_project
+    ON yb_catalog_notice_line (tenant_id, project_code)
+    WHERE is_deleted = FALSE;
+
+CREATE INDEX IF NOT EXISTS ix_yb_cat_notice_line_action_end
+    ON yb_catalog_notice_line (tenant_id, action, end_date)
+    WHERE is_deleted = FALSE;
+
+COMMENT ON TABLE yb_catalog_notice_line IS '医保文件通知-明细行';
+COMMENT ON COLUMN yb_catalog_notice_line.action IS 'ADD/MODIFY/STOP/PROVINCE_MODIFY/SET_PAY_CLASS/UNKNOWN';
+COMMENT ON COLUMN yb_catalog_notice_line.payload_json IS '整行规范化 JSON，保留全部原列';
+COMMENT ON COLUMN yb_catalog_notice_line.line_status IS 'ACTIVE/SUPERSEDED';
+
+CREATE TABLE IF NOT EXISTS yb_catalog_notice_apply_log (
+    id                      BIGINT       NOT NULL PRIMARY KEY,
+    doc_id                  BIGINT       NOT NULL,
+    line_id                 BIGINT,
+    target_table            VARCHAR(64),
+    target_id               BIGINT,
+    before_json             TEXT,
+    after_json              TEXT,
+    op                      VARCHAR(64)  NOT NULL,
+    affected_refs_json      TEXT,
+    operator_id             BIGINT,
+    operated_at             TIMESTAMP    NOT NULL,
+
+    created_at              TIMESTAMP    NOT NULL,
+    updated_at              TIMESTAMP,
+    created_by              BIGINT,
+    updated_by              BIGINT,
+    is_deleted              BOOLEAN      NOT NULL DEFAULT FALSE,
+    deleted_at              TIMESTAMP,
+    deleted_by              BIGINT,
+    tenant_id               BIGINT       NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ix_yb_cat_notice_apply_log_doc
+    ON yb_catalog_notice_apply_log (doc_id, operated_at DESC)
+    WHERE is_deleted = FALSE;
+
+COMMENT ON TABLE yb_catalog_notice_apply_log IS '医保文件通知-应用审计';
+COMMENT ON COLUMN yb_catalog_notice_apply_log.affected_refs_json IS '关联单据（如未收费收费单列表）';
+
+CREATE TABLE IF NOT EXISTS yb_national_catalog_notice_overlay (
+    id                      BIGINT       NOT NULL PRIMARY KEY,
+    contract_id             BIGINT       NOT NULL,
+    list_type               VARCHAR(30)  NOT NULL,
+    hilist_code             VARCHAR(64)  NOT NULL,
+    notice_avali_flag       VARCHAR(8),
+    notice_end_date         DATE,
+    notice_patch_json       TEXT,
+    last_notice_doc_id      BIGINT,
+    last_notice_line_id     BIGINT,
+    effective_at            TIMESTAMP,
+
+    created_at              TIMESTAMP    NOT NULL,
+    updated_at              TIMESTAMP,
+    created_by              BIGINT,
+    updated_by              BIGINT,
+    is_deleted              BOOLEAN      NOT NULL DEFAULT FALSE,
+    deleted_at              TIMESTAMP,
+    deleted_by              BIGINT,
+    tenant_id               BIGINT       NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_yb_nat_catalog_notice_overlay_biz
+    ON yb_national_catalog_notice_overlay (tenant_id, contract_id, list_type, hilist_code)
+    WHERE is_deleted = FALSE;
+
+COMMENT ON TABLE yb_national_catalog_notice_overlay IS '国家目录通知叠加（不改 13xx 镜像主列）';
+COMMENT ON COLUMN yb_national_catalog_notice_overlay.notice_avali_flag IS '通知口径可用：1 可用 / 0 停用';
+
+CREATE TABLE IF NOT EXISTS yb_service_project_map (
+    id                      BIGINT       NOT NULL PRIMARY KEY,
+    project_code            VARCHAR(64)  NOT NULL,
+    hilist_code             VARCHAR(64),
+    status                  VARCHAR(32)  NOT NULL,
+    notice_doc_id           BIGINT,
+    notice_line_id          BIGINT,
+    mapped_at               TIMESTAMP,
+
+    created_at              TIMESTAMP    NOT NULL,
+    updated_at              TIMESTAMP,
+    created_by              BIGINT,
+    updated_by              BIGINT,
+    is_deleted              BOOLEAN      NOT NULL DEFAULT FALSE,
+    deleted_at              TIMESTAMP,
+    deleted_by              BIGINT,
+    tenant_id               BIGINT       NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_yb_service_project_map_code
+    ON yb_service_project_map (tenant_id, project_code)
+    WHERE is_deleted = FALSE;
+
+COMMENT ON TABLE yb_service_project_map IS '01* 物价项目码与国家目录编码映射';
+COMMENT ON COLUMN yb_service_project_map.status IS 'MAPPED/PENDING';
+
+CREATE TABLE IF NOT EXISTS yb_catalog_notice_todo (
+    id                      BIGINT       NOT NULL PRIMARY KEY,
+    todo_type               VARCHAR(32)  NOT NULL,
+    hilist_code             VARCHAR(64),
+    project_code            VARCHAR(64),
+    product_name            VARCHAR(512),
+    effective_date          DATE,
+    doc_id                  BIGINT,
+    line_id                 BIGINT,
+    status                  VARCHAR(32)  NOT NULL,
+    close_reason            VARCHAR(512),
+    closed_by               BIGINT,
+    closed_at               TIMESTAMP,
+
+    created_at              TIMESTAMP    NOT NULL,
+    updated_at              TIMESTAMP,
+    created_by              BIGINT,
+    updated_by              BIGINT,
+    is_deleted              BOOLEAN      NOT NULL DEFAULT FALSE,
+    deleted_at              TIMESTAMP,
+    deleted_by              BIGINT,
+    tenant_id               BIGINT       NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ix_yb_cat_notice_todo_open
+    ON yb_catalog_notice_todo (tenant_id, todo_type, status, id DESC)
+    WHERE is_deleted = FALSE;
+
+COMMENT ON TABLE yb_catalog_notice_todo IS '医保文件通知-首页催办待办';
+COMMENT ON COLUMN yb_catalog_notice_todo.todo_type IS 'STOP / PAY_CLASS';
+COMMENT ON COLUMN yb_catalog_notice_todo.status IS 'OPEN / CLOSED';
+
+CREATE TABLE IF NOT EXISTS yb_catalog_notice_compliance_report (
+    id                      BIGINT       NOT NULL PRIMARY KEY,
+    contract_id             BIGINT,
+    list_type               VARCHAR(30),
+    summary_json            TEXT,
+    issues_json             TEXT,
+    issue_count             INT          NOT NULL DEFAULT 0,
+    ran_at                  TIMESTAMP    NOT NULL,
+    ran_by                  BIGINT,
+
+    created_at              TIMESTAMP    NOT NULL,
+    updated_at              TIMESTAMP,
+    created_by              BIGINT,
+    updated_by              BIGINT,
+    is_deleted              BOOLEAN      NOT NULL DEFAULT FALSE,
+    deleted_at              TIMESTAMP,
+    deleted_by              BIGINT,
+    tenant_id               BIGINT       NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ix_yb_cat_notice_compliance_latest
+    ON yb_catalog_notice_compliance_report (tenant_id, contract_id, list_type, ran_at DESC)
+    WHERE is_deleted = FALSE;
+
+COMMENT ON TABLE yb_catalog_notice_compliance_report IS '医保文件通知-合规校验报告（覆盖最新语义由查询取 ran_at 最大）';
+
+-- from former V6__yb_national_catalog_picker_index.sql
+-- 药品/国家目录选码检索加速：模糊匹配 + 1312/1301 过滤路径
+-- 依赖 PostgreSQL pg_trgm（托管库若无权限，需 DBA 预先 CREATE EXTENSION）
+
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+-- 1312 摘要选码（vali=1，无 source_line_no 或来源 1312）
+CREATE INDEX IF NOT EXISTS idx_yb_nat_cat_picker_1312
+    ON yb_national_catalog_item (contract_id, list_type, tenant_id, hilist_code)
+    WHERE is_deleted = FALSE
+      AND vali_flag = '1'
+      AND (source_infno = '1312' OR source_line_no IS NULL);
+
+-- 1301 明细选码/分页
+CREATE INDEX IF NOT EXISTS idx_yb_nat_cat_picker_1301
+    ON yb_national_catalog_item (contract_id, list_type, tenant_id, hilist_code)
+    WHERE is_deleted = FALSE
+      AND source_infno = '1301'
+      AND source_line_no IS NOT NULL;
+
+-- 名称 / 拼音 / 编码 / 批准文号：前后模糊（配合 ILIKE）
+CREATE INDEX IF NOT EXISTS idx_yb_nat_cat_hilist_name_trgm
+    ON yb_national_catalog_item USING gin (hilist_name gin_trgm_ops)
+    WHERE is_deleted = FALSE;
+
+CREATE INDEX IF NOT EXISTS idx_yb_nat_cat_pinyin_trgm
+    ON yb_national_catalog_item USING gin (pinyin gin_trgm_ops)
+    WHERE is_deleted = FALSE;
+
+CREATE INDEX IF NOT EXISTS idx_yb_nat_cat_hilist_code_trgm
+    ON yb_national_catalog_item USING gin (hilist_code gin_trgm_ops)
+    WHERE is_deleted = FALSE;
+
+CREATE INDEX IF NOT EXISTS idx_yb_nat_cat_aprvno_trgm
+    ON yb_national_catalog_item USING gin (aprvno gin_trgm_ops)
+    WHERE is_deleted = FALSE
+      AND aprvno IS NOT NULL
+      AND aprvno <> '';
+
+-- from former V7__yb_detail_audit.sql
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+-- CHS Flyway V7：明细审核 3101/3103 结构化落库（AS 试调 / W3 统计）
+
+CREATE TABLE IF NOT EXISTS yb_detail_audit_hit (
+    id                      BIGINT         NOT NULL PRIMARY KEY,
+    jr_id                   VARCHAR(64)    NOT NULL,
+    task_id                 VARCHAR(64),
+    trig_scen               VARCHAR(8),
+    contract_bus_no         VARCHAR(64),
+    mdtrt_id                VARCHAR(64),
+    patn_id                 VARCHAR(64),
+    rule_id                 VARCHAR(64),
+    rule_name               VARCHAR(256),
+    vola_cont               VARCHAR(2000),
+    vola_amt                NUMERIC(18, 4),
+    sev_deg                 VARCHAR(8),
+    vola_bhvr_type          VARCHAR(8),
+    dr_codg                 VARCHAR(64),
+    dr_name                 VARCHAR(128),
+    dept_codg               VARCHAR(64),
+    dept_name               VARCHAR(128),
+    operator_id             BIGINT,
+
+    created_at              TIMESTAMP      NOT NULL,
+    updated_at              TIMESTAMP,
+    created_by              BIGINT,
+    updated_by              BIGINT,
+    is_deleted              BOOLEAN        NOT NULL DEFAULT FALSE,
+    deleted_at              TIMESTAMP,
+    deleted_by              BIGINT,
+    tenant_id               BIGINT         NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_yb_detail_audit_hit_jr
+    ON yb_detail_audit_hit (tenant_id, jr_id)
+    WHERE is_deleted = FALSE;
+
+CREATE INDEX IF NOT EXISTS ix_yb_detail_audit_hit_stats
+    ON yb_detail_audit_hit (tenant_id, created_at DESC, dr_codg, trig_scen)
+    WHERE is_deleted = FALSE;
+
+COMMENT ON TABLE yb_detail_audit_hit IS '明细审核违规头（3101 result 行）';
+COMMENT ON COLUMN yb_detail_audit_hit.jr_id IS '平台违规结果 ID';
+COMMENT ON COLUMN yb_detail_audit_hit.dr_codg IS '责任医师编码（统计页）';
+
+CREATE TABLE IF NOT EXISTS yb_detail_audit_hit_line (
+    id                      BIGINT         NOT NULL PRIMARY KEY,
+    jrd_id                  VARCHAR(64)    NOT NULL,
+    jr_id                   VARCHAR(64)    NOT NULL,
+    rx_id                   VARCHAR(64),
+    vola_item_type          VARCHAR(8),
+    vola_amt                NUMERIC(18, 4),
+    mdtrt_id                VARCHAR(64),
+
+    created_at              TIMESTAMP      NOT NULL,
+    updated_at              TIMESTAMP,
+    created_by              BIGINT,
+    updated_by              BIGINT,
+    is_deleted              BOOLEAN        NOT NULL DEFAULT FALSE,
+    deleted_at              TIMESTAMP,
+    deleted_by              BIGINT,
+    tenant_id               BIGINT         NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_yb_detail_audit_hit_line_jrd
+    ON yb_detail_audit_hit_line (tenant_id, jrd_id)
+    WHERE is_deleted = FALSE;
+
+CREATE INDEX IF NOT EXISTS ix_yb_detail_audit_hit_line_jr
+    ON yb_detail_audit_hit_line (tenant_id, jr_id)
+    WHERE is_deleted = FALSE;
+
+COMMENT ON TABLE yb_detail_audit_hit_line IS '明细审核违规明细（judge_result_detail_dtos）';
+COMMENT ON COLUMN yb_detail_audit_hit_line.jrd_id IS '平台明细 ID，3103 warn_rslt_id';
+
+CREATE TABLE IF NOT EXISTS yb_detail_audit_feedback (
+    id                      BIGINT         NOT NULL PRIMARY KEY,
+    warn_rslt_id            VARCHAR(64)    NOT NULL,
+    dspo_way                VARCHAR(8)     NOT NULL,
+    dspo_way_rea            VARCHAR(512),
+    warn_type               VARCHAR(8),
+    jr_id                   VARCHAR(64),
+    contract_bus_no         VARCHAR(64),
+    operator_id             BIGINT,
+
+    created_at              TIMESTAMP      NOT NULL,
+    updated_at              TIMESTAMP,
+    created_by              BIGINT,
+    updated_by              BIGINT,
+    is_deleted              BOOLEAN        NOT NULL DEFAULT FALSE,
+    deleted_at              TIMESTAMP,
+    deleted_by              BIGINT,
+    tenant_id               BIGINT         NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ix_yb_detail_audit_feedback_rslt
+    ON yb_detail_audit_feedback (tenant_id, warn_rslt_id, created_at DESC)
+    WHERE is_deleted = FALSE;
+
+COMMENT ON TABLE yb_detail_audit_feedback IS '明细审核 3103 反馈行';
+COMMENT ON COLUMN yb_detail_audit_feedback.warn_rslt_id IS '存 jrd_id（吉林 R7=B）';
+
+-- from former V8__yb_institution_catalog_match.sql
+-- yb_institution_catalog_match（1317 医药机构目录匹配本地镜像）
+-- CHS Flyway V8
+
+CREATE TABLE IF NOT EXISTS yb_institution_catalog_match (
+    id                  BIGINT       NOT NULL PRIMARY KEY,
+    contract_id         BIGINT       NOT NULL,
+    fixmedins_code      VARCHAR(30),
+    medins_list_codg    VARCHAR(30)  NOT NULL,
+    medins_list_name    VARCHAR(200),
+    insu_admdvs         VARCHAR(6),
+    list_type           VARCHAR(30)  NOT NULL,
+    med_list_codg       VARCHAR(30)  NOT NULL,
+    begndate            DATE,
+    enddate             DATE,
+    aprvno              VARCHAR(30),
+    dosform             VARCHAR(200),
+    exct_cont           VARCHAR(2000),
+    item_cont           VARCHAR(2000),
+    prcunt              VARCHAR(100),
+    spec                VARCHAR(200),
+    pacspec             VARCHAR(100),
+    memo                VARCHAR(500),
+    vali_flag           VARCHAR(16),
+    rid                 VARCHAR(40),
+    updt_time           TIMESTAMP,
+    poolarea_no         VARCHAR(6),
+
+    created_at          TIMESTAMP    NOT NULL,
+    updated_at          TIMESTAMP,
+    created_by          BIGINT,
+    updated_by          BIGINT,
+    is_deleted          BOOLEAN      NOT NULL DEFAULT FALSE,
+    deleted_at          TIMESTAMP,
+    deleted_by          BIGINT,
+    tenant_id           BIGINT       NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_yb_inst_cat_match
+    ON yb_institution_catalog_match (
+        contract_id, tenant_id, medins_list_codg, med_list_codg, list_type)
+    WHERE is_deleted = FALSE;
+
+CREATE INDEX IF NOT EXISTS idx_yb_inst_cat_match_name
+    ON yb_institution_catalog_match (contract_id, medins_list_name)
+    WHERE is_deleted = FALSE;
+
+CREATE INDEX IF NOT EXISTS idx_yb_inst_cat_match_list
+    ON yb_institution_catalog_match (contract_id, list_type, vali_flag)
+    WHERE is_deleted = FALSE;
+
+COMMENT ON TABLE yb_institution_catalog_match IS '医保1317医药机构目录匹配本地镜像';
+COMMENT ON COLUMN yb_institution_catalog_match.medins_list_codg IS '定点医药机构目录编号（院内编码）';
+COMMENT ON COLUMN yb_institution_catalog_match.med_list_codg IS '医疗目录编码（国家医保码）';
+COMMENT ON COLUMN yb_institution_catalog_match.list_type IS '目录类别';
+COMMENT ON COLUMN yb_institution_catalog_match.vali_flag IS '有效标志';
+
+-- from former V10__backfill_retail_upload_diff.sql (safe no-op on empty fresh DB)
+-- 历史回填：院内零售合计 / 2204·2301 上传合计 / 分差（retail−upload）
+-- 口径对齐 SettlementRetailUploadDiffSupport + ContextLoader：
+--   retail = DISTINCT charge_item_ids → adm_charge_item.total_price 合计（套餐展开重复 id 去重）
+--   upload = 优先 invoke_log 成功报文 feedetail.det_item_fee_sumamt 合计；否则回落 fee_upload
+-- 仅更新三字段均为 NULL 的行；幂等可重跑。不入 3201。
+
+-- ========== 门诊预结算 ==========
+WITH charge_ids AS (
+    SELECT
+        p.id AS pre_id,
+        p.tenant_id,
+        p.chrg_bchno,
+        CASE
+            WHEN p.charge_item_ids IS NULL OR btrim(p.charge_item_ids) = '' THEN NULL
+            WHEN btrim(p.charge_item_ids) LIKE '[%' THEN (
+                SELECT array_agg(DISTINCT (elem)::bigint)
+                FROM jsonb_array_elements_text(p.charge_item_ids::jsonb) AS t(elem)
+                WHERE btrim(elem) <> ''
+            )
+            ELSE (
+                SELECT array_agg(DISTINCT btrim(x)::bigint)
+                FROM unnest(string_to_array(p.charge_item_ids, ',')) AS x
+                WHERE btrim(x) <> ''
+            )
+        END AS ids
+    FROM yb_clinic_pre_settle p
+    WHERE COALESCE(p.is_deleted, FALSE) = FALSE
+      AND p.retail_medfee_sumamt IS NULL
+      AND p.upload_medfee_sumamt IS NULL
+      AND p.retail_upload_diff_amt IS NULL
+),
+retail AS (
+    SELECT
+        c.pre_id,
+        ROUND(COALESCE(SUM(ci.total_price), 0), 2) AS retail_sum
+    FROM charge_ids c
+    LEFT JOIN LATERAL unnest(c.ids) AS u(cid) ON TRUE
+    LEFT JOIN adm_charge_item ci ON ci.id = u.cid
+    GROUP BY c.pre_id
+),
+upload_log AS (
+    SELECT
+        c.pre_id,
+        ROUND(COALESCE((
+            SELECT SUM((e ->> 'det_item_fee_sumamt')::numeric)
+            FROM jsonb_array_elements(
+                COALESCE(l.request_json::jsonb -> 'feedetail', '[]'::jsonb)
+            ) AS e
+        ), 0), 2) AS upload_sum,
+        TRUE AS found
+    FROM charge_ids c
+    JOIN LATERAL (
+        SELECT l.request_json
+        FROM yb_invoke_log l
+        WHERE l.infno = '2204'
+          AND COALESCE(l.is_deleted, FALSE) = FALSE
+          AND l.chrg_bchno = c.chrg_bchno
+          AND l.tenant_id = c.tenant_id
+          AND l.request_json IS NOT NULL
+          AND btrim(l.request_json) <> ''
+        ORDER BY
+            CASE WHEN COALESCE(l.infcode, '0') IN ('0', '') THEN 0 ELSE 1 END,
+            l.created_at DESC
+        LIMIT 1
+    ) l ON TRUE
+),
+upload_fee AS (
+    SELECT
+        c.pre_id,
+        ROUND(COALESCE(SUM(f.det_item_fee_sumamt), 0), 2) AS upload_sum,
+        COUNT(f.id) > 0 AS found
+    FROM charge_ids c
+    LEFT JOIN yb_clinic_fee_upload f
+        ON f.chrg_bchno = c.chrg_bchno
+       AND f.tenant_id = c.tenant_id
+       AND COALESCE(f.is_deleted, FALSE) = FALSE
+       AND f.upload_status IN ('UPLOADED', 'SETTLED')
+    GROUP BY c.pre_id
+),
+calc AS (
+    SELECT
+        c.pre_id,
+        r.retail_sum,
+        CASE
+            WHEN ul.found THEN ul.upload_sum
+            WHEN uf.found THEN uf.upload_sum
+            ELSE NULL
+        END AS upload_sum
+    FROM charge_ids c
+    JOIN retail r ON r.pre_id = c.pre_id
+    LEFT JOIN upload_log ul ON ul.pre_id = c.pre_id
+    LEFT JOIN upload_fee uf ON uf.pre_id = c.pre_id
+    WHERE c.ids IS NOT NULL
+)
+UPDATE yb_clinic_pre_settle p
+SET
+    retail_medfee_sumamt = c.retail_sum,
+    upload_medfee_sumamt = c.upload_sum,
+    retail_upload_diff_amt = ROUND(c.retail_sum - c.upload_sum, 2),
+    updated_at = COALESCE(p.updated_at, p.created_at)
+FROM calc c
+WHERE p.id = c.pre_id
+  AND c.upload_sum IS NOT NULL
+  AND p.retail_upload_diff_amt IS NULL;
+
+-- ========== 住院预结算 ==========
+WITH charge_ids AS (
+    SELECT
+        p.id AS pre_id,
+        p.tenant_id,
+        p.encounter_id,
+        CASE
+            WHEN p.charge_item_ids IS NULL OR btrim(p.charge_item_ids) = '' THEN NULL
+            WHEN btrim(p.charge_item_ids) LIKE '[%' THEN (
+                SELECT array_agg(DISTINCT (elem)::bigint)
+                FROM jsonb_array_elements_text(p.charge_item_ids::jsonb) AS t(elem)
+                WHERE btrim(elem) <> ''
+            )
+            ELSE (
+                SELECT array_agg(DISTINCT btrim(x)::bigint)
+                FROM unnest(string_to_array(p.charge_item_ids, ',')) AS x
+                WHERE btrim(x) <> ''
+            )
+        END AS ids
+    FROM yb_inpatient_pre_settle p
+    WHERE COALESCE(p.is_deleted, FALSE) = FALSE
+      AND p.retail_medfee_sumamt IS NULL
+      AND p.upload_medfee_sumamt IS NULL
+      AND p.retail_upload_diff_amt IS NULL
+),
+retail AS (
+    SELECT
+        c.pre_id,
+        ROUND(COALESCE(SUM(ci.total_price), 0), 2) AS retail_sum
+    FROM charge_ids c
+    LEFT JOIN LATERAL unnest(c.ids) AS u(cid) ON TRUE
+    LEFT JOIN adm_charge_item ci ON ci.id = u.cid
+    GROUP BY c.pre_id
+),
+upload_log AS (
+    SELECT
+        c.pre_id,
+        ROUND(COALESCE((
+            SELECT SUM((e ->> 'det_item_fee_sumamt')::numeric)
+            FROM jsonb_array_elements(
+                COALESCE(
+                    l.request_json::jsonb -> 'feedetail',
+                    l.request_json::jsonb -> 'input' -> 'feedetail',
+                    '[]'::jsonb
+                )
+            ) AS e
+        ), 0), 2) AS upload_sum,
+        TRUE AS found
+    FROM charge_ids c
+    JOIN LATERAL (
+        SELECT l.request_json
+        FROM yb_invoke_log l
+        WHERE l.infno = '2301'
+          AND COALESCE(l.is_deleted, FALSE) = FALSE
+          AND l.encounter_id = c.encounter_id
+          AND l.tenant_id = c.tenant_id
+          AND l.request_json IS NOT NULL
+          AND btrim(l.request_json) <> ''
+        ORDER BY
+            CASE WHEN COALESCE(l.infcode, '0') IN ('0', '') THEN 0 ELSE 1 END,
+            l.created_at DESC
+        LIMIT 1
+    ) l ON TRUE
+),
+upload_fee AS (
+    SELECT
+        c.pre_id,
+        ROUND(COALESCE(SUM(f.det_item_fee_sumamt), 0), 2) AS upload_sum,
+        COUNT(f.id) > 0 AS found
+    FROM charge_ids c
+    LEFT JOIN LATERAL unnest(c.ids) AS u(cid) ON TRUE
+    LEFT JOIN yb_inpatient_fee_upload f
+        ON f.charge_item_id = u.cid
+       AND f.tenant_id = c.tenant_id
+       AND COALESCE(f.is_deleted, FALSE) = FALSE
+       AND f.upload_status IN ('UPLOADED', 'SETTLED')
+    GROUP BY c.pre_id
+),
+calc AS (
+    SELECT
+        c.pre_id,
+        r.retail_sum,
+        CASE
+            WHEN ul.found THEN ul.upload_sum
+            WHEN uf.found THEN uf.upload_sum
+            ELSE NULL
+        END AS upload_sum
+    FROM charge_ids c
+    JOIN retail r ON r.pre_id = c.pre_id
+    LEFT JOIN upload_log ul ON ul.pre_id = c.pre_id
+    LEFT JOIN upload_fee uf ON uf.pre_id = c.pre_id
+    WHERE c.ids IS NOT NULL
+)
+UPDATE yb_inpatient_pre_settle p
+SET
+    retail_medfee_sumamt = c.retail_sum,
+    upload_medfee_sumamt = c.upload_sum,
+    retail_upload_diff_amt = ROUND(c.retail_sum - c.upload_sum, 2),
+    updated_at = COALESCE(p.updated_at, p.created_at)
+FROM calc c
+WHERE p.id = c.pre_id
+  AND c.upload_sum IS NOT NULL
+  AND p.retail_upload_diff_amt IS NULL;
+
+-- ========== 正式结算：自预结算透传 ==========
+UPDATE yb_settlement_record sr
+SET
+    retail_medfee_sumamt = p.retail_medfee_sumamt,
+    upload_medfee_sumamt = p.upload_medfee_sumamt,
+    retail_upload_diff_amt = p.retail_upload_diff_amt,
+    updated_at = COALESCE(sr.updated_at, sr.created_at)
+FROM yb_clinic_pre_settle p
+WHERE sr.pre_settle_id = p.id
+  AND sr.encounter_class = 'AMB'
+  AND COALESCE(sr.is_deleted, FALSE) = FALSE
+  AND sr.retail_upload_diff_amt IS NULL
+  AND p.retail_upload_diff_amt IS NOT NULL;
+
+UPDATE yb_settlement_record sr
+SET
+    retail_medfee_sumamt = p.retail_medfee_sumamt,
+    upload_medfee_sumamt = p.upload_medfee_sumamt,
+    retail_upload_diff_amt = p.retail_upload_diff_amt,
+    updated_at = COALESCE(sr.updated_at, sr.created_at)
+FROM yb_inpatient_pre_settle p
+WHERE sr.pre_settle_id = p.id
+  AND sr.encounter_class = 'IMP'
+  AND COALESCE(sr.is_deleted, FALSE) = FALSE
+  AND sr.retail_upload_diff_amt IS NULL
+  AND p.retail_upload_diff_amt IS NOT NULL;
+
+-- from former V11__yb_national_catalog_pack_fields.sql (columns in CREATE above; backfill only)
+-- 历史回填：仅数组型 raw_json。若运维已预填（存在 min_prcunt），则跳过以免启动重复扫全表。
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM yb_national_catalog_item
+        WHERE min_prcunt IS NOT NULL
+        LIMIT 1
+    ) THEN
+        RAISE NOTICE 'yb_national_catalog_item pack fields already populated, skip backfill';
+        RETURN;
+    END IF;
+
+    UPDATE yb_national_catalog_item
+    SET
+        min_pac_cnt = NULLIF(btrim(raw_json::json->>41), ''),
+        min_pacunt = NULLIF(btrim(raw_json::json->>42), ''),
+        min_prepunt = NULLIF(btrim(raw_json::json->>43), ''),
+        min_prcunt = NULLIF(btrim(raw_json::json->>48), '')
+    WHERE is_deleted = false
+      AND raw_json IS NOT NULL
+      AND left(btrim(raw_json), 1) = '[';
+END $$;
+

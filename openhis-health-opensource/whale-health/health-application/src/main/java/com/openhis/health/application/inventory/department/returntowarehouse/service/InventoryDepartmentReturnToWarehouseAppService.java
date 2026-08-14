@@ -5,12 +5,16 @@
 package com.openhis.health.application.inventory.department.returntowarehouse.service;
 
 import com.openhis.health.application.inventory.department.returntowarehouse.dto.LinkableStockInListRowDto;
+import com.openhis.health.application.inventory.department.returntowarehouse.dto.ProductDefinitionItemDto;
 import com.openhis.health.application.inventory.department.returntowarehouse.dto.ReturnToWarehouseLineDto;
 import com.openhis.health.application.inventory.department.returntowarehouse.dto.ReturnToWarehouseListRowDto;
 import com.openhis.health.application.inventory.department.returntowarehouse.mapper.InventoryDepartmentReturnToWarehouseMapper;
 import com.openhis.health.application.inventory.department.returntowarehouse.request.*;
 import com.openhis.health.application.inventory.department.returntowarehouse.response.*;
 import com.openhis.health.application.inventory.department.returntowarehouse.support.ReturnToWarehouseStockInLineHelper;
+import com.openhis.health.application.shared.inventory.InventoryItemProductSelectionPageLoader;
+import com.openhis.health.application.shared.supplyrequest.SupplyRequestPricedWriteOrchestrator;
+import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.custom.supplier.queries.model.SupplierDetailQueryModel;
@@ -19,16 +23,20 @@ import com.openhis.health.application.shared.tracenumber.TraceNumberSupplyAgreeT
 import com.openhis.health.application.shared.tracenumber.RecordTraceTransferPairSpec;
 import com.openhis.health.application.basic.administration.support.PractitionerRoleScopeLoader;
 import com.openhis.health.application.shared.product.ProductDefinitionCatalogEditorHintsAssembler;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.product.support.ProductDefinitionDisplaySupport;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.InventoryDepartmentConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
 import com.openhis.health.domain.share.enums.SupplierStatus;
 import com.openhis.health.domain.share.enums.SupplyStatus;
 import com.openhis.health.domain.share.enums.SupplyType;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogEditorHintsDto;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogUnitBandDto;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionSelectionTerminologyMaps;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.EnumUtil;
@@ -38,6 +46,7 @@ import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.LocationStatus;
 import com.openhis.health.domain.workflow.inventoryitem.command.CreateInventoryItemCommand;
 import com.openhis.health.domain.workflow.inventoryitem.command.IncreaseQuantityCommand;
+import com.openhis.health.domain.workflow.inventoryitem.queries.InventoryItemPageQuery;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryCatalogAvailabilityRowModel;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryItemModel;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemDomainService;
@@ -53,12 +62,12 @@ import com.openhis.health.domain.workflow.supplyrequest.queries.VerifyAbleEditQu
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestValidationModel;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestDomainService;
-import com.openhis.health.application.inventory.support.SupplyRequestPricedWriteOrchestrator;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQueryService;
 import com.openhis.health.domain.workflow.supplyrequest.support.SupplyPersistedSplitQuantity;
 import com.openhis.health.application.shared.inventory.InventoryListLocationNameResolver;
 import com.openhis.health.application.shared.inventory.InventoryListPractitionerNameResolver;
 import com.openhis.health.application.shared.pagination.PageQueryBinder;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.shared.validator.CurrentManagedLocationIdsResolver;
 import com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
@@ -70,6 +79,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -88,8 +101,9 @@ import java.util.Set;
 /**
  * 科室退库单（{@link SupplyType#DEPT_RETURN} · {@code department/returntowarehouse}）应用编排（IF-DEPT-RTW · DM §6.1.5）。
  *
- * <p>明细须从已同意科室入库单（{@code original_bus_no}，type {@link SupplyType#DEPT_STOCK_IN}）拉取，禁止自由选品。
- * 同意后：领域落已同意态 → 退库发放 → 源科室药房扣减、目的药库增库存 → 追溯码出库 → 自动生成退库入库壳单（type 5）；不上报医保进销存。</p>
+ * <p>明细可选关联已同意科室入库单（{@code original_bus_no}，type {@link SupplyType#DEPT_STOCK_IN}）拉取可退余量，
+ * 也可按源科室药房库存自由选品。同意后：领域落已同意态 → 退库发放 → 源科室药房扣减、目的药库增库存 → 追溯码出库 →
+ * 自动生成退库入库壳单（type 5）；不上报医保进销存。</p>
  *
  * <p>库位门禁：源侧须为 {@link LocationForm#DEPARTMENT_PHARMACY}；目的侧须为药库 {@link LocationForm#WAREHOUSE}。</p>
  *
@@ -119,6 +133,10 @@ public class InventoryDepartmentReturnToWarehouseAppService {
     private final InventoryItemDomainService inventoryItemDomainService;
     /** 库存读侧：可用量、匹配行 id。 */
     private final InventoryItemQueryService inventoryItemQueryService;
+    /** 库存选品分页（源科室药房批号行）。 */
+    private final InventoryItemProductSelectionPageLoader inventoryItemProductSelectionPageLoader;
+    /** 批号维进价读路径。 */
+    private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
     /** 库位读侧与形态断言。 */
     private final LocationQueryService locationQueryService;
     /** 岗位管辖库位 Gate。 */
@@ -312,9 +330,6 @@ public class InventoryDepartmentReturnToWarehouseAppService {
         if (request == null) {
             throw new BusinessException(ErrorCodeConstants.DEPT_RTW_001, "请求不能为空");
         }
-        if (StringUtils.isEmpty(request.getOriginalBusNo())) {
-            throw new BusinessException(ErrorCodeConstants.DEPT_RTW_001, "originalBusNo 不能为空");
-        }
         if (request.getLines() == null || request.getLines().isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.DEPT_RTW_001, "退库明细不能为空");
         }
@@ -325,8 +340,15 @@ public class InventoryDepartmentReturnToWarehouseAppService {
         this.assertReturnToWarehouseLocationGate(request.getSourceLocationId(), request.getPurposeLocationId());
         this.validateSupplierOptional(request.getSupplierId());
         this.assertReturnToWarehouseTraceNosWithinWideLimit(request.getLines(), ErrorCodeConstants.DEPT_RTW_001);
+        // Pre：有关联入库单时校验可退余量；无关联时允许自由选品，仅靠源科室药房可用库存门禁
+        String createOriginalBusNo = request.getOriginalBusNo();
+        if (!StringUtils.isEmpty(createOriginalBusNo)) {
+            createOriginalBusNo = createOriginalBusNo.trim();
+        } else {
+            createOriginalBusNo = null;
+        }
         this.assertReturnLinesBoundToStockInAndWithinReturnable(
-            request.getOriginalBusNo().trim(), request.getSourceLocationId(),
+            createOriginalBusNo, request.getSourceLocationId(),
             this.toDraftReturnLinesFromReturnLineDtos(request.getLines()), null);
         this.assertReturnToWarehouseDraftLinesWithinSourceAvailableInventory(request.getSourceLocationId(), request.getLines());
         this.assertReturnToWarehouseLinesOccurrencePresent(request.getLines());
@@ -628,6 +650,7 @@ public class InventoryDepartmentReturnToWarehouseAppService {
             }
 
             InventoryMatchKey srcKey = new InventoryMatchKey();
+            srcKey.setSupplierId(line.getSupplierId());
             srcKey.setLotNumber(resolvedLot);
             srcKey.setLocationId(sourceLocationId);
             srcKey.setItemTable(line.getItemTable());
@@ -811,17 +834,142 @@ public class InventoryDepartmentReturnToWarehouseAppService {
     }
 
     /**
-     * 分页查询选品（已废弃：科室退库禁止自由选品，须从入库单拉明细）。
+     * 分页查询科室退库选品（源科室药房库存批号级）。
      *
-     * @param request 选品请求
-     * @return 不再支持
+     * @param request 含源科室药房、物品表与分页参数
+     * @return 选品行与分页元数据
      */
     public PageProductsForReturnToWarehouseResponse pageProductsForReturnToWarehouse(
         PageProductsForReturnToWarehouseRequest request) {
-        // Gate：本场景禁止目录选品，须通过 getLinkableStockInDetail 从入库单带入明细
-        throw new BusinessException(
-            ErrorCodeConstants.DEPT_RTW_001,
-            "科室退库单禁止自由选品，请先选择入库单并通过 getLinkableStockInDetail 拉取可退明细");
+        // Gate：分页窗口、机构与源科室药房门禁
+        this.pageWindowGate.requireNonNullPageWindow(request, ErrorCodeConstants.DEPT_RTW_001, "分页参数不能为空");
+        if (request.getSourceLocationId() == null) {
+            // 无源科室药房无法按库存批号展开选品
+            throw new BusinessException(ErrorCodeConstants.DEPT_RTW_001, "sourceLocationId 不能为空");
+        }
+        this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.DEPT_RTW_101, "机构上下文缺失");
+        Set<Long> allowedDepartmentPharmacies = this.resolveGatedDepartmentPharmacyLocationIds();
+        this.assertDepartmentPharmacyLocationAllowed(request.getSourceLocationId(), allowedDepartmentPharmacies);
+        this.assertProductTableNameWhitelistForReturnToWarehouseSelection(request.getProductTableName());
+        // Pre：组装源科室药房库存分页查询（物品表白名单），再批量拼产品定义、批号维进价与目录槽
+        InventoryItemPageQuery invQuery = new InventoryItemPageQuery();
+        invQuery.setLocationId(request.getSourceLocationId());
+        invQuery.setItemTable(request.getProductTableName().trim());
+        // —— 前台可选：true 仅返回选品库位账面量>0 的批号行；false/未传不过滤数量。——
+        invQuery.setPositiveQuantityOnly(request.getPositiveQuantityOnly());
+        PageQueryBinder.bind(request, invQuery);
+        Pageable pageable = PageRequest.of(
+            request.springPageIndex(), request.getBoundedPageSize(), Sort.by(Sort.Direction.ASC, FieldNameConstants.ID));
+        try {
+            // Cmd：查询可用库存行
+            Page<InventoryItemModel> page = this.inventoryItemProductSelectionPageLoader.page(invQuery, pageable);
+            List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
+            // —— 收集本页库存行对应的产品定义批量查找键。——
+            for (InventoryItemModel inv : page.getContent()) {
+                if (inv == null || inv.getItemId() == null || StringUtils.isEmpty(inv.getItemTable())) {
+                    continue;
+                }
+                ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
+                lookup.setProductDefinitionId(inv.getItemId());
+                lookup.setProductTableName(inv.getItemTable().trim());
+                lookups.add(lookup);
+            }
+            Map<String, ProductDefinitionDisplayDto> products = new HashMap<>();
+            if (!lookups.isEmpty()) {
+                try {
+                    products = this.productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
+                } catch (RuntimeException ex) {
+                    // 产品读失败时降级为空 map，选品仍返回库存行基本字段
+                    log.warn("batchGetProductByIds failed for department return-to-warehouse selection", ex);
+                }
+            }
+            String itemTable = request.getProductTableName().trim();
+            LinkedHashSet<Long> pageItemIds = new LinkedHashSet<>();
+            for (InventoryItemModel inv : page.getContent()) {
+                if (inv != null && inv.getItemId() != null) {
+                    pageItemIds.add(inv.getItemId());
+                }
+            }
+            // —— 选品为批号行级展开：可用量按 inventoryItemId 回填，与 assert 行级键一致。——
+            Map<Long, BigDecimal> availableQtyByInventoryItemId = new HashMap<>();
+            if (!pageItemIds.isEmpty()) {
+                List<InventoryCatalogAvailabilityRowModel> availRows =
+                    this.inventoryItemQueryService.findAvailableCatalogRowsForOrder(
+                        itemTable, new ArrayList<>(pageItemIds), List.of(request.getSourceLocationId()));
+                for (InventoryCatalogAvailabilityRowModel ar : availRows) {
+                    if (ar == null || ar.getId() == null || ar.getQuantity() == null) {
+                        continue;
+                    }
+                    if (!Objects.equals(ar.getLocationId(), request.getSourceLocationId())) {
+                        // 仅保留本源科室药房行，避免跨库位可用量串入
+                        continue;
+                    }
+                    availableQtyByInventoryItemId.put(ar.getId(), ar.getQuantity());
+                }
+            }
+            ProductDefinitionSelectionTerminologyMaps terminologyMaps =
+                this.productDefinitionDisplayTerminologyAssembler.loadSelectionTerminologyMaps();
+            List<ProductDefinitionItemDto> records = new ArrayList<>();
+            // —— 库存行 → 选品 DTO：可用量、批号维进价（展示）、单位四槽。——
+            for (InventoryItemModel inv : page.getContent()) {
+                if (inv == null) {
+                    continue;
+                }
+                String key = ProductDefinitionKeyUtil.buildCompositeKey(inv.getItemTable(), inv.getItemId());
+                ProductDefinitionDisplayDto pr = products.get(key);
+                ProductDefinitionItemDto dto =
+                    this.returnToWarehouseMapper.toProductDefinitionItemDtoFromInventory(inv, pr);
+                if (inv.getId() != null) {
+                    BigDecimal avail = availableQtyByInventoryItemId.get(inv.getId());
+                    // 无可用量行时展示 0，避免 null 误导前端可退库
+                    if (avail == null) {
+                        avail = BigDecimal.ZERO;
+                    }
+                    dto.setAvailableQuantity(avail);
+                } else {
+                    dto.setAvailableQuantity(BigDecimal.ZERO);
+                }
+                BigDecimal lotCostUnit = null;
+                if (StringUtils.isNotEmpty(inv.getLotNumber())) {
+                    // 选品槽展示：批号维 LOT_NUMBER_COST（非写回供应请求行价）
+                    lotCostUnit = this.chargeItemDefinitionQueryService.resolveFirstLotNumberCostPriceValue(
+                        inv.getItemTable(), inv.getItemId(), inv.getLotNumber().trim());
+                }
+                dto.setPurchaseUnitPrice(lotCostUnit);
+                ProductDefinitionCatalogEditorHintsDto hints =
+                    ProductDefinitionCatalogEditorHintsAssembler.fromDisplayDto(pr, terminologyMaps);
+                if (hints != null) {
+                    List<ProductDefinitionCatalogUnitBandDto> bands = hints.getUnitBands();
+                    dto.setUnitBands(bands);
+                    // —— 库存流转选品槽锚仅 LOT_NUMBER_COST；无批号价不灌目录 PURCHASE。——
+                    ProductDefinitionCatalogUnitBandsAssembler.applyInboundWarehouseBandPrices(
+                        bands, pr, lotCostUnit);
+                }
+                records.add(dto);
+            }
+            // Asm：映射选品分页
+            return PagedResultBuilder.build(new PageProductsForReturnToWarehouseResponse(), records, page);
+        } catch (RuntimeException ex) {
+            log.warn("pageProductsForReturnToWarehouse failed", ex);
+            throw new BusinessException(ErrorCodeConstants.DEPT_RTW_102, "退库选品查询失败");
+        }
+    }
+
+    /**
+     * 退库选品 {@code productTableName} 白名单：仅药品/耗材定义表。
+     *
+     * @param raw 请求表名
+     * @throws BusinessException 空或非法表名
+     */
+    private void assertProductTableNameWhitelistForReturnToWarehouseSelection(String raw) {
+        if (StringUtils.isEmpty(raw)) {
+            throw new BusinessException(ErrorCodeConstants.DEPT_RTW_001, "productTableName 不能为空");
+        }
+        String table = raw.trim();
+        if (!TableNameConstants.MED_MEDICATION_DEFINITION.equals(table)
+            && !TableNameConstants.ADM_DEVICE_DEFINITION.equals(table)) {
+            throw new BusinessException(ErrorCodeConstants.DEPT_RTW_001, "productTableName 非法");
+        }
     }
 
     /**
@@ -1030,9 +1178,11 @@ public class InventoryDepartmentReturnToWarehouseAppService {
     }
 
     /**
-     * 草稿退库行须绑定有效入库单且不超过可退数量（含 excludeReturnBusNo）。
+     * 关联入库单时：草稿退库行须绑定有效入库单且不超过可退数量（含 excludeReturnBusNo）。
      *
-     * @param originalBusNo       来源入库 bus_no
+     * <p>未传 {@code originalBusNo} 时直接放行，由源科室药房可用库存门禁约束自由选品明细。</p>
+     *
+     * @param originalBusNo       来源入库 bus_no；空表示自由选品
      * @param sourceLocationId    源 location
      * @param draftLines          草稿行
      * @param excludeReturnBusNo  排除的退库单号（编辑时）
@@ -1043,8 +1193,9 @@ public class InventoryDepartmentReturnToWarehouseAppService {
         Long sourceLocationId,
         List<ReturnToWarehouseStockInLineHelper.DraftReturnLine> draftLines,
         String excludeReturnBusNo) {
+        // —— 未关联入库单：允许自由选品，跳过入库可退余量绑定。——
         if (StringUtils.isEmpty(originalBusNo)) {
-            throw new BusinessException(ErrorCodeConstants.DEPT_RTW_001, "originalBusNo 不能为空");
+            return;
         }
         this.validateOriginalDeptStockInForReturnToWarehouse(originalBusNo.trim(), sourceLocationId);
         List<SupplyRequestModel> stockInLines = this.loadStockInLinesByBusNo(originalBusNo.trim());

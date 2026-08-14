@@ -43,6 +43,7 @@ import com.openhis.health.domain.workflow.inventoryitem.queries.InventoryItemPag
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryCatalogAvailabilityRowModel;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryItemModel;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemQueryService;
+import com.openhis.health.application.shared.inventory.InventoryItemProductSelectionPageLoader;
 import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyByBusNoBatchQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyByBusNoQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyRequestDocumentListQuery;
@@ -78,6 +79,7 @@ public class InventoryWarehouseTransferInAppService {
     private final PageWindowGate pageWindowGate;
     private final SupplyRequestQueryService supplyRequestQueryService;
     private final InventoryItemQueryService inventoryItemQueryService;
+    private final InventoryItemProductSelectionPageLoader inventoryItemProductSelectionPageLoader;
     private final LocationQueryService locationQueryService;
     private final PractitionerRoleScopeLoader practitionerRoleScopeLoader;
     private final CurrentManagedLocationIdsResolver managedLocationIdsResolver;
@@ -357,7 +359,7 @@ public class InventoryWarehouseTransferInAppService {
         Pageable pageable = PageRequest.of(request.springPageIndex(), request.getBoundedPageSize(), Sort.by(Sort.Direction.ASC, FieldNameConstants.ID));
         try {
             // Cmd：查询可用库存行
-            Page<InventoryItemModel> page = inventoryItemQueryService.queryInventoryItemsByPage(invQuery, pageable);
+            Page<InventoryItemModel> page = inventoryItemProductSelectionPageLoader.page(invQuery, pageable);
             List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
             for (InventoryItemModel inv : page.getContent()) {
                 if (inv == null || inv.getItemId() == null || StringUtils.isEmpty(inv.getItemTable())) {
@@ -437,14 +439,9 @@ public class InventoryWarehouseTransferInAppService {
                 if (hints != null) {
                     List<ProductDefinitionCatalogUnitBandDto> bands = hints.getUnitBands();
                     dto.setUnitBands(bands);
-                    BigDecimal packageAnchor = lotCostUnit;
-                    if (packageAnchor == null && StringUtils.isNotEmpty(inv.getItemTable()) && inv.getItemId() != null) {
-                        // 无批号价时回落采购包装锚，供单位槽展示换算
-                        packageAnchor = this.chargeItemDefinitionQueryService.resolveFirstPurchasePriceValue(
-                            inv.getItemTable().trim(), inv.getItemId());
-                    }
+                    // —— 库存流转选品槽锚仅 LOT_NUMBER_COST；无批号价不灌目录 PURCHASE。——
                     ProductDefinitionCatalogUnitBandsAssembler.applyInboundWarehouseBandPrices(
-                        bands, pr, packageAnchor);
+                        bands, pr, lotCostUnit);
                 }
                 records.add(dto);
             }

@@ -11,6 +11,7 @@ import com.openhis.chs.domain.outpatient.command.OpSettleChargeLine;
 import com.openhis.chs.domain.share.enums.DiagType;
 import com.openhis.chs.domain.outpatient.loader.OpPreSettleContextLoader;
 import com.openhis.chs.domain.settlement.support.SettlementTraceCountSupport;
+import com.openhis.chs.domain.notice.entity.YbNationalCatalogNoticeOverlay;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
@@ -49,8 +50,13 @@ import com.openhis.chs.bridge.catalog.ChsInsuranceContractReaderImpl;
 import com.openhis.chs.bridge.notice.CatalogNoticeComplianceAssertSupport;
 import com.openhis.chs.bridge.outpatient.assembler.InsuranceDiagnosisCodeAssembler;
 import com.openhis.chs.bridge.settlement.support.ChsActivityPackageFeeExpandSupport;
+import com.openhis.chs.bridge.settlement.support.ChsFeeRefundInitFeedetlSupport;
 import com.openhis.chs.bridge.settlement.support.ChsFeeUploadSlice;
 import com.openhis.chs.bridge.settlement.support.ChsSettlementDrugTraceRatioResolver;
+import com.openhis.chs.bridge.settlement.support.SettlementFeeUnitConvertSupport;
+import com.openhis.chs.domain.catalog.repository.YbNationalCatalogItemLookup;
+import com.openhis.chs.domain.catalog.support.NationalCatalogPackHint;
+import com.openhis.chs.bridge.settlement.support.SettlementRetailUploadDiffSupport;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.session.CurrentOperatorResolver;
 import com.openhis.whale.core.application.util.StringUtils;
@@ -101,6 +107,7 @@ public class ChsOutpatientInsuranceContextLoader implements OpPreSettleContextLo
     private final CatalogNoticeComplianceAssertSupport catalogNoticeComplianceAssertSupport;
     private final ChsActivityPackageFeeExpandSupport activityPackageFeeExpandSupport;
     private final ChsSettlementDrugTraceRatioResolver settlementDrugTraceRatioResolver;
+    private final YbNationalCatalogItemLookup nationalCatalogItemLookup;
 
     /**
      * 单笔预结算上下文：加载 chargeItems 并组装完整 {@link OpPreSettleCommand}。
@@ -125,6 +132,35 @@ public class ChsOutpatientInsuranceContextLoader implements OpPreSettleContextLo
         }
         List<ChargeItem> chargeItems = this.loadChargeItems(chargeItemIds);
         return this.buildContext(partial, chargeItems, partial.getMedType(), null, null);
+    }
+
+    /**
+     * 补全门诊预结算上下文，复用调用方已装载的收费项（避免 Gate med_type 解析与 enrich 双次扫库）。
+     *
+     * <p>bridge 专用重载（domain 接口不暴露 health {@code ChargeItem} 类型）。</p>
+     *
+     * @param partial               调用方已填写的部分命令
+     * @param preloadedChargeItems  已按 ids 装载的收费项；空则回落 {@link #enrichPreSettle(OpPreSettleCommand)}
+     * @return 补全后的预结算命令
+     */
+    public OpPreSettleCommand enrichPreSettle(
+        OpPreSettleCommand partial,
+        List<ChargeItem> preloadedChargeItems) {
+        // Pre：无预加载行时回落标准路径（含 PLANNED 按就诊装载）
+        if (preloadedChargeItems == null || preloadedChargeItems.isEmpty()) {
+            return this.enrichPreSettle(partial);
+        }
+        List<Long> ids = new ArrayList<>(preloadedChargeItems.size());
+        for (ChargeItem item : preloadedChargeItems) {
+            if (item != null && item.getId() != null) {
+                ids.add(item.getId());
+            }
+        }
+        // Pre：回写 ids，供后续编排/日志对齐
+        if (!ids.isEmpty()) {
+            partial.setChargeItemIds(ids);
+        }
+        return this.buildContext(partial, preloadedChargeItems, partial.getMedType(), null, null);
     }
 
     /**
@@ -361,16 +397,33 @@ public class ChsOutpatientInsuranceContextLoader implements OpPreSettleContextLo
 
         Map<Long, ChargeItemDefinition> definitionMap = buildDefinitionMap(chargeItems);
         Map<String, ProductDefinitionCatalogQueryModel> productMap = loadProducts(chargeItems, definitionMap);
-        Map<Long, MedicationDefinition> medicationById = new HashMap<>();
+        // Pre：国家目录包装/计价单位（2204 限价折算优先于院内药典）
+        Map<String, NationalCatalogPackHint> packHintByYbNo = nationalCatalogItemLookup
+            .loadPackHintsByHilistCodes(
+                contract.getId(),
+                TenantUtils.getCurrentTenantId(),
+                collectYbNos(productMap));
         // Pre：收费行→药品申请/发放批号，供 DD §4.3 主表比例优先
         ChsSettlementDrugTraceRatioResolver.SettlementDrugTraceBatchContext drugTraceContext =
             settlementDrugTraceRatioResolver.prepare(chargeItems);
-        List<OpSettleChargeLine> lines = new ArrayList<>();
-        BigDecimal total = BigDecimal.ZERO;
-        int drugTracCnt = 0;
-        int mcsTracCnt = 0;
+        // Pre：父产品映射 → 套餐子项/售价一次预取，消除按套餐 N+1
+        Map<Long, ProductDefinitionCatalogQueryModel> parentProductByItemId = new HashMap<>();
         for (ChargeItem item : chargeItems) {
-            ProductDefinitionCatalogQueryModel parentProduct = resolveProduct(item, productMap, definitionMap);
+            if (item == null || item.getId() == null) {
+                continue;
+            }
+            parentProductByItemId.put(item.getId(), this.resolveProduct(item, productMap, definitionMap));
+        }
+        ChsActivityPackageFeeExpandSupport.PackageExpandBatchContext packageBatch =
+            activityPackageFeeExpandSupport.prepare(chargeItems, parentProductByItemId);
+        // Pre：冲销源收费项一次装载，供 2204 init_feedetl_sn
+        Map<Long, ChargeItem> refundSourceById =
+            ChsFeeRefundInitFeedetlSupport.loadRefundSources(chargeItemQueryService, chargeItems);
+        // Pre：先展开全部 slice，收集 yb_no 后一次加载局文 overlay
+        List<OpFeeSliceWork> sliceWorks = new ArrayList<>();
+        LinkedHashSet<String> hilistCodes = new LinkedHashSet<>();
+        for (ChargeItem item : chargeItems) {
+            ProductDefinitionCatalogQueryModel parentProduct = parentProductByItemId.get(item.getId());
             ChargeItemDefinition definitionForGate = null;
             if (item.getDefinitionId() != null) {
                 definitionForGate = definitionMap.get(item.getDefinitionId());
@@ -381,7 +434,7 @@ public class ChsOutpatientInsuranceContextLoader implements OpPreSettleContextLo
             }
             // Pre：诊疗套餐有子项时只展开子项行（父项通常无 yb_no）
             List<ChsFeeUploadSlice> slices = activityPackageFeeExpandSupport.expandToUploadSlices(
-                item, parentProduct, parentDisplayName);
+                item, parentProduct, parentDisplayName, packageBatch);
             for (ChsFeeUploadSlice slice : slices) {
                 ProductDefinitionCatalogQueryModel product = slice.getProduct();
                 String itemDisplayName = slice.getDisplayName();
@@ -394,100 +447,140 @@ public class ChsOutpatientInsuranceContextLoader implements OpPreSettleContextLo
                         "INS-011",
                         buildMissingYbNoMessage(item, itemDisplayName, product));
                 }
-                catalogNoticeComplianceAssertSupport.assertAllowed(
-                    TenantUtils.getCurrentTenantId(),
-                    contract.getId(),
-                    product.getYbNo().trim(),
-                    product.getProductBusNo(),
-                    slice.getPric(),
-                    itemDisplayName,
-                    product.getProductDefinitionId(),
-                    product.getProductTableName());
-                if (isNotEmpty(product.getProductTableName())) {
-                    // DD §4.3：药品两分支 floor；比例=收费行对应 req/发药批号→主表优先，否则药典
-                    if (SettlementTraceCountSupport.isMedication(product.getProductTableName())) {
-                        MedicationDefinition med = null;
-                        // 有药品定义才加载药典贴码单位/比例
-                        if (product.getProductDefinitionId() != null) {
-                            med = medicationById.get(product.getProductDefinitionId());
-                            // 本批未缓存：读药典实体
-                            if (med == null) {
-                                med = medicationDefinitionQueryService
-                                    .findOptionalMedicationDefinitionEntityById(product.getProductDefinitionId())
-                                    .orElse(null);
-                                // 读到药典实体：写入本批缓存防 N+1
-                                if (med != null) {
-                                    medicationById.put(product.getProductDefinitionId(), med);
-                                }
+                hilistCodes.add(product.getYbNo().trim());
+                sliceWorks.add(new OpFeeSliceWork(item, slice, product, itemDisplayName, definitionForGate));
+            }
+        }
+        Map<String, YbNationalCatalogNoticeOverlay> overlayByHilist =
+            catalogNoticeComplianceAssertSupport.preloadOverlays(
+                TenantUtils.getCurrentTenantId(), contract.getId(), hilistCodes);
+        // Pre：同处方号 ELEP hi_rxno 请求级去重
+        Map<String, String> hiRxnoByPrescriptionNo = new HashMap<>();
+        List<OpSettleChargeLine> lines = new ArrayList<>();
+        BigDecimal total = BigDecimal.ZERO;
+        int drugTracCnt = 0;
+        int mcsTracCnt = 0;
+        Map<Long, MedicationDefinition> medicationById = new HashMap<>();
+        for (OpFeeSliceWork work : sliceWorks) {
+            ChargeItem item = work.item();
+            ChsFeeUploadSlice slice = work.slice();
+            ProductDefinitionCatalogQueryModel product = work.product();
+            String itemDisplayName = work.itemDisplayName();
+            ChargeItemDefinition definitionForGate = work.definitionForGate();
+            catalogNoticeComplianceAssertSupport.assertAllowed(
+                TenantUtils.getCurrentTenantId(),
+                contract.getId(),
+                product.getYbNo().trim(),
+                product.getProductBusNo(),
+                slice.getPric(),
+                itemDisplayName,
+                product.getProductDefinitionId(),
+                product.getProductTableName(),
+                overlayByHilist);
+            MedicationDefinition medForFee = null;
+            if (isNotEmpty(product.getProductTableName())) {
+                // DD §4.3：药品两分支 floor；比例=收费行对应 req/发药批号→主表优先，否则药典
+                if (SettlementTraceCountSupport.isMedication(product.getProductTableName())) {
+                    // 有药品定义才加载药典贴码单位/比例
+                    if (product.getProductDefinitionId() != null) {
+                        medForFee = medicationById.get(product.getProductDefinitionId());
+                        // 本批未缓存：读药典实体
+                        if (medForFee == null) {
+                            medForFee = medicationDefinitionQueryService
+                                .findOptionalMedicationDefinitionEntityById(product.getProductDefinitionId())
+                                .orElse(null);
+                            // 读到药典实体：写入本批缓存防 N+1
+                            if (medForFee != null) {
+                                medicationById.put(product.getProductDefinitionId(), medForFee);
                             }
                         }
-                        String chargeUnit = item.getQuantityUnit();
-                        String catalogUnit = null;
-                        BigDecimal catalogRatio = null;
-                        // 药典命中：作为主表缺失时的回落
-                        if (med != null) {
-                            catalogUnit = med.getTraceUnitCode();
-                            catalogRatio = med.getTraceUnitRatio();
-                        }
-                        ChsSettlementDrugTraceRatioResolver.ResolvedDrugTraceUnit resolved =
-                            settlementDrugTraceRatioResolver.resolve(
-                                item,
-                                product.getProductDefinitionId(),
-                                catalogUnit,
-                                catalogRatio,
-                                drugTraceContext);
-                        drugTracCnt += SettlementTraceCountSupport.countDrugTracUnits(
-                            product.getProductTableName(),
-                            slice.getCnt(),
-                            chargeUnit,
-                            resolved.traceUnitCode(),
-                            resolved.traceUnitRatio());
-                    } else {
-                        // 耗材：仍按 mcs_trac_cnt 原口径 floor
-                        mcsTracCnt += SettlementTraceCountSupport.countMcsTracUnits(
-                            product.getProductTableName(), slice.getCnt());
                     }
-                }
-                OpSettleChargeLine line = new OpSettleChargeLine();
-                line.setChargeItemId(slice.getChargeItemId());
-                line.setFeedetlSn(slice.getFeedetlSn());
-                // 2204 耗材口径：med_list_codg=医保编码截前15；medins_list_codg=完整医保编码
-                String fullYbNo = product.getYbNo().trim();
-                line.setMedListCodg(SettlementTraceCountSupport.toPlatformMedListCodg(
-                    product.getProductTableName(), fullYbNo));
-                line.setMedinsListCodg(resolveMedinsListCodg(product, fullYbNo));
-                line.setDetItemFeeSumamt(slice.getDetItemFeeSumamt());
-                line.setCnt(slice.getCnt());
-                line.setPric(slice.getPric());
-                line.setFeeOcurTime(item.getOccurrenceTime());
-                line.setRxno(resolve2204Rxno(item.getPrescriptionNo()));
-                // Pre：3101 医嘱树必填名称/目录类/规格（与 §2.6 Snapshot 同源，禁止空串出站）
-                line.setItemName(resolveChargeItemDisplayName(itemDisplayName, product, definitionForGate));
-                line.setHilistType(resolveHilistTypeByProductTable(product.getProductTableName()));
-                line.setChrgType(ChsDetailAuditConstants.DEFAULT_CHRG_TYPE);
-                line.setHilistLv(ChsDetailAuditConstants.DEFAULT_HILIST_LV);
-                line.setSpec(ChsDetailAuditConstants.DEFAULT_SPEC);
-                String qtyUnit = item.getQuantityUnit();
-                if (isNotEmpty(qtyUnit)) {
-                    line.setSpecUnt(qtyUnit.trim());
+                    String chargeUnit = item.getQuantityUnit();
+                    String catalogUnit = null;
+                    BigDecimal catalogRatio = null;
+                    // 药典命中：作为主表缺失时的回落
+                    if (medForFee != null) {
+                        catalogUnit = medForFee.getTraceUnitCode();
+                        catalogRatio = medForFee.getTraceUnitRatio();
+                    }
+                    ChsSettlementDrugTraceRatioResolver.ResolvedDrugTraceUnit resolved =
+                        settlementDrugTraceRatioResolver.resolve(
+                            item,
+                            product.getProductDefinitionId(),
+                            catalogUnit,
+                            catalogRatio,
+                            drugTraceContext);
+                    // 追溯码计数仍按收费单位数量（勿用折片后 cnt）
+                    drugTracCnt += SettlementTraceCountSupport.countDrugTracUnits(
+                        product.getProductTableName(),
+                        slice.getCnt(),
+                        chargeUnit,
+                        resolved.traceUnitCode(),
+                        resolved.traceUnitRatio());
                 } else {
-                    line.setSpecUnt(ChsDetailAuditConstants.DEFAULT_SPEC_UNT);
+                    // 耗材：仍按 mcs_trac_cnt 原口径 floor
+                    mcsTracCnt += SettlementTraceCountSupport.countMcsTracUnits(
+                        product.getProductTableName(), slice.getCnt());
                 }
-                // 2204 dise_codg 可空：仅慢病组有病种码时传；普通门诊不回填主诊码
-                if (isNotEmpty(groupDiseCodg)) {
-                    line.setDiseCodg(groupDiseCodg);
-                }
-                if (organization != null) {
-                    line.setBilgDeptCodg(resolveDeptPlatformCodg(organization));
-                    line.setBilgDeptName(organization.getName());
-                }
-                if (doctor != null) {
-                    line.setBilgDrCodg(doctor.getYbNo());
-                    line.setBilgDrName(doctor.getName());
-                }
-                lines.add(line);
-                total = total.add(MonetaryAmountSupport.nullToZero(slice.getDetItemFeeSumamt()));
             }
+            // Pre：药品按盒收费时 cnt/pric 折成目录计价单位，对齐医保限价口径
+            String fullYbNo = product.getYbNo().trim();
+            NationalCatalogPackHint packHint = resolvePackHint(packHintByYbNo, fullYbNo, contract.getId());
+            SettlementFeeUnitConvertSupport.FeeUploadQtyPrice uploadQtyPrice =
+                SettlementFeeUnitConvertSupport.toSplitUnit(
+                    medForFee, item.getQuantityUnit(), slice.getCnt(), slice.getPric(), packHint);
+            OpSettleChargeLine line = new OpSettleChargeLine();
+            line.setChargeItemId(slice.getChargeItemId());
+            line.setFeedetlSn(slice.getFeedetlSn());
+            // Pre：退单行写原费用流水（refund_id → 正数行 feedetl_sn）
+            String initFeedetlSn = ChsFeeRefundInitFeedetlSupport.resolveInitFeedetlSn(
+                item, slice.getFeedetlSn(), refundSourceById);
+            if (isNotEmpty(initFeedetlSn)) {
+                line.setInitFeedetlSn(initFeedetlSn);
+            }
+            // 2204 耗材口径：med_list_codg=医保编码截前15；medins_list_codg=完整医保编码
+            line.setMedListCodg(SettlementTraceCountSupport.toPlatformMedListCodg(
+                product.getProductTableName(), fullYbNo));
+            line.setMedinsListCodg(resolveMedinsListCodg(product, fullYbNo));
+            // Pre：折片后金额须与 pric×cnt 一致（长春 2204 费用分割校验；6 位单价平摊）
+            line.setDetItemFeeSumamt(uploadQtyPrice.sumamtOr(slice.getDetItemFeeSumamt()));
+            line.setCnt(uploadQtyPrice.cnt());
+            line.setPric(uploadQtyPrice.pric());
+            // Gate：负数 cnt 必须已带 init_feedetl_sn
+            ChsFeeRefundInitFeedetlSupport.assertNegativeCntHasInit(
+                line.getCnt(), line.getInitFeedetlSn(), line.getFeedetlSn());
+            line.setFeeOcurTime(item.getOccurrenceTime());
+            line.setRxno(this.resolve2204Rxno(item.getPrescriptionNo(), hiRxnoByPrescriptionNo));
+            // Pre：3101 医嘱树必填名称/目录类/规格（与 §2.6 Snapshot 同源，禁止空串出站）
+            line.setItemName(resolveChargeItemDisplayName(itemDisplayName, product, definitionForGate));
+            line.setHilistType(resolveHilistTypeByProductTable(product.getProductTableName()));
+            line.setChrgType(ChsDetailAuditConstants.DEFAULT_CHRG_TYPE);
+            line.setHilistLv(ChsDetailAuditConstants.DEFAULT_HILIST_LV);
+            line.setSpec(ChsDetailAuditConstants.DEFAULT_SPEC);
+            String qtyUnit = uploadQtyPrice.unitCodeOrNull();
+            if (isEmpty(qtyUnit)) {
+                qtyUnit = item.getQuantityUnit();
+            }
+            if (isNotEmpty(qtyUnit)) {
+                line.setSpecUnt(qtyUnit.trim());
+            } else {
+                line.setSpecUnt(ChsDetailAuditConstants.DEFAULT_SPEC_UNT);
+            }
+            // 2204 dise_codg 可空：仅慢病组有病种码时传；普通门诊不回填主诊码
+            if (isNotEmpty(groupDiseCodg)) {
+                line.setDiseCodg(groupDiseCodg);
+            }
+            if (organization != null) {
+                line.setBilgDeptCodg(resolveDeptPlatformCodg(organization));
+                line.setBilgDeptName(organization.getName());
+            }
+            if (doctor != null) {
+                line.setBilgDrCodg(doctor.getYbNo());
+                line.setBilgDrName(doctor.getName());
+            }
+            lines.add(line);
+            // Pre：medfee_sumamt 与上传明细合计一致（6 位单价平摊后通常=院内合计）
+            total = total.add(MonetaryAmountSupport.nullToZero(line.getDetItemFeeSumamt()));
         }
 
         Long operatorId = currentOperatorResolver.requireOperatorId(
@@ -529,6 +622,12 @@ public class ChsOutpatientInsuranceContextLoader implements OpPreSettleContextLo
         ctx.setClinicDiagnoses(clinicDiagnoses);
         ctx.setChargeLines(lines);
         ctx.setMedfeeSumamt(total);
+        // Pre：零售/上传分差落上下文，供预结算/正式结算快照与日结勾稽
+        SettlementRetailUploadDiffSupport.RetailUploadDiffAmounts retailUploadDiff =
+            SettlementRetailUploadDiffSupport.of(sumChargeItemRetailTotal(chargeItems), total);
+        ctx.setRetailMedfeeSumamt(retailUploadDiff.retailMedfeeSumamt());
+        ctx.setUploadMedfeeSumamt(retailUploadDiff.uploadMedfeeSumamt());
+        ctx.setRetailUploadDiffAmt(retailUploadDiff.retailUploadDiffAmt());
         ctx.setPaymentDraftId(partial.getPaymentDraftId());
         ctx.setOperatorId(operatorId);
         ctx.setTenantId(TenantUtils.getCurrentTenantId());
@@ -701,27 +800,64 @@ public class ChsOutpatientInsuranceContextLoader implements OpPreSettleContextLo
     /**
      * 2204.rxno：仅传 ELEP 已上传成功时{@code hi_rxno}；无电子处方时留空，禁止用院内处方号伪造。
      *
-     * @param prescriptionNo 院内处方号（关联 {@code med_medication_request}）
+     * @param prescriptionNo           院内处方号（关联 {@code med_medication_request}）
+     * @param hiRxnoByPrescriptionNo   本请求缓存（命中则不再打 ELEP）；value 空串表示已查无 hi_rxno
      * @return 平台 hi_rxno，或 {@code null} 表示无电子处方明细
      */
-    private String resolve2204Rxno(String prescriptionNo) {
+    private String resolve2204Rxno(String prescriptionNo, Map<String, String> hiRxnoByPrescriptionNo) {
         if (isEmpty(prescriptionNo)) {
             return null;
+        }
+        String key = prescriptionNo.trim();
+        // 本批已查过：空串哨兵表示无 hi_rxno
+        if (hiRxnoByPrescriptionNo != null && hiRxnoByPrescriptionNo.containsKey(key)) {
+            String cached = hiRxnoByPrescriptionNo.get(key);
+            if (isEmpty(cached)) {
+                return null;
+            }
+            return cached;
         }
         ElepPrescriptionExtension elepExtension = elepPrescriptionExtensionProvider.getIfAvailable();
         // ELEP 未装配或未启用：2204 不得携带 rxno，避免医保按电子处方核验
         if (elepExtension == null || !elepExtension.isEnabled()) {
+            if (hiRxnoByPrescriptionNo != null) {
+                hiRxnoByPrescriptionNo.put(key, "");
+            }
             return null;
         }
         Optional<String> hiRxno = elepExtension.findRxNoByPrescriptionNo(
-                        new ElepRxNoByPrescriptionNoExtensionIn().setPrescriptionNo(prescriptionNo.trim()))
+                        new ElepRxNoByPrescriptionNoExtensionIn().setPrescriptionNo(key))
                 .map(ElepRxNoQueryExtensionOut::getHiRxno)
                 .filter(StringUtils::isNotEmpty);
         // 未找到已上传 hi_rxno：留空，禁止回退院内处方
         if (hiRxno.isEmpty()) {
+            if (hiRxnoByPrescriptionNo != null) {
+                hiRxnoByPrescriptionNo.put(key, "");
+            }
             return null;
         }
-        return hiRxno.get();
+        String resolved = hiRxno.get();
+        if (hiRxnoByPrescriptionNo != null) {
+            hiRxnoByPrescriptionNo.put(key, resolved);
+        }
+        return resolved;
+    }
+
+    /**
+     * 展开后待门禁/组行的工作单元（先批 overlay 再逐行 assert）。
+     *
+     * @param item              院内收费项
+     * @param slice             上传逻辑行
+     * @param product           产品投影（已含 yb_no）
+     * @param itemDisplayName   展示名
+     * @param definitionForGate 定价定义（可空）
+     */
+    private record OpFeeSliceWork(
+        ChargeItem item,
+        ChsFeeUploadSlice slice,
+        ProductDefinitionCatalogQueryModel product,
+        String itemDisplayName,
+        ChargeItemDefinition definitionForGate) {
     }
 
     /**
@@ -786,6 +922,62 @@ public class ChsOutpatientInsuranceContextLoader implements OpPreSettleContextLo
             return definition.getChargeName().trim();
         }
         return ChsDetailAuditConstants.DEFAULT_SPEC;
+    }
+
+    /**
+     * 汇总本组收费项院内零售合计（父项 total_price；与账单一致）。
+     *
+     * @param chargeItems 收费项
+     * @return 行金额加总（未两位化；分差支持内会 scaleSettle）
+     */
+    private static BigDecimal sumChargeItemRetailTotal(List<ChargeItem> chargeItems) {
+        BigDecimal retail = BigDecimal.ZERO;
+        if (chargeItems == null || chargeItems.isEmpty()) {
+            return retail;
+        }
+        for (ChargeItem item : chargeItems) {
+            if (item == null) {
+                continue;
+            }
+            retail = retail.add(MonetaryAmountSupport.nullToZero(item.getTotalPrice()));
+        }
+        return retail;
+    }
+
+    /** 从已加载产品投影收集国家码（供批量读目录包装）。 */
+    private static LinkedHashSet<String> collectYbNos(
+        Map<String, ProductDefinitionCatalogQueryModel> productMap) {
+        LinkedHashSet<String> codes = new LinkedHashSet<>();
+        if (productMap == null || productMap.isEmpty()) {
+            return codes;
+        }
+        for (ProductDefinitionCatalogQueryModel product : productMap.values()) {
+            if (product != null && isNotEmpty(product.getYbNo())) {
+                codes.add(product.getYbNo().trim());
+            }
+        }
+        return codes;
+    }
+
+    /**
+     * 取目录包装 hint；套餐子项码未预载时补查一次写入缓存。
+     */
+    private NationalCatalogPackHint resolvePackHint(
+        Map<String, NationalCatalogPackHint> packHintByYbNo,
+        String ybNo,
+        Long contractId) {
+        if (isEmpty(ybNo) || packHintByYbNo == null) {
+            return null;
+        }
+        String code = ybNo.trim();
+        if (packHintByYbNo.containsKey(code)) {
+            return packHintByYbNo.get(code);
+        }
+        Map<String, NationalCatalogPackHint> loaded = nationalCatalogItemLookup.loadPackHintsByHilistCodes(
+            contractId, TenantUtils.getCurrentTenantId(), List.of(code));
+        NationalCatalogPackHint hint = loaded.get(code);
+        packHintByYbNo.put(code, hint);
+        return hint;
     }
 
     /**

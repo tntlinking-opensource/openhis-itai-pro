@@ -71,6 +71,31 @@ public interface YbSettlementRecordRepository extends JpaRepository<YbSettlement
         LocalDateTime endExclusive);
 
     /**
+     * 按平台结算时间 {@code setl_time} 查询未删除结算回执（左闭右开）。
+     *
+     * @param tenantId     租户 ID
+     * @param beginAt      起始时间（含）
+     * @param endExclusive 结束时间（不含）
+     */
+    List<YbSettlementRecord> findAllByTenantIdAndIsDeletedFalseAndSetlTimeGreaterThanEqualAndSetlTimeLessThan(
+        Long tenantId,
+        LocalDateTime beginAt,
+        LocalDateTime endExclusive);
+
+    /**
+     * {@code setl_time} 为空时回落创建时间窗（左闭右开），供对账日期口径补齐。
+     *
+     * @param tenantId     租户 ID
+     * @param beginAt      起始时间（含）
+     * @param endExclusive 结束时间（不含）
+     */
+    List<YbSettlementRecord>
+        findAllByTenantIdAndIsDeletedFalseAndSetlTimeIsNullAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+            Long tenantId,
+            LocalDateTime beginAt,
+            LocalDateTime endExclusive);
+
+    /**
      * 按就诊查询最新一笔未删除结算回执。
      *
      * @param encounterId 就诊 ID
@@ -105,4 +130,13 @@ public interface YbSettlementRecordRepository extends JpaRepository<YbSettlement
      * @param tenantId 租户 ID
      */
     List<YbSettlementRecord> findAllByIdInAndTenantIdAndIsDeletedFalse(Collection<Long> ids, Long tenantId);
+
+    /**
+     * 按平台结算号集合与租户批量查询未删除结算回执（3202 结果行补姓名/时间）。
+     *
+     * @param setlIds  平台 setl_id 集合
+     * @param tenantId 租户 ID
+     */
+    List<YbSettlementRecord> findAllBySetlIdInAndTenantIdAndIsDeletedFalse(
+        Collection<String> setlIds, Long tenantId);
 }

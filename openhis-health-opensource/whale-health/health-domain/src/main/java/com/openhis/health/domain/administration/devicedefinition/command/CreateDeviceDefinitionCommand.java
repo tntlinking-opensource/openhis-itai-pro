@@ -71,7 +71,7 @@ public class CreateDeviceDefinitionCommand extends BatchCommand<CreateDeviceDefi
         private String modelNumber;
         /** 高值器材标志（0/1）。 */
         private Integer hvcmFlag;
-        /** 是否为收费耗材标记（0/1）。 */
+        /** 收费耗材标记（0/1；1=收费；界面「不收费耗材」勾选对应 0）。 */
         private Integer chargeableFlag;
         /** 病案结算类型编码。 */
         private String mrSettlementTypeCode;

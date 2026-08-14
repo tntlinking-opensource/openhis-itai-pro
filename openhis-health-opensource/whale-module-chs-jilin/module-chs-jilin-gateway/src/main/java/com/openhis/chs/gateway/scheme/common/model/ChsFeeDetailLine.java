@@ -18,6 +18,10 @@ public class ChsFeeDetailLine {
     @JSONField(name = "feedetl_sn")
     private String feedetlSn;
 
+    /** 原费用流水号；退单（cnt 为负）时必填，对应被退单的 {@code feedetl_sn}。 */
+    @JSONField(name = "init_feedetl_sn")
+    private String initFeedetlSn;
+
     @JSONField(name = "mdtrt_id")
     private String mdtrtId;
 

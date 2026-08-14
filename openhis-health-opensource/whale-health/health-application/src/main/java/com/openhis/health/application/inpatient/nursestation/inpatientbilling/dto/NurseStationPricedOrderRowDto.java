@@ -72,8 +72,11 @@ public class NurseStationPricedOrderRowDto {
     @Schema(description = "总价")
     private BigDecimal totalPrice;
 
-    /** 划价时间。 */
-    @Schema(description = "划价时间")
+    /**
+     * 划价客户可见时间（BR-IP-PRC-030）：诊疗=净剩 Procedure.recorded_time；
+     * 耗材=主发放 dispense_time（无则 prepare_time）。
+     */
+    @Schema(description = "划价客户可见时间（recorded/发放）")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     private LocalDateTime pricedTime;
 

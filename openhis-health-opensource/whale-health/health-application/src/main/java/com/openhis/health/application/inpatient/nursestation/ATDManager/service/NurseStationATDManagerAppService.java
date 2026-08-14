@@ -1045,7 +1045,7 @@ public class NurseStationATDManagerAppService {
             ReleaseBedCommand releaseCommand =
                 nurseStationATDManagerMapper.toReleaseBedCommand(bedId, encounterId, operatorId);
             locationDomainService.releaseBed(releaseCommand);
-            // Asm：事务提交后异步上报汇总径净销售 3505（结算已完成；失败不回滚清床）
+            // Asm：事务提交后异步上报住院净销售合并 3505（结算已完成；失败不回滚清床）
             this.scheduleClearBedSummarySalesUploadAfterCommit(encounterId);
             return nurseStationATDManagerMapper.toClearDischargedBedResponse(encounterId);
         } catch (BusinessException ex) {
@@ -1317,10 +1317,10 @@ public class NurseStationATDManagerAppService {
     }
 
     /**
-     * 清床成功后：事务提交再异步触发汇总径净销售 3505。
+     * 清床成功后：事务提交再异步触发住院净销售合并 3505。
      *
      * <p>扩展未启用时跳过；失败由 CHS 侧记日志，不回滚清床事实。
-     * 办理出院不挂本上报（彼时尚未结算，缺 setl 上下文）。</p>
+     * 办理出院不挂本上报（彼时尚未结算，缺 setl 上下文）；有床路径必须清床后再传以防反结。</p>
      *
      * @param encounterId 就诊主键
      */

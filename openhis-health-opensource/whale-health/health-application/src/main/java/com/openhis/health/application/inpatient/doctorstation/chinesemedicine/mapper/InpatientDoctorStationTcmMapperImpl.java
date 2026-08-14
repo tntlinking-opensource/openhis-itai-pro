@@ -336,6 +336,8 @@ public class InpatientDoctorStationTcmMapperImpl implements InpatientDoctorStati
         cmd.setSortNumber(line.getSortNumber());
         cmd.setDosageInstruction(trimToNull(line.getDosageInstructionCode()));
         cmd.setGenerateSourceEnum(GenerateSource.DOCTOR_PRESCRIPTION.getCode());
+        // Pre：行级费用性质写入中药申请 contract_id（自费等级仅本味）
+        cmd.setContractId(line.getContractId());
         return cmd;
     }
 
@@ -382,6 +384,8 @@ public class InpatientDoctorStationTcmMapperImpl implements InpatientDoctorStati
         if (line.getDosageInstructionCode() != null) {
             cmd.setDosageInstruction(trimToEmpty(line.getDosageInstructionCode()));
         }
+        // Pre：UPDATE 同步本味 contract_id（以行为主）
+        cmd.setContractId(line.getContractId());
         return cmd;
     }
 

@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -52,6 +53,24 @@ public class CatalogNoticeComplianceGate {
      * @return allowed=false 时携带门禁码
      */
     public ComplianceGateResult evaluate(ComplianceGateCommand command) {
+        // Pre：无预加载 Map 时逐条读 overlay（兼容未批查调用方）
+        return this.evaluate(command, null);
+    }
+
+    /**
+     * 评估单行是否允许开单/上传；可传入本批已批量加载的 overlay，避免按行 N+1。
+     *
+     * <p>当 {@code overlayByHilist != null} 且 hilist 非空：Map 无键视为「无 overlay / 放行」，
+     * 与 {@link NationalCatalogOverlayQueryService#getOverlay} 空结果同义，<b>不再</b>回落单条查询
+     *（调用方须保证本批 yb_no 已纳入 {@code mapOverlaysByHilistCodes}）。</p>
+     *
+     * @param command         行级入参
+     * @param overlayByHilist 本批预加载（key=hilistCode）；null 表示走单条 getOverlay
+     * @return allowed=false 时携带门禁码
+     */
+    public ComplianceGateResult evaluate(
+            ComplianceGateCommand command,
+            Map<String, YbNationalCatalogNoticeOverlay> overlayByHilist) {
         // 无租户上下文：结算链不拦截（由上游保证租户）
         if (command == null || command.getTenantId() == null) {
             return ComplianceGateResult.allow();
@@ -69,9 +88,9 @@ public class CatalogNoticeComplianceGate {
             return unmapped;
         }
 
+        // Pre：优先用本批 Map；未预加载时仍单条查询（语义与门禁规则不变）
+        Optional<YbNationalCatalogNoticeOverlay> overlayOpt = this.resolveOverlay(command, hilist, overlayByHilist);
         // 无 overlay：通知未触达该编码，放行
-        Optional<YbNationalCatalogNoticeOverlay> overlayOpt = overlayQueryService.getOverlay(
-            command.getTenantId(), command.getContractId(), command.getListType(), hilist);
         if (overlayOpt.isEmpty()) {
             return ComplianceGateResult.allow();
         }
@@ -94,6 +113,34 @@ public class CatalogNoticeComplianceGate {
     }
 
     /**
+     * 解析本行 overlay：预加载 Map 优先；未预加载则单条读库。
+     *
+     * @param command         行级入参（取 tenant/contract/listType）
+     * @param hilist          已 trim 的国家码；可空
+     * @param overlayByHilist 本批预加载；null 表示未批查
+     * @return overlay；无则 empty
+     */
+    private Optional<YbNationalCatalogNoticeOverlay> resolveOverlay(
+            ComplianceGateCommand command,
+            String hilist,
+            Map<String, YbNationalCatalogNoticeOverlay> overlayByHilist) {
+        // 无国家码：无 overlay 可评
+        if (hilist == null) {
+            return Optional.empty();
+        }
+        // 本批已批量加载：缺键 = 无通知叠加（与 getOverlay 空同义）
+        if (overlayByHilist != null) {
+            YbNationalCatalogNoticeOverlay preloaded = overlayByHilist.get(hilist);
+            if (preloaded == null) {
+                return Optional.empty();
+            }
+            return Optional.of(preloaded);
+        }
+        return overlayQueryService.getOverlay(
+            command.getTenantId(), command.getContractId(), command.getListType(), hilist);
+    }
+
+    /**
      * 仅项目码、无国家码时硬阻断。
      *
      * <p>注意：国家医疗服务价格项目编码本身常以 {@code 01} 开头（如 {@code 012302030030000}），
@@ -105,7 +152,12 @@ public class CatalogNoticeComplianceGate {
         String hilist = trimToNull(command.getHilistCode());
         String project = trimToNull(command.getProjectCode());
         String itemName = trimToNull(command.getItemDisplayName());
-        String itemLabel = itemName == null ? "该收费项目" : "「" + itemName + "」";
+        String itemLabel;
+        if (itemName == null) {
+            itemLabel = "该收费项目";
+        } else {
+            itemLabel = "「" + itemName + "」";
+        }
         // 已有 hilist/yb_no：视为可上传目录编码（含合法的 01* 医疗服务价格国码），不再前缀误杀
         if (hilist != null) {
             return ComplianceGateResult.allow();

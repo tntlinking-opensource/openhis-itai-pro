@@ -77,4 +77,13 @@ public class TcmRxLineDto {
     /** 特殊煎法展示名。 */
     @Schema(description = "特殊煎法展示名")
     private String dosageInstructionText;
+
+    /** 行级费用性质/合同主键（本行 {@code med_medication_request.contract_id}）。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "行级费用性质/合同主键")
+    private Long contractId;
+
+    /** 行级费用性质展示文案（合同分类：自费/医保等）。 */
+    @Schema(description = "行级费用性质展示文案")
+    private String feeNatureText;
 }

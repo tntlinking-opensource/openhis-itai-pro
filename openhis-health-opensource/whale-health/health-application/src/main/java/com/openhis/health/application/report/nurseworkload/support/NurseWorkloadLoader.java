@@ -29,7 +29,8 @@ import java.time.LocalDateTime;
  * 护士工作量读路径 scope 预解析（application/report/nurseworkload/support；AS-RPT-002 IF-RPT-NWL-02～05）。
  *
  * <p>编排 Encounter / ServiceRequest / DeviceDefinition / DeviceDispense 读侧；不写库。
- * 须在调用 {@code ProcedureQueryService} / {@code DeviceDispenseQueryService} 护士工作量方法前执行。</p>
+ * 须在调用 {@code ProcedureQueryService} / {@code DeviceDispenseQueryService} 护士工作量方法前执行。
+ * 诊疗与耗材 IF 可按需只 enrich 本侧 map，避免互扫无关聚合。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -42,12 +43,27 @@ public class NurseWorkloadLoader {
     private final DeviceAutoInventoryDeductSettingResolver deviceAutoInventoryDeductSettingResolver;
 
     /**
-     * 预解析就诊 scope、耗材开关及 SR/耗材定义 enrich map。
+     * 预解析就诊 scope，并 enrich 诊疗类目与耗材 hvcm（兼容旧调用，两侧均加载）。
      *
      * @param query 须含 {@code encounterScope}、{@code dateFrom}/{@code dateTo}
      * @throws IllegalArgumentException 参数非法（与 AS EX-RPT-NWL-102 语义对齐，由应用层转换提示语）
      */
     public void prepareNurseWorkloadQueryScopes(NurseWorkloadPageQuery query) {
+        this.prepareNurseWorkloadQueryScopes(query, true, true);
+    }
+
+    /**
+     * 按需预解析 scope：仅加载当前 IF 需要的跨聚合 enrich map。
+     *
+     * @param query                 须含 {@code encounterScope}、{@code dateFrom}/{@code dateTo}
+     * @param needExecutionCategory {@code true} 时批量 enrich SR.category_enum（诊疗 IF）
+     * @param needConsumableHvcm    {@code true} 时批量 enrich 耗材 hvcm_flag（耗材 IF）
+     * @throws IllegalArgumentException 参数非法
+     */
+    public void prepareNurseWorkloadQueryScopes(
+        NurseWorkloadPageQuery query,
+        boolean needExecutionCategory,
+        boolean needConsumableHvcm) {
         // Gate：报表必填筛选项，非法直接拒绝（Support 层抛 IAE，应用层映射用户提示）
         if (query == null) {
             throw new IllegalArgumentException("nurse workload query is required");
@@ -76,11 +92,19 @@ public class NurseWorkloadLoader {
             query.setHvcmFlagByDeviceDefId(Map.of());
             return;
         }
-        // Pre：诊疗汇总/明细所需的 SR.category_enum（跨聚合读，经 ServiceRequest QS）
-        query.setCategoryEnumByServiceRequestId(
-            this.serviceRequestQueryService.mapCategoryEnumByEncounterIds(encounterScope));
-        // Pre：耗材汇总/明细所需的 hvcm_flag（先取候选发放行再批量查 DeviceDefinition）
-        query.setHvcmFlagByDeviceDefId(this.buildHvcmFlagMapForConsumableCandidates(query));
+        // Pre：诊疗 IF 才拉 SR.category_enum；耗材 IF 跳过，避免无谓词扫全就诊 SR
+        if (needExecutionCategory) {
+            query.setCategoryEnumByServiceRequestId(
+                this.serviceRequestQueryService.mapCategoryEnumByEncounterIds(encounterScope));
+        } else {
+            query.setCategoryEnumByServiceRequestId(Map.of());
+        }
+        // Pre：耗材 IF 才拉候选发放 + hvcm；诊疗 IF 跳过
+        if (needConsumableHvcm) {
+            query.setHvcmFlagByDeviceDefId(this.buildHvcmFlagMapForConsumableCandidates(query));
+        } else {
+            query.setHvcmFlagByDeviceDefId(Map.of());
+        }
     }
 
     /**

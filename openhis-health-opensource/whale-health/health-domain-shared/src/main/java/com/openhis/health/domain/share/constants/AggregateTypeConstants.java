@@ -312,7 +312,13 @@ public interface AggregateTypeConstants {
     /**
      * 病案主档聚合类型（领域事件 {@code aggregateType}）。
      *
-     * <p>值 {@code "case_record"} 为 Wave 1 定稿，与短码 {@code "CR"} 并存语义；事件载荷已发布，暂不改为短码以免破坏订阅方匹配。</p>
+     * <p>值 {@code "case_record"} 为 Wave 1 定稿，与短码 {@link #CASE_RECORD_MEDCASNO} 并存语义；
+     * 事件载荷已发布，暂不改为短码以免破坏订阅方匹配。</p>
      */
     String CASE_RECORD = "case_record";
+
+    /**
+     * 病案号 {@code medcasno} 发号前缀（B.10.9 按日流水：前缀 + yyyy-MM-dd + 4 位序号）。
+     */
+    String CASE_RECORD_MEDCASNO = "CR";
 }

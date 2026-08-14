@@ -75,6 +75,26 @@ public final class MonetaryAmountSupport {
     }
 
     /**
+     * 中药饮片/中草药单价 UI 展示刻度：3 位 HALF_UP（非入账权威，不替代 {@link #scaleCalc(BigDecimal)}）。
+     *
+     * <p>适用：<strong>药品目录（药典）维护页</strong>进售价回显；支付/发票总价仍用 {@link #scaleSettle(BigDecimal)}。
+     * 本方法不改写库房单据等其它消费方。</p>
+     *
+     * @param value 原始单价（可为 null）
+     * @return 3 位展示刻度金额；null 视为 0
+     */
+    public static BigDecimal scaleTcmUnitPriceDisplay(BigDecimal value) {
+        if (value == null) {
+            return BigDecimal.ZERO.setScale(
+                ChargeItemAmountScaleConstants.CHARGE_MONETARY_TCM_UNIT_PRICE_DISPLAY_SCALE,
+                MONETARY_ROUNDING);
+        }
+        return value.setScale(
+            ChargeItemAmountScaleConstants.CHARGE_MONETARY_TCM_UNIT_PRICE_DISPLAY_SCALE,
+            MONETARY_ROUNDING);
+    }
+
+    /**
      * 单价 × 数量 → 行金额（6 位 HALF_UP）。
      *
      * @param unitPrice 单价
@@ -133,11 +153,15 @@ public final class MonetaryAmountSupport {
     }
 
     /**
-     * 拆零最小单位数量 + 每包装单位价 → 行总额（满包×包装价 + 余量×拆零单价，BR-INV-DTL-007）。
+     * 拆零最小单位数量 + 每包装单位价 → 行总额（BR-INV-DTL-007 / BR-MON-PKG-001）。
+     *
+     * <p><strong>硬约束</strong>：金额锚点始终是<strong>包装价</strong>。
+     * 满包部分 = {@code 整包数 × 包装价}；零头部分 = {@code 包装价 × 余量 / ratio}（单步线性）。
+     * <strong>禁止</strong>先把包装价除成「拆零单价」再乘数量（含零头）——该路径会产生中间舍入尾差，库存估值严禁。</p>
      *
      * @param splitQuantity     拆零最小单位数量
-     * @param packageUnitRatio  包装单位相对拆零倍数
-     * @param packageUnitPrice  每包装单位单价
+     * @param packageUnitRatio  包装单位相对拆零倍数（1 包装 = ratio 拆零）
+     * @param packageUnitPrice  每包装单位单价（非拆零单价）
      * @return 行总额（6 位）；数量或单价缺失时 null
      */
     public static BigDecimal computeSplitQuantityLineTotal(
@@ -149,6 +173,7 @@ public final class MonetaryAmountSupport {
             return null;
         }
         BigDecimal ratio = resolvePositivePackageUnitRatio(packageUnitRatio);
+        // 换算比非法时无法按包装锚计价
         if (ratio.compareTo(BigDecimal.ZERO) <= 0) {
             return null;
         }
@@ -156,13 +181,19 @@ public final class MonetaryAmountSupport {
         BigDecimal wholePackages = parts[0];
         BigDecimal remainderSplits = parts[1];
         BigDecimal scaledPackagePrice = scaleCalc(packageUnitPrice);
-        BigDecimal perSplit = scaledPackagePrice.divide(
-            ratio,
-            ChargeItemAmountScaleConstants.CHARGE_MONETARY_SCALE,
-            MONETARY_ROUNDING
-        );
-        BigDecimal total = wholePackages.multiply(scaledPackagePrice).add(remainderSplits.multiply(perSplit));
-        return scaleCalc(total);
+        // 满包：整包数 × 包装价（绝不经拆零单价）
+        BigDecimal wholePart = wholePackages.multiply(scaledPackagePrice);
+        BigDecimal remainderPart = BigDecimal.ZERO;
+        // 零头：包装价 × 余量 / ratio，单步线性，禁止先派生拆零单价再乘
+        if (remainderSplits.compareTo(BigDecimal.ZERO) != 0) {
+            remainderPart = scaledPackagePrice.multiply(remainderSplits)
+                .divide(
+                    ratio,
+                    ChargeItemAmountScaleConstants.CHARGE_MONETARY_SCALE,
+                    MONETARY_ROUNDING
+                );
+        }
+        return scaleCalc(wholePart.add(remainderPart));
     }
 
     /**

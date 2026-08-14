@@ -17,13 +17,17 @@ import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.query.ProductDefinitionCatalogPageQuery;
 import com.openhis.health.domain.share.query.ProductDefinitionPurchasePageQuery;
 import com.openhis.health.domain.share.utils.KeywordExactFirstOrderSupport;
+import com.openhis.health.domain.share.utils.IdInQueryChunkSupport;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
+import com.openhis.health.domain.workflow.inventoryitem.entity.InventoryItem;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.CriteriaQuery;
 import jakarta.persistence.criteria.Order;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
+import jakarta.persistence.criteria.Subquery;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -33,6 +37,8 @@ import org.springframework.data.jpa.domain.Specification;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -46,7 +52,10 @@ import java.util.Set;
  *
  * <p>职责：目录分页、详情、导入导出占位与可编辑性门控；查询条件下推至 {@link Specification} 与分页 API，不写库。</p>
  *
- * <p>聚合边界：仅本聚合 {@link MedicationDefinitionRepository}。</p>
+ * <p>聚合边界：仅本聚合 {@link MedicationDefinitionRepository} 持久化；
+ * 目录 {@code positiveQuantityOnly} 仅用 Criteria EXISTS 判定 {@code wkf_inventory_item} 是否存在可用正库存行，
+ * 可选按 {@code positiveQuantityLocationIds} 收窄库位（医生站候选发药库）；
+ * <strong>不</strong>注入库存 Repository（读侧存在性过滤，保证 limit/offset 前过滤）。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -129,6 +138,9 @@ public class MedicationDefinitionQueryService {
         purchase.setManufacturer(query.getManufacturer());
         purchase.setKeyword(query.getKeyword());
         purchase.setPrepickedProductKeys(query.getPrepickedProductKeys());
+        purchase.setPositiveQuantityOnly(query.getPositiveQuantityOnly());
+        // 目录「只看库存>0」库位收窄与采购 Spec 共用 EXISTS
+        purchase.setPositiveQuantityLocationIds(query.getPositiveQuantityLocationIds());
         purchase.setPageNo(query.getPageNo());
         purchase.setPageSize(query.getPageSize());
         purchase.setSortField(query.getSortField());
@@ -301,7 +313,7 @@ public class MedicationDefinitionQueryService {
     }
 
     /**
-     * 药品目录维护分页谓词：未删除 + 分类 + 关键字（名称/助记码/业务号）。
+     * 药品目录维护分页谓词：未删除 + 分类 + 基药标识 + 关键字（名称/助记码/业务号）。
      *
      * @param query 目录查询条件
      * @return JPA Specification
@@ -313,6 +325,10 @@ public class MedicationDefinitionQueryService {
             if (query != null) {
                 if (StringUtils.isNotEmpty(query.getCategoryCode())) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.CATEGORY_CODE), query.getCategoryCode().trim()));
+                }
+                // 基药筛选：仅在入参非空时等值匹配 basic_flag（null 不限；与列表/导出同口径）
+                if (query.getBasicFlag() != null) {
+                    predicates.add(cb.equal(root.get(FieldNameConstants.BASIC_FLAG), query.getBasicFlag()));
                 }
                 if (StringUtils.isNotEmpty(query.getKeyword())) {
                     String trimmed = query.getKeyword().trim();
@@ -383,11 +399,62 @@ public class MedicationDefinitionQueryService {
                 Predicate keywordPred = this.buildPurchaseKeywordPredicate(root, cb, query.getKeyword());
                 Predicate prepPred = this.buildMedicationPrepickedPredicate(root, cb, query.getPrepickedProductKeys());
                 this.appendKeywordOrPrepicked(predicates, cb, keywordPred, prepPred);
+                // 医生站选品「只看库存>0」：须在分页 limit/offset 前过滤，禁止前端筛当前页
+                if (Boolean.TRUE.equals(query.getPositiveQuantityOnly())) {
+                    predicates.add(this.buildPositiveAvailableInventoryExistsPredicate(
+                        root, cq, cb, TableNameConstants.MED_MEDICATION_DEFINITION, query.getPositiveQuantityLocationIds()));
+                }
                 // B.2.1：有关键字时精确命中置顶（与 LIKE 列同集合）；次级创建时间倒序
                 this.applyPurchaseKeywordExactFirstOrder(root, cq, cb, query.getKeyword());
             }
             return cb.and(predicates.toArray(Predicate[]::new));
         };
+    }
+
+    /**
+     * 药品定义存在「可用正库存」行：ACTIVE、quantity&gt;0、未过期、未删除。
+     *
+     * <p>可选按库位集合收窄（医生站候选发药库位，与目录可开立库存展示对齐）；
+     * {@code locationIds == null} 时不按库位收窄（采购/进货全院账面口径）；
+     * 非 null 且空列表时恒不命中（无可发药库位）。</p>
+     *
+     * @param root         药品定义根
+     * @param cq           外层查询（挂 Subquery）
+     * @param cb           CriteriaBuilder
+     * @param itemTable    库存 item_table（药品定义表名）
+     * @param locationIds  可选库位收窄；null=不收窄
+     * @return EXISTS 谓词；库位列表为空时返回恒假
+     */
+    private Predicate buildPositiveAvailableInventoryExistsPredicate(
+        Root<MedicationDefinition> root,
+        CriteriaQuery<?> cq,
+        CriteriaBuilder cb,
+        String itemTable,
+        List<Long> locationIds
+    ) {
+        // 医生站已解析候选库位但结果为空：无可开立库存维度，药定义一律不命中
+        if (locationIds != null && locationIds.isEmpty()) {
+            return cb.disjunction();
+        }
+        Subquery<Long> sub = cq.subquery(Long.class);
+        Root<InventoryItem> inv = sub.from(InventoryItem.class);
+        sub.select(inv.get(FieldNameConstants.ID));
+        LocalDateTime now = LocalDateTime.now();
+        List<Predicate> where = new ArrayList<>();
+        where.add(cb.isFalse(inv.get(FieldNameConstants.IS_DELETED)));
+        where.add(cb.equal(inv.get(FieldNameConstants.ITEM_TABLE), itemTable));
+        where.add(cb.equal(inv.get(FieldNameConstants.ITEM_ID), root.get(FieldNameConstants.ID)));
+        where.add(cb.equal(inv.get(FieldNameConstants.INVENTORY_STATUS_ENUM), PublicationStatus.ACTIVE.getCode()));
+        where.add(cb.greaterThan(inv.get(FieldNameConstants.QUANTITY), BigDecimal.ZERO));
+        where.add(cb.or(
+            cb.isNull(inv.get(FieldNameConstants.EXPIRATION_DATE)),
+            cb.greaterThan(inv.get(FieldNameConstants.EXPIRATION_DATE), now)));
+        // 有候选库位时与目录展示同口径收窄，避免药库有量、药房为 0 仍被「只看库存>0」放行
+        if (locationIds != null) {
+            where.add(inv.get(FieldNameConstants.LOCATION_ID).in(locationIds));
+        }
+        sub.where(where.toArray(Predicate[]::new));
+        return cb.exists(sub);
     }
 
     /**
@@ -630,6 +697,8 @@ public class MedicationDefinitionQueryService {
     /**
      * 按主键集合批量加载药品定义（医嘱列表预热等场景）。
      *
+     * <p>主键过多时按 {@link com.openhis.health.domain.share.constants.GeneralSharedConstants#ID_IN_QUERY_CHUNK_SIZE} 分批。</p>
+     *
      * @param ids 主键集合
      * @return 命中实体列表；入参为空时返回空列表
      */
@@ -637,7 +706,15 @@ public class MedicationDefinitionQueryService {
         if (ids == null || ids.isEmpty()) {
             return Collections.emptyList();
         }
-        return medicationDefinitionRepository.findAllById(ids);
+        return IdInQueryChunkSupport.loadByIdInChunks(
+            ids,
+            chunkIds -> {
+                List<MedicationDefinition> rows = medicationDefinitionRepository.findAllById(chunkIds);
+                if (rows == null) {
+                    return Collections.emptyList();
+                }
+                return rows;
+            });
     }
 
     /**
@@ -878,6 +955,30 @@ public class MedicationDefinitionQueryService {
         List<MedicationDefinition> rows = this.medicationDefinitionRepository.findAll(specification);
         List<Long> ids = new ArrayList<>();
         // Loop：收集命中注射标志的目录主键，供应用层写入处方查询 resolved 字段
+        for (MedicationDefinition row : rows) {
+            if (row != null && row.getId() != null) {
+                ids.add(row.getId());
+            }
+        }
+        return ids;
+    }
+
+    /**
+     * 按基药标识解析药品定义主键（库存明细基药筛选预解析，B.6.4 禁止 inventory 跨包 JOIN）。
+     *
+     * @param basicFlag {@code true}/{@code false}；{@code null} 时返回空列表
+     * @return 未删除且 {@code basic_flag} 等于入参的目录主键列表
+     */
+    public List<Long> listIdsByBasicFlag(Boolean basicFlag) {
+        if (basicFlag == null) {
+            return Collections.emptyList();
+        }
+        Specification<MedicationDefinition> specification = (root, criteriaQuery, cb) -> cb.and(
+            cb.isFalse(root.get(FieldNameConstants.IS_DELETED)),
+            cb.equal(root.get(FieldNameConstants.BASIC_FLAG), basicFlag));
+        List<MedicationDefinition> rows = this.medicationDefinitionRepository.findAll(specification);
+        List<Long> ids = new ArrayList<>();
+        // Loop：收集命中基药标识的目录主键，供库存明细 InventoryCatalogFilter 写入 resolved 字段
         for (MedicationDefinition row : rows) {
             if (row != null && row.getId() != null) {
                 ids.add(row.getId());

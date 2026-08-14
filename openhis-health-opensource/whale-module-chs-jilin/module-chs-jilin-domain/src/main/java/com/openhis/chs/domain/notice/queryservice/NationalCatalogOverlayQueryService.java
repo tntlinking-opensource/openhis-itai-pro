@@ -51,6 +51,16 @@ public class NationalCatalogOverlayQueryService {
 
     /**
      * 按编码批量取 overlay；key=hilistCode。
+     *
+     * <p>pick 规则与 {@link #getOverlay} <b>完全一致</b>：入参 {@code listType} 原样传入
+     * {@link CatalogNoticeOverlayRules#pickBestOverlay}；<b>禁止</b>在 listType 为空时用候选行的
+     * listType 回填（否则会改变契约优先于「无品类过滤」的命中结果，导致结算门禁与单条路径不一致）。</p>
+     *
+     * @param tenantId    租户
+     * @param contractId  契约
+     * @param listType    品类；可空（与 getOverlay 同义）
+     * @param hilistCodes 国家目录编码集合
+     * @return hilistCode → 命中 overlay；无命中者不入 Map
      */
     public Map<String, YbNationalCatalogNoticeOverlay> mapOverlaysByHilistCodes(
             Long tenantId,
@@ -80,15 +90,11 @@ public class NationalCatalogOverlayQueryService {
             }
             byCode.computeIfAbsent(row.getHilistCode(), k -> new ArrayList<>()).add(row);
         }
+        // 与 getOverlay 同口径：listType 原样传入，空则不按品类先过滤
         String lt = trimToNull(listType);
         for (Map.Entry<String, List<YbNationalCatalogNoticeOverlay>> entry : byCode.entrySet()) {
-            String code = entry.getKey();
-            String rowListType = lt;
-            if (rowListType == null && !entry.getValue().isEmpty()) {
-                rowListType = entry.getValue().get(0).getListType();
-            }
-            CatalogNoticeOverlayRules.pickBestOverlay(entry.getValue(), contractId, rowListType)
-                .ifPresent(o -> result.put(code, o));
+            CatalogNoticeOverlayRules.pickBestOverlay(entry.getValue(), contractId, lt)
+                .ifPresent(o -> result.put(entry.getKey(), o));
         }
         return result;
     }

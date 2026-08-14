@@ -4,7 +4,7 @@
  */
 package com.openhis.health.application.shared.inpatient;
 
-import com.openhis.health.domain.administration.account.service.AccountDomainService;
+import com.openhis.health.application.shared.financial.EncounterChargeAccountOpener;
 import com.openhis.health.domain.administration.encounter.command.AdmissionConditionItem;
 import com.openhis.health.domain.administration.encounter.command.BatchUpsertEncounterDiagnosisAssociationCommand;
 import com.openhis.health.domain.administration.encounter.command.RegisterInpatientEncounterCommand;
@@ -13,6 +13,8 @@ import com.openhis.health.domain.administration.encounter.queries.model.Encounte
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDiagnosisQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterDomainService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
+import com.openhis.health.domain.financial.contract.entity.Contract;
+import com.openhis.health.domain.financial.contract.service.ContractQueryService;
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
 import com.openhis.health.domain.share.constants.BusinessSequenceConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
@@ -26,16 +28,21 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 住院登记写路径跨聚合编排：开立登记账户与入院诊断（仅 adm_encounter_diagnosis，不经 Condition）。
+ *
+ * <p>账户口径与门诊挂号一致：人人个人现金自费户；省/市医保或工伤另开医保户（预交金仍进个人现金户）。</p>
  */
 @Component
 @RequiredArgsConstructor
 public class EncounterInpatientAdmissionOrchestrator {
 
-    /** 账户写侧领域服务（住院登记个人现金户开立）。 */
-    private final AccountDomainService accountDomainService;
+    /** 就诊挂账双账户幂等开立（个人现金自费 + 可选医保户）。 */
+    private final EncounterChargeAccountOpener encounterChargeAccountOpener;
+    /** 费用性质读侧：判断入院合同是否需并行医保户。 */
+    private final ContractQueryService contractQueryService;
     /** 业务序列服务（中医病证组号 {@code tcm_syndrome_group} 分配）。 */
     private final BusinessSequenceService businessSequenceService;
     /** 就诊写侧领域服务（就诊诊断关联 upsert）。 */
@@ -57,11 +64,34 @@ public class EncounterInpatientAdmissionOrchestrator {
                 throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "住院登记缺少就诊标识");
             }
             Long patientId = this.resolvePatientId(command, encounterId);
-            accountDomainService.openInpatientRegAccount(
-                patientId, encounterId, item.getContractNo(), operatorId);
+            // Cmd：个人现金自费户必开；医保/工伤入院另开 MEDICAL_INSURANCE（contract_no=入院费用性质）
+            String contractNo = item.getContractNo();
+            boolean openMedicalInsurance = this.resolveOpenMedicalInsurance(contractNo);
+            encounterChargeAccountOpener.ensureEncounterChargeAccounts(
+                patientId, encounterId, contractNo, openMedicalInsurance, item.getInsutype(), operatorId);
             this.applyPlannedRegistrationAdmissionDiagnosisPolicy(
                 patientId, encounterId, item.getAdmissionDiagnoses(), operatorId);
         }
+    }
+
+    /**
+     * 入院费用性质是否需并行医保账户。
+     *
+     * @param contractNo 入院合同 bus_no
+     * @return 需开 MEDICAL_INSURANCE 时 true
+     */
+    private boolean resolveOpenMedicalInsurance(String contractNo) {
+        if (StringUtils.isEmpty(contractNo)) {
+            return false;
+        }
+        Optional<Contract> contractOpt =
+            contractQueryService.findOptionalContractEntityByBusNo(contractNo.trim());
+        if (contractOpt.isEmpty()) {
+            return false;
+        }
+        Contract contract = contractOpt.get();
+        return encounterChargeAccountOpener.needsParallelMedicalInsuranceAccount(
+            contract.getYbFlag(), contract.getCategoryEnum());
     }
 
     /**

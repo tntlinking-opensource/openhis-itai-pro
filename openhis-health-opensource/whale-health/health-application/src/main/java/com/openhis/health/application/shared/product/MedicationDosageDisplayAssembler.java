@@ -19,12 +19,17 @@ import java.util.Objects;
  * （{@code doseUnitRatio} 表示「1 最小单位对应多少计量单位」，与开立侧 {@code doseBandConvertK} 同源）。
  * 计量单位与最小单位相同（比 code，缺则比展示名）时不拼括号。</p>
  *
- * <p>示例：{@code 1支(2ml)/次}；单位相同时 {@code 1片/次}。</p>
+ * <p>小数位：计量（剂量单位）展示固定 3 位；最小单位展示 2 位（与开立页换算展示对齐）。</p>
+ *
+ * <p>示例：{@code 0.75片(35.625毫克)/次}；单位相同时 {@code 1片/次}。</p>
  */
 public final class MedicationDosageDisplayAssembler {
 
-    /** 剂量数量展示小数位（与护士站原 formatDosageDisplay 一致）。 */
-    private static final int DOSE_DISPLAY_SCALE = 4;
+    /** 计量（剂量单位）展示小数位。 */
+    private static final int DOSE_DISPLAY_SCALE = 3;
+
+    /** 最小单位（拆零）展示小数位。 */
+    private static final int SPLIT_DISPLAY_SCALE = 2;
 
     /** 工具类禁止实例化。 */
     private MedicationDosageDisplayAssembler() {
@@ -48,7 +53,7 @@ public final class MedicationDosageDisplayAssembler {
         if (dose == null) {
             return MedicationDosageDisplayResult.empty();
         }
-        String doseText = formatPlainQuantity(dose);
+        String doseText = formatDoseQuantity(dose);
         String doseUnitName = ProductDefinitionCatalogUnitBandsAssembler.resolveDoseUnitDisplayName(
             doseUnitLabelByCode, doseUnitCode, productRow);
         String dosePart = doseText;
@@ -81,17 +86,17 @@ public final class MedicationDosageDisplayAssembler {
         }
 
         // 开立口径：拆零量 = 剂量 ÷ doseUnitRatio（1 最小单位对应 ratio 个计量单位）
-        BigDecimal splitDose = dose.divide(ratio, DOSE_DISPLAY_SCALE, RoundingMode.HALF_UP);
-        String splitText = formatPlainQuantity(splitDose);
+        BigDecimal splitDose = dose.divide(ratio, SPLIT_DISPLAY_SCALE, RoundingMode.HALF_UP);
+        String splitText = formatSplitQuantity(splitDose);
         String splitLabel = splitUnitName;
         if (StringUtils.isEmpty(splitLabel)) {
             splitLabel = splitUnitCode;
         }
-        // 主显最小单位，括号内为计量单位：1支(2ml)/次
+        // 主显最小单位，括号内为计量单位：0.75片(35.625毫克)/次
         String dosageDisplay = appendPerDoseSuffix(splitText + splitLabel + "(" + dosePart + ")");
         return MedicationDosageDisplayResult.of(
             dosageDisplay,
-            splitDose.stripTrailingZeros(),
+            splitDose,
             splitUnitCode,
             splitUnitName);
     }
@@ -131,13 +136,25 @@ public final class MedicationDosageDisplayAssembler {
     }
 
     /**
-     * 数量去尾零纯文本（避免科学计数）。
+     * 计量（剂量单位）数量展示：固定 3 位小数。
      *
      * @param qty 数量
      * @return 纯数字串
      */
-    private static String formatPlainQuantity(BigDecimal qty) {
-        return qty.setScale(DOSE_DISPLAY_SCALE, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
+    private static String formatDoseQuantity(BigDecimal qty) {
+        return qty.setScale(DOSE_DISPLAY_SCALE, RoundingMode.HALF_UP).toPlainString();
+    }
+
+    /**
+     * 最小单位数量展示：2 位小数并去尾零（如 1.00→1、0.75→0.75）。
+     *
+     * @param qty 数量
+     * @return 纯数字串
+     */
+    private static String formatSplitQuantity(BigDecimal qty) {
+        return qty.setScale(SPLIT_DISPLAY_SCALE, RoundingMode.HALF_UP)
+            .stripTrailingZeros()
+            .toPlainString();
     }
 
     /**

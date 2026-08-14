@@ -50,4 +50,14 @@ public class PageNurseConsumableWorkloadDetailRequest {
     /** 页大小。 */
     @Schema(description = "页大小")
     private Integer pageSize;
+
+    /** 开立科室主键（可选）。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "开立科室主键（可选）")
+    private Long requestingOrgId;
+
+    /** 科室主键（遗留；请用 requestingOrgId）。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "科室主键（遗留；请用 requestingOrgId）")
+    private Long organizationId;
 }

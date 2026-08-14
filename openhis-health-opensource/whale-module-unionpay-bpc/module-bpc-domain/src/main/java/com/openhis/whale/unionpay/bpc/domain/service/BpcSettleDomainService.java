@@ -45,6 +45,8 @@ public class BpcSettleDomainService {
     public PrepareConsumerScanResult prepareConsumerScan(PrepareConsumerScanCommand command) {
         requirePaymentId(command.getPaymentId());
         requireAmount(command.getAmount());
+        // Gate：同支付草稿已有未退货 SUCCESS 消费单时禁止再发 C，避免银联半成功后重复扣款。
+        this.assertNoOpenSuccessConsumerScan(command.getPaymentId());
         String fixmedinsCode = BpcContractConfigLoader.resolveFixmedinsCode(command.getFixmedinsCode());
         if (!StringUtils.hasText(fixmedinsCode)) {
             throw new BusinessException(
@@ -92,6 +94,8 @@ public class BpcSettleDomainService {
                 .orElseThrow(() -> new BusinessException("BPC_ORDER_NOT_FOUND", "BPC 订单不存在"));
 
         if (BpcOrderStatus.SUCCESS.getCode().equals(order.getStatus())) {
+            // Pre：幂等补结算时按院内下单金额纠偏（曾被银行优惠实付覆盖的行）。
+            this.retainOrderAmountIgnoringBankDiscount(order, command.getTxnAmtFen(), command.getAmount());
             this.syncOrderPaymentId(order, command);
             order.setUpdatedAt(LocalDateTime.now());
             bpcOrderRepository.save(order);
@@ -113,9 +117,8 @@ public class BpcSettleDomainService {
         order.setPayType(command.getPayType());
         order.setRespCode(command.getRespCode());
         order.setRespMsg(command.getRespMsg());
-        if (command.getTxnAmtFen() != null) {
-            order.setTxnAmtFen(command.getTxnAmtFen());
-        }
+        // Cmd：银行优惠实付可小于下单，BPC 金额仍写院内下单分（1000），不写 999.88。
+        this.retainOrderAmountIgnoringBankDiscount(order, command.getTxnAmtFen(), command.getAmount());
         this.syncOrderPaymentId(order, command);
         order.setUpdatedAt(LocalDateTime.now());
         bpcOrderRepository.save(order);
@@ -132,6 +135,45 @@ public class BpcSettleDomainService {
         order.setPaymentId(command.getPaymentId());
         if (command.getDetailIndex() != null) {
             order.setDetailIndex(command.getDetailIndex());
+        }
+    }
+
+    /**
+     * 银行/渠道优惠：回传实付可小于院内下单；BPC {@code txn_amt_fen} 一律保留下单分，禁止改写为实付。
+     *
+     * <p>优惠与院内应收无关；补结算幂等时若历史行曾被实付覆盖，按 {@code orderAmountYuan} 纠偏回下单分。</p>
+     *
+     * @param order             预下单/已成功 BPC 订单
+     * @param returnedTxnAmtFen Win 回传实付分；null 表示不做实付比对
+     * @param orderAmountYuan   院内扫码行金额（元）；非空时作为权威下单分
+     * @throws BusinessException 回传分额无效或大于院内下单
+     */
+    private void retainOrderAmountIgnoringBankDiscount(
+        BpcOrder order,
+        Long returnedTxnAmtFen,
+        BigDecimal orderAmountYuan) {
+        long orderFen;
+        if (orderAmountYuan != null) {
+            orderFen = toFen(orderAmountYuan);
+            order.setTxnAmtFen(orderFen);
+        } else {
+            Long preparedFen = order.getTxnAmtFen();
+            if (preparedFen == null || preparedFen <= 0L) {
+                throw new BusinessException("BPC_AMOUNT_INVALID", "预下单金额无效");
+            }
+            orderFen = preparedFen.longValue();
+        }
+        if (returnedTxnAmtFen == null) {
+            return;
+        }
+        if (returnedTxnAmtFen <= 0L) {
+            throw new BusinessException("BPC_AMOUNT_INVALID", "银联回传金额无效");
+        }
+        // Gate：仅拦超额；实付偏小视为银行优惠，忽略不落库。
+        if (returnedTxnAmtFen > orderFen) {
+            throw new BusinessException(
+                "BPC_AMOUNT_MISMATCH",
+                "银联回传金额大于预下单金额");
         }
     }
 
@@ -281,6 +323,48 @@ public class BpcSettleDomainService {
         requirePaymentId(paymentId);
         return bpcOrderRepository.findByTenantIdAndPaymentIdAndIsDeletedFalseOrderByCreatedAtDesc(
                 TenantUtils.getCurrentTenantId(), paymentId);
+    }
+
+    /**
+     * 同支付草稿是否已存在未退货的成功消费单（半成功补结算场景禁止再 prepare）。
+     *
+     * @param paymentId 支付草稿/支付单主键
+     * @return true 表示存在可补结算的 SUCCESS 消费单
+     */
+    @Transactional(readOnly = true)
+    public boolean hasOpenSuccessConsumerScanOrder(Long paymentId) {
+        requirePaymentId(paymentId);
+        List<BpcOrder> orders = this.getOrdersByPayment(paymentId);
+        for (BpcOrder order : orders) {
+            if (order == null) {
+                continue;
+            }
+            if (!BpcOrderStatus.SUCCESS.getCode().equals(order.getStatus())) {
+                continue;
+            }
+            if (!BpcTranType.CONSUMER_SCAN.getCode().equals(order.getTranType())) {
+                continue;
+            }
+            if (!StringUtils.hasText(order.getMerTradeNo()) || !StringUtils.hasText(order.getTradeNo())) {
+                continue;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Gate：已有 SUCCESS 消费单时拒绝新 C，提示补结算或银联退货后再收。
+     *
+     * @param paymentId 支付草稿主键
+     */
+    private void assertNoOpenSuccessConsumerScan(Long paymentId) {
+        if (!this.hasOpenSuccessConsumerScanOrder(paymentId)) {
+            return;
+        }
+        throw new BusinessException(
+            "BPC_SCAN_ALREADY_SUCCESS",
+            "该支付草稿银联已扣款成功，请补结算落账或先银联退货，禁止重复扫码");
     }
 
     private BpcOrder findOrder(Long tenantId, QueryBpcOrderCommand command) {

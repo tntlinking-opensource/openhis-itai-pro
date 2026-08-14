@@ -55,7 +55,7 @@ import org.springframework.stereotype.Component;
  * <p><b>追溯码</b>：策略与上报前校验内聚于 {@code *UploadContextLoader} 与 Orchestrator，Health 仅调用本 SPI。</p>
  *
  * <p><b>SPI 接口</b>：{@link InventoryThirdPartyUploadExtension}</p>
- * <p><b>Health 调用方</b>：门诊/住院发退药、库房进销存、清床汇总径净销售、反结/召回冲销</p>
+ * <p><b>Health 调用方</b>：门诊发退药、库房进销存、住院清床/无床直结净销售合并、反结/召回冲销（住院发/退药当时不上报）</p>
  */
 @Component
 @Primary
@@ -100,7 +100,7 @@ public class InventoryThirdPartyUploadExtensionImpl implements InventoryThirdPar
     }
 
     /**
-     * 【3505】清床后汇总径净销售上报（异步）。
+     * 【3505】清床/无床直结后住院净销售合并上报（异步）。
      *
      * @param command 就诊与可选契约
      */
@@ -110,13 +110,13 @@ public class InventoryThirdPartyUploadExtensionImpl implements InventoryThirdPar
             return;
         }
         CapturedOperator operator = captureOperator();
-        // Cmd：委托异步 Runner，立即返回，不阻塞清床 HTTP
+        // Cmd：委托异步 Runner，立即返回，不阻塞清床/结算 HTTP
         uploadAsyncRunner.uploadAfterDischargeSummarySales(
             currentTenantId(), operator.operatorId(), operator.operatorName(), toDischargeSummaryCommand(command));
     }
 
     /**
-     * 【3506】反结/召回冲销清床汇总径净销售（异步；无成功清床 3505 时 no-op）。
+     * 【3506】反结/召回冲销清床或无床直结合并净销售（异步；无成功 3505 时 no-op）。
      *
      * @param command 就诊与可选契约
      */
@@ -136,7 +136,7 @@ public class InventoryThirdPartyUploadExtensionImpl implements InventoryThirdPar
     }
 
     /**
-     * 清床轻门禁：存在未冲销的成功清床汇总 3505 时 true。
+     * 清床轻门禁：存在未冲销的成功清床/无床直结合并 3505 时 true。
      *
      * @param encounterId 就诊主键
      * @return 存在未冲销销售时 true
@@ -296,10 +296,10 @@ public class InventoryThirdPartyUploadExtensionImpl implements InventoryThirdPar
     }
 
     /**
-     * 将清床汇总径上报 ExtensionIn 映射为 CHS 命令。
+     * 将清床/无床直结合并上报 ExtensionIn 映射为 CHS 命令。
      *
-     * @param command 清床汇总径扩展入参
-     * @return CHS 清床汇总径上报命令
+     * @param command 清床/无床直结合并扩展入参
+     * @return CHS 清床合并上报命令
      */
     private static UploadAfterDischargeSummarySalesCommand toDischargeSummaryCommand(
         InventoryUploadAfterDischargeSummarySalesExtensionIn command) {

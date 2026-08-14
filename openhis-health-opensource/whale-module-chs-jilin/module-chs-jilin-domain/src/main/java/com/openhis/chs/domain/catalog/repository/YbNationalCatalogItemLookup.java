@@ -5,10 +5,13 @@
 package com.openhis.chs.domain.catalog.repository;
 
 import com.openhis.chs.domain.catalog.entity.YbNationalCatalogItem;
+import com.openhis.chs.domain.catalog.support.NationalCatalogPackHint;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 国家目录镜像复杂只读查询（PostgreSQL DISTINCT ON / 1301 明细）；Repository 接口号{@code @Query} */
@@ -75,5 +78,20 @@ public interface YbNationalCatalogItemLookup {
         String spec,
         boolean excludePlatformExpired,
         Pageable pageable);
+
+    /**
+     * 按国家码批量取 1301 包装/计价单位（结算 2204/2301 限价折算）。
+     *
+     * <p>同码多行时优先 1301；读持久化列 {@code min_pac_*} / {@code min_prcunt}。</p>
+     *
+     * @param contractId  契约
+     * @param tenantId    租户
+     * @param hilistCodes 国家码集合
+     * @return hilistCode → hint；无包装字段的码不入表
+     */
+    Map<String, NationalCatalogPackHint> loadPackHintsByHilistCodes(
+        Long contractId,
+        Long tenantId,
+        Collection<String> hilistCodes);
 }
-
+

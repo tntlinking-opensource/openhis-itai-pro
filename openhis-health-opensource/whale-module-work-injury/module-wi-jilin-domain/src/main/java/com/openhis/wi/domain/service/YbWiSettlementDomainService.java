@@ -12,6 +12,7 @@ import com.openhis.chs.domain.settlement.YbPreSettleStatus;
 import com.openhis.chs.domain.settlement.YbSettlementVoucherStatus;
 import com.openhis.chs.domain.settlement.entity.YbSettlementRecord;
 import com.openhis.chs.domain.settlement.repository.YbSettlementRecordRepository;
+import com.openhis.chs.domain.settlement.service.YbSettlementReversalDomainService;
 import com.openhis.wi.domain.share.WorkInjuryConstants;
 import com.openhis.wi.domain.share.WiErrorCodes;
 import com.openhis.wi.domain.entity.YbWiPreSettle;
@@ -36,6 +37,7 @@ public class YbWiSettlementDomainService {
 
     private final YbWiPreSettleRepository preSettleRepository;
     private final YbSettlementRecordRepository settlementRecordRepository;
+    private final YbSettlementReversalDomainService settlementReversalDomainService;
 
     /**
      * 【2207】正式结算写入 {@code yb_settlement_record}（settle_mode=WORK_INJURY）。
@@ -71,7 +73,11 @@ public class YbWiSettlementDomainService {
             String winMsgid,
             Long tenantId) {
         if (isEmpty(setlId)) {
-            throw new BusinessException(WiErrorCodes.PLATFORM_INFCODE_FAILED, "2207 出参缺少 setl_id");
+            // 院点 2207 出参常无 setl_id（NEUSILOGS 与 2206 同结构），用单据号作结算主键
+            setlId = firstNonBlank(mdtrtId, chrgBchno);
+        }
+        if (isEmpty(setlId)) {
+            throw new BusinessException(WiErrorCodes.PLATFORM_INFCODE_FAILED, "2207 出参缺少 setl_id/mdtrt_id");
         }
         Long resolvedTenantId = resolveTenantId(tenantId);
         String normalizedSetlId = setlId.trim();
@@ -117,14 +123,106 @@ public class YbWiSettlementDomainService {
     }
 
     /**
-     * 【2208】结算回执标记 REVOKED。
+     * 平台 2207 已成功、本地无回执时的单边补落。
+     * <p>把就诊下带单据号的 ACTIVE 预结算挂到当前草稿，写入 settlement_record 并标 SETTLED。</p>
+     *
+     * @param encounterId    就诊 ID
+     * @param paymentDraftId 当前收银草稿
+     * @param contractId     合同（可空）
+     * @param tenantId       租户
+     * @return 补落后的回执；无可补数据时 empty
+     */
+    @Transactional
+    public Optional<YbSettlementRecord> recoverUnilateralFromActivePreSettle(
+            Long encounterId,
+            Long paymentDraftId,
+            Long contractId,
+            Long tenantId) {
+        if (encounterId == null || paymentDraftId == null) {
+            return Optional.empty();
+        }
+        Long resolvedTenantId = resolveTenantId(tenantId);
+        Optional<YbSettlementRecord> already = findByPaymentDraft(paymentDraftId, null, resolvedTenantId);
+        if (already.isPresent()) {
+            return already;
+        }
+        Optional<YbWiPreSettle> preOpt = preSettleRepository
+                .findFirstByEncounterIdAndStatusAndTenantIdAndIsDeletedFalseOrderByCreatedAtDesc(
+                        encounterId, YbPreSettleStatus.ACTIVE.name(), resolvedTenantId);
+        if (preOpt.isEmpty()) {
+            // 可能已 SETTLED 但 settlement 丢失：再按 SETTLED+单据号补
+            preOpt = preSettleRepository
+                    .findFirstByEncounterIdAndStatusAndTenantIdAndIsDeletedFalseOrderByCreatedAtDesc(
+                            encounterId, YbPreSettleStatus.SETTLED.name(), resolvedTenantId);
+        }
+        if (preOpt.isEmpty()) {
+            return Optional.empty();
+        }
+        YbWiPreSettle pre = preOpt.get();
+        String mdtrtId = firstNonBlank(pre.getMdtrtId(), pre.getChrgBchno());
+        if (isEmpty(mdtrtId)) {
+            return Optional.empty();
+        }
+        Optional<YbSettlementRecord> bySetl = settlementRecordRepository
+                .findFirstBySetlIdAndTenantIdAndIsDeletedFalse(mdtrtId.trim(), resolvedTenantId);
+        if (bySetl.isPresent()) {
+            if (!paymentDraftId.equals(pre.getPaymentDraftId())) {
+                pre.setPaymentDraftId(paymentDraftId);
+                preSettleRepository.save(pre);
+            }
+            return bySetl;
+        }
+        if (!paymentDraftId.equals(pre.getPaymentDraftId())) {
+            pre.setPaymentDraftId(paymentDraftId);
+            preSettleRepository.save(pre);
+        }
+        // saveConfirmedFrom2207 要求 ACTIVE；若已 SETTLED 先临时改回 ACTIVE
+        boolean wasSettled = YbPreSettleStatus.SETTLED.name().equals(pre.getStatus());
+        if (wasSettled) {
+            pre.setStatus(YbPreSettleStatus.ACTIVE.name());
+            preSettleRepository.save(pre);
+        }
+        YbSettlementRecord record = saveConfirmedFrom2207(
+                encounterId,
+                contractId != null ? contractId : pre.getContractId(),
+                paymentDraftId,
+                mdtrtId,
+                mdtrtId,
+                pre.getPsnNo(),
+                pre.getChrgBchno(),
+                pre.getMedfeeSumamt(),
+                pre.getFundPaySumamt(),
+                pre.getPsnCashPay(),
+                pre.getSnapshotJson(),
+                null,
+                resolvedTenantId);
+        pre.setStatus(YbPreSettleStatus.SETTLED.name());
+        preSettleRepository.save(pre);
+        return Optional.of(record);
+    }
+
+    /**
+     * 【2208】结算回执标记 REVOKED，并合成 {@code yb_settlement_reversal}（对账抵减用）。
      *
      * @param settlementRecordId yb_settlement_record.id
      * @param tenantId           租户 ID
-     * @return 更新后的回执；已 REVOKED 时幂等返回
+     * @return 更新后的回执；已 REVOKED 时幂等返回（仍补写缺失撤销凭证）
      */
     @Transactional
     public YbSettlementRecord markRevoked2208(Long settlementRecordId, Long tenantId) {
+        return markRevoked2208(settlementRecordId, tenantId, null);
+    }
+
+    /**
+     * 【2208】结算回执标记 REVOKED，并合成 {@code yb_settlement_reversal}（对账抵减用）。
+     *
+     * @param settlementRecordId yb_settlement_record.id
+     * @param tenantId           租户 ID
+     * @param invokeLogId        2208 invoke 日志 ID（可空）
+     * @return 更新后的回执；已 REVOKED 时幂等返回（仍补写缺失撤销凭证）
+     */
+    @Transactional
+    public YbSettlementRecord markRevoked2208(Long settlementRecordId, Long tenantId, Long invokeLogId) {
         if (settlementRecordId == null) {
             throw new BusinessException(WiErrorCodes.INVALID_INVOKE_SESSION, "settlementRecordId 不能为空");
         }
@@ -132,10 +230,8 @@ public class YbWiSettlementDomainService {
         YbSettlementRecord row = settlementRecordRepository
                 .findFirstByIdAndTenantIdAndIsDeletedFalse(settlementRecordId, resolvedTenantId)
                 .orElseThrow(() -> new BusinessException(WiErrorCodes.INVALID_INVOKE_SESSION, "结算回执不存在"));
-        if (YbSettlementVoucherStatus.REVOKED.equals(row.getStatus())) {
-            return row;
-        }
-        row.setStatus(YbSettlementVoucherStatus.REVOKED);
+        // 工伤 2208 无平台 setlinfo：按回执快照合成撤销凭证，供结算统计同窗抵减
+        settlementReversalDomainService.persistSyntheticIfAbsent(row, null, invokeLogId);
         return settlementRecordRepository.save(row);
     }
 

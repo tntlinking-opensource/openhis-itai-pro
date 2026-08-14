@@ -4,6 +4,7 @@
  */
 package com.openhis.whale.booking.bridge.outpatient.context;
 
+import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.whale.booking.bridge.slot.context.BookingSlotReaderImpl;
 import com.openhis.whale.booking.domain.appointment.command.CancelAppointmentCommand;
 import com.openhis.whale.booking.domain.appointment.command.CheckInOutpatientBookingCommand;
@@ -26,6 +27,7 @@ import com.openhis.whale.booking.domain.slot.repository.SlotRepository;
 import com.openhis.whale.booking.domain.slot.service.SlotDomainService;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
@@ -111,12 +113,21 @@ public class OutpatientBookingWriterImpl {
         allocateItem.setSlotId(slotId);
         allocateCommand.setOperatorId(command.getOperatorId());
         allocateCommand.setItems(List.of(allocateItem));
+        // Pre：清退号残留（encounter 已解绑、未软删），否则 uk_wkf_appt_patient_service_day 拦住再挂。
+        this.terminateOrphanOutpatientBookings(
+            command.getPatientId(),
+            command.getHealthcareServiceId(),
+            registrationDate,
+            command.getOperatorId());
         // Cmd：先占容量，再写预约行；预约失败则回滚占号，避免余量泄漏。
         slotDomainService.allocateBooking(allocateCommand);
         try {
             this.createWalkInAppointment(command, slotId, registrationDate);
         } catch (RuntimeException ex) {
             this.releaseSlotQuietly(slotId, command.getOperatorId());
+            if (this.isOutpatientBookingDuplicateConflict(ex)) {
+                throw new BusinessException(ErrorCodeConstants.APPOINTMENT_RULE_CONFLICT, "同日同患者同服务重复预约");
+            }
             throw ex;
         }
         return slotId;
@@ -161,7 +172,8 @@ public class OutpatientBookingWriterImpl {
      * 退号回调：按 onCancelPolicy 释放号源占用并处理预约关联。
      *
      * <p>{@link RegistrationCancelPolicyConstants#RELEASE_SLOT_ONLY}（默认）与
-     * {@link RegistrationCancelPolicyConstants#CANCEL_APPOINTMENT} 均释放 bookedCount；
+     * {@link RegistrationCancelPolicyConstants#CANCEL_APPOINTMENT} 均释放 bookedCount，
+     * 并软删预约行（释放 {@code uk_wkf_appt_patient_service_day}，允许同日同服务再挂）；
      * {@link RegistrationCancelPolicyConstants#KEEP_SLOT} 仅解绑就诊。</p>
      *
      * @param encounterId 就诊主键
@@ -207,21 +219,8 @@ public class OutpatientBookingWriterImpl {
             this.releaseSlotQuietly(appointment.getSlotId(), operatorId);
         }
 
-        // CANCEL_APPOINTMENT：预约行一并终态；其余默认仅解绑 encounter。
-        if (RegistrationCancelPolicyConstants.CANCEL_APPOINTMENT.equalsIgnoreCase(cancelPolicy)) {
-            CancelAppointmentCommand cancelCommand = new CancelAppointmentCommand();
-            cancelCommand.setOperatorId(operatorId);
-            CancelAppointmentCommand.CancelAppointmentItemCommand cancelItem =
-                new CancelAppointmentCommand.CancelAppointmentItemCommand();
-            cancelItem.setAppointmentId(appointment.getId());
-            cancelItem.setReason(cancelReasonText);
-            cancelItem.setCancellationReasonCode("REGISTRATION_CANCELLED");
-            cancelCommand.setItems(List.of(cancelItem));
-            appointmentDomainService.cancelAppointment(cancelCommand);
-            return;
-        }
-
-        this.releaseEncounterLinkOnly(encounterId);
+        // Cmd：软删预约行，释放同日同服务防重唯一键，保证退号后可再挂。
+        this.cancelOutpatientAppointment(appointment.getId(), operatorId, cancelReasonText);
     }
 
     /**
@@ -258,6 +257,80 @@ public class OutpatientBookingWriterImpl {
         item.setOrigin(origin);
         createCommand.setItems(List.of(item));
         appointmentDomainService.create(createCommand);
+    }
+
+    /**
+     * 软删同日同服务、已解绑就诊的门诊预约残留（历史 RELEASE_SLOT_ONLY 退号未终态行）。
+     *
+     * @param patientId 患者主键
+     * @param healthcareServiceId 医疗服务主键
+     * @param bookingDate 挂号自然日
+     * @param operatorId 操作人
+     */
+    private void terminateOrphanOutpatientBookings(
+        Long patientId,
+        Long healthcareServiceId,
+        LocalDate bookingDate,
+        Long operatorId) {
+        if (patientId == null || healthcareServiceId == null || bookingDate == null) {
+            return;
+        }
+        List<Appointment> candidates = appointmentRepository
+            .findByPatientIdAndHealthcareServiceIdAndBookingDateAndIsDeletedFalse(
+                patientId, healthcareServiceId, bookingDate);
+        for (Appointment appointment : candidates) {
+            if (!AppointmentKindConstants.OUTPATIENT_BOOKING.equals(appointment.getAppointmentKind())) {
+                continue;
+            }
+            // Gate：仍绑定就诊的视为有效预约/挂号，不清理。
+            if (appointment.getEncounterId() != null) {
+                continue;
+            }
+            this.cancelOutpatientAppointment(appointment.getId(), operatorId, "退号残留清理");
+        }
+    }
+
+    /**
+     * 按主键终态门诊预约行（软删）。
+     *
+     * @param appointmentId 预约主键
+     * @param operatorId 操作人
+     * @param reasonText 取消原因
+     */
+    private void cancelOutpatientAppointment(Long appointmentId, Long operatorId, String reasonText) {
+        CancelAppointmentCommand cancelCommand = new CancelAppointmentCommand();
+        cancelCommand.setOperatorId(operatorId);
+        CancelAppointmentCommand.CancelAppointmentItemCommand cancelItem =
+            new CancelAppointmentCommand.CancelAppointmentItemCommand();
+        cancelItem.setAppointmentId(appointmentId);
+        cancelItem.setReason(reasonText);
+        cancelItem.setCancellationReasonCode("REGISTRATION_CANCELLED");
+        cancelCommand.setItems(List.of(cancelItem));
+        appointmentDomainService.cancelAppointment(cancelCommand);
+    }
+
+    /**
+     * 是否为门诊同日防重唯一索引冲突。
+     *
+     * @param throwable 异常
+     * @return true 表示撞上 uk_wkf_appt_patient_service_day
+     */
+    private boolean isOutpatientBookingDuplicateConflict(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof DataIntegrityViolationException) {
+                String message = current.getMessage();
+                if (message != null && message.contains("uk_wkf_appt_patient_service_day")) {
+                    return true;
+                }
+            }
+            String message = current.getMessage();
+            if (message != null && message.contains("uk_wkf_appt_patient_service_day")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     /**

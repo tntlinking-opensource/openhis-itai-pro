@@ -32,7 +32,7 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * 待补偿列表查询支撑（供 {@link com.openhis.whale.einvoice.boss.application.compensation.service.EinvoiceBossCompensationAppService} 使用）。
+ * 待补偿列表查询支撑（�?{@link com.openhis.whale.einvoice.boss.application.compensation.service.EinvoiceBossCompensationAppService} 使用）�?
  */
 @Component
 @RequiredArgsConstructor
@@ -47,9 +47,9 @@ public class BossCompensationQuerySupport {
     private boolean lastScanTruncated;
 
     /**
-     * 加载待补偿行（含筛选）。
+     * 加载待补偿行（含筛选）�?
      *
-     * @param filter 筛选条件
+     * @param filter 筛选条�?
      * @return 待补偿行
      */
     public List<BossCompensationRow> loadCompensationRows(ListPendingCompensationRequest filter) {
@@ -69,7 +69,7 @@ public class BossCompensationQuerySupport {
                 BossCompensationRow row = toRow(
                         snapshot,
                         task,
-                        documentRepository.findByInvoiceIdAndIsDeletedFalse(invoiceId),
+                        documentRepository.findFirstByInvoiceIdAndIsDeletedFalseOrderByIdAsc(invoiceId),
                         type.get(),
                         now);
                 if (!matchesFilter(row, filter)) {
@@ -85,7 +85,7 @@ public class BossCompensationQuerySupport {
     }
 
     /**
-     * 最近一次扫描是否因上限截断。
+     * 最近一次扫描是否因上限截断�?
      *
      * @return 截断标记
      */
@@ -94,7 +94,7 @@ public class BossCompensationQuerySupport {
     }
 
     /**
-     * 汇总待补偿统计。
+     * 汇总待补偿统计�?
      *
      * @param rows 待补偿行
      * @return 统计
@@ -116,9 +116,9 @@ public class BossCompensationQuerySupport {
     }
 
     /**
-     * 汇总 orphan DRAFT、超时 DRAFT、FAILED/PENDING 任务的候选 invoiceId（受 scanLimit 约束）。
+     * 汇�?orphan DRAFT、超�?DRAFT、FAILED/PENDING 任务的候�?invoiceId（受 scanLimit 约束）�?
      *
-     * @param staleThreshold 超时阈值
+     * @param staleThreshold 超时阈�?
      * @return 去重后的候选集合；达上限时 {@link #lastScanTruncated}=true
      */
     private Set<Long> collectCandidateInvoiceIds(LocalDateTime staleThreshold) {
@@ -142,7 +142,7 @@ public class BossCompensationQuerySupport {
         return invoiceIds;
     }
 
-    /** 按异常类型、业务线、关键词过滤补偿行。 */
+    /** 按异常类型、业务线、关键词过滤补偿行�?*/
     private boolean matchesFilter(BossCompensationRow row, ListPendingCompensationRequest filter) {
         if (filter == null) {
             return true;
@@ -166,7 +166,7 @@ public class BossCompensationQuerySupport {
         return true;
     }
 
-    /** 快照 + 分类结果 → 补偿列表行（含可操作按钮标志）。 */
+    /** 快照 + 分类结果 �?补偿列表行（含可操作按钮标志）�?*/
     private BossCompensationRow toRow(
             BossIssueSnapshot snapshot,
             Optional<EinvBossIssueTask> task,
@@ -196,7 +196,7 @@ public class BossCompensationQuerySupport {
         return row;
     }
 
-    /** 按异常类型设置前端可执行动作（重新入队/立即开/查票/调额）。 */
+    /** 按异常类型设置前端可执行动作（重新入�?立即开/查票/调额）�?*/
     private void fillActions(
             BossCompensationRow row,
             CompensationExceptionType type,
@@ -228,7 +228,7 @@ public class BossCompensationQuerySupport {
         }
     }
 
-    /** 与单据调额门控一致：仅草稿（未成功开出）允许调额。 */
+    /** 与单据调额门控一致：仅草稿（未成功开出）允许调额�?*/
     private boolean isAdjustable(BossIssueSnapshot snapshot, Optional<EinvBossDocument> document) {
         if (document.isPresent() && IssueKind.COM.getCode().equals(document.get().getIssueKind())) {
             return !StringUtils.hasText(document.get().getBossBillNo());
@@ -236,7 +236,7 @@ public class BossCompensationQuerySupport {
         return "DRAFT".equals(snapshot.getInvoiceStatus());
     }
 
-    /** 由 health invoiceTypeCode 推断 REG/AMB/IMP。 */
+    /** �?health invoiceTypeCode 推断 REG/AMB/IMP�?*/
     private String resolveIssueKind(BossIssueSnapshot snapshot) {
         String typeCode = snapshot.getInvoiceTypeCode();
         if (typeCode != null && typeCode.toUpperCase(Locale.ROOT).contains("INPATIENT")) {
@@ -261,7 +261,7 @@ public class BossCompensationQuerySupport {
         return "门诊";
     }
 
-    /** 异常类型枚举 → 列表展示文案。 */
+    /** 异常类型枚举 �?列表展示文案�?*/
     private String resolveExceptionLabel(CompensationExceptionType type) {
         return switch (type) {
             case LOST -> "事件丢失";

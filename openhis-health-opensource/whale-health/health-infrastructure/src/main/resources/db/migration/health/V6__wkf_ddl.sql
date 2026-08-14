@@ -659,6 +659,8 @@ CREATE TABLE IF NOT EXISTS "public"."wkf_service_request" (
     "performer_id" int8,
     "performer_check_id" int8,
     "check_time" timestamptz(6),
+    "stop_performer_check_id" int8,
+    "stop_check_time" timestamptz(6),
     "location_id" int8,
     "org_id" int8,
     "reason_text" varchar(255),
@@ -717,6 +719,8 @@ COMMENT ON COLUMN wkf_service_request.performer_type_code IS 'performer类型编
 COMMENT ON COLUMN wkf_service_request.performer_id IS 'performer标识';
 COMMENT ON COLUMN wkf_service_request.performer_check_id IS 'performercheck标识';
 COMMENT ON COLUMN wkf_service_request.check_time IS 'check时间';
+COMMENT ON COLUMN wkf_service_request.stop_performer_check_id IS '停嘱校对人（护士 Practitioner）；空表示停嘱待校或未停嘱';
+COMMENT ON COLUMN wkf_service_request.stop_check_time IS '停嘱校对时间；与 stop_performer_check_id 成对';
 COMMENT ON COLUMN wkf_service_request.location_id IS '位置/科室标识';
 COMMENT ON COLUMN wkf_service_request.org_id IS '机构标识';
 COMMENT ON COLUMN wkf_service_request.reason_text IS '原因文本';

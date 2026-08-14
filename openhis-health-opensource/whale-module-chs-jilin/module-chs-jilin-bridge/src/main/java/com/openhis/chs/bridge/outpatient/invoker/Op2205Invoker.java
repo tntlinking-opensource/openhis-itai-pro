@@ -20,6 +20,7 @@ import com.openhis.chs.gateway.client.ResultBody;
 import com.openhis.chs.domain.share.constants.ChsInfNo;
 import com.openhis.chs.gateway.scheme.outpatient.model.Op2205Input;
 import com.openhis.chs.gateway.scheme.outpatient.assembler.Op2205InputAssembler;
+import com.openhis.chs.domain.share.constants.ChsPlatformCodes;
 import com.openhis.chs.gateway.support.ChsCurrentOperatorResolver;
 import com.openhis.chs.gateway.support.ChsPlatformResponseSupport;
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -54,10 +55,29 @@ public class Op2205Invoker {
         }
         Long tenantId = OutpatientSettleCommandAssembler.resolveTenantId(enriched.getTenantId());
         YbClinicPreSettle pre = clinicPreSettleDomainService.findByChrgBchno(enriched.getChrgBchno(), tenantId);
+        // Gate：非 ACTIVE 快照默认不撤；但 chrg_bchno 碰撞时他患 SETTLED 会占号，
+        // 若命令显式带本就诊 mdtrt/psn，仍须出站 2205 清悬挂明细（不可被他患 SETTLED 短路）。
         if (pre != null && !YbClinicPreSettle.STATUS_ACTIVE.equals(pre.getStatus())) {
-            return new OpRevokeFeeDetailResult()
-                .setChrgBchno(pre.getChrgBchno())
-                .setRevoked(false);
+            boolean commandHasMdtrt =
+                isNotEmpty(enriched.getMdtrtId()) && isNotEmpty(enriched.getPsnNo());
+            boolean sameMdtrtAlreadySettled =
+                YbClinicPreSettle.STATUS_SETTLED.equals(pre.getStatus())
+                    && isNotEmpty(pre.getMdtrtId())
+                    && isNotEmpty(enriched.getMdtrtId())
+                    && pre.getMdtrtId().trim().equals(enriched.getMdtrtId().trim());
+            if (sameMdtrtAlreadySettled) {
+                // 本就诊该批已正式结算，2205 无效，须走 2208
+                return new OpRevokeFeeDetailResult()
+                    .setChrgBchno(pre.getChrgBchno())
+                    .setRevoked(false);
+            }
+            if (!commandHasMdtrt) {
+                return new OpRevokeFeeDetailResult()
+                    .setChrgBchno(pre.getChrgBchno())
+                    .setRevoked(false);
+            }
+            // 他患/旧状态占号：忽略本地非 ACTIVE 快照，按命令字段孤儿撤销
+            pre = null;
         }
         String chrgBchno = enriched.getChrgBchno().trim();
         String mdtrtId;
@@ -65,8 +85,17 @@ public class Op2205Invoker {
         String contractBusNo;
         String insuplcAdmdvs;
         if (pre != null) {
-            mdtrtId = pre.getMdtrtId();
-            psnNo = pre.getPsnNo();
+            // Pre：ACTIVE 快照优先；命令可覆盖 contract / 参保地
+            if (isNotEmpty(enriched.getMdtrtId())) {
+                mdtrtId = enriched.getMdtrtId().trim();
+            } else {
+                mdtrtId = pre.getMdtrtId();
+            }
+            if (isNotEmpty(enriched.getPsnNo())) {
+                psnNo = enriched.getPsnNo().trim();
+            } else {
+                psnNo = pre.getPsnNo();
+            }
             if (isNotEmpty(enriched.getContractBusNo())) {
                 contractBusNo = enriched.getContractBusNo().trim();
             } else {
@@ -78,7 +107,7 @@ public class Op2205Invoker {
                 insuplcAdmdvs = pre.getInsuplcAdmdvs();
             }
         } else {
-            // 2204 已成功、2206 未落库时：无预结算快照，用命令补齐字段直接 2205
+            // 2204 已成功、本地无 ACTIVE：用命令补齐字段直接 2205（含批次号碰撞孤儿）
             mdtrtId = enriched.getMdtrtId();
             psnNo = enriched.getPsnNo();
             contractBusNo = enriched.getContractBusNo();
@@ -94,16 +123,40 @@ public class Op2205Invoker {
         Op2205Input input2205 = Op2205InputAssembler.assemble(mdtrtId, chrgBchno, psnNo);
         ResultBody body2205 = gatewayClient.invoke(
             contractBusNo, ChsInfNo.OUTPATIENT_FEE_REVOKE, input2205, invokeContext);
-        ChsPlatformResponseSupport.requireSuccess(body2205, ChsInfNo.OUTPATIENT_FEE_REVOKE);
+        // Pre：平台已无明细视为幂等成功（上次 2205 成功后外层事务回滚导致本地仍 ACTIVE）
+        if (!isPlatformSuccessOrAlreadyCleared(body2205)) {
+            ChsPlatformResponseSupport.requireSuccess(body2205, ChsInfNo.OUTPATIENT_FEE_REVOKE);
+        }
 
-        clinicFeeUploadDomainService.markRevokedByChrgBchno(chrgBchno, tenantId);
+        // Pre：独立事务落库，避免后续 2204/2206 失败回滚把 CANCELLED 冲掉
+        clinicFeeUploadDomainService.markRevokedByChrgBchnoInNewTx(chrgBchno, tenantId);
         if (pre != null) {
-            clinicPreSettleDomainService.markCancelledAndSave(pre);
+            clinicPreSettleDomainService.markCancelledByChrgBchnoInNewTx(chrgBchno, tenantId);
         }
 
         return new OpRevokeFeeDetailResult()
             .setChrgBchno(chrgBchno)
             .setRevoked(true);
+    }
+
+    /**
+     * 2205 成功，或平台已无未结算明细（幂等）。
+     *
+     * @param body 平台响应
+     * @return true 时可继续本地收口
+     */
+    private static boolean isPlatformSuccessOrAlreadyCleared(ResultBody body) {
+        if (body == null) {
+            return false;
+        }
+        if (ChsPlatformCodes.INFCODE_SUCCESS.equals(body.getInfcode())) {
+            return true;
+        }
+        String err = body.getErrMsg();
+        if (err == null || err.trim().isEmpty()) {
+            return false;
+        }
+        return err.contains("未查询到任何有效相关的记录");
     }
 
     /**

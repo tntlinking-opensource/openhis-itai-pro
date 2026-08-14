@@ -6,7 +6,6 @@ package com.openhis.health.application.report.consumableusage.outpatient.support
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -19,7 +18,10 @@ import org.springframework.stereotype.Component;
 import com.openhis.health.application.report.consumableusage.outpatient.dto.OutpatientConsumableUsageDetailRowDto;
 import com.openhis.health.application.report.consumableusage.outpatient.dto.OutpatientConsumableUsageSummaryRowDto;
 import com.openhis.health.application.report.consumableusage.support.ConsumableUsageReportAmountEnricher;
+import com.openhis.health.application.report.consumableusage.support.ConsumableUsageReportFilterLoader;
+import com.openhis.health.application.report.consumableusage.support.ConsumableUsageReportQueryFilter;
 import com.openhis.health.application.report.consumableusage.support.ConsumableUsageReportScopeLoader;
+import com.openhis.health.application.shared.advice.OrderCatalogDisplayAssembler;
 import com.openhis.health.application.shared.option.TerminologyOptionLoader;
 import com.openhis.health.application.shared.report.PatientSettlementContextRow;
 import com.openhis.health.application.shared.report.ReportPatientSettlementContextAssembler;
@@ -29,7 +31,10 @@ import com.openhis.health.domain.administration.encounter.service.EncounterQuery
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
 import com.openhis.health.domain.administration.patient.service.PatientQueryService;
+import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
+import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.share.constants.ConsumableUsageReportConstants;
+import com.openhis.health.domain.share.constants.DeptIssueReportConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.enums.DispenseStatus;
 import com.openhis.health.domain.share.enums.EncounterClass;
@@ -43,12 +48,13 @@ import com.openhis.health.domain.workflow.supplyrequest.queries.model.DeptIssueR
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.DeptIssueReportSummaryRow;
 import com.openhis.health.domain.workflow.supplyrequest.query.DeptIssueReportPageQuery;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQueryService;
+import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.util.StringUtils;
 
 import lombok.RequiredArgsConstructor;
 
 /**
- * 门诊耗材使用报表两路并集编排（患者 DeviceDispense ∪ 科室 DEPT_ISSUE；AS-RPT-005）。
+ * 门诊耗材使用报表单源编排（患者 DeviceDispense 或科室 DEPT_ISSUE；AS-RPT-005）。
  *
  * <p>领域白名单（AS Gap / DM-WKF-007 §6.2.23～24、DM-WKF-006 §6.2.15）：
  * {@code pageConsumableUsageDispenseLines} / {@code listConsumableUsageDispenseLines} /
@@ -56,7 +62,7 @@ import lombok.RequiredArgsConstructor;
  * {@code pageDeptIssueReportLines} / {@code listDeptIssueReportLines} /
  * {@code summarizeDeptIssueReport}。门诊域由本 Support 预写 AMB encounter scope。</p>
  *
- * <p>禁止 import 本 Feature Request/Response。</p>
+ * <p>禁止 ALL 两路并集；禁止 import 本 Feature Request/Response。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -70,6 +76,9 @@ public class OutpatientConsumableUsageReportQuerySupport {
 
     /** 就诊/库位/组织 scope 预解析。 */
     private final ConsumableUsageReportScopeLoader consumableUsageReportScopeLoader;
+
+    /** 品规/患者/记录类型等跨聚合筛选预解析。 */
+    private final ConsumableUsageReportFilterLoader consumableUsageReportFilterLoader;
 
     /** 患者侧金额 enrich。 */
     private final ConsumableUsageReportAmountEnricher consumableUsageReportAmountEnricher;
@@ -89,6 +98,9 @@ public class OutpatientConsumableUsageReportQuerySupport {
     /** 库位名。 */
     private final LocationQueryService locationQueryService;
 
+    /** 执行人（发耗材人）姓名。 */
+    private final PractitionerQueryService practitionerQueryService;
+
     /** 单位术语。 */
     private final TerminologyOptionLoader terminologyOptionLoader;
 
@@ -98,23 +110,15 @@ public class OutpatientConsumableUsageReportQuerySupport {
     /**
      * 汇总：两路净量按维合并；金额仅患者侧经 ChargeItem，科室侧用行价累加近似净额。
      *
-     * @param dateFrom            日起
-     * @param dateTo              日止
-     * @param summaryDimension    汇总维
-     * @param sourceCode          来源筛
-     * @param locationId          可选库位
-     * @param feeNatureContractNo 费用性质 bus_no
+     * @param filter 报表筛选（含日期/来源/库位/科室/品规/患者/记录类型/执行人）
      * @return 汇总响应
      */
-    public OutpatientConsumableUsageSummaryResult summarize(
-        String dateFrom,
-        String dateTo,
-        String summaryDimension,
-        String sourceCode,
-        Long locationId,
-        String feeNatureContractNo) {
-        String dimension = this.resolveSummaryDimension(summaryDimension);
-        String source = this.resolveSourceCode(sourceCode);
+    public OutpatientConsumableUsageSummaryResult summarize(ConsumableUsageReportQueryFilter filter) {
+        String dimension = this.resolveSummaryDimension(filter.getSummaryDimension());
+        String source = this.resolveSourceCode(filter.getSourceCode());
+        // Pre：CATEGORY 先走 ITEM 领域分桶；科室 LOCATION remap 在 ScopeLoader
+        String patientDomainDimension = this.resolvePatientDomainDimension(dimension);
+        String deptDomainDimension = this.resolveDeptDomainDimension(dimension);
         List<OutpatientConsumableUsageSummaryRowDto> rows = new ArrayList<>();
         // Pre：按来源收窄一路或两路
         if (this.includePatient(source)) {
@@ -122,35 +126,44 @@ public class OutpatientConsumableUsageReportQuerySupport {
             this.preparePatientDispenseQueryWithFeeNature(
                 patientQuery,
                 EncounterClass.AMB.getCode(),
-                dateFrom,
-                dateTo,
-                locationId,
-                dimension,
-                feeNatureContractNo);
+                filter,
+                patientDomainDimension);
             List<ConsumableUsageDispenseSummaryRow> patientSummaries =
                 this.deviceDispenseQueryService.summarizeConsumableUsageDispense(patientQuery);
             rows.addAll(this.mapPatientSummaries(patientSummaries, dimension));
         }
         if (this.includeDept(source)) {
             DeptIssueReportPageQuery deptQuery = new DeptIssueReportPageQuery();
-            this.consumableUsageReportScopeLoader.prepareDeptIssueQuery(
+            this.prepareDeptIssueQuery(
                 deptQuery,
                 EncounterClass.AMB.getCode(),
-                dateFrom,
-                dateTo,
-                locationId,
-                dimension);
+                filter,
+                deptDomainDimension);
             List<DeptIssueReportSummaryRow> deptSummaries =
                 this.supplyRequestQueryService.summarizeDeptIssueReport(deptQuery);
             rows = this.mergeSummaryRows(rows, this.mapDeptSummaries(deptSummaries, dimension));
         }
-        // Asm：回填展示名
-        this.enrichSummaryDisplay(rows);
+        Map<Long, String> categoryCodeByDeviceDefId = null;
+        // CATEGORY：ITEM 行再按类型分桶（含科室领用）
+        if (ConsumableUsageReportConstants.SUMMARY_DIMENSION_CATEGORY.equals(dimension)) {
+            categoryCodeByDeviceDefId = this.resolveCategoryCodeByDeviceDefIds(this.collectDeviceDefIds(rows));
+            rows = this.rebucketItemRowsToCategory(rows, categoryCodeByDeviceDefId);
+        }
+        // Asm：回填统一 dimensionName
+        this.enrichSummaryDisplay(rows, dimension);
         // Pre：汇总金额仅拉定价所需明细，禁止姓名/品名等展示 enrich
         List<OutpatientConsumableUsageDetailRowDto> detailRows =
-            this.listDetailForSummaryAmounts(dateFrom, dateTo, source, locationId, feeNatureContractNo);
+            this.listDetailForSummaryAmounts(filter);
+        // CATEGORY：明细可能多出品规，补全映射避免金额落入空类型桶
+        if (ConsumableUsageReportConstants.SUMMARY_DIMENSION_CATEGORY.equals(dimension)) {
+            LinkedHashSet<Long> allDeviceDefIds = this.collectDeviceDefIdsFromDetails(detailRows);
+            if (categoryCodeByDeviceDefId != null) {
+                allDeviceDefIds.addAll(categoryCodeByDeviceDefId.keySet());
+            }
+            categoryCodeByDeviceDefId = this.resolveCategoryCodeByDeviceDefIds(allDeviceDefIds);
+        }
         this.consumableUsageReportAmountEnricher.aggregateSummaryPurchaseSaleAmounts(
-            rows, detailRows, dimension);
+            rows, detailRows, dimension, categoryCodeByDeviceDefId);
         OutpatientConsumableUsageSummaryResult response =
             new OutpatientConsumableUsageSummaryResult();
         response.setRows(rows);
@@ -162,26 +175,19 @@ public class OutpatientConsumableUsageReportQuerySupport {
     }
 
     /**
-     * 明细分页：两路并集按业务时间倒序后切页。
+     * 明细分页：单源领域真分页（患者 DeviceDispense 或科室领用）；禁止 ALL 并集预取。
      *
-     * @param dateFrom   日起
-     * @param dateTo     日止
-     * @param sourceCode 来源筛
-     * @param locationId          可选库位
-     * @param feeNatureContractNo 费用性质 bus_no
-     * @param pageNo              页码（1 基）
-     * @param pageSize            页大小
+     * @param filter   报表筛选
+     * @param pageNo   页码（1 基）
+     * @param pageSize 页大小
      * @return 明细分页
      */
     public OutpatientConsumableUsageDetailPageResult pageDetail(
-        String dateFrom,
-        String dateTo,
-        String sourceCode,
-        Long locationId,
-        String feeNatureContractNo,
+        ConsumableUsageReportQueryFilter filter,
         Integer pageNo,
         Integer pageSize) {
-        String source = this.resolveSourceCode(sourceCode);
+        // Gate：来源规范化；ALL/未知码拒绝
+        String source = this.resolveSourceCode(filter.getSourceCode());
         int resolvedPageNo = 1;
         if (pageNo != null && pageNo > 0) {
             resolvedPageNo = pageNo;
@@ -193,145 +199,129 @@ public class OutpatientConsumableUsageReportQuerySupport {
         if (resolvedPageSize > ConsumableUsageReportConstants.MAX_PAGE_SIZE) {
             resolvedPageSize = ConsumableUsageReportConstants.MAX_PAGE_SIZE;
         }
-        // Pre：单来源走领域原生分页；并集对齐发药报表前缀页 + mergeAndSlice
+        // Pre：患者单源 → 领域原生分页，禁止 pageNo*pageSize 前缀物化
         if (ConsumableUsageReportConstants.SOURCE_CODE_PATIENT_DISPENSE.equals(source)) {
-            return this.pagePatientOnly(
-                dateFrom, dateTo, locationId, feeNatureContractNo, resolvedPageNo, resolvedPageSize);
+            return this.pagePatientOnly(filter, resolvedPageNo, resolvedPageSize);
         }
+        // Pre：领用单源 → 领域原生分页
         if (ConsumableUsageReportConstants.SOURCE_CODE_DEPT_ISSUE.equals(source)) {
-            return this.pageDeptOnly(dateFrom, dateTo, locationId, resolvedPageNo, resolvedPageSize);
+            return this.pageDeptOnly(filter, resolvedPageNo, resolvedPageSize);
         }
-        // Pre：两路各取前 pageNo*pageSize 条（封顶 EXPORT_MAX_ROWS），再内存排序切当前页
-        int fetchSize = resolvedPageNo * resolvedPageSize;
-        if (fetchSize < resolvedPageSize) {
-            fetchSize = resolvedPageSize;
-        }
-        if (fetchSize > ConsumableUsageReportConstants.EXPORT_MAX_ROWS) {
-            fetchSize = ConsumableUsageReportConstants.EXPORT_MAX_ROWS;
-        }
-        OutpatientConsumableUsageDetailPageResult patientPage = this.pagePatientOnly(
-            dateFrom, dateTo, locationId, feeNatureContractNo, 1, fetchSize);
-        OutpatientConsumableUsageDetailPageResult deptPage =
-            this.pageDeptOnly(dateFrom, dateTo, locationId, 1, fetchSize);
-        List<OutpatientConsumableUsageDetailRowDto> pageRows = this.mergeAndSlice(
-            patientPage.getRecords(),
-            deptPage.getRecords(),
-            resolvedPageNo,
-            resolvedPageSize);
-        OutpatientConsumableUsageDetailPageResult response =
-            new OutpatientConsumableUsageDetailPageResult();
-        response.setRecords(pageRows);
-        // Asm：total 取两路领域 totalElements 之和（来源互斥）
-        response.setTotal(patientPage.getTotal() + deptPage.getTotal());
-        response.setPageNo(resolvedPageNo);
-        response.setPageSize(resolvedPageSize);
-        return response;
+        // Gate：防御——规范化后仍非单源
+        throw new BusinessException(
+            ConsumableUsageReportConstants.EX_RPT_OCU_103,
+            "禁止全部来源混查");
     }
 
     /**
-     * 明细全量列表（导出 DETAIL Tab；受 EXPORT_MAX_ROWS 约束）。
+     * 明细全量列表（导出 DETAIL Tab；受 EXPORT_MAX_ROWS 约束；单源）。
      *
-     * @param dateFrom   日起
-     * @param dateTo     日止
-     * @param sourceCode 来源筛
-     * @param locationId          可选库位
-     * @param feeNatureContractNo 费用性质 bus_no
+     * @param filter 报表筛选
      * @return 明细行
      */
-    public List<OutpatientConsumableUsageDetailRowDto> listDetailForExport(
-        String dateFrom,
-        String dateTo,
-        String sourceCode,
-        Long locationId,
-        String feeNatureContractNo) {
-        String source = this.resolveSourceCode(sourceCode);
+    public List<OutpatientConsumableUsageDetailRowDto> listDetailForExport(ConsumableUsageReportQueryFilter filter) {
+        String source = this.resolveSourceCode(filter.getSourceCode());
         if (ConsumableUsageReportConstants.SOURCE_CODE_PATIENT_DISPENSE.equals(source)) {
-            return this.listPatientDetails(
-                dateFrom, dateTo, locationId, feeNatureContractNo, ConsumableUsageReportConstants.EXPORT_MAX_ROWS);
+            return this.listPatientDetails(filter, ConsumableUsageReportConstants.EXPORT_MAX_ROWS);
         }
         if (ConsumableUsageReportConstants.SOURCE_CODE_DEPT_ISSUE.equals(source)) {
-            return this.listDeptDetails(dateFrom, dateTo, locationId, ConsumableUsageReportConstants.EXPORT_MAX_ROWS);
+            return this.listDeptDetails(filter, ConsumableUsageReportConstants.EXPORT_MAX_ROWS);
         }
-        return this.listMergedDetailLines(
-            dateFrom, dateTo, locationId, feeNatureContractNo, ConsumableUsageReportConstants.EXPORT_MAX_ROWS);
+        throw new BusinessException(
+            ConsumableUsageReportConstants.EX_RPT_OCU_104,
+            "禁止全部来源混查");
     }
 
     /**
-     * 汇总金额专用明细列表：与导出同来源分支，但仅补 organizationId + 进售价，禁止展示 enrich。
+     * 汇总金额专用明细列表：单源有界装载；仅补 organizationId + 进售价，禁止展示 enrich。
      *
-     * @param dateFrom            日起
-     * @param dateTo              日止
-     * @param sourceCode          来源筛
-     * @param locationId          可选库位
-     * @param feeNatureContractNo 费用性质 bus_no
+     * @param filter 报表筛选
      * @return 仅含聚合/定价字段的明细行
      */
     public List<OutpatientConsumableUsageDetailRowDto> listDetailForSummaryAmounts(
-        String dateFrom,
-        String dateTo,
-        String sourceCode,
-        Long locationId,
-        String feeNatureContractNo) {
-        String source = this.resolveSourceCode(sourceCode);
-        // Pre：单来源/并集与 listDetailForExport 同分支，改走金额-only 装载
+        ConsumableUsageReportQueryFilter filter) {
+        String source = this.resolveSourceCode(filter.getSourceCode());
+        // Pre：单来源金额-only；禁止回刷全窗展示明细
         if (ConsumableUsageReportConstants.SOURCE_CODE_PATIENT_DISPENSE.equals(source)) {
             return this.listPatientDetailsForSummaryAmounts(
-                dateFrom, dateTo, locationId, feeNatureContractNo, ConsumableUsageReportConstants.EXPORT_MAX_ROWS);
+                filter, ConsumableUsageReportConstants.EXPORT_MAX_ROWS);
         }
         if (ConsumableUsageReportConstants.SOURCE_CODE_DEPT_ISSUE.equals(source)) {
             return this.listDeptDetailsForSummaryAmounts(
-                dateFrom, dateTo, locationId, ConsumableUsageReportConstants.EXPORT_MAX_ROWS);
+                filter, ConsumableUsageReportConstants.EXPORT_MAX_ROWS);
         }
-        return this.listMergedDetailLinesForSummaryAmounts(
-            dateFrom, dateTo, locationId, feeNatureContractNo, ConsumableUsageReportConstants.EXPORT_MAX_ROWS);
+        throw new BusinessException(
+            ConsumableUsageReportConstants.EX_RPT_OCU_103,
+            "禁止全部来源混查");
     }
 
     /**
-     * 患者侧 scope 预解析并叠加费用性质 encounter 收窄。
+     * 患者侧 scope 预解析、费用性质 encounter 收窄与品规/患者/记录类型筛选。
      *
      * @param query               患者侧查询
-     * @param encounterClassCode  就诊类别
-     * @param dateFrom            日起
-     * @param dateTo              日止
-     * @param locationId          库位
-     * @param summaryDimension    汇总维
-     * @param feeNatureContractNo 费用性质 bus_no
+     * @param encounterClassCode  就诊类别 AMB / IMP
+     * @param filter              报表筛选
+     * @param summaryDimension    汇总维；明细可 null
      */
     private void preparePatientDispenseQueryWithFeeNature(
         ConsumableUsageReportPageQuery query,
         String encounterClassCode,
-        String dateFrom,
-        String dateTo,
-        Long locationId,
-        String summaryDimension,
-        String feeNatureContractNo) {
+        ConsumableUsageReportQueryFilter filter,
+        String summaryDimension) {
         this.consumableUsageReportScopeLoader.preparePatientDispenseQuery(
-            query, encounterClassCode, dateFrom, dateTo, locationId, summaryDimension);
+            query,
+            encounterClassCode,
+            filter.getDateFrom(),
+            filter.getDateTo(),
+            filter.getLocationId(),
+            summaryDimension,
+            filter.getOrganizationId());
         this.reportPatientSettlementContextAssembler.applyFeeNatureFilterToConsumableUsageReportPageQuery(
-            query, feeNatureContractNo);
+            query, filter.getFeeNatureContractNo());
+        // Pre：记录类型/执行人/品规/患者关键字叠加
+        this.consumableUsageReportFilterLoader.applyPatientExtraFilters(query, filter, encounterClassCode);
+    }
+
+    /**
+     * 科室领用侧 scope 预解析与品规筛选。
+     *
+     * @param query              科室侧查询
+     * @param encounterClassCode 就诊类别 AMB / IMP
+     * @param filter             报表筛选
+     * @param summaryDimension   汇总维；明细可 null
+     */
+    private void prepareDeptIssueQuery(
+        DeptIssueReportPageQuery query,
+        String encounterClassCode,
+        ConsumableUsageReportQueryFilter filter,
+        String summaryDimension) {
+        this.consumableUsageReportScopeLoader.prepareDeptIssueQuery(
+            query,
+            encounterClassCode,
+            filter.getDateFrom(),
+            filter.getDateTo(),
+            filter.getLocationId(),
+            summaryDimension,
+            filter.getOrganizationId());
+        // Pre：类型/关键字 → resolvedItemIds
+        this.consumableUsageReportFilterLoader.applyDeptExtraFilters(query, filter);
     }
 
     /**
      * 仅患者侧分页。
      *
-     * @param dateFrom            日起
-     * @param dateTo              日止
-     * @param locationId          可选库位
-     * @param feeNatureContractNo 费用性质 bus_no
-     * @param pageNo              1 基页码
-     * @param pageSize            页大小
+     * @param filter   报表筛选
+     * @param pageNo   1 基页码
+     * @param pageSize 页大小
      * @return 患者侧明细分页（含展示 enrich）
      */
     private OutpatientConsumableUsageDetailPageResult pagePatientOnly(
-        String dateFrom,
-        String dateTo,
-        Long locationId,
-        String feeNatureContractNo,
+        ConsumableUsageReportQueryFilter filter,
         int pageNo,
         int pageSize) {
         ConsumableUsageReportPageQuery query = new ConsumableUsageReportPageQuery();
         this.preparePatientDispenseQueryWithFeeNature(
-            query, EncounterClass.AMB.getCode(), dateFrom, dateTo, locationId, null, feeNatureContractNo);
+            query, EncounterClass.AMB.getCode(), filter, null);
         query.setPageNo(pageNo);
         query.setPageSize(pageSize);
         Page<ConsumableUsageDispenseLineQueryModel> page =
@@ -350,22 +340,17 @@ public class OutpatientConsumableUsageReportQuerySupport {
     /**
      * 仅科室侧分页。
      *
-     * @param dateFrom   日起
-     * @param dateTo     日止
-     * @param locationId 可选库位
-     * @param pageNo     1 基页码
-     * @param pageSize   页大小
+     * @param filter   报表筛选
+     * @param pageNo   1 基页码
+     * @param pageSize 页大小
      * @return 科室侧明细分页（含展示 enrich）
      */
     private OutpatientConsumableUsageDetailPageResult pageDeptOnly(
-        String dateFrom,
-        String dateTo,
-        Long locationId,
+        ConsumableUsageReportQueryFilter filter,
         int pageNo,
         int pageSize) {
         DeptIssueReportPageQuery query = new DeptIssueReportPageQuery();
-        this.consumableUsageReportScopeLoader.prepareDeptIssueQuery(
-            query, EncounterClass.AMB.getCode(), dateFrom, dateTo, locationId, null);
+        this.prepareDeptIssueQuery(query, EncounterClass.AMB.getCode(), filter, null);
         query.setPageNo(pageNo);
         query.setPageSize(pageSize);
         Page<DeptIssueReportLineQueryModel> page =
@@ -382,134 +367,18 @@ public class OutpatientConsumableUsageReportQuerySupport {
     }
 
     /**
-     * 两路有界列表合并排序（导出 DETAIL / 展示 enrich）。
-     *
-     * @param dateFrom            日起
-     * @param dateTo              日止
-     * @param locationId          可选库位
-     * @param feeNatureContractNo 费用性质 bus_no
-     * @param maxRows             合并后上限
-     * @return 合并排序后的明细行
-     */
-    private List<OutpatientConsumableUsageDetailRowDto> listMergedDetailLines(
-        String dateFrom,
-        String dateTo,
-        Long locationId,
-        String feeNatureContractNo,
-        int maxRows) {
-        List<OutpatientConsumableUsageDetailRowDto> patientRows =
-            this.listPatientDetails(dateFrom, dateTo, locationId, feeNatureContractNo, maxRows);
-        List<OutpatientConsumableUsageDetailRowDto> deptRows =
-            this.listDeptDetails(dateFrom, dateTo, locationId, maxRows);
-        List<OutpatientConsumableUsageDetailRowDto> merged = new ArrayList<>(patientRows.size() + deptRows.size());
-        merged.addAll(patientRows);
-        merged.addAll(deptRows);
-        // Asm：业务时间倒序；空时间沉底
-        merged.sort(Comparator.comparing(
-            OutpatientConsumableUsageDetailRowDto::getBusinessTime,
-            Comparator.nullsLast(Comparator.reverseOrder())));
-        if (merged.size() > maxRows) {
-            return new ArrayList<>(merged.subList(0, maxRows));
-        }
-        return merged;
-    }
-
-    /**
-     * 两路明细按业务时间倒序合并后切当前页（SOURCE=全部）。
-     *
-     * @param patientRows 患者侧前缀行
-     * @param deptRows    科室侧前缀行
-     * @param pageNo      1 基页码
-     * @param pageSize    页大小
-     * @return 当前页切片；页越界为空列表
-     */
-    private List<OutpatientConsumableUsageDetailRowDto> mergeAndSlice(
-        List<OutpatientConsumableUsageDetailRowDto> patientRows,
-        List<OutpatientConsumableUsageDetailRowDto> deptRows,
-        int pageNo,
-        int pageSize) {
-        List<OutpatientConsumableUsageDetailRowDto> merged = new ArrayList<>();
-        if (patientRows != null) {
-            merged.addAll(patientRows);
-        }
-        if (deptRows != null) {
-            merged.addAll(deptRows);
-        }
-        // Asm：业务时间倒序；空时间沉底
-        merged.sort(Comparator.comparing(
-            OutpatientConsumableUsageDetailRowDto::getBusinessTime,
-            Comparator.nullsLast(Comparator.reverseOrder())));
-        if (pageSize <= 0) {
-            return List.of();
-        }
-        int safePageNo = pageNo;
-        if (safePageNo < 1) {
-            safePageNo = 1;
-        }
-        int fromIndex = (safePageNo - 1) * pageSize;
-        if (fromIndex >= merged.size()) {
-            return List.of();
-        }
-        int toIndex = fromIndex + pageSize;
-        if (toIndex > merged.size()) {
-            toIndex = merged.size();
-        }
-        return new ArrayList<>(merged.subList(fromIndex, toIndex));
-    }
-
-    /**
-     * 汇总金额：两路有界合并（仅金额 enrich）。
-     *
-     * @param dateFrom            日起
-     * @param dateTo              日止
-     * @param locationId          可选库位
-     * @param feeNatureContractNo 费用性质 bus_no
-     * @param maxRows             合并后上限
-     * @return 合并排序后的金额明细
-     */
-    private List<OutpatientConsumableUsageDetailRowDto> listMergedDetailLinesForSummaryAmounts(
-        String dateFrom,
-        String dateTo,
-        Long locationId,
-        String feeNatureContractNo,
-        int maxRows) {
-        List<OutpatientConsumableUsageDetailRowDto> patientRows =
-            this.listPatientDetailsForSummaryAmounts(
-                dateFrom, dateTo, locationId, feeNatureContractNo, maxRows);
-        List<OutpatientConsumableUsageDetailRowDto> deptRows =
-            this.listDeptDetailsForSummaryAmounts(dateFrom, dateTo, locationId, maxRows);
-        List<OutpatientConsumableUsageDetailRowDto> merged = new ArrayList<>(patientRows.size() + deptRows.size());
-        merged.addAll(patientRows);
-        merged.addAll(deptRows);
-        // Asm：业务时间倒序；空时间沉底
-        merged.sort(Comparator.comparing(
-            OutpatientConsumableUsageDetailRowDto::getBusinessTime,
-            Comparator.nullsLast(Comparator.reverseOrder())));
-        if (merged.size() > maxRows) {
-            return new ArrayList<>(merged.subList(0, maxRows));
-        }
-        return merged;
-    }
-
-    /**
      * 患者侧有界明细列表。
      *
-     * @param dateFrom            日起
-     * @param dateTo              日止
-     * @param locationId          可选库位
-     * @param feeNatureContractNo 费用性质 bus_no
-     * @param maxRows             有界上限
+     * @param filter  报表筛选
+     * @param maxRows 有界上限
      * @return 含展示 enrich 的患者明细
      */
     private List<OutpatientConsumableUsageDetailRowDto> listPatientDetails(
-        String dateFrom,
-        String dateTo,
-        Long locationId,
-        String feeNatureContractNo,
+        ConsumableUsageReportQueryFilter filter,
         int maxRows) {
         ConsumableUsageReportPageQuery query = new ConsumableUsageReportPageQuery();
         this.preparePatientDispenseQueryWithFeeNature(
-            query, EncounterClass.AMB.getCode(), dateFrom, dateTo, locationId, null, feeNatureContractNo);
+            query, EncounterClass.AMB.getCode(), filter, null);
         query.setPageSize(maxRows);
         List<ConsumableUsageDispenseLineQueryModel> models =
             this.deviceDispenseQueryService.listConsumableUsageDispenseLines(query);
@@ -521,20 +390,15 @@ public class OutpatientConsumableUsageReportQuerySupport {
     /**
      * 科室侧有界明细列表。
      *
-     * @param dateFrom   日起
-     * @param dateTo     日止
-     * @param locationId 可选库位
-     * @param maxRows    有界上限
+     * @param filter  报表筛选
+     * @param maxRows 有界上限
      * @return 含展示 enrich 的科室明细
      */
     private List<OutpatientConsumableUsageDetailRowDto> listDeptDetails(
-        String dateFrom,
-        String dateTo,
-        Long locationId,
+        ConsumableUsageReportQueryFilter filter,
         int maxRows) {
         DeptIssueReportPageQuery query = new DeptIssueReportPageQuery();
-        this.consumableUsageReportScopeLoader.prepareDeptIssueQuery(
-            query, EncounterClass.AMB.getCode(), dateFrom, dateTo, locationId, null);
+        this.prepareDeptIssueQuery(query, EncounterClass.AMB.getCode(), filter, null);
         query.setPageSize(maxRows);
         List<DeptIssueReportLineQueryModel> models =
             this.supplyRequestQueryService.listDeptIssueReportLines(query);
@@ -546,22 +410,16 @@ public class OutpatientConsumableUsageReportQuerySupport {
     /**
      * 汇总金额：患者侧有界明细（仅 organizationId + 进售价）。
      *
-     * @param dateFrom            日起
-     * @param dateTo              日止
-     * @param locationId          可选库位
-     * @param feeNatureContractNo 费用性质 bus_no
-     * @param maxRows             有界上限
+     * @param filter  报表筛选
+     * @param maxRows 有界上限
      * @return 金额聚合用患者明细
      */
     private List<OutpatientConsumableUsageDetailRowDto> listPatientDetailsForSummaryAmounts(
-        String dateFrom,
-        String dateTo,
-        Long locationId,
-        String feeNatureContractNo,
+        ConsumableUsageReportQueryFilter filter,
         int maxRows) {
         ConsumableUsageReportPageQuery query = new ConsumableUsageReportPageQuery();
         this.preparePatientDispenseQueryWithFeeNature(
-            query, EncounterClass.AMB.getCode(), dateFrom, dateTo, locationId, null, feeNatureContractNo);
+            query, EncounterClass.AMB.getCode(), filter, null);
         query.setPageSize(maxRows);
         List<ConsumableUsageDispenseLineQueryModel> models =
             this.deviceDispenseQueryService.listConsumableUsageDispenseLines(query);
@@ -573,20 +431,15 @@ public class OutpatientConsumableUsageReportQuerySupport {
     /**
      * 汇总金额：科室侧有界明细（仅 organizationId + 进售价）。
      *
-     * @param dateFrom   日起
-     * @param dateTo     日止
-     * @param locationId 可选库位
-     * @param maxRows    有界上限
+     * @param filter  报表筛选
+     * @param maxRows 有界上限
      * @return 金额聚合用科室明细
      */
     private List<OutpatientConsumableUsageDetailRowDto> listDeptDetailsForSummaryAmounts(
-        String dateFrom,
-        String dateTo,
-        Long locationId,
+        ConsumableUsageReportQueryFilter filter,
         int maxRows) {
         DeptIssueReportPageQuery query = new DeptIssueReportPageQuery();
-        this.consumableUsageReportScopeLoader.prepareDeptIssueQuery(
-            query, EncounterClass.AMB.getCode(), dateFrom, dateTo, locationId, null);
+        this.prepareDeptIssueQuery(query, EncounterClass.AMB.getCode(), filter, null);
         query.setPageSize(maxRows);
         List<DeptIssueReportLineQueryModel> models =
             this.supplyRequestQueryService.listDeptIssueReportLines(query);
@@ -624,6 +477,8 @@ public class OutpatientConsumableUsageReportQuerySupport {
             row.setUnitCode(model.getUnitCode());
             row.setLotNumber(model.getLotNumber());
             row.setBusinessTime(model.getDispenseTime());
+            // 发耗材人：患者发放取执行人
+            row.setPerformerId(model.getPerformerId());
             BigDecimal quantity = model.getQuantity();
             if (quantity == null) {
                 quantity = BigDecimal.ZERO;
@@ -667,6 +522,8 @@ public class OutpatientConsumableUsageReportQuerySupport {
             row.setUnitCode(model.getUnitCode());
             row.setLotNumber(model.getLotNumber());
             row.setBusinessTime(model.getBusinessTime());
+            // 发耗材人：科室领用取审批人
+            row.setPerformerId(model.getApproverId());
             BigDecimal quantity = model.getItemQuantity();
             if (quantity == null) {
                 quantity = BigDecimal.ZERO;
@@ -761,6 +618,7 @@ public class OutpatientConsumableUsageReportQuerySupport {
         LinkedHashSet<Long> encounterIds = new LinkedHashSet<>();
         LinkedHashSet<Long> locationIds = new LinkedHashSet<>();
         LinkedHashSet<Long> prefilledOrgIds = new LinkedHashSet<>();
+        LinkedHashSet<Long> performerIds = new LinkedHashSet<>();
         for (OutpatientConsumableUsageDetailRowDto row : rows) {
             if (row.getDeviceDefId() != null) {
                 deviceDefIds.add(row.getDeviceDefId());
@@ -778,6 +636,9 @@ public class OutpatientConsumableUsageReportQuerySupport {
             if (row.getOrganizationId() != null) {
                 prefilledOrgIds.add(row.getOrganizationId());
             }
+            if (row.getPerformerId() != null) {
+                performerIds.add(row.getPerformerId());
+            }
         }
         Map<Long, DeviceDefinition> deviceById = this.loadDeviceMap(deviceDefIds);
         Map<Long, String> patientNameById = this.patientQueryService.findPatientNamesByIds(patientIds);
@@ -792,6 +653,7 @@ public class OutpatientConsumableUsageReportQuerySupport {
         organizationIds.addAll(prefilledOrgIds);
         Map<Long, String> orgNameById = this.organizationQueryService.mapNamesByIds(organizationIds);
         Map<Long, String> locationNameById = this.locationQueryService.mapNamesByIds(locationIds);
+        Map<Long, String> performerNameById = this.loadPerformerNameById(performerIds);
         Map<String, String> unitLabelMap =
             this.terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.UNIT_CODE);
         List<OutpatientConsumableUsageDetailRowDto> patientAmountLines = new ArrayList<>();
@@ -823,6 +685,9 @@ public class OutpatientConsumableUsageReportQuerySupport {
             if (row.getLocationId() != null) {
                 row.setLocationName(locationNameById.get(row.getLocationId()));
             }
+            if (row.getPerformerId() != null) {
+                row.setPerformerName(performerNameById.get(row.getPerformerId()));
+            }
             if (row.getUnitCode() != null) {
                 row.setUnitCode_dictText(unitLabelMap.get(row.getUnitCode()));
             }
@@ -846,7 +711,9 @@ public class OutpatientConsumableUsageReportQuerySupport {
     }
 
     /**
-     * 患者侧明细行回填费用性质与 medType（科室领用无 encounter 留空）。
+     * 患者侧明细行回填费用性质与 medType。
+     *
+     * <p>费用性质：发放收费行挂账账户；医疗类别仍取就诊主诊；科室领用无 encounter/发放则留空。</p>
      *
      * @param rows 已装配明细行
      */
@@ -855,28 +722,49 @@ public class OutpatientConsumableUsageReportQuerySupport {
             return;
         }
         LinkedHashSet<Long> encounterIds = new LinkedHashSet<>();
+        List<OutpatientConsumableUsageDetailRowDto> patientRows = new ArrayList<>();
         for (OutpatientConsumableUsageDetailRowDto row : rows) {
-            if (row != null && row.getEncounterId() != null) {
+            if (row == null) {
+                continue;
+            }
+            if (row.getEncounterId() != null) {
                 encounterIds.add(row.getEncounterId());
             }
-        }
-        if (encounterIds.isEmpty()) {
-            return;
+            if (row.getDispenseId() != null) {
+                patientRows.add(row);
+            }
         }
         Map<Long, PatientSettlementContextRow> contextByEncounterId =
             this.reportPatientSettlementContextAssembler.mapContextsByEncounterIds(encounterIds);
+        Map<Long, Long> accountIdByDispenseId =
+            this.consumableUsageReportAmountEnricher.mapAccountIdByDispenseId(patientRows);
+        Map<Long, PatientSettlementContextRow> feeNatureByAccountId =
+            this.reportPatientSettlementContextAssembler.mapFeeNatureContextsByAccountIds(
+                accountIdByDispenseId.values());
         for (OutpatientConsumableUsageDetailRowDto row : rows) {
-            if (row == null || row.getEncounterId() == null) {
+            if (row == null) {
                 continue;
             }
-            PatientSettlementContextRow context = contextByEncounterId.get(row.getEncounterId());
-            if (context == null) {
+            if (row.getEncounterId() != null) {
+                PatientSettlementContextRow context = contextByEncounterId.get(row.getEncounterId());
+                if (context != null) {
+                    row.setMedType(context.getMedType());
+                    row.setMedTypeDisplay(context.getMedTypeDisplay());
+                }
+            }
+            if (row.getDispenseId() == null) {
                 continue;
             }
-            row.setFeeNatureContractNo(context.getFeeNatureContractNo());
-            row.setFeeNatureDisplay(context.getFeeNatureDisplay());
-            row.setMedType(context.getMedType());
-            row.setMedTypeDisplay(context.getMedTypeDisplay());
+            Long accountId = accountIdByDispenseId.get(row.getDispenseId());
+            if (accountId == null) {
+                continue;
+            }
+            PatientSettlementContextRow feeNature = feeNatureByAccountId.get(accountId);
+            if (feeNature == null) {
+                continue;
+            }
+            row.setFeeNatureContractNo(feeNature.getFeeNatureContractNo());
+            row.setFeeNatureDisplay(feeNature.getFeeNatureDisplay());
         }
     }
 
@@ -924,7 +812,11 @@ public class OutpatientConsumableUsageReportQuerySupport {
     }
 
     /**
-     * 科室侧汇总映射。
+     * 科室侧汇总映射；LOCATION 维将领域 {@code PHARMACY:} 键规范为 {@code LOCATION:}。
+     *
+     * @param summaries 科室领域汇总行
+     * @param dimension 请求维（对外维，可为 LOCATION）
+     * @return 应用层汇总行
      */
     private List<OutpatientConsumableUsageSummaryRowDto> mapDeptSummaries(
         List<DeptIssueReportSummaryRow> summaries,
@@ -938,7 +830,7 @@ public class OutpatientConsumableUsageReportQuerySupport {
                 continue;
             }
             OutpatientConsumableUsageSummaryRowDto row = new OutpatientConsumableUsageSummaryRowDto();
-            row.setDimensionKey(summary.getDimensionKey());
+            row.setDimensionKey(this.normalizeDeptDimensionKey(summary.getDimensionKey(), dimension));
             row.setSummaryDimension(dimension);
             row.setOrganizationId(summary.getOrganizationId());
             row.setLocationId(summary.getPurposeLocationId());
@@ -1003,9 +895,12 @@ public class OutpatientConsumableUsageReportQuerySupport {
     }
 
     /**
-     * 回填汇总展示名。
+     * 回填汇总展示名：统一写入 {@code dimensionName}（耗材房/品规/类型/科室）。
+     *
+     * @param rows      汇总行
+     * @param dimension 请求维
      */
-    private void enrichSummaryDisplay(List<OutpatientConsumableUsageSummaryRowDto> rows) {
+    private void enrichSummaryDisplay(List<OutpatientConsumableUsageSummaryRowDto> rows, String dimension) {
         if (rows == null || rows.isEmpty()) {
             return;
         }
@@ -1031,6 +926,12 @@ public class OutpatientConsumableUsageReportQuerySupport {
         Map<Long, String> orgNameById = this.organizationQueryService.mapNamesByIds(organizationIds);
         Map<Long, String> locationNameById = this.locationQueryService.mapNamesByIds(locationIds);
         Map<Long, DeviceDefinition> deviceById = this.loadDeviceMap(deviceDefIds);
+        // 类型维：术语码→展示名（禁止把 categoryCode 原样当 dimensionName）
+        Map<String, String> categoryLabelByCode = Map.of();
+        if (ConsumableUsageReportConstants.SUMMARY_DIMENSION_CATEGORY.equals(dimension)) {
+            categoryLabelByCode = this.terminologyOptionLoader.buildLabelMap(
+                TerminologyCodeSystemNameConstants.DEVICE_CATEGORY_CODE);
+        }
         for (OutpatientConsumableUsageSummaryRowDto row : rows) {
             if (row.getPatientId() != null) {
                 row.setPatientName(patientNameById.get(row.getPatientId()));
@@ -1044,6 +945,26 @@ public class OutpatientConsumableUsageReportQuerySupport {
             DeviceDefinition device = deviceById.get(row.getDeviceDefId());
             if (device != null) {
                 row.setDeviceName(device.getName());
+            }
+            // Asm：按维写统一维度列
+            if (ConsumableUsageReportConstants.SUMMARY_DIMENSION_ITEM.equals(dimension)) {
+                row.setDimensionName(row.getDeviceName());
+            } else if (ConsumableUsageReportConstants.SUMMARY_DIMENSION_CATEGORY.equals(dimension)) {
+                String categoryCode = row.getCategoryCode();
+                String categoryLabel =
+                    OrderCatalogDisplayAssembler.resolveCategoryDisplay(categoryLabelByCode, categoryCode);
+                if (StringUtils.isNotEmpty(categoryLabel)) {
+                    row.setDimensionName(categoryLabel);
+                } else {
+                    row.setDimensionName(categoryCode);
+                }
+            } else if (ConsumableUsageReportConstants.SUMMARY_DIMENSION_DEPARTMENT.equals(dimension)) {
+                row.setDimensionName(row.getOrganizationName());
+            } else if (ConsumableUsageReportConstants.SUMMARY_DIMENSION_LOCATION.equals(dimension)) {
+                row.setDimensionName(row.getLocationName());
+            } else {
+                // 遗留 PATIENT 维：患者姓名
+                row.setDimensionName(row.getPatientName());
             }
         }
     }
@@ -1064,6 +985,30 @@ public class OutpatientConsumableUsageReportQuerySupport {
             deviceById.put(device.getId(), device);
         }
         return deviceById;
+    }
+
+    /**
+     * 批量加载执行人（发耗材人）姓名。
+     *
+     * @param performerIds 医务人员主键
+     * @return id → 姓名
+     */
+    private Map<Long, String> loadPerformerNameById(LinkedHashSet<Long> performerIds) {
+        Map<Long, String> performerNameById = new HashMap<>();
+        if (performerIds == null || performerIds.isEmpty()) {
+            return performerNameById;
+        }
+        List<Practitioner> practitioners = this.practitionerQueryService.findAllByIds(performerIds);
+        for (Practitioner practitioner : practitioners) {
+            if (practitioner == null || practitioner.getId() == null) {
+                continue;
+            }
+            if (StringUtils.isEmpty(practitioner.getName())) {
+                continue;
+            }
+            performerNameById.put(practitioner.getId(), practitioner.getName().trim());
+        }
+        return performerNameById;
     }
 
     /**
@@ -1102,33 +1047,220 @@ public class OutpatientConsumableUsageReportQuerySupport {
     }
 
     /**
-     * 汇总维缺省回落患者（BR-RPT-OCU-003 主维之一）。
+     * 汇总维缺省回落耗材房（对齐药品默认药房）。
      *
      * @param summaryDimension 请求维；可空
-     * @return PATIENT / DEPARTMENT 等
+     * @return LOCATION / ITEM / CATEGORY / DEPARTMENT 等
      */
     private String resolveSummaryDimension(String summaryDimension) {
         String trimmed = StringUtils.trimToNull(summaryDimension);
-        // Gate：未传维时按患者净用量，避免空维导致领域拒查
+        // Gate：未传维时按耗材房净用量
         if (trimmed == null) {
-            return ConsumableUsageReportConstants.SUMMARY_DIMENSION_PATIENT;
+            return ConsumableUsageReportConstants.SUMMARY_DIMENSION_LOCATION;
         }
         return trimmed;
     }
 
     /**
-     * 来源筛缺省回落全部（两路并集）。
+     * 患者侧领域维：CATEGORY 先按 ITEM 分桶。
+     *
+     * @param requestDimension 请求维
+     * @return 领域 summaryDimension
+     */
+    private String resolvePatientDomainDimension(String requestDimension) {
+        if (ConsumableUsageReportConstants.SUMMARY_DIMENSION_CATEGORY.equals(requestDimension)) {
+            return ConsumableUsageReportConstants.SUMMARY_DIMENSION_ITEM;
+        }
+        return requestDimension;
+    }
+
+    /**
+     * 科室侧领域维：LOCATION→PHARMACY，CATEGORY→ITEM。
+     *
+     * @param requestDimension 请求维
+     * @return 传入 ScopeLoader / 领域的维码
+     */
+    private String resolveDeptDomainDimension(String requestDimension) {
+        if (ConsumableUsageReportConstants.SUMMARY_DIMENSION_LOCATION.equals(requestDimension)) {
+            return DeptIssueReportConstants.SUMMARY_DIMENSION_PHARMACY;
+        }
+        if (ConsumableUsageReportConstants.SUMMARY_DIMENSION_CATEGORY.equals(requestDimension)) {
+            return DeptIssueReportConstants.SUMMARY_DIMENSION_ITEM;
+        }
+        return requestDimension;
+    }
+
+    /**
+     * 科室领域键规范为对外 LOCATION: 前缀（金额 enrich 同口径）。
+     *
+     * @param domainKey 领域 dimensionKey
+     * @param dimension 请求维
+     * @return 规范化键
+     */
+    private String normalizeDeptDimensionKey(String domainKey, String dimension) {
+        if (domainKey == null) {
+            return null;
+        }
+        if (!ConsumableUsageReportConstants.SUMMARY_DIMENSION_LOCATION.equals(dimension)) {
+            return domainKey;
+        }
+        if (domainKey.startsWith("PHARMACY:")) {
+            return "LOCATION:" + domainKey.substring("PHARMACY:".length());
+        }
+        return domainKey;
+    }
+
+    /**
+     * 收集汇总行品规主键。
+     *
+     * @param rows 汇总行
+     * @return 去重品规 id
+     */
+    private LinkedHashSet<Long> collectDeviceDefIds(List<OutpatientConsumableUsageSummaryRowDto> rows) {
+        LinkedHashSet<Long> deviceDefIds = new LinkedHashSet<>();
+        if (rows == null) {
+            return deviceDefIds;
+        }
+        for (OutpatientConsumableUsageSummaryRowDto row : rows) {
+            if (row != null && row.getDeviceDefId() != null) {
+                deviceDefIds.add(row.getDeviceDefId());
+            }
+        }
+        return deviceDefIds;
+    }
+
+    /**
+     * 收集明细行品规主键。
+     *
+     * @param detailRows 明细行
+     * @return 去重品规 id
+     */
+    private LinkedHashSet<Long> collectDeviceDefIdsFromDetails(
+        List<OutpatientConsumableUsageDetailRowDto> detailRows) {
+        LinkedHashSet<Long> deviceDefIds = new LinkedHashSet<>();
+        if (detailRows == null) {
+            return deviceDefIds;
+        }
+        for (OutpatientConsumableUsageDetailRowDto row : detailRows) {
+            if (row != null && row.getDeviceDefId() != null) {
+                deviceDefIds.add(row.getDeviceDefId());
+            }
+        }
+        return deviceDefIds;
+    }
+
+    /**
+     * 批量解析品规 → 耗材类型 code。
+     *
+     * @param deviceDefIds 品规主键
+     * @return id → categoryCode
+     */
+    private Map<Long, String> resolveCategoryCodeByDeviceDefIds(LinkedHashSet<Long> deviceDefIds) {
+        Map<Long, String> categoryById = new HashMap<>();
+        if (deviceDefIds == null || deviceDefIds.isEmpty()) {
+            return categoryById;
+        }
+        Map<Long, DeviceDefinition> deviceById = this.loadDeviceMap(deviceDefIds);
+        for (Map.Entry<Long, DeviceDefinition> entry : deviceById.entrySet()) {
+            DeviceDefinition device = entry.getValue();
+            if (device == null) {
+                continue;
+            }
+            categoryById.put(entry.getKey(), device.getCategoryCode());
+        }
+        return categoryById;
+    }
+
+    /**
+     * 将 ITEM 汇总行再按类型分桶为 CATEGORY 行。
+     *
+     * @param itemRows                   ITEM 维汇总行
+     * @param categoryCodeByDeviceDefId  品规→类型
+     * @return CATEGORY 维汇总行
+     */
+    private List<OutpatientConsumableUsageSummaryRowDto> rebucketItemRowsToCategory(
+        List<OutpatientConsumableUsageSummaryRowDto> itemRows,
+        Map<Long, String> categoryCodeByDeviceDefId) {
+        Map<String, OutpatientConsumableUsageSummaryRowDto> bucket = new LinkedHashMap<>();
+        if (itemRows == null) {
+            return new ArrayList<>();
+        }
+        Map<Long, String> categoryMap = categoryCodeByDeviceDefId;
+        if (categoryMap == null) {
+            categoryMap = Map.of();
+        }
+        for (OutpatientConsumableUsageSummaryRowDto itemRow : itemRows) {
+            if (itemRow == null) {
+                continue;
+            }
+            String categoryCode = "";
+            if (itemRow.getDeviceDefId() != null) {
+                String mapped = categoryMap.get(itemRow.getDeviceDefId());
+                if (mapped != null) {
+                    categoryCode = mapped;
+                }
+            }
+            String key = "CATEGORY:" + categoryCode;
+            OutpatientConsumableUsageSummaryRowDto existing = bucket.get(key);
+            if (existing == null) {
+                OutpatientConsumableUsageSummaryRowDto categoryRow = new OutpatientConsumableUsageSummaryRowDto();
+                categoryRow.setDimensionKey(key);
+                categoryRow.setSummaryDimension(ConsumableUsageReportConstants.SUMMARY_DIMENSION_CATEGORY);
+                categoryRow.setCategoryCode(categoryCode);
+                categoryRow.setNetQuantity(itemRow.getNetQuantity());
+                categoryRow.setLineCount(itemRow.getLineCount());
+                categoryRow.setNetAmount(BigDecimal.ZERO);
+                bucket.put(key, categoryRow);
+                continue;
+            }
+            BigDecimal leftQty = existing.getNetQuantity();
+            if (leftQty == null) {
+                leftQty = BigDecimal.ZERO;
+            }
+            BigDecimal rightQty = itemRow.getNetQuantity();
+            if (rightQty == null) {
+                rightQty = BigDecimal.ZERO;
+            }
+            existing.setNetQuantity(leftQty.add(rightQty));
+            long leftCount = 0L;
+            if (existing.getLineCount() != null) {
+                leftCount = existing.getLineCount();
+            }
+            long rightCount = 0L;
+            if (itemRow.getLineCount() != null) {
+                rightCount = itemRow.getLineCount();
+            }
+            existing.setLineCount(leftCount + rightCount);
+        }
+        return new ArrayList<>(bucket.values());
+    }
+
+    /**
+     * 来源筛缺省回落患者使用；ALL / 未知码拒绝（禁止并集混查）。
      *
      * @param sourceCode 请求来源；可空
-     * @return ALL / PATIENT_DISPENSE / DEPT_ISSUE
+     * @return PATIENT_DISPENSE / DEPT_ISSUE
+     * @throws BusinessException 传入 ALL 或非法码时拒绝
      */
     private String resolveSourceCode(String sourceCode) {
         String trimmed = StringUtils.trimToNull(sourceCode);
-        // Gate：未传来源时查两路，与 AS「明细=并集」一致
+        // Gate：未传默认患者使用
         if (trimmed == null) {
-            return ConsumableUsageReportConstants.SOURCE_CODE_ALL;
+            return ConsumableUsageReportConstants.SOURCE_CODE_PATIENT_DISPENSE;
         }
-        return trimmed;
+        // Gate：遗留 ALL 明确拒绝，禁止两路并集全窗物化
+        if (ConsumableUsageReportConstants.SOURCE_CODE_ALL.equals(trimmed)) {
+            throw new BusinessException(
+                ConsumableUsageReportConstants.EX_RPT_OCU_103,
+                "禁止全部来源混查");
+        }
+        if (ConsumableUsageReportConstants.SOURCE_CODE_PATIENT_DISPENSE.equals(trimmed)
+            || ConsumableUsageReportConstants.SOURCE_CODE_DEPT_ISSUE.equals(trimmed)) {
+            return trimmed;
+        }
+        throw new BusinessException(
+            ConsumableUsageReportConstants.EX_RPT_OCU_103,
+            "禁止全部来源混查");
     }
 
     /**
@@ -1138,8 +1270,7 @@ public class OutpatientConsumableUsageReportQuerySupport {
      * @return true 表示查询 DeviceDispense
      */
     private boolean includePatient(String source) {
-        return ConsumableUsageReportConstants.SOURCE_CODE_ALL.equals(source)
-            || ConsumableUsageReportConstants.SOURCE_CODE_PATIENT_DISPENSE.equals(source);
+        return ConsumableUsageReportConstants.SOURCE_CODE_PATIENT_DISPENSE.equals(source);
     }
 
     /**
@@ -1149,8 +1280,7 @@ public class OutpatientConsumableUsageReportQuerySupport {
      * @return true 表示查询 Supply DEPT_ISSUE
      */
     private boolean includeDept(String source) {
-        return ConsumableUsageReportConstants.SOURCE_CODE_ALL.equals(source)
-            || ConsumableUsageReportConstants.SOURCE_CODE_DEPT_ISSUE.equals(source);
+        return ConsumableUsageReportConstants.SOURCE_CODE_DEPT_ISSUE.equals(source);
     }
 
     /**

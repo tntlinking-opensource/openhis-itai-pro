@@ -9,6 +9,8 @@ import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
 import com.openhis.health.application.inpatient.financial.settle.support.dto.InpatientSettleCategorySummaryDto;
 import com.openhis.health.application.inpatient.financial.settle.support.dto.InpatientSettleChargeLineDto;
 import com.openhis.health.application.inpatient.financial.settle.support.dto.SettledPaymentBriefDto;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogUnitBandDto;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
@@ -102,7 +104,6 @@ public class InpatientSettleReadAssembler {
             dto.setChargeItemId(chargeItem.getId());
             dto.setUnitPrice(chargeItem.getUnitPrice());
             dto.setQuantityValue(chargeItem.getQuantityValue());
-            dto.setQuantityUnit(chargeItem.getQuantityUnit());
             dto.setLineAmount(chargeItem.getTotalPrice());
             dto.setStatusEnum(chargeItem.getStatusEnum());
             ChargeItemStatus status = EnumUtil.fromCode(ChargeItemStatus.class, chargeItem.getStatusEnum());
@@ -126,10 +127,55 @@ public class InpatientSettleReadAssembler {
                 dto.setCategoryCode(product.getCategoryCode());
                 dto.setCategoryDisplay(product.getCategoryCodeDictText());
             }
+            // Asm：数量单位输出中文展示名（对齐门诊收银 / 护士费用明细，避免 bottle/branch）
+            dto.setQuantityUnit(this.resolveQuantityUnitDisplay(chargeItem.getQuantityUnit(), product));
             dto.setSelected(defaultSelected);
             lines.add(dto);
         }
         return lines;
+    }
+
+    /**
+     * 将账单单位码解析为中文展示名。
+     *
+     * <p>优先目录入站单位槽 unitName，其次产品各槽字典文案；诊疗无匹配时回落主单位名。</p>
+     *
+     * @param quantityUnit 持久化单位码
+     * @param product      产品展示 DTO
+     * @return 展示单位；无匹配时回落原码
+     */
+    private String resolveQuantityUnitDisplay(String quantityUnit, ProductDefinitionDisplayDto product) {
+        if (product == null) {
+            return quantityUnit;
+        }
+        if (StringUtils.isNotEmpty(quantityUnit)) {
+            List<ProductDefinitionCatalogUnitBandDto> bands =
+                ProductDefinitionCatalogUnitBandsAssembler.buildInboundSelectionBands(product);
+            String normalized = quantityUnit.trim();
+            for (ProductDefinitionCatalogUnitBandDto band : bands) {
+                if (band == null || StringUtils.isEmpty(band.getUnitCode())) {
+                    continue;
+                }
+                if (normalized.equalsIgnoreCase(band.getUnitCode().trim())) {
+                    if (StringUtils.isNotEmpty(band.getUnitName())) {
+                        return band.getUnitName();
+                    }
+                }
+            }
+            String fromProductSlots =
+                ProductDefinitionCatalogUnitBandsAssembler.resolveUnitDisplayNameFromProduct(product, normalized);
+            if (StringUtils.isNotEmpty(fromProductSlots)) {
+                return fromProductSlots;
+            }
+        }
+        if (TableNameConstants.WKF_ACTIVITY_DEFINITION.equals(product.getProductTableName())) {
+            String primaryName =
+                ProductDefinitionCatalogUnitBandsAssembler.resolveCatalogPrimaryUnitName(product);
+            if (StringUtils.isNotEmpty(primaryName)) {
+                return primaryName;
+            }
+        }
+        return quantityUnit;
     }
 
     /**
@@ -393,7 +439,8 @@ public class InpatientSettleReadAssembler {
             dto.setPaymentId(payment.getId());
             dto.setPaymentNo(payment.getPaymentNo());
             dto.setSettleTime(payment.getBillDate());
-            dto.setReceivableTotal(payment.getDisplayAmount());
+            // Pre：历史「结算金额」取本批费用合计；少补 display=0 时回落 tendered，仍为 0 则保持 0（详情页用收费项合计）
+            dto.setReceivableTotal(this.resolvePaymentBatchTotal(payment));
             if (payment.getId() != null && payMethodTexts != null) {
                 dto.setPayMethodText(payMethodTexts.get(payment.getId()));
             }

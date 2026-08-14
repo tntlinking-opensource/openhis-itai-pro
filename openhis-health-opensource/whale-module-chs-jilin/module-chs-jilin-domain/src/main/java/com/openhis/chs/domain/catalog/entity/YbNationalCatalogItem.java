@@ -84,4 +84,20 @@ public class YbNationalCatalogItem extends BaseAuditedEntity implements IExclude
     /** 1301 TXT 行号（从 1 起）312 行为 */
     @Column(name = "source_line_no")
     private Integer sourceLineNo;
+
+    /** 1301 最小包装数量（规范第 42 列 / raw_json 下标 41）。 */
+    @Column(name = "min_pac_cnt", length = 20)
+    private String minPacCnt;
+
+    /** 1301 最小包装单位（规范第 43 列 / raw_json 下标 42）。 */
+    @Column(name = "min_pacunt", length = 30)
+    private String minPacunt;
+
+    /** 1301 最小制剂单位（规范第 44 列 / raw_json 下标 43）。 */
+    @Column(name = "min_prepunt", length = 30)
+    private String minPrepunt;
+
+    /** 1301 最小计价单位（规范第 49 列 / raw_json 下标 48）。 */
+    @Column(name = "min_prcunt", length = 50)
+    private String minPrcunt;
 }

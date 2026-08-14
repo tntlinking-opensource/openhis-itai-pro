@@ -14,16 +14,21 @@ import com.openhis.health.domain.medication.medicationdispense.service.Medicatio
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.enums.DispenseStatus;
+import com.openhis.health.domain.share.enums.MedicationDispenseType;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
  * 住院医嘱签退/校对退回只读门控（AS-IP-DOR-003 EX-IP-ORD-103、AS-IP-NUR-003 BR-IP-AUD-013 共用）。
  *
- * <p>跨聚合断言经各 DM {@code *QueryService} 完成（B.6.4）：净剩 COMPLETED 执行、阻塞性发药、不可回退费用。</p>
+ * <p>跨聚合断言经各 DM {@code *QueryService} 完成（B.6.4）：净剩 COMPLETED 执行、阻塞性发药（含净发药数量）、不可回退费用。</p>
+ *
+ * <p>发药口径对齐 DM-MED-002 §6.1.4：退药确认只推进 {@code REFUND+REFUNDED} 对冲行，正向 {@code COMPLETED} 不改态；
+ * 门控须按「正向已发数量 − 已确认退药数量」净额判断，不得把已全额对冲的正向 {@code COMPLETED} 误判为阻塞。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -37,7 +42,7 @@ public class InpatientAdviceRevokeGate {
     private final ChargeItemQueryService chargeItemQueryService;
 
     /**
-     * 断言药品申请可签退/校对退回：无净剩余执行、无在途/已发/待发退发药、无待结算/已结算/退款中费用。
+     * 断言药品申请可签退/校对退回：无净剩余执行、无在途/净已发/待发退发药、无待结算/已结算/退款中费用。
      *
      * @param encounterId 就诊主键
      * @param medReqIds   药品申请主键列表
@@ -109,7 +114,9 @@ public class InpatientAdviceRevokeGate {
     }
 
     /**
-     * 断言无阻塞性药品发放（在途/已发/待发退/部分退均不可签退或校对退回）。
+     * 断言无阻塞性药品发放：在途/待发退/部分退立即拦截；正向已发按与已确认退药的数量净额判断。
+     *
+     * <p>长期嘱可能多日发退：仅「有过 REFUNDED」不能放行，须 {@code 正向 COMPLETED 数量 ≤ REFUND+REFUNDED 数量}。</p>
      *
      * @param medReqId  药品申请主键
      * @param errorCode 业务语义码
@@ -117,10 +124,26 @@ public class InpatientAdviceRevokeGate {
      */
     private void assertNoBlockingDispense(Long medReqId, String errorCode, String message) {
         List<MedicationDispense> dispenses = medicationDispenseQueryService.listByMedReqIds(List.of(medReqId));
+        BigDecimal forwardCompletedQty = BigDecimal.ZERO;
+        BigDecimal refundedQty = BigDecimal.ZERO;
         for (MedicationDispense dispense : dispenses) {
-            if (isBlockingMedicationDispense(dispense)) {
+            if (isInFlightOrPendingRefundDispense(dispense)) {
+                // 在途或待发退/部分退未收口：禁止签退/校对退回
                 throw new BusinessException(errorCode, message);
             }
+            if (isForwardCompletedDispense(dispense)) {
+                // 正向 COMPLETED 仍可能是退药后的历史锚点，先累加待与 REFUNDED 对冲
+                forwardCompletedQty = forwardCompletedQty.add(resolveBusinessQuantity(dispense));
+                continue;
+            }
+            if (isConfirmedRefundDispense(dispense)) {
+                // 已确认退药对冲行：冲减净已发（DM-MED-002 §6.1.4）
+                refundedQty = refundedQty.add(resolveBusinessQuantity(dispense));
+            }
+        }
+        if (forwardCompletedQty.compareTo(refundedQty) > 0) {
+            // 净已发仍大于 0：尚有未退完的已发量，禁止签退/校对退回
+            throw new BusinessException(errorCode, message);
         }
     }
 
@@ -152,14 +175,12 @@ public class InpatientAdviceRevokeGate {
     }
 
     /**
-     * 药品发放是否阻塞签退/校对退回。
-     *
-     * <p>在途（PREPARATION/PREPARED/IN_PROGRESS/ON_HOLD）、已发、待发退/部分退均视为未处理干净。</p>
+     * 是否为在途或待发退/部分退发放行（不含正向 COMPLETED；COMPLETED 改走净数量对冲）。
      *
      * @param dispense 发放行
      * @return 阻塞时为 true
      */
-    private static boolean isBlockingMedicationDispense(MedicationDispense dispense) {
+    private static boolean isInFlightOrPendingRefundDispense(MedicationDispense dispense) {
         if (dispense == null || dispense.getStatusEnum() == null) {
             return false;
         }
@@ -171,9 +192,6 @@ public class InpatientAdviceRevokeGate {
             return true;
         }
         if (DispenseStatus.IN_PROGRESS.equals(status)) {
-            return true;
-        }
-        if (DispenseStatus.COMPLETED.equals(status)) {
             return true;
         }
         if (DispenseStatus.SUMMARIZED.equals(status)) {
@@ -192,6 +210,65 @@ public class InpatientAdviceRevokeGate {
             return true;
         }
         return false;
+    }
+
+    /**
+     * 是否为正向已发药行（非 REFUND 类型且 {@code COMPLETED}）。
+     *
+     * @param dispense 发放行
+     * @return 正向已发时为 true
+     */
+    private static boolean isForwardCompletedDispense(MedicationDispense dispense) {
+        if (dispense == null || dispense.getStatusEnum() == null) {
+            return false;
+        }
+        if (!DispenseStatus.COMPLETED.equals(dispense.getStatusEnum())) {
+            return false;
+        }
+        if (MedicationDispenseType.REFUND.equals(dispense.getDispenseEnum())) {
+            // REFUND 类型不应落 COMPLETED；防御性排除，避免误计入正向已发
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * 是否为已确认退药对冲行（{@code dispense_enum=REFUND} 且 {@code REFUNDED}）。
+     *
+     * @param dispense 发放行
+     * @return 已确认退药时为 true
+     */
+    private static boolean isConfirmedRefundDispense(MedicationDispense dispense) {
+        if (dispense == null || dispense.getStatusEnum() == null) {
+            return false;
+        }
+        if (!DispenseStatus.REFUNDED.equals(dispense.getStatusEnum())) {
+            return false;
+        }
+        if (!MedicationDispenseType.REFUND.equals(dispense.getDispenseEnum())) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * 解析发放业务数量（优先 {@code dispense_quantity}，否则 {@code quantity}；取绝对值便于对冲）。
+     *
+     * @param dispense 发放行
+     * @return 非负业务数量；空则 0
+     */
+    private static BigDecimal resolveBusinessQuantity(MedicationDispense dispense) {
+        if (dispense == null) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal qty = dispense.getDispenseQuantity();
+        if (qty == null) {
+            qty = dispense.getQuantity();
+        }
+        if (qty == null) {
+            return BigDecimal.ZERO;
+        }
+        return qty.abs();
     }
 
     /**

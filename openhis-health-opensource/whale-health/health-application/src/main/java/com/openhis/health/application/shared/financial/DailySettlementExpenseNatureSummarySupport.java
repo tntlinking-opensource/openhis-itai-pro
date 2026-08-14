@@ -305,10 +305,10 @@ public final class DailySettlementExpenseNatureSummarySupport {
     }
 
     /**
-     * 医保补偿合计：各医保费用性质统筹（基金）代数和。
+     * 医保统筹合计：各省/市医保费用性质统筹（基金）代数和；**不含工伤**。
      *
      * @param natureByContractNo 费用性质累加桶
-     * @return 补偿合计（展示字符串）
+     * @return 统筹合计（展示字符串）
      */
     public static String sumInsuranceCompensationAmount(Map<String, NatureBucket> natureByContractNo) {
         BigDecimal total = BigDecimal.ZERO;
@@ -324,6 +324,25 @@ public final class DailySettlementExpenseNatureSummarySupport {
     }
 
     /**
+     * 个人账户合计：各医保费用性质个人账户代数和。
+     *
+     * @param natureByContractNo 费用性质累加桶
+     * @return 个账合计（展示字符串）
+     */
+    public static String sumInsuranceAccountAmount(Map<String, NatureBucket> natureByContractNo) {
+        BigDecimal total = BigDecimal.ZERO;
+        if (natureByContractNo == null || natureByContractNo.isEmpty()) {
+            return formatAmount(total);
+        }
+        for (NatureBucket bucket : natureByContractNo.values()) {
+            if (bucket != null && bucket.isInsurance()) {
+                total = total.add(nullToZero(bucket.getAccountAmount()));
+            }
+        }
+        return formatAmount(total);
+    }
+
+    /**
      * 装配下半区扁平展示行。
      *
      * @param totalIncome                   总收入
@@ -331,7 +350,9 @@ public final class DailySettlementExpenseNatureSummarySupport {
      * @param alipayAmount                  支付宝
      * @param onlineBankAmount              银行卡
      * @param cashDueAmount                 应交现金（现金渠道）
-     * @param insuranceCompensationAmount   医保补偿合计
+     * @param insuranceCompensationAmount   医保统筹合计
+     * @param insuranceAccountAmount        个人账户合计
+     * @param chsRetailUploadDiffAmount     医保上传差额（零售−上传）；null 跳过
      * @param depositAmount                 预交金（住院）；门诊传 null 跳过
      * @param natures                       费用性质块
      * @param physicalExamCount             体检人次；null 跳过
@@ -343,6 +364,8 @@ public final class DailySettlementExpenseNatureSummarySupport {
         String onlineBankAmount,
         String cashDueAmount,
         String insuranceCompensationAmount,
+        String insuranceAccountAmount,
+        String chsRetailUploadDiffAmount,
         String depositAmount,
         List<DailySettlementExpenseNatureSummaryDto> natures,
         Integer physicalExamCount) {
@@ -352,7 +375,12 @@ public final class DailySettlementExpenseNatureSummarySupport {
         rows.add(row("alipayAmount", "支付宝", alipayAmount, "元", 0));
         rows.add(row("onlineBankAmount", "银行卡", onlineBankAmount, "元", 0));
         rows.add(row("cashDueAmount", "应交现金", cashDueAmount, "元", 0));
-        rows.add(row("insuranceCompensationAmount", "医保补偿", insuranceCompensationAmount, "元", 0));
+        rows.add(row("insuranceCompensationAmount", "医保统筹", insuranceCompensationAmount, "元", 0));
+        rows.add(row("insuranceAccountAmount", "个人账户", insuranceAccountAmount, "元", 0));
+        // 勾稽项：零售−上传分差，不并入总收入/应交现金；为 0 时不下发展示行
+        if (chsRetailUploadDiffAmount != null && !isZeroDisplayAmount(chsRetailUploadDiffAmount)) {
+            rows.add(row("chsRetailUploadDiffAmount", "医保上传差额", chsRetailUploadDiffAmount, "元", 0));
+        }
         if (depositAmount != null) {
             rows.add(row("depositAmount", "预交金", depositAmount, "元", 0));
         }
@@ -441,5 +469,21 @@ public final class DailySettlementExpenseNatureSummarySupport {
 
     private static String formatAmount(BigDecimal amount) {
         return MonetaryAmountSupport.scaleDisplay(nullToZero(amount)).toPlainString();
+    }
+
+    /** 展示金额是否为 0（空、0、0.00）。 */
+    private static boolean isZeroDisplayAmount(String amount) {
+        if (StringUtils.isEmpty(amount)) {
+            return true;
+        }
+        String raw = amount.trim();
+        if (raw.endsWith("元")) {
+            raw = raw.substring(0, raw.length() - 1).trim();
+        }
+        try {
+            return new BigDecimal(raw).compareTo(BigDecimal.ZERO) == 0;
+        } catch (NumberFormatException ex) {
+            return false;
+        }
     }
 }

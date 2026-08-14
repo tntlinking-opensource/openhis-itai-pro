@@ -25,6 +25,7 @@ import com.openhis.health.application.finance.pharmacydailysettlement.dto.Pharma
 import com.openhis.health.application.finance.pharmacydailysettlement.support.PharmacyDailySettlementPreviewAssembler;
 import com.openhis.health.application.finance.pharmacydailysettlement.support.PharmacyDailySettlementPricingSupport;
 import com.openhis.health.application.shared.option.TerminologyOptionLoader;
+import com.openhis.health.application.shared.validator.CurrentManagedLocationIdsResolver;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
@@ -67,15 +68,15 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 门诊药房日结应用服务（AS-OP-PHA-006，IF-OP-PDC-01～04 + 交账历史）。
+ * 门诊药房日结应用服务（AS-OP-PHA-006，IF-OP-PDC-01～05）。
  *
  * <p>职责边界：</p>
  * <ul>
- *   <li>Gate：登录、日期窗、单药房必填、漏交硬栏。</li>
+ *   <li>Gate：登录、日期窗、单药房必填、岗位管辖药房（{@link CurrentManagedLocationIdsResolver}）、漏交硬栏。</li>
  *   <li>Pre：未挂载发药候选、窗内发药人自动带出、主区汇总读侧。</li>
  *   <li>Cmd：提交/撤回交账并挂载/清挂载 dispense。</li>
  *   <li>Asm：经 {@link OutpatientPharmacyDailySettlementMapper} 与 {@link PharmacyDailySettlementPreviewAssembler} 装配；
- *       历史按 {@code submitted_at} 分页。</li>
+ *       历史按 {@code submitted_at} 分页，且仅管辖药房。</li>
  * </ul>
  *
  * <p>接入：{@code AppServiceControllerRegistrar} →
@@ -104,6 +105,9 @@ public class OutpatientPharmacyDailySettlementAppService {
     /** 药房 location 读侧。 */
     private final LocationQueryService locationQueryService;
 
+    /** 岗位管辖库房解析（药房下拉 / 查询·提交·历史 Gate）。 */
+    private final CurrentManagedLocationIdsResolver managedLocationIdsResolver;
+
     /** 发药人主档读侧。 */
     private final PractitionerQueryService practitionerQueryService;
 
@@ -119,7 +123,7 @@ public class OutpatientPharmacyDailySettlementAppService {
     /** 主区预览装配（大类/品规/明细）。 */
     private final PharmacyDailySettlementPreviewAssembler pharmacyDailySettlementPreviewAssembler;
 
-    /** 进/售读价与挂载 payment 净收入。 */
+    /** 进/售读价与日结利润（售价−进价）。 */
     private final PharmacyDailySettlementPricingSupport pharmacyDailySettlementPricingSupport;
 
     /** 漏交硬栏文案。 */
@@ -144,7 +148,7 @@ public class OutpatientPharmacyDailySettlementAppService {
         LocalDate today = LocalDate.now();
         LocalDateTime defaultFrom = today.atStartOfDay();
         LocalDateTime defaultTo = LocalDateTime.now();
-        // Pre：药房下拉；有 orgId 时收窄至该科室下药房
+        // Pre：药房下拉 = 启用药房 ∩ 岗位管辖（有 orgId 时先按科室再管辖）
         List<Location> pharmacies = this.resolvePharmacyLocations(request);
         List<OptionDto> pharmacyOptions = this.pharmacyDailySettlementPreviewAssembler.toPharmacyOptions(pharmacies);
         // Pre：药师岗全员下拉（与收费日结财务岗同构，可多选软筛）
@@ -174,12 +178,13 @@ public class OutpatientPharmacyDailySettlementAppService {
                 OutpatientPharmacyDailySettlementConstants.EX_OP_PDC_103,
                 "查询失败，请稍后重试");
             this.assertDateRangeValid(request.getDateFrom(), request.getDateTo());
-            this.assertLocationIdRequired(request.getLocationId());
+            // Gate：药房必填且须在岗位管辖范围内（BR-OP-PDC-009）
+            this.assertManagedPharmacyLocation(request.getLocationId());
             PreviewPharmacyCashierSettlementQuery previewQuery = this.outpatientPharmacyDailySettlementMapper.toPreviewQuery(
                 request,
                 CashierSettlementType.OP_PHARMACY.getCode());
             String typeEnum = CashierSettlementType.OP_PHARMACY.getCode();
-            // Pre：漏交扫描与窗内发药人自动带出
+            // Pre：漏交扫描（MIN 聚合，不拉历史全量实体）
             LocalDateTime gapHardBlockEarliestAt =
                 this.medicationDispenseQueryService.findEarliestUnsettledDispenseTimeBeforeWindow(
                     typeEnum,
@@ -191,37 +196,32 @@ public class OutpatientPharmacyDailySettlementAppService {
                     typeEnum,
                     request.getLocationId(),
                     request.getDateTo());
-            List<Long> practitionerIdsInWindow =
-                this.medicationDispenseQueryService.listDistinctPractitionerIdsInPharmacyCashierSettlementWindow(
-                    typeEnum,
-                    request.getLocationId(),
-                    request.getDateFrom(),
-                    request.getDateTo());
-            List<OptionDto> practitionerOptions = this.buildPractitionerOptions(practitionerIdsInWindow);
-            // Pre：未交账候选实体与展示口径发药（含已交）
-            List<MedicationDispense> unsettledDispenses =
-                this.medicationDispenseQueryService.findUnsettledDispensesForCashierSettlement(previewQuery);
+            // Pre：窗内展示口径发药只查一次；未交账与发药人从中拆分，禁止重复 findAll
             List<MedicationDispense> summaryDispenses =
                 this.medicationDispenseQueryService.findDispensesForPharmacyCashierSettlementSummary(previewQuery);
+            List<MedicationDispense> unsettledDispenses =
+                this.medicationDispenseQueryService.filterUnsettledDispenses(summaryDispenses);
+            List<Long> practitionerIdsInWindow =
+                this.medicationDispenseQueryService.extractDistinctPractitionerIds(summaryDispenses);
+            List<OptionDto> practitionerOptions = this.buildPractitionerOptions(practitionerIdsInWindow);
             Map<String, String> categoryLabelByCode =
                 this.terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.MEDICATION_CATEGORY_CODE);
             Map<String, String> unitLabels =
                 this.terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.UNIT_CODE);
-            // Asm：主区与弹窗明细（弹窗含药品名/规格/厂家/进售）
+            // Asm：主区进/售只读价一次，大类与品规共用快照
+            PharmacyDailySettlementPricingSupport.PharmacyDailySettlementPurchaseSaleSnapshot purchaseSaleSnapshot =
+                this.pharmacyDailySettlementPricingSupport.buildPurchaseSaleSnapshot(summaryDispenses, false);
             List<PharmacyDailySettlementCategoryRowDto> categoryRows =
                 this.pharmacyDailySettlementPreviewAssembler.assembleCategoryRows(
-                    summaryDispenses, categoryLabelByCode, false);
+                    purchaseSaleSnapshot, categoryLabelByCode);
             List<PharmacyDailySettlementProductRowDto> productRows =
-                this.pharmacyDailySettlementPreviewAssembler.assembleProductRows(summaryDispenses, false);
+                this.pharmacyDailySettlementPreviewAssembler.assembleProductRows(purchaseSaleSnapshot);
             List<PharmacyDailySettlementDispenseItemDto> items =
                 this.pharmacyDailySettlementPreviewAssembler.toDispenseItems(
-                    unsettledDispenses, false, unitLabels);
-            List<Long> unsettledDispenseIds =
-                new ArrayList<>(this.collectDispenseIdsFromEntities(unsettledDispenses));
-            // Asm：待交笔数按源行条数计（BR-CS-011：一发一退=2，净额可为 0）；关联净收入现算
-            BigDecimal totalIncome = this.pharmacyDailySettlementPricingSupport.sumMountedDispensePaymentNetIncome(
-                unsettledDispenseIds,
-                false);
+                    unsettledDispenses, false, unitLabels, purchaseSaleSnapshot);
+            // Asm：待交笔数按源行条数计（BR-CS-011：一发一退=2）；日结利润=主区售价合计−进价合计（复用进/售快照）
+            BigDecimal totalIncome =
+                this.pharmacyDailySettlementPricingSupport.sumPurchaseSaleProfit(purchaseSaleSnapshot);
             PreviewOutpatientPharmacyDailySettlementResponse response = new PreviewOutpatientPharmacyDailySettlementResponse();
             response.setCategoryRows(categoryRows);
             response.setProductRows(productRows);
@@ -250,8 +250,8 @@ public class OutpatientPharmacyDailySettlementAppService {
     /**
      * IF-OP-PDC-03：确认门诊药房交账。
      *
-     * <p>头表 {@code total_income} 为挂载发药关联 payment 净收入（DD §3.2.1，见
-     * {@link PharmacyDailySettlementPricingSupport#sumMountedDispensePaymentNetIncome}）。</p>
+     * <p>头表 {@code total_income} 为勾选发药售价合计 − 进价合计（与主区批号价同口径，见
+     * {@link PharmacyDailySettlementPricingSupport#sumPurchaseSaleProfitByDispenseIds}）。</p>
      *
      * @param request 与预览相同业务窗、药房与勾选发药行
      * @return 交账头标识、单号与挂载条数
@@ -267,7 +267,8 @@ public class OutpatientPharmacyDailySettlementAppService {
             OutpatientPharmacyDailySettlementConstants.EX_OP_PDC_102,
             "当前账号未绑定医务人员，无法提交交账");
         this.assertDateRangeValid(request.getDateFrom(), request.getDateTo());
-        this.assertLocationIdRequired(request.getLocationId());
+        // Gate：药房必填且须在岗位管辖范围内（BR-OP-PDC-009）
+        this.assertManagedPharmacyLocation(request.getLocationId());
         PreviewOutpatientPharmacyDailySettlementRequest previewRequest = this.toPreviewRequestFromSubmit(request);
         PreviewPharmacyCashierSettlementQuery previewQuery = this.outpatientPharmacyDailySettlementMapper.toPreviewQuery(
             previewRequest,
@@ -308,8 +309,8 @@ public class OutpatientPharmacyDailySettlementAppService {
                 request.getDateTo());
         String practitionerIds =
             this.dailySettlementOrgLocationScopeSupport.joinPractitionerIds(practitionerIdsInWindow);
-        // Cmd：挂载发药关联 payment 净收入落头表 total_income（DD §3.2.1）
-        BigDecimal totalIncome = this.pharmacyDailySettlementPricingSupport.sumMountedDispensePaymentNetIncome(
+        // Cmd：勾选发药日结利润（售价−进价）落头表 total_income
+        BigDecimal totalIncome = this.pharmacyDailySettlementPricingSupport.sumPurchaseSaleProfitByDispenseIds(
             selectedDispenseIds,
             false);
         SubmitCashierSettlementCommand command = this.outpatientPharmacyDailySettlementMapper.toSubmitCommand(
@@ -356,6 +357,8 @@ public class OutpatientPharmacyDailySettlementAppService {
                 OutpatientPharmacyDailySettlementConstants.EX_OP_PDC_103,
                 "交账记录不存在");
         }
+        // Gate：交账头药房须在岗位管辖范围内（禁止撤回他库交账）
+        this.assertManagedPharmacyLocation(settlement.getLocationId());
         // Gate：仅待审可撤回；须为提交人或会计
         this.assertWithdrawPermission(settlement);
         WithdrawCashierSettlementCommand command = new WithdrawCashierSettlementCommand();
@@ -370,7 +373,9 @@ public class OutpatientPharmacyDailySettlementAppService {
     }
 
     /**
-     * 门诊药房交账历史分页（按交账提交时刻窗，类型 {@code OP_PHARMACY}）。
+     * IF-OP-PDC-05：门诊药房交账历史分页（按交账提交时刻窗，类型 {@code OP_PHARMACY}）。
+     *
+     * <p>仅返回当前登录者岗位管辖药房下的交账单（BR-OP-PDC-009）。</p>
      *
      * @param request 交账时刻窗与分页
      * @return 历史页
@@ -396,11 +401,13 @@ public class OutpatientPharmacyDailySettlementAppService {
         if (request.getPageSize() != null) {
             pageSize = Math.min(200, Math.max(1, request.getPageSize()));
         }
-        // Pre：按交账提交时刻窗分页历史
+        // Pre：历史仅管辖药房；空集合 → 空页（禁止退化为全院）
+        Set<Long> gatedPharmacyIds = this.resolveGatedPharmacyLocationIds();
         Page<CashierSettlementHistoryItemQueryModel> page = this.cashierSettlementQueryService.pageHistory(
             CashierSettlementType.OP_PHARMACY.getCode(),
             request.getSubmittedFrom(),
             request.getSubmittedTo(),
+            gatedPharmacyIds,
             PageRequest.of(pageIndex, pageSize));
         PageOutpatientPharmacyDailySettlementHistoryResponse response =
             new PageOutpatientPharmacyDailySettlementHistoryResponse();
@@ -457,20 +464,50 @@ public class OutpatientPharmacyDailySettlementAppService {
     }
 
     /**
-     * 解析药房下拉数据源：org 收窄或全量启用药房。
+     * 解析药房下拉数据源：启用药房（可选 org 收窄）∩ 岗位管辖库房。
      *
      * @param request 初始化请求
-     * @return 药房实体列表
+     * @return 当前登录者可见的启用药房列表
      */
     private List<Location> resolvePharmacyLocations(LoadOutpatientPharmacyDailySettlementPageInitRequest request) {
         Long orgId = null;
         if (request != null) {
             orgId = request.getOrgId();
         }
+        List<Location> pharmacies;
         if (orgId != null) {
-            return this.locationQueryService.listPharmaciesByOrganization(orgId);
+            pharmacies = this.locationQueryService.listPharmaciesByOrganization(orgId);
+        } else {
+            pharmacies = this.locationQueryService.listAllActivePharmacies();
         }
-        return this.locationQueryService.listAllActivePharmacies();
+        // Gate：与请领/发药同构，禁止暴露非管辖药房
+        return this.managedLocationIdsResolver.narrowActiveLocationsByManaged(pharmacies);
+    }
+
+    /**
+     * 岗位可见且启用中的药房主键集合（下拉 / 历史 IN / 写路径 Gate 同源）。
+     *
+     * @return 管辖收窄后的药房 id；无可见药房时 empty
+     */
+    private Set<Long> resolveGatedPharmacyLocationIds() {
+        return this.managedLocationIdsResolver.gatedLocationIdsFromActive(
+            this.locationQueryService.listAllActivePharmacies());
+    }
+
+    /**
+     * 药房范围键 Gate：必填且须落在岗位管辖启用药房白名单内。
+     *
+     * @param locationId 发药库房
+     * @throws BusinessException 空药房或越权时 EX-OP-PDC-102
+     */
+    private void assertManagedPharmacyLocation(Long locationId) {
+        this.assertLocationIdRequired(locationId);
+        Set<Long> allowed = this.resolveGatedPharmacyLocationIds();
+        this.managedLocationIdsResolver.assertLocationInManagedGate(
+            locationId,
+            allowed,
+            OutpatientPharmacyDailySettlementConstants.EX_OP_PDC_102,
+            "所选药房不在当前用户管辖范围内");
     }
 
     /**

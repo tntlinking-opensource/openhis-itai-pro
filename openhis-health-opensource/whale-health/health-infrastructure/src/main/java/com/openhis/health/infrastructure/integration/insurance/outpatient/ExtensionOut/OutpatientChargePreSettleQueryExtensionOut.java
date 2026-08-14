@@ -7,7 +7,9 @@ package com.openhis.health.infrastructure.integration.insurance.outpatient.Exten
 import lombok.Data;
 import lombok.experimental.Accessors;
 
-/** 支付草稿下 ACTIVE 预结算批次快照（confirm 前解析 chrg_bchno）。 */
+import java.math.BigDecimal;
+
+/** 支付草稿下 ACTIVE 预结算批次快照（confirm 前解析 chrg_bchno / 权威现金）。 */
 @Data
 @Accessors(chain = true)
 public class OutpatientChargePreSettleQueryExtensionOut {
@@ -29,4 +31,10 @@ public class OutpatientChargePreSettleQueryExtensionOut {
 
     /** 是否使用个账 acct_used_flag（1/0）。 */
     private String acctUsedFlag;
+
+    /** 医疗费总额 medfee_sumamt（权威现金门禁）。 */
+    private BigDecimal medfeeSumamt;
+
+    /** 个人现金支出 psn_cash_pay（权威现金门禁）。 */
+    private BigDecimal psnCashPay;
 }

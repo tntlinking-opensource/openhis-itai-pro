@@ -37,9 +37,9 @@ public class SummarizeOutpatientRegistrationDetailReportRequest {
     @Schema(description = "挂号科室主键")
     private Long organizationId;
 
-    /** 挂号医生主键；空表示该科室全员（BR-RPT-ORG-002 分支）。 */
+    /** 接诊医生主键（活动 ADMITTER）；空表示不按接诊医生收窄（BR-RPT-ORG-002 分支）。 */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "挂号医生主键")
+    @Schema(description = "接诊医生主键（活动 ADMITTER）")
     private Long practitionerId;
 
     /** 患者姓名/门诊号关键字；空不收窄。 */

@@ -29,17 +29,19 @@ import java.util.List;
 public interface OutpatientFeeDetailReportMapper {
 
     /**
-     * 前身初始化响应 → 报表初始化响应（补呈现模式）。
+     * 前身初始化响应 → 报表初始化响应（补呈现模式与汇总维度）。
      *
      * @param source                     前身 init 响应
      * @param presentationModeOptions    汇总/明细 Tab
      * @param defaultActiveTab           默认激活 Tab
+     * @param summaryDimensionOptions    汇总维度下拉
      * @return 报表 init 响应；source 为 null 时返回 null
      */
     LoadOutpatientFeeDetailReportPageInitResponse toLoadPageInitResponse(
         LoadOutpatientFeeDetailPageInitResponse source,
         List<OptionDto> presentationModeOptions,
-        String defaultActiveTab);
+        String defaultActiveTab,
+        List<OptionDto> summaryDimensionOptions);
 
     /**
      * 汇总请求 → 领域 Query（强制 tradeDirection=ALL）。

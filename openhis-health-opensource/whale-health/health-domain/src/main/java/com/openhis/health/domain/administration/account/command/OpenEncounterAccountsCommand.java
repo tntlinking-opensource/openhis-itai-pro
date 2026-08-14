@@ -33,5 +33,9 @@ public class OpenEncounterAccountsCommand extends BatchCommand<OpenEncounterAcco
         private Boolean defaultFlag;
         /** 费用性质业务编码（写入账户 {@code contract_no}）。 */
         private String contractNo;
+        /**
+         * 险种类型码（310/390 等）；仅医保账户有意义。
+         */
+        private String insutype;
     }
 }

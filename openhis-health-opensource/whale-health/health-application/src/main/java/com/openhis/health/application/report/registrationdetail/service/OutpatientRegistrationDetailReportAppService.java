@@ -19,6 +19,7 @@ import com.openhis.health.application.report.registrationdetail.response.Summari
 import com.openhis.health.application.report.registrationdetail.support.OutpatientRegistrationDetailReportEnricher;
 import com.openhis.health.application.report.registrationdetail.support.OutpatientRegistrationDetailReportQuerySupport;
 import com.openhis.health.domain.administration.encounter.queries.OutpatientRegistrationReportPageQuery;
+import com.openhis.health.domain.administration.encounter.queries.model.OutpatientRegistrationDetailStatsQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientRegistrationReportLineQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientRegistrationReportSummaryRow;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
@@ -30,6 +31,7 @@ import com.openhis.health.domain.administration.practitioner.entity.Practitioner
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.OutpatientRegistrationReportConstants;
 import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
+import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.session.CurrentOperatorResolver;
@@ -40,6 +42,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -165,17 +168,25 @@ public class OutpatientRegistrationDetailReportAppService {
             // Cmd：领域净汇总（退号冲减）
             List<OutpatientRegistrationReportSummaryRow> domainRows =
                 this.encounterQueryService.summarizeOutpatientRegistrationByOrgOrDoctorAndServiceType(query);
-            // Asm：展示名 enrich + 净笔数合计（BR-RPT-ORG-003）
+            // Asm：展示名/挂号费 enrich + 净笔数与净金额合计（BR-RPT-ORG-003）
             List<OutpatientRegistrationDetailSummaryRowDto> rows = this.enricher.enrichSummaryRows(domainRows);
             long total = 0L;
-            // 遍历汇总行累加净挂号笔数供页脚展示
+            BigDecimal totalFee = BigDecimal.ZERO;
+            // 遍历汇总行累加净挂号笔数与挂号费供页脚展示
             for (OutpatientRegistrationDetailSummaryRowDto row : rows) {
-                // 跳过空行或无笔数字段，避免 NPE 污染合计
-                if (row != null && row.getNetRegistrationCount() != null) {
+                // 跳过空行，避免 NPE 污染合计
+                if (row == null) {
+                    continue;
+                }
+                if (row.getNetRegistrationCount() != null) {
                     total = total + row.getNetRegistrationCount();
                 }
+                if (row.getRegistrationFeeAmount() != null) {
+                    totalFee = totalFee.add(row.getRegistrationFeeAmount());
+                }
             }
-            return this.mapper.toSummarizeResponse(rows, total);
+            return this.mapper.toSummarizeResponse(
+                rows, total, MonetaryAmountSupport.scaleSettle(totalFee));
         } catch (BusinessException businessException) {
             // Gate：业务异常原样抛出
             throw businessException;
@@ -220,9 +231,12 @@ public class OutpatientRegistrationDetailReportAppService {
             // Cmd：领域明细分页
             Page<OutpatientRegistrationReportLineQueryModel> page =
                 this.encounterQueryService.pageOutpatientRegistrationDetailReport(query);
-            // Asm：费用性质 / 号源 / 挂号费 enrich → 分页响应
+            // Pre：同筛选挂/退页脚（对齐门诊挂号当日统计口径）
+            OutpatientRegistrationDetailStatsQueryModel stats =
+                this.encounterQueryService.countOutpatientRegistrationDetailReportStats(query);
+            // Asm：费用性质 / 号源 / 挂号费 enrich → 分页响应 + 页脚
             List<OutpatientRegistrationDetailRowDto> rows = this.enricher.enrichDetailRows(page.getContent());
-            return this.mapper.toDetailPageResponse(rows, page);
+            return this.mapper.toDetailPageResponse(rows, page, stats);
         } catch (BusinessException businessException) {
             // Gate：业务异常原样抛出
             throw businessException;
@@ -590,7 +604,7 @@ public class OutpatientRegistrationDetailReportAppService {
         options.add(department);
         OptionDto doctor = new OptionDto();
         doctor.setValue(OutpatientRegistrationReportConstants.SUMMARY_VIEW_DOCTOR);
-        doctor.setLabel("按医生");
+        doctor.setLabel("按接诊医生");
         options.add(doctor);
         return options;
     }

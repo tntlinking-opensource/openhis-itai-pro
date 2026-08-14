@@ -29,7 +29,8 @@ import java.util.List;
 public class PeriodBalanceDetailPricingAssembler {
 
     /**
-     * 行总额：满包×包装价 + 拆零余量×拆零单价（BR-INV-DTL-007）。
+     * 行总额：满包×包装价 + 零头（包装价×余量/ratio 单步，BR-INV-DTL-007 / BR-MON-PKG-001）。
+     * 禁止先派生拆零单价再乘数量。
      *
      * @param quantity      拆零最小单位数量
      * @param ratio         包装换算比

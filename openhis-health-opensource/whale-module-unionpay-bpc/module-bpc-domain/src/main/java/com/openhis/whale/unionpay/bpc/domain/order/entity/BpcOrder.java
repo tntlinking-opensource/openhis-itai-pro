@@ -35,6 +35,7 @@ public class BpcOrder extends BaseAuditedEntity {
     @Column(name = "tran_type", nullable = false, length = 8)
     private String tranType;
 
+    /** 交易金额（分）：院内下单金额；银行优惠实付偏小不覆盖本字段。 */
     @Column(name = "txn_amt_fen", nullable = false)
     private Long txnAmtFen;
 

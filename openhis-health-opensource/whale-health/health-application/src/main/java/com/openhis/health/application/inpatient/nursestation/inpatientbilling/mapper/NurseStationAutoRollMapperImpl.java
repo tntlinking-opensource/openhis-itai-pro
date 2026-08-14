@@ -36,7 +36,7 @@ public class NurseStationAutoRollMapperImpl implements NurseStationAutoRollMappe
         CreateAutoGenRuleCommand command = new CreateAutoGenRuleCommand();
         command.setRuleName(request.getRuleName());
         command.setEncounterId(request.getEncounterId());
-        // 床位服务固定 trigger 表名（BR-IP-ARG-003）
+        // 自动计费配置固定 trigger 为诊疗活动表（BR-IP-ARG-003；不含耗材）
         command.setTriggerSourceTable(TableNameConstants.WKF_ACTIVITY_DEFINITION);
         command.setTriggerSourceId(request.getActivityId());
         command.setChargeDefinitionId(request.getChargeDefinitionId());
@@ -44,6 +44,8 @@ public class NurseStationAutoRollMapperImpl implements NurseStationAutoRollMappe
         command.setQuantityValue(request.getQuantityValue());
         command.setPriority(request.getPriority());
         command.setRemark(request.getRemark());
+        command.setBusinessTime(request.getBusinessTime());
+        command.setBillingPractitionerId(request.getBillingPractitionerId());
         command.setOperatorId(operatorId);
         return command;
     }
@@ -70,6 +72,8 @@ public class NurseStationAutoRollMapperImpl implements NurseStationAutoRollMappe
         command.setQuantityValue(request.getQuantityValue());
         command.setPriority(request.getPriority());
         command.setRemark(request.getRemark());
+        command.setBusinessTime(request.getBusinessTime());
+        command.setBillingPractitionerId(request.getBillingPractitionerId());
         command.setOperatorId(operatorId);
         return command;
     }
@@ -120,7 +124,7 @@ public class NurseStationAutoRollMapperImpl implements NurseStationAutoRollMappe
     }
 
     /**
-     * 新增配置成功后 ensure 长期床位 SR 命令。
+     * 新增配置成功后 ensure 长期滚费 SR 命令（categoryEnum 由 AppService 按选品回填）。
      *
      * @param request    新增请求
      * @param ruleId     配置主键

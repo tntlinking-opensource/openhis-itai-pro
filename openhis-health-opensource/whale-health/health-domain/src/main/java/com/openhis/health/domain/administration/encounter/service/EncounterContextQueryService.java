@@ -271,6 +271,10 @@ public class EncounterContextQueryService {
                 model.setGenderEnum(patient.getGenderEnum());
                 model.setIdCard(patient.getIdCard());
                 model.setPhone(patient.getPhone());
+                // 地址全文：仅透传主档 text；空则保持 null，供医生站卡片回显
+                if (patient.getAddress() != null && StringUtils.isNotEmpty(patient.getAddress().getText())) {
+                    model.setAddress(patient.getAddress().getText());
+                }
                 if (patient.getBirthDate() != null) {
                     model.setBirthDate(patient.getBirthDate().atStartOfDay());
                     Date birthDate = Date.from(

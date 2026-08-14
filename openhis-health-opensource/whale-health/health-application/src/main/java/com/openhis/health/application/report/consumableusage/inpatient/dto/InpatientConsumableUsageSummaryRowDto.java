@@ -30,7 +30,11 @@ public class InpatientConsumableUsageSummaryRowDto
     @Schema(description = "汇总维度码")
     private String summaryDimension;
 
-    /** 患者主键；非患者维可空。 */
+    /** 维度展示名（耗材房名/品规名/类型文案/科室名）。 */
+    @Schema(description = "维度名称")
+    private String dimensionName;
+
+    /** 患者主键；非患者维可空（遗留 PATIENT 维兼容）。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "患者主键")
     private Long patientId;
@@ -65,6 +69,10 @@ public class InpatientConsumableUsageSummaryRowDto
     /** 耗材名称。 */
     @Schema(description = "耗材名称")
     private String deviceName;
+
+    /** 耗材类型 code（CATEGORY 维；术语 device_category_code）。 */
+    @Schema(description = "耗材类型 code")
+    private String categoryCode;
 
     /** 净数量（发/领为正、退为负）。 */
     @Schema(description = "净数量")

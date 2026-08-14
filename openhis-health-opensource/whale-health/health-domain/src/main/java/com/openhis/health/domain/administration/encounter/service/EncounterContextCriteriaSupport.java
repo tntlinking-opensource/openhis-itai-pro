@@ -13,6 +13,7 @@ import com.openhis.health.domain.administration.encounter.queries.ClinicRegister
 import com.openhis.health.domain.administration.encounter.queries.EncounterSessionScope;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterLocationScope;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
+import com.openhis.health.domain.administration.encounter.queries.NurseStationOutpatientQueueQuery;
 import com.openhis.health.domain.administration.encounter.queries.OutpatientEncounterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.RegistrationSlipPageQuery;
 import com.openhis.health.domain.administration.location.entity.Location;
@@ -263,9 +264,9 @@ public class EncounterContextCriteriaSupport {
     }
 
     /**
-     * 门诊护士站执行队列筛选规约（待执行医嘱/申请存在性）。
+     * 门诊护士站执行队列筛选规约（待执行医嘱/申请存在性；可选开立科室）。
      *
-     * @param query 分页与关键字/日期窗；{@code null} 时使用空条件
+     * @param query 分页与关键字/日期窗/开立科室；{@code null} 时使用空条件
      * @return JPA 规约
      */
     public Specification<Encounter> nurseStationOutpatientSpecification(AbstractPageQuery query) {
@@ -273,8 +274,20 @@ public class EncounterContextCriteriaSupport {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
             predicates.add(this.outpatientClassEnumPredicate(root, cb));
-            if (StringUtils.isNotEmpty(query.getKeyword())) {
-                String trimmed = query.getKeyword().trim();
+            AbstractPageQuery effective;
+            if (query != null) {
+                effective = query;
+            } else {
+                effective = new AbstractPageQuery();
+            }
+            // 开立科室：非空时按就诊 organization_id 等值收窄；空=全部科室
+            if (effective instanceof NurseStationOutpatientQueueQuery nurseQuery
+                && nurseQuery.getOrgId() != null) {
+                predicates.add(cb.equal(
+                    root.get(FieldNameConstants.ORGANIZATION_ID), nurseQuery.getOrgId()));
+            }
+            if (StringUtils.isNotEmpty(effective.getKeyword())) {
+                String trimmed = effective.getKeyword().trim();
                 String pattern = SearchCodeUtil.toCaseInsensitiveLikePattern(trimmed);
                 predicates.add(this.existsPatientKeyword(root, cb, criteriaQuery, pattern));
                 // B.2.1：护士站患者关键字精确置顶，次级开始时间倒序
@@ -284,13 +297,13 @@ public class EncounterContextCriteriaSupport {
                         cb.desc(root.get(FieldNameConstants.START_TIME)),
                         cb.desc(root.get(FieldNameConstants.ID))));
             }
-            if (query.getStartDate() != null) {
+            if (effective.getStartDate() != null) {
                 predicates.add(cb.greaterThanOrEqualTo(
-                    root.get(FieldNameConstants.START_TIME), query.getStartDate()));
+                    root.get(FieldNameConstants.START_TIME), effective.getStartDate()));
             }
-            if (query.getEndDate() != null) {
+            if (effective.getEndDate() != null) {
                 predicates.add(cb.lessThanOrEqualTo(
-                    root.get(FieldNameConstants.START_TIME), query.getEndDate()));
+                    root.get(FieldNameConstants.START_TIME), effective.getEndDate()));
             }
             predicates.add(this.buildNurseStationRequestExistsAny(root, cb, criteriaQuery));
             return cb.and(predicates.toArray(new Predicate[0]));
@@ -305,10 +318,11 @@ public class EncounterContextCriteriaSupport {
     }
 
     /**
-     * 医生站查看者可见性（BR-DOR-009）：按状态分派，与是否存在活动 {@code REGISTRATION_DOCTOR} 组合 OR。
+     * 医生站查看者可见性（BR-DOR-009）：按状态分派，与是否存在活动 {@code REGISTRATION_DOCTOR}/{@code ADMITTER} 组合。
      *
-     * <p>挂到科室（无活动挂号医生）时，待诊与接诊后均科室全员可见；挂到医生时，待诊仅挂号医生、
-     * 接诊中/暂离仅接诊医生（ADMITTER）可见；诊毕始终科室共享。</p>
+     * <p>待诊：无活动挂号医生（且无活动接诊医生）时科室全员可见；有挂号医生时仅该医师可见（历史误写
+     * {@code ADMITTER} 兼容同口径）。接诊中/暂离：无论挂号是否指定医生，仅活动接诊医生
+     * （{@code ADMITTER}）可见。诊毕：始终科室共享。</p>
      */
     private Predicate buildDoctorStationViewerVisibilityPredicate(
         Root<Encounter> root,
@@ -355,16 +369,12 @@ public class EncounterContextCriteriaSupport {
             EncounterStatus.ON_HOLD.getCode());
         if (!inConsultStatuses.isEmpty()) {
             Predicate inConsultStatusIn = root.get(FieldNameConstants.STATUS_ENUM).in(inConsultStatuses);
-            // 挂到科室：无 REGISTRATION_DOCTOR 时接诊后仍科室共享，不收窄到 ADMITTER
-            Predicate noRegistrationDoctor = this.notExistsActiveParticipantWithRole(
-                root, cb, criteriaQuery, EncounterParticipantRole.REGISTRATION_DOCTOR.getCode());
+            // 接诊中/暂离：统一仅活动 ADMITTER 可见（挂到科室与挂到医生同口径）
             Predicate admitterIsViewer = this.existsActiveParticipantWithRoleAndPractitioner(
                 root, cb, criteriaQuery,
                 EncounterParticipantRole.ADMITTER.getCode(),
                 viewerPractitionerId);
-            // 挂到医生：接诊中/暂离仅活动 ADMITTER 可见（与旧口径一致）
-            Predicate inConsultVisible = cb.or(noRegistrationDoctor, admitterIsViewer);
-            visibilityOr.add(cb.and(inConsultStatusIn, inConsultVisible));
+            visibilityOr.add(cb.and(inConsultStatusIn, admitterIsViewer));
         }
         if (visibilityOr.isEmpty()) {
             // 状态范围与可见性规则无交集：空结果
@@ -974,7 +984,7 @@ public class EncounterContextCriteriaSupport {
                 if (Boolean.TRUE.equals(query.getPrepayEligibleOnly())) {
                     this.applyPrepayEligibleStatus(predicates, root, cb);
                 } else {
-                    // 登记/入院列表默认状态并集
+                    // 登记/入院列表：有筛选则映射 status；未传则查全部 IMP
                     this.applyRegistrationListStatus(predicates, root, cb, query);
                 }
             }
@@ -985,6 +995,7 @@ public class EncounterContextCriteriaSupport {
                 predicates.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), query.getStatusEnum()));
             }
             this.applyAdmissionDate(predicates, root, cb, query);
+            this.applyDischargeDate(predicates, root, cb, query);
             this.applyKeyword(predicates, root, cb, criteriaQuery, query);
             return cb.and(predicates.toArray(new Predicate[0]));
         };
@@ -1248,12 +1259,35 @@ public class EncounterContextCriteriaSupport {
             EncounterStatus.COMPLETED.getCode()));
     }
 
-    /** 入院日期当天 [startOfDay, nextDay) 收窄 startTime。 */
+    /**
+     * 入院日期过滤：优先闭区间 {@code admissionDateFrom}～{@code admissionDateTo}（含起止日），
+     * 否则回退单日 {@code admissionDate}；按 {@code startTime} 落在 [日始, 次日) 收窄。
+     *
+     * @param predicates 谓词累加器
+     * @param root       Encounter 根
+     * @param cb         CriteriaBuilder
+     * @param query      住院分页查询
+     */
     private void applyAdmissionDate(
         List<Predicate> predicates,
         Root<Encounter> root,
         jakarta.persistence.criteria.CriteriaBuilder cb,
         InpatientEncounterPageQuery query) {
+        LocalDate from = query.getAdmissionDateFrom();
+        LocalDate to = query.getAdmissionDateTo();
+        // 区间优先：起止任一有值即按下推（开放边界允许）
+        if (from != null || to != null) {
+            if (from != null) {
+                predicates.add(cb.greaterThanOrEqualTo(
+                        root.get(FieldNameConstants.START_TIME), from.atStartOfDay()));
+            }
+            if (to != null) {
+                // 含止日整天：次日 0 点前
+                predicates.add(cb.lessThan(
+                        root.get(FieldNameConstants.START_TIME), to.plusDays(1).atStartOfDay()));
+            }
+            return;
+        }
         LocalDate admissionDate = query.getAdmissionDate();
         if (admissionDate == null) {
             return;
@@ -1265,7 +1299,40 @@ public class EncounterContextCriteriaSupport {
     }
 
     /**
-     * 入院/登记列表状态：UI listStatus 映射为 encounter status；缺省为 PLANNED+REGISTERED+IN_PROGRESS。
+     * 出院日期过滤：闭区间 {@code dischargeDateFrom}～{@code dischargeDateTo}（含起止日），
+     * 按 {@code endTime} 落在 [日始, 次日) 收窄；无出院时间的在院就诊不命中。
+     *
+     * @param predicates 谓词累加器
+     * @param root       Encounter 根
+     * @param cb         CriteriaBuilder
+     * @param query      住院分页查询
+     */
+    private void applyDischargeDate(
+        List<Predicate> predicates,
+        Root<Encounter> root,
+        jakarta.persistence.criteria.CriteriaBuilder cb,
+        InpatientEncounterPageQuery query) {
+        LocalDate from = query.getDischargeDateFrom();
+        LocalDate to = query.getDischargeDateTo();
+        // 未选出院日：不下推出院时间条件
+        if (from == null && to == null) {
+            return;
+        }
+        // 在院无 endTime：不能落入出院区间
+        predicates.add(cb.isNotNull(root.get(FieldNameConstants.END_TIME)));
+        if (from != null) {
+            predicates.add(cb.greaterThanOrEqualTo(
+                    root.get(FieldNameConstants.END_TIME), from.atStartOfDay()));
+        }
+        if (to != null) {
+            // 含止日整天：次日 0 点前
+            predicates.add(cb.lessThan(
+                    root.get(FieldNameConstants.END_TIME), to.plusDays(1).atStartOfDay()));
+        }
+    }
+
+    /**
+     * 入院/登记列表状态：UI listStatus 映射为 encounter status；未传则不按状态收窄（查全部 IMP）。
      */
     private void applyRegistrationListStatus(
         List<Predicate> predicates,
@@ -1279,11 +1346,7 @@ public class EncounterContextCriteriaSupport {
             }
         }
         if (listStatuses == null || listStatuses.isEmpty()) {
-            // 未传登记列表状态：默认三态并集
-            predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(
-                EncounterStatus.PLANNED.getCode(),
-                EncounterStatus.REGISTERED.getCode(),
-                EncounterStatus.IN_PROGRESS.getCode()));
+            // 未传登记列表状态：不按 status_enum 收窄（产品：不选=全部）
             return;
         }
         LinkedHashSet<String> encounterStatuses = new LinkedHashSet<>();
@@ -1301,11 +1364,7 @@ public class EncounterContextCriteriaSupport {
             encounterStatuses.add(encounterStatus);
         }
         if (encounterStatuses.isEmpty()) {
-            // 映射后无有效状态：回落默认三态
-            predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(
-                EncounterStatus.PLANNED.getCode(),
-                EncounterStatus.REGISTERED.getCode(),
-                EncounterStatus.IN_PROGRESS.getCode()));
+            // 映射后无有效状态：与未传一致，不按状态收窄
             return;
         }
         predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(encounterStatuses));

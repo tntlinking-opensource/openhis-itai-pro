@@ -28,4 +28,34 @@ public class OutpatientChargePreSettleExtensionOut {
     private BigDecimal acctPay;
     /** 个人现金支出（→ 收银 displayAmount）。 */
     private BigDecimal psnCashPay;
+    /**
+     * 实际支付起付线（2206 {@code act_pay_dedc}）。
+     *
+     * <p>只读展示；不参与本地应收/支付草稿金额重算。</p>
+     */
+    private BigDecimal actPayDedc;
+    /**
+     * 公务员标志（2206 {@code cvlserv_flag}，0=否 / 1=是）。
+     *
+     * <p>只读展示。</p>
+     */
+    private String cvlservFlag;
+    /**
+     * 公务员医疗补助资金支出（2206 {@code cvlserv_pay}）。
+     *
+     * <p>只读展示；不参与本地应收重算。</p>
+     */
+    private BigDecimal cvlservPay;
+    /**
+     * 基本医保统筹基金支出（2206 {@code hifp_pay}）。
+     *
+     * <p>只读展示；与 {@link #fundPaySumamt} 区分。</p>
+     */
+    private BigDecimal hifpPay;
+    /**
+     * 其他支出（2206 {@code oth_pay}，含电子钱包等）。
+     *
+     * <p>只读展示；不参与本地应收重算。</p>
+     */
+    private BigDecimal othPay;
 }

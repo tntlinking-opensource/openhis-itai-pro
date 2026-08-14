@@ -17,4 +17,10 @@ import lombok.experimental.Accessors;
 @Accessors(chain = true)
 @Schema(description = "护士工作量统计页初始化 IF-RPT-NWL-01")
 public class LoadNurseWorkloadFormInitRequest {
+
+    /**
+     * 就诊范围 OUTPATIENT/INPATIENT；空则默认门诊，用于刷新开立科室下拉。
+     */
+    @Schema(description = "就诊范围 OUTPATIENT/INPATIENT")
+    private String encounterScope;
 }

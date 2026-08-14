@@ -5,7 +5,7 @@
 > **文档**：设计/架构类 Markdown 在 **[whale-doc](../whale-doc/)**；入口 **[文档地图](../whale-doc/文档地图.md)**。  
 > 扩展 Module：**[扩展模块架构统一约定](../whale-doc/01-架构/扩展模块架构统一约定.md)** · **[新扩展包开发指南](../whale-doc/01-架构/新扩展包开发指南.md)**
 
-当前版本：**2.0.4-SNAPSHOT**（根 `pom.xml`）。
+当前版本：**2.0.5**（根 `pom.xml`）。
 
 ---
 
@@ -61,7 +61,7 @@ mvn clean package -pl whale-health/health-app -am -DskipTests
 产物：
 
 ```text
-whale-health/health-app/target/health-app-2.0.4-SNAPSHOT.jar
+whale-health/health-app/target/health-app-2.0.5.jar
 ```
 
 ### 修改 Framework 后
@@ -111,7 +111,7 @@ mvn compile -pl whale-health/health-app -am -DskipTests
 ```bash
 mvn spring-boot:run -pl whale-health/health-app -DskipTests
 # 或
-java -jar whale-health/health-app/target/health-app-2.0.4-SNAPSHOT.jar
+java -jar whale-health/health-app/target/health-app-2.0.5.jar
 ```
 
 默认日志：`logs/whale-health.log`。
@@ -122,7 +122,7 @@ java -jar whale-health/health-app/target/health-app-2.0.4-SNAPSHOT.jar
 
 1. `mvn clean install -f whale-framework/pom.xml -DskipTests`（未改 framework 且本地已有对应版本可跳过）
 2. `mvn clean package -pl whale-health/health-app -am -DskipTests`
-3. 部署 `health-app-2.0.4-SNAPSHOT.jar` 与生产配置
+3. 部署 `health-app-2.0.5.jar` 与生产配置
 4. 启动示例：
 
 ```bash
@@ -162,7 +162,7 @@ Framework 常用能力：多租户 `IMultiTenant`、审计 `BaseAuditedEntity`�
 
 ## 版本
 
-根 `pom.xml`（`artifactId: whale`）为全仓库 parent，当前 **`2.0.4-SNAPSHOT`**。发版时改根 POM `<version>`，各模块经 parent 链继承；`whale.framework.version` 等属性默认 `${project.version}`。
+根 `pom.xml`（`artifactId: whale`）为全仓库 parent，当前 **`2.0.5`**。发版时改根 POM `<version>`，各模块经 parent 链继承；`whale.framework.version` 等属性默认 `${project.version}`。
 
 ---
 

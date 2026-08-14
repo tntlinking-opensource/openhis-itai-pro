@@ -5,6 +5,8 @@
 package com.openhis.health.application.report.inoutdetail.support;
 
 import com.openhis.health.application.report.inoutdetail.dto.InpatientInOutDetailRowDto;
+import com.openhis.health.application.shared.report.PatientSettlementContextRow;
+import com.openhis.health.application.shared.report.ReportPatientSettlementContextAssembler;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientInOutDetailReportLineQueryModel;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
@@ -18,6 +20,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -26,7 +31,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 住院患者入出明细报表展示 enrich（患者/科室/病区床位/转科/费用空值；AS-RPT-010）。
+ * 住院患者入出明细报表展示 enrich（患者/科室/病区床位/转科/住院天数/入院身份费用性质/费用空值；AS-RPT-010）。
  */
 @Component
 @RequiredArgsConstructor
@@ -40,6 +45,9 @@ public class InpatientInOutDetailReportEnricher {
 
     /** 位置实体/名称批量。 */
     private final LocationQueryService locationQueryService;
+
+    /** 入院身份费用性质（就诊优先账户，与挂号明细/患者卡片同口径）。 */
+    private final ReportPatientSettlementContextAssembler reportPatientSettlementContextAssembler;
 
     /**
      * 领域行 → 展示行；待重结或无净额 → settledFeeAmount 置 null。
@@ -61,6 +69,7 @@ public class InpatientInOutDetailReportEnricher {
         LinkedHashSet<Long> patientIds = new LinkedHashSet<>();
         LinkedHashSet<Long> locationIds = new LinkedHashSet<>();
         LinkedHashSet<Long> organizationIds = new LinkedHashSet<>();
+        LinkedHashSet<Long> encounterIds = new LinkedHashSet<>();
         // 第一遍：收集批量 enrich 主键
         for (InpatientInOutDetailReportLineQueryModel line : lines) {
             // 跳过空投影行
@@ -70,6 +79,9 @@ public class InpatientInOutDetailReportEnricher {
             // 有患者主键才参与人口学批量
             if (line.getPatientId() != null) {
                 patientIds.add(line.getPatientId());
+            }
+            if (line.getEncounterId() != null) {
+                encounterIds.add(line.getEncounterId());
             }
             this.collectLocationId(locationIds, line.getAdmissionWardLocationId());
             this.collectLocationId(locationIds, line.getCurrentWardLocationId());
@@ -88,6 +100,9 @@ public class InpatientInOutDetailReportEnricher {
         }
         Map<Long, PatientInpatientProjectionSnapshot> patientById =
             this.patientQueryService.mapInpatientProjectionSnapshotsByIds(patientIds);
+        // Pre：入院身份费用性质（优先账户合同名，不跟账单行）
+        Map<Long, PatientSettlementContextRow> feeNatureByEncounterId =
+            this.reportPatientSettlementContextAssembler.mapContextsByEncounterIds(encounterIds);
         Map<Long, Location> locationById = this.locationQueryService.loadLocationEntityMapByIds(locationIds);
         // 入院病区/转往病区 → 科室 id（登记时科室以最早病区挂靠为准）
         for (Location location : locationById.values()) {
@@ -115,6 +130,8 @@ public class InpatientInOutDetailReportEnricher {
             row.setPatientId(line.getPatientId());
             row.setStartTime(line.getStartTime());
             row.setEndTime(line.getEndTime());
+            // Asm：住院天数（入院日计第 1 天；无出院日用当天）
+            row.setInpatientDays(this.resolveInpatientDays(line.getStartTime(), line.getEndTime()));
             row.setTransferred(line.isTransferred());
             PatientInpatientProjectionSnapshot patient = patientById.get(line.getPatientId());
             // 人口学：有快照则回填姓名性别年龄
@@ -134,6 +151,14 @@ public class InpatientInOutDetailReportEnricher {
             row.setBedName(locationNameById.get(line.getCurrentBedLocationId()));
             row.setTransferTargetText(
                 this.buildTransferTargetText(line.getTransferTargetWardLocationIds(), locationById, organizationNameById));
+            // Asm：费用性质 = 入院身份（用什么入院就是什么）
+            if (line.getEncounterId() != null) {
+                PatientSettlementContextRow feeNature = feeNatureByEncounterId.get(line.getEncounterId());
+                if (feeNature != null) {
+                    row.setFeeNatureContractNo(feeNature.getFeeNatureContractNo());
+                    row.setFeeNatureDisplay(feeNature.getFeeNatureDisplay());
+                }
+            }
             // 待重结 → 费用列强制空（禁止写 0）
             if (line.getEncounterId() != null && pendingSet.contains(line.getEncounterId())) {
                 row.setSettledFeeAmount(null);
@@ -250,6 +275,34 @@ public class InpatientInOutDetailReportEnricher {
             first = false;
         }
         return builder.toString();
+    }
+
+    /**
+     * 住院天数：自然日差 + 1（入院日计第 1 天）；有出院日截至出院日，否则截至当天；至少 1 天。
+     *
+     * @param startTime 入院时间
+     * @param endTime 出院时间；可空
+     * @return 住院天数；无入院时间则 null
+     */
+    private Integer resolveInpatientDays(LocalDateTime startTime, LocalDateTime endTime) {
+        // 无入院时间无法计日
+        if (startTime == null) {
+            return null;
+        }
+        LocalDate startDate = startTime.toLocalDate();
+        LocalDate endDate;
+        // 已出院用出院日，在院用当天
+        if (endTime != null) {
+            endDate = endTime.toLocalDate();
+        } else {
+            endDate = LocalDate.now();
+        }
+        long days = ChronoUnit.DAYS.between(startDate, endDate) + 1L;
+        // 异常时间序仍展示至少 1 天
+        if (days < 1L) {
+            return 1;
+        }
+        return (int) days;
     }
 
     /**

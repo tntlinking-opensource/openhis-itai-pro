@@ -46,6 +46,10 @@ public final class InsuranceCatalogMappingMapper {
             candidate.setProdentpName(base.getProdentpName());
             candidate.setSourceInfno(base.getSourceInfno());
             candidate.setUpdtTime(base.getUpdtTime());
+            candidate.setMinPacCnt(base.getMinPacCnt());
+            candidate.setMinPacunt(base.getMinPacunt());
+            candidate.setMinPrepunt(base.getMinPrepunt());
+            candidate.setMinPrcunt(base.getMinPrcunt());
         }
         return candidate;
     }

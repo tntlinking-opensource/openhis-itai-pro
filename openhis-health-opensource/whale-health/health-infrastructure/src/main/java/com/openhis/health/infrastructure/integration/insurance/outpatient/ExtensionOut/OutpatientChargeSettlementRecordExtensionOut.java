@@ -8,6 +8,7 @@ import lombok.Data;
 import lombok.experimental.Accessors;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 /**
  * 门诊第三方正式结算回执摘要（退费/2601 补偿查询、支付记录分摊展示用）。
@@ -24,8 +25,14 @@ public class OutpatientChargeSettlementRecordExtensionOut {
     private Long paymentId;
     /** 关联预结算 id。 */
     private Long preSettleId;
+    /**
+     * 本批次收费项主键（来自预结算 {@code charge_item_ids}；银联补收精确匹配用）。
+     */
+    private List<Long> chargeItemIds;
     /** 费用性质 id。 */
     private Long contractId;
+    /** 记账账户 id。 */
+    private Long accountId;
     /** 收费批次号 chrg_bchno。 */
     private String chargeBatchNo;
     /** 平台 setl_id。 */
@@ -53,6 +60,8 @@ public class OutpatientChargeSettlementRecordExtensionOut {
     private BigDecimal hifpPay;
     /** 统筹基金支付比例 pool_prop_selfpay。 */
     private BigDecimal poolPropSelfpay;
+    /** 公务员标志 cvlserv_flag（0=否 / 1=是；支付记录展示）。 */
+    private String cvlservFlag;
     /** 公务员补助 cvlserv_pay。 */
     private BigDecimal cvlservPay;
     /** 企业补充 hifes_pay。 */

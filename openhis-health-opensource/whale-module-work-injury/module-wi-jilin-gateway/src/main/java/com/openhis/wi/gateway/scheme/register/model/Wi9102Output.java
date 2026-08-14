@@ -17,6 +17,6 @@ import java.util.List;
 @Accessors(chain = true)
 public class Wi9102Output {
 
-    /** 审批行列表；单行时可自动 bindQualification。 */
+    /** 审批行列表；submit 时优先绑定门诊(12)，否则首条。 */
     private List<Wi9102QualificationRow> rows = new ArrayList<>();
 }

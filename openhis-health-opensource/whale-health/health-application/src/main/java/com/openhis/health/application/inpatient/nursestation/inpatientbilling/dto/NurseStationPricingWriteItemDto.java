@@ -76,12 +76,18 @@ public class NurseStationPricingWriteItemDto {
     private BigDecimal totalPrice;
 
     /**
-     * 耗材发放库房（IF-IP-PRC-01 目录已解析；写路径定价 FIFO 直接在该库位取批号，不再二次 match 模板）。
+     * 耗材发放库房（IF-IP-PRC-01 目录已解析；写路径定价在该库位取批号，不再二次 match 模板）。
      */
     @Schema(description = "耗材发放库房（目录 defaultDispenseLocationId 回传；耗材行必填）")
     @JsonSerialize(using = ToStringSerializer.class)
     /** 耗材发放库房（目录 defaultDispenseLocationId 回传；耗材行必填）。 */
     private Long performLocation;
+
+    /**
+     * 耗材选中批号（IF-IP-PRC-01 批号行回传；有值时写路径按该批号对 LOT_NUMBER_PRICE，不再 FIFO 冒顶）。
+     */
+    @Schema(description = "耗材选中批号（目录 lotNumber 回传；有值时锁定批号价）")
+    private String lotNumber;
 
     @Schema(description = "父锚点")
     /** 父锚点。 */

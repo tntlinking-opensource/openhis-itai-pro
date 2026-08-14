@@ -12,7 +12,9 @@ import com.alibaba.fastjson2.JSONArray;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 /** {@code charge_item_ids} JSON 数组序列化（兼容历史 CSV） */
 public final class ChargeItemIdsSupport {
@@ -21,19 +23,25 @@ public final class ChargeItemIdsSupport {
     }
 
     /**
-     * 将收费项 id 列表序列化为 JSON 数组字符串。
+     * 将收费项 id 列表序列化为 JSON 数组字符串（去重保序）。
      *
      * @param chargeItemIds 收费项 id
-     * @return {@code [1,2,3]} 或 null */
+     * @return {@code [1,2,3]} 或 null
+     */
     public static String toJsonArray(List<Long> chargeItemIds) {
         if (chargeItemIds == null || chargeItemIds.isEmpty()) {
             return null;
         }
         JSONArray array = new JSONArray();
+        Set<Long> seen = new LinkedHashSet<>();
         for (Long id : chargeItemIds) {
-            if (id != null) {
-                array.add(id);
+            if (id == null) {
+                continue;
             }
+            if (!seen.add(id)) {
+                continue;
+            }
+            array.add(id);
         }
         if (array.isEmpty()) {
             return null;
@@ -42,10 +50,14 @@ public final class ChargeItemIdsSupport {
     }
 
     /**
-     * 解析 {@code charge_item_ids}，兼容 JSON 数组与历史逗号分隔。
+     * 解析 {@code charge_item_ids}，兼容 JSON 数组与历史逗号分隔（去重保序）。
+     *
+     * <p>预结算快照可能因明细展开写入重复 id；按 id 查库为集合语义，重复会导致
+     * 「请求条数 ≠ 查出条数」误报收费项不完整。</p>
      *
      * @param raw 库中原始值
-     * @return id 列表，无则空列表 */
+     * @return id 列表，无则空列表
+     */
     public static List<Long> parseIds(String raw) {
         if (isEmpty(raw)) {
             return Collections.emptyList();
@@ -56,22 +68,22 @@ public final class ChargeItemIdsSupport {
             if (array == null || array.isEmpty()) {
                 return Collections.emptyList();
             }
-            List<Long> ids = new ArrayList<>(array.size());
+            Set<Long> seen = new LinkedHashSet<>();
             for (int i = 0; i < array.size(); i++) {
                 Object value = array.get(i);
                 if (value != null) {
-                    ids.add(Long.valueOf(String.valueOf(value)));
+                    seen.add(Long.valueOf(String.valueOf(value)));
                 }
             }
-            return ids;
+            return new ArrayList<>(seen);
         }
         String[] parts = trimmed.split(",");
-        List<Long> ids = new ArrayList<>(parts.length);
+        Set<Long> seen = new LinkedHashSet<>();
         for (String part : parts) {
             if (isNotEmpty(part)) {
-                ids.add(Long.valueOf(part.trim()));
+                seen.add(Long.valueOf(part.trim()));
             }
         }
-        return ids;
+        return new ArrayList<>(seen);
     }
 }

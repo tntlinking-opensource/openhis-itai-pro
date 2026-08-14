@@ -39,8 +39,8 @@ public interface OutpatientPharmacyPrescriptionQueryConstants {
     /** 费用性质分类文案：市医保。 */
     String CONTRACT_CATEGORY_MUNICIPAL_INSURANCE_LABEL = "市医保";
 
-    /** 费用性质分类文案：职工医保。 */
-    String CONTRACT_CATEGORY_WORKER_INSURANCE_LABEL = "职工医保";
+    /** 费用性质分类文案：工伤保险（category_enum=WORKER_INSURANCE；院点合同 H*-GS）。 */
+    String CONTRACT_CATEGORY_WORKER_INSURANCE_LABEL = "工伤保险";
 
     /** 页面初始化失败。 */
     String EX_OPQ_101 = "EX-OPQ-101";

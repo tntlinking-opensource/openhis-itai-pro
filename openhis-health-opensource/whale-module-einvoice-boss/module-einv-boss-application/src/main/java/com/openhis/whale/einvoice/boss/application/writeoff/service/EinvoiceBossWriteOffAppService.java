@@ -41,9 +41,9 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * 手动冲红页（HTTP：{@code /api/app/einvoiceBossWriteOff/*}）。
+ * 手动冲红页（HTTP：{@code /api/app/einvoiceBossWriteOff/*}）�?
  *
- * <p>待冲红：已开具蓝票且尚未冲红成功；冲红记录：本地已作废或博思冲红有结果，支持查看。</p>
+ * <p>待冲红：已开具蓝票且尚未冲红成功；冲红记录：本地已作废或博思冲红有结果，支持查看�?/p>
  */
 @Slf4j
 @Service
@@ -63,7 +63,7 @@ public class EinvoiceBossWriteOffAppService {
     private final EinvoiceBossGatewayProperties properties;
 
     /**
-     * 手动冲红列表（待冲红 / 冲红记录）。
+     * 手动冲红列表（待冲红 / 冲红记录）�?
      *
      * @param request 筛选与分页
      * @return 分页结果
@@ -74,7 +74,7 @@ public class EinvoiceBossWriteOffAppService {
         int pageNo = safe.getPageNo() == null || safe.getPageNo() < 1 ? 1 : safe.getPageNo();
         int pageSize = safe.getPageSize() == null || safe.getPageSize() < 1 ? 20 : safe.getPageSize();
 
-        // 先多取再按健康状态过滤，避免 ISSUED/CANCELLED 只能靠快照判定
+        // 先多取再按健康状态过滤，避免 ISSUED/CANCELLED 只能靠快照判�?
         int fetchSize = Math.min(Math.max(pageSize * 5, 50), properties.getList().getKeywordFilterLimit());
         Specification<EinvBossDocument> spec = buildSpec(safe, scope);
         Page<EinvBossDocument> page = documentRepository.findAll(
@@ -106,7 +106,7 @@ public class EinvoiceBossWriteOffAppService {
     }
 
     /**
-     * 冲红详情（复用单据详情，供查看红票信息）。
+     * 冲红详情（复用单据详情，供查看红票信息）�?
      *
      * @param request 单据主键
      * @return 详情
@@ -119,9 +119,9 @@ public class EinvoiceBossWriteOffAppService {
     }
 
     /**
-     * 手动冲红：本地 ISSUED 先作废，再同步调博思 {@code writeOffEBill}。
+     * 手动冲红：本�?ISSUED 先作废，再同步调博�?{@code writeOffEBill}�?
      *
-     * @param request 单据/票据与原因
+     * @param request 单据/票据与原�?
      * @return 冲红结果
      */
     public ManualWriteOffResponse manualWriteOff(ManualWriteOffRequest request) {
@@ -143,7 +143,7 @@ public class EinvoiceBossWriteOffAppService {
         String reason = StringUtils.hasText(request.getReason()) ? request.getReason().trim() : "手动冲红";
         Long operatorId = currentOperatorResolver.requireOperatorId("AUTH-001", "当前登录用户不能为空");
 
-        // 本地主档先 CANCELLED，再调博思；已作废则仅重试博思冲红
+        // 本地主档�?CANCELLED，再调博思；已作废则仅重试博思冲�?
         invoiceWritebackLoader.writeoffLocalInvoice(document.getInvoiceId(), reason, operatorId);
         BossInvoiceIssueResult result = writeOffService.writeOff(document.getInvoiceId(), reason);
 
@@ -164,7 +164,7 @@ public class EinvoiceBossWriteOffAppService {
                             EinvBossErrorCodes.EINV_DOCUMENT_NOT_FOUND, "单据不存在"));
         }
         if (invoiceId != null) {
-            return documentRepository.findByInvoiceIdAndIsDeletedFalse(invoiceId)
+            return documentRepository.findFirstByInvoiceIdAndIsDeletedFalseOrderByIdAsc(invoiceId)
                     .orElseThrow(() -> new BusinessException(
                             EinvBossErrorCodes.EINV_DOCUMENT_NOT_FOUND, "单据不存在"));
         }
@@ -247,10 +247,10 @@ public class EinvoiceBossWriteOffAppService {
             return "CANCELLED".equals(item.getInvoiceStatus())
                     || StringUtils.hasText(item.getWriteOffStatus());
         }
-        // 待冲红：已开具，且尚未冲红成功（含冲红失败可重试）
+        // 待冲红：已开具，且尚未冲红成功（含冲红失败可重试�?
         if (!"ISSUED".equals(item.getInvoiceStatus())) {
-            // 本地已作废但博思冲红失败，也允许在「冲红记录」看；待冲红仅 ISSUED
-            // 例外：CANCELLED + FAILED 放到 HISTORY；但用户可能想从候选重试 —— 见下
+            // 本地已作废但博思冲红失败，也允许在「冲红记录」看；待冲红�?ISSUED
+            // 例外：CANCELLED + FAILED 放到 HISTORY；但用户可能想从候选重�?—�?见下
             return "CANCELLED".equals(item.getInvoiceStatus())
                     && WriteOffStatus.FAILED.getCode().equals(item.getWriteOffStatus());
         }

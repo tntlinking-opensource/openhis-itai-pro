@@ -1044,19 +1044,38 @@ public class InventoryUploadContextLoader {
     }
 
     /**
-     * 解析就诊最新医保结算记录。
+     * 解析就诊最新医保结算记录（默认门诊 AMB，供发药当时 3505）。
      *
      * @param encounterId 就诊 ID
      * @param contract    契约
      * @return 医保结算记录，非医保契约时返回 null
      */
     YbSettlementRecord resolveSettlement(Long encounterId, Contract contract) {
+        return this.resolveSettlement(encounterId, contract, ChsSettleEncounterClass.AMB);
+    }
+
+    /**
+     * 解析就诊最新医保结算记录（按就诊类别 AMB/IMP）。
+     *
+     * <p>住院清床合并 3505 须传 {@link ChsSettleEncounterClass#IMP}，否则取不到出院结算 {@code setl_id}。</p>
+     *
+     * @param encounterId    就诊 ID
+     * @param contract       契约
+     * @param encounterClass 结算就诊类别（{@link ChsSettleEncounterClass}）
+     * @return 医保结算记录，非医保契约时返回 null
+     */
+    YbSettlementRecord resolveSettlement(Long encounterId, Contract contract, String encounterClass) {
         if (!isInsuranceContract(contract)) {
             return null;
         }
+        String settleClass = encounterClass;
+        // 未显式传类别：回落门诊，保持历史发药路径行为
+        if (isEmpty(settleClass)) {
+            settleClass = ChsSettleEncounterClass.AMB;
+        }
         Long tenantId = TenantUtils.getCurrentTenantId();
         Optional<YbSettlementRecord> settlement = settlementRecordQueryService
-            .findOptionalLatestByEncounterAndClass(encounterId, ChsSettleEncounterClass.AMB, tenantId);
+            .findOptionalLatestByEncounterAndClass(encounterId, settleClass, tenantId);
         return settlement.orElse(null);
     }
 

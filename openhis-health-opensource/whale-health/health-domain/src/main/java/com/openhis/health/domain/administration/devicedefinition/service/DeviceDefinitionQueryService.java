@@ -16,10 +16,13 @@ import com.openhis.health.domain.share.utils.KeywordExactFirstOrderSupport;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import com.openhis.health.domain.administration.devicedefinition.entity.DeviceDefinition;
 import com.openhis.health.domain.administration.devicedefinition.repository.DeviceDefinitionRepository;
+import com.openhis.health.domain.workflow.inventoryitem.entity.InventoryItem;
 import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.CriteriaQuery;
 import jakarta.persistence.criteria.Order;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
+import jakarta.persistence.criteria.Subquery;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -28,6 +31,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -43,7 +48,9 @@ import lombok.RequiredArgsConstructor;
  *
  * <p>边界：只读，不写库；联查与报表走读模型，不在本类展开复杂联表。</p>
  *
- * <p>聚合边界：仅本聚合 {@link DeviceDefinitionRepository}。</p>
+ * <p>聚合边界：仅本聚合 {@link DeviceDefinitionRepository} 持久化；
+ * 目录 {@code positiveQuantityOnly} 仅用 Criteria EXISTS 判定库存是否存在可用正库存行，
+ * 可选按 {@code positiveQuantityLocationIds} 收窄库位；不注入库存 Repository。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -120,8 +127,11 @@ public class DeviceDefinitionQueryService {
                 String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(sk);
                 List<Predicate> ors = new ArrayList<>();
                 ors.add(cb.like(cb.lower(root.get(FieldNameConstants.NAME)), likeIc));
+                ors.add(cb.like(cb.lower(root.get(FieldNameConstants.MERCHANDISE_NAME)), likeIc));
                 ors.add(cb.like(cb.lower(root.get(FieldNameConstants.PY_STR)), likeIc));
                 ors.add(cb.like(cb.lower(root.get(FieldNameConstants.WB_STR)), likeIc));
+                ors.add(cb.like(cb.lower(root.get(FieldNameConstants.MERCHANDISE_PY_STR)), likeIc));
+                ors.add(cb.like(cb.lower(root.get(FieldNameConstants.MERCHANDISE_WB_STR)), likeIc));
                 ors.add(cb.like(cb.lower(root.get(FieldNameConstants.BUS_NO)), likeIc));
                 ors.add(cb.like(cb.lower(root.get(FieldNameConstants.YB_NO)), likeIc));
                 ands.add(cb.or(ors.toArray(Predicate[]::new)));
@@ -133,8 +143,11 @@ public class DeviceDefinitionQueryService {
                     sk,
                     secondary,
                     root.get(FieldNameConstants.NAME),
+                    root.get(FieldNameConstants.MERCHANDISE_NAME),
                     root.get(FieldNameConstants.PY_STR),
                     root.get(FieldNameConstants.WB_STR),
+                    root.get(FieldNameConstants.MERCHANDISE_PY_STR),
+                    root.get(FieldNameConstants.MERCHANDISE_WB_STR),
                     root.get(FieldNameConstants.BUS_NO),
                     root.get(FieldNameConstants.YB_NO));
             }
@@ -174,7 +187,7 @@ public class DeviceDefinitionQueryService {
     /**
      * 按关键词检索启用中的器材定义（DM-ADM-008 §6.2.4）。
      *
-     * <p>关键词同时匹配名称、拼音首码、五笔首码；返回启用（{@link PublicationStatus#ACTIVE}）记录。</p>
+     * <p>关键词同时匹配名称、商品名、拼音首码、五笔首码；返回启用（{@link PublicationStatus#ACTIVE}）记录。</p>
      *
      * @param keyword 检索关键词（不含通配符，内部拼接）
      * @return 匹配的器材定义列表
@@ -190,8 +203,11 @@ public class DeviceDefinitionQueryService {
                 String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(sk);
                 ands.add(cb.or(
                     cb.like(cb.lower(root.get(FieldNameConstants.NAME)), likeIc),
+                    cb.like(cb.lower(root.get(FieldNameConstants.MERCHANDISE_NAME)), likeIc),
                     cb.like(cb.lower(root.get(FieldNameConstants.PY_STR)), likeIc),
-                    cb.like(cb.lower(root.get(FieldNameConstants.WB_STR)), likeIc)
+                    cb.like(cb.lower(root.get(FieldNameConstants.WB_STR)), likeIc),
+                    cb.like(cb.lower(root.get(FieldNameConstants.MERCHANDISE_PY_STR)), likeIc),
+                    cb.like(cb.lower(root.get(FieldNameConstants.MERCHANDISE_WB_STR)), likeIc)
                 ));
                 // B.2.1：下拉选品精确全等置顶
                 KeywordExactFirstOrderSupport.applyExactFirstOrder(
@@ -200,8 +216,11 @@ public class DeviceDefinitionQueryService {
                     sk,
                     List.of(cb.desc(root.get(FieldNameConstants.ID))),
                     root.get(FieldNameConstants.NAME),
+                    root.get(FieldNameConstants.MERCHANDISE_NAME),
                     root.get(FieldNameConstants.PY_STR),
-                    root.get(FieldNameConstants.WB_STR));
+                    root.get(FieldNameConstants.WB_STR),
+                    root.get(FieldNameConstants.MERCHANDISE_PY_STR),
+                    root.get(FieldNameConstants.MERCHANDISE_WB_STR));
             }
             return cb.and(ands.toArray(Predicate[]::new));
         };
@@ -255,6 +274,9 @@ public class DeviceDefinitionQueryService {
             purchase.setManufacturer(query.getManufacturer());
             purchase.setKeyword(query.getKeyword());
             purchase.setPrepickedProductKeys(query.getPrepickedProductKeys());
+            purchase.setPositiveQuantityOnly(query.getPositiveQuantityOnly());
+            // 目录「只看库存>0」库位收窄与采购 Spec 共用 EXISTS
+            purchase.setPositiveQuantityLocationIds(query.getPositiveQuantityLocationIds());
             purchase.setPageNo(query.getPageNo());
             purchase.setPageSize(query.getPageSize());
         }
@@ -334,11 +356,61 @@ public class DeviceDefinitionQueryService {
                 Predicate keywordPred = this.buildPurchaseKeywordPredicate(root, cb, query.getKeyword());
                 Predicate prepPred = this.buildDevicePrepickedPredicate(root, cb, query.getPrepickedProductKeys());
                 this.appendKeywordOrPrepicked(ands, cb, keywordPred, prepPred);
+                // 医生站选品「只看库存>0」：须在分页 limit/offset 前过滤
+                if (Boolean.TRUE.equals(query.getPositiveQuantityOnly())) {
+                    ands.add(this.buildPositiveAvailableInventoryExistsPredicate(
+                        root, cq, cb, TableNameConstants.ADM_DEVICE_DEFINITION, query.getPositiveQuantityLocationIds()));
+                }
                 // B.2.1：有关键字时精确命中置顶（与 LIKE 列同集合）
                 this.applyPurchaseKeywordExactFirstOrder(root, cq, cb, query.getKeyword());
             }
             return cb.and(ands.toArray(Predicate[]::new));
         };
+    }
+
+    /**
+     * 耗材定义存在「可用正库存」行：ACTIVE、quantity&gt;0、未过期、未删除。
+     *
+     * <p>可选按库位集合收窄（医生站候选发药库位）；{@code locationIds == null} 不收窄；
+     * 非 null 且空列表恒不命中。</p>
+     *
+     * @param root         耗材定义根
+     * @param cq           外层查询
+     * @param cb           CriteriaBuilder
+     * @param itemTable    库存 item_table（耗材定义表名）
+     * @param locationIds  可选库位收窄；null=不收窄
+     * @return EXISTS 谓词；库位列表为空时返回恒假
+     */
+    private Predicate buildPositiveAvailableInventoryExistsPredicate(
+        Root<DeviceDefinition> root,
+        CriteriaQuery<?> cq,
+        CriteriaBuilder cb,
+        String itemTable,
+        List<Long> locationIds
+    ) {
+        // 医生站已解析候选库位但结果为空：无可开立库存维度，耗材定义一律不命中
+        if (locationIds != null && locationIds.isEmpty()) {
+            return cb.disjunction();
+        }
+        Subquery<Long> sub = cq.subquery(Long.class);
+        Root<InventoryItem> inv = sub.from(InventoryItem.class);
+        sub.select(inv.get(FieldNameConstants.ID));
+        LocalDateTime now = LocalDateTime.now();
+        List<Predicate> where = new ArrayList<>();
+        where.add(cb.isFalse(inv.get(FieldNameConstants.IS_DELETED)));
+        where.add(cb.equal(inv.get(FieldNameConstants.ITEM_TABLE), itemTable));
+        where.add(cb.equal(inv.get(FieldNameConstants.ITEM_ID), root.get(FieldNameConstants.ID)));
+        where.add(cb.equal(inv.get(FieldNameConstants.INVENTORY_STATUS_ENUM), PublicationStatus.ACTIVE.getCode()));
+        where.add(cb.greaterThan(inv.get(FieldNameConstants.QUANTITY), BigDecimal.ZERO));
+        where.add(cb.or(
+            cb.isNull(inv.get(FieldNameConstants.EXPIRATION_DATE)),
+            cb.greaterThan(inv.get(FieldNameConstants.EXPIRATION_DATE), now)));
+        // 有候选库位时与目录展示同口径收窄
+        if (locationIds != null) {
+            where.add(inv.get(FieldNameConstants.LOCATION_ID).in(locationIds));
+        }
+        sub.where(where.toArray(Predicate[]::new));
+        return cb.exists(sub);
     }
 
     /**

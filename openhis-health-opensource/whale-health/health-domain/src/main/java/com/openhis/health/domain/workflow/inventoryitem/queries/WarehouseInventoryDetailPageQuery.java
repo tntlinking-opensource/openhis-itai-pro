@@ -45,6 +45,12 @@ public class WarehouseInventoryDetailPageQuery extends AbstractPageQuery {
     /** 医保等级多选，与药品/耗材主表 {@code chrgitm_lv} 子查询对齐。 */
     private List<Integer> chrgitmLvList;
 
+    /**
+     * 基药标识筛选（药典 {@code basic_flag}）；非空时仅保留命中药品定义的库存行（耗材排除）。
+     * <p>定义主键由应用层 {@code InventoryCatalogFilter} 预解析写入 {@link #resolvedMedicationDefinitionIds}。</p>
+     */
+    private Boolean basicFlag;
+
     /** 供应状态持久化码多选，取值域为 {@code PublicationStatus#getCode()}。 */
     private List<String> inventoryStatusEnums;
 

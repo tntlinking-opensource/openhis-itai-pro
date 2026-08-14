@@ -41,10 +41,10 @@ public class OutpatientFeeDetailAmountSummaryDto {
     /**
      * 进价合计（含退单负号；结算刻度 2 位）。
      *
-     * <p>明细分页页脚可为 {@code null}（未跑全量历史进价，前端展示「—」）；
-     * 汇总 Tab / 导出路径仍返回实值。</p>
+     * <p>明细分页页脚：命中 scope 批量历史进价代数和（诊疗无进价按 0）；
+     * 汇总 Tab / 导出同口径实值。</p>
      */
-    @Schema(description = "进价合计；明细分页页脚可空")
+    @Schema(description = "进价合计")
     private BigDecimal purchaseAmountTotal;
 
     /** 售价合计（含退单负号；结算刻度 2 位）。 */

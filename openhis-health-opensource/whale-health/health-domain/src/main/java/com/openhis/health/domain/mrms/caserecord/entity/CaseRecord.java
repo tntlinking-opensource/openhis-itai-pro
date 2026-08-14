@@ -39,7 +39,7 @@ public class CaseRecord extends BaseAuditedEntity {
     @Column(name = "encounter_id", nullable = false)
     private Long encounterId;
 
-    /** 院内病案号 {@code medcasno}，租户内唯一，格式 {@code yyyy#####}。 */
+    /** 院内病案号 {@code medcasno}，租户内唯一，格式 {@code CR}{@code yyyy-MM-dd}{@code ####}（B.10.9 按日）。 */
     @Column(name = "medcasno", nullable = false, length = 32)
     private String medcasno;
 
@@ -63,6 +63,10 @@ public class CaseRecord extends BaseAuditedEntity {
     /** 列表冗余：性别字典码（同步自首页 {@code gend_code}）。 */
     @Column(name = "gend_code", length = 16)
     private String gendCode;
+
+    /** 列表冗余：证件号码（同步自首页 {@code certno}）。 */
+    @Column(name = "certno", length = 32)
+    private String certno;
 
     /** 列表冗余：入院时间（同步自首页 {@code adm_time}）。 */
     @Column(name = "adm_time")
@@ -123,6 +127,25 @@ public class CaseRecord extends BaseAuditedEntity {
     /** 最近 4401 上传错误摘要。 */
     @Column(name = "chs_upload_error", length = 500)
     private String chsUploadError;
+
+    /**
+     * 结算清单上传状态（对齐老 uploadSettFlag）：
+     * {@code 0}未传 / {@code 1}已传未提交 / {@code 2}已提交。
+     */
+    @Column(name = "settle_upload_status_code", length = 8)
+    private String settleUploadStatusCode;
+
+    /** 4101A 平台返回清单流水号 {@code setl_list_id}。 */
+    @Column(name = "setl_list_id", length = 64)
+    private String setlListId;
+
+    /** 最近结算清单上传/提交时间。 */
+    @Column(name = "settle_upload_at")
+    private LocalDateTime settleUploadAt;
+
+    /** 最近结算清单上传错误摘要。 */
+    @Column(name = "settle_upload_error", length = 500)
+    private String settleUploadError;
 
     /** 解档原因（UNARCHIVE 迁移写入，高权限审计留痕）。 */
     @Column(name = "unarchive_reason", length = 500)
@@ -218,6 +241,7 @@ public class CaseRecord extends BaseAuditedEntity {
         this.psnName = homepage.getPsnName();
         this.iptNo = homepage.getIptNo();
         this.gendCode = homepage.getGendCode();
+        this.certno = homepage.getCertno();
         this.admTime = homepage.getAdmTime();
         this.dscgTime = homepage.getDscgTime();
         this.admCatyName = homepage.getAdmCatyName();

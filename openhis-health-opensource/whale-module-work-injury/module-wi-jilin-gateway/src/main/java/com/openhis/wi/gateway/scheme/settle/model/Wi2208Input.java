@@ -9,21 +9,25 @@ import lombok.Data;
 import lombok.experimental.Accessors;
 
 /**
- * 【2208】费用结算撤销 input（10-P0 §10）。
+ * 【2208】费用结算撤销 input（手册 V1.3：ipt_otp_no / mdtrt_id / setl_time / keep_tp_type）。
  */
 @Data
 @Accessors(chain = true)
 public class Wi2208Input {
 
-    /** 2207 出参 setl_id。 */
-    @JSONField(name = "setl_id")
-    private String setlId;
+    /** 门诊/住院流水号。 */
+    @JSONField(name = "ipt_otp_no")
+    private String iptOtpNo;
 
     /** 平台就诊 ID mdtrt_id。 */
     @JSONField(name = "mdtrt_id")
     private String mdtrtId;
 
-    /** 人员编号 psn_no。 */
-    @JSONField(name = "psn_no")
-    private String psnNo;
+    /** 原结算时间 yyyyMMddHHmmss。 */
+    @JSONField(name = "setl_time")
+    private String setlTime;
+
+    /** 是否保留处方：0 不保留 / 1 保留。 */
+    @JSONField(name = "keep_tp_type")
+    private String keepTpType;
 }

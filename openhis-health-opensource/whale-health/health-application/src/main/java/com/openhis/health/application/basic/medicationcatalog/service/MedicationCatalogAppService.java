@@ -250,6 +250,7 @@ public class MedicationCatalogAppService {
         pageQuery.setPageNo(query.getPageNo());
         pageQuery.setPageSize(query.getPageSize());
         pageQuery.setCategoryCode(query.getCategoryCode());
+        pageQuery.setBasicFlag(query.getBasicFlag());
         pageQuery.setKeyword(query.getKeyword());
         // Pre：读侧分页查询主表
         Page<MedicationDefinitionPageQueryModel> pageResult = medicationDefinitionQueryService.pageMedicationCatalog(
@@ -602,6 +603,7 @@ public class MedicationCatalogAppService {
         MedicationDefinitionCatalogPageQuery pageQuery = new MedicationDefinitionCatalogPageQuery();
         pageQuery.setKeyword(safeRequest.getKeyword());
         pageQuery.setCategoryCode(safeRequest.getCategoryCode());
+        pageQuery.setBasicFlag(safeRequest.getBasicFlag());
         int fetchLimit = MedicationCatalogImportConstants.EXPORT_MAX_ROWS + 1;
         List<MedicationDefinitionDetailQueryModel> details =
             medicationDefinitionQueryService.listMedicationCatalogForExport(pageQuery, fetchLimit);

@@ -195,14 +195,11 @@ public class InpatientPrepayAppService {
                     encounterIds.add(row.getEncounterId());
                 }
             }
+            // Pre：个人现金户仅供余额展示；费用性质须优先医保账户合同号（与护士站/医生站同口径）。
             Map<Long, Account> accountByEncounterId =
                 accountQueryService.mapRegistrationAccountsByEncounterIds(encounterIds);
-            Map<Long, String> contractNoByEncounterId = new HashMap<>();
-            for (Map.Entry<Long, Account> entry : accountByEncounterId.entrySet()) {
-                if (entry.getValue() != null && entry.getValue().getContractNo() != null) {
-                    contractNoByEncounterId.put(entry.getKey(), entry.getValue().getContractNo());
-                }
-            }
+            Map<Long, String> contractNoByEncounterId =
+                accountQueryService.mapPreferredContractNoByEncounterIds(encounterIds);
             // Pre：上下文 patient_id 缺失时从就诊主档回填，避免卡片/门控误判 EX-IP-PREP-102。
             Map<Long, Long> patientIdByEncounterId =
                 encounterQueryService.mapPatientIdByEncounterIds(encounterIds);
@@ -309,12 +306,13 @@ public class InpatientPrepayAppService {
         this.sortPaymentsNewestFirst(hospitalDeposits);
         Map<Long, String> operatorNameById = practitionerQueryService.mapDisplayNameByEntererIds(
             this.collectEntererIds(hospitalDeposits));
-        Map<Long, String> payMethodTextByPaymentId = this.loadPayMethodTextIndex(hospitalDeposits);
+        PayChannelIndex payChannelIndex = this.loadPayChannelIndex(hospitalDeposits);
         List<PrepayPaymentRecordDto> records =
             inpatientPrepayMapper.toPrepayPaymentRecordDtoList(
                 hospitalDeposits,
                 operatorNameById,
-                payMethodTextByPaymentId);
+                payChannelIndex.textByPaymentId(),
+                payChannelIndex.codeByPaymentId());
         response.setRecords(records);
         return response;
     }
@@ -771,15 +769,16 @@ public class InpatientPrepayAppService {
     }
 
     /**
-     * 批量解析流水支付方式展示（明细首条 pay_enum → 中文渠道名）。
+     * 批量解析流水支付渠道 code 与展示名（明细首条 pay_enum）。
      *
      * @param payments 住院存款支付头列表
-     * @return paymentId → 支付方式展示
+     * @return paymentId → code / 展示名
      */
-    private Map<Long, String> loadPayMethodTextIndex(List<PaymentReconciliationQueryModel> payments) {
+    private PayChannelIndex loadPayChannelIndex(List<PaymentReconciliationQueryModel> payments) {
+        Map<Long, String> codeByPaymentId = new HashMap<>();
         Map<Long, String> textByPaymentId = new HashMap<>();
         if (payments == null || payments.isEmpty()) {
-            return textByPaymentId;
+            return new PayChannelIndex(codeByPaymentId, textByPaymentId);
         }
         LinkedHashSet<Long> paymentIds = new LinkedHashSet<>();
         for (PaymentReconciliationQueryModel payment : payments) {
@@ -790,9 +789,18 @@ public class InpatientPrepayAppService {
         Map<Long, String> payEnumByPaymentId =
             paymentReconciliationQueryService.mapFirstPayEnumByPaymentIds(paymentIds);
         for (Map.Entry<Long, String> entry : payEnumByPaymentId.entrySet()) {
-            String display = paymentChannelDisplayAssembler.resolvePayChannelDisplay(entry.getValue(), null);
-            textByPaymentId.put(entry.getKey(), display);
+            String payEnum = entry.getValue();
+            codeByPaymentId.put(entry.getKey(), payEnum);
+            textByPaymentId.put(
+                entry.getKey(),
+                paymentChannelDisplayAssembler.resolvePayChannelDisplay(payEnum, null));
         }
-        return textByPaymentId;
+        return new PayChannelIndex(codeByPaymentId, textByPaymentId);
+    }
+
+    /** 流水支付渠道索引（code + 展示名）。 */
+    private record PayChannelIndex(
+        Map<Long, String> codeByPaymentId,
+        Map<Long, String> textByPaymentId) {
     }
 }

@@ -17,7 +17,9 @@ public class PractitionerWorkloadOverviewSummaryQueryModel {
     /** 接诊人数（distinct encounter_id）。 */
     private Integer encounterCountTotal = 0;
 
-    /** 处方数量（distinct med_medication_request）。 */
+    /**
+     * 处方数量（按 {@code prescription_no} 去重；同方多行计 1；无处方号回落 request id）。
+     */
     private Integer prescriptionCountTotal = 0;
 
     /** 诊疗项目总数量（distinct 诊疗 + 耗材 request）。 */

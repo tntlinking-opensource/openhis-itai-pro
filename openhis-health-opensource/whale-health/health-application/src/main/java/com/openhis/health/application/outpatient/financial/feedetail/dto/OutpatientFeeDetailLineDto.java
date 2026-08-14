@@ -75,12 +75,21 @@ public class OutpatientFeeDetailLineDto {
     @Schema(description = "开单医生")
     private String orderingDoctorName;
 
-    /** 收费人主键。 */
+    /** 执行人主键（有执行记录时为 Procedure 主执行人；否则 ChargeItem.performer_id）。 */
+    @Schema(description = "执行人主键")
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long performerId;
+
+    /** 执行人姓名（临嘱/长嘱同口径：优先执行记录主执行人）。 */
+    @Schema(description = "执行人")
+    private String performerName;
+
+    /** 收费人主键（仅结算/退费后有值；待结为空）。 */
     @Schema(description = "收费人主键")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long cashierId;
 
-    /** 收费人姓名。 */
+    /** 收费人姓名（仅结算后回显）。 */
     @Schema(description = "收费人")
     private String cashierName;
 
@@ -91,6 +100,18 @@ public class OutpatientFeeDetailLineDto {
     /** 收退方向：CHARGE / REFUND。 */
     @Schema(description = "收退方向")
     private String tradeDirection;
+
+    /**
+     * 费用性质合同业务号（账单真源：{@code ChargeItem.account_id → Account.contract_no}）。
+     */
+    @Schema(description = "费用性质合同业务号")
+    private String feeNatureContractNo;
+
+    /**
+     * 费用性质展示名（账户 contract_no → fin_contract 名称；转自费后跟新账户）。
+     */
+    @Schema(description = "费用性质")
+    private String feeNatureDisplay;
 
     /** 医保等级展示。 */
     @Schema(description = "医保等级")

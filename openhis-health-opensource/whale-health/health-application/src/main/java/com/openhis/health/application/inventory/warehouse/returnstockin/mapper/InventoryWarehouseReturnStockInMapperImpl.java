@@ -12,7 +12,6 @@ import com.openhis.health.application.inventory.warehouse.returnstockin.dto.Supp
 import com.openhis.health.application.inventory.warehouse.returnstockin.dto.WarehouseOptionDto;
 import com.openhis.health.application.inventory.warehouse.returnstockin.request.*;
 import com.openhis.health.application.inventory.warehouse.returnstockin.response.*;
-import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.custom.supplier.queries.model.SupplierListItemQueryModel;
@@ -59,7 +58,6 @@ import java.util.Objects;
 @RequiredArgsConstructor
 public class InventoryWarehouseReturnStockInMapperImpl implements InventoryWarehouseReturnStockInMapper {
 
-    private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
     private final LocationQueryService locationQueryService;
 
     /**
@@ -821,10 +819,8 @@ public class InventoryWarehouseReturnStockInMapperImpl implements InventoryWareh
         dto.setMinUnitCode(pr.getSplitUnitCode());
         dto.setCategoryCode(pr.getCategoryCode());
         dto.setPrice(pr.getPrice());
-        if (StringUtils.isNotEmpty(pr.getProductTableName()) && pr.getProductDefinitionId() != null) {
-            dto.setPurchasePrice(chargeItemDefinitionQueryService.resolveFirstPurchasePriceValue(
-                pr.getProductTableName().trim(), pr.getProductDefinitionId()));
-        }
+        // —— 退库入库选品已禁手工；不灌目录 PURCHASE（流转金额只认批号/源单落库价）。——
+        dto.setPurchasePrice(null);
         dto.setManufacturer(pr.getManufacturer());
         dto.setPyStr(pr.getPyStr());
         dto.setWbStr(pr.getWbStr());

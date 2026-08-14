@@ -95,6 +95,67 @@ public final class ContractConfigLoader {
         return suffixMatch;
     }
 
+    /**
+     * 按当前契约的定点机构码，查找同机构下指定就医地区划（{@code adm_vs}）的兄弟通道。
+     *
+     * <p>优先 {@code {fixmedins_code}-{admVs}} 精确段；否则扫描同 {@code fixmedins_code} 且
+     * {@code adm_vs} 匹配的唯一配置。用于 1101 异地失败后切省通道（如 229900）重试。</p>
+     *
+     * @param currentBusNo 当前合同 bus_no
+     * @param targetAdmVs  目标就医地区划
+     * @return 兄弟通道配置；当前已是目标区划时返回当前配置；找不到则 null
+     */
+    public static ContractConfig findSiblingByAdmVs(String currentBusNo, String targetAdmVs) {
+        if (currentBusNo == null || currentBusNo.isBlank()
+            || targetAdmVs == null || targetAdmVs.isBlank()) {
+            return null;
+        }
+        ContractConfig current = getByBusNo(currentBusNo.trim());
+        if (current == null) {
+            return null;
+        }
+        String target = targetAdmVs.trim();
+        if (target.equals(trimToEmpty(current.getAdmVs()))) {
+            return current;
+        }
+        String fixmedins = trimToEmpty(current.getFixmedinsCode());
+        if (!fixmedins.isEmpty()) {
+            ContractConfig byBusNo = getByBusNo(fixmedins + "-" + target);
+            if (byBusNo != null && target.equals(trimToEmpty(byBusNo.getAdmVs()))) {
+                return byBusNo;
+            }
+        }
+        reloadIfStale();
+        ContractConfig match = null;
+        for (ContractConfig candidate : cache.values()) {
+            if (candidate == null) {
+                continue;
+            }
+            if (!fixmedins.isEmpty()
+                && !fixmedins.equals(trimToEmpty(candidate.getFixmedinsCode()))) {
+                continue;
+            }
+            if (!target.equals(trimToEmpty(candidate.getAdmVs()))) {
+                continue;
+            }
+            if (match != null
+                && !trimToEmpty(match.getBusNo()).equals(trimToEmpty(candidate.getBusNo()))) {
+                throw new IllegalStateException(
+                    "chs-contract 存在多个同机构 adm_vs=" + target + " 契约: "
+                        + match.getBusNo() + " 与 " + candidate.getBusNo());
+            }
+            match = candidate;
+        }
+        return match;
+    }
+
+    private static String trimToEmpty(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.trim();
+    }
+
     /** 强制重新加载（管理接口或测试可调用） */
     public static void refresh() {
         LOCK.lock();

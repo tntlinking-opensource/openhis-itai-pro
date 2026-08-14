@@ -24,4 +24,18 @@ public class ReconDetailResultRowResult {
     private BigDecimal medfeeSumamt;
     private BigDecimal fundPaySumamt;
     private BigDecimal acctPay;
+    /** 本地补齐：人员姓名（平台结果文件无此列） */
+    private String psnName;
+    /** 本地补齐：结算时间 yyyy-MM-dd HH:mm:ss */
+    private String setlTime;
+    /** 本地补齐：结算回执状态 CONFIRMED / REVOKED */
+    private String localStatus;
+    /** 本地是否命中结算回执（BC 对照左栏） */
+    private Boolean localExists;
+    /** 本地补齐：医疗费总额 */
+    private BigDecimal localMedfeeSumamt;
+    /** 本地补齐：基金支付总额 */
+    private BigDecimal localFundPaySumamt;
+    /** 本地补齐：个人账户支出 */
+    private BigDecimal localAcctPay;
 }

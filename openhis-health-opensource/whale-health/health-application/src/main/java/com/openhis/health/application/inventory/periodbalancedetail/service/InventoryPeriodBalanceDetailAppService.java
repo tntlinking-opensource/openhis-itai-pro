@@ -65,7 +65,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -73,6 +72,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -218,26 +218,25 @@ public class InventoryPeriodBalanceDetailAppService {
         // Pre：批量加载期间业务数据
         PeriodBalanceDetailAssemblyContext assemblyContext = this.loadAssemblyContext(
             request, tenantId, location, formEnum, windowContext, null);
-        // Pre：目录分页主表
-        CatalogPageSlice catalogSlice = this.pageCatalogDefinitions(request);
-        List<Long> pageItemIds = catalogSlice.itemIds;
-        this.enrichProductsForItems(assemblyContext, pageItemIds, request.getItemTable());
-        this.loadPriceHistoryForItems(assemblyContext, request.getItemTable(), pageItemIds);
-        // Asm：品种填数、筛选与动态列
-        List<PeriodBalanceDetailListRowDto> rows = this.assemblySupport.buildListRows(pageItemIds, assemblyContext);
-        rows = this.assemblySupport.applyRowFilters(
-            rows, request.getKeyword(), request.getIsBus(), request.getIsBalance());
         List<PeriodBalanceDetailColumnDto> columns = this.assemblySupport.resolveActiveColumns(formEnum);
         List<String> activeCodes = this.assemblySupport.extractActiveColumnCodes(columns);
         int responsePageNo = 1;
         if (request.getPageNo() != null) {
             responsePageNo = request.getPageNo().intValue();
         }
+        int pageSize = request.getBoundedPageSize();
+        // Asm：默认「仅有业务」先筛后分页；展示全目录时仍走目录分页
+        FilteredPageSlice filteredSlice;
+        if (this.isHideZeroBusiness(request.getIsBus())) {
+            filteredSlice = this.pageFilteredBusinessRows(request, assemblyContext);
+        } else {
+            filteredSlice = this.pageCatalogRows(request, assemblyContext);
+        }
         return this.periodBalanceDetailMapper.toPageResponse(
-            rows,
-            catalogSlice.totalElements,
+            filteredSlice.rows,
+            filteredSlice.totalElements,
             responsePageNo,
-            request.getBoundedPageSize(),
+            pageSize,
             formEnum,
             request.getItemTable(),
             columns,
@@ -269,40 +268,51 @@ public class InventoryPeriodBalanceDetailAppService {
         List<PeriodBalanceDetailColumnDto> columns = this.assemblySupport.resolveActiveColumns(formEnum);
         List<PeriodBalanceDetailListRowDto> allRows = new ArrayList<>();
         int exportCap = InventoryPeriodBalanceDetailExportConstants.EXPORT_MAX_ROWS;
-        int pageSize = InventoryPeriodBalanceDetailExportConstants.EXPORT_PAGE_SIZE;
-        int pageNo = 1;
         boolean truncated = false;
-        while (allRows.size() < exportCap) {
-            // Pre：分页拉取目录主表直至耗尽或触顶导出行上限
-            PagePeriodBalanceDetailRequest batchRequest = this.copyPageRequest(pageRequest);
-            batchRequest.setPageNo(Integer.valueOf(pageNo));
-            batchRequest.setPageSize(Integer.valueOf(pageSize));
-            CatalogPageSlice slice = this.pageCatalogDefinitions(batchRequest);
-            if (slice.itemIds.isEmpty()) {
-                // 已无更多目录页，结束导出拉取
-                break;
-            }
-            this.enrichProductsForItems(assemblyContext, slice.itemIds, pageRequest.getItemTable());
-            this.loadPriceHistoryForItems(assemblyContext, pageRequest.getItemTable(), slice.itemIds);
-            List<PeriodBalanceDetailListRowDto> batchRows =
-                this.assemblySupport.buildListRows(slice.itemIds, assemblyContext);
-            batchRows = this.assemblySupport.applyRowFilters(
-                batchRows, pageRequest.getKeyword(), pageRequest.getIsBus(), pageRequest.getIsBalance());
-            for (PeriodBalanceDetailListRowDto row : batchRows) {
+        // Asm：与列表同筛；默认有业务先筛后导出，避免按全目录翻页漏感/空页
+        if (this.isHideZeroBusiness(pageRequest.getIsBus())) {
+            List<PeriodBalanceDetailListRowDto> filteredRows =
+                this.buildFilteredBusinessRows(pageRequest, assemblyContext);
+            for (PeriodBalanceDetailListRowDto row : filteredRows) {
                 if (allRows.size() >= exportCap) {
-                    // 触顶导出行上限，标记截断
                     truncated = true;
                     break;
                 }
                 allRows.add(row);
             }
-            if (truncated) {
-                break;
+        } else {
+            int pageSize = InventoryPeriodBalanceDetailExportConstants.EXPORT_PAGE_SIZE;
+            int pageNo = 1;
+            while (allRows.size() < exportCap) {
+                // Pre：分页拉取目录主表直至耗尽或触顶导出行上限
+                PagePeriodBalanceDetailRequest batchRequest = this.copyPageRequest(pageRequest);
+                batchRequest.setPageNo(Integer.valueOf(pageNo));
+                batchRequest.setPageSize(Integer.valueOf(pageSize));
+                CatalogPageSlice slice = this.pageCatalogDefinitions(batchRequest);
+                if (slice.itemIds.isEmpty()) {
+                    break;
+                }
+                this.enrichProductsForItems(assemblyContext, slice.itemIds, pageRequest.getItemTable());
+                this.loadPriceHistoryForItems(assemblyContext, pageRequest.getItemTable(), slice.itemIds);
+                List<PeriodBalanceDetailListRowDto> batchRows =
+                    this.assemblySupport.buildListRows(slice.itemIds, assemblyContext);
+                batchRows = this.assemblySupport.applyRowFilters(
+                    batchRows, pageRequest.getKeyword(), pageRequest.getIsBus(), pageRequest.getIsBalance());
+                for (PeriodBalanceDetailListRowDto row : batchRows) {
+                    if (allRows.size() >= exportCap) {
+                        truncated = true;
+                        break;
+                    }
+                    allRows.add(row);
+                }
+                if (truncated) {
+                    break;
+                }
+                if (pageNo >= slice.totalPages) {
+                    break;
+                }
+                pageNo = pageNo + 1;
             }
-            if (pageNo >= slice.totalPages) {
-                break;
-            }
-            pageNo = pageNo + 1;
         }
         List<PeriodBalanceDetailExportRowDto> exportRows = new ArrayList<>();
         for (PeriodBalanceDetailListRowDto row : allRows) {
@@ -841,6 +851,140 @@ public class InventoryPeriodBalanceDetailAppService {
     }
 
     /**
+     * 是否默认隐藏期间全零业务行（{@code isBus} 未传或 true）。
+     *
+     * @param isBus 请求筛选
+     * @return 隐藏为 true
+     */
+    private boolean isHideZeroBusiness(Boolean isBus) {
+        if (isBus == null) {
+            return true;
+        }
+        return isBus.booleanValue();
+    }
+
+    /**
+     * 默认「仅有业务」：以期间动账品种为主表，先筛后分页，{@code total} 为筛选后条数。
+     *
+     * @param request          分页请求
+     * @param assemblyContext  已装载上下文
+     * @return 当前页行与筛选后总数
+     */
+    private FilteredPageSlice pageFilteredBusinessRows(
+        PagePeriodBalanceDetailRequest request,
+        PeriodBalanceDetailAssemblyContext assemblyContext
+    ) {
+        List<PeriodBalanceDetailListRowDto> filteredRows =
+            this.buildFilteredBusinessRows(request, assemblyContext);
+        return this.sliceFilteredRows(filteredRows, request);
+    }
+
+    /**
+     * 展示全目录：目录分页主表 + 当前页行筛选（{@code isBalance}/关键字）。
+     *
+     * @param request          分页请求
+     * @param assemblyContext  已装载上下文
+     * @return 当前页行与目录总数
+     */
+    private FilteredPageSlice pageCatalogRows(
+        PagePeriodBalanceDetailRequest request,
+        PeriodBalanceDetailAssemblyContext assemblyContext
+    ) {
+        CatalogPageSlice catalogSlice = this.pageCatalogDefinitions(request);
+        List<Long> pageItemIds = catalogSlice.itemIds;
+        this.enrichProductsForItems(assemblyContext, pageItemIds, request.getItemTable());
+        this.loadPriceHistoryForItems(assemblyContext, request.getItemTable(), pageItemIds);
+        List<PeriodBalanceDetailListRowDto> rows =
+            this.assemblySupport.buildListRows(pageItemIds, assemblyContext);
+        rows = this.assemblySupport.applyRowFilters(
+            rows, request.getKeyword(), request.getIsBus(), request.getIsBalance());
+        FilteredPageSlice slice = new FilteredPageSlice();
+        slice.rows = rows;
+        slice.totalElements = catalogSlice.totalElements;
+        return slice;
+    }
+
+    /**
+     * 收集期间有业务品种、填数并应用 keyword / isBus / isBalance。
+     *
+     * @param request          筛选条件
+     * @param assemblyContext  已装载上下文
+     * @return 筛选后全量行（未分页）
+     */
+    private List<PeriodBalanceDetailListRowDto> buildFilteredBusinessRows(
+        PagePeriodBalanceDetailRequest request,
+        PeriodBalanceDetailAssemblyContext assemblyContext
+    ) {
+        List<Long> candidateItemIds = this.collectPeriodBusinessItemIds(assemblyContext);
+        if (candidateItemIds.isEmpty()) {
+            return new ArrayList<>();
+        }
+        this.enrichProductsForItems(assemblyContext, candidateItemIds, request.getItemTable());
+        this.loadPriceHistoryForItems(assemblyContext, request.getItemTable(), candidateItemIds);
+        List<PeriodBalanceDetailListRowDto> rows =
+            this.assemblySupport.buildListRows(candidateItemIds, assemblyContext);
+        return this.assemblySupport.applyRowFilters(
+            rows, request.getKeyword(), request.getIsBus(), request.getIsBalance());
+    }
+
+    /**
+     * 期间业务 Map 中的品种主键（按 id 升序，稳定分页）。
+     *
+     * @param assemblyContext 装配上下文
+     * @return 候选品种 id
+     */
+    private List<Long> collectPeriodBusinessItemIds(PeriodBalanceDetailAssemblyContext assemblyContext) {
+        List<Long> itemIds = new ArrayList<>();
+        Map<Long, PeriodBalanceDetailAggregateRow> periodByItemId = assemblyContext.getPeriodByItemId();
+        if (periodByItemId == null || periodByItemId.isEmpty()) {
+            return itemIds;
+        }
+        for (Long itemId : periodByItemId.keySet()) {
+            if (itemId != null) {
+                itemIds.add(itemId);
+            }
+        }
+        Collections.sort(itemIds);
+        return itemIds;
+    }
+
+    /**
+     * 对筛选后全量行做内存分页。
+     *
+     * @param filteredRows 筛选后行
+     * @param request      分页参数
+     * @return 当前页切片
+     */
+    private FilteredPageSlice sliceFilteredRows(
+        List<PeriodBalanceDetailListRowDto> filteredRows,
+        PagePeriodBalanceDetailRequest request
+    ) {
+        FilteredPageSlice slice = new FilteredPageSlice();
+        if (filteredRows == null) {
+            slice.rows = new ArrayList<>();
+            slice.totalElements = 0L;
+            return slice;
+        }
+        slice.totalElements = filteredRows.size();
+        int pageSize = request.getBoundedPageSize();
+        int pageNo = 1;
+        if (request.getPageNo() != null && request.getPageNo().intValue() > 0) {
+            pageNo = request.getPageNo().intValue();
+        }
+        int fromIndex = (pageNo - 1) * pageSize;
+        if (fromIndex >= filteredRows.size()) {
+            slice.rows = new ArrayList<>();
+            return slice;
+        }
+        int toIndex = fromIndex + pageSize;
+        if (toIndex > filteredRows.size()) {
+            toIndex = filteredRows.size();
+        }
+        slice.rows = new ArrayList<>(filteredRows.subList(fromIndex, toIndex));
+        return slice;
+    }
+
+    /**
      * 目录分页切片。
      *
      * @param request 分页请求
@@ -1256,5 +1400,17 @@ public class InventoryPeriodBalanceDetailAppService {
 
         /** 总页数。 */
         private int totalPages;
+    }
+
+    /**
+     * 列表分页结果（行已筛选）。
+     */
+    private static final class FilteredPageSlice {
+
+        /** 当前页行。 */
+        private List<PeriodBalanceDetailListRowDto> rows = new ArrayList<>();
+
+        /** 筛选后总条数（默认有业务）或目录总数（展示全目录）。 */
+        private long totalElements;
     }
 }

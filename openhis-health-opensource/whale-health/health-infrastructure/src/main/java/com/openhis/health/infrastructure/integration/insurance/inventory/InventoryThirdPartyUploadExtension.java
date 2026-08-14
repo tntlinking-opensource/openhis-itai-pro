@@ -49,13 +49,13 @@ public interface InventoryThirdPartyUploadExtension {
     }
 
     /**
-     * 住院清床后上报汇总径净销售（3505）。
+     * 住院清床或无床直结后上报净销售合并（3505）。
      *
-     * <p>口径：入院～清床间 {@code summary_no} 非空发放行发退相抵，按发药日+药品+批号+库位+单位+单价合并；
-     * 药师取发放行 {@code practitioner_id}（汇总核发写入的药师，非护士）。
-     * 本地 {@code source_type=CLEAR_BED_SUMMARY}，{@code source_id=encounterId}。</p>
+     * <p>口径：入院～离院间全部已核发/已退药发放行发退相抵，按药品+批号+包装锚单价合并（不含库位、不按天）；
+     * 读 {@code MedicationDispense.trace_no}（同码去重；{@code trdn_flag} 按码累计 OUT−IN）；
+     * {@code setl_id} 取住院 IMP 结算回执。本地 {@code source_type=CLEAR_BED_SUMMARY}，{@code source_id=encounterId}。</p>
      *
-     * <p><b>异步</b>：事务提交后 {@code @Async} 出站；失败不回滚清床。</p>
+     * <p><b>异步</b>：事务提交后 {@code @Async} 出站；失败不回滚清床/结算。</p>
      *
      * @param command 含就诊与可选合同；扩展未启用时为 no-op
      */
@@ -63,10 +63,10 @@ public interface InventoryThirdPartyUploadExtension {
     }
 
     /**
-     * 反结/召回后冲销清床汇总径净销售（3506）。
+     * 反结/召回后冲销清床（或无床直结）合并净销售（3506）。
      *
      * <p>仅当本就诊存在成功 {@code CLEAR_BED_SUMMARY} 3505 时出站；未清床反结（尚无 3505）为 no-op。
-     * 冲销按审计报文原样组装，不含发药当时 {@code DISPENSE} 按患者销售。</p>
+     * 冲销按审计报文原样组装，不含门诊发药当时 {@code DISPENSE} 销售。</p>
      *
      * <p><b>异步</b>：与清床 3505 同路径；失败不回滚反结/召回。</p>
      *
@@ -77,7 +77,7 @@ public interface InventoryThirdPartyUploadExtension {
     }
 
     /**
-     * 本就诊是否存在已成功上报、尚未被 3506 冲销的清床汇总销售。
+     * 本就诊是否存在已成功上报、尚未被 3506 冲销的清床/无床直结合并销售。
      *
      * <p>清床写路径轻门禁：召回后若冲销未成功，禁止再次清床以免平台双报。扩展未启用时 false。</p>
      *

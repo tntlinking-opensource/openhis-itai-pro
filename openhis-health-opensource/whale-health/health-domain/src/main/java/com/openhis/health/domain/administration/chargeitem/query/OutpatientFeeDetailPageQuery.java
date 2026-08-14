@@ -13,16 +13,18 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDate;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
 /**
  * 门诊费用明细分页读查询（DM-ADM-011 §6.2.25～6.2.26；AS-OP-FIN-005 IF-OP-FDT-02/03）。
  *
- * <p>payment 侧筛选（{@code billDateFrom/To}、{@code cashierId}、{@code tradeDirection}）由
- * {@link com.openhis.health.domain.financial.paymentreconciliation.service.PaymentReconciliationQueryService}
- * 解析为 {@link #paymentChargeItemLinks}；就诊/患者/产品筛选项由
- * {@link com.openhis.health.application.outpatient.financial.feedetail.support.OutpatientFeeDetailLoader} 预解析后写入 scope 字段。</p>
+ * <p>时间窗 {@code billDateFrom/To} 映射 ChargeItem {@code entered_date}；收费人
+ * {@code cashierId}/{@code entererMatchIds} 匹配账单 {@code enterer_id}。由
+ * {@link com.openhis.health.application.outpatient.financial.feedetail.support.OutpatientFeeDetailLoader}
+ * 写入合成链路与 resolved scope，<strong>禁止扫 Payment</strong>。门诊默认仅 {@code SETTLED}；
+ * 住院可通过 {@link #allowedChargeItemStatusCodes} 扩展待结算。</p>
  */
 @Getter
 @Setter
@@ -36,8 +38,15 @@ public class OutpatientFeeDetailPageQuery extends AbstractPageQuery {
     /** 结算业务日止（闭区间，本地日历日）。 */
     private LocalDate billDateTo;
 
-    /** 挂号科室（Encounter.organization_id）。 */
+    /** 挂号科室（Encounter.organization_id；遗留筛选项，报表中心改用 {@link #requestingOrgId}）。 */
     private Long registrationDepartmentId;
+
+    /**
+     * 开立科室（账单 {@code ChargeItem.requesting_org_id} / 对应 req 开立科室）。
+     *
+     * <p>报表中心费用明细 / 工作量等统一按本字段筛选；与就诊挂号科室不是同一概念。</p>
+     */
+    private Long requestingOrgId;
 
     /** 费用大类多选（{@link com.openhis.health.domain.share.constants.OutpatientFeeDetailConstants}）。 */
     private List<String> feeCategoryCodes;
@@ -67,6 +76,14 @@ public class OutpatientFeeDetailPageQuery extends AbstractPageQuery {
 
     /** 收退 Tab：ALL / CHARGE / REFUND。 */
     private String tradeDirection;
+
+    /**
+     * 允许纳入的收费状态码白名单（如 {@code SETTLED}、{@code PENDING_SETTLEMENT}）。
+     *
+     * <p>空或 null 时费用明细候选行默认仅 {@code SETTLED}（门诊报表口径）；住院报表由 Support
+     * 按结算状态筛写入。</p>
+     */
+    private List<String> allowedChargeItemStatusCodes;
 
     /**
      * Payment 读侧预解析后的 chargeItem 主键集合；空集合表示无命中。
@@ -107,4 +124,44 @@ public class OutpatientFeeDetailPageQuery extends AbstractPageQuery {
      * 同一次请求内已物化的候选行缓存；page / summary / 导出翻页复用，禁止重复加载 ChargeItem。
      */
     private List<OutpatientFeeDetailChargeRowQueryModel> cachedChargeRows;
+
+    /**
+     * 为 true 时跳过医保基金+个账分摊金额挂载（fin_type 汇总不读该列；避免按 payment 拉 PaymentRecDetail）。
+     */
+    private Boolean skipYbFundAmountAttach;
+
+    /**
+     * 明细分页：DB 分页后的就诊块 total（命中 encounter 全集计数）。
+     *
+     * <p>由 {@code prepare*PageScopes} 写入；{@code pageOutpatientFeeDetailEncounterBlocks}
+     * 在 {@link #pageScopeOnly} 时直接作为 Page.total，禁止再内存 collect 全日窗 encounter 序。</p>
+     */
+    private Long resolvedEncounterPageTotal;
+
+    /**
+     * 为 true 时表示 {@link #resolvedPaymentChargeItemLinks} / {@link #preloadedChargeItemsById}
+     * 仅含本页就诊；域层分页须短路组块，禁止再对全日窗 links 排序切片。
+     */
+    private Boolean pageScopeOnly;
+
+    /**
+     * 硬筛选后命中的就诊主键全集（非仅本页）；供页脚 SQL SUM 的 encounter IN。
+     *
+     * <p>明细分页页脚须对全集求和，禁止只 SUM 本页。</p>
+     */
+    private List<Long> resolvedFeeDetailMatchedEncounterIds;
+
+    /**
+     * 页脚售价合计（已由 Loader 对命中投影/SQL 算出时写入；非空则 AppService 直接采用）。
+     *
+     * <p>项目关键字等无法完全下推 SQL 时，由轻量投影代数和写入，避免为页脚再装全日窗实体。</p>
+     */
+    private BigDecimal resolvedSaleAmountTotal;
+
+    /**
+     * 硬筛选后命中的 chargeItem 主键全集（非仅本页）；供页脚历史进价批量解析。
+     *
+     * <p>无硬筛时可空：页脚进价改为按 {@link #resolvedFeeDetailMatchedEncounterIds} 日窗 IN 装载。</p>
+     */
+    private List<Long> resolvedFeeDetailMatchedChargeItemIds;
 }

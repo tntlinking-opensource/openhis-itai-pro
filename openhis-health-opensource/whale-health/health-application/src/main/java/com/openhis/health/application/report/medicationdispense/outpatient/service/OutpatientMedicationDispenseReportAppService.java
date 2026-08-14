@@ -22,6 +22,8 @@ import com.openhis.health.application.shared.option.TerminologyOptionLoader;
 import com.openhis.health.application.shared.validator.PageWindowGate;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
+import com.openhis.health.domain.administration.organization.entity.Organization;
+import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseReportSummaryRow;
@@ -81,6 +83,9 @@ public class OutpatientMedicationDispenseReportAppService {
     /** 启用药房下拉（报表不按管辖库房收窄）。 */
     private final LocationQueryService locationQueryService;
 
+    /** 开立/领用科室下拉。 */
+    private final OrganizationQueryService organizationQueryService;
+
     /** medication_category_code 术语下拉。 */
     private final TerminologyOptionLoader terminologyOptionLoader;
 
@@ -135,8 +140,10 @@ public class OutpatientMedicationDispenseReportAppService {
             String defaultFrom = today.format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
             String defaultTo = today.format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
             List<OptionDto> feeNatureOptions = this.reportPatientSettlementContextAssembler.loadFeeNatureOptions();
+            List<OptionDto> organizationOptions = this.buildOrganizationOptions();
             // Asm：装配初始化响应
-            return this.outpatientMedicationDispenseReportMapper.toLoadPageInitResponse(
+            LoadOutpatientMedicationDispenseReportPageInitResponse response =
+                this.outpatientMedicationDispenseReportMapper.toLoadPageInitResponse(
                 pharmacies,
                 categoryOptions,
                 practitionerOptions,
@@ -146,6 +153,8 @@ public class OutpatientMedicationDispenseReportAppService {
                 feeNatureOptions,
                 defaultFrom,
                 defaultTo);
+            response.setOrganizationOptions(organizationOptions);
+            return response;
         } catch (RuntimeException ex) {
             log.warn("门诊发药报表页初始化失败", ex);
             throw new BusinessException(
@@ -197,6 +206,7 @@ public class OutpatientMedicationDispenseReportAppService {
                         request.getDrugKeyword(),
                         request.getPatientKeyword(),
                         request.getFeeNatureContractNo(),
+                        request.getOrganizationId(),
                         1,
                         PharmacyDispenseRecordExportConstants.EXPORT_MAX_ROWS);
                 MedicationDispenseReportSummaryQuery summaryQuery =
@@ -216,6 +226,7 @@ public class OutpatientMedicationDispenseReportAppService {
                         request.getPharmacyLocationId(),
                         request.getMedicationCategoryCodes(),
                         request.getDrugKeyword(),
+                        request.getOrganizationId(),
                         summaryDimension,
                         1,
                         PharmacyDispenseRecordExportConstants.EXPORT_MAX_ROWS);
@@ -271,11 +282,11 @@ public class OutpatientMedicationDispenseReportAppService {
     }
 
     /**
-     * IF-RPT-OMD-03：门诊发药报表明细分页（患者发退药 ∪ 科室领用）。
+     * IF-RPT-OMD-03：门诊发药报表明细分页（单源领域真分页：患者或领用）。
      *
      * @param request 筛选与分页
      * @return 平铺明细分页
-     * @throws BusinessException EX-RPT-OMD-102 / 103
+     * @throws BusinessException EX-RPT-OMD-102 / 103；来源 ALL 时「禁止全部来源混查」
      */
     public PageOutpatientMedicationDispenseReportDetailResponse pageOutpatientMedicationDispenseReportDetail(
         PageOutpatientMedicationDispenseReportDetailRequest request) {
@@ -289,6 +300,7 @@ public class OutpatientMedicationDispenseReportAppService {
             "分页参数无效");
         this.validateDispenseDateWindow(request.getDispenseDateFrom(), request.getDispenseDateTo());
         try {
+            // Gate：规范化来源；ALL/未知码在 support 内拒绝
             String sourceCode =
                 this.outpatientMedicationDispenseReportQuerySupport.normalizeSourceCode(request.getSourceCode());
             boolean queryPatient =
@@ -296,7 +308,7 @@ public class OutpatientMedicationDispenseReportAppService {
             boolean queryDept = this.outpatientMedicationDispenseReportQuerySupport.includeDeptIssue(sourceCode);
             int pageNo = request.getPageNo();
             int pageSize = request.getPageSize();
-            // 仅患者侧：领域分页即可，避免无意义的两路 merge
+            // Pre：患者单源 → slip 领域分页，禁止 pageNo*pageSize 前缀预取
             if (queryPatient && !queryDept) {
                 MedicationDispenseRecordPageQuery patientQuery =
                     this.outpatientMedicationDispenseReportQuerySupport.buildPatientRecordQuery(
@@ -309,19 +321,19 @@ public class OutpatientMedicationDispenseReportAppService {
                         request.getDrugKeyword(),
                         request.getPatientKeyword(),
                         request.getFeeNatureContractNo(),
+                        request.getOrganizationId(),
                         pageNo,
                         pageSize);
-                // Pre：发放事实分页 + ChargeItem 价装载
                 Page<MedicationDispenseSlipQueryModel> slipPage =
                     this.outpatientMedicationDispenseReportQuerySupport.pagePatientSlips(patientQuery);
                 List<OutpatientMedicationDispenseDetailRowDto> rows =
                     this.outpatientMedicationDispenseReportQuerySupport.assemblePatientDetailRows(
                         slipPage.getContent());
-                // Asm：单路 total 直接用领域分页元数据
+                // Asm：total 用领域分页元数据
                 return this.outpatientMedicationDispenseReportMapper.toPageDetailResponse(
                     rows, slipPage.getTotalElements(), pageNo, pageSize);
             }
-            // 仅科室领用侧：领域分页 + 落库价符号处理
+            // Pre：领用单源 → 领域分页
             if (queryDept && !queryPatient) {
                 DeptIssueReportPageQuery deptQuery =
                     this.outpatientMedicationDispenseReportQuerySupport.buildDeptIssueQuery(
@@ -330,6 +342,7 @@ public class OutpatientMedicationDispenseReportAppService {
                         request.getPharmacyLocationId(),
                         request.getMedicationCategoryCodes(),
                         request.getDrugKeyword(),
+                        request.getOrganizationId(),
                         null,
                         pageNo,
                         pageSize);
@@ -340,61 +353,10 @@ public class OutpatientMedicationDispenseReportAppService {
                 return this.outpatientMedicationDispenseReportMapper.toPageDetailResponse(
                     rows, deptPage.getTotalElements(), pageNo, pageSize);
             }
-            // 两路并集：各取前 pageNo*pageSize 条，内存按业务时间倒序后切片（BR-RPT-OMD-009）
-            int fetchSize = pageNo * pageSize;
-            // 防护：页码异常导致 fetchSize 小于 pageSize 时至少取一页
-            if (fetchSize < pageSize) {
-                fetchSize = pageSize;
-            }
-            long patientTotal = 0L;
-            long deptTotal = 0L;
-            List<OutpatientMedicationDispenseDetailRowDto> patientRows = List.of();
-            List<OutpatientMedicationDispenseDetailRowDto> deptRows = List.of();
-            // 患者侧前缀页（含 total 供并集基数）
-            if (queryPatient) {
-                MedicationDispenseRecordPageQuery patientQuery =
-                    this.outpatientMedicationDispenseReportQuerySupport.buildPatientRecordQuery(
-                        request.getDispenseDateFrom(),
-                        request.getDispenseDateTo(),
-                        request.getRecordTypeCode(),
-                        request.getPharmacyLocationId(),
-                        request.getDispenserPractitionerId(),
-                        request.getMedicationCategoryCodes(),
-                        request.getDrugKeyword(),
-                        request.getPatientKeyword(),
-                        request.getFeeNatureContractNo(),
-                        1,
-                        fetchSize);
-                Page<MedicationDispenseSlipQueryModel> slipPage =
-                    this.outpatientMedicationDispenseReportQuerySupport.pagePatientSlips(patientQuery);
-                patientTotal = slipPage.getTotalElements();
-                patientRows = this.outpatientMedicationDispenseReportQuerySupport.assemblePatientDetailRows(
-                    slipPage.getContent());
-            }
-            // 领用侧前缀页
-            if (queryDept) {
-                DeptIssueReportPageQuery deptQuery =
-                    this.outpatientMedicationDispenseReportQuerySupport.buildDeptIssueQuery(
-                        request.getDispenseDateFrom(),
-                        request.getDispenseDateTo(),
-                        request.getPharmacyLocationId(),
-                        request.getMedicationCategoryCodes(),
-                        request.getDrugKeyword(),
-                        null,
-                        1,
-                        fetchSize);
-                Page<DeptIssueReportLineQueryModel> deptPage =
-                    this.outpatientMedicationDispenseReportQuerySupport.pageDeptLines(deptQuery);
-                deptTotal = deptPage.getTotalElements();
-                deptRows = this.outpatientMedicationDispenseReportQuerySupport.assembleDeptDetailRows(
-                    deptPage.getContent());
-            }
-            List<OutpatientMedicationDispenseDetailRowDto> pageRows =
-                this.outpatientMedicationDispenseReportQuerySupport.mergeAndSliceDetailRows(
-                    patientRows, deptRows, pageNo, pageSize);
-            // Asm：总条数取两路并集基数之和（来源互斥，无重复计）
-            return this.outpatientMedicationDispenseReportMapper.toPageDetailResponse(
-                pageRows, patientTotal + deptTotal, pageNo, pageSize);
+            // Gate：防御——规范化后仍非单源则拒绝混查
+            throw new BusinessException(
+                OutpatientMedicationDispenseReportConstants.EX_OMD_103,
+                "禁止全部来源混查");
         } catch (BusinessException ex) {
             throw ex;
         } catch (RuntimeException ex) {
@@ -474,22 +436,21 @@ public class OutpatientMedicationDispenseReportAppService {
     }
 
     /**
-     * 导出明细：两路各取上限后合并，再截断至 EXPORT_MAX_ROWS。
+     * 导出明细：按单源 list 至 EXPORT_MAX_ROWS；禁止两路并集。
      *
      * @param request 导出请求
      * @return 明细行
      */
     private List<OutpatientMedicationDispenseDetailRowDto> loadDetailRowsForExport(
         ExportOutpatientMedicationDispenseReportRequest request) {
+        // Gate：与明细分页同来源口径
         String sourceCode =
             this.outpatientMedicationDispenseReportQuerySupport.normalizeSourceCode(request.getSourceCode());
         boolean queryPatient =
             this.outpatientMedicationDispenseReportQuerySupport.includePatientDispense(sourceCode);
         boolean queryDept = this.outpatientMedicationDispenseReportQuerySupport.includeDeptIssue(sourceCode);
-        List<OutpatientMedicationDispenseDetailRowDto> patientRows = List.of();
-        List<OutpatientMedicationDispenseDetailRowDto> deptRows = List.of();
-        // 患者侧：list 上限与发退药记录导出同常量
-        if (queryPatient) {
+        // 患者单源：有界 list
+        if (queryPatient && !queryDept) {
             MedicationDispenseRecordPageQuery patientQuery =
                 this.outpatientMedicationDispenseReportQuerySupport.buildPatientRecordQuery(
                     request.getDispenseDateFrom(),
@@ -501,14 +462,15 @@ public class OutpatientMedicationDispenseReportAppService {
                     request.getDrugKeyword(),
                     request.getPatientKeyword(),
                     request.getFeeNatureContractNo(),
+                    request.getOrganizationId(),
                     1,
                     PharmacyDispenseRecordExportConstants.EXPORT_MAX_ROWS);
             List<MedicationDispenseSlipQueryModel> slips =
                 this.outpatientMedicationDispenseReportQuerySupport.listPatientSlips(patientQuery);
-            patientRows = this.outpatientMedicationDispenseReportQuerySupport.assemblePatientDetailRows(slips);
+            return this.outpatientMedicationDispenseReportQuerySupport.assemblePatientDetailRows(slips);
         }
-        // 领用侧：同上限 list，退领数量/金额已取负
-        if (queryDept) {
+        // 领用单源：同上限；退领数量/金额已取负
+        if (queryDept && !queryPatient) {
             DeptIssueReportPageQuery deptQuery =
                 this.outpatientMedicationDispenseReportQuerySupport.buildDeptIssueQuery(
                     request.getDispenseDateFrom(),
@@ -516,18 +478,39 @@ public class OutpatientMedicationDispenseReportAppService {
                     request.getPharmacyLocationId(),
                     request.getMedicationCategoryCodes(),
                     request.getDrugKeyword(),
+                    request.getOrganizationId(),
                     null,
                     1,
                     PharmacyDispenseRecordExportConstants.EXPORT_MAX_ROWS);
             List<DeptIssueReportLineQueryModel> lines =
                 this.outpatientMedicationDispenseReportQuerySupport.listDeptLines(deptQuery);
-            deptRows = this.outpatientMedicationDispenseReportQuerySupport.assembleDeptDetailRows(lines);
+            return this.outpatientMedicationDispenseReportQuerySupport.assembleDeptDetailRows(lines);
         }
-        return this.outpatientMedicationDispenseReportQuerySupport.mergeAndSliceDetailRows(
-            patientRows,
-            deptRows,
-            1,
-            PharmacyDispenseRecordExportConstants.EXPORT_MAX_ROWS);
+        throw new BusinessException(
+            OutpatientMedicationDispenseReportConstants.EX_OMD_104,
+            "禁止全部来源混查");
+    }
+
+    /**
+     * 构造开立/领用科室下拉（门诊挂号组织树）。
+     *
+     * @return 科室选项
+     */
+    private List<OptionDto> buildOrganizationOptions() {
+        List<OptionDto> options = new ArrayList<>();
+        List<Organization> organizations =
+            this.organizationQueryService.listOrganizationsForOutpatientRegistration();
+        for (Organization organization : organizations) {
+            // 缺主键的脏数据不入下拉
+            if (organization == null || organization.getId() == null) {
+                continue;
+            }
+            OptionDto option = new OptionDto();
+            option.setValue(String.valueOf(organization.getId()));
+            option.setLabel(organization.getName());
+            options.add(option);
+        }
+        return options;
     }
 
     /**

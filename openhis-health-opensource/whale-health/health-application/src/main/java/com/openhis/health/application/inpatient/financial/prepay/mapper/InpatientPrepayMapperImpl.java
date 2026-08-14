@@ -159,15 +159,18 @@ public class InpatientPrepayMapperImpl implements InpatientPrepayMapper {
     /**
      * 住院存款支付列表 + 操作员名索引 → 流水 DTO 列表（已按 bill_date/id 降序）。
      *
-     * @param payments         已过滤 HOSPITAL_DEPOSIT 的支付头
-     * @param operatorNameById entererId → 展示名
+     * @param payments                  已过滤 HOSPITAL_DEPOSIT 的支付头
+     * @param operatorNameById          entererId → 展示名
+     * @param payMethodTextByPaymentId  paymentId → 支付方式展示
+     * @param payChannelCodeByPaymentId paymentId → 支付渠道 code
      * @return 流水 DTO 列表
      */
     @Override
     public List<PrepayPaymentRecordDto> toPrepayPaymentRecordDtoList(
         List<PaymentReconciliationQueryModel> payments,
         Map<Long, String> operatorNameById,
-        Map<Long, String> payMethodTextByPaymentId) {
+        Map<Long, String> payMethodTextByPaymentId,
+        Map<Long, String> payChannelCodeByPaymentId) {
         List<PrepayPaymentRecordDto> rows = new ArrayList<>();
         if (payments == null) {
             return rows;
@@ -191,8 +194,13 @@ public class InpatientPrepayMapperImpl implements InpatientPrepayMapper {
                 amount = payment.getTenderedAmount();
             }
             dto.setAmount(amount);
-            if (payment.getId() != null && payMethodTextByPaymentId != null) {
-                dto.setPayMethodText(payMethodTextByPaymentId.get(payment.getId()));
+            if (payment.getId() != null) {
+                if (payMethodTextByPaymentId != null) {
+                    dto.setPayMethodText(payMethodTextByPaymentId.get(payment.getId()));
+                }
+                if (payChannelCodeByPaymentId != null) {
+                    dto.setPayChannelCode(payChannelCodeByPaymentId.get(payment.getId()));
+                }
             }
             if (payment.getEntererId() != null && operatorNameById != null) {
                 dto.setOperatorName(operatorNameById.get(payment.getEntererId()));

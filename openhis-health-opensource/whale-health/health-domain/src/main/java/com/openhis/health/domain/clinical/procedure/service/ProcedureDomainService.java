@@ -230,6 +230,26 @@ public class ProcedureDomainService {
     }
 
     /**
+     * 修正已完成执行记录的客户可见时刻（仅 {@code recorded_time}，DM-CLN-004 §6.1.7）。
+     *
+     * <p>不改 {@code occurrence_time}；不发布额外领域事件（展示轴修正，非状态迁移）。</p>
+     *
+     * @param cmd 执行记录主键与新 recorded_time
+     * @throws BusinessException 记录不存在、非 COMPLETED 或时刻为空
+     */
+    public void amendProcedureRecordedTime(AmendProcedureRecordedTimeCommand cmd) {
+        // 前置校验：命令与主键必填
+        if (cmd == null || cmd.getProcedureId() == null) {
+            throw new BusinessException(ErrorCodeConstants.PROCEDURE_INVALID_ARGUMENT, "执行记录主键不能为空");
+        }
+        // 加载/组装：加载 COMPLETED 行并仅改 recorded
+        Procedure entity = this.loadProcedure(cmd.getProcedureId());
+        entity.amendRecordedTime(cmd.getRecordedTime());
+        // 持久化：展示时刻落库；occurrence 保持不变
+        procedureRepository.save(entity);
+    }
+
+    /**
      * 加载执行记录实体。
      *
      * @param procedureId 执行记录主键

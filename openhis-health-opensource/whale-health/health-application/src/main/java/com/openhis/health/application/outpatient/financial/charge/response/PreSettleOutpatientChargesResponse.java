@@ -37,15 +37,42 @@ public class PreSettleOutpatientChargesResponse {
     /** 医保医疗费总额。 */
     @Schema(description = "医保医疗费总额")
     private BigDecimal ybMedfeeSumamt;
-    /** 医保统筹支付。 */
-    @Schema(description = "医保统筹支付")
+    /** 医保基金支付总额（含统筹/其他基金等，不等于单列统筹）。 */
+    @Schema(description = "医保基金支付总额")
     private BigDecimal ybFundPaySumamt;
+    /** 基本医保统筹基金支出（hifp_pay）。 */
+    @Schema(description = "基本医保统筹基金支出")
+    private BigDecimal ybHifpPay;
+    /** 其他支出（oth_pay，含电子钱包等）。 */
+    @Schema(description = "其他支出")
+    private BigDecimal ybOthPay;
     /** 医保个账支付。 */
     @Schema(description = "医保个账支付")
     private BigDecimal ybAcctPay;
     /** 医保现金/自付。 */
     @Schema(description = "医保现金自付")
     private BigDecimal ybPsnCashPay;
+    /**
+     * 实际支付起付线（2206 {@code act_pay_dedc}；混合结算多组时金额求和）。
+     *
+     * <p>仅收银展示，不参与本地应收重算。</p>
+     */
+    @Schema(description = "实际支付起付线")
+    private BigDecimal ybActPayDedc;
+    /**
+     * 公务员标志（2206 {@code cvlserv_flag}，0=否 / 1=是；混合结算取首笔非空）。
+     *
+     * <p>仅收银展示。</p>
+     */
+    @Schema(description = "公务员标志")
+    private String ybCvlservFlag;
+    /**
+     * 公务员医疗补助资金支出（2206 {@code cvlserv_pay}；混合结算多组时金额求和）。
+     *
+     * <p>仅收银展示，不参与本地应收重算。</p>
+     */
+    @Schema(description = "公务员医疗补助资金支出")
+    private BigDecimal ybCvlservPay;
     /** 是否已完成医保 2206 预结算。 */
     @Schema(description = "是否已完成医保预结算")
     private Boolean insurancePreSettled;

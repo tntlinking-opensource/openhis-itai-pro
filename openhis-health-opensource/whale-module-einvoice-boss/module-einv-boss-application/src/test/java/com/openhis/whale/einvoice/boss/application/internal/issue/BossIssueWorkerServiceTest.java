@@ -18,6 +18,7 @@ import com.openhis.whale.einvoice.boss.domain.issue.repository.EinvBossIssueTask
 import com.openhis.whale.einvoice.boss.domain.issue.result.BossInvoiceIssueResult;
 import com.openhis.whale.einvoice.boss.domain.issue.loader.EinvoiceIssueSnapshotContextLoader;
 import com.openhis.whale.einvoice.boss.domain.writeoff.loader.EinvoiceInvoiceWritebackLoader;
+import com.openhis.whale.core.infrastructure.multitenancy.TenantContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -59,6 +60,8 @@ class BossIssueWorkerServiceTest {
     private EinvoiceBossDocumentInitializerService documentInitializer;
     @Mock
     private BossRecoverService recoverService;
+    @Mock
+    private TenantContext tenantContext;
 
     @InjectMocks
     private BossIssueWorkerService issueWorker;

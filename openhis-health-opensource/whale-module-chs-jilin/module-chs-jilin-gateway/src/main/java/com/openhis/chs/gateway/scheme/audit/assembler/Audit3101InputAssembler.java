@@ -190,13 +190,14 @@ public final class Audit3101InputAssembler {
             row.setHilistName(order.getHilistName());
             row.setHilistDosform(order.getHilistDosform());
             row.setHilistLv(order.getHilistLv());
-            row.setHilistPric(order.getHilistPric());
+            // Pre：目录价/单价/金额统一 2 位（长春 3101 数值长度校验）
+            row.setHilistPric(scalePlatformMoney(order.getHilistPric()));
             row.setHosplistCode(order.getHosplistCode());
             row.setHosplistName(order.getHosplistName());
             row.setHosplistDosform(order.getHosplistDosform());
             row.setCnt(order.getCnt());
-            row.setPric(order.getPric());
-            row.setSumamt(order.getSumamt());
+            row.setPric(scalePlatformMoney(order.getPric()));
+            row.setSumamt(scalePlatformMoney(order.getSumamt()));
             row.setOwnpayAmt(order.getOwnpayAmt());
             row.setSelfpayAmt(order.getSelfpayAmt());
             row.setSpec(order.getSpec());
@@ -238,5 +239,18 @@ public final class Audit3101InputAssembler {
             rows.add(row);
         }
         return rows;
+    }
+
+    /**
+     * 平台金额/单价：2 位 HALF_UP。
+     *
+     * @param value 原始金额
+     * @return 两位小数；null 原样
+     */
+    private static java.math.BigDecimal scalePlatformMoney(java.math.BigDecimal value) {
+        if (value == null) {
+            return null;
+        }
+        return value.setScale(2, java.math.RoundingMode.HALF_UP);
     }
 }

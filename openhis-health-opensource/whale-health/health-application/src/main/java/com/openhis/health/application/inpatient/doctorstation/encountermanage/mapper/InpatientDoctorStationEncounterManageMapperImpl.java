@@ -110,10 +110,12 @@ public class InpatientDoctorStationEncounterManageMapperImpl implements Inpatien
         String enrichmentHouseName = null;
         String enrichmentPinyin = null;
         String enrichmentWubi = null;
+        String enrichmentInsutype = null;
         if (enrichment != null) {
             enrichmentHouseName = enrichment.getHouseName();
             enrichmentPinyin = enrichment.getPinyinCode();
             enrichmentWubi = enrichment.getWubiCode();
+            enrichmentInsutype = enrichment.getInsutype();
         }
         DoctorStationPatientQueueItemDto dto = new DoctorStationPatientQueueItemDto();
         dto.setEncounterId(row.getEncounterId());
@@ -159,6 +161,7 @@ public class InpatientDoctorStationEncounterManageMapperImpl implements Inpatien
         dto.setPinyinCode(enrichmentPinyin);
         dto.setWubiCode(enrichmentWubi);
         dto.setContractDisplay(overlayContract);
+        dto.setInsutype(enrichmentInsutype);
         return dto;
     }
 

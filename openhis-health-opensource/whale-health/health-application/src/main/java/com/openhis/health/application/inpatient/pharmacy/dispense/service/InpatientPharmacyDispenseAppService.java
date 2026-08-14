@@ -5,6 +5,8 @@
 package com.openhis.health.application.inpatient.pharmacy.dispense.service;
 
 import com.openhis.health.application.shared.advice.InpatientMedicationRequestExecutionMeasureHelper;
+import com.openhis.health.application.shared.advice.InpatientStandingOrderSplittableSettingResolver;
+import com.openhis.health.application.shared.advice.StandingOrderPackageBatchEligibilitySupport;
 import com.openhis.health.application.shared.financial.EncounterContractDisplayAssembler;
 import com.openhis.health.application.shared.option.OptionDtoAssembler;
 import com.openhis.health.application.shared.option.FrequencyOptionLoader;
@@ -45,6 +47,7 @@ import com.openhis.health.domain.administration.practitioner.entity.Practitioner
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.custom.tracenumber.service.TraceNumberQueryService;
 import com.openhis.health.application.shared.tracenumber.TraceNumberDispenseTraceOrchestrator;
+import com.openhis.health.application.shared.tracenumber.TraceScanCountSupport;
 import com.openhis.health.domain.medication.medicationdispense.command.CancelMedicationDispenseCommand;
 import com.openhis.health.domain.medication.medicationdispense.command.DispenseMedicationCommand;
 import com.openhis.health.domain.medication.medicationdispense.command.PrepareMedicationDispenseCommand;
@@ -80,8 +83,6 @@ import com.openhis.health.domain.workflow.inventoryitem.command.AllocateAndDecre
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemDomainService;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemQueryService;
 import com.openhis.health.domain.workflow.inventoryitem.support.MedicationProductQuantityToSplitUnitConverter;
-import com.openhis.health.infrastructure.integration.insurance.inventory.InventoryThirdPartyUploadExtension;
-import com.openhis.health.infrastructure.integration.insurance.inventory.ExtensionIn.InventoryUploadAfterDispenseExtensionIn;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
@@ -110,7 +111,8 @@ import java.util.regex.Pattern;
  * <ul>
  *   <li>Gate：登录/分页/岗位管辖、发药行状态与数量、追溯码与库存门禁。</li>
  *   <li>Pre：待发队列、发药单读模型、收费定价与产品定义加载。</li>
- *   <li>Cmd：配药保存、核发发药、作废与库存扣减、3505 进销存上传（按患者直发；汇总核发见 AS-IP-PHA-002，不上报）。</li>
+ *   <li>Cmd：配药保存、核发发药、作废与库存扣减、院内追溯 OUT；医保 3505 不在发药时上报
+ *   （无住院结算 setl_id；统一由清床/无床直结后合并上传）。</li>
  *   <li>Asm：经 {@link InpatientPharmacyDispenseMapper} 装配响应。</li>
  * </ul>
  */
@@ -118,8 +120,6 @@ import java.util.regex.Pattern;
 @Service
 @RequiredArgsConstructor
 public class InpatientPharmacyDispenseAppService {
-
-    private final InventoryThirdPartyUploadExtension inventoryUploadExtension;
 
     private final CurrentPractitionerResolver currentPractitionerResolver;
     private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
@@ -154,6 +154,8 @@ public class InpatientPharmacyDispenseAppService {
     private final ProcedureQueryService procedureQueryService;
     /** 就诊费用性质（优先合同名）批量回填队列卡片，与门诊发药同口径。 */
     private final EncounterContractDisplayAssembler encounterContractDisplayAssembler;
+    /** 住院长嘱是否可拆（配药时一盒一点整包装校验）。 */
+    private final InpatientStandingOrderSplittableSettingResolver standingOrderSplittableSettingResolver;
 
     /**
      * 加载住院发药页初始化元数据、调配药师与领药人（护士）分页候选。
@@ -401,9 +403,7 @@ public class InpatientPharmacyDispenseAppService {
                 dispenseById.put(loadedDispense.getId(), loadedDispense);
             }
         }
-        List<String> traceCodeInputs = new ArrayList<>();
-        List<String> hardHospitalCodes = new ArrayList<>();
-        // Pre：逐行 Gate（就诊一致、可配药态、追溯/库存/长临数量）
+        // Pre：逐行 Gate（就诊一致、可配药态、追溯行内去重/库存/长临数量；码身份仅软，见 BR-TRC-006）
         for (SavePrepareInpatientDispenseLineSubmitDto submitLine : request.getLines()) {
             MedicationDispense dispense = dispenseById.get(submitLine.getDispenseId());
             if (dispense == null) {
@@ -423,31 +423,34 @@ public class InpatientPharmacyDispenseAppService {
                 dispenseQty = dispense.getDispenseQuantity();
             }
             List<String> lineTraceCodes = splitTraceCodes(submitLine.getTraceNo());
-            traceCodeInputs.addAll(lineTraceCodes);
-            // 有码批硬校验；无码批仅业务行
-            boolean lotHasMaster = traceNumberQueryService.existsMasterByItemLot(
-                TableNameConstants.MED_MEDICATION_DEFINITION,
-                dispense.getMedicationId(),
-                dispense.getLotNumber());
-            if (lotHasMaster) {
-                hardHospitalCodes.addAll(lineTraceCodes);
-                if (!lineTraceCodes.isEmpty()) {
-                    traceNumberQueryService.assertCodesInNetStockForDispenseLine(
-                        TableNameConstants.MED_MEDICATION_DEFINITION,
-                        dispense.getMedicationId(),
-                        dispense.getLotNumber(),
-                        dispense.getLocationId(),
-                        lineTraceCodes);
-                }
-            }
+            // Gate：仅单行内码不重复；跨行同码允许（BR-TRC-023）
+            traceNumberQueryService.assertNoDuplicateTraceCodes(lineTraceCodes);
+            // Gate：主档存在且剩余≤0 硬拦；未建档仍软（BR-TRC-006）
+            traceNumberQueryService.assertMasterCodesNotExhaustedForDispense(lineTraceCodes);
+            // BR-TRC-006/020：未建档/品批不匹配不做硬拦；核发写流水软跳过
             ProductDefinitionDisplayDto productRow = loadProductForMedication(dispense.getMedicationId());
             if (productRow == null) {
                 throw new BusinessException(ErrorCodeConstants.EX_OPP_205_STOCK_OR_LOCATION_INVALID, "缺少药品目录投影，无法校验库存");
             }
-            // 长期：quantity/unit_code=一次执行发药量/单位；临时：总量由 BR-IPP-006 合计，此处仅校单位。
+            // Gate：绑码硬上限=ceil(操作量)；码倍不参与个数（BR-TRC-023）
+            if (!lineTraceCodes.isEmpty() && dispenseQty != null) {
+                int maxCodes = TraceScanCountSupport.resolveOutboundMaxCodeCount(dispenseQty);
+                if (lineTraceCodes.size() > maxCodes) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.TRACE_NUMBER_INVALID_ARGUMENT,
+                        "追溯码数量超过发药量，请减少扫码");
+                }
+            }
+            // 长期：默认可拆按单次执行量；不可拆且发放已是整包装量时按一盒一点校验
             if (TherapyType.LONG_TERM.getCode().equals(medicationRequestDetail.getTherapyEnum())) {
+                boolean packageBatch = false;
+                if (!standingOrderSplittableSettingResolver.isSplittable()
+                    && StandingOrderPackageBatchEligibilitySupport.isPackageUnitDistinctFromSplit(productRow)) {
+                    packageBatch = InpatientMedicationRequestExecutionMeasureHelper.matchesPackageBatchQuantity(
+                        dispenseQty, dispense.getUnitCode(), productRow);
+                }
                 InpatientMedicationRequestExecutionMeasureHelper.assertLongTermDispenseMatchesPerExecutionRequest(
-                    medicationRequestDetail, dispenseQty, dispense.getUnitCode(), productRow);
+                    medicationRequestDetail, dispenseQty, dispense.getUnitCode(), productRow, packageBatch);
             } else {
                 InpatientMedicationRequestExecutionMeasureHelper.assertTemporaryDispenseUnitMatchesRequest(
                     medicationRequestDetail, dispense.getUnitCode(), productRow);
@@ -464,9 +467,6 @@ public class InpatientPharmacyDispenseAppService {
         }
         // 长临合计门控
         assertTemporaryTherapyQuantitiesForInpatient(dispenseById);
-        traceNumberQueryService.assertNoDuplicateTraceCodes(traceCodeInputs);
-        // 仅有码批参与在院硬校验
-        traceNumberQueryService.assertCodesInHospitalForDispense(hardHospitalCodes);
         // Cmd：领域推进 PREPARATION → IN_PROGRESS，写入调配药师与追溯码
         PrepareMedicationDispenseCommand prepareCommand = inpatientPharmacyDispenseMapper.toPrepareMedicationDispenseCommand(
             operatorPractitionerId, request.getPreparerPractitionerId(), request.getLines(), dispenseById);
@@ -578,17 +578,8 @@ public class InpatientPharmacyDispenseAppService {
         // Cmd：追溯出库（发放行维度）
         traceNumberDispenseTraceOrchestrator.recordDispenseOutLines(
             dispensersInSubmitOrder, operatorPractitionerId, productByMedicationIdForDispense);
-        DispenseInpatientMedicationsResponse response =
-            inpatientPharmacyDispenseMapper.toDispenseBatchResponse(submittedDispenseIds, "发药成功", true);
-        // Asm：可选医保 3505 上传（afterCommit + 异步；失败不回滚本地发药）
-        inventoryUploadExtension.runUploadIfEnabled(() -> {
-            InventoryUploadAfterDispenseExtensionIn uploadCommand = new InventoryUploadAfterDispenseExtensionIn()
-                .setEncounterId(request.getEncounterId())
-                .setDispenseIds(submittedDispenseIds)
-                .setContractBusNo(request.getContractBusNo());
-            inventoryUploadExtension.uploadAfterDispense(uploadCommand);
-        });
-        return response;
+        // Asm：住院发药不调 3505（须待出院结算后有 setl_id；见清床/无床直结合并上传）
+        return inpatientPharmacyDispenseMapper.toDispenseBatchResponse(submittedDispenseIds, "发药成功", true);
     }
 
     /**

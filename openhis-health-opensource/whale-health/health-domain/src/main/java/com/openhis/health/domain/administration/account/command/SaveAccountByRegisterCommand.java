@@ -23,6 +23,11 @@ public class SaveAccountByRegisterCommand {
     private Boolean defaultFlag;
     /** 费用性质业务编码（{@code fin_contract.bus_no}，写入 {@code adm_account.contract_no}）。 */
     private String contractNo;
+    /**
+     * 险种类型码（国家医保：310 职工 / 390 城乡居民等）。
+     * 仅医保账户写入；个人现金户可空。
+     */
+    private String insutype;
     /** 操作人主键。 */
     private Long operatorId;
 }

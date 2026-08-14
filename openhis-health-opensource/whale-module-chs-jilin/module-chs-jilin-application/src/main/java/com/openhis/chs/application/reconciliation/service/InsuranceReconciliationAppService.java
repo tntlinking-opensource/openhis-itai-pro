@@ -74,7 +74,7 @@ public class InsuranceReconciliationAppService {
      * 真正对总账时走 {@link #reconcileDailyLedger}（3201）。</p>
      * <p>月清算/总额场景由调用方对列表再合计。</p>
      *
-     * @param request 日期区间及可选 {@code insutype}/{@code clrType} 过滤
+     * @param request 契约、日期区间及可选 {@code insutype}/{@code clrType} 过滤
      * @return 分组汇总行；无结算时为空列表
      */
     public List<ClearAmountSummaryResult> summarizeClearAmounts(SummarizeClearAmountCommand request) {

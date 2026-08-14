@@ -137,6 +137,9 @@ public interface DoctorStationAdviceConstants {
     /** 取消停嘱：行状态非已停嘱。 */
     String MSG_CANCEL_STOP_NOT_STOPPED = "仅已停嘱的长期医嘱可取消停嘱";
 
+    /** 取消停嘱：护士已完成停嘱校对，须先取消停嘱校对（BR-IP-ORD-025）。 */
+    String MSG_CANCEL_STOP_ALREADY_STOP_CHECKED = "已停嘱校对，请先取消停嘱校对后再取消停嘱";
+
     /** 取消停嘱：出院/转科门禁拦截。 */
     String MSG_CANCEL_STOP_DISCHARGE_GATE = "存在出院或转科申请，无法取消停嘱";
 

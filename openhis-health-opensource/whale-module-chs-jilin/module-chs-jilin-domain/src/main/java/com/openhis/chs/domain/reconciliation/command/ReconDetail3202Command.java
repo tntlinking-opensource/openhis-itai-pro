@@ -21,6 +21,8 @@ public class ReconDetail3202Command {
     private String fileQuryNo;
     private String stmtBegndate;
     private String stmtEnddate;
+    /** 可选：仅上传该险种明细（与 3201 行对齐） */
+    private String insutype;
     private String clrType;
     /** 退费结算标志，默认 0 */
     private String refdSetlFlag;

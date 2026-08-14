@@ -52,6 +52,9 @@ public class ProductDefinitionCatalogPageLoader {
     /**
      * 分页检索产品目录（药/诊/材），支持单表或多表合并视图。
      *
+     * <p>多表（「全部」）时各表按完整 {@code pageSize} 取数再合并截断，禁止按表数均分页大小
+     * （对齐 AS-OP-DOR-003-SDD §3.3 规则 A / IF-DOR-11）。</p>
+     *
      * @param rmQuery 读模型风格分页入参（含表名、类目、关键字等）
      * @return 当前页 {@link ProductDefinitionDisplayDto} 与 Spring 分页元数据
      */
@@ -65,19 +68,13 @@ public class ProductDefinitionCatalogPageLoader {
             this.enrichPageContent(single.getContent());
             return single;
         }
-        // 多表路径：各表仍 DB 分页（perTablePageable），合并后截取本页上限（目录「全部」Tab 口径；非全量内存分页）。
-        // DOC-CONFLICT：total 为各表 total 之和，与「全局精确 total」存在偏差，与历史 RM 行为一致。
-        // 预选主键回查：结果已由 prepickedProductKeys 限定，不得再按表数均分 pageSize，
-        // 否则同表多项（如历史医嘱复用整次就诊）会被截断后误报「目录中未找到」。
+        // 多表路径：各表均按完整 pageSize 做 DB 分页，再合并截取（目录「全部」Tab；非全量内存分页）。
+        // 禁止按表数均分 pageSize：关键字仅命中单表（如「全部」搜耗材名）时只会返回 pageSize/3 条，
+        // 与单表「耗材」Tab 结果不一致，医生站会表现为「全部搜不到、切耗材才有」。
+        // DOC-CONFLICT：total 为各表 total 之和；合并行序随 resolveTables 表序拼接，非全局精确排序分页。
         boolean prepickedLookup = this.hasPrepickedProductKeys(query);
-        int perTable;
-        // 预选回查：每表用完整 pageSize，避免按表均分后同表多项被截断
-        if (prepickedLookup) {
-            perTable = pageable.getPageSize();
-        } else {
-            // 目录「全部」Tab：按表均分 pageSize，合并后再截到本页上限
-            perTable = Math.max(1, pageable.getPageSize() / tables.size());
-        }
+        // 每表用完整 pageSize，保证单表命中量与单表 Tab 同口径（预选回查同此）
+        int perTable = pageable.getPageSize();
         Pageable perTablePageable = PageRequest.of(pageable.getPageNumber(), perTable, pageable.getSort());
         List<ProductDefinitionDisplayDto> merged = new ArrayList<>();
         long total = 0L;
@@ -92,7 +89,7 @@ public class ProductDefinitionCatalogPageLoader {
         if (prepickedLookup) {
             mergeCap = pageable.getPageSize() * tables.size();
         } else {
-            // 普通目录页：合并后仍截到请求 pageSize
+            // 普通「全部」目录页：合并后截到请求 pageSize（行序=表序拼接，非全局重排）
             mergeCap = pageable.getPageSize();
         }
         int end = Math.min(merged.size(), mergeCap);
@@ -116,7 +113,7 @@ public class ProductDefinitionCatalogPageLoader {
      * @return 存在非空 prepickedProductKeys 时为 true
      */
     private boolean hasPrepickedProductKeys(ProductDefinitionCatalogPageQuery query) {
-        // 无查询或未带预选键：走普通目录分页均分口径
+        // 无预选键：走普通「全部」合并截断（mergeCap=pageSize）；有预选键则放宽 mergeCap
         if (query == null || query.getPrepickedProductKeys() == null) {
             return false;
         }
@@ -268,6 +265,9 @@ public class ProductDefinitionCatalogPageLoader {
         query.setPricingFlag(rmQuery.getPricingFlag());
         query.setKeyword(rmQuery.getKeyword());
         query.setPrepickedProductKeys(rmQuery.getPrepickedProductKeys());
+        query.setPositiveQuantityOnly(rmQuery.getPositiveQuantityOnly());
+        // 医生站「只看库存>0」候选库位：下推至药/耗 Spec EXISTS（null=不收窄）
+        query.setPositiveQuantityLocationIds(rmQuery.getPositiveQuantityLocationIds());
         query.setPageNo(rmQuery.getPageNo());
         query.setPageSize(rmQuery.getPageSize());
         query.setSortField(rmQuery.getSortField());

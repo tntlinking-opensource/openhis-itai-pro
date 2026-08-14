@@ -70,4 +70,12 @@ public class LoadInpatientFeeDetailReportPageInitResponse {
     /** 费用性质下拉（value=fin_contract.bus_no）。 */
     @Schema(description = "费用性质选项")
     private List<OptionDto> feeNatureOptions;
+
+    /** 结算状态筛选项（全部/已结算/待结算）。 */
+    @Schema(description = "结算状态选项")
+    private List<OptionDto> settlementStatusOptions;
+
+    /** 汇总维度下拉（FIN_TYPE / DEPARTMENT / FEE_CATEGORY / ITEM）。 */
+    @Schema(description = "汇总维度选项")
+    private List<OptionDto> summaryDimensionOptions;
 }

@@ -22,6 +22,7 @@ import com.openhis.health.domain.administration.encounter.service.EncounterQuery
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.InpatientSettleQueueTab;
 import com.openhis.health.domain.share.query.AbstractPageQuery;
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -203,14 +204,51 @@ public class EncounterContextReader {
     /**
      * 按给定顺序批量加载住院上下文（保持输入 encounterId 顺序，含诊断快照）。
      *
+     * <p>超过 {@link GeneralSharedConstants#BATCH_LIMIT} 时按就诊主键分批回补再按输入顺序拼装。</p>
+     *
      * @param encounterIdsOrdered 就诊主键有序列表
      * @return 与输入顺序对齐的住院上下文列表
      */
     public List<InpatientEncounterContextQueryModel> listInpatientContextsByEncounterIdsOrdered(
         List<Long> encounterIdsOrdered) {
-        List<InpatientEncounterContextQueryModel> loaded =
-            encounterContextQueryService.listInpatientContextsByEncounterIdsOrdered(encounterIdsOrdered);
-        return this.applyInpatientDiagnosisSnapshots(loaded, true);
+        if (encounterIdsOrdered == null || encounterIdsOrdered.isEmpty()) {
+            return new ArrayList<>();
+        }
+        int batchLimit = GeneralSharedConstants.BATCH_LIMIT;
+        // 未超批量上限：一次回补即可
+        if (encounterIdsOrdered.size() <= batchLimit) {
+            List<InpatientEncounterContextQueryModel> loaded =
+                encounterContextQueryService.listInpatientContextsByEncounterIdsOrdered(encounterIdsOrdered);
+            return this.applyInpatientDiagnosisSnapshots(loaded, true);
+        }
+        Map<Long, InpatientEncounterContextQueryModel> byEncounterId = new HashMap<>();
+        int fromIndex = 0;
+        // Loop：按 BATCH_LIMIT 分批加载住院上下文与诊断快照
+        while (fromIndex < encounterIdsOrdered.size()) {
+            int toIndex = fromIndex + batchLimit;
+            if (toIndex > encounterIdsOrdered.size()) {
+                toIndex = encounterIdsOrdered.size();
+            }
+            List<Long> batchIds = encounterIdsOrdered.subList(fromIndex, toIndex);
+            List<InpatientEncounterContextQueryModel> batchLoaded =
+                encounterContextQueryService.listInpatientContextsByEncounterIdsOrdered(batchIds);
+            for (InpatientEncounterContextQueryModel model
+                : this.applyInpatientDiagnosisSnapshots(batchLoaded, true)) {
+                if (model != null && model.getEncounterId() != null) {
+                    byEncounterId.put(model.getEncounterId(), model);
+                }
+            }
+            fromIndex = toIndex;
+        }
+        List<InpatientEncounterContextQueryModel> ordered = new ArrayList<>(encounterIdsOrdered.size());
+        // Asm：按调用方输入顺序输出，缺失 id 跳过
+        for (Long encounterId : encounterIdsOrdered) {
+            InpatientEncounterContextQueryModel hit = byEncounterId.get(encounterId);
+            if (hit != null) {
+                ordered.add(hit);
+            }
+        }
+        return ordered;
     }
 
     /**
@@ -274,9 +312,9 @@ public class EncounterContextReader {
     }
 
     /**
-     * 门诊护士站执行队列分页（读模型层，含诊断快照）。
+     * 门诊护士站执行队列分页（读模型层，含诊断快照；支持可选开立科室）。
      *
-     * @param query 分页参数
+     * @param query 分页参数（可为 {@link com.openhis.health.domain.administration.encounter.queries.NurseStationOutpatientQueueQuery}）
      * @return 门诊就诊上下文分页
      */
     public Page<OutpatientEncounterContextQueryModel> pageNurseStationOutpatientQueue(AbstractPageQuery query) {
@@ -299,14 +337,51 @@ public class EncounterContextReader {
     /**
      * 按给定顺序批量加载门诊上下文（保持输入 encounterId 顺序，含诊断快照）。
      *
+     * <p>超过 {@link GeneralSharedConstants#BATCH_LIMIT} 时按就诊主键分批回补再按输入顺序拼装，
+     * 避免发药/退费/退药等队列一次回补触发患者批量上限。</p>
+     *
      * @param encounterIdsOrdered 就诊主键有序列表
      * @return 与输入顺序对齐的门诊上下文列表
      */
     public List<OutpatientEncounterContextQueryModel> listOutpatientContextsByEncounterIdsOrdered(
         List<Long> encounterIdsOrdered) {
-        List<OutpatientEncounterContextQueryModel> loaded =
-            encounterContextQueryService.listOutpatientContextsByEncounterIdsOrdered(encounterIdsOrdered);
-        return this.applyOutpatientDiagnosisSnapshots(loaded);
+        if (encounterIdsOrdered == null || encounterIdsOrdered.isEmpty()) {
+            return new ArrayList<>();
+        }
+        int batchLimit = GeneralSharedConstants.BATCH_LIMIT;
+        // 未超批量上限：一次回补即可
+        if (encounterIdsOrdered.size() <= batchLimit) {
+            List<OutpatientEncounterContextQueryModel> loaded =
+                encounterContextQueryService.listOutpatientContextsByEncounterIdsOrdered(encounterIdsOrdered);
+            return this.applyOutpatientDiagnosisSnapshots(loaded);
+        }
+        Map<Long, OutpatientEncounterContextQueryModel> byEncounterId = new HashMap<>();
+        int fromIndex = 0;
+        // Loop：按 BATCH_LIMIT 分批加载门诊上下文与诊断快照
+        while (fromIndex < encounterIdsOrdered.size()) {
+            int toIndex = fromIndex + batchLimit;
+            if (toIndex > encounterIdsOrdered.size()) {
+                toIndex = encounterIdsOrdered.size();
+            }
+            List<Long> batchIds = encounterIdsOrdered.subList(fromIndex, toIndex);
+            List<OutpatientEncounterContextQueryModel> batchLoaded =
+                encounterContextQueryService.listOutpatientContextsByEncounterIdsOrdered(batchIds);
+            for (OutpatientEncounterContextQueryModel model : this.applyOutpatientDiagnosisSnapshots(batchLoaded)) {
+                if (model != null && model.getEncounterId() != null) {
+                    byEncounterId.put(model.getEncounterId(), model);
+                }
+            }
+            fromIndex = toIndex;
+        }
+        List<OutpatientEncounterContextQueryModel> ordered = new ArrayList<>(encounterIdsOrdered.size());
+        // Asm：按调用方输入顺序输出，缺失 id 跳过
+        for (Long encounterId : encounterIdsOrdered) {
+            OutpatientEncounterContextQueryModel hit = byEncounterId.get(encounterId);
+            if (hit != null) {
+                ordered.add(hit);
+            }
+        }
+        return ordered;
     }
 
     /**

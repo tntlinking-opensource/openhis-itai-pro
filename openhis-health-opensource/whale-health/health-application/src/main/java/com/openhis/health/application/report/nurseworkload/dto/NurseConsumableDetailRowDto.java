@@ -103,7 +103,11 @@ public class NurseConsumableDetailRowDto {
     @Schema(description = "患者姓名")
     private String patientName;
 
-    /** 金额。 */
-    @Schema(description = "金额")
-    private BigDecimal amount;
+    /** 售价。 */
+    @Schema(description = "售价")
+    private BigDecimal saleAmount;
+
+    /** 进价（批号进价包装锚）。 */
+    @Schema(description = "进价")
+    private BigDecimal purchaseAmount;
 }

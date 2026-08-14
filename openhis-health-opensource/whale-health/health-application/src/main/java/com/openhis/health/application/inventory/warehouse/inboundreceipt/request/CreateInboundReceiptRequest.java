@@ -19,7 +19,7 @@ import java.util.List;
  *
  * <p>枚举语义字段须传各业务枚举的 {@link com.openhis.health.domain.share.enums.EnumInterface#getCode()} 字符串（B.10.8.1）。
  * {@link #lines} 须非空且至少一行；源/目的位置须通过应用层药库白名单门禁。
- * {@link #originalBusNo} <strong>必填</strong>，须引用已同意的药库订货单（禁止无源直建）。</p>
+ * {@link #originalBusNo} <strong>可选</strong>：空白为手工直建；非空须引用已同意的药库订货单。</p>
  */
 @Getter
 @Setter
@@ -27,8 +27,8 @@ import java.util.List;
 @Schema(description = "新建药库入库单 IF-WHS-IN-04")
 public class CreateInboundReceiptRequest {
 
-    /** 来源订货业务单号，必填。 */
-    @Schema(description = "来源订货业务单号，必填")
+    /** 来源订货业务单号；可空（手工直建），非空须为已同意药库订货单。 */
+    @Schema(description = "来源订货业务单号；可空（手工直建）")
     private String originalBusNo;
 
     @JsonSerialize(using = ToStringSerializer.class)

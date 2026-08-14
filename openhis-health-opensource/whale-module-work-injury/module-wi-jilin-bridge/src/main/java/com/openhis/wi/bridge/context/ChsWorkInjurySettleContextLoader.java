@@ -5,6 +5,7 @@
 package com.openhis.wi.bridge.context;
 
 import com.openhis.wi.domain.share.WiErrorCodes;
+import com.openhis.wi.domain.share.WorkInjuryConstants;
 import com.openhis.wi.domain.settle.command.WiSettleChargeLine;
 import com.openhis.wi.domain.settle.command.WiSettleContext;
 import com.openhis.wi.domain.entity.YbWiEncounterAnchor;
@@ -200,7 +201,7 @@ public class ChsWorkInjurySettleContextLoader implements WorkInjurySettleContext
             ctx.setAdmDiagCode(anchor.getAdmDiagCode().trim());
         }
         if (isNotEmpty(anchor.getMedType())) {
-            ctx.setMedType(anchor.getMedType().trim());
+            ctx.setMedType(WorkInjuryConstants.normalizeMedType(anchor.getMedType()));
         }
     }
 
@@ -286,7 +287,7 @@ public class ChsWorkInjurySettleContextLoader implements WorkInjurySettleContext
         return BigDecimal.ZERO;
     }
 
-    /** 按 productTable 推断 2204 list_type（101 药品 / 103 耗材 / 201 服务）。 */
+    /** 按 productTable 推断 2204 list_type（手册 1药品/2诊疗/3材料；勿用省医保 101/201/103）。 */
     private String resolveListType(ChargeItem item, ChargeItemDefinition definition) {
         String productTable = item.getProductTable();
         if (isEmpty(productTable) && definition != null) {
@@ -297,10 +298,10 @@ public class ChsWorkInjurySettleContextLoader implements WorkInjurySettleContext
         }
         String table = productTable.trim().toLowerCase();
         if (table.contains("medication") || table.contains("drug")) {
-            return "101";
+            return WiPlatformConstants.LIST_TYPE_DRUG;
         }
         if (table.contains("device") || table.contains("material")) {
-            return "103";
+            return WiPlatformConstants.LIST_TYPE_MATERIAL;
         }
         return WiPlatformConstants.DEFAULT_LIST_TYPE;
     }

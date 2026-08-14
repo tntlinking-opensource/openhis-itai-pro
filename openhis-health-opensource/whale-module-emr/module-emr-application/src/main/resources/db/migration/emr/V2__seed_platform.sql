@@ -1,5 +1,5 @@
 -- 平台基础种子：文书类型 + 通用元数据 + 病程简易模板（日常/上级查房）
--- 门诊/入院/首次病程/住院样例模板见 V4、V5；告知书见 V3。
+-- 门诊/入院/首次病程/朝阳住院模板见 V4、V5；告知书见 V3。
 
 INSERT INTO emr_document_type (
     id, code, name, default_template_id, is_enabled, sort_order, category_code,

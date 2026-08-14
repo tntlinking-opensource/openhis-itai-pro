@@ -12,7 +12,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * 老 HIS（areahis）统计项 {@code CODE → CODE1} 映射。
+ * 朝阳中医院老 HIS（areahis）统计项 {@code CODE → CODE1} 映射。
  *
  * <p>老系统门诊/挂号电子票 {@code chargeDetail.chargeCode} 取 {@code basic_code.code1}；
  * 住院电子票取 {@code basic_code.code}（YLZY*）。Whale 对照表默认存住院口径 CODE，

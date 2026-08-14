@@ -9,7 +9,7 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.SupplyStatus;
 import com.openhis.health.domain.share.enums.SupplyType;
 import com.openhis.health.domain.workflow.supplyrequest.queries.WarehouseDocumentDetailPageQuery;
-import com.openhis.health.application.inventory.inventorydetail.support.InventoryCatalogFilter;
+import com.openhis.health.application.shared.inventory.InventoryCatalogFilter;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import com.openhis.whale.core.application.util.StringUtils;

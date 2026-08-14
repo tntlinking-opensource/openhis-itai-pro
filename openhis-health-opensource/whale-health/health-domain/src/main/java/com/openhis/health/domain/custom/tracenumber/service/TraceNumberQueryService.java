@@ -327,13 +327,16 @@ public class TraceNumberQueryService {
     }
 
     /**
-     * 按库存行查本库仍在库追溯码（DM §6.2.7 · IF-TRC-22）；子表轧差净拆零量 &gt; 0。
+     * 按库存行查本库仍在库追溯码（DM §6.2.7 · IF-TRC-22）。
+     *
+     * <p>条件：本库子表轧差净拆零 &gt; 0，且主档 {@code IN_HOSPITAL}、剩余拆零 &gt; 0。
+     * 流转未扫码时子表净量可能滞后，须以主档消耗态为准，避免把已发药 OUT 的码仍当本库在库。</p>
      *
      * @param locationId 库位
      * @param itemTable  品项表（本期仅 {@link TableNameConstants#MED_MEDICATION_DEFINITION}）
      * @param itemId     药品定义标识
      * @param lotNumber  批号
-     * @return 本库仍在库码列表
+     * @return 本库仍在库且主档未耗尽的码列表
      * @throws BusinessException 品项表非药品时
      */
     public List<InventoryItemTraceNumberQueryModel> listInStockTraceNumbersByInventoryItemKey(
@@ -360,6 +363,7 @@ public class TraceNumberQueryService {
         Map<String, TraceNumber> masterByTraceNo = this.loadMastersByTraceNos(netByTraceNo.keySet());
         List<InventoryItemTraceNumberQueryModel> result = new ArrayList<>();
         for (Map.Entry<String, BigDecimal> entry : netByTraceNo.entrySet()) {
+            // 本库净量已耗尽：不算在库
             if (entry.getValue().compareTo(BigDecimal.ZERO) <= 0) {
                 continue;
             }
@@ -374,6 +378,14 @@ public class TraceNumberQueryService {
                 continue;
             }
             if (!TableNameConstants.MED_MEDICATION_DEFINITION.equals(master.getItemTable())) {
+                continue;
+            }
+            // 主档已出院或剩余耗尽：发药等 HOSPITAL_IO OUT 已消耗，禁止因流转未扫导致子表净量滞后而仍当本库在库
+            if (!InHospitalStatus.IN_HOSPITAL.getCode().equals(master.getInHospitalStatusEnum())) {
+                continue;
+            }
+            if (master.getRemainingSplitQuantity() == null
+                || master.getRemainingSplitQuantity().compareTo(BigDecimal.ZERO) <= 0) {
                 continue;
             }
             InventoryItemTraceNumberQueryModel row = new InventoryItemTraceNumberQueryModel();
@@ -1066,10 +1078,15 @@ public class TraceNumberQueryService {
     }
 
     /**
-     * 断言同一请求内追溯码不重复（AS-CUS-TRC-001 · BR-TRC-015）。
+     * 断言给定码集合内无重复（发药口径：仅校验<strong>单行</strong>逗号串内不重复）。
      *
-     * @param traceCodes 追溯码集合
-     * @throws BusinessException 请求内重复时
+     * <p>消耗/发药侧<strong>允许</strong>同一追溯码出现在多行（箱码/同品多明细共扫一码，见 DD §3.4 /
+     * AS-CUS-TRC-001 · BR-TRC-023）。跨行同码不得调用本方法对「整单拼表」做硬拒。
+     * IF-TRC-21 单次反查请求内重复仍由 {@link #batchResolveTraceIdentityByTraceNos} 标记
+     * {@code DUPLICATE_IN_REQUEST}（与业务行绑定去重无关）。</p>
+     *
+     * @param traceCodes 通常为一行展开后的码列表
+     * @throws BusinessException 集合内出现重复码时
      */
     public void assertNoDuplicateTraceCodes(Collection<String> traceCodes) {
         if (traceCodes == null || traceCodes.isEmpty()) {
@@ -1081,11 +1098,11 @@ public class TraceNumberQueryService {
             if (normalized == null) {
                 continue;
             }
-            // 同一请求重复提交相同码须拒绝，避免双 OUT
+            // 单行内同码重复：硬拒（禁止一行绑两次相同码）
             if (seen.contains(normalized)) {
                 throw new BusinessException(
                     ErrorCodeConstants.TRACE_NUMBER_DUPLICATE_IN_REQUEST,
-                    "同一请求内追溯码重复"
+                    "同一明细行内追溯码重复"
                 );
             }
             seen.add(normalized);
@@ -1093,7 +1110,63 @@ public class TraceNumberQueryService {
     }
 
     /**
-     * 断言追溯码主档在院可用（全院语义 · BR-TRC-006），替代单表时代「已出库」校验。
+     * 发药硬 Gate：主档已存在且拆零剩余 ≤ 0 时拒绝再用该码（BR-TRC-006 消耗侧例外）。
+     *
+     * <p>主档不存在（未建档）不抛——消耗侧仍软放行仅记业务行。仅「找得到主档但剩余已耗尽」硬拦。</p>
+     *
+     * @param traceCodes 提交/扫入的追溯码集合
+     * @throws BusinessException 任一码主档存在且剩余 ≤ 0
+     */
+    public void assertMasterCodesNotExhaustedForDispense(Collection<String> traceCodes) {
+        if (traceCodes == null || traceCodes.isEmpty()) {
+            return;
+        }
+        Set<String> normalizedCodes = new HashSet<>();
+        for (String code : traceCodes) {
+            String normalized = trimToNull(code);
+            // 空白片段忽略
+            if (normalized != null) {
+                normalizedCodes.add(normalized);
+            }
+        }
+        if (normalizedCodes.isEmpty()) {
+            return;
+        }
+        Map<String, TraceNumber> masterByTraceNo = this.loadMastersByTraceNos(normalizedCodes);
+        for (String normalized : normalizedCodes) {
+            TraceNumber master = masterByTraceNo.get(normalized);
+            // 主档 trace_no 未 trim 时兜底按去空白匹配
+            if (master == null) {
+                for (TraceNumber candidate : masterByTraceNo.values()) {
+                    if (candidate == null) {
+                        continue;
+                    }
+                    if (normalized.equals(trimToNull(candidate.getTraceNo()))) {
+                        master = candidate;
+                        break;
+                    }
+                }
+            }
+            // 未建档：消耗侧软放行，不在此硬拦
+            if (master == null) {
+                continue;
+            }
+            BigDecimal remaining = master.getRemainingSplitQuantity();
+            // 主档剩余空或 ≤0：禁止再扫/再提交该码发药
+            if (remaining == null || remaining.compareTo(BigDecimal.ZERO) <= 0) {
+                throw new BusinessException(
+                    ErrorCodeConstants.TRACE_NUMBER_NOT_IN_HOSPITAL,
+                    "追溯码剩余已耗尽，不可再使用"
+                );
+            }
+        }
+    }
+
+    /**
+     * 断言追溯码主档在院可用（全院语义 · BR-TRC-006 读侧能力）。
+     *
+     * <p><b>消耗/发药保存配药不得整段调用</b>（未建档/品批不匹配仍软）；耗尽硬拦请用
+     * {@link #assertMasterCodesNotExhaustedForDispense}。</p>
      *
      * @param traceCodes 追溯码集合
      * @throws BusinessException 任一码不在院或剩余耗尽时
@@ -1134,6 +1207,9 @@ public class TraceNumberQueryService {
 
     /**
      * 发药行追溯码可用性校验：本库净量优先；本库无该码时允许全院同品同批在院码。
+     *
+     * <p><b>消耗/发药保存配药不得调用</b>（BR-TRC-006/020：码身份硬 Gate 仅进货；未建档/品批不匹配仅前端软提示，
+     * 业务行可存码，核发写流水软跳过）。本方法保留读侧/诊断复用。</p>
      *
      * <p>医院场景库房间流转常不扫码，子表本库净量可能为 0，但主档仍 {@code IN_HOSPITAL} 且剩余 &gt; 0；
      * 此时只要扫码主档的 {@code itemId}+{@code lotNumber} 与发药行一致即可通过。</p>
@@ -1397,9 +1473,48 @@ public class TraceNumberQueryService {
         String busNo,
         Collection<String> operationTypes
     ) {
+        return this.listHospitalIoRecordsByBusNoDirectionAndOperationTypes(
+            busNo, TraceDirection.OUT.getCode(), operationTypes);
+    }
+
+    /**
+     * 按业务单号 + 操作类型查询 HOSPITAL_IO IN 流水（id 升序）。
+     *
+     * <p>供住院清床合并 3505：按码汇总发药 OUT 后减去退药 IN 实扣，判定 {@code trdn_flag}。</p>
+     *
+     * @param busNo           业务单号（退药发放行 bus_no）
+     * @param operationTypes  操作类型 code 集合；空则返回空列表
+     * @return IN 流水读模型
+     */
+    public List<TraceNumberRecordQueryModel> listHospitalIoInRecordsByBusNoAndOperationTypes(
+        String busNo,
+        Collection<String> operationTypes
+    ) {
+        return this.listHospitalIoRecordsByBusNoDirectionAndOperationTypes(
+            busNo, TraceDirection.IN.getCode(), operationTypes);
+    }
+
+    /**
+     * 按业务单号 + 方向 + 操作类型查询 HOSPITAL_IO 流水（id 升序）。
+     *
+     * @param busNo              业务单号
+     * @param recordDirectionEnum 方向 code（OUT/IN）
+     * @param operationTypes     操作类型 code 集合；空则返回空列表
+     * @return 流水读模型
+     */
+    private List<TraceNumberRecordQueryModel> listHospitalIoRecordsByBusNoDirectionAndOperationTypes(
+        String busNo,
+        String recordDirectionEnum,
+        Collection<String> operationTypes
+    ) {
         String trimmedBusNo = trimToNull(busNo);
         // 无单号或未指定操作类型：无流水可查
         if (trimmedBusNo == null || operationTypes == null || operationTypes.isEmpty()) {
+            return new ArrayList<>();
+        }
+        String direction = trimToNull(recordDirectionEnum);
+        // 方向空：无法过滤 OUT/IN
+        if (direction == null) {
             return new ArrayList<>();
         }
         Set<String> opSet = new HashSet<>();
@@ -1422,12 +1537,12 @@ public class TraceNumberQueryService {
             if (flow == null) {
                 continue;
             }
-            // 非院内出入类别：非发药 OUT 镜像源
+            // 非院内出入类别：非发药/退药镜像源
             if (!TraceRecordCategory.HOSPITAL_IO.getCode().equals(flow.getRecordCategoryEnum())) {
                 continue;
             }
-            // 非 OUT 方向：退药镜像只认出库流水
-            if (!TraceDirection.OUT.getCode().equals(flow.getRecordDirectionEnum())) {
+            // 方向不匹配：跳过
+            if (!direction.equals(flow.getRecordDirectionEnum())) {
                 continue;
             }
             // 操作类型不在本批：跳过

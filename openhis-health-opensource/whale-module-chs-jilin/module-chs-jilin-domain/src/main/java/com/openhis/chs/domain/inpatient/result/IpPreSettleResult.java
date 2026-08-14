@@ -43,4 +43,19 @@ public class IpPreSettleResult {
 
     /** 个人现金支出 */
     private BigDecimal psnCashPay;
+
+    /** 实际支付起付线（2303 act_pay_dedc，只读展示） */
+    private BigDecimal actPayDedc;
+
+    /** 公务员标志（2303 cvlserv_flag，只读展示） */
+    private String cvlservFlag;
+
+    /** 公务员医疗补助（2303 cvlserv_pay，只读展示） */
+    private BigDecimal cvlservPay;
+
+    /** 基本医保统筹基金支出（2303 hifp_pay，只读展示） */
+    private BigDecimal hifpPay;
+
+    /** 其他支出（2303 oth_pay，只读展示） */
+    private BigDecimal othPay;
 }

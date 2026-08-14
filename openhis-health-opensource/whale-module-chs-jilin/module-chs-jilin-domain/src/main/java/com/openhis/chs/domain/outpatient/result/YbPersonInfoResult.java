@@ -87,4 +87,14 @@ public class YbPersonInfoResult {
 
     private List<YbIdetInfoRow> idetinfoList = new ArrayList<>();
 
+    /**
+     * 1101 异地失败切省通道重试成功后的实际合同 bus_no；未切换时为 null。
+     */
+    private String resolvedContractBusNo;
+
+    /**
+     * 1101 异地失败切省通道重试成功后的实际费用性质 id；未切换或未解析到时为 null。
+     */
+    private Long resolvedContractId;
+
 }

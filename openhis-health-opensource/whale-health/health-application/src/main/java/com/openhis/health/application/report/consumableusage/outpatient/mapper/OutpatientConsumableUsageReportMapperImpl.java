@@ -19,6 +19,7 @@ import com.openhis.health.domain.administration.organization.entity.Organization
 import com.openhis.health.domain.share.constants.ConsumableUsageReportConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.whale.core.application.dto.OptionDto;
+import com.openhis.whale.core.application.util.StringUtils;
 
 /**
  * 门诊耗材使用报表映射实现（AS-RPT-005）。
@@ -34,6 +35,9 @@ public class OutpatientConsumableUsageReportMapperImpl implements OutpatientCons
      * @param summaryDimensionOptions 汇总维选项
      * @param sourceCodeOptions       来源选项
      * @param feeNatureOptions        费用性质（bus_no）
+     * @param categoryOptions         耗材类型
+     * @param practitionerOptions     执行人
+     * @param recordTypeOptions       记录类型
      * @param defaultDateFrom         默认日起
      * @param defaultDateTo           默认日止
      * @return 初始化响应
@@ -45,6 +49,9 @@ public class OutpatientConsumableUsageReportMapperImpl implements OutpatientCons
         List<OptionDto> summaryDimensionOptions,
         List<OptionDto> sourceCodeOptions,
         List<OptionDto> feeNatureOptions,
+        List<OptionDto> categoryOptions,
+        List<OptionDto> practitionerOptions,
+        List<OptionDto> recordTypeOptions,
         String defaultDateFrom,
         String defaultDateTo) {
         LoadOutpatientConsumableUsageReportPageInitResponse response =
@@ -56,7 +63,44 @@ public class OutpatientConsumableUsageReportMapperImpl implements OutpatientCons
         response.setOrganizationOptions(this.toOrganizationOptions(organizations));
         response.setLocationOptions(this.toLocationOptions(locations));
         response.setFeeNatureOptions(feeNatureOptions);
+        response.setCategoryOptions(categoryOptions);
+        response.setPractitionerOptions(practitionerOptions);
+        response.setRecordTypeOptions(recordTypeOptions);
         return response;
+    }
+
+    /**
+     * 构建记录类型下拉：ALL / DISPENSE / REFUND。
+     *
+     * @return 选项
+     */
+    @Override
+    public List<OptionDto> buildRecordTypeOptions() {
+        List<OptionDto> options = new ArrayList<>();
+        options.add(this.option(
+            ConsumableUsageReportConstants.RECORD_TYPE_ALL,
+            ConsumableUsageReportConstants.RECORD_TYPE_ALL_LABEL));
+        options.add(this.option(
+            ConsumableUsageReportConstants.RECORD_TYPE_DISPENSE,
+            ConsumableUsageReportConstants.RECORD_TYPE_DISPENSE_LABEL));
+        options.add(this.option(
+            ConsumableUsageReportConstants.RECORD_TYPE_REFUND,
+            ConsumableUsageReportConstants.RECORD_TYPE_REFUND_LABEL));
+        return options;
+    }
+
+    /**
+     * 构造 OptionDto。
+     *
+     * @param value 值
+     * @param label 展示
+     * @return 选项
+     */
+    private OptionDto option(String value, String label) {
+        OptionDto option = new OptionDto();
+        option.setValue(value);
+        option.setLabel(label);
+        return option;
     }
 
     /**
@@ -92,6 +136,7 @@ public class OutpatientConsumableUsageReportMapperImpl implements OutpatientCons
         exportRow.setSaleAmount(row.getSaleAmount());
         exportRow.setLotNumber(row.getLotNumber());
         exportRow.setStatusOrTypeText(row.getStatusOrTypeEnum_enumText());
+        exportRow.setPerformerName(row.getPerformerName());
         return exportRow;
     }
 
@@ -111,6 +156,10 @@ public class OutpatientConsumableUsageReportMapperImpl implements OutpatientCons
         exportRow.setOrganizationName(row.getOrganizationName());
         exportRow.setLocationName(row.getLocationName());
         exportRow.setDeviceName(row.getDeviceName());
+        // CATEGORY 等无分列主键时用统一维度名回填品名列，避免汇总导出空维度
+        if (StringUtils.isEmpty(exportRow.getDeviceName()) && StringUtils.isNotEmpty(row.getDimensionName())) {
+            exportRow.setDeviceName(row.getDimensionName());
+        }
         exportRow.setQuantity(row.getNetQuantity());
         exportRow.setAmount(row.getSaleNetAmount());
         exportRow.setPurchaseAmount(row.getPurchaseNetAmount());

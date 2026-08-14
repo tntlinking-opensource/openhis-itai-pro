@@ -17,6 +17,11 @@ public class OpSettleChargeLine {
 
     private Long chargeItemId;
     private String feedetlSn;
+    /**
+     * 原费用流水号（2204 {@code init_feedetl_sn}）；
+     * 冲销行（{@code ChargeItem.refundId}）必填，指向被退正数行流水。
+     */
+    private String initFeedetlSn;
     private String medListCodg;
     private String medinsListCodg;
     private BigDecimal detItemFeeSumamt;

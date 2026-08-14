@@ -24,13 +24,16 @@ import com.openhis.health.domain.share.enums.AdministrativeGender;
 import com.openhis.health.domain.share.enums.EncounterClass;
 import com.openhis.health.domain.share.enums.EncounterParticipantRole;
 import com.openhis.health.domain.share.enums.EncounterStatus;
+import com.openhis.health.domain.share.utils.AgeCalculatorUtil;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import lombok.RequiredArgsConstructor;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.stereotype.Component;
+import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -147,6 +150,14 @@ public class ClinicRegistrationLoader {
                 AdministrativeGender gender = EnumUtil.fromCode(AdministrativeGender.class, patient.getGenderEnum());
                 if (gender != null) {
                     model.setPatientGenderText(gender.getDisplay());
+                }
+                if (patient.getBirthDate() != null) {
+                    Date birthDate = Date.from(
+                        patient.getBirthDate().atStartOfDay(ZoneId.systemDefault()).toInstant());
+                    String ageText = AgeCalculatorUtil.getAge(birthDate);
+                    if (StringUtils.isNotEmpty(ageText)) {
+                        model.setPatientAgeText(ageText);
+                    }
                 }
             }
             this.applyDoctor(model, bundle, encounter.getId());

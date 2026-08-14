@@ -47,16 +47,25 @@ public class YbInvUploadDomainService {
     /**
      * 按租户、接口编号、定点批次流水号与来源行主键查询已存在的上报流水。
      *
+     * <p>{@code DELETED}（冲销标删）视为不存在，避免再清床/再结时幂等短路到旧行。</p>
+     *
      * @param tenantId      租户主键
      * @param infno         医保接口编号（如 3501、3505）
      * @param fixmedinsBchno 定点医药机构批次流水号
      * @param sourceLineId  来源业务行主键
-     * @return 已存在的上报流水，未找到时 empty
+     * @return 已存在的上报流水，未找到或已 DELETED 时 empty
      */
     public Optional<YbInvUpload> findExistingLine(
             Long tenantId, String infno, String fixmedinsBchno, Long sourceLineId) {
-        return uploadRepository.findFirstByTenantIdAndInfnoAndFixmedinsBchnoAndSourceLineId(
+        Optional<YbInvUpload> found =
+            uploadRepository.findFirstByTenantIdAndInfnoAndFixmedinsBchnoAndSourceLineId(
                 tenantId, infno, fixmedinsBchno, sourceLineId);
+        // 已冲销标删的流水不作幂等命中：再清床/再结须新建上报行（多轮召回）
+        if (found.isPresent()
+            && ChsInventoryConstants.UPLOAD_STATUS_DELETED.equals(found.get().getUploadStatus())) {
+            return Optional.empty();
+        }
+        return found;
     }
 
     /**

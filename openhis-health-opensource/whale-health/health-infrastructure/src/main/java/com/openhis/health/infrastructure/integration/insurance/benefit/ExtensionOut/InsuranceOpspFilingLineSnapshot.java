@@ -14,6 +14,9 @@ import lombok.experimental.Accessors;
 @Accessors(chain = true)
 public class InsuranceOpspFilingLineSnapshot {
 
+    /** 医疗类别（门诊慢病 140104 / 门诊特病 140201；5302A 打标，缺省默认 140104）。 */
+    private String medicalTypeCode;
+
     /** 慢特病病种编码。 */
     private String opspDiseCode;
 

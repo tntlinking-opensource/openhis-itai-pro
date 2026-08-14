@@ -43,15 +43,19 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 门诊医生站签发前处方分方装配器。
+ * 门诊医生站签发前处方分方装配器（西药/中成药）。
  *
  * <p>在 IF-DOR-15 药品签发循环之前，装配 {@link PrescriptionSplitLineContext} 快照并委托
  * {@link MedicationRequestDomainService#splitPrescription} 仅回写 {@code prescription_no} 与 {@code rx_type_code}
  * （不改医嘱状态、不改收费状态）。住院路径不调用本装配器。</p>
  *
- * <p>参与集 = 本批待签发药品草稿 ∪ 本就诊已签发（ACTIVE）且未 SETTLED 的药品行，
+ * <p>参与集 = 本批待签发药品草稿 ∪ 本就诊已签发（ACTIVE）且未 SETTLED 的<strong>非中药饮片</strong>行，
  * 用于防止「开一个签一个」绕过分方；<b>禁止</b>给未纳入本批发签的其它 DRAFT 写处方号
  * （「签发以后才有方」）。</p>
+ *
+ * <p><b>中药隔离（BR-TCM-ISO / BR-ORD-023）</b>：{@code tcmFlag=true} 的中药饮片<strong>禁止</strong>进入本装配器。
+ * 中药处方号由 IF-DOR-37 {@code TcmRxSignAssembler} 按方标识取号；西药签发不得改写已签发中药的
+ * {@code prescription_no}，否则会与已落库收费行/代煎 companion 处方号漂移。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -67,7 +71,9 @@ public class OutpatientPrescriptionSplitAssembler {
     private final OutpatientPrescriptionAmountLimitSettingResolver outpatientPrescriptionAmountLimitSettingResolver;
 
     /**
-     * 对本批发签目标与已签发未收费药品执行分方，返回申请主键到处方号的映射。
+     * 对本批西药/中成药签目标与已签发未收费非中药执行分方，返回申请主键到处方号的映射。
+     *
+     * <p>中药饮片（{@code tcmFlag=true}）不参与；其处方号由 IF-DOR-37 维护。</p>
      *
      * @param encounterId                  就诊主键
      * @param orgId                        开立机构（FIFO 库房解析）
@@ -81,7 +87,7 @@ public class OutpatientPrescriptionSplitAssembler {
         Long operatorId,
         Collection<Long> signingMedicationRequestIds
     ) {
-        // Pre：仅装配「本批发签草稿 ∪ 已签发未收费」快照，勿带其它未签发草稿
+        // Pre：仅装配「本批西药/中成药签草稿 ∪ 已签发未收费非中药」快照；排除中药饮片与其它未签发草稿
         List<PrescriptionSplitLineContext> lines =
             buildSplitLineContexts(encounterId, orgId, signingMedicationRequestIds);
         if (lines.isEmpty()) {
@@ -98,10 +104,11 @@ public class OutpatientPrescriptionSplitAssembler {
     }
 
     /**
-     * 收集参与分方的药品行并装配快照。
+     * 收集参与西药/中成药分方的药品行并装配快照。
      *
-     * <p>纳入：本批发签目标中仍为 DRAFT 的行；以及本就诊 ACTIVE 且未 SETTLED 的行。
-     * 排除：未在本批发签集合内的其它 DRAFT（避免未签发却落处方号）。</p>
+     * <p>纳入：本批发签目标中仍为 DRAFT 的非中药行；以及本就诊 ACTIVE 且未 SETTLED 的非中药行。
+     * 排除：{@code tcmFlag=true} 中药饮片（中药手动分方，禁止被西药签发改号）；
+     * 未在本批发签集合内的其它 DRAFT（避免未签发却落处方号）。</p>
      *
      * @param encounterId                  就诊主键
      * @param orgId                        开立机构
@@ -119,7 +126,7 @@ public class OutpatientPrescriptionSplitAssembler {
         if (medicationRows.isEmpty()) {
             return List.of();
         }
-        // Pre：本批待签发主键集合；空集合时仍可仅重分已 ACTIVE 未收费行（防御）
+        // Pre：本批待签发主键集合；空集合时仍可仅重分已 ACTIVE 未收费非中药行（防御）
         Set<Long> signingIds = new HashSet<>();
         if (signingMedicationRequestIds != null) {
             for (Long signingId : signingMedicationRequestIds) {
@@ -139,6 +146,10 @@ public class OutpatientPrescriptionSplitAssembler {
         List<MedicationRequestListQueryModel> candidates = new ArrayList<>();
         for (MedicationRequestListQueryModel row : medicationRows) {
             if (row == null || row.getId() == null) {
+                continue;
+            }
+            // Gate：中药饮片不进西药分方，避免改写 IF-DOR-37 已落号及收费/代煎 companion 处方号
+            if (Boolean.TRUE.equals(row.getTcmFlag())) {
                 continue;
             }
             if (chargeRollup.settledRequestIds.contains(row.getId())) {

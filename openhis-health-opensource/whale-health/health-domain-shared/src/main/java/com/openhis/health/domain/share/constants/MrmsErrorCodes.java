@@ -53,4 +53,14 @@ public final class MrmsErrorCodes {
 
     /** 4401 组装校验失败。 */
     public static final String UPLOAD_ASSEMBLE_VALIDATION = "MRMS_UPLOAD_ASSEMBLE_VALIDATION";
+
+    /** 非病案管理员不可归档/解档病例。 */
+    public static final String CLINICAL_ARCHIVE_ROLE_REQUIRED = "MRMS_CLINICAL_ARCHIVE_ROLE_REQUIRED";
+
+    /** 病案主档已归档时禁止单独解档病例（须走病案解档）。 */
+    public static final String CLINICAL_UNARCHIVE_BLOCKED_BY_CASE_RECORD =
+            "MRMS_CLINICAL_UNARCHIVE_BLOCKED_BY_CASE_RECORD";
+
+    /** EMR 未启用，无法归档/解档病例。 */
+    public static final String CLINICAL_ARCHIVE_EMR_DISABLED = "MRMS_CLINICAL_ARCHIVE_EMR_DISABLED";
 }

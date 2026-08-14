@@ -62,7 +62,11 @@ public class ChargeItem extends BaseAuditedEntity {
     @Column(name = "occurrence_time", nullable = false)
     private LocalDateTime occurrenceTime;
 
-    /** 执行人主键（DM performer_id）。 */
+    /**
+     * 执行人主键（DM performer_id）。
+     *
+     * <p>护士站等执行路径可写执行人；<strong>禁止</strong>再用于收款人——收款人见 {@link #entererId}。</p>
+     */
     @Column(name = "performer_id")
     private Long performerId;
 
@@ -130,11 +134,19 @@ public class ChargeItem extends BaseAuditedEntity {
     @Column(name = "override_reason_text")
     private String overrideReasonText;
 
-    /** 录入人主键（DM enterer_id）。 */
+    /**
+     * 收费人主键（DM enterer_id = {@code adm_practitioner.id}）。
+     *
+     * <p>仅结算/退费完成时写入；开立时为空。开单医生见上游 Request {@code requester_id}。</p>
+     */
     @Column(name = "enterer_id")
     private Long entererId;
 
-    /** 录入时间（DM entered_date）。 */
+    /**
+     * 收费时间（DM entered_date）。
+     *
+     * <p>与支付单 {@code bill_date} 同值；开立时刻见上游 Request {@code req_opened_time}。</p>
+     */
     @Column(name = "entered_date")
     private LocalDateTime enteredDate;
 

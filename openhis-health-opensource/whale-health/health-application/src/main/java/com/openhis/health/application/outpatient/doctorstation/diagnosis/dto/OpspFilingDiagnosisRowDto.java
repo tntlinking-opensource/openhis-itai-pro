@@ -63,4 +63,10 @@ public class OpspFilingDiagnosisRowDto {
     /** 中西医维度标签。 */
     @Schema(description = "中西医维度")
     private String diagnosisKind;
+
+    /**
+     * 医保医疗类别码（门诊慢病 140104 / 门诊特病 140201；5301 缺省 140104，5302A 可覆盖）。
+     */
+    @Schema(description = "医保医疗类别码")
+    private String medicalTypeCode;
 }

@@ -78,4 +78,44 @@ public class Ip2401Invoker {
             tenantId);
         return mdtrtId;
     }
+
+    /**
+     * 强制重新办理 2401 入院登记（先软删本地 map，再出站），返回新 mdtrt_id。
+     *
+     * <p>用于旧就诊已离院且无法 2405、需换新就诊号结算的恢复路径。</p>
+     *
+     * @param contractBusNo 医保契约 bus_no
+     * @param context       住院结算上下文（须含入院/诊断等 2401 字段）
+     * @param invokeContext 操作员与签到上下文
+     * @param tenantId      租户 ID
+     * @return 新的平台就诊 ID
+     */
+    public String registerFresh(
+            String contractBusNo,
+            IpSettleContext context,
+            InvokeContext invokeContext,
+            Long tenantId) {
+        String medType = IpInpatientSettleInputAssembler.resolveMedTypeForContext(context);
+        encounterPlatformMapDomainService.softDeleteEncounterMap(
+            context.getEncounterId(),
+            context.getContractId(),
+            null,
+            medType,
+            context.getOperatorId(),
+            tenantId);
+        Ip2401Input input2401 = IpInpatientSettleInputAssembler.assemble2401(context);
+        ResultBody body2401 = gatewayClient.invoke(
+            contractBusNo, ChsInfNo.INPATIENT_ADMISSION, input2401, invokeContext);
+        Ip2401Output output2401 = Ip2401OutputParser.requireResult(body2401);
+        String mdtrtId = Ip2401OutputParser.resolveMdtrtId(output2401);
+        encounterPlatformMapDomainService.saveAfterPlatformRegistration(
+            context.getEncounterId(),
+            context.getContractId(),
+            medType,
+            mdtrtId,
+            context.getPsnNo(),
+            context.getEncounterBusNo(),
+            tenantId);
+        return mdtrtId;
+    }
 }

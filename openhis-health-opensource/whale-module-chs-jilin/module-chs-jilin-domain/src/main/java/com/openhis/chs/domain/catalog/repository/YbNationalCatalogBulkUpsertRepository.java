@@ -10,6 +10,7 @@ import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
 import com.openhis.chs.domain.catalog.command.UpsertNationalCatalogRowCommand;
 import com.openhis.chs.domain.catalog.support.CatalogRowFieldNormalizer;
+import com.openhis.chs.domain.catalog.support.NationalCatalogPackFieldExtractor;
 import com.openhis.whale.core.infrastructure.id.SnowflakeIdGenerator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -32,9 +33,11 @@ public class YbNationalCatalogBulkUpsertRepository {
             id, contract_id, list_type, tenant_id,
             source_file_qury_no, source_line_no, hilist_code, hilist_name,
             chrgitm_lv, lmt_used_flag, begndate, enddate, vali_flag,
-            spec, dosform, aprvno, prodentp_name, pinyin, raw_json, source_infno, updt_time,
+            spec, dosform, aprvno, prodentp_name, pinyin, raw_json,
+            min_pac_cnt, min_pacunt, min_prepunt, min_prcunt,
+            source_infno, updt_time,
             created_at, updated_at, created_by, updated_by, is_deleted
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,false)
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,false)
         """;
 
     private static final String UPSERT_FILE_PACKAGE = INSERT_FILE_PACKAGE + """
@@ -54,6 +57,10 @@ public class YbNationalCatalogBulkUpsertRepository {
             prodentp_name = EXCLUDED.prodentp_name,
             pinyin = EXCLUDED.pinyin,
             raw_json = EXCLUDED.raw_json,
+            min_pac_cnt = EXCLUDED.min_pac_cnt,
+            min_pacunt = EXCLUDED.min_pacunt,
+            min_prepunt = EXCLUDED.min_prepunt,
+            min_prcunt = EXCLUDED.min_prcunt,
             source_infno = EXCLUDED.source_infno,
             updt_time = EXCLUDED.updt_time,
             updated_at = EXCLUDED.updated_at,
@@ -65,9 +72,11 @@ public class YbNationalCatalogBulkUpsertRepository {
             id, contract_id, list_type, tenant_id,
             source_file_qury_no, source_line_no, hilist_code, hilist_name,
             chrgitm_lv, lmt_used_flag, begndate, enddate, vali_flag,
-            spec, dosform, aprvno, prodentp_name, pinyin, raw_json, source_infno, updt_time,
+            spec, dosform, aprvno, prodentp_name, pinyin, raw_json,
+            min_pac_cnt, min_pacunt, min_prepunt, min_prcunt,
+            source_infno, updt_time,
             created_at, updated_at, created_by, updated_by, is_deleted
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,false)
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,false)
         ON CONFLICT (contract_id, list_type, hilist_code, tenant_id)
             WHERE is_deleted = false AND source_line_no IS NULL
         DO UPDATE SET
@@ -83,6 +92,10 @@ public class YbNationalCatalogBulkUpsertRepository {
             prodentp_name = EXCLUDED.prodentp_name,
             pinyin = EXCLUDED.pinyin,
             raw_json = EXCLUDED.raw_json,
+            min_pac_cnt = EXCLUDED.min_pac_cnt,
+            min_pacunt = EXCLUDED.min_pacunt,
+            min_prepunt = EXCLUDED.min_prepunt,
+            min_prcunt = EXCLUDED.min_prcunt,
             source_infno = EXCLUDED.source_infno,
             updt_time = EXCLUDED.updt_time,
             updated_at = EXCLUDED.updated_at,
@@ -203,7 +216,7 @@ public class YbNationalCatalogBulkUpsertRepository {
         bindCommonColumns(ps, 7, operatorId, now, row);
     }
 
-    /** 绑定目录镜像公共列（含字段规范化） */
+    /** 绑定目录镜像公共列（含字段规范化与包装单位落列） */
     private static void bindCommonColumns(
             java.sql.PreparedStatement ps,
             int startIndex,
@@ -231,12 +244,39 @@ public class YbNationalCatalogBulkUpsertRepository {
         ps.setString(i++, CatalogRowFieldNormalizer.truncateVarchar(
             row.getPinyin(), CatalogRowFieldNormalizer.LEN_PINYIN));
         ps.setString(i++, row.getRawJson());
+        NationalCatalogPackFieldExtractor.PackFields pack = resolvePackFields(row);
+        ps.setString(i++, CatalogRowFieldNormalizer.truncateVarchar(
+            pack.minPacCnt(), CatalogRowFieldNormalizer.LEN_MIN_PAC_CNT));
+        ps.setString(i++, CatalogRowFieldNormalizer.truncateVarchar(
+            pack.minPacunt(), CatalogRowFieldNormalizer.LEN_MIN_PACUNT));
+        ps.setString(i++, CatalogRowFieldNormalizer.truncateVarchar(
+            pack.minPrepunt(), CatalogRowFieldNormalizer.LEN_MIN_PREPUNT));
+        ps.setString(i++, CatalogRowFieldNormalizer.truncateVarchar(
+            pack.minPrcunt(), CatalogRowFieldNormalizer.LEN_MIN_PRCUNT));
         ps.setString(i++, row.getSourceInfno());
         ps.setTimestamp(i++, toTimestamp(row.getUpdtTime()));
         ps.setTimestamp(i++, Timestamp.valueOf(now));
         ps.setTimestamp(i++, Timestamp.valueOf(now));
         ps.setObject(i++, operatorId);
         ps.setObject(i, operatorId);
+    }
+
+    /**
+     * 优先用命令显式包装字段；否则从 {@code raw_json} 数组下标回落（1301 文件 / 历史兼容）。
+     */
+    private static NationalCatalogPackFieldExtractor.PackFields resolvePackFields(
+            UpsertNationalCatalogRowCommand row) {
+        if (row.getMinPacCnt() != null
+            || row.getMinPacunt() != null
+            || row.getMinPrepunt() != null
+            || row.getMinPrcunt() != null) {
+            return new NationalCatalogPackFieldExtractor.PackFields(
+                row.getMinPacCnt(),
+                row.getMinPacunt(),
+                row.getMinPrepunt(),
+                row.getMinPrcunt());
+        }
+        return NationalCatalogPackFieldExtractor.fromRawJson(row.getRawJson());
     }
 
     /** {@link java.time.LocalDate} 转 {@link java.sql.Date} */

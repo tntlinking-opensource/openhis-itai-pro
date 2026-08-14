@@ -83,4 +83,12 @@ public class PageDoctorStationAdviceCatalogRequest extends AbstractHealthPageReq
     /** 申请单选品类别过滤（检查 TEST/23、检验 PROOF/22、治疗 TREATMENT/21）。 */
     @Schema(description = "申请单选品类别过滤（检查 TEST/23、检验 PROOF/22、治疗 TREATMENT/21）")
     private String categoryEnum;
+
+    /**
+     * 仅返回可开立库存大于 0 的药/耗目录行（分页前 SQL 过滤，避免前端筛当前页导致条数不准）。
+     * 过滤口径与目录「库存数量」一致：按开立科室取药模板库位（可选指定药房）收窄，不计药库等非候选库位账面。
+     * 诊疗定义无库存维度，不受本开关影响；{@code null}/{@code false} 时不过滤。
+     */
+    @Schema(description = "仅看库存>0（药/耗，按取药模板库位）；true 时分页前过滤，诊疗不受影响")
+    private Boolean positiveQuantityOnly;
 }

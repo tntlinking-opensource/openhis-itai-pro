@@ -85,7 +85,8 @@ public class NurseStationInpatientBillingProcedureOrchestrator {
             nurseStationInpatientBillingMapper.toStartProcedureExecutionCommand(procedureId, practitionerId);
         procedureDomainService.startProcedureExecution(startCmd);
         CompleteProcedureRecordCommand completeCmd =
-            nurseStationInpatientBillingMapper.toCompleteNursePricingProcedureRecordCommand(procedureId, practitionerId);
+            nurseStationInpatientBillingMapper.toCompleteNursePricingProcedureRecordCommand(
+                procedureId, practitionerId, effectiveTime);
         procedureDomainService.completeProcedureRecord(completeCmd);
         // Cmd：主执行人写入 cln_procedure_performer，供 AS-RPT-002 按护士筛选净执行次数
         procedureExecutionPerformerOrchestrator.registerPrimaryPerformer(

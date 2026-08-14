@@ -59,6 +59,9 @@ public class OutpatientEncounterContextQueryModel {
     /** 患者联系电话。 */
     private String phone;
 
+    /** 患者地址全文（主档 {@code Patient.address.text}）。 */
+    private String address;
+
     /** 科室 ID。 */
     private Long organizationId;
 

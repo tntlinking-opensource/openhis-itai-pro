@@ -17,7 +17,8 @@ import java.math.BigDecimal;
 /**
  * 发药前库存充足断言（物理库存 − 待发预占，GAP-EXE-003；B.6.4 多聚合只读编排）。
  *
- * <p>物理量与预占必须同口径：有批号时双方均按该批号收窄，禁止「物理按批、预占按品」混算。</p>
+ * <p>物理量与预占必须同口径：有批号时双方均按该批号收窄，禁止「物理按批、预占按品」混算。
+ * 预占仅计 {@code now &lt; limitTime} 行（草稿约 2h、收费待发约 12h），与医生站目录预减一致。</p>
  */
 @Component
 @RequiredArgsConstructor

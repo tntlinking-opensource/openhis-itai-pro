@@ -34,9 +34,9 @@ public class PageOutpatientRegistrationDetailReportDetailRequest extends Abstrac
     @Schema(description = "挂号科室主键")
     private Long organizationId;
 
-    /** 挂号医生主键；空表示不按医生收窄。 */
+    /** 接诊医生主键（活动 ADMITTER）；空表示不按接诊医生收窄。 */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "挂号医生主键")
+    @Schema(description = "接诊医生主键（活动 ADMITTER）")
     private Long practitionerId;
 
     /**

@@ -28,7 +28,12 @@ public final class OpOutpatientSettleInputAssembler {
     private OpOutpatientSettleInputAssembler() {
     }
 
-    /** 生成收费批次号（0 字符） */
+    /**
+     * 生成收费批次号（≤30）：机构码前 8 位 + yyyyMMdd + 雪花取模 12 位。
+     *
+     * <p>历史仅 6 位后缀时同日碰撞概率过高（已现「他患 SETTLED 占号 → 本就诊 2204 悬挂无法 2205」）；
+     * 12 位可将空间扩至 1e12，仍满足省平台 {@code chrg_bchno} 长度。</p>
+     */
     public static String newChrgBchno(ContractConfig config, long seed) {
         String prefix = "OP";
         if (config != null && isNotEmpty(config.getFixmedinsCode())) {
@@ -40,8 +45,9 @@ public final class OpOutpatientSettleInputAssembler {
             }
         }
         String day = DateUtil.format(DateUtil.date(), "yyyyMMdd");
-        String suffix = String.valueOf(Math.abs(seed) % 1_000_000L);
-        while (suffix.length() < 6) {
+        // 12 位后缀：避免同日 chrg_bchno 碰撞导致他患 SETTLED 短路本就诊 2205
+        String suffix = String.valueOf(Math.abs(seed) % 1_000_000_000_000L);
+        while (suffix.length() < 12) {
             suffix = "0" + suffix;
         }
         return prefix + day + suffix;

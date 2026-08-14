@@ -40,10 +40,16 @@ public final class ChsInventoryConstants {
     /** 本地上报来源：机构首次进销存初始化（3501+3502） */
     public static final String SOURCE_TYPE_INIT = "INIT";
     /**
-     * 本地上报来源：住院清床后汇总径净销售（3505）及其反结/召回冲销（3506）。
-     * <p>与发药当时 {@link #SOURCE_TYPE_DISPENSE} 区分，便于按就诊精确冲销清床批次。</p>
+     * 本地上报来源：住院清床（或无床直结）后净销售合并（3505）及其反结/召回冲销（3506）。
+     * <p>与门诊发药当时 {@link #SOURCE_TYPE_DISPENSE} 区分；住院发药不写本类型，便于按就诊精确冲销。</p>
      */
     public static final String SOURCE_TYPE_CLEAR_BED_SUMMARY = "CLEAR_BED_SUMMARY";
+
+    /**
+     * 清床/无床直结冲销伴生 3502 本地批次前缀（后接原 3505 上报流水 id）。
+     * <p>仅作本地 {@code originalFixmedinsBchno}；不写 HIS 退药发放行。</p>
+     */
+    public static final String CLEAR_BED_REVERSE_COMPANION_BCHNO_PREFIX = "CLRREV";
 
     /** 本地与平台库存比对：仅本系统有记录、平台无 */
     public static final String COMPARE_DIFF_LOCAL_ONLY = "LOCAL_ONLY";
@@ -88,10 +94,24 @@ public final class ChsInventoryConstants {
     public static final int UPLOAD_QUANTITY_SCALE = 4;
 
     /**
+     * 2204/2301 单价小数位（平台 {@code pric} 为 numeric(16,6)）。
+     *
+     * <p>折盒→片时用 6 位单价平摊院内行合计，使 {@code det_item_fee_sumamt = round(pric×cnt, 2)}
+     * 与院内实收一致；禁止压成 2 位后再乘数量（会产生零售−上传分差）。</p>
+     */
+    public static final int UPLOAD_PRICE_SCALE = 6;
+
+    /**
      * 3503/3504 采购发票号缺省占位（业务未填 {@code invoice_no} 时上报，避免拦正常进退货）。
      * <p>平台字段 {@code purc_invo_no}；有真实发票号时优先用库值。</p>
      */
     public static final String DEFAULT_PURC_INVO_NO = "0";
+
+    /**
+     * 3503/3504 批准文号缺省占位（中药饮片等无国药准字、主数据空时上报）。
+     * <p>平台字段 {@code aprvno} 为必填；有真实批准文号时优先用库值。占位与门诊空白字段常见写法一致为 {@code -}。</p>
+     */
+    public static final String DEFAULT_APRVNO = "-";
 
     /** 机构进销存初始化：单次请求最大明细行数（防止超时） */
     public static final int INITIALIZE_INVENTORY_DEFAULT_MAX_LINES = 200;

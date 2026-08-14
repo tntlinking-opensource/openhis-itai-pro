@@ -4,56 +4,41 @@
  */
 package com.openhis.health.domain.mrms.caserecord.support;
 
-import com.openhis.health.domain.mrms.caserecord.entity.MedcasnoSequence;
-import com.openhis.health.domain.mrms.caserecord.repository.MedcasnoSequenceRepository;
+import com.openhis.health.domain.share.constants.AggregateTypeConstants;
+import com.openhis.health.domain.share.constants.BusinessSequenceConstants;
 import com.openhis.health.domain.share.constants.MrmsErrorCodes;
 import com.openhis.whale.core.application.exception.BusinessException;
+import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
-import java.time.Year;
-
 /**
- * 病案号发号器：格式 {@code {yyyy}{5位流水}}，按租户+自然年隔离序号。
+ * 病案号发号器（Whale B.10.9 业务流水）：{@code CR} + {@code yyyy-MM-dd} + 4 位日流水。
+ *
+ * <p>与住院号 {@code ZY} 同构，走 {@link BusinessSequenceService#getSeqByDay}；租户隔离、跨日从 1 起。</p>
  */
 @Service
 @RequiredArgsConstructor
 public class MedcasnoGenerator {
 
-    private final MedcasnoSequenceRepository medcasnoSequenceRepository;
+    private final BusinessSequenceService businessSequenceService;
 
     /**
-     * 分配租户内唯一病案号；依赖 {@code mrms_medcasno_sequence} 行锁保障并发安全。
+     * 分配租户内唯一病案号（前缀 {@link AggregateTypeConstants#CASE_RECORD_MEDCASNO}，按自然日流水）。
      *
-     * @param tenantId 租户主键
-     * @return 病案号字符串
+     * @param tenantId 租户主键（须非空；实际隔离依赖会话租户上下文）
+     * @return 病案号，如 {@code CR2026-08-130001}
      */
     @Transactional(rollbackFor = Exception.class)
     public String nextMedcasno(Long tenantId) {
+        // Gate：租户空则拒绝发号，避免无隔离上下文撞号
         if (tenantId == null) {
             throw new BusinessException(MrmsErrorCodes.MEDCASNO_GENERATE_FAILED, "租户不能为空");
         }
-        int year = Year.now().getValue();
-        MedcasnoSequence sequence = medcasnoSequenceRepository
-                .findByTenantIdAndYearValueAndIsDeletedFalse(tenantId, year)
-                .orElse(null);
-        // 当年首号：初始化序列表
-        if (sequence == null) {
-            sequence = new MedcasnoSequence();
-            sequence.setTenantId(tenantId);
-            sequence.setYearValue(year);
-            sequence.setLastSeq(0);
-            sequence.setCreatedAt(LocalDateTime.now());
-            sequence.setIsDeleted(false);
-        }
-        int nextSeq = sequence.getLastSeq() + 1;
-        sequence.setLastSeq(nextSeq);
-        sequence.setUpdatedAt(LocalDateTime.now());
-        // 持久化序号（行锁保障并发）
-        medcasnoSequenceRepository.save(sequence);
-        String seqPart = String.format("%05d", nextSeq);
-        return year + seqPart;
+        // Cmd：按日业务流水（前缀 + 年月日 + 4 位序号）
+        return businessSequenceService.getSeqByDay(
+                AggregateTypeConstants.CASE_RECORD_MEDCASNO,
+                BusinessSequenceConstants.BUS_NO_SEQ_LENGTH);
     }
 }

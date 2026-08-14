@@ -27,6 +27,7 @@ import com.openhis.whale.core.domain.event.IDomainEventPublisher;
 import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
 import lombok.RequiredArgsConstructor;
 import com.openhis.whale.core.application.util.StringUtils;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -150,6 +151,13 @@ public class PaymentReconciliationDomainService {
         payment.setStatusEnum(PaymentStatus.SUCCESS);
         payment.setOutcomeEnum(cmd.getOutcomeEnum());
         payment.setBillDate(cmd.getBillDate());
+        // 2207 权威现金回写头表，避免仍锁在预结算草稿 display/tendered
+        if (cmd.getDisplayAmount() != null) {
+            payment.setDisplayAmount(cmd.getDisplayAmount());
+        }
+        if (cmd.getTenderedAmount() != null) {
+            payment.setTenderedAmount(cmd.getTenderedAmount());
+        }
         paymentRepository.save(payment);
         List<PaymentYbSettlementItemCommand> ybItems = this.persistYbSettlements(payment.getId(), cmd.getYbSettlements());
         if (cmd.getPayReceiptDetails() != null) {
@@ -180,6 +188,10 @@ public class PaymentReconciliationDomainService {
         payment.setBillDate(cmd.getBillDate());
         paymentRepository.save(payment);
         List<PaymentYbSettlementItemCommand> ybItems = this.persistYbSettlements(payment.getId(), cmd.getYbSettlements());
+        // 医保正式结算：覆盖为统筹/个账/现金明细（对齐门诊 payReceiptDetails）
+        if (cmd.getPayReceiptDetails() != null) {
+            this.replaceDetails(payment.getId(), cmd.getPayReceiptDetails());
+        }
         payment = this.mustGetPayment(cmd.getPaymentId());
         InpatientPaymentSettledEvent event = new InpatientPaymentSettledEvent(
             payment.getId(), payment.getEncounterId(), payment.getChargeItemIds(), payment.getDisplayAmount());
@@ -193,11 +205,22 @@ public class PaymentReconciliationDomainService {
     /**
      * 基于原支付单创建门诊退款单（逆向支付单）。
      *
+     * <p>BR-PMR-008 / BR-REF-008：对原单加悲观写锁后再判重；落库依赖
+     * {@code uk_fin_payment_rec_active_unpay_relation} 部分唯一索引兜底并发双写，
+     * 避免收费日结对同一原单重复冲减西药等费用性质。</p>
+     *
      * @param cmd 门诊退款申请命令，包含原单关联、退费金额、支付方向及明细信息
      * @return 新建退款支付单主键
      */
     public Long requestOutpatientRefund(RequestOutpatientRefundCommand cmd) {
-        if (this.existsActiveOutpatientRefundByRelationId(cmd.getRelationId())) {
+        // 前置校验：原单主键必填，否则无法加锁与追溯
+        if (cmd.getRelationId() == null) {
+            throw new BusinessException(ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT, "退款须关联原支付单");
+        }
+        // 加载/组装聚合：锁原单，串行化同一原支付的并发退费申请
+        this.lockOriginalPaymentForRefund(cmd.getRelationId());
+        // 前置校验：已有进行中或已完成逆向单则拒绝，防止日结重复取负
+        if (this.existsActiveRefundByRelationId(cmd.getRelationId())) {
             throw new BusinessException(ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT, "原单已存在退款单");
         }
         PaymentReconciliation payment = new PaymentReconciliation();
@@ -217,7 +240,13 @@ public class PaymentReconciliationDomainService {
         payment.setStatusEnum(PaymentStatus.REFUND_PROCESSING);
         payment.assertHeaderCompleteBeforeNewPersist();
         payment.assertAmountNonNegative();
-        PaymentReconciliation saved = paymentRepository.save(payment);
+        PaymentReconciliation saved;
+        try {
+            // 持久化：flush 以触发部分唯一索引；并发后到请求转为业务冲突
+            saved = paymentRepository.saveAndFlush(payment);
+        } catch (DataIntegrityViolationException integrityViolationException) {
+            throw new BusinessException(ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT, "原单已存在退款单");
+        }
         this.replaceDetails(saved.getId(), cmd.getPaymentDetails());
         // Event：持久化完成后发布门诊退款申请事件
         domainEventPublisher.publish(new OutpatientRefundRequestedEvent(
@@ -288,20 +317,42 @@ public class PaymentReconciliationDomainService {
     }
 
     /**
-     * 判断原支付是否已有进行中的逆向退费（{@code REFUND_PROCESSING} 或 {@code REFUNDED}）。
+     * 对原支付加悲观写锁，保证随后的有效逆向单判重与插入在同一 UoW 内串行。
+     *
+     * @param originalPaymentId 原支付主键（{@code relation_id}）
+     * @throws BusinessException 原单不存在或已软删
+     */
+    private void lockOriginalPaymentForRefund(Long originalPaymentId) {
+        PaymentReconciliation original = paymentRepository.findWithLockById(originalPaymentId)
+            .orElseThrow(() -> new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_NOT_FOUND, "原支付单不存在"));
+        // 已软删原单不得再发起逆向，避免挂到幽灵 relation_id
+        if (Boolean.TRUE.equals(original.getIsDeleted())) {
+            throw new BusinessException(ErrorCodeConstants.PAYMENT_RECONCILIATION_NOT_FOUND, "原支付单不存在");
+        }
+    }
+
+    /**
+     * 判断原支付是否已有未删除的有效逆向退费（{@code REFUND_PROCESSING} 或 {@code REFUNDED}）。
+     *
+     * <p>abort 会清空 {@code relation_id} 并置 {@code CANCELLED}，故不占有效坑；软删行忽略。</p>
      *
      * @param relationId 原支付主键
      * @return 存在有效逆向单时 {@code true}
      */
-    private boolean existsActiveOutpatientRefundByRelationId(Long relationId) {
+    private boolean existsActiveRefundByRelationId(Long relationId) {
         if (relationId == null) {
             return false;
         }
         List<PaymentReconciliation> payments = paymentRepository.findByRelationId(relationId);
         for (PaymentReconciliation payment : payments) {
-            if (payment == null || !relationId.equals(payment.getRelationId())) {
+            if (payment == null || Boolean.TRUE.equals(payment.getIsDeleted())) {
                 continue;
             }
+            if (!relationId.equals(payment.getRelationId())) {
+                continue;
+            }
+            // 仅进行中/已完成逆向单算有效；CANCELLED 等终态不拦截重试
             if (PaymentStatus.REFUND_PROCESSING.equals(payment.getStatusEnum())
                 || PaymentStatus.REFUNDED.equals(payment.getStatusEnum())) {
                 return true;
@@ -313,11 +364,19 @@ public class PaymentReconciliationDomainService {
     /**
      * 取消住院结算并生成逆向退款支付单。
      *
+     * <p>与门诊 {@link #requestOutpatientRefund} 同构：锁原单 + 有效逆向判重 + 唯一索引兜底（BR-PMR-008）。</p>
+     *
      * @param cmd 住院取消结算命令，包含原单关联、退款金额、支付方向与明细
      * @return 新建逆向支付单主键
      */
     public Long cancelInpatientSettleAsRefund(CancelInpatientSettleAsRefundCommand cmd) {
-        if (paymentRepository.existsByRelationId(cmd.getRelationId())) {
+        // 前置校验：原单主键必填
+        if (cmd.getRelationId() == null) {
+            throw new BusinessException(ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT, "退款须关联原支付单");
+        }
+        // 加载/组装聚合：锁原单后判重，避免住院反结并发双写 UN_PAY
+        this.lockOriginalPaymentForRefund(cmd.getRelationId());
+        if (this.existsActiveRefundByRelationId(cmd.getRelationId())) {
             throw new BusinessException(ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT, "原单已存在退款单");
         }
         PaymentReconciliation payment = new PaymentReconciliation();
@@ -336,7 +395,13 @@ public class PaymentReconciliationDomainService {
         payment.setStatusEnum(PaymentStatus.REFUND_PROCESSING);
         payment.assertHeaderCompleteBeforeNewPersist();
         payment.assertAmountNonNegative();
-        PaymentReconciliation saved = paymentRepository.save(payment);
+        PaymentReconciliation saved;
+        try {
+            // 持久化：flush 触发部分唯一索引，将并发冲突转为业务异常
+            saved = paymentRepository.saveAndFlush(payment);
+        } catch (DataIntegrityViolationException integrityViolationException) {
+            throw new BusinessException(ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT, "原单已存在退款单");
+        }
         this.replaceDetails(saved.getId(), cmd.getPaymentDetails());
         return saved.getId();
     }

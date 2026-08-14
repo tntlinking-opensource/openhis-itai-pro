@@ -93,6 +93,30 @@ public class YbPersonCacheDomainService {
     }
 
     /**
+     * 按契约 + 身份证号查找最新一条人员缓存（含已过期）。
+     *
+     * <p>优先身份证别名键（{@code mdtrt_cert_type=02}）；医生站险种回显不要求当日有效。</p>
+     *
+     * @param contractId 费用性质契约主键
+     * @param idCard     患者身份证号
+     * @param tenantId   租户 ID
+     * @return 最新缓存行；参数不全或未命中时返回空
+     */
+    public Optional<YbPersonCache> findLatestByContractIdAndIdCard(
+        Long contractId, String idCard, Long tenantId) {
+        if (contractId == null || tenantId == null || isEmpty(idCard)) {
+            return Optional.empty();
+        }
+        String certno = normalizePersonCacheCertno(idCard);
+        if (certno == null) {
+            certno = idCard.trim();
+        }
+        return personCacheRepository
+            .findFirstByContractIdAndMdtrtCertTypeAndMdtrtCertNoAndTenantIdAndIsDeletedFalseOrderByCachedAtDesc(
+                contractId, PERSON_CACHE_CERTNO_ALIAS_TYPE, certno, tenantId);
+    }
+
+    /**
      * 按契约 + 身份证号查找当日未过期的读卡主凭证缓存。
      *
      * <p>优先 {@code 01}/{@code 03}（电子凭证/社保卡）；若当日仅以身份证读卡则允许 {@code 02}。

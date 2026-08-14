@@ -80,7 +80,7 @@ public class OutpatientMedicationSignChargeOrchestrator {
      *
      * @param encounterId 就诊主键
      * @param patientId   患者主键
-     * @param accountId   自费账户
+     * @param accountId   挂账账户（按行费用性质解析后的 account_id）
      * @param orgId       开立机构
      * @param operatorId  操作人
      * @param medReqId    药品申请主键（已 sign）
@@ -135,6 +135,7 @@ public class OutpatientMedicationSignChargeOrchestrator {
             segmentQuantities,
             segmentLotNumbers,
             fifoCtx.getUnitCode(),
+            fifoCtx.getPrescriptionNo(),
             readCache);
         // Cmd：草稿费用升为 PLANNED，供门诊收银预结算
         chargeItemDomainService.planDraftChargeItemsAfterAdviceSignedByDispenseAnchors(
@@ -178,6 +179,7 @@ public class OutpatientMedicationSignChargeOrchestrator {
      * @param segmentQuantities      各分段数量
      * @param segmentLotNumbers      各分段 FIFO 批号（与 dispenseIds 等长；落账对价键）
      * @param quantityUnit           计价单位
+     * @param prescriptionNo         药品请求处方号（同方多味共享；写入 ChargeItem 供工作量按方去重）
      * @param readCache              批内挂费读缓存；null 时逐条查价
      */
     public void createDispenseSegmentChargeDrafts(
@@ -195,6 +197,7 @@ public class OutpatientMedicationSignChargeOrchestrator {
         List<BigDecimal> segmentQuantities,
         List<String> segmentLotNumbers,
         String quantityUnit,
+        String prescriptionNo,
         SignChargeReadCache readCache
     ) {
         if (dispenseIds == null || segmentQuantities == null || segmentLotNumbers == null
@@ -207,6 +210,10 @@ public class OutpatientMedicationSignChargeOrchestrator {
         }
         ProductDefinitionDisplayDto productRow = resolveProductDisplay(productDefinitionTable, productDefinitionId, readCache);
         List<CreateChargeItemCommand.Item> draftItems = new ArrayList<>();
+        String trimmedPrescriptionNo = null;
+        if (StringUtils.isNotEmpty(prescriptionNo)) {
+            trimmedPrescriptionNo = prescriptionNo.trim();
+        }
         // Asm：每一发放分段一行 ChargeItem，单价必须跟本段 FIFO 批号
         for (int i = 0; i < dispenseIds.size(); i++) {
             String fifoLotNumber = segmentLotNumbers.get(i);
@@ -223,21 +230,27 @@ public class OutpatientMedicationSignChargeOrchestrator {
                         + lotLabel
                         + "）。请先维护该批号收费项定价后再签发医嘱。");
             }
-            draftItems.add(OrderChargeDraftAssembler.toCreateChargeItemDraftItemForFifoDispenseSegment(
-                encounterId,
-                patientId,
-                accountId,
-                orgId,
-                requestId,
-                requestServiceTable,
-                productDefinitionTable,
-                productDefinitionId,
-                dispenseTable,
-                dispenseIds.get(i),
-                priceLine,
-                segmentQuantities.get(i),
-                quantityUnit,
-                productRow));
+            CreateChargeItemCommand.Item draftItem =
+                OrderChargeDraftAssembler.toCreateChargeItemDraftItemForFifoDispenseSegment(
+                    encounterId,
+                    patientId,
+                    accountId,
+                    orgId,
+                    requestId,
+                    requestServiceTable,
+                    productDefinitionTable,
+                    productDefinitionId,
+                    dispenseTable,
+                    dispenseIds.get(i),
+                    priceLine,
+                    segmentQuantities.get(i),
+                    quantityUnit,
+                    productRow);
+            // Asm：药品处方号落收费行，同方多味共享，工作量按方计 1
+            if (trimmedPrescriptionNo != null) {
+                draftItem.setPrescriptionNo(trimmedPrescriptionNo);
+            }
+            draftItems.add(draftItem);
         }
         CreateChargeItemCommand batchCmd = new CreateChargeItemCommand();
         batchCmd.setOperatorId(operatorId);

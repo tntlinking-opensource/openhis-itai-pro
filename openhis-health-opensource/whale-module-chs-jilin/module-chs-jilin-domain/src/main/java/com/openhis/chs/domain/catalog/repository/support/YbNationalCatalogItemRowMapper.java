@@ -54,6 +54,10 @@ public final class YbNationalCatalogItemRowMapper {
         row.setUpdtTime(toLocalDateTime(rs.getTimestamp("updt_time")));
         row.setSourceFileQuryNo(rs.getString("source_file_qury_no"));
         row.setSourceLineNo(rs.getObject("source_line_no", Integer.class));
+        row.setMinPacCnt(rs.getString("min_pac_cnt"));
+        row.setMinPacunt(rs.getString("min_pacunt"));
+        row.setMinPrepunt(rs.getString("min_prepunt"));
+        row.setMinPrcunt(rs.getString("min_prcunt"));
         return row;
     }
 

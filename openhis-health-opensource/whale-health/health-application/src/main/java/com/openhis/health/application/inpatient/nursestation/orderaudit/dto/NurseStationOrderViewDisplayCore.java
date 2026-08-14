@@ -7,6 +7,7 @@ package com.openhis.health.application.inpatient.nursestation.orderaudit.dto;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -62,14 +63,53 @@ public class NurseStationOrderViewDisplayCore {
     /** 规格/大小；诊疗可为 null。 */
     private String specificationText;
 
-    /** 剂量/数量展示。 */
+    /**
+     * 拆零比（目录 {@code package_unit_ratio}：1 包装 = N 拆零；仅药嘱；未维护时为 null）。
+     */
+    private BigDecimal partPercent;
+
+    /**
+     * 包装装量后缀（如 {@code 1片x100}；仅药嘱；缺数据时为 null）。
+     */
+    private String packageSplitRatioText;
+
+    /**
+     * 包装单位展示名（目录包装单位术语；仅药嘱；缺数据时为 null）。
+     * <p>供摆药单等按「一盒一点」整包装计总量时拼接数量+单位，禁止前端写死「盒」。</p>
+     */
+    private String packageUnitDisplay;
+
+    /** 剂量/数量展示（药嘱优先单次 dose；与开立总量字段语义不同）。 */
     private String dosageDisplay;
+
+    /**
+     * 开立总量展示（数量+单位；仅临时/出院带药有值）。
+     *
+     * <p>对齐 {@code BR-MRQ-009}：临时与出院带药 {@code quantity}/{@code unit_code} 为总量语义；
+     * 长期为单次用量，本字段保持 null，摆药总量勿用本字段替代 dose×次数或一盒一点口径。</p>
+     */
+    private String quantityDisplay;
+
+    /**
+     * 日剂量友好展示（如 {@code 每日三片}；长期药且频次可解析每日次数时有值）。
+     */
+    private String dailyDoseDisplay;
 
     /** 用法展示（药品）。 */
     private String usageDisplay;
 
     /** 频次展示。 */
     private String frequencyDisplay;
+
+    /**
+     * 输液滴速编码（药嘱 {@code speed_code}；诊嘱为 null）。
+     */
+    private String speedCode;
+
+    /**
+     * 输液滴速展示名（术语 {@code speed_code} 解析；无码为空）。
+     */
+    private String speedDisplay;
 
     /** 开立时间（{@code req_opened_time}）。 */
     private LocalDateTime reqOpenedTime;
@@ -97,6 +137,20 @@ public class NurseStationOrderViewDisplayCore {
      * 医嘱执行 Tab 等消费方拷贝至行 DTO。
      */
     private String performerCheckOrgDisplay;
+
+    /** 停嘱校对人主键（{@code stop_performer_check_id}；未停嘱校对为 null）。 */
+    private Long stopPerformerCheckId;
+
+    /** 停嘱校对时间（{@code stop_check_time}）。 */
+    private LocalDateTime stopCheckTime;
+
+    /** 停嘱校对人姓名（与 {@link #performerCheckName} 同解析链）。 */
+    private String stopCheckerName;
+
+    /**
+     * 是否停嘱待校：STOPPED 且 {@code stopPerformerCheckId == null} 且长期。
+     */
+    private Boolean stopAuditPending;
 
     /** 执行/发药库位展示。 */
     private String performerLocationDisplay;

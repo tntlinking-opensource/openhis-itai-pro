@@ -134,7 +134,8 @@ public class InventoryInboundUploadContextLoader {
         // fixmedins_bchno：进货单据头 busNo（supply_request 行上的单据号）
         cmd.setFixmedinsBchno(InventoryUploadBatchNoAssembler.buildFixmedinsBchno(line.getBusNo()));
         cmd.setManuLotnum(line.getLotNumber());
-        cmd.setAprvno(medication.getApprovalNumber());
+        // aprvno ← 批准文号；中药等无国药准字时占位，避免平台 3503 拒收
+        cmd.setAprvno(resolveAprvnoOrDefault(medication.getApprovalNumber()));
         cmd.setProdentpName(medication.getManufacturerText());
         // 库房：拆零数量 → 操作单位数量；单价与 unitCode 同单位
         InventoryUploadQtyPriceResult qtyPrice = InventoryUploadQuantityAssembler.resolveWarehouseQtyAndPrice(
@@ -169,6 +170,22 @@ public class InventoryInboundUploadContextLoader {
         }
         // 未填：平台占位，保证 3503/3504 报文非空且不拦进货
         return ChsInventoryConstants.DEFAULT_PURC_INVO_NO;
+    }
+
+    /**
+     * 解析批准文号：有值用主数据，空则平台占位 {@link ChsInventoryConstants#DEFAULT_APRVNO}。
+     *
+     * @param approvalNumber 药品定义批准文号
+     * @return 非空批准文号或默认占位
+     */
+    private String resolveAprvnoOrDefault(String approvalNumber) {
+        String trimmed = trimToNull(approvalNumber);
+        // 主数据已维护真实批准文号 / 国药准字
+        if (trimmed != null) {
+            return trimmed;
+        }
+        // 中药饮片等常无准字：占位上报，避免 3503 必填字段拒收
+        return ChsInventoryConstants.DEFAULT_APRVNO;
     }
 
     /**

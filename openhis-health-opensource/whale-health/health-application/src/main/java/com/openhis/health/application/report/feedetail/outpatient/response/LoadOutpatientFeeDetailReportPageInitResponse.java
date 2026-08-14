@@ -70,4 +70,8 @@ public class LoadOutpatientFeeDetailReportPageInitResponse {
     /** 费用性质下拉（value=fin_contract.bus_no）。 */
     @Schema(description = "费用性质选项")
     private List<OptionDto> feeNatureOptions;
+
+    /** 汇总维度下拉（FIN_TYPE / DEPARTMENT / FEE_CATEGORY / ITEM）。 */
+    @Schema(description = "汇总维度选项")
+    private List<OptionDto> summaryDimensionOptions;
 }

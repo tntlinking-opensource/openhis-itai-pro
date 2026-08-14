@@ -771,8 +771,43 @@ public class SupplyRequestQueryService {
             }
             this.applyResolvedItemIds(predicates, root, cb, query.getResolvedItemIds());
             this.applyDeptIssueBusinessTimeWindow(predicates, root, cb, query);
+            // 领用科室：落库 consuming_organization_id 精确筛；历史空列靠应用层库位收窄
+            if (query.getConsumingOrganizationId() != null) {
+                predicates.add(cb.or(
+                    cb.equal(
+                        root.get(FieldNameConstants.CONSUMING_ORGANIZATION_ID),
+                        query.getConsumingOrganizationId()),
+                    cb.and(
+                        cb.isNull(root.get(FieldNameConstants.CONSUMING_ORGANIZATION_ID)),
+                        this.buildPurposeLocationFallbackPredicate(
+                            root, cb, query.getResolvedPurposeLocationIds(), query.getPurposeLocationId()))));
+            }
             return cb.and(predicates.toArray(new Predicate[0]));
         };
+    }
+
+    /**
+     * 领用科室筛选时：历史行 consuming_organization_id 为空，回落到目的库位 IN / 单库位等值。
+     *
+     * @param root                         供应请求根
+     * @param cb                           CriteriaBuilder
+     * @param resolvedPurposeLocationIds   预解析库位；可空
+     * @param purposeLocationId            单库位；可空
+     * @return 库位谓词；无可用库位时恒假
+     */
+    private Predicate buildPurposeLocationFallbackPredicate(
+        Root<SupplyRequest> root,
+        CriteriaBuilder cb,
+        List<Long> resolvedPurposeLocationIds,
+        Long purposeLocationId) {
+        if (purposeLocationId != null) {
+            return cb.equal(root.get(FieldNameConstants.PURPOSE_LOCATION_ID), purposeLocationId);
+        }
+        if (resolvedPurposeLocationIds != null && !resolvedPurposeLocationIds.isEmpty()) {
+            return root.get(FieldNameConstants.PURPOSE_LOCATION_ID).in(resolvedPurposeLocationIds);
+        }
+        // 无库位回落范围：拒查空列历史行，避免领用科室筛失效放宽
+        return cb.equal(cb.literal(1), cb.literal(0));
     }
 
     /**
@@ -853,6 +888,8 @@ public class SupplyRequestQueryService {
         model.setLotNumber(row.getLotNumber());
         model.setPrice(row.getPrice());
         model.setTotalPrice(row.getTotalPrice());
+        // 发耗材人：科室领用取审批人
+        model.setApproverId(row.getApproverId());
         LocalDateTime businessTime = row.getApprovalTime();
         if (businessTime == null) {
             businessTime = row.getOccurrenceTime();
@@ -968,15 +1005,25 @@ public class SupplyRequestQueryService {
      * @return 存在则为 true
      */
     public boolean existsNonOpeningBusinessForLocation(Long purposeLocationId) {
+        return this.findFirstNonOpeningBusinessForLocation(purposeLocationId).isPresent();
+    }
+
+    /**
+     * 同库首条非期初业务供应行（已提交及以上；GAP-OPN-004 供应侧诊断）。
+     *
+     * @param purposeLocationId 目的库房
+     * @return 命中行；无则 empty
+     */
+    public Optional<SupplyRequest> findFirstNonOpeningBusinessForLocation(Long purposeLocationId) {
         if (purposeLocationId == null) {
-            return false;
+            return Optional.empty();
         }
         List<String> openingTypes = openingTypeCodes();
         List<String> blockingStatuses = List.of(
             SupplyStatus.APPROVAL.getCode(),
             SupplyStatus.AGREE.getCode());
         return supplyRequestRepository
-            .existsByPurposeLocationIdAndTypeEnumNotInAndStatusEnumInAndIsDeletedFalse(
+            .findFirstByPurposeLocationIdAndTypeEnumNotInAndStatusEnumInAndIsDeletedFalseOrderByIdAsc(
                 purposeLocationId, openingTypes, blockingStatuses);
     }
 

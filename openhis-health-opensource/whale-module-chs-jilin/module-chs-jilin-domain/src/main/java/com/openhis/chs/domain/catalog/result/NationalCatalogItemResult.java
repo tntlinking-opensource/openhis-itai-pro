@@ -89,4 +89,16 @@ public class NationalCatalogItemResult {
 
     @Schema(description = "合成限价上限 hilist_pric_uplmt_amt（来自 overlay patch）")
     private String priceUplmtAmt;
+
+    @Schema(description = "1301 最小包装数量 min_pac_cnt")
+    private String minPacCnt;
+
+    @Schema(description = "1301 最小包装单位 min_pacunt")
+    private String minPacunt;
+
+    @Schema(description = "1301 最小制剂单位 min_prepunt")
+    private String minPrepunt;
+
+    @Schema(description = "1301 最小计价单位 min_prcunt（限价口径）")
+    private String minPrcunt;
 }

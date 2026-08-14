@@ -67,6 +67,10 @@ public class ModifyServiceRequestDraftCommand extends BatchCommand<ModifyService
          * 用药频次编码（长期诊疗必填；传空串表示清空 {@code rate_code}）。
          */
         private String rateCode;
+        /**
+         * 费用性质/合同主键；非空且与存量不同时更新 {@code wkf_service_request.contract_id}。
+         */
+        private Long contractId;
     }
 
     /** 明细行子命令（为本命令独立类型，每行一个 target_table + target_id 引用）。 */

@@ -10,6 +10,7 @@ import com.openhis.wi.gateway.scheme.settle.model.Wi2206Output;
 import com.openhis.wi.gateway.scheme.settle.model.Wi2207Output;
 import com.openhis.wi.gateway.scheme.register.model.Wi2301Output;
 import com.openhis.wi.gateway.scheme.register.model.Wi9102Output;
+import com.openhis.wi.gateway.scheme.register.model.Wi9102QualificationRow;
 import com.openhis.wi.gateway.scheme.register.parser.Wi1101OutputParser;
 import com.openhis.wi.gateway.scheme.register.parser.Wi2301OutputParser;
 import com.openhis.wi.gateway.scheme.register.parser.Wi9102OutputParser;
@@ -20,6 +21,7 @@ import com.openhis.wi.gateway.scheme.shared.model.WiInfnoConstants;
 import com.openhis.wi.gateway.scheme.shared.model.WiInvokeSessionStatus;
 import com.openhis.wi.gateway.scheme.shared.model.WiNextAction;
 import com.openhis.wi.gateway.scheme.shared.model.WiPhase;
+import com.openhis.wi.gateway.scheme.shared.model.WiPlatformConstants;
 import com.openhis.wi.gateway.scheme.shared.assembler.WiPlatformInputAssembler;
 import com.openhis.wi.bridge.invoke.support.WorkInjuryInvokeLogSupport;
 import com.openhis.wi.bridge.settle.workflow.WorkInjurySettleStepPlanner;
@@ -49,6 +51,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -60,7 +64,8 @@ import java.util.UUID;
  *
  * <p><b>出站</b>：Win :5000（前端循环，Whale 不直调 DLL）。</p>
  * <p><b>副作用</b>：{@code yb_wi_invoke_session}、{@code yb_invoke_log}、
- * {@code yb_wi_pre_settle}、{@code yb_settlement_record}、{@code yb_wi_encounter_anchor}。</p>
+ * {@code yb_wi_pre_settle}、{@code yb_settlement_record}、{@code yb_settlement_reversal}、
+ * {@code yb_wi_encounter_anchor}。</p>
  * <p><b>编排真源</b>：{@link WorkInjurySettleStepPlanner}；报文：{@link WiPlatformInputAssembler}。</p>
  */
 @Component
@@ -97,22 +102,31 @@ public class WorkInjuryInvokeOrchestrator {
         Long operatorId = resolveOperatorId(request.getOperatorId());
 
         YbWiInvokeSession session = loadOrCreateSession(request, phase, operatorId);
-        WiSettleContext ctx = loadContextForPrepare(phase, request);
+        // 续步 prepare 常只带 sessionId；须先解析 contractId 再 load 上下文，避免 loader 拿到 null
+        Long contractId = resolveContractIdForPrepare(request, session);
+        WiSettleContext ctx = loadContextForPrepare(phase, request, contractId);
         YbWiEncounterAnchor anchor = null;
-        if (phase == WiPhase.RECON) {
-            if (request.getContractId() == null) {
-                throw new BusinessException(WiErrorCodes.INVALID_INVOKE_SESSION, "RECON 须指定 contractId");
+        if (phase == WiPhase.RECON || phase == WiPhase.RECON_CONFIRM) {
+            if (contractId == null) {
+                throw new BusinessException(WiErrorCodes.INVALID_INVOKE_SESSION, phase.getCode() + " 须指定 contractId");
             }
         } else {
             anchor = anchorDomainService.ensureAnchor(
-                    request.getEncounterId(), request.getContractId(), ctx);
+                    request.getEncounterId(), contractId, ctx);
             if (phase == WiPhase.OP_SETTLE) {
                 anchorDomainService.assertQualificationForSettle(anchor);
             }
         }
 
+        int feeLineCount = feeLineCount(ctx);
         int stepIndex = session.getStepIndex();
-        String infno = stepPlanner.resolveInfno(phase, stepIndex, anchor);
+        String infno = stepPlanner.resolveInfno(phase, stepIndex, anchor, feeLineCount);
+        // 链上固定保留 2201 槽位；已登记则本步不调 Win，直接推进，避免「流水号已使用」
+        while (WiInfnoConstants.OUTPATIENT_REG.equals(infno) && isPlatformRegistered(anchor)) {
+            session.setStepIndex(session.getStepIndex() + 1);
+            stepIndex = session.getStepIndex();
+            infno = stepPlanner.resolveInfno(phase, stepIndex, anchor, feeLineCount);
+        }
         if (!StringUtils.hasText(infno)) {
             return new PrepareWorkInjuryInvokeResponse()
                     .setSessionId(session.getSessionId())
@@ -126,8 +140,11 @@ public class WorkInjuryInvokeOrchestrator {
 
         String mdtrtIdFor2207 = resolveMdtrtIdFor2207(session, infno);
         YbSettlementRecord settlementRecord = resolveSettlementRecord(infno, request.getContext());
+        int feeUploadBatchIndex =
+                stepPlanner.resolveFeeUploadBatchIndex(phase, stepIndex, anchor, feeLineCount);
         Map<String, Object> input = WiPlatformInputAssembler.assemble(
-                infno, ctx, anchor, request.getContext(), mdtrtIdFor2207, settlementRecord);
+                infno, ctx, anchor, request.getContext(), mdtrtIdFor2207, settlementRecord,
+                feeUploadBatchIndex);
         return new PrepareWorkInjuryInvokeResponse()
                 .setSessionId(session.getSessionId())
                 .setStepToken(stepToken)
@@ -136,6 +153,39 @@ public class WorkInjuryInvokeOrchestrator {
                 .setOperatorNo(String.valueOf(operatorId))
                 .setInput(input)
                 .setNextAction(WiNextAction.INVOKE_WIN.getCode());
+    }
+
+    /**
+     * 单边补落后返回已完成会话（前端跳过 Win 链，直接刷新金额并确认收费）。
+     *
+     * @param request prepare 请求（须含 encounter/paymentDraft）
+     * @param record  已补落的结算回执
+     * @return nextAction=COMPLETED
+     */
+    @Transactional
+    public PrepareWorkInjuryInvokeResponse prepareCompletedUnilateralSession(
+            PrepareWorkInjuryInvokeRequest request,
+            YbSettlementRecord record) {
+        Long operatorId = resolveOperatorId(request != null ? request.getOperatorId() : null);
+        YbWiInvokeSession session = new YbWiInvokeSession();
+        session.setSessionId(UUID.randomUUID().toString());
+        session.setEncounterId(request.getEncounterId());
+        session.setContractId(request.getContractId() != null
+                ? request.getContractId()
+                : (record != null ? record.getContractId() : null));
+        session.setPaymentDraftId(request.getPaymentDraftId());
+        session.setPhase(WiPhase.OP_SETTLE.getCode());
+        session.setStepIndex(stepPlanner.totalSteps(WiPhase.OP_SETTLE, null, 1));
+        session.setStatus(WiInvokeSessionStatus.COMPLETED.getCode());
+        session.setPendingStepToken(null);
+        session.setTenantId(TenantUtils.getCurrentTenantId());
+        session.setCreatedBy(operatorId);
+        invokeSessionRepository.save(session);
+        PrepareWorkInjuryInvokeResponse response = new PrepareWorkInjuryInvokeResponse()
+                .setSessionId(session.getSessionId())
+                .setNextAction(WiNextAction.COMPLETED.getCode())
+                .setErrMsg("平台已结算，本地已补齐单边，请直接确认收费");
+        return response;
     }
 
     /**
@@ -158,7 +208,14 @@ public class WorkInjuryInvokeOrchestrator {
 
         WiPhase phase = WiPhase.fromCode(session.getPhase());
         YbWiEncounterAnchor anchor = loadAnchor(session.getEncounterId());
-        String infno = stepPlanner.resolveInfno(phase, session.getStepIndex(), anchor);
+        WiSettleContext ctx = loadContextForSubmit(phase, session, request);
+        int feeLineCount = feeLineCount(ctx);
+        String infno = stepPlanner.resolveInfno(phase, session.getStepIndex(), anchor, feeLineCount);
+
+        boolean success = request.isSuccess()
+                || isIdempotent2205EmptyRevoke(infno, request.getErrMsg())
+                || isIdempotent2207BillAlreadyUsed(infno, request.getErrMsg())
+                || isIdempotent2203AlreadySettled(infno, request.getErrMsg());
 
         Long invokeLogId = invokeLogSupport.write(
                 session.getContractId(),
@@ -169,10 +226,52 @@ public class WorkInjuryInvokeOrchestrator {
                 request.getInfcode(),
                 request.getErrMsg(),
                 request.getOutput(),
-                request.isSuccess(),
+                success,
                 request.getWinRawInput());
 
-        if (!request.isSuccess()) {
+        // 2203「已存在结算信息」：平台已结，补本地后结束会话，勿继续 2204
+        if (success && isIdempotent2203AlreadySettled(infno, request.getErrMsg())) {
+            YbSettlementRecord recovered = settlementDomainService
+                    .recoverUnilateralFromActivePreSettle(
+                            session.getEncounterId(),
+                            session.getPaymentDraftId(),
+                            session.getContractId(),
+                            TenantUtils.getCurrentTenantId())
+                    .orElse(null);
+            if (recovered == null) {
+                session.setStatus(WiInvokeSessionStatus.FAILED.getCode());
+                session.setPendingStepToken(null);
+                invokeSessionRepository.save(session);
+                return new SubmitWorkInjuryInvokeResultResponse()
+                        .setSessionId(session.getSessionId())
+                        .setNextAction(WiNextAction.FAILED.getCode())
+                        .setErrMsg("平台已结算但本地无预结算快照可补落，请联系医保办");
+            }
+            if (anchor != null) {
+                anchorDomainService.apply2207SetlId(anchor, recovered.getSetlId());
+                anchorDomainService.markActiveFeeUpload(anchor, false);
+            }
+            session.setStatus(WiInvokeSessionStatus.COMPLETED.getCode());
+            session.setPendingStepToken(null);
+            invokeSessionRepository.save(session);
+            invokeLogSupport.linkSettlementRecord(
+                    invokeLogId,
+                    recovered.getId(),
+                    recovered.getPreSettleId(),
+                    recovered.getChrgBchno());
+            return new SubmitWorkInjuryInvokeResultResponse()
+                    .setSessionId(session.getSessionId())
+                    .setNextAction(WiNextAction.COMPLETED.getCode())
+                    .setSummary("平台已结算，本地已补齐单边")
+                    .setSettlementRecordId(recovered.getId())
+                    .setSetlId(recovered.getSetlId())
+                    .setChrgBchno(recovered.getChrgBchno())
+                    .setMedfeeSumamt(recovered.getMedfeeSumamt())
+                    .setFundPaySumamt(recovered.getFundPaySumamt())
+                    .setPsnCashPay(recovered.getPsnCashPay());
+        }
+
+        if (!success) {
             session.setStatus(WiInvokeSessionStatus.FAILED.getCode());
             session.setPendingStepToken(null);
             invokeSessionRepository.save(session);
@@ -182,7 +281,6 @@ public class WorkInjuryInvokeOrchestrator {
                     .setErrMsg(request.getErrMsg());
         }
 
-        WiSettleContext ctx = loadContextForSubmit(phase, session, request);
         YbSettlementRecord settlementRecord = applySubmitSideEffect(
                 infno, anchor, ctx, session, request, invokeLogId);
 
@@ -190,7 +288,7 @@ public class WorkInjuryInvokeOrchestrator {
         session.setPendingStepToken(null);
 
         anchor = loadAnchor(session.getEncounterId());
-        boolean hasMore = stepPlanner.hasMoreSteps(phase, session.getStepIndex(), anchor);
+        boolean hasMore = stepPlanner.hasMoreSteps(phase, session.getStepIndex(), anchor, feeLineCount);
         if (hasMore) {
             session.setStatus(WiInvokeSessionStatus.ACTIVE.getCode());
             invokeSessionRepository.save(session);
@@ -227,6 +325,33 @@ public class WorkInjuryInvokeOrchestrator {
             return requestOperatorId;
         }
         return currentOperatorResolver.requireOperatorId("请先登录后再操作工伤业务");
+    }
+
+    /**
+     * prepare 用 contractId：请求优先，否则会话，再否则已有锚点。
+     *
+     * @param request prepare 请求
+     * @param session 当前会话
+     * @return contractId；均无时 null
+     */
+    private Long resolveContractIdForPrepare(
+            PrepareWorkInjuryInvokeRequest request, YbWiInvokeSession session) {
+        if (request != null && request.getContractId() != null) {
+            return request.getContractId();
+        }
+        if (session != null && session.getContractId() != null) {
+            return session.getContractId();
+        }
+        Long encounterId = request != null ? request.getEncounterId() : null;
+        if (encounterId == null && session != null) {
+            encounterId = session.getEncounterId();
+        }
+        if (encounterId == null) {
+            return null;
+        }
+        return encounterAnchorRepository.findByEncounterId(encounterId)
+                .map(YbWiEncounterAnchor::getContractId)
+                .orElse(null);
     }
 
     /**
@@ -274,11 +399,13 @@ public class WorkInjuryInvokeOrchestrator {
     /**
      * prepare 阶段加载 HIS 上下文：OP_SETTLE 含 chargeLines，其余 phase 仅登记字段。
      *
-     * @param phase   业务阶段
-     * @param request prepare 请求
+     * @param phase      业务阶段
+     * @param request    prepare 请求
+     * @param contractId 已解析的合同 id（续步可能仅来自会话/锚点）
      * @return 组装 input 用上下文；RECON 等无 encounter 时可为 null
      */
-    private WiSettleContext loadContextForPrepare(WiPhase phase, PrepareWorkInjuryInvokeRequest request) {
+    private WiSettleContext loadContextForPrepare(
+            WiPhase phase, PrepareWorkInjuryInvokeRequest request, Long contractId) {
         WorkInjurySettleContextLoader loader = settleContextOperationsProvider.getIfAvailable();
         if (phase == WiPhase.OP_SETTLE) {
             if (loader == null) {
@@ -286,14 +413,56 @@ public class WorkInjuryInvokeOrchestrator {
             }
             return loader.loadSettleContext(
                     request.getEncounterId(),
-                    request.getContractId(),
+                    contractId,
                     request.getPaymentDraftId(),
                     resolveChargeItemIds(request.getContext()));
         }
         if (loader != null && request.getEncounterId() != null) {
-            return loader.loadRegisterContext(request.getEncounterId(), request.getContractId());
+            return loader.loadRegisterContext(request.getEncounterId(), contractId);
         }
         return null;
+    }
+
+    /** OP_SETTLE chargeLines 条数；非结算 phase 为 0。 */
+    private static int feeLineCount(WiSettleContext ctx) {
+        if (ctx == null || ctx.getChargeLines() == null) {
+            return 0;
+        }
+        return ctx.getChargeLines().size();
+    }
+
+    private static boolean isPlatformRegistered(YbWiEncounterAnchor anchor) {
+        return anchor != null && Boolean.TRUE.equals(anchor.getPlatformRegistered());
+    }
+
+    /**
+     * 2205 整单撤：平台无未结算处方时返回该文案，视为已干净，按成功推进。
+     */
+    private static boolean isIdempotent2205EmptyRevoke(String infno, String errMsg) {
+        if (!WiInfnoConstants.OUTPATIENT_FEE_REVOKE.equals(infno) || !StringUtils.hasText(errMsg)) {
+            return false;
+        }
+        return errMsg.contains("没有需要删除的未结算的处方");
+    }
+
+    /**
+     * 2207：平台已用该单据号结算成功，重提报「已使用」——按成功推进并补落本地回执。
+     */
+    private static boolean isIdempotent2207BillAlreadyUsed(String infno, String errMsg) {
+        if (!WiInfnoConstants.OUTPATIENT_SETTLE.equals(infno) || !StringUtils.hasText(errMsg)) {
+            return false;
+        }
+        return errMsg.contains("单据号") && errMsg.contains("已使用");
+    }
+
+    /**
+     * 2203：平台已有结算信息不可改登记——视为单边信号，补本地后结束链。
+     */
+    private static boolean isIdempotent2203AlreadySettled(String infno, String errMsg) {
+        if (!WiInfnoConstants.OUTPATIENT_VISIT_UPLOAD.equals(infno) || !StringUtils.hasText(errMsg)) {
+            return false;
+        }
+        return errMsg.contains("已存在结算信息");
     }
 
     /**
@@ -365,7 +534,8 @@ public class WorkInjuryInvokeOrchestrator {
             return null;
         }
         return preSettleDomainService.findActiveMdtrtId(session.getEncounterId(), session.getPaymentDraftId())
-                .orElse(null);
+                .orElseThrow(() -> new BusinessException(
+                        WiErrorCodes.INVALID_INVOKE_SESSION, "2207 须先完成 2206 预结算"));
     }
 
     /**
@@ -402,8 +572,16 @@ public class WorkInjuryInvokeOrchestrator {
         }
         if (WiInfnoConstants.QUALIFICATION_QUERY.equals(infno)) {
             Wi9102Output parsed = Wi9102OutputParser.parse(output);
-            if (parsed.getRows() != null && parsed.getRows().size() == 1) {
-                anchorDomainService.bindQualification(anchor, parsed.getRows().get(0).getQualificationId());
+            Wi9102QualificationRow preferred = pickPreferredQualificationRow(parsed);
+            if (preferred != null && StringUtils.hasText(preferred.getQualificationId())) {
+                String approveType = preferred.getApproveType() == null
+                        ? null
+                        : preferred.getApproveType().trim();
+                anchorDomainService.bindQualification(
+                        anchor, preferred.getQualificationId().trim(), approveType);
+            } else {
+                // 无可用类型12：清空旧资格（常为类型10），避免 2201「审批类型与就医类型不符」
+                anchorDomainService.clearQualification(anchor);
             }
             return null;
         }
@@ -433,12 +611,26 @@ public class WorkInjuryInvokeOrchestrator {
         }
         if (WiInfnoConstants.OUTPATIENT_SETTLE.equals(infno)) {
             Wi2207Output parsed = Wi2207OutputParser.parse(output);
+            String mdtrtId = parsed.getMdtrtId();
+            String setlId = parsed.getSetlId();
+            // 平台已结算但本次失败文案为「单据号已使用」：出参空，从预结算快照回填
+            if (!StringUtils.hasText(mdtrtId) || !StringUtils.hasText(setlId)) {
+                String fromPre = preSettleDomainService
+                        .findActiveMdtrtId(session.getEncounterId(), session.getPaymentDraftId())
+                        .orElse(null);
+                if (!StringUtils.hasText(mdtrtId)) {
+                    mdtrtId = fromPre;
+                }
+                if (!StringUtils.hasText(setlId)) {
+                    setlId = StringUtils.hasText(parsed.getSetlId()) ? parsed.getSetlId() : mdtrtId;
+                }
+            }
             YbSettlementRecord record = settlementDomainService.saveConfirmedFrom2207(
                     session.getEncounterId(),
                     session.getContractId(),
                     session.getPaymentDraftId(),
-                    parsed.getSetlId(),
-                    parsed.getMdtrtId(),
+                    setlId,
+                    mdtrtId,
                     null,
                     null,
                     parsed.getMedfeeSumamt(),
@@ -447,7 +639,8 @@ public class WorkInjuryInvokeOrchestrator {
                     JSON.toJSONString(parsed),
                     request.getWinMsgid(),
                     TenantUtils.getCurrentTenantId());
-            anchorDomainService.apply2207SetlId(anchor, parsed.getSetlId());
+            anchorDomainService.apply2207SetlId(anchor, record.getSetlId());
+            anchorDomainService.markActiveFeeUpload(anchor, false);
             preSettleDomainService.markSettled(session.getEncounterId(), session.getPaymentDraftId());
             invokeLogSupport.linkSettlementRecord(
                     invokeLogId,
@@ -462,7 +655,7 @@ public class WorkInjuryInvokeOrchestrator {
                 throw new BusinessException(WiErrorCodes.INVALID_INVOKE_SESSION, "2208 缺少 settlementRecordId");
             }
             YbSettlementRecord revoked = settlementDomainService.markRevoked2208(
-                    record.getId(), TenantUtils.getCurrentTenantId());
+                    record.getId(), TenantUtils.getCurrentTenantId(), invokeLogId);
             anchorDomainService.clearSetlIdAfter2208(anchor);
             if (revoked.getPreSettleId() != null) {
                 preSettleDomainService.markRevokedByPreSettleId(revoked.getPreSettleId());
@@ -537,5 +730,42 @@ public class WorkInjuryInvokeOrchestrator {
             return Long.parseLong(String.valueOf(raw).trim());
         }
         return null;
+    }
+
+    /**
+     * 9102 自动绑定：仅选未过期且审批类型＝院点联网就医类型（12）的行。
+     * <p>类型 10 等虽可能未过期，但院点「医疗类别10暂未开通联网结算」；若强行 med_type=12 又会报
+     * 「审批类型10跟就医类型12不符」。故不回落到非 12 行。</p>
+     *
+     * @param parsed 9102 出参
+     * @return 待绑定行；无可用类型12时 null
+     */
+    private Wi9102QualificationRow pickPreferredQualificationRow(Wi9102Output parsed) {
+        if (parsed == null || parsed.getRows() == null || parsed.getRows().isEmpty()) {
+            return null;
+        }
+        String today = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
+        String settleType = WiPlatformConstants.DEFAULT_MED_TYPE;
+        List<Wi9102QualificationRow> rows = parsed.getRows();
+        Wi9102QualificationRow best = null;
+        String bestEnd = null;
+        for (Wi9102QualificationRow row : rows) {
+            if (row == null || !StringUtils.hasText(row.getQualificationId())) {
+                continue;
+            }
+            String approveType = row.getApproveType() == null ? "" : String.valueOf(row.getApproveType()).trim();
+            if (!settleType.equals(approveType)) {
+                continue;
+            }
+            String end = row.getEndDate() == null ? "" : row.getEndDate().trim();
+            if (StringUtils.hasText(end) && end.compareTo(today) < 0) {
+                continue;
+            }
+            if (best == null || end.compareTo(bestEnd == null ? "" : bestEnd) > 0) {
+                best = row;
+                bestEnd = end;
+            }
+        }
+        return best;
     }
 }

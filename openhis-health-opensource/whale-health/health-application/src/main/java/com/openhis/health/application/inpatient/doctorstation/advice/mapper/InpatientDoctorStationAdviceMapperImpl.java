@@ -215,6 +215,8 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
                 q.setCategoryCode(ServiceApplyFormOrchestrator.resolveApplyFormCategoryCode(request.getCategoryEnum()));
             }
         }
+        // Pre：只看库存>0 下推至药/耗定义分页 Spec（诊疗忽略）
+        q.setPositiveQuantityOnly(request.getPositiveQuantityOnly());
         return q;
     }
 
@@ -255,6 +257,8 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
             DoctorStationAdviceConstants.DEFAULT_MEDICATION_REQUEST_UNIT_CODE_PLACEHOLDER));
         cmd.setMethodCode(line.getMedicationPayload().getMethodCode());
         cmd.setRateCode(line.getMedicationPayload().getRateCode());
+        // 输液滴速：原样透传（可空；与 IF-IP-DOR-10 speedCode 回显对齐）
+        cmd.setSpeedCode(line.getMedicationPayload().getSpeedCode());
         cmd.setGenerateSourceEnum(GenerateSource.DOCTOR_PRESCRIPTION.getCode());
         cmd.setOrgId(orgId);
         cmd.setRecorderId(operatorId);
@@ -315,6 +319,8 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
         cmd.setUnitCode(line.getMedicationPayload().getUnitCode());
         cmd.setMethodCode(line.getMedicationPayload().getMethodCode());
         cmd.setRateCode(line.getMedicationPayload().getRateCode());
+        // 输液滴速：原样透传（可空；空串由域层按「显式传入」清空旧值）
+        cmd.setSpeedCode(line.getMedicationPayload().getSpeedCode());
         cmd.setTherapyEnum(this.resolveTherapyTypeCode(line));
         cmd.setSortNumber(line.getSortNumber());
         cmd.setGroupId(line.getMedicationPayload().getGroupId());

@@ -20,11 +20,13 @@ import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -84,6 +86,38 @@ public class YbSettlementRecordQueryService {
                 continue;
             }
             out.put(row.getId(), row);
+        }
+        return out;
+    }
+
+    /**
+     * 按平台结算号批量装载未删除结算回执（3202 明细结果补姓名/结算时间）。
+     *
+     * @param setlIds  平台 setl_id 集合
+     * @param tenantId 租户 ID
+     * @return setlId → 回执；参数缺失或未命中时空 map
+     */
+    public Map<String, YbSettlementRecord> mapBySetlIds(Collection<String> setlIds, Long tenantId) {
+        if (setlIds == null || setlIds.isEmpty() || tenantId == null) {
+            return Collections.emptyMap();
+        }
+        LinkedHashSet<String> unique = new LinkedHashSet<>();
+        for (String setlId : setlIds) {
+            if (setlId != null && !setlId.isBlank()) {
+                unique.add(setlId.trim());
+            }
+        }
+        if (unique.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<YbSettlementRecord> rows =
+            settlementRecordRepository.findAllBySetlIdInAndTenantIdAndIsDeletedFalse(unique, tenantId);
+        Map<String, YbSettlementRecord> out = new HashMap<>(rows.size() * 2);
+        for (YbSettlementRecord row : rows) {
+            if (row == null || row.getSetlId() == null || row.getSetlId().isBlank()) {
+                continue;
+            }
+            out.putIfAbsent(row.getSetlId().trim(), row);
         }
         return out;
     }
@@ -219,6 +253,53 @@ public class YbSettlementRecordQueryService {
     }
 
     /**
+     * 按医保结算时间查询结算回执（左闭右开；{@code setl_time} 为空回落 {@code created_at}）。
+     * <p>供对账清算：3201/3202 日期口径对齐平台「以结算返回的结算时间为依据」。</p>
+     *
+     * @param tenantId     租户 ID
+     * @param beginAt      起始时间（含）
+     * @param endExclusive 结束时间（不含）
+     * @return 结算回执列表；参数缺失时空列表
+     */
+    public List<YbSettlementRecord> listBySetlTimeBetween(
+            Long tenantId, LocalDateTime beginAt, LocalDateTime endExclusive) {
+        if (tenantId == null || beginAt == null || endExclusive == null) {
+            return Collections.emptyList();
+        }
+        // Pre：有结算时间的按 setl_time 入窗
+        List<YbSettlementRecord> bySetlTime =
+            settlementRecordRepository
+                .findAllByTenantIdAndIsDeletedFalseAndSetlTimeGreaterThanEqualAndSetlTimeLessThan(
+                    tenantId, beginAt, endExclusive);
+        // Pre：缺省结算时间的回落创建时间，避免历史空 setl_time 整日落空
+        List<YbSettlementRecord> byCreatedFallback =
+            settlementRecordRepository
+                .findAllByTenantIdAndIsDeletedFalseAndSetlTimeIsNullAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+                    tenantId, beginAt, endExclusive);
+        List<YbSettlementRecord> mergedList;
+        if (byCreatedFallback.isEmpty()) {
+            mergedList = bySetlTime;
+        } else if (bySetlTime.isEmpty()) {
+            mergedList = byCreatedFallback;
+        } else {
+            // Asm：按主键去重合并
+            Map<Long, YbSettlementRecord> merged = new LinkedHashMap<>();
+            for (YbSettlementRecord row : bySetlTime) {
+                if (row != null && row.getId() != null) {
+                    merged.put(row.getId(), row);
+                }
+            }
+            for (YbSettlementRecord row : byCreatedFallback) {
+                if (row != null && row.getId() != null) {
+                    merged.putIfAbsent(row.getId(), row);
+                }
+            }
+            mergedList = new ArrayList<>(merged.values());
+        }
+        return mergedList;
+    }
+
+    /**
      * 按支付单查询关联的全部结算回执（含混合结算多笔）。
      *
      * @param paymentId 支付单 ID
@@ -231,6 +312,22 @@ public class YbSettlementRecordQueryService {
         }
         return settlementRecordRepository.findAllByPaymentIdAndTenantIdAndIsDeletedFalseOrderByCreatedAtAsc(
             paymentId, tenantId);
+    }
+
+    /**
+     * 按支付单取最早一笔 CONFIRMED 结算回执（博思基金分项 / 票面金额）。
+     *
+     * @param paymentId 支付单 ID
+     * @param tenantId  租户 ID
+     * @return 有效回执；无则 empty
+     */
+    public Optional<YbSettlementRecord> findFirstConfirmedByPaymentId(Long paymentId, Long tenantId) {
+        for (YbSettlementRecord row : this.listByPaymentId(paymentId, tenantId)) {
+            if (row != null && YbSettlementVoucherStatus.CONFIRMED.equals(row.getStatus())) {
+                return Optional.of(row);
+            }
+        }
+        return Optional.empty();
     }
 
     /**
@@ -281,6 +378,76 @@ public class YbSettlementRecordQueryService {
             if (isNotEmpty(insutype)) {
                 out.put(row.getPaymentId(), insutype.trim());
             }
+        }
+        return out;
+    }
+
+    /**
+     * 批量解析结算回执「零售−上传」分差（收费日结勾稽）。
+     *
+     * @param ids      结算回执主键集合
+     * @param tenantId 租户 ID
+     * @return id → retail_upload_diff_amt；未命中或不含分差字段不入表
+     */
+    public Map<Long, BigDecimal> mapRetailUploadDiffByIds(Collection<Long> ids, Long tenantId) {
+        if (ids == null || ids.isEmpty() || tenantId == null) {
+            return Collections.emptyMap();
+        }
+        LinkedHashSet<Long> unique = new LinkedHashSet<>();
+        for (Long id : ids) {
+            if (id != null) {
+                unique.add(id);
+            }
+        }
+        if (unique.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<YbSettlementRecord> rows =
+            settlementRecordRepository.findAllByIdInAndTenantIdAndIsDeletedFalse(unique, tenantId);
+        Map<Long, BigDecimal> out = new HashMap<>(rows.size() * 2);
+        for (YbSettlementRecord row : rows) {
+            if (row == null || row.getId() == null || row.getRetailUploadDiffAmt() == null) {
+                continue;
+            }
+            out.put(row.getId(), row.getRetailUploadDiffAmt());
+        }
+        return out;
+    }
+
+    /**
+     * 按支付单批量解析「零售−上传」分差（桥表缺 settlement_record_id 时日结回落）。
+     *
+     * <p>每个 payment 对其回执分差做代数和（与桥表多回执口径一致，**BR-OP-DCL-028**）。</p>
+     *
+     * @param paymentIds 支付单主键集合
+     * @param tenantId   租户 ID
+     * @return paymentId → retail_upload_diff_amt 代数和
+     */
+    public Map<Long, BigDecimal> mapRetailUploadDiffByPaymentIds(Collection<Long> paymentIds, Long tenantId) {
+        if (paymentIds == null || paymentIds.isEmpty() || tenantId == null) {
+            return Collections.emptyMap();
+        }
+        LinkedHashSet<Long> unique = new LinkedHashSet<>();
+        for (Long paymentId : paymentIds) {
+            if (paymentId != null) {
+                unique.add(paymentId);
+            }
+        }
+        if (unique.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<YbSettlementRecord> rows =
+            settlementRecordRepository.findAllByPaymentIdInAndTenantIdAndIsDeletedFalseOrderByCreatedAtAsc(
+                unique, tenantId);
+        if (rows == null || rows.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, BigDecimal> out = new HashMap<>();
+        for (YbSettlementRecord row : rows) {
+            if (row == null || row.getPaymentId() == null || row.getRetailUploadDiffAmt() == null) {
+                continue;
+            }
+            out.merge(row.getPaymentId(), row.getRetailUploadDiffAmt(), BigDecimal::add);
         }
         return out;
     }

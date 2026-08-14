@@ -136,6 +136,9 @@ COMMENT ON COLUMN fin_payment_rec_detail.before_balance IS 'before余额';
 COMMENT ON COLUMN fin_payment_rec_detail.after_balance IS 'after余额';
 COMMENT ON COLUMN fin_payment_rec_detail.result_enum IS 'result枚举值';
 
+CREATE INDEX IF NOT EXISTS idx_fin_payment_rec_detail_reconciliation_id
+    ON fin_payment_rec_detail (reconciliation_id);
+
 -- from V44__fin_payment_rec_static.sql
 -- fin_payment_rec_static（建表）
 -- Flyway V51
@@ -176,6 +179,10 @@ COMMENT ON COLUMN fin_payment_rec_static.type_code IS '类型编码';
 COMMENT ON COLUMN fin_payment_rec_static.type_name IS '类型名称';
 COMMENT ON COLUMN fin_payment_rec_static.amount IS '金额';
 COMMENT ON COLUMN fin_payment_rec_static.charge_item_ids IS '收费项ids';
+
+CREATE INDEX IF NOT EXISTS idx_fin_payment_rec_static_reconciliation_id
+    ON fin_payment_rec_static (reconciliation_id)
+    WHERE is_deleted = FALSE;
 
 -- from V45__fin_payment_reconciliation.sql
 -- fin_payment_reconciliation（建表）
@@ -222,6 +229,11 @@ CREATE TABLE IF NOT EXISTS "public"."fin_payment_reconciliation" (
 CREATE INDEX IF NOT EXISTS idx_fin_payment_cashier_settlement
     ON fin_payment_reconciliation (enterer_id, bill_date, cashier_settlement_id)
     WHERE is_deleted = FALSE;
+
+-- 日结/交账挂载现算读侧：按 cashier_settlement_id 反查 payment
+CREATE INDEX IF NOT EXISTS idx_fin_payment_reconciliation_cashier_settlement_id
+    ON fin_payment_reconciliation (cashier_settlement_id)
+    WHERE is_deleted = FALSE AND cashier_settlement_id IS NOT NULL;
 COMMENT ON TABLE fin_payment_reconciliation IS '财务 payment reconciliation';
 COMMENT ON COLUMN fin_payment_reconciliation.id IS '主键';
 COMMENT ON COLUMN fin_payment_reconciliation.tenant_id IS '租户标识';

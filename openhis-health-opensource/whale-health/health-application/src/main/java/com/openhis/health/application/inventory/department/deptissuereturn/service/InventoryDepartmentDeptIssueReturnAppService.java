@@ -50,7 +50,7 @@ import com.openhis.health.domain.workflow.supplyrequest.queries.VerifyAbleEditQu
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestValidationModel;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestDomainService;
-import com.openhis.health.application.inventory.support.SupplyRequestPricedWriteOrchestrator;
+import com.openhis.health.application.shared.supplyrequest.SupplyRequestPricedWriteOrchestrator;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQueryService;
 import com.openhis.health.infrastructure.integration.insurance.inventory.InventoryThirdPartyUploadExtension;
 import com.openhis.health.infrastructure.integration.insurance.inventory.ExtensionIn.InventoryUploadAfterDeptIssueReturnExtensionIn;
@@ -610,6 +610,7 @@ public class InventoryDepartmentDeptIssueReturnAppService {
                 line, ErrorCodeConstants.DEP_TL_104, "供应请求行 item_quantity 须为拆零正数量");
             String resolvedLot = this.resolveLotNumberForInventory(line.getLotNumber());
             InventoryMatchKey matchKey = new InventoryMatchKey();
+            matchKey.setSupplierId(line.getSupplierId());
             matchKey.setLotNumber(resolvedLot);
             matchKey.setLocationId(purposeLocationId);
             matchKey.setItemTable(line.getItemTable());

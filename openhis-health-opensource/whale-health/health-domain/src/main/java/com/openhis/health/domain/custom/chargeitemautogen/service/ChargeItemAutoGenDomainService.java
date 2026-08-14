@@ -9,12 +9,14 @@ import com.openhis.health.domain.custom.chargeitemautogen.command.*;
 import com.openhis.health.domain.custom.chargeitemautogen.entity.ChargeItemAutoGen;
 import com.openhis.health.domain.custom.chargeitemautogen.repository.ChargeItemAutoGenRepository;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.events.custom.chargeitemautogen.ChargeItemAutoGenEditedEvent;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.LocalTime;
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -62,6 +64,18 @@ public class ChargeItemAutoGenDomainService {
             rule.setPriority(command.getPriority());
         }
         rule.setRemark(command.getRemark());
+        // 业务时刻未传时默认日末，与历史硬编码口径一致。
+        LocalTime businessTime = command.getBusinessTime();
+        if (businessTime == null) {
+            businessTime = InpatientNurseStationConstants.DAY_END_CLOCK;
+        }
+        rule.setBusinessTime(businessTime);
+        // 计费人未传时回落操作人，保证新建行可断言非空。
+        Long billingPractitionerId = command.getBillingPractitionerId();
+        if (billingPractitionerId == null) {
+            billingPractitionerId = command.getOperatorId();
+        }
+        rule.setBillingPractitionerId(billingPractitionerId);
 
         // 状态未传时默认 ACTIVE（DM §6.1.1 缺省约定）。
         if (command.getStatusEnum() == null) {
@@ -143,6 +157,22 @@ public class ChargeItemAutoGenDomainService {
         // 命令传入备注时覆盖规则说明。
         if (command.getRemark() != null) {
             rule.setRemark(command.getRemark());
+        }
+        // 命令传入业务时刻时覆盖滚费落账时钟。
+        if (command.getBusinessTime() != null) {
+            rule.setBusinessTime(command.getBusinessTime());
+        }
+        // 命令传入计费人时覆盖滚费操作人锚点。
+        if (command.getBillingPractitionerId() != null) {
+            rule.setBillingPractitionerId(command.getBillingPractitionerId());
+        }
+        // 存量无业务时刻时补日末，避免更新断言失败。
+        if (rule.getBusinessTime() == null) {
+            rule.setBusinessTime(InpatientNurseStationConstants.DAY_END_CLOCK);
+        }
+        // 存量无计费人时回落本次操作人。
+        if (rule.getBillingPractitionerId() == null) {
+            rule.setBillingPractitionerId(command.getOperatorId());
         }
 
         rule.assertRequiredFields();

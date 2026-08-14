@@ -14,6 +14,7 @@ import com.openhis.health.domain.share.utils.EncounterDiagnosisIdsPredicates;
 import com.openhis.health.domain.workflow.servicerequest.entity.ServiceRequest;
 import com.openhis.health.domain.workflow.servicerequest.entity.ServiceRequestDetail;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.InpatientAutoRollNursingLevelQueryModel;
+import com.openhis.health.domain.workflow.servicerequest.queries.model.NursingLevelOrderLineQueryModel;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.OffsetVerificationModel;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestHistoryModel;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
@@ -694,8 +695,9 @@ public class ServiceRequestQueryService {
     /**
      * 解析 billDate 当日最后有效校对护理级别（AS-IP-NUR-013 BR-IP-ARG-009；DM-WKF-004 §6.2.25）。
      *
-     * <p>口径：医生开立 + category {@code 26}；须已校对（{@code check_time} 非空）；停嘱后 {@code stop_time}
-     * 早于 billDate 自然日则不再参与；同日内换级取 {@code check_time} 最大者。</p>
+     * <p>口径：医生开立 + category {@code 26}；仅 {@code VERIFIED}（已校对未停嘱）参与滚费，与自动计费配置
+     * {@code ACTIVE} 同构——{@code STOPPED} 一经停嘱即退出滚费池；须另开新护理级别或办出院。
+     * 校对日晚于 billDate 的行在 billDate 尚未生效；同日换级取 {@code check_time} 最大的 {@code VERIFIED}。</p>
      *
      * @param encounterId 就诊主键
      * @param billDate    滚费业务日（前一日自然日）
@@ -715,35 +717,27 @@ public class ServiceRequestQueryService {
                 ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
                 "解析滚费护理级别时 billDate 不能为空");
         }
+        // Pre：仅 VERIFIED——STOPPED 与配置 INACTIVE 同义，永不参与滚费
         Specification<ServiceRequest> specification = (root, criteriaQuery, cb) -> cb.and(
             cb.isFalse(root.get(FieldNameConstants.IS_DELETED)),
             cb.equal(root.get(FieldNameConstants.ENCOUNTER_ID), encounterId),
             cb.equal(root.get(FieldNameConstants.CATEGORY_ENUM), ServiceRequestCategoryConstants.SERVICE_CATEGORY_NURSING),
             cb.equal(root.get(FieldNameConstants.GENERATE_SOURCE_ENUM), GenerateSource.DOCTOR_PRESCRIPTION.getCode()),
-            root.get(FieldNameConstants.STATUS_ENUM).in(
-                RequestStatus.VERIFIED.getCode(),
-                RequestStatus.STOPPED.getCode()));
+            cb.equal(root.get(FieldNameConstants.STATUS_ENUM), RequestStatus.VERIFIED.getCode()));
         List<ServiceRequest> rows = serviceRequestRepository.findAll(specification);
         if (rows.isEmpty()) {
             return Optional.empty();
         }
-        // Loop：在 billDate 自然日口径下筛选有效护理级别，取 check_time 最大者（换级 stop-old-start-new）。
+        // Loop：billDate 已生效的 VERIFIED 中取 check_time 最大者（换级 stop-old-start-new）
         ServiceRequest best = null;
         for (ServiceRequest row : rows) {
             if (row == null || row.getCheckTime() == null) {
                 continue;
             }
             LocalDate verifiedDate = row.getCheckTime().toLocalDate();
-            // 校对日晚于 billDate 的医嘱在 billDate 尚未生效。
+            // 校对日晚于 billDate：该级别在 billDate 尚未校对生效
             if (verifiedDate.isAfter(billDate)) {
                 continue;
-            }
-            // 停嘱止算：stop_time 自然日早于 billDate 则 billDate 不再计费。
-            if (RequestStatus.STOPPED.getCode().equals(row.getStatusEnum())) {
-                LocalDateTime endTime = row.getStopTime();
-                if (endTime != null && endTime.toLocalDate().isBefore(billDate)) {
-                    continue;
-                }
             }
             if (best == null) {
                 best = row;
@@ -756,15 +750,7 @@ public class ServiceRequestQueryService {
         if (best == null) {
             return Optional.empty();
         }
-        InpatientAutoRollNursingLevelQueryModel model = new InpatientAutoRollNursingLevelQueryModel();
-        model.setServiceRequestId(best.getId());
-        model.setActivityId(best.getActivityId());
-        model.setQuantity(best.getQuantity());
-        model.setUnitCode(best.getUnitCode());
-        model.setRequesterId(best.getRequesterId());
-        model.setCheckTime(best.getCheckTime());
-        model.setStatusEnum(best.getStatusEnum());
-        return Optional.of(model);
+        return Optional.of(this.toNursingLevelQueryModel(best));
     }
 
     /**
@@ -807,10 +793,55 @@ public class ServiceRequestQueryService {
     }
 
     /**
+     * 病案首页护理天数：列出就诊下医生开立的护理级别医嘱行（已校对或已停嘱，含时间窗）。
+     *
+     * <p>仅本聚合 {@link ServiceRequestRepository}；级别名称由调用方经 ActivityDefinition 解析。</p>
+     *
+     * @param encounterId 就诊主键
+     * @return 护理级别医嘱行；无数据时 empty
+     */
+    public List<NursingLevelOrderLineQueryModel> listNursingLevelOrderLinesForCaseRecord(Long encounterId) {
+        if (encounterId == null) {
+            return Collections.emptyList();
+        }
+        List<ServiceRequest> rows = serviceRequestRepository.findByEncounterIdAndCategoryEnumIn(
+            encounterId, List.of(ServiceRequestCategoryConstants.SERVICE_CATEGORY_NURSING));
+        List<NursingLevelOrderLineQueryModel> result = new ArrayList<>();
+        for (ServiceRequest row : rows) {
+            if (row == null || Boolean.TRUE.equals(row.getIsDeleted())) {
+                continue;
+            }
+            // 仅医生开立护理级别
+            if (!GenerateSource.DOCTOR_PRESCRIPTION.getCode().equals(row.getGenerateSourceEnum())) {
+                continue;
+            }
+            String status = row.getStatusEnum();
+            // 未校对草稿不计入天数；已校对或已停嘱参与累计
+            boolean verified = RequestStatus.VERIFIED.getCode().equals(status);
+            boolean stopped = RequestStatus.STOPPED.getCode().equals(status);
+            if (!verified && !stopped) {
+                continue;
+            }
+            // 无校对时间无法定生效日起点
+            if (row.getCheckTime() == null) {
+                continue;
+            }
+            NursingLevelOrderLineQueryModel line = new NursingLevelOrderLineQueryModel();
+            line.setServiceRequestId(row.getId());
+            line.setActivityId(row.getActivityId());
+            line.setStatusEnum(status);
+            line.setCheckTime(row.getCheckTime());
+            line.setStopTime(row.getStopTime());
+            result.add(line);
+        }
+        return result;
+    }
+
+    /**
      * 批量解析患者队列展示用当前护理级别（AS-IP-NUR-001 IF-IP-NUR-02 / AS-IP-DOR-001 IF-IP-DOR-01）。
      *
-     * <p>口径：仅展示护士校对后生效的护理级别，与 {@link #findLastEffectiveNursingLevelForAutoRoll} 一致；
-     * {@code referenceDate} 当日最后有效校对护理级别；未校对 {@code DRAFT}/{@code ACTIVE} 不参与展示。</p>
+     * <p>口径：仅展示仍为 {@code VERIFIED} 的校对护理级别（与滚费 {@link #findLastEffectiveNursingLevelForAutoRoll} 同构；
+     * {@code STOPPED} 不展示为当前级别）；{@code referenceDate} 当日最后校对生效者；未校对 {@code DRAFT}/{@code ACTIVE} 不参与。</p>
      *
      * @param encounterIds  就诊主键集合
      * @param referenceDate 展示参考自然日；null 时按调用方约定（App 层通常传当日）
@@ -836,14 +867,13 @@ public class ServiceRequestQueryService {
         if (billDate == null) {
             billDate = LocalDate.now();
         }
+        // Pre：队列当前级别仅 VERIFIED；STOPPED 已退出护理滚费池，不展示为当前级别
         Specification<ServiceRequest> specification = (root, criteriaQuery, cb) -> cb.and(
             cb.isFalse(root.get(FieldNameConstants.IS_DELETED)),
             root.get(FieldNameConstants.ENCOUNTER_ID).in(encounterIdList),
             cb.equal(root.get(FieldNameConstants.CATEGORY_ENUM), ServiceRequestCategoryConstants.SERVICE_CATEGORY_NURSING),
             cb.equal(root.get(FieldNameConstants.GENERATE_SOURCE_ENUM), GenerateSource.DOCTOR_PRESCRIPTION.getCode()),
-            root.get(FieldNameConstants.STATUS_ENUM).in(
-                RequestStatus.VERIFIED.getCode(),
-                RequestStatus.STOPPED.getCode()));
+            cb.equal(root.get(FieldNameConstants.STATUS_ENUM), RequestStatus.VERIFIED.getCode()));
         List<ServiceRequest> rows = serviceRequestRepository.findAll(specification);
         if (rows.isEmpty()) {
             return result;
@@ -1214,6 +1244,8 @@ public class ServiceRequestQueryService {
         model.setOccurrenceEndTime(request.getOccurrenceEndTime());
         model.setStopTime(request.getStopTime());
         model.setStopperId(request.getStopperId());
+        model.setStopPerformerCheckId(request.getStopPerformerCheckId());
+        model.setStopCheckTime(request.getStopCheckTime());
         model.setEncounterDiagnosisIds(request.getEncounterDiagnosisIds());
         model.setPrescriptionNo(request.getPrescriptionNo());
         return model;
@@ -1241,9 +1273,9 @@ public class ServiceRequestQueryService {
     }
 
     /**
-     * 单就诊护理级别候选中解析患者队列展示口径（仅已校对生效态）。
+     * 单就诊护理级别候选中解析患者队列展示口径（仅 {@code VERIFIED}）。
      *
-     * @param rows          同就诊护理级别医嘱候选（须已校对 {@code VERIFIED}/{@code STOPPED}）
+     * @param rows          同就诊护理级别医嘱候选（调用方已收窄为 {@code VERIFIED}）
      * @param referenceDate 展示参考自然日
      * @return 读模型；无有效校对护理级别时 null
      */
@@ -1258,20 +1290,14 @@ public class ServiceRequestQueryService {
             if (row == null || row.getCheckTime() == null) {
                 continue;
             }
-            if (!RequestStatus.VERIFIED.getCode().equals(row.getStatusEnum())
-                && !RequestStatus.STOPPED.getCode().equals(row.getStatusEnum())) {
+            // 防御：非 VERIFIED 不展示为当前级别（STOPPED 已退出滚费池）
+            if (!RequestStatus.VERIFIED.getCode().equals(row.getStatusEnum())) {
                 continue;
             }
             LocalDate verifiedDate = row.getCheckTime().toLocalDate();
             // 校对日晚于参考日则参考日尚未生效
             if (verifiedDate.isAfter(referenceDate)) {
                 continue;
-            }
-            if (RequestStatus.STOPPED.getCode().equals(row.getStatusEnum())) {
-                LocalDateTime endTime = row.getStopTime();
-                if (endTime != null && endTime.toLocalDate().isBefore(referenceDate)) {
-                    continue;
-                }
             }
             if (verifiedBest == null) {
                 verifiedBest = row;

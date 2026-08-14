@@ -4,40 +4,77 @@
  */
 package com.openhis.health.application.inventory.pharmacy.returntowarehouse.dto;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogUnitBandDto;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
+import lombok.experimental.Accessors;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.List;
 
 /**
- * 产品定义选品行（本场景已废弃自由选品，仅保留历史接口兼容）。
+ * 药房退库选品分页行（源药房库存批号级展开，IF-PHA-RTW-11）。
  */
 @Getter
 @Setter
+@Accessors(chain = true)
+@Schema(description = "药房退库选品分页行")
 public class ProductDefinitionItemDto {
 
-    /** 产品定义主键。 */
-    private Long productDefinitionId;
-    /** 产品定义来源表名。 */
+    /** 物品来源物理表名。 */
+    @Schema(description = "物品来源物理表名")
     private String productTableName;
-    /** 产品展示名称。 */
+
+    /** 产品定义主键。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "产品定义主键")
+    private Long productDefinitionId;
+
+    /** 目录业务编号 productBusNo。 */
+    @Schema(description = "目录业务编号 productBusNo")
+    private String productBusNo;
+
+    /** 物品名称。 */
+    @Schema(description = "物品名称")
     private String productName;
-    /** 商品名/通用名展示。 */
-    private String merchandiseName;
-    /** 采购/包装单位编码。 */
-    private String unitCode;
-    /** 拆零/最小单位编码。 */
-    private String minUnitCode;
-    /** 品类编码。 */
-    private String categoryCode;
-    /** 销售单价（当前价读路径）。 */
-    private BigDecimal price;
-    /** 采购单价（当前价读路径）。 */
-    private BigDecimal purchasePrice;
-    /** 生产厂家。 */
+
+    /** 规格。 */
+    @Schema(description = "规格")
+    private String specification;
+
+    /** 厂家合一。 */
+    @Schema(description = "厂家合一")
     private String manufacturer;
-    /** 拼音检索码。 */
-    private String pyStr;
-    /** 五笔检索码。 */
-    private String wbStr;
+
+    /** 批号。 */
+    @Schema(description = "批号")
+    private String lotNumber;
+
+    /** 效期。 */
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
+    @Schema(description = "效期")
+    private LocalDateTime expirationDate;
+
+    /** 源药房可用量。 */
+    @Schema(description = "源药房可用量")
+    private BigDecimal availableQuantity;
+
+    /** 单位四槽。 */
+    @Schema(description = "单位四槽")
+    private List<ProductDefinitionCatalogUnitBandDto> unitBands;
+
+    /** 批号维进价展示（LOT_NUMBER_COST，随 lotNumber）。 */
+    @Schema(description = "批号维进价展示（LOT_NUMBER_COST，随 lotNumber）")
+    private BigDecimal purchaseUnitPrice;
+
+    /** 库存行主键。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "库存行主键")
+    private Long inventoryItemId;
 }

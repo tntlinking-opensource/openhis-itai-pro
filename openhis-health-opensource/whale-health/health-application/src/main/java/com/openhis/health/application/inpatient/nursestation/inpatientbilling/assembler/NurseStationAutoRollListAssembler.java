@@ -40,20 +40,26 @@ public class NurseStationAutoRollListAssembler {
     /**
      * 装配配置列表行（含 INACTIVE；展示名来自批量预取的 activity/定价 Map）。
      *
-     * @param rules           规则读模型
-     * @param activityById    床位服务定义
-     * @param definitionById  定价定义
-     * @param organizationId  机构主键（定价择优上下文；可为 null）
+     * @param rules                         规则读模型
+     * @param activityById                  床位服务定义
+     * @param definitionById                定价定义
+     * @param organizationId                机构主键（定价择优上下文；可为 null）
+     * @param billingPractitionerNameById   计费人姓名（可空 Map）
      * @return 列表 DTO
      */
     public List<NurseStationAutoRollConfigRowDto> assembleConfigRows(
         List<ChargeItemAutoGenRuleQueryModel> rules,
         Map<Long, ActivityDefinition> activityById,
         Map<Long, ChargeItemDefinition> definitionById,
-        Long organizationId) {
+        Long organizationId,
+        Map<Long, String> billingPractitionerNameById) {
         List<NurseStationAutoRollConfigRowDto> rows = new ArrayList<>();
         if (rules == null || rules.isEmpty()) {
             return rows;
+        }
+        Map<Long, String> nameById = billingPractitionerNameById;
+        if (nameById == null) {
+            nameById = Map.of();
         }
         for (ChargeItemAutoGenRuleQueryModel rule : rules) {
             if (rule == null) {
@@ -71,6 +77,11 @@ public class NurseStationAutoRollListAssembler {
             dto.setPerformingOrgId(rule.getPerformingOrgId());
             dto.setPriority(rule.getPriority());
             dto.setRemark(rule.getRemark());
+            dto.setBusinessTime(rule.getBusinessTime());
+            dto.setBillingPractitionerId(rule.getBillingPractitionerId());
+            if (rule.getBillingPractitionerId() != null) {
+                dto.setBillingPractitionerName(nameById.get(rule.getBillingPractitionerId()));
+            }
             dto.setChargeDefinitionId(rule.getChargeDefinitionId());
             // Pre：展示名来自批量 Map，避免列表 N+1
             ActivityDefinition activity = activityById.get(rule.getTriggerSourceId());

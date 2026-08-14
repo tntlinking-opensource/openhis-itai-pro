@@ -29,4 +29,10 @@ public interface WhalePlatformRoleCodeConstants {
 
     /** 财务审批：财务审批族供应单（进货/退供应商/损益/盘点）与调价单的审批/驳回岗位。 */
     String ROLE_FINANCE_APPROVER = "ROLE_FINANCE_APPROVER";
+
+    /**
+     * 病案管理员：病案管理全菜单；门诊/住院「归档病例 / 解档病例」权限。
+     * <p>与病案主档归档（质控/上传）区分：本角色操作的是临床病例文书锁定。</p>
+     */
+    String ROLE_MRMS_ADMIN = "ROLE_MRMS_ADMIN";
 }

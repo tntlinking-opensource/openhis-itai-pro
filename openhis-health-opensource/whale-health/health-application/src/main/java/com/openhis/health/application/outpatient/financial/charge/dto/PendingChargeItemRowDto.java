@@ -74,12 +74,12 @@ public class PendingChargeItemRowDto {
     @Schema(description = "总价")
     private BigDecimal totalPrice;
 
-    /** 收款人系统用户主键。 */
-    @Schema(description = "收款人系统用户主键（仅 adm_charge_item.performer_id，不做 updated_by 回落）")
+    /** 收费人医务人员主键（adm_charge_item.enterer_id，BR-OPC-016）。 */
+    @Schema(description = "收费人医务人员主键（仅 adm_charge_item.enterer_id，不做 updated_by 回落）")
     private Long cashierUserId;
 
-    /** 收款人姓名。 */
-    @Schema(description = "收款人姓名（能关联到医务人员主档时解析，否则为空）")
+    /** 收费人姓名。 */
+    @Schema(description = "收费人姓名（能关联到医务人员主档时解析，否则为空）")
     private String cashierName;
 
     /** 折扣率展示文本。 */
@@ -109,9 +109,19 @@ public class PendingChargeItemRowDto {
     @Schema(description = "费用性质展示（与 contractName 同源，供 IF-OPC-03 前端列 feeNatureDisplay）")
     private String feeNatureDisplay;
 
-    /** 医疗类别/医保诊疗类别 code。 */
-    @Schema(description = "医疗类别/医保诊疗类别（adm_encounter_diagnosis.med_type，按收费行 encounter_diagnosis_ids ids 串首位解析）")
+    /**
+     * 就诊类型 code（医保医疗类别 {@code YbMedType}）。
+     * <p>取值自 {@code adm_encounter_diagnosis.med_type}，按收费行 {@code encounter_diagnosis_ids} ids 串首位 id 解析。</p>
+     */
+    @Schema(description = "就诊类型 code（YbMedType；adm_encounter_diagnosis.med_type，按收费行 encounter_diagnosis_ids ids 串首位解析）")
     private String medTypeCode;
+
+    /**
+     * 就诊类型展示文案（{@code YbMedType#getDisplay()}）。
+     * <p>供 IF-OPC-03 前端收费项目列表「就诊类型」列；未知码时为空，前端可回落 {@link #medTypeCode}。</p>
+     */
+    @Schema(description = "就诊类型展示（YbMedType 文案，供前端列 medTypeDisplay）")
+    private String medTypeDisplay;
 
     /** 绑定就诊诊断主键有序串（列 encounter_diagnosis_ids；有序，首位为主诊断）。 */
     @Schema(description = "绑定就诊诊断主键有序串（encounter_diagnosis_ids）")

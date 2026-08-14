@@ -15,12 +15,16 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import java.time.LocalTime;
 
 /**
  * 收费明细自动生成规则聚合根。
  *
  * <p>该聚合为单表配置型数据，仅维护「触发来源 → 目标定价」映射与启停状态；
  * 不创建收费明细事实，不参与计费金额计算。</p>
+ *
+ * <p>住院滚费（床位/可日结配置）：{@code businessTime} 为 billDate 当日落账时刻，
+ * {@code billingPractitionerId} 为计费人；护理级别滚费不读本表。</p>
  */
 @Getter
 @Setter
@@ -89,6 +93,18 @@ public class ChargeItemAutoGen extends BaseAuditedEntity {
     private String remark;
 
     /**
+     * 滚费业务时刻（billDate 当日；默认 23:59:59）。
+     */
+    @Column(name = "business_time", nullable = false)
+    private LocalTime businessTime;
+
+    /**
+     * 滚费计费人（{@code adm_practitioner.id}；落 Charge.performer_id）。
+     */
+    @Column(name = "billing_practitioner_id")
+    private Long billingPractitionerId;
+
+    /**
      * 初始化为启用态（active）。
      */
     public void initActiveStatus() {
@@ -128,6 +144,12 @@ public class ChargeItemAutoGen extends BaseAuditedEntity {
         }
         if (this.priority < 0) {
             throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_AUTO_GEN_INVALID_ARGUMENT, "优先级必须为非负整数");
+        }
+        if (this.businessTime == null) {
+            throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_AUTO_GEN_INVALID_ARGUMENT, "业务时间不能为空");
+        }
+        if (this.billingPractitionerId == null) {
+            throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_AUTO_GEN_INVALID_ARGUMENT, "计费人不能为空");
         }
     }
 

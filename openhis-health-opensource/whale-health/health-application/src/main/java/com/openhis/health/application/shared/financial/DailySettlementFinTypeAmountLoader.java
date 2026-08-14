@@ -82,9 +82,13 @@ public class DailySettlementFinTypeAmountLoader {
     /**
      * 批量解析收费明细 fin_type_code（结算写快照、费用明细细分类口径一致）。
      *
-     * @param chargeItems 收费明细列表；空时返回空 Map
+     * <p>分类仅锚 {@code definition_id} 历史定价行 {@code type_code}（挂号/号源强制诊察费）；
+     * <strong>不</strong>依赖 {@code unit_price}/{@code total_price}。费用明细硬筛轻量投影
+     * （未选单价）与完整实体均可调用；缺 {@code definition_id} 或锚点无法解析时整批失败。</p>
+     *
+     * @param chargeItems 收费明细列表（实体或仅填 id/definitionId/挂号识别字段的 stub）；空时返回空 Map
      * @return chargeItemId → fin_type_code
-     * @throws BusinessException 任一条 charge_item 单价/总额或 definition_id 缺失，或定价锚点无法解析 fin_type
+     * @throws BusinessException 任一条缺 definition_id，或定价锚点无法解析 fin_type
      */
     public Map<Long, String> mapFinTypeCodeByChargeItemId(List<ChargeItem> chargeItems) {
         Map<Long, String> finTypeByChargeItemId = new LinkedHashMap<>();
@@ -104,7 +108,8 @@ public class DailySettlementFinTypeAmountLoader {
             if (chargeItem == null || chargeItem.getId() == null) {
                 continue;
             }
-            this.requirePersistedChargeItemPriceAndDefinitionId(chargeItem);
+            // Gate：fin_type 只认定价锚点；禁止因投影未选单价误报「脏数据」
+            this.requireDefinitionIdForFinType(chargeItem);
             String finTypeCode = this.resolveFinTypeCode(chargeItem, definitionById);
             finTypeByChargeItemId.put(chargeItem.getId(), finTypeCode);
         }
@@ -147,33 +152,26 @@ public class DailySettlementFinTypeAmountLoader {
     }
 
     /**
-     * 校验 charge_item 已落库单价、总额与定价锚点；缺失时拒绝汇总。
+     * 校验收费行具备 fin_type 解析所需定价锚点；缺失时拒绝汇总。
      *
-     * @param chargeItem 待汇总收费明细
-     * @throws BusinessException 单价/总额或 definition_id 为空
+     * <p>单价/总额属金额展示与落库完整性范畴，由创建路径与金额 IF 保证；本方法不校验，
+     * 以免费用明细硬筛 stub（Criteria 未选 {@code unit_price}）被误判为脏数据。</p>
+     *
+     * @param chargeItem 待解析收费明细（实体或 stub）
+     * @throws BusinessException definition_id 为空
      */
-    private void requirePersistedChargeItemPriceAndDefinitionId(ChargeItem chargeItem) {
+    private void requireDefinitionIdForFinType(ChargeItem chargeItem) {
         if (chargeItem.getDefinitionId() == null) {
             throw new BusinessException(
                 ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT,
                 "收费明细缺少定价锚点 definition_id，无法汇总财务类型，chargeItemId=" + chargeItem.getId());
-        }
-        if (chargeItem.getUnitPrice() == null) {
-            throw new BusinessException(
-                ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT,
-                "收费明细单价为空，无法汇总财务类型，chargeItemId=" + chargeItem.getId());
-        }
-        if (chargeItem.getTotalPrice() == null) {
-            throw new BusinessException(
-                ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT,
-                "收费明细总额为空，无法汇总财务类型，chargeItemId=" + chargeItem.getId());
         }
     }
 
     /**
      * 解析单条收费明细 fin_type：仅锚 charge_item.definition_id 对应历史定价行 type_code。
      *
-     * @param chargeItem     收费明细（调用方已校验单价/总额/definition_id）
+     * @param chargeItem     收费明细（调用方已校验 definition_id；挂号识别可依赖 generateSource/serviceTable）
      * @param definitionById definitionId → 定价行
      * @return fin_type_code
      * @throws BusinessException 定价锚点缺失或 type_code 无法解析

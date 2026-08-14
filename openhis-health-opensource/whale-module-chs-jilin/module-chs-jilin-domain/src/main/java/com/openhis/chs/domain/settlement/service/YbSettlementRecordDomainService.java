@@ -105,6 +105,31 @@ public class YbSettlementRecordDomainService {
     }
 
     /**
+     * 将 CONFIRMED 回执改挂到新的支付草稿（银联补收收口，不改平台结算态）。
+     *
+     * @param settlementRecordId 结算回执主键
+     * @param newPaymentId       新支付草稿主键
+     * @param tenantId           租户 ID
+     * @return true=已改挂；false=未命中或非 CONFIRMED
+     */
+    public boolean rebindPaymentId(Long settlementRecordId, Long newPaymentId, Long tenantId) {
+        if (settlementRecordId == null || newPaymentId == null || tenantId == null) {
+            return false;
+        }
+        YbSettlementRecord row = this.findByIdAndTenant(settlementRecordId, tenantId).orElse(null);
+        if (row == null) {
+            return false;
+        }
+        if (!YbSettlementVoucherStatus.CONFIRMED.equals(row.getStatus())) {
+            return false;
+        }
+        row.setPaymentId(newPaymentId);
+        row.setUpdatedAt(LocalDateTime.now());
+        settlementRecordRepository.save(row);
+        return true;
+    }
+
+    /**
      * 按主键与租户查询未删除结算回执。
      *
      * @param id       结算回执主键

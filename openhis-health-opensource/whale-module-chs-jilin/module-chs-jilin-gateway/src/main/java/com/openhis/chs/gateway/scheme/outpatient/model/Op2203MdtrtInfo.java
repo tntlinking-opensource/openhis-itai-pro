@@ -26,4 +26,12 @@ public class Op2203MdtrtInfo {
 
     @JSONField(name = "main_cond_dscr")
     private String mainCondDscr;
+
+    /** 病种编码（慢特病等按 opsp_dise_cod 上送；普门可空）。 */
+    @JSONField(name = "dise_codg")
+    private String diseCodg;
+
+    /** 病种名称（与 dise_codg 成对；普门可空）。 */
+    @JSONField(name = "dise_name")
+    private String diseName;
 }

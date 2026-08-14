@@ -30,10 +30,10 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * 从 health 快照同步 {@code einv_boss_document} 与 {@code einv_boss_line}。
+ * �?health 快照同步 {@code einv_boss_document} �?{@code einv_boss_line}�?
  *
- * <p>入队（{@link com.openhis.whale.einvoice.boss.application.internal.issue.BossIssueTaskEnqueueService}）
- * 与开票前刷新均经本服务；{@code amountStatus=ADJUSTED} 时保留人工调额结果。</p>
+ * <p>入队（{@link com.openhis.whale.einvoice.boss.application.internal.issue.BossIssueTaskEnqueueService}�?
+ * 与开票前刷新均经本服务；{@code amountStatus=ADJUSTED} 时保留人工调额结果�?/p>
  */
 @Slf4j
 @Service
@@ -48,7 +48,7 @@ public class EinvoiceBossDocumentInitializerService {
     private final EinvoiceBossGatewayProperties properties;
 
     /**
-     * 全量初始化或刷新（首入队；非 ADJUSTED 时重建明细）。
+     * 全量初始化或刷新（首入队；非 ADJUSTED 时重建明细）�?
      *
      * @param invoiceId 票据主键
      * @return 单据实体
@@ -58,7 +58,7 @@ public class EinvoiceBossDocumentInitializerService {
     }
 
     /**
-     * 开票前刷新：已人工调额（ADJUSTED）时保留明细与总额，仅同步非金额头字段。
+     * 开票前刷新：已人工调额（ADJUSTED）时保留明细与总额，仅同步非金额头字段�?
      *
      * @param invoiceId 票据主键
      * @return 单据实体
@@ -68,15 +68,15 @@ public class EinvoiceBossDocumentInitializerService {
     }
 
     /**
-     * 从快照同步单据头与可选明细重建。
+     * 从快照同步单据头与可选明细重建�?
      *
      * @param invoiceId 票据主键
-     * @param allowLineRebuild true 时非 ADJUSTED 单据会软删旧明细并重建
-     * @return 持久化后的单据
+     * @param allowLineRebuild true 时非 ADJUSTED 单据会软删旧明细并重�?
+     * @return 持久化后的单�?
      */
     private EinvBossDocument syncFromSnapshot(Long invoiceId, boolean allowLineRebuild) {
         BossIssueSnapshot snapshot = issueSnapshotContextLoader.loadForInvoice(invoiceId);
-        Optional<EinvBossDocument> existing = documentRepository.findByInvoiceIdAndIsDeletedFalse(invoiceId);
+        Optional<EinvBossDocument> existing = documentRepository.findFirstByInvoiceIdAndIsDeletedFalseOrderByIdAsc(invoiceId);
         EinvBossDocument document;
         if (existing.isPresent()) {
             document = existing.get();
@@ -96,7 +96,7 @@ public class EinvoiceBossDocumentInitializerService {
         document.setBusNo(snapshot.getBusNo());
         document.setBusType(payloadMetadataAccess.resolveBusType(issueKind));
         document.setPlatformProfile(properties.getPlatform().getProfile());
-        // 分支：已调额单据保留 total/payment/amountStatus，避免 Worker 覆盖人工修正
+        // 分支：已调额单据保留 total/payment/amountStatus，避�?Worker 覆盖人工修正
         if (!adjusted) {
             document.setTotalAmt(snapshot.getTotalAmt());
             document.setPaymentAmt(snapshot.getPaymentAmt());
@@ -112,9 +112,9 @@ public class EinvoiceBossDocumentInitializerService {
     }
 
     /**
-     * 软删旧明细并按快照 chargeLines 重建；挂号无明细时补 REG_FEE 单行。
+     * 软删旧明细并按快�?chargeLines 重建；挂号无明细时补 REG_FEE 单行�?
      *
-     * @param document 所属单据
+     * @param document 所属单�?
      * @param snapshot health 收费明细快照
      * @return 待持久化的新明细列表
      */
@@ -137,8 +137,11 @@ public class EinvoiceBossDocumentInitializerService {
             resolveBossCharge(document.getTenantId(), document.getIssueKind(), chargeLine, line);
             applyLineAmounts(chargeLine, line);
             line.setUnit(chargeLine.getUnit());
-            // listDetail.name：具体项目名；空则出站回落 chargeName
+            // listDetail.name：具体项目名；空则出站回�?chargeName
             line.setItemName(blankToNull(chargeLine.getItemName()));
+            line.setItemCode(blankToNull(chargeLine.getItemCode()));
+            line.setListMedicalCareType(blankToNull(chargeLine.getListMedicalCareType()));
+            line.setListRemark(blankToNull(chargeLine.getListRemark()));
             line.setSourceChargeItemId(chargeLine.getChargeItemId());
             line.setAdjusted(false);
             line.setIsDeleted(false);
@@ -165,12 +168,12 @@ public class EinvoiceBossDocumentInitializerService {
     }
 
     /**
-     * 写入明细标准价/数量/金额，满足博思 {@code std * number = amt}。
+     * 写入明细标准�?数量/金额，满足博�?{@code std * number = amt}�?
      *
-     * <p>优先用收费项单价作 {@code std}；无单价时退化为 {@code std=金额、number=1}，
-     * 避免把行金额误写入标准价导致拒收（如中药饮片按克计价）。</p>
+     * <p>优先用收费项单价�?{@code std}；无单价时退化为 {@code std=金额、number=1}�?
+     * 避免把行金额误写入标准价导致拒收（如中药饮片按克计价）�?/p>
      *
-     * @param chargeLine health 收费快照行
+     * @param chargeLine health 收费快照�?
      * @param line 待填充的 boss 明细
      */
     private void applyLineAmounts(BossChargeLineSnapshot chargeLine, EinvBossLine line) {
@@ -203,14 +206,14 @@ public class EinvoiceBossDocumentInitializerService {
     }
 
     /**
-     * 经 {@code einv_charge_contrast} 将 health internalCode 映射为博思 chargeCode/chargeName。
+     * �?{@code einv_charge_contrast} �?health internalCode 映射为博�?chargeCode/chargeName�?
      *
-     * <p>对照表存住院口径统计项 CODE（YLZY*）；门诊/挂号再换算为老系统 CODE1（YLMZ*），
-     * 对齐 areahis 门诊 {@code chargeDetail.chargeCode}。</p>
+     * <p>对照表存住院口径统计�?CODE（YLZY*）；门诊/挂号再换算为老系�?CODE1（YLMZ*），
+     * 对齐 areahis 门诊 {@code chargeDetail.chargeCode}�?/p>
      *
-     * @param tenantId 租户（对照表维度）
+     * @param tenantId 租户（对照表维度�?
      * @param issueKind 票种 REG/AMB/IMP
-     * @param chargeLine 快照行
+     * @param chargeLine 快照�?
      * @param line 待填充的 boss 明细实体
      */
     private void resolveBossCharge(

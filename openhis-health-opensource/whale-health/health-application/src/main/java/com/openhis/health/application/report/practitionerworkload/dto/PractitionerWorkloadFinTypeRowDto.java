@@ -11,7 +11,9 @@ import lombok.experimental.Accessors;
 import java.math.BigDecimal;
 
 /**
- * 工作量汇总 fin_type 行 DTO（IF-RPT-WKL-02）。
+ * 工作量汇总 fin_type 行 DTO（IF-RPT-WKL-02；DD-报表中心-进售价口径）。
+ *
+ * <p>金额列仅售价/进价；本轮不含应收/实收。</p>
  */
 @Data
 @Accessors(chain = true)
@@ -26,19 +28,11 @@ public class PractitionerWorkloadFinTypeRowDto {
     @Schema(description = "财务类型展示名")
     private String finTypeDisplay;
 
-    /** 应收金额。 */
-    @Schema(description = "应收金额")
-    private BigDecimal receivableAmount;
+    /** 售价合计（账单 total_price 加和；行级 6 位）。 */
+    @Schema(description = "售价合计")
+    private BigDecimal saleAmount;
 
-    /** 实收金额。 */
-    @Schema(description = "实收金额")
-    private BigDecimal actualReceivedAmount;
-
-    /** 成本金额。 */
-    @Schema(description = "成本金额")
-    private BigDecimal costAmount;
-
-    /** 净收入。 */
-    @Schema(description = "净收入")
-    private BigDecimal netIncomeAmount;
+    /** 进价合计（批号进价包装锚；诊疗无进价不加；行级 6 位）。 */
+    @Schema(description = "进价合计")
+    private BigDecimal purchaseAmount;
 }

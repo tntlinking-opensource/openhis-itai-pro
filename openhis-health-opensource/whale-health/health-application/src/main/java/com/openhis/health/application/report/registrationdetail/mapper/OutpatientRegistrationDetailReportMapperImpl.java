@@ -4,6 +4,7 @@
  */
 package com.openhis.health.application.report.registrationdetail.mapper;
 
+import com.openhis.health.application.report.registrationdetail.dto.OutpatientRegistrationDetailFooterDto;
 import com.openhis.health.application.report.registrationdetail.dto.OutpatientRegistrationDetailRowDto;
 import com.openhis.health.application.report.registrationdetail.dto.OutpatientRegistrationDetailSummaryRowDto;
 import com.openhis.health.application.report.registrationdetail.request.ExportOutpatientRegistrationDetailReportRequest;
@@ -15,11 +16,13 @@ import com.openhis.health.application.report.registrationdetail.response.PageOut
 import com.openhis.health.application.report.registrationdetail.response.SummarizeOutpatientRegistrationDetailReportResponse;
 import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.domain.administration.encounter.queries.OutpatientRegistrationReportPageQuery;
+import com.openhis.health.domain.administration.encounter.queries.model.OutpatientRegistrationDetailStatsQueryModel;
 import com.openhis.whale.core.application.dto.OptionDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -128,34 +131,81 @@ public class OutpatientRegistrationDetailReportMapperImpl implements OutpatientR
      *
      * @param rows                       展示行
      * @param totalNetRegistrationCount  净笔数合计
+     * @param totalRegistrationFeeAmount 净挂号费合计
      * @return 汇总响应
      */
     @Override
     public SummarizeOutpatientRegistrationDetailReportResponse toSummarizeResponse(
         List<OutpatientRegistrationDetailSummaryRowDto> rows,
-        long totalNetRegistrationCount) {
+        long totalNetRegistrationCount,
+        BigDecimal totalRegistrationFeeAmount) {
         SummarizeOutpatientRegistrationDetailReportResponse response =
             new SummarizeOutpatientRegistrationDetailReportResponse();
         response.setRows(rows);
         response.setTotalNetRegistrationCount(totalNetRegistrationCount);
+        response.setTotalRegistrationFeeAmount(totalRegistrationFeeAmount);
         return response;
     }
 
     /**
-     * 明细展示行 + Spring Page → 分页响应。
+     * 明细展示行 + Spring Page + 挂/退页脚 → 分页响应。
      *
-     * @param rows 当前页展示行
-     * @param page 领域分页壳
+     * @param rows  当前页展示行
+     * @param page  领域分页壳
+     * @param stats 同筛选挂/退统计；可空则页脚置 0
      * @return 分页响应
      */
     @Override
     public PageOutpatientRegistrationDetailReportDetailResponse toDetailPageResponse(
         List<OutpatientRegistrationDetailRowDto> rows,
-        Page<?> page) {
-        return PagedResultBuilder.build(
+        Page<?> page,
+        OutpatientRegistrationDetailStatsQueryModel stats) {
+        PageOutpatientRegistrationDetailReportDetailResponse response = PagedResultBuilder.build(
             new PageOutpatientRegistrationDetailReportDetailResponse(),
             rows,
             page);
+        response.setFooter(this.toFooterDto(stats));
+        return response;
+    }
+
+    /**
+     * 领域挂/退统计 → 页脚 DTO。
+     *
+     * @param stats 领域统计；可空
+     * @return 页脚；字段非 null
+     */
+    @Override
+    public OutpatientRegistrationDetailFooterDto toFooterDto(OutpatientRegistrationDetailStatsQueryModel stats) {
+        OutpatientRegistrationDetailFooterDto footer = new OutpatientRegistrationDetailFooterDto();
+        // 空统计：页脚三项置 0，避免前端 NPE
+        if (stats == null) {
+            footer.setRegistrationCount(0L);
+            footer.setCancelledCount(0L);
+            footer.setActiveCount(0L);
+            return footer;
+        }
+        Long registrationCount = stats.getRegistrationCount();
+        // 领域未写挂号数时按 0 回填
+        if (registrationCount == null) {
+            footer.setRegistrationCount(0L);
+        } else {
+            footer.setRegistrationCount(registrationCount);
+        }
+        Long cancelledCount = stats.getCancelledCount();
+        // 领域未写已退数时按 0 回填
+        if (cancelledCount == null) {
+            footer.setCancelledCount(0L);
+        } else {
+            footer.setCancelledCount(cancelledCount);
+        }
+        Long activeCount = stats.getActiveCount();
+        // 领域未写有效数时按 0 回填
+        if (activeCount == null) {
+            footer.setActiveCount(0L);
+        } else {
+            footer.setActiveCount(activeCount);
+        }
+        return footer;
     }
 
     /**

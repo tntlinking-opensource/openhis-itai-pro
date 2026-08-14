@@ -15,6 +15,11 @@ import com.openhis.chs.bridge.outpatient.invoker.Op2204Invoker;
 import com.openhis.chs.bridge.outpatient.invoker.Op2205Invoker;
 import com.openhis.chs.bridge.outpatient.invoker.Op2206Invoker;
 import com.openhis.chs.bridge.outpatient.mapper.SetlinfoIntegrationMapper;
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
+import com.openhis.chs.domain.invoke.entity.YbInvokeLog;
+import com.openhis.chs.domain.invoke.service.YbInvokeLogQueryService;
 import com.openhis.chs.domain.outpatient.command.OpPreSettleBatchCommand;
 import com.openhis.chs.domain.outpatient.command.OpPreSettleCommand;
 import com.openhis.chs.domain.outpatient.command.OpRevokeFeeDetailCommand;
@@ -28,6 +33,8 @@ import com.openhis.chs.domain.outpatient.service.YbClinicFeeUploadDomainService;
 import com.openhis.chs.domain.outpatient.service.YbClinicPreSettleDomainService;
 import com.openhis.chs.domain.outpatient.service.YbClinicPreSettleQueryService;
 import com.openhis.chs.domain.share.constants.ChsErrorCodes;
+import com.openhis.chs.domain.share.constants.ChsInfNo;
+import com.openhis.chs.domain.share.constants.ChsPlatformCodes;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.chs.domain.settlement.model.ChargeBatch;
 import com.openhis.chs.domain.settlement.model.PlatformSetlinfoFields;
@@ -51,7 +58,9 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 【2201→2203→2204→2206】门诊医保预结算编排。
@@ -70,6 +79,7 @@ public class OpOutpatientPreSettleOrchestrator {
     private final YbClinicPreSettleDomainService clinicPreSettleDomainService;
     private final YbClinicPreSettleQueryService clinicPreSettleQueryService;
     private final YbClinicFeeUploadDomainService clinicFeeUploadDomainService;
+    private final YbInvokeLogQueryService invokeLogQueryService;
     private final Op2203Invoker op2203Invoker;
     private final Op2204Invoker op2204Invoker;
     private final Op2206Invoker op2206Invoker;
@@ -90,7 +100,8 @@ public class OpOutpatientPreSettleOrchestrator {
             .setPaymentDraftId(context.getPaymentDraftId())
             .setTenantId(tenantId));
         try {
-            return doInvoke(context, tenantId);
+            // Pre：单组路径须先 2205 清旧 ACTIVE，避免 feedetl_sn 重复
+            return doInvoke(context, tenantId, true);
         } finally {
             ChsInvokeLogContextHolder.clear();
         }
@@ -98,8 +109,8 @@ public class OpOutpatientPreSettleOrchestrator {
 
     /**
      * 批量混合预结算：逐组 invoke，失败时对已完成组执行 2205。
-     * <p>单笔 invoke 内部已对挂号费 med_type=12 做 2202 收口；批量已成功组若含挂号费，
-     * 其 map 在后续「作废」或下次预结算失败链再清（组结果未携 encounter，避免半截 2202）。</p>
+     * <p>旧 ACTIVE 批次仅在批量入口清一次；组内禁止再 2205，否则后组会撤掉前组明细，
+     * 正式 2207 报「未查询到费用明细」。</p>
      *
      * @param command 批量命令
      * @return 批量预结算结果
@@ -111,8 +122,16 @@ public class OpOutpatientPreSettleOrchestrator {
         }
         List<OpPreSettleGroupResult> completedGroups = new ArrayList<>();
         try {
+            // Pre：批量开始前统一撤销本就诊旧 ACTIVE（重试场景）；勿在各组 doInvoke 内重复
+            if (!enrichedGroups.isEmpty()) {
+                OpPreSettleCommand first = enrichedGroups.get(0);
+                OutpatientSettleCommandAssembler.validatePreSettleContext(first);
+                Long tenantId = OutpatientSettleCommandAssembler.resolveTenantId(first.getTenantId());
+                this.revokePriorActivePreSettles(first, tenantId);
+            }
             for (OpPreSettleCommand enriched : enrichedGroups) {
-                OpPreSettleResult platform = invoke(enriched);
+                // Cmd：组内跳过 revokePrior，保留本批已成功组的平台费用明细
+                OpPreSettleResult platform = invokeForBatchGroup(enriched);
                 completedGroups.add(toGroupResult(platform, enriched));
             }
         } catch (RuntimeException ex) {
@@ -136,21 +155,45 @@ public class OpOutpatientPreSettleOrchestrator {
     }
 
     /**
+     * 批量内单组预结算：与 {@link #invoke} 相同出站链，但不再撤销本批已 ACTIVE 组。
+     *
+     * @param context 已补全的组上下文
+     * @return 预结算分摊结果
+     */
+    private OpPreSettleResult invokeForBatchGroup(OpPreSettleCommand context) {
+        OutpatientSettleCommandAssembler.validatePreSettleContext(context);
+        Long tenantId = OutpatientSettleCommandAssembler.resolveTenantId(context.getTenantId());
+        ChsInvokeLogContextHolder.set(new ChsInvokeLogContext()
+            .setContractId(context.getContractId())
+            .setEncounterId(context.getEncounterId())
+            .setPaymentDraftId(context.getPaymentDraftId())
+            .setTenantId(tenantId));
+        try {
+            return doInvoke(context, tenantId, false);
+        } finally {
+            ChsInvokeLogContextHolder.clear();
+        }
+    }
+
+    /**
      * 执行 2201→2203→2204→2206；中途失败时按 §3.1.1 收口。
      *
-     * @param context  门诊预结算上下文
-     * @param tenantId 租户 ID
+     * @param context           门诊预结算上下文
+     * @param tenantId          租户 ID
+     * @param revokePriorActive 是否先 2205 清本就诊旧 ACTIVE（批量组内须 false）
      * @return 预结算结果
      */
-    private OpPreSettleResult doInvoke(OpPreSettleCommand context, Long tenantId) {
+    private OpPreSettleResult doInvoke(OpPreSettleCommand context, Long tenantId, boolean revokePriorActive) {
         ContractConfig config = OutpatientSettleCommandAssembler.requireContractConfig(context.getContractBusNo());
         InvokeContext invokeContext = OutpatientSettleCommandAssembler.buildInvokeContext(context);
         String mdtrtId = null;
         String chrgBchno = null;
         boolean resolvedMdtrt = false;
         try {
-            // 重试预结算前先 2205 清掉本就诊未结算旧批次，避免 feedetl_sn 重复主键
-            this.revokePriorActivePreSettles(context, tenantId);
+            // Pre：单组/批量入口已决定是否清旧批；组内再清会误撤本批前组费用
+            if (revokePriorActive) {
+                this.revokePriorActivePreSettles(context, tenantId);
+            }
             // Pre：挂号费改传 11 时，先 2202 清掉 12 残留及可能被锁成「门诊挂号」的 11 map
             this.revokeStaleRegisterFeeMapsBeforeSettle(context, tenantId);
 
@@ -185,6 +228,7 @@ public class OpOutpatientPreSettleOrchestrator {
             clinicFeeUploadDomainService.linkPreSettle(batchNo, row.getId(), tenantId);
             ChargeBatchInvokeLogSupport.mergeBatch(ChargeBatch.fromClinicPreSettle(row));
 
+            // Asm：四金额仍以落库快照为准；起付线/公务员字段仅内存透传供收银展示（不改应收、不扩预结算表）
             return new OpPreSettleResult()
                 .setPreSettleId(row.getId())
                 .setChrgBchno(batchNo)
@@ -192,7 +236,12 @@ public class OpOutpatientPreSettleOrchestrator {
                 .setMedfeeSumamt(row.getMedfeeSumamt())
                 .setFundPaySumamt(row.getFundPaySumamt())
                 .setAcctPay(row.getAcctPay())
-                .setPsnCashPay(row.getPsnCashPay());
+                .setPsnCashPay(row.getPsnCashPay())
+                .setActPayDedc(platformSetlinfo.getActPayDedc())
+                .setCvlservFlag(platformSetlinfo.getCvlservFlag())
+                .setCvlservPay(platformSetlinfo.getCvlservPay())
+                .setHifpPay(platformSetlinfo.getHifpPay())
+                .setOthPay(platformSetlinfo.getOthPay());
         } catch (RuntimeException ex) {
             // Cmd：预结算未成功 → 自动清本单脏状态（与关窗不撤区分）
             this.rollbackIncompleteRegisterFeePreSettle(context, chrgBchno, mdtrtId, resolvedMdtrt);
@@ -243,25 +292,34 @@ public class OpOutpatientPreSettleOrchestrator {
     }
 
     /**
-     * 预结算前撤销本就诊同契约下 ACTIVE 旧批次（上次预结算成功、正式收费失败后的重试场景）。
+     * 预结算前撤销本就诊同契约下 ACTIVE 旧批次，并回收「平台 2204 成功、本地无 ACTIVE」孤儿批次。
+     *
+     * <p>孤儿场景：2204/2206 出站成功后外层事务回滚，invoke 日志已落库但预结算快照未保留；
+     * 重试若只扫 ACTIVE 会漏撤，平台 feedetl_sn 残留导致 feeListDBO_41。</p>
      *
      * @param context  预结算上下文
      * @param tenantId 租户 ID
      */
     private void revokePriorActivePreSettles(OpPreSettleCommand context, Long tenantId) {
+        Set<String> revokedBatchNos = new HashSet<>();
         List<YbClinicPreSettle> priors = clinicPreSettleQueryService.listActiveByEncounterIdAndContractId(
             context.getEncounterId(), context.getContractId(), tenantId);
         for (YbClinicPreSettle prior : priors) {
             if (isEmpty(prior.getChrgBchno())) {
                 continue;
             }
+            String chrgBchno = prior.getChrgBchno().trim();
             try {
+                // Pre：显式带 mdtrt/psn，避免 chrg_bchno 碰撞时被他患 SETTLED 快照短路
                 op2205Invoker.invoke(new OpRevokeFeeDetailCommand()
-                    .setChrgBchno(prior.getChrgBchno().trim())
+                    .setChrgBchno(chrgBchno)
+                    .setMdtrtId(prior.getMdtrtId())
+                    .setPsnNo(prior.getPsnNo())
                     .setContractBusNo(context.getContractBusNo())
                     .setInsuplcAdmdvs(context.getInsuplcAdmdvs())
                     .setOperatorId(context.getOperatorId())
                     .setTenantId(tenantId));
+                revokedBatchNos.add(chrgBchno);
             } catch (RuntimeException ex) {
                 log.warn(
                     "预结算前撤销旧批次失败 encounterId={} chrgBchno={}: {}",
@@ -270,8 +328,198 @@ public class OpOutpatientPreSettleOrchestrator {
                     ex.getMessage());
                 throw new BusinessException(
                     ChsErrorCodes.PLATFORM_FAILED,
-                    "存在未结算的医保费用明细且撤销失败，请稍后重试。批次号：" + prior.getChrgBchno().trim());
+                    "存在未结算的医保费用明细且撤销失败，请稍后重试。批次号：" + chrgBchno);
             }
+        }
+        // Pre：扫 invoke 日志回收平台悬挂（本地无 ACTIVE）
+        this.revokeOrphanUploadedFeeBatches(context, tenantId, revokedBatchNos);
+    }
+
+    /**
+     * 按本就诊成功 2204 且仍可能挂在平台的批次出站 2205，清残留 feedetl_sn。
+     *
+     * <p>跳过：本轮已撤；已成功 2205；仍正式结算中（有 2207 且无 2208）。
+     * 含「2208 已退费但未 2205」——否则平台未结明细残留会导致下次 2206 金额翻倍。</p>
+     *
+     * @param context        预结算上下文
+     * @param tenantId       租户 ID
+     * @param alreadyRevoked 本轮已撤销过的批次号（跳过重复）
+     */
+    private void revokeOrphanUploadedFeeBatches(
+        OpPreSettleCommand context,
+        Long tenantId,
+        Set<String> alreadyRevoked) {
+        if (context.getEncounterId() == null) {
+            return;
+        }
+        Set<String> settledBatchNos = new HashSet<>();
+        List<YbInvokeLog> settleLogs = invokeLogQueryService.listByEncounterIdAndInfno(
+            context.getEncounterId(), ChsInfNo.OUTPATIENT_SETTLE, tenantId);
+        for (YbInvokeLog settleLog : settleLogs) {
+            if (!isInvokeSuccess(settleLog) || isEmpty(settleLog.getChrgBchno())) {
+                continue;
+            }
+            settledBatchNos.add(settleLog.getChrgBchno().trim());
+        }
+        Set<String> settleRevokedBatchNos = new HashSet<>();
+        List<YbInvokeLog> settleRevokeLogs = invokeLogQueryService.listByEncounterIdAndInfno(
+            context.getEncounterId(), ChsInfNo.OUTPATIENT_SETTLE_REVOKE, tenantId);
+        for (YbInvokeLog settleRevokeLog : settleRevokeLogs) {
+            if (!isInvokeSuccess(settleRevokeLog) || isEmpty(settleRevokeLog.getChrgBchno())) {
+                continue;
+            }
+            settleRevokedBatchNos.add(settleRevokeLog.getChrgBchno().trim());
+        }
+        Set<String> feeDetailRevokedBatchNos = new HashSet<>();
+        List<YbInvokeLog> feeRevokeLogs = invokeLogQueryService.listByEncounterIdAndInfno(
+            context.getEncounterId(), ChsInfNo.OUTPATIENT_FEE_REVOKE, tenantId);
+        for (YbInvokeLog feeRevokeLog : feeRevokeLogs) {
+            if (!isInvokeSuccess(feeRevokeLog) || isEmpty(feeRevokeLog.getChrgBchno())) {
+                continue;
+            }
+            feeDetailRevokedBatchNos.add(feeRevokeLog.getChrgBchno().trim());
+        }
+        List<YbInvokeLog> uploadLogs = invokeLogQueryService.listByEncounterIdAndInfno(
+            context.getEncounterId(), ChsInfNo.OUTPATIENT_FEE_UPLOAD, tenantId);
+        for (YbInvokeLog uploadLog : uploadLogs) {
+            if (!isInvokeSuccess(uploadLog) || isEmpty(uploadLog.getChrgBchno())) {
+                continue;
+            }
+            String chrgBchno = uploadLog.getChrgBchno().trim();
+            // Gate：本轮已撤或历史上已成功 2205 → 跳过
+            if (alreadyRevoked.contains(chrgBchno) || feeDetailRevokedBatchNos.contains(chrgBchno)) {
+                continue;
+            }
+            // Gate：仍正式结算中（有 2207 且无 2208）禁止 2205，须先退费 2208
+            if (settledBatchNos.contains(chrgBchno) && !settleRevokedBatchNos.contains(chrgBchno)) {
+                continue;
+            }
+            String mdtrtId = resolveMdtrtIdFromInvokeRequest(uploadLog.getRequestJson());
+            String psnNo = resolvePsnNoFromInvokeRequest(uploadLog.getRequestJson());
+            if (isEmpty(psnNo)) {
+                psnNo = context.getPsnNo();
+            }
+            if (isEmpty(mdtrtId) || isEmpty(psnNo)) {
+                log.warn(
+                    "悬挂 2204 缺 mdtrt/psn，跳过自动 2205 encounterId={} chrgBchno={}",
+                    context.getEncounterId(),
+                    chrgBchno);
+                continue;
+            }
+            String contractBusNo = context.getContractBusNo();
+            if (isEmpty(contractBusNo) && isNotEmpty(uploadLog.getContractBusNo())) {
+                contractBusNo = uploadLog.getContractBusNo().trim();
+            }
+            try {
+                op2205Invoker.invoke(new OpRevokeFeeDetailCommand()
+                    .setChrgBchno(chrgBchno)
+                    .setMdtrtId(mdtrtId.trim())
+                    .setPsnNo(psnNo.trim())
+                    .setContractBusNo(contractBusNo)
+                    .setInsuplcAdmdvs(context.getInsuplcAdmdvs())
+                    .setOperatorId(context.getOperatorId())
+                    .setTenantId(tenantId));
+                alreadyRevoked.add(chrgBchno);
+            } catch (RuntimeException ex) {
+                String msg = ex.getMessage();
+                // Gate：同 chrg_bchno 他患 SETTLED 本地收口冲突时，平台侧往往已撤完，不阻断后续 2204
+                if (msg != null && msg.contains("已参与正式结算的费用明细不可")) {
+                    log.warn(
+                        "悬挂 2204 本地收口碰到他患 SETTLED，视为已处理 encounterId={} chrgBchno={}",
+                        context.getEncounterId(),
+                        chrgBchno);
+                    alreadyRevoked.add(chrgBchno);
+                    continue;
+                }
+                log.warn(
+                    "预结算前撤销悬挂 2204 失败 encounterId={} chrgBchno={}: {}",
+                    context.getEncounterId(),
+                    chrgBchno,
+                    msg);
+                throw new BusinessException(
+                    ChsErrorCodes.PLATFORM_FAILED,
+                    "存在未结算的医保费用明细且撤销失败，请稍后重试。批次号：" + chrgBchno);
+            }
+        }
+    }
+
+    /**
+     * 判断 invoke 日志是否平台成功（infcode=0）。
+     *
+     * @param row 调用日志
+     * @return true 表示成功
+     */
+    private static boolean isInvokeSuccess(YbInvokeLog row) {
+        if (row == null || isEmpty(row.getInfcode())) {
+            return false;
+        }
+        return ChsPlatformCodes.INFCODE_SUCCESS.equals(row.getInfcode().trim());
+    }
+
+    /**
+     * 从 2204/2206 请求 JSON 解析 mdtrt_id。
+     *
+     * @param requestJson 请求报文
+     * @return mdtrt_id；无法解析时 null
+     */
+    private static String resolveMdtrtIdFromInvokeRequest(String requestJson) {
+        JSONObject root = parseInvokeRequestRoot(requestJson);
+        if (root == null) {
+            return null;
+        }
+        JSONObject data = root.getJSONObject("data");
+        if (data != null && isNotEmpty(data.getString("mdtrt_id"))) {
+            return data.getString("mdtrt_id").trim();
+        }
+        JSONArray feedetail = root.getJSONArray("feedetail");
+        if (feedetail != null && !feedetail.isEmpty()) {
+            JSONObject first = feedetail.getJSONObject(0);
+            if (first != null && isNotEmpty(first.getString("mdtrt_id"))) {
+                return first.getString("mdtrt_id").trim();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 从 2204/2206 请求 JSON 解析 psn_no。
+     *
+     * @param requestJson 请求报文
+     * @return psn_no；无法解析时 null
+     */
+    private static String resolvePsnNoFromInvokeRequest(String requestJson) {
+        JSONObject root = parseInvokeRequestRoot(requestJson);
+        if (root == null) {
+            return null;
+        }
+        JSONObject data = root.getJSONObject("data");
+        if (data != null && isNotEmpty(data.getString("psn_no"))) {
+            return data.getString("psn_no").trim();
+        }
+        JSONArray feedetail = root.getJSONArray("feedetail");
+        if (feedetail != null && !feedetail.isEmpty()) {
+            JSONObject first = feedetail.getJSONObject(0);
+            if (first != null && isNotEmpty(first.getString("psn_no"))) {
+                return first.getString("psn_no").trim();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 解析 invoke 请求根对象。
+     *
+     * @param requestJson 请求报文
+     * @return JSON 对象；空或非法时 null
+     */
+    private static JSONObject parseInvokeRequestRoot(String requestJson) {
+        if (isEmpty(requestJson)) {
+            return null;
+        }
+        try {
+            return JSON.parseObject(requestJson);
+        } catch (RuntimeException ex) {
+            return null;
         }
     }
 
@@ -390,6 +638,12 @@ public class OpOutpatientPreSettleOrchestrator {
         result.setFundPaySumamt(platform.getFundPaySumamt());
         result.setAcctPay(platform.getAcctPay());
         result.setPsnCashPay(platform.getPsnCashPay());
+        // 组级同样透传展示字段，供混合预结算汇总
+        result.setActPayDedc(platform.getActPayDedc());
+        result.setCvlservFlag(platform.getCvlservFlag());
+        result.setCvlservPay(platform.getCvlservPay());
+        result.setHifpPay(platform.getHifpPay());
+        result.setOthPay(platform.getOthPay());
         result.setGroupIndex(enriched.getGroupIndex());
         result.setMedType(enriched.getMedType());
         result.setDiseCodg(enriched.getGroupDiseCodg());

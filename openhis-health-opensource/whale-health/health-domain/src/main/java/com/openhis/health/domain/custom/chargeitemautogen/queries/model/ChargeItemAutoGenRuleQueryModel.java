@@ -9,6 +9,7 @@ import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 
 /**
  * 按目标定价反查规则查询模型。
@@ -60,6 +61,14 @@ public class ChargeItemAutoGenRuleQueryModel {
      * 备注（可空）。
      */
     private String remark;
+    /**
+     * 滚费业务时刻（billDate 当日）。
+     */
+    private LocalTime businessTime;
+    /**
+     * 滚费计费人（adm_practitioner.id）。
+     */
+    private Long billingPractitionerId;
     /**
      * 创建时刻（滚费任务按创建日过滤，BR-IP-ARG-013）。
      */

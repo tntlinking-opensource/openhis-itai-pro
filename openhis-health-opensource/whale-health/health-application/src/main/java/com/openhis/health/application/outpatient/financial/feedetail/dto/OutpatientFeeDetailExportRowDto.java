@@ -31,7 +31,7 @@ public class OutpatientFeeDetailExportRowDto {
     @Excel(name = "挂号科室", sort = 3)
     private String registrationDepartmentName;
 
-    /** 费用性质（优先账户 → fin_contract）。 */
+    /** 费用性质（收费行 account_id → fin_contract）。 */
     @Excel(name = "费用性质", sort = 4)
     private String feeNatureDisplay;
 
@@ -71,39 +71,43 @@ public class OutpatientFeeDetailExportRowDto {
     @Excel(name = "开单医生", sort = 13)
     private String orderingDoctorName;
 
+    /** 执行人。 */
+    @Excel(name = "执行人", sort = 14)
+    private String performerName;
+
     /** 收费人。 */
-    @Excel(name = "收费人", sort = 14)
+    @Excel(name = "收费人", sort = 15)
     private String cashierName;
 
     /** 结算时间。 */
-    @Excel(name = "结算时间", sort = 15)
+    @Excel(name = "结算时间", sort = 16)
     private String billDate;
 
     /** 医保等级。 */
-    @Excel(name = "医保等级", sort = 16)
+    @Excel(name = "医保等级", sort = 17)
     private String insuranceLevelDisplay;
 
     /** 医保类型。 */
-    @Excel(name = "医保类型", sort = 17)
+    @Excel(name = "医保类型", sort = 18)
     private String insuranceTypeDisplay;
 
     /** 进价单价。 */
-    @Excel(name = "进价单价", sort = 18)
+    @Excel(name = "进价单价", sort = 19)
     private BigDecimal purchaseUnitPrice;
 
     /** 进价总价。 */
-    @Excel(name = "进价总价", sort = 19)
+    @Excel(name = "进价总价", sort = 20)
     private BigDecimal purchaseAmount;
 
     /** 售价单价。 */
-    @Excel(name = "售价单价", sort = 20)
+    @Excel(name = "售价单价", sort = 21)
     private BigDecimal saleUnitPrice;
 
     /** 售价总价。 */
-    @Excel(name = "售价总价", sort = 21)
+    @Excel(name = "售价总价", sort = 22)
     private BigDecimal saleAmount;
 
     /** 实收金额。 */
-    @Excel(name = "实收金额", sort = 22)
+    @Excel(name = "实收金额", sort = 23)
     private BigDecimal actualReceivedAmount;
 }

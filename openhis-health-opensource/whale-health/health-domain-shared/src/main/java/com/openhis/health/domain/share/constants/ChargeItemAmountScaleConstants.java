@@ -26,4 +26,13 @@ public interface ChargeItemAmountScaleConstants {
      * 前端展示刻度（与 {@link #CHARGE_MONETARY_SETTLE_SCALE} 同为 2 位；仅 UI format，非入账权威）。
      */
     int CHARGE_MONETARY_DISPLAY_SCALE = 2;
+
+    /**
+     * 中药饮片/中草药（{@code medication_category_code=4}）单价 UI 展示/录入刻度：3 位。
+     *
+     * <p>本常量用于<strong>药品目录（药典）维护页</strong>进售价 format / InputNumber；落库仍走
+     * {@link #CHARGE_MONETARY_SCALE}（6 位）。与前端 {@code MONEY_TCM_UNIT_PRICE_DP} 对齐。
+     * 不改变库房单据等其它页面的既有展示逻辑。</p>
+     */
+    int CHARGE_MONETARY_TCM_UNIT_PRICE_DISPLAY_SCALE = 3;
 }

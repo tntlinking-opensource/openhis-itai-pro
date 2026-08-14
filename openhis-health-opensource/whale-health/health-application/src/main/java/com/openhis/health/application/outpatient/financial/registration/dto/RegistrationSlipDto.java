@@ -101,6 +101,22 @@ public class RegistrationSlipDto {
     @Schema(description = "起付线展示")
     private String deductibleLineText;
 
+    /**
+     * 公务员待遇展示（2207 {@code cvlserv_flag}：是/否；无回执时为空串）。
+     *
+     * <p>仅小票展示，不参与金额计算。</p>
+     */
+    @Schema(description = "公务员待遇展示")
+    private String cvlservFlagText;
+
+    /**
+     * 公务员医疗补助资金支出展示（2207 {@code cvlserv_pay}）。
+     *
+     * <p>仅小票展示，不参与金额计算。</p>
+     */
+    @Schema(description = "公务员补助展示")
+    private String cvlservPayText;
+
     /** 现金渠道支付格式化文案。 */
     @Schema(description = "现金支付展示")
     private String cashPayText;

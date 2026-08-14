@@ -11,6 +11,7 @@ import lombok.Data;
 import lombok.experimental.Accessors;
 
 import java.math.BigDecimal;
+import java.time.LocalTime;
 
 /**
  * IF-IP-ARG-02：自动计费配置列表行。
@@ -84,4 +85,23 @@ public class NurseStationAutoRollConfigRowDto {
     /** 备注。 */
     @Schema(description = "备注")
     private String remark;
+
+    /**
+     * 滚费业务时刻（billDate 当日）。
+     */
+    @Schema(description = "滚费业务时刻")
+    private LocalTime businessTime;
+
+    /**
+     * 滚费计费人主键。
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "滚费计费人主键")
+    private Long billingPractitionerId;
+
+    /**
+     * 滚费计费人姓名。
+     */
+    @Schema(description = "滚费计费人姓名")
+    private String billingPractitionerName;
 }

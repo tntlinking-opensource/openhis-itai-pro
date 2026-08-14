@@ -13,16 +13,20 @@ import com.openhis.health.application.inpatient.nursestation.orderaudit.response
 import com.openhis.health.application.inpatient.nursestation.orderaudit.response.VerifyNurseStationOrdersResponse;
 import com.openhis.health.domain.administration.encounter.command.DischargeInpatientEncounterCommand;
 import com.openhis.health.domain.administration.encounter.command.InitiateDepartmentTransferCommand;
+import com.openhis.health.domain.medication.medicationrequest.command.CancelVerifyStopMedicationOrderCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.RejectMedicationOrderCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.VerifyMedicationOrderCommand;
+import com.openhis.health.domain.medication.medicationrequest.command.VerifyStopMedicationOrderCommand;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.application.shared.advice.InpatientOrderListSkeleton;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.ReadModelOrderTypeConstants;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.enums.TherapyType;
+import com.openhis.health.domain.workflow.servicerequest.command.CancelVerifyStopServiceRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.RejectServiceRequestToDraftCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.VerifyServiceRequestCommand;
+import com.openhis.health.domain.workflow.servicerequest.command.VerifyStopServiceRequestCommand;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
@@ -62,7 +66,7 @@ public class NurseStationOrderAuditMapperImpl implements NurseStationOrderAuditM
     /**
      * auditTab → RequestStatus code 列表（BR-IP-AUD-003）。
      *
-     * @param auditTab pending / passed / stopped / suspended
+     * @param auditTab pending / passed
      * @return 状态码列表；非法 tab 由调用方 Gate 拦截
      */
     @Override
@@ -70,20 +74,15 @@ public class NurseStationOrderAuditMapperImpl implements NurseStationOrderAuditM
         String normalized = trimToEmpty(auditTab);
         List<String> codes = new ArrayList<>();
         if (InpatientNurseStationConstants.AUDIT_TAB_PENDING.equals(normalized)) {
+            // 待校：开嘱待校（ACTIVE）+ 停嘱待校候选（STOPPED，再由 filterPendingAuditRows 收窄）
             codes.add(RequestStatus.ACTIVE.getCode());
-            return codes;
-        }
-        if (InpatientNurseStationConstants.AUDIT_TAB_PASSED.equals(normalized)) {
-            // 已校对 Tab 仅 VERIFIED；停嘱后迁至执行列表，不在校对队列保留（BR-IP-AUD-003）
-            codes.add(RequestStatus.VERIFIED.getCode());
-            return codes;
-        }
-        if (InpatientNurseStationConstants.AUDIT_TAB_STOPPED.equals(normalized)) {
             codes.add(RequestStatus.STOPPED.getCode());
             return codes;
         }
-        if (InpatientNurseStationConstants.AUDIT_TAB_SUSPENDED.equals(normalized)) {
-            codes.add(RequestStatus.CANCELLED.getCode());
+        if (InpatientNurseStationConstants.AUDIT_TAB_PASSED.equals(normalized)) {
+            // 已校对：在执已开嘱校对（VERIFIED）+ 已停嘱校对（STOPPED，再 filterPassedAuditRows）
+            codes.add(RequestStatus.VERIFIED.getCode());
+            codes.add(RequestStatus.STOPPED.getCode());
             return codes;
         }
         return codes;
@@ -131,6 +130,77 @@ public class NurseStationOrderAuditMapperImpl implements NurseStationOrderAuditM
                 continue;
             }
             kept.add(row);
+        }
+        return kept;
+    }
+
+    /**
+     * 待校 Tab 二次收窄：保留 ACTIVE；STOPPED 仅保留长期且尚未停嘱校对。
+     *
+     * @param skeleton 已过滤草稿/负向行的骨架；可 null
+     * @return 待校行；入参 null 时返回空列表
+     */
+    @Override
+    public List<InpatientOrderListSkeleton> filterPendingAuditRows(List<InpatientOrderListSkeleton> skeleton) {
+        if (skeleton == null || skeleton.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<InpatientOrderListSkeleton> kept = new ArrayList<>();
+        String activeCode = RequestStatus.ACTIVE.getCode();
+        String stoppedCode = RequestStatus.STOPPED.getCode();
+        String longTermCode = TherapyType.LONG_TERM.getCode();
+        for (InpatientOrderListSkeleton row : skeleton) {
+            if (row == null) {
+                continue;
+            }
+            String status = row.getStatusEnum();
+            // 开嘱待校：ACTIVE 原样保留
+            if (activeCode.equals(status)) {
+                kept.add(row);
+                continue;
+            }
+            // 停嘱待校：仅长期 STOPPED 且尚未写停嘱校对痕迹
+            if (stoppedCode.equals(status)) {
+                if (!longTermCode.equals(row.getTherapyEnum())) {
+                    continue;
+                }
+                if (row.getStopPerformerCheckId() != null) {
+                    continue;
+                }
+                kept.add(row);
+            }
+        }
+        return kept;
+    }
+
+    /**
+     * 已校对 Tab 二次收窄：VERIFIED 原样保留；STOPPED 仅保留已写停嘱校对痕迹的行（一条医嘱只出现一次）。
+     *
+     * @param skeleton 已过滤草稿/负向行的骨架；可 null
+     * @return 已校对行；入参 null 时返回空列表
+     */
+    @Override
+    public List<InpatientOrderListSkeleton> filterPassedAuditRows(List<InpatientOrderListSkeleton> skeleton) {
+        if (skeleton == null || skeleton.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<InpatientOrderListSkeleton> kept = new ArrayList<>();
+        String verifiedCode = RequestStatus.VERIFIED.getCode();
+        String stoppedCode = RequestStatus.STOPPED.getCode();
+        for (InpatientOrderListSkeleton row : skeleton) {
+            if (row == null) {
+                continue;
+            }
+            String status = row.getStatusEnum();
+            // 已开嘱校对、尚未停嘱：进已校对
+            if (verifiedCode.equals(status)) {
+                kept.add(row);
+                continue;
+            }
+            // 已停嘱且已停嘱校对：同一行展示开嘱校对人 + 停嘱校对人
+            if (stoppedCode.equals(status) && row.getStopPerformerCheckId() != null) {
+                kept.add(row);
+            }
         }
         return kept;
     }
@@ -205,6 +275,98 @@ public class NurseStationOrderAuditMapperImpl implements NurseStationOrderAuditM
         line.setPerformerCheckId(performerCheckId);
         line.setCheckTime(checkTime);
         command.setItems(List.of(line));
+        return command;
+    }
+
+    /**
+     * 写项 → 药品停嘱校对命令（仅写停嘱校对痕迹，状态仍为 STOPPED）。
+     *
+     * @param item                 写锚点；非空
+     * @param operatorId           操作人用户主键（事件追溯）
+     * @param stopPerformerCheckId 停嘱校对人 practitioner 主键
+     * @param stopCheckTime        停嘱校对时间
+     * @return 药品停嘱校对命令
+     */
+    @Override
+    public VerifyStopMedicationOrderCommand toVerifyStopMedicationOrderCommand(
+        NurseStationOrderAuditWriteItemDto item,
+        Long operatorId,
+        Long stopPerformerCheckId,
+        LocalDateTime stopCheckTime) {
+        VerifyStopMedicationOrderCommand command = new VerifyStopMedicationOrderCommand();
+        if (item == null) {
+            return command;
+        }
+        command.setOperatorId(operatorId);
+        command.setId(item.getRequestId());
+        command.setStopPerformerCheckId(stopPerformerCheckId);
+        command.setStopCheckTime(stopCheckTime);
+        return command;
+    }
+
+    /**
+     * 写项 → 诊疗停嘱校对命令（仅写停嘱校对痕迹，状态仍为 STOPPED）。
+     *
+     * @param item                 写锚点；非空
+     * @param operatorId           操作人用户主键（事件追溯）
+     * @param stopPerformerCheckId 停嘱校对人 practitioner 主键
+     * @param stopCheckTime        停嘱校对时间
+     * @return 诊疗停嘱校对命令
+     */
+    @Override
+    public VerifyStopServiceRequestCommand toVerifyStopServiceRequestCommand(
+        NurseStationOrderAuditWriteItemDto item,
+        Long operatorId,
+        Long stopPerformerCheckId,
+        LocalDateTime stopCheckTime) {
+        VerifyStopServiceRequestCommand command = new VerifyStopServiceRequestCommand();
+        if (item == null) {
+            return command;
+        }
+        command.setOperatorId(operatorId);
+        command.setId(item.getRequestId());
+        command.setStopPerformerCheckId(stopPerformerCheckId);
+        command.setStopCheckTime(stopCheckTime);
+        return command;
+    }
+
+    /**
+     * 写项 → 取消药品停嘱校对命令（清空停嘱校对痕迹，状态仍为 STOPPED）。
+     *
+     * @param item       写锚点；非空
+     * @param operatorId 操作人用户主键（事件追溯）
+     * @return 取消药品停嘱校对命令
+     */
+    @Override
+    public CancelVerifyStopMedicationOrderCommand toCancelVerifyStopMedicationOrderCommand(
+        NurseStationOrderAuditWriteItemDto item,
+        Long operatorId) {
+        CancelVerifyStopMedicationOrderCommand command = new CancelVerifyStopMedicationOrderCommand();
+        if (item == null) {
+            return command;
+        }
+        command.setOperatorId(operatorId);
+        command.setId(item.getRequestId());
+        return command;
+    }
+
+    /**
+     * 写项 → 取消诊疗停嘱校对命令（清空停嘱校对痕迹，状态仍为 STOPPED）。
+     *
+     * @param item       写锚点；非空
+     * @param operatorId 操作人用户主键（事件追溯）
+     * @return 取消诊疗停嘱校对命令
+     */
+    @Override
+    public CancelVerifyStopServiceRequestCommand toCancelVerifyStopServiceRequestCommand(
+        NurseStationOrderAuditWriteItemDto item,
+        Long operatorId) {
+        CancelVerifyStopServiceRequestCommand command = new CancelVerifyStopServiceRequestCommand();
+        if (item == null) {
+            return command;
+        }
+        command.setOperatorId(operatorId);
+        command.setId(item.getRequestId());
         return command;
     }
 

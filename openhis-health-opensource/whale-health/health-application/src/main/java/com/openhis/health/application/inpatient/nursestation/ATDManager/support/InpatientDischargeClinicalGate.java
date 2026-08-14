@@ -343,7 +343,7 @@ public class InpatientDischargeClinicalGate {
     }
 
     /**
-     * 长期已停嘱且停嘱时刻前仍有待执行槽位（与 Q-IP-EXE-001 同源）。
+     * 长期已停嘱且停嘱时刻前仍有待执行槽位（与 Q-IP-EXE-001 同源，含一盒一点/拆零下限切批）。
      *
      * @param medRow                 药品请求；非药嘱传 null
      * @param svcRow                 诊疗请求；非诊嘱传 null

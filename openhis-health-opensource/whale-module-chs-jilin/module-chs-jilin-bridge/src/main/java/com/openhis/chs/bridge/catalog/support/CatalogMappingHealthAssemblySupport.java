@@ -212,11 +212,11 @@ public class CatalogMappingHealthAssemblySupport {
     }
 
     /**
-     * 1317 等场景：按主键回写耗材医保编码与对码标志。
+     * 按主键回写耗材对码标志（及调用方传入的 yb_no；1317 应传院内原值，勿传平台短码）。
      *
      * @param deviceId   耗材定义主键
      * @param ybFlag     是否医保
-     * @param ybNo       医保目录编码
+     * @param ybNo       医保目录编码（保留原值时传 device.ybNo）
      * @param matched    是否已对照
      * @param chrgitmLv  收费项目等级
      * @param operatorId 操作人
@@ -233,7 +233,7 @@ public class CatalogMappingHealthAssemblySupport {
         SyncDeviceDefinitionYbMappingCommand.Item item = new SyncDeviceDefinitionYbMappingCommand.Item();
         item.setId(deviceId);
         item.setYbFlag(ybFlag);
-        // 回写保留完整医保编码；上传 med_list_codg 时再截前 15
+        // 调用方决定是否改码；1317 只标 match，须传入院内既有完整码
         if (isNotEmpty(ybNo)) {
             item.setYbNo(ybNo.trim());
         } else {

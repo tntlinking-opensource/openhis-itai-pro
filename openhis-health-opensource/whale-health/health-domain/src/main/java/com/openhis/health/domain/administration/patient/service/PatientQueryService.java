@@ -5,7 +5,6 @@
 package com.openhis.health.domain.administration.patient.service;
 
 import com.openhis.health.domain.share.constants.FieldNameConstants;
-import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.administration.patient.entity.Patient;
 import com.openhis.health.domain.administration.patient.entity.PatientIdentifier;
 import com.openhis.health.domain.administration.patient.queries.DuplicatePatientCheckQuery;
@@ -15,6 +14,7 @@ import com.openhis.health.domain.administration.patient.repository.PatientIdenti
 import com.openhis.health.domain.administration.patient.repository.PatientRepository;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.utils.AgeCalculatorUtil;
+import com.openhis.health.domain.share.utils.IdInQueryChunkSupport;
 import com.openhis.health.domain.share.utils.KeywordExactFirstOrderSupport;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import com.openhis.health.domain.share.enums.PatientStatus;
@@ -325,26 +325,22 @@ public class PatientQueryService {
     }
 
     /**
-     * 批量加载患者详情。
+     * 批量加载患者详情（读侧；主键过多时按 {@link IdInQueryChunkSupport} 分批 IN，不设 {@code BATCH_LIMIT} 硬拒）。
      *
      * @param patientIds 患者标识集合
-     * @return 患者详情映射
-     */
-    /**
-     * 批量加载患者详情。
-     *
-     * @param patientIds 患者标识集合
-     * @return 患者详情映射
+     * @return 患者详情映射；空入参返回空映射
      */
     public Map<Long, BatchPatientDetailQueryModel> batchLoadPatientDetails(List<Long> patientIds) {
         if (patientIds == null || patientIds.isEmpty()) {
             return Collections.emptyMap();
         }
-        if (patientIds.size() > GeneralSharedConstants.BATCH_LIMIT) {
-            throw new BusinessException(ErrorCodeConstants.PATIENT_INVALID_ARGUMENT, "批量加载数量超过上限");
-        }
-        List<Patient> patients = patientRepository.findAllByIdIn(patientIds);
-        List<PatientIdentifier> identifiers = patientIdentifierRepository.findAllByPatientIdIn(patientIds);
+        // Pre：患者主键与标识子表 IN 分批（写侧批量上限见 PatientDomainService）
+        List<Patient> patients = IdInQueryChunkSupport.loadByIdInChunks(
+            patientIds,
+            chunkIds -> patientRepository.findAllByIdIn(chunkIds));
+        List<PatientIdentifier> identifiers = IdInQueryChunkSupport.loadByIdInChunks(
+            patientIds,
+            chunkIds -> patientIdentifierRepository.findAllByPatientIdIn(chunkIds));
         Map<Long, List<PatientIdentifier>> identifierMap = new HashMap<>();
         for (PatientIdentifier identifier : identifiers) {
             List<PatientIdentifier> list = identifierMap.computeIfAbsent(identifier.getPatientId(), key -> new ArrayList<>());
@@ -365,7 +361,7 @@ public class PatientQueryService {
     }
 
     /**
-     * 按主键批量解析患者姓名（工作台列表等轻量展示）。
+     * 按主键批量解析患者姓名（工作台列表等轻量展示；读侧分批 IN，不设 {@code BATCH_LIMIT} 硬拒）。
      *
      * @param patientIds 患者标识集合
      * @return 患者主键 → 姓名字符串（无记录则无条目）
@@ -383,10 +379,10 @@ public class PatientQueryService {
         if (idSet.isEmpty()) {
             return Collections.emptyMap();
         }
-        if (idSet.size() > GeneralSharedConstants.BATCH_LIMIT) {
-            throw new BusinessException(ErrorCodeConstants.PATIENT_INVALID_ARGUMENT, "批量加载数量超过上限");
-        }
-        List<Patient> patients = patientRepository.findAllByIdIn(idSet);
+        // Pre：患者主键 IN 分批
+        List<Patient> patients = IdInQueryChunkSupport.loadByIdInChunks(
+            idSet,
+            chunkIds -> patientRepository.findAllByIdIn(chunkIds));
         Map<Long, String> out = new HashMap<>(patients.size());
         for (Patient p : patients) {
             if (p == null || p.getId() == null || Boolean.TRUE.equals(p.getIsDeleted())) {
@@ -400,7 +396,10 @@ public class PatientQueryService {
     }
 
     /**
-     * 按主键批量加载患者实体（querysupport 上下文组装；不含 identifier/student 子表）。
+     * 按主键批量加载患者实体（就诊上下文等；不含 identifier/student 子表；读侧分批 IN）。
+     *
+     * <p>门诊处方查询等页内装配经 {@code EncounterContextQueryService} 调用本方法；
+     * 单页患者数可超过写侧 {@code BATCH_LIMIT}，禁止再硬抛「批量加载数量超过上限」。</p>
      *
      * @param patientIds 患者主键集合
      * @return 患者 ID → 实体；未命中或已软删则无条目
@@ -418,10 +417,10 @@ public class PatientQueryService {
         if (idSet.isEmpty()) {
             return Collections.emptyMap();
         }
-        if (idSet.size() > GeneralSharedConstants.BATCH_LIMIT) {
-            throw new BusinessException(ErrorCodeConstants.PATIENT_INVALID_ARGUMENT, "批量加载数量超过上限");
-        }
-        List<Patient> patients = patientRepository.findAllByIdIn(idSet);
+        // Pre：患者主键 IN 分批
+        List<Patient> patients = IdInQueryChunkSupport.loadByIdInChunks(
+            idSet,
+            chunkIds -> patientRepository.findAllByIdIn(chunkIds));
         Map<Long, Patient> out = new HashMap<>(patients.size());
         for (Patient patient : patients) {
             if (patient != null && patient.getId() != null && !Boolean.TRUE.equals(patient.getIsDeleted())) {
@@ -432,7 +431,7 @@ public class PatientQueryService {
     }
 
     /**
-     * 批量加载住院信息读模型投影所需的患者人口学字段（DM-ADM-001 §6.2.9）。
+     * 批量加载住院信息读模型投影所需的患者人口学字段（DM-ADM-001 §6.2.9；读侧分批 IN）。
      *
      * @param patientIds 患者主键集合；{@code null} 或空时返回空映射
      * @return 患者 ID → 人口学快照
@@ -451,10 +450,10 @@ public class PatientQueryService {
         if (idSet.isEmpty()) {
             return Collections.emptyMap();
         }
-        if (idSet.size() > GeneralSharedConstants.BATCH_LIMIT) {
-            throw new BusinessException(ErrorCodeConstants.PATIENT_INVALID_ARGUMENT, "批量加载数量超过上限");
-        }
-        List<Patient> patients = patientRepository.findAllByIdIn(idSet);
+        // Pre：患者主键 IN 分批
+        List<Patient> patients = IdInQueryChunkSupport.loadByIdInChunks(
+            idSet,
+            chunkIds -> patientRepository.findAllByIdIn(chunkIds));
         Map<Long, PatientInpatientProjectionSnapshot> out = new HashMap<>(patients.size());
         for (Patient patient : patients) {
             if (patient.getId() == null || Boolean.TRUE.equals(patient.getIsDeleted())) {

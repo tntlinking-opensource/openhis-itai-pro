@@ -10,7 +10,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * 产品选品分页响应（已废弃，本场景禁止自由选品）。
+ * 科室退库选品分页响应（IF-DEP-RTW-11；内容为源科室药房库存批号行）。
  */
 @Getter
 @Setter

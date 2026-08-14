@@ -84,6 +84,12 @@ public class InpatientPharmacySummaryDispenseAssembler {
                 dto.setPackageUnitCode(product.getPackageUnitCode());
                 dto.setPackageUnitRatio(product.getPackageUnitRatio());
                 dto.setSplitUnitCode(product.getSplitUnitCode());
+                // 药典贴码单位/比例：主档无快照时回落；有主档时由 enricher 覆盖
+                if (StringUtils.isNotEmpty(product.getTraceUnitCode())) {
+                    dto.setTraceUnitCode(product.getTraceUnitCode());
+                    dto.setTraceUnitRatio(product.getTraceUnitRatio());
+                    dto.setTraceUnitCodeText(product.getTraceUnitCodeDictText());
+                }
             }
             lines.add(dto);
         }

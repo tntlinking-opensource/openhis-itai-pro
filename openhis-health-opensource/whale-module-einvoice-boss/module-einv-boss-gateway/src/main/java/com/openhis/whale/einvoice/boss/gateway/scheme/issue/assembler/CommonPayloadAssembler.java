@@ -65,43 +65,29 @@ public class CommonPayloadAssembler {
         }
         body.put("sex", StringUtils.defaultIfBlank(document.getPayerSex(), "男"));
         body.put("age", StringUtils.defaultIfBlank(document.getPayerAge(), "0"));
-        body.put("payChannelDetail", buildPayChannel(document.getTotalAmt()));
+        body.put("payChannelDetail", BossPayloadSupport.buildPayChannelDetail(null, document.getTotalAmt()));
         body.put("chargeDetail", buildChargeDetail(lines));
         return JSON.toJSONString(body);
     }
 
     /**
-     * 构建通用票支付渠道（COM 线不共用 {@link BossPayloadSupport#buildPayChannel} 以避免 unit 默认值差异）。
-     *
-     * @param totalAmt 支付总额
-     * @return payChannelDetail 数组
-     */
-    private JSONArray buildPayChannel(BigDecimal totalAmt) {
-        JSONArray channels = new JSONArray();
-        JSONObject channel = new JSONObject();
-        channel.put("payChannelCode", "01");
-        channel.put("payChannelValue", scale2(totalAmt));
-        channels.add(channel);
-        return channels;
-    }
-
-    /**
-     * 构建通用票 chargeDetail（无 selfAmt 列）。
+     * 构建通用票 chargeDetail（无 selfAmt 列；按 chargeCode 聚合，与门诊/挂号/住院一致）。
      *
      * @param lines 明细行
      * @return chargeDetail 数组
      */
     private JSONArray buildChargeDetail(List<EinvBossLine> lines) {
         JSONArray array = new JSONArray();
-        for (EinvBossLine line : lines) {
+        int sortNo = 1;
+        for (BossPayloadSupport.AggregatedChargeLine agg : BossPayloadSupport.aggregateByChargeCode(lines)) {
             JSONObject item = new JSONObject();
-            item.put("sortNo", line.getLineNo());
-            item.put("chargeCode", line.getChargeCode());
-            item.put("chargeName", line.getChargeName());
-            item.put("unit", line.getUnit());
-            item.put("std", scale2(line.getStdAmount()));
-            item.put("number", line.getQuantity() != null ? line.getQuantity() : BigDecimal.ONE);
-            item.put("amt", scale2(line.getAmount()));
+            item.put("sortNo", sortNo++);
+            item.put("chargeCode", agg.chargeCode);
+            item.put("chargeName", agg.chargeName);
+            item.put("unit", agg.unit);
+            item.put("std", agg.amt);
+            item.put("number", BigDecimal.ONE);
+            item.put("amt", agg.amt);
             array.add(item);
         }
         return array;

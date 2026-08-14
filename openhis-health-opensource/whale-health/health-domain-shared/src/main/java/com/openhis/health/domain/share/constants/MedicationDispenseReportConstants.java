@@ -20,7 +20,7 @@ public interface MedicationDispenseReportConstants {
     /** 汇总维度：按药品类型（应用层预解析 {@code categoryCodeByMedicationId}）。 */
     String SUMMARY_DIMENSION_CATEGORY = "CATEGORY";
 
-    /** 来源：全部（应用层并集，非本聚合字段）。 */
+    /** 来源：全部（已禁止；Gate 遇此码抛「禁止全部来源混查」）。 */
     String SOURCE_ALL = "ALL";
 
     /** 来源：患者发退药。 */

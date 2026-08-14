@@ -22,9 +22,9 @@ public class NurseStationAutoRollLinePoster {
     /**
      * 单条滚费执行落账。
      *
-     * @param line        落账行
-     * @param operatorId  任务操作人
-     * @param performerId 主执行人（责任护士）
+     * @param line        落账行（含 occurrenceTime）
+     * @param operatorId  操作人（写入 Charge.performer_id；配置项路径与计费人同值）
+     * @param performerId 主执行人（写入 Procedure performer；配置项=计费人，护理=责任护士）
      * @return 执行结果
      */
     public InpatientAutoRollOrderExecutionOrchestrator.Outcome postLine(
@@ -42,6 +42,7 @@ public class NurseStationAutoRollLinePoster {
             command.setQuantity(line.getQuantity());
             command.setQuantityUnit(line.getUnitCode());
             command.setPreferredDefinitionId(line.getChargeDefinitionId());
+            command.setOccurrenceTime(line.getOccurrenceTime());
             command.setPerformerId(performerId);
             command.setOperatorId(operatorId);
             return inpatientAutoRollOrderExecutionOrchestrator.executeLongTermServiceOrderSlot(command);

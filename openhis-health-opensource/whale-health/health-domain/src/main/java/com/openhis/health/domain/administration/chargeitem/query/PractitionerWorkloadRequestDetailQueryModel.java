@@ -35,10 +35,10 @@ public class PractitionerWorkloadRequestDetailQueryModel {
     /** 开单科室 {@code adm_charge_item.requesting_org_id}。 */
     private Long requestingOrgId;
 
-    /** 开单医生 {@code adm_charge_item.enterer_id}。 */
+    /** 开单医生（应用层自 Request {@code requester_id} 回填；非 ChargeItem.enterer_id）。 */
     private Long entererId;
 
-    /** 开立时间 {@code adm_charge_item.entered_date}。 */
+    /** 开立时间（应用层自 Request {@code req_opened_time} 回填）。 */
     private LocalDateTime enteredDate;
 
     /** payment 结账时间 {@code bill_date}（排序辅助）。 */

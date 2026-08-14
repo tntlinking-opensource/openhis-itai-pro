@@ -59,6 +59,12 @@ public class DeptIssueReportPageQuery extends AbstractPageQuery {
     private Map<Long, Long> organizationIdByPurposeLocationId;
 
     /**
+     * 领用科室组织主键；非 null 时按 {@code consuming_organization_id} 筛选
+     *（空落库历史行由应用层先收窄 {@link #resolvedPurposeLocationIds}）。
+     */
+    private Long consumingOrganizationId;
+
+    /**
      * 分页大小：缺省 {@link DeptIssueReportConstants#DEFAULT_PAGE_SIZE}，
      * 上限 {@link DeptIssueReportConstants#MAX_PAGE_SIZE}。
      *

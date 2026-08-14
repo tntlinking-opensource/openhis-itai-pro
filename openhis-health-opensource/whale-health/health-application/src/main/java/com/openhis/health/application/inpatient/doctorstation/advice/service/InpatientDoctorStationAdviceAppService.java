@@ -102,6 +102,7 @@ import com.openhis.health.application.shared.advice.InpatientOrderListSkeleton;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.application.shared.product.ProductDefinitionCatalogPageLoader;
+import com.openhis.health.application.shared.product.DoctorStationCatalogPositiveStockLocationBinder;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.application.shared.product.ProductDefinitionPageQuery;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
@@ -161,6 +162,8 @@ public class InpatientDoctorStationAdviceAppService {
     private final InpatientDoctorStationAdviceCatalogAssembler inpatientDoctorStationAdviceCatalogAssembler;
     private final InpatientDoctorStationAdviceOrderBindQueryService inpatientDoctorStationAdviceOrderBindQueryService;
     private final ProductDefinitionCatalogPageLoader productDefinitionCatalogPageLoader;
+    /** 医生站「只看库存>0」：模板库位下推至目录分页 Spec。 */
+    private final DoctorStationCatalogPositiveStockLocationBinder doctorStationCatalogPositiveStockLocationBinder;
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     private final MedicationRequestDomainService medicationRequestDomainService;
     private final ServiceRequestDomainService serviceRequestDomainService;
@@ -263,10 +266,10 @@ public class InpatientDoctorStationAdviceAppService {
     }
 
     /**
-     * 医嘱开立页初始化：频次、给药途径与费用性质（合同）下拉。
+     * 医嘱开立页初始化：频次、给药途径、输液滴速与费用性质（合同）下拉。
      *
      * @param request 就诊 id、患者 id（Gate 用）
-     * @return 频次、给药途径与费用性质 {@code OptionDto} 列表
+     * @return 频次、给药途径、滴速与费用性质 {@code OptionDto} 列表
      * @throws BusinessException 快照缺失或患者与读模型不一致
      */
     public InitInpatientDoctorStationAdviceResponse initInpatientDoctorStationAdvice(InitInpatientDoctorStationAdviceRequest request) {
@@ -274,6 +277,9 @@ public class InpatientDoctorStationAdviceAppService {
         InitInpatientDoctorStationAdviceResponse resp = new InitInpatientDoctorStationAdviceResponse();
         resp.setMedicationRateOptions(frequencyOptionLoader.loadActiveRateOptions());
         resp.setMedicationRouteOptions(codeSystemQueryService.getOptionListByCodeSystemName(TerminologyCodeSystemNameConstants.METHOD_CODE));
+        // Pre：输液滴速术语（与列表 speedName 同源 code_system=speed_code）
+        resp.setMedicationSpeedOptions(codeSystemQueryService.getOptionListByCodeSystemName(
+            DoctorStationAdviceConstants.TERMINOLOGY_SPEED_CODE_SYSTEM_NAME));
         resp.setFeeNatureOptions(
             contractFeeNatureOptionLoader.loadOptionsForEncounter(request.getPatientId(), request.getEncounterId()));
         // Pre：读侧树模型按 busNo 已排序，再过滤为启用态供新申请引用
@@ -378,6 +384,13 @@ public class InpatientDoctorStationAdviceAppService {
     ) {
         InpatientEncounterContextQueryModel snapshot = requireInpatientSnapshot(request.getEncounterId(), request.getPatientId(), false);
         ProductDefinitionPageQuery pageQuery = inpatientDoctorStationAdviceMapper.toProductDefinitionPageQuery(request);
+        // Pre：只看库存>0 时按取药模板库位收窄 EXISTS（与目录可开立量展示对齐）
+        Long catalogOrgId = snapshot.getOrganizationId();
+        if (request.getOrganizationUnitId() != null) {
+            catalogOrgId = request.getOrganizationUnitId();
+        }
+        doctorStationCatalogPositiveStockLocationBinder.bindIfPositiveQuantityOnly(
+            pageQuery, catalogOrgId, request.getPharmacyLocationId());
         Page<ProductDefinitionDisplayDto> page = productDefinitionCatalogPageLoader.pageProductDefinition(pageQuery);
         List<InpatientDoctorStationAdviceCatalogRowDto> rows =
             inpatientDoctorStationAdviceCatalogAssembler.assemblePageContent(request, page, snapshot);
@@ -907,6 +920,7 @@ public class InpatientDoctorStationAdviceAppService {
         Long encounterId = request.getEncounterId();
         IntegrationAfterCommitSupport.runAfterCommit(() ->
                 encounterQueryService.findOptionalEncounterEntityById(encounterId).ifPresent(encounter -> {
+                    // 入院登记已建档；此处幂等兜底历史未建档就诊（失败不影响出院医嘱）
                     if (encounter.getTenantId() != null && encounter.getPatientId() != null) {
                         caseRecordDomainService.bootstrapIfAbsent(
                                 encounter.getTenantId(),
@@ -920,6 +934,9 @@ public class InpatientDoctorStationAdviceAppService {
 
     /**
      * 住院医生站统一门控：加载快照并校验患者、IMP、可选可写态。
+     *
+     * <p>可见性经 {@link InpatientDoctorStationEncounterVisibilityResolver}：在科队列优先，
+     * 否则按就诊主键回落（病案首页已出院患者可读医嘱）。</p>
      *
      * @param encounterId 就诊主键
      * @param patientId   患者主键（与卡片一致）
@@ -1177,6 +1194,7 @@ public class InpatientDoctorStationAdviceAppService {
     }
 
     /**
+     * 停嘱前置：药品须为长期（状态须 VERIFIED 由领域 {@code ensureLongTermForStop} 再断言）。
      *
      * @param requestId 药品申请主键
      * @throws BusinessException 非长期医嘱时抛出
@@ -1189,6 +1207,7 @@ public class InpatientDoctorStationAdviceAppService {
     }
 
     /**
+     * 停嘱前置：诊疗须为长期（状态须 VERIFIED/COMPLETED 由领域 {@code assertStoppable} 再断言）。
      *
      * @param encounterId 就诊主键（用于列举医生开立来源申请）
      * @param requestId   诊疗申请主键
@@ -1202,10 +1221,10 @@ public class InpatientDoctorStationAdviceAppService {
     }
 
     /**
-     * 取消停嘱前置：药品须为长期且当前 STOPPED。
+     * 取消停嘱前置：药品须为长期、已 STOPPED，且护士尚未完成停嘱校对（BR-IP-ORD-025）。
      *
      * @param requestId 药品申请主键
-     * @throws BusinessException 非长期或非 STOPPED 时抛出
+     * @throws BusinessException 非长期、非 STOPPED 或已停嘱校对时抛出
      */
     private void assertStoppedLongTermMedication(Long requestId) {
         MedicationRequestDetailQueryModel detail = medicationRequestQueryService.loadMedicationRequestById(requestId);
@@ -1217,14 +1236,21 @@ public class InpatientDoctorStationAdviceAppService {
             // 仅已停嘱行可恢复，避免误改在执状态。
             throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT, DoctorStationAdviceConstants.MSG_CANCEL_STOP_NOT_STOPPED);
         }
+        // 已停嘱校对须护士先取消停嘱校对（逆流程）。
+        MedicationRequest entity = medicationRequestQueryService.findById(requestId);
+        if (entity != null && entity.getStopPerformerCheckId() != null) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_RULE_CONFLICT,
+                DoctorStationAdviceConstants.MSG_CANCEL_STOP_ALREADY_STOP_CHECKED);
+        }
     }
 
     /**
-     * 取消停嘱前置：诊疗须为长期且当前 STOPPED。
+     * 取消停嘱前置：诊疗须为长期、已 STOPPED，且护士尚未完成停嘱校对（BR-IP-ORD-025）。
      *
      * @param encounterId 就诊主键（用于列举医生开立来源申请）
      * @param requestId   诊疗申请主键
-     * @throws BusinessException 非长期或非 STOPPED 时抛出
+     * @throws BusinessException 非长期、非 STOPPED 或已停嘱校对时抛出
      */
     private void assertStoppedLongTermService(Long encounterId, Long requestId) {
         ServiceRequestListModel row = resolveServiceRequestRow(encounterId, requestId);
@@ -1235,6 +1261,12 @@ public class InpatientDoctorStationAdviceAppService {
         if (!RequestStatus.STOPPED.getCode().equals(row.getStatusEnum())) {
             // 仅已停嘱行可恢复，避免误改在执状态。
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, DoctorStationAdviceConstants.MSG_CANCEL_STOP_NOT_STOPPED);
+        }
+        // 已停嘱校对须护士先取消停嘱校对（逆流程）。
+        if (row.getStopPerformerCheckId() != null) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                DoctorStationAdviceConstants.MSG_CANCEL_STOP_ALREADY_STOP_CHECKED);
         }
     }
 
@@ -1354,20 +1386,23 @@ public class InpatientDoctorStationAdviceAppService {
     }
 
     /**
-     * 新申请页标本定义下拉：关键字检索启用项并按 sort 排序。
+     * IF-IP-DOR-18：加载启用态样本定义下拉（含拼音/五笔，供申请单样本 filterable）。
      *
      * @return OptionDto 列表（上限 500）
      */
     private List<OptionDto> loadSpecimenDefinitionOptions() {
+        // Pre：无关键字取启用样本上限 500，透出 pyStr/wbStr 供前端模糊
         SearchSpecimenDefinitionQuery query = new SearchSpecimenDefinitionQuery();
         query.setLimit(500);
         List<SpecimenDefinitionSearchItemQueryModel> rows = specimenDefinitionQueryService.searchByKeyWord(query);
         return OptionDtoAssembler.sortBySortAsc(
-            OptionDtoAssembler.toOptionsWithSortFallback(
+            OptionDtoAssembler.toSearchableOptionsWithSortFallback(
                 rows,
                 SpecimenDefinitionSearchItemQueryModel::getId,
                 SpecimenDefinitionSearchItemQueryModel::getName,
                 SpecimenDefinitionSearchItemQueryModel::getId,
+                SpecimenDefinitionSearchItemQueryModel::getPyStr,
+                SpecimenDefinitionSearchItemQueryModel::getWbStr,
                 0L));
     }
 

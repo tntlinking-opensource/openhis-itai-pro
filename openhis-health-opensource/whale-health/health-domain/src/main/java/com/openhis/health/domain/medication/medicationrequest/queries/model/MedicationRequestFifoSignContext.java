@@ -19,6 +19,11 @@ public class MedicationRequestFifoSignContext {
     /** 药品申请主键。 */
     private Long medReqId;
 
+    /**
+     * 处方号（同方多味共享；签发挂费须写入 {@code ChargeItem.prescription_no}）。
+     */
+    private String prescriptionNo;
+
     /** 药品定义主键。 */
     private Long medicationId;
 

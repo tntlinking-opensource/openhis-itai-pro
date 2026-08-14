@@ -35,8 +35,10 @@ import com.openhis.chs.domain.share.enums.MidSetlFlag;
 import com.openhis.chs.domain.share.enums.PsnSetlway;
 import com.openhis.chs.domain.inpatient.command.IpSettleChargeLine;
 import com.openhis.chs.domain.inpatient.command.IpSettleContext;
+import com.openhis.chs.domain.share.constants.ChsInventoryConstants;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -88,15 +90,19 @@ public final class IpInpatientSettleInputAssembler {
                 .setFeeOcurTime(line.getFeeOcurTime().format(FEE_TIME))
                 .setMedListCodg(line.getMedListCodg())
                 .setMedinsListCodg(line.getMedinsListCodg())
-                .setDetItemFeeSumamt(line.getDetItemFeeSumamt())
+                .setDetItemFeeSumamt(scalePlatformAmt(line.getDetItemFeeSumamt()))
                 .setCnt(line.getCnt())
-                .setPric(line.getPric())
+                .setPric(scalePlatformPric(line.getPric()))
                 .setBilgDeptCodg(blankToDash(line.getBilgDeptCodg()))
                 .setBilgDeptName(blankToDash(line.getBilgDeptName()))
                 .setBilgDrCodg(blankToDash(line.getBilgDrCodg()))
                 .setBilgDrName(blankToDash(line.getBilgDrName()))
                 .setHospApprFlag(HospApprFlag.APPROVED.getCode())
                 .setDscgTkdrugFlag(DscgTkdrugFlag.NO.getCode());
+            // Pre：退单行带原费用流水（平台 HospFeeDtlBO_121）
+            if (isNotEmpty(line.getInitFeedetlSn())) {
+                row.setInitFeedetlSn(line.getInitFeedetlSn().trim());
+            }
             if (isNotEmpty(line.getDrordNo())) {
                 row.setDrordNo(line.getDrordNo());
             }
@@ -124,7 +130,8 @@ public final class IpInpatientSettleInputAssembler {
     /** 2303 input.data */
     public static Ip2303Input assemble2303(IpSettleContext ctx, String mdtrtId, BigDecimal medfeeSumamt) {
         ChsSettleData data = baseSettleData(ctx, mdtrtId, medfeeSumamt);
-        data.setMidSetlFlag(resolveMidSetlFlag(ctx));
+        // 平台 mid_setl_flag 写死 0（长春等地拒绝 1）；本地 MID_SETTLE 仅跳过 2402。
+        data.setMidSetlFlag(MidSetlFlag.NO.getCode());
         if (IpSettleContext.SETTLE_MODE_DISCHARGE_FULL.equals(ctx.getSettleMode())) {
             data.setDscgTime(formatDscgDate(resolveDischargeTime(ctx)));
         } else {
@@ -140,7 +147,8 @@ public final class IpInpatientSettleInputAssembler {
         BigDecimal medfeeSumamt,
         ChsSetlinfoOutput setlinfo) {
         ChsSettleData data = baseSettleData(ctx, mdtrtId, medfeeSumamt);
-        data.setMidSetlFlag(resolveMidSetlFlag(ctx));
+        // 与 2303 一致：平台 mid_setl_flag 恒为 0。
+        data.setMidSetlFlag(MidSetlFlag.NO.getCode());
         if (setlinfo != null) {
             data.setFulamtOwnpayAmt(setlinfo.getFulamtOwnpayAmt());
             data.setOverlmtSelfpay(setlinfo.getOverlmtSelfpay());
@@ -256,13 +264,12 @@ public final class IpInpatientSettleInputAssembler {
             .setDiagTime(formatTime(ctx.getAdmissionTime()));
     }
 
-    private static String resolveMidSetlFlag(IpSettleContext ctx) {
-        if (IpSettleContext.SETTLE_MODE_MID.equals(ctx.getSettleMode())) {
-            return MidSetlFlag.YES.getCode();
-        }
-        return MidSetlFlag.NO.getCode();
-    }
-
+    /**
+     * 解析住院 med_type（默认普通住院）。
+     *
+     * @param ctx 住院结算上下文
+     * @return med_type 码
+     */
     private static String resolveMedType(IpSettleContext ctx) {
         if (isNotEmpty(ctx.getMedType())) {
             return ctx.getMedType().trim();
@@ -270,7 +277,12 @@ public final class IpInpatientSettleInputAssembler {
         return MedType.GENERAL_HOSPITALIZATION.getCode();
     }
 
-    /** 解析住院 med_type（默21 普通住院） */
+    /**
+     * 解析住院 med_type（默21 普通住院）
+     *
+     * @param ctx 住院结算上下文
+     * @return med_type 码
+     */
     public static String resolveMedTypeForContext(IpSettleContext ctx) {
         return resolveMedType(ctx);
     }
@@ -351,5 +363,21 @@ public final class IpInpatientSettleInputAssembler {
             return "-";
         }
         return value.trim();
+    }
+
+    /** 2301 {@code pric}：最多 6 位 HALF_UP（规范 16,6）。 */
+    private static BigDecimal scalePlatformPric(BigDecimal value) {
+        if (value == null) {
+            return null;
+        }
+        return value.setScale(ChsInventoryConstants.UPLOAD_PRICE_SCALE, RoundingMode.HALF_UP);
+    }
+
+    /** 2301 {@code det_item_fee_sumamt}：2 位 HALF_UP（规范 16,2）。 */
+    private static BigDecimal scalePlatformAmt(BigDecimal value) {
+        if (value == null) {
+            return null;
+        }
+        return value.setScale(2, RoundingMode.HALF_UP);
     }
 }

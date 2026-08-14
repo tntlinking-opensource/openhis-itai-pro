@@ -23,4 +23,9 @@ public class ExportMedicationCatalogRequest {
      * 药品分类编码筛选；空表示不限。
      */
     private String categoryCode;
+
+    /**
+     * 基药标识筛选（对应药典 {@code basic_flag}）；{@code null} 表示不限。
+     */
+    private Boolean basicFlag;
 }

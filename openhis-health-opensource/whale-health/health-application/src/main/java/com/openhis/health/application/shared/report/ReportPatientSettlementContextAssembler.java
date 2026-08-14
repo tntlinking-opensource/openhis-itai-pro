@@ -6,11 +6,14 @@ package com.openhis.health.application.shared.report;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
+import com.openhis.health.domain.administration.account.entity.Account;
 import com.openhis.health.domain.administration.account.service.AccountQueryService;
+import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.domain.financial.contract.queries.model.ContractListItemQueryModel;
 import com.openhis.health.domain.financial.contract.service.ContractQueryService;
 import com.openhis.health.domain.medication.medicationdispense.query.MedicationDispenseRecordPageQuery;
+import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.YbMedType;
 import com.openhis.health.domain.workflow.devicedispense.query.ConsumableUsageReportPageQuery;
 import com.openhis.health.domain.share.utils.EnumUtil;
@@ -30,9 +33,14 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 报表患者结算上下文装配：费用性质（优先账户 → fin_contract）+ medType（主诊断优先）。
+ * 报表患者结算上下文装配。
  *
- * <p>口径对齐挂号明细/患者卡片：有医保账户优先其合同；medType 取就诊诊断主诊，否则首条非空。
+ * <p><b>就诊优先账户（身份）</b>（{@link #mapContextsByEncounterIds}）：患者卡片/队列、
+ * 门诊挂号明细、住院入出明细——用什么挂号/入院就是什么（有医保户优先其合同）；本方法同时带出主诊 medType。
+ * 门诊挂号列表同口径见 {@code EncounterContractDisplayAssembler}。
+ * <b>账单挂账账户</b>（{@link #mapFeeNatureContextsByAccountIds} /
+ * {@link #mapFeeNatureContextsByDispenseIdFromChargeItems}）：费用明细/发药/耗材已结行——
+ * {@code ChargeItem.account_id → Account.contract_no → fin_contract}（转自费后跟新账户）。
  * 费用性质筛选下拉 {@code value=bus_no}，与日结 expenseProperty 一致。</p>
  */
 @Component
@@ -94,7 +102,10 @@ public class ReportPatientSettlementContextAssembler {
     }
 
     /**
-     * 按优先费用性质合同号解析就诊主键（空筛选返回 null 表示不收窄）。
+     * 按费用性质合同号解析就诊主键（空筛选返回 null 表示不收窄）。
+     *
+     * <p>已结账单类报表：就诊下<strong>任一</strong>有效账户 {@code contract_no} 命中即入集
+     * （双账户选自费后筛「自费」可命中）。行级展示仍须跟 {@code ChargeItem.account_id}。</p>
      *
      * @param feeNatureContractNo {@code fin_contract.bus_no}；空则不筛选
      * @return 匹配就诊主键；筛选有值但无命中时为空列表；未筛选时 {@code null}
@@ -105,7 +116,145 @@ public class ReportPatientSettlementContextAssembler {
         if (normalized == null) {
             return null;
         }
-        return this.accountQueryService.listEncounterIdsByPreferredContractNo(normalized);
+        return this.accountQueryService.listEncounterIdsByAnyAccountContractNo(normalized);
+    }
+
+    /**
+     * 按收费行发放锚点装配费用性质（{@code ChargeItem.dispense_id → account_id → contract_no}）。
+     *
+     * @param chargeItems 已加载收费行
+     * @return 发放主键 → 费用性质；同发放多行取首个非空账户
+     */
+    public Map<Long, PatientSettlementContextRow> mapFeeNatureContextsByDispenseIdFromChargeItems(
+        Collection<ChargeItem> chargeItems
+    ) {
+        if (chargeItems == null || chargeItems.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        LinkedHashSet<Long> accountIds = new LinkedHashSet<>();
+        for (ChargeItem chargeItem : chargeItems) {
+            if (chargeItem != null && chargeItem.getAccountId() != null) {
+                accountIds.add(chargeItem.getAccountId());
+            }
+        }
+        Map<Long, PatientSettlementContextRow> feeNatureByAccountId =
+            this.mapFeeNatureContextsByAccountIds(accountIds);
+        Map<Long, PatientSettlementContextRow> out = new HashMap<>();
+        for (ChargeItem chargeItem : chargeItems) {
+            if (chargeItem == null || chargeItem.getAccountId() == null) {
+                continue;
+            }
+            Long dispenseKey = chargeItem.getDispenseId();
+            // 药/耗材也可能锚在 service_id=发放主键
+            if (dispenseKey == null
+                && (TableNameConstants.MED_MEDICATION_DISPENSE.equals(chargeItem.getServiceTable())
+                    || TableNameConstants.WKF_DEVICE_DISPENSE.equals(chargeItem.getServiceTable()))) {
+                dispenseKey = chargeItem.getServiceId();
+            }
+            if (dispenseKey == null) {
+                continue;
+            }
+            // 同发放多段费用取首个账户费用性质
+            if (out.containsKey(dispenseKey)) {
+                continue;
+            }
+            PatientSettlementContextRow feeNature = feeNatureByAccountId.get(chargeItem.getAccountId());
+            if (feeNature != null) {
+                out.put(dispenseKey, feeNature);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 按收费行挂账账户批量解析费用性质（账单真源，非就诊优先账户）。
+     *
+     * @param accountIds {@code ChargeItem.account_id} 集合
+     * @return 账户主键 → 仅填 {@code feeNature*} 的上下文；无合同号时不含键
+     */
+    public Map<Long, PatientSettlementContextRow> mapFeeNatureContextsByAccountIds(Collection<Long> accountIds) {
+        if (accountIds == null || accountIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        LinkedHashSet<Long> unique = new LinkedHashSet<>();
+        for (Long accountId : accountIds) {
+            if (accountId != null) {
+                unique.add(accountId);
+            }
+        }
+        if (unique.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        // Pre：账户 → contract_no
+        Map<Long, Account> accountById = this.accountQueryService.mapAccountsByIds(unique);
+        Map<Long, String> contractNoByAccountId = new HashMap<>(accountById.size() * 2);
+        for (Map.Entry<Long, Account> entry : accountById.entrySet()) {
+            Account account = entry.getValue();
+            if (account == null) {
+                continue;
+            }
+            String contractNo = trimToNull(account.getContractNo());
+            if (contractNo != null) {
+                contractNoByAccountId.put(entry.getKey(), contractNo);
+            }
+        }
+        Map<String, String> contractNameByBusNo = this.loadContractNames(contractNoByAccountId);
+        Map<Long, PatientSettlementContextRow> out = new HashMap<>(contractNoByAccountId.size() * 2);
+        for (Map.Entry<Long, String> entry : contractNoByAccountId.entrySet()) {
+            PatientSettlementContextRow row = new PatientSettlementContextRow();
+            String contractNo = entry.getValue();
+            row.setFeeNatureContractNo(contractNo);
+            row.setFeeNatureDisplay(contractNameByBusNo.get(contractNo));
+            out.put(entry.getKey(), row);
+        }
+        return out;
+    }
+
+    /**
+     * 按收费行 {@code account_id → contract_no} 筛选命中主键（费用明细费用性质筛选真源）。
+     *
+     * @param chargeItems           候选收费行
+     * @param feeNatureContractNo   {@code fin_contract.bus_no}；空则不筛选
+     * @return 命中的 chargeItemId；未筛选时 {@code null}；有筛选无命中时为空集合
+     */
+    public Set<Long> filterChargeItemIdsByAccountContractNo(
+        Collection<ChargeItem> chargeItems,
+        String feeNatureContractNo
+    ) {
+        String normalized = trimToNull(feeNatureContractNo);
+        // 未选费用性质：调用方不收窄
+        if (normalized == null) {
+            return null;
+        }
+        if (chargeItems == null || chargeItems.isEmpty()) {
+            return Set.of();
+        }
+        LinkedHashSet<Long> accountIds = new LinkedHashSet<>();
+        for (ChargeItem chargeItem : chargeItems) {
+            if (chargeItem != null && chargeItem.getAccountId() != null) {
+                accountIds.add(chargeItem.getAccountId());
+            }
+        }
+        // 无挂账账户：筛选结果为空
+        if (accountIds.isEmpty()) {
+            return Set.of();
+        }
+        Map<Long, Account> accountById = this.accountQueryService.mapAccountsByIds(accountIds);
+        LinkedHashSet<Long> matched = new LinkedHashSet<>();
+        for (ChargeItem chargeItem : chargeItems) {
+            if (chargeItem == null || chargeItem.getId() == null || chargeItem.getAccountId() == null) {
+                continue;
+            }
+            Account account = accountById.get(chargeItem.getAccountId());
+            if (account == null) {
+                continue;
+            }
+            // Pre：账单账户 contract_no 与筛选合同号一致才入集
+            if (normalized.equals(trimToNull(account.getContractNo()))) {
+                matched.add(chargeItem.getId());
+            }
+        }
+        return matched;
     }
 
     /**

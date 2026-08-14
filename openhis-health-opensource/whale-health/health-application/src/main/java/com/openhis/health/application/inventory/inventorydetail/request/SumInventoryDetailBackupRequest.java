@@ -47,6 +47,12 @@ public class SumInventoryDetailBackupRequest {
     @Schema(description = "医保等级多选")
     private List<Integer> chrgitmLvList;
 
+    /**
+     * 基药标识筛选（药典 {@code basic_flag}）；仅收窄药品行；{@code null} 不限。
+     */
+    @Schema(description = "基药标识：true/false；null 不限（仅药品）")
+    private Boolean basicFlag;
+
     /** 库存范围：true 数量等于0，false 数量大于0，null 不限。 */
     @Schema(description = "库存范围：true 数量等于0，false 数量大于0，null 不限")
     private Boolean zeroStockOnly;

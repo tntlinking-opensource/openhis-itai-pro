@@ -144,4 +144,168 @@ public class DocumentStructureManager {
             }
         }
     }
+
+    /**
+     * 从 Tiptap content JSON 提取指定数据项纯文本（如 chiefComplaint）。
+     * 优先取数据元 attrs.value；否则收集子树 text，并去掉「主诉：」类前缀。
+     * 解析失败或未命中时返回 null（列表摘要用，不抛错）。
+     *
+     * @param contentJson 文书正文 JSON
+     * @param dataItemName 数据项名 / elementId，如 chiefComplaint
+     * @return 去空白后的纯文本；无则 null
+     */
+    public String extractPlainTextByDataItemName(String contentJson, String dataItemName) {
+        if (contentJson == null || contentJson.isEmpty()) {
+            return null;
+        }
+        if (dataItemName == null || dataItemName.isEmpty()) {
+            return null;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(contentJson);
+            if (root == null || !root.isObject()) {
+                return null;
+            }
+            JsonNode content = root.get(CONTENT);
+            if (content == null || !content.isArray()) {
+                return null;
+            }
+            String fromValue = findFirstMatchingValue(content, dataItemName);
+            if (fromValue == null || fromValue.isEmpty()) {
+                // 兼容部分模板 attrs.name 用中文「主诉」
+                if ("chiefComplaint".equals(dataItemName)) {
+                    fromValue = findFirstMatchingValue(content, "主诉");
+                }
+            }
+            if (fromValue != null && !fromValue.isEmpty()) {
+                return fromValue;
+            }
+            String fromText = findFirstMatchingSubtreeText(content, dataItemName);
+            if (fromText == null || fromText.isEmpty()) {
+                if ("chiefComplaint".equals(dataItemName)) {
+                    fromText = findFirstMatchingSubtreeText(content, "主诉");
+                }
+            }
+            return normalizeExtractedText(fromText, dataItemName);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    /** 优先匹配数据元 / chip 的 attrs.value */
+    private String findFirstMatchingValue(JsonNode nodes, String dataItemName) {
+        if (nodes == null || !nodes.isArray()) {
+            return null;
+        }
+        for (JsonNode node : nodes) {
+            if (node == null || !node.isObject()) {
+                continue;
+            }
+            JsonNode attrs = node.get(ATTRS);
+            if (attrs != null && attrs.isObject() && attrsMatchDataItem(attrs, dataItemName)) {
+                String value = attrs.path(ATTR_VALUE).asText(null);
+                if (value != null) {
+                    String trimmed = value.trim();
+                    if (!trimmed.isEmpty()) {
+                        return trimmed;
+                    }
+                }
+            }
+            JsonNode child = node.get(CONTENT);
+            if (child != null && child.isArray()) {
+                String nested = findFirstMatchingValue(child, dataItemName);
+                if (nested != null && !nested.isEmpty()) {
+                    return nested;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** 匹配段落/区域名后收集子孙 text 节点 */
+    private String findFirstMatchingSubtreeText(JsonNode nodes, String dataItemName) {
+        if (nodes == null || !nodes.isArray()) {
+            return null;
+        }
+        for (JsonNode node : nodes) {
+            if (node == null || !node.isObject()) {
+                continue;
+            }
+            JsonNode attrs = node.get(ATTRS);
+            if (attrs != null && attrs.isObject() && attrsMatchDataItem(attrs, dataItemName)) {
+                StringBuilder sb = new StringBuilder();
+                collectTextNodes(node, sb);
+                String text = sb.toString().trim();
+                if (!text.isEmpty()) {
+                    return text;
+                }
+            }
+            JsonNode child = node.get(CONTENT);
+            if (child != null && child.isArray()) {
+                String nested = findFirstMatchingSubtreeText(child, dataItemName);
+                if (nested != null && !nested.isEmpty()) {
+                    return nested;
+                }
+            }
+        }
+        return null;
+    }
+
+    private boolean attrsMatchDataItem(JsonNode attrs, String dataItemName) {
+        String name = attrs.path(ATTR_NAME).asText(null);
+        if (dataItemName.equals(name)) {
+            return true;
+        }
+        String elementId = attrs.path(ATTR_ELEMENT_ID).asText(null);
+        return dataItemName.equals(elementId);
+    }
+
+    private void collectTextNodes(JsonNode node, StringBuilder out) {
+        if (node == null || !node.isObject()) {
+            return;
+        }
+        String type = node.path(TYPE).asText(null);
+        if ("text".equals(type)) {
+            String text = node.path("text").asText("");
+            if (!text.isEmpty()) {
+                out.append(text);
+            }
+        }
+        // 固定文案节点可能把字放在 attrs.text
+        JsonNode attrs = node.get(ATTRS);
+        if (attrs != null && attrs.isObject()) {
+            String fixed = attrs.path("text").asText(null);
+            if (fixed != null && !fixed.isEmpty() && !"text".equals(type)) {
+                out.append(fixed);
+            }
+        }
+        JsonNode child = node.get(CONTENT);
+        if (child != null && child.isArray()) {
+            for (JsonNode c : child) {
+                collectTextNodes(c, out);
+            }
+        }
+    }
+
+    /** 去掉「主诉：」等标签前缀；仅标签无正文时视为空 */
+    private String normalizeExtractedText(String raw, String dataItemName) {
+        if (raw == null) {
+            return null;
+        }
+        String text = raw.trim();
+        if (text.isEmpty()) {
+            return null;
+        }
+        if ("chiefComplaint".equals(dataItemName)) {
+            if (text.startsWith("主诉：")) {
+                text = text.substring("主诉：".length()).trim();
+            } else if (text.startsWith("主诉:")) {
+                text = text.substring("主诉:".length()).trim();
+            }
+        }
+        if (text.isEmpty()) {
+            return null;
+        }
+        return text;
+    }
 }

@@ -35,9 +35,10 @@ import com.openhis.health.domain.administration.location.service.LocationQuerySe
 import com.openhis.health.domain.administration.patient.service.PatientQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
-import com.openhis.health.domain.custom.tracenumber.queries.model.TraceNumberQueryModel;
+import com.openhis.health.domain.custom.tracenumber.queries.model.TraceNumberIdentityQueryModel;
 import com.openhis.health.domain.custom.tracenumber.service.TraceNumberQueryService;
 import com.openhis.health.application.shared.tracenumber.TraceNumberDispenseTraceOrchestrator;
+import com.openhis.health.application.shared.tracenumber.TraceScanCountSupport;
 import com.openhis.health.application.shared.tracenumber.DispenseTraceUnitSnapshotEnricher;
 import com.openhis.health.domain.medication.medicationdispense.entity.MedicationDispense;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseSummaryItemQueryModel;
@@ -418,8 +419,6 @@ public class InpatientPharmacySummaryDispenseAppService {
                 // Pre：汇总追溯码仅落 SupplyDelivery，不写入患者发放行
                 Map<Long, String> traceBySupplyRequestId =
                     this.buildTraceOverrideBySupplyRequestId(request.getTraceLines());
-                List<String> allTraceCodes = this.collectTraceCodesFromSupplyLines(supplyLines, traceBySupplyRequestId);
-                List<String> hardHospitalCodes = new ArrayList<>();
                 for (SupplyRequestModel supplyLine : supplyLines) {
                     if (supplyLine == null || supplyLine.getId() == null) {
                         continue;
@@ -429,35 +428,36 @@ public class InpatientPharmacySummaryDispenseAppService {
                     if (lineTraceCodes.isEmpty()) {
                         continue;
                     }
+                    // Gate：仅供应行内码不重复；跨行同码允许（BR-TRC-023）
+                    traceNumberQueryService.assertNoDuplicateTraceCodes(lineTraceCodes);
+                    // Gate：主档存在且剩余≤0 硬拦（住院汇总同门诊/住院发药）
+                    traceNumberQueryService.assertMasterCodesNotExhaustedForDispense(lineTraceCodes);
                     if (supplyLine.getPurposeLocationId() == null) {
                         throw new BusinessException(
                             InpatientPharmacySummaryDispenseConstants.EX_IPS_204,
                             "追溯码冲突或请选择有效调配药师");
                     }
-                    // Gate：有码批本库优先否则全院；无码批跳过硬校验
-                    String lotForAssert = this.resolveSummaryTraceLotNumber(supplyLine, traceNoRaw);
-                    boolean lotHasMaster = traceNumberQueryService.existsMasterByItemLot(
-                        TableNameConstants.MED_MEDICATION_DEFINITION,
-                        supplyLine.getItemId(),
-                        lotForAssert);
-                    if (!lotHasMaster) {
-                        continue;
-                    }
-                    hardHospitalCodes.addAll(lineTraceCodes);
-                    traceNumberQueryService.assertCodesInNetStockForDispenseLine(
-                        TableNameConstants.MED_MEDICATION_DEFINITION,
-                        supplyLine.getItemId(),
-                        lotForAssert,
-                        supplyLine.getPurposeLocationId(),
-                        lineTraceCodes);
-                }
-                traceNumberQueryService.assertNoDuplicateTraceCodes(allTraceCodes);
-                if (!hardHospitalCodes.isEmpty()) {
-                    traceNumberQueryService.assertCodesInHospitalForDispense(hardHospitalCodes);
+                    // BR-TRC-006/020：未建档/品批不匹配不做硬拦；写流水软跳过
                 }
                 // Pre：药品目录（单位换算）
                 Map<String, ProductDefinitionDisplayDto> productByKey =
                     productDefinitionDisplayTerminologyAssembler.loadAsMap(this.collectProductLookupsFromDispenses(dispenses));
+                // Gate：供应行绑码硬上限=ceil(操作量)；码倍不参与个数
+                for (SupplyRequestModel supplyLine : supplyLines) {
+                    if (supplyLine == null || supplyLine.getId() == null || supplyLine.getItemQuantity() == null) {
+                        continue;
+                    }
+                    List<String> lineTraceCodes = splitTraceCodes(traceBySupplyRequestId.get(supplyLine.getId()));
+                    if (lineTraceCodes.isEmpty()) {
+                        continue;
+                    }
+                    int maxCodes = TraceScanCountSupport.resolveOutboundMaxCodeCount(supplyLine.getItemQuantity());
+                    if (lineTraceCodes.size() > maxCodes) {
+                        throw new BusinessException(
+                            InpatientPharmacySummaryDispenseConstants.EX_IPS_204,
+                            "追溯码数量超过发药量，请减少扫码");
+                    }
+                }
                 // Pre：逐行库存充足预校验（BR-IPS-006）
                 for (MedicationDispense dispense : dispenses) {
                     if (dispense == null) {
@@ -550,7 +550,7 @@ public class InpatientPharmacySummaryDispenseAppService {
                     String productKey = ProductDefinitionKeyUtil.buildCompositeKey(
                         TableNameConstants.MED_MEDICATION_DEFINITION, supplyLine.getItemId());
                     ProductDefinitionDisplayDto productRow = productByKey.get(productKey);
-                    String lotNumber = this.resolveSummaryTraceLotNumber(supplyLine, traceNoRaw);
+                    String lotNumber = this.resolveSummaryTraceLotNumber(supplyLine, traceNoRaw, dispenses);
                     MedicationProductUnitConversionSource unitConversionSource = null;
                     if (productRow != null) {
                         unitConversionSource = ProductDefinitionDisplaySupport.toUnitConversionSource(productRow);
@@ -1133,29 +1133,6 @@ public class InpatientPharmacySummaryDispenseAppService {
     }
 
     /**
-     * 从汇总供应行收集全部追溯码片段。
-     *
-     * @param supplyLines              type 27 供应行
-     * @param traceBySupplyRequestId   供应行 id → 追溯码
-     * @return 追溯码片段列表
-     */
-    private List<String> collectTraceCodesFromSupplyLines(
-        List<SupplyRequestModel> supplyLines,
-        Map<Long, String> traceBySupplyRequestId) {
-        List<String> codes = new ArrayList<>();
-        if (supplyLines == null || traceBySupplyRequestId == null) {
-            return codes;
-        }
-        for (SupplyRequestModel supplyLine : supplyLines) {
-            if (supplyLine == null || supplyLine.getId() == null) {
-                continue;
-            }
-            codes.addAll(splitTraceCodes(traceBySupplyRequestId.get(supplyLine.getId())));
-        }
-        return codes;
-    }
-
-    /**
      * 按药品 id 选取代表性发放行（追溯门控快照用；不用于追溯码落库）。
      *
      * @param dispenses    汇总下发放行
@@ -1224,9 +1201,11 @@ public class InpatientPharmacySummaryDispenseAppService {
                 locationId,
                 line.getItemId(),
                 lot,
-                (code, ratio) -> {
+                (code, ratio, codeText) -> {
+                    // Asm：主档贴码单位/比例/术语文案（扫码弹窗药品明细展示）
                     target.setTraceUnitCode(code);
                     target.setTraceUnitRatio(ratio);
+                    target.setTraceUnitCodeText(codeText);
                 },
                 target::setLotHasTraceMaster
             ));
@@ -1235,22 +1214,50 @@ public class InpatientPharmacySummaryDispenseAppService {
     }
 
     /**
-     * 汇总核发写追溯时解析批号：供应行 → 主表首码 → 失败则抛业务异常。
+     * 汇总核发写追溯时解析批号（与门诊发药行 {@code MedicationDispense.lotNumber} 同口径）。
      *
-     * @param supplyLine  汇总供应行
-     * @param traceNoRaw  逗号追溯串
+     * <p>顺序：供应行批号 → 同药品首个发放行批号 → 主档软回落（无主档不抛
+     * {@code TRACE_NUMBER_NOT_FOUND}，无码批仅落 SupplyDelivery 业务码）。</p>
+     *
+     * @param supplyLine 汇总供应行
+     * @param traceNoRaw 逗号追溯串
+     * @param dispenses  同汇总单发放行（供批号回落）
      * @return 非空批号
      * @throws BusinessException 无法解析批号时
      */
-    private String resolveSummaryTraceLotNumber(SupplyRequestModel supplyLine, String traceNoRaw) {
+    private String resolveSummaryTraceLotNumber(
+        SupplyRequestModel supplyLine,
+        String traceNoRaw,
+        List<MedicationDispense> dispenses
+    ) {
+        // Pre：供应行自带批号（部分汇总 Supply 有值）
         if (supplyLine != null && StringUtils.isNotEmpty(supplyLine.getLotNumber())) {
             return supplyLine.getLotNumber().trim();
         }
+        // Pre：合并行禁止 lotNumber，批号真源在底层发放行（与详情 enrich / 门诊同口径）
+        if (supplyLine != null && supplyLine.getItemId() != null && dispenses != null) {
+            for (MedicationDispense dispense : dispenses) {
+                if (dispense == null || dispense.getMedicationId() == null) {
+                    continue;
+                }
+                if (!supplyLine.getItemId().equals(dispense.getMedicationId())) {
+                    continue;
+                }
+                if (StringUtils.isNotEmpty(dispense.getLotNumber())) {
+                    return dispense.getLotNumber().trim();
+                }
+            }
+        }
+        // Pre：主档软回落；NOT_FOUND 不抛 TRACE_NUMBER_NOT_FOUND（对齐门诊无码批 Option A）
         List<String> codes = splitTraceCodes(traceNoRaw);
         if (!codes.isEmpty()) {
-            TraceNumberQueryModel master = traceNumberQueryService.getTraceNumberByTraceNo(codes.get(0));
-            if (master != null && StringUtils.isNotEmpty(master.getLotNumber())) {
-                return master.getLotNumber().trim();
+            List<TraceNumberIdentityQueryModel> identities =
+                traceNumberQueryService.batchResolveTraceIdentityByTraceNos(List.of(codes.get(0)));
+            if (!identities.isEmpty()) {
+                TraceNumberIdentityQueryModel identity = identities.get(0);
+                if (identity != null && StringUtils.isNotEmpty(identity.getLotNumber())) {
+                    return identity.getLotNumber().trim();
+                }
             }
         }
         throw new BusinessException(

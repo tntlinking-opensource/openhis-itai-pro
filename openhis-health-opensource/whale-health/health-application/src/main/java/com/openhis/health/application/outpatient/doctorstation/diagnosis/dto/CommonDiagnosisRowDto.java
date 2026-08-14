@@ -81,4 +81,11 @@ public class CommonDiagnosisRowDto {
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "证候定义标识")
     private Long syndromeDefinitionId;
+
+    /**
+     * 条件模板主键：个人/科室常用树节点解绑时回传；历史/医生常用分支为空。
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "条件模板标识（个人/科室常用解绑用）")
+    private Long templateId;
 }

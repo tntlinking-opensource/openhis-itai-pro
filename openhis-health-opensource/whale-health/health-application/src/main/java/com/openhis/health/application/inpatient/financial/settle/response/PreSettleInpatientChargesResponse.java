@@ -37,9 +37,17 @@ public class PreSettleInpatientChargesResponse {
     @Schema(description = "是否已完成医保预结算")
     private Boolean insurancePreSettled;
 
-    /** 患者实付金额。 */
-    @Schema(description = "患者实付金额（医保 psn_cash_pay）")
+    /**
+     * 渠道实付/少补预览（预交金充足时为 0）。
+     *
+     * <p>自费：{@code max(0, 本批应收 − 库内预交金)}；医保：{@code max(0, 个人现金 − 库内预交金)}。</p>
+     */
+    @Schema(description = "渠道实付/少补（预交金充足时为 0）")
     private BigDecimal displayAmount;
+
+    /** 预结算时点的库内预交金余额（登记个人现金户 balance，供前端展示冲抵）。 */
+    @Schema(description = "库内预交金余额")
+    private BigDecimal prepayNetBalance;
 
     /** 医保医疗费总额。 */
     @Schema(description = "医保医疗费总额")
@@ -56,6 +64,26 @@ public class PreSettleInpatientChargesResponse {
     /** 医保个人现金支付。 */
     @Schema(description = "医保个人现金支付")
     private BigDecimal ybPsnCashPay;
+
+    /** 基本医保统筹（2303 hifp_pay，只读展示）。 */
+    @Schema(description = "基本医保统筹基金支出")
+    private BigDecimal ybHifpPay;
+
+    /** 其他支出（2303 oth_pay，只读展示）。 */
+    @Schema(description = "其他支出")
+    private BigDecimal ybOthPay;
+
+    /** 实际支付起付线（2303 act_pay_dedc，只读展示）。 */
+    @Schema(description = "实际支付起付线")
+    private BigDecimal ybActPayDedc;
+
+    /** 公务员医疗补助（2303 cvlserv_pay，只读展示）。 */
+    @Schema(description = "公务员医疗补助")
+    private BigDecimal ybCvlservPay;
+
+    /** 公务员标志（2303 cvlserv_flag，只读展示）。 */
+    @Schema(description = "公务员标志")
+    private String ybCvlservFlag;
 
     /** 医保预结算快照 ID。 */
     @Schema(description = "医保预结算快照 ID")

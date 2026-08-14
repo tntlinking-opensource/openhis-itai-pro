@@ -40,7 +40,11 @@ public class CreateReturnCommand extends BatchCommand<CreateReturnCommand.Create
     public static class CreateReturnItemCommand {
         /** 业务单号。 */
         private String busNo;
-        /** 来源/关联业务单号（退库必填，由领域校验）。 */
+        /**
+         * 来源/关联业务单号。
+         *
+         * <p>药房/科室主动退库可空（自由选品）；退库入库壳单由领域校验非空。</p>
+         */
         private String originalBusNo;
         /** 供应类型持久化码。 */
         private String typeEnum;

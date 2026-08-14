@@ -23,8 +23,22 @@ public class BossLineResult {
     /** 博思收费项目编码。 */
     private String chargeCode;
 
-    /** 博思收费项目名称。 */
+    /** 博思收费项目名称（统计大类）。 */
     private String chargeName;
+
+    /**
+     * 清单具体项目名称（药品/诊疗名）；调额页「项目名称」优先展示本字段。
+     */
+    private String itemName;
+
+    /** 清单医保分类展示（甲类/乙类/丙类/自费）。 */
+    private String listRemark;
+
+    /** 清单医保分类码（1甲/2乙/3丙）。 */
+    private String listMedicalCareType;
+
+    /** 计量单位。 */
+    private String unit;
 
     /** 标准金额。 */
     private BigDecimal stdAmount;

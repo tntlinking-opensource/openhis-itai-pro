@@ -13,6 +13,7 @@ import com.openhis.health.domain.administration.encounter.queries.model.Inpatien
 import com.openhis.health.domain.custom.chargeitemautogen.queries.model.ChargeItemAutoGenActiveRuleQueryModel;
 import com.openhis.health.domain.custom.chargeitemautogen.queries.model.ChargeItemAutoGenRuleQueryModel;
 import com.openhis.health.domain.custom.chargeitemautogen.service.ChargeItemAutoGenQueryService;
+import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.InpatientAutoRollNursingLevelQueryModel;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +23,7 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -114,8 +116,15 @@ public class NurseStationAutoRollEncounterProcessor {
                 rule.getTriggerSourceId(),
                 rule.getChargeDefinitionId(),
                 rule.getQuantityValue(),
-                priceLine.getUnitCode());
-            if (this.postAutoRollLine(line, operatorId, performerId, result)) {
+                priceLine.getUnitCode(),
+                rule.getBusinessTime());
+            // 配置计费人优先；存量空则回落责任护士/任务操作人（BR-IP-ARG-019）
+            Long bedPerformerId = rule.getBillingPractitionerId();
+            if (bedPerformerId == null) {
+                bedPerformerId = performerId;
+            }
+            // Charge.performer_id 取自 operatorId，故计费人同时写入两边
+            if (this.postAutoRollLine(line, bedPerformerId, bedPerformerId, result)) {
                 result.setProcessedEncounter(true);
             }
         }
@@ -155,7 +164,9 @@ public class NurseStationAutoRollEncounterProcessor {
                             nursingModel.getActivityId(),
                             nursingChargeDefinitionId,
                             nursingQty,
-                            nursingModel.getUnitCode());
+                            nursingModel.getUnitCode(),
+                            null);
+                        // 护理分支：时刻写死日末；计费人仍用责任护士/任务操作人
                         if (this.postAutoRollLine(line, operatorId, performerId, result)) {
                             result.setProcessedEncounter(true);
                         }
@@ -195,6 +206,7 @@ public class NurseStationAutoRollEncounterProcessor {
      * @param chargeDefinitionId 定价 id
      * @param quantity           数量
      * @param unitCode           单位
+     * @param businessTime       配置业务时刻；空则日末（护理写死）
      * @return 执行行
      */
     private AutoRollLineContext buildExecutionLineContext(
@@ -204,7 +216,8 @@ public class NurseStationAutoRollEncounterProcessor {
         Long activityId,
         Long chargeDefinitionId,
         BigDecimal quantity,
-        String unitCode) {
+        String unitCode,
+        LocalTime businessTime) {
         AutoRollLineContext line = new AutoRollLineContext();
         line.setServiceRequestId(serviceRequestId);
         line.setEncounterId(ctx.getEncounterId());
@@ -220,7 +233,12 @@ public class NurseStationAutoRollEncounterProcessor {
         line.setQuantity(qty);
         line.setUnitCode(unitCode);
         line.setBillDate(billDate);
-        line.setOccurrenceTime(billDate.atStartOfDay());
+        LocalTime clock = businessTime;
+        // 护理或未配时刻：日末，避免 00:00:00 早于入院
+        if (clock == null) {
+            clock = InpatientNurseStationConstants.DAY_END_CLOCK;
+        }
+        line.setOccurrenceTime(billDate.atTime(clock));
         return line;
     }
 

@@ -11,6 +11,7 @@ import lombok.Data;
 import lombok.experimental.Accessors;
 
 import java.math.BigDecimal;
+import java.time.LocalTime;
 
 /**
  * IF-IP-ARG-03：新增自动计费配置请求。
@@ -34,9 +35,9 @@ public class CreateAutoGenRuleRequest {
     @Schema(description = "规则名称", requiredMode = Schema.RequiredMode.REQUIRED)
     private String ruleName;
 
-    /** 床位服务活动定义主键。 */
+    /** 诊疗活动定义主键（自动计费选品；排除护理/转科/出院/嘱托）。 */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "床位服务活动定义主键", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(description = "诊疗活动定义主键", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long activityId;
 
     /** 收费项定价主键。 */
@@ -60,4 +61,17 @@ public class CreateAutoGenRuleRequest {
     /** 备注。 */
     @Schema(description = "备注")
     private String remark;
+
+    /**
+     * 滚费业务时刻（billDate 当日；空则日末 23:59:59）。
+     */
+    @Schema(description = "滚费业务时刻 HH:mm:ss，默认 23:59:59")
+    private LocalTime businessTime;
+
+    /**
+     * 滚费计费人（adm_practitioner.id；空则当前登录人）。
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "滚费计费人")
+    private Long billingPractitionerId;
 }

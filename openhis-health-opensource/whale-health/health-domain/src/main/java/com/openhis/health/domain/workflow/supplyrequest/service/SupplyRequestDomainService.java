@@ -724,7 +724,9 @@ public class SupplyRequestDomainService {
     /**
      * 创建或修订退库单（药房退库 / 科室退库主动单；退库入库壳单仅新建）：带既有 busNo 且类型可修订时软删旧行整批重插；否则新建并发布创建事件。
      *
-     * @param command 退库明细（须含 originalBusNo 等）
+     * <p>药房/科室主动退库允许 {@code originalBusNo} 为空（自由选品）；退库入库壳单仍须绑定下游退库单号。</p>
+     *
+     * @param command 退库明细
      * @return 业务单号
      * @throws BusinessException 类型不支持修订、单不存在或字段非法时
      */
@@ -734,22 +736,29 @@ public class SupplyRequestDomainService {
         List<CreateReturnCommand.CreateReturnItemCommand> items = command.resolveItems();
         CreateReturnCommand.CreateReturnItemCommand head = items.get(0);
         String requestedBusNo = head.getBusNo();
+        // —— 首行带既有 busNo 视为同号全量修订；空白则为新建并发布 Created 事件。——
         boolean revisionRequested = requestedBusNo != null && !requestedBusNo.trim().isEmpty();
 
         if (revisionRequested) {
             String busNo = requestedBusNo.trim();
             List<SupplyRequest> existingLines = supplyRequestRepository.findByBusNoAndIsDeletedFalse(busNo);
             if (existingLines.isEmpty()) {
+                // 修订目标单号在库中不存在，禁止凭空写同号行
                 throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_NOT_FOUND, "退库单不存在，无法修订");
             }
             SupplyRequest headExisting = existingLines.get(0);
             if (headExisting != null && SupplyType.PHARMACY_RETURN_TO_WAREHOUSE.getCode().equals(headExisting.getTypeEnum())) {
+                // 药房退库：仅待审/驳回/撤回可软删重插
                 SupplyRequest.assertPharmacyReturnToWarehouseLinesRevisable(existingLines);
+            } else if (headExisting != null && SupplyType.DEPT_RETURN.getCode().equals(headExisting.getTypeEnum())) {
+                // 科室退库：修订门控与药房退库同构
+                SupplyRequest.assertDeptReturnLinesRevisable(existingLines);
             } else if (headExisting != null && SupplyType.CABINET_RETURN_STOCK_IN.getCode().equals(headExisting.getTypeEnum())) {
                 // 退库入库单仅由下游退库 agree 自动生成，禁止同号修订
                 throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
                     "退库入库单由药房/科室退库同意后系统自动生成，不支持修订");
             } else {
+                // 其它供应类型不得借用 createReturn 修订入口
                 throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "该退库单据类型不支持通过 createReturn 修订");
             }
 
@@ -757,6 +766,7 @@ public class SupplyRequestDomainService {
             this.softDeleteExistingLinesForRevision(existingLines);
 
             List<SupplyRequest> toInsert = new ArrayList<>();
+            // —— 按命令行全量重建同号明细（含可选 originalBusNo 自由选品行）。——
             for (CreateReturnCommand.CreateReturnItemCommand item : items) {
                 SupplyRequest entity = this.buildReturnEntityFromItem(busNo, item);
                 this.applyBootstrapReturnStatus(command, entity);
@@ -767,6 +777,7 @@ public class SupplyRequestDomainService {
             return busNo;
         }
 
+        // —— 新建路径：领域生成业务单号后落库并发布创建事件。——
         String busNo = this.generateSupplyBusNo(items.get(0).getTypeEnum());
 
         List<SupplyRequest> toSave = new ArrayList<>();
@@ -785,10 +796,12 @@ public class SupplyRequestDomainService {
     /**
      * 退库命令单行 → {@link SupplyRequest} 实体（含 originalBusNo Gate 与待审核初态）。
      *
+     * <p>药房/科室主动退库允许 {@code originalBusNo} 为空（自由选品）；退库入库壳单须绑下游退库单。</p>
+     *
      * @param busNo 业务单号
      * @param item  退库明细行命令
      * @return 待 save 实体
-     * @throws BusinessException originalBusNo 缺失
+     * @throws BusinessException 退库入库壳单缺 originalBusNo
      */
     private SupplyRequest buildReturnEntityFromItem(String busNo, CreateReturnCommand.CreateReturnItemCommand item) {
         SupplyRequest entity = this.buildCommonEntity(busNo, item.getTypeEnum(), item.getItemTable(), item.getItemId(),
@@ -815,9 +828,15 @@ public class SupplyRequestDomainService {
             entity.setApprovalTime(item.getApprovalTime());
         }
 
-        // 前置校验：退库/壳单 originalBusNo 必填（主动退库绑入库单；壳单绑退库单）
-        if (entity.getOriginalBusNo() == null || entity.getOriginalBusNo().trim().isEmpty()) {
-            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "退库单 originalBusNo 必填");
+        // 主动退库（药房/科室）允许 originalBusNo 为空；退库入库壳单仍须绑定下游退库单号
+        boolean freeSelectReturn =
+            SupplyType.PHARMACY_RETURN_TO_WAREHOUSE.getCode().equals(entity.getTypeEnum())
+                || SupplyType.DEPT_RETURN.getCode().equals(entity.getTypeEnum());
+        if (!freeSelectReturn) {
+            // 壳单等非主动退库类型：缺关联单号则拒绝落库，避免无源壳台账
+            if (entity.getOriginalBusNo() == null || entity.getOriginalBusNo().trim().isEmpty()) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "退库单 originalBusNo 必填");
+            }
         }
         return entity;
     }
@@ -1356,7 +1375,7 @@ public class SupplyRequestDomainService {
      * @throws BusinessException 修订门控、类型不匹配或入库类缺 originalBusNo 时
      */
     public String createRequisition(CreateRequisitionCommand command) {
-        // 前置：目录进价权威单价重算行金额（BR-MON-001）
+        // 前置：批号进价 LOT_NUMBER_COST 重算行金额（禁止目录 PURCHASE；BR-MON-001）
         this.writePricingSupport.applyRequisitionCommand(command);
         List<CreateRequisitionCommand.CreateRequisitionItemCommand> items = command.resolveItems();
         CreateRequisitionCommand.CreateRequisitionItemCommand head = items.get(0);

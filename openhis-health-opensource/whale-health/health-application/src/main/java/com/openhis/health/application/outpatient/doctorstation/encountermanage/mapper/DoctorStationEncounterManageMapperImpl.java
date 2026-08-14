@@ -6,10 +6,12 @@ package com.openhis.health.application.outpatient.doctorstation.encountermanage.
 
 import com.openhis.health.application.shared.pagination.PageQueryBinder;
 import com.openhis.health.application.shared.pagination.PagedResultBuilder;
+import com.openhis.health.application.outpatient.doctorstation.encountermanage.request.CancelOutpatientReceptionRequest;
 import com.openhis.health.application.outpatient.doctorstation.encountermanage.request.CompleteOutpatientEncounterRequest;
 import com.openhis.health.application.outpatient.doctorstation.encountermanage.request.MarkOutpatientLeaveRequest;
 import com.openhis.health.application.outpatient.doctorstation.encountermanage.request.PageOutpatientInfoForDoctorStationRequest;
 import com.openhis.health.application.outpatient.doctorstation.encountermanage.request.StartOutpatientReceptionRequest;
+import com.openhis.health.application.outpatient.doctorstation.encountermanage.response.CancelOutpatientReceptionResponse;
 import com.openhis.health.application.outpatient.doctorstation.encountermanage.response.CompleteOutpatientEncounterResponse;
 import com.openhis.health.application.outpatient.doctorstation.encountermanage.response.MarkOutpatientLeaveResponse;
 import com.openhis.health.application.outpatient.doctorstation.encountermanage.response.PageOutpatientInfoForDoctorStationResponse;
@@ -17,6 +19,7 @@ import com.openhis.health.application.outpatient.doctorstation.encountermanage.r
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.mapper.DoctorStationDiagnosisMapper;
 import com.openhis.health.application.outpatient.doctorstation.encountermanage.dto.OutpatientInfoItemDto;
 import com.openhis.health.application.shared.converter.TextValueConverter;
+import com.openhis.health.domain.administration.encounter.command.CancelOutpatientReceptionCommand;
 import com.openhis.health.domain.administration.encounter.command.CompleteOutpatientEncounterCommand;
 import com.openhis.health.domain.administration.encounter.command.MarkOutpatientLeaveCommand;
 import com.openhis.health.domain.administration.encounter.command.StartOutpatientReceptionCommand;
@@ -38,10 +41,10 @@ import java.util.Map;
 /**
  * {@link DoctorStationEncounterManageMapper} 实现：医生站就诊管理应用层字段映射器。
  *
- * <p><b>职责</b>：将医生站就诊队列、接诊、暂离、完诊等 HTTP 请求装配为领域命令，
+ * <p><b>职责</b>：将医生站就诊队列、接诊、暂离、完诊、取消接诊等 HTTP 请求装配为领域命令，
  * 将门诊信息读模型装配为列表/详情响应；不包含业务状态机推演。</p>
  *
- * <p><b>对应接口规格</b>：IF-DOR-01 ～ IF-DOR-04（医生站就诊队列、接诊、暂离、完诊）。</p>
+ * <p><b>对应接口规格</b>：IF-DOR-01 ～ IF-DOR-04、IF-DOR-06（医生站就诊队列、接诊、暂离、完诊、取消接诊）。</p>
  *
  * <p><b>边界假设</b>：
  * <ul>
@@ -166,6 +169,7 @@ public class DoctorStationEncounterManageMapperImpl implements DoctorStationEnco
         dto.setAgeText(row.getAgeText());
         dto.setIdCard(row.getIdCard());
         dto.setPhone(row.getPhone());
+        dto.setAddress(row.getAddress());
         // 科室与医生信息
         dto.setOrganizationId(row.getOrganizationId());
         dto.setOrganizationName(row.getOrganizationName());
@@ -254,6 +258,23 @@ public class DoctorStationEncounterManageMapperImpl implements DoctorStationEnco
     }
 
     /**
+     * 取消接诊请求 → 领域命令（IF-DOR-06）。
+     *
+     * @param request 请求（非空）
+     * @return 取消接诊命令
+     */
+    @Override
+    public CancelOutpatientReceptionCommand toCancelOutpatientReceptionCommand(CancelOutpatientReceptionRequest request) {
+        CancelOutpatientReceptionCommand command = new CancelOutpatientReceptionCommand();
+        command.setOperatorId(request.getOperatorId());
+        CancelOutpatientReceptionCommand.CancelOutpatientReceptionItemCommand item =
+            new CancelOutpatientReceptionCommand.CancelOutpatientReceptionItemCommand();
+        item.setEncounterId(request.getEncounterId());
+        command.setItem(item);
+        return command;
+    }
+
+    /**
      * 接诊结果装配（IF-DOR-02 Asm）。
      *
      * @param encounterId 就诊主键
@@ -293,6 +314,21 @@ public class DoctorStationEncounterManageMapperImpl implements DoctorStationEnco
     @Override
     public CompleteOutpatientEncounterResponse toCompleteOutpatientEncounterResponse(Long encounterId, boolean success) {
         CompleteOutpatientEncounterResponse response = new CompleteOutpatientEncounterResponse();
+        response.setEncounterId(encounterId);
+        response.setSuccess(success);
+        return response;
+    }
+
+    /**
+     * 取消接诊结果装配（IF-DOR-06 Asm）。
+     *
+     * @param encounterId 就诊主键
+     * @param success     是否成功
+     * @return 响应体
+     */
+    @Override
+    public CancelOutpatientReceptionResponse toCancelOutpatientReceptionResponse(Long encounterId, boolean success) {
+        CancelOutpatientReceptionResponse response = new CancelOutpatientReceptionResponse();
         response.setEncounterId(encounterId);
         response.setSuccess(success);
         return response;

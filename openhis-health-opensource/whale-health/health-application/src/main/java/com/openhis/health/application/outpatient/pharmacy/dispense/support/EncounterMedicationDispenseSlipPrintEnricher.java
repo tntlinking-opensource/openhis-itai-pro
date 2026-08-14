@@ -7,6 +7,7 @@ package com.openhis.health.application.outpatient.pharmacy.dispense.support;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
+import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.domain.administration.organization.entity.Organization;
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
@@ -17,11 +18,14 @@ import com.openhis.health.domain.share.constants.PrescriptionSplitConstants;
 import com.openhis.health.domain.share.enums.AdministrativeGender;
 import com.openhis.health.domain.share.enums.OrganizationType;
 import com.openhis.health.domain.share.enums.PublicationStatus;
+import com.openhis.health.domain.share.enums.YbMedType;
+import com.openhis.health.domain.share.utils.EncounterDiagnosisIdsSupport;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.application.outpatient.pharmacy.dispense.dto.EncounterMedicationDispenseSlipRowDto;
 import com.openhis.health.application.shared.diagnosis.EncounterDiagnosisSnapshotAssembler;
 import com.openhis.health.application.shared.financial.ContractExpenseNatureAssembler;
+import com.openhis.health.application.shared.financial.EncounterContractDisplayAssembler;
 import com.openhis.whale.core.application.util.StringUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -29,6 +33,7 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -41,7 +46,8 @@ import static com.openhis.whale.core.application.util.StringUtils.firstNonBlank;
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
 /**
- * 门诊发药 slip 行处方打印字段回补（患者/机构/诊断/药品展示行）。
+ * 门诊发药 slip 行处方打印字段回补（患者/机构/诊断/药品展示行），
+ * 并回填笺面/打印「就诊类型」用的医保医疗类别（{@code med_type}）。
  */
 @Component
 @RequiredArgsConstructor
@@ -49,8 +55,12 @@ public class EncounterMedicationDispenseSlipPrintEnricher {
 
     private final OrganizationQueryService organizationQueryService;
     private final EncounterDiagnosisSnapshotAssembler encounterDiagnosisSnapshotAssembler;
+    /** 就诊诊断读侧：批量解析 {@code adm_encounter_diagnosis.med_type}。 */
+    private final EncounterQueryService encounterQueryService;
     /** 费用性质：药嘱 contract_id → ContractCategory 分类文案。 */
     private final ContractExpenseNatureAssembler contractExpenseNatureAssembler;
+    /** 就诊优先合同展示名（与发药队列 / 医生站卡片 contractDisplay 同口径）。 */
+    private final EncounterContractDisplayAssembler encounterContractDisplayAssembler;
 
     /** 医院名称短窗缓存（避免每次 enrich 全量拉机构树）。 */
     private volatile CachedHospitalName cachedHospitalName;
@@ -61,7 +71,7 @@ public class EncounterMedicationDispenseSlipPrintEnricher {
      * @param rows 已装配 slip 行
      * @param outpatientSnapshot 就诊上下文（非历史医嘱 scope）
      * @param preparerPractitionerNameByDispenseId 调配药师姓名（按发放单）
-     * @param pricingPractitionerNameByDispenseId 划价人=收费人姓名（按发放单；来自结算收费明细 performer_id）
+     * @param pricingPractitionerNameByDispenseId 划价人=收费人姓名（按发放单；来自结算收费明细 enterer_id）
      * @param medicationRequestByMedReqId 药嘱索引（费用性质 contract_id）
      */
     public void enrichOutpatientPrintFields(
@@ -91,6 +101,8 @@ public class EncounterMedicationDispenseSlipPrintEnricher {
         Map<String, String> prescriptionDateByKey = resolvePrescriptionDateByKey(rows);
         Map<Long, String> feeNatureTextByContractId =
             this.buildFeeNatureTextByContractId(medicationRequestByMedReqId);
+        // Pre：就诊优先合同名（与队列卡片 contractDisplay 同口径，作患者费用性质主来源）
+        String encounterContractDisplay = resolveEncounterContractDisplay(outpatientSnapshot);
         Map<Long, String> preparerNames;
         if (preparerPractitionerNameByDispenseId == null) {
             preparerNames = Map.of();
@@ -109,6 +121,9 @@ public class EncounterMedicationDispenseSlipPrintEnricher {
         } else {
             requestById = medicationRequestByMedReqId;
         }
+        // Pre：按处方号解析医保医疗类别（一张方一种 med_type；供笺面「就诊类型」）
+        Map<String, String> medTypeCodeByPrescriptionKey =
+            this.buildMedTypeCodeByPrescriptionKey(rows, requestById);
         for (EncounterMedicationDispenseSlipRowDto row : rows) {
             if (row == null) {
                 continue;
@@ -118,8 +133,11 @@ public class EncounterMedicationDispenseSlipPrintEnricher {
             row.setGenderEnumText(genderEnumText);
             row.setPatientPhone(patientPhone);
             row.setHospitalName(hospitalName);
-            // 费用性质：药嘱 contract_id → 分类文案；无合同/未识别时回落自费（与发药笺面一致）
-            String feeNatureText = resolveFeeNatureText(row, requestById, feeNatureTextByContractId);
+            // 费用性质（患者维度）：优先就诊合同名（与队列卡片一致）；空则药嘱分类文案；再空回落自费
+            String feeNatureText = encounterContractDisplay;
+            if (StringUtils.isEmpty(feeNatureText)) {
+                feeNatureText = resolveFeeNatureText(row, requestById, feeNatureTextByContractId);
+            }
             if (StringUtils.isEmpty(feeNatureText)) {
                 feeNatureText = OutpatientPharmacyPrescriptionQueryConstants.CONTRACT_CATEGORY_SELF_CHARGE_LABEL;
             }
@@ -137,14 +155,17 @@ public class EncounterMedicationDispenseSlipPrintEnricher {
                     row.setConditionSummaryText(unionSummary);
                 }
             }
-            applyPrescriptionTypeLines(row);
+            // Asm：笺面就诊类型 ← 本方绑定诊断 med_type（YbMedType 展示）
+            applyEncounterMedicationType(row, medTypeCodeByPrescriptionKey.get(prescriptionKey));
+            // Asm：方头纸质分类锚定 rx_type_code；慢病 med_type 覆盖默认「普通处方」
+            applyPrescriptionTypeLines(row, requestById);
             BigDecimal prescriptionTotal = totalPriceByPrescriptionKey.get(prescriptionKey);
             row.setPrescriptionTotalPrice(prescriptionTotal);
             row.setPrescriptionTotalPriceText(formatPrescriptionTotalPriceText(prescriptionTotal));
             row.setPrescriptionDateText(prescriptionDateByKey.get(prescriptionKey));
             if (row.getDispenseId() != null) {
                 row.setPreparerPractitionerName(preparerNames.get(row.getDispenseId()));
-                // 划价取收费人（结算 performer），禁止回落开单医生
+                // 划价取收费人（ChargeItem.enterer_id），禁止回落开单医生
                 String pricingName = pricingNames.get(row.getDispenseId());
                 if (StringUtils.isNotEmpty(pricingName)) {
                     row.setPricingPractitionerName(pricingName);
@@ -239,41 +260,200 @@ public class EncounterMedicationDispenseSlipPrintEnricher {
     }
 
     /**
-     * 方头右上角两行：纸质处方分类文案 + 有效期（与样张「普通处方 / 当日有效」对齐）。
-     * <p>勿回落 {@code tcmFlagText}/{@code skinTestFlagText} 等布尔展示「是/否」，亦勿直接印术语「门诊西药」。</p>
+     * 解析就诊优先合同展示名（与发药队列 {@code contractDisplay} 同口径）。
      *
-     * @param row slip 行（就地写入 typeLine1/2）
+     * @param outpatientSnapshot 门诊就诊上下文；可空
+     * @return 合同名称；无就诊或无合同时 null
      */
-    private static void applyPrescriptionTypeLines(EncounterMedicationDispenseSlipRowDto row) {
-        row.setPrescriptionTypeLine1(resolvePrescriptionPaperTypeLine1(row.getEncounterMedicationTypeCode()));
+    private String resolveEncounterContractDisplay(OutpatientEncounterContextQueryModel outpatientSnapshot) {
+        if (outpatientSnapshot == null || outpatientSnapshot.getEncounterId() == null) {
+            return null;
+        }
+        Map<Long, String> displayByEncounterId =
+            this.encounterContractDisplayAssembler.mapContractDisplayByEncounterIds(
+                Collections.singletonList(outpatientSnapshot.getEncounterId()));
+        return trimToNull(displayByEncounterId.get(outpatientSnapshot.getEncounterId()));
+    }
+
+    /**
+     * 按处方分组键解析医保医疗类别码：同方各药行绑定诊断并集后取首位非空 {@code med_type}。
+     *
+     * <p>业务不变量：一张方只能是一种医疗类别（普通门诊 / 慢病等），不可能混绑。</p>
+     *
+     * @param rows        slip 行
+     * @param requestById 药嘱索引
+     * @return 处方分组键 → {@code YbMedType#getCode()}；无可用 med_type 时不含键
+     */
+    private Map<String, String> buildMedTypeCodeByPrescriptionKey(
+        List<EncounterMedicationDispenseSlipRowDto> rows,
+        Map<Long, MedicationRequestListQueryModel> requestById) {
+        Map<String, String> result = new HashMap<>();
+        // Gate：无 slip / 无药嘱则无法回填就诊类型
+        if (rows == null || rows.isEmpty() || requestById == null || requestById.isEmpty()) {
+            return result;
+        }
+        Map<String, List<String>> idsTextsByKey = new LinkedHashMap<>();
+        Set<Long> allDiagnosisIds = new HashSet<>();
+        // Loop：按处方键收集各药行绑定诊断 ids，并汇总批量查 med_type 的主键
+        for (EncounterMedicationDispenseSlipRowDto row : rows) {
+            // 空行或无药嘱主键：跳过本行诊断收集
+            if (row == null || row.getMedReqId() == null) {
+                continue;
+            }
+            MedicationRequestListQueryModel requestRow = requestById.get(row.getMedReqId());
+            // 药嘱未入索引：无法取绑定诊断
+            if (requestRow == null) {
+                continue;
+            }
+            String idsText = requestRow.getEncounterDiagnosisIds();
+            // 未绑诊断：不参与本方 med_type 决议
+            if (StringUtils.isEmpty(idsText)) {
+                continue;
+            }
+            String key = prescriptionGroupKey(row);
+            List<String> bucket = idsTextsByKey.get(key);
+            // 本方首次出现：新建 ids 桶
+            if (bucket == null) {
+                bucket = new ArrayList<>();
+                idsTextsByKey.put(key, bucket);
+            }
+            bucket.add(idsText);
+            allDiagnosisIds.addAll(EncounterDiagnosisIdsSupport.parseUniqueOrderedIds(idsText, true));
+        }
+        // Gate：本页无绑定诊断则整批不回填
+        if (allDiagnosisIds.isEmpty()) {
+            return result;
+        }
+        Map<Long, String> medTypeByDiagnosisId =
+            this.encounterQueryService.mapMedTypeByEncounterDiagnosisIds(allDiagnosisIds);
+        // Loop：各方取并集首位有 med_type 的诊断作为本方医疗类别
+        for (Map.Entry<String, List<String>> entry : idsTextsByKey.entrySet()) {
+            String unionIds = EncounterDiagnosisIdsSupport.unionOrderedIdsTexts(entry.getValue());
+            List<Long> orderedIds = EncounterDiagnosisIdsSupport.parseUniqueOrderedIds(unionIds, true);
+            String resolvedMedType = null;
+            for (Long diagnosisId : orderedIds) {
+                // 非法主键段跳过
+                if (diagnosisId == null) {
+                    continue;
+                }
+                String medType = trimToNull(medTypeByDiagnosisId.get(diagnosisId));
+                // 取并集有序首位非空 med_type 作为本方唯一医疗类别
+                if (medType != null) {
+                    resolvedMedType = medType;
+                    break;
+                }
+            }
+            // 本方有可用 med_type 才写入结果图
+            if (resolvedMedType != null) {
+                result.put(entry.getKey(), resolvedMedType);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 将处方级 med_type 写入 slip 行（code + YbMedType 展示名）。
+     *
+     * @param row         slip 行
+     * @param medTypeCode {@code YbMedType#getCode()}；可空
+     */
+    private static void applyEncounterMedicationType(EncounterMedicationDispenseSlipRowDto row, String medTypeCode) {
+        String code = trimToNull(medTypeCode);
+        // 无 med_type：清空，避免残留旧 rx_type_code 误显
+        if (code == null) {
+            row.setEncounterMedicationTypeCode(null);
+            row.setEncounterMedicationTypeText(null);
+            return;
+        }
+        row.setEncounterMedicationTypeCode(code);
+        YbMedType medTypeEnum = EnumUtil.fromCode(YbMedType.class, code);
+        // 合法 YbMedType：笺面展示枚举中文名（普通门诊 / 门诊慢病等）
+        if (medTypeEnum != null) {
+            row.setEncounterMedicationTypeText(medTypeEnum.getDisplay());
+        } else {
+            // 未知码仍回传 code，避免笺面空白且不伪造文案
+            row.setEncounterMedicationTypeText(code);
+        }
+    }
+
+    /**
+     * 方头右上角两行：纸质处方分类文案 + 有效期（与样张「普通处方 / 当日有效」对齐）。
+     * <p>分类优先锚定药嘱 {@code rx_type_code}（急诊/儿科/麻精）；默认「普通处方」时若本方
+     * {@code med_type} 为慢病/慢特病/特病，则写「慢病处方」（与发药单就诊类型同源）。</p>
+     *
+     * @param row         slip 行（就地写入 typeLine1/2；须已回填 encounterMedicationTypeCode）
+     * @param requestById 药嘱索引（取 {@code rx_type_code}）
+     */
+    private static void applyPrescriptionTypeLines(
+        EncounterMedicationDispenseSlipRowDto row,
+        Map<Long, MedicationRequestListQueryModel> requestById) {
+        String rxTypeCode = null;
+        // 有药嘱主键时从索引取 rx_type_code，供纸质方头分类
+        if (row.getMedReqId() != null && requestById != null) {
+            MedicationRequestListQueryModel requestRow = requestById.get(row.getMedReqId());
+            // 命中药嘱则写入处方类别码
+            if (requestRow != null) {
+                rxTypeCode = requestRow.getRxTypeCode();
+            }
+        }
+        row.setPrescriptionTypeLine1(
+            resolvePrescriptionPaperTypeLine1(rxTypeCode, row.getEncounterMedicationTypeCode()));
         row.setPrescriptionTypeLine2("当日有效");
     }
 
     /**
-     * 按处方类别码（355）映射方头第一行纸质分类文案。
+     * 按处方类别码（355）与医保医疗类别映射方头第一行纸质分类文案。
      *
-     * @param rxTypeCode {@code rx_type_code}
-     * @return 普通/急诊/儿科/麻精一文案
+     * @param rxTypeCode  {@code rx_type_code}
+     * @param medTypeCode {@code YbMedType#getCode()}（可空）
+     * @return 普通/慢病/急诊/儿科/麻精一文案
      */
-    private static String resolvePrescriptionPaperTypeLine1(String rxTypeCode) {
+    private static String resolvePrescriptionPaperTypeLine1(String rxTypeCode, String medTypeCode) {
         String code = trimToNull(rxTypeCode);
-        if (code == null) {
-            return "普通处方";
-        }
+        // 急诊西药/中药/中成药类别 → 急诊处方
         if (PrescriptionSplitConstants.RX_TYPE_EMERGENCY_WESTERN.equals(code)
             || PrescriptionSplitConstants.RX_TYPE_EMERGENCY_HERBAL.equals(code)
             || PrescriptionSplitConstants.RX_TYPE_EMERGENCY_PATENT.equals(code)) {
             return "急诊处方";
         }
+        // 儿科西药/中药/中成药类别 → 儿科处方
         if (PrescriptionSplitConstants.RX_TYPE_PEDIATRIC_WESTERN.equals(code)
             || PrescriptionSplitConstants.RX_TYPE_PEDIATRIC_HERBAL.equals(code)
             || PrescriptionSplitConstants.RX_TYPE_PEDIATRIC_PATENT.equals(code)) {
             return "儿科处方";
         }
+        // 麻精一专用类别
         if (PrescriptionSplitConstants.RX_TYPE_NARCOTIC_PSYCH_ONE.equals(code)) {
             return "麻精一";
         }
+        // 慢病/慢特病/特病医疗类别 → 慢病处方（与发药单 med_type 对齐）
+        if (isChronicMedTypeCode(medTypeCode)) {
+            return "慢病处方";
+        }
         return "普通处方";
+    }
+
+    /**
+     * 是否慢病系医保医疗类别（门诊慢特病 / 门诊慢病 / 门诊特病）。
+     *
+     * @param medTypeCode {@code YbMedType#getCode()}
+     * @return true=慢病系
+     */
+    private static boolean isChronicMedTypeCode(String medTypeCode) {
+        String code = trimToNull(medTypeCode);
+        if (code == null) {
+            return false;
+        }
+        if (YbMedType.CHRONIC_SPECIAL_DISEASE_OUTPATIENT.getCode().equals(code)) {
+            return true;
+        }
+        if (YbMedType.CHRONIC_DISEASE_OUTPATIENT.getCode().equals(code)) {
+            return true;
+        }
+        if (YbMedType.SPECIAL_DISEASE_OUTPATIENT.getCode().equals(code)) {
+            return true;
+        }
+        return false;
     }
 
     /**

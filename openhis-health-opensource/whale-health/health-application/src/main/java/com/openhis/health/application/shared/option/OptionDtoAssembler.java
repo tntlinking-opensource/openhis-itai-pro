@@ -102,6 +102,53 @@ public final class OptionDtoAssembler {
     }
 
     /**
+     * 按行内排序值优先映射为带拼音/五笔检索码的 OptionDto（供前端 filterable）。
+     *
+     * @param rows 原始列表
+     * @param idExtractor 主键提取器
+     * @param labelExtractor 展示名称提取器
+     * @param sortExtractor 行内排序值提取器
+     * @param pyStrExtractor 拼音码提取器
+     * @param wbStrExtractor 五笔码提取器
+     * @param defaultSort 默认排序值
+     * @param <T> 行对象类型
+     * @return 下拉项列表
+     */
+    public static <T> List<OptionDto> toSearchableOptionsWithSortFallback(
+        List<T> rows,
+        Function<T, Long> idExtractor,
+        Function<T, String> labelExtractor,
+        Function<T, Long> sortExtractor,
+        Function<T, String> pyStrExtractor,
+        Function<T, String> wbStrExtractor,
+        Long defaultSort) {
+        if (rows == null || rows.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<OptionDto> options = new ArrayList<>();
+        // Loop：逐条装配 value/label/sort，并透出拼音五笔供前端模糊
+        for (T row : rows) {
+            if (row == null) {
+                continue;
+            }
+            Long id = idExtractor.apply(row);
+            String value = null;
+            if (id != null) {
+                value = String.valueOf(id);
+            }
+            Long sort = sortExtractor.apply(row);
+            if (sort == null) {
+                sort = defaultSort;
+            }
+            OptionDto option = new OptionDto(sort, value, labelExtractor.apply(row));
+            option.setPyStr(pyStrExtractor.apply(row));
+            option.setWbStr(wbStrExtractor.apply(row));
+            options.add(option);
+        }
+        return options;
+    }
+
+    /**
      * 按 {@link OptionDto#getSort()} 升序排序；sort 为空时排末位，再以 value 稳定次序。
      *
      * @param options 原始下拉项

@@ -7,3 +7,4 @@
 | history | `flyway_schema_history_peis` |
 | 开关 | `openhis.modules.peis.enabled` |
 | 范围 | 仅 `peis_*`；`cln_*` / AOL 在 health 核心 |
+| 版本 | **V1** DDL（全表）+ **V2** 种子（菜单/术语/打印；原 V3–V13 已合入） |

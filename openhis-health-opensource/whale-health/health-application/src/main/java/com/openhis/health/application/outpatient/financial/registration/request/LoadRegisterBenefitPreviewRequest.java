@@ -66,8 +66,8 @@ public class LoadRegisterBenefitPreviewRequest {
     @Schema(description = "是否调用 2001 待遇检查，默认 true")
     private Boolean runTreatmentCheck;
 
-    /** 是否调用 5301 慢特病备案查询，默认 true。 */
-    @Schema(description = "是否调用 5301 慢特病备案查询，默认 true")
+    /** 是否调用慢特病备案查询（5301 主查），默认 true。 */
+    @Schema(description = "是否调用慢特病备案查询（5301 主查），默认 true")
     private Boolean runOpspFilingQuery;
 
     /** 是否调用 5206 人员累计查询，默认 true。 */

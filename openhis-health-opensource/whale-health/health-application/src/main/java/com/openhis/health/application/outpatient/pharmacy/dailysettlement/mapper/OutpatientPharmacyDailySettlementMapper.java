@@ -56,7 +56,7 @@ public interface OutpatientPharmacyDailySettlementMapper {
      * @param selectedDispenseIds  勾选发药行
      * @param practitionerIds      窗内发药人快照
      * @param paymentCount         挂载条数
-     * @param totalIncome          头表 total_income（v1 为零占位）
+     * @param totalIncome          头表 total_income（日结利润：售价−进价）
      * @return 提交命令
      */
     SubmitCashierSettlementCommand toSubmitCommand(

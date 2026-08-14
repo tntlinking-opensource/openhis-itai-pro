@@ -202,7 +202,10 @@ public class PharmacyDispenseRecordChargePricingAssembler {
             unitPrice = unitPriceOut.get(forwardDispenseId);
         }
         if (unitPrice == null && forwardSlip != null) {
-            BigDecimal forwardTotal = totalPriceOut == null ? null : totalPriceOut.get(forwardDispenseId);
+            BigDecimal forwardTotal = null;
+            if (totalPriceOut != null) {
+                forwardTotal = totalPriceOut.get(forwardDispenseId);
+            }
             BigDecimal forwardQuantity = this.resolveSlipQuantity(forwardSlip);
             if (forwardTotal != null && forwardQuantity != null && forwardQuantity.compareTo(BigDecimal.ZERO) > 0) {
                 unitPrice = MonetaryAmountSupport.unitPriceFromLineTotal(forwardTotal, forwardQuantity);
@@ -284,35 +287,30 @@ public class PharmacyDispenseRecordChargePricingAssembler {
         if (forwardDispensesByOriginRequestId == null || forwardDispensesByOriginRequestId.isEmpty()) {
             return result;
         }
-        Map<Long, LinkedHashSet<Long>> dispenseIdsByEncounterId = new HashMap<>();
+        LinkedHashSet<Long> forwardDispenseIds = new LinkedHashSet<>();
         for (List<MedicationDispense> forwardRows : forwardDispensesByOriginRequestId.values()) {
             if (forwardRows == null) {
                 continue;
             }
             for (MedicationDispense forward : forwardRows) {
-                if (forward == null || forward.getId() == null || forward.getEncounterId() == null) {
+                if (forward == null || forward.getId() == null) {
                     continue;
                 }
-                dispenseIdsByEncounterId
-                    .computeIfAbsent(forward.getEncounterId(), ignored -> new LinkedHashSet<>())
-                    .add(forward.getId());
+                forwardDispenseIds.add(forward.getId());
             }
         }
-        for (Map.Entry<Long, LinkedHashSet<Long>> entry : dispenseIdsByEncounterId.entrySet()) {
-            Long encounterId = entry.getKey();
-            List<Long> dispenseIds = new ArrayList<>(entry.getValue());
-            List<ChargeItem> chargeRows = new ArrayList<>();
-            chargeRows.addAll(
-                this.chargeItemQueryService.listChargeItemsForMedicationDispensePricing(encounterId, dispenseIds));
-            chargeRows.addAll(
-                this.chargeItemQueryService.listPendingSettlementChargeItemsForMedicationDispensePricing(
-                    encounterId, dispenseIds));
-            for (ChargeItem chargeRow : chargeRows) {
-                if (chargeRow == null || chargeRow.getDispenseId() == null) {
-                    continue;
-                }
-                result.computeIfAbsent(chargeRow.getDispenseId(), ignored -> new ArrayList<>()).add(chargeRow);
+        if (forwardDispenseIds.isEmpty()) {
+            return result;
+        }
+        // Pre：跨就诊一次按 dispenseIds 批量读价（含待结算），禁止按就诊循环 N+1
+        List<ChargeItem> chargeRows =
+            this.chargeItemQueryService.listChargeItemsForMedicationDispensePricingByDispenseIds(
+                forwardDispenseIds, true);
+        for (ChargeItem chargeRow : chargeRows) {
+            if (chargeRow == null || chargeRow.getDispenseId() == null) {
+                continue;
             }
+            result.computeIfAbsent(chargeRow.getDispenseId(), ignored -> new ArrayList<>()).add(chargeRow);
         }
         return result;
     }

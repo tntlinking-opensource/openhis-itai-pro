@@ -116,4 +116,9 @@ public class CurrentUserDto {
      * 是否具备财务审批登录角色（{@code whale_user_roles} 绑定 {@code ROLE_FINANCE_APPROVER}；动账类供应单与调价 approve/reject）。
      */
     private Boolean canFinanceApprove;
+
+    /**
+     * 是否具备病案管理员登录角色（{@code whale_user_roles} 绑定 {@code ROLE_MRMS_ADMIN}；门诊/住院「归档病例 / 解档病例」）。
+     */
+    private Boolean canMrmsAdmin;
 }

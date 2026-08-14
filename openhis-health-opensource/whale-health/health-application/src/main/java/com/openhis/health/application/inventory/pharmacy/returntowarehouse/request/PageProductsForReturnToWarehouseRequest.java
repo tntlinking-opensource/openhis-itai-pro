@@ -5,30 +5,34 @@
 package com.openhis.health.application.inventory.pharmacy.returntowarehouse.request;
 
 import com.openhis.health.application.shared.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
+import lombok.experimental.Accessors;
 
 /**
- * 产品选品分页请求（已废弃，本场景禁止自由选品）。
+ * 药房退库选品分页请求（IF-PHA-RTW-11）。
+ *
+ * <p>按源药房库存批号行展开；{@code productTableName} 须落在药品/耗材定义表白名单内。</p>
  */
 @Getter
 @Setter
+@Accessors(chain = true)
 public class PageProductsForReturnToWarehouseRequest extends AbstractHealthPageRequest {
 
-    /** 产品定义来源表名。 */
+    /** 源药房位置。 */
+    @Schema(description = "源药房位置", requiredMode = Schema.RequiredMode.REQUIRED)
+    private Long sourceLocationId;
+
+    /** 物品表名白名单。 */
+    @Schema(description = "物品表名白名单", requiredMode = Schema.RequiredMode.REQUIRED)
     private String productTableName;
-    /** 品类编码。 */
-    private String categoryCode;
-    /** 启用标志。 */
-    private Boolean activeFlag;
-    /** 供应商主键。 */
-    private Long supplierId;
-    /** 生产厂家。 */
-    private String manufacturer;
-    /** 是否附带库存信息。 */
-    private Boolean includeInventory;
-    /** 排序字段。 */
-    private String sortField;
-    /** 排序方向。 */
-    private String sortOrder;
+
+    /**
+     * 是否仅查选品库位账面数量大于 0 的批号行；可选，非必传。
+     *
+     * <p>{@code true}：仅返回 {@code quantity > 0}；{@code false} 或未传：不按数量过滤，零库存行一并返回。</p>
+     */
+    @Schema(description = "true=仅返回选品库位账面量>0的批号行；false/未传=不过滤数量")
+    private Boolean positiveQuantityOnly;
 }

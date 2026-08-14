@@ -47,6 +47,7 @@ import com.openhis.health.domain.share.enums.DispenseStatus;
 import com.openhis.health.domain.share.enums.EncounterClass;
 import com.openhis.health.domain.share.enums.MedicationDispenseType;
 import com.openhis.health.domain.share.utils.EnumUtil;
+import com.openhis.health.domain.share.utils.IdInQueryChunkSupport;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.TypedQuery;
 import jakarta.persistence.criteria.CriteriaBuilder;
@@ -830,8 +831,9 @@ public class MedicationDispenseQueryService {
     /**
      * 护士站执行前：按药房+药品批量汇总全局待发预占（IF-IP-EXE-02 / BR-IP-EXE-014）。
      *
-     * <p>状态口径同 {@link DoctorStationOrderCatalogConstants#DISPENSE_OCCUPANCY_STATUSES_FOR_ORDER_CATALOG}；
-     * <strong>不限就诊</strong>，统计该药房+药品下全部未完成发药闭环占用。可用库存由
+     * <p>状态口径见 {@link NurseStationExecutionConstants#DISPENSE_RESERVE_STATUSES_FOR_EXECUTION_GATE}；
+     * 须 {@code now &lt; limitTime}（与 IF-DOR-11 目录预减一致：草稿窗 2h、待发窗 12h，过期不再占库存）。
+     * <strong>不限就诊</strong>，统计该药房+药品下未过期未完成发药闭环占用。可用库存由
      * {@link com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemQueryService#sumAvailableInventory}
      * 汇总；FIFO dry-run 与 Gate 编排在应用层完成。</p>
      *
@@ -846,6 +848,7 @@ public class MedicationDispenseQueryService {
         if (locationIds == null || locationIds.isEmpty() || medicationIds == null || medicationIds.isEmpty()) {
             return results;
         }
+        LocalDateTime now = LocalDateTime.now();
         Specification<MedicationDispense> specification = (root, cq, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
@@ -853,6 +856,8 @@ public class MedicationDispenseQueryService {
             predicates.add(root.get(FieldNameConstants.MEDICATION_ID).in(medicationIds));
             predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(
                 NurseStationExecutionConstants.DISPENSE_RESERVE_STATUSES_FOR_EXECUTION_GATE));
+            // 预减窗：过期占用不再挡执行/发药（与目录 IF-DOR-11 同谓词）
+            predicates.add(cb.greaterThan(root.get(FieldNameConstants.LIMIT_TIME), now));
             return cb.and(predicates.toArray(new Predicate[0]));
         };
         // 内存按库位+药品累加待发数量（单次 findAll，满足 A.9.1）
@@ -885,7 +890,8 @@ public class MedicationDispenseQueryService {
      *
      * <p>预占口径须与物理库存断言一致：入参 {@code lotNumber} 非空时仅累计<strong>同批号</strong>待发行，
      * 避免 FIFO 拆批后同方其它批号行被误计入本批净可用（物理按批、预占按品会假报不足）。
-     * 批号为空时仍按库房+药品全批汇总。</p>
+     * 批号为空时仍按库房+药品全批汇总。仅累计 {@code now &lt; limitTime} 的行
+     * （草稿约 2h、收费待发约 12h；与 {@link #listMedicationDispensesForOrderCatalogOccupancy} 一致）。</p>
      *
      * @param locationId         发放库房库位主键
      * @param medicationId       药品定义主键
@@ -909,6 +915,7 @@ public class MedicationDispenseQueryService {
             normalizedLot = lotNumber.trim();
         }
         final String lotFilter = normalizedLot;
+        LocalDateTime now = LocalDateTime.now();
         Specification<MedicationDispense> specification = (root, cq, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
@@ -916,6 +923,8 @@ public class MedicationDispenseQueryService {
             predicates.add(cb.equal(root.get(FieldNameConstants.MEDICATION_ID), medicationId));
             predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(
                 NurseStationExecutionConstants.DISPENSE_RESERVE_STATUSES_FOR_EXECUTION_GATE));
+            // 预减窗：过期占用不计入（字段已按草稿 2h / 待发 12h 写入；查询侧必须过滤）
+            predicates.add(cb.greaterThan(root.get(FieldNameConstants.LIMIT_TIME), now));
             // 有批号时 DB 侧先收窄到同字面批号，内存再 trim 对齐物理断言
             if (lotFilter != null) {
                 predicates.add(cb.equal(root.get(FieldNameConstants.LOT_NUMBER), lotFilter));
@@ -962,7 +971,9 @@ public class MedicationDispenseQueryService {
     }
 
     /**
-     * 批量按主键加载发放聚合行（门诊发药等编排批量门禁；单次 IN 查询）。
+     * 批量按主键加载发放聚合行（门诊发药等编排批量门禁）。
+     *
+     * <p>主键过多时按 {@link GeneralSharedConstants#ID_IN_QUERY_CHUNK_SIZE} 分批 IN。</p>
      *
      * @param ids 发放单主键集合
      * @return 实体列表；空入参返回空表
@@ -971,7 +982,9 @@ public class MedicationDispenseQueryService {
         if (ids == null || ids.isEmpty()) {
             return List.of();
         }
-        List<MedicationDispense> rows = medicationDispenseRepository.findByIdIn(ids);
+        List<MedicationDispense> rows = IdInQueryChunkSupport.loadByIdInChunks(
+            ids,
+            chunkIds -> medicationDispenseRepository.findByIdIn(chunkIds));
         List<MedicationDispense> result = new ArrayList<>();
         for (MedicationDispense row : rows) {
             if (row != null && !Boolean.TRUE.equals(row.getIsDeleted())) {
@@ -1532,6 +1545,7 @@ public class MedicationDispenseQueryService {
         model.setQuantityValue(quantityValue);
         model.setQuantityUnitCode(dispense.getUnitCode());
         model.setPlannedDispenseTime(dispense.getPlannedDispenseTime());
+        model.setProcedureId(dispense.getProcedureId());
         model.setSummaryNo(dispense.getSummaryNo());
         model.setLotNumber(dispense.getLotNumber());
         model.setLocationId(dispense.getLocationId());
@@ -1567,9 +1581,35 @@ public class MedicationDispenseQueryService {
             this.applyResolvedMedicationIds(predicates, root, cb, effectiveQuery.getResolvedMedicationIdsForCategory());
             this.applyResolvedMedicationIds(predicates, root, cb, effectiveQuery.getResolvedMedicationIdsForDrugKeyword());
             this.applyResolvedEncounterIds(predicates, root, cb, effectiveQuery.getResolvedEncounterIdsForPatientKeyword());
+            this.applyResolvedMedReqIdsForOrderingDepartment(
+                predicates, root, cb, effectiveQuery.getResolvedMedReqIdsForOrderingDepartment());
             this.applyDispenseTimeWindow(predicates, root, cb, effectiveQuery);
             return cb.and(predicates.toArray(new Predicate[0]));
         };
+    }
+
+    /**
+     * 开立科室预解析药嘱主键 → {@code med_req_id IN}；空列表拒查。
+     *
+     * @param predicates 谓词列表
+     * @param root       发放根
+     * @param cb         CriteriaBuilder
+     * @param medReqIds  预解析药嘱主键；null 表示不筛
+     */
+    private void applyResolvedMedReqIdsForOrderingDepartment(
+        List<Predicate> predicates,
+        Root<MedicationDispense> root,
+        CriteriaBuilder cb,
+        List<Long> medReqIds) {
+        if (medReqIds == null) {
+            return;
+        }
+        // 开立科室无命中药嘱：拒查，避免筛失效放宽
+        if (medReqIds.isEmpty()) {
+            predicates.add(cb.equal(cb.literal(1), cb.literal(0)));
+            return;
+        }
+        predicates.add(root.get(FieldNameConstants.MED_REQ_ID).in(medReqIds));
     }
 
     /**
@@ -1909,6 +1949,9 @@ public class MedicationDispenseQueryService {
         model.setDispenserId(dispense.getPractitionerId());
         model.setDispenseTime(dispense.getDispenseTime());
         model.setSummaryNo(dispense.getSummaryNo());
+        // 住院按日虚拟发药单：前端用 procedure → recorded_time；一并透出计划锚点供排查
+        model.setProcedureId(dispense.getProcedureId());
+        model.setPlannedDispenseTime(dispense.getPlannedDispenseTime());
         return model;
     }
 
@@ -2277,16 +2320,25 @@ public class MedicationDispenseQueryService {
     }
 
     /**
-     * 患者队列分页大小：入参有界页大小，否则默认页大小。
+     * 患者队列分页大小：入参有界页大小，否则默认页大小；不得超过 {@link GeneralSharedConstants#BATCH_LIMIT}，
+     * 避免队列回补就诊上下文时单次患者批量超限。
      *
      * @param query 分页入参
      * @return 页大小
      */
     private int resolveQueuePageSize(AbstractPageQuery query) {
+        int pageSize;
+        // 有显式 pageSize 时取有界值，否则用默认页大小
         if (query.getPageSize() != null && query.getPageSize() > 0) {
-            return query.getBoundedPageSize();
+            pageSize = query.getBoundedPageSize();
+        } else {
+            pageSize = GeneralSharedConstants.DEFAULT_QUERY_PAGE_SIZE;
         }
-        return GeneralSharedConstants.DEFAULT_QUERY_PAGE_SIZE;
+        // 队列回补患者/上下文批量上限：截断到 BATCH_LIMIT
+        if (pageSize > GeneralSharedConstants.BATCH_LIMIT) {
+            pageSize = GeneralSharedConstants.BATCH_LIMIT;
+        }
+        return pageSize;
     }
 
     /**
@@ -2792,10 +2844,13 @@ public class MedicationDispenseQueryService {
      *
      * @param query 交账类型、药房与业务窗
      * @return 条数
-     * @throws BusinessException 查询条件非法或候选行 {@code dispense_time} 为空
+     * @throws BusinessException 查询条件非法
      */
     public long countUnsettledDispensesForCashierSettlement(PreviewPharmacyCashierSettlementQuery query) {
-        return this.findUnsettledDispensesForCashierSettlement(query).size();
+        this.assertPharmacyCashierSettlementPreviewQueryValid(query);
+        Specification<MedicationDispense> specification =
+            this.buildPharmacyCashierSettlementSpecification(query, true, PharmacyCashierSettlementTimeScope.IN_WINDOW);
+        return this.medicationDispenseRepository.count(specification);
     }
 
     /**
@@ -2853,6 +2908,8 @@ public class MedicationDispenseQueryService {
     /**
      * 交账业务日窗内出现过发药的 {@code practitioner_id} 去重列表（不按人硬筛；用于默认勾选候选）。
      *
+     * <p>仅投影 {@code practitioner_id}，禁止把窗内全量发药实体拉进 JVM。</p>
+     *
      * @param typeEnum   {@code OP_PHARMACY} / {@code IP_PHARMACY}
      * @param locationId 发药库房
      * @param dateFrom   业务日窗起（含）
@@ -2873,9 +2930,32 @@ public class MedicationDispenseQueryService {
         this.assertPharmacyCashierSettlementPreviewQueryValid(probe);
         Specification<MedicationDispense> specification =
             this.buildPharmacyCashierSettlementSpecification(probe, false, PharmacyCashierSettlementTimeScope.IN_WINDOW);
-        List<MedicationDispense> rows = this.medicationDispenseRepository.findAll(specification);
+        CriteriaBuilder cb = this.entityManager.getCriteriaBuilder();
+        CriteriaQuery<Long> criteriaQuery = cb.createQuery(Long.class);
+        Root<MedicationDispense> root = criteriaQuery.from(MedicationDispense.class);
+        Predicate scopePredicate = specification.toPredicate(root, criteriaQuery, cb);
+        List<Predicate> predicates = new ArrayList<>();
+        if (scopePredicate != null) {
+            predicates.add(scopePredicate);
+        }
+        predicates.add(cb.isNotNull(root.get(FieldNameConstants.PRACTITIONER_ID)));
+        criteriaQuery.select(root.get(FieldNameConstants.PRACTITIONER_ID)).distinct(true);
+        criteriaQuery.where(cb.and(predicates.toArray(new Predicate[0])));
+        return this.entityManager.createQuery(criteriaQuery).getResultList();
+    }
+
+    /**
+     * 从已加载的展示口径发药中提取去重 {@code practitioner_id}（供预览复用一次窗内查询）。
+     *
+     * @param dispenses 窗内发药实体；可空
+     * @return practitioner_id 列表（已去重、去空）
+     */
+    public List<Long> extractDistinctPractitionerIds(List<MedicationDispense> dispenses) {
         LinkedHashSet<Long> practitionerIds = new LinkedHashSet<>();
-        for (MedicationDispense row : rows) {
+        if (dispenses == null || dispenses.isEmpty()) {
+            return new ArrayList<>();
+        }
+        for (MedicationDispense row : dispenses) {
             if (row != null && row.getPractitionerId() != null) {
                 practitionerIds.add(row.getPractitionerId());
             }
@@ -2884,9 +2964,29 @@ public class MedicationDispenseQueryService {
     }
 
     /**
+     * 从窗内展示口径发药中拆出未交账行（{@code cashier_settlement_id} 为空；与 BR-CS-002 同口径）。
+     *
+     * @param summaryDispenses 展示口径发药（含已交）；可空
+     * @return 未交账发药列表（保持原相对顺序）
+     */
+    public List<MedicationDispense> filterUnsettledDispenses(List<MedicationDispense> summaryDispenses) {
+        List<MedicationDispense> unsettled = new ArrayList<>();
+        if (summaryDispenses == null || summaryDispenses.isEmpty()) {
+            return unsettled;
+        }
+        for (MedicationDispense row : summaryDispenses) {
+            if (row != null && row.getCashierSettlementId() == null) {
+                unsettled.add(row);
+            }
+        }
+        return unsettled;
+    }
+
+    /**
      * 查询窗起点之前最早未交账发药时间（BR-CS-020 软提示）。
      *
-     * <p>口径：未挂载且 {@code dispense_time &lt; dateFrom}（且 {@code dispense_time &lt;= dateTo}）。</p>
+     * <p>口径：未挂载且 {@code dispense_time &lt; dateFrom}（且 {@code dispense_time &lt;= dateTo}）。
+     * 仅投影最早一条 {@code dispense_time}，禁止把历史未交账全量实体拉进 JVM。</p>
      *
      * @param typeEnum   {@code OP_PHARMACY} / {@code IP_PHARMACY}
      * @param locationId 发药库房
@@ -2908,17 +3008,23 @@ public class MedicationDispenseQueryService {
         this.assertPharmacyCashierSettlementPreviewQueryValid(probe);
         Specification<MedicationDispense> specification = this.buildPharmacyCashierSettlementSpecification(
             probe, true, PharmacyCashierSettlementTimeScope.BEFORE_WINDOW_START);
-        List<MedicationDispense> rows = this.medicationDispenseRepository.findAll(specification);
-        LocalDateTime earliest = null;
-        for (MedicationDispense row : rows) {
-            if (row == null || row.getDispenseTime() == null) {
-                continue;
-            }
-            if (earliest == null || row.getDispenseTime().isBefore(earliest)) {
-                earliest = row.getDispenseTime();
-            }
+        CriteriaBuilder cb = this.entityManager.getCriteriaBuilder();
+        CriteriaQuery<LocalDateTime> criteriaQuery = cb.createQuery(LocalDateTime.class);
+        Root<MedicationDispense> root = criteriaQuery.from(MedicationDispense.class);
+        Predicate scopePredicate = specification.toPredicate(root, criteriaQuery, cb);
+        // Pre：只投影最早一条 dispense_time，禁止拉历史未交账全量实体
+        criteriaQuery.select(root.get(FieldNameConstants.DISPENSE_TIME));
+        if (scopePredicate != null) {
+            criteriaQuery.where(scopePredicate);
         }
-        return earliest;
+        criteriaQuery.orderBy(cb.asc(root.get(FieldNameConstants.DISPENSE_TIME)));
+        TypedQuery<LocalDateTime> typedQuery = this.entityManager.createQuery(criteriaQuery);
+        typedQuery.setMaxResults(1);
+        List<LocalDateTime> result = typedQuery.getResultList();
+        if (result == null || result.isEmpty()) {
+            return null;
+        }
+        return result.get(0);
     }
 
     /**

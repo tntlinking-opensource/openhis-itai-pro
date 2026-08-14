@@ -38,7 +38,8 @@ import java.util.Map;
  * 槽价与账单单价换算<strong>必须以包装单位为唯一输入锚</strong>，只允许<strong>包装价 → 其它单位价</strong>（{@code P_slot = P_pkg × R_slot / R_pkg}），
  * <strong>禁止</strong>以拆零/默认开立单位为锚再「往回乘」还原包装价，<strong>禁止</strong>把包装价误当作拆零价后再除倍数纠错。</p>
  *
- * <p>库房入/出/盘<strong>选品</strong>（{@link #applyInboundWarehouseBandPrices}）读路径包装锚为定价表当前 {@code PURCHASE}/{@code LOT_NUMBER_COST}。
+ * <p>库房流转<strong>选品</strong>（{@link #applyInboundWarehouseBandPrices}）包装锚仅 {@code LOT_NUMBER_COST}；
+ * 目录 {@code PURCHASE} 仅进货/订货/科室采购申请选品作参考默认值。
  * 库房<strong>详情</strong>（{@link #enrichWarehouseDetailCatalogFromPersistedSupplyLinePrice}）仅锚 {@code SupplyRequest} 已持久化 {@code price}/{@code unitCode}，禁止回落定价表（**BR-PRICE-SRC-001**）。
  * {@code SALE}、{@code LOT_NUMBER_PRICE} <strong>不参与</strong>库房单据读路径与槽价装配（{@code LOT_NUMBER_PRICE} 仅在同意入库时写入，供门诊/收费下游消费）。</p>
  *
@@ -610,8 +611,8 @@ public final class ProductDefinitionCatalogUnitBandsAssembler {
     /**
      * 库房选品/详情：以<strong>每包装单位单价</strong>为唯一锚，线性写入四槽 {@code unitPrice}（含 {@code PURCHASE}/{@code STOCK}/{@code SPLIT}）。
      *
-     * <p>{@code pricePerPackageUnit} 典型来源：定价表 {@code PURCHASE}（维护态每包装进价）、批号 {@code LOT_NUMBER_COST}、或行价归一后的包装锚。
-     * <strong>禁止</strong>传入「每采购包装单位」目录价或调用 {@link #applyInboundBandsPriceFromCatalogPurchase}。</p>
+     * <p>{@code pricePerPackageUnit} 典型来源：流转场景为批号 {@code LOT_NUMBER_COST}；采购参考场景可为目录 {@code PURCHASE}；
+     * 或行价归一后的包装锚。<strong>禁止</strong>在非采购流转路径把药典 {@code PURCHASE} 当作缺批号价回落。</p>
      *
      * @param bands                 进货四槽
      * @param productRow            产品读模型，可 null
@@ -626,11 +627,13 @@ public final class ProductDefinitionCatalogUnitBandsAssembler {
     }
 
     /**
-     * 库房详情行：批号进价或目录 {@code PURCHASE}（均为每包装）为默认锚；行 {@code price}/{@code unitCode} 优先并归一为包装锚后写槽。
+     * 库房详情行：默认锚为批号进价；行 {@code price}/{@code unitCode} 优先并归一为包装锚后写槽。
+     *
+     * <p>{@code catalogPurchasePricePerPackage} 入参保留兼容，<strong>忽略不用</strong>（药典 PURCHASE 不参与流转详情槽价）。</p>
      *
      * @param bands                            进货四槽
      * @param productRow                       产品读模型，可 null
-     * @param catalogPurchasePricePerPackage   定价表 {@code PURCHASE}（每包装），可 null
+     * @param catalogPurchasePricePerPackage   已废弃；忽略
      * @param lotNumberCostPricePerPackage     批号 {@code LOT_NUMBER_COST}（每包装），可 null
      * @param linePrice                        明细行单价，可 null
      * @param lineUnitCode                     明细行计价单位编码，可 null
@@ -646,11 +649,8 @@ public final class ProductDefinitionCatalogUnitBandsAssembler {
         if (bands == null || bands.isEmpty()) {
             return;
         }
+        // catalogPurchasePricePerPackage 故意忽略：流转详情禁止药典价回落
         BigDecimal packageAnchor = lotNumberCostPricePerPackage;
-        // 无批号进价时回落目录采购价（均为每包装）
-        if (packageAnchor == null) {
-            packageAnchor = catalogPurchasePricePerPackage;
-        }
         // 行价优先：将行 unitCode/price 归一为包装锚后覆盖默认锚
         if (linePrice != null) {
             BigDecimal fromLine = resolvePackageAnchorUnitPriceFromLine(

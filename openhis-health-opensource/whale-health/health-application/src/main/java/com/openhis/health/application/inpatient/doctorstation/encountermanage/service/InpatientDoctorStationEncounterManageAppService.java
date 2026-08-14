@@ -9,6 +9,7 @@ import com.openhis.health.application.shared.inpatient.InpatientAccountBalanceDi
 import com.openhis.health.application.shared.inpatient.InpatientAccountBalanceDisplayDtoApplier;
 import com.openhis.health.application.shared.inpatient.InpatientAccountBalanceDisplayResult;
 import com.openhis.health.application.shared.inpatient.InpatientInfoQueueDisplayAssembler;
+import com.openhis.health.application.shared.financial.EncounterInsutypeDisplayAssembler;
 import com.openhis.health.application.shared.pagination.PageQueryBinder;
 import com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver;
 import com.openhis.health.application.shared.validator.PageWindowGate;
@@ -84,6 +85,8 @@ public class InpatientDoctorStationEncounterManageAppService {
     private final PaymentReconciliationQueryService paymentReconciliationQueryService;
     /** 患者队列护理级别只读 enrich（BR-IP-DOR-009）。 */
     private final InpatientPatientQueueNursingLevelEnrichAssembler inpatientPatientQueueNursingLevelEnrichAssembler;
+    /** 险种展示：账户/读卡缓存/预结算回落。 */
+    private final EncounterInsutypeDisplayAssembler encounterInsutypeDisplayAssembler;
 
     /**
      * 分页查询住院医生站在院患者队列（IF-IP-DOR-01）。
@@ -127,7 +130,7 @@ public class InpatientDoctorStationEncounterManageAppService {
             Map<Long, InpatientInfoQueueDisplayAssembler.InpatientQueueDisplayOverlay> displayOverlay =
                 inpatientInfoQueueDisplayAssembler.buildOverlay(page.getContent(), contractNoByEncounterId);
             Map<Long, DoctorStationQueueDisplayEnrichment> enrichmentByEncounterId =
-                this.buildDisplayEnrichment(page.getContent());
+                this.buildDisplayEnrichment(page.getContent(), pageEncounterIds);
             Map<Long, BigDecimal> pendingByEncounterId =
                 chargeItemQueryService.mapPendingSettlementTotalPriceByEncounterIds(pageEncounterIds);
             Map<Long, BigDecimal> settledByEncounterId =
@@ -231,13 +234,15 @@ public class InpatientDoctorStationEncounterManageAppService {
     }
 
     /**
-     * 为当前页读模型行构建展示增补（病房名、检索码）；不拉护士站任务计数。
+     * 为当前页读模型行构建展示增补（病房名、检索码、险种）；不拉护士站任务计数。
      *
-     * @param rows 读模型行
+     * @param rows         读模型行
+     * @param encounterIds 当前页就诊主键（批量取医保账户）
      * @return encounterId → 增补字段
      */
     private Map<Long, DoctorStationQueueDisplayEnrichment> buildDisplayEnrichment(
-        List<InpatientEncounterContextQueryModel> rows) {
+        List<InpatientEncounterContextQueryModel> rows,
+        Set<Long> encounterIds) {
         Map<Long, DoctorStationQueueDisplayEnrichment> result = new HashMap<>();
         if (rows == null || rows.isEmpty()) {
             return result;
@@ -278,6 +283,9 @@ public class InpatientDoctorStationEncounterManageAppService {
             }
             houseNameByBusNoByWardId.put(wardId, houseIndex);
         }
+        // Pre：医保账户险种批量回填（账户空则读卡缓存/预结算回落）。
+        Map<Long, String> insutypeByEncounterId =
+            encounterInsutypeDisplayAssembler.mapInsutypeByEncounterIds(encounterIds);
         for (InpatientEncounterContextQueryModel row : rows) {
             if (row == null || row.getEncounterId() == null) {
                 continue;
@@ -292,6 +300,7 @@ public class InpatientDoctorStationEncounterManageAppService {
                 enrichment.setPinyinCode(pinyinByPatientId.get(row.getPatientId()));
                 enrichment.setWubiCode(wubiByPatientId.get(row.getPatientId()));
             }
+            enrichment.setInsutype(insutypeByEncounterId.get(row.getEncounterId()));
             result.put(row.getEncounterId(), enrichment);
         }
         return result;

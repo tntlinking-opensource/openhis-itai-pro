@@ -5,13 +5,16 @@
 package com.openhis.health.application.inpatient.nursestation.inpatientbilling.assembler;
 
 import com.openhis.health.application.shared.product.ClinicalCatalogPriceResolver;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricingWriteItemDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.mapper.NurseStationInpatientBillingMapper;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.application.shared.encounter.EncounterContextReader;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogUnitBandDto;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
+import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
@@ -40,7 +43,8 @@ import java.util.Map;
  * {@link com.openhis.health.application.basic.activitydefinition.support.ActivityDefinitionPackageChildResolver} 在需要时解析。</p>
  *
  * <p>耗材 {@code performLocation} 须为 IF-IP-PRC-01 {@code defaultDispenseLocationId} 回传；
- * {@link #reapplyAuthoritativeWritePricing} 经 {@code resolveDraftChargePriceLine} 透传库位，废止服务端二次 match 模板。</p>
+ * 可选 {@code lotNumber} 锁定批号价。权威单价先取包装锚 LOT_NUMBER_PRICE/SALE，再按提交
+ * {@code unitCode} 线性换算到划价单位（禁止包装价÷ratio 再×数量）。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -57,8 +61,8 @@ public class NurseStationInpatientBillingWriteAssembler {
     /**
      * 写路径入账前批量重算价目与单价（后端定权威；前端 unitPrice 仅展示参考）。
      *
-     * <p>耗材须回传 IF-IP-PRC-01 已解析 {@code performLocation}，经 {@code clientResolvedDispenseLocationId}
-     * 直接 FIFO 取批号售价，<strong>不再</strong> match 取药/发材模板。</p>
+     * <p>耗材须回传 IF-IP-PRC-01 已解析 {@code performLocation}；有 {@code lotNumber} 时锁定该批号价，
+     * 否则 FIFO。包装锚价再按提交 {@code unitCode} 线性换算到划价单位后落账。</p>
      *
      * @param items               待提交写行（耗材须已带 performLocation）
      * @param encounterIds        本批就诊
@@ -127,10 +131,11 @@ public class NurseStationInpatientBillingWriteAssembler {
                     organizationId,
                     row.getEncounterId(),
                     row.getPerformLocation(),
-                    null
+                    null,
+                    row.getLotNumber()
                 );
             } else if (TableNameConstants.WKF_ACTIVITY_DEFINITION.equals(row.getProductTableName())) {
-                // 诊疗写路径：SALE 择优，不涉及 performLocation
+                // 诊疗写路径：SALE 择优，不涉及 performLocation / 批号
                 selected = clinicalCatalogPriceResolver.resolveDraftChargePriceLine(
                     row.getProductTableName(),
                     row.getProductDefinitionId(),
@@ -146,19 +151,60 @@ public class NurseStationInpatientBillingWriteAssembler {
                     InpatientNurseStationConstants.EX_IP_PRC_204,
                     "划价项目无效或价格异常，请重新选品");
             }
-            // Gate：无 SALE 价目时拒绝落账，避免 0 元费用
+            // Gate：无价目时拒绝落账，避免 0 元费用
             if (selected == null || selected.getPriceValue() == null) {
                 throw new BusinessException(
                     InpatientNurseStationConstants.EX_IP_PRC_204,
                     "划价项目无效或价格异常，请重新选品");
             }
-            // 后端定权威：覆盖前端展示单价，写入 chargeItemDefinitionId 供落账
+            // 后端定权威：包装锚价 → 提交单位槽价 → 行金额（禁止包装价÷ratio 再×数量）
+            BigDecimal authoritativeUnitPrice = this.resolveAuthoritativeUnitPriceForSubmittedUnit(
+                productRow, selected, row.getUnitCode());
             row.setChargeItemDefinitionId(selected.getId());
-            row.setUnitPrice(selected.getPriceValue());
+            row.setUnitPrice(authoritativeUnitPrice);
             if (row.getQuantity() != null) {
-                row.setTotalPrice(selected.getPriceValue().multiply(row.getQuantity()));
+                row.setTotalPrice(MonetaryAmountSupport.lineTotal(authoritativeUnitPrice, row.getQuantity()));
             }
         }
+    }
+
+    /**
+     * 将包装锚定价线性换算为提交 {@code unitCode} 对应槽单价。
+     *
+     * @param productRow           产品读模型；空时回落包装锚价
+     * @param selected             命中定价行（包装锚 {@code price_value}）
+     * @param submittedUnitCode    前端提交划价单位
+     * @return 与提交单位同口径的入账单价
+     */
+    private BigDecimal resolveAuthoritativeUnitPriceForSubmittedUnit(
+        ProductDefinitionDisplayDto productRow,
+        ChargeItemDefinition selected,
+        String submittedUnitCode
+    ) {
+        BigDecimal packageAnchoredPrice = selected.getPriceValue();
+        if (productRow == null || StringUtils.isEmpty(submittedUnitCode)) {
+            return packageAnchoredPrice;
+        }
+        String bandPricingUnitCode = ProductDefinitionCatalogUnitBandsAssembler
+            .resolveDoctorStationBandPricingUnitCode(productRow, selected.getPriceTypeCode());
+        List<ProductDefinitionCatalogUnitBandDto> bands =
+            ProductDefinitionCatalogUnitBandsAssembler.buildDoctorStationBands(
+                productRow, bandPricingUnitCode, packageAnchoredPrice);
+        if (bands == null || bands.isEmpty()) {
+            return packageAnchoredPrice;
+        }
+        String normalizedUnitCode = submittedUnitCode.trim();
+        for (ProductDefinitionCatalogUnitBandDto band : bands) {
+            if (band == null || StringUtils.isEmpty(band.getUnitCode())) {
+                continue;
+            }
+            // 命中提交单位且槽上已有线性单价：作入账权威
+            if (normalizedUnitCode.equals(band.getUnitCode().trim()) && band.getUnitPrice() != null) {
+                return band.getUnitPrice();
+            }
+        }
+        // 提交单位未落在 bands：回落包装锚价（与历史同构）
+        return packageAnchoredPrice;
     }
 
     /**

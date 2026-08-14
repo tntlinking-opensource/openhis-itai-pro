@@ -74,7 +74,7 @@ public class InpatientPharmacyDailySettlementMapperImpl implements InpatientPhar
     /**
      * 提交请求转领域命令（IF-IP-PDC-03）。
      *
-     * <p>头表 {@code total_income} 由 AppService 传入挂载发药关联 payment 净收入（DD §3.2.1）。</p>
+     * <p>头表 {@code total_income} 由 AppService 传入勾选发药日结利润（售价合计 − 进价合计）。</p>
      *
      * @param request              提交请求
      * @param typeEnum             交账类型 code
@@ -83,7 +83,7 @@ public class InpatientPharmacyDailySettlementMapperImpl implements InpatientPhar
      * @param selectedDispenseIds  勾选发药行
      * @param practitionerIds      发药人快照
      * @param paymentCount         挂载条数
-     * @param totalIncome          列表金额快照
+     * @param totalIncome          日结利润（售价−进价）
      * @return 提交命令
      */
     @Override

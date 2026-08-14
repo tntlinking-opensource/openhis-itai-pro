@@ -92,7 +92,7 @@ public class DeviceDefinition extends BaseAuditedEntity {
     /** 高值器材标志。 */
     @Column(name = "hvcm_flag")
     private Boolean hvcmFlag;
-    /** 是否为收费耗材标记。 */
+    /** 收费耗材标记（true=收费；界面「不收费耗材」勾选对应 false）。 */
     @Column(name = "chargeable_flag")
     private Boolean chargeableFlag;
     /** 病案结算类型编码（术语 {@code mr_settlement_type_code}）。 */

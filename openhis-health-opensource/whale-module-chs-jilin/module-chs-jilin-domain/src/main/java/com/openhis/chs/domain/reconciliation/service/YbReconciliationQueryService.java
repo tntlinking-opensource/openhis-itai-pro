@@ -6,6 +6,8 @@ package com.openhis.chs.domain.reconciliation.service;
 
 import static com.openhis.whale.core.application.util.StringUtils.isEmpty;
 
+import com.openhis.chs.domain.catalog.access.ChsInsuranceContractReader;
+import com.openhis.chs.domain.contract.ChsContractSnapshot;
 import com.openhis.chs.domain.inpatient.entity.YbInpatientPreSettle;
 import com.openhis.chs.domain.inpatient.service.YbInpatientPreSettleQueryService;
 import com.openhis.chs.domain.reconciliation.command.SummarizeClearAmountCommand;
@@ -38,7 +40,9 @@ import java.util.Set;
  * <p>数据源仅为本院 HIS 已落库结算快照与撤销凭证；<b>不访问医保网关、不发起 3201/3202</b>。
  * 平台对账由 bridge Invoker / Workflow 在用户点击「发起对账」时另行调用。</p>
  * <p>跨聚合读：经 settlement / inpatient 本模块 QueryService 装载快照，不直注他聚合 Repository。</p>
- * <p>金额口径：正向结算累加、同窗撤销抵减（一收一退净额为 0）；笔数口径：正向与撤销各计 1 笔（一收一退计 2）。</p>
+ * <p>金额口径：正向累加、同窗撤销抵减（一收一退净 0）；笔数：正向与撤销各计 1。
+ * 3202 明细含反向行。若 3201 仍不平，以 3202 差异文件为准继续核对。</p>
+ * <p>日期口径：正向按平台 {@code setl_time}（空则回落创建时间）；撤销按 {@code reversed_at}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -54,12 +58,14 @@ public class YbReconciliationQueryService {
     private final YbSettlementRecordQueryService settlementRecordQueryService;
     private final YbSettlementReversalQueryService settlementReversalQueryService;
     private final YbInpatientPreSettleQueryService inpatientPreSettleQueryService;
+    private final ChsInsuranceContractReader contractReader;
 
     /**
      * 按险种 + 清算类别汇总指定日期区间内门诊与住院结算快照金额（HIS 本地只读）。
      * <p>供日对账列表「待对账金额」、月清算预览、以及 3201/3202 出站前金额缺省补齐。
-     * 本方法本身不调医保；命令中 {@code insutype}/{@code clrType} 非空时仅返回匹配维度行。</p>
-     * <p>一收一退：原结算与撤销同窗时金额正负抵净不入净额，笔数仍计两笔。</p>
+     * 本方法本身不调医保；命令中 {@code contractBusNo}/{@code contractId} 非空时仅汇总该契约结算；
+     * {@code insutype}/{@code clrType} 非空时仅返回匹配维度行。</p>
+     * <p>一收一退：原结算与撤销同窗时金额正负抵净；笔数各计 1。</p>
      *
      * @param command  契约、日期区间及可选维度过滤
      * @param tenantId 租户
@@ -67,20 +73,28 @@ public class YbReconciliationQueryService {
      */
     public List<ClearAmountSummaryResult> summarizeClearAmounts(
             SummarizeClearAmountCommand command, Long tenantId) {
-        // Pre：解析日期区间（左闭右开）
+        // Pre：解析日期区间（左闭右开）与可选契约范围（省/市医保须分开汇总）
         DateRange range = resolveDateRange(command);
         SummarizeClearAmountCommand safe = safeCommand(command);
+        Long contractIdFilter = resolveContractIdFilter(safe);
         Map<DimKey, AmountBucket> buckets = new HashMap<>();
 
-        // Cmd：门诊/住院正式结算快照正向累加（含日后撤销的 REVOKED 行，金额由同窗撤销抵减）
-        for (YbSettlementRecord row : settlementRecordQueryService.listCreatedBetween(
-            tenantId, range.beginAt(), range.endExclusive())) {
+        List<YbSettlementRecord> loaded =
+            settlementRecordQueryService.listBySetlTimeBetween(
+                tenantId, range.beginAt(), range.endExclusive());
+
+        // Cmd：按 setl_time 正向累加（含 REVOKED；金额由同窗撤销抵减）
+        for (YbSettlementRecord row : loaded) {
+            if (!matchContractFilter(row.getContractId(), contractIdFilter)) {
+                continue;
+            }
             DimKey key = new DimKey(normalizeDim(row.getInsutype()), normalizeDim(row.getClrType()));
             // 可选过滤：仅保留请求指定的险种/清算类别
             if (!matchOptionalFilter(key, safe)) {
                 continue;
             }
             AmountBucket bucket = buckets.computeIfAbsent(key, ignored -> new AmountBucket());
+            // 金额含 REVOKED（同窗撤销再抵减）；笔数含 REVOKED（一收一退计 2；8/2 实证 61 仅笔数不平→应为 70）
             bucket.add(
                 nullToZero(row.getMedfeeSumamt()),
                 nullToZero(row.getFundPaySumamt()),
@@ -89,11 +103,15 @@ public class YbReconciliationQueryService {
         }
 
         // Cmd：同窗撤销凭证按原结算险种/清算类别抵减金额，并各计 1 笔
-        applyReversalsInRange(buckets, safe, tenantId, range.beginAt(), range.endExclusive());
+        applyReversalsInRange(
+            buckets, safe, contractIdFilter, tenantId, range.beginAt(), range.endExclusive());
 
         // Cmd：住院已结算预结算无 clr_type，固定归入住院清算类别
         for (YbInpatientPreSettle row : inpatientPreSettleQueryService.listSettledBetween(
             tenantId, range.beginAt(), range.endExclusive())) {
+            if (!matchContractFilter(row.getContractId(), contractIdFilter)) {
+                continue;
+            }
             DimKey key = new DimKey(normalizeDim(row.getInsutype()), CLR_TYPE_INPATIENT);
             if (!matchOptionalFilter(key, safe)) {
                 continue;
@@ -203,7 +221,8 @@ public class YbReconciliationQueryService {
 
     /**
      * 加载 3202 明细对账输入文件行预览（门诊 + 住院结算快照 + 同窗撤销反向行）。
-     * <p>退费须同时上报正向与反向两条（平台 {@code refd_setl_flag}）；反向行来自撤销凭证。</p>
+     * <p>退费须同时上报正向与反向两条（平台 {@code refd_setl_flag}）；反向行来自撤销凭证。
+     * 指定契约时仅包含该契约结算及其撤销反向行。</p>
      *
      * @param command  契约与日期区间
      * @param tenantId 租户
@@ -211,8 +230,34 @@ public class YbReconciliationQueryService {
      */
     public List<ReconDetailRowResult> loadDetailRows(SummarizeClearAmountCommand command, Long tenantId) {
         DateRange range = resolveDateRange(command);
-        List<YbSettlementRecord> settlements = settlementRecordQueryService.listCreatedBetween(
-            tenantId, range.beginAt(), range.endExclusive());
+        SummarizeClearAmountCommand safe = safeCommand(command);
+        Long contractIdFilter = resolveContractIdFilter(safe);
+        // Pre：正向含 CONFIRMED+REVOKED（落库实证：8/1 曾以 81/92 行成功调通 3202；
+        // 仅 CONFIRMED=65 时长春报「未检索到对账信息」）。撤销另出反向行（revoke_setl_id）。
+        List<YbSettlementRecord> settlements = new ArrayList<>();
+        for (YbSettlementRecord row : settlementRecordQueryService.listBySetlTimeBetween(
+            tenantId, range.beginAt(), range.endExclusive())) {
+            if (!matchContractFilter(row.getContractId(), contractIdFilter)) {
+                continue;
+            }
+            DimKey key = new DimKey(normalizeDim(row.getInsutype()), normalizeDim(row.getClrType()));
+            if (!matchOptionalFilter(key, safe)) {
+                continue;
+            }
+            settlements.add(row);
+        }
+        List<YbInpatientPreSettle> inpatientRows = new ArrayList<>();
+        for (YbInpatientPreSettle row : inpatientPreSettleQueryService.listSettledBetween(
+            tenantId, range.beginAt(), range.endExclusive())) {
+            if (!matchContractFilter(row.getContractId(), contractIdFilter)) {
+                continue;
+            }
+            DimKey key = new DimKey(normalizeDim(row.getInsutype()), CLR_TYPE_INPATIENT);
+            if (!matchOptionalFilter(key, safe)) {
+                continue;
+            }
+            inpatientRows.add(row);
+        }
         List<YbSettlementReversal> reversals = settlementReversalQueryService.listReversedBetween(
             tenantId, range.beginAt(), range.endExclusive());
         // Pre：跨日退费时原结算可能不在本窗，按撤销关联 ID 补装，供反向行补全 setl/mdtrt
@@ -224,27 +269,42 @@ public class YbReconciliationQueryService {
         }
         Map<Long, YbSettlementRecord> reversalOrigins =
             settlementRecordQueryService.mapByIds(reversalOriginIds, tenantId);
-        List<YbSettlementRecord> reversalOriginRows = new ArrayList<>(reversalOrigins.values());
+        List<YbSettlementRecord> reversalOriginRows = new ArrayList<>();
+        List<YbSettlementReversal> contractReversals = new ArrayList<>();
+        for (YbSettlementReversal reversal : reversals) {
+            YbSettlementRecord origin = reversalOrigins.get(reversal.getSettlementRecordId());
+            // 指定契约时：原结算缺失或不属于本契约则不入明细文件
+            if (origin == null || !matchContractFilter(origin.getContractId(), contractIdFilter)) {
+                continue;
+            }
+            DimKey key = new DimKey(normalizeDim(origin.getInsutype()), normalizeDim(origin.getClrType()));
+            if (!matchOptionalFilter(key, safe)) {
+                continue;
+            }
+            contractReversals.add(reversal);
+            reversalOriginRows.add(origin);
+        }
         List<ReconDetailRowResult> rows = new ArrayList<>();
         rows.addAll(ReconDetailRowSupport.fromOutpatientRows(settlements));
-        rows.addAll(ReconDetailRowSupport.fromInpatientRows(
-            inpatientPreSettleQueryService.listSettledBetween(tenantId, range.beginAt(), range.endExclusive())));
-        rows.addAll(ReconDetailRowSupport.fromReversalRows(reversals, reversalOriginRows));
+        rows.addAll(ReconDetailRowSupport.fromInpatientRows(inpatientRows));
+        rows.addAll(ReconDetailRowSupport.fromReversalRows(contractReversals, reversalOriginRows));
         return rows;
     }
 
     /**
      * 将撤销时间窗内的反向凭证按原结算维度抵减金额并计入笔数。
      *
-     * @param buckets  汇总桶
-     * @param safe     已安全化命令（含可选维度过滤）
-     * @param tenantId 租户
-     * @param beginAt  起始（含）
-     * @param endExclusive 结束（不含）
+     * @param buckets          汇总桶
+     * @param safe             已安全化命令（含可选维度过滤）
+     * @param contractIdFilter 可选契约主键；null 表示不过滤
+     * @param tenantId         租户
+     * @param beginAt          起始（含）
+     * @param endExclusive     结束（不含）
      */
     private void applyReversalsInRange(
             Map<DimKey, AmountBucket> buckets,
             SummarizeClearAmountCommand safe,
+            Long contractIdFilter,
             Long tenantId,
             LocalDateTime beginAt,
             LocalDateTime endExclusive) {
@@ -268,6 +328,9 @@ public class YbReconciliationQueryService {
             if (origin == null) {
                 continue;
             }
+            if (!matchContractFilter(origin.getContractId(), contractIdFilter)) {
+                continue;
+            }
             DimKey key = new DimKey(normalizeDim(origin.getInsutype()), normalizeDim(origin.getClrType()));
             if (!matchOptionalFilter(key, safe)) {
                 continue;
@@ -280,6 +343,35 @@ public class YbReconciliationQueryService {
                 nullToZero(reversal.getAcctPay()).abs(),
                 nullToZero(reversal.getPsnCashPay()).abs());
         }
+    }
+
+    /**
+     * 由 {@code contractBusNo}/{@code contractId} 解析契约主键；二者皆空则不过滤。
+     *
+     * @param safe 已安全化命令
+     * @return 契约主键；未指定契约时为 null
+     */
+    private Long resolveContractIdFilter(SummarizeClearAmountCommand safe) {
+        if (isEmpty(safe.getContractBusNo()) && safe.getContractId() == null) {
+            return null;
+        }
+        ChsContractSnapshot contract =
+            contractReader.requireContract(safe.getContractBusNo(), safe.getContractId());
+        return contract.id();
+    }
+
+    /**
+     * 可选契约过滤：未指定契约时放行；指定则须与结算 {@code contractId} 一致。
+     *
+     * @param rowContractId    结算行契约主键
+     * @param contractIdFilter 请求契约主键；null 表示不过滤
+     * @return true 表示纳入汇总/明细
+     */
+    private static boolean matchContractFilter(Long rowContractId, Long contractIdFilter) {
+        if (contractIdFilter == null) {
+            return true;
+        }
+        return contractIdFilter.equals(rowContractId);
     }
 
     /**

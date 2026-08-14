@@ -58,8 +58,8 @@ public class RegistrationPayloadAssembler {
         body.put("patientNo", snapshot.getEncounterBusNo());
         body.put("patientId", snapshot.getPatientId().toString());
         putMedicalEncounterFields(body, snapshot, properties);
-        fillSelfPayAmounts(body, document.getTotalAmt());
-        body.put("payChannelDetail", buildPayChannel(document.getTotalAmt()));
+        fillInsuranceOrSelfPayAmounts(body, snapshot, document.getTotalAmt());
+        body.put("payChannelDetail", buildPayChannelDetail(snapshot, document.getTotalAmt()));
         body.put("chargeDetail", buildChargeDetail(lines));
         body.put("listDetail", buildListDetail(lines));
         return JSON.toJSONString(body);

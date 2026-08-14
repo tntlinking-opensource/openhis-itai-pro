@@ -12,6 +12,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -75,9 +76,27 @@ public class NurseStationOrderAuditRowDto {
     @Schema(description = "规格/大小；诊疗可为 null")
     private String specificationText;
 
+    /**
+     * 拆零比（目录 {@code package_unit_ratio}：1 包装 = N 拆零；仅药嘱；未维护时为 null）。
+     */
+    @Schema(description = "拆零比（1包装=N拆零）")
+    private BigDecimal partPercent;
+
+    /**
+     * 包装装量后缀（如 {@code 1片x100}；仅药嘱；缺数据时为 null）。
+     */
+    @Schema(description = "包装装量后缀（如 1片x100）")
+    private String packageSplitRatioText;
+
     /** 剂量/数量展示。 */
     @Schema(description = "剂量/数量展示")
     private String dosageDisplay;
+
+    /**
+     * 日剂量友好展示（如 {@code 每日三片}；长期药且频次可解析每日次数时有值）。
+     */
+    @Schema(description = "日剂量展示（如 每日三片）")
+    private String dailyDoseDisplay;
 
     /** 用法展示（药品）。 */
     @Schema(description = "用法展示（药品）")
@@ -86,6 +105,18 @@ public class NurseStationOrderAuditRowDto {
     /** 频次展示。 */
     @Schema(description = "频次展示")
     private String frequencyDisplay;
+
+    /**
+     * 输液滴速编码（药嘱 {@code med_medication_request.speed_code}；诊嘱为 null）。
+     */
+    @Schema(description = "输液滴速编码（仅药嘱）")
+    private String speedCode;
+
+    /**
+     * 输液滴速展示名（术语 {@code speed_code}；无码为空）。
+     */
+    @Schema(description = "输液滴速展示（仅药嘱）")
+    private String speedDisplay;
 
     /** 开立时间（{@code req_opened_time}）。 */
     @Schema(description = "开立时间（req_opened_time）")
@@ -118,6 +149,26 @@ public class NurseStationOrderAuditRowDto {
     /** 校对人姓名（已校对及后续 Tab 展示）。 */
     @Schema(description = "校对人姓名（已校对及后续 Tab 展示）")
     private String performerCheckName;
+
+    /** 停嘱校对人主键（{@code stop_performer_check_id}；未停嘱校对为 null）。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "停嘱校对人主键")
+    private Long stopPerformerCheckId;
+
+    /** 停嘱校对时间（{@code stop_check_time}）。 */
+    @Schema(description = "停嘱校对时间")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
+    private LocalDateTime stopCheckTime;
+
+    /** 停嘱校对人姓名。 */
+    @Schema(description = "停嘱校对人姓名")
+    private String stopCheckerName;
+
+    /**
+     * 是否停嘱待校：STOPPED 且尚未停嘱校对且长期；前端据此高亮/筛选停嘱校对行。
+     */
+    @Schema(description = "是否停嘱待校")
+    private Boolean stopAuditPending;
 
     /** 执行/发药位置展示。 */
     @Schema(description = "执行/发药位置展示")

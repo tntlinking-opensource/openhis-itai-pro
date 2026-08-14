@@ -19,7 +19,6 @@ import com.openhis.health.application.shared.advice.TcmMethodCodeDisplayAssemble
 import com.openhis.health.application.shared.option.FrequencyOptionLoader;
 import com.openhis.health.application.shared.option.TerminologyOptionLoader;
 import com.openhis.health.application.shared.advice.OrderCatalogDisplayAssembler;
-import com.openhis.health.application.inpatient.pharmacy.dispenserecord.dto.InpatientPharmacyDispenseRecordQueryRowDto;
 import com.openhis.health.application.outpatient.pharmacy.dispenserecord.dto.PharmacyDispenseRecordQueryRowDto;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import lombok.RequiredArgsConstructor;
@@ -115,7 +114,20 @@ public class PharmacyDispenseRecordReadAssembler {
      * @param dispenserNameByPractitionerId 发药人姓名
      * @return 平铺行列表
      */
-    public List<InpatientPharmacyDispenseRecordQueryRowDto> assembleInpatientRows(
+    /**
+     * 装配住院发药报表患者侧平铺行（含住院号/病区/床号）。
+     *
+     * @param slipRows                    发放事实
+     * @param medicationRequestByMedReqId 药嘱索引
+     * @param productByMedicationId       药品展示索引
+     * @param inpatientContextByEncounterId 住院就诊上下文
+     * @param chargeUnitPriceByDispenseId 单价 Map
+     * @param chargeTotalPriceByDispenseId 金额 Map
+     * @param orderingDepartmentNameByOrgId 开单科室名
+     * @param dispenserNameByPractitionerId 发药人姓名
+     * @return 平铺行列表
+     */
+    public List<PharmacyDispenseRecordQueryRowDto> assembleInpatientRows(
         List<MedicationDispenseSlipQueryModel> slipRows,
         Map<Long, MedicationRequestListQueryModel> medicationRequestByMedReqId,
         Map<Long, ProductDefinitionDisplayDto> productByMedicationId,
@@ -129,12 +141,12 @@ public class PharmacyDispenseRecordReadAssembler {
         }
         AssemblyLabels labels = this.loadTerminologyLabels(false);
         Map<Long, String> pharmacyNameByLocationId = this.loadPharmacyNames(slipRows);
-        List<InpatientPharmacyDispenseRecordQueryRowDto> rows = new ArrayList<>(slipRows.size());
+        List<PharmacyDispenseRecordQueryRowDto> rows = new ArrayList<>(slipRows.size());
         for (MedicationDispenseSlipQueryModel slip : slipRows) {
             if (slip == null) {
                 continue;
             }
-            PharmacyDispenseRecordQueryRowDto base = this.buildBaseRow(
+            PharmacyDispenseRecordQueryRowDto row = this.buildBaseRow(
                 slip,
                 medicationRequestByMedReqId,
                 productByMedicationId,
@@ -145,7 +157,7 @@ public class PharmacyDispenseRecordReadAssembler {
                 pharmacyNameByLocationId,
                 labels,
                 false);
-            InpatientPharmacyDispenseRecordQueryRowDto row = this.copyToInpatientRow(base);
+            // Asm：住院号/病区/床号取自住院就诊上下文
             if (slip.getEncounterId() != null && inpatientContextByEncounterId != null) {
                 InpatientEncounterContextQueryModel context = inpatientContextByEncounterId.get(slip.getEncounterId());
                 if (context != null) {
@@ -280,47 +292,6 @@ public class PharmacyDispenseRecordReadAssembler {
                 row.setManufacturerText(product.getManufacturer());
             }
         }
-        return row;
-    }
-
-    /**
-     * 将中性平铺行投影为住院发退药行（追加就诊 busNo 等住院专属列）。
-     *
-     * @param base 门诊/住院共用装配结果
-     * @return 住院行 DTO
-     */
-    private InpatientPharmacyDispenseRecordQueryRowDto copyToInpatientRow(PharmacyDispenseRecordQueryRowDto base) {
-        InpatientPharmacyDispenseRecordQueryRowDto row = new InpatientPharmacyDispenseRecordQueryRowDto();
-        row.setDispenseId(base.getDispenseId());
-        row.setRecordTypeCode(base.getRecordTypeCode());
-        row.setRecordTypeText(base.getRecordTypeText());
-        row.setDispenseTime(base.getDispenseTime());
-        row.setPharmacyLocationId(base.getPharmacyLocationId());
-        row.setPharmacyLocationName(base.getPharmacyLocationName());
-        row.setDispenserPractitionerId(base.getDispenserPractitionerId());
-        row.setDispenserName(base.getDispenserName());
-        row.setPatientId(base.getPatientId());
-        row.setPatientName(base.getPatientName());
-        row.setEncounterId(base.getEncounterId());
-        row.setEncounterBusNo(base.getEncounterBusNo());
-        row.setPrescriptionNo(base.getPrescriptionNo());
-        row.setMedicationId(base.getMedicationId());
-        row.setMedicationCode(base.getMedicationCode());
-        row.setMedicationName(base.getMedicationName());
-        row.setMedicationSpec(base.getMedicationSpec());
-        row.setQuantity(base.getQuantity());
-        row.setUnitCode(base.getUnitCode());
-        row.setUnitText(base.getUnitText());
-        row.setUnitPrice(base.getUnitPrice());
-        row.setTotalAmount(base.getTotalAmount());
-        row.setLotNumber(base.getLotNumber());
-        row.setTraceNo(base.getTraceNo());
-        row.setOrderingDepartmentId(base.getOrderingDepartmentId());
-        row.setOrderingDepartmentName(base.getOrderingDepartmentName());
-        row.setUsageText(base.getUsageText());
-        row.setManufacturerText(base.getManufacturerText());
-        row.setSummaryNo(base.getSummaryNo());
-        row.setMedReqId(base.getMedReqId());
         return row;
     }
 

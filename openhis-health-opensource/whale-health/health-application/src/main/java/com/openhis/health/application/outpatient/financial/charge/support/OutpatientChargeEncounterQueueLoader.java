@@ -8,6 +8,7 @@ import com.openhis.health.domain.administration.chargeitem.query.OutpatientCharg
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.domain.administration.patient.service.PatientQueryService;
+import com.openhis.health.domain.share.constants.OutpatientChargeQueueTab;
 import com.openhis.health.domain.share.constants.OutpatientRefundQueueTab;
 import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import lombok.RequiredArgsConstructor;
@@ -39,10 +40,35 @@ public class OutpatientChargeEncounterQueueLoader {
      * @return 就诊主键页
      */
     public Page<Long> pageEncounterIdsForOutpatientCashierQueue(OutpatientChargeQueueEncounterQuery query) {
-        LinkedHashSet<String> codes = new LinkedHashSet<>(4);
-        codes.add(ChargeItemStatus.PLANNED.getCode());
-        codes.add(ChargeItemStatus.SETTLED.getCode());
-        return this.pageWithResolvedScope(query, new ArrayList<>(codes));
+        return this.pageEncounterIdsForOutpatientCashierQueue(query, OutpatientChargeQueueTab.ALL);
+    }
+
+    /**
+     * 门诊收银队列：按页签收敛收费状态后再分页（避免「先宽查分页再滤页签」导致条数漂移与全量回补超时）。
+     *
+     * <p>待收费页签仅收 {@link ChargeItemStatus#PLANNED}；已结算仅收 {@link ChargeItemStatus#SETTLED}；
+     * 全部页签二者并集。应用层仍按 BR-OPC-012 打标做兜底过滤。</p>
+     *
+     * @param query        须含 {@code excludedServiceTable}
+     * @param queueTabCode {@link OutpatientChargeQueueTab}
+     * @return 就诊主键页
+     */
+    public Page<Long> pageEncounterIdsForOutpatientCashierQueue(
+        OutpatientChargeQueueEncounterQuery query,
+        String queueTabCode) {
+        List<String> statusCodes = new ArrayList<>(2);
+        if (OutpatientChargeQueueTab.PENDING.equals(queueTabCode)) {
+            // 待收费页签：仅 PLANNED，避免已结就诊挤占分页窗口
+            statusCodes.add(ChargeItemStatus.PLANNED.getCode());
+        } else if (OutpatientChargeQueueTab.SETTLED.equals(queueTabCode)) {
+            // 已结算页签：仅 SETTLED
+            statusCodes.add(ChargeItemStatus.SETTLED.getCode());
+        } else {
+            // 全部/缺省：待收与已结并集
+            statusCodes.add(ChargeItemStatus.PLANNED.getCode());
+            statusCodes.add(ChargeItemStatus.SETTLED.getCode());
+        }
+        return this.pageWithResolvedScope(query, statusCodes);
     }
 
     /**

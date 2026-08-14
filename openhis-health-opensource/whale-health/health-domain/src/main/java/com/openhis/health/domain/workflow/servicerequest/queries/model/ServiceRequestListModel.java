@@ -80,6 +80,10 @@ public class ServiceRequestListModel {
     private LocalDateTime stopTime;
     /** 停嘱人主键（{@code stopper_id}；未停 null）。 */
     private Long stopperId;
+    /** 停嘱校对人主键（{@code stop_performer_check_id}；未停嘱校对 null）。 */
+    private Long stopPerformerCheckId;
+    /** 停嘱校对时间（{@code stop_check_time}）。 */
+    private LocalDateTime stopCheckTime;
     /** 绑定就诊诊断主键有序串（持久化 {@code wkf_service_request.encounter_diagnosis_ids}；有序，首位为主诊断）。 */
     private String encounterDiagnosisIds;
     /** 处方/申请单号（持久化 {@code wkf_service_request.prescription_no}）。 */

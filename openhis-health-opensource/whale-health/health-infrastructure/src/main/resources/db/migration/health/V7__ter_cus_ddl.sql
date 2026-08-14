@@ -80,6 +80,8 @@ CREATE TABLE IF NOT EXISTS "public"."cus_charge_item_auto_gen" (
     "priority" int4 NOT NULL,
     "remark" varchar(255),
     "encounter_id" int8 NOT NULL,
+    "business_time" time(6) NOT NULL DEFAULT TIME '23:59:59',
+    "billing_practitioner_id" int8,
     CONSTRAINT "cus_charge_item_auto_gen_pkey" PRIMARY KEY ("id")
 );
 
@@ -107,6 +109,8 @@ COMMENT ON COLUMN cus_charge_item_auto_gen.quantity_value IS '默认数量（大
 COMMENT ON COLUMN cus_charge_item_auto_gen.priority IS '优先级（数值越小越靠前）';
 COMMENT ON COLUMN cus_charge_item_auto_gen.remark IS '备注';
 COMMENT ON COLUMN cus_charge_item_auto_gen.encounter_id IS '住院就诊标识（adm_encounter.id）';
+COMMENT ON COLUMN cus_charge_item_auto_gen.business_time IS '滚费业务时刻（billDate 当日；默认 23:59:59；护理分支不读本列）';
+COMMENT ON COLUMN cus_charge_item_auto_gen.billing_practitioner_id IS '滚费计费人（adm_practitioner.id；写入 Charge.performer_id / Procedure 主执行人）';
 
 -- from V31__cus_condition_template.sql
 -- cus_condition_template（建表）

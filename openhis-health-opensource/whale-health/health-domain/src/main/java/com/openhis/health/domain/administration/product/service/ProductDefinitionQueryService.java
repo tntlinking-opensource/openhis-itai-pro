@@ -20,6 +20,7 @@ import com.openhis.health.domain.workflow.activitydefinition.entity.ActivityDefi
 import com.openhis.health.domain.workflow.activitydefinition.service.ActivityDefinitionQueryService;
 import com.openhis.whale.core.application.util.StringUtils;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -31,6 +32,7 @@ import java.util.Map;
 import java.util.Set;
 
 /** 产品定义批量只读查询（L1：四表路由 + 展示 DTO / 目录编码）。 */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ProductDefinitionQueryService {
@@ -81,24 +83,29 @@ public class ProductDefinitionQueryService {
     }
 
     private void loadDisplayRows(String tableName, List<Long> idList, Map<String, ProductDefinitionDisplayDto> result) {
-        if (TableNameConstants.MED_MEDICATION_DEFINITION.equals(tableName)) {
-            for (MedicationDefinition med : medicationDefinitionQueryService.findAllByIds(idList)) {
-                putDisplay(result, ProductDefinitionDisplaySupport.fromMedication(med));
+        try {
+            if (TableNameConstants.MED_MEDICATION_DEFINITION.equals(tableName)) {
+                for (MedicationDefinition med : medicationDefinitionQueryService.findAllByIds(idList)) {
+                    putDisplay(result, ProductDefinitionDisplaySupport.fromMedication(med));
+                }
+            } else if (TableNameConstants.WKF_ACTIVITY_DEFINITION.equals(tableName)) {
+                for (ActivityDefinition act : activityDefinitionQueryService.findAllByIds(idList)) {
+                    putDisplay(result, ProductDefinitionDisplaySupport.fromActivity(act));
+                }
+            } else if (TableNameConstants.ADM_DEVICE_DEFINITION.equals(tableName)) {
+                for (DeviceDefinition dev : deviceDefinitionQueryService.getAllDeviceDefinitions(idList)) {
+                    putDisplay(result, ProductDefinitionDisplaySupport.fromDevice(dev));
+                }
+            } else if (TableNameConstants.ADM_HEALTHCARE_SERVICE.equals(tableName)) {
+                Map<Long, HealthcareService> healthcareById =
+                    healthcareServiceQueryService.loadHealthcareServiceMapByIds(idList);
+                for (HealthcareService healthcareService : healthcareById.values()) {
+                    putDisplay(result, ProductDefinitionDisplaySupport.fromHealthcareService(healthcareService));
+                }
             }
-        } else if (TableNameConstants.WKF_ACTIVITY_DEFINITION.equals(tableName)) {
-            for (ActivityDefinition act : activityDefinitionQueryService.findAllByIds(idList)) {
-                putDisplay(result, ProductDefinitionDisplaySupport.fromActivity(act));
-            }
-        } else if (TableNameConstants.ADM_DEVICE_DEFINITION.equals(tableName)) {
-            for (DeviceDefinition dev : deviceDefinitionQueryService.getAllDeviceDefinitions(idList)) {
-                putDisplay(result, ProductDefinitionDisplaySupport.fromDevice(dev));
-            }
-        } else if (TableNameConstants.ADM_HEALTHCARE_SERVICE.equals(tableName)) {
-            Map<Long, HealthcareService> healthcareById =
-                healthcareServiceQueryService.loadHealthcareServiceMapByIds(idList);
-            for (HealthcareService healthcareService : healthcareById.values()) {
-                putDisplay(result, ProductDefinitionDisplaySupport.fromHealthcareService(healthcareService));
-            }
+        } catch (RuntimeException ex) {
+            // 单表失败不阻断其他表（如耗材异常不应丢掉同票诊疗/药品的甲乙丙与项目名）
+            log.warn("batchLoadByKeys failed for table={}, ids={}", tableName, idList.size(), ex);
         }
     }
 

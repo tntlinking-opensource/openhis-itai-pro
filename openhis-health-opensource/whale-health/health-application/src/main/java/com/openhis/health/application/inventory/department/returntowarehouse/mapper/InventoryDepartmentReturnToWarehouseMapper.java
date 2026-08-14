@@ -5,6 +5,7 @@
 package com.openhis.health.application.inventory.department.returntowarehouse.mapper;
 
 import com.openhis.health.application.inventory.department.returntowarehouse.dto.LinkableStockInListRowDto;
+import com.openhis.health.application.inventory.department.returntowarehouse.dto.ProductDefinitionItemDto;
 import com.openhis.health.application.inventory.department.returntowarehouse.dto.ReturnToWarehouseListRowDto;
 import com.openhis.health.application.inventory.department.returntowarehouse.dto.SupplierOptionDto;
 import com.openhis.health.application.inventory.department.returntowarehouse.dto.WarehouseOptionDto;
@@ -24,6 +25,7 @@ import com.openhis.health.domain.workflow.supplyrequest.queries.model.WarehouseD
 import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogEditorHintsDto;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
+import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryItemModel;
 import com.openhis.whale.core.application.dto.OptionDto;
 import org.springframework.data.domain.Page;
 
@@ -329,11 +331,12 @@ public interface InventoryDepartmentReturnToWarehouseMapper {
     RemoveReturnToWarehouseResponse toRemoveReturnToWarehouseResponse(boolean ok);
 
     /**
-     * 将产品定义读模型分页装配为退药库选品分页响应。
+     * 库存读模型与产品读模型映射为退库选品行 DTO。
      *
-     * @param page 产品定义读模型分页
-     * @return 选品分页响应
+     * @param inv 库存项读模型
+     * @param pr  产品读模型，可 null
+     * @return 选品行 DTO
      */
-    PageProductsForReturnToWarehouseResponse toPageProductsForReturnToWarehouseResponse(
-        Page<ProductDefinitionDisplayDto> page);
+    ProductDefinitionItemDto toProductDefinitionItemDtoFromInventory(
+        InventoryItemModel inv, ProductDefinitionDisplayDto pr);
 }

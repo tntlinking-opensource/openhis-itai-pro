@@ -50,6 +50,7 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 
@@ -143,6 +144,76 @@ public class ProcedureQueryService {
     }
 
     /**
+     * 按诊疗请求主键批量解析净剩 COMPLETED 的客户可见时刻（{@code recorded_time}）。
+     *
+     * <p>供护士划价已划价列表（IF-IP-PRC-05）与改时（IF-IP-PRC-07）展示轴；按就诊加载净剩行后按
+     * {@code request_table=wkf_service_request} 收窄。</p>
+     *
+     * @param encounterIds      就诊主键集合
+     * @param serviceRequestIds 诊疗请求主键集合；空则返回空 Map
+     * @return 诊疗请求 id → recorded_time
+     */
+    public Map<Long, LocalDateTime> mapNetCompletedRecordedTimeByServiceRequestIds(
+        Collection<Long> encounterIds,
+        Collection<Long> serviceRequestIds) {
+        Map<Long, LocalDateTime> recordedByRequestId = new HashMap<>();
+        if (encounterIds == null || encounterIds.isEmpty()
+            || serviceRequestIds == null || serviceRequestIds.isEmpty()) {
+            return recordedByRequestId;
+        }
+        Set<Long> serviceIdSet = new HashSet<>();
+        for (Long serviceRequestId : serviceRequestIds) {
+            if (serviceRequestId != null) {
+                serviceIdSet.add(serviceRequestId);
+            }
+        }
+        if (serviceIdSet.isEmpty()) {
+            return recordedByRequestId;
+        }
+        String serviceRequestTable = TableNameConstants.WKF_SERVICE_REQUEST;
+        for (Long encounterId : this.distinctNonNullEncounterIds(encounterIds)) {
+            List<ProcedureRecordQueryModel> netRows =
+                this.listNetRemainingCompletedProcedureRecords(encounterId, null, null);
+            for (ProcedureRecordQueryModel row : netRows) {
+                if (row == null || row.getRequestId() == null || row.getRecordedTime() == null) {
+                    continue;
+                }
+                // 仅诊疗请求表；非目标请求跳过
+                if (!serviceRequestTable.equals(row.getRequestTable())) {
+                    continue;
+                }
+                if (!serviceIdSet.contains(row.getRequestId())) {
+                    continue;
+                }
+                recordedByRequestId.put(row.getRequestId(), row.getRecordedTime());
+            }
+        }
+        return recordedByRequestId;
+    }
+
+    /**
+     * 按诊疗请求解析净剩 COMPLETED 执行记录主键（改时写路径锚定）。
+     *
+     * @param encounterId     就诊主键
+     * @param serviceRequestId 诊疗请求主键
+     * @return 净剩 COMPLETED 主键；无则 empty
+     */
+    public Optional<Long> findNetCompletedProcedureIdByServiceRequest(Long encounterId, Long serviceRequestId) {
+        if (encounterId == null || serviceRequestId == null) {
+            return Optional.empty();
+        }
+        List<ProcedureRecordQueryModel> netRows = this.listNetRemainingCompletedProcedureRecords(
+            encounterId, serviceRequestId, TableNameConstants.WKF_SERVICE_REQUEST);
+        for (ProcedureRecordQueryModel row : netRows) {
+            if (row == null || row.getId() == null) {
+                continue;
+            }
+            return Optional.of(row.getId());
+        }
+        return Optional.empty();
+    }
+
+    /**
      * 构建就诊维度「净剩 COMPLETED」执行记录的展示时间索引（AS-IP-NUR-006 双轨展示轴）。
      *
      * <p>口径与 {@link #mapNetCompletedOccurrenceTimeByEncounterId} 同净剩集合；值为
@@ -164,6 +235,101 @@ public class ProcedureQueryService {
             recordedById.put(row.getId(), row.getRecordedTime());
         }
         return recordedById;
+    }
+
+    /**
+     * 按 {@code recorded_time} 左闭右开窗拉取净剩 COMPLETED 诊疗执行（仅本聚合 Repository）。
+     *
+     * <p>供住院费用明细报表待结业务日轴（客户可见 recorded）；对冲口径与护士工作量同构。
+     * 仅 {@code wkf_service_request} 锚点。</p>
+     *
+     * @param recordedFromInclusive recorded 起（含）
+     * @param recordedToExclusive   recorded 止（不含）
+     * @return 净剩 COMPLETED 实体；窗非法时返回空列表
+     */
+    public List<Procedure> listNetCompletedServiceRequestProceduresByRecordedTimeWindow(
+        LocalDateTime recordedFromInclusive,
+        LocalDateTime recordedToExclusive) {
+        // 诊疗执行：request_table = wkf_service_request
+        return this.listNetCompletedProceduresByRequestTableAndRecordedTimeWindow(
+            TableNameConstants.WKF_SERVICE_REQUEST,
+            recordedFromInclusive,
+            recordedToExclusive);
+    }
+
+    /**
+     * 按 {@code recorded_time} 左闭右开窗拉取净剩 COMPLETED 药品执行（仅本聚合 Repository）。
+     *
+     * <p>供住院费用明细报表待结药品业务日轴；与诊疗同构，锚点 {@code med_medication_request}。
+     * 禁止只扫诊疗窗导致待结药品漏报（显示不全）。</p>
+     *
+     * @param recordedFromInclusive recorded 起（含）
+     * @param recordedToExclusive   recorded 止（不含）
+     * @return 净剩 COMPLETED 实体；窗非法时返回空列表
+     */
+    public List<Procedure> listNetCompletedMedicationRequestProceduresByRecordedTimeWindow(
+        LocalDateTime recordedFromInclusive,
+        LocalDateTime recordedToExclusive) {
+        // 药品执行：request_table = med_medication_request
+        return this.listNetCompletedProceduresByRequestTableAndRecordedTimeWindow(
+            TableNameConstants.MED_MEDICATION_REQUEST,
+            recordedFromInclusive,
+            recordedToExclusive);
+    }
+
+    /**
+     * 按指定 {@code request_table} + {@code recorded_time} 左闭右开窗拉取净剩 COMPLETED 执行（仅本聚合 Repository）。
+     *
+     * <p>对冲口径：同表 {@code CANCEL.refund_id} 指向的 COMPLETED 剔除。净过滤须传入与候选相同的
+     * {@code requestTable}（诊疗/药品各自净轴）；禁止误用「仅诊疗 SR」过滤器，否则药品执行会被整表丢弃，
+     * 住院费用明细待结轴漏药。</p>
+     *
+     * @param requestTable          来源请求表持久化名（诊疗/药品）
+     * @param recordedFromInclusive recorded 起（含）
+     * @param recordedToExclusive   recorded 止（不含）
+     * @return 净剩 COMPLETED 实体；表名空或窗非法时返回空列表
+     */
+    public List<Procedure> listNetCompletedProceduresByRequestTableAndRecordedTimeWindow(
+        String requestTable,
+        LocalDateTime recordedFromInclusive,
+        LocalDateTime recordedToExclusive) {
+        if (StringUtils.isEmpty(requestTable)) {
+            return Collections.emptyList();
+        }
+        if (recordedFromInclusive == null || recordedToExclusive == null) {
+            return Collections.emptyList();
+        }
+        if (!recordedFromInclusive.isBefore(recordedToExclusive)) {
+            return Collections.emptyList();
+        }
+        List<Procedure> candidates =
+            this.procedureRepository.findByRequestTableAndRecordedTimeGreaterThanEqualAndRecordedTimeLessThanAndIsDeletedFalse(
+                requestTable,
+                recordedFromInclusive,
+                recordedToExclusive);
+        if (candidates.isEmpty()) {
+            return Collections.emptyList();
+        }
+        LinkedHashSet<Long> completedIds = new LinkedHashSet<>();
+        for (Procedure entity : candidates) {
+            if (entity != null
+                && entity.getId() != null
+                && EventStatus.COMPLETED.getCode().equals(entity.getStatusEnum())) {
+                completedIds.add(entity.getId());
+            }
+        }
+        List<Procedure> cancelRows = Collections.emptyList();
+        if (!completedIds.isEmpty()) {
+            // Pre：对冲 CANCEL 须与候选同 request_table（诊疗/药品各自净轴，禁止串表）
+            cancelRows = this.procedureRepository.findByRefundIdInAndRequestTableAndIsDeletedFalse(
+                completedIds,
+                requestTable);
+        }
+        // Asm：按入参 requestTable 净 COMPLETED；禁止误用仅诊疗 SR 过滤器导致药品执行被整表丢弃
+        return this.procedureNetExecutionFilterSupport.filterNetCompletedProceduresByRequestTable(
+            candidates,
+            cancelRows,
+            requestTable);
     }
 
     /**
@@ -489,7 +655,7 @@ public class ProcedureQueryService {
      */
     public Page<NurseExecutionWorkloadDetailQueryModel> pageNurseExecutionWorkloadDetail(
         NurseWorkloadPageQuery query) {
-        // Pre：净 COMPLETED 全集；内存分页（默认 20 条/页，上限 1000）
+        // Pre：净 COMPLETED 全集排序后仅物化当前页（翻页勿全量装配模型）
         List<Procedure> netRows = this.listNurseExecutionNetCompletedProcedures(query);
         netRows.sort(Comparator.comparing(Procedure::getRecordedTime, Comparator.nullsLast(Comparator.reverseOrder())));
         int pageSize = this.resolveNurseWorkloadPageSize(query);
@@ -503,17 +669,51 @@ public class ProcedureQueryService {
             return new PageImpl<>(Collections.emptyList(), pageable, netRows.size());
         }
         int toIndex = Math.min(fromIndex + pageSize, netRows.size());
-        List<Procedure> pageSlice = netRows.subList(fromIndex, toIndex);
+        List<NurseExecutionWorkloadDetailQueryModel> pageModels =
+            this.toNurseExecutionWorkloadDetailModels(netRows.subList(fromIndex, toIndex), query);
+        Pageable pageable = PageRequest.of(springIndex, pageSize);
+        return new PageImpl<>(pageModels, pageable, netRows.size());
+    }
+
+    /**
+     * 护士诊疗执行工作量明细全量列表（汇总页脚金额复用；与分页同口径）。
+     *
+     * @param query 预解析 scope
+     * @return 按 {@code recorded_time} 倒序的净 COMPLETED 明细
+     */
+    public List<NurseExecutionWorkloadDetailQueryModel> listNurseExecutionWorkloadDetail(
+        NurseWorkloadPageQuery query) {
+        List<Procedure> netRows = this.listNurseExecutionNetCompletedProcedures(query);
+        netRows.sort(Comparator.comparing(Procedure::getRecordedTime, Comparator.nullsLast(Comparator.reverseOrder())));
+        return this.toNurseExecutionWorkloadDetailModels(netRows, query);
+    }
+
+    /**
+     * 将净执行 Procedure 切片装配为明细读模型（批量主执行人 + 预解析类目）。
+     *
+     * @param procedureSlice 已排序的净执行切片
+     * @param query          含类目 enrich map
+     * @return 明细读模型
+     */
+    private List<NurseExecutionWorkloadDetailQueryModel> toNurseExecutionWorkloadDetailModels(
+        List<Procedure> procedureSlice,
+        NurseWorkloadPageQuery query) {
+        if (procedureSlice == null || procedureSlice.isEmpty()) {
+            return Collections.emptyList();
+        }
         List<Long> procedureIds = new ArrayList<>();
-        for (Procedure entity : pageSlice) {
+        for (Procedure entity : procedureSlice) {
             if (entity != null && entity.getId() != null) {
                 procedureIds.add(entity.getId());
             }
         }
         Map<Long, Long> practitionerIdByProcedureId = this.mapPrimaryPractitionerIdByProcedureIds(procedureIds);
         Map<Long, String> categoryByServiceRequestId = this.resolveCategoryEnumByServiceRequestId(query);
-        List<NurseExecutionWorkloadDetailQueryModel> models = new ArrayList<>();
-        for (Procedure entity : pageSlice) {
+        List<NurseExecutionWorkloadDetailQueryModel> models = new ArrayList<>(procedureSlice.size());
+        for (Procedure entity : procedureSlice) {
+            if (entity == null) {
+                continue;
+            }
             NurseExecutionWorkloadDetailQueryModel model = new NurseExecutionWorkloadDetailQueryModel();
             model.setProcedureId(entity.getId());
             model.setServiceRequestId(entity.getRequestId());
@@ -526,8 +726,7 @@ public class ProcedureQueryService {
             }
             models.add(model);
         }
-        Pageable pageable = PageRequest.of(springIndex, pageSize);
-        return new PageImpl<>(models, pageable, netRows.size());
+        return models;
     }
 
     /**

@@ -19,9 +19,11 @@ import java.util.List;
 /**
  * 住院医生站就诊可见性 Gate（AS-IP-DOR-001 **BR-IP-DOR-010**；诊断/医嘱/中医等 Tab 共用）。
  *
- * <p>可见范围与 IF-IP-DOR-01 列表一致：当前会话科室（须在岗位出诊管辖内）下
- * {@code IMP + IN_PROGRESS/ON_HOLD} 的全部在院患者；<strong>不</strong>按主治/责任医生、
- * 转科发起人等活动参与者收窄（与门诊 **BR-DOR-009** 不同）。</p>
+ * <p>优先与 IF-IP-DOR-01 列表一致：当前会话科室下 {@code IMP + IN_PROGRESS/ON_HOLD} 在院队列；
+ * <strong>不</strong>按主治/责任医生等活动参与者收窄（与门诊 **BR-DOR-009** 不同）。</p>
+ *
+ * <p>若不在医生站在科队列（已出院/已结算、病案首页临床侧栏等），按就诊主键回落读取，
+ * 仍校验 patientId 与读模型一致；写路径另有可写态门控（IN_PROGRESS/ON_HOLD）。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -34,7 +36,7 @@ public class InpatientDoctorStationEncounterVisibilityResolver {
     private final PatientEncounterConsistencyGate patientEncounterConsistencyGate;
 
     /**
-     * 断言就诊对当前住院医生站可见且患者卡片一致（**BR-IP-DOR-010**）。
+     * 断言就诊可访问且患者卡片一致（本科室在科队列优先；否则按就诊主键回落）。
      *
      * @param encounterId 目标就诊主键
      * @param patientId   左侧卡片患者主键
@@ -50,7 +52,7 @@ public class InpatientDoctorStationEncounterVisibilityResolver {
     }
 
     /**
-     * 断言就诊对当前住院医生站可见且患者卡片一致（**BR-IP-DOR-010**）。
+     * 断言就诊可访问且患者卡片一致（本科室在科队列优先；否则按就诊主键回落）。
      *
      * @param encounterId 目标就诊主键
      * @param patientId   左侧卡片患者主键
@@ -68,20 +70,8 @@ public class InpatientDoctorStationEncounterVisibilityResolver {
         if (encounterId == null || patientId == null) {
             throw new BusinessException(errorCode, message);
         }
-        InpatientEncounterPageQuery query = new InpatientEncounterPageQuery();
-        query.setDoctorStationQueue(Boolean.TRUE);
-        query.setEncounterIdsIn(Collections.singletonList(encounterId));
-        // Pre：复用 Q-IPI-006 医生站队列谓词（科室全员可见，不按参与者收窄）
-        List<InpatientEncounterContextQueryModel> visibleRows =
-            this.encounterContextReader.listInpatientEncounterContexts(query);
-        InpatientEncounterContextQueryModel encounterSnapshot = null;
-        for (InpatientEncounterContextQueryModel row : visibleRows) {
-            if (row != null && encounterId.equals(row.getEncounterId())) {
-                encounterSnapshot = row;
-                break;
-            }
-        }
-        // 业务分支：不在医生站可见队列内则拒绝，防止跨科室越权读写
+        InpatientEncounterContextQueryModel encounterSnapshot = this.resolveAccessibleSnapshot(encounterId);
+        // 就诊不存在或不可读
         if (encounterSnapshot == null) {
             throw new BusinessException(errorCode, message);
         }
@@ -95,7 +85,7 @@ public class InpatientDoctorStationEncounterVisibilityResolver {
     }
 
     /**
-     * 断言就诊对当前住院医生站可见（**BR-IP-DOR-010**；不校验 request.patientId）。
+     * 断言就诊可访问（不校验 request.patientId）。
      *
      * <p>仅用于删除等请求未携带 {@code patientId} 的写路径；其它 IF 须用
      * {@link #assertVisible(Long, Long)}。</p>
@@ -113,9 +103,24 @@ public class InpatientDoctorStationEncounterVisibilityResolver {
         if (encounterId == null) {
             throw new BusinessException(errorCode, message);
         }
+        InpatientEncounterContextQueryModel encounterSnapshot = this.resolveAccessibleSnapshot(encounterId);
+        if (encounterSnapshot == null) {
+            throw new BusinessException(errorCode, message);
+        }
+        return encounterSnapshot;
+    }
+
+    /**
+     * 解析可访问就诊快照：优先医生站在科队列，否则按就诊主键回落（病案/出院场景）。
+     *
+     * @param encounterId 就诊主键
+     * @return 快照；不存在时 null
+     */
+    private InpatientEncounterContextQueryModel resolveAccessibleSnapshot(Long encounterId) {
         InpatientEncounterPageQuery query = new InpatientEncounterPageQuery();
         query.setDoctorStationQueue(Boolean.TRUE);
         query.setEncounterIdsIn(Collections.singletonList(encounterId));
+        // Pre：复用 Q-IPI-006 医生站队列谓词（科室全员可见，不按参与者收窄）
         List<InpatientEncounterContextQueryModel> visibleRows =
             this.encounterContextReader.listInpatientEncounterContexts(query);
         for (InpatientEncounterContextQueryModel row : visibleRows) {
@@ -123,6 +128,7 @@ public class InpatientDoctorStationEncounterVisibilityResolver {
                 return row;
             }
         }
-        throw new BusinessException(errorCode, message);
+        // 不在在科队列：按就诊主键回落（已出院/病案首页临床侧栏）
+        return this.encounterContextReader.getInpatientContextByEncounterId(encounterId).orElse(null);
     }
 }

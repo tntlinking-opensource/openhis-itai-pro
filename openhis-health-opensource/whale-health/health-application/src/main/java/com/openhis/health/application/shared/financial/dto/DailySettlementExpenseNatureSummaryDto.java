@@ -40,7 +40,7 @@ public class DailySettlementExpenseNatureSummaryDto {
     private String cashAmount;
 
     /** 统筹（仅医保）。 */
-    @Schema(description = "统筹")
+    @Schema(description = "医保统筹")
     private String fundAmount;
 
     /** 个账（仅医保）。 */

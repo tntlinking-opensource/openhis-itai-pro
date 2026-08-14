@@ -10,8 +10,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 结算撤销凭证只读查询（本聚合 {@link YbSettlementReversalRepository}）。
@@ -39,5 +43,38 @@ public class YbSettlementReversalQueryService {
         return reversalRepository
             .findAllByTenantIdAndIsDeletedFalseAndReversedAtGreaterThanEqualAndReversedAtLessThan(
                 tenantId, beginAt, endExclusive);
+    }
+
+    /**
+     * 按平台撤销结算号批量装载未删除撤销凭证（3202 退费结果行本院补齐）。
+     *
+     * @param revokeSetlIds 平台 revoke_setl_id / 退费 setl_id 集合
+     * @param tenantId      租户 ID
+     * @return revokeSetlId → 凭证；参数缺失或未命中时空 map
+     */
+    public Map<String, YbSettlementReversal> mapByRevokeSetlIds(
+            Collection<String> revokeSetlIds, Long tenantId) {
+        if (revokeSetlIds == null || revokeSetlIds.isEmpty() || tenantId == null) {
+            return Collections.emptyMap();
+        }
+        LinkedHashSet<String> unique = new LinkedHashSet<>();
+        for (String setlId : revokeSetlIds) {
+            if (setlId != null && !setlId.isBlank()) {
+                unique.add(setlId.trim());
+            }
+        }
+        if (unique.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<YbSettlementReversal> rows =
+            reversalRepository.findAllByRevokeSetlIdInAndTenantIdAndIsDeletedFalse(unique, tenantId);
+        Map<String, YbSettlementReversal> out = new HashMap<>(rows.size() * 2);
+        for (YbSettlementReversal row : rows) {
+            if (row == null || row.getRevokeSetlId() == null || row.getRevokeSetlId().isBlank()) {
+                continue;
+            }
+            out.putIfAbsent(row.getRevokeSetlId().trim(), row);
+        }
+        return out;
     }
 }

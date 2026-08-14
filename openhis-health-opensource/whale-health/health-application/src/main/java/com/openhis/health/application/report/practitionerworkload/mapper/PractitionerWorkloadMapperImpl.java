@@ -46,7 +46,7 @@ public class PractitionerWorkloadMapperImpl implements PractitionerWorkloadMappe
     public PractitionerWorkloadPageQuery toPractitionerWorkloadPageQuery(QueryPractitionerWorkloadSummaryRequest request) {
         PractitionerWorkloadPageQuery query = new PractitionerWorkloadPageQuery();
         this.applyCommonFilter(query, request.getEncounterScope(), request.getDateFrom(), request.getDateTo(),
-            request.getOrganizationId(), request.getPractitionerId());
+            request.getOrganizationId(), request.getRequestingOrgId(), request.getPractitionerId());
         return query;
     }
 
@@ -61,7 +61,7 @@ public class PractitionerWorkloadMapperImpl implements PractitionerWorkloadMappe
         PractitionerWorkloadPageQuery query = new PractitionerWorkloadPageQuery();
         PageQueryBinder.bind(request, query);
         this.applyCommonFilter(query, request.getEncounterScope(), request.getDateFrom(), request.getDateTo(),
-            request.getOrganizationId(), request.getPractitionerId());
+            request.getOrganizationId(), request.getRequestingOrgId(), request.getPractitionerId());
         return query;
     }
 
@@ -75,7 +75,7 @@ public class PractitionerWorkloadMapperImpl implements PractitionerWorkloadMappe
     public PractitionerWorkloadPageQuery toPractitionerWorkloadPageQuery(ExportPractitionerWorkloadDetailRequest request) {
         PractitionerWorkloadPageQuery query = new PractitionerWorkloadPageQuery();
         this.applyCommonFilter(query, request.getEncounterScope(), request.getDateFrom(), request.getDateTo(),
-            request.getOrganizationId(), request.getPractitionerId());
+            request.getOrganizationId(), request.getRequestingOrgId(), request.getPractitionerId());
         return query;
     }
 
@@ -181,9 +181,8 @@ public class PractitionerWorkloadMapperImpl implements PractitionerWorkloadMappe
         row.setSpecification(line.getSpecification());
         row.setPractitionerName(line.getPractitionerName());
         row.setEnteredDate(line.getEnteredDate());
-        row.setReceivableAmount(line.getReceivableAmount());
-        row.setActualReceivedAmount(line.getActualReceivedAmount());
-        row.setCostAmount(line.getCostAmount());
+        row.setSaleAmount(line.getSaleAmount());
+        row.setPurchaseAmount(line.getPurchaseAmount());
         return row;
     }
 
@@ -212,14 +211,15 @@ public class PractitionerWorkloadMapperImpl implements PractitionerWorkloadMappe
     }
 
     /**
-     * 工作量报表：写入公共分页筛选（就诊范围、账单日区间、机构、医务人员）。
+     * 工作量报表：写入公共分页筛选（就诊范围、账单日区间、开立科室、医务人员）。
      *
-     * @param query           待填充查询对象
-     * @param encounterScope  就诊范围码
-     * @param dateFrom        起始展示日期 yyyy-MM-dd
-     * @param dateTo          截止展示日期 yyyy-MM-dd
-     * @param organizationId  机构 id
-     * @param practitionerId  医务人员 id
+     * @param query            待填充查询对象
+     * @param encounterScope   就诊范围码
+     * @param dateFrom         起始展示日期 yyyy-MM-dd
+     * @param dateTo           截止展示日期 yyyy-MM-dd
+     * @param organizationId   遗留科室 id
+     * @param requestingOrgId  开立科室 id
+     * @param practitionerId   医务人员 id
      */
     private void applyCommonFilter(
         PractitionerWorkloadPageQuery query,
@@ -227,11 +227,13 @@ public class PractitionerWorkloadMapperImpl implements PractitionerWorkloadMappe
         String dateFrom,
         String dateTo,
         Long organizationId,
+        Long requestingOrgId,
         Long practitionerId) {
         query.setEncounterScope(trimToNull(encounterScope));
         query.setBillDateFrom(this.parseDisplayDate(dateFrom));
         query.setBillDateTo(this.parseDisplayDate(dateTo));
         query.setOrganizationId(organizationId);
+        query.setRequestingOrgId(requestingOrgId);
         query.setPractitionerId(practitionerId);
     }
 

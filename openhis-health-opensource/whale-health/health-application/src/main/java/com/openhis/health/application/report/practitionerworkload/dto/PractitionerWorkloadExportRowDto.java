@@ -12,7 +12,7 @@ import lombok.experimental.Accessors;
 import java.math.BigDecimal;
 
 /**
- * 科室/医生工作量明细导出行 DTO（IF-RPT-WKL-04）。
+ * 科室/医生工作量明细导出行 DTO（IF-RPT-WKL-04；DD-报表中心-进售价口径）。
  */
 @Data
 @Accessors(chain = true)
@@ -54,18 +54,13 @@ public class PractitionerWorkloadExportRowDto {
     @Schema(description = "开立时间")
     private String enteredDate;
 
-    /** 应收。 */
-    @Excel(name = "应收", sort = 8)
-    @Schema(description = "应收")
-    private BigDecimal receivableAmount;
+    /** 售价。 */
+    @Excel(name = "售价", sort = 8)
+    @Schema(description = "售价")
+    private BigDecimal saleAmount;
 
-    /** 实收。 */
-    @Excel(name = "实收", sort = 9)
-    @Schema(description = "实收")
-    private BigDecimal actualReceivedAmount;
-
-    /** 成本。 */
-    @Excel(name = "成本", sort = 10)
-    @Schema(description = "成本")
-    private BigDecimal costAmount;
+    /** 进价。 */
+    @Excel(name = "进价", sort = 9)
+    @Schema(description = "进价")
+    private BigDecimal purchaseAmount;
 }

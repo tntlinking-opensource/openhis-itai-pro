@@ -18,10 +18,10 @@ import org.springframework.stereotype.Component;
 import java.util.Optional;
 
 /**
- * {@link EinvoiceIssueOrchestrator} 的 application 层实现（domain 端口 → Worker / 同步服务）。
+ * {@link EinvoiceIssueOrchestrator} �?application 层实现（domain 端口 �?Worker / 同步服务）�?
  *
- * <p>与 CHS bridge Orchestrator 不同：Boss 异步 Worker、任务表、Flyway 均在 application，
- * 故本类驻留 {@code application/issue/workflow/} 而非 bridge。bridge Extension 仅依赖 domain 接口。</p>
+ * <p>�?CHS bridge Orchestrator 不同：Boss 异步 Worker、任务表、Flyway 均在 application�?
+ * 故本类驻�?{@code application/issue/workflow/} 而非 bridge。bridge Extension 仅依�?domain 接口�?/p>
  */
 @Component
 @Primary
@@ -49,14 +49,14 @@ public class EinvoiceIssueOrchestratorImpl implements EinvoiceIssueOrchestrator 
     /**
      * {@inheritDoc}
      *
-     * <p>实现：查询 {@code einv_boss_document.boss_bill_no} 是否非空。</p>
+     * <p>实现：查�?{@code einv_boss_document.boss_bill_no} 是否非空�?/p>
      */
     @Override
     public boolean canWriteOff(Long invoiceId) {
         if (invoiceId == null) {
             return false;
         }
-        return documentRepository.findByInvoiceIdAndIsDeletedFalse(invoiceId)
+        return documentRepository.findFirstByInvoiceIdAndIsDeletedFalseOrderByIdAsc(invoiceId)
                 .map(doc -> StringUtils.isNotBlank(doc.getBossBillNo()))
                 .orElse(false);
     }

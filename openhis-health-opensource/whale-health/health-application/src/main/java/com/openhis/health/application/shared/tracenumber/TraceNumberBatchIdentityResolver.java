@@ -100,7 +100,10 @@ public final class TraceNumberBatchIdentityResolver {
     }
 
     /**
-     * 请求内重复码检测（Gate 辅助，领域亦会标记 DUPLICATE_IN_REQUEST）。
+     * 单次反查请求内重复码检测（IF-TRC-21 / 进货等硬去重）。
+     *
+     * <p>仅用于「一次 HTTP 批量反查入参」或进货单内全局唯一；
+     * <strong>发药保存配药不得</strong>用本方法对跨行拼表硬拒（跨行同码见 BR-TRC-023）。</p>
      *
      * @param traceNos 追溯码列表
      * @throws BusinessException 请求内重复时

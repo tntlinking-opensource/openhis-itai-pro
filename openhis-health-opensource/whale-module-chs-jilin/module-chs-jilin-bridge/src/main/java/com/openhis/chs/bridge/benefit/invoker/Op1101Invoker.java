@@ -8,6 +8,9 @@ import static com.openhis.whale.core.application.util.StringUtils.isEmpty;
 import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
 
 import com.openhis.chs.bridge.benefit.mapper.Op1101ResultMapper;
+import com.openhis.chs.gateway.support.Op1101ChannelRetrySupport;
+import com.openhis.chs.domain.catalog.access.ChsInsuranceContractReader;
+import com.openhis.chs.domain.contract.ChsContractSnapshot;
 import com.openhis.chs.domain.outpatient.result.YbPersonInfoResult;
 import com.openhis.chs.domain.outpatient.access.Op1101QueryInvoker;
 import com.openhis.chs.domain.outpatient.command.YbPersonQueryCommand;
@@ -19,6 +22,7 @@ import com.openhis.chs.gateway.client.InsuranceGatewayClient;
 import com.openhis.chs.gateway.client.InvokeContext;
 import com.openhis.chs.gateway.client.ResultBody;
 import com.openhis.chs.domain.share.constants.ChsInfNo;
+import com.openhis.chs.gateway.config.ContractConfig;
 import com.openhis.chs.gateway.scheme.benefit.model.Op1101Input;
 import com.openhis.chs.gateway.scheme.benefit.assembler.Op1101InputAssembler;
 import com.openhis.chs.gateway.scheme.benefit.model.Op1101Output;
@@ -27,6 +31,7 @@ import com.openhis.chs.domain.share.constants.ChsPlatformCodes;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.infrastructure.multitenancy.TenantUtils;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.Optional;
@@ -35,16 +40,19 @@ import java.util.Optional;
  * 【1101】人员信息获取 Invoker：读卡查询参保人基本信息、险种与账户余额。
  *
  * <p>流程：当日缓存命中直接返回（除非 forceRefresh）→ 否则 gateway 出站 → 结果写入 {@code yb_person_cache}。
- * 社保卡（凭证类型 03）解密失败时自动回落身份证（02）重试。</p>
+ * 社保卡（凭证类型 03）解密失败时自动回落身份证（02）重试；
+ * 异地就医地区划失败时自动切同机构省通道（adm_vs=229900）重试一次。</p>
  *
  * <p>实现 domain {@link Op1101QueryInvoker}，供挂号读卡、待遇校验等场景共用。</p>
  */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class Op1101Invoker implements Op1101QueryInvoker {
 
     private final InsuranceGatewayClient gatewayClient;
     private final YbPersonCacheDomainService personCacheDomainService;
+    private final ChsInsuranceContractReader contractReader;
 
     /**
      * 读卡获取人员信息。
@@ -65,6 +73,9 @@ public class Op1101Invoker implements Op1101QueryInvoker {
             }
         }
 
+        String originalBusNo = trimToEmpty(command.getContractBusNo());
+        Long originalContractId = command.getContractId();
+
         InvokeContext invokeContext = InvokeContext.builder()
             .operatorId(String.valueOf(command.getOperatorId()))
             .insuplcAdmdvs(command.getInsuplcAdmdvs())
@@ -77,8 +88,23 @@ public class Op1101Invoker implements Op1101QueryInvoker {
             command.getCertno(),
             command.getPsnName());
         ResultBody body = invokeWithIdCardFallback(command, invokeContext, input);
+        body = invokeWithProvincialChannelRetry(command, invokeContext, body);
         Op1101Output output = Op1101OutputParser.requireOutput(body);
         YbPersonInfoResult result = Op1101ResultMapper.fromOutput(output, command.getInsuplcAdmdvs());
+        if (!originalBusNo.equals(trimToEmpty(command.getContractBusNo()))) {
+            result.setResolvedContractBusNo(command.getContractBusNo());
+            // 仅当 fin_contract 已解析到新合同 id 时回传，避免把原市医保 id 误标为已切换
+            if (command.getContractId() != null
+                && !command.getContractId().equals(originalContractId)) {
+                result.setResolvedContractId(command.getContractId());
+            }
+            log.info(
+                "1101 异地失败已切省通道重试成功: fromBusNo={} toBusNo={} fromContractId={} toContractId={}",
+                originalBusNo,
+                command.getContractBusNo(),
+                originalContractId,
+                command.getContractId());
+        }
         personCacheDomainService.persistFrom1101(command, result, body.getOutput(), tenantId);
         return result;
     }
@@ -109,6 +135,56 @@ public class Op1101Invoker implements Op1101QueryInvoker {
             command.setMdtrtCertType("02");
             command.setMdtrtCertNo(certno);
             command.setCardSn(null);
+        }
+        return retried;
+    }
+
+    /**
+     * 市/非省通道 1101 报异地就医地区划错误时，切同机构省通道（229900）用同一凭证重试一次。
+     *
+     * @param command       人员查询命令（成功时回写 contractBusNo/contractId）
+     * @param invokeContext 出站上下文
+     * @param body          当前响应
+     * @return 重试后的响应；无需重试则原样返回
+     */
+    private ResultBody invokeWithProvincialChannelRetry(
+            YbPersonQueryCommand command,
+            InvokeContext invokeContext,
+            ResultBody body) {
+        if (!Op1101ChannelRetrySupport.shouldRetryWithProvincialChannel(body, command.getContractBusNo())) {
+            return body;
+        }
+        ContractConfig provincial = Op1101ChannelRetrySupport.resolveProvincialSibling(
+            command.getContractBusNo());
+        if (provincial == null) {
+            log.warn(
+                "1101 异地就医地区划失败但未找到省通道契约 busNo={}",
+                command.getContractBusNo());
+            return body;
+        }
+        Op1101Input retryInput = Op1101InputAssembler.assemble(
+            command.getMdtrtCertType(),
+            command.getMdtrtCertNo(),
+            command.getCardSn(),
+            command.getPsnCertType(),
+            command.getCertno(),
+            command.getPsnName());
+        ResultBody retried = gatewayClient.invoke(
+            provincial.getBusNo(), ChsInfNo.PERSON_INFO, retryInput, invokeContext);
+        if (retried == null || !ChsPlatformCodes.INFCODE_SUCCESS.equals(retried.getInfcode())) {
+            return retried != null ? retried : body;
+        }
+        command.setContractBusNo(provincial.getBusNo().trim());
+        try {
+            ChsContractSnapshot snapshot = contractReader.requireContract(provincial.getBusNo(), null);
+            if (snapshot != null && snapshot.id() != null) {
+                command.setContractId(snapshot.id());
+            }
+        } catch (RuntimeException ex) {
+            log.warn(
+                "1101 省通道重试成功但未解析到 fin_contract id busNo={}: {}",
+                provincial.getBusNo(),
+                ex.getMessage());
         }
         return retried;
     }

@@ -28,6 +28,9 @@ public interface OutpatientConsumableUsageReportMapper {
      * @param summaryDimensionOptions 汇总维选项
      * @param sourceCodeOptions      来源选项
      * @param feeNatureOptions       费用性质（bus_no）
+     * @param categoryOptions        耗材类型
+     * @param practitionerOptions    执行人
+     * @param recordTypeOptions      记录类型
      * @param defaultDateFrom        默认日起
      * @param defaultDateTo          默认日止
      * @return 初始化响应
@@ -38,8 +41,18 @@ public interface OutpatientConsumableUsageReportMapper {
         List<OptionDto> summaryDimensionOptions,
         List<OptionDto> sourceCodeOptions,
         List<OptionDto> feeNatureOptions,
+        List<OptionDto> categoryOptions,
+        List<OptionDto> practitionerOptions,
+        List<OptionDto> recordTypeOptions,
         String defaultDateFrom,
         String defaultDateTo);
+
+    /**
+     * 构建记录类型下拉：ALL / DISPENSE / REFUND。
+     *
+     * @return 选项
+     */
+    List<OptionDto> buildRecordTypeOptions();
 
     /**
      * 明细行 → 导出行。

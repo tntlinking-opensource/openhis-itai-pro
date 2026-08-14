@@ -18,7 +18,8 @@ import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
  * <strong>退供伴生 3502</strong> 取<strong>退供单号</strong>（见 {@link InventoryPurchaseCompanion3502LineAssembler}）；
  * <strong>退药伴生 3502</strong> 取<strong>退药单号</strong>（{@code originalFixmedinsBchno}，见
  * {@link InventorySaleCompanion3502LineAssembler}）；
- * 住院清床合并 3505 取合并桶代表行 busNo。</p>
+ * 住院清床/无床直结合并 3505 取合并桶代表发放行 busNo（一行一桶幂等键）；
+ * 清床冲销 3506 平台批次仍用原 3505；伴生 3502 用 {@code CLRREV}{原3505上报id}（不写 HIS 退药单）。</p>
  */
 public final class InventoryUploadBatchNoAssembler {
 

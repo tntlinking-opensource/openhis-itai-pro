@@ -8,6 +8,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import java.time.LocalTime;
 
 /**
  * 按触发键查询的生效规则查询模型。
@@ -55,4 +56,12 @@ public class ChargeItemAutoGenActiveRuleQueryModel {
      * 同键下匹配优先级（数值越小越优先）。
      */
     private Integer priority;
+    /**
+     * 滚费业务时刻（billDate 当日）。
+     */
+    private LocalTime businessTime;
+    /**
+     * 滚费计费人（adm_practitioner.id）。
+     */
+    private Long billingPractitionerId;
 }

@@ -54,10 +54,12 @@ import com.openhis.health.domain.workflow.servicerequest.command.RemoveFromNurse
 import com.openhis.health.domain.workflow.servicerequest.command.RemoveServiceRequestDraftCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.SignServiceRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.CancelStopServiceRequestCommand;
+import com.openhis.health.domain.workflow.servicerequest.command.CancelVerifyStopServiceRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.ChangeServiceRequestBusinessTimeCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.StopServiceRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.UpsertNursingOrderCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.VerifyServiceRequestCommand;
+import com.openhis.health.domain.workflow.servicerequest.command.VerifyStopServiceRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.WithdrawSignedServiceRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.entity.ServiceRequest;
 import com.openhis.health.domain.workflow.servicerequest.entity.ServiceRequestDetail;
@@ -340,6 +342,11 @@ public class ServiceRequestDomainService {
             request.setEncounterDiagnosisIds(item.getEncounterDiagnosisIds());
             changedFields.add(FieldNameConstants.ENCOUNTER_DIAGNOSIS_IDS);
         }
+        // 费用性质：命令显式传入且与存量不同时覆盖 contract_id
+        if (item.getContractId() != null && !Objects.equals(item.getContractId(), request.getContractId())) {
+            request.setContractId(item.getContractId());
+            changedFields.add(FieldNameConstants.CONTRACT_ID);
+        }
 
         // 前置：护理级别须长期（修改自身时不重复校验并发）
         this.assertNursingLevelOrderRules(request, request.getId(), false);
@@ -569,6 +576,53 @@ public class ServiceRequestDomainService {
         request.activeOrCompletedToDraft();
         serviceRequestRepository.save(request);
         domainEventPublisher.publish(new ServiceRequestRejectedToDraftEvent(request.getId(), request.getStatusEnum()));
+    }
+
+    /**
+     * 停嘱校对：仅写 {@code stop_performer_check_id}/{@code stop_check_time}，状态仍为 STOPPED。
+     *
+     * @param command 停嘱校对命令
+     * @throws BusinessException 不可停嘱校对时
+     */
+    public void verifyStopServiceRequest(VerifyStopServiceRequestCommand command) {
+        if (command == null || command.getId() == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "停嘱校对时 id 不能为空");
+        }
+        if (command.getStopPerformerCheckId() == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "停嘱校对时 stopPerformerCheckId 不能为空");
+        }
+        // 加载：按主键取诊疗申请聚合根。
+        ServiceRequest request = this.requireServiceRequest(command.getId());
+        LocalDateTime stopCheckTime = command.getStopCheckTime();
+        // 校对时刻未传则取当前系统时间。
+        if (stopCheckTime == null) {
+            stopCheckTime = LocalDateTime.now();
+        }
+        // 状态迁移：仅写停嘱校对痕迹，不改 STOPPED。
+        request.markStopChecked(command.getStopPerformerCheckId(), stopCheckTime);
+        // 持久化：痕迹落库供待校列表与取消停嘱门禁读取。
+        serviceRequestRepository.save(request);
+    }
+
+    /**
+     * 取消停嘱校对：清空停嘱校对痕迹，状态仍为 STOPPED（逆流程解锁医生取消停嘱）。
+     *
+     * @param command 取消停嘱校对命令
+     * @throws BusinessException 不可取消停嘱校对时
+     */
+    public void cancelVerifyStopServiceRequest(CancelVerifyStopServiceRequestCommand command) {
+        if (command == null || command.getId() == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "取消停嘱校对时 id 不能为空");
+        }
+        // 加载：按主键取诊疗申请聚合根。
+        ServiceRequest request = this.requireServiceRequest(command.getId());
+        // 状态迁移：清空停嘱校对人/时间，不改 STOPPED。
+        request.clearStopChecked();
+        // 持久化：清空后医生取消停嘱门禁可通过。
+        serviceRequestRepository.save(request);
     }
 
     /**
@@ -1071,19 +1125,20 @@ public class ServiceRequestDomainService {
     }
 
     /**
-     * 床位自动计费配置 ensure 长期 VERIFIED 床位诊疗申请（AS-IP-NUR-013 BR-IP-ARG-019；DM-WKF-004 §6.1.20）。
+     * 自动计费配置 ensure 长期 VERIFIED 诊疗申请（AS-IP-NUR-013 BR-IP-ARG-019；DM-WKF-004 §6.1.20）。
      *
-     * <p>按 {@code based_on=cus_charge_item_auto_gen.id} 幂等；滚费任务对该 SR 走 IF-IP-EXE-02 执行，不再按日落临时 SR。</p>
+     * <p>按 {@code based_on=cus_charge_item_auto_gen.id} 幂等；滚费任务对该 SR 走 IF-IP-EXE-02 执行，不再按日落临时 SR。
+     * {@code category_enum} 取自命令（选品 ActivityDefinition 类目），不再写死床位 51。</p>
      *
-     * @param command 配置锚点与数量等
-     * @return 长期床位诊疗申请主键
+     * @param command 配置锚点、类目与数量等
+     * @return 长期诊疗申请主键
      * @throws BusinessException 不变式失败时
      */
     public Long ensureAutoRollBedLongTermServiceRequest(EnsureAutoRollBedLongTermServiceRequestCommand command) {
         if (command == null || command.getRuleId() == null) {
             throw new BusinessException(
                 ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
-                "床位滚费 ensure 时 ruleId 不能为空");
+                "自动计费 ensure 时 ruleId 不能为空");
         }
         // Pre：同配置规则已存在未删 auto-roll 长期医嘱则直接复用
         Optional<ServiceRequest> existing = serviceRequestRepository.findFirstByBasedOnTableAndBasedOnIdAndGenerateSourceEnumAndIsDeletedFalse(
@@ -1096,22 +1151,29 @@ public class ServiceRequestDomainService {
         if (command.getEncounterId() == null) {
             throw new BusinessException(
                 ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
-                "床位滚费 ensure 时 encounterId 不能为空");
+                "自动计费 ensure 时 encounterId 不能为空");
         }
         if (command.getPatientId() == null) {
             throw new BusinessException(
                 ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
-                "床位滚费 ensure 时 patientId 不能为空");
+                "自动计费 ensure 时 patientId 不能为空");
         }
         if (command.getActivityId() == null) {
             throw new BusinessException(
                 ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
-                "床位滚费 ensure 时 activityId 不能为空");
+                "自动计费 ensure 时 activityId 不能为空");
         }
         if (command.getRequesterId() == null) {
             throw new BusinessException(
                 ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
-                "床位滚费 ensure 时 requesterId 不能为空");
+                "自动计费 ensure 时 requesterId 不能为空");
+        }
+        // Gate：类目须由应用层按选品回传，禁止域内写死床位 51（BR-IP-ARG-003）
+        String categoryEnum = StringUtils.trimToNull(command.getCategoryEnum());
+        if (categoryEnum == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                "自动计费 ensure 时 categoryEnum 不能为空");
         }
         BigDecimal quantity = command.getQuantity();
         if (quantity == null || quantity.compareTo(BigDecimal.ZERO) <= 0) {
@@ -1121,7 +1183,7 @@ public class ServiceRequestDomainService {
         if (StringUtils.isEmpty(unitCode)) {
             throw new BusinessException(
                 ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
-                "床位滚费 ensure 时 unitCode 不能为空（须为诊疗活动 packageUnitCode 持久化码）");
+                "自动计费 ensure 时 unitCode 不能为空（须为诊疗活动 packageUnitCode 持久化码）");
         }
         LocalDateTime now = LocalDateTime.now();
         ServiceRequest request = new ServiceRequest();
@@ -1132,7 +1194,7 @@ public class ServiceRequestDomainService {
         request.setUnitCode(unitCode);
         request.setRequesterId(command.getRequesterId());
         request.setGenerateSourceEnum(GenerateSource.AUTO_ROLL_FEES.getCode());
-        request.setCategoryEnum(ServiceRequestCategoryConstants.SERVICE_CATEGORY_BED_SERVICE);
+        request.setCategoryEnum(categoryEnum);
         request.setTherapyEnum(TherapyType.LONG_TERM.getCode());
         request.setRateCode(InpatientAutoRollConstants.AUTO_ROLL_LONG_TERM_DAILY_RATE_CODE);
         request.setBasedOnTable(TableNameConstants.CUS_CHARGE_ITEM_AUTO_GEN);
@@ -1427,8 +1489,10 @@ public class ServiceRequestDomainService {
         out.setReqOpenedTime(LocalDateTime.now());
         out.setReqAuthoredTime(null);
         out.setStopTime(null);
-        // 复制/重开新行不得继承源行停嘱人。
+        // 复制/重开新行不得继承源行停嘱人与停嘱校对痕迹。
         out.setStopperId(null);
+        out.setStopPerformerCheckId(null);
+        out.setStopCheckTime(null);
         out.setIsDeleted(Boolean.FALSE);
         out.initDraft();
         return out;
@@ -1670,8 +1734,10 @@ public class ServiceRequestDomainService {
         refund.setReqOpenedTime(refundAuthored);
         refund.setReqAuthoredTime(refundAuthored);
         refund.setStopTime(null);
-        // 负向单无停嘱语义，停嘱人须空。
+        // 负向单无停嘱语义，停嘱人与停嘱校对痕迹须空。
         refund.setStopperId(null);
+        refund.setStopPerformerCheckId(null);
+        refund.setStopCheckTime(null);
         refund.setRefundServiceId(source.getId());
         refund.setReasonText(reason);
         refund.setIsDeleted(Boolean.FALSE);

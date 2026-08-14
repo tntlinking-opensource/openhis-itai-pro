@@ -72,6 +72,18 @@ public class YbClinicPreSettle extends BaseAuditedEntity implements PreSettleSna
     @Column(name = "medfee_sumamt")
     private BigDecimal medfeeSumamt;
 
+    /** 院内收费合计（charge_item.total_price，结算两位）。 */
+    @Column(name = "retail_medfee_sumamt")
+    private BigDecimal retailMedfeeSumamt;
+
+    /** 2204 上传明细合计（pric×cnt，结算两位）。 */
+    @Column(name = "upload_medfee_sumamt")
+    private BigDecimal uploadMedfeeSumamt;
+
+    /** 零售−上传分差（retail−upload）。 */
+    @Column(name = "retail_upload_diff_amt")
+    private BigDecimal retailUploadDiffAmt;
+
     @Column(name = "fund_pay_sumamt")
     private BigDecimal fundPaySumamt;
 

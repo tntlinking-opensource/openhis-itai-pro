@@ -106,7 +106,8 @@ public class DoctorStationInpatientAdmissionMapperImpl implements DoctorStationI
         }
         for (AdmissionDiagnosisSubmitDto row : rows) {
             AdmissionConditionItem item = new AdmissionConditionItem();
-            item.setEncounterDiagnosisId(this.resolveAdmissionEncounterDiagnosisId(row));
+            // 住院申请一律新建住院线诊断关联，不复用门诊就诊诊断行主键（防跨就诊 upsert）
+            item.setEncounterDiagnosisId(null);
             item.setConditionDefinitionId(row.getConditionDefinitionId());
             item.setPrimaryFlag(row.getPrimaryFlag());
             item.setDescription(row.getDescription());
@@ -115,15 +116,5 @@ public class DoctorStationInpatientAdmissionMapperImpl implements DoctorStationI
             items.add(item);
         }
         return items;
-    }
-
-    /**
-     * 解析入院诊断行主键。
-     *
-     * @param row 提交行
-     * @return 就诊诊断行主键；新建时为 null
-     */
-    private Long resolveAdmissionEncounterDiagnosisId(AdmissionDiagnosisSubmitDto row) {
-        return row.getEncounterDiagnosisId();
     }
 }

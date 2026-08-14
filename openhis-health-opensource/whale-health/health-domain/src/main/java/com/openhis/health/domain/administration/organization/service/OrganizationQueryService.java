@@ -10,6 +10,7 @@ import com.openhis.health.domain.administration.organization.repository.Organiza
 import com.openhis.health.domain.share.enums.OrganizationClassification;
 import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.health.domain.share.enums.OrganizationType;
+import com.openhis.health.domain.share.utils.IdInQueryChunkSupport;
 import com.openhis.whale.core.infrastructure.multitenancy.TenantUtils;
 import lombok.RequiredArgsConstructor;
 import com.openhis.whale.core.application.util.StringUtils;
@@ -102,7 +103,11 @@ public class OrganizationQueryService {
         if (distinctIds.isEmpty()) {
             return organizationById;
         }
-        for (Organization organization : scopeToCurrentTenant(organizationRepository.findAllByIdIn(distinctIds))) {
+        // Pre：机构主键 IN 分批
+        List<Organization> organizations = IdInQueryChunkSupport.loadByIdInChunks(
+            distinctIds,
+            chunkIds -> scopeToCurrentTenant(organizationRepository.findAllByIdIn(new LinkedHashSet<>(chunkIds))));
+        for (Organization organization : organizations) {
             if (organization != null && organization.getId() != null) {
                 organizationById.put(organization.getId(), organization);
             }
@@ -130,7 +135,11 @@ public class OrganizationQueryService {
         if (distinctIds.isEmpty()) {
             return nameByOrganizationId;
         }
-        for (Organization organization : scopeToCurrentTenant(organizationRepository.findAllByIdIn(distinctIds))) {
+        // Pre：机构主键 IN 分批
+        List<Organization> organizations = IdInQueryChunkSupport.loadByIdInChunks(
+            distinctIds,
+            chunkIds -> scopeToCurrentTenant(organizationRepository.findAllByIdIn(new LinkedHashSet<>(chunkIds))));
+        for (Organization organization : organizations) {
             if (organization.getId() != null && organization.getName() != null) {
                 nameByOrganizationId.put(organization.getId(), organization.getName());
             }
@@ -318,7 +327,11 @@ public class OrganizationQueryService {
             return Map.of();
         }
         Map<Long, String> out = new HashMap<>(idSet.size());
-        for (Organization o : scopeToCurrentTenant(organizationRepository.findAllByIdIn(idSet))) {
+        // Pre：机构主键 IN 分批
+        List<Organization> organizations = IdInQueryChunkSupport.loadByIdInChunks(
+            idSet,
+            chunkIds -> scopeToCurrentTenant(organizationRepository.findAllByIdIn(new LinkedHashSet<>(chunkIds))));
+        for (Organization o : organizations) {
             out.put(o.getId(), StringUtils.defaultString(o.getName()));
         }
         return out;

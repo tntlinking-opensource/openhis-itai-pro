@@ -6,6 +6,7 @@ package com.openhis.health.application.inpatient.nursestation.inpatientbilling.r
 
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationAutoRollConfigRowDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationAutoRollNursingReadonlyDto;
+import com.openhis.whale.core.application.dto.OptionDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
@@ -28,4 +29,10 @@ public class ListAutoRollConfigsResponse {
     /** 护理级别只读区。 */
     @Schema(description = "护理级别只读区")
     private NurseStationAutoRollNursingReadonlyDto nursingLevelReadonly;
+
+    /**
+     * 计费人下拉（在职护士；供配置弹窗选用）。
+     */
+    @Schema(description = "计费人护士选项")
+    private List<OptionDto> nurseOptions = new ArrayList<>();
 }

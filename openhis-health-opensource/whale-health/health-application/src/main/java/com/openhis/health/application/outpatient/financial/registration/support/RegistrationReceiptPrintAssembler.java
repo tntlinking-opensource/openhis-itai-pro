@@ -6,8 +6,8 @@ package com.openhis.health.application.outpatient.financial.registration.support
 
 import com.openhis.health.application.outpatient.financial.registration.dto.RegistrationReceiptChargeLineDto;
 import com.openhis.health.application.outpatient.financial.registration.dto.RegistrationSlipDto;
-import com.openhis.health.domain.administration.account.entity.Account;
-import com.openhis.health.domain.administration.account.service.AccountQueryService;
+import com.openhis.health.application.shared.encounter.EncounterContextReader;
+import com.openhis.health.application.shared.financial.EncounterContractDisplayAssembler;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
@@ -19,8 +19,6 @@ import com.openhis.health.domain.administration.organization.entity.Organization
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
-import com.openhis.health.domain.financial.contract.entity.Contract;
-import com.openhis.health.domain.financial.contract.service.ContractQueryService;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentRecDetailQueryModel;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentReconciliationQueryModel;
 import com.openhis.health.domain.financial.paymentreconciliation.service.PaymentReconciliationQueryService;
@@ -37,7 +35,7 @@ import com.openhis.health.infrastructure.integration.insurance.outpatient.Outpat
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientRegistrationPlatformQueryExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionOut.OutpatientChargeSettlementRecordExtensionOut;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionOut.OutpatientRegistrationPlatformQueryExtensionOut;
-import com.openhis.health.application.shared.encounter.EncounterContextReader;
+import com.openhis.whale.core.application.util.StringUtils;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -47,7 +45,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
-import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 /**
@@ -62,8 +59,8 @@ public class RegistrationReceiptPrintAssembler {
     private final PaymentReconciliationQueryService paymentReconciliationQueryService;
     private final ChargeItemQueryService chargeItemQueryService;
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
-    private final AccountQueryService accountQueryService;
-    private final ContractQueryService contractQueryService;
+    /** 就诊费用性质展示（有医保户优先医保合同名，与挂号列表/医生站卡片同口径）。 */
+    private final EncounterContractDisplayAssembler encounterContractDisplayAssembler;
     private final PractitionerQueryService practitionerQueryService;
     private final OutpatientRegistrationInsuranceExtension outpatientRegistrationInsuranceExtension;
     private final OutpatientChargeInsuranceExtension outpatientChargeInsuranceExtension;
@@ -255,7 +252,8 @@ public class RegistrationReceiptPrintAssembler {
     /**
      * 按支付子明细与医保平台快照回填小票各渠道金额字段（统筹/个账/现金/微信/支付宝等）。
      *
-     * <p>起付线取 2207 回执 {@code act_pay_dedc}；个账余额优先取回执 {@code balc}，
+     * <p>起付线取 2207 回执 {@code act_pay_dedc}；公务员待遇/补助取回执
+     * {@code cvlserv_flag}/{@code cvlserv_pay}；个账余额优先取回执 {@code balc}，
      * 再回落支付明细 {@code afterBalance}（门诊挂号通常不写 afterBalance）。</p>
      *
      * @param slip               待填充挂号单 DTO
@@ -289,10 +287,14 @@ public class RegistrationReceiptPrintAssembler {
 
         BigDecimal settlementActPayDedc = null;
         BigDecimal settlementBalc = null;
+        String settlementCvlservFlag = null;
+        BigDecimal settlementCvlservPay = null;
         if (payment != null && payment.getId() != null) {
             SettlementPrintAmounts settlementAmounts = resolveSettlementPrintAmounts(payment.getId());
             settlementActPayDedc = settlementAmounts.actPayDedc;
             settlementBalc = settlementAmounts.balc;
+            settlementCvlservFlag = settlementAmounts.cvlservFlag;
+            settlementCvlservPay = settlementAmounts.cvlservPay;
         }
         BigDecimal accountBalance = firstNonNull(settlementBalc, accountBalanceFromDetail);
 
@@ -313,12 +315,14 @@ public class RegistrationReceiptPrintAssembler {
         if (insuranceSnapshot != null) {
             snapshotCash = insuranceSnapshot.getYbPsnCashPay();
         }
-        BigDecimal cash = firstNonNull(
-            channelAmounts.get(PaymentChannel.CASH.getCode()),
-            snapshotCash);
+        BigDecimal cash = channelAmounts.get(PaymentChannel.CASH.getCode());
         BigDecimal wechat = channelAmounts.get(PaymentChannel.WECHAT.getCode());
         BigDecimal alipay = channelAmounts.get(PaymentChannel.ALIPAY.getCode());
         BigDecimal bankCard = channelAmounts.get(PaymentChannel.BANK_CARD.getCode());
+        // 本笔已有微信/支付宝/银行卡时，禁止用医保快照个人现金污染「现金支付」
+        if (cash == null && wechat == null && alipay == null && bankCard == null) {
+            cash = snapshotCash;
+        }
 
         if (cash == null && wechat == null && alipay == null && bankCard == null
             && fund == null && acct == null && slip.getAmount() != null) {
@@ -336,6 +340,9 @@ public class RegistrationReceiptPrintAssembler {
         slip.setFundPayText(formatAmountText(fund));
         slip.setAccountPayText(formatAmountText(acct));
         slip.setDeductibleLineText(formatAmountText(settlementActPayDedc));
+        // 公务员待遇/补助：仅小票展示透传，不参与渠道金额合计
+        slip.setCvlservFlagText(formatCvlservFlagText(settlementCvlservFlag));
+        slip.setCvlservPayText(formatAmountText(settlementCvlservPay));
         slip.setCashPayText(formatAmountText(cash));
         slip.setWechatPayText(formatAmountText(wechat));
         slip.setAlipayPayText(formatAmountText(alipay));
@@ -343,12 +350,13 @@ public class RegistrationReceiptPrintAssembler {
     }
 
     /**
-     * 从支付单下未撤销的 2207 正式结算回执汇总小票起付线与个账余额。
+     * 从支付单下未撤销的 2207 正式结算回执汇总小票起付线、公务员字段与个账余额。
      *
-     * <p>多笔时 {@code act_pay_dedc} 求和；{@code balc} 取最后一笔非空值。</p>
+     * <p>多笔时 {@code act_pay_dedc}/{@code cvlserv_pay} 求和；{@code cvlserv_flag}
+     * 取首笔非空；{@code balc} 取最后一笔非空值。</p>
      *
      * @param paymentId 支付主键
-     * @return 起付线/余额；扩展未启用或无回执时字段为 null
+     * @return 起付线/公务员/余额；扩展未启用或无回执时字段为 null
      */
     private SettlementPrintAmounts resolveSettlementPrintAmounts(Long paymentId) {
         SettlementPrintAmounts amounts = new SettlementPrintAmounts();
@@ -365,6 +373,13 @@ public class RegistrationReceiptPrintAssembler {
                 continue;
             }
             amounts.actPayDedc = sumNullable(amounts.actPayDedc, record.getActPayDedc());
+            amounts.cvlservPay = sumNullable(amounts.cvlservPay, record.getCvlservPay());
+            if (amounts.cvlservFlag == null) {
+                String flag = StringUtils.trimToNull(record.getCvlservFlag());
+                if (flag != null) {
+                    amounts.cvlservFlag = flag;
+                }
+            }
             if (record.getBalc() != null) {
                 amounts.balc = record.getBalc();
             }
@@ -389,9 +404,30 @@ public class RegistrationReceiptPrintAssembler {
         return left.add(right);
     }
 
-    /** 小票用结算回执金额（起付线 + 个账余额）。 */
+    /**
+     * 公务员标志 → 小票展示文案。
+     *
+     * <p>仅认平台字典：{@code 1}→是 / {@code 0}→否；空或非 0/1 一律空串，禁止臆造。</p>
+     *
+     * @param flag 平台 {@code cvlserv_flag}
+     * @return 展示文案
+     */
+    private static String formatCvlservFlagText(String flag) {
+        String value = StringUtils.trimToEmpty(flag);
+        if ("1".equals(value)) {
+            return "是";
+        }
+        if ("0".equals(value)) {
+            return "否";
+        }
+        return "";
+    }
+
+    /** 小票用结算回执字段（起付线 + 公务员 + 个账余额）。 */
     private static final class SettlementPrintAmounts {
         private BigDecimal actPayDedc;
+        private String cvlservFlag;
+        private BigDecimal cvlservPay;
         private BigDecimal balc;
     }
 
@@ -417,21 +453,22 @@ public class RegistrationReceiptPrintAssembler {
     }
 
     /**
-     * 由就诊自费账户合同号解析费用性质展示名（合同名称）。
+     * 解析挂号小票费用性质展示名（挂号身份合同名）。
+     *
+     * <p>与挂号列表 {@code contractName}、医生站卡片同口径：有医保账户且合同号非空时优先医保合同名，
+     * 否则回落登记个人现金户合同名。禁止仅取自费账户，否则市医保挂号也会打成「自费」。</p>
      *
      * @param encounterId 就诊主键
-     * @return 合同名称；无账户或合同时为 null
+     * @return 合同名称；无可用合同时为 null
      */
     private String resolveFeeNatureText(Long encounterId) {
-        Account account = accountQueryService.getSelfAccount(encounterId);
-        if (account == null || StringUtils.isEmpty(account.getContractNo())) {
+        if (encounterId == null) {
             return null;
         }
-        return contractQueryService.findOptionalContractEntityByBusNo(account.getContractNo().trim())
-            .map(Contract::getName)
-            .map(String::trim)
-            .filter(name -> !name.isEmpty())
-            .orElse(null);
+        // Pre：优先医保账户合同，与 ClinicRegister 列表费用性质列一致
+        Map<Long, String> displayByEncounter =
+            encounterContractDisplayAssembler.mapContractDisplayByEncounterIds(List.of(encounterId));
+        return displayByEncounter.get(encounterId);
     }
 
     /**

@@ -87,7 +87,11 @@ public class NurseExecutionDetailRowDto {
     @Schema(description = "患者姓名")
     private String patientName;
 
-    /** 金额。 */
-    @Schema(description = "金额")
-    private BigDecimal amount;
+    /** 售价。 */
+    @Schema(description = "售价")
+    private BigDecimal saleAmount;
+
+    /** 进价（诊疗执行无进价为 null）。 */
+    @Schema(description = "进价")
+    private BigDecimal purchaseAmount;
 }

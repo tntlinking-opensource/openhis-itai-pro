@@ -239,7 +239,8 @@ public class DeviceCatalogImportRowValidator {
         row.setAllergenFlag(this.resolveYesNoDefaultFalse(row, row.getAllergenFlagText(), "过敏标记", errors));
         row.setYbFlag(this.resolveYesNoDefaultFalse(row, row.getYbFlagText(), "医保标记", errors));
         row.setHvcmFlag(this.resolveYesNoDefaultFalse(row, row.getHvcmFlagText(), "高值耗材标志", errors));
-        row.setChargeableFlag(this.resolveYesNoDefaultFalse(row, row.getChargeableFlagText(), "是否收费耗材", errors));
+        // 「不收费耗材」是→chargeableFlag=false；否→true；空白保持 false
+        this.resolveNonChargeableFlag(row, errors);
     }
 
     /**
@@ -444,6 +445,36 @@ public class DeviceCatalogImportRowValidator {
             return Boolean.FALSE;
         }
         return this.parseYesNo(row, raw, columnName, errors);
+    }
+
+    /**
+     * 解析「不收费耗材」列并写入 chargeableFlag（库语义：true=收费）。
+     *
+     * <p>是→false；否→true；空白或非法文案保持 false（与历史默认一致）。</p>
+     *
+     * @param row 导入行
+     * @param errors 错误收集
+     */
+    private void resolveNonChargeableFlag(
+        DeviceCatalogImportRow row,
+        List<ImportDeviceCatalogErrorItemDto> errors
+    ) {
+        String raw = row.getChargeableFlagText();
+        if (StringUtils.isEmpty(raw)) {
+            row.setChargeableFlag(Boolean.FALSE);
+            return;
+        }
+        int errorCountBefore = errors.size();
+        Boolean nonChargeable = this.parseYesNo(row, raw, "不收费耗材", errors);
+        if (errors.size() > errorCountBefore) {
+            row.setChargeableFlag(Boolean.FALSE);
+            return;
+        }
+        if (Boolean.TRUE.equals(nonChargeable)) {
+            row.setChargeableFlag(Boolean.FALSE);
+            return;
+        }
+        row.setChargeableFlag(Boolean.TRUE);
     }
 
     /**

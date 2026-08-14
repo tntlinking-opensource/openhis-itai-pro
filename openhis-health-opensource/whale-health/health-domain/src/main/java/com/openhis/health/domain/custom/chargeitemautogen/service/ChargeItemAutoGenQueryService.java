@@ -219,6 +219,8 @@ public class ChargeItemAutoGenQueryService {
         model.setPerformingOrgId(row.getPerformingOrgId());
         model.setQuantityValue(row.getQuantityValue());
         model.setPriority(row.getPriority());
+        model.setBusinessTime(row.getBusinessTime());
+        model.setBillingPractitionerId(row.getBillingPractitionerId());
         return model;
     }
 
@@ -238,6 +240,8 @@ public class ChargeItemAutoGenQueryService {
         model.setQuantityValue(row.getQuantityValue());
         model.setPriority(row.getPriority());
         model.setRemark(row.getRemark());
+        model.setBusinessTime(row.getBusinessTime());
+        model.setBillingPractitionerId(row.getBillingPractitionerId());
         model.setCreatedAt(row.getCreatedAt());
         return model;
     }

@@ -20,6 +20,7 @@ import com.openhis.health.domain.share.events.workflow.devicedispense.DeviceDisp
 import com.openhis.health.domain.share.events.workflow.devicedispense.DeviceDispenseSummaryCancelledEvent;
 import com.openhis.health.domain.share.events.workflow.devicedispense.DeviceDispenseSummaryCompletedEvent;
 import com.openhis.health.domain.share.events.workflow.devicedispense.DeviceDispensedEvent;
+import com.openhis.health.domain.workflow.devicedispense.command.AmendDeviceDispenseDisplayTimeCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.CancelDeviceDispenseSummaryCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.CancelUndispensedDeviceDispenseCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.CreatePendingRefundDeviceDispenseCommand;
@@ -819,6 +820,26 @@ public class DeviceDispenseDomainService {
             dispense.preparedToPreparation();
         }
         deviceDispenseRepository.saveAll(rows);
+    }
+
+    /**
+     * 修正耗材发放客户可见时刻（DM-WKF-007；AS-IP-NUR-005 IF-IP-PRC-07）。
+     *
+     * <p>已发改 {@code dispense_time}；仅拣配改 {@code prepare_time}；不改 {@code planned_dispense_time}。</p>
+     *
+     * @param command 发放主键与新展示时刻
+     * @throws BusinessException 发放不存在或无可改展示字段
+     */
+    public void amendDeviceDispenseDisplayTime(AmendDeviceDispenseDisplayTimeCommand command) {
+        // 前置校验：主键与时刻必填
+        if (command == null || command.getDispenseId() == null) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "发放主键不能为空");
+        }
+        // 加载/组装：主发放行仅改展示轴
+        DeviceDispense entity = this.mustGetById(command.getDispenseId());
+        entity.amendDisplayTime(command.getDisplayTime());
+        // 持久化：发放/拣配展示时刻落库
+        deviceDispenseRepository.save(entity);
     }
 
     /**

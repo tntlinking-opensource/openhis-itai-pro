@@ -36,4 +36,18 @@ public interface YbPersonCacheRepository extends JpaRepository<YbPersonCache, Lo
      */
     List<YbPersonCache> findByContractIdAndTenantIdAndIsDeletedFalseAndExpireAtAfterOrderByCachedAtDesc(
         Long contractId, Long tenantId, LocalDateTime expireAt);
+
+    /**
+     * 按契约、凭证类型与凭证号查找最新一条人员缓存（含已过期，按 cached_at 倒序）。
+     *
+     * <p>供医生站险种展示：住院患者入院读卡后缓存可能已过日终，仍需回显职工/居民。</p>
+     *
+     * @param contractId    契约 ID
+     * @param mdtrtCertType 就诊凭证类型
+     * @param mdtrtCertNo   就诊凭证号
+     * @param tenantId      租户 ID
+     * @return 最新缓存行
+     */
+    Optional<YbPersonCache> findFirstByContractIdAndMdtrtCertTypeAndMdtrtCertNoAndTenantIdAndIsDeletedFalseOrderByCachedAtDesc(
+        Long contractId, String mdtrtCertType, String mdtrtCertNo, Long tenantId);
 }

@@ -25,6 +25,8 @@ import com.openhis.health.domain.administration.practitioner.service.Practitione
 import com.openhis.health.domain.financial.cashiersettlement.command.SubmitCashierSettlementCommand;
 import com.openhis.health.domain.financial.cashiersettlement.command.WithdrawCashierSettlementCommand;
 import com.openhis.health.domain.financial.cashiersettlement.queries.PreviewCashierSettlementQuery;
+import com.openhis.health.domain.financial.cashiersettlement.queries.model.CashierSettlementMountedPaymentBundle;
+import com.openhis.health.domain.financial.cashiersettlement.queries.model.CashierSettlementSummaryPaymentBundle;
 import com.openhis.health.domain.financial.cashiersettlement.queries.model.PreviewCashierSettlementQueryModel;
 import com.openhis.health.domain.financial.cashiersettlement.queries.model.UnsettledPaymentPreviewItemQueryModel;
 import com.openhis.health.domain.financial.cashiersettlement.service.CashierSettlementDomainService;
@@ -210,11 +212,11 @@ public class OutpatientDailySettlementAppService {
             PreviewCashierSettlementQueryModel previewModel =
                 this.paymentReconciliationQueryService.previewUnsettledPaymentsForCashierSettlement(previewQuery);
             // Pre：展示汇总须含已交账流水，仅 paymentCount/items 保持未交账口径（BR-OP-DCL-014）
-            List<UnsettledPaymentPreviewItemQueryModel> summaryPreviewItems =
-                this.paymentReconciliationQueryService.previewPaymentsForCashierSettlementSummary(previewQuery);
+            CashierSettlementSummaryPaymentBundle summaryBundle =
+                this.paymentReconciliationQueryService.loadPaymentsForCashierSettlementSummary(previewQuery);
+            List<UnsettledPaymentPreviewItemQueryModel> summaryPreviewItems = summaryBundle.getPreviewItems();
+            List<PaymentReconciliationQueryModel> displayPaymentModels = summaryBundle.getPaymentModels();
             Set<Long> displayPaymentIds = this.collectPaymentIdsFromPreviewItems(summaryPreviewItems);
-            List<PaymentReconciliationQueryModel> displayPaymentModels =
-                this.paymentReconciliationQueryService.findPaymentQueryModelsForCashierSettlementSummary(previewQuery);
             Map<Long, List<PaymentRecDetailQueryModel>> recDetailsByPaymentId =
                 this.loadRecDetailsByPaymentIds(displayPaymentIds);
             Map<String, Boolean> insuranceByContractBusNo =
@@ -299,8 +301,11 @@ public class OutpatientDailySettlementAppService {
             locked,
             OutpatientDailySettlementConstants.EX_OP_DCL_105,
             OutpatientDailySettlementConstants.EX_OP_DCL_201);
-        Integer paymentCount = selectedPaymentIds.size();
-        // Pre：头表 total_income = 勾选集合与 handoverSummary.totalIncome 同管线（DD §3.2.1）
+        // Pre：头表笔数/总收入与日结同口径（不含工伤；挂载仍含工伤 payment）
+        Integer paymentCount =
+            this.outpatientDailySettlementMapper.resolveSelectedSettlementPaymentCount(
+                locked.getItems(),
+                selectedPaymentIds);
         BigDecimal totalIncome =
             this.outpatientDailySettlementMapper.resolveSelectedSettlementTotalIncome(
                 locked.getItems(),
@@ -480,10 +485,11 @@ public class OutpatientDailySettlementAppService {
     private CashierSettlementMountedVoucherDto rebuildOutpatientMountedVoucherFromMounts(
         CashierSettlement settlement) {
         Long settlementId = settlement.getId();
-        List<UnsettledPaymentPreviewItemQueryModel> mountedItems =
-            this.paymentReconciliationQueryService.previewPaymentsByCashierSettlementId(settlementId);
-        List<PaymentReconciliationQueryModel> paymentModels =
-            this.paymentReconciliationQueryService.findPaymentQueryModelsByCashierSettlementId(settlementId);
+        // Pre：一次装载挂载 payment（避免头表双扫）
+        CashierSettlementMountedPaymentBundle mountedBundle =
+            this.paymentReconciliationQueryService.loadMountedPaymentsByCashierSettlementId(settlementId);
+        List<UnsettledPaymentPreviewItemQueryModel> mountedItems = mountedBundle.getPreviewItems();
+        List<PaymentReconciliationQueryModel> paymentModels = mountedBundle.getPaymentModels();
         PreviewCashierSettlementQueryModel previewModel = new PreviewCashierSettlementQueryModel();
         previewModel.setItems(mountedItems);
         previewModel.setPaymentCount(mountedItems.size());
@@ -495,15 +501,14 @@ public class OutpatientDailySettlementAppService {
                 this.collectContractBusNosFromPreviewItems(mountedItems));
         List<OptionDto> finTypeOptions =
             this.terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.FIN_TYPE_CODE);
-        Map<Long, List<ChargeItem>> chargeItemsByPaymentId =
-            this.dailySettlementPaymentDetailLoader.loadChargeItemsByPaymentModels(paymentModels);
+        // 挂载现算最终只取 rows/summary；不装 charge_item（items enrich 对本路径无贡献）
         PreviewOutpatientDailySettlementResponse preview =
             this.outpatientDailySettlementMapper.toPreviewOutpatientDailySettlementResponse(
                 previewModel,
                 mountedItems,
                 paymentModels,
                 recDetailsByPaymentId,
-                chargeItemsByPaymentId,
+                Map.of(),
                 null,
                 insuranceByContractBusNo,
                 finTypeOptions);
@@ -948,19 +953,13 @@ public class OutpatientDailySettlementAppService {
     }
 
     /**
-     * 按 payment id 批量加载支付明细读模型。
+     * 按 payment id 批量加载支付明细读模型（分批 IN，避免 N+1）。
      *
      * @param paymentIds payment 主键集合
      * @return paymentId → 明细列表
      */
     private Map<Long, List<PaymentRecDetailQueryModel>> loadRecDetailsByPaymentIds(Set<Long> paymentIds) {
-        Map<Long, List<PaymentRecDetailQueryModel>> result = new LinkedHashMap<>();
-        for (Long paymentId : paymentIds) {
-            List<PaymentRecDetailQueryModel> details =
-                this.paymentReconciliationQueryService.listPaymentRecDetailsByPaymentId(paymentId);
-            result.put(paymentId, details);
-        }
-        return result;
+        return this.paymentReconciliationQueryService.mapPaymentRecDetailsByPaymentIds(paymentIds);
     }
 
     /**

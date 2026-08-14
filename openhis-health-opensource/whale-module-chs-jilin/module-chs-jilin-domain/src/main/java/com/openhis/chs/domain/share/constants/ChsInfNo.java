@@ -173,12 +173,20 @@ public final class ChsInfNo {
     public static final String PERSON_CUM_QUERY = "5206";
     /** 【5301】人员慢特病备案查询 */
     public static final String PERSON_OPSP_FILING_QUERY = "5301";
+    /** 【5302A】人员门诊慢特病审批查询（新，吉林；可按 med_type 分查慢/特） */
+    public static final String PERSON_OPSP_APPROVAL_QUERY = "5302A";
     /** 【2601】冲正交易 */
     public static final String TRANSACTION_CORRECT = "2601";
     /** 【1901】字典表查询/下载 */
     public static final String DICT_QUERY = "1901";
     /** 【4401】住院病案首页信息上传 */
     public static final String MEDCAS_HOMEPAGE = "4401";
+    /** 【4101A】医疗保障基金结算清单信息上传（新） */
+    public static final String SETTLE_LIST_UPLOAD = "4101A";
+    /** 【4102】医疗保障基金结算清单信息状态修改 */
+    public static final String SETTLE_LIST_STATUS = "4102";
+    /** 【4103】医疗保障基金结算清单信息查询 */
+    public static final String SETTLE_LIST_QUERY = "4103";
 
     private static final Map<String, String> DISPLAY_NAMES = Map.ofEntries(
         Map.entry(SIGN_IN, "签到"),
@@ -248,11 +256,15 @@ public final class ChsInfNo {
         Map.entry(OPSP_DRUG_QUERY, "人员慢特病用药记录查询"),
         Map.entry(PERSON_CUM_QUERY, "人员累计信息查询"),
         Map.entry(PERSON_OPSP_FILING_QUERY, "人员慢特病备案查询"),
+        Map.entry(PERSON_OPSP_APPROVAL_QUERY, "人员门诊慢特病审批查询"),
         Map.entry(DETAIL_AUDIT_PRIOR, "明细审核事前提醒分析"),
         Map.entry(DETAIL_AUDIT_FEEDBACK, "事前提醒服务反馈"),
         Map.entry(TRANSACTION_CORRECT, "冲正交易"),
         Map.entry(DICT_QUERY, "字典表查询"),
-        Map.entry(MEDCAS_HOMEPAGE, "住院病案首页信息上传"));
+        Map.entry(MEDCAS_HOMEPAGE, "住院病案首页信息上传"),
+        Map.entry(SETTLE_LIST_UPLOAD, "医疗保障基金结算清单信息上传"),
+        Map.entry(SETTLE_LIST_STATUS, "医疗保障基金结算清单信息状态修改"),
+        Map.entry(SETTLE_LIST_QUERY, "医疗保障基金结算清单信息查询"));
 
     /**
      * infno → 中文交易名（运维日志、界面展示）；未知编号原样返回。

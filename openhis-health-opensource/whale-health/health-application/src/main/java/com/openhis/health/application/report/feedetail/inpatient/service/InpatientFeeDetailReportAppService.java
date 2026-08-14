@@ -27,6 +27,7 @@ import com.openhis.health.application.report.feedetail.inpatient.support.Inpatie
 import com.openhis.health.application.report.feedetail.support.FeeDetailReportFinTypeSummaryAssembler;
 import com.openhis.health.application.shared.financial.PaymentEntererMatchResolver;
 import com.openhis.health.application.shared.option.TerminologyOptionLoader;
+import com.openhis.health.application.shared.report.FeeDetailMatchedScopePurchaseTotalSupport;
 import com.openhis.health.application.shared.report.ReportPatientSettlementContextAssembler;
 import com.openhis.health.domain.administration.chargeitem.query.FeeDetailFinTypeSummaryQueryModel;
 import com.openhis.health.domain.administration.chargeitem.query.OutpatientFeeDetailChargeRowQueryModel;
@@ -37,10 +38,12 @@ import com.openhis.health.domain.administration.organization.entity.Organization
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
+import com.openhis.health.domain.share.constants.FeeDetailReportConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.InpatientFeeDetailReportConstants;
 import com.openhis.health.domain.share.constants.OutpatientFeeDetailConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
+import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.session.CurrentOperatorResolver;
@@ -52,7 +55,9 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -62,10 +67,10 @@ import java.util.Map;
  *
  * <p>职责边界：</p>
  * <ul>
- *   <li>Gate：登录、日期窗、收退 Tab、呈现模式与分页参数。</li>
+ *   <li>Gate：登录、日期窗、收退 Tab、呈现模式、汇总维度白名单与分页参数。</li>
  *   <li>Pre：{@link InpatientFeeDetailReportQuerySupport} scope 预解析与跨聚合 enrichment。</li>
  *   <li>Cmd：无写库。</li>
- *   <li>Asm：fin_type 净汇总、就诊块明细与导出。</li>
+ *   <li>Asm：多维净汇总（{@link FeeDetailReportFinTypeSummaryAssembler#assembleSummaryRows}）、就诊块明细与导出。</li>
  * </ul>
  *
  * <p>接入：{@code AppServiceControllerRegistrar} →
@@ -115,6 +120,9 @@ public class InpatientFeeDetailReportAppService {
     /** 费用性质下拉（fin_contract.bus_no）。 */
     private final ReportPatientSettlementContextAssembler reportPatientSettlementContextAssembler;
 
+    /** 明细分页页脚：命中 scope 历史进价合计。 */
+    private final FeeDetailMatchedScopePurchaseTotalSupport feeDetailMatchedScopePurchaseTotalSupport;
+
     /**
      * IF-RPT-IFD-01：住院费用明细报表页初始化。
      *
@@ -141,7 +149,8 @@ public class InpatientFeeDetailReportAppService {
             List<OptionDto> finTypeSubCategoryOptions =
                 this.terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.FIN_TYPE_CODE);
             List<OptionDto> feeNatureOptions = this.reportPatientSettlementContextAssembler.loadFeeNatureOptions();
-            // Asm：装配 init 响应（默认今日闭区间、呈现模式与默认汇总 Tab）
+            List<OptionDto> settlementStatusOptions = this.buildSettlementStatusOptions();
+            // Asm：装配 init 响应（默认今日闭区间、呈现模式、汇总维度与默认汇总 Tab）
             return this.inpatientFeeDetailReportMapper.toLoadPageInitResponse(
                 todayText,
                 todayText,
@@ -155,7 +164,9 @@ public class InpatientFeeDetailReportAppService {
                 cashierOptions,
                 this.buildPresentationModeOptions(),
                 InpatientFeeDetailReportConstants.DEFAULT_ACTIVE_TAB,
-                feeNatureOptions);
+                feeNatureOptions,
+                settlementStatusOptions,
+                this.buildSummaryDimensionOptions());
         } catch (BusinessException businessException) {
             // 业务码原样上抛，避免二次包装丢失语义
             throw businessException;
@@ -169,13 +180,14 @@ public class InpatientFeeDetailReportAppService {
     }
 
     /**
-     * IF-RPT-IFD-02：费用类型净汇总。
+     * IF-RPT-IFD-02：费用明细多维净汇总。
      *
-     * <p>收退 Tab 强制 ALL（净视角）；与明细同日期/科室等筛选。</p>
+     * <p>收退 Tab 强制 ALL（净视角）；与明细同日期/科室等筛选。
+     * 汇总维度默认 FIN_TYPE；亦可 DEPARTMENT / FEE_CATEGORY / ITEM。</p>
      *
-     * @param request 筛选条件（收退方向强制 ALL）
-     * @return fin_type 汇总行 + 页脚
-     * @throws BusinessException 未登录 {@code EX-RPT-IFD-101}；日期非法 {@code EX-RPT-IFD-102}；
+     * @param request 筛选条件（收退方向强制 ALL）+ 可选 summaryDimension
+     * @return 汇总行 + 页脚
+     * @throws BusinessException 未登录 {@code EX-RPT-IFD-101}；日期/维度非法 {@code EX-RPT-IFD-102}；
      *     查询/数据不完整 {@code EX-RPT-IFD-103}
      */
     public SummarizeInpatientFeeDetailReportResponse summarizeInpatientFeeDetailReport(
@@ -186,20 +198,24 @@ public class InpatientFeeDetailReportAppService {
             "费用明细汇总失败，请稍后重试");
         // Gate：日期闭区间必填且止日不早于起日；汇总不校验收退/分页
         this.validateQueryWindow(request.getDateFrom(), request.getDateTo(), null, null, null);
+        // Gate：汇总维度白名单；空回落 FIN_TYPE，非法码 → EX-RPT-IFD-102
+        String summaryDimension = this.normalizeAndValidateSummaryDimension(request.getSummaryDimension());
         try {
             // Asm：Request → Query（Mapper 内强制 tradeDirection=ALL）
             OutpatientFeeDetailPageQuery query = this.inpatientFeeDetailReportMapper.toSummarizeQuery(request);
             this.applyEntererMatchToFeeDetailQuery(query);
-            // Pre：住院 scope 预解析（payment → chargeItem / 就诊收窄）
-            this.inpatientFeeDetailReportQuerySupport.prepareInpatientFeeDetailQueryScopes(query);
-            // Pre：域层按 definition_id 代数净汇总（含退负号）
+            // Pre：汇总不展示医保分摊列；按账单 occurrence 窗取 scope（禁止扫 Payment）
+            query.setSkipYbFundAmountAttach(Boolean.TRUE);
+            this.inpatientFeeDetailReportQuerySupport.prepareInpatientFeeDetailSummarizeScopesFromChargeBill(query);
+            // Pre：域层按 definition_id 代数净汇总（含退负号；同时缓存 chargeRows 供多维分桶）
             List<FeeDetailFinTypeSummaryQueryModel> domainRows =
                 this.chargeItemQueryService.summarizeInpatientFeeDetailByFinType(query);
             Map<String, String> finTypeLabelByCode =
                 this.terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.FIN_TYPE_CODE);
-            // Asm：历史定价 type_code enrich + 同 fin_type 合并（禁止当前 ACTIVE 目录价）
+            // Asm：按汇总维度合并（FIN_TYPE / 科室 / 大类 / 品规）
             List<FeeDetailReportSummaryRowDto> rows =
-                this.feeDetailReportFinTypeSummaryAssembler.assembleMergedFinTypeRows(
+                this.feeDetailReportFinTypeSummaryAssembler.assembleSummaryRows(
+                    summaryDimension,
                     query,
                     domainRows,
                     finTypeLabelByCode,
@@ -244,8 +260,8 @@ public class InpatientFeeDetailReportAppService {
             // Asm：Request → Query
             OutpatientFeeDetailPageQuery query = this.inpatientFeeDetailReportMapper.toPageQuery(request);
             this.applyEntererMatchToFeeDetailQuery(query);
-            // Pre：住院 scope 预解析
-            this.inpatientFeeDetailReportQuerySupport.prepareInpatientFeeDetailQueryScopes(query);
+            // Pre：明细分页专路径（禁止满月已结实体预载）
+            this.inpatientFeeDetailReportQuerySupport.prepareInpatientFeeDetailPageScopes(query);
             // Pre：域层按就诊块分页（本页块）
             Page<OutpatientFeeDetailEncounterBlockQueryModel> blockPage =
                 this.chargeItemQueryService.pageInpatientFeeDetailEncounterBlocks(query);
@@ -253,11 +269,14 @@ public class InpatientFeeDetailReportAppService {
             List<OutpatientFeeDetailEncounterBlockDto> blockDtos =
                 this.inpatientFeeDetailReportBlockAssembler.assembleEncounterBlockDtos(
                     blockPage.getContent(), query);
-            // Asm：全量命中金额 summary（跨页合计，非本页）
+            // Asm：页脚售价（投影合计或 SQL SUM），禁止全日窗实体
             OutpatientFeeDetailAmountSummaryDto summary = this.buildGlobalSummary(query);
-            // Asm：包装分页响应
-            return this.inpatientFeeDetailReportMapper.toPageResponse(
-                blockDtos, blockPage.getTotalElements(), summary, request);
+            // Asm：包装分页响应；pageNo 回写钳制后的实际页
+            PageInpatientFeeDetailReportResponse response =
+                this.inpatientFeeDetailReportMapper.toPageResponse(
+                    blockDtos, blockPage.getTotalElements(), summary, request);
+            response.setPageNo(blockPage.getNumber() + 1);
+            return response;
         } catch (IllegalArgumentException illegalArgumentException) {
             // 配置/定价缺口映射数据不完整码，引导财务核对收费项目
             log.warn("住院费用明细数据不完整: {}", illegalArgumentException.getMessage());
@@ -475,19 +494,49 @@ public class InpatientFeeDetailReportAppService {
     }
 
     /**
-     * 全量命中 summary：候选行轻量加总（售价/实收/医保等），禁止为页脚全量 enrichment 就诊块。
+     * 全量命中 summary：明细分页页脚仅售价合计，禁止再全窗物化 RowQueryModel。
      *
-     * <p>明细分页页脚不跑全量历史进价；{@code purchaseAmountTotal} 置空（与门诊同构）。</p>
+     * <p>优先 Loader 写入的 {@code resolvedSaleAmountTotal}；仅已结 pageScope 时对命中就诊全集 SQL SUM。</p>
      *
      * @param query 已预解析 scope 的查询
      * @return 全量金额 summary
      */
     private OutpatientFeeDetailAmountSummaryDto buildGlobalSummary(OutpatientFeeDetailPageQuery query) {
-        // Pre：复用同请求候选行（含 payment 快照分母）
-        List<OutpatientFeeDetailChargeRowQueryModel> rows =
-            this.chargeItemQueryService.listOutpatientFeeDetailChargeRows(query);
-        // Asm：轻量加总为页脚跨页合计真源（BR-OP-FDT-013 同构；进价合计可空）
-        return this.inpatientFeeDetailReportBlockAssembler.assembleGlobalSummaryFromChargeRows(rows);
+        BigDecimal saleAmountTotal;
+        if (query.getResolvedSaleAmountTotal() != null) {
+            saleAmountTotal = query.getResolvedSaleAmountTotal();
+        } else if (Boolean.TRUE.equals(query.getPageScopeOnly())
+            && query.getBillDateFrom() != null
+            && query.getBillDateTo() != null) {
+            LocalDateTime enteredFrom = query.getBillDateFrom().atStartOfDay();
+            LocalDateTime enteredToExclusive = query.getBillDateTo().plusDays(1).atStartOfDay();
+            List<String> statusCodes = query.getAllowedChargeItemStatusCodes();
+            if (statusCodes == null || statusCodes.isEmpty()) {
+                statusCodes = List.of(ChargeItemStatus.SETTLED.getCode());
+            }
+            List<String> serviceTables =
+                this.chargeItemQueryService.resolveServiceTablesForFeeCategories(query.getFeeCategoryCodes());
+            List<String> serviceTableFilter = null;
+            if (serviceTables != null && !serviceTables.isEmpty()) {
+                serviceTableFilter = serviceTables;
+            }
+            saleAmountTotal = this.chargeItemQueryService.sumFeeDetailSaleTotalPriceByEnteredDateWindow(
+                enteredFrom,
+                enteredToExclusive,
+                statusCodes,
+                query.getEntererMatchIds(),
+                query.getRequestingOrgId(),
+                query.getResolvedFeeDetailMatchedEncounterIds(),
+                serviceTableFilter);
+        } else {
+            saleAmountTotal =
+                this.chargeItemQueryService.summarizeOutpatientFeeDetailSaleAmountFromPreloadedScope(query);
+        }
+        // Asm：页脚售价 + 进价（命中 scope 批量历史进价，禁 RowQueryModel）
+        BigDecimal purchaseAmountTotal =
+            this.feeDetailMatchedScopePurchaseTotalSupport.sumPurchaseAmountForMatchedScope(query);
+        return this.inpatientFeeDetailReportBlockAssembler.assembleDetailPageFooterSaleSummary(
+            saleAmountTotal, purchaseAmountTotal);
     }
 
     /**
@@ -501,6 +550,7 @@ public class InpatientFeeDetailReportAppService {
         target.setBillDateFrom(source.getBillDateFrom());
         target.setBillDateTo(source.getBillDateTo());
         target.setRegistrationDepartmentId(source.getRegistrationDepartmentId());
+        target.setRequestingOrgId(source.getRequestingOrgId());
         target.setFeeCategoryCodes(source.getFeeCategoryCodes());
         target.setSubCategoryCodes(source.getSubCategoryCodes());
         target.setPatientKeyword(source.getPatientKeyword());
@@ -510,6 +560,7 @@ public class InpatientFeeDetailReportAppService {
         target.setEntererMatchIds(source.getEntererMatchIds());
         target.setTradeDirection(source.getTradeDirection());
         target.setFeeNatureContractNo(source.getFeeNatureContractNo());
+        target.setAllowedChargeItemStatusCodes(source.getAllowedChargeItemStatusCodes());
         target.setResolvedChargeItemScope(source.getResolvedChargeItemScope());
         target.setResolvedEncounterScope(source.getResolvedEncounterScope());
         target.setPaymentChargeItemLinks(source.getPaymentChargeItemLinks());
@@ -522,7 +573,7 @@ public class InpatientFeeDetailReportAppService {
     }
 
     /**
-     * 收费人筛选写入 payment enterer 白名单。
+     * 收费人筛选写入账单 {@code enterer_id} 白名单（Practitioner 兼容；不查 Payment）。
      *
      * @param query 费用明细 Query
      */
@@ -589,6 +640,25 @@ public class InpatientFeeDetailReportAppService {
         options.add(this.buildOption(
             OutpatientFeeDetailConstants.TRADE_DIRECTION_REFUND,
             OutpatientFeeDetailConstants.TRADE_DIRECTION_REFUND_LABEL));
+        return options;
+    }
+
+    /**
+     * 构造结算状态筛选项。
+     *
+     * @return ALL/SETTLED/PENDING_SETTLEMENT
+     */
+    private List<OptionDto> buildSettlementStatusOptions() {
+        List<OptionDto> options = new ArrayList<>();
+        options.add(this.buildOption(
+            InpatientFeeDetailReportConstants.SETTLEMENT_STATUS_ALL,
+            InpatientFeeDetailReportConstants.SETTLEMENT_STATUS_ALL_LABEL));
+        options.add(this.buildOption(
+            InpatientFeeDetailReportConstants.SETTLEMENT_STATUS_SETTLED,
+            InpatientFeeDetailReportConstants.SETTLEMENT_STATUS_SETTLED_LABEL));
+        options.add(this.buildOption(
+            InpatientFeeDetailReportConstants.SETTLEMENT_STATUS_PENDING,
+            InpatientFeeDetailReportConstants.SETTLEMENT_STATUS_PENDING_LABEL));
         return options;
     }
 
@@ -697,13 +767,86 @@ public class InpatientFeeDetailReportAppService {
         summarizeRequest.setDateFrom(request.getDateFrom());
         summarizeRequest.setDateTo(request.getDateTo());
         summarizeRequest.setRegistrationDepartmentId(request.getRegistrationDepartmentId());
+        summarizeRequest.setRequestingOrgId(request.getRequestingOrgId());
         summarizeRequest.setFeeCategoryCodes(request.getFeeCategoryCodes());
         summarizeRequest.setSubCategoryCodes(request.getSubCategoryCodes());
         summarizeRequest.setPatientKeyword(request.getPatientKeyword());
         summarizeRequest.setProductNameKeyword(request.getProductNameKeyword());
         summarizeRequest.setProductCodeKeyword(request.getProductCodeKeyword());
         summarizeRequest.setCashierId(request.getCashierId());
+        summarizeRequest.setSettlementStatus(request.getSettlementStatus());
+        summarizeRequest.setFeeNatureContractNo(request.getFeeNatureContractNo());
+        summarizeRequest.setSummaryDimension(request.getSummaryDimension());
         return summarizeRequest;
+    }
+
+    /**
+     * 构造汇总维度下拉（FIN_TYPE / DEPARTMENT / FEE_CATEGORY / ITEM）。
+     *
+     * @return 汇总维度选项
+     */
+    private List<OptionDto> buildSummaryDimensionOptions() {
+        List<OptionDto> options = new ArrayList<>();
+        options.add(this.buildOption(
+            FeeDetailReportConstants.SUMMARY_DIMENSION_FIN_TYPE,
+            FeeDetailReportConstants.SUMMARY_DIMENSION_FIN_TYPE_LABEL));
+        options.add(this.buildOption(
+            FeeDetailReportConstants.SUMMARY_DIMENSION_DEPARTMENT,
+            FeeDetailReportConstants.SUMMARY_DIMENSION_DEPARTMENT_LABEL));
+        options.add(this.buildOption(
+            FeeDetailReportConstants.SUMMARY_DIMENSION_FEE_CATEGORY,
+            FeeDetailReportConstants.SUMMARY_DIMENSION_FEE_CATEGORY_LABEL));
+        options.add(this.buildOption(
+            FeeDetailReportConstants.SUMMARY_DIMENSION_ITEM,
+            FeeDetailReportConstants.SUMMARY_DIMENSION_ITEM_LABEL));
+        return options;
+    }
+
+    /**
+     * 汇总维度规范化与白名单校验；空回落 FIN_TYPE，非法码拒绝。
+     *
+     * @param summaryDimension 请求维度
+     * @return 规范化维度 code
+     */
+    private String normalizeAndValidateSummaryDimension(String summaryDimension) {
+        // 空串回落默认费用类型维，兼容旧前端未传该字段
+        if (StringUtils.isEmpty(summaryDimension)) {
+            return FeeDetailReportConstants.DEFAULT_SUMMARY_DIMENSION;
+        }
+        String normalized = summaryDimension.trim();
+        // 白名单命中则放行；否则拒绝对齐 EX-RPT-IFD-102
+        if (this.isAllowedSummaryDimension(normalized)) {
+            return normalized;
+        }
+        throw new BusinessException(
+            InpatientFeeDetailReportConstants.EX_RPT_IFD_102,
+            "汇总维度无效，请重新选择");
+    }
+
+    /**
+     * 汇总维度白名单。
+     *
+     * @param summaryDimension 维度 code
+     * @return 是否允许
+     */
+    private boolean isAllowedSummaryDimension(String summaryDimension) {
+        // 费用类型（默认维）
+        if (FeeDetailReportConstants.SUMMARY_DIMENSION_FIN_TYPE.equals(summaryDimension)) {
+            return true;
+        }
+        // 开立科室
+        if (FeeDetailReportConstants.SUMMARY_DIMENSION_DEPARTMENT.equals(summaryDimension)) {
+            return true;
+        }
+        // 费用大类（药品/诊疗/耗材/挂号）
+        if (FeeDetailReportConstants.SUMMARY_DIMENSION_FEE_CATEGORY.equals(summaryDimension)) {
+            return true;
+        }
+        // 品规/项目（definition）
+        if (FeeDetailReportConstants.SUMMARY_DIMENSION_ITEM.equals(summaryDimension)) {
+            return true;
+        }
+        return false;
     }
 
     /**

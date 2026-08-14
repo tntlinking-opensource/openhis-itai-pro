@@ -9,10 +9,16 @@ import com.openhis.health.infrastructure.integration.insurance.benefit.Extension
 import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionIn.InsurancePersonQueryExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionIn.InsuranceTreatmentCheckExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionOut.InsuranceCumulativeQueryExtensionOut;
+import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionOut.InsuranceEncounterPsnSnapshot;
 import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionOut.InsuranceOpspFilingEncounterSnapshot;
 import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionOut.InsuranceOpspFilingQueryExtensionOut;
 import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionOut.InsurancePersonQueryExtensionOut;
 import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionOut.InsuranceTreatmentCheckExtensionOut;
+
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * 门诊挂号待遇确认前的第三方信息查询扩展点（1101/2001/5301/5206 及就医地区划解析）。
@@ -85,5 +91,56 @@ public interface InsuranceRegisterBenefitQueryExtension {
      */
     default String resolveTreatmentAreaCode(Long contractId) {
         return null;
+    }
+
+    /**
+     * 按就诊批量解析医保人员编号（平台 {@code psn_no}）。
+     *
+     * <p>实现侧应从就诊平台映射等本地落库批量读取，禁止按行远程调平台。</p>
+     *
+     * @param encounterIds 就诊主键集合
+     * @return 就诊主键 → 人员编号；无映射或不含键；未启用第三方时返回空 Map
+     */
+    default Map<Long, String> mapPsnNoByEncounterIds(Collection<Long> encounterIds) {
+        Map<Long, InsuranceEncounterPsnSnapshot> snapshots = mapEncounterPsnByEncounterIds(encounterIds);
+        if (snapshots == null || snapshots.isEmpty()) {
+            return Collections.emptyMap();
+        }
+            Map<Long, String> result = new HashMap<>();
+        for (Map.Entry<Long, InsuranceEncounterPsnSnapshot> entry : snapshots.entrySet()) {
+            if (entry.getKey() == null || entry.getValue() == null) {
+                continue;
+            }
+            String psnNo = entry.getValue().getPsnNo();
+            if (psnNo == null || psnNo.trim().isEmpty()) {
+                continue;
+            }
+            result.put(entry.getKey(), psnNo.trim());
+        }
+        return result;
+    }
+
+    /**
+     * 按就诊批量解析医保人员编号与医疗类别（本地平台映射）。
+     *
+     * @param encounterIds 就诊主键集合
+     * @return 就诊主键 → 展示快照；无映射或不含键
+     */
+    default Map<Long, InsuranceEncounterPsnSnapshot> mapEncounterPsnByEncounterIds(
+        Collection<Long> encounterIds) {
+        return Collections.emptyMap();
+    }
+
+    /**
+     * 按就诊批量解析险种类型码（310 职工 / 390 城乡居民等）。
+     *
+     * <p>实现侧应从本地落库批量读取（人员缓存/预结算等），禁止按行远程调平台。
+     * 读卡缓存允许含已过期行（住院跨日仍需展示职工/居民）。</p>
+     *
+     * @param encounterIds 就诊主键集合
+     * @return 就诊主键 → insutype；无映射不含键；未启用第三方时返回空 Map
+     */
+    default Map<Long, String> mapInsutypeByEncounterIds(Collection<Long> encounterIds) {
+        return Collections.emptyMap();
     }
 }

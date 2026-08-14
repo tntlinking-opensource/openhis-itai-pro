@@ -7,7 +7,8 @@ package com.openhis.health.domain.share.constants;
 /**
  * 耗材目录批量导入字面量（镜像 AS-BAS-CAT-002 药品导入）。
  *
- * <p>模板 v1.2：与「新增耗材」手工表单可填字段对齐（32 列）；不含 busNo/拼音五笔/状态/医药机构目录编码。</p>
+ * <p>模板 v1.3：与「新增耗材」手工表单可填字段对齐（32 列）；不含 busNo/拼音五笔/状态/医药机构目录编码。
+ * 「不收费耗材」列：是→chargeableFlag=false，否→true；空白保持 false。</p>
  */
 public interface DeviceCatalogImportConstants {
 
@@ -15,7 +16,7 @@ public interface DeviceCatalogImportConstants {
     String TEMPLATE_CODE = "DEV_CATALOG_IMPORT";
 
     /** 当前模板版本。 */
-    String TEMPLATE_VERSION = "v1.2";
+    String TEMPLATE_VERSION = "v1.3";
 
     /** 指导页 Sheet 名。 */
     String SHEET_GUIDE = "①从这里开始";
@@ -57,7 +58,7 @@ public interface DeviceCatalogImportConstants {
     long ERROR_FILE_MAX_BYTES = 15L * 1024L * 1024L;
 
     /** 下载模板默认文件名。 */
-    String TEMPLATE_FILE_NAME = "耗材目录导入模板_v1.2.xlsx";
+    String TEMPLATE_FILE_NAME = "耗材目录导入模板_v1.3.xlsx";
 
     /** 导出文件名时间戳格式。 */
     String EXPORT_FILE_NAME_TIME_PATTERN = "yyyyMMddHHmmss";
@@ -119,7 +120,7 @@ public interface DeviceCatalogImportConstants {
         "过敏标记",
         "医保标记",
         "高值耗材标志",
-        "是否收费耗材",
+        "不收费耗材",
         "说明"
     };
 

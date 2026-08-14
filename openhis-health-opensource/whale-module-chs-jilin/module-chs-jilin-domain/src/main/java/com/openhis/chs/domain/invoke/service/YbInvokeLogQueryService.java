@@ -86,4 +86,23 @@ public class YbInvokeLogQueryService {
         }
         return Optional.empty();
     }
+
+    /**
+     * 按就诊与交易号列出调用日志（倒序）。
+     *
+     * <p>仅本聚合 {@code yb_invoke_log}；供预结算前回收「平台 2204 成功、本地无 ACTIVE」悬挂批次。</p>
+     *
+     * @param encounterId 就诊 ID
+     * @param infno       交易号
+     * @param tenantId    租户 ID
+     * @return 调用日志；参数不全时 empty list
+     */
+    public List<YbInvokeLog> listByEncounterIdAndInfno(Long encounterId, String infno, Long tenantId) {
+        if (encounterId == null || tenantId == null || !isNotEmpty(infno)) {
+            return Collections.emptyList();
+        }
+        return invokeLogRepository
+            .findAllByEncounterIdAndInfnoAndTenantIdAndIsDeletedFalseOrderByCreatedAtDesc(
+                encounterId, infno.trim(), tenantId);
+    }
 }

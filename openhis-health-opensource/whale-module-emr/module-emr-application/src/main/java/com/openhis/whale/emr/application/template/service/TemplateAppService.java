@@ -408,7 +408,8 @@ public class TemplateAppService {
 
     /**
      * 医生站「存为模版」：仅 PERSONAL / DEPARTMENT；
-     * 个人所有者与科室 id 取当前登录上下文，避免前端雪花精度丢失。
+     * 个人所有者与科室 id <b>一律</b>取当前登录会话，忽略请求体中的雪花 id
+     *（避免前端精度丢失或选了非当前登录科室，导致同科医生 listForStation 看不见）。
      */
     private void applyDoctorStationScopeOnCreate(Template t, CreateTemplateRequest request) {
         String scope = TemplateScopeValidator.normalizeScopeLevel(request.getScopeLevel());
@@ -429,12 +430,10 @@ public class TemplateAppService {
             return;
         }
         if (TemplateScopeLevel.DEPARTMENT.getCode().equals(scope)) {
-            Long orgId = parseOptionalLongId(request.getOrganizationId(), "organizationId");
-            if (orgId == null && currentUser != null) {
-                orgId = currentUser.getCurrentOrganizationUnitId();
-            }
+            // 与 listForStation 可见性过滤同源：会话科室（HIS adm_organization.id）
+            Long orgId = currentUser != null ? currentUser.getCurrentOrganizationUnitId() : null;
             if (orgId == null) {
-                throw new ValidationException("当前账号未关联科室，无法保存科室模板");
+                throw new ValidationException("当前账号未选择登录科室，无法保存科室模板");
             }
             applyScopeFieldsToTemplate(
                     t,

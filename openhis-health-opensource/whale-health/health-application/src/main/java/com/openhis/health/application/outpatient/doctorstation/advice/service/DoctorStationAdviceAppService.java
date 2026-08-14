@@ -74,12 +74,18 @@ import com.openhis.health.application.outpatient.doctorstation.advice.response.S
 import com.openhis.health.application.outpatient.doctorstation.advice.response.SignDoctorStationAdviceBatchResponse;
 import com.openhis.health.application.outpatient.doctorstation.advice.response.UpdateDoctorStationMedicationAdviceGroupsResponse;
 import com.openhis.health.application.outpatient.doctorstation.advice.response.WithdrawDoctorStationAdviceBatchResponse;
+import com.openhis.health.application.shared.financial.EncounterChargeAccountOpener;
 import com.openhis.health.domain.administration.account.service.AccountQueryService;
+import com.openhis.health.domain.financial.contract.queries.model.ContractDetailQueryModel;
+import com.openhis.health.domain.financial.contract.service.ContractQueryService;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
+import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemDomainService;
+import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
+import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.medication.medicationdispense.command.ReleaseDispenseReserveCommand;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseDomainService;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
@@ -96,6 +102,7 @@ import com.openhis.health.application.shared.encounter.EncounterContextReader;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.application.shared.product.ProductDefinitionCatalogPageLoader;
+import com.openhis.health.application.shared.product.DoctorStationCatalogPositiveStockLocationBinder;
 import com.openhis.health.application.shared.product.ProductDefinitionPageQuery;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
@@ -109,6 +116,8 @@ import com.openhis.health.domain.workflow.devicedispense.command.ReleaseDeviceDi
 import com.openhis.health.domain.workflow.devicedispense.command.ReplaceFifoDeviceDispenseDraftsCommand;
 import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseDomainService;
 import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseQueryService;
+import com.openhis.health.domain.workflow.devicerequest.command.ChangeDeviceOrderDraftCommand;
+import com.openhis.health.domain.workflow.devicerequest.command.CreateDeviceOrderDraftCommand;
 import com.openhis.health.domain.workflow.devicerequest.queries.model.DeviceRequestFifoSignContext;
 import com.openhis.health.domain.workflow.devicerequest.service.DeviceRequestDomainService;
 import com.openhis.health.domain.workflow.devicerequest.service.DeviceRequestQueryService;
@@ -150,11 +159,19 @@ public class DoctorStationAdviceAppService {
     private final DoctorStationAdviceCatalogAssembler doctorStationAdviceCatalogAssembler;
     private final DoctorStationAdviceOrderBindQueryService doctorStationAdviceOrderBindQueryService;
     private final ProductDefinitionCatalogPageLoader productDefinitionCatalogPageLoader;
+    /** 医生站「只看库存>0」：模板库位下推至目录分页 Spec。 */
+    private final DoctorStationCatalogPositiveStockLocationBinder doctorStationCatalogPositiveStockLocationBinder;
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
     private final ClinicalCatalogPriceResolver clinicalCatalogPriceResolver;
     private final ChargeItemDomainService chargeItemDomainService;
+    /** 读侧：签发耗材前复用草稿费用账户（行级费用性质） */
+    private final ChargeItemQueryService chargeItemQueryService;
     private final AccountQueryService accountQueryService;
+    /** 就诊挂账账户解析（按费用性质合同 → account_id）。 */
+    private final EncounterChargeAccountOpener encounterChargeAccountOpener;
+    /** 合同读侧：行级 contractId → bus_no。 */
+    private final ContractQueryService contractQueryService;
     private final MedicationRequestDomainService medicationRequestDomainService;
     private final ServiceRequestDomainService serviceRequestDomainService;
     private final DeviceRequestDomainService deviceRequestDomainService;
@@ -164,7 +181,7 @@ public class DoctorStationAdviceAppService {
     private final CodeSystemQueryService codeSystemQueryService;
     /** 用药频次下拉：读 cus_frequency 启用态，替代术语 rate_code。 */
     private final FrequencyOptionLoader frequencyOptionLoader;
-    /** 费用性质（合同）下拉：按就诊挂号分类收窄。 */
+    /** 费用性质下拉：按就诊已开立账户装配（展示合同名）。 */
     private final ContractFeeNatureOptionLoader contractFeeNatureOptionLoader;
     private final DoctorStationAdviceFifoAllocationAssembler doctorStationAdviceFifoAllocationAssembler;
     private final MedicationDispenseDomainService medicationDispenseDomainService;
@@ -350,6 +367,13 @@ public class DoctorStationAdviceAppService {
         doctorStationAdviceMapper.validatePatientEncounter(request.getPatientId(), snapshot.getPatientId());
         // 前置：将前端分页/筛选参数转为读模型分页命令（定价来源、关键字等下推至 RM 查询）。
         ProductDefinitionPageQuery pageQuery = doctorStationAdviceMapper.toProductDefinitionPageQuery(request);
+        // Pre：只看库存>0 时按取药模板库位收窄 EXISTS（与目录可开立量展示对齐）
+        Long catalogOrgId = snapshot.getOrganizationId();
+        if (request.getOrganizationUnitId() != null) {
+            catalogOrgId = request.getOrganizationUnitId();
+        }
+        doctorStationCatalogPositiveStockLocationBinder.bindIfPositiveQuantityOnly(
+            pageQuery, catalogOrgId, request.getPharmacyLocationId());
         Page<ProductDefinitionDisplayDto> page = productDefinitionCatalogPageLoader.pageProductDefinition(pageQuery);
         // 装配：目录行（读模型已分页，装配器不再发起分页查询）
         List<DoctorStationAdviceCatalogRowDto> rows =
@@ -375,11 +399,8 @@ public class DoctorStationAdviceAppService {
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "未获取到当前操作人");
         Long orgId = snapshot.getOrganizationId();
-        // Pre：自费账户为费用草稿锚点，缺失则拒绝整单保存。
-        Long accountId = accountQueryService.getSelfPayAccount(request.getEncounterId());
-        if (accountId == null) {
-            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "就诊未解析到自费账户，无法生成费用草稿");
-        }
+        // Pre：申请单默认挂账——双账户优先医保户，单户个人现金；行级合同可在 Spec 中覆盖时仍走本默认
+        Long accountId = this.resolveAdviceChargeAccountId(request.getEncounterId(), null);
         SaveDoctorStationAdviceDraftBatchRequest chargeContext = new SaveDoctorStationAdviceDraftBatchRequest();
         chargeContext.setEncounterId(request.getEncounterId());
         chargeContext.setPatientId(request.getPatientId());
@@ -482,21 +503,23 @@ public class DoctorStationAdviceAppService {
         // 解析当前操作人主键
         Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "未获取到当前操作人");
         Long orgId = snapshot.getOrganizationId();
-        // 前置：费用草稿挂账锚点为就诊默认个人现金账户（AccountTypeCode.PERSONAL_CASH_ACCOUNT，与挂号开户一致），缺失才拒绝整批暂存。
-        Long accountId = accountQueryService.getSelfPayAccount(request.getEncounterId());
-        // 自费账户缺失时阻断整批暂存
-        if (accountId == null) {
-            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "就诊未解析到自费账户，无法生成费用草稿");
+        // 前置：至少存在个人现金或医保挂账账户；具体行按费用性质合同解析 account_id
+        if (accountQueryService.getSelfPayAccount(request.getEncounterId()) == null
+            && accountQueryService.getMedicalInsuranceAccount(request.getEncounterId()) == null) {
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "就诊未解析到挂账账户，无法生成费用草稿");
         }
         // 收集新建药品医嘱主键，供前端局部刷新
         List<Long> newMedIds = new ArrayList<>();
         // 命令：按行操作码分发 CREATE/UPDATE/DELETE；单行失败则整批随 AppService UoW 回滚。
         for (DoctorStationAdviceDraftLineRequest line : request.getLines()) {
             String op = trimToEmpty(line.getLineOp()).toUpperCase(java.util.Locale.ROOT);
+            // Pre：行级合同 → 挂账账户（双账户默认医保；选自费合同则挂个人现金）
+            Long lineAccountId = this.resolveAdviceChargeAccountId(
+                request.getEncounterId(), this.extractLineContractId(line));
             if (DoctorStationAdviceConstants.LINE_OP_CREATE.equals(op)) {
-                handleCreateLine(request, line, operatorId, orgId, accountId, newMedIds);
+                handleCreateLine(request, line, operatorId, orgId, lineAccountId, newMedIds);
             } else if (DoctorStationAdviceConstants.LINE_OP_UPDATE.equals(op)) {
-                handleUpdateLine(request, line, operatorId, orgId, accountId);
+                handleUpdateLine(request, line, operatorId, orgId, lineAccountId);
             } else if (DoctorStationAdviceConstants.LINE_OP_DELETE.equals(op)) {
                 handleDeleteLine(request, line, operatorId);
             } else {
@@ -518,7 +541,7 @@ public class DoctorStationAdviceAppService {
      * @param line       单行请求（资源类型 + 各资源载荷）
      * @param operatorId 当前操作人，写入域命令
      * @param orgId      开立机构，药品草稿落库需要
-     * @param accountId  自费账户，费用草稿锚点
+     * @param accountId  挂账账户（按行费用性质解析后的 account_id）
      * @param newMedIds  输出：本轮新建的药品申请主键，供前端刷新列表或跳转
      * @throws BusinessException 资源类型非法、载荷缺失或域不变量失败（由下层抛出）
      */
@@ -554,8 +577,11 @@ public class DoctorStationAdviceAppService {
             newMedIds.add(newMedicationRequestId);
         } else if (ProductTableNameHelper.isDevice(pt)) {
             // 耗材：草稿 + 费用；dispenseLocationId 来自目录 IF-DOR-11，写路径 FIFO 不再 match 模板
-            Long newDeviceRequestId = deviceRequestDomainService.createDeviceOrderDraft(
-                doctorStationAdviceMapper.toCreateDeviceOrderDraftCommand(request, line, operatorId));
+            CreateDeviceOrderDraftCommand createDeviceCmd =
+                doctorStationAdviceMapper.toCreateDeviceOrderDraftCommand(request, line, operatorId);
+            // Pre：行级合同 id → bus_no 落 contract_code，供列表回显费用性质
+            this.applyDeviceContractCode(createDeviceCmd.getItem(), this.extractLineContractId(line));
+            Long newDeviceRequestId = deviceRequestDomainService.createDeviceOrderDraft(createDeviceCmd);
             createChargeIfPossible(request, newDeviceRequestId, TableNameConstants.WKF_DEVICE_REQUEST,
                 TableNameConstants.ADM_DEVICE_DEFINITION, line.getDevicePayload().getDeviceDefinitionId(),
                 line.getDevicePayload().getQuantity(), line.getDevicePayload().getUnitCode(),
@@ -597,7 +623,7 @@ public class DoctorStationAdviceAppService {
      * @param line       含 {@code requestId} 与各资源载荷
      * @param operatorId 操作人
      * @param orgId      机构上下文（费用草稿）
-     * @param accountId  自费账户
+     * @param accountId  挂账账户（按行费用性质解析；UPDATE 会作废旧草稿费后按新账户重建）
      * @throws BusinessException 资源类型非法、requestId 缺失（由 Mapper/域抛出）或域校验失败
      */
     private void handleUpdateLine(
@@ -629,7 +655,11 @@ public class DoctorStationAdviceAppService {
             chargeItemDomainService.voidUnbilledDraftChargeItemsByServiceAnchor(
                 doctorStationAdviceMapper.toVoidDraftChargeAnchor(
                     request.getEncounterId(), TableNameConstants.WKF_DEVICE_REQUEST, line.getRequestId(), operatorId));
-            deviceRequestDomainService.changeDeviceOrderDraft(doctorStationAdviceMapper.toChangeDeviceOrderDraftCommand(line, operatorId));
+            ChangeDeviceOrderDraftCommand changeDeviceCmd =
+                doctorStationAdviceMapper.toChangeDeviceOrderDraftCommand(line, operatorId);
+            // Pre：行级合同 id → bus_no 更新 contract_code，供列表回显费用性质
+            this.applyDeviceContractCode(changeDeviceCmd.getItem(), this.extractLineContractId(line));
+            deviceRequestDomainService.changeDeviceOrderDraft(changeDeviceCmd);
             createChargeIfPossible(request, line.getRequestId(), TableNameConstants.WKF_DEVICE_REQUEST,
                 TableNameConstants.ADM_DEVICE_DEFINITION, line.getDevicePayload().getDeviceDefinitionId(),
                 line.getDevicePayload().getQuantity(), line.getDevicePayload().getUnitCode(),
@@ -722,7 +752,7 @@ public class DoctorStationAdviceAppService {
      * @param productRow     产品定义读模型
      * @param clientResolvedDispenseLocationId 目录 IF-DOR-11 已解析发药库位；药耗非空时写路径不再 match 模板
      * @param methodCode     给药途径（药品 FIFO 模板 calcScore）；诊疗/耗材可空
-     * @param accountId      自费账户
+     * @param accountId      挂账账户
      * @param orgId          机构
      * @param operatorId     操作人
      * @throws BusinessException 定义主键已给出但无可用开立口径定价行时抛出（错误码 {@link ErrorCodeConstants#CHARGE_ITEM_DEFINITION_INVALID_ARGUMENT}）
@@ -805,11 +835,8 @@ public class DoctorStationAdviceAppService {
         // 解析当前操作人主键与机构上下文
         Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "未获取到当前操作人");
         Long orgId = snapshot.getOrganizationId();
-        // 签发需要自费账户作为费用锚点
-        Long accountId = accountQueryService.getSelfPayAccount(request.getEncounterId());
-        if (accountId == null) {
-            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "就诊未解析到自费账户，无法完成签发费用编排");
-        }
+        // 签发默认挂账户：双账户优先医保、单户个人现金；药/耗材循环内再按行 contractId 覆盖
+        Long defaultChargeAccountId = this.resolveAdviceChargeAccountId(request.getEncounterId(), null);
         // 收集药品医嘱与处方号映射，供前端展示
         Map<Long, String> rxMap = new HashMap<>();
         // Pre：本批药品签发目标主键（分方只带这些 DRAFT + 已 ACTIVE 未收费，不写其它未签发草稿）
@@ -886,9 +913,18 @@ public class DoctorStationAdviceAppService {
                 if (fifoMedCtx == null) {
                     throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_NOT_FOUND, "药品申请不存在");
                 }
+                // Pre：分方后的处方号写回 FIFO 切片（装载早于 sign，上下文内原号可能为空）
+                fifoMedCtx.setPrescriptionNo(prescriptionNo);
+                // Pre：按药品行已落库 contractId 解析挂账，避免整批默认医保覆盖医生选自费
+                Long medicationContractId = null;
+                if (medRow != null) {
+                    medicationContractId = medRow.getContractId();
+                }
+                Long medicationAccountId = this.resolveAdviceChargeAccountId(
+                    request.getEncounterId(), medicationContractId);
                 // Cmd：FIFO 发放 + 分段挂费 + PLANNED（与 IF-DOR-37 共用 Support；FIFO 仍逐条以保证库存占用正确）
                 outpatientMedicationSignChargeOrchestrator.replaceFifoDispenseAndPlanChargesAfterMedicationSigned(
-                    request.getEncounterId(), request.getPatientId(), accountId, orgId, operatorId,
+                    request.getEncounterId(), request.getPatientId(), medicationAccountId, orgId, operatorId,
                     t.getRequestId(), fifoMedCtx, signChargeReadCache);
             } else if (ProductTableNameHelper.isActivity(pt)) {
                 // 诊疗：域 sign 后外呼仅占位，真实 LIS/PACS 路由待检查申请类型后替换
@@ -901,6 +937,9 @@ public class DoctorStationAdviceAppService {
             } else if (ProductTableNameHelper.isDevice(pt)) {
                 // 耗材：签发后走 FIFO 分段发放与费用升位
                 deviceRequestDomainService.signDeviceOrder(doctorStationAdviceMapper.toSignDeviceOrderCommand(t.getRequestId(), operatorId));
+                // Pre：签发前读取草稿费用账户，保留医生所选费用性质（耗材实体无 contract_id）
+                Long deviceAccountId = this.resolveDeviceDraftChargeAccountId(
+                    request.getEncounterId(), t.getRequestId(), defaultChargeAccountId);
                 chargeItemDomainService.voidUnbilledDraftChargeItemsByServiceAnchors(
                     request.getEncounterId(), TableNameConstants.WKF_DEVICE_REQUEST, List.of(t.getRequestId()));
                 DeviceRequestFifoSignContext fifoDevCtx = deviceFifoById.get(t.getRequestId());
@@ -926,8 +965,9 @@ public class DoctorStationAdviceAppService {
                     devQtys.add(seg.getQuantity());
                     devLotNumbers.add(seg.getLotNumber());
                 }
+                // Pre：优先复用暂存时按费用性质解析的账户；无草稿费用时回落就诊默认账户
                 this.outpatientMedicationSignChargeOrchestrator.createDispenseSegmentChargeDrafts(
-                    request.getEncounterId(), request.getPatientId(), accountId, orgId, operatorId,
+                    request.getEncounterId(), request.getPatientId(), deviceAccountId, orgId, operatorId,
                     fifoDevCtx.getDeviceReqId(),
                     TableNameConstants.WKF_DEVICE_REQUEST,
                     TableNameConstants.ADM_DEVICE_DEFINITION,
@@ -937,6 +977,7 @@ public class DoctorStationAdviceAppService {
                     devQtys,
                     devLotNumbers,
                     fifoDevCtx.getUnitCode(),
+                    null,
                     signChargeReadCache);
                 chargeItemDomainService.planDraftChargeItemsAfterAdviceSignedByDispenseAnchors(
                     request.getEncounterId(), TableNameConstants.WKF_DEVICE_DISPENSE, devDispenseIds);
@@ -1079,18 +1120,23 @@ public class DoctorStationAdviceAppService {
     }
 
     /**
-     * IF-DOR-18：加载启用态样本定义下拉。
+     * IF-DOR-18：加载启用态样本定义下拉（含拼音/五笔，供申请单样本 filterable）。
+     *
+     * @return 排序后的样本 OptionDto 列表（上限 500）
      */
     private List<OptionDto> loadSpecimenDefinitionOptions() {
+        // Pre：无关键字取启用样本上限 500，透出 pyStr/wbStr 供前端模糊
         SearchSpecimenDefinitionQuery query = new SearchSpecimenDefinitionQuery();
         query.setLimit(500);
         List<SpecimenDefinitionSearchItemQueryModel> rows = specimenDefinitionQueryService.searchByKeyWord(query);
         return OptionDtoAssembler.sortBySortAsc(
-            OptionDtoAssembler.toOptionsWithSortFallback(
+            OptionDtoAssembler.toSearchableOptionsWithSortFallback(
                 rows,
                 SpecimenDefinitionSearchItemQueryModel::getId,
                 SpecimenDefinitionSearchItemQueryModel::getName,
                 SpecimenDefinitionSearchItemQueryModel::getId,
+                SpecimenDefinitionSearchItemQueryModel::getPyStr,
+                SpecimenDefinitionSearchItemQueryModel::getWbStr,
                 0L));
     }
 
@@ -1293,4 +1339,125 @@ public class DoctorStationAdviceAppService {
         return targets;
     }
 
+    /**
+     * 从医嘱草稿行提取费用性质合同主键（药品/诊疗/耗材载荷）。
+     *
+     * @param line 草稿行
+     * @return 合同主键；未选时 null
+     */
+    private Long extractLineContractId(DoctorStationAdviceDraftLineRequest line) {
+        if (line == null) {
+            return null;
+        }
+        if (line.getMedicationPayload() != null && line.getMedicationPayload().getContractId() != null) {
+            return line.getMedicationPayload().getContractId();
+        }
+        if (line.getServicePayload() != null && line.getServicePayload().getContractId() != null) {
+            return line.getServicePayload().getContractId();
+        }
+        // 耗材：行级合同用于挂账账户解析，并落 contract_code（bus_no）供列表回显
+        if (line.getDevicePayload() != null && line.getDevicePayload().getContractId() != null) {
+            return line.getDevicePayload().getContractId();
+        }
+        return null;
+    }
+
+    /**
+     * 将费用性质合同主键解析为 bus_no，写入耗材草稿命令的 {@code contractCode}。
+     *
+     * @param item       创建或修改耗材草稿项（可空则忽略）
+     * @param contractId 合同主键；空则不写
+     */
+    private void applyDeviceContractCode(
+        CreateDeviceOrderDraftCommand.CreateDeviceOrderDraftItemCommand item,
+        Long contractId
+    ) {
+        if (item == null || contractId == null) {
+            return;
+        }
+        ContractDetailQueryModel contract = contractQueryService.findContractById(contractId);
+        if (contract == null || StringUtils.isEmpty(contract.getBusNo())) {
+            return;
+        }
+        item.setContractCode(contract.getBusNo().trim());
+    }
+
+    /**
+     * 将费用性质合同主键解析为 bus_no，写入耗材修改草稿命令的 {@code contractCode}。
+     *
+     * @param item       修改耗材草稿项（可空则忽略）
+     * @param contractId 合同主键；空则不写
+     */
+    private void applyDeviceContractCode(
+        ChangeDeviceOrderDraftCommand.ChangeDeviceOrderDraftItemCommand item,
+        Long contractId
+    ) {
+        if (item == null || contractId == null) {
+            return;
+        }
+        ContractDetailQueryModel contract = contractQueryService.findContractById(contractId);
+        if (contract == null || StringUtils.isEmpty(contract.getBusNo())) {
+            return;
+        }
+        item.setContractCode(contract.getBusNo().trim());
+    }
+
+    /**
+     * 耗材签发前读取未计费草稿费用的挂账账户，保留暂存时费用性质选择。
+     *
+     * @param encounterId           就诊主键
+     * @param deviceRequestId       耗材申请主键
+     * @param defaultChargeAccountId 无草稿费用时的回落账户
+     * @return 挂账账户主键
+     */
+    private Long resolveDeviceDraftChargeAccountId(
+        Long encounterId,
+        Long deviceRequestId,
+        Long defaultChargeAccountId
+    ) {
+        if (encounterId == null || deviceRequestId == null) {
+            return defaultChargeAccountId;
+        }
+        List<ChargeItem> draftCharges = chargeItemQueryService.listByEncounterAndServiceAnchors(
+            encounterId, TableNameConstants.WKF_DEVICE_REQUEST, List.of(deviceRequestId));
+        for (ChargeItem chargeItem : draftCharges) {
+            if (chargeItem == null || chargeItem.getAccountId() == null) {
+                continue;
+            }
+            String status = chargeItem.getStatusEnum();
+            if (ChargeItemStatus.DRAFT.getCode().equals(status)
+                || ChargeItemStatus.PLANNED.getCode().equals(status)) {
+                return chargeItem.getAccountId();
+            }
+        }
+        return defaultChargeAccountId;
+    }
+
+    /**
+     * 按行合同解析挂账账户：有合同则匹配账户 contract_no；无合同双账户默认医保户。
+     *
+     * <p>已选自费合同时 {@code preferInsurance=false}，避免 contract_no 未精确命中时误挂医保户。</p>
+     *
+     * @param encounterId 就诊主键
+     * @param contractId  行级合同主键；可空
+     * @return 挂账账户主键
+     */
+    private Long resolveAdviceChargeAccountId(Long encounterId, Long contractId) {
+        String contractBusNo = null;
+        // 无行合同时双账户默认医保；有合同则按是否并行医保性质决定回落优先
+        boolean preferInsurance = true;
+        if (contractId != null) {
+            ContractDetailQueryModel contract = contractQueryService.findContractById(contractId);
+            if (contract != null) {
+                if (contract.getBusNo() != null) {
+                    contractBusNo = contract.getBusNo().trim();
+                }
+                preferInsurance = encounterChargeAccountOpener.needsParallelMedicalInsuranceAccount(
+                    contract.getYbFlag(), contract.getCategoryEnum());
+            }
+        }
+        return encounterChargeAccountOpener.resolveChargeAccountId(encounterId, contractBusNo, preferInsurance);
+    }
+
 }
+

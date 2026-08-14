@@ -162,19 +162,28 @@ public class ThirdPartyPaymentSettleOrchestrator {
     }
 
     /**
-     * 校验银联回传交易金额（分）与 HIS 扫码行金额（元）一致；回传缺失时跳过。
+     * 校验银联回传交易金额（分）相对 HIS 扫码行金额（元）合法；回传缺失时跳过。
+     *
+     * <p>银行/渠道营销优惠时，持卡人实付（{@code txnAmtFen}）可小于院内下单金额；
+     * 优惠与院内应收、患者预交金入账无关，不得因此拒结算。禁止实付大于下单金额。</p>
      *
      * @param clientScanResult Win 被扫回传
      * @param amountYuan       待结算扫码行金额（元）
-     * @throws BusinessException 回传分额与元额换算不一致
+     * @throws BusinessException 回传分额无效或大于院内下单分额
      */
     private static void validateTxnAmtFen(ClientScanResultDto clientScanResult, BigDecimal amountYuan) {
         Long txnAmtFen = clientScanResult.getTxnAmtFen();
         if (txnAmtFen == null) {
             return;
         }
+        // Gate：实付分须为正；银联优惠允许实付 < 下单，禁止实付 > 下单。
+        if (txnAmtFen <= 0L) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
+                "银联回传金额无效");
+        }
         long expectedFen = amountYuan.multiply(BigDecimal.valueOf(100L)).setScale(0, RoundingMode.HALF_UP).longValue();
-        if (txnAmtFen != expectedFen) {
+        if (txnAmtFen > expectedFen) {
             throw new BusinessException(
                 ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
                 "扫码支付金额与银联回传不一致");

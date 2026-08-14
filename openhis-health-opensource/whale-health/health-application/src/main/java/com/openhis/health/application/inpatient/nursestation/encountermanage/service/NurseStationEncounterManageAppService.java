@@ -36,6 +36,9 @@ import com.openhis.health.application.inpatient.nursestation.ATDManager.support.
 import com.openhis.health.application.inpatient.nursestation.ATDManager.support.dto.InpatientPatientQueueNursingLevelDisplayRow;
 import com.openhis.health.application.inpatient.nursestation.orderaudit.support.NurseStationOrderViewListAssembler;
 import com.openhis.health.application.shared.advice.LongTermFirstExecutionSlotSupport;
+import com.openhis.health.application.shared.advice.StandingOrderPackageBatchPlanTimeResolver;
+import com.openhis.health.application.shared.advice.InpatientStandingOrderSplittableSettingResolver;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.domain.custom.frequency.queries.model.FrequencyExecutionTimePointQueryModel;
 import com.openhis.health.domain.custom.frequency.service.FrequencyQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
@@ -74,8 +77,13 @@ import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.enums.TherapyType;
 import com.openhis.health.domain.share.utils.EncounterParticipantRoleDisplayUtil;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
+import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.workflow.servicerequest.entity.ServiceRequest;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
+import com.openhis.health.infrastructure.integration.insurance.benefit.InsuranceRegisterBenefitQueryExtension;
+import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionOut.InsuranceEncounterPsnSnapshot;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
@@ -177,11 +185,23 @@ public class NurseStationEncounterManageAppService {
     /** 医嘱执行列表排除口径（待执行计数与 IF-IP-EXE-01 对齐）。 */
     private final NurseStationOrderViewListAssembler nurseStationOrderViewListAssembler;
 
-    /** 频次展开（长期医嘱当日计划时点数，供待执行计数对比净完成）。 */
+    /** 频次展开（诊疗长期待执行计数；药嘱长嘱改走一盒一点解析器）。 */
     private final FrequencyQueryService frequencyQueryService;
 
-    /** 术语下拉（adm_cond_code 等）。 */
+    /** 住院长嘱是否可拆；不可拆时药嘱待执与 IF-IP-EXE-01 同源一盒一点。 */
+    private final InpatientStandingOrderSplittableSettingResolver standingOrderSplittableSettingResolver;
+
+    /** 长嘱可拆/一盒一点计划点（BR-IP-EXE-035；与执行列表共用）。 */
+    private final StandingOrderPackageBatchPlanTimeResolver standingOrderPackageBatchPlanTimeResolver;
+
+    /** 药品目录批量加载（不可拆切盒取包装拆零比）。 */
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
+
+    /** 术语下拉（adm_cond_code、method_code 等）。 */
     private final TerminologyOptionLoader terminologyOptionLoader;
+
+    /** 医保人员编号批量回填（SPI；未装配 Module 时为空 Map）。 */
+    private final InsuranceRegisterBenefitQueryExtension insuranceRegisterBenefitQueryExtension;
 
     /**
      * IF-IP-NUR-01：病区病房树查询。
@@ -335,6 +355,9 @@ public class NurseStationEncounterManageAppService {
             // Pre：当前页批量解析护理级别展示（BR-IP-NUR-015）
             Map<Long, InpatientPatientQueueNursingLevelDisplayRow> nursingLevelByEncounterId =
                 inpatientPatientQueueNursingLevelEnrichAssembler.enrichByEncounterIds(pageEncounterIds, LocalDate.now());
+            // Pre：病情术语码 → 展示名（入院状态）。
+            Map<String, String> admCondLabelByCode =
+                terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.ADM_COND_CODE);
             List<PatientQueueItemDto> content = new ArrayList<>();
             for (InpatientEncounterContextQueryModel row : page.getContent()) {
                 if (row == null) {
@@ -372,6 +395,9 @@ public class NurseStationEncounterManageAppService {
                     row, counts, enrichment, rowOverlay, priorityEnum, accountId);
                 InpatientAccountBalanceDisplayDtoApplier.apply(item, accountBalanceDisplay);
                 this.applyNursingLevelDisplay(item, nursingLevelByEncounterId.get(row.getEncounterId()));
+                if (!StringUtils.isEmpty(priorityEnum)) {
+                    item.setPriorityEnumText(admCondLabelByCode.get(priorityEnum.trim()));
+                }
                 content.add(item);
             }
             return nurseStationEncounterManageMapper.toPagePatientQueueResponse(content, page);
@@ -728,7 +754,7 @@ public class NurseStationEncounterManageAppService {
     }
 
     /**
-     * 为当前页读模型行构建展示增补（病房名、检索码）。
+     * 为当前页读模型行构建展示增补（病房名、检索码、证件号、住址）。
      *
      * @param rows              读模型行
      * @param houseNameByBusNo  病房 bus_no 索引
@@ -749,15 +775,49 @@ public class NurseStationEncounterManageAppService {
         }
         Map<Long, String> pinyinByPatientId = new HashMap<>();
         Map<Long, String> wubiByPatientId = new HashMap<>();
-        // Pre：读模型未投影检索码，按当前页患者主键逐条补全（页大小受 Gate 约束，避免全表 N+1）。
+        Map<Long, String> idCardByPatientId = new HashMap<>();
+        Map<Long, String> addressByPatientId = new HashMap<>();
+        Map<Long, String> phoneByPatientId = new HashMap<>();
+        Map<Long, String> patientBusNoByPatientId = new HashMap<>();
+        // Pre：读模型未投影检索码/证件/住址/电话，按当前页患者主键逐条补全（页大小受 Gate 约束）。
         for (Long patientId : patientIds) {
             PatientDetailQueryModel detail = patientQueryService.loadPatientDetail(patientId);
             if (detail == null || detail.getPatient() == null) {
                 continue;
             }
-            pinyinByPatientId.put(patientId, detail.getPatient().getPyStr());
-            wubiByPatientId.put(patientId, detail.getPatient().getWbStr());
+            PatientCoreQueryModel core = detail.getPatient();
+            pinyinByPatientId.put(patientId, core.getPyStr());
+            wubiByPatientId.put(patientId, core.getWbStr());
+            // 大屏/队列展示完整证件号，不做脱敏。
+            if (!StringUtils.isEmpty(core.getIdCard())) {
+                idCardByPatientId.put(patientId, core.getIdCard().trim());
+            }
+            String addressText = this.resolvePatientAddressText(core);
+            if (addressText != null) {
+                addressByPatientId.put(patientId, addressText);
+            }
+            if (!StringUtils.isEmpty(core.getPhone())) {
+                phoneByPatientId.put(patientId, core.getPhone().trim());
+            }
+            if (!StringUtils.isEmpty(core.getBusNo())) {
+                patientBusNoByPatientId.put(patientId, core.getBusNo().trim());
+            }
         }
+        Set<Long> encounterIds = new LinkedHashSet<>();
+        for (InpatientEncounterContextQueryModel row : rows) {
+            if (row != null && row.getEncounterId() != null) {
+                encounterIds.add(row.getEncounterId());
+            }
+        }
+        // Pre：医保人员编号/医疗类别批量回填（平台映射落库；SPI 未启用时为空）。
+        Map<Long, InsuranceEncounterPsnSnapshot> psnByEncounterId =
+            insuranceRegisterBenefitQueryExtension.mapEncounterPsnByEncounterIds(encounterIds);
+        // Pre：医保账户险种类别批量回填。
+        Map<Long, Account> miAccountByEncounterId =
+            accountQueryService.mapMedicalInsuranceAccountsByEncounterIds(encounterIds);
+        // Pre：入院途径术语码 → 展示名。
+        Map<String, String> inWayLabelByCode =
+            terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.IN_WAY_CODE);
         for (InpatientEncounterContextQueryModel row : rows) {
             if (row == null || row.getEncounterId() == null) {
                 continue;
@@ -767,10 +827,66 @@ public class NurseStationEncounterManageAppService {
             if (row.getPatientId() != null) {
                 enrichment.setPinyinCode(pinyinByPatientId.get(row.getPatientId()));
                 enrichment.setWubiCode(wubiByPatientId.get(row.getPatientId()));
+                enrichment.setIdCardNo(idCardByPatientId.get(row.getPatientId()));
+                enrichment.setAddress(addressByPatientId.get(row.getPatientId()));
+                enrichment.setPatientPhone(phoneByPatientId.get(row.getPatientId()));
+                enrichment.setPatientBusNo(patientBusNoByPatientId.get(row.getPatientId()));
+            }
+            if (!StringUtils.isEmpty(row.getInWayCode())) {
+                String inWayCode = row.getInWayCode().trim();
+                enrichment.setInWayCode(inWayCode);
+                enrichment.setInWayCodeText(inWayLabelByCode.get(inWayCode));
+            }
+            Account miAccount = miAccountByEncounterId.get(row.getEncounterId());
+            if (miAccount != null && !StringUtils.isEmpty(miAccount.getInsutype())) {
+                enrichment.setInsutype(miAccount.getInsutype().trim());
+            }
+            InsuranceEncounterPsnSnapshot psnSnapshot = psnByEncounterId.get(row.getEncounterId());
+            if (psnSnapshot != null) {
+                enrichment.setInsuranceNo(psnSnapshot.getPsnNo());
+                enrichment.setMedType(psnSnapshot.getMedType());
+                enrichment.setMedTypeDisplay(psnSnapshot.getMedTypeDisplay());
             }
             result.put(row.getEncounterId(), enrichment);
         }
         return result;
+    }
+
+    /**
+     * 拼装患者住址展示文案：优先全文，否则省市区街道拼接。
+     *
+     * @param core 患者核心读模型
+     * @return 非空住址或 null
+     */
+    private String resolvePatientAddressText(PatientCoreQueryModel core) {
+        if (core == null) {
+            return null;
+        }
+        if (!StringUtils.isEmpty(core.getAddress())) {
+            return core.getAddress().trim();
+        }
+        StringBuilder sb = new StringBuilder();
+        this.appendAddressPart(sb, core.getAddressProvince());
+        this.appendAddressPart(sb, core.getAddressCity());
+        this.appendAddressPart(sb, core.getAddressDistrict());
+        this.appendAddressPart(sb, core.getAddressStreet());
+        if (sb.length() == 0) {
+            return null;
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 向住址缓冲追加一段非空区划文案。
+     *
+     * @param sb   缓冲
+     * @param part 区划片段
+     */
+    private void appendAddressPart(StringBuilder sb, String part) {
+        if (StringUtils.isEmpty(part)) {
+            return;
+        }
+        sb.append(part.trim());
     }
 
     /**
@@ -808,11 +924,15 @@ public class NurseStationEncounterManageAppService {
     /**
      * 批量计算就诊维度任务计数（BR-IP-NUR-004/005）。
      *
-     * <p><b>校 pendingAuditCount</b>：药品+诊疗中 {@code status=ACTIVE} 且来源为医生开立的行数；
+     * <p><b>校 pendingAuditCount</b>：
+     * （1）药品+诊疗中 {@code status=ACTIVE} 且来源为医生开立的行数；
+     * （2）另计 {@code status=STOPPED}、长期、医生开立且 {@code stopPerformerCheckId == null} 的停嘱待校行；
      * 不计护士划价及其它非医生开立来源；与校对列表一致<strong>禁止用 based_on 排除</strong>
      *（BR-IP-AUD-002）。住院退药不造负向 Request；{@code refund_*_id}/负数量仅为门诊同源防御。</p>
      * <p><b>执 pendingExecuteCount</b>：药品+诊疗中 {@code status=VERIFIED}、非停嘱、医生开立，且
      * <b>开嘱日起至统计日截止前仍有未终态计划槽</b>的医嘱行数（与待执行 Tab 对齐：含跨日未完成临时/出院带药与昨日未完成长期槽；
+     * <strong>可拆</strong>长期仍按频次预计点判定（与改一盒一点前一致）；
+     * <strong>仅全局不可拆且资格命中</strong>的长期药品按<strong>一盒一点盒首锚点</strong>判定（IF-IP-EXE-01 / **BR-IP-EXE-035**）；
      * 已执行与不执行均为终态，不算待执行；按行 +1 不按槽累加）；
      * 不计护士划价、床位滚费、转科/出院/护理级别；
      * <strong>皮试检查 companion SR 与皮试药均计入</strong>（执行/计费走 AS-IP-NUR-004，结果登记见 AS-IP-NUR-011）。</p>
@@ -846,6 +966,7 @@ public class NurseStationEncounterManageAppService {
         String activeCode = RequestStatus.ACTIVE.getCode();
         String verifiedCode = RequestStatus.VERIFIED.getCode();
         String stoppedCode = RequestStatus.STOPPED.getCode();
+        String longTermCode = TherapyType.LONG_TERM.getCode();
         String doctorPrescriptionSourceCode = GenerateSource.DOCTOR_PRESCRIPTION.getCode();
         List<MedicationRequest> activeMeds =
             medicationRequestQueryService.listByEncounterIdsAndStatusEnum(idSet, activeCode);
@@ -885,6 +1006,53 @@ public class NurseStationEncounterManageAppService {
                 bundle.setPendingAuditCount(bundle.getPendingAuditCount() + 1);
             }
         }
+        // 校：另扫 STOPPED 医生开立长期且尚未停嘱校对的行，计入 pendingAuditCount（与 pending Tab 停嘱待校对齐）
+        List<MedicationRequest> stoppedMeds =
+            medicationRequestQueryService.listByEncounterIdsAndStatusEnum(idSet, stoppedCode);
+        List<ServiceRequest> stoppedServices =
+            serviceRequestQueryService.listByEncounterIdsAndStatusEnum(idSet, stoppedCode);
+        for (MedicationRequest row : stoppedMeds) {
+            if (row == null || row.getEncounterId() == null) {
+                continue;
+            }
+            if (!doctorPrescriptionSourceCode.equals(row.getGenerateSourceEnum())) {
+                continue;
+            }
+            if (!longTermCode.equals(row.getTherapyEnum())) {
+                continue;
+            }
+            if (row.getStopPerformerCheckId() != null) {
+                continue;
+            }
+            if (this.isExcludedFromPendingAuditCountMedication(row)) {
+                continue;
+            }
+            NurseStationTaskCountBundle bundle = result.get(row.getEncounterId());
+            if (bundle != null) {
+                bundle.setPendingAuditCount(bundle.getPendingAuditCount() + 1);
+            }
+        }
+        for (ServiceRequest row : stoppedServices) {
+            if (row == null || row.getEncounterId() == null) {
+                continue;
+            }
+            if (!doctorPrescriptionSourceCode.equals(row.getGenerateSourceEnum())) {
+                continue;
+            }
+            if (!longTermCode.equals(row.getTherapyEnum())) {
+                continue;
+            }
+            if (row.getStopPerformerCheckId() != null) {
+                continue;
+            }
+            if (this.isExcludedFromPendingAuditCountService(row)) {
+                continue;
+            }
+            NurseStationTaskCountBundle bundle = result.get(row.getEncounterId());
+            if (bundle != null) {
+                bundle.setPendingAuditCount(bundle.getPendingAuditCount() + 1);
+            }
+        }
         List<MedicationRequest> verifiedMeds =
             medicationRequestQueryService.listByEncounterIdsAndStatusEnum(idSet, verifiedCode);
         List<ServiceRequest> verifiedServices =
@@ -893,12 +1061,21 @@ public class NurseStationEncounterManageAppService {
         LocalDateTime dayEnd = executionDate.plusDays(1).atStartOfDay();
         // Pre：按请求锚点索引 Procedure，供跨日计划槽终态判定（与 IF-IP-EXE-01 待执行 Tab 对齐）。
         Map<String, List<Procedure>> proceduresByAnchor = this.indexProceduresByRequestAnchor(procedures);
+        // Pre：目录/用法术语，药嘱待执与执行列表一盒一点/拆零下限切批同源。
+        boolean applyStandingOrderPackageBatch = !standingOrderSplittableSettingResolver.isSplittable();
+        Map<String, ProductDefinitionDisplayDto> medicationProductByKey =
+            this.loadMedicationProductsForPendingExecute(verifiedMeds);
+        Map<String, String> methodLabelByCode =
+            terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.METHOD_CODE);
         this.addPendingExecuteForMedicationRequests(
             verifiedMeds,
             stoppedCode,
             doctorPrescriptionSourceCode,
             dayEnd,
             proceduresByAnchor,
+            applyStandingOrderPackageBatch,
+            medicationProductByKey,
+            methodLabelByCode,
             result);
         this.addPendingExecuteForServiceRequests(
             verifiedServices,
@@ -980,14 +1157,18 @@ public class NurseStationEncounterManageAppService {
      * 将 VERIFIED 药品请求中「医生开立、非停嘱、截止日前仍有未终态计划槽」的行计入待执行（按医嘱行 +1）。
      *
      * <p>窗口 = 开嘱日起～统计日结束（含跨日未完成槽、临时/出院带药不限开立日）；
-     * 已执行与不执行均为终态；日三次须各槽终态满才不计；与待执行 Tab 行口径对齐。</p>
+     * 长期在全局不可拆且资格命中时按盒首锚点判定（**BR-IP-EXE-035**），与待执行 Tab 行口径对齐；
+     * 已执行与不执行均为终态。</p>
      *
-     * @param requests                     药品申请列表
-     * @param stoppedCode                  停嘱状态 code
-     * @param doctorPrescriptionSourceCode 医生开立来源 code
-     * @param dayEnd                       统计日终点（不含）
-     * @param proceduresByAnchor           请求锚点 → Procedure
-     * @param result                       输出计数包
+     * @param requests                         药品申请列表
+     * @param stoppedCode                      停嘱状态 code
+     * @param doctorPrescriptionSourceCode     医生开立来源 code
+     * @param dayEnd                           统计日终点（不含）
+     * @param proceduresByAnchor               请求锚点 → Procedure
+     * @param applyStandingOrderPackageBatch   全局不可拆时为 true
+     * @param medicationProductByKey           药品复合键 → 目录
+     * @param methodLabelByCode                用法 code → 展示名
+     * @param result                           输出计数包
      */
     private void addPendingExecuteForMedicationRequests(
         List<MedicationRequest> requests,
@@ -995,6 +1176,9 @@ public class NurseStationEncounterManageAppService {
         String doctorPrescriptionSourceCode,
         LocalDateTime dayEnd,
         Map<String, List<Procedure>> proceduresByAnchor,
+        boolean applyStandingOrderPackageBatch,
+        Map<String, ProductDefinitionDisplayDto> medicationProductByKey,
+        Map<String, String> methodLabelByCode,
         Map<Long, NurseStationTaskCountBundle> result) {
         if (requests == null || requests.isEmpty()) {
             return;
@@ -1023,19 +1207,167 @@ public class NurseStationEncounterManageAppService {
             }
             String anchor = requestTable + separator + row.getId();
             List<Procedure> requestProcedures = proceduresByAnchor.get(anchor);
-            // 截止日前仍有 pending/hedged pending 槽 → 整行计 1。
-            if (this.hasUnfinishedExecuteSlots(
-                row.getTherapyEnum(),
-                row.getRateCode(),
+            // 截止日前仍有 pending/hedged pending 槽 → 整行计 1（药嘱长期走一盒一点同源展槽）。
+            if (this.hasUnfinishedMedicationExecuteSlots(
+                row,
                 openedTime,
                 dayEnd,
-                requestProcedures)) {
+                requestProcedures,
+                applyStandingOrderPackageBatch,
+                medicationProductByKey,
+                methodLabelByCode)) {
                 NurseStationTaskCountBundle bundle = result.get(row.getEncounterId());
                 if (bundle != null) {
                     bundle.setPendingExecuteCount(bundle.getPendingExecuteCount() + 1);
                 }
             }
         }
+    }
+
+    /**
+     * 药品行截止日前是否仍有未终态计划槽（临时整单 / 长期可拆日点或一盒一点盒首）。
+     *
+     * <p><b>可拆</b>（{@code applyStandingOrderPackageBatch=false}）：完全回落历史
+     * {@link #hasUnfinishedExecuteSlots}（频次展开至 {@code dayEnd}），保证与改一盒一点前统计一致。
+     * <b>不可拆</b>：长期药经 {@link StandingOrderPackageBatchPlanTimeResolver} 取盒首锚点。</p>
+     *
+     * @param row                            药品申请
+     * @param openedTime                     开立锚点
+     * @param dayEnd                         统计截止（不含）
+     * @param requestProcedures              该请求 Procedure
+     * @param applyStandingOrderPackageBatch 是否尝试一盒一点
+     * @param medicationProductByKey         目录 Map
+     * @param methodLabelByCode              用法展示名
+     * @return true 表示应计入待执行行
+     */
+    private boolean hasUnfinishedMedicationExecuteSlots(
+        MedicationRequest row,
+        LocalDateTime openedTime,
+        LocalDateTime dayEnd,
+        List<Procedure> requestProcedures,
+        boolean applyStandingOrderPackageBatch,
+        Map<String, ProductDefinitionDisplayDto> medicationProductByKey,
+        Map<String, String> methodLabelByCode) {
+        if (row == null || openedTime == null || dayEnd == null) {
+            return false;
+        }
+        // 开立晚于截止：尚无计划。
+        if (!openedTime.isBefore(dayEnd)) {
+            return false;
+        }
+        List<Procedure> procedures = requestProcedures;
+        if (procedures == null) {
+            procedures = Collections.emptyList();
+        }
+        // 临时 / 出院带药：整单单槽 = 开立时刻（不可拆开关不影响临嘱）。
+        if (!TherapyType.LONG_TERM.getCode().equals(row.getTherapyEnum())) {
+            return this.isTemporarySlotStillPending(procedures);
+        }
+        if (StringUtils.isEmpty(row.getRateCode())) {
+            // 长期无频次无法展开，与执行列表剔除一致。
+            return false;
+        }
+        Set<LocalDateTime> planned;
+        try {
+            StandingOrderPackageBatchPlanTimeResolver.MeasureInput measure =
+                new StandingOrderPackageBatchPlanTimeResolver.MeasureInput();
+            measure.setTherapyEnum(row.getTherapyEnum());
+            measure.setQuantity(row.getQuantity());
+            measure.setUnitCode(row.getUnitCode());
+            measure.setFirstDose(row.getFirstDose());
+            measure.setFirstDoseUnitCode(row.getFirstDoseUnitCode());
+            measure.setMethodCode(row.getMethodCode());
+            ProductDefinitionDisplayDto product = this.resolveMedicationProductForPendingExecute(
+                row.getMedicationId(), medicationProductByKey);
+            // 统计日末作 selectionDeadline；含院点一盒一点与产品拆零下限切批（BR-IP-EXE-035/036）
+            LocalDateTime selectionDeadline = dayEnd.minusSeconds(1);
+            StandingOrderPackageBatchPlanTimeResolver.ExpandResult expand =
+                standingOrderPackageBatchPlanTimeResolver.resolveLongTermPlanTimes(
+                    row.getRateCode(),
+                    openedTime,
+                    selectionDeadline,
+                    null,
+                    applyStandingOrderPackageBatch,
+                    measure,
+                    product,
+                    methodLabelByCode);
+            planned = expand.getPlanTimes();
+        } catch (BusinessException ex) {
+            // 频次不可用：不计待执行（与历史 resolveLongTermPlannedTimesThrough 空集口径一致）
+            return false;
+        }
+        if (planned == null || planned.isEmpty()) {
+            // 无可展计划槽（含不可拆硬顶未凑满盒 → 空）→ 不计待执行
+            return false;
+        }
+        for (LocalDateTime planTime : planned) {
+            if (planTime == null) {
+                continue;
+            }
+            // 任一盒首/单位首仍 pending / hedged pending → 整行待执行（行 +1，不按槽累加）。
+            if (this.isLongTermOccurrenceStillPending(procedures, planTime)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 批量加载长期药品目录，供待执计数一盒一点取包装拆零比。
+     *
+     * @param requests 已校对药品申请
+     * @return 复合键 → 目录
+     */
+    private Map<String, ProductDefinitionDisplayDto> loadMedicationProductsForPendingExecute(
+        List<MedicationRequest> requests) {
+        if (requests == null || requests.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
+        Set<String> seenKeys = new LinkedHashSet<>();
+        for (MedicationRequest row : requests) {
+            if (row == null || row.getMedicationId() == null) {
+                continue;
+            }
+            if (!TherapyType.LONG_TERM.getCode().equals(row.getTherapyEnum())) {
+                continue;
+            }
+            String key = ProductDefinitionKeyUtil.buildCompositeKey(
+                TableNameConstants.MED_MEDICATION_DEFINITION, row.getMedicationId());
+            if (key == null || seenKeys.contains(key)) {
+                continue;
+            }
+            seenKeys.add(key);
+            ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
+            lookup.setProductTableName(TableNameConstants.MED_MEDICATION_DEFINITION);
+            lookup.setProductDefinitionId(row.getMedicationId());
+            lookups.add(lookup);
+        }
+        if (lookups.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
+    }
+
+    /**
+     * 从预热 Map 解析药品目录。
+     *
+     * @param medicationId           药品定义主键
+     * @param medicationProductByKey 预热 Map
+     * @return 目录；缺失时 null
+     */
+    private ProductDefinitionDisplayDto resolveMedicationProductForPendingExecute(
+        Long medicationId,
+        Map<String, ProductDefinitionDisplayDto> medicationProductByKey) {
+        if (medicationId == null || medicationProductByKey == null || medicationProductByKey.isEmpty()) {
+            return null;
+        }
+        String key = ProductDefinitionKeyUtil.buildCompositeKey(
+            TableNameConstants.MED_MEDICATION_DEFINITION, medicationId);
+        if (key == null) {
+            return null;
+        }
+        return medicationProductByKey.get(key);
     }
 
     /**

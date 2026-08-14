@@ -67,7 +67,7 @@ public class OutpatientFeeDetailAssembler {
             }
             line.setCashierId(context.getCashierId());
         }
-        line.setOrderingDoctorId(chargeItem.getEntererId());
+        // 开单医生由应用层回填；收费人仅结算写入（context.cashierId←enterer_id，待结为空）
         line.setQuantityValue(this.scaleQuantityDisplay(chargeItem.getQuantityValue()));
         line.setUnitPrice(MonetaryAmountSupport.scaleCalc(chargeItem.getUnitPrice()));
         String feeCategoryCode = this.resolveFeeCategoryCode(chargeItem.getServiceTable());
@@ -205,8 +205,8 @@ public class OutpatientFeeDetailAssembler {
     /**
      * 由域层候选行直接装配全量金额 summary（**BR-OP-FDT-010～013**），不装配产品/就诊/人员展示字段。
      *
-     * <p>供明细分页页脚使用：避免为算合计而全量 enrichment 就诊块。金额口径与
-     * {@link #assembleLineAmounts} + 进价回填一致；进价由调用方批量解析后传入。</p>
+     * <p>供<strong>汇总 Tab / 导出</strong>等已物化候选行路径；明细分页页脚须改走
+     * {@link #assembleDetailPageFooterSaleSummary}，禁止为页脚再全窗物化 RowQueryModel。</p>
      *
      * @param rows                         全量命中候选行（含 payment 上下文与快照分母）
      * @param purchaseAmountByChargeItemId chargeItemId → 历史进价行额（缺键按 0）
@@ -310,6 +310,36 @@ public class OutpatientFeeDetailAssembler {
         summary.setActualReceivedAmountTotal(MonetaryAmountSupport.scaleSettle(actualReceivedSum));
         summary.setInsuranceAmountTotal(MonetaryAmountSupport.scaleSettle(insuranceSum));
         summary.setSelfPayAmountTotal(MonetaryAmountSupport.scaleSettle(selfPaySum));
+        return summary;
+    }
+
+    /**
+     * 明细分页页脚：装配售价合计 + 进价合计（均已 settle）。
+     *
+     * <p>售价来自 SQL SUM / 投影代数和；进价来自命中 scope 批量历史进价（
+     * {@code FeeDetailMatchedScopePurchaseTotalSupport}），禁止为页脚再
+     * {@code listOutpatientFeeDetailChargeRows}。</p>
+     *
+     * @param saleAmountTotal     全窗售价代数和（结算刻度；可为 null，按 0）
+     * @param purchaseAmountTotal 全窗进价代数和（结算刻度；可为 null，按 0）
+     * @return 页脚 summary
+     */
+    public OutpatientFeeDetailAmountSummaryDto assembleDetailPageFooterSaleSummary(
+        BigDecimal saleAmountTotal,
+        BigDecimal purchaseAmountTotal) {
+        OutpatientFeeDetailAmountSummaryDto summary = new OutpatientFeeDetailAmountSummaryDto();
+        summary.setBaseAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
+        summary.setDiscountAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
+        summary.setReceivableAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
+        summary.setDiscountedAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
+        summary.setActualReceivedAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
+        summary.setInsuranceAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
+        summary.setSelfPayAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
+        // Asm：售价/进价均 settle 后回填页脚（进价含诊疗按 0 的代数和）
+        BigDecimal settledSale = MonetaryAmountSupport.scaleSettle(saleAmountTotal);
+        summary.setSaleAmountTotal(settledSale);
+        summary.setLineAmountTotal(settledSale);
+        summary.setPurchaseAmountTotal(MonetaryAmountSupport.scaleSettle(purchaseAmountTotal));
         return summary;
     }
 

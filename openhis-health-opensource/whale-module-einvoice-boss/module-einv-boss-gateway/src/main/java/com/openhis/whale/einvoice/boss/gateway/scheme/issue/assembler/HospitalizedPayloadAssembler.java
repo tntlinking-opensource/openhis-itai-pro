@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static com.openhis.whale.einvoice.boss.gateway.scheme.issue.assembler.BossPayloadSupport.*;
@@ -21,7 +22,7 @@ import static com.openhis.whale.einvoice.boss.gateway.scheme.issue.assembler.Bos
 /**
  * 住院线（{@code invEBillHospitalized}）业务 JSON 组装。
  *
- * <p>较门诊/挂号额外包含 {@code hospitalNo}、{@code visitNo}、{@code isArrears} 等住院专用字段。</p>
+ * <p>较门诊/挂号额外包含 {@code hospitalNo}、{@code visitNo}、{@code isArrears}、{@code category} 等住院专用字段。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -61,8 +62,31 @@ public class HospitalizedPayloadAssembler {
         body.put("patientId", snapshot.getPatientId().toString());
         body.put("patientNo", snapshot.getEncounterBusNo());
         putMedicalEncounterFields(body, snapshot, properties);
-        fillSelfPayAmounts(body, document.getTotalAmt());
-        body.put("payChannelDetail", buildPayChannel(document.getTotalAmt()));
+        // 博思住院票必填 category=入院科室名称（与 patientCategory 同值；缺省时院点校验 EYD-ESA-0109）
+        String categoryName = snapshot.getPatientCategory();
+        if (!StringUtils.hasText(categoryName)) {
+            categoryName = defaultIfBlank(snapshot.getCaseNumber(),
+                defaultIfBlank(snapshot.getEncounterBusNo(), "住院"));
+        }
+        body.put("category", categoryName);
+        body.put("patientCategory", categoryName);
+        if (StringUtils.hasText(snapshot.getPatientCategoryCode())) {
+            body.put("categoryCode", snapshot.getPatientCategoryCode());
+            body.put("patientCategoryCode", snapshot.getPatientCategoryCode());
+        }
+        // 博思住院票必填 inHospitalDate/outHospitalDate（yyyyMMdd）
+        LocalDateTime inAt = snapshot.getInHospitalDateTime();
+        if (inAt == null) {
+            inAt = snapshot.getBillDateTime();
+        }
+        body.put("inHospitalDate", formatDay(inAt));
+        LocalDateTime outAt = snapshot.getOutHospitalDateTime();
+        if (outAt == null) {
+            outAt = snapshot.getBillDateTime();
+        }
+        body.put("outHospitalDate", formatDay(outAt));
+        fillInsuranceOrSelfPayAmounts(body, snapshot, document.getTotalAmt());
+        body.put("payChannelDetail", buildPayChannelDetail(snapshot, document.getTotalAmt()));
         body.put("chargeDetail", buildChargeDetail(lines));
         body.put("listDetail", buildListDetail(lines));
         body.put("isArrears", "1");

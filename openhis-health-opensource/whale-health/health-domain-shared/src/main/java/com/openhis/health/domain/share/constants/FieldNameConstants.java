@@ -148,6 +148,10 @@ public interface FieldNameConstants {
      * 费用性质/合同主键（{@code contract_id}）。
      */
     String CONTRACT_ID = "contractId";
+    /**
+     * 费用性质合同业务号（{@code contract_code} / {@code bus_no}；耗材行无 contract_id 时落此列）。
+     */
+    String CONTRACT_CODE = "contractCode";
 /** FieldName 共享常量：at，值 {@code createdAt}。 */
     String CREATED_AT = "createdAt";
     /**
@@ -264,6 +268,12 @@ public interface FieldNameConstants {
 
     /** 计划发药时刻（{@code med_medication_dispense.planned_dispense_time}）。 */
     String PLANNED_DISPENSE_TIME = "plannedDispenseTime";
+
+    /** 耗材拣配时刻（{@code wkf_device_dispense.prepare_time}）。 */
+    String PREPARE_TIME = "prepareTime";
+
+    /** 耗材请求主键（{@code wkf_device_dispense.device_req_id}）。 */
+    String DEVICE_REQ_ID = "deviceReqId";
     /**
      * 药品成组号（药品申请 {@code groupId}）。
      */
@@ -276,6 +286,8 @@ public interface FieldNameConstants {
     String END_TIME = "endTime";
 /** FieldName 共享常量：id，值 {@code entererId}。 */
     String ENTERER_ID = "entererId";
+/** FieldName 共享常量：date，值 {@code enteredDate}（收费明细=收费时间）。 */
+    String ENTERED_DATE = "enteredDate";
 /** FieldName 共享常量：content，值 {@code entrustContent}。 */
     String ENTRUST_CONTENT = "entrustContent";
 /** FieldName 共享常量：date，值 {@code expirationDate}。 */
@@ -558,6 +570,18 @@ public interface FieldNameConstants {
      * 产品来源物理表名。
      */
     String PRODUCT_TABLE_NAME = "productTableName";
+
+    /** 收费明细产品来源表（{@code adm_charge_item.product_table}，JPA {@code productTable}）。 */
+    String PRODUCT_TABLE = "productTable";
+
+    /** 收费明细产品主键（{@code adm_charge_item.product_id}，JPA {@code productId}）。 */
+    String PRODUCT_ID = "productId";
+
+    /** 收费明细挂账账户主键（{@code adm_charge_item.account_id}，JPA {@code accountId}）。 */
+    String ACCOUNT_ID = "accountId";
+
+    /** 开立/申请机构主键（{@code adm_charge_item.requesting_org_id}，JPA {@code requestingOrgId}）。 */
+    String REQUESTING_ORG_ID = "requestingOrgId";
 /** FieldName 共享常量：unit code，值 {@code purchaseUnitCode}。 */
     String PURCHASE_UNIT_CODE = "purchaseUnitCode";
 /** FieldName 共享常量：unit ratio，值 {@code purchaseUnitRatio}。 */
@@ -575,6 +599,10 @@ public interface FieldNameConstants {
     String QUANTITY = "quantity";
 /** FieldName 共享常量：code，值 {@code rateCode}。 */
     String RATE_CODE = "rateCode";
+    /**
+     * 输液滴速编码（{@code med_medication_request.speed_code}）。
+     */
+    String SPEED_CODE = "speedCode";
 /** FieldName 共享常量：REASON，值 {@code reason}。 */
     String REASON = "reason";
 /** FieldName 共享常量：text，值 {@code reasonText}。 */
@@ -724,9 +752,17 @@ public interface FieldNameConstants {
      */
     String SUBMIT_TIME = "submitTime";
     /**
+     * 交账头提交时刻（{@code fin_cashier_settlement.submitted_at} / 实体 {@code submittedAt}）。
+     */
+    String SUBMITTED_AT = "submittedAt";
+    /**
      * 制单/申请时刻（调价单 {@code adjustment_time}）。
      */
     String ADJUSTMENT_TIME = "adjustmentTime";
+    /**
+     * 调价原因（调价单 {@code adjustment_reason}）。
+     */
+    String ADJUSTMENT_REASON = "adjustmentReason";
     /**
      * 审批通过/生效时刻（调价单 {@code approve_time}）。
      */

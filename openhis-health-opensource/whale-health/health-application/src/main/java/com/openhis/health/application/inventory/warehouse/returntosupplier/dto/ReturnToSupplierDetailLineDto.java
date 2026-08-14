@@ -72,6 +72,18 @@ public class ReturnToSupplierDetailLineDto {
     @Schema(description = "产品名称 productName")
     private String productName;
 
+    /**
+     * 单价（包装锚进价快照）：取供应请求落库 {@code price}；优先来源进货行，缺省为批号进价（BR-WHS-RT-009）。
+     */
+    @Schema(description = "单价（包装锚进价） price")
+    private BigDecimal price;
+
+    /**
+     * 行合计金额：取供应请求落库 {@code total_price}（拆零量 × 包装锚单价，BR-MON-PKG-001）。
+     */
+    @Schema(description = "行合计 totalPrice")
+    private BigDecimal totalPrice;
+
     /** 产品目录 productCatalog（含 unitBands，详情单位回显用）。 */
     @Schema(description = "产品目录 productCatalog")
     private ProductDefinitionCatalogEditorHintsDto productCatalog;

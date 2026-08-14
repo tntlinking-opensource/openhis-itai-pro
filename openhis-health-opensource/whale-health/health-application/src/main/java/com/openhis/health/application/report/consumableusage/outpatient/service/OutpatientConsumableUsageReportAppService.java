@@ -8,6 +8,8 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import com.openhis.health.application.report.consumableusage.outpatient.dto.OutpatientConsumableUsageDetailRowDto;
@@ -25,14 +27,20 @@ import com.openhis.health.application.report.consumableusage.outpatient.response
 import com.openhis.health.application.report.consumableusage.outpatient.support.OutpatientConsumableUsageDetailPageResult;
 import com.openhis.health.application.report.consumableusage.outpatient.support.OutpatientConsumableUsageReportQuerySupport;
 import com.openhis.health.application.report.consumableusage.outpatient.support.OutpatientConsumableUsageSummaryResult;
+import com.openhis.health.application.report.consumableusage.support.ConsumableUsageReportQueryFilter;
+import com.openhis.health.application.shared.option.TerminologyOptionLoader;
 import com.openhis.health.application.shared.report.ReportPatientSettlementContextAssembler;
 import com.openhis.health.application.shared.validator.PageWindowGate;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.organization.entity.Organization;
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
+import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
+import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.share.constants.ConsumableUsageReportConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+import com.openhis.health.domain.share.constants.PharmacyDispenseRecordConstants;
+import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.session.CurrentOperatorResolver;
@@ -78,6 +86,12 @@ public class OutpatientConsumableUsageReportAppService {
     /** 映射。 */
     private final OutpatientConsumableUsageReportMapper outpatientConsumableUsageReportMapper;
 
+    /** 耗材类型术语下拉。 */
+    private final TerminologyOptionLoader terminologyOptionLoader;
+
+    /** 执行人（发耗材人）下拉主档。 */
+    private final PractitionerQueryService practitionerQueryService;
+
     /** 费用性质 / medType 上下文装配。 */
     private final ReportPatientSettlementContextAssembler reportPatientSettlementContextAssembler;
 
@@ -102,6 +116,24 @@ public class OutpatientConsumableUsageReportAppService {
             LocalDate today = LocalDate.now();
             String defaultDate = today.format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
             List<OptionDto> feeNatureOptions = this.reportPatientSettlementContextAssembler.loadFeeNatureOptions();
+            List<OptionDto> categoryOptions =
+                this.terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.DEVICE_CATEGORY_CODE);
+            Page<Practitioner> dispenserPage = this.practitionerQueryService.pageActivePractitionersForPosition(
+                null,
+                null,
+                PageRequest.of(0, PharmacyDispenseRecordConstants.DISPENSER_OPTION_PAGE_SIZE),
+                false);
+            List<OptionDto> practitionerOptions = new ArrayList<>();
+            // Pre：执行人下拉跳过无主键脏行
+            for (Practitioner practitioner : dispenserPage.getContent()) {
+                if (practitioner == null || practitioner.getId() == null) {
+                    continue;
+                }
+                OptionDto option = new OptionDto();
+                option.setValue(String.valueOf(practitioner.getId()));
+                option.setLabel(practitioner.getName());
+                practitionerOptions.add(option);
+            }
             // Asm：装配默认日期与筛选项
             return this.outpatientConsumableUsageReportMapper.toLoadPageInitResponse(
                 organizations,
@@ -109,6 +141,9 @@ public class OutpatientConsumableUsageReportAppService {
                 this.buildSummaryDimensionOptions(),
                 this.buildSourceCodeOptions(),
                 feeNatureOptions,
+                categoryOptions,
+                practitionerOptions,
+                this.outpatientConsumableUsageReportMapper.buildRecordTypeOptions(),
                 defaultDate,
                 defaultDate);
         } catch (RuntimeException ex) {
@@ -138,12 +173,7 @@ public class OutpatientConsumableUsageReportAppService {
             // Pre：Support 预解析 AMB scope + 两路净汇总合并
             OutpatientConsumableUsageSummaryResult result =
                 this.outpatientConsumableUsageReportQuerySupport.summarize(
-                    request.getDateFrom(),
-                    request.getDateTo(),
-                    request.getSummaryDimension(),
-                    request.getSourceCode(),
-                    request.getLocationId(),
-                    request.getFeeNatureContractNo());
+                    this.buildQueryFilter(request));
             // Asm：Support 结果映射 HTTP 响应（页脚净量净额）
             SummarizeOutpatientConsumableUsageReportResponse response =
                 new SummarizeOutpatientConsumableUsageReportResponse();
@@ -187,11 +217,7 @@ public class OutpatientConsumableUsageReportAppService {
             // Pre：Support 两路并集或单路分页（来源筛收窄）
             OutpatientConsumableUsageDetailPageResult result =
                 this.outpatientConsumableUsageReportQuerySupport.pageDetail(
-                    request.getDateFrom(),
-                    request.getDateTo(),
-                    request.getSourceCode(),
-                    request.getLocationId(),
-                    request.getFeeNatureContractNo(),
+                    this.buildQueryFilter(request),
                     request.getPageNo(),
                     request.getPageSize());
             // Asm：分页元数据与明细行写入响应
@@ -243,12 +269,7 @@ public class OutpatientConsumableUsageReportAppService {
                 // Pre：汇总 Tab → 同 IF-02 净汇总后截断导出行
                 OutpatientConsumableUsageSummaryResult summary =
                     this.outpatientConsumableUsageReportQuerySupport.summarize(
-                        request.getDateFrom(),
-                        request.getDateTo(),
-                        request.getSummaryDimension(),
-                        request.getSourceCode(),
-                        request.getLocationId(),
-                        request.getFeeNatureContractNo());
+                        this.buildQueryFilter(request));
                 List<OutpatientConsumableUsageSummaryRowDto> rows = summary.getRows();
                 if (rows == null) {
                     // Asm：空汇总仍导出列头
@@ -267,11 +288,7 @@ public class OutpatientConsumableUsageReportAppService {
                 // Pre：明细 Tab（含非 SUMMARY 的兜底）→ 有界并集列表
                 List<OutpatientConsumableUsageDetailRowDto> detailRows =
                     this.outpatientConsumableUsageReportQuerySupport.listDetailForExport(
-                        request.getDateFrom(),
-                        request.getDateTo(),
-                        request.getSourceCode(),
-                        request.getLocationId(),
-                        request.getFeeNatureContractNo());
+                        this.buildQueryFilter(request));
                 if (detailRows.size() >= ConsumableUsageReportConstants.EXPORT_MAX_ROWS) {
                     // Gate：list 已按上限截取，触顶即视为可能截断
                     truncated = true;
@@ -297,6 +314,74 @@ public class OutpatientConsumableUsageReportAppService {
                 ConsumableUsageReportConstants.EX_RPT_OCU_104,
                 "导出失败，请稍后重试");
         }
+    }
+
+    /**
+     * 从汇总请求装配报表筛选对象。
+     *
+     * @param request IF-RPT-OCU-02 请求
+     * @return 传入 QuerySupport 的筛选
+     */
+    private ConsumableUsageReportQueryFilter buildQueryFilter(
+        SummarizeOutpatientConsumableUsageReportRequest request) {
+        return new ConsumableUsageReportQueryFilter()
+            .setDateFrom(request.getDateFrom())
+            .setDateTo(request.getDateTo())
+            .setSummaryDimension(request.getSummaryDimension())
+            .setSourceCode(request.getSourceCode())
+            .setLocationId(request.getLocationId())
+            .setFeeNatureContractNo(request.getFeeNatureContractNo())
+            .setRecordTypeCode(request.getRecordTypeCode())
+            .setDeviceCategoryCodes(request.getDeviceCategoryCodes())
+            .setPerformerPractitionerId(request.getPerformerPractitionerId())
+            .setDeviceKeyword(request.getDeviceKeyword())
+            .setPatientKeyword(request.getPatientKeyword())
+            .setOrganizationId(request.getOrganizationId());
+    }
+
+    /**
+     * 从明细分页请求装配报表筛选对象。
+     *
+     * @param request IF-RPT-OCU-03 请求
+     * @return 传入 QuerySupport 的筛选
+     */
+    private ConsumableUsageReportQueryFilter buildQueryFilter(
+        PageOutpatientConsumableUsageReportDetailRequest request) {
+        return new ConsumableUsageReportQueryFilter()
+            .setDateFrom(request.getDateFrom())
+            .setDateTo(request.getDateTo())
+            .setSourceCode(request.getSourceCode())
+            .setLocationId(request.getLocationId())
+            .setFeeNatureContractNo(request.getFeeNatureContractNo())
+            .setRecordTypeCode(request.getRecordTypeCode())
+            .setDeviceCategoryCodes(request.getDeviceCategoryCodes())
+            .setPerformerPractitionerId(request.getPerformerPractitionerId())
+            .setDeviceKeyword(request.getDeviceKeyword())
+            .setPatientKeyword(request.getPatientKeyword())
+            .setOrganizationId(request.getOrganizationId());
+    }
+
+    /**
+     * 从导出请求装配报表筛选对象。
+     *
+     * @param request IF-RPT-OCU-04 请求
+     * @return 传入 QuerySupport 的筛选
+     */
+    private ConsumableUsageReportQueryFilter buildQueryFilter(
+        ExportOutpatientConsumableUsageReportRequest request) {
+        return new ConsumableUsageReportQueryFilter()
+            .setDateFrom(request.getDateFrom())
+            .setDateTo(request.getDateTo())
+            .setSummaryDimension(request.getSummaryDimension())
+            .setSourceCode(request.getSourceCode())
+            .setLocationId(request.getLocationId())
+            .setFeeNatureContractNo(request.getFeeNatureContractNo())
+            .setRecordTypeCode(request.getRecordTypeCode())
+            .setDeviceCategoryCodes(request.getDeviceCategoryCodes())
+            .setPerformerPractitionerId(request.getPerformerPractitionerId())
+            .setDeviceKeyword(request.getDeviceKeyword())
+            .setPatientKeyword(request.getPatientKeyword())
+            .setOrganizationId(request.getOrganizationId());
     }
 
     /**
@@ -330,20 +415,28 @@ public class OutpatientConsumableUsageReportAppService {
     private List<OptionDto> buildSummaryDimensionOptions() {
         List<OptionDto> options = new ArrayList<>();
         options.add(this.option(
-            ConsumableUsageReportConstants.SUMMARY_DIMENSION_PATIENT, "按患者"));
+            ConsumableUsageReportConstants.SUMMARY_DIMENSION_LOCATION,
+            ConsumableUsageReportConstants.SUMMARY_DIMENSION_LOCATION_LABEL));
         options.add(this.option(
-            ConsumableUsageReportConstants.SUMMARY_DIMENSION_DEPARTMENT, "按科室"));
+            ConsumableUsageReportConstants.SUMMARY_DIMENSION_ITEM,
+            ConsumableUsageReportConstants.SUMMARY_DIMENSION_ITEM_LABEL));
+        options.add(this.option(
+            ConsumableUsageReportConstants.SUMMARY_DIMENSION_CATEGORY,
+            ConsumableUsageReportConstants.SUMMARY_DIMENSION_CATEGORY_LABEL));
+        options.add(this.option(
+            ConsumableUsageReportConstants.SUMMARY_DIMENSION_DEPARTMENT,
+            ConsumableUsageReportConstants.SUMMARY_DIMENSION_DEPARTMENT_LABEL));
         return options;
     }
 
     /**
-     * 来源筛下拉。
+     * 来源筛下拉（患者 / 领用二选一；禁止 ALL 并集）。
      *
      * @return 选项
      */
     private List<OptionDto> buildSourceCodeOptions() {
         List<OptionDto> options = new ArrayList<>();
-        options.add(this.option(ConsumableUsageReportConstants.SOURCE_CODE_ALL, "全部"));
+        // 默认项在前：患者使用（DD：禁止来源=全部混查）
         options.add(this.option(ConsumableUsageReportConstants.SOURCE_CODE_PATIENT_DISPENSE, "患者使用"));
         options.add(this.option(ConsumableUsageReportConstants.SOURCE_CODE_DEPT_ISSUE, "科室领用"));
         return options;

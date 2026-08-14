@@ -109,4 +109,45 @@ public final class MedicationPackageSplitQuantityDisplayAssembler {
         }
         return packageText.toString();
     }
+
+    /**
+     * 包装装量后缀：拼入规格括号，形如 {@code 1片x100}（与规格拼接为 {@code 5mg1片x100}）。
+     *
+     * <p>供住院医生站 / 护士站医嘱列表；禁止再输出「1盒=24片」口语口径。
+     * 包装与拆零同单位且倍数为 1 时无信息量，返回 null。</p>
+     *
+     * @param product 药品目录读模型（包装倍数与拆零单位来源）
+     * @return 装量后缀；缺倍数或拆零单位时 {@code null}
+     */
+    public static String buildPackageSplitRatioText(ProductDefinitionDisplayDto product) {
+        if (product == null) {
+            return null;
+        }
+        BigDecimal packageRatio = product.getPackageUnitRatio();
+        if (packageRatio == null || packageRatio.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+        String splitUnitCode = trimToNull(product.getSplitUnitCode());
+        String packageUnitCode = trimToNull(product.getPackageUnitCode());
+        String splitUnitText = StringUtils.firstNonBlank(
+            product.getSplitUnitCodeDictText(),
+            ProductDefinitionCatalogUnitBandsAssembler.resolveUnitDisplayName(null, splitUnitCode, product),
+            splitUnitCode);
+        if (StringUtils.isEmpty(splitUnitText)) {
+            return null;
+        }
+        String packageUnitText = StringUtils.firstNonBlank(
+            product.getPackageUnitCodeDictText(),
+            ProductDefinitionCatalogUnitBandsAssembler.resolveUnitDisplayName(null, packageUnitCode, product),
+            packageUnitCode);
+        // 同单位且倍数为 1：无装量信息，不展示
+        if (StringUtils.isNotEmpty(packageUnitText)
+            && packageUnitText.equals(splitUnitText)
+            && packageRatio.compareTo(BigDecimal.ONE) == 0) {
+            return null;
+        }
+        String ratioText = packageRatio.stripTrailingZeros().toPlainString();
+        // 临床规格装量：1片x100（前端与 totalVolume「5mg」拼成 5mg1片x100）
+        return "1" + splitUnitText + "x" + ratioText;
+    }
 }

@@ -4,6 +4,8 @@
  */
 package com.openhis.health.application.inpatient.nursestation.inpatientbilling.service;
 
+import com.openhis.health.application.basic.administration.support.PractitionerRoleScopeLoader;
+import com.openhis.health.application.shared.pagination.PageQueryBinder;
 import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.shared.validator.CurrentManagedWardLocationIdsResolver;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
@@ -14,10 +16,13 @@ import com.openhis.health.application.inpatient.nursestation.inpatientbilling.as
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.assembler.NurseStationInpatientBillingCatalogAssembler;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.assembler.NurseStationInpatientBillingListAssembler;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.assembler.NurseStationInpatientBillingWriteAssembler;
+import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricedOrderRowDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricingCancelItemDto;
+import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricingCatalogRowDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricingParentRequestAnchorDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricingPatientGroupDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricingWriteItemDto;
+import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.PrepickedProductKeyDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationSupplementParentOrderRowDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.assembler.NurseStationAutoRollWriteAssembler;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.AutoRollEncounterProcessResult;
@@ -25,6 +30,7 @@ import com.openhis.health.application.inpatient.nursestation.inpatientbilling.ma
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.mapper.NurseStationInpatientBillingMapper;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.request.ActivateAutoGenRuleRequest;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.request.CancelNurseStationPricingRequest;
+import com.openhis.health.application.inpatient.nursestation.inpatientbilling.request.ChangeNurseStationPricingBusinessTimeRequest;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.request.ConfirmDirectNurseStationPricingRequest;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.request.ConfirmSupplementNurseStationPricingRequest;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.request.CreateAutoGenRuleRequest;
@@ -39,6 +45,7 @@ import com.openhis.health.application.inpatient.nursestation.inpatientbilling.re
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.request.UpdateAutoGenRuleRequest;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.response.ActivateAutoGenRuleResponse;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.response.CancelNurseStationPricingResponse;
+import com.openhis.health.application.inpatient.nursestation.inpatientbilling.response.ChangeNurseStationPricingBusinessTimeResponse;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.response.ConfirmDirectNurseStationPricingResponse;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.response.ConfirmSupplementNurseStationPricingResponse;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.response.CreateAutoGenRuleResponse;
@@ -53,6 +60,8 @@ import com.openhis.health.application.inpatient.nursestation.inpatientbilling.re
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.response.UpdateAutoGenRuleResponse;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.support.NurseStationAutoRollEncounterProcessor;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.support.NurseStationInpatientBillingProcedureOrchestrator;
+import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
+import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemDomainService;
@@ -64,9 +73,11 @@ import com.openhis.health.domain.custom.chargeitemautogen.queries.model.ChargeIt
 import com.openhis.health.domain.custom.chargeitemautogen.service.ChargeItemAutoGenDomainService;
 import com.openhis.health.domain.custom.chargeitemautogen.service.ChargeItemAutoGenQueryService;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.workflow.activitydefinition.entity.ActivityDefinition;
 import com.openhis.health.domain.workflow.activitydefinition.queries.model.ActivityDefinitionDetailQueryModel;
 import com.openhis.health.domain.workflow.activitydefinition.service.ActivityDefinitionQueryService;
+import com.openhis.health.domain.administration.encounter.entity.Encounter;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.application.shared.encounter.EncounterContextReader;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.support.InpatientAutoRollEncounterContextLoader;
@@ -81,6 +92,7 @@ import com.openhis.health.application.shared.product.ProductDefinitionCatalogPag
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.ReadModelOrderTypeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
 import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.enums.DispenseStatus;
 import com.openhis.health.domain.share.enums.GenerateSource;
@@ -93,18 +105,30 @@ import com.openhis.health.domain.workflow.devicerequest.service.DeviceRequestQue
 import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseDomainService;
 import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseQueryService;
 import com.openhis.health.application.shared.nursestation.DeviceDispenseNurseWorkflowOrchestrator;
+import com.openhis.health.domain.workflow.inventoryitem.queries.InventoryItemPageQuery;
+import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryItemModel;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemDomainService;
+import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemQueryService;
+import com.openhis.health.application.shared.inventory.InventoryItemProductSelectionPageLoader;
 import com.openhis.health.domain.administration.chargeitem.command.OffsetNursePricingChargeItemsByServiceAnchorsCommand;
+import com.openhis.health.domain.clinical.procedure.command.AmendProcedureRecordedTimeCommand;
+import com.openhis.health.domain.clinical.procedure.service.ProcedureDomainService;
+import com.openhis.health.domain.clinical.procedure.service.ProcedureQueryService;
+import com.openhis.health.domain.workflow.devicedispense.command.AmendDeviceDispenseDisplayTimeCommand;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.InpatientAutoRollNursingLevelQueryModel;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestDomainService;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
+import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.infrastructure.job.SchedulableJob;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -126,7 +150,8 @@ import java.util.Set;
  *
  * <p>选品目录：诊疗与耗材定价目录分页（排除药品）。</p>
  * <p>直接划价/医嘱补费：不经校对签发，同事务落请求、诊疗 Procedure（登录人执行）、收费与耗材自动发放（BR-IP-PRC-008/019）。</p>
- * <p>取消划价：已划价列表多选整行还原（IF-IP-PRC-06）。</p>
+ * <p>取消划价：已划价列表多选整行冲销留痕（IF-IP-PRC-06）。</p>
+ * <p>改划价展示时间：诊疗改 Procedure.recorded_time；耗材改发放展示时刻（IF-IP-PRC-07）。</p>
  * <p>自动计费：配置 CRUD/启停、已滚费用展开（IF-IP-ARG-09）与住院滚费任务（AS-IP-NUR-013 IF-IP-ARG-02～09）。</p>
  * <p>列表：父医嘱候选与已划价记录，均收窄至护士管理病区可见就诊。</p>
  * <p>接入：AppServiceControllerRegistrar → POST /api/app/nurseStationInpatientBilling/{methodName}。</p>
@@ -156,6 +181,8 @@ public class NurseStationInpatientBillingAppService {
     private final DeviceDispenseDomainService deviceDispenseDomainService;
     private final DeviceDispenseNurseWorkflowOrchestrator deviceDispenseNurseWorkflowOrchestrator;
     private final InventoryItemDomainService inventoryItemDomainService;
+    private final InventoryItemQueryService inventoryItemQueryService;
+    private final InventoryItemProductSelectionPageLoader inventoryItemProductSelectionPageLoader;
     private final ChargeItemDomainService chargeItemDomainService;
     private final NurseStationInpatientBillingMapper nurseStationInpatientBillingMapper;
     private final NurseStationInpatientBillingCatalogAssembler nurseStationInpatientBillingCatalogAssembler;
@@ -170,25 +197,42 @@ public class NurseStationInpatientBillingAppService {
     private final NurseStationAutoRollWriteAssembler nurseStationAutoRollWriteAssembler;
     private final NurseStationAutoRollEncounterProcessor nurseStationAutoRollEncounterProcessor;
     private final NurseStationInpatientBillingProcedureOrchestrator nurseStationInpatientBillingProcedureOrchestrator;
+    /** 诊疗划价展示轴：净剩 Procedure.recorded_time 读/写。 */
+    private final ProcedureQueryService procedureQueryService;
+    private final ProcedureDomainService procedureDomainService;
     /** 就诊出院结算轨禁止划价/取消划价等费用写路径。 */
     private final InpatientPendingSettlementClinicalGate inpatientPendingSettlementClinicalGate;
+    /** 计费人姓名批量解析。 */
+    private final PractitionerQueryService practitionerQueryService;
+    /** 在职护士下拉（配置计费人）。 */
+    private final PractitionerRoleScopeLoader practitionerRoleScopeLoader;
 
     /**
-     * IF-IP-PRC-01：划价选品目录分页（读侧 FIFO 批号售价 + 耗材 defaultDispenseLocationId）。
+     * IF-IP-PRC-01：划价选品目录分页。
      *
-     * @param request 分页、prepickedProductKeys、机构/库房筛选
+     * <p>耗材：按<strong>住院科室取药模板</strong>候选耗材房库存批号行分页（含数量 0；总量=库存行数；
+     * <strong>不</strong>按登录人岗位管辖药房）。诊疗：仍按产品定义分页。</p>
+     *
+     * @param request 分页、prepickedProductKeys、机构/库房筛选；耗材建议带 encounterId
      * @return 带定价行、单位槽、套餐子项、吸氧/心电 Gate 标记的目录页
      * @throws BusinessException EX-IP-PRC-101 分页非法或目录加载失败
      */
     public PageNurseStationPricingCatalogResponse pageNurseStationPricingCatalog(
         PageNurseStationPricingCatalogRequest request) {
         try {
+            // Gate：分页窗口须为正
             pageWindowGate.requirePositivePageWindow(
                 request,
                 InpatientNurseStationConstants.EX_IP_PRC_101,
                 "分页参数无效");
+            // 耗材 Tab：库存驱动，禁止产品目录分页再过滤（否则总量与空页脱节）
+            if (this.isDeviceOnlyPricingCatalogRequest(request)) {
+                return this.pageDevicePricingCatalogFromAdmissionDepartmentPharmacyInventory(request);
+            }
+            // Pre：诊疗产品定义分页
             var pageQuery = nurseStationInpatientBillingMapper.toProductDefinitionPageQuery(request);
             Page<ProductDefinitionDisplayDto> page = productDefinitionCatalogPageLoader.pageProductDefinition(pageQuery);
+            // Asm：诊疗目录行
             var rows = nurseStationInpatientBillingCatalogAssembler.assembleCatalogRows(request, page);
             return PagedResultBuilder.build(new PageNurseStationPricingCatalogResponse(), rows, page);
         } catch (BusinessException ex) {
@@ -201,12 +245,166 @@ public class NurseStationInpatientBillingAppService {
     }
 
     /**
+     * 请求是否仅为耗材表（前端耗材 Tab / 组套预选耗材）。
+     *
+     * @param request 选品请求
+     * @return true 表示只查耗材库存分页
+     */
+    private boolean isDeviceOnlyPricingCatalogRequest(PageNurseStationPricingCatalogRequest request) {
+        if (request == null || request.getProductTableNames() == null || request.getProductTableNames().isEmpty()) {
+            return false;
+        }
+        boolean hasDevice = false;
+        for (String table : request.getProductTableNames()) {
+            if (StringUtils.isEmpty(table)) {
+                continue;
+            }
+            String trimmed = table.trim();
+            if (TableNameConstants.ADM_DEVICE_DEFINITION.equalsIgnoreCase(trimmed)) {
+                hasDevice = true;
+                continue;
+            }
+            // 夹带非耗材表：走产品定义路径
+            return false;
+        }
+        return hasDevice;
+    }
+
+    /**
+     * 耗材选品：住院科室取药模板耗材房库存批号分页（含数量 0）。
+     *
+     * <p>库位来自 {@code ServiceLocationTemplate}（入院/当前住院科室），不按登录人管辖药房。</p>
+     *
+     * @param request 选品请求
+     * @return 库存驱动的划价目录页
+     */
+    private PageNurseStationPricingCatalogResponse pageDevicePricingCatalogFromAdmissionDepartmentPharmacyInventory(
+        PageNurseStationPricingCatalogRequest request
+    ) {
+        // Pre：住院科室优先取就诊 organizationId，回落请求 organizationUnitId
+        Long organizationId = this.resolvePricingCatalogOrganizationId(request);
+        if (organizationId == null) {
+            return PagedResultBuilder.build(
+                new PageNurseStationPricingCatalogResponse(),
+                List.of(),
+                0L,
+                request.getPageNo(),
+                request.getBoundedPageSize());
+        }
+        // 回写请求机构，供装配默认发放库房 match 取药模板
+        request.setOrganizationUnitId(organizationId);
+        List<Long> templatePharmacyIds =
+            nurseStationInpatientBillingCatalogAssembler.listAdmissionDepartmentDevicePharmacyLocationIds(
+                organizationId, request.getPharmacyLocationId());
+        // 无取药模板耗材房：空页，总量 0（与 content 一致）
+        if (templatePharmacyIds.isEmpty()) {
+            return PagedResultBuilder.build(
+                new PageNurseStationPricingCatalogResponse(),
+                List.of(),
+                0L,
+                request.getPageNo(),
+                request.getBoundedPageSize());
+        }
+        List<Long> locationIds = templatePharmacyIds;
+        // 请求指定库房时：须落在模板候选内，否则空页
+        if (request.getPharmacyLocationId() != null) {
+            if (!templatePharmacyIds.contains(request.getPharmacyLocationId())) {
+                return PagedResultBuilder.build(
+                    new PageNurseStationPricingCatalogResponse(),
+                    List.of(),
+                    0L,
+                    request.getPageNo(),
+                    request.getBoundedPageSize());
+            }
+            locationIds = List.of(request.getPharmacyLocationId());
+        }
+        InventoryItemPageQuery invQuery = new InventoryItemPageQuery();
+        invQuery.setItemTable(TableNameConstants.ADM_DEVICE_DEFINITION);
+        invQuery.setLocationIds(locationIds);
+        invQuery.setInventoryStatusEnum(PublicationStatus.ACTIVE.getCode());
+        // 有库存记录即返回，数量 0 不排除
+        invQuery.setIncludeZeroQuantity(Boolean.TRUE);
+        // 组套预选：按耗材定义 id 收窄库存行
+        List<Long> prepickedItemIds = this.resolvePrepickedDeviceItemIds(request);
+        if (prepickedItemIds != null) {
+            if (prepickedItemIds.isEmpty()) {
+                return PagedResultBuilder.build(
+                    new PageNurseStationPricingCatalogResponse(),
+                    List.of(),
+                    0L,
+                    request.getPageNo(),
+                    request.getBoundedPageSize());
+            }
+            invQuery.setItemIds(prepickedItemIds);
+        }
+        PageQueryBinder.bind(request, invQuery);
+        Pageable pageable = PageRequest.of(
+            request.springPageIndex(),
+            request.getBoundedPageSize(),
+            Sort.by(Sort.Direction.ASC, FieldNameConstants.ID));
+        // Pre：按库存批号行分页
+        Page<InventoryItemModel> inventoryPage =
+            inventoryItemProductSelectionPageLoader.page(invQuery, pageable);
+        // Asm：库存行 → 划价目录行（批号/剩余量/拆零价）
+        List<NurseStationPricingCatalogRowDto> rows =
+            nurseStationInpatientBillingCatalogAssembler.assembleDeviceCatalogRowsFromInventory(
+                request, inventoryPage.getContent());
+        return PagedResultBuilder.build(new PageNurseStationPricingCatalogResponse(), rows, inventoryPage);
+    }
+
+    /**
+     * 解析划价选品所用住院科室：优先就诊 organizationId，回落请求 organizationUnitId。
+     *
+     * @param request 选品请求
+     * @return 科室主键；均无则 null
+     */
+    private Long resolvePricingCatalogOrganizationId(PageNurseStationPricingCatalogRequest request) {
+        if (request == null) {
+            return null;
+        }
+        if (request.getEncounterId() != null) {
+            // 就诊主档 organizationId = 入院/当前住院科室（取药模板键）
+            return encounterQueryService.findOptionalEncounterEntityById(request.getEncounterId())
+                .map(Encounter::getOrganizationId)
+                .orElse(request.getOrganizationUnitId());
+        }
+        return request.getOrganizationUnitId();
+    }
+
+    /**
+     * 从 prepickedProductKeys 提取耗材定义 id；无预选时返回 null（表示不收窄）。
+     *
+     * @param request 选品请求
+     * @return null=不收窄；非 null=预选 id 列表（可空表示预选非法）
+     */
+    private List<Long> resolvePrepickedDeviceItemIds(PageNurseStationPricingCatalogRequest request) {
+        if (request.getPrepickedProductKeys() == null || request.getPrepickedProductKeys().isEmpty()) {
+            return null;
+        }
+        LinkedHashSet<Long> itemIds = new LinkedHashSet<>();
+        for (PrepickedProductKeyDto key : request.getPrepickedProductKeys()) {
+            if (key == null || key.getProductDefinitionId() == null) {
+                continue;
+            }
+            if (StringUtils.isEmpty(key.getProductTableName())) {
+                continue;
+            }
+            if (!TableNameConstants.ADM_DEVICE_DEFINITION.equalsIgnoreCase(key.getProductTableName().trim())) {
+                continue;
+            }
+            itemIds.add(key.getProductDefinitionId());
+        }
+        return new ArrayList<>(itemIds);
+    }
+
+    /**
      * IF-IP-PRC-02：直接划价确认（无父医嘱锚点）。
      *
      * <p>耗材 {@code performLocation} 须为 IF-IP-PRC-01 目录 {@code defaultDispenseLocationId} 回传；
-     * 入账价经 {@link NurseStationInpatientBillingWriteAssembler#reapplyAuthoritativeWritePricing} 重算。</p>
+     * 入账价经 {@link NurseStationInpatientBillingWriteAssembler#reapplyAuthoritativeWritePricing} 重算。
+     * 可选 {@code pricingTime} 写入客户可见展示轴（诊 recorded / 材发放展示）。</p>
      *
-     * @param request 1～50 行写明细，每行须 accountId 与数量等产品字段（单价由服务端重算）
+     * @param request 1～50 行写明细，每行须 accountId 与数量等产品字段（单价由服务端重算）；可选 pricingTime
      * @return 新建诊疗/耗材请求 id 汇总
      * @throws BusinessException EX-IP-PRC-201 夹带父锚点；EX-IP-PRC-202 缺耗材库位；其余同写路径
      */
@@ -214,7 +412,7 @@ public class NurseStationInpatientBillingAppService {
         ConfirmDirectNurseStationPricingRequest request) {
         try {
             nurseStationInpatientBillingMapper.validateDirectPricingItems(request.getItems());
-            return this.confirmPricingWrite(request.getItems());
+            return this.confirmPricingWrite(request.getItems(), request.getPricingTime());
         } catch (BusinessException ex) {
             throw ex;
         } catch (RuntimeException ex) {
@@ -237,7 +435,8 @@ public class NurseStationInpatientBillingAppService {
             for (NurseStationPricingWriteItemDto row : request.getItems()) {
                 this.assertParentOrderAllowed(row.getParentRequestAnchor(), row.getEncounterId());
             }
-            ConfirmDirectNurseStationPricingResponse core = this.confirmPricingWrite(request.getItems());
+            ConfirmDirectNurseStationPricingResponse core =
+                this.confirmPricingWrite(request.getItems(), request.getPricingTime());
             ConfirmSupplementNurseStationPricingResponse resp = new ConfirmSupplementNurseStationPricingResponse();
             resp.setSuccess(core.getSuccess());
             resp.setProcessedCount(core.getProcessedCount());
@@ -309,9 +508,11 @@ public class NurseStationInpatientBillingAppService {
     public ListNurseStationPricedOrdersResponse listNurseStationPricedOrders(
         ListNurseStationPricedOrdersRequest request) {
         try {
+            // Gate：可见就诊
             List<Long> visibleEncounterIds = this.resolveVisibleEncounterIds(request.getEncounterIds());
+            // Pre：骨架不按 created_at 预过滤；客户可见时间轴为 recorded/发放时刻，区间在 Asm 后过滤（BR-IP-PRC-030）
             List<InpatientOrderListSkeleton> skeleton = inpatientOrderListMergeAssembler.mergeNurseStationPricedOrders(
-                visibleEncounterIds, request.getPricedTimeFrom(), request.getPricedTimeTo(), request.getParentRequestId());
+                visibleEncounterIds, null, null, request.getParentRequestId());
             Set<Long> serviceIds = new LinkedHashSet<>();
             Set<Long> deviceReqIds = new LinkedHashSet<>();
             for (InpatientOrderListSkeleton row : skeleton) {
@@ -342,12 +543,21 @@ public class NurseStationInpatientBillingAppService {
                 deviceDispenseQueryService.mapDeviceDispenseIdsByDeviceRequestIds(deviceReqIds);
             Map<Long, String> primaryDispenseStatusByDeviceReqId =
                 deviceDispenseQueryService.mapPrimaryDispenseStatusByDeviceReqIds(deviceReqIds);
+            Map<Long, LocalDateTime> recordedTimeByServiceRequestId =
+                procedureQueryService.mapNetCompletedRecordedTimeByServiceRequestIds(
+                    visibleEncounterIds, serviceIds);
+            Map<Long, LocalDateTime> displayTimeByDeviceRequestId =
+                deviceDispenseQueryService.mapPrimaryDisplayTimeByDeviceReqIds(deviceReqIds);
             Map<Long, NurseStationInpatientBillingListAssembler.PricedOrderRowFacts> pricedRowFactsByOrderId =
                 nurseStationInpatientBillingListAssembler.buildPricedRowFactsByOrderId(skeleton);
+            // Asm：组装客户可见 pricedTime（recorded / 发放）
             List<NurseStationPricingPatientGroupDto> groups =
                 nurseStationInpatientBillingListAssembler.assemblePricedOrderGroups(
                     skeleton, chargeByServiceId, dispenseIdsByDeviceReqId, primaryDispenseStatusByDeviceReqId,
-                    pricedRowFactsByOrderId);
+                    pricedRowFactsByOrderId, recordedTimeByServiceRequestId, displayTimeByDeviceRequestId);
+            // Asm：按展示轴区间过滤（与列表「划价时间」一致）
+            groups = this.filterPricedGroupsByDisplayTime(
+                groups, request.getPricedTimeFrom(), request.getPricedTimeTo());
             ListNurseStationPricedOrdersResponse resp = new ListNurseStationPricedOrdersResponse();
             resp.setGroups(groups);
             return resp;
@@ -498,6 +708,193 @@ public class NurseStationInpatientBillingAppService {
     }
 
     /**
+     * IF-IP-PRC-07：修改划价客户可见时间（BR-IP-PRC-030～032）。
+     *
+     * <p>诊疗仅改净剩 COMPLETED Procedure.{@code recorded_time}；耗材仅改主发放
+     * {@code dispense_time}/{@code prepare_time}。不改 {@code occurrence_time}、Charge 发生时间、Request 创建时间。</p>
+     *
+     * @param request items（同冲销行键）+ newTime
+     * @return 成功行数
+     * @throws BusinessException EX-IP-PRC-102/401/402/403/406/407
+     */
+    public ChangeNurseStationPricingBusinessTimeResponse changeNurseStationPricingBusinessTime(
+        ChangeNurseStationPricingBusinessTimeRequest request) {
+        try {
+            // Gate：入参非空、≤50、禁止重复键（复用冲销校验）
+            nurseStationInpatientBillingMapper.validateCancelPricingItems(request.getItems());
+            if (request.getNewTime() == null) {
+                throw new BusinessException(
+                    InpatientNurseStationConstants.EX_IP_PRC_407,
+                    "请选择有效的划价时间");
+            }
+            Long operatorId = currentPractitionerResolver.requireOperatorId(
+                InpatientNurseStationConstants.EX_IP_PRC_407,
+                "修改划价时间失败，请稍后重试");
+            List<NurseStationPricingCancelItemDto> items = request.getItems();
+            LocalDateTime newTime = request.getNewTime();
+            List<Long> encounterIds = new ArrayList<>();
+            List<Long> serviceRequestIds = new ArrayList<>();
+            List<Long> deviceRequestIds = new ArrayList<>();
+            // Pre：分轨收集 id
+            for (NurseStationPricingCancelItemDto row : items) {
+                if (row == null) {
+                    continue;
+                }
+                encounterIds.add(row.getEncounterId());
+                if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(row.getOrderType())) {
+                    serviceRequestIds.add(row.getRequestId());
+                } else if (ReadModelOrderTypeConstants.DEVICE_REQUEST.equals(row.getOrderType())) {
+                    deviceRequestIds.add(row.getRequestId());
+                }
+            }
+            // Gate：可见性 + 出院结算轨（与冲销同口径，BR-IP-PRC-029）
+            this.assertEncountersVisibleForChargeWrite(encounterIds);
+            String nursePricingSource = GenerateSource.NURSE_PRICING.getCode();
+            Map<Long, ServiceRequestListModel> serviceModelById =
+                serviceRequestQueryService.mapListModelsByIds(serviceRequestIds);
+            Map<Long, DeviceRequestListModel> deviceModelById =
+                deviceRequestQueryService.mapListModelsByIds(deviceRequestIds);
+            for (NurseStationPricingCancelItemDto row : items) {
+                if (row == null) {
+                    continue;
+                }
+                if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(row.getOrderType())) {
+                    ServiceRequestListModel model = serviceModelById.get(row.getRequestId());
+                    // 诊疗行须 nurse-pricing 且就诊一致
+                    if (model == null || !nursePricingSource.equals(model.getGenerateSourceEnum())
+                        || !row.getEncounterId().equals(model.getEncounterId())) {
+                        throw new BusinessException(
+                            InpatientNurseStationConstants.EX_IP_PRC_402,
+                            "所选划价行无效，请刷新列表后重试");
+                    }
+                } else if (ReadModelOrderTypeConstants.DEVICE_REQUEST.equals(row.getOrderType())) {
+                    DeviceRequestListModel model = deviceModelById.get(row.getRequestId());
+                    // 耗材行须 nurse-pricing 且就诊一致
+                    if (model == null || !nursePricingSource.equals(model.getGenerateSourceEnum())
+                        || !row.getEncounterId().equals(model.getEncounterId())) {
+                        throw new BusinessException(
+                            InpatientNurseStationConstants.EX_IP_PRC_402,
+                            "所选划价行无效，请刷新列表后重试");
+                    }
+                }
+            }
+            // Pre：关联费用须全部待结算（与冲销同 Gate，避免已结算后改展示时间）
+            Set<Long> chargeAnchorIds = new LinkedHashSet<>(serviceRequestIds);
+            chargeAnchorIds.addAll(deviceRequestIds);
+            ChargeItemQueryCommand chargeCmd = new ChargeItemQueryCommand();
+            chargeCmd.setServiceIds(new ArrayList<>(chargeAnchorIds));
+            chargeCmd.setExcludeSupersededSettledLines(true);
+            List<ChargeItem> linkedCharges = chargeItemQueryService.listChargeItemsByServiceIds(chargeCmd);
+            this.assertCancelPricingChargeGate(linkedCharges, chargeAnchorIds, nursePricingSource);
+            Map<Long, Long> primaryDispenseIdByDeviceReqId =
+                deviceDispenseQueryService.mapPrimaryDispenseIdByDeviceReqIds(deviceRequestIds);
+            // Cmd：诊疗轨只改 recorded_time
+            for (NurseStationPricingCancelItemDto row : items) {
+                if (row == null || !ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(row.getOrderType())) {
+                    continue;
+                }
+                Optional<Long> procedureIdOpt = procedureQueryService.findNetCompletedProcedureIdByServiceRequest(
+                    row.getEncounterId(), row.getRequestId());
+                // 无净剩 COMPLETED Procedure 则无法改展示轴
+                if (procedureIdOpt.isEmpty()) {
+                    throw new BusinessException(
+                        InpatientNurseStationConstants.EX_IP_PRC_407,
+                        "划价执行记录不存在，请刷新后重试");
+                }
+                AmendProcedureRecordedTimeCommand amendCmd = new AmendProcedureRecordedTimeCommand();
+                amendCmd.setProcedureId(procedureIdOpt.get());
+                amendCmd.setRecordedTime(newTime);
+                amendCmd.setOperatorId(operatorId);
+                procedureDomainService.amendProcedureRecordedTime(amendCmd);
+            }
+            // Cmd：耗材轨只改发放/拣配展示时刻
+            for (NurseStationPricingCancelItemDto row : items) {
+                if (row == null || !ReadModelOrderTypeConstants.DEVICE_REQUEST.equals(row.getOrderType())) {
+                    continue;
+                }
+                Long dispenseId = primaryDispenseIdByDeviceReqId.get(row.getRequestId());
+                // 无主发放则无法改展示轴
+                if (dispenseId == null) {
+                    throw new BusinessException(
+                        InpatientNurseStationConstants.EX_IP_PRC_407,
+                        "耗材发放记录不存在，请刷新后重试");
+                }
+                AmendDeviceDispenseDisplayTimeCommand amendCmd = new AmendDeviceDispenseDisplayTimeCommand();
+                amendCmd.setDispenseId(dispenseId);
+                amendCmd.setDisplayTime(newTime);
+                amendCmd.setOperatorId(operatorId);
+                deviceDispenseDomainService.amendDeviceDispenseDisplayTime(amendCmd);
+            }
+            // Asm：整批成功
+            ChangeNurseStationPricingBusinessTimeResponse resp = new ChangeNurseStationPricingBusinessTimeResponse();
+            resp.setSuccess(Boolean.TRUE);
+            resp.setProcessedCount(items.size());
+            resp.setMessage("已修改划价时间");
+            return resp;
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            throw new BusinessException(
+                InpatientNurseStationConstants.EX_IP_PRC_407,
+                "修改划价时间失败，请稍后重试");
+        }
+    }
+
+    /**
+     * 按客户可见划价时间区间过滤已划价分组（空区间不过滤）。
+     *
+     * @param groups 已组装分组
+     * @param from   下限（含）；可空
+     * @param to     上限（含）；可空
+     * @return 过滤后分组（空组剔除）
+     */
+    private List<NurseStationPricingPatientGroupDto> filterPricedGroupsByDisplayTime(
+        List<NurseStationPricingPatientGroupDto> groups,
+        LocalDateTime from,
+        LocalDateTime to) {
+        if (groups == null || groups.isEmpty()) {
+            return new ArrayList<>();
+        }
+        // 无时间窗：原样返回
+        if (from == null && to == null) {
+            return groups;
+        }
+        List<NurseStationPricingPatientGroupDto> filtered = new ArrayList<>();
+        for (NurseStationPricingPatientGroupDto group : groups) {
+            if (group == null || group.getPricedOrders() == null) {
+                continue;
+            }
+            List<NurseStationPricedOrderRowDto> kept = new ArrayList<>();
+            for (NurseStationPricedOrderRowDto row : group.getPricedOrders()) {
+                if (row == null) {
+                    continue;
+                }
+                LocalDateTime pricedTime = row.getPricedTime();
+                // 无展示时刻：有时间窗时剔除，避免误入
+                if (pricedTime == null) {
+                    continue;
+                }
+                if (from != null && pricedTime.isBefore(from)) {
+                    continue;
+                }
+                if (to != null && pricedTime.isAfter(to)) {
+                    continue;
+                }
+                kept.add(row);
+            }
+            // 组内无行则不返回该就诊组
+            if (kept.isEmpty()) {
+                continue;
+            }
+            NurseStationPricingPatientGroupDto next = new NurseStationPricingPatientGroupDto();
+            next.setEncounterId(group.getEncounterId());
+            next.setPricedOrders(kept);
+            filtered.add(next);
+        }
+        return filtered;
+    }
+
+    /**
      * IF-IP-ARG-02：自动计费配置列表（含护理级别只读区）。
      *
      * @param request encounterId、patientId 必填；billDate 空则当日
@@ -530,6 +927,7 @@ public class NurseStationInpatientBillingAppService {
                 request.getEncounterId(), billDate);
         Set<Long> activityIds = new HashSet<>();
         Set<Long> chargeDefinitionIds = new HashSet<>();
+        Set<Long> billingPractitionerIds = new HashSet<>();
         for (ChargeItemAutoGenRuleQueryModel rule : rules) {
             if (rule == null) {
                 continue;
@@ -539,6 +937,9 @@ public class NurseStationInpatientBillingAppService {
             }
             if (rule.getChargeDefinitionId() != null) {
                 chargeDefinitionIds.add(rule.getChargeDefinitionId());
+            }
+            if (rule.getBillingPractitionerId() != null) {
+                billingPractitionerIds.add(rule.getBillingPractitionerId());
             }
         }
         Long nursingChargeDefinitionId = null;
@@ -560,19 +961,27 @@ public class NurseStationInpatientBillingAppService {
             nursingDefinitionById = Map.of(
                 nursingChargeDefinitionId, definitionById.get(nursingChargeDefinitionId));
         }
+        // Pre：计费人姓名批量解析（禁止列表 N+1）
+        Map<Long, String> billingNameById = Collections.emptyMap();
+        if (!billingPractitionerIds.isEmpty()) {
+            billingNameById = practitionerQueryService.mapDisplayNameByEntererIds(billingPractitionerIds);
+        }
+        // Pre：在职护士下拉供配置弹窗选用计费人
+        List<OptionDto> nurseOptions = this.buildAutoRollNurseOptions();
         // Asm：配置区与护理只读区分别装配（BR-IP-ARG-005 护理区只读）
         ListAutoRollConfigsResponse response = new ListAutoRollConfigsResponse();
         response.setConfigs(nurseStationAutoRollListAssembler.assembleConfigRows(
-            rules, activityById, definitionById, organizationId));
+            rules, activityById, definitionById, organizationId, billingNameById));
         response.setNursingLevelReadonly(nurseStationAutoRollListAssembler.assembleNursingReadonly(
             nursing, billDate, activityById, nursingDefinitionById, organizationId));
+        response.setNurseOptions(nurseOptions);
         return response;
     }
 
     /**
      * IF-IP-ARG-03：新增自动计费配置。
      *
-     * @param request 床位服务与定价必填；quantity 空则默认 1
+     * @param request 诊疗活动与定价必填；quantity 空则默认 1
      * @return 新建规则主键
      * @throws BusinessException EX-IP-ARG-201/301/302
      */
@@ -601,19 +1010,27 @@ public class NurseStationInpatientBillingAppService {
                 request.getPatientId(),
                 InpatientNurseStationConstants.EX_IP_ARG_201);
             this.assertEncounterAllowsChargeWrite(encounterSnapshot);
-            // Pre：床位服务 category=51 与定价有效（BR-IP-ARG-002/004）
-            this.assertBedServiceActivity(request.getActivityId());
+            // Pre：可日结诊疗类目与定价有效（BR-IP-ARG-003/004）；排除护理/转科/出院/嘱托
+            String activityCategoryCode = this.assertAutoRollConfigurableActivity(request.getActivityId());
             this.assertChargeDefinitionValid(request.getChargeDefinitionId());
             var command = nurseStationAutoRollMapper.toCreateAutoGenRuleCommand(request, operatorId);
             // Pre：未指定执行科室时锚定患者当前住院科室（BR-IP-ARG-018；与滚费 findActiveRulesByEncounter 上下文一致）
             if (command.getPerformingOrgId() == null) {
                 command.setPerformingOrgId(encounterSnapshot.getOrganizationId());
             }
+            // Pre：业务时刻缺省日末；计费人缺省当前登录人（BR-IP-ARG-015/019）
+            if (command.getBusinessTime() == null) {
+                command.setBusinessTime(InpatientNurseStationConstants.DAY_END_CLOCK);
+            }
+            if (command.getBillingPractitionerId() == null) {
+                command.setBillingPractitionerId(operatorId);
+            }
             // Cmd：写库默认 ACTIVE（BR-IP-ARG-016）
             Long ruleId = chargeItemAutoGenDomainService.createAutoGenRule(command);
-            // Cmd：ensure 长期床位 SR（BR-IP-ARG-019；配置保存即 VERIFIED，禁止手动执行）
+            // Cmd：ensure 长期滚费 SR（BR-IP-ARG-019；配置保存即 VERIFIED，禁止手动执行）
             var ensureCommand = nurseStationAutoRollMapper.toEnsureAutoRollBedLongTermServiceRequestCommand(
                 request, ruleId, operatorId);
+            ensureCommand.setCategoryEnum(activityCategoryCode);
             ensureCommand.setUnitCode(
                 nurseStationAutoRollWriteAssembler.resolveActivityOrderUnitCode(request.getActivityId()));
             serviceRequestDomainService.ensureAutoRollBedLongTermServiceRequest(ensureCommand);
@@ -656,9 +1073,9 @@ public class NurseStationInpatientBillingAppService {
                 request.getPatientId(),
                 InpatientNurseStationConstants.EX_IP_ARG_201);
             this.assertEncounterAllowsChargeWrite(updateSnapshot);
-            // Pre：按需校验床位服务与定价
+            // Pre：按需校验可日结诊疗类目与定价（排除护理/转科/出院/嘱托）
             if (request.getActivityId() != null) {
-                this.assertBedServiceActivity(request.getActivityId());
+                this.assertAutoRollConfigurableActivity(request.getActivityId());
             }
             if (request.getChargeDefinitionId() != null) {
                 this.assertChargeDefinitionValid(request.getChargeDefinitionId());
@@ -923,6 +1340,16 @@ public class NurseStationInpatientBillingAppService {
                         triggerTime);
                     continue;
                 }
+                // Gate：记进不计出——已办理出院且出院自然日不晚于 billDate：出院日及之后整 encounter 不滚（BR-IP-ARG-008）
+                if (this.isAutoRollDischargeDayOrAfter(ctx.getEndTime(), billDate)) {
+                    skippedCount++;
+                    log.debug(
+                        "住院滚费跳过 encounterId={} reason=dischargeDayOrAfter endTime={} billDate={}",
+                        ctx.getEncounterId(),
+                        ctx.getEndTime(),
+                        billDate);
+                    continue;
+                }
                 // Gate：无个人账户无法落 Charge，整 encounter 跳过
                 if (ctx.getAccountId() == null) {
                     skippedCount++;
@@ -970,8 +1397,8 @@ public class NurseStationInpatientBillingAppService {
         if (scannedEncounterCount > 0 && createdChargeItemCount == 0) {
             log.warn(
                 "住院滚费未生成任何待结算费用 billDate={} scanned={} skipped={} failed={}；"
-                    + "常见原因：首次分床日未跨午夜(BR-IP-ARG-007)、无个人账户、配置未ACTIVE/执行科室不匹配、"
-                    + "同日已幂等落账、lazy ensure 失败或定价解析失败",
+                    + "常见原因：首次分床日未跨午夜(BR-IP-ARG-007)、出院日及之后(记进不计出)、无个人账户、"
+                    + "配置未ACTIVE/护理已停嘱、同日已幂等落账或定价解析失败",
                 billDate,
                 scannedEncounterCount,
                 skippedCount,
@@ -997,13 +1424,59 @@ public class NurseStationInpatientBillingAppService {
     }
 
     /**
+     * 是否为出院日及之后的业务日（记进不计出：出院日整 encounter 不滚床位/护理）。
+     *
+     * @param endTime  就诊 end_time（办理出院写入；未出院可空）
+     * @param billDate 滚费业务日
+     * @return 应跳过滚费时为 true
+     */
+    private boolean isAutoRollDischargeDayOrAfter(LocalDateTime endTime, LocalDate billDate) {
+        if (endTime == null || billDate == null) {
+            return false;
+        }
+        // endDate <= billDate → 出院日及之后不计
+        return !endTime.toLocalDate().isAfter(billDate);
+    }
+
+    /**
+     * 组装自动计费配置弹窗「计费人」护士下拉。
+     *
+     * @return OptionDto 列表（value=practitionerId）
+     */
+    private List<OptionDto> buildAutoRollNurseOptions() {
+        List<Practitioner> nurses = practitionerRoleScopeLoader.listActivePractitionersForPlatformRole(
+            WhalePlatformRoleCodeConstants.ROLE_NURSE, null);
+        List<OptionDto> options = new ArrayList<>();
+        if (nurses == null || nurses.isEmpty()) {
+            return options;
+        }
+        for (Practitioner practitioner : nurses) {
+            if (practitioner == null || practitioner.getId() == null) {
+                continue;
+            }
+            String label = practitioner.getName();
+            if (StringUtils.isEmpty(label)) {
+                label = String.valueOf(practitioner.getId());
+            }
+            options.add(new OptionDto(practitioner.getId(), String.valueOf(practitioner.getId()), label));
+        }
+        return options;
+    }
+
+    /**
      * IF-IP-PRC-02/04 写路径公共编排：重算价、Gate、按产品类型分流落库。
      *
-     * @param items 1～50 行；直接划价无 based_on，补费由 Mapper 写入 based_on
+     * <p>{@code pricingTime} 写入客户可见展示轴：诊疗 Procedure.recorded（创建时与 occurrence 同值）；
+     * 耗材在发放单生成后 {@code amendDeviceDispenseDisplayTime} 回写 dispense/prepare。
+     * 空则取当前时刻。</p>
+     *
+     * @param items       1～50 行；直接划价无 based_on，补费由 Mapper 写入 based_on
+     * @param pricingTime 整批划价客户可见时刻；可空
      * @return 写结果与新建 id 列表
      */
     private ConfirmDirectNurseStationPricingResponse confirmPricingWrite(
-        List<NurseStationPricingWriteItemDto> items) {
+        List<NurseStationPricingWriteItemDto> items,
+        LocalDateTime pricingTime) {
         if (items == null || items.isEmpty()) {
             throw new BusinessException(
                 InpatientNurseStationConstants.EX_IP_PRC_204,
@@ -1021,6 +1494,11 @@ public class NurseStationInpatientBillingAppService {
         Long requesterId = currentPractitionerResolver.findPractitionerIdOrNull();
         if (requesterId == null) {
             requesterId = operatorId;
+        }
+        // Pre：整批客户可见划价时刻；前端可选改时，空则当前时刻
+        LocalDateTime effectivePricingTime = pricingTime;
+        if (effectivePricingTime == null) {
+            effectivePricingTime = LocalDateTime.now();
         }
         Set<Long> encounterIds = new HashSet<>();
         for (NurseStationPricingWriteItemDto row : items) {
@@ -1084,6 +1562,14 @@ public class NurseStationInpatientBillingAppService {
                 this.assertNursePricingDeviceDispenseFinalized(
                     deviceReqId, operatorId, requesterId, inventoryDecreaseAccumulator);
                 Long dispenseId = deviceDispenseQueryService.resolvePrimaryDispenseIdForDeviceRequest(deviceReqId);
+                // Cmd：客户可见划价时刻回写发放/拣配展示轴（与 IF-07 同域能力）
+                if (dispenseId != null) {
+                    AmendDeviceDispenseDisplayTimeCommand amendCmd = new AmendDeviceDispenseDisplayTimeCommand();
+                    amendCmd.setDispenseId(dispenseId);
+                    amendCmd.setDisplayTime(effectivePricingTime);
+                    amendCmd.setOperatorId(operatorId);
+                    deviceDispenseDomainService.amendDeviceDispenseDisplayTime(amendCmd);
+                }
                 var chargeCmd = nurseStationInpatientBillingMapper.toCreateChargeItemCommand(
                     row,
                     TableNameConstants.WKF_DEVICE_REQUEST,
@@ -1105,17 +1591,16 @@ public class NurseStationInpatientBillingAppService {
                 serviceRows, operatorId, requesterId);
             List<Long> serviceRequestIds = serviceRequestDomainService.createFromNursePricing(serviceCmd);
             createdServiceIds.addAll(serviceRequestIds);
-            LocalDateTime pricingTime = LocalDateTime.now();
             for (int i = 0; i < serviceRows.size(); i++) {
                 NurseStationPricingWriteItemDto row = serviceRows.get(i);
                 Long serviceRequestId = serviceRequestIds.get(i);
-                // Cmd：划价即视为当场执行；执行人/记录人固定为当前登录医务人员（operatorId）
+                // Cmd：划价即视为当场执行；执行人/记录人固定为当前登录医务人员；recorded/occurrence 用整批 pricingTime
                 Long procedureId = nurseStationInpatientBillingProcedureOrchestrator.registerCompletedNursePricingProcedure(
                     serviceRequestId,
                     row.getEncounterId(),
                     row.getPatientId(),
                     operatorId,
-                    pricingTime);
+                    effectivePricingTime);
                 var chargeCmd = nurseStationInpatientBillingMapper.toCreateChargeItemCommand(
                     row,
                     TableNameConstants.WKF_SERVICE_REQUEST,
@@ -1490,7 +1975,7 @@ public class NurseStationInpatientBillingAppService {
      * @param encounterId        就诊
      * @param patientId          患者
      * @param ruleName           规则名
-     * @param activityId         床位服务
+     * @param activityId         诊疗活动
      * @param chargeDefinitionId 定价
      * @param quantityValue      数量（可空）
      */
@@ -1515,32 +2000,67 @@ public class NurseStationInpatientBillingAppService {
     }
 
     /**
-     * 床位服务须为 category=51（BR-IP-ARG-002）。
+     * 自动计费选品须为可日结诊疗：有效 ActivityDefinition，排除护理/转科/出院/嘱托（BR-IP-ARG-003）。
      *
      * @param activityId 活动定义主键
+     * @return 诊疗类目 code（写入 ensure 长期 SR 的 category_enum）
      */
-    private void assertBedServiceActivity(Long activityId) {
+    private String assertAutoRollConfigurableActivity(Long activityId) {
         try {
             ActivityDefinitionDetailQueryModel catalog = activityDefinitionQueryService.getServiceCatalog(activityId);
             if (catalog == null || catalog.getBaseInfo() == null) {
                 throw new BusinessException(
                     InpatientNurseStationConstants.EX_IP_ARG_302,
-                    "床位服务无效，请重新选品");
+                    "诊疗项目无效，请重新选品");
             }
-            String categoryCode = catalog.getBaseInfo().getCategoryCode();
-            if (!"51".equals(categoryCode)) {
+            String categoryCode = StringUtils.trimToNull(catalog.getBaseInfo().getCategoryCode());
+            // Gate：类目缺失视为目录脏数据，拒绝写入配置
+            if (categoryCode == null) {
                 throw new BusinessException(
                     InpatientNurseStationConstants.EX_IP_ARG_302,
-                    "床位服务无效，请重新选品");
+                    "诊疗项目无效，请重新选品");
             }
+            // Gate：护理走医嘱校对滚费分支；转科/出院/嘱托不计费，均禁止入配置表
+            if (this.isExcludedFromAutoRollConfigCategory(categoryCode)) {
+                throw new BusinessException(
+                    InpatientNurseStationConstants.EX_IP_ARG_302,
+                    "护理、转科、出院、嘱托等不计费项目不能配置自动计费，请重新选品");
+            }
+            return categoryCode;
         } catch (BusinessException ex) {
             if (ErrorCodeConstants.ACTIVITY_DEFINITION_NOT_FOUND.equals(ex.getErrorCode())) {
                 throw new BusinessException(
                     InpatientNurseStationConstants.EX_IP_ARG_302,
-                    "床位服务无效，请重新选品");
+                    "诊疗项目无效，请重新选品");
             }
             throw ex;
         }
+    }
+
+    /**
+     * 是否禁止写入自动计费配置的诊疗类目（护理防双计；转科/出院/嘱托不计费）。
+     *
+     * @param categoryEnum 诊疗类目 code
+     * @return 须排除为 true
+     */
+    private boolean isExcludedFromAutoRollConfigCategory(String categoryEnum) {
+        String category = StringUtils.trimToNull(categoryEnum);
+        if (category == null) {
+            return false;
+        }
+        if (InpatientNurseStationConstants.SERVICE_CATEGORY_NURSING.equals(category)) {
+            return true;
+        }
+        if (InpatientNurseStationConstants.SERVICE_CATEGORY_TRANSFER.equals(category)) {
+            return true;
+        }
+        if (InpatientNurseStationConstants.SERVICE_CATEGORY_DISCHARGE.equals(category)) {
+            return true;
+        }
+        if (InpatientNurseStationConstants.SERVICE_CATEGORY_ENTRUST.equals(category)) {
+            return true;
+        }
+        return false;
     }
 
     /**

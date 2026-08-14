@@ -55,6 +55,7 @@ import com.openhis.health.domain.workflow.inventoryitem.queries.InventoryItemPag
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryItemModel;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemDomainService;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemQueryService;
+import com.openhis.health.application.shared.inventory.InventoryItemProductSelectionPageLoader;
 import com.openhis.health.domain.workflow.inventoryitem.valueobject.InventoryMatchKey;
 import com.openhis.health.domain.workflow.supplydelivery.service.SupplyDeliveryDomainService;
 import com.openhis.health.domain.workflow.supplydelivery.service.SupplyDeliveryQueryService;
@@ -65,7 +66,7 @@ import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequ
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestValidationModel;
 import com.openhis.health.domain.workflow.supplyrequest.support.SupplyPersistedSplitQuantity;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestDomainService;
-import com.openhis.health.application.inventory.support.SupplyRequestPricedWriteOrchestrator;
+import com.openhis.health.application.shared.supplyrequest.SupplyRequestPricedWriteOrchestrator;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQueryService;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
@@ -114,6 +115,7 @@ public class InventoryWarehouseTransferOutAppService {
     private final SupplyDeliveryQueryService supplyDeliveryQueryService;
     private final InventoryItemDomainService inventoryItemDomainService;
     private final InventoryItemQueryService inventoryItemQueryService;
+    private final InventoryItemProductSelectionPageLoader inventoryItemProductSelectionPageLoader;
     private final LocationQueryService locationQueryService;
     private final PractitionerQueryService practitionerQueryService;
     private final PractitionerRoleScopeLoader practitionerRoleScopeLoader;
@@ -581,6 +583,7 @@ public class InventoryWarehouseTransferOutAppService {
 
             String resolvedLot = this.resolveLotNumberForTransferOutInventory(line.getLotNumber());
             InventoryMatchKey srcKey = new InventoryMatchKey();
+            srcKey.setSupplierId(line.getSupplierId());
             srcKey.setLotNumber(resolvedLot);
             srcKey.setLocationId(sourceLocationId);
             srcKey.setItemTable(line.getItemTable());
@@ -633,6 +636,7 @@ public class InventoryWarehouseTransferOutAppService {
         for (TransferOutDestIncr op : destIncrs) {
             SupplyRequestModel line = op.line;
             InventoryMatchKey dstKey = new InventoryMatchKey();
+            dstKey.setSupplierId(op.sourceInventorySupplierId);
             dstKey.setLotNumber(op.resolvedLot);
             dstKey.setLocationId(op.purposeLocationId);
             dstKey.setItemTable(line.getItemTable());
@@ -783,7 +787,7 @@ public class InventoryWarehouseTransferOutAppService {
         Pageable pageable = PageRequest.of(
             request.springPageIndex(), request.getBoundedPageSize(), Sort.by(Sort.Direction.ASC, FieldNameConstants.ID));
         try {
-            Page<InventoryItemModel> page = inventoryItemQueryService.queryInventoryItemsByPage(invQuery, pageable);
+            Page<InventoryItemModel> page = inventoryItemProductSelectionPageLoader.page(invQuery, pageable);
             List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
             for (InventoryItemModel inv : page.getContent()) {
                 if (inv == null || inv.getItemId() == null || StringUtils.isEmpty(inv.getItemTable())) {
@@ -864,13 +868,9 @@ public class InventoryWarehouseTransferOutAppService {
                 if (hints != null) {
                     List<ProductDefinitionCatalogUnitBandDto> bands = hints.getUnitBands();
                     dto.setUnitBands(bands);
-                    BigDecimal packageAnchor = lotCostUnit;
-                    if (packageAnchor == null && StringUtils.isNotEmpty(inv.getItemTable()) && inv.getItemId() != null) {
-                        packageAnchor = this.chargeItemDefinitionQueryService.resolveFirstPurchasePriceValue(
-                            inv.getItemTable().trim(), inv.getItemId());
-                    }
+                    // —— 库存流转选品槽锚仅 LOT_NUMBER_COST；无批号价不灌目录 PURCHASE。——
                     ProductDefinitionCatalogUnitBandsAssembler.applyInboundWarehouseBandPrices(
-                        bands, pr, packageAnchor);
+                        bands, pr, lotCostUnit);
                 }
                 records.add(dto);
             }
@@ -1715,7 +1715,7 @@ public class InventoryWarehouseTransferOutAppService {
         private String splitUnitCode;
     /** 目的侧新建库存行时冗余分类/检索码；与 agree 循环内批量读模型快照一致。 */
         private ProductDefinitionDisplayDto productDefinition;
-    /** 源库命中行上的供应商标识，用于目的库首次建账 {@code supplier_id}（四元组定位不收窄供应商）。 */
+    /** 源库命中行上的供应商标识，用于目的库五元组定位与首次建账 {@code supplier_id}。 */
         private Long sourceInventorySupplierId;
     /** 源库命中行生产日期，目的库新建时供应行未带 {@code start_time} 则承袭。 */
         private LocalDateTime sourceInventoryProductionDate;

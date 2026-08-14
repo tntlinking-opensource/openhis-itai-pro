@@ -304,6 +304,10 @@ public class InpatientSettleReadLoader {
             chargeItems, productByKey, false);
         // Pre：IF-IP-STL-07 历史以 payment 为主；本批合计真源 tendered_amount，明细行金额对齐 payment
         BigDecimal paymentBatchTotal = inpatientSettleReadAssembler.resolvePaymentBatchTotal(activePayment);
+        // Pre：医保少补为 0 时 tendered/display 均为 0，回落收费项合计供开票勾稽与页头展示
+        if (paymentBatchTotal == null || paymentBatchTotal.compareTo(BigDecimal.ZERO) <= 0) {
+            paymentBatchTotal = sumChargeItemAmount(chargeItems);
+        }
         inpatientSettleReadAssembler.alignChargeLineAmountsToPaymentMaster(lines, paymentBatchTotal);
         Map<Long, List<PaymentStaticSnapshotQueryModel>> staticRowsByPaymentId =
             paymentReconciliationQueryService.mapPaymentRecStaticsByReconciliationIds(

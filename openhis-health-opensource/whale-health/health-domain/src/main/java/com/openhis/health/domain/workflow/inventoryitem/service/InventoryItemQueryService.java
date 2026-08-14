@@ -363,6 +363,86 @@ public class InventoryItemQueryService {
     }
 
     /**
+     * 划价/目录回落：按物品表 + 多 itemId 批量加载可用批次行（<strong>不限定库位</strong>）。
+     *
+     * <p>可用口径与 {@link #findAvailableCatalogRowsForOrder} 同构（可用品、正数量、未过期、剔除锁定），
+     * 仅省略库位 IN 谓词。供发材模板候选库位为空时仍能按品展开批号行。</p>
+     *
+     * <p>仅本聚合 {@code InventoryItemRepository}；规模风险：itemIds 须为当前页产品 id（禁止全库扫）。</p>
+     *
+     * @param itemTable 物品主表名
+     * @param itemIds   物品定义主键集合
+     * @return 可用行列表；入参缺表名或 itemIds 为空时返回空列表
+     */
+    public List<InventoryCatalogAvailabilityRowModel> findAvailableCatalogRowsByItemIds(
+        String itemTable,
+        Collection<Long> itemIds
+    ) {
+        List<InventoryCatalogAvailabilityRowModel> result = new ArrayList<>();
+        if (StringUtils.isEmpty(itemTable) || itemIds == null || itemIds.isEmpty()) {
+            return result;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        List<Long> idList = new ArrayList<>(itemIds);
+        Specification<InventoryItem> specification = (root, cq, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            // 不限库位：仅保留可用品/正数量/未过期/未删除
+            this.appendCoreAvailableInventoryCatalogRowPredicatesWithoutLocation(root, cb, now, predicates);
+            predicates.add(cb.equal(root.get(FieldNameConstants.ITEM_TABLE), itemTable.trim()));
+            predicates.add(root.get(FieldNameConstants.ITEM_ID).in(idList));
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+        return this.loadAvailableInventoryCatalogRowsBySpecification(specification);
+    }
+
+    /**
+     * 护士划价选品：按物品表 + 多 itemId × 管辖库位批量加载库存目录行（<strong>含账面数量 0</strong>）。
+     *
+     * <p>与 {@link #findAvailableCatalogRowsForOrder} 同构（可用品、未过期、未删除、库位 IN、剔除锁定），
+     * 唯一差异：数量谓词为 {@code quantity &gt;= 0}（有库存记录即返回，零库存行仍展示；无记录不返回）。</p>
+     *
+     * <p>仅本聚合 {@code InventoryItemRepository}；规模风险：itemIds/locationIds 须为当前页与管辖库位（禁止全库扫）。</p>
+     *
+     * @param itemTable   物品主表名
+     * @param itemIds     物品定义主键集合
+     * @param locationIds 允许的库位主键（如登录人管辖科室药房）
+     * @return 库存目录行；入参缺表名或任一侧集合为空时返回空列表
+     */
+    public List<InventoryCatalogAvailabilityRowModel> findCatalogInventoryRowsIncludingZeroForLocations(
+        String itemTable,
+        Collection<Long> itemIds,
+        List<Long> locationIds
+    ) {
+        List<InventoryCatalogAvailabilityRowModel> result = new ArrayList<>();
+        if (StringUtils.isEmpty(itemTable) || itemIds == null || itemIds.isEmpty()) {
+            return result;
+        }
+        if (locationIds == null || locationIds.isEmpty()) {
+            return result;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        List<Long> idList = new ArrayList<>(itemIds);
+        List<Long> locationIdList = new ArrayList<>(locationIds);
+        Specification<InventoryItem> specification = (root, cq, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            // 含数量 0：有库存行即返回；无记录则自然不命中
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(
+                cb.equal(root.get(FieldNameConstants.INVENTORY_STATUS_ENUM), PublicationStatus.ACTIVE.getCode()));
+            predicates.add(cb.greaterThanOrEqualTo(root.get(FieldNameConstants.QUANTITY), BigDecimal.ZERO));
+            jakarta.persistence.criteria.Predicate notExpired =
+                cb.or(cb.isNull(root.get(FieldNameConstants.EXPIRATION_DATE)),
+                    cb.greaterThan(root.get(FieldNameConstants.EXPIRATION_DATE), now));
+            predicates.add(notExpired);
+            predicates.add(root.get(FieldNameConstants.LOCATION_ID).in(locationIdList));
+            predicates.add(cb.equal(root.get(FieldNameConstants.ITEM_TABLE), itemTable.trim()));
+            predicates.add(root.get(FieldNameConstants.ITEM_ID).in(idList));
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+        return this.loadAvailableInventoryCatalogRowsBySpecification(specification);
+    }
+
+    /**
      * 按库存项主键批量加载「可用目录行」视图（与 {@link #findAvailableCatalogRowsForOrder} 同一可用口径：可用品状态、正数量、未过期、剔除锁定）。
      *
      * <p>
@@ -443,8 +523,25 @@ public class InventoryItemQueryService {
     private void appendCoreAvailableInventoryCatalogRowPredicates(jakarta.persistence.criteria.Root<InventoryItem> root,
         jakarta.persistence.criteria.CriteriaBuilder cb, LocalDateTime now, List<Long> locationIds,
         List<jakarta.persistence.criteria.Predicate> predicates) {
-        predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+        this.appendCoreAvailableInventoryCatalogRowPredicatesWithoutLocation(root, cb, now, predicates);
         predicates.add(root.get(FieldNameConstants.LOCATION_ID).in(locationIds));
+    }
+
+    /**
+     * 可用目录行共通谓词（不含库位限定）：未删除、可用品、正数量、未过期。
+     *
+     * @param root       库存项根
+     * @param cb         条件构建器
+     * @param now        当前时刻（效期比较）
+     * @param predicates 输出列表
+     */
+    private void appendCoreAvailableInventoryCatalogRowPredicatesWithoutLocation(
+        jakarta.persistence.criteria.Root<InventoryItem> root,
+        jakarta.persistence.criteria.CriteriaBuilder cb,
+        LocalDateTime now,
+        List<jakarta.persistence.criteria.Predicate> predicates
+    ) {
+        predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
         predicates
             .add(cb.equal(root.get(FieldNameConstants.INVENTORY_STATUS_ENUM), PublicationStatus.ACTIVE.getCode()));
         predicates.add(cb.greaterThan(root.get(FieldNameConstants.QUANTITY), BigDecimal.ZERO));
@@ -518,37 +615,22 @@ public class InventoryItemQueryService {
     }
 
     /**
-     * 按四元组（库位 + 物品表 + 物品主键 + 批号字面值）精确匹配单条正常供应且未删除的库存行（DM-WKF-008；{@code supplierId} 不参与定位）。
+     * 按五元组（库位 + 物品表 + 物品主键 + 批号字面值 + 供应商）精确匹配单条正常供应且未删除的库存行（DM-WKF-008）。
      *
-     * @param key 复合匹配键（仅 {@code locationId}/{@code itemTable}/{@code itemId}/{@code lotNumber} 参与）
+     * <p>{@code supplierId} 非空时按供应商收窄；为空时仅当同批号下至多一条 ACTIVE 未删行时返回，多供应商并存返回 null（避免误并）。</p>
+     *
+     * @param key 复合匹配键
      * @return 读模型；key 为空或未命中时为 null
      */
     public InventoryItemModel findMatchingInventory(InventoryMatchKey key) {
         if (key == null) {
             return null;
         }
-        if (key.getLocationId() == null || key.getItemId() == null || StringUtils.isEmpty(key.getItemTable())) {
+        Optional<Long> id = this.findFirstIdByInventoryMatchKey(key);
+        if (id.isEmpty()) {
             return null;
         }
-        String lot;
-        if (key.getLotNumber() == null) {
-            lot = "";
-        } else {
-            lot = key.getLotNumber();
-        }
-        List<InventoryItem> rows =
-            inventoryItemRepository.findByLotNumberAndLocationIdAndItemTableAndItemIdOrderByIdAsc(lot,
-                key.getLocationId(), key.getItemTable().trim(), key.getItemId());
-        for (InventoryItem row : rows) {
-            if (row == null || Boolean.TRUE.equals(row.getIsDeleted())) {
-                continue;
-            }
-            if (!PublicationStatus.ACTIVE.getCode().equals(row.getInventoryStatusEnum())) {
-                continue;
-            }
-            return this.toItemModel(row);
-        }
-        return null;
+        return this.getInventoryItemById(id.get());
     }
 
     /**
@@ -711,7 +793,10 @@ public class InventoryItemQueryService {
     }
 
     /**
-     * 库存项分页检索：表、物品、库位、状态与关键字（名称/批号/检索码）组合过滤。
+     * 库存项分页检索：表、物品、库位、状态与关键字组合过滤。
+     *
+     * <p>关键字匹配库存冗余列（名称/批号/拼音/五笔），并可 OR 应用层预解析的药品/耗材定义主键
+     *（编码、商品名等，见 {@link InventoryItemPageQuery#getResolvedMedicationDefinitionIdsForKeyword()}）。</p>
      *
      * @param query 筛选条件
      * @param pageable 分页
@@ -725,28 +810,52 @@ public class InventoryItemQueryService {
                 if (StringUtils.isNotEmpty(query.getItemTable())) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.ITEM_TABLE), query.getItemTable().trim()));
                 }
-                if (query.getItemId() != null) {
+                if (query.getItemIds() != null && !query.getItemIds().isEmpty()) {
+                    // 预选/本页物品 id IN（优先于单 itemId）
+                    predicates.add(root.get(FieldNameConstants.ITEM_ID).in(query.getItemIds()));
+                } else if (query.getItemId() != null) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.ITEM_ID), query.getItemId()));
                 }
-                if (query.getLocationId() != null) {
+                if (query.getLocationIds() != null && !query.getLocationIds().isEmpty()) {
+                    // 多库位 IN（优先于单 locationId；管辖科室药房等）
+                    predicates.add(root.get(FieldNameConstants.LOCATION_ID).in(query.getLocationIds()));
+                } else if (query.getLocationId() != null) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.LOCATION_ID), query.getLocationId()));
                 }
                 if (query.getInventoryStatusEnum() != null) {
                     predicates.add(
                         cb.equal(root.get(FieldNameConstants.INVENTORY_STATUS_ENUM), query.getInventoryStatusEnum()));
                 }
-                if (Boolean.TRUE.equals(query.getPositiveQuantityOnly())) {
+                if (Boolean.TRUE.equals(query.getIncludeZeroQuantity())) {
+                    // 护士划价等：有库存记录即可，数量 0 仍返回
+                    predicates.add(cb.greaterThanOrEqualTo(root.get(FieldNameConstants.QUANTITY), BigDecimal.ZERO));
+                } else if (Boolean.TRUE.equals(query.getPositiveQuantityOnly())) {
                     // —— 选品分页仅展示账面量大于零的批号行，与库存明细「有库存」列表口径一致。——
                     predicates.add(cb.greaterThan(root.get(FieldNameConstants.QUANTITY), BigDecimal.ZERO));
                 }
                 if (StringUtils.isNotEmpty(query.getKeyword())) {
                     String trimmed = query.getKeyword().trim();
                     String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(trimmed);
-                    predicates.add(cb.or(cb.like(cb.lower(root.get(FieldNameConstants.NAME)), likeIc),
+                    List<jakarta.persistence.criteria.Predicate> keywordOr = new ArrayList<>();
+                    // 库存项冗余列：名称、批号、拼音/五笔（不含商品名；商品名经定义预解析）
+                    keywordOr.add(cb.or(
+                        cb.like(cb.lower(root.get(FieldNameConstants.NAME)), likeIc),
                         cb.like(cb.lower(root.get(FieldNameConstants.LOT_NUMBER)), likeIc),
                         cb.like(cb.lower(root.get(FieldNameConstants.PY_STR)), likeIc),
                         cb.like(cb.lower(root.get(FieldNameConstants.WB_STR)), likeIc)));
-                    // B.2.1：库存选品关键字精确全等置顶
+                    // 产品定义预解析：编码、商品名等（B.6.4；与库存明细选品同口径）
+                    if (query.getResolvedMedicationDefinitionIdsForKeyword() != null
+                        && !query.getResolvedMedicationDefinitionIdsForKeyword().isEmpty()) {
+                        keywordOr.add(this.medicationDefinitionItemPredicate(
+                            root, cb, query.getResolvedMedicationDefinitionIdsForKeyword()));
+                    }
+                    if (query.getResolvedDeviceDefinitionIdsForKeyword() != null
+                        && !query.getResolvedDeviceDefinitionIdsForKeyword().isEmpty()) {
+                        keywordOr.add(this.deviceDefinitionItemPredicate(
+                            root, cb, query.getResolvedDeviceDefinitionIdsForKeyword()));
+                    }
+                    predicates.add(cb.or(keywordOr.toArray(new jakarta.persistence.criteria.Predicate[0])));
+                    // B.2.1：库存选品关键字对冗余列精确全等置顶（定义 id 命中无法在本表做全等）
                     KeywordExactFirstOrderSupport.applyExactFirstOrder(
                         cq,
                         cb,
@@ -992,6 +1101,11 @@ public class InventoryItemQueryService {
                 chrgitmOr.add(this.medicationDefinitionItemPredicate(root, cb, query.getResolvedMedicationDefinitionIds()));
                 chrgitmOr.add(this.deviceDefinitionItemPredicate(root, cb, query.getResolvedDeviceDefinitionIds()));
                 predicates.add(cb.or(chrgitmOr.toArray(new jakarta.persistence.criteria.Predicate[0])));
+            }
+            // 基药筛选：仅药品行且 item_id 落在预解析定义主键（耗材无基药标识，直接排除）
+            if (query.getBasicFlag() != null) {
+                predicates.add(this.medicationDefinitionItemPredicate(
+                    root, cb, query.getResolvedMedicationDefinitionIds()));
             }
             this.appendLowStockAggregateKeyPredicates(root, cb, predicates, query.getLowStockWarningAggregateKeys());
             return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
@@ -1275,9 +1389,13 @@ public class InventoryItemQueryService {
     }
 
     /**
-     * 按四元组匹配既有可扣减库存项主键：{@code location_id + item_table + item_id + lot_number}（批号为持久化字面值）； 仅返回正常供应、未删除且未锁定的首条（与
+     * 按五元组匹配既有可扣减库存项主键：
+     * {@code location_id + item_table + item_id + lot_number + supplier_id}（批号为持久化字面值）；
+     * 仅返回正常供应、未删除且未锁定的首条。
      *
-     * @param key 匹配键（仅库位、物品表、物品主键、批号参与）
+     * <p>{@code supplierId} 为空时：同批号仅一条可参与行则命中；多条（典型为多供应商）抛业务异常，强制调用方带上供应商。</p>
+     *
+     * @param key 匹配键
      * @return 命中则返回主键
      */
     public Optional<Long> findFirstIdByInventoryMatchKey(InventoryMatchKey key) {
@@ -1290,14 +1408,22 @@ public class InventoryItemQueryService {
         } else {
             lot = key.getLotNumber();
         }
-        return this.findFirstActiveUnlockedIdByQuadruple(key.getLocationId(), key.getItemTable(), key.getItemId(), lot);
+        return this.findFirstActiveUnlockedIdByInventoryMatch(
+            key.getSupplierId(), key.getLocationId(), key.getItemTable(), key.getItemId(), lot);
     }
 
     /**
-     * 内部：四元组定位首条可参与增减的库存主键（ACTIVE、未删除、未锁定）。
+     * 内部：五元组（供应商非空）或同批号唯一行定位首条可参与增减的库存主键（ACTIVE、未删除、未锁定）。
+     *
+     * @param supplierId 供应商；可空（空则要求同批号至多一行）
+     * @param locationId 库位
+     * @param itemTable  物品表
+     * @param itemId     物品主键
+     * @param lotNumber  批号字面值
+     * @return 命中主键
      */
-    private Optional<Long> findFirstActiveUnlockedIdByQuadruple(Long locationId, String itemTable, Long itemId,
-        String lotNumber) {
+    private Optional<Long> findFirstActiveUnlockedIdByInventoryMatch(Long supplierId, Long locationId, String itemTable,
+        Long itemId, String lotNumber) {
         if (locationId == null || itemId == null || StringUtils.isEmpty(itemTable)) {
             return Optional.empty();
         }
@@ -1307,8 +1433,15 @@ public class InventoryItemQueryService {
         } else {
             lot = lotNumber;
         }
-        List<InventoryItem> rows = inventoryItemRepository
-            .findByLotNumberAndLocationIdAndItemTableAndItemIdOrderByIdAsc(lot, locationId, itemTable.trim(), itemId);
+        List<InventoryItem> rows;
+        // 供应商非空：五元组精确候选
+        if (supplierId != null) {
+            rows = inventoryItemRepository.findBySupplierIdAndLotNumberAndLocationIdAndItemTableAndItemIdOrderByIdAsc(
+                supplierId, lot, locationId, itemTable.trim(), itemId);
+        } else {
+            rows = inventoryItemRepository.findByLotNumberAndLocationIdAndItemTableAndItemIdOrderByIdAsc(lot,
+                locationId, itemTable.trim(), itemId);
+        }
         List<InventoryItem> activeRows = new ArrayList<>();
         for (InventoryItem row : rows) {
             if (row == null || Boolean.TRUE.equals(row.getIsDeleted())) {
@@ -1325,6 +1458,11 @@ public class InventoryItemQueryService {
         List<InventoryItem> unlocked = this.withoutLockedInventoryRows(activeRows);
         if (unlocked.isEmpty()) {
             return Optional.empty();
+        }
+        // 未带供应商且同批号多行：禁止静默取首条，避免扣错供应商账面
+        if (supplierId == null && unlocked.size() > 1) {
+            throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT,
+                "同一库房同一物品同一批号存在多条供应商库存行，定位时须指定供应商");
         }
         InventoryItem first = unlocked.get(0);
         if (first.getId() == null) {
@@ -1500,7 +1638,8 @@ public class InventoryItemQueryService {
      * 定位门诊发药将要扣减的<strong>单条</strong>库存项主键（药品物品表 + 药品定义 + 库房 + 批号）。
      *
      * <p>
-     * 排除已逻辑删除行；若命中零条或多条（例如不同供应商五元组并存的历史脏数据）则阻断发药，避免误扣。
+     * 排除已逻辑删除行；同批号多供应商并存时按 FEFO（效期升序 → 创建时间升序 → id 升序）择首条扣减，
+     * 批号价仍按「品+批号」取价，不因供应商拆价。
      * </p>
      *
      * @param itemTableName 物品主表名
@@ -1508,7 +1647,7 @@ public class InventoryItemQueryService {
      * @param pharmacyLocationId 库房库位主键
      * @param lotNumber 批号（非空且 trim 后用于等值匹配）
      * @return 库存项主键
-     * @throws BusinessException 参数非法、未命中或命中多条
+     * @throws BusinessException 参数非法或未命中
      */
     public Long requireInventoryItemIdForMedicationDispenseBatch(String itemTableName, Long medicationId,
         Long pharmacyLocationId, String lotNumber) {
@@ -1521,14 +1660,14 @@ public class InventoryItemQueryService {
     }
 
     /**
-     * 解析药品在指定库房+批号下的唯一启用库存账面行（与发药扣减定位规则一致）。
+     * 解析药品在指定库房+批号下的库存账面行；同批号多行时 FEFO 择首条（与发药扣减定位规则一致）。
      *
      * @param itemTableName 物品主表名
      * @param medicationId 药品定义主键
      * @param pharmacyLocationId 库房库位主键
      * @param lotNumber 批号
      * @return 非空实体
-     * @throws BusinessException 参数非法、未命中或命中多条
+     * @throws BusinessException 参数非法或未命中
      */
     private InventoryItem resolveSingleActiveMedicationInventoryBatchEntity(String itemTableName, Long medicationId,
         Long pharmacyLocationId, String lotNumber) {
@@ -1558,18 +1697,85 @@ public class InventoryItemQueryService {
         if (activeRows.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.EX_OPP_205_STOCK_OR_LOCATION_INVALID, "未找到与发放批号匹配的库存账面行");
         }
-        if (activeRows.size() > 1) {
-            throw new BusinessException(ErrorCodeConstants.EX_OPP_205_STOCK_OR_LOCATION_INVALID,
-                "同一药品同一批号存在多条库存账面记录，禁止自动扣减");
+        return this.pickFefoFirstInventoryRow(activeRows);
+    }
+
+    /**
+     * 同批号多账面行时按 FEFO 择首条：效期升序（空效期靠后）→ 创建时间升序 → id 升序。
+     *
+     * @param activeRows 未删候选；调用方保证非空
+     * @return FEFO 首条
+     */
+    private InventoryItem pickFefoFirstInventoryRow(List<InventoryItem> activeRows) {
+        InventoryItem best = activeRows.get(0);
+        for (int i = 1; i < activeRows.size(); i++) {
+            InventoryItem candidate = activeRows.get(i);
+            if (candidate == null) {
+                continue;
+            }
+            if (this.compareInventoryRowFefo(candidate, best) < 0) {
+                best = candidate;
+            }
         }
-        return activeRows.get(0);
+        return best;
+    }
+
+    /**
+     * FEFO 比较：效期早者优先；同效期创建早者优先；再比主键。
+     *
+     * @param left  左行
+     * @param right 右行
+     * @return 负值表示 left 更先出
+     */
+    private int compareInventoryRowFefo(InventoryItem left, InventoryItem right) {
+        LocalDateTime leftExp = left.getExpirationDate();
+        LocalDateTime rightExp = right.getExpirationDate();
+        if (leftExp == null && rightExp != null) {
+            return 1;
+        }
+        if (leftExp != null && rightExp == null) {
+            return -1;
+        }
+        if (leftExp != null && rightExp != null) {
+            int byExp = leftExp.compareTo(rightExp);
+            if (byExp != 0) {
+                return byExp;
+            }
+        }
+        LocalDateTime leftCreated = left.getCreatedAt();
+        LocalDateTime rightCreated = right.getCreatedAt();
+        if (leftCreated == null && rightCreated != null) {
+            return 1;
+        }
+        if (leftCreated != null && rightCreated == null) {
+            return -1;
+        }
+        if (leftCreated != null && rightCreated != null) {
+            int byCreated = leftCreated.compareTo(rightCreated);
+            if (byCreated != 0) {
+                return byCreated;
+            }
+        }
+        Long leftId = left.getId();
+        Long rightId = right.getId();
+        if (leftId == null && rightId == null) {
+            return 0;
+        }
+        if (leftId == null) {
+            return 1;
+        }
+        if (rightId == null) {
+            return -1;
+        }
+        return leftId.compareTo(rightId);
     }
 
     /**
      * 定位耗材发放将要扣减的<strong>单条</strong>库存项主键（物品表 + 耗材定义主键 + 库位 + 批号）。
      *
      * <p>
-     * 规则与 {@link #requireInventoryItemIdForMedicationDispenseBatch} 同构：排除逻辑删除；零条或多条均阻断。
+     * 规则与 {@link #requireInventoryItemIdForMedicationDispenseBatch} 同构：排除逻辑删除；
+     * 同批号多供应商时 FEFO 择首条。
      * </p>
      *
      * @param itemTableName 物品主表名（如 {@code adm_device_definition}）
@@ -1589,14 +1795,14 @@ public class InventoryItemQueryService {
     }
 
     /**
-     * 按批号+库房+耗材定义定位唯一未删库存批次；0 或多条均抛业务异常。
+     * 按批号+库房+耗材定义定位未删库存批次；同批号多行时 FEFO 择首条。
      *
      * @param itemTableName       物品表名
      * @param deviceDefinitionId  耗材定义 id
      * @param locationId          库房 id
      * @param lotNumber           批号
-     * @return 唯一库存行
-     * @throws BusinessException 参数缺失、无批次或多批次
+     * @return FEFO 首条库存行
+     * @throws BusinessException 参数缺失或无批次
      */
     private InventoryItem resolveSingleActiveDeviceInventoryBatchEntity(String itemTableName, Long deviceDefinitionId,
         Long locationId, String lotNumber) {
@@ -1625,11 +1831,7 @@ public class InventoryItemQueryService {
         if (activeRows.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.EX_OPP_205_STOCK_OR_LOCATION_INVALID, "未找到与发放批号匹配的耗材库存账面行");
         }
-        if (activeRows.size() > 1) {
-            throw new BusinessException(ErrorCodeConstants.EX_OPP_205_STOCK_OR_LOCATION_INVALID,
-                "同一耗材同一批号存在多条库存账面记录，禁止自动扣减");
-        }
-        return activeRows.get(0);
+        return this.pickFefoFirstInventoryRow(activeRows);
     }
 
     /**

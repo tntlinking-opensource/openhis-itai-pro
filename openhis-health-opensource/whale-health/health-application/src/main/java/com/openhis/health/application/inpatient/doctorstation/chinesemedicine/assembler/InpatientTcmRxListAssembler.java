@@ -24,6 +24,7 @@ import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConsta
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.application.shared.advice.TcmMethodCodeDisplayAssembler;
+import com.openhis.health.application.shared.financial.ContractExpenseNatureAssembler;
 import com.openhis.health.application.shared.option.FrequencyOptionLoader;
 import com.openhis.health.application.shared.option.TerminologyOptionLoader;
 import com.openhis.health.application.shared.advice.OrderCatalogDisplayAssembler;
@@ -67,6 +68,8 @@ public class InpatientTcmRxListAssembler {
     private final FrequencyOptionLoader frequencyOptionLoader;
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     private final ClinicalCatalogPriceResolver clinicalCatalogPriceResolver;
+    /** 合同费用性质分类文案（行级 contract_id → 自费/医保等）。 */
+    private final ContractExpenseNatureAssembler contractExpenseNatureAssembler;
 
     /**
      * 将领域按方聚合读模型 enrich 为方头+行 DTO。
@@ -88,6 +91,7 @@ public class InpatientTcmRxListAssembler {
                 Comparator.nullsLast(Comparator.naturalOrder())));
         Set<Long> medicationIds = new HashSet<>();
         Set<Long> requestIds = new HashSet<>();
+        Set<Long> contractIds = new HashSet<>();
         for (TcmHerbalPrescriptionGroupQueryModel group : orderedGroups) {
             if (group.getLines() == null) {
                 continue;
@@ -99,9 +103,15 @@ public class InpatientTcmRxListAssembler {
                 if (line.getId() != null) {
                     requestIds.add(line.getId());
                 }
+                if (line.getContractId() != null) {
+                    contractIds.add(line.getContractId());
+                }
             }
         }
         Map<Long, String> medicationNameById = loadMedicationNames(medicationIds);
+        // Pre：行级费用性质文案（contract_id → 自费/公费/省医保等）
+        Map<Long, String> feeNatureTextByContractId =
+            this.contractExpenseNatureAssembler.mapCategoryTextByContractIdIn(contractIds);
         // Pre：批量加载药嘱锚定的 ChargeItem，供已计费行展示账单单价（BR-PRICE-SRC-001）
         TcmLineChargeEnrich chargeEnrich = loadLineChargeEnrich(requestIds);
         Map<String, String> tcmMethodLabelByCode =
@@ -142,6 +152,8 @@ public class InpatientTcmRxListAssembler {
             if (firstLine != null) {
                 header.setDecoctionMethodCode(TcmMethodCodeDisplayAssembler.readContentJsonTextField(
                     firstLine.getContentJson(), "decoctionMethodCode"));
+                // 方头诊断多选回显：取组内首行已落库的就诊诊断 ids 串
+                header.setEncounterDiagnosisIds(firstLine.getEncounterDiagnosisIds());
             }
             List<TcmRxLineDto> lineDtos = new ArrayList<>();
             if (group.getLines() != null) {
@@ -168,6 +180,11 @@ public class InpatientTcmRxListAssembler {
                     lineDto.setDosageInstructionCode(line.getDosageInstruction());
                     lineDto.setDosageInstructionText(OrderCatalogDisplayAssembler.resolveCategoryDisplay(
                         dosageInstructionLabelByCode, line.getDosageInstruction()));
+                    // Asm：行级费用性质（以行为主）
+                    lineDto.setContractId(line.getContractId());
+                    if (line.getContractId() != null) {
+                        lineDto.setFeeNatureText(feeNatureTextByContractId.get(line.getContractId()));
+                    }
                     lineDtos.add(lineDto);
                 }
             }

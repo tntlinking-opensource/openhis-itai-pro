@@ -36,7 +36,7 @@ public class CreateTemplateRequest {
     private Boolean enabled = true;
     /**
      * 医生站「存为模版」：仅允许 PERSONAL / DEPARTMENT；
-     * 所有者与科室取当前登录上下文（避免前端雪花精度问题）。
+     * 为 true 时所有者与科室取当前登录会话（忽略请求体中的 id）。
      */
     private Boolean fromDoctorStation;
 }

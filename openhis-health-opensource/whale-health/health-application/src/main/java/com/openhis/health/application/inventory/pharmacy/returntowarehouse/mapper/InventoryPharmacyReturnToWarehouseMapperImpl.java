@@ -15,7 +15,6 @@ import com.openhis.health.application.inventory.pharmacy.returntowarehouse.dto.W
 import com.openhis.health.application.inventory.pharmacy.returntowarehouse.request.*;
 import com.openhis.health.application.inventory.pharmacy.returntowarehouse.response.*;
 import com.openhis.health.application.inventory.pharmacy.returntowarehouse.support.ReturnToWarehouseStockInLineHelper;
-import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.custom.supplier.queries.model.SupplierListItemQueryModel;
@@ -27,6 +26,7 @@ import com.openhis.health.domain.share.enums.SupplyStatus;
 import com.openhis.health.domain.share.enums.SupplyType;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
+import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryItemModel;
 import com.openhis.health.domain.workflow.supplydelivery.command.CreateSupplyDeliveryCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.AgreeRequestCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.CreateReturnCommand;
@@ -61,7 +61,6 @@ import java.util.Objects;
 @RequiredArgsConstructor
 public class InventoryPharmacyReturnToWarehouseMapperImpl implements InventoryPharmacyReturnToWarehouseMapper {
 
-    private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
     private final LocationQueryService locationQueryService;
 
     /**
@@ -499,7 +498,8 @@ public class InventoryPharmacyReturnToWarehouseMapperImpl implements InventoryPh
             CreateReturnCommand.CreateReturnItemCommand item =
                 new CreateReturnCommand.CreateReturnItemCommand();
             item.setBusNo(busNo);
-            if (resolvedOriginal != null) {
+            // —— 空串与 null 一律落 null，表示自由选品退库（未关联入库单）。——
+            if (!StringUtils.isEmpty(resolvedOriginal)) {
                 item.setOriginalBusNo(resolvedOriginal.trim());
             } else {
                 item.setOriginalBusNo(null);
@@ -951,47 +951,35 @@ public class InventoryPharmacyReturnToWarehouseMapperImpl implements InventoryPh
     }
 
     /**
-     * 将产品定义读模型分页装配为退药库选品分页响应（本场景已废弃自由选品）。
+     * 库存读模型与产品读模型映射为退库选品行 DTO（IF-PHA-RTW-11）。
      *
-     * @param page 产品定义读模型分页
-     * @return 选品分页响应
+     * @param inv 库存项读模型
+     * @param pr  产品读模型，可 null
+     * @return 选品行 DTO
      */
     @Override
-    public PageProductsForReturnToWarehouseResponse toPageProductsForReturnToWarehouseResponse(
-        Page<ProductDefinitionDisplayDto> page) {
-        List<ProductDefinitionItemDto> content = new ArrayList<>();
-        for (ProductDefinitionDisplayDto pr : page.getContent()) {
-            if (pr == null) {
-                continue;
-            }
-            content.add(this.toProductDefinitionItemDto(pr));
-        }
-        return PagedResultBuilder.build(new PageProductsForReturnToWarehouseResponse(), content, page);
-    }
-
-    /**
-     * 产品定义读模型 → 退药库选品 DTO（含首条采购价 enrich）。
-     *
-     * @param pr 产品定义展示 DTO
-     * @return 选品 DTO
-     */
-    private ProductDefinitionItemDto toProductDefinitionItemDto(ProductDefinitionDisplayDto pr) {
+    public ProductDefinitionItemDto toProductDefinitionItemDtoFromInventory(
+        InventoryItemModel inv, ProductDefinitionDisplayDto pr) {
         ProductDefinitionItemDto dto = new ProductDefinitionItemDto();
-        dto.setProductDefinitionId(pr.getProductDefinitionId());
-        dto.setProductTableName(pr.getProductTableName());
-        dto.setProductName(pr.getProductName());
-        dto.setMerchandiseName(pr.getMerchandiseName());
-        dto.setUnitCode(pr.getPurchaseUnitCode());
-        dto.setMinUnitCode(pr.getSplitUnitCode());
-        dto.setCategoryCode(pr.getCategoryCode());
-        dto.setPrice(pr.getPrice());
-        if (StringUtils.isNotEmpty(pr.getProductTableName()) && pr.getProductDefinitionId() != null) {
-            dto.setPurchasePrice(chargeItemDefinitionQueryService.resolveFirstPurchasePriceValue(
-                pr.getProductTableName().trim(), pr.getProductDefinitionId()));
+        dto.setInventoryItemId(inv.getId());
+        dto.setProductTableName(inv.getItemTable());
+        dto.setProductDefinitionId(inv.getItemId());
+        dto.setAvailableQuantity(inv.getQuantity());
+        dto.setLotNumber(inv.getLotNumber());
+        dto.setExpirationDate(inv.getExpirationDate());
+        if (pr != null) {
+            // —— 读模型在场时补齐编号/名称/规格/厂家，便于选品弹窗一眼识别。——
+            dto.setProductBusNo(pr.getProductBusNo());
+            dto.setProductName(pr.getProductName());
+            dto.setSpecification(pr.getTotalVolume());
+            dto.setManufacturer(pr.getManufacturer());
+        } else {
+            dto.setProductName(null);
+            dto.setSpecification(null);
+            dto.setManufacturer(null);
         }
-        dto.setManufacturer(pr.getManufacturer());
-        dto.setPyStr(pr.getPyStr());
-        dto.setWbStr(pr.getWbStr());
+        dto.setUnitBands(null);
+        dto.setPurchaseUnitPrice(null);
         return dto;
     }
 

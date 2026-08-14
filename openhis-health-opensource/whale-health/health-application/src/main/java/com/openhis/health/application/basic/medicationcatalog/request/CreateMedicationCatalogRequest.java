@@ -209,14 +209,19 @@ public class CreateMedicationCatalogRequest {
 
     /**
      * 采购参考价（维护态 {@code PURCHASE}，元/包装单位）。
+     *
+     * <p>落库经 {@code MonetaryAmountSupport#scaleCalc} 保留 6 位；中药饮片（分类码 {@code 4}）
+     * 维护页 UI 展示/录入允许 3 位小数，西药/中成药仍为 2 位展示。</p>
      */
-    @Schema(description = "采购参考价（元/包装单位）", example = "10.5")
+    @Schema(description = "采购参考价（元/包装单位；中药 UI 可 3 位）", example = "10.5")
     private BigDecimal purchasePrice;
 
     /**
      * 销售参考价（维护态 {@code SALE}，元/包装单位）。
+     *
+     * <p>落库 6 位；中药饮片维护页 UI 展示/录入允许 3 位小数。</p>
      */
-    @Schema(description = "销售参考价（元/包装单位）", example = "15.8")
+    @Schema(description = "销售参考价（元/包装单位；中药 UI 可 3 位）", example = "15.8")
     private BigDecimal retailPrice;
 
     /** 药品最高零售限价。 */

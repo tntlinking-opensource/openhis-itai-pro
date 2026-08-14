@@ -185,6 +185,57 @@ public class NurseStationCostDetailAssembler {
     }
 
     /**
+     * 费用清单打印：成对剔除冲销留痕（原行 + 冲销行）。
+     *
+     * <p>剔除集合 = 结果集内 {@code refund_id} 非空的冲销行及其指向的原行
+     * + 调用方根据窗外冲销行反查得到的已被冲销原行主键。</p>
+     *
+     * @param rows                      候选收费行
+     * @param offsetSourceIdsOutsideWin 日期窗外冲销行指向的原行主键（可空）
+     * @return 剔除成对留痕后的行
+     */
+    public List<InpatientNurseStationCostDetailChargeRow> filterOutOffsetPairedChargeRows(
+        List<InpatientNurseStationCostDetailChargeRow> rows,
+        Set<Long> offsetSourceIdsOutsideWin) {
+        if (rows == null || rows.isEmpty()) {
+            return List.of();
+        }
+        // 成对剔除 id：冲销行自身、其 refund_id 原行、窗外冲销反查到的原行
+        Set<Long> excludeIds = new LinkedHashSet<>();
+        if (offsetSourceIdsOutsideWin != null && !offsetSourceIdsOutsideWin.isEmpty()) {
+            excludeIds.addAll(offsetSourceIdsOutsideWin);
+        }
+        for (InpatientNurseStationCostDetailChargeRow row : rows) {
+            if (row == null || row.getChargeItem() == null) {
+                continue;
+            }
+            ChargeItem charge = row.getChargeItem();
+            if (charge.getRefundId() == null) {
+                continue;
+            }
+            // 冲销行与被冲销原行一并剔除
+            if (charge.getId() != null) {
+                excludeIds.add(charge.getId());
+            }
+            excludeIds.add(charge.getRefundId());
+        }
+        if (excludeIds.isEmpty()) {
+            return rows;
+        }
+        List<InpatientNurseStationCostDetailChargeRow> filtered = new ArrayList<>();
+        for (InpatientNurseStationCostDetailChargeRow row : rows) {
+            if (row == null || row.getChargeItem() == null || row.getChargeItem().getId() == null) {
+                continue;
+            }
+            // 保留未被成对冲销的有效费用行
+            if (!excludeIds.contains(row.getChargeItem().getId())) {
+                filtered.add(row);
+            }
+        }
+        return filtered;
+    }
+
+    /**
      * 展示产品是否为嘱托活动（类目 52 或名称「嘱托」）。
      *
      * @param product 产品读模型；可 null
@@ -447,7 +498,7 @@ public class NurseStationCostDetailAssembler {
             }
             NurseStationCostSummaryActivityLineDto activityLine = new NurseStationCostSummaryActivityLineDto();
             activityLine.setChargeItemId(charge.getId());
-            // 组内倒序已按逻辑 occurrence；列展示优先 displayDateTime（执行 recorded）
+            // 组内倒序/列展示：客户可见轴（recorded / 发放 / 滚费 occurrence）
             activityLine.setActivityDateTime(row.getBusinessDateTime());
             activityLine.setDisplayDateTime(row.getDisplayDateTime());
             Long operatorId = this.resolveActivityOperatorId(charge);
@@ -467,7 +518,9 @@ public class NurseStationCostDetailAssembler {
     }
 
     /**
-     * 解析汇总展开明细操作人：划价/滚费优先 enterer，医嘱执行优先 performer。
+     * 解析汇总展开明细操作人：仅读 {@code performer_id}（划价护士/执行人）。
+     *
+     * <p>{@code enterer_*} 语义为收费人/收费时间（BR-OPC-016），禁止再当作划价/执行操作人。</p>
      *
      * @param charge 收费明细
      * @return 操作人 Practitioner 主键；无则 null
@@ -476,16 +529,7 @@ public class NurseStationCostDetailAssembler {
         if (charge == null) {
             return null;
         }
-        if (this.isPricingGenerateSource(charge.getGenerateSourceEnum())) {
-            if (charge.getEntererId() != null) {
-                return charge.getEntererId();
-            }
-            return charge.getPerformerId();
-        }
-        if (charge.getPerformerId() != null) {
-            return charge.getPerformerId();
-        }
-        return charge.getEntererId();
+        return charge.getPerformerId();
     }
 
     /**

@@ -38,8 +38,8 @@ public class PagePeriodBalanceDetailRequest extends AbstractHealthPageRequest {
     @Schema(description = "物品主表；不传时由服务端按库位现库/期初快照解析")
     private String itemTable;
 
-    /** 默认 true：隐藏期间全 0 业务行。 */
-    @Schema(description = "默认 true：隐藏期间全 0 业务行")
+    /** 默认 true：仅展示期间有业务的品种，并按筛选结果分页。 */
+    @Schema(description = "默认 true：仅展示期间有业务的品种（先筛后分页）；false=全目录分页")
     private Boolean isBus;
 
     /** 账平筛选：true 仅账平，false 仅不平，null 不过滤。 */

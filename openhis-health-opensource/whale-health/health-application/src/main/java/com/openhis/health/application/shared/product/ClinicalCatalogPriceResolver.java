@@ -275,6 +275,41 @@ public class ClinicalCatalogPriceResolver {
         Long clientResolvedDispenseLocationId,
         String methodCode
     ) {
+        // 无显式批号：回落 FIFO 首批（与历史写路径同构）
+        return resolveDraftChargePriceLine(
+            productTableName,
+            productDefinitionId,
+            productRow,
+            organizationId,
+            encounterId,
+            clientResolvedDispenseLocationId,
+            methodCode,
+            null);
+    }
+
+    /**
+     * 医嘱/划价写路径单价：药耗可锁定选中批号对 {@code LOT_NUMBER_PRICE}；空批号则 FIFO。
+     *
+     * @param productTableName                 产品定义表
+     * @param productDefinitionId              产品定义主键
+     * @param productRow                       产品读模型（categoryCode / 占用换算）
+     * @param organizationId                   开立机构
+     * @param encounterId                      就诊（占用预减）
+     * @param clientResolvedDispenseLocationId 目录下拉已解析发药库位；可空则回落模板 + FIFO
+     * @param methodCode                       给药途径（药品）
+     * @param leadingInventoryLotNumber        选中批号；非空时跳过 FIFO、按该批号对价
+     * @return 费用草稿定价行；无命中时为 null
+     */
+    public ChargeItemDefinition resolveDraftChargePriceLine(
+        String productTableName,
+        Long productDefinitionId,
+        ProductDefinitionDisplayDto productRow,
+        Long organizationId,
+        Long encounterId,
+        Long clientResolvedDispenseLocationId,
+        String methodCode,
+        String leadingInventoryLotNumber
+    ) {
         if (productDefinitionId == null || StringUtils.isEmpty(productTableName)) {
             return null;
         }
@@ -295,7 +330,7 @@ public class ClinicalCatalogPriceResolver {
             if (productRow != null) {
                 categoryCode = productRow.getCategoryCode();
             }
-            // 药耗：透传目录已解析库位 + 占用预减后 FIFO 批号售价；库位空则回落模板 match
+            // 药耗：可选锁定批号；否则透传库位 + 占用预减后 FIFO
             ClinicalCatalogUnitPriceQuery priceCmd = ClinicalCatalogUnitPriceQuery.builder()
                 .productTableName(productTableName)
                 .productDefinitionId(productDefinitionId)
@@ -304,12 +339,17 @@ public class ClinicalCatalogPriceResolver {
                 .organizationId(organizationId)
                 .encounterId(encounterId)
                 .clientResolvedDispenseLocationId(clientResolvedDispenseLocationId)
+                .leadingInventoryLotNumber(leadingInventoryLotNumber)
                 .priceLines(priceLines)
                 .productRowForOccupancy(productRow)
                 .build();
             ChargeItemDefinition catalogPrice = resolveCatalogUnitPrice(priceCmd);
             if (catalogPrice != null) {
                 return catalogPrice;
+            }
+            // 已锁定批号却无该批价：禁止跨批号冒充（与执行落账同口径）
+            if (StringUtils.isNotEmpty(leadingInventoryLotNumber)) {
+                return null;
             }
             // 无 FIFO 批号可对时才允许跨批号择优兜底（BR-ORD-001 无库存）
             return selectFirstPriceLineForChargeDraft(productTableName, priceLines);
@@ -682,16 +722,22 @@ public class ClinicalCatalogPriceResolver {
     /**
      * 从定价行列表中取 LOT_NUMBER_PRICE 类型最优行（priority 小优先，同 priority id 小优先）。
      *
-     * <p><strong>仅</strong>用于无 FIFO/执行批号时的兜底，或同批号多行决胜前的类型过滤；
-     * 有明确批号的落账禁止直接调用本方法冒充该批售价。</p>
+     * <p><strong>仅</strong>用于无 FIFO/执行批号时的展示/暂存兜底，或同批号多行决胜前的类型过滤；
+     * 有明确批号的<strong>落账</strong>禁止直接调用本方法冒充该批售价。</p>
      *
      * @param lines 同实例定价行
      * @return 最优批号价行；无匹配时 null
      */
-    private static ChargeItemDefinition selectBestLotNumberPriceLine(List<ChargeItemDefinition> lines) {
+    public ChargeItemDefinition selectBestLotNumberPriceLine(List<ChargeItemDefinition> lines) {
         String lotPriceCode = PriceType.LOT_NUMBER_PRICE.getCode();
         ChargeItemDefinition best = null;
+        if (lines == null || lines.isEmpty()) {
+            return null;
+        }
         for (ChargeItemDefinition line : lines) {
+            if (line == null) {
+                continue;
+            }
             if (lotPriceCode.equals(line.getPriceTypeCode())) {
                 best = betterPriceLine(best, line);
             }

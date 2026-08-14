@@ -16,6 +16,7 @@ import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
@@ -23,6 +24,8 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
 
 /**
@@ -65,9 +68,9 @@ public class CashierSettlementQueryService {
     }
 
     /**
-     * 交账历史分页。
+     * 交账历史分页（不按药房收窄；收款日结等沿用）。
      *
-     * @param typeEnum       OP_PAYMENT / IP_PAYMENT 等
+     * @param typeEnum       OP_PAYMENT / IP_PAYMENT / OP_PHARMACY / IP_PHARMACY
      * @param submittedFrom  提交时刻起
      * @param submittedTo    提交时刻止
      * @param pageable       分页
@@ -78,43 +81,102 @@ public class CashierSettlementQueryService {
         LocalDateTime submittedFrom,
         LocalDateTime submittedTo,
         Pageable pageable) {
+        return this.pageHistory(typeEnum, submittedFrom, submittedTo, null, pageable);
+    }
+
+    /**
+     * 交账历史分页；可选按 {@code location_id IN} 收窄（药房日结管辖药房）。
+     *
+     * <p>{@code locationIds == null}：不按药房过滤；
+     * {@code locationIds} 非 null 且为空：无可见药房，直接空页（禁止退化为全院历史）。</p>
+     *
+     * @param typeEnum       OP_PAYMENT / IP_PAYMENT / OP_PHARMACY / IP_PHARMACY
+     * @param submittedFrom  提交时刻起（含）
+     * @param submittedTo    提交时刻止（含）
+     * @param locationIds    药房主键集合；null 表示不限
+     * @param pageable       分页
+     * @return 历史页（按 {@code submitted_at} 降序）
+     */
+    public Page<CashierSettlementHistoryItemQueryModel> pageHistory(
+        String typeEnum,
+        LocalDateTime submittedFrom,
+        LocalDateTime submittedTo,
+        Collection<Long> locationIds,
+        Pageable pageable) {
         if (StringUtils.isEmpty(typeEnum) || submittedFrom == null || submittedTo == null || pageable == null) {
             return Page.empty(pageable);
         }
-        Page<CashierSettlement> page =
-            this.cashierSettlementRepository.findByTypeEnumAndSubmittedAtBetweenAndIsDeletedFalseOrderBySubmittedAtDesc(
-                typeEnum,
-                submittedFrom,
-                submittedTo,
-                pageable);
+        LinkedHashSet<Long> distinctLocationIds = null;
+        if (locationIds != null) {
+            distinctLocationIds = new LinkedHashSet<>();
+            for (Long locationId : locationIds) {
+                if (locationId != null) {
+                    distinctLocationIds.add(locationId);
+                }
+            }
+            // Gate：显式空集合 = 无可视药房，禁止退化为不加 location 谓词
+            if (distinctLocationIds.isEmpty()) {
+                return Page.empty(pageable);
+            }
+        }
+        LinkedHashSet<Long> locationFilter = distinctLocationIds;
+        Specification<CashierSettlement> specification = (root, criteriaQuery, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.TYPE_ENUM), typeEnum));
+            predicates.add(cb.greaterThanOrEqualTo(root.get(FieldNameConstants.SUBMITTED_AT), submittedFrom));
+            predicates.add(cb.lessThanOrEqualTo(root.get(FieldNameConstants.SUBMITTED_AT), submittedTo));
+            if (locationFilter != null) {
+                predicates.add(root.get(FieldNameConstants.LOCATION_ID).in(locationFilter));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        Pageable sortedPageable = PageRequest.of(
+            pageable.getPageNumber(),
+            pageable.getPageSize(),
+            Sort.by(Sort.Direction.DESC, FieldNameConstants.SUBMITTED_AT));
+        Page<CashierSettlement> page = this.cashierSettlementRepository.findAll(specification, sortedPageable);
         List<CashierSettlementHistoryItemQueryModel> items = new ArrayList<>();
         for (CashierSettlement settlement : page.getContent()) {
             if (settlement == null) {
                 continue;
             }
-            CashierSettlementHistoryItemQueryModel item = new CashierSettlementHistoryItemQueryModel();
-            item.setSettlementId(settlement.getId());
-            item.setBusNo(settlement.getBusNo());
-            item.setTypeEnum(settlement.getTypeEnum());
-            item.setSubmittedAt(settlement.getSubmittedAt());
-            item.setDateFrom(settlement.getDateFrom());
-            item.setDateTo(settlement.getDateTo());
-            item.setPractitionerIds(settlement.getPractitionerIds());
-            item.setSubmitterId(settlement.getSubmitterId());
-            item.setApproverId(settlement.getApproverId());
-            item.setApprovedAt(settlement.getApprovedAt());
-            item.setOrgId(settlement.getOrgId());
-            item.setLocationId(settlement.getLocationId());
-            item.setPaymentCount(settlement.getPaymentCount());
-            item.setTotalIncome(settlement.getTotalIncome());
-            // 有挂载笔数即可按源表现算重打（DD：不存 print_snapshot_json）
-            Integer paymentCount = settlement.getPaymentCount();
-            boolean canReprint = paymentCount != null && paymentCount.intValue() > 0;
-            item.setCanReprintFromMounts(canReprint);
-            item.setStatusEnum(settlement.getStatusEnum());
-            items.add(item);
+            items.add(this.toHistoryItemQueryModel(settlement));
         }
-        return new PageImpl<>(items, pageable, page.getTotalElements());
+        return new PageImpl<>(items, sortedPageable, page.getTotalElements());
+    }
+
+    /**
+     * 交账头实体 → 历史分页行读模型。
+     *
+     * @param settlement 交账头实体
+     * @return 历史行；settlement 为空时返回 null
+     */
+    private CashierSettlementHistoryItemQueryModel toHistoryItemQueryModel(CashierSettlement settlement) {
+        if (settlement == null) {
+            return null;
+        }
+        CashierSettlementHistoryItemQueryModel item = new CashierSettlementHistoryItemQueryModel();
+        item.setSettlementId(settlement.getId());
+        item.setBusNo(settlement.getBusNo());
+        item.setTypeEnum(settlement.getTypeEnum());
+        item.setSubmittedAt(settlement.getSubmittedAt());
+        item.setDateFrom(settlement.getDateFrom());
+        item.setDateTo(settlement.getDateTo());
+        item.setPractitionerIds(settlement.getPractitionerIds());
+        item.setSubmitterId(settlement.getSubmitterId());
+        item.setApproverId(settlement.getApproverId());
+        item.setApprovedAt(settlement.getApprovedAt());
+        item.setOrgId(settlement.getOrgId());
+        item.setLocationId(settlement.getLocationId());
+        item.setPaymentCount(settlement.getPaymentCount());
+        item.setTotalIncome(settlement.getTotalIncome());
+        // 有挂载笔数即可按源表现算重打（DD：不存 print_snapshot_json）
+        Integer paymentCount = settlement.getPaymentCount();
+        boolean canReprint = paymentCount != null && paymentCount.intValue() > 0;
+        item.setCanReprintFromMounts(canReprint);
+        item.setStatusEnum(settlement.getStatusEnum());
+        return item;
     }
 
     /**
@@ -262,4 +324,4 @@ public class CashierSettlementQueryService {
             Sort.Order.desc(FieldNameConstants.ID));
     }
 }
-
+

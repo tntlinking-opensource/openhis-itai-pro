@@ -1,7 +1,8 @@
--- PEIS ModularFlyway V1 · peis_* DDL
+-- PEIS ModularFlyway V1 · peis_* DDL（greenfield baseline）
 -- history: flyway_schema_history_peis
 -- switch: openhis.modules.peis.enabled
--- CLN / AOL 仍在 health 核心（V3 / V7），本脚本仅 peis_* 表
+-- CLN / AOL 仍在 health 核心，本脚本仅 peis_* 表
+-- folded: V1 + V6（团检）+ V7（健康档案）+ V10（复查任务）DDL
 
 -- peis_service_request_ext（建表）
 -- DM-PEIS-001
@@ -271,3 +272,147 @@ COMMENT ON COLUMN peis_auto_express.express_script IS '表达式脚本';
 COMMENT ON COLUMN peis_auto_express.target_condition_def_id IS '目标诊断定义标识';
 COMMENT ON COLUMN peis_auto_express.rule_type_code IS '规则类型编码';
 COMMENT ON COLUMN peis_auto_express.status_enum IS '状态枚举';
+
+-- ========== folded from V6__peis_group_check_and_menu.sql (DDL only) ==========
+-- PEIS V6：团检单位/合同/批次/名册
+-- 主路径：名册 → AS-PE-FIN-002 批量收费建 Encounter(待检) → GRP 到检确认
+
+CREATE TABLE IF NOT EXISTS peis_group_company (
+    id BIGINT PRIMARY KEY,
+    tenant_id BIGINT NOT NULL,
+    org_id BIGINT,
+    name VARCHAR(128) NOT NULL,
+    campus_college_id BIGINT,
+    contact_name VARCHAR(64),
+    contact_phone VARCHAR(32),
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ,
+    created_by BIGINT,
+    updated_by BIGINT,
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at TIMESTAMPTZ,
+    deleted_by BIGINT,
+    version INT NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS peis_group_contract (
+    id BIGINT PRIMARY KEY,
+    tenant_id BIGINT NOT NULL,
+    org_id BIGINT,
+    company_id BIGINT NOT NULL,
+    package_activity_id BIGINT NOT NULL,
+    contract_name VARCHAR(128),
+    valid_from DATE,
+    valid_to DATE,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ,
+    created_by BIGINT,
+    updated_by BIGINT,
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at TIMESTAMPTZ,
+    deleted_by BIGINT,
+    version INT NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS peis_group_batch (
+    id BIGINT PRIMARY KEY,
+    tenant_id BIGINT NOT NULL,
+    org_id BIGINT,
+    company_id BIGINT NOT NULL,
+    contract_id BIGINT NOT NULL,
+    batch_name VARCHAR(128) NOT NULL,
+    package_activity_id BIGINT NOT NULL,
+    booking_date DATE,
+    status_code VARCHAR(32) NOT NULL DEFAULT 'DRAFT',
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ,
+    created_by BIGINT,
+    updated_by BIGINT,
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at TIMESTAMPTZ,
+    deleted_by BIGINT,
+    version INT NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS peis_group_roster (
+    id BIGINT PRIMARY KEY,
+    tenant_id BIGINT NOT NULL,
+    org_id BIGINT,
+    batch_id BIGINT NOT NULL,
+    patient_id BIGINT,
+    full_name VARCHAR(128) NOT NULL,
+    id_card_no VARCHAR(32),
+    student_no VARCHAR(64),
+    employee_no VARCHAR(64),
+    college_id BIGINT,
+    class_name VARCHAR(128),
+    mobile_phone VARCHAR(32),
+    encounter_id BIGINT,
+    pay_status_code VARCHAR(32) NOT NULL DEFAULT 'UNPAID',
+    arrival_status_code VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ,
+    created_by BIGINT,
+    updated_by BIGINT,
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at TIMESTAMPTZ,
+    deleted_by BIGINT,
+    version INT NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_peis_group_roster_batch ON peis_group_roster (batch_id) WHERE is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_peis_group_roster_pay ON peis_group_roster (batch_id, pay_status_code) WHERE is_deleted = false;
+
+-- ========== folded from V7__peis_patient_health_archive.sql ==========
+-- PEIS V7：学生健康档案（BAS-05 / AS-PEIS-ARCH-001）
+CREATE TABLE IF NOT EXISTS peis_patient_health_archive (
+    id BIGINT PRIMARY KEY,
+    tenant_id BIGINT NOT NULL,
+    org_id BIGINT,
+    patient_id BIGINT NOT NULL,
+    past_history TEXT,
+    family_history TEXT,
+    habit_summary TEXT,
+    allergy_summary TEXT,
+    remark TEXT,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ,
+    created_by BIGINT,
+    updated_by BIGINT,
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at TIMESTAMPTZ,
+    deleted_by BIGINT,
+    version INT NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_peis_health_archive_patient
+    ON peis_patient_health_archive (tenant_id, patient_id)
+    WHERE is_deleted = false;
+COMMENT ON TABLE peis_patient_health_archive IS '体检健康档案（既往史/习惯等）';
+
+-- ========== folded from V10__seed_report_print_grant_recheck_menus.sql (DDL only) ==========
+-- PEIS V10：复查任务表（AS-PEIS-REC-001）
+
+CREATE TABLE IF NOT EXISTS peis_recheck_task (
+  id int8 PRIMARY KEY,
+  tenant_id int8,
+  org_id int8,
+  created_at timestamptz NOT NULL,
+  updated_at timestamptz,
+  created_by int8,
+  updated_by int8,
+  is_deleted bool NOT NULL DEFAULT false,
+  deleted_at timestamptz,
+  deleted_by int8,
+  version int4 NOT NULL DEFAULT 0,
+  encounter_id int8 NOT NULL,
+  patient_id int8,
+  status_enum varchar(64) NOT NULL DEFAULT 'requested',
+  reason varchar(512),
+  diagnostic_report_id int8,
+  completed_at timestamptz,
+  completed_by int8
+);
+
+CREATE INDEX IF NOT EXISTS idx_peis_recheck_task_encounter
+  ON peis_recheck_task (encounter_id, is_deleted);
+
+COMMENT ON TABLE peis_recheck_task IS '体检复查任务（Peis 04 §4.5 方案 A 本地 Task 语义，待 WKF Task 迁入）';

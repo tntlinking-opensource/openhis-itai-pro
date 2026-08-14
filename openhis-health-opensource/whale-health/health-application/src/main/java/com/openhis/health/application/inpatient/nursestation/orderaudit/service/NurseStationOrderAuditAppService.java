@@ -27,8 +27,10 @@ import com.openhis.health.application.inpatient.nursestation.orderexecute.suppor
 import com.openhis.health.application.shared.encounter.EncounterContextReader;
 import com.openhis.health.domain.custom.encounterhistory.queries.model.EncounterHistoryMilestoneQueryModel;
 import com.openhis.health.domain.custom.encounterhistory.service.EncounterHistoryQueryService;
+import com.openhis.health.domain.medication.medicationrequest.command.CancelVerifyStopMedicationOrderCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.RejectMedicationOrderCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.VerifyMedicationOrderCommand;
+import com.openhis.health.domain.medication.medicationrequest.command.VerifyStopMedicationOrderCommand;
 import com.openhis.health.domain.medication.medicationrequest.entity.MedicationRequest;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestDomainService;
@@ -46,8 +48,11 @@ import com.openhis.health.domain.share.enums.EncounterClass;
 import com.openhis.health.domain.share.enums.EncounterStatus;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.RequestStatus;
+import com.openhis.health.domain.share.enums.TherapyType;
+import com.openhis.health.domain.workflow.servicerequest.command.CancelVerifyStopServiceRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.RejectServiceRequestToDraftCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.VerifyServiceRequestCommand;
+import com.openhis.health.domain.workflow.servicerequest.command.VerifyStopServiceRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestQueryModel;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestDomainService;
@@ -58,6 +63,7 @@ import lombok.extern.slf4j.Slf4j;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.math.BigDecimal;
@@ -72,10 +78,14 @@ import java.util.Set;
 /**
  * 住院护士站医嘱校对应用编排（AS-IP-NUR-003：IF-IP-AUD-01～03）。
  *
- * <p>待校列表：管理病区内多选患者的待审/已审医嘱，按 Tab 与长临筛选。</p>
- * <p>校对（IF-IP-AUD-02）：药品/诊疗审核通过；转科/出院类医嘱联动就诊状态。</p>
- * <p>退回（IF-IP-AUD-03）：{@code ACTIVE}/{@code VERIFIED} 均可退回草稿；须 **BR-IP-AUD-013**
- *（医生开立、非派生行、无净执行/在途发药/不可回退费用）；转科/出院里程碑同步撤销 {@code ON_HOLD}（GAP-ATD-008）。</p>
+ * <p>待校列表：管理病区内多选患者的待审/已审医嘱，按 Tab 与长临筛选；
+ * pending 含开嘱待校（ACTIVE）与停嘱待校（长期 STOPPED 且 {@code stopPerformerCheckId} 为空）。</p>
+ * <p>校对（IF-IP-AUD-02）：ACTIVE 走开嘱校对；STOPPED 走停嘱校对（仅写停嘱校对痕迹）；
+ * 转科/出院联动仅开嘱校对成功后触发。</p>
+ * <p>退回（IF-IP-AUD-03）：{@code ACTIVE}/{@code VERIFIED} 退回草稿（须 **BR-IP-AUD-013**）；
+ * 已停嘱校对走取消停嘱校对（{@code EX-IP-AUD-204}，不改状态）；
+ * 转科/出院里程碑同步撤销 {@code ON_HOLD} 仅开嘱退回路径触发。</p>
+ * <p>写路径整批同事务（**BR-IP-AUD-010**）。</p>
  */
 @Slf4j
 @Service
@@ -133,6 +143,15 @@ public class NurseStationOrderAuditAppService {
                 visibleEncounterIds, statusEnumIn, therapyEnum);
             List<InpatientOrderListSkeleton> filtered =
                 nurseStationOrderAuditMapper.filterAuditQueueRows(skeleton);
+            String auditTab = trimToEmpty(request.getAuditTab());
+            // Pre：pending Tab 再收窄停嘱待校（长期 STOPPED 且未停嘱校对）
+            if (InpatientNurseStationConstants.AUDIT_TAB_PENDING.equals(auditTab)) {
+                filtered = nurseStationOrderAuditMapper.filterPendingAuditRows(filtered);
+            }
+            // Pre：passed Tab 含 VERIFIED + 已停嘱校对 STOPPED（同一条不拆两行）
+            if (InpatientNurseStationConstants.AUDIT_TAB_PASSED.equals(auditTab)) {
+                filtered = nurseStationOrderAuditMapper.filterPassedAuditRows(filtered);
+            }
             String medicineCategoryTab = inpatientNurseStationTcmOrchestrator.resolveMedicineCategoryTabOrDefault(
                 request.getMedicineCategoryTab());
             String doctorSource = GenerateSource.DOCTOR_PRESCRIPTION.getCode();
@@ -172,56 +191,97 @@ public class NurseStationOrderAuditAppService {
     }
 
     /**
-     * IF-IP-AUD-02：批量校对通过；药品/诊疗分别走领域 verify，转科/出院类联动就诊状态。
+     * IF-IP-AUD-02：批量校对通过；ACTIVE 走开嘱校对，STOPPED 走停嘱校对；转科/出院仅开嘱校对后联动。
      *
      * @param request 待校对项
      * @return 处理结果
      * @throws BusinessException EX-IP-AUD-201/202/203
      */
+    @Transactional(rollbackFor = Exception.class)
     public VerifyNurseStationOrdersResponse verifyNurseStationOrders(VerifyNurseStationOrdersRequest request) {
+        // Gate：请求体非空
         if (request == null) {
             throw new BusinessException(
                 ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT,
                 "请求不能为空");
         }
+        // Gate：勾选条数与锚点完整
         this.assertWriteItemsGate(request.getItems());
+        // Gate：操作人须为当前 Practitioner
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             InpatientNurseStationConstants.EX_IP_AUD_201,
             "未登录或登录已失效，无法校对医嘱");
         Long performerCheckId = operatorId;
         LocalDateTime checkTime = LocalDateTime.now();
         List<NurseStationOrderAuditWriteItemDto> items = request.getItems();
+        // Pre：写项所属就诊须在护士站可见范围
         Set<Long> visibleEncounterIds = this.resolveVisibleEncounterIdsForWrite(items, true);
         Map<Long, List<MedicationRequestListQueryModel>> medByEncounter = this.loadMedByEncounterForWrite(visibleEncounterIds);
-        // Pre·药嘱写扩行：中药整方 / 西药成组一并扩成逐条校对（Gate 条数按扩行前勾选计）
+        // Pre·药嘱写扩行：中药整方 / 西药成组一并扩成逐条校对（开嘱/停嘱校对均适用；Gate 条数按扩行前勾选计）
         List<NurseStationOrderAuditWriteItemDto> expandedItems =
             this.expandAuditWriteItemsByTcmPrescription(items, medByEncounter);
         Map<Long, ServiceRequestListModel> serviceDetailById =
             this.indexServiceRequestListById(visibleEncounterIds);
+        // Gate：扩行后逐条校验可见性与开嘱/停嘱校对资格
         for (NurseStationOrderAuditWriteItemDto item : expandedItems) {
-            this.assertWriteItemActiveAndVisible(item, visibleEncounterIds, true);
+            this.assertWriteItemVerifiableAndVisible(item, visibleEncounterIds);
         }
         int processed = 0;
+        // Cmd：药品——STOPPED 停嘱校对，ACTIVE 开嘱校对
         for (NurseStationOrderAuditWriteItemDto item : expandedItems) {
             if (!ReadModelOrderTypeConstants.MED_REQUEST.equals(item.getOrderType())) {
                 continue;
             }
+            MedicationRequest med = medicationRequestQueryService.findById(item.getRequestId());
+            if (med == null) {
+                throw new BusinessException(
+                    InpatientNurseStationConstants.EX_IP_AUD_201,
+                    "药品申请不存在");
+            }
+            // 分支：已停嘱长期行走停嘱校对，仅写停嘱校对痕迹
+            if (RequestStatus.STOPPED.getCode().equals(med.getStatusEnum())) {
+                VerifyStopMedicationOrderCommand stopCommand =
+                    nurseStationOrderAuditMapper.toVerifyStopMedicationOrderCommand(
+                        item, operatorId, performerCheckId, checkTime);
+                medicationRequestDomainService.verifyStopMedicationOrder(stopCommand);
+                processed = processed + 1;
+                continue;
+            }
+            // 分支：已发送行走开嘱校对 → VERIFIED
             VerifyMedicationOrderCommand command = nurseStationOrderAuditMapper.toVerifyMedicationOrderCommand(
                 item, operatorId, performerCheckId, checkTime);
             medicationRequestDomainService.verifyMedicationOrder(command);
             processed = processed + 1;
         }
         List<Long> verifiedServiceRequestIds = new ArrayList<>();
+        // Cmd：诊疗——STOPPED 停嘱校对，ACTIVE 开嘱校对（诊疗不参与成组扩行，用原始勾选）
         for (NurseStationOrderAuditWriteItemDto item : items) {
             if (!ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(item.getOrderType())) {
                 continue;
             }
+            ServiceRequestListModel svc = serviceRequestQueryService.getListModelById(item.getRequestId());
+            if (svc == null) {
+                throw new BusinessException(
+                    InpatientNurseStationConstants.EX_IP_AUD_201,
+                    "诊疗申请不存在");
+            }
+            // 分支：已停嘱长期行走停嘱校对，不触发转科/出院联动
+            if (RequestStatus.STOPPED.getCode().equals(svc.getStatusEnum())) {
+                VerifyStopServiceRequestCommand stopCommand =
+                    nurseStationOrderAuditMapper.toVerifyStopServiceRequestCommand(
+                        item, operatorId, performerCheckId, checkTime);
+                serviceRequestDomainService.verifyStopServiceRequest(stopCommand);
+                processed = processed + 1;
+                continue;
+            }
+            // 分支：已发送行走开嘱校对，收集 id 供转科/出院编排
             VerifyServiceRequestCommand command = nurseStationOrderAuditMapper.toVerifyServiceRequestCommand(
                 item, operatorId, performerCheckId, checkTime);
             serviceRequestDomainService.verifyServiceRequest(command);
             verifiedServiceRequestIds.add(item.getRequestId());
             processed = processed + 1;
         }
+        // Cmd：仅开嘱校对成功的诊疗触发转科/出院 Encounter 编排（停嘱校对不触发）
         for (Long serviceRequestId : verifiedServiceRequestIds) {
             try {
                 this.orchestrateEncounterAfterServiceVerified(
@@ -239,16 +299,22 @@ public class NurseStationOrderAuditAppService {
                     "患者流转状态已变更，请刷新后重试");
             }
         }
+        // Asm：映射处理条数
         return nurseStationOrderAuditMapper.toVerifyNurseStationOrdersResponse(processed);
     }
 
     /**
-     * IF-IP-AUD-03：批量退回草稿；须 **BR-IP-AUD-013** 门控后写库；转科/出院类同步撤销相关就诊编排。
+     * IF-IP-AUD-03：批量退回草稿或取消停嘱校对；转科/出院类同步撤销仅开嘱退回路径触发。
+     *
+     * <p>STOPPED 且已有 {@code stopPerformerCheckId}：取消停嘱校对（清空痕迹、不改状态、不退回草稿）。
+     * 其余走原退回草稿（须 **BR-IP-AUD-013**）。</p>
      *
      * @param request 待退回项与统一原因
      * @return 处理结果
-     * @throws BusinessException EX-IP-AUD-301（状态/门控/来源）、EX-IP-AUD-302（不可见）、EX-IP-AUD-203（逆向编排）
+     * @throws BusinessException EX-IP-AUD-301（退回草稿门控）、EX-IP-AUD-204（取消停嘱校对失败）、
+     *         EX-IP-AUD-302（不可见）、EX-IP-AUD-203（逆向编排）
      */
+    @Transactional(rollbackFor = Exception.class)
     public RejectNurseStationOrdersResponse rejectNurseStationOrders(RejectNurseStationOrdersRequest request) {
         // Gate：请求体与批量条数上限
         if (request == null) {
@@ -268,30 +334,76 @@ public class NurseStationOrderAuditAppService {
         // Pre：写项所属就诊须在护士站可见范围
         Set<Long> visibleEncounterIds = this.resolveVisibleEncounterIdsForWrite(items, false);
         Map<Long, List<MedicationRequestListQueryModel>> medByEncounter = this.loadMedByEncounterForWrite(visibleEncounterIds);
-        // Pre·药嘱写扩行：退回须覆盖中药整方 / 西药成组全部成员行
+        // Pre·药嘱写扩行：退回/取消停嘱校对须覆盖中药整方 / 西药成组全部成员行
         List<NurseStationOrderAuditWriteItemDto> expandedItems =
             this.expandAuditWriteItemsByTcmPrescription(items, medByEncounter);
-        // Pre：状态/来源/下游事实门禁（ACTIVE/VERIFIED 均须过签退门控，防直调 API 恶意退回）
+        // Pre：状态/来源/下游事实门禁（取消停嘱校对仅可见性；ACTIVE/VERIFIED 须过签退门控）
         for (NurseStationOrderAuditWriteItemDto item : expandedItems) {
             this.assertWriteItemRejectableAndVisible(item, visibleEncounterIds);
         }
         int processed = 0;
-        // Cmd：药品申请退回草稿并写校对人追溯
+        // Cmd：药品——已停嘱校对则取消停嘱校对；否则退回草稿
         for (NurseStationOrderAuditWriteItemDto item : expandedItems) {
             if (!ReadModelOrderTypeConstants.MED_REQUEST.equals(item.getOrderType())) {
                 continue;
             }
+            MedicationRequest med = medicationRequestQueryService.findById(item.getRequestId());
+            if (med == null) {
+                throw new BusinessException(
+                    InpatientNurseStationConstants.EX_IP_AUD_301,
+                    "药品申请不存在");
+            }
+            // 分支：STOPPED 且已有停嘱校对痕迹 → 取消停嘱校对（不改状态、不退回草稿）
+            if (RequestStatus.STOPPED.getCode().equals(med.getStatusEnum())
+                && med.getStopPerformerCheckId() != null) {
+                try {
+                    CancelVerifyStopMedicationOrderCommand cancelCommand =
+                        nurseStationOrderAuditMapper.toCancelVerifyStopMedicationOrderCommand(item, operatorId);
+                    medicationRequestDomainService.cancelVerifyStopMedicationOrder(cancelCommand);
+                } catch (BusinessException ex) {
+                    // 域断言失败统一映射为取消停嘱校对语义码，避免泄漏域错误码
+                    throw new BusinessException(
+                        InpatientNurseStationConstants.EX_IP_AUD_204,
+                        ex.getMessage());
+                }
+                processed = processed + 1;
+                continue;
+            }
+            // 分支：ACTIVE/VERIFIED → 退回草稿
             RejectMedicationOrderCommand command = nurseStationOrderAuditMapper.toRejectMedicationOrderCommand(
                 item, reason, operatorId, performerCheckId, checkTime);
             medicationRequestDomainService.rejectMedicationOrder(command);
             processed = processed + 1;
         }
         List<Long> rejectedServiceRequestIds = new ArrayList<>();
-        // Cmd：诊疗申请退回草稿
+        // Cmd：诊疗——已停嘱校对则取消停嘱校对；否则退回草稿（诊疗不参与成组扩行）
         for (NurseStationOrderAuditWriteItemDto item : items) {
             if (!ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(item.getOrderType())) {
                 continue;
             }
+            ServiceRequestListModel svc = serviceRequestQueryService.getListModelById(item.getRequestId());
+            if (svc == null) {
+                throw new BusinessException(
+                    InpatientNurseStationConstants.EX_IP_AUD_301,
+                    "诊疗申请不存在");
+            }
+            // 分支：STOPPED 且已有停嘱校对痕迹 → 取消停嘱校对，不触发转科/出院撤销
+            if (RequestStatus.STOPPED.getCode().equals(svc.getStatusEnum())
+                && svc.getStopPerformerCheckId() != null) {
+                try {
+                    CancelVerifyStopServiceRequestCommand cancelCommand =
+                        nurseStationOrderAuditMapper.toCancelVerifyStopServiceRequestCommand(item, operatorId);
+                    serviceRequestDomainService.cancelVerifyStopServiceRequest(cancelCommand);
+                } catch (BusinessException ex) {
+                    // 域断言失败统一映射为取消停嘱校对语义码
+                    throw new BusinessException(
+                        InpatientNurseStationConstants.EX_IP_AUD_204,
+                        ex.getMessage());
+                }
+                processed = processed + 1;
+                continue;
+            }
+            // 分支：ACTIVE/VERIFIED → 退回草稿，收集 id 供 ON_HOLD 撤销
             RejectServiceRequestToDraftCommand command =
                 nurseStationOrderAuditMapper.toRejectServiceRequestToDraftCommand(
                     item, reason, operatorId, performerCheckId, checkTime);
@@ -299,7 +411,7 @@ public class NurseStationOrderAuditAppService {
             rejectedServiceRequestIds.add(item.getRequestId());
             processed = processed + 1;
         }
-        // Cmd：转科/出院类诊疗同步撤销 ON_HOLD 过渡态（GAP-ATD-008）
+        // Cmd：转科/出院类诊疗同步撤销 ON_HOLD 过渡态（GAP-ATD-008；仅开嘱退回）
         for (Long serviceRequestId : rejectedServiceRequestIds) {
             transferDischargeHoldOrchestrationSupport.tryRevertHoldAfterServiceRequestReverted(
                 serviceRequestId,
@@ -477,45 +589,96 @@ public class NurseStationOrderAuditAppService {
     }
 
     /**
-     * 单条写项 ACTIVE 与可见性门禁。
+     * 单条校对写项：可见性 + 开嘱校对（ACTIVE）或停嘱校对（长期 STOPPED 且未写停嘱校对痕迹）。
      *
      * @param item              写项
-     * @param visibleEncounters   可见就诊集合
-     * @param verifyPath          true=校对路径（201/202），false=退回路径（301/302）
+     * @param visibleEncounters 可见就诊集合
      */
-    private void assertWriteItemActiveAndVisible(
+    private void assertWriteItemVerifiableAndVisible(
         NurseStationOrderAuditWriteItemDto item,
-        Set<Long> visibleEncounters,
-        boolean verifyPath) {
-        String notActiveCode;
-        String notVisibleCode;
-        if (verifyPath) {
-            notActiveCode = InpatientNurseStationConstants.EX_IP_AUD_201;
-            notVisibleCode = InpatientNurseStationConstants.EX_IP_AUD_202;
-        } else {
-            notActiveCode = InpatientNurseStationConstants.EX_IP_AUD_301;
-            notVisibleCode = InpatientNurseStationConstants.EX_IP_AUD_302;
-        }
+        Set<Long> visibleEncounters) {
+        String notAllowedCode = InpatientNurseStationConstants.EX_IP_AUD_201;
+        String notVisibleCode = InpatientNurseStationConstants.EX_IP_AUD_202;
         Long encounterId = this.resolveEncounterIdForWriteItem(item);
+        // Gate：就诊须在管理病区可见范围
         if (encounterId == null || !visibleEncounters.contains(encounterId)) {
             throw new BusinessException(notVisibleCode, "就诊不在护士站可见范围");
         }
-        boolean active;
         if (ReadModelOrderTypeConstants.MED_REQUEST.equals(item.getOrderType())) {
-            active = medicationRequestQueryService.checkMedicationRequestSignOffAllowed(item.getRequestId());
-        } else if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(item.getOrderType())) {
-            Boolean withdrawable = serviceRequestQueryService.validateServiceRequestWithdrawable(item.getRequestId());
-            active = Boolean.TRUE.equals(withdrawable);
-        } else {
-            throw new BusinessException(notActiveCode, "不支持的医嘱类型");
+            this.assertMedicationRequestVerifiable(item.getRequestId(), notAllowedCode);
+            return;
         }
-        if (!active) {
-            throw new BusinessException(notActiveCode, "仅已发送医嘱允许校对");
+        if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(item.getOrderType())) {
+            this.assertServiceRequestVerifiable(item.getRequestId(), notAllowedCode);
+            return;
         }
+        throw new BusinessException(notAllowedCode, "不支持的医嘱类型");
     }
 
     /**
-     * 单条退回写项：须 ACTIVE/VERIFIED、医生开立来源、无下游阻塞事实（BR-IP-AUD-013）。
+     * 药品校对资格：ACTIVE 可开嘱校对；长期 STOPPED 且未停嘱校对可停嘱校对。
+     *
+     * @param requestId 药品申请主键
+     * @param errorCode 业务语义码
+     */
+    private void assertMedicationRequestVerifiable(Long requestId, String errorCode) {
+        MedicationRequest request = medicationRequestQueryService.findById(requestId);
+        if (request == null) {
+            throw new BusinessException(errorCode, "药品申请不存在");
+        }
+        String status = request.getStatusEnum();
+        // 分支：已发送 → 开嘱校对
+        if (RequestStatus.ACTIVE.getCode().equals(status)) {
+            return;
+        }
+        // 分支：已停嘱 → 仅长期且尚未停嘱校对可走停嘱校对
+        if (RequestStatus.STOPPED.getCode().equals(status)) {
+            if (!TherapyType.LONG_TERM.getCode().equals(request.getTherapyEnum())) {
+                throw new BusinessException(errorCode, "仅长期已停嘱医嘱允许停嘱校对");
+            }
+            if (request.getStopPerformerCheckId() != null) {
+                throw new BusinessException(errorCode, "该医嘱已完成停嘱校对");
+            }
+            return;
+        }
+        throw new BusinessException(errorCode, "仅已发送或待停嘱校对医嘱允许校对");
+    }
+
+    /**
+     * 诊疗校对资格：ACTIVE 可开嘱校对；长期 STOPPED 且未停嘱校对可停嘱校对。
+     *
+     * @param requestId 诊疗申请主键
+     * @param errorCode 业务语义码
+     */
+    private void assertServiceRequestVerifiable(Long requestId, String errorCode) {
+        ServiceRequestListModel detail = serviceRequestQueryService.getListModelById(requestId);
+        if (detail == null) {
+            throw new BusinessException(errorCode, "诊疗申请不存在");
+        }
+        String status = detail.getStatusEnum();
+        // 分支：已发送 → 开嘱校对
+        if (RequestStatus.ACTIVE.getCode().equals(status)) {
+            return;
+        }
+        // 分支：已停嘱 → 仅长期且尚未停嘱校对可走停嘱校对
+        if (RequestStatus.STOPPED.getCode().equals(status)) {
+            if (!TherapyType.LONG_TERM.getCode().equals(detail.getTherapyEnum())) {
+                throw new BusinessException(errorCode, "仅长期已停嘱医嘱允许停嘱校对");
+            }
+            if (detail.getStopPerformerCheckId() != null) {
+                throw new BusinessException(errorCode, "该医嘱已完成停嘱校对");
+            }
+            return;
+        }
+        throw new BusinessException(errorCode, "仅已发送或待停嘱校对医嘱允许校对");
+    }
+
+    /**
+     * 单条退回/取消停嘱校对写项门禁。
+     *
+     * <p>STOPPED 且已有停嘱校对痕迹：仅校验可见性（取消停嘱校对路径）。
+     * STOPPED 但尚未停嘱校对：拒绝（{@code EX-IP-AUD-204}，须先停嘱校对或改从 pending 校对）。
+     * 其余须 ACTIVE/VERIFIED、医生开立来源、无下游阻塞事实（BR-IP-AUD-013 / {@code EX-IP-AUD-301}）。</p>
      *
      * @param item              写项
      * @param visibleEncounters 可见就诊集合
@@ -523,23 +686,50 @@ public class NurseStationOrderAuditAppService {
     private void assertWriteItemRejectableAndVisible(
         NurseStationOrderAuditWriteItemDto item,
         Set<Long> visibleEncounters) {
-        String notActiveCode = InpatientNurseStationConstants.EX_IP_AUD_301;
+        String rejectDraftCode = InpatientNurseStationConstants.EX_IP_AUD_301;
+        String cancelStopVerifyCode = InpatientNurseStationConstants.EX_IP_AUD_204;
         String notVisibleCode = InpatientNurseStationConstants.EX_IP_AUD_302;
         Long encounterId = this.resolveEncounterIdForWriteItem(item);
         if (encounterId == null || !visibleEncounters.contains(encounterId)) {
             throw new BusinessException(notVisibleCode, "就诊不在护士站可见范围");
         }
         if (ReadModelOrderTypeConstants.MED_REQUEST.equals(item.getOrderType())) {
+            MedicationRequest med = medicationRequestQueryService.findById(item.getRequestId());
+            if (med == null) {
+                throw new BusinessException(rejectDraftCode, "药品申请不存在");
+            }
+            // 分支：已停嘱校对 → 取消停嘱校对路径，跳过退回草稿门控
+            if (RequestStatus.STOPPED.getCode().equals(med.getStatusEnum())
+                && med.getStopPerformerCheckId() != null) {
+                return;
+            }
+            // 分支：已停嘱但未停嘱校对 → 不可「退回/取消停嘱校对」，须先做停嘱校对
+            if (RequestStatus.STOPPED.getCode().equals(med.getStatusEnum())) {
+                throw new BusinessException(cancelStopVerifyCode, "该医嘱尚未停嘱校对，无法取消停嘱校对");
+            }
             // 药品：状态白名单 + 来源/派生 + 签退门控
-            this.assertMedicationRequestRejectable(item.getRequestId(), encounterId, notActiveCode);
+            this.assertMedicationRequestRejectable(item.getRequestId(), encounterId, rejectDraftCode);
             return;
         }
         if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(item.getOrderType())) {
+            ServiceRequestListModel svc = serviceRequestQueryService.getListModelById(item.getRequestId());
+            if (svc == null) {
+                throw new BusinessException(rejectDraftCode, "诊疗申请不存在");
+            }
+            // 分支：已停嘱校对 → 取消停嘱校对路径，跳过退回草稿门控
+            if (RequestStatus.STOPPED.getCode().equals(svc.getStatusEnum())
+                && svc.getStopPerformerCheckId() != null) {
+                return;
+            }
+            // 分支：已停嘱但未停嘱校对 → 须先停嘱校对
+            if (RequestStatus.STOPPED.getCode().equals(svc.getStatusEnum())) {
+                throw new BusinessException(cancelStopVerifyCode, "该医嘱尚未停嘱校对，无法取消停嘱校对");
+            }
             // 诊疗：同上（无发药 Gate，仅执行/费用）
-            this.assertServiceRequestRejectable(item.getRequestId(), encounterId, notActiveCode);
+            this.assertServiceRequestRejectable(item.getRequestId(), encounterId, rejectDraftCode);
             return;
         }
-        throw new BusinessException(notActiveCode, "不支持的医嘱类型");
+        throw new BusinessException(rejectDraftCode, "不支持的医嘱类型");
     }
 
     /**
@@ -890,7 +1080,7 @@ public class NurseStationOrderAuditAppService {
     }
 
     /**
-     * 校对 Tab 白名单（BR-IP-AUD-003）。
+     * 校对 Tab 白名单：仅未校对 / 已校对（BR-IP-AUD-003）。
      *
      * @param tab auditTab
      * @return 是否允许
@@ -900,12 +1090,6 @@ public class NurseStationOrderAuditAppService {
             return true;
         }
         if (InpatientNurseStationConstants.AUDIT_TAB_PASSED.equals(tab)) {
-            return true;
-        }
-        if (InpatientNurseStationConstants.AUDIT_TAB_STOPPED.equals(tab)) {
-            return true;
-        }
-        if (InpatientNurseStationConstants.AUDIT_TAB_SUSPENDED.equals(tab)) {
             return true;
         }
         return false;

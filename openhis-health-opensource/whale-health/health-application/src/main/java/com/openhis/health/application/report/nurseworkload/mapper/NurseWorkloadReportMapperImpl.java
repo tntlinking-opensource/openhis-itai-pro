@@ -45,6 +45,8 @@ public class NurseWorkloadReportMapperImpl implements NurseWorkloadReportMapper 
         query.setDateFrom(request.getDateFrom());
         query.setDateTo(request.getDateTo());
         query.setPractitionerId(request.getPractitionerId());
+        query.setRequestingOrgId(this.resolveRequestingOrgId(
+            request.getRequestingOrgId(), request.getOrganizationId()));
         return query;
     }
 
@@ -61,6 +63,8 @@ public class NurseWorkloadReportMapperImpl implements NurseWorkloadReportMapper 
         query.setDateFrom(request.getDateFrom());
         query.setDateTo(request.getDateTo());
         query.setPractitionerId(request.getPractitionerId());
+        query.setRequestingOrgId(this.resolveRequestingOrgId(
+            request.getRequestingOrgId(), request.getOrganizationId()));
         query.setPageNo(this.resolvePageNo(request.getPageNo()));
         query.setPageSize(this.resolvePageSize(request.getPageSize()));
         return query;
@@ -79,6 +83,8 @@ public class NurseWorkloadReportMapperImpl implements NurseWorkloadReportMapper 
         query.setDateFrom(request.getDateFrom());
         query.setDateTo(request.getDateTo());
         query.setPractitionerId(request.getPractitionerId());
+        query.setRequestingOrgId(this.resolveRequestingOrgId(
+            request.getRequestingOrgId(), request.getOrganizationId()));
         query.setPageNo(this.resolvePageNo(request.getPageNo()));
         query.setPageSize(this.resolvePageSize(request.getPageSize()));
         return query;
@@ -97,7 +103,23 @@ public class NurseWorkloadReportMapperImpl implements NurseWorkloadReportMapper 
         query.setDateFrom(request.getDateFrom());
         query.setDateTo(request.getDateTo());
         query.setPractitionerId(request.getPractitionerId());
+        query.setRequestingOrgId(this.resolveRequestingOrgId(
+            request.getRequestingOrgId(), request.getOrganizationId()));
         return query;
+    }
+
+    /**
+     * 开立科室优先；仅传遗留 organizationId 时回填 requestingOrgId。
+     *
+     * @param requestingOrgId  开立科室
+     * @param organizationId   遗留科室
+     * @return 解析后的开立科室 id
+     */
+    private Long resolveRequestingOrgId(Long requestingOrgId, Long organizationId) {
+        if (requestingOrgId != null) {
+            return requestingOrgId;
+        }
+        return organizationId;
     }
 
     /**

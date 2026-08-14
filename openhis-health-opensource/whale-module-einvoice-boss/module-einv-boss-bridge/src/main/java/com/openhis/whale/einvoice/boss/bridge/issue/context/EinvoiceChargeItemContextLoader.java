@@ -19,6 +19,7 @@ import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.whale.einvoice.boss.bridge.issue.support.BossQuantityUnitDisplayResolver;
 import com.openhis.whale.einvoice.boss.domain.issue.result.BossChargeLineSnapshot;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -32,6 +33,7 @@ import java.util.stream.Collectors;
 /**
  * 从 health {@code adm_charge_item} 加载开票明细快照，并解析博思内部收费编码。
  */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class EinvoiceChargeItemContextLoader {
@@ -63,7 +65,7 @@ public class EinvoiceChargeItemContextLoader {
                 .collect(Collectors.toList());
         Map<Long, ChargeItemDefinition> definitionMap =
                 chargeItemDefinitionQueryService.findAllDefinitionsByIdIn(definitionIds);
-        Map<String, ProductDefinitionDisplayDto> productMap = loadProductMap(rows);
+        Map<String, ProductDefinitionDisplayDto> productMap = loadProductMap(rows, definitionMap);
         // 票面单位须为中文 display；quantity_unit 存术语 code（如 6/branch/bottle）
         Map<String, String> unitLabelByCode = quantityUnitDisplayResolver.warmLabelMap();
         for (ChargeItem row : rows) {
@@ -73,7 +75,9 @@ public class EinvoiceChargeItemContextLoader {
             ChargeItemDefinition definition = row.getDefinitionId() != null
                     ? definitionMap.get(row.getDefinitionId()) : null;
             snapshot.setInternalCode(resolveInternalCode(registrationFee, row, definition));
-            snapshot.setItemName(resolveItemName(row, definition, productMap));
+            ProductDefinitionDisplayDto product = resolveProduct(row, definition, productMap);
+            snapshot.setItemName(resolveItemName(definition, product));
+            applyProductGrade(snapshot, product);
             snapshot.setAmount(row.getTotalPrice());
             snapshot.setQuantity(row.getQuantityValue());
             snapshot.setUnit(quantityUnitDisplayResolver.toDisplay(row.getQuantityUnit(), unitLabelByCode));
@@ -84,13 +88,26 @@ public class EinvoiceChargeItemContextLoader {
     }
 
     /**
-     * 具体项目名：产品目录名优先，其次价目 {@code chargeName}（对齐 areahis listDetail.name）。
+     * 写入医保目录编码与甲/乙/丙（自费票同样需要展开，不按票头医保类型跳过）。
      */
-    private String resolveItemName(
-            ChargeItem row,
-            ChargeItemDefinition definition,
-            Map<String, ProductDefinitionDisplayDto> productMap) {
-        ProductDefinitionDisplayDto product = resolveProduct(row, productMap);
+    private static void applyProductGrade(BossChargeLineSnapshot snapshot, ProductDefinitionDisplayDto product) {
+        if (product == null) {
+            return;
+        }
+        snapshot.setItemCode(firstNonBlank(product.getYbNo(), product.getProductBusNo()));
+        snapshot.setChrgitmLv(product.getChrgitmLv());
+        BossChrgitmLvMapping.Grade grade = BossChrgitmLvMapping.resolve(product.getChrgitmLv());
+        snapshot.setListMedicalCareType(grade.medicalCareType());
+        snapshot.setListRemark(firstNonBlank(product.getChrgitmLvText(), grade.remark()));
+    }
+
+    /**
+     * 具体项目名：产品目录名优先，其次价目 {@code chargeName}（对齐 areahis listDetail.name）。
+     *
+     * <p>价目名若与统计大类同名（如「西药费」）且产品名为空，仍返回价目名由调用方处理；
+     * 正常药品价目 {@code chargeName} 为药名。</p>
+     */
+    private String resolveItemName(ChargeItemDefinition definition, ProductDefinitionDisplayDto product) {
         if (product != null) {
             String productName = firstNonBlank(product.getProductName(), product.getMerchandiseName());
             if (StringUtils.hasText(productName)) {
@@ -113,63 +130,134 @@ public class EinvoiceChargeItemContextLoader {
         return null;
     }
 
-    private Map<String, ProductDefinitionDisplayDto> loadProductMap(List<ChargeItem> rows) {
+    private Map<String, ProductDefinitionDisplayDto> loadProductMap(
+            List<ChargeItem> rows, Map<Long, ChargeItemDefinition> definitionMap) {
         LinkedHashSet<String> dedupeKeys = new LinkedHashSet<>();
         List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
         for (ChargeItem row : rows) {
-            ProductDefinitionBatchLookup lookup = buildProductLookup(row);
-            if (lookup == null) {
-                continue;
+            ChargeItemDefinition definition = row.getDefinitionId() != null && definitionMap != null
+                    ? definitionMap.get(row.getDefinitionId()) : null;
+            for (ProductDefinitionBatchLookup lookup : buildProductLookups(row, definition)) {
+                String key = ProductDefinitionKeyUtil.buildCompositeKey(
+                        lookup.getProductTableName(), lookup.getProductDefinitionId());
+                if (key == null || !dedupeKeys.add(key)) {
+                    continue;
+                }
+                lookups.add(lookup);
             }
-            String key = ProductDefinitionKeyUtil.buildCompositeKey(
-                    lookup.getProductTableName(), lookup.getProductDefinitionId());
-            if (key == null || !dedupeKeys.add(key)) {
-                continue;
-            }
-            lookups.add(lookup);
         }
         if (lookups.isEmpty()) {
-            return Map.of();
+            return new java.util.HashMap<>();
         }
-        return productDefinitionQueryService.batchLoadByKeys(lookups);
+        try {
+            Map<String, ProductDefinitionDisplayDto> loaded =
+                    productDefinitionQueryService.batchLoadByKeys(lookups);
+            return loaded != null ? new java.util.HashMap<>(loaded) : new java.util.HashMap<>();
+        } catch (Exception ex) {
+            log.warn("Batch load product definitions failed, size={}, fallback single lookups", lookups.size(), ex);
+            Map<String, ProductDefinitionDisplayDto> fallback = new java.util.HashMap<>();
+            for (ProductDefinitionBatchLookup lookup : lookups) {
+                try {
+                    Map<String, ProductDefinitionDisplayDto> one =
+                            productDefinitionQueryService.batchLoadByKeys(List.of(lookup));
+                    if (one != null) {
+                        fallback.putAll(one);
+                    }
+                } catch (Exception singleEx) {
+                    log.warn(
+                            "Single product lookup failed, table={}, id={}",
+                            lookup.getProductTableName(),
+                            lookup.getProductDefinitionId(),
+                            singleEx);
+                }
+            }
+            return fallback;
+        }
     }
 
     private ProductDefinitionDisplayDto resolveProduct(
-            ChargeItem row, Map<String, ProductDefinitionDisplayDto> productMap) {
-        ProductDefinitionBatchLookup lookup = buildProductLookup(row);
-        if (lookup == null || productMap == null || productMap.isEmpty()) {
+            ChargeItem row,
+            ChargeItemDefinition definition,
+            Map<String, ProductDefinitionDisplayDto> productMap) {
+        List<ProductDefinitionBatchLookup> lookups = buildProductLookups(row, definition);
+        if (lookups.isEmpty()) {
             return null;
         }
-        String key = ProductDefinitionKeyUtil.buildCompositeKey(
-                lookup.getProductTableName(), lookup.getProductDefinitionId());
-        if (key == null) {
-            return null;
+        for (ProductDefinitionBatchLookup lookup : lookups) {
+            String key = ProductDefinitionKeyUtil.buildCompositeKey(
+                    lookup.getProductTableName(), lookup.getProductDefinitionId());
+            if (key == null) {
+                continue;
+            }
+            ProductDefinitionDisplayDto hit = productMap != null ? productMap.get(key) : null;
+            if (hit != null) {
+                return hit;
+            }
         }
-        return productMap.get(key);
+        // 批量 Map 漏载时按 lookup 单条回源，避免整票丢失项目名/甲乙丙
+        for (ProductDefinitionBatchLookup lookup : lookups) {
+            try {
+                Map<String, ProductDefinitionDisplayDto> one =
+                        productDefinitionQueryService.batchLoadByKeys(List.of(lookup));
+                if (one == null || one.isEmpty()) {
+                    continue;
+                }
+                String key = ProductDefinitionKeyUtil.buildCompositeKey(
+                        lookup.getProductTableName(), lookup.getProductDefinitionId());
+                ProductDefinitionDisplayDto hit = key != null ? one.get(key) : null;
+                if (hit != null) {
+                    if (productMap != null) {
+                        productMap.put(key, hit);
+                    }
+                    return hit;
+                }
+            } catch (Exception ex) {
+                log.warn(
+                        "Fallback product lookup failed, table={}, id={}",
+                        lookup.getProductTableName(),
+                        lookup.getProductDefinitionId(),
+                        ex);
+            }
+        }
+        log.warn(
+                "Einvoice product not resolved, chargeItemId={}, definitionId={}, lookups={}",
+                row != null ? row.getId() : null,
+                definition != null ? definition.getId() : null,
+                lookups.size());
+        return null;
     }
 
     /**
-     * 收费行 → 产品 lookup：优先 product_*；挂号费回落 healthcare_service。
+     * 收费行 → 产品 lookup：product_* → 价目 instance_* → 挂号 healthcare_service。
+     *
+     * <p>自费西药价目 {@code chargeName} 常为空，必须靠目录主键展开药名/甲乙丙。</p>
      */
-    private static ProductDefinitionBatchLookup buildProductLookup(ChargeItem chargeItem) {
-        if (chargeItem == null) {
-            return null;
+    private static List<ProductDefinitionBatchLookup> buildProductLookups(
+            ChargeItem chargeItem, ChargeItemDefinition definition) {
+        List<ProductDefinitionBatchLookup> lookups = new ArrayList<>(3);
+        if (chargeItem != null
+                && StringUtils.hasText(chargeItem.getProductTable())
+                && chargeItem.getProductId() != null) {
+            lookups.add(lookupOf(chargeItem.getProductTable(), chargeItem.getProductId()));
         }
-        if (StringUtils.hasText(chargeItem.getProductTable()) && chargeItem.getProductId() != null) {
-            ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
-            lookup.setProductTableName(chargeItem.getProductTable().trim());
-            lookup.setProductDefinitionId(chargeItem.getProductId());
-            return lookup;
+        if (definition != null
+                && StringUtils.hasText(definition.getInstanceTable())
+                && definition.getInstanceId() != null) {
+            lookups.add(lookupOf(definition.getInstanceTable(), definition.getInstanceId()));
         }
-        if (!StringUtils.hasText(chargeItem.getServiceTable()) || chargeItem.getServiceId() == null) {
-            return null;
+        if (chargeItem != null
+                && StringUtils.hasText(chargeItem.getServiceTable())
+                && chargeItem.getServiceId() != null
+                && TableNameConstants.ADM_HEALTHCARE_SERVICE.equals(chargeItem.getServiceTable().trim())) {
+            lookups.add(lookupOf(TableNameConstants.ADM_HEALTHCARE_SERVICE, chargeItem.getServiceId()));
         }
-        if (!TableNameConstants.ADM_HEALTHCARE_SERVICE.equals(chargeItem.getServiceTable().trim())) {
-            return null;
-        }
+        return lookups;
+    }
+
+    private static ProductDefinitionBatchLookup lookupOf(String tableName, Long definitionId) {
         ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
-        lookup.setProductTableName(TableNameConstants.ADM_HEALTHCARE_SERVICE);
-        lookup.setProductDefinitionId(chargeItem.getServiceId());
+        lookup.setProductTableName(tableName.trim());
+        lookup.setProductDefinitionId(definitionId);
         return lookup;
     }
 

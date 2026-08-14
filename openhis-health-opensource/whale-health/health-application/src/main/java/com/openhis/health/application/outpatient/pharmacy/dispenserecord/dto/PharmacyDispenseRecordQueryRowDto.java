@@ -107,4 +107,13 @@ public class PharmacyDispenseRecordQueryRowDto {
 
     /** 药嘱主键。 */
     private Long medReqId;
+
+    /** 住院号（住院发药报表装配；门诊行可空）。 */
+    private String inpatientNo;
+
+    /** 病区名称（住院发药报表装配；门诊行可空）。 */
+    private String wardName;
+
+    /** 床号（住院发药报表装配；门诊行可空）。 */
+    private String bedName;
 }

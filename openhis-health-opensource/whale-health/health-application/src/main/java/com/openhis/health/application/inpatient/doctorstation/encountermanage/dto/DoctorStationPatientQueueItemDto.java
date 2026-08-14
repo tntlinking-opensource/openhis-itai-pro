@@ -269,4 +269,10 @@ public class DoctorStationPatientQueueItemDto implements InpatientAccountBalance
      */
     @Schema(description = "费用性质/医保类型展示")
     private String contractDisplay;
+
+    /**
+     * 险种类型码（国家医保：310 职工 / 390 城乡居民等）：来自就诊医保账户 {@code adm_account.insutype}。
+     */
+    @Schema(description = "险种类型码（310 职工 / 390 城乡居民等）")
+    private String insutype;
 }

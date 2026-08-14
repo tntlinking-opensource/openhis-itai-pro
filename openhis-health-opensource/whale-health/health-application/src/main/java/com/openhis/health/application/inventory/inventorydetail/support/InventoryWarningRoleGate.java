@@ -4,51 +4,29 @@
  */
 package com.openhis.health.application.inventory.inventorydetail.support;
 
-import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
-import com.openhis.whale.core.infrastructure.security.ICurrentUser;
-import com.openhis.whale.identity.application.UserAppService;
-import com.openhis.whale.identity.application.dto.RoleDto;
+import com.openhis.whale.core.infrastructure.permission.IPermissionChecker;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import java.util.List;
-
 /**
- * 库存/效期预警可见性：仅库管或药师登录角色可查看工作台预警与统计。
+ * 库存/效期预警可见性：具备「库存明细」菜单权限（{@code Navigation.Invstocklist}）即可查看。
  */
 @Component
 @RequiredArgsConstructor
 public class InventoryWarningRoleGate {
 
-    private final ICurrentUser currentUser;
-    private final UserAppService userAppService;
+    /** 库存明细菜单导航权限名（与菜单 {@code InvStockList} / 路径 {@code /inventory/stock-list} 同源）。 */
+    private static final String STOCK_LIST_MENU_PERMISSION = "Navigation.Invstocklist";
+
+    private final IPermissionChecker permissionChecker;
 
     /**
-     * 当前登录用户是否具备库存预警查看权限（{@code ROLE_WAREHOUSE} 或 {@code ROLE_PHARMACIST}）。
+     * 当前登录用户是否具备库存预警查看权限（与库存明细菜单权限一致）。
      *
      * @return 可查看时为 {@code true}
      */
     public boolean canViewInventoryWarnings() {
-        // 未登录用户不可见预警
-        if (!this.currentUser.isAuthenticated()) {
-            return false;
-        }
-        Long userId = this.currentUser.getCurrentUserId();
-        if (userId == null) {
-            return false;
-        }
-        List<RoleDto> roles = this.userAppService.getRoles(userId);
-        for (RoleDto role : roles) {
-            if (role == null || role.getCode() == null) {
-                continue;
-            }
-            String code = role.getCode().trim();
-            // 库管或药师角色可查看预警入口
-            if (WhalePlatformRoleCodeConstants.ROLE_WAREHOUSE.equalsIgnoreCase(code)
-                || WhalePlatformRoleCodeConstants.ROLE_PHARMACIST.equalsIgnoreCase(code)) {
-                return true;
-            }
-        }
-        return false;
+        // Gate：与库存明细菜单授权同源，无该菜单则不展示工作台预警入口
+        return this.permissionChecker.isGranted(STOCK_LIST_MENU_PERMISSION);
     }
 }

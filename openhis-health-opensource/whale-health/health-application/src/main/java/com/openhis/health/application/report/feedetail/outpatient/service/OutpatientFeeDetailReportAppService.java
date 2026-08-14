@@ -29,6 +29,7 @@ import com.openhis.health.application.shared.option.TerminologyOptionLoader;
 import com.openhis.health.domain.administration.chargeitem.query.FeeDetailFinTypeSummaryQueryModel;
 import com.openhis.health.domain.administration.chargeitem.query.OutpatientFeeDetailPageQuery;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
+import com.openhis.health.domain.share.constants.FeeDetailReportConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.OutpatientFeeDetailReportConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
@@ -51,11 +52,13 @@ import java.util.Map;
  *
  * <p>职责边界：</p>
  * <ul>
- *   <li>Gate：登录、日期窗、呈现模式（SUMMARY/DETAIL）。</li>
+ *   <li>Gate：登录、日期窗、呈现模式（SUMMARY/DETAIL）、汇总维度白名单。</li>
  *   <li>Pre：明细 IF 门面委托 {@link OutpatientFeeDetailAppService}；汇总走
- *       {@link OutpatientFeeDetailLoader} + {@link ChargeItemQueryService#summarizeOutpatientFeeDetailByFinType}。</li>
+ *       {@link OutpatientFeeDetailLoader} + {@link ChargeItemQueryService#summarizeOutpatientFeeDetailByFinType}
+ *      （缓存 chargeRows 供多维分桶）。</li>
  *   <li>Cmd：无写库（只读报表）。</li>
- *   <li>Asm：{@link FeeDetailReportFinTypeSummaryAssembler} 按 fin_type 合并与页脚结算刻度。</li>
+ *   <li>Asm：{@link FeeDetailReportFinTypeSummaryAssembler#assembleSummaryRows} 按
+ *       {@code summaryDimension}（FIN_TYPE / DEPARTMENT / FEE_CATEGORY / ITEM）分桶与页脚结算刻度。</li>
  * </ul>
  *
  * <p>接入：{@code AppServiceControllerRegistrar} →
@@ -108,11 +111,12 @@ public class OutpatientFeeDetailReportAppService {
             LoadOutpatientFeeDetailPageInitResponse source =
                 this.outpatientFeeDetailAppService.loadOutpatientFeeDetailPageInit(
                     new LoadOutpatientFeeDetailPageInitRequest());
-            // Asm：在前身选项上补呈现模式与默认汇总 Tab（BR-RPT-OFD-004/005）
+            // Asm：在前身选项上补呈现模式、汇总维度与默认汇总 Tab（BR-RPT-OFD-004/005）
             return this.outpatientFeeDetailReportMapper.toLoadPageInitResponse(
                 source,
                 this.buildPresentationModeOptions(),
-                OutpatientFeeDetailReportConstants.DEFAULT_ACTIVE_TAB);
+                OutpatientFeeDetailReportConstants.DEFAULT_ACTIVE_TAB,
+                this.buildSummaryDimensionOptions());
         } catch (BusinessException businessException) {
             // 前身业务码原样上抛，避免二次包装丢失语义
             throw businessException;
@@ -126,13 +130,14 @@ public class OutpatientFeeDetailReportAppService {
     }
 
     /**
-     * IF-RPT-OFD-02：费用类型净汇总。
+     * IF-RPT-OFD-02：费用明细多维净汇总。
      *
-     * <p>收退 Tab 强制 ALL（净视角，BR-RPT-OFD-003）；与明细同日期/科室等筛选。</p>
+     * <p>收退 Tab 强制 ALL（净视角，BR-RPT-OFD-003）；与明细同日期/科室等筛选。
+     * 汇总维度默认 FIN_TYPE；亦可 DEPARTMENT / FEE_CATEGORY / ITEM。</p>
      *
-     * @param request 筛选条件（收退方向忽略，强制 ALL）
-     * @return fin_type 汇总行 + 页脚
-     * @throws BusinessException 日期非法 {@code EX-RPT-OFD-102}；查询/数据不完整 {@code EX-RPT-OFD-103}
+     * @param request 筛选条件（收退方向忽略，强制 ALL）+ 可选 summaryDimension
+     * @return 汇总行 + 页脚
+     * @throws BusinessException 日期/维度非法 {@code EX-RPT-OFD-102}；查询/数据不完整 {@code EX-RPT-OFD-103}
      */
     public SummarizeOutpatientFeeDetailReportResponse summarizeOutpatientFeeDetailReport(
         SummarizeOutpatientFeeDetailReportRequest request) {
@@ -142,20 +147,24 @@ public class OutpatientFeeDetailReportAppService {
             "费用明细汇总失败，请稍后重试");
         // Gate：日期闭区间必填且止日不早于起日（BR-RPT-OFD-005）
         this.validateDateWindow(request.getDateFrom(), request.getDateTo());
+        // Gate：汇总维度白名单；空回落 FIN_TYPE，非法码 → EX-RPT-OFD-102
+        String summaryDimension = this.normalizeAndValidateSummaryDimension(request.getSummaryDimension());
         try {
             // Asm：Request → Query，Mapper 内强制 tradeDirection=ALL
             OutpatientFeeDetailPageQuery query = this.outpatientFeeDetailReportMapper.toSummarizeQuery(request);
             this.applyEntererMatchToFeeDetailQuery(query);
-            // Pre：payment bill_date scope + 科室/患者/项目收窄
-            this.outpatientFeeDetailLoader.prepareOutpatientFeeDetailQueryScopes(query);
-            // Pre：域层按 definition_id 代数净汇总（含退负号）
+            // Pre：汇总不展示医保分摊列；按账单 occurrence 窗取 scope（禁止扫 Payment）
+            query.setSkipYbFundAmountAttach(Boolean.TRUE);
+            this.outpatientFeeDetailLoader.prepareOutpatientFeeDetailSummarizeScopesFromChargeBill(query);
+            // Pre：域层按 definition_id 代数净汇总（含退负号；同时缓存 chargeRows 供多维分桶）
             List<FeeDetailFinTypeSummaryQueryModel> domainRows =
                 this.chargeItemQueryService.summarizeOutpatientFeeDetailByFinType(query);
             Map<String, String> finTypeLabelByCode =
                 this.terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.FIN_TYPE_CODE);
-            // Asm：历史定价 type_code enrich + 同 fin_type 合并（禁止当前 ACTIVE 目录价）
+            // Asm：按汇总维度合并（FIN_TYPE / 科室 / 大类 / 品规）
             List<FeeDetailReportSummaryRowDto> rows =
-                this.feeDetailReportFinTypeSummaryAssembler.assembleMergedFinTypeRows(
+                this.feeDetailReportFinTypeSummaryAssembler.assembleSummaryRows(
+                    summaryDimension,
                     query,
                     domainRows,
                     finTypeLabelByCode,
@@ -300,7 +309,7 @@ public class OutpatientFeeDetailReportAppService {
     }
 
     /**
-     * 收费人筛选写入 payment enterer 白名单。
+     * 收费人筛选写入账单 {@code enterer_id} 白名单（Practitioner 兼容；不查 Payment）。
      *
      * @param query 费用明细 Query
      */
@@ -372,13 +381,84 @@ public class OutpatientFeeDetailReportAppService {
         summarizeRequest.setDateFrom(request.getDateFrom());
         summarizeRequest.setDateTo(request.getDateTo());
         summarizeRequest.setRegistrationDepartmentId(request.getRegistrationDepartmentId());
+        summarizeRequest.setRequestingOrgId(request.getRequestingOrgId());
         summarizeRequest.setFeeCategoryCodes(request.getFeeCategoryCodes());
         summarizeRequest.setSubCategoryCodes(request.getSubCategoryCodes());
         summarizeRequest.setPatientKeyword(request.getPatientKeyword());
         summarizeRequest.setProductNameKeyword(request.getProductNameKeyword());
         summarizeRequest.setProductCodeKeyword(request.getProductCodeKeyword());
         summarizeRequest.setCashierId(request.getCashierId());
+        summarizeRequest.setSummaryDimension(request.getSummaryDimension());
         return summarizeRequest;
+    }
+
+    /**
+     * 构造汇总维度下拉（FIN_TYPE / DEPARTMENT / FEE_CATEGORY / ITEM）。
+     *
+     * @return 汇总维度选项
+     */
+    private List<OptionDto> buildSummaryDimensionOptions() {
+        List<OptionDto> options = new ArrayList<>();
+        options.add(this.buildOption(
+            FeeDetailReportConstants.SUMMARY_DIMENSION_FIN_TYPE,
+            FeeDetailReportConstants.SUMMARY_DIMENSION_FIN_TYPE_LABEL));
+        options.add(this.buildOption(
+            FeeDetailReportConstants.SUMMARY_DIMENSION_DEPARTMENT,
+            FeeDetailReportConstants.SUMMARY_DIMENSION_DEPARTMENT_LABEL));
+        options.add(this.buildOption(
+            FeeDetailReportConstants.SUMMARY_DIMENSION_FEE_CATEGORY,
+            FeeDetailReportConstants.SUMMARY_DIMENSION_FEE_CATEGORY_LABEL));
+        options.add(this.buildOption(
+            FeeDetailReportConstants.SUMMARY_DIMENSION_ITEM,
+            FeeDetailReportConstants.SUMMARY_DIMENSION_ITEM_LABEL));
+        return options;
+    }
+
+    /**
+     * 汇总维度规范化与白名单校验；空回落 FIN_TYPE，非法码拒绝。
+     *
+     * @param summaryDimension 请求维度
+     * @return 规范化维度 code
+     */
+    private String normalizeAndValidateSummaryDimension(String summaryDimension) {
+        // 空串回落默认费用类型维，兼容旧前端未传该字段
+        if (StringUtils.isEmpty(summaryDimension)) {
+            return FeeDetailReportConstants.DEFAULT_SUMMARY_DIMENSION;
+        }
+        String normalized = summaryDimension.trim();
+        // 白名单命中则放行；否则拒绝对齐 EX-RPT-OFD-102
+        if (this.isAllowedSummaryDimension(normalized)) {
+            return normalized;
+        }
+        throw new BusinessException(
+            OutpatientFeeDetailReportConstants.EX_RPT_OFD_102,
+            "汇总维度无效，请重新选择");
+    }
+
+    /**
+     * 汇总维度白名单。
+     *
+     * @param summaryDimension 维度 code
+     * @return 是否允许
+     */
+    private boolean isAllowedSummaryDimension(String summaryDimension) {
+        // 费用类型（默认维）
+        if (FeeDetailReportConstants.SUMMARY_DIMENSION_FIN_TYPE.equals(summaryDimension)) {
+            return true;
+        }
+        // 开立科室
+        if (FeeDetailReportConstants.SUMMARY_DIMENSION_DEPARTMENT.equals(summaryDimension)) {
+            return true;
+        }
+        // 费用大类（药品/诊疗/耗材/挂号）
+        if (FeeDetailReportConstants.SUMMARY_DIMENSION_FEE_CATEGORY.equals(summaryDimension)) {
+            return true;
+        }
+        // 品规/项目（definition）
+        if (FeeDetailReportConstants.SUMMARY_DIMENSION_ITEM.equals(summaryDimension)) {
+            return true;
+        }
+        return false;
     }
 
     /**

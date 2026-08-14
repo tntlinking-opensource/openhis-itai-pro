@@ -47,6 +47,17 @@ public class YbEncounterPlatformMapDomainService {
         YbEncounterPlatformMap existing = findActive(
             encounterId, contractId, normalizedMedType, tenantId);
         if (existing != null) {
+            // Pre：registerFresh 软删未命中时勿直接复用旧 mdtrt，覆盖为平台新就诊号
+            if (!normalizedMdtrtId.equals(existing.getMdtrtId())) {
+                existing.setMdtrtId(normalizedMdtrtId);
+                if (isNotEmpty(psnNo)) {
+                    existing.setPsnNo(psnNo);
+                }
+                if (isNotEmpty(iptOtpNo)) {
+                    existing.setIptOtpNo(iptOtpNo);
+                }
+                return encounterPlatformMapRepository.saveAndFlush(existing);
+            }
             return existing;
         }
         YbEncounterPlatformMap row = new YbEncounterPlatformMap();
@@ -145,7 +156,8 @@ public class YbEncounterPlatformMapDomainService {
             if (operatorId != null) {
                 row.setDeletedBy(operatorId);
             }
-            encounterPlatformMapRepository.save(row);
+            // Pre：立即刷库，避免同事务内 saveAfter 仍读到未删旧行并复用死 mdtrt
+            encounterPlatformMapRepository.saveAndFlush(row);
         });
     }
 

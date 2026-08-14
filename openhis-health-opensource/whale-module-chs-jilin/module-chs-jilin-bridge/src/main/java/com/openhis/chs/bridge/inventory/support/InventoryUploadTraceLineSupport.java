@@ -28,8 +28,11 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -104,6 +107,185 @@ public class InventoryUploadTraceLineSupport {
             medication.getCategoryCode(),
             trdnFlag,
             inventoryProperties));
+    }
+
+    /**
+     * 住院清床合并销售：按多发放/退药单号汇总每码净实扣后写 {@code trdn_flag} 与策略。
+     *
+     * <p>同码多天扫只报一次时，禁止用代表行单一 {@code bus_no} 套门诊算法；
+     * 须 {@code sum(OUT) − sum(IN)} 按码累计后再
+     * {@link InventoryTracePolicySupport#resolveTrdnFlagFromActualDeducts}。</p>
+     *
+     * @param medication         药品
+     * @param operationUnitCode  上报数量单位（与 sel_retn_cnt 同阶）
+     * @param netTraceCodes      去重后的净上报码
+     * @param forwardBusNos      正向已核发发放行 bus_no
+     * @param refundBusNos       已确认退药发放行 bus_no
+     * @param cmd                已含 drugTracCodgs / selRetnCnt 的上报行
+     */
+    public void applyClearBedMergedTrdnFlagAndPolicy(
+        MedicationDefinition medication,
+        String operationUnitCode,
+        List<String> netTraceCodes,
+        Collection<String> forwardBusNos,
+        Collection<String> refundBusNos,
+        InvUploadLineCommand cmd
+    ) {
+        if (medication == null || cmd == null) {
+            return;
+        }
+        List<String> codes = netTraceCodes;
+        // 调用方未传码列表：回落行上已装码
+        if (codes == null) {
+            codes = cmd.getDrugTracCodgs();
+        }
+        // 无医保目录编码：无需追溯；未扫默认 trdn_flag=1
+        if (isEmpty(cmd.getMedListCodg())) {
+            cmd.setTracePolicy(ChsInventoryConstants.TRACE_POLICY_NO_YB_NO);
+            cmd.setTrdnFlag(InventoryTracePolicySupport.resolveTrdnFlagUnscannedDefault());
+            return;
+        }
+        // 未扫：默认拆零
+        if (codes == null || codes.isEmpty()) {
+            cmd.setTrdnFlag(InventoryTracePolicySupport.resolveTrdnFlagUnscannedDefault());
+            cmd.setTracePolicy(InventoryTracePolicySupport.resolve(
+                medication.getYbNo(),
+                medication.getCategoryCode(),
+                cmd.getTrdnFlag(),
+                inventoryProperties));
+            return;
+        }
+        String traceUnit = this.resolveFirstTraceUnitCode(codes);
+        BigDecimal perTrace = InventoryUploadQuantityAssembler.ratioToSplit(medication, traceUnit);
+        List<BigDecimal> perCodeNetDeducts = this.listMergedPerCodeNetSplitDeducts(
+            codes, forwardBusNos, refundBusNos);
+        String trdnFlag = InventoryTracePolicySupport.resolveTrdnFlagFromActualDeducts(
+            codes, perCodeNetDeducts, perTrace, operationUnitCode, traceUnit);
+        // 无流水实扣时回落行数量余数，避免合并行误用代表 busNo
+        if (perCodeNetDeducts.isEmpty()) {
+            BigDecimal opSplit = InventoryUploadQuantityAssembler.operationQuantityToSplit(
+                medication, operationUnitCode, cmd.getSelRetnCnt());
+            trdnFlag = InventoryTracePolicySupport.resolveTrdnFlag(
+                operationUnitCode, traceUnit, opSplit, perTrace);
+        }
+        cmd.setTrdnFlag(trdnFlag);
+        cmd.setTracePolicy(InventoryTracePolicySupport.resolve(
+            medication.getYbNo(),
+            medication.getCategoryCode(),
+            trdnFlag,
+            inventoryProperties));
+    }
+
+    /**
+     * 按码汇总清床合并桶内发药 OUT 减退药 IN 的净拆零实扣（与 netTraceCodes 同序，缺流水则跳过该码）。
+     *
+     * @param netTraceCodes  去重净码
+     * @param forwardBusNos  正向发放 bus_no
+     * @param refundBusNos   退药发放 bus_no
+     * @return 每码净实扣列表（仅含能解析到正净量的码）
+     */
+    private List<BigDecimal> listMergedPerCodeNetSplitDeducts(
+        List<String> netTraceCodes,
+        Collection<String> forwardBusNos,
+        Collection<String> refundBusNos
+    ) {
+        List<BigDecimal> deducts = new ArrayList<>();
+        if (netTraceCodes == null || netTraceCodes.isEmpty()) {
+            return deducts;
+        }
+        Map<String, BigDecimal> netByCode = new LinkedHashMap<>();
+        for (String code : netTraceCodes) {
+            if (isEmpty(code)) {
+                continue;
+            }
+            netByCode.put(code.trim(), BigDecimal.ZERO);
+        }
+        // 无有效码：无实扣
+        if (netByCode.isEmpty()) {
+            return deducts;
+        }
+        List<String> outOps = List.of(
+            TraceNumberRecordOperationType.MEDICATION_DISPENSE_OUT.getCode(),
+            TraceNumberRecordOperationType.MEDICATION_EXTRA_DISPENSE_OUT.getCode());
+        List<String> inOps = List.of(TraceNumberRecordOperationType.MEDICATION_RETURN_IN.getCode());
+        if (forwardBusNos != null) {
+            for (String busNo : forwardBusNos) {
+                this.accumulateHospitalIoSplitByCode(netByCode, busNo, outOps, true);
+            }
+        }
+        if (refundBusNos != null) {
+            for (String busNo : refundBusNos) {
+                this.accumulateHospitalIoSplitByCode(netByCode, busNo, inOps, false);
+            }
+        }
+        for (String code : netTraceCodes) {
+            if (isEmpty(code)) {
+                continue;
+            }
+            BigDecimal net = netByCode.get(code.trim());
+            // 无净正量：该码不参与满盒判定列表（与 resolveTrdnFlagFromActualDeducts 跳过非正一致）
+            if (net == null || net.compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            deducts.add(net);
+        }
+        return deducts;
+    }
+
+    /**
+     * 将单号下指定操作类型的 HOSPITAL_IO 拆零量按码累加或扣减到 netByCode。
+     *
+     * @param netByCode   码 → 净拆零（仅处理已在 map 中的码）
+     * @param busNo       发放 bus_no
+     * @param operationTypes 操作类型
+     * @param add         true=加 OUT；false=减 IN
+     */
+    private void accumulateHospitalIoSplitByCode(
+        Map<String, BigDecimal> netByCode,
+        String busNo,
+        List<String> operationTypes,
+        boolean add
+    ) {
+        if (isEmpty(busNo) || netByCode == null || netByCode.isEmpty()) {
+            return;
+        }
+        List<TraceNumberRecordQueryModel> rows;
+        // 发药 OUT 与退药 IN 分向查询
+        if (add) {
+            rows = traceNumberQueryService.listHospitalIoOutRecordsByBusNoAndOperationTypes(
+                busNo.trim(), operationTypes);
+        } else {
+            rows = traceNumberQueryService.listHospitalIoInRecordsByBusNoAndOperationTypes(
+                busNo.trim(), operationTypes);
+        }
+        for (TraceNumberRecordQueryModel row : rows) {
+            if (row == null || isEmpty(row.getTraceNo())) {
+                continue;
+            }
+            String code = row.getTraceNo().trim();
+            // 不在本合并行净码集合：忽略（防串码）
+            if (!netByCode.containsKey(code)) {
+                continue;
+            }
+            BigDecimal split = row.getSplitQuantity();
+            // 缺拆零量时回落业务 quantity
+            if (split == null || split.compareTo(BigDecimal.ZERO) <= 0) {
+                split = row.getQuantity();
+            }
+            if (split == null || split.compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            BigDecimal current = netByCode.get(code);
+            if (current == null) {
+                current = BigDecimal.ZERO;
+            }
+            // OUT 累加；IN 扣减本患者退药
+            if (add) {
+                netByCode.put(code, current.add(split));
+            } else {
+                netByCode.put(code, current.subtract(split));
+            }
+        }
     }
 
     /**

@@ -21,7 +21,8 @@ import java.util.List;
 /**
  * 退供应商 IF-WHS-RT-13：按「当前院内剩余码」预填追溯码（AS-INV-WHS-005 · BR-WHS-RT-008）。
  *
- * <p>有码批：源药库本库净量优先；本库空则全院同品同批在院剩余。无码批：清空、不校验。
+ * <p>有码批：源药库本库净量优先（且主档在院剩余 &gt; 0）；本库空则全院同品同批在院剩余。
+ * 截取个数按 {@code min(可退余量, 源库可用量)} 与每码拆零比换算。无码批：清空、不校验。
  * 禁止回放进货单历史 {@code trace_no}。</p>
  */
 @Component
@@ -32,7 +33,7 @@ public class ReturnToSupplierRemainingTracePrefiller {
     private final TraceNumberQueryService traceNumberQueryService;
 
     /**
-     * 覆盖可退行上的追溯码：当前剩余码（本库优先 / 全院回落），按可退拆零截取应退个数。
+     * 覆盖可退行上的追溯码：当前剩余码（本库优先 / 全院回落），按可退∩源库可用截取应退个数。
      *
      * @param lines             可退明细（Mapper 已映射；本方法会改写 {@code traceNo}）
      * @param sourceLocationId  退货源药库（= 进货目的库）
@@ -73,7 +74,7 @@ public class ReturnToSupplierRemainingTracePrefiller {
                     line.getItemId(),
                     lotNumber.trim()
                 );
-            // 本库无净量：回落全院在院且剩余 > 0（不看 loc）
+            // 本库无在院剩余净量：回落全院在院且剩余 > 0（不看 loc）
             if (remaining == null || remaining.isEmpty()) {
                 remaining = this.traceNumberQueryService.listInHospitalTraceNumbersByItemLot(
                     itemTable,
@@ -102,9 +103,11 @@ public class ReturnToSupplierRemainingTracePrefiller {
     }
 
     /**
-     * 按可退拆零量与主档每码拆零比计算应退码个数；无法换算时取剩余码全量供用户裁剪。
+     * 按可退∩源库可用拆零量与主档每码拆零比计算应退码个数；无法换算时取剩余码全量供用户裁剪。
      *
-     * @param line      可退行（含可退拆零量）
+     * <p>可退余量按进货占用口径可能仍大于源库账面；截码须同时受源库可用约束，避免多带已调出/已发药码。</p>
+     *
+     * @param line      可退行（含可退余量、源库可用量）
      * @param remaining 已选出的剩余码列表（首码可带 {@code traceUnitRatio}）
      * @return 应截取个数
      */
@@ -112,8 +115,8 @@ public class ReturnToSupplierRemainingTracePrefiller {
         ReturnableInboundLineDto line,
         List<InventoryItemTraceNumberQueryModel> remaining
     ) {
-        BigDecimal returnable = line.getReturnableQuantity();
-        if (returnable == null || returnable.compareTo(BigDecimal.ZERO) <= 0) {
+        BigDecimal splitCap = this.resolveSplitCapForTake(line);
+        if (splitCap == null || splitCap.compareTo(BigDecimal.ZERO) <= 0) {
             return remaining.size();
         }
         InventoryItemTraceNumberQueryModel first = remaining.get(0);
@@ -124,13 +127,40 @@ public class ReturnToSupplierRemainingTracePrefiller {
         if (perCodeSplit == null || perCodeSplit.compareTo(BigDecimal.ZERO) <= 0) {
             return remaining.size();
         }
-        // 应退码数 = ceil(可退拆零 / 每码拆零)，至少 1
-        int n = returnable.divide(perCodeSplit, 6, RoundingMode.HALF_UP)
+        // 应退码数 = ceil(截码拆零上限 / 每码拆零)，至少 1
+        int n = splitCap.divide(perCodeSplit, 6, RoundingMode.HALF_UP)
             .setScale(0, RoundingMode.CEILING)
             .intValue();
         if (n < 1) {
             return 1;
         }
         return n;
+    }
+
+    /**
+     * 截码拆零上限：可退余量与源库可用量取较小正值；仅一侧有值则用该侧；皆空则 null（调用方取剩余全量）。
+     *
+     * @param line 可退行
+     * @return 拆零上限；无法约束时 null
+     */
+    private BigDecimal resolveSplitCapForTake(ReturnableInboundLineDto line) {
+        BigDecimal returnable = line.getReturnableQuantity();
+        BigDecimal available = line.getSourceAvailableQuantity();
+        boolean returnablePositive = returnable != null && returnable.compareTo(BigDecimal.ZERO) > 0;
+        boolean availablePositive = available != null && available.compareTo(BigDecimal.ZERO) > 0;
+        // 两侧皆有：取较小，防止进货可退口径大于源库账面时多带码
+        if (returnablePositive && availablePositive) {
+            if (returnable.compareTo(available) <= 0) {
+                return returnable;
+            }
+            return available;
+        }
+        if (returnablePositive) {
+            return returnable;
+        }
+        if (availablePositive) {
+            return available;
+        }
+        return null;
     }
 }

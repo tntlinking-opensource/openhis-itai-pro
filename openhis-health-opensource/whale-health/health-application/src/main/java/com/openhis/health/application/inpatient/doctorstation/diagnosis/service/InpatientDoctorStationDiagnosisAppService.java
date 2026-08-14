@@ -33,6 +33,7 @@ import com.openhis.health.domain.administration.encounter.service.EncounterQuery
 import com.openhis.health.domain.clinical.conditiondefinition.queries.model.DoctorStationConditionDefinitionRowModel;
 import com.openhis.health.domain.clinical.conditiondefinition.service.ConditionDefinitionQueryService;
 import com.openhis.health.domain.custom.conditiontemplate.command.BindConditionTemplateCommand;
+import com.openhis.health.domain.custom.conditiontemplate.command.UnbindConditionTemplateCommand;
 import com.openhis.health.domain.custom.conditiontemplate.queries.model.ConditionTemplateQueryModel;
 import com.openhis.health.domain.custom.conditiontemplate.service.ConditionTemplateDomainService;
 import com.openhis.health.domain.custom.conditiontemplate.service.ConditionTemplateQueryService;
@@ -46,8 +47,13 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.InpatientDoctorStationDiagnosisConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.enums.ConditionTemplateBinding;
+import com.openhis.health.application.outpatient.doctorstation.diagnosis.dto.MaintainableCommonDiagnosisRowDto;
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.request.BindCommonDiagnosisRequest;
+import com.openhis.health.application.outpatient.doctorstation.diagnosis.request.ListMaintainableCommonDiagnosesRequest;
+import com.openhis.health.application.outpatient.doctorstation.diagnosis.request.UnbindCommonDiagnosisRequest;
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.response.BindCommonDiagnosisResponse;
+import com.openhis.health.application.outpatient.doctorstation.diagnosis.response.ListMaintainableCommonDiagnosesResponse;
+import com.openhis.health.application.outpatient.doctorstation.diagnosis.response.UnbindCommonDiagnosisResponse;
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.support.PatientHistoryCommonDiagnosisAssembler;
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.support.PatientHistoryCommonDiagnosisRow;
 import com.openhis.health.domain.share.utils.EnumUtil;
@@ -208,7 +214,7 @@ public class InpatientDoctorStationDiagnosisAppService {
      * @throws BusinessException 门控失败或领域规则冲突时抛出
      */
     public SaveEncounterDiagnosisResponse saveDoctorDiagnosis(SaveEncounterDiagnosisRequest request) {
-        // Gate：批次结构、住院类别、患者一致性与可写态
+        // Gate：批次结构、住院类别、患者一致性（诊断允许后补，不按在院状态拦截）
         inpatientDoctorStationDiagnosisMapper.validateSaveEncounterDiagnosisRequest(request);
         inpatientDoctorStationDiagnosisMapper.validateIptDiseaseTypeCodesInBatch(request);
         InpatientEncounterContextQueryModel snapshot =
@@ -295,6 +301,105 @@ public class InpatientDoctorStationDiagnosisAppService {
     }
 
     /**
+     * 列出当前登录用户可维护的个人/科室常用诊断（与门诊同构）。
+     *
+     * @param request 空请求体即可
+     * @return 个人列表与科室列表
+     * @throws BusinessException 未登录时
+     */
+    public ListMaintainableCommonDiagnosesResponse listMaintainableCommonDiagnoses(
+        ListMaintainableCommonDiagnosesRequest request) {
+        // Gate：须已登录
+        Long operatorId = this.currentOperatorResolver.findOperatorIdOrNull();
+        if (operatorId == null) {
+            throw new BusinessException(ErrorCodeConstants.CONDITION_TEMPLATE_INVALID_ARGUMENT, "请先登录后再操作");
+        }
+        // Pre：术语来源展示 + 当前登录科室
+        Map<String, String> sourceLabels = this.buildSourceLabelMap();
+        Long orgId = this.managedOrganizationIdsResolver.resolveOrganizationUnitIdForQuery();
+        List<ConditionTemplateQueryModel> personalTemplates = this.conditionTemplateQueryService.listByOwnerAndType(
+            operatorId, ConditionTemplateBinding.PERSONAL.getCode());
+        List<MaintainableCommonDiagnosisRowDto> personalRows =
+            this.mapTemplatesToMaintainableRows(personalTemplates, sourceLabels);
+        List<MaintainableCommonDiagnosisRowDto> departmentRows = new ArrayList<>();
+        if (orgId != null) {
+            List<ConditionTemplateQueryModel> orgTemplates = this.conditionTemplateQueryService.listByOwnerAndType(
+                orgId, ConditionTemplateBinding.DEPARTMENT.getCode());
+            departmentRows = this.mapTemplatesToMaintainableRows(orgTemplates, sourceLabels);
+        }
+        // Asm：组装响应
+        ListMaintainableCommonDiagnosesResponse response = new ListMaintainableCommonDiagnosesResponse();
+        response.setPersonalList(personalRows);
+        response.setDepartmentList(departmentRows);
+        return response;
+    }
+
+    /**
+     * 解绑个人/科室常用诊断模板行（与门诊同构；仅本用户/本科室）。
+     *
+     * @param request 模板行主键列表
+     * @return 解绑结果
+     * @throws BusinessException 未登录、主键为空、无权解绑时
+     */
+    public UnbindCommonDiagnosisResponse unbindCommonDiagnosis(UnbindCommonDiagnosisRequest request) {
+        // Gate：主键列表非空
+        if (request == null || request.getTemplateIds() == null || request.getTemplateIds().isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.CONDITION_TEMPLATE_INVALID_ARGUMENT, "模板行主键不能为空");
+        }
+        Long operatorId = this.currentOperatorResolver.findOperatorIdOrNull();
+        if (operatorId == null) {
+            throw new BusinessException(ErrorCodeConstants.CONDITION_TEMPLATE_INVALID_ARGUMENT, "请先登录后再操作");
+        }
+        Long orgId = this.managedOrganizationIdsResolver.resolveOrganizationUnitIdForQuery();
+        // Pre：汇总当前用户可操作的模板主键
+        Set<Long> allowedIds = new HashSet<>();
+        List<ConditionTemplateQueryModel> ownedPersonal = this.conditionTemplateQueryService.listByOwnerAndType(
+            operatorId, ConditionTemplateBinding.PERSONAL.getCode());
+        for (ConditionTemplateQueryModel row : ownedPersonal) {
+            if (row.getId() != null) {
+                allowedIds.add(row.getId());
+            }
+        }
+        if (orgId != null) {
+            List<ConditionTemplateQueryModel> ownedDept = this.conditionTemplateQueryService.listByOwnerAndType(
+                orgId, ConditionTemplateBinding.DEPARTMENT.getCode());
+            for (ConditionTemplateQueryModel row : ownedDept) {
+                if (row.getId() != null) {
+                    allowedIds.add(row.getId());
+                }
+            }
+        }
+        List<Long> toUnbind = new ArrayList<>();
+        for (Long templateId : request.getTemplateIds()) {
+            if (templateId == null) {
+                throw new BusinessException(ErrorCodeConstants.CONDITION_TEMPLATE_INVALID_ARGUMENT, "模板行主键不能为空");
+            }
+            if (!allowedIds.contains(templateId)) {
+                throw new BusinessException(ErrorCodeConstants.CONDITION_TEMPLATE_INVALID_ARGUMENT, "无权解绑该常用诊断");
+            }
+            toUnbind.add(templateId);
+        }
+        // Cmd：领域批量软删
+        UnbindConditionTemplateCommand command = new UnbindConditionTemplateCommand();
+        command.setOperatorId(operatorId);
+        List<UnbindConditionTemplateCommand.UnbindConditionTemplateItemCommand> items = new ArrayList<>();
+        for (Long templateId : toUnbind) {
+            UnbindConditionTemplateCommand.UnbindConditionTemplateItemCommand item =
+                new UnbindConditionTemplateCommand.UnbindConditionTemplateItemCommand();
+            item.setTemplateId(templateId);
+            items.add(item);
+        }
+        command.setItems(items);
+        this.conditionTemplateDomainService.unbindConditionTemplate(command);
+        // Asm：成功响应
+        UnbindCommonDiagnosisResponse response = new UnbindCommonDiagnosisResponse();
+        response.setSuccess(Boolean.TRUE);
+        response.setUnboundCount(toUnbind.size());
+        response.setMessage("常用诊断已移除");
+        return response;
+    }
+
+    /**
      * 按归属对象与绑定类型批量绑定诊断定义。
      *
      * @param objectId      归属对象
@@ -329,7 +434,7 @@ public class InpatientDoctorStationDiagnosisAppService {
      */
     public DeleteEncounterDiagnosisResponse delEncounterDiagnosis(DeleteEncounterDiagnosisRequest request) {
         Long encounterDiagnosisId = inpatientDoctorStationDiagnosisMapper.resolveDeleteEncounterDiagnosisId(request);
-        // Gate：删除请求、住院类别、患者一致性与可写态
+        // Gate：删除请求、住院类别、患者一致性（诊断允许后补，不按在院状态拦截）
         inpatientDoctorStationDiagnosisMapper.validateDeleteEncounterDiagnosisRequest(
             encounterDiagnosisId,
             request.getEncounterId());
@@ -523,6 +628,54 @@ public class InpatientDoctorStationDiagnosisAppService {
     }
 
     /**
+     * 将模板绑定列表解析为可维护常用诊断行（带回 templateId）。
+     *
+     * @param templates    模板只读行
+     * @param sourceLabels 来源展示映射
+     * @return 可维护行列表
+     */
+    private List<MaintainableCommonDiagnosisRowDto> mapTemplatesToMaintainableRows(
+        List<ConditionTemplateQueryModel> templates,
+        Map<String, String> sourceLabels) {
+        List<MaintainableCommonDiagnosisRowDto> rows = new ArrayList<>();
+        if (templates == null || templates.isEmpty()) {
+            return rows;
+        }
+        List<Long> ids = new ArrayList<>();
+        for (ConditionTemplateQueryModel template : templates) {
+            if (template.getDefinitionId() != null) {
+                ids.add(template.getDefinitionId());
+            }
+        }
+        List<DoctorStationConditionDefinitionRowModel> defs =
+            this.conditionDefinitionQueryService.listActiveDoctorStationRowsByIds(ids);
+        Map<Long, DoctorStationConditionDefinitionRowModel> byId = new HashMap<>();
+        for (DoctorStationConditionDefinitionRowModel def : defs) {
+            byId.put(def.getId(), def);
+        }
+        for (ConditionTemplateQueryModel template : templates) {
+            DoctorStationConditionDefinitionRowModel def = byId.get(template.getDefinitionId());
+            MaintainableCommonDiagnosisRowDto row = new MaintainableCommonDiagnosisRowDto();
+            row.setTemplateId(template.getId());
+            row.setConditionDefinitionId(template.getDefinitionId());
+            row.setSortWeight(template.getSortWeight());
+            if (def != null) {
+                CommonDiagnosisRowDto common =
+                    this.inpatientDoctorStationDiagnosisMapper.toCommonDiagnosisRowDto(def, sourceLabels);
+                row.setConditionCode(common.getConditionCode());
+                row.setConditionDefinitionName(common.getConditionDefinitionName());
+                row.setDiagnosisKind(common.getDiagnosisKind());
+                row.setDiagnosisKindText(common.getDiagnosisKindText());
+                row.setYbNo(common.getYbNo());
+            } else {
+                row.setConditionDefinitionName("（目录已停用或不存在）");
+            }
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    /**
      * 将模板行解析为常用诊断候选（批量装载定义元数据后去重装配）。
      *
      * @param templates    模板只读行
@@ -553,7 +706,11 @@ public class InpatientDoctorStationDiagnosisAppService {
             if (def == null) {
                 continue;
             }
-            rows.add(inpatientDoctorStationDiagnosisMapper.toCommonDiagnosisRowDto(def, sourceLabels));
+            CommonDiagnosisRowDto row =
+                inpatientDoctorStationDiagnosisMapper.toCommonDiagnosisRowDto(def, sourceLabels);
+            // 个人/科室常用：回填模板主键，供快捷树就地解绑
+            row.setTemplateId(template.getId());
+            rows.add(row);
         }
         return rows;
     }

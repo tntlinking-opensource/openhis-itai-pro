@@ -15,6 +15,7 @@ import com.openhis.chs.domain.medicalinfo.command.QueryDise5202Command;
 import com.openhis.chs.domain.medicalinfo.command.QueryFee5204Command;
 import com.openhis.chs.domain.medicalinfo.command.QueryMdtrt5201Command;
 import com.openhis.chs.domain.medicalinfo.command.QueryOpspDrug5205Command;
+import com.openhis.chs.domain.medicalinfo.command.QueryOpspApproval5302ACommand;
 import com.openhis.chs.domain.medicalinfo.command.QueryOpspFiling5301Command;
 import com.openhis.chs.domain.medicalinfo.command.QuerySetl5203Command;
 import com.openhis.chs.domain.medicalinfo.constants.ChsMedicalInfoConstants;
@@ -111,6 +112,14 @@ public class MedicalInfoInvokeSupport {
     /** 校验 5301 慢特病备案信息查询入参。 */
     public void validateOpspFiling5301(QueryOpspFiling5301Command command) {
         requirePsnNo(command);
+    }
+
+    /** 校验 5302A 门诊慢特病审批查询入参。 */
+    public void validateOpspApproval5302A(QueryOpspApproval5302ACommand command) {
+        requirePsnNo(command);
+        if (command != null && isNotEmpty(command.getMedType())) {
+            command.setMedType(command.getMedType().trim());
+        }
     }
 
     private void requirePsnNo(MedicalInfoQueryBaseCommand command) {

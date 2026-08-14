@@ -14,6 +14,8 @@ import lombok.RequiredArgsConstructor;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -238,6 +240,64 @@ public class ClinicalCatalogDispenseLocationResolver {
             null,
             null
         );
+    }
+
+    /**
+     * 汇总机构取药科室模板上的全部 {@code def_location_id}（去重），供「只看库存&gt;0」分页 EXISTS 收窄。
+     *
+     * <p>与目录行可开立量展示同属模板库位空间；可选 {@code pharmacyLocationId} 在模板集合内时收窄为单点。
+     * 不按单品 calcScore 过滤（分页前尚无当前页产品），略宽于单品候选，但仍排除药库等非模板库位账面。</p>
+     *
+     * @param organizationId     开立/接诊科室
+     * @param pharmacyLocationId 可选指定药房
+     * @return 去重库位 id；机构为空或无模板时为空列表（非 null）
+     */
+    public List<Long> listOrganizationTemplateDefLocationIds(Long organizationId, Long pharmacyLocationId) {
+        if (organizationId == null) {
+            return List.of();
+        }
+        List<ServiceLocationTemplate> organizationRows = this.loadOrganizationTemplateRows(organizationId);
+        LinkedHashSet<Long> locationIds = new LinkedHashSet<>();
+        for (ServiceLocationTemplate row : organizationRows) {
+            if (row == null || row.getDefLocationId() == null) {
+                continue;
+            }
+            locationIds.add(row.getDefLocationId());
+        }
+        return this.narrowByPharmacyLocation(new ArrayList<>(locationIds), pharmacyLocationId);
+    }
+
+    /**
+     * 汇总住院科室取药模板中<strong>耗材</strong>候选库位（{@code item_table=adm_device_definition}）。
+     *
+     * <p>供护士划价耗材选品库存分页：按入院/当前住院科室配置的取药科室，
+     * <strong>不</strong>按登录人岗位管辖药房收窄。</p>
+     *
+     * @param organizationId     住院科室（就诊 organizationId）
+     * @param pharmacyLocationId 可选指定库房；须落在模板集合内
+     * @return 去重库位 id；无模板时为空列表
+     */
+    public List<Long> listDeviceTemplateDefLocationIds(Long organizationId, Long pharmacyLocationId) {
+        if (organizationId == null) {
+            return List.of();
+        }
+        List<ServiceLocationTemplate> organizationRows = this.loadOrganizationTemplateRows(organizationId);
+        LinkedHashSet<Long> locationIds = new LinkedHashSet<>();
+        for (ServiceLocationTemplate row : organizationRows) {
+            if (row == null || row.getDefLocationId() == null) {
+                continue;
+            }
+            // 软删模板不参与发材库位
+            if (Boolean.TRUE.equals(row.getIsDeleted())) {
+                continue;
+            }
+            // 仅耗材表模板（排除药品取药模板）
+            if (!TableNameConstants.ADM_DEVICE_DEFINITION.equals(row.getItemTable())) {
+                continue;
+            }
+            locationIds.add(row.getDefLocationId());
+        }
+        return this.narrowByPharmacyLocation(new ArrayList<>(locationIds), pharmacyLocationId);
     }
 
     /**

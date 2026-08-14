@@ -73,9 +73,9 @@ public class NurseStationExecutionInventoryAssembler {
         private String categoryCode;
         /** 给药途径编码（模板 calcScore 维度）。 */
         private String methodCode;
-        /** 业务单位数量（长期=单次量，临时=总量）。 */
+        /** 业务单位数量（可拆长期=单次量；临时=总量；一盒一点=1 包装）。 */
         private BigDecimal businessQuantity;
-        /** 业务单位编码。 */
+        /** 业务单位编码（一盒一点时为包装单位）。 */
         private String unitCode;
     }
 

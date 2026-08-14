@@ -15,6 +15,7 @@ import com.openhis.health.domain.mrms.caserecord.repository.CaseRecordHomepageRe
 import com.openhis.health.domain.mrms.caserecord.repository.CaseRecordRepository;
 import com.openhis.health.domain.mrms.caserecord.support.MedcasnoGenerator;
 import com.openhis.health.domain.share.constants.MrmsErrorCodes;
+import com.openhis.health.domain.share.enums.CaseRecordStatus;
 import com.openhis.health.domain.share.enums.CaseRecordTransitionAction;
 import com.openhis.health.domain.share.enums.HomepageDiagType;
 import com.openhis.health.domain.share.enums.WorkflowRole;
@@ -39,7 +40,7 @@ import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 /**
  * 病案主档（{@code mrms_case_record}）聚合写侧领域服务。
  *
- * <p>职责：幂等建档、离院 bootstrap、首页保存/自动取值、医生提交、工作流状态迁移与领域事件发布。</p>
+ * <p>职责：幂等建档、入院登记 bootstrap、首页保存/自动取值、医生提交、工作流状态迁移与领域事件发布。</p>
  * <p>不变量：状态迁移委托聚合根 {@link CaseRecord}；持久化先于 {@code publish} 领域事件。</p>
  */
 @Slf4j
@@ -94,7 +95,9 @@ public class CaseRecordDomainService {
     }
 
     /**
-     * 离院/集成 bootstrap：幂等建档 + 懒创建首页；新建时全量 HIS 自动取值并刷新列表冗余。
+     * 入院登记 bootstrap：幂等建档 + 懒创建首页；新建时全量 HIS 自动取值并刷新列表冗余。
+     *
+     * <p>主触发：住院登记提交 afterCommit；出院医嘱/首页打开仅作历史就诊幂等兜底。</p>
      *
      * @param tenantId 租户
      * @param patientId 患者
@@ -146,7 +149,7 @@ public class CaseRecordDomainService {
      */
     @Transactional(rollbackFor = Exception.class)
     public CaseRecordHomepage saveHomepage(HomepageSaveCommand command) {
-        // Pre：加载主档并断言医生可编辑
+        // Pre：加载主档并断言医生可编辑（draft/returned；归档冻结后不可改）
         CaseRecord record = requireById(command.getCaseRecordId());
         record.assertEditableByDoctor();
         // Cmd：首页写侧保存
@@ -164,7 +167,7 @@ public class CaseRecordDomainService {
      */
     @Transactional(rollbackFor = Exception.class)
     public CaseRecordHomepage refreshAutoFill(RefreshAutoFillCommand command) {
-        // Pre：主档与首页须处于医生可编辑态
+        // Pre：主档与首页须处于医生可编辑态（未归档冻结）
         CaseRecord record = requireById(command.getCaseRecordId());
         record.assertEditableByDoctor();
         CaseRecordHomepage homepage = requireHomepage(command.getCaseRecordId());
@@ -296,6 +299,72 @@ public class CaseRecordDomainService {
     }
 
     /**
+     * 4401 成功后隐性推进：将病案推到已归档并冻结首页（自动管理病案，用户无感）。
+     *
+     * <p>按状态机逐步 SUBMIT→RECEIVE→START_QC→ARCHIVE；已归档仅补冻结。任一步失败抛业务异常。</p>
+     *
+     * @param caseRecordId 病案主档主键
+     * @param operatorId 操作人（与现有迁移口径一致）
+     * @return 推进后的主档
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public CaseRecord ensureArchivedAndFrozenForUpload(Long caseRecordId, Long operatorId) {
+        CaseRecord record = requireById(caseRecordId);
+        // 已归档：仅确保首页冻结
+        if (record.getStatusEnum() == CaseRecordStatus.ARCHIVED) {
+            caseRecordHomepageDomainService.freeze(caseRecordId, operatorId);
+            return requireById(caseRecordId);
+        }
+        // draft/returned → 医生提交
+        if (record.getStatusEnum() == CaseRecordStatus.DRAFT
+                || record.getStatusEnum() == CaseRecordStatus.RETURNED) {
+            SubmitCaseRecordCommand submit = new SubmitCaseRecordCommand();
+            submit.setCaseRecordId(caseRecordId);
+            submit.setOperatorId(operatorId);
+            submit(submit);
+            record = requireById(caseRecordId);
+        }
+        // submitted → 病案室接收
+        if (record.getStatusEnum() == CaseRecordStatus.SUBMITTED) {
+            runRoomTransition(caseRecordId, CaseRecordTransitionAction.RECEIVE, operatorId);
+            record = requireById(caseRecordId);
+        }
+        // received → 开始质控
+        if (record.getStatusEnum() == CaseRecordStatus.RECEIVED) {
+            runRoomTransition(caseRecordId, CaseRecordTransitionAction.START_QC, operatorId);
+            record = requireById(caseRecordId);
+        }
+        // qcing → 归档（同步冻结）
+        if (record.getStatusEnum() == CaseRecordStatus.QCING) {
+            runRoomTransition(caseRecordId, CaseRecordTransitionAction.ARCHIVE, operatorId);
+            record = requireById(caseRecordId);
+        }
+        // 终态仍非归档则阻断（避免半吊子）
+        if (record.getStatusEnum() != CaseRecordStatus.ARCHIVED) {
+            throw new BusinessException(
+                    MrmsErrorCodes.UPLOAD_PRECONDITION,
+                    "隐性推进后病案仍未归档，当前状态=" + record.getStatusCode());
+        }
+        return record;
+    }
+
+    /**
+     * 以病案室角色执行单步状态迁移。
+     *
+     * @param caseRecordId 病案主键
+     * @param action 迁移动作
+     * @param operatorId 操作人
+     */
+    private void runRoomTransition(Long caseRecordId, CaseRecordTransitionAction action, Long operatorId) {
+        TransitionCaseRecordCommand command = new TransitionCaseRecordCommand();
+        command.setCaseRecordId(caseRecordId);
+        command.setAction(action);
+        command.setRole(WorkflowRole.RECORD_ROOM);
+        command.setOperatorId(operatorId);
+        transition(command);
+    }
+
+    /**
      * 加载首页，不存在时抛业务异常。
      *
      * @param caseRecordId 病案主档主键
@@ -318,7 +387,10 @@ public class CaseRecordDomainService {
     }
 
     /**
-     * 离院 bootstrap 全量自动取值；失败仅打日志不阻断建档。
+     * 建档后全量自动取值；失败仅打日志不阻断建档。
+     *
+     * @param record     刚建或已存在的主档
+     * @param operatorId 操作人
      */
     private void runBootstrapAutoFill(CaseRecord record, Long operatorId) {
         try {
@@ -329,7 +401,7 @@ public class CaseRecordDomainService {
             command.setOperatorId(operatorId);
             refreshAutoFill(command);
         } catch (Exception ex) {
-            log.warn("离院建档自动取值失败 caseRecordId={} encounterId={}",
+            log.warn("建档自动取值失败 caseRecordId={} encounterId={}",
                     record.getId(), record.getEncounterId(), ex);
         }
     }

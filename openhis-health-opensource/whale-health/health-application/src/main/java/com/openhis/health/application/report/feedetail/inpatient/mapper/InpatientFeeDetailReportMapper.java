@@ -41,6 +41,8 @@ public interface InpatientFeeDetailReportMapper {
      * @param presentationModeOptions       汇总/明细 Tab
      * @param defaultActiveTab              默认激活 Tab
      * @param feeNatureOptions              费用性质（bus_no）
+     * @param settlementStatusOptions       结算状态筛
+     * @param summaryDimensionOptions       汇总维度下拉
      * @return 初始化响应
      */
     LoadInpatientFeeDetailReportPageInitResponse toLoadPageInitResponse(
@@ -56,7 +58,9 @@ public interface InpatientFeeDetailReportMapper {
         List<OptionDto> cashierOptions,
         List<OptionDto> presentationModeOptions,
         String defaultActiveTab,
-        List<OptionDto> feeNatureOptions);
+        List<OptionDto> feeNatureOptions,
+        List<OptionDto> settlementStatusOptions,
+        List<OptionDto> summaryDimensionOptions);
 
     /**
      * 汇总请求 → 领域 Query（强制 tradeDirection=ALL）。

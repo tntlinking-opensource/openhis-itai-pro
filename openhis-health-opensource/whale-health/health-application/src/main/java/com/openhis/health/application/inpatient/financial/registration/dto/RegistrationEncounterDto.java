@@ -113,4 +113,14 @@ public class RegistrationEncounterDto {
     /** 主治医生姓名。 */
     @Schema(description = "主治医生姓名")
     private String attendingDoctorName;
+
+    /**
+     * 费用性质（合同）ID。
+     *
+     * <p>已登记就诊：优先医保账户 {@code contract_no} 对应合同，否则回落个人现金户；
+     * 未开户（如仅医生申请）时为 null，前端可默认下拉第一项。</p>
+     */
+    @Schema(description = "费用性质（合同）ID")
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long contractId;
 }

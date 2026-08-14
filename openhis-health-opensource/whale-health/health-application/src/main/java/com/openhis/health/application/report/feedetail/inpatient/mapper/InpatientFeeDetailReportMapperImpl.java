@@ -53,6 +53,9 @@ public class InpatientFeeDetailReportMapperImpl implements InpatientFeeDetailRep
      * @param cashierOptions                收费员
      * @param presentationModeOptions       汇总/明细 Tab
      * @param defaultActiveTab              默认激活 Tab
+     * @param feeNatureOptions              费用性质
+     * @param settlementStatusOptions       结算状态筛
+     * @param summaryDimensionOptions       汇总维度下拉
      * @return 初始化响应
      */
     @Override
@@ -69,7 +72,9 @@ public class InpatientFeeDetailReportMapperImpl implements InpatientFeeDetailRep
         List<OptionDto> cashierOptions,
         List<OptionDto> presentationModeOptions,
         String defaultActiveTab,
-        List<OptionDto> feeNatureOptions) {
+        List<OptionDto> feeNatureOptions,
+        List<OptionDto> settlementStatusOptions,
+        List<OptionDto> summaryDimensionOptions) {
         LoadInpatientFeeDetailReportPageInitResponse response = new LoadInpatientFeeDetailReportPageInitResponse();
         response.setDefaultDateFrom(defaultDateFrom);
         response.setDefaultDateTo(defaultDateTo);
@@ -84,6 +89,8 @@ public class InpatientFeeDetailReportMapperImpl implements InpatientFeeDetailRep
         response.setPresentationModeOptions(presentationModeOptions);
         response.setDefaultActiveTab(defaultActiveTab);
         response.setFeeNatureOptions(feeNatureOptions);
+        response.setSettlementStatusOptions(settlementStatusOptions);
+        response.setSummaryDimensionOptions(summaryDimensionOptions);
         return response;
     }
 
@@ -102,10 +109,11 @@ public class InpatientFeeDetailReportMapperImpl implements InpatientFeeDetailRep
         query.setPageNo(1);
         query.setPageSize(InpatientFeeDetailReportConstants.DEFAULT_PAGE_SIZE);
         this.applyFilterFields(query, request.getDateFrom(), request.getDateTo(),
-            request.getRegistrationDepartmentId(), request.getFeeCategoryCodes(), request.getSubCategoryCodes(),
+            request.getRegistrationDepartmentId(), request.getRequestingOrgId(),
+            request.getFeeCategoryCodes(), request.getSubCategoryCodes(),
             request.getPatientKeyword(), request.getProductNameKeyword(), request.getProductCodeKeyword(),
             request.getCashierId(), OutpatientFeeDetailConstants.TRADE_DIRECTION_ALL,
-            request.getFeeNatureContractNo());
+            request.getFeeNatureContractNo(), request.getSettlementStatus());
         return query;
     }
 
@@ -123,9 +131,11 @@ public class InpatientFeeDetailReportMapperImpl implements InpatientFeeDetailRep
         OutpatientFeeDetailPageQuery query = new OutpatientFeeDetailPageQuery();
         PageQueryBinder.bind(request, query);
         this.applyFilterFields(query, request.getDateFrom(), request.getDateTo(),
-            request.getRegistrationDepartmentId(), request.getFeeCategoryCodes(), request.getSubCategoryCodes(),
+            request.getRegistrationDepartmentId(), request.getRequestingOrgId(),
+            request.getFeeCategoryCodes(), request.getSubCategoryCodes(),
             request.getPatientKeyword(), request.getProductNameKeyword(), request.getProductCodeKeyword(),
-            request.getCashierId(), request.getTradeDirection(), request.getFeeNatureContractNo());
+            request.getCashierId(), request.getTradeDirection(), request.getFeeNatureContractNo(),
+            request.getSettlementStatus());
         return query;
     }
 
@@ -144,9 +154,11 @@ public class InpatientFeeDetailReportMapperImpl implements InpatientFeeDetailRep
         query.setPageNo(1);
         query.setPageSize(InpatientFeeDetailReportConstants.EXPORT_MAX_ROWS);
         this.applyFilterFields(query, request.getDateFrom(), request.getDateTo(),
-            request.getRegistrationDepartmentId(), request.getFeeCategoryCodes(), request.getSubCategoryCodes(),
+            request.getRegistrationDepartmentId(), request.getRequestingOrgId(),
+            request.getFeeCategoryCodes(), request.getSubCategoryCodes(),
             request.getPatientKeyword(), request.getProductNameKeyword(), request.getProductCodeKeyword(),
-            request.getCashierId(), request.getTradeDirection(), request.getFeeNatureContractNo());
+            request.getCashierId(), request.getTradeDirection(), request.getFeeNatureContractNo(),
+            request.getSettlementStatus());
         return query;
     }
 
@@ -256,7 +268,8 @@ public class InpatientFeeDetailReportMapperImpl implements InpatientFeeDetailRep
      * @param query                    目标领域 Query
      * @param dateFrom                 结算日起
      * @param dateTo                   结算日止
-     * @param registrationDepartmentId 住院科室
+     * @param registrationDepartmentId 住院科室（遗留）
+     * @param requestingOrgId          开立科室（账单 requesting_org_id）
      * @param feeCategoryCodes         费用大类
      * @param subCategoryCodes         细分类
      * @param patientKeyword           患者关键字
@@ -265,12 +278,14 @@ public class InpatientFeeDetailReportMapperImpl implements InpatientFeeDetailRep
      * @param cashierId                收费人
      * @param tradeDirection           收退 Tab
      * @param feeNatureContractNo      费用性质合同 bus_no
+     * @param settlementStatus         结算状态筛
      */
     private void applyFilterFields(
         OutpatientFeeDetailPageQuery query,
         String dateFrom,
         String dateTo,
         Long registrationDepartmentId,
+        Long requestingOrgId,
         List<String> feeCategoryCodes,
         List<String> subCategoryCodes,
         String patientKeyword,
@@ -278,7 +293,8 @@ public class InpatientFeeDetailReportMapperImpl implements InpatientFeeDetailRep
         String productCodeKeyword,
         Long cashierId,
         String tradeDirection,
-        String feeNatureContractNo) {
+        String feeNatureContractNo,
+        String settlementStatus) {
         if (StringUtils.isNotEmpty(dateFrom)) {
             query.setBillDateFrom(LocalDate.parse(dateFrom.trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER));
         }
@@ -286,6 +302,7 @@ public class InpatientFeeDetailReportMapperImpl implements InpatientFeeDetailRep
             query.setBillDateTo(LocalDate.parse(dateTo.trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER));
         }
         query.setRegistrationDepartmentId(registrationDepartmentId);
+        query.setRequestingOrgId(requestingOrgId);
         query.setFeeCategoryCodes(feeCategoryCodes);
         query.setSubCategoryCodes(subCategoryCodes);
         query.setPatientKeyword(trimToNull(patientKeyword));
@@ -299,6 +316,33 @@ public class InpatientFeeDetailReportMapperImpl implements InpatientFeeDetailRep
             query.setTradeDirection(resolvedTradeDirection);
         }
         query.setFeeNatureContractNo(trimToNull(feeNatureContractNo));
+        query.setAllowedChargeItemStatusCodes(this.resolveAllowedChargeItemStatusCodes(settlementStatus));
+    }
+
+    /**
+     * 结算状态筛 → ChargeItem 状态白名单。
+     *
+     * @param settlementStatus ALL / SETTLED / PENDING_SETTLEMENT；空默认 ALL
+     * @return 状态码列表
+     */
+    private List<String> resolveAllowedChargeItemStatusCodes(String settlementStatus) {
+        String normalized = trimToNull(settlementStatus);
+        if (normalized == null
+            || InpatientFeeDetailReportConstants.SETTLEMENT_STATUS_ALL.equals(normalized)) {
+            return List.of(
+                InpatientFeeDetailReportConstants.SETTLEMENT_STATUS_SETTLED,
+                InpatientFeeDetailReportConstants.SETTLEMENT_STATUS_PENDING);
+        }
+        if (InpatientFeeDetailReportConstants.SETTLEMENT_STATUS_SETTLED.equals(normalized)) {
+            return List.of(InpatientFeeDetailReportConstants.SETTLEMENT_STATUS_SETTLED);
+        }
+        if (InpatientFeeDetailReportConstants.SETTLEMENT_STATUS_PENDING.equals(normalized)) {
+            return List.of(InpatientFeeDetailReportConstants.SETTLEMENT_STATUS_PENDING);
+        }
+        // 非法值回落全部，避免空窗
+        return List.of(
+            InpatientFeeDetailReportConstants.SETTLEMENT_STATUS_SETTLED,
+            InpatientFeeDetailReportConstants.SETTLEMENT_STATUS_PENDING);
     }
 
     /**

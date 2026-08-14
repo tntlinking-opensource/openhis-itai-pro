@@ -11,12 +11,16 @@ import com.openhis.health.application.inpatient.nursestation.orderaudit.response
 import com.openhis.health.application.inpatient.nursestation.orderaudit.response.VerifyNurseStationOrdersResponse;
 import com.openhis.health.domain.administration.encounter.command.DischargeInpatientEncounterCommand;
 import com.openhis.health.domain.administration.encounter.command.InitiateDepartmentTransferCommand;
+import com.openhis.health.domain.medication.medicationrequest.command.CancelVerifyStopMedicationOrderCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.RejectMedicationOrderCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.VerifyMedicationOrderCommand;
+import com.openhis.health.domain.medication.medicationrequest.command.VerifyStopMedicationOrderCommand;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.application.shared.advice.InpatientOrderListSkeleton;
+import com.openhis.health.domain.workflow.servicerequest.command.CancelVerifyStopServiceRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.RejectServiceRequestToDraftCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.VerifyServiceRequestCommand;
+import com.openhis.health.domain.workflow.servicerequest.command.VerifyStopServiceRequestCommand;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -40,7 +44,10 @@ public interface NurseStationOrderAuditMapper {
     /**
      * auditTab → RequestStatus code 列表（BR-IP-AUD-003）。
      *
-     * @param auditTab pending / passed / stopped / suspended
+     * <p>{@code pending}：ACTIVE + STOPPED（再 {@link #filterPendingAuditRows}）。
+     * {@code passed}：VERIFIED + STOPPED（再 {@link #filterPassedAuditRows}，同一行展示开嘱/停嘱校对人）。</p>
+     *
+     * @param auditTab pending / passed（stopped/suspended 已废弃）
      * @return 状态码列表；非法 tab 由调用方 Gate 拦截
      */
     List<String> resolveStatusEnumIn(String auditTab);
@@ -60,6 +67,24 @@ public interface NurseStationOrderAuditMapper {
      * @return 过滤后列表；入参 null 时返回空列表
      */
     List<InpatientOrderListSkeleton> filterAuditQueueRows(List<InpatientOrderListSkeleton> skeleton);
+
+    /**
+     * 待校 Tab 二次收窄：保留 ACTIVE；STOPPED 仅保留长期且尚未停嘱校对（{@code stopPerformerCheckId == null}）。
+     *
+     * <p>仅在 auditTab=pending 且已跑完 {@link #filterAuditQueueRows} 后调用；非 pending 禁止调用。</p>
+     *
+     * @param skeleton 已过滤草稿/负向行的骨架；可 null
+     * @return 待校行；入参 null 时返回空列表
+     */
+    List<InpatientOrderListSkeleton> filterPendingAuditRows(List<InpatientOrderListSkeleton> skeleton);
+
+    /**
+     * 已校对 Tab 二次收窄：保留全部 VERIFIED；STOPPED 仅保留已完成停嘱校对的行（同一条不拆两行）。
+     *
+     * @param skeleton 已过滤草稿/负向行的骨架；可 null
+     * @return 已校对行；入参 null 时返回空列表
+     */
+    List<InpatientOrderListSkeleton> filterPassedAuditRows(List<InpatientOrderListSkeleton> skeleton);
 
     /**
      * 分组列表 → 列表响应。
@@ -99,6 +124,58 @@ public interface NurseStationOrderAuditMapper {
         Long operatorId,
         Long performerCheckId,
         LocalDateTime checkTime);
+
+    /**
+     * 写项 → 药品停嘱校对命令（仅写停嘱校对痕迹，状态仍为 STOPPED）。
+     *
+     * @param item                 写锚点；非空
+     * @param operatorId           操作人用户主键（事件追溯）
+     * @param stopPerformerCheckId 停嘱校对人 practitioner 主键
+     * @param stopCheckTime        停嘱校对时间
+     * @return 药品停嘱校对命令
+     */
+    VerifyStopMedicationOrderCommand toVerifyStopMedicationOrderCommand(
+        NurseStationOrderAuditWriteItemDto item,
+        Long operatorId,
+        Long stopPerformerCheckId,
+        LocalDateTime stopCheckTime);
+
+    /**
+     * 写项 → 诊疗停嘱校对命令（仅写停嘱校对痕迹，状态仍为 STOPPED）。
+     *
+     * @param item                 写锚点；非空
+     * @param operatorId           操作人用户主键（事件追溯）
+     * @param stopPerformerCheckId 停嘱校对人 practitioner 主键
+     * @param stopCheckTime        停嘱校对时间
+     * @return 诊疗停嘱校对命令
+     */
+    VerifyStopServiceRequestCommand toVerifyStopServiceRequestCommand(
+        NurseStationOrderAuditWriteItemDto item,
+        Long operatorId,
+        Long stopPerformerCheckId,
+        LocalDateTime stopCheckTime);
+
+    /**
+     * 写项 → 取消药品停嘱校对命令（清空停嘱校对痕迹，状态仍为 STOPPED）。
+     *
+     * @param item       写锚点；非空
+     * @param operatorId 操作人用户主键（事件追溯）
+     * @return 取消药品停嘱校对命令
+     */
+    CancelVerifyStopMedicationOrderCommand toCancelVerifyStopMedicationOrderCommand(
+        NurseStationOrderAuditWriteItemDto item,
+        Long operatorId);
+
+    /**
+     * 写项 → 取消诊疗停嘱校对命令（清空停嘱校对痕迹，状态仍为 STOPPED）。
+     *
+     * @param item       写锚点；非空
+     * @param operatorId 操作人用户主键（事件追溯）
+     * @return 取消诊疗停嘱校对命令
+     */
+    CancelVerifyStopServiceRequestCommand toCancelVerifyStopServiceRequestCommand(
+        NurseStationOrderAuditWriteItemDto item,
+        Long operatorId);
 
     /**
      * 写项 → 药品退回命令。

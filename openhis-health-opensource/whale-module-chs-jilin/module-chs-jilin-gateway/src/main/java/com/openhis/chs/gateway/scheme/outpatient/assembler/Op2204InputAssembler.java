@@ -5,16 +5,17 @@
 package com.openhis.chs.gateway.scheme.outpatient.assembler;
 
 import static com.openhis.whale.core.application.util.StringUtils.isNotEmpty;
-import com.openhis.chs.gateway.scheme.outpatient.model.Op2204Input;
 
 import com.openhis.chs.domain.outpatient.command.OpPreSettleCommand;
 import com.openhis.chs.domain.outpatient.command.OpSettleChargeLine;
+import com.openhis.chs.domain.share.constants.ChsInventoryConstants;
 import com.openhis.chs.gateway.scheme.common.model.ChsFeeDetailLine;
 import com.openhis.chs.gateway.scheme.outpatient.model.Op2204Input;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
-import com.openhis.chs.gateway.scheme.outpatient.model.Op2204Input;
 
 /** 【2204】费用明细上传报文组装 */
 public final class Op2204InputAssembler {
@@ -35,14 +36,18 @@ public final class Op2204InputAssembler {
                     java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")))
                 .setMedListCodg(line.getMedListCodg())
                 .setMedinsListCodg(line.getMedinsListCodg())
-                .setDetItemFeeSumamt(line.getDetItemFeeSumamt())
+                .setDetItemFeeSumamt(scalePlatformAmt(line.getDetItemFeeSumamt()))
                 .setCnt(line.getCnt())
-                .setPric(line.getPric())
+                .setPric(scalePlatformPric(line.getPric()))
                 .setBilgDeptCodg(OpOutpatientSettleInputAssembler.blankToDash(line.getBilgDeptCodg()))
                 .setBilgDeptName(OpOutpatientSettleInputAssembler.blankToDash(line.getBilgDeptName()))
                 .setBilgDrCodg(OpOutpatientSettleInputAssembler.blankToDash(line.getBilgDrCodg()))
                 .setBilgDrName(OpOutpatientSettleInputAssembler.blankToDash(line.getBilgDrName()))
                 .setHospApprFlag("1");
+            // Pre：退单行带原费用流水（与 2301 同口径）
+            if (isNotEmpty(line.getInitFeedetlSn())) {
+                row.setInitFeedetlSn(line.getInitFeedetlSn().trim());
+            }
             if (isNotEmpty(line.getDiseCodg())) {
                 row.setDiseCodg(line.getDiseCodg());
             }
@@ -56,4 +61,21 @@ public final class Op2204InputAssembler {
         input.setInsuplcAdmdvs(ctx.getInsuplcAdmdvs());
         return input;
     }
+
+    /** 2204 {@code pric}：最多 6 位 HALF_UP（规范 16,6；禁止压成 2 位破坏平摊）。 */
+    private static BigDecimal scalePlatformPric(BigDecimal value) {
+        if (value == null) {
+            return null;
+        }
+        return value.setScale(ChsInventoryConstants.UPLOAD_PRICE_SCALE, RoundingMode.HALF_UP);
+    }
+
+    /** 2204 {@code det_item_fee_sumamt}：2 位 HALF_UP（规范 16,2）。 */
+    private static BigDecimal scalePlatformAmt(BigDecimal value) {
+        if (value == null) {
+            return null;
+        }
+        return value.setScale(2, RoundingMode.HALF_UP);
+    }
 }
+

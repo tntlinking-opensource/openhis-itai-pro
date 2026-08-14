@@ -28,7 +28,6 @@ import com.openhis.health.domain.administration.encounter.queries.model.Inpatien
 import com.openhis.health.domain.share.constants.DoctorStationDiagnosisConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
-import com.openhis.health.domain.share.enums.EncounterStatus;
 import com.openhis.health.domain.share.enums.IptPatientDiseaseDiagType;
 import com.openhis.health.domain.share.enums.YbMedType;
 import com.openhis.health.domain.share.enums.PublicationStatus;
@@ -59,7 +58,7 @@ import java.util.Set;
  * <ul>
  *   <li>JSON 键名统一经 {@link FieldNameConstants} 收口，与 {@code EncounterDomainService} 物化快照一致。</li>
  *   <li>住院读模型表仅投影 IMP 就诊，能加载快照即视为就诊类别合法（{@link #validateInpatientEncounterClassImp}）。</li>
- *   <li>可写状态仅 IN_PROGRESS / ON_HOLD（BR-IP-DOD-007）；患者疾病诊断类型码须合法（BR-IP-DOD-008）。</li>
+ *   <li>住院诊断允许后补：就诊存在即可写诊断，不按在院状态拦截（与医嘱可写态分离）。患者疾病诊断类型码须合法（BR-IP-DOD-008）。</li>
  * </ul></p>
  */
 @Component
@@ -578,25 +577,20 @@ public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDocto
     }
 
     /**
-     * 校验就诊处于医生站可写状态（IN_PROGRESS 或 ON_HOLD，BR-IP-DOD-007）。
+     * 校验住院就诊上下文可用于维护诊断：仅要求就诊读模型存在。
+     *
+     * <p>住院诊断允许医生后补/更正，不按在院状态（IN_PROGRESS/ON_HOLD）拦截；
+     * 医嘱开立仍走独立可写态门控，与本方法无关。</p>
      *
      * @param snapshot 住院信息读模型快照
      */
     @Override
     public void validateInpatientEncounterWritableGate(InpatientEncounterContextQueryModel snapshot) {
+        // 无就诊上下文则无法落诊断
         if (snapshot == null) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_NOT_FOUND, "请先选择患者");
         }
-        String statusCode = snapshot.getStatusEnum();
-        // BR-IP-DOD-007：在院可写 = 在科(IN_PROGRESS) 或 留观/暂停(ON_HOLD)。
-        if (EncounterStatus.IN_PROGRESS.getCode().equals(statusCode)) {
-            return;
-        }
-        if (EncounterStatus.ON_HOLD.getCode().equals(statusCode)) {
-            return;
-        }
-        // 已出院、待入科等状态禁止改诊断，避免与护士站流转冲突。
-        throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS, "当前患者不可编辑诊断");
+        // 后补放开：已出院/待入科等状态仍允许改诊断（病案与临床后补）
     }
 
     /**

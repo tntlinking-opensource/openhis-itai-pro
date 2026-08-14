@@ -69,7 +69,9 @@ import com.openhis.health.domain.financial.contract.service.ContractQueryService
 import com.openhis.health.domain.financial.paymentreconciliation.command.CollectAdvanceDepositCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.SettleInpatientPaymentCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.service.PaymentReconciliationDomainService;
+import com.openhis.health.domain.mrms.caserecord.service.CaseRecordDomainService;
 import com.openhis.health.infrastructure.integration.financial.orchestration.PaymentReconciliationSettleOrchestration;
+import com.openhis.health.infrastructure.integration.noop.IntegrationAfterCommitSupport;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
@@ -115,7 +117,7 @@ import java.util.Set;
  * <ul>
  *   <li>Gate：分页窗口、登记状态筛选、科室/病区/预交金明细与余额门禁。</li>
  *   <li>Pre：患者解析/建档、住院上下文与主数据加载、医保入院可选衔接。</li>
- *   <li>Cmd：开立/完成住院就诊、收取预交金、取消登记与医保撤销。</li>
+ *   <li>Cmd：开立/完成住院就诊、收取预交金、取消登记与医保撤销；登记成功后幂等建病案主档。</li>
  *   <li>Asm：经 {@link InpatientRegistrationMapper} 装配队列/上下文/登记响应。</li>
  * </ul>
  */
@@ -149,6 +151,9 @@ public class InpatientRegistrationAppService {
     private final PractitionerQueryService practitionerQueryService;
 
     private final InpatientChargeInsuranceExtension inpatientChargeInsuranceExtension;
+
+    /** 入院登记成功后幂等建病案主档（发号 + autoFill）。 */
+    private final CaseRecordDomainService caseRecordDomainService;
 
     /**
      * IF-IP-REG-00：住院登记页初始化。
@@ -266,6 +271,11 @@ public class InpatientRegistrationAppService {
                 encounter,
                 inWayLabelByCode,
                 admitSourceLabelByCode);
+            // Pre：费用性质回显 — 优先医保账户合同，否则个人现金户（与护士站/预交金卡片同口径）。
+            if (encounterDto != null) {
+                encounterDto.setContractId(
+                    this.resolvePreferredContractIdForEncounter(request.getEncounterId()));
+            }
             // Pre：门诊转住院时从源门诊就诊解析接诊医生，登记弹窗只读展示。
             if (encounterDto != null && encounterDto.getAmbEncounterId() != null) {
                 encounterDto.setOutpatientDoctorName(
@@ -297,12 +307,11 @@ public class InpatientRegistrationAppService {
         List<Organization> inpatientDepartments = organizationQueryService.listOrganizationsForInpatientAdmission();
         List<OptionDto> organizationOptions = OptionDtoAssembler.toOptions(
             inpatientDepartments, Organization::getId, Organization::getName, 0L);
-        // Gate：待入科（REGISTERED）与已入科（IN_PROGRESS）打开弹窗为只读查看，防止误改已登记信息。
+        // Gate：非待登记（PLANNED）打开弹窗为只读查看，防止误改已登记/在院/已结算等信息。
         boolean readOnly = false;
         if (encounterDto != null) {
             String statusEnum = encounterDto.getStatusEnum();
-            if (EncounterStatus.REGISTERED.getCode().equals(statusEnum)
-                || EncounterStatus.IN_PROGRESS.getCode().equals(statusEnum)) {
+            if (!EncounterStatus.PLANNED.getCode().equals(statusEnum)) {
                 readOnly = true;
             }
         }
@@ -428,9 +437,52 @@ public class InpatientRegistrationAppService {
         String busNo = registeredEncounter.getBusNo();
         // Cmd：医保费用性质时衔接入院登记（2401），获取 mdtrtId。
         String ybMdtrtId = this.runInsuranceAdmissionIfNeeded(request, encounterId);
+        // Cmd：登记事务提交后幂等建病案（失败不回滚登记；打开首页仍有 bootstrap 兜底）
+        this.scheduleCaseRecordBootstrapAfterCommit(encounterId, registrarId);
         // Asm：返回登记结果供前端跳转或打印。
         return inpatientRegistrationMapper.toSubmitRegistrationResponse(
             encounterId, busNo, paymentId, accountOpened, ybMdtrtId);
+    }
+
+    /**
+     * 住院登记事务提交后幂等建病案主档与首页（Whale {@code MedcasnoGenerator} 发号）。
+     *
+     * <p>放 afterCommit：建档失败不拖垮登记；同就诊重复调用由 {@code bootstrapIfAbsent} 幂等。</p>
+     *
+     * @param encounterId 住院就诊主键
+     * @param operatorId  登记操作人（可为 null）
+     */
+    private void scheduleCaseRecordBootstrapAfterCommit(Long encounterId, Long operatorId) {
+        // Gate：缺就诊主键则无法建档
+        if (encounterId == null) {
+            return;
+        }
+        IntegrationAfterCommitSupport.runAfterCommit(() -> {
+            encounterQueryService.findOptionalEncounterEntityById(encounterId).ifPresent(encounter -> {
+                // Gate：就诊须带租户与患者，否则无法发病案号
+                if (encounter.getTenantId() == null || encounter.getPatientId() == null) {
+                    log.warn(
+                        "入院登记后跳过病案建档：就诊缺少 tenantId/patientId encounterId={}",
+                        encounterId);
+                    return;
+                }
+                try {
+                    // Cmd：幂等建档 + 新建时 HIS autoFill
+                    caseRecordDomainService.bootstrapIfAbsent(
+                        encounter.getTenantId(),
+                        encounter.getPatientId(),
+                        encounterId,
+                        operatorId);
+                } catch (RuntimeException ex) {
+                    // 建档失败不抛回登记链路；病案首页打开时仍可 bootstrap 兜底
+                    log.warn(
+                        "入院登记后病案建档失败 encounterId={} patientId={}",
+                        encounterId,
+                        encounter.getPatientId(),
+                        ex);
+                }
+            });
+        });
     }
 
     /**
@@ -565,6 +617,27 @@ public class InpatientRegistrationAppService {
         command.setContractId(contractId);
         inpatientChargeInsuranceExtension.revokeAdmission(command);
         return true;
+    }
+
+    /**
+     * 解析就诊展示用费用性质合同 ID：优先医保账户，否则个人现金户（与护士站/预交金卡片同口径）。
+     *
+     * @param encounterId 住院就诊主键
+     * @return 合同主键；无可用合同号或未命中主数据时 null
+     */
+    private Long resolvePreferredContractIdForEncounter(Long encounterId) {
+        if (encounterId == null) {
+            return null;
+        }
+        Map<Long, String> preferredContractNoByEncounterId =
+            accountQueryService.mapPreferredContractNoByEncounterIds(Collections.singleton(encounterId));
+        String contractNo = preferredContractNoByEncounterId.get(encounterId);
+        if (StringUtils.isBlank(contractNo)) {
+            return null;
+        }
+        Map<String, Long> contractIdByBusNo =
+            contractQueryService.mapContractIdByBusNoIn(Collections.singleton(contractNo.trim()));
+        return contractIdByBusNo.get(contractNo.trim());
     }
 
     /**

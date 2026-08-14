@@ -18,14 +18,32 @@ public final class WiPlatformConstants {
     /** 2206/2207 门诊出院原因默认。 */
     public static final String DEFAULT_DSCG_TRT_RSLT = "01";
 
-    /** 2204 默认三大目录类别（医疗服务）。 */
-    public static final String DEFAULT_LIST_TYPE = "201";
+    /** 2204 默认三大目录类别（手册：1药品/2诊疗/3材料；诊疗项目）。 */
+    public static final String DEFAULT_LIST_TYPE = "2";
+
+    /** 2204 list_type：药品。 */
+    public static final String LIST_TYPE_DRUG = "1";
+
+    /** 2204 list_type：诊疗项目。 */
+    public static final String LIST_TYPE_SERVICE = "2";
+
+    /** 2204 list_type：材料。 */
+    public static final String LIST_TYPE_MATERIAL = "3";
 
     /** 2204 是否最小计量单位：否。 */
     public static final String MIN_UNIT_NO = "0";
 
-    /** 9102 查询窗口：开始日期 = 今天 -30 天。 */
-    public static final int QUERY_START_DAYS_BEFORE = 30;
+    /** 2204 单次最多明细条数（手册）。 */
+    public static final int FEE_UPLOAD_BATCH_SIZE = 50;
+
+    /** 2208 是否保留处方：不保留（退费默认整单撤销）。 */
+    public static final String KEEP_TP_TYPE_NO = "0";
+
+    /** 2208 是否保留处方：保留。 */
+    public static final String KEEP_TP_TYPE_YES = "1";
+
+    /** 9102 查询窗口：开始日期 = 今天 - 年数（与挂号预览对齐，院点审批跨度常超 30 天）。 */
+    public static final int QUERY_START_YEARS_BEFORE = 3;
 
     /** 2301 endDate 空时默认 +30 天。 */
     public static final int APPROVAL_DEFAULT_DAYS = 30;

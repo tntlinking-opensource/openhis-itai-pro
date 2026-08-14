@@ -4,14 +4,18 @@
  */
 package com.openhis.health.application.report.practitionerworkload.support;
 
+import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.PractitionerWorkloadPageQuery;
+import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
+import com.openhis.health.domain.administration.encounter.entity.Encounter;
 import com.openhis.health.domain.administration.encounter.queries.model.PractitionerWorkloadEncounterContextQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.domain.administration.organization.entity.Organization;
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.OutpatientFeeDetailChargePaymentLinkQueryModel;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.OutpatientFeeDetailPaymentContextQueryModel;
-import com.openhis.health.domain.financial.paymentreconciliation.service.PaymentReconciliationQueryService;
+import com.openhis.health.application.shared.report.ChargeItemOrderingDoctorFromRequestSupport;
+import com.openhis.health.application.shared.report.ReportChargeBillSummarizeScopeSupport;
 import com.openhis.health.domain.share.constants.PractitionerWorkloadConstants;
 import com.openhis.health.domain.share.enums.EncounterClass;
 import com.openhis.health.domain.share.enums.OrganizationClassification;
@@ -19,18 +23,23 @@ import lombok.RequiredArgsConstructor;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.time.LocalDateTime;
 
 /**
  * 科室/医生工作量读路径 scope 预解析（application/report/practitionerworkload/support；AS-RPT-001 IF-RPT-WKL-02～04）。
  *
- * <p>跨聚合编排 Organization / Encounter / Payment 读侧；不写库。汇总 Tab 展示合并由应用层承担（BR-RPT-WKL-016）。</p>
+ * <p>跨聚合编排 Organization / Encounter / ChargeItem 读侧；不写库。
+ * <strong>明细/汇总/导出统一 ChargeItem-only</strong>（账单 {@code entered_date} 窗 + 仅 {@code SETTLED} + 合成链路），
+ * 禁止扫 Payment；开立科室筛 {@code ChargeItem.requesting_org_id}
+ * （DD-报表中心-进售价口径，与门诊费用明细同净口径）。</p>
+ * <p>挂号净人次仍按 {@code Encounter.organization_id}（方案 C），与费用开立科室筛选值同源但语义不同。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -38,16 +47,30 @@ public class PractitionerWorkloadLoader {
 
     private final OrganizationQueryService organizationQueryService;
     private final EncounterQueryService encounterQueryService;
-    private final PaymentReconciliationQueryService paymentReconciliationQueryService;
+    private final ChargeItemQueryService chargeItemQueryService;
+    private final ReportChargeBillSummarizeScopeSupport reportChargeBillSummarizeScopeSupport;
+    private final ChargeItemOrderingDoctorFromRequestSupport chargeItemOrderingDoctorFromRequestSupport;
 
     /**
-     * 预解析科室范围、就诊 scope、payment 快照与就诊上下文。
+     * 预解析科室范围、就诊 scope、账单 chargeItem 快照与就诊上下文（与汇总同口径，禁止扫 Payment）。
      *
      * @param query 须含 {@code encounterScope}、{@code billDateFrom}/{@code billDateTo}
      * @throws IllegalArgumentException 参数非法或科室与就诊域不一致（对齐 EX-RPT-WKL-102/106）
      */
     public void preparePractitionerWorkloadQueryScopes(PractitionerWorkloadPageQuery query) {
-        // Gate：必填筛选项与日期窗合法，避免下游空跑全表
+        this.preparePractitionerWorkloadSummarizeScopesFromChargeBill(query);
+    }
+
+    /**
+     * 明细/汇总/导出：按账单收费时间窗解析 chargeItem（与费用明细同构），禁止扫 Payment。
+     *
+     * <p>费用行<strong>不再</strong>先按挂号科室就诊求交——否则跨科开立会被误剔，售价与费用明细对不上。
+     * 仅按就诊 class（AMB/IMP）+ 开立科室 {@code requesting_org_id} + 仅 SETTLED 收窄。</p>
+     *
+     * @param query 须含日期窗与 encounterScope
+     */
+    public void preparePractitionerWorkloadSummarizeScopesFromChargeBill(PractitionerWorkloadPageQuery query) {
+        // Gate：与明细分页同必填校验
         if (query == null) {
             throw new IllegalArgumentException("practitioner workload query is required");
         }
@@ -60,82 +83,186 @@ public class PractitionerWorkloadLoader {
         if (query.getBillDateFrom().isAfter(query.getBillDateTo())) {
             throw new IllegalArgumentException("billDateFrom must not be after billDateTo");
         }
-        // Pre：门诊/住院 → Encounter.class_enum 存储码
+        // Pre：开立科室优先；遗留 organizationId 回落（报表中心统一 requesting_org_id）
+        this.normalizeRequestingOrgFilter(query);
         String encounterClassCode = this.resolveEncounterClassCode(query.getEncounterScope());
         query.setResolvedEncounterClassCode(encounterClassCode);
-        // Pre：未选科室 = 该域全部 ACTIVE 科室；已选须与 encounterScope 类别一致
         List<Long> organizationIds = this.resolveOrganizationIds(query, encounterClassCode);
         query.setResolvedOrganizationIds(organizationIds);
-        // Pre：就诊 scope = class + 挂号科室 IN + bill_date 窗相交（经 Encounter QS，B.6.4）
-        LocalDateTime windowFrom = query.getBillDateFrom().atStartOfDay();
-        LocalDateTime windowTo = query.getBillDateTo().atTime(23, 59, 59);
-        List<Long> encounterScope = this.encounterQueryService.listEncounterIdsForPractitionerWorkloadScope(
-            encounterClassCode, organizationIds, windowFrom, windowTo);
-        query.setResolvedEncounterScope(encounterScope);
-        // Pre：选医生时挂号统计仅保留 REGISTRATION_DOCTOR 命中就诊
+        // Pre：挂号医生收窄仍走挂号业务日窗就诊（方案 C）；与费用 scope 解耦
+        this.resolveRegistrationDoctorEncounterScope(query, encounterClassCode, organizationIds);
+        LocalDateTime enteredFrom = query.getBillDateFrom().atStartOfDay();
+        LocalDateTime enteredToExclusive = query.getBillDateTo().plusDays(1).atStartOfDay();
+        // Pre：仅 SETTLED（与费用明细净口径一致；退费不入统计）
+        List<ChargeItem> windowChargeItems =
+            this.chargeItemQueryService.listSettledChargeItemsByEnteredDateWindow(
+                enteredFrom, enteredToExclusive, null);
+        LinkedHashSet<Long> windowEncounterIds = new LinkedHashSet<>();
+        for (ChargeItem chargeItem : windowChargeItems) {
+            if (chargeItem != null && chargeItem.getEncounterId() != null) {
+                windowEncounterIds.add(chargeItem.getEncounterId());
+            }
+        }
+        // Pre：门诊/住院 class 求交（禁止再按 Encounter.organization_id 当开立科室）
+        Set<Long> classMatchedEncounterIds =
+            this.filterEncounterIdsByClass(windowEncounterIds, encounterClassCode);
+        if (classMatchedEncounterIds.isEmpty()) {
+            this.clearChargeScopes(query);
+            return;
+        }
+        List<ChargeItem> scopedChargeItems = new ArrayList<>();
+        for (ChargeItem chargeItem : windowChargeItems) {
+            if (chargeItem == null || chargeItem.getId() == null || chargeItem.getEncounterId() == null) {
+                continue;
+            }
+            // Pre：就诊域 class 不匹配则跳过（住院行不进门诊工作量）
+            if (!classMatchedEncounterIds.contains(chargeItem.getEncounterId())) {
+                continue;
+            }
+            // Pre：开立科室 = ChargeItem.requesting_org_id（DD；与费用明细同筛）
+            if (!this.matchesRequestingOrgFilter(query, chargeItem)) {
+                continue;
+            }
+            scopedChargeItems.add(chargeItem);
+        }
+        if (scopedChargeItems.isEmpty()) {
+            this.clearChargeScopes(query);
+            return;
+        }
+        // Pre：选医生时按 Request.requester_id 预筛（BR-RPT-WKL-005）
         if (query.getPractitionerId() != null) {
-            Set<Long> registrationScope = this.encounterQueryService.filterEncounterIdsByActiveRegistrationDoctor(
-                encounterScope, query.getPractitionerId());
-            query.setRegistrationDoctorEncounterScope(registrationScope);
+            query.setOrderingDoctorChargeItemScope(
+                this.chargeItemOrderingDoctorFromRequestSupport.filterChargeItemIdsByOrderingDoctor(
+                    scopedChargeItems, query.getPractitionerId()));
         } else {
-            query.setRegistrationDoctorEncounterScope(null);
+            query.setOrderingDoctorChargeItemScope(null);
         }
-        // Pre：payment bill_date 窗 + kind 解析 chargeItem 快照（DM-FIN-002 §6.2.19）
-        List<Long> chargeItemIds =
-            this.paymentReconciliationQueryService.listPractitionerWorkloadChargeItemIdsByPaymentFilter(query);
+        List<OutpatientFeeDetailChargePaymentLinkQueryModel> links =
+            this.reportChargeBillSummarizeScopeSupport.buildSyntheticPaymentLinks(scopedChargeItems);
+        Map<Long, OutpatientFeeDetailPaymentContextQueryModel> contextByChargeItemId =
+            this.reportChargeBillSummarizeScopeSupport.buildSyntheticPaymentContextByChargeItemId(scopedChargeItems);
+        List<Long> chargeItemIds = new ArrayList<>();
+        LinkedHashSet<Long> encounterIdsForContext = new LinkedHashSet<>();
+        for (ChargeItem chargeItem : scopedChargeItems) {
+            chargeItemIds.add(chargeItem.getId());
+            encounterIdsForContext.add(chargeItem.getEncounterId());
+        }
+        // Asm：费用命中就诊即 resolvedEncounterScope（供下游 charge 行匹配；非挂号科室全量）
+        query.setResolvedEncounterScope(new ArrayList<>(encounterIdsForContext));
+        query.setPaymentChargeItemLinks(links);
+        query.setResolvedPaymentChargeItemLinks(links);
+        query.setPaymentContextByChargeItemId(contextByChargeItemId);
         query.setResolvedChargeItemScope(chargeItemIds);
-        if (chargeItemIds.isEmpty()) {
-            query.setEncounterContextByEncounterId(Collections.emptyMap());
-            return;
-        }
-        // Pre：挂号号源分组需 Encounter 上下文；仅拉 payment 命中就诊，禁止全量 encounterScope
-        LinkedHashSet<Long> encounterIdsForContext =
-            this.collectEncounterIdsForWorkloadContext(query);
-        if (encounterIdsForContext.isEmpty()) {
-            query.setEncounterContextByEncounterId(Collections.emptyMap());
-            return;
-        }
+        query.setPaymentsInScope(List.of());
         Map<Long, PractitionerWorkloadEncounterContextQueryModel> contextByEncounterId =
             this.encounterQueryService.mapPractitionerWorkloadEncounterContextByIds(encounterIdsForContext);
         query.setEncounterContextByEncounterId(contextByEncounterId);
     }
 
     /**
-     * 从 payment 关联收集需拉 Encounter 上下文的就诊 id（优先 links，回落 paymentContext）。
+     * 选医生时解析挂号医生就诊白名单（业务日窗 + REGISTRATION_DOCTOR）；未选医生则清空。
      *
-     * @param query 已写入 paymentChargeItemLinks / paymentContextByChargeItemId
-     * @return 去重后的 encounterId；无命中为空集合
+     * @param query              已归一查询
+     * @param encounterClassCode AMB/IMP
+     * @param organizationIds    挂号科室范围
      */
-    private LinkedHashSet<Long> collectEncounterIdsForWorkloadContext(PractitionerWorkloadPageQuery query) {
-        LinkedHashSet<Long> encounterIds = new LinkedHashSet<>();
-        List<OutpatientFeeDetailChargePaymentLinkQueryModel> links = query.getPaymentChargeItemLinks();
-        // Pre：优先从 chargeItem↔payment 关联行取 encounterId
-        if (links != null) {
-            for (OutpatientFeeDetailChargePaymentLinkQueryModel link : links) {
-                if (link == null || link.getPaymentContext() == null) {
-                    continue;
-                }
-                Long encounterId = link.getPaymentContext().getEncounterId();
-                if (encounterId != null) {
-                    encounterIds.add(encounterId);
-                }
+    private void resolveRegistrationDoctorEncounterScope(
+        PractitionerWorkloadPageQuery query,
+        String encounterClassCode,
+        List<Long> organizationIds) {
+        if (query.getPractitionerId() == null) {
+            query.setRegistrationDoctorEncounterScope(null);
+            return;
+        }
+        // Pre：与 AS-RPT-007 同业务日闭区间，再滤挂号医生
+        LocalDateTime businessTimeFrom = query.getBillDateFrom().atStartOfDay();
+        LocalDateTime businessTimeTo = query.getBillDateTo().atTime(LocalTime.MAX);
+        List<Long> registrationCandidates =
+            this.encounterQueryService.listEncounterIdsForRegistrationBusinessWindow(
+                encounterClassCode, organizationIds, businessTimeFrom, businessTimeTo);
+        Set<Long> registrationScope = this.encounterQueryService.filterEncounterIdsByActiveRegistrationDoctor(
+            registrationCandidates, query.getPractitionerId());
+        query.setRegistrationDoctorEncounterScope(registrationScope);
+    }
+
+    /**
+     * 费用无命中时清空 charge 相关 scope（保留已解析科室/挂号医生 scope）。
+     *
+     * @param query 目标查询
+     */
+    private void clearChargeScopes(PractitionerWorkloadPageQuery query) {
+        query.setResolvedEncounterScope(List.of());
+        query.setResolvedChargeItemScope(List.of());
+        query.setPaymentChargeItemLinks(List.of());
+        query.setResolvedPaymentChargeItemLinks(List.of());
+        query.setPaymentContextByChargeItemId(Collections.emptyMap());
+        query.setPaymentsInScope(List.of());
+        query.setEncounterContextByEncounterId(Collections.emptyMap());
+        query.setOrderingDoctorChargeItemScope(null);
+    }
+
+    /**
+     * 按就诊 class 过滤主键集合（与费用明细 {@code filterEncounterIdsByClass} 同构）。
+     *
+     * @param encounterIds       候选就诊
+     * @param encounterClassCode AMB/IMP 存储码
+     * @return 命中 class 的就诊 id
+     */
+    private Set<Long> filterEncounterIdsByClass(Set<Long> encounterIds, String encounterClassCode) {
+        if (encounterIds == null || encounterIds.isEmpty() || StringUtils.isEmpty(encounterClassCode)) {
+            return Set.of();
+        }
+        List<Encounter> encounters = this.encounterQueryService.listEncounterEntitiesByIds(encounterIds);
+        LinkedHashSet<Long> matched = new LinkedHashSet<>();
+        for (Encounter encounter : encounters) {
+            if (encounter == null || encounter.getId() == null) {
+                continue;
+            }
+            // Pre：仅保留当前门诊/住院域
+            if (encounterClassCode.equals(encounter.getClassEnum())) {
+                matched.add(encounter.getId());
             }
         }
-        // 若 links 无 encounterId：回落 chargeItem → payment 上下文 values
-        if (encounterIds.isEmpty()) {
-            Map<Long, OutpatientFeeDetailPaymentContextQueryModel> paymentContextByChargeItemId =
-                query.getPaymentContextByChargeItemId();
-            if (paymentContextByChargeItemId != null) {
-                for (OutpatientFeeDetailPaymentContextQueryModel paymentContext
-                    : paymentContextByChargeItemId.values()) {
-                    if (paymentContext == null || paymentContext.getEncounterId() == null) {
-                        continue;
-                    }
-                    encounterIds.add(paymentContext.getEncounterId());
-                }
+        return matched;
+    }
+
+    /**
+     * 开立科室筛：已选 {@code requestingOrgId}（或遗留 organizationId 归一后）须等于账单开立科室。
+     *
+     * @param query      已归一请求
+     * @param chargeItem 账单行
+     * @return 未选科室或命中为 true
+     */
+    private boolean matchesRequestingOrgFilter(PractitionerWorkloadPageQuery query, ChargeItem chargeItem) {
+        Long requestingOrgId = query.getRequestingOrgId();
+        if (requestingOrgId == null) {
+            // 未选开立科室：仍须落在域内 resolved 科室内（与挂号科室列表同域）
+            List<Long> resolvedOrganizationIds = query.getResolvedOrganizationIds();
+            if (resolvedOrganizationIds == null || resolvedOrganizationIds.isEmpty()) {
+                return false;
             }
+            Long chargeRequestingOrgId = chargeItem.getRequestingOrgId();
+            if (chargeRequestingOrgId == null) {
+                return false;
+            }
+            return resolvedOrganizationIds.contains(chargeRequestingOrgId);
         }
-        return encounterIds;
+        return requestingOrgId.equals(chargeItem.getRequestingOrgId());
+    }
+
+    /**
+     * 报表中心开立科室优先；仅传遗留 organizationId 时回填 requestingOrgId。
+     *
+     * @param query 工作量查询
+     */
+    private void normalizeRequestingOrgFilter(PractitionerWorkloadPageQuery query) {
+        if (query.getRequestingOrgId() == null && query.getOrganizationId() != null) {
+            query.setRequestingOrgId(query.getOrganizationId());
+        }
+        // 挂号净人次仍用 organizationId 解析科室列表；与开立科室同值时保持一致
+        if (query.getOrganizationId() == null && query.getRequestingOrgId() != null) {
+            query.setOrganizationId(query.getRequestingOrgId());
+        }
     }
 
     /**
@@ -158,15 +285,19 @@ public class PractitionerWorkloadLoader {
     /**
      * 解析报表科室 id 列表：已选科室须与门诊/住院 class 一致；未选则全量 ACTIVE 科室。
      *
-     * @param query               分页入参
-     * @param encounterClassCode  IMP/AMB code
+     * @param query              分页入参
+     * @param encounterClassCode IMP/AMB code
      * @return 参与统计的 organizationId 列表
      * @throws IllegalArgumentException 科室不存在或 class 不匹配
      */
     private List<Long> resolveOrganizationIds(PractitionerWorkloadPageQuery query, String encounterClassCode) {
-        if (query.getOrganizationId() != null) {
+        Long selectedOrgId = query.getOrganizationId();
+        if (selectedOrgId == null) {
+            selectedOrgId = query.getRequestingOrgId();
+        }
+        if (selectedOrgId != null) {
             Organization organization =
-                this.organizationQueryService.loadOrganizationByIdForDisplay(query.getOrganizationId());
+                this.organizationQueryService.loadOrganizationByIdForDisplay(selectedOrgId);
             if (organization == null) {
                 throw new IllegalArgumentException("organization not found or not in tenant scope");
             }
@@ -174,7 +305,7 @@ public class PractitionerWorkloadLoader {
             if (!this.expectedOrganizationClassification(encounterClassCode).equals(organization.getClassEnum())) {
                 throw new IllegalArgumentException("organization class does not match encounterScope");
             }
-            return List.of(query.getOrganizationId());
+            return List.of(selectedOrgId);
         }
         // 未选科室：门诊挂号科室 / 住院入院科室全量 ACTIVE 列表
         List<Organization> organizations;

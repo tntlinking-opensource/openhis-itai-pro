@@ -53,9 +53,25 @@ public final class TraceScanCountSupport {
     }
 
     /**
+     * 消耗侧单行可绑码个数硬上限：{@code ceil(操作量)}。
+     *
+     * <p>开 2 支→2、开 1 盒→1。码倍/拆零<strong>不</strong>参与个数（只用于盖住判定）。</p>
+     *
+     * @param operationQuantity 操作数量（与发药/出库操作单位同阶）
+     * @return ≥1 的整数上限
+     */
+    public static int resolveOutboundMaxCodeCount(BigDecimal operationQuantity) {
+        if (operationQuantity == null || operationQuantity.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException(ErrorCodeConstants.TRACE_NUMBER_INVALID_ARGUMENT, "操作数量无效，无法计算最多可扫码数");
+        }
+        return ceilToAtLeastOne(operationQuantity);
+    }
+
+    /**
      * 出库/发药：应扫码数 = ceil(操作拆零 / 每码拆零)，不足一整码时至少 1。
      *
-     * <p>操作单位已等于追溯码单位时，直接取操作数量向上取整。</p>
+     * <p>操作单位已等于追溯码单位时，直接取操作数量向上取整。
+     * <strong>仅软提示</strong>；硬上限见 {@link #resolveOutboundMaxCodeCount}。</p>
      *
      * @param conversionSource  药典单位换算源
      * @param operationUnitCode 操作单位

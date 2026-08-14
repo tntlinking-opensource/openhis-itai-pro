@@ -69,4 +69,11 @@ public class ExportInpatientMedicationDispenseReportRequest {
     /** 费用性质合同业务号（{@code fin_contract.bus_no}）；空则不筛选。 */
     @Schema(description = "费用性质 contract bus_no")
     private String feeNatureContractNo;
+
+    /**
+     * 科室组织主键：患者侧=开立科室（药嘱 org_id）；领用侧=领用科室（consuming_organization_id）。
+     */
+    @Schema(description = "开立/领用科室组织主键（随来源解释）")
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long organizationId;
 }

@@ -348,6 +348,9 @@ public class InpatientRegistrationMapperImpl implements InpatientRegistrationMap
         item.setRegistrarId(registrarId);
         item.setRegisterTime(request.getStartTime());
         item.setContractNo(contractNo);
+        if (StringUtils.isNotEmpty(request.getInsutype())) {
+            item.setInsutype(request.getInsutype().trim());
+        }
         item.setAdmitSourceCode(request.getAdmitSourceCode());
         item.setInWayCode(request.getInWayCode());
         item.setPriorityCode(request.getPriorityEnum());

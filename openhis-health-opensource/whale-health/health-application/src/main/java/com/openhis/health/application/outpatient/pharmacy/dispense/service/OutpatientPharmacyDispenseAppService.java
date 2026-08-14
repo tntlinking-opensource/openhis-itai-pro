@@ -75,6 +75,7 @@ import com.openhis.health.domain.custom.tracenumber.queries.model.TraceNumberIde
 import com.openhis.health.domain.custom.tracenumber.service.TraceNumberQueryService;
 import com.openhis.health.application.shared.tracenumber.TraceNumberBatchIdentityResolver;
 import com.openhis.health.application.shared.tracenumber.TraceNumberDispenseTraceOrchestrator;
+import com.openhis.health.application.shared.tracenumber.TraceScanCountSupport;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
 import com.openhis.health.domain.workflow.inventoryitem.command.AllocateAndDecreaseCommand;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemDomainService;
@@ -367,8 +368,6 @@ public class OutpatientPharmacyDispenseAppService {
             }
         }
 
-        List<String> traceCodeInputs = new ArrayList<>();
-        List<String> hardHospitalCodes = new ArrayList<>();
         for (SavePrepareDispenseLineSubmitDto submitLine : request.getLines()) {
             MedicationDispense dispense = dispenseById.get(submitLine.getDispenseId());
             if (dispense == null) {
@@ -426,29 +425,25 @@ public class OutpatientPharmacyDispenseAppService {
             }
 
             List<String> lineTraceCodes = splitTraceCodes(submitLine.getTraceNo());
-            // 有码批：硬校验本库优先、否则全院同品同批在院；无码批：跳过（仅业务行）
-            boolean lotHasMaster = traceNumberQueryService.existsMasterByItemLot(
-                TableNameConstants.MED_MEDICATION_DEFINITION,
-                dispense.getMedicationId(),
-                submitLine.getLotNumber());
-            if (lotHasMaster) {
-                hardHospitalCodes.addAll(lineTraceCodes);
-                if (!lineTraceCodes.isEmpty()) {
-                    traceNumberQueryService.assertCodesInNetStockForDispenseLine(
-                        TableNameConstants.MED_MEDICATION_DEFINITION,
-                        dispense.getMedicationId(),
-                        submitLine.getLotNumber(),
-                        submitLine.getDispenseLocationId(),
-                        lineTraceCodes);
-                }
-            }
-            // 有码/无码批均参与本单码去重
-            traceCodeInputs.addAll(lineTraceCodes);
+            // Gate：仅单行内码不重复；跨行同码允许（箱码共扫，BR-TRC-023）
+            traceNumberQueryService.assertNoDuplicateTraceCodes(lineTraceCodes);
+            // Gate：主档存在且剩余≤0 硬拦；未建档仍软（BR-TRC-006）
+            traceNumberQueryService.assertMasterCodesNotExhaustedForDispense(lineTraceCodes);
+            // BR-TRC-006/020：未建档/品批不匹配不做硬拦；核发写流水软跳过
 
             if (productRow == null) {
                 throw new BusinessException(ErrorCodeConstants.EX_OPP_205_STOCK_OR_LOCATION_INVALID, "缺少药品目录投影，无法按最小单位校验库存");
             }
-            // BR-OPP-014：码数/剩余硬 Gate 不在保存配药；核发写追溯走 IF-OPP-05 / TraceNumberDispenseTraceOrchestrator（可选扫，盖不住跳过写）
+            // Gate：绑码个数硬上限=ceil(操作量)；码倍不参与个数
+            if (!lineTraceCodes.isEmpty()) {
+                int maxCodes = TraceScanCountSupport.resolveOutboundMaxCodeCount(submitLine.getQuantity());
+                if (lineTraceCodes.size() > maxCodes) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.TRACE_NUMBER_INVALID_ARGUMENT,
+                        "追溯码数量超过发药量，请减少扫码");
+                }
+            }
+            // BR-OPP-014：剩余盖住硬 Gate 不在保存配药；核发写追溯走 IF-OPP-05（可选扫，盖不住跳过写）
             medicationDispenseInventoryAvailabilityGate.assertSufficientForMedicationDispenseWithReserve(
                 TableNameConstants.MED_MEDICATION_DEFINITION,
                 dispense.getMedicationId(),
@@ -465,10 +460,6 @@ public class OutpatientPharmacyDispenseAppService {
             submittedDispenseIds,
             request.getLines(),
             dispenseById);
-
-        traceNumberQueryService.assertNoDuplicateTraceCodes(traceCodeInputs);
-        // 仅有码批参与在院硬校验；无码批码不在主表
-        traceNumberQueryService.assertCodesInHospitalForDispense(hardHospitalCodes);
 
         assertTemporaryTherapyQuantities(request.getLines(), dispenseById);
 

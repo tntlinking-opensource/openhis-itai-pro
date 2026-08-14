@@ -63,7 +63,7 @@ import com.openhis.health.domain.custom.supplier.queries.model.SupplierListItemQ
 import com.openhis.health.domain.custom.supplier.service.SupplierQueryService;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.application.inventory.inventorydetail.support.InventoryCatalogFilter;
+import com.openhis.health.application.shared.inventory.InventoryCatalogFilter;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionSelectionTerminologyMaps;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
@@ -244,7 +244,7 @@ public class InventoryWarehouseInventoryDetailAppService {
     }
 
     /**
-     * 工作台库存/效期预警摘要：仅库管或药师可见；计数范围与列表 Gate 一致。
+     * 工作台库存/效期预警摘要：具备库存明细菜单权限可见；计数范围与列表 Gate 一致。
      *
      * @param request 可空壳请求
      * @return 预警可见性与条数
@@ -259,7 +259,7 @@ public class InventoryWarehouseInventoryDetailAppService {
         BigDecimal minPackageQty = this.inventoryWarningSettingResolver.resolveMinPackageQuantityWarning();
         response.setExpireWarningDays(Integer.valueOf(expireDays));
         response.setMinPackageQuantityWarning(Integer.valueOf(minPackageQty.intValue()));
-        // Gate：非库管/药师不可见预警，计数归零避免越权探知
+        // Gate：无库存明细菜单权限不可见预警，计数归零避免越权探知
         if (!this.inventoryWarningRoleGate.canViewInventoryWarnings()) {
             response.setVisible(Boolean.FALSE);
             response.setExpireWarningCount(Integer.valueOf(0));
@@ -557,6 +557,8 @@ public class InventoryWarehouseInventoryDetailAppService {
         List<Long> effectiveWarehouseIds = this.resolveEffectiveWarehouseIds(request.getWarehouseIds());
         DocInventoryItemSnapshotPageQuery query = this.inventoryWarehouseInventoryDetailMapper.toSnapshotPageQuery(
             request, tenantId, resolvedBusNo, effectiveWarehouseIds);
+        // Pre：基药标识经药典预解析 item_id（静表无 basic_flag 列）
+        this.inventoryCatalogFilter.enrichSnapshotBasicFlagDefinitionIds(query);
         Sort sort = Sort.by(Sort.Order.asc(FieldNameConstants.PY_STR));
         Pageable pageable = PageRequest.of(request.springPageIndex(), request.getBoundedPageSize(), sort);
         Page<DocInventoryItemSnapshotRowQueryModel> page;
@@ -606,6 +608,8 @@ public class InventoryWarehouseInventoryDetailAppService {
         List<Long> effectiveWarehouseIds = this.resolveEffectiveWarehouseIds(request.getWarehouseIds());
         DocInventoryItemSnapshotPageQuery query = this.inventoryWarehouseInventoryDetailMapper.toSnapshotPageQuery(
             request, tenantId, resolvedBusNo, effectiveWarehouseIds);
+        // Pre：基药标识经药典预解析 item_id（静表无 basic_flag 列）
+        this.inventoryCatalogFilter.enrichSnapshotBasicFlagDefinitionIds(query);
         List<DocInventoryItemSnapshotRowQueryModel> models;
         try {
             // Cmd：拉取汇总候选行（禁止重算定价）
@@ -674,6 +678,8 @@ public class InventoryWarehouseInventoryDetailAppService {
         List<Long> effectiveWarehouseIds = this.resolveEffectiveWarehouseIds(request.getWarehouseIds());
         DocInventoryItemSnapshotPageQuery query = this.inventoryWarehouseInventoryDetailMapper.toSnapshotPageQuery(
             request, tenantId, resolvedBusNo, effectiveWarehouseIds);
+        // Pre：基药标识经药典预解析 item_id（静表无 basic_flag 列）
+        this.inventoryCatalogFilter.enrichSnapshotBasicFlagDefinitionIds(query);
         List<DocInventoryItemSnapshotRowQueryModel> models;
         try {
             // Cmd：拉取导出行（上限 10 万）
@@ -1738,11 +1744,13 @@ public class InventoryWarehouseInventoryDetailAppService {
     }
 
     /**
-     * 行总额：整包数×包装整包价 + 拆零余量×（包装整包价÷拆零换算比），舍入与收费域一致。
+     * 行总额：满包×包装价 + 零头（包装价×余量/ratio 单步），BR-INV-DTL-007 / BR-MON-PKG-001。
+     *
+     * <p>禁止先把包装价除成拆零单价再乘数量。</p>
      *
      * @param quantity      拆零最小单位账面数量
      * @param ratio         拆零↔包装换算比（1 包装 = ratio 拆零）
-     * @param packageAmount 包装整包价
+     * @param packageAmount 包装整包价（非拆零单价）
      * @return 行总额；单价缺失时 null
      */
     private BigDecimal computeLineTotal(BigDecimal quantity, BigDecimal ratio, BigDecimal packageAmount) {

@@ -47,4 +47,14 @@ public class InsurancePersonQueryExtensionOut {
 
     /** 身份认定明细行。 */
     private List<InsuranceIdentityLineSnapshot> identityLines = new ArrayList<>();
+
+    /**
+     * 1101 异地失败切省通道后的实际合同 bus_no；未切换时为 null。
+     */
+    private String resolvedContractBusNo;
+
+    /**
+     * 1101 异地失败切省通道后的实际费用性质 id；未切换时为 null。
+     */
+    private Long resolvedContractId;
 }

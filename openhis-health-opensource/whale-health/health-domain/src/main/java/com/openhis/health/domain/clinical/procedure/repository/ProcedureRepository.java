@@ -82,6 +82,19 @@ public interface ProcedureRepository extends JpaRepository<Procedure, Long>, Jpa
         LocalDateTime recordedTo);
 
     /**
+     * 按来源表 + {@code recorded_time} 左闭右开窗查询（住院费用明细待结业务日轴）。
+     *
+     * @param requestTable             来源表持久化名
+     * @param recordedFromInclusive    recorded 起（含）
+     * @param recordedToExclusive      recorded 止（不含）
+     * @return 执行记录列表
+     */
+    List<Procedure> findByRequestTableAndRecordedTimeGreaterThanEqualAndRecordedTimeLessThanAndIsDeletedFalse(
+        String requestTable,
+        LocalDateTime recordedFromInclusive,
+        LocalDateTime recordedToExclusive);
+
+    /**
      * 护士工作量：按 {@code refund_id} 批量加载取消行（DM-CLN-004 §6.2.6 对冲口径；AS-RPT-002）。
      *
      * @param refundIds     被对冲 COMPLETED 主键集合

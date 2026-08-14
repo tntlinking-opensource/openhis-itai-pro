@@ -8,6 +8,7 @@ import com.openhis.health.infrastructure.integration.insurance.outpatient.Extens
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientChargeCorrectSettleExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientChargePreSettleBatchExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientChargePreSettleExtensionIn;
+import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientChargeRebindSettlementPaymentExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientChargeRevokeSettleExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientChargeRevokeFeeDetailExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientChargePreSettleListExtensionIn;
@@ -117,6 +118,17 @@ public interface OutpatientChargeInsuranceExtension {
      */
     default List<OutpatientChargeSettlementRecordExtensionOut> listSettlementsByPayment(Long paymentId) {
         return Collections.emptyList();
+    }
+
+    /**
+     * 将已确认回执（及关联预结算）改挂到新支付草稿；无网关出站。
+     *
+     * @param command 回执主键列表 + 新支付草稿 id
+     * @return 实际改挂条数；须与请求条数一致，否则调用方应失败
+     * @throws com.openhis.whale.core.application.exception.BusinessException 任一回执未能改挂时
+     */
+    default int rebindConfirmedSettlementsToPayment(OutpatientChargeRebindSettlementPaymentExtensionIn command) {
+        return 0;
     }
 
     /**

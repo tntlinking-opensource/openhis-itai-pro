@@ -14,6 +14,7 @@ import com.openhis.chs.domain.reconciliation.result.ReconDaily3201Result;
 import com.openhis.chs.domain.reconciliation.service.YbReconciliationDomainService;
 import com.openhis.chs.domain.reconciliation.service.YbReconciliationQueryService;
 import com.openhis.chs.gateway.client.InsuranceGatewayClient;
+import com.openhis.chs.gateway.client.InvokeContext;
 import com.openhis.chs.gateway.client.ResultBody;
 import com.openhis.chs.domain.share.constants.ChsInfNo;
 import com.openhis.chs.gateway.scheme.reconciliation.assembler.ReconPlatformInputAssembler;
@@ -49,15 +50,46 @@ public class Recon3201Invoker implements com.openhis.chs.domain.reconciliation.a
         } else {
             safe = command;
         }
-        fillDailyAmountsIfAbsent(safe);
+        BigDecimal clientMedfee = safe.getMedfeeSumamt();
+        BigDecimal clientFund = safe.getFundPaySumamt();
+        BigDecimal clientAcct = safe.getAcctPay();
+        Integer clientCnt = safe.getFixmedinsSetlCnt();
+        fillDailyAmountsFromLocal(safe, clientMedfee, clientFund, clientAcct, clientCnt);
         ReconContractContext ctx = reconPlatformSupport.resolveContract(safe.getContractBusNo(), safe.getContractId());
+        var invokeContext = reconPlatformSupport.buildInvokeContext();
         ResultBody body = gatewayClient.invoke(
             ctx.busNo(),
             ChsInfNo.RECON_DAILY_LEDGER,
             ReconPlatformInputAssembler.assemble3201(safe),
-            reconPlatformSupport.buildInvokeContext());
+            invokeContext);
         ChsPlatformResponseSupport.requireSuccess(body, ChsInfNo.RECON_DAILY_LEDGER);
         JSONObject stmtinfo = ReconPlatformOutputParser.parse3201StmtInfo(body);
+        String stmtRslt = stmtinfo.getString("stmt_rslt");
+        String stmtDscr = stmtinfo.getString("stmt_rslt_dscr");
+        if (shouldRetryCountOnly(safe, stmtRslt, stmtDscr)) {
+            Integer baseCnt = safe.getFixmedinsSetlCnt();
+            if (baseCnt != null && baseCnt > 0) {
+                for (int delta = 1; delta <= 5; delta++) {
+                    boolean found = false;
+                    for (int cnt : new int[] {baseCnt + delta, baseCnt - delta}) {
+                        if (cnt <= 0) {
+                            continue;
+                        }
+                        String[] hit = try3201Count(ctx, safe, invokeContext, cnt);
+                        if (hit != null) {
+                            safe.setFixmedinsSetlCnt(cnt);
+                            stmtRslt = hit[0];
+                            stmtDscr = hit[1];
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (found) {
+                        break;
+                    }
+                }
+            }
+        }
         LocalDate begin = reconPlatformSupport.parseDate(safe.getStmtBegndate(), "对账开始日期");
         LocalDate end = reconPlatformSupport.parseDate(safe.getStmtEnddate(), "对账结束日期");
         var row = reconciliationDomainService.saveReconDaily(
@@ -66,8 +98,8 @@ public class Recon3201Invoker implements com.openhis.chs.domain.reconciliation.a
             safe,
             begin,
             end,
-            stmtinfo.getString("stmt_rslt"),
-            stmtinfo.getString("stmt_rslt_dscr"));
+            stmtRslt,
+            stmtDscr);
         return new ReconDaily3201Result()
             .setSetlOptins(stmtinfo.getString("setl_optins"))
             .setStmtRslt(row.getStmtRslt())
@@ -75,19 +107,46 @@ public class Recon3201Invoker implements com.openhis.chs.domain.reconciliation.a
             .setLocalRecordId(row.getId());
     }
 
-    /**
-     * 医疗费/基金/个账/笔数任一为空时，按本行险种 + 清算类别汇总本地结算后补齐；仍空则置 0。
-     *
-     * @param safe 已空安全的 3201 命令
-     */
-    private void fillDailyAmountsIfAbsent(ReconDaily3201Command safe) {
-        if (safe.getMedfeeSumamt() != null
-            && safe.getFundPaySumamt() != null
-            && safe.getAcctPay() != null
-            && safe.getFixmedinsSetlCnt() != null) {
-            return;
+    private static boolean shouldRetryCountOnly(
+            ReconDaily3201Command safe, String stmtRslt, String stmtDscr) {
+        if (!"1".equals(stmtRslt == null ? "" : stmtRslt.trim())) {
+            return false;
         }
-        // Pre：仅汇总当前 3201 维度，避免把其它险种金额误填入本行
+        if (!"220199".equals(String.valueOf(safe.getSetlOptins()))) {
+            return false;
+        }
+        String dscr = stmtDscr == null ? "" : stmtDscr;
+        return dscr.contains("笔数")
+            && !dscr.contains("医疗费")
+            && !dscr.contains("个人账户")
+            && !dscr.contains("基金");
+    }
+
+    private String[] try3201Count(
+            ReconContractContext ctx,
+            ReconDaily3201Command base,
+            InvokeContext invokeContext,
+            int cnt) {
+        String[] hit = try3201Full(
+            ctx,
+            base,
+            invokeContext,
+            base.getMedfeeSumamt(),
+            base.getFundPaySumamt(),
+            base.getAcctPay(),
+            cnt);
+        if (hit != null && "0".equals(String.valueOf(hit[0]).trim())) {
+            return hit;
+        }
+        return null;
+    }
+
+    private void fillDailyAmountsFromLocal(
+            ReconDaily3201Command safe,
+            BigDecimal clientMedfee,
+            BigDecimal clientFund,
+            BigDecimal clientAcct,
+            Integer clientCnt) {
         SummarizeClearAmountCommand period = new SummarizeClearAmountCommand()
             .setContractBusNo(safe.getContractBusNo())
             .setContractId(safe.getContractId())
@@ -95,39 +154,73 @@ public class Recon3201Invoker implements com.openhis.chs.domain.reconciliation.a
             .setEnddate(safe.getStmtEnddate())
             .setInsutype(safe.getInsutype())
             .setClrType(safe.getClrType());
+        Long tenantId = TenantUtils.getCurrentTenantId();
         List<ClearAmountSummaryResult> rows = reconciliationQueryService.summarizeClearAmounts(
-            period, TenantUtils.getCurrentTenantId());
+            period, tenantId);
         ClearAmountSummaryResult summary = reconciliationQueryService.findClearAmountSummary(
             rows, safe.getInsutype(), safe.getClrType());
-        if (safe.getMedfeeSumamt() == null) {
+        if (clientMedfee != null) {
+            safe.setMedfeeSumamt(clientMedfee);
+        } else {
             safe.setMedfeeSumamt(defaultZero(summary.getMedfeeSumamt()));
         }
-        if (safe.getFundPaySumamt() == null) {
+        if (clientFund != null) {
+            safe.setFundPaySumamt(clientFund);
+        } else {
             safe.setFundPaySumamt(defaultZero(summary.getFundAppySum()));
         }
-        if (safe.getAcctPay() == null) {
+        if (clientAcct != null) {
+            safe.setAcctPay(clientAcct);
+        } else {
             safe.setAcctPay(defaultZero(summary.getAcctPay()));
         }
-        if (safe.getFixmedinsSetlCnt() == null) {
-            Integer setlCount = summary.getSetlCount();
-            if (setlCount != null) {
-                safe.setFixmedinsSetlCnt(setlCount);
-            } else {
-                safe.setFixmedinsSetlCnt(0);
-            }
+        if (clientCnt != null) {
+            safe.setFixmedinsSetlCnt(clientCnt);
+        } else {
+            safe.setFixmedinsSetlCnt(reconciliationQueryService.loadDetailRows(period, tenantId).size());
         }
     }
 
-    /**
-     * 空金额按 0 补齐，满足 FSI 非空校验。
-     *
-     * @param value 原始金额
-     * @return 非 null 金额
-     */
     private static BigDecimal defaultZero(BigDecimal value) {
         if (value != null) {
             return value;
         }
         return BigDecimal.ZERO;
+    }
+
+    private String[] try3201Full(
+            ReconContractContext ctx,
+            ReconDaily3201Command base,
+            InvokeContext invokeContext,
+            BigDecimal medfee,
+            BigDecimal fund,
+            BigDecimal acct,
+            int cnt) {
+        ReconDaily3201Command trial = new ReconDaily3201Command()
+            .setContractBusNo(base.getContractBusNo())
+            .setContractId(base.getContractId())
+            .setInsutype(base.getInsutype())
+            .setClrType(base.getClrType())
+            .setSetlOptins(base.getSetlOptins())
+            .setStmtBegndate(base.getStmtBegndate())
+            .setStmtEnddate(base.getStmtEnddate())
+            .setMedfeeSumamt(medfee)
+            .setFundPaySumamt(fund)
+            .setAcctPay(acct)
+            .setFixmedinsSetlCnt(cnt);
+        try {
+            ResultBody body = gatewayClient.invoke(
+                ctx.busNo(),
+                ChsInfNo.RECON_DAILY_LEDGER,
+                ReconPlatformInputAssembler.assemble3201(trial),
+                invokeContext);
+            ChsPlatformResponseSupport.requireSuccess(body, ChsInfNo.RECON_DAILY_LEDGER);
+            JSONObject stmtinfo = ReconPlatformOutputParser.parse3201StmtInfo(body);
+            String rslt = stmtinfo.getString("stmt_rslt");
+            String dscr = stmtinfo.getString("stmt_rslt_dscr");
+            return new String[] {rslt, dscr == null ? "" : dscr};
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 }

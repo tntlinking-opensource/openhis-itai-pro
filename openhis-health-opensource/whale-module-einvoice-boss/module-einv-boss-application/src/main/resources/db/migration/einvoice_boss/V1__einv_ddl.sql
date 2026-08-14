@@ -39,11 +39,14 @@ CREATE TABLE einv_boss_document (
     updated_at       TIMESTAMP,
     updated_by       BIGINT,
     deleted_at       TIMESTAMP,
-    deleted_by       BIGINT,
-    CONSTRAINT uk_einv_doc_invoice UNIQUE (invoice_id)
+    deleted_by       BIGINT
 );
+-- 拆票：同一 invoice 可有主票+续票多条；幂等键为未删除 bus_no
+CREATE INDEX idx_einv_doc_invoice ON einv_boss_document(invoice_id);
 CREATE INDEX idx_einv_doc_payment ON einv_boss_document(payment_id);
-CREATE INDEX idx_einv_doc_bus_no ON einv_boss_document(bus_no);
+CREATE UNIQUE INDEX uk_einv_doc_bus_no_active
+    ON einv_boss_document(bus_no)
+    WHERE COALESCE(is_deleted, false) = false;
 
 -- einv_boss_line
 CREATE TABLE einv_boss_line (
@@ -61,6 +64,10 @@ CREATE TABLE einv_boss_line (
     source_charge_item_id BIGINT,
     adjusted             BOOLEAN       NOT NULL DEFAULT FALSE,
     adjust_reason        VARCHAR(500),
+    item_name            VARCHAR(200),
+    item_code            VARCHAR(50),
+    list_medical_care_type VARCHAR(1),
+    list_remark          VARCHAR(200),
     is_deleted           BOOLEAN       NOT NULL DEFAULT FALSE,
     created_at           TIMESTAMP     NOT NULL,
     created_by           BIGINT,
@@ -142,10 +149,10 @@ CREATE TABLE einv_charge_contrast (
 COMMENT ON TABLE einv_boss_document IS 'einvBoss文档';
 COMMENT ON COLUMN einv_boss_document.id IS '主键';
 COMMENT ON COLUMN einv_boss_document.tenant_id IS '租户标识';
-COMMENT ON COLUMN einv_boss_document.invoice_id IS '发票标识';
+COMMENT ON COLUMN einv_boss_document.invoice_id IS '关联 health 票据；拆票时主票与续票共享同一 invoice_id';
 COMMENT ON COLUMN einv_boss_document.payment_id IS '支付标识';
 COMMENT ON COLUMN einv_boss_document.issue_kind IS '开具类型';
-COMMENT ON COLUMN einv_boss_document.bus_no IS '业务编号';
+COMMENT ON COLUMN einv_boss_document.bus_no IS '业务流水号（主票=health.bus_no；续票=bus_no-2…；未删除唯一）';
 COMMENT ON COLUMN einv_boss_document.bus_type IS 'bus类型';
 COMMENT ON COLUMN einv_boss_document.total_amt IS '合计amt';
 COMMENT ON COLUMN einv_boss_document.payment_amt IS '支付amt';
@@ -184,6 +191,10 @@ COMMENT ON COLUMN einv_boss_line.unit IS '单元';
 COMMENT ON COLUMN einv_boss_line.source_charge_item_id IS '来源收费项标识';
 COMMENT ON COLUMN einv_boss_line.adjusted IS '是否已调整';
 COMMENT ON COLUMN einv_boss_line.adjust_reason IS 'adjust原因';
+COMMENT ON COLUMN einv_boss_line.item_name IS '清单具体项目名称（listDetail.name；可空时出站回落 charge_name）';
+COMMENT ON COLUMN einv_boss_line.item_code IS '清单药品/项目编码（listDetail.code；医保 ybNo 优先）';
+COMMENT ON COLUMN einv_boss_line.list_medical_care_type IS '清单医保药品分类（1甲/2乙/3丙）';
+COMMENT ON COLUMN einv_boss_line.list_remark IS '清单备注（甲类/乙类/丙类/自费）';
 COMMENT ON COLUMN einv_boss_line.is_deleted IS '软删标记';
 COMMENT ON COLUMN einv_boss_line.created_at IS '创建时间';
 COMMENT ON COLUMN einv_boss_line.updated_at IS '最后更新时间';

@@ -62,7 +62,7 @@ public class DailySettlementPaymentDetailLoader {
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
 
     /**
-     * 按 payment 读模型批量加载 charge_item（优先 payment.chargeItemIds）。
+     * 按 payment 读模型批量加载 charge_item（优先 payment.chargeItemIds；一次 IN 再分组）。
      *
      * @param paymentModels 展示窗内 payment 读模型
      * @return paymentId → 收费项列表
@@ -73,21 +73,40 @@ public class DailySettlementPaymentDetailLoader {
         if (paymentModels == null || paymentModels.isEmpty()) {
             return result;
         }
+        Map<Long, List<Long>> chargeItemIdsByPaymentId = new LinkedHashMap<>();
+        LinkedHashSet<Long> allChargeItemIds = new LinkedHashSet<>();
         for (PaymentReconciliationQueryModel paymentModel : paymentModels) {
             if (paymentModel == null || paymentModel.getId() == null) {
                 continue;
             }
             List<Long> chargeItemIds = this.parseChargeItemIds(paymentModel.getChargeItemIds());
-            List<ChargeItem> chargeItems = List.of();
-            if (!chargeItemIds.isEmpty()) {
-                ChargeItemQueryCommand command = new ChargeItemQueryCommand();
-                command.setIds(chargeItemIds);
-                List<ChargeItem> loaded = this.chargeItemQueryService.loadChargeItemsByIds(command);
-                if (loaded != null && !loaded.isEmpty()) {
-                    chargeItems = loaded;
+            chargeItemIdsByPaymentId.put(paymentModel.getId(), chargeItemIds);
+            result.put(paymentModel.getId(), List.of());
+            allChargeItemIds.addAll(chargeItemIds);
+        }
+        if (allChargeItemIds.isEmpty()) {
+            return result;
+        }
+        ChargeItemQueryCommand command = new ChargeItemQueryCommand();
+        command.setIds(new ArrayList<>(allChargeItemIds));
+        List<ChargeItem> loaded = this.chargeItemQueryService.loadChargeItemsByIds(command);
+        Map<Long, ChargeItem> chargeItemById = new LinkedHashMap<>();
+        if (loaded != null) {
+            for (ChargeItem chargeItem : loaded) {
+                if (chargeItem != null && chargeItem.getId() != null) {
+                    chargeItemById.put(chargeItem.getId(), chargeItem);
                 }
             }
-            result.put(paymentModel.getId(), chargeItems);
+        }
+        for (Map.Entry<Long, List<Long>> entry : chargeItemIdsByPaymentId.entrySet()) {
+            List<ChargeItem> chargeItems = new ArrayList<>();
+            for (Long chargeItemId : entry.getValue()) {
+                ChargeItem chargeItem = chargeItemById.get(chargeItemId);
+                if (chargeItem != null) {
+                    chargeItems.add(chargeItem);
+                }
+            }
+            result.put(entry.getKey(), chargeItems);
         }
         return result;
     }

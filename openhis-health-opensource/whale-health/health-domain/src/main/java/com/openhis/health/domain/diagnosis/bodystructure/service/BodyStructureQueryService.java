@@ -65,6 +65,9 @@ public class BodyStructureQueryService {
             model.setBusNo(bodyStructure.getBusNo());
             model.setName(bodyStructure.getName());
             model.setStatusEnum(bodyStructure.getStatusEnum());
+            // 透出拼音/五笔，供 IF-DOR-18 申请单部位下拉前端模糊检索
+            model.setPyStr(bodyStructure.getPyStr());
+            model.setWbStr(bodyStructure.getWbStr());
             map.put(model.getId(), model);
         }
         for (BodyStructure bodyStructure : bodyStructures) {

@@ -65,4 +65,14 @@ public class MedicationDispenseSlipQueryModel {
     private String prescriptionNo;
     /** 开单医生（读模型曾投影；主表无列时可为 null，由药嘱回填）。 */
     private Long medRequesterId;
+    /**
+     * 挂接的护士执行记录主键 {@code cln_procedure.id}。
+     * <p>住院按患者发药按日分单时，用于回填 {@code recorded_time}；门诊行通常为空。</p>
+     */
+    private Long procedureId;
+    /**
+     * 计划发药/执行锚点时刻（实体 {@code planned_dispense_time}）。
+     * <p>住院日分单真源为执行 {@code recorded_time}，本字段仅透出供排查，不作日键。</p>
+     */
+    private LocalDateTime plannedDispenseTime;
 }

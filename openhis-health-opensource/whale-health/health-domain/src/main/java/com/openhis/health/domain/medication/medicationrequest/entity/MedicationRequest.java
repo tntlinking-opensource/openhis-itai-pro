@@ -220,6 +220,18 @@ public class MedicationRequest extends BaseAuditedEntity {
     @Column(name = "stopper_id")
     private Long stopperId;
 
+    /**
+     * 停嘱校对人：护士确认医生停嘱后写入；取消停嘱校对或取消停嘱时清空；不改状态。
+     */
+    @Column(name = "stop_performer_check_id")
+    private Long stopPerformerCheckId;
+
+    /**
+     * 停嘱校对时间：与 {@link #stopPerformerCheckId} 成对；改停嘱时间不改本列。
+     */
+    @Column(name = "stop_check_time")
+    private LocalDateTime stopCheckTime;
+
     @Column(name = "refund_medicine_id")
     private Long refundMedicineId;
 
@@ -316,22 +328,73 @@ public class MedicationRequest extends BaseAuditedEntity {
     }
 
     /**
-      * 校验当前操作的业务约束。
+     * 断言可停嘱：须为长期且已开嘱校对（{@link RequestStatus#VERIFIED}）；禁止未校对直接停嘱。
      */
     public void ensureLongTermForStop() {
         if (!TherapyType.LONG_TERM.getCode().equals(this.therapyEnum)) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_RULE_CONFLICT, "仅长期医嘱可停嘱");
         }
+        // 未开嘱校对须走撤回，禁止 ACTIVE 直接停嘱。
+        if (!RequestStatus.VERIFIED.getCode().equals(this.statusEnum)) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_INVALID_STATUS, "仅已校对的长期医嘱可停嘱");
+        }
     }
 
     /**
-     * 断言可取消停嘱：须为长期且当前已停嘱。
+     * 断言当前为已停嘱的长期医嘱（改停嘱时间等；不检查停嘱校对痕迹）。
+     */
+    public void ensureLongTermStopped() {
+        if (!TherapyType.LONG_TERM.getCode().equals(this.therapyEnum)) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_RULE_CONFLICT, "仅长期医嘱可停嘱");
+        }
+        if (!RequestStatus.STOPPED.getCode().equals(this.statusEnum)) {
+            // 非 STOPPED 不可操作停嘱轴，防止误改在执医嘱。
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_INVALID_STATUS, "仅已停嘱的长期医嘱可操作停嘱");
+        }
+    }
+
+    /**
+     * 断言可取消停嘱：须为长期、已停嘱，且护士尚未完成停嘱校对（逆流程须先取消停嘱校对）。
      */
     public void ensureLongTermStoppedForCancelStop() {
-        ensureLongTermForStop();
+        ensureLongTermStopped();
+        // 已停嘱校对时医生禁止取消停嘱，须护士先取消停嘱校对。
+        if (this.stopPerformerCheckId != null) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_RULE_CONFLICT, "已停嘱校对，请先取消停嘱校对后再取消停嘱");
+        }
+    }
+
+    /**
+     * 断言可停嘱校对：须已停嘱、长期、且尚未写入停嘱校对痕迹。
+     */
+    public void ensureStopVerifiable() {
+        if (!TherapyType.LONG_TERM.getCode().equals(this.therapyEnum)) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_RULE_CONFLICT, "仅长期医嘱可停嘱校对");
+        }
         if (!RequestStatus.STOPPED.getCode().equals(this.statusEnum)) {
-            // 非 STOPPED 不可取消停嘱，防止误恢复在执医嘱。
-            throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_INVALID_STATUS, "仅已停嘱的长期医嘱可取消停嘱");
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_INVALID_STATUS, "仅已停嘱状态可停嘱校对");
+        }
+        // 已写过停嘱校对痕迹则拒绝重复校对（取消后可再校）。
+        if (this.stopPerformerCheckId != null) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_RULE_CONFLICT, "该医嘱已完成停嘱校对");
+        }
+    }
+
+    /**
+     * 断言可取消停嘱校对：须长期、已停嘱且已有停嘱校对痕迹。
+     */
+    public void ensureStopVerifyCancellable() {
+        if (!TherapyType.LONG_TERM.getCode().equals(this.therapyEnum)) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_RULE_CONFLICT, "仅长期医嘱可取消停嘱校对");
+        }
+        if (!RequestStatus.STOPPED.getCode().equals(this.statusEnum)) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_INVALID_STATUS, "仅已停嘱状态可取消停嘱校对");
+        }
+        // 未停嘱校对则无痕迹可清。
+        if (this.stopPerformerCheckId == null) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_RULE_CONFLICT, "该医嘱尚未停嘱校对");
         }
     }
 
@@ -422,7 +485,7 @@ public class MedicationRequest extends BaseAuditedEntity {
     }
 
     /**
-     * 停止用药请求：写入停嘱时间与停嘱人并迁至已停止。
+     * 停止用药请求：写入停嘱时间与停嘱人并迁至已停止；停嘱校对应为空（待护士校对）。
      *
      * @param stopTime  停嘱时间（写入 {@code stop_time}）
      * @param stopperId 停嘱人（写入 {@code stopper_id}；通常为操作医生）
@@ -432,24 +495,55 @@ public class MedicationRequest extends BaseAuditedEntity {
         this.stopTime = stopTime;
         // 停嘱人随停嘱操作落库，改停嘱时间不覆盖本列。
         this.stopperId = stopperId;
+        // 新停嘱视为未停嘱校对，须护士重新校对。
+        this.stopPerformerCheckId = null;
+        this.stopCheckTime = null;
         this.statusEnum = RequestStatus.STOPPED.getCode();
         this.statusChangedTime = LocalDateTime.now();
     }
 
     /**
-     * 取消停嘱：按校对痕迹恢复为已校对或已发送，并清空停嘱时间与停嘱人（BR-IP-ORD-025 / BR-MRQ-006a）。
+     * 取消停嘱：按开嘱校对痕迹恢复为已校对或已发送，并清空停嘱轴与停嘱校对痕迹（BR-IP-ORD-025 / BR-MRQ-006a）。
      */
     public void fromStopped() {
-        // 护士已校对过则恢复 VERIFIED，否则恢复 ACTIVE（BR-IP-ORD-025 / BR-MRQ-006a）。
+        // 护士已开嘱校对过则恢复 VERIFIED，否则恢复 ACTIVE（BR-IP-ORD-025 / BR-MRQ-006a）。
         if (this.performerCheckId != null) {
             this.statusEnum = RequestStatus.VERIFIED.getCode();
         } else {
             this.statusEnum = RequestStatus.ACTIVE.getCode();
         }
-        // 取消停嘱清 stop_time 与 stopper_id，不改动服药计划结束列。
+        // 取消停嘱清 stop_time / stopper_id / 停嘱校对痕迹，不改动服药计划结束列。
         this.stopTime = null;
         this.stopperId = null;
+        this.stopPerformerCheckId = null;
+        this.stopCheckTime = null;
         this.statusChangedTime = LocalDateTime.now();
+    }
+
+    /**
+     * 停嘱校对：仅写停嘱校对人/时间，不改 {@link RequestStatus#STOPPED}。
+     *
+     * @param stopPerformerCheckId 停嘱校对人
+     * @param stopCheckTime        停嘱校对时间
+     */
+    public void markStopChecked(Long stopPerformerCheckId, LocalDateTime stopCheckTime) {
+        ensureStopVerifiable();
+        // 校对人必填，禁止空痕迹。
+        if (stopPerformerCheckId == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT, "停嘱校对人不能为空");
+        }
+        this.stopPerformerCheckId = stopPerformerCheckId;
+        this.stopCheckTime = stopCheckTime;
+    }
+
+    /**
+     * 取消停嘱校对：清空停嘱校对痕迹，状态仍为 {@link RequestStatus#STOPPED}。
+     */
+    public void clearStopChecked() {
+        ensureStopVerifyCancellable();
+        this.stopPerformerCheckId = null;
+        this.stopCheckTime = null;
     }
 
     /**
@@ -464,9 +558,9 @@ public class MedicationRequest extends BaseAuditedEntity {
             throw new BusinessException(
                 ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT, "不可修改该时间");
         }
-        // 改停嘱时间仅已停嘱长期行可执行。
+        // 改停嘱时间仅已停嘱长期行可执行；已停嘱校对仍可改时且保留校对痕迹。
         if (RequestBusinessTimeKind.STOP.equals(kind)) {
-            ensureLongTermStoppedForCancelStop();
+            ensureLongTermStopped();
         }
     }
 

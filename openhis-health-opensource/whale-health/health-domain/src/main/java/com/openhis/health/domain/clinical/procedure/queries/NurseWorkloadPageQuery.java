@@ -37,6 +37,9 @@ public class NurseWorkloadPageQuery extends AbstractPageQuery {
     /** 可选护士：诊疗取 Procedure 主执行人；耗材取 preparer_id 或 performer_id（随开关）。 */
     private Long practitionerId;
 
+    /** 开立科室（{@code ChargeItem.requesting_org_id}）；非空时金额 enrich 仅匹配该科室账单行。 */
+    private Long requestingOrgId;
+
     /** 解析后的就诊类别存储码（AMB / IMP）；由 Support 写入。 */
     private String resolvedEncounterClassCode;
 

@@ -197,7 +197,12 @@ CREATE TABLE IF NOT EXISTS mrms_case_record (
     chs_upload_status_code VARCHAR(32),
     chs_upload_at       TIMESTAMP,
     chs_upload_error    VARCHAR(500),
-    unarchive_reason    VARCHAR(500)
+    settle_upload_status_code VARCHAR(8),
+    setl_list_id        VARCHAR(64),
+    settle_upload_at    TIMESTAMP,
+    settle_upload_error VARCHAR(500),
+    unarchive_reason    VARCHAR(500),
+    certno              VARCHAR(32)
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uk_mrms_case_encounter
@@ -241,7 +246,12 @@ COMMENT ON COLUMN mrms_case_record.quality_grade_code IS '质控等级编码';
 COMMENT ON COLUMN mrms_case_record.chs_upload_status_code IS '4401上传状态冗余';
 COMMENT ON COLUMN mrms_case_record.chs_upload_at IS '最近4401上传时间';
 COMMENT ON COLUMN mrms_case_record.chs_upload_error IS '最近4401上传错误摘要';
+COMMENT ON COLUMN mrms_case_record.settle_upload_status_code IS '结算清单上传：0未传/1已传未提交/2已提交';
+COMMENT ON COLUMN mrms_case_record.setl_list_id IS '4101A 平台返回清单流水号 setl_list_id';
+COMMENT ON COLUMN mrms_case_record.settle_upload_at IS '最近结算清单上传/提交时间';
+COMMENT ON COLUMN mrms_case_record.settle_upload_error IS '最近结算清单上传错误摘要';
 COMMENT ON COLUMN mrms_case_record.unarchive_reason IS '解档原因';
+COMMENT ON COLUMN mrms_case_record.certno IS '列表冗余：证件号码（同步自首页 certno）';
 COMMENT ON COLUMN mrms_case_record.created_at IS '创建时间';
 COMMENT ON COLUMN mrms_case_record.updated_at IS '最后更新时间';
 COMMENT ON COLUMN mrms_case_record.created_by IS '创建人';
@@ -310,6 +320,8 @@ CREATE TABLE IF NOT EXISTS mrms_case_record_homepage (
     psn_tel             VARCHAR(32),
     coner_name          VARCHAR(100),
     coner_tel           VARCHAR(32),
+    coner_rlts_code     VARCHAR(16),
+    coner_addr          VARCHAR(500),
     ipt_no              VARCHAR(64),
     adm_way_code        VARCHAR(16),
     adm_caty_code       VARCHAR(32),
@@ -321,6 +333,18 @@ CREATE TABLE IF NOT EXISTS mrms_case_record_homepage (
     ipt_days            INTEGER,
     transfer_dept_summary VARCHAR(500),
     dscg_way_code       VARCHAR(16),
+    trt_type_code       VARCHAR(16),
+    spga_nurscare_days  INTEGER,
+    lv1_nurscare_days   INTEGER,
+    scd_nurscare_days   INTEGER,
+    lv3_nurscare_days   INTEGER,
+    otp_wm_dise         VARCHAR(200),
+    wm_dise_code        VARCHAR(32),
+    otp_tcm_dise        VARCHAR(200),
+    tcm_dise_code       VARCHAR(32),
+    brn_damg_bfadm_coma_dura VARCHAR(32),
+    brn_damg_afadm_coma_dura VARCHAR(32),
+    vent_used_dura      VARCHAR(32),
     dept_director_name  VARCHAR(50),
     chfdr_name          VARCHAR(50),
     atddr_name          VARCHAR(50),
@@ -361,6 +385,8 @@ COMMENT ON COLUMN mrms_case_record_homepage.curr_addr IS '字段：curr addr';
 COMMENT ON COLUMN mrms_case_record_homepage.psn_tel IS '字段：psn tel';
 COMMENT ON COLUMN mrms_case_record_homepage.coner_name IS 'coner名称';
 COMMENT ON COLUMN mrms_case_record_homepage.coner_tel IS '字段：coner tel';
+COMMENT ON COLUMN mrms_case_record_homepage.coner_rlts_code IS '联系人关系字典码（4401 coner_rlts）';
+COMMENT ON COLUMN mrms_case_record_homepage.coner_addr IS '联系人地址（4401 coner_addr）';
 COMMENT ON COLUMN mrms_case_record_homepage.ipt_no IS 'ipt编号';
 COMMENT ON COLUMN mrms_case_record_homepage.adm_way_code IS 'admway编码';
 COMMENT ON COLUMN mrms_case_record_homepage.adm_caty_code IS 'admcaty编码';
@@ -372,6 +398,18 @@ COMMENT ON COLUMN mrms_case_record_homepage.dscg_time IS 'dscg时间';
 COMMENT ON COLUMN mrms_case_record_homepage.ipt_days IS '住院days';
 COMMENT ON COLUMN mrms_case_record_homepage.transfer_dept_summary IS 'transferdept摘要';
 COMMENT ON COLUMN mrms_case_record_homepage.dscg_way_code IS 'dscgway编码';
+COMMENT ON COLUMN mrms_case_record_homepage.trt_type_code IS '治疗类别字典码（4401 trt_type）';
+COMMENT ON COLUMN mrms_case_record_homepage.spga_nurscare_days IS '特级护理天数（4401 spga_nurscare_days）';
+COMMENT ON COLUMN mrms_case_record_homepage.lv1_nurscare_days IS '一级护理天数（4401 lv1_nurscare_days）';
+COMMENT ON COLUMN mrms_case_record_homepage.scd_nurscare_days IS '二级护理天数（4401 scd_nurscare_days）';
+COMMENT ON COLUMN mrms_case_record_homepage.lv3_nurscare_days IS '三级护理天数（4401 lv3_nurscare_days）';
+COMMENT ON COLUMN mrms_case_record_homepage.otp_wm_dise IS '门急诊西医诊断名称（4401 otp_wm_dise）';
+COMMENT ON COLUMN mrms_case_record_homepage.wm_dise_code IS '门急诊西医诊断编码（4401 wm_dise_code）';
+COMMENT ON COLUMN mrms_case_record_homepage.otp_tcm_dise IS '门急诊中医诊断名称（4401 otp_tcm_dise）';
+COMMENT ON COLUMN mrms_case_record_homepage.tcm_dise_code IS '门急诊中医诊断编码（4401 tcm_dise_code）';
+COMMENT ON COLUMN mrms_case_record_homepage.brn_damg_bfadm_coma_dura IS '入院前颅脑损伤昏迷时长（天/时/分文本，4401 brn_damg_bfadm_coma_dura）';
+COMMENT ON COLUMN mrms_case_record_homepage.brn_damg_afadm_coma_dura IS '入院后颅脑损伤昏迷时长（天/时/分文本，4401 brn_damg_afadm_coma_dura）';
+COMMENT ON COLUMN mrms_case_record_homepage.vent_used_dura IS '呼吸机使用时长（天/时/分文本，4401 vent_used_dura）';
 COMMENT ON COLUMN mrms_case_record_homepage.dept_director_name IS 'deptdirector名称';
 COMMENT ON COLUMN mrms_case_record_homepage.chfdr_name IS 'chfdr名称';
 COMMENT ON COLUMN mrms_case_record_homepage.atddr_name IS 'atddr名称';
@@ -445,6 +483,14 @@ CREATE TABLE IF NOT EXISTS mrms_homepage_procedure (
     oprn_oprt_name      VARCHAR(200),
     oprn_date           DATE,
     main_oprn_flag      VARCHAR(3),
+    oprn_level_code     VARCHAR(16),
+    oprn_incision_code  VARCHAR(16),
+    heal_grade_code     VARCHAR(16),
+    anst_way_code       VARCHAR(16),
+    oper_dr_name        VARCHAR(50),
+    anst_dr_name        VARCHAR(50),
+    oper_dr_code        VARCHAR(32),
+    anst_dr_code        VARCHAR(32),
     vali_flag           VARCHAR(3)   NOT NULL DEFAULT '1',
     created_at          TIMESTAMP    NOT NULL,
     updated_at          TIMESTAMP,
@@ -467,6 +513,14 @@ COMMENT ON COLUMN mrms_homepage_procedure.oprn_oprt_code IS '手术操作编码'
 COMMENT ON COLUMN mrms_homepage_procedure.oprn_oprt_name IS '手术操作名称';
 COMMENT ON COLUMN mrms_homepage_procedure.oprn_date IS '手术日期';
 COMMENT ON COLUMN mrms_homepage_procedure.main_oprn_flag IS '是否主手术';
+COMMENT ON COLUMN mrms_homepage_procedure.oprn_level_code IS '手术级别字典码（4401 oprn_level）';
+COMMENT ON COLUMN mrms_homepage_procedure.oprn_incision_code IS '切口愈合类别/切口字典码（4401 oprn_incision）';
+COMMENT ON COLUMN mrms_homepage_procedure.heal_grade_code IS '愈合等级字典码（4401 heal_grade）';
+COMMENT ON COLUMN mrms_homepage_procedure.anst_way_code IS '麻醉方式字典码（4401 anst_way）';
+COMMENT ON COLUMN mrms_homepage_procedure.oper_dr_name IS '术者姓名（4401 oper_dr_name）';
+COMMENT ON COLUMN mrms_homepage_procedure.anst_dr_name IS '麻醉医师姓名（4401 anst_dr_name）';
+COMMENT ON COLUMN mrms_homepage_procedure.oper_dr_code IS '术者医保医师代码（4101A oper_dr_code）';
+COMMENT ON COLUMN mrms_homepage_procedure.anst_dr_code IS '麻醉医师医保医师代码（4101A anst_dr_code）';
 COMMENT ON COLUMN mrms_homepage_procedure.vali_flag IS '有效标志';
 COMMENT ON COLUMN mrms_homepage_procedure.created_at IS '创建时间';
 COMMENT ON COLUMN mrms_homepage_procedure.updated_at IS '最后更新时间';

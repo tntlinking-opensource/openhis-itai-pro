@@ -63,6 +63,16 @@ public class EncounterMedicationDispenseSlipRowDto {
     @Schema(description = "批号")
     private String lotNumber;
 
+    /**
+     * 发放库房 + 本行批号下的当前账面剩余数量（最小单位/拆零单位，与 {@code wkf_inventory_item.quantity} 一致）。
+     *
+     * <p>IF-OPP-03 现查库存：按 {@link #dispenseLocationId}×{@link #medicationId}×{@link #lotNumber}
+     * 批量取可用品正数量未过期行后汇总；批号或库房为空时不回填；无匹配账面行时为 {@code 0}。
+     * 与 {@link #inventoryDetailList} 候选明细区分：本字段锚定发放行已选定（或已核发）库房×批号。</p>
+     */
+    @Schema(description = "发放库房×批号当前剩余数量（最小单位，现查）")
+    private BigDecimal remainingQuantity;
+
     /** 追溯码。 */
     @Schema(description = "追溯码")
     private String traceNo;
@@ -193,26 +203,32 @@ public class EncounterMedicationDispenseSlipRowDto {
     private String splitUnitCode;
 
     /**
-     * 追溯码主档贴码单位（{@code cus_trace_number.trace_unit_code}；本库优先否则全院同批）。
+     * 追溯码贴码单位（优先 {@code cus_trace_number.trace_unit_code}；无主档时回落药典目录）。
      *
-     * <p>发药应扫个数换算用；非药典目录值。</p>
+     * <p>发药应扫个数换算与扫码弹窗展示用。</p>
      */
-    @Schema(description = "追溯码主档贴码单位")
+    @Schema(description = "追溯码贴码单位（主档优先，否则药典）")
     private String traceUnitCode;
 
     /**
-     * 追溯码主档贴码比例快照（{@code cus_trace_number.trace_unit_ratio}；1 码对应拆零量）。
-     *
-     * <p>发药应扫个数 = ceil(行拆零 / 本值)；非药典目录比。</p>
+     * 追溯码贴码单位展示文案（{@code UNIT_CODE} 术语；扫码弹窗药品明细列用）。
      */
-    @Schema(description = "追溯码主档贴码比例快照")
+    @Schema(description = "追溯码贴码单位展示文案")
+    private String traceUnitCodeText;
+
+    /**
+     * 追溯码贴码比例（优先主档 {@code trace_unit_ratio}；无主档时回落药典；1 码单位 = N 拆零）。
+     *
+     * <p>发药应扫个数 = ceil(行拆零 / 本值)。</p>
+     */
+    @Schema(description = "追溯码贴码比例（1码=N拆零；主档优先否则药典）")
     private BigDecimal traceUnitRatio;
 
     /**
      * 主表该品批是否已有追溯码（有码批=true）。
      *
      * <p>false=无码批（期初/进货未扫）：扫码仅软提示数量，发药只写业务行 {@code trace_no}，不写主表流水。
-     * true=有码批：须校验本库优先、否则全院在院码，并写主表流水。</p>
+     * true=有码批：消耗侧码身份/在院仍软提示（仅进货硬 Gate，BR-TRC-006/020）；核发写流水盖不住或未建档则软跳过。</p>
      */
     @Schema(description = "主表该品批是否已有追溯码")
     private Boolean lotHasTraceMaster;
@@ -228,6 +244,14 @@ public class EncounterMedicationDispenseSlipRowDto {
     /** 医嘱开立总量。 */
     @Schema(description = "医嘱开立总量")
     private BigDecimal requestQuantity;
+
+    /**
+     * 中药付数（方头 {@code chinese_herbs_dose_quantity}）。
+     *
+     * <p>处方笺「N付」须用本字段；勿用 {@link #requestQuantity}（单剂×付数的请求总量）。</p>
+     */
+    @Schema(description = "中药付数")
+    private BigDecimal chineseHerbsDoseQuantity;
 
     /** 本发放单行数量。 */
     @Schema(description = "本发放单行数量", requiredMode = Schema.RequiredMode.REQUIRED)
@@ -283,12 +307,22 @@ public class EncounterMedicationDispenseSlipRowDto {
     @Schema(description = "拆分属性展示")
     private String partAttributeText;
 
-    /** 就诊用药类别码。 */
-    @Schema(description = "就诊用药类别码")
+    /**
+     * 医保医疗类别码（{@code YbMedType#getCode()} ↔ {@code adm_encounter_diagnosis.med_type}）。
+     *
+     * <p>取自本发放行绑定药嘱 {@code encounter_diagnosis_ids} 首位诊断；同处方号各行一致
+     *（一张方仅一种医疗类别，不可能既是普通门诊又是慢病）。</p>
+     */
+    @Schema(description = "医保医疗类别码（YbMedType / med_type）")
     private String encounterMedicationTypeCode;
 
-    /** 就诊用药类别展示名。 */
-    @Schema(description = "就诊用药类别展示")
+    /**
+     * 医保医疗类别展示名（{@code YbMedType#getDisplay()}，如「普通门诊」「门诊慢病」）。
+     *
+     * <p>发药单笺面「就诊类型」与处方打印 {@code feeNatureText} 槽位（模板标题「就诊类型」）同源回显；
+     * 纸质方头分类仍走 {@code prescriptionTypeLine*}（{@code rx_type_code}）。</p>
+     */
+    @Schema(description = "医保医疗类别展示（YbMedType）")
     private String encounterMedicationTypeText;
 
     /** 发放类型枚举码。 */
@@ -367,7 +401,7 @@ public class EncounterMedicationDispenseSlipRowDto {
     @Schema(description = "调配药师姓名（处方打印）")
     private String preparerPractitionerName;
 
-    /** 划价员姓名（处方打印；取收费人/结算 performer，禁止回落开单医生）。 */
+    /** 划价员姓名（处方打印；取收费人 ChargeItem.enterer_id，禁止回落开单医生）。 */
     @Schema(description = "划价员姓名（处方打印；收费人）")
     private String pricingPractitionerName;
 

@@ -67,4 +67,28 @@ public class PreRegisterSettlementResponse {
     /** 医保个人现金支付。 */
     @Schema(description = "医保个人现金支付")
     private BigDecimal ybPsnCashPay;
+
+    /**
+     * 实际支付起付线（2206 {@code act_pay_dedc}）。
+     *
+     * <p>仅确认弹窗展示，不参与挂号费应收重算。</p>
+     */
+    @Schema(description = "实际支付起付线")
+    private BigDecimal ybActPayDedc;
+
+    /**
+     * 公务员标志（2206 {@code cvlserv_flag}，0=否 / 1=是）。
+     *
+     * <p>仅确认弹窗展示。</p>
+     */
+    @Schema(description = "公务员标志")
+    private String ybCvlservFlag;
+
+    /**
+     * 公务员医疗补助资金支出（2206 {@code cvlserv_pay}）。
+     *
+     * <p>仅确认弹窗展示，不参与挂号费应收重算。</p>
+     */
+    @Schema(description = "公务员医疗补助资金支出")
+    private BigDecimal ybCvlservPay;
 }

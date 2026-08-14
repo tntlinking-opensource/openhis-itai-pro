@@ -200,9 +200,12 @@ public class ActivityDefinitionQueryService {
             String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(trimmed);
             predicates.add(cb.or(
                 cb.like(cb.lower(root.get(FieldNameConstants.NAME)), likeIc),
+                cb.like(cb.lower(root.get(FieldNameConstants.MERCHANDISE_NAME)), likeIc),
                 cb.like(cb.lower(root.get(FieldNameConstants.BUS_NO)), likeIc),
                 cb.like(cb.lower(root.get(FieldNameConstants.PY_STR)), likeIc),
-                cb.like(cb.lower(root.get(FieldNameConstants.WB_STR)), likeIc)
+                cb.like(cb.lower(root.get(FieldNameConstants.WB_STR)), likeIc),
+                cb.like(cb.lower(root.get(FieldNameConstants.MERCHANDISE_PY_STR)), likeIc),
+                cb.like(cb.lower(root.get(FieldNameConstants.MERCHANDISE_WB_STR)), likeIc)
             ));
             // B.2.1：关键字检索精确全等置顶
             KeywordExactFirstOrderSupport.applyExactFirstOrder(
@@ -211,9 +214,12 @@ public class ActivityDefinitionQueryService {
                 trimmed,
                 List.of(cb.desc(root.get(FieldNameConstants.ID))),
                 root.get(FieldNameConstants.NAME),
+                root.get(FieldNameConstants.MERCHANDISE_NAME),
                 root.get(FieldNameConstants.BUS_NO),
                 root.get(FieldNameConstants.PY_STR),
-                root.get(FieldNameConstants.WB_STR));
+                root.get(FieldNameConstants.WB_STR),
+                root.get(FieldNameConstants.MERCHANDISE_PY_STR),
+                root.get(FieldNameConstants.MERCHANDISE_WB_STR));
             return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
         };
 
@@ -498,15 +504,18 @@ public class ActivityDefinitionQueryService {
                 if (query.getChildrenFlag() != null) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.CHILDREN_FLAG), query.getChildrenFlag()));
                 }
-                // 关键字同时匹配名称、业务编号与检索码，提升临床检索命中率
+                // 关键字同时匹配名称、商品名、业务编号与检索码，提升临床检索命中率
                 if (StringUtils.isNotEmpty(query.getKeyword())) {
                     String trimmed = query.getKeyword().trim();
                     String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(trimmed);
                     predicates.add(cb.or(
                         cb.like(cb.lower(root.get(FieldNameConstants.NAME)), likeIc),
+                        cb.like(cb.lower(root.get(FieldNameConstants.MERCHANDISE_NAME)), likeIc),
                         cb.like(cb.lower(root.get(FieldNameConstants.BUS_NO)), likeIc),
                         cb.like(cb.lower(root.get(FieldNameConstants.PY_STR)), likeIc),
-                        cb.like(cb.lower(root.get(FieldNameConstants.WB_STR)), likeIc)
+                        cb.like(cb.lower(root.get(FieldNameConstants.WB_STR)), likeIc),
+                        cb.like(cb.lower(root.get(FieldNameConstants.MERCHANDISE_PY_STR)), likeIc),
+                        cb.like(cb.lower(root.get(FieldNameConstants.MERCHANDISE_WB_STR)), likeIc)
                     ));
                     // B.2.1：维护分页关键字精确全等置顶
                     KeywordExactFirstOrderSupport.applyExactFirstOrder(
@@ -515,9 +524,12 @@ public class ActivityDefinitionQueryService {
                         trimmed,
                         List.of(cb.desc(root.get(FieldNameConstants.CREATED_AT))),
                         root.get(FieldNameConstants.NAME),
+                        root.get(FieldNameConstants.MERCHANDISE_NAME),
                         root.get(FieldNameConstants.BUS_NO),
                         root.get(FieldNameConstants.PY_STR),
-                        root.get(FieldNameConstants.WB_STR));
+                        root.get(FieldNameConstants.WB_STR),
+                        root.get(FieldNameConstants.MERCHANDISE_PY_STR),
+                        root.get(FieldNameConstants.MERCHANDISE_WB_STR));
                 }
             }
             return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));

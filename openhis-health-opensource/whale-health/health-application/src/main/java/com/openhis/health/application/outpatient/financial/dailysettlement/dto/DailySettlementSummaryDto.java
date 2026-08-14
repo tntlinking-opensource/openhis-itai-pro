@@ -64,10 +64,22 @@ public class DailySettlementSummaryDto {
     private String cashDueAmount;
 
     /**
-     * 医保补偿合计（各医保费用性质统筹/基金支出代数和）。
+     * 医保统筹合计（各医保费用性质统筹/基金支出代数和）。
      */
-    @Schema(description = "医保补偿合计")
+    @Schema(description = "医保统筹合计")
     private String insuranceCompensationAmount;
+
+    /**
+     * 个人账户合计（各医保费用性质个人账户代数和）。
+     */
+    @Schema(description = "个人账户合计")
+    private String insuranceAccountAmount;
+
+    /**
+     * 医保上传差额合计（院内零售−2204/2301 上传；带符号代数和；勾稽项，不入总收入）。
+     */
+    @Schema(description = "医保上传差额合计（零售−上传）")
+    private String chsRetailUploadDiffAmount;
 
     /** 体检人次。 */
     @Schema(description = "体检人次")

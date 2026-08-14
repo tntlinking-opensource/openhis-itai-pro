@@ -198,7 +198,7 @@ public final class ChsSignEndpointSupport {
             }
             return base;
         }
-        return "127.0.0.1";
+        return "ddjk.jlhs.gov.cn";
     }
 
     private static int resolvePluginPort(ContractConfig config) {

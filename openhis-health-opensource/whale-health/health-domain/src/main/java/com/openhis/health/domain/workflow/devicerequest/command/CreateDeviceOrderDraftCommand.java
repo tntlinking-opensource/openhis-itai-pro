@@ -59,5 +59,9 @@ public class CreateDeviceOrderDraftCommand extends BatchCommand<CreateDeviceOrde
          * 组套标识（成组绑定可与主药嘱 {@code package_id} 对齐；可空）。
          */
         private Long packageId;
+        /**
+         * 费用性质合同业务号（合同 {@code bus_no}；落 {@code wkf_device_request.contract_code}，供列表反查 contractId）。
+         */
+        private String contractCode;
     }
 }

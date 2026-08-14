@@ -47,4 +47,14 @@ public class ExportNurseWorkloadDetailRequest {
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "护士执业者主键（可选）")
     private Long practitionerId;
+
+    /** 开立科室主键（可选）。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "开立科室主键（可选）")
+    private Long requestingOrgId;
+
+    /** 科室主键（遗留；请用 requestingOrgId）。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "科室主键（遗留；请用 requestingOrgId）")
+    private Long organizationId;
 }

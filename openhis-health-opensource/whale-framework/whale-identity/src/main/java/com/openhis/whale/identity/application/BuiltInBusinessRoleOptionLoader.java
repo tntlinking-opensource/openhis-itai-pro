@@ -107,6 +107,9 @@ public class BuiltInBusinessRoleOptionLoader {
         if ("ROLE_FINANCE_APPROVER".equals(normalized)) {
             return List.of(RoleAssignmentScopeConstants.ORG);
         }
+        if ("ROLE_MRMS_ADMIN".equals(normalized)) {
+            return List.of(RoleAssignmentScopeConstants.ORG);
+        }
         return List.of();
     }
 

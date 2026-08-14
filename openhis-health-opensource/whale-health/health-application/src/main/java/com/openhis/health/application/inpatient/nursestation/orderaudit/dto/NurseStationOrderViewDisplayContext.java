@@ -37,6 +37,16 @@ public class NurseStationOrderViewDisplayContext {
     /** 频次 code → 展示名。 */
     private Map<String, String> rateLabelByCode;
 
+    /**
+     * 频次 code → 每日执行次数（仅日周期；供长期药「每日三片」）。
+     */
+    private Map<String, Integer> timesPerDayByRateCode;
+
+    /**
+     * 输液滴速 code → 展示名（术语 {@code speed_code}）。
+     */
+    private Map<String, String> speedLabelByCode;
+
     /** 剂量单位 code → 展示名。 */
     private Map<String, String> doseUnitLabelByCode;
 

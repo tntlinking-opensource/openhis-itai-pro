@@ -392,7 +392,7 @@ public class DeviceCatalogImportTemplateBuilder {
         this.addListValidation(dataSheet, helper, firstRow, lastRow, 27, "OPT_YES_NO", "请选择过敏标记");
         this.addListValidation(dataSheet, helper, firstRow, lastRow, 28, "OPT_YES_NO", "请选择医保标记");
         this.addListValidation(dataSheet, helper, firstRow, lastRow, 29, "OPT_YES_NO", "请选择高值耗材标志");
-        this.addListValidation(dataSheet, helper, firstRow, lastRow, 30, "OPT_YES_NO", "请选择是否收费耗材");
+        this.addListValidation(dataSheet, helper, firstRow, lastRow, 30, "OPT_YES_NO", "请选择不收费耗材");
     }
 
     /**

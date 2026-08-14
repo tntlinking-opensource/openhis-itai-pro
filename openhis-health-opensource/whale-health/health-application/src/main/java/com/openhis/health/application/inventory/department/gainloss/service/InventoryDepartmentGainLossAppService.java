@@ -53,6 +53,7 @@ import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryC
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryItemModel;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemDomainService;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemQueryService;
+import com.openhis.health.application.shared.inventory.InventoryItemProductSelectionPageLoader;
 import com.openhis.health.domain.workflow.inventoryitem.valueobject.InventoryMatchKey;
 import com.openhis.health.domain.workflow.supplydelivery.service.SupplyDeliveryDomainService;
 import com.openhis.health.domain.workflow.supplydelivery.service.SupplyDeliveryQueryService;
@@ -62,7 +63,7 @@ import com.openhis.health.domain.workflow.supplyrequest.queries.VerifyAbleEditQu
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestValidationModel;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestDomainService;
-import com.openhis.health.application.inventory.support.SupplyRequestPricedWriteOrchestrator;
+import com.openhis.health.application.shared.supplyrequest.SupplyRequestPricedWriteOrchestrator;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQueryService;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.health.infrastructure.integration.insurance.inventory.InventoryThirdPartyUploadExtension;
@@ -116,6 +117,7 @@ public class InventoryDepartmentGainLossAppService {
     private final SupplyDeliveryQueryService supplyDeliveryQueryService;
     private final InventoryItemDomainService inventoryItemDomainService;
     private final InventoryItemQueryService inventoryItemQueryService;
+    private final InventoryItemProductSelectionPageLoader inventoryItemProductSelectionPageLoader;
     private final LocationQueryService locationQueryService;
     private final PractitionerQueryService practitionerQueryService;
     private final PractitionerRoleScopeLoader practitionerRoleScopeLoader;
@@ -556,6 +558,7 @@ public class InventoryDepartmentGainLossAppService {
             Long purposeLocationId = line.getPurposeLocationId();
             String resolvedLot = this.resolveLotNumberForGainLossInventory(line.getLotNumber());
             InventoryMatchKey matchKey = new InventoryMatchKey();
+            matchKey.setSupplierId(line.getSupplierId());
             matchKey.setLotNumber(resolvedLot);
             matchKey.setLocationId(purposeLocationId);
             matchKey.setItemTable(line.getItemTable());
@@ -720,7 +723,7 @@ public class InventoryDepartmentGainLossAppService {
             request.springPageIndex(), request.getBoundedPageSize(), Sort.by(Sort.Direction.ASC, FieldNameConstants.ID));
         try {
             // Cmd：分页查询现库库存行
-            Page<InventoryItemModel> page = inventoryItemQueryService.queryInventoryItemsByPage(invQuery, pageable);
+            Page<InventoryItemModel> page = inventoryItemProductSelectionPageLoader.page(invQuery, pageable);
             List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
             for (InventoryItemModel inv : page.getContent()) {
                 if (inv == null || inv.getItemId() == null || StringUtils.isEmpty(inv.getItemTable())) {
@@ -800,13 +803,9 @@ public class InventoryDepartmentGainLossAppService {
                 if (hints != null) {
                     List<ProductDefinitionCatalogUnitBandDto> bands = hints.getUnitBands();
                     dto.setUnitBands(bands);
-                    BigDecimal packageAnchor = lotCostUnit;
-                    if (packageAnchor == null && StringUtils.isNotEmpty(inv.getItemTable()) && inv.getItemId() != null) {
-                        packageAnchor = this.chargeItemDefinitionQueryService.resolveFirstPurchasePriceValue(
-                            inv.getItemTable().trim(), inv.getItemId());
-                    }
+                    // —— 库存流转选品槽锚仅 LOT_NUMBER_COST；无批号价不灌目录 PURCHASE。——
                     ProductDefinitionCatalogUnitBandsAssembler.applyInboundWarehouseBandPrices(
-                        bands, pr, packageAnchor);
+                        bands, pr, lotCostUnit);
                 }
                 records.add(dto);
             }

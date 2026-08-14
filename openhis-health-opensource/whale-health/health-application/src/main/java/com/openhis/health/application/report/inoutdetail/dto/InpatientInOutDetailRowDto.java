@@ -91,15 +91,31 @@ public class InpatientInOutDetailRowDto {
     @Schema(description = "出院时间")
     private LocalDateTime endTime;
 
+    /**
+     * 住院天数：自然日，入院日计第 1 天；有出院日截至出院日，否则截至当天。
+     */
+    @Excel(name = "住院天数", sort = 12)
+    @Schema(description = "住院天数（入院日计第1天；未出院用当天）")
+    private Integer inpatientDays;
+
     /** 转往科室文案；无转科可空。 */
-    @Excel(name = "转往", sort = 12)
+    @Excel(name = "转往", sort = 13)
     @Schema(description = "转往科室文案")
     private String transferTargetText;
+
+    /** 费用性质合同业务号（入院身份优先账户 → fin_contract.bus_no）。 */
+    @Schema(description = "费用性质合同业务号")
+    private String feeNatureContractNo;
+
+    /** 费用性质展示（入院身份：用什么入院就是什么）。 */
+    @Excel(name = "费用性质", sort = 14)
+    @Schema(description = "费用性质展示")
+    private String feeNatureDisplay;
 
     /**
      * 已结费用净额；无有效净额或待重结为 null（禁止 0）。
      */
-    @Excel(name = "已结费用", sort = 13)
+    @Excel(name = "已结费用", sort = 15)
     @Schema(description = "已结费用净额；空表示未结/待重结")
     private BigDecimal settledFeeAmount;
 

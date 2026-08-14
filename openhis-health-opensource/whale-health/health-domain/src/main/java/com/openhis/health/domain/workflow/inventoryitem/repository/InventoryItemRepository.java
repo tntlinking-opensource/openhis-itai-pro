@@ -35,11 +35,21 @@ public interface InventoryItemRepository extends JpaRepository<InventoryItem, Lo
      */
     List<InventoryItem> findByIdIn(List<Long> idList);
 
-    Optional<InventoryItem> findFirstBySupplierIdAndLotNumberAndLocationIdAndItemTableAndItemId(
+    /**
+     * 按五元组定位候选库存行（供应商 + 批号 + 库房 + 物品表 + 物品主键）；多行时按 id 升序。
+     *
+     * @param supplierId  供应商
+     * @param lotNumber   批号
+     * @param locationId  库房库位
+     * @param itemTable   物品来源表名
+     * @param itemId      物品定义主键
+     * @return 匹配行列表（可能为空）
+     */
+    List<InventoryItem> findBySupplierIdAndLotNumberAndLocationIdAndItemTableAndItemIdOrderByIdAsc(
         Long supplierId, String lotNumber, Long locationId, String itemTable, Long itemId);
 
     /**
-     * 按批号、库房、物品定位候选库存行（同一物品同一批次在同一库房理论上唯一；多行时按 id 升序取首条前由调用方处理歧义）。
+     * 按四元组定位候选库存行（批号 + 库房 + 物品）；同批号多供应商时可返回多行，由调用方按五元组或 FEFO 收窄。
      *
      * @param lotNumber   批号
      * @param locationId  库房库位

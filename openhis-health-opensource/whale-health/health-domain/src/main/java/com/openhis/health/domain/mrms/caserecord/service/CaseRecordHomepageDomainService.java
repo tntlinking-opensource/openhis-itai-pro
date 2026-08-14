@@ -15,10 +15,13 @@ import com.openhis.health.domain.mrms.caserecord.command.HomepageSaveCommand;
 import com.openhis.health.domain.mrms.caserecord.support.CaseRecordAutoFillSupport;
 import com.openhis.health.domain.mrms.caserecord.vo.DiagnosisLineSnapshot;
 import com.openhis.health.domain.mrms.caserecord.vo.EncounterSnapshot;
+import com.openhis.health.domain.mrms.caserecord.vo.FeeSummarySnapshot;
+import com.openhis.health.domain.mrms.caserecord.vo.NursingCareDaysSnapshot;
 import com.openhis.health.domain.mrms.caserecord.vo.PatientSnapshot;
 import com.openhis.health.domain.mrms.caserecord.vo.ProcedureLineSnapshot;
 import com.openhis.health.domain.mrms.caserecord.vo.TransferLineSnapshot;
 import com.openhis.health.domain.mrms.caserecord.repository.CaseRecordHomepageRepository;
+import com.openhis.health.domain.share.constants.MrmsConstants;
 import com.openhis.health.domain.mrms.caserecord.repository.CaseRecordRepository;
 import com.openhis.health.domain.mrms.caserecord.repository.HomepageDiagnosisRepository;
 import com.openhis.health.domain.mrms.caserecord.repository.HomepageProcedureRepository;
@@ -113,6 +116,7 @@ public class CaseRecordHomepageDomainService {
         var record = caseRecordRepository.findByIdAndIsDeletedFalse(command.getCaseRecordId())
                 .orElseThrow(() -> new BusinessException(MrmsErrorCodes.CASE_RECORD_NOT_FOUND, "病案主档不存在"));
         CaseRecordHomepage homepage = ensureHomepage(command.getCaseRecordId(), record.getTenantId(), command.getOperatorId());
+        // 归档冻结后禁止保存
         homepage.assertEditable();
         Map<String, String> sources = FieldSourcesJsonUtil.parse(objectMapper, homepage.getFieldSourcesJson());
         // Cmd：标量人工修订写入并 bump 版本
@@ -145,7 +149,7 @@ public class CaseRecordHomepageDomainService {
      * 从 HIS 读侧快照合并首页字段，尊重 {@code field_sources_json} 中 manual 标记。
      *
      * @param record 病案主档
-     * @param sections 合并分区（{@code all/basic/inpatient/staff/diagnosis/procedure}）
+     * @param sections 合并分区（{@code all/basic/inpatient/staff/diagnosis/procedure/fee}）
      * @param forceOverwrite 是否强制覆盖 manual 字段
      * @param operatorId 操作人
      * @return 合并后的首页
@@ -187,6 +191,10 @@ public class CaseRecordHomepageDomainService {
                 sources.put("procedures", FieldFillSource.AUTO.getCode());
             }
         }
+        // 费用：总额 + 分项写入 extension_json（ICU/输血本期不自动取值）
+        if (all || containsSection(sections, "fee")) {
+            mergeFeeSection(record, homepage, sources, forceOverwrite);
+        }
         homepage.setFieldSourcesJson(FieldSourcesJsonUtil.toJson(objectMapper, sources));
         homepage.setUpdatedAt(LocalDateTime.now());
         homepage.setUpdatedBy(operatorId);
@@ -194,14 +202,14 @@ public class CaseRecordHomepageDomainService {
     }
 
     /**
-     * 列出病案首页诊断子表（未软删，按类型与序号排序）。
+     * 列出病案首页诊断子表（未软删，按 {@code sort_no} 升序）。
+     * <p>与前端上移/下移维护的序号一致，避免按诊断类型重排导致保存后顺序回跳。
      *
      * @param caseRecordId 病案主档主键
      * @return 诊断行列表
      */
     public List<HomepageDiagnosis> listDiagnoses(Long caseRecordId) {
-        return diagnosisRepository
-                .findByCaseRecordIdAndIsDeletedFalseOrderByDiagTypeCodeAscSortNoAsc(caseRecordId);
+        return diagnosisRepository.findByCaseRecordIdAndIsDeletedFalseOrderBySortNoAsc(caseRecordId);
     }
 
     /**
@@ -317,7 +325,13 @@ public class CaseRecordHomepageDomainService {
         diagnosisRepository.saveAll(toSave);
     }
 
-    /** 人工保存路径：软删旧行后重建手术子表。 */
+    /**
+     * 人工保存路径：软删旧行后重建手术子表（含 P0 扩列字段全量复制）。
+     *
+     * @param caseRecordId 病案主档主键
+     * @param tenantId     租户主键
+     * @param lines        入参手术行；空则仅软删
+     */
     private void replaceProcedures(Long caseRecordId, Long tenantId, List<HomepageProcedure> lines) {
         softDeleteProcedures(caseRecordId);
         if (lines == null || lines.isEmpty()) {
@@ -333,6 +347,13 @@ public class CaseRecordHomepageDomainService {
             entity.setOprnOprtName(line.getOprnOprtName());
             entity.setOprnDate(line.getOprnDate());
             entity.setMainOprnFlag(line.getMainOprnFlag());
+            // P0 手术扩列：级别/切口/愈合/麻醉/术者，随全量替换一并落库
+            entity.setOprnLevelCode(line.getOprnLevelCode());
+            entity.setOprnIncisionCode(line.getOprnIncisionCode());
+            entity.setHealGradeCode(line.getHealGradeCode());
+            entity.setAnstWayCode(line.getAnstWayCode());
+            entity.setOperDrName(line.getOperDrName());
+            entity.setAnstDrName(line.getAnstDrName());
             entity.setValiFlag("1");
             entity.setCreatedAt(LocalDateTime.now());
             entity.setIsDeleted(false);
@@ -378,8 +399,13 @@ public class CaseRecordHomepageDomainService {
         putIfAllowed(homepage, sources, "psn_tel", patient.getPhone(), force);
         putIfAllowed(homepage, sources, "coner_name", patient.getContactName(), force);
         putIfAllowed(homepage, sources, "coner_tel", patient.getContactPhone(), force);
+        putIfAllowed(homepage, sources, "coner_rlts_code", patient.getContactRelationCode(), force);
         putIfAllowed(homepage, sources, "ntly_code", patient.getNationalityCode(), force);
         putIfAllowed(homepage, sources, "naty_code", patient.getNatyCode(), force);
+        putIfAllowed(homepage, sources, "mrg_stas_code", patient.getMaritalStatusCode(), force);
+        putIfAllowed(homepage, sources, "prfs_code", patient.getPrfsCode(), force);
+        // 工作单位写入扩展，供前端 emprAddr 回显
+        putExtensionIfAllowed(homepage, sources, "emprAddr", patient.getWorkCompany(), force);
     }
 
     /** 合并住院信息分区（adm_encounter + 转科摘要）。 */
@@ -396,10 +422,18 @@ public class CaseRecordHomepageDomainService {
         putIfAllowed(homepage, sources, "ipt_no", enc.getIptNo(), force);
         putIfAllowed(homepage, sources, "adm_time", enc.getAdmTime(), force);
         putIfAllowed(homepage, sources, "dscg_time", enc.getDscgTime(), force);
+        // 纠偏非法/空白入院途径后，按就诊 in_way（与 adm_way 同码）回填；空白/非法不受 manual 空锁阻挡
+        this.clearInvalidAdmWayIfNeeded(homepage, sources);
+        this.putAdmWayFromHis(homepage, sources, enc.getAdmWayCode(), force);
         putIfAllowed(homepage, sources, "adm_caty_code", enc.getAdmCatyCode(), force);
         putIfAllowed(homepage, sources, "adm_caty_name", enc.getAdmCatyName(), force);
         putIfAllowed(homepage, sources, "dscg_caty_code", enc.getDscgCatyCode(), force);
         putIfAllowed(homepage, sources, "dscg_caty_name", enc.getDscgCatyName(), force);
+        // 病区床位落 extension，与前端 admWard/admBed 对齐
+        putExtensionIfAllowed(homepage, sources, "admWard", enc.getAdmWardName(), force);
+        putExtensionIfAllowed(homepage, sources, "admBed", enc.getAdmBedName(), force);
+        putExtensionIfAllowed(homepage, sources, "dscgWard", enc.getDscgWardName(), force);
+        putExtensionIfAllowed(homepage, sources, "dscgBed", enc.getDscgBedName(), force);
         // 出入院时间齐全时计算住院天数（4401 至少 1 天）
         if (enc.getAdmTime() != null && enc.getDscgTime() != null) {
             long days = ChronoUnit.DAYS.between(enc.getAdmTime().toLocalDate(), enc.getDscgTime().toLocalDate());
@@ -409,6 +443,13 @@ public class CaseRecordHomepageDomainService {
             }
             putIfAllowed(homepage, sources, "ipt_days", (int) days, force);
         }
+        // 护理天数：护理级别医嘱汇总
+        NursingCareDaysSnapshot nursing =
+                caseRecordAutoFillSupport.sumNursingCareDays(record.getEncounterId(), enc.getDscgTime());
+        putIfAllowed(homepage, sources, "spga_nurscare_days", nursing.getSpgaNurscareDays(), force);
+        putIfAllowed(homepage, sources, "lv1_nurscare_days", nursing.getLv1NurscareDays(), force);
+        putIfAllowed(homepage, sources, "scd_nurscare_days", nursing.getScdNurscareDays(), force);
+        putIfAllowed(homepage, sources, "lv3_nurscare_days", nursing.getLv3NurscareDays(), force);
         putIfAllowed(
                 homepage,
                 sources,
@@ -446,6 +487,33 @@ public class CaseRecordHomepageDomainService {
         putIfAllowed(homepage, sources, "atddr_practitioner_id", enc.getAtddrPractitionerId(), force);
         putIfAllowed(homepage, sources, "ipt_dr_name", enc.getIptDrName(), force);
         putIfAllowed(homepage, sources, "resp_nurs_name", enc.getRespNursName(), force);
+    }
+
+    /**
+     * 合并费用分区：医疗费总额与分项写入 extension_json。
+     *
+     * @param record   病案
+     * @param homepage 首页
+     * @param sources  字段来源
+     * @param force    是否强制覆盖 manual
+     */
+    private void mergeFeeSection(
+            CaseRecord record,
+            CaseRecordHomepage homepage,
+            Map<String, String> sources,
+            boolean force) {
+        FeeSummarySnapshot fee = caseRecordAutoFillSupport.sumFeeSummary(record.getEncounterId());
+        if (fee == null) {
+            return;
+        }
+        putExtensionIfAllowed(homepage, sources, MrmsConstants.EXT_MEDFEE_SUMAMT, fee.getMedfeeSumamt(), force);
+        Map<String, java.math.BigDecimal> items = fee.getFeeItems();
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<String, java.math.BigDecimal> entry : items.entrySet()) {
+            putExtensionIfAllowed(homepage, sources, entry.getKey(), entry.getValue(), force);
+        }
     }
 
     /**
@@ -564,7 +632,72 @@ public class CaseRecordHomepageDomainService {
         return FieldFillSource.MANUAL.getCode().equals(sources.get(sectionKey));
     }
 
-    /** 按 field_sources 与 force 决定是否写入标量并标记 auto。 */
+    /**
+     * 清空非法入院途径（如误写入的入院类型码 6=常规），并解除空白上的 manual 锁，便于按 in_way 回填。
+     *
+     * @param homepage 首页实体
+     * @param sources  字段来源图
+     */
+    private void clearInvalidAdmWayIfNeeded(CaseRecordHomepage homepage, Map<String, String> sources) {
+        String current = homepage.getAdmWayCode();
+        // 空白：去掉 manual 空锁，后续可按 HIS 回填
+        if (current == null || current.isBlank()) {
+            sources.remove("adm_way_code");
+            homepage.setAdmWayCode(null);
+            return;
+        }
+        // 已是合法 4401 码则保留
+        if (MrmsConstants.isValidAdmWayCode(current)) {
+            return;
+        }
+        // 非法码（含历史 6=常规）：一律清空，避免前端 sanitize 后「有值不回显」
+        homepage.setAdmWayCode(null);
+        sources.remove("adm_way_code");
+    }
+
+    /**
+     * 从就诊快照写入入院途径：合法 HIS 码回填；已有合法手工值且非 force 时保留。
+     *
+     * <p>调用关系：{@link #mergeInpatientSection} 在 {@link #clearInvalidAdmWayIfNeeded} 之后调用；
+     * HIS 侧码来自 {@code EncounterSnapshot.admWayCode}（已由 {@code mapInWayCodeToAdmWayCode} 映射）。</p>
+     *
+     * @param homepage 首页实体
+     * @param sources  字段来源图
+     * @param fromHis  就诊映射后的 adm_way（1/2/3/9）
+     * @param force    是否强制覆盖合法 manual
+     */
+    private void putAdmWayFromHis(
+            CaseRecordHomepage homepage, Map<String, String> sources, String fromHis, boolean force) {
+        // HIS 无入院途径时不覆盖首页（可能仍为空待手工选）
+        if (fromHis == null || fromHis.isBlank()) {
+            return;
+        }
+        // 非法 HIS 码不写入，避免再次污染 adm_way_code
+        if (!MrmsConstants.isValidAdmWayCode(fromHis)) {
+            return;
+        }
+        String current = homepage.getAdmWayCode();
+        boolean currentOk = current != null && !current.isBlank() && MrmsConstants.isValidAdmWayCode(current);
+        String source = sources.get("adm_way_code");
+        // 已有合法手工值且非强制：尊重病案室选择
+        if (!force
+                && currentOk
+                && FieldFillSource.MANUAL.getCode().equals(source)) {
+            return;
+        }
+        applyAutoFillField(homepage, "adm_way_code", fromHis.trim());
+        sources.put("adm_way_code", FieldFillSource.AUTO.getCode());
+    }
+
+    /**
+     * 按 field_sources 与 force 决定是否写入标量并标记 auto。
+     *
+     * @param homepage 首页实体
+     * @param sources  字段来源图
+     * @param fieldKey 来源键（与列名/snake 键一致）
+     * @param newVal   HIS 新值；null 表示不覆盖
+     * @param force    是否强制覆盖 manual
+     */
     private void putIfAllowed(
             CaseRecordHomepage homepage,
             Map<String, String> sources,
@@ -576,7 +709,7 @@ public class CaseRecordHomepageDomainService {
             return;
         }
         String source = sources.get(fieldKey);
-        // manual 锁定且非强制覆盖时保留医生手工值
+        // manual 锁定且非强制覆盖时保留医生/病案手工值
         if (!force && FieldFillSource.MANUAL.getCode().equals(source)) {
             return;
         }
@@ -584,7 +717,13 @@ public class CaseRecordHomepageDomainService {
         sources.put(fieldKey, FieldFillSource.AUTO.getCode());
     }
 
-    /** 自动取值标量字段映射（switch 与首页列一一对应）。 */
+    /**
+     * 自动取值标量字段映射（switch 与首页列一一对应；未知 fieldKey 忽略）。
+     *
+     * @param homepage 首页实体
+     * @param fieldKey 字段键
+     * @param value    已判定非 null 的写入值
+     */
     private void applyAutoFillField(CaseRecordHomepage homepage, String fieldKey, Object value) {
         switch (fieldKey) {
             case "psn_name" -> homepage.setPsnName(String.valueOf(value));
@@ -595,9 +734,13 @@ public class CaseRecordHomepageDomainService {
             case "psn_tel" -> homepage.setPsnTel(String.valueOf(value));
             case "coner_name" -> homepage.setConerName(String.valueOf(value));
             case "coner_tel" -> homepage.setConerTel(String.valueOf(value));
+            case "coner_rlts_code" -> homepage.setConerRltsCode(String.valueOf(value));
             case "ntly_code" -> homepage.setNtlyCode(String.valueOf(value));
             case "naty_code" -> homepage.setNatyCode(String.valueOf(value));
+            case "mrg_stas_code" -> homepage.setMrgStasCode(String.valueOf(value));
+            case "prfs_code" -> homepage.setPrfsCode(String.valueOf(value));
             case "ipt_no" -> homepage.setIptNo(String.valueOf(value));
+            case "adm_way_code" -> homepage.setAdmWayCode(String.valueOf(value));
             case "adm_time" -> homepage.setAdmTime((LocalDateTime) value);
             case "dscg_time" -> homepage.setDscgTime((LocalDateTime) value);
             case "adm_caty_code" -> homepage.setAdmCatyCode(String.valueOf(value));
@@ -605,6 +748,10 @@ public class CaseRecordHomepageDomainService {
             case "dscg_caty_code" -> homepage.setDscgCatyCode(String.valueOf(value));
             case "dscg_caty_name" -> homepage.setDscgCatyName(String.valueOf(value));
             case "ipt_days" -> homepage.setIptDays((Integer) value);
+            case "spga_nurscare_days" -> homepage.setSpgaNurscareDays((Integer) value);
+            case "lv1_nurscare_days" -> homepage.setLv1NurscareDays((Integer) value);
+            case "scd_nurscare_days" -> homepage.setScdNurscareDays((Integer) value);
+            case "lv3_nurscare_days" -> homepage.setLv3NurscareDays((Integer) value);
             case "dscg_way_code" -> homepage.setDscgWayCode(String.valueOf(value));
             case "transfer_dept_summary" -> homepage.setTransferDeptSummary(String.valueOf(value));
             case "dept_director_name" -> homepage.setDeptDirectorName(String.valueOf(value));
@@ -616,6 +763,37 @@ public class CaseRecordHomepageDomainService {
             default -> {
             }
         }
+    }
+
+    /**
+     * 自动取值写入扩展 JSON 键（病区床位等无独立列字段）；尊重 manual 锁。
+     *
+     * @param homepage 首页
+     * @param sources  字段来源
+     * @param extKey   extension 键（与前端 HOMEPAGE_EXTENSION_KEYS 对齐）
+     * @param newVal   新值
+     * @param force    是否强制覆盖 manual
+     */
+    private void putExtensionIfAllowed(
+            CaseRecordHomepage homepage,
+            Map<String, String> sources,
+            String extKey,
+            Object newVal,
+            boolean force) {
+        // 空值不写入扩展
+        if (newVal == null) {
+            return;
+        }
+        String sourceKey = "ext:" + extKey;
+        String source = sources.get(sourceKey);
+        // manual 锁定且非强制覆盖时保留
+        if (!force && FieldFillSource.MANUAL.getCode().equals(source)) {
+            return;
+        }
+        Map<String, Object> patch = new HashMap<>();
+        patch.put(extKey, String.valueOf(newVal));
+        homepage.setExtensionJson(mergeExtension(homepage.getExtensionJson(), patch));
+        sources.put(sourceKey, FieldFillSource.AUTO.getCode());
     }
 
     /** 判断合并请求是否包含指定分区 code。 */

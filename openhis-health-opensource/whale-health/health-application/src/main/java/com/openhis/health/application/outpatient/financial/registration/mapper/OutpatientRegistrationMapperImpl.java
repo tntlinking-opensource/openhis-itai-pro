@@ -48,6 +48,7 @@ import com.openhis.health.domain.administration.invoice.entity.Invoice;
 import com.openhis.health.domain.administration.invoice.query.InvoiceQueryCommand;
 import com.openhis.health.domain.administration.organization.entity.Organization;
 import com.openhis.health.domain.administration.patient.command.RegisterPatientCommand;
+import com.openhis.health.domain.administration.patient.command.UpdatePatientAddressCommand;
 import com.openhis.health.domain.administration.patient.command.UpdatePatientPhoneCommand;
 import com.openhis.health.domain.administration.patient.entity.Patient;
 import com.openhis.health.domain.administration.patient.queries.DuplicatePatientCheckQuery;
@@ -475,6 +476,7 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
             return new ClinicRegisterItemDto().setEncounterId(item.getEncounterId())
                 .setEncounterBusNo(item.getEncounterBusNo()).setPatientName(item.getPatientName())
                 .setPatientGenderCode(item.getPatientGenderCode()).setPatientGenderText(genderRowText)
+                .setPatientAgeText(item.getPatientAgeText())
                 .setContactPhone(item.getContactPhone()).setOrganizationName(item.getOrganizationName())
                 .setDoctorName(item.getDoctorName()).setStatusEnum(item.getStatusEnum())
                 .setStatusText(item.getStatusEnumText()).setStartTime(item.getStartTime())
@@ -574,6 +576,7 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
         item.setGenderEnum(request.getGender());
         item.setIdCard(request.getIdCardNo());
         item.setPhone(request.getPhone());
+        item.setAddress(request.getAddress());
         item.setBirthDate(request.getBirthDate());
         item.setOrganizationId(request.getOrganizationId());
         item.setTempFlag(Boolean.FALSE);
@@ -595,6 +598,24 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
             new UpdatePatientPhoneCommand.UpdatePatientPhoneItemCommand();
         item.setPatientId(patientId);
         item.setPhone(phone);
+        command.setItem(item);
+        return command;
+    }
+
+    /**
+     * 将既有患者主键与读卡地址全文装配为更新地址命令（单条 item）。
+     *
+     * @param patientId 既有患者主键
+     * @param address 地址全文
+     * @return 更新地址命令
+     */
+    @Override
+    public UpdatePatientAddressCommand toUpdatePatientAddressCommand(Long patientId, String address) {
+        UpdatePatientAddressCommand command = new UpdatePatientAddressCommand();
+        UpdatePatientAddressCommand.UpdatePatientAddressItemCommand item =
+            new UpdatePatientAddressCommand.UpdatePatientAddressItemCommand();
+        item.setPatientId(patientId);
+        item.setAddress(address);
         command.setItem(item);
         return command;
     }

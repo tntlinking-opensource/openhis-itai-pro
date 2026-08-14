@@ -66,6 +66,15 @@ public class OpPreSettleCommand {
     private List<OpSettleChargeLine> chargeLines;
     private BigDecimal medfeeSumamt;
 
+    /** 院内收费合计（charge_item.total_price，结算两位）。 */
+    private BigDecimal retailMedfeeSumamt;
+
+    /** 2204 上传明细合计（pric×cnt，结算两位）。 */
+    private BigDecimal uploadMedfeeSumamt;
+
+    /** 零售−上传分差（retail−upload）。 */
+    private BigDecimal retailUploadDiffAmt;
+
     private Long paymentDraftId;
     /** 本批次收费项挂载的结算账户（混合结算按组区分） */
     private Long accountId;

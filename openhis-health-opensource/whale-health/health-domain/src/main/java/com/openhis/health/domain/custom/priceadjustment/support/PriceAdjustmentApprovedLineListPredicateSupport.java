@@ -32,7 +32,7 @@ public final class PriceAdjustmentApprovedLineListPredicateSupport {
     }
 
     /**
-     * 组装软删、已生效、生效时刻窗、项目表、项目主键 IN、单号谓词。
+     * 组装软删、已生效、生效时刻窗、项目表、项目主键 IN、单号、排除调价原因谓词。
      *
      * @param root  调价主行根
      * @param cb    条件构建器
@@ -70,7 +70,32 @@ public final class PriceAdjustmentApprovedLineListPredicateSupport {
             String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(query.getBusNo().trim());
             predicates.add(cb.like(cb.lower(root.get(FieldNameConstants.BUS_NO)), likeIc));
         }
+        // 排除指定调价原因（院点自动调价审计等）：谓词层剔除，count/分页一致
+        List<String> excludeReasons = normalizeExcludeAdjustmentReasons(query.getExcludeAdjustmentReasons());
+        if (!excludeReasons.isEmpty()) {
+            predicates.add(cb.not(root.get(FieldNameConstants.ADJUSTMENT_REASON).in(excludeReasons)));
+        }
         return predicates;
+    }
+
+    /**
+     * 规范化排除原因列表：去空、trim；入参 null 或全空则返回空列表。
+     *
+     * @param raw 原始排除原因
+     * @return 非 null 列表（可空）
+     */
+    private static List<String> normalizeExcludeAdjustmentReasons(List<String> raw) {
+        List<String> normalized = new ArrayList<>();
+        if (raw == null || raw.isEmpty()) {
+            return normalized;
+        }
+        for (String reason : raw) {
+            if (StringUtils.isEmpty(reason)) {
+                continue;
+            }
+            normalized.add(reason.trim());
+        }
+        return normalized;
     }
 
     /**

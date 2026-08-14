@@ -15,7 +15,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
-import java.util.Optional;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.never;
@@ -46,9 +46,10 @@ class BossWriteOffServiceTest {
         document.setBusNo("IV-1");
         document.setTotalAmt(new BigDecimal("5.00"));
 
-        when(documentRepository.findByInvoiceIdAndIsDeletedFalse(invoiceId)).thenReturn(Optional.of(document));
+        when(documentRepository.findAllByInvoiceIdAndIsDeletedFalseOrderByIdAsc(invoiceId))
+                .thenReturn(List.of(document));
 
-        BossInvoiceIssueResult result = writeOffService.writeOff(invoiceId, "退费");
+        BossInvoiceIssueResult result = writeOffService.writeOff(invoiceId, "??");
 
         assertEquals("200001", result.getBillNo());
         verify(writeOffOutboundAccess, never()).invokeWriteOff(

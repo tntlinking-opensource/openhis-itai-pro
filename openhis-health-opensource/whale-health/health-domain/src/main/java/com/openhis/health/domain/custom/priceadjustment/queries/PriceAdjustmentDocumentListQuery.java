@@ -9,6 +9,7 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 调价单列表过滤入参：按 {@code bus_no} 聚合分页（对齐库房 {@link com.openhis.health.domain.workflow.supplyrequest.queries.SupplyRequestDocumentListQuery}）。
@@ -59,4 +60,11 @@ public class PriceAdjustmentDocumentListQuery extends AbstractPageQuery {
 
     /** 制单时间窗止（闭区间，映射 {@code adjustment_time}）。 */
     private LocalDateTime adjustmentTimeTo;
+
+    /**
+     * 排除的调价原因全文列表；非空时 {@code adjustment_reason NOT IN (...)}。
+     *
+     * <p>供调用方在列表谓词层剔除审计单；空或未设表示不排除。count/分页与可见行一致。</p>
+     */
+    private List<String> excludeAdjustmentReasons;
 }

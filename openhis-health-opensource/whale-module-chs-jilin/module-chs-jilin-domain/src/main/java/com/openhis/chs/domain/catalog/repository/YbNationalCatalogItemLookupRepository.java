@@ -6,6 +6,7 @@ package com.openhis.chs.domain.catalog.repository;
 
 import com.openhis.chs.domain.catalog.entity.YbNationalCatalogItem;
 import com.openhis.chs.domain.catalog.repository.support.YbNationalCatalogItemRowMapper;
+import com.openhis.chs.domain.catalog.support.NationalCatalogPackHint;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -15,7 +16,12 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * 国家目录镜像复杂只读查询（JdbcTemplate；Repository 接口号{@code @Query}） */
@@ -23,15 +29,12 @@ import java.util.List;
 @RequiredArgsConstructor
 public class YbNationalCatalogItemLookupRepository implements YbNationalCatalogItemLookup {
 
-    /**
-     * 选码/分页列表列：显式排除 raw_json，避免大字段拖慢网络与反序列化；
-     * 仍保留 raw_json 列别名（NULL）以兼容 {@link YbNationalCatalogItemRowMapper}。
-     */
     private static final String PICKER_COLUMNS = """
         id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by,
         tenant_id, contract_id, list_type, hilist_code, hilist_name, chrgitm_lv, lmt_used_flag,
         begndate, enddate, vali_flag, spec, dosform, aprvno, prodentp_name, pinyin,
-        NULL::text AS raw_json, source_infno, updt_time, source_file_qury_no, source_line_no
+        NULL::text AS raw_json, source_infno, updt_time, source_file_qury_no, source_line_no,
+        min_pac_cnt, min_pacunt, min_prepunt, min_prcunt
         """;
 
     private final JdbcTemplate jdbcTemplate;
@@ -260,6 +263,68 @@ public class YbNationalCatalogItemLookupRepository implements YbNationalCatalogI
             dataArgs.toArray());
         long total = resolvePagedTotal(content, totalHolder[0], pageable, filter, false);
         return new PageImpl<>(content, pageable, total);
+    }
+
+    /**
+     * 按国家码批量取包装/计价单位（DISTINCT ON hilist_code；优先 1301 且已落列有值的行）。
+     *
+     * <p>读持久化列 {@code min_pac_*} / {@code min_prcunt}，禁止再扫 {@code raw_json}。</p>
+     */
+    @Override
+    public Map<String, NationalCatalogPackHint> loadPackHintsByHilistCodes(
+        Long contractId,
+        Long tenantId,
+        Collection<String> hilistCodes) {
+        Map<String, NationalCatalogPackHint> out = new LinkedHashMap<>();
+        if (contractId == null || tenantId == null || hilistCodes == null || hilistCodes.isEmpty()) {
+            return out;
+        }
+        Set<String> codes = new LinkedHashSet<>();
+        for (String code : hilistCodes) {
+            if (code != null && !code.isBlank()) {
+                codes.add(code.trim());
+            }
+        }
+        if (codes.isEmpty()) {
+            return out;
+        }
+        String placeholders = String.join(",", codes.stream().map(c -> "?").toList());
+        String sql = """
+            SELECT DISTINCT ON (hilist_code)
+              hilist_code, min_pac_cnt, min_pacunt, min_prepunt, min_prcunt
+            FROM yb_national_catalog_item
+            WHERE contract_id = ?
+              AND tenant_id = ?
+              AND is_deleted = false
+              AND hilist_code IN (%s)
+              AND (
+                min_pac_cnt IS NOT NULL
+                OR min_pacunt IS NOT NULL
+                OR min_prepunt IS NOT NULL
+                OR min_prcunt IS NOT NULL
+              )
+            ORDER BY hilist_code,
+              CASE WHEN source_infno = '1301' THEN 0 ELSE 1 END,
+              updated_at DESC NULLS LAST
+            """.formatted(placeholders);
+        List<Object> args = new ArrayList<>(2 + codes.size());
+        args.add(contractId);
+        args.add(tenantId);
+        args.addAll(codes);
+        jdbcTemplate.query(sql, rs -> {
+            NationalCatalogPackHint hint = NationalCatalogPackHint.of(
+                rs.getString("hilist_code"),
+                rs.getString("min_pac_cnt"),
+                rs.getString("min_pacunt"),
+                rs.getString("min_prepunt"),
+                rs.getString("min_prcunt"));
+            // 无计价/包装任一字段则跳过（等同未命中目录包装）
+            if (hint == null || (!hint.hasPricingUnit() && hint.minPacCntAsDecimal() == null)) {
+                return;
+            }
+            out.put(hint.hilistCode(), hint);
+        }, args.toArray());
+        return out;
     }
 
     /** 契约+租户+list_type 基础 WHERE 片段 */

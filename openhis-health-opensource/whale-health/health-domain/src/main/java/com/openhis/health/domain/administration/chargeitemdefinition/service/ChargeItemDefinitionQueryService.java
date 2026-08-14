@@ -190,6 +190,57 @@ public class ChargeItemDefinitionQueryService {
     }
 
     /**
+     * 批量解析同表多实例的 {@link PriceType#SALE} 当前有效择优单价（语义同 {@link #resolveFirstSalePriceValue}）。
+     *
+     * <p>用于套餐子项展开等避免按子项 N+1；择优规则仍走 {@link #selectFirstNonNullPriceValueStable}。</p>
+     *
+     * @param instanceTable 物品物理表名（如诊疗定义表）
+     * @param instanceIds   实例主键集合
+     * @return instanceId → 单价；无命中的 id 不出现在 Map 中（never null）
+     */
+    public Map<Long, BigDecimal> mapFirstSalePriceValueByInstanceIds(
+        String instanceTable,
+        Collection<Long> instanceIds
+    ) {
+        Map<Long, BigDecimal> result = new HashMap<>();
+        if (StringUtils.isEmpty(instanceTable) || instanceIds == null || instanceIds.isEmpty()) {
+            return result;
+        }
+        LinkedHashSet<Long> uniqueIds = new LinkedHashSet<>();
+        for (Long id : instanceIds) {
+            if (id != null) {
+                uniqueIds.add(id);
+            }
+        }
+        // 无有效主键：直接空结果
+        if (uniqueIds.isEmpty()) {
+            return result;
+        }
+        ChargeItemDefinitionQueryCommand priceCmd = new ChargeItemDefinitionQueryCommand();
+        priceCmd.setInstanceTable(instanceTable.trim());
+        priceCmd.setInstanceIds(uniqueIds);
+        priceCmd.setPriceTypeCodes(List.of(PriceType.SALE.getCode()));
+        List<ChargeItemDefinition> lines = this.findPriceLinesByProjects(priceCmd);
+        Map<Long, List<ChargeItemDefinition>> byInstanceId = new HashMap<>();
+        if (lines != null) {
+            for (ChargeItemDefinition line : lines) {
+                if (line == null || line.getInstanceId() == null) {
+                    continue;
+                }
+                byInstanceId.computeIfAbsent(line.getInstanceId(), k -> new ArrayList<>()).add(line);
+            }
+        }
+        // 逐实例择优，与单条 resolveFirstSalePriceValue 同口径
+        for (Long instanceId : uniqueIds) {
+            BigDecimal price = selectFirstNonNullPriceValueStable(byInstanceId.get(instanceId));
+            if (price != null) {
+                result.put(instanceId, price);
+            }
+        }
+        return result;
+    }
+
+    /**
      * 解析实例+批号维 {@link PriceType#LOT_NUMBER_COST} 当前有效择优单价（价随批号展示，不做实例维回落）。
      *
      * <p>库房单据读路径两档锚价之二（有批号时）；{@link PriceType#LOT_NUMBER_PRICE} 不参与库房读路径。</p>

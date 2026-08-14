@@ -279,6 +279,15 @@ public class Patient extends BaseAuditedEntity {
     }
 
     /**
+     * 校验是否允许更新地址全文（挂号读卡回写等窄写路径）。
+     */
+    public void assertAddressUpdatable() {
+        if (!PatientStatus.ACTIVE.getCode().equals(this.statusEnum)) {
+            throw new BusinessException(ErrorCodeConstants.PATIENT_INVALID_STATUS, "仅活跃患者允许更新地址");
+        }
+    }
+
+    /**
      * 校验是否允许同步患者证件。
      */
     public void assertIdentifierSyncAllowed() {

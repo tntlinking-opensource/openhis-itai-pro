@@ -756,19 +756,23 @@ public class NurseStationInpatientBillingMapperImpl implements NurseStationInpat
     /**
      * 护士划价诊疗完成 Procedure。
      *
-     * @param procedureId 执行记录主键
-     * @param operatorId  操作人
+     * @param procedureId  执行记录主键
+     * @param operatorId   操作人
+     * @param recordedTime 客户可见执行时刻（与 create.occurrence 同值，保证展示轴初始一致）
      * @return 完成命令
      */
     @Override
     public CompleteProcedureRecordCommand toCompleteNursePricingProcedureRecordCommand(
         Long procedureId,
-        Long operatorId) {
+        Long operatorId,
+        LocalDateTime recordedTime) {
         CompleteProcedureRecordCommand command = new CompleteProcedureRecordCommand();
         command.setProcedureId(procedureId);
         command.setOperatorId(operatorId);
         command.setResultText(InpatientNurseStationConstants.INPATIENT_NURSE_PRICING_PROCEDURE_RESULT_TEXT);
         command.setReportJson(null);
+        // 划价创建时 recorded 与 occurrence 同值；后续改时仅动 recorded（IF-IP-PRC-07）
+        command.setRecordedTime(recordedTime);
         return command;
     }
 

@@ -54,4 +54,8 @@ public class LoadInpatientMedicationDispenseReportPageInitResponse {
     /** 费用性质下拉（value=fin_contract.bus_no）。 */
     @Schema(description = "费用性质选项")
     private List<OptionDto> feeNatureOptions;
+
+    /** 开立/领用科室下拉（随来源解释）。 */
+    @Schema(description = "开立/领用科室选项")
+    private List<OptionDto> organizationOptions;
 }

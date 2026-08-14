@@ -14,7 +14,7 @@
 
     <groupId>com.openhis</groupId>
     <artifactId>whale</artifactId>
-    <version>2.0.4-SNAPSHOT</version>
+    <version>2.0.5</version>
     <packaging>pom</packaging>
 
     <name>OpenHIS All</name>
@@ -54,7 +54,6 @@
         <module>whale-module-elep-jilin</module>
         <module>whale-module-einvoice-boss</module>
         <module>whale-module-unionpay-bpc</module>
-        <module>whale-module-crb</module>
     </modules>
 
     <dependencyManagement>
@@ -105,12 +104,6 @@
         </profile>
         <profile>
             <id>with-unionpay-bpc</id>
-        </profile>
-        <profile>
-            <id>with-crb</id>
-            <modules>
-                <module>whale-module-crb</module>
-            </modules>
         </profile>
     </profiles>
 

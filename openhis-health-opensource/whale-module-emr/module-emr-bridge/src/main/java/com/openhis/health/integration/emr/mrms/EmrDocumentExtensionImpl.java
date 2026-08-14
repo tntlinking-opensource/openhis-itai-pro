@@ -38,6 +38,7 @@ import org.springframework.transaction.annotation.Transactional;
 import jakarta.persistence.criteria.Predicate;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -229,6 +230,50 @@ public class EmrDocumentExtensionImpl implements EmrDocumentExtension {
                 documentManager.updateStatus(document.getId(), DocumentManager.STATUS_SUBMITTED);
             }
         }
+    }
+
+    /**
+     * 批量判断就诊下是否存在 LOCKED 文书（病例归档态；归档病例落 LOCKED）。
+     *
+     * @param encounterIds 就诊主键集合
+     * @return 命中就诊主键集合
+     */
+    @Override
+    public Set<Long> filterEncounterIdsWithLockedOrArchivedDocuments(Collection<Long> encounterIds) {
+        Set<Long> hit = new HashSet<>();
+        if (encounterIds == null || encounterIds.isEmpty()) {
+            return hit;
+        }
+        List<String> encounterKeys = new ArrayList<>();
+        Map<String, Long> keyToId = new HashMap<>();
+        for (Long encounterId : encounterIds) {
+            if (encounterId == null) {
+                continue;
+            }
+            String key = String.valueOf(encounterId);
+            encounterKeys.add(key);
+            keyToId.put(key, encounterId);
+        }
+        if (encounterKeys.isEmpty()) {
+            return hit;
+        }
+        Specification<Document> spec = (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(root.get("encounterId").in(encounterKeys));
+            predicates.add(cb.equal(root.get("isDeleted"), false));
+            predicates.add(root.get("status").in(DocumentManager.STATUS_LOCKED));
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        for (Document document : documentRepository.findAll(spec)) {
+            if (document == null || document.getEncounterId() == null) {
+                continue;
+            }
+            Long encounterId = keyToId.get(document.getEncounterId());
+            if (encounterId != null) {
+                hit.add(encounterId);
+            }
+        }
+        return hit;
     }
 
     /**

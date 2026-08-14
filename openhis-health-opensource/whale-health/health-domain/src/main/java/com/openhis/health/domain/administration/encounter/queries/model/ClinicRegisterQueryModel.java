@@ -26,6 +26,8 @@ public class ClinicRegisterQueryModel {
     private String patientGenderCode;
     /** 患者性别展示文案（字典翻译，只读）。 */
     private String patientGenderText;
+    /** 患者年龄展示文案（由出生日期推算，如 45岁）。 */
+    private String patientAgeText;
     /** 联系电话（快照）。 */
     private String contactPhone;
     /** 挂号科室名称。 */

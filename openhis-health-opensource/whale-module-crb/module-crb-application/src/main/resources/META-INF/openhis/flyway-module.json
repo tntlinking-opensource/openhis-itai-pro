@@ -1,6 +1,0 @@
-{
-  "moduleId": "crb",
-  "enabledProperty": "openhis.modules.crb.enabled",
-  "locations": "classpath:db/migration/crb",
-  "historyTable": "flyway_schema_history_crb"
-}

@@ -7,10 +7,12 @@ package com.openhis.wi.domain.service;
 import static com.openhis.whale.core.application.util.StringUtils.isEmpty;
 
 import com.openhis.wi.domain.share.WorkInjuryConstants;
+import com.openhis.wi.domain.share.WiErrorCodes;
 import com.openhis.chs.domain.settlement.YbPreSettleStatus;
 import com.openhis.wi.domain.settle.command.WiSettleContext;
 import com.openhis.wi.domain.entity.YbWiPreSettle;
 import com.openhis.wi.domain.repository.YbWiPreSettleRepository;
+import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.infrastructure.multitenancy.TenantUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -34,15 +36,17 @@ public class YbWiPreSettleDomainService {
 
     /**
      * 【2206】预结算成功后写入 ACTIVE 快照。
+     * <p>院点 NEUSI 实回 {@code mdtrt_id} 常为空串，但 2207 规则强制非空（手册：传入实际单据号）。
+     * 空时用本地 {@code chrg_bchno} 作为单据号落库，供 2207 回传。</p>
      *
      * @param ctx            HIS 结算上下文
-     * @param mdtrtId        2206 出参 mdtrt_id
+     * @param mdtrtId        2206 出参 mdtrt_id（可空）
      * @param medfeeSumamt   医疗费总额
      * @param fundPaySumamt  统筹支付
      * @param psnCashPay     个人现金
      * @param snapshotJson   2206 出参 JSON
      * @param tenantId       租户 ID（可空，取当前租户）
-     * @return 新行；ctx 或 mdtrtId 无效时返回 null
+     * @return 新行
      */
     @Transactional
     public YbWiPreSettle saveActiveFrom2206(
@@ -53,17 +57,23 @@ public class YbWiPreSettleDomainService {
             BigDecimal psnCashPay,
             String snapshotJson,
             Long tenantId) {
-        if (ctx == null || isEmpty(mdtrtId)) {
-            return null;
+        if (ctx == null) {
+            throw new BusinessException(WiErrorCodes.INVALID_INVOKE_SESSION, "2206 缺少 HIS 上下文，无法写预结算快照");
         }
         Long resolvedTenantId = resolveTenantId(tenantId);
+        String chrgBchno = newChrgBchno(ctx.getEncounterId(), ctx.getPaymentDraftId());
+        String resolvedMdtrt = mdtrtId == null ? "" : mdtrtId.trim();
+        if (isEmpty(resolvedMdtrt)) {
+            // NEUSILOGS：2206 output.mdtrt_id=""；2207 报「mdtrt_id不允许为空」
+            resolvedMdtrt = chrgBchno;
+        }
         YbWiPreSettle row = new YbWiPreSettle();
         row.setContractId(ctx.getContractId());
         row.setEncounterId(ctx.getEncounterId());
         row.setPaymentDraftId(ctx.getPaymentDraftId());
-        row.setChrgBchno(newChrgBchno(ctx.getEncounterId(), ctx.getPaymentDraftId()));
+        row.setChrgBchno(chrgBchno);
         row.setContractBusNo(WorkInjuryConstants.CONTRACT_BUS_NO);
-        row.setMdtrtId(mdtrtId.trim());
+        row.setMdtrtId(resolvedMdtrt);
         String psnNo = "";
         if (ctx.getPsnNo() != null) {
             psnNo = ctx.getPsnNo().trim();
@@ -81,11 +91,13 @@ public class YbWiPreSettleDomainService {
 
     /**
      * 读 ACTIVE 快照的 mdtrt_id（2207 assemble 挂接）。
+     * <p>历史行若 mdtrt_id 为空，回退 {@code chrg_bchno} 并回写，避免已预结算单据无法确认收费。</p>
      *
      * @param encounterId    就诊 ID
      * @param paymentDraftId 收银草稿 ID（可空）
      * @return mdtrt_id
      */
+    @Transactional
     public Optional<String> findActiveMdtrtId(Long encounterId, Long paymentDraftId) {
         if (encounterId == null) {
             return Optional.empty();
@@ -101,7 +113,21 @@ public class YbWiPreSettleDomainService {
                     .findFirstByEncounterIdAndStatusAndTenantIdAndIsDeletedFalseOrderByCreatedAtDesc(
                             encounterId, YbPreSettleStatus.ACTIVE.name(), tenantId);
         }
-        return row.map(YbWiPreSettle::getMdtrtId).filter(id -> !isEmpty(id));
+        if (row.isEmpty()) {
+            return Optional.empty();
+        }
+        YbWiPreSettle pre = row.get();
+        String id = pre.getMdtrtId();
+        if (!isEmpty(id)) {
+            return Optional.of(id.trim());
+        }
+        String fallback = pre.getChrgBchno();
+        if (isEmpty(fallback)) {
+            return Optional.empty();
+        }
+        pre.setMdtrtId(fallback.trim());
+        preSettleRepository.save(pre);
+        return Optional.of(fallback.trim());
     }
 
     /**
@@ -168,6 +194,70 @@ public class YbWiPreSettleDomainService {
     }
 
     /**
+     * 收银刷新：优先 ACTIVE；单边补落后仅有 SETTLED 时也可读金额。
+     *
+     * @param paymentDraftId 收银草稿 ID
+     * @param tenantId       租户 ID
+     * @return 预结算行
+     */
+    public Optional<YbWiPreSettle> findActiveOrSettledByPaymentDraft(Long paymentDraftId, Long tenantId) {
+        Optional<YbWiPreSettle> active = findActiveByPaymentDraft(paymentDraftId, tenantId);
+        if (active.isPresent()) {
+            return active;
+        }
+        if (paymentDraftId == null) {
+            return Optional.empty();
+        }
+        return preSettleRepository
+                .findFirstByPaymentDraftIdAndStatusAndTenantIdAndIsDeletedFalseOrderByCreatedAtDesc(
+                        paymentDraftId, YbPreSettleStatus.SETTLED.name(), tenantId);
+    }
+
+    /**
+     * 就诊下最新可补账单边的 ACTIVE 预结算（须有单据号）。
+     *
+     * @param encounterId 就诊 ID
+     * @param tenantId    租户 ID
+     * @return ACTIVE 且 mdtrt/chrg 非空的预结算
+     */
+    public Optional<YbWiPreSettle> findRecoverableActiveByEncounter(Long encounterId, Long tenantId) {
+        if (encounterId == null) {
+            return Optional.empty();
+        }
+        Long resolvedTenantId = tenantId != null ? tenantId : TenantUtils.getCurrentTenantId();
+        Optional<YbWiPreSettle> row = preSettleRepository
+                .findFirstByEncounterIdAndStatusAndTenantIdAndIsDeletedFalseOrderByCreatedAtDesc(
+                        encounterId, YbPreSettleStatus.ACTIVE.name(), resolvedTenantId);
+        if (row.isEmpty()) {
+            return Optional.empty();
+        }
+        YbWiPreSettle pre = row.get();
+        if (isEmpty(pre.getMdtrtId()) && isEmpty(pre.getChrgBchno())) {
+            return Optional.empty();
+        }
+        return row;
+    }
+
+    /**
+     * 单边补账时把 ACTIVE 预结算挂到当前收银草稿。
+     *
+     * @param pre            预结算行
+     * @param paymentDraftId 新草稿 ID
+     * @return 更新后的行
+     */
+    @Transactional
+    public YbWiPreSettle rebindPaymentDraft(YbWiPreSettle pre, Long paymentDraftId) {
+        if (pre == null || paymentDraftId == null) {
+            return pre;
+        }
+        if (paymentDraftId.equals(pre.getPaymentDraftId())) {
+            return pre;
+        }
+        pre.setPaymentDraftId(paymentDraftId);
+        return preSettleRepository.save(pre);
+    }
+
+    /**
      * 生成 WI 收费批次号：{@code WI}{yyyyMMdd}{6位 encounter⊕draft 哈希}，最长 30。
      *
      * @param encounterId    就诊 id
@@ -183,11 +273,16 @@ public class YbWiPreSettleDomainService {
         if (paymentDraftId != null) {
             seed = seed ^ paymentDraftId;
         }
-        String suffix = String.valueOf(Math.abs(seed) % 1_000_000L);
-        while (suffix.length() < 6) {
+        String suffix = String.valueOf(Math.abs(seed) % 100_000L);
+        while (suffix.length() < 5) {
             suffix = "0" + suffix;
         }
-        String batch = "WI" + day + suffix;
+        // 附加时间片，避免同日同草稿重预结算复用单据号触发平台「已使用」
+        String time = String.valueOf(System.currentTimeMillis() % 10_000L);
+        while (time.length() < 4) {
+            time = "0" + time;
+        }
+        String batch = "WI" + day + suffix + time;
         if (batch.length() > 30) {
             return batch.substring(0, 30);
         }

@@ -7,6 +7,7 @@ package com.openhis.health.application.outpatient.financial.refund.service;
 import com.openhis.health.application.shared.pagination.PageQueryBinder;
 import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.financial.OutpatientTcmDecoctionChargeItemRecognizer;
 import com.openhis.health.application.shared.financial.PaymentChannelOptionProvider;
 import com.openhis.health.application.shared.validator.PaymentChannelGate;
 import com.openhis.health.application.outpatient.financial.refund.support.PaymentChannelRefundOrchestrator;
@@ -172,6 +173,9 @@ public class OutpatientRefundAppService {
 
     /** 账户解析（IF-REF-06）。 */
     private final AccountQueryService accountQueryService;
+
+    /** 门诊代煎费识别：半退保留行转账户时排除，保持自费费用性质。 */
+    private final OutpatientTcmDecoctionChargeItemRecognizer outpatientTcmDecoctionChargeItemRecognizer;
 
     /** 定价定义名称回落。 */
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
@@ -471,6 +475,8 @@ public class OutpatientRefundAppService {
                 request.getEncounterId(), snapshotIds);
             BatchChargeItemIdsCommand billRefundCommand =
                 outpatientRefundMapper.toBatchChargeItemIdsCommand(completionIds, operatorId);
+            // Cmd：退费完成覆盖 ChargeItem 收费人/收费时间（与逆向 payment 同源）
+            billRefundCommand.setBillDate(billDate);
             chargeItemDomainService.completeOutpatientBillRefund(billRefundCommand);
             // 资金退费成功后收口原支付关联票据：DRAFT 本地作废；ISSUED 冲红（半退再结算会另开新票）。
             this.voidOrWriteOffInvoiceLinkedToPayment(
@@ -713,17 +719,25 @@ public class OutpatientRefundAppService {
                 ErrorCodeConstants.ACCOUNT_NOT_FOUND,
                 this.buildMessage(OutpatientRefundConstants.MESSAGE_CODE_ACCOUNT_NOT_FOUND, "未找到目标账户"));
         }
-        // Cmd：批量切换收费项账户，不触发支付链。
+        // Cmd：批量切换收费项账户，不触发支付链；代煎行强制自费，不参与切换。
         SwitchChargeItemAccountCommand command = new SwitchChargeItemAccountCommand();
         command.setOperatorId(currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.PRACTITIONER_INVALID_ARGUMENT,
             "当前会话操作人不能为空"));
         List<SwitchChargeItemAccountCommand.Item> items = new ArrayList<>();
         for (ChargeItem row : preservedRows) {
+            // 代煎挂个人现金自费户，半退保留行转账户时跳过（BR-REF-010）
+            if (outpatientTcmDecoctionChargeItemRecognizer.isDecoctionChargeItem(row)) {
+                continue;
+            }
             SwitchChargeItemAccountCommand.Item item = new SwitchChargeItemAccountCommand.Item();
             item.setChargeItemId(row.getId());
             item.setAccountId(targetAccountId);
             items.add(item);
+        }
+        // 仅代煎保留行时无目标可切，幂等成功
+        if (items.isEmpty()) {
+            return outpatientRefundMapper.toSwitchPreservedChargeItemsAccountResponse(true);
         }
         command.setItems(items);
         chargeItemDomainService.switchChargeItemAccount(command);
@@ -1955,8 +1969,8 @@ public class OutpatientRefundAppService {
         if (accountIds.size() == 1) {
             return accountIds.iterator().next();
         }
-        // 多账户并存时不强行猜测，交由原支付明细分渠道匹配。
-        return defaultSelfPayAccountId;
+        // 多账户并存时不强行猜测，交由原支付明细分渠道匹配（含医保户+代煎自费合同户）。
+        return null;
     }
 
     /**

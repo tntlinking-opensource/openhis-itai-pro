@@ -91,6 +91,8 @@ public class NurseStationCostDetailAppService {
      * 按就诊与日期区间查询住院费用明细或汇总。
      *
      * <p>可选 {@code keyword}：按展示产品名称、院内编码模糊过滤后再装配行与合计（BR-IP-CDT-019）。</p>
+     * <p>可选 {@code excludeOffsetPairs=true}：费用清单打印成对剔除冲销留痕（原行+冲销行；
+     * 冲销可在日期窗外仍剔除窗内原行）；页面 Tab 不传，留痕仍可见。</p>
      *
      * @param request 就诊、患者、日期区间、展示模式与可选项目关键字
      * @return 明细行或汇总行 + 合计块
@@ -101,7 +103,7 @@ public class NurseStationCostDetailAppService {
         try {
             // Gate：查询参数、日期区间与展示模式合法
             this.validateQueryRequest(request);
-            // Gate：单就诊须在护士站可见范围且 patientId 一致（BR-IP-CDT-001）
+            // Gate：就诊存在且 patientId 一致；已出院/病案场景不限护士站在科队列
             this.requireVisibleEncounter(request.getEncounterId(), request.getPatientId());
             // Pre：批量拉取收费行与父行、产品目录
             ChargeItemQueryCommand chargeQuery = nurseStationCostDetailMapper.toChargeItemQueryCommand(request);
@@ -121,6 +123,10 @@ public class NurseStationCostDetailAppService {
             List<InpatientNurseStationCostDetailChargeRow> displayRows =
                 nurseStationCostDetailAssembler.filterChargeRowsByItemKeyword(
                     nonEntrustRows, productByKey, parentChargeById, request.getKeyword());
+            // Pre：费用清单打印成对剔除冲销留痕（原行+冲销行；冲销可在日期窗外）
+            if (Boolean.TRUE.equals(request.getExcludeOffsetPairs())) {
+                displayRows = this.filterDisplayRowsForOffsetPairs(displayRows);
+            }
             NurseStationCostDetailTotalsDto totals =
                 nurseStationCostDetailAssembler.buildTotals(displayRows, productByKey, parentChargeById);
             // Pre：识别床位自动计费 SR（auto-roll-fees），供明细来源/汇总操作类型覆盖展示
@@ -142,6 +148,9 @@ public class NurseStationCostDetailAppService {
             // Asm：映射查询响应
             return nurseStationCostDetailMapper.toQueryResponse(
                 presentationMode, detailLines, summaryLines, totals);
+        } catch (BusinessException businessException) {
+            // 业务门禁/校验原文上抛，禁止吞成泛化「加载失败」
+            throw businessException;
         } catch (IllegalArgumentException illegalArgumentException) {
             log.warn("nurse station cost detail data incomplete: {}", illegalArgumentException.getMessage());
             throw new BusinessException(
@@ -208,10 +217,12 @@ public class NurseStationCostDetailAppService {
     }
 
     /**
-     * 单就诊须在护士站可见范围且 patientId 与读模型一致（BR-IP-CDT-001，同 005 口径）。
+     * 校验就诊可查费用：优先护士站在科可见；若已出院/病案等不在在科队列，则按就诊主键回落读取。
+     *
+     * <p>patientId 须与住院读模型一致（BR-IP-CDT-001）。病案首页费用清单依赖回落分支。</p>
      *
      * @param encounterId 目标就诊
-     * @param patientId   卡片患者 id
+     * @param patientId   请求患者 id
      */
     private void requireVisibleEncounter(Long encounterId, Long patientId) {
         List<Long> wardIds = managedWardLocationIdsResolver.listManagedWardLocationIdsOrEmpty();
@@ -226,7 +237,12 @@ public class NurseStationCostDetailAppService {
                 break;
             }
         }
-        // 就诊不在护士站管辖队列内，拒绝查询以防横向越权
+        // 不在护士站在科队列：按就诊主键回落（已出院/已结算/病案场景）
+        if (encounterSnapshot == null) {
+            encounterSnapshot =
+                EncounterContextReader.getInpatientContextByEncounterId(encounterId).orElse(null);
+        }
+        // 就诊不存在或不可读，拒绝查询
         if (encounterSnapshot == null) {
             throw new BusinessException(
                 InpatientNurseStationConstants.EX_IP_CDT_102,
@@ -238,6 +254,40 @@ public class NurseStationCostDetailAppService {
             encounterSnapshot.getPatientId(),
             InpatientNurseStationConstants.EX_IP_CDT_102,
             "当前患者不可用，请刷新左侧列表");
+    }
+
+    /**
+     * 费用清单打印：按 refund_id 成对剔除冲销留痕（含窗外冲销反查原行）。
+     *
+     * @param displayRows 关键字过滤后的候选行
+     * @return 剔除成对冲销后的行
+     */
+    private List<InpatientNurseStationCostDetailChargeRow> filterDisplayRowsForOffsetPairs(
+        List<InpatientNurseStationCostDetailChargeRow> displayRows) {
+        if (displayRows == null || displayRows.isEmpty()) {
+            return List.of();
+        }
+        // Pre：收集窗内收费主键，反查任意冲销行（可跨日期）指向这些原行
+        Set<Long> chargeIdsInWindow = new LinkedHashSet<>();
+        for (InpatientNurseStationCostDetailChargeRow row : displayRows) {
+            if (row == null || row.getChargeItem() == null || row.getChargeItem().getId() == null) {
+                continue;
+            }
+            chargeIdsInWindow.add(row.getChargeItem().getId());
+        }
+        Set<Long> offsetSourceIdsOutsideWin = new LinkedHashSet<>();
+        if (!chargeIdsInWindow.isEmpty()) {
+            List<ChargeItem> offsetRows =
+                chargeItemQueryService.listChargeItemsByRefundIds(chargeIdsInWindow);
+            for (ChargeItem offsetRow : offsetRows) {
+                if (offsetRow == null || offsetRow.getRefundId() == null) {
+                    continue;
+                }
+                offsetSourceIdsOutsideWin.add(offsetRow.getRefundId());
+            }
+        }
+        return nurseStationCostDetailAssembler.filterOutOffsetPairedChargeRows(
+            displayRows, offsetSourceIdsOutsideWin);
     }
 
     /**

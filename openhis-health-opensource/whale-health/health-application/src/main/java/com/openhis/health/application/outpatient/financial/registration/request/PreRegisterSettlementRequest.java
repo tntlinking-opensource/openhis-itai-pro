@@ -38,6 +38,13 @@ public class PreRegisterSettlementRequest {
     @Schema(description = "手机号")
     private String phone;
 
+    /**
+     * 地址全文；新建时写入主档；复用既有患者时非空且与主档不同则回写主档（BR-REG-019）。
+     * 通常来自身份证读卡户籍地址，不拆省市区。
+     */
+    @Schema(description = "地址全文（身份证读卡等）")
+    private String address;
+
     /** 出生日期。 */
     @Schema(description = "出生日期")
     private LocalDate birthDate;

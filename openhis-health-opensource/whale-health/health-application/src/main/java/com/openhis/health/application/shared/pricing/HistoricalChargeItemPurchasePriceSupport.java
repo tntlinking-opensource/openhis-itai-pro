@@ -30,6 +30,7 @@ import com.openhis.health.domain.medication.medicationdispense.service.Medicatio
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.PriceType;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.domain.workflow.devicedispense.entity.DeviceDispense;
 import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseQueryService;
@@ -40,10 +41,18 @@ import lombok.RequiredArgsConstructor;
 /**
  * 报表/费用明细进价解析（BR-PRICE-SRC-001；只读；性能优先批号进价）。
  *
- * <p>药耗主路径：批量查当前 ACTIVE {@link PriceType#LOT_NUMBER_COST}；
+ * <p>药耗主路径：批量查当前 ACTIVE {@link PriceType#LOT_NUMBER_COST}（同批号
+ * {@link PriceType#LOT_NUMBER_PRICE} 为缺进价时的回落；西药/耗材进货写价同值，中药院点加价后进售可不同）。
+ * 批号来源优先级：发放单 {@code lot_number} → 收费锚点定价行 {@code lot_no}（{@code LOT_NUMBER_PRICE}/{@code LOT_NUMBER_COST}）。
  * <strong>品规无已审批调价时禁止触达任何调价历史/定价兄弟行</strong>，直接用批号进/售价。
- * 仅有调价的品规才按 {@code occurrence_time} 与审批时刻比对取调前价（每人一次批量预取，禁止逐行反复查）。
- * 无批号时回落 ACTIVE {@link PriceType#PURCHASE}。诊疗/挂号：PURCHASE 缺失回退 SALE。
+ * 仅<strong>药耗</strong>有调价时才按业务时刻回放<strong>调前进/售价</strong>（批号须一致，禁止串批；
+ * 售价回放见 {@link #resolveLotSaleUnitPrice}）。
+ * 诊疗/挂号目录 {@link PriceType#SALE}<strong>不回放</strong>。
+ * 患者侧药耗售价优先账单；账单缺失（如取消执行逻辑删）时<strong>仅</strong>允许回落批号售价的场景：
+ * <strong>药房日结</strong>、<strong>住院发药报表/药品使用明细</strong>（正/退同行，与日结轧差对齐）；其它报表/费用明细/门诊发退药等仍只认账单。
+ * <strong>禁止</strong>回落目录 {@link PriceType#PURCHASE}（药典参考价不参与进价统计；有批号用批号进/售，无批号药耗跳过）。
+ * 诊疗/挂号<strong>无真实进价</strong>：进价单价/行额解析结果为 {@code null}（不编进价；禁止用账单价冒充进价；
+ * 见 {@code DD-报表中心-进售价口径与开立科室-2026-08}）。
  * <strong>禁止</strong>{@code listHistoricalDefinitionsByInstance} 无脑全量兄弟扫描。</p>
  */
 @Component
@@ -62,6 +71,9 @@ public class HistoricalChargeItemPurchasePriceSupport {
     /** 耗材发放批号读侧。 */
     private final DeviceDispenseQueryService deviceDispenseQueryService;
 
+    /** 按操作单位计行进价（包装直接×数量 / 拆零满包+零头）。 */
+    private final ChargeItemPackageUnitRatioSupport chargeItemPackageUnitRatioSupport;
+
     /**
      * 批量计算 chargeItem 行进价总额（未带收退符号；6 位 HALF_UP）。
      *
@@ -79,16 +91,60 @@ public class HistoricalChargeItemPurchasePriceSupport {
     /**
      * 由已解析进价单价推导行进价总额（未带收退符号；6 位 HALF_UP）。
      *
-     * <p>供费用明细 enrichment：先 {@link #computePurchaseUnitPriceByChargeItemId} 再本方法，
-     * 禁止紧接着再调 {@link #computePurchaseAmountByChargeItemId} 导致定价批号双倍 IO。</p>
+     * <p>无包装倍数时退化为 {@code 单价×数量}（兼容药房日结等未改路径）。
+     * 报表药耗请改用四参重载（含产品 Map），按操作单位分支（#4M-OP / BR-MON-PKG-001）计行额。
+     * 本两参重载无倍数、无产品 Map，仅退化为 lineTotal，勿用于费用明细/汇总。</p>
      *
-     * @param chargeItems              收费明细；空则返回空 map
-     * @param purchaseUnitByChargeItemId chargeItemId → 进价单价；缺键跳过该行
+     * @param chargeItems                收费明细；空则返回空 map
+     * @param purchaseUnitByChargeItemId chargeItemId → 进价单价（包装单位）；缺键跳过该行
      * @return chargeItemId → 行进价总额
      */
     public Map<Long, BigDecimal> computePurchaseAmountFromUnitPrices(
         Collection<ChargeItem> chargeItems,
         Map<Long, BigDecimal> purchaseUnitByChargeItemId) {
+        return this.computePurchaseAmountFromUnitPrices(chargeItems, purchaseUnitByChargeItemId, null, null);
+    }
+
+    /**
+     * 由已解析包装进价单价推导行进价总额（未带收退符号；6 位 HALF_UP）。
+     *
+     * <p><strong>费用明细 / 发药耗材 / 工作量须传产品 Map</strong>（四参重载）：先
+     * {@link #computePurchaseUnitPriceByChargeItemId} 再本方法带 {@code productByCompositeKey}。
+     * 本三参重载在无产品 Map 时有倍数则<strong>假定 quantity 已是拆零量</strong>；
+     * ChargeItem 操作单位已是包装时会把进价压矮，禁止用于报表汇总。</p>
+     *
+     * @param chargeItems                    收费明细；空则返回空 map
+     * @param purchaseUnitByChargeItemId     chargeItemId → 包装单位进价单价；缺键跳过
+     * @param packageUnitRatioByChargeItemId chargeItemId → 1 包装含拆零数；可空
+     * @return chargeItemId → 行进价总额
+     */
+    public Map<Long, BigDecimal> computePurchaseAmountFromUnitPrices(
+        Collection<ChargeItem> chargeItems,
+        Map<Long, BigDecimal> purchaseUnitByChargeItemId,
+        Map<Long, BigDecimal> packageUnitRatioByChargeItemId) {
+        return this.computePurchaseAmountFromUnitPrices(
+            chargeItems, purchaseUnitByChargeItemId, packageUnitRatioByChargeItemId, null);
+    }
+
+    /**
+     * 由已解析包装进价单价推导行进价总额（按操作单位分支；6 位 HALF_UP）。
+     *
+     * <p>有 {@code productByCompositeKey} 时委托
+     * {@link ChargeItemPackageUnitRatioSupport#computePurchaseLineAmount}：
+     * 包装操作单位 → 包装价×包装数量；拆零操作单位 → 满包×包装价+零头单步（BR-MON-PKG-001）。
+     * <strong>禁止</strong>把包装数量折成拆零量再算，也禁止包装价÷ratio 再×数量。</p>
+     *
+     * @param chargeItems                    收费明细；空则返回空 map
+     * @param purchaseUnitByChargeItemId     chargeItemId → 包装单位进价单价；缺键跳过
+     * @param packageUnitRatioByChargeItemId chargeItemId → 1 包装含拆零数；可空
+     * @param productByCompositeKey          复合键 → 产品（判操作单位）；可空
+     * @return chargeItemId → 行进价总额
+     */
+    public Map<Long, BigDecimal> computePurchaseAmountFromUnitPrices(
+        Collection<ChargeItem> chargeItems,
+        Map<Long, BigDecimal> purchaseUnitByChargeItemId,
+        Map<Long, BigDecimal> packageUnitRatioByChargeItemId,
+        Map<String, ProductDefinitionDisplayDto> productByCompositeKey) {
         Map<Long, BigDecimal> purchaseByChargeItemId = new LinkedHashMap<>();
         if (chargeItems == null || chargeItems.isEmpty() || purchaseUnitByChargeItemId == null) {
             return purchaseByChargeItemId;
@@ -101,12 +157,34 @@ public class HistoricalChargeItemPurchasePriceSupport {
             if (unit == null) {
                 continue;
             }
-            BigDecimal quantity = chargeItem.getQuantityValue();
-            if (quantity == null) {
-                // 无数量按 1 计行额，与单价×数量口径一致
-                quantity = BigDecimal.ONE;
+            BigDecimal ratio = null;
+            if (packageUnitRatioByChargeItemId != null) {
+                ratio = packageUnitRatioByChargeItemId.get(chargeItem.getId());
             }
-            purchaseByChargeItemId.put(chargeItem.getId(), MonetaryAmountSupport.lineTotal(unit, quantity));
+            BigDecimal lineAmount;
+            // Pre：有产品 Map 时按操作单位分支（包装直接×数量；拆零走满包+零头）
+            if (productByCompositeKey != null && !productByCompositeKey.isEmpty()) {
+                ProductDefinitionDisplayDto product =
+                    this.chargeItemPackageUnitRatioSupport.resolveProduct(chargeItem, productByCompositeKey);
+                lineAmount = this.chargeItemPackageUnitRatioSupport.computePurchaseLineAmount(
+                    unit, ratio, chargeItem, product);
+            } else if (ratio != null && ratio.compareTo(BigDecimal.ZERO) > 0) {
+                // 无产品 Map：假定 quantity 已是拆零量（历史兼容路径）
+                BigDecimal quantity = chargeItem.getQuantityValue();
+                if (quantity == null) {
+                    quantity = BigDecimal.ONE;
+                }
+                lineAmount = MonetaryAmountSupport.computeSplitQuantityLineTotal(quantity, ratio, unit);
+            } else {
+                BigDecimal quantity = chargeItem.getQuantityValue();
+                if (quantity == null) {
+                    quantity = BigDecimal.ONE;
+                }
+                lineAmount = MonetaryAmountSupport.lineTotal(unit, quantity);
+            }
+            if (lineAmount != null) {
+                purchaseByChargeItemId.put(chargeItem.getId(), lineAmount);
+            }
         }
         return purchaseByChargeItemId;
     }
@@ -131,7 +209,8 @@ public class HistoricalChargeItemPurchasePriceSupport {
         // Pre：仅加载收费锚点 definition，禁止 listHistoricalDefinitionsByInstance 全量兄弟扫描
         Map<Long, ChargeItemDefinition> definitionById =
             this.chargeItemDefinitionQueryService.findAllDefinitionsByIdIn(definitionIds);
-        Map<Long, String> lotByChargeItemId = this.loadLotNumberByChargeItemId(chargeItems);
+        // Pre：批号优先发放单，缺失时回落锚点定价行 lot_no（LOT_NUMBER_PRICE/COST）
+        Map<Long, String> lotByChargeItemId = this.loadLotNumberByChargeItemId(chargeItems, definitionById);
         PurchaseResolveContext resolveContext =
             this.buildPurchaseResolveContext(chargeItems, definitionById, lotByChargeItemId);
         for (ChargeItem chargeItem : chargeItems) {
@@ -181,6 +260,42 @@ public class HistoricalChargeItemPurchasePriceSupport {
                     session.itemTable, session.adjustedItemIds));
         }
         return session;
+    }
+
+    /**
+     * 批量预热会话内当前 ACTIVE 批号进/售价缓存，避免逐键 {@code List.of(key)} 查库。
+     *
+     * @param session  {@link #beginLotPriceSession} 产出；空则忽略
+     * @param lotKeys  本批品规+批号键；可空
+     */
+    public void warmCurrentLotPrices(
+        LotPriceResolveSession session,
+        Collection<ChargeItemDefinitionLotBatchKey> lotKeys) {
+        if (session == null || lotKeys == null || lotKeys.isEmpty()) {
+            return;
+        }
+        LinkedHashSet<ChargeItemDefinitionLotBatchKey> distinctKeys = new LinkedHashSet<>();
+        for (ChargeItemDefinitionLotBatchKey key : lotKeys) {
+            if (key != null) {
+                distinctKeys.add(key);
+            }
+        }
+        if (distinctKeys.isEmpty()) {
+            return;
+        }
+        Map<String, List<ChargeItemDefinition>> lotCostByKey =
+            this.chargeItemDefinitionQueryService.findLotNumberCostLinesGroupedByLotBatchKey(distinctKeys);
+        Map<String, List<ChargeItemDefinition>> lotSaleByKey =
+            this.chargeItemDefinitionQueryService.findLotNumberPriceLinesGroupedByLotBatchKey(distinctKeys);
+        for (ChargeItemDefinitionLotBatchKey key : distinctKeys) {
+            String composite = key.compositeKey();
+            if (!session.lotCostByCompositeKey.containsKey(composite)) {
+                session.lotCostByCompositeKey.put(composite, this.firstLotCostPrice(lotCostByKey.get(composite)));
+            }
+            if (!session.lotSaleByCompositeKey.containsKey(composite)) {
+                session.lotSaleByCompositeKey.put(composite, this.firstLotCostPrice(lotSaleByKey.get(composite)));
+            }
+        }
     }
 
     /**
@@ -247,8 +362,10 @@ public class HistoricalChargeItemPurchasePriceSupport {
     /**
      * 按品规+批号解析售价单价（发药明细已带批号时的轻量入口；仅 {@link PriceType#LOT_NUMBER_PRICE}）。
      *
-     * <p>无调价：直接 ACTIVE 批号售价；有调价：按业务时刻取该批号调前售价，否则仍用当前批号售价。
-     * <strong>禁止</strong>回落维护态 {@link PriceType#SALE} 参考价。</p>
+     * <p>无调价：直接 ACTIVE 批号售价；有调价：按业务时刻取调前批号售价，否则仍用当前批号售价
+     * （与 {@link #resolveLotPurchaseUnitPrice} 同构）。仅供「账单缺失回落」白名单场景调用：
+     * 药房日结、住院发药报表/药品使用明细（正/退）；有账单时仍以 {@code ChargeItem} 为准。
+     * <strong>禁止</strong>回落维护态 {@link PriceType#SALE}；禁止报表/费用明细等泛化回落。</p>
      *
      * @param instanceTable 品规定义表
      * @param instanceId    品规定义主键
@@ -265,12 +382,12 @@ public class HistoricalChargeItemPurchasePriceSupport {
     }
 
     /**
-     * 按品规+批号解析售价单价（可复用会话）。
+     * 按品规+批号解析售价单价（可复用会话；同批号调价回放与进价同构）。
      *
      * @param instanceTable 品规定义表
      * @param instanceId    品规定义主键
      * @param lotNumber     批号
-     * @param businessTime  业务时刻；可空
+     * @param businessTime  业务时刻；可空（空则不做调价回放）
      * @param session       {@link #beginLotPriceSession} 产出；可空
      * @return 售价单价；无法解析时 {@code null}
      */
@@ -306,10 +423,10 @@ public class HistoricalChargeItemPurchasePriceSupport {
     }
 
     /**
-     * 按品规 instance 解析历史售价单价（每包装；禁当前 ACTIVE 覆盖已落库业务时，优先调前售价回放）。
+     * 按品规 instance 解析售价单价（每包装；仅当前 ACTIVE {@link PriceType#SALE}）。
      *
-     * <p>无调价：ACTIVE SALE；有调价且业务时刻早于首次审批：取调前售价；否则 ACTIVE SALE。
-     * {@code businessTime} 为空时不做调价回放（不查 exists/history）。</p>
+     * <p>诊疗/目录售价<strong>不做</strong>调价回放；业务统计以账单为准时应读 {@code ChargeItem}。
+     * {@code businessTime}/{@code session} 保留入参兼容，忽略。</p>
      *
      * @param instanceTable 品规定义表名
      * @param instanceId    品规定义主键
@@ -320,11 +437,11 @@ public class HistoricalChargeItemPurchasePriceSupport {
     }
 
     /**
-     * 按品规 instance + 业务时刻解析售价单价。
+     * 按品规 instance 解析售价单价（仅当前 ACTIVE SALE；不回放）。
      *
      * @param instanceTable 品规定义表名
      * @param instanceId    品规定义主键
-     * @param businessTime  业务时刻；可空
+     * @param businessTime  保留入参兼容（忽略）
      * @return 售价单价；无命中 {@code null}
      */
     public BigDecimal resolveHistoricalSaleUnitPrice(
@@ -335,12 +452,12 @@ public class HistoricalChargeItemPurchasePriceSupport {
     }
 
     /**
-     * 按品规 instance + 业务时刻解析售价单价（可复用会话）。
+     * 按品规 instance 解析售价单价（仅当前 ACTIVE SALE；不回放）。
      *
      * @param instanceTable 品规定义表名
      * @param instanceId    品规定义主键
-     * @param businessTime  业务时刻；可空
-     * @param session       批号会话（同表品规调价集合）；可空
+     * @param businessTime  保留入参兼容（忽略）
+     * @param session       保留入参兼容（可复用当前 SALE 缓存）
      * @return 售价单价；无命中 {@code null}
      */
     public BigDecimal resolveHistoricalSaleUnitPrice(
@@ -351,20 +468,8 @@ public class HistoricalChargeItemPurchasePriceSupport {
         if (instanceId == null || StringUtils.isEmpty(instanceTable)) {
             return null;
         }
-        String table = instanceTable.trim();
-        BigDecimal currentSale = this.resolveCurrentSale(table, instanceId, session);
-        if (businessTime == null) {
-            return currentSale;
-        }
-        if (!this.isAdjustedInSessionOrLookup(table, instanceId, session)) {
-            return currentSale;
-        }
-        BigDecimal adjustedSale = this.resolveSaleFromAdjustmentHistory(
-            table, instanceId, null, businessTime, session);
-        if (adjustedSale != null) {
-            return adjustedSale;
-        }
-        return currentSale;
+        // Pre：诊疗/目录售价不回放，只读当前 ACTIVE SALE
+        return this.resolveCurrentSale(instanceTable.trim(), instanceId, session);
     }
 
     /**
@@ -383,9 +488,12 @@ public class HistoricalChargeItemPurchasePriceSupport {
         List<ChargeItemDefinitionLotBatchKey> lotKeys = new ArrayList<>();
         LinkedHashSet<Long> medItemIds = new LinkedHashSet<>();
         LinkedHashSet<Long> deviceItemIds = new LinkedHashSet<>();
-        LinkedHashSet<Long> activityItemIds = new LinkedHashSet<>();
         for (ChargeItem chargeItem : chargeItems) {
             if (chargeItem == null || chargeItem.getDefinitionId() == null) {
+                continue;
+            }
+            // Gate：诊疗/挂号无真实进价，后续直接用账单单价，不进调价预取
+            if (this.isActivityLike(chargeItem)) {
                 continue;
             }
             ChargeItemDefinition definition = definitionById.get(chargeItem.getDefinitionId());
@@ -405,8 +513,6 @@ public class HistoricalChargeItemPurchasePriceSupport {
                 medItemIds.add(instanceId);
             } else if (TableNameConstants.ADM_DEVICE_DEFINITION.equals(table)) {
                 deviceItemIds.add(instanceId);
-            } else if (this.isActivityLike(chargeItem)) {
-                activityItemIds.add(instanceId);
             }
             String lot = lotByChargeItemId.get(chargeItem.getId());
             ChargeItemDefinitionLotBatchKey key =
@@ -418,20 +524,19 @@ public class HistoricalChargeItemPurchasePriceSupport {
         if (!lotKeys.isEmpty()) {
             context.lotCostByCompositeKey =
                 this.chargeItemDefinitionQueryService.findLotNumberCostLinesGroupedByLotBatchKey(lotKeys);
+            // Pre：同批号售价一并预取，供缺 LOT_NUMBER_COST 时回落（禁目录 PURCHASE）
+            context.lotSaleByCompositeKey =
+                this.chargeItemDefinitionQueryService.findLotNumberPriceLinesGroupedByLotBatchKey(lotKeys);
         }
         context.adjustedMedItemIds = this.loadAdjustedItemIds(
             TableNameConstants.MED_MEDICATION_DEFINITION, medItemIds);
         context.adjustedDeviceItemIds = this.loadAdjustedItemIds(
             TableNameConstants.ADM_DEVICE_DEFINITION, deviceItemIds);
-        context.adjustedActivityItemIds = this.loadAdjustedItemIds(
-            TableNameConstants.WKF_ACTIVITY_DEFINITION, activityItemIds);
-        // Pre：仅有调价品规批量预取调价历史；无调价品规禁止触达 history
+        // Pre：仅药耗有调价品规批量预取历史；诊疗不回放、不预取
         this.prefetchAdjustmentHistory(
             context, TableNameConstants.MED_MEDICATION_DEFINITION, context.adjustedMedItemIds);
         this.prefetchAdjustmentHistory(
             context, TableNameConstants.ADM_DEVICE_DEFINITION, context.adjustedDeviceItemIds);
-        this.prefetchAdjustmentHistory(
-            context, TableNameConstants.WKF_ACTIVITY_DEFINITION, context.adjustedActivityItemIds);
         return context;
     }
 
@@ -476,6 +581,10 @@ public class HistoricalChargeItemPurchasePriceSupport {
         if (chargeItem.getDefinitionId() == null) {
             return null;
         }
+        // Gate：诊疗/挂号无真实进价——不编进价（禁账单价冒充；禁调价回放与目录价）
+        if (this.isActivityLike(chargeItem)) {
+            return null;
+        }
         ChargeItemDefinition definition = definitionById.get(chargeItem.getDefinitionId());
         if (definition == null) {
             return null;
@@ -484,9 +593,6 @@ public class HistoricalChargeItemPurchasePriceSupport {
         String priceTypeCode = definition.getPriceTypeCode();
         if (PriceType.PURCHASE.getCode().equals(priceTypeCode)
             || PriceType.LOT_NUMBER_COST.getCode().equals(priceTypeCode)) {
-            return this.scalePriceValueOrNull(definition);
-        }
-        if (PriceType.SALE.getCode().equals(priceTypeCode) && this.isActivityServiceTable(chargeItem.getServiceTable())) {
             return this.scalePriceValueOrNull(definition);
         }
         String instanceTable = definition.getInstanceTable();
@@ -504,16 +610,18 @@ public class HistoricalChargeItemPurchasePriceSupport {
             ChargeItemDefinitionLotBatchKey key =
                 ChargeItemDefinitionLotBatchKey.maybeOf(table, instanceId, lot);
             BigDecimal currentLotCost = null;
+            BigDecimal currentLotSale = null;
             if (key != null) {
                 currentLotCost = this.firstLotCostPrice(context.lotCostByCompositeKey.get(key.compositeKey()));
+                currentLotSale = this.firstLotCostPrice(context.lotSaleByCompositeKey.get(key.compositeKey()));
             }
             boolean adjusted = this.isItemAdjusted(table, instanceId, context);
             if (!adjusted) {
-                // 无调价：直接批号进价 / PURCHASE，禁止查调价历史与定价兄弟全量
+                // 无调价：直接批号进价；缺 COST 时同批号售价回落（西药/耗材同值）；禁止目录 PURCHASE
                 if (currentLotCost != null) {
                     return currentLotCost;
                 }
-                return this.chargeItemDefinitionQueryService.resolveFirstPurchasePriceValue(table, instanceId);
+                return currentLotSale;
             }
             BigDecimal fromAdjust =
                 this.resolvePurchaseFromAdjustmentHistory(table, instanceId, lot.trim(), businessTime, context);
@@ -523,49 +631,11 @@ public class HistoricalChargeItemPurchasePriceSupport {
             if (currentLotCost != null) {
                 return currentLotCost;
             }
-            return this.chargeItemDefinitionQueryService.resolveFirstPurchasePriceValue(table, instanceId);
+            // 有调价但未命中调前价/COST：同批号售价回落，禁止目录 PURCHASE
+            return currentLotSale;
         }
-        // 无批号：诊疗/挂号或药耗缺批号 → PURCHASE，必要时 SALE
-        if (this.isActivityLike(chargeItem)) {
-            return this.resolveActivityPurchaseUnit(table, instanceId, businessTime, context);
-        }
-        return this.chargeItemDefinitionQueryService.resolveFirstPurchasePriceValue(table, instanceId);
-    }
-
-    /**
-     * 诊疗/挂号进价：无调价取当前 PURCHASE（缺则 SALE）；有调价按业务时刻回放调前进价/售价。
-     *
-     * @param table        实例表
-     * @param instanceId   实例 id
-     * @param businessTime 业务时刻
-     * @param context      调价集合
-     * @return 单价或 null
-     */
-    private BigDecimal resolveActivityPurchaseUnit(
-        String table,
-        Long instanceId,
-        LocalDateTime businessTime,
-        PurchaseResolveContext context) {
-        boolean adjusted = context.adjustedActivityItemIds.contains(instanceId)
-            || this.isItemAdjusted(table, instanceId, context);
-        if (adjusted && businessTime != null) {
-            BigDecimal fromAdjust =
-                this.resolvePurchaseFromAdjustmentHistory(table, instanceId, null, businessTime, context);
-            if (fromAdjust != null) {
-                return fromAdjust;
-            }
-            BigDecimal saleAdjust =
-                this.resolveSaleFromAdjustmentHistory(table, instanceId, null, businessTime, context);
-            if (saleAdjust != null) {
-                return saleAdjust;
-            }
-        }
-        BigDecimal purchase =
-            this.chargeItemDefinitionQueryService.resolveFirstPurchasePriceValue(table, instanceId);
-        if (purchase != null) {
-            return purchase;
-        }
-        return this.chargeItemDefinitionQueryService.resolveFirstSalePriceValue(table, instanceId);
+        // 无批号药耗：禁止目录药典 PURCHASE；无法锚定批号进价则跳过该行
+        return null;
     }
 
     /**
@@ -850,7 +920,11 @@ public class HistoricalChargeItemPurchasePriceSupport {
     }
 
     /**
-     * 从调价子表挑批号匹配的调前进价；无批号时取首条非空调前进价。
+     * 从调价子表挑批号匹配的调前进价。
+     *
+     * <p>调用方已给出批号时<strong>必须</strong>与明细 {@code lot_number} 一致才回放；对不上返回
+     * {@code null}（回落当前 ACTIVE 批号进价），<strong>禁止</strong>串用其它批号的调前价。
+     * 批号为空时（目录级调价无批号维）才取首条非空调前进价。</p>
      *
      * @param details   调价明细
      * @param lotNumber 批号；可空
@@ -862,16 +936,18 @@ public class HistoricalChargeItemPurchasePriceSupport {
         if (details == null || details.isEmpty()) {
             return null;
         }
+        // Gate：有发药/库存批号时只认同批号明细，禁止串批回放
         if (StringUtils.isNotEmpty(lotNumber)) {
             String lot = lotNumber.trim();
             for (PriceAdjustmentDetailQueryModel detail : details) {
                 if (detail == null || detail.getOldPurchaseAmount() == null) {
                     continue;
                 }
-                if (lot.equals(detail.getLotNumber())) {
+                if (this.lotNumberEquals(lot, detail.getLotNumber())) {
                     return MonetaryAmountSupport.scaleCalc(detail.getOldPurchaseAmount());
                 }
             }
+            return null;
         }
         for (PriceAdjustmentDetailQueryModel detail : details) {
             if (detail != null && detail.getOldPurchaseAmount() != null) {
@@ -882,7 +958,9 @@ public class HistoricalChargeItemPurchasePriceSupport {
     }
 
     /**
-     * 从调价子表挑批号匹配的调前售价；无批号时取首条非空调前售价。
+     * 从调价子表挑批号匹配的调前售价（目录 SALE 历史回放等；批号价售价路径已不再回放）。
+     *
+     * <p>有批号时必须与明细批号一致；对不上返回 {@code null}，禁止串批。批号为空时取首条非空。</p>
      *
      * @param details   调价明细
      * @param lotNumber 批号；可空
@@ -894,16 +972,18 @@ public class HistoricalChargeItemPurchasePriceSupport {
         if (details == null || details.isEmpty()) {
             return null;
         }
+        // Gate：有批号只认同批号，禁止串用其它批号调前售价
         if (StringUtils.isNotEmpty(lotNumber)) {
             String lot = lotNumber.trim();
             for (PriceAdjustmentDetailQueryModel detail : details) {
                 if (detail == null || detail.getOldSellingAmount() == null) {
                     continue;
                 }
-                if (lot.equals(detail.getLotNumber())) {
+                if (this.lotNumberEquals(lot, detail.getLotNumber())) {
                     return MonetaryAmountSupport.scaleCalc(detail.getOldSellingAmount());
                 }
             }
+            return null;
         }
         for (PriceAdjustmentDetailQueryModel detail : details) {
             if (detail != null && detail.getOldSellingAmount() != null) {
@@ -911,6 +991,20 @@ public class HistoricalChargeItemPurchasePriceSupport {
             }
         }
         return null;
+    }
+
+    /**
+     * 批号字面值比较（两端 trim；明细批号空则不匹配）。
+     *
+     * @param expectedLot 调用方批号（已 trim）
+     * @param detailLot   调价明细批号
+     * @return 一致时 {@code true}
+     */
+    private boolean lotNumberEquals(String expectedLot, String detailLot) {
+        if (StringUtils.isEmpty(expectedLot) || StringUtils.isEmpty(detailLot)) {
+            return false;
+        }
+        return expectedLot.equals(detailLot.trim());
     }
 
     /**
@@ -1053,12 +1147,18 @@ public class HistoricalChargeItemPurchasePriceSupport {
     }
 
     /**
-     * 从发放单批量解析 chargeItem → 批号。
+     * 从发放单与收费锚点定价行批量解析 chargeItem → 批号。
      *
-     * @param chargeItems 收费明细
+     * <p>优先级：发放单批号 → 遗留 {@code service_table=*_dispense} 的 serviceId 发放行 →
+     * 锚点 {@code LOT_NUMBER_PRICE}/{@code LOT_NUMBER_COST} 行的 {@code lot_no}。</p>
+     *
+     * @param chargeItems    收费明细
+     * @param definitionById 锚点定价（供 lot_no 回落）；可空
      * @return chargeItemId → 批号
      */
-    private Map<Long, String> loadLotNumberByChargeItemId(Collection<ChargeItem> chargeItems) {
+    private Map<Long, String> loadLotNumberByChargeItemId(
+        Collection<ChargeItem> chargeItems,
+        Map<Long, ChargeItemDefinition> definitionById) {
         Map<Long, String> lotByChargeItemId = new HashMap<>();
         LinkedHashSet<Long> medDispenseIds = new LinkedHashSet<>();
         LinkedHashSet<Long> deviceDispenseIds = new LinkedHashSet<>();
@@ -1068,29 +1168,16 @@ public class HistoricalChargeItemPurchasePriceSupport {
             if (chargeItem == null || chargeItem.getId() == null) {
                 continue;
             }
-            Long dispenseId = chargeItem.getDispenseId();
-            String dispenseTable = chargeItem.getDispenseTable();
-            if (dispenseId == null) {
+            Long medDispenseId = this.resolveMedicationDispenseId(chargeItem);
+            if (medDispenseId != null) {
+                medDispenseIds.add(medDispenseId);
+                chargeToMedDispense.put(chargeItem.getId(), medDispenseId);
                 continue;
             }
-            if (TableNameConstants.MED_MEDICATION_DISPENSE.equals(dispenseTable)
-                || StringUtils.isEmpty(dispenseTable)) {
-                if (this.isMedicationOrDeviceServiceTable(chargeItem.getServiceTable())
-                    || TableNameConstants.MED_MEDICATION_DISPENSE.equals(dispenseTable)) {
-                    if (TableNameConstants.MED_MEDICATION_REQUEST.equals(chargeItem.getServiceTable())
-                        || TableNameConstants.MED_MEDICATION_DISPENSE.equals(chargeItem.getServiceTable())
-                        || TableNameConstants.MED_MEDICATION_DISPENSE.equals(dispenseTable)) {
-                        medDispenseIds.add(dispenseId);
-                        chargeToMedDispense.put(chargeItem.getId(), dispenseId);
-                        continue;
-                    }
-                }
-            }
-            if (TableNameConstants.WKF_DEVICE_DISPENSE.equals(dispenseTable)
-                || TableNameConstants.WKF_DEVICE_REQUEST.equals(chargeItem.getServiceTable())
-                || TableNameConstants.WKF_DEVICE_DISPENSE.equals(chargeItem.getServiceTable())) {
-                deviceDispenseIds.add(dispenseId);
-                chargeToDeviceDispense.put(chargeItem.getId(), dispenseId);
+            Long deviceDispenseId = this.resolveDeviceDispenseId(chargeItem);
+            if (deviceDispenseId != null) {
+                deviceDispenseIds.add(deviceDispenseId);
+                chargeToDeviceDispense.put(chargeItem.getId(), deviceDispenseId);
             }
         }
         Map<Long, String> medLotByDispenseId = new HashMap<>();
@@ -1125,7 +1212,110 @@ public class HistoricalChargeItemPurchasePriceSupport {
                 lotByChargeItemId.put(entry.getKey(), lot);
             }
         }
+        // 发放无批号：回落收费锚点 LOT_NUMBER_PRICE/COST 行上的 lot_no（挂费时已写入）
+        if (definitionById != null && !definitionById.isEmpty()) {
+            for (ChargeItem chargeItem : chargeItems) {
+                if (chargeItem == null || chargeItem.getId() == null) {
+                    continue;
+                }
+                if (StringUtils.isNotEmpty(lotByChargeItemId.get(chargeItem.getId()))) {
+                    continue;
+                }
+                if (chargeItem.getDefinitionId() == null) {
+                    continue;
+                }
+                String lotFromDefinition =
+                    this.lotNoFromLotPriceDefinition(definitionById.get(chargeItem.getDefinitionId()));
+                if (StringUtils.isNotEmpty(lotFromDefinition)) {
+                    lotByChargeItemId.put(chargeItem.getId(), lotFromDefinition);
+                }
+            }
+        }
         return lotByChargeItemId;
+    }
+
+    /**
+     * 解析药品发放主键：显式 dispense 列优先；遗留仅 service 锚定发放表时用 serviceId。
+     *
+     * @param chargeItem 收费明细
+     * @return 发放主键；无法解析时 {@code null}
+     */
+    private Long resolveMedicationDispenseId(ChargeItem chargeItem) {
+        String dispenseTable = chargeItem.getDispenseTable();
+        String serviceTable = chargeItem.getServiceTable();
+        if (TableNameConstants.MED_MEDICATION_DISPENSE.equals(dispenseTable)
+            && chargeItem.getDispenseId() != null) {
+            return chargeItem.getDispenseId();
+        }
+        // 遗留：service_table=药品发放且 dispense_id 为空
+        if (TableNameConstants.MED_MEDICATION_DISPENSE.equals(serviceTable)
+            && chargeItem.getServiceId() != null
+            && chargeItem.getDispenseId() == null) {
+            return chargeItem.getServiceId();
+        }
+        if (chargeItem.getDispenseId() == null) {
+            return null;
+        }
+        if (TableNameConstants.MED_MEDICATION_REQUEST.equals(serviceTable)
+            || TableNameConstants.MED_MEDICATION_DISPENSE.equals(serviceTable)) {
+            // dispense_table 空或药品发放：按药品发放读批号
+            if (StringUtils.isEmpty(dispenseTable)
+                || TableNameConstants.MED_MEDICATION_DISPENSE.equals(dispenseTable)) {
+                return chargeItem.getDispenseId();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 解析耗材发放主键：显式 dispense 列优先；遗留仅 service 锚定发放表时用 serviceId。
+     *
+     * @param chargeItem 收费明细
+     * @return 发放主键；无法解析时 {@code null}
+     */
+    private Long resolveDeviceDispenseId(ChargeItem chargeItem) {
+        String dispenseTable = chargeItem.getDispenseTable();
+        String serviceTable = chargeItem.getServiceTable();
+        if (TableNameConstants.WKF_DEVICE_DISPENSE.equals(dispenseTable)
+            && chargeItem.getDispenseId() != null) {
+            return chargeItem.getDispenseId();
+        }
+        // 遗留：service_table=耗材发放且 dispense_id 为空
+        if (TableNameConstants.WKF_DEVICE_DISPENSE.equals(serviceTable)
+            && chargeItem.getServiceId() != null
+            && chargeItem.getDispenseId() == null) {
+            return chargeItem.getServiceId();
+        }
+        if (chargeItem.getDispenseId() == null) {
+            return null;
+        }
+        if (TableNameConstants.WKF_DEVICE_REQUEST.equals(serviceTable)
+            || TableNameConstants.WKF_DEVICE_DISPENSE.equals(serviceTable)) {
+            // dispense_table 空或耗材发放：按耗材发放读批号
+            if (StringUtils.isEmpty(dispenseTable)
+                || TableNameConstants.WKF_DEVICE_DISPENSE.equals(dispenseTable)) {
+                return chargeItem.getDispenseId();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 从批号价类定价行读取批号（非批号价类返回 null）。
+     *
+     * @param definition 收费锚点定价
+     * @return 批号；无则 {@code null}
+     */
+    private String lotNoFromLotPriceDefinition(ChargeItemDefinition definition) {
+        if (definition == null || StringUtils.isEmpty(definition.getLotNo())) {
+            return null;
+        }
+        String priceTypeCode = definition.getPriceTypeCode();
+        if (PriceType.LOT_NUMBER_PRICE.getCode().equals(priceTypeCode)
+            || PriceType.LOT_NUMBER_COST.getCode().equals(priceTypeCode)) {
+            return definition.getLotNo().trim();
+        }
+        return null;
     }
 
     /**
@@ -1228,28 +1418,6 @@ public class HistoricalChargeItemPurchasePriceSupport {
     }
 
     /**
-     * 服务表是否为药/耗请求或发放表。
-     *
-     * @param serviceTable service_table
-     * @return 药耗为 true
-     */
-    private boolean isMedicationOrDeviceServiceTable(String serviceTable) {
-        if (StringUtils.isEmpty(serviceTable)) {
-            return false;
-        }
-        String normalized = serviceTable.trim();
-        if (TableNameConstants.MED_MEDICATION_REQUEST.equals(normalized)
-            || TableNameConstants.MED_MEDICATION_DISPENSE.equals(normalized)) {
-            return true;
-        }
-        if (TableNameConstants.WKF_DEVICE_REQUEST.equals(normalized)
-            || TableNameConstants.WKF_DEVICE_DISPENSE.equals(normalized)) {
-            return true;
-        }
-        return false;
-    }
-
-    /**
      * 识别挂号 chargeItem。
      *
      * @param chargeItem 收费明细
@@ -1276,6 +1444,9 @@ public class HistoricalChargeItemPurchasePriceSupport {
 
         /** 批号复合键 → ACTIVE 批号进价行。 */
         private Map<String, List<ChargeItemDefinition>> lotCostByCompositeKey = Map.of();
+
+        /** 批号复合键 → ACTIVE 批号售价行（缺 COST 时回落）。 */
+        private Map<String, List<ChargeItemDefinition>> lotSaleByCompositeKey = Map.of();
 
         /** 有已审批调价的药品品规 id。 */
         private LinkedHashSet<Long> adjustedMedItemIds = new LinkedHashSet<>();

@@ -36,6 +36,7 @@ public class MedicationDispensePickupPendingPageQuery extends AbstractPageQuery 
 
     /**
      * 计划发药截止时间（含）：{@code planned_dispense_time <= queryDeadline}（**BR-IP-SUM-002**）。
+     * 长嘱不可拆一盒一点由执行写路径整包装落一行，本列表不再做整盒补齐（原 **BR-IP-SUM-017** 已退役）。
      */
     private LocalDateTime queryDeadline;
 }

@@ -17,11 +17,6 @@ import com.openhis.chs.domain.inventory.entity.YbInvUploadTrace;
 import com.openhis.chs.domain.inventory.repository.YbInvUploadTraceRepository;
 import com.openhis.chs.domain.inventory.service.YbInvUploadQueryService;
 import com.openhis.chs.domain.share.constants.ChsInventoryConstants;
-import com.openhis.health.domain.medication.medicationdispense.command.CreatePendingRefundDispenseCommand;
-import com.openhis.health.domain.medication.medicationdispense.command.RefundDispensedMedicationCommand;
-import com.openhis.health.domain.medication.medicationdispense.entity.MedicationDispense;
-import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseDomainService;
-import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.whale.core.infrastructure.multitenancy.TenantUtils;
 import lombok.RequiredArgsConstructor;
@@ -31,18 +26,18 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 import static com.openhis.whale.core.application.util.StringUtils.isEmpty;
 import static com.openhis.whale.core.application.util.StringUtils.isNotEmpty;
 
 /**
- * 清床汇总径 3505 审计冲销 → 3506 组装。
+ * 清床/无床直结合并 3505 审计冲销 → 3506 组装。
  *
- * <p>数量/单价/追溯码仍按成功 3505 审计回退；{@code fixmedins_bchno}=原清床销售批次号；
- * {@code medins_prod_sel_no}=3511 平台销售流水；退药单仅作本地 {@code source_line_id}。</p>
+ * <p>只读 {@code yb_inv_upload} 成功 3505 审计还原数量/单价/追溯码；
+ * {@code fixmedins_bchno}=原清床 3505 批次号；{@code medins_prod_sel_no}=3511 平台销售流水。
+ * <b>禁止</b>创建或改写 {@code MedicationDispense}（门诊 3506 挂已有退药事实；住院冲销仅对冲已报合并销售）。
+ * 出站仍走与门诊退药相同的 {@code uploadSaleReturn3506}（3506→3502 单向隔离）。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -51,14 +46,12 @@ public class InventoryClearBedSummaryReverseUploadContextLoader {
 
     private final YbInvUploadQueryService uploadQueryService;
     private final YbInvUploadTraceRepository uploadTraceRepository;
-    private final MedicationDispenseQueryService medicationDispenseQueryService;
-    private final MedicationDispenseDomainService medicationDispenseDomainService;
     private final InventorySaleUploadReferenceResolver saleUploadReferenceResolver;
 
     /**
-     * 按就诊已成功清床汇总 3505 组装 3506；无成功销售时返回空 lines。
+     * 按就诊已成功清床/直结合并 3505 组装 3506；无成功销售时返回空 lines。
      *
-     * @param command 就诊、可选契约、可选已生成退药单 id
+     * @param command 就诊与可选契约（{@code dispenseIds} 已废弃，忽略）
      * @return 3506 命令（{@code sourceType=CLEAR_BED_SUMMARY}）
      */
     public InvUpload3506Command build3506ReverseRequest(UploadAfterClearBedSummarySalesReverseCommand command) {
@@ -71,6 +64,7 @@ public class InventoryClearBedSummaryReverseUploadContextLoader {
         Long tenantId = TenantUtils.getCurrentTenantId();
         List<YbInvUpload> saleRows =
             uploadQueryService.listSuccessfulClearBedSummarySales(tenantId, encounterId);
+        // Gate：无成功合并 3505 则 no-op（覆盖未清床反结）
         if (saleRows.isEmpty()) {
             return request;
         }
@@ -88,17 +82,13 @@ public class InventoryClearBedSummaryReverseUploadContextLoader {
         }
         request.setEncounterId(encounterId);
         request.setSourceId(encounterId);
-        // 与清床 3505 同源，便于运维按就诊过滤冲销批次；不含 DISPENSE 按患者销售
+        // 与清床 3505 同源，便于运维按就诊过滤冲销批次
         request.setSourceType(ChsInventoryConstants.SOURCE_TYPE_CLEAR_BED_SUMMARY);
-
-        // Pre：退药单 — 入参优先，否则按每条清床 3505 生成 REFUND 行以取得新 busNo
-        Map<Long, MedicationDispense> refundBySaleUploadId =
-            this.resolveRefundDispensesForSales(saleRows, command.getDispenseIds());
 
         String reverseTime = LocalDateTime.now().format(GeneralSharedConstants.DATE_TIME_FORMATTER);
         for (YbInvUpload saleRow : saleRows) {
-            MedicationDispense refundDispense = refundBySaleUploadId.get(saleRow.getId());
-            InvUploadLineCommand line = this.buildReverseLineFromSaleUpload(saleRow, reverseTime, refundDispense);
+            // Asm：纯审计还原，不写 HIS 发放表
+            InvUploadLineCommand line = this.buildReverseLineFromSaleUpload(saleRow, reverseTime);
             if (line == null) {
                 continue;
             }
@@ -108,114 +98,16 @@ public class InventoryClearBedSummaryReverseUploadContextLoader {
     }
 
     /**
-     * 解析冲销用退药单：优先入参 id 列表与销售行按序配对；不足时为缺行生成退药发放行。
+     * 从单条成功 3505 审计还原 3506 行（吉林：平台单据号/对单均用原销售 {@code fixmedins_bchno}）。
      *
-     * @param saleRows          成功清床 3505
-     * @param providedDispenseIds 调用方已生成的退药单主键；可空
-     * @return 销售上报 id → 退药发放行
-     */
-    private Map<Long, MedicationDispense> resolveRefundDispensesForSales(
-        List<YbInvUpload> saleRows,
-        List<Long> providedDispenseIds
-    ) {
-        Map<Long, MedicationDispense> result = new HashMap<>();
-        List<MedicationDispense> provided = this.loadProvidedRefundDispenses(providedDispenseIds);
-        int providedIndex = 0;
-        for (YbInvUpload saleRow : saleRows) {
-            if (saleRow == null || saleRow.getId() == null) {
-                continue;
-            }
-            MedicationDispense refund;
-            if (providedIndex < provided.size()) {
-                refund = provided.get(providedIndex);
-                providedIndex = providedIndex + 1;
-            } else {
-                // 未传入足够退药单时现场生成，保证 fixmedins_bchno 为新业务单据号
-                refund = this.createRefundDispenseForSaleUpload(saleRow);
-            }
-            if (refund != null) {
-                result.put(saleRow.getId(), refund);
-            }
-        }
-        return result;
-    }
-
-    /**
-     * 按入参主键加载退药发放行（保持入参顺序）。
+     * <p>本地幂等 {@code source_line_id}=原 3505 上报流水 id；伴生 3502 批次=
+     * {@code CLRREV}{uploadId}（不落 MedicationDispense）。</p>
      *
-     * @param dispenseIds 退药单主键
-     * @return 已加载实体列表；入参空则空表
-     */
-    private List<MedicationDispense> loadProvidedRefundDispenses(List<Long> dispenseIds) {
-        List<MedicationDispense> rows = new ArrayList<>();
-        if (dispenseIds == null || dispenseIds.isEmpty()) {
-            return rows;
-        }
-        for (Long dispenseId : dispenseIds) {
-            if (dispenseId == null) {
-                continue;
-            }
-            MedicationDispense row = medicationDispenseQueryService.findById(dispenseId);
-            if (row != null) {
-                rows.add(row);
-            }
-        }
-        return rows;
-    }
-
-    /**
-     * 为单条清床 3505 生成并确认退药发放行（数量取审计净销量）。
-     *
-     * @param saleRow 成功清床汇总 3505
-     * @return 已退药发放行；无法创建时 null
-     */
-    private MedicationDispense createRefundDispenseForSaleUpload(YbInvUpload saleRow) {
-        if (saleRow == null || saleRow.getSourceLineId() == null) {
-            return null;
-        }
-        JSONObject selinfo = this.parseSelinfo(saleRow.getRequestJson());
-        BigDecimal refundQty = null;
-        if (selinfo != null) {
-            refundQty = this.readSelinfoDecimal(selinfo, "sel_retn_cnt", "selRetnCnt");
-        }
-        if (refundQty == null || refundQty.compareTo(BigDecimal.ZERO) <= 0) {
-            return null;
-        }
-        MedicationDispense origin =
-            medicationDispenseQueryService.findById(saleRow.getSourceLineId());
-        if (origin == null || origin.getMedReqId() == null) {
-            return null;
-        }
-        // Cmd：创建待退 REFUND 行（新 busNo）
-        CreatePendingRefundDispenseCommand createCommand = new CreatePendingRefundDispenseCommand();
-        createCommand.setOriginDispenseId(origin.getId());
-        createCommand.setRefundRequestId(origin.getMedReqId());
-        createCommand.setRefundQuantity(refundQty);
-        Long refundId = medicationDispenseDomainService.createPendingRefundDispense(createCommand);
-        // Cmd：确认退药，写入 dispense_time
-        RefundDispensedMedicationCommand.Item item = new RefundDispensedMedicationCommand.Item();
-        item.setId(refundId);
-        item.setRefundQuantity(refundQty);
-        item.setReasonText("清床汇总径销售冲销");
-        RefundDispensedMedicationCommand refundCommand = new RefundDispensedMedicationCommand();
-        refundCommand.setItems(List.of(item));
-        medicationDispenseDomainService.refundDispensedMedication(refundCommand);
-        return medicationDispenseQueryService.findById(refundId);
-    }
-
-    /**
-     * 从单条成功 3505 审计还原 3506 行（吉林：单据号/对单均用原销售 {@code fixmedins_bchno}）。
-     *
-     * @param saleRow        成功清床汇总 3505
-     * @param reverseTime    回落退货时间
-     * @param refundDispense 退药发放行（提供 sourceLineId / 本地暂存退药单号）；空则本行失败原因
+     * @param saleRow     成功清床/直结合并 3505
+     * @param reverseTime 回落退货时间（反结/召回触发时刻）
      * @return 3506 行；报文不可解析时 null
      */
-    private InvUploadLineCommand buildReverseLineFromSaleUpload(
-        YbInvUpload saleRow,
-        String reverseTime,
-        MedicationDispense refundDispense
-    ) {
+    private InvUploadLineCommand buildReverseLineFromSaleUpload(YbInvUpload saleRow, String reverseTime) {
         if (saleRow == null || saleRow.getId() == null) {
             return null;
         }
@@ -224,12 +116,8 @@ public class InventoryClearBedSummaryReverseUploadContextLoader {
             return null;
         }
         InvUploadLineCommand line = new InvUploadLineCommand();
-        // 幂等行键跟退药单；无退药单时暂用原 sourceLineId 并记失败
-        if (refundDispense != null && refundDispense.getId() != null) {
-            line.setSourceLineId(refundDispense.getId());
-        } else {
-            line.setSourceLineId(saleRow.getSourceLineId());
-        }
+        // 本地幂等键：原 3505 上报流水 id（每轮重报会新建流水，见 findExisting 跳过 DELETED）
+        line.setSourceLineId(saleRow.getId());
         line.setMedListCodg(this.readSelinfoString(selinfo, "med_list_codg", "medListCodg"));
         line.setFixmedinsHilistId(this.readSelinfoString(selinfo, "fixmedins_hilist_id", "fixmedinsHilistId"));
         line.setFixmedinsHilistName(this.readSelinfoString(selinfo, "fixmedins_hilist_name", "fixmedinsHilistName"));
@@ -237,17 +125,10 @@ public class InventoryClearBedSummaryReverseUploadContextLoader {
         if (isEmpty(saleBchno)) {
             saleBchno = this.readSelinfoString(selinfo, "fixmedins_bchno", "fixmedinsBchno");
         }
-        // 暂存退药单号；平台定位仍用原 3505 批次号（吉林口径，同 3504）
-        if (refundDispense != null && isNotEmpty(refundDispense.getBusNo())) {
-            line.setOriginalFixmedinsBchno(
-                InventoryUploadBatchNoAssembler.buildFixmedinsBchno(refundDispense.getBusNo()));
-        } else {
-            line.setOriginalFixmedinsBchno(saleBchno);
-            if (refundDispense == null || isEmpty(refundDispense.getBusNo())) {
-                line.setPreUploadFailureMessage("清床冲销缺少退药单，无法定位退药 sourceLineId/幂等键");
-            }
-        }
-        // 吉林：fixmedins_bchno = 原清床 3505 批次号；medins_prod_sel_no = 3511 平台流水
+        // 伴生 3502(106) 本地批次：合成号，禁止为凑单号写 HIS 退药行
+        line.setOriginalFixmedinsBchno(InventoryUploadBatchNoAssembler.buildFixmedinsBchno(
+            ChsInventoryConstants.CLEAR_BED_REVERSE_COMPANION_BCHNO_PREFIX + saleRow.getId()));
+        // 吉林：平台 3506 fixmedins_bchno = 原清床 3505 批次号
         line.setFixmedinsBchno(saleBchno);
         String platformSelNo = null;
         try {
@@ -257,10 +138,8 @@ public class InventoryClearBedSummaryReverseUploadContextLoader {
             if (isEmpty(detail)) {
                 detail = ex.getClass().getSimpleName();
             }
-            if (isEmpty(line.getPreUploadFailureMessage())) {
-                line.setPreUploadFailureMessage(
-                    "无法解析平台商品销售流水号(medins_prod_sel_no)：3511失败 " + detail.trim());
-            }
+            line.setPreUploadFailureMessage(
+                "无法解析平台商品销售流水号(medins_prod_sel_no)：3511失败 " + detail.trim());
         }
         line.setMedinsProdSelNo(platformSelNo);
         if (isEmpty(platformSelNo) && isEmpty(line.getPreUploadFailureMessage())) {
@@ -273,13 +152,8 @@ public class InventoryClearBedSummaryReverseUploadContextLoader {
         line.setTrdnFlag(this.readSelinfoString(selinfo, "trdn_flag", "trdnFlag"));
         line.setFinlTrnsPric(this.readSelinfoDecimal(selinfo, "finl_trns_pric", "finlTrnsPric"));
         line.setSelRetnCnt(this.readSelinfoDecimal(selinfo, "sel_retn_cnt", "selRetnCnt"));
-        // 退货时间优先退药单 dispense_time
-        if (refundDispense != null && refundDispense.getDispenseTime() != null) {
-            line.setSelRetnTime(
-                refundDispense.getDispenseTime().format(GeneralSharedConstants.DATE_TIME_FORMATTER));
-        } else {
-            line.setSelRetnTime(reverseTime);
-        }
+        // 冲销时间：反结/召回触发时刻（无 HIS 退药单可取）
+        line.setSelRetnTime(reverseTime);
         line.setSelRetnOpterName(this.readSelinfoString(selinfo, "sel_retn_opter_name", "selRetnOpterName"));
         line.setSetlId(this.readSelinfoString(selinfo, "setl_id", "setlId"));
         line.setMdtrtSn(this.readSelinfoString(selinfo, "mdtrt_sn", "mdtrtSn"));

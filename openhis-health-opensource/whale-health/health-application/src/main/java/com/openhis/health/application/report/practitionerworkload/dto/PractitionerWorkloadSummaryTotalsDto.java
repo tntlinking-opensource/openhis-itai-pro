@@ -11,38 +11,32 @@ import lombok.experimental.Accessors;
 import java.math.BigDecimal;
 
 /**
- * 工作量汇总页脚合计 DTO（IF-RPT-WKL-02/03）。
+ * 工作量汇总页脚合计 DTO（IF-RPT-WKL-02/03；DD-报表中心-进售价口径）。
+ *
+ * <p>金额列仅售价/进价合计（账单行加和）；本轮不含应收/实收。</p>
  */
 @Data
 @Accessors(chain = true)
 @Schema(description = "工作量汇总合计")
 public class PractitionerWorkloadSummaryTotalsDto {
 
-    /** 应收合计。 */
-    @Schema(description = "应收合计")
-    private BigDecimal receivableAmountTotal;
+    /** 售价合计（账单 total_price 加和；结算刻度）。 */
+    @Schema(description = "售价合计")
+    private BigDecimal saleAmountTotal;
 
-    /** 实收合计。 */
-    @Schema(description = "实收合计")
-    private BigDecimal actualReceivedAmountTotal;
+    /** 进价合计（批号进价包装锚加和；诊疗无进价不累加；结算刻度）。 */
+    @Schema(description = "进价合计")
+    private BigDecimal purchaseAmountTotal;
 
-    /** 成本合计。 */
-    @Schema(description = "成本合计")
-    private BigDecimal costAmountTotal;
-
-    /** 净收入合计。 */
-    @Schema(description = "净收入合计")
-    private BigDecimal netIncomeAmountTotal;
-
-    /** 挂号净笔数合计。 */
-    @Schema(description = "挂号净笔数合计")
+    /** 挂号净人次合计（与 AS-RPT-007 同口径：一就诊一次，退号不计入）。 */
+    @Schema(description = "挂号净人次合计")
     private Integer registrationNetCountTotal;
 
     /** 接诊人数合计。 */
     @Schema(description = "接诊人数合计")
     private Integer encounterCountTotal;
 
-    /** 处方数量合计。 */
+    /** 处方数量合计（按处方号去重；同方多行计 1）。 */
     @Schema(description = "处方数量合计")
     private Integer prescriptionCountTotal;
 

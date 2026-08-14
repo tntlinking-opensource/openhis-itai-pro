@@ -33,6 +33,7 @@ import com.openhis.health.domain.medication.medicationdispense.entity.Medication
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
 import com.openhis.health.domain.medication.medicationrequest.query.OutpatientSignedPrescriptionDrugLinePageQuery;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
+import com.openhis.health.domain.medication.medicationrequest.queries.model.OutpatientSignedPrescriptionSummaryCountQueryModel;
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.OutpatientPharmacyPrescriptionQueryConstants;
@@ -249,14 +250,21 @@ public class OutpatientPharmacyPrescriptionQueryAppService {
                         diagnosisIdsForMedType);
                 query.setResolvedMedicationRequestIdsForMedType(medTypeResolvedIds);
             }
-            // Pre：主事实分页（已签发、正方+退方、BR-OPQ-001～015）
+            // Pre：主事实分页（已签发、正方+退方、BR-OPQ-001～016）
             Page<MedicationRequestListQueryModel> page =
                 this.medicationRequestQueryService.pageOutpatientSignedPrescriptionDrugLines(query);
+            // Pre：同规约轻量 COUNT DISTINCT（页脚总处方量 / 就诊人数；禁止二次拉明细）
+            OutpatientSignedPrescriptionSummaryCountQueryModel summary =
+                this.medicationRequestQueryService.countOutpatientSignedPrescriptionSummary(query);
             // Pre+Asm：页内批量装关联后装配平铺行
             List<OutpatientPharmacyPrescriptionDrugLineDto> rows =
                 this.assemblePageRows(page.getContent());
-            // Asm：分页元数据 + 平铺行
-            return this.prescriptionQueryMapper.toPageResponse(page, rows);
+            // Asm：分页元数据 + 平铺行 + 去重汇总
+            return this.prescriptionQueryMapper.toPageResponse(
+                page,
+                rows,
+                summary.getPrescriptionCount(),
+                summary.getVisitPatientCount());
         } catch (BusinessException ex) {
             throw ex;
         } catch (RuntimeException ex) {

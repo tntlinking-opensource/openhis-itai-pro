@@ -44,6 +44,16 @@ public class DocInventoryItemSnapshotPageQuery {
     private List<Integer> chrgitmLvs;
 
     /**
+     * 基药标识筛选（药典 {@code basic_flag}）；非空时仅保留药品行且 {@code item_id} 落在预解析列表。
+     */
+    private Boolean basicFlag;
+
+    /**
+     * 应用层按基药标识预解析的药品定义主键；与 {@link #basicFlag} 成对使用。
+     */
+    private List<Long> resolvedMedicationDefinitionIds;
+
+    /**
      * 零库存筛选：{@code true} 数量等于 0；{@code false} 数量大于 0；{@code null} 不限。
      */
     private Boolean zeroStockFlag;

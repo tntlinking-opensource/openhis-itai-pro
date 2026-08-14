@@ -31,4 +31,15 @@ public interface YbInvokeLogRepository
      */
     List<YbInvokeLog> findAllBySettlementRecordIdAndTenantIdAndIsDeletedFalseOrderByCreatedAtDesc(
         Long settlementRecordId, Long tenantId);
+
+    /**
+     * 按就诊与交易号查询 invoke 日志，按创建时间倒序（用于悬挂 2204 孤儿批次回收）。
+     *
+     * @param encounterId 就诊 ID
+     * @param infno       交易号（如 2204/2207）
+     * @param tenantId    租户 ID
+     * @return 调用日志列表
+     */
+    List<YbInvokeLog> findAllByEncounterIdAndInfnoAndTenantIdAndIsDeletedFalseOrderByCreatedAtDesc(
+        Long encounterId, String infno, Long tenantId);
 }

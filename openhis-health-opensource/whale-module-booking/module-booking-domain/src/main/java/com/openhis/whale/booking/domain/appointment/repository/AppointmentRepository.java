@@ -10,6 +10,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -53,6 +54,19 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long>,
      * @return 有效项集合
      */
     List<Appointment> findByPatientId(Long patientId);
+
+    /**
+     * 门诊防重键：同患者 + 同服务 + 同自然日且未软删的预约行。
+     *
+     * @param patientId 患者标识
+     * @param healthcareServiceId 医疗服务标识
+     * @param bookingDate 预约自然日
+     * @return 未软删行（含已解绑就诊的退号残留）
+     */
+    List<Appointment> findByPatientIdAndHealthcareServiceIdAndBookingDateAndIsDeletedFalse(
+        Long patientId,
+        Long healthcareServiceId,
+        LocalDate bookingDate);
 
     /**
      * 按机构与诊室查询有效项（用于调序重排等场景）。

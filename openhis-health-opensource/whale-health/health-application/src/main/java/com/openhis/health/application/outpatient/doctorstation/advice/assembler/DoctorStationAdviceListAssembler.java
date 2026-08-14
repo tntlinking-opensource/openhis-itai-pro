@@ -60,6 +60,7 @@ import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
 import com.openhis.health.domain.workflow.activitydefinition.entity.ActivityDefinition;
 import com.openhis.health.domain.workflow.activitydefinition.queries.model.ActivityDefinitionChildQueryModel;
 import com.openhis.health.domain.workflow.activitydefinition.service.ActivityDefinitionQueryService;
+import com.openhis.health.domain.financial.contract.service.ContractQueryService;
 import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseQueryService;
 import com.openhis.health.domain.workflow.devicerequest.queries.model.DeviceRequestListModel;
 import com.openhis.health.domain.workflow.devicerequest.service.DeviceRequestQueryService;
@@ -136,6 +137,8 @@ public class DoctorStationAdviceListAssembler {
     private final OrganizationQueryService organizationQueryService;
     /** 费用性质：药嘱 contract_id → ContractCategory 分类文案（处方笺展示）。 */
     private final ContractExpenseNatureAssembler contractExpenseNatureAssembler;
+    /** 合同读侧：耗材 contract_code（bus_no）→ contractId，供列表费用性质回显。 */
+    private final ContractQueryService contractQueryService;
 
     /** 诊疗套餐子项批量加载（B.6.2，禁止透出 children_json 串）。 */
     private final ActivityDefinitionQueryService activityDefinitionQueryService;
@@ -227,6 +230,7 @@ public class DoctorStationAdviceListAssembler {
         Set<Long> adviceEncounterDiagnosisIds = new HashSet<>();
         Set<Long> servicePerformOrgIds = new HashSet<>();
         Set<Long> medicationContractIds = new HashSet<>();
+        Set<String> deviceContractBusNos = new HashSet<>();
         // Loop：扫描药品行，收集定义 id、开立者、绑定诊断与费用性质，供后续批量预热与展示回填。
         for (MedicationRequestListQueryModel row : medicationRows) {
             if (row.getMedicationId() != null) {
@@ -243,7 +247,7 @@ public class DoctorStationAdviceListAssembler {
                 medicationContractIds.add(row.getContractId());
             }
         }
-        // Loop：扫描诊疗行，收集活动定义 id、开立者、绑定诊断 id、执行科室 org_id。
+        // Loop：扫描诊疗行，收集活动定义 id、开立者、绑定诊断 id、执行科室 org_id、费用性质。
         for (ServiceRequestListModel row : serviceRows) {
             if (row.getActivityId() != null) {
                 activityDefIds.add(row.getActivityId());
@@ -258,8 +262,11 @@ public class DoctorStationAdviceListAssembler {
             if (row.getLocationId() != null) {
                 servicePerformOrgIds.add(row.getLocationId());
             }
+            if (row.getContractId() != null) {
+                medicationContractIds.add(row.getContractId());
+            }
         }
-        // Loop：扫描耗材行，收集器材定义 id、开立者与绑定诊断 id。
+        // Loop：扫描耗材行，收集器材定义 id、开立者、绑定诊断与费用性质 bus_no。
         for (DeviceRequestListModel row : deviceRows) {
             if (row.getDeviceDefId() != null) {
                 deviceDefIds.add(row.getDeviceDefId());
@@ -268,6 +275,17 @@ public class DoctorStationAdviceListAssembler {
                 practitionerIds.add(row.getRequesterId());
             }
             collectEncounterDiagnosisIdsFromIds(row.getEncounterDiagnosisIds(), adviceEncounterDiagnosisIds);
+            if (StringUtils.isNotEmpty(row.getContractCode())) {
+                deviceContractBusNos.add(row.getContractCode().trim());
+            }
+        }
+        // Pre：耗材 contract_code → contractId，并入费用性质文案批量映射。
+        Map<String, Long> deviceContractIdByBusNo =
+            contractQueryService.mapContractIdByBusNoIn(deviceContractBusNos);
+        for (Long deviceContractId : deviceContractIdByBusNo.values()) {
+            if (deviceContractId != null) {
+                medicationContractIds.add(deviceContractId);
+            }
         }
 
         Map<Long, Long> conditionDefinitionIdByEncounterDiagnosisId = new HashMap<>();
@@ -292,7 +310,7 @@ public class DoctorStationAdviceListAssembler {
         Map<Long, String> servicePerformOrgNameById = organizationQueryService.mapNamesByIds(servicePerformOrgIds);
         Map<Long, String> conditionDefinitionDisplayByDefinitionId =
             loadConditionDefinitionDisplayNames(adviceConditionDefinitionIds);
-        // Pre：费用性质分类文案（contract_id → 自费/公费/省医保/市医保/职工医保）
+        // Pre：费用性质分类文案（contract_id → 自费/公费/省医保/市医保/工伤保险）
         Map<Long, String> feeNatureTextByContractId =
             this.contractExpenseNatureAssembler.mapCategoryTextByContractIdIn(medicationContractIds);
 
@@ -560,6 +578,11 @@ public class DoctorStationAdviceListAssembler {
             line.setSortNumber(serviceRow.getSortNumber());
             line.setStatusEnum(serviceRow.getStatusEnum());
             line.setStatusEnumText(resolveRequestStatusDisplay(serviceRow.getStatusEnum()));
+            // 费用性质：诊疗行 contract_id + 分类文案（编辑卡回显）
+            line.setContractId(serviceRow.getContractId());
+            if (serviceRow.getContractId() != null) {
+                line.setFeeNatureText(feeNatureTextByContractId.get(serviceRow.getContractId()));
+            }
             applyChargeRollup(line, serviceRollup.get(serviceRow.getId()));
             fillLineAmountByUnitAndQuantity(line);
             line.setIsAuthoredByCurrentUser(resolveIsMine(currentUserId, serviceRow.getRequesterId()));
@@ -638,6 +661,15 @@ public class DoctorStationAdviceListAssembler {
             line.setSortNumber(deviceRow.getSortNumber());
             line.setStatusEnum(deviceRow.getStatusEnum());
             line.setStatusEnumText(resolveRequestStatusDisplay(deviceRow.getStatusEnum()));
+            // 费用性质：contract_code（bus_no）反查 contractId + 分类文案
+            Long deviceContractId = null;
+            if (StringUtils.isNotEmpty(deviceRow.getContractCode())) {
+                deviceContractId = deviceContractIdByBusNo.get(deviceRow.getContractCode().trim());
+            }
+            line.setContractId(deviceContractId);
+            if (deviceContractId != null) {
+                line.setFeeNatureText(feeNatureTextByContractId.get(deviceContractId));
+            }
             applyChargeRollup(line, deviceRollup.get(deviceRow.getId()));
             fillLineAmountByUnitAndQuantity(line);
             line.setIsAuthoredByCurrentUser(resolveIsMine(currentUserId, deviceRow.getRequesterId()));

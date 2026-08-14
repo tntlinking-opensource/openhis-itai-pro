@@ -123,6 +123,16 @@ public final class VitalSignConstants {
     private static final List<String> ADMISSION_DETAIL_CODES = List.of(
         HEIGHT, WEIGHT, TEMP, HR, PULSE, SBP, DBP);
 
+    /**
+     * 入科时点槽测量项：锚定 {@code encounter.start_time}，归入对应三测时次。
+     */
+    private static final List<String> ADMISSION_SLOT_CODES = List.of(TEMP, HR, PULSE, SBP, DBP);
+
+    /**
+     * 入科日补充项：锚定入科日 22:00 槽（与体温单底部身高/体重展示一致）。
+     */
+    private static final List<String> ADMISSION_DAY_SUPPLEMENT_CODES = List.of(HEIGHT, WEIGHT);
+
     private static final Set<String> ADMISSION_CODE_SET = Collections.unmodifiableSet(
         new LinkedHashSet<>(ADMISSION_DETAIL_CODES));
 
@@ -136,6 +146,24 @@ public final class VitalSignConstants {
      */
     public static List<String> admissionDetailCodes() {
         return ADMISSION_DETAIL_CODES;
+    }
+
+    /**
+     * 返回入科时点槽测量项编码（体温/心率/脉搏/血压）。
+     *
+     * @return 不可变列表
+     */
+    public static List<String> admissionSlotCodes() {
+        return ADMISSION_SLOT_CODES;
+    }
+
+    /**
+     * 返回入科日补充项编码（身高/体重，锚定 22:00）。
+     *
+     * @return 不可变列表
+     */
+    public static List<String> admissionDaySupplementCodes() {
+        return ADMISSION_DAY_SUPPLEMENT_CODES;
     }
 
     /**

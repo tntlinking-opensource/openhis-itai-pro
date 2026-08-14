@@ -67,7 +67,7 @@ public interface NurseStationAutoRollMapper {
     SuspendAutoGenRuleCommand toSuspendAutoGenRuleCommand(SuspendAutoGenRuleRequest request, Long operatorId);
 
     /**
-     * 新增配置成功后 ensure 长期床位 SR 命令。
+     * 新增配置成功后 ensure 长期滚费 SR 命令（categoryEnum 由 AppService 按选品回填）。
      *
      * @param request    新增请求
      * @param ruleId     配置主键

@@ -123,13 +123,16 @@ public class NurseStationCostDetailReadAssembler {
             if (product != null) {
                 line.setItemName(product.getProductName());
                 line.setItemSpec(product.getTotalVolume());
+                // 与汇总行同源：明细单打印按产品实际分类（中药/西药/检验等）分组
+                line.setCategoryCode(product.getCategoryCode());
+                line.setCategoryDisplay(product.getCategoryCodeDictText());
             }
             line.setQuantityValue(charge.getQuantityValue());
             line.setQuantityUnit(charge.getQuantityUnit());
             line.setQuantityUnitDisplay(resolveQuantityUnitDisplay(charge.getQuantityUnit(), product));
             line.setUnitPrice(charge.getUnitPrice());
             line.setTotalPrice(charge.getTotalPrice());
-            // 逻辑轴 occurrence；展示轴 recorded（无则同逻辑轴）
+            // 客户可见轴：进窗/排序/列同源（recorded / 发放 / 滚费 occurrence）
             line.setBusinessDateTime(row.getBusinessDateTime());
             line.setDisplayDateTime(row.getDisplayDateTime());
             line.setStatusEnum(charge.getStatusEnum());

@@ -17,6 +17,8 @@ import com.openhis.chs.domain.settlement.support.ChargeItemIdsSupport;
 import com.openhis.chs.domain.settlement.support.FeeUploadResultApplier;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -33,6 +35,9 @@ public class YbInpatientFeeUploadDomainService {
     /**
      * 将 2301 费用上传结果逐行 upsert 至 {@code yb_inpatient_fee_upload}。
      *
+     * <p>使用 {@code REQUIRES_NEW}：平台 2301 已成功后若后续 2303 失败回滚，本地上传态仍保留，
+     * 避免重试再传同 {@code feedetl_sn} 触发平台 feeListDBO_41 重复主键。</p>
+     *
      * @param encounterId        就诊 ID
      * @param mdtrtId              平台就诊 ID
      * @param lines                待落库收费明细
@@ -40,6 +45,7 @@ public class YbInpatientFeeUploadDomainService {
      * @param fallbackOutputJson   平台原始应答 JSON（无逐行结果时兜底）
      * @param tenantId             租户 ID
      */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void persistFrom2301(
         Long encounterId,
         String mdtrtId,
@@ -118,6 +124,34 @@ public class YbInpatientFeeUploadDomainService {
                     || YbFeeUploadStatus.UPLOADED.equals(row.getUploadStatus()))
                 .ifPresent(row -> {
                     chargeBatchLifecycle.markInpatientFeeSettleRevoked(row);
+                    feeUploadRepository.save(row);
+                });
+        }
+    }
+
+    /**
+     * 批量将指定收费项对应的住院费用上传行标记为已撤销（供换新 mdtrt 后重传 2301）。
+     *
+     * <p>使用 {@code REQUIRES_NEW} 先提交并释放行锁：随后 {@link #persistFrom2301} 同为
+     * {@code REQUIRES_NEW}，若本方法挂在外层事务未提交则会对同一行死等，预结算卡在 2301 成功之后。</p>
+     *
+     * @param chargeItemIds 收费项 ID
+     * @param tenantId      租户 ID
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void markRevokedByChargeItemIds(List<Long> chargeItemIds, Long tenantId) {
+        if (chargeItemIds == null || chargeItemIds.isEmpty() || tenantId == null) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        for (Long chargeItemId : chargeItemIds) {
+            if (chargeItemId == null) {
+                continue;
+            }
+            feeUploadRepository.findFirstByChargeItemIdAndTenantIdAndIsDeletedFalse(chargeItemId, tenantId)
+                .ifPresent(row -> {
+                    chargeBatchLifecycle.markInpatientFeeRevoked(row);
+                    row.setUploadedAt(now);
                     feeUploadRepository.save(row);
                 });
         }

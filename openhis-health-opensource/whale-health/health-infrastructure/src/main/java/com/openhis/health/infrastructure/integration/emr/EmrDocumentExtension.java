@@ -43,6 +43,17 @@ public interface EmrDocumentExtension {
     }
 
     /**
+     * 批量判断就诊下是否存在已锁定文书（病例归档态：归档病例 → LOCKED）。
+     *
+     * @param encounterIds 就诊主键集合；可空
+     * @return 存在 LOCKED 文书的就诊主键集合；未装配 EMR 时为空集
+     */
+    default java.util.Set<Long> filterEncounterIdsWithLockedOrArchivedDocuments(
+            java.util.Collection<Long> encounterIds) {
+        return java.util.Collections.emptySet();
+    }
+
+    /**
      * 门诊文书跨患者分页（病案「门诊病历查询」）。
      *
      * @param query 类型/患者/就诊/状态与分页；{@code null} 时返回空页

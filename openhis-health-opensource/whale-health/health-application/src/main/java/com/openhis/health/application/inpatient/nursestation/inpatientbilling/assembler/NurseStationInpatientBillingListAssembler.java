@@ -335,6 +335,8 @@ public class NurseStationInpatientBillingListAssembler {
      * @param dispenseIdsByDeviceReqId 耗材请求 id → 发放 id 列表
      * @param primaryDispenseStatusByDeviceReqId 耗材请求 id → 主发放状态码
      * @param pricedRowFactsByOrderId orderId → 展示事实
+     * @param recordedTimeByServiceRequestId 诊疗请求 id → Procedure.recorded_time（客户可见）
+     * @param displayTimeByDeviceRequestId   耗材请求 id → 发放/拣配展示时刻（客户可见）
      * @return 按 encounter 分组的已划价行
      */
     public List<NurseStationPricingPatientGroupDto> assemblePricedOrderGroups(
@@ -342,7 +344,9 @@ public class NurseStationInpatientBillingListAssembler {
         Map<Long, List<ChargeItem>> chargeByServiceId,
         Map<Long, List<Long>> dispenseIdsByDeviceReqId,
         Map<Long, String> primaryDispenseStatusByDeviceReqId,
-        Map<Long, PricedOrderRowFacts> pricedRowFactsByOrderId) {
+        Map<Long, PricedOrderRowFacts> pricedRowFactsByOrderId,
+        Map<Long, LocalDateTime> recordedTimeByServiceRequestId,
+        Map<Long, LocalDateTime> displayTimeByDeviceRequestId) {
         if (skeleton == null || skeleton.isEmpty()) {
             return new ArrayList<>();
         }
@@ -353,7 +357,7 @@ public class NurseStationInpatientBillingListAssembler {
             }
             NurseStationPricedOrderRowDto row = this.mapPricedRow(
                 order, chargeByServiceId, dispenseIdsByDeviceReqId, primaryDispenseStatusByDeviceReqId,
-                pricedRowFactsByOrderId);
+                pricedRowFactsByOrderId, recordedTimeByServiceRequestId, displayTimeByDeviceRequestId);
             if (row == null) {
                 continue;
             }
@@ -458,7 +462,9 @@ public class NurseStationInpatientBillingListAssembler {
         Map<Long, List<ChargeItem>> chargeByServiceId,
         Map<Long, List<Long>> dispenseIdsByDeviceReqId,
         Map<Long, String> primaryDispenseStatusByDeviceReqId,
-        Map<Long, PricedOrderRowFacts> pricedRowFactsByOrderId) {
+        Map<Long, PricedOrderRowFacts> pricedRowFactsByOrderId,
+        Map<Long, LocalDateTime> recordedTimeByServiceRequestId,
+        Map<Long, LocalDateTime> displayTimeByDeviceRequestId) {
         Long serviceId = order.getOrderId();
         if (ReadModelOrderTypeConstants.DEVICE_REQUEST.equals(order.getOrderType())) {
             serviceId = order.getOrderId();
@@ -503,7 +509,9 @@ public class NurseStationInpatientBillingListAssembler {
         if (facts != null && StringUtils.isNotEmpty(facts.getUnitDisplay())) {
             row.setUnitDisplay(facts.getUnitDisplay());
         }
-        row.setPricedTime(this.resolvePricedTime(order, charge));
+        // 客户可见划价时间：诊疗 recorded_time / 耗材发放时间（BR-IP-PRC-030）
+        row.setPricedTime(this.resolvePricedTime(
+            order, charge, recordedTimeByServiceRequestId, displayTimeByDeviceRequestId));
         if (charge != null) {
             row.setUnitPrice(charge.getUnitPrice());
             row.setTotalPrice(charge.getTotalPrice());
@@ -661,17 +669,48 @@ public class NurseStationInpatientBillingListAssembler {
     }
 
     /**
-     * 划价时间：骨架 createdAt → Charge 发生时间 → 开立时间（ListModel 路径无 createdAt）。
+     * 划价客户可见时间：诊疗净剩 Procedure.recorded_time；耗材主发放 dispense/prepare；
+     * 回落 Charge.occurrence → 骨架 createdAt → 开立时间（BR-IP-PRC-030）。
+     *
+     * @param order                          骨架行
+     * @param charge                         主费用行
+     * @param recordedTimeByServiceRequestId 诊疗 recorded 索引
+     * @param displayTimeByDeviceRequestId   耗材发放展示时刻索引
+     * @return 展示时刻；均空时 null
      */
-    private LocalDateTime resolvePricedTime(InpatientOrderListSkeleton order, ChargeItem charge) {
+    private LocalDateTime resolvePricedTime(
+        InpatientOrderListSkeleton order,
+        ChargeItem charge,
+        Map<Long, LocalDateTime> recordedTimeByServiceRequestId,
+        Map<Long, LocalDateTime> displayTimeByDeviceRequestId) {
         if (order == null) {
             return null;
         }
-        if (order.getCreatedAt() != null) {
-            return order.getCreatedAt();
+        Long orderId = order.getOrderId();
+        // 诊疗：客户可见轴 = Procedure.recorded_time
+        if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(order.getOrderType())
+            && recordedTimeByServiceRequestId != null
+            && orderId != null) {
+            LocalDateTime recorded = recordedTimeByServiceRequestId.get(orderId);
+            if (recorded != null) {
+                return recorded;
+            }
         }
+        // 耗材：客户可见轴 = 发放时间（dispense/prepare）
+        if (ReadModelOrderTypeConstants.DEVICE_REQUEST.equals(order.getOrderType())
+            && displayTimeByDeviceRequestId != null
+            && orderId != null) {
+            LocalDateTime dispenseDisplay = displayTimeByDeviceRequestId.get(orderId);
+            if (dispenseDisplay != null) {
+                return dispenseDisplay;
+            }
+        }
+        // 回落：账单发生时间 → 骨架创建 → 开立（兼容历史无 Procedure/发放时刻）
         if (charge != null && charge.getOccurrenceTime() != null) {
             return charge.getOccurrenceTime();
+        }
+        if (order.getCreatedAt() != null) {
+            return order.getCreatedAt();
         }
         return order.resolveOrderOpenedTime();
     }

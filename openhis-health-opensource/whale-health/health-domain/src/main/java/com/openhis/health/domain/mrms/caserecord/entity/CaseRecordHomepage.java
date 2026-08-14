@@ -108,6 +108,62 @@ public class CaseRecordHomepage extends BaseAuditedEntity {
     @Column(name = "coner_tel", length = 32)
     private String conerTel;
 
+    /** 联系人关系字典码（4401 coner_rlts）。 */
+    @Column(name = "coner_rlts_code", length = 16)
+    private String conerRltsCode;
+
+    /** 联系人地址（4401 coner_addr）。 */
+    @Column(name = "coner_addr", length = 500)
+    private String conerAddr;
+
+    /** 治疗类别字典码（4401 trt_type）。 */
+    @Column(name = "trt_type_code", length = 16)
+    private String trtTypeCode;
+
+    /** 特级护理天数（4401 spga_nurscare_days）。 */
+    @Column(name = "spga_nurscare_days")
+    private Integer spgaNurscareDays;
+
+    /** 一级护理天数（4401 lv1_nurscare_days）。 */
+    @Column(name = "lv1_nurscare_days")
+    private Integer lv1NurscareDays;
+
+    /** 二级护理天数（4401 scd_nurscare_days）。 */
+    @Column(name = "scd_nurscare_days")
+    private Integer scdNurscareDays;
+
+    /** 三级护理天数（4401 lv3_nurscare_days）。 */
+    @Column(name = "lv3_nurscare_days")
+    private Integer lv3NurscareDays;
+
+    /** 门急诊西医诊断名称（4401 otp_wm_dise）。 */
+    @Column(name = "otp_wm_dise", length = 200)
+    private String otpWmDise;
+
+    /** 门急诊西医诊断编码（4401 wm_dise_code）。 */
+    @Column(name = "wm_dise_code", length = 32)
+    private String wmDiseCode;
+
+    /** 门急诊中医诊断名称（4401 otp_tcm_dise）。 */
+    @Column(name = "otp_tcm_dise", length = 200)
+    private String otpTcmDise;
+
+    /** 门急诊中医诊断编码（4401 tcm_dise_code）。 */
+    @Column(name = "tcm_dise_code", length = 32)
+    private String tcmDiseCode;
+
+    /** 入院前颅脑损伤昏迷时长（天/时/分文本，4401 brn_damg_bfadm_coma_dura）。 */
+    @Column(name = "brn_damg_bfadm_coma_dura", length = 32)
+    private String brnDamgBfadmComaDura;
+
+    /** 入院后颅脑损伤昏迷时长（天/时/分文本，4401 brn_damg_afadm_coma_dura）。 */
+    @Column(name = "brn_damg_afadm_coma_dura", length = 32)
+    private String brnDamgAfadmComaDura;
+
+    /** 呼吸机使用时长（天/时/分文本，4401 vent_used_dura）。 */
+    @Column(name = "vent_used_dura", length = 32)
+    private String ventUsedDura;
+
     /** 住院号（adm_encounter.bus_no 冗余）。 */
     @Column(name = "ipt_no", length = 64)
     private String iptNo;
@@ -249,15 +305,67 @@ public class CaseRecordHomepage extends BaseAuditedEntity {
             this.brdy = command.getBrdy();
             sources.put("brdy", FieldFillSource.MANUAL.getCode());
         }
+        markManualField(command.getNtlyCode(), "ntly_code", sources, v -> this.ntlyCode = v);
+        markManualField(command.getNatyCode(), "naty_code", sources, v -> this.natyCode = v);
         markManualField(command.getCertno(), "certno", sources, v -> this.certno = v);
+        markManualField(command.getPrfsCode(), "prfs_code", sources, v -> this.prfsCode = v);
+        markManualField(command.getMrgStasCode(), "mrg_stas_code", sources, v -> this.mrgStasCode = v);
+        markManualField(command.getCurrAddr(), "curr_addr", sources, v -> this.currAddr = v);
+        markManualField(command.getPsnTel(), "psn_tel", sources, v -> this.psnTel = v);
+        markManualField(command.getConerName(), "coner_name", sources, v -> this.conerName = v);
+        markManualField(command.getConerTel(), "coner_tel", sources, v -> this.conerTel = v);
+        markManualField(command.getConerRltsCode(), "coner_rlts_code", sources, v -> this.conerRltsCode = v);
+        markManualField(command.getConerAddr(), "coner_addr", sources, v -> this.conerAddr = v);
+        markManualField(command.getTrtTypeCode(), "trt_type_code", sources, v -> this.trtTypeCode = v);
+        if (command.getSpgaNurscareDays() != null) {
+            this.spgaNurscareDays = command.getSpgaNurscareDays();
+            sources.put("spga_nurscare_days", FieldFillSource.MANUAL.getCode());
+        }
+        if (command.getLv1NurscareDays() != null) {
+            this.lv1NurscareDays = command.getLv1NurscareDays();
+            sources.put("lv1_nurscare_days", FieldFillSource.MANUAL.getCode());
+        }
+        if (command.getScdNurscareDays() != null) {
+            this.scdNurscareDays = command.getScdNurscareDays();
+            sources.put("scd_nurscare_days", FieldFillSource.MANUAL.getCode());
+        }
+        if (command.getLv3NurscareDays() != null) {
+            this.lv3NurscareDays = command.getLv3NurscareDays();
+            sources.put("lv3_nurscare_days", FieldFillSource.MANUAL.getCode());
+        }
+        markManualField(command.getOtpWmDise(), "otp_wm_dise", sources, v -> this.otpWmDise = v);
+        markManualField(command.getWmDiseCode(), "wm_dise_code", sources, v -> this.wmDiseCode = v);
+        markManualField(command.getOtpTcmDise(), "otp_tcm_dise", sources, v -> this.otpTcmDise = v);
+        markManualField(command.getTcmDiseCode(), "tcm_dise_code", sources, v -> this.tcmDiseCode = v);
+        markManualField(
+                command.getBrnDamgBfadmComaDura(),
+                "brn_damg_bfadm_coma_dura",
+                sources,
+                v -> this.brnDamgBfadmComaDura = v);
+        markManualField(
+                command.getBrnDamgAfadmComaDura(),
+                "brn_damg_afadm_coma_dura",
+                sources,
+                v -> this.brnDamgAfadmComaDura = v);
+        markManualField(command.getVentUsedDura(), "vent_used_dura", sources, v -> this.ventUsedDura = v);
         markManualField(command.getIptNo(), "ipt_no", sources, v -> this.iptNo = v);
-        markManualField(command.getAdmWayCode(), "adm_way_code", sources, v -> this.admWayCode = v);
+        // 入院途径：空白不落 manual 空锁，避免打开页无法从就诊 in_way 回填
+        if (command.getAdmWayCode() != null) {
+            if (command.getAdmWayCode().isBlank()) {
+                this.admWayCode = null;
+                sources.remove("adm_way_code");
+            } else {
+                markManualField(command.getAdmWayCode(), "adm_way_code", sources, v -> this.admWayCode = v);
+            }
+        }
         markManualField(command.getAdmCatyCode(), "adm_caty_code", sources, v -> this.admCatyCode = v);
+        markManualField(command.getAdmCatyName(), "adm_caty_name", sources, v -> this.admCatyName = v);
         if (command.getAdmTime() != null) {
             this.admTime = command.getAdmTime();
             sources.put("adm_time", FieldFillSource.MANUAL.getCode());
         }
         markManualField(command.getDscgCatyCode(), "dscg_caty_code", sources, v -> this.dscgCatyCode = v);
+        markManualField(command.getDscgCatyName(), "dscg_caty_name", sources, v -> this.dscgCatyName = v);
         if (command.getDscgTime() != null) {
             this.dscgTime = command.getDscgTime();
             sources.put("dscg_time", FieldFillSource.MANUAL.getCode());
@@ -266,10 +374,17 @@ public class CaseRecordHomepage extends BaseAuditedEntity {
             this.iptDays = command.getIptDays();
             sources.put("ipt_days", FieldFillSource.MANUAL.getCode());
         }
+        markManualField(
+                command.getTransferDeptSummary(),
+                "transfer_dept_summary",
+                sources,
+                v -> this.transferDeptSummary = v);
         markManualField(command.getDscgWayCode(), "dscg_way_code", sources, v -> this.dscgWayCode = v);
+        markManualField(command.getDeptDirectorName(), "dept_director_name", sources, v -> this.deptDirectorName = v);
         markManualField(command.getChfdrName(), "chfdr_name", sources, v -> this.chfdrName = v);
         markManualField(command.getAtddrName(), "atddr_name", sources, v -> this.atddrName = v);
         markManualField(command.getIptDrName(), "ipt_dr_name", sources, v -> this.iptDrName = v);
+        markManualField(command.getRespNursName(), "resp_nurs_name", sources, v -> this.respNursName = v);
     }
 
     /**

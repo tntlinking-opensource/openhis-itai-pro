@@ -43,16 +43,16 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * 博思电子票据单据页应用服务（HTTP：{@code /api/app/einvoiceBossDocument/*}）。
+ * 博思电子票据单据页应用服务（HTTP：{@code /api/app/einvoiceBossDocument/*}）�?
  *
- * <p>职责：单据详情、金额预校验、人工调额（P1）、调额审计日志。不直接调用 GatewayClient；
- * 调额后由 Worker 重新开具时尊重 {@code amountStatus=ADJUSTED}。</p>
+ * <p>职责：单据详情、金额预校验、人工调额（P1）、调额审计日志。不直接调用 GatewayClient�?
+ * 调额后由 Worker 重新开具时尊重 {@code amountStatus=ADJUSTED}�?/p>
  */
 @Service
 @RequiredArgsConstructor
 public class EinvoiceBossDocumentAppService {
 
-    /** 调额补差行的默认 chargeCode。 */
+    /** 调额补差行的默认 chargeCode�?*/
     private static final String BALANCE_CHARGE_CODE = "BALANCE_ADJ";
 
     private final EinvBossDocumentRepository documentRepository;
@@ -61,12 +61,12 @@ public class EinvoiceBossDocumentAppService {
     private final EinvBossIssueTaskRepository taskRepository;
     private final EinvoiceIssueSnapshotContextLoader issueSnapshotContextLoader;
     private final BossInvoiceAmountValidator amountValidator;
-    /** 写路径操作人门控（B.6.5），禁止 AppService 直读 ICurrentUser。 */
+    /** 写路径操作人门控（B.6.5），禁止 AppService 直读 ICurrentUser�?*/
     private final CurrentOperatorResolver currentOperatorResolver;
     private final BossWriteOffStatusSupport writeOffStatusSupport;
 
     /**
-     * 按支付主键查询单据摘要（账单 Banner 跳转）。
+     * 按支付主键查询单据摘要（账单 Banner 跳转）�?
      *
      * @param paymentId 支付主键
      * @return 摘要（无单据时字段为空）
@@ -76,7 +76,7 @@ public class EinvoiceBossDocumentAppService {
         if (paymentId == null) {
             return dto;
         }
-        documentRepository.findByPaymentIdAndIsDeletedFalse(paymentId).ifPresent(document -> {
+        documentRepository.findFirstByPaymentIdAndIsDeletedFalseOrderByIdAsc(paymentId).ifPresent(document -> {
             dto.setDocumentId(document.getId());
             dto.setInvoiceId(document.getInvoiceId());
         });
@@ -84,7 +84,7 @@ public class EinvoiceBossDocumentAppService {
     }
 
     /**
-     * 按单据主键查询详情。
+     * 按单据主键查询详情�?
      *
      * @param documentId 单据主键
      * @return 详情
@@ -95,19 +95,19 @@ public class EinvoiceBossDocumentAppService {
     }
 
     /**
-     * 按票据主键查询详情。
+     * 按票据主键查询详情�?
      *
      * @param invoiceId 票据主键
      * @return 详情
      */
     public BossDocumentDetail getByInvoiceId(Long invoiceId) {
-        EinvBossDocument document = documentRepository.findByInvoiceIdAndIsDeletedFalse(invoiceId)
+        EinvBossDocument document = documentRepository.findFirstByInvoiceIdAndIsDeletedFalseOrderByIdAsc(invoiceId)
                 .orElseThrow(() -> new BusinessException(EinvBossErrorCodes.EINV_DOCUMENT_NOT_FOUND, "无电子票据单据"));
         return buildDetail(document);
     }
 
     /**
-     * 预校验金额。
+     * 预校验金额�?
      *
      * @param documentId 单据主键
      * @return 校验结果
@@ -120,10 +120,10 @@ public class EinvoiceBossDocumentAppService {
     }
 
     /**
-     * 保存金额调整。
+     * 保存金额调整�?
      *
      * @param request 调整请求
-     * @return 更新后详情
+     * @return 更新后详�?
      */
     public BossDocumentDetail saveAdjustment(SaveDocumentAdjustmentRequest request) {
         // Gate: 单据存在 + 草稿态可调额
@@ -196,18 +196,18 @@ public class EinvoiceBossDocumentAppService {
         log.setCreatedAt(LocalDateTime.now());
         adjustLogRepository.save(log);
 
-        // Cmd: 支付额不一致时返回警告（不阻断保存）
+        // Cmd: 支付额不一致时返回警告（不阻断保存�?
         BossDocumentDetail detail = buildDetail(document);
         if (document.getPaymentAmt() != null
                 && scale2(targetTotal).compareTo(scale2(document.getPaymentAmt())) != 0) {
             detail.setWarningCode(EinvBossErrorCodes.EINV_PAYMENT_AMOUNT_MISMATCH);
-            detail.setWarningMessage("开票总额与支付金额不一致，请核对后再重新开具");
+            detail.setWarningMessage("开票总额与支付金额不一致，请核对后再重新开票");
         }
         return detail;
     }
 
     /**
-     * 组装单据详情 DTO：票面、明细、任务、调额日志、冲红展示。
+     * 组装单据详情 DTO：票面、明细、任务、调额日志、冲红展示�?
      *
      * @param document boss 单据
      * @return 前端详情契约
@@ -268,11 +268,11 @@ public class EinvoiceBossDocumentAppService {
     }
 
     /**
-     * 计算明细合计与开票总额的差额（调额页预校验）。
+     * 计算明细合计与开票总额的差额（调额页预校验）�?
      *
      * @param totalAmt 开票总额
-     * @param lines 明细行
-     * @return 含 lineSum、diff、valid 的校验结果
+     * @param lines 明细�?
+     * @return �?lineSum、diff、valid 的校验结�?
      */
     private BossAmountValidateResult computeValidateResult(BigDecimal totalAmt, List<EinvBossLine> lines) {
         BigDecimal sum = BigDecimal.ZERO;
@@ -292,7 +292,7 @@ public class EinvoiceBossDocumentAppService {
     }
 
     /**
-     * 加载未删除单据，不存在时抛 {@link EinvBossErrorCodes#EINV_DOCUMENT_NOT_FOUND}。
+     * 加载未删除单据，不存在时�?{@link EinvBossErrorCodes#EINV_DOCUMENT_NOT_FOUND}�?
      *
      * @param documentId 单据主键
      * @return 单据实体
@@ -303,7 +303,7 @@ public class EinvoiceBossDocumentAppService {
                 .orElseThrow(() -> new BusinessException(EinvBossErrorCodes.EINV_DOCUMENT_NOT_FOUND, "无电子票据单据"));
     }
 
-    /** 仅草稿（未成功开出）票据允许调额。 */
+    /** 仅草稿（未成功开出）票据允许调额�?*/
     private void assertAdjustable(EinvBossDocument document) {
         if (IssueKind.COM.getCode().equals(document.getIssueKind())) {
             if (StringUtils.hasText(document.getBossBillNo())) {
@@ -321,20 +321,25 @@ public class EinvoiceBossDocumentAppService {
         return currentOperatorResolver.requireOperatorId("AUTH-001", "当前登录用户不能为空");
     }
 
-    /** 明细实体 → 列表行 DTO。 */
+    /** 明细实体 �?列表�?DTO�?*/
     private BossLineResult toLineDto(EinvBossLine line) {
         BossLineResult dto = new BossLineResult();
         dto.setLineId(line.getId());
         dto.setLineNo(line.getLineNo());
         dto.setChargeCode(line.getChargeCode());
         dto.setChargeName(line.getChargeName());
+        // 调额页展示具体项目名与甲乙丙；出站仍�?chargeName 作统计大�?
+        dto.setItemName(line.getItemName());
+        dto.setListRemark(line.getListRemark());
+        dto.setListMedicalCareType(line.getListMedicalCareType());
+        dto.setUnit(line.getUnit());
         dto.setStdAmount(line.getStdAmount());
         dto.setAmount(line.getAmount());
         dto.setAdjusted(Boolean.TRUE.equals(line.getAdjusted()));
         return dto;
     }
 
-    /** 任务实体 → 摘要 DTO（状态、重试、最近错误）。 */
+    /** 任务实体 �?摘要 DTO（状态、重试、最近错误）�?*/
     private BossTaskSummary toTaskDto(EinvBossIssueTask task) {
         BossTaskSummary dto = new BossTaskSummary();
         dto.setTaskId(task.getId());
@@ -346,7 +351,7 @@ public class EinvoiceBossDocumentAppService {
         return dto;
     }
 
-    /** 调额审计实体 → 前端 DTO。 */
+    /** 调额审计实体 �?前端 DTO�?*/
     private BossAdjustLog toAdjustLogDto(EinvBossAmountAdjustLog log) {
         BossAdjustLog dto = new BossAdjustLog();
         dto.setId(log.getId());
@@ -358,11 +363,11 @@ public class EinvoiceBossDocumentAppService {
     }
 
     /**
-     * 构建调额前后明细差异 JSON（写入 {@code einv_boss_amount_adjust_log.diff_json}）。
+     * 构建调额前后明细差异 JSON（写�?{@code einv_boss_amount_adjust_log.diff_json}）�?
      *
-     * @param before 调额前明细
-     * @param after 调额后明细
-     * @return 可序列化的差异结构
+     * @param before 调额前明�?
+     * @param after 调额后明�?
+     * @return 可序列化的差异结�?
      */
     private Map<String, Object> buildDiffJson(List<EinvBossLine> before, List<EinvBossLine> after) {
         Map<Long, EinvBossLine> beforeById = before.stream()
@@ -385,7 +390,7 @@ public class EinvoiceBossDocumentAppService {
         return payload;
     }
 
-    /** issueKind 码 → 中文业务线标签。 */
+    /** issueKind �?�?中文业务线标签�?*/
     private String resolveIssueKindLabel(String issueKind) {
         if (IssueKind.REG.getCode().equals(issueKind)) {
             return "挂号";
@@ -399,7 +404,7 @@ public class EinvoiceBossDocumentAppService {
         return "门诊";
     }
 
-    /** 金额统一保留两位小数；null 视为 0.00。 */
+    /** 金额统一保留两位小数；null 视为 0.00�?*/
     private BigDecimal scale2(BigDecimal value) {
         if (value == null) {
             return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);

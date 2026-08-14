@@ -19,7 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Map;
 
 /**
- * 工伤 invoke 审计写入 {@code yb_invoke_log}（scheme 隔离：contract_bus_no=H00000000000-GS）。
+ * 工伤 invoke 审计写入 {@code yb_invoke_log}（scheme 隔离：contract_bus_no=H22010402403-GS）。
  */
 @Component
 @RequiredArgsConstructor
@@ -110,6 +110,25 @@ public class WorkInjuryInvokeLogSupport {
             }
             invokeLogRepository.save(row);
         });
+    }
+
+    /**
+     * 就诊是否已有平台 2207 成功审计（单边判定：平台已结、本地可能未落）。
+     *
+     * @param encounterId 就诊 ID
+     * @return true 表示存在 infcode=0 的 2207 日志
+     */
+    public boolean hasSuccessful2207(Long encounterId) {
+        if (encounterId == null) {
+            return false;
+        }
+        Long tenantId = TenantUtils.getCurrentTenantId();
+        return !invokeLogRepository.findAll((root, query, cb) -> cb.and(
+                cb.equal(root.get("encounterId"), encounterId),
+                cb.equal(root.get("infno"), WiInfnoConstants.OUTPATIENT_SETTLE),
+                cb.equal(root.get("tenantId"), tenantId),
+                cb.equal(root.get("isDeleted"), Boolean.FALSE),
+                cb.equal(root.get("infcode"), "0"))).isEmpty();
     }
 
     /** 截断 err_msg 至 {@link #ERR_MSG_MAX} 字符（yb_invoke_log 列宽）。 */

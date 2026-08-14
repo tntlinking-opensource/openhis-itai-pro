@@ -11,6 +11,7 @@ import lombok.Data;
 import lombok.experimental.Accessors;
 
 import java.math.BigDecimal;
+import java.time.LocalTime;
 
 /**
  * IF-IP-ARG-04：更新自动计费配置请求（非空字段覆盖；不含启停）。
@@ -39,9 +40,9 @@ public class UpdateAutoGenRuleRequest {
     @Schema(description = "规则名称")
     private String ruleName;
 
-    /** 床位服务活动定义主键。 */
+    /** 诊疗活动定义主键（自动计费选品；排除护理/转科/出院/嘱托）。 */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "床位服务活动定义主键")
+    @Schema(description = "诊疗活动定义主键")
     private Long activityId;
 
     /** 收费项定价主键。 */
@@ -65,4 +66,17 @@ public class UpdateAutoGenRuleRequest {
     /** 备注。 */
     @Schema(description = "备注")
     private String remark;
+
+    /**
+     * 滚费业务时刻（非空则覆盖）。
+     */
+    @Schema(description = "滚费业务时刻 HH:mm:ss")
+    private LocalTime businessTime;
+
+    /**
+     * 滚费计费人（非空则覆盖）。
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "滚费计费人")
+    private Long billingPractitionerId;
 }

@@ -16,8 +16,9 @@ import lombok.Setter;
 /**
  * 门诊挂号明细报表分页/汇总筛选（AS-RPT-007；仅 Encounter AMB）。
  *
- * <p>跨聚合收窄（患者关键字、挂号医生）由应用层预解析后写入 {@link #resolvedEncounterIds}：
- * 医生筛复用既有 {@code filterEncounterIdsByActiveRegistrationDoctor}（B.6.4）。</p>
+ * <p>跨聚合收窄（患者关键字、接诊医生）由应用层预解析后写入 {@link #resolvedEncounterIds}：
+ * 医生筛复用 {@code filterEncounterIdsByActiveAdmitterDoctor}
+ * （活动接诊医生 ADMITTER；B.6.4）。</p>
  */
 @Getter
 @Setter
@@ -38,7 +39,7 @@ public class OutpatientRegistrationReportPageQuery extends AbstractPageQuery {
     private List<Long> resolvedOrganizationIds;
 
     /**
-     * 就诊主键收窄（患者关键字 / 挂号医生等）；非 null 时 IN；空列表拒查。
+     * 就诊主键收窄（患者关键字 / 接诊医生筛等）；非 null 时 IN；空列表拒查。
      */
     private List<Long> resolvedEncounterIds;
 

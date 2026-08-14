@@ -27,6 +27,7 @@ import com.openhis.health.domain.administration.encounter.queries.model.Inpatien
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientInOutDetailReportLineQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.model.OpenInpatientLineQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientDuplicateCheckQueryModel;
+import com.openhis.health.domain.administration.encounter.queries.model.OutpatientRegistrationDetailStatsQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientRegistrationReportLineQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientRegistrationReportSummaryRow;
 import com.openhis.health.domain.administration.encounter.queries.model.PractitionerWorkloadEncounterContextQueryModel;
@@ -39,6 +40,7 @@ import com.openhis.health.domain.administration.encounter.repository.EncounterRe
 import com.openhis.health.domain.share.constants.EncounterDiagnosisBindingConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.utils.EncounterDiagnosisIdsSupport;
+import com.openhis.health.domain.share.utils.IdInQueryChunkSupport;
 import com.openhis.health.domain.share.utils.KeywordExactFirstOrderSupport;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import com.openhis.health.domain.share.enums.EncounterActivityStatus;
@@ -347,6 +349,79 @@ public class EncounterQueryService {
             }
         }
         return ids;
+    }
+
+    /**
+     * 按活动接诊医生（ADMITTER）医务人员主键集合反查就诊主键。
+     *
+     * <p>聚合边界：仅本聚合参与者仓储；用于门诊病历等按接诊医生收窄列表。</p>
+     *
+     * @param practitionerIds 接诊医生医务人员主键；空时返回空列表
+     * @return 就诊主键列表（去重保序）
+     */
+    public List<Long> listEncounterIdsByActiveAdmitterPractitionerIds(Collection<Long> practitionerIds) {
+        if (practitionerIds == null || practitionerIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        LinkedHashSet<Long> distinctPractitionerIds = new LinkedHashSet<>();
+        for (Long practitionerId : practitionerIds) {
+            if (practitionerId != null) {
+                distinctPractitionerIds.add(practitionerId);
+            }
+        }
+        if (distinctPractitionerIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<EncounterParticipant> participants =
+            participantRepository.findAllByPractitionerIdInAndRoleCodeAndStatusEnum(
+                distinctPractitionerIds,
+                EncounterConstants.ROLE_ADMITTER,
+                EncounterActivityStatus.ACTIVE.getCode());
+        LinkedHashSet<Long> encounterIds = new LinkedHashSet<>();
+        for (EncounterParticipant participant : participants) {
+            if (participant == null || participant.getEncounterId() == null) {
+                continue;
+            }
+            encounterIds.add(participant.getEncounterId());
+        }
+        return new ArrayList<>(encounterIds);
+    }
+
+    /**
+     * 批量映射活动接诊医生（ADMITTER；同就诊多医生保留首次）。
+     *
+     * @param encounterIds 就诊主键集合
+     * @return encounterId → practitionerId
+     */
+    public Map<Long, Long> mapActiveAdmitterPractitionerIdByEncounterIds(Collection<Long> encounterIds) {
+        Map<Long, Long> result = new HashMap<>();
+        if (encounterIds == null || encounterIds.isEmpty()) {
+            return result;
+        }
+        LinkedHashSet<Long> distinct = new LinkedHashSet<>();
+        for (Long encounterId : encounterIds) {
+            if (encounterId != null) {
+                distinct.add(encounterId);
+            }
+        }
+        if (distinct.isEmpty()) {
+            return result;
+        }
+        List<EncounterParticipant> participants = participantRepository.findAllByEncounterIdInAndStatusEnum(
+            distinct, EncounterActivityStatus.ACTIVE.getCode());
+        String role = EncounterConstants.ROLE_ADMITTER;
+        for (EncounterParticipant participant : participants) {
+            if (participant == null || participant.getEncounterId() == null) {
+                continue;
+            }
+            if (!role.equals(participant.getRoleCode())) {
+                continue;
+            }
+            if (!result.containsKey(participant.getEncounterId())) {
+                result.put(participant.getEncounterId(), participant.getPractitionerId());
+            }
+        }
+        return result;
     }
 
     /**
@@ -1787,6 +1862,8 @@ public class EncounterQueryService {
     /**
      * 按主键批量加载就诊实体（保持调用方 id 集合语义，过滤 null）。
      *
+     * <p>主键过多时按 {@link com.openhis.health.domain.share.constants.GeneralSharedConstants#ID_IN_QUERY_CHUNK_SIZE} 分批 IN。</p>
+     *
      * @param encounterIds 就诊主键集合
      * @return 命中实体列表
      */
@@ -1795,7 +1872,9 @@ public class EncounterQueryService {
         if (distinct.isEmpty()) {
             return Collections.emptyList();
         }
-        return encounterRepository.findAllByIdIn(distinct);
+        return IdInQueryChunkSupport.loadByIdInChunks(
+            distinct,
+            chunkIds -> encounterRepository.findAllByIdIn(new LinkedHashSet<>(chunkIds)));
     }
 
     /**
@@ -1814,6 +1893,8 @@ public class EncounterQueryService {
     /**
      * 按主键批量加载 IMP 类别就诊实体。
      *
+     * <p>主键过多时按 {@link com.openhis.health.domain.share.constants.GeneralSharedConstants#ID_IN_QUERY_CHUNK_SIZE} 分批 IN。</p>
+     *
      * @param encounterIds 就诊主键集合
      * @return 住院实体列表
      */
@@ -1822,7 +1903,10 @@ public class EncounterQueryService {
         if (distinct.isEmpty()) {
             return Collections.emptyList();
         }
-        return encounterRepository.findAllByIdInAndClassEnum(distinct, EncounterClass.IMP.getCode());
+        return IdInQueryChunkSupport.loadByIdInChunks(
+            distinct,
+            chunkIds -> encounterRepository.findAllByIdInAndClassEnum(
+                new LinkedHashSet<>(chunkIds), EncounterClass.IMP.getCode()));
     }
 
     /**
@@ -2023,7 +2107,8 @@ public class EncounterQueryService {
      *
      * <p>状态含 {@link EncounterStatus#IN_PROGRESS}、{@link EncounterStatus#ON_HOLD}、
      * {@link EncounterStatus#COMPLETED}（已结算待清床）；排除 {@link EncounterStatus#DISCHARGED}。
-     * 须存在激活床位轨迹（{@code form_enum=BED}）。账户 id 由 querysupport 经 Account QS 补齐。</p>
+     * 须存在激活床位轨迹（{@code form_enum=BED}）。读模型含 {@code endTime} 供应用层记进不计出 Gate。
+     * 账户 id 由 querysupport 经 Account QS 补齐。</p>
      *
      * @return 滚费候选就诊列表（不含 accountId）；无命中时空列表
      */
@@ -2102,6 +2187,8 @@ public class EncounterQueryService {
             model.setPatientId(encounter.getPatientId());
             model.setOrganizationId(encounter.getOrganizationId());
             model.setStartTime(encounter.getStartTime());
+            // 出院日门控（记进不计出）：应用层按 end_time 自然日与 billDate 比较
+            model.setEndTime(encounter.getEndTime());
             model.setBedAssignedAt(bedAssignedAtByEncounterId.get(encounterId));
             model.setStatusEnum(encounter.getStatusEnum());
             model.setBedLocationId(bedLocationByEncounterId.get(encounterId));
@@ -2286,16 +2373,76 @@ public class EncounterQueryService {
         if (practitionerId == null || candidateEncounterIds == null || candidateEncounterIds.isEmpty()) {
             return Collections.emptySet();
         }
+        Map<Long, Long> doctorByEncounter =
+            this.mapActiveRegistrationDoctorByEncounterIds(candidateEncounterIds);
+        Set<Long> matched = new HashSet<>();
+        for (Map.Entry<Long, Long> entry : doctorByEncounter.entrySet()) {
+            if (practitionerId.equals(entry.getValue())) {
+                matched.add(entry.getKey());
+            }
+        }
+        return matched;
+    }
+
+    /**
+     * 批量解析活动 {@code REGISTRATION_DOCTOR}（工作量医生卡片一次分桶；BR-RPT-WKL-005）。
+     *
+     * @param candidateEncounterIds 候选就诊
+     * @return encounterId → 挂号医生主键；无命中不含键
+     */
+    public Map<Long, Long> mapActiveRegistrationDoctorByEncounterIds(
+        Collection<Long> candidateEncounterIds) {
+        Map<Long, Long> doctorByEncounter = new HashMap<>();
+        if (candidateEncounterIds == null || candidateEncounterIds.isEmpty()) {
+            return doctorByEncounter;
+        }
         List<EncounterParticipant> participants = participantRepository.findAllByEncounterIdInAndStatusEnum(
             candidateEncounterIds, EncounterActivityStatus.ACTIVE.getCode());
-        Set<Long> matched = new HashSet<>();
         String registrationDoctorRole = EncounterParticipantRole.REGISTRATION_DOCTOR.getCode();
         for (EncounterParticipant participant : participants) {
             if (participant == null || participant.getEncounterId() == null) {
                 continue;
             }
-            // 仅 REGISTRATION_DOCTOR 角色参与挂号医生收窄
+            // 仅 REGISTRATION_DOCTOR；同就诊多条时保留首次（与挂号明细医生维同口径）
             if (!registrationDoctorRole.equals(participant.getRoleCode())) {
+                continue;
+            }
+            if (participant.getPractitionerId() == null) {
+                continue;
+            }
+            if (!doctorByEncounter.containsKey(participant.getEncounterId())) {
+                doctorByEncounter.put(participant.getEncounterId(), participant.getPractitionerId());
+            }
+        }
+        return doctorByEncounter;
+    }
+
+    /**
+     * 在候选就诊中筛选活动接诊医生（{@code ADMITTER}）为指定医师的就诊（AS-RPT-007）。
+     *
+     * <p>明细医生列与筛选仅认接诊医生；挂到科室未接诊时无 ADMITTER，选该大夫不命中。
+     * 工作量挂号人次与本方法同口径（ADMITTER），与门诊挂号明细筛「接诊医生」对齐。</p>
+     *
+     * @param candidateEncounterIds 候选就诊
+     * @param practitionerId        医师主键
+     * @return 命中就诊 id 集合；{@code practitionerId} 为空时返回空集合
+     */
+    public Set<Long> filterEncounterIdsByActiveAdmitterDoctor(
+        Collection<Long> candidateEncounterIds,
+        Long practitionerId) {
+        if (practitionerId == null || candidateEncounterIds == null || candidateEncounterIds.isEmpty()) {
+            return Collections.emptySet();
+        }
+        List<EncounterParticipant> participants = participantRepository.findAllByEncounterIdInAndStatusEnum(
+            candidateEncounterIds, EncounterActivityStatus.ACTIVE.getCode());
+        Set<Long> matched = new HashSet<>();
+        String admitterRole = EncounterParticipantRole.ADMITTER.getCode();
+        for (EncounterParticipant participant : participants) {
+            if (participant == null || participant.getEncounterId() == null) {
+                continue;
+            }
+            // 仅活动 ADMITTER 参与接诊医生收窄
+            if (!admitterRole.equals(participant.getRoleCode())) {
                 continue;
             }
             if (practitionerId.equals(participant.getPractitionerId())) {
@@ -2348,6 +2495,197 @@ public class EncounterQueryService {
     }
 
     /**
+     * 门诊挂号明细报表明细页脚挂/退统计（AS-RPT-007；对齐门诊挂号当日统计口径）。
+     *
+     * <p>与明细分页同 AMB/业务日/科室/resolvedEncounterIds 过滤；
+     * 挂号排除 {@code PLANNED}/{@code ENTERED_IN_ERROR}；已退仅 {@code CANCELLED}；
+     * 有效 = 挂号 − 已退（下限 0）。仅本聚合 Encounter 仓储。</p>
+     *
+     * @param query 筛选（分页字段忽略）
+     * @return 挂号/已退/有效笔数
+     */
+    public OutpatientRegistrationDetailStatsQueryModel countOutpatientRegistrationDetailReportStats(
+        OutpatientRegistrationReportPageQuery query) {
+        OutpatientRegistrationDetailStatsQueryModel result = new OutpatientRegistrationDetailStatsQueryModel();
+        result.setRegistrationCount(0L);
+        result.setCancelledCount(0L);
+        result.setActiveCount(0L);
+        if (query == null) {
+            query = new OutpatientRegistrationReportPageQuery();
+        }
+        // Gate：空预解析集合表示关键字/医生无命中，拒查 → 统计为 0
+        if (query.getResolvedEncounterIds() != null && query.getResolvedEncounterIds().isEmpty()) {
+            return result;
+        }
+        if (query.getResolvedOrganizationIds() != null && query.getResolvedOrganizationIds().isEmpty()) {
+            return result;
+        }
+        Specification<Encounter> baseSpec = this.buildOutpatientRegistrationReportSpecification(query);
+        String planned = EncounterStatus.PLANNED.getCode();
+        String enteredInError = EncounterStatus.ENTERED_IN_ERROR.getCode();
+        String cancelled = EncounterStatus.CANCELLED.getCode();
+        // 挂号：排除待挂号与未收费取消，避免冲高「有效」（对齐 getTodayRegisterSummary）
+        Specification<Encounter> registrationSpec = baseSpec.and((root, criteriaQuery, cb) -> cb.and(
+            cb.notEqual(root.get(FieldNameConstants.STATUS_ENUM), planned),
+            cb.notEqual(root.get(FieldNameConstants.STATUS_ENUM), enteredInError)));
+        long registrationCount = encounterRepository.count(registrationSpec);
+        // 已退：仅退号完成（CANCELLED）
+        Specification<Encounter> cancelledSpec = baseSpec.and((root, criteriaQuery, cb) ->
+            cb.equal(root.get(FieldNameConstants.STATUS_ENUM), cancelled));
+        long cancelledCount = encounterRepository.count(cancelledSpec);
+        result.setRegistrationCount(registrationCount);
+        result.setCancelledCount(cancelledCount);
+        result.setActiveCount(Math.max(0L, registrationCount - cancelledCount));
+        return result;
+    }
+
+    /**
+     * 工作量挂号净人次：按挂号科室 × 号源汇总（AS-RPT-001 **BR-RPT-WKL-009**）。
+     *
+     * <p>时间轴与净人次对齐 **AS-RPT-007**：{@code coalesce(startTime, createdAt)} 落在业务日闭区间；
+     * 有效挂号 +1，{@code CANCELLED}/{@code PLANNED}/{@code ENTERED_IN_ERROR} 不计入。
+     * 仅本聚合 {@link EncounterRepository}；禁止经 ChargeItem/Payment 计次。</p>
+     *
+     * @param encounterClassCode   就诊类别存储码（AMB / IMP）
+     * @param organizationIds      挂号科室集合；空则返回空列表
+     * @param businessTimeFrom     业务窗起（含）
+     * @param businessTimeTo       业务窗止（含）
+     * @param resolvedEncounterIds 医生筛预解析就诊；{@code null} 不收窄；空集合拒查返回空
+     * @return 科室 × 号源净汇总行
+     */
+    public List<OutpatientRegistrationReportSummaryRow> summarizePractitionerWorkloadRegistrationByOrgAndServiceType(
+        String encounterClassCode,
+        Collection<Long> organizationIds,
+        LocalDateTime businessTimeFrom,
+        LocalDateTime businessTimeTo,
+        Collection<Long> resolvedEncounterIds) {
+        // Gate：类别与科室为空无法划定 scope
+        if (StringUtils.isEmpty(encounterClassCode)
+            || organizationIds == null
+            || organizationIds.isEmpty()
+            || businessTimeFrom == null
+            || businessTimeTo == null) {
+            return Collections.emptyList();
+        }
+        // Gate：空预解析集合表示医生筛无命中，拒查防全表扫
+        if (resolvedEncounterIds != null && resolvedEncounterIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        // Pre：与挂号明细同 coalesce 时间轴 + 科室 IN + 可选就诊收窄
+        Specification<Encounter> specification = this.buildPractitionerWorkloadRegistrationSpecification(
+            encounterClassCode, organizationIds, businessTimeFrom, businessTimeTo, resolvedEncounterIds);
+        List<Encounter> rows = encounterRepository.findAll(specification);
+        // Asm：按挂号科室 × 号源分桶累加净人次
+        Map<String, OutpatientRegistrationReportSummaryRow> bucketByKey = new LinkedHashMap<>();
+        for (Encounter row : rows) {
+            if (row == null) {
+                continue;
+            }
+            int delta = this.resolveOutpatientRegistrationNetDelta(row.getStatusEnum());
+            // 待挂号/退号/错误态不参与净汇总
+            if (delta == 0) {
+                continue;
+            }
+            Long organizationId = row.getOrganizationId();
+            // 无挂号科室无法落入方案 C 桶
+            if (organizationId == null) {
+                continue;
+            }
+            Long serviceTypeId = row.getServiceTypeId();
+            String serviceTypeKey = "null";
+            if (serviceTypeId != null) {
+                serviceTypeKey = String.valueOf(serviceTypeId);
+            }
+            String bucketKey = organizationId + ":" + serviceTypeKey;
+            OutpatientRegistrationReportSummaryRow summary = bucketByKey.get(bucketKey);
+            if (summary == null) {
+                summary = new OutpatientRegistrationReportSummaryRow();
+                summary.setDimensionKey(bucketKey);
+                summary.setSummaryDimension(
+                    OutpatientRegistrationReportConstants.SUMMARY_DIMENSION_ORGANIZATION);
+                summary.setOrganizationId(organizationId);
+                summary.setServiceTypeId(serviceTypeId);
+                summary.setNetRegistrationCount(0L);
+                bucketByKey.put(bucketKey, summary);
+            }
+            summary.setNetRegistrationCount(summary.getNetRegistrationCount() + delta);
+            if (row.getId() != null) {
+                summary.getContributingEncounterIds().add(row.getId());
+            }
+        }
+        return new ArrayList<>(bucketByKey.values());
+    }
+
+    /**
+     * 工作量挂号医生筛候选：按类别 / 挂号科室 / 业务日窗列出就诊主键（对齐 AS-RPT-007 时间轴）。
+     *
+     * <p>仅本聚合 Encounter 仓储；供应用层再叠 {@link #filterEncounterIdsByActiveRegistrationDoctor}。</p>
+     *
+     * @param encounterClassCode 就诊类别存储码（AMB / IMP）
+     * @param organizationIds    挂号科室集合
+     * @param businessTimeFrom   业务窗起（含）
+     * @param businessTimeTo     业务窗止（含）
+     * @return 候选就诊主键；参数无效时返回空列表
+     */
+    public List<Long> listEncounterIdsForRegistrationBusinessWindow(
+        String encounterClassCode,
+        Collection<Long> organizationIds,
+        LocalDateTime businessTimeFrom,
+        LocalDateTime businessTimeTo) {
+        // Gate：类别与科室为空无法划定候选
+        if (StringUtils.isEmpty(encounterClassCode)
+            || organizationIds == null
+            || organizationIds.isEmpty()
+            || businessTimeFrom == null
+            || businessTimeTo == null) {
+            return Collections.emptyList();
+        }
+        Specification<Encounter> specification = this.buildPractitionerWorkloadRegistrationSpecification(
+            encounterClassCode, organizationIds, businessTimeFrom, businessTimeTo, null);
+        List<Long> encounterIds = new ArrayList<>();
+        for (Encounter encounter : encounterRepository.findAll(specification)) {
+            if (encounter != null && encounter.getId() != null) {
+                encounterIds.add(encounter.getId());
+            }
+        }
+        return encounterIds;
+    }
+
+    /**
+     * 构建工作量挂号统计规约：类别 + coalesce 业务日窗 + 科室 IN + 可选就诊收窄。
+     *
+     * @param encounterClassCode   就诊类别存储码
+     * @param organizationIds      挂号科室集合（非空）
+     * @param businessTimeFrom     业务窗起（含）
+     * @param businessTimeTo       业务窗止（含）
+     * @param resolvedEncounterIds 可选就诊主键收窄；null 不加 IN
+     * @return JPA 规约
+     */
+    private Specification<Encounter> buildPractitionerWorkloadRegistrationSpecification(
+        String encounterClassCode,
+        Collection<Long> organizationIds,
+        LocalDateTime businessTimeFrom,
+        LocalDateTime businessTimeTo,
+        Collection<Long> resolvedEncounterIds) {
+        return (root, criteriaQuery, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.CLASS_ENUM), encounterClassCode));
+            // 与 AS-RPT-007 同：挂号发生时刻 = coalesce(startTime, createdAt)
+            jakarta.persistence.criteria.Expression<LocalDateTime> occurredAt = cb.coalesce(
+                root.get(FieldNameConstants.START_TIME),
+                root.get(FieldNameConstants.CREATED_AT));
+            predicates.add(cb.greaterThanOrEqualTo(occurredAt, businessTimeFrom));
+            predicates.add(cb.lessThanOrEqualTo(occurredAt, businessTimeTo));
+            predicates.add(root.get(FieldNameConstants.ORGANIZATION_ID).in(organizationIds));
+            if (resolvedEncounterIds != null) {
+                predicates.add(root.get(FieldNameConstants.ID).in(resolvedEncounterIds));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+    }
+
+    /**
      * 门诊挂号明细报表净汇总（按科室或医生 × 号源；DM-ADM-002 §6.2.35）。
      *
      * <p>有效挂号计入净笔数；CANCELLED / PLANNED / ENTERED_IN_ERROR 不计入
@@ -2375,9 +2713,9 @@ public class EncounterQueryService {
         if (dimension == null) {
             dimension = OutpatientRegistrationReportConstants.SUMMARY_DIMENSION_ORGANIZATION;
         }
-        Map<Long, Long> doctorByEncounter = this.mapActiveRegistrationDoctorByEncounterIds(
+        Map<Long, Long> doctorByEncounter = this.mapActiveAdmitterPractitionerIdByEncounterIds(
             this.collectEncounterIds(rows));
-        // Asm：按科室或医生 × 号源分桶累加净笔数
+        // Asm：按科室或接诊医生 × 号源分桶累加净笔数
         Map<String, OutpatientRegistrationReportSummaryRow> bucketByKey = new LinkedHashMap<>();
         for (Encounter row : rows) {
             if (row == null) {
@@ -2397,7 +2735,7 @@ public class EncounterQueryService {
                 summary.setSummaryDimension(dimension);
                 summary.setServiceTypeId(row.getServiceTypeId());
                 summary.setNetRegistrationCount(0L);
-                // 医生维回填执业者；科室维回填 organization_id
+                // 医生维回填接诊医生；科室维回填 organization_id
                 if (OutpatientRegistrationReportConstants.SUMMARY_DIMENSION_DOCTOR.equals(dimension)) {
                     summary.setPractitionerId(doctorByEncounter.get(row.getId()));
                 } else {
@@ -2406,6 +2744,10 @@ public class EncounterQueryService {
                 bucketByKey.put(bucketKey, summary);
             }
             summary.setNetRegistrationCount(summary.getNetRegistrationCount() + delta);
+            // 记下计入净额的就诊，供应用层按号源 ChargeItem 汇总净挂号费
+            if (row.getId() != null) {
+                summary.getContributingEncounterIds().add(row.getId());
+            }
         }
         return new ArrayList<>(bucketByKey.values());
     }
@@ -2443,34 +2785,6 @@ public class EncounterQueryService {
             }
             return cb.and(predicates.toArray(new Predicate[0]));
         };
-    }
-
-    /**
-     * 批量映射活动挂号医生（明细展示 / 医生维汇总键；同就诊多医生保留首次）。
-     *
-     * @param encounterIds 就诊主键集合
-     * @return encounterId → practitionerId
-     */
-    private Map<Long, Long> mapActiveRegistrationDoctorByEncounterIds(Collection<Long> encounterIds) {
-        Map<Long, Long> result = new HashMap<>();
-        if (encounterIds == null || encounterIds.isEmpty()) {
-            return result;
-        }
-        List<EncounterParticipant> participants = participantRepository.findAllByEncounterIdInAndStatusEnum(
-            encounterIds, EncounterActivityStatus.ACTIVE.getCode());
-        String role = EncounterParticipantRole.REGISTRATION_DOCTOR.getCode();
-        for (EncounterParticipant participant : participants) {
-            if (participant == null || participant.getEncounterId() == null) {
-                continue;
-            }
-            if (!role.equals(participant.getRoleCode())) {
-                continue;
-            }
-            if (!result.containsKey(participant.getEncounterId())) {
-                result.put(participant.getEncounterId(), participant.getPractitionerId());
-            }
-        }
-        return result;
     }
 
     /**

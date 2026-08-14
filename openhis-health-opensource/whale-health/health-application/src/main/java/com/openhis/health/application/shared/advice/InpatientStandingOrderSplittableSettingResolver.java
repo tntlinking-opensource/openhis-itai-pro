@@ -13,8 +13,14 @@ import org.springframework.stereotype.Component;
 /**
  * 读取「住院长嘱是否可拆」全局开关（{@link SettingDefinitionEnum#INPATIENT_STANDING_ORDER_SPLITTABLE}）。
  *
- * <p>种子为 {@code provider_name=G}、默认 {@code 1}（可拆）。值为 {@code 0} 时，护士站待执行列表
- * （IF-IP-EXE-01）对长期药品按包装单位切盒展槽；写执行/取消等其它链路不受本开关影响。</p>
+ * <p>种子为 {@code provider_name=G}、默认 {@code 1}（可拆）。值为 {@code 0} 时：</p>
+ * <ul>
+ *   <li>护士站待执行列表（IF-IP-EXE-01）、患者队列待执行计数（BR-IP-NUR-005）、出院门禁待执行槽位判定
+ *       （BR-IP-ATD-011①′ / ATD-03/05）：长期 + 包装单位≠拆零 + 口服类用法
+ *       → 按包装切盒后<strong>一盒一个时点</strong>（**BR-IP-EXE-035**）；执行写路径落<strong>一整包装</strong>账单/发放（临嘱同构）</li>
+ *   <li>汇总领药（IF-IP-SUM-01）：执行已按整包装落一行，列表仅按截止过滤，不再做「整盒展多点」补齐</li>
+ * </ul>
+ * <p>值为 {@code 1}/缺省：按频次一天（槽）一天执行，与产品可拆设计一致（仍可命中拆零下限 BR-IP-EXE-036）。</p>
  */
 @Component
 @RequiredArgsConstructor

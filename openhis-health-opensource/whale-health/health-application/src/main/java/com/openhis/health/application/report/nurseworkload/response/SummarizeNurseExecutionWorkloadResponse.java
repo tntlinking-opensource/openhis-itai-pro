@@ -30,7 +30,11 @@ public class SummarizeNurseExecutionWorkloadResponse {
     @Schema(description = "合计执行次数")
     private Long totalExecutionCount;
 
-    /** 合计金额。 */
-    @Schema(description = "合计金额")
-    private BigDecimal totalAmount;
+    /** 合计售价。 */
+    @Schema(description = "合计售价")
+    private BigDecimal totalSaleAmount;
+
+    /** 合计进价（诊疗无进价，恒 null）。 */
+    @Schema(description = "合计进价")
+    private BigDecimal totalPurchaseAmount;
 }

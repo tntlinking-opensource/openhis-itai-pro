@@ -4,15 +4,25 @@
  */
 package com.openhis.health.domain.mrms.caserecord.support;
 
+import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
+import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
+import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
+import com.openhis.health.domain.administration.devicedefinition.entity.DeviceDefinition;
+import com.openhis.health.domain.administration.devicedefinition.service.DeviceDefinitionQueryService;
 import com.openhis.health.domain.administration.encounter.entity.Encounter;
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDiagnosisQueryModel;
+import com.openhis.health.domain.administration.encounter.queries.model.EncounterLocationQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterParticipantQueryModel;
+import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
+import com.openhis.health.domain.administration.encounter.service.EncounterContextQueryService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.organization.entity.Organization;
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
 import com.openhis.health.domain.administration.patient.entity.Patient;
 import com.openhis.health.domain.administration.patient.service.PatientQueryService;
+import com.openhis.health.domain.administration.patient.valueobject.Address;
+import com.openhis.health.domain.administration.patient.valueobject.ContactPerson;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.clinical.conditiondefinition.queries.model.ConditionDefinitionBatchItemQueryModel;
@@ -25,27 +35,42 @@ import com.openhis.health.domain.custom.encounterhistory.service.EncounterHistor
 import com.openhis.health.domain.mrms.caserecord.resolver.AdmissionConditionResolver;
 import com.openhis.health.domain.mrms.caserecord.vo.DiagnosisLineSnapshot;
 import com.openhis.health.domain.mrms.caserecord.vo.EncounterSnapshot;
+import com.openhis.health.domain.mrms.caserecord.vo.FeeSummarySnapshot;
+import com.openhis.health.domain.mrms.caserecord.vo.NursingCareDaysSnapshot;
 import com.openhis.health.domain.mrms.caserecord.vo.PatientSnapshot;
 import com.openhis.health.domain.mrms.caserecord.vo.ProcedureLineSnapshot;
 import com.openhis.health.domain.mrms.caserecord.vo.TransferLineSnapshot;
+import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
+import com.openhis.health.domain.medication.medicationdefinition.service.MedicationDefinitionQueryService;
 import com.openhis.health.domain.share.constants.CustomConstants;
+import com.openhis.health.domain.share.constants.MrmsConstants;
 import com.openhis.health.domain.share.constants.ServiceRequestCategoryConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.domain.share.enums.AdministrativeGender;
+import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.enums.EncounterParticipantRole;
 import com.openhis.health.domain.share.enums.IptPatientDiseaseDiagType;
+import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.utils.EnumUtil;
+import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.domain.workflow.activitydefinition.entity.ActivityDefinition;
 import com.openhis.health.domain.workflow.activitydefinition.service.ActivityDefinitionQueryService;
+import com.openhis.health.domain.workflow.servicerequest.queries.model.NursingLevelOrderLineQueryModel;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -69,6 +94,7 @@ public class CaseRecordAutoFillSupport {
 
     private final PatientQueryService patientQueryService;
     private final EncounterQueryService encounterQueryService;
+    private final EncounterContextQueryService encounterContextQueryService;
     private final PractitionerQueryService practitionerQueryService;
     private final LocationQueryService locationQueryService;
     private final OrganizationQueryService organizationQueryService;
@@ -77,10 +103,13 @@ public class CaseRecordAutoFillSupport {
     private final ProcedureQueryService procedureQueryService;
     private final ServiceRequestQueryService serviceRequestQueryService;
     private final ActivityDefinitionQueryService activityDefinitionQueryService;
+    private final MedicationDefinitionQueryService medicationDefinitionQueryService;
+    private final DeviceDefinitionQueryService deviceDefinitionQueryService;
+    private final ChargeItemQueryService chargeItemQueryService;
     private final Optional<AdmissionConditionResolver> admissionConditionResolver;
 
     /**
-     * 加载患者基础信息快照（adm_patient）。
+     * 加载患者基础信息快照（adm_patient + 地址/联系人）。
      *
      * @param patientId 患者主键
      * @return 快照；不存在或 id 为空时返回 null
@@ -97,15 +126,32 @@ public class CaseRecordAutoFillSupport {
         PatientSnapshot snap = new PatientSnapshot();
         snap.setPatientId(patient.getId());
         snap.setName(patient.getName());
-        snap.setGenderCode(patient.getGenderEnum());
+        snap.setGenderCode(this.toHomepageGenderCode(patient.getGenderEnum()));
         snap.setBirthDate(patient.getBirthDate());
         snap.setCertno(patient.getIdCard());
         snap.setPhone(patient.getPhone());
+        snap.setCurrAddr(this.formatPatientAddress(patient.getAddress()));
+        // 国籍/民族列命名易混：country_code→ntly，nationality_code→naty
+        snap.setNationalityCode(trimToNull(patient.getCountryCode()));
+        snap.setNatyCode(trimToNull(patient.getNationalityCode()));
+        snap.setMaritalStatusCode(trimToNull(patient.getMaritalStatusEnum()));
+        snap.setPrfsCode(trimToNull(patient.getPrfsEnum()));
+        snap.setWorkCompany(trimToNull(patient.getWorkCompany()));
+        snap.setNativePlace(trimToNull(patient.getNativePlace()));
+        ContactPerson contact = patient.getLinkName();
+        // 联系人：姓名/电话/关系
+        if (contact != null) {
+            snap.setContactName(trimToNull(contact.getName()));
+            snap.setContactPhone(trimToNull(contact.getTelcom()));
+            if (contact.getRelationCode() != null) {
+                snap.setContactRelationCode(String.valueOf(contact.getRelationCode()));
+            }
+        }
         return snap;
     }
 
     /**
-     * 加载就诊快照：出入院时间、科室、参与者等（adm_encounter + 参与者）。
+     * 加载就诊快照：出入院时间、科室、病区床位、入院途径、参与者。
      *
      * @param encounterId 就诊主键
      * @return 快照；不存在时返回 null
@@ -114,7 +160,7 @@ public class CaseRecordAutoFillSupport {
         if (encounterId == null) {
             return null;
         }
-        // 跨聚合读：adm_encounter + 参与者
+        // 跨聚合读：adm_encounter + 参与者 + 位置轨迹
         Encounter encounter = encounterQueryService.findOptionalEncounterEntityById(encounterId).orElse(null);
         if (encounter == null) {
             return null;
@@ -125,13 +171,225 @@ public class CaseRecordAutoFillSupport {
         snap.setIptNo(encounter.getBusNo());
         snap.setAdmTime(encounter.getStartTime());
         snap.setDscgTime(encounter.getEndTime());
+        // 入院途径：in_way 与 4401 adm_way 同码（V28）；禁止拷贝入院类型 admit_source（如 6=常规）
+        snap.setAdmWayCode(MrmsConstants.mapInWayCodeToAdmWayCode(encounter.getInWayCode()));
         applyDepartments(snap, encounter);
+        applyWardAndBed(snap, encounterId);
         applyParticipants(snap, encounterQueryService.listActiveEncounterParticipants(encounterId));
         return snap;
     }
 
     /**
-     * 写入就诊快照入院/出院科别：入院取就诊机构，出院取末次完成病区所属机构。
+     * 按护理级别医嘱累计特级/一/二/三级护理天数。
+     *
+     * <p>起点：校对日（含）；止点：停嘱日或出院日/今日（不含止点日，记进不计出）；至少 1 天。</p>
+     *
+     * @param encounterId 就诊主键
+     * @param dscgTime    出院时间；空则止于今日
+     * @return 天数快照；无护理医嘱时各字段为 null
+     */
+    public NursingCareDaysSnapshot sumNursingCareDays(Long encounterId, LocalDateTime dscgTime) {
+        NursingCareDaysSnapshot snap = new NursingCareDaysSnapshot();
+        if (encounterId == null) {
+            return snap;
+        }
+        List<NursingLevelOrderLineQueryModel> lines =
+                serviceRequestQueryService.listNursingLevelOrderLinesForCaseRecord(encounterId);
+        if (lines.isEmpty()) {
+            return snap;
+        }
+        Set<Long> activityIds = new HashSet<>();
+        for (NursingLevelOrderLineQueryModel line : lines) {
+            if (line.getActivityId() != null) {
+                activityIds.add(line.getActivityId());
+            }
+        }
+        Map<Long, String> activityNameById = new HashMap<>();
+        if (!activityIds.isEmpty()) {
+            for (ActivityDefinition def : activityDefinitionQueryService.findAllByIds(activityIds)) {
+                if (def != null && def.getId() != null) {
+                    activityNameById.put(def.getId(), def.getName());
+                }
+            }
+        }
+        LocalDate endExclusive = LocalDate.now().plusDays(1);
+        // 已出院：止于出院日（不含出院当日，与滚费记进不计出对齐）
+        if (dscgTime != null) {
+            endExclusive = dscgTime.toLocalDate();
+        }
+        int spga = 0;
+        int lv1 = 0;
+        int scd = 0;
+        int lv3 = 0;
+        for (NursingLevelOrderLineQueryModel line : lines) {
+            LocalDate start = line.getCheckTime().toLocalDate();
+            LocalDate stopExclusive = endExclusive;
+            // 已停嘱：止于停嘱日
+            if (line.getStopTime() != null) {
+                stopExclusive = line.getStopTime().toLocalDate();
+            }
+            int days = this.countInclusiveExclusiveDays(start, stopExclusive);
+            if (days <= 0) {
+                continue;
+            }
+            String level = this.resolveNursingLevelBucket(activityNameById.get(line.getActivityId()));
+            // 按级别桶累加
+            if ("spga".equals(level)) {
+                spga += days;
+            } else if ("lv1".equals(level)) {
+                lv1 += days;
+            } else if ("scd".equals(level)) {
+                scd += days;
+            } else if ("lv3".equals(level)) {
+                lv3 += days;
+            }
+        }
+        if (spga > 0) {
+            snap.setSpgaNurscareDays(spga);
+        }
+        if (lv1 > 0) {
+            snap.setLv1NurscareDays(lv1);
+        }
+        if (scd > 0) {
+            snap.setScdNurscareDays(scd);
+        }
+        if (lv3 > 0) {
+            snap.setLv3NurscareDays(lv3);
+        }
+        return snap;
+    }
+
+    /**
+     * 按就诊收费明细汇总医疗费总额与 4401 费用分项。
+     *
+     * <p>口径：待结算+已结算占用（与住院费用占用合计一致）；分项按目录
+     * {@code mr_settlement_type_code} 映射，未维护归入 {@code oth_fee}。</p>
+     *
+     * @param encounterId 就诊主键
+     * @return 费用快照；无费用时总额为 0、分项空
+     */
+    public FeeSummarySnapshot sumFeeSummary(Long encounterId) {
+        FeeSummarySnapshot snap = new FeeSummarySnapshot();
+        snap.setMedfeeSumamt(BigDecimal.ZERO);
+        snap.setFeeItems(new LinkedHashMap<>());
+        if (encounterId == null) {
+            return snap;
+        }
+        BigDecimal total = chargeItemQueryService.sumInpatientChargedOccupancyTotalPriceByEncounterId(encounterId);
+        snap.setMedfeeSumamt(MonetaryAmountSupport.scaleCalc(total));
+        // 预置 1～28 分项为 0，保证首页费用区完整回填
+        Map<String, BigDecimal> feeItems = new LinkedHashMap<>();
+        for (int i = 1; i < MrmsConstants.MR_SETTLEMENT_TO_4401_FEE_KEY.length; i++) {
+            String feeKey = MrmsConstants.MR_SETTLEMENT_TO_4401_FEE_KEY[i];
+            if (feeKey != null) {
+                feeItems.put(feeKey, MonetaryAmountSupport.scaleCalc(BigDecimal.ZERO));
+            }
+        }
+        snap.setFeeItems(feeItems);
+        ChargeItemQueryCommand cmd = new ChargeItemQueryCommand();
+        cmd.setEncounterId(encounterId);
+        cmd.setStatusEnumIn(List.of(
+                ChargeItemStatus.PENDING_SETTLEMENT.getCode(),
+                ChargeItemStatus.SETTLED.getCode()));
+        cmd.setExcludeSupersededSettledLines(Boolean.TRUE);
+        List<ChargeItem> rows = chargeItemQueryService.listChargeItemsByEncounterId(cmd);
+        if (rows == null || rows.isEmpty()) {
+            return snap;
+        }
+        Map<String, Map<Long, String>> mrCodeByTableAndProductId = this.loadMrSettlementTypeByProduct(rows);
+        for (ChargeItem row : rows) {
+            if (row == null || row.getTotalPrice() == null) {
+                continue;
+            }
+            String mrCode = this.resolveMrSettlementTypeCode(row, mrCodeByTableAndProductId);
+            String feeKey = MrmsConstants.to4401FeeExtensionKey(mrCode);
+            BigDecimal previous = feeItems.get(feeKey);
+            if (previous == null) {
+                previous = BigDecimal.ZERO;
+            }
+            feeItems.put(feeKey, MonetaryAmountSupport.scaleCalc(previous.add(row.getTotalPrice())));
+        }
+        snap.setFeeItems(feeItems);
+        return snap;
+    }
+
+    /**
+     * 批量预载各产品表的病案结算类型码。
+     *
+     * @param rows 收费明细
+     * @return productTable → (productId → mrSettlementTypeCode)
+     */
+    private Map<String, Map<Long, String>> loadMrSettlementTypeByProduct(List<ChargeItem> rows) {
+        Set<Long> medIds = new LinkedHashSet<>();
+        Set<Long> actIds = new LinkedHashSet<>();
+        Set<Long> deviceIds = new LinkedHashSet<>();
+        for (ChargeItem row : rows) {
+            if (row == null || row.getProductId() == null) {
+                continue;
+            }
+            String table = trimToNull(row.getProductTable());
+            if (TableNameConstants.MED_MEDICATION_DEFINITION.equals(table)) {
+                medIds.add(row.getProductId());
+            } else if (TableNameConstants.WKF_ACTIVITY_DEFINITION.equals(table)) {
+                actIds.add(row.getProductId());
+            } else if (TableNameConstants.ADM_DEVICE_DEFINITION.equals(table)) {
+                deviceIds.add(row.getProductId());
+            }
+        }
+        Map<String, Map<Long, String>> result = new HashMap<>();
+        if (!medIds.isEmpty()) {
+            Map<Long, String> medMap = new HashMap<>();
+            for (MedicationDefinition def : medicationDefinitionQueryService.findAllByIds(medIds)) {
+                if (def != null && def.getId() != null) {
+                    medMap.put(def.getId(), trimToNull(def.getMrSettlementTypeCode()));
+                }
+            }
+            result.put(TableNameConstants.MED_MEDICATION_DEFINITION, medMap);
+        }
+        if (!actIds.isEmpty()) {
+            Map<Long, String> actMap = new HashMap<>();
+            for (ActivityDefinition def : activityDefinitionQueryService.findAllByIds(actIds)) {
+                if (def != null && def.getId() != null) {
+                    actMap.put(def.getId(), trimToNull(def.getMrSettlementTypeCode()));
+                }
+            }
+            result.put(TableNameConstants.WKF_ACTIVITY_DEFINITION, actMap);
+        }
+        if (!deviceIds.isEmpty()) {
+            Map<Long, String> deviceMap = new HashMap<>();
+            for (DeviceDefinition def : deviceDefinitionQueryService.getAllDeviceDefinitions(deviceIds)) {
+                if (def != null && def.getId() != null) {
+                    deviceMap.put(def.getId(), trimToNull(def.getMrSettlementTypeCode()));
+                }
+            }
+            result.put(TableNameConstants.ADM_DEVICE_DEFINITION, deviceMap);
+        }
+        return result;
+    }
+
+    /**
+     * 解析单行收费明细的病案结算类型码。
+     *
+     * @param row                       收费行
+     * @param mrCodeByTableAndProductId 预载映射
+     * @return 术语码；无则 null
+     */
+    private String resolveMrSettlementTypeCode(
+            ChargeItem row, Map<String, Map<Long, String>> mrCodeByTableAndProductId) {
+        String table = trimToNull(row.getProductTable());
+        if (table == null || row.getProductId() == null) {
+            return null;
+        }
+        Map<Long, String> byId = mrCodeByTableAndProductId.get(table);
+        if (byId == null) {
+            return null;
+        }
+        return byId.get(row.getProductId());
+    }
+
+    /**
+     * 写入就诊快照入院/出院科别：入院取就诊机构；出院优先末次完成病区机构，
+     * 其次住院上下文当前科室，最后回落就诊机构（无转科时与入院同）。
      *
      * @param snap      待填充就诊快照
      * @param encounter 就诊实体
@@ -139,15 +397,51 @@ public class CaseRecordAutoFillSupport {
     private void applyDepartments(EncounterSnapshot snap, Encounter encounter) {
         // 入院科别：就诊所属机构
         if (encounter.getOrganizationId() != null) {
-            applyOrganization(snap, organizationQueryService.loadOrganizationByIdForDisplay(encounter.getOrganizationId()), true);
+            applyOrganization(
+                    snap,
+                    organizationQueryService.loadOrganizationByIdForDisplay(encounter.getOrganizationId()),
+                    true);
         }
-        // 出院科别：末次完成病区对应机构
+        // 出院科别①：末次已完成病区所属机构（转科/清床后最准确）
         encounterQueryService.findLastCompletedWardLocationIdByEncounterId(encounter.getId())
                 .flatMap(locationQueryService::findOptionalById)
                 .ifPresent(ward -> applyOrganization(
                         snap,
                         organizationQueryService.loadOrganizationByIdForDisplay(ward.getOrganizationId()),
                         false));
+        // 出院科别②：尚无完成病区轨迹时用住院上下文当前科室（与出院病区同源）
+        if (this.isBlankDscgCaty(snap)) {
+            Optional<InpatientEncounterContextQueryModel> ctxOpt =
+                    encounterContextQueryService.getInpatientContextByEncounterId(encounter.getId());
+            if (ctxOpt.isPresent()) {
+                InpatientEncounterContextQueryModel ctx = ctxOpt.get();
+                if (ctx.getOrganizationId() != null) {
+                    applyOrganization(
+                            snap,
+                            organizationQueryService.loadOrganizationByIdForDisplay(ctx.getOrganizationId()),
+                            false);
+                } else if (trimToNull(ctx.getOrganizationName()) != null) {
+                    snap.setDscgCatyName(trimToNull(ctx.getOrganizationName()));
+                }
+            }
+        }
+        // 出院科别③：无转科时与入院同为就诊机构（出院时间已有、病区仍在活动态时常见）
+        if (this.isBlankDscgCaty(snap) && encounter.getOrganizationId() != null) {
+            applyOrganization(
+                    snap,
+                    organizationQueryService.loadOrganizationByIdForDisplay(encounter.getOrganizationId()),
+                    false);
+        }
+    }
+
+    /**
+     * 出院科别 code/name 是否均未写入。
+     *
+     * @param snap 就诊快照
+     * @return true 表示出院科别仍空
+     */
+    private boolean isBlankDscgCaty(EncounterSnapshot snap) {
+        return trimToNull(snap.getDscgCatyCode()) == null && trimToNull(snap.getDscgCatyName()) == null;
     }
 
     /**
@@ -744,6 +1038,211 @@ public class CaseRecordAutoFillSupport {
             return null;
         }
         return code.toUpperCase(Locale.ROOT);
+    }
+
+    /**
+     * 填充入院/出院病区床位：轨迹最早 WARD/BED + 当前活动或末次完成。
+     *
+     * @param snap        就诊快照
+     * @param encounterId 就诊主键
+     */
+    private void applyWardAndBed(EncounterSnapshot snap, Long encounterId) {
+        List<EncounterLocationQueryModel> locations = encounterQueryService.listEncounterLocations(encounterId);
+        Long earliestWardId = this.findEarliestLocationId(locations, LocationForm.WARD.getCode());
+        Long earliestBedId = this.findEarliestLocationId(locations, LocationForm.BED.getCode());
+        if (earliestWardId != null) {
+            snap.setAdmWardName(trimToNull(locationQueryService.findNameById(earliestWardId)));
+        }
+        if (earliestBedId != null) {
+            snap.setAdmBedName(trimToNull(locationQueryService.findNameById(earliestBedId)));
+        }
+        // 出院侧：优先当前活动上下文；无则末次完成 WARD/BED
+        Optional<InpatientEncounterContextQueryModel> ctxOpt =
+                encounterContextQueryService.getInpatientContextByEncounterId(encounterId);
+        if (ctxOpt.isPresent()) {
+            InpatientEncounterContextQueryModel ctx = ctxOpt.get();
+            String wardName = trimToNull(ctx.getWardName());
+            String bedName = trimToNull(ctx.getBedName());
+            if (wardName != null) {
+                snap.setDscgWardName(wardName);
+            }
+            if (bedName != null) {
+                snap.setDscgBedName(bedName);
+            }
+        }
+        // 上下文无病区时回落末次完成 WARD
+        if (snap.getDscgWardName() == null) {
+            encounterQueryService.findLastCompletedWardLocationIdByEncounterId(encounterId)
+                    .ifPresent(wardId -> snap.setDscgWardName(trimToNull(locationQueryService.findNameById(wardId))));
+        }
+        // 上下文无床位时回落末次完成 BED
+        if (snap.getDscgBedName() == null) {
+            Map<Long, Long> bedMap =
+                    encounterQueryService.mapLastCompletedBedLocationIdByEncounterIds(List.of(encounterId));
+            Long bedId = bedMap.get(encounterId);
+            if (bedId != null) {
+                snap.setDscgBedName(trimToNull(locationQueryService.findNameById(bedId)));
+            }
+        }
+        // 入院病区空时用当前/出院病区兜底（未分床前仅有当前）
+        if (snap.getAdmWardName() == null && snap.getDscgWardName() != null) {
+            snap.setAdmWardName(snap.getDscgWardName());
+        }
+        if (snap.getAdmBedName() == null && snap.getDscgBedName() != null) {
+            snap.setAdmBedName(snap.getDscgBedName());
+        }
+    }
+
+    /**
+     * 在位置轨迹中取指定形态最早 start_time 的 locationId。
+     *
+     * @param locations 轨迹
+     * @param formCode  WARD/BED
+     * @return locationId；无则 null
+     */
+    private Long findEarliestLocationId(List<EncounterLocationQueryModel> locations, String formCode) {
+        if (locations == null || locations.isEmpty() || formCode == null) {
+            return null;
+        }
+        EncounterLocationQueryModel best = null;
+        for (EncounterLocationQueryModel row : locations) {
+            if (row == null || row.getLocationId() == null) {
+                continue;
+            }
+            if (!formCode.equals(row.getFormEnum())) {
+                continue;
+            }
+            if (best == null) {
+                best = row;
+                continue;
+            }
+            LocalDateTime bestStart = best.getStartTime();
+            LocalDateTime rowStart = row.getStartTime();
+            // 无开始时间的行靠后
+            if (bestStart == null && rowStart != null) {
+                best = row;
+                continue;
+            }
+            if (bestStart != null && rowStart != null && rowStart.isBefore(bestStart)) {
+                best = row;
+            }
+        }
+        if (best == null) {
+            return null;
+        }
+        return best.getLocationId();
+    }
+
+    /**
+     * 拼接患者地址全文（省市区+街道/text）。
+     *
+     * @param address 地址值对象
+     * @return 非空全文；全空时 null
+     */
+    private String formatPatientAddress(Address address) {
+        if (address == null) {
+            return null;
+        }
+        String text = trimToNull(address.getText());
+        if (text != null) {
+            return text;
+        }
+        StringBuilder sb = new StringBuilder();
+        this.appendAddressPart(sb, address.getProvince());
+        this.appendAddressPart(sb, address.getCity());
+        this.appendAddressPart(sb, address.getDistrict());
+        this.appendAddressPart(sb, address.getStreet());
+        if (sb.length() == 0) {
+            return null;
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 追加地址片段（跳过空）。
+     *
+     * @param sb   缓冲
+     * @param part 片段
+     */
+    private void appendAddressPart(StringBuilder sb, String part) {
+        String value = trimToNull(part);
+        if (value == null) {
+            return;
+        }
+        sb.append(value);
+    }
+
+    /**
+     * AdministrativeGender → 首页/4401 性别码（1 男 2 女）。
+     *
+     * @param genderEnum 患者 gender_enum
+     * @return 首页 gend_code
+     */
+    private String toHomepageGenderCode(String genderEnum) {
+        String code = trimToNull(genderEnum);
+        if (code == null) {
+            return null;
+        }
+        if (AdministrativeGender.MALE.getCode().equals(code)) {
+            return "1";
+        }
+        if (AdministrativeGender.FEMALE.getCode().equals(code)) {
+            return "2";
+        }
+        // 已是 1/2 等首页码则原样保留
+        return code;
+    }
+
+    /**
+     * 日历天：含 start、不含 endExclusive；同日至少 1 天。
+     *
+     * @param start         含
+     * @param endExclusive  不含
+     * @return 天数
+     */
+    private int countInclusiveExclusiveDays(LocalDate start, LocalDate endExclusive) {
+        if (start == null || endExclusive == null) {
+            return 0;
+        }
+        // 止点不晚于起点：按 1 天计（当日校对当日停）
+        if (!endExclusive.isAfter(start)) {
+            return 1;
+        }
+        long days = ChronoUnit.DAYS.between(start, endExclusive);
+        if (days < 1) {
+            return 1;
+        }
+        return (int) days;
+    }
+
+    /**
+     * 活动定义名称 → 护理级别桶（spga/lv1/scd/lv3）。
+     *
+     * @param activityName 活动名称
+     * @return 桶码；无法识别 null
+     */
+    private String resolveNursingLevelBucket(String activityName) {
+        String name = trimToNull(activityName);
+        if (name == null) {
+            return null;
+        }
+        String normalized = name.replace("Ⅰ", "I").replace("Ⅱ", "II").replace("Ⅲ", "III");
+        // 特级优先
+        if (normalized.contains("特")) {
+            return "spga";
+        }
+        if (normalized.contains("III") || normalized.contains("Ⅲ") || normalized.contains("三级")
+                || normalized.contains("3级") || normalized.contains("Ⅲ级")) {
+            return "lv3";
+        }
+        if (normalized.contains("II") || normalized.contains("Ⅱ") || normalized.contains("二级")
+                || normalized.contains("2级")) {
+            return "scd";
+        }
+        if (normalized.contains("I") || normalized.contains("一级") || normalized.contains("1级")) {
+            return "lv1";
+        }
+        return null;
     }
 
     /** 诊断回填范围：出院诊断 / 入院诊断。 */

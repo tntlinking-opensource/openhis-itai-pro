@@ -7,6 +7,7 @@ package com.openhis.health.domain.administration.practitioner.service;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.repository.PractitionerRepository;
 import com.openhis.health.domain.share.enums.PublicationStatus;
+import com.openhis.health.domain.share.utils.IdInQueryChunkSupport;
 import lombok.RequiredArgsConstructor;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
@@ -141,18 +142,24 @@ public class PractitionerQueryService {
             return java.util.Collections.emptyMap();
         }
         java.util.Map<Long, String> nameByEntererId = new java.util.HashMap<>(distinct.size() * 2);
-        java.util.List<Long> unresolved = new java.util.ArrayList<>();
-        for (Long entererId : distinct) {
-            Practitioner practitioner = practitionerRepository.findById(entererId).orElse(null);
-            if (practitioner != null && practitioner.getId() != null && StringUtils.isNotEmpty(practitioner.getName())) {
+        java.util.LinkedHashSet<Long> unresolved = new java.util.LinkedHashSet<>(distinct);
+        // Pre：一次按主键批量加载，禁止 findById 循环 N+1
+        List<Practitioner> byPractitionerId = this.findAllByIds(distinct);
+        for (Practitioner practitioner : byPractitionerId) {
+            if (practitioner == null || practitioner.getId() == null) {
+                continue;
+            }
+            unresolved.remove(practitioner.getId());
+            if (StringUtils.isNotEmpty(practitioner.getName())) {
                 nameByEntererId.put(practitioner.getId(), practitioner.getName());
-            } else {
-                unresolved.add(entererId);
             }
         }
         if (!unresolved.isEmpty()) {
-            java.util.List<Practitioner> byUserId =
-                practitionerRepository.findAllByUserIdInAndIsDeletedFalse(unresolved);
+            // Pre：存量 enterer_id 可能仍为系统用户 ID，再按 userId IN 补齐
+            List<Practitioner> byUserId =
+                IdInQueryChunkSupport.loadByIdInChunks(
+                    unresolved,
+                    chunkIds -> practitionerRepository.findAllByUserIdInAndIsDeletedFalse(chunkIds));
             for (Practitioner practitioner : byUserId) {
                 if (practitioner == null || practitioner.getUserId() == null) {
                     continue;
@@ -168,6 +175,8 @@ public class PractitionerQueryService {
     /**
      * 按主键集合批量加载医务人员（列表装配等场景避免 N+1）。
      *
+     * <p>主键过多时按 {@link com.openhis.health.domain.share.constants.GeneralSharedConstants#ID_IN_QUERY_CHUNK_SIZE} 分批。</p>
+     *
      * @param ids 医务人员主键集合
      * @return 命中实体列表；入参为空时返回空列表
      */
@@ -175,7 +184,66 @@ public class PractitionerQueryService {
         if (ids == null || ids.isEmpty()) {
             return Collections.emptyList();
         }
-        return practitionerRepository.findAllById(ids);
+        return IdInQueryChunkSupport.loadByIdInChunks(
+            ids,
+            chunkIds -> {
+                List<Practitioner> rows = practitionerRepository.findAllById(chunkIds);
+                if (rows == null) {
+                    return Collections.emptyList();
+                }
+                return rows;
+            });
+    }
+
+    /**
+     * 按姓名关键字模糊匹配在职医务人员主键（门诊病历接诊医生筛选等）。
+     *
+     * <p>聚合边界：仅本聚合 {@link PractitionerRepository}。</p>
+     *
+     * @param nameKeyword 姓名关键字；空白时返回空列表
+     * @return 命中主键列表（去重保序）
+     */
+    public List<Long> listActivePractitionerIdsByNameKeyword(String nameKeyword) {
+        if (StringUtils.isEmpty(nameKeyword)) {
+            return Collections.emptyList();
+        }
+        String trimmed = nameKeyword.trim();
+        String status = PublicationStatus.ACTIVE.getCode();
+        Specification<Practitioner> specification =
+            PractitionerPageQuerySupport.activePractitioners(status, trimmed, false, null);
+        List<Practitioner> rows = practitionerRepository.findAll(specification);
+        List<Long> ids = new ArrayList<>();
+        for (Practitioner row : rows) {
+            if (row == null || row.getId() == null) {
+                continue;
+            }
+            ids.add(row.getId());
+        }
+        return ids;
+    }
+
+    /**
+     * 批量解析医务人员展示名。
+     *
+     * @param practitionerIds 医务人员主键集合
+     * @return practitionerId → 姓名；未命中或姓名空则不写入该键
+     */
+    public Map<Long, String> mapNamesByIds(Collection<Long> practitionerIds) {
+        if (practitionerIds == null || practitionerIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<Practitioner> rows = findAllByIds(practitionerIds);
+        java.util.Map<Long, String> result = new java.util.HashMap<>();
+        for (Practitioner row : rows) {
+            if (row == null || row.getId() == null) {
+                continue;
+            }
+            if (StringUtils.isEmpty(row.getName())) {
+                continue;
+            }
+            result.put(row.getId(), row.getName());
+        }
+        return result;
     }
 
     /**

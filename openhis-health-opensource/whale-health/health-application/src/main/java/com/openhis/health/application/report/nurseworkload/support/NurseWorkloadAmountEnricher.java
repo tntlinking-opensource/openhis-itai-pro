@@ -6,10 +6,16 @@ package com.openhis.health.application.report.nurseworkload.support;
 
 import com.openhis.health.application.report.nurseworkload.dto.NurseConsumableDetailRowDto;
 import com.openhis.health.application.report.nurseworkload.dto.NurseExecutionDetailRowDto;
+import com.openhis.health.application.shared.pricing.ChargeItemPackageUnitRatioSupport;
+import com.openhis.health.application.shared.pricing.HistoricalChargeItemPurchasePriceSupport;
+import com.openhis.health.application.shared.product.ChargeItemProductLookupHelper;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -24,10 +30,11 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 护士工作量报表金额 enrich（**BR-RPT-NWL-021**；金额刻度 **BR-MON-001**）。
+ * 护士工作量报表金额 enrich（**BR-RPT-NWL-021**；DD-报表中心-进售价口径）。
  *
- * <p>按收费明细锚点汇总 {@code total_price}；明细行 {@link MonetaryAmountSupport#scaleCalc} 出参 6 位，
- * 页脚 {@link #sumDetailAmounts} 走 {@link MonetaryAmountSupport#sumThenSettle}。</p>
+ * <p>售价 = 匹配 {@link ChargeItem#getTotalPrice()} 加和；进价仅耗材行经
+ * {@link HistoricalChargeItemPurchasePriceSupport} 批号进价包装锚计算；诊疗执行进价恒为 null。
+ * 已选开立科室时仅匹配 {@code requesting_org_id} 一致的 ChargeItem。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -35,12 +42,24 @@ public class NurseWorkloadAmountEnricher {
 
     private final ChargeItemQueryService chargeItemQueryService;
 
+    /** 历史批号进价解析。 */
+    private final HistoricalChargeItemPurchasePriceSupport historicalChargeItemPurchasePriceSupport;
+
+    /** 包装换算比（行进价合计 BR-MON-PKG-001）。 */
+    private final ChargeItemPackageUnitRatioSupport chargeItemPackageUnitRatioSupport;
+
+    /** 产品展示批量加载（packageUnitRatio）。 */
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
+
     /**
-     * 回填诊疗执行明细行金额。
+     * 回填诊疗执行明细行售价；进价保持 null（诊疗无进价）。
      *
-     * @param rows 待 enrich 明细行
+     * @param rows             待 enrich 明细行
+     * @param requestingOrgId  开立科室；非空时仅匹配该 requesting_org_id
      */
-    public void enrichExecutionDetailAmounts(List<NurseExecutionDetailRowDto> rows) {
+    public void enrichExecutionDetailAmounts(
+        List<NurseExecutionDetailRowDto> rows,
+        Long requestingOrgId) {
         if (rows == null || rows.isEmpty()) {
             return;
         }
@@ -49,24 +68,27 @@ public class NurseWorkloadAmountEnricher {
             if (row == null) {
                 continue;
             }
-            // Asm：匹配 ChargeItem 合计后保持 6 位行金额（BR-MON-001）
-            row.setAmount(MonetaryAmountSupport.scaleCalc(this.sumMatchedChargeAmount(row, chargeItems)));
+            row.setSaleAmount(MonetaryAmountSupport.scaleCalc(
+                this.sumMatchedChargeSaleAmount(row, chargeItems, requestingOrgId)));
         }
     }
 
     /**
-     * 回填耗材使用明细行金额。
+     * 回填耗材使用明细行售价与进价。
      *
      * @param rows                   待 enrich 明细行
      * @param deviceReqIdByDispenseId 发放 id → 耗材请求 id
+     * @param requestingOrgId        开立科室；非空时仅匹配该 requesting_org_id
      */
     public void enrichConsumableDetailAmounts(
         List<NurseConsumableDetailRowDto> rows,
-        Map<Long, Long> deviceReqIdByDispenseId) {
+        Map<Long, Long> deviceReqIdByDispenseId,
+        Long requestingOrgId) {
         if (rows == null || rows.isEmpty()) {
             return;
         }
-        List<ChargeItem> chargeItems = this.loadChargeItemsForConsumableRows(rows);
+        List<ChargeItem> chargeItems = this.loadChargeItemsForConsumableRows(rows, deviceReqIdByDispenseId);
+        Map<Long, BigDecimal> purchaseByChargeItemId = this.computePurchaseByChargeItemId(chargeItems);
         for (NurseConsumableDetailRowDto row : rows) {
             if (row == null) {
                 continue;
@@ -75,7 +97,13 @@ public class NurseWorkloadAmountEnricher {
             if (row.getDispenseId() != null && deviceReqIdByDispenseId != null) {
                 deviceReqId = deviceReqIdByDispenseId.get(row.getDispenseId());
             }
-            row.setAmount(MonetaryAmountSupport.scaleCalc(this.sumMatchedConsumableChargeAmount(row, deviceReqId, chargeItems)));
+            List<ChargeItem> matched = this.listMatchedConsumableChargeItems(
+                row, deviceReqId, chargeItems, requestingOrgId);
+            row.setSaleAmount(MonetaryAmountSupport.scaleCalc(this.sumChargeItemSaleAmount(matched)));
+            BigDecimal purchaseTotal = this.sumChargeItemPurchaseAmount(matched, purchaseByChargeItemId);
+            if (purchaseTotal != null) {
+                row.setPurchaseAmount(MonetaryAmountSupport.scaleCalc(purchaseTotal));
+            }
         }
     }
 
@@ -90,21 +118,17 @@ public class NurseWorkloadAmountEnricher {
     }
 
     /**
-     * 按诊疗执行明细行收集 encounter/procedure/service 锚点并批量加载 ChargeItem。
+     * 按诊疗执行明细行收集 procedure/service 锚点并批量加载 ChargeItem。
      *
      * @param rows 诊疗执行明细行
      * @return 去重后的收费明细列表
      */
     private List<ChargeItem> loadChargeItemsForExecutionRows(List<NurseExecutionDetailRowDto> rows) {
-        LinkedHashSet<Long> encounterIds = new LinkedHashSet<>();
         LinkedHashSet<Long> procedureIds = new LinkedHashSet<>();
         LinkedHashSet<Long> serviceRequestIds = new LinkedHashSet<>();
         for (NurseExecutionDetailRowDto row : rows) {
             if (row == null) {
                 continue;
-            }
-            if (row.getEncounterId() != null) {
-                encounterIds.add(row.getEncounterId());
             }
             if (row.getProcedureId() != null) {
                 procedureIds.add(row.getProcedureId());
@@ -114,60 +138,93 @@ public class NurseWorkloadAmountEnricher {
             }
         }
         Map<Long, ChargeItem> chargeItemById = new HashMap<>();
-        this.mergeChargeItems(chargeItemById, this.listChargeItemsByEncounterIds(encounterIds));
         this.mergeChargeItems(chargeItemById, this.chargeItemQueryService.listChargeItemsByProcedureIds(procedureIds));
-        ChargeItemQueryCommand serviceCmd = new ChargeItemQueryCommand();
-        serviceCmd.setServiceIds(serviceRequestIds);
-        serviceCmd.setExcludeSupersededSettledLines(true);
-        this.mergeChargeItems(chargeItemById, this.chargeItemQueryService.listChargeItemsByServiceIds(serviceCmd));
+        if (!serviceRequestIds.isEmpty()) {
+            ChargeItemQueryCommand serviceCmd = new ChargeItemQueryCommand();
+            serviceCmd.setServiceIds(serviceRequestIds);
+            serviceCmd.setExcludeSupersededSettledLines(true);
+            this.mergeChargeItems(chargeItemById, this.chargeItemQueryService.listChargeItemsByServiceIds(serviceCmd));
+        }
         return new ArrayList<>(chargeItemQueryService.filterOutSupersededSettledLinesGroupedByEncounter(
             new ArrayList<>(chargeItemById.values())));
     }
 
     /**
-     * 按耗材使用明细行收集 encounter/dispense 锚点并批量加载 ChargeItem。
+     * 按耗材使用明细行收集 dispense / deviceRequest 锚点并批量加载 ChargeItem。
      *
-     * @param rows 耗材使用明细行
+     * @param rows                   耗材使用明细行
+     * @param deviceReqIdByDispenseId 发放 → 请求
      * @return 去重后的收费明细列表
      */
-    private List<ChargeItem> loadChargeItemsForConsumableRows(List<NurseConsumableDetailRowDto> rows) {
-        LinkedHashSet<Long> encounterIds = new LinkedHashSet<>();
+    private List<ChargeItem> loadChargeItemsForConsumableRows(
+        List<NurseConsumableDetailRowDto> rows,
+        Map<Long, Long> deviceReqIdByDispenseId) {
         LinkedHashSet<Long> serviceIds = new LinkedHashSet<>();
         for (NurseConsumableDetailRowDto row : rows) {
             if (row == null) {
                 continue;
             }
-            if (row.getEncounterId() != null) {
-                encounterIds.add(row.getEncounterId());
-            }
             if (row.getDispenseId() != null) {
                 serviceIds.add(row.getDispenseId());
             }
+            if (row.getDispenseId() != null && deviceReqIdByDispenseId != null) {
+                Long deviceReqId = deviceReqIdByDispenseId.get(row.getDispenseId());
+                if (deviceReqId != null) {
+                    serviceIds.add(deviceReqId);
+                }
+            }
         }
         Map<Long, ChargeItem> chargeItemById = new HashMap<>();
-        this.mergeChargeItems(chargeItemById, this.listChargeItemsByEncounterIds(encounterIds));
-        ChargeItemQueryCommand serviceCmd = new ChargeItemQueryCommand();
-        serviceCmd.setServiceIds(serviceIds);
-        serviceCmd.setExcludeSupersededSettledLines(true);
-        this.mergeChargeItems(chargeItemById, this.chargeItemQueryService.listChargeItemsByServiceIds(serviceCmd));
+        if (!serviceIds.isEmpty()) {
+            ChargeItemQueryCommand serviceCmd = new ChargeItemQueryCommand();
+            serviceCmd.setServiceIds(serviceIds);
+            serviceCmd.setExcludeSupersededSettledLines(true);
+            this.mergeChargeItems(chargeItemById, this.chargeItemQueryService.listChargeItemsByServiceIds(serviceCmd));
+        }
+        LinkedHashSet<Long> dispenseIds = new LinkedHashSet<>();
+        for (NurseConsumableDetailRowDto row : rows) {
+            if (row != null && row.getDispenseId() != null) {
+                dispenseIds.add(row.getDispenseId());
+            }
+        }
+        this.mergeChargeItems(
+            chargeItemById,
+            this.chargeItemQueryService.listChargeItemsByDeviceDispenseIds(dispenseIds));
         return new ArrayList<>(chargeItemQueryService.filterOutSupersededSettledLinesGroupedByEncounter(
             new ArrayList<>(chargeItemById.values())));
     }
 
     /**
-     * 按就诊 id 集合查询收费明细；空集合返回空列表。
+     * 批量计算 chargeItem 行进价合计（包装锚；无进价则无键）。
      *
-     * @param encounterIds 就诊主键集合
-     * @return 收费明细列表
+     * @param chargeItems 候选收费明细
+     * @return chargeItemId → 行进价
      */
-    private List<ChargeItem> listChargeItemsByEncounterIds(Set<Long> encounterIds) {
-        if (encounterIds.isEmpty()) {
-            return List.of();
+    private Map<Long, BigDecimal> computePurchaseByChargeItemId(List<ChargeItem> chargeItems) {
+        Map<Long, BigDecimal> purchaseByChargeItemId = new HashMap<>();
+        if (chargeItems == null || chargeItems.isEmpty()) {
+            return purchaseByChargeItemId;
         }
-        ChargeItemQueryCommand cmd = new ChargeItemQueryCommand();
-        cmd.setEncounterIds(encounterIds);
-        cmd.setExcludeSupersededSettledLines(true);
-        return this.chargeItemQueryService.listChargeItemsByEncounterIds(cmd);
+        Map<Long, BigDecimal> purchaseUnitByChargeItemId =
+            this.historicalChargeItemPurchasePriceSupport.computePurchaseUnitPriceByChargeItemId(chargeItems);
+        LinkedHashSet<ProductDefinitionBatchLookup> lookups = new LinkedHashSet<>();
+        for (ChargeItem chargeItem : chargeItems) {
+            ProductDefinitionBatchLookup lookup =
+                ChargeItemProductLookupHelper.buildLookupFromChargeItem(chargeItem);
+            if (lookup != null) {
+                lookups.add(lookup);
+            }
+        }
+        Map<String, ProductDefinitionDisplayDto> productByCompositeKey =
+            this.productDefinitionDisplayTerminologyAssembler.loadAsMap(new ArrayList<>(lookups));
+        Map<Long, BigDecimal> packageUnitRatioByChargeItemId =
+            this.chargeItemPackageUnitRatioSupport.mapPackageUnitRatioByChargeItemId(
+                chargeItems, productByCompositeKey);
+        return this.historicalChargeItemPurchasePriceSupport.computePurchaseAmountFromUnitPrices(
+            chargeItems,
+            purchaseUnitByChargeItemId,
+            packageUnitRatioByChargeItemId,
+            productByCompositeKey);
     }
 
     /**
@@ -189,23 +246,115 @@ public class NurseWorkloadAmountEnricher {
     }
 
     /**
-     * 汇总与诊疗执行行匹配的 ChargeItem 金额（procedure 或 serviceRequest 锚点）。
+     * 汇总与诊疗执行行匹配的 ChargeItem 售价。
      *
-     * @param row         执行明细行
-     * @param chargeItems 候选收费明细
+     * @param row             执行明细行
+     * @param chargeItems     候选收费明细
+     * @param requestingOrgId 开立科室；非空时过滤
      * @return 匹配行 total_price 合计（未结算刻度）
      */
-    private BigDecimal sumMatchedChargeAmount(NurseExecutionDetailRowDto row, List<ChargeItem> chargeItems) {
+    private BigDecimal sumMatchedChargeSaleAmount(
+        NurseExecutionDetailRowDto row,
+        List<ChargeItem> chargeItems,
+        Long requestingOrgId) {
+        return this.sumChargeItemSaleAmount(
+            this.listMatchedExecutionChargeItems(row, chargeItems, requestingOrgId));
+    }
+
+    /**
+     * 列出与诊疗执行行匹配的 ChargeItem（去重 id）。
+     *
+     * @param row             执行明细行
+     * @param chargeItems     候选收费明细
+     * @param requestingOrgId 开立科室；非空时过滤
+     * @return 匹配收费明细
+     */
+    private List<ChargeItem> listMatchedExecutionChargeItems(
+        NurseExecutionDetailRowDto row,
+        List<ChargeItem> chargeItems,
+        Long requestingOrgId) {
         Set<Long> usedChargeItemIds = new HashSet<>();
-        BigDecimal total = BigDecimal.ZERO;
+        List<ChargeItem> matched = new ArrayList<>();
         for (ChargeItem chargeItem : chargeItems) {
-            if (!this.matchesExecutionRow(row, chargeItem)) {
+            if (!this.matchesExecutionRow(row, chargeItem, requestingOrgId)) {
                 continue;
             }
             if (!usedChargeItemIds.add(chargeItem.getId())) {
                 continue;
             }
-            total = total.add(this.priceOf(chargeItem));
+            matched.add(chargeItem);
+        }
+        return matched;
+    }
+
+    /**
+     * 列出与耗材使用行匹配的 ChargeItem（去重 id）。
+     *
+     * @param row             耗材明细行
+     * @param deviceReqId     发放反查的耗材请求 id；可空
+     * @param chargeItems     候选收费明细
+     * @param requestingOrgId 开立科室；非空时过滤
+     * @return 匹配收费明细
+     */
+    private List<ChargeItem> listMatchedConsumableChargeItems(
+        NurseConsumableDetailRowDto row,
+        Long deviceReqId,
+        List<ChargeItem> chargeItems,
+        Long requestingOrgId) {
+        Set<Long> usedChargeItemIds = new HashSet<>();
+        List<ChargeItem> matched = new ArrayList<>();
+        for (ChargeItem chargeItem : chargeItems) {
+            if (!this.matchesConsumableRow(row, deviceReqId, chargeItem, requestingOrgId)) {
+                continue;
+            }
+            if (!usedChargeItemIds.add(chargeItem.getId())) {
+                continue;
+            }
+            matched.add(chargeItem);
+        }
+        return matched;
+    }
+
+    /**
+     * 汇总 chargeItem 列表售价 total_price。
+     *
+     * @param matched 匹配收费明细
+     * @return 售价合计（未结算刻度）
+     */
+    private BigDecimal sumChargeItemSaleAmount(List<ChargeItem> matched) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (ChargeItem chargeItem : matched) {
+            total = total.add(this.salePriceOf(chargeItem));
+        }
+        return total;
+    }
+
+    /**
+     * 汇总 chargeItem 列表行进价；全无进价键时返回 null。
+     *
+     * @param matched                  匹配收费明细
+     * @param purchaseByChargeItemId   chargeItemId → 行进价
+     * @return 进价合计；无有效进价时为 null
+     */
+    private BigDecimal sumChargeItemPurchaseAmount(
+        List<ChargeItem> matched,
+        Map<Long, BigDecimal> purchaseByChargeItemId) {
+        if (matched == null || matched.isEmpty() || purchaseByChargeItemId == null) {
+            return null;
+        }
+        BigDecimal total = null;
+        for (ChargeItem chargeItem : matched) {
+            if (chargeItem == null || chargeItem.getId() == null) {
+                continue;
+            }
+            BigDecimal purchaseAmount = purchaseByChargeItemId.get(chargeItem.getId());
+            if (purchaseAmount == null) {
+                continue;
+            }
+            if (total == null) {
+                total = BigDecimal.ZERO;
+            }
+            total = total.add(purchaseAmount);
         }
         return total;
     }
@@ -213,11 +362,18 @@ public class NurseWorkloadAmountEnricher {
     /**
      * 收费明细是否与诊疗执行行锚点匹配。
      *
-     * @param row        执行明细行
-     * @param chargeItem 收费明细
+     * @param row             执行明细行
+     * @param chargeItem      收费明细
+     * @param requestingOrgId 开立科室；非空时须一致
      * @return 匹配为 true
      */
-    private boolean matchesExecutionRow(NurseExecutionDetailRowDto row, ChargeItem chargeItem) {
+    private boolean matchesExecutionRow(
+        NurseExecutionDetailRowDto row,
+        ChargeItem chargeItem,
+        Long requestingOrgId) {
+        if (!this.matchesRequestingOrg(chargeItem, requestingOrgId)) {
+            return false;
+        }
         if (row.getProcedureId() != null
             && row.getProcedureId().equals(chargeItem.getProcedureId())) {
             return true;
@@ -231,43 +387,22 @@ public class NurseWorkloadAmountEnricher {
     }
 
     /**
-     * 汇总与耗材使用行匹配的 ChargeItem 金额（dispense 或 deviceRequest 锚点）。
-     *
-     * @param row         耗材明细行
-     * @param deviceReqId 发放 id 反查的耗材请求 id；可空
-     * @param chargeItems 候选收费明细
-     * @return 匹配行 total_price 合计（未结算刻度）
-     */
-    private BigDecimal sumMatchedConsumableChargeAmount(
-        NurseConsumableDetailRowDto row,
-        Long deviceReqId,
-        List<ChargeItem> chargeItems) {
-        Set<Long> usedChargeItemIds = new HashSet<>();
-        BigDecimal total = BigDecimal.ZERO;
-        for (ChargeItem chargeItem : chargeItems) {
-            if (!this.matchesConsumableRow(row, deviceReqId, chargeItem)) {
-                continue;
-            }
-            if (!usedChargeItemIds.add(chargeItem.getId())) {
-                continue;
-            }
-            total = total.add(this.priceOf(chargeItem));
-        }
-        return total;
-    }
-
-    /**
      * 收费明细是否与耗材使用行锚点匹配。
      *
-     * @param row         耗材明细行
-     * @param deviceReqId 发放反查的耗材请求 id；可空
-     * @param chargeItem  收费明细
+     * @param row             耗材明细行
+     * @param deviceReqId     发放反查的耗材请求 id；可空
+     * @param chargeItem      收费明细
+     * @param requestingOrgId 开立科室；非空时须一致
      * @return 匹配为 true
      */
     private boolean matchesConsumableRow(
         NurseConsumableDetailRowDto row,
         Long deviceReqId,
-        ChargeItem chargeItem) {
+        ChargeItem chargeItem,
+        Long requestingOrgId) {
+        if (!this.matchesRequestingOrg(chargeItem, requestingOrgId)) {
+            return false;
+        }
         if (row.getDispenseId() != null) {
             if (TableNameConstants.WKF_DEVICE_DISPENSE.equals(chargeItem.getServiceTable())
                 && row.getDispenseId().equals(chargeItem.getServiceId())) {
@@ -287,12 +422,26 @@ public class NurseWorkloadAmountEnricher {
     }
 
     /**
-     * 取收费明细行金额；null 按零处理。
+     * 开立科室筛：已选 requestingOrgId 须等于账单开立科室。
+     *
+     * @param chargeItem      收费明细
+     * @param requestingOrgId 开立科室；空则不过滤
+     * @return 通过筛选为 true
+     */
+    private boolean matchesRequestingOrg(ChargeItem chargeItem, Long requestingOrgId) {
+        if (requestingOrgId == null) {
+            return true;
+        }
+        return requestingOrgId.equals(chargeItem.getRequestingOrgId());
+    }
+
+    /**
+     * 取收费明细行售价；null 按零处理。
      *
      * @param chargeItem 收费明细
      * @return total_price 或 ZERO
      */
-    private BigDecimal priceOf(ChargeItem chargeItem) {
+    private BigDecimal salePriceOf(ChargeItem chargeItem) {
         if (chargeItem.getTotalPrice() == null) {
             return BigDecimal.ZERO;
         }

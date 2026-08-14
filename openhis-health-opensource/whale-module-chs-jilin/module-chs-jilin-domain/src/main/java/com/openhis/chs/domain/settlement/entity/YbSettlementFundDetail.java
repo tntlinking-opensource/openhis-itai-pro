@@ -23,7 +23,8 @@ public class YbSettlementFundDetail extends BaseAuditedEntity {
     @Column(name = "settlement_record_id", nullable = false)
     private Long settlementRecordId;
 
-    @Column(name = "fund_pay_type", length = 6)
+    /** 国家码可能超过 6 位（如电子钱包 9999981） */
+    @Column(name = "fund_pay_type", length = 16)
     private String fundPayType;
 
     @Column(name = "fund_pay_type_name", length = 128)

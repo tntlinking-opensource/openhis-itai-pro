@@ -107,6 +107,12 @@ public class InpatientDoctorStationAdviceRowDto {
     @Schema(description = "单次剂量展示串（最小单位为主，括号附计量；单位相同时无括号）")
     private String dosageDisplay;
 
+    /**
+     * 日剂量友好展示（如 {@code 每日三片}；长期药且频次可解析每日次数时有值）。
+     */
+    @Schema(description = "日剂量展示（如 每日三片）")
+    private String dailyDoseDisplay;
+
     /** 单次剂量对应的最小（拆零）单位数量；单位相同或无法换算时为 null。 */
     @Schema(description = "单次剂量对应的最小单位数量")
     private BigDecimal splitDose;
@@ -158,10 +164,16 @@ public class InpatientDoctorStationAdviceRowDto {
     private Integer dispensePerDuration;
 
     /**
-     * 拆零比（相对拆零单位倍数；底层未投影时为 null，禁止前端自行推算）。
+     * 拆零比（目录 {@code package_unit_ratio}：1 包装 = N 拆零；未维护时为 null，禁止前端自行推算）。
      */
-    @Schema(description = "拆零比")
+    @Schema(description = "拆零比（1包装=N拆零）")
     private BigDecimal partPercent;
+
+    /**
+     * 包装装量后缀（如 {@code 1片x100}；与规格拼接为 {@code 5mg1片x100}；缺数据时为 null）。
+     */
+    @Schema(description = "包装装量后缀（如 1片x100）")
+    private String packageSplitRatioText;
 
     /** 执行或发药位置 id。 */
     @JsonSerialize(using = ToStringSerializer.class)
@@ -361,6 +373,14 @@ public class InpatientDoctorStationAdviceRowDto {
     /** 停嘱人姓名（列表展示：停嘱时间后跟人名）。 */
     @Schema(description = "停嘱人姓名")
     private String stopperName;
+
+    /**
+     * 停嘱校对人主键（{@code stop_performer_check_id}）。
+     * <p>非空表示护士已完成停嘱校对，前端应禁用「取消停嘱」。</p>
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "停嘱校对人主键；非空时禁止取消停嘱")
+    private Long stopPerformerCheckId;
 
     /** 是否当前登录医师开立。 */
     @Schema(description = "是否当前登录医师开立")

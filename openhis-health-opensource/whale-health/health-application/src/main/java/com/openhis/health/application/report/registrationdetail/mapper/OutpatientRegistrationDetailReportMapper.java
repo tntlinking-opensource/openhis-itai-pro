@@ -4,6 +4,7 @@
  */
 package com.openhis.health.application.report.registrationdetail.mapper;
 
+import com.openhis.health.application.report.registrationdetail.dto.OutpatientRegistrationDetailFooterDto;
 import com.openhis.health.application.report.registrationdetail.dto.OutpatientRegistrationDetailRowDto;
 import com.openhis.health.application.report.registrationdetail.dto.OutpatientRegistrationDetailSummaryRowDto;
 import com.openhis.health.application.report.registrationdetail.request.ExportOutpatientRegistrationDetailReportRequest;
@@ -14,9 +15,11 @@ import com.openhis.health.application.report.registrationdetail.response.LoadOut
 import com.openhis.health.application.report.registrationdetail.response.PageOutpatientRegistrationDetailReportDetailResponse;
 import com.openhis.health.application.report.registrationdetail.response.SummarizeOutpatientRegistrationDetailReportResponse;
 import com.openhis.health.domain.administration.encounter.queries.OutpatientRegistrationReportPageQuery;
+import com.openhis.health.domain.administration.encounter.queries.model.OutpatientRegistrationDetailStatsQueryModel;
 import com.openhis.whale.core.application.dto.OptionDto;
 import org.springframework.data.domain.Page;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -77,24 +80,36 @@ public interface OutpatientRegistrationDetailReportMapper {
     /**
      * 汇总行 + 合计 → 汇总响应。
      *
-     * @param rows                       展示行
-     * @param totalNetRegistrationCount  净笔数合计
+     * @param rows                          展示行
+     * @param totalNetRegistrationCount     净笔数合计
+     * @param totalRegistrationFeeAmount    净挂号费合计
      * @return 汇总响应
      */
     SummarizeOutpatientRegistrationDetailReportResponse toSummarizeResponse(
         List<OutpatientRegistrationDetailSummaryRowDto> rows,
-        long totalNetRegistrationCount);
+        long totalNetRegistrationCount,
+        BigDecimal totalRegistrationFeeAmount);
 
     /**
-     * 明细展示行 + Spring Page → 分页响应。
+     * 明细展示行 + Spring Page + 挂/退页脚 → 分页响应。
      *
-     * @param rows 当前页展示行
-     * @param page 领域分页壳
+     * @param rows  当前页展示行
+     * @param page  领域分页壳
+     * @param stats 同筛选挂/退统计；可空则页脚置 0
      * @return 分页响应
      */
     PageOutpatientRegistrationDetailReportDetailResponse toDetailPageResponse(
         List<OutpatientRegistrationDetailRowDto> rows,
-        Page<?> page);
+        Page<?> page,
+        OutpatientRegistrationDetailStatsQueryModel stats);
+
+    /**
+     * 领域挂/退统计 → 页脚 DTO。
+     *
+     * @param stats 领域统计；可空
+     * @return 页脚；字段非 null
+     */
+    OutpatientRegistrationDetailFooterDto toFooterDto(OutpatientRegistrationDetailStatsQueryModel stats);
 
     /**
      * 导出二进制 → 导出响应。

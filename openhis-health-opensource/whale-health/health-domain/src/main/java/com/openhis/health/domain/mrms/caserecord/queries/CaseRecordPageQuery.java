@@ -37,9 +37,36 @@ public class CaseRecordPageQuery extends AbstractPageQuery {
     /** 主治医师 {@code adm_practitioner.id}（主档冗余 {@code atddr_practitioner_id}）。 */
     private Long attendingPractitionerId;
 
+    /** 入院时间下限（含，主档冗余 {@code adm_time}）。 */
+    private LocalDateTime admFrom;
+
+    /** 入院时间上限（含，主档冗余 {@code adm_time}）。 */
+    private LocalDateTime admTo;
+
     /** 出院时间下限（含，主档冗余 {@code dscg_time}）。 */
     private LocalDateTime dscgFrom;
 
     /** 出院时间上限（含，主档冗余 {@code dscg_time}）。 */
     private LocalDateTime dscgTo;
+
+    /**
+     * 是否出院：{@code "1"}={@code dscg_time} 非空，{@code "0"}={@code dscg_time} 为空；空则不过滤。
+     */
+    private String dischargedCode;
+
+    /**
+     * 4401 上传状态过滤（主档 {@code chs_upload_status_code}）。
+     * {@code none}=未上传（列 null 或空串）；其余值精确匹配。
+     */
+    private String chsUploadStatusCode;
+
+    /**
+     * 结算上传状态（二期占位：本期 QueryService 接收但不下推过滤）。
+     */
+    private String settleUploadStatus;
+
+    /**
+     * 是否已结算（二期占位：本期 QueryService 接收但不下推过滤）。
+     */
+    private String settledCode;
 }

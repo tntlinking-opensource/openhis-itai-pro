@@ -37,4 +37,11 @@ public class PriceAdjustmentApprovedLineListQuery extends AbstractPageQuery {
      * 调价单号；非空时参与模糊匹配（与单据列表单号关键字语义一致）。
      */
     private String busNo;
+
+    /**
+     * 排除的调价原因全文列表；非空时 {@code adjustment_reason NOT IN (...)}。
+     *
+     * <p>供调用方在列表谓词层剔除审计单；空或未设表示不排除。</p>
+     */
+    private List<String> excludeAdjustmentReasons;
 }

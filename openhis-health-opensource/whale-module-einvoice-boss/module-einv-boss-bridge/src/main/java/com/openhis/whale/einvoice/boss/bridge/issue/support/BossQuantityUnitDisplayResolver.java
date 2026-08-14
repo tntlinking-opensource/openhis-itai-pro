@@ -71,12 +71,19 @@ public class BossQuantityUnitDisplayResolver {
         String code = quantityUnit.trim();
         if (labelByCode != null && !labelByCode.isEmpty()) {
             String fromMap = labelByCode.get(code);
-            return StringUtils.hasText(fromMap) ? fromMap : code;
+            if (StringUtils.hasText(fromMap)) {
+                return fromMap;
+            }
+            // 预热 Map 残缺（缓存驱逐等）时不得直接回退原文码，继续单码回源
         }
         for (String systemName : UNIT_CODE_SYSTEMS) {
             Concept concept = codeSystemQueryService.findConceptByCodeSystemNameAndCode(systemName, code);
             if (concept != null && StringUtils.hasText(concept.getDisplay())) {
-                return concept.getDisplay().trim();
+                String display = concept.getDisplay().trim();
+                if (labelByCode != null) {
+                    labelByCode.putIfAbsent(code, display);
+                }
+                return display;
             }
         }
         return code;

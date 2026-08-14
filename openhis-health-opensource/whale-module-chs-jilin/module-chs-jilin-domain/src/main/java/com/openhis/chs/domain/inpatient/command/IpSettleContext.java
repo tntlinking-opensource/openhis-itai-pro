@@ -24,6 +24,15 @@ public class IpSettleContext {
     private Long encounterId;
     private String encounterBusNo;
     private Long patientId;
+    /** 患者姓名；供 3101 {@code patient_dtos.patn_name}。 */
+    private String patientName;
+    /** HIS 行政性别码（MALE/FEMALE/UNKNOWN）；投影时转医保 GEND。 */
+    private String patientGender;
+    /**
+     * 出生日期（yyyy-MM-dd），供 3101 {@code patient_dtos.brdy}；
+     * 由 ContextLoader 从 Encounter 患者上下文写入（对齐门诊）。
+     */
+    private String brdy;
     private LocalDateTime admissionTime;
     private LocalDateTime dischargeTime;
     private String settleMode;
@@ -52,6 +61,15 @@ public class IpSettleContext {
 
     private List<IpSettleChargeLine> chargeLines;
     private BigDecimal medfeeSumamt;
+
+    /** 院内收费合计（charge_item.total_price，结算两位）。 */
+    private BigDecimal retailMedfeeSumamt;
+
+    /** 2301 上传明细合计（pric×cnt，结算两位）。 */
+    private BigDecimal uploadMedfeeSumamt;
+
+    /** 零售−上传分差（retail−upload）。 */
+    private BigDecimal retailUploadDiffAmt;
 
     private Long paymentDraftId;
     private Long operatorId;

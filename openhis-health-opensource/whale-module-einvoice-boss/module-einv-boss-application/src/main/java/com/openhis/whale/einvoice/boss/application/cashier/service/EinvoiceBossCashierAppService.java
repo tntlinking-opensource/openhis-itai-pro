@@ -17,9 +17,9 @@ import org.springframework.stereotype.Service;
 import java.util.Optional;
 
 /**
- * 收费窗电子票据组件（HTTP：{@code /api/app/einvoiceBossCashier/*}）。
+ * 收费窗电子票据组件（HTTP：{@code /api/app/einvoiceBossCashier/*}）�?
  *
- * <p>按 paymentId 查询开票进度与二维码，供收银台嵌入展示。</p>
+ * <p>�?paymentId 查询开票进度与二维码，供收银台嵌入展示�?/p>
  */
 @Service
 @RequiredArgsConstructor
@@ -30,14 +30,14 @@ public class EinvoiceBossCashierAppService {
     private final EinvoiceIssueSnapshotContextLoader issueSnapshotContextLoader;
 
     /**
-     * 按支付主键查询开票进度。
+     * 按支付主键查询开票进度�?
      *
      * @param paymentId 支付主键
-     * @return 开票进度
+     * @return 开票进�?
      */
     public BossIssueStatus getIssueStatus(Long paymentId) {
         BossIssueStatus dto = new BossIssueStatus();
-        Optional<EinvBossDocument> document = documentRepository.findByPaymentIdAndIsDeletedFalse(paymentId);
+        Optional<EinvBossDocument> document = documentRepository.findFirstByPaymentIdAndIsDeletedFalseOrderByIdAsc(paymentId);
         if (document.isEmpty()) {
             return dto;
         }
@@ -54,14 +54,14 @@ public class EinvoiceBossCashierAppService {
     }
 
     /**
-     * 按支付主键获取 QR（仅 ISSUED 后有值）。
+     * 按支付主键获�?QR（仅 ISSUED 后有值）�?
      *
      * @param paymentId 支付主键
      * @return QR 信息或空对象
      */
     public BossCashierQr getQr(Long paymentId) {
         BossCashierQr dto = new BossCashierQr();
-        Optional<EinvBossDocument> document = documentRepository.findByPaymentIdAndIsDeletedFalse(paymentId);
+        Optional<EinvBossDocument> document = documentRepository.findFirstByPaymentIdAndIsDeletedFalseOrderByIdAsc(paymentId);
         if (document.isEmpty()) {
             return dto;
         }

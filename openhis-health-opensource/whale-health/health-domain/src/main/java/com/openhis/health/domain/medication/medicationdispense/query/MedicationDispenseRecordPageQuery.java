@@ -64,6 +64,11 @@ public class MedicationDispenseRecordPageQuery extends AbstractPageQuery {
     private List<Long> resolvedMedicationIdsForCategory;
 
     /**
+     * 开立科室预解析药品申请主键（药嘱 {@code org_id}）；非 null 时 {@code med_req_id IN}；空列表拒查。
+     */
+    private List<Long> resolvedMedReqIdsForOrderingDepartment;
+
+    /**
      * 发退药记录读侧页大小：默认 10，上限 {@link PharmacyDispenseRecordExportConstants#EXPORT_MAX_ROWS}（与导出行上限一致）。
      *
      * @return 有效页大小

@@ -27,7 +27,8 @@ import java.util.Set;
  * 门诊挂号明细报表 scope 预解析（AS-RPT-007；医生/关键字 → {@code resolvedEncounterIds}）。
  *
  * <p>跨聚合只读编排；不写库。医生筛复用
- * {@link EncounterQueryService#filterEncounterIdsByActiveRegistrationDoctor}（B.6.4）。</p>
+ * {@link EncounterQueryService#filterEncounterIdsByActiveAdmitterDoctor}
+ * （活动接诊医生 ADMITTER；B.6.4）。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -43,13 +44,13 @@ public class OutpatientRegistrationDetailReportQuerySupport {
     private final OrganizationQueryService organizationQueryService;
 
     /**
-     * 将日期窗与科室写入 Query，并按关键字/挂号医生预写 {@code resolvedEncounterIds}。
+     * 将日期窗与科室写入 Query，并按关键字/接诊医生预写 {@code resolvedEncounterIds}。
      *
      * @param query          领域筛选（非空）
      * @param dateFrom       业务日起
      * @param dateTo         业务日止
      * @param organizationId 挂号科室；可空
-     * @param practitionerId 挂号医生；可空
+     * @param practitionerId 接诊医生（活动 ADMITTER）；可空
      * @param keyword        患者/门诊号关键字；可空
      */
     public void prepareQueryScopes(
@@ -72,10 +73,10 @@ public class OutpatientRegistrationDetailReportQuerySupport {
         if (trimmedKeyword != null) {
             resolvedEncounterIds = this.resolveEncounterIdsByKeyword(trimmedKeyword);
         }
-        // Pre：挂号医生筛；候选为关键字命中或科室 AMB scope，再 filter REGISTRATION_DOCTOR（B.6.4）
+        // Pre：接诊医生筛；候选为关键字命中或科室 AMB scope，再滤活动 ADMITTER（B.6.4）
         if (practitionerId != null) {
             List<Long> candidates;
-            // 已有关键字收窄：在命中集合上再滤医生
+            // 已有关键字收窄：在命中集合上再滤接诊医生
             if (resolvedEncounterIds != null) {
                 candidates = new ArrayList<>(resolvedEncounterIds);
             } else {
@@ -83,7 +84,7 @@ public class OutpatientRegistrationDetailReportQuerySupport {
                 candidates = this.listAmbEncounterCandidates(
                     organizationId, businessTimeFrom, businessTimeTo);
             }
-            Set<Long> doctorMatched = this.encounterQueryService.filterEncounterIdsByActiveRegistrationDoctor(
+            Set<Long> doctorMatched = this.encounterQueryService.filterEncounterIdsByActiveAdmitterDoctor(
                 candidates, practitionerId);
             resolvedEncounterIds = new LinkedHashSet<>(doctorMatched);
         }
@@ -110,7 +111,7 @@ public class OutpatientRegistrationDetailReportQuerySupport {
             || OutpatientRegistrationReportConstants.SUMMARY_DIMENSION_ORGANIZATION.equals(trimmed)) {
             return OutpatientRegistrationReportConstants.SUMMARY_DIMENSION_ORGANIZATION;
         }
-        // 按挂号医生 × 号源
+        // 按接诊医生 × 号源
         if (OutpatientRegistrationReportConstants.SUMMARY_VIEW_DOCTOR.equals(trimmed)) {
             return OutpatientRegistrationReportConstants.SUMMARY_DIMENSION_DOCTOR;
         }

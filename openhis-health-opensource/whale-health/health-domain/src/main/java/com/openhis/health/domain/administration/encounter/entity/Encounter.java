@@ -320,11 +320,43 @@ public class Encounter extends BaseAuditedEntity {
     }
 
     /**
+     * 断言当前状态允许取消接诊（回退待诊，供窗口退号前由医生同意）。
+     *
+     * <p>门诊：仅 {@code IN_PROGRESS}/{@code ON_HOLD}/{@code DISCHARGED} 可取消接诊；
+     * 与账单无关，语义为「医生同意退号」。</p>
+     */
+    public void assertCancelReceptionAllowed() {
+        this.assertClass(EncounterClass.AMB.getCode());
+        // 仅已接诊后的状态允许回退：在诊、暂离、完诊。
+        if (!EncounterStatus.IN_PROGRESS.getCode().equals(this.statusEnum)
+            && !EncounterStatus.ON_HOLD.getCode().equals(this.statusEnum)
+            && !EncounterStatus.DISCHARGED.getCode().equals(this.statusEnum)) {
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS, "当前状态不允许取消接诊");
+        }
+    }
+
+    /**
+     * 取消门诊接诊：回到已挂号待诊，清空接诊/完诊时刻。
+     *
+     * <p>允许自在诊/暂离/完诊回退；完诊为业务终态，本方法豁免终止态拦截（对齐重新接诊路径）。
+     * 接诊医生参与者收口由领域服务在聚合外子表完成。</p>
+     */
+    public void cancelOutpatientReception() {
+        this.assertCancelReceptionAllowed();
+        // 统一回到已挂号，窗口方可按 BR-REG-008 继续退号。
+        this.statusEnum = EncounterStatus.REGISTERED.getCode();
+        this.receptionTime = null;
+        this.endTime = null;
+    }
+
+    /**
      * 断言当前状态允许取消。
      *
-     * <p>门诊允许退号的前置状态：REGISTERED（已挂号未接诊）、
-     * TRIAGED（已分诊但医生未接诊）、IN_PROGRESS（接诊中）、DISCHARGED（完诊）。
-     * PLANNED（待挂号/预结算未缴费）不走退号域动作，由应用侧引导完成缴费或清理草稿。</p>
+     * <p>门诊允许退号的前置状态：仅 REGISTERED（已挂号未接诊）、TRIAGED（已分诊未接诊）。
+     * 已接诊（IN_PROGRESS/ON_HOLD）或完诊（DISCHARGED）须先经医生「取消接诊」回退待诊，
+     * 再由窗口退号——防止患者问诊后直接找款员退号而医生不知情。</p>
+     *
+     * <p>PLANNED（待挂号/预结算未缴费）不走退号域动作，由应用侧引导完成缴费或清理草稿。</p>
      *
      * <p>住院（IMP）取消登记须走 {@link #assertInpatientAdmissionCancelable(boolean)}，不在此方法内处理。</p>
      */
@@ -332,11 +364,9 @@ public class Encounter extends BaseAuditedEntity {
         if (EncounterClass.IMP.getCode().equals(this.classEnum)) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS, "住院取消登记请使用专用域动作");
         }
-        // 门诊：待挂号（PLANNED）禁止退号；已挂号至完诊允许退号。
+        // 门诊：仅未接诊的已挂号/已分诊可退号；已接诊/完诊须先取消接诊。
         if (!EncounterStatus.REGISTERED.getCode().equals(this.statusEnum)
-            && !EncounterStatus.TRIAGED.getCode().equals(this.statusEnum)
-            && !EncounterStatus.IN_PROGRESS.getCode().equals(this.statusEnum)
-            && !EncounterStatus.DISCHARGED.getCode().equals(this.statusEnum)) {
+            && !EncounterStatus.TRIAGED.getCode().equals(this.statusEnum)) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS, "当前门诊状态不允许取消");
         }
     }

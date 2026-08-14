@@ -6,6 +6,8 @@ package com.openhis.whale.einvoice.boss.application.internal.issue;
 
 import com.openhis.health.domain.share.enums.InvoiceStatus;
 import com.openhis.whale.core.application.exception.BusinessException;
+import com.openhis.whale.core.infrastructure.multitenancy.TenantContext;
+import com.openhis.whale.core.infrastructure.multitenancy.TenantUtils;
 import com.openhis.whale.einvoice.boss.application.internal.common.BossCommonSnapshotSupport;
 import com.openhis.whale.einvoice.boss.application.internal.document.EinvoiceBossDocumentInitializerService;
 import com.openhis.whale.einvoice.boss.domain.issue.access.BossIssueDocumentResultAccess;
@@ -61,6 +63,7 @@ public class BossIssueWorkerService {
     private final BossIssueTaskStatusWriter taskStatusWriter;
     private final EinvoiceBossDocumentInitializerService documentInitializer;
     private final BossRecoverService recoverService;
+    private final TenantContext tenantContext;
 
     /**
      * 按任务主键消费一次开票（Scheduler / 手工触发）。
@@ -110,6 +113,22 @@ public class BossIssueWorkerService {
             throw new BusinessException(EinvBossErrorCodes.EINV_TASK_CONCURRENT, "任务正在被其他节点处理");
         }
 
+        // @Async / 定时线程无 HTTP 租户；且可能残留其它请求租户。全任务绑定单据租户，
+        // 保证产品甲乙丙展开与单位术语转中文在出站 normalize 时仍可用。
+        Long previousTenantId = TenantUtils.getCurrentTenantId();
+        boolean tenantBound = bindDocumentTenant(document.getTenantId());
+        try {
+            return processClaimedTask(task, document, commonIssue);
+        } finally {
+            restoreTenant(tenantBound, previousTenantId);
+        }
+    }
+
+    /**
+     * 抢占成功后的开具主体（调用方已绑定单据租户）。
+     */
+    private BossInvoiceIssueResult processClaimedTask(
+            EinvBossIssueTask task, EinvBossDocument document, boolean commonIssue) {
         BossIssueSnapshot snapshot;
         if (commonIssue) {
             snapshot = commonSnapshotSupport.build(document);
@@ -135,6 +154,8 @@ public class BossIssueWorkerService {
             if (!commonIssue) {
                 // initialize：非 ADJUSTED 重建明细（保证 std*数量=金额），ADJUSTED 保留人工调额
                 document = documentInitializer.initialize(task.getInvoiceId());
+                // 重建后再取快照，出站 enrich 与落库明细同源（药名/甲乙丙/中文单位）
+                snapshot = issueSnapshotContextLoader.loadForInvoice(task.getInvoiceId());
             }
             List<EinvBossLine> lines = lineRepository.findByDocumentIdAndIsDeletedFalseOrderByLineNoAsc(document.getId());
             List<BigDecimal> lineAmounts = lines.stream().map(EinvBossLine::getAmount).collect(Collectors.toList());
@@ -149,7 +170,7 @@ public class BossIssueWorkerService {
 
             IssueInvokeOutcome outcome =
                     issueOutboundAccess.invokeIssue(task, document, lines, snapshot);
-            documentResultAccess.persistIssueResult(document, outcome.issueResult(), outcome.payloadJson());
+            documentResultAccess.persistSplitIssueResults(document, outcome);
             if (!commonIssue) {
                 invoiceWritebackLoader.issueElectronicInvoice(
                         task.getInvoiceId(), outcome.issueResult(), snapshot.getOperatorId());
@@ -174,6 +195,38 @@ public class BossIssueWorkerService {
             }
             taskStatusWriter.failTask(task.getId(), EinvBossErrorCodes.EINV_BOSS_TIMEOUT, ex.getMessage());
             throw new BusinessException(EinvBossErrorCodes.EINV_BOSS_TIMEOUT, "调用博思异常: " + ex.getMessage(), ex);
+        }
+    }
+
+    /**
+     * 将当前线程租户覆盖为单据租户；已是同一租户则不标记为已绑定。
+     *
+     * @param documentTenantId 单据租户；空则不改
+     * @return true 表示本方法改写了租户，调用方须 {@link #restoreTenant}
+     */
+    private boolean bindDocumentTenant(Long documentTenantId) {
+        if (documentTenantId == null) {
+            return false;
+        }
+        Long current = TenantUtils.getCurrentTenantId();
+        if (documentTenantId.equals(current)) {
+            return false;
+        }
+        tenantContext.setCurrentTenantId(documentTenantId);
+        return true;
+    }
+
+    /**
+     * 恢复 {@link #bindDocumentTenant} 之前的租户（无则 clear）。
+     */
+    private void restoreTenant(boolean tenantBound, Long previousTenantId) {
+        if (!tenantBound) {
+            return;
+        }
+        if (previousTenantId == null) {
+            tenantContext.clear();
+        } else {
+            tenantContext.setCurrentTenantId(previousTenantId);
         }
     }
 

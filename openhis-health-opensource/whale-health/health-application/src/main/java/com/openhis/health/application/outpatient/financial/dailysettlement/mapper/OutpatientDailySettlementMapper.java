@@ -123,11 +123,24 @@ public interface OutpatientDailySettlementMapper {
         List<Long> selectedPaymentIds);
 
     /**
+     * 按勾选 payment 现算头表笔数（与总收入同口径：不含工伤合同）。
+     *
+     * <p>提交头表 {@code payment_count} 必须调用本方法；挂载仍含工伤 payment，笔数快照不含。</p>
+     *
+     * @param lockedItems        提交前锁定的未交账预览行
+     * @param selectedPaymentIds 本次勾选挂载 payment 主键
+     * @return 不含工伤的勾选笔数；空选为 0
+     */
+    Integer resolveSelectedSettlementPaymentCount(
+        List<UnsettledPaymentPreviewItemQueryModel> lockedItems,
+        List<Long> selectedPaymentIds);
+
+    /**
      * 提交结果装配响应。
      *
      * @param settlementId 交账头主键
      * @param busNo        交账单号
-     * @param paymentCount 挂载条数
+     * @param paymentCount 计入总收入笔数（不含工伤）
      * @return 提交响应
      */
     SubmitOutpatientDailySettlementResponse toSubmitOutpatientDailySettlementResponse(

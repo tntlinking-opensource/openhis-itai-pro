@@ -19,7 +19,7 @@ import org.springframework.stereotype.Service;
 import java.util.Optional;
 
 /**
- * 开票任务入队：初始化 document/line 并创建 PENDING task。
+ * 开票任务入队：初始�?document/line 并创�?PENDING task�?
  */
 @Slf4j
 @Service
@@ -31,11 +31,11 @@ public class BossIssueTaskEnqueueService {
     private final EinvBossIssueTaskRepository taskRepository;
 
     /**
-     * 为指定票据创建 boss 单据并入队任务。
+     * 为指定票据创�?boss 单据并入队任务�?
      *
      * @param invoiceId 票据主键
-     * @param triggerSource 触发来源码
-     * @return 新建任务主键；唯一约束冲突（已有活跃任务）时为空
+     * @param triggerSource 触发来源�?
+     * @return 新建任务主键；唯一约束冲突（已有活跃任务）时为�?
      */
     public Optional<Long> enqueue(Long invoiceId, String triggerSource) {
         EinvBossDocument document = resolveDocument(invoiceId);
@@ -51,23 +51,23 @@ public class BossIssueTaskEnqueueService {
             taskRepository.saveAndFlush(task);
             return Optional.ofNullable(task.getId());
         } catch (DataIntegrityViolationException ex) {
-            // 蓝绿/重复事件：uk_einv_task_invoice_active 保证仅一条活跃任务
+            // 蓝绿/重复事件：uk_einv_task_invoice_active 保证仅一条活跃任�?
             log.debug("Issue task already enqueued, invoiceId={}", invoiceId);
             return Optional.empty();
         }
     }
 
     /**
-     * 解析或初始化与 invoiceId 关联的 boss 单据。
+     * 解析或初始化�?invoiceId 关联�?boss 单据�?
      *
      * <p>若已有单据且金额已调整（{@code amountStatus=ADJUSTED}），则刷新明细；
-     * 否则走完整 initialize。</p>
+     * 否则走完�?initialize�?/p>
      *
      * @param invoiceId 票据主键
-     * @return 可用于创建 task 的 document
+     * @return 可用于创�?task �?document
      */
     private EinvBossDocument resolveDocument(Long invoiceId) {
-        Optional<EinvBossDocument> existing = documentRepository.findByInvoiceIdAndIsDeletedFalse(invoiceId);
+        Optional<EinvBossDocument> existing = documentRepository.findFirstByInvoiceIdAndIsDeletedFalseOrderByIdAsc(invoiceId);
         if (existing.isPresent() && AmountStatus.ADJUSTED.getCode().equals(existing.get().getAmountStatus())) {
             return documentInitializer.refreshForIssue(invoiceId);
         }

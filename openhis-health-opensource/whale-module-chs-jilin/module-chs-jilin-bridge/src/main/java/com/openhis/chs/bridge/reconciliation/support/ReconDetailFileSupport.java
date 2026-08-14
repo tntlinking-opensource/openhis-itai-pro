@@ -15,6 +15,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -97,6 +98,7 @@ public final class ReconDetailFileSupport {
         if (value == null) {
             return "0.00";
         }
-        return value.stripTrailingZeros().toPlainString();
+        // 平台数值型 16,2：固定两位小数，避免 stripTrailingZeros 产出 35.7 / 0
+        return value.setScale(2, RoundingMode.HALF_UP).toPlainString();
     }
 }

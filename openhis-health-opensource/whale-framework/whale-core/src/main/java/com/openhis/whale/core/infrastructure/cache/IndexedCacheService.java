@@ -43,14 +43,15 @@ public class IndexedCacheService<T> {
     private final Cache<String, Set<String>> indexCache;
 
     public IndexedCacheService() {
+        // 术语概念全量预热可达数千～上万条；过小会导致 item 被驱逐而 index 仍残留，getAll 返回残缺列表
         this.itemCache = Caffeine.newBuilder()
             .expireAfterWrite(24, TimeUnit.HOURS)
-            .maximumSize(10000)
+            .maximumSize(50000)
             .build();
 
         this.indexCache = Caffeine.newBuilder()
             .expireAfterWrite(24, TimeUnit.HOURS)
-            .maximumSize(1000)
+            .maximumSize(5000)
             .build();
     }
 
@@ -94,10 +95,20 @@ public class IndexedCacheService<T> {
             return new ArrayList<>();
         }
 
-        return itemKeys.stream()
+        List<T> result = itemKeys.stream()
             .map(itemKey -> itemCache.getIfPresent(buildCacheKey(indexKey, itemKey)))
             .filter(Objects::nonNull)
             .collect(Collectors.toList());
+        // index 仍在但 item 已被 maximumSize 驱逐 → 视为未命中，迫使调用方回源全量重载
+        if (result.size() != itemKeys.size()) {
+            log.warn(
+                "IndexedCache partial eviction detected, indexKey={}, indexSize={}, itemHit={}",
+                indexKey,
+                itemKeys.size(),
+                result.size());
+            return new ArrayList<>();
+        }
+        return result;
     }
 
     /**

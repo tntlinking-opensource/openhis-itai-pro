@@ -353,7 +353,7 @@ public class DoctorStationAdviceRowDto {
     private Long contractId;
 
     /**
-     * 费用性质分类展示文案（ContractCategory：自费/公费/省医保/市医保/职工医保）。
+     * 费用性质分类展示文案（ContractCategory：自费/公费/省医保/市医保/工伤保险）。
      * <p>处方笺「费用性质」展示用；无合同时为空，前端回落「自费」。</p>
      */
     @Schema(description = "费用性质分类展示文案")

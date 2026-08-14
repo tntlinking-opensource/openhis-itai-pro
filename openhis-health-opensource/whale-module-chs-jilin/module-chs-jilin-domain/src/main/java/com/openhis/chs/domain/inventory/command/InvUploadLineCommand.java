@@ -76,7 +76,10 @@ public class InvUploadLineCommand {
     private String splerPmtno;
     /** 3503/3504：生产厂家名称 */
     private String prodentpName;
-    /** 3503/3504：批准文号 */
+    /**
+     * 3503/3504：批准文号（真源药品主数据 {@code approval_number}）。
+     * <p>业务未填时 Loader / 出站组装回落 {@link com.openhis.chs.domain.share.constants.ChsInventoryConstants#DEFAULT_APRVNO}。</p>
+     */
     private String aprvno;
     /** 3503/3504：采购/退货数量 */
     private BigDecimal purcRetnCnt;

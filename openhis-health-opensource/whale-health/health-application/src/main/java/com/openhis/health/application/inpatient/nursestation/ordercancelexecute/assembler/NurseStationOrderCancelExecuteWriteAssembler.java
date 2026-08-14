@@ -9,6 +9,7 @@ import com.openhis.health.application.inpatient.nursestation.dispensesummary.ass
 import com.openhis.health.application.inpatient.nursestation.ordercancelexecute.dto.CancelExecutionSummaryRebuildContext;
 import com.openhis.health.application.inpatient.nursestation.ordercancelexecute.dto.SummaryRebuildHint;
 import com.openhis.health.application.inpatient.nursestation.ordercancelexecute.mapper.NurseStationOrderCancelExecuteMapper;
+import com.openhis.health.application.inpatient.pharmacy.dispense.support.InpatientMedicationDispenseChargePricingLoader;
 import com.openhis.health.application.shared.nursestation.DeviceDispenseNurseWorkflowOrchestrator;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
@@ -75,8 +76,10 @@ public class NurseStationOrderCancelExecuteWriteAssembler {
     private final MedicationDispenseQueryService medicationDispenseQueryService;
     /** Charge 写侧：ORDER_EXECUTE 按 procedureId 逻辑删。 */
     private final ChargeItemDomainService chargeItemDomainService;
-    /** Charge 读侧：过滤重建单价只读。 */
+    /** Charge 读侧：结算 Gate 再生链过滤。 */
     private final ChargeItemQueryService chargeItemQueryService;
+    /** 住院汇总重建定价：仅 PENDING_SETTLEMENT，按 dispenseId 锚定（同 IF-IP-SUM-04）。 */
+    private final InpatientMedicationDispenseChargePricingLoader inpatientMedicationDispenseChargePricingLoader;
     /** 诊疗申请读侧：based_on 反查绑定 SR。 */
     private final ServiceRequestQueryService serviceRequestQueryService;
     /** 诊疗申请写侧：派生 SR 逻辑删除。 */
@@ -436,7 +439,7 @@ public class NurseStationOrderCancelExecuteWriteAssembler {
                     InpatientNurseStationConstants.EX_IP_CXL_204,
                     "汇总单状态已变更，请刷新后重试");
             }
-            // 18c / 18d：按 Supply 态撤整单
+            // 18c / 18d：按 Supply 态撤整单；APPROVAL 驳回后须再逻辑删 Supply，否则驳回残单仍含已取消药
             if (SupplyStatus.PENDING_APPROVAL.getCode().equals(currentStatus)) {
                 medicationDispenseDomainService.cancelMedicationDispenseSummary(
                     nurseStationOrderCancelExecuteMapper.toCancelMedicationDispenseSummaryCommand(summaryNo, operatorId));
@@ -447,6 +450,9 @@ public class NurseStationOrderCancelExecuteWriteAssembler {
                     nurseStationOrderCancelExecuteMapper.toRejectRequestCommand(summaryNo, operatorId));
                 medicationDispenseDomainService.cancelMedicationDispenseSummary(
                     nurseStationOrderCancelExecuteMapper.toCancelMedicationDispenseSummaryCommand(summaryNo, operatorId));
+                // 驳回态允许删单：去掉含取消行的旧 Supply，避免汇总 Tab 仍展示「取消的药」
+                supplyRequestDomainService.removeByBusNo(
+                    nurseStationOrderCancelExecuteMapper.toRemoveByBusNoCommand(summaryNo, operatorId));
             } else {
                 throw new BusinessException(
                     InpatientNurseStationConstants.EX_IP_CXL_204,
@@ -454,7 +460,7 @@ public class NurseStationOrderCancelExecuteWriteAssembler {
             }
             // 18e.1：撤汇总后剔除行已回 PREPARATION，须按长临嘱删/回退，避免待发池残留重复行（BR-IP-CXL-007）
             this.rollbackExcludedDispensesAfterSummaryWithdrawal(excludedIds, operatorId);
-            // 18e：剔除取消行后剩余发放行
+            // 18e：剔除取消行后剩余发放行（取消行不得进入重建）
             Set<Long> excludedSafe = excludedIds;
             if (excludedSafe == null) {
                 excludedSafe = new HashSet<>();
@@ -471,12 +477,17 @@ public class NurseStationOrderCancelExecuteWriteAssembler {
             if (remainingDispenseIds.isEmpty()) {
                 continue;
             }
-            // 18f：过滤重建
+            // 18f：过滤重建（定价口径同 IF-IP-SUM-04：PENDING_SETTLEMENT + dispenseId）
             List<MedicationDispense> remainingDispenses =
-                medicationDispenseQueryService.listMedicationDispensesByIds(remainingDispenseIds);
+                this.filterRemainingDispensesForRebuild(
+                    medicationDispenseQueryService.listMedicationDispensesByIds(remainingDispenseIds),
+                    excludedSafe);
+            if (remainingDispenses.isEmpty()) {
+                continue;
+            }
             Map<Long, List<Long>> dispenseIdsByEncounter = new HashMap<>();
             for (MedicationDispense dispense : remainingDispenses) {
-                if (dispense == null || dispense.getId() == null || dispense.getEncounterId() == null) {
+                if (dispense.getEncounterId() == null) {
                     continue;
                 }
                 List<Long> bucket = dispenseIdsByEncounter.get(dispense.getEncounterId());
@@ -486,20 +497,12 @@ public class NurseStationOrderCancelExecuteWriteAssembler {
                 }
                 bucket.add(dispense.getId());
             }
-            Map<Long, ChargeItem> chargeByDispenseId = new HashMap<>();
-            for (Map.Entry<Long, List<Long>> encEntry : dispenseIdsByEncounter.entrySet()) {
-                List<ChargeItem> pricingRows = chargeItemQueryService.listChargeItemsForMedicationDispensePricing(
-                    encEntry.getKey(), encEntry.getValue());
-                for (ChargeItem charge : pricingRows) {
-                    if (charge == null || charge.getServiceId() == null) {
-                        continue;
-                    }
-                    chargeByDispenseId.put(charge.getServiceId(), charge);
-                }
-            }
+            Map<Long, ChargeItem> chargeByDispenseId =
+                inpatientMedicationDispenseChargePricingLoader.mapPendingSettlementChargeByDispenseIds(
+                    dispenseIdsByEncounter);
             List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
             for (MedicationDispense dispense : remainingDispenses) {
-                if (dispense == null || dispense.getMedicationId() == null) {
+                if (dispense.getMedicationId() == null) {
                     continue;
                 }
                 ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
@@ -587,6 +590,40 @@ public class NurseStationOrderCancelExecuteWriteAssembler {
                 nurseStationOrderCancelExecuteMapper.toRemoveUndispensedDispenseCommand(
                     dispenseId, operatorId));
         }
+    }
+
+    /**
+     * 重建前再次剔除已取消发放行（防御二次入组，避免取消药仍写入新汇总单）。
+     *
+     * @param loadedDispenses 按剩余 id 加载的发放行
+     * @param excludedIds     本次取消剔除集
+     * @return 可参与过滤重建的发放行
+     */
+    private List<MedicationDispense> filterRemainingDispensesForRebuild(
+        List<MedicationDispense> loadedDispenses,
+        Set<Long> excludedIds) {
+        List<MedicationDispense> result = new ArrayList<>();
+        if (loadedDispenses == null || loadedDispenses.isEmpty()) {
+            return result;
+        }
+        Set<Long> excludedSafe = excludedIds;
+        if (excludedSafe == null) {
+            excludedSafe = new HashSet<>();
+        }
+        for (MedicationDispense dispense : loadedDispenses) {
+            if (dispense == null || dispense.getId() == null) {
+                continue;
+            }
+            // 已软删或属本次取消剔除集：不得进入新汇总
+            if (Boolean.TRUE.equals(dispense.getIsDeleted())) {
+                continue;
+            }
+            if (excludedSafe.contains(dispense.getId())) {
+                continue;
+            }
+            result.add(dispense);
+        }
+        return result;
     }
 
     /**

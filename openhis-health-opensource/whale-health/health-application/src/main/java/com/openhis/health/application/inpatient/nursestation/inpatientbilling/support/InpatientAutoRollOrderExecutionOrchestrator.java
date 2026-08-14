@@ -111,7 +111,11 @@ public class InpatientAutoRollOrderExecutionOrchestrator {
         if (operatorId == null) {
             operatorId = performerId;
         }
-        LocalDateTime planTime = billDate.atStartOfDay();
+        // 业务发生时刻：优先配置/调用方传入；空则日末（护理与兼容路径）
+        LocalDateTime planTime = command.getOccurrenceTime();
+        if (planTime == null) {
+            planTime = billDate.atTime(InpatientNurseStationConstants.DAY_END_CLOCK);
+        }
         BigDecimal quantity = command.getQuantity();
         if (quantity == null || quantity.compareTo(BigDecimal.ZERO) <= 0) {
             quantity = serviceOrder.getQuantity();
@@ -172,7 +176,7 @@ public class InpatientAutoRollOrderExecutionOrchestrator {
             completeCmd.setProcedureId(procedureId);
             completeCmd.setOperatorId(operatorId);
             completeCmd.setResultText(InpatientNurseStationConstants.INPATIENT_NURSE_EXECUTE_PROCEDURE_RESULT_TEXT);
-            // 滚费自动执行：展示时间与计划日对齐（recorded=planTime），逻辑锚点仍为 occurrence=planTime
+            // 滚费自动执行：recorded_time / occurrence_time 同锚 planTime（配置业务时刻或日末）
             completeCmd.setRecordedTime(planTime);
             procedureDomainService.completeProcedureRecord(completeCmd);
         } catch (BusinessException ex) {

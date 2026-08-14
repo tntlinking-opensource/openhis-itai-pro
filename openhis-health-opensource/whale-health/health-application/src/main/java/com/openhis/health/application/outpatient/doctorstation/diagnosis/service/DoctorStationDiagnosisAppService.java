@@ -4,6 +4,7 @@
  */
 package com.openhis.health.application.outpatient.doctorstation.diagnosis.service;
 
+import com.openhis.health.application.outpatient.doctorstation.diagnosis.dto.MaintainableCommonDiagnosisRowDto;
 import com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.dto.CommonDiagnosisRowDto;
@@ -18,7 +19,9 @@ import com.openhis.health.domain.administration.encounter.queries.model.Encounte
 import com.openhis.health.domain.administration.encounter.service.EncounterDomainService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.domain.clinical.conditiondefinition.queries.model.DoctorStationConditionDefinitionRowModel;
+import com.openhis.health.domain.clinical.conditiondefinition.queries.model.EnsureChronicSpecOpspResult;
 import com.openhis.health.domain.clinical.conditiondefinition.queries.model.OpspDiseCodeDefinitionMatchQueryModel;
+import com.openhis.health.domain.clinical.conditiondefinition.service.ConditionDefinitionDomainService;
 import com.openhis.health.domain.clinical.conditiondefinition.service.ConditionDefinitionQueryService;
 import com.openhis.health.infrastructure.integration.insurance.benefit.InsuranceRegisterBenefitQueryExtension;
 import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionIn.InsuranceOpspFilingQueryExtensionIn;
@@ -26,6 +29,7 @@ import com.openhis.health.infrastructure.integration.insurance.benefit.Extension
 import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionOut.InsuranceOpspFilingLineSnapshot;
 import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionOut.InsuranceOpspFilingQueryExtensionOut;
 import com.openhis.health.domain.custom.conditiontemplate.command.BindConditionTemplateCommand;
+import com.openhis.health.domain.custom.conditiontemplate.command.UnbindConditionTemplateCommand;
 import com.openhis.health.domain.custom.conditiontemplate.queries.model.ConditionTemplateQueryModel;
 import com.openhis.health.domain.custom.conditiontemplate.service.ConditionTemplateDomainService;
 import com.openhis.health.domain.custom.conditiontemplate.service.ConditionTemplateQueryService;
@@ -40,6 +44,7 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.enums.ConditionTemplateBinding;
 import com.openhis.health.domain.share.enums.EncounterClass;
+import com.openhis.health.domain.share.enums.YbMedType;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
 import com.openhis.whale.core.application.session.CurrentOperatorResolver;
 import com.openhis.whale.core.application.dto.OptionDto;
@@ -57,7 +62,7 @@ import java.util.*;
 /**
  * 门诊医生站诊断录入编排：就诊诊断快照、常用树、慢特病备案导入候选、定义检索与保存/删除。
  *
- * <p>对应 AS-OP-DOR-002 / AS-SDD：IF-DOR-06/06A/06B/07/08/08A/09。</p>
+ * <p>对应 AS-OP-DOR-002 / AS-SDD：IF-DOR-06/06A/06B/07/08/08A/09；常用维护 list/unbind 为医生站轻量维护。</p>
  */
 @Slf4j
 @Service
@@ -69,6 +74,8 @@ public class DoctorStationDiagnosisAppService {
     private final EncounterDiagnosisSnapshotAssembler encounterDiagnosisSnapshotAssembler;
     private final PatientHistoryCommonDiagnosisAssembler patientHistoryCommonDiagnosisAssembler;
     private final ConditionDefinitionQueryService conditionDefinitionQueryService;
+    /** 慢病备案未匹配点击补录：仅写 chronic_spec。 */
+    private final ConditionDefinitionDomainService conditionDefinitionDomainService;
     private final ConditionTemplateQueryService conditionTemplateQueryService;
     /** 个人/科室常用模板写侧（IF-DOR-08A）。 */
     private final ConditionTemplateDomainService conditionTemplateDomainService;
@@ -161,7 +168,7 @@ public class DoctorStationDiagnosisAppService {
      */
     public PatientOpspFilingDiagnosisResponse getPatientOpspFilingDiagnosis(
         GetPatientOpspFilingDiagnosisRequest request) {
-        // Gate：未装配医保模块时隐藏入口，禁止发起 5301（BR-DOD-012）。
+        // Gate：未装配医保模块时隐藏入口，禁止发起 5302A（BR-DOD-012）。
         if (!this.registerBenefitQueryExtension.isEnabled()) {
             return this.doctorStationDiagnosisMapper.toPatientOpspFilingDiagnosisResponse(false, List.of());
         }
@@ -195,7 +202,7 @@ public class DoctorStationDiagnosisAppService {
         } catch (RuntimeException ex) {
             // EX-DOD-106：平台失败弱提示，不阻断诊断 Tab。
             log.warn(
-                "5301 慢特病备案查询失败 encounterId={} contractId={} psnNo={}: {}",
+                "慢特病备案查询失败 encounterId={} contractId={} psnNo={}: {}",
                 request.getEncounterId(),
                 filingCtx.getContractId(),
                 filingCtx.getPsnNo(),
@@ -255,6 +262,161 @@ public class DoctorStationDiagnosisAppService {
         }
         // Asm：启用标志为 true，供前端渲染「慢病备案」分支。
         return this.doctorStationDiagnosisMapper.toPatientOpspFilingDiagnosisResponse(true, rows);
+    }
+
+    /**
+     * 点击未匹配慢病备案：幂等补录门诊慢特病种目录（仅 {@code chronic_spec}）并返回可导入定义。
+     *
+     * <p>对应 AS-OP-DOR-002 IF-DOR-06C / BR-DOD-013。不修改其它来源诊断目录；歧义/过期仍拒绝。</p>
+     *
+     * @param request 就诊/患者与备案码
+     * @return 可导入定义
+     * @throws BusinessException 门控失败、备案无效或不存在、歧义匹配
+     */
+    public EnsureOpspFilingDiagnosisResponse ensureOpspFilingDiagnosis(EnsureOpspFilingDiagnosisRequest request) {
+        // Gate：CHS 未启用时禁止补录，避免医生站绕过目录维护写主数据。
+        if (!this.registerBenefitQueryExtension.isEnabled()) {
+            throw new BusinessException(ErrorCodeConstants.CONDITION_DEFINITION_INVALID_ARGUMENT, "医保模块未启用，无法补录慢病目录");
+        }
+        // Pre：门诊就诊上下文与串患者门禁。
+        OutpatientEncounterContextQueryModel snapshot =
+            this.EncounterContextReader.mustGetOutpatientContextByEncounterId(request.getEncounterId());
+        this.doctorStationDiagnosisMapper.validateEncounterPatientGate(snapshot, request.getPatientId());
+        // Gate：非门诊就诊不允许走慢病备案导入。
+        if (!EncounterClass.AMB.getCode().equals(snapshot.getClassEnum())) {
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS, "当前就诊类别不允许导入慢病备案诊断");
+        }
+        String opspCode = StringUtils.trimToNull(request.getOpspDiseCode());
+        // Gate：无备案码无法定位 5302A 行与目录主键。
+        if (opspCode == null) {
+            throw new BusinessException(ErrorCodeConstants.CONDITION_DEFINITION_INVALID_ARGUMENT, "慢特病种编码不能为空");
+        }
+        // Pre：解析 contractId/psnNo；自费或未读卡时无法核对备案。
+        InsuranceOpspFilingEncounterSnapshot filingCtx =
+            this.registerBenefitQueryExtension.resolveOpspFilingEncounter(request.getEncounterId());
+        if (filingCtx == null
+            || filingCtx.getContractId() == null
+            || StringUtils.isBlank(filingCtx.getPsnNo())) {
+            throw new BusinessException(ErrorCodeConstants.CONDITION_DEFINITION_INVALID_ARGUMENT, "当前就诊无有效医保人员上下文");
+        }
+        // Pre：再查慢特病备案（5301 主查），确认该码属于本患者有效备案（防前端伪造码写目录）。
+        InsuranceOpspFilingLineSnapshot filingLine =
+            this.findOpspFilingLineOrThrow(request.getEncounterId(), filingCtx, opspCode);
+        // Gate：过期备案禁止补录与导入。
+        if (!this.isOpspFilingValid(filingLine.getEnddate(), LocalDate.now())) {
+            throw new BusinessException(ErrorCodeConstants.CONDITION_DEFINITION_INVALID_STATUS, "备案已过期，不可导入");
+        }
+        String opspName = StringUtils.trimToNull(filingLine.getOpspDiseName());
+        // Pre：平台名为空时回退请求名，仍空则无法落目录。
+        if (opspName == null) {
+            opspName = StringUtils.trimToNull(request.getOpspDiseName());
+        }
+        if (opspName == null) {
+            throw new BusinessException(ErrorCodeConstants.CONDITION_DEFINITION_INVALID_ARGUMENT, "慢特病种名称不能为空");
+        }
+        // Pre：已能唯一匹配则直接复用，避免多余写库。
+        OpspDiseCodeDefinitionMatchQueryModel existing = this.resolveUniqueOpspMatchOrThrow(opspCode);
+        boolean catalogWritten = false;
+        if (existing == null || existing.getConditionDefinitionId() == null) {
+            // Cmd：仅幂等写入/启用 chronic_spec，不改其它来源目录。
+            EnsureChronicSpecOpspResult ensureResult =
+                this.conditionDefinitionDomainService.ensureActiveChronicSpecOpspDisease(opspCode, opspName);
+            catalogWritten = ensureResult.isCatalogWritten();
+            existing = this.resolveUniqueOpspMatchOrThrow(opspCode);
+        }
+        // Gate：补录后仍无唯一启用目录，失败给信息科处理。
+        if (existing == null || existing.getConditionDefinitionId() == null) {
+            throw new BusinessException(ErrorCodeConstants.CONDITION_DEFINITION_NOT_FOUND, "慢病目录补录失败，请联系信息科");
+        }
+        // Asm：装配可导入定义供前端走 IF-DOR-08。
+        String definitionName = existing.getName();
+        if (StringUtils.isBlank(definitionName)) {
+            definitionName = opspName;
+        }
+        EnsureOpspFilingDiagnosisResponse response = new EnsureOpspFilingDiagnosisResponse();
+        response.setOpspDiseCode(opspCode);
+        response.setOpspDiseName(opspName);
+        response.setConditionDefinitionId(existing.getConditionDefinitionId());
+        response.setConditionCode(existing.getConditionCode());
+        response.setConditionDefinitionName(definitionName);
+        response.setDiagnosisKind(
+            DoctorStationDiagnosisConstants.resolveDiagnosisKindFromSource(existing.getSourceEnum()));
+        response.setMedicalTypeCode(this.resolveOpspImportMedicalTypeCode(filingLine.getMedicalTypeCode()));
+        response.setCreated(catalogWritten);
+        return response;
+    }
+
+    /**
+     * 备案导入医疗类别：无标签默认门诊慢病；合法 140104/140201 原样。
+     *
+     * @param medicalTypeCode 平台/打标结果
+     * @return 非空 140104 或 140201
+     */
+    private String resolveOpspImportMedicalTypeCode(String medicalTypeCode) {
+        String code = StringUtils.trimToNull(medicalTypeCode);
+        if (YbMedType.SPECIAL_DISEASE_OUTPATIENT.getCode().equals(code)) {
+            return YbMedType.SPECIAL_DISEASE_OUTPATIENT.getCode();
+        }
+        return YbMedType.CHRONIC_DISEASE_OUTPATIENT.getCode();
+    }
+
+    /**
+     * 从备案查询结果中定位指定备案码行；平台失败或缺失时抛业务异常。
+     *
+     * @param encounterId 就诊标识（仅用于日志）
+     * @param filingCtx   已解析的参保上下文
+     * @param opspCode    归一化备案码
+     * @return 非空备案行
+     * @throws BusinessException 平台失败、备案中无该码
+     */
+    private InsuranceOpspFilingLineSnapshot findOpspFilingLineOrThrow(
+        Long encounterId,
+        InsuranceOpspFilingEncounterSnapshot filingCtx,
+        String opspCode) {
+        try {
+            InsuranceOpspFilingQueryExtensionIn queryCommand = new InsuranceOpspFilingQueryExtensionIn();
+            queryCommand.setContractId(filingCtx.getContractId());
+            queryCommand.setPsnNo(filingCtx.getPsnNo().trim());
+            InsuranceOpspFilingQueryExtensionOut filingOut =
+                this.registerBenefitQueryExtension.queryOpspFiling(queryCommand);
+            if (filingOut != null && filingOut.getFilingLines() != null) {
+                for (InsuranceOpspFilingLineSnapshot line : filingOut.getFilingLines()) {
+                    if (line != null && opspCode.equals(StringUtils.trimToNull(line.getOpspDiseCode()))) {
+                        return line;
+                    }
+                }
+            }
+        } catch (RuntimeException ex) {
+            log.warn(
+                "慢特病备案核对失败 encounterId={} opspDiseCode={}: {}",
+                encounterId,
+                opspCode,
+                ex.getMessage());
+            throw new BusinessException(ErrorCodeConstants.CONDITION_DEFINITION_INVALID_ARGUMENT, "暂时无法核对慢病备案，请稍后重试");
+        }
+        throw new BusinessException(ErrorCodeConstants.CONDITION_DEFINITION_NOT_FOUND, "患者慢病备案中不存在该病种");
+    }
+
+    /**
+     * 按备案码解析唯一启用目录匹配；歧义时拒绝静默择一。
+     *
+     * @param opspCode 归一化备案码
+     * @return 唯一匹配投影；无命中返回 {@code null}
+     * @throws BusinessException 同优先级多条目录
+     */
+    private OpspDiseCodeDefinitionMatchQueryModel resolveUniqueOpspMatchOrThrow(String opspCode) {
+        List<OpspDiseCodeDefinitionMatchQueryModel> matches =
+            this.conditionDefinitionQueryService.listActiveDoctorStationRowsByOpspDiseCodes(List.of(opspCode));
+        if (matches == null || matches.isEmpty()) {
+            return null;
+        }
+        OpspDiseCodeDefinitionMatchQueryModel match = matches.get(0);
+        // Gate：歧义禁止静默导入，医生改手工检索。
+        if (match != null && match.isAmbiguous()) {
+            throw new BusinessException(
+                ErrorCodeConstants.CONDITION_DEFINITION_INVALID_ARGUMENT, "院内目录存在多条匹配，请手工检索选择");
+        }
+        return match;
     }
 
     /**
@@ -388,6 +550,111 @@ public class DoctorStationDiagnosisAppService {
         response.setPersonalBoundCount(personalBoundCount);
         response.setDepartmentBoundCount(departmentBoundCount);
         response.setMessage("常用诊断已保存");
+        return response;
+    }
+
+    /**
+     * 列出当前登录用户可维护的个人/科室常用诊断（含模板行主键）。
+     *
+     * <p>个人 = PERSONAL + 当前用户；科室 = DEPARTMENT + 当前登录科室。不含医师维度「常用」与全院绑定。</p>
+     *
+     * @param request 空请求体即可（归属由会话解析）
+     * @return 个人列表与科室列表
+     * @throws BusinessException 未登录时
+     */
+    public ListMaintainableCommonDiagnosesResponse listMaintainableCommonDiagnoses(
+        ListMaintainableCommonDiagnosesRequest request) {
+        // Gate：须已登录，否则无法解析个人归属
+        Long operatorId = this.currentOperatorResolver.findOperatorIdOrNull();
+        if (operatorId == null) {
+            throw new BusinessException(ErrorCodeConstants.CONDITION_TEMPLATE_INVALID_ARGUMENT, "请先登录后再操作");
+        }
+        // Pre：术语来源展示映射 + 当前登录科室
+        Map<String, String> sourceLabels = this.buildSourceLabelMap();
+        Long orgId = this.managedOrganizationIdsResolver.resolveOrganizationUnitIdForQuery();
+        // Asm：个人常用
+        List<ConditionTemplateQueryModel> personalTemplates = this.conditionTemplateQueryService.listByOwnerAndType(
+            operatorId, ConditionTemplateBinding.PERSONAL.getCode());
+        List<MaintainableCommonDiagnosisRowDto> personalRows =
+            this.mapTemplatesToMaintainableRows(personalTemplates, sourceLabels);
+        // Asm：科室常用（无登录科室时返回空列表，不抛错，便于前端仍可维护个人）
+        List<MaintainableCommonDiagnosisRowDto> departmentRows = new ArrayList<>();
+        if (orgId != null) {
+            List<ConditionTemplateQueryModel> orgTemplates = this.conditionTemplateQueryService.listByOwnerAndType(
+                orgId, ConditionTemplateBinding.DEPARTMENT.getCode());
+            departmentRows = this.mapTemplatesToMaintainableRows(orgTemplates, sourceLabels);
+        }
+        ListMaintainableCommonDiagnosesResponse response = new ListMaintainableCommonDiagnosesResponse();
+        response.setPersonalList(personalRows);
+        response.setDepartmentList(departmentRows);
+        return response;
+    }
+
+    /**
+     * 解绑个人/科室常用诊断模板行。
+     *
+     * <p>仅允许解绑归属当前用户或当前登录科室的行；禁止借本接口操作他人/他科/全院绑定。</p>
+     *
+     * @param request 模板行主键列表
+     * @return 解绑结果
+     * @throws BusinessException 未登录、主键为空、行不存在或无权解绑时
+     */
+    public UnbindCommonDiagnosisResponse unbindCommonDiagnosis(UnbindCommonDiagnosisRequest request) {
+        // Gate：主键列表非空
+        if (request == null || request.getTemplateIds() == null || request.getTemplateIds().isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.CONDITION_TEMPLATE_INVALID_ARGUMENT, "模板行主键不能为空");
+        }
+        Long operatorId = this.currentOperatorResolver.findOperatorIdOrNull();
+        if (operatorId == null) {
+            throw new BusinessException(ErrorCodeConstants.CONDITION_TEMPLATE_INVALID_ARGUMENT, "请先登录后再操作");
+        }
+        Long orgId = this.managedOrganizationIdsResolver.resolveOrganizationUnitIdForQuery();
+        // Pre：批量加载待解绑行，校验归属（个人→当前用户；科室→当前登录科室）
+        List<ConditionTemplateQueryModel> ownedPersonal = this.conditionTemplateQueryService.listByOwnerAndType(
+            operatorId, ConditionTemplateBinding.PERSONAL.getCode());
+        Set<Long> allowedIds = new HashSet<>();
+        for (ConditionTemplateQueryModel row : ownedPersonal) {
+            if (row.getId() != null) {
+                allowedIds.add(row.getId());
+            }
+        }
+        if (orgId != null) {
+            List<ConditionTemplateQueryModel> ownedDept = this.conditionTemplateQueryService.listByOwnerAndType(
+                orgId, ConditionTemplateBinding.DEPARTMENT.getCode());
+            for (ConditionTemplateQueryModel row : ownedDept) {
+                if (row.getId() != null) {
+                    allowedIds.add(row.getId());
+                }
+            }
+        }
+        List<Long> toUnbind = new ArrayList<>();
+        for (Long templateId : request.getTemplateIds()) {
+            if (templateId == null) {
+                throw new BusinessException(ErrorCodeConstants.CONDITION_TEMPLATE_INVALID_ARGUMENT, "模板行主键不能为空");
+            }
+            // 非本用户/本科室绑定：拒绝，避免越权删他人常用
+            if (!allowedIds.contains(templateId)) {
+                throw new BusinessException(ErrorCodeConstants.CONDITION_TEMPLATE_INVALID_ARGUMENT, "无权解绑该常用诊断");
+            }
+            toUnbind.add(templateId);
+        }
+        // Cmd：领域批量软删
+        UnbindConditionTemplateCommand command = new UnbindConditionTemplateCommand();
+        command.setOperatorId(operatorId);
+        List<UnbindConditionTemplateCommand.UnbindConditionTemplateItemCommand> items = new ArrayList<>();
+        for (Long templateId : toUnbind) {
+            UnbindConditionTemplateCommand.UnbindConditionTemplateItemCommand item =
+                new UnbindConditionTemplateCommand.UnbindConditionTemplateItemCommand();
+            item.setTemplateId(templateId);
+            items.add(item);
+        }
+        command.setItems(items);
+        this.conditionTemplateDomainService.unbindConditionTemplate(command);
+        // Asm：成功响应
+        UnbindCommonDiagnosisResponse response = new UnbindCommonDiagnosisResponse();
+        response.setSuccess(Boolean.TRUE);
+        response.setUnboundCount(toUnbind.size());
+        response.setMessage("常用诊断已移除");
         return response;
     }
 
@@ -588,6 +855,55 @@ public class DoctorStationDiagnosisAppService {
     }
 
     /**
+     * 将模板绑定列表解析为可维护常用诊断行（带回 templateId，保持模板顺序）。
+     *
+     * @param templates    模板只读行
+     * @param sourceLabels 来源展示映射
+     * @return 可维护行列表
+     */
+    private List<MaintainableCommonDiagnosisRowDto> mapTemplatesToMaintainableRows(
+        List<ConditionTemplateQueryModel> templates,
+        Map<String, String> sourceLabels) {
+        List<MaintainableCommonDiagnosisRowDto> rows = new ArrayList<>();
+        if (templates == null || templates.isEmpty()) {
+            return rows;
+        }
+        List<Long> ids = new ArrayList<>();
+        for (ConditionTemplateQueryModel template : templates) {
+            if (template.getDefinitionId() != null) {
+                ids.add(template.getDefinitionId());
+            }
+        }
+        // 模板仅存 definitionId：一次性批量拉启用定义行
+        List<DoctorStationConditionDefinitionRowModel> defs =
+            this.conditionDefinitionQueryService.listActiveDoctorStationRowsByIds(ids);
+        Map<Long, DoctorStationConditionDefinitionRowModel> byId = new HashMap<>();
+        for (DoctorStationConditionDefinitionRowModel def : defs) {
+            byId.put(def.getId(), def);
+        }
+        for (ConditionTemplateQueryModel template : templates) {
+            DoctorStationConditionDefinitionRowModel def = byId.get(template.getDefinitionId());
+            // 模板指向已停用/已删定义：仍展示编码占位，便于用户解绑脏数据
+            MaintainableCommonDiagnosisRowDto row = new MaintainableCommonDiagnosisRowDto();
+            row.setTemplateId(template.getId());
+            row.setConditionDefinitionId(template.getDefinitionId());
+            row.setSortWeight(template.getSortWeight());
+            if (def != null) {
+                CommonDiagnosisRowDto common = this.doctorStationDiagnosisMapper.toCommonDiagnosisRowDto(def, sourceLabels);
+                row.setConditionCode(common.getConditionCode());
+                row.setConditionDefinitionName(common.getConditionDefinitionName());
+                row.setDiagnosisKind(common.getDiagnosisKind());
+                row.setDiagnosisKindText(common.getDiagnosisKindText());
+                row.setYbNo(common.getYbNo());
+            } else {
+                row.setConditionDefinitionName("（目录已停用或不存在）");
+            }
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    /**
      * 将模板绑定列表解析为常用诊断行（保持模板顺序，过滤无效定义）。
      *
      * @param templates    模板只读行
@@ -620,6 +936,8 @@ public class DoctorStationDiagnosisAppService {
                 continue;
             }
             CommonDiagnosisRowDto row = this.doctorStationDiagnosisMapper.toCommonDiagnosisRowDto(def, sourceLabels);
+            // 个人/科室常用：回填模板主键，供快捷树就地解绑
+            row.setTemplateId(template.getId());
             rows.add(row);
         }
         return rows;

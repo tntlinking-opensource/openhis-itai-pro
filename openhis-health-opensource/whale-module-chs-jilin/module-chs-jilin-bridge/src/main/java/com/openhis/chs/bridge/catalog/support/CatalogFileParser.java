@@ -9,6 +9,7 @@ import static com.openhis.whale.core.application.util.StringUtils.isNotEmpty;
 import static com.openhis.whale.core.application.util.StringUtils.isEmpty;
 import com.alibaba.fastjson2.JSON;
 import com.openhis.chs.domain.catalog.command.UpsertNationalCatalogRowCommand;
+import com.openhis.chs.domain.catalog.support.NationalCatalogPackFieldExtractor;
 import com.openhis.chs.domain.share.constants.ChsCatalogConstants;
 import com.openhis.chs.domain.share.constants.ChsErrorCodes;
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -406,6 +407,12 @@ public final class CatalogFileParser {
         cmd.setSourceInfno(spec.sourceInfno());
         cmd.setSourceLineNo(lineNo);
         cmd.setRawJson(JSON.toJSONString(cols));
+        NationalCatalogPackFieldExtractor.PackFields pack =
+            NationalCatalogPackFieldExtractor.fromColumns(cols);
+        cmd.setMinPacCnt(pack.minPacCnt());
+        cmd.setMinPacunt(pack.minPacunt());
+        cmd.setMinPrepunt(pack.minPrepunt());
+        cmd.setMinPrcunt(pack.minPrcunt());
         return cmd;
     }
 

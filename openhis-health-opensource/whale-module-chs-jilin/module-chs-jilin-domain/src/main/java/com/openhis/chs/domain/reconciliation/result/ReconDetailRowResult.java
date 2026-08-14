@@ -20,6 +20,8 @@ public class ReconDetailRowResult {
     private BigDecimal medfeeSumamt;
     private BigDecimal fundPaySumamt;
     private BigDecimal acctPay;
+    /** 个人现金支出（3202 头 cash_payamt 按文件行汇总用；可不入 TAB 文件） */
+    private BigDecimal psnCashPay;
     private String refdSetlFlag;
     /** OP / IP */
     private String source;

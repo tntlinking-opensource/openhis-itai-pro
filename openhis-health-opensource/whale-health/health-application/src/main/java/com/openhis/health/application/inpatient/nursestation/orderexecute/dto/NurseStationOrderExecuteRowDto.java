@@ -14,6 +14,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -92,9 +93,41 @@ public class NurseStationOrderExecuteRowDto {
     @Schema(description = "规格展示")
     private String specificationText;
 
-    /** 剂量/数量展示。 */
-    @Schema(description = "剂量/数量展示")
+    /**
+     * 拆零比（目录 {@code package_unit_ratio}：1 包装 = N 拆零；仅药嘱；未维护时为 null）。
+     */
+    @Schema(description = "拆零比（1包装=N拆零）")
+    private BigDecimal partPercent;
+
+    /**
+     * 包装装量后缀（如 {@code 1片x100}；仅药嘱；缺数据时为 null）。
+     */
+    @Schema(description = "包装装量后缀（如 1片x100）")
+    private String packageSplitRatioText;
+
+    /**
+     * 包装单位展示名（目录包装单位术语；仅药嘱；缺数据时为 null）。
+     * <p>摆药单等按一盒一点整包装计总量时使用，禁止前端写死「盒」。</p>
+     */
+    @Schema(description = "包装单位展示名（目录）")
+    private String packageUnitDisplay;
+
+    /** 剂量/数量展示（药嘱优先单次 dose）。 */
+    @Schema(description = "剂量/数量展示（优先单次 dose）")
     private String dosageDisplay;
+
+    /**
+     * 开立总量展示（数量+单位；仅临时/出院带药有值；长期为 null）。
+     * <p>摆药单/用药单「总量」列优先用本字段，禁止用 {@link #dosageDisplay}（每次量）冒充总量。</p>
+     */
+    @Schema(description = "开立总量展示（临时/出院带药）")
+    private String quantityDisplay;
+
+    /**
+     * 日剂量友好展示（如 {@code 每日三片}；长期药且频次可解析每日次数时有值）。
+     */
+    @Schema(description = "日剂量展示（如 每日三片）")
+    private String dailyDoseDisplay;
 
     /** 用法展示。 */
     @Schema(description = "用法展示")
@@ -116,6 +149,18 @@ public class NurseStationOrderExecuteRowDto {
     /** 频次展示。 */
     @Schema(description = "频次展示")
     private String frequencyDisplay;
+
+    /**
+     * 输液滴速编码（药嘱 {@code med_medication_request.speed_code}；诊嘱为 null）。
+     */
+    @Schema(description = "输液滴速编码（仅药嘱）")
+    private String speedCode;
+
+    /**
+     * 输液滴速展示名（术语 {@code speed_code}；无码为空）。
+     */
+    @Schema(description = "输液滴速展示（仅药嘱）")
+    private String speedDisplay;
 
     /** 开立时间（{@code req_opened_time}）。 */
     @Schema(description = "开立时间（req_opened_time）")

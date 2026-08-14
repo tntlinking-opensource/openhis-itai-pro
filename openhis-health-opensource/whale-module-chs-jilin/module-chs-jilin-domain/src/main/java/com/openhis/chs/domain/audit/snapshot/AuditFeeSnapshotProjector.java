@@ -23,9 +23,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Snapshot / 门诊预结算上下文 → 3101 Command 投影。
+ * Snapshot / 门诊·住院预结算上下文 → 3101 Command 投影。
  *
- * <p>纯映射、无 I/O；机构类型等级与 mdtrtId 由调用方写入 Snapshot 后再投影。</p>
+ * <p>纯映射、无 I/O；机构类型等级与 mdtrtId 由调用方写入 Snapshot 后再投影。
+ * 住院须投影 {@code patn_name}/{@code gend}/{@code brdy}，与门诊 {@link #fromOpPreSettle} 对齐。</p>
  */
 public final class AuditFeeSnapshotProjector {
 
@@ -87,6 +88,12 @@ public final class AuditFeeSnapshotProjector {
         }
         snap.setEncounterId(ctx.getEncounterId());
         snap.setPsnNo(ctx.getPsnNo());
+        // Pre：3101 患者节点与门诊 fromOpPreSettle 对齐（patn_name/gend/brdy）
+        snap.setPatnName(ctx.getPatientName());
+        // Pre：HIS AdministrativeGender（MALE/FEMALE）→ 医保 GEND（1/2/0），长度须 1～3
+        snap.setGend(mapHisGenderToPlatformGend(ctx.getPatientGender()));
+        // Pre：3101 brdy 与 Encounter 患者出生日期对齐（§2.6）
+        snap.setBrdy(ctx.getBrdy());
         snap.setPoolarea(ctx.getInsuplcAdmdvs());
         snap.setInsutype(ctx.getInsutype());
         snap.setMedType(ctx.getMedType());
@@ -94,6 +101,10 @@ public final class AuditFeeSnapshotProjector {
         snap.setMedfeeSumamt(ctx.getMedfeeSumamt());
         snap.setAdmDate(formatDt(ctx.getAdmissionTime()));
         snap.setDscgDate(formatDt(ctx.getDischargeTime()));
+        // Pre：在院预结算无出院时点时 dscg_date 与 adm_date 同值（表 116 必填，对齐门诊）
+        if (StringUtils.isEmpty(snap.getDscgDate())) {
+            snap.setDscgDate(snap.getAdmDate());
+        }
         snap.setDscgMainDiseCodg(ctx.getMainDiagCode());
         snap.setDscgMainDiseName(ctx.getMainDiagName());
         snap.setDrCodg(ctx.getAtddrNo());
@@ -250,8 +261,8 @@ public final class AuditFeeSnapshotProjector {
             o.setSpec(line.getSpec());
             o.setSpecUnt(line.getSpecUnt());
             o.setCnt(line.getCnt());
-            o.setPric(line.getPric());
-            o.setSumamt(line.getDetItemFeeSumamt());
+            o.setPric(scalePlatformMoney(line.getPric()));
+            o.setSumamt(scalePlatformMoney(line.getDetItemFeeSumamt()));
             o.setDrordDeptCodg(line.getBilgDeptCodg());
             o.setDrordDeptName(line.getBilgDeptName());
             o.setDrordDrCodg(line.getBilgDrCodg());
@@ -286,9 +297,11 @@ public final class AuditFeeSnapshotProjector {
             o.setRxno(line.getDrordNo());
             o.setHilistCode(line.getMedListCodg());
             o.setHosplistCode(line.getMedinsListCodg());
+            // Pre：住院收费行无单独品名时用默认占位，与 mapOrderCommands / 门诊 assert 同口径
+            o.setHilistName(ChsDetailAuditConstants.DEFAULT_SPEC);
             o.setCnt(line.getCnt());
-            o.setPric(line.getPric());
-            o.setSumamt(line.getDetItemFeeSumamt());
+            o.setPric(scalePlatformMoney(line.getPric()));
+            o.setSumamt(scalePlatformMoney(line.getDetItemFeeSumamt()));
             o.setDrordDeptCodg(line.getBilgDeptCodg());
             o.setDrordDeptName(line.getBilgDeptName());
             o.setDrordDrCodg(line.getBilgDrCodg());
@@ -357,17 +370,18 @@ public final class AuditFeeSnapshotProjector {
             o.setHilistCode(line.getHilistCode());
             o.setHilistName(firstNonEmpty(line.getHilistName(), ChsDetailAuditConstants.DEFAULT_SPEC));
             o.setHilistLv(firstNonEmpty(line.getHilistLv(), ChsDetailAuditConstants.DEFAULT_HILIST_LV));
-            // Pre：目录价缺省用行单价，禁止空
-            if (line.getPric() != null) {
-                o.setHilistPric(line.getPric());
+            // Pre：目录价/单价须 2 位小数（长春 3101：长度 16、小数 2 位非零实数）
+            java.math.BigDecimal platformPric = scalePlatformMoney(line.getPric());
+            if (platformPric != null) {
+                o.setHilistPric(platformPric);
             } else {
-                o.setHilistPric(java.math.BigDecimal.ZERO);
+                o.setHilistPric(java.math.BigDecimal.ZERO.setScale(2));
             }
             o.setHosplistCode(firstNonEmpty(line.getHosplistCode(), line.getHilistCode()));
             o.setHosplistName(firstNonEmpty(line.getHilistName(), ChsDetailAuditConstants.DEFAULT_SPEC));
             o.setCnt(line.getCnt());
-            o.setPric(line.getPric());
-            o.setSumamt(line.getSumamt());
+            o.setPric(platformPric);
+            o.setSumamt(scalePlatformMoney(line.getSumamt()));
             o.setSpec(firstNonEmpty(line.getSpec(), ChsDetailAuditConstants.DEFAULT_SPEC));
             o.setSpecUnt(firstNonEmpty(line.getSpecUnt(), ChsDetailAuditConstants.DEFAULT_SPEC_UNT));
             o.setDrordBegnDate(line.getDrordBegnDate());
@@ -437,5 +451,18 @@ public final class AuditFeeSnapshotProjector {
             return primary.trim();
         }
         return fallback;
+    }
+
+    /**
+     * 平台金额/单价：2 位 HALF_UP（3101 hilist_pric/pric 校验）。
+     *
+     * @param value 原始金额
+     * @return 两位小数；null 原样
+     */
+    private static java.math.BigDecimal scalePlatformMoney(java.math.BigDecimal value) {
+        if (value == null) {
+            return null;
+        }
+        return value.setScale(2, java.math.RoundingMode.HALF_UP);
     }
 }

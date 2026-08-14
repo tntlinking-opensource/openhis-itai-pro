@@ -366,6 +366,12 @@ public class EncounterMedicationDispenseSlipReadAssembler {
             row.setPackageUnitCode(product.getPackageUnitCode());
             row.setPackageUnitRatio(product.getPackageUnitRatio());
             row.setSplitUnitCode(product.getSplitUnitCode());
+            // 药典贴码单位/比例：主档无快照时作展示与待扫软算回落；有主档时由 enricher 覆盖
+            if (StringUtils.isNotEmpty(product.getTraceUnitCode())) {
+                row.setTraceUnitCode(product.getTraceUnitCode());
+                row.setTraceUnitRatio(product.getTraceUnitRatio());
+                row.setTraceUnitCodeText(product.getTraceUnitCodeDictText());
+            }
             if (StringUtils.isNotEmpty(product.getPartAttributeEnum())) {
                 row.setPartAttributeCode(product.getPartAttributeEnum());
                 row.setPartAttributeText(
@@ -380,6 +386,10 @@ public class EncounterMedicationDispenseSlipReadAssembler {
                 row.setOrderingDepartmentName(context.deptNames().get(req.getOrgId()));
             }
             row.setRequestQuantity(req.getQuantity());
+            // 中药付数：处方笺「N付」展示用；与 requestQuantity（请求总量）分列
+            if (Boolean.TRUE.equals(req.getTcmFlag())) {
+                row.setChineseHerbsDoseQuantity(req.getChineseHerbsDoseQuantity());
+            }
             row.setFrequencyCode(req.getRateCode());
             row.setRouteCode(req.getMethodCode());
             row.setDoseValue(req.getDose());
@@ -392,9 +402,7 @@ public class EncounterMedicationDispenseSlipReadAssembler {
                 requestOpenedTime = req.getReqAuthoredTime();
             }
             row.setRequestOpenedTime(requestOpenedTime);
-            row.setEncounterMedicationTypeCode(req.getRxTypeCode());
-            row.setEncounterMedicationTypeText(
-                OrderCatalogDisplayAssembler.resolveCategoryDisplay(context.rxLabels(), req.getRxTypeCode()));
+            // 医保医疗类别（med_type）由 PrintEnricher 按绑定诊断回填；此处不再误写 rx_type_code
             row.setTherapyEnum(req.getTherapyEnum());
             TherapyType therapyType = EnumUtil.fromCode(TherapyType.class, req.getTherapyEnum());
             if (therapyType != null) {

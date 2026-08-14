@@ -321,6 +321,8 @@ public class DoctorStationTcmMapperImpl implements DoctorStationTcmMapper {
         cmd.setSortNumber(line.getSortNumber());
         cmd.setDosageInstruction(trimToNull(line.getDosageInstructionCode()));
         cmd.setGenerateSourceEnum(GenerateSource.DOCTOR_PRESCRIPTION.getCode());
+        // Pre：以行为主写 contract_id（行空回落方头默认）
+        cmd.setContractId(resolveEffectiveContractId(header, line));
         return cmd;
     }
 
@@ -359,7 +361,28 @@ public class DoctorStationTcmMapperImpl implements DoctorStationTcmMapper {
         if (line.getDosageInstructionCode() != null) {
             cmd.setDosageInstruction(trimToEmpty(line.getDosageInstructionCode()));
         }
+        // Pre：以行为主写 contract_id（UPDATE 同步本味，行空回落方头）
+        cmd.setContractId(resolveEffectiveContractId(header, line));
         return cmd;
+    }
+
+    /**
+     * 解析本味合同：行级优先，缺省回落方头默认（兼容旧前端只传方头）。
+     *
+     * @param header 方头
+     * @param line   明细行
+     * @return 有效合同主键；均可空
+     */
+    private static Long resolveEffectiveContractId(
+        TcmRxDraftHeaderRequest header,
+        TcmRxDraftLineRequest line) {
+        if (line != null && line.getContractId() != null) {
+            return line.getContractId();
+        }
+        if (header != null) {
+            return header.getContractId();
+        }
+        return null;
     }
 
     /**

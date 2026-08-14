@@ -64,20 +64,6 @@ public enum SettingDefinitionEnum {
 
     /**
 
-     * 挂号开立时是否必须选择接诊医生；值约定：{@code 1} 必选，{@code 0} 非必选（种子默认必选）。
-
-     * <p>种子：{@code whale_settings.provider_name=G}、{@code provider_key=NULL}（全局，非院点）。
-
-     * 非必选且未选医生时挂到科室；医生站可见性见 AS-OP-DOR-001 BR-DOR-009。</p>
-
-     */
-
-    REGISTRATION_DOCTOR_REQUIRED("registrationDoctorRequired", "挂号时医生是否必选"),
-
-
-
-    /**
-
      * 住院长期医嘱是否允许拆分执行/记账；值约定：{@code 1} 可拆，{@code 0} 不可拆（种子默认可拆）。
 
      */

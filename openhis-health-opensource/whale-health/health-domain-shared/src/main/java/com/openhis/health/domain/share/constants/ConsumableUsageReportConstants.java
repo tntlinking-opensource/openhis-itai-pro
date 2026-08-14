@@ -7,21 +7,45 @@ package com.openhis.health.domain.share.constants;
 /**
  * 耗材使用报表常量（AS-RPT-005 / AS-RPT-006）。
  *
- * <p>科室领用侧见 {@link DeptIssueReportConstants}；两路并集由应用层编排。</p>
+ * <p>汇总主维对齐发药报表：耗材房 / 品规 / 类型 / 科室；默认 {@link #SUMMARY_DIMENSION_LOCATION}。
+ * 科室领用侧领域仍用 {@link DeptIssueReportConstants#SUMMARY_DIMENSION_PHARMACY}，
+ * 应用层在 LOCATION 维下 remap 后统一对外 {@code LOCATION:} 前缀。</p>
+ *
+ * <p>科室领用侧见 {@link DeptIssueReportConstants}；应用层按单源编排，禁止 ALL 并集。</p>
  */
 public interface ConsumableUsageReportConstants {
 
-    /** 汇总维度：按患者。 */
+    /**
+     * 汇总维度：按患者（遗留码；不入 init 下拉，默认不再回落此维）。
+     *
+     * @deprecated 产品已收敛为耗材房/品规/类型/科室主维；保留仅兼容旧请求
+     */
+    @Deprecated
     String SUMMARY_DIMENSION_PATIENT = "PATIENT";
 
     /** 汇总维度：按开单/就诊科室（应用层预解析 encounter→organization）。 */
     String SUMMARY_DIMENSION_DEPARTMENT = "DEPARTMENT";
 
-    /** 汇总维度：按发放库位。 */
+    /** 汇总维度：按耗材房（发放/领用库位；默认维）。 */
     String SUMMARY_DIMENSION_LOCATION = "LOCATION";
 
     /** 汇总维度：按耗材品规。 */
     String SUMMARY_DIMENSION_ITEM = "ITEM";
+
+    /** 汇总维度：按耗材类型（DeviceDefinition.categoryCode；应用层由 ITEM 再分桶）。 */
+    String SUMMARY_DIMENSION_CATEGORY = "CATEGORY";
+
+    /** 汇总维展示：按耗材房。 */
+    String SUMMARY_DIMENSION_LOCATION_LABEL = "按耗材房";
+
+    /** 汇总维展示：按品规。 */
+    String SUMMARY_DIMENSION_ITEM_LABEL = "按品规";
+
+    /** 汇总维展示：按类型。 */
+    String SUMMARY_DIMENSION_CATEGORY_LABEL = "按类型";
+
+    /** 汇总维展示：按科室。 */
+    String SUMMARY_DIMENSION_DEPARTMENT_LABEL = "按科室";
 
     /** 明细来源：患者发放（DeviceDispense）。 */
     String SOURCE_CODE_PATIENT_DISPENSE = "PATIENT_DISPENSE";
@@ -29,8 +53,28 @@ public interface ConsumableUsageReportConstants {
     /** 明细来源：科室领用/退领（Supply DEPT_ISSUE / DEPT_ISSUE_RETURN）。 */
     String SOURCE_CODE_DEPT_ISSUE = "DEPT_ISSUE";
 
-    /** 明细来源筛：两路并集。 */
+    /** 明细来源筛：两路并集（已禁止；Gate 遇此码抛「禁止全部来源混查」）。 */
     String SOURCE_CODE_ALL = "ALL";
+
+    /**
+     * 记录类型筛：全部（已发 ∪ 已退）；码值对齐发药报表 {@code PharmacyDispenseRecordConstants#RECORD_TYPE_ALL}。
+     */
+    String RECORD_TYPE_ALL = "ALL";
+
+    /** 记录类型筛：仅发放（COMPLETED / PART_COMPLETED）。 */
+    String RECORD_TYPE_DISPENSE = "DISPENSE";
+
+    /** 记录类型筛：仅退发（REFUNDED）。 */
+    String RECORD_TYPE_REFUND = "REFUND";
+
+    /** 记录类型展示：全部。 */
+    String RECORD_TYPE_ALL_LABEL = "全部";
+
+    /** 记录类型展示：发放。 */
+    String RECORD_TYPE_DISPENSE_LABEL = "发放";
+
+    /** 记录类型展示：退发。 */
+    String RECORD_TYPE_REFUND_LABEL = "退发";
 
     /** 导出 Tab：汇总。 */
     String EXPORT_TAB_SUMMARY = "SUMMARY";

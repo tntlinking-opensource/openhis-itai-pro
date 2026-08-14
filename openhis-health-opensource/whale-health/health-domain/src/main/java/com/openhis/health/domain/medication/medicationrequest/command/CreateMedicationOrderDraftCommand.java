@@ -33,6 +33,10 @@ public class CreateMedicationOrderDraftCommand {
     private String methodCode;
     /** 频次编码。 */
     private String rateCode;
+    /**
+     * 输液滴速编码（术语 {@code speed_code}；可空；非输液药可不传）。
+     */
+    private String speedCode;
     /** 单次剂量。 */
     private BigDecimal dose;
     /** 剂量单位编码。 */

@@ -181,7 +181,10 @@ public class NurseStationOrderAuditListAssembler {
     }
 
     /**
-     * 医嘱查看展示内核 → 校对列表行 DTO。
+     * 医嘱查看展示内核 → 校对列表行 DTO（含停嘱校对痕迹与待校标记）。
+     *
+     * @param core 展示内核；非空
+     * @param line 校对列表行；非空，由调用方新建
      */
     private void applyViewCoreToAuditRow(NurseStationOrderViewDisplayCore core, NurseStationOrderAuditRowDto line) {
         line.setListRowKey(core.getListRowKey());
@@ -198,9 +201,14 @@ public class NurseStationOrderAuditListAssembler {
         line.setAdviceDisplayName(core.getAdviceDisplayName());
         line.setRemark(core.getRemark());
         line.setSpecificationText(core.getSpecificationText());
+        line.setPartPercent(core.getPartPercent());
+        line.setPackageSplitRatioText(core.getPackageSplitRatioText());
         line.setDosageDisplay(core.getDosageDisplay());
+        line.setDailyDoseDisplay(core.getDailyDoseDisplay());
         line.setUsageDisplay(core.getUsageDisplay());
         line.setFrequencyDisplay(core.getFrequencyDisplay());
+        line.setSpeedCode(core.getSpeedCode());
+        line.setSpeedDisplay(core.getSpeedDisplay());
         line.setReqOpenedTime(core.getReqOpenedTime());
         line.setReqAuthoredTime(core.getReqAuthoredTime());
         line.setStopTime(core.getStopTime());
@@ -208,6 +216,10 @@ public class NurseStationOrderAuditListAssembler {
         line.setStopperId(core.getStopperId());
         line.setStopperName(core.getStopperName());
         line.setPerformerCheckName(core.getPerformerCheckName());
+        line.setStopPerformerCheckId(core.getStopPerformerCheckId());
+        line.setStopCheckTime(core.getStopCheckTime());
+        line.setStopCheckerName(core.getStopCheckerName());
+        line.setStopAuditPending(core.getStopAuditPending());
         line.setPerformerLocationDisplay(core.getPerformerLocationDisplay());
         line.setGroupId(core.getGroupId());
         line.setGroupNo(core.getGroupNo());

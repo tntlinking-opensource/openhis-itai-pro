@@ -99,6 +99,12 @@ public final class ChsOutpatientInsuranceIntegrationMapper {
         out.setFundPaySumamt(result.getFundPaySumamt());
         out.setAcctPay(result.getAcctPay());
         out.setPsnCashPay(result.getPsnCashPay());
+        // 展示透传：起付线/公务员标志与补助（不参与 health 应收重算）
+        out.setActPayDedc(result.getActPayDedc());
+        out.setCvlservFlag(result.getCvlservFlag());
+        out.setCvlservPay(result.getCvlservPay());
+        out.setHifpPay(result.getHifpPay());
+        out.setOthPay(result.getOthPay());
         return out;
     }
 
@@ -138,6 +144,11 @@ public final class ChsOutpatientInsuranceIntegrationMapper {
         out.setFundPaySumamt(group.getFundPaySumamt());
         out.setAcctPay(group.getAcctPay());
         out.setPsnCashPay(group.getPsnCashPay());
+        out.setActPayDedc(group.getActPayDedc());
+        out.setCvlservFlag(group.getCvlservFlag());
+        out.setCvlservPay(group.getCvlservPay());
+        out.setHifpPay(group.getHifpPay());
+        out.setOthPay(group.getOthPay());
         out.setGroupIndex(group.getGroupIndex());
         out.setMedType(group.getMedType());
         out.setDiseCodg(group.getDiseCodg());
@@ -181,6 +192,7 @@ public final class ChsOutpatientInsuranceIntegrationMapper {
         out.setPaymentId(result.getPaymentId());
         out.setPreSettleId(result.getPreSettleId());
         out.setContractId(result.getContractId());
+        out.setAccountId(result.getAccountId());
         out.setChargeBatchNo(result.getChrgBchno());
         out.setSettlementId(result.getSetlId());
         out.setEncounterPlatformId(result.getMdtrtId());
@@ -194,6 +206,7 @@ public final class ChsOutpatientInsuranceIntegrationMapper {
         out.setActPayDedc(result.getActPayDedc());
         out.setHifpPay(result.getHifpPay());
         out.setPoolPropSelfpay(result.getPoolPropSelfpay());
+        out.setCvlservFlag(result.getCvlservFlag());
         out.setCvlservPay(result.getCvlservPay());
         out.setHifesPay(result.getHifesPay());
         out.setHifmiPay(result.getHifmiPay());
@@ -230,6 +243,7 @@ public final class ChsOutpatientInsuranceIntegrationMapper {
             .setPaymentId(row.getPaymentId())
             .setPreSettleId(row.getPreSettleId())
             .setContractId(row.getContractId())
+            .setAccountId(row.getAccountId())
             .setChrgBchno(row.getChrgBchno())
             .setSetlId(row.getSetlId())
             .setMdtrtId(row.getMdtrtId())
@@ -243,6 +257,7 @@ public final class ChsOutpatientInsuranceIntegrationMapper {
             .setActPayDedc(row.getActPayDedc())
             .setHifpPay(row.getHifpPay())
             .setPoolPropSelfpay(row.getPoolPropSelfpay())
+            .setCvlservFlag(row.getCvlservFlag())
             .setCvlservPay(row.getCvlservPay())
             .setHifesPay(row.getHifesPay())
             .setHifmiPay(row.getHifmiPay())

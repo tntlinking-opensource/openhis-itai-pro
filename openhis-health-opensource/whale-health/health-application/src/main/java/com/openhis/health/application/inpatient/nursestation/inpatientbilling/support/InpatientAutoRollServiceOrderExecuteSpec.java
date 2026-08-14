@@ -9,6 +9,7 @@ import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 /**
  * 住院滚费长期诊疗医嘱单槽位执行命令（AS-IP-NUR-013 IF-IP-ARG-08；对齐 IF-IP-EXE-02）。
@@ -32,8 +33,13 @@ public class InpatientAutoRollServiceOrderExecuteSpec {
     /** 机构主键（orgId / requestingOrgId）。 */
     private Long organizationId;
 
-    /** 滚费业务日（planTime = billDate 00:00:00）。 */
+    /** 滚费业务日。 */
     private LocalDate billDate;
+
+    /**
+     * 费用发生时刻（配置业务时刻拼 billDate；护理写死日末；空则编排层回落日末）。
+     */
+    private LocalDateTime occurrenceTime;
 
     /** 执行数量。 */
     private BigDecimal quantity;
@@ -44,9 +50,13 @@ public class InpatientAutoRollServiceOrderExecuteSpec {
     /** 优先定价 id（床位配置锚定；护理可为 null 走目录择优）。 */
     private Long preferredDefinitionId;
 
-    /** 主执行人（责任护士；写入 Procedure performer 与 Charge enterer）。 */
+    /**
+     * 主执行人（配置计费人或责任护士；写入 Procedure performer）。
+     */
     private Long performerId;
 
-    /** 任务/系统操作人（Procedure operator）。 */
+    /**
+     * 操作人（同时写入 Charge.performer_id；床位配置路径与计费人同值）。
+     */
     private Long operatorId;
 }

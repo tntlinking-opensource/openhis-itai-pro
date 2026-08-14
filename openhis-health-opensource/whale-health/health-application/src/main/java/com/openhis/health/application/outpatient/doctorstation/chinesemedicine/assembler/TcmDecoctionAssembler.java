@@ -35,6 +35,7 @@ import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQ
 import com.openhis.health.application.shared.advice.OrderChargeDraftAssembler;
 import com.openhis.health.application.shared.advice.ServiceAdviceCommandAssembler;
 import com.openhis.health.application.shared.advice.ServiceAdviceDraftCommandHelper;
+import com.openhis.health.application.shared.financial.OutpatientSelfPayFeeNatureAccountResolver;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -45,13 +46,17 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * IF-DOR-37 代煎费写路径编排：同处方号下签发代煎 {@code ServiceRequest} 并按付数挂 {@code PLANNED} 费用。
  *
- * <p>与皮试 companion 类似，代煎为方级诊疗 companion，须落库 {@code wkf_service_request} 后再锚定收费明细。</p>
+ * <p>与皮试 companion 类似，代煎为方级诊疗 companion，须落库 {@code wkf_service_request} 后再锚定收费明细。
+ * 门诊代煎账单挂个人现金自费户（调用方传入）；SR {@code contract_id} 写自费合同冗余；
+ * <b>不</b>开立/改写 {@code Account}（与转自费「只改账单 account_id」同口径）。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -64,22 +69,25 @@ public class TcmDecoctionAssembler {
     private final ServiceRequestDomainService serviceRequestDomainService;
     private final ServiceRequestQueryService serviceRequestQueryService;
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
+    /** 自费合同只读：写入 SR.contract_id 冗余（不动 Account）。 */
+    private final OutpatientSelfPayFeeNatureAccountResolver outpatientSelfPayFeeNatureAccountResolver;
 
     /**
      * 按付数刷新同处方号下代煎费（先 void 旧项，再签发 ServiceRequest 并升 PLANNED 费用）。
      *
-     * <p>BR-TCM-RX-009：方头代煎=是时，数量取中药付数；费用锚定 {@code wkf_service_request}，与 IF-DOR-15 诊疗签发口径一致。</p>
+     * <p>BR-TCM-RX-009：方头代煎=是时，数量取中药付数；费用锚定 {@code wkf_service_request}。
+     * {@code ChargeItem.account_id} 须为就诊个人现金自费户；禁止改写 Account 主数据。</p>
      *
      * @param encounterId               就诊主键
      * @param patientId                 患者主键
-     * @param accountId                 自费账户主键
+     * @param accountId                 个人现金自费户主键（仅写账单挂账）
      * @param orgId                     机构主键
      * @param operatorId                操作人（开嘱/签发医师）
      * @param prescriptionNo            中药处方号
      * @param doseQuantity              付数
      * @param anchorRow                 方内代表药行（诊断、长临、执行科室透传）
      * @param anchorMedicationRequestId 方内代表药行主键（{@code based_on} 锚点）
-     * @throws BusinessException 租户未配置代煎诊疗项目或未维护零售价时
+     * @throws BusinessException 租户未配置代煎诊疗项目、未维护零售价或自费合同时
      */
     public void replacePlannedDecoctionCharge(
         Long encounterId,
@@ -101,13 +109,16 @@ public class TcmDecoctionAssembler {
         BigDecimal quantity = doseQuantity;
         String therapyEnum = resolveTherapyEnum(anchorRow);
         String unitCode = ServiceAdviceDraftCommandHelper.requireUnitCode(null, null, activityProductRow);
+        // Pre：自费合同写入 SR 冗余；账单挂账以入参个人现金户为准
+        Long selfPayContractId = outpatientSelfPayFeeNatureAccountResolver.resolveSelfPayContractId();
         // Cmd：落库代煎 ServiceRequest 草稿并立即签发至 ACTIVE
         CreateServiceRequestDraftCommand createCmd = buildDecoctionServiceRequestDraftCommand(
             encounterId, patientId, operatorId, orgId, prescriptionNo, activityId,
-            anchorRow, anchorMedicationRequestId, quantity, unitCode, therapyEnum, activityProductRow);
+            anchorRow, anchorMedicationRequestId, quantity, unitCode, therapyEnum, activityProductRow,
+            selfPayContractId);
         Long serviceRequestId = serviceRequestDomainService.createServiceRequestDraft(createCmd);
         serviceRequestDomainService.signServiceRequest(buildSignServiceRequestCommand(serviceRequestId, operatorId));
-        // Cmd：按 SR 锚点挂费用草稿并升为 PLANNED，供门诊收银预结算
+        // Cmd：按 SR 锚点挂费用草稿并升为 PLANNED（account_id=个人现金自费户）
         CreateChargeItemCommand.Item draftItem = OrderChargeDraftAssembler.toCreateChargeItemDraftItemFromOrder(
             encounterId, patientId, accountId, orgId,
             serviceRequestId, TableNameConstants.WKF_SERVICE_REQUEST,
@@ -120,6 +131,58 @@ public class TcmDecoctionAssembler {
         chargeItemDomainService.createDraftChargeItemFromOrder(chargeCmd);
         chargeItemDomainService.planDraftChargeItemsAfterAdviceSigned(
             encounterId, TableNameConstants.WKF_SERVICE_REQUEST, serviceRequestId);
+    }
+
+    /**
+     * 补充代煎费前门控：同方已存在有效代煎 companion，或代煎费已进入收费/结算时拒绝重复补充。
+     *
+     * <p>已收费药材处方仍可补充；若代煎费本身已收费，须走收银退费。
+     * 取消后残留的未计费 DRAFT/PLANNED（无有效 SR）不拦截，由 {@link #replacePlannedDecoctionCharge} 内 void 扫尾。</p>
+     *
+     * @param encounterId    就诊主键
+     * @param prescriptionNo 中药处方号
+     * @throws BusinessException 已存在代煎费时
+     */
+    public void assertDecoctionChargeSupplementable(Long encounterId, String prescriptionNo) {
+        if (encounterId == null || StringUtils.isEmpty(prescriptionNo)) {
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "补充代煎费时就诊或处方号不能为空");
+        }
+        Long activityId = requireDecoctionActivityId();
+        List<ServiceRequestListModel> decoctionRows =
+            findDecoctionServiceRequests(encounterId, prescriptionNo, activityId);
+        // Gate：仍存在有效代煎 companion SR 则拒绝重复补充
+        if (!decoctionRows.isEmpty()) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_RULE_CONFLICT,
+                "当前处方已有代煎费，请勿重复补充；已收费代煎请走退费流程");
+        }
+        // Pre：无有效 SR 时仅拦截已进入收费/结算的费用；取消后残留的 DRAFT/PLANNED 由后续 void 清理，不得误拦再补充
+        ChargeItemQueryCommand query = new ChargeItemQueryCommand();
+        query.setEncounterId(encounterId);
+        List<ChargeItem> items = chargeItemQueryService.listChargeItemsByEncounterId(query);
+        String trimmedPrescriptionNo = prescriptionNo.trim();
+        for (ChargeItem chargeItem : items) {
+            if (chargeItem == null || Boolean.TRUE.equals(chargeItem.getIsDeleted())) {
+                continue;
+            }
+            if (!trimmedPrescriptionNo.equals(trimToEmpty(chargeItem.getPrescriptionNo()))) {
+                continue;
+            }
+            if (!TableNameConstants.WKF_ACTIVITY_DEFINITION.equals(chargeItem.getProductTable())) {
+                continue;
+            }
+            if (!activityId.equals(chargeItem.getProductId())) {
+                continue;
+            }
+            String status = StringUtils.trimToEmpty(chargeItem.getStatusEnum());
+            if (ChargeItemStatus.PENDING_SETTLEMENT.getCode().equals(status)
+                || ChargeItemStatus.SETTLED.getCode().equals(status)
+                || ChargeItemStatus.REFUNDING.getCode().equals(status)) {
+                throw new BusinessException(
+                    ErrorCodeConstants.MEDICATION_REQUEST_RULE_CONFLICT,
+                    "当前处方已有代煎费，请勿重复补充；已收费代煎请走退费流程");
+            }
+        }
     }
 
     /**
@@ -173,7 +236,8 @@ public class TcmDecoctionAssembler {
     /**
      * 移除同处方号下未计费代煎费及对应 ServiceRequest。
      *
-     * <p>签退/取消代煎时对称清理；已签发 SR 先回退 PLANNED 费用再签退并软删草稿。</p>
+     * <p>签退/取消代煎时对称清理：已签发 SR 先回退 PLANNED→DRAFT 并作废草稿费用，再签退并软删；
+     * 最后扫尾孤儿未计费代煎费，保证取消后可再次补充。</p>
      *
      * @param encounterId    就诊主键
      * @param prescriptionNo 中药处方号
@@ -206,9 +270,12 @@ public class TcmDecoctionAssembler {
                     ServiceAdviceCommandAssembler.toVoidDraftChargeAnchor(
                         encounterId, TableNameConstants.WKF_SERVICE_REQUEST, row.getId(), operatorId));
             } else {
-                // 已签发：先回退 PLANNED 费用，再签退 SR 以便软删
+                // 已签发：PLANNED→DRAFT 后必须作废草稿费用，再签退并软删 SR（否则再补充会被费用门控误拦）
                 chargeItemDomainService.rollbackPlannedChargeItemsAfterAdviceSignedOff(
                     encounterId, TableNameConstants.WKF_SERVICE_REQUEST, row.getId());
+                chargeItemDomainService.voidUnbilledDraftChargeItemsByServiceAnchor(
+                    ServiceAdviceCommandAssembler.toVoidDraftChargeAnchor(
+                        encounterId, TableNameConstants.WKF_SERVICE_REQUEST, row.getId(), operatorId));
                 if (RequestStatus.ACTIVE.getCode().equals(status)) {
                     serviceRequestDomainService.withdrawSignedServiceRequest(
                         ServiceAdviceCommandAssembler.toWithdrawServiceRequestCommand(row.getId(), operatorId));
@@ -217,6 +284,8 @@ public class TcmDecoctionAssembler {
             serviceRequestDomainService.removeServiceRequestDraft(
                 ServiceAdviceCommandAssembler.toRemoveServiceRequestDraftCommand(row.getId(), operatorId));
         }
+        // Cmd：清理已软删 SR 锚定的孤儿未计费代煎费（历史取消路径曾只回退未作废）
+        voidResidualUnbilledDecoctionCharges(encounterId, prescriptionNo, activityId, operatorId);
     }
 
     /**
@@ -252,6 +321,7 @@ public class TcmDecoctionAssembler {
      * @param unitCode                  单位 code
      * @param therapyEnum               长临 code
      * @param activityProductRow        诊疗产品读模型
+     * @param selfPayContractId         自费费用性质合同主键（写入 SR 冗余，不动 Account）
      * @return 领域创建命令
      */
     private CreateServiceRequestDraftCommand buildDecoctionServiceRequestDraftCommand(
@@ -266,7 +336,8 @@ public class TcmDecoctionAssembler {
         BigDecimal quantity,
         String unitCode,
         String therapyEnum,
-        ProductDefinitionDisplayDto activityProductRow
+        ProductDefinitionDisplayDto activityProductRow,
+        Long selfPayContractId
     ) {
         CreateServiceRequestDraftCommand cmd = new CreateServiceRequestDraftCommand();
         cmd.setOperatorId(operatorId);
@@ -284,6 +355,8 @@ public class TcmDecoctionAssembler {
         item.setRequesterId(operatorId);
         item.setGenerateSourceEnum(GenerateSource.DOCTOR_PRESCRIPTION.getCode());
         item.setPrescriptionNo(trimToNull(prescriptionNo));
+        // SR 冗余自费 contract_id（账单挂账以入参个人现金户为准，不动 Account）
+        item.setContractId(selfPayContractId);
         if (anchorRow != null) {
             // 诊断与执行科室与代表药行对齐，便于护士站/收银展示
             item.setEncounterDiagnosisIds(anchorRow.getEncounterDiagnosisIds());
@@ -351,6 +424,78 @@ public class TcmDecoctionAssembler {
             matched.add(row);
         }
         return matched;
+    }
+
+    /**
+     * 清理同方仍残留的未计费代煎费（含已软删 SR 锚定的孤儿 DRAFT/PLANNED）。
+     *
+     * <p>历史取消路径仅将 PLANNED 回退为 DRAFT 未作废，再补充时费用门控会误拦；本方法在 SR 循环后按产品+处方号扫尾。</p>
+     *
+     * @param encounterId    就诊主键
+     * @param prescriptionNo 处方号
+     * @param activityId     代煎诊疗项目主键
+     * @param operatorId     操作人；为空时跳过（与 SR 写侧一致）
+     */
+    private void voidResidualUnbilledDecoctionCharges(
+        Long encounterId,
+        String prescriptionNo,
+        Long activityId,
+        Long operatorId
+    ) {
+        // Gate：无操作人时不改写费用，避免审计链断裂
+        if (operatorId == null) {
+            return;
+        }
+        ChargeItemQueryCommand query = new ChargeItemQueryCommand();
+        query.setEncounterId(encounterId);
+        List<ChargeItem> items = chargeItemQueryService.listChargeItemsByEncounterId(query);
+        String trimmedPrescriptionNo = prescriptionNo.trim();
+        Set<Long> serviceRequestIds = new LinkedHashSet<>();
+        Set<Long> activityServiceIds = new LinkedHashSet<>();
+        for (ChargeItem chargeItem : items) {
+            if (chargeItem == null || Boolean.TRUE.equals(chargeItem.getIsDeleted())) {
+                continue;
+            }
+            if (!trimmedPrescriptionNo.equals(trimToEmpty(chargeItem.getPrescriptionNo()))) {
+                continue;
+            }
+            if (!TableNameConstants.WKF_ACTIVITY_DEFINITION.equals(chargeItem.getProductTable())) {
+                continue;
+            }
+            if (!activityId.equals(chargeItem.getProductId())) {
+                continue;
+            }
+            String status = StringUtils.trimToEmpty(chargeItem.getStatusEnum());
+            // 仅扫未计费态；已收费/结算由门控拒绝，须走退费
+            if (!ChargeItemStatus.DRAFT.getCode().equals(status)
+                && !ChargeItemStatus.PLANNED.getCode().equals(status)) {
+                continue;
+            }
+            String serviceTable = trimToEmpty(chargeItem.getServiceTable());
+            Long serviceId = chargeItem.getServiceId();
+            if (serviceId == null) {
+                continue;
+            }
+            // Pre：按锚点表分流，供后续 rollback/void 批量命中
+            if (TableNameConstants.WKF_SERVICE_REQUEST.equals(serviceTable)) {
+                serviceRequestIds.add(serviceId);
+            } else if (TableNameConstants.WKF_ACTIVITY_DEFINITION.equals(serviceTable)) {
+                activityServiceIds.add(serviceId);
+            }
+        }
+        for (Long serviceId : serviceRequestIds) {
+            // Cmd：孤儿 PLANNED 先回退再作废草稿
+            chargeItemDomainService.rollbackPlannedChargeItemsAfterAdviceSignedOff(
+                encounterId, TableNameConstants.WKF_SERVICE_REQUEST, serviceId);
+            chargeItemDomainService.voidUnbilledDraftChargeItemsByServiceAnchor(
+                ServiceAdviceCommandAssembler.toVoidDraftChargeAnchor(
+                    encounterId, TableNameConstants.WKF_SERVICE_REQUEST, serviceId, operatorId));
+        }
+        if (!activityServiceIds.isEmpty()) {
+            // Cmd：历史错误锚点残留草稿一并清理
+            chargeItemDomainService.voidUnbilledDraftChargeItemsByServiceAnchors(
+                encounterId, TableNameConstants.WKF_ACTIVITY_DEFINITION, activityServiceIds);
+        }
     }
 
     /**

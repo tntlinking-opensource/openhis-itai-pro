@@ -19,6 +19,10 @@ public final class CatalogRowFieldNormalizer {
     public static final int LEN_APRVNO = 100;
     public static final int LEN_PRODENTP_NAME = 200;
     public static final int LEN_PINYIN = 100;
+    public static final int LEN_MIN_PAC_CNT = 20;
+    public static final int LEN_MIN_PACUNT = 30;
+    public static final int LEN_MIN_PREPUNT = 30;
+    public static final int LEN_MIN_PRCUNT = 50;
 
     /** 工具类禁止实例化 */
     private CatalogRowFieldNormalizer() {

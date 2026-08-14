@@ -6,28 +6,37 @@ package com.openhis.health.integration.insurance.outpatient;
 
 import static com.openhis.whale.core.application.util.StringUtils.isEmpty;
 
+import com.openhis.chs.bridge.outpatient.assembler.ChsOutpatientInsuranceBatchPreSettleAssembler;
+import com.openhis.chs.bridge.outpatient.assembler.OutpatientInsuranceChargeGrouper;
+import com.openhis.chs.bridge.outpatient.assembler.OutpatientInsuranceChargeGrouper.OutpatientInsuranceChargeSplitResult;
+import com.openhis.chs.bridge.outpatient.assembler.OutpatientInsuranceChargeGrouper.OutpatientInsuranceSettleGroupPlan;
 import com.openhis.chs.bridge.outpatient.invoker.Op2205Invoker;
 import com.openhis.chs.bridge.outpatient.invoker.Op2207Invoker;
 import com.openhis.chs.bridge.outpatient.invoker.Op2208Invoker;
 import com.openhis.chs.bridge.outpatient.workflow.OpOutpatientPreSettleOrchestrator;
 import com.openhis.chs.bridge.settlement.invoker.Op2601Invoker;
 import com.openhis.chs.domain.catalog.access.ChsInsuranceContractReader;
-import com.openhis.chs.domain.outpatient.result.OpRevokeSettleResult;
+import com.openhis.chs.domain.outpatient.command.OpPreSettleCommand;
 import com.openhis.chs.domain.outpatient.entity.YbClinicPreSettle;
 import com.openhis.chs.domain.outpatient.loader.OpPreSettleContextLoader;
+import com.openhis.chs.domain.outpatient.result.OpRevokeSettleResult;
+import com.openhis.chs.domain.outpatient.service.YbClinicPreSettleDomainService;
 import com.openhis.chs.domain.outpatient.service.YbClinicPreSettleQueryService;
 import com.openhis.chs.domain.settlement.command.SettlementCorrectionCommand;
 import com.openhis.chs.domain.settlement.entity.YbSettlementRecord;
 import com.openhis.chs.domain.settlement.service.YbSettlementRecordDomainService;
 import com.openhis.chs.domain.settlement.service.YbSettlementRecordQueryService;
+import com.openhis.chs.domain.share.constants.ChsErrorCodes;
+import com.openhis.chs.domain.share.enums.MedType;
 import com.openhis.chs.gateway.support.ChsCurrentOperatorResolver;
+import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.financial.paymentreconciliation.service.PaymentReconciliationDomainService;
-import com.openhis.health.infrastructure.integration.insurance.outpatient.OutpatientChargeInsuranceExtension;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientChargeConfirmExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientChargeCorrectSettleExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientChargePreSettleBatchExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientChargePreSettleExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientChargePreSettleListExtensionIn;
+import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientChargeRebindSettlementPaymentExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientChargeRevokeFeeDetailExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientChargeRevokeSettleExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionOut.OutpatientChargeConfirmExtensionOut;
@@ -37,7 +46,7 @@ import com.openhis.health.infrastructure.integration.insurance.outpatient.Extens
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionOut.OutpatientChargeRevokeFeeDetailExtensionOut;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionOut.OutpatientChargeRevokeSettleExtensionOut;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionOut.OutpatientChargeSettlementRecordExtensionOut;
-import com.openhis.chs.bridge.outpatient.assembler.ChsOutpatientInsuranceBatchPreSettleAssembler;
+import com.openhis.health.infrastructure.integration.insurance.outpatient.OutpatientChargeInsuranceExtension;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.infrastructure.multitenancy.TenantUtils;
 import lombok.RequiredArgsConstructor;
@@ -47,7 +56,9 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 吉林医保门诊收银结算 SPI 实现。
@@ -67,6 +78,7 @@ public class OutpatientChargeInsuranceExtensionImpl implements OutpatientChargeI
 
     private final ChsInsuranceContractReader contractReader;
     private final OpPreSettleContextLoader contextLoader;
+    private final OutpatientInsuranceChargeGrouper chargeGrouper;
     private final ChsOutpatientInsuranceBatchPreSettleAssembler batchPreSettleAssembler;
     private final OpOutpatientPreSettleOrchestrator preSettleOrchestrator;
     private final Op2207Invoker op2207Invoker;
@@ -74,6 +86,7 @@ public class OutpatientChargeInsuranceExtensionImpl implements OutpatientChargeI
     private final Op2205Invoker op2205Invoker;
     private final Op2601Invoker op2601Invoker;
     private final YbClinicPreSettleQueryService clinicPreSettleQueryService;
+    private final YbClinicPreSettleDomainService clinicPreSettleDomainService;
     private final YbSettlementRecordQueryService settlementRecordQueryService;
     private final YbSettlementRecordDomainService settlementRecordDomainService;
     private final ChsCurrentOperatorResolver currentOperatorResolver;
@@ -92,11 +105,67 @@ public class OutpatientChargeInsuranceExtensionImpl implements OutpatientChargeI
         return contractReader.isInsuranceContract(contractId);
     }
 
-    /** 【2203→2204→2206】门诊预结算，写入 yb_clinic_pre_settle。 */
+    /**
+     * 【2203→2204→2206】门诊预结算，写入 yb_clinic_pre_settle。
+     *
+     * <p>与 batch 同源：按收费项绑定诊断解析 {@code med_type}/{@code dise_codg}，
+     * 禁止仅依赖请求缺省 {@code 11}（慢病会错走普门 map）。</p>
+     */
     @Override
     public OutpatientChargePreSettleExtensionOut preSettle(OutpatientChargePreSettleExtensionIn command) {
-        var enriched = contextLoader.enrichPreSettle(
-            ChsOutpatientInsuranceIntegrationMapper.toPartialPreSettleCommand(command));
+        if (command == null
+            || command.getEncounterId() == null
+            || command.getChargeItemIds() == null
+            || command.getChargeItemIds().isEmpty()) {
+            var enriched = contextLoader.enrichPreSettle(
+                ChsOutpatientInsuranceIntegrationMapper.toPartialPreSettleCommand(command));
+            return ChsOutpatientInsuranceIntegrationMapper.toExtensionPreSettleOut(
+                preSettleOrchestrator.invoke(enriched));
+        }
+        OutpatientInsuranceChargeSplitResult split = chargeGrouper.split(
+            command.getEncounterId(), command.getChargeItemIds());
+        List<OutpatientInsuranceSettleGroupPlan> groups = split.getInsuranceGroups();
+        if (groups == null || groups.isEmpty()) {
+            var enriched = contextLoader.enrichPreSettle(
+                ChsOutpatientInsuranceIntegrationMapper.toPartialPreSettleCommand(command));
+            return ChsOutpatientInsuranceIntegrationMapper.toExtensionPreSettleOut(
+                preSettleOrchestrator.invoke(enriched));
+        }
+        if (groups.size() > 1) {
+            // Gate：仅跨医疗类别（普门/慢病）拒绝；同 med_type 多病种应走 preSettleBatch
+            LinkedHashSet<String> medTypes = new LinkedHashSet<>();
+            for (OutpatientInsuranceSettleGroupPlan group : groups) {
+                if (group == null || group.getMedType() == null || group.getMedType().isBlank()) {
+                    medTypes.add(MedType.GENERAL_OUTPATIENT.getCode());
+                } else {
+                    medTypes.add(group.getMedType().trim());
+                }
+            }
+            if (medTypes.size() > 1) {
+                throw new BusinessException(
+                    ChsErrorCodes.SETTLEMENT_INVARIANT,
+                    "普通门诊与慢病等须分次结算（起付线），请每次只勾选同一就诊类型的明细");
+            }
+            throw new BusinessException(
+                ChsErrorCodes.SETTLEMENT_INVARIANT,
+                "同一就诊类型下不同慢病病种须分组预结算，请使用批量预结算");
+        }
+        OutpatientInsuranceSettleGroupPlan plan = groups.get(0);
+        List<Long> groupChargeItemIds = new ArrayList<>(plan.getChargeItems().size());
+        for (ChargeItem item : plan.getChargeItems()) {
+            groupChargeItemIds.add(item.getId());
+        }
+        OpPreSettleCommand partial = ChsOutpatientInsuranceIntegrationMapper.toPartialPreSettleCommand(command);
+        partial.setMedType(plan.getMedType());
+        partial.setChargeItemIds(groupChargeItemIds);
+        OpPreSettleCommand enriched = contextLoader.enrichPreSettleForGroup(
+            partial,
+            groupChargeItemIds,
+            plan.getMedType(),
+            plan.getDiseCodg(),
+            plan.getDiseName());
+        enriched.setAccountId(plan.getAccountId());
+        enriched.setGroupDiseCodg(plan.getDiseCodg());
         return ChsOutpatientInsuranceIntegrationMapper.toExtensionPreSettleOut(
             preSettleOrchestrator.invoke(enriched));
     }
@@ -138,7 +207,9 @@ public class OutpatientChargeInsuranceExtensionImpl implements OutpatientChargeI
                 .setInsuplcAdmdvs(row.getInsuplcAdmdvs())
                 .setInsutype(row.getInsutype())
                 .setPayerCertType(row.getMdtrtCertType())
-                .setAcctUsedFlag(row.getAcctUsedFlag()));
+                .setAcctUsedFlag(row.getAcctUsedFlag())
+                .setMedfeeSumamt(row.getMedfeeSumamt())
+                .setPsnCashPay(row.getPsnCashPay()));
         }
         return snapshots;
     }
@@ -153,10 +224,98 @@ public class OutpatientChargeInsuranceExtensionImpl implements OutpatientChargeI
         List<YbSettlementRecord> rows = settlementRecordQueryService.listByPaymentId(paymentId, tenantId);
         List<OutpatientChargeSettlementRecordExtensionOut> results = new ArrayList<>();
         for (YbSettlementRecord row : rows) {
-            results.add(ChsOutpatientInsuranceIntegrationMapper.toExtensionSettlementRecord(
-                ChsOutpatientInsuranceIntegrationMapper.toSettleRecordResult(row)));
+            OutpatientChargeSettlementRecordExtensionOut out =
+                ChsOutpatientInsuranceIntegrationMapper.toExtensionSettlementRecord(
+                    ChsOutpatientInsuranceIntegrationMapper.toSettleRecordResult(row));
+            if (row.getPreSettleId() != null) {
+                YbClinicPreSettle pre = clinicPreSettleDomainService.findById(row.getPreSettleId());
+                if (pre != null && tenantId.equals(pre.getTenantId()) && !Boolean.TRUE.equals(pre.getIsDeleted())) {
+                    out.setChargeItemIds(parseChargeItemIdsText(pre.getChargeItemIds()));
+                }
+            }
+            results.add(out);
         }
         return results;
+    }
+
+    /** 本地：孤儿 2207 补收时改挂回执与预结算到新草稿；任一失败则抛错。 */
+    @Override
+    public int rebindConfirmedSettlementsToPayment(OutpatientChargeRebindSettlementPaymentExtensionIn command) {
+        if (command == null
+            || command.getNewPaymentId() == null
+            || command.getSettlementRecordIds() == null
+            || command.getSettlementRecordIds().isEmpty()) {
+            throw new BusinessException(
+                ChsErrorCodes.SETTLEMENT_INVARIANT,
+                "银联补收改挂参数不完整");
+        }
+        Long tenantId = TenantUtils.getCurrentTenantId();
+        Long newPaymentId = command.getNewPaymentId();
+        int rebound = 0;
+        for (Long settlementRecordId : command.getSettlementRecordIds()) {
+            if (settlementRecordId == null) {
+                throw new BusinessException(
+                    ChsErrorCodes.SETTLEMENT_INVARIANT,
+                    "银联补收改挂失败：结算回执主键为空");
+            }
+            YbSettlementRecord row = settlementRecordDomainService
+                .findByIdAndTenant(settlementRecordId, tenantId)
+                .orElse(null);
+            if (row == null) {
+                throw new BusinessException(
+                    ChsErrorCodes.SETTLEMENT_INVARIANT,
+                    "银联补收改挂失败：结算回执不存在 " + settlementRecordId);
+            }
+            boolean ok = settlementRecordDomainService.rebindPaymentId(settlementRecordId, newPaymentId, tenantId);
+            if (!ok) {
+                throw new BusinessException(
+                    ChsErrorCodes.SETTLEMENT_INVARIANT,
+                    "银联补收改挂失败：回执非 CONFIRMED 或不可改挂 " + settlementRecordId);
+            }
+            if (row.getPreSettleId() != null) {
+                clinicPreSettleDomainService.rebindPaymentDraftId(row.getPreSettleId(), newPaymentId, tenantId);
+            }
+            rebound += 1;
+        }
+        if (rebound != command.getSettlementRecordIds().size()) {
+            throw new BusinessException(
+                ChsErrorCodes.SETTLEMENT_INVARIANT,
+                "银联补收改挂条数不一致");
+        }
+        return rebound;
+    }
+
+    /** 解析预结算 charge_item_ids（JSON 数组或逗号串）。 */
+    private static List<Long> parseChargeItemIdsText(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return List.of();
+        }
+        String text = raw.trim();
+        if (text.startsWith("[") && text.endsWith("]")) {
+            text = text.substring(1, text.length() - 1).trim();
+        }
+        if (text.isEmpty()) {
+            return List.of();
+        }
+        Set<Long> unique = new LinkedHashSet<>();
+        for (String part : text.split(",")) {
+            if (part == null || part.isBlank()) {
+                continue;
+            }
+            String token = part.trim();
+            if (token.startsWith("\"") && token.endsWith("\"") && token.length() >= 2) {
+                token = token.substring(1, token.length() - 1).trim();
+            }
+            if (token.isEmpty()) {
+                continue;
+            }
+            try {
+                unique.add(Long.parseLong(token));
+            } catch (NumberFormatException ignored) {
+                // 跳过非法段
+            }
+        }
+        return new ArrayList<>(unique);
     }
 
     /** 【2208】撤销门诊结算，标记回执已撤销，并同步支付侧桥表 REVOKED。 */

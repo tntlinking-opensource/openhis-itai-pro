@@ -21,8 +21,8 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * 1317 正向回写：按 medins_list_codg=bus_no 命中院内品项后写 yb_no / yb_match_flag。
- * <p>仅有效行回写；未命中计 skipped，不清院内已对码。</p>
+ * 1317 正向回写：按 medins_list_codg=bus_no 命中院内品项后仅写 yb_match_flag。
+ * <p>不回写 med_list_codg→yb_no（耗材平台短码会覆盖院内完整码）；未命中计 skipped，不清院内已对码。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -34,7 +34,7 @@ public class Catalog1317WriteBackSupport {
     private final CatalogMappingHealthAssemblySupport healthAssemblySupport;
 
     /**
-     * 对一批 upsert 命令尝试正向回写院内对码。
+     * 对一批 upsert 命令尝试正向回写院内对码标志。
      *
      * @param rows       已映射命令（可含无效行）
      * @param operatorId 操作人
@@ -56,14 +56,14 @@ public class Catalog1317WriteBackSupport {
                 skipped++;
                 continue;
             }
+            // med_list_codg 仅作平台有效对照门禁，不写入院内 yb_no
             if (isEmpty(row.getMedinsListCodg()) || isEmpty(row.getMedListCodg())) {
                 skipped++;
                 continue;
             }
             String busNo = row.getMedinsListCodg().trim();
-            String ybNo = row.getMedListCodg().trim();
             String listType = trimOrEmpty(row.getListType());
-            boolean ok = writeOne(listType, busNo, ybNo, operatorId);
+            boolean ok = writeOne(listType, busNo, operatorId);
             if (ok) {
                 written++;
             } else {
@@ -74,81 +74,78 @@ public class Catalog1317WriteBackSupport {
     }
 
     /**
-     * 按 list_type 路由到药品/诊疗/耗材并回写。
+     * 按 list_type 路由到药品/诊疗/耗材并回写对码标志。
      *
      * @param listType   目录类别
      * @param busNo      院内编码
-     * @param ybNo       医保编码
      * @param operatorId 操作人
      * @return 是否命中并回写成功
      */
-    private boolean writeOne(String listType, String busNo, String ybNo, Long operatorId) {
+    private boolean writeOne(String listType, String busNo, Long operatorId) {
         if (ListType.MEDICAL_SERVICE.getCode().equals(listType)) {
-            return writeActivity(busNo, ybNo, operatorId);
+            return writeActivity(busNo, operatorId);
         }
         if (ListType.MEDICAL_CONSUMABLE.getCode().equals(listType)) {
-            return writeDevice(busNo, ybNo, operatorId);
+            return writeDevice(busNo, operatorId);
         }
         // 101/102 及其他默认按药品处理
-        return writeMedication(busNo, ybNo, operatorId);
+        return writeMedication(busNo, operatorId);
     }
 
     /**
-     * 按 bus_no 回写药品对码。
+     * 按 bus_no 回写药品对码标志（保留院内 yb_no）。
      *
      * @param busNo      院内编码
-     * @param ybNo       医保编码
      * @param operatorId 操作人
      * @return 是否命中
      */
-    private boolean writeMedication(String busNo, String ybNo, Long operatorId) {
+    private boolean writeMedication(String busNo, Long operatorId) {
         List<MedicationDefinition> list = medicationDefinitionQueryService.findByBusNos(List.of(busNo));
         if (list == null || list.isEmpty()) {
             return false;
         }
         MedicationDefinition med = list.get(0);
-        healthAssemblySupport.syncMedicationMatchFlag(med.getId(), ybNo, med.getChrgitmLv(), true, operatorId);
+        healthAssemblySupport.syncMedicationMatchFlag(
+            med.getId(), med.getYbNo(), med.getChrgitmLv(), true, operatorId);
         return true;
     }
 
     /**
-     * 按 bus_no 回写诊疗对码。
+     * 按 bus_no 回写诊疗对码标志（保留院内 yb_no）。
      *
      * @param busNo      院内编码
-     * @param ybNo       医保编码
      * @param operatorId 操作人
      * @return 是否命中
      */
-    private boolean writeActivity(String busNo, String ybNo, Long operatorId) {
+    private boolean writeActivity(String busNo, Long operatorId) {
         List<ActivityDefinition> list = activityDefinitionQueryService.findByBusNos(List.of(busNo));
         if (list == null || list.isEmpty()) {
             return false;
         }
         ActivityDefinition activity = list.get(0);
         healthAssemblySupport.syncActivityMatchFlag(
-            activity.getId(), ybNo, activity.getChrgitmLv(), true, operatorId);
+            activity.getId(), activity.getYbNo(), activity.getChrgitmLv(), true, operatorId);
         return true;
     }
 
     /**
-     * 按 bus_no 回写耗材对码（含 yb_no）。
+     * 按 bus_no 回写耗材对码标志（保留院内完整 yb_no）。
      *
      * @param busNo      院内编码
-     * @param ybNo       医保编码
      * @param operatorId 操作人
      * @return 是否命中
      */
-    private boolean writeDevice(String busNo, String ybNo, Long operatorId) {
+    private boolean writeDevice(String busNo, Long operatorId) {
         List<DeviceDefinition> list = deviceDefinitionQueryService.findByBusNos(List.of(busNo));
         if (list == null || list.isEmpty()) {
             return false;
         }
         DeviceDefinition device = list.get(0);
-        // 1317 medins_list_codg=bus_no；回写 yb_no（截前 15）与对码标志
+        // 1317：只标已对码，不把平台 med_list_codg（耗材可能是 15 位短码）写入 yb_no
         healthAssemblySupport.syncDeviceYbMapping(
             device.getId(),
             device.getYbFlag(),
-            ybNo,
+            device.getYbNo(),
             true,
             device.getChrgitmLv(),
             operatorId);

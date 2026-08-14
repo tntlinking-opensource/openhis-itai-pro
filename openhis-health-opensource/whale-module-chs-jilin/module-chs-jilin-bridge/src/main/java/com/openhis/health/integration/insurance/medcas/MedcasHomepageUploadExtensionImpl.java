@@ -4,9 +4,15 @@
  */
 package com.openhis.health.integration.insurance.medcas;
 
+import com.openhis.chs.bridge.medcas.invoker.Med4101AInvoker;
+import com.openhis.chs.bridge.medcas.invoker.Med4102Invoker;
+import com.openhis.chs.bridge.medcas.invoker.Med4103Invoker;
 import com.openhis.chs.bridge.medcas.invoker.Med4401Invoker;
 import com.openhis.health.infrastructure.integration.insurance.medcas.MedcasHomepageUploadExtension;
 import com.openhis.health.infrastructure.integration.insurance.medcas.ExtensionIn.MedcasHomepageUploadExtensionIn;
+import com.openhis.health.infrastructure.integration.insurance.medcas.ExtensionIn.MedcasSettleListQueryExtensionIn;
+import com.openhis.health.infrastructure.integration.insurance.medcas.ExtensionIn.MedcasSettleListStatusExtensionIn;
+import com.openhis.health.infrastructure.integration.insurance.medcas.ExtensionIn.MedcasSettleListUploadExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.medcas.ExtensionOut.MedcasUploadExtensionOut;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -15,11 +21,10 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
 /**
- * 吉林医保病案首页上传 SPI 实现。
+ * 吉林医保病案上报 SPI 实现（4401 / 4101A / 4102 / 4103）。
  *
  * <p><b>SPI 接口</b>：{@link MedcasHomepageUploadExtension}</p>
  * <p><b>Health 调用方</b>：{@code MrmsCaseRecordUploadAppService}</p>
- * <p><b>Bridge 委托</b>：{@link Med4401Invoker}</p>
  */
 @Component
 @Primary
@@ -29,6 +34,9 @@ import org.springframework.stereotype.Component;
 public class MedcasHomepageUploadExtensionImpl implements MedcasHomepageUploadExtension {
 
     private final Med4401Invoker med4401Invoker;
+    private final Med4101AInvoker med4101AInvoker;
+    private final Med4102Invoker med4102Invoker;
+    private final Med4103Invoker med4103Invoker;
 
     /** 本地：返回 Extension 已启用。 */
     @Override
@@ -40,5 +48,23 @@ public class MedcasHomepageUploadExtensionImpl implements MedcasHomepageUploadEx
     @Override
     public MedcasUploadExtensionOut upload(MedcasHomepageUploadExtensionIn command) {
         return med4401Invoker.invoke(command);
+    }
+
+    /** 【4101A】上传结算清单。 */
+    @Override
+    public MedcasUploadExtensionOut uploadSettleList(MedcasSettleListUploadExtensionIn command) {
+        return med4101AInvoker.invoke(command);
+    }
+
+    /** 【4102】修改结算清单状态。 */
+    @Override
+    public MedcasUploadExtensionOut modifySettleListStatus(MedcasSettleListStatusExtensionIn command) {
+        return med4102Invoker.invoke(command);
+    }
+
+    /** 【4103】查询结算清单信息。 */
+    @Override
+    public MedcasUploadExtensionOut querySettleList(MedcasSettleListQueryExtensionIn command) {
+        return med4103Invoker.invoke(command);
     }
 }

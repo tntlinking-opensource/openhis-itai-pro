@@ -32,7 +32,7 @@ public class InventoryOpeningLineDto {
     @Schema(description = "物品定义主键")
     private Long itemId;
 
-    /** 批号（同单内与 itemTable/itemId 组成唯一键）。 */
+    /** 批号（同单内与 itemTable/itemId/supplierId 组成唯一键）。 */
     @Schema(description = "批号")
     private String lotNumber;
 

@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -26,5 +27,9 @@ public class SummarizeOutpatientRegistrationDetailReportResponse {
     /** 净挂号笔数合计。 */
     @Schema(description = "净挂号笔数合计")
     private Long totalNetRegistrationCount;
+
+    /** 净挂号费合计（各汇总行挂号费代数和）。 */
+    @Schema(description = "净挂号费合计")
+    private BigDecimal totalRegistrationFeeAmount;
 }
 

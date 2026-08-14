@@ -56,4 +56,12 @@ public class TcmRxDraftLineRequest {
     /** 特殊煎法术语 code。 */
     @Schema(description = "特殊煎法术语 code")
     private String dosageInstructionCode;
+
+    /**
+     * 行级费用性质/合同主键（落库本行 {@code med_medication_request.contract_id}）。
+     * <p>自费等级药材仅本行切自费，不拖整方。</p>
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "行级费用性质/合同主键")
+    private Long contractId;
 }

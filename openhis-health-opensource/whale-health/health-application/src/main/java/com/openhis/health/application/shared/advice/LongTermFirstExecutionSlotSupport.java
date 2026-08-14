@@ -12,12 +12,18 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
+
 /**
  * 长期医嘱开立日「首次执行槽」裁剪与停嘱日「末执行槽」识别。
  *
  * <p>开立日规则见 BR-IP-ORD-030⑥ / BR-IP-EXE-032；停嘱日末槽为对称易用性：
  * 识别最后一个 ≤ 停嘱的频次点，供列表/写路径 {@code defaultActualTime}=停嘱时刻
  * （同槽既是首次又是末槽时开嘱优先）。频次时钟禁止写死。</p>
+ *
+ * <p>开嘱日首次槽默认 actualTime = 开立时刻延后
+ * {@link InpatientNurseStationConstants#FIRST_EXECUTION_DEFAULT_ACTUAL_DELAY_MINUTES} 分钟
+ * （跨自然日钳开立日末，保证与 planTime 同日）。</p>
  */
 public final class LongTermFirstExecutionSlotSupport {
 
@@ -139,6 +145,28 @@ public final class LongTermFirstExecutionSlotSupport {
             return false;
         }
         return planTime.withNano(0).equals(firstPlanTime.withNano(0));
+    }
+
+    /**
+     * 开嘱日首次槽默认 actualTime：开立时刻延后固定分钟（BR-IP-EXE-032）。
+     *
+     * <p>延后后若跨入下一自然日，钳到开立日 {@code 23:59:59}，避免与开嘱日 planTime
+     * 同日 Gate（BR-IP-EXE-030）冲突。</p>
+     *
+     * @param openedTime 开立时刻；空则无法解析
+     * @return 建议实际执行时刻；开立为空时 null
+     */
+    public static LocalDateTime resolveFirstSlotDefaultActualTime(LocalDateTime openedTime) {
+        if (openedTime == null) {
+            return null;
+        }
+        LocalDateTime delayed = openedTime.plusMinutes(
+            InpatientNurseStationConstants.FIRST_EXECUTION_DEFAULT_ACTUAL_DELAY_MINUTES);
+        // 跨日则钳开立日末，保证 defaultActualTime 与开嘱日 planTime 同自然日
+        if (!delayed.toLocalDate().equals(openedTime.toLocalDate())) {
+            return openedTime.toLocalDate().atTime(23, 59, 59);
+        }
+        return delayed;
     }
 
     /**

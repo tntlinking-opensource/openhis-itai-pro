@@ -535,6 +535,29 @@ public class SupplyRequest extends BaseAuditedEntity {
     }
 
     /**
+     * 门控：科室退库单（type 22）同号全量修订。
+     *
+     * @param lines 同一 {@code bus_no} 下已存在的未删除行
+     * @throws BusinessException 单号不存在、非科室退库类型或存在不可修订状态行
+     */
+    public static void assertDeptReturnLinesRevisable(List<SupplyRequest> lines) {
+        if (lines == null || lines.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_NOT_FOUND, "科室退库单不存在，无法修订");
+        }
+        for (SupplyRequest row : lines) {
+            if (row == null) {
+                continue;
+            }
+            if (!SupplyType.DEPT_RETURN.getCode().equals(row.getTypeEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "非科室退库单不可按同号全量修订");
+            }
+            if (!SupplyRequest.isRevisableSupplyStatusCode(row.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核/驳回/已撤回状态允许修订科室退库明细");
+            }
+        }
+    }
+
+    /**
      * 门控：盘点执行单（药库/药房/科室盘点类 {@link SupplyType#isStocktakeTypeCode(String)}）同号全量修订。
      *
      * <p>与药库出库、订货修订一致：待审核/驳回/已撤回允许软删旧行后按命令全量重插；禁止混用非盘点类型单号。</p>

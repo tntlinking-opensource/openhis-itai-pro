@@ -13,7 +13,10 @@ import com.openhis.health.application.shared.validator.CurrentPractitionerResolv
 import com.openhis.health.application.shared.advice.InpatientMedicationRequestExecutionMeasureHelper;
 import com.openhis.health.application.shared.advice.InpatientNursingOrderGate;
 import com.openhis.health.application.shared.advice.InpatientEntrustOrderGateSupport;
+import com.openhis.health.application.shared.advice.InpatientStandingOrderSplittableSettingResolver;
 import com.openhis.health.application.shared.advice.LongTermFirstExecutionSlotSupport;
+import com.openhis.health.application.shared.advice.StandingOrderPackageBatchEligibilitySupport;
+import com.openhis.health.application.shared.option.TerminologyOptionLoader;
 import com.openhis.health.domain.custom.frequency.queries.model.FrequencyExecutionTimePointQueryModel;
 import com.openhis.health.domain.custom.frequency.service.FrequencyQueryService;
 import com.openhis.health.application.shared.validator.InpatientPendingSettlementClinicalGate;
@@ -68,6 +71,7 @@ import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.ReadModelOrderTypeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.enums.TherapyType;
@@ -201,6 +205,10 @@ public class NurseStationOrderExecuteAppService {
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     /** 发放库房模板解析（绑定耗材 performLocation，对齐护士划价）。 */
     private final ClinicalCatalogDispenseLocationResolver clinicalCatalogDispenseLocationResolver;
+    /** 住院长嘱是否可拆；不可拆时口服长嘱一盒一点整包装写量。 */
+    private final InpatientStandingOrderSplittableSettingResolver standingOrderSplittableSettingResolver;
+    /** 用法术语码 → 展示名（口服类判定）。 */
+    private final TerminologyOptionLoader terminologyOptionLoader;
 
     /**
      * IF-IP-EXE-01：医嘱执行列表查询。
@@ -241,7 +249,7 @@ public class NurseStationOrderExecuteAppService {
             this.expandExecuteWriteSlotsByTcmPrescription(request.getItems());
         // Pre：OrderInfo、可见性、药诊明细、Procedure 历史——避免写循环内单条查库
         WriteContextBundle context = this.prepareWriteContext(items);
-        // Pre：首次槽 actualTime 默认开嘱时刻；其余回落 planTime（BR-IP-ORD-030⑥ / BR-IP-EXE-030）
+        // Pre：首次槽 actualTime 默认开立延后；其余回落 planTime（BR-IP-ORD-030⑥ / BR-IP-EXE-030/032）
         this.applyExecutionActualTimeDefaults(items, context);
         // Pre：临嘱双轨收敛——planTime 与 actualTime 强制同值（改不改时分都一样）
         this.alignTemporaryExecutePlanAndActualTimes(items, context);
@@ -441,16 +449,28 @@ public class NurseStationOrderExecuteAppService {
         if (fifoSegments == null || fifoSegments.isEmpty()) {
             throw new BusinessException(InpatientNurseStationConstants.EX_IP_EXE_302, "库存 Gate 未通过");
         }
-        String unitCode = InpatientMedicationRequestExecutionMeasureHelper.resolveDispenseUnitCodeForExecutionSlot(
-            med.getTherapyEnum(),
-            med.getUnitCode(),
-            med.getFirstDoseUnitCode(),
-            item.getPlanTime(),
-            this.resolveFirstPlanTimeOnOpenedDay(med));
-        ChargeItem template = this.findChargeTemplate(context, order.getEncounterId(),
-            TableNameConstants.MED_MEDICATION_REQUEST, med.getId());
         ProductDefinitionDisplayDto medicationProduct =
             this.loadMedicationProductDefinition(context, med.getMedicationId());
+        boolean packageBatch = this.isStandingOrderPackageBatchExecution(context, med, medicationProduct);
+        String packageUnitCode = null;
+        if (medicationProduct != null) {
+            packageUnitCode = medicationProduct.getPackageUnitCode();
+        }
+        InpatientMedicationRequestExecutionMeasureHelper.BillableMeasure billable =
+            InpatientMedicationRequestExecutionMeasureHelper.resolveBillableDispenseMeasureForExecutionSlot(
+                med.getTherapyEnum(),
+                med.getQuantity(),
+                med.getFirstDose(),
+                med.getUnitCode(),
+                med.getFirstDoseUnitCode(),
+                item.getPlanTime(),
+                this.resolveFirstPlanTimeOnOpenedDay(med),
+                packageBatch,
+                packageUnitCode,
+                medicationProduct);
+        String unitCode = billable.getUnitCode();
+        ChargeItem template = this.findChargeTemplate(context, order.getEncounterId(),
+            TableNameConstants.MED_MEDICATION_REQUEST, med.getId());
         // Cmd：每 FIFO 分段各建一条 Dispense(PREPARATION) 与一条待结算 Charge
         for (NurseStationExecutionInventoryAssembler.MedicationFifoSegment segment : fifoSegments) {
             if (segment == null || segment.getQuantity() == null) {
@@ -910,7 +930,7 @@ public class NurseStationOrderExecuteAppService {
     /**
      * 执行写路径：补齐 actualTime 默认值并校验与 planTime 同自然日。
      *
-     * <p>开嘱日首次槽默认开嘱时刻（BR-IP-EXE-032）；已停嘱时停嘱日末槽默认停嘱时刻
+     * <p>开嘱日首次槽默认开立延后（BR-IP-EXE-032）；已停嘱时停嘱日末槽默认停嘱时刻
      * （同槽开嘱优先）；其余默认 planTime（BR-IP-EXE-030）。</p>
      *
      * @param items   写槽位
@@ -956,7 +976,9 @@ public class NurseStationOrderExecuteAppService {
     }
 
     /**
-     * 写路径边界默认 actualTime：开嘱日首次=开嘱；已停嘱停嘱日末=停嘱；同槽开嘱优先。
+     * 写路径边界默认 actualTime：开嘱日首次=开立延后；已停嘱停嘱日末=停嘱；同槽开嘱优先。
+     *
+     * <p>临时单槽 planTime=开立时亦按首次槽盖延后默认（无频次裁剪，BR-IP-EXE-032）。</p>
      *
      * @param item    写槽位
      * @param context 预加载上下文
@@ -967,13 +989,20 @@ public class NurseStationOrderExecuteAppService {
         WriteContextBundle context) {
         OrderExecutionContext orderCtx = context.resolveOrderContext(item);
         LocalDateTime planTime = item.getPlanTime();
+        String therapy = trimToEmpty(orderCtx.therapyEnum);
         if (ReadModelOrderTypeConstants.MED_REQUEST.equals(item.getOrderType())) {
             MedicationRequestListQueryModel med = orderCtx.medDetail;
             LocalDateTime openedTime = this.resolveMedicationOpenedTime(med);
+            // 临嘱单槽：planTime 锚开立 → 默认 actualTime 开立延后
+            if (TherapyType.TEMPORARY.getCode().equals(therapy)
+                && openedTime != null
+                && planTime.withNano(0).equals(openedTime.withNano(0))) {
+                return LongTermFirstExecutionSlotSupport.resolveFirstSlotDefaultActualTime(openedTime);
+            }
             LocalDateTime firstPlanTime = this.resolveFirstPlanTimeOnOpenedDay(med);
             if (LongTermFirstExecutionSlotSupport.isFirstExecutionSlot(planTime, firstPlanTime)
                 && openedTime != null) {
-                return openedTime;
+                return LongTermFirstExecutionSlotSupport.resolveFirstSlotDefaultActualTime(openedTime);
             }
             // 仅已停嘱才盖停嘱日末槽默认，避免未停嘱误用残留 stop_time
             if (med != null
@@ -989,10 +1018,16 @@ public class NurseStationOrderExecuteAppService {
         if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(item.getOrderType())) {
             ServiceRequestListModel svc = orderCtx.svcDetail;
             LocalDateTime openedTime = this.resolveServiceOpenedTime(svc);
+            // 临嘱诊疗单槽同药嘱：开立锚点盖延后默认
+            if (TherapyType.TEMPORARY.getCode().equals(therapy)
+                && openedTime != null
+                && planTime.withNano(0).equals(openedTime.withNano(0))) {
+                return LongTermFirstExecutionSlotSupport.resolveFirstSlotDefaultActualTime(openedTime);
+            }
             LocalDateTime firstPlanTime = this.resolveFirstPlanTimeOnOpenedDayForService(svc);
             if (LongTermFirstExecutionSlotSupport.isFirstExecutionSlot(planTime, firstPlanTime)
                 && openedTime != null) {
-                return openedTime;
+                return LongTermFirstExecutionSlotSupport.resolveFirstSlotDefaultActualTime(openedTime);
             }
             if (svc != null
                 && RequestStatus.STOPPED.getCode().equals(svc.getStatusEnum())
@@ -1204,18 +1239,28 @@ public class NurseStationOrderExecuteAppService {
             line.setMethodCode(med.getMethodCode());
             // categoryCode 由库存装配器按产品读模型 category_code 解析（与住院医生站 FIFO 口径一致）
             LocalDateTime firstPlanTime = this.resolveFirstPlanTimeOnOpenedDay(med);
-            line.setBusinessQuantity(InpatientMedicationRequestExecutionMeasureHelper.resolveDispenseQuantityForExecutionSlot(
-                med.getTherapyEnum(),
-                med.getQuantity(),
-                med.getFirstDose(),
-                item.getPlanTime(),
-                firstPlanTime));
-            line.setUnitCode(InpatientMedicationRequestExecutionMeasureHelper.resolveDispenseUnitCodeForExecutionSlot(
-                med.getTherapyEnum(),
-                med.getUnitCode(),
-                med.getFirstDoseUnitCode(),
-                item.getPlanTime(),
-                firstPlanTime));
+            ProductDefinitionDisplayDto product =
+                this.loadMedicationProductDefinition(context, med.getMedicationId());
+            boolean packageBatch = this.isStandingOrderPackageBatchExecution(context, med, product);
+            String packageUnitCode = null;
+            if (product != null) {
+                packageUnitCode = product.getPackageUnitCode();
+            }
+            // 计费/扣库量：一盒一点或拆零下限抬量后与 Charge/Dispense 同源（BR-IP-EXE-035/036）
+            InpatientMedicationRequestExecutionMeasureHelper.BillableMeasure billable =
+                InpatientMedicationRequestExecutionMeasureHelper.resolveBillableDispenseMeasureForExecutionSlot(
+                    med.getTherapyEnum(),
+                    med.getQuantity(),
+                    med.getFirstDose(),
+                    med.getUnitCode(),
+                    med.getFirstDoseUnitCode(),
+                    item.getPlanTime(),
+                    firstPlanTime,
+                    packageBatch,
+                    packageUnitCode,
+                    product);
+            line.setBusinessQuantity(billable.getQuantity());
+            line.setUnitCode(billable.getUnitCode());
             lines.add(line);
         }
         return lines;
@@ -1738,6 +1783,12 @@ public class NurseStationOrderExecuteAppService {
                 procedureQueryService.getProcedureRecords(item.getOrderId(), requestTable);
             bundle.proceduresByOrderKey.put(orderKey, procedures);
         }
+        // Pre：不可拆开关 + 口服用法术语，供一盒一点整包装写量
+        bundle.standingOrderPackageBatchEnabled = !standingOrderSplittableSettingResolver.isSplittable();
+        if (bundle.standingOrderPackageBatchEnabled) {
+            bundle.methodLabelByCode = terminologyOptionLoader.buildLabelMap(
+                TerminologyCodeSystemNameConstants.METHOD_CODE);
+        }
         return bundle;
     }
 
@@ -2051,10 +2102,7 @@ public class NurseStationOrderExecuteAppService {
         if (items == null || items.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "请勾选至少一条待执行槽位");
         }
-        if (items.size() > InpatientNurseStationConstants.EXECUTE_WRITE_BATCH_MAX) {
-            // BR-IP-EXE-022：单次批量上限，防止长事务
-            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "单次最多处理50条计划点");
-        }
+        // 暂不卡 EXECUTE_WRITE_BATCH_MAX（现场大批量执行）；仍整批同事务回滚（BR-IP-EXE-022）
         for (NurseStationOrderExecuteWriteSlotDto item : items) {
             if (item == null || item.getOrderId() == null || StringUtils.isEmpty(item.getOrderType())) {
                 throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "医嘱锚点不完整");
@@ -2071,7 +2119,7 @@ public class NurseStationOrderExecuteAppService {
             if (executePath) {
                 LocalDateTime actualTime = item.getActualTime();
                 if (actualTime == null) {
-                    // 暂留空：预加载明细后由 applyExecutionActualTimeDefaults 填开嘱时刻或 planTime
+                    // 暂留空：预加载明细后由 applyExecutionActualTimeDefaults 填开立延后或 planTime
                     continue;
                 }
                 // Gate：仅允许同自然日调整时分，禁止改日期（展示用 recorded，逻辑仍用 planTime）
@@ -2591,6 +2639,31 @@ public class NurseStationOrderExecuteAppService {
     }
 
     /**
+     * 本次执行是否走长嘱不可拆一盒一点整包装写量（开关关闭 + 长期 + 包装≠拆零 + 口服类）。
+     *
+     * @param context 写上下文（含开关与用法术语）
+     * @param med     药品申请
+     * @param product 目录
+     * @return true=数量 1 包装单位
+     */
+    private boolean isStandingOrderPackageBatchExecution(
+        WriteContextBundle context,
+        MedicationRequestListQueryModel med,
+        ProductDefinitionDisplayDto product) {
+        if (context == null || !context.standingOrderPackageBatchEnabled) {
+            return false;
+        }
+        if (med == null) {
+            return false;
+        }
+        return StandingOrderPackageBatchEligibilitySupport.isEligibleWithoutSplittableSwitch(
+            med.getTherapyEnum(),
+            med.getMethodCode(),
+            context.methodLabelByCode,
+            product);
+    }
+
+    /**
      * 写路径预加载上下文容器。
      *
      * <p>Charge/产品/定价按 encounterId、产品键缓存，避免同一批次重复查库。</p>
@@ -2620,6 +2693,10 @@ public class NurseStationOrderExecuteAppService {
         private Map<Long, String> encounterPatientNames = new HashMap<>();
         /** 绑定耗材自动扣库时按 inventoryItemId 累计待扣数量（批次末合并扣减）。 */
         private final Map<Long, BigDecimal> deviceInventoryDecreaseAccumulator = new HashMap<>();
+        /** 用法 code → 展示名（一盒一点口服类判定）；prepare 时预热。 */
+        private Map<String, String> methodLabelByCode = new HashMap<>();
+        /** 全局不可拆时为 true（与设置开关取反）。 */
+        private boolean standingOrderPackageBatchEnabled;
 
         /**
          * @return 绑定耗材自动扣库累计器（可空映射，调用方判空后合并扣减）

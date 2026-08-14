@@ -6,8 +6,10 @@ package com.openhis.health.domain.financial.paymentreconciliation.repository;
 
 import com.openhis.health.domain.financial.paymentreconciliation.entity.PaymentReconciliation;
 import com.openhis.health.domain.share.enums.PaymentStatus;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
@@ -25,6 +27,15 @@ public interface PaymentReconciliationRepository extends JpaRepository<PaymentRe
      * @return 查询结果
      */
     Optional<PaymentReconciliation> findById(Long id);
+
+    /**
+     * 按主键加悲观写锁加载（退费申请串行化同一原单，落实 BR-PMR-008）。
+     *
+     * @param id 原支付主键
+     * @return 未软删时仍可能返回已删行；调用方须再校验业务态
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<PaymentReconciliation> findWithLockById(Long id);
 
     /**
      * 按条件查询。

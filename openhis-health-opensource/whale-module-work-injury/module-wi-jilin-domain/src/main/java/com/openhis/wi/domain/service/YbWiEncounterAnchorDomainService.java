@@ -68,7 +68,9 @@ public class YbWiEncounterAnchorDomainService {
      */
     public void assertQualificationForSettle(YbWiEncounterAnchor anchor) {
         if (anchor == null || isEmpty(anchor.getQualificationId())) {
-            throw new BusinessException(WiErrorCodes.NO_QUALIFICATION, "缺少 qualification_id，请先完成 9102 审批查询");
+            throw new BusinessException(
+                    WiErrorCodes.NO_QUALIFICATION,
+                    "缺少有效门诊工伤审批（类型12）。若仅有审批类型10，院点联网结算未开通；请先「一键备案」申请类型12后再收费");
         }
         if (WorkInjuryConstants.QUALIFICATION_PENDING_9102.equals(anchor.getQualificationStatus())) {
             throw new BusinessException(
@@ -77,6 +79,14 @@ public class YbWiEncounterAnchorDomainService {
         }
         if (!WorkInjuryConstants.QUALIFICATION_VALID.equals(anchor.getQualificationStatus())) {
             throw new BusinessException(WiErrorCodes.NO_QUALIFICATION, "审批资格未生效，请先完成 9102 并绑定 qualification_id");
+        }
+        // 就医类型须为院点开通的 12，且须与资格审批类型一致（绑定时已按 approveType 写入）
+        if (!WorkInjuryConstants.isOnlineSettleMedType(anchor.getMedType())) {
+            throw new BusinessException(
+                    WiErrorCodes.NO_QUALIFICATION,
+                    "当前审批/就医类型为 "
+                            + WorkInjuryConstants.normalizeMedType(anchor.getMedType())
+                            + "，院点联网结算仅开通 12。请重新办理门诊工伤备案（审批类型12）后再收费");
         }
     }
 
@@ -110,6 +120,19 @@ public class YbWiEncounterAnchorDomainService {
      */
     @Transactional
     public void bindQualification(YbWiEncounterAnchor anchor, String qualificationId) {
+        bindQualification(anchor, qualificationId, null);
+    }
+
+    /**
+     * 【9102】绑定 qualification_id，并同步就医类型 med_type＝审批类型 approveType。
+     * <p>平台强制二者一致；院点联网结算仅开通 12，故自动绑定应只选 approveType=12 的行。</p>
+     *
+     * @param anchor          就诊锚点
+     * @param qualificationId 平台审批资格 ID
+     * @param approveType     9102 行审批类型（写入 med_type；空则默认 12）
+     */
+    @Transactional
+    public void bindQualification(YbWiEncounterAnchor anchor, String qualificationId, String approveType) {
         if (anchor == null) {
             throw new BusinessException(WiErrorCodes.INVALID_INVOKE_SESSION, "就诊锚点不存在");
         }
@@ -118,6 +141,25 @@ public class YbWiEncounterAnchorDomainService {
         }
         anchor.setQualificationId(qualificationId.trim());
         anchor.setQualificationStatus(WorkInjuryConstants.QUALIFICATION_VALID);
+        // 就医类型必须与审批类型一致（平台校验）；空则院点默认 12
+        anchor.setMedType(WorkInjuryConstants.normalizeMedType(
+                isNotEmpty(approveType) ? approveType.trim() : WorkInjuryConstants.DEFAULT_MED_TYPE));
+        encounterAnchorRepository.save(anchor);
+    }
+
+    /**
+     * 清空资格绑定（无可用门诊类型 12 审批时调用，避免带着类型 10 资格去 2201）。
+     *
+     * @param anchor 就诊锚点
+     */
+    @Transactional
+    public void clearQualification(YbWiEncounterAnchor anchor) {
+        if (anchor == null) {
+            return;
+        }
+        anchor.setQualificationId(null);
+        anchor.setQualificationStatus(WorkInjuryConstants.QUALIFICATION_NONE);
+        anchor.setMedType(WorkInjuryConstants.DEFAULT_MED_TYPE);
         encounterAnchorRepository.save(anchor);
     }
 
@@ -223,7 +265,7 @@ public class YbWiEncounterAnchorDomainService {
             anchor.setAdmDiagCode(ctx.getAdmDiagCode().trim());
         }
         if (isNotEmpty(ctx.getMedType())) {
-            anchor.setMedType(ctx.getMedType().trim());
+            anchor.setMedType(WorkInjuryConstants.normalizeMedType(ctx.getMedType()));
         }
     }
 }

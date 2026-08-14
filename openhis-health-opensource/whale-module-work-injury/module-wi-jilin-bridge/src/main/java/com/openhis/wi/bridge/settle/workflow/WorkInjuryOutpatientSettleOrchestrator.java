@@ -4,6 +4,7 @@
  */
 package com.openhis.wi.bridge.settle.workflow;
 
+import com.openhis.wi.bridge.invoke.support.WorkInjuryInvokeLogSupport;
 import com.openhis.wi.bridge.invoke.workflow.WorkInjuryInvokeOrchestrator;
 import com.openhis.wi.gateway.scheme.shared.model.WiPhase;
 import com.openhis.chs.domain.settlement.entity.YbSettlementRecord;
@@ -51,6 +52,7 @@ public class WorkInjuryOutpatientSettleOrchestrator {
     private final YbWiEncounterAnchorRepository encounterAnchorRepository;
     private final YbWiSettlementDomainService settlementDomainService;
     private final YbWiPreSettleDomainService preSettleDomainService;
+    private final WorkInjuryInvokeLogSupport invokeLogSupport;
 
     /**
      * OP_SETTLE 前校验 anchor 审批资格（WI-004）。
@@ -93,6 +95,21 @@ public class WorkInjuryOutpatientSettleOrchestrator {
                 .setPaymentDraftId(command.getPaymentDraftId())
                 .setOperatorId(command.getOperatorId())
                 .setContext(context);
+
+        // 平台 2207 已成功、本地无回执：补落单边后直接 COMPLETED，避免再撞 2203「已存在结算」
+        if (invokeLogSupport.hasSuccessful2207(command.getEncounterId())) {
+            Optional<YbSettlementRecord> recovered = settlementDomainService.recoverUnilateralFromActivePreSettle(
+                    command.getEncounterId(),
+                    command.getPaymentDraftId(),
+                    command.getContractId(),
+                    TenantUtils.getCurrentTenantId());
+            if (recovered.isPresent()) {
+                YbSettlementRecord record = recovered.get();
+                encounterAnchorRepository.findByEncounterId(command.getEncounterId()).ifPresent(anchor ->
+                        anchorDomainService.apply2207SetlId(anchor, record.getSetlId()));
+                return invokeOperations.prepareCompletedUnilateralSession(request, record);
+            }
+        }
         return invokeOperations.prepareInvoke(request);
     }
 
@@ -136,14 +153,15 @@ public class WorkInjuryOutpatientSettleOrchestrator {
      * @param paymentDraftId 收银草稿 ID
      */
     public Optional<WorkInjuryPreSettleSnapshot> findActivePreSettleByPaymentDraft(Long paymentDraftId) {
-        return preSettleDomainService.findActiveByPaymentDraft(paymentDraftId, TenantUtils.getCurrentTenantId())
+        return preSettleDomainService
+                .findActiveOrSettledByPaymentDraft(paymentDraftId, TenantUtils.getCurrentTenantId())
                 .map(this::toPreSettleSnapshot);
     }
 
     /**
      * 启动 OP_REVERSE invoke 会话（【2208】）。
      *
-     * @param command settlementRecordId、operatorId 必填
+     * @param command settlementRecordId 必填；operatorId 可空（由 prepare 回落当前登录人）
      */
     public PrepareWorkInjuryInvokeResponse startReverse(StartWorkInjuryReverseCommand command) {
         if (command == null || command.getSettlementRecordId() == null) {
@@ -151,9 +169,6 @@ public class WorkInjuryOutpatientSettleOrchestrator {
         }
         YbSettlementRecord record = settlementDomainService.requireRevocableRecord(
                 command.getSettlementRecordId(), TenantUtils.getCurrentTenantId());
-        if (command.getOperatorId() == null) {
-            throw new BusinessException(WiErrorCodes.INVALID_INVOKE_SESSION, "operatorId 不能为空");
-        }
         Map<String, Object> context = new HashMap<>();
         context.put("settlementRecordId", record.getId());
         if (command.getPaymentId() != null) {

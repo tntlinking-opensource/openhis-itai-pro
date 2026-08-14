@@ -85,4 +85,12 @@ public class PageInpatientDoctorStationAdviceCatalogRequest extends AbstractHeal
      */
     @Schema(description = "排除药品 medication_category_code 集合（如开立西药医嘱传 [\"4\"] 排除中草药）")
     private List<String> excludeMedicationCategoryCodes;
+
+    /**
+     * 仅返回可开立库存大于 0 的药/耗目录行（分页前 SQL 过滤）。
+     * 过滤口径与目录「库存数量」一致：按开立科室取药模板库位（可选指定药房）收窄。
+     * 诊疗定义无库存维度，不受本开关影响；{@code null}/{@code false} 时不过滤。
+     */
+    @Schema(description = "仅看库存>0（药/耗，按取药模板库位）；true 时分页前过滤，诊疗不受影响")
+    private Boolean positiveQuantityOnly;
 }

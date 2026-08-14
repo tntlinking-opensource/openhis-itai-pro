@@ -11,7 +11,6 @@ import com.openhis.whale.core.application.exception.ValidationException;
 import com.openhis.whale.core.application.util.PageRequestUtils;
 import com.openhis.whale.core.application.util.SpecificationUtils;
 import com.openhis.whale.core.infrastructure.multitenancy.TenantUtils;
-import com.openhis.whale.core.infrastructure.permission.RequirePermission;
 import com.openhis.whale.identity.domain.Role;
 import com.openhis.whale.identity.domain.User;
 import com.openhis.whale.identity.domain.UserTenant;
@@ -67,7 +66,6 @@ public class SettingAppService {
      * @return 设置DTO
      * @throws EntityNotFoundException 设置不存在
      */
-    @RequirePermission("Navigation.SettingManagement")
     public SettingDto getById(Long id) {
         Setting setting = settingManager.findById(id).orElseThrow(() -> new EntityNotFoundException("设置", id));
         return toDto(setting);
@@ -80,7 +78,6 @@ public class SettingAppService {
      * @return 设置DTO
      * @throws EntityNotFoundException 设置不存在
      */
-    @RequirePermission("Navigation.SettingManagement")
     public SettingDto getByName(String name) {
         Setting setting = settingManager.findByName(name)
             .orElseThrow(() -> new EntityNotFoundException(String.format("设置 (名称: %s) 不存在", name)));
@@ -96,7 +93,6 @@ public class SettingAppService {
      * @return 设置DTO
      * @throws EntityNotFoundException 设置不存在
      */
-    @RequirePermission("Navigation.SettingManagement")
     public SettingDto getByNameAndProvider(String name, String providerName, String providerKey) {
         Setting setting = settingManager.findByNameAndProvider(name, providerName, providerKey)
             .orElseThrow(() -> new EntityNotFoundException(String.format("设置 (名称: %s) 不存在", name)));
@@ -109,7 +105,6 @@ public class SettingAppService {
      * @param name 设置名称
      * @return 设置值，不存在返回 null
      */
-    @RequirePermission("Navigation.SettingManagement")
     public String getValue(String name) {
         return settingManager.findByName(name).map(Setting::getValue).orElse(null);
     }
@@ -120,7 +115,6 @@ public class SettingAppService {
      * @param request 请求（name + defaultValue）
      * @return 设置值或默认值
      */
-    @RequirePermission("Navigation.SettingManagement")
     public String getValueOrDefault(GetValueOrDefaultRequest request) {
         return settingManager.findByName(request.getName()).map(Setting::getValue).orElse(request.getDefaultValue());
     }
@@ -130,7 +124,6 @@ public class SettingAppService {
      *
      * @return 初始化DTO（providers 为 value/label 列表）
      */
-    @RequirePermission("Navigation.SettingManagement")
     public SettingInitDto init() {
         List<OptionDto> providers = SettingProviderName.priorityOrder().stream()
             .map(p -> new OptionDto(0l, p.getCode(), p.getLabel())).collect(Collectors.toList());
@@ -149,7 +142,6 @@ public class SettingAppService {
      *
      * @return 配置项定义列表（title + name）
      */
-    @RequirePermission("Navigation.SettingManagement")
     public List<SettingDefinitionDto> initDefinitions() {
         return SettingDefinitionEnum.all().stream().map(def -> {
             SettingDefinitionDto dto = new SettingDefinitionDto();
@@ -175,7 +167,6 @@ public class SettingAppService {
      * @param providerName 提供者名称（G/U/R/T）
      * @return 可选 providerKey 列表
      */
-    @RequirePermission("Navigation.SettingManagement")
     public List<ProviderKeyOptionDto> getProviderKeys(String providerName) {
         SettingProviderName provider = SettingProviderName.of(providerName);
         Long tenantId = TenantUtils.getCurrentTenantId();
@@ -246,7 +237,6 @@ public class SettingAppService {
      * @param request 请求（name）
      * @return 最终值（不存在返回 null；多角色冲突会抛异常）
      */
-    @RequirePermission("Navigation.SettingManagement")
     public String getEffectiveValue(GetEffectiveValueRequest request) {
         return settingManager.getEffectiveValue(request.getName());
     }
@@ -257,7 +247,6 @@ public class SettingAppService {
      * @param request 查询条件（keyword/name/providerName/providerKey + 分页）
      * @return 分页结果
      */
-    @RequirePermission("Navigation.SettingManagement")
     public PagedResult<SettingDto> getList(SettingQueryRequest request) {
         Specification<Setting> spec = buildSpecification(request);
         PageRequest pageRequest = PageRequestUtils.createDefault(request.getPageNo(), request.getPageSize());
@@ -276,7 +265,6 @@ public class SettingAppService {
      * @param request 创建请求
      * @return 创建后的设置DTO
      */
-    @RequirePermission("Navigation.SettingManagement")
     public SettingDto create(CreateSettingRequest request) {
         normalizeProvider(request);
         validateProviderForCreate(request);
@@ -315,7 +303,6 @@ public class SettingAppService {
      * @param request 更新请求
      * @return 更新后的设置DTO
      */
-    @RequirePermission("Navigation.SettingManagement")
     public SettingDto update(Long id, UpdateSettingRequest request) {
         Setting setting = settingManager.findById(id).orElseThrow(() -> new EntityNotFoundException("设置", id));
 
@@ -338,7 +325,6 @@ public class SettingAppService {
      * @param request name + value
      * @return 最新设置DTO
      */
-    @RequirePermission("Navigation.SettingManagement")
     public SettingDto setValue(SetValueRequest request) {
         Setting setting = settingManager.findByName(request.getName()).orElseGet(() -> {
             Setting newSetting = new Setting();
@@ -362,7 +348,6 @@ public class SettingAppService {
      * @param providerKey 提供者键（G 可为空；U/R/T 必填）
      * @return 最新设置DTO
      */
-    @RequirePermission("Navigation.SettingManagement")
     public SettingDto setValue(String name, String value, String providerName, String providerKey) {
         String normalizedProviderName = normalizeText(providerName);
         String normalizedProviderKey = normalizeText(providerKey);
@@ -390,7 +375,6 @@ public class SettingAppService {
      *
      * @param id 设置主键
      */
-    @RequirePermission("Navigation.SettingManagement")
     public void delete(Long id) {
         Setting setting = settingManager.findById(id).orElseThrow(() -> new EntityNotFoundException("设置", id));
 
@@ -403,7 +387,6 @@ public class SettingAppService {
      *
      * @param name 设置名称
      */
-    @RequirePermission("Navigation.SettingManagement")
     public void deleteByName(String name) {
         Setting setting = settingManager.findByName(name)
             .orElseThrow(() -> new EntityNotFoundException(String.format("设置 (名称: %s) 不存在", name)));
@@ -418,7 +401,6 @@ public class SettingAppService {
      * @param providerName 提供者名称
      * @param providerKey 提供者键
      */
-    @RequirePermission("Navigation.SettingManagement")
     public void deleteByProvider(String providerName, String providerKey) {
         settingManager.deleteByProvider(providerName, providerKey);
         log.info("Deleted settings by provider: {}:{}", providerName, providerKey);

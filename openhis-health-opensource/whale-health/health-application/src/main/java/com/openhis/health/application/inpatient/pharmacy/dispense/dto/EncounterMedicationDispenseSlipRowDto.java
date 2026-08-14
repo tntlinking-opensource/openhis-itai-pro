@@ -45,6 +45,22 @@ public class EncounterMedicationDispenseSlipRowDto {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long medReqId;
 
+    /**
+     * 挂接的护士执行记录主键 {@code cln_procedure.id}。
+     * <p>住院 IF-IPP-03 按日虚拟发药单用；无执行挂接时为空。</p>
+     */
+    @Schema(description = "执行记录主键")
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long procedureId;
+
+    /**
+     * 护士认定实际执行时刻（{@code cln_procedure.recorded_time}）。
+     * <p>住院按患者发药前端按本字段自然日虚拟分「发药单」；与汇总领药 planned 轴无关。</p>
+     */
+    @Schema(description = "护士执行 recorded_time")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
+    private LocalDateTime recordedTime;
+
     /** 药品定义主键。 */
     @Schema(description = "药品定义主键", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
@@ -193,25 +209,31 @@ public class EncounterMedicationDispenseSlipRowDto {
     private String splitUnitCode;
 
     /**
-     * 追溯码主档贴码单位（{@code cus_trace_number.trace_unit_code}；本库优先否则全院同批）。
+     * 追溯码贴码单位（优先主档；无主档时回落药典目录）。
      *
-     * <p>发药应扫个数换算用；非药典目录值。</p>
+     * <p>发药应扫个数换算与扫码弹窗展示用。</p>
      */
-    @Schema(description = "追溯码主档贴码单位")
+    @Schema(description = "追溯码贴码单位（主档优先，否则药典）")
     private String traceUnitCode;
 
     /**
-     * 追溯码主档贴码比例快照（{@code cus_trace_number.trace_unit_ratio}；1 码对应拆零量）。
-     *
-     * <p>发药应扫个数 = ceil(行拆零 / 本值)；非药典目录比。</p>
+     * 追溯码贴码单位展示文案（{@code UNIT_CODE} 术语；扫码弹窗药品明细列用）。
      */
-    @Schema(description = "追溯码主档贴码比例快照")
+    @Schema(description = "追溯码贴码单位展示文案")
+    private String traceUnitCodeText;
+
+    /**
+     * 追溯码贴码比例（优先主档；无主档时回落药典；1 码单位 = N 拆零）。
+     *
+     * <p>发药应扫个数 = ceil(行拆零 / 本值)。</p>
+     */
+    @Schema(description = "追溯码贴码比例（1码=N拆零；主档优先否则药典）")
     private BigDecimal traceUnitRatio;
 
     /**
      * 主表该品批是否已有追溯码（有码批=true）。
      *
-     * <p>false=无码批：扫码仅软提示，发药只写业务行不写主表流水；true=有码批：本库优先否则全院校验并写流水。</p>
+     * <p>false=无码批：扫码仅软提示，发药只写业务行不写主表流水；true=有码批：消耗侧码身份软提示（仅进货硬拦），写流水盖不住跳过。</p>
      */
     @Schema(description = "主表该品批是否已有追溯码")
     private Boolean lotHasTraceMaster;
@@ -227,6 +249,14 @@ public class EncounterMedicationDispenseSlipRowDto {
     /** 医嘱开立总量。 */
     @Schema(description = "医嘱开立总量")
     private BigDecimal requestQuantity;
+
+    /**
+     * 中药付数（方头 {@code chinese_herbs_dose_quantity}）。
+     *
+     * <p>处方笺「N付」须用本字段；勿用 {@link #requestQuantity}（单剂×付数的请求总量）。</p>
+     */
+    @Schema(description = "中药付数")
+    private BigDecimal chineseHerbsDoseQuantity;
 
     /** 本发放单行数量。 */
     @Schema(description = "本发放单行数量", requiredMode = Schema.RequiredMode.REQUIRED)
@@ -329,6 +359,13 @@ public class EncounterMedicationDispenseSlipRowDto {
     /** 患者联系电话（处方打印）。 */
     @Schema(description = "患者联系电话（处方打印）")
     private String patientPhone;
+
+    /**
+     * 发放库房×批号当前剩余数量（最小单位，现查）。
+     * <p>住院不返回候选库存列表；仅锚定行上库房批号账面剩余供笺面「剩余库存」回显。</p>
+     */
+    @Schema(description = "发放库房×批号当前剩余数量（最小单位）")
+    private BigDecimal remainingQuantity;
 
     /** 医疗机构名称（处方打印页眉）。 */
     @Schema(description = "医疗机构名称（处方打印页眉）")

@@ -23,6 +23,7 @@ import com.openhis.health.application.shared.inventoryopening.InventoryOpeningVo
 import com.openhis.health.application.shared.pagination.PageQueryBinder;
 import com.openhis.health.application.shared.product.ProductDefinitionCatalogEditorHintsAssembler;
 import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.application.shared.pricing.LotNumberPurchasePriceConsistencyGate;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.application.shared.product.ProductDefinitionPageQuery;
 import com.openhis.health.application.shared.tracenumber.RecordTraceFromSupplyLineSpec;
@@ -131,6 +132,7 @@ public class BasicInventoryOpeningAppService {
     private final InventoryOpeningBusinessLockSupport businessLockSupport;
     private final InventoryOpeningTraceGateSupport traceGateSupport;
     private final InventoryOpeningExcelSupport excelSupport;
+    private final LotNumberPurchasePriceConsistencyGate lotNumberPurchasePriceConsistencyGate;
     private final BasicInventoryOpeningMapper openingMapper;
     private final SupplyRequestWarehouseLineAmountSupport warehouseLineAmountSupport;
     private final com.openhis.health.domain.custom.supplier.service.SupplierQueryService supplierQueryService;
@@ -302,6 +304,8 @@ public class BasicInventoryOpeningAppService {
         // Pre：有行时校验唯一/效期/追溯/药库进价
         traceGateSupport.assertWritableLines(
             request.getLines(), typePair.openingTypeCode, products, false);
+        // Gate：同表同品同批号不得与已有批号进价冲突
+        this.assertOpeningLotPurchasePriceConsistency(request.getLines());
         // Cmd：createOpening
         String busNo = supplyRequestDomainService.createOpening(
             openingMapper.toCreateOpeningCommand(
@@ -346,6 +350,8 @@ public class BasicInventoryOpeningAppService {
         // 裁决 2B：持久化编辑须至少一行（空明细仅允许本地草稿，不可落库清空）
         traceGateSupport.assertWritableLines(
             request.getLines(), typePair.openingTypeCode, products, true);
+        // Gate：同表同品同批号不得与已有批号进价冲突
+        this.assertOpeningLotPurchasePriceConsistency(request.getLines());
         // Cmd：同号 createOpening 修订
         supplyRequestDomainService.createOpening(
             openingMapper.toCreateOpeningCommand(
@@ -477,6 +483,8 @@ public class BasicInventoryOpeningAppService {
             q.setBusNo(busNo);
             List<SupplyRequestModel> agreedLines = supplyRequestQueryService.getSupplyByBusNo(q);
             this.assertOpeningType(agreedLines);
+            // Gate：同意入账前再拦同批号异价
+            this.assertOpeningSupplyLotPurchasePriceConsistency(agreedLines);
             // Cmd3：发放
             try {
                 supplyDeliveryDomainService.createSupplyDelivery(
@@ -646,6 +654,8 @@ public class BasicInventoryOpeningAppService {
             // Pre：全量业务校验（与页面 create/update 同闸门）
             traceGateSupport.assertWritableLines(
                 resolvedLines, typePair.openingTypeCode, products, true);
+            // Gate：同表同品同批号不得与已有批号进价冲突
+            this.assertOpeningLotPurchasePriceConsistency(resolvedLines);
         } catch (BusinessException ex) {
             InventoryOpeningImportErrorDto err = new InventoryOpeningImportErrorDto();
             err.setExcelRowNum(Integer.valueOf(0));
@@ -793,6 +803,8 @@ public class BasicInventoryOpeningAppService {
         Map<String, ProductDefinitionDisplayDto> products = this.loadProductsForWritableLines(copyLines);
         // Pre：复制行须过闸门（供应商/效期/强制码等），避免脏源单静默落库
         traceGateSupport.assertWritableLines(copyLines, typePair.openingTypeCode, products, true);
+        // Gate：同表同品同批号不得与已有批号进价冲突
+        this.assertOpeningLotPurchasePriceConsistency(copyLines);
         // Cmd：createOpening 新草稿
         String busNo = supplyRequestDomainService.createOpening(
             openingMapper.toCreateOpeningCommandFromLines(
@@ -862,8 +874,9 @@ public class BasicInventoryOpeningAppService {
                 throw new BusinessException(ErrorCodeConstants.BAS_INV_OPN_009,
                     "供应商必填：" + resolvedLot);
             }
-            // 清零后：四元组已有行则加至本单量；无行才新建（避免「四元组已存在」）
+            // 清零后：五元组已有行则加至本单量；无行才新建（同批号不同供应商可并存）
             InventoryMatchKey matchKey = new InventoryMatchKey();
+            matchKey.setSupplierId(supplierId);
             matchKey.setLotNumber(resolvedLot);
             matchKey.setLocationId(line.getPurposeLocationId());
             matchKey.setItemTable(line.getItemTable());
@@ -1054,7 +1067,7 @@ public class BasicInventoryOpeningAppService {
         costCmd.setItem(costItem);
         chargeItemDefinitionDomainService.addLotPurchasePrice(costCmd);
 
-        // LOT_NUMBER_PRICE 与进价同值；院点定制同意后 AOP 再对中草药 ×1.25
+        // LOT_NUMBER_PRICE 与进价同值；朝阳院点同意后 AOP 再对中草药 ×1.25
         SavePriceLineCommand saleCmd = new SavePriceLineCommand();
         saleCmd.setOperatorId(operatorId);
         SavePriceLineCommand.Item saleItem = new SavePriceLineCommand.Item();
@@ -1866,6 +1879,65 @@ public class BasicInventoryOpeningAppService {
                 cat.setPurchasePrice(dto.getPrice());
             }
         }
+    }
+
+    /**
+     * 期初可写行：同表同品同批号进价须与已有 {@code LOT_NUMBER_COST} 一致。
+     *
+     * <p>期初行 {@code price} 恒为每包装单位价（与操作 {@code unitCode} 无关）；
+     * 比对时禁止传入操作单位，否则门禁会把包装价误当拆零价再放大（如 20×50=1000）。</p>
+     *
+     * @param lines 期初明细
+     */
+    private void assertOpeningLotPurchasePriceConsistency(List<InventoryOpeningLineDto> lines) {
+        if (lines == null || lines.isEmpty()) {
+            return;
+        }
+        List<LotNumberPurchasePriceConsistencyGate.LotPurchasePriceCheckLine> checkLines = new ArrayList<>();
+        for (InventoryOpeningLineDto line : lines) {
+            if (line == null) {
+                continue;
+            }
+            LotNumberPurchasePriceConsistencyGate.LotPurchasePriceCheckLine check =
+                new LotNumberPurchasePriceConsistencyGate.LotPurchasePriceCheckLine();
+            check.setItemTable(line.getItemTable());
+            check.setItemId(line.getItemId());
+            check.setLotNumber(line.getLotNumber());
+            check.setPrice(line.getPrice());
+            // Gate：unitCode 留空 → 按已是包装锚比对，禁止二次换算
+            checkLines.add(check);
+        }
+        this.lotNumberPurchasePriceConsistencyGate.assertIncomingLotPurchasePricesConsistent(
+            checkLines, ErrorCodeConstants.BAS_INV_OPN_002);
+    }
+
+    /**
+     * 期初同意行：同表同品同批号进价一致性。
+     *
+     * <p>供应行 {@code price} 同为包装单位价；比对不传操作 {@code unitCode}（与保存路径一致）。</p>
+     *
+     * @param lines AGREE 供应行
+     */
+    private void assertOpeningSupplyLotPurchasePriceConsistency(List<SupplyRequestModel> lines) {
+        if (lines == null || lines.isEmpty()) {
+            return;
+        }
+        List<LotNumberPurchasePriceConsistencyGate.LotPurchasePriceCheckLine> checkLines = new ArrayList<>();
+        for (SupplyRequestModel line : lines) {
+            if (line == null) {
+                continue;
+            }
+            LotNumberPurchasePriceConsistencyGate.LotPurchasePriceCheckLine check =
+                new LotNumberPurchasePriceConsistencyGate.LotPurchasePriceCheckLine();
+            check.setItemTable(line.getItemTable());
+            check.setItemId(line.getItemId());
+            check.setLotNumber(line.getLotNumber());
+            check.setPrice(line.getPrice());
+            // Gate：unitCode 留空 → 按已是包装锚比对，禁止二次换算
+            checkLines.add(check);
+        }
+        this.lotNumberPurchasePriceConsistencyGate.assertIncomingLotPurchasePricesConsistent(
+            checkLines, ErrorCodeConstants.BAS_INV_OPN_009);
     }
 
     /**

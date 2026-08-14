@@ -43,6 +43,7 @@ import com.openhis.health.domain.workflow.inventoryitem.queries.InventoryItemPag
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryCatalogAvailabilityRowModel;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryItemModel;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemQueryService;
+import com.openhis.health.application.shared.inventory.InventoryItemProductSelectionPageLoader;
 import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyByBusNoQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyByOriginalBusNoQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyRequestDocumentListQuery;
@@ -51,7 +52,7 @@ import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequ
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestValidationModel;
 import com.openhis.health.domain.workflow.supplyrequest.support.SupplyPersistedSplitQuantity;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestDomainService;
-import com.openhis.health.application.inventory.support.SupplyRequestPricedWriteOrchestrator;
+import com.openhis.health.application.shared.supplyrequest.SupplyRequestPricedWriteOrchestrator;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQueryService;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
@@ -89,6 +90,7 @@ public class InventoryPharmacyRequisitionAppService {
     private final SupplyRequestPricedWriteOrchestrator supplyRequestPricedWriteOrchestrator;
     private final SupplyRequestQueryService supplyRequestQueryService;
     private final InventoryItemQueryService inventoryItemQueryService;
+    private final InventoryItemProductSelectionPageLoader inventoryItemProductSelectionPageLoader;
     private final LocationQueryService locationQueryService;
     private final CurrentManagedLocationIdsResolver managedLocationIdsResolver;
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
@@ -514,7 +516,7 @@ public class InventoryPharmacyRequisitionAppService {
         PageQueryBinder.bind(request, invQuery);
         Pageable pageable = PageRequest.of(request.springPageIndex(), request.getBoundedPageSize(), Sort.by(Sort.Direction.ASC, FieldNameConstants.ID));
         try {
-            Page<InventoryItemModel> page = inventoryItemQueryService.queryInventoryItemsByPage(invQuery, pageable);
+            Page<InventoryItemModel> page = inventoryItemProductSelectionPageLoader.page(invQuery, pageable);
             List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
             for (InventoryItemModel inv : page.getContent()) {
                 if (inv == null || inv.getItemId() == null || StringUtils.isEmpty(inv.getItemTable())) {
@@ -568,14 +570,16 @@ public class InventoryPharmacyRequisitionAppService {
                 if (inv.getId() == null) {
                     continue;
                 }
+                // —— 展示量：优先可用口径；无可用行时回退账面量（可为 0）。勿在此硬过滤 qty<=0，
+                //    否则会无视 positiveQuantityOnly=false（「只查库存大于0」关闭）把零库存行全部丢掉。——
                 BigDecimal bookQty = inv.getQuantity();
-                if (bookQty == null || bookQty.compareTo(BigDecimal.ZERO) <= 0) {
-                    continue;
-                }
-                // —— 展示量：优先可用口径（剔除锁定/停供/过期）；未命中时回退账面量，与库存明细「有库存」列表对齐。——
                 BigDecimal avail = availableQtyByInventoryItemId.get(inv.getId());
                 if (avail == null) {
-                    avail = bookQty;
+                    if (bookQty == null) {
+                        avail = BigDecimal.ZERO;
+                    } else {
+                        avail = bookQty;
+                    }
                 }
                 dto.setAvailableQuantity(avail);
                 BigDecimal lotCostUnit = null;
@@ -589,13 +593,9 @@ public class InventoryPharmacyRequisitionAppService {
                 if (hints != null) {
                     List<ProductDefinitionCatalogUnitBandDto> bands = hints.getUnitBands();
                     dto.setUnitBands(bands);
-                    BigDecimal packageAnchor = lotCostUnit;
-                    if (packageAnchor == null && StringUtils.isNotEmpty(inv.getItemTable()) && inv.getItemId() != null) {
-                        packageAnchor = this.chargeItemDefinitionQueryService.resolveFirstPurchasePriceValue(
-                            inv.getItemTable().trim(), inv.getItemId());
-                    }
+                    // —— 库存流转选品槽锚仅 LOT_NUMBER_COST；无批号价不灌目录 PURCHASE。——
                     ProductDefinitionCatalogUnitBandsAssembler.applyInboundWarehouseBandPrices(
-                        bands, pr, packageAnchor);
+                        bands, pr, lotCostUnit);
                 }
                 records.add(dto);
             }

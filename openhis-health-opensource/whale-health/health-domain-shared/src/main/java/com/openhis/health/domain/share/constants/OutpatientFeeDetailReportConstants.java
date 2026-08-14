@@ -37,7 +37,7 @@ public interface OutpatientFeeDetailReportConstants {
     String EXPORT_SHEET_NAME_DETAIL = "门诊费用明细";
 
     /** 汇总导出工作表名。 */
-    String EXPORT_SHEET_NAME_SUMMARY = "门诊费用类型汇总";
+    String EXPORT_SHEET_NAME_SUMMARY = "门诊费用汇总";
 
     /** 未登录或主数据加载失败（IF-RPT-OFD-01）。 */
     String EX_RPT_OFD_101 = "EX-RPT-OFD-101";

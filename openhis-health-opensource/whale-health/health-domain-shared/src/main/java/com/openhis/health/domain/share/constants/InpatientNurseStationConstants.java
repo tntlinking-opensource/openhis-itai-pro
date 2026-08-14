@@ -5,6 +5,7 @@
 package com.openhis.health.domain.share.constants;
 
 import java.math.BigDecimal;
+import java.time.LocalTime;
 
 /**
  * 住院护士站共享常量（AS-IP-NUR-001、AS-IP-NUR-002）。
@@ -140,16 +141,30 @@ public interface InpatientNurseStationConstants {
     /** 写操作类型：互换床（IF-IP-NUR-ATD-02）。 */
     String BED_OPERATION_SWAP = "SWAP";
 
-    /** 医嘱校对 Tab：未校对（ACTIVE）。 */
+    /**
+     * 医嘱校对 Tab：未校对。
+     *
+     * <p>含开嘱待校（{@code ACTIVE}）与停嘱待校（长期 {@code STOPPED} 且 {@code stop_performer_check_id} 为空）。</p>
+     */
     String AUDIT_TAB_PENDING = "pending";
 
-    /** 医嘱校对 Tab：已校对（VERIFIED + STOPPED）。 */
+    /**
+     * 医嘱校对 Tab：已校对。
+     *
+     * <p>含 {@code VERIFIED}（在执）与已停嘱校对的 {@code STOPPED}；同一条只一行，同时展示开嘱校对人与停嘱校对人。</p>
+     */
     String AUDIT_TAB_PASSED = "passed";
 
-    /** 医嘱校对 Tab：已停嘱（STOPPED）。 */
+    /**
+     * @deprecated 校对页已取消独立「已停止」Tab；已停嘱校对行并入 {@link #AUDIT_TAB_PASSED}。保留常量仅防旧调用。
+     */
+    @Deprecated
     String AUDIT_TAB_STOPPED = "stopped";
 
-    /** 医嘱校对 Tab：已作废（CANCELLED）。 */
+    /**
+     * @deprecated 校对页已取消「已作废」Tab。保留常量仅防旧调用。
+     */
+    @Deprecated
     String AUDIT_TAB_SUSPENDED = "suspended";
 
 /** InpatientNurseStation 共享常量：filter all，值 {@code all}。 */
@@ -200,16 +215,25 @@ public interface InpatientNurseStationConstants {
     /** 所选就诊均不在护士站可见范围（IF-IP-AUD-01）。 */
     String EX_IP_AUD_102 = "EX-IP-AUD-102";
 
-    /** 校对：状态非 ACTIVE 或域断言失败（IF-IP-AUD-02）。 */
+    /**
+     * 校对：开嘱校对状态非 ACTIVE、停嘱校对状态/长临/痕迹不满足，或域断言失败（IF-IP-AUD-02）。
+     *
+     * <p>开嘱校对与停嘱校对共用本码；停嘱校对失败含非 STOPPED、非长期、已写过停嘱校对痕迹等。</p>
+     */
     String EX_IP_AUD_201 = "EX-IP-AUD-201";
 
     /** 校对：就诊不可见（IF-IP-AUD-02）。 */
     String EX_IP_AUD_202 = "EX-IP-AUD-202";
 
-    /** 校对：转科/出院就诊联动失败（IF-IP-AUD-02）。 */
+    /** 校对：转科/出院就诊联动失败（IF-IP-AUD-02；仅开嘱校对成功后触发，停嘱校对不触发）。 */
     String EX_IP_AUD_203 = "EX-IP-AUD-203";
 
-    /** 退回：状态/来源/派生/门控未满足（IF-IP-AUD-03 / BR-IP-AUD-013）。 */
+    /**
+     * 取消停嘱校对：状态非 STOPPED、尚无停嘱校对痕迹，或域断言失败（IF-IP-AUD-03 停嘱校对撤销分支）。
+     */
+    String EX_IP_AUD_204 = "EX-IP-AUD-204";
+
+    /** 退回：状态/来源/派生/门控未满足；取消停嘱校对路径不走本码（见 {@link #EX_IP_AUD_204}）（IF-IP-AUD-03 / BR-IP-AUD-013）。 */
     String EX_IP_AUD_301 = "EX-IP-AUD-301";
 
     /** 退回：就诊不可见（IF-IP-AUD-03）。 */
@@ -236,14 +260,33 @@ public interface InpatientNurseStationConstants {
 
     /**
      * 长嘱不可拆（IF-IP-EXE-01）：为凑满包装批次，相对开嘱日最多向前探测的自然日数；
-     * 超限仍凑不满则降级可拆展开。
+     * 超限仍凑不满则降级可拆展开。拆零下限切批（BR-IP-EXE-036）共用本前瞻上限。
      */
     int STANDING_ORDER_PACKAGE_BATCH_MAX_LOOKAHEAD_DAYS = 366;
 
     /**
-     * 长嘱不可拆：单次向后扩展频次窗的步进自然日数（探测「截止落在第几盒」时用）。
+     * 长嘱批次探测：单次向后扩展频次窗的步进自然日数（下一盒/下一拆零单位锚点）。
      */
     int STANDING_ORDER_PACKAGE_BATCH_EXPAND_STEP_DAYS = 14;
+
+    /**
+     * 长嘱批次探测循环上限（一盒一点 / 拆零下限共用），防止 NEED_MORE 死循环。
+     */
+    int STANDING_ORDER_BATCH_PROBE_MAX_ROUNDS = 64;
+
+    /**
+     * 自然日末时钟（23:59:59，无纳秒）。
+     *
+     * <p>用作频次展开/批次探测窗的<strong>日级右界</strong>（开嘱日 + 前瞻天数后的当天结束）。
+     * 刻意不用 {@link LocalTime#MAX}（含纳秒），与护士站既有日末钳位同形，避免与秒级 planTime 比较漂移。</p>
+     */
+    LocalTime DAY_END_CLOCK = LocalTime.of(23, 59, 59);
+
+    /**
+     * 口服类用法展示名前缀（术语 {@code method_code} 展示名以本前缀开头即视为口服类，
+     * 含口服、口服缓释、口服控释等；对齐 **BR-IP-EXE-035**）。
+     */
+    String ORAL_METHOD_DISPLAY_PREFIX = "口服";
 
     /** 医嘱执行列表查询失败（IF-IP-EXE-01）。 */
     String EX_IP_EXE_101 = "EX-IP-EXE-101";
@@ -309,8 +352,19 @@ public interface InpatientNurseStationConstants {
      */
     String MSG_ACTUAL_TIME_BEFORE_OPENED = "执行时间不能早于开立时间";
 
-    /** 划价/取消划价：就诊已出院或已结算不可写（IF-IP-PRC-02/04/06）。 */
+    /**
+     * 开嘱日首次执行槽默认 actualTime 相对开立时刻的延后分钟数（BR-IP-EXE-032）。
+     *
+     * <p>列表 {@code defaultActualTime} 与写侧空/未改时分默认同口径；跨自然日时钳到开立日末，
+     * 以满足与 planTime 同日（BR-IP-EXE-030）。</p>
+     */
+    int FIRST_EXECUTION_DEFAULT_ACTUAL_DELAY_MINUTES = 2;
+
+    /** 划价/取消划价/改时：就诊已出院或已结算不可写（IF-IP-PRC-02/04/06/07）。 */
     String EX_IP_PRC_406 = "EX-IP-PRC-406";
+
+    /** 改划价展示时间域写失败整批回滚（IF-IP-PRC-07）。 */
+    String EX_IP_PRC_407 = "EX-IP-PRC-407";
 
     /** 住院护士站医嘱执行完成结果摘要（Procedure complete 门禁占位）。 */
     String INPATIENT_NURSE_EXECUTE_PROCEDURE_RESULT_TEXT = "住院护士站医嘱执行完成";
@@ -668,6 +722,12 @@ public interface InpatientNurseStationConstants {
 
     /** 体温单保存：写失败（IF-IP-TMP-03）。 */
     String EX_IP_TMP_204 = "EX-IP-TMP-204";
+
+    /** 体温单删除：记录不存在（IF-IP-TMP-05）。 */
+    String EX_IP_TMP_301 = "EX-IP-TMP-301";
+
+    /** 体温单删除：写失败（IF-IP-TMP-05）。 */
+    String EX_IP_TMP_302 = "EX-IP-TMP-302";
 
     /** 护理记录视图：时间轴（IF-IP-NRC-01）。 */
     String NURSING_RECORD_VIEW_MODE_TIMELINE = "timeline";

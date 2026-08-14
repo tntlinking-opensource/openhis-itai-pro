@@ -20,12 +20,15 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 博思冲红业务服务（writeOffEBill）：冲红状态机 + 委托 {@link BossWriteOffOutboundAccess} 出站。
  *
  * <p>状态流转：SUCCESS 幂等返回 → claim PROCESSING → 出站 → SUCCESS/FAILED/SKIPPED。
- * 红票号优先取 {@code eScarletBillNo}，回退 {@code billNo}。</p>
+ * 红票号优先取 {@code eScarletBillNo}，回退 {@code billNo}。
+ * 拆票场景下同一 invoice 多条单据须逐张冲红。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -36,23 +39,61 @@ public class BossWriteOffService {
     private final EinvBossDocumentRepository documentRepository;
 
     /**
-     * 同步冲红入口。
+     * 同步冲红入口（含拆票续票：逐张冲红）。
      *
      * @param invoiceId 票据主键
      * @param reason 冲红原因（写入博思报文）
-     * @return 冲红票结果 DTO
+     * @return 主票冲红结果 DTO
      */
     public BossInvoiceIssueResult writeOff(Long invoiceId, String reason) {
-        EinvBossDocument document = documentRepository.findByInvoiceIdAndIsDeletedFalse(invoiceId)
-                .orElseThrow(() -> new BusinessException(EinvBossErrorCodes.EINV_DOCUMENT_NOT_FOUND, "无电子票据单据"));
-        if (!StringUtils.isNotBlank(document.getBossBillNo())) {
-            markSkipped(document, "未开出蓝票");
-            throw new BusinessException(EinvBossErrorCodes.EINV_BOSS_REJECT, "未开出蓝票，无需博思冲红");
+        List<EinvBossDocument> documents =
+                documentRepository.findAllByInvoiceIdAndIsDeletedFalseOrderByIdAsc(invoiceId);
+        if (documents.isEmpty()) {
+            throw new BusinessException(EinvBossErrorCodes.EINV_DOCUMENT_NOT_FOUND, "无电子票据单据");
         }
-        if (WriteOffStatus.SUCCESS.getCode().equals(document.getWriteOffStatus())
-                && StringUtils.isNotBlank(document.getWriteOffBillNo())) {
-            return toWriteOffResult(document);
+
+        List<EinvBossDocument> needWriteOff = new ArrayList<>();
+        for (EinvBossDocument document : documents) {
+            if (!StringUtils.isNotBlank(document.getBossBillNo())) {
+                markSkipped(document, "未开出蓝票");
+                continue;
+            }
+            if (WriteOffStatus.SUCCESS.getCode().equals(document.getWriteOffStatus())
+                    && StringUtils.isNotBlank(document.getWriteOffBillNo())) {
+                continue;
+            }
+            needWriteOff.add(document);
         }
+        if (needWriteOff.isEmpty()) {
+            boolean anyIssued = false;
+            for (EinvBossDocument document : documents) {
+                if (StringUtils.isNotBlank(document.getBossBillNo())) {
+                    anyIssued = true;
+                    break;
+                }
+            }
+            if (!anyIssued) {
+                throw new BusinessException(EinvBossErrorCodes.EINV_BOSS_REJECT, "未开出蓝票，无需博思冲红");
+            }
+            return toWriteOffResult(documents.get(0));
+        }
+
+        BossIssueSnapshot snapshot = issueSnapshotContextLoader.loadForInvoice(invoiceId);
+        BossInvoiceIssueResult lastResult = null;
+        for (EinvBossDocument document : needWriteOff) {
+            lastResult = writeOffOne(document, snapshot, reason);
+        }
+        if (lastResult != null) {
+            return lastResult;
+        }
+        return toWriteOffResult(documents.get(0));
+    }
+
+    /**
+     * 冲红单张 boss 单据。
+     */
+    private BossInvoiceIssueResult writeOffOne(
+            EinvBossDocument document, BossIssueSnapshot snapshot, String reason) {
         int claimed = documentRepository.claimWriteOffProcessing(
                 document.getId(), WriteOffStatus.PROCESSING.getCode(), LocalDateTime.now());
         if (claimed == 0) {
@@ -64,7 +105,6 @@ public class BossWriteOffService {
         }
         document = documentRepository.findById(document.getId()).orElse(document);
 
-        BossIssueSnapshot snapshot = issueSnapshotContextLoader.loadForInvoice(invoiceId);
         try {
             WriteOffInvokeOutcome outcome =
                     writeOffOutboundAccess.invokeWriteOff(document, snapshot, reason);

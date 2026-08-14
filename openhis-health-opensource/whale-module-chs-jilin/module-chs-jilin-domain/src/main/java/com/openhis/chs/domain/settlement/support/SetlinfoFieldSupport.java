@@ -48,6 +48,24 @@ public final class SetlinfoFieldSupport {
     }
 
     /**
+     * 将上下文中的零售/上传分差写入门诊预结算快照（平台金额字段之外）。
+     *
+     * @param row     预结算实体
+     * @param retail  院内收费合计
+     * @param upload  2204 上传合计
+     * @param diffAmt 分差 retail−upload
+     */
+    public static void applyClinicRetailUploadDiff(
+        YbClinicPreSettle row, BigDecimal retail, BigDecimal upload, BigDecimal diffAmt) {
+        if (row == null) {
+            return;
+        }
+        row.setRetailMedfeeSumamt(retail);
+        row.setUploadMedfeeSumamt(upload);
+        row.setRetailUploadDiffAmt(diffAmt);
+    }
+
+    /**
      * 将 2303 setlinfo 金额字段写入住院预结算快照。
      *
      * @param row      预结算实体
@@ -65,6 +83,24 @@ public final class SetlinfoFieldSupport {
         row.setOverlmtSelfpay(setlinfo.getOverlmtSelfpay());
         row.setPreselfpayAmt(setlinfo.getPreselfpayAmt());
         row.setInscpScpAmt(setlinfo.getInscpScpAmt());
+    }
+
+    /**
+     * 将上下文中的零售/上传分差写入住院预结算快照。
+     *
+     * @param row     预结算实体
+     * @param retail  院内收费合计
+     * @param upload  2301 上传合计
+     * @param diffAmt 分差 retail−upload
+     */
+    public static void applyInpatientRetailUploadDiff(
+        YbInpatientPreSettle row, BigDecimal retail, BigDecimal upload, BigDecimal diffAmt) {
+        if (row == null) {
+            return;
+        }
+        row.setRetailMedfeeSumamt(retail);
+        row.setUploadMedfeeSumamt(upload);
+        row.setRetailUploadDiffAmt(diffAmt);
     }
 
     /**
@@ -160,6 +196,12 @@ public final class SetlinfoFieldSupport {
         if (pre != null && pre.getAccountId() != null) {
             row.setAccountId(pre.getAccountId());
         }
+        // Pre：零售/上传分差自预结算快照透传（非平台 setlinfo 字段）
+        if (pre != null) {
+            row.setRetailMedfeeSumamt(pre.getRetailMedfeeSumamt());
+            row.setUploadMedfeeSumamt(pre.getUploadMedfeeSumamt());
+            row.setRetailUploadDiffAmt(pre.getRetailUploadDiffAmt());
+        }
     }
 
     /**
@@ -193,7 +235,8 @@ public final class SetlinfoFieldSupport {
         row.setOverlmtSelfpay(setlinfo.getOverlmtSelfpay());
         row.setPreselfpayAmt(setlinfo.getPreselfpayAmt());
         row.setInscpScpAmt(setlinfo.getInscpScpAmt());
-        row.setHifpPay(setlinfo.getHifpPay());
+        // 2304 常缺 hifp_pay：用基金总额 − 其它基金分项回落，保证博思统筹开票非空
+        row.setHifpPay(resolveHifpPayOrFallback(setlinfo, pre));
         row.setCvlservPay(setlinfo.getCvlservPay());
         row.setHifmiPay(setlinfo.getHifmiPay());
         row.setHifobPay(setlinfo.getHifobPay());
@@ -219,6 +262,52 @@ public final class SetlinfoFieldSupport {
         if (pre != null && pre.getAccountId() != null) {
             row.setAccountId(pre.getAccountId());
         }
+        // Pre：零售/上传分差自预结算快照透传（非平台 setlinfo 字段）
+        if (pre != null) {
+            row.setRetailMedfeeSumamt(pre.getRetailMedfeeSumamt());
+            row.setUploadMedfeeSumamt(pre.getUploadMedfeeSumamt());
+            row.setRetailUploadDiffAmt(pre.getRetailUploadDiffAmt());
+        }
+    }
+
+    /**
+     * 解析基本统筹：优先 setlinfo.hifp_pay；缺省时用基金总额减去其它基金分项。
+     *
+     * @param setlinfo 2304 setlinfo
+     * @param pre      预结算快照（基金总额回落）
+     * @return 统筹金额；无法解析时 null
+     */
+    private static BigDecimal resolveHifpPayOrFallback(
+        PlatformSetlinfoFields setlinfo,
+        YbInpatientPreSettle pre) {
+        if (setlinfo.getHifpPay() != null) {
+            return setlinfo.getHifpPay();
+        }
+        BigDecimal fundSum = decimalOr(
+            setlinfo.getFundPaySumamt(),
+            fallbackIp(pre, YbInpatientPreSettle::getFundPaySumamt));
+        if (fundSum == null) {
+            return null;
+        }
+        BigDecimal other = nullToZeroBigDecimal(setlinfo.getCvlservPay())
+            .add(nullToZeroBigDecimal(setlinfo.getHifesPay()))
+            .add(nullToZeroBigDecimal(setlinfo.getHifmiPay()))
+            .add(nullToZeroBigDecimal(setlinfo.getHifobPay()))
+            .add(nullToZeroBigDecimal(setlinfo.getMafPay()))
+            .add(nullToZeroBigDecimal(setlinfo.getHospPartAmt()))
+            .add(nullToZeroBigDecimal(setlinfo.getOthPay()));
+        BigDecimal hifp = fundSum.subtract(other);
+        if (hifp.compareTo(BigDecimal.ZERO) < 0) {
+            return fundSum;
+        }
+        return hifp;
+    }
+
+    private static BigDecimal nullToZeroBigDecimal(BigDecimal value) {
+        if (value == null) {
+            return BigDecimal.ZERO;
+        }
+        return value;
     }
 
     /**

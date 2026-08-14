@@ -132,6 +132,8 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
         if (StringUtils.isNotEmpty(request.getCategoryEnum())) {
             q.setCategoryCode(ServiceApplyFormOrchestrator.resolveApplyFormCategoryCode(request.getCategoryEnum()));
         }
+        // Pre：只看库存>0 下推至药/耗定义分页 Spec（诊疗忽略；须在 limit/offset 前过滤）
+        q.setPositiveQuantityOnly(request.getPositiveQuantityOnly());
         return q;
     }
 
@@ -402,6 +404,8 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
             item.setRemark(servicePayload.getChildOverridesJson());
             item.setEncounterDiagnosisIds(servicePayload.getEncounterDiagnosisIds());
             item.setOrgId(servicePayload.getPerformOrgId());
+            // Pre：费用性质覆盖（与 CREATE 同源；供挂账账户与列表回显）
+            item.setContractId(servicePayload.getContractId());
             BigDecimal quantity = ServiceAdviceDraftCommandHelper.resolveQuantityForModify(
                 servicePayload.getQuantity(), servicePayload.getChildOverridesJson());
             if (quantity != null && quantity.compareTo(BigDecimal.ZERO) > 0) {

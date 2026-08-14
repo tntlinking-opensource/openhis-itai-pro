@@ -41,4 +41,16 @@ public class BossChargeLineSnapshot {
      * 对照缺失时也可回落为 {@code chargeName}。</p>
      */
     private String itemName;
+
+    /** 药品/项目编码（ybNo 优先）→ {@code listDetail.code}。 */
+    private String itemCode;
+
+    /** 院内医保等级码（chrgitmLv）。 */
+    private Integer chrgitmLv;
+
+    /** 清单医保药品分类（博思 1甲/2乙/3丙）。 */
+    private String listMedicalCareType;
+
+    /** 清单备注（甲类/乙类/丙类/自费）。 */
+    private String listRemark;
 }

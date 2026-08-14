@@ -55,6 +55,18 @@ public class EinvBossLine extends BaseAuditedEntity {
     @Column(name = "item_name", length = 200)
     private String itemName;
 
+    /** 清单药品/项目编码（listDetail.code）。 */
+    @Column(name = "item_code", length = 50)
+    private String itemCode;
+
+    /** 清单医保药品分类（1甲/2乙/3丙）。 */
+    @Column(name = "list_medical_care_type", length = 1)
+    private String listMedicalCareType;
+
+    /** 清单备注（甲类/乙类/丙类/自费）。 */
+    @Column(name = "list_remark", length = 200)
+    private String listRemark;
+
     /** 标准金额。 */
     @Column(name = "std_amount", nullable = false, precision = 14, scale = 2)
     private BigDecimal stdAmount;

@@ -15,7 +15,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
- * 工伤费用性质判定（WORKER_INSURANCE / H00000000000-GS）。
+ * 工伤费用性质判定（WORKER_INSURANCE / H22010402403-GS）。
  */
 @Component
 @RequiredArgsConstructor

@@ -166,6 +166,17 @@ public interface ChargeItemRepository extends JpaRepository<ChargeItem, Long>, J
         Long encounterId, String dispenseTable, Collection<Long> dispenseIds, Collection<String> statusEnums);
 
     /**
+     * 按发放锚点与收费状态集合跨就诊批量加载明细（药房日结挂载净收入等，禁止按就诊 N+1）。
+     *
+     * @param dispenseTable 发放物理表名
+     * @param dispenseIds   发放主键集合
+     * @param statusEnums   收费状态持久化码集合（非空）
+     * @return 明细列表；调用方保证集合非空
+     */
+    List<ChargeItem> findAllByDispenseTableAndDispenseIdInAndStatusEnumIn(
+        String dispenseTable, Collection<Long> dispenseIds, Collection<String> statusEnums);
+
+    /**
      * 按半退保留链 {@code refund_id} 批量加载再生收费行（执行收口与读侧过滤）。
      *
      * @param refundIds 源已结算收费明细主键集合（对应 {@code adm_charge_item.refund_id}）

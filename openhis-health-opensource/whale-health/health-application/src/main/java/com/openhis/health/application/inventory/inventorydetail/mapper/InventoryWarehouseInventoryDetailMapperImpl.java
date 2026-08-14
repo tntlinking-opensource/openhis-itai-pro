@@ -60,7 +60,7 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
         WarehouseInventoryDetailPageQuery q = new WarehouseInventoryDetailPageQuery();
         PageQueryBinder.bind(request, q);
         this.applyFilters(q, request.getMedicationCategoryCodes(), request.getDeviceCategoryCodes(),
-            request.getSupplierIds(), request.getChrgitmLvList(),
+            request.getSupplierIds(), request.getChrgitmLvList(), request.getBasicFlag(),
             request.getZeroStockOnly(), request.getExpireWithinDays(), request.getInventoryStatusEnums());
         q.setEffectiveWarehouseIds(effectiveWarehouseIds);
         return q;
@@ -81,7 +81,7 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
         WarehouseInventoryDetailPageQuery q = new WarehouseInventoryDetailPageQuery();
         q.setKeyword(request.getKeyword());
         this.applyFilters(q, request.getMedicationCategoryCodes(), request.getDeviceCategoryCodes(),
-            request.getSupplierIds(), request.getChrgitmLvList(),
+            request.getSupplierIds(), request.getChrgitmLvList(), request.getBasicFlag(),
             request.getZeroStockOnly(), request.getExpireWithinDays(), request.getInventoryStatusEnums());
         q.setEffectiveWarehouseIds(effectiveWarehouseIds);
         return q;
@@ -102,7 +102,7 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
         WarehouseInventoryDetailPageQuery q = new WarehouseInventoryDetailPageQuery();
         q.setKeyword(request.getKeyword());
         this.applyFilters(q, request.getMedicationCategoryCodes(), request.getDeviceCategoryCodes(),
-            request.getSupplierIds(), request.getChrgitmLvList(),
+            request.getSupplierIds(), request.getChrgitmLvList(), request.getBasicFlag(),
             request.getZeroStockOnly(), request.getExpireWithinDays(), request.getInventoryStatusEnums());
         q.setEffectiveWarehouseIds(effectiveWarehouseIds);
         return q;
@@ -116,6 +116,7 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
      * @param deviceCategoryCodes     耗材分类编码列表
      * @param supplierIds             供应商主键列表
      * @param chrgitmLvList           医保等级列表（与读模型列语义一致）
+     * @param basicFlag               基药标识（null 不限）
      * @param zeroStockOnly           库存范围（true 数量等于0，false 数量大于0）
      * @param expireWithinDays        近效期天数
      * @param inventoryStatusEnums    供应状态持久化码列表
@@ -126,6 +127,7 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
         List<String> deviceCategoryCodes,
         List<Long> supplierIds,
         List<Integer> chrgitmLvList,
+        Boolean basicFlag,
         Boolean zeroStockOnly,
         Integer expireWithinDays,
         List<String> inventoryStatusEnums
@@ -134,6 +136,7 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
         q.setDeviceCategoryCodes(deviceCategoryCodes);
         q.setSupplierIds(supplierIds);
         q.setChrgitmLvList(chrgitmLvList);
+        q.setBasicFlag(basicFlag);
         q.setZeroStockOnly(zeroStockOnly);
         q.setExpireWithinDays(expireWithinDays);
         q.setInventoryStatusEnums(inventoryStatusEnums);
@@ -277,6 +280,7 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
             request.getDeviceCategoryCodes(),
             request.getSupplierIds(),
             request.getChrgitmLvList(),
+            request.getBasicFlag(),
             request.getZeroStockOnly(),
             request.getExpireWithinDays(),
             request.getInventoryStatusEnums()
@@ -311,6 +315,7 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
             request.getDeviceCategoryCodes(),
             request.getSupplierIds(),
             request.getChrgitmLvList(),
+            request.getBasicFlag(),
             request.getZeroStockOnly(),
             request.getExpireWithinDays(),
             request.getInventoryStatusEnums()
@@ -345,6 +350,7 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
             request.getDeviceCategoryCodes(),
             request.getSupplierIds(),
             request.getChrgitmLvList(),
+            request.getBasicFlag(),
             request.getZeroStockOnly(),
             request.getExpireWithinDays(),
             request.getInventoryStatusEnums()
@@ -361,6 +367,7 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
      * @param deviceCategoryCodes     耗材分类
      * @param supplierIds             供应商
      * @param chrgitmLvList           医保等级
+     * @param basicFlag               基药标识（null 不限）
      * @param zeroStockOnly           零库存筛选
      * @param expireWithinDays        近效期
      * @param inventoryStatusEnums    供应状态
@@ -371,6 +378,7 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
         List<String> deviceCategoryCodes,
         List<Long> supplierIds,
         List<Integer> chrgitmLvList,
+        Boolean basicFlag,
         Boolean zeroStockOnly,
         Integer expireWithinDays,
         List<String> inventoryStatusEnums
@@ -379,6 +387,7 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
         query.setDeviceCategoryCodes(deviceCategoryCodes);
         query.setSupplierIds(supplierIds);
         query.setChrgitmLvs(chrgitmLvList);
+        query.setBasicFlag(basicFlag);
         query.setInventoryStatusEnums(inventoryStatusEnums);
         if (zeroStockOnly != null) {
             query.setZeroStockFlag(zeroStockOnly);

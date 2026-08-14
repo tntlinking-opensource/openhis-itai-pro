@@ -605,6 +605,68 @@ public class AuthAppService {
     }
 
     /**
+     * 当前登录用户自助修改密码：校验旧密码后更新哈希。
+     * <p>用户 ID 仅取自会话，不接受前端传入目标用户，防止越权；
+     * 规则与管理端重置一致（新密码至少 6 位）。改密成功后前端应引导重新登录。</p>
+     *
+     * @param request 旧密码与新密码
+     */
+    public void changeOwnPassword(ChangeOwnPasswordRequest request) {
+        if (!loginSession.isAuthenticated()) {
+            throw new BusinessException("未登录");
+        }
+        Long userId = loginSession.getCurrentUserId();
+        if (userId == null) {
+            throw new BusinessException("无法获取用户ID");
+        }
+        if (request == null) {
+            throw new BusinessException("修改密码请求不能为空");
+        }
+
+        String oldPassword = request.getOldPassword();
+        if (oldPassword == null || oldPassword.isEmpty()) {
+            throw new BusinessException("旧密码不能为空");
+        }
+        String newPassword = request.getNewPassword();
+        if (newPassword == null || newPassword.trim().isEmpty()) {
+            throw new BusinessException("新密码不能为空");
+        }
+        newPassword = newPassword.trim();
+        if (newPassword.length() < 6) {
+            throw new BusinessException("密码长度至少6位");
+        }
+        if (oldPassword.equals(newPassword)) {
+            throw new BusinessException("新密码不能与旧密码相同");
+        }
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new EntityNotFoundException("用户", userId));
+        String passwordHash = user.getPasswordHash();
+        if (passwordHash == null || passwordHash.isEmpty()) {
+            throw new BusinessException("旧密码错误");
+        }
+
+        boolean oldMatches;
+        try {
+            oldMatches = passwordEncoder.matches(oldPassword, passwordHash);
+        } catch (Exception e) {
+            logger.error("自助改密校验旧密码异常: userId={}, error={}", userId, e.getMessage(), e);
+            throw new BusinessException("旧密码错误");
+        }
+        if (!oldMatches) {
+            throw new BusinessException("旧密码错误");
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        // 自助改密成功后清除锁定，避免旧失败计数挡住新密码登录
+        user.setIsLockedOut(false);
+        user.setLockoutEnd(null);
+        user.setAccessFailedCount(0);
+        userRepository.save(user);
+        logger.info("用户自助修改密码成功: userId={}", userId);
+    }
+
+    /**
      * 获取当前用户可用的租户列表
      * 用于用户登录后选择租户
      */

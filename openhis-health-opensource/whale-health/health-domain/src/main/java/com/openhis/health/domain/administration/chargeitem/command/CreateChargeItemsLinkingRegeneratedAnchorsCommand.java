@@ -20,7 +20,7 @@ import java.util.List;
 @Setter
 public class CreateChargeItemsLinkingRegeneratedAnchorsCommand extends BatchCommand<CreateChargeItemsLinkingRegeneratedAnchorsCommand.Item> {
 
-    /** 操作人主键，写入新行 enterer_id。 */
+    /** 操作人主键（创建路径不写 enterer_*；收费人仅结算/退费完成时落库）。 */
     private Long operatorId;
 
     /**

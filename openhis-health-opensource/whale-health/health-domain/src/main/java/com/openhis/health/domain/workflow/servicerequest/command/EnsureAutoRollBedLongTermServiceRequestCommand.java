@@ -10,9 +10,10 @@ import lombok.Setter;
 import java.math.BigDecimal;
 
 /**
- * 床位自动计费配置 ensure 长期床位诊疗申请命令（AS-IP-NUR-013 BR-IP-ARG-019；DM-WKF-004）。
+ * 自动计费配置 ensure 长期诊疗申请命令（AS-IP-NUR-013 BR-IP-ARG-019；DM-WKF-004）。
  *
- * <p>配置保存时创建或复用 {@code generate_source=auto-roll-fees} 的长期 VERIFIED 医嘱，供滚费任务按 IF-IP-EXE-02 执行。</p>
+ * <p>配置保存时创建或复用 {@code generate_source=auto-roll-fees} 的长期 VERIFIED 医嘱，供滚费任务按 IF-IP-EXE-02 执行。
+ * 类目取自选品 ActivityDefinition（不写死床位 51）。</p>
  */
 @Getter
 @Setter
@@ -27,8 +28,13 @@ public class EnsureAutoRollBedLongTermServiceRequestCommand {
     /** 患者主键。 */
     private Long patientId;
 
-    /** 床位服务活动定义主键。 */
+    /** 诊疗活动定义主键（自动计费选品）。 */
     private Long activityId;
+
+    /**
+     * 诊疗类目 code（写入 {@code ServiceRequest.category_enum}；与选品 ActivityDefinition.category_code 一致）。
+     */
+    private String categoryEnum;
 
     /** 医嘱数量（通常与配置 quantityValue 一致）。 */
     private BigDecimal quantity;

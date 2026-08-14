@@ -94,12 +94,15 @@ public class InventoryThirdPartyUploadAsyncRunner {
     }
 
     /**
-     * 异步上报清床汇总径净销售 3505；失败仅记日志。
+     * 异步上报住院清床/无床直结净销售合并 3505；失败仅记日志。
+     *
+     * <p>出站走 {@link InventoryThirdPartyUploadOrchestrator#uploadSale3505}，与门诊发药同路径：
+     * **3502(107)→3505**；3502 失败仍继续 3505；3505 失败不回写 3502。</p>
      *
      * @param tenantId     调用线程捕获的租户主键
      * @param operatorId   调用线程捕获的操作人主键
      * @param operatorName 调用线程捕获的操作人姓名；可空
-     * @param command      清床汇总径命令
+     * @param command      清床/无床直结合并命令
      */
     @Async
     public void uploadAfterDischargeSummarySales(
@@ -112,20 +115,23 @@ public class InventoryThirdPartyUploadAsyncRunner {
             if (command == null || command.getEncounterId() == null) {
                 return;
             }
-            // Pre：按就诊发退相抵并按天+单价分桶后组装 3505
+            // Pre：按就诊发退相抵并按药+批+包装锚价分桶后组装 3505
             InvUpload3505Command request = dischargeSummaryUploadContextLoader.build3505Request(command);
             // 净量为空：无可报销售行，静默结束
             if (request.getLines() == null || request.getLines().isEmpty()) {
                 return;
             }
             applyOperator(request, operatorId, operatorName);
-            // Cmd：逐行出站 3505
+            // Cmd：与门诊发药同 Orchestrator（含前置 3502 单向隔离）
             uploadOrchestrator.uploadSale3505(request);
-        }, "清床汇总3505", summarizeEncounterCommand(command));
+        }, "清床合并3505", summarizeEncounterCommand(command));
     }
 
     /**
-     * 异步冲销清床汇总径净销售 3506；无成功 3505 时 no-op；失败仅记日志。
+     * 异步冲销清床/无床直结合并净销售 3506；无成功 3505 时 no-op；失败仅记日志。
+     *
+     * <p>出站走 {@link InventoryThirdPartyUploadOrchestrator#uploadSaleReturn3506}，与门诊退药同路径：
+     * **3506 成功后再 3502(106)**；伴生失败不回写 3506；组装侧不写 HIS 发放表。</p>
      *
      * @param tenantId     调用线程捕获的租户主键
      * @param operatorId   调用线程捕获的操作人主键
@@ -143,7 +149,7 @@ public class InventoryThirdPartyUploadAsyncRunner {
             if (command == null || command.getEncounterId() == null) {
                 return;
             }
-            // Pre：按已成功清床汇总 3505 审计原样组装 3506
+            // Pre：按已成功合并 3505 审计组装 3506（不写 MedicationDispense）
             InvUpload3506Command request =
                 clearBedSummaryReverseUploadContextLoader.build3506ReverseRequest(command);
             // 无成功清床 3505 可冲销时为空
@@ -151,7 +157,7 @@ public class InventoryThirdPartyUploadAsyncRunner {
                 return;
             }
             applyOperator(request, operatorId, operatorName);
-            // Cmd：逐行出站 3506
+            // Cmd：与门诊退药同 Orchestrator（含后置 3502 单向隔离）
             uploadOrchestrator.uploadSaleReturn3506(request);
         }, "清床冲销3506", summarizeEncounterCommand(command));
     }

@@ -291,6 +291,8 @@ public class EncounterMedicationDispenseSlipReadAssembler {
         row.setEncounterBusNo(context.encounterBusNo());
         row.setDispenseId(slip.getDispenseId());
         row.setMedReqId(slip.getMedReqId());
+        // 住院日分单锚点：执行主键；recorded_time 由 Loader 批量回填
+        row.setProcedureId(slip.getProcedureId());
         row.setMedicationId(slip.getMedicationId());
         row.setDispenseLocationId(slip.getLocationId());
         if (slip.getLocationId() != null) {
@@ -335,9 +337,14 @@ public class EncounterMedicationDispenseSlipReadAssembler {
             prescriptionNo = req.getPrescriptionNo();
         }
         row.setPrescriptionNo(prescriptionNo);
-        row.setOrderingPractitionerId(slip.getMedRequesterId());
-        if (slip.getMedRequesterId() != null) {
-            row.setOrderingPractitionerName(context.orderingDrNames().get(slip.getMedRequesterId()));
+        // 开单医生：slip 投影优先；住院发放行常无 medRequesterId，回落药嘱开立人
+        Long orderingPractitionerId = slip.getMedRequesterId();
+        if (orderingPractitionerId == null && req != null) {
+            orderingPractitionerId = req.getRequesterId();
+        }
+        row.setOrderingPractitionerId(orderingPractitionerId);
+        if (orderingPractitionerId != null) {
+            row.setOrderingPractitionerName(context.orderingDrNames().get(orderingPractitionerId));
         }
         if (outpatientMode && context.invMap() != null && slip.getDispenseId() != null) {
             row.setInventoryDetailList(context.invMap().get(slip.getDispenseId()));
@@ -361,6 +368,12 @@ public class EncounterMedicationDispenseSlipReadAssembler {
             row.setPackageUnitCode(product.getPackageUnitCode());
             row.setPackageUnitRatio(product.getPackageUnitRatio());
             row.setSplitUnitCode(product.getSplitUnitCode());
+            // 药典贴码单位/比例：主档无快照时回落；有主档时由 enricher 覆盖
+            if (StringUtils.isNotEmpty(product.getTraceUnitCode())) {
+                row.setTraceUnitCode(product.getTraceUnitCode());
+                row.setTraceUnitRatio(product.getTraceUnitRatio());
+                row.setTraceUnitCodeText(product.getTraceUnitCodeDictText());
+            }
             if (StringUtils.isNotEmpty(product.getPartAttributeEnum())) {
                 row.setPartAttributeCode(product.getPartAttributeEnum());
                 row.setPartAttributeText(
@@ -375,6 +388,10 @@ public class EncounterMedicationDispenseSlipReadAssembler {
                 row.setOrderingDepartmentName(context.deptNames().get(req.getOrgId()));
             }
             row.setRequestQuantity(req.getQuantity());
+            // 中药付数：处方笺「N付」展示用；与 requestQuantity（请求总量）分列
+            if (Boolean.TRUE.equals(req.getTcmFlag())) {
+                row.setChineseHerbsDoseQuantity(req.getChineseHerbsDoseQuantity());
+            }
             row.setFrequencyCode(req.getRateCode());
             row.setRouteCode(req.getMethodCode());
             row.setDoseValue(req.getDose());

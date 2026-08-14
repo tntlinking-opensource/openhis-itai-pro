@@ -61,12 +61,15 @@ public class YbInpatientPreSettleDomainService {
         row.setPsnSetlway(context.getPsnSetlway());
         row.setMedType(context.getMedType());
         row.setSettleMode(context.getSettleMode());
-        if (IpSettleContext.SETTLE_MODE_MID.equals(context.getSettleMode())) {
-            row.setMidSetlFlag(MidSetlFlag.YES.getCode());
-        } else {
-            row.setMidSetlFlag(MidSetlFlag.NO.getCode());
-        }
+        // 与平台入参一致：mid_setl_flag 恒为 0（本地 MID_SETTLE 仅跳过 2402，不表示平台中途）。
+        row.setMidSetlFlag(MidSetlFlag.NO.getCode());
         SetlinfoFieldSupport.applyInpatientPreSettleAmountFields(row, setlinfo);
+        // Pre：零售/上传分差来自 ContextLoader（平台 medfee 写入后仍保留上传口径）
+        SetlinfoFieldSupport.applyInpatientRetailUploadDiff(
+            row,
+            context.getRetailMedfeeSumamt(),
+            context.getUploadMedfeeSumamt(),
+            context.getRetailUploadDiffAmt());
         row.setChargeItemIds(chargeItemIdsJson);
         row.setStatus(YbInpatientPreSettle.STATUS_ACTIVE);
         row.setTenantId(tenantId);
@@ -142,6 +145,29 @@ public class YbInpatientPreSettleDomainService {
         for (YbInpatientPreSettle row : activeRows) {
             markCancelledAndSave(row);
         }
+    }
+
+    /**
+     * 换新平台就诊后，用 2303 结果刷新仍为 ACTIVE 的预结算快照（保留 paymentDraftId / chargeItemIds）。
+     *
+     * @param row      ACTIVE 预结算行
+     * @param mdtrtId  新平台就诊 ID
+     * @param setlinfo 2303 setlinfo
+     * @return 持久化后的快照
+     */
+    public YbInpatientPreSettle refreshActiveFrom2303(
+            YbInpatientPreSettle row,
+            String mdtrtId,
+            PlatformSetlinfoFields setlinfo) {
+        if (row == null) {
+            throw new BusinessException(ChsErrorCodes.PLATFORM_FAILED, "预结算快照不存在");
+        }
+        if (!YbInpatientPreSettle.STATUS_ACTIVE.equals(row.getStatus())) {
+            throw new BusinessException(ChsErrorCodes.PLATFORM_FAILED, "预结算快照状态非法，无法刷新");
+        }
+        row.setMdtrtId(mdtrtId);
+        SetlinfoFieldSupport.applyInpatientPreSettleAmountFields(row, setlinfo);
+        return inpatientPreSettleRepository.save(row);
     }
 
     /**

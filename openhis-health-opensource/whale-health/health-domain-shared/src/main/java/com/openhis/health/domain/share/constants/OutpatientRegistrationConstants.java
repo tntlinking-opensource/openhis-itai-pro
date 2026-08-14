@@ -36,9 +36,40 @@ public interface OutpatientRegistrationConstants {
         "存在退费处理中的账单，请待退费完成后再退号";
 
     /**
+     * 退号校验：已接诊/暂离/完诊，须医生先取消接诊（与账单门禁无关，表示医生同意退号）。
+     */
+    String CANCEL_REASON_CODE_NEED_CANCEL_RECEPTION = "CANCEL-BIZ-416";
+
+    /**
+     * 已接诊不可直接退号：引导患者回医生站取消接诊。
+     */
+    String CANCEL_MESSAGE_NEED_CANCEL_RECEPTION =
+        "请让患者去医生处取消接诊后再退号";
+
+    /**
+     * 未收费取消门禁：半成功（银联已扣或医保 2207 已确认，院内尚未落成挂号）。
+     *
+     * <p>禁止走「未收费取消」作废草稿，避免钱已收、就诊不可见。</p>
+     */
+    String CANCEL_REASON_CODE_HALF_SUCCESS = "CANCEL-BIZ-413";
+
+    /**
+     * 半成功禁止取消的窗口提示：引导补结算或银联退货+医保撤销。
+     */
+    String CANCEL_MESSAGE_HALF_SUCCESS =
+        "本单银联或医保已收款但挂号未落成，不能取消：请续付补结算完成挂号，或先银联退货并撤销医保结算后再取消";
+
+    /**
      * 挂号窗口列表：退号完成行状态展示文案。
      *
      * <p>库内状态仍为 {@code CANCELLED}；窗口不展示枚举默认「已取消」，以免与未收费取消混淆。</p>
      */
     String CLINIC_REGISTER_STATUS_TEXT_REFUNDED = "退号";
+
+    /**
+     * 挂号明细/窗口：未收费取消终态展示文案。
+     *
+     * <p>库内状态仍为 {@code ENTERED_IN_ERROR}；不直接展示枚举「错误录入」，以免与业务「取消挂号」脱节。</p>
+     */
+    String CLINIC_REGISTER_STATUS_TEXT_ENTERED_IN_ERROR = "未收费取消";
 }

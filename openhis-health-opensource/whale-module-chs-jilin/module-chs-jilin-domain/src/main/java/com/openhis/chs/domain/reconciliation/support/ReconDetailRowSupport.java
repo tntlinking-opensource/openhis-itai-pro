@@ -56,6 +56,7 @@ public final class ReconDetailRowSupport {
                 .setMedfeeSumamt(row.getMedfeeSumamt())
                 .setFundPaySumamt(row.getFundPaySumamt())
                 .setAcctPay(row.getAcctPay())
+                .setPsnCashPay(row.getPsnCashPay())
                 .setRefdSetlFlag(REFD_SETL_FLAG_NORMAL)
                 .setSource("OP"));
         }
@@ -84,6 +85,7 @@ public final class ReconDetailRowSupport {
                 .setMedfeeSumamt(row.getMedfeeSumamt())
                 .setFundPaySumamt(row.getFundPaySumamt())
                 .setAcctPay(row.getAcctPay())
+                .setPsnCashPay(row.getPsnCashPay())
                 .setRefdSetlFlag(REFD_SETL_FLAG_NORMAL)
                 .setSource("IP"));
         }
@@ -92,11 +94,11 @@ public final class ReconDetailRowSupport {
 
     /**
      * 撤销凭证转为 3202 反向行（{@code refd_setl_flag=1}）。
-     * <p>结算 ID 优先用撤销回执 {@code revoke_setl_id}，否则回落原结算 {@code setl_id}；
-     * 金额取撤销落库值（一般为正数绝对值）。</p>
+     * <p>落库实证：反向须用 {@code revoke_setl_id} + 负金额；用原 {@code setl_id} 正金额会报退费状态不一致。
+     * 正向明细不含已撤销单，故反向不再复用原 setl_id。</p>
      *
      * @param reversals   撤销时间窗内凭证
-     * @param settlements 同窗或已装载的原结算（用于补全 setl/mdtrt；可为 null）
+     * @param settlements 同窗或已装载的原结算（用于补全 mdtrt/psn；可为 null）
      * @return 有效反向行
      */
     public static List<ReconDetailRowResult> fromReversalRows(
@@ -108,21 +110,21 @@ public final class ReconDetailRowSupport {
         Map<Long, YbSettlementRecord> byId = indexSettlements(settlements);
         for (YbSettlementReversal reversal : reversals) {
             YbSettlementRecord origin = byId.get(reversal.getSettlementRecordId());
-            String originSetlId = null;
             String originMdtrtId = null;
             String originPsnNo = null;
             if (origin != null) {
-                originSetlId = origin.getSetlId();
                 originMdtrtId = origin.getMdtrtId();
                 originPsnNo = origin.getPsnNo();
             }
-            String setlId = firstNonEmpty(reversal.getRevokeSetlId(), originSetlId, null);
+            // 优先撤销结算号；无则回落原单（跨日补装场景）
+            String setlId = firstNonEmpty(reversal.getRevokeSetlId(), origin != null ? origin.getSetlId() : null, null);
             String mdtrtId = firstNonEmpty(reversal.getMdtrtId(), originMdtrtId, null);
             if (isEmpty(setlId) || isEmpty(mdtrtId)) {
                 continue;
             }
             String psnNo = firstNonEmpty(reversal.getPsnNo(), originPsnNo, null);
             String source = resolveReversalSource(reversal, origin);
+            // 金额保持落库符号（通常为负）；与首笔成功对明细账文件一致
             result.add(new ReconDetailRowResult()
                 .setSetlId(setlId.trim())
                 .setMdtrtId(mdtrtId.trim())
@@ -130,6 +132,7 @@ public final class ReconDetailRowSupport {
                 .setMedfeeSumamt(reversal.getMedfeeSumamt())
                 .setFundPaySumamt(reversal.getFundPaySumamt())
                 .setAcctPay(reversal.getAcctPay())
+                .setPsnCashPay(reversal.getPsnCashPay())
                 .setRefdSetlFlag(REFD_SETL_FLAG_REFUND)
                 .setSource(source));
         }

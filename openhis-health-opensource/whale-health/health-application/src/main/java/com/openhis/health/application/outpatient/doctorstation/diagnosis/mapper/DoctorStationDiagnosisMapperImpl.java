@@ -533,7 +533,7 @@ public class DoctorStationDiagnosisMapperImpl implements DoctorStationDiagnosisM
     }
 
     /**
-     * 将 5301 备案行与目录匹配结果装配为医生站候选行。
+     * 将 5302A 备案行与目录匹配结果装配为医生站候选行。
      *
      * @param filingLine  平台备案行
      * @param match       目录匹配；未命中可空
@@ -556,6 +556,7 @@ public class DoctorStationDiagnosisMapperImpl implements DoctorStationDiagnosisM
             row.setOpspDiseName(filingLine.getOpspDiseName());
             row.setBeginDate(filingLine.getBegndate());
             row.setEndDate(filingLine.getEnddate());
+            row.setMedicalTypeCode(filingLine.getMedicalTypeCode());
         }
         row.setValid(valid);
         row.setMatchStatus(matchStatus);

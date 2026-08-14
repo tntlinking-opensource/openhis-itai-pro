@@ -33,6 +33,13 @@ public class InpatientAutoRollEncounterQueryModel {
     /** 就诊 start_time（首次分床 {@code transitToInProgress} 锚点；转床不更新；BR-IP-ARG-007 滚费 Gate 主锚）。 */
     private LocalDateTime startTime;
 
+    /**
+     * 就诊 end_time（办理出院写入；未出院可空）。
+     *
+     * <p>滚费记进不计出：{@code end_time} 自然日不晚于 billDate 则整 encounter 当日不滚（BR-IP-ARG-008）。</p>
+     */
+    private LocalDateTime endTime;
+
     /** 首次分床时刻（全部 BED 轨迹最早 {@code start_time}；转床仅新增轨迹，不替换本字段）。 */
     private LocalDateTime bedAssignedAt;
 

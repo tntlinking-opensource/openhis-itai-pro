@@ -207,4 +207,23 @@ public class Procedure extends BaseAuditedEntity {
             throw new BusinessException(ErrorCodeConstants.PROCEDURE_INVALID_ARGUMENT, "取消原因不能为空");
         }
     }
+
+    /**
+     * 修正客户可见执行时刻（仅 {@code recorded_time}；不改 {@code occurrence_time}）。
+     *
+     * <p>仅净剩已完成行可改；对齐医嘱执行双轨与护士划价改时（IF-IP-PRC-07）。</p>
+     *
+     * @param newRecordedTime 新的 recorded_time
+     * @throws BusinessException 非 COMPLETED 或时刻为空
+     */
+    public void amendRecordedTime(LocalDateTime newRecordedTime) {
+        if (newRecordedTime == null) {
+            throw new BusinessException(ErrorCodeConstants.PROCEDURE_INVALID_ARGUMENT, "执行展示时间不能为空");
+        }
+        // 仅已完成事实允许改展示时刻；CANCEL/准备中不可改
+        if (!EventStatus.COMPLETED.getCode().equals(this.statusEnum)) {
+            throw new BusinessException(ErrorCodeConstants.PROCEDURE_INVALID_STATUS, "仅已完成执行记录可修改展示时间");
+        }
+        this.recordedTime = newRecordedTime;
+    }
 }

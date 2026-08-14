@@ -166,13 +166,17 @@ public class BodyMapperImpl implements BodyMapper {
             if (n.getId() != null) {
                 optionValue = String.valueOf(n.getId());
             }
-            result.add(new OptionDto(
+            OptionDto option = new OptionDto(
                 idx,
                 optionValue,
                 n.getName(),
                 n.getBusNo(),
                 children
-            ));
+            );
+            // 管理端树形下拉同步透出拼音/五笔，与医生站申请单过滤口径一致
+            option.setPyStr(n.getPyStr());
+            option.setWbStr(n.getWbStr());
+            result.add(option);
         }
         return result;
     }

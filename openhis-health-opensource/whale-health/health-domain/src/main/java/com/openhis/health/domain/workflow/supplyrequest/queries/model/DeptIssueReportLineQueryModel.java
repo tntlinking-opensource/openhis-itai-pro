@@ -62,4 +62,9 @@ public class DeptIssueReportLineQueryModel {
 
     /** 行总价（落库，可空）。 */
     private BigDecimal totalPrice;
+
+    /**
+     * 审批人主键（发耗材人；库列 {@code approver_id}；可空）。
+     */
+    private Long approverId;
 }

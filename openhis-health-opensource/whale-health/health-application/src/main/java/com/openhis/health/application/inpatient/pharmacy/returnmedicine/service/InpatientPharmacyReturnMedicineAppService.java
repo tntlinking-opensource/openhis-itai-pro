@@ -50,8 +50,6 @@ import com.openhis.health.domain.workflow.inventoryitem.command.IncreaseQuantity
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemDomainService;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemQueryService;
 import com.openhis.health.domain.workflow.inventoryitem.support.MedicationProductQuantityToSplitUnitConverter;
-import com.openhis.health.infrastructure.integration.insurance.inventory.InventoryThirdPartyUploadExtension;
-import com.openhis.health.infrastructure.integration.insurance.inventory.ExtensionIn.InventoryUploadAfterReturnExtensionIn;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
@@ -74,7 +72,7 @@ import java.util.Map;
  * <ul>
  *   <li>读侧：{@link PharmacyReturnEncounterQueueLoader} 预解析在院就诊；{@link EncounterContextReader} 住院上下文</li>
  *   <li>写侧：{@link MedicationDispenseDomainService#refundDispensedMedication} 推进发放态；库存/追溯补偿</li>
- *   <li>医保 3506：仅按患者直发产生的退药行上报；汇总发药对冲行（{@code summary_no} 非空）不上报</li>
+ *   <li>医保 3506：住院退药当时不上报（与发药不报 3505 对称；在院退药计入清床/无床直结净销售合并）</li>
  *   <li>不写 ChargeItem、不完成负向药嘱、不提供拒绝退药</li>
  * </ul>
  *
@@ -84,8 +82,6 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 public class InpatientPharmacyReturnMedicineAppService {
-
-    private final InventoryThirdPartyUploadExtension inventoryUploadExtension;
 
     /** 写路径操作人门控（B.6.1.4）。 */
     private final CurrentPractitionerResolver currentPractitionerResolver;
@@ -302,16 +298,12 @@ public class InpatientPharmacyReturnMedicineAppService {
         List<MedicationDispense> confirmedDispenses = new ArrayList<>();
         Map<Long, BigDecimal> inventoryIncreaseMerged = new HashMap<>();
         Map<Long, ProductDefinitionDisplayDto> productByMedicationId = new HashMap<>();
-        Long encounterIdForUpload = null;
         for (InpatientReturnMedicineItemRequest item : request.getItems()) {
             if (item == null || item.getDispenseId() == null) {
                 continue;
             }
             // Pre：加载待退发放行并校验 PENDING_REFUND（幂等拒绝已 REFUNDED）
             MedicationDispense md = medicationDispenseQueryService.mustGetMedicationDispense(item.getDispenseId());
-            if (encounterIdForUpload == null && md.getEncounterId() != null) {
-                encounterIdForUpload = md.getEncounterId();
-            }
             assertPendingRefundDispense(md.getStatusEnum(), item.getDispenseId());
             RefundDispensedMedicationCommand.Item refundItem = new RefundDispensedMedicationCommand.Item();
             refundItem.setId(md.getId());
@@ -349,42 +341,8 @@ public class InpatientPharmacyReturnMedicineAppService {
         ConfirmInpatientMedicineReturnResponse response = new ConfirmInpatientMedicineReturnResponse();
         response.setSuccess(Boolean.TRUE);
         response.setMessage(MedicationCommonConstants.INPATIENT_PHARMACY_RETURN_CONFIRM_SUCCESS_MESSAGE);
-        // Asm：可选医保 3506（afterCommit + 异步；仅非汇总径退药行）
-        tryUploadMedicareInventoryAfterReturn(encounterIdForUpload, confirmedDispenses);
+        // Asm：住院退药不调 3506（无配对 3505；退量由清床/无床直结净销售合并相抵）
         return response;
-    }
-
-    /**
-     * 退药本地事实提交后触发 3506（afterCommit + 异步）；汇总发药对冲行（{@code summary_no} 非空）跳过。
-     */
-    private void tryUploadMedicareInventoryAfterReturn(
-        Long encounterId,
-        List<MedicationDispense> confirmedDispenses
-    ) {
-        if (encounterId == null || confirmedDispenses == null || confirmedDispenses.isEmpty()) {
-            return;
-        }
-        // Pre：仅保留无汇总单号的退药行（按患者直发路径）；汇总径整批跳过 3506
-        List<Long> uploadDispenseIds = new ArrayList<>();
-        for (MedicationDispense md : confirmedDispenses) {
-            if (md == null || md.getId() == null) {
-                continue;
-            }
-            // 汇总发药产生的对冲行：createPendingRefund 已复制 summary_no，不上报以免与未报 3505 不成对
-            if (StringUtils.isNotEmpty(md.getSummaryNo())) {
-                continue;
-            }
-            uploadDispenseIds.add(md.getId());
-        }
-        if (uploadDispenseIds.isEmpty()) {
-            return;
-        }
-        inventoryUploadExtension.runUploadIfEnabled(() -> {
-            InventoryUploadAfterReturnExtensionIn uploadCommand = new InventoryUploadAfterReturnExtensionIn()
-                .setEncounterId(encounterId)
-                .setDispenseIds(uploadDispenseIds);
-            inventoryUploadExtension.uploadAfterReturn(uploadCommand);
-        });
     }
 
     /**

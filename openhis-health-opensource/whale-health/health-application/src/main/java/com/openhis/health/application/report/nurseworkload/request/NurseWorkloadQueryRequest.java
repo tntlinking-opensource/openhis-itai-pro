@@ -42,4 +42,14 @@ public class NurseWorkloadQueryRequest {
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "护士执业者主键（可选）")
     private Long practitionerId;
+
+    /** 开立科室主键（可选；{@code ChargeItem.requesting_org_id}）。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "开立科室主键（可选）")
+    private Long requestingOrgId;
+
+    /** 科室主键（遗留；报表中心请用 {@link #requestingOrgId}）。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "科室主键（遗留；请用 requestingOrgId）")
+    private Long organizationId;
 }

@@ -49,6 +49,10 @@ public class PrepayPaymentRecordDto {
     @Schema(description = "支付方式展示")
     private String payMethodText;
 
+    /** 支付渠道 code（明细首条 pay_enum，如 WECHAT/CASH/ALIPAY/BANK_CARD）。 */
+    @Schema(description = "支付渠道 code")
+    private String payChannelCode;
+
     /** 操作员展示名。 */
     @Schema(description = "操作员展示名")
     private String operatorName;

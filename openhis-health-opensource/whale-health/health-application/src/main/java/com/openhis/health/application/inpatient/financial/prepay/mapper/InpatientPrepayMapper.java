@@ -74,12 +74,14 @@ public interface InpatientPrepayMapper {
      * @param payments                 已过滤 HOSPITAL_DEPOSIT 的支付头
      * @param operatorNameById         entererId → 展示名
      * @param payMethodTextByPaymentId paymentId → 支付方式展示（明细首条渠道）
+     * @param payChannelCodeByPaymentId paymentId → 支付渠道 code（明细首条 pay_enum）
      * @return 流水 DTO 列表
      */
     List<PrepayPaymentRecordDto> toPrepayPaymentRecordDtoList(
         List<PaymentReconciliationQueryModel> payments,
         Map<Long, String> operatorNameById,
-        Map<Long, String> payMethodTextByPaymentId);
+        Map<Long, String> payMethodTextByPaymentId,
+        Map<Long, String> payChannelCodeByPaymentId);
 
     /**
      * 续收请求 → 收取预交金领域命令。

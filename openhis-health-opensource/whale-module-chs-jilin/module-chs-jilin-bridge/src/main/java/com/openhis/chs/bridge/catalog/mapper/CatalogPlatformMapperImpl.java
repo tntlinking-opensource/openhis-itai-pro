@@ -57,6 +57,10 @@ public class CatalogPlatformMapperImpl implements CatalogPlatformMapper {
         dto.setProdentpName(entity.getProdentpName());
         dto.setSourceInfno(entity.getSourceInfno());
         dto.setUpdtTime(entity.getUpdtTime());
+        dto.setMinPacCnt(entity.getMinPacCnt());
+        dto.setMinPacunt(entity.getMinPacunt());
+        dto.setMinPrepunt(entity.getMinPrepunt());
+        dto.setMinPrcunt(entity.getMinPrcunt());
         return dto;
     }
 

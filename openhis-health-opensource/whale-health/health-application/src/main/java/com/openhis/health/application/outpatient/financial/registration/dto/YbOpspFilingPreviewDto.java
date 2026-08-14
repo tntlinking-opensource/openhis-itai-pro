@@ -7,7 +7,7 @@ package com.openhis.health.application.outpatient.financial.registration.dto;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
-/** 5301 慢特病备案预览行。 */
+/** 5302A 慢特病备案预览行。 */
 @Data
 @Accessors(chain = true)
 public class YbOpspFilingPreviewDto {

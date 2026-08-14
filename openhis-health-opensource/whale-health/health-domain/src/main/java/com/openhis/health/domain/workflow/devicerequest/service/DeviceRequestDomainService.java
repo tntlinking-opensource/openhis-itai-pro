@@ -122,6 +122,10 @@ public class DeviceRequestDomainService {
         if (item.getPackageId() != null) {
             request.setPackageId(item.getPackageId());
         }
+        // Pre：费用性质合同 bus_no 落 contract_code，供列表反查与挂账回显。
+        if (item.getContractCode() != null) {
+            request.setContractCode(item.getContractCode());
+        }
         request.initDraft();
         request.setIsDeleted(Boolean.FALSE);
         // Pre：开立时间仅首次暂存写入；签发时刻由 sign 写 req_authored_time。
@@ -241,6 +245,12 @@ public class DeviceRequestDomainService {
                 request.getEncounterId(), item.getEncounterDiagnosisIds());
             request.setEncounterDiagnosisIds(item.getEncounterDiagnosisIds());
             changedFields.add(FieldNameConstants.ENCOUNTER_DIAGNOSIS_IDS);
+        }
+        // 费用性质合同 bus_no：命令显式传入时覆盖 contract_code。
+        if (item.getContractCode() != null
+            && !Objects.equals(item.getContractCode(), request.getContractCode())) {
+            request.setContractCode(item.getContractCode());
+            changedFields.add(FieldNameConstants.CONTRACT_CODE);
         }
 
         request.assertRequiredForCreate();

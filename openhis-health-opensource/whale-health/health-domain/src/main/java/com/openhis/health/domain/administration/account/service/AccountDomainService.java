@@ -69,6 +69,9 @@ public class AccountDomainService {
             row.setTypeCode(item.getTypeCode());
             row.setDefaultFlag(item.getDefaultFlag());
             row.setContractNo(item.getContractNo());
+            if (StringUtils.isNotEmpty(item.getInsutype())) {
+                row.setInsutype(item.getInsutype().trim());
+            }
             this.applyNewAccountStatusDefaults(row);
             // 新开账户余额归零。
             row.setBalance(BigDecimal.ZERO);
@@ -94,10 +97,11 @@ public class AccountDomainService {
      * @param cmd 挂号开立命令
      */
     public void saveAccountByRegister(SaveAccountByRegisterCommand cmd) {
-        // Pre：同就诊同类型账户已存在则幂等跳过（住院登记与预交金补开场景）。
+        // Pre：同就诊同类型账户已存在则幂等跳过（住院登记与预交金补开场景）；空 insutype 可补写。
         Optional<Account> exists = repository.findFirstByPatientIdAndEncounterIdAndTypeCode(
             cmd.getPatientId(), cmd.getEncounterId(), cmd.getTypeCode());
         if (exists.isPresent()) {
+            this.backfillInsutypeIfMissing(exists.get(), cmd.getInsutype());
             return;
         }
         // Pre：组装单条挂号场景账户实体。
@@ -108,6 +112,9 @@ public class AccountDomainService {
         row.setTypeCode(cmd.getTypeCode());
         row.setDefaultFlag(cmd.getDefaultFlag());
         row.setContractNo(cmd.getContractNo());
+        if (StringUtils.isNotEmpty(cmd.getInsutype())) {
+            row.setInsutype(cmd.getInsutype().trim());
+        }
         this.applyNewAccountStatusDefaults(row);
         // 新开账户余额归零。
         row.setBalance(BigDecimal.ZERO);
@@ -143,6 +150,23 @@ public class AccountDomainService {
             return;
         }
         row.setContractNo(contractNo.trim());
+        repository.save(row);
+    }
+
+    /**
+     * 账户已开立但 {@code insutype} 为空时补写（不覆盖已有值）。
+     *
+     * @param row      已存在账户
+     * @param insutype 险种码；空则跳过
+     */
+    private void backfillInsutypeIfMissing(Account row, String insutype) {
+        if (row == null || StringUtils.isEmpty(insutype)) {
+            return;
+        }
+        if (StringUtils.isNotEmpty(row.getInsutype())) {
+            return;
+        }
+        row.setInsutype(insutype.trim());
         repository.save(row);
     }
 

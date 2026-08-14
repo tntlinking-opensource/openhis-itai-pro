@@ -106,6 +106,8 @@ public class InsuranceBenefitIntegrationMapper {
         result.setBrdy(platform.getBrdy());
         result.setCoverageLines(toCoverageLines(platform.getInsuinfoList()));
         result.setIdentityLines(toIdentityLines(platform.getIdetinfoList()));
+        result.setResolvedContractBusNo(platform.getResolvedContractBusNo());
+        result.setResolvedContractId(platform.getResolvedContractId());
         return result;
     }
 

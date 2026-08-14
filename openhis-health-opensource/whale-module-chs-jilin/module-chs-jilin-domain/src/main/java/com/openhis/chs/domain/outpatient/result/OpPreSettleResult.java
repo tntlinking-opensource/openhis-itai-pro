@@ -35,6 +35,41 @@ public class OpPreSettleResult {
     /** 个人现金支出 */
     private BigDecimal psnCashPay;
 
+    /**
+     * 实际支付起付线（2206 {@code act_pay_dedc}）。
+     *
+     * <p>仅展示透传，不参与本地应收重算；不落 {@code yb_clinic_pre_settle}。</p>
+     */
+    private BigDecimal actPayDedc;
+
+    /**
+     * 公务员标志（2206 {@code cvlserv_flag}，字典 0/1）。
+     *
+     * <p>仅展示透传，不落预结算快照表。</p>
+     */
+    private String cvlservFlag;
+
+    /**
+     * 公务员医疗补助资金支出（2206 {@code cvlserv_pay}）。
+     *
+     * <p>仅展示透传，不参与本地应收重算。</p>
+     */
+    private BigDecimal cvlservPay;
+
+    /**
+     * 基本医保统筹基金支出（2206 {@code hifp_pay}）。
+     *
+     * <p>仅展示透传；与 {@link #fundPaySumamt}（基金总额）区分，勿互相顶替。</p>
+     */
+    private BigDecimal hifpPay;
+
+    /**
+     * 其他支出（2206 {@code oth_pay}，含电子钱包等）。
+     *
+     * <p>仅展示透传，不参与本地应收重算。</p>
+     */
+    private BigDecimal othPay;
+
     private String psnNo;
     private String insuplcAdmdvs;
     private String insutype;

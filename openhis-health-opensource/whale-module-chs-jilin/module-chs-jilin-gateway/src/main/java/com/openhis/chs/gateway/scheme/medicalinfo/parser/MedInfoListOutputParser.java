@@ -15,7 +15,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** 【5201–5301】列表型 output 解析 */
+/** 【5201–5302A】列表型 output 解析 */
 public final class MedInfoListOutputParser {
 
     private static final String[] ARRAY_KEYS_5201 = {"mdtrtinfo", "mdtrt_info", "data", "output"};
@@ -24,6 +24,7 @@ public final class MedInfoListOutputParser {
     private static final String[] ARRAY_KEYS_5205 = {"feedetail", "fee_detail", "data", "output"};
     private static final String[] ARRAY_KEYS_5206 = {"cuminfo", "cum_info", "data", "output"};
     private static final String[] ARRAY_KEYS_5301 = {"feedetail", "fee_detail", "data", "output"};
+    private static final String[] ARRAY_KEYS_5302A = {"result", "feedetail", "data", "output"};
 
     private MedInfoListOutputParser() {
     }
@@ -50,6 +51,10 @@ public final class MedInfoListOutputParser {
 
     public static MedicalInfoQueryResult parse5301(ResultBody body) {
         return rowsResult(ChsInfNo.PERSON_OPSP_FILING_QUERY, parseOutputRows(body, ARRAY_KEYS_5301));
+    }
+
+    public static MedicalInfoQueryResult parse5302A(ResultBody body) {
+        return rowsResult(ChsInfNo.PERSON_OPSP_APPROVAL_QUERY, parseOutputRows(body, ARRAY_KEYS_5302A));
     }
 
     private static MedicalInfoQueryResult rowsResult(String infno, List<Map<String, Object>> rows) {
@@ -114,7 +119,11 @@ public final class MedInfoListOutputParser {
             || root.containsKey("hilist_code")
             || root.containsKey("cum_type_code")
             || root.containsKey("opsp_dise_code")
-            || root.containsKey("opspDiseCode");
+            || root.containsKey("opspDiseCode")
+            || root.containsKey("opsp_dise_name")
+            || root.containsKey("opspDiseName")
+            || root.containsKey("trtDclaDetlSn")
+            || root.containsKey("trt_dcla_detl_sn");
     }
 
     private static List<Map<String, Object>> toRowList(Object raw) {

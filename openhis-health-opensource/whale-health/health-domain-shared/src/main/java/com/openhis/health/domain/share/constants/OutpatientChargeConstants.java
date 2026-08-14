@@ -35,6 +35,11 @@ public interface OutpatientChargeConstants {
      */
     String PENDING_CHARGE_ITEM_DISPLAY_FALLBACK = "收费项目";
 
+    /**
+     * 门诊收费小票：中草药明细合并展示名称（不打印单味药名与剂量，仅汇总金额）。
+     */
+    String CHARGE_RECEIPT_MERGED_TCM_FEE_ITEM_NAME = "中药费";
+
     /** 预结算失败：未选择收费项。 */
     String MESSAGE_CODE_PRESETTLE_NO_CHARGE_ITEMS = "EX-OPC-301";
     /** 预结算失败：缺少诊断。 */
@@ -45,6 +50,12 @@ public interface OutpatientChargeConstants {
     String MESSAGE_CODE_PRESETTLE_ACCOUNT_MISSING = "EX-OPC-308";
     /** 预结算失败：合同不存在。 */
     String MESSAGE_CODE_PRESETTLE_CONTRACT_NOT_FOUND = "EX-OPC-306";
+    /**
+     * 预结算失败：同批勾选出现多种第三方医保费用性质合同。
+     *
+     * <p>就诊理论仅一种医保挂号合同；与自费混结允许，与第二种医保合同不允许（BR-OPC-021）。</p>
+     */
+    String MESSAGE_CODE_PRESETTLE_MULTI_INSURANCE_CONTRACT = "EX-OPC-309";
 
     /** 正式结算失败：草稿不存在或状态非法。 */
     String MESSAGE_CODE_SETTLE_DRAFT_INVALID = "EX-OPC-401";

@@ -6,14 +6,15 @@ package com.openhis.health.domain.diagnosis.bodystructure.entity;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.PublicationStatus;
+import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import com.openhis.whale.core.application.exception.BusinessException;
+import com.openhis.whale.core.application.util.StringUtils;
 import com.openhis.whale.core.domain.BaseAuditedEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
-import com.openhis.whale.core.application.util.StringUtils;
 
 import java.time.LocalDateTime;
 
@@ -63,11 +64,15 @@ public class BodyStructure extends BaseAuditedEntity {
     }
 
     /**
-      * 刷新衍生字段值。
+     * 按名称重算拼音/五笔检索码（BR-BDS-003：名称变更后强制同步）。
      */
     public void refreshSearchCodeFromName() {
-        this.pyStr = this.name;
-        this.wbStr = this.name;
+        // 名称为空时不覆盖既有检索码，避免误清空
+        if (StringUtils.isEmpty(this.name)) {
+            return;
+        }
+        this.pyStr = SearchCodeUtil.toPyStr(this.name);
+        this.wbStr = SearchCodeUtil.toWbStr(this.name);
     }
 
     /**

@@ -16,7 +16,7 @@ public enum ContractCategory implements EnumInterface {
     PROVINCIAL_INSURANCE(0L, "PROVINCIAL_INSURANCE", "", "", 3L),
     /** 市医保（ContractCategory，编码 {@code MUNICIPAL_INSURANCE}）。 */
     MUNICIPAL_INSURANCE(0L, "MUNICIPAL_INSURANCE", "", "", 4L),
-    /** 职工医保（ContractCategory，编码 {@code WORKER_INSURANCE}）。 */
+    /** 工伤保险（ContractCategory，编码 {@code WORKER_INSURANCE}；历史名「职工医保」，现用于工伤合同）。 */
     WORKER_INSURANCE(0L, "WORKER_INSURANCE", "", "", 5L);
 
     private final Long codeSystemId;

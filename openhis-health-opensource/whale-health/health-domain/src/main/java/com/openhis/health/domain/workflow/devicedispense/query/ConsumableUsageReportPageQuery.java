@@ -44,13 +44,23 @@ public class ConsumableUsageReportPageQuery extends AbstractPageQuery {
     private List<Long> resolvedDeviceDefIds;
 
     /**
+     * 记录类型：{@link ConsumableUsageReportConstants#RECORD_TYPE_ALL} /
+     * {@link ConsumableUsageReportConstants#RECORD_TYPE_DISPENSE} /
+     * {@link ConsumableUsageReportConstants#RECORD_TYPE_REFUND}；空视为全部。
+     */
+    private String recordTypeCode;
+
+    /** 执行人（发耗材人）主键；空则不按 {@code performer_id} 筛。 */
+    private Long performerId;
+
+    /**
      * 就诊收窄（门诊 AMB / 住院 IMP 由应用层写入）；{@code null} 表示不按就诊 IN；
      * 空列表拒查。
      */
     private List<Long> resolvedEncounterScope;
 
     /**
-     * 汇总维度：{@link ConsumableUsageReportConstants#SUMMARY_DIMENSION_PATIENT} 等。
+     * 汇总维度：{@link ConsumableUsageReportConstants#SUMMARY_DIMENSION_LOCATION} 等。
      */
     private String summaryDimension;
 

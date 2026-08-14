@@ -103,4 +103,8 @@ public class InpatientConsumableUsageExportRowDto {
     /** 状态/类型。 */
     @Excel(name = "状态/类型", sort = 21)
     private String statusOrTypeText;
+
+    /** 执行人（发耗材人）。 */
+    @Excel(name = "执行人", sort = 22)
+    private String performerName;
 }

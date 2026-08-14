@@ -212,10 +212,30 @@ public class NurseStationEncounterManageMapperImpl implements NurseStationEncoun
         String enrichmentHouseName = null;
         String enrichmentPinyin = null;
         String enrichmentWubi = null;
+        String enrichmentIdCardNo = null;
+        String enrichmentInsuranceNo = null;
+        String enrichmentAddress = null;
+        String enrichmentPatientPhone = null;
+        String enrichmentPatientBusNo = null;
+        String enrichmentInWayCode = null;
+        String enrichmentInWayCodeText = null;
+        String enrichmentInsutype = null;
+        String enrichmentMedType = null;
+        String enrichmentMedTypeDisplay = null;
         if (enrichment != null) {
             enrichmentHouseName = enrichment.getHouseName();
             enrichmentPinyin = enrichment.getPinyinCode();
             enrichmentWubi = enrichment.getWubiCode();
+            enrichmentIdCardNo = enrichment.getIdCardNo();
+            enrichmentInsuranceNo = enrichment.getInsuranceNo();
+            enrichmentAddress = enrichment.getAddress();
+            enrichmentPatientPhone = enrichment.getPatientPhone();
+            enrichmentPatientBusNo = enrichment.getPatientBusNo();
+            enrichmentInWayCode = enrichment.getInWayCode();
+            enrichmentInWayCodeText = enrichment.getInWayCodeText();
+            enrichmentInsutype = enrichment.getInsutype();
+            enrichmentMedType = enrichment.getMedType();
+            enrichmentMedTypeDisplay = enrichment.getMedTypeDisplay();
         }
         PatientQueueItemDto dto = new PatientQueueItemDto();
         dto.setEncounterId(row.getEncounterId());
@@ -246,6 +266,16 @@ public class NurseStationEncounterManageMapperImpl implements NurseStationEncoun
         if (displayOverlay != null) {
             dto.setContractDisplay(displayOverlay.getContractDisplay());
         }
+        dto.setIdCardNo(enrichmentIdCardNo);
+        dto.setInsuranceNo(enrichmentInsuranceNo);
+        dto.setAddress(enrichmentAddress);
+        dto.setPatientPhone(enrichmentPatientPhone);
+        dto.setPatientBusNo(enrichmentPatientBusNo);
+        dto.setInWayCode(enrichmentInWayCode);
+        dto.setInWayCodeText(enrichmentInWayCodeText);
+        dto.setInsutype(enrichmentInsutype);
+        dto.setMedType(enrichmentMedType);
+        dto.setMedTypeDisplay(enrichmentMedTypeDisplay);
         dto.setPriorityEnum(priorityEnum);
         dto.setStartTime(row.getStartTime());
         // 入科时间：读模型未单独投影时与入院时间同源，供详情/表单回显。
@@ -350,6 +380,9 @@ public class NurseStationEncounterManageMapperImpl implements NurseStationEncoun
         detail.setNursingLevelActivityId(base.getNursingLevelActivityId());
         detail.setNursingLevelName(base.getNursingLevelName());
         detail.setNursingLevelStatusEnum(base.getNursingLevelStatusEnum());
+        detail.setContractDisplay(base.getContractDisplay());
+        detail.setInsuranceNo(base.getInsuranceNo());
+        detail.setAddress(base.getAddress());
         detail.setPatientPhone(patientPhone);
         detail.setIdCardNo(idCardNo);
         detail.setParticipants(participants);

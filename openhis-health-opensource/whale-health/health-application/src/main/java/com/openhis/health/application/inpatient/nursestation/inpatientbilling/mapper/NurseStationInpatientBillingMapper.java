@@ -187,7 +187,10 @@ public interface NurseStationInpatientBillingMapper {
      * @param operatorId  操作人
      * @return 完成命令
      */
-    CompleteProcedureRecordCommand toCompleteNursePricingProcedureRecordCommand(Long procedureId, Long operatorId);
+    CompleteProcedureRecordCommand toCompleteNursePricingProcedureRecordCommand(
+        Long procedureId,
+        Long operatorId,
+        LocalDateTime recordedTime);
 
     /**
      * 取消划价 CANCEL 对冲 Procedure。

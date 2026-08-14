@@ -13,7 +13,9 @@ import lombok.experimental.Accessors;
 import java.math.BigDecimal;
 
 /**
- * 工作量明细行 DTO（IF-RPT-WKL-03/04）。
+ * 工作量明细行 DTO（IF-RPT-WKL-03/04；DD-报表中心-进售价口径）。
+ *
+ * <p>一行一账单；金额仅售价/进价；本轮不含应收/实收。</p>
  */
 @Data
 @Accessors(chain = true)
@@ -29,11 +31,6 @@ public class PractitionerWorkloadDetailLineDto {
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "chargeItem 主键")
     private Long chargeItemId;
-
-    /** payment 主键（明细行唯一键）。 */
-    @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "payment 主键")
-    private Long paymentId;
 
     /** 开单科室名称。 */
     @Schema(description = "开单科室名称")
@@ -77,19 +74,11 @@ public class PractitionerWorkloadDetailLineDto {
     @Schema(description = "开立时间")
     private String enteredDate;
 
-    /** 应收金额。 */
-    @Schema(description = "应收金额")
-    private BigDecimal receivableAmount;
+    /** 售价金额（账单 total_price；带收退符号）。 */
+    @Schema(description = "售价金额")
+    private BigDecimal saleAmount;
 
-    /** 实收金额。 */
-    @Schema(description = "实收金额")
-    private BigDecimal actualReceivedAmount;
-
-    /** 成本金额。 */
-    @Schema(description = "成本金额")
-    private BigDecimal costAmount;
-
-    /** 净收入。 */
-    @Schema(description = "净收入")
-    private BigDecimal netIncomeAmount;
+    /** 进价金额（批号进价包装锚；诊疗无进价则为 null）。 */
+    @Schema(description = "进价金额")
+    private BigDecimal purchaseAmount;
 }

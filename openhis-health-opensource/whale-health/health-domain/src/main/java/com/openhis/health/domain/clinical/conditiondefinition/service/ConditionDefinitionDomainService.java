@@ -9,10 +9,12 @@ import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
 import com.openhis.health.domain.clinical.conditiondefinition.command.*;
 import com.openhis.health.domain.clinical.conditiondefinition.entity.ConditionDefinition;
+import com.openhis.health.domain.clinical.conditiondefinition.queries.model.EnsureChronicSpecOpspResult;
 import com.openhis.health.domain.clinical.conditiondefinition.repository.ConditionDefinitionRepository;
 import com.openhis.health.domain.share.constants.BusinessSequenceConstants;
 import com.openhis.health.domain.share.constants.DoctorStationDiagnosisConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.health.domain.share.events.clinical.conditiondefinition.*;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
@@ -25,6 +27,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.IntConsumer;
 import lombok.RequiredArgsConstructor;
 
@@ -89,6 +92,66 @@ public class ConditionDefinitionDomainService {
         syncPeerCatalog(saved);
         domainEventPublisher.publish(new ConditionDefinitionCreatedEvent(saved.getId(), saved.getConditionCode(), saved.getName(), saved.getStatusEnum()));
         return saved.getId();
+    }
+
+    /**
+     * 幂等确保门诊慢特病种目录（{@code chronic_spec}）存在且启用。
+     *
+     * <p>仅读写 {@code source_enum=chronic_spec} 且 {@code condition_code=opspDiseCode} 的一行：
+     * 已存在则必要时启用；不存在则新增。不修改其它来源目录，也不改同名 ICD 行。</p>
+     *
+     * @param opspDiseCode 门慢门特病种目录代码（如 M01912）
+     * @param opspDiseName 门慢门特病种名称
+     * @return 目录主键及本次是否写库（新建或启用）
+     * @throws BusinessException 编码/名称为空，或并发创建冲突且复读失败
+     */
+    public EnsureChronicSpecOpspResult ensureActiveChronicSpecOpspDisease(String opspDiseCode, String opspDiseName) {
+        String code = trimToNull(opspDiseCode);
+        String name = trimToNull(opspDiseName);
+        // Gate：缺码或缺名无法落慢病目录主数据。
+        if (code == null || name == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.CONDITION_DEFINITION_INVALID_ARGUMENT, "慢特病种编码与名称不能为空");
+        }
+        String source = DoctorStationDiagnosisConstants.SOURCE_CHRONIC_SPEC;
+        // Pre：只查 chronic_spec 同码行，避免误改 general_dx / clinical_v2。
+        Optional<ConditionDefinition> existing = repository.findBySourceEnumAndConditionCode(source, code);
+        if (existing.isPresent()) {
+            ConditionDefinition entity = existing.get();
+            // Cmd：停用行仅启用本行，不改名称/编码/其它来源。
+            if (!PublicationStatus.ACTIVE.getCode().equals(entity.getStatusEnum())) {
+                entity.enable();
+                ConditionDefinition saved = repository.save(entity);
+                domainEventPublisher.publish(
+                    new ConditionDefinitionEnabledEvent(saved.getId(), saved.getStatusEnum()));
+                return new EnsureChronicSpecOpspResult(saved.getId(), true);
+            }
+            // Asm：已启用则复用，标记未写库。
+            return new EnsureChronicSpecOpspResult(entity.getId(), false);
+        }
+        // Cmd：无同码行则新增一条启用态慢病目录（yb_no=病种码，不写 clinic_code）。
+        AddDiseaseCommand cmd = new AddDiseaseCommand();
+        cmd.setSourceEnum(source);
+        cmd.setConditionCode(code);
+        cmd.setName(name);
+        cmd.setYbNo(code);
+        cmd.setYbFlag(Boolean.TRUE);
+        cmd.setYbMatchFlag(Boolean.TRUE);
+        cmd.setStatusEnum(PublicationStatus.ACTIVE.getCode());
+        try {
+            Long id = this.addDisease(cmd);
+            return new EnsureChronicSpecOpspResult(id, true);
+        } catch (BusinessException ex) {
+            // 并发双击：他事务已插入同码时复读返回，避免前端失败。
+            if (!ErrorCodeConstants.CONDITION_DEFINITION_CODE_CONFLICT.equals(ex.getErrorCode())) {
+                throw ex;
+            }
+            Optional<ConditionDefinition> raced = repository.findBySourceEnumAndConditionCode(source, code);
+            if (raced.isEmpty()) {
+                throw ex;
+            }
+            return new EnsureChronicSpecOpspResult(raced.get().getId(), false);
+        }
     }
 
     /**

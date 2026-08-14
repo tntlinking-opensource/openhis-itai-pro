@@ -18,7 +18,7 @@ import java.util.Collection;
 @Setter
 public class OffsetNursePricingChargeItemsByServiceAnchorsCommand {
 
-    /** 操作人主键（冲销行 enterer）。 */
+    /** 操作人主键（冲销行写入 performer_id；非收费人 enterer_*）。 */
     private Long operatorId;
 
     /** 就诊标识。 */

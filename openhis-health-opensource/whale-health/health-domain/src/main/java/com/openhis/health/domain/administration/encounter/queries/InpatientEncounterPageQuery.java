@@ -31,8 +31,22 @@ public class InpatientEncounterPageQuery extends AbstractPageQuery {
     private String registrationListStatus;
     /** 登记列表状态多选（与 {@link #registrationListStatus} 语义一致，优先于单值）。 */
     private List<String> registrationListStatuses;
-    /** 入院日期；按自然日过滤在院候选。 */
+    /** 入院日期（单日）；与 {@link #admissionDateFrom}/{@link #admissionDateTo} 互斥时优先区间。 */
     private LocalDate admissionDate;
+    /**
+     * 入院日起（含自然日）；与 {@link #admissionDateTo} 组成闭区间，过滤 {@code startTime}。
+     * 仅一侧有值时表示开放边界。
+     */
+    private LocalDate admissionDateFrom;
+    /** 入院日止（含自然日）；语义同 {@link #admissionDateFrom}。 */
+    private LocalDate admissionDateTo;
+    /**
+     * 出院日起（含自然日）；与 {@link #dischargeDateTo} 组成闭区间，过滤 {@code endTime}。
+     * 仅一侧有值时表示开放边界；无 {@code endTime} 的在院就诊不命中出院区间。
+     */
+    private LocalDate dischargeDateFrom;
+    /** 出院日止（含自然日）；语义同 {@link #dischargeDateFrom}。 */
+    private LocalDate dischargeDateTo;
     /** 为 {@code true} 时仅返回预交金页左侧队列可见就诊（清床前，含 {@code COMPLETED} 待清床）。 */
     private Boolean prepayEligibleOnly;
     /**

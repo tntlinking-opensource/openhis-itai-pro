@@ -7,6 +7,7 @@ package com.openhis.health.application.shared.option;
 import com.openhis.health.domain.custom.frequency.entity.Frequency;
 import com.openhis.health.domain.custom.frequency.service.FrequencyQueryService;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+import com.openhis.health.domain.share.enums.FrequencyCycleType;
 import com.openhis.whale.core.application.dto.OptionDto;
 import lombok.RequiredArgsConstructor;
 import com.openhis.whale.core.application.util.StringUtils;
@@ -71,6 +72,69 @@ public class FrequencyOptionLoader {
             labelByCode.put(row.getRateCode(), row.getName());
         }
         return labelByCode;
+    }
+
+    /**
+     * 构建 rateCode → 每日执行次数（仅日周期且日步进为 1；由 {@code day_times} 段数解析）。
+     *
+     * <p>供长期药「每日三片」日剂量展示；周周期 / 隔日 / 按需 / 固定次数不入图。</p>
+     *
+     * @return 码 → 每日次数；无法解析的码不出现
+     */
+    public Map<String, Integer> buildTimesPerDayMap() {
+        List<Frequency> rows = this.loadActiveFrequenciesCached();
+        Map<String, Integer> timesByCode = new HashMap<>();
+        for (Frequency row : rows) {
+            if (row == null || StringUtils.isEmpty(row.getRateCode())) {
+                continue;
+            }
+            Integer times = this.resolveDailyTimesPerDay(row);
+            if (times == null || times <= 0) {
+                continue;
+            }
+            timesByCode.put(row.getRateCode(), times);
+        }
+        return timesByCode;
+    }
+
+    /**
+     * 解析「每日」次数：仅 {@code daily} 且日间隔为 1，取 {@code day_times} 非空段数。
+     *
+     * @param frequency 频次实体
+     * @return 每日次数；不适用时 null
+     */
+    private Integer resolveDailyTimesPerDay(Frequency frequency) {
+        if (frequency == null) {
+            return null;
+        }
+        // 仅日周期可标「每日」
+        if (!FrequencyCycleType.DAILY.getCode().equals(StringUtils.trimToEmpty(frequency.getCycleType()))) {
+            return null;
+        }
+        // 隔 N 天：不是每日
+        Integer dayInterval = frequency.getDayInterval();
+        if (dayInterval != null && dayInterval > 1) {
+            return null;
+        }
+        Integer dayCount = frequency.getDayCount();
+        if (dayCount != null && dayCount > 1) {
+            return null;
+        }
+        String dayTimes = StringUtils.trimToNull(frequency.getDayTimes());
+        if (dayTimes == null) {
+            return null;
+        }
+        int count = 0;
+        String[] segments = dayTimes.split(GeneralSharedConstants.COMMA);
+        for (String segment : segments) {
+            if (StringUtils.isNotEmpty(StringUtils.trimToEmpty(segment))) {
+                count++;
+            }
+        }
+        if (count <= 0) {
+            return null;
+        }
+        return count;
     }
 
     /**

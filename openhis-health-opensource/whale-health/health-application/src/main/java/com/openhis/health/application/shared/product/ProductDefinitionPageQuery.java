@@ -70,6 +70,18 @@ public class ProductDefinitionPageQuery extends AbstractPageQuery {
     /** 是否关联库存。 */
     private Boolean includeInventory;
 
+    /**
+     * 仅返回账面可用库存大于 0 的药/耗定义（分页前过滤）；诊疗表忽略本字段。
+     */
+    private Boolean positiveQuantityOnly;
+
+    /**
+     * 「只看库存&gt;0」时 EXISTS 限定的库位集合（医生站下推候选发药库位；采购选品可空=全院）。
+     *
+     * <p>{@code null}：不按库位收窄；非 null（含空列表）：仅这些库位有正库存才命中。</p>
+     */
+    private List<Long> positiveQuantityLocationIds;
+
     /** 排序字段。 */
     private String sortField;
 

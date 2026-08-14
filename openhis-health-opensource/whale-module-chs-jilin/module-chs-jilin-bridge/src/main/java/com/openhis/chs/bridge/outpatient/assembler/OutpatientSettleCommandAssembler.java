@@ -115,6 +115,9 @@ public final class OutpatientSettleCommandAssembler {
         ctx.setAccountId(pre.getAccountId());
         ctx.setContractBusNo(pre.getContractBusNo());
         ctx.setMedfeeSumamt(pre.getMedfeeSumamt());
+        ctx.setRetailMedfeeSumamt(pre.getRetailMedfeeSumamt());
+        ctx.setUploadMedfeeSumamt(pre.getUploadMedfeeSumamt());
+        ctx.setRetailUploadDiffAmt(pre.getRetailUploadDiffAmt());
         ctx.setTenantId(pre.getTenantId());
         return ctx;
     }

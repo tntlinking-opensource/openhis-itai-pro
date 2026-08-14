@@ -33,6 +33,9 @@ public class CaseRecordListItemQueryModel {
     /** 性别字典码冗余 {@code gend_code}。 */
     private String gendCode;
 
+    /** 证件号码冗余 {@code certno}。 */
+    private String certno;
+
     /** 入院时间冗余 {@code adm_time}。 */
     private LocalDateTime admTime;
 
@@ -53,4 +56,10 @@ public class CaseRecordListItemQueryModel {
 
     /** 病案工作流状态 code {@code status_code}。 */
     private String statusCode;
+
+    /** 4401 上传状态冗余 {@code chs_upload_status_code}（pending/success/failed/skipped；空表示未上传）。 */
+    private String chsUploadStatusCode;
+
+    /** 结算清单上传状态 {@code settle_upload_status_code}（0/1/2）。 */
+    private String settleUploadStatusCode;
 }

@@ -104,6 +104,11 @@ public interface GeneralSharedConstants {
     Integer BATCH_LIMIT = 100;
 
     /**
+     * 主键 {@code IN (...)} 单批上限（费用明细等大 scope 分批打库，避免单次超长 IN 超时）。
+     */
+    Integer ID_IN_QUERY_CHUNK_SIZE = 500;
+
+    /**
      * 列表/工作站查询未显式传入 {@code pageSize} 时的默认条数（与多数 QueryService 回落口径一致）。
      */
     Integer DEFAULT_QUERY_PAGE_SIZE = 20;
@@ -238,7 +243,7 @@ public interface GeneralSharedConstants {
     String ZERO = "0";
 
     /**
-     * {@code whale_settings} 开关型配置开启值（如自动扣库、挂号医生必选、住院长嘱可拆等）。
+     * {@code whale_settings} 开关型配置开启值（如自动扣库、住院长嘱可拆等）。
      */
     String WHALE_SETTING_SWITCH_ON = "1";
 

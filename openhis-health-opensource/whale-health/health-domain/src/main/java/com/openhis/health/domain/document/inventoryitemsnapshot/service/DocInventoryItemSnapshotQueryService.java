@@ -11,6 +11,7 @@ import com.openhis.health.domain.document.inventoryitemsnapshot.queries.model.Do
 import com.openhis.health.domain.document.inventoryitemsnapshot.repository.DocInventoryItemSnapshotRepository;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.utils.InventoryDetailSnapshotBusNoSupport;
 import com.openhis.health.domain.share.utils.KeywordExactFirstOrderSupport;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
@@ -314,6 +315,18 @@ public class DocInventoryItemSnapshotQueryService {
             }
             if (query.getChrgitmLvs() != null && !query.getChrgitmLvs().isEmpty()) {
                 predicates.add(root.get(FieldNameConstants.CHRGITM_LV).in(query.getChrgitmLvs()));
+            }
+            // 基药筛选：静表无 basic_flag，按应用层预解析的药品定义主键收窄（耗材排除）
+            if (query.getBasicFlag() != null) {
+                List<Long> medIds = query.getResolvedMedicationDefinitionIds();
+                if (medIds == null || medIds.isEmpty()) {
+                    // 无命中定义时强制空结果，避免漏筛成全量
+                    predicates.add(cb.equal(root.get(FieldNameConstants.ID), -1L));
+                } else {
+                    predicates.add(cb.and(
+                        cb.equal(root.get(FieldNameConstants.ITEM_TABLE), TableNameConstants.MED_MEDICATION_DEFINITION),
+                        root.get(FieldNameConstants.ITEM_ID).in(medIds)));
+                }
             }
             if (StringUtils.isNotEmpty(query.getKeyword())) {
                 String trimmed = query.getKeyword().trim();

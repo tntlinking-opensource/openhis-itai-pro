@@ -36,6 +36,7 @@ import com.openhis.health.domain.medication.medicationrequest.service.Medication
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
 import com.openhis.health.domain.share.constants.*;
 import com.openhis.health.domain.share.enums.GenerateSource;
+import com.openhis.health.domain.share.utils.EncounterDiagnosisIdsSupport;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.enums.TherapyType;
 import com.openhis.health.domain.share.enums.YbMedType;
@@ -48,6 +49,7 @@ import com.openhis.health.application.shared.validator.PageWindowGate;
 import com.openhis.health.application.inpatient.doctorstation.encountermanage.support.InpatientDoctorStationEncounterVisibilityResolver;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.application.shared.product.ProductDefinitionCatalogPageLoader;
+import com.openhis.health.application.shared.product.DoctorStationCatalogPositiveStockLocationBinder;
 import com.openhis.health.application.shared.product.ProductDefinitionPageQuery;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.application.shared.diagnosis.EncounterDiagnosisReferenceSupport;
@@ -143,6 +145,9 @@ public class InpatientDoctorStationTcmAppService {
 
     /** 产品目录分页加载。 */
     private final ProductDefinitionCatalogPageLoader productDefinitionCatalogPageLoader;
+
+    /** 医生站「只看库存>0」：模板库位下推至目录分页 Spec。 */
+    private final DoctorStationCatalogPositiveStockLocationBinder doctorStationCatalogPositiveStockLocationBinder;
 
     /** 产品定义批量加载。 */
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
@@ -324,6 +329,13 @@ public class InpatientDoctorStationTcmAppService {
         InpatientEncounterContextQueryModel snapshot = requireInpatientSnapshot(request.getEncounterId(), request.getPatientId(), false);
         PageInpatientDoctorStationAdviceCatalogRequest catalogRequest = tcmMapper.toPageInpatientDoctorStationAdviceCatalogRequest(request);
         ProductDefinitionPageQuery pageQuery = adviceMapper.toProductDefinitionPageQuery(catalogRequest);
+        // Pre：只看库存>0 时按取药模板库位收窄 EXISTS
+        Long catalogOrgId = snapshot.getOrganizationId();
+        if (catalogRequest.getOrganizationUnitId() != null) {
+            catalogOrgId = catalogRequest.getOrganizationUnitId();
+        }
+        doctorStationCatalogPositiveStockLocationBinder.bindIfPositiveQuantityOnly(
+            pageQuery, catalogOrgId, catalogRequest.getPharmacyLocationId());
         // Pre：强制中草药分类
         pageQuery.setCategoryCode(DoctorStationTcmConstants.HERBAL_CATEGORY_CODE);
         Page<ProductDefinitionDisplayDto> page = productDefinitionCatalogPageLoader.pageProductDefinition(pageQuery);
@@ -385,6 +397,16 @@ public class InpatientDoctorStationTcmAppService {
                 if (DoctorStationAdviceConstants.LINE_OP_CREATE.equals(op)) {
                     CreateHerbalMedicationOrderDraftCommand createCmd = tcmMapper.toCreateHerbalMedicationOrderDraftCommand(
                         request, header, line, operatorId, orgId, contentJson, quantity);
+                    // Pre：签退回草稿后同方续开——继承同 prescriptionGroupKey 已有处方号，避免签发时另取新号
+                    if (StringUtils.isEmpty(createCmd.getPrescriptionNo())) {
+                        String existingPrescriptionNo = medicationRequestQueryService.findTcmPrescriptionNoByGroupKey(
+                            request.getEncounterId(),
+                            GenerateSource.DOCTOR_PRESCRIPTION.getCode(),
+                            header.getPrescriptionGroupKey());
+                        if (StringUtils.isNotEmpty(existingPrescriptionNo)) {
+                            createCmd.setPrescriptionNo(existingPrescriptionNo);
+                        }
+                    }
                     Long newId = medicationRequestDomainService.createHerbalMedicationOrderDraft(createCmd);
                     // 非临嘱创建后补写 therapy_enum
                     if (!TherapyType.TEMPORARY.getCode().equals(header.getTherapyEnum())) {
@@ -517,20 +539,159 @@ public class InpatientDoctorStationTcmAppService {
     }
 
     /**
-     * IF-IP-TCM-39：查询患者历史中药处方。
+     * IF-IP-TCM-39：查询患者历史中药处方（含当前就诊已签方）。
+     *
+     * <p>摘要行附带 {@code detail} 完整方头明细，供前端点击引用；明细按就诊直读领域聚合，
+     * 不走 IF-IP-TCM-34 的医生站队列可见性门控（历史就诊通常不在当前队列）。</p>
+     * <p>与当前就诊同号的行标记 {@code currentEncounterFlag=true}，侧栏展示「本次」；本次方排在列表前部。</p>
      *
      * @param request 含 patientId、currentEncounterId、可选 keyword
-     * @return 历史方行列表
+     * @return 历史方行列表（含引用用 detail）
      */
     public ListPatientTcmHerbalPrescriptionHistoryResponse listPatientTcmHerbalPrescriptionHistory(
         ListPatientTcmHerbalPrescriptionHistoryRequest request) {
-        // Pre：历史方聚合
+        // Pre：历史方聚合（含当前就诊已签方）
         List<TcmHerbalPrescriptionHistoryGroupQueryModel> groups =
             medicationRequestQueryService.listTcmHerbalPrescriptionHistoryByPatient(
                 request.getPatientId(), request.getCurrentEncounterId());
         // Asm：enrich + 关键字过滤
         List<TcmRxHistoryRowDto> rows = prescriptionListAssembler.enrichHistoryGroups(groups, request.getKeyword());
+        // Asm：按就诊批量补齐完整方明细，供侧栏点击引用
+        Map<String, TcmRxHeaderDto> detailByKey = this.loadHistoryPrescriptionDetailsByEncounter(groups);
+        Long currentEncounterId = request.getCurrentEncounterId();
+        for (TcmRxHistoryRowDto row : rows) {
+            if (row == null || row.getEncounterId() == null || StringUtils.isEmpty(row.getPrescriptionNo())) {
+                continue;
+            }
+            String detailKey = row.getEncounterId() + "|" + row.getPrescriptionNo().trim();
+            row.setDetail(detailByKey.get(detailKey));
+            // 本次就诊已签方：侧栏「本次」标识
+            row.setCurrentEncounterFlag(Objects.equals(row.getEncounterId(), currentEncounterId));
+        }
+        // 本次方置顶，同组内仍按开立时间倒序
+        rows.sort(Comparator
+            .comparing((TcmRxHistoryRowDto row) -> {
+                if (Boolean.TRUE.equals(row.getCurrentEncounterFlag())) {
+                    return 0;
+                }
+                return 1;
+            })
+            .thenComparing(TcmRxHistoryRowDto::getReqOpenedTime, Comparator.nullsLast(Comparator.reverseOrder()))
+            .thenComparing(TcmRxHistoryRowDto::getPrescriptionNo, Comparator.nullsLast(Comparator.naturalOrder())));
         return tcmMapper.toListPatientTcmHerbalPrescriptionHistoryResponse(rows);
+    }
+
+    /**
+     * 按历史方涉及的就诊批量加载完整中药方头（含明细行），供 IF-IP-TCM-39 引用。
+     *
+     * @param groups 历史方摘要聚合
+     * @return key=encounterId|prescriptionNo → 方头 DTO
+     */
+    private Map<String, TcmRxHeaderDto> loadHistoryPrescriptionDetailsByEncounter(
+        List<TcmHerbalPrescriptionHistoryGroupQueryModel> groups) {
+        Map<String, TcmRxHeaderDto> detailByKey = new HashMap<>();
+        if (groups == null || groups.isEmpty()) {
+            return detailByKey;
+        }
+        Set<Long> historyEncounterIds = new LinkedHashSet<>();
+        for (TcmHerbalPrescriptionHistoryGroupQueryModel group : groups) {
+            if (group != null && group.getEncounterId() != null) {
+                historyEncounterIds.add(group.getEncounterId());
+            }
+        }
+        for (Long historyEncounterId : historyEncounterIds) {
+            try {
+                // Pre：直读历史就诊中药方（无住院医生站队列可见性门控）
+                List<TcmHerbalPrescriptionGroupQueryModel> encounterGroups =
+                    medicationRequestQueryService.listTcmHerbalPrescriptionsByEncounter(
+                        historyEncounterId, GenerateSource.DOCTOR_PRESCRIPTION.getCode());
+                List<TcmRxHeaderDto> headers =
+                    prescriptionListAssembler.enrichInpatientPrescriptionGroups(encounterGroups);
+                if (headers == null || headers.isEmpty()) {
+                    continue;
+                }
+                // Pre：同就诊病证组快照（无可见性门控），供历史方复用诊断
+                String diagnosisJson =
+                    encounterDiagnosisSnapshotAssembler.buildSnapshot(historyEncounterId).diagnosisJson();
+                List<TcmDiagnosisGroupRowDto> encounterDiagnosisGroups =
+                    diagnosisAssembler.groupTcmDiagnosisRows(historyEncounterId, diagnosisJson);
+                for (TcmRxHeaderDto header : headers) {
+                    if (header == null || StringUtils.isEmpty(header.getPrescriptionNo())) {
+                        continue;
+                    }
+                    // Asm：方头挂上可复用病证目录对，前端跨就诊落到本次
+                    header.setReuseDiagnosisGroups(
+                        this.pickReuseDiagnosisGroupsForHistoryHeader(header, encounterDiagnosisGroups));
+                    String detailKey = historyEncounterId + "|" + header.getPrescriptionNo().trim();
+                    detailByKey.put(detailKey, header);
+                }
+            } catch (RuntimeException ex) {
+                // 单就诊明细失败不阻断历史摘要列表展示
+                log.warn("加载历史中药方明细失败, historyEncounterId={}", historyEncounterId, ex);
+            }
+        }
+        return detailByKey;
+    }
+
+    /**
+     * 从历史就诊病证组中挑选与方头绑定相关的组（供跨就诊复用诊断）。
+     *
+     * @param header 历史方头（含 tcmSyndromeGroup / encounterDiagnosisIds）
+     * @param encounterGroups 历史就诊全部中医病证组
+     * @return 与方头相关的病证组；无匹配时空列表
+     */
+    private List<TcmDiagnosisGroupRowDto> pickReuseDiagnosisGroupsForHistoryHeader(
+        TcmRxHeaderDto header,
+        List<TcmDiagnosisGroupRowDto> encounterGroups
+    ) {
+        if (header == null || encounterGroups == null || encounterGroups.isEmpty()) {
+            return List.of();
+        }
+        // 优先按方头病证组号精确匹配
+        String syndromeGroup = trimToEmpty(header.getTcmSyndromeGroup());
+        if (StringUtils.isNotEmpty(syndromeGroup)) {
+            List<TcmDiagnosisGroupRowDto> byGroup = new ArrayList<>();
+            for (TcmDiagnosisGroupRowDto group : encounterGroups) {
+                if (group == null) {
+                    continue;
+                }
+                if (syndromeGroup.equals(trimToEmpty(group.getTcmSyndromeGroup()))) {
+                    byGroup.add(group);
+                }
+            }
+            if (!byGroup.isEmpty()) {
+                return byGroup;
+            }
+        }
+        // 组号对不上时：按方头绑定诊断 id 命中病名/证候事实行
+        List<Long> boundDxIds =
+            EncounterDiagnosisIdsSupport.parseUniqueOrderedIds(header.getEncounterDiagnosisIds(), true);
+        if (!boundDxIds.isEmpty()) {
+            Set<Long> boundIdSet = new LinkedHashSet<>(boundDxIds);
+            List<TcmDiagnosisGroupRowDto> byDxId = new ArrayList<>();
+            for (TcmDiagnosisGroupRowDto group : encounterGroups) {
+                if (group == null) {
+                    continue;
+                }
+                Long diseaseDxId = group.getDiseaseEncounterDiagnosisId();
+                Long syndromeDxId = group.getSyndromeEncounterDiagnosisId();
+                if ((diseaseDxId != null && boundIdSet.contains(diseaseDxId))
+                    || (syndromeDxId != null && boundIdSet.contains(syndromeDxId))) {
+                    byDxId.add(group);
+                }
+            }
+            if (!byDxId.isEmpty()) {
+                return byDxId;
+            }
+        }
+        // 历史就诊仅一组病证时默认挂上，便于复用
+        if (encounterGroups.size() == 1) {
+            TcmDiagnosisGroupRowDto only = encounterGroups.get(0);
+            if (only != null) {
+                return List.of(only);
+            }
+        }
+        return List.of();
     }
 
     /**
@@ -620,7 +781,7 @@ public class InpatientDoctorStationTcmAppService {
     private void validateTcmDiagnosisBatch(SaveTcmDiagnosisGroupsBatchRequest request) {
         int primaryCount = 0;
         for (TcmDiagnosisGroupItemRequest group : request.getGroups()) {
-            // Gate：默认一病一证；院点定制可通过 @Primary 策略允许单侧
+            // Gate：默认一病一证；朝阳等院点可通过 @Primary 策略允许单侧
             tcmDiagnosisGroupPairingPolicy.assertGroupAcceptable(
                 group.getDiseaseDefinitionId(), group.getSyndromeDefinitionId());
             if (group.getPrimaryFlag() != null

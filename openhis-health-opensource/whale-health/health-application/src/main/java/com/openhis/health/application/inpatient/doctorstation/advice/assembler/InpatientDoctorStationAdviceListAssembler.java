@@ -14,9 +14,11 @@ import com.openhis.health.application.shared.option.TerminologyOptionLoader;
 import com.openhis.health.application.shared.advice.InpatientEntrustOrderGateSupport;
 import com.openhis.health.application.shared.advice.OrderCatalogDisplayAssembler;
 import com.openhis.health.application.shared.advice.OrderRequestCatalogWarmAssembler;
+import com.openhis.health.application.shared.product.MedicationDailyDoseDisplayAssembler;
 import com.openhis.health.application.shared.product.MedicationDosageDisplayAssembler;
 import com.openhis.health.application.shared.product.MedicationDosageDisplayAssembler.MedicationDosageDisplayResult;
 import com.openhis.health.application.shared.product.MedicationMerchandiseDisplaySupport;
+import com.openhis.health.application.shared.product.MedicationPackageSplitQuantityDisplayAssembler;
 import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
 import com.openhis.health.application.shared.advice.OrderRequestCatalogWarmContext;
 import com.openhis.health.application.inpatient.doctorstation.advice.dto.InpatientDoctorStationAdviceRowDto;
@@ -303,6 +305,7 @@ public class InpatientDoctorStationAdviceListAssembler {
         Map<String, String> methodLabelByCode =
             terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.METHOD_CODE);
         Map<String, String> rateLabelByCode = frequencyOptionLoader.buildRateLabelMap();
+        Map<String, Integer> timesPerDayByRateCode = frequencyOptionLoader.buildTimesPerDayMap();
         Map<String, String> doseUnitLabelByCode =
             terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.DOSE_UNIT);
         Map<String, String> dosageInstructionLabelByCode =
@@ -415,6 +418,7 @@ public class InpatientDoctorStationAdviceListAssembler {
                     fifoLocByMedReq, locationNameById, currentUserId,
                     medicationDetailById.get(order.getMedReqId()),
                     medicationDefinitionById, unitLabelByCode, methodLabelByCode, rateLabelByCode,
+                    timesPerDayByRateCode,
                     doseUnitLabelByCode, dosageInstructionLabelByCode, speedLabelByCode,
                     medicationCategoryLabelByCode, conditionDefinitionDisplayById,
                     conditionDefinitionIdByEncounterDiagnosisId,
@@ -651,6 +655,7 @@ public class InpatientDoctorStationAdviceListAssembler {
         Map<String, String> unitLabelByCode,
         Map<String, String> methodLabelByCode,
         Map<String, String> rateLabelByCode,
+        Map<String, Integer> timesPerDayByRateCode,
         Map<String, String> doseUnitLabelByCode,
         Map<String, String> dosageInstructionLabelByCode,
         Map<String, String> speedLabelByCode,
@@ -775,6 +780,8 @@ public class InpatientDoctorStationAdviceListAssembler {
             line.setStopTime(formatRequestInstantForApi(medDetail.getStopTime()));
             line.setStopperId(medDetail.getStopperId());
             line.setStopperName(practitionerNameById.get(medDetail.getStopperId()));
+            // 停嘱校对人：非空时前端禁用取消停嘱
+            line.setStopPerformerCheckId(medDetail.getStopPerformerCheckId());
             line.setStatusEnum(medDetail.getStatusEnum());
             line.setStatusEnumText(resolveRequestStatusDisplay(medDetail.getStatusEnum()));
             line.setIsAuthoredByCurrentUser(resolveIsMine(currentUserId, medAuthorId));
@@ -797,6 +804,7 @@ public class InpatientDoctorStationAdviceListAssembler {
             line.setStopTime(formatRequestInstantForApi(order.getStopTime()));
             line.setStopperId(order.getStopperId());
             line.setStopperName(practitionerNameById.get(order.getStopperId()));
+            line.setStopPerformerCheckId(order.getStopPerformerCheckId());
             line.setPerformLocationId(order.getLocationId());
             if (order.getLocationId() != null) {
                 line.setPerformLocationName(locationNameById.get(order.getLocationId()));
@@ -807,6 +815,10 @@ public class InpatientDoctorStationAdviceListAssembler {
             line.setTherapyTypeCode(order.getTherapyEnum());
         }
         fillTherapyDisplay(line);
+        // 长期药日剂量：单次拆零量 × 每日次数 →「每日三片」
+        fillMedicationDailyDoseDisplay(line, timesPerDayByRateCode);
+        // 包装装量后缀：1片x100（前端与规格拼成 5mg1片x100）
+        fillMedicationPackageSplitRatio(line, productByKey, productTable, medDefId);
         // 项目类别（甲/乙/丙）：来自药品定义读模型已回填的 CHRGITM_LV 文案
         fillChrgitmLvFromProduct(line, productByKey, productTable, medDefId);
         // 护士执行后费用归并（锚定 med_medication_request 或 dispense）。
@@ -914,6 +926,8 @@ public class InpatientDoctorStationAdviceListAssembler {
             line.setStopTime(formatRequestInstantForApi(serviceDetail.getStopTime()));
             line.setStopperId(serviceDetail.getStopperId());
             line.setStopperName(practitionerNameById.get(serviceDetail.getStopperId()));
+            // 停嘱校对人：非空时前端禁用取消停嘱
+            line.setStopPerformerCheckId(serviceDetail.getStopPerformerCheckId());
             line.setSortNumber(serviceDetail.getSortNumber());
             line.setTherapyTypeCode(serviceDetail.getTherapyEnum());
             line.setStatusEnum(serviceDetail.getStatusEnum());
@@ -940,6 +954,7 @@ public class InpatientDoctorStationAdviceListAssembler {
             line.setStopTime(formatRequestInstantForApi(order.getStopTime()));
             line.setStopperId(order.getStopperId());
             line.setStopperName(practitionerNameById.get(order.getStopperId()));
+            line.setStopPerformerCheckId(order.getStopPerformerCheckId());
             line.setPerformLocationId(order.getLocationId());
             if (order.getLocationId() != null) {
                 line.setPerformLocationName(locationNameById.get(order.getLocationId()));
@@ -1152,6 +1167,67 @@ public class InpatientDoctorStationAdviceListAssembler {
         line.setCatalogCategoryCode(def.getCategoryCode().trim());
         line.setCatalogCategoryName(
             OrderCatalogDisplayAssembler.resolveCategoryDisplay(medicationCategoryLabelByCode, def.getCategoryCode()));
+    }
+
+    /**
+     * 回填药品包装装量后缀：目录包装相对拆零倍数 →「1片x100」（与规格拼成 5mg1片x100）。
+     *
+     * @param line          列表行
+     * @param productByKey  产品读模型
+     * @param productTable  药品定义表名
+     * @param medicationId  药品定义主键
+     */
+    private void fillMedicationPackageSplitRatio(
+        InpatientDoctorStationAdviceRowDto line,
+        Map<String, ProductDefinitionDisplayDto> productByKey,
+        String productTable,
+        Long medicationId
+    ) {
+        if (medicationId == null || productByKey == null) {
+            return;
+        }
+        ProductDefinitionDisplayDto product = productByKey.get(
+            ProductDefinitionKeyUtil.buildCompositeKey(productTable, medicationId));
+        if (product == null) {
+            return;
+        }
+        // 数值口径：与目录 package_unit_ratio 同源（legacy 字段名 partPercent）
+        line.setPartPercent(product.getPackageUnitRatio());
+        line.setPackageSplitRatioText(
+            MedicationPackageSplitQuantityDisplayAssembler.buildPackageSplitRatioText(product));
+    }
+
+    /**
+     * 长期药回填日剂量友好文案（每日三片）；临时/出院带药不填。
+     *
+     * @param line                   已填 dose/splitDose/rateCode/therapyTypeCode 的列表行
+     * @param timesPerDayByRateCode  频次码 → 每日次数
+     */
+    private void fillMedicationDailyDoseDisplay(
+        InpatientDoctorStationAdviceRowDto line,
+        Map<String, Integer> timesPerDayByRateCode
+    ) {
+        if (line == null) {
+            return;
+        }
+        if (!TherapyType.LONG_TERM.getCode().equals(StringUtils.trimToEmpty(line.getTherapyTypeCode()))) {
+            return;
+        }
+        Integer timesPerDay = null;
+        if (timesPerDayByRateCode != null && StringUtils.isNotEmpty(line.getRateCode())) {
+            timesPerDay = timesPerDayByRateCode.get(line.getRateCode());
+        }
+        // 有拆零结构化量优先；同单位时 splitDose 为空，回落 dose + 拆零/剂量单位名
+        BigDecimal perDoseQty = line.getSplitDose();
+        String perDoseUnit = line.getSplitDoseUnitName();
+        if (perDoseQty == null) {
+            perDoseQty = line.getDose();
+            if (StringUtils.isEmpty(perDoseUnit)) {
+                perDoseUnit = line.getDoseUnitName();
+            }
+        }
+        line.setDailyDoseDisplay(
+            MedicationDailyDoseDisplayAssembler.buildDailyDoseDisplay(perDoseQty, perDoseUnit, timesPerDay));
     }
 
     /**

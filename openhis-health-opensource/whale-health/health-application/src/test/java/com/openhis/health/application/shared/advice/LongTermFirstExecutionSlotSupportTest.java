@@ -87,4 +87,25 @@ class LongTermFirstExecutionSlotSupportTest {
             LongTermFirstExecutionSlotSupport.resolveLastPlanTimeOnStopDay(expanded, stop);
         assertEquals(LocalDateTime.of(2026, 7, 16, 12, 0), last);
     }
+
+    @Test
+    void resolveFirstSlotDefaultActualTime_delaysTwoMinutes() {
+        LocalDateTime opened = LocalDateTime.of(2026, 8, 5, 10, 0, 15);
+        LocalDateTime actual =
+            LongTermFirstExecutionSlotSupport.resolveFirstSlotDefaultActualTime(opened);
+        assertEquals(LocalDateTime.of(2026, 8, 5, 10, 2, 15), actual);
+    }
+
+    @Test
+    void resolveFirstSlotDefaultActualTime_crossMidnight_clampsToDayEnd() {
+        LocalDateTime opened = LocalDateTime.of(2026, 8, 5, 23, 59, 0);
+        LocalDateTime actual =
+            LongTermFirstExecutionSlotSupport.resolveFirstSlotDefaultActualTime(opened);
+        assertEquals(LocalDateTime.of(2026, 8, 5, 23, 59, 59), actual);
+    }
+
+    @Test
+    void resolveFirstSlotDefaultActualTime_nullOpened_returnsNull() {
+        assertNull(LongTermFirstExecutionSlotSupport.resolveFirstSlotDefaultActualTime(null));
+    }
 }

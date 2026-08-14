@@ -35,4 +35,10 @@ public class DoctorStationQueueDisplayEnrichment {
      */
     @Schema(description = "五笔码")
     private String wubiCode;
+
+    /**
+     * 险种类型码：来自就诊医保账户 {@code adm_account.insutype}（与护士站队列同口径）。
+     */
+    @Schema(description = "险种类型码")
+    private String insutype;
 }

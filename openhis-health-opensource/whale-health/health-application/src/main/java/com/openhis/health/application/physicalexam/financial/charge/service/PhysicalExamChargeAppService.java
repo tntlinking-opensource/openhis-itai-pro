@@ -354,6 +354,8 @@ public class PhysicalExamChargeAppService {
         Long paymentId = paymentReconciliationSettleOrchestration.settleOutpatientPayment(settleCommand);
         BatchChargeItemIdsCommand batchCommand =
             physicalExamChargeMapper.toBatchChargeItemIdsCommand(request.getChargeItemIds(), operatorId);
+        // Cmd：收费时间与 payment.bill_date 同值写入 ChargeItem.entered_date（BR-OPC-016）
+        batchCommand.setBillDate(request.getBillDate());
         chargeItemDomainService.settleChargeItems(batchCommand);
         outpatientPaymentDraftLifecycleOrchestrator.cancelAllDraftsForEncounter(request.getEncounterId(), null);
         // Cmd：票面按收费项合计开票（含医保已付）；现金 displayAmount=0 仍开票（BR-INV-008）

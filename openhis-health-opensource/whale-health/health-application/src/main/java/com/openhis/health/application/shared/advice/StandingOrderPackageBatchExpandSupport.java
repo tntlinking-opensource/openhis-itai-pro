@@ -13,11 +13,13 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * 住院长嘱「不可拆」包装批次切分（仅列表读路径消费）。
+ * 住院长嘱「不可拆 · 一盒一点」包装批次切分（列表读路径；写路径另按整包装量落账）。
  *
  * <p>在<strong>已应用首日/首次槽裁剪与首次槽换量</strong>之后，按槽拆零量顺序累加；累加值须
- * <strong>刚好等于</strong>一包装拆零量才切一盒。筛选截止时刻落在第 N 盒时，返回第 1～N 盒全部时点
- * （可晚于截止时刻，展满该盒）。凑不出刚好一盒、或单槽超量导致无法整除时，调用方须降级为可拆展开。</p>
+ * <strong>刚好等于</strong>一包装拆零量才切一盒。筛选截止时刻落在第 N 盒时，仅回传第 1～N 盒的
+ * <strong>盒首锚点</strong>（每盒一个 planTime，形态对齐临嘱单点），<strong>禁止</strong>再展盒内全部频次点。
+ * 单槽超量或累加无法刚好整除时，调用方须降级为可拆展开；
+ * <strong>停嘱/探测硬顶截断未凑满当前盒</strong>时<strong>不</strong>降级可拆，仅回传已凑满盒的盒首（无则空）。</p>
  */
 public final class StandingOrderPackageBatchExpandSupport {
 
@@ -28,9 +30,9 @@ public final class StandingOrderPackageBatchExpandSupport {
      * 切盒结果种类。
      */
     public enum CutKind {
-        /** 已得到覆盖截止时刻的完整盒批次，可安全展满到第 N 盒末。 */
+        /** 已得到覆盖截止时刻的完整盒批次，回传第 1～N 盒首锚点。 */
         SUCCESS,
-        /** 截止时刻落入尚未凑满的当前盒，且调用方仍可继续向后展开频次点。 */
+        /** 截止时刻落入尚未凑满的当前盒，或已越过第 N 盒末但下一盒未展开，调用方须继续向后展开频次点。 */
         NEED_MORE,
         /** 无法刚好整除或入参不足；调用方应按可拆口径展开。 */
         FALLBACK
@@ -56,7 +58,7 @@ public final class StandingOrderPackageBatchExpandSupport {
         }
 
         /**
-         * SUCCESS 时为第 1～N 盒计划点；其它种类为空列表。
+         * SUCCESS 时为第 1～N 盒<strong>盒首</strong>计划点（每盒一点）；其它种类为空列表。
          *
          * @return 计划点列表（不可变意图，调用方可再包 Set）
          */
@@ -67,7 +69,7 @@ public final class StandingOrderPackageBatchExpandSupport {
         /**
          * 构造成功结果。
          *
-         * @param planTimes 第 1～N 盒时点
+         * @param planTimes 第 1～N 盒首锚点
          * @return 结果
          */
         public static CutResult success(List<LocalDateTime> planTimes) {
@@ -97,19 +99,21 @@ public final class StandingOrderPackageBatchExpandSupport {
     }
 
     /**
-     * 在已展开的有序计划点上按包装拆零量切盒，并按筛选截止时刻决定展到第几盒。
+     * 在已展开的有序计划点上按包装拆零量切盒，并按筛选截止时刻决定回传几盒的<strong>盒首锚点</strong>。
      *
      * <p>规则：</p>
      * <ul>
      *   <li>累加拆零量须刚好等于 {@code packageSplitQuantity} 才关闭一盒；一旦 {@code cum + qty > package} 则 FALLBACK</li>
      *   <li>N = 最大满足「该盒首槽 planTime ≤ deadline」的完整盒序号</li>
-     *   <li>若截止时刻已落入尚未凑满的当前盒：可继续展开则 NEED_MORE；调用方已达停嘱等硬上界则 FALLBACK（不硬凑盒）</li>
-     *   <li>若第 N 盒已凑满但截止仍晚于该盒末槽、且窗内尚无更晚点：可继续展开则 NEED_MORE（避免截止已进下一盒区间却只展到 N）</li>
+     *   <li>SUCCESS 仅回传各盒<strong>首槽</strong>时刻（一盒一点），不回传盒内其余频次点</li>
+     *   <li>若截止时刻已落入尚未凑满的当前盒：可继续展开则 NEED_MORE；已达停嘱等硬上界则
+     *       SUCCESS（仅已凑满盒首，无则空）——<strong>禁止</strong>降级可拆日点（停嘱后不再执行尾巴）</li>
+     *   <li>若第 N 盒已凑满但截止仍晚于该盒末槽、且窗内尚无更晚点：可继续展开则 NEED_MORE（探测下一盒锚点）</li>
      * </ul>
      *
      * @param orderedPlanTimes       已按时间升序、已做首次槽裁剪的计划点
      * @param splitQuantities        与计划点一一对应的拆零数量（含首次槽换量后的量）
-     * @param packageSplitQuantity   一包装单位对应的拆零量（如 1 盒 = 24 片）
+     * @param packageSplitQuantity   一包装单位对应的拆零量（如 1 盒 = 10 片）
      * @param selectionDeadline      列表筛选截止时刻（executionDeadline）
      * @param canExtendFurther       {@code true} 表示调用方还能把频次窗再往后扩；{@code false} 表示已触及停嘱/探测上限
      * @return 切盒结果
@@ -183,11 +187,20 @@ public final class StandingOrderPackageBatchExpandSupport {
         }
 
         if (incompleteTouchesDeadline) {
-            // 截止落在未凑满盒内：能继续扩窗则再探；已到停嘱/探测顶则降级可拆（不硬凑）
+            // 截止落在未凑满盒内：能继续扩窗则再探；已到停嘱/探测顶则不硬凑、也不降级可拆日点
             if (canExtendFurther) {
                 return CutResult.needMore();
             }
-            return CutResult.fallback();
+            // 硬顶截断：只回传此前已凑满盒的盒首；无完整盒则空（已执行盒首仍由 Procedure 并集展示）
+            if (batchCountCoveringDeadline <= 0) {
+                return CutResult.success(Collections.emptyList());
+            }
+            List<LocalDateTime> hardCapSelected = new ArrayList<>();
+            for (int batchIndex = 0; batchIndex < batchCountCoveringDeadline; batchIndex++) {
+                List<Integer> batch = completeBatches.get(batchIndex);
+                hardCapSelected.add(orderedPlanTimes.get(batch.get(0)));
+            }
+            return CutResult.success(hardCapSelected);
         }
 
         if (batchCountCoveringDeadline <= 0) {
@@ -198,19 +211,18 @@ public final class StandingOrderPackageBatchExpandSupport {
         List<Integer> coveringBatch = completeBatches.get(batchCountCoveringDeadline - 1);
         int lastIndexOfCovering = coveringBatch.get(coveringBatch.size() - 1);
         LocalDateTime lastOfCovering = orderedPlanTimes.get(lastIndexOfCovering);
-        // 截止已晚于当前第 N 盒末槽，且探测窗内尚无更晚时点 → 下一盒未展开，须继续探测
+        // 截止已晚于当前第 N 盒末槽，且探测窗内尚无更晚时点 → 下一盒未展开，须继续探测盒首锚点
         if (lastOfCovering.isBefore(selectionDeadline)
             && lastIndexOfCovering >= orderedPlanTimes.size() - 1
             && canExtendFurther) {
             return CutResult.needMore();
         }
 
+        // 一盒一点：仅取各完整盒的首槽作为待执行/已执行锚点
         List<LocalDateTime> selected = new ArrayList<>();
         for (int batchIndex = 0; batchIndex < batchCountCoveringDeadline; batchIndex++) {
             List<Integer> batch = completeBatches.get(batchIndex);
-            for (Integer slotIndex : batch) {
-                selected.add(orderedPlanTimes.get(slotIndex));
-            }
+            selected.add(orderedPlanTimes.get(batch.get(0)));
         }
         return CutResult.success(selected);
     }

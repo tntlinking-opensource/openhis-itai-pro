@@ -34,9 +34,11 @@ public class DocumentSummaryDto {
     private LocalDateTime createdAt;
     /** 最后更新时间 */
     private LocalDateTime updatedAt;
-    /** 创建人 id */
+    /** 创建人 id（雪花，序列化为字符串避免前端精度丢失） */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long createdBy;
-    /** 最后更新人 id */
+    /** 最后更新人 id（雪花，序列化为字符串避免前端精度丢失） */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long updatedBy;
     /**
      * 创建时使用的模板 ID（溯源；列表挂到模板树下用）
@@ -47,4 +49,8 @@ public class DocumentSummaryDto {
     private String deptName;
     /** 保存人显示名（优先更新人，否则创建人） */
     private String savedByName;
+    /**
+     * 主诉摘要（列表展示；从正文 chiefComplaint 数据项轻量提取，无额外查询）
+     */
+    private String chiefComplaint;
 }

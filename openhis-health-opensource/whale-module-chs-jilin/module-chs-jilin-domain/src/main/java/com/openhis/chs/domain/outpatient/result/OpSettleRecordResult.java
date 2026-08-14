@@ -18,6 +18,8 @@ public class OpSettleRecordResult {
     private Long paymentId;
     private Long preSettleId;
     private Long contractId;
+    /** 记账账户 id（{@code yb_settlement_record.account_id}）。 */
+    private Long accountId;
     private String chrgBchno;
     private String setlId;
     private String mdtrtId;
@@ -32,6 +34,8 @@ public class OpSettleRecordResult {
     private BigDecimal actPayDedc;
     private BigDecimal hifpPay;
     private BigDecimal poolPropSelfpay;
+    /** 公务员标志（2207 {@code cvlserv_flag}，字典 0/1；支付记录展示用）。 */
+    private String cvlservFlag;
     private BigDecimal cvlservPay;
     private BigDecimal hifesPay;
     private BigDecimal hifmiPay;

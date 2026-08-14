@@ -18,6 +18,8 @@ import com.openhis.chs.domain.settlement.support.SetlinfoFieldSupport;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 
@@ -63,6 +65,12 @@ public class YbClinicPreSettleDomainService {
         row.setAcctUsedFlag(context.getAcctUsedFlag());
         row.setPsnSetlway(context.getPsnSetlway());
         SetlinfoFieldSupport.applyPreSettleAmountFields(row, setlinfo);
+        // Pre：零售/上传分差来自 ContextLoader（平台 medfee 写入后仍保留上传口径）
+        SetlinfoFieldSupport.applyClinicRetailUploadDiff(
+            row,
+            context.getRetailMedfeeSumamt(),
+            context.getUploadMedfeeSumamt(),
+            context.getRetailUploadDiffAmt());
         row.setChargeItemIds(chargeItemIdsJson);
         row.setStatus(YbClinicPreSettle.STATUS_ACTIVE);
         row.setMedType(context.getMedType());
@@ -135,6 +143,26 @@ public class YbClinicPreSettleDomainService {
     }
 
     /**
+     * 将预结算快照改挂到新支付草稿（银联补收；不改 status）。
+     *
+     * @param preSettleId  预结算主键
+     * @param newPaymentId 新支付草稿主键
+     * @param tenantId     租户 ID
+     */
+    public void rebindPaymentDraftId(Long preSettleId, Long newPaymentId, Long tenantId) {
+        if (preSettleId == null || newPaymentId == null || tenantId == null) {
+            return;
+        }
+        YbClinicPreSettle pre = clinicPreSettleRepository.findById(preSettleId).orElse(null);
+        if (pre == null || Boolean.TRUE.equals(pre.getIsDeleted()) || !tenantId.equals(pre.getTenantId())) {
+            return;
+        }
+        pre.setPaymentDraftId(newPaymentId);
+        pre.setUpdatedAt(LocalDateTime.now());
+        clinicPreSettleRepository.save(pre);
+    }
+
+    /**
      * 将预结算快照标记为已撤销并持久化。
      *
      * @param pre 预结算快照
@@ -152,6 +180,26 @@ public class YbClinicPreSettleDomainService {
     public void markCancelledAndSave(YbClinicPreSettle pre) {
         chargeBatchLifecycle.markClinicPreSettleCancelled(pre);
         clinicPreSettleRepository.save(pre);
+    }
+
+    /**
+     * 按批次将 ACTIVE 预结算置 CANCELLED（独立事务）。
+     *
+     * <p>供 2205 成功后调用：外层预结算若因后续 2204/2206 失败回滚，本地状态仍与平台一致。</p>
+     *
+     * @param chrgBchno 收费批次号
+     * @param tenantId  租户 ID
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void markCancelledByChrgBchnoInNewTx(String chrgBchno, Long tenantId) {
+        if (isEmpty(chrgBchno)) {
+            return;
+        }
+        YbClinicPreSettle pre = findByChrgBchno(chrgBchno.trim(), tenantId);
+        if (pre == null || !YbClinicPreSettle.STATUS_ACTIVE.equals(pre.getStatus())) {
+            return;
+        }
+        markCancelledAndSave(pre);
     }
 
     /**

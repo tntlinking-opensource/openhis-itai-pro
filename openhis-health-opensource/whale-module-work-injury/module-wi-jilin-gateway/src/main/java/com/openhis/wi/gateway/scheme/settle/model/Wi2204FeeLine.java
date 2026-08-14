@@ -19,7 +19,7 @@ public class Wi2204FeeLine {
     @JSONField(name = "ipt_otp_no")
     private String iptOtpNo;
 
-    /** 三大目录类别 list_type（201 医疗服务等）。 */
+    /** 三大目录类别 list_type（手册：1药品/2诊疗/3材料）。 */
     @JSONField(name = "list_type")
     private String listType;
 

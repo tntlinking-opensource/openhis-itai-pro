@@ -97,8 +97,8 @@ public class InpatientPharmacyDailySettlementHistoryItemDto implements CashierSe
     @Schema(description = "挂载发药笔数")
     private Integer paymentCount;
 
-    /** 列表金额快照。 */
-    @Schema(description = "列表金额快照")
+    /** 交账日结利润快照（售价合计 − 进价合计）。 */
+    @Schema(description = "日结利润（售价-进价）")
     private BigDecimal totalIncome;
 
     /** 交账状态 code。 */

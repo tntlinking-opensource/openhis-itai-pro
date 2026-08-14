@@ -8,6 +8,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import java.time.LocalTime;
 
 /**
  * 新增自动计费规则命令。
@@ -55,6 +56,14 @@ public class CreateAutoGenRuleCommand {
      * 备注（可空）。
      */
     private String remark;
+    /**
+     * 滚费业务时刻（可空；默认日末 23:59:59）。
+     */
+    private LocalTime businessTime;
+    /**
+     * 滚费计费人（adm_practitioner.id；可空时由应用层回落当前操作人）。
+     */
+    private Long billingPractitionerId;
     /**
      * 操作人标识。
      */

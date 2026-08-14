@@ -31,10 +31,15 @@ public class PageInpatientFeeDetailReportRequest extends AbstractHealthPageReque
     @Schema(description = "结算业务日止（yyyy-MM-dd）", requiredMode = Schema.RequiredMode.REQUIRED)
     private String dateTo;
 
-    /** 住院科室主键。 */
-    @Schema(description = "住院科室主键")
+    /** 住院科室主键（遗留；报表中心请用 {@link #requestingOrgId}）。 */
+    @Schema(description = "住院科室主键（遗留）")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long registrationDepartmentId;
+
+    /** 开立科室主键（账单 requesting_org_id）。 */
+    @Schema(description = "开立科室主键")
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long requestingOrgId;
 
     /** 费用大类多选 code。 */
     @Schema(description = "费用大类 code 多选")
@@ -64,6 +69,12 @@ public class PageInpatientFeeDetailReportRequest extends AbstractHealthPageReque
     /** 收退 Tab：ALL / CHARGE / REFUND；默认 ALL。 */
     @Schema(description = "收退 Tab code")
     private String tradeDirection;
+
+    /**
+     * 结算状态筛：ALL / SETTLED / PENDING_SETTLEMENT；空则默认 ALL。
+     */
+    @Schema(description = "结算状态筛 ALL/SETTLED/PENDING_SETTLEMENT")
+    private String settlementStatus;
 
     /** 费用性质合同业务号（{@code fin_contract.bus_no}）；空则不筛选。 */
     @Schema(description = "费用性质合同业务号")

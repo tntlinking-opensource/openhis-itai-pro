@@ -268,9 +268,11 @@ public class PeriodBalanceDetailAssembler {
     /**
      * 应用 isBus / isBalance / keyword 筛选（BR-INV-SET-006）。
      *
+     * <p>默认 {@code isBus}：仅保留期间至少一项业务非零的品种；期初/期末有库存但无动账不保留。</p>
+     *
      * @param rows       待筛选行
      * @param keyword    关键字
-     * @param isBus      是否隐藏全 0 业务行
+     * @param isBus      是否仅展示有期间业务的品种（未传/true=是）
      * @param isBalance  账平筛选
      * @return 筛选后行
      */
@@ -1005,19 +1007,15 @@ public class PeriodBalanceDetailAssembler {
     }
 
     /**
-     * 判断是否全零行：期初、期末数量均为 0，且期间业务列均为 0。
+     * 判断是否全零业务行：期间业务数量/调价均为 0（BR-INV-SET-006）。
+     *
+     * <p>不含期初/期末库存：仅库存无动账的品种在默认 {@code isBus} 下不展示，
+     * 避免目录分页后「有库存无业务」挤占「期间有业务」清单。</p>
      *
      * @param row 行
-     * @return 全零为 true
+     * @return 期间业务全零为 true
      */
     private boolean isAllZeroBusinessRow(PeriodBalanceDetailListRowDto row) {
-        // 期初或期末有库存：不算全零行（BR-INV-SET-006 业务口径）
-        if (!this.isZero(row.getBeginQuantity())) {
-            return false;
-        }
-        if (!this.isZero(row.getEndQuantity())) {
-            return false;
-        }
         if (!this.isZero(row.getPurchaseQuantity())) {
             return false;
         }

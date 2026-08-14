@@ -41,18 +41,21 @@ import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 public class OutpatientFeeDetailReportMapperImpl implements OutpatientFeeDetailReportMapper {
 
     /**
-     * 前身初始化响应 → 报表初始化响应（补呈现模式）。
+     * 前身初始化响应 → 报表初始化响应（补呈现模式与汇总维度）。
      *
      * @param source                  前身 init 响应
      * @param presentationModeOptions 汇总/明细 Tab
      * @param defaultActiveTab        默认激活 Tab
+     * @param summaryDimensionOptions 汇总维度下拉
      * @return 报表 init 响应；source 为 null 时返回 null
      */
     @Override
     public LoadOutpatientFeeDetailReportPageInitResponse toLoadPageInitResponse(
         LoadOutpatientFeeDetailPageInitResponse source,
         List<OptionDto> presentationModeOptions,
-        String defaultActiveTab) {
+        String defaultActiveTab,
+        List<OptionDto> summaryDimensionOptions) {
+        // 前身 init 失败返回 null 时透传，避免空壳下拉
         if (source == null) {
             return null;
         }
@@ -70,6 +73,7 @@ public class OutpatientFeeDetailReportMapperImpl implements OutpatientFeeDetailR
         response.setPresentationModeOptions(presentationModeOptions);
         response.setDefaultActiveTab(defaultActiveTab);
         response.setFeeNatureOptions(source.getFeeNatureOptions());
+        response.setSummaryDimensionOptions(summaryDimensionOptions);
         return response;
     }
 
@@ -94,6 +98,7 @@ public class OutpatientFeeDetailReportMapperImpl implements OutpatientFeeDetailR
             query.setBillDateTo(LocalDate.parse(request.getDateTo().trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER));
         }
         query.setRegistrationDepartmentId(request.getRegistrationDepartmentId());
+        query.setRequestingOrgId(request.getRequestingOrgId());
         query.setFeeCategoryCodes(request.getFeeCategoryCodes());
         query.setSubCategoryCodes(request.getSubCategoryCodes());
         query.setPatientKeyword(trimToNull(request.getPatientKeyword()));
@@ -145,6 +150,7 @@ public class OutpatientFeeDetailReportMapperImpl implements OutpatientFeeDetailR
         target.setDateFrom(request.getDateFrom());
         target.setDateTo(request.getDateTo());
         target.setRegistrationDepartmentId(request.getRegistrationDepartmentId());
+        target.setRequestingOrgId(request.getRequestingOrgId());
         target.setFeeCategoryCodes(request.getFeeCategoryCodes());
         target.setSubCategoryCodes(request.getSubCategoryCodes());
         target.setPatientKeyword(request.getPatientKeyword());
@@ -192,6 +198,7 @@ public class OutpatientFeeDetailReportMapperImpl implements OutpatientFeeDetailR
         target.setDateFrom(request.getDateFrom());
         target.setDateTo(request.getDateTo());
         target.setRegistrationDepartmentId(request.getRegistrationDepartmentId());
+        target.setRequestingOrgId(request.getRequestingOrgId());
         target.setFeeCategoryCodes(request.getFeeCategoryCodes());
         target.setSubCategoryCodes(request.getSubCategoryCodes());
         target.setPatientKeyword(request.getPatientKeyword());

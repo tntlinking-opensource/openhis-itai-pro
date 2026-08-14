@@ -53,6 +53,11 @@ public class ChargeSettlementSetlinfoDto {
     @Schema(description = "基本医疗保险统筹基金支付比例")
     private BigDecimal poolPropSelfpay;
 
+    /** 公务员标志（2207 {@code cvlserv_flag}，0=否 / 1=是；多笔回执取首笔非空）。 */
+    @Schema(description = "公务员标志")
+    private String cvlservFlag;
+
+    /** 公务员医疗补助资金支出。 */
     @Schema(description = "公务员医疗补助资金支出")
     private BigDecimal cvlservPay;
 

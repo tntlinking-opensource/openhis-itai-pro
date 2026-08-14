@@ -59,13 +59,17 @@ public interface OutpatientPharmacyPrescriptionQueryMapper {
         OutpatientPharmacyPrescriptionQuerySupport.PatientScope patientScope);
 
     /**
-     * 装配分页响应。
+     * 装配分页响应（含筛选窗去重汇总）。
      *
-     * @param page 领域分页壳
-     * @param rows 平铺行
+     * @param page               领域分页壳
+     * @param rows               平铺行
+     * @param prescriptionCount  总处方量（处方号去重）
+     * @param visitPatientCount  就诊人数（就诊主键去重）
      * @return 分页响应
      */
     PageOutpatientPharmacyPrescriptionQueryResponse toPageResponse(
         Page<?> page,
-        List<OutpatientPharmacyPrescriptionDrugLineDto> rows);
+        List<OutpatientPharmacyPrescriptionDrugLineDto> rows,
+        Integer prescriptionCount,
+        Integer visitPatientCount);
 }

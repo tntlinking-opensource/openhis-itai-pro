@@ -55,4 +55,11 @@ public class SaveDeviceAdviceDraftLinePayload {
      */
     @Schema(description = "绑定就诊诊断主键有序串")
     private String encounterDiagnosisIds;
+
+    /**
+     * 费用性质/合同覆盖，可空表示走患者默认；用于暂存挂账账户解析（与诊疗/药品同口径）。
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "费用性质覆盖")
+    private Long contractId;
 }

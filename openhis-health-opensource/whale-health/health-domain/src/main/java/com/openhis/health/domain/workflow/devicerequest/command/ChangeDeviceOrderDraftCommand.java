@@ -55,5 +55,9 @@ public class ChangeDeviceOrderDraftCommand extends BatchCommand<ChangeDeviceOrde
          * 绑定就诊诊断主键有序串（草稿修改；非空且与存量不同时更新 {@code wkf_device_request.encounter_diagnosis_ids}）。
          */
         private String encounterDiagnosisIds;
+        /**
+         * 费用性质合同业务号（合同 {@code bus_no}；非空时更新 {@code wkf_device_request.contract_code}）。
+         */
+        private String contractCode;
     }
 }

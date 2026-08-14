@@ -84,6 +84,12 @@ public class InpatientOrderListSkeleton {
     /** 停嘱人主键（{@code stopper_id}；未停嘱为 null）。 */
     private Long stopperId;
 
+    /** 停嘱校对人主键（{@code stop_performer_check_id}；未停嘱校对为 null）。 */
+    private Long stopPerformerCheckId;
+
+    /** 停嘱校对时间（{@code stop_check_time}）。 */
+    private LocalDateTime stopCheckTime;
+
     /** 执行/发药库位主键（诊嘱）。 */
     private Long locationId;
 
@@ -180,6 +186,8 @@ public class InpatientOrderListSkeleton {
         skeleton.setReqAuthoredTime(request.getReqAuthoredTime());
         skeleton.setStopTime(request.getStopTime());
         skeleton.setStopperId(request.getStopperId());
+        skeleton.setStopPerformerCheckId(request.getStopPerformerCheckId());
+        skeleton.setStopCheckTime(request.getStopCheckTime());
         skeleton.setBasedOnTable(request.getBasedOnTable());
         skeleton.setBasedOnId(request.getBasedOnId());
         skeleton.setRefundMedicineId(request.getRefundMedicineId());
@@ -218,6 +226,8 @@ public class InpatientOrderListSkeleton {
         skeleton.setReqAuthoredTime(model.getReqAuthoredTime());
         skeleton.setStopTime(model.getStopTime());
         skeleton.setStopperId(model.getStopperId());
+        skeleton.setStopPerformerCheckId(model.getStopPerformerCheckId());
+        skeleton.setStopCheckTime(model.getStopCheckTime());
         skeleton.setBasedOnTable(model.getBasedOnTable());
         skeleton.setBasedOnId(model.getBasedOnId());
         skeleton.setRefundMedicineId(model.getRefundMedicineId());
@@ -251,6 +261,8 @@ public class InpatientOrderListSkeleton {
         skeleton.setReqAuthoredTime(request.getReqAuthoredTime());
         skeleton.setStopTime(request.getStopTime());
         skeleton.setStopperId(request.getStopperId());
+        skeleton.setStopPerformerCheckId(request.getStopPerformerCheckId());
+        skeleton.setStopCheckTime(request.getStopCheckTime());
         skeleton.setLocationId(request.getLocationId());
         skeleton.setBasedOnTable(request.getBasedOnTable());
         skeleton.setBasedOnId(request.getBasedOnId());
@@ -286,6 +298,8 @@ public class InpatientOrderListSkeleton {
         skeleton.setReqAuthoredTime(model.getReqAuthoredTime());
         skeleton.setStopTime(model.getStopTime());
         skeleton.setStopperId(model.getStopperId());
+        skeleton.setStopPerformerCheckId(model.getStopPerformerCheckId());
+        skeleton.setStopCheckTime(model.getStopCheckTime());
         skeleton.setLocationId(model.getLocationId());
         skeleton.setBasedOnTable(model.getBasedOnTable());
         skeleton.setBasedOnId(model.getBasedOnId());

@@ -19,10 +19,11 @@ import java.util.ArrayList;
 /**
  * 销售 3505 / 退药 3506 配对 3502 行组装（无 IO、无 Spring）。
  *
- * <p>发药：先 {@link InvChgType#OTHER_OUT}（107，负）再 3505；批次沿用发药
+ * <p>发药 / 住院清床合并：先 {@link InvChgType#OTHER_OUT}（107，负）再 3505；批次沿用销售行
  * {@code fixmedins_bchno}。</p>
- * <p>退药：先 3506 成功，再 {@link InvChgType#OTHER_IN}（106，正）；批次取
- * {@code originalFixmedinsBchno}（退药单号），与 3506 定位原销售用的批次号不同。</p>
+ * <p>门诊退药 / 住院清床冲销：先 3506 成功，再 {@link InvChgType#OTHER_IN}（106，正）；批次取
+ * {@code originalFixmedinsBchno}（门诊=退药发放 busNo；住院冲销=`CLRREV`{原3505上报id}），
+ * 与 3506 平台定位用的原销售批次号不同。</p>
  */
 public final class InventorySaleCompanion3502LineAssembler {
 

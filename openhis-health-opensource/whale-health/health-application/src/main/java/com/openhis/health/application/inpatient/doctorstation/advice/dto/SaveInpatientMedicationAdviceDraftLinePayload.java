@@ -44,6 +44,12 @@ public class SaveInpatientMedicationAdviceDraftLinePayload {
     @Schema(description = "频次编码")
     private String rateCode;
 
+    /**
+     * 输液滴速术语编码（{@code speed_code}；可空；落库 {@code med_medication_request.speed_code}）。
+     */
+    @Schema(description = "输液滴速编码")
+    private String speedCode;
+
     /** 成组号；同号表示同组输液/配伍等。 */
     @JsonSerialize(using = ToStringSerializer.class)
     /** 组号。 */

@@ -113,16 +113,14 @@ public class InpatientMedicationDispenseReportMapperImpl implements InpatientMed
     }
 
     /**
-     * 构建来源下拉。
+     * 构建来源下拉（患者 / 领用二选一；禁止 ALL 并集）。
      *
      * @return 选项
      */
     @Override
     public List<OptionDto> buildSourceOptions() {
         List<OptionDto> options = new ArrayList<>();
-        options.add(this.option(
-            MedicationDispenseReportConstants.SOURCE_ALL,
-            MedicationDispenseReportConstants.SOURCE_ALL_LABEL));
+        // 默认项在前：患者发药（DD：禁止来源=全部混查）
         options.add(this.option(
             MedicationDispenseReportConstants.SOURCE_PATIENT_DISPENSE,
             MedicationDispenseReportConstants.SOURCE_PATIENT_DISPENSE_LABEL));

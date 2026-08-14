@@ -48,6 +48,7 @@ import com.openhis.health.domain.clinical.procedure.entity.Procedure;
 import com.openhis.health.domain.clinical.procedure.service.ProcedureQueryService;
 import com.openhis.health.domain.medication.medicationdispense.command.SummarizeMedicationDispensesCommand;
 import com.openhis.health.domain.medication.medicationdispense.entity.MedicationDispense;
+import com.openhis.health.domain.medication.medicationdispense.query.MedicationDispensePickupPendingPageQuery;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispensePickupPendingQueryModel;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseSummaryItemQueryModel;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseDomainService;
@@ -77,6 +78,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -93,7 +95,8 @@ import java.time.LocalDateTime;
  *
  * <p>职责边界：</p>
  * <ul>
- *   <li><b>IF-IP-SUM-01</b>：待汇总明细分页 + 就诊/医嘱/时间点分组展示（排除出院带药，**BR-IP-SUM-016**）</li>
+ *   <li><b>IF-IP-SUM-01</b>：待汇总明细分页 + 就诊/医嘱/时间点分组展示（排除出院带药，**BR-IP-SUM-016**；
+ *       不可拆口服长嘱执行已整包装落一行，列表按截止过滤即可）</li>
  *   <li><b>IF-IP-SUM-02/03</b>：已生成汇总单头/合并明细查询</li>
  *   <li><b>IF-IP-SUM-09</b>：摆药单查询（按患者分组，同 medReqId 合并数量）</li>
  *   <li><b>IF-IP-SUM-04</b>：按药房拆单、itemId+单价合并、拆零写 SupplyRequest（PENDING_APPROVAL）+ 发放行 SUMMARIZED；拒绝出院带药</li>
@@ -188,7 +191,7 @@ public class NurseStationDispenseSummaryAppService {
             List<Long> resolvedMedReqIds = nurseStationDispenseSummaryListAssembler.resolveMedReqIds(
                 executeOrders, request.getMedicineCategoryTab());
             Map<Long, MedicationRequestListQueryModel> medReqById = this.indexMedReqById(executeOrders);
-            // Pre ⑥⑦：域分页待汇总发放行
+            // Pre ⑥⑦：域分页待汇总发放行（默认可拆：planned ≤ queryDeadline）
             Page<MedicationDispensePickupPendingQueryModel> page =
                 medicationDispenseQueryService.pageMedicationDispensePickupPending(
                     nurseStationDispenseSummaryMapper.toPickupPendingPageQuery(
@@ -196,9 +199,10 @@ public class NurseStationDispenseSummaryAppService {
             // Pre ⑦b：跨聚合只读回填账单单价（PENDING_SETTLEMENT）
             inpatientMedicationDispenseChargePricingLoader.applyPendingSettlementUnitPricesToPickupPendingRows(
                 page.getContent());
-            // Pre ⑧：药品展示批量加载
+            // Pre ⑧：药品展示批量加载（执行已按整包装落一行时，列表仅截止过滤，不再整盒展多点补齐）
             Map<String, ProductDefinitionDisplayDto> productByKey =
-                productDefinitionDisplayTerminologyAssembler.loadAsMap(this.collectProductLookupsFromPendingPage(page));
+                productDefinitionDisplayTerminologyAssembler.loadAsMap(
+                    this.collectProductLookupsFromPendingLines(page.getContent(), List.of()));
             // Pre ⑨：药房展示批量加载
             Set<Long> locationIds = this.collectLocationIdsFromPendingPage(page);
             Map<Long, Location> locationById = nurseStationDispenseSummaryListAssembler.indexLocations(
@@ -919,12 +923,44 @@ public class NurseStationDispenseSummaryAppService {
      */
     private List<ProductDefinitionBatchLookup> collectProductLookupsFromPendingPage(
         Page<MedicationDispensePickupPendingQueryModel> page) {
-        List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
-        if (page == null || page.getContent() == null) {
-            return lookups;
+        if (page == null) {
+            return this.collectProductLookupsFromPendingLines(null, null);
         }
+        return this.collectProductLookupsFromPendingLines(page.getContent(), null);
+    }
+
+    /**
+     * 从待汇总扁平行收集药品定义批量查询键（去重）。
+     *
+     * @param primaryLines 主结果行
+     * @param extraLines   附加行；可空
+     * @return ProductDefinition 批量 lookup 列表
+     */
+    private List<ProductDefinitionBatchLookup> collectProductLookupsFromPendingLines(
+        List<MedicationDispensePickupPendingQueryModel> primaryLines,
+        List<MedicationDispensePickupPendingQueryModel> extraLines) {
+        List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
         Set<String> dedupe = new HashSet<>();
-        for (MedicationDispensePickupPendingQueryModel row : page.getContent()) {
+        this.appendProductLookupsFromPendingLines(primaryLines, lookups, dedupe);
+        this.appendProductLookupsFromPendingLines(extraLines, lookups, dedupe);
+        return lookups;
+    }
+
+    /**
+     * 将扁平行中的药品 id 追加进 lookup 列表（同复合键去重）。
+     *
+     * @param lines   待汇总行
+     * @param lookups 输出 lookup
+     * @param dedupe  已见复合键
+     */
+    private void appendProductLookupsFromPendingLines(
+        List<MedicationDispensePickupPendingQueryModel> lines,
+        List<ProductDefinitionBatchLookup> lookups,
+        Set<String> dedupe) {
+        if (lines == null || lines.isEmpty()) {
+            return;
+        }
+        for (MedicationDispensePickupPendingQueryModel row : lines) {
             if (row == null || row.getMedicationId() == null) {
                 continue;
             }
@@ -937,7 +973,6 @@ public class NurseStationDispenseSummaryAppService {
                 lookups.add(lookup);
             }
         }
-        return lookups;
     }
 
     /**

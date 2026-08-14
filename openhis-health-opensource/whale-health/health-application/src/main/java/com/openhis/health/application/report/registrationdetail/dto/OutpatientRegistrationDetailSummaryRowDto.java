@@ -11,6 +11,8 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
+import java.math.BigDecimal;
+
 /**
  * 门诊挂号明细报表净汇总行（IF-RPT-ORG-02/04）。
  */
@@ -37,14 +39,14 @@ public class OutpatientRegistrationDetailSummaryRowDto {
     @Schema(description = "挂号科室名称")
     private String organizationName;
 
-    /** 挂号医生主键；科室维时为 null。 */
+    /** 接诊医生主键；科室维时为 null。 */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "挂号医生主键")
+    @Schema(description = "接诊医生主键")
     private Long practitionerId;
 
-    /** 挂号医生姓名。 */
-    @Excel(name = "医生", sort = 2)
-    @Schema(description = "挂号医生姓名")
+    /** 接诊医生姓名。 */
+    @Excel(name = "接诊医生", sort = 2)
+    @Schema(description = "接诊医生姓名")
     private String practitionerName;
 
     /** 号源类型主键。 */
@@ -61,5 +63,12 @@ public class OutpatientRegistrationDetailSummaryRowDto {
     @Excel(name = "净挂号笔数", sort = 4)
     @Schema(description = "净挂号笔数")
     private Long netRegistrationCount;
+
+    /**
+     * 净挂号费金额（计入净笔数就诊的号源 ChargeItem 合计；与明细挂号费同口径）。
+     */
+    @Excel(name = "挂号费合计", sort = 5)
+    @Schema(description = "净挂号费金额")
+    private BigDecimal registrationFeeAmount;
 }
 

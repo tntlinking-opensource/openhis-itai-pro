@@ -5,23 +5,25 @@
 package com.openhis.health.application.finance.pharmacydailysettlement.support;
 
 import com.openhis.health.application.finance.pharmacydailysettlement.dto.PharmacyDailySettlementHandoverLineEnrichment;
+import com.openhis.health.application.outpatient.pharmacy.dispenserecord.support.PharmacyDispenseRecordChargePricingAssembler;
 import com.openhis.health.application.report.medicationdispense.support.MedicationDispenseReportPricingEnricher;
+import com.openhis.health.application.shared.pricing.ChargeItemPackageUnitRatioSupport;
 import com.openhis.health.application.shared.pricing.HistoricalChargeItemPurchasePriceSupport;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
-import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentReconciliationQueryModel;
-import com.openhis.health.domain.financial.paymentreconciliation.service.PaymentReconciliationQueryService;
+import com.openhis.health.domain.administration.chargeitemdefinition.query.ChargeItemDefinitionLotBatchKey;
 import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
 import com.openhis.health.domain.medication.medicationdefinition.service.MedicationDefinitionQueryService;
 import com.openhis.health.domain.medication.medicationdispense.entity.MedicationDispense;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseSlipQueryModel;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
+import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
+import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
 import com.openhis.health.domain.share.constants.MedicationDispenseReportConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.domain.share.enums.DispenseStatus;
 import com.openhis.health.domain.share.enums.MedicationDispenseType;
-import com.openhis.health.domain.share.enums.PaymentStatus;
-import com.openhis.health.domain.share.financial.DailySettlementRefundPaymentRules;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
@@ -34,27 +36,31 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
- * 药房日结进/售读价与挂载 payment 净收入汇总（DD §2.8.1 / §3.2.1）。
+ * 药房日结进/售读价与日结利润汇总（DD §2；患者侧与发药报表同口径）。
  *
- * <p>主区进/售取自<strong>批号价</strong>（{@code LOT_NUMBER_COST} / {@code LOT_NUMBER_PRICE}，含发药时刻调价回放）
- * × 发药数量（6 位行额），按品规加总后再结算 2 位；大类金额 = 下属品规已结算金额之和。
- * <strong>禁止</strong>回落维护态 {@code PURCHASE}/{@code SALE} 参考价。
- * 头表 {@code total_income} 仍为挂载 payment 净收入（账单路径），与进/售分列。</p>
+ * <p><strong>售价</strong>优先发放锚点 {@code ChargeItem} 行额（账单实收，不回放）；
+ * 退药行常无自有 {@code dispense_id} 账单锚点，须按原正向发放补售价后再取负轧差
+ * （与发退药记录 / 发药报表 {@link PharmacyDispenseRecordChargePricingAssembler} 同口径）。
+ * 账单仍缺失（如住院取消执行逻辑删待结算行）时：回落批号 {@code LOT_NUMBER_PRICE}，
+ * 同批号调价回放与进价同构，按发药 {@code unitCode} 分支计行额；
+ * <strong>禁止</strong>回落目录 {@code SALE}。
+ * <strong>进价</strong>取批号 {@code LOT_NUMBER_COST}（包装锚），按发药 {@code unitCode} 分支计行额
+ * （包装单位→包装价×数量；拆零→满包×包装价+零头单步，BR-MON-PKG-001）；
+ * 仅当调价明细批号与发药批号一致时才做发药时刻回放；
+ * <strong>禁止</strong>串批回放、禁止回落维护态 {@code PURCHASE}、禁止包装价÷ratio 得拆零价再×数量。
+ * 头表 {@code total_income} = 售价合计 − 进价合计（与主区同口径，不读 payment）。</p>
  */
 @Component
 @RequiredArgsConstructor
 public class PharmacyDailySettlementPricingSupport {
-
-    /** 发放锚点 ChargeItem 读侧（仅头表 payment 净收入关联）。 */
-    private final ChargeItemQueryService chargeItemQueryService;
 
     /** 药品定义读侧（大类映射）。 */
     private final MedicationDefinitionQueryService medicationDefinitionQueryService;
@@ -62,24 +68,34 @@ public class PharmacyDailySettlementPricingSupport {
     /** 发放读侧（提交挂载 dispense 实体加载）。 */
     private final MedicationDispenseQueryService medicationDispenseQueryService;
 
-    /** payment 读侧（挂载净收入关联）。 */
-    private final PaymentReconciliationQueryService paymentReconciliationQueryService;
-
     /** 品规展示批量装配。 */
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
 
-    /** 历史进/售单价（批号进价/批号售价 + 调价回放）。 */
+    /** 按操作单位计包装锚行进价（与发药报表同口径）。 */
+    private final ChargeItemPackageUnitRatioSupport chargeItemPackageUnitRatioSupport;
+
+    /** 批号进价（含同批号调价回放）。 */
     private final HistoricalChargeItemPurchasePriceSupport historicalChargeItemPurchasePriceSupport;
+
+    /** 收费明细读侧（患者侧售价锚点）。 */
+    private final ChargeItemQueryService chargeItemQueryService;
+
+    /** 药嘱读侧（退药行解析原正向药嘱）。 */
+    private final MedicationRequestQueryService medicationRequestQueryService;
+
+    /** 退药行按原正向发放补售价（与发退药记录同口径）。 */
+    private final PharmacyDispenseRecordChargePricingAssembler pharmacyDispenseRecordChargePricingAssembler;
 
     /**
      * 按窗内发药事实汇总大类/品规进售净额与净数量（含已交挂载行）。
      *
-     * <p>进/售单价仅取批号价（{@code LOT_NUMBER_COST} / {@code LOT_NUMBER_PRICE}，含发药时刻调价回放），再 × 发药数量；
-     * 品规按 {@code medicationId + 进价单价 + 售价单价} 分桶（单价一致才合并）；
-     * {@code inpatientMode} 仅保留签名兼容，主区进/售不读账单 ChargeItem。</p>
+     * <p>售价 = 发放锚点账单行额（缺则批号 {@code LOT_NUMBER_PRICE} 同批号回放）；
+     * 进价 = 批号包装进价按 {@code unitCode} 分支计行额（同批号才调价回放）。
+     * 品规按 {@code medicationId + 进价单价 + 售价单价} 分桶（单价一致才合并）。
+     * {@code inpatientMode=true} 时收费态含住院 {@code PENDING_SETTLEMENT}。</p>
      *
      * @param dispenses      展示口径发药
-     * @param inpatientMode  保留入参兼容（主区进/售不使用）
+     * @param inpatientMode  住院药房日结时为 true（收费态含待结算）
      * @return 大类/品规汇总快照；无事实时各 Map 为空
      */
     public PharmacyDailySettlementPurchaseSaleSnapshot buildPurchaseSaleSnapshot(
@@ -91,28 +107,111 @@ public class PharmacyDailySettlementPricingSupport {
         }
         List<MedicationDispenseSlipQueryModel> slipRows = this.toSlipRows(dispenses);
         Map<Long, String> categoryCodeByMedicationId = this.loadCategoryCodeByMedicationId(dispenses);
-        // Pre：批号价单价 × 发药数量；品规按「药品+进售单价」分桶
-        List<PurchaseSaleDetailLineAdapter> detailLines = this.buildDefinitionPricedDetailLines(slipRows);
+        // Pre：账单售价 + 批号进价；品规按「药品+进售单价」分桶
+        List<PurchaseSaleDetailLineAdapter> detailLines =
+            this.buildDefinitionPricedDetailLines(slipRows, inpatientMode);
+        for (PurchaseSaleDetailLineAdapter line : detailLines) {
+            if (line != null && line.getDispenseId() != null) {
+                snapshot.detailLineByDispenseId.put(line.getDispenseId(), line);
+            }
+        }
         this.accumulateProductAndCategoryFromDetailLines(detailLines, categoryCodeByMedicationId, snapshot);
         this.attachProductDisplay(snapshot);
         return snapshot;
     }
 
     /**
-     * 计算挂载发药集合关联 payment 净收入（DD §3.2.1 列表快照）。
+     * 由进/售快照计算药房日结售价合计（各大类/品规售价总额之和）。
      *
-     * <p>关联路径：{@code MedicationDispense.id} → {@code ChargeItem}
-     *（{@code dispense_id} 或 {@code service_id} = dispense.id，且 {@code dispense_table} /
-     * {@code service_table} = {@code med_medication_dispense}）
-     * → {@code PaymentReconciliation.charge_item_ids} 包含 chargeItem.id
-     * → 对命中 payment 去重后累加 signed {@code netAmount}
-     *（正向 {@code tendered_amount − returned_amount}；逆向退费取负，与收款日结预览净额同构）。</p>
+     * <p>与大类主区同口径：品规已结算 2 位金额代数加总后再 {@link MonetaryAmountSupport#scaleSettle}；
+     * 退药行售价为负，轧差后可为负。</p>
+     *
+     * @param snapshot 进/售汇总快照（可与主区大类/品规共用）
+     * @return 售价合计（结算 2 位）；快照为空时 0
+     */
+    public BigDecimal sumSaleAmount(PharmacyDailySettlementPurchaseSaleSnapshot snapshot) {
+        if (snapshot == null || snapshot.productBuckets.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal saleTotal = BigDecimal.ZERO;
+        // Asm：按品规已结算售价加总（与大类 = 品规之和一致）
+        for (ProductPurchaseSaleBucket bucket : snapshot.productBuckets.values()) {
+            if (bucket == null || bucket.getSaleAmount() == null) {
+                continue;
+            }
+            saleTotal = saleTotal.add(bucket.getSaleAmount());
+        }
+        return MonetaryAmountSupport.scaleSettle(saleTotal);
+    }
+
+    /**
+     * 由进/售快照计算药房日结利润：售价合计 − 进价合计。
+     *
+     * <p>与大类主区同口径：品规已结算 2 位金额代数加总后再 {@link MonetaryAmountSupport#scaleSettle}；
+     * 退药行进/售为负，轧差后利润可为负。</p>
+     *
+     * @param snapshot 进/售汇总快照（可与主区大类/品规共用）
+     * @return 日结利润（结算 2 位）；快照为空时 0
+     */
+    public BigDecimal sumPurchaseSaleProfit(PharmacyDailySettlementPurchaseSaleSnapshot snapshot) {
+        if (snapshot == null || snapshot.productBuckets.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal purchaseTotal = BigDecimal.ZERO;
+        BigDecimal saleTotal = BigDecimal.ZERO;
+        // Asm：按品规已结算进/售加总（与大类 = 品规之和一致）
+        for (ProductPurchaseSaleBucket bucket : snapshot.productBuckets.values()) {
+            if (bucket == null) {
+                continue;
+            }
+            if (bucket.getPurchaseAmount() != null) {
+                purchaseTotal = purchaseTotal.add(bucket.getPurchaseAmount());
+            }
+            if (bucket.getSaleAmount() != null) {
+                saleTotal = saleTotal.add(bucket.getSaleAmount());
+            }
+        }
+        return MonetaryAmountSupport.scaleSettle(saleTotal.subtract(purchaseTotal));
+    }
+
+    /**
+     * 按发药实体集合现算售价合计（审批列表/详情展示用）。
+     *
+     * @param dispenses     发药实体
+     * @param inpatientMode 住院时收费态含待结算
+     * @return 售价合计；无发药时 0
+     */
+    public BigDecimal sumSaleAmountFromDispenses(
+        List<MedicationDispense> dispenses,
+        boolean inpatientMode) {
+        PharmacyDailySettlementPurchaseSaleSnapshot snapshot =
+            this.buildPurchaseSaleSnapshot(dispenses, inpatientMode);
+        return this.sumSaleAmount(snapshot);
+    }
+
+    /**
+     * 按发药实体集合现算日结利润（提交勾选行 / 未复用主区快照时）。
+     *
+     * @param dispenses     发药实体
+     * @param inpatientMode 住院时收费态含待结算
+     * @return 售价合计 − 进价合计；无发药时 0
+     */
+    public BigDecimal sumPurchaseSaleProfitFromDispenses(
+        List<MedicationDispense> dispenses,
+        boolean inpatientMode) {
+        PharmacyDailySettlementPurchaseSaleSnapshot snapshot =
+            this.buildPurchaseSaleSnapshot(dispenses, inpatientMode);
+        return this.sumPurchaseSaleProfit(snapshot);
+    }
+
+    /**
+     * 按发药主键集合现算日结利润（提交落头表 {@code total_income}）。
      *
      * @param selectedDispenseIds 本次勾选挂载发药主键
-     * @param inpatientMode       住院药房日结时为 true
-     * @return 挂载集合关联 payment 净收入合计；无账单锚点时 0
+     * @param inpatientMode       住院时收费态含待结算
+     * @return 售价合计 − 进价合计；无勾选时 0
      */
-    public BigDecimal sumMountedDispensePaymentNetIncome(
+    public BigDecimal sumPurchaseSaleProfitByDispenseIds(
         List<Long> selectedDispenseIds,
         boolean inpatientMode) {
         if (selectedDispenseIds == null || selectedDispenseIds.isEmpty()) {
@@ -120,87 +219,81 @@ public class PharmacyDailySettlementPricingSupport {
         }
         List<MedicationDispense> dispenses =
             this.medicationDispenseQueryService.listMedicationDispensesByIds(selectedDispenseIds);
-        if (dispenses.isEmpty()) {
-            return BigDecimal.ZERO;
-        }
-        List<MedicationDispenseSlipQueryModel> slipRows = this.toSlipRows(dispenses);
-        LinkedHashSet<Long> linkedChargeItemIds = this.collectLinkedChargeItemIds(slipRows, inpatientMode);
-        if (linkedChargeItemIds.isEmpty()) {
-            return BigDecimal.ZERO;
-        }
-        LinkedHashSet<Long> encounterIds = new LinkedHashSet<>();
-        for (MedicationDispense dispense : dispenses) {
-            if (dispense != null && dispense.getEncounterId() != null) {
-                encounterIds.add(dispense.getEncounterId());
-            }
-        }
-        LinkedHashMap<Long, PaymentReconciliationQueryModel> paymentsById = new LinkedHashMap<>();
-        LinkedHashMap<Long, PaymentReconciliationQueryModel> matchedPaymentsById = new LinkedHashMap<>();
-        for (Long encounterId : encounterIds) {
-            List<PaymentReconciliationQueryModel> payments =
-                this.paymentReconciliationQueryService.findPaymentsByEncounter(encounterId);
-            for (PaymentReconciliationQueryModel payment : payments) {
-                if (payment == null || payment.getId() == null) {
-                    continue;
-                }
-                paymentsById.put(payment.getId(), payment);
-                if (!this.isSettlementPaymentStatus(payment.getStatusEnum())) {
-                    continue;
-                }
-                if (this.paymentLinksAnyChargeItem(payment.getChargeItemIds(), linkedChargeItemIds)) {
-                    matchedPaymentsById.put(payment.getId(), payment);
-                }
-            }
-        }
-        if (matchedPaymentsById.isEmpty()) {
-            return BigDecimal.ZERO;
-        }
-        BigDecimal total = BigDecimal.ZERO;
-        for (PaymentReconciliationQueryModel payment : matchedPaymentsById.values()) {
-            total = total.add(this.computeSettlementPaymentNetAmount(payment, paymentsById));
-        }
-        return MonetaryAmountSupport.scaleCalc(total);
+        return this.sumPurchaseSaleProfitFromDispenses(dispenses, inpatientMode);
     }
 
     /**
-     * 交账弹窗明细 enrich：按未交账发药装配品规展示与进/售行额（与主区同口径：批号价 × 数量）。
+     * 交账弹窗明细 enrich：按未交账发药装配品规展示与进/售行额（与主区同口径：账单售价 + 批号进价）。
      *
      * @param dispenses     未交账发药实体
-     * @param inpatientMode 保留入参兼容（弹窗进/售不读账单）
+     * @param inpatientMode 住院时收费态含待结算
      * @return dispenseId → enrich；无发药时为空 Map
      */
     public Map<Long, PharmacyDailySettlementHandoverLineEnrichment> buildHandoverLineEnrichments(
         List<MedicationDispense> dispenses,
         boolean inpatientMode) {
+        return this.buildHandoverLineEnrichments(dispenses, inpatientMode, null);
+    }
+
+    /**
+     * 交账弹窗明细 enrich；可复用主区快照中已算行价，避免对未交账子集二次读价。
+     *
+     * @param dispenses     未交账发药实体
+     * @param inpatientMode 住院时收费态含待结算
+     * @param snapshot      主区进/售快照；非空时优先复用其行价
+     * @return dispenseId → enrich
+     */
+    public Map<Long, PharmacyDailySettlementHandoverLineEnrichment> buildHandoverLineEnrichments(
+        List<MedicationDispense> dispenses,
+        boolean inpatientMode,
+        PharmacyDailySettlementPurchaseSaleSnapshot snapshot) {
         Map<Long, PharmacyDailySettlementHandoverLineEnrichment> enrichments = new LinkedHashMap<>();
         if (dispenses == null || dispenses.isEmpty()) {
             return enrichments;
         }
-        List<MedicationDispenseSlipQueryModel> slipRows = this.toSlipRows(dispenses);
-        List<PurchaseSaleDetailLineAdapter> detailLines = this.buildDefinitionPricedDetailLines(slipRows);
         Map<Long, PurchaseSaleDetailLineAdapter> lineByDispenseId = new HashMap<>();
-        for (PurchaseSaleDetailLineAdapter line : detailLines) {
-            if (line != null && line.getDispenseId() != null) {
-                lineByDispenseId.put(line.getDispenseId(), line);
+        if (snapshot != null && !snapshot.detailLineByDispenseId.isEmpty()) {
+            lineByDispenseId.putAll(snapshot.detailLineByDispenseId);
+        } else {
+            List<MedicationDispenseSlipQueryModel> slipRows = this.toSlipRows(dispenses);
+            List<PurchaseSaleDetailLineAdapter> detailLines =
+                this.buildDefinitionPricedDetailLines(slipRows, inpatientMode);
+            for (PurchaseSaleDetailLineAdapter line : detailLines) {
+                if (line != null && line.getDispenseId() != null) {
+                    lineByDispenseId.put(line.getDispenseId(), line);
+                }
             }
         }
-        // Pre：批量装载品规展示（名称/规格/厂家/编码）
-        List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
-        LinkedHashSet<Long> medicationIds = new LinkedHashSet<>();
+        // Pre：批量装载品规展示（名称/规格/厂家/编码）；优先复用主区快照已挂展示
+        Map<Long, ProductPurchaseSaleBucket> productBucketByMedicationId = new HashMap<>();
+        if (snapshot != null) {
+            for (ProductPurchaseSaleBucket bucket : snapshot.productBuckets.values()) {
+                if (bucket != null && bucket.getMedicationId() != null
+                    && !productBucketByMedicationId.containsKey(bucket.getMedicationId())) {
+                    productBucketByMedicationId.put(bucket.getMedicationId(), bucket);
+                }
+            }
+        }
+        LinkedHashSet<Long> missingMedicationIds = new LinkedHashSet<>();
         for (MedicationDispense dispense : dispenses) {
             if (dispense == null || dispense.getMedicationId() == null) {
                 continue;
             }
-            if (!medicationIds.add(dispense.getMedicationId())) {
-                continue;
+            if (!productBucketByMedicationId.containsKey(dispense.getMedicationId())) {
+                missingMedicationIds.add(dispense.getMedicationId());
             }
-            ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
-            lookup.setProductTableName(TableNameConstants.MED_MEDICATION_DEFINITION);
-            lookup.setProductDefinitionId(dispense.getMedicationId());
-            lookups.add(lookup);
         }
-        Map<String, ProductDefinitionDisplayDto> productByKey =
-            this.productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
+        Map<String, ProductDefinitionDisplayDto> productByKey = Map.of();
+        if (!missingMedicationIds.isEmpty()) {
+            List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
+            for (Long medicationId : missingMedicationIds) {
+                ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
+                lookup.setProductTableName(TableNameConstants.MED_MEDICATION_DEFINITION);
+                lookup.setProductDefinitionId(medicationId);
+                lookups.add(lookup);
+            }
+            productByKey = this.productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
+        }
         for (MedicationDispense dispense : dispenses) {
             if (dispense == null || dispense.getId() == null) {
                 continue;
@@ -210,14 +303,22 @@ public class PharmacyDailySettlementPricingSupport {
             enrichment.setUnitCode(dispense.getUnitCode());
             Long medicationId = dispense.getMedicationId();
             if (medicationId != null) {
-                String key = ProductDefinitionKeyUtil.buildCompositeKey(
-                    TableNameConstants.MED_MEDICATION_DEFINITION, medicationId);
-                ProductDefinitionDisplayDto product = productByKey.get(key);
-                if (product != null) {
-                    enrichment.setMedicationName(product.getProductName());
-                    enrichment.setMedicationBusNo(product.getProductBusNo());
-                    enrichment.setSpecification(product.getTotalVolume());
-                    enrichment.setManufacturer(product.getManufacturer());
+                ProductPurchaseSaleBucket bucket = productBucketByMedicationId.get(medicationId);
+                if (bucket != null) {
+                    enrichment.setMedicationName(bucket.getMedicationName());
+                    enrichment.setMedicationBusNo(bucket.getBusNo());
+                    enrichment.setSpecification(bucket.getSpecification());
+                    enrichment.setManufacturer(bucket.getManufacturer());
+                } else {
+                    String key = ProductDefinitionKeyUtil.buildCompositeKey(
+                        TableNameConstants.MED_MEDICATION_DEFINITION, medicationId);
+                    ProductDefinitionDisplayDto product = productByKey.get(key);
+                    if (product != null) {
+                        enrichment.setMedicationName(product.getProductName());
+                        enrichment.setMedicationBusNo(product.getProductBusNo());
+                        enrichment.setSpecification(product.getTotalVolume());
+                        enrichment.setManufacturer(product.getManufacturer());
+                    }
                 }
             }
             PurchaseSaleDetailLineAdapter priced = lineByDispenseId.get(dispense.getId());
@@ -233,29 +334,67 @@ public class PharmacyDailySettlementPricingSupport {
     }
 
     /**
-     * 按批号价装配行进/售（单价 × 发药数量；含调价回放；不读账单 ChargeItem；不回落参考价）。
+     * 按批号包装进价 + 账单售价（缺则批号售价回落）装配明细行。
      *
-     * @param slipRows 发放 slip
+     * <p>进价按 unitCode 分支计行额，可回放；售价有账单不回放，无账单回落批号售价并可回放。</p>
+     *
+     * @param slipRows       发放 slip
+     * @param inpatientMode  住院时含待结算账单
      * @return 明细适配行
      */
     private List<PurchaseSaleDetailLineAdapter> buildDefinitionPricedDetailLines(
-        List<MedicationDispenseSlipQueryModel> slipRows) {
+        List<MedicationDispenseSlipQueryModel> slipRows,
+        boolean inpatientMode) {
         List<PurchaseSaleDetailLineAdapter> detailLines = new ArrayList<>();
         if (slipRows == null || slipRows.isEmpty()) {
             return detailLines;
         }
         LinkedHashSet<Long> medicationIds = new LinkedHashSet<>();
+        LinkedHashSet<Long> dispenseIds = new LinkedHashSet<>();
+        LinkedHashSet<ChargeItemDefinitionLotBatchKey> lotKeys = new LinkedHashSet<>();
         for (MedicationDispenseSlipQueryModel slip : slipRows) {
-            if (slip != null && slip.getMedicationId() != null) {
-                medicationIds.add(slip.getMedicationId());
+            if (slip == null || slip.getMedicationId() == null) {
+                continue;
+            }
+            medicationIds.add(slip.getMedicationId());
+            if (slip.getDispenseId() != null) {
+                dispenseIds.add(slip.getDispenseId());
+            }
+            if (!StringUtils.isEmpty(slip.getLotNumber())) {
+                ChargeItemDefinitionLotBatchKey lotKey = ChargeItemDefinitionLotBatchKey.maybeOf(
+                    TableNameConstants.MED_MEDICATION_DEFINITION,
+                    slip.getMedicationId(),
+                    slip.getLotNumber());
+                if (lotKey != null) {
+                    lotKeys.add(lotKey);
+                }
             }
         }
-        // Pre：一次筛有调价品规并预取历史；无调价者后续只读批号价
+        // Pre：账单售价一次按发放锚点批量加载（与发药报表患者侧同口径）
+        Map<Long, BigDecimal> saleUnitByDispenseId = new HashMap<>();
+        Map<Long, BigDecimal> saleTotalByDispenseId = new HashMap<>();
+        this.mergeChargeSalePricingByDispenseIds(
+            dispenseIds, inpatientMode, saleUnitByDispenseId, saleTotalByDispenseId);
+        // Pre：退药行常无自有 dispense 账单锚点，按原正向发放补售价（漏补则日结少扣退费）
+        this.supplementMissingRefundSalePricing(slipRows, saleUnitByDispenseId, saleTotalByDispenseId);
+        // Pre：一次筛有调价品规并预取历史；无调价者后续只读批号进/售
         HistoricalChargeItemPurchasePriceSupport.LotPriceResolveSession lotSession =
             this.historicalChargeItemPurchasePriceSupport.beginLotPriceSession(
                 TableNameConstants.MED_MEDICATION_DEFINITION, medicationIds);
-        Map<String, BigDecimal> saleUnitCache = new HashMap<>();
+        // Pre：批号进/售一次预热，消灭逐 (品规,批号) 查库
+        this.historicalChargeItemPurchasePriceSupport.warmCurrentLotPrices(lotSession, lotKeys);
+        // Pre：品规展示一次装载 — 判 unitCode 是否包装 + 取 packageUnitRatio
+        List<ProductDefinitionBatchLookup> productLookups = new ArrayList<>();
+        for (Long medicationId : medicationIds) {
+            ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
+            lookup.setProductTableName(TableNameConstants.MED_MEDICATION_DEFINITION);
+            lookup.setProductDefinitionId(medicationId);
+            productLookups.add(lookup);
+        }
+        Map<String, ProductDefinitionDisplayDto> productByCompositeKey =
+            this.productDefinitionDisplayTerminologyAssembler.loadAsMap(productLookups);
         Map<String, BigDecimal> purchaseUnitCache = new HashMap<>();
+        Map<String, BigDecimal> saleUnitCache = new HashMap<>();
         for (MedicationDispenseSlipQueryModel slip : slipRows) {
             if (slip == null || slip.getDispenseId() == null) {
                 continue;
@@ -269,18 +408,66 @@ public class PharmacyDailySettlementPricingSupport {
                 slip.getDispenseEnum(),
                 slip.getDispenseQuantity());
             line.setSignedQuantity(signedQuantity);
-            BigDecimal saleUnit = this.resolveSaleUnitFromLotPrice(slip, saleUnitCache, lotSession);
-            BigDecimal purchaseUnit = this.resolvePurchaseUnitFromLotPrice(slip, purchaseUnitCache, lotSession);
-            line.setSaleUnitPrice(MonetaryAmountSupport.scaleCalc(saleUnit));
-            line.setPurchaseUnitPrice(MonetaryAmountSupport.scaleCalc(purchaseUnit));
-            if (saleUnit != null) {
-                BigDecimal saleAmount = MonetaryAmountSupport.lineTotal(saleUnit, signedQuantity);
-                line.setSaleAmount(saleAmount);
-                line.setUnitPrice(line.getSaleUnitPrice());
-                line.setTotalAmount(saleAmount);
+            BigDecimal saleUnit = saleUnitByDispenseId.get(slip.getDispenseId());
+            BigDecimal saleAmount = this.signedChargeSaleAmount(
+                slip.getDispenseEnum(),
+                saleTotalByDispenseId.get(slip.getDispenseId()));
+            // 批号包装进价（历史回放）；非拆零单价
+            BigDecimal packagePurchaseUnit =
+                this.resolvePurchaseUnitFromLotPrice(slip, purchaseUnitCache, lotSession);
+            ProductDefinitionDisplayDto product = null;
+            if (slip.getMedicationId() != null) {
+                String compositeKey = ProductDefinitionKeyUtil.buildCompositeKey(
+                    TableNameConstants.MED_MEDICATION_DEFINITION, slip.getMedicationId());
+                if (compositeKey != null) {
+                    product = productByCompositeKey.get(compositeKey);
+                }
             }
-            if (purchaseUnit != null) {
-                line.setPurchaseAmount(MonetaryAmountSupport.lineTotal(purchaseUnit, signedQuantity));
+            BigDecimal packageUnitRatio = null;
+            if (product != null) {
+                packageUnitRatio = product.getPackageUnitRatio();
+            }
+            // 展示进价：与发药 unitCode 同阶（包装回包装价；拆零才折展示拆零价）
+            BigDecimal displayPurchaseUnit =
+                this.chargeItemPackageUnitRatioSupport.toAlignedPurchaseDisplayUnitPrice(
+                    packagePurchaseUnit, packageUnitRatio, slip.getUnitCode(), product);
+            // 账单仍缺售价：回落批号 LOT_NUMBER_PRICE（同批号调价回放）+ unitCode 分支行额
+            if (saleAmount == null) {
+                BigDecimal packageSaleUnit =
+                    this.resolveSaleUnitFromLotPrice(slip, saleUnitCache, lotSession);
+                if (packageSaleUnit != null) {
+                    saleUnit = this.chargeItemPackageUnitRatioSupport.toAlignedPurchaseDisplayUnitPrice(
+                        packageSaleUnit, packageUnitRatio, slip.getUnitCode(), product);
+                    saleAmount = this.chargeItemPackageUnitRatioSupport.computePurchaseLineAmount(
+                        packageSaleUnit,
+                        packageUnitRatio,
+                        signedQuantity,
+                        slip.getUnitCode(),
+                        product);
+                }
+            }
+            // 单价可空：禁止 scaleCalc(null)→0 伪装「零售价」
+            if (saleUnit != null) {
+                line.setSaleUnitPrice(MonetaryAmountSupport.scaleCalc(saleUnit));
+            }
+            if (displayPurchaseUnit != null) {
+                line.setPurchaseUnitPrice(MonetaryAmountSupport.scaleCalc(displayPurchaseUnit));
+            }
+            if (saleAmount != null) {
+                line.setSaleAmount(MonetaryAmountSupport.scaleCalc(saleAmount));
+                line.setUnitPrice(line.getSaleUnitPrice());
+                line.setTotalAmount(line.getSaleAmount());
+            }
+            // 行进价：包装单位直接×数量；拆零走满包+零头；禁止包装价÷ratio 再×数量
+            if (packagePurchaseUnit != null) {
+                BigDecimal purchaseAmount =
+                    this.chargeItemPackageUnitRatioSupport.computePurchaseLineAmount(
+                        packagePurchaseUnit,
+                        packageUnitRatio,
+                        signedQuantity,
+                        slip.getUnitCode(),
+                        product);
+                line.setPurchaseAmount(MonetaryAmountSupport.scaleCalc(purchaseAmount));
             }
             detailLines.add(line);
         }
@@ -288,47 +475,161 @@ public class PharmacyDailySettlementPricingSupport {
     }
 
     /**
-     * 批号售价单价：发药批号 {@code LOT_NUMBER_PRICE} + 发药时刻调价回放；无批号/无价则空（禁止 SALE 参考价）。
+     * 按发放主键批量合并账单售价（单价/总额）；住院可含待结算态。
      *
-     * @param slip          发放事实
-     * @param saleUnitCache 缓存
-     * @param lotSession    调价预取会话
-     * @return 售价单价；无法解析时 {@code null}
+     * @param dispenseIds           发放主键
+     * @param inpatientMode         是否含 PENDING_SETTLEMENT
+     * @param saleUnitByDispenseId  输出：dispenseId → 售价单价
+     * @param saleTotalByDispenseId 输出：dispenseId → 售价总额（账单符号，退药行再由调用方取负）
      */
-    private BigDecimal resolveSaleUnitFromLotPrice(
-        MedicationDispenseSlipQueryModel slip,
-        Map<String, BigDecimal> saleUnitCache,
-        HistoricalChargeItemPurchasePriceSupport.LotPriceResolveSession lotSession) {
-        Long medicationId = slip.getMedicationId();
-        if (medicationId == null) {
-            return null;
+    private void mergeChargeSalePricingByDispenseIds(
+        Collection<Long> dispenseIds,
+        boolean inpatientMode,
+        Map<Long, BigDecimal> saleUnitByDispenseId,
+        Map<Long, BigDecimal> saleTotalByDispenseId) {
+        if (dispenseIds == null || dispenseIds.isEmpty()) {
+            return;
         }
-        String lotNumber = slip.getLotNumber();
-        String cacheKey = this.buildUnitCacheKey(medicationId, slip.getDispenseTime(), lotNumber);
-        if (saleUnitCache.containsKey(cacheKey)) {
-            return saleUnitCache.get(cacheKey);
+        List<ChargeItem> chargeRows =
+            this.chargeItemQueryService.listChargeItemsForMedicationDispensePricingByDispenseIds(
+                dispenseIds, inpatientMode);
+        if (chargeRows == null || chargeRows.isEmpty()) {
+            return;
         }
-        BigDecimal unit = null;
-        if (!StringUtils.isEmpty(lotNumber)) {
-            // Pre：仅批号售价；禁止回落 SALE 参考价；无调价不查历史
-            unit = this.historicalChargeItemPurchasePriceSupport.resolveLotSaleUnitPrice(
-                TableNameConstants.MED_MEDICATION_DEFINITION,
-                medicationId,
-                lotNumber,
-                slip.getDispenseTime(),
-                lotSession);
+        Map<Long, BigDecimal> totalByDispense = new HashMap<>();
+        Map<Long, BigDecimal> qtyByDispense = new HashMap<>();
+        for (ChargeItem chargeRow : chargeRows) {
+            if (chargeRow == null || chargeRow.getDispenseId() == null) {
+                continue;
+            }
+            Long dispenseKey = chargeRow.getDispenseId();
+            if (chargeRow.getTotalPrice() != null) {
+                BigDecimal existingTotal = totalByDispense.get(dispenseKey);
+                if (existingTotal == null) {
+                    totalByDispense.put(dispenseKey, chargeRow.getTotalPrice());
+                } else {
+                    totalByDispense.put(dispenseKey, existingTotal.add(chargeRow.getTotalPrice()));
+                }
+            }
+            if (chargeRow.getQuantityValue() != null) {
+                BigDecimal existingQty = qtyByDispense.get(dispenseKey);
+                if (existingQty == null) {
+                    qtyByDispense.put(dispenseKey, chargeRow.getQuantityValue());
+                } else {
+                    qtyByDispense.put(dispenseKey, existingQty.add(chargeRow.getQuantityValue()));
+                }
+            }
         }
-        saleUnitCache.put(cacheKey, unit);
-        return unit;
+        for (Map.Entry<Long, BigDecimal> entry : totalByDispense.entrySet()) {
+            Long dispenseKey = entry.getKey();
+            BigDecimal totalVal = entry.getValue();
+            saleTotalByDispenseId.put(dispenseKey, totalVal);
+            BigDecimal qtyVal = qtyByDispense.get(dispenseKey);
+            if (qtyVal != null && qtyVal.compareTo(BigDecimal.ZERO) > 0) {
+                saleUnitByDispenseId.put(
+                    dispenseKey, MonetaryAmountSupport.unitPriceFromLineTotal(totalVal, qtyVal));
+            }
+        }
     }
 
     /**
-     * 批号进价单价：发药批号 {@code LOT_NUMBER_COST} + 发药时刻调价回放；无批号/无价则空（禁止 PURCHASE 参考价）。
+     * 账单售价按发放类型取符号：退药行总额取绝对值后取负，与数量符号一致。
+     *
+     * @param dispenseEnum 发放类型
+     * @param chargeTotal  账单总额（可空）
+     * @return 带符号售价总额；入参空时 {@code null}
+     */
+    private BigDecimal signedChargeSaleAmount(MedicationDispenseType dispenseEnum, BigDecimal chargeTotal) {
+        if (chargeTotal == null) {
+            return null;
+        }
+        if (MedicationDispenseType.REFUND.equals(dispenseEnum)) {
+            return chargeTotal.abs().negate();
+        }
+        return chargeTotal;
+    }
+
+    /**
+     * 对仍缺售价的退药行，按原正向发放账单补单价/行额（写入映射后由调用方取负）。
+     *
+     * <p>退药 {@code MedicationDispense} 通常不挂自有 ChargeItem；仅按退药 {@code dispense_id}
+     * 读价会得到空售价，大类/品规售价净额漏扣退费。与发退药记录补价同管线。</p>
+     *
+     * @param slipRows              发放 slip
+     * @param saleUnitByDispenseId  输出：dispenseId → 售价单价（可写）
+     * @param saleTotalByDispenseId 输出：dispenseId → 售价总额（可写；退药为正额绝对值，后续取负）
+     */
+    private void supplementMissingRefundSalePricing(
+        List<MedicationDispenseSlipQueryModel> slipRows,
+        Map<Long, BigDecimal> saleUnitByDispenseId,
+        Map<Long, BigDecimal> saleTotalByDispenseId) {
+        if (slipRows == null || slipRows.isEmpty()) {
+            return;
+        }
+        LinkedHashSet<Long> medReqIdsNeedingSupplement = new LinkedHashSet<>();
+        for (MedicationDispenseSlipQueryModel slip : slipRows) {
+            if (slip == null || slip.getDispenseId() == null || slip.getMedReqId() == null) {
+                continue;
+            }
+            if (!this.isRefundSlipRow(slip)) {
+                continue;
+            }
+            // 0 元占位不视为已有售价，须补原正向账单
+            BigDecimal existingSaleTotal = saleTotalByDispenseId.get(slip.getDispenseId());
+            BigDecimal existingSaleUnit = saleUnitByDispenseId.get(slip.getDispenseId());
+            boolean hasUsableSale = false;
+            if (existingSaleUnit != null && existingSaleUnit.compareTo(BigDecimal.ZERO) != 0) {
+                hasUsableSale = true;
+            }
+            if (existingSaleTotal != null && existingSaleTotal.compareTo(BigDecimal.ZERO) != 0) {
+                hasUsableSale = true;
+            }
+            if (hasUsableSale) {
+                continue;
+            }
+            medReqIdsNeedingSupplement.add(slip.getMedReqId());
+        }
+        if (medReqIdsNeedingSupplement.isEmpty()) {
+            return;
+        }
+        // Pre：仅加载缺售价退药行的药嘱（含 refundMedicineId），禁止全窗扫药嘱
+        Map<Long, MedicationRequestListQueryModel> medicationRequestByMedReqId = new HashMap<>();
+        for (MedicationRequestListQueryModel request
+            : this.medicationRequestQueryService.listMedicationRequestListModelsByIds(medReqIdsNeedingSupplement)) {
+            if (request != null && request.getId() != null) {
+                medicationRequestByMedReqId.put(request.getId(), request);
+            }
+        }
+        this.pharmacyDispenseRecordChargePricingAssembler.supplementRefundPricingFromOriginMedicationRequests(
+            slipRows,
+            medicationRequestByMedReqId,
+            saleUnitByDispenseId,
+            saleTotalByDispenseId);
+    }
+
+    /**
+     * 是否退药语义行（{@code dispenseEnum=REFUND} 或 {@code status=REFUNDED}）。
+     *
+     * @param slip 发放 slip
+     * @return 退药行为 true
+     */
+    private boolean isRefundSlipRow(MedicationDispenseSlipQueryModel slip) {
+        if (slip == null) {
+            return false;
+        }
+        if (MedicationDispenseType.REFUND.equals(slip.getDispenseEnum())) {
+            return true;
+        }
+        return DispenseStatus.REFUNDED.equals(slip.getStatusEnum());
+    }
+
+    /**
+     * 批号包装进价单价：发药批号 {@code LOT_NUMBER_COST} + 发药时刻调价回放；无批号/无价则空（禁止 PURCHASE 参考价）。
      *
      * @param slip              发放事实
      * @param purchaseUnitCache 缓存
      * @param lotSession        调价预取会话
-     * @return 进价单价；无法解析时 {@code null}
+     * @return 包装单位进价单价；无法解析时 {@code null}
      */
     private BigDecimal resolvePurchaseUnitFromLotPrice(
         MedicationDispenseSlipQueryModel slip,
@@ -358,6 +659,43 @@ public class PharmacyDailySettlementPricingSupport {
     }
 
     /**
+     * 批号包装售价单价：发药批号 {@code LOT_NUMBER_PRICE} + 发药时刻调价回放；无批号/无价则空（禁止 SALE 参考价）。
+     *
+     * <p>仅账单缺失回落路径调用（药房日结白名单）；有 {@code ChargeItem} 时不以本方法冒充账单实收。</p>
+     *
+     * @param slip          发放事实
+     * @param saleUnitCache 缓存
+     * @param lotSession    调价预取会话
+     * @return 包装单位售价单价；无法解析时 {@code null}
+     */
+    private BigDecimal resolveSaleUnitFromLotPrice(
+        MedicationDispenseSlipQueryModel slip,
+        Map<String, BigDecimal> saleUnitCache,
+        HistoricalChargeItemPurchasePriceSupport.LotPriceResolveSession lotSession) {
+        Long medicationId = slip.getMedicationId();
+        if (medicationId == null) {
+            return null;
+        }
+        String lotNumber = slip.getLotNumber();
+        String cacheKey = this.buildUnitCacheKey(medicationId, slip.getDispenseTime(), lotNumber);
+        if (saleUnitCache.containsKey(cacheKey)) {
+            return saleUnitCache.get(cacheKey);
+        }
+        BigDecimal unit = null;
+        if (!StringUtils.isEmpty(lotNumber)) {
+            // Pre：仅批号售价；禁止回落 SALE；无调价不查历史（与进价同构）
+            unit = this.historicalChargeItemPurchasePriceSupport.resolveLotSaleUnitPrice(
+                TableNameConstants.MED_MEDICATION_DEFINITION,
+                medicationId,
+                lotNumber,
+                slip.getDispenseTime(),
+                lotSession);
+        }
+        saleUnitCache.put(cacheKey, unit);
+        return unit;
+    }
+
+    /**
      * 单价缓存键：品规 + 发药时刻 + 批号。
      *
      * @param medicationId 品规主键
@@ -382,52 +720,6 @@ public class PharmacyDailySettlementPricingSupport {
         return key.toString();
     }
 
-
-    /**
-     * 收集挂载 dispense 关联的 ChargeItem 主键集合。
-     */
-    private LinkedHashSet<Long> collectLinkedChargeItemIds(
-        List<MedicationDispenseSlipQueryModel> slipRows,
-        boolean inpatientMode) {
-        LinkedHashSet<Long> chargeItemIds = new LinkedHashSet<>();
-        Map<Long, List<Long>> dispenseIdsByEncounterId = new HashMap<>();
-        for (MedicationDispenseSlipQueryModel slip : slipRows) {
-            if (slip == null || slip.getDispenseId() == null || slip.getEncounterId() == null) {
-                continue;
-            }
-            dispenseIdsByEncounterId
-                .computeIfAbsent(slip.getEncounterId(), ignored -> new ArrayList<>())
-                .add(slip.getDispenseId());
-        }
-        for (Map.Entry<Long, List<Long>> entry : dispenseIdsByEncounterId.entrySet()) {
-            Long encounterId = entry.getKey();
-            List<Long> dispenseIds = entry.getValue();
-            List<ChargeItem> chargeRows =
-                this.chargeItemQueryService.listChargeItemsForMedicationDispensePricing(encounterId, dispenseIds);
-            this.collectChargeItemIds(chargeRows, chargeItemIds);
-            if (inpatientMode) {
-                List<ChargeItem> pendingRows =
-                    this.chargeItemQueryService.listPendingSettlementChargeItemsForMedicationDispensePricing(
-                        encounterId, dispenseIds);
-                this.collectChargeItemIds(pendingRows, chargeItemIds);
-            }
-        }
-        return chargeItemIds;
-    }
-
-    /**
-     * 从 ChargeItem 列表提取主键。
-     */
-    private void collectChargeItemIds(List<ChargeItem> chargeRows, Set<Long> chargeItemIds) {
-        if (chargeRows == null || chargeRows.isEmpty()) {
-            return;
-        }
-        for (ChargeItem chargeRow : chargeRows) {
-            if (chargeRow != null && chargeRow.getId() != null) {
-                chargeItemIds.add(chargeRow.getId());
-            }
-        }
-    }
 
     /**
      * 按明细行累加品规/大类：品规键 = medicationId + 进价单价 + 售价单价（单价一致才合并）。
@@ -664,112 +956,6 @@ public class PharmacyDailySettlementPricingSupport {
     }
 
     /**
-     * 是否纳入交账 payment 净收入的状态。
-     */
-    private boolean isSettlementPaymentStatus(PaymentStatus statusEnum) {
-        return PaymentStatus.SUCCESS.equals(statusEnum) || PaymentStatus.REFUNDED.equals(statusEnum);
-    }
-
-    /**
-     * payment 快照 charge_item_ids 是否与目标集合有交集。
-     */
-    private boolean paymentLinksAnyChargeItem(String chargeItemIdsSnapshot, Set<Long> targetChargeItemIds) {
-        if (targetChargeItemIds == null || targetChargeItemIds.isEmpty()) {
-            return false;
-        }
-        for (Long chargeItemId : this.parseChargeItemIds(chargeItemIdsSnapshot)) {
-            if (chargeItemId != null && targetChargeItemIds.contains(chargeItemId)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * 解析 payment.charge_item_ids 逗号分隔串。
-     */
-    private List<Long> parseChargeItemIds(String rawChargeItemIds) {
-        if (StringUtils.isEmpty(rawChargeItemIds)) {
-            return List.of();
-        }
-        List<Long> ids = new ArrayList<>();
-        for (String segment : rawChargeItemIds.split(",")) {
-            String trimmed = StringUtils.trimToNull(segment);
-            if (trimmed == null) {
-                continue;
-            }
-            try {
-                ids.add(Long.parseLong(trimmed));
-            } catch (NumberFormatException ignored) {
-                // 跳过非法片段
-            }
-        }
-        return ids;
-    }
-
-    /**
-     * 单条 payment 交账净额（正向 tendered−returned；逆向取负，基数对齐原单 display/tendered）。
-     *
-     * @param payment       命中 payment 读模型
-     * @param paymentsById  同就诊已加载 payment（含 relation 原单）
-     * @return 带符号净额
-     */
-    private BigDecimal computeSettlementPaymentNetAmount(
-        PaymentReconciliationQueryModel payment,
-        Map<Long, PaymentReconciliationQueryModel> paymentsById) {
-        if (payment == null) {
-            return BigDecimal.ZERO;
-        }
-        if (DailySettlementRefundPaymentRules.isRefundPaymentForSettlement(
-            payment.getPaymentEnum(),
-            payment.getRelationId(),
-            payment.getStatusEnum())) {
-            BigDecimal amount = this.resolveReversePreviewAmountBasis(payment, paymentsById);
-            if (amount == null) {
-                amount = BigDecimal.ZERO;
-            }
-            return amount.abs().negate();
-        }
-        BigDecimal tendered = payment.getTenderedAmount();
-        if (tendered == null) {
-            tendered = BigDecimal.ZERO;
-        }
-        BigDecimal returned = payment.getReturnedAmount();
-        if (returned == null) {
-            returned = BigDecimal.ZERO;
-        }
-        return tendered.subtract(returned);
-    }
-
-    /**
-     * 逆向退费净额基数：优先原单 display/tendered，否则回落本单。
-     */
-    private BigDecimal resolveReversePreviewAmountBasis(
-        PaymentReconciliationQueryModel reverse,
-        Map<Long, PaymentReconciliationQueryModel> paymentsById) {
-        if (reverse != null && reverse.getRelationId() != null && paymentsById != null) {
-            PaymentReconciliationQueryModel original = paymentsById.get(reverse.getRelationId());
-            if (original != null) {
-                BigDecimal originalAmount = original.getDisplayAmount();
-                if (originalAmount == null) {
-                    originalAmount = original.getTenderedAmount();
-                }
-                if (originalAmount != null) {
-                    return originalAmount;
-                }
-            }
-        }
-        if (reverse == null) {
-            return null;
-        }
-        BigDecimal amount = reverse.getDisplayAmount();
-        if (amount == null) {
-            amount = reverse.getTenderedAmount();
-        }
-        return amount;
-    }
-
-    /**
      * 向金额列表追加一行（忽略 null）。
      */
     private void addAmount(List<BigDecimal> amounts, BigDecimal amount) {
@@ -833,6 +1019,11 @@ public class PharmacyDailySettlementPricingSupport {
          * 品规汇总桶；键 = medicationId|进价单价|售价单价（单价一致才合并）。
          */
         private final Map<String, ProductPurchaseSaleBucket> productBuckets = new LinkedHashMap<>();
+
+        /**
+         * 行级进/售（供弹窗明细复用，避免二次读价）；键 = dispenseId。
+         */
+        private final Map<Long, PurchaseSaleDetailLineAdapter> detailLineByDispenseId = new HashMap<>();
     }
 
     /** 大类汇总桶（中间态 + 结算结果）。 */

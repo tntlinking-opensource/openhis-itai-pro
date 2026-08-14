@@ -70,7 +70,7 @@ class EinvoiceBossDocumentInitializerServiceTest {
         existing.setTotalAmt(new BigDecimal("9.50"));
 
         when(issueSnapshotContextLoader.loadForInvoice(invoiceId)).thenReturn(snapshot);
-        when(documentRepository.findByInvoiceIdAndIsDeletedFalse(invoiceId)).thenReturn(Optional.of(existing));
+        when(documentRepository.findFirstByInvoiceIdAndIsDeletedFalseOrderByIdAsc(invoiceId)).thenReturn(Optional.of(existing));
         when(payloadMetadataAccess.resolveIssueKind(any())).thenReturn("REG");
         when(payloadMetadataAccess.resolveBusType(any())).thenReturn("06");
         when(properties.getPlatform()).thenReturn(new EinvoiceBossGatewayProperties.Platform());
@@ -104,7 +104,7 @@ class EinvoiceBossDocumentInitializerServiceTest {
         snapshot.setChargeLines(List.of(chargeLine));
 
         when(issueSnapshotContextLoader.loadForInvoice(invoiceId)).thenReturn(snapshot);
-        when(documentRepository.findByInvoiceIdAndIsDeletedFalse(invoiceId)).thenReturn(Optional.empty());
+        when(documentRepository.findFirstByInvoiceIdAndIsDeletedFalseOrderByIdAsc(invoiceId)).thenReturn(Optional.empty());
         when(payloadMetadataAccess.resolveIssueKind(any())).thenReturn("AMB");
         when(payloadMetadataAccess.resolveBusType(any())).thenReturn("02");
         when(properties.getPlatform()).thenReturn(new EinvoiceBossGatewayProperties.Platform());
@@ -148,7 +148,7 @@ class EinvoiceBossDocumentInitializerServiceTest {
         snapshot.setChargeLines(List.of(chargeLine));
 
         when(issueSnapshotContextLoader.loadForInvoice(invoiceId)).thenReturn(snapshot);
-        when(documentRepository.findByInvoiceIdAndIsDeletedFalse(invoiceId)).thenReturn(Optional.empty());
+        when(documentRepository.findFirstByInvoiceIdAndIsDeletedFalseOrderByIdAsc(invoiceId)).thenReturn(Optional.empty());
         when(payloadMetadataAccess.resolveIssueKind(any())).thenReturn("AMB");
         when(payloadMetadataAccess.resolveBusType(any())).thenReturn("02");
         when(properties.getPlatform()).thenReturn(new EinvoiceBossGatewayProperties.Platform());

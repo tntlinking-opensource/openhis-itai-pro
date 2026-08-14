@@ -16,15 +16,19 @@ import com.openhis.health.application.outpatient.financial.dailysettlement.respo
 import com.openhis.health.application.outpatient.financial.dailysettlement.service.OutpatientDailySettlementAppService;
 import com.openhis.health.application.shared.financial.cashiersettlement.CashierSettlementMountedVoucherDto;
 import com.openhis.health.application.shared.option.TerminologyOptionLoader;
+import com.openhis.health.application.finance.cashiersettlementapproval.dto.CashierSettlementApprovalHeaderDto;
 import com.openhis.health.domain.financial.cashiersettlement.queries.model.CashierSettlementHeaderQueryModel;
 import com.openhis.health.domain.medication.medicationdispense.entity.MedicationDispense;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.enums.CashierSettlementType;
+import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -203,6 +207,8 @@ public class CashierSettlementApprovalDetailBodySupport {
                     "当前交账无挂载发药（可能已撤回/驳回清挂载）；大类为零值占位，品规为空。");
                 return;
             }
+            // Asm：有挂载时详情头金额与大类售价总额之和对齐（覆盖头表利润快照的展示值）
+            this.overlayPharmacyHeaderSaleTotal(response, categoryRows);
             response.setDetailBodyRecomputeNote(
                 "药房日结大类/品规按挂载发药现算（对齐" + scopeLabel + "药房日结主区）。");
         } catch (RuntimeException runtimeException) {
@@ -215,5 +221,31 @@ public class CashierSettlementApprovalDetailBodySupport {
             response.setPharmacyProductRows(Collections.emptyList());
             response.setDetailBodyRecomputeNote("药房日结体现算失败，仅展示头表；请稍后重试或核对挂载。");
         }
+    }
+
+    /**
+     * 详情头金额覆盖为各大类售价总额之和（与审批列表药房展示口径一致）。
+     *
+     * @param response     详情响应
+     * @param categoryRows 大类汇总行
+     */
+    private void overlayPharmacyHeaderSaleTotal(
+        LoadCashierSettlementApprovalDetailResponse response,
+        List<PharmacyDailySettlementCategoryRowDto> categoryRows) {
+        CashierSettlementApprovalHeaderDto header = response.getHeader();
+        if (header == null) {
+            return;
+        }
+        List<BigDecimal> saleAmounts = new ArrayList<>();
+        if (categoryRows != null) {
+            // Pre：收集各大类已结算售价
+            for (PharmacyDailySettlementCategoryRowDto row : categoryRows) {
+                if (row == null || row.getSaleAmount() == null) {
+                    continue;
+                }
+                saleAmounts.add(row.getSaleAmount());
+            }
+        }
+        header.setTotalIncome(MonetaryAmountSupport.sumThenSettle(saleAmounts));
     }
 }

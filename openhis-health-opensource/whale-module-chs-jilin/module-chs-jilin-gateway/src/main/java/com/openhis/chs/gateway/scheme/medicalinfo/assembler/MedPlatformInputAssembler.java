@@ -5,23 +5,16 @@
 package com.openhis.chs.gateway.scheme.medicalinfo.assembler;
 
 import static com.openhis.whale.core.application.util.StringUtils.isNotEmpty;
-import com.openhis.chs.gateway.scheme.medicalinfo.model.Med5201Input;
-import com.openhis.chs.gateway.scheme.medicalinfo.model.Med5202Input;
-import com.openhis.chs.gateway.scheme.medicalinfo.model.Med5203Input;
-import com.openhis.chs.gateway.scheme.medicalinfo.model.Med5204Input;
-import com.openhis.chs.gateway.scheme.medicalinfo.model.Med5205Input;
-import com.openhis.chs.gateway.scheme.medicalinfo.model.Med5206Input;
-import com.openhis.chs.gateway.scheme.medicalinfo.model.Med5301Input;
 
 import com.openhis.chs.domain.medicalinfo.command.QueryCum5206Command;
 import com.openhis.chs.domain.medicalinfo.command.QueryDise5202Command;
 import com.openhis.chs.domain.medicalinfo.command.QueryFee5204Command;
 import com.openhis.chs.domain.medicalinfo.command.QueryMdtrt5201Command;
+import com.openhis.chs.domain.medicalinfo.command.QueryOpspApproval5302ACommand;
 import com.openhis.chs.domain.medicalinfo.command.QueryOpspDrug5205Command;
 import com.openhis.chs.domain.medicalinfo.command.QueryOpspFiling5301Command;
 import com.openhis.chs.domain.medicalinfo.command.QuerySetl5203Command;
 import com.openhis.chs.domain.share.enums.MedType;
-import com.openhis.whale.core.application.util.StringUtils;
 import com.openhis.chs.gateway.scheme.medicalinfo.model.Med5201Input;
 import com.openhis.chs.gateway.scheme.medicalinfo.model.Med5202Input;
 import com.openhis.chs.gateway.scheme.medicalinfo.model.Med5203Input;
@@ -29,8 +22,10 @@ import com.openhis.chs.gateway.scheme.medicalinfo.model.Med5204Input;
 import com.openhis.chs.gateway.scheme.medicalinfo.model.Med5205Input;
 import com.openhis.chs.gateway.scheme.medicalinfo.model.Med5206Input;
 import com.openhis.chs.gateway.scheme.medicalinfo.model.Med5301Input;
+import com.openhis.chs.gateway.scheme.medicalinfo.model.Med5302AInput;
+import com.openhis.whale.core.application.util.StringUtils;
 
-/** 5201–5301 平台报文 input.data 组装 */
+/** 5201–5302A 平台报文 input.data 组装 */
 public final class MedPlatformInputAssembler {
 
     private MedPlatformInputAssembler() {
@@ -106,6 +101,16 @@ public final class MedPlatformInputAssembler {
     public static Med5301Input assemble5301(QueryOpspFiling5301Command command) {
         Med5301Input.Med5301Data data = new Med5301Input.Med5301Data().setPsnNo(command.getPsnNo());
         Med5301Input input = new Med5301Input();
+        input.setData(data);
+        return input;
+    }
+
+    public static Med5302AInput assemble5302A(QueryOpspApproval5302ACommand command) {
+        Med5302AInput.Med5302AData data = new Med5302AInput.Med5302AData().setPsnNo(command.getPsnNo());
+        if (isNotEmpty(command.getMedType())) {
+            data.setMedType(command.getMedType().trim());
+        }
+        Med5302AInput input = new Med5302AInput();
         input.setData(data);
         return input;
     }

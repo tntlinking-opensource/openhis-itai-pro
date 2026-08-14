@@ -15,10 +15,12 @@ public enum WiPhase {
     REG_APPROVAL,
     /** 门诊收费 2201→2207。 */
     OP_SETTLE,
-    /** 退费 2208。 */
+    /** 门诊退费 2208。 */
     OP_REVERSE,
-    /** 对账 1320→1322。 */
-    RECON;
+    /** 总额对账 1320（与对账确认拆分，对齐老 HIS）。 */
+    RECON,
+    /** 对账确认 1322（须已结束月份）。 */
+    RECON_CONFIRM;
 
     public String getCode() {
         return name();

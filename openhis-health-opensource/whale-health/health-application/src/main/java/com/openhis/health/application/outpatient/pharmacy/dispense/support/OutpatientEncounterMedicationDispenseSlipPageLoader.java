@@ -190,7 +190,7 @@ public class OutpatientEncounterMedicationDispenseSlipPageLoader {
         } else if (result.getContent() != null && !result.getContent().isEmpty()) {
             Map<Long, String> preparerPractitionerNameByDispenseId =
                 resolvePreparerPractitionerNames(slipPage.getContent());
-            // Pre：划价人=收费人（结算收费明细 performer_id → 医务人员姓名）
+            // Pre：划价人=收费人（结算收费明细 enterer_id → 医务人员姓名）
             Map<Long, String> pricingPractitionerNameByDispenseId =
                 resolvePricingCashierNamesByDispenseId(chargeRowsForSlip);
             encounterMedicationDispenseSlipPrintEnricher.enrichOutpatientPrintFields(
@@ -204,6 +204,8 @@ public class OutpatientEncounterMedicationDispenseSlipPageLoader {
                 query.getEncounterId(), result.getContent());
             // Asm：主档贴码单位/比例（cus_trace_number）回填，供前端待扫个数换算
             this.enrichTraceUnitSnapshotFromMaster(result.getContent());
+            // Asm：发放库房×批号现查剩余数量（发药单笺面「剩余数量」展示）
+            this.enrichRemainingQuantityFromInventory(result.getContent());
         }
         return result;
     }
@@ -675,10 +677,10 @@ public class OutpatientEncounterMedicationDispenseSlipPageLoader {
     }
 
     /**
-     * 解析处方划价人（收费人）姓名：取结算收费明细 {@code performer_id}（BR-OPC-016 与 payment.enterer_id 同源）。
+     * 解析处方划价人（收费人）姓名：取结算收费明细 {@code enterer_id}（BR-OPC-016 与 payment.enterer_id 同源）。
      *
      * @param chargeRows 发药定价收费明细
-     * @return dispenseId → 收费人姓名；未结算或无收款人时不写入
+     * @return dispenseId → 收费人姓名；未结算或无收费人时不写入
      */
     private Map<Long, String> resolvePricingCashierNamesByDispenseId(List<ChargeItem> chargeRows) {
         Map<Long, String> pricingNameByDispenseId = new HashMap<>();
@@ -687,19 +689,19 @@ public class OutpatientEncounterMedicationDispenseSlipPageLoader {
         }
         LinkedHashSet<Long> cashierPractitionerIds = new LinkedHashSet<>();
         for (ChargeItem chargeRow : chargeRows) {
-            if (chargeRow != null && chargeRow.getPerformerId() != null) {
-                cashierPractitionerIds.add(chargeRow.getPerformerId());
+            if (chargeRow != null && chargeRow.getEntererId() != null) {
+                cashierPractitionerIds.add(chargeRow.getEntererId());
             }
         }
         Map<Long, Practitioner> cashierById = loadPractitionersByIds(cashierPractitionerIds);
         for (ChargeItem chargeRow : chargeRows) {
-            if (chargeRow == null || chargeRow.getDispenseId() == null || chargeRow.getPerformerId() == null) {
+            if (chargeRow == null || chargeRow.getDispenseId() == null || chargeRow.getEntererId() == null) {
                 continue;
             }
             if (pricingNameByDispenseId.containsKey(chargeRow.getDispenseId())) {
                 continue;
             }
-            Practitioner cashier = cashierById.get(chargeRow.getPerformerId());
+            Practitioner cashier = cashierById.get(chargeRow.getEntererId());
             if (cashier == null || StringUtils.isEmpty(cashier.getName())) {
                 continue;
             }
@@ -751,9 +753,99 @@ public class OutpatientEncounterMedicationDispenseSlipPageLoader {
     }
 
     /**
+     * 按发放行已锚定的库房×药品×批号现查账面剩余数量并回填 {@code remainingQuantity}。
+     *
+     * <p>与候选 {@code inventoryDetailList} 分列：本方法只认行上 {@code dispenseLocationId}+{@code lotNumber}，
+     * 一次 {@code findAvailableCatalogRowsForOrder} 批量取数后内存切片，禁止按行 N+1。</p>
+     *
+     * @param rows 已装配的发药 slip 行
+     */
+    private void enrichRemainingQuantityFromInventory(List<EncounterMedicationDispenseSlipRowDto> rows) {
+        // Gate：无行则无需查库存
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        LinkedHashSet<Long> medicationIds = new LinkedHashSet<>();
+        LinkedHashSet<Long> locationIds = new LinkedHashSet<>();
+        for (EncounterMedicationDispenseSlipRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            // 库房、药品、批号三者齐全才参与现查；缺任一无法定位账面批
+            if (row.getMedicationId() == null || row.getDispenseLocationId() == null
+                || StringUtils.isEmpty(row.getLotNumber())) {
+                continue;
+            }
+            medicationIds.add(row.getMedicationId());
+            locationIds.add(row.getDispenseLocationId());
+        }
+        // Gate：本页无可定位的库房×批号行
+        if (medicationIds.isEmpty() || locationIds.isEmpty()) {
+            return;
+        }
+        // Pre：多品×多发放库房一次拉可用库存行（正数量/可用品/未过期口径）
+        List<InventoryCatalogAvailabilityRowModel> physicalRows =
+            inventoryItemQueryService.findAvailableCatalogRowsForOrder(
+                TableNameConstants.MED_MEDICATION_DEFINITION,
+                new ArrayList<>(medicationIds),
+                new ArrayList<>(locationIds));
+        Map<String, BigDecimal> remainingByMedicationLocationLot = new HashMap<>();
+        for (InventoryCatalogAvailabilityRowModel physicalRow : physicalRows) {
+            if (physicalRow == null || physicalRow.getItemId() == null || physicalRow.getLocationId() == null) {
+                continue;
+            }
+            if (StringUtils.isEmpty(physicalRow.getLotNumber()) || physicalRow.getQuantity() == null) {
+                continue;
+            }
+            String key = buildMedicationLocationLotKey(
+                physicalRow.getItemId(), physicalRow.getLocationId(), physicalRow.getLotNumber());
+            BigDecimal current = remainingByMedicationLocationLot.get(key);
+            if (current == null) {
+                remainingByMedicationLocationLot.put(key, physicalRow.getQuantity());
+            } else {
+                remainingByMedicationLocationLot.put(key, current.add(physicalRow.getQuantity()));
+            }
+        }
+        // Asm：按行键回填；有库房+批号但无可用账面行时置 0（已耗尽仍需展示剩余）
+        for (EncounterMedicationDispenseSlipRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (row.getMedicationId() == null || row.getDispenseLocationId() == null
+                || StringUtils.isEmpty(row.getLotNumber())) {
+                continue;
+            }
+            String key = buildMedicationLocationLotKey(
+                row.getMedicationId(), row.getDispenseLocationId(), row.getLotNumber());
+            BigDecimal remaining = remainingByMedicationLocationLot.get(key);
+            if (remaining == null) {
+                row.setRemainingQuantity(BigDecimal.ZERO);
+            } else {
+                row.setRemainingQuantity(remaining);
+            }
+        }
+    }
+
+    /**
+     * 组装「药品+库房+批号」内存匹配键（批号 trim，与库存行等值口径一致）。
+     *
+     * @param medicationId 药品定义主键
+     * @param locationId   发放库房主键
+     * @param lotNumber    批号（调用方保证非空）
+     * @return 非空匹配键
+     */
+    private static String buildMedicationLocationLotKey(Long medicationId, Long locationId, String lotNumber) {
+        String lot = "";
+        if (lotNumber != null) {
+            lot = lotNumber.trim();
+        }
+        return medicationId + "|" + locationId + "|" + lot;
+    }
+
+    /**
      * 按发放库房+药品+批号回填主档贴码单位/比例（本库优先，否则全院同批）。
      *
-     * <p>待扫个数换算真源为 {@code cus_trace_number}，禁止用目录比。</p>
+     * <p>有主档时覆盖装配阶段预填的药典 {@code trace_unit_*}；无主档则保留药典回落。</p>
      *
      * @param rows 已装配的发药 slip 行
      */
@@ -788,9 +880,11 @@ public class OutpatientEncounterMedicationDispenseSlipPageLoader {
                 locationId,
                 row.getMedicationId(),
                 lot,
-                (code, ratio) -> {
+                (code, ratio, codeText) -> {
+                    // Asm：主档贴码单位/比例/术语文案（扫码弹窗药品明细展示）
                     target.setTraceUnitCode(code);
                     target.setTraceUnitRatio(ratio);
+                    target.setTraceUnitCodeText(codeText);
                 },
                 target::setLotHasTraceMaster
             ));

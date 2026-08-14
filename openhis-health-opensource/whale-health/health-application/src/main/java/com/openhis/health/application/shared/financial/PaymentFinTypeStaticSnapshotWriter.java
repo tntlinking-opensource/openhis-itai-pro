@@ -14,6 +14,7 @@ import com.openhis.health.domain.financial.paymentreconciliation.service.Payment
 import com.openhis.health.domain.share.constants.DailySettlementSharedConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.PaymentKind;
+import com.openhis.health.infrastructure.integration.financial.PaymentFinTypeStaticSnapshotHook;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.util.StringUtils;
 import lombok.RequiredArgsConstructor;
@@ -32,10 +33,13 @@ import java.util.Map;
  * <p>金额权威为关联 {@code charge_item.total_price} 绝对值之和（日结「总收入」口径）；
  * charge_item 同时提供 fin_type 分类权重。{@code tenderedAmount}/{@code displayAmount} 仍表示
  * 患者现金应付（医保全个账可为 0），不得用作分类快照分摊基数。</p>
+ *
+ * <p>实现 {@link PaymentFinTypeStaticSnapshotHook}，供落账编排同事务同步调用；
+ * 领域事件 {@link PaymentFinTypeStaticSnapshotListener} 仍保留作退费/反结等非 settle 编排路径。</p>
  */
 @Component
 @RequiredArgsConstructor
-public class PaymentFinTypeStaticSnapshotWriter {
+public class PaymentFinTypeStaticSnapshotWriter implements PaymentFinTypeStaticSnapshotHook {
 
     private static final int MONEY_SCALE = 6;
 

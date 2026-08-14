@@ -47,4 +47,16 @@ public class TcmRxHistoryRowDto {
     /** 药名列表。 */
     @Schema(description = "药名列表")
     private List<String> medicationNames = new ArrayList<>();
+
+    /**
+     * 历史方完整方头+明细（供侧栏点击引用；不经当前就诊 list 接口，避免住院可见性门控挡住历史就诊）。
+     */
+    @Schema(description = "历史方完整明细（引用用）")
+    private TcmRxHeaderDto detail;
+
+    /**
+     * 是否来自当前就诊（侧栏展示「本次」标识；含当前就诊已签方后由应用层对照 currentEncounterId 写入）。
+     */
+    @Schema(description = "是否本次就诊")
+    private Boolean currentEncounterFlag;
 }

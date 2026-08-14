@@ -12,6 +12,7 @@ import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQuery
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientRegistrationReportLineQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientRegistrationReportSummaryRow;
+import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.domain.administration.healthcareservice.entity.HealthcareService;
 import com.openhis.health.domain.administration.healthcareservice.service.HealthcareServiceQueryService;
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
@@ -38,7 +39,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 门诊挂号明细报表展示 enrich（号源/科室/医生/费用性质/挂号费；AS-RPT-007 BR-RPT-ORG-004）。
+ * 门诊挂号明细报表展示 enrich（号源/科室/挂号医生/接诊医生/费用性质/挂号费；AS-RPT-007 BR-RPT-ORG-004）。
  *
  * <p>禁止写入 Request/Response 包依赖；金额经 {@link MonetaryAmountSupport} 结算刻度。</p>
  */
@@ -55,10 +56,13 @@ public class OutpatientRegistrationDetailReportEnricher {
     /** 医生姓名批量。 */
     private final PractitionerQueryService practitionerQueryService;
 
+    /** 就诊读侧：活动接诊医生（ADMITTER）批量映射。 */
+    private final EncounterQueryService encounterQueryService;
+
     /** 号源类型名称批量。 */
     private final HealthcareServiceQueryService healthcareServiceQueryService;
 
-    /** 就诊费用性质合同号（优先医保户）。 */
+    /** 账户读侧：就诊优先合同（挂号身份费用性质，与患者卡片同口径）。 */
     private final AccountQueryService accountQueryService;
 
     /** 费用性质合同主数据。 */
@@ -68,9 +72,9 @@ public class OutpatientRegistrationDetailReportEnricher {
     private final ChargeItemQueryService chargeItemQueryService;
 
     /**
-     * 领域汇总行 → 带展示名的 DTO 列表。
+     * 领域汇总行 → 带展示名与净挂号费的 DTO 列表。
      *
-     * @param rows 领域净汇总行
+     * @param rows 领域净汇总行（含计入净额的就诊主键）
      * @return 展示行；入参 null 时空列表
      */
     public List<OutpatientRegistrationDetailSummaryRowDto> enrichSummaryRows(
@@ -83,7 +87,8 @@ public class OutpatientRegistrationDetailReportEnricher {
         LinkedHashSet<Long> organizationIds = new LinkedHashSet<>();
         LinkedHashSet<Long> practitionerIds = new LinkedHashSet<>();
         LinkedHashSet<Long> serviceTypeIds = new LinkedHashSet<>();
-        // 第一遍：收集批量 enrich 主键
+        LinkedHashSet<Long> feeEncounterIds = new LinkedHashSet<>();
+        // 第一遍：收集批量 enrich 主键（含净额就诊，供挂号费）
         for (OutpatientRegistrationReportSummaryRow row : rows) {
             if (row == null) {
                 continue;
@@ -97,12 +102,21 @@ public class OutpatientRegistrationDetailReportEnricher {
             if (row.getServiceTypeId() != null) {
                 serviceTypeIds.add(row.getServiceTypeId());
             }
+            if (row.getContributingEncounterIds() != null) {
+                for (Long encounterId : row.getContributingEncounterIds()) {
+                    if (encounterId != null) {
+                        feeEncounterIds.add(encounterId);
+                    }
+                }
+            }
         }
         Map<Long, String> orgNameById = this.organizationQueryService.mapNamesByIds(organizationIds);
         Map<Long, String> doctorNameById = this.mapPractitionerNames(practitionerIds);
         Map<Long, HealthcareService> serviceById =
             this.healthcareServiceQueryService.loadHealthcareServiceMapByIds(serviceTypeIds);
-        // 第二遍：装配展示名
+        // Pre：号源锚点挂号费（与明细列同口径）
+        Map<Long, BigDecimal> feeByEncounter = this.mapRegistrationFeeByEncounterIds(feeEncounterIds);
+        // 第二遍：装配展示名 + 分桶净挂号费
         for (OutpatientRegistrationReportSummaryRow row : rows) {
             if (row == null) {
                 continue;
@@ -129,9 +143,46 @@ public class OutpatientRegistrationDetailReportEnricher {
                     dto.setServiceTypeName(StringUtils.trimToNull(service.getName()));
                 }
             }
+            dto.setRegistrationFeeAmount(
+                MonetaryAmountSupport.scaleSettle(
+                    this.sumRegistrationFeeForEncounters(row.getContributingEncounterIds(), feeByEncounter)));
             result.add(dto);
         }
         return result;
+    }
+
+    /**
+     * 累加若干就诊的号源挂号费（缺费按 0）。
+     *
+     * @param encounterIds   计入净额的就诊主键
+     * @param feeByEncounter 就诊 → 挂号费
+     * @return 代数和；无就诊时为 {@code null}（出参再经结算刻度）
+     */
+    private BigDecimal sumRegistrationFeeForEncounters(
+        List<Long> encounterIds,
+        Map<Long, BigDecimal> feeByEncounter) {
+        if (encounterIds == null || encounterIds.isEmpty()) {
+            return null;
+        }
+        BigDecimal sum = BigDecimal.ZERO;
+        boolean any = false;
+        for (Long encounterId : encounterIds) {
+            if (encounterId == null) {
+                continue;
+            }
+            any = true;
+            BigDecimal fee = null;
+            if (feeByEncounter != null) {
+                fee = feeByEncounter.get(encounterId);
+            }
+            if (fee != null) {
+                sum = sum.add(fee);
+            }
+        }
+        if (!any) {
+            return null;
+        }
+        return sum;
     }
 
     /**
@@ -173,16 +224,25 @@ public class OutpatientRegistrationDetailReportEnricher {
                 serviceTypeIds.add(line.getServiceTypeId());
             }
         }
+        // Pre：接诊医生（活动 ADMITTER）按就诊批量映射；姓名与挂号医生共用执业者字典
+        Map<Long, Long> admitterIdByEncounter =
+            this.encounterQueryService.mapActiveAdmitterPractitionerIdByEncounterIds(encounterIds);
+        for (Long admitterId : admitterIdByEncounter.values()) {
+            if (admitterId != null) {
+                doctorIds.add(admitterId);
+            }
+        }
         // Pre：患者/科室/医生/号源/费用性质合同/挂号费批量装载（A.9.1）
         Map<Long, String> patientNameById = this.patientQueryService.findPatientNamesByIds(patientIds);
         Map<Long, String> orgNameById = this.organizationQueryService.mapNamesByIds(organizationIds);
         Map<Long, String> doctorNameById = this.mapPractitionerNames(doctorIds);
         Map<Long, HealthcareService> serviceById =
             this.healthcareServiceQueryService.loadHealthcareServiceMapByIds(serviceTypeIds);
+        // Pre：挂号费金额走号源 ChargeItem；费用性质走就诊优先账户（用什么挂号就是什么）
+        Map<Long, BigDecimal> feeByEncounter = this.mapRegistrationFeeByEncounterIds(encounterIds);
         Map<Long, String> contractNoByEncounter =
             this.accountQueryService.mapPreferredContractNoByEncounterIds(encounterIds);
         Map<String, Contract> contractByBusNo = this.loadContractsByBusNos(contractNoByEncounter);
-        Map<Long, BigDecimal> feeByEncounter = this.mapRegistrationFeeByEncounterIds(encounterIds);
 
         // 第二遍：行字段 + BR-RPT-ORG-004 费用性质/医保类型
         for (OutpatientRegistrationReportLineQueryModel line : lines) {
@@ -207,6 +267,14 @@ public class OutpatientRegistrationDetailReportEnricher {
             if (line.getRegistrationDoctorId() != null) {
                 dto.setRegistrationDoctorName(doctorNameById.get(line.getRegistrationDoctorId()));
             }
+            // 接诊医生：未接诊（无活动 ADMITTER）时留空
+            if (line.getEncounterId() != null) {
+                Long admitterId = admitterIdByEncounter.get(line.getEncounterId());
+                dto.setAdmitterDoctorId(admitterId);
+                if (admitterId != null) {
+                    dto.setAdmitterDoctorName(doctorNameById.get(admitterId));
+                }
+            }
             if (line.getServiceTypeId() != null) {
                 HealthcareService service = serviceById.get(line.getServiceTypeId());
                 if (service != null) {
@@ -226,7 +294,7 @@ public class OutpatientRegistrationDetailReportEnricher {
     }
 
     /**
-     * 回填费用性质与医保类型列（优先医保账户合同；BR-RPT-ORG-004）。
+     * 回填费用性质与医保类型列（就诊优先账户：挂号身份，非账单行账户）。
      *
      * @param dto                   明细行
      * @param encounterId           就诊主键
@@ -273,15 +341,22 @@ public class OutpatientRegistrationDetailReportEnricher {
     }
 
     /**
-     * 就诊状态展示：退号统一「退号」文案，其余走枚举 display。
+     * 就诊状态展示：退号 / 未收费取消用窗口文案，其余走枚举 display。
+     *
+     * @param statusEnum 就诊状态码
+     * @return 展示文案；空入参返回 null
      */
     private String resolveStatusDisplay(String statusEnum) {
         if (StringUtils.isEmpty(statusEnum)) {
             return null;
         }
-        // 退号完成：窗口文案统一「退号」
+        // 已收费后退号：统一「退号」
         if (EncounterStatus.CANCELLED.getCode().equals(statusEnum)) {
             return OutpatientRegistrationConstants.CLINIC_REGISTER_STATUS_TEXT_REFUNDED;
+        }
+        // 未收费取消：统一「未收费取消」（库内仍为 ENTERED_IN_ERROR）
+        if (EncounterStatus.ENTERED_IN_ERROR.getCode().equals(statusEnum)) {
+            return OutpatientRegistrationConstants.CLINIC_REGISTER_STATUS_TEXT_ENTERED_IN_ERROR;
         }
         EncounterStatus status = EnumUtil.fromCode(EncounterStatus.class, statusEnum);
         if (status != null) {
@@ -333,7 +408,10 @@ public class OutpatientRegistrationDetailReportEnricher {
     }
 
     /**
-     * 批量汇总各就诊挂号费（{@code service_table = adm_healthcare_service} 行 total_price 代数和）。
+     * 批量汇总各就诊挂号费（号源锚点 {@code service_table = adm_healthcare_service} 行 total_price 代数和）。
+     *
+     * @param encounterIds 就诊主键
+     * @return 就诊 → 金额代数和
      */
     private Map<Long, BigDecimal> mapRegistrationFeeByEncounterIds(LinkedHashSet<Long> encounterIds) {
         Map<Long, BigDecimal> feeByEncounter = new HashMap<>();
@@ -343,27 +421,22 @@ public class OutpatientRegistrationDetailReportEnricher {
         ChargeItemQueryCommand command = new ChargeItemQueryCommand();
         command.setEncounterIds(new ArrayList<>(encounterIds));
         List<ChargeItem> chargeLines = this.chargeItemQueryService.listChargeItemsByEncounterIds(command);
-        if (chargeLines == null) {
+        if (chargeLines == null || chargeLines.isEmpty()) {
             return feeByEncounter;
         }
         String healthcareServiceSlot = TableNameConstants.ADM_HEALTHCARE_SERVICE;
         for (ChargeItem line : chargeLines) {
-            if (line == null || line.getEncounterId() == null) {
+            if (line == null || line.getEncounterId() == null || line.getTotalPrice() == null) {
                 continue;
             }
-            // 仅号源锚点计入挂号费
             if (!healthcareServiceSlot.equals(line.getServiceTable())) {
-                continue;
-            }
-            BigDecimal lineTotal = line.getTotalPrice();
-            if (lineTotal == null) {
                 continue;
             }
             BigDecimal current = feeByEncounter.get(line.getEncounterId());
             if (current == null) {
-                feeByEncounter.put(line.getEncounterId(), lineTotal);
+                feeByEncounter.put(line.getEncounterId(), line.getTotalPrice());
             } else {
-                feeByEncounter.put(line.getEncounterId(), current.add(lineTotal));
+                feeByEncounter.put(line.getEncounterId(), current.add(line.getTotalPrice()));
             }
         }
         return feeByEncounter;

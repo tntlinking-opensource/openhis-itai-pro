@@ -57,6 +57,11 @@ public class RegisterPatientCommand extends BatchCommand<RegisterPatientCommand.
         private String phone;
 
         /**
+         * 地址全文（如身份证读卡户籍地址；省市区拆分可不填）。
+         */
+        private String address;
+
+        /**
          * 临时建档标记。
          */
         private Boolean tempFlag;

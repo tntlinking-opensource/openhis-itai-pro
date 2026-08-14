@@ -163,4 +163,17 @@ public class OutpatientConsumableUsageDetailRowDto implements ConsumableUsageRep
     /** 医保医疗类别展示文案。 */
     @Schema(description = "医疗类别")
     private String medTypeDisplay;
+
+    /**
+     * 执行人（发耗材人）主键。
+     *
+     * <p>患者发放取 {@code DeviceDispense.performer_id}；科室领用取审批人 {@code SupplyRequest.approver_id}。</p>
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "执行人主键")
+    private Long performerId;
+
+    /** 执行人（发耗材人）姓名。 */
+    @Schema(description = "执行人姓名")
+    private String performerName;
 }

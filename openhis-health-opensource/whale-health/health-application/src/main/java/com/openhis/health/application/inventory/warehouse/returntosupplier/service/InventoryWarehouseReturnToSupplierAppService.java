@@ -5,8 +5,12 @@
 package com.openhis.health.application.inventory.warehouse.returntosupplier.service;
 
 import com.openhis.health.application.inventory.warehouse.returntosupplier.dto.LinkableGoodsReceiptListRowDto;
+import com.openhis.health.application.inventory.warehouse.returntosupplier.dto.ReturnableInboundLineDto;
+import com.openhis.health.application.inventory.warehouse.returntosupplier.dto.ReturnToSupplierDetailLineDto;
 import com.openhis.health.application.inventory.warehouse.returntosupplier.dto.ReturnToSupplierLineDto;
 import com.openhis.health.application.inventory.warehouse.returntosupplier.dto.ReturnToSupplierListRowDto;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogEditorHintsDto;
 import com.openhis.health.application.inventory.warehouse.returntosupplier.support.ReturnToSupplierInboundLineHelper;
 import com.openhis.health.application.inventory.warehouse.returntosupplier.support.ReturnToSupplierRemainingTracePrefiller;
 import com.openhis.health.application.inventory.warehouse.returntosupplier.mapper.InventoryWarehouseReturnToSupplierMapper;
@@ -250,7 +254,13 @@ public class InventoryWarehouseReturnToSupplierAppService {
             products = new HashMap<>();
         }
         // Asm：映射详情并增强展示字段
-        return this.returnToSupplierMapper.toGetReturnToSupplierDetailResponse(lines, products);
+        GetReturnToSupplierDetailResponse response =
+            this.returnToSupplierMapper.toGetReturnToSupplierDetailResponse(lines, products);
+        // Asm：历史未落价行按进货比例回补单价/行额（只读，不写库）；槽价锚定落库价
+        this.enrichReturnToSupplierDetailAmountsFromInboundIfMissing(response, lines);
+        this.enrichReturnToSupplierDetailCatalogSlotPrices(response.getLines());
+        this.refreshReturnToSupplierDetailHeaderTotals(response);
+        return response;
     }
 
     /**
@@ -577,6 +587,7 @@ public class InventoryWarehouseReturnToSupplierAppService {
             String resolvedLot = this.resolveLotNumberForInventory(line.getLotNumber());
 
             InventoryMatchKey srcKey = new InventoryMatchKey();
+            srcKey.setSupplierId(line.getSupplierId());
             srcKey.setLotNumber(resolvedLot);
             srcKey.setLocationId(sourceLocationId);
             srcKey.setItemTable(line.getItemTable());
@@ -839,6 +850,8 @@ public class InventoryWarehouseReturnToSupplierAppService {
         // Asm：映射退货预填响应
         GetLinkableGoodsReceiptDetailResponse res = this.returnToSupplierMapper.toGetLinkableGoodsReceiptDetailResponse(
             inboundLines, returnableByKey, returnedByKey, availableByKey, products);
+        // Asm：可退行槽价锚定进货落库价；行合计按可退拆零量比例回算（供前端草稿预览）
+        this.enrichLinkableReturnableLinePricesForPreview(res.getLines());
         // Asm：覆盖追溯码为当前院内剩余（本库优先 / 全院回落；禁止回放进货历史码串 · BR-WHS-RT-008）
         this.returnToSupplierRemainingTracePrefiller.fillRemainingTraceNos(res.getLines(), inboundWarehouseId);
         if (head.getSupplierId() != null) {
@@ -1187,10 +1200,172 @@ public class InventoryWarehouseReturnToSupplierAppService {
     }
 
     /**
+     * IF-WHS-RT-03：详情行槽价锚定供应请求落库单价（BR-PRICE-SRC-001），禁止当前目录价覆盖。
+     *
+     * @param lines 详情明细行
+     */
+    private void enrichReturnToSupplierDetailCatalogSlotPrices(List<ReturnToSupplierDetailLineDto> lines) {
+        if (lines == null || lines.isEmpty()) {
+            return;
+        }
+        for (ReturnToSupplierDetailLineDto dto : lines) {
+            if (dto == null) {
+                continue;
+            }
+            ProductDefinitionCatalogEditorHintsDto cat = dto.getProductCatalog();
+            if (cat == null) {
+                continue;
+            }
+            // —— 历史单据：槽价仅锚 SupplyRequest 持久化行价（BR-PRICE-SRC-001）。——
+            ProductDefinitionCatalogUnitBandsAssembler.enrichWarehouseDetailCatalogFromPersistedSupplyLinePrice(
+                cat, dto.getPrice(), dto.getUnitCode(), null);
+        }
+    }
+
+    /**
+     * IF-WHS-RT-03：历史未落价明细按来源进货行单价/总额比例回补展示（不写库）。
+     *
+     * @param response 详情响应
+     * @param returnLines 退货供应请求明细
+     */
+    private void enrichReturnToSupplierDetailAmountsFromInboundIfMissing(
+        GetReturnToSupplierDetailResponse response,
+        List<SupplyRequestModel> returnLines) {
+        if (response == null || response.getLines() == null || response.getLines().isEmpty()) {
+            return;
+        }
+        if (returnLines == null || returnLines.isEmpty()) {
+            return;
+        }
+        String originalBusNo = response.getOriginalBusNo();
+        if (StringUtils.isEmpty(originalBusNo)) {
+            originalBusNo = returnLines.get(0).getOriginalBusNo();
+        }
+        if (StringUtils.isEmpty(originalBusNo)) {
+            return;
+        }
+        Map<String, SupplyRequestModel> inboundByKey =
+            ReturnToSupplierInboundLineHelper.indexInboundLinesByKey(
+                this.loadInboundLinesByBusNo(originalBusNo.trim()));
+        Map<String, SupplyRequestModel> returnByKey = new HashMap<>();
+        for (SupplyRequestModel returnLine : returnLines) {
+            if (returnLine == null || returnLine.getItemId() == null
+                || StringUtils.isEmpty(returnLine.getItemTable())) {
+                continue;
+            }
+            String key = ReturnToSupplierInboundLineHelper.buildInboundLineKey(
+                returnLine.getItemTable(), returnLine.getItemId(), returnLine.getLotNumber());
+            if (!key.isEmpty()) {
+                returnByKey.put(key, returnLine);
+            }
+        }
+        for (ReturnToSupplierDetailLineDto dto : response.getLines()) {
+            if (dto == null || dto.getItemId() == null || StringUtils.isEmpty(dto.getItemTable())) {
+                continue;
+            }
+            boolean needPrice = dto.getPrice() == null;
+            boolean needTotal = dto.getTotalPrice() == null;
+            if (!needPrice && !needTotal) {
+                // 已有落库价：以快照为准
+                continue;
+            }
+            String lineKey = ReturnToSupplierInboundLineHelper.buildInboundLineKey(
+                dto.getItemTable(), dto.getItemId(), dto.getLotNumber());
+            SupplyRequestModel inboundLine = inboundByKey.get(lineKey);
+            if (inboundLine == null) {
+                continue;
+            }
+            if (needPrice && inboundLine.getPrice() != null) {
+                // —— 单价回补：优先进货落库包装进价（同源批号进价快照）。——
+                dto.setPrice(inboundLine.getPrice());
+            }
+            if (needTotal) {
+                SupplyRequestModel returnLine = returnByKey.get(lineKey);
+                BigDecimal returnQty = null;
+                if (returnLine != null) {
+                    returnQty = returnLine.getItemQuantity();
+                }
+                if (returnQty == null) {
+                    returnQty = dto.getItemQuantity();
+                }
+                BigDecimal inboundQty = inboundLine.getItemQuantity();
+                BigDecimal inboundTotal = inboundLine.getTotalPrice();
+                if (returnQty == null || inboundQty == null || inboundTotal == null
+                    || inboundQty.compareTo(BigDecimal.ZERO) <= 0) {
+                    continue;
+                }
+                // —— 按进货行落库总额比例分摊：退货拆零量 / 进货拆零量 × 进货行总额。——
+                BigDecimal lineAmt = inboundTotal.multiply(returnQty)
+                    .divide(
+                        inboundQty,
+                        ChargeItemAmountScaleConstants.CHARGE_MONETARY_SCALE,
+                        MonetaryAmountSupport.MONETARY_ROUNDING);
+                dto.setTotalPrice(MonetaryAmountSupport.scaleCalc(lineAmt));
+            }
+        }
+    }
+
+    /**
+     * IF-WHS-RT-03：按明细行重算整单合计并双写 {@code totalAmount}/{@code totalPrice}。
+     *
+     * @param response 详情响应
+     */
+    private void refreshReturnToSupplierDetailHeaderTotals(GetReturnToSupplierDetailResponse response) {
+        if (response == null || response.getLines() == null) {
+            return;
+        }
+        BigDecimal totalAmount = BigDecimal.ZERO;
+        for (ReturnToSupplierDetailLineDto line : response.getLines()) {
+            if (line == null || line.getTotalPrice() == null) {
+                continue;
+            }
+            totalAmount = totalAmount.add(line.getTotalPrice());
+        }
+        response.setTotalAmount(totalAmount);
+        response.setTotalPrice(totalAmount);
+    }
+
+    /**
+     * IF-WHS-RT-13：可退预填行槽价锚定进货落库价；行合计按可退量比例回算（草稿预览，权威仍在写价门禁）。
+     *
+     * @param lines 可退进货明细行
+     */
+    private void enrichLinkableReturnableLinePricesForPreview(List<ReturnableInboundLineDto> lines) {
+        if (lines == null || lines.isEmpty()) {
+            return;
+        }
+        for (ReturnableInboundLineDto dto : lines) {
+            if (dto == null) {
+                continue;
+            }
+            ProductDefinitionCatalogEditorHintsDto cat = dto.getProductCatalog();
+            if (cat != null) {
+                // —— 预填草稿：槽价锚进货落库价，避免目录现价污染展示。——
+                ProductDefinitionCatalogUnitBandsAssembler.enrichWarehouseDetailCatalogFromPersistedSupplyLinePrice(
+                    cat, dto.getPrice(), dto.getUnitCode(), null);
+            }
+            BigDecimal returnableQty = dto.getReturnableQuantity();
+            BigDecimal inboundQty = dto.getInboundQuantity();
+            BigDecimal inboundTotal = dto.getTotalPrice();
+            if (returnableQty == null || inboundQty == null || inboundTotal == null
+                || inboundQty.compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            // —— 可退预览行额：可退拆零量 / 进货拆零量 × 进货行总额（与详情历史回补同口径）。——
+            BigDecimal lineAmt = inboundTotal.multiply(returnableQty)
+                .divide(
+                    inboundQty,
+                    ChargeItemAmountScaleConstants.CHARGE_MONETARY_SCALE,
+                    MonetaryAmountSupport.MONETARY_ROUNDING);
+            dto.setTotalPrice(MonetaryAmountSupport.scaleCalc(lineAmt));
+        }
+    }
+
+    /**
      * 创建/修订前：按行键从来源进货单回填包装单价到命令行（BR-PRICE-SRC-001）。
      *
      * <p>领域 {@code SupplyRequestWritePricingSupport#applyReturnToSupplierCommand} 再据此重算
-     * {@code totalPrice}；进货行缺价时由写价门禁回落批号/目录进价。</p>
+     * {@code totalPrice}；进货行缺价时由写价门禁回落批号进价（禁止目录药典价）。</p>
      *
      * @param command 待写领域命令
      */

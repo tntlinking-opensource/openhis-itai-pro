@@ -33,15 +33,23 @@ public class OutpatientFeeDetailEncounterBlockDto {
     @Schema(description = "门诊号")
     private String busNo;
 
-    /** 挂号科室名称。 */
+    /** 挂号科室名称（就诊 Encounter.organization；遗留展示）。 */
     @Schema(description = "挂号科室")
     private String registrationDepartmentName;
 
-    /** 费用性质合同业务号（优先账户 → fin_contract.bus_no）。 */
+    /** 开立科室名称（块内首行账单 requesting_org_id）。 */
+    @Schema(description = "开立科室")
+    private String requestingOrgName;
+
+    /**
+     * 费用性质合同业务号（块级回落：取块内首行账单账户；行级见 {@code lines[].feeNature*}）。
+     */
     @Schema(description = "费用性质合同业务号")
     private String feeNatureContractNo;
 
-    /** 费用性质展示名（合同名称）。 */
+    /**
+     * 费用性质展示名（块级回落；明细列以行级 {@code feeNatureDisplay} 为准）。
+     */
     @Schema(description = "费用性质")
     private String feeNatureDisplay;
 

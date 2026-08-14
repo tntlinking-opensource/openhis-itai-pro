@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -64,6 +65,18 @@ public class GetReturnToSupplierDetailResponse {
      */
     @Schema(description = "采购发票号 invoiceNo")
     private String invoiceNo;
+
+    /**
+     * 整单退货金额合计：明细行 {@code totalPrice} 之和（与列表 {@code totalAmount} 同口径）。
+     */
+    @Schema(description = "整单退货金额合计 totalAmount")
+    private BigDecimal totalAmount;
+
+    /**
+     * 整单退货金额合计（与 {@link #totalAmount} 双写，兼容侧栏/页脚读任一字段）。
+     */
+    @Schema(description = "整单退货金额合计 totalPrice")
+    private BigDecimal totalPrice;
 
     /** 明细行 lines。 */
     @Schema(description = "明细行 lines")

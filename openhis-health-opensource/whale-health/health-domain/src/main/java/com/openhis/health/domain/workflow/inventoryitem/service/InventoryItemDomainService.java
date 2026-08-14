@@ -55,9 +55,9 @@ public class InventoryItemDomainService {
     /**
      * 新建库存项。
      *
-     * @param command 领域命令（批次内仅一条明细：物品、四元组定位、数量等）
+     * @param command 领域命令（批次内仅一条明细：物品、五元组定位、数量等）
      * @return 已持久化的库存项
-     * @throws BusinessException 批次条数不为 1、同四元组已存在或不变式失败时
+     * @throws BusinessException 批次条数不为 1、同五元组已存在或不变式失败时
      */
     public InventoryItem createInventoryItem(CreateInventoryItemCommand command) {
         List<CreateInventoryItemCommand.CreateInventoryItemItemCommand> items = command.resolveItems();
@@ -67,9 +67,9 @@ public class InventoryItemDomainService {
         }
         CreateInventoryItemCommand.CreateInventoryItemItemCommand item = items.get(0);
 
-        if (this.existsNonDeletedInventoryByQuadruple(
-            item.getLotNumber(), item.getLocationId(), item.getItemTable(), item.getItemId())) {
-            throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "四元组已存在匹配库存项，禁止重复新建");
+        if (this.existsNonDeletedInventoryByQuintuple(
+            item.getSupplierId(), item.getLotNumber(), item.getLocationId(), item.getItemTable(), item.getItemId())) {
+            throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "五元组已存在匹配库存项，禁止重复新建");
         }
 
         InventoryItem entity = new InventoryItem();
@@ -584,21 +584,30 @@ public class InventoryItemDomainService {
     }
 
     /**
-     * 新建前：同四元组是否已有未逻辑删除的占用行（与读侧 {@code findFirstIdByInventoryMatchKey} 四元组口径一致）。
+     * 新建前：同五元组是否已有未逻辑删除的占用行（与读侧 {@code findFirstIdByInventoryMatchKey} 五元组口径一致）。
+     *
+     * @param supplierId 供应商；空则无法判定五元组占用，视为不存在（由实体 assertCreatable 拦供应商必填）
+     * @param lotNumber  批号
+     * @param locationId 库位
+     * @param itemTable  物品表
+     * @param itemId     物品主键
+     * @return 已存在未删占用行时为 true
      */
-    private boolean existsNonDeletedInventoryByQuadruple(String lotNumber, Long locationId, String itemTable, Long itemId) {
-        if (locationId == null || itemId == null || StringUtils.isEmpty(itemTable)) {
+    private boolean existsNonDeletedInventoryByQuintuple(Long supplierId, String lotNumber, Long locationId,
+        String itemTable, Long itemId) {
+        if (supplierId == null || locationId == null || itemId == null || StringUtils.isEmpty(itemTable)) {
             return false;
         }
         String lot;
         if (lotNumber == null) {
-            // 无批号与空串批号在仓储四元组中等价。
+            // 无批号与空串批号在仓储批号列中等价。
             lot = "";
         } else {
             lot = lotNumber;
         }
-        List<InventoryItem> rows = inventoryItemRepository.findByLotNumberAndLocationIdAndItemTableAndItemIdOrderByIdAsc(
-            lot, locationId, itemTable.trim(), itemId);
+        List<InventoryItem> rows =
+            inventoryItemRepository.findBySupplierIdAndLotNumberAndLocationIdAndItemTableAndItemIdOrderByIdAsc(
+                supplierId, lot, locationId, itemTable.trim(), itemId);
         for (InventoryItem row : rows) {
             if (row != null && !Boolean.TRUE.equals(row.getIsDeleted())) {
                 return true;

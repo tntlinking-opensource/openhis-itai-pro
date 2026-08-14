@@ -260,6 +260,58 @@ public class EncounterDomainService {
     }
 
     /**
+     * 门诊取消接诊：在诊/暂离/完诊回退为已挂号，收口活动接诊医生，供窗口退号前由医生明示同意。
+     *
+     * <p>与账单门禁无关；持久化后发布 {@link OutpatientReceptionCancelledEvent}。</p>
+     *
+     * @param command 取消接诊命令
+     */
+    public void cancelOutpatientReception(CancelOutpatientReceptionCommand command) {
+        List<CancelOutpatientReceptionCommand.CancelOutpatientReceptionItemCommand> items = command.resolveItems();
+        // 前置校验/加载：按命令项批量装载就诊，避免循环内单条查库。
+        Map<Long, Encounter> encounterMap = this.loadEncounterMap(
+            CommandBatchUtil.extractIds(items, CancelOutpatientReceptionCommand.CancelOutpatientReceptionItemCommand::getEncounterId));
+        List<Encounter> toSave = new ArrayList<>();
+        List<EncounterParticipant> participantUpserts = new ArrayList<>();
+        for (CancelOutpatientReceptionCommand.CancelOutpatientReceptionItemCommand item : items) {
+            Encounter encounter = this.requireEncounter(encounterMap, item.getEncounterId());
+            LocalDateTime cancelledAt;
+            if (item.getCancelledAt() == null) {
+                cancelledAt = LocalDateTime.now();
+                // 回填命令项，保证后续事件发布时间与参与者收口时刻一致。
+                item.setCancelledAt(cancelledAt);
+            } else {
+                cancelledAt = item.getCancelledAt();
+            }
+            // 状态迁移：在诊/暂离/完诊 → 已挂号，清空接诊与完诊时刻。
+            encounter.cancelOutpatientReception();
+            toSave.add(encounter);
+            // 同角色只能有一个活动参与者：取消接诊时收口全部活动 ADMITTER。
+            List<EncounterParticipant> activeDoctors = participantRepository
+                .findAllByEncounterIdAndRoleCodeAndStatusEnum(
+                    encounter.getId(), EncounterConstants.ROLE_ADMITTER, EncounterActivityStatus.ACTIVE.getCode());
+            for (EncounterParticipant old : activeDoctors) {
+                old.markCompleted(cancelledAt);
+                participantUpserts.add(old);
+            }
+        }
+        // 持久化：就诊主档先于参与者与事件。
+        encounterRepository.saveAll(toSave);
+        if (!participantUpserts.isEmpty()) {
+            participantRepository.saveAll(participantUpserts);
+        }
+        // 发布事件：载荷带取消后状态码，供医生站队列从在诊/完诊回到待诊。
+        for (CancelOutpatientReceptionCommand.CancelOutpatientReceptionItemCommand item : items) {
+            Encounter encounter = this.requireEncounter(encounterMap, item.getEncounterId());
+            OutpatientReceptionCancelledEvent cancelledEvent =
+                new OutpatientReceptionCancelledEvent(
+                    encounter.getId(), encounter.getPatientId(), item.getCancelledAt());
+            cancelledEvent.setStatusEnum(encounter.getStatusEnum());
+            domainEventPublisher.publish(cancelledEvent);
+        }
+    }
+
+    /**
      * 门诊暂离。
      *
      * @param command 命令

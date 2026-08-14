@@ -218,8 +218,6 @@ openhis:
       enabled: true
     peis:
       enabled: true
-    crb:
-      enabled: true
     einvoice-boss:
       enabled: true
     unionpay-bpc:

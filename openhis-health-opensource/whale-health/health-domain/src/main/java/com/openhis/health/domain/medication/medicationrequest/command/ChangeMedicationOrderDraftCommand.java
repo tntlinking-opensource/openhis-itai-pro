@@ -29,6 +29,10 @@ public class ChangeMedicationOrderDraftCommand {
     private String methodCode;
     /** 频次编码。 */
     private String rateCode;
+    /**
+     * 输液滴速编码（术语 {@code speed_code}）；非空时更新（含空串清空）。
+     */
+    private String speedCode;
     /** 单次剂量；非空时更新。 */
     private BigDecimal dose;
     /** 剂量单位编码；非空时更新。 */

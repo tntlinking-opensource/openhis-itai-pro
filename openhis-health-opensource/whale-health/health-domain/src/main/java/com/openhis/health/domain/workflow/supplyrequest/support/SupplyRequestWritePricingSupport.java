@@ -33,8 +33,10 @@ import java.util.List;
  * <p>由 {@link com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestDomainService} 在持久化前调用，
  * 防止应用层绕过 {@code SupplyRequestPricedWriteOrchestrator} 直写前端价格。</p>
  *
- * <p><strong>订货 / 进货</strong>：接受协商单价，行额按拆零数量 + 包装价套 BR-INV-DTL-007；
- * <strong>其它单据</strong>：单价从批号成本/目录进价解析（每包装）后同公式重算行金额。</p>
+ * <p><strong>订货 / 进货 / 科室采购申请</strong>：接受协商单价（进货选品可用目录 {@code PURCHASE} 作参考默认值），
+ * 行额按拆零数量 + 包装价套 BR-INV-DTL-007。
+ * <strong>请领 / 出库 / 调拨 / 退库 / 退供应商 / 盘点 / 损益 / 科室发退药</strong>：单价必须存在
+ * {@code LOT_NUMBER_COST}（每包装），缺失直接拒绝落库；目录药典价禁止参与业务流转金额。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -95,7 +97,7 @@ public class SupplyRequestWritePricingSupport {
     }
 
     /**
-     * 出库单：批号成本/目录进价权威单价。
+     * 出库单：强制批号进价（{@code LOT_NUMBER_COST}）。
      *
      * @param command 领域写命令
      */
@@ -107,7 +109,7 @@ public class SupplyRequestWritePricingSupport {
     }
 
     /**
-     * 调拨/调出：同出库口径。
+     * 调拨/调出：强制批号进价（同出库）。
      *
      * @param command 领域写命令
      */
@@ -119,7 +121,7 @@ public class SupplyRequestWritePricingSupport {
             if (item == null) {
                 continue;
             }
-            BigDecimal unit = resolveLotOrCatalogUnitPrice(
+            BigDecimal unit = requireLotNumberCostUnitPrice(
                 item.getItemTable(), item.getItemId(), item.getLotNumber());
             applyAuthoritativeUnitAndLineTotal(
                 item.getItemTable(),
@@ -133,9 +135,14 @@ public class SupplyRequestWritePricingSupport {
     }
 
     /**
-     * 请领单：目录进价权威单价。
+     * 请领单：强制批号进价（{@code LOT_NUMBER_COST}），禁止目录 {@code PURCHASE} 回落。
+     *
+     * <p>药房/科室请领均为批号级明细；无批号或无批号成本时直接抛错，避免参考价污染业务金额。
+     * 写回使用显式 {@code setPrice}/{@code setTotalPrice}（不用 method-ref），并在目录价与批号价不一致时
+     * 拒绝「落库单价等于目录价」的污染结果（防止旧 class / 错误回落静默落库）。</p>
      *
      * @param command 领域写命令
+     * @throws BusinessException 批号空白、无 {@code LOT_NUMBER_COST}、或单价疑似目录价污染
      */
     public void applyRequisitionCommand(CreateRequisitionCommand command) {
         if (command == null) {
@@ -145,20 +152,73 @@ public class SupplyRequestWritePricingSupport {
             if (item == null) {
                 continue;
             }
-            BigDecimal unit = resolveCatalogPurchaseUnitPrice(item.getItemTable(), item.getItemId());
-            applyAuthoritativeUnitAndLineTotal(
+            // —— 请领金额只认批号成本：无 LOT_NUMBER_COST 拒绝落库（目录 PURCHASE 仅参考，不参与流转）。——
+            BigDecimal lotCostUnit = requireLotNumberCostUnitPrice(
+                item.getItemTable(), item.getItemId(), item.getLotNumber());
+            BigDecimal scaledUnit = MonetaryAmountSupport.scaleCalc(requireResolvableUnitPrice(lotCostUnit));
+            BigDecimal lineTotal = this.warehouseLineAmountSupport.computeWarehouseSplitLineTotal(
                 item.getItemTable(),
                 item.getItemId(),
-                unit,
+                null,
                 item.getItemQuantity(),
-                item::setPrice,
-                item::setTotalPrice
+                scaledUnit
             );
+            // —— 覆盖前端/目录参考价：显式写回，避免请求体单价残留。——
+            item.setPrice(scaledUnit);
+            item.setTotalPrice(lineTotal);
+            if (item.getPrice() == null || item.getTotalPrice() == null) {
+                throw new BusinessException(
+                    ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
+                    "请领行批号进价重算失败，禁止落库：批号=" + item.getLotNumber());
+            }
+            // —— 卫兵：批号价与目录价不一致时，落库单价不得等于目录价（拦截旧逻辑/错误回落）。——
+            assertRequisitionPriceNotCatalogPollution(
+                item.getItemTable(), item.getItemId(), item.getLotNumber(), lotCostUnit, item.getPrice());
         }
     }
 
     /**
-     * 科室发药：批号成本/进价权威单价。
+     * 请领写侧卫兵：当目录 {@code PURCHASE} 与批号 {@code LOT_NUMBER_COST} 数值不同时，
+     * 禁止落库单价等于目录价（典型故障：旧字节码仍走目录权威价）。
+     *
+     * @param itemTable   品项表
+     * @param itemId      品项 id
+     * @param lotNumber   批号（仅用于异常文案）
+     * @param lotCostUnit 已解析的批号进价
+     * @param savedPrice  即将落库的行单价
+     * @throws BusinessException 疑似目录价污染
+     */
+    private void assertRequisitionPriceNotCatalogPollution(
+        String itemTable,
+        Long itemId,
+        String lotNumber,
+        BigDecimal lotCostUnit,
+        BigDecimal savedPrice
+    ) {
+        BigDecimal catalogPurchase = chargeItemDefinitionQueryService.resolveFirstPurchasePriceValue(
+            itemTable, itemId);
+        if (catalogPurchase == null || savedPrice == null || lotCostUnit == null) {
+            return;
+        }
+        BigDecimal scaledCatalog = MonetaryAmountSupport.scaleCalc(catalogPurchase);
+        BigDecimal scaledLot = MonetaryAmountSupport.scaleCalc(lotCostUnit);
+        if (scaledLot.compareTo(scaledCatalog) == 0) {
+            return;
+        }
+        if (savedPrice.compareTo(scaledCatalog) == 0) {
+            throw new BusinessException(
+                ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
+                "请领行单价疑似目录价污染，禁止落库：批号="
+                    + (lotNumber == null ? "" : lotNumber.trim())
+                    + "，批号进价="
+                    + scaledLot
+                    + "，目录价="
+                    + scaledCatalog);
+        }
+    }
+
+    /**
+     * 科室发药：强制批号进价。
      *
      * @param command 领域写命令
      */
@@ -170,7 +230,7 @@ public class SupplyRequestWritePricingSupport {
             if (item == null) {
                 continue;
             }
-            BigDecimal unit = resolveLotOrCatalogUnitPrice(
+            BigDecimal unit = requireLotNumberCostUnitPrice(
                 item.getItemTable(), item.getItemId(), item.getLotNumber());
             applyAuthoritativeUnitAndLineTotal(
                 item.getItemTable(),
@@ -184,7 +244,7 @@ public class SupplyRequestWritePricingSupport {
     }
 
     /**
-     * 科室退药：批号成本/进价权威单价。
+     * 科室退药：强制批号进价。
      *
      * @param command 领域写命令
      */
@@ -196,7 +256,7 @@ public class SupplyRequestWritePricingSupport {
             if (item == null) {
                 continue;
             }
-            BigDecimal unit = resolveLotOrCatalogUnitPrice(
+            BigDecimal unit = requireLotNumberCostUnitPrice(
                 item.getItemTable(), item.getItemId(), item.getLotNumber());
             applyAuthoritativeUnitAndLineTotal(
                 item.getItemTable(),
@@ -210,7 +270,7 @@ public class SupplyRequestWritePricingSupport {
     }
 
     /**
-     * 盘点：实盘与盈亏金额按权威单价重算。
+     * 盘点：实盘与盈亏金额按批号进价重算。
      *
      * @param command 领域写命令
      */
@@ -222,14 +282,14 @@ public class SupplyRequestWritePricingSupport {
             if (item == null) {
                 continue;
             }
-            BigDecimal unit = resolveLotOrCatalogUnitPrice(
+            BigDecimal unit = requireLotNumberCostUnitPrice(
                 item.getItemTable(), item.getItemId(), item.getLotNumber());
             applyAuthoritativeStocktakeLineAmounts(item, unit);
         }
     }
 
     /**
-     * 退库单：批号成本/进价权威单价（含编排壳单复制行）。
+     * 退库单：强制批号进价（含编排壳单复制行）。
      *
      * @param command 领域写命令
      */
@@ -241,7 +301,7 @@ public class SupplyRequestWritePricingSupport {
             if (item == null) {
                 continue;
             }
-            BigDecimal unit = resolveLotOrCatalogUnitPrice(
+            BigDecimal unit = requireLotNumberCostUnitPrice(
                 item.getItemTable(), item.getItemId(), item.getLotNumber());
             applyAuthoritativeUnitAndLineTotal(
                 item.getItemTable(),
@@ -255,7 +315,7 @@ public class SupplyRequestWritePricingSupport {
     }
 
     /**
-     * 药库退供应商：优先沿用命令行已带的进货落库单价（BR-PRICE-SRC-001），缺省再解析批号/目录进价。
+     * 药库退供应商：优先沿用命令行已带的进货落库单价；缺省强制批号进价（禁止目录药典价）。
      *
      * @param command 领域写命令
      */
@@ -269,8 +329,8 @@ public class SupplyRequestWritePricingSupport {
             }
             BigDecimal unit = item.getPrice();
             if (unit == null) {
-                // 应用层未从进货行回填单价时，回落批号/目录权威进价（与退库同构）
-                unit = resolveLotOrCatalogUnitPrice(
+                // 应用层未从进货行回填单价时，强制批号进价（禁止目录 PURCHASE）
+                unit = requireLotNumberCostUnitPrice(
                     item.getItemTable(), item.getItemId(), item.getLotNumber());
             }
             applyAuthoritativeUnitAndLineTotal(
@@ -285,7 +345,7 @@ public class SupplyRequestWritePricingSupport {
     }
 
     /**
-     * 损益：同盘点口径。
+     * 损益：同盘点口径（强制批号进价）。
      *
      * @param command 领域写命令
      */
@@ -297,7 +357,7 @@ public class SupplyRequestWritePricingSupport {
             if (item == null) {
                 continue;
             }
-            BigDecimal unit = resolveLotOrCatalogUnitPrice(
+            BigDecimal unit = requireLotNumberCostUnitPrice(
                 item.getItemTable(), item.getItemId(), item.getLotNumber());
             applyAuthoritativeStocktakeLineAmounts(item, unit);
         }
@@ -369,7 +429,7 @@ public class SupplyRequestWritePricingSupport {
             if (item == null) {
                 continue;
             }
-            BigDecimal unit = resolveLotOrCatalogUnitPrice(
+            BigDecimal unit = requireLotNumberCostUnitPrice(
                 item.getItemTable(), item.getItemId(), item.getLotNumber());
             applyAuthoritativeUnitAndLineTotal(
                 item.getItemTable(),
@@ -482,35 +542,30 @@ public class SupplyRequestWritePricingSupport {
     }
 
     /**
-     * 批号成本优先，缺失则回落目录进价。
+     * 库房流转写侧：解析批号成本；批号空白或无 {@code LOT_NUMBER_COST} 时抛错（禁止目录药典价）。
      *
      * @param itemTable 品项表
      * @param itemId    品项 id
      * @param lotNumber 批号
-     * @return 单价；皆不可解析则 null
+     * @return 非空批号进价（每包装）
+     * @throws BusinessException 无法解析批号成本
      */
-    private BigDecimal resolveLotOrCatalogUnitPrice(String itemTable, Long itemId, String lotNumber) {
-        if (StringUtils.isNotEmpty(itemTable) && itemId != null && StringUtils.isNotEmpty(lotNumber)) {
-            BigDecimal lotCost = chargeItemDefinitionQueryService.resolveFirstLotNumberCostPriceValue(
-                itemTable.trim(), itemId, lotNumber.trim());
-            if (lotCost != null) {
-                return lotCost;
-            }
-        }
-        return resolveCatalogPurchaseUnitPrice(itemTable, itemId);
-    }
-
-    /**
-     * 目录首条进价（PurchasePrice）。
-     *
-     * @param itemTable 品项表
-     * @param itemId    品项 id
-     * @return 进价；参数不全则 null
-     */
-    private BigDecimal resolveCatalogPurchaseUnitPrice(String itemTable, Long itemId) {
+    private BigDecimal requireLotNumberCostUnitPrice(String itemTable, Long itemId, String lotNumber) {
         if (StringUtils.isEmpty(itemTable) || itemId == null) {
-            return null;
+            throw new BusinessException(
+                ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "明细缺少品项，无法解析批号进价");
         }
-        return chargeItemDefinitionQueryService.resolveFirstPurchasePriceValue(itemTable.trim(), itemId);
+        if (StringUtils.isEmpty(lotNumber)) {
+            throw new BusinessException(
+                ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "明细缺少批号，无法解析批号进价");
+        }
+        BigDecimal lotCost = chargeItemDefinitionQueryService.resolveFirstLotNumberCostPriceValue(
+            itemTable.trim(), itemId, lotNumber.trim());
+        if (lotCost == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
+                "未找到批号进价（LOT_NUMBER_COST），禁止落库：批号=" + lotNumber.trim());
+        }
+        return lotCost;
     }
 }

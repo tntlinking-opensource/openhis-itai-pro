@@ -66,18 +66,18 @@ public class NurseStationCostDetailLineDto {
     private BigDecimal totalPrice;
 
     /**
-     * 逻辑业务时间（划价/滚费 = 账单 occurrence；医嘱执行 = Procedure.occurrence_time）。
-     * <p>日期过滤与倒序锚本字段；页面「业务时间」列优先读 {@link #displayDateTime}。</p>
+     * 客户可见业务时间（进窗 / 排序 / 列同源）：有 Procedure = recorded_time；
+     * 护士划价耗材 = 发放时刻；滚费 = occurrence。
      */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
-    @Schema(description = "逻辑业务时间（occurrence）")
+    @Schema(description = "客户可见业务时间（recorded / 发放 / 滚费 occurrence）")
     private LocalDateTime businessDateTime;
 
     /**
-     * 页面展示时间（医嘱执行 = Procedure.recorded_time；划价/滚费 = 同 businessDateTime）。
+     * 页面展示时间（与 {@link #businessDateTime} 同源；兼容前端优先读本字段）。
      */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
-    @Schema(description = "展示时间（执行/划价事实时刻）")
+    @Schema(description = "展示时间（与业务时间同源）")
     private LocalDateTime displayDateTime;
 
     /** 费用状态 code。 */
@@ -107,4 +107,16 @@ public class NurseStationCostDetailLineDto {
     /** 费用大类块 code：MEDICATION/SERVICE/DEVICE。 */
     @Schema(description = "费用大类块 code")
     private String expenseBlockCode;
+
+    /**
+     * 产品实际分类 code（与汇总行同源；费用明细单按分类分组用）。
+     */
+    @Schema(description = "产品实际分类 code")
+    private String categoryCode;
+
+    /**
+     * 产品实际分类展示名（如西药/中药/检验；无分类时前端回落费用大类）。
+     */
+    @Schema(description = "产品实际分类展示名")
+    private String categoryDisplay;
 }

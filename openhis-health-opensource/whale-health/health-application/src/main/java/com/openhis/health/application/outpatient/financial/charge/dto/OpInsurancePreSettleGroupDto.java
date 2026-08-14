@@ -53,8 +53,8 @@ public class OpInsurancePreSettleGroupDto {
     /** 医疗费总额。 */
     @Schema(description = "医疗费总额")
     private BigDecimal medfeeSumamt;
-    /** 统筹支付金额。 */
-    @Schema(description = "统筹支付")
+    /** 基金支付总额（fund_pay_sumamt；含统筹及其他基金，不等于单列统筹）。 */
+    @Schema(description = "基金支付总额")
     private BigDecimal fundPaySumamt;
     /** 个人账户支付金额。 */
     @Schema(description = "个账支付")

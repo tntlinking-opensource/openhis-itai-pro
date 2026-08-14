@@ -136,6 +136,17 @@ public interface SupplyRequestRepository extends JpaRepository<SupplyRequest, Lo
         Long purposeLocationId, Collection<String> typeEnums, Collection<String> statusEnums);
 
     /**
+     * 同库首条非 OPENING、指定状态集合的未删供应行（期初业务封锁诊断用）。
+     *
+     * @param purposeLocationId 目的库房
+     * @param typeEnums         排除的 OPENING 类型集合（NotIn）
+     * @param statusEnums       已提交及以上状态集合
+     * @return 命中行；无则 empty
+     */
+    Optional<SupplyRequest> findFirstByPurposeLocationIdAndTypeEnumNotInAndStatusEnumInAndIsDeletedFalseOrderByIdAsc(
+        Long purposeLocationId, Collection<String> typeEnums, Collection<String> statusEnums);
+
+    /**
      * 同库是否存在指定类型与状态的未删供应单（审核中闸门等）。
      *
      * @param purposeLocationId 目的库房

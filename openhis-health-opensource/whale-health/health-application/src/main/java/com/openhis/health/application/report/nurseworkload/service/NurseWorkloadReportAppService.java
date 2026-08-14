@@ -6,15 +6,21 @@ package com.openhis.health.application.report.nurseworkload.service;
 
 import com.openhis.health.application.report.nurseworkload.dto.NurseConsumableDetailExportRowDto;
 import com.openhis.health.application.report.nurseworkload.dto.NurseConsumableDetailRowDto;
+import com.openhis.health.application.report.nurseworkload.dto.NurseConsumableItemChipDto;
+import com.openhis.health.application.report.nurseworkload.dto.NurseConsumableSummaryRowDto;
 import com.openhis.health.application.report.nurseworkload.dto.NurseExecutionDetailExportRowDto;
 import com.openhis.health.application.report.nurseworkload.dto.NurseExecutionDetailRowDto;
+import com.openhis.health.application.report.nurseworkload.dto.NurseExecutionSummaryRowDto;
+import com.openhis.health.application.report.nurseworkload.dto.NurseWorkloadNurseCardDto;
 import com.openhis.health.application.report.nurseworkload.mapper.NurseWorkloadReportMapper;
 import com.openhis.health.application.report.nurseworkload.request.ExportNurseWorkloadDetailRequest;
+import com.openhis.health.application.report.nurseworkload.request.ListNurseWorkloadNurseCardsRequest;
 import com.openhis.health.application.report.nurseworkload.request.LoadNurseWorkloadFormInitRequest;
 import com.openhis.health.application.report.nurseworkload.request.NurseWorkloadQueryRequest;
 import com.openhis.health.application.report.nurseworkload.request.PageNurseConsumableWorkloadDetailRequest;
 import com.openhis.health.application.report.nurseworkload.request.PageNurseExecutionWorkloadDetailRequest;
 import com.openhis.health.application.report.nurseworkload.response.ExportNurseWorkloadDetailResponse;
+import com.openhis.health.application.report.nurseworkload.response.ListNurseWorkloadNurseCardsResponse;
 import com.openhis.health.application.report.nurseworkload.response.LoadNurseWorkloadFormInitResponse;
 import com.openhis.health.application.report.nurseworkload.response.PageNurseConsumableWorkloadDetailResponse;
 import com.openhis.health.application.report.nurseworkload.response.PageNurseExecutionWorkloadDetailResponse;
@@ -26,6 +32,8 @@ import com.openhis.health.application.report.nurseworkload.support.NurseWorkload
 import com.openhis.health.domain.administration.devicedefinition.entity.DeviceDefinition;
 import com.openhis.health.domain.administration.devicedefinition.service.DeviceDefinitionQueryService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
+import com.openhis.health.domain.administration.organization.entity.Organization;
+import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
 import com.openhis.health.domain.administration.patient.service.PatientQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
@@ -67,6 +75,7 @@ import java.time.LocalDateTime;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -123,6 +132,9 @@ public class NurseWorkloadReportAppService {
     /** 就诊读侧。 */
     private final EncounterQueryService encounterQueryService;
 
+    /** 科室主数据读侧（开立科室下拉：门诊挂号科 / 住院入院科）。 */
+    private final OrganizationQueryService organizationQueryService;
+
     /** 护士岗人员加载。 */
     private final PractitionerRoleScopeLoader practitionerRoleScopeLoader;
 
@@ -139,9 +151,9 @@ public class NurseWorkloadReportAppService {
     private final NurseWorkloadReportMapper nurseWorkloadReportMapper;
 
     /**
-     * IF-RPT-NWL-01：页面初始化（默认门诊+当日+护士下拉）。
+     * IF-RPT-NWL-01：页面初始化（默认门诊+当日+开立科室与护士下拉）。
      *
-     * @param request 空壳请求
+     * @param request 可选 encounterScope（刷新开立科室下拉口径）
      * @return 初始化响应
      * @throws BusinessException {@link ErrorCodeConstants#RPT_NWL_101} 初始化失败
      */
@@ -158,13 +170,19 @@ public class NurseWorkloadReportAppService {
             List<Practitioner> nurses = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRole(
                 WhalePlatformRoleCodeConstants.ROLE_NURSE,
                 null);
-            // Asm：默认门诊+当日、就诊范围与护士下拉（§3.2 序号 4）
+            // Asm：默认门诊+当日、就诊范围 / 开立科室 / 护士下拉（§3.2 序号 4）
             LoadNurseWorkloadFormInitResponse response = new LoadNurseWorkloadFormInitResponse();
             LocalDate today = LocalDate.now();
             response.setDefaultEncounterScope(NurseWorkloadConstants.ENCOUNTER_SCOPE_OUTPATIENT);
             response.setDefaultDateFrom(today);
             response.setDefaultDateTo(today);
             response.setEncounterScopeOptions(this.buildEncounterScopeOptions());
+            // Pre：开立科室随就诊范围；入参空则默认门诊（与医生工作量同构）
+            String organizationScope = NurseWorkloadConstants.ENCOUNTER_SCOPE_OUTPATIENT;
+            if (request != null && StringUtils.isNotEmpty(request.getEncounterScope())) {
+                organizationScope = request.getEncounterScope().trim();
+            }
+            response.setOrganizationOptions(this.buildOrganizationOptions(organizationScope));
             response.setNurseOptions(this.buildNurseOptions(nurses));
             return response;
         } catch (BusinessException businessException) {
@@ -196,8 +214,8 @@ public class NurseWorkloadReportAppService {
             request.getDateTo());
         // Pre：Request → 领域 Query（§3.3 序号 2）
         NurseWorkloadPageQuery query = this.nurseWorkloadReportMapper.toNurseWorkloadPageQuery(request);
-        // Pre：就诊 scope / SR·category / 耗材 hvcm 预解析（§3.3 序号 3）
-        this.prepareNurseWorkloadQueryScopesSafely(query);
+        // Pre：就诊 scope + SR 类目；跳过耗材 hvcm（诊疗 IF 不需要）
+        this.prepareNurseWorkloadQueryScopesSafely(query, true, false);
         // Pre：按 category_enum 汇总净 COMPLETED 次数（§3.3 序号 4）
         List<NurseExecutionCategorySummaryQueryModel> summaries = this.executeQuerySafely(
             () -> this.procedureQueryService.summarizeNurseExecutionWorkloadByCategory(query));
@@ -207,7 +225,8 @@ public class NurseWorkloadReportAppService {
         // Asm：汇总行 + totalExecutionCount 页脚合计（§3.3 序号 6～7）
         SummarizeNurseExecutionWorkloadResponse response =
             this.nurseWorkloadAssembler.buildExecutionSummaryResponse(summaries, categoryLabelMap);
-        response.setTotalAmount(this.sumExecutionAmountForQuery(query));
+        response.setTotalSaleAmount(this.sumExecutionSaleAmountForQuery(query));
+        response.setTotalPurchaseAmount(null);
         return response;
     }
 
@@ -228,8 +247,8 @@ public class NurseWorkloadReportAppService {
             request.getDateTo());
         // Pre：Request → Query（含分页键；§3.4 序号 2）
         NurseWorkloadPageQuery query = this.nurseWorkloadReportMapper.toNurseWorkloadPageQuery(request);
-        // Pre：scope 预解析（§3.4 序号 3）
-        this.prepareNurseWorkloadQueryScopesSafely(query);
+        // Pre：就诊 scope + SR 类目；跳过耗材 hvcm
+        this.prepareNurseWorkloadQueryScopesSafely(query, true, false);
         // Pre：净 COMPLETED 明细分页，recorded_time DESC（§3.4 序号 4）
         Page<NurseExecutionWorkloadDetailQueryModel> page = this.executeQuerySafely(
             () -> this.procedureQueryService.pageNurseExecutionWorkloadDetail(query));
@@ -239,7 +258,7 @@ public class NurseWorkloadReportAppService {
             this.buildExecutionDetailEnrichmentContext(rows);
         // Asm：回填 GenerateSource、项目名等展示字段（§3.4 序号 12）
         this.nurseWorkloadAssembler.enrichExecutionDetailRows(rows, enrichmentContext);
-        this.nurseWorkloadAmountEnricher.enrichExecutionDetailAmounts(rows);
+        this.nurseWorkloadAmountEnricher.enrichExecutionDetailAmounts(rows, query.getRequestingOrgId());
         // Asm：组装分页响应（§3.4 序号 13）
         PageNurseExecutionWorkloadDetailResponse response = new PageNurseExecutionWorkloadDetailResponse();
         response.setTotal(page.getTotalElements());
@@ -274,15 +293,101 @@ public class NurseWorkloadReportAppService {
             request.getDateTo());
         // Pre：Request → Query（§3.5 序号 2）
         NurseWorkloadPageQuery query = this.nurseWorkloadReportMapper.toNurseWorkloadPageQuery(request);
-        // Pre：scope 预解析含 hvcm enrich（§3.5 序号 3）
-        this.prepareNurseWorkloadQueryScopesSafely(query);
+        // Pre：就诊 scope + 耗材 hvcm；跳过 SR 类目
+        this.prepareNurseWorkloadQueryScopesSafely(query, false, true);
         // Pre：按 hvcm_flag 汇总发放数量（§3.5 序号 4）
         List<NurseConsumableHvcmSummaryQueryModel> summaries = this.executeQuerySafely(
             () -> this.deviceDispenseQueryService.summarizeNurseConsumableWorkloadByHvcm(query));
         // Asm：汇总行 + totalQuantity 页脚合计（§3.5 序号 5～6）
         SummarizeNurseConsumableWorkloadResponse response =
             this.nurseWorkloadAssembler.buildConsumableSummaryResponse(summaries);
-        response.setTotalAmount(this.sumConsumableAmountForQuery(query));
+        response.setTotalSaleAmount(this.sumConsumableSaleAmountForQuery(query));
+        response.setTotalPurchaseAmount(this.sumConsumablePurchaseAmountForQuery(query));
+        return response;
+    }
+
+    /**
+     * 护士卡片墙批量查询：诊疗+耗材事实一次加载后按护士分桶（轻量 enrich，禁止患者/就诊展示装载）。
+     *
+     * @param request 与汇总同筛选
+     * @return 有数据的护士卡片
+     * @throws BusinessException {@link ErrorCodeConstants#RPT_NWL_102}/{@link ErrorCodeConstants#RPT_NWL_104}
+     */
+    public ListNurseWorkloadNurseCardsResponse listNurseWorkloadNurseCards(
+        @Valid ListNurseWorkloadNurseCardsRequest request) {
+        // Gate：筛选项合法
+        this.validateNurseWorkloadQueryRequest(
+            request.getEncounterScope(),
+            request.getDateFrom(),
+            request.getDateTo());
+        NurseWorkloadPageQuery query = new NurseWorkloadPageQuery();
+        query.setEncounterScope(request.getEncounterScope());
+        query.setDateFrom(request.getDateFrom());
+        query.setDateTo(request.getDateTo());
+        query.setRequestingOrgId(this.resolveSelectedRequestingOrgId(
+            request.getRequestingOrgId(), request.getOrganizationId()));
+        // Pre：两侧 enrich 一次（卡片同时需要类目与 hvcm）
+        this.prepareNurseWorkloadQueryScopesSafely(query, true, true);
+        // Pre：全量事实行一次加载（禁止前端翻页重复扫候选集）
+        List<NurseExecutionWorkloadDetailQueryModel> executionModels = this.executeQuerySafely(
+            () -> this.procedureQueryService.listNurseExecutionWorkloadDetail(query));
+        List<NurseConsumableWorkloadDetailQueryModel> consumableModels = this.executeQuerySafely(
+            () -> this.deviceDispenseQueryService.listNurseConsumableWorkloadDetail(query));
+        List<NurseExecutionDetailRowDto> executionRows = this.mapExecutionDetailRows(executionModels);
+        List<NurseConsumableDetailRowDto> consumableRows = this.mapConsumableDetailRows(consumableModels);
+        // Pre：类目展示名（术语）+ 金额；跳过 SR/患者/就诊名
+        Map<String, String> categoryLabelMap = this.terminologyOptionLoader.buildLabelMap(
+            TerminologyCodeSystemNameConstants.ACTIVITY_CATEGORY_CODE);
+        for (NurseExecutionDetailRowDto row : executionRows) {
+            if (row == null) {
+                continue;
+            }
+            String categoryEnum = row.getCategoryEnum();
+            if (categoryEnum != null && categoryLabelMap.containsKey(categoryEnum)) {
+                row.setCategoryDisplay(categoryLabelMap.get(categoryEnum));
+            } else if (row.getCategoryDisplay() == null) {
+                row.setCategoryDisplay("未分类");
+            }
+        }
+        this.nurseWorkloadAmountEnricher.enrichExecutionDetailAmounts(executionRows, query.getRequestingOrgId());
+        // Pre：耗材品名/规格/hvcm 展示（仅 DeviceDefinition 批量）
+        this.fillConsumableCardDisplayFields(consumableRows);
+        Map<Long, Long> deviceReqIdByDispenseId =
+            this.buildDeviceReqIdByDispenseIdForAmountSum(consumableModels);
+        this.nurseWorkloadAmountEnricher.enrichConsumableDetailAmounts(
+            consumableRows, deviceReqIdByDispenseId, query.getRequestingOrgId());
+        // Asm：按护士分桶组装卡片
+        Map<Long, List<NurseExecutionDetailRowDto>> executionByNurse =
+            this.bucketExecutionRowsByNurse(executionRows);
+        Map<Long, List<NurseConsumableDetailRowDto>> consumableByNurse =
+            this.bucketConsumableRowsByNurse(consumableRows);
+        LinkedHashSet<Long> nurseIds = new LinkedHashSet<>();
+        nurseIds.addAll(executionByNurse.keySet());
+        nurseIds.addAll(consumableByNurse.keySet());
+        List<NurseWorkloadNurseCardDto> cards = new ArrayList<>();
+        for (Long nurseId : nurseIds) {
+            List<NurseExecutionDetailRowDto> nurseExecution =
+                executionByNurse.getOrDefault(nurseId, List.of());
+            List<NurseConsumableDetailRowDto> nurseConsumable =
+                consumableByNurse.getOrDefault(nurseId, List.of());
+            NurseWorkloadNurseCardDto card = new NurseWorkloadNurseCardDto();
+            card.setPractitionerId(nurseId);
+            card.setExecutionTotalCount((long) nurseExecution.size());
+            card.setExecutionSaleAmountTotal(this.nurseWorkloadAmountEnricher.sumDetailAmounts(
+                this.collectSaleAmounts(nurseExecution)));
+            card.setExecutionPurchaseAmountTotal(null);
+            card.setExecutionSummaryRows(this.buildExecutionSummaryRowsFromDetails(nurseExecution));
+            card.setConsumableTotalQuantity(this.sumConsumableQuantities(nurseConsumable));
+            card.setConsumableSaleAmountTotal(this.nurseWorkloadAmountEnricher.sumDetailAmounts(
+                this.collectSaleAmountsFromConsumable(nurseConsumable)));
+            card.setConsumablePurchaseAmountTotal(this.sumNullableDetailAmounts(
+                this.collectPurchaseAmountsFromConsumable(nurseConsumable)));
+            card.setConsumableSummaryRows(this.buildConsumableSummaryRowsFromDetails(nurseConsumable));
+            card.setConsumableItemChips(this.buildConsumableItemChips(nurseConsumable));
+            cards.add(card);
+        }
+        ListNurseWorkloadNurseCardsResponse response = new ListNurseWorkloadNurseCardsResponse();
+        response.setCards(cards);
         return response;
     }
 
@@ -303,8 +408,8 @@ public class NurseWorkloadReportAppService {
             request.getDateTo());
         // Pre：Request → Query（§3.6 序号 2）
         NurseWorkloadPageQuery query = this.nurseWorkloadReportMapper.toNurseWorkloadPageQuery(request);
-        // Pre：scope 预解析（§3.6 序号 3）
-        this.prepareNurseWorkloadQueryScopesSafely(query);
+        // Pre：就诊 scope + 耗材 hvcm；跳过 SR 类目
+        this.prepareNurseWorkloadQueryScopesSafely(query, false, true);
         // Pre：有效发放行分页（§3.6 序号 4）
         Page<NurseConsumableWorkloadDetailQueryModel> page = this.executeQuerySafely(
             () -> this.deviceDispenseQueryService.pageNurseConsumableWorkloadDetail(query));
@@ -316,7 +421,8 @@ public class NurseWorkloadReportAppService {
         this.nurseWorkloadAssembler.enrichConsumableDetailRows(rows, enrichmentContext);
         this.nurseWorkloadAmountEnricher.enrichConsumableDetailAmounts(
             rows,
-            enrichmentContext.getDeviceReqIdByDispenseId());
+            enrichmentContext.getDeviceReqIdByDispenseId(),
+            query.getRequestingOrgId());
         // Asm：组装分页响应（§3.6 序号 13）
         PageNurseConsumableWorkloadDetailResponse response = new PageNurseConsumableWorkloadDetailResponse();
         response.setTotal(page.getTotalElements());
@@ -356,9 +462,10 @@ public class NurseWorkloadReportAppService {
             ErrorCodeConstants.RPT_NWL_105,
             "导出失败，请缩小日期范围后重试");
         try {
-            // Pre：导出 Query（无分页键）+ scope 预解析（§3.7 序号 2～3）
+            // Pre：导出 Query（无分页键）+ 按主 Tab 按需 enrich（§3.7 序号 2～3）
             NurseWorkloadPageQuery query = this.nurseWorkloadReportMapper.toNurseWorkloadPageQuery(request);
-            this.prepareNurseWorkloadQueryScopesSafely(query);
+            boolean needExecution = NurseWorkloadConstants.MAIN_TAB_EXECUTION.equals(request.getMainTabCode());
+            this.prepareNurseWorkloadQueryScopesSafely(query, needExecution, !needExecution);
             boolean truncated;
             byte[] fileBytes;
             int exportedRowCount;
@@ -416,81 +523,60 @@ public class NurseWorkloadReportAppService {
     }
 
     /**
-     * 汇总诊疗执行明细金额：仅分页拉事实行 + 金额 enrich，禁止走导出级展示 enrichment。
+     * 汇总诊疗执行明细售价：一次拉全量事实行 + 金额 enrich，禁止按页重复扫净执行候选集。
      *
      * @param query 已预解析读查询
-     * @return 金额合计（结算 2 位）
+     * @return 售价合计（结算 2 位）
      */
-    private BigDecimal sumExecutionAmountForQuery(NurseWorkloadPageQuery query) {
-        List<BigDecimal> amounts = new ArrayList<>();
-        int pageNo = 1;
-        // Pre：按导出页大小翻页，仅金额 enrich（BR-RPT-NWL-022）
-        while (amounts.size() < NurseWorkloadExportConstants.EXPORT_MAX_ROWS) {
-            NurseWorkloadPageQuery pageQuery = this.copyQueryWithPaging(
-                query, pageNo, NurseWorkloadExportConstants.EXPORT_PAGE_SIZE);
-            Page<NurseExecutionWorkloadDetailQueryModel> page =
-                this.procedureQueryService.pageNurseExecutionWorkloadDetail(pageQuery);
-            // 空页表示已扫完
-            if (page.getContent().isEmpty()) {
-                break;
-            }
-            List<NurseExecutionDetailRowDto> rows = this.mapExecutionDetailRows(page.getContent());
-            // Pre：跳过 GenerateSource/项目名等展示 enrichment，只算 ChargeItem 金额
-            this.nurseWorkloadAmountEnricher.enrichExecutionDetailAmounts(rows);
-            for (NurseExecutionDetailRowDto row : rows) {
-                if (amounts.size() >= NurseWorkloadExportConstants.EXPORT_MAX_ROWS) {
-                    break;
-                }
-                if (row != null && row.getAmount() != null) {
-                    amounts.add(row.getAmount());
-                }
-            }
-            if (page.getContent().size() < NurseWorkloadExportConstants.EXPORT_PAGE_SIZE) {
-                break;
-            }
-            pageNo = pageNo + 1;
+    private BigDecimal sumExecutionSaleAmountForQuery(NurseWorkloadPageQuery query) {
+        List<NurseExecutionWorkloadDetailQueryModel> allModels =
+            this.procedureQueryService.listNurseExecutionWorkloadDetail(query);
+        if (allModels.size() > NurseWorkloadExportConstants.EXPORT_MAX_ROWS) {
+            allModels = allModels.subList(0, NurseWorkloadExportConstants.EXPORT_MAX_ROWS);
         }
-        return this.nurseWorkloadAmountEnricher.sumDetailAmounts(amounts);
+        List<NurseExecutionDetailRowDto> rows = this.mapExecutionDetailRows(allModels);
+        this.nurseWorkloadAmountEnricher.enrichExecutionDetailAmounts(rows, query.getRequestingOrgId());
+        return this.nurseWorkloadAmountEnricher.sumDetailAmounts(this.collectSaleAmounts(rows));
     }
 
     /**
-     * 汇总耗材使用明细金额：仅分页拉事实行 + 金额 enrich，禁止走导出级展示 enrichment。
+     * 汇总耗材使用明细售价：一次拉全量事实行 + 金额 enrich，禁止按页重复扫候选发放行。
      *
      * @param query 已预解析读查询
-     * @return 金额合计（结算 2 位）
+     * @return 售价合计（结算 2 位）
      */
-    private BigDecimal sumConsumableAmountForQuery(NurseWorkloadPageQuery query) {
-        List<BigDecimal> amounts = new ArrayList<>();
-        int pageNo = 1;
-        // Pre：按导出页大小翻页，仅金额 enrich（BR-RPT-NWL-022）
-        while (amounts.size() < NurseWorkloadExportConstants.EXPORT_MAX_ROWS) {
-            NurseWorkloadPageQuery pageQuery = this.copyQueryWithPaging(
-                query, pageNo, NurseWorkloadExportConstants.EXPORT_PAGE_SIZE);
-            Page<NurseConsumableWorkloadDetailQueryModel> page =
-                this.deviceDispenseQueryService.pageNurseConsumableWorkloadDetail(pageQuery);
-            // 空页表示已扫完
-            if (page.getContent().isEmpty()) {
-                break;
-            }
-            List<NurseConsumableDetailRowDto> rows = this.mapConsumableDetailRows(page.getContent());
-            // Pre：仅解析发放→请求映射供金额匹配，跳过姓名/品名等展示 enrichment
-            Map<Long, Long> deviceReqIdByDispenseId =
-                this.buildDeviceReqIdByDispenseIdForAmountSum(page.getContent());
-            this.nurseWorkloadAmountEnricher.enrichConsumableDetailAmounts(rows, deviceReqIdByDispenseId);
-            for (NurseConsumableDetailRowDto row : rows) {
-                if (amounts.size() >= NurseWorkloadExportConstants.EXPORT_MAX_ROWS) {
-                    break;
-                }
-                if (row != null && row.getAmount() != null) {
-                    amounts.add(row.getAmount());
-                }
-            }
-            if (page.getContent().size() < NurseWorkloadExportConstants.EXPORT_PAGE_SIZE) {
-                break;
-            }
-            pageNo = pageNo + 1;
+    private BigDecimal sumConsumableSaleAmountForQuery(NurseWorkloadPageQuery query) {
+        List<NurseConsumableWorkloadDetailQueryModel> allModels =
+            this.deviceDispenseQueryService.listNurseConsumableWorkloadDetail(query);
+        if (allModels.size() > NurseWorkloadExportConstants.EXPORT_MAX_ROWS) {
+            allModels = allModels.subList(0, NurseWorkloadExportConstants.EXPORT_MAX_ROWS);
         }
-        return this.nurseWorkloadAmountEnricher.sumDetailAmounts(amounts);
+        List<NurseConsumableDetailRowDto> rows = this.mapConsumableDetailRows(allModels);
+        Map<Long, Long> deviceReqIdByDispenseId =
+            this.buildDeviceReqIdByDispenseIdForAmountSum(allModels);
+        this.nurseWorkloadAmountEnricher.enrichConsumableDetailAmounts(
+            rows, deviceReqIdByDispenseId, query.getRequestingOrgId());
+        return this.nurseWorkloadAmountEnricher.sumDetailAmounts(this.collectSaleAmountsFromConsumable(rows));
+    }
+
+    /**
+     * 汇总耗材使用明细进价：与 {@link #sumConsumableSaleAmountForQuery(NurseWorkloadPageQuery)} 同范围。
+     *
+     * @param query 已预解析读查询
+     * @return 进价合计；全无进价时为 null
+     */
+    private BigDecimal sumConsumablePurchaseAmountForQuery(NurseWorkloadPageQuery query) {
+        List<NurseConsumableWorkloadDetailQueryModel> allModels =
+            this.deviceDispenseQueryService.listNurseConsumableWorkloadDetail(query);
+        if (allModels.size() > NurseWorkloadExportConstants.EXPORT_MAX_ROWS) {
+            allModels = allModels.subList(0, NurseWorkloadExportConstants.EXPORT_MAX_ROWS);
+        }
+        List<NurseConsumableDetailRowDto> rows = this.mapConsumableDetailRows(allModels);
+        Map<Long, Long> deviceReqIdByDispenseId =
+            this.buildDeviceReqIdByDispenseIdForAmountSum(allModels);
+        this.nurseWorkloadAmountEnricher.enrichConsumableDetailAmounts(
+            rows, deviceReqIdByDispenseId, query.getRequestingOrgId());
+        return this.sumNullableDetailAmounts(this.collectPurchaseAmountsFromConsumable(rows));
     }
 
     /**
@@ -558,14 +644,20 @@ public class NurseWorkloadReportAppService {
     /**
      * Pre：调用 Support 预解析 scope；IAE 映射为用户可读提示。
      *
-     * @param query 领域读查询
+     * @param query                 领域读查询
+     * @param needExecutionCategory 是否 enrich SR 类目
+     * @param needConsumableHvcm    是否 enrich 耗材 hvcm
      * @throws BusinessException {@link ErrorCodeConstants#RPT_NWL_102}
      */
-    private void prepareNurseWorkloadQueryScopesSafely(NurseWorkloadPageQuery query) {
+    private void prepareNurseWorkloadQueryScopesSafely(
+        NurseWorkloadPageQuery query,
+        boolean needExecutionCategory,
+        boolean needConsumableHvcm) {
         try {
-            this.nurseWorkloadLoader.prepareNurseWorkloadQueryScopes(query);
+            this.nurseWorkloadLoader.prepareNurseWorkloadQueryScopes(
+                query, needExecutionCategory, needConsumableHvcm);
         } catch (IllegalArgumentException illegalArgumentException) {
-            // Supcontracts 层 IAE 映射为 EX-RPT-NWL-102 用户提示
+            // Support 层 IAE 映射为 EX-RPT-NWL-102 用户提示
             throw new BusinessException(
                 ErrorCodeConstants.RPT_NWL_102,
                 "请选择门诊或住院及有效的查询日期",
@@ -655,7 +747,7 @@ public class NurseWorkloadReportAppService {
             NurseWorkloadAssembler.NurseWorkloadExecutionDetailEnrichmentContext context =
                 this.buildExecutionDetailEnrichmentContext(rows);
             this.nurseWorkloadAssembler.enrichExecutionDetailRows(rows, context);
-            this.nurseWorkloadAmountEnricher.enrichExecutionDetailAmounts(rows);
+            this.nurseWorkloadAmountEnricher.enrichExecutionDetailAmounts(rows, baseQuery.getRequestingOrgId());
             for (NurseExecutionDetailRowDto row : rows) {
                 if (aggregated.size() >= NurseWorkloadExportConstants.EXPORT_MAX_ROWS) {
                     // 触顶 EXPORT_MAX_ROWS，标记 truncated 并停止追加
@@ -700,7 +792,8 @@ public class NurseWorkloadReportAppService {
             this.nurseWorkloadAssembler.enrichConsumableDetailRows(rows, context);
             this.nurseWorkloadAmountEnricher.enrichConsumableDetailAmounts(
                 rows,
-                context.getDeviceReqIdByDispenseId());
+                context.getDeviceReqIdByDispenseId(),
+                baseQuery.getRequestingOrgId());
             for (NurseConsumableDetailRowDto row : rows) {
                 if (aggregated.size() >= NurseWorkloadExportConstants.EXPORT_MAX_ROWS) {
                     truncated = true;
@@ -943,6 +1036,40 @@ public class NurseWorkloadReportAppService {
     }
 
     /**
+     * 按 encounterScope 构建开立科室下拉（门诊挂号科 / 住院入院科），与医生工作量同构。
+     *
+     * <p>门诊走 {@link OrganizationQueryService#listOrganizationsForOutpatientRegistration()}；
+     * 住院走 {@link OrganizationQueryService#listOrganizationsForInpatientAdmission()}。
+     * 跳过 id 为空的脏数据行。</p>
+     *
+     * @param encounterScope 门诊或住院 code（{@link NurseWorkloadConstants#ENCOUNTER_SCOPE_OUTPATIENT} /
+     *                       {@link NurseWorkloadConstants#ENCOUNTER_SCOPE_INPATIENT}）
+     * @return OptionDto 列表；无科室时返回空列表（非 null）
+     */
+    private List<OptionDto> buildOrganizationOptions(String encounterScope) {
+        List<Organization> organizations;
+        // 住院：入院科室口径
+        if (NurseWorkloadConstants.ENCOUNTER_SCOPE_INPATIENT.equals(encounterScope)) {
+            organizations = this.organizationQueryService.listOrganizationsForInpatientAdmission();
+        } else {
+            // 门诊（含未知 scope 回落）：挂号科室口径
+            organizations = this.organizationQueryService.listOrganizationsForOutpatientRegistration();
+        }
+        List<OptionDto> options = new ArrayList<>();
+        for (Organization organization : organizations) {
+            // 无主键的科室无法作为筛选值，跳过
+            if (organization == null || organization.getId() == null) {
+                continue;
+            }
+            OptionDto option = new OptionDto();
+            option.setValue(String.valueOf(organization.getId()));
+            option.setLabel(organization.getName());
+            options.add(option);
+        }
+        return options;
+    }
+
+    /**
      * 构建护士下拉 OptionDto 列表。
      *
      * @param nurses 护士实体列表
@@ -998,5 +1125,322 @@ public class NurseWorkloadReportAppService {
                 "页面配置加载失败，请稍后重试");
         }
         return tenantId;
+    }
+
+    /**
+     * 卡片耗材行回填品名/规格/hvcm 展示（仅 DeviceDefinition 批量，禁止患者就诊 enrich）。
+     *
+     * @param rows 耗材明细 DTO
+     */
+    private void fillConsumableCardDisplayFields(List<NurseConsumableDetailRowDto> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        LinkedHashSet<Long> deviceDefIds = new LinkedHashSet<>();
+        for (NurseConsumableDetailRowDto row : rows) {
+            if (row != null && row.getDeviceDefId() != null) {
+                deviceDefIds.add(row.getDeviceDefId());
+            }
+        }
+        Map<Long, DeviceDefinition> definitionById = new HashMap<>();
+        if (!deviceDefIds.isEmpty()) {
+            List<DeviceDefinition> definitions =
+                this.deviceDefinitionQueryService.getAllDeviceDefinitions(deviceDefIds);
+            for (DeviceDefinition definition : definitions) {
+                if (definition != null && definition.getId() != null) {
+                    definitionById.put(definition.getId(), definition);
+                }
+            }
+        }
+        for (NurseConsumableDetailRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            row.setHvcmDisplay(this.resolveCardHvcmDisplay(row.getHvcmFlag()));
+            if (row.getDeviceDefId() == null) {
+                continue;
+            }
+            DeviceDefinition definition = definitionById.get(row.getDeviceDefId());
+            if (definition == null) {
+                continue;
+            }
+            if (definition.getName() != null) {
+                row.setDeviceName(definition.getName().trim());
+            }
+            if (definition.getTotalVolume() != null) {
+                row.setSpecText(definition.getTotalVolume().trim());
+            }
+            if (row.getHvcmFlag() == null) {
+                row.setHvcmFlag(definition.getHvcmFlag());
+                row.setHvcmDisplay(this.resolveCardHvcmDisplay(definition.getHvcmFlag()));
+            }
+        }
+    }
+
+    /**
+     * 高/低值展示文案（与 Assembler 同常量）。
+     *
+     * @param hvcmFlag 高值标志
+     * @return 展示名
+     */
+    private String resolveCardHvcmDisplay(Boolean hvcmFlag) {
+        if (hvcmFlag == null) {
+            return NurseWorkloadConstants.HVCM_UNKNOWN_DISPLAY;
+        }
+        if (Boolean.TRUE.equals(hvcmFlag)) {
+            return NurseWorkloadConstants.HVCM_HIGH_DISPLAY;
+        }
+        return NurseWorkloadConstants.HVCM_LOW_DISPLAY;
+    }
+
+    /**
+     * 诊疗明细按护士分桶。
+     *
+     * @param rows 诊疗明细
+     * @return nurseId → 行
+     */
+    private Map<Long, List<NurseExecutionDetailRowDto>> bucketExecutionRowsByNurse(
+        List<NurseExecutionDetailRowDto> rows) {
+        Map<Long, List<NurseExecutionDetailRowDto>> byNurse = new LinkedHashMap<>();
+        if (rows == null) {
+            return byNurse;
+        }
+        for (NurseExecutionDetailRowDto row : rows) {
+            if (row == null || row.getPractitionerId() == null) {
+                continue;
+            }
+            List<NurseExecutionDetailRowDto> bucket = byNurse.get(row.getPractitionerId());
+            if (bucket == null) {
+                bucket = new ArrayList<>();
+                byNurse.put(row.getPractitionerId(), bucket);
+            }
+            bucket.add(row);
+        }
+        return byNurse;
+    }
+
+    /**
+     * 耗材明细按护士分桶。
+     *
+     * @param rows 耗材明细
+     * @return nurseId → 行
+     */
+    private Map<Long, List<NurseConsumableDetailRowDto>> bucketConsumableRowsByNurse(
+        List<NurseConsumableDetailRowDto> rows) {
+        Map<Long, List<NurseConsumableDetailRowDto>> byNurse = new LinkedHashMap<>();
+        if (rows == null) {
+            return byNurse;
+        }
+        for (NurseConsumableDetailRowDto row : rows) {
+            if (row == null || row.getPractitionerId() == null) {
+                continue;
+            }
+            List<NurseConsumableDetailRowDto> bucket = byNurse.get(row.getPractitionerId());
+            if (bucket == null) {
+                bucket = new ArrayList<>();
+                byNurse.put(row.getPractitionerId(), bucket);
+            }
+            bucket.add(row);
+        }
+        return byNurse;
+    }
+
+    /**
+     * 收集诊疗行售价列表。
+     *
+     * @param rows 诊疗行
+     * @return 售价列表
+     */
+    private List<BigDecimal> collectSaleAmounts(List<NurseExecutionDetailRowDto> rows) {
+        List<BigDecimal> amounts = new ArrayList<>();
+        for (NurseExecutionDetailRowDto row : rows) {
+            if (row != null && row.getSaleAmount() != null) {
+                amounts.add(row.getSaleAmount());
+            }
+        }
+        return amounts;
+    }
+
+    /**
+     * 收集耗材行售价列表。
+     *
+     * @param rows 耗材行
+     * @return 售价列表
+     */
+    private List<BigDecimal> collectSaleAmountsFromConsumable(List<NurseConsumableDetailRowDto> rows) {
+        List<BigDecimal> amounts = new ArrayList<>();
+        for (NurseConsumableDetailRowDto row : rows) {
+            if (row != null && row.getSaleAmount() != null) {
+                amounts.add(row.getSaleAmount());
+            }
+        }
+        return amounts;
+    }
+
+    /**
+     * 收集耗材行进价列表（跳过 null）。
+     *
+     * @param rows 耗材行
+     * @return 进价列表
+     */
+    private List<BigDecimal> collectPurchaseAmountsFromConsumable(List<NurseConsumableDetailRowDto> rows) {
+        List<BigDecimal> amounts = new ArrayList<>();
+        for (NurseConsumableDetailRowDto row : rows) {
+            if (row != null && row.getPurchaseAmount() != null) {
+                amounts.add(row.getPurchaseAmount());
+            }
+        }
+        return amounts;
+    }
+
+    /**
+     * 汇总可空明细金额；空列表返回 null。
+     *
+     * @param amounts 明细金额
+     * @return 合计；无有效值时为 null
+     */
+    private BigDecimal sumNullableDetailAmounts(List<BigDecimal> amounts) {
+        if (amounts == null || amounts.isEmpty()) {
+            return null;
+        }
+        return this.nurseWorkloadAmountEnricher.sumDetailAmounts(amounts);
+    }
+
+    /**
+     * 开立科室优先；仅传遗留 organizationId 时回填 requestingOrgId。
+     *
+     * @param requestingOrgId 开立科室
+     * @param organizationId  遗留科室
+     * @return 解析后的开立科室 id
+     */
+    private Long resolveSelectedRequestingOrgId(Long requestingOrgId, Long organizationId) {
+        if (requestingOrgId != null) {
+            return requestingOrgId;
+        }
+        return organizationId;
+    }
+
+    /**
+     * 耗材数量代数和。
+     *
+     * @param rows 耗材行
+     * @return 数量合计
+     */
+    private BigDecimal sumConsumableQuantities(List<NurseConsumableDetailRowDto> rows) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (NurseConsumableDetailRowDto row : rows) {
+            if (row != null && row.getQuantity() != null) {
+                total = total.add(row.getQuantity());
+            }
+        }
+        return total;
+    }
+
+    /**
+     * 由诊疗明细聚合成类目汇总行。
+     *
+     * @param rows 单护士诊疗明细
+     * @return 类目汇总
+     */
+    private List<NurseExecutionSummaryRowDto> buildExecutionSummaryRowsFromDetails(
+        List<NurseExecutionDetailRowDto> rows) {
+        Map<String, NurseExecutionSummaryRowDto> bucket = new LinkedHashMap<>();
+        for (NurseExecutionDetailRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            String categoryKey = "";
+            if (row.getCategoryEnum() != null) {
+                categoryKey = row.getCategoryEnum();
+            }
+            NurseExecutionSummaryRowDto summary = bucket.get(categoryKey);
+            if (summary == null) {
+                summary = new NurseExecutionSummaryRowDto();
+                summary.setCategoryEnum(row.getCategoryEnum());
+                summary.setCategoryDisplay(row.getCategoryDisplay());
+                summary.setExecutionCount(0L);
+                bucket.put(categoryKey, summary);
+            }
+            summary.setExecutionCount(summary.getExecutionCount() + 1L);
+        }
+        return new ArrayList<>(bucket.values());
+    }
+
+    /**
+     * 由耗材明细聚合成高/低值汇总行。
+     *
+     * @param rows 单护士耗材明细
+     * @return hvcm 汇总
+     */
+    private List<NurseConsumableSummaryRowDto> buildConsumableSummaryRowsFromDetails(
+        List<NurseConsumableDetailRowDto> rows) {
+        Map<String, NurseConsumableSummaryRowDto> bucket = new LinkedHashMap<>();
+        for (NurseConsumableDetailRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            String bucketKey = "HVCM_NULL";
+            if (Boolean.TRUE.equals(row.getHvcmFlag())) {
+                bucketKey = "HVCM_TRUE";
+            } else if (Boolean.FALSE.equals(row.getHvcmFlag())) {
+                bucketKey = "HVCM_FALSE";
+            }
+            NurseConsumableSummaryRowDto summary = bucket.get(bucketKey);
+            if (summary == null) {
+                summary = new NurseConsumableSummaryRowDto();
+                summary.setHvcmFlag(row.getHvcmFlag());
+                summary.setHvcmDisplay(row.getHvcmDisplay());
+                summary.setQuantityTotal(BigDecimal.ZERO);
+                bucket.put(bucketKey, summary);
+            }
+            if (row.getQuantity() != null) {
+                summary.setQuantityTotal(summary.getQuantityTotal().add(row.getQuantity()));
+            }
+        }
+        return new ArrayList<>(bucket.values());
+    }
+
+    /**
+     * 由耗材明细聚合成品名 chip。
+     *
+     * @param rows 单护士耗材明细
+     * @return chip 列表
+     */
+    private List<NurseConsumableItemChipDto> buildConsumableItemChips(List<NurseConsumableDetailRowDto> rows) {
+        Map<String, NurseConsumableItemChipDto> bucket = new LinkedHashMap<>();
+        for (NurseConsumableDetailRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            String name = "";
+            if (row.getDeviceName() != null) {
+                name = row.getDeviceName().trim();
+            }
+            String spec = "";
+            if (row.getSpecText() != null) {
+                spec = row.getSpecText().trim();
+            }
+            String label = name;
+            if (!name.isEmpty() && !spec.isEmpty()) {
+                label = name + "(" + spec + ")";
+            } else if (name.isEmpty() && !spec.isEmpty()) {
+                label = spec;
+            } else if (name.isEmpty()) {
+                label = "未知耗材";
+            }
+            String key = String.valueOf(row.getDeviceDefId()) + "::" + label;
+            NurseConsumableItemChipDto chip = bucket.get(key);
+            if (chip == null) {
+                chip = new NurseConsumableItemChipDto();
+                chip.setKey(key);
+                chip.setLabel(label);
+                chip.setQuantity(BigDecimal.ZERO);
+                bucket.put(key, chip);
+            }
+            if (row.getQuantity() != null) {
+                chip.setQuantity(chip.getQuantity().add(row.getQuantity()));
+            }
+        }
+        return new ArrayList<>(bucket.values());
     }
 }

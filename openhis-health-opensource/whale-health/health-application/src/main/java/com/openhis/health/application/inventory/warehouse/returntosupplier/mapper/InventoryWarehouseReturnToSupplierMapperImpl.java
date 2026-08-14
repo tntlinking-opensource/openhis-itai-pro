@@ -190,10 +190,19 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
         res.setCategoryEnum(this.toApiSortSupplyCategory(head.getCategoryEnum()));
         res.setInvoiceNo(head.getInvoiceNo());
         List<ReturnToSupplierDetailLineDto> detailLines = new ArrayList<>();
+        BigDecimal totalAmount = BigDecimal.ZERO;
         for (SupplyRequestModel line : lines) {
-            detailLines.add(this.toDetailLine(line, productByKey));
+            ReturnToSupplierDetailLineDto detailLine = this.toDetailLine(line, productByKey);
+            detailLines.add(detailLine);
+            if (detailLine.getTotalPrice() != null) {
+                // —— 整单合计：仅累加已落库行额，缺价行由 AppService 读侧回补后再重算。——
+                totalAmount = totalAmount.add(detailLine.getTotalPrice());
+            }
         }
         res.setLines(detailLines);
+        // —— 双写 totalAmount/totalPrice，兼容页脚与侧栏读任一字段。——
+        res.setTotalAmount(totalAmount);
+        res.setTotalPrice(totalAmount);
         return res;
     }
 
@@ -218,6 +227,9 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
         dto.setOccurrenceTime(line.getOccurrenceTime());
         dto.setReason(line.getReason());
         dto.setRemake(line.getRemake());
+        // —— 行价取供应请求落库快照（BR-PRICE-SRC-001），禁止在此回落当前目录价。——
+        dto.setPrice(line.getPrice());
+        dto.setTotalPrice(line.getTotalPrice());
         if (productByKey != null && line.getItemTable() != null && line.getItemId() != null) {
             String key = ProductDefinitionKeyUtil.buildCompositeKey(line.getItemTable(), line.getItemId());
             ProductDefinitionDisplayDto pr = productByKey.get(key);

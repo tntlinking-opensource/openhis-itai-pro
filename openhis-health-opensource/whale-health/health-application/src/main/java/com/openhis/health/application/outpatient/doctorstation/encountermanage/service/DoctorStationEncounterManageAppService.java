@@ -6,10 +6,12 @@ package com.openhis.health.application.outpatient.doctorstation.encountermanage.
 
 import com.openhis.health.application.outpatient.doctorstation.encountermanage.dto.OutpatientInfoItemDto;
 import com.openhis.health.application.outpatient.doctorstation.encountermanage.mapper.DoctorStationEncounterManageMapper;
+import com.openhis.health.application.outpatient.doctorstation.encountermanage.request.CancelOutpatientReceptionRequest;
 import com.openhis.health.application.outpatient.doctorstation.encountermanage.request.CompleteOutpatientEncounterRequest;
 import com.openhis.health.application.outpatient.doctorstation.encountermanage.request.MarkOutpatientLeaveRequest;
 import com.openhis.health.application.outpatient.doctorstation.encountermanage.request.PageOutpatientInfoForDoctorStationRequest;
 import com.openhis.health.application.outpatient.doctorstation.encountermanage.request.StartOutpatientReceptionRequest;
+import com.openhis.health.application.outpatient.doctorstation.encountermanage.response.CancelOutpatientReceptionResponse;
 import com.openhis.health.application.outpatient.doctorstation.encountermanage.response.CompleteOutpatientEncounterResponse;
 import com.openhis.health.application.outpatient.doctorstation.encountermanage.response.MarkOutpatientLeaveResponse;
 import com.openhis.health.application.outpatient.doctorstation.encountermanage.response.PageOutpatientInfoForDoctorStationResponse;
@@ -17,6 +19,7 @@ import com.openhis.health.application.outpatient.doctorstation.encountermanage.r
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
+import com.openhis.health.domain.administration.encounter.command.CancelOutpatientReceptionCommand;
 import com.openhis.health.domain.administration.encounter.command.CompleteOutpatientEncounterCommand;
 import com.openhis.health.domain.administration.encounter.command.MarkOutpatientLeaveCommand;
 import com.openhis.health.domain.administration.encounter.command.StartOutpatientReceptionCommand;
@@ -26,6 +29,7 @@ import com.openhis.health.domain.administration.encounter.service.EncounterDomai
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.application.shared.encounter.EncounterContextReader;
 import com.openhis.health.application.shared.financial.EncounterContractDisplayAssembler;
+import com.openhis.health.application.shared.financial.EncounterInsutypeDisplayAssembler;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.administration.encounter.queries.OutpatientEncounterPageQuery;
@@ -52,7 +56,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 门诊医生站就诊管理编排：患者队列、接诊/暂离/完诊与费用性质下拉。
+ * 门诊医生站就诊管理编排：患者队列、接诊/暂离/完诊/取消接诊与费用性质下拉。
+ *
+ * <p>对应 AS-OP-DOR-001：IF-DOR-01～04、IF-DOR-06。</p>
  */
 @Slf4j
 @Service
@@ -62,7 +68,7 @@ public class DoctorStationEncounterManageAppService {
     /** 就诊读侧：门诊上下文分页、完诊预检与 mustGet。 */
     private final EncounterQueryService encounterQueryService;
     private final EncounterContextReader EncounterContextReader;
-    /** 就诊写侧：接诊、暂离、完诊命令编排。 */
+    /** 就诊写侧：接诊、暂离、完诊、取消接诊命令编排。 */
     private final EncounterDomainService encounterDomainService;
     /** 字段映射：Request/QueryModel ↔ 医生站列表与命令 DTO。 */
     private final DoctorStationEncounterManageMapper doctorStationEncounterManageMapper;
@@ -75,6 +81,8 @@ public class DoctorStationEncounterManageAppService {
     private final WorkInjuryEncounterContextExtension workInjuryEncounterContextExtension;
     /** 费用性质展示：有医保账户优先合同名，供患者卡片胶囊。 */
     private final EncounterContractDisplayAssembler encounterContractDisplayAssembler;
+    /** 险种展示：账户/读卡缓存/预结算回落，供职工/居民短标签。 */
+    private final EncounterInsutypeDisplayAssembler encounterInsutypeDisplayAssembler;
 
     /**
      * 分页查询本科室门诊患者列表（读模型）。
@@ -105,6 +113,8 @@ public class DoctorStationEncounterManageAppService {
         this.applyWorkInjuryContextLabels(resp);
         // Asm：本页就诊批量回填费用性质展示（有医保账户优先，禁止写死自费）
         this.applyContractDisplayLabels(resp);
+        // Asm：本页就诊批量回填险种类型（职工/居民，来自医保账户 insutype）
+        this.applyInsutypeLabels(resp);
         // 费用性质下拉随就诊挂号分类变化，患者列表页不附带（由医嘱 init 按 encounterId 加载）。
         resp.setFeeNatureOptions(Collections.emptyList());
         return resp;
@@ -135,6 +145,34 @@ public class DoctorStationEncounterManageAppService {
                 continue;
             }
             row.setContractDisplay(contractDisplayByEncounterId.get(row.getEncounterId()));
+        }
+    }
+
+    /**
+     * 门诊医生站列表：批量回填 {@code insutype}（账户优先，空则读卡缓存/预结算回落）。
+     *
+     * @param resp 分页响应
+     */
+    private void applyInsutypeLabels(PageOutpatientInfoForDoctorStationResponse resp) {
+        if (resp == null || resp.getContent() == null || resp.getContent().isEmpty()) {
+            return;
+        }
+        LinkedHashSet<Long> encounterIds = new LinkedHashSet<>();
+        for (OutpatientInfoItemDto row : resp.getContent()) {
+            if (row != null && row.getEncounterId() != null) {
+                encounterIds.add(row.getEncounterId());
+            }
+        }
+        if (encounterIds.isEmpty()) {
+            return;
+        }
+        Map<Long, String> insutypeByEncounterId =
+            encounterInsutypeDisplayAssembler.mapInsutypeByEncounterIds(encounterIds);
+        for (OutpatientInfoItemDto row : resp.getContent()) {
+            if (row == null || row.getEncounterId() == null) {
+                continue;
+            }
+            row.setInsutype(insutypeByEncounterId.get(row.getEncounterId()));
         }
     }
 
@@ -247,6 +285,32 @@ public class DoctorStationEncounterManageAppService {
     }
 
     /**
+     * 取消门诊接诊（IF-DOR-06）：医生同意退号，将在诊/暂离/完诊回退为已挂号待诊。
+     *
+     * <p>与账单无关；窗口退号（IF-REG-09/10）在已接诊态会提示患者先来医生处取消接诊。</p>
+     *
+     * @param request 取消接诊请求
+     * @return 受理结果
+     * @throws BusinessException 就诊不存在、类别非门诊或当前状态不允许取消接诊
+     */
+    public CancelOutpatientReceptionResponse cancelOutpatientReception(CancelOutpatientReceptionRequest request) {
+        // Gate：取消接诊须绑定明确就诊与操作人，避免匿名回退接诊态。
+        this.validateCancelOutpatientReceptionRequest(request);
+        // Pre：强一致加载就诊头，仅门诊类别允许本工作站取消接诊。
+        EncounterDetailQueryModel encounterHead = this.encounterQueryService.mustGetEncounter(request.getEncounterId());
+        if (!EncounterClass.AMB.getCode().equals(encounterHead.getClassEnum())) {
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS, "当前就诊类别不允许在此工作站取消门诊接诊");
+        }
+        // Cmd：领域回退状态并收口 ADMITTER，发布取消接诊事件。
+        CancelOutpatientReceptionCommand command =
+            this.doctorStationEncounterManageMapper.toCancelOutpatientReceptionCommand(request);
+        this.encounterDomainService.cancelOutpatientReception(command);
+        log.info("门诊取消接诊完成 encounterId={} operatorId={}", request.getEncounterId(), request.getOperatorId());
+        // Asm：返回受理结果供医生站刷新队列。
+        return this.doctorStationEncounterManageMapper.toCancelOutpatientReceptionResponse(request.getEncounterId(), true);
+    }
+
+    /**
      * 校验医生站列表查询入参。
      *
      * @param request 请求体
@@ -316,6 +380,24 @@ public class DoctorStationEncounterManageAppService {
      * @throws BusinessException 参数缺失
      */
     private void validateCompleteOutpatientEncounterRequest(CompleteOutpatientEncounterRequest request) {
+        if (request == null) {
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "请求体不能为空");
+        }
+        if (request.getEncounterId() == null) {
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "就诊标识不能为空");
+        }
+        if (request.getOperatorId() == null) {
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "操作人不能为空");
+        }
+    }
+
+    /**
+     * 校验取消接诊请求。
+     *
+     * @param request 请求体
+     * @throws BusinessException 参数缺失
+     */
+    private void validateCancelOutpatientReceptionRequest(CancelOutpatientReceptionRequest request) {
         if (request == null) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "请求体不能为空");
         }

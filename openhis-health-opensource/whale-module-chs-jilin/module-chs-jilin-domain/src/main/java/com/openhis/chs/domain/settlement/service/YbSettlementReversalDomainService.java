@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /** 2208/2305 撤销凭证落库 */
 @Service
@@ -95,6 +96,30 @@ public class YbSettlementReversalDomainService {
         synthetic.setAcctPay(record.getAcctPay());
         synthetic.setPsnCashPay(record.getPsnCashPay());
         return persistReversal(record, synthetic, null, operatorId, invokeLogId);
+    }
+
+    /**
+     * 无平台撤销 setlinfo 时按结算回执合成撤销凭证；已有未删除凭证则跳过（幂等）。
+     * <p>供工伤 2208、历史补齐等场景：只保证对账抵减有反向行，不重复落库。</p>
+     *
+     * @param record      原结算回执
+     * @param operatorId  操作员 ID
+     * @param invokeLogId 关联 invoke 日志 ID
+     * @return 已有或新建撤销凭证主键；record 为空时 {@code null}
+     */
+    public Long persistSyntheticIfAbsent(YbSettlementRecord record, Long operatorId, Long invokeLogId) {
+        if (record == null || record.getId() == null) {
+            return null;
+        }
+        Long tenantId = record.getTenantId();
+        List<YbSettlementReversal> existing =
+            reversalRepository.findAllBySettlementRecordIdAndTenantIdAndIsDeletedFalseOrderByReversedAtDesc(
+                record.getId(), tenantId);
+        if (!existing.isEmpty()) {
+            chargeBatchLifecycle.markVoucherRevoked(record);
+            return existing.get(0).getId();
+        }
+        return persist2601Correction(record, operatorId, invokeLogId);
     }
 
     /**

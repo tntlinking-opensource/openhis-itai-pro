@@ -280,6 +280,8 @@ public class DeviceRequestQueryService {
         // 组套标识：列表回显供绑定耗材与主药 package_id 对齐核对
         model.setPackageId(request.getPackageId());
         model.setEncounterDiagnosisIds(request.getEncounterDiagnosisIds());
+        // 费用性质：contract_code = 合同 bus_no，供医生站反查 contractId
+        model.setContractCode(request.getContractCode());
         return model;
     }
 

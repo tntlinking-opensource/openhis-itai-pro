@@ -31,10 +31,15 @@ public class PageOutpatientFeeDetailRequest extends AbstractHealthPageRequest {
     @Schema(description = "结算业务日止（yyyy-MM-dd）", requiredMode = Schema.RequiredMode.REQUIRED)
     private String dateTo;
 
-    /** 挂号科室主键（Encounter.organization_id）。 */
-    @Schema(description = "挂号科室主键")
+    /** 挂号科室主键（Encounter.organization_id；遗留）。 */
+    @Schema(description = "挂号科室主键（遗留）")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long registrationDepartmentId;
+
+    /** 开立科室主键（账单 requesting_org_id）。 */
+    @Schema(description = "开立科室主键")
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long requestingOrgId;
 
     /** 费用大类多选 code。 */
     @Schema(description = "费用大类 code 多选")

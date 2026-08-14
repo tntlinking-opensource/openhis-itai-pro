@@ -6,7 +6,6 @@ package com.openhis.health.application.outpatient.pharmacy.dispense.support;
 
 import com.openhis.health.application.outpatient.pharmacy.dispense.dto.EncounterMedicationDispenseSlipRowDto;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
-import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.share.constants.DoctorStationTcmConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
@@ -28,6 +27,8 @@ import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
 /**
  * 门诊发药 slip：按处方号回填同方代煎费（IF-OPP-03 展示；锚定代煎 companion ChargeItem）。
+ *
+ * <p>门诊一方一代煎费：回显取「当前有效」单行（已结优先于残留 PLANNED/DRAFT），禁止把同方多条费用加总导致金额/数量翻倍。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -64,7 +65,7 @@ public class EncounterMedicationDispenseSlipDecoctionChargeEnricher {
         if (decoctionActivityId == null) {
             return;
         }
-        // Pre：按处方号汇总有效代煎收费明细
+        // Pre：按处方号取当前有效代煎收费行（一方一行，避免残留行加总）
         Map<String, DecoctionChargeAggregate> amountByPrescriptionNo =
             loadDecoctionChargeByPrescriptionNo(encounterId, decoctionActivityId, herbalPrescriptionNos);
         if (amountByPrescriptionNo.isEmpty()) {
@@ -141,12 +142,14 @@ public class EncounterMedicationDispenseSlipDecoctionChargeEnricher {
     }
 
     /**
-     * 按就诊 + 代煎 activity 产品锚点加载收费明细，筛出有效代煎费用并按方汇总。
+     * 按就诊 + 代煎 activity 产品锚点加载收费明细，筛出有效代煎费用并按方取当前展示行。
      *
-     * @param encounterId            就诊主键
-     * @param decoctionActivityId    代煎 activity 主键
-     * @param herbalPrescriptionNos  本页中药处方号
-     * @return 处方号 → 代煎费汇总
+     * <p>同方若同时存在已结与残留 PLANNED/DRAFT，取已结行；半退被替代的源 SETTLED 先排除。</p>
+     *
+     * @param encounterId           就诊主键
+     * @param decoctionActivityId   代煎 activity 主键
+     * @param herbalPrescriptionNos 本页中药处方号
+     * @return 处方号 → 代煎费展示汇总值
      */
     private Map<String, DecoctionChargeAggregate> loadDecoctionChargeByPrescriptionNo(
         Long encounterId,
@@ -156,7 +159,9 @@ public class EncounterMedicationDispenseSlipDecoctionChargeEnricher {
         // Pre：只拉代煎产品费用行，禁止 listChargeItemsByEncounterId 全就诊扫表
         List<ChargeItem> chargeItems = chargeItemQueryService.listChargeItemsByEncounterAndProduct(
             encounterId, TableNameConstants.WKF_ACTIVITY_DEFINITION, decoctionActivityId);
-        Map<String, DecoctionChargeAggregate> result = new HashMap<>();
+        // Pre：排除半退/反结链上已被再生叶替代的源 SETTLED，避免与再生行双计
+        chargeItems = chargeItemQueryService.filterOutSupersededSettledLines(encounterId, chargeItems);
+        Map<String, ChargeItem> preferredByPrescriptionNo = new HashMap<>();
         for (ChargeItem chargeItem : chargeItems) {
             if (!isEffectiveDecoctionChargeItem(chargeItem, decoctionActivityId)) {
                 continue;
@@ -165,35 +170,80 @@ public class EncounterMedicationDispenseSlipDecoctionChargeEnricher {
             if (prescriptionNo == null || !herbalPrescriptionNos.contains(prescriptionNo)) {
                 continue;
             }
+            ChargeItem current = preferredByPrescriptionNo.get(prescriptionNo);
+            // Gate：同方多行时只保留展示优先级更高的一行（已结优先于残留待收/草稿）
+            if (current == null || isPreferredDecoctionChargeOver(chargeItem, current)) {
+                preferredByPrescriptionNo.put(prescriptionNo, chargeItem);
+            }
+        }
+        Map<String, DecoctionChargeAggregate> result = new HashMap<>();
+        for (Map.Entry<String, ChargeItem> entry : preferredByPrescriptionNo.entrySet()) {
+            ChargeItem chargeItem = entry.getValue();
             BigDecimal lineAmount = chargeItem.getTotalPrice();
             if (lineAmount == null) {
                 lineAmount = BigDecimal.ZERO;
             }
-            DecoctionChargeAggregate current = result.get(prescriptionNo);
-            if (current == null) {
-                result.put(
-                    prescriptionNo,
-                    new DecoctionChargeAggregate(
-                        MonetaryAmountSupport.scaleDisplay(lineAmount),
-                        chargeItem.getQuantityValue(),
-                        trimToNull(chargeItem.getQuantityUnit())));
-                continue;
-            }
-            BigDecimal mergedAmount = MonetaryAmountSupport.scaleDisplay(
-                current.totalAmount().add(lineAmount));
-            BigDecimal mergedQuantity = current.quantity();
-            if (mergedQuantity == null) {
-                mergedQuantity = chargeItem.getQuantityValue();
-            } else if (chargeItem.getQuantityValue() != null) {
-                mergedQuantity = mergedQuantity.add(chargeItem.getQuantityValue());
-            }
-            String unitCode = current.unitCode();
-            if (unitCode == null) {
-                unitCode = trimToNull(chargeItem.getQuantityUnit());
-            }
-            result.put(prescriptionNo, new DecoctionChargeAggregate(mergedAmount, mergedQuantity, unitCode));
+            result.put(
+                entry.getKey(),
+                new DecoctionChargeAggregate(
+                    MonetaryAmountSupport.scaleDisplay(lineAmount),
+                    chargeItem.getQuantityValue(),
+                    trimToNull(chargeItem.getQuantityUnit())));
         }
         return result;
+    }
+
+    /**
+     * 判定候选代煎收费行是否优于当前展示行（状态优先，同态取更大主键）。
+     *
+     * @param candidate 候选行
+     * @param current   当前已选行
+     * @return {@code true} 应用候选替换当前
+     */
+    private static boolean isPreferredDecoctionChargeOver(ChargeItem candidate, ChargeItem current) {
+        int candidateRank = decoctionDisplayStatusRank(candidate.getStatusEnum());
+        int currentRank = decoctionDisplayStatusRank(current.getStatusEnum());
+        if (candidateRank > currentRank) {
+            return true;
+        }
+        if (candidateRank < currentRank) {
+            return false;
+        }
+        Long candidateId = candidate.getId();
+        Long currentId = current.getId();
+        if (candidateId == null) {
+            return false;
+        }
+        if (currentId == null) {
+            return true;
+        }
+        return candidateId.compareTo(currentId) > 0;
+    }
+
+    /**
+     * 代煎费笺面展示状态优先级：已结 &gt; 退款中 &gt; 待结 &gt; 待收 &gt; 草稿。
+     *
+     * @param statusEnum 收费状态码
+     * @return 数值越大越优先展示
+     */
+    private static int decoctionDisplayStatusRank(String statusEnum) {
+        String status = trimToEmpty(statusEnum);
+        if (ChargeItemStatus.SETTLED.getCode().equals(status)) {
+            return 50;
+        }
+        if (ChargeItemStatus.REFUNDING.getCode().equals(status)) {
+            return 40;
+        }
+        if (ChargeItemStatus.PENDING_SETTLEMENT.getCode().equals(status)) {
+            return 30;
+        }
+        if (ChargeItemStatus.PLANNED.getCode().equals(status)) {
+            return 20;
+        }
+        if (ChargeItemStatus.DRAFT.getCode().equals(status)) {
+            return 10;
+        }
+        return 0;
     }
 
     /**
@@ -201,7 +251,7 @@ public class EncounterMedicationDispenseSlipDecoctionChargeEnricher {
      *
      * @param chargeItem          收费明细
      * @param decoctionActivityId 代煎 activity 主键
-     * @return {@code true} 纳入汇总
+     * @return {@code true} 可参与同方择优
      */
     private static boolean isEffectiveDecoctionChargeItem(ChargeItem chargeItem, Long decoctionActivityId) {
         if (chargeItem == null || Boolean.TRUE.equals(chargeItem.getIsDeleted())) {
@@ -214,7 +264,7 @@ public class EncounterMedicationDispenseSlipDecoctionChargeEnricher {
             return false;
         }
         String status = trimToEmpty(chargeItem.getStatusEnum());
-        // 已退费不再展示；草稿/待收/待结/已结/退款中均回显金额
+        // 已退费不再展示；草稿/待收/待结/已结/退款中均可作为候选
         if (ChargeItemStatus.REFUNDED.getCode().equals(status)) {
             return false;
         }
@@ -229,9 +279,9 @@ public class EncounterMedicationDispenseSlipDecoctionChargeEnricher {
     }
 
     /**
-     * 同方代煎费汇总（金额 + 数量/单位）。
+     * 同方代煎费展示值（金额 + 数量/单位）。
      *
-     * @param totalAmount 金额合计
+     * @param totalAmount 金额
      * @param quantity    数量（付数）
      * @param unitCode    数量单位码
      */

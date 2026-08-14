@@ -47,4 +47,16 @@ public class LoadOutpatientConsumableUsageReportPageInitResponse {
     /** 费用性质下拉（value=fin_contract.bus_no）。 */
     @Schema(description = "费用性质选项")
     private List<OptionDto> feeNatureOptions;
+
+    /** 耗材类型下拉。 */
+    @Schema(description = "耗材类型选项")
+    private List<OptionDto> categoryOptions;
+
+    /** 执行人（发耗材人）下拉。 */
+    @Schema(description = "执行人选项")
+    private List<OptionDto> practitionerOptions;
+
+    /** 记录类型下拉：ALL / DISPENSE / REFUND。 */
+    @Schema(description = "记录类型选项")
+    private List<OptionDto> recordTypeOptions;
 }

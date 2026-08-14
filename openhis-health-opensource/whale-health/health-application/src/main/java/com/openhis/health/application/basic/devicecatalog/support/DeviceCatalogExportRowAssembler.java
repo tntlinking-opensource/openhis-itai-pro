@@ -92,7 +92,8 @@ public class DeviceCatalogExportRowAssembler {
         values[28] = this.yesNoLabel(entity.getAllergenFlag());
         values[29] = this.yesNoLabel(entity.getYbFlag());
         values[30] = this.yesNoLabel(entity.getHvcmFlag());
-        values[31] = this.yesNoLabel(entity.getChargeableFlag());
+        // 「不收费耗材」列：库 chargeableFlag=true(收费)→否；false→是
+        values[31] = this.nonChargeableYesNoLabel(entity.getChargeableFlag());
         values[32] = this.textOrEmpty(descriptionParts.descriptionText);
         return values;
     }
@@ -213,6 +214,22 @@ public class DeviceCatalogExportRowAssembler {
             return "是";
         }
         return "否";
+    }
+
+    /**
+     * 收费标记 → 「不收费耗材」列是/否（与导入列语义一致）。
+     *
+     * @param chargeableFlag 库字段：true=收费
+     * @return 是/否/空
+     */
+    private String nonChargeableYesNoLabel(Boolean chargeableFlag) {
+        if (chargeableFlag == null) {
+            return "";
+        }
+        if (Boolean.TRUE.equals(chargeableFlag)) {
+            return "否";
+        }
+        return "是";
     }
 
     /**

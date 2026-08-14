@@ -47,6 +47,13 @@ public class ClinicRegisterItemDto {
     @Schema(description = "患者性别（展示）")
     private String patientGenderText;
 
+    /**
+     * 患者年龄展示文案（由出生日期推算，如 {@code 45岁}、{@code 3岁5月}；无出生日期时为空）。
+     */
+    /** 患者年龄（展示）（业务字段）。 */
+    @Schema(description = "患者年龄（展示）")
+    private String patientAgeText;
+
     /** 患者联系电话（业务字段）。 */
     @Schema(description = "患者联系电话")
     private String contactPhone;
@@ -111,7 +118,9 @@ public class ClinicRegisterItemDto {
     @Schema(description = "收费人姓名")
     private String cashierName;
 
-    /** 费用性质名称。 */
+    /**
+     * 费用性质名称（挂号身份：就诊优先账户合同名，有医保户优先医保；非账单挂账/支付渠道）。
+     */
     @Schema(description = "费用性质名称")
     private String contractName;
 

@@ -8,17 +8,21 @@ import com.openhis.chs.bridge.inpatient.invoker.Ip2302Invoker;
 import com.openhis.chs.bridge.inpatient.invoker.Ip2304Invoker;
 import com.openhis.chs.bridge.inpatient.invoker.Ip2305Invoker;
 import com.openhis.chs.bridge.inpatient.workflow.IpAdmissionOrchestrator;
+import com.openhis.chs.bridge.inpatient.invoker.Ip2402Invoker;
 import com.openhis.chs.bridge.inpatient.invoker.Ip2403Invoker;
 import com.openhis.chs.bridge.inpatient.invoker.Ip2404Invoker;
 import com.openhis.chs.bridge.inpatient.invoker.Ip2405Invoker;
 import com.openhis.chs.bridge.inpatient.workflow.IpInpatientPreSettleOrchestrator;
 import com.openhis.chs.bridge.inpatient.workflow.IpPlatformAdmissionOrchestrator;
+import com.openhis.chs.bridge.inpatient.assembler.InpatientSettleCommandAssembler;
+import com.openhis.chs.bridge.inpatient.support.IpPlatformDischargeRevokeSupport;
 import com.openhis.chs.domain.catalog.access.ChsInsuranceContractReader;
 import com.openhis.chs.domain.inpatient.command.IpAdmissionCommand;
 import com.openhis.chs.domain.inpatient.result.IpAdmissionResult;
 import com.openhis.chs.domain.inpatient.command.IpConfirmSettleCommand;
 import com.openhis.chs.domain.inpatient.result.IpConfirmSettleResult;
 import com.openhis.chs.domain.inpatient.command.IpEncounterCommand;
+import com.openhis.chs.domain.inpatient.command.IpSettleContext;
 import com.openhis.chs.domain.inpatient.queries.model.IpPlatformAdmissionQueryModel;
 import com.openhis.chs.domain.inpatient.command.IpPreSettleCommand;
 import com.openhis.chs.domain.inpatient.result.IpPreSettleResult;
@@ -29,6 +33,10 @@ import com.openhis.chs.domain.inpatient.result.IpRevokeSettleResult;
 import com.openhis.chs.domain.inpatient.entity.YbInpatientPreSettle;
 import com.openhis.chs.domain.inpatient.loader.IpSettleContextLoader;
 import com.openhis.chs.domain.inpatient.service.YbInpatientPreSettleQueryService;
+import com.openhis.chs.domain.settlement.support.ChargeItemIdsSupport;
+import com.openhis.chs.gateway.client.InvokeContext;
+import com.openhis.chs.gateway.scheme.inpatient.assembler.IpInpatientSettleInputAssembler;
+import com.openhis.chs.gateway.scheme.inpatient.model.Ip2402Input;
 import com.openhis.chs.gateway.support.ChsCurrentOperatorResolver;
 import com.openhis.health.domain.financial.paymentreconciliation.service.PaymentReconciliationDomainService;
 import com.openhis.health.infrastructure.integration.insurance.inpatient.InpatientChargeInsuranceExtension;
@@ -62,7 +70,7 @@ import java.util.List;
  * <p><b>Health 调用方</b>：{@code InpatientSettleAppService}、{@code InpatientRegistrationAppService}</p>
  * <p><b>Bridge 委托</b>：{@link IpPlatformAdmissionOrchestrator}、{@link IpAdmissionOrchestrator}、
  * {@link IpInpatientPreSettleOrchestrator}、{@link Ip2304Invoker}、{@link Ip2305Invoker}、
- * {@link Ip2302Invoker}、{@link Ip2403Invoker}、{@link Ip2404Invoker}、{@link Ip2405Invoker}</p>
+ * {@link Ip2302Invoker}、{@link Ip2402Invoker}、{@link Ip2403Invoker}、{@link Ip2404Invoker}、{@link Ip2405Invoker}</p>
  */
 @Component
 @Primary
@@ -79,6 +87,7 @@ public class InpatientChargeInsuranceExtensionImpl implements InpatientChargeIns
     private final Ip2304Invoker ip2304Invoker;
     private final Ip2305Invoker ip2305Invoker;
     private final Ip2302Invoker ip2302Invoker;
+    private final Ip2402Invoker ip2402Invoker;
     private final Ip2403Invoker ip2403Invoker;
     private final Ip2404Invoker ip2404Invoker;
     private final Ip2405Invoker ip2405Invoker;
@@ -130,7 +139,7 @@ public class InpatientChargeInsuranceExtensionImpl implements InpatientChargeIns
         return toNeutralAdmissionResult(chsResult);
     }
 
-    /** 【2301→2402→2303】住院预结算，写入 yb_inpatient_pre_settle。 */
+    /** 【2301→2303】住院预结算，写入 yb_inpatient_pre_settle（2402 不在预结算调用）。 */
     @Override
     public InpatientChargePreSettleExtensionOut preSettle(InpatientChargePreSettleExtensionIn command) {
         IpPreSettleResult chsResult = preSettleOrchestrator.invoke(
@@ -138,7 +147,7 @@ public class InpatientChargeInsuranceExtensionImpl implements InpatientChargeIns
         return toNeutralPreSettleResult(chsResult);
     }
 
-    /** 【2304】本地落账前住院正式结算确认，写入 yb_settlement_record。 */
+    /** 【2402→2304→（2402 幂等）】本地落账前住院正式结算确认；长春出院全结须先离院再 2304。 */
     @Override
     public InpatientChargeConfirmExtensionOut confirmBeforeLocalSettle(InpatientChargeConfirmExtensionIn command) {
         IpConfirmSettleCommand domainCommand = new IpConfirmSettleCommand();
@@ -147,7 +156,61 @@ public class InpatientChargeInsuranceExtensionImpl implements InpatientChargeIns
         domainCommand.setEncounterId(command.getEncounterId());
         domainCommand.setOperatorId(currentOperatorResolver.requireOperatorId("AUTH_REQUIRED", "请先登录"));
         domainCommand.setTenantId(TenantUtils.getCurrentTenantId());
-        return toNeutralConfirmResult(ip2304Invoker.invoke(domainCommand));
+        IpConfirmSettleResult chsResult = ip2304Invoker.invoke(domainCommand);
+        this.registerPlatformDischargeAfterConfirm(chsResult, domainCommand.getPaymentDraftId());
+        return toNeutralConfirmResult(chsResult);
+    }
+
+    /**
+     * 正式结算成功后办理平台出院（2402）；非出院全结跳过；平台已出院幂等忽略。
+     *
+     * @param confirmResult  2304 结果
+     * @param paymentDraftId 支付草稿 ID
+     */
+    private void registerPlatformDischargeAfterConfirm(
+            IpConfirmSettleResult confirmResult,
+            Long paymentDraftId) {
+        if (confirmResult == null || paymentDraftId == null) {
+            return;
+        }
+        Long tenantId = TenantUtils.getCurrentTenantId();
+        YbInpatientPreSettle pre = inpatientPreSettleQueryService
+            .findOptionalSettledByPaymentDraftId(paymentDraftId, tenantId)
+            .orElse(null);
+        if (pre == null) {
+            return;
+        }
+        if (!IpSettleContext.SETTLE_MODE_DISCHARGE_FULL.equals(pre.getSettleMode())) {
+            return;
+        }
+        IpPreSettleCommand enrichCommand = new IpPreSettleCommand();
+        enrichCommand.setEncounterId(pre.getEncounterId());
+        enrichCommand.setContractId(pre.getContractId());
+        enrichCommand.setPaymentDraftId(pre.getPaymentDraftId());
+        enrichCommand.setSettleMode(pre.getSettleMode());
+        enrichCommand.setPsnNo(pre.getPsnNo());
+        enrichCommand.setMdtrtCertType(pre.getMdtrtCertType());
+        enrichCommand.setMdtrtCertNo(pre.getMdtrtCertNo());
+        enrichCommand.setInsuplcAdmdvs(pre.getInsuplcAdmdvs());
+        enrichCommand.setInsutype(pre.getInsutype());
+        enrichCommand.setAcctUsedFlag(pre.getAcctUsedFlag());
+        enrichCommand.setPsnSetlway(pre.getPsnSetlway());
+        enrichCommand.setChargeItemIds(ChargeItemIdsSupport.parseIds(pre.getChargeItemIds()));
+        IpSettleContext ctx = contextLoader.enrichPreSettle(enrichCommand);
+        String mdtrtId = confirmResult.getMdtrtId();
+        if (mdtrtId == null || mdtrtId.isBlank()) {
+            mdtrtId = pre.getMdtrtId();
+        }
+        InvokeContext invokeContext = InpatientSettleCommandAssembler.buildInvokeContext(ctx);
+        Ip2402Input input2402 = IpInpatientSettleInputAssembler.assemble2402(ctx, mdtrtId);
+        try {
+            ip2402Invoker.invoke(ctx.getContractBusNo(), input2402, invokeContext);
+        } catch (RuntimeException ex) {
+            if (IpPlatformDischargeRevokeSupport.isAlreadyDischargedOnPlatform(ex)) {
+                return;
+            }
+            throw ex;
+        }
     }
 
     /** 本地：按收银草稿 ID 查询活跃预结算列表，无网关出站。 */
@@ -339,6 +402,12 @@ public class InpatientChargeInsuranceExtensionImpl implements InpatientChargeIns
         result.setFundPaySumamt(chsResult.getFundPaySumamt());
         result.setAcctPay(chsResult.getAcctPay());
         result.setPsnCashPay(chsResult.getPsnCashPay());
+        // Asm：2303 setlinfo 分项只读透传，供医护站/收费处费用明细展示。
+        result.setActPayDedc(chsResult.getActPayDedc());
+        result.setCvlservFlag(chsResult.getCvlservFlag());
+        result.setCvlservPay(chsResult.getCvlservPay());
+        result.setHifpPay(chsResult.getHifpPay());
+        result.setOthPay(chsResult.getOthPay());
         return result;
     }
 

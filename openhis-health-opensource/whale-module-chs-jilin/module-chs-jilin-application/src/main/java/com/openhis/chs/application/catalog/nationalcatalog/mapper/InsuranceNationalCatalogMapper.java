@@ -115,6 +115,10 @@ public final class InsuranceNationalCatalogMapper {
             .setAprvno(item.getAprvno())
             .setProdentpName(item.getProdentpName())
             .setSourceInfno(item.getSourceInfno())
-            .setUpdtTime(item.getUpdtTime());
+            .setUpdtTime(item.getUpdtTime())
+            .setMinPacCnt(item.getMinPacCnt())
+            .setMinPacunt(item.getMinPacunt())
+            .setMinPrepunt(item.getMinPrepunt())
+            .setMinPrcunt(item.getMinPrcunt());
     }
 }

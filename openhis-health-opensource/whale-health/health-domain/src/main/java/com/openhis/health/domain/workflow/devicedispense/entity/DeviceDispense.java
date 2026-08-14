@@ -634,4 +634,29 @@ public class DeviceDispense extends BaseAuditedEntity {
         this.performerId = null;
         this.statusEnum = DispenseStatus.PREPARATION.getCode();
     }
+
+    /**
+     * 修正客户可见发放时刻（发放时间轴 = recorded 轴；不改 planned_dispense_time）。
+     *
+     * <p>已写 {@code dispense_time} 则改发放时刻；否则改 {@code prepare_time}（仅拣配未发）。</p>
+     *
+     * @param newDisplayTime 新的展示时刻
+     * @throws BusinessException 时刻为空或无可改展示字段
+     */
+    public void amendDisplayTime(LocalDateTime newDisplayTime) {
+        if (newDisplayTime == null) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "发放展示时间不能为空");
+        }
+        // 已发优先改 dispense_time（客户可见发放时间）
+        if (this.dispenseTime != null) {
+            this.dispenseTime = newDisplayTime;
+            return;
+        }
+        // 仅拣配：改 prepare_time
+        if (this.prepareTime != null) {
+            this.prepareTime = newDisplayTime;
+            return;
+        }
+        throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_STATUS, "发放单尚无拣配/发放时间，无法修改");
+    }
 }

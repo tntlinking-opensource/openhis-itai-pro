@@ -301,15 +301,15 @@ public class AccountQueryService {
     }
 
     /**
-     * 按优先费用性质合同号列出就诊主键（报表筛选；口径同 {@link #mapPreferredContractNoByEncounterIds}）。
+     * 按账户 {@code contract_no} 列出就诊主键（任一有效账户命中即可；含双账户自费户）。
      *
-     * <p>先按 {@code contract_no} 反查候选就诊，再校验「展示优先」合同号与筛选值一致，
-     * 避免双账户场景仅命中非优先户。</p>
+     * <p>发药/耗材/费用明细等<b>已结账单</b>类报表筛选用本方法；患者卡片「展示优先」仍用
+     * {@link #listEncounterIdsByPreferredContractNo}。</p>
      *
      * @param contractNo {@code fin_contract.bus_no}；空则返回空列表
      * @return 去重后的就诊主键；无命中时空列表
      */
-    public List<Long> listEncounterIdsByPreferredContractNo(String contractNo) {
+    public List<Long> listEncounterIdsByAnyAccountContractNo(String contractNo) {
         String normalized = trimContractNo(contractNo);
         // 空合同号：无法按费用性质收窄
         if (normalized == null) {
@@ -320,19 +320,34 @@ public class AccountQueryService {
         if (candidates == null || candidates.isEmpty()) {
             return Collections.emptyList();
         }
-        LinkedHashSet<Long> candidateEncounterIds = new LinkedHashSet<>();
-        // Loop：收集有效账户上的就诊主键
+        LinkedHashSet<Long> encounterIds = new LinkedHashSet<>();
+        // Loop：有效账户上的就诊均入集（不按「优先医保户」再滤）
         for (Account row : candidates) {
             if (row == null || row.getEncounterId() == null) {
                 continue;
             }
-            // 停用账户不参与费用性质筛选候选
             if (!this.isEffectiveActiveAccount(row)) {
                 continue;
             }
-            candidateEncounterIds.add(row.getEncounterId());
+            encounterIds.add(row.getEncounterId());
         }
-        // 候选空：无有效就诊
+        return new ArrayList<>(encounterIds);
+    }
+
+    /**
+     * 按优先费用性质合同号列出就诊主键（口径同 {@link #mapPreferredContractNoByEncounterIds}）。
+     *
+     * <p>仅患者卡片/挂号身份展示筛选；已结账单类报表请用 {@link #listEncounterIdsByAnyAccountContractNo}。</p>
+     *
+     * @param contractNo {@code fin_contract.bus_no}；空则返回空列表
+     * @return 去重后的就诊主键；无命中时空列表
+     */
+    public List<Long> listEncounterIdsByPreferredContractNo(String contractNo) {
+        String normalized = trimContractNo(contractNo);
+        if (normalized == null) {
+            return Collections.emptyList();
+        }
+        List<Long> candidateEncounterIds = this.listEncounterIdsByAnyAccountContractNo(normalized);
         if (candidateEncounterIds.isEmpty()) {
             return Collections.emptyList();
         }

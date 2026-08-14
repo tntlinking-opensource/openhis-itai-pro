@@ -13,8 +13,7 @@ import java.math.BigDecimal;
  * 清算/日对账本地金额汇总行（按险种 + 清算类别分组后的一条）。
  * <p>金额来自 HIS 结算快照与同窗撤销抵减，不是医保平台对账回写结果；
  * 平台对账结果见日账流水（{@code stmt_rslt} 等）。</p>
- * <p>口径（BR-CHS-REC-008）：四项金额正向累加、撤销抵减（一收一退净 0）；
- * {@code setlCount} 含正向与撤销（一收一退计 2）。</p>
+ * <p>口径：四项金额正向累加、同窗撤销抵减；{@code setlCount} 含正向与撤销。</p>
  */
 @Data
 @Accessors(chain = true)

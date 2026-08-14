@@ -45,7 +45,7 @@ public class AutoRollLineContext {
     /** 数量单位持久化码。 */
     private String unitCode;
 
-    /** 诊疗类目（51 床位 / 26 护理）。 */
+    /** 诊疗类目 code（配置选品类目 / 护理分支 26）。 */
     private String categoryEnum;
 
     /** 开立人主键。 */
@@ -54,7 +54,7 @@ public class AutoRollLineContext {
     /** 滚费业务日。 */
     private LocalDate billDate;
 
-    /** 费用发生时刻。 */
+    /** 费用发生时刻（配置业务时刻或护理日末；与 Procedure.recorded_time 对齐）。 */
     private LocalDateTime occurrenceTime;
 
     /** 单价（入账权威）。 */

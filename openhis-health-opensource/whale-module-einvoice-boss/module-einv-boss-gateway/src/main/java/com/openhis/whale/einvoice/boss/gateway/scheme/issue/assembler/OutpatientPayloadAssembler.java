@@ -20,8 +20,7 @@ import static com.openhis.whale.einvoice.boss.gateway.scheme.issue.assembler.Bos
 /**
  * 门诊线（{@code invoiceEBillOutpatient}）业务 JSON 组装。
  *
- * <p>自费场景基金分项由 {@link BossPayloadSupport#fillSelfPayAmounts} 填 0，
- * otherInfo 结构对齐旧 OpenHis 以满足院点非空校验。</p>
+ * <p>有医保结算时填 CHS 基金分项；无结算时由 {@link BossPayloadSupport#fillSelfPayAmounts} 填自费口径。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -59,8 +58,8 @@ public class OutpatientPayloadAssembler {
         body.put("patientNo", snapshot.getEncounterBusNo());
         body.put("patientId", snapshot.getPatientId().toString());
         putMedicalEncounterFields(body, snapshot, properties);
-        fillSelfPayAmounts(body, document.getTotalAmt());
-        body.put("payChannelDetail", buildPayChannel(document.getTotalAmt()));
+        fillInsuranceOrSelfPayAmounts(body, snapshot, document.getTotalAmt());
+        body.put("payChannelDetail", buildPayChannelDetail(snapshot, document.getTotalAmt()));
         body.put("chargeDetail", buildChargeDetail(lines));
         body.put("listDetail", buildListDetail(lines));
         return JSON.toJSONString(body);
