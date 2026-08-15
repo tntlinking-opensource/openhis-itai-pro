@@ -31,10 +31,12 @@ defineOptions({ name: 'WorkInjuryFilingDetailDialog' });
 const props = defineProps<{
   encounterId?: string | number;
   contractId?: string | number;
+  injureAffirmIdHint?: string;
 }>();
 
 const emit = defineEmits<{
   completed: [];
+  cancelled: [];
   probed: [result: WorkInjuryFilingProbeResult];
 }>();
 
@@ -193,11 +195,18 @@ const summaryLine = computed(() => {
 });
 
 const displayPsnNo = computed(() => context.value?.psnNo || probe.value?.psnNo || '—');
-const displayInjureAffirmId = computed(
-  () => context.value?.injureAffirmId || probe.value?.injureAffirmId || '—',
+const displayInjureAffirmId = computed(() => {
+  const fromCtx = context.value?.injureAffirmId || probe.value?.injureAffirmId;
+  const hint = props.injureAffirmIdHint?.trim();
+  return fromCtx || hint || '—';
+});
+const resolvedInjureAffirmIdHint = computed(() =>
+  displayInjureAffirmId.value === '—' ? undefined : displayInjureAffirmId.value,
 );
 
 const pendingAutoGuide = ref(false);
+/** 无就诊时仅查看预查结果，不引导上传 */
+const pendingViewOnly = ref(false);
 
 async function loadAnchorContext() {
   if (!anchorReady.value) {
@@ -239,20 +248,35 @@ async function runProbe(options?: { silent?: boolean }) {
   }
 }
 
-function openAddFiling() {
+function openAddFiling(options?: { quickConfirm?: boolean }) {
   if (!anchorReady.value) {
-    ElMessage.warning('添加备案需先完成确认挂号（落就诊后再上传 2301）');
+    ElMessage.warning('请先点「确认挂号」完成预结算，系统会引导备案（未备案不能完成挂号）');
     return;
   }
   // nextTick：确保 2301 子组件已挂载
   window.setTimeout(() => {
-    approvalDialogRef.value?.openDialog();
+    approvalDialogRef.value?.openDialog({ quickConfirm: options?.quickConfirm });
   }, 0);
 }
 
 async function onApprovalCompleted() {
   await loadAnchorContext();
+  if (!context.value?.qualificationValid) {
+    ElMessage.warning('备案已提交，但审批尚未生效，请点「查询备案」确认');
+    return;
+  }
+  visible.value = false;
   emit('completed');
+}
+
+function onApprovalCancelled() {
+  // 一键备案取消时保持详情窗，便于继续操作；ensure 场景由关闭详情 resolve
+}
+
+function onFilingDialogClosed() {
+  if (!context.value?.qualificationValid) {
+    emit('cancelled');
+  }
 }
 
 async function maybeGuideApprovalAfterLoad() {
@@ -260,16 +284,21 @@ async function maybeGuideApprovalAfterLoad() {
     return;
   }
   pendingAutoGuide.value = false;
+  if (pendingViewOnly.value) {
+    // 查看模式不自动弹 2301
+    return;
+  }
   if (!anchorReady.value) {
-    ElMessage.warning('暂无有效审批：请先确认挂号后再添加备案');
+    ElMessage.warning('请先点「确认挂号」完成预结算，系统会引导备案（未备案不能完成挂号）');
     return;
   }
   if (context.value?.qualificationValid) {
+    visible.value = false;
+    emit('completed');
     return;
   }
-  // 有当前有效审批但未绑定：自动绑定门诊(12)优先，否则取首条有效
-  const preferred =
-    validRows.value.find((r) => String(r.approveType ?? '').trim() === '12') ?? validRows.value[0];
+  // 仅自动绑定门诊审批类型 12（院点联网结算）；类型 10 为转诊，不可强绑
+  const preferred = validRows.value.find((r) => String(r.approveType ?? '').trim() === '12');
   if (preferred?.qualificationId) {
     try {
       await bindWorkInjuryQualification({
@@ -278,15 +307,22 @@ async function maybeGuideApprovalAfterLoad() {
         qualificationId: preferred.qualificationId,
       });
       await loadAnchorContext();
-      ElMessage.success(`已自动绑定有效审批 ${preferred.qualificationId}`);
+      ElMessage.success(`已自动绑定门诊审批 ${preferred.qualificationId}`);
+      visible.value = false;
       emit('completed');
       return;
     } catch (error) {
       ElMessage.error(error instanceof Error ? error.message : '自动绑定审批失败');
     }
   }
-  ElMessage.warning('暂无有效审批，请填写备案信息');
-  openAddFiling();
+  // 无类型12：一键备案（须有认定 ID）
+  if (!resolvedInjureAffirmIdHint.value) {
+    ElMessage.warning('暂无门诊审批（类型12）。若仅有转诊类型10，请先读卡取得认定 ID 后再一键备案');
+    return;
+  }
+  ElMessage.warning('暂无门诊审批（类型12），将打开一键备案');
+  // 稍等详情窗完全打开，再弹 2301，避免与 AppDialog 互顶闪退
+  window.setTimeout(() => openAddFiling({ quickConfirm: true }), 180);
 }
 
 async function loadAll() {
@@ -310,6 +346,7 @@ watch(visible, (open) => {
     void loadAll();
   } else {
     pendingAutoGuide.value = false;
+    pendingViewOnly.value = false;
   }
 });
 
@@ -328,10 +365,20 @@ async function refreshQualification() {
         { silent: true },
       );
       await loadAnchorContext();
-      emit('completed');
+      // 仅审批已生效时通知外层（避免 ensure 误判成功）
+      if (context.value?.qualificationValid) {
+        emit('completed');
+        visible.value = false;
+        ElMessage.success('已绑定有效工伤备案');
+        return;
+      }
     }
     await runProbe({ silent: true });
-    ElMessage.success('备案查询已刷新');
+    ElMessage.success(
+      probe.value?.hasValidFiling
+        ? '备案查询已刷新（请确认绑定后继续挂号）'
+        : '备案查询已刷新，暂无有效审批',
+    );
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '工伤审批查询失败');
   } finally {
@@ -339,8 +386,13 @@ async function refreshQualification() {
   }
 }
 
-function openDialog(options?: { autoGuideApproval?: boolean }) {
+function openDialog(options?: { autoGuideApproval?: boolean; viewOnly?: boolean }) {
   pendingAutoGuide.value = Boolean(options?.autoGuideApproval);
+  // autoGuide 时以 props 是否齐全为准；勿在打开瞬间因未就绪误标 viewOnly 跳过 2301
+  pendingViewOnly.value = Boolean(options?.viewOnly);
+  if (!options?.autoGuideApproval && !anchorReady.value) {
+    pendingViewOnly.value = true;
+  }
   visible.value = true;
 }
 
@@ -354,14 +406,19 @@ defineExpose({ openDialog, runProbe });
     width="640px"
     destroy-on-close
     :close-on-click-modal="false"
+    @closed="onFilingDialogClosed"
   >
     <div v-loading="loading" class="wi-filing-dialog">
       <ElAlert
-        type="info"
+        type="warning"
         :closable="false"
         show-icon
         class="!mb-2"
-        title="挂号费须自费；添加备案需确认挂号后"
+        :title="
+          anchorReady
+            ? '未备案不能完成挂号。点「确认挂号」预结算后，系统会先绑定已有审批，没有再一键备案'
+            : '当前仅可查看备案。请先点「确认挂号」完成预结算，系统会引导备案后才能确认缴费'
+        "
       />
 
       <template v-if="probe || context">
@@ -428,7 +485,15 @@ defineExpose({ openDialog, runProbe });
             </template>
           </ElTableColumn>
         </ElTable>
-        <ElEmpty v-else-if="probe" description="暂无审批，确认挂号后可添加备案" :image-size="56" />
+        <ElEmpty
+          v-else-if="probe"
+          :description="
+            anchorReady
+              ? '暂无有效审批，可一键备案后继续挂号'
+              : '暂无有效审批。请先点「确认挂号」，预结算后可一键备案'
+          "
+          :image-size="56"
+        />
       </template>
 
       <ElEmpty v-else description="点击「查询备案」读取工伤卡信息" :image-size="56" />
@@ -440,12 +505,11 @@ defineExpose({ openDialog, runProbe });
         查询备案
       </ElButton>
       <ElButton
-        v-if="!context?.qualificationValid"
+        v-if="anchorReady && !context?.qualificationValid"
         type="warning"
-        :disabled="!anchorReady"
-        @click="openAddFiling"
+        @click="openAddFiling({ quickConfirm: Boolean(resolvedInjureAffirmIdHint) })"
       >
-        添加备案
+        一键备案
       </ElButton>
     </template>
   </AppDialog>
@@ -455,7 +519,8 @@ defineExpose({ openDialog, runProbe });
     ref="approvalDialogRef"
     :encounter-id="encounterId!"
     :contract-id="contractId"
-    :injure-affirm-id-hint="displayInjureAffirmId === '—' ? undefined : displayInjureAffirmId"
+    :injure-affirm-id-hint="resolvedInjureAffirmIdHint"
     @completed="onApprovalCompleted"
+    @cancelled="onApprovalCancelled"
   />
 </template>

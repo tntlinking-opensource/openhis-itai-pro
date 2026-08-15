@@ -3,9 +3,9 @@ import type { DocumentTypeDto } from '#/api/emr/document-type';
 import type { TemplateDto } from '#/api/emr/template';
 
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
-import { formatTemplateScopeTag } from '#/views/basic/emr-template/emr-template-scope.constants';
+import { EMR_TEMPLATE_SCOPE_LEVEL } from '#/views/basic/emr-template/emr-template-scope.constants';
 
-/** 病历侧栏树节点：目录分类 → 模板 → 该模板建出的病历 */
+/** 病历侧栏树节点：目录分类 → 范围分组 → 模板；已写病历挂「历史病历」 */
 export interface EmrTemplateTreeNode {
   /** Element Plus Tree `node-key`，全局唯一 */
   nodeKey: string;
@@ -18,14 +18,16 @@ export interface EmrTemplateTreeNode {
   categoryCode?: string;
   /** 模板主键字符串（模板节点） */
   templateId?: string;
-  /** 是否为目录分类父节点（门诊病历/住院病历/…） */
+  /** 是否为目录分类父节点（门诊病历模板/住院病历/…） */
   isDocumentType?: boolean;
-  /** 是否为分组节点（如「其他病历」，不可点选） */
+  /** 是否为分组节点（如「个人」「科室」「全院」「其他病历」，不可点选） */
   isGroup?: boolean;
   /** 是否为模板节点（点选 → 新建） */
   isTemplate?: boolean;
   /** 是否为已有病历节点（点选 → 打开） */
   isDocument?: boolean;
+  /** 是否挂在「历史病历」下（只读浏览，不可删） */
+  isHistoryDocument?: boolean;
   /** 模板列表 DTO */
   template?: TemplateDto;
   /** 病历摘要 DTO */
@@ -35,11 +37,18 @@ export interface EmrTemplateTreeNode {
 
 /** 侧栏目录五类（顺序即展示顺序） */
 export const EMR_DIRECTORY_CATEGORIES = [
-  { code: 'OUTPATIENT', label: '门诊病历' },
+  { code: 'OUTPATIENT', label: '门诊病历模板' },
   { code: 'INPATIENT', label: '住院病历' },
   { code: 'NOTICE', label: '告知书' },
   { code: 'SURGERY', label: '手术病历' },
   { code: 'OTHER', label: '其他' },
+] as const;
+
+/** 模板范围子父级（个人 / 科室 / 全院），顺序即展示顺序 */
+const EMR_TEMPLATE_SCOPE_GROUPS = [
+  { code: EMR_TEMPLATE_SCOPE_LEVEL.PERSONAL, label: '个人' },
+  { code: EMR_TEMPLATE_SCOPE_LEVEL.DEPARTMENT, label: '科室' },
+  { code: EMR_TEMPLATE_SCOPE_LEVEL.HOSPITAL, label: '全院' },
 ] as const;
 
 const CATEGORY_LABEL_BY_CODE: Record<string, string> = Object.fromEntries(
@@ -79,28 +88,123 @@ export function buildDocumentTreeLabel(
   const current = preserveApiIdForRequest(options?.currentEncounterId) ?? '';
   const docEnc = preserveApiIdForRequest(doc.encounterId) ?? '';
   if (current && docEnc && docEnc !== current) {
-    parts.push('[关联]');
+    parts.push('[历史]');
   }
   return parts.length > 0 ? parts.join(' ') : '未保存';
 }
 
 function buildTemplateLeafLabel(tpl: TemplateDto): string {
-  const base =
+  return (
     tpl.name ??
     tpl.code ??
-    (tpl.id === null || tpl.id === undefined ? '未命名模板' : String(tpl.id));
-  const scopeTag = formatTemplateScopeTag(tpl.scopeLevel);
-  return scopeTag ? `${base} [${scopeTag}]` : base;
+    (tpl.id === null || tpl.id === undefined ? '未命名模板' : String(tpl.id))
+  );
 }
 
-function toDocumentLeaf(doc: DocumentSummaryDto): EmrTemplateTreeNode {
+/** 归一化模板范围；未知/空按全院归组（与历史默认全院模板一致） */
+function resolveTemplateScopeGroupCode(scopeLevel?: string | null): string {
+  const scope = String(scopeLevel ?? '')
+    .trim()
+    .toUpperCase();
+  if (scope === EMR_TEMPLATE_SCOPE_LEVEL.PERSONAL) {
+    return EMR_TEMPLATE_SCOPE_LEVEL.PERSONAL;
+  }
+  if (scope === EMR_TEMPLATE_SCOPE_LEVEL.DEPARTMENT) {
+    return EMR_TEMPLATE_SCOPE_LEVEL.DEPARTMENT;
+  }
+  return EMR_TEMPLATE_SCOPE_LEVEL.HOSPITAL;
+}
+
+/**
+ * 将模板叶子按个人 / 科室 / 全院分组；空组不展示。
+ * 范围已体现在父节点，模板名不再拼接 [个人]/[科室]/[全院]。
+ */
+function groupTemplateNodesByScope(
+  catCode: string,
+  templateNodes: EmrTemplateTreeNode[],
+): EmrTemplateTreeNode[] {
+  if (templateNodes.length === 0) return [];
+
+  const buckets = new Map<string, EmrTemplateTreeNode[]>();
+  for (const node of templateNodes) {
+    const key = resolveTemplateScopeGroupCode(node.template?.scopeLevel);
+    const list = buckets.get(key) ?? [];
+    list.push(node);
+    buckets.set(key, list);
+  }
+
+  const groups: EmrTemplateTreeNode[] = [];
+  for (const { code, label } of EMR_TEMPLATE_SCOPE_GROUPS) {
+    const list = buckets.get(code);
+    if (!list?.length) continue;
+    groups.push({
+      nodeKey: `scope:${catCode}:${code}`,
+      label,
+      categoryCode: catCode,
+      isGroup: true,
+      children: list,
+    });
+  }
+  return groups;
+}
+
+function toDocumentLeaf(
+  doc: DocumentSummaryDto,
+  options?: { history?: boolean; currentEncounterId?: string },
+): EmrTemplateTreeNode {
   const idStr = preserveApiIdForRequest(doc.id) ?? `noid-${String(doc.updatedAt ?? '')}`;
+  const history = Boolean(options?.history);
   return {
-    nodeKey: `doc:${idStr}`,
-    label: buildDocumentTreeLabel(doc),
+    nodeKey: history ? `hist-doc:${idStr}` : `doc:${idStr}`,
+    label: buildDocumentTreeLabel(doc, { currentEncounterId: options?.currentEncounterId }),
     documentTypeCode: (doc.documentTypeCode ?? '').trim() || undefined,
+    documentTypeName: (doc.documentTypeName ?? '').trim() || undefined,
     isDocument: true,
+    isHistoryDocument: history || undefined,
     document: doc,
+  };
+}
+
+/** 按科室聚合历史文书；时间放在卡片内展示 */
+function buildHistoryDocumentTree(
+  historyDocuments: DocumentSummaryDto[],
+  currentEncounterId?: string,
+  historyRootLabel = '历史病历',
+): EmrTemplateTreeNode | null {
+  if (historyDocuments.length === 0) return null;
+
+  // 按科室名分桶（同科室跨就诊合并）
+  const byDept = new Map<string, DocumentSummaryDto[]>();
+  for (const doc of historyDocuments) {
+    const dept = formatDocumentTreeDept(doc) || '未知科室';
+    const bucket = byDept.get(dept) ?? [];
+    bucket.push(doc);
+    byDept.set(dept, bucket);
+  }
+
+  // 组间按组内最新文书时间降序
+  const groups = [...byDept.entries()].map(([dept, docs]) => {
+    const sorted = sortDocuments(docs);
+    const latest = sorted[0];
+    return {
+      dept,
+      latestTs: Date.parse(latest?.updatedAt ?? latest?.createdAt ?? '') || 0,
+      node: {
+        nodeKey: `hist-dept:${dept}`,
+        label: dept,
+        isGroup: true,
+        children: sorted.map((d) => toDocumentLeaf(d, { history: true, currentEncounterId })),
+      } satisfies EmrTemplateTreeNode,
+    };
+  });
+  groups.sort((a, b) => b.latestTs - a.latestTs);
+
+  return {
+    nodeKey: 'cat:HISTORY',
+    label: historyRootLabel,
+    categoryCode: 'HISTORY',
+    isDocumentType: true,
+    children: groups.map((g) => g.node),
   };
 }
 
@@ -180,15 +284,63 @@ export function resolveEmrDirectoryCategory(
   return 'OTHER';
 }
 
+/** 按目录分类白名单过滤文书（类型表优先带 categoryCode） */
+export function filterDocumentsByDirectoryCategories(
+  documents: DocumentSummaryDto[],
+  documentTypes: DocumentTypeDto[],
+  allowedCategories: string[] | undefined,
+): DocumentSummaryDto[] {
+  if (!allowedCategories?.length) {
+    return documents;
+  }
+  const allowed = new Set(allowedCategories.map((c) => c.trim().toUpperCase()).filter(Boolean));
+  if (allowed.size === 0) {
+    return documents;
+  }
+  const categoryByTypeCode = new Map<string, string>();
+  for (const dt of documentTypes) {
+    const code = String(dt.code ?? '').trim();
+    if (!code) continue;
+    categoryByTypeCode.set(code, resolveEmrDirectoryCategory(code, dt.categoryCode));
+  }
+  return documents.filter((doc) => {
+    const typeCode = (doc.documentTypeCode ?? '').trim();
+    const cat =
+      categoryByTypeCode.get(typeCode) ?? resolveEmrDirectoryCategory(typeCode, undefined);
+    return allowed.has(cat);
+  });
+}
+
 /**
- * 以目录分类为父、模板为子、该模板建出的病历为孙节点；
- * 无 sourceTemplateId 的病历挂在分类下「其他病历」。
+ * 以目录分类为父、范围（个人/科室/全院）为子、模板为孙；
+ * documents 若传入仍可挂在对应模板下（兼容）；医生站侧栏已改为全部走 historyDocuments；
+ * 追加顶级「历史病历」（按科室合并）。
  */
 export function buildEmrTemplateTree(
   documentTypes: DocumentTypeDto[],
   templates: TemplateDto[],
   documents: DocumentSummaryDto[] = [],
+  historyDocuments: DocumentSummaryDto[] = [],
+  options?: {
+    allowedCategories?: string[];
+    currentEncounterId?: string;
+    /** 「历史病历」根节点文案；病案按就诊打开时可改为「本次就诊病历」 */
+    historyRootLabel?: string;
+  },
 ): EmrTemplateTreeNode[] {
+  const currentEncounterId = options?.currentEncounterId;
+  const allowedCategories = options?.allowedCategories;
+  const historyRootLabel = options?.historyRootLabel?.trim() || '历史病历';
+  const scopedDocuments = filterDocumentsByDirectoryCategories(
+    documents,
+    documentTypes,
+    allowedCategories,
+  );
+  const scopedHistoryDocuments = filterDocumentsByDirectoryCategories(
+    historyDocuments,
+    documentTypes,
+    allowedCategories,
+  );
   const typeByCode = new Map<string, DocumentTypeDto>();
   for (const dt of documentTypes) {
     const code = String(dt.code ?? '').trim();
@@ -205,7 +357,7 @@ export function buildEmrTemplateTree(
 
   const docsByTemplateId = new Map<string, DocumentSummaryDto[]>();
   const orphanDocsByType = new Map<string, DocumentSummaryDto[]>();
-  for (const doc of documents) {
+  for (const doc of scopedDocuments) {
     const tplId = docSourceTemplateId(doc);
     if (tplId) {
       const bucket = docsByTemplateId.get(tplId) ?? [];
@@ -267,13 +419,20 @@ export function buildEmrTemplateTree(
   }
 
   const nodes: EmrTemplateTreeNode[] = [];
+  const allowedCategorySet = allowedCategories?.length
+    ? new Set(allowedCategories.map((c) => c.trim().toUpperCase()).filter(Boolean))
+    : null;
 
   for (const { code: catCode, label: catLabel } of EMR_DIRECTORY_CATEGORIES) {
+    if (allowedCategorySet && !allowedCategorySet.has(catCode)) {
+      typesByCategory.delete(catCode);
+      continue;
+    }
     const typesInCat = typesByCategory.get(catCode) ?? [];
     typesByCategory.delete(catCode);
     if (typesInCat.length === 0) continue;
 
-    const children: EmrTemplateTreeNode[] = [];
+    const templateNodes: EmrTemplateTreeNode[] = [];
     const orphanDocs: DocumentSummaryDto[] = [];
 
     for (const dt of typesInCat) {
@@ -285,11 +444,13 @@ export function buildEmrTemplateTree(
         const tplId = tpl.id === null || tpl.id === undefined ? '' : String(tpl.id);
         const docs = tplId ? (docsByTemplateId.get(tplId) ?? []) : [];
         if (tplId) docsByTemplateId.delete(tplId);
-        children.push(toTemplateNode(tpl, children.length, docs, typeName || undefined));
+        templateNodes.push(toTemplateNode(tpl, templateNodes.length, docs, typeName || undefined));
       }
       orphanDocs.push(...(orphanDocsByType.get(typeCode) ?? []));
       orphanDocsByType.delete(typeCode);
     }
+
+    const children: EmrTemplateTreeNode[] = [...groupTemplateNodesByScope(catCode, templateNodes)];
 
     if (orphanDocs.length > 0) {
       children.push({
@@ -312,10 +473,14 @@ export function buildEmrTemplateTree(
     });
   }
 
-  /** 未落入五类的残余（理论上不应出现） */
+  /** 未落入五类的残余（理论上不应出现；白名单模式下若未放行 OTHER 则跳过） */
   const leftoverTypeBuckets = [...typesByCategory.entries()];
-  if (leftoverTypeBuckets.length > 0 || templatesByCode.size > 0 || orphanDocsByType.size > 0) {
-    const children: EmrTemplateTreeNode[] = [];
+  const allowLeftoverCategory = !allowedCategorySet || allowedCategorySet.has('OTHER');
+  if (
+    allowLeftoverCategory &&
+    (leftoverTypeBuckets.length > 0 || templatesByCode.size > 0 || orphanDocsByType.size > 0)
+  ) {
+    const templateNodes: EmrTemplateTreeNode[] = [];
     for (const [, types] of leftoverTypeBuckets) {
       for (const dt of types) {
         const typeCode = String(dt.code ?? '').trim();
@@ -326,7 +491,9 @@ export function buildEmrTemplateTree(
           const tplId = tpl.id === null || tpl.id === undefined ? '' : String(tpl.id);
           const docs = tplId ? (docsByTemplateId.get(tplId) ?? []) : [];
           if (tplId) docsByTemplateId.delete(tplId);
-          children.push(toTemplateNode(tpl, children.length, docs, typeName || undefined));
+          templateNodes.push(
+            toTemplateNode(tpl, templateNodes.length, docs, typeName || undefined),
+          );
         }
       }
     }
@@ -335,9 +502,10 @@ export function buildEmrTemplateTree(
         const tplId = tpl.id === null || tpl.id === undefined ? '' : String(tpl.id);
         const docs = tplId ? (docsByTemplateId.get(tplId) ?? []) : [];
         if (tplId) docsByTemplateId.delete(tplId);
-        children.push(toTemplateNode(tpl, children.length, docs));
+        templateNodes.push(toTemplateNode(tpl, templateNodes.length, docs));
       }
     }
+    const children: EmrTemplateTreeNode[] = [...groupTemplateNodesByScope('OTHER', templateNodes)];
     const leftovers = [...orphanDocsByType.values()].flat();
     if (leftovers.length > 0) {
       children.push({
@@ -356,6 +524,15 @@ export function buildEmrTemplateTree(
         children,
       });
     }
+  }
+
+  const historyRoot = buildHistoryDocumentTree(
+    scopedHistoryDocuments,
+    currentEncounterId,
+    historyRootLabel,
+  );
+  if (historyRoot) {
+    nodes.push(historyRoot);
   }
 
   return nodes;

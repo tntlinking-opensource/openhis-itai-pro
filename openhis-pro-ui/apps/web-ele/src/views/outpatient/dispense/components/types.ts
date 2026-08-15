@@ -43,8 +43,20 @@ export interface DispensePrescriptionBlock {
   pricingPractitionerName?: string;
   /** 费用性质展示文案（后端 feeNatureText；空时笺面补偿用队列患者 feeNatureLabel） */
   feeNatureLabel?: string;
+  /**
+   * 就诊类型展示（后端 encounterMedicationTypeText ← adm_encounter_diagnosis.med_type）。
+   * 一张方一种类型；发药单笺面回显用，打印不消费。
+   */
+  visitTypeLabel?: string;
   /** 患者手机号（后端 slip.patientPhone） */
   patientPhone?: string;
+  /**
+   * 方头纸质分类第一行（普通处方 / 慢病处方 / 急诊处方等）。
+   * 与打印 prescriptionTypeLine1 同源。
+   */
+  prescriptionTypeLine1?: string;
+  /** 方头第二行（默认「当日有效」） */
+  prescriptionTypeLine2?: string;
   issuedAt: string;
   status: 'blocking' | 'completed' | 'partial' | 'pending' | 'prepared';
   items: DispensePrescriptionLine[];
@@ -71,6 +83,11 @@ export interface DispenseInventoryPickOption {
 /** 处方内单行药品（发药列表粒度） */
 export interface DispensePrescriptionLine {
   id: string;
+  /**
+   * 展示合并行背后的发放主键列表（住院按日+同医嘱累加数量时）。
+   * 缺省视为仅 {@link id} 一条；勾选/发药提交须展开为本列表。
+   */
+  sourceDispenseIds?: string[];
   /** 药品定义主键，批量扫码行级匹配用 */
   medicationId?: string;
   itemName: string;
@@ -78,6 +95,8 @@ export interface DispensePrescriptionLine {
   quantity: string;
   /** 发放/计价单位码（与后端 slip.unitCode 对齐） */
   unitCode?: string;
+  /** 发放/计价单位展示名（库存剩余换算用） */
+  unitText?: string;
   /** 本发放行数量数值（与后端 slip.quantity 对齐） */
   quantityValue?: number;
   /** 包装单位码；追溯默认按包装计码 */
@@ -87,12 +106,20 @@ export interface DispensePrescriptionLine {
   /** 拆零单位码 */
   splitUnitCode?: string;
   /**
+   * 当前药品剩余库存展示（候选库存最小单位汇总后换算，如 4盒6片）。
+   * 代煎费等非药品行可为「—」。
+   */
+  remainingStockText?: string;
+  /**
    * 追溯码主档贴码单位（cus_trace_number；发药待扫换算用）。
    * 非药典目录值。
    */
   traceUnitCode?: string;
+  /** 追溯码主档贴码单位展示文案（UNIT_CODE 术语） */
+  traceUnitCodeText?: string;
   /**
    * 追溯码主档贴码比例快照（1 码对应拆零量；发药待扫换算用）。
+   * 语义：1 个追溯码单位 = 本值个拆零单位。
    */
   traceUnitRatio?: number;
   /**

@@ -53,10 +53,6 @@ export interface LoadRegisterFormInitResult {
   /** 号源类型主键 → 挂号费销售价（元） */
   serviceTypeFeeById?: Record<string, number | string>;
   paymentChannelOptions?: OptionDto[];
-  /**
-   * 挂号时医生是否必选（全局开关 registrationDoctorRequired；true=必选，false/缺省=可只挂科室）
-   */
-  registrationDoctorRequired?: boolean;
   workInjuryCapability?: {
     enabled?: boolean;
     winRequired?: boolean;
@@ -114,6 +110,10 @@ export interface PreRegisterSettlementParams {
   organizationId: number | string;
   patientId?: null | number | string;
   phone: string;
+  /**
+   * 地址全文：身份证读卡户籍地址等；新建写入主档，复用时非空且不同则回写（BR-REG-019）。
+   */
+  address?: string;
   practitionerId: number | string;
   serviceTypeId: number | string;
   slotId?: null | number | string;
@@ -197,11 +197,23 @@ export interface YbRegisterBenefitPreviewDto {
   insuinfoList?: YbInsuInfoPreviewDto[];
   insuplcAdmdvs?: string;
   insutype?: string;
+  /** 慢特病备案（5301 主查） */
   opspFilingList?: YbOpspFilingPreviewDto[];
   psnName?: string;
   psnNo?: string;
+  /**
+   * 1101 异地失败切省通道后的实际合同 bus_no；未切换时为空。
+   * 后续 2001/5301 应使用对应费用性质，避免仍走市通道。
+   */
+  resolvedContractBusNo?: string;
+  /** 1101 异地失败切省通道后的实际费用性质 id */
+  resolvedContractId?: string;
   /** 2001 待遇检查结果 */
   treatmentBlocked?: boolean;
+  /** 省内失败时前端弹警告；跨省静默为 false */
+  treatmentCheckAlert?: boolean;
+  /** 2001 提示：跨省「暂不可查」或省内失败说明 */
+  treatmentCheckHint?: string;
   treatmentInfoList?: YbTreatmentInfoPreviewDto[];
 }
 
@@ -284,6 +296,12 @@ export interface PreRegisterSettlementResult {
   ybFundPaySumamt?: number | string;
   ybAcctPay?: number | string;
   ybPsnCashPay?: number | string;
+  /** 实际支付起付线（2206；仅展示） */
+  ybActPayDedc?: number | string;
+  /** 公务员标志（2206；仅展示） */
+  ybCvlservFlag?: string;
+  /** 公务员医疗补助资金支出（2206；仅展示） */
+  ybCvlservPay?: number | string;
 }
 
 /** 结算时提交的单渠道支付明细 */
@@ -338,6 +356,8 @@ export interface ClinicRegisterItemDto {
   patientGenderCode: string;
   patientGenderText: string;
   patientName: string;
+  /** 患者年龄展示文案（由出生日期推算，如 45岁；无出生日期时为空） */
+  patientAgeText?: string;
   /** 待正式结算时的支付草稿 id；无则不可点「收费」 */
   paymentDraftId?: string;
   /** 已成功缴费后的挂号费支付流水 id（按挂号费 chargeItem 锚定；退号银联退货/补打挂号小票） */
@@ -467,6 +487,10 @@ export interface RegistrationSlipDto {
   chargeItemLines?: RegistrationReceiptChargeLineDto[];
   chargeTimeText?: string;
   deductibleLineText?: string;
+  /** 公务员待遇（是/否） */
+  cvlservFlagText?: string;
+  /** 公务员医疗补助金额 */
+  cvlservPayText?: string;
   doctorName?: string;
   encounterId?: null | number | string;
   feeNatureText?: string;
@@ -512,6 +536,26 @@ export async function httpPagePatientsForSelect(
 ): Promise<PagePatientsForSelectResult> {
   return publicRequestClient.post<PagePatientsForSelectResult>(
     '/outpatientRegistration/pagePatientsForSelect',
+    params,
+  );
+}
+
+/** 可挂号科室列表请求（关键字可选） */
+export interface ListDepartmentsParams {
+  keyword?: string;
+}
+
+/** 可挂号科室列表响应 */
+export interface ListDepartmentsResult {
+  departmentOptions: OptionDto[];
+}
+
+/** 加载可挂号科室下拉（供护士站开立科室筛选等复用） */
+export async function httpListDepartments(
+  params: ListDepartmentsParams = {},
+): Promise<ListDepartmentsResult> {
+  return publicRequestClient.post<ListDepartmentsResult>(
+    '/outpatientRegistration/listDepartments',
     params,
   );
 }
@@ -663,6 +707,12 @@ export interface RefreshRegisterFeeInsurancePreSettleResult {
   ybFundPaySumamt?: number | string;
   ybAcctPay?: number | string;
   ybPsnCashPay?: number | string;
+  /** 实际支付起付线（2206；仅展示） */
+  ybActPayDedc?: number | string;
+  /** 公务员标志（2206；仅展示） */
+  ybCvlservFlag?: string;
+  /** 公务员医疗补助资金支出（2206；仅展示） */
+  ybCvlservPay?: number | string;
 }
 
 export async function httpCancelPlannedRegistration(

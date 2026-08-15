@@ -1,17 +1,18 @@
-<!--
+﻿<!--
   损益单右侧主区：InvMainShell + InvDocActions + 单头 + 明细表格（变更原因手写）。
 -->
 <script setup lang="ts">
 import type { VxeGridProps, VxeGridPropTypes } from '#/adapter/vxe-table';
 import type { ApiOptionItem } from '#/types/api-response';
 
-import { computed, nextTick, reactive, ref, watch } from 'vue';
+import { computed, nextTick, reactive, ref, watch, onBeforeUnmount, onDeactivated } from 'vue';
 
 import { Trash2 } from '@vben/icons';
 import { formatDateTime } from '@vben/utils';
 
 import { QuestionFilled } from '@element-plus/icons-vue';
 import InvDocActions from '@inventory/components/inv-doc-actions.vue';
+import InvDocAmountSummaryBar from '@inventory/components/inv-doc-amount-summary-bar.vue';
 import InvDocGridToolbar from '@inventory/components/inv-doc-grid-toolbar.vue';
 import InvDocTraceScanBridge from '@inventory/components/inv-doc-trace-scan-bridge.vue';
 import InvMainShell from '@inventory/components/inv-main-shell.vue';
@@ -31,7 +32,7 @@ import {
 } from 'element-plus';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
-import { useFromFinanceApproval } from '#/composables/use-from-finance-approval';
+import { useFinanceApprovalViewSummary } from '#/composables/use-finance-approval-view-summary';
 import { bindInvDocCompactColumns } from '#/composables/use-inv-doc-compact-columns';
 import {
   applyInventoryRowQtyUnitList,
@@ -43,6 +44,10 @@ import {
 } from '#/utils/inventory/inventory-doc-grid-common';
 import { useInventoryDocGridEdit } from '#/composables/use-inventory-doc-grid-edit';
 import { useInvDocParentSyncSession } from '#/composables/use-inv-doc-parent-sync-session';
+import {
+  clearInvDocDraftCacheAfterSave,
+  INV_DOC_DRAFT_SCENE,
+} from '#/utils/inventory/inv-doc-draft-cache';
 import {
   agreeDeptGainLossApi,
   createDeptGainLossApi,
@@ -125,6 +130,8 @@ import {
   resolveDefaultPractitionerIdForSelect,
   resolveDocHeadProductPickLocationId,
   warnInventoryLocationRequiredByLabel,
+  resolveInvDocPreparedByName,
+  resolveInvDocApprovedByName,
 } from '#/utils/inventory/inventory-workbench-list';
 import { buildInvDocumentTitle, printInvDocument } from '#/utils/print/print-inv-document';
 import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
@@ -166,9 +173,13 @@ interface GainLossPreviewRow {
 }
 
 interface Props {
+  /** 侧栏当前单据行（制单人/审批人与队列卡片同口径） */
+  queueCardRow?: null | Record<string, unknown>;
   variant: GainLossVariant;
   busNo?: string;
   isDraftOrder?: boolean;
+  /** 侧栏草稿稳定 id（_clientDraftId），用于 session 缓存隔离 */
+  clientDraftId?: string;
   resetKey?: number;
   locationOptions: ApiOptionItem[];
   practitionerOptions?: ApiOptionItem[];
@@ -178,8 +189,10 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  queueCardRow: null,
   busNo: '',
   isDraftOrder: false,
+  clientDraftId: '',
   resetKey: 0,
   locationOptions: () => [],
   practitionerOptions: () => [],
@@ -274,7 +287,8 @@ const headApplyTime = ref(formatDateTime(new Date()));
 const saving = ref(false);
 
 const isNewDraft = computed(() => !headerBusNo.value);
-const { fromFinanceApproval } = useFromFinanceApproval();
+const { fromFinanceApproval, showFinanceApprovalSummary, financeApprovalSummaryItems } =
+  useFinanceApprovalViewSummary();
 /** 新建草稿或待审核/驳回/已撤回可改；财务审批深链强制只读 */
 const documentEditable = computed(
   () =>
@@ -790,7 +804,7 @@ function buildLinesPayload(
       gainLossQuantity: splitQty,
       unitCode: unitCode || undefined,
       lotNumber: String(r.lotNumber ?? '').trim() || undefined,
-      traceNo: String(r.traceNo ?? '').trim() || undefined,
+      traceNo: String(r.traceNo ?? '').trim(),
       reason: String(r.reason ?? '').trim() || undefined,
       price: Number.isFinite(price) && price > 0 ? price : undefined,
       gainLossAmount,
@@ -901,8 +915,25 @@ async function persistGainLoss(): Promise<string | undefined> {
   }
 }
 
+/** 落库成功后清 session 草稿缓存 */
+function clearDraftPersistAfterSave(busNo?: string) {
+  clearInvDocDraftCacheAfterSave({
+    scene:
+      props.variant === 'pharmacy'
+        ? INV_DOC_DRAFT_SCENE.pharmacyGainLoss
+        : props.variant === 'department'
+          ? INV_DOC_DRAFT_SCENE.deptGainLoss
+          : INV_DOC_DRAFT_SCENE.warehouseGainLoss,
+    clientDraftId: props.clientDraftId,
+    busNo,
+  });
+  parentSync.clearDraftSnap();
+}
+
 async function handleSaveDoc() {
-  await persistGainLoss();
+  const no = await persistGainLoss();
+  if (!no) return;
+  clearDraftPersistAfterSave(no);
 }
 
 async function handleSaveAndSubmitDoc() {
@@ -910,6 +941,7 @@ async function handleSaveAndSubmitDoc() {
   if (saving.value) return;
   const no = await persistGainLoss();
   if (!no) return;
+  clearDraftPersistAfterSave(no);
   saving.value = true;
   try {
     await handleSubmitApproval();
@@ -925,6 +957,16 @@ async function handleRemoveDoc() {
     } catch {
       return;
     }
+    clearInvDocDraftCacheAfterSave({
+      scene:
+        props.variant === 'pharmacy'
+          ? INV_DOC_DRAFT_SCENE.pharmacyGainLoss
+          : props.variant === 'department'
+            ? INV_DOC_DRAFT_SCENE.deptGainLoss
+            : INV_DOC_DRAFT_SCENE.warehouseGainLoss,
+      clientDraftId: props.clientDraftId,
+    });
+    parentSync.discardDraftSession();
     resetDetailForCreate();
     emit('documentRemoved');
     return;
@@ -948,6 +990,7 @@ async function handleRemoveDoc() {
     } else {
       await removeGainLossApi({ busNo: no });
     }
+    clearDraftPersistAfterSave(no);
     ElMessage.success('已删除');
     resetDetailForCreate();
     emit('documentRemoved');
@@ -1078,7 +1121,34 @@ interface GainLossDraftSnap {
   rows: GainLossPreviewRow[];
 }
 
-const parentSync = useInvDocParentSyncSession<GainLossDraftSnap>();
+const parentSync = useInvDocParentSyncSession<GainLossDraftSnap>({
+  scene: () =>
+    props.variant === 'pharmacy'
+      ? INV_DOC_DRAFT_SCENE.pharmacyGainLoss
+      : props.variant === 'department'
+        ? INV_DOC_DRAFT_SCENE.deptGainLoss
+        : INV_DOC_DRAFT_SCENE.warehouseGainLoss,
+  getDocKey: () => {
+    const draftId = String(props.clientDraftId ?? '').trim();
+    if (props.isDraftOrder && draftId) return draftId;
+    return String(props.busNo ?? headerBusNo.value ?? '').trim() || undefined;
+  },
+  getCardMeta: () => ({
+    statusEnum_enumText: '编辑中',
+    applyTime: headApplyTime.value,
+  }),
+});
+
+/** 拍摄当前主区草稿快照（侧栏切单 / 落盘共用） */
+function captureGainLossDraftSnap(): GainLossDraftSnap {
+  return {
+    purposeLocationId: purposeLocationId.value,
+    practitionerId: practitionerId.value,
+    headItemTableType: headItemTableType.value,
+    headApplyTime: headApplyTime.value,
+    rows: collectGridRows().map((r) => ({ ...r })),
+  };
+}
 
 /** 侧栏切单：缓存/恢复本地草稿，避免已落库明细污染新建单 */
 async function syncFromParentContext() {
@@ -1086,13 +1156,7 @@ async function syncFromParentContext() {
     { isDraftOrder: Boolean(props.isDraftOrder), parentBusNo: props.busNo },
     {
       getLocalPersistedBusNo: () => headerBusNo.value,
-      captureDraft: () => ({
-        purposeLocationId: purposeLocationId.value,
-        practitionerId: practitionerId.value,
-        headItemTableType: headItemTableType.value,
-        headApplyTime: headApplyTime.value,
-        rows: collectGridRows().map((r) => ({ ...r })),
-      }),
+      captureDraft: captureGainLossDraftSnap,
       restoreDraft: async (snap) => {
         headerBusNo.value = undefined;
         detailStatusEnum.value = undefined;
@@ -1114,6 +1178,21 @@ async function syncFromParentContext() {
     },
   );
 }
+/** 切菜单 / KeepAlive 停用前把未保存草稿写入 sessionStorage */
+function flushGainLossDraftPersist(): void {
+  parentSync.flushPersist({
+    getLocalPersistedBusNo: () => headerBusNo.value,
+    captureDraft: captureGainLossDraftSnap,
+  });
+}
+
+onBeforeUnmount(() => {
+  flushGainLossDraftPersist();
+});
+
+onDeactivated(() => {
+  flushGainLossDraftPersist();
+});
 
 watch(
   () => props.resetKey,
@@ -1123,7 +1202,7 @@ watch(
 );
 
 watch(
-  () => [props.busNo, props.isDraftOrder, props.resetKey] as const,
+  () => [props.busNo, props.isDraftOrder, props.resetKey, props.clientDraftId] as const,
   () => {
     void syncFromParentContext();
   },
@@ -1201,28 +1280,33 @@ async function handlePrint() {
     normalizedItemTableTypeOptions.value,
     headItemTableType.value,
   );
-  const practitionerName = resolvePrintOptionLabel(
-    effectivePractitionerOptions.value,
-    practitionerId.value,
-  );
   const documentTitle = buildInvDocumentTitle(locationName, '损益单');
   const applyTimeText = String(headApplyTime.value ?? '')
     .trim()
     .replace('T', ' ');
 
-  // 按当前网格展示值组装盈亏明细：损益量 → diffQty，原因 → reasonText
+  // 损益量写入 actualQtyText / diffQty（无账面列）
   const lineRows = productRows.map((row) => ({
     productName: String(row.productName ?? '').trim(),
     specText: String(row.spec ?? '').trim(),
     manufacturerText: String(row.manufacturer ?? '').trim(),
     lotNumber: String(row.lotNumber ?? '').trim(),
+    bookQtyText: '',
+    actualQty: row.gainLossQuantity,
     diffQty: row.gainLossQuantity,
     unitLabel: resolveGainLossPrintUnitLabel(row),
     unitPrice: row.price,
+    actualAmount: row.gainLossAmount,
     diffAmount: row.gainLossAmount,
     reasonText: String(row.reason ?? '').trim(),
   }));
 
+  const preparedByName = resolveInvDocPreparedByName(
+    props.queueCardRow as null | Record<string, unknown>,
+  );
+  const approvedByName = resolveInvDocApprovedByName(
+    props.queueCardRow as null | Record<string, unknown>,
+  );
   await printInvDocument({
     family: 'stocktake',
     source: {
@@ -1233,10 +1317,9 @@ async function handlePrint() {
       itemTypeText,
       sourceLocationText: locationName,
       destLocationText: '',
-      practitionerName,
       lineRows,
-      preparedByName: practitionerName,
-      approvedByName: '',
+      preparedByName,
+      approvedByName,
     },
     bizRef: { busNo, docKind: 'gain-loss', variant: props.variant },
     jobName: documentTitle,
@@ -1391,6 +1474,10 @@ async function handlePrint() {
           </Grid>
         </div>
       </div>
+      <InvDocAmountSummaryBar
+        v-if="showFinanceApprovalSummary"
+        :items="financeApprovalSummaryItems"
+      />
     </InvMainShell>
   </div>
   <InvDocTraceScanBridge

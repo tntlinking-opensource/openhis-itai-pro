@@ -8,7 +8,10 @@ import { computed } from 'vue';
 
 import { ElButton, ElCheckbox, ElTag } from 'element-plus';
 
-import { buildServiceApplyFormDetailHint } from '#/utils/service-apply-display';
+import {
+  appendRehabTreatmentCourseRemark,
+  buildServiceApplyFormDetailHint,
+} from '#/utils/service-apply-display';
 
 import { rowLooksDraftForSign } from '../advice/services/advice-row';
 import {
@@ -73,16 +76,22 @@ const detailColumnLabel = computed(() => (applyKind.value === 'lab' ? '样本' :
 /** 合计金额 */
 const totalAmountText = computed(() => sumServiceApplyDocumentTotalAmount(props.group.lines));
 
-/** 注意事项：合并各行 remark（去重） */
+/** 注意事项：合并各行 remark（去重）；康复科治疗单追加固定疗程说明 */
 const precautionText = computed(() => {
   const parts: string[] = [];
+  // 合并本单各行备注，去重后作为基础注意事项
   for (const line of props.group.lines) {
     const remark = trimText(line.remark);
     if (remark && !parts.includes(remark)) {
       parts.push(remark);
     }
   }
-  return parts.join('；');
+  return appendRehabTreatmentCourseRemark(
+    parts.join('；'),
+    applyKind.value,
+    headLine.value?.performOrgName,
+    '；',
+  );
 });
 
 /** 去掉「样本：/部位：」前缀，仅保留明细值 */

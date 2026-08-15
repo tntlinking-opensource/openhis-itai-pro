@@ -326,6 +326,7 @@ onMounted(async () => {
     </template>
 
     <PurchaseRequestMainPane
+      :queue-card-row="selectedOrder"
       class="min-h-0 flex-1"
       :apply-time="tableForm.applyTime"
       :bus-no="selectedBusNo"

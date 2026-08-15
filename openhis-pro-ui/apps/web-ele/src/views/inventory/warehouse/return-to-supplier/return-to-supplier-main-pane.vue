@@ -1,4 +1,4 @@
-<!--
+﻿<!--
   药库退货单右侧主区：InvMainShell + InvDocActions + 单头 + 明细表格。
 -->
 <script setup lang="ts">
@@ -17,19 +17,20 @@ import type { InboundProductUnitBand } from '#/utils/inventory/inbound-product-u
 
 import type { FormInstance } from 'element-plus';
 
-import { computed, nextTick, reactive, ref, watch } from 'vue';
+import { computed, nextTick, reactive, ref, watch, onBeforeUnmount, onDeactivated } from 'vue';
 
 import { Trash2 } from '@vben/icons';
 import { useUserStore } from '@vben/stores';
 import { formatDateTime } from '@vben/utils';
 
 import InvDocActions from '@inventory/components/inv-doc-actions.vue';
+import InvDocAmountSummaryBar from '@inventory/components/inv-doc-amount-summary-bar.vue';
 import InvDocGridToolbar from '@inventory/components/inv-doc-grid-toolbar.vue';
 import InvDocTraceScanBridge from '@inventory/components/inv-doc-trace-scan-bridge.vue';
 import InvDocLinkPickerDialog from '@inventory/components/inv-doc-link-picker-dialog.vue';
 import InvMainShell from '@inventory/components/inv-main-shell.vue';
 import InvPrimaryBtn from '@inventory/components/inv-primary-btn.vue';
-import { useFromFinanceApproval } from '#/composables/use-from-finance-approval';
+import { useFinanceApprovalViewSummary } from '#/composables/use-finance-approval-view-summary';
 import { bindInvDocCompactColumns } from '#/composables/use-inv-doc-compact-columns';
 import {
   ElAlert,
@@ -48,6 +49,10 @@ import {
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import { useInventoryDocGridEdit } from '#/composables/use-inventory-doc-grid-edit';
 import { useInvDocParentSyncSession } from '#/composables/use-inv-doc-parent-sync-session';
+import {
+  clearInvDocDraftCacheAfterSave,
+  INV_DOC_DRAFT_SCENE,
+} from '#/utils/inventory/inv-doc-draft-cache';
 import {
   agreeReturnToSupplierApi,
   createReturnToSupplierApi,
@@ -68,9 +73,10 @@ import {
   INV_ALL_LOCATIONS_FILTER_ID,
   INV_ALL_WAREHOUSES_LABEL,
   isSpecificInventoryLocationId,
-  resolveLoginPractitionerLabelFromUserInfo,
   resolveSpecificInventoryLocationId,
   warnInventoryLocationRequired,
+  resolveInvDocPreparedByName,
+  resolveInvDocApprovedByName,
 } from '#/utils/inventory/inventory-workbench-list';
 import {
   buildInventoryLocationHeadFormRules,
@@ -78,9 +84,14 @@ import {
   validateInventoryHeadFormFields,
 } from '#/utils/inventory/inventory-doc-head-form-validation';
 import { withInvDocLinkPickerEnrichedColumns } from '#/utils/inventory/inv-doc-link-picker-display';
-import { buildInvDocumentTitle, printInvDocument } from '#/utils/print/print-inv-document';
+import {
+  buildInvDocumentTitle,
+  printInvDocument,
+  resolveInvPrintProductBusNo,
+} from '#/utils/print/print-inv-document';
 import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
 import {
+  applyWarehouseNonInboundBandKindToRow,
   canConvertDisplayQtyToSplitForBands,
   persistDisplayQtyAsSplitForBands,
   resolveInboundLinePersistUnitCodeForBands,
@@ -105,6 +116,11 @@ import {
   stockOutStatusLabel,
   normalizeStockOutStatusSort,
 } from '#/utils/inventory/stock-out-doc-actions';
+import {
+  formatInventoryLineTotal,
+  formatMoneyDisplay,
+  sumMoneyThenSettle,
+} from '#/utils/format/money-scale';
 import { resolveLoginPractitionerIdForRequest } from '#/utils/format/preserve-api-id';
 
 defineOptions({ name: 'InventoryWarehouseReturnToSupplierMainPane' });
@@ -129,6 +145,10 @@ interface ReturnPreviewRow {
   __prevBandKind?: string;
   /** 关联进货行落库时的 unitCode，保存须与进货行一致 */
   inboundPersistedUnitCode?: string;
+  /** 包装锚进价（展示带换算后写入当前计量带单价） */
+  price?: number;
+  /** 行合计金额展示（两位；详情回显后端，编辑态本地重算） */
+  totalPrice?: string;
   lotNumber: string;
   traceNo: string;
   reason: string;
@@ -136,8 +156,12 @@ interface ReturnPreviewRow {
 }
 
 interface Props {
+  /** 侧栏当前单据行（制单人/审批人与队列卡片同口径） */
+  queueCardRow?: null | Record<string, unknown>;
   busNo?: string;
   isDraftOrder?: boolean;
+  /** 侧栏草稿稳定 id（_clientDraftId），用于 session 缓存隔离 */
+  clientDraftId?: string;
   resetKey?: number;
   warehouseOptions: WarehouseOptionDto[];
   supplierOptions?: ApiOptionItem[];
@@ -147,8 +171,10 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  queueCardRow: null,
   busNo: '',
   isDraftOrder: false,
+  clientDraftId: '',
   resetKey: 0,
   warehouseOptions: () => [],
   supplierOptions: () => [],
@@ -206,6 +232,14 @@ const supplierId = ref<number | string | undefined>(undefined);
 const detailStatusEnum = ref<number | undefined>(undefined);
 const headApplyTime = ref(formatDateTime(new Date()));
 const saving = ref(false);
+
+/** 明细金额变更计数：驱动页脚合计重算（网格 data 非响应式） */
+const linesAmountRevision = ref(0);
+
+/** 标记明细金额已变，触发页脚合计刷新 */
+function bumpLinesAmountRevision() {
+  linesAmountRevision.value += 1;
+}
 
 const linkInboundVisible = ref(false);
 const linkInboundLoading = ref(false);
@@ -290,7 +324,8 @@ const linkInboundTableColumns = computed<TableColumn[]>(() =>
 );
 
 const isNewDraft = computed(() => !headerBusNo.value);
-const { fromFinanceApproval } = useFromFinanceApproval();
+const { fromFinanceApproval, showFinanceApprovalSummary, financeApprovalSummaryItems } =
+  useFinanceApprovalViewSummary();
 const documentEditable = computed(
   () =>
     !fromFinanceApproval.value &&
@@ -356,6 +391,8 @@ function createEmptyRow(): ReturnPreviewRow {
     productName: '',
     itemQuantity: undefined,
     unitCode: '',
+    price: undefined,
+    totalPrice: '',
     lotNumber: '',
     traceNo: '',
     reason: '',
@@ -363,15 +400,36 @@ function createEmptyRow(): ReturnPreviewRow {
   };
 }
 
+/** 详情/预填行金额展示：后端 6 位 → 两位展示串 */
+function formatReturnDetailTotalAmount(total: unknown): string {
+  if (total === undefined || total === null || total === '') return '';
+  const n = Number(total);
+  if (!Number.isFinite(n)) return String(total).trim();
+  return formatMoneyDisplay(n);
+}
+
+/** 编辑态：同计量带数量 × 单价刷新行合计（详情回显不覆盖后端落库总额） */
+function recalcReturnToSupplierLineTotal(row: ReturnPreviewRow) {
+  const qty = Number(row.itemQuantity);
+  const unit = Number(row.price);
+  row.totalPrice =
+    Number.isFinite(qty) && Number.isFinite(unit) ? formatInventoryLineTotal(qty, unit) : '';
+  bumpLinesAmountRevision();
+}
+
 function applyReturnRowUnitList(row: ReturnPreviewRow): void {
   applyInventoryRowQtyUnitList(row);
 }
 
+/** 切换退货计量带：换算数量与展示单价后刷新行合计 */
 function handleReturnToSupplierUnitBandChanged(row: ReturnPreviewRow): void {
   handleWarehouseNonInboundUnitBandChanged(row, {
     getQty: () => Number(row.itemQuantity ?? 0),
     setQty: (qty) => {
       row.itemQuantity = qty;
+    },
+    onAfterChanged: () => {
+      recalcReturnToSupplierLineTotal(row);
     },
   });
 }
@@ -382,6 +440,17 @@ function mapReturnableInboundLineToGrid(
 ): ReturnPreviewRow {
   const base = mapReturnableLinkLineToGridRow<ReturnPreviewRow>(ln, rowIdx);
   base.inboundPersistedUnitCode = String(ln.unitCode ?? '').trim();
+  const packagePrice = ln.price === undefined || ln.price === null ? undefined : Number(ln.price);
+  base.price = Number.isFinite(packagePrice as number) ? (packagePrice as number) : undefined;
+  // —— 计量带展示单价：以进货落库包装价为 legacy 锚，禁止目录现价覆盖。——
+  if (base.unitBands?.length && base.selectedBandKind) {
+    applyWarehouseNonInboundBandKindToRow(base, base.selectedBandKind, packagePrice);
+  }
+  if (ln.totalPrice !== undefined && ln.totalPrice !== null) {
+    base.totalPrice = formatReturnDetailTotalAmount(ln.totalPrice);
+  } else {
+    recalcReturnToSupplierLineTotal(base);
+  }
   return base;
 }
 
@@ -394,14 +463,31 @@ function mapDetailLineToGrid(ln: ReturnToSupplierDetailLineDto, rowIdx: number):
         ? `ln-item-${String(itemIdRaw)}-${rowIdx}`
         : `ln-x-${rowIdx}`;
   const name = String(ln.productName ?? '').trim();
+  const packagePrice = ln.price === undefined || ln.price === null ? undefined : Number(ln.price);
   const row: ReturnPreviewRow = {
     id: idStr,
-    medicinePick: name ? { id: itemIdRaw as number | string | undefined, name } : undefined,
+    medicinePick: name
+      ? {
+          id: itemIdRaw as number | string | undefined,
+          name,
+          ...(String(
+            (ln.productCatalog as { productBusNo?: string } | null | undefined)?.productBusNo ?? '',
+          ).trim()
+            ? {
+                busNo: String(
+                  (ln.productCatalog as { productBusNo?: string }).productBusNo ?? '',
+                ).trim(),
+              }
+            : {}),
+        }
+      : undefined,
     itemTable: ln.itemTable,
     itemId: itemIdRaw,
     productName: name,
     itemQuantity: ln.itemQuantity === undefined ? undefined : Number(ln.itemQuantity),
     unitCode: String(ln.unitCode ?? ''),
+    price: Number.isFinite(packagePrice as number) ? (packagePrice as number) : undefined,
+    totalPrice: formatReturnDetailTotalAmount(ln.totalPrice),
     lotNumber: String(ln.lotNumber ?? ''),
     traceNo: String(ln.traceNo ?? ''),
     reason: String(ln.reason ?? ''),
@@ -416,6 +502,10 @@ function mapDetailLineToGrid(ln: ReturnToSupplierDetailLineDto, rowIdx: number):
   });
   applyHydratedInventoryDetailQtyToRow(row, hydrated);
   applyReturnRowUnitList(row);
+  // —— 详情回显：用落库包装价换算到当前展示带单价；行总额保留后端值。——
+  if (row.unitBands?.length && row.selectedBandKind) {
+    applyWarehouseNonInboundBandKindToRow(row, row.selectedBandKind, packagePrice);
+  }
   return row;
 }
 
@@ -452,6 +542,33 @@ const columns: VxeGridPropTypes.Column[] = [
         onUnitChange: (row: ReturnPreviewRow) => {
           handleReturnToSupplierUnitBandChanged(row);
         },
+      },
+    },
+  },
+  {
+    field: 'price',
+    title: '单价',
+    width: 120,
+    align: 'right',
+    headerAlign: 'center',
+    cellRender: {
+      name: 'InventoryUnitPriceCell',
+      props: {
+        priceField: 'price',
+        unitField: 'selectedBandKind',
+      },
+    },
+  },
+  {
+    field: 'totalPrice',
+    title: '总金额',
+    width: 112,
+    align: 'right',
+    headerAlign: 'center',
+    cellRender: {
+      name: 'InventoryTotalAmountCell',
+      props: {
+        amountField: 'totalPrice',
       },
     },
   },
@@ -548,6 +665,8 @@ const [Grid, gridApi] = useVbenVxeGrid<ReturnPreviewRow>({
       returnToSupplierGridEdit.onCellClick(params),
     editClosed(params: { row: ReturnPreviewRow }) {
       returnToSupplierGridEdit.syncRowFormMode(params.row);
+      // —— 数量改完后按当前计量带单价重算行金额（草稿预览，权威以后端写价为准）。——
+      recalcReturnToSupplierLineTotal(params.row);
     },
   },
   class: 'min-h-0 flex-1 !rounded-none !bg-transparent shadow-none',
@@ -610,6 +729,29 @@ function collectGridRows(): ReturnPreviewRow[] {
   return g?.getFullData?.() ?? [];
 }
 
+/** 明细行退货金额合计（页脚展示；结算 2 位口径） */
+const documentAmountSummaryItems = computed(() => {
+  void linesAmountRevision.value;
+  const amounts: Array<number | string> = [];
+  // 仅汇总已选品明细的行金额
+  for (const row of collectGridRows()) {
+    if (!isPresentItemId(row.itemId)) continue;
+    const raw = String(row.totalPrice ?? '').trim();
+    if (!raw) continue;
+    amounts.push(raw);
+  }
+  if (amounts.length === 0) return [];
+  return [{ label: '退货金额', value: formatMoneyDisplay(sumMoneyThenSettle(amounts)) }];
+});
+
+/** 页脚合计：财务审批深链优先；否则展示当前明细合计 */
+const amountSummaryBarItems = computed(() => {
+  if (showFinanceApprovalSummary.value) {
+    return financeApprovalSummaryItems.value;
+  }
+  return documentAmountSummaryItems.value;
+});
+
 const traceScanBridgeRef = ref<InstanceType<typeof InvDocTraceScanBridge> | null>(null);
 
 /** 打开批量追溯码扫码弹窗 */
@@ -630,6 +772,7 @@ function resetDetailForCreate() {
   void nextTick(() => {
     gridApi?.grid?.loadData([]);
     patchReturnToSupplierGridEditConfig();
+    bumpLinesAmountRevision();
   });
 }
 
@@ -670,6 +813,7 @@ async function loadDetail(busNo: string, loadGen?: number) {
       if (loadGen !== undefined && parentSync.isLoadStale(loadGen)) return;
       gridApi?.grid?.loadData(gridRows);
       patchReturnToSupplierGridEditConfig();
+      bumpLinesAmountRevision();
     });
   } catch {
     if (loadGen !== undefined && parentSync.isLoadStale(loadGen)) return;
@@ -677,6 +821,7 @@ async function loadDetail(busNo: string, loadGen?: number) {
       if (loadGen !== undefined && parentSync.isLoadStale(loadGen)) return;
       gridApi?.grid?.loadData([]);
       patchReturnToSupplierGridEditConfig();
+      bumpLinesAmountRevision();
     });
   }
 }
@@ -708,7 +853,7 @@ function buildLinesPayload(rows: ReturnPreviewRow[]): ReturnToSupplierLineDto[] 
       itemQuantity: persisted.itemQuantity,
       unitCode: unitCode || undefined,
       lotNumber: String(r.lotNumber ?? '').trim() || undefined,
-      traceNo: String(r.traceNo ?? '').trim() || undefined,
+      traceNo: String(r.traceNo ?? '').trim(),
       occurrenceTime: resolveOccurrenceTimeForApi(),
       reason: String(r.reason ?? '').trim() || undefined,
       remake: String(r.remake ?? '').trim() || undefined,
@@ -811,13 +956,26 @@ async function persistReturnToSupplier(): Promise<string | undefined> {
   }
 }
 
+/** 落库成功后清 session 草稿缓存 */
+function clearDraftPersistAfterSave(busNo?: string) {
+  clearInvDocDraftCacheAfterSave({
+    scene: INV_DOC_DRAFT_SCENE.warehouseReturnToSupplier,
+    clientDraftId: props.clientDraftId,
+    busNo,
+  });
+  parentSync.clearDraftSnap();
+}
+
 async function handleSaveDoc() {
-  await persistReturnToSupplier();
+  const no = await persistReturnToSupplier();
+  if (!no) return;
+  clearDraftPersistAfterSave(no);
 }
 
 async function handleSaveAndSubmitDoc() {
   const no = await persistReturnToSupplier();
   if (!no) return;
+  clearDraftPersistAfterSave(no);
   await handleSubmitApproval();
 }
 
@@ -828,6 +986,11 @@ async function handleRemoveDoc() {
     } catch {
       return;
     }
+    clearInvDocDraftCacheAfterSave({
+      scene: INV_DOC_DRAFT_SCENE.warehouseReturnToSupplier,
+      clientDraftId: props.clientDraftId,
+    });
+    parentSync.discardDraftSession();
     resetDetailForCreate();
     emit('documentRemoved');
     return;
@@ -845,6 +1008,11 @@ async function handleRemoveDoc() {
   }
   try {
     await removeReturnToSupplierApi({ busNo: no });
+    clearInvDocDraftCacheAfterSave({
+      scene: INV_DOC_DRAFT_SCENE.warehouseReturnToSupplier,
+      busNo: no,
+    });
+    parentSync.clearDraftSnap();
     ElMessage.success('已删除');
     resetDetailForCreate();
     emit('documentRemoved');
@@ -990,9 +1158,6 @@ async function handlePrint() {
 
   const warehouseName = resolvePrintWarehouseName(sourceLocationId.value);
   const supplierText = resolvePrintOptionLabel(props.supplierOptions, supplierId.value);
-  const practitionerName = resolveLoginPractitionerLabelFromUserInfo(
-    userStore.userInfo as null | Record<string, unknown>,
-  );
   const documentTitle = buildInvDocumentTitle(warehouseName, '退供应商单');
   const applyTimeText = String(headApplyTime.value ?? props.applyTime ?? '')
     .trim()
@@ -1000,13 +1165,25 @@ async function handlePrint() {
 
   // 按当前网格展示值组装退货明细
   const lineRows = productRows.map((row) => ({
+    productBusNo: resolveInvPrintProductBusNo(row as unknown as Record<string, unknown>),
     productName: String(row.productName ?? '').trim(),
     qty: row.itemQuantity,
     unitLabel: resolveReturnPrintUnitLabel(row),
+    unitPrice: row.price,
+    amount: row.totalPrice,
     lotNumber: String(row.lotNumber ?? '').trim(),
     reasonText: String(row.reason ?? '').trim(),
   }));
 
+  const preparedByName = resolveInvDocPreparedByName(
+    props.queueCardRow as null | Record<string, unknown>,
+  );
+  const approvedByName = resolveInvDocApprovedByName(
+    props.queueCardRow as null | Record<string, unknown>,
+  );
+  const totalAmountText =
+    documentAmountSummaryItems.value[0]?.value ??
+    formatMoneyDisplay(sumMoneyThenSettle(productRows.map((r) => r.totalPrice ?? 0)));
   await printInvDocument({
     family: 'return',
     source: {
@@ -1019,11 +1196,11 @@ async function handlePrint() {
       supplierText,
       linkDocText: String(originalBusNo.value ?? '').trim(),
       destLocationText: '',
-      practitionerName,
       invoiceNoText: '',
       lineRows,
-      preparedByName: practitionerName,
-      approvedByName: '',
+      totalAmountText,
+      preparedByName,
+      approvedByName,
     },
     bizRef: { busNo, docKind: 'return-to-supplier' },
     jobName: documentTitle,
@@ -1049,6 +1226,7 @@ async function deleteItem(row: 'select' | ReturnPreviewRow) {
   const checked = $grid.getCheckboxRecords() as ReturnPreviewRow[];
   if (row === 'select' && checked.length === 0) return;
   await $grid.remove(row === 'select' ? checked : row);
+  bumpLinesAmountRevision();
 }
 
 async function openUpstreamPicker() {
@@ -1159,6 +1337,7 @@ async function applyLinkableInboundToDraft(row: LinkableGoodsReceiptListRowDto) 
     void nextTick(() => {
       gridApi?.grid?.loadData(gridRows);
       patchReturnToSupplierGridEditConfig();
+      bumpLinesAmountRevision();
     });
     linkInboundVisible.value = false;
     ElMessage.success('已带入可退明细，请核对数量后保存');
@@ -1185,7 +1364,30 @@ interface ReturnToSupplierDraftSnap {
   rows: ReturnPreviewRow[];
 }
 
-const parentSync = useInvDocParentSyncSession<ReturnToSupplierDraftSnap>();
+const parentSync = useInvDocParentSyncSession<ReturnToSupplierDraftSnap>({
+  scene: INV_DOC_DRAFT_SCENE.warehouseReturnToSupplier,
+  getDocKey: () => {
+    const draftId = String(props.clientDraftId ?? '').trim();
+    if (props.isDraftOrder && draftId) return draftId;
+    return String(props.busNo ?? headerBusNo.value ?? '').trim() || undefined;
+  },
+  getCardMeta: () => ({
+    statusEnum_enumText: '编辑中',
+    applyTime: headApplyTime.value,
+  }),
+});
+
+/** 拍摄当前主区草稿快照（侧栏切单 / 落盘共用） */
+function captureReturnToSupplierDraftSnap(): ReturnToSupplierDraftSnap {
+  return {
+    originalBusNo: originalBusNo.value,
+    sourceLocationId: sourceLocationId.value,
+    purposeLocationId: purposeLocationId.value,
+    supplierId: supplierId.value,
+    headApplyTime: headApplyTime.value,
+    rows: collectGridRows().map((r) => ({ ...r })),
+  };
+}
 
 /** 侧栏切单：缓存/恢复本地草稿，避免已落库明细污染新建单 */
 async function syncFromParentContext() {
@@ -1193,14 +1395,7 @@ async function syncFromParentContext() {
     { isDraftOrder: Boolean(props.isDraftOrder), parentBusNo: props.busNo },
     {
       getLocalPersistedBusNo: () => headerBusNo.value,
-      captureDraft: () => ({
-        originalBusNo: originalBusNo.value,
-        sourceLocationId: sourceLocationId.value,
-        purposeLocationId: purposeLocationId.value,
-        supplierId: supplierId.value,
-        headApplyTime: headApplyTime.value,
-        rows: collectGridRows().map((r) => ({ ...r })),
-      }),
+      captureDraft: captureReturnToSupplierDraftSnap,
       restoreDraft: async (snap) => {
         headerBusNo.value = undefined;
         detailStatusEnum.value = undefined;
@@ -1213,6 +1408,7 @@ async function syncFromParentContext() {
         await nextTick();
         gridApi?.grid?.loadData(snap.rows);
         patchReturnToSupplierGridEditConfig();
+        bumpLinesAmountRevision();
       },
       resetForCreate: () => {
         resetDetailForCreate();
@@ -1223,6 +1419,21 @@ async function syncFromParentContext() {
     },
   );
 }
+/** 切菜单 / KeepAlive 停用前把未保存草稿写入 sessionStorage */
+function flushReturnToSupplierDraftPersist(): void {
+  parentSync.flushPersist({
+    getLocalPersistedBusNo: () => headerBusNo.value,
+    captureDraft: captureReturnToSupplierDraftSnap,
+  });
+}
+
+onBeforeUnmount(() => {
+  flushReturnToSupplierDraftPersist();
+});
+
+onDeactivated(() => {
+  flushReturnToSupplierDraftPersist();
+});
 
 watch(
   () => props.resetKey,
@@ -1232,7 +1443,7 @@ watch(
 );
 
 watch(
-  () => [props.busNo, props.isDraftOrder, props.resetKey] as const,
+  () => [props.busNo, props.isDraftOrder, props.resetKey, props.clientDraftId] as const,
   () => {
     void syncFromParentContext();
   },
@@ -1414,6 +1625,10 @@ watch(
           </Grid>
         </div>
       </div>
+      <InvDocAmountSummaryBar
+        v-if="amountSummaryBarItems.length > 0"
+        :items="amountSummaryBarItems"
+      />
     </InvMainShell>
 
     <InvDocLinkPickerDialog

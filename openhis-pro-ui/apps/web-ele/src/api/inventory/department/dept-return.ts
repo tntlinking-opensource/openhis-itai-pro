@@ -145,7 +145,8 @@ export interface DeptReturnLineDto {
 }
 
 export interface CreateDeptReturnRequest {
-  originalBusNo: string;
+  /** 可选：关联已同意科室入库单；空则按源科室药房库存自由选品 */
+  originalBusNo?: string;
   sourceLocationId: number | string;
   purposeLocationId: number | string;
   practitionerId?: number | string;
@@ -216,13 +217,12 @@ export interface RemoveDeptReturnRequest {
 }
 
 export interface PageProductsForDeptReturnRequest {
+  /** 源科室药房位置（库存选品门禁） */
+  sourceLocationId: number | string;
   productTableName?: string;
   keyword?: string;
-  categoryCode?: string;
-  activeFlag?: boolean;
-  supplierId?: number;
-  manufacturer?: string;
-  includeInventory?: boolean;
+  /** true=仅返回账面量>0 的批号行 */
+  positiveQuantityOnly?: boolean;
   pageNo: number;
   pageSize: number;
   sortField?: string;
@@ -230,18 +230,18 @@ export interface PageProductsForDeptReturnRequest {
 }
 
 export interface ProductDefinitionItemDto {
-  productDefinitionId?: number;
+  productDefinitionId?: number | string;
   productTableName?: string;
+  productBusNo?: string;
   productName?: string;
-  merchandiseName?: string;
-  unitCode?: string;
-  minUnitCode?: string;
-  categoryCode?: string;
-  price?: number;
-  purchasePrice?: number;
+  specification?: string;
   manufacturer?: string;
-  pyStr?: string;
-  wbStr?: string;
+  lotNumber?: string;
+  expirationDate?: string;
+  availableQuantity?: number;
+  unitBands?: unknown;
+  purchaseUnitPrice?: number;
+  inventoryItemId?: number | string;
 }
 
 export interface PageProductsForDeptReturnResponse {

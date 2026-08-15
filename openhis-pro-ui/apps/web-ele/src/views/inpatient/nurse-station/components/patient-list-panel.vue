@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { PatientStatusFilter } from './patient-list-panel.context';
+import type { PatientAdmissionFilter, PatientStatusFilter } from './patient-list-panel.context';
 
 import { inject, toRef } from 'vue';
 
@@ -25,7 +25,10 @@ if (!injectedContext) {
 }
 const context = injectedContext;
 const {
+  admissionFilter,
+  admissionOptions,
   availableWards,
+  changeAdmissionFilter,
   changeKeyword,
   changeRegionIds,
   changeStatusFilter,
@@ -63,6 +66,11 @@ function handleStatusFilterChange(value: PatientStatusFilter) {
   changeStatusFilter(value);
 }
 
+/** 切换入科状态筛选（本地过滤）。 */
+function handleAdmissionFilterChange(value: PatientAdmissionFilter) {
+  changeAdmissionFilter(value);
+}
+
 /** 病区勾选变化后拉取队列。 */
 function handleRegionIdsChange(value: string[]) {
   changeRegionIds(value);
@@ -93,7 +101,7 @@ function handleCardClick(id: string) {
   togglePatientCardSelection(id);
 }
 
-/** 双击卡片打开患者入科选床弹窗。 */
+/** 双击卡片打开患者体征卡。 */
 function handleCardDblClick(patient: (typeof filteredPatients.value)[number]) {
   onPatientCardDblClick(patient);
 }
@@ -211,6 +219,18 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
           />
         </div>
         <div class="nurse-search-bar__row">
+          <ElSelect
+            :model-value="admissionFilter"
+            class="nurse-search-bar__admission"
+            @update:model-value="handleAdmissionFilterChange"
+          >
+            <ElOption
+              v-for="item in admissionOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </ElSelect>
           <ElSelect
             :model-value="statusFilter"
             class="nurse-search-bar__status"
@@ -543,6 +563,7 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
 .nurse-search-bar__refresh {
   flex-shrink: 0;
 }
+.nurse-search-bar__admission,
 .nurse-search-bar__status {
   flex: 1;
   min-width: 0;

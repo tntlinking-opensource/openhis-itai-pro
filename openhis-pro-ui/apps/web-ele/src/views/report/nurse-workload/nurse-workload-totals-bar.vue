@@ -8,24 +8,37 @@ import { fmtReportNumber } from '#/views/report/shared/report-format';
 defineOptions({ name: 'NurseWorkloadTotalsBar' });
 
 interface Props {
-  consumableTotalAmount?: number | string;
+  consumableTotalPurchaseAmount?: number | string | null;
   consumableTotalQuantity?: number | string;
-  executionTotalAmount?: number | string;
+  consumableTotalSaleAmount?: number | string;
   executionTotalCount?: number;
+  executionTotalPurchaseAmount?: number | string | null;
+  executionTotalSaleAmount?: number | string;
   nurseCount?: number;
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  consumableTotalAmount: 0,
+  consumableTotalPurchaseAmount: null,
   consumableTotalQuantity: 0,
-  executionTotalAmount: 0,
+  consumableTotalSaleAmount: 0,
   executionTotalCount: 0,
+  executionTotalPurchaseAmount: null,
+  executionTotalSaleAmount: 0,
   nurseCount: 0,
 });
 
-const amountTotal = computed(
-  () => Number(props.executionTotalAmount ?? 0) + Number(props.consumableTotalAmount ?? 0),
+const saleTotal = computed(
+  () => Number(props.executionTotalSaleAmount ?? 0) + Number(props.consumableTotalSaleAmount ?? 0),
 );
+
+const purchaseTotal = computed(() => {
+  const executionPurchase = props.executionTotalPurchaseAmount;
+  const consumablePurchase = props.consumableTotalPurchaseAmount;
+  if (executionPurchase == null && consumablePurchase == null) {
+    return null;
+  }
+  return Number(executionPurchase ?? 0) + Number(consumablePurchase ?? 0);
+});
 </script>
 
 <template>
@@ -70,9 +83,9 @@ const amountTotal = computed(
           <IconifyIcon icon="lucide:banknote" />
         </span>
         <div class="nurse-workload-stats__content">
-          <span class="nurse-workload-stats__label">处置金额</span>
+          <span class="nurse-workload-stats__label">处置售价</span>
           <span class="nurse-workload-stats__value nurse-workload-stats__value--amount">
-            {{ fmtReportNumber(executionTotalAmount, 2) }}
+            {{ fmtReportNumber(executionTotalSaleAmount, 2) }}
           </span>
         </div>
       </div>
@@ -82,9 +95,9 @@ const amountTotal = computed(
           <IconifyIcon icon="lucide:wallet" />
         </span>
         <div class="nurse-workload-stats__content">
-          <span class="nurse-workload-stats__label">耗材金额</span>
+          <span class="nurse-workload-stats__label">耗材售价</span>
           <span class="nurse-workload-stats__value nurse-workload-stats__value--amount">
-            {{ fmtReportNumber(consumableTotalAmount, 2) }}
+            {{ fmtReportNumber(consumableTotalSaleAmount, 2) }}
           </span>
         </div>
       </div>
@@ -94,9 +107,35 @@ const amountTotal = computed(
           <IconifyIcon icon="lucide:circle-dollar-sign" />
         </span>
         <div class="nurse-workload-stats__content">
-          <span class="nurse-workload-stats__label">金额合计</span>
+          <span class="nurse-workload-stats__label">售价合计</span>
           <span class="nurse-workload-stats__value nurse-workload-stats__value--amount-total">
-            {{ fmtReportNumber(amountTotal, 2) }}
+            {{ fmtReportNumber(saleTotal, 2) }}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="nurse-workload-stats__row nurse-workload-stats__row--amount">
+      <div class="nurse-workload-stats__card nurse-workload-stats__card--amount">
+        <span class="nurse-workload-stats__icon">
+          <IconifyIcon icon="lucide:receipt" />
+        </span>
+        <div class="nurse-workload-stats__content">
+          <span class="nurse-workload-stats__label">耗材进价</span>
+          <span class="nurse-workload-stats__value nurse-workload-stats__value--amount">
+            {{ fmtReportNumber(consumableTotalPurchaseAmount, 2) }}
+          </span>
+        </div>
+      </div>
+
+      <div class="nurse-workload-stats__card nurse-workload-stats__card--amount-total">
+        <span class="nurse-workload-stats__icon">
+          <IconifyIcon icon="lucide:coins" />
+        </span>
+        <div class="nurse-workload-stats__content">
+          <span class="nurse-workload-stats__label">进价合计</span>
+          <span class="nurse-workload-stats__value nurse-workload-stats__value--amount-total">
+            {{ fmtReportNumber(purchaseTotal, 2) }}
           </span>
         </div>
       </div>
@@ -115,6 +154,10 @@ const amountTotal = computed(
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
+}
+
+.nurse-workload-stats__row--amount:last-child {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .nurse-workload-stats__card {

@@ -236,6 +236,10 @@ export function formatSpecialEventDisplayText(
   if (code === SPECIAL_EVENT_ITEM_CODE.ADMISSION) {
     return `入院|时间${timeText}`;
   }
+  // 纸质体温单出院竖排口径：今日出院|几时几分
+  if (code === SPECIAL_EVENT_ITEM_CODE.DISCHARGE) {
+    return `今日出院|${timeText}`;
+  }
   const label = resolveSpecialEventLabel(eventType, labelMap);
   return `${label}|${timeText}`;
 }

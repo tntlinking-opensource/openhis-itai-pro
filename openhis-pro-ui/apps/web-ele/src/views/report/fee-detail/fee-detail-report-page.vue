@@ -41,6 +41,10 @@ import {
   pageFeeDetailReportApi,
   PRESENTATION_MODE_DETAIL,
   PRESENTATION_MODE_SUMMARY,
+  SETTLEMENT_STATUS_ALL,
+  SETTLEMENT_STATUS_PENDING,
+  SETTLEMENT_STATUS_SETTLED,
+  SUMMARY_DIMENSION_FIN_TYPE,
   summarizeFeeDetailReportApi,
 } from '#/api/report/fee-detail';
 import { useRequest } from '#/hooks/use-request';
@@ -81,7 +85,9 @@ interface QueryFormState {
   dateFrom: string;
   dateTo: string;
   tradeDirection: string;
-  registrationDepartmentId?: string;
+  /** 住院结算状态：ALL / SETTLED / PENDING_SETTLEMENT。 */
+  settlementStatus: string;
+  requestingOrgId?: string;
   feeCategoryCodes?: string[];
   subCategoryCodes?: string[];
   patientKeyword?: string;
@@ -90,6 +96,8 @@ interface QueryFormState {
   cashierId?: string;
   feeNatureContractNo?: string;
   presentationMode: PresentationModeCode;
+  /** 汇总维度（仅汇总 Tab）。 */
+  summaryDimension: string;
 }
 
 const props = defineProps<Props>();
@@ -99,7 +107,10 @@ const summaryRows = ref<FeeDetailReportSummaryRowDto[]>([]);
 const summaryFooter = ref<FeeDetailReportSummaryFooterDto | undefined>();
 const tableData = ref<FeeDetailTableRow[]>([]);
 const globalSummary = ref<FeeDetailAmountSummaryDto | undefined>();
-const total = ref(0);
+/** 明细分页 total（就诊块数）。 */
+const detailTotal = ref(0);
+/** 汇总 Tab 行数（与明细分页 total 隔离，避免切 Tab 串扰）。 */
+const summaryTotal = ref(0);
 const tableScrollRef = ref<InstanceType<typeof ReportTableScroll> | null>(null);
 
 const queryParams = reactive<QueryFormState>({
@@ -108,7 +119,8 @@ const queryParams = reactive<QueryFormState>({
   dateFrom: '',
   dateTo: '',
   tradeDirection: 'ALL',
-  registrationDepartmentId: undefined,
+  settlementStatus: SETTLEMENT_STATUS_ALL,
+  requestingOrgId: undefined,
   feeCategoryCodes: undefined,
   subCategoryCodes: undefined,
   patientKeyword: undefined,
@@ -118,9 +130,13 @@ const queryParams = reactive<QueryFormState>({
   feeNatureContractNo: undefined,
   /** 进入页默认明细 Tab（门/住院统一）。 */
   presentationMode: PRESENTATION_MODE_DETAIL,
+  summaryDimension: SUMMARY_DIMENSION_FIN_TYPE,
 });
 
 const pageTitle = computed(() => (props.scope === 'outpatient' ? '门诊费用明细' : '住院费用明细'));
+
+/** 住院含待结：日期轴为已结结算日 / 待结发生日；门诊仍称结算日期。 */
+const businessDateLabel = computed(() => (props.scope === 'inpatient' ? '业务日期' : '结算日期'));
 
 const defaultExportFileName = computed(() =>
   props.scope === 'outpatient' ? '门诊费用明细.xlsx' : '住院费用明细.xlsx',
@@ -128,7 +144,9 @@ const defaultExportFileName = computed(() =>
 
 const encounterNoLabel = computed(() => (props.scope === 'outpatient' ? '门诊号' : '住院号'));
 
-const departmentLabel = computed(() => (props.scope === 'outpatient' ? '挂号科室' : '住院科室'));
+const departmentFilterLabel = '开立科室';
+/** 明细块头科室列：开立科室（后端 requestingOrgName，缺省回落就诊科室）。 */
+const departmentColumnLabel = '开立科室';
 
 const patientKeywordPlaceholder = computed(() =>
   props.scope === 'outpatient' ? '姓名 / 门诊号' : '姓名 / 住院号',
@@ -158,6 +176,26 @@ const tradeDirectionOptions = computed<ApiOptionItem[]>(
   () => pageInit.value?.tradeDirectionOptions ?? [],
 );
 
+/** 住院结算状态筛：优先用 init；缺省本地兜底，保证筛选可见。 */
+const settlementStatusOptions = computed<ApiOptionItem[]>(() => {
+  const fromInit = pageInit.value?.settlementStatusOptions ?? [];
+  if (fromInit.length > 0) {
+    return fromInit;
+  }
+  if (props.scope !== 'inpatient') {
+    return [];
+  }
+  return [
+    { label: '全部', value: SETTLEMENT_STATUS_ALL },
+    { label: '已结算', value: SETTLEMENT_STATUS_SETTLED },
+    { label: '待结算', value: SETTLEMENT_STATUS_PENDING },
+  ];
+});
+
+const showSettlementStatusFilter = computed(
+  () => props.scope === 'inpatient' && settlementStatusOptions.value.length > 0,
+);
+
 const registrationDepartmentOptions = computed<ApiOptionItem[]>(
   () => pageInit.value?.registrationDepartmentOptions ?? [],
 );
@@ -169,6 +207,10 @@ const feeCategoryOptions = computed<ApiOptionItem[]>(
 const cashierOptions = computed<ApiOptionItem[]>(() => pageInit.value?.cashierOptions ?? []);
 
 const feeNatureOptions = computed<ApiOptionItem[]>(() => pageInit.value?.feeNatureOptions ?? []);
+
+const summaryDimensionOptions = computed<ApiOptionItem[]>(
+  () => pageInit.value?.summaryDimensionOptions ?? [],
+);
 
 /** 项目类别：合并药品/诊疗/耗材 fin_type 字典（按 value 去重）。 */
 const subCategoryOptions = computed<ApiOptionItem[]>(() => {
@@ -223,7 +265,7 @@ const footerSummaryItems = computed(() => {
   }
   const summary = globalSummary.value;
   if (!summary) {
-    return [{ label: '明细行数', value: total.value }];
+    return [{ label: '明细行数', value: detailTotal.value }];
   }
   return FEE_DETAIL_SUMMARY_DISPLAY.map((item) => ({
     label: item.label,
@@ -243,7 +285,8 @@ const { run: runSummarize, loading: summarizeLoading } = useRequest(
     onSuccess: (data) => {
       summaryRows.value = data?.rows ?? [];
       summaryFooter.value = data?.footer;
-      total.value = summaryRows.value.length;
+      // 汇总 Tab 独立 total，避免与明细分页 total 串扰
+      summaryTotal.value = summaryRows.value.length;
     },
   },
 );
@@ -254,7 +297,12 @@ const { run: runPage, loading: pageLoading } = useRequest(
     manual: true,
     onSuccess: (data) => {
       tableData.value = flattenEncounterBlocksToTableRows(data.content ?? []);
-      total.value = data.totalCount ?? 0;
+      // total 为就诊块数（非明细行数）；须 Number 化，避免字符串导致分页失效
+      detailTotal.value = Number(data.totalCount ?? 0) || 0;
+      // 后端钳制越界页后回写实际 pageNo，前端同步避免空页
+      if (data.pageNo != null && Number(data.pageNo) >= 1) {
+        queryParams.pageNo = Number(data.pageNo);
+      }
       globalSummary.value = data.summary;
     },
   },
@@ -300,7 +348,7 @@ function buildFilterPayload() {
   const dateFrom = normalizeReportDateRangeYmd(queryParams.dateFrom);
   const dateTo = normalizeReportDateRangeYmd(queryParams.dateTo);
   if (!dateFrom || !dateTo) {
-    ElMessage.warning('请选择结算日期');
+    ElMessage.warning(props.scope === 'inpatient' ? '请选择业务日期' : '请选择结算日期');
     return null;
   }
   if (dayjs(dateFrom).isAfter(dayjs(dateTo))) {
@@ -312,7 +360,7 @@ function buildFilterPayload() {
     dateTo,
     // 汇总 Tab 不传收退方向，由后端强制净视角。
     tradeDirection: isSummaryTab.value ? undefined : queryParams.tradeDirection || 'ALL',
-    registrationDepartmentId: preserveApiIdForRequest(queryParams.registrationDepartmentId),
+    requestingOrgId: preserveApiIdForRequest(queryParams.requestingOrgId),
     feeCategoryCodes: queryParams.feeCategoryCodes?.length
       ? queryParams.feeCategoryCodes
       : undefined,
@@ -324,6 +372,14 @@ function buildFilterPayload() {
     productCodeKeyword: queryParams.productCodeKeyword?.trim() || undefined,
     cashierId: preserveApiIdForRequest(queryParams.cashierId),
     feeNatureContractNo: queryParams.feeNatureContractNo || undefined,
+    // 仅住院传结算状态；门诊忽略。
+    settlementStatus:
+      props.scope === 'inpatient'
+        ? queryParams.settlementStatus || SETTLEMENT_STATUS_ALL
+        : undefined,
+    summaryDimension: isSummaryTab.value
+      ? queryParams.summaryDimension || SUMMARY_DIMENSION_FIN_TYPE
+      : undefined,
   };
 }
 
@@ -372,7 +428,16 @@ function handleReset() {
       ? 'ALL'
       : String(init.tradeDirectionOptions[0]?.value ?? 'ALL');
   }
-  queryParams.registrationDepartmentId = undefined;
+  queryParams.settlementStatus = SETTLEMENT_STATUS_ALL;
+  if (init?.settlementStatusOptions?.length) {
+    const hasAll = init.settlementStatusOptions.some(
+      (item) => item.value === SETTLEMENT_STATUS_ALL,
+    );
+    queryParams.settlementStatus = hasAll
+      ? SETTLEMENT_STATUS_ALL
+      : String(init.settlementStatusOptions[0]?.value ?? SETTLEMENT_STATUS_ALL);
+  }
+  queryParams.requestingOrgId = undefined;
   queryParams.feeCategoryCodes = undefined;
   queryParams.subCategoryCodes = undefined;
   queryParams.patientKeyword = undefined;
@@ -381,6 +446,9 @@ function handleReset() {
   queryParams.cashierId = undefined;
   queryParams.feeNatureContractNo = undefined;
   queryParams.presentationMode = resolveDefaultPresentationMode(init);
+  queryParams.summaryDimension = String(
+    summaryDimensionOptions.value[0]?.value ?? SUMMARY_DIMENSION_FIN_TYPE,
+  );
   queryParams.pageNo = 1;
   queryParams.pageSize = init?.defaultPageSize ?? 10;
   void getList();
@@ -405,8 +473,11 @@ function handlePageSizeChange(size: number) {
   void getList();
 }
 
-/** 切换页码（仅明细）。 */
+/** 切换页码（仅明细）；同页重复触发不重复请求。 */
 function handleCurrentPageChange(page: number) {
+  if (!page || page < 1 || page === queryParams.pageNo) {
+    return;
+  }
   queryParams.pageNo = page;
   void getList();
 }
@@ -497,9 +568,18 @@ function handleEncounterSpanMethod(params: {
   });
 }
 
-/** 汇总行稳定 key。 */
+/**
+ * 汇总行稳定 key（优先 dimensionKey，兼容旧 finType*）。
+ *
+ * @param row 汇总行
+ */
 function resolveSummaryRowKey(row: FeeDetailReportSummaryRowDto) {
-  return String(row.finTypeCode ?? row.finTypeDisplay ?? '');
+  // 多维契约：优先用分桶键
+  if (row.dimensionKey) {
+    return String(row.dimensionKey);
+  }
+  // 兼容 FIN_TYPE 旧字段或仅有展示名
+  return String(row.finTypeCode ?? row.finTypeDisplay ?? row.dimensionName ?? '');
 }
 
 /** 加载页初始化下拉与默认日期。 */
@@ -518,6 +598,18 @@ async function loadPageInit() {
       ? 'ALL'
       : String(data.tradeDirectionOptions[0]?.value ?? 'ALL');
   }
+  queryParams.settlementStatus = SETTLEMENT_STATUS_ALL;
+  if (data.settlementStatusOptions?.length) {
+    const hasAll = data.settlementStatusOptions.some(
+      (item) => item.value === SETTLEMENT_STATUS_ALL,
+    );
+    queryParams.settlementStatus = hasAll
+      ? SETTLEMENT_STATUS_ALL
+      : String(data.settlementStatusOptions[0]?.value ?? SETTLEMENT_STATUS_ALL);
+  }
+  const firstDim = data.summaryDimensionOptions?.[0]?.value;
+  // init 首项为 FIN_TYPE；无选项时本地默认
+  queryParams.summaryDimension = String(firstDim ?? SUMMARY_DIMENSION_FIN_TYPE);
   queryParams.cashierId = undefined;
 }
 
@@ -537,7 +629,7 @@ onMounted(async () => {
       <template #query>
         <ReportQueryBar :model="queryBarModel">
           <template #fields>
-            <ElFormItem label="结算日期">
+            <ElFormItem :label="businessDateLabel">
               <ElDatePicker
                 v-model="businessDateRange"
                 type="daterange"
@@ -551,12 +643,22 @@ onMounted(async () => {
                 @change="handleQuery"
               />
             </ElFormItem>
-            <ElFormItem v-if="!isSummaryTab" label="收退方向">
-              <ElRadioGroup
-                v-model="queryParams.tradeDirection"
+            <ElFormItem v-if="isSummaryTab" label="汇总维">
+              <ElSelect
+                v-model="queryParams.summaryDimension"
                 :class="REPORT_QUERY_CONTROL"
                 @change="handleQuery"
               >
+                <ElOption
+                  v-for="item in toSelectOptions(summaryDimensionOptions)"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem v-if="!isSummaryTab" label="收退方向">
+              <ElRadioGroup v-model="queryParams.tradeDirection" @change="handleQuery">
                 <ElRadioButton
                   v-for="item in toSelectOptions(tradeDirectionOptions)"
                   :key="item.value"
@@ -566,9 +668,24 @@ onMounted(async () => {
                 </ElRadioButton>
               </ElRadioGroup>
             </ElFormItem>
-            <ElFormItem :label="departmentLabel">
+            <ElFormItem v-if="showSettlementStatusFilter" label="结算状态">
               <ElSelect
-                v-model="queryParams.registrationDepartmentId"
+                v-model="queryParams.settlementStatus"
+                :clearable="false"
+                :class="REPORT_QUERY_CONTROL"
+                @change="handleQuery"
+              >
+                <ElOption
+                  v-for="item in toSelectOptions(settlementStatusOptions)"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem :label="departmentFilterLabel">
+              <ElSelect
+                v-model="queryParams.requestingOrgId"
                 clearable
                 filterable
                 placeholder="全部"
@@ -698,7 +815,7 @@ onMounted(async () => {
       <template #toolbar>
         <ReportListToolbar
           :title="`${pageTitle} · ${isSummaryTab ? '汇总' : '明细'}`"
-          :total="isSummaryTab ? summaryRows.length : total"
+          :total="isSummaryTab ? summaryTotal : detailTotal"
         >
           <template #actions>
             <ElRadioGroup v-model="queryParams.presentationMode" @change="handleTabChange">
@@ -723,13 +840,17 @@ onMounted(async () => {
               :row-key="resolveSummaryRowKey"
             >
               <ElTableColumn
-                prop="finTypeDisplay"
-                label="费用类型"
-                min-width="140"
+                prop="dimensionName"
+                label="维度"
+                min-width="160"
                 align="center"
                 header-align="center"
                 show-overflow-tooltip
-              />
+              >
+                <template #default="{ row }">
+                  {{ row.dimensionName || row.finTypeDisplay || '—' }}
+                </template>
+              </ElTableColumn>
               <ElTableColumn
                 prop="lineCount"
                 label="行数"
@@ -766,20 +887,6 @@ onMounted(async () => {
                   </span>
                 </template>
               </ElTableColumn>
-              <ElTableColumn
-                label="实收合计"
-                prop="actualReceivedAmountTotal"
-                width="120"
-                align="right"
-                header-align="right"
-                :class-name="REPORT_TABLE_NUM_CELL"
-              >
-                <template #default="{ row }">
-                  <span :class="resolveAmountClass(row.actualReceivedAmountTotal)">
-                    {{ formatMoneyCell(row.actualReceivedAmountTotal) }}
-                  </span>
-                </template>
-              </ElTableColumn>
             </ReportElTable>
 
             <ReportElTable
@@ -813,7 +920,7 @@ onMounted(async () => {
               />
               <ElTableColumn
                 prop="registrationDepartmentName"
-                :label="departmentLabel"
+                :label="departmentColumnLabel"
                 width="100"
                 align="center"
                 header-align="center"
@@ -889,6 +996,14 @@ onMounted(async () => {
                 show-overflow-tooltip
               />
               <ElTableColumn
+                prop="performerName"
+                label="执行人"
+                width="88"
+                align="center"
+                header-align="center"
+                show-overflow-tooltip
+              />
+              <ElTableColumn
                 prop="cashierName"
                 label="收费人"
                 width="88"
@@ -898,7 +1013,7 @@ onMounted(async () => {
               />
               <ElTableColumn
                 prop="billDate"
-                label="结算时间"
+                :label="props.scope === 'inpatient' ? '业务时间' : '结算时间'"
                 width="160"
                 align="center"
                 header-align="center"
@@ -986,20 +1101,6 @@ onMounted(async () => {
                   </span>
                 </template>
               </ElTableColumn>
-              <ElTableColumn
-                label="实收金额"
-                prop="actualReceivedAmount"
-                width="96"
-                align="right"
-                header-align="right"
-                :class-name="REPORT_TABLE_NUM_CELL"
-              >
-                <template #default="{ row }">
-                  <span :class="resolveAmountClass(row.actualReceivedAmount)">
-                    {{ formatMoneyCell(row.actualReceivedAmount) }}
-                  </span>
-                </template>
-              </ElTableColumn>
             </ReportElTable>
           </template>
         </ReportTableScroll>
@@ -1010,7 +1111,7 @@ onMounted(async () => {
           :summary-items="footerSummaryItems"
           :current-page="queryParams.pageNo"
           :page-size="isSummaryTab ? Math.max(summaryRows.length, 1) : queryParams.pageSize"
-          :total="isSummaryTab ? summaryRows.length : total"
+          :total="isSummaryTab ? summaryTotal : detailTotal"
           :layout="isSummaryTab ? 'total' : 'sizes, prev, pager, next, jumper'"
           @size-change="handlePageSizeChange"
           @current-change="handleCurrentPageChange"

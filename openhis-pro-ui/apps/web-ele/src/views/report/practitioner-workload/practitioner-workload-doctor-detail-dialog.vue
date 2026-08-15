@@ -12,7 +12,7 @@ import type {
   PractitionerWorkloadSummaryTotalsDto,
 } from '#/api/report/practitioner-workload';
 
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
 
 import { TableLayout } from '@vben-core/table-layout-ui';
 
@@ -22,6 +22,7 @@ import { ElButton, ElMessage, ElPagination } from 'element-plus';
 import {
   exportPractitionerWorkloadDetailApi,
   pagePractitionerWorkloadDetailApi,
+  queryPractitionerWorkloadSummaryApi,
 } from '#/api/report/practitioner-workload';
 import AppDialog from '#/components/app-dialog.vue';
 import SectionTitle from '#/components/layouts/section-title.vue';
@@ -34,10 +35,9 @@ defineOptions({ name: 'PractitionerWorkloadDoctorDetailDialog' });
 
 interface Props {
   baseFilter: PractitionerWorkloadQueryFilter;
-  finTypeRows: PractitionerWorkloadFinTypeRowDto[];
   practitionerId: string;
   practitionerName: string;
-  registrationRows: PractitionerWorkloadRegistrationRowDto[];
+  /** 卡片墙已带的外显合计；弹窗打开后会用 IF-02 补全实收/挂号等。 */
   summaryTotals: PractitionerWorkloadSummaryTotalsDto;
 }
 
@@ -57,6 +57,9 @@ const visible = defineModel<boolean>({ default: false });
 const detailRows = ref<DetailTableRow[]>([]);
 const detailTotal = ref(0);
 const detailPage = reactive({ pageNo: 1, pageSize: 10 });
+const finTypeRows = ref<PractitionerWorkloadFinTypeRowDto[]>([]);
+const registrationRows = ref<PractitionerWorkloadRegistrationRowDto[]>([]);
+const resolvedSummaryTotals = ref<PractitionerWorkloadSummaryTotalsDto>({});
 
 const { run: runDetailPage, loading: detailLoading } = useRequest(
   pagePractitionerWorkloadDetailApi,
@@ -65,9 +68,21 @@ const { run: runDetailPage, loading: detailLoading } = useRequest(
     onSuccess: (data) => {
       detailRows.value = (data?.content ?? []).map((row) => ({
         ...row,
-        _rowKey: `${row.chargeItemId ?? ''}-${row.paymentId ?? ''}`,
+        _rowKey: String(row.chargeItemId ?? ''),
       }));
       detailTotal.value = Number(data?.totalCount ?? 0);
+    },
+  },
+);
+
+const { run: runDoctorSummary, loading: summaryLoading } = useRequest(
+  queryPractitionerWorkloadSummaryApi,
+  {
+    manual: true,
+    onSuccess: (data) => {
+      finTypeRows.value = data?.finTypeRows ?? [];
+      registrationRows.value = data?.registrationRows ?? [];
+      resolvedSummaryTotals.value = data?.summaryTotals ?? props.summaryTotals ?? {};
     },
   },
 );
@@ -78,14 +93,17 @@ const { run: runExport, loading: exportLoading } = useRequest(exportPractitioner
 
 /** 汇总区第一行：工作量指标。 */
 const workloadSummaryMetrics = computed<MetricItem[]>(() => {
-  const t = props.summaryTotals;
+  const t = resolvedSummaryTotals.value;
   return [
-    { label: '接诊人数', value: String(t.encounterCountTotal ?? 0) },
+    {
+      label: '挂号人次',
+      value: String(t.registrationNetCountTotal ?? t.encounterCountTotal ?? 0),
+    },
     { label: '处方数量', value: String(t.prescriptionCountTotal ?? 0) },
     { label: '诊疗项目', value: String(t.activityItemCountTotal ?? 0) },
     {
-      label: '开单总金额',
-      value: fmtReportNumber(t.receivableAmountTotal),
+      label: '售价合计',
+      value: fmtReportNumber(t.saleAmountTotal),
       highlight: true,
     },
   ];
@@ -93,39 +111,37 @@ const workloadSummaryMetrics = computed<MetricItem[]>(() => {
 
 /** 汇总区第二行：费用指标。 */
 const financialSummaryMetrics = computed<MetricItem[]>(() => {
-  const t = props.summaryTotals;
+  const t = resolvedSummaryTotals.value;
   return [
-    { label: '应收', value: fmtReportNumber(t.receivableAmountTotal) },
-    { label: '实收', value: fmtReportNumber(t.actualReceivedAmountTotal) },
-    { label: '成本', value: fmtReportNumber(t.costAmountTotal) },
-    { label: '挂号净笔数', value: String(t.registrationNetCountTotal ?? 0) },
+    { label: '售价', value: fmtReportNumber(t.saleAmountTotal) },
+    { label: '进价', value: fmtReportNumber(t.purchaseAmountTotal) },
   ];
 });
 
 const hasBreakdown = computed(
-  () => props.finTypeRows.length > 0 || props.registrationRows.length > 0,
+  () => finTypeRows.value.length > 0 || registrationRows.value.length > 0,
 );
+
+const panelLoading = computed(() => detailLoading.value || summaryLoading.value);
 
 const detailColumns: TableColumn[] = [
   { prop: 'catalogTypeDisplay', label: '类型', minWidth: 72 },
-  { prop: 'productName', label: '项目名称', minWidth: 160 },
-  { prop: 'requestingOrgName', label: '科室', minWidth: 100 },
+  { prop: 'productName', label: '项目名称', minWidth: 200 },
+  { prop: 'requestingOrgName', label: '开立科室', minWidth: 100 },
   { prop: 'enteredDate', label: '开立时间', minWidth: 158 },
   {
-    prop: 'receivableAmount',
-    label: '应收',
-    minWidth: 88,
+    prop: 'saleAmount',
+    label: '售价',
+    minWidth: 96,
     align: 'right',
-    formatter: (row) =>
-      fmtReportNumber((row as PractitionerWorkloadDetailLineDto).receivableAmount),
+    formatter: (row) => fmtReportNumber((row as PractitionerWorkloadDetailLineDto).saleAmount),
   },
   {
-    prop: 'actualReceivedAmount',
-    label: '实收',
-    minWidth: 88,
+    prop: 'purchaseAmount',
+    label: '进价',
+    minWidth: 96,
     align: 'right',
-    formatter: (row) =>
-      fmtReportNumber((row as PractitionerWorkloadDetailLineDto).actualReceivedAmount),
+    formatter: (row) => fmtReportNumber((row as PractitionerWorkloadDetailLineDto).purchaseAmount),
   },
 ];
 
@@ -135,6 +151,14 @@ function buildDoctorDetailFilter() {
     ...props.baseFilter,
     practitionerId: preserveApiIdForRequest(props.practitionerId),
   };
+}
+
+/** 弹窗打开时懒加载 IF-02（费用性质/号源拆分）。 */
+async function loadDoctorSummaryBreakdown() {
+  resolvedSummaryTotals.value = props.summaryTotals ?? {};
+  finTypeRows.value = [];
+  registrationRows.value = [];
+  await runDoctorSummary(buildDoctorDetailFilter());
 }
 
 /** 拉取当前医生医嘱明细分页。 */
@@ -174,17 +198,77 @@ function handlePageSizeChange(size: number) {
   void loadDetailPage();
 }
 
+/** 明细表容器：用于量高，把下方空白吃进表体。 */
+const tableWrapRef = ref<HTMLElement | null>(null);
+/** 传给 TableLayout 的固定表高（弹层少行也要撑满，不能只用 maxHeight）。 */
+const detailTableHeight = ref(280);
+let tableWrapResizeObserver: null | ResizeObserver = null;
+
+/**
+ * 按明细容器剩余高度回填表格 height，避免下方大块空白。
+ */
+function updateDetailTableHeight() {
+  const wrap = tableWrapRef.value;
+  if (!wrap) {
+    return;
+  }
+  const nextHeight = Math.floor(wrap.clientHeight);
+  // 保底可读高度，避免首帧未布局时写成过小值
+  if (nextHeight >= 160) {
+    detailTableHeight.value = nextHeight;
+  }
+}
+
+/**
+ * 监听明细容器尺寸变化并回填表高。
+ */
+function bindTableWrapHeightObserver() {
+  tableWrapResizeObserver?.disconnect();
+  tableWrapResizeObserver = null;
+  updateDetailTableHeight();
+  const wrap = tableWrapRef.value;
+  if (!wrap || typeof ResizeObserver === 'undefined') {
+    return;
+  }
+  tableWrapResizeObserver = new ResizeObserver(() => {
+    updateDetailTableHeight();
+  });
+  tableWrapResizeObserver.observe(wrap);
+}
+
+onBeforeUnmount(() => {
+  tableWrapResizeObserver?.disconnect();
+  tableWrapResizeObserver = null;
+});
+
 watch(
-  () => visible.value,
-  (open) => {
+  () => [visible.value, props.practitionerId] as const,
+  ([open]) => {
+    // 关闭：清空态，避免下次闪旧数据
     if (!open) {
       detailRows.value = [];
       detailTotal.value = 0;
       detailPage.pageNo = 1;
+      finTypeRows.value = [];
+      registrationRows.value = [];
+      resolvedSummaryTotals.value = {};
+      tableWrapResizeObserver?.disconnect();
+      tableWrapResizeObserver = null;
       return;
     }
-    void loadDetailPage();
+    // 打开或切换医生：须拉汇总 + 明细（含首次挂载时 visible 已为 true 的场景）
+    detailPage.pageNo = 1;
+    void Promise.all([loadDoctorSummaryBreakdown(), loadDetailPage()]);
+    // 弹窗定高后下一帧再量表高，把下方空白吃进表体
+    void nextTick(() => {
+      bindTableWrapHeightObserver();
+      window.setTimeout(() => {
+        updateDetailTableHeight();
+      }, 80);
+    });
   },
+  // immediate：父级 v-if 首次挂载时 model 可能已是 true，无 change 也要加载
+  { immediate: true },
 );
 </script>
 
@@ -192,13 +276,13 @@ watch(
   <AppDialog
     v-model="visible"
     :title="`${practitionerName} · 工作量明细`"
-    width="1000px"
+    width="1280px"
     top="2vh"
     destroy-on-close
     class="practitioner-workload-doctor-detail-dialog"
   >
     <div
-      v-loading="detailLoading"
+      v-loading="panelLoading"
       element-loading-text="加载明细中..."
       class="practitioner-workload-doctor-detail"
     >
@@ -250,7 +334,7 @@ watch(
               <span v-if="index > 0" class="practitioner-workload-doctor-detail__breakdown-sep"
                 >·</span
               >
-              <span>{{ row.finTypeDisplay }} {{ fmtReportNumber(row.receivableAmount) }}</span>
+              <span>{{ row.finTypeDisplay }} {{ fmtReportNumber(row.saleAmount) }}</span>
             </template>
           </div>
           <div
@@ -279,7 +363,7 @@ watch(
           </ElButton>
         </div>
 
-        <div class="practitioner-workload-doctor-detail__table-wrap">
+        <div ref="tableWrapRef" class="practitioner-workload-doctor-detail__table-wrap">
           <TableLayout
             :table-data="detailRows"
             :loading="detailLoading"
@@ -287,6 +371,7 @@ watch(
             :query-params="{}"
             :form-items="[]"
             :table-columns="detailColumns"
+            :table-height="detailTableHeight"
             :show-top-query="false"
             :show-pagination="false"
             row-key="_rowKey"
@@ -315,9 +400,11 @@ watch(
 <style scoped>
 .practitioner-workload-doctor-detail {
   display: flex;
+  height: 100%;
+  min-height: 0;
+  flex: 1;
   flex-direction: column;
   gap: 16px;
-  min-height: 0;
 }
 
 .practitioner-workload-doctor-detail__summary {
@@ -411,9 +498,12 @@ watch(
   gap: 12px;
 }
 
+/* 明细表吃满汇总下方剩余高度，分页贴底 */
 .practitioner-workload-doctor-detail__table-wrap {
-  flex: 1;
-  min-height: 240px;
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
   overflow: auto;
 }
 
@@ -425,22 +515,36 @@ watch(
 </style>
 
 <style>
+/* 弹窗定高，下方空白留给明细表撑开 */
 .practitioner-workload-doctor-detail-dialog.el-dialog {
   display: flex;
-  width: 1000px !important;
-  max-width: 92vw;
+  width: min(1280px, 96vw) !important;
+  max-width: 96vw;
+  height: calc(100vh - 48px) !important;
   max-height: calc(100vh - 48px);
   margin-bottom: 0;
   flex-direction: column;
   overflow: hidden;
 }
 
+.practitioner-workload-doctor-detail-dialog .el-dialog__header {
+  flex-shrink: 0;
+}
+
 .practitioner-workload-doctor-detail-dialog .el-dialog__body {
   display: flex;
   min-height: 0;
-  flex: 1;
+  flex: 1 1 auto;
   flex-direction: column;
   padding-top: 8px;
   overflow: hidden;
+}
+
+.practitioner-workload-doctor-detail-dialog
+  .el-dialog__body
+  > .practitioner-workload-doctor-detail {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
 }
 </style>

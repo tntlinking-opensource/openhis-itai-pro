@@ -34,6 +34,11 @@ export interface RegisterConfirmDetail {
 export interface RegisterPatientRecord {
   /** 对应表单「年龄」字段（medicalInsuranceNo） */
   patientAge?: string;
+  /**
+   * 地址全文（可选；身份证读卡户籍地址等默认写入，挂号员可改；
+   * 预结算上送 BR-REG-019；undefined 表示不改动表单已有值）
+   */
+  patientAddress?: string;
   patientBirthday: string;
   patientGender: string;
   patientIdCard: string;
@@ -62,6 +67,22 @@ export interface RegisterSlotSelectionPayload {
   slotStart?: string;
 }
 
+/** 工伤待遇区内联备案摘要（来自 Win 1101→9102 预查） */
+export interface RegisterWorkInjuryBenefitSummary {
+  errorMessage?: string;
+  hasValidFiling?: boolean;
+  injureAffirmId?: string;
+  psnName?: string;
+  psnNo?: string;
+  rows?: Array<{
+    approveType?: string;
+    endDate?: string;
+    qualificationId: string;
+    startDate?: string;
+  }>;
+  statusLabel?: string;
+}
+
 /** 下方「待遇确认」只读展示区（费用性质切换后异步灌入） */
 export interface RegisterBenefitDisplayPayload {
   kind?: '' | 'INSURANCE' | 'STUDENT' | 'WORK_INJURY';
@@ -85,6 +106,8 @@ export interface RegisterBenefitDisplayPayload {
   studentName?: string;
   studentNo?: string;
   treatmentBlocked?: boolean;
+  /** 工伤：备案详情（待遇区直接展示） */
+  workInjury?: RegisterWorkInjuryBenefitSummary;
 }
 
 /** 下方 Tab 切换险种时重查 2001 的上下文 */
@@ -127,6 +150,8 @@ export interface RegisterFormAreaExpose {
   findBootstrapInsuranceContractId: () => string | undefined;
   /** 按发卡地推荐医保费用性质（优先于 findBootstrapInsuranceContractId） */
   findBootstrapInsuranceContractIdByInsuplc: (insuplcAdmdvs?: string) => string | undefined;
+  /** 取首个自费费用性质，供选工伤被拒时回退 */
+  findDefaultSelfPayContractId: () => string | undefined;
   /** 费用性质 → chs-contract bus_no（9001 签到） */
   getContractBusNo: (contractId: unknown) => string | undefined;
   /** 切换费用性质；emitChange=false 时仅回填字段，由调用方继续拉待遇（保留 autoApplyRecommend） */
@@ -157,4 +182,8 @@ export interface RegisterFormAreaExpose {
   validateForSubmit: () => Promise<boolean>;
   /** 工伤无有效审批时打开备案引导（自动绑定或弹出 2301） */
   openWorkInjuryApprovalGuide: () => void;
+  /** 挂号门禁：确保已绑定有效工伤备案 */
+  ensureWorkInjuryFilingReady: () => Promise<boolean>;
+  /** 读取当前待遇区工伤备案摘要 */
+  getWorkInjuryBenefitSummary: () => RegisterWorkInjuryBenefitSummary | undefined;
 }

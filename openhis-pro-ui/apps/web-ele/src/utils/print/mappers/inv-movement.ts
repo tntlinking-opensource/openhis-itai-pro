@@ -1,7 +1,7 @@
 import {
   buildInvDocumentTitle,
   invPrintAmountText,
-  invPrintExpiryRangeText,
+  invPrintExpiryDateText,
   invPrintQtyUnitText,
   invPrintStr,
 } from './inv-common';
@@ -9,6 +9,8 @@ import {
 /** 计价流转单明细行（与 inv-movement-print 模板 lineRows 列一致） */
 export interface InvMovementPrintLineRow {
   seqNo: string;
+  /** 项目编码（药品/耗材 productBusNo） */
+  productBusNo: string;
   productName: string;
   specText: string;
   manufacturerText: string;
@@ -16,7 +18,7 @@ export interface InvMovementPrintLineRow {
   unitPriceText: string;
   amountText: string;
   lotNumber: string;
-  /** 生产日~效期，模板内两行展示 */
+  /** 有效期（YYYY-MM-DD），不含生产日 */
   expiryText: string;
 }
 
@@ -32,15 +34,27 @@ export interface InvMovementPrintData {
   linkDocText: string;
   destLocationText: string;
   invoiceNoText: string;
-  practitionerName: string;
   lineRows: InvMovementPrintLineRow[];
   totalAmountText: string;
+  /** 制单人（单据创建人，非当前打印人） */
   preparedByName: string;
   approvedByName: string;
+  /**
+   * 采购申请单签批栏开关：`'1'` 时模板展示「经办人/科室责任人/业务主管院长/院长」；
+   * 其它单据传 `''`，不展示。
+   */
+  purchaseRequestSignOff: string;
+  /**
+   * 耗材出库签批栏开关：`'1'` 时隐藏「审核」，展示「主管领导/领用人」；
+   * 药品出库及其它单据传 `''`。
+   */
+  deviceStockOutSignOff: string;
 }
 
 /** 明细行入参（展示字段，由页面组装） */
 export interface InvMovementPrintLineSource {
+  /** 项目编码（药品/耗材 productBusNo） */
+  productBusNo?: string;
   productName?: string;
   specText?: string;
   manufacturerText?: string;
@@ -51,9 +65,10 @@ export interface InvMovementPrintLineSource {
   unitPrice?: null | number | string;
   amount?: null | number | string;
   lotNumber?: string;
+  /** @deprecated 打印不再展示生产日；仅兼容旧入参 */
   productionDate?: string;
   expiryDate?: string;
-  /** 已拼好的生产~效期 */
+  /** 已拼好的有效期；若含 `生产~效期` 则 mapper 只取效期段 */
   expiryText?: string;
 }
 
@@ -72,19 +87,22 @@ export interface InvMovementPrintSource {
   linkDocText?: string;
   destLocationText?: string;
   invoiceNoText?: string;
-  practitionerName?: string;
   lineRows?: InvMovementPrintLineSource[];
   totalAmountText?: string;
   preparedByName?: string;
   approvedByName?: string;
+  /** 采购申请单签批栏：true/`'1'` 才展示；其它单据勿传 */
+  purchaseRequestSignOff?: boolean | string;
+  /** 耗材出库签批栏：true/`'1'` 才展示；其它单据勿传 */
+  deviceStockOutSignOff?: boolean | string;
 }
 
 function mapLine(row: InvMovementPrintLineSource, index: number): InvMovementPrintLineRow {
   const qtyUnitText = invPrintStr(row.qtyUnitText) || invPrintQtyUnitText(row.qty, row.unitLabel);
-  const expiryText =
-    invPrintStr(row.expiryText) || invPrintExpiryRangeText(row.productionDate, row.expiryDate);
+  const expiryText = invPrintExpiryDateText(row.expiryDate, row.expiryText);
   return {
     seqNo: String(index + 1),
+    productBusNo: invPrintStr(row.productBusNo),
     productName: invPrintStr(row.productName),
     specText: invPrintStr(row.specText),
     manufacturerText: invPrintStr(row.manufacturerText),
@@ -127,10 +145,17 @@ export function buildInvMovementPrintData(source: InvMovementPrintSource): InvMo
     linkDocText: invPrintStr(source.linkDocText),
     destLocationText: invPrintStr(source.destLocationText),
     invoiceNoText: invPrintStr(source.invoiceNoText),
-    practitionerName: invPrintStr(source.practitionerName),
     lineRows,
     totalAmountText,
     preparedByName: invPrintStr(source.preparedByName),
     approvedByName: invPrintStr(source.approvedByName),
+    purchaseRequestSignOff:
+      source.purchaseRequestSignOff === true || invPrintStr(source.purchaseRequestSignOff) === '1'
+        ? '1'
+        : '',
+    deviceStockOutSignOff:
+      source.deviceStockOutSignOff === true || invPrintStr(source.deviceStockOutSignOff) === '1'
+        ? '1'
+        : '',
   };
 }

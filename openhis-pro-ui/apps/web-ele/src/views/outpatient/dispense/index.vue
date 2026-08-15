@@ -14,7 +14,7 @@ import type {
 } from '#/api/outpatient-pharmacy-dispense/outpatient-pharmacy-dispense.types';
 import type { ChargeType } from '#/chs/constants/insurance-contract';
 
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue';
 
 import { useDebounceFn } from '@vueuse/core';
 import { ElMessage, ElMessageBox, ElOption, ElSelect } from 'element-plus';
@@ -35,6 +35,12 @@ import { fetchEncounterTcmDiagnosisDisplayText } from '#/components/doctor-stati
 import StationTriPaneLayout from '#/components/layouts/station-tri-pane-layout.vue';
 import { usePrintClientWarmup } from '#/composables/use-print-client-warmup';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import {
+  DISPENSE_TRACE_CACHE_SCENE,
+  readDispenseTraceCache,
+  removeDispenseTraceCacheLines,
+  writeDispenseTraceCache,
+} from '#/utils/medication/dispense-trace-cache';
 import {
   resolvePreparerSelection,
   writePreparerPreference,
@@ -96,9 +102,13 @@ const sheetTcmDiagnosisText = ref('');
 const sheetLoading = ref(false);
 
 const traceScanVisible = ref(false);
+/** 批量扫码弹窗明细：打开时按当前勾选处方截取 */
+const traceScanDialogLines = ref<DispensePrescriptionItemRow[]>([]);
 const traceCodeByLineId = ref<Record<string, string>>({});
 /** 表格每行选中的库房×批号（仅待发且有 inventory 候选时出现下拉） */
 const inventoryPickByLineId = ref<Record<string, string>>({});
+
+const OUTPATIENT_TRACE_CACHE_SCENE = DISPENSE_TRACE_CACHE_SCENE.outpatient;
 
 const dispenserOptions = ref<{ label: string; value: string }[]>([]);
 const queueScope = ref<'completed' | 'pending'>('pending');
@@ -278,6 +288,46 @@ function clearRxWorkbenchTransientState() {
   });
 }
 
+/** 将当前内存扫码/库房选择写入指定就诊的 session 缓存 */
+function persistDispenseTraceCacheForEncounter(encounterId: string): void {
+  const enc = String(encounterId ?? '').trim();
+  if (!enc) return;
+  writeDispenseTraceCache({
+    scene: OUTPATIENT_TRACE_CACHE_SCENE,
+    encounterId: enc,
+    snap: {
+      traceCodeByLineId: { ...traceCodeByLineId.value },
+      inventoryPickByLineId: { ...inventoryPickByLineId.value },
+    },
+  });
+}
+
+/** 从 session 恢复某就诊的扫码/库房选择到内存 */
+function restoreDispenseTraceCacheForEncounter(encounterId: string): void {
+  const enc = String(encounterId ?? '').trim();
+  if (!enc) return;
+  const snap = readDispenseTraceCache(OUTPATIENT_TRACE_CACHE_SCENE, enc);
+  if (!snap) return;
+  traceCodeByLineId.value = { ...snap.traceCodeByLineId };
+  if (snap.inventoryPickByLineId) {
+    inventoryPickByLineId.value = { ...snap.inventoryPickByLineId };
+  }
+}
+
+/** 当前就诊有变更时防抖落盘（扫码/选库房后误切菜单可恢复） */
+const debouncedPersistCurrentDispenseTrace = useDebounceFn(() => {
+  const enc = String(selectedPatientId.value ?? '').trim();
+  if (!enc) return;
+  // 空态不落盘：换患者先清空内存时，避免误删新就诊已有 session 缓存
+  if (
+    Object.keys(traceCodeByLineId.value).length === 0 &&
+    Object.keys(inventoryPickByLineId.value).length === 0
+  ) {
+    return;
+  }
+  persistDispenseTraceCacheForEncounter(enc);
+}, 300);
+
 /**
  * 发药成功后仅清除本批已核发行的临时扫码/库房选择。
  * 单独发药时保留其余待发行的批量扫码结果，避免一发全清。
@@ -299,6 +349,15 @@ function clearTransientStateForDispensedLines(lineIds: string[]) {
     if (!idSet.has(id)) nextPick[id] = pick;
   }
   inventoryPickByLineId.value = nextPick;
+  // 同步 session：已发行从缓存剔除
+  const enc = String(selectedPatientId.value ?? '').trim();
+  if (enc) {
+    removeDispenseTraceCacheLines({
+      scene: OUTPATIENT_TRACE_CACHE_SCENE,
+      encounterId: enc,
+      lineIds,
+    });
+  }
 }
 
 /**
@@ -338,12 +397,30 @@ function resolveDefaultInventoryPickValue(row: DispensePrescriptionItemRow): str
   return opts[0]?.value;
 }
 
-watch(selectedPatientId, () => {
+watch(selectedPatientId, (enc, prevEnc) => {
+  // 换患者前：先把上一位的扫码落盘，避免误切白扫
+  const prev = String(prevEnc ?? '').trim();
+  if (prev) {
+    persistDispenseTraceCacheForEncounter(prev);
+  }
   // 换患者：清空扫码/勾选等临时态，并先清笺面避免闪上一位
   clearRxWorkbenchTransientState();
   sheetViewBlocks.value = [];
   sheetTcmDiagnosisText.value = '';
+  // 再恢复新就诊已缓存的扫码（切走再回来）
+  const next = String(enc ?? '').trim();
+  if (next) {
+    restoreDispenseTraceCacheForEncounter(next);
+  }
 });
+
+watch(
+  [traceCodeByLineId, inventoryPickByLineId],
+  () => {
+    debouncedPersistCurrentDispenseTrace();
+  },
+  { deep: true },
+);
 
 watch(activeRxKind, () => {
   // 切中西药 tab：只清勾选，保留另一 tab 已扫追溯码（批量扫码后可分批发药）
@@ -433,13 +510,31 @@ watch(queueScope, () => {
 function handleQueueCardSelect(patient: { id: string }) {
   const id = patient.id;
   if (selectedPatientId.value === id) {
+    // 再点同一人：刷新明细，但扫码先落盘再恢复，避免误触清空白扫
+    persistDispenseTraceCacheForEncounter(id);
     clearRxWorkbenchTransientState();
+    restoreDispenseTraceCacheForEncounter(id);
     void reloadEncounterSlipsFromServer(false);
     void loadAllPrescriptionBlocksForSheet();
     return;
   }
   selectedPatientId.value = id;
 }
+
+/** 切菜单 / 停用前落盘当前就诊扫码 */
+function flushCurrentDispenseTraceCache(): void {
+  const enc = String(selectedPatientId.value ?? '').trim();
+  if (!enc) return;
+  persistDispenseTraceCacheForEncounter(enc);
+}
+
+onBeforeUnmount(() => {
+  flushCurrentDispenseTraceCache();
+});
+
+onDeactivated(() => {
+  flushCurrentDispenseTraceCache();
+});
 
 /** 时间范围变更：清空时回退为当天 */
 function handleQueueDateRangeChange(range: [string, string] | null) {
@@ -450,7 +545,26 @@ function handleQueueDateRangeChange(range: [string, string] | null) {
   queueDateRange.value = [today, today];
 }
 
+/**
+ * 批量扫描追溯码：药品明细随当前勾选处方走（笺面勾选 / 列表明细勾选同构）。
+ */
 function handleBatchTraceScan() {
+  const selectedIds = rxCenterRef.value?.getSelectedDispenseLineIds() ?? [];
+  if (selectedIds.length === 0) {
+    ElMessage.warning('请先勾选处方');
+    return;
+  }
+  const selected = new Set(selectedIds);
+  const lines = prescriptionList.value.filter((row) => {
+    const sourceIds =
+      row.sourceDispenseIds && row.sourceDispenseIds.length > 0 ? row.sourceDispenseIds : [row.id];
+    return sourceIds.some((id) => selected.has(id));
+  });
+  if (lines.length === 0) {
+    ElMessage.warning('所选处方暂无药品明细');
+    return;
+  }
+  traceScanDialogLines.value = lines;
   traceScanVisible.value = true;
 }
 
@@ -897,7 +1011,7 @@ onMounted(async () => {
     <TraceScanDialog
       v-model="traceScanVisible"
       v-model:trace-by-line-id="traceCodeByLineId"
-      :lines="prescriptionList"
+      :lines="traceScanDialogLines"
       :inventory-pick-by-line-id="inventoryPickByLineId"
       :patient-name="selectedPatient?.patientName ?? ''"
     />

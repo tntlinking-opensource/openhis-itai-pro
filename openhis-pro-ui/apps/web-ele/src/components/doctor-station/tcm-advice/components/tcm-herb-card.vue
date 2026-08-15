@@ -50,6 +50,12 @@ export interface TcmHerbCardItem {
   dosageInstructionText?: string;
   /** 医保等级展示名（目录带出） */
   chrgitmLvText?: string;
+  /** 行级费用性质展示文案 */
+  feeNatureText?: string;
+  /** 行级费用态码（ChargeItemStatus） */
+  chargeStatusEnum?: string;
+  /** 行级费用态展示文案 */
+  chargeStatusText?: string;
 }
 
 interface DosageInstructionOption {

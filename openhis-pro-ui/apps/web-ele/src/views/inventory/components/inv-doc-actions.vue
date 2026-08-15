@@ -2,7 +2,7 @@
   库房单据工作站：单据级底部操作按钮组。
   财务审批族传 require-finance-approval-role：
   - 普通进入：隐藏审批/驳回，保留制单按钮；
-  - 财务审批深链 + 财务角色：仅展示审批/驳回，隐藏制单按钮。
+  - 财务审批深链：仅展示审批/驳回，隐藏制单按钮（角色由后端 Gate 校验，与交账审批同口径）。
   打印按钮在有单据时可用（printDisabled 控制）。
 -->
 <script setup lang="ts">
@@ -11,7 +11,6 @@ import { computed } from 'vue';
 import { Check, Printer, RefreshLeft } from '@element-plus/icons-vue';
 import { ElButton } from 'element-plus';
 
-import { useFinanceApprovalAccess } from '#/composables/use-finance-approval-access';
 import { useFromFinanceApproval } from '#/composables/use-from-finance-approval';
 
 import InvActionSep from './inv-action-sep.vue';
@@ -26,7 +25,7 @@ const props = withDefaults(
     removeDisabled?: boolean;
     /**
      * 财务审批族单据为 true：原业务页默认隐藏审批/驳回；
-     * 财务审批深链 + 财务审批角色时仅展示审驳。
+     * 财务审批深链时仅展示审驳（有无 ROLE_FINANCE_APPROVER 由后端校验）。
      */
     requireFinanceApprovalRole?: boolean;
     saveAndSubmitDisabled?: boolean;
@@ -59,11 +58,10 @@ const emit = defineEmits<{
 }>();
 
 const { fromFinanceApproval } = useFromFinanceApproval();
-const { canFinanceApprove } = useFinanceApprovalAccess();
 
-/** 财务审批只读审驳入口（深链 + 角色） */
+/** 财务审批只读审驳入口（深链即可展示；角色由后端 Gate 校验） */
 const financeApprovalReviewMode = computed(
-  () => props.requireFinanceApprovalRole && fromFinanceApproval.value && canFinanceApprove.value,
+  () => props.requireFinanceApprovalRole && fromFinanceApproval.value,
 );
 
 /** 是否展示审批/驳回 */

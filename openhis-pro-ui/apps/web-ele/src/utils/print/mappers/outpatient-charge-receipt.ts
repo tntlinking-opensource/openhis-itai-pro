@@ -22,6 +22,12 @@ export interface OutpatientChargeReceiptPrintData {
   fundPayText: string;
   accountPayText: string;
   deductibleLineText: string;
+  /** 公务员待遇（是/否） */
+  cvlservFlagText: string;
+  /** 公务员医疗补助金额 */
+  cvlservPayText: string;
+  /** 其他支出（含电子钱包等） */
+  othPayText: string;
   cashPayText: string;
   wechatPayText: string;
   alipayPayText: string;
@@ -43,6 +49,12 @@ export interface ChargeReceiptSlipPrintSource {
   fundPayText?: string;
   accountPayText?: string;
   deductibleLineText?: string;
+  /** 公务员待遇（是/否） */
+  cvlservFlagText?: string;
+  /** 公务员医疗补助金额 */
+  cvlservPayText?: string;
+  /** 其他支出（含电子钱包等） */
+  othPayText?: string;
   cashPayText?: string;
   wechatPayText?: string;
   alipayPayText?: string;
@@ -108,6 +120,9 @@ export function buildOutpatientChargeReceiptPrintData(
     fundPayText: str(source.fundPayText),
     accountPayText: str(source.accountPayText),
     deductibleLineText: str(source.deductibleLineText),
+    cvlservFlagText: str(source.cvlservFlagText),
+    cvlservPayText: str(source.cvlservPayText),
+    othPayText: str(source.othPayText),
     cashPayText: str(source.cashPayText),
     wechatPayText: str(source.wechatPayText),
     alipayPayText: str(source.alipayPayText),

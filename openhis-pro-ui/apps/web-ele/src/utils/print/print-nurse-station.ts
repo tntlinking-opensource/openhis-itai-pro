@@ -14,6 +14,7 @@ import {
   buildExecuteTimeTextForInfusionDay,
   groupInfusionMedicationLinesForPrint,
   resolveInfusionLabelPrintDayCount,
+  resolveInfusionLabelPrintTimesPerDay,
 } from './mappers/outpatient-infusion-label';
 import { resolveNursePrescriptionPrintTargets } from './nurse-prescription-print';
 import { print, PRINT_SCENARIO } from './runtime';
@@ -64,7 +65,12 @@ export interface PrintInfusionLabelOptions {
   scenarioCode?: string;
 }
 
-/** 护士站输液瓶签打印（按输液组逐张打印，同组药品在同一张瓶贴；按用药天数逐日打印） */
+/**
+ * 护士站输液瓶签打印：
+ * - 按输液组逐张（同组药品同一张）
+ * - 按用药天数逐日
+ * - 门诊再按用药频次每日次数拆张，总量按「天数×次数」整除到每张；住院不按频次拆
+ */
 export async function printInfusionLabel(options: PrintInfusionLabelOptions) {
   const encounterId = String(options.encounterId ?? '').trim();
   if (!encounterId) {
@@ -79,41 +85,56 @@ export async function printInfusionLabel(options: PrintInfusionLabelOptions) {
 
   const scenarioCode =
     String(options.scenarioCode ?? '').trim() || PRINT_SCENARIO.opInfusionLabelPrint;
+  // 住院瓶签仍按选定日一张；仅门诊按频次拆张
+  const splitByFrequency = scenarioCode === PRINT_SCENARIO.opInfusionLabelPrint;
   const baseExecuteTimeText = String(options.source.executeTimeText ?? '').trim();
   let printedCount = 0;
   for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
     const group = groups[groupIndex]!;
     const dayCount = resolveInfusionLabelPrintDayCount(group.medicationLines);
+    const timesPerDay = splitByFrequency
+      ? await resolveInfusionLabelPrintTimesPerDay(group.medicationLines)
+      : 1;
+    const quantitySplitCount = dayCount * timesPerDay;
     const medicationRequestIds = group.medicationLines
       .map((line) => String(line.requestId ?? '').trim())
       .filter((id) => id.length > 0);
     for (let dayIndex = 0; dayIndex < dayCount; dayIndex += 1) {
-      const suffixParts: string[] = [];
-      if (groups.length > 1) {
-        suffixParts.push(`${groupIndex + 1}/${groups.length}`);
-      }
-      if (dayCount > 1) {
-        suffixParts.push(`第${dayIndex + 1}/${dayCount}天`);
-      }
-      const suffix = suffixParts.length > 0 ? ` (${suffixParts.join('·')})` : '';
-      const result = await print({
-        scenarioCode,
-        source: {
-          ...options.source,
-          medicationLines: group.medicationLines,
-          executeTimeText: buildExecuteTimeTextForInfusionDay(baseExecuteTimeText, dayIndex),
-        },
-        bizRef: {
-          encounterId,
-          groupId: group.groupId,
-          medicationRequestIds,
-          dayIndex: dayIndex + 1,
-          dayCount,
-        },
-        jobName: `${options.jobName ?? '输液瓶签'}${suffix}`,
-      });
-      if (result.ok) {
-        printedCount += 1;
+      for (let timeIndex = 0; timeIndex < timesPerDay; timeIndex += 1) {
+        const suffixParts: string[] = [];
+        if (groups.length > 1) {
+          suffixParts.push(`${groupIndex + 1}/${groups.length}`);
+        }
+        if (dayCount > 1) {
+          suffixParts.push(`第${dayIndex + 1}/${dayCount}天`);
+        }
+        if (timesPerDay > 1) {
+          suffixParts.push(`第${timeIndex + 1}/${timesPerDay}次`);
+        }
+        const suffix = suffixParts.length > 0 ? ` (${suffixParts.join('·')})` : '';
+        const result = await print({
+          scenarioCode,
+          source: {
+            ...options.source,
+            medicationLines: group.medicationLines,
+            executeTimeText: buildExecuteTimeTextForInfusionDay(baseExecuteTimeText, dayIndex),
+            quantitySplitCount,
+          },
+          bizRef: {
+            encounterId,
+            groupId: group.groupId,
+            medicationRequestIds,
+            dayIndex: dayIndex + 1,
+            dayCount,
+            timeIndex: timeIndex + 1,
+            timesPerDay,
+            quantitySplitCount,
+          },
+          jobName: `${options.jobName ?? '输液瓶签'}${suffix}`,
+        });
+        if (result.ok) {
+          printedCount += 1;
+        }
       }
     }
   }

@@ -13,7 +13,7 @@ import type {
   NurseWorkloadQueryFilter,
 } from '#/api/report/nurse-workload';
 
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
 
 import { TableLayout } from '@vben-core/table-layout-ui';
 
@@ -42,11 +42,13 @@ interface Props {
   baseFilter: NurseWorkloadQueryFilter;
   consumableItemChips?: NurseConsumableItemChip[];
   consumableItemCount?: number;
+  consumablePurchaseAmountTotal?: number | string | null;
   consumableSummaryRows: NurseConsumableSummaryRowDto[];
-  consumableTotalAmount?: number | string;
+  consumableSaleAmountTotal?: number | string;
   consumableTotalQuantity?: number | string;
+  executionPurchaseAmountTotal?: number | string | null;
+  executionSaleAmountTotal?: number | string;
   executionSummaryRows: NurseExecutionSummaryRowDto[];
-  executionTotalAmount?: number | string;
   executionTotalCount?: number;
   practitionerId: string;
   practitionerName: string;
@@ -55,9 +57,10 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   consumableItemChips: () => [],
   consumableItemCount: 0,
-  consumableTotalAmount: 0,
+  consumableSaleAmountTotal: 0,
   consumableTotalQuantity: 0,
-  executionTotalAmount: 0,
+  executionPurchaseAmountTotal: null,
+  executionSaleAmountTotal: 0,
   executionTotalCount: 0,
 });
 const visible = defineModel<boolean>({ default: false });
@@ -71,21 +74,25 @@ const detailPage = reactive({ pageNo: 1, pageSize: 10 });
 
 const workloadMetrics = computed(() => [
   { label: '处置次数', value: String(props.executionTotalCount ?? 0) },
-  { label: '处置金额', value: fmtReportNumber(props.executionTotalAmount, 2) },
+  { label: '处置售价', value: fmtReportNumber(props.executionSaleAmountTotal, 2) },
   { label: '耗材项数', value: String(props.consumableItemCount ?? 0) },
   {
     label: '耗材总数量',
     value: fmtReportNumber(props.consumableTotalQuantity, 2),
   },
   {
-    label: '耗材金额',
-    value: fmtReportNumber(props.consumableTotalAmount, 2),
+    label: '耗材售价',
+    value: fmtReportNumber(props.consumableSaleAmountTotal, 2),
     highlight: true,
   },
   {
-    label: '金额合计',
+    label: '耗材进价',
+    value: fmtReportNumber(props.consumablePurchaseAmountTotal, 2),
+  },
+  {
+    label: '售价合计',
     value: fmtReportNumber(
-      Number(props.executionTotalAmount ?? 0) + Number(props.consumableTotalAmount ?? 0),
+      Number(props.executionSaleAmountTotal ?? 0) + Number(props.consumableSaleAmountTotal ?? 0),
       2,
     ),
     highlight: true,
@@ -124,41 +131,58 @@ const { run: runExport, loading: exportLoading } = useRequest(exportNurseWorkloa
 });
 
 const executionDetailColumns: TableColumn[] = [
-  { prop: 'itemName', label: '诊疗项目', minWidth: 160 },
-  { prop: 'categoryDisplay', label: '类目', minWidth: 100 },
-  { prop: 'generateSourceDisplay', label: '来源', minWidth: 90 },
+  { prop: 'itemName', label: '诊疗项目', minWidth: 180 },
+  { prop: 'categoryDisplay', label: '类目', minWidth: 88 },
+  { prop: 'generateSourceDisplay', label: '来源', minWidth: 80 },
   {
-    prop: 'amount',
-    label: '金额',
-    minWidth: 100,
-    formatter: (row) => fmtReportNumber((row as NurseExecutionDetailRowDto).amount, 2),
+    prop: 'saleAmount',
+    label: '售价',
+    minWidth: 88,
+    align: 'right',
+    formatter: (row) => fmtReportNumber((row as NurseExecutionDetailRowDto).saleAmount, 2),
   },
-  { prop: 'recordedTime', label: '执行时间', minWidth: 160 },
-  { prop: 'encounterBusNo', label: '就诊号', minWidth: 120 },
-  { prop: 'patientName', label: '患者', minWidth: 100 },
+  {
+    prop: 'purchaseAmount',
+    label: '进价',
+    minWidth: 88,
+    align: 'right',
+    formatter: (row) => fmtReportNumber((row as NurseExecutionDetailRowDto).purchaseAmount, 2),
+  },
+  { prop: 'recordedTime', label: '执行时间', minWidth: 150 },
+  { prop: 'encounterBusNo', label: '就诊号', minWidth: 150 },
+  { prop: 'patientName', label: '患者', minWidth: 88 },
 ];
 
 const consumableDetailColumns: TableColumn[] = [
-  { prop: 'deviceName', label: '耗材名称', minWidth: 160 },
-  { prop: 'specText', label: '规格', minWidth: 100 },
-  { prop: 'hvcmDisplay', label: '高/低值', minWidth: 90 },
-  { prop: 'generateSourceDisplay', label: '来源', minWidth: 90 },
-  { prop: 'businessTime', label: '业务时间', minWidth: 160 },
+  { prop: 'deviceName', label: '耗材名称', minWidth: 180 },
+  { prop: 'specText', label: '规格', minWidth: 96 },
+  { prop: 'hvcmDisplay', label: '高/低值', minWidth: 80 },
+  { prop: 'generateSourceDisplay', label: '来源', minWidth: 80 },
+  { prop: 'businessTime', label: '业务时间', minWidth: 150 },
   {
     prop: 'quantity',
     label: '数量',
-    minWidth: 90,
+    minWidth: 72,
+    align: 'right',
     formatter: (row) => fmtReportNumber((row as NurseConsumableDetailRowDto).quantity, 2),
   },
   {
-    prop: 'amount',
-    label: '金额',
-    minWidth: 100,
-    formatter: (row) => fmtReportNumber((row as NurseConsumableDetailRowDto).amount, 2),
+    prop: 'saleAmount',
+    label: '售价',
+    minWidth: 80,
+    align: 'right',
+    formatter: (row) => fmtReportNumber((row as NurseConsumableDetailRowDto).saleAmount, 2),
   },
-  { prop: 'unitCodeLabel', label: '单位', minWidth: 80 },
-  { prop: 'encounterBusNo', label: '就诊号', minWidth: 120 },
-  { prop: 'patientName', label: '患者', minWidth: 100 },
+  {
+    prop: 'purchaseAmount',
+    label: '进价',
+    minWidth: 80,
+    align: 'right',
+    formatter: (row) => fmtReportNumber((row as NurseConsumableDetailRowDto).purchaseAmount, 2),
+  },
+  { prop: 'unitCodeLabel', label: '单位', minWidth: 56 },
+  { prop: 'encounterBusNo', label: '就诊号', minWidth: 150 },
+  { prop: 'patientName', label: '患者', minWidth: 88 },
 ];
 
 /** 组装带护士 id 的明细查询条件。 */
@@ -213,6 +237,10 @@ async function handleExportDetail() {
 function handleMainTabChange() {
   detailPage.pageNo = 1;
   void loadDetailPage();
+  // 切 Tab 后表体容器可能重挂，补一次量高
+  void nextTick(() => {
+    updateDetailTableHeight();
+  });
 }
 
 /** 明细翻页。 */
@@ -228,9 +256,64 @@ function handlePageSizeChange(size: number) {
   void loadDetailPage();
 }
 
+/** 明细表容器：用于量高，把下方空白吃进表体。 */
+const tableWrapRef = ref<HTMLElement | null>(null);
+/** 传给 TableLayout 的固定表高（弹层少行也要撑满，不能只用 maxHeight）。 */
+const detailTableHeight = ref(280);
+let tableWrapResizeObserver: null | ResizeObserver = null;
+
+/**
+ * 按 Tabs 内容区剩余高度回填表格 height，避免下方大块空白。
+ */
+function updateDetailTableHeight() {
+  const wrap = tableWrapRef.value;
+  if (!wrap) {
+    return;
+  }
+  const tabsHeader = wrap.querySelector('.el-tabs__header');
+  let headerHeight = 40;
+  if (tabsHeader instanceof HTMLElement) {
+    headerHeight = tabsHeader.offsetHeight + 8;
+  }
+  const nextHeight = Math.floor(wrap.clientHeight - headerHeight);
+  // 保底可读高度，避免首帧未布局时写成过小值
+  if (nextHeight >= 160) {
+    detailTableHeight.value = nextHeight;
+  }
+}
+
+/**
+ * 监听明细容器尺寸变化并回填表高。
+ */
+function bindTableWrapHeightObserver() {
+  tableWrapResizeObserver?.disconnect();
+  tableWrapResizeObserver = null;
+  updateDetailTableHeight();
+  const wrap = tableWrapRef.value;
+  if (!wrap || typeof ResizeObserver === 'undefined') {
+    return;
+  }
+  tableWrapResizeObserver = new ResizeObserver(() => {
+    updateDetailTableHeight();
+  });
+  tableWrapResizeObserver.observe(wrap);
+}
+
+onBeforeUnmount(() => {
+  tableWrapResizeObserver?.disconnect();
+  tableWrapResizeObserver = null;
+});
+
+const detailLoading = computed(
+  () =>
+    (mainTab.value === NURSE_MAIN_TAB_EXECUTION && executionDetailLoading.value) ||
+    (mainTab.value === NURSE_MAIN_TAB_CONSUMABLE && consumableDetailLoading.value),
+);
+
 watch(
-  () => visible.value,
-  (open) => {
+  () => [visible.value, props.practitionerId] as const,
+  ([open]) => {
+    // 关闭：清空态，避免下次闪旧数据
     if (!open) {
       executionDetailRows.value = [];
       executionDetailTotal.value = 0;
@@ -238,10 +321,23 @@ watch(
       consumableDetailTotal.value = 0;
       detailPage.pageNo = 1;
       mainTab.value = NURSE_MAIN_TAB_EXECUTION;
+      tableWrapResizeObserver?.disconnect();
+      tableWrapResizeObserver = null;
       return;
     }
+    // 打开或切换护士：须拉当前 Tab 明细（含首次挂载时 visible 已为 true 的场景）
+    detailPage.pageNo = 1;
     void loadDetailPage();
+    // 弹窗定高后下一帧再量表高，把下方空白吃进表体
+    void nextTick(() => {
+      bindTableWrapHeightObserver();
+      window.setTimeout(() => {
+        updateDetailTableHeight();
+      }, 80);
+    });
   },
+  // immediate：父级 v-if 首次挂载时 model 可能已是 true，无 change 也要加载
+  { immediate: true },
 );
 </script>
 
@@ -249,12 +345,16 @@ watch(
   <AppDialog
     v-model="visible"
     :title="`${practitionerName} · 工作量明细`"
-    width="1000px"
+    width="1280px"
     top="2vh"
     destroy-on-close
     class="nurse-workload-nurse-detail-dialog"
   >
-    <div class="nurse-workload-nurse-detail">
+    <div
+      v-loading="detailLoading"
+      element-loading-text="加载明细中..."
+      class="nurse-workload-nurse-detail"
+    >
       <div class="nurse-workload-nurse-detail__summary-card">
         <div class="nurse-workload-nurse-detail__metrics">
           <div
@@ -309,8 +409,12 @@ watch(
           </ElButton>
         </div>
 
-        <div class="nurse-workload-nurse-detail__table-wrap">
-          <ElTabs v-model="mainTab" @tab-change="handleMainTabChange">
+        <div ref="tableWrapRef" class="nurse-workload-nurse-detail__table-wrap">
+          <ElTabs
+            v-model="mainTab"
+            class="nurse-workload-nurse-detail__tabs"
+            @tab-change="handleMainTabChange"
+          >
             <ElTabPane label="诊疗执行" :name="NURSE_MAIN_TAB_EXECUTION">
               <TableLayout
                 :table-data="executionDetailRows"
@@ -319,6 +423,7 @@ watch(
                 :query-params="{}"
                 :form-items="[]"
                 :table-columns="executionDetailColumns"
+                :table-height="detailTableHeight"
                 :show-top-query="false"
                 :show-pagination="false"
                 row-key="procedureId"
@@ -334,6 +439,7 @@ watch(
                 :query-params="{}"
                 :form-items="[]"
                 :table-columns="consumableDetailColumns"
+                :table-height="detailTableHeight"
                 :show-top-query="false"
                 :show-pagination="false"
                 row-key="dispenseId"
@@ -344,13 +450,7 @@ watch(
           </ElTabs>
         </div>
 
-        <div
-          v-if="
-            (mainTab === NURSE_MAIN_TAB_EXECUTION && executionDetailTotal > 0) ||
-            (mainTab === NURSE_MAIN_TAB_CONSUMABLE && consumableDetailTotal > 0)
-          "
-          class="nurse-workload-nurse-detail__pager"
-        >
+        <div class="nurse-workload-nurse-detail__pager">
           <ElPagination
             :current-page="detailPage.pageNo"
             :page-size="detailPage.pageSize"
@@ -372,7 +472,9 @@ watch(
 <style scoped>
 .nurse-workload-nurse-detail {
   display: flex;
-  max-height: calc(100vh - 108px);
+  height: 100%;
+  min-height: 0;
+  flex: 1;
   flex-direction: column;
   gap: 16px;
 }
@@ -394,6 +496,7 @@ watch(
 
 .nurse-workload-nurse-detail__metric {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: 4px;
 }
@@ -457,10 +560,44 @@ watch(
   gap: 12px;
 }
 
+/* 明细表吃满汇总下方剩余高度，分页贴底 */
 .nurse-workload-nurse-detail__table-wrap {
-  height: min(480px, calc(100vh - 300px));
-  min-height: 360px;
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
   overflow: auto;
+}
+
+.nurse-workload-nurse-detail__tabs {
+  display: flex;
+  height: 100%;
+  min-height: 280px;
+  flex: 1;
+  flex-direction: column;
+}
+
+.nurse-workload-nurse-detail__tabs :deep(.el-tabs__header) {
+  flex-shrink: 0;
+  margin-bottom: 8px;
+}
+
+.nurse-workload-nurse-detail__tabs :deep(.el-tabs__content) {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.nurse-workload-nurse-detail__tabs :deep(.el-tabs__body),
+.nurse-workload-nurse-detail__tabs :deep(.el-tab-pane) {
+  height: 100%;
+}
+
+.nurse-workload-nurse-detail__tabs :deep(.table-layout),
+.nurse-workload-nurse-detail__tabs :deep(.table-layout-container),
+.nurse-workload-nurse-detail__tabs :deep(.table-body) {
+  height: 100%;
+  min-height: 0;
 }
 
 .nurse-workload-nurse-detail__pager {
@@ -471,22 +608,34 @@ watch(
 </style>
 
 <style>
+/* 弹窗定高，下方空白留给明细表撑开（对齐医生工作量明细弹窗体感） */
 .nurse-workload-nurse-detail-dialog.el-dialog {
   display: flex;
-  width: 1000px !important;
-  max-width: 92vw;
+  width: min(1280px, 96vw) !important;
+  max-width: 96vw;
+  height: calc(100vh - 48px) !important;
   max-height: calc(100vh - 48px);
   margin-bottom: 0;
   flex-direction: column;
   overflow: hidden;
 }
 
+.nurse-workload-nurse-detail-dialog .el-dialog__header {
+  flex-shrink: 0;
+}
+
 .nurse-workload-nurse-detail-dialog .el-dialog__body {
   display: flex;
-  min-height: calc(100vh - 120px);
-  flex: 1;
+  min-height: 0;
+  flex: 1 1 auto;
   flex-direction: column;
   padding-top: 8px;
   overflow: hidden;
+}
+
+.nurse-workload-nurse-detail-dialog .el-dialog__body > .nurse-workload-nurse-detail {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
 }
 </style>

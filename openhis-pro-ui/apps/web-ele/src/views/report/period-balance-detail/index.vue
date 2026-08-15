@@ -54,7 +54,7 @@ import {
 } from '#/views/report/shared/report-format';
 
 import PeriodBalanceDetailFlowExpandPanel from './period-balance-detail-flow-expand-panel.vue';
-import { formatMinUnitQuantity } from './settlement-flow-rows';
+import { buildPeriodBusinessSummary, formatMinUnitQuantity } from './settlement-flow-rows';
 
 defineOptions({ name: 'PeriodBalanceDetailReportPage' });
 
@@ -110,14 +110,14 @@ const PAGE_TITLE = '库房期初期末明细';
 /** 页内展示的账平核对公式（与后端 BR-INV-SET-011/012/013 一致，仅进价侧）。 */
 const BALANCE_FORMULA_LINES = [
   '数量口径：一律以拆零最小单位计（与库存明细「库存(最小)」一致）',
-  '期初/期末盘点单据：单号日 D 为零点备份（建议每日 00:05），数量为 (D−1) 日终库存；期间含期初盘点日全天',
+  '期初/期末日终备份：单号日 D 为零点备份（建议每日 00:05），数量为 (D−1) 日终库存；期间含期初备份日全天；期末不选=查到当前实时库存',
+  '默认「仅显示有业务」：列表只含期间发生过入库/出库/发药等动账（或调价）的品种，分页总数与列表一致',
   '推算期末数量 = 期初数量 − 发药 + 退药 + 入库/调入/退库/退领 + 盘点盈 − 出库/调出/退供应商/领用 − 盘点亏 + 损益调整',
   '盈亏数 = 实际期末数量 − 推算期末数量',
   '推算期末进价总额 = 期初进价总额 ± 期间各业务进价额（符号与数量侧一致）+ 调价进价盈亏',
   '盈亏差 = 实际期末进价总额 − 推算期末进价总额',
   '是否账平：盈亏数 = 0 且 盈亏差 = 0',
-  '主表「调价」列：有本库调价进价盈亏时显示；调价不改变数量',
-  '展开行：随「隐藏全零行」联动；选「否」时列出全部适用业务（含 0）',
+  '主表「期间业务」为摘要，展开行可看数量/金额；「仅显示有业务=否」时按全目录翻页（含无动账品种）',
 ];
 
 const tableData = ref<PeriodBalanceDetailListRowDto[]>([]);
@@ -132,13 +132,13 @@ const resolvedItemTable = ref<PeriodBalanceDetailItemTable>(ITEM_TABLE_MEDICATIO
 
 const queryParams = reactive<QueryState>({
   pageNo: 1,
-  pageSize: 10,
+  pageSize: 20,
   isBus: 'true',
 });
 
 const tableLoading = computed(() => initLoading.value || pageLoading.value || exportLoading.value);
 
-/** 与查询区「隐藏全零行」一致：是则展开子表也过滤全 0 业务行。 */
+/** 与查询区「仅显示有业务」一致：是则展开子表也过滤全 0 业务行。 */
 const hideFlowZeroRows = computed(() => {
   const raw = queryParams.isBus;
   return !(raw === false || raw === 'false');
@@ -209,6 +209,14 @@ const mainTableColumns = computed<SettlementTableColumn[]>(() => {
       fixed: 'left',
       align: 'center',
       headerAlign: 'center',
+    },
+    {
+      prop: 'periodBusinessSummary',
+      label: '期间业务',
+      minWidth: 160,
+      align: 'center',
+      headerAlign: 'center',
+      formatter: (row) => buildPeriodBusinessSummary(row, columnMeta.value),
     },
     {
       prop: 'beginCostPackageUnitPrice',
@@ -404,7 +412,7 @@ async function getList(options?: { quietMissingRequired?: boolean }) {
     tableData.value = [];
     total.value = 0;
     if (!options?.quietMissingRequired) {
-      ElMessage.warning('请选择期初盘点单据');
+      ElMessage.warning('请选择期初日终备份');
     }
     return;
   }
@@ -503,12 +511,12 @@ onMounted(async () => {
                 />
               </ElSelect>
             </ElFormItem>
-            <ElFormItem label="期初盘点单据">
+            <ElFormItem label="期初日终备份">
               <ElSelect
                 v-model="queryParams.startBackupBusNo"
                 clearable
                 filterable
-                placeholder="请选择期初"
+                placeholder="必选，=前一日日终库存"
                 class="period-balance-detail-query-control--backup"
                 @change="handleFilterChange"
               >
@@ -520,12 +528,12 @@ onMounted(async () => {
                 />
               </ElSelect>
             </ElFormItem>
-            <ElFormItem label="期末盘点单据">
+            <ElFormItem label="期末日终备份">
               <ElSelect
                 v-model="queryParams.endBackupBusNo"
                 clearable
                 filterable
-                placeholder="请选择期末"
+                placeholder="可选，空=实时库存"
                 class="period-balance-detail-query-control--backup"
                 @change="handleFilterChange"
               >
@@ -547,14 +555,14 @@ onMounted(async () => {
                 @clear="handleFilterChange"
               />
             </ElFormItem>
-            <ElFormItem label="隐藏全零行">
+            <ElFormItem label="仅显示有业务">
               <ElSelect
                 v-model="queryParams.isBus"
                 :class="REPORT_QUERY_CONTROL"
                 @change="handleFilterChange"
               >
-                <ElOption label="是" value="true" />
-                <ElOption label="否" value="false" />
+                <ElOption label="是（推荐）" value="true" />
+                <ElOption label="否（全目录）" value="false" />
               </ElSelect>
             </ElFormItem>
             <ElFormItem label="账平筛选">

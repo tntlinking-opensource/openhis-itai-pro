@@ -51,6 +51,7 @@ import {
   sumMoneyThenSettle,
 } from '#/utils/format/money-scale';
 import { printServiceApplyForms } from '#/utils/print/print-service-apply';
+import { syncLineRemarkWithRehabTreatmentCourse } from '#/utils/service-apply-display';
 import { loadAllDepartmentPerformOrgOptions } from '#/views/doctor-station/advice-shared/perform-org-options.service';
 import * as inpatientServiceApplyApi from '#/views/inpatient/doctor-station/service-apply/inpatient-service-apply.service';
 
@@ -63,10 +64,13 @@ import {
   buildServiceApplyDiagnosisOptions,
   buildServiceApplySelectedItemsFromAdviceRows,
   catalogRowCategoryLabel,
+  catalogRowChrgitmLvText,
   catalogRowKey,
   catalogRowUnitPrice,
   detailTargetIds,
+  filterSpecimenDefinitionOptions,
   firstTreeOptionValue,
+  matchBodyStructureTreeFilterNode,
   mergeCatalogDefaultPerformOrgOptions,
   pickCatalogDefaultPerformOrgId,
   pickDefaultServiceApplyEncounterDiagnosisIds,
@@ -148,6 +152,8 @@ const encounterDiagnosisRows = ref<EncounterDiagnosisRowDto[]>([]);
 const diagnosisDialogVisible = ref(false);
 const bodyStructureOptions = ref<TerminologyOptionDto[]>([]);
 const specimenDefinitionOptions = ref<TerminologyOptionDto[]>([]);
+/** 样本下拉自定义过滤关键字（空则展示全量） */
+const specimenFilterKeyword = ref('');
 const savedPrescriptionNo = ref('');
 
 let catalogSearchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -175,10 +181,16 @@ const dialogTitle = computed(() => {
   return `${kindLabel}申请`;
 });
 
-/** 明细下拉：检验样本 / 检查·治疗部位 */
-const detailOptions = computed(() =>
-  effectiveApplyKind.value === 'lab' ? specimenDefinitionOptions.value : bodyStructureOptions.value,
-);
+/** 明细下拉：检验样本（按关键字过滤）/ 检查·治疗部位树 */
+const detailOptions = computed(() => {
+  if (effectiveApplyKind.value === 'lab') {
+    return filterSpecimenDefinitionOptions(
+      specimenDefinitionOptions.value,
+      specimenFilterKeyword.value,
+    );
+  }
+  return bodyStructureOptions.value;
+});
 
 /** 明细字段标签 */
 const detailFieldLabel = computed(() => (effectiveApplyKind.value === 'lab' ? '样本' : '部位'));
@@ -246,9 +258,50 @@ function formatMoney(value: number): string {
   return formatMoneyDisplay(value);
 }
 
+/** 样本 Select：自定义过滤（名称/编码/拼音/五笔） */
+function handleSpecimenFilter(query: string) {
+  specimenFilterKeyword.value = query;
+}
+
+/** 样本下拉关闭时清空过滤关键字，避免再次打开仍收窄 */
+function handleSpecimenDropdownVisible(open: boolean) {
+  if (!open) {
+    specimenFilterKeyword.value = '';
+  }
+}
+
+/** 部位 TreeSelect：节点是否命中过滤关键字 */
+function handleBodyStructureFilterNode(keyword: string, data: TerminologyOptionDto): boolean {
+  return matchBodyStructureTreeFilterNode(keyword, data);
+}
+
 /** 生成已选行唯一 key */
 function nextRowKey(catalogKey: string): string {
   return `${catalogKey}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+/** 当前执行科室展示名（与下拉 label 一致） */
+function resolveCurrentPerformOrgName(): string {
+  return orgOptions.value.find((item) => item.value === orgId.value)?.label ?? '';
+}
+
+/** 治疗申请 + 康复科：同步清单各行备注中的固定疗程说明 */
+function syncSelectedItemsRehabCourseRemark() {
+  if (effectiveApplyKind.value !== 'treatment') {
+    return;
+  }
+  const performOrgName = resolveCurrentPerformOrgName();
+  selectedItems.value = selectedItems.value.map((row) => {
+    const nextRemark = syncLineRemarkWithRehabTreatmentCourse(
+      row.remark,
+      'treatment',
+      performOrgName,
+    );
+    if ((row.remark ?? '') === (nextRemark ?? '')) {
+      return row;
+    }
+    return { ...row, remark: nextRemark };
+  });
 }
 
 /** 将目录行转为已选行（字段对齐 ServiceApplyFormLineRequest） */
@@ -268,7 +321,10 @@ function buildSelectedRow(row: DoctorStationAdviceCatalogRowDto): ServiceApplySe
     quantity: 1,
     unitCode: String(row.unitCode ?? '').trim(),
     unitPrice: catalogRowUnitPrice(row),
+    chrgitmLvText: catalogRowChrgitmLvText(row) || undefined,
     detailItems: defaultTargetId ? buildDetailItems(kind, [defaultTargetId]) : [],
+    // 已选康复科时，新加入行直接带上固定疗程备注
+    remark: syncLineRemarkWithRehabTreatmentCourse(undefined, kind, resolveCurrentPerformOrgName()),
   };
 }
 
@@ -376,6 +432,8 @@ async function refreshOrgOptions() {
       orgOptions.value[0]?.value ||
       '';
   }
+  // 默认/回落后的执行科室可能已是康复科，同步行备注
+  syncSelectedItemsRehabCourseRemark();
 }
 
 /** 加载初始化下拉与目录 */
@@ -401,11 +459,15 @@ async function loadPanelData() {
     if (token !== catalogFetchToken) return;
     bodyStructureOptions.value = initOpts.bodyStructureOptions;
     specimenDefinitionOptions.value = initOpts.specimenDefinitionOptions;
+    specimenFilterKeyword.value = '';
     catalogItems.value = catalogRes.rows;
+    // 编辑回显：列表若未带医保等级，用当前目录页补齐展示文案
+    enrichSelectedChrgitmLvFromCatalog();
   } catch {
     if (token !== catalogFetchToken) return;
     bodyStructureOptions.value = [];
     specimenDefinitionOptions.value = [];
+    specimenFilterKeyword.value = '';
     catalogItems.value = [];
     encounterDiagnosisRows.value = [];
     encounterDiagnosisIds.value = [];
@@ -415,6 +477,31 @@ async function loadPanelData() {
       catalogLoading.value = false;
     }
   }
+}
+
+/** 用左侧目录行补齐右侧清单医保等级展示（仅填空，不覆盖已有文案） */
+function enrichSelectedChrgitmLvFromCatalog() {
+  if (selectedItems.value.length === 0 || catalogItems.value.length === 0) {
+    return;
+  }
+  // 目录键 → 医保等级文案
+  const textByKey = new Map<string, string>();
+  for (const row of catalogItems.value) {
+    const text = catalogRowChrgitmLvText(row);
+    if (!text) continue;
+    textByKey.set(catalogRowKey(row), text);
+  }
+  if (textByKey.size === 0) return;
+  selectedItems.value = selectedItems.value.map((item) => {
+    if (String(item.chrgitmLvText ?? '').trim()) {
+      return item;
+    }
+    const fromCatalog = textByKey.get(item.catalogRowKey);
+    if (!fromCatalog) {
+      return item;
+    }
+    return { ...item, chrgitmLvText: fromCatalog };
+  });
 }
 
 /** 取当前机构上下文 */
@@ -683,6 +770,8 @@ async function hydrateFromEditDocumentGroup(group: ServiceApplyDocumentGroup) {
       existing.label = performOrgName;
     }
   }
+  // 回显科室名后再按康复科规则补备注（编辑单可能尚未写入该文案）
+  syncSelectedItemsRehabCourseRemark();
 }
 
 /** 弹窗打开时重置为初始态并加载数据 */
@@ -744,6 +833,11 @@ watch(keyword, () => {
   catalogSearchTimer = setTimeout(() => {
     void loadPanelData();
   }, 300);
+});
+
+/** 切换执行科室：康复科写入疗程备注，切走则去掉 */
+watch(orgId, () => {
+  syncSelectedItemsRehabCourseRemark();
 });
 </script>
 
@@ -832,10 +926,17 @@ watch(keyword, () => {
               @click="handleAddCatalogItem(item)"
             >
               <div class="catalog-item__head">
-                <span class="catalog-item__name">{{ item.name }}</span>
-                <span class="catalog-item__price"
-                  >¥{{ formatMoney(catalogRowUnitPrice(item)) }}</span
-                >
+                <span class="catalog-item__name">
+                  {{ item.name }}
+                  <span v-if="catalogRowChrgitmLvText(item)" class="catalog-item__chrgitm-lv">
+                    {{ catalogRowChrgitmLvText(item) }}
+                  </span>
+                </span>
+                <span class="catalog-item__price-wrap">
+                  <span class="catalog-item__price"
+                    >¥{{ formatMoney(catalogRowUnitPrice(item)) }}</span
+                  >
+                </span>
               </div>
               <div class="catalog-item__sub">
                 <span>{{ catalogRowCategoryLabel(item) }}</span>
@@ -908,7 +1009,15 @@ watch(keyword, () => {
               <div class="cart-item__top">
                 <div class="cart-item__info">
                   <div class="cart-item__title-row">
-                    <span class="cart-item__name">{{ row.activityName }}</span>
+                    <span class="cart-item__name">
+                      {{ row.activityName }}
+                      <span
+                        v-if="String(row.chrgitmLvText ?? '').trim()"
+                        class="cart-item__chrgitm-lv"
+                      >
+                        {{ String(row.chrgitmLvText).trim() }}
+                      </span>
+                    </span>
                     <span class="cart-item__price">
                       ¥{{ formatMoney(calcMoneyLineTotal(row.unitPrice, row.quantity)) }}
                     </span>
@@ -942,10 +1051,16 @@ watch(keyword, () => {
                   multiple
                   collapse-tags
                   collapse-tags-tooltip
+                  filterable
+                  clearable
+                  :filter-method="handleSpecimenFilter"
                   class="cart-field__detail"
                   :placeholder="
-                    detailRequired ? `请选择${detailFieldLabel}` : `选填${detailFieldLabel}`
+                    detailRequired
+                      ? `请选择${detailFieldLabel}（支持拼音）`
+                      : `选填${detailFieldLabel}（支持拼音）`
                   "
+                  @visible-change="handleSpecimenDropdownVisible"
                   @update:model-value="(v: string[]) => writeDetailTargetIds(row, v)"
                 >
                   <ElOption
@@ -967,9 +1082,12 @@ watch(keyword, () => {
                   class="cart-field__detail"
                   :data="bodyStructureOptions"
                   :props="{ value: 'value', label: 'label', children: 'children' }"
+                  :filter-node-method="handleBodyStructureFilterNode"
                   node-key="value"
                   :placeholder="
-                    detailRequired ? `请选择${detailFieldLabel}` : `选填${detailFieldLabel}`
+                    detailRequired
+                      ? `请选择${detailFieldLabel}（支持拼音）`
+                      : `选填${detailFieldLabel}（支持拼音）`
                   "
                   @update:model-value="(v: string[]) => writeDetailTargetIds(row, v)"
                 />
@@ -1229,6 +1347,23 @@ watch(keyword, () => {
   font-size: 14px;
   font-weight: 600;
   color: var(--el-text-color-primary);
+  min-width: 0;
+}
+
+.catalog-item__price-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* 医保等级：仅展示甲/乙/丙等文案，紧跟项目名称 */
+.catalog-item__chrgitm-lv {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--el-color-warning);
+  white-space: nowrap;
 }
 
 .catalog-item__price {
@@ -1364,6 +1499,14 @@ watch(keyword, () => {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cart-item__chrgitm-lv {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--el-color-warning);
   white-space: nowrap;
 }
 

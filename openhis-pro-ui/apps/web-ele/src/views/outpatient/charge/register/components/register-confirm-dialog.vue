@@ -5,11 +5,23 @@ import { computed, nextTick, ref, watch } from 'vue';
 
 import { ElAlert, ElButton, ElInput, ElMessage, ElRadioButton, ElRadioGroup } from 'element-plus';
 
+import {
+  httpCompensateInsuranceSettlementsByPayment,
+  httpConfirmOutpatientInsuranceBeforeScan,
+} from '#/api/outpatient-charge/outpatient-charge.http';
 import AppDialog from '#/components/app-dialog.vue';
 import { isScanPayChannel } from '#/composables/payment/useUnionPayScanPay';
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
 import { FALLBACK_DEFAULT_PAY_CHANNEL } from '#/utils/payment/payment-channel-options';
-import { settleWithScanRecovery } from '#/utils/payment/scan-settle-recovery';
+import {
+  clearCachedClientScanResult,
+  hasCachedClientScanSuccess,
+} from '#/utils/payment/scan-settle-cache';
+import {
+  ScanSettleIncompleteError,
+  ScanSettleRefundedError,
+  settleWithScanRecovery,
+} from '#/utils/payment/scan-settle-recovery';
 import { submitScanPayment } from '#/utils/payment/submit-scan-payment';
 import { schedulePrintRegistrationReceipt } from '#/utils/print/print-registration-receipt';
 
@@ -24,6 +36,7 @@ import {
 import { DEFAULT_REGISTER_PAY_CHANNEL_CODE, payRegisterFee } from '../services/register.service';
 
 import WorkInjuryFilingDetailAction from '#/chs/work-injury/work-injury-filing-detail-action.vue';
+import { httpWorkInjuryLoadEncounterContext } from '#/chs/work-injury/work-injury.http';
 
 defineOptions({
   name: 'RegisterConfirmDialog',
@@ -82,6 +95,7 @@ const ybCredentialReadAt = ref<null | number>(null);
 const rescanAndRefreshHandler = ref<null | RescanRefreshHandler>(null);
 const workInjuryRegister = ref(false);
 const workInjuryContractId = ref<string | number | undefined>(undefined);
+const workInjuryInjureAffirmId = ref<string | undefined>(undefined);
 
 const insurancePreSettled = computed(() =>
   Boolean(
@@ -96,6 +110,32 @@ const insuranceFundPay = computed(() =>
 const insuranceAcctPay = computed(() =>
   Number((pendingPreSettlement.value as null | { ybAcctPay?: unknown })?.ybAcctPay ?? 0),
 );
+/** 实际支付起付线（2206 展示透传） */
+const insuranceActPayDedc = computed(() =>
+  Number((pendingPreSettlement.value as null | { ybActPayDedc?: unknown })?.ybActPayDedc ?? 0),
+);
+/** 公务员医疗补助资金支出（2206 展示透传） */
+const insuranceCvlservPay = computed(() =>
+  Number((pendingPreSettlement.value as null | { ybCvlservPay?: unknown })?.ybCvlservPay ?? 0),
+);
+/** 公务员标志原文（0/1） */
+const insuranceCvlservFlagRaw = computed(() => {
+  const flag = (pendingPreSettlement.value as null | { ybCvlservFlag?: unknown })?.ybCvlservFlag;
+  return String(flag ?? '').trim();
+});
+
+/**
+ * 公务员待遇展示：0→否 / 1→是；空则 —
+ */
+function formatConfirmCvlservFlag(flag: string) {
+  if (flag === '1') {
+    return '是';
+  }
+  if (flag === '0') {
+    return '否';
+  }
+  return flag || '—';
+}
 const workInjuryEncounterId = computed(
   () => (pendingPreSettlement.value as null | { encounterId?: string | number })?.encounterId,
 );
@@ -216,6 +256,7 @@ async function open(
     ybCredentialReadAt?: null | number;
     workInjuryRegister?: boolean;
     workInjuryContractId?: string | number;
+    workInjuryInjureAffirmId?: string;
   },
 ) {
   detail.value = nextDetail;
@@ -225,6 +266,7 @@ async function open(
   rescanAndRefreshHandler.value = options?.rescanAndRefresh ?? null;
   workInjuryRegister.value = Boolean(options?.workInjuryRegister);
   workInjuryContractId.value = options?.workInjuryContractId;
+  workInjuryInjureAffirmId.value = options?.workInjuryInjureAffirmId;
   credentialExpiredHint.value = false;
   scanCode.value = '';
   scanStatusText.value = '';
@@ -241,6 +283,7 @@ function resetState() {
   credentialExpiredHint.value = false;
   workInjuryRegister.value = false;
   workInjuryContractId.value = undefined;
+  workInjuryInjureAffirmId.value = undefined;
 }
 
 function handleCancelDialog() {
@@ -314,14 +357,42 @@ async function executeRegisterPayment() {
   if (!ensureCredentialFreshBeforePay()) {
     return;
   }
+  // 工伤双保险：缴费前再校验有效备案
+  if (workInjuryRegister.value && workInjuryEncounterId.value) {
+    try {
+      const wiCtx = await httpWorkInjuryLoadEncounterContext(workInjuryEncounterId.value);
+      if (!wiCtx?.qualificationValid) {
+        ElMessage.warning('无有效工伤备案，无法确认缴费；请先完成一键备案');
+        return;
+      }
+    } catch (error) {
+      ElMessage.error(error instanceof Error ? error.message : '工伤备案校验失败');
+      return;
+    }
+  }
   const needScanPay = showCashPaySection.value && isScanPayChannel(payChannelCode.value);
-  if (needScanPay && !scanCode.value.trim()) {
+  const halfSuccessLocked = hasCachedClientScanSuccess(pre.paymentDraftId);
+  if (needScanPay && !halfSuccessLocked && !scanCode.value.trim()) {
     ElMessage.warning('请输入付款码');
     return;
   }
+  /** 医保预结算 + 扫码：先 2207 再 Win */
+  const chsBeforeScan = Boolean(insurancePreSettled.value) && needScanPay;
   payLoading.value = true;
   scanStatusText.value = '';
+  let chs2207BeforeScanDone = false;
   try {
+    if (chsBeforeScan) {
+      await httpConfirmOutpatientInsuranceBeforeScan({
+        paymentDraftId: String(pre.paymentDraftId),
+        encounterId:
+          pre.encounterId === null || pre.encounterId === undefined
+            ? undefined
+            : String(pre.encounterId),
+      });
+      chs2207BeforeScanDone = true;
+    }
+
     let clientScanResult;
     if (needScanPay) {
       await refreshUnionPayCapabilities();
@@ -329,33 +400,53 @@ async function executeRegisterPayment() {
         ElMessage.error('请启动本地客户端（OpenHIS.Win）并确认银联组件已安装');
         return;
       }
-      scanStatusText.value = '等待支付结果…';
-      const scanOutcome = await submitScanPayment({
-        paymentDraftId: pre.paymentDraftId,
-        amount: payableCashAmount.value,
-        scanCode: scanCode.value,
-      });
-      clientScanResult = scanOutcome.clientScanResult;
+      scanStatusText.value = halfSuccessLocked ? '银联已扣款，正在补结算…' : '等待支付结果…';
+      try {
+        const scanOutcome = await submitScanPayment({
+          paymentDraftId: pre.paymentDraftId,
+          amount: payableCashAmount.value,
+          scanCode: scanCode.value,
+        });
+        clientScanResult = scanOutcome.clientScanResult;
+      } catch (scanError) {
+        if (chs2207BeforeScanDone) {
+          try {
+            await httpCompensateInsuranceSettlementsByPayment({
+              paymentDraftId: String(pre.paymentDraftId),
+            });
+            ElMessage.warning('银联支付失败，已冲正医保结算；请重新缴费');
+          } catch {
+            ElMessage.error('银联支付失败，且医保冲正未完成，请联系医保办，勿重复收费');
+          }
+        }
+        throw scanError;
+      }
     }
 
     const result = clientScanResult
-      ? await settleWithScanRecovery(clientScanResult, () =>
-          payRegisterFee({
-            appointmentId:
-              pre.appointmentId === null || pre.appointmentId === undefined
-                ? undefined
-                : String(pre.appointmentId),
-            paymentDetails: showCashPaySection.value
-              ? [
-                  {
-                    payAmount: payableCashAmount.value,
-                    payChannelCode: payChannelCode.value,
-                  },
-                ]
-              : [],
+      ? await settleWithScanRecovery(
+          clientScanResult,
+          () =>
+            payRegisterFee({
+              appointmentId:
+                pre.appointmentId === null || pre.appointmentId === undefined
+                  ? undefined
+                  : String(pre.appointmentId),
+              paymentDetails: showCashPaySection.value
+                ? [
+                    {
+                      payAmount: payableCashAmount.value,
+                      payChannelCode: payChannelCode.value,
+                    },
+                  ]
+                : [],
+              paymentDraftId: pre.paymentDraftId,
+              clientScanResult,
+            }),
+          {
             paymentDraftId: pre.paymentDraftId,
-            clientScanResult,
-          }),
+            refundAmountYuan: payableCashAmount.value,
+          },
         )
       : await payRegisterFee({
           appointmentId:
@@ -372,6 +463,7 @@ async function executeRegisterPayment() {
             : [],
           paymentDraftId: pre.paymentDraftId,
         });
+    clearCachedClientScanResult(pre.paymentDraftId);
     ElMessage.success('挂号成功！');
     finishAfterPay();
     schedulePrintRegistrationReceipt({
@@ -380,10 +472,22 @@ async function executeRegisterPayment() {
       jobName: '挂号小票',
     });
   } catch (error) {
+    if (error instanceof ScanSettleRefundedError) {
+      ElMessage.warning(error.message);
+      scanStatusText.value = '';
+      return;
+    }
+    if (error instanceof ScanSettleIncompleteError) {
+      ElMessage.error(error.message);
+      scanStatusText.value = '银联已扣款，请补结算或银联退货，勿重复扫码';
+      return;
+    }
     const { code, message } = resolvePayError(error);
     if (isInsuranceCredentialExpiredError(code, message)) {
       credentialExpiredHint.value = true;
       ElMessage.warning(formatInsuranceCredentialExpiredHint());
+    } else if (message) {
+      ElMessage.error(message);
     }
   } finally {
     payLoading.value = false;
@@ -445,6 +549,18 @@ defineExpose({
           <div class="register-confirm-dialog__meta-row">
             <span>个账支付</span>
             <span>¥{{ formatMoneyDisplay(insuranceAcctPay) }}</span>
+          </div>
+          <div class="register-confirm-dialog__meta-row">
+            <span>起付线</span>
+            <span>¥{{ formatMoneyDisplay(insuranceActPayDedc) }}</span>
+          </div>
+          <div class="register-confirm-dialog__meta-row">
+            <span>公务员待遇</span>
+            <span>{{ formatConfirmCvlservFlag(insuranceCvlservFlagRaw) }}</span>
+          </div>
+          <div class="register-confirm-dialog__meta-row">
+            <span>公务员医疗补助</span>
+            <span>¥{{ formatMoneyDisplay(insuranceCvlservPay) }}</span>
           </div>
         </template>
       </div>
@@ -510,6 +626,7 @@ defineExpose({
           link
           :encounter-id="workInjuryEncounterId"
           :contract-id="workInjuryContractId"
+          :injure-affirm-id-hint="workInjuryInjureAffirmId"
         />
         <div v-else class="flex-1" />
         <div class="flex shrink-0 justify-end gap-2">

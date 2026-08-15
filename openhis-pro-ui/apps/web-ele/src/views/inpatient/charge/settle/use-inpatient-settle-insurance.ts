@@ -6,27 +6,50 @@ import { httpGetInsurancePersonInfo } from '#/chs/api/insurance-person';
 import {
   DEFAULT_CARD_READER_HOST,
   DEFAULT_CARD_READER_PORT,
+  DEFAULT_SFZ_DRIVER_TYPE,
+  formatYbPluginError,
+  invokeIdCardRead,
   invokeSocialCardRead,
   isYbPluginOnline,
   resolveSocialCard1101Credential,
   YB_PLUGIN_FUNCTION_ID,
+  type SocialCard1101Credential,
 } from '#/chs/utils/yb-plugin';
-
-import { ENCOUNTER_STATUS_ON_HOLD, ENCOUNTER_STATUS_PENDING } from './inpatient-settle.constants';
+import {
+  chooseOutpatientChargeInsuranceMedium,
+  outpatientChargeReadCredentialFailHint,
+  outpatientChargeReadCredentialHint,
+  outpatientChargeReadCredentialLabel,
+  type OutpatientChargeInsuranceMedium,
+} from '#/views/outpatient/charge/charge/use-outpatient-charge-insurance';
 import {
   isInsuranceContractCategory,
   isSelfPayContractCategory,
   isWorkInjuryContractCategory,
 } from '#/views/outpatient/charge/register/services/charge-type-category';
+import { readYbEcVoucherSnapshot } from '#/views/outpatient/charge/register/services/read-yb-ec-voucher';
+
+import { ENCOUNTER_STATUS_ON_HOLD, ENCOUNTER_STATUS_PENDING } from './inpatient-settle.constants';
+
+export type InpatientSettleInsuranceMedium = OutpatientChargeInsuranceMedium;
 
 export interface InpatientSettleInsuranceContext {
   contractId: string;
   insuplcAdmdvs?: string;
   insutype?: string;
+  /** 本次读卡介质 */
+  medium: InpatientSettleInsuranceMedium;
   psnNo: string;
   ybCardInfo: string;
   ybMediumType: string;
 }
+
+export {
+  chooseOutpatientChargeInsuranceMedium as chooseInpatientSettleInsuranceMedium,
+  outpatientChargeReadCredentialFailHint as inpatientSettleReadCredentialFailHint,
+  outpatientChargeReadCredentialHint as inpatientSettleReadCredentialHint,
+  outpatientChargeReadCredentialLabel as inpatientSettleReadCredentialLabel,
+};
 
 /** 登记账户是否为医保性质（用于决定是否读卡；按 contractId 对应类别码判断）。 */
 export function isInpatientInsuranceRegistration(
@@ -122,46 +145,164 @@ export function isZeroAmountDischargeFullSettle(
   );
 }
 
-/** 读卡并 1101，返回预结算所需医保上下文；本机插件离线时返回 null（不抛错）。 */
-export async function resolveInpatientSettleInsuranceContext(
-  contractId: string,
-): Promise<InpatientSettleInsuranceContext | null> {
-  if (!(await isYbPluginOnline())) {
+/** 读身份证并组 1101 凭证（对齐门诊收费）。 */
+async function resolveIdCardCredential(): Promise<null | SocialCard1101Credential> {
+  const card = await invokeIdCardRead({
+    FunctionId: YB_PLUGIN_FUNCTION_ID.ID_CARD,
+    IP: DEFAULT_CARD_READER_HOST,
+    PORT: DEFAULT_CARD_READER_PORT,
+    TIMEOUT: 60,
+    LOG_PATH: 'C:/neu_log/',
+    SFZ_DRIVER_TYPE: DEFAULT_SFZ_DRIVER_TYPE,
+  });
+  const certno = (card.idNumber ?? '').trim().toUpperCase();
+  if (!certno) {
+    ElMessage.warning('身份证读卡未返回有效证件号');
     return null;
   }
+  const cardCipher = (card.signBuff ?? '').trim();
+  if (!cardCipher) {
+    ElMessage.warning(
+      '读身份证未返回卡密（SignBuff），市医保结算可能失败，建议改刷社保卡或扫医保码',
+    );
+  }
+  return {
+    mdtrtCertType: '02',
+    mdtrtCertNo: cardCipher || certno,
+    certno,
+    psnCertType: '01',
+  };
+}
+
+/** 读社保卡并组 1101 凭证。 */
+async function resolveSocialCardCredential(): Promise<{
+  credential: SocialCard1101Credential;
+  psnName?: string;
+} | null> {
   const card = await invokeSocialCardRead({
     FunctionId: YB_PLUGIN_FUNCTION_ID.SOCIAL_CARD,
     IP: DEFAULT_CARD_READER_HOST,
     PORT: DEFAULT_CARD_READER_PORT,
     TIMEOUT: 60,
     LOG_PATH: 'C:/neu_log/',
-    SFZ_DRIVER_TYPE: 0,
+    SFZ_DRIVER_TYPE: DEFAULT_SFZ_DRIVER_TYPE,
   });
   const credential = resolveSocialCard1101Credential(card);
-  const person = await httpGetInsurancePersonInfo({
-    cardSn: credential.cardSn,
-    certno: credential.certno,
-    contractId,
-    mdtrtCertType: credential.mdtrtCertType,
-    mdtrtCertNo: credential.mdtrtCertNo,
-    psnCertType: credential.psnCertType,
-  });
+  if (credential.mdtrtCertType === '03' && !(credential.cardSn ?? '').trim()) {
+    ElMessage.error('社保卡读卡缺少卡识别码，请重新读卡');
+    return null;
+  }
   return {
-    contractId,
-    insuplcAdmdvs: person.insuplcAdmdvs,
-    insutype: person.insutype,
-    psnNo: person.psnNo,
-    ybCardInfo: credential.mdtrtCertNo,
-    ybMediumType: credential.mdtrtCertType,
+    credential,
+    psnName: (card.psnName ?? '').trim() || undefined,
   };
 }
 
-/** 医保读卡校验（工具栏「医保校验」）。 */
+/** 扫医保码并组 1101 凭证。 */
+async function resolveEcVoucherCredential(): Promise<{
+  credential: SocialCard1101Credential;
+  insuplcAdmdvs?: string;
+  psnName?: string;
+} | null> {
+  const snapshot = await readYbEcVoucherSnapshot({ officeName: '住院结算' });
+  const credential = snapshot?.insuranceCredential;
+  if (!credential?.mdtrtCertNo) {
+    return null;
+  }
+  const psnName = (snapshot.patientName ?? '').trim();
+  if (credential.mdtrtCertType === '01' && (!(credential.certno ?? '').trim() || !psnName)) {
+    ElMessage.warning('医保码未返回身份证号或姓名，无法调用医保');
+    return null;
+  }
+  return {
+    credential,
+    insuplcAdmdvs: (snapshot.insuplcAdmdvs ?? '').trim() || undefined,
+    psnName: psnName || undefined,
+  };
+}
+
+/**
+ * 按选定介质读卡/扫码并 1101，返回预结算所需医保上下文；插件离线返回 null。
+ */
+export async function resolveInpatientSettleInsuranceContext(
+  contractId: string,
+  medium: InpatientSettleInsuranceMedium,
+): Promise<InpatientSettleInsuranceContext | null> {
+  if (!(await isYbPluginOnline())) {
+    return null;
+  }
+  try {
+    let credential: SocialCard1101Credential;
+    let psnName: string | undefined;
+    let issuingAdmdvs: string | undefined;
+    if (medium === 'yb-ec') {
+      const ec = await resolveEcVoucherCredential();
+      if (!ec) {
+        return null;
+      }
+      credential = ec.credential;
+      psnName = ec.psnName;
+      issuingAdmdvs = ec.insuplcAdmdvs;
+    } else if (medium === 'id') {
+      const idCard = await resolveIdCardCredential();
+      if (!idCard) {
+        return null;
+      }
+      credential = idCard;
+    } else {
+      const social = await resolveSocialCardCredential();
+      if (!social) {
+        return null;
+      }
+      credential = social.credential;
+      psnName = social.psnName;
+    }
+
+    const person = await httpGetInsurancePersonInfo({
+      cardSn: credential.cardSn,
+      certno: credential.certno,
+      contractId,
+      mdtrtCertType: credential.mdtrtCertType,
+      mdtrtCertNo: credential.mdtrtCertNo,
+      psnCertType: credential.psnCertType,
+      psnName,
+    });
+    const psnNo = String(person.psnNo ?? '').trim();
+    if (!psnNo) {
+      ElMessage.warning('读卡未返回人员编号，请重试或检查费用性质');
+      return null;
+    }
+    return {
+      contractId,
+      insuplcAdmdvs: person.insuplcAdmdvs || issuingAdmdvs,
+      insutype: person.insutype,
+      medium,
+      psnNo,
+      ybCardInfo: credential.mdtrtCertNo,
+      ybMediumType: credential.mdtrtCertType,
+    };
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : formatYbPluginError(error) || '医保读卡失败';
+    ElMessage.error(message);
+    return null;
+  }
+}
+
+/** 医保读卡校验（工具栏「医保校验」）：先选介质再读卡。 */
 export async function verifyInpatientInsuranceCard(contractId: string): Promise<void> {
   try {
-    const ctx = await resolveInpatientSettleInsuranceContext(contractId);
+    const medium = await chooseOutpatientChargeInsuranceMedium();
+    if (!medium) {
+      return;
+    }
+    const ctx = await resolveInpatientSettleInsuranceContext(contractId, medium);
     if (!ctx) {
-      ElMessage.warning('本机 OpenHIS.Win 未启动，无法进行医保读卡校验');
+      ElMessage.warning(
+        (await isYbPluginOnline())
+          ? outpatientChargeReadCredentialFailHint(medium)
+          : '本机 OpenHIS.Win 未启动，无法进行医保读卡校验',
+      );
       return;
     }
     ElMessage.success(`读卡成功，人员编号：${ctx.psnNo}`);

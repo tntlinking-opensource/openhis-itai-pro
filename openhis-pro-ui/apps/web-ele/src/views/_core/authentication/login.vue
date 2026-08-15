@@ -36,6 +36,30 @@ import { requireLoginScopeReady } from '#/utils/auth/require-login-scope-ready';
 
 defineOptions({ name: 'Login' });
 
+interface QuickLoginAccount {
+  label: string;
+  userName: string;
+  password: string;
+}
+
+/** 登录页快捷账号：拼音用户名，统一密码 123456 */
+const QUICK_LOGIN_ACCOUNTS: QuickLoginAccount[] = [
+  { label: '医生', userName: 'yisheng', password: '123456' },
+  { label: '住院医生', userName: 'zyyisheng', password: '123456' },
+  { label: '护士', userName: 'hushi', password: '123456' },
+  { label: '收费', userName: 'shoufei', password: '123456' },
+  { label: '药房', userName: 'yaofang', password: '123456' },
+  { label: '库管', userName: 'kuguan', password: '123456' },
+  { label: '财务', userName: 'caiwu', password: '123456' },
+];
+
+/**
+ * 开发辅助登录（admin 预填 + 快捷角色）：主线开发/打包、院点开发均开启；
+ * 仅院点生产打包（PROD + VITE_OPENHIS_PROJECT）关闭。
+ */
+const showDevLoginAids =
+  !import.meta.env.PROD || !String(import.meta.env.VITE_OPENHIS_PROJECT ?? '').trim();
+
 const authStore = useAuthStore();
 const accessStore = useAccessStore();
 const userStore = useUserStore();
@@ -137,6 +161,24 @@ async function applyDepartmentOutcome(
   showOrganizationList.value = true;
   departmentStepHint.value = outcome.message || LOGIN_DEPARTMENT_LOAD_FAILED_MESSAGE;
   ElMessage.error(departmentStepHint.value);
+}
+
+/** 点击快捷账号：回填表单并走与普通登录相同的提交流程 */
+async function handleQuickLogin(account: QuickLoginAccount) {
+  if (authStore.loginLoading) {
+    return;
+  }
+
+  const formApi = authenticationLoginRef.value?.getFormApi?.();
+  if (formApi) {
+    await formApi.setFieldValue('userName', account.userName);
+    await formApi.setFieldValue('password', account.password);
+  }
+
+  await handleLogin({
+    userName: account.userName,
+    password: account.password,
+  });
 }
 
 async function handleLogin(values: any) {
@@ -484,7 +526,11 @@ const formSchema = computed((): VbenFormSchema[] => {
       },
       fieldName: 'userName',
       label: $t('authentication.username'),
-      rules: z.string().min(1, { message: $t('authentication.usernameTip') }),
+      defaultValue: showDevLoginAids ? 'admin' : undefined,
+      // 院点生产无预填时值为 undefined，须配 required_error，否则 Zod 默认英文 Required
+      rules: z
+        .string({ required_error: $t('authentication.usernameTip') })
+        .min(1, { message: $t('authentication.usernameTip') }),
     },
     {
       component: 'VbenInputPassword',
@@ -493,7 +539,10 @@ const formSchema = computed((): VbenFormSchema[] => {
       },
       fieldName: 'password',
       label: $t('authentication.password'),
-      rules: z.string().min(1, { message: $t('authentication.passwordTip') }),
+      defaultValue: showDevLoginAids ? 'Admin@123456' : undefined,
+      rules: z
+        .string({ required_error: $t('authentication.passwordTip') })
+        .min(1, { message: $t('authentication.passwordTip') }),
     },
     // {
     //   component: markRaw(SliderCaptcha),
@@ -522,6 +571,19 @@ const formSchema = computed((): VbenFormSchema[] => {
         :loading="authStore.loginLoading"
         @submit="handleLogin"
       />
+
+      <div v-if="showDevLoginAids" class="mt-2 flex items-center justify-center gap-5">
+        <ElButton
+          v-for="account in QUICK_LOGIN_ACCOUNTS"
+          :key="account.userName"
+          :disabled="authStore.loginLoading"
+          link
+          type="primary"
+          @click="handleQuickLogin(account)"
+        >
+          {{ account.label }}
+        </ElButton>
+      </div>
     </div>
 
     <div v-else-if="showTenantList" class="mx-auto h-full w-full sm:max-w-3xl">

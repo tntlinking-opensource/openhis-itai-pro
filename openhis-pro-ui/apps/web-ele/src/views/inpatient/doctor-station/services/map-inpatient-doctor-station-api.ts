@@ -32,6 +32,7 @@ export function mapDoctorStationPatientQueueRow(
     bedId: toOptionalIdString(dto.bedId),
     bedName: dto.bedName,
     contractDisplay: dto.contractDisplay,
+    insutype: dto.insutype,
     diagnosisList: dto.diagnosisList,
     diagnosisSummary: dto.diagnosisSummary,
     encounterBusNo: dto.encounterBusNo,

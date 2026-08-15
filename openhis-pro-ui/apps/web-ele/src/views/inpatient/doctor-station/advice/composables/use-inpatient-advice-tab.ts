@@ -70,8 +70,12 @@ import {
 import {
   defaultContractSelection,
   defaultMedicationRateCode,
+  enrichFeeNatureOptionsWithCategory,
   firstTerminologyCode,
+  type FeeNatureOption,
 } from '../services/advice-format';
+import { getChargeTypeListApi } from '#/api/core/common';
+import type { AdviceListTimeSortOrder } from '../services/advice-list';
 import {
   flattenAdviceRowsForResourceOps,
   getAdviceStatusTagType,
@@ -86,6 +90,8 @@ import {
   productTableNameForAdviceRow,
   resourceKeyFromRow,
   rowLooksCancelStopLongTermEligible,
+  rowLooksStopChecked,
+  rowLooksStopped,
   rowLooksAppendSkinTestEligible,
   rowLooksDeletable,
   rowLooksDraft,
@@ -109,6 +115,16 @@ import { calcAdviceTotalFee } from './use-advice-drug-list';
 export interface UseInpatientAdviceTabProps {
   encounterId?: string;
   patientId?: string;
+  /**
+   * 外部强制只读（病案菜单非相关医生 / 归档后）。
+   * 与就诊态写门禁叠加：任一为 true 则禁用开立写操作。
+   */
+  forceWriteDisabled?: boolean;
+  /**
+   * 开立时间默认排序；病案首页临床侧栏传 `asc`（先开的在上）。
+   * 未传时医生站默认 `desc`。
+   */
+  defaultTimeSortOrder?: AdviceListTimeSortOrder;
 }
 
 /** 住院医生站「开立医嘱」页签：与门诊同构的独立实现，对接住院医嘱开立应用服务 */
@@ -117,19 +133,26 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
   const doctorPatientStore = useInpatientDoctorPatientStore();
   const ensureClinicalReception = inject(ENSURE_CLINICAL_RECEPTION_KEY, undefined);
 
-  /** 待结算/已结算/已离院：仅禁用开立医嘱写按钮（列表照常加载，写拦截由后端 EX-IP-ORD-107） */
-  const adviceWriteDisabled = computed(() =>
-    isEncounterClinicalOrderMutationBlocked(doctorPatientStore.selectedPatient?.statusEnum),
+  /** 待结算/已结算/已离院，或外部强制只读：仅禁用开立医嘱写按钮（列表照常加载） */
+  const adviceWriteDisabled = computed(
+    () =>
+      Boolean(props.forceWriteDisabled) ||
+      isEncounterClinicalOrderMutationBlocked(doctorPatientStore.selectedPatient?.statusEnum),
   );
 
   const medicationRateOptions = ref<TerminologyOptionDto[]>([]);
   const medicationRouteOptions = ref<TerminologyOptionDto[]>([]);
-  const feeNatureOptions = ref<TerminologyOptionDto[]>([]);
+  const medicationSpeedOptions = ref<TerminologyOptionDto[]>([]);
+  const feeNatureOptions = ref<FeeNatureOption[]>([]);
 
   const adviceTableRef = ref<InstanceType<typeof ElTable>>();
   const tableSelection = ref<AdviceRowItem[]>([]);
 
   const rows = ref<AdviceRowItem[]>([]);
+  /** 最近一次列表接口原始行，供表头切换时间排序时本地重排 */
+  const adviceListSourceDtos = ref<InpatientDoctorStationAdviceRowDto[]>([]);
+  /** 开立时间排序：医生站默认倒序；病案首页可传 defaultTimeSortOrder=asc */
+  const timeSortOrder = ref<AdviceListTimeSortOrder>(props.defaultTimeSortOrder ?? 'desc');
   /** 医嘱主表列表拉取中 */
   const adviceListLoading = ref(false);
   /** 保存 / 签发 / 撤回 / 删除 / 刷新 等写操作进行中（含紧随的列表刷新） */
@@ -614,11 +637,24 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
       })
       .filter(Boolean) as Array<{ productTableName: string; requestId: string }>;
     if (lines.length === 0) {
-      ElMessage.warning('请勾选至少一条可取消停嘱的长期医嘱');
+      // 已停嘱但护士已停嘱校对：须先退回停嘱校对，提示勿用笼统「无可取消停嘱」
+      const blockedByStopCheck = flatSel.filter(
+        (r) => rowLooksStopped(r) && rowLooksStopChecked(r),
+      );
+      if (blockedByStopCheck.length > 0) {
+        ElMessage.warning('所选医嘱已停嘱校对，请先由护士在医嘱校对中退回后再取消停嘱');
+        return;
+      }
+      ElMessage.warning('请勾选至少一条已停嘱且尚未停嘱校对的长期医嘱');
       return;
     }
     if (lines.length < flatSel.length) {
-      ElMessage.warning('已跳过不可取消停嘱行');
+      const skippedStopChecked = flatSel.some((r) => rowLooksStopped(r) && rowLooksStopChecked(r));
+      if (skippedStopChecked) {
+        ElMessage.warning('已跳过已停嘱校对行（须护士先退回停嘱校对）');
+      } else {
+        ElMessage.warning('已跳过不可取消停嘱行');
+      }
     }
     await withAdviceMutationLoading(async () => {
       try {
@@ -846,7 +882,7 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
       ElMessage.warning('请选择有效时间');
       return;
     }
-    // 开立/停嘱相对入院·出院·彼此交叉校验（仅前端提示）
+    // 开立：仅入院/出院；停嘱：入院/出院 + 须晚于开立（仅前端提示）
     const selected = doctorPatientStore.selectedPatient;
     const admissionTime = String(selected?.startTime ?? selected?.admissionTime ?? '').trim();
     const dischargeTime = String(selected?.endTime ?? '').trim();
@@ -859,8 +895,6 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
       const openedErr = validateChangeOpenedBusinessTime(newTime, {
         admissionTime,
         dischargeTime,
-        // 仅已停嘱的原始 stop_time；未停嘱不校开立↔停嘱
-        stopTime: String(editRow?.stopTimeRaw ?? '').trim() || undefined,
       });
       if (openedErr) {
         ElMessage.warning(openedErr);
@@ -906,6 +940,105 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
             : `${title}失败`;
         ElMessage.error(msg);
       }
+    });
+  };
+
+  /**
+   * 勾选中可批量改开立时间的目标行（requestId + 产品表）。
+   */
+  const resolveBatchOpenedBusinessTimeTargets = (): Array<{
+    productTableName: string;
+    requestId: string;
+  }> => {
+    const flatSel = flattenAdviceRowsForResourceOps(tableSelection.value);
+    return flatSel
+      .filter((r) => canEditOpenedBusinessTime(r))
+      .map((r) => {
+        const requestId = String(r.requestId ?? '').trim();
+        const productTableName = productTableNameForAdviceRow(r);
+        if (!requestId || !productTableName) {
+          return null;
+        }
+        return { requestId, productTableName };
+      })
+      .filter(Boolean) as Array<{ productTableName: string; requestId: string }>;
+  };
+
+  /**
+   * 批量改开立时间：勾选行统一写成同一时刻（IF-IP-DOR-26 逐行调用）。
+   * @param pickerValue DatePicker 值 YYYY-MM-DD HH:mm
+   */
+  const handleBatchChangeOpenedBusinessTime = async (pickerValue: string) => {
+    if (showEditor.value && editorDirty.value) {
+      ElMessage.warning('请先保存或关闭当前编辑卡片');
+      return;
+    }
+    const encounterId = props.encounterId?.trim() || '';
+    const patientId = props.patientId?.trim() || '';
+    if (!encounterId || !patientId) {
+      ElMessage.warning('缺少就诊或患者信息');
+      return;
+    }
+    const newTime = normalizeBusinessTimeInput(pickerValue);
+    if (!newTime) {
+      ElMessage.warning('请选择有效时间');
+      return;
+    }
+    const selectedPatient = doctorPatientStore.selectedPatient;
+    const admissionTime = String(
+      selectedPatient?.startTime ?? selectedPatient?.admissionTime ?? '',
+    ).trim();
+    const dischargeTime = String(selectedPatient?.endTime ?? '').trim();
+    const openedErr = validateChangeOpenedBusinessTime(newTime, {
+      admissionTime,
+      dischargeTime,
+    });
+    if (openedErr) {
+      ElMessage.warning(openedErr);
+      return;
+    }
+    const flatSel = flattenAdviceRowsForResourceOps(tableSelection.value);
+    const targets = resolveBatchOpenedBusinessTimeTargets();
+    if (targets.length === 0) {
+      ElMessage.warning('请勾选至少一条可改开立时间的医嘱');
+      return;
+    }
+    if (targets.length < flatSel.length) {
+      ElMessage.warning('已跳过不可改开立时间的行');
+    }
+    await withAdviceMutationLoading(async () => {
+      let failMsg = '';
+      // 后端无批量改时接口，同一 newTime 逐行提交
+      for (const line of targets) {
+        try {
+          const res = await httpChangeInpatientDoctorStationAdviceBusinessTime({
+            encounterId,
+            patientId,
+            requestId: line.requestId,
+            productTableName: line.productTableName,
+            timeKind: 'OPENED',
+            newTime,
+          });
+          if (res.success === false) {
+            failMsg = String(res.message || '').trim() || '改开立时间失败';
+            break;
+          }
+        } catch (error: unknown) {
+          failMsg =
+            error && typeof error === 'object' && 'message' in error
+              ? String((error as { message?: unknown }).message)
+              : '改开立时间失败';
+          break;
+        }
+      }
+      if (failMsg) {
+        ElMessage.error(failMsg);
+        await loadAdviceList();
+        return;
+      }
+      ElMessage.success(`已将 ${targets.length} 条医嘱开立时间改为同一时刻`);
+      clearAdviceTableSelection();
+      await loadAdviceList();
     });
   };
 
@@ -1120,11 +1253,26 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     void loadAdviceList();
   }
 
+  /** 按当前时间排序方向，用缓存的原始行重算列表 */
+  function applyAdviceListFromSource() {
+    rows.value = mergeMedicationAdviceRowsForListDisplay(
+      adviceListSourceDtos.value,
+      timeSortOrder.value,
+    );
+  }
+
+  /** 表头切换开立时间升序 / 倒序（仅两种状态） */
+  function toggleTimeSortOrder() {
+    timeSortOrder.value = timeSortOrder.value === 'desc' ? 'asc' : 'desc';
+    applyAdviceListFromSource();
+  }
+
   /** 选中就诊变化时拉取医嘱主表 */
   async function loadAdviceList() {
     const encounterId = props.encounterId?.trim() || '';
     const patientId = props.patientId?.trim() || '';
     if (!encounterId || !patientId) {
+      adviceListSourceDtos.value = [];
       rows.value = [];
       adviceListLoading.value = false;
       return;
@@ -1138,8 +1286,10 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
         ...(therapyTypeCode ? { therapyTypeCode } : {}),
       });
       const { content: list } = parsePagedRowsFromApiData<InpatientDoctorStationAdviceRowDto>(res);
-      rows.value = mergeMedicationAdviceRowsForListDisplay(list);
+      adviceListSourceDtos.value = list;
+      applyAdviceListFromSource();
     } catch {
+      adviceListSourceDtos.value = [];
       rows.value = [];
     } finally {
       adviceListLoading.value = false;
@@ -1153,17 +1303,26 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     if (!encounterId || !patientId) {
       medicationRateOptions.value = [];
       medicationRouteOptions.value = [];
+      medicationSpeedOptions.value = [];
       feeNatureOptions.value = [];
       return;
     }
     try {
-      const res = await httpInitInpatientDoctorStationAdvice({ encounterId, patientId });
+      const [res, chargeTypes] = await Promise.all([
+        httpInitInpatientDoctorStationAdvice({ encounterId, patientId }),
+        getChargeTypeListApi().catch(() => []),
+      ]);
       medicationRateOptions.value = res.medicationRateOptions ?? [];
       medicationRouteOptions.value = res.medicationRouteOptions ?? [];
-      feeNatureOptions.value = res.feeNatureOptions ?? [];
+      medicationSpeedOptions.value = res.medicationSpeedOptions ?? [];
+      feeNatureOptions.value = enrichFeeNatureOptionsWithCategory(
+        res.feeNatureOptions ?? [],
+        chargeTypes,
+      );
     } catch {
       medicationRateOptions.value = [];
       medicationRouteOptions.value = [];
+      medicationSpeedOptions.value = [];
       feeNatureOptions.value = [];
     }
   }
@@ -1198,6 +1357,7 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
         excludeMedicationCategoryCodes: [
           ...WESTERN_ADVICE_CATALOG_EXCLUDE_MEDICATION_CATEGORY_CODES,
         ],
+        positiveQuantityOnly: params.positiveQuantityOnly,
       });
       const { content: rawRows, totalCount } =
         parsePagedRowsFromApiData<InpatientDoctorStationAdviceCatalogRowDto>(res);
@@ -1485,9 +1645,11 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     const encounterId = props.encounterId?.trim() || '';
     const patientId = props.patientId?.trim() || '';
     if (!encounterId || !patientId) {
+      adviceListSourceDtos.value = [];
       rows.value = [];
       medicationRateOptions.value = [];
       medicationRouteOptions.value = [];
+      medicationSpeedOptions.value = [];
       feeNatureOptions.value = [];
       return;
     }
@@ -1513,11 +1675,18 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
 
   onMounted(() => {
     attachAdviceEscKeydown();
+    // 无 KeepAlive（如病案首页弹层）时 onActivated 不触发，须挂载即拉数
+    isTabActive.value = true;
+    void loadAdviceTabData();
   });
 
   onActivated(() => {
-    isTabActive.value = true;
     attachAdviceEscKeydown();
+    // KeepAlive 首次：onMounted 已拉过且 isTabActive 仍为 true，跳过避免双请求
+    if (isTabActive.value) {
+      return;
+    }
+    isTabActive.value = true;
     void loadAdviceTabData();
   });
 
@@ -1579,6 +1748,8 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     beginInlineBusinessTimeEdit,
     bindInlineBusinessTimePickerRef,
     confirmInlineBusinessTime,
+    handleBatchChangeOpenedBusinessTime,
+    resolveBatchOpenedBusinessTimeTargets,
     handleInlineBusinessTimeVisible,
     inlineBusinessTimeEdit,
     isInlineBusinessTimeEditing,
@@ -1588,6 +1759,7 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     medicationRateOptions,
     setListTherapyFilter,
     medicationRouteOptions,
+    medicationSpeedOptions,
     onAdviceSelectionChange,
     orderSelectExpandNonce,
     orderSelectFocusNonce,
@@ -1596,6 +1768,8 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     queryProductOptions,
     reload,
     showEditor,
+    timeSortOrder,
+    toggleTimeSortOrder,
     validateWesternRow,
   };
 }

@@ -1,4 +1,10 @@
-import type { PatientItem, PatientStatusFilter, RegionItem, WardItem } from './types';
+import type {
+  PatientAdmissionFilter,
+  PatientItem,
+  PatientStatusFilter,
+  RegionItem,
+  WardItem,
+} from './types';
 
 import { computed, ref } from 'vue';
 
@@ -19,6 +25,8 @@ import {
 } from './services/map-inpatient-nurse-station-api';
 
 const QUEUE_PAGE_SIZE = 50;
+/** 待入科就诊状态 code（与 DM-ADM-002 REGISTERED 一致） */
+const ENCOUNTER_STATUS_REGISTERED = 'REGISTERED';
 
 /** 护士站患者基础数据：病区树、队列接口、筛选与列表统计。 */
 export function useNurseStationPatientData() {
@@ -27,6 +35,8 @@ export function useNurseStationPatientData() {
   const patients = ref<PatientItem[]>([]);
   const keyword = ref('');
   const statusFilter = ref<PatientStatusFilter>('all');
+  /** 入科状态筛选（本地过滤；后端列表状态筛选已废止）。 */
+  const admissionFilter = ref<PatientAdmissionFilter>('all');
   const selectedRegionIds = ref<string[]>([]);
   const selectedWardIds = ref<string[]>([]);
   /** 病区/病房筛选区是否展开。 */
@@ -37,6 +47,10 @@ export function useNurseStationPatientData() {
     { label: '待校对', value: 'pending-audit' },
     { label: '待执行', value: 'pending-execute' },
     { label: '已处理', value: 'processed' },
+  ];
+  const admissionOptions: Array<{ label: string; value: PatientAdmissionFilter }> = [
+    { label: '全部', value: 'all' },
+    { label: '待入科', value: 'pending-admission' },
   ];
   const regionMap = computed(() => new Map(regionOptions.value.map((i) => [i.id, i.name])));
   /** 患者列表展示：病区 id 到名称的快速映射。 */
@@ -64,8 +78,13 @@ export function useNurseStationPatientData() {
   const filteredPatients = computed(() => {
     const regionIds = selectedRegionIds.value;
     const wardIds = selectedWardIds.value;
+    const onlyPendingAdmission = admissionFilter.value === 'pending-admission';
     return patients.value.filter((item) => {
       if (!item.regionId) {
+        return false;
+      }
+      // 待入科：仅保留 REGISTERED
+      if (onlyPendingAdmission && item.statusEnum !== ENCOUNTER_STATUS_REGISTERED) {
         return false;
       }
       const matchRegion = regionIds.length === 0 || regionIds.includes(item.regionId);
@@ -172,6 +191,11 @@ export function useNurseStationPatientData() {
     void loadPatientQueue();
   }
 
+  /** 入科状态筛选变更（本地过滤，不重拉队列）。 */
+  function changeAdmissionFilter(value: PatientAdmissionFilter) {
+    admissionFilter.value = value;
+  }
+
   /** 病区勾选变更。 */
   function changeRegionIds(value: string[]) {
     selectedRegionIds.value = value;
@@ -189,6 +213,7 @@ export function useNurseStationPatientData() {
   async function refreshPatientFilters() {
     keyword.value = '';
     statusFilter.value = 'all';
+    admissionFilter.value = 'all';
     await loadPatientQueue();
   }
 
@@ -199,7 +224,10 @@ export function useNurseStationPatientData() {
 
   /** 患者列表面板上下文中的数据与筛选动作。 */
   const patientListPanelDataContext = {
+    admissionFilter,
+    admissionOptions,
     availableWards,
+    changeAdmissionFilter,
     changeKeyword,
     changeRegionIds,
     changeStatusFilter,
@@ -222,9 +250,12 @@ export function useNurseStationPatientData() {
   };
 
   return {
+    admissionFilter,
+    admissionOptions,
     availableWards,
     bedMapWardIds,
     bootstrapPatientWorkbench,
+    changeAdmissionFilter,
     changeKeyword,
     changeRegionIds,
     changeStatusFilter,

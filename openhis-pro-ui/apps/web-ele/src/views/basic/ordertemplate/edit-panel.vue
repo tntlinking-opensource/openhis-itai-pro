@@ -200,6 +200,7 @@ const {
   formatLineProductText,
   formatLineKindText,
   formatLineDoseText,
+  displayMedicationDoseQty,
   formatLineRouteText,
   formatLineFrequencyText,
   formatLineDaysText,
@@ -1085,10 +1086,10 @@ onUnmounted(() => {
                     <div class="dose-num-with-unit">
                       <ElInputNumber
                         class="dose-qty-input"
-                        :model-value="row._doseConvertRatio ?? undefined"
+                        :model-value="displayMedicationDoseQty(row._doseConvertRatio)"
                         :disabled="isReadonly"
                         :min="0"
-                        :precision="2"
+                        :precision="3"
                         :controls="false"
                         @update:model-value="
                           (val) => handleLineDoseConvertRatioChange(row as DraftLine, val)

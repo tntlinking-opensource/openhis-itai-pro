@@ -65,6 +65,8 @@ const AUTO_ROLL_CANCEL_EXECUTE_REASON = '取消自动计费';
 const billDate = ref(dayjs().format('YYYY-MM-DD'));
 const configRows = ref<AutoRollConfigTableRow[]>([]);
 const nursingReadonly = ref<NurseStationAutoRollNursingReadonlyDto | null>(null);
+/** 计费人护士下拉 */
+const nurseOptions = ref<{ label: string; value: string }[]>([]);
 const configDialogVisible = ref(false);
 const editingRow = ref<AutoRollConfigTableRow | null>(null);
 const mutationLoading = ref(false);
@@ -110,6 +112,7 @@ async function loadAutoRollConfigs() {
   if (!props.canViewBilling || !props.patient) {
     configRows.value = [];
     nursingReadonly.value = null;
+    nurseOptions.value = [];
     clearPostedChargeCache();
     return;
   }
@@ -117,6 +120,7 @@ async function loadAutoRollConfigs() {
   if (!encounterId || !patientId) {
     configRows.value = [];
     nursingReadonly.value = null;
+    nurseOptions.value = [];
     clearPostedChargeCache();
     return;
   }
@@ -127,6 +131,14 @@ async function loadAutoRollConfigs() {
   });
   configRows.value = mapAutoRollConfigRows(res.configs);
   nursingReadonly.value = res.nursingLevelReadonly ?? null;
+  // 计费人下拉：value 须原样 string，禁止 Number
+  nurseOptions.value = (res.nurseOptions ?? [])
+    .map((opt) => {
+      const value = preserveApiIdForRequest(opt.value) ?? '';
+      const label = String(opt.label ?? '').trim() || value;
+      return { value, label };
+    })
+    .filter((opt) => opt.value.length > 0);
   clearPostedChargeCache();
 }
 
@@ -230,8 +242,10 @@ async function handleConfigSaved(payload: ConfigSavedPayload) {
       chargeDefinitionId,
       quantityValue: payload.form.quantityValue,
       remark: payload.form.remark || undefined,
+      businessTime: payload.form.businessTime,
+      billingPractitionerId: payload.form.billingPractitionerId,
     });
-    ElMessage.success('新增床位费配置成功');
+    ElMessage.success('新增自动计费配置成功');
   } else {
     const ruleId = preserveApiIdForRequest(payload.ruleId);
     if (!ruleId) {
@@ -246,8 +260,10 @@ async function handleConfigSaved(payload: ConfigSavedPayload) {
       chargeDefinitionId,
       quantityValue: payload.form.quantityValue,
       remark: payload.form.remark,
+      businessTime: payload.form.businessTime,
+      billingPractitionerId: payload.form.billingPractitionerId,
     });
-    ElMessage.success('更新床位费配置成功');
+    ElMessage.success('更新自动计费配置成功');
   }
 
   closeConfigDialog();
@@ -412,7 +428,7 @@ defineExpose({ reload });
 <template>
   <div class="auto-roll-panel flex min-h-0 flex-1 flex-col">
     <ElAlert
-      title="床位费由下方配置参与每日自动滚费；护理费取自医嘱校对。展开配置行可查看已滚费用，待结算记录可在此取消（不影响配置与次日滚费）。"
+      title="下方配置的诊疗项目参与每日自动滚费；护理费取自医嘱校对（不可在此配置）。展开配置行可查看已滚费用，待结算记录可在此取消（不影响配置与次日滚费）。"
       type="info"
       :closable="false"
       show-icon
@@ -427,7 +443,7 @@ defineExpose({ reload });
 
     <div class="billing-list-card flex min-h-0 flex-1 flex-col">
       <div class="billing-list-card__toolbar">
-        <span class="auto-roll-panel__section-title">床位费配置</span>
+        <span class="auto-roll-panel__section-title">自动计费配置</span>
         <div class="billing-list-card__actions">
           <ElButton :loading="tableLoading" @click="handleQuery">刷新</ElButton>
           <ElButton type="primary" :disabled="!canOperateBilling" @click="openCreateDialog">
@@ -521,6 +537,20 @@ defineExpose({ reload });
         <ElTableColumn prop="activityName" label="项目名称" min-width="160" show-overflow-tooltip />
         <ElTableColumn prop="quantityValue" label="数量" width="72" align="center" />
         <ElTableColumn
+          prop="businessTime"
+          label="业务时间"
+          width="100"
+          align="center"
+          show-overflow-tooltip
+        />
+        <ElTableColumn
+          prop="billingPractitionerName"
+          label="计费人"
+          min-width="96"
+          align="center"
+          show-overflow-tooltip
+        />
+        <ElTableColumn
           prop="unitPrice"
           label="价格"
           min-width="96"
@@ -572,6 +602,7 @@ defineExpose({ reload });
       v-model:visible="configDialogVisible"
       :can-operate="canOperateBilling"
       :edit-row="editingRow"
+      :nurse-options="nurseOptions"
       :patient="patient"
       :saving="dialogSaving"
       @closed="closeConfigDialog"

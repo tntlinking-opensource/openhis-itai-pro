@@ -5,6 +5,7 @@ import type {
   OpInsurancePreSettleGroupDto,
   PreSettleChargeLinePreviewDto,
 } from '#/api/outpatient-charge/outpatient-charge.types';
+import type { RefundChannelDisplayItem } from '#/utils/payment/payment-channel-options';
 
 import { computed, ref, watch } from 'vue';
 
@@ -46,6 +47,10 @@ const props = withDefaults(
     displayAmount?: number | string;
     /** 医保个人账户支付前余额（1101 balc；无医保时不传） */
     insuranceAccountBalance?: null | number | string;
+    /**
+     * 公务员标志（2206 cvlserv_flag；0/1；仅展示）
+     */
+    insuranceCvlservFlag?: null | string;
     insuranceBreakdownItems?: InsuranceBreakdownItem[];
     /** 多账户混合结算时的医保分组（仅多 account 时展示） */
     insuranceGroups?: OpInsurancePreSettleGroupDto[];
@@ -60,8 +65,12 @@ const props = withDefaults(
     receivableAmountLabel?: string;
     /** 是否展示银联被扫区（Whale 模块 + Win native 就绪） */
     scanPayEnabled?: boolean;
+    /** 半成功锁定：禁止改付款码/支付方式，仅允许补结算 */
+    scanInputLocked?: boolean;
     /** 扫码状态提示（父组件写入） */
     scanStatusText?: string;
+    /** 退费原路渠道行（showPayChannel=false 时展示） */
+    refundChannelItems?: RefundChannelDisplayItem[];
     selectedChargeCount?: number;
     /** 是否展示支付方式选择（退费原路返回时为 false） */
     showPayChannel?: boolean;
@@ -72,6 +81,7 @@ const props = withDefaults(
     dialogTitle: '确认收费',
     displayAmount: 0,
     insuranceAccountBalance: undefined,
+    insuranceCvlservFlag: undefined,
     insuranceBreakdownItems: () => [],
     insuranceGroups: () => [],
     loading: false,
@@ -80,7 +90,9 @@ const props = withDefaults(
     primaryButtonText: '确认收费',
     projectTableTitle: '收费项目',
     receivableAmountLabel: '应收金额',
+    refundChannelItems: () => [],
     scanPayEnabled: false,
+    scanInputLocked: false,
     scanStatusText: '',
     selectedChargeCount: 0,
     showPayChannel: true,
@@ -114,7 +126,8 @@ const zeroPayHint = computed(() => {
 });
 
 watch(visible, (open) => {
-  if (open) {
+  // 半成功补结算时保留状态，勿清空付款码区提示所需上下文
+  if (open && !props.scanInputLocked) {
     scanCode.value = '';
   }
 });
@@ -182,7 +195,7 @@ const insuranceGroupColumns: TableColumn[] = [
   },
   {
     prop: 'fundPaySumamt',
-    label: '统筹',
+    label: '基金',
     width: 88,
     align: 'right',
     headerAlign: 'center',
@@ -280,10 +293,17 @@ const feeDetailDisplayRows = computed(() => {
   }
   const rows: { key: string; label: string; value: number }[] = [];
   for (const def of OUTPATIENT_CHARGE_FEE_DETAIL_FIELD_DEFS) {
+    const value = map.get(def.key) ?? 0;
+    // 常显：基金合计 / 现金 / 最终应收；其余仅非零展示，避免与「统筹」重复空行干扰
+    const alwaysShow =
+      def.key === 'fundPay' || def.key === 'cashPay' || def.key === 'finalReceivable';
+    if (!alwaysShow && Math.abs(Number(value)) < 0.000001) {
+      continue;
+    }
     rows.push({
       key: def.key,
       label: def.label,
-      value: map.get(def.key) ?? 0,
+      value,
     });
   }
   return rows;
@@ -299,12 +319,37 @@ const showInsuranceAccountBalance = computed(() => {
   return Number.isFinite(Number(value));
 });
 
+/** 公务员标志是否有可展示值（0/1 或平台原文） */
+const showInsuranceCvlservFlag = computed(() => {
+  const value = String(props.insuranceCvlservFlag ?? '').trim();
+  return value.length > 0;
+});
+
+/** 账户信息区是否展示（余额或公务员任一有值） */
+const showAccountInfoCard = computed(
+  () => showInsuranceAccountBalance.value || showInsuranceCvlservFlag.value,
+);
+
 const insuranceAccountBalanceDisplay = computed(() => {
   if (!showInsuranceAccountBalance.value) {
     return '—';
   }
   return `¥${formatMoney(props.insuranceAccountBalance)}`;
 });
+
+/**
+ * 公务员标志展示文案（对齐挂号待遇区：0→否 / 1→是）
+ */
+function formatCvlservFlagDisplay(flag?: null | string) {
+  const value = String(flag ?? '').trim();
+  if (value === '1') {
+    return '是';
+  }
+  if (value === '0') {
+    return '否';
+  }
+  return value || '—';
+}
 
 /** 费用明细金额是否非零（用于高亮有实际发生额的项） */
 function isNonZeroFeeAmount(value: number) {
@@ -351,12 +396,16 @@ const handleCancel = () => {
 
         <!-- 右上：账户信息 + 结算操作 -->
         <div class="copy-right-stack">
-          <div v-if="showInsuranceAccountBalance" class="copy-card copy-account-card">
+          <div v-if="showAccountInfoCard" class="copy-card copy-account-card">
             <SectionTitle class="mb-2" title="账户信息" />
             <div class="copy-summary">
-              <div class="copy-summary-item is-balc">
+              <div v-if="showInsuranceAccountBalance" class="copy-summary-item is-balc">
                 <span>医保余额（支付前）</span>
                 <strong>{{ insuranceAccountBalanceDisplay }}</strong>
+              </div>
+              <div v-if="showInsuranceCvlservFlag" class="copy-summary-item">
+                <span>公务员待遇</span>
+                <strong>{{ formatCvlservFlagDisplay(props.insuranceCvlservFlag) }}</strong>
               </div>
             </div>
           </div>
@@ -392,7 +441,11 @@ const handleCancel = () => {
 
             <div v-if="showPayChannelSection" class="copy-section">
               <div class="copy-section-title">支付方式</div>
-              <ElRadioGroup v-model="payChannelCode" class="copy-pay-group">
+              <ElRadioGroup
+                v-model="payChannelCode"
+                class="copy-pay-group"
+                :disabled="props.scanInputLocked"
+              >
                 <ElRadioButton v-for="opt in payChannelOptions" :key="opt.value" :value="opt.value">
                   {{ opt.label }}
                 </ElRadioButton>
@@ -403,8 +456,28 @@ const handleCancel = () => {
               <p class="copy-refund-hint">{{ zeroPayHint }}</p>
             </div>
             <div v-else class="copy-section">
-              <div class="copy-section-title">退款路径</div>
-              <p class="copy-refund-hint">按原支付渠道原路返回，无需选择支付方式。</p>
+              <div class="copy-section-title">退费确认</div>
+              <div class="copy-refund-confirm">
+                <div class="copy-refund-confirm__row is-amount">
+                  <span>退费金额</span>
+                  <strong>¥{{ formatMoney(receivableAmount) }}</strong>
+                </div>
+                <div class="copy-refund-confirm__channels">
+                  <div class="copy-refund-confirm__channels-title">退费渠道（原路返回）</div>
+                  <template v-if="props.refundChannelItems.length > 0">
+                    <div
+                      v-for="(item, idx) in props.refundChannelItems"
+                      :key="`${item.label}-${idx}`"
+                      class="copy-refund-confirm__channel-row"
+                    >
+                      <span>{{ item.label }}</span>
+                      <strong v-if="item.amount != null">¥{{ formatMoney(item.amount) }}</strong>
+                      <strong v-else>原路返回</strong>
+                    </div>
+                  </template>
+                  <p v-else class="copy-refund-hint">按原支付渠道原路返回，无需选择支付方式。</p>
+                </div>
+              </div>
             </div>
 
             <div v-if="showScanPaySection" class="copy-section">
@@ -414,12 +487,22 @@ const handleCancel = () => {
                 <ElInput
                   v-model="scanCode"
                   class="copy-input-number"
-                  placeholder="请扫码或输入付款码"
-                  clearable
+                  :placeholder="
+                    props.scanInputLocked
+                      ? '银联已扣款，请直接确认收费补结算'
+                      : '请扫码或输入付款码'
+                  "
+                  :disabled="props.scanInputLocked"
+                  :clearable="!props.scanInputLocked"
                   @keyup.enter="emit('confirmCharge')"
                 />
               </div>
-              <p v-if="props.scanStatusText" class="copy-scan-status">{{ props.scanStatusText }}</p>
+              <p v-if="props.scanInputLocked" class="copy-scan-status">
+                银联已扣款成功：请点「确认收费」补结算，勿重复扫码
+              </p>
+              <p v-else-if="props.scanStatusText" class="copy-scan-status">
+                {{ props.scanStatusText }}
+              </p>
             </div>
           </div>
         </div>
@@ -610,6 +693,55 @@ const handleCancel = () => {
   color: #64748b;
   font-size: 13px;
   line-height: 1.5;
+}
+
+.copy-refund-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.copy-refund-confirm__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: #475569;
+  font-size: 13px;
+}
+
+.copy-refund-confirm__row.is-amount strong {
+  color: #ea580c;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.copy-refund-confirm__channels {
+  border-radius: 6px;
+  background: #f8fafc;
+  padding: 10px 12px;
+}
+
+.copy-refund-confirm__channels-title {
+  margin-bottom: 8px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.copy-refund-confirm__channel-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.copy-refund-confirm__channel-row strong {
+  font-weight: 600;
 }
 
 .copy-insurance-list :deep(.el-descriptions__label) {

@@ -2,6 +2,7 @@ import type {
   NurseStationPricedOrderRowDto,
   NurseStationPricingCancelItemDto,
   NurseStationPricingCatalogRowDto,
+  NurseStationPricingCatalogUnitBandDto,
   NurseStationPricingParentRequestAnchorDto,
   NurseStationPricingPatientGroupDto,
   NurseStationPricingWriteItemDto,
@@ -44,7 +45,21 @@ export const PRICING_PRODUCT_TABLE_SERVICE = 'wkf_activity_definition';
 /** 目录未返回计价单位 code 时的临时占位（联调兜底，待目录接口补齐后移除）。 */
 export const PRICING_CATALOG_FALLBACK_UNIT_CODE = 'U';
 
+/** 划价单位槽：拆零 */
+export const PRICING_BAND_KIND_SPLIT = 'SPLIT';
+
+/** 划价单位槽：包装 */
+export const PRICING_BAND_KIND_PACKAGE = 'PACKAGE';
+
 export type PricingCatalogCategory = 'device' | 'service';
+
+/** 已选划价行可选单位（拆零/包装） */
+export interface PricingUnitBandSelectOption {
+  bandKind: string;
+  unitCode: string;
+  unitName: string;
+  unitPrice: number;
+}
 
 export type OrderBillingCategory = 'all' | 'long' | 'temp';
 
@@ -125,6 +140,27 @@ export function normalizePricingCatalogRow(
     unitPriceRaw === undefined || unitPriceRaw === null
       ? row.unitPrice
       : (unitPriceRaw as number | string);
+  const inventoryItemId = preserveApiIdForRequest(
+    readCatalogField(row, 'inventoryItemId', 'inventory_item_id'),
+  );
+  const lotNumber =
+    String(readCatalogField(row, 'lotNumber', 'lot_number') ?? row.lotNumber ?? '').trim() ||
+    undefined;
+  const remainingQuantityRaw = readCatalogField(row, 'remainingQuantity', 'remaining_quantity');
+  const remainingQuantity =
+    remainingQuantityRaw === undefined || remainingQuantityRaw === null
+      ? row.remainingQuantity
+      : (remainingQuantityRaw as number | string);
+  const availableQuantityText =
+    String(
+      readCatalogField(row, 'availableQuantityText', 'available_quantity_text') ??
+        row.availableQuantityText ??
+        '',
+    ).trim() || undefined;
+  const expirationDate =
+    String(
+      readCatalogField(row, 'expirationDate', 'expiration_date') ?? row.expirationDate ?? '',
+    ).trim() || undefined;
 
   return {
     ...row,
@@ -138,6 +174,11 @@ export function normalizePricingCatalogRow(
     defaultDispenseLocationId,
     defaultDispenseLocationName,
     unitPrice,
+    inventoryItemId,
+    lotNumber,
+    remainingQuantity,
+    availableQuantityText,
+    expirationDate,
     busNo: String(readCatalogField(row, 'busNo', 'bus_no') ?? row.busNo ?? '').trim() || undefined,
     name: String(readCatalogField(row, 'name') ?? row.name ?? '').trim() || undefined,
     unitName:
@@ -181,6 +222,196 @@ export function resolvePricingCatalogUnitCode(row: NurseStationPricingCatalogRow
   return PRICING_CATALOG_FALLBACK_UNIT_CODE;
 }
 
+/** 规范化 bandKind 为大写。 */
+function normalizePricingBandKind(kind?: string): string {
+  return String(kind ?? '')
+    .trim()
+    .toUpperCase();
+}
+
+/** 按 bandKind 查找单位槽。 */
+function findPricingUnitBand(
+  bands: NurseStationPricingCatalogRowDto['unitBands'],
+  bandKind: string,
+): NurseStationPricingCatalogUnitBandDto | undefined {
+  const key = normalizePricingBandKind(bandKind);
+  if (!key) {
+    return undefined;
+  }
+  return (bands ?? []).find((band) => normalizePricingBandKind(band.bandKind) === key);
+}
+
+/**
+ * 耗材默认划价单位槽：优先 SPLIT；无拆零则 PACKAGE；再回落首个有 unitCode 的槽。
+ * 诊疗仅 PACKAGE。
+ */
+export function resolvePricingDefaultBandKind(
+  row: NurseStationPricingCatalogRowDto,
+  categoryHint?: PricingCatalogCategory,
+): string {
+  if (!isPricingDeviceCatalogRow(row, categoryHint)) {
+    return PRICING_BAND_KIND_PACKAGE;
+  }
+  const split = findPricingUnitBand(row.unitBands, PRICING_BAND_KIND_SPLIT);
+  if (split && String(split.unitCode ?? '').trim()) {
+    return PRICING_BAND_KIND_SPLIT;
+  }
+  const pkg = findPricingUnitBand(row.unitBands, PRICING_BAND_KIND_PACKAGE);
+  if (pkg && String(pkg.unitCode ?? '').trim()) {
+    return PRICING_BAND_KIND_PACKAGE;
+  }
+  const first = (row.unitBands ?? []).find((band) => String(band.unitCode ?? '').trim());
+  return normalizePricingBandKind(first?.bandKind) || PRICING_BAND_KIND_PACKAGE;
+}
+
+/**
+ * 列出可切换划价单位（仅包装/拆零；同 unitCode 去重）。
+ * 单价取槽上 unitPrice（后端已按包装锚线性写入，禁止前端再 ÷ratio）。
+ */
+export function listPricingUnitBandSelectOptions(
+  row: NurseStationPricingCatalogRowDto,
+): PricingUnitBandSelectOption[] {
+  const preferredKinds = [PRICING_BAND_KIND_SPLIT, PRICING_BAND_KIND_PACKAGE];
+  const seenCodes = new Set<string>();
+  const options: PricingUnitBandSelectOption[] = [];
+  // 仅收集拆零/包装两槽，供已选清单切换
+  for (const kind of preferredKinds) {
+    const band = findPricingUnitBand(row.unitBands, kind);
+    if (!band) {
+      continue;
+    }
+    const unitCode = String(band.unitCode ?? '').trim();
+    if (!unitCode || seenCodes.has(unitCode)) {
+      continue;
+    }
+    const unitPrice = Number(band.unitPrice);
+    if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
+      continue;
+    }
+    seenCodes.add(unitCode);
+    options.push({
+      bandKind: kind,
+      unitCode,
+      unitName: String(band.unitName ?? '').trim() || unitCode,
+      unitPrice,
+    });
+  }
+  return options;
+}
+
+/**
+ * 解析已选 band 下单价：优先槽 unitPrice（须有效正数）；否则回落行头 unitPrice。
+ * <p>注意：{@code Number(null)===0}，不可把空槽价当成 0 元展示。</p>
+ */
+export function resolvePricingDisplayUnitPrice(
+  row: NurseStationPricingCatalogRowDto,
+  bandKind?: string,
+): number {
+  const kind = normalizePricingBandKind(bandKind) || resolvePricingDefaultBandKind(row);
+  const band = findPricingUnitBand(row.unitBands, kind);
+  const rawBandPrice = band?.unitPrice;
+  // 槽价未装配（null/空）时不得 Number(null)→0，须回落行头包装锚价
+  if (rawBandPrice !== undefined && rawBandPrice !== null && String(rawBandPrice).trim() !== '') {
+    const bandPrice = Number(rawBandPrice);
+    if (Number.isFinite(bandPrice) && bandPrice > 0) {
+      return bandPrice;
+    }
+  }
+  const header = Number(row.unitPrice ?? 0);
+  return Number.isFinite(header) && header > 0 ? header : 0;
+}
+
+/** 解析已选 band 下 unitCode。 */
+export function resolvePricingDisplayUnitCode(
+  row: NurseStationPricingCatalogRowDto,
+  bandKind?: string,
+): string {
+  const kind = normalizePricingBandKind(bandKind) || resolvePricingDefaultBandKind(row);
+  const band = findPricingUnitBand(row.unitBands, kind);
+  const bandCode = String(band?.unitCode ?? '').trim();
+  if (bandCode) {
+    return bandCode;
+  }
+  return resolvePricingCatalogUnitCode(row);
+}
+
+/** 解析已选 band 下单位展示名。 */
+export function resolvePricingDisplayUnitName(
+  row: NurseStationPricingCatalogRowDto,
+  bandKind?: string,
+): string {
+  const kind = normalizePricingBandKind(bandKind) || resolvePricingDefaultBandKind(row);
+  const band = findPricingUnitBand(row.unitBands, kind);
+  const bandName = String(band?.unitName ?? '').trim();
+  if (bandName) {
+    return bandName;
+  }
+  return String(row.unitName ?? '').trim() || resolvePricingDisplayUnitCode(row, kind);
+}
+
+/**
+ * 在包装/拆零之间换算数量（ratioToSplit 相对拆零）。
+ * 缺 ratio 时原样返回，避免误改数量。
+ */
+export function convertPricingQtyBetweenBandKinds(
+  quantity: number,
+  fromBandKind: string,
+  toBandKind: string,
+  row: NurseStationPricingCatalogRowDto,
+): number {
+  const fromKind = normalizePricingBandKind(fromBandKind);
+  const toKind = normalizePricingBandKind(toBandKind);
+  if (!fromKind || !toKind || fromKind === toKind) {
+    return quantity;
+  }
+  const fromBand = findPricingUnitBand(row.unitBands, fromKind);
+  const toBand = findPricingUnitBand(row.unitBands, toKind);
+  const fromRatio = Number(fromBand?.ratioToSplit);
+  const toRatio = Number(toBand?.ratioToSplit);
+  if (!Number.isFinite(fromRatio) || fromRatio <= 0 || !Number.isFinite(toRatio) || toRatio <= 0) {
+    return quantity;
+  }
+  // 展示量 → 拆零 → 目标单位
+  const splitQty = quantity * fromRatio;
+  const converted = splitQty / toRatio;
+  if (!Number.isFinite(converted) || converted <= 0) {
+    return 1;
+  }
+  return Math.max(1, Math.round(converted * 1000) / 1000);
+}
+
+/** 目录行剩余数量展示：优先文案，其次拆零净量数字。 */
+export function formatPricingCatalogRemainingQty(row: NurseStationPricingCatalogRowDto): string {
+  const text = String(row.availableQuantityText ?? '').trim();
+  if (text) {
+    return text;
+  }
+  if (row.remainingQuantity === undefined || row.remainingQuantity === null) {
+    return '—';
+  }
+  const n = Number(row.remainingQuantity);
+  if (!Number.isFinite(n)) {
+    return String(row.remainingQuantity);
+  }
+  return String(n);
+}
+
+/**
+ * 目录行单价+单位拼接展示（如「2.90/支」；单位已并入剩余数量时不再单独列）。
+ */
+export function formatPricingCatalogUnitPriceWithUnit(
+  row: NurseStationPricingCatalogRowDto,
+  categoryHint?: PricingCatalogCategory,
+): string {
+  const bandKind = resolvePricingDefaultBandKind(row, categoryHint);
+  const priceText = formatMoneyDisplay(resolvePricingDisplayUnitPrice(row, bandKind));
+  const unitText = String(resolvePricingDisplayUnitName(row, bandKind) ?? '').trim();
+  if (!unitText) {
+    return priceText;
+  }
+  return `${priceText}/${unitText}`;
+}
+
 /** 日期区间 → 划价时间查询边界（LocalDateTime 字符串） */
 export function mapPricingDateRangeToQuery(range: string[]): {
   pricedTimeFrom?: string;
@@ -199,13 +430,22 @@ export function mapPricingDateRangeToQuery(range: string[]): {
   };
 }
 
-/** 目录行稳定键（用于已选清单去重） */
+/** 目录行稳定键（品×批号/库存项去重） */
 export function buildPricingCatalogRowKey(
   row: NurseStationPricingCatalogRowDto,
   categoryHint?: PricingCatalogCategory,
 ): string {
   const tableName = resolvePricingCatalogProductTableName(row, categoryHint);
   const definitionId = preserveApiIdForRequest(row.productDefinitionId) ?? '';
+  const inventoryItemId = preserveApiIdForRequest(row.inventoryItemId) ?? '';
+  const lotNumber = String(row.lotNumber ?? '').trim();
+  // 耗材批号行：库存项优先，其次批号；诊疗/无批号品级行仅用定义键
+  if (inventoryItemId) {
+    return `${tableName}:${definitionId}:${inventoryItemId}`;
+  }
+  if (lotNumber) {
+    return `${tableName}:${definitionId}:lot:${lotNumber}`;
+  }
   return `${tableName}:${definitionId}`;
 }
 
@@ -695,7 +935,10 @@ export function mapPricingTableRowToCancelItem(
   };
 }
 
-/** 已选表格行 → 取消划价 items（去重、保序） */
+/**
+ * 已选表格行 → 冲销 / 改划价时间 items（去重、保序）。
+ * 改时与冲销行键同构，复用本映射即可。
+ */
 export function mapSelectedPricingRowsToCancelItems(
   rows: PricingConfirmationTableRow[],
   selectedRowIds: Set<string>,
@@ -745,6 +988,10 @@ interface BuildDirectPricingWriteItemOptions {
   quantity: number;
   performLocation?: string;
   categoryHint?: PricingCatalogCategory;
+  /** 已选单位槽（耗材默认 SPLIT） */
+  selectedBandKind?: string;
+  /** 已选单位下展示单价（与 unitCode 同口径） */
+  displayUnitPrice?: number;
 }
 
 /** 收集直接划价写行缺失字段（中文标签，供提交前提示）。 */
@@ -777,7 +1024,9 @@ export function listDirectPricingWriteItemMissingFields(
   if (!preserveApiIdForRequest(catalogRow.chargeItemDefinitionId)) {
     missing.push('定价定义ID');
   }
-  if (!resolvePricingCatalogUnitCode(catalogRow)) {
+  const bandKind =
+    options.selectedBandKind || resolvePricingDefaultBandKind(catalogRow, categoryHint);
+  if (!resolvePricingDisplayUnitCode(catalogRow, bandKind)) {
     missing.push('计价单位');
   }
 
@@ -810,8 +1059,13 @@ export function buildDirectPricingWriteItem(
   const productTableName = resolvePricingCatalogProductTableName(catalogRow, categoryHint);
   const productDefinitionId = preserveApiIdForRequest(catalogRow.productDefinitionId);
   const chargeItemDefinitionId = preserveApiIdForRequest(catalogRow.chargeItemDefinitionId);
-  const unitCode = resolvePricingCatalogUnitCode(catalogRow);
-  const unitPriceRaw = catalogRow.unitPrice ?? 0;
+  const bandKind =
+    options.selectedBandKind || resolvePricingDefaultBandKind(catalogRow, categoryHint);
+  const unitCode = resolvePricingDisplayUnitCode(catalogRow, bandKind);
+  const unitPriceRaw =
+    options.displayUnitPrice !== undefined
+      ? options.displayUnitPrice
+      : resolvePricingDisplayUnitPrice(catalogRow, bandKind);
 
   const isDevice = isPricingDeviceCatalogRow(catalogRow, categoryHint);
   const activityId = preserveApiIdForRequest(catalogRow.activityId);
@@ -821,6 +1075,7 @@ export function buildDirectPricingWriteItem(
     performLocation,
     categoryHint,
   );
+  const lotNumber = String(catalogRow.lotNumber ?? '').trim() || undefined;
 
   if (
     !productTableName ||
@@ -849,6 +1104,7 @@ export function buildDirectPricingWriteItem(
     unitPrice: String(unitPriceRaw),
     totalPrice: String(totalPrice),
     performLocation: isDevice ? performLocationId : undefined,
+    lotNumber: isDevice ? lotNumber : undefined,
   };
 }
 

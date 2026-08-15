@@ -100,10 +100,18 @@ export function formatSummaryPatientDispenseLineText(
   return `${name} ${quantity}`;
 }
 
-/** 合并 Supply 行 → 追溯码弹窗扁平行（汇总路径不关联患者发放行） */
+/**
+ * 合并 Supply 行 → 追溯码弹窗扁平行（汇总路径不关联患者发放行）。
+ * 字段口径与门诊/住院患者发药 slip 映射对齐，供同一 TraceScanDialog 使用。
+ *
+ * @param lines 合并展示行
+ * @param purposeLocationId 汇总单头发放药房（行上无库房时写入 dispenseLocationId）
+ */
 export function mapSummaryMergedLinesToTraceLines(
   lines: SummaryMergedLineDisplayRow[],
+  purposeLocationId?: null | string,
 ): DispensePrescriptionItemRow[] {
+  const locationId = preserveApiIdForRequest(purposeLocationId) ?? '';
   return lines.map((line, index) => {
     const id = preserveApiIdForRequest(line.supplyRequestId) ?? `summary-merged-${index}`;
     const name = String(line.medicationName ?? '').trim();
@@ -118,6 +126,7 @@ export function mapSummaryMergedLinesToTraceLines(
     const quantityValue = parseOptionalPositiveNumber(line.itemQuantity);
     return {
       id,
+      // 与门诊 map-api 同：string 化药品 id，避免锁定行品项比对失败
       medicationId: preserveApiIdForRequest(line.itemId) || undefined,
       itemName,
       quantity: formatSummaryMergedLineQuantity(line),
@@ -126,18 +135,21 @@ export function mapSummaryMergedLinesToTraceLines(
       packageUnitCode: String(line.packageUnitCode ?? '').trim() || undefined,
       packageUnitRatio: parseOptionalPositiveNumber(line.packageUnitRatio),
       splitUnitCode: String(line.splitUnitCode ?? '').trim() || undefined,
-      // 主档贴码快照：待扫个数换算真源
+      // 主档贴码快照：待扫个数换算真源 + 扫码弹窗展示
       traceUnitCode: String(line.traceUnitCode ?? '').trim() || undefined,
+      traceUnitCodeText: String(line.traceUnitCodeText ?? '').trim() || undefined,
       traceUnitRatio: parseOptionalPositiveNumber(line.traceUnitRatio),
       lotHasTraceMaster: line.lotHasTraceMaster === true,
       spec,
-      traceCode: String(line.traceNo ?? '').trim(),
+      traceCode: String(line.traceNo ?? '').trim() || '—',
       batchNo,
       amount:
         line.totalPrice != null && line.totalPrice !== ''
           ? formatMoneyDisplay(line.totalPrice)
           : '—',
       pharmacy: String(line.purposeLocationName ?? '').trim() || '—',
+      // 与门诊 dispenseLocationId 同构，供库取/全院回落
+      dispenseLocationId: locationId || undefined,
       factory: String(line.manufacturerName ?? '').trim() || '—',
       diagnosis: '—',
       freq: '—',

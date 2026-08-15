@@ -150,16 +150,24 @@ export interface PreSettleInpatientChargesRequest {
 
 /** 住院预结算响应 */
 export interface PreSettleInpatientChargesResponse {
+  /** 渠道实付/少补（预交金充足时为 0） */
   displayAmount?: null | number | string;
   insurancePreSettled?: boolean;
   paymentDraftId: string;
+  /** 库内预交金余额（冲抵口径） */
+  prepayNetBalance?: null | number | string;
   previewText?: string;
   receivableTotal: number | string;
   settlementComposition?: string;
   settleMode?: string;
   ybAcctPay?: null | number | string;
+  ybActPayDedc?: null | number | string;
+  ybCvlservFlag?: null | string;
+  ybCvlservPay?: null | number | string;
   ybFundPaySumamt?: null | number | string;
+  ybHifpPay?: null | number | string;
   ybMedfeeSumamt?: null | number | string;
+  ybOthPay?: null | number | string;
   ybPreSettleId?: string;
   ybPsnCashPay?: null | number | string;
 }
@@ -196,6 +204,8 @@ export interface ConfirmInpatientSettleResponse {
 
 /** 已结算/反结历史支付单摘要（IF-IP-STL-07 增量） */
 export interface SettledPaymentBriefDto {
+  /** 是否已关联医保正式结算回执 */
+  insuranceSettled?: boolean;
   payMethodText?: string;
   paymentId: string;
   /** 支付业务单号（fin_payment_reconciliation.payment_no） */
@@ -217,6 +227,14 @@ export interface SettledPaymentBriefDto {
   settleTime: string;
   /** PaymentStatus code，如 SUCCESS / REFUNDED */
   statusEnum?: string;
+  ybAcctPay?: null | number | string;
+  ybActPayDedc?: null | number | string;
+  ybCvlservPay?: null | number | string;
+  ybFundPaySumamt?: null | number | string;
+  ybHifpPay?: null | number | string;
+  ybMedfeeSumamt?: null | number | string;
+  ybOthPay?: null | number | string;
+  ybPsnCashPay?: null | number | string;
 }
 
 /** 已结算单查阅请求 */

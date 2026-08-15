@@ -55,6 +55,8 @@ export interface InpatientDoctorStationAdviceRowDto extends DoctorStationAdviceR
   stopTime?: string;
   stopperId?: string;
   stopperName?: string;
+  /** 停嘱校对人；非空时医生不可取消停嘱 */
+  stopPerformerCheckId?: string;
   conditionDefinitionId?: string;
   /** 长嘱皮试药换批提示：建议追加皮试检查（IF-IP-DOR-27） */
   needAppendSkinTestFlag?: boolean;

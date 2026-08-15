@@ -96,3 +96,13 @@ export interface SaveNurseStationTemperatureSheetAtRecordedTimeResponse {
   nextTimeSlot?: null | string;
   vitalSignId?: null | string;
 }
+
+export interface DeleteNurseStationTemperatureSheetRequest {
+  encounterId: string;
+  patientId: string;
+  vitalSignId: string;
+}
+
+export interface DeleteNurseStationTemperatureSheetResponse {
+  success?: boolean;
+}

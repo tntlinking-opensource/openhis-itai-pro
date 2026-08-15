@@ -3,6 +3,8 @@ import type {
   AutoGenRuleMutationResponse,
   CancelNurseStationPricingRequest,
   CancelNurseStationPricingResponse,
+  ChangeNurseStationPricingBusinessTimeRequest,
+  ChangeNurseStationPricingBusinessTimeResponse,
   ConfirmDirectNurseStationPricingRequest,
   ConfirmDirectNurseStationPricingResponse,
   ConfirmSupplementNurseStationPricingRequest,
@@ -84,6 +86,16 @@ export async function httpCancelNurseStationPricing(
 ): Promise<CancelNurseStationPricingResponse> {
   return publicRequestClient.post<CancelNurseStationPricingResponse>(
     `${BASE}/cancelNurseStationPricing`,
+    body,
+  );
+}
+
+/** 修改划价展示时间（待结算行；items 与冲销同构，单批最多 50 行） */
+export async function httpChangeNurseStationPricingBusinessTime(
+  body: ChangeNurseStationPricingBusinessTimeRequest,
+): Promise<ChangeNurseStationPricingBusinessTimeResponse> {
+  return publicRequestClient.post<ChangeNurseStationPricingBusinessTimeResponse>(
+    `${BASE}/changeNurseStationPricingBusinessTime`,
     body,
   );
 }

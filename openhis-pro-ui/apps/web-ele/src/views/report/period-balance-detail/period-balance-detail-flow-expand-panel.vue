@@ -16,7 +16,7 @@ defineOptions({ name: 'PeriodBalanceDetailFlowExpandPanel' });
 interface Props {
   row: PeriodBalanceDetailListRowDto;
   columns?: PeriodBalanceDetailColumnDto[];
-  /** 与查询区「隐藏全零行」联动 */
+  /** 与查询区「仅显示有业务」联动 */
   hideZeroRows?: boolean;
 }
 

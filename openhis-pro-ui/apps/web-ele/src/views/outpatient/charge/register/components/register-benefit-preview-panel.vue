@@ -143,6 +143,10 @@ const treatmentTableEmptyText = computed(() => {
   if (panelTreatmentLoading.value && allTreatmentRows.value.length === 0) {
     return '正在加载待遇信息…';
   }
+  const hint = String(previewModel.value.treatmentCheckHint ?? '').trim();
+  if (allTreatmentRows.value.length === 0 && hint) {
+    return hint;
+  }
   if (allTreatmentRows.value.length === 0) {
     return '暂无待遇检查数据';
   }
@@ -204,6 +208,8 @@ async function refreshTreatmentForSelectedInsu() {
         insutype: insu.insutype,
         balc: insu.balc ?? previewModel.value.balc,
         treatmentBlocked: result.ybPreview.treatmentBlocked,
+        treatmentCheckAlert: result.ybPreview.treatmentCheckAlert,
+        treatmentCheckHint: result.ybPreview.treatmentCheckHint,
         treatmentInfoList: result.ybPreview.treatmentInfoList,
       };
     }
@@ -371,6 +377,14 @@ defineExpose({
 
         <div class="register-benefit-preview-panel__group">
           <div class="register-benefit-preview-panel__group-title">{{ treatmentCheckTitle }}</div>
+          <ElAlert
+            v-if="previewModel.treatmentCheckHint && !panelTreatmentLoading"
+            type="info"
+            :closable="false"
+            show-icon
+            :title="previewModel.treatmentCheckHint"
+            class="register-benefit-preview-panel__alert"
+          />
           <div
             v-if="displayedTreatmentRows.length > 0"
             class="register-benefit-preview-panel__field-grid"
@@ -605,6 +619,14 @@ defineExpose({
               <ElSwitch v-model="showNotEnjoyedTreatment" size="small" />
             </div>
           </div>
+          <ElAlert
+            v-if="previewModel.treatmentCheckHint && !panelTreatmentLoading"
+            type="info"
+            :closable="false"
+            show-icon
+            :title="previewModel.treatmentCheckHint"
+            class="mb-2"
+          />
           <ElAlert
             v-if="previewModel.treatmentBlocked"
             type="warning"

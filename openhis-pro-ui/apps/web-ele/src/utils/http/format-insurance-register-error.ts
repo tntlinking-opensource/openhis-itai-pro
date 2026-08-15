@@ -24,6 +24,20 @@ function isOutpatientRegister2201(msg: string): boolean {
   return /(?:^|[^\d])2201(?:[^\d]|$)/.test(msg) || msg.includes('挂号登记');
 }
 
+/** 是否「没有有效的门诊定点」类跨省普通门诊拒付。 */
+function isNoValidOutpatientDesignatedPoint(msg: string): boolean {
+  return msg.includes('没有有效的门诊定点') || msg.includes('无有效的门诊定点');
+}
+
+/** 市医保 2201 对身份证凭证走卡串加解密失败（FMI encodeCard / 解密卡串）。 */
+function isFmiIdCardCertFailure(msg: string): boolean {
+  const hasFmiAuth =
+    msg.includes('接口认证服务') || msg.includes('调用远程FMI') || msg.includes('FMI接口失败');
+  const hasCardCipher =
+    msg.includes('解密卡串') || msg.includes('encodeCard') || msg.includes('err data length');
+  return hasFmiAuth || hasCardCipher;
+}
+
 /** 将医保挂号/收费/进销存等相关后端错误转为友好、可持久展示的用户文案。 */
 export function formatInsuranceRegisterError(
   errorCode: string | undefined,
@@ -51,6 +65,7 @@ export function formatInsuranceRegisterError(
     errorCode === 'REG-VAL-002' ||
     errorCode === 'REG-VAL-003' ||
     isOutpatientRegister2201(msg) ||
+    isNoValidOutpatientDesignatedPoint(msg) ||
     inventoryInfno != null ||
     msg.includes('医保编码') ||
     msg.includes('yb_no') ||
@@ -58,6 +73,25 @@ export function formatInsuranceRegisterError(
 
   if (!isRegisterInsurance) {
     return null;
+  }
+
+  // 跨省普通门诊拒付：优先给出慢特病结算指引（收费 2206 等）
+  if (isNoValidOutpatientDesignatedPoint(msg)) {
+    const clean = msg.split('>>>')[0]?.trim() || msg;
+    return {
+      title: '医保结算失败：无有效门诊定点',
+      message: [
+        clean,
+        '',
+        '处理建议：',
+        '· 该患者可能是跨省就医，普通门诊（医疗类别 11）需参保地门诊定点',
+        '· 若已有慢特病备案：请医生站导入慢病诊断，按「门诊慢病（140104）」或「门诊特病（140201）」结算',
+        '· 若无慢特病备案且确需普通门诊：请患者先在参保地办理异地门诊定点/备案后再来结算',
+        '· 紧急时可先自费，备案生效后再按医保政策处理',
+        '',
+        '若仍失败，请联系信息科或医保办，并提供上述技术详情。',
+      ].join('\n'),
+    };
   }
 
   if (errorCode === 'INS-011' || msg.includes('yb_no') || msg.includes('医保编码')) {
@@ -180,12 +214,36 @@ export function formatInsuranceRegisterError(
 
   if (msg.includes('2204') || msg.includes('费用上传')) {
     const clean = msg.split('>>>')[0]?.trim() || msg;
+    // 长春 feeListDBO.41 / feeListDBO_41：费用明细主键冲突（同 feedetl_sn 重复 2204）
+    if (
+      /feeListDBO[._]?41/i.test(msg) ||
+      msg.includes('请勿插入重复的主键') ||
+      msg.includes('请勿输入重复的值')
+    ) {
+      return {
+        title: '医保收费：费用明细上传失败（流水号重复）',
+        message: [
+          clean,
+          '',
+          '原因说明：平台上该费用明细流水号（feedetl_sn）已存在，重复上传被拒。',
+          '',
+          '处理建议：',
+          '1. 关闭收费窗后重新打开该患者，再点「医保收费」（系统会先 2205 撤销未结算明细）',
+          '2. 若仍失败：该流水可能已在平台正式结算（2207），需先医保退费/冲正（2208）后再收',
+          '3. 核对同就诊是否有「预结算成功但收费失败」的悬挂批次',
+          '',
+          '若仍失败，请联系信息科，提供就诊号、批次号与上述技术详情。',
+        ].join('\n'),
+      };
+    }
     return {
       title: '医保收费：费用明细上传失败',
       message: [
         clean,
         '',
         '常见原因：',
+        '· 费用明细流水号重复（feeListDBO.41）：上次预结算明细未撤销干净',
+        '· 数量/单价/金额不一致（折片后须满足 金额=单价×数量）',
         '· 耗材/药品「医保编码」未维护或位数不符合平台规则（耗材上传截前 15 位）',
         '· 当日医保签到（9001）失效，可尝试重新读卡签到',
         '',
@@ -215,6 +273,22 @@ export function formatInsuranceRegisterError(
     }
 
     if (isOutpatientRegister2201(msg)) {
+      if (isFmiIdCardCertFailure(msg)) {
+        return {
+          title: '医保挂号登记失败：就诊凭证不被平台接受',
+          message: [
+            '医保平台在门诊挂号登记（2201）时校验就诊凭证失败（接口认证/FMI 卡串处理异常）。',
+            '市医保对身份证（02）需上送读卡第二缓冲 SignBuff 作卡密；若仍为明文身份证号，或 SignBuff 为空，易触发本错误。',
+            '',
+            '请按以下步骤处理：',
+            '1. 确认本机 OpenHIS.Win 已更新，重新读身份证（应取得 SignBuff 卡密）后再挂号',
+            '2. 若读卡仍无卡密：改扫「医保电子凭证」或刷「社保卡」',
+            '3. 确认当日医保签到（9001）有效后重试',
+            '',
+            `技术详情：${clean}`,
+          ].join('\n'),
+        };
+      }
       return {
         title: '医保平台挂号登记失败',
         message: [
@@ -224,6 +298,7 @@ export function formatInsuranceRegisterError(
           '· 医师/科室医保编码未维护或填写错误',
           '· 当日医保签到（9001）失效，可尝试重新读卡签到',
           '· 医保专网或平台短暂异常',
+          '· 身份证读卡后市医保建档失败：请改扫医保电子凭证或刷社保卡',
           '',
           '若仍失败，请联系信息科或医保办，并提供上述技术详情。',
         ].join('\n'),

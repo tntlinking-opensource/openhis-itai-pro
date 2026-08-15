@@ -266,6 +266,8 @@ export interface ReconDetail3202Params extends ReconciliationContractRequest {
   setlOptins: string;
   stmtBegndate: string;
   stmtEnddate: string;
+  /** 与 3201 行一致时仅上传该险种明细 */
+  insutype?: string;
   clrType: string;
   refdSetlFlag?: string;
   medfeeSumamt?: number | string;
@@ -285,6 +287,17 @@ export interface ReconDetailResultRow {
   medfeeSumamt?: number | string;
   fundPaySumamt?: number | string;
   acctPay?: number | string;
+  /** 本地补齐：人员姓名 */
+  psnName?: string;
+  /** 本地补齐：结算时间 */
+  setlTime?: string;
+  /** 本地补齐：CONFIRMED / REVOKED */
+  localStatus?: string;
+  /** 本地是否命中结算回执 */
+  localExists?: boolean;
+  localMedfeeSumamt?: number | string;
+  localFundPaySumamt?: number | string;
+  localAcctPay?: number | string;
 }
 
 export interface ReconDetail3202Result {
@@ -368,11 +381,13 @@ export async function queryCrossProvinceReconFailuresApi(
   return res.data ?? [];
 }
 
-/** 工伤对账 invoke 首步（1320；后续 prepare/submit 走 health workInjuryInvoke）。 */
+/** 工伤对账 invoke 首步（prepareInvoke；phase=RECON|RECON_CONFIRM）。 */
 export interface StartWorkInjuryReconParams {
   contractId: string | number;
   operatorId?: string | number;
   formContext?: Record<string, unknown>;
+  /** RECON=1320 总额对账；RECON_CONFIRM=1322 对账确认 */
+  phase?: 'RECON' | 'RECON_CONFIRM';
 }
 
 export interface WorkInjuryReconPrepareStep {
@@ -389,9 +404,15 @@ export interface WorkInjuryReconPrepareStep {
 export async function startWorkInjuryReconApi(
   params: StartWorkInjuryReconParams,
 ): Promise<WorkInjuryReconPrepareStep> {
+  const phase = params.phase ?? 'RECON';
   const res = await requestClient.post<ApiResponse<WorkInjuryReconPrepareStep>>(
-    `${BASE}/startWorkInjuryRecon`,
-    params,
+    '/workInjuryInvoke/prepareInvoke',
+    {
+      phase,
+      contractId: params.contractId,
+      operatorId: params.operatorId,
+      context: params.formContext,
+    },
   );
   return res.data ?? {};
 }

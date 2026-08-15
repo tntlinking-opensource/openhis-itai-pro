@@ -13,21 +13,47 @@ export type CaseRecordStatusCode =
   | 'returned'
   | 'submitted';
 
-/** 病案检索列表行（CaseRecordListItemDto） */
+/** 病案检索列表行（CaseRecordListItemDto：以住院就诊为行，主档可空） */
 export interface CaseRecordListItemDto {
+  /** 住院就诊主键（列表行锚点） */
+  encounterId?: string;
+  /** 患者主键 */
+  patientId?: string;
+  /** 病案主档主键；未建档时为空 */
   caseRecordId?: string;
   medcasno?: string;
   psnName?: string;
   iptNo?: string;
   gendCode?: string;
+  /** 年龄展示文案（如 26岁）；临床侧栏体温单抬头 */
+  ageText?: string;
+  /** 床位名（出院无活动床时为末次已完成床，可能带「原…（未占床）」） */
+  bedName?: string;
+  /** 病区/病室名（无活动病区时为末次已完成病区） */
+  wardName?: string;
+  certno?: string;
   admTime?: string;
   dscgTime?: string;
   admCatyName?: string;
   dscgCatyName?: string;
   chfdrName?: string;
+  /** 入院科室主键（同科室临床门禁） */
+  organizationId?: string;
   mainDiagName?: string;
   statusCode?: CaseRecordStatusCode | string;
   statusLabel?: string;
+  /** 4401 首页上传状态（空=未上传） */
+  chsUploadStatusCode?: string;
+  /** 是否已结算 1/0（COMPLETED/DISCHARGED） */
+  settledCode?: string;
+  /** 费用性质/医保类型展示（同护士站 contractDisplay） */
+  insuranceTypeText?: string;
+  /** 结算上传状态（本期常为空） */
+  settleUploadStatusCode?: string;
+  /** 医嘱上传状态（本期常为空） */
+  orderUploadStatusCode?: string;
+  /** 病例是否已归档（住院病例查询回填；首页可空） */
+  clinicalArchived?: boolean;
 }
 
 /** @deprecated 使用 CaseRecordListItemDto */
@@ -54,10 +80,22 @@ export interface QueryCaseRecordParams extends PageParams {
   admCatyName?: string;
   /** 主治医师 practitionerId 过滤 */
   attendingPractitionerId?: string;
-  /** 出院日期起 */
+  /** 入院日期起 yyyy-MM-dd */
+  admFrom?: string;
+  /** 入院日期止 yyyy-MM-dd */
+  admTo?: string;
+  /** 出院日期起 yyyy-MM-dd */
   dscgFrom?: string;
-  /** 出院日期止 */
+  /** 出院日期止 yyyy-MM-dd */
   dscgTo?: string;
+  /** 是否出院 1/0 */
+  dischargedCode?: string;
+  /** 首页上传状态 none/pending/success/failed/skipped（对齐 ChsUploadStatus） */
+  homepageUploadStatus?: string;
+  /** 结算上传状态（同口径；列未落库时仅 none 可命中） */
+  settleUploadStatus?: string;
+  /** 是否已结算 1/0 */
+  settledCode?: string;
 }
 
 export interface HomepageDto {
@@ -77,7 +115,20 @@ export interface HomepageDto {
   psnTel?: string;
   conerName?: string;
   conerTel?: string;
+  conerRltsCode?: string;
   conerAddr?: string;
+  trtTypeCode?: string;
+  spgaNurscareDays?: number;
+  lv1NurscareDays?: number;
+  scdNurscareDays?: number;
+  lv3NurscareDays?: number;
+  otpWmDise?: string;
+  wmDiseCode?: string;
+  otpTcmDise?: string;
+  tcmDiseCode?: string;
+  brnDamgBfadmComaDura?: string;
+  brnDamgAfadmComaDura?: string;
+  ventUsedDura?: string;
   iptNo?: string;
   admWayCode?: string;
   admCatyCode?: string;
@@ -121,38 +172,25 @@ export interface ProcedureLineDto {
   oprnOprtCode?: string;
   oprnOprtName?: string;
   oprnDate?: string;
+  mainOprnFlag?: string;
   oprnLevelCode?: string;
   oprnIncisionCode?: string;
   healGradeCode?: string;
   anstWayCode?: string;
+  operDrName?: string;
+  anstDrName?: string;
+  valiFlag?: string;
 }
 
 export interface SaveHomepageParams {
-  caseRecordId: string;
+  /** 已建档时传；首次保存可空，此时须带 encounterId */
+  caseRecordId?: string;
+  /** 住院就诊主键；无 caseRecordId 时建档用 */
+  encounterId?: string;
   psnName?: string;
   gendCode?: string;
   brdy?: string;
   certno?: string;
-  iptNo?: string;
-  admWayCode?: string;
-  admCatyCode?: string;
-  admTime?: string;
-  dscgCatyCode?: string;
-  dscgTime?: string;
-  iptDays?: number;
-  dscgWayCode?: string;
-  chfdrName?: string;
-  atddrName?: string;
-  iptDrName?: string;
-  extension?: Record<string, unknown>;
-  diagnoses?: DiagnosisLineDto[];
-  procedures?: ProcedureLineDto[];
-  /** 前端表单扩展字段（保存时写入 extension） */
-  admCatyName?: string;
-  dscgCatyName?: string;
-  transferDeptSummary?: string;
-  deptDirectorName?: string;
-  respNursName?: string;
   ntlyCode?: string;
   natyCode?: string;
   prfsCode?: string;
@@ -161,7 +199,39 @@ export interface SaveHomepageParams {
   psnTel?: string;
   conerName?: string;
   conerTel?: string;
+  conerRltsCode?: string;
   conerAddr?: string;
+  trtTypeCode?: string;
+  spgaNurscareDays?: number;
+  lv1NurscareDays?: number;
+  scdNurscareDays?: number;
+  lv3NurscareDays?: number;
+  otpWmDise?: string;
+  wmDiseCode?: string;
+  otpTcmDise?: string;
+  tcmDiseCode?: string;
+  brnDamgBfadmComaDura?: string;
+  brnDamgAfadmComaDura?: string;
+  ventUsedDura?: string;
+  iptNo?: string;
+  admWayCode?: string;
+  admCatyCode?: string;
+  admCatyName?: string;
+  admTime?: string;
+  dscgCatyCode?: string;
+  dscgCatyName?: string;
+  dscgTime?: string;
+  iptDays?: number;
+  transferDeptSummary?: string;
+  dscgWayCode?: string;
+  deptDirectorName?: string;
+  chfdrName?: string;
+  atddrName?: string;
+  iptDrName?: string;
+  respNursName?: string;
+  extension?: Record<string, unknown>;
+  diagnoses?: DiagnosisLineDto[];
+  procedures?: ProcedureLineDto[];
 }
 
 export type RefreshSectionCode =
@@ -374,12 +444,42 @@ export interface UploadResultDto {
   infcode?: string;
   errMsg?: string;
   assembledAt?: string;
+  /** 4101A 平台清单流水号 */
+  setlListId?: string;
+  /** 一键编排中本步是否跳过 */
+  skipped?: boolean;
+}
+
+export interface OneClickReportResultDto {
+  homepage4401?: UploadResultDto;
+  settle4101A?: UploadResultDto;
+  commit4102?: UploadResultDto;
+  allSuccess?: boolean;
+}
+
+/** 4103 平台结算清单查询结果 */
+export interface SettleListQuery4103Dto {
+  success?: boolean;
+  errMsg?: string;
+  infcode?: string;
+  psnNo?: string;
+  setlId?: string;
+  setlListId?: string;
+  medcasno?: string;
+  psnName?: string;
+  setlTime?: string;
+  medfeeSumamt?: number;
+  setlStatusText?: string;
+  platformMsg?: string;
+  setlinfo?: Record<string, unknown>;
 }
 
 export interface UploadLogDto {
   id?: string;
   caseRecordId?: string;
   contractBusNo?: string;
+  /** 交易号 4401/4101A/4102/4103 */
+  infno?: string;
   statusCode?: string;
   infcode?: string;
   errMsg?: string;
@@ -389,7 +489,8 @@ export interface UploadLogDto {
 
 export interface Upload4401Params {
   caseRecordId: string;
-  contractBusNo: string;
+  /** 可省略：后端从就诊医保账户解析 */
+  contractBusNo?: string;
 }
 
 export interface RetryUploadParams {
@@ -411,13 +512,17 @@ export interface UnarchiveCaseRecordParams {
 }
 
 /** 门诊病历查询列表行 */
-export interface OutpatientRecordListItemDto {
+export interface OutpatientEmrListItemDto {
   documentId?: string;
   patientId?: string;
   encounterId?: string;
   patientName?: string;
   outpatientNo?: string;
   deptName?: string;
+  /** 接诊医生姓名 */
+  doctorName?: string;
+  /** 接诊医生医务人员主键（活动 ADMITTER；与登录 practitionerId 比对控制可编辑） */
+  admitterPractitionerId?: string;
   encounterTime?: string;
   title?: string;
   documentTypeCode?: string;
@@ -425,13 +530,81 @@ export interface OutpatientRecordListItemDto {
   statusCode?: string;
   updatedAt?: string;
   printable?: boolean;
+  /** 病例是否已归档（文书 LOCKED/ARCHIVED） */
+  clinicalArchived?: boolean;
 }
 
 /** 门诊病历查询分页参数 */
-export interface QueryOutpatientRecordParams extends PageParams {
+export interface QueryOutpatientEmrParams extends PageParams {
   keyword?: string;
   statusCode?: string;
-  deptName?: string;
+  /** 就诊科室主键（string，防雪花精度丢失） */
+  organizationId?: string;
+  /** 接诊医生医务人员主键（活动 ADMITTER） */
+  admitterPractitionerId?: string;
   encounterDateFrom?: string;
   encounterDateTo?: string;
+}
+
+/**
+ * 住院病例查询列表行（字段口径与 CaseRecordListItemDto 对齐，独立菜单出参）。
+ * 主键一律 string，避免雪花精度丢失。
+ */
+export interface InpatientEmrListItemDto {
+  /** 住院就诊主键（列表行锚点） */
+  encounterId?: string;
+  /** 患者主键 */
+  patientId?: string;
+  /** 病案主档主键；未建档时为空 */
+  caseRecordId?: string;
+  medcasno?: string;
+  psnName?: string;
+  iptNo?: string;
+  gendCode?: string;
+  /** 年龄展示文案（如 26岁）；临床侧栏体温单抬头 */
+  ageText?: string;
+  /** 床位名（出院无活动床时为末次已完成床，可能带「原…（未占床）」） */
+  bedName?: string;
+  /** 病区/病室名（无活动病区时为末次已完成病区） */
+  wardName?: string;
+  certno?: string;
+  admTime?: string;
+  dscgTime?: string;
+  admCatyName?: string;
+  dscgCatyName?: string;
+  chfdrName?: string;
+  /** 入院科室主键（同科室临床门禁） */
+  organizationId?: string;
+  mainDiagName?: string;
+  statusCode?: CaseRecordStatusCode | string;
+  statusLabel?: string;
+  /** 4401 首页上传状态（空=未上传） */
+  chsUploadStatusCode?: string;
+  /** 是否已结算 1/0 */
+  settledCode?: string;
+  /** 费用性质展示 */
+  insuranceTypeText?: string;
+  settleUploadStatusCode?: string;
+  orderUploadStatusCode?: string;
+  /** 病例是否已归档（就诊下存在 LOCKED 文书） */
+  clinicalArchived?: boolean;
+}
+
+/** 住院病例查询分页参数 */
+export interface QueryInpatientEmrParams extends PageParams {
+  keyword?: string;
+  /** 入院科别名称过滤 */
+  admCatyName?: string;
+  /** 主治医师 practitionerId（string，防雪花精度丢失） */
+  attendingPractitionerId?: string;
+  /** 入院日期起 yyyy-MM-dd */
+  admFrom?: string;
+  /** 入院日期止 yyyy-MM-dd */
+  admTo?: string;
+  /** 出院日期起 yyyy-MM-dd */
+  dscgFrom?: string;
+  /** 出院日期止 yyyy-MM-dd */
+  dscgTo?: string;
+  /** 是否出院 1/0 */
+  dischargedCode?: string;
 }

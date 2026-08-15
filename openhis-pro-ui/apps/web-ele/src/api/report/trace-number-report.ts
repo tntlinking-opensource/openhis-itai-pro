@@ -4,6 +4,7 @@
 import type { PageParams } from '#/types/api-response';
 
 import { publicRequestClient } from '#/api/request';
+import { reportLongRequestConfig } from '#/constants/report-request-timeout';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
 const BASE = '/traceNumberReport';
@@ -144,6 +145,7 @@ export async function pageTraceNumberReportApi(body: PageTraceNumberReportReques
   const res = await publicRequestClient.post<PageTraceNumberReportResponse>(
     `${BASE}/pageTraceNumberReport`,
     body,
+    reportLongRequestConfig(),
   );
   const { content, totalCount } = parsePagedRowsFromApiData<TraceNumberReportRowDto>(res);
   return {
@@ -171,5 +173,6 @@ export async function exportTraceNumberReportApi(body: ExportTraceNumberReportRe
   return publicRequestClient.post<ExportTraceNumberReportResponse>(
     `${BASE}/exportTraceNumberReport`,
     body,
+    reportLongRequestConfig(),
   );
 }

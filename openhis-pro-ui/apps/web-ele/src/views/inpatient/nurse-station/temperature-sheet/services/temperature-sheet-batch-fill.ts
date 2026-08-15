@@ -11,9 +11,11 @@ import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import {
   applyFillSlotsToDraft,
+  clearTemperatureSheetPreviousDaySupplementFields,
   createEmptyExtraRecord,
   createEmptyFillRow,
   createEmptyFillRows,
+  isTemperatureSheetAdmissionRecordDate,
   mapFillRowToSaveRequest,
   normalizeTemperatureSheetRecordTime,
   syncFillRowChartTimeSlot,
@@ -32,6 +34,8 @@ export const TEMPERATURE_SHEET_BATCH_SAVE_LIMIT = 50;
 
 /** 按时间批量录入：单行患者草稿 */
 export interface TemperatureSheetBatchFillRowDraft {
+  /** 入院时间（判断入院日是否隐藏前一日统计项） */
+  admissionAt?: string;
   bedNo: string;
   dayRows: TemperatureSheetFillRowDraft[];
   encounterId: string;
@@ -119,6 +123,7 @@ export function buildEmptyBatchFillRow(
     bedNo: patient.bedNo?.trim() || '-',
     name: patient.name?.trim() || '-',
     gender: patient.gender?.trim() || '',
+    admissionAt: patient.admissionAt,
     dayRows,
     slotRow,
     extraRecord: createEmptyExtraRecord(),
@@ -197,15 +202,20 @@ export async function loadTemperatureSheetBatchFillRows(
         );
         syncSpecialEventTimesOnSelectionChange(slotRow);
         syncSpecialEventShortcutFields(slotRow);
+        // 入院日不回显前一日统计项
+        const resolvedExtra = isTemperatureSheetAdmissionRecordDate(recordDate, patient.admissionAt)
+          ? clearTemperatureSheetPreviousDaySupplementFields(extraRecord)
+          : extraRecord;
         return {
           encounterId,
           patientId,
           bedNo: patient.bedNo?.trim() || '-',
           name: patient.name?.trim() || '-',
           gender: patient.gender?.trim() || '',
+          admissionAt: patient.admissionAt,
           dayRows,
           slotRow,
-          extraRecord,
+          extraRecord: resolvedExtra,
         };
       } catch {
         return {
@@ -268,18 +278,22 @@ export function collectBatchTemperatureSheetSaveRequests(
   }
 
   for (const row of rows) {
+    // 入院日不提交前一日统计项
+    const extraForSave = isTemperatureSheetAdmissionRecordDate(recordDate, row.admissionAt)
+      ? clearTemperatureSheetPreviousDaySupplementFields(row.extraRecord)
+      : row.extraRecord;
     // 当前时分落入图表 22 槽时带补充项，其它时次仅体征
-    const slotExtra = row.slotRow.timeSlot === '22' ? row.extraRecord : createEmptyExtraRecord();
+    const slotExtra = row.slotRow.timeSlot === '22' ? extraForSave : createEmptyExtraRecord();
     pushRequest(
       mapFillRowToSaveRequest(row.slotRow, slotExtra, recordDate, row.encounterId, row.patientId),
     );
 
     // 非 22 槽但填了补充项：额外提交 22:00（保留当日已有 22 点体征）
-    if (row.slotRow.timeSlot !== '22' && hasTemperatureSheetExtraRecordContent(row.extraRecord)) {
+    if (row.slotRow.timeSlot !== '22' && hasTemperatureSheetExtraRecordContent(extraForSave)) {
       pushRequest(
         mapFillRowToSaveRequest(
           resolveBatchSlot22Row(row),
-          row.extraRecord,
+          extraForSave,
           recordDate,
           row.encounterId,
           row.patientId,

@@ -28,6 +28,7 @@ export function mapEncounterRowToDiagnosisItem(
   const medicineType = mtRaw === 'TCM' ? 'tcm' : 'western';
   const conditionDefinitionId = (row.conditionDefinitionId ?? '').trim() || undefined;
   const mainDiagnosisFlag = Number(row.mainDiagnosisFlag) === 1 ? 1 : 0;
+  const medicalTypeCode = String(row.medicalTypeCode ?? '').trim() || undefined;
   const tcmSyndromeGroup = String(row.tcmSyndromeGroup ?? '').trim() || undefined;
   return {
     id: encounterDiagnosisId,
@@ -37,6 +38,7 @@ export function mapEncounterRowToDiagnosisItem(
     encounterDiagnosisId,
     mainDiagnosisFlag,
     ...(conditionDefinitionId ? { conditionDefinitionId } : {}),
+    ...(medicalTypeCode ? { medicalTypeCode } : {}),
     ...(tcmSyndromeGroup ? { tcmSyndromeGroup } : {}),
   };
 }

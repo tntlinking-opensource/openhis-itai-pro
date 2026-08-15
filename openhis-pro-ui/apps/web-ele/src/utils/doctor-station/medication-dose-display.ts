@@ -1,11 +1,19 @@
 /**
- * 西药单次剂量展示：优先后端 dosageDisplay；否则最小单位为主，括号内附计量单位。
- * 计量单位与最小单位一致时不拼括号（如 `1片`；不同则如 `1支(2ml)`）。
- * 列表/收起摘要在剂量段后保留「/次」（如 `1支(2ml)/次，共1支。`）。
+ * 西药单次剂量展示：优先用结构化数量按开立口径重拼；
+ * 缺数量时再回落后端 dosageDisplay。
+ * 最小单位为主，括号内附计量单位；单位一致时不拼括号。
+ * 小数位：计量（剂量单位）固定 3 位；最小单位 2 位。
+ * 列表/收起摘要在剂量段后保留「/次」。
+ * 长期药剂量位见 formatLongTermMedicationDoseLine（单次 + 日总量）。
  */
 
+import {
+  roundMedicationDoseDisplayQty,
+  roundMedicationSplitQty,
+} from '#/utils/doctor-station/medication-unit-band-query';
+
 export interface MedicationDoseDisplayParts {
-  /** 后端已拼好的单次剂量展示串（优先） */
+  /** 后端已拼好的单次剂量展示串（仅缺结构化数量时回落） */
   dosageDisplay?: null | string;
   /** 计量侧数量 */
   dose?: null | number | string;
@@ -35,6 +43,37 @@ function trimText(value: unknown): string {
   return String(value).trim();
 }
 
+/** 解析正数数量；非法则 undefined。 */
+function parsePositiveQty(value: unknown): number | undefined {
+  if (value === null || value === undefined || trimText(value) === '') {
+    return undefined;
+  }
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) {
+    return undefined;
+  }
+  return n;
+}
+
+/** 计量（剂量单位）展示串：固定 3 位小数。 */
+export function formatDoseQtyDisplayText(value: unknown): string {
+  const n = parsePositiveQty(value);
+  if (n === undefined) {
+    return '';
+  }
+  return roundMedicationDoseDisplayQty(n).toFixed(3);
+}
+
+/** 最小单位展示串：2 位小数并去尾零。 */
+export function formatSplitQtyDisplayText(value: unknown): string {
+  const n = parsePositiveQty(value);
+  if (n === undefined) {
+    return '';
+  }
+  const rounded = roundMedicationSplitQty(n);
+  return String(Number(rounded.toFixed(2)));
+}
+
 /** 计量单位与最小单位是否同一：优先比 code，缺则比展示名 */
 export function isSameMedicationDoseUnit(
   doseUnitCode?: null | string,
@@ -56,47 +95,80 @@ export function isSameMedicationDoseUnit(
 }
 
 /**
- * 单次剂量主文案：优先 dosageDisplay；
- * 否则 `最小单位量+单位`，不同单位时附 `(计量量+计量单位)`。
+ * 单次剂量主文案：有结构化数量时按 2/3 位重拼；
+ * 否则回落 dosageDisplay。
  */
 export function formatMedicationDoseDisplay(parts: MedicationDoseDisplayParts): string {
-  const fromBackend = trimText(parts.dosageDisplay);
-  if (fromBackend) {
-    return fromBackend;
-  }
-
-  const doseQty = trimText(parts.dose);
+  const doseQtyText = formatDoseQtyDisplayText(parts.dose);
   const doseUnit = trimText(parts.doseUnitName) || trimText(parts.doseUnitCode);
-  const dosePart = doseQty ? (doseUnit ? `${doseQty}${doseUnit}` : doseQty) : '';
+  const dosePart = doseQtyText ? (doseUnit ? `${doseQtyText}${doseUnit}` : doseQtyText) : '';
 
-  const splitQty = trimText(parts.splitDose);
+  const splitQtyText = formatSplitQtyDisplayText(parts.splitDose);
   const splitUnit = trimText(parts.splitDoseUnitName) || trimText(parts.splitDoseUnitCode);
-  const splitPart = splitQty ? (splitUnit ? `${splitQty}${splitUnit}` : splitQty) : '';
+  const splitPart = splitQtyText ? (splitUnit ? `${splitQtyText}${splitUnit}` : splitQtyText) : '';
 
-  // 无拆零侧：仅回计量段
-  if (!splitPart) {
-    return dosePart;
+  if (splitPart || dosePart) {
+    // 无拆零侧：仅回计量段
+    if (!splitPart) {
+      return dosePart;
+    }
+    // 单位相同或无计量侧：只回最小单位段
+    if (
+      !dosePart ||
+      isSameMedicationDoseUnit(
+        parts.doseUnitCode,
+        parts.doseUnitName || doseUnit,
+        parts.splitDoseUnitCode,
+        parts.splitDoseUnitName || splitUnit,
+      )
+    ) {
+      return splitPart;
+    }
+    return `${splitPart}(${dosePart})`;
   }
-  // 单位相同或无计量侧：只回最小单位段
-  if (
-    !dosePart ||
-    isSameMedicationDoseUnit(
-      parts.doseUnitCode,
-      parts.doseUnitName || doseUnit,
-      parts.splitDoseUnitCode,
-      parts.splitDoseUnitName || splitUnit,
-    )
-  ) {
-    return splitPart;
-  }
-  return `${splitPart}(${dosePart})`;
+
+  return trimText(parts.dosageDisplay);
 }
 
-/** 剂量段补上「/次」（后端已带则不重复） */
+/** 1～10 中文数字（与后端日剂量友好展示对齐） */
+const CHINESE_DIGITS = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十'] as const;
+
+/** 正整数 1～10 → 中文；其余原样（去科学计数） */
+function formatFriendlyDoseQtyText(qtyText: string): string {
+  const raw = trimText(qtyText);
+  if (!raw) {
+    return '';
+  }
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) {
+    return raw;
+  }
+  if (Number.isInteger(n) && n >= 1 && n <= 10) {
+    return CHINESE_DIGITS[n]!;
+  }
+  return raw;
+}
+
+/** 已是列表友好成稿（含长期「一次一片，每日三片」）则不再补 /次 */
+function isReadyMadeDoseSummary(text: string): boolean {
+  const core = trimText(text);
+  if (!core) {
+    return false;
+  }
+  if (core.startsWith('每日') || core.startsWith('一次')) {
+    return true;
+  }
+  return core.includes('，每日') || core.includes('，一次');
+}
+
+/** 剂量段补上「/次」（后端已带则不重复；日剂量/长期友好文案不补） */
 function withPerDoseSuffix(doseCore: string): string {
   const core = trimText(doseCore);
   if (!core) {
     return '';
+  }
+  if (isReadyMadeDoseSummary(core)) {
+    return core;
   }
   if (core.endsWith('/次')) {
     return core;
@@ -105,9 +177,70 @@ function withPerDoseSuffix(doseCore: string): string {
 }
 
 /**
+ * 长期药剂量位：单次量 + 日总量（频次已在用法行展示，不再重复）。
+ * 例：一次一片，每日三片（有日剂量文案时才装配；否则返回空串由调用方回落）。
+ */
+export function formatLongTermMedicationDoseLine(
+  options: MedicationDoseDisplayParts & {
+    /** 日剂量友好文案（如 每日三片） */
+    dailyDoseDisplay?: null | string;
+  },
+): string {
+  const dailyPart = trimText(options.dailyDoseDisplay);
+  if (!dailyPart) {
+    return '';
+  }
+
+  // 单次量优先后端 dosageDisplay（如 1片/次）；缺再按结构化字段重拼
+  let perDoseCore = trimText(options.dosageDisplay).replace(/\/次$/u, '');
+  if (!perDoseCore) {
+    perDoseCore = formatMedicationDoseDisplay({
+      dose: options.dose,
+      doseUnitCode: options.doseUnitCode,
+      doseUnitName: options.doseUnitName,
+      splitDose: options.splitDose,
+      splitDoseUnitCode: options.splitDoseUnitCode,
+      splitDoseUnitName: options.splitDoseUnitName,
+    }).replace(/\/次$/u, '');
+  }
+  // 列表只保留最小单位段：1片(5.000毫克) → 1片
+  const parenIdx = perDoseCore.indexOf('(');
+  if (parenIdx >= 0) {
+    perDoseCore = trimText(perDoseCore.slice(0, parenIdx));
+  }
+  // 勿把日剂量文案再套成「一次…」
+  if (perDoseCore && (perDoseCore.startsWith('每日') || perDoseCore === dailyPart)) {
+    perDoseCore = '';
+  }
+
+  let perDosePart = '';
+  if (perDoseCore) {
+    if (perDoseCore.startsWith('一次')) {
+      perDosePart = perDoseCore;
+    } else {
+      const matched = perDoseCore.match(/^(\d+(?:\.\d+)?)(.*)$/u);
+      if (matched) {
+        const qtyText = formatFriendlyDoseQtyText(matched[1]!);
+        perDosePart = `一次${qtyText}${matched[2] ?? ''}`;
+      } else {
+        perDosePart = `一次${perDoseCore}`;
+      }
+    }
+  }
+
+  return [perDosePart, dailyPart].filter((p) => p.length > 0).join('，');
+}
+
+/**
  * 列表剂量摘要行：单次剂量主文案+/次 + 可选「共总量」；末尾句号与历史口径一致。
+ * 已是长期友好文案（一次…，每日…）时原样返回，不再补 /次。
  */
 export function formatMedicationDoseSummaryLine(options: MedicationDoseSummaryOptions): string {
+  const readyDaily = trimText(options.dosageDisplay);
+  // 长期友好成稿或旧「每日三片」：不再拼 /次 / 共
+  if (isReadyMadeDoseSummary(readyDaily)) {
+    return readyDaily;
+  }
   const left = withPerDoseSuffix(formatMedicationDoseDisplay(options));
   const includeTotal = options.includeTotal !== false;
   let right = '';
@@ -141,25 +274,17 @@ export function formatWesternEditDoseSegment(item: {
   doseSubUnit?: null | string;
   singleDose?: null | number;
 }): string {
-  const doseQtyRaw = item.doseConvertRatio;
-  const doseQty =
-    doseQtyRaw === undefined || doseQtyRaw === null || !Number.isFinite(Number(doseQtyRaw))
-      ? ''
-      : String(doseQtyRaw);
   const doseUnit = trimText(item.doseSubUnit);
-  const splitQtyRaw = item.singleDose;
-  const splitQty =
-    splitQtyRaw === undefined || splitQtyRaw === null || !Number.isFinite(Number(splitQtyRaw))
-      ? ''
-      : String(splitQtyRaw);
   const splitUnit = trimText(item.doseMainUnit);
+  const hasSplit = parsePositiveQty(item.singleDose) !== undefined;
+  const hasDose = parsePositiveQty(item.doseConvertRatio) !== undefined;
 
-  if (splitQty || doseQty) {
+  if (hasSplit || hasDose) {
     return withPerDoseSuffix(
       formatMedicationDoseDisplay({
-        dose: doseQty || undefined,
+        dose: item.doseConvertRatio,
         doseUnitName: doseUnit || undefined,
-        splitDose: splitQty || undefined,
+        splitDose: item.singleDose,
         splitDoseUnitName: splitUnit || undefined,
       }),
     );

@@ -48,6 +48,14 @@ export interface NationalCatalogItem {
   noticeEndDate?: string;
   /** 局文限价上限 */
   priceUplmtAmt?: string;
+  /** 1301 最小包装数量 */
+  minPacCnt?: string;
+  /** 1301 最小包装单位 */
+  minPacunt?: string;
+  /** 1301 最小制剂单位 */
+  minPrepunt?: string;
+  /** 1301 最小计价单位（限价口径） */
+  minPrcunt?: string;
 }
 
 export interface Refresh1312Params extends Catalog1312FilterParams {

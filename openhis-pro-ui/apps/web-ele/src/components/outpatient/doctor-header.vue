@@ -12,6 +12,7 @@ withDefaults(defineProps<Props>(), {
     ageText: '',
     phone: '',
     medicalRecordNo: '',
+    address: '',
     serviceTypeName: '',
     startTime: '',
   }),

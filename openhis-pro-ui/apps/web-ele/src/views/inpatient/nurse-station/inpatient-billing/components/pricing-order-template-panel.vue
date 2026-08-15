@@ -8,7 +8,7 @@ import type { OrderTemplateHeaderItem } from '#/api/basic/order-template';
 
 import { computed, ref, watch } from 'vue';
 
-import { ElInput, ElScrollbar, ElTooltip, ElTree } from 'element-plus';
+import { ElEmpty, ElInput, ElScrollbar, ElTooltip, ElTree } from 'element-plus';
 
 import { buildOrderTemplateTreeFromGroups } from '#/views/outpatient/doctor-station/advice/services/order-template.service';
 
@@ -27,12 +27,15 @@ interface Props {
   active?: boolean;
   applying?: boolean;
   disabled?: boolean;
+  /** 抽屉内可隐藏标题栏，避免与 Drawer title 重复 */
+  showHeader?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   active: false,
   applying: false,
   disabled: false,
+  showHeader: true,
 });
 
 const emit = defineEmits<{
@@ -51,6 +54,16 @@ const templateTreeData = computed<OrderTemplateTreeNode[]>(() =>
     excludeBindingScopes: PRICING_EXCLUDED_BINDING_SCOPES,
   }),
 );
+
+/** 树是否无任何可点组套（含仅空分类） */
+const hasTemplateNodes = computed(() => {
+  for (const group of templateTreeData.value) {
+    if ((group.children?.length ?? 0) > 0) {
+      return true;
+    }
+  }
+  return templateTreeData.value.some((node) => node.nodeType === 'template');
+});
 
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -126,11 +139,14 @@ defineExpose({ clearSelection, reloadTemplateList });
 
 <template>
   <section v-loading="listLoading || applying" class="pricing-order-template-panel">
-    <header class="pricing-order-template-panel__header">划价组套</header>
+    <header v-if="showHeader" class="pricing-order-template-panel__header">划价组套</header>
     <div class="pricing-order-template-panel__search">
       <ElInput v-model="searchKeyword" placeholder="搜索组套名称" clearable :disabled="disabled" />
     </div>
-    <ElScrollbar class="pricing-order-template-panel__tree-wrap">
+    <div v-if="!listLoading && !hasTemplateNodes" class="pricing-order-template-panel__empty">
+      <ElEmpty description="暂无划价组套" :image-size="72" />
+    </div>
+    <ElScrollbar v-else class="pricing-order-template-panel__tree-wrap">
       <ElTree
         :data="templateTreeData"
         node-key="id"
@@ -197,6 +213,15 @@ defineExpose({ clearSelection, reloadTemplateList });
   flex: 1;
   min-height: 0;
   padding: 0 6px 8px;
+}
+
+.pricing-order-template-panel__empty {
+  align-items: center;
+  display: flex;
+  flex: 1;
+  justify-content: center;
+  min-height: 160px;
+  padding: 12px;
 }
 
 .pricing-order-template-tree {

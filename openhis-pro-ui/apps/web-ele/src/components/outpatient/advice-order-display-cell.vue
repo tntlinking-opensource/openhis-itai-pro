@@ -36,6 +36,8 @@ interface AdviceDrugLineSource {
   frequency?: string;
   medicationDays?: number | string;
   dosageDisplay?: string;
+  /** 成组共用行滴速展示 */
+  speedDisplay?: string;
   splitDose?: number | string;
   splitDoseUnitCode?: string;
   splitDoseUnitName?: string;
@@ -92,18 +94,35 @@ function lineParts(item: unknown) {
   return { title: formatDrugTitle(d), dose: formatDrugDose(d) };
 }
 
-/** 组内共用行：用法、频次、天数；缺省则不拼该段 */
+/** 组内共用行：用法、频次、滴速、天数；缺省则不拼该段 */
 function formatSharedLine(items: readonly unknown[]): string {
   if (items.length === 0) return '';
   const d = toLineSource(items[0]);
   const usage = str(d.usage);
   const freq = str(d.frequency);
   const days = str(d.medicationDays);
+  // 同组滴速一致；首行常为溶媒无码，从组内任一条取展示名
+  let speed = '';
+  for (const item of items) {
+    speed = str(toLineSource(item).speedDisplay);
+    if (speed) {
+      break;
+    }
+  }
   const dayPart = days ? `（${days}天）` : '';
-  if (usage && freq) return `${usage}，${freq}${dayPart}`;
-  if (usage) return `${usage}${dayPart}`;
-  if (freq) return `${freq}${dayPart}`;
-  return dayPart;
+  const parts: string[] = [];
+  if (usage && freq) {
+    parts.push(`${usage}，${freq}`);
+  } else if (usage || freq) {
+    parts.push(usage || freq);
+  }
+  if (speed) {
+    parts.push(`滴速：${speed}`);
+  }
+  if (parts.length === 0) {
+    return dayPart;
+  }
+  return `${parts.join('，')}${dayPart}`;
 }
 
 const contentTrim = computed(() => str(props.content));

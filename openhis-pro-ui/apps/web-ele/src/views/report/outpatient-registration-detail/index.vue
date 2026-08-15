@@ -83,6 +83,13 @@ const summaryRows = ref<OutpatientRegistrationDetailSummaryRowDto[]>([]);
 const detailRows = ref<OutpatientRegistrationDetailRowDto[]>([]);
 const total = ref(0);
 const totalNetRegistrationCount = ref(0);
+const totalRegistrationFeeAmount = ref<number | string>(0);
+/** 明细页脚：挂号笔数（排除待挂号/未收费取消）。 */
+const registrationCount = ref(0);
+/** 明细页脚：已退笔数。 */
+const cancelledCount = ref(0);
+/** 明细页脚：有效笔数。 */
+const activeCount = ref(0);
 const tableScrollRef = ref<InstanceType<typeof ReportTableScroll> | null>(null);
 
 const queryParams = reactive<QueryState>({
@@ -123,11 +130,20 @@ const footerSummaryItems = computed(() => {
       {
         label: '净挂号笔数合计',
         value: totalNetRegistrationCount.value,
+      },
+      {
+        label: '挂号费合计',
+        value: formatMoneyCell(totalRegistrationFeeAmount.value),
         primary: true,
+        prefix: '¥',
       },
     ];
   }
-  return [{ label: '明细行数', value: total.value }];
+  return [
+    { label: '挂号', value: registrationCount.value },
+    { label: '有效', value: activeCount.value },
+    { label: '已退', value: cancelledCount.value },
+  ];
 });
 
 /** ReportQueryBar 需要 Record 形态的 model。 */
@@ -164,7 +180,11 @@ const { run: runSummarize, loading: summarizeLoading } = useRequest(
     onSuccess: (data) => {
       summaryRows.value = data?.rows ?? [];
       totalNetRegistrationCount.value = Number(data?.totalNetRegistrationCount ?? 0);
+      totalRegistrationFeeAmount.value = data?.totalRegistrationFeeAmount ?? 0;
       total.value = summaryRows.value.length;
+      registrationCount.value = 0;
+      cancelledCount.value = 0;
+      activeCount.value = 0;
     },
   },
 );
@@ -177,6 +197,11 @@ const { run: runPageDetail, loading: detailLoading } = useRequest(
       detailRows.value = data?.content ?? [];
       total.value = Number(data?.totalCount ?? 0);
       totalNetRegistrationCount.value = 0;
+      totalRegistrationFeeAmount.value = 0;
+      const footer = data?.footer;
+      registrationCount.value = Number(footer?.registrationCount ?? 0);
+      cancelledCount.value = Number(footer?.cancelledCount ?? 0);
+      activeCount.value = Number(footer?.activeCount ?? 0);
     },
   },
 );
@@ -402,7 +427,7 @@ onMounted(async () => {
                 />
               </ElSelect>
             </ElFormItem>
-            <ElFormItem label="挂号医生">
+            <ElFormItem label="接诊医生">
               <ElSelect
                 v-model="queryParams.practitionerId"
                 clearable
@@ -499,7 +524,7 @@ onMounted(async () => {
               <ElTableColumn
                 v-if="isDoctorView"
                 prop="practitionerName"
-                label="医生"
+                label="接诊医生"
                 min-width="120"
                 align="center"
                 header-align="center"
@@ -533,6 +558,17 @@ onMounted(async () => {
                   <span :class="resolveSignedNumberClass(row.netRegistrationCount)">
                     {{ formatCountCell(row.netRegistrationCount) }}
                   </span>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                label="挂号费合计"
+                width="120"
+                align="right"
+                header-align="right"
+                :class-name="REPORT_TABLE_AMOUNT_CELL"
+              >
+                <template #default="{ row }">
+                  {{ formatMoneyCell(row.registrationFeeAmount) }}
                 </template>
               </ElTableColumn>
             </ReportElTable>
@@ -569,8 +605,8 @@ onMounted(async () => {
                 show-overflow-tooltip
               />
               <ElTableColumn
-                prop="registrationDoctorName"
-                label="挂号医生"
+                prop="admitterDoctorName"
+                label="接诊医生"
                 min-width="100"
                 align="center"
                 header-align="center"

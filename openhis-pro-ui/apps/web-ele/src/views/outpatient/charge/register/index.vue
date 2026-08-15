@@ -16,6 +16,7 @@ defineOptions({
 
 const historyRef = ref<null | RegisterRightPanelExpose>(null);
 const historyDateRange = ref(getDateRangeQuick({ strategy: 'calendar-day' }) as [string, string]);
+const historyCollapsed = ref(false);
 
 /** 挂号结算成功或取消核对后，刷新底部历史与统计 */
 async function handleRegisterSuccess() {
@@ -26,11 +27,15 @@ async function handleRegisterSuccess() {
 function handleDateRangeChange(range: [string, string]) {
   historyDateRange.value = range;
 }
+
+function handleHistoryCollapsedChange(collapsed: boolean) {
+  historyCollapsed.value = collapsed;
+}
 </script>
 
 <template>
   <Page content-class="register-page-content">
-    <div class="register-page">
+    <div class="register-page" :class="{ 'register-page--history-collapsed': historyCollapsed }">
       <RegisterLeftPanel
         class="register-page__workspace"
         @register-success="handleRegisterSuccess"
@@ -41,6 +46,7 @@ function handleDateRangeChange(range: [string, string]) {
         class="register-page__history"
         :date-range="historyDateRange"
         @date-range-change="handleDateRangeChange"
+        @collapsed-change="handleHistoryCollapsedChange"
       />
     </div>
   </Page>
@@ -57,10 +63,18 @@ function handleDateRangeChange(range: [string, string]) {
   overflow: hidden;
 }
 
+.register-page--history-collapsed {
+  grid-template-rows: 1fr auto;
+}
+
 .register-page__workspace,
 .register-page__history {
   min-height: 0;
   overflow: hidden;
+}
+
+.register-page--history-collapsed .register-page__history {
+  overflow: visible;
 }
 
 /* 窄屏（<1680，含 1600）：压缩上方、给历史列表更多高度 */
@@ -69,6 +83,10 @@ function handleDateRangeChange(range: [string, string]) {
     grid-template-rows: auto minmax(320px, 1fr);
     gap: 6px;
     padding: 4px;
+  }
+
+  .register-page--history-collapsed {
+    grid-template-rows: 1fr auto;
   }
 
   .register-page__workspace {

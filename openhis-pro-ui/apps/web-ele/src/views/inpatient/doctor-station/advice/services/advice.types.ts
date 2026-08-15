@@ -30,6 +30,8 @@ export interface AdviceEditForm {
   firstDoseUnitCode?: string;
   frequency: string;
   usage: string;
+  /** 输液滴速编码（术语 speed_code） */
+  speedCode?: string;
   medicationDays?: number;
   totalAmount?: number;
   /** 诊疗开立数量（与 servicePayload.quantity 对应；执行次数仍用 totalAmount） */
@@ -87,6 +89,8 @@ export interface AdviceDrugItem extends AdviceEditForm {
   entrustContent?: string;
   /** 医嘱备注（药嘱/诊嘱 remark；与嘱托正文分立） */
   remark?: string;
+  /** 目录/列表注射输液标志；为 true 时编辑卡展示滴速 */
+  injectFlag?: boolean;
 }
 
 /** 住院医嘱编辑卡 · 长期/临时/出院带药（与 AS-IP-DOR-003 出院带药处方类别 code 对齐） */
@@ -102,6 +106,8 @@ export interface ProductQueryParams {
   pageSize: number;
   keyword?: string;
   productTableNames?: string[];
+  /** 仅看库存>0；后端分页过滤，禁止前端筛当前页 */
+  positiveQuantityOnly?: boolean;
 }
 
 export interface AdviceProductOption {
@@ -122,6 +128,8 @@ export interface AdviceProductOption {
   unitName?: string;
   rateCode?: string;
   methodCode?: string;
+  /** 目录注射/输液标志（inject_flag）；开立卡用于展示滴速 */
+  injectFlag?: boolean;
   productDefinitionId?: string;
   productTableName?: string;
   unitBands?: DoctorStationMedicationUnitBandDto[];
@@ -162,6 +170,8 @@ export interface AdviceRowItem {
   stopTimeRaw?: string;
   /** 停嘱人姓名（改停嘱时间门禁/展示） */
   stopperName?: string;
+  /** 停嘱校对人主键；非空时禁止取消停嘱 */
+  stopPerformerCheckId?: string;
   extension: string;
   lineTotalAmount: string;
   diagnosisSummary: string;
@@ -198,6 +208,12 @@ export interface AdviceRowItem {
   specificationText?: string;
   conditionDefinitionName?: string;
   methodCode?: string;
+  /** 列表行输液滴速编码 */
+  speedCode?: string;
+  /** 列表行输液滴速展示名 */
+  speedName?: string;
+  /** 列表注射/输液标志（injectionFlag） */
+  injectionFlag?: boolean;
   listDose?: number;
   listDoseUnitCode?: string;
   /** 首日/首次用量（列表回显 → 编辑卡） */

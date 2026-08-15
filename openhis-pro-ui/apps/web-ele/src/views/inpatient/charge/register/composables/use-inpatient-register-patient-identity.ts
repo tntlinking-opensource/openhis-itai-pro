@@ -15,6 +15,8 @@ import {
   formatYbPluginOfflineMessage,
   getYbEcOrgId,
   getYbEcVoucherUrl,
+  DEFAULT_SFZ_DRIVER_TYPE,
+  invokeIdCardRead,
   invokeSocialCardRead,
   invokeYbPlugin,
   isYbPluginOnline,
@@ -100,20 +102,24 @@ export function useInpatientRegisterPatientIdentity(
       return null;
     }
     try {
-      const payload = await invokeYbPlugin({
+      const card = await invokeIdCardRead({
         FunctionId: YB_PLUGIN_FUNCTION_ID.ID_CARD,
         IP: DEFAULT_CARD_READER_HOST,
         PORT: DEFAULT_CARD_READER_PORT,
         TIMEOUT: 60,
         LOG_PATH: 'C:/neu_log/',
-        SFZ_DRIVER_TYPE: 0,
+        SFZ_DRIVER_TYPE: DEFAULT_SFZ_DRIVER_TYPE,
       });
-      const idCardNo = payload.trim();
-      if (!idCardNo) {
+      if (!card.idNumber) {
         ElMessage.warning('读卡未返回有效信息');
         return null;
       }
-      return buildSnapshotFromIdCard(idCardNo);
+      if (!card.signBuff?.trim()) {
+        ElMessage.warning(
+          '读身份证未返回卡密（SignBuff），医保登记可能失败，建议改刷社保卡或扫医保码',
+        );
+      }
+      return buildSnapshotFromIdCard(card.idNumber, card.name, card.signBuff);
     } catch (error) {
       ElMessage.error(formatYbPluginError(error));
       return null;
@@ -132,7 +138,7 @@ export function useInpatientRegisterPatientIdentity(
         PORT: DEFAULT_CARD_READER_PORT,
         TIMEOUT: 60,
         LOG_PATH: 'C:/neu_log/',
-        SFZ_DRIVER_TYPE: 0,
+        SFZ_DRIVER_TYPE: DEFAULT_SFZ_DRIVER_TYPE,
       });
       const snapshot = buildSnapshotFromSocialCard(card);
       if (!snapshot) {
@@ -191,7 +197,7 @@ export function useInpatientRegisterPatientIdentity(
         PORT: DEFAULT_CARD_READER_PORT,
         TIMEOUT: 60,
         LOG_PATH: 'C:/neu_log/',
-        SFZ_DRIVER_TYPE: 0,
+        SFZ_DRIVER_TYPE: DEFAULT_SFZ_DRIVER_TYPE,
       };
       const payload = await invokeYbPlugin(ecInput, undefined, 65_000);
       const trimmed = payload.trim();

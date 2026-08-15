@@ -5,6 +5,7 @@ import type { ApiOptionItem, PageParams } from '#/types/api-response';
 import type { BinaryExportResult } from '#/utils/export/download-binary-export';
 
 import { publicRequestClient } from '#/api/request';
+import { reportLongRequestConfig } from '#/constants/report-request-timeout';
 
 const BASE = '/outpatientFeeDetail';
 
@@ -59,6 +60,8 @@ export interface OutpatientFeeDetailLineDto {
   quantityUnitDisplay?: string;
   orderingDoctorId?: string;
   orderingDoctorName?: string;
+  performerId?: string;
+  performerName?: string;
   cashierId?: string;
   cashierName?: string;
   billDate?: string;
@@ -116,6 +119,7 @@ export async function pageOutpatientFeeDetailApi(body: PageOutpatientFeeDetailPa
   return publicRequestClient.post<PageOutpatientFeeDetailResponse>(
     `${BASE}/pageOutpatientFeeDetail`,
     body,
+    reportLongRequestConfig(),
   );
 }
 
@@ -124,5 +128,6 @@ export async function exportOutpatientFeeDetailApi(body: ExportOutpatientFeeDeta
   return publicRequestClient.post<ExportOutpatientFeeDetailResponse>(
     `${BASE}/exportOutpatientFeeDetail`,
     body,
+    reportLongRequestConfig(),
   );
 }

@@ -94,14 +94,18 @@ const POSITIVE_QTY_SUPPORTED_SOURCES = new Set<ProductPickListSource>([
   'pharmacy-requisition',
   'department-requisition',
   'dept-issue',
+  'return-to-warehouse',
+  'dept-return',
 ]);
 
-/** 出库/调出：默认仅查账面量>0 */
+/** 出库/调出/退库：默认仅查账面量>0 */
 const POSITIVE_QTY_DEFAULT_TRUE_SOURCES = new Set<ProductPickListSource>([
   'stock-out',
   'warehouse-transfer-out',
   'pharmacy-transfer-out',
   'dept-transfer-out',
+  'return-to-warehouse',
+  'dept-return',
 ]);
 
 interface Props {
@@ -192,7 +196,11 @@ const tableColumns = computed(() => {
   ) {
     return [...INBOUND_RECEIPT_PRODUCT_PICK_TABLE_COLUMNS];
   }
-  if (props.listSource === 'stock-out') {
+  if (
+    props.listSource === 'stock-out' ||
+    props.listSource === 'return-to-warehouse' ||
+    props.listSource === 'dept-return'
+  ) {
     return [...STOCK_OUT_PRODUCT_PICK_TABLE_COLUMNS];
   }
   return [...INVENTORY_PRODUCT_PICK_TABLE_COLUMNS];
@@ -353,30 +361,41 @@ async function handleRemoteMethod(params: { keyword?: string; pageNo: number; pa
     return mapInventoryPickListResponse(res.data);
   }
 
-  if (
-    props.listSource === 'return-to-warehouse' ||
-    props.listSource === 'return-stock-in' ||
-    props.listSource === 'dept-return'
-  ) {
+  if (props.listSource === 'return-to-warehouse' || props.listSource === 'dept-return') {
     const productTableName = (q.productTableName as string | undefined)?.trim();
     const sourceLocationId = resolveSourceLocationId(q);
     if (sourceLocationId === undefined || !productTableName) {
       return { content: [], totalElements: 0 };
     }
     const common = {
+      sourceLocationId,
+      productTableName,
+      keyword: params.keyword?.trim() || undefined,
+      positiveQuantityOnly: resolvePositiveQuantityOnly(q),
+      pageNo: params.pageNo,
+      pageSize: params.pageSize,
+    };
+    const res =
+      props.listSource === 'return-to-warehouse'
+        ? await pageProductsForReturnToWarehouseApi(common)
+        : await pageProductsForDeptReturnApi(common);
+    return mapInventoryPickListResponse(res.data);
+  }
+
+  if (props.listSource === 'return-stock-in') {
+    const productTableName = (q.productTableName as string | undefined)?.trim();
+    const sourceLocationId = resolveSourceLocationId(q);
+    if (sourceLocationId === undefined || !productTableName) {
+      return { content: [], totalElements: 0 };
+    }
+    const res = await pageProductsForReturnStockInApi({
       productTableName,
       keyword: params.keyword?.trim() || undefined,
       includeInventory: true,
       pageNo: params.pageNo,
       pageSize: params.pageSize,
       activeFlag: true,
-    };
-    const res =
-      props.listSource === 'return-to-warehouse'
-        ? await pageProductsForReturnToWarehouseApi(common)
-        : props.listSource === 'return-stock-in'
-          ? await pageProductsForReturnStockInApi(common)
-          : await pageProductsForDeptReturnApi(common);
+    });
     return mapInventoryPickListResponse(res.data);
   }
 

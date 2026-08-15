@@ -25,6 +25,8 @@ export interface InpatientPatientCardPayload {
   departmentAdmissionTime?: string;
   status?: string;
   paymentType?: string;
+  /** 险种类型码（310 职工 / 390 城乡居民）；医生站短标签展示 */
+  insutype?: string;
   priority?: string;
   queueNumber?: number | string;
   visitNo?: string;
@@ -53,6 +55,8 @@ export interface PatientInfoBarPayload {
   ageText?: null | string;
   phone?: null | string;
   medicalRecordNo?: null | string;
+  /** 患者地址全文（主档；头部条完整展示，不截断） */
+  address?: null | string;
   /** 就诊类别名称（如普通门诊），用于条上标签 */
   serviceTypeName?: null | string;
   /** 挂号/就诊开始时刻，原始字符串由条内格式化为展示 */

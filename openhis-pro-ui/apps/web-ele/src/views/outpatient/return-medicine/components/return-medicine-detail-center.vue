@@ -9,6 +9,7 @@ import { ElButton, ElEmpty, ElTable, ElTableColumn, ElTag } from 'element-plus';
 
 import SectionTitle from '#/components/layouts/section-title.vue';
 import TraceCodeTooltip from '#/components/trace/trace-code-tooltip.vue';
+import { formatMoneyYuanWithSymbol, sumMoneyThenSettle } from '#/utils/format/money-scale';
 
 defineOptions({
   name: 'ReturnMedicineDetailCenter',
@@ -44,6 +45,16 @@ const canOperate = computed(
 const tableEmptyText = computed(() => {
   if (!props.selectedPatient) return '请从左侧选择退药患者';
   return isPendingQueue.value ? '暂无待退药药品明细' : '暂无已退药记录';
+});
+
+/** 当前明细总价合计（有明细才展示） */
+const detailTotalAmountText = computed(() => {
+  if (props.detailRows.length === 0) return '';
+  // 只累加有有效总价的行
+  const amounts = props.detailRows
+    .map((row) => row.totalPrice)
+    .filter((price): price is number => price != null);
+  return formatMoneyYuanWithSymbol(sumMoneyThenSettle(amounts));
 });
 
 /** 退药状态 → 标签类型 */
@@ -123,10 +134,17 @@ defineExpose({
             {{ selectedPatient.refundEnumText }}
           </ElTag>
         </p>
-        <div class="mb-2 flex w-full min-w-0 flex-wrap items-center gap-1">
+        <div class="mb-2 flex w-full min-w-0 flex-wrap items-center justify-between gap-1">
           <ElButton type="primary" :disabled="!canOperate" @click="emit('confirmReturn')">
             确认退药
           </ElButton>
+          <div
+            v-if="selectedPatient && detailTotalAmountText"
+            class="return-detail-total shrink-0 text-sm"
+          >
+            <span class="return-detail-total__label">合计金额</span>
+            <strong class="return-detail-total__value">{{ detailTotalAmountText }}</strong>
+          </div>
         </div>
       </header>
       <div
@@ -195,5 +213,22 @@ defineExpose({
 :deep(.return-detail-table .el-table__header .cell) {
   color: var(--el-text-color-primary);
   font-weight: 500;
+}
+
+.return-detail-total {
+  display: inline-flex;
+  gap: 8px;
+  align-items: baseline;
+  line-height: 20px;
+}
+
+.return-detail-total__label {
+  color: var(--el-text-color-regular);
+}
+
+.return-detail-total__value {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
 }
 </style>

@@ -15,17 +15,23 @@ import { ElMessage } from 'element-plus';
 import { httpPageNurseStationPricingCatalog } from '#/api/inpatient/nurse-station/inpatient-nurse-station-inpatient-billing.http';
 import AppDialog from '#/components/app-dialog.vue';
 import { useRequest } from '#/hooks/use-request';
+import { useUserStore } from '@vben/stores';
+
 import { useAuthStore } from '#/store';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
-import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import {
+  preserveApiIdForRequest,
+  resolveLoginPractitionerIdForRequest,
+} from '#/utils/format/preserve-api-id';
 
 import { PRICING_PRODUCT_TABLE_SERVICE } from '../services/map-nurse-station-inpatient-billing';
 import {
-  AUTO_ROLL_BED_SERVICE_CATEGORY_CODE,
+  AUTO_ROLL_DEFAULT_BUSINESS_TIME,
   buildAutoRollCatalogFromTableRow,
   buildAutoRollCatalogRowKey,
   buildAutoRollFormFromTableRow,
+  isAutoRollConfigurableCatalogRow,
 } from '../services/map-nurse-station-auto-roll';
 
 defineOptions({
@@ -35,6 +41,7 @@ defineOptions({
 const props = withDefaults(defineProps<Props>(), {
   canOperate: false,
   editRow: null,
+  nurseOptions: () => [],
   patient: null,
   saving: false,
   visible: false,
@@ -56,6 +63,8 @@ const emit = defineEmits<{
 interface Props {
   canOperate?: boolean;
   editRow?: AutoRollConfigTableRow | null;
+  /** 计费人护士下拉 */
+  nurseOptions?: { label: string; value: string }[];
   patient?: NurseStationModulePatient | null;
   saving?: boolean;
   visible?: boolean;
@@ -71,10 +80,13 @@ const selectedCatalog = ref<AutoRollSelectedCatalogItem | null>(null);
 const formModel = reactive<AutoRollConfigFormModel>({
   quantityValue: 1,
   remark: '',
+  businessTime: AUTO_ROLL_DEFAULT_BUSINESS_TIME,
+  billingPractitionerId: '',
 });
 
 const catalogRequest = useRequest(httpPageNurseStationPricingCatalog, { manual: true });
 const authStore = useAuthStore();
+const userStore = useUserStore();
 
 const visibleModel = computed({
   get: () => props.visible,
@@ -85,12 +97,12 @@ const visibleModel = computed({
 const isEditMode = computed(() => props.editRow != null);
 
 /** 弹窗标题文案。 */
-const dialogTitle = computed(() => (isEditMode.value ? '编辑床位费配置' : '新增床位费配置'));
+const dialogTitle = computed(() => (isEditMode.value ? '编辑自动计费配置' : '新增自动计费配置'));
 
-/** 当前选中的床位服务展示名。 */
+/** 当前选中的诊疗项目展示名。 */
 const selectedCatalogName = computed(() => selectedCatalog.value?.catalog.name?.trim() || '—');
 
-/** 当前选中的床位服务价格。 */
+/** 当前选中的诊疗项目价格。 */
 const selectedCatalogPrice = computed(() => {
   const raw = selectedCatalog.value?.catalog.unitPrice;
   if (raw === undefined || raw === null || raw === '') {
@@ -101,6 +113,24 @@ const selectedCatalogPrice = computed(() => {
     return '—';
   }
   return `￥${formatMoneyDisplay(num)}`;
+});
+
+/** 计费人下拉（保证编辑回显项在内）。 */
+const billingPractitionerSelectOptions = computed(() => {
+  const merged = [...props.nurseOptions];
+  const currentId = formModel.billingPractitionerId;
+  if (!currentId) {
+    return merged;
+  }
+  // 已选计费人若不在护士列表中，补一条避免回显空白
+  if (!merged.some((opt) => opt.value === currentId)) {
+    const name = props.editRow?.billingPractitionerName?.trim();
+    merged.unshift({
+      value: currentId,
+      label: name && name !== '—' ? name : currentId,
+    });
+  }
+  return merged;
 });
 
 /** 取当前登录机构，供选品目录查询。 */
@@ -118,6 +148,8 @@ function resetDialogState() {
   selectedCatalog.value = null;
   formModel.quantityValue = 1;
   formModel.remark = '';
+  formModel.businessTime = AUTO_ROLL_DEFAULT_BUSINESS_TIME;
+  formModel.billingPractitionerId = resolveLoginPractitionerIdForRequest(userStore.userInfo) ?? '';
 }
 
 /** 编辑模式下用表格行预填表单与选品。 */
@@ -125,10 +157,12 @@ function applyEditRow(row: AutoRollConfigTableRow) {
   const form = buildAutoRollFormFromTableRow(row);
   formModel.quantityValue = form.quantityValue;
   formModel.remark = form.remark;
+  formModel.businessTime = form.businessTime;
+  formModel.billingPractitionerId = form.billingPractitionerId;
   selectedCatalog.value = buildAutoRollCatalogFromTableRow(row);
 }
 
-/** 加载床位服务选品目录。 */
+/** 加载诊疗项目选品目录（仅诊疗表；护理/转科/出院/嘱托前端再滤一层）。 */
 async function loadCatalog() {
   const patient = props.patient;
   const encounterId = patient ? preserveApiIdForRequest(patient.id) : undefined;
@@ -140,11 +174,11 @@ async function loadCatalog() {
     pageNo: catalogPageNo.value,
     pageSize: CATALOG_PAGE_SIZE,
     productTableNames: [PRICING_PRODUCT_TABLE_SERVICE],
-    categoryCode: AUTO_ROLL_BED_SERVICE_CATEGORY_CODE,
     organizationUnitId: resolveOrganizationUnitId(),
   });
   const parsed = parsePagedRowsFromApiData<NurseStationPricingCatalogRowDto>(res);
-  catalogRows.value = parsed.content;
+  // 不计费/护理类目不展示，避免保存时被后端拒绝
+  catalogRows.value = parsed.content.filter((row) => isAutoRollConfigurableCatalogRow(row));
   catalogTotal.value = parsed.totalCount;
 }
 
@@ -160,8 +194,12 @@ async function handleDialogOpen() {
   await loadCatalog();
 }
 
-/** 点击目录行选中床位服务。 */
+/** 点击目录行选中诊疗项目。 */
 function handleCatalogRowClick(row: NurseStationPricingCatalogRowDto) {
+  if (!isAutoRollConfigurableCatalogRow(row)) {
+    ElMessage.warning('护理、转科、出院、嘱托等不计费项目不能配置自动计费');
+    return;
+  }
   const rowKey = buildAutoRollCatalogRowKey(row);
   selectedCatalog.value = { rowKey, catalog: row };
 }
@@ -173,7 +211,7 @@ function handleSubmit() {
     return;
   }
   if (!selectedCatalog.value) {
-    ElMessage.warning('请先在左侧选择床位服务项目');
+    ElMessage.warning('请先在左侧选择诊疗项目');
     return;
   }
   const activityId = preserveApiIdForRequest(
@@ -183,17 +221,28 @@ function handleSubmit() {
     selectedCatalog.value.catalog.chargeItemDefinitionId,
   );
   if (!activityId || !chargeDefinitionId) {
-    ElMessage.warning('所选床位服务项目缺少活动或定价信息，请重新选择');
+    ElMessage.warning('所选诊疗项目缺少活动或定价信息，请重新选择');
     return;
   }
   if (!formModel.quantityValue || formModel.quantityValue <= 0) {
     ElMessage.warning('数量必须大于 0');
     return;
   }
+  if (!formModel.businessTime?.trim()) {
+    ElMessage.warning('请选择业务时间');
+    return;
+  }
+  const billingPractitionerId = preserveApiIdForRequest(formModel.billingPractitionerId);
+  if (!billingPractitionerId) {
+    ElMessage.warning('请选择计费人');
+    return;
+  }
   emit('saved', {
     form: {
       quantityValue: formModel.quantityValue,
       remark: formModel.remark.trim(),
+      businessTime: formModel.businessTime.trim(),
+      billingPractitionerId,
     },
     selectedCatalog: selectedCatalog.value,
     mode: isEditMode.value ? 'edit' : 'create',
@@ -242,7 +291,7 @@ watch(
 
       <div class="auto-roll-config-dialog__body">
         <section class="auto-roll-config-panel auto-roll-config-panel--left">
-          <header class="auto-roll-config-panel__header">床位服务选品</header>
+          <header class="auto-roll-config-panel__header">诊疗项目选品</header>
           <div class="auto-roll-config-filter">
             <ElInput
               v-model="catalogKeyword"
@@ -311,6 +360,31 @@ watch(
                 :controls="false"
                 class="auto-roll-config-form__qty"
               />
+            </ElFormItem>
+            <ElFormItem label="业务时间" required>
+              <ElTimePicker
+                v-model="formModel.businessTime"
+                value-format="HH:mm:ss"
+                format="HH:mm:ss"
+                placeholder="默认 23:59:59"
+                class="w-full"
+              />
+            </ElFormItem>
+            <ElFormItem label="计费人" required>
+              <ElSelect
+                v-model="formModel.billingPractitionerId"
+                filterable
+                clearable
+                placeholder="请选择计费人"
+                class="w-full"
+              >
+                <ElOption
+                  v-for="opt in billingPractitionerSelectOptions"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </ElSelect>
             </ElFormItem>
             <ElFormItem label="备注">
               <ElInput

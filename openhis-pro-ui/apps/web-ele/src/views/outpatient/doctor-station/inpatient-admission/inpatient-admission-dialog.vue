@@ -84,7 +84,7 @@ const inWayCodeOptions = ref<OptionDto[]>([]);
 const admitSourceCodeOptions = ref<OptionDto[]>([]);
 const admCondCodeOptions = ref<OptionDto[]>([]);
 const westernDiagnosisOptions = ref<OptionDto[]>([]);
-/** 门诊主诊预填行（提交时可带 encounterDiagnosisId） */
+/** 门诊主诊预填行（仅带目录 ID 比对；住院线须新建诊断，不提交门诊 encounterDiagnosisId） */
 const prefilledDiagnosisRow = ref<EncounterDiagnosisRowDto | null>(null);
 
 const existingLine = reactive({
@@ -297,7 +297,7 @@ function ensureWesternDiagnosisOption(definitionId: string, label: string) {
   westernDiagnosisOptions.value = [{ label: name, value }, ...westernDiagnosisOptions.value];
 }
 
-/** 从门诊就诊诊断预填主诊断 */
+/** 从门诊就诊诊断预填主诊断（目录预填；不复用门诊诊断行主键） */
 async function prefillDiagnosisFromAmbEncounter() {
   const encounterId = preserveApiIdForRequest(props.ambEncounterId);
   const patientId = preserveApiIdForRequest(props.patientId);
@@ -308,6 +308,8 @@ async function prefillDiagnosisFromAmbEncounter() {
   if (!primary) return;
   prefilledDiagnosisRow.value = primary;
   form.admissionDiagnosis = mapEncounterDiagnosisToAdmissionFormState(primary, rows);
+  // 住院申请 INSERT 新 IMP 线，入院诊断须在住院就诊新建，禁止携带门诊行主键
+  form.admissionDiagnosis.encounterDiagnosisId = undefined;
   if (form.admissionDiagnosis.medicineType === 'western') {
     ensureWesternDiagnosisOption(
       form.admissionDiagnosis.westernDefinitionId,
@@ -352,11 +354,10 @@ async function handleDepartmentChange(organizationId: string) {
   await loadWardOptions(organizationId);
 }
 
-/** 组装提交的入院诊断列表 */
+/** 组装提交的入院诊断列表（仅目录定义；不传门诊就诊诊断行主键） */
 function buildAdmissionDiagnoses() {
   const prefilled = prefilledDiagnosisRow.value;
   return buildAdmissionDiagnosesFromFormState(form.admissionDiagnosis, {
-    prefilledEncounterDiagnosisId: preserveApiIdForRequest(prefilled?.encounterDiagnosisId),
     prefilledWesternDefinitionId: preserveApiIdForRequest(prefilled?.conditionDefinitionId),
   });
 }
@@ -528,7 +529,7 @@ watch(
             />
           </ElSelect>
         </ElFormItem>
-        <ElFormItem label="入院方式">
+        <ElFormItem label="入院途径">
           <ElSelect
             v-model="form.inWayCode"
             clearable

@@ -1,5 +1,5 @@
 <!--
-  药库进货单左侧：历史进货单检索 + 卡片队列（从订货单新建入口在右侧操作区）。
+  药库进货单左侧：历史进货单检索 + 卡片队列 + 空白新增（从订货单新建入口在右侧操作区）。
 -->
 <script setup lang="ts">
 import type { ApiOptionItem } from '#/types/api-response';
@@ -9,6 +9,7 @@ import { ref } from 'vue';
 import { RotateCw, Search } from '@vben/icons';
 
 import InvAsideShell from '@inventory/components/inv-aside-shell.vue';
+import InvPrimaryBtn from '@inventory/components/inv-primary-btn.vue';
 import InvQueueCards from '@inventory/components/inv-queue-cards.vue';
 import dayjs from 'dayjs';
 import isoWeek from 'dayjs/plugin/isoWeek';
@@ -20,6 +21,7 @@ defineOptions({ name: 'PurchaseInboundAsidePane' });
 
 withDefaults(
   defineProps<{
+    addDisabled?: boolean;
     cabinetListOptions: Record<string, unknown>[];
     orders: Record<string, unknown>[];
     practitionerOption?: ApiOptionItem[];
@@ -27,11 +29,13 @@ withDefaults(
     showSupplierInQueue?: boolean;
   }>(),
   {
+    addDisabled: false,
     showSupplierInQueue: false,
   },
 );
 
 const emit = defineEmits<{
+  add: [];
   locationChange: [locationId: number | string | undefined];
   search: [];
   select: [row: Record<string, unknown>];
@@ -106,6 +110,11 @@ function handleRefreshClick() {
 function handleQueueSelect(row: Record<string, unknown>) {
   emit('select', row);
 }
+
+/** 底部空白新增进货单 */
+function handleAdd() {
+  emit('add');
+}
 </script>
 
 <template>
@@ -172,9 +181,14 @@ function handleQueueSelect(row: Record<string, unknown>) {
         :selected-order="selectedOrder"
         :show-supplier="showSupplierInQueue"
         empty-description="暂无进货单"
-        :show-empty-add="false"
+        empty-add-label="新增进货单"
+        @add="handleAdd"
         @select="handleQueueSelect"
       />
+    </template>
+
+    <template #footer>
+      <InvPrimaryBtn label="新增进货单" :disabled="addDisabled" @click="handleAdd" />
     </template>
   </InvAsideShell>
 </template>

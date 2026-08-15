@@ -71,6 +71,8 @@ export interface InpatientPharmacySummarySlipLineDto {
   splitUnitCode?: string;
   /** 追溯码主档贴码单位 */
   traceUnitCode?: string;
+  /** 追溯码主档贴码单位展示文案（UNIT_CODE） */
+  traceUnitCodeText?: string;
   /** 追溯码主档贴码比例快照 */
   traceUnitRatio?: number | string;
   /** 主表该品批是否已有追溯码（有码批） */

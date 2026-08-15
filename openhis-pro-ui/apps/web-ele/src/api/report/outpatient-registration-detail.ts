@@ -6,6 +6,7 @@ import type { ApiOptionItem, PageParams } from '#/types/api-response';
 import type { BinaryExportResult } from '#/utils/export/download-binary-export';
 
 import { publicRequestClient } from '#/api/request';
+import { reportLongRequestConfig } from '#/constants/report-request-timeout';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
 const BASE = '/outpatientRegistrationDetailReport';
@@ -54,11 +55,15 @@ export interface OutpatientRegistrationDetailSummaryRowDto {
   serviceTypeId?: string;
   serviceTypeName?: string;
   netRegistrationCount?: number;
+  /** 净挂号费（计入净笔数就诊的号源费用合计）。 */
+  registrationFeeAmount?: number | string;
 }
 
 export interface SummarizeOutpatientRegistrationDetailReportResponse {
   rows?: OutpatientRegistrationDetailSummaryRowDto[];
   totalNetRegistrationCount?: number;
+  /** 净挂号费合计。 */
+  totalRegistrationFeeAmount?: number | string;
 }
 
 export interface OutpatientRegistrationDetailRowDto {
@@ -70,6 +75,10 @@ export interface OutpatientRegistrationDetailRowDto {
   organizationName?: string;
   registrationDoctorId?: string;
   registrationDoctorName?: string;
+  /** 接诊医生主键（活动 ADMITTER；未接诊可空）。 */
+  admitterDoctorId?: string;
+  /** 接诊医生姓名（活动 ADMITTER；未接诊可空）。 */
+  admitterDoctorName?: string;
   serviceTypeId?: string;
   serviceTypeName?: string;
   statusEnum?: string;
@@ -91,6 +100,12 @@ export interface PageOutpatientRegistrationDetailReportDetailResponse {
   totalCount?: number;
   pageNo?: number;
   pageSize?: number;
+  /** 同筛选挂/退页脚（对齐门诊挂号当日统计）。 */
+  footer?: {
+    registrationCount?: number;
+    cancelledCount?: number;
+    activeCount?: number;
+  };
 }
 
 export interface ExportOutpatientRegistrationDetailReportRequest
@@ -115,6 +130,7 @@ export async function summarizeOutpatientRegistrationDetailReportApi(
   return publicRequestClient.post<SummarizeOutpatientRegistrationDetailReportResponse>(
     `${BASE}/summarizeOutpatientRegistrationDetailReport`,
     body,
+    reportLongRequestConfig(),
   );
 }
 
@@ -125,6 +141,7 @@ export async function pageOutpatientRegistrationDetailReportDetailApi(
   const res = await publicRequestClient.post<PageOutpatientRegistrationDetailReportDetailResponse>(
     `${BASE}/pageOutpatientRegistrationDetailReportDetail`,
     body,
+    reportLongRequestConfig(),
   );
   const { content, totalCount } =
     parsePagedRowsFromApiData<OutpatientRegistrationDetailRowDto>(res);
@@ -142,5 +159,6 @@ export async function exportOutpatientRegistrationDetailReportApi(
   return publicRequestClient.post<ExportOutpatientRegistrationDetailReportResponse>(
     `${BASE}/exportOutpatientRegistrationDetailReport`,
     body,
+    reportLongRequestConfig(),
   );
 }

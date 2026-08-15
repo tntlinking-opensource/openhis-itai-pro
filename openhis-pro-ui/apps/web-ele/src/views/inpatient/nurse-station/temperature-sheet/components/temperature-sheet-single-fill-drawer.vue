@@ -17,6 +17,7 @@ import dayjs from 'dayjs';
 import { ElMessage } from 'element-plus';
 
 import {
+  httpDeleteNurseStationTemperatureSheet,
   httpGetNurseStationTemperatureSheetData,
   httpLoadNurseStationTemperatureSheetInit,
   httpSaveNurseStationTemperatureSheetAtRecordedTime,
@@ -27,6 +28,7 @@ import { useRequest } from '#/hooks/use-request';
 import {
   applyFillSlotsToEditableDraft,
   applySavedVitalSignIdsToFillRows,
+  clearTemperatureSheetPreviousDaySupplementFields,
   collectTemperatureSheetSaveRequests,
   createDefaultEditableFillRows,
   createEmptyExtraRecord,
@@ -35,6 +37,7 @@ import {
   formatTemperatureSheetTimeSlotHm,
   hasEditableFillRowVitalContent,
   isBloodPressureInputDisabled,
+  isTemperatureSheetAdmissionRecordDate,
   resolveMergedTemperatureSheetGridRows,
   shiftTemperatureSheetRecordDateYmd,
   syncFillRowChartTimeSlot,
@@ -51,6 +54,11 @@ import {
   validateFillRowsSpecialEvents,
   validateSpecialEventStore,
 } from '../services/temperature-sheet-special-events';
+import {
+  isRecordDateTimeBeforeAdmission,
+  resolveAdmissionDateYmd,
+  resolveMinRecordHmForDate,
+} from '../services/temperature-sheet-time-format';
 import TemperatureSheetFillSlotSpecial from './temperature-sheet-fill-slot-special.vue';
 import TemperatureSheetBottomTimePicker from './temperature-sheet-bottom-time-picker.vue';
 import '../styles/temperature-sheet-fill-drawer.css';
@@ -94,6 +102,10 @@ const currentPatient = ref<TemperatureSheetSingleFillPatient | null>(null);
 const recordDate = ref('');
 const activeFillSlotIndex = ref(0);
 const savingAll = ref(false);
+/** 正在删除的录入行下标；空串表示无进行中删除 */
+const deletingFillRowIndex = ref<null | number>(null);
+/** 上一天/下一天切换中的方向；null 表示非按钮触发的加载 */
+const shiftingDayOffset = ref<null | number>(null);
 const fillFormAreaRef = ref<HTMLElement | null>(null);
 const tempRecordRows = ref<TemperatureSheetFillRowDraft[]>(createDefaultEditableFillRows());
 const extraRecord = ref<TemperatureSheetExtraRecordDraft>(createEmptyExtraRecord());
@@ -127,6 +139,51 @@ const supplementStatisticalDateLabel = computed(() => {
   }
   return formatTemperatureSheetDisplayDate(shiftTemperatureSheetRecordDateYmd(entryDate, -1));
 });
+
+/** 当前录入日是否为入院日（入院日不填前一日统计项） */
+const isAdmissionDayRecord = computed(() =>
+  isTemperatureSheetAdmissionRecordDate(recordDate.value, currentPatient.value?.admissionAt),
+);
+
+/** 入院日 YYYY-MM-DD；无入院时间时为空 */
+const admissionDateYmd = computed(() => resolveAdmissionDateYmd(currentPatient.value?.admissionAt));
+
+/** 入院日当天的测量时间下限；非入院日为空 */
+const minRecordHm = computed(() =>
+  resolveMinRecordHmForDate(recordDate.value, currentPatient.value?.admissionAt),
+);
+
+/** 上一天是否可点（不可早于入院日） */
+const canShiftToPreviousDay = computed(() => {
+  const admissionDate = admissionDateYmd.value;
+  const currentDate = recordDate.value.trim();
+  if (!admissionDate || !currentDate) {
+    return true;
+  }
+  return currentDate > admissionDate;
+});
+
+/** 日期选择器禁用入院日之前的日期 */
+function isRecordDateDisabled(date: Date): boolean {
+  const admissionDate = admissionDateYmd.value;
+  if (!admissionDate) {
+    return false;
+  }
+  return dayjs(date).format('YYYY-MM-DD') < admissionDate;
+}
+
+/** 将录入日抬到不低于入院日 */
+function clampRecordDateToAdmission(dateYmd: string): string {
+  const admissionDate = resolveAdmissionDateYmd(currentPatient.value?.admissionAt);
+  const nextDate = dateYmd.trim();
+  if (!admissionDate || !nextDate) {
+    return nextDate;
+  }
+  if (nextDate < admissionDate) {
+    return admissionDate;
+  }
+  return nextDate;
+}
 
 const { handleFormKeydown: handleFillFormKeydown } = useFormKeyboardNavigation(fillFormAreaRef, {
   keys: ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Enter'],
@@ -190,42 +247,61 @@ async function loadFillDrawerSlots(): Promise<void> {
     tempRecordRows.value = createDefaultEditableFillRows();
     extraRecord.value = createEmptyExtraRecord();
     specialEventStore.value = createEmptySpecialEventStore();
+    shiftingDayOffset.value = null;
     return;
   }
 
-  const response = await dataRequest.run({
-    encounterId: patient.encounterId,
-    patientId: patient.patientId,
-    windowRange: WINDOW_RANGE,
-    pageIndex: 0,
-    focusRecordDate: recordDate.value,
-  });
-
-  const sheetGridRows = resolveMergedTemperatureSheetGridRows(response, WINDOW_DAY_COUNT);
-  specialEventStore.value = buildSpecialEventStoreFromGridRows(sheetGridRows);
-
-  if (response.fillSlots) {
-    const draft = applyFillSlotsToEditableDraft(response.fillSlots);
-    draft.rows.forEach((row) => {
-      syncSpecialEventTimesOnSelectionChange(row);
-      syncSpecialEventShortcutFields(row);
+  try {
+    const response = await dataRequest.run({
+      encounterId: patient.encounterId,
+      patientId: patient.patientId,
+      windowRange: WINDOW_RANGE,
+      pageIndex: 0,
+      focusRecordDate: recordDate.value,
     });
-    tempRecordRows.value = draft.rows;
-    extraRecord.value = draft.extraRecord;
-    return;
-  }
 
-  tempRecordRows.value = createDefaultEditableFillRows();
-  extraRecord.value = createEmptyExtraRecord();
+    const sheetGridRows = resolveMergedTemperatureSheetGridRows(response, WINDOW_DAY_COUNT);
+    specialEventStore.value = buildSpecialEventStoreFromGridRows(sheetGridRows);
+
+    if (response.fillSlots) {
+      const draft = applyFillSlotsToEditableDraft(response.fillSlots);
+      // 回显后同步特殊事件快捷字段与时间
+      draft.rows.forEach((row) => {
+        syncSpecialEventTimesOnSelectionChange(row);
+        syncSpecialEventShortcutFields(row);
+      });
+      tempRecordRows.value = draft.rows;
+      // 入院日不回显前一日统计项（业务上入院当日不填）
+      extraRecord.value = isTemperatureSheetAdmissionRecordDate(
+        recordDate.value,
+        patient.admissionAt,
+      )
+        ? clearTemperatureSheetPreviousDaySupplementFields(draft.extraRecord)
+        : draft.extraRecord;
+      return;
+    }
+
+    tempRecordRows.value = createDefaultEditableFillRows();
+    extraRecord.value = createEmptyExtraRecord();
+  } finally {
+    shiftingDayOffset.value = null;
+  }
 }
 
-/** 修改行测量时间（自选时分，禁止与其他行重复） */
+/** 修改行测量时间（自选时分，禁止与其他行重复；不可早于入院时间） */
 function handleRowRecordTimeChange(row: TemperatureSheetFillRowDraft, timeHm: null | string): void {
   if (!timeHm?.trim()) {
     return;
   }
   const nextTime = timeHm.trim();
   if (nextTime === row.recordTime) {
+    return;
+  }
+  if (
+    isRecordDateTimeBeforeAdmission(recordDate.value, nextTime, currentPatient.value?.admissionAt)
+  ) {
+    const minHm = minRecordHm.value;
+    ElMessage.warning(minHm ? `测量时间不能早于入院时间 ${minHm}` : '测量时间不能早于入院时间');
     return;
   }
   const duplicated = tempRecordRows.value.some(
@@ -248,6 +324,19 @@ function handleAddFillRow(): void {
     return;
   }
   const row = createEmptyFillRow();
+  const minHm = minRecordHm.value;
+  // 入院日当天：默认时分不低于入院时间
+  if (
+    minHm &&
+    isRecordDateTimeBeforeAdmission(
+      recordDate.value,
+      row.recordTime,
+      currentPatient.value?.admissionAt,
+    )
+  ) {
+    row.recordTime = minHm;
+    syncFillRowChartTimeSlot(row);
+  }
   // 若与已有行撞同一时分，顺延一分钟
   while (tempRecordRows.value.some((item) => item.recordTime === row.recordTime)) {
     const [hourText, minuteText] = row.recordTime.split(':');
@@ -263,15 +352,51 @@ function handleAddFillRow(): void {
   activeFillSlotIndex.value = tempRecordRows.value.length - 1;
 }
 
-/** 删除录入行（至少保留 1 条） */
-function handleRemoveFillRow(index: number): void {
-  if (tempRecordRows.value.length <= 1) {
+/** 删除录入行：已落库调删除接口；末行清空为空白待填 */
+async function handleRemoveFillRow(index: number): Promise<void> {
+  const target = tempRecordRows.value[index];
+  if (!target) {
+    return;
+  }
+  const patient = currentPatient.value;
+  const vitalSignId = target.vitalSignId?.trim();
+  // 仅一条且未落库：保留空白行，避免抽屉无录入位
+  if (!vitalSignId && tempRecordRows.value.length <= 1) {
     ElMessage.warning('至少保留一条待填写记录');
     return;
   }
-  tempRecordRows.value.splice(index, 1);
-  if (activeFillSlotIndex.value >= tempRecordRows.value.length) {
-    activeFillSlotIndex.value = tempRecordRows.value.length - 1;
+
+  if (vitalSignId) {
+    if (!patient) {
+      ElMessage.warning('请先选择患者');
+      return;
+    }
+    deletingFillRowIndex.value = index;
+    try {
+      await httpDeleteNurseStationTemperatureSheet({
+        vitalSignId,
+        encounterId: patient.encounterId,
+        patientId: patient.patientId,
+      });
+    } finally {
+      deletingFillRowIndex.value = null;
+    }
+  }
+
+  // 末行：清空为空白待填；多行：直接移除
+  if (tempRecordRows.value.length <= 1) {
+    tempRecordRows.value = createDefaultEditableFillRows();
+    activeFillSlotIndex.value = 0;
+  } else {
+    tempRecordRows.value.splice(index, 1);
+    if (activeFillSlotIndex.value >= tempRecordRows.value.length) {
+      activeFillSlotIndex.value = tempRecordRows.value.length - 1;
+    }
+  }
+
+  if (vitalSignId && patient) {
+    ElMessage.success('已删除记录');
+    emit('saved', patient.encounterId);
   }
 }
 
@@ -291,14 +416,21 @@ async function open(options: {
   recordDate?: string;
 }): Promise<void> {
   currentPatient.value = options.patient;
-  recordDate.value = options.recordDate?.trim() || dayjs().format('YYYY-MM-DD');
+  const requestedDate = options.recordDate?.trim() || dayjs().format('YYYY-MM-DD');
+  recordDate.value = clampRecordDateToAdmission(requestedDate);
   await ensureSpecialEventOptionsLoaded();
   await loadFillDrawerSlots();
-  // 从批量入口带入时次：空行时落到该槽整点
+  // 从批量入口带入时次：空行时落到该槽整点（不低于入院时分）
   if (options.activeTimeSlot && tempRecordRows.value.length === 1) {
     const onlyRow = tempRecordRows.value[0];
     if (onlyRow && !hasEditableFillRowVitalContent(onlyRow)) {
-      onlyRow.recordTime = formatTemperatureSheetTimeSlotHm(options.activeTimeSlot);
+      const slotHm = formatTemperatureSheetTimeSlotHm(options.activeTimeSlot);
+      const minHm = resolveMinRecordHmForDate(recordDate.value, options.patient.admissionAt);
+      onlyRow.recordTime =
+        minHm &&
+        isRecordDateTimeBeforeAdmission(recordDate.value, slotHm, options.patient.admissionAt)
+          ? minHm
+          : slotHm;
       syncFillRowChartTimeSlot(onlyRow);
     }
   }
@@ -307,16 +439,24 @@ async function open(options: {
   await focusFirstInput();
 }
 
-/** 录入日期加减天数并重新加载 */
+/** 录入日期加减天数；可见时由 recordDate watch 触发回显加载 */
 function shiftRecordDateByDays(offset: number): void {
+  if (dataRequest.loading.value) {
+    return;
+  }
   const base = recordDate.value?.trim() ? dayjs(recordDate.value) : dayjs();
   if (!base.isValid()) {
     return;
   }
-  recordDate.value = base.add(offset, 'day').format('YYYY-MM-DD');
-  if (visible.value) {
-    void loadFillDrawerSlots();
+  const nextDate = base.add(offset, 'day').format('YYYY-MM-DD');
+  const admissionDate = admissionDateYmd.value;
+  // 上一天不可早于入院日
+  if (admissionDate && nextDate < admissionDate) {
+    ElMessage.warning(`录入日期不能早于入院日期 ${admissionDate}`);
+    return;
   }
+  shiftingDayOffset.value = offset;
+  recordDate.value = nextDate;
 }
 
 /** 复制上一行生命体征（不含时间；首行不可用） */
@@ -334,20 +474,19 @@ function copyPrevRow(index: number): void {
     Boolean(prev.temp.trim()) ||
     Boolean(prev.pulse.trim()) ||
     Boolean(prev.respiratory.trim()) ||
-    Boolean(prev.heartRate.trim()) ||
     Boolean(prev.systolic.trim()) ||
     Boolean(prev.diastolic.trim());
   if (!hasPrevVital) {
     ElMessage.warning('上一条暂无生命体征可复制');
     return;
   }
-  // 整行替换，避免个别输入框未及时回显
+  // 整行替换，避免个别输入框未及时回显；心率与脉搏同值
   tempRecordRows.value[index] = {
     ...current,
     temp: prev.temp,
     pulse: prev.pulse,
     respiratory: prev.respiratory,
-    heartRate: prev.heartRate,
+    heartRate: prev.pulse,
     systolic: prev.systolic,
     diastolic: prev.diastolic,
   };
@@ -395,7 +534,7 @@ function fillSameFromFirstRow(): void {
     row.temp = firstRow.temp;
     row.pulse = firstRow.pulse;
     row.respiratory = firstRow.respiratory;
-    row.heartRate = firstRow.heartRate;
+    row.heartRate = firstRow.pulse;
   });
 }
 
@@ -411,11 +550,42 @@ function validateFillRowTimesUnique(): string | null {
   return null;
 }
 
+/** 保存前校验测量时间不早于入院时间 */
+function validateFillRowsNotBeforeAdmission(): string | null {
+  const patient = currentPatient.value;
+  const admissionDate = admissionDateYmd.value;
+  if (!patient?.admissionAt || !recordDate.value.trim()) {
+    return null;
+  }
+  if (admissionDate && recordDate.value.trim() < admissionDate) {
+    return `录入日期不能早于入院日期 ${admissionDate}`;
+  }
+  const minHm = minRecordHm.value;
+  // 仅检查有内容的行（空行会在保存收集时跳过）
+  for (const row of tempRecordRows.value) {
+    if (!hasEditableFillRowVitalContent(row) && !row.vitalSignId?.trim()) {
+      continue;
+    }
+    if (isRecordDateTimeBeforeAdmission(recordDate.value, row.recordTime, patient.admissionAt)) {
+      return minHm
+        ? `${row.recordTime} 早于入院时间 ${minHm}，请调整后再保存`
+        : `${row.recordTime} 早于入院时间，请调整后再保存`;
+    }
+  }
+  return null;
+}
+
 /** 批量保存当日全部已填写时次 */
 async function handleSaveAllSlots(): Promise<void> {
   const patient = currentPatient.value;
   if (!patient || !recordDate.value) {
     ElMessage.warning('请先选择患者与录入日期');
+    return;
+  }
+
+  const admissionError = validateFillRowsNotBeforeAdmission();
+  if (admissionError) {
+    ElMessage.warning(admissionError);
     return;
   }
 
@@ -427,7 +597,10 @@ async function handleSaveAllSlots(): Promise<void> {
 
   const saveRequests = collectTemperatureSheetSaveRequests(
     tempRecordRows.value,
-    extraRecord.value,
+    // 入院日不提交前一日统计项
+    isAdmissionDayRecord.value
+      ? clearTemperatureSheetPreviousDaySupplementFields(extraRecord.value)
+      : extraRecord.value,
     recordDate.value,
     patient.encounterId,
     patient.patientId,
@@ -464,8 +637,15 @@ async function handleSaveAllSlots(): Promise<void> {
   }
 }
 
-watch(recordDate, () => {
+watch(recordDate, (nextDate) => {
   if (!visible.value) {
+    return;
+  }
+  // 防护：录入日被改到入院日之前时抬回入院日
+  const clampedDate = clampRecordDateToAdmission(nextDate ?? '');
+  if (clampedDate && clampedDate !== nextDate) {
+    recordDate.value = clampedDate;
+    ElMessage.warning(`录入日期不能早于入院日期 ${clampedDate}`);
     return;
   }
   void loadFillDrawerSlots();
@@ -493,6 +673,8 @@ defineExpose({
           <div class="fill-record-date-nav">
             <ElDatePicker
               v-model="recordDate"
+              :disabled="dataRequest.loading.value"
+              :disabled-date="isRecordDateDisabled"
               format="YYYY-MM-DD"
               placeholder="录入日期"
               popper-class="temperature-sheet-fill-popper"
@@ -500,8 +682,24 @@ defineExpose({
               type="date"
               value-format="YYYY-MM-DD"
             />
-            <ElButton plain size="small" @click="shiftRecordDateByDays(-1)">上一天</ElButton>
-            <ElButton plain size="small" @click="shiftRecordDateByDays(1)">下一天</ElButton>
+            <ElButton
+              :disabled="dataRequest.loading.value || !canShiftToPreviousDay"
+              :loading="shiftingDayOffset === -1 && dataRequest.loading.value"
+              plain
+              size="small"
+              @click="shiftRecordDateByDays(-1)"
+            >
+              上一天
+            </ElButton>
+            <ElButton
+              :disabled="dataRequest.loading.value"
+              :loading="shiftingDayOffset === 1 && dataRequest.loading.value"
+              plain
+              size="small"
+              @click="shiftRecordDateByDays(1)"
+            >
+              下一天
+            </ElButton>
           </div>
           <ElTag v-if="patientTitleText" type="info">{{ patientTitleText }}</ElTag>
           <ElTag type="info">键盘快捷：←/→ 切换，↑/↓ 同列切换，Enter 下一项</ElTag>
@@ -517,7 +715,7 @@ defineExpose({
         </div>
       </div>
 
-      <div class="fill-drawer-main">
+      <div v-loading="dataRequest.loading.value" class="fill-drawer-main">
         <section class="fill-card">
           <header class="fill-card-title">
             生命体征（主录入）
@@ -530,7 +728,6 @@ defineExpose({
             <span>体温(℃)</span>
             <span>脉搏</span>
             <span>呼吸</span>
-            <span>心率</span>
             <span>收缩压</span>
             <span>舒张压</span>
             <span>特殊</span>
@@ -552,6 +749,7 @@ defineExpose({
                 @click.stop
               >
                 <TemperatureSheetBottomTimePicker
+                  :min-hm="minRecordHm || ''"
                   :model-value="row.recordTime"
                   @update:model-value="(value) => handleRowRecordTimeChange(row, value)"
                 />
@@ -572,11 +770,6 @@ defineExpose({
                 </ElInput>
               </div>
               <div class="nav-cell" :data-nav-col="3" data-nav-group="vital" :data-nav-row="index">
-                <ElInput v-model="row.heartRate" placeholder="心率">
-                  <template #suffix>bpm</template>
-                </ElInput>
-              </div>
-              <div class="nav-cell" :data-nav-col="4" data-nav-group="vital" :data-nav-row="index">
                 <ElInput
                   v-model="row.systolic"
                   :disabled="isBloodPressureInputDisabled(row, tempRecordRows)"
@@ -585,7 +778,7 @@ defineExpose({
                   <template #suffix>mmHg</template>
                 </ElInput>
               </div>
-              <div class="nav-cell" :data-nav-col="5" data-nav-group="vital" :data-nav-row="index">
+              <div class="nav-cell" :data-nav-col="4" data-nav-group="vital" :data-nav-row="index">
                 <ElInput
                   v-model="row.diastolic"
                   :disabled="isBloodPressureInputDisabled(row, tempRecordRows)"
@@ -608,7 +801,11 @@ defineExpose({
                   复制上条
                 </ElButton>
                 <ElButton
-                  :disabled="tempRecordRows.length <= 1"
+                  :disabled="
+                    deletingFillRowIndex === index ||
+                    (!row.vitalSignId?.trim() && tempRecordRows.length <= 1)
+                  "
+                  :loading="deletingFillRowIndex === index"
                   link
                   type="danger"
                   @click.stop="handleRemoveFillRow(index)"
@@ -623,7 +820,10 @@ defineExpose({
         <section class="fill-card fill-extra-card">
           <header class="fill-card-title">
             补充记录
-            <ElTag size="small" type="info">
+            <ElTag v-if="isAdmissionDayRecord" size="small" type="info">
+              入院当日不填大便次数、小便次数、总入量、其他、尿量；次日录入后显示在入院日列
+            </ElTag>
+            <ElTag v-else size="small" type="info">
               大便次数、小便次数、总入量、其他、尿量为前一日（{{
                 supplementStatisticalDateLabel || '—'
               }}）统计，保存后显示在前一日列
@@ -636,7 +836,7 @@ defineExpose({
                 <template #suffix>kg</template>
               </ElInput>
             </div>
-            <div class="extra-item">
+            <div v-if="!isAdmissionDayRecord" class="extra-item">
               <span class="extra-label">小便次数</span>
               <ElInput v-model="extraRecord.urineCount" placeholder="次数">
                 <template #suffix>次</template>
@@ -648,7 +848,7 @@ defineExpose({
                 <template #suffix>cm</template>
               </ElInput>
             </div>
-            <div class="extra-item">
+            <div v-if="!isAdmissionDayRecord" class="extra-item">
               <span class="extra-label">大便次数</span>
               <ElInput v-model="extraRecord.stoolCount" placeholder="次数">
                 <template #suffix>次</template>
@@ -660,19 +860,19 @@ defineExpose({
                 <template #suffix>cm</template>
               </ElInput>
             </div>
-            <div class="extra-item">
+            <div v-if="!isAdmissionDayRecord" class="extra-item">
               <span class="extra-label">入量</span>
               <ElInput v-model="extraRecord.intake" placeholder="入量">
                 <template #suffix>ml</template>
               </ElInput>
             </div>
-            <div class="extra-item">
+            <div v-if="!isAdmissionDayRecord" class="extra-item">
               <span class="extra-label">尿量</span>
               <ElInput v-model="extraRecord.urine" placeholder="尿量">
                 <template #suffix>ml</template>
               </ElInput>
             </div>
-            <div class="extra-item">
+            <div v-if="!isAdmissionDayRecord" class="extra-item">
               <span class="extra-label">其他</span>
               <ElInput v-model="extraRecord.other" placeholder="其他">
                 <template #suffix>ml</template>
@@ -752,7 +952,7 @@ defineExpose({
 .fill-grid-head,
 .fill-row {
   display: grid;
-  grid-template-columns: 120px repeat(6, 160px) minmax(520px, 1fr) 120px;
+  grid-template-columns: 120px repeat(5, 160px) minmax(520px, 1fr) 120px;
   gap: 8px;
   align-items: start;
 }

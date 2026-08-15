@@ -69,6 +69,8 @@ export namespace AuthApi {
     organizationId?: null | number | string;
     /** 是否具备财务审批角色（动账类供应单与调价 approve/reject） */
     canFinanceApprove?: boolean;
+    /** 是否具备病案管理员角色（门诊/住院归档病例 / 解档病例） */
+    canMrmsAdmin?: boolean;
   }
 
   /** 当前租户信息 */
@@ -235,6 +237,19 @@ export async function refreshTokenApi(refreshToken: string) {
  */
 export async function logoutApi(refreshToken?: string) {
   return baseRequestClient.post('/auth/logout', refreshToken ? { refreshToken } : {});
+}
+
+/** 当前登录用户自助改密（须校验旧密码） */
+export interface ChangeOwnPasswordParams {
+  oldPassword: string;
+  newPassword: string;
+}
+
+/**
+ * 个人中心修改密码：校验旧密码后更新；成功后前端应退出并重新登录
+ */
+export async function changeOwnPasswordApi(data: ChangeOwnPasswordParams) {
+  return requestClient.post('/auth/changeOwnPassword', data);
 }
 
 /**

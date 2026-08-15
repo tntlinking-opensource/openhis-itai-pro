@@ -1,4 +1,4 @@
-<!--
+﻿<!--
   科室退库单右侧主区。
 -->
 <script setup lang="ts">
@@ -14,7 +14,7 @@ import type {
 } from '#/api/inventory/department/dept-return';
 import type { ApiOptionItem } from '#/types/api-response';
 
-import { computed, nextTick, reactive, ref, watch } from 'vue';
+import { computed, nextTick, reactive, ref, watch, onBeforeUnmount, onDeactivated } from 'vue';
 
 import { Trash2 } from '@vben/icons';
 import { useUserStore } from '@vben/stores';
@@ -27,7 +27,6 @@ import InvDocLinkPickerDialog from '@inventory/components/inv-doc-link-picker-di
 import InvMainShell from '@inventory/components/inv-main-shell.vue';
 import InvPrimaryBtn from '@inventory/components/inv-primary-btn.vue';
 import {
-  ElAlert,
   ElButton,
   ElDatePicker,
   ElForm,
@@ -43,6 +42,10 @@ import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import { useInventoryDocGridEdit } from '#/composables/use-inventory-doc-grid-edit';
 import { bindInvDocCompactColumns } from '#/composables/use-inv-doc-compact-columns';
 import { useInvDocParentSyncSession } from '#/composables/use-inv-doc-parent-sync-session';
+import {
+  clearInvDocDraftCacheAfterSave,
+  INV_DOC_DRAFT_SCENE,
+} from '#/utils/inventory/inv-doc-draft-cache';
 import {
   agreeDeptReturnApi,
   createDeptReturnApi,
@@ -63,12 +66,18 @@ import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import {
   INV_ALL_DEPT_PHARMACIES_LABEL,
   INV_ALL_LOCATIONS_FILTER_ID,
+  INV_ITEM_TABLE_TYPE_DEVICE,
+  INV_ITEM_TABLE_TYPE_MEDICATION,
+  INVENTORY_ITEM_TABLE_TYPE_LABELS,
   preserveLocationIdForRequest,
   isSpecificInventoryLocationId,
+  resolveDocHeadProductPickLocationId,
   resolveSpecificInventoryLocationId,
   buildInventoryDocPractitionerSelectOptions,
   coercePractitionerIdForSelect,
   resolveDefaultPractitionerIdForSelect,
+  resolveInvDocPreparedByName,
+  resolveInvDocApprovedByName,
 } from '#/utils/inventory/inventory-workbench-list';
 import {
   buildInventoryLocationHeadFormRules,
@@ -76,11 +85,9 @@ import {
   validateInventoryHeadFormFields,
 } from '#/utils/inventory/inventory-doc-head-form-validation';
 import {
-  INV_DOC_UPSTREAM_HINT,
   INV_DOC_UPSTREAM_WELCOME,
   hasNonEmptyBusNo,
   mapReturnableLinkLineToGridRow,
-  warnInventoryDocRestriction,
 } from '#/utils/inventory/inventory-doc-restrictions';
 import { withInvDocLinkPickerEnrichedColumns } from '#/utils/inventory/inv-doc-link-picker-display';
 import {
@@ -90,31 +97,53 @@ import {
   stockOutStatusLabel,
   normalizeStockOutStatusSort,
 } from '#/utils/inventory/stock-out-doc-actions';
-import { resolveLoginPractitionerIdForRequest } from '#/utils/format/preserve-api-id';
+import {
+  preserveApiIdForRequest,
+  resolveLoginPractitionerIdForRequest,
+} from '#/utils/format/preserve-api-id';
 import {
   applyHydratedInventoryDetailQtyToRow,
   applyInventoryRowQtyUnitList,
+  applyWarehouseNonInboundProductPickUnitsToRow,
   createInventoryQtyUnitColumn,
   handleWarehouseNonInboundUnitBandChanged,
   hydrateInventoryDetailLineQtyForGrid,
+  scheduleInventoryProductPickFocus,
 } from '#/utils/inventory/inventory-doc-grid-common';
+import {
+  inventoryPickAvailableQtyAsStockDisplay,
+  inventoryPickMedicineCell,
+  inventoryPickStringField,
+} from '#/utils/inventory/inventory-product-pick-list';
 import {
   canConvertDisplayQtyToSplitForBands,
   persistDisplayQtyAsSplitForBands,
   resolveInboundLinePersistUnitCodeForBands,
   type InboundProductUnitBand,
 } from '#/utils/inventory/inbound-product-unit-bands';
-import { buildInvDocumentTitle, printInvDocument } from '#/utils/print/print-inv-document';
+import {
+  buildInvDocumentTitle,
+  printInvDocument,
+  resolveInvPrintProductBusNo,
+} from '#/utils/print/print-inv-document';
 import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
 
 defineOptions({ name: 'InventoryDepartmentDeptReturnMainPane' });
 
+interface MedicinePickCell {
+  id?: number | string;
+  name?: string;
+}
+
 interface ReturnPreviewRow {
   id: string;
-  medicinePick?: Record<string, unknown>;
+  medicinePick?: MedicinePickCell | Record<string, unknown>;
   itemTable?: string;
   itemId?: number | string;
+  inventoryItemId?: number | string;
   productName: string;
+  specification?: string;
+  manufacturer?: string;
   itemQuantity?: number;
   unitCode: string;
   unitCodeDictText?: string;
@@ -129,8 +158,12 @@ interface ReturnPreviewRow {
 }
 
 interface Props {
+  /** 侧栏当前单据行（制单人/审批人与队列卡片同口径） */
+  queueCardRow?: null | Record<string, unknown>;
   busNo?: string;
   isDraftOrder?: boolean;
+  /** 侧栏草稿稳定 id（_clientDraftId），用于 session 缓存隔离 */
+  clientDraftId?: string;
   resetKey?: number;
   showWelcomeEmpty?: boolean;
   deptOptions: LocationOptionDto[];
@@ -140,8 +173,10 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  queueCardRow: null,
   busNo: '',
   isDraftOrder: false,
+  clientDraftId: '',
   resetKey: 0,
   showWelcomeEmpty: false,
   deptOptions: () => [],
@@ -151,10 +186,23 @@ const props = withDefaults(defineProps<Props>(), {
 });
 
 const emit = defineEmits<{
+  createBlank: [];
   createFromUpstream: [row: DeptReturnListRowDto];
   documentRemoved: [];
   documentSaved: [{ busNo?: string }];
 }>();
+
+/** 单头「项目类型」选项（选品 productTableName） */
+const itemTableTypeOptions = [
+  {
+    value: INV_ITEM_TABLE_TYPE_MEDICATION,
+    label: INVENTORY_ITEM_TABLE_TYPE_LABELS[INV_ITEM_TABLE_TYPE_MEDICATION],
+  },
+  {
+    value: INV_ITEM_TABLE_TYPE_DEVICE,
+    label: INVENTORY_ITEM_TABLE_TYPE_LABELS[INV_ITEM_TABLE_TYPE_DEVICE],
+  },
+];
 
 const userStore = useUserStore();
 
@@ -193,6 +241,8 @@ const headerBusNo = ref<string | undefined>(undefined);
 const originalBusNo = ref<string | undefined>(undefined);
 const sourceLocationId = ref<number | string | undefined>(undefined);
 const purposeLocationId = ref<number | string | undefined>(undefined);
+/** 科室单据默认耗材（对偶领用/请领；耗材房选「药品」会查空） */
+const headItemTableType = ref(INV_ITEM_TABLE_TYPE_DEVICE);
 const practitionerId = ref<number | string | undefined>(undefined);
 const headFormRef = ref<FormInstance>();
 
@@ -200,6 +250,11 @@ const headFormModel = computed(() => ({
   sourceLocationId: sourceLocationId.value ?? '',
   purposeLocationId: purposeLocationId.value ?? '',
 }));
+
+/** 选品门禁：跟单头「科室」，不用侧栏筛选库 */
+const productPickGateLocationId = computed(() =>
+  resolveDocHeadProductPickLocationId(sourceLocationId.value, props.deptOptions),
+);
 
 const headFormRules = computed(() =>
   buildInventoryLocationHeadFormRules({
@@ -298,7 +353,7 @@ const documentEditable = computed(
   () => isNewDraft.value || isStockOutDocumentEditableStatus(detailStatusEnum.value),
 );
 const hasLinkedUpstream = computed(() => hasNonEmptyBusNo(originalBusNo.value));
-const linesGridEditable = computed(() => documentEditable.value && hasLinkedUpstream.value);
+const linesGridEditable = computed(() => documentEditable.value);
 const headerStatusText = computed(() => {
   if (isNewDraft.value) return '编辑中';
   return stockOutStatusLabel(detailStatusEnum.value);
@@ -311,11 +366,10 @@ const docActionFlags = computed(() => {
     status: detailStatusEnum.value,
   });
   const busy = saving.value;
-  const upstreamRequired = isNewDraft.value && !hasLinkedUpstream.value;
   return {
     ...base,
-    saveDisabled: base.saveDisabled || busy || upstreamRequired,
-    saveAndSubmitDisabled: base.saveAndSubmitDisabled || busy || upstreamRequired,
+    saveDisabled: base.saveDisabled || busy,
+    saveAndSubmitDisabled: base.saveAndSubmitDisabled || busy,
     printDisabled: busy || !hasPersistedBusNo,
   };
 });
@@ -353,11 +407,15 @@ function createEmptyRow(): ReturnPreviewRow {
     medicinePick: undefined,
     itemTable: undefined,
     itemId: undefined,
+    inventoryItemId: undefined,
     productName: '',
+    specification: '',
+    manufacturer: '',
     itemQuantity: undefined,
     unitCode: '',
     selectedBandKind: 'LEGACY',
     unitList: [{ value: 'LEGACY', label: '单位' }],
+    __prevBandKind: 'LEGACY',
     lotNumber: '',
     traceNo: '',
     reason: '',
@@ -374,6 +432,29 @@ function handleDeptReturnUnitBandChanged(row: ReturnPreviewRow): void {
   });
 }
 
+/** 库存选品回填退库明细行（与药房退库同构） */
+function syncRowFromDeptReturnMedicinePick(pick: Record<string, unknown>, row: ReturnPreviewRow) {
+  row.medicinePick = inventoryPickMedicineCell(pick) ?? (pick as ReturnPreviewRow['medicinePick']);
+  row.itemTable = inventoryPickStringField(pick, 'productTableName');
+  const defId = pick.productDefinitionId;
+  row.itemId =
+    defId === undefined || defId === null || String(defId).trim() === ''
+      ? undefined
+      : (defId as number | string);
+  const invId = pick.inventoryItemId;
+  row.inventoryItemId =
+    invId === undefined || invId === null || String(invId).trim() === ''
+      ? undefined
+      : (invId as number | string);
+  row.productName = inventoryPickStringField(pick, 'productName');
+  row.specification = inventoryPickStringField(pick, 'specification');
+  row.manufacturer = inventoryPickStringField(pick, 'manufacturer');
+  applyWarehouseNonInboundProductPickUnitsToRow(pick, row);
+  row.lotNumber = inventoryPickStringField(pick, 'lotNumber');
+  const availQty = inventoryPickAvailableQtyAsStockDisplay(pick);
+  row.itemQuantity = Number.isFinite(availQty) ? availQty : undefined;
+}
+
 function mapDetailLineToGrid(ln: DeptReturnDetailLineDto, rowIdx: number): ReturnPreviewRow {
   const itemIdRaw = ln.itemId;
   const idStr =
@@ -385,10 +466,30 @@ function mapDetailLineToGrid(ln: DeptReturnDetailLineDto, rowIdx: number): Retur
   const name = String(ln.productName ?? '').trim();
   const row: ReturnPreviewRow = {
     id: idStr,
-    medicinePick: name ? { id: itemIdRaw as number | string | undefined, name } : undefined,
+    medicinePick: name
+      ? {
+          id: itemIdRaw as number | string | undefined,
+          name,
+          ...(String(
+            (ln.productCatalog as { productBusNo?: string } | null | undefined)?.productBusNo ?? '',
+          ).trim()
+            ? {
+                busNo: String(
+                  (ln.productCatalog as { productBusNo?: string }).productBusNo ?? '',
+                ).trim(),
+              }
+            : {}),
+        }
+      : undefined,
     itemTable: ln.itemTable,
     itemId: itemIdRaw,
     productName: name,
+    specification: String(
+      (ln as { specification?: string }).specification ??
+        (ln as { productCatalog?: { totalVolume?: string } }).productCatalog?.totalVolume ??
+        '',
+    ),
+    manufacturer: String((ln as { manufacturer?: string }).manufacturer ?? ''),
     itemQuantity: ln.itemQuantity === undefined ? undefined : Number(ln.itemQuantity),
     unitCode: String(ln.unitCode ?? ''),
     // 仅回填真实字典文案；裸 unitCode 交给 hydrate/计量带解析，避免数量列显示「100 9」
@@ -413,7 +514,8 @@ function isDeptReturnRowComplete(row: ReturnPreviewRow): boolean {
   if (!String(row.itemTable ?? '').trim() || !isPresentItemId(row.itemId)) return false;
   const qty = Number(row.itemQuantity);
   if (!Number.isFinite(qty) || qty <= 0) return false;
-  return !!String(row.unitCode ?? '').trim();
+  if (!String(row.unitCode ?? '').trim()) return false;
+  return canConvertDisplayQtyToSplitForBands(row.unitBands ?? [], qty, row.selectedBandKind);
 }
 
 let deptReturnGridEdit!: ReturnType<typeof useInventoryDocGridEdit<ReturnPreviewRow>>;
@@ -422,10 +524,37 @@ const columns: VxeGridPropTypes.Column[] = [
   { type: 'checkbox', width: 48, fixed: 'left', align: 'center' },
   { type: 'seq', title: '序号', width: 52, fixed: 'left', align: 'center' },
   {
-    field: 'productName',
+    field: 'medicinePick',
     title: '项目名称',
     minWidth: 200,
     fixed: 'left',
+    editRender: {
+      name: 'PurchaseOrderMedicineSelect',
+      props: {
+        listSource: 'dept-return',
+        placeholder: '请输入关键字检索',
+        query: async () => ({
+          productTableName: headItemTableType.value || undefined,
+          sourceLocationId: sourceLocationId.value ?? productPickGateLocationId.value,
+        }),
+        onSelected: (product: Record<string, unknown>, row: ReturnPreviewRow) => {
+          syncRowFromDeptReturnMedicinePick(product, row);
+          handleDeptReturnProductPick(row);
+        },
+      },
+    },
+    showOverflow: true,
+  },
+  {
+    field: 'specification',
+    title: '规格',
+    width: 120,
+    showOverflow: true,
+  },
+  {
+    field: 'manufacturer',
+    title: '厂家/产地',
+    minWidth: 120,
     showOverflow: true,
   },
   createInventoryQtyUnitColumn({
@@ -435,7 +564,6 @@ const columns: VxeGridPropTypes.Column[] = [
     field: 'lotNumber',
     title: '批号',
     width: 120,
-    editRender: { name: 'InventoryPersistElInput', props: { maxlength: 64, clearable: true } },
     showOverflow: true,
   },
   {
@@ -490,16 +618,16 @@ const gridOptions: VxeGridProps<ReturnPreviewRow> = reactive({
 });
 
 const DEPT_RETURN_EDITABLE_COLUMN_FIELDS = new Set([
+  'medicinePick',
   '_qtyUnit',
-  'lotNumber',
   'reason',
   'remake',
   'traceNo',
 ]);
 
 const DEPT_RETURN_EDIT_FIELD_ORDER = [
+  'medicinePick',
   '_qtyUnit',
-  'lotNumber',
   'traceNo',
   'reason',
   'remake',
@@ -509,7 +637,6 @@ type DeptReturnEditField = (typeof DEPT_RETURN_EDIT_FIELD_ORDER)[number];
 
 const DEPT_RETURN_VERTICAL_NAV_FIELDS = new Set<DeptReturnEditField>([
   '_qtyUnit',
-  'lotNumber',
   'reason',
   'remake',
   'traceNo',
@@ -543,7 +670,7 @@ deptReturnGridEdit = useInventoryDocGridEdit<ReturnPreviewRow>({
   collectRows: collectGridRows,
   config: {
     rowKey: (row) => row.id,
-    productField: 'productName',
+    productField: 'medicinePick',
     editFieldOrder: DEPT_RETURN_EDIT_FIELD_ORDER,
     editableFields: DEPT_RETURN_EDITABLE_COLUMN_FIELDS,
     verticalNavFields: DEPT_RETURN_VERTICAL_NAV_FIELDS,
@@ -552,6 +679,11 @@ deptReturnGridEdit = useInventoryDocGridEdit<ReturnPreviewRow>({
     isRowComplete: isDeptReturnRowComplete,
   },
 });
+
+/** 选品后进入整行表单并聚焦数量 */
+function handleDeptReturnProductPick(row: ReturnPreviewRow) {
+  scheduleInventoryProductPickFocus(deptReturnGridEdit, row);
+}
 
 function patchDeptReturnGridEditConfig() {
   const patched = deptReturnGridEdit.patchGridOptions({
@@ -600,6 +732,7 @@ function resetDetailForCreate() {
   pinnedPractitionerOptions.value = [];
   sourceLocationId.value = undefined;
   purposeLocationId.value = undefined;
+  headItemTableType.value = INV_ITEM_TABLE_TYPE_DEVICE;
   practitionerId.value = resolveDefaultPractitionerIdForSelect(
     effectivePractitionerOptions.value,
     userStore.userInfo as null | Record<string, unknown>,
@@ -636,6 +769,12 @@ async function loadDetail(busNo: string, loadGen?: number) {
       detailPractitionerId,
       effectivePractitionerOptions.value,
     );
+
+    // 回显首行物品表作为项目类型，便于继续自由选品
+    const firstLineTable = String(data.lines?.[0]?.itemTable ?? '').trim();
+    if (firstLineTable) {
+      headItemTableType.value = firstLineTable;
+    }
 
     let headOt = '';
     for (const ln of data.lines ?? []) {
@@ -683,11 +822,14 @@ function buildLinesPayload(rows: ReturnPreviewRow[]): DeptReturnLineDto[] {
       }) ?? String(r.unitCode ?? '').trim();
     return {
       itemTable: r.itemTable,
-      itemId: isPresentItemId(r.itemId) ? String(r.itemId) : undefined,
+      // Snowflake itemId 必须以 string 提交，禁止 Number() 抹精度
+      itemId: isPresentItemId(r.itemId)
+        ? (preserveApiIdForRequest(r.itemId) ?? String(r.itemId))
+        : undefined,
       itemQuantity: persisted.itemQuantity,
       unitCode: unitCode || undefined,
       lotNumber: String(r.lotNumber ?? '').trim() || undefined,
-      traceNo: String(r.traceNo ?? '').trim() || undefined,
+      traceNo: String(r.traceNo ?? '').trim(),
       occurrenceTime: resolveOccurrenceTimeForApi(),
       reason: String(r.reason ?? '').trim() || undefined,
       remake: String(r.remake ?? '').trim() || undefined,
@@ -696,10 +838,6 @@ function buildLinesPayload(rows: ReturnPreviewRow[]): DeptReturnLineDto[] {
 }
 
 function validateBeforeSave(rows: ReturnPreviewRow[]): boolean {
-  if (!hasLinkedUpstream.value) {
-    warnInventoryDocRestriction(INV_DOC_UPSTREAM_HINT.deptReturn);
-    return false;
-  }
   if (rows.length === 0) {
     ElMessage.warning('请至少添加一行退库明细');
     return false;
@@ -770,8 +908,9 @@ async function persistDocument(): Promise<string | undefined> {
       return headerBusNo.value;
     }
 
+    const linkedOriginal = String(originalBusNo.value ?? '').trim();
     const res = await createDeptReturnApi({
-      originalBusNo: originalBusNo.value!.trim(),
+      ...(linkedOriginal ? { originalBusNo: linkedOriginal } : {}),
       ...common,
     });
     const no = res.data?.busNo;
@@ -790,13 +929,26 @@ async function persistDocument(): Promise<string | undefined> {
   }
 }
 
+/** 落库成功后清 session 草稿缓存 */
+function clearDraftPersistAfterSave(busNo?: string) {
+  clearInvDocDraftCacheAfterSave({
+    scene: INV_DOC_DRAFT_SCENE.deptReturn,
+    clientDraftId: props.clientDraftId,
+    busNo,
+  });
+  parentSync.clearDraftSnap();
+}
+
 async function handleSaveDoc() {
-  await persistDocument();
+  const no = await persistDocument();
+  if (!no) return;
+  clearDraftPersistAfterSave(no);
 }
 
 async function handleSaveAndSubmitDoc() {
   const no = await persistDocument();
   if (!no) return;
+  clearDraftPersistAfterSave(no);
   await handleSubmitApproval();
 }
 
@@ -807,6 +959,11 @@ async function handleRemoveDoc() {
     } catch {
       return;
     }
+    clearInvDocDraftCacheAfterSave({
+      scene: INV_DOC_DRAFT_SCENE.deptReturn,
+      clientDraftId: props.clientDraftId,
+    });
+    parentSync.discardDraftSession();
     resetDetailForCreate();
     emit('documentRemoved');
     return;
@@ -824,6 +981,11 @@ async function handleRemoveDoc() {
   }
   try {
     await removeDeptReturnApi({ busNo: no });
+    clearInvDocDraftCacheAfterSave({
+      scene: INV_DOC_DRAFT_SCENE.deptReturn,
+      busNo: no,
+    });
+    parentSync.clearDraftSnap();
     ElMessage.success('已删除');
     resetDetailForCreate();
     emit('documentRemoved');
@@ -915,10 +1077,6 @@ async function handleReject() {
 
 async function addItem() {
   if (!documentEditable.value) return;
-  if (!hasLinkedUpstream.value) {
-    warnInventoryDocRestriction(INV_DOC_UPSTREAM_HINT.deptReturn);
-    return;
-  }
   if (
     !(await validateInventoryHeadFormFields(headFormRef.value, [
       'sourceLocationId',
@@ -934,7 +1092,7 @@ async function addItem() {
   await $grid.$nextTick();
   if (row) {
     await $grid.scrollToRow(row);
-    await deptReturnGridEdit.enterRowFormMode(row as ReturnPreviewRow, '_qtyUnit');
+    await deptReturnGridEdit.enterRowFormMode(row as ReturnPreviewRow, 'medicinePick');
   }
 }
 
@@ -1074,11 +1232,36 @@ interface DeptReturnDraftSnap {
   sourceLocationId?: number | string;
   purposeLocationId?: number | string;
   practitionerId?: number | string;
+  headItemTableType: string;
   headApplyTime: string;
   rows: ReturnPreviewRow[];
 }
 
-const parentSync = useInvDocParentSyncSession<DeptReturnDraftSnap>();
+const parentSync = useInvDocParentSyncSession<DeptReturnDraftSnap>({
+  scene: INV_DOC_DRAFT_SCENE.deptReturn,
+  getDocKey: () => {
+    const draftId = String(props.clientDraftId ?? '').trim();
+    if (props.isDraftOrder && draftId) return draftId;
+    return String(props.busNo ?? headerBusNo.value ?? '').trim() || undefined;
+  },
+  getCardMeta: () => ({
+    statusEnum_enumText: '编辑中',
+    applyTime: headApplyTime.value,
+  }),
+});
+
+/** 拍摄当前主区草稿快照（侧栏切单 / 落盘共用） */
+function captureDeptReturnDraftSnap(): DeptReturnDraftSnap {
+  return {
+    originalBusNo: originalBusNo.value,
+    sourceLocationId: sourceLocationId.value,
+    purposeLocationId: purposeLocationId.value,
+    practitionerId: practitionerId.value,
+    headItemTableType: headItemTableType.value,
+    headApplyTime: headApplyTime.value,
+    rows: collectGridRows().map((r) => ({ ...r })),
+  };
+}
 
 /** 侧栏切单：缓存/恢复本地草稿，避免已落库明细污染新建单 */
 async function syncFromParentContext() {
@@ -1086,14 +1269,7 @@ async function syncFromParentContext() {
     { isDraftOrder: Boolean(props.isDraftOrder), parentBusNo: props.busNo },
     {
       getLocalPersistedBusNo: () => headerBusNo.value,
-      captureDraft: () => ({
-        originalBusNo: originalBusNo.value,
-        sourceLocationId: sourceLocationId.value,
-        purposeLocationId: purposeLocationId.value,
-        practitionerId: practitionerId.value,
-        headApplyTime: headApplyTime.value,
-        rows: collectGridRows().map((r) => ({ ...r })),
-      }),
+      captureDraft: captureDeptReturnDraftSnap,
       restoreDraft: async (snap) => {
         headerBusNo.value = undefined;
         detailStatusEnum.value = undefined;
@@ -1101,6 +1277,7 @@ async function syncFromParentContext() {
         sourceLocationId.value = snap.sourceLocationId;
         purposeLocationId.value = snap.purposeLocationId;
         practitionerId.value = snap.practitionerId;
+        headItemTableType.value = snap.headItemTableType || INV_ITEM_TABLE_TYPE_DEVICE;
         headApplyTime.value = snap.headApplyTime;
         deptReturnGridEdit.resetFormMode();
         await nextTick();
@@ -1116,6 +1293,21 @@ async function syncFromParentContext() {
     },
   );
 }
+/** 切菜单 / KeepAlive 停用前把未保存草稿写入 sessionStorage */
+function flushDeptReturnDraftPersist(): void {
+  parentSync.flushPersist({
+    getLocalPersistedBusNo: () => headerBusNo.value,
+    captureDraft: captureDeptReturnDraftSnap,
+  });
+}
+
+onBeforeUnmount(() => {
+  flushDeptReturnDraftPersist();
+});
+
+onDeactivated(() => {
+  flushDeptReturnDraftPersist();
+});
 
 watch(
   () => props.resetKey,
@@ -1125,7 +1317,7 @@ watch(
 );
 
 watch(
-  () => [props.busNo, props.isDraftOrder, props.resetKey] as const,
+  () => [props.busNo, props.isDraftOrder, props.resetKey, props.clientDraftId] as const,
   () => {
     void syncFromParentContext();
   },
@@ -1201,17 +1393,14 @@ async function handlePrint() {
 
   const sourceName = resolvePrintLocationName(props.deptOptions, sourceLocationId.value);
   const warehouseName = resolvePrintLocationName(props.warehouseOptions, purposeLocationId.value);
-  const practitionerName = resolvePrintOptionLabel(
-    effectivePractitionerOptions.value,
-    practitionerId.value,
-  );
-  const documentTitle = buildInvDocumentTitle(sourceName, '退库单');
+  const documentTitle = buildInvDocumentTitle(sourceName, '科室退库单');
   const applyTimeText = String(headApplyTime.value ?? props.applyTime ?? '')
     .trim()
     .replace('T', ' ');
 
   // 按当前网格展示值组装退货明细
   const lineRows = productRows.map((row) => ({
+    productBusNo: resolveInvPrintProductBusNo(row as unknown as Record<string, unknown>),
     productName: String(row.productName ?? '').trim(),
     qty: row.itemQuantity,
     unitLabel: resolveDeptReturnPrintUnitLabel(row),
@@ -1219,6 +1408,12 @@ async function handlePrint() {
     reasonText: String(row.reason ?? '').trim(),
   }));
 
+  const preparedByName = resolveInvDocPreparedByName(
+    props.queueCardRow as null | Record<string, unknown>,
+  );
+  const approvedByName = resolveInvDocApprovedByName(
+    props.queueCardRow as null | Record<string, unknown>,
+  );
   await printInvDocument({
     family: 'return',
     source: {
@@ -1231,11 +1426,10 @@ async function handlePrint() {
       supplierText: '',
       linkDocText: String(originalBusNo.value ?? '').trim(),
       destLocationText: warehouseName,
-      practitionerName,
       invoiceNoText: '',
       lineRows,
-      preparedByName: practitionerName,
-      approvedByName: '',
+      preparedByName,
+      approvedByName,
     },
     bizRef: { busNo, docKind: 'dept-return' },
     jobName: documentTitle,
@@ -1267,7 +1461,10 @@ async function handlePrint() {
         class="flex min-h-0 flex-1 flex-col items-center justify-center px-4 py-12"
       >
         <el-empty :image-size="96" :description="INV_DOC_UPSTREAM_WELCOME.deptReturn">
-          <InvPrimaryBtn label="从入库单新建" @click="openUpstreamPicker" />
+          <div class="flex flex-wrap items-center justify-center gap-2">
+            <InvPrimaryBtn label="新建空白退库单" @click="emit('createBlank')" />
+            <ElButton @click="openUpstreamPicker">从入库单新建</ElButton>
+          </div>
         </el-empty>
       </div>
 
@@ -1348,6 +1545,21 @@ async function handlePrint() {
                   />
                 </ElSelect>
               </ElFormItem>
+              <ElFormItem label="项目类型">
+                <ElSelect
+                  v-model="headItemTableType"
+                  placeholder="药品/耗材"
+                  class="w-full"
+                  :disabled="!documentEditable"
+                >
+                  <ElOption
+                    v-for="t in itemTableTypeOptions"
+                    :key="t.value"
+                    :label="t.label"
+                    :value="t.value"
+                  />
+                </ElSelect>
+              </ElFormItem>
               <ElFormItem label="制单时间">
                 <ElDatePicker
                   v-model="headApplyTime"
@@ -1366,7 +1578,7 @@ async function handlePrint() {
                     class="min-w-0 flex-1"
                     readonly
                     disabled
-                    placeholder="请通过「从入库单选择」关联"
+                    placeholder="可选：从入库单带入"
                   />
                   <ElButton
                     class="shrink-0"
@@ -1381,15 +1593,6 @@ async function handlePrint() {
           </ElForm>
         </div>
 
-        <ElAlert
-          v-if="documentEditable && !hasLinkedUpstream"
-          type="warning"
-          :closable="false"
-          show-icon
-          class="shrink-0"
-          :title="INV_DOC_UPSTREAM_HINT.deptReturn"
-        />
-
         <div
           ref="deptReturnGridKeyboardRef"
           class="dept-return-main-pane__grid-wrap flex min-h-0 min-w-0 flex-1 flex-col"
@@ -1398,9 +1601,10 @@ async function handlePrint() {
           <Grid class="min-h-0 flex-1">
             <template #toolbar-actions>
               <InvDocGridToolbar
-                :show-add="false"
+                :show-add="true"
                 :disabled="!linesGridEditable"
                 show-trace-scan
+                @add="addItem"
                 @delete-selected="deleteItem('select')"
                 @trace-scan="handleOpenTraceScan"
               />

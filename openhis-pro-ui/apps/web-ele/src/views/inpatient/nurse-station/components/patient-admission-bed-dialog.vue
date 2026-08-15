@@ -4,7 +4,7 @@ import type {
   OptionDto,
   PatientDetailDto,
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station.types';
-
+import type { AdmissionBedOperationIntent } from '../services/admission-bed-operation';
 import type { NurseStationModulePatient } from './nurse-station-module-patient.types';
 import type { PatientItem } from '../types';
 
@@ -30,12 +30,12 @@ import {
 import { httpExecuteBedOperation } from '#/api/inpatient/nurse-station/inpatient-nurse-station-atd.http';
 import AppDialog from '#/components/app-dialog.vue';
 import { useRequest } from '#/hooks/use-request';
+import { formatMoneyYuan } from '#/utils/format/money-scale';
 import { isStaleCrossRoleError } from '#/utils/http/stale-cross-role-error';
-import { normalizeTerminologyOptions } from '#/utils/terminology/resolve-terminology-option-label';
 import { normalizeAdmCondTermCode } from '#/utils/terminology/resolve-adm-cond-code-label';
+import { normalizeTerminologyOptions } from '#/utils/terminology/resolve-terminology-option-label';
 import { DEFAULT_ADM_COND_CODE_GENERAL } from '#/views/inpatient/charge/register/inpatient-register.constants';
 
-import type { AdmissionBedOperationIntent } from '../services/admission-bed-operation';
 import {
   admissionBedConfirmLabel,
   admissionBedDialogTitle,
@@ -52,6 +52,10 @@ import {
 } from '../services/map-patient-detail-participants';
 import { loadPrintPendingRows } from '../print-center/load-print-pending';
 import { printInpatientPrintCenter } from '../print-center/print-center-print';
+import {
+  formatNurseStationAccountBalance,
+  resolveInpatientAccountBalanceLabel,
+} from './nurse-station-module-patient.types';
 
 defineOptions({
   name: 'InpatientNurseStationPatientAdmissionBedDialog',
@@ -83,6 +87,8 @@ const detail = ref<PatientDetailDto | null>(null);
 const doctorOptions = ref<OptionDto[]>([]);
 const primaryNurseOptions = ref<OptionDto[]>([]);
 const admCondCodeOptions = ref<OptionDto[]>([]);
+/** 打开弹窗时回填的入院体征快照；用于判断后续保存是否需要再写体征 */
+const loadedAdmissionVitals = ref<AdmissionVitalSignSubmitDto | undefined>();
 
 const vitalForm = reactive({
   heightCm: '',
@@ -120,8 +126,10 @@ const dialogLoading = computed(
     detailRequest.loading.value || saveRequest.loading.value || bedOperationRequest.loading.value,
 );
 
-/** 腕带打印中 */
+/** 打印腕带中 */
 const printingWristband = ref(false);
+/** 打印床头卡中 */
+const printingBedCard = ref(false);
 
 const encounterId = computed(() => props.patient?.id ?? '');
 
@@ -155,24 +163,177 @@ const ageDisplay = computed(() => {
 });
 
 /** 联系电话 */
-const phoneDisplay = computed(() => (detail.value?.patientPhone ?? '').trim() || '—');
+const phoneDisplay = computed(
+  () => (detail.value?.patientPhone ?? props.patient?.patientPhone ?? '').trim() || '—',
+);
 
 /** 住院号 */
-const inpatientNoDisplay = computed(() => (detail.value?.encounterBusNo ?? '').trim() || '—');
+const inpatientNoDisplay = computed(
+  () => (detail.value?.encounterBusNo ?? props.patient?.encounterBusNo ?? '').trim() || '—',
+);
+
+/** 病人院内编码 */
+const patientBusNoDisplay = computed(
+  () => (detail.value?.patientBusNo ?? props.patient?.patientBusNo ?? '').trim() || '—',
+);
+
+/** 入院途径 */
+const inWayDisplay = computed(
+  () => (detail.value?.inWayCodeText ?? props.patient?.inWayCodeText ?? '').trim() || '—',
+);
+
+/** 身份证号 */
+const idCardNoDisplay = computed(
+  () => (detail.value?.idCardNo ?? props.patient?.idCardNo ?? '').trim() || '—',
+);
+
+/** 住址 */
+const addressDisplay = computed(
+  () => (detail.value?.address ?? props.patient?.address ?? '').trim() || '—',
+);
+
+/** 入院状态（病情展示） */
+const admissionStatusDisplay = computed(
+  () => (detail.value?.priorityEnumText ?? props.patient?.priorityEnumText ?? '').trim() || '—',
+);
+
+/** 入院科室（机构名） */
+const organizationNameDisplay = computed(
+  () => (detail.value?.organizationName ?? props.patient?.organizationName ?? '').trim() || '—',
+);
+
+/** 入院病区名称 */
+const wardNameDisplay = computed(() => {
+  const op = props.bedOperation;
+  if (op) {
+    return op.targetRegionName;
+  }
+  return (
+    (detail.value?.wardName ?? props.regionNameById[props.patient?.regionId ?? ''] ?? '').trim() ||
+    '—'
+  );
+});
+
+/** 主治医生 */
+const attendingDoctorDisplay = computed(
+  () =>
+    (detail.value?.attendingDoctorName ?? props.patient?.attendingDoctorName ?? '').trim() || '—',
+);
+
+/** 医保人员编号 */
+const insuranceNoDisplay = computed(
+  () => (detail.value?.insuranceNo ?? props.patient?.insuranceNo ?? '').trim() || '—',
+);
+
+/** 医保类型（费用性质） */
+const feeTypeLabel = computed(
+  () => (detail.value?.contractDisplay ?? props.patient?.feeType ?? '—').trim() || '—',
+);
+
+/** 居民医疗类型 */
+const medTypeDisplay = computed(
+  () => (detail.value?.medTypeDisplay ?? props.patient?.medTypeDisplay ?? '').trim() || '—',
+);
+
+/** 险种类别展示（与大屏同口径） */
+const insutypeDisplay = computed(() => {
+  const code = (detail.value?.insutype ?? props.patient?.insutype ?? '').trim();
+  if (!code) {
+    return '—';
+  }
+  if (code === '1') {
+    return '1-医疗保险';
+  }
+  return code;
+});
+
+/** 入院时间展示 */
+const admissionAtDisplay = computed(() => {
+  const raw = (
+    detail.value?.admissionTime ??
+    detail.value?.startTime ??
+    props.patient?.admissionTime ??
+    props.patient?.startTime ??
+    ''
+  ).trim();
+  if (!raw) {
+    return '—';
+  }
+  const parsed = dayjs(raw);
+  return parsed.isValid() ? parsed.format('YYYY-MM-DD HH:mm') : raw;
+});
+
+/** 住院天数：即进不计出（入院日计、出院日不计）；在院含当日 */
+const inpatientDaysDisplay = computed(() => {
+  const admissionRaw = (
+    detail.value?.admissionTime ??
+    detail.value?.startTime ??
+    props.patient?.admissionTime ??
+    props.patient?.startTime ??
+    ''
+  ).trim();
+  if (!admissionRaw) {
+    return '—';
+  }
+  const admission = dayjs(admissionRaw);
+  if (!admission.isValid()) {
+    return '—';
+  }
+  const endRaw = (detail.value?.endTime ?? props.patient?.endTime ?? '').trim();
+  let hasDischarge = false;
+  let end = dayjs();
+  if (endRaw && dayjs(endRaw).isValid()) {
+    hasDischarge = true;
+    end = dayjs(endRaw);
+  }
+  const diff = end.startOf('day').diff(admission.startOf('day'), 'day');
+  // 已出院：即进不计出
+  if (hasDischarge) {
+    return `${Math.max(1, diff)}天`;
+  }
+  // 在院：含当日
+  return `${Math.max(1, diff + 1)}天`;
+});
+
+/** 预缴额 */
+const paidAmountDisplay = computed(() => {
+  const paid = detail.value?.paidAmount ?? props.patient?.paidAmount;
+  if (paid == null || paid === '') {
+    return '—';
+  }
+  const num = Number(paid);
+  if (Number.isFinite(num)) {
+    return formatMoneyYuan(num);
+  }
+  return String(paid);
+});
+
+/** 账户余额标签（可用余额/账户余额） */
+const balanceFieldLabel = computed(() =>
+  resolveInpatientAccountBalanceLabel({
+    accountBalanceDisplayMode:
+      detail.value?.accountBalanceDisplayMode ?? props.patient?.accountBalanceDisplayMode,
+  }),
+);
+
+/** 账户余额金额 */
+const balanceAmountDisplay = computed(() =>
+  formatNurseStationAccountBalance({
+    accountBalance: detail.value?.accountBalance ?? props.patient?.accountBalance,
+    accountBalanceSummaryText:
+      detail.value?.accountBalanceSummaryText ?? props.patient?.accountBalanceSummaryText,
+    availableBalance: detail.value?.availableBalance ?? props.patient?.availableBalance,
+  }),
+);
 
 /** 住院诊断 */
 const diagnosisDisplay = computed(() => {
-  const list = detail.value?.diagnosisList;
+  const list = detail.value?.diagnosisList ?? props.patient?.diagnosisList;
   if (list?.length) {
     return list.join('；');
   }
   return (detail.value?.diagnosisSummary ?? props.patient?.diagnosis ?? '—').trim() || '—';
 });
-
-/** 费用性质 */
-const feeTypeLabel = computed(
-  () => (detail.value?.contractDisplay ?? props.patient?.feeType ?? '—').trim() || '—',
-);
 
 /** 护理级别（读模型 nursingLevelName） */
 const nursingLevelLabel = computed(
@@ -224,12 +385,29 @@ const swapPartnerHint = computed(() => {
   return `将与「${op.swapPartnerName}」（床位 ${op.targetBedName}）互换`;
 });
 
-/** 患者信息区展示字段 */
+/** 患者信息区展示字段（字段口径对齐大屏患者卡） */
 const patientInfoFields = computed(() => [
-  { label: '联系电话', value: phoneDisplay.value },
   { label: '住院号', value: inpatientNoDisplay.value },
-  { label: '住院诊断', value: diagnosisDisplay.value, span: 2 },
-  { label: '所在位置', value: locationDisplay.value, span: 2 },
+  { label: '入院途径', value: inWayDisplay.value },
+  { label: '病人ID', value: patientBusNoDisplay.value },
+  { label: '电话', value: phoneDisplay.value },
+  { label: '身份证号', value: idCardNoDisplay.value },
+  { label: '护理级别', value: nursingLevelLabel.value || '—' },
+  { label: '入院状态', value: admissionStatusDisplay.value },
+  { label: '入院科室', value: organizationNameDisplay.value },
+  { label: '入院病区', value: wardNameDisplay.value },
+  { label: '主治医生', value: attendingDoctorDisplay.value },
+  { label: '医保号', value: insuranceNoDisplay.value },
+  { label: '医保类型', value: feeTypeLabel.value },
+  { label: '居民医疗类型', value: medTypeDisplay.value },
+  { label: '险种类别', value: insutypeDisplay.value },
+  { label: '入院时间', value: admissionAtDisplay.value },
+  { label: '住院天数', value: inpatientDaysDisplay.value },
+  { label: balanceFieldLabel.value, value: balanceAmountDisplay.value },
+  { label: '预缴', value: paidAmountDisplay.value },
+  { label: '所在位置', value: locationDisplay.value, span: 3 },
+  { label: '地址', value: addressDisplay.value, span: 3 },
+  { label: '入院诊断', value: diagnosisDisplay.value, span: 3 },
 ]);
 
 /** 入院科室（病区）只读 */
@@ -288,6 +466,7 @@ function resetForms() {
   vitalForm.pulse = '';
   vitalForm.bloodPressureHigh = '';
   vitalForm.bloodPressureLow = '';
+  loadedAdmissionVitals.value = undefined;
   admissionForm.inpatientDoctorId = '';
   admissionForm.attendingDoctorId = '';
   admissionForm.chiefDoctorId = '';
@@ -296,30 +475,119 @@ function resetForms() {
   admissionForm.admissionTimeDisplay = '';
 }
 
+/** 归一化体征块字段，便于比较是否改动 */
+function normalizeAdmissionVitalSigns(
+  vitals?: AdmissionVitalSignSubmitDto,
+): Required<
+  Pick<
+    AdmissionVitalSignSubmitDto,
+    | 'heightCm'
+    | 'weightKg'
+    | 'temperature'
+    | 'heartRate'
+    | 'pulse'
+    | 'bloodPressureHigh'
+    | 'bloodPressureLow'
+  >
+> {
+  const pulseOrHeartRate = (vitals?.pulse ?? '').trim() || (vitals?.heartRate ?? '').trim();
+  return {
+    heightCm: (vitals?.heightCm ?? '').trim(),
+    weightKg: (vitals?.weightKg ?? '').trim(),
+    temperature: (vitals?.temperature ?? '').trim(),
+    heartRate: pulseOrHeartRate,
+    pulse: pulseOrHeartRate,
+    bloodPressureHigh: (vitals?.bloodPressureHigh ?? '').trim(),
+    bloodPressureLow: (vitals?.bloodPressureLow ?? '').trim(),
+  };
+}
+
+/** 体征块是否至少有一项非空 */
+function hasAnyAdmissionVitalValue(vitals?: AdmissionVitalSignSubmitDto): boolean {
+  const normalized = normalizeAdmissionVitalSigns(vitals);
+  return Object.values(normalized).some((value) => Boolean(value));
+}
+
+/** 当前表单相对打开时快照是否有改动 */
+function isAdmissionVitalsChangedFromLoaded(current?: AdmissionVitalSignSubmitDto): boolean {
+  const next = normalizeAdmissionVitalSigns(current);
+  const prev = normalizeAdmissionVitalSigns(loadedAdmissionVitals.value);
+  return (
+    next.heightCm !== prev.heightCm ||
+    next.weightKg !== prev.weightKg ||
+    next.temperature !== prev.temperature ||
+    next.pulse !== prev.pulse ||
+    next.bloodPressureHigh !== prev.bloodPressureHigh ||
+    next.bloodPressureLow !== prev.bloodPressureLow
+  );
+}
+
 /** 体征表单 → 提交块；全空时返回 undefined */
 function buildAdmissionVitalSignsFromForm(): AdmissionVitalSignSubmitDto | undefined {
-  const dto: AdmissionVitalSignSubmitDto = {
-    heightCm: vitalForm.heightCm.trim() || undefined,
-    weightKg: vitalForm.weightKg.trim() || undefined,
-    temperature: vitalForm.temperature.trim() || undefined,
-    heartRate: vitalForm.heartRate.trim() || undefined,
-    pulse: vitalForm.pulse.trim() || undefined,
-    bloodPressureHigh: vitalForm.bloodPressureHigh.trim() || undefined,
-    bloodPressureLow: vitalForm.bloodPressureLow.trim() || undefined,
+  const normalized = normalizeAdmissionVitalSigns({
+    heightCm: vitalForm.heightCm,
+    weightKg: vitalForm.weightKg,
+    temperature: vitalForm.temperature,
+    heartRate: vitalForm.pulse,
+    pulse: vitalForm.pulse,
+    bloodPressureHigh: vitalForm.bloodPressureHigh,
+    bloodPressureLow: vitalForm.bloodPressureLow,
+  });
+  if (!hasAnyAdmissionVitalValue(normalized)) {
+    return undefined;
+  }
+  return {
+    heightCm: normalized.heightCm || undefined,
+    weightKg: normalized.weightKg || undefined,
+    temperature: normalized.temperature || undefined,
+    heartRate: normalized.heartRate || undefined,
+    pulse: normalized.pulse || undefined,
+    bloodPressureHigh: normalized.bloodPressureHigh || undefined,
+    bloodPressureLow: normalized.bloodPressureLow || undefined,
   };
-  const hasAny = Object.values(dto).some((value) => Boolean(value));
-  return hasAny ? dto : undefined;
+}
+
+/**
+ * 组装本次是否提交入院体征：
+ * 已有入院体征且未改动 → 不提交（后续保存只改医护，不再写/新增体征）；
+ * 首次填写或确有改动 → 提交（后端按入科时点 upsert，不新增第二份）。
+ */
+function resolveAdmissionVitalSignsForSave(): AdmissionVitalSignSubmitDto | undefined {
+  const payload = buildAdmissionVitalSignsFromForm();
+  if (!payload) {
+    return undefined;
+  }
+  if (
+    hasAnyAdmissionVitalValue(loadedAdmissionVitals.value) &&
+    !isAdmissionVitalsChangedFromLoaded(payload)
+  ) {
+    return undefined;
+  }
+  return payload;
 }
 
 /** 详情回填块 → 体征表单 */
 function applyAdmissionVitalSignsToForm(vitals?: AdmissionVitalSignSubmitDto) {
-  vitalForm.heightCm = (vitals?.heightCm ?? '').trim();
-  vitalForm.weightKg = (vitals?.weightKg ?? '').trim();
-  vitalForm.temperature = (vitals?.temperature ?? '').trim();
-  vitalForm.heartRate = (vitals?.heartRate ?? '').trim();
-  vitalForm.pulse = (vitals?.pulse ?? '').trim();
-  vitalForm.bloodPressureHigh = (vitals?.bloodPressureHigh ?? '').trim();
-  vitalForm.bloodPressureLow = (vitals?.bloodPressureLow ?? '').trim();
+  const normalized = normalizeAdmissionVitalSigns(vitals);
+  vitalForm.heightCm = normalized.heightCm;
+  vitalForm.weightKg = normalized.weightKg;
+  vitalForm.temperature = normalized.temperature;
+  vitalForm.pulse = normalized.pulse;
+  vitalForm.heartRate = normalized.heartRate;
+  vitalForm.bloodPressureHigh = normalized.bloodPressureHigh;
+  vitalForm.bloodPressureLow = normalized.bloodPressureLow;
+  // 快照用归一化结果，比较时与表单口径一致
+  loadedAdmissionVitals.value = hasAnyAdmissionVitalValue(normalized)
+    ? {
+        heightCm: normalized.heightCm || undefined,
+        weightKg: normalized.weightKg || undefined,
+        temperature: normalized.temperature || undefined,
+        heartRate: normalized.heartRate || undefined,
+        pulse: normalized.pulse || undefined,
+        bloodPressureHigh: normalized.bloodPressureHigh || undefined,
+        bloodPressureLow: normalized.bloodPressureLow || undefined,
+      }
+    : undefined;
 }
 
 /** 关闭弹窗 */
@@ -327,7 +595,7 @@ function closeDialog() {
   visible.value = false;
 }
 
-/** 弹窗患者 → 打印模块入参（腕带字段来自列表摘要 + 详情兜底） */
+/** 弹窗患者 → 打印模块入参（腕带/床头卡字段来自列表摘要 + 详情兜底） */
 function mapDialogPatientToModulePatient(item: PatientItem): NurseStationModulePatient {
   const d = detail.value;
   return {
@@ -342,8 +610,13 @@ function mapDialogPatientToModulePatient(item: PatientItem): NurseStationModuleP
     gender: (d?.genderEnumText ?? item.gender ?? '').trim(),
     age: item.age,
     nurseLevel: item.level,
-    feeType: item.feeType,
+    feeType: (d?.contractDisplay ?? item.feeType ?? '').trim() || undefined,
+    attendingDoctorName:
+      (d?.attendingDoctorName ?? item.attendingDoctorName ?? '').trim() || undefined,
     diagnosis: item.diagnosis || d?.diagnosisSummary,
+    // 入院科室：详情优先，勿漏传到腕带/床头卡打印
+    organizationName: (d?.organizationName ?? item.organizationName ?? '').trim() || undefined,
+    organizationId: (d?.organizationId ?? item.organizationId ?? '').trim() || undefined,
     regionName: props.regionNameById[item.regionId] || d?.wardName || '-',
     wardName: props.wardNameById[item.wardId] || d?.houseName || '-',
     pendingAudit: item.pendingAudit,
@@ -399,6 +672,47 @@ async function handlePrintWristband() {
     }
   } finally {
     printingWristband.value = false;
+  }
+}
+
+/** 打印当前弹窗患者床头卡 */
+async function handlePrintBedCard() {
+  const row = props.patient;
+  if (!row) {
+    ElMessage.warning('患者信息未加载');
+    return;
+  }
+  if (printingBedCard.value) {
+    return;
+  }
+  printingBedCard.value = true;
+  try {
+    const patients = [mapDialogPatientToModulePatient(row)];
+    const today = dayjs().format('YYYY-MM-DD');
+    const selectedRows = await loadPrintPendingRows({
+      docType: 'bed_card',
+      patients,
+      dateFrom: today,
+      dateTo: today,
+      executionDeadline: `${today} 23:59:59`,
+    });
+    if (selectedRows.length <= 0) {
+      ElMessage.warning('暂无「床头卡」可打印数据');
+      return;
+    }
+    const result = await printInpatientPrintCenter({
+      docType: 'bed_card',
+      patients,
+      selectedRows,
+      dateFrom: today,
+      dateTo: today,
+      executionDeadline: `${today} 23:59:59`,
+    });
+    if (result.ok) {
+      ElMessage.success(`已发送打印：床头卡，共 ${result.count} 份`);
+    }
+  } finally {
+    printingBedCard.value = false;
   }
 }
 
@@ -478,6 +792,60 @@ function validateAdmissionForm(): boolean {
   return true;
 }
 
+/**
+ * 保存体征卡表单（医护/病情 + 入院体征）；不触发分床，保存后不关窗。
+ * 有体征时须已入科（有 start_time），否则体温单锚点无法落库。
+ */
+async function handleSaveVitals() {
+  const id = encounterId.value;
+  if (!id) {
+    return;
+  }
+  if (!validateAdmissionForm()) {
+    return;
+  }
+  // 已有入院体征且未改动时不提交，避免后续保存重复写/新增
+  const vitalPayload = resolveAdmissionVitalSignsForSave();
+  // 未入科无 start_time 时后端跳过写体温单，避免假成功
+  const inWardAt = (
+    detail.value?.startTime ??
+    detail.value?.admissionTime ??
+    props.patient?.startTime ??
+    props.patient?.admissionTime ??
+    ''
+  ).trim();
+  if (vitalPayload && !inWardAt) {
+    ElMessage.warning('请先完成入科分床，体征将按入科时间写入体温单');
+    return;
+  }
+  const participants = buildParticipantSubmitRows({
+    inpatientDoctorId: admissionForm.inpatientDoctorId,
+    attendingDoctorId: admissionForm.attendingDoctorId,
+    chiefDoctorId: admissionForm.chiefDoctorId,
+    primaryNurseId: admissionForm.primaryNurseId,
+  });
+  try {
+    await saveRequest.run({
+      encounterId: id,
+      priorityEnum: admissionForm.priorityEnum || undefined,
+      participants: participants.length > 0 ? participants : undefined,
+      admissionVitalSigns: vitalPayload,
+    });
+    if (vitalPayload) {
+      ElMessage.success('已保存并带入体温单');
+    } else {
+      ElMessage.success('入院信息已保存');
+    }
+    emit('saved');
+    // 回读详情，保证医护与体征以服务端为准
+    await loadDetailAndForm();
+  } catch (error) {
+    if (isStaleCrossRoleError(error)) {
+      emit('saved');
+    }
+  }
+}
+
 /** 确认：保存医护信息后按需提交分床/换床/互换 */
 async function handleAdmit() {
   const id = encounterId.value;
@@ -494,8 +862,11 @@ async function handleAdmit() {
     primaryNurseId: admissionForm.primaryNurseId,
   });
   const op = props.bedOperation;
-  const vitalPayload = buildAdmissionVitalSignsFromForm();
   const assignWithBed = op?.type === 'assign';
+  // 首次分床仍可随身征；维护路径：未改动则不重复提交入院体征
+  const vitalPayload = assignWithBed
+    ? buildAdmissionVitalSignsFromForm()
+    : resolveAdmissionVitalSignsForSave();
   try {
     await saveRequest.run({
       encounterId: id,
@@ -579,7 +950,10 @@ watch(visible, (open) => {
               v-for="item in patientInfoFields"
               :key="item.label"
               class="patient-info-card__field"
-              :class="{ 'patient-info-card__field--span2': item.span === 2 }"
+              :class="{
+                'patient-info-card__field--span2': item.span === 2,
+                'patient-info-card__field--span3': item.span === 3,
+              }"
             >
               <span class="patient-info-card__label">{{ item.label }}</span>
               <span class="patient-info-card__value" :title="item.value">{{ item.value }}</span>
@@ -609,14 +983,9 @@ watch(visible, (open) => {
             </ElFormItem>
           </div>
           <div class="admission-dialog__row">
-            <ElFormItem label="心率">
-              <ElInput v-model="vitalForm.heartRate" placeholder="请输入">
-                <template #suffix>BPM</template>
-              </ElInput>
-            </ElFormItem>
             <ElFormItem label="脉搏">
               <ElInput v-model="vitalForm.pulse" placeholder="请输入">
-                <template #suffix>P</template>
+                <template #suffix>次/分</template>
               </ElInput>
             </ElFormItem>
             <ElFormItem label="血压">
@@ -745,8 +1114,12 @@ watch(visible, (open) => {
         >
           打腕带
         </ElButton>
+        <ElButton plain :loading="printingBedCard" :disabled="!patient" @click="handlePrintBedCard">
+          打床头卡
+        </ElButton>
         <div class="admission-dialog__footer-actions">
           <ElButton @click="closeDialog">取消</ElButton>
+          <ElButton :loading="saveRequest.loading.value" @click="handleSaveVitals">保存</ElButton>
           <ElButton type="primary" :loading="dialogLoading" @click="handleAdmit">
             {{ confirmButtonLabel }}
           </ElButton>
@@ -762,25 +1135,25 @@ watch(visible, (open) => {
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
   display: flex;
-  margin-bottom: 16px;
+  margin-bottom: 10px;
   overflow: hidden;
   box-shadow: 0 1px 2px rgb(15 23 42 / 6%);
 }
 .patient-info-card__accent {
   background: var(--el-color-primary);
   flex-shrink: 0;
-  width: 4px;
+  width: 3px;
 }
 .patient-info-card__body {
   flex: 1;
   min-width: 0;
-  padding: 12px 14px;
+  padding: 8px 12px;
 }
 .patient-info-card__hero {
   align-items: center;
   display: flex;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: 8px;
+  margin-bottom: 6px;
 }
 .patient-info-card__avatar {
   align-items: center;
@@ -789,11 +1162,11 @@ watch(visible, (open) => {
   color: #fff;
   display: flex;
   flex-shrink: 0;
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 600;
-  height: 44px;
+  height: 32px;
   justify-content: center;
-  width: 44px;
+  width: 32px;
 }
 .patient-info-card__identity {
   flex: 1;
@@ -803,63 +1176,77 @@ watch(visible, (open) => {
   align-items: baseline;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 6px;
+  gap: 6px;
+  margin-bottom: 2px;
 }
 .patient-info-card__name {
   color: var(--el-text-color-primary);
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 600;
   line-height: 1.2;
 }
 .patient-info-card__demographics {
   color: var(--el-text-color-secondary);
-  font-size: 13px;
+  font-size: 12px;
 }
 .patient-info-card__tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 4px;
+}
+.patient-info-card__tags :deep(.el-tag) {
+  height: 20px;
+  line-height: 18px;
+  padding: 0 6px;
 }
 .patient-info-card__swap-hint {
   background: var(--el-color-warning-light-9);
-  border-radius: 6px;
+  border-radius: 4px;
   color: var(--el-color-warning-dark-2);
-  font-size: 13px;
-  line-height: 1.45;
-  margin-bottom: 10px;
-  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.35;
+  margin-bottom: 6px;
+  padding: 4px 8px;
 }
 .patient-info-card__grid {
   border-top: 1px dashed var(--el-border-color-lighter);
   display: grid;
-  gap: 10px 20px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  padding-top: 12px;
+  gap: 2px 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding-top: 6px;
 }
 .patient-info-card__field {
+  align-items: baseline;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   min-width: 0;
+  line-height: 1.35;
 }
 .patient-info-card__field--span2 {
   grid-column: span 2;
 }
+.patient-info-card__field--span3 {
+  grid-column: span 3;
+}
 .patient-info-card__label {
   color: var(--el-text-color-secondary);
+  flex-shrink: 0;
   font-size: 12px;
-  line-height: 1.2;
+}
+.patient-info-card__label::after {
+  content: '：';
 }
 .patient-info-card__value {
   color: var(--el-text-color-primary);
-  font-size: 13px;
-  line-height: 1.5;
+  flex: 1;
+  font-size: 12px;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.patient-info-card__field--span2 .patient-info-card__value {
+.patient-info-card__field--span2 .patient-info-card__value,
+.patient-info-card__field--span3 .patient-info-card__value {
   white-space: normal;
 }
 .admission-dialog__section + .admission-dialog__section {

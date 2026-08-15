@@ -555,6 +555,17 @@ onMounted(async () => {
                 </template>
               </ElTableColumn>
               <ElTableColumn
+                prop="inpatientDays"
+                label="住院天数"
+                width="96"
+                align="right"
+                header-align="right"
+              >
+                <template #default="{ row }">
+                  {{ formatTextCell(row.inpatientDays) }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
                 v-if="showTransferColumn"
                 prop="transferTargetText"
                 label="转往"
@@ -565,6 +576,18 @@ onMounted(async () => {
               >
                 <template #default="{ row }">
                   {{ formatTextCell(row.transferTargetText) }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                prop="feeNatureDisplay"
+                label="费用性质"
+                min-width="110"
+                align="center"
+                header-align="center"
+                show-overflow-tooltip
+              >
+                <template #default="{ row }">
+                  {{ formatTextCell(row.feeNatureDisplay) }}
                 </template>
               </ElTableColumn>
               <ElTableColumn

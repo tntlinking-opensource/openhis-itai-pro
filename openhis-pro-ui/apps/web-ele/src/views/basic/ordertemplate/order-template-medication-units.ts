@@ -10,7 +10,9 @@ import {
   doseConvertRatioSplitToDose,
   hydrateAdviceRowDoseFromBackend,
   normalizeCatalogUnitBands,
+  roundMedicationDoseDisplayQty,
   roundMedicationQty,
+  roundMedicationSplitQty,
   totalAmountSplitToSalesFactor,
   totalUnitSelectOptions,
   unitCodeByBandKind,
@@ -150,22 +152,30 @@ export function applyLineDoseFieldsFromBands(
   }
 }
 
-/** 拆零侧变更 → 同步剂量侧 */
+/** 拆零侧变更 → 同步剂量侧（剂量存 6 位，界面另按 3 位展示） */
 export function applySplitDoseToDoseSide(line: MedicationLineDraftSlice, singleDose: number) {
   const k = line._doseBandConvertK ?? doseConvertRatioSplitToDose(line._unitBands);
   if (k === undefined || !Number.isFinite(k) || k <= 0) {
     return;
   }
+  const currentDose = Number(line._doseConvertRatio);
+  // 剂量侧同步过来的片数不要反推剂量，避免两位片数把 35.625 抹成 35.63
+  if (Number.isFinite(currentDose) && currentDose > 0) {
+    const splitFromDose = roundMedicationSplitQty(currentDose / k);
+    if (roundMedicationSplitQty(singleDose) === splitFromDose) {
+      return;
+    }
+  }
   line._doseConvertRatio = roundMedicationQty(singleDose * k);
 }
 
-/** 剂量侧变更 → 同步拆零侧 */
+/** 剂量侧变更 → 同步拆零侧（最小单位保留 2 位） */
 export function applyDoseQtyToSplitSide(line: MedicationLineDraftSlice, doseQty: number) {
   const k = line._doseBandConvertK ?? doseConvertRatioSplitToDose(line._unitBands);
   if (k === undefined || !Number.isFinite(k) || k <= 0) {
     return;
   }
-  line._singleDose = roundMedicationQty(doseQty / k);
+  line._singleDose = roundMedicationSplitQty(doseQty / k);
 }
 
 /** 清空行内单次剂量字段 */
@@ -399,26 +409,36 @@ export function resolvePricingCatalogUnitDisplayText(item: Record<string, unknow
   ).trim();
 }
 
-/** 保存前组装 dosageText（优先剂量侧，回落拆零侧，对齐门诊 resolveMedicationDraftDosePayload） */
+/** 保存前组装 dosageText（优先剂量侧落库 6 位，回落拆零侧 2 位） */
 export function buildDosageText(line: MedicationLineDraftSlice): string | undefined {
   const doseQtyRaw = Number(line._doseConvertRatio ?? Number.NaN);
   if (Number.isFinite(doseQtyRaw) && doseQtyRaw > 0) {
+    const doseQty = roundMedicationQty(doseQtyRaw);
     const subUnit = String(line._doseSubUnit ?? unitNameByBandKind(line._unitBands, 'DOSE')).trim();
-    return subUnit ? `${doseQtyRaw}${subUnit}` : String(doseQtyRaw);
+    return subUnit ? `${doseQty}${subUnit}` : String(doseQty);
   }
 
   const singleRaw = Number(line._singleDose ?? Number.NaN);
   if (Number.isFinite(singleRaw) && singleRaw > 0) {
+    const single = roundMedicationSplitQty(singleRaw);
     const mainUnit = String(
       line._doseMainUnit ?? unitNameByBandKind(line._unitBands, 'SPLIT'),
     ).trim();
-    return mainUnit ? `${singleRaw}${mainUnit}` : String(singleRaw);
+    return mainUnit ? `${single}${mainUnit}` : String(single);
   }
 
   return line.dosageText;
 }
 
-/** 单次剂量展示文案（拆零 = 剂量） */
+/** 剂量单位输入框/文案展示：保留 3 位小数。 */
+export function displayMedicationDoseQty(raw: number | null | undefined): number | undefined {
+  if (raw === null || raw === undefined) return undefined;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return undefined;
+  return roundMedicationDoseDisplayQty(n);
+}
+
+/** 单次剂量展示文案（拆零 = 剂量；剂量侧固定 3 位） */
 export function formatLineDoseDisplayText(line: MedicationLineDraftSlice): string {
   const mainUnit =
     String(line._doseMainUnit ?? unitNameByBandKind(line._unitBands, 'SPLIT')).trim() || '—';
@@ -427,24 +447,29 @@ export function formatLineDoseDisplayText(line: MedicationLineDraftSlice): strin
   const single = line._singleDose;
   const doseQty = line._doseConvertRatio;
   const k = line._doseBandConvertK ?? doseConvertRatioSplitToDose(line._unitBands);
+  const doseShown = displayMedicationDoseQty(doseQty);
+  const doseText =
+    doseShown === undefined ? undefined : roundMedicationDoseDisplayQty(doseShown).toFixed(3);
+  const singleText =
+    single === undefined || !Number.isFinite(Number(single))
+      ? undefined
+      : String(Number(roundMedicationSplitQty(Number(single)).toFixed(2)));
 
   if (
-    single !== undefined &&
-    Number.isFinite(Number(single)) &&
-    doseQty !== undefined &&
-    Number.isFinite(Number(doseQty)) &&
+    singleText !== undefined &&
+    doseText !== undefined &&
     k !== undefined &&
     k > 0 &&
     mainUnit !== '—' &&
     subUnit !== '—'
   ) {
-    return `${single}${mainUnit} = ${doseQty}${subUnit}`;
+    return `${singleText}${mainUnit} = ${doseText}${subUnit}`;
   }
-  if (doseQty !== undefined && Number.isFinite(Number(doseQty)) && subUnit !== '—') {
-    return `${doseQty}${subUnit}`;
+  if (doseText !== undefined && subUnit !== '—') {
+    return `${doseText}${subUnit}`;
   }
-  if (single !== undefined && Number.isFinite(Number(single)) && mainUnit !== '—') {
-    return `${single}${mainUnit}`;
+  if (singleText !== undefined && mainUnit !== '—') {
+    return `${singleText}${mainUnit}`;
   }
   const fallback = String(line.dosageText ?? '').trim();
   return fallback || '—';

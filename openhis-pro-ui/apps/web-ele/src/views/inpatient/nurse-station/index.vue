@@ -228,7 +228,7 @@ function openAdmissionBedDialog(patient: PatientItem, intent: AdmissionBedOperat
   admissionBedDialogVisible.value = true;
 }
 
-/** 双击患者卡片：在院列表打开入科选床弹窗。 */
+/** 双击患者卡片：打开患者体征卡（可单独保存体征）。 */
 function handlePatientCardDblClick(patient: PatientItem) {
   openAdmissionBedDialog(patient, null);
 }
@@ -320,7 +320,24 @@ function openPatientLargeScreen() {
   largeScreenVisible.value = true;
 }
 
-/** 大屏快捷入口：收敛为当前患者后切换业务页签（大屏暂不自动收起）。 */
+/** 大屏选中患者：收敛为当前患者并收起大屏回到业务区。 */
+function handleLargeScreenSelect(payload: { patientId: string }) {
+  const patient = patients.value.find((row) => row.id === payload.patientId);
+  selectedPatientIds.value = new Set([payload.patientId]);
+  setActivePatient(payload.patientId);
+  largeScreenVisible.value = false;
+  // 未分床且当前页签需床位时，引导至入出转分床
+  if (
+    patient &&
+    isNurseStationBedUnassigned(patient.bedNo) &&
+    doesNurseStationTabRequireBed(activeOperationTab.value)
+  ) {
+    ElMessage.warning(NURSE_STATION_BED_REQUIRED_MESSAGE);
+    void handleOperationTabClick(IN_OUT_TRANSFER_TAB);
+  }
+}
+
+/** 大屏快捷入口：收敛为当前患者、切换业务页签并收起大屏。 */
 function handleLargeScreenShortcut(payload: { patientId: string; tab: OperationTab }) {
   const patient = patients.value.find((row) => row.id === payload.patientId);
   // 未分床仅允许跳转入出转分床
@@ -332,12 +349,14 @@ function handleLargeScreenShortcut(payload: { patientId: string; tab: OperationT
     ElMessage.warning(NURSE_STATION_BED_REQUIRED_MESSAGE);
     selectedPatientIds.value = new Set([payload.patientId]);
     setActivePatient(payload.patientId);
+    largeScreenVisible.value = false;
     void handleOperationTabClick(IN_OUT_TRANSFER_TAB);
     return;
   }
   // 先收敛为单患者，避免多选态切到单选页签时被策略收束清空
   selectedPatientIds.value = new Set([payload.patientId]);
   setActivePatient(payload.patientId);
+  largeScreenVisible.value = false;
   void handleOperationTabClick(payload.tab);
 }
 
@@ -401,6 +420,7 @@ onMounted(async () => {
       :pending-execute-count="pendingExecuteCount"
       :region-name-by-id="regionNameByIdRecord"
       :ward-name-by-id="wardNameByIdRecord"
+      @select="handleLargeScreenSelect"
       @shortcut="handleLargeScreenShortcut"
       @refresh="handleLargeScreenRefresh"
     />

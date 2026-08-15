@@ -2,7 +2,8 @@
  * IF-DOR-23 用法/诊疗绑定解析与落库。
  *
  * 仅供 advice-draft-save.service 中 MANUAL_USAGE_BIND 策略调用；
- * 仅新建药品（CREATE）触发用法绑定弹窗；UPDATE 编辑保存不二次带出。
+ * 新建药品（CREATE）触发用法绑定、新建诊疗（CREATE）触发诊疗绑定；
+ * UPDATE 编辑保存不二次带出。
  */
 import type {
   AdviceDraftBindDialogRow,
@@ -251,7 +252,7 @@ function buildBindDedupeKey(
   return `${targetTable}|${targetId}|${basedOnTable}|${basedOnId}`;
 }
 
-/** 变更行是否为新建药品（仅 CREATE 药品触发用法绑定带出） */
+/** 变更行是否为新建药品（CREATE → USAGE 绑定带出） */
 function isMedicationCreateDraftLine(line: DoctorStationAdviceDraftLineRequest): boolean {
   if (line.lineOp !== 'CREATE') {
     return false;
@@ -260,13 +261,22 @@ function isMedicationCreateDraftLine(line: DoctorStationAdviceDraftLineRequest):
   return productTableName === MEDICATION_DEFINITION_TABLE;
 }
 
-/** 批次内是否含新建药品行 */
-function hasMedicationCreateLine(lines: readonly DoctorStationAdviceDraftLineRequest[]): boolean {
-  return lines.some(isMedicationCreateDraftLine);
+/** 变更行是否为新建诊疗（CREATE → ACTIVITY 绑定带出） */
+function isServiceCreateDraftLine(line: DoctorStationAdviceDraftLineRequest): boolean {
+  if (line.lineOp !== 'CREATE') {
+    return false;
+  }
+  const productTableName = String(line.productTableName ?? '').trim();
+  return productTableName === ACTIVITY_DEFINITION_TABLE;
 }
 
-/** 绑定项是否由新建药品行触发（UPDATE 编辑保存不参与二次带出） */
-function isBindItemTriggeredByMedicationCreate(
+/** 批次内是否含会触发绑定的新建行（药品用法 / 诊疗） */
+function hasBindTriggerCreateLine(lines: readonly DoctorStationAdviceDraftLineRequest[]): boolean {
+  return lines.some((line) => isMedicationCreateDraftLine(line) || isServiceCreateDraftLine(line));
+}
+
+/** 绑定项是否由新建药品/诊疗行触发（UPDATE 不参与二次带出） */
+function isBindItemTriggeredByEligibleCreate(
   item: DoctorStationAdviceDraftBindItemDto,
   lines: readonly DoctorStationAdviceDraftLineRequest[],
 ): boolean {
@@ -278,7 +288,7 @@ function isBindItemTriggeredByMedicationCreate(
   if (!triggerLine) {
     return false;
   }
-  return isMedicationCreateDraftLine(triggerLine);
+  return isMedicationCreateDraftLine(triggerLine) || isServiceCreateDraftLine(triggerLine);
 }
 
 /** 服务端不去重，前端仅合并：① 同组药品同用法同目标；② 目标+锚点完全相同的重复项 */
@@ -1023,7 +1033,7 @@ async function saveAdviceDraftBatchWithConfirmedBindRows(
   };
 }
 
-/** IF-DOR-23 + 来源缓存 / 弹窗确认：仅新建药品触发带出；纯 UPDATE 编辑保存不二次弹窗 */
+/** IF-DOR-23 + 来源缓存 / 弹窗确认：新建药品→用法绑定、新建诊疗→诊疗绑定；纯 UPDATE 不二次弹窗 */
 export async function saveAdviceDraftBatchWithBindResolution(
   options: SaveAdviceDraftBatchWithBindOptions,
 ): Promise<SaveDoctorStationAdviceDraftBatchResponse> {
@@ -1035,7 +1045,8 @@ export async function saveAdviceDraftBatchWithBindResolution(
     ...(pricingSourceCode ? { pricingSourceCode } : {}),
   };
 
-  if (!hasMedicationCreateLine(lines)) {
+  // 无新建药品/诊疗行时不解析绑定（纯 UPDATE/DELETE 直接暂存）
+  if (!hasBindTriggerCreateLine(lines)) {
     return httpSaveDoctorStationAdviceDraftBatch(batchBody);
   }
 
@@ -1044,8 +1055,9 @@ export async function saveAdviceDraftBatchWithBindResolution(
     patientId,
     lines,
   });
+  // 只保留由本次 CREATE 药品/诊疗触发行产生的绑定项
   dialogRowCandidates = dialogRowCandidates.filter((row) =>
-    isBindItemTriggeredByMedicationCreate(row.bindItem, lines),
+    isBindItemTriggeredByEligibleCreate(row.bindItem, lines),
   );
 
   if (dialogRowCandidates.length === 0) {

@@ -19,6 +19,8 @@ export interface DrugGroupDisplayItem {
   medicationDays: number | string;
   /** 后端/汇总好的单次剂量展示串（优先于 singleDose+单位拼接） */
   dosageDisplay?: string;
+  /** 成组共用行滴速展示（术语 speed_code 展示名） */
+  speedDisplay?: string;
   splitDose?: number | string;
   splitDoseUnitCode?: string;
   splitDoseUnitName?: string;

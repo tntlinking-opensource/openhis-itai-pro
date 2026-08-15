@@ -4,6 +4,7 @@ import type { TableColumn } from '@vben-core/table-layout-ui';
 import type { RegisterHistoryTableRow } from '../services';
 
 import type { DateRangeQuickSpec } from '#/utils/format/date-range-quick';
+import type { RefundChannelDisplayItem } from '#/utils/payment/payment-channel-options';
 
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
@@ -21,20 +22,32 @@ import {
   ElTag,
 } from 'element-plus';
 
+import { httpListOriginalPayChannelCodes } from '#/api/outpatient-refund/outpatient-refund.http';
 import AppDialog from '#/components/app-dialog.vue';
 import SelectFuzzyInput from '#/components/select-fuzzy-input.vue';
 import { isScanPayChannel } from '#/composables/payment/useUnionPayScanPay';
 import { buildDefaultDateRangeShortcuts } from '#/utils/format/date-picker-shortcuts';
 import { getDateRangeQuick } from '#/utils/format/date-range-quick';
 import { formatMoneyDisplay, formatMoneyYuanWithSymbol } from '#/utils/format/money-scale';
-import { FALLBACK_DEFAULT_PAY_CHANNEL } from '#/utils/payment/payment-channel-options';
-import { settleWithScanRecovery } from '#/utils/payment/scan-settle-recovery';
+import { tagTypeByCode } from '#/utils/format/status-tag';
+import {
+  buildRefundChannelDisplayItems,
+  FALLBACK_DEFAULT_PAY_CHANNEL,
+} from '#/utils/payment/payment-channel-options';
+import {
+  clearCachedClientScanResult,
+  hasCachedClientScanSuccess,
+} from '#/utils/payment/scan-settle-cache';
+import {
+  ScanSettleIncompleteError,
+  ScanSettleRefundedError,
+  settleWithScanRecovery,
+} from '#/utils/payment/scan-settle-recovery';
 import { submitScanPayment } from '#/utils/payment/submit-scan-payment';
 import {
   clearCachedClientRefundResult,
   submitScanRefund,
 } from '#/utils/payment/submit-scan-refund';
-import { tagTypeByCode } from '#/utils/format/status-tag';
 import {
   printRegistrationReceipt,
   schedulePrintRegistrationReceipt,
@@ -110,10 +123,16 @@ const {
   scanPayEnabled,
   hasScanPayChannel,
   effectivePayChannelOptions,
+  payChannelOptions,
   ensurePayChannelsLoaded,
   refreshPayChannelsForDialog,
   refreshUnionPayCapabilities,
 } = useRegisterPayChannels();
+
+/** 退号确认：原支付落库渠道码 */
+const cancelOriginalPayChannelCodes = ref<string[]>([]);
+const cancelRefundChannelItems = ref<RefundChannelDisplayItem[]>([]);
+const cancelDialogLoadingChannels = ref(false);
 
 const showDateToolbar = computed(() => props.toolbarMode === 'full');
 const showKeywordToolbar = computed(
@@ -199,10 +218,19 @@ const tableColumns: TableColumn[] = [
   {
     prop: 'patientName',
     label: '患者信息',
-    minWidth: 60,
+    minWidth: 120,
     align: 'center',
     headerAlign: 'center',
     formatter: (row) => formatPatientInfoCell(row as RegisterHistoryTableRow),
+  },
+  {
+    prop: 'patientAgeText',
+    label: '年龄',
+    // 固定窄列，避免 minWidth 参与剩余宽度均分后过宽
+    width: 56,
+    align: 'center',
+    headerAlign: 'center',
+    formatter: (_row, _column, cellValue) => String(cellValue ?? '').trim() || '—',
   },
   {
     prop: 'contactPhone',
@@ -339,21 +367,13 @@ watch(
 );
 
 /**
- * 列表「患者信息」列：姓名/性别（接口无年龄字段，仅拼性别文案）。
+ * 列表「患者信息」列：姓名/性别（年龄单独成列，见 patientAgeText）。
  */
 function formatPatientInfoCell(row: RegisterHistoryTableRow): string {
   const name = String(row.patientName ?? '').trim();
   const gender = String(row.patientGenderText ?? '').trim();
-  if (!name && !gender) {
-    return '—';
-  }
-  if (!gender) {
-    return name || '—';
-  }
-  if (!name) {
-    return gender;
-  }
-  return `${name}/${gender}`;
+  const parts = [name, gender].filter(Boolean);
+  return parts.length > 0 ? parts.join('/') : '—';
 }
 
 /**
@@ -397,6 +417,9 @@ function onHistoryActionDialogClosed() {
   payChannelCode.value = DEFAULT_REGISTER_PAY_CHANNEL_CODE;
   scanCode.value = '';
   scanStatusText.value = '';
+  cancelOriginalPayChannelCodes.value = [];
+  cancelRefundChannelItems.value = [];
+  cancelDialogLoadingChannels.value = false;
 }
 
 function resolvePayError(error: unknown): { code?: string; message: string } {
@@ -479,7 +502,7 @@ function canShowVoid(row: RegisterHistoryTableRow): boolean {
   return String(row.statusEnum ?? '').trim() === ENCOUNTER_STATUS_CODE.PLANNED;
 }
 
-/** 已挂号 / 已分诊 / 在诊：展示窗口「退号」。 */
+/** 已挂号至完诊：展示窗口「退号」（已接诊时点退后由后端提示先取消接诊）。 */
 function canShowCancel(row: RegisterHistoryTableRow): boolean {
   return ENCOUNTER_CANCELABLE_STATUS_CODES.has(row.statusEnum);
 }
@@ -543,7 +566,9 @@ async function executeChargeRegister() {
   }
   const cashPay = historyPayableCashAmount(row);
   const needScanPay = cashPay > 0.001 && isScanPayChannel(payChannelCode.value);
-  if (needScanPay && !scanCode.value.trim()) {
+  /** 半成功：本机已有银联成功凭证时允许空付款码，走补结算而非重扫 */
+  const halfSuccessLocked = hasCachedClientScanSuccess(draftId);
+  if (needScanPay && !halfSuccessLocked && !scanCode.value.trim()) {
     ElMessage.warning('请输入付款码');
     return;
   }
@@ -557,7 +582,7 @@ async function executeChargeRegister() {
         ElMessage.error('请启动本地客户端（OpenHIS.Win）并确认银联组件已安装');
         return;
       }
-      scanStatusText.value = '等待支付结果…';
+      scanStatusText.value = halfSuccessLocked ? '银联已扣款，正在补结算…' : '等待支付结果…';
       const scanOutcome = await submitScanPayment({
         paymentDraftId: draftId,
         amount: cashPay,
@@ -576,17 +601,23 @@ async function executeChargeRegister() {
         : [];
 
     const payResult = await (clientScanResult
-      ? settleWithScanRecovery(clientScanResult, () =>
-          payRegisterFee({
-            paymentDetails: payDetails,
-            paymentDraftId: draftId,
-            clientScanResult,
-          }),
+      ? settleWithScanRecovery(
+          clientScanResult,
+          () =>
+            payRegisterFee({
+              paymentDetails: payDetails,
+              paymentDraftId: draftId,
+              clientScanResult,
+            }),
+          { paymentDraftId: draftId, refundAmountYuan: cashPay },
         )
       : payRegisterFee({
           paymentDetails: payDetails,
           paymentDraftId: draftId,
         }));
+    if (clientScanResult) {
+      clearCachedClientScanResult(draftId);
+    }
     historyActionDialogVisible.value = false;
     historyActionRow.value = null;
     ElMessage.success('收费成功');
@@ -598,10 +629,22 @@ async function executeChargeRegister() {
       jobName: '挂号小票',
     });
   } catch (error) {
+    if (error instanceof ScanSettleRefundedError) {
+      ElMessage.warning(error.message);
+      scanStatusText.value = '';
+      return;
+    }
+    if (error instanceof ScanSettleIncompleteError) {
+      ElMessage.error(error.message);
+      scanStatusText.value = '银联已扣款，请补结算或银联退货，勿重复扫码';
+      return;
+    }
     const { code, message } = resolvePayError(error);
     if (isInsuranceCredentialExpiredError(code, message)) {
       historyCredentialExpiredHint.value = true;
       ElMessage.warning(formatInsuranceCredentialExpiredHint());
+    } else if (message) {
+      ElMessage.error(message);
     }
   } finally {
     actionDialogLoading.value = false;
@@ -618,12 +661,47 @@ function historyPayableCashAmount(row: RegisterHistoryTableRow): number {
 }
 
 /**
- * 打开退号核对弹窗。
+ * 打开退号核对弹窗：拉取原支付渠道并展示应退金额 / 退费渠道（原路返回）。
  */
-function handleCancel(row: RegisterHistoryTableRow) {
+async function handleCancel(row: RegisterHistoryTableRow) {
   historyActionMode.value = 'cancel';
   historyActionRow.value = row;
+  cancelOriginalPayChannelCodes.value = [];
+  cancelRefundChannelItems.value = [];
   historyActionDialogVisible.value = true;
+
+  const paymentId = String(row.paymentId ?? '').trim();
+  const fund = Number(row.ybFundPaySumamt ?? 0);
+  const acct = Number(row.ybAcctPay ?? 0);
+  const hasInsurancePay =
+    Boolean(row.insurancePreSettled) ||
+    (Number.isFinite(fund) && fund > 0.001) ||
+    (Number.isFinite(acct) && acct > 0.001);
+  const selfPay = hasInsurancePay ? Number(row.ybPsnCashPay ?? 0) : Number(row.amount ?? 0);
+
+  cancelDialogLoadingChannels.value = true;
+  try {
+    await ensurePayChannelsLoaded();
+    if (paymentId) {
+      try {
+        const codes = await httpListOriginalPayChannelCodes({ paymentId });
+        cancelOriginalPayChannelCodes.value = Array.isArray(codes)
+          ? codes.map((code) => String(code ?? '').trim()).filter(Boolean)
+          : [];
+      } catch {
+        cancelOriginalPayChannelCodes.value = [];
+      }
+    }
+    cancelRefundChannelItems.value = buildRefundChannelDisplayItems({
+      originalPayChannelCodes: cancelOriginalPayChannelCodes.value,
+      payChannelOptions: payChannelOptions.value,
+      selfPayAmount: Number.isFinite(selfPay) ? selfPay : 0,
+      ybAcctPay: hasInsurancePay ? acct : undefined,
+      ybFundPaySumamt: hasInsurancePay ? fund : undefined,
+    });
+  } finally {
+    cancelDialogLoadingChannels.value = false;
+  }
 }
 
 /**
@@ -681,6 +759,7 @@ async function executeCancelRegister() {
         clientRefundResult =
           (await submitScanRefund({
             originalPaymentId: paymentId,
+            originalPayChannelCodes: cancelOriginalPayChannelCodes.value,
             refundAmountYuan: row.amount,
           })) ?? undefined;
       } catch (error) {
@@ -1009,8 +1088,41 @@ defineExpose({
         </template>
 
         <template v-else>
+          <div class="register-history-action-dialog__amount">
+            <span class="register-history-action-dialog__amount-label">退费金额</span>
+            <span class="register-history-action-dialog__amount-value">{{
+              historyDialogAmountYuan(historyActionRow)
+            }}</span>
+          </div>
+
+          <div class="register-history-action-dialog__refund-channels">
+            <div class="register-history-action-dialog__section-title">退费渠道（原路返回）</div>
+            <div
+              v-if="cancelDialogLoadingChannels"
+              class="text-[13px] text-[var(--el-text-color-secondary)]"
+            >
+              正在加载原支付渠道…
+            </div>
+            <template v-else-if="cancelRefundChannelItems.length > 0">
+              <div
+                v-for="(item, idx) in cancelRefundChannelItems"
+                :key="`${item.label}-${idx}`"
+                class="register-history-action-dialog__refund-channel-row"
+              >
+                <span>{{ item.label }}</span>
+                <strong v-if="item.amount != null">{{
+                  formatMoneyYuanWithSymbol(item.amount)
+                }}</strong>
+                <strong v-else>原路返回</strong>
+              </div>
+            </template>
+            <p v-else class="text-[13px] text-[var(--el-text-color-secondary)]">
+              按原支付渠道原路返回
+            </p>
+          </div>
+
           <div
-            class="mb-1 border-0 border-b border-solid border-[var(--el-border-color-lighter)] pb-1 text-[14px] font-semibold text-[var(--el-text-color-primary)]"
+            class="mb-1 mt-4 border-0 border-b border-solid border-[var(--el-border-color-lighter)] pb-1 text-[14px] font-semibold text-[var(--el-text-color-primary)]"
           >
             就诊与患者
           </div>
@@ -1049,10 +1161,6 @@ defineExpose({
             <span class="text-[var(--el-text-color-regular)]">挂号时间</span>
             <span class="text-[var(--el-text-color-primary)]">{{
               historyDialogCell(historyActionRow.startTime)
-            }}</span>
-            <span class="text-[var(--el-text-color-regular)]">应退金额</span>
-            <span class="text-[var(--el-text-color-primary)]">{{
-              historyDialogAmountYuan(historyActionRow)
             }}</span>
             <span class="text-[var(--el-text-color-regular)]">当前状态</span>
             <span class="text-[var(--el-text-color-primary)]">{{
@@ -1248,6 +1356,27 @@ defineExpose({
   font-weight: 700;
   line-height: 1.2;
   color: var(--el-color-primary);
+}
+
+.register-history-action-dialog__refund-channels {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.register-history-action-dialog__refund-channel-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+  color: var(--el-text-color-primary);
+  font-size: 13px;
+}
+
+.register-history-action-dialog__refund-channel-row strong {
+  font-weight: 600;
 }
 
 .register-history-action-dialog__meta {

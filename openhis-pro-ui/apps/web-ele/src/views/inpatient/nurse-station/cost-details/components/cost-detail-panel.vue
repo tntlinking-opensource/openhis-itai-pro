@@ -32,6 +32,8 @@ interface Props {
   loading?: boolean;
   /** 费用清单打印中 */
   printing?: boolean;
+  /** 费用明细单打印中 */
+  printingDetail?: boolean;
   presentationMode?: NurseStationCostDetailPresentationMode;
   presentationOptions?: NurseStationCostDetailPresentationOptionDto[];
   quickDay?: CostDetailQuickDay;
@@ -51,6 +53,7 @@ const props = withDefaults(defineProps<Props>(), {
   keyword: '',
   loading: false,
   printing: false,
+  printingDetail: false,
   presentationMode: 'DETAIL',
   presentationOptions: () => [],
   quickDay: 'today',
@@ -62,6 +65,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
   onPrint: [];
+  onPrintDetail: [];
   onQuery: [];
   onQuickDayChange: [day: CostDetailQuickDay];
   onPresentationModeChange: [mode: NurseStationCostDetailPresentationMode];
@@ -106,9 +110,47 @@ function handleQuickDayChangeEvent(value: boolean | number | string) {
   }
 }
 
+/** 数值是否为负（冲销留痕数量/金额）。 */
+function isNegativeNumeric(value: number | string | undefined) {
+  if (value == null || value === '') {
+    return false;
+  }
+  const n = Number(value);
+  return Number.isFinite(n) && n < 0;
+}
+
 /** 明细行是否应用退费高亮样式。 */
 function isRefundHighlightRow(row: NurseStationCostDetailLineDto) {
   return row.refundHighlight === true;
+}
+
+/**
+ * 护士划价冲销留痕行（BR-IP-CDT-018）：来源仍为 nurse-pricing，
+ * 以退费态或数量/金额为负识别，整行标红（不可用「护士冲销」文案判断）。
+ */
+function isNurseOffsetHighlightRow(row: NurseStationCostDetailLineDto) {
+  if (String(row.generateSourceEnum ?? '').trim() !== 'nurse-pricing') {
+    return false;
+  }
+  const status = String(row.statusEnum ?? '')
+    .trim()
+    .toUpperCase();
+  if (status.includes('REFUND')) {
+    return true;
+  }
+  return isNegativeNumeric(row.quantityValue) || isNegativeNumeric(row.totalPrice);
+}
+
+/** 明细表行 class：退费底色 + 护士冲销标红可叠加。 */
+function resolveDetailRowClassName(row: NurseStationCostDetailLineDto) {
+  const classes: string[] = [];
+  if (isRefundHighlightRow(row)) {
+    classes.push('cost-detail-row--refund');
+  }
+  if (isNurseOffsetHighlightRow(row)) {
+    classes.push('cost-detail-row--cancel');
+  }
+  return classes.join(' ');
 }
 
 /** 费用状态 → Tag 类型。 */
@@ -196,6 +238,9 @@ function splitRowDisplayDateTime(row: {
         <ElButton @click="emit('onReset')">重置</ElButton>
         <ElButton type="primary" :loading="loading" @click="emit('onQuery')">查询</ElButton>
         <ElButton plain :loading="printing" @click="emit('onPrint')">打印费用清单</ElButton>
+        <ElButton plain :loading="printingDetail" @click="emit('onPrintDetail')">
+          打印费用明细单
+        </ElButton>
       </div>
     </section>
 
@@ -267,9 +312,7 @@ function splitRowDisplayDateTime(row: {
           height="100%"
           row-key="chargeItemId"
           class="cost-detail-table"
-          :row-class-name="
-            ({ row }) => (isRefundHighlightRow(row) ? 'cost-detail-row--refund' : '')
-          "
+          :row-class-name="({ row }) => resolveDetailRowClassName(row)"
         >
           <ElTableColumn prop="itemName" label="项目名称" min-width="168" show-overflow-tooltip />
           <ElTableColumn prop="itemSpec" label="规格" min-width="96" show-overflow-tooltip>
@@ -642,6 +685,12 @@ function splitRowDisplayDateTime(row: {
 }
 
 .cost-detail-page :deep(.cost-detail-row--cancel) {
+  color: var(--el-color-danger);
+}
+
+/* 金额列有独立字色，冲销行需一并继承危险色 */
+.cost-detail-page :deep(.cost-detail-row--cancel .cost-detail-money--amount),
+.cost-detail-page :deep(.cost-detail-row--cancel .cost-detail-datetime__time) {
   color: var(--el-color-danger);
 }
 

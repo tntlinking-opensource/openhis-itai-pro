@@ -17,14 +17,15 @@ import { saveAdviceDraftBatchWithBindResolution } from './advice-draft-bind.serv
  *
  * | 场景 | 策略 | 函数 |
  * |------|------|------|
- * | 编辑卡手动保存（仅新建药品 CREATE） | MANUAL_USAGE_BIND | saveAdviceDraftBatchWithManualUsageBind |
+ * | 编辑卡手动保存（新建药品/诊疗 CREATE） | MANUAL_USAGE_BIND | saveAdviceDraftBatchWithManualUsageBind |
  * | 编辑卡手动保存（纯 UPDATE / DELETE） | DIRECT_ONLY 同等 | 同上入口内自动跳过绑定 |
  * | 组套套用 | DIRECT_ONLY | saveAdviceDraftBatchDirect |
  * | 历史医嘱复用 | DIRECT_ONLY | saveAdviceDraftBatchDirect |
  * | 删除草稿行 | DIRECT_ONLY | saveAdviceDraftBatchDirect |
  *
- * **手动开药用法带出** 与 **批量套用/编辑保存不带出** 是独立链路：
- * - 仅新建药品（CREATE）保存时解析用法绑定并弹窗确认；
+ * **手动开立绑定带出** 与 **批量套用/编辑保存不带出** 是独立链路：
+ * - 新建药品（CREATE）→ 解析 USAGE 用法绑定并弹窗确认；
+ * - 新建诊疗（CREATE）→ 解析 ACTIVITY 诊疗绑定并弹窗确认；
  * - 纯编辑（UPDATE）、组套、历史医嘱复用均不二次带出。
  *
  * 新增暂存入口时：先对照上表选定策略，禁止直接调用 httpSaveDoctorStationAdviceDraftBatch。
@@ -33,7 +34,7 @@ import { saveAdviceDraftBatchWithBindResolution } from './advice-draft-bind.serv
 /** 暂存策略：仅落库变更行，不解析 IF-DOR-23 绑定 */
 export const ADVICE_DRAFT_SAVE_DIRECT_ONLY = 'DIRECT_ONLY' as const;
 
-/** 暂存策略：手动医嘱保存，解析用法绑定并弹窗确认后带出诊疗/耗材 */
+/** 暂存策略：手动医嘱保存，解析用法/诊疗绑定并弹窗确认后带出诊疗/耗材 */
 export const ADVICE_DRAFT_SAVE_MANUAL_USAGE_BIND = 'MANUAL_USAGE_BIND' as const;
 
 export type AdviceDraftSavePolicy =
@@ -62,7 +63,7 @@ export async function saveAdviceDraftBatchDirect(
   });
 }
 
-/** 手动编辑保存：仅新建药品行解析用法绑定；纯 UPDATE 直接暂存 */
+/** 手动编辑保存：新建药品→用法绑定、新建诊疗→诊疗绑定；纯 UPDATE 直接暂存 */
 export async function saveAdviceDraftBatchWithManualUsageBind(
   options: SaveAdviceDraftBatchOptions,
 ): Promise<SaveDoctorStationAdviceDraftBatchResponse> {

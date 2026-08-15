@@ -19,6 +19,8 @@ export interface ServiceApplySelectedItem {
   unitCode: string;
   /** 展示单价，来自目录 `unitPrice` */
   unitPrice: number;
+  /** 医保等级展示（甲类/乙类/丙类）；仅展示，不参与分支 */
+  chrgitmLvText?: string;
   remark?: string;
   detailItems: ServiceApplyFormDetailItemRequest[];
 }

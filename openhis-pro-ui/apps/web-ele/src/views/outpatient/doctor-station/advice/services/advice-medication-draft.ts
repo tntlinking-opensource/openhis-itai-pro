@@ -355,6 +355,7 @@ function buildServiceDraftLine(
   }
   const rateCode = String(item.frequency || '').trim() || undefined;
   const encounterDiagnosisIds = resolveOptionalEncounterDiagnosisIds(item, encounterRows);
+  const contractId = resolveMedicationContractId(item);
   const sortNumber = resolveOptionalDraftSortNumber(item);
   const servicePayload: NonNullable<DoctorStationAdviceDraftLineRequest['servicePayload']> = {
     activityDefinitionId: defId || '',
@@ -364,6 +365,7 @@ function buildServiceDraftLine(
     ...(rateCode ? { rateCode } : {}),
     executionCount,
     ...(encounterDiagnosisIds ? { encounterDiagnosisIds } : {}),
+    ...(contractId ? { contractId } : {}),
   };
   return {
     lineOp: op,
@@ -393,12 +395,14 @@ function buildDeviceDraftLine(
     parseProductTableNameFromSelectedId(item.selectedId) ||
     'adm_device_definition';
   const performOrgRaw = String(item.performOrgId ?? '').trim();
+  const contractId = resolveMedicationContractId(item);
   const sortNumber = resolveOptionalDraftSortNumber(item);
   const devicePayload: NonNullable<DoctorStationAdviceDraftLineRequest['devicePayload']> = {
     deviceDefinitionId: defId || '',
     quantity: qty,
     unitCode,
     ...(performOrgRaw && /^\d+$/.test(performOrgRaw) ? { performOrgId: performOrgRaw } : {}),
+    ...(contractId ? { contractId } : {}),
   };
   return {
     lineOp: op,

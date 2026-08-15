@@ -4,6 +4,7 @@
 import type { PageParams } from '#/types/api-response';
 
 import { publicRequestClient } from '#/api/request';
+import { reportLongRequestConfig } from '#/constants/report-request-timeout';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
 const BASE = '/inventoryDocumentDetail';
@@ -124,6 +125,7 @@ export async function pageDocumentDetailsApi(body: PageDocumentDetailsRequest) {
   const res = await publicRequestClient.post<PageDocumentDetailsResponse>(
     `${BASE}/pageDocumentDetails`,
     body,
+    reportLongRequestConfig(),
   );
   const { content, totalCount } = parsePagedRowsFromApiData<DocumentDetailRowDto>(res);
   return {
@@ -138,6 +140,7 @@ export async function summarizeDocumentDetailsApi(body: ExportDocumentDetailsReq
   return publicRequestClient.post<SummarizeDocumentDetailsResponse>(
     `${BASE}/summarizeDocumentDetails`,
     body,
+    reportLongRequestConfig(),
   );
 }
 
@@ -146,5 +149,6 @@ export async function exportDocumentDetailsApi(body: ExportDocumentDetailsReques
   return publicRequestClient.post<ExportDocumentDetailsResponse>(
     `${BASE}/exportDocumentDetails`,
     body,
+    reportLongRequestConfig(),
   );
 }

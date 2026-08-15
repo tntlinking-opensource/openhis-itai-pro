@@ -105,6 +105,10 @@ export interface ReturnToSupplierDetailLineDto {
   reason?: string;
   remake?: string;
   productName?: string;
+  /** 单价（包装锚进价快照；优先进货落库价，缺省批号进价） */
+  price?: number;
+  /** 行合计金额（落库 total_price） */
+  totalPrice?: number;
   /** 产品目录计量带，详情回显 / 换算用 */
   productCatalog?: { unitBands?: unknown; unitBandsJson?: unknown };
 }
@@ -120,6 +124,10 @@ export interface GetReturnToSupplierDetailResponse {
   sourceTypeEnum?: number;
   purposeTypeEnum?: number;
   categoryEnum?: number;
+  /** 整单退货金额合计 */
+  totalAmount?: number;
+  /** 整单退货金额合计（与 totalAmount 双写） */
+  totalPrice?: number;
   lines: ReturnToSupplierDetailLineDto[];
 }
 

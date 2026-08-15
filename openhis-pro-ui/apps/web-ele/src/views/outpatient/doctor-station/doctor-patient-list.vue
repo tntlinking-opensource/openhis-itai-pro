@@ -22,6 +22,7 @@ import {
 } from 'element-plus';
 
 import PatientCard from '#/components/outpatient/patient-card.vue';
+import { formatInsutype, formatInsutypeShort } from '#/chs/constants/reconciliation';
 import { useSingleDayDatePickerShortcuts } from '#/composables/use-single-day-date-picker-shortcuts';
 import { encounterQueueStatusDisplayText } from '#/utils/outpatient/encounter-queue-status-text';
 
@@ -175,6 +176,13 @@ const feeNatureChipStyle = (patient: DoctorStationPatient) => {
 
 const feeNatureChipLabel = (patient: DoctorStationPatient) =>
   (patient.contractDisplay ?? '').trim() || '自费';
+
+const insutypeChipLabel = (patient: DoctorStationPatient) => formatInsutypeShort(patient.insutype);
+
+const insutypeChipTitle = (patient: DoctorStationPatient) => {
+  const full = formatInsutype(patient.insutype);
+  return full && full !== '—' ? full : '';
+};
 
 const outpatientStatusChipInlineStyle = (patient: DoctorStationPatient) => {
   const c = outpatientStatusChipStyle(patient);
@@ -343,10 +351,6 @@ const handleRefresh = () => {
               <span class="patient-item__label">病历号</span>
               <span class="patient-item__value">{{ cardBottomRecordNo(patient) }}</span>
             </div>
-            <div class="patient-item__row">
-              <span class="patient-item__label">性别</span>
-              <span class="patient-item__value">{{ outpatientGenderDisplay(patient) }}</span>
-            </div>
             <div class="patient-item__row patient-item__row--chips">
               <span class="patient-item__label">费用性质</span>
               <span class="patient-item__value patient-item__value--chips">
@@ -360,17 +364,38 @@ const handleRefresh = () => {
                   {{ feeNatureChipLabel(patient) }}
                 </span>
                 <span
+                  v-if="insutypeChipLabel(patient)"
+                  class="ml-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700"
+                  :title="insutypeChipTitle(patient) || undefined"
+                >
+                  {{ insutypeChipLabel(patient) }}
+                </span>
+                <span
                   v-if="patient.workInjuryEncounter"
                   class="ml-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800"
-                  :title="patient.workInjuryApprovalStatusLabel ?? '工伤'"
+                  :title="
+                    patient.workInjuryApprovalStatusLabel
+                      ? `工伤备案：${patient.workInjuryApprovalStatusLabel}`
+                      : '工伤就诊（备案请在挂号处办理）'
+                  "
                 >
                   工伤{{
-                    patient.workInjuryApprovalStatusLabel
-                      ? `·${patient.workInjuryApprovalStatusLabel}`
-                      : ''
+                    patient.workInjuryQualificationValid
+                      ? '·已备案'
+                      : patient.workInjuryApprovalStatusLabel
+                        ? `·${patient.workInjuryApprovalStatusLabel}`
+                        : '·未备案'
                   }}
                 </span>
               </span>
+            </div>
+            <div class="patient-item__row">
+              <span class="patient-item__label">电话号</span>
+              <span class="patient-item__value">{{ formatField(patient.phone) }}</span>
+            </div>
+            <div class="patient-item__row">
+              <span class="patient-item__label">身份证号</span>
+              <span class="patient-item__value">{{ formatField(patient.idCard) }}</span>
             </div>
             <div class="patient-item__row">
               <span class="patient-item__label">就诊时间</span>
@@ -381,12 +406,8 @@ const handleRefresh = () => {
               <span class="patient-item__value">{{ formatField(patient.organizationName) }}</span>
             </div>
             <div class="patient-item__row">
-              <span class="patient-item__label">电话号</span>
-              <span class="patient-item__value">{{ formatField(patient.phone) }}</span>
-            </div>
-            <div class="patient-item__row">
-              <span class="patient-item__label">身份证号</span>
-              <span class="patient-item__value">{{ formatField(patient.idCard) }}</span>
+              <span class="patient-item__label">地址</span>
+              <span class="patient-item__value">{{ formatField(patient.address) }}</span>
             </div>
             <PatientAllergySkinTestSection
               :patient-id="patient.patientId ?? ''"

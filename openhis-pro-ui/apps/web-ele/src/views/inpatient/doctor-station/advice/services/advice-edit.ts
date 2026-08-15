@@ -19,6 +19,7 @@ import {
   doseConvertRatioSplitToDose,
   resolveAdviceLineUnitPrice,
   roundMedicationQty,
+  roundMedicationSplitQty,
   totalAmountSplitToSalesFactor,
   unitCodeByBandKind,
   unitNameByBandKind,
@@ -116,6 +117,8 @@ export function createAdviceDrugItem(
     singleDose: numFromSeed('singleDose'),
     frequency,
     usage,
+    speedCode: String(s?.speedCode ?? '').trim() || undefined,
+    injectFlag: s?.injectFlag === true,
     medicationDays: numFromSeed('medicationDays'),
     totalAmount: numFromSeed('totalAmount'),
     serviceQuantity: numFromSeed('serviceQuantity'),
@@ -180,6 +183,8 @@ export function buildWesternProductSelectPatch(
   const rc = row.rateCode?.trim();
   if (mc) patch.usage = mc;
   if (rc) patch.frequency = rc;
+  // 目录注射/输液标志：驱动编辑卡「滴速」显隐
+  patch.injectFlag = row.injectFlag === true;
   const bands = row.unitBands;
   patch.unitBands = bands;
   const catalogRaw = row.catalogUnitPrice ?? row.price;
@@ -198,11 +203,12 @@ export function buildWesternProductSelectPatch(
   const curDq = Number.isFinite(curDqRaw) && curDqRaw > 0 ? curDqRaw : Number.NaN;
   if (ratioK !== undefined && Number.isFinite(ratioK) && ratioK > 0) {
     patch.doseBandConvertK = ratioK;
-    if (Number.isFinite(curSd) && curSd > 0) {
-      patch.doseConvertRatio = roundMedicationQty(curSd * ratioK);
-    } else if (Number.isFinite(curDq) && curDq > 0) {
-      patch.singleDose = roundMedicationQty(curDq / ratioK);
+    // 剂量单位是落库真源：两侧都有时优先保留剂量，再反算两位最小单位
+    if (Number.isFinite(curDq) && curDq > 0) {
+      patch.singleDose = roundMedicationSplitQty(curDq / ratioK);
       patch.doseConvertRatio = roundMedicationQty(curDq);
+    } else if (Number.isFinite(curSd) && curSd > 0) {
+      patch.doseConvertRatio = roundMedicationQty(curSd * ratioK);
     }
   } else {
     patch.doseBandConvertK = undefined;

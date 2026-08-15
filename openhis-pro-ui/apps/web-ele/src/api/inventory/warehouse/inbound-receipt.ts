@@ -179,6 +179,8 @@ export interface InboundProductCatalogHintDto {
   purchasePrice?: number;
   merchandiseName?: string;
   categoryCode?: string;
+  /** 院内项目编码（与选品 productBusNo 同义） */
+  productBusNo?: string;
   totalVolume?: string;
 }
 

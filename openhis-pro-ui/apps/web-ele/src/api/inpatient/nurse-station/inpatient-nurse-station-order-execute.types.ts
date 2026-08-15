@@ -25,6 +25,10 @@ export interface ListNurseStationOrderExecuteRequest {
   therapyType?: NurseStationOrderExecuteTherapyFilter;
   medicineCategoryTab?: NurseStationOrderExecuteMedicineCategoryTab;
   executionDeadline: string;
+  /** 开嘱日起（含）YYYY-MM-DD HH:mm:ss；空表示不下界过滤 */
+  reqOpenedTimeFrom?: string;
+  /** 开嘱日止（含）YYYY-MM-DD HH:mm:ss；空表示不上界过滤 */
+  reqOpenedTimeTo?: string;
 }
 
 /** 执行槽位（与后端 NurseStationOrderExecuteSlotDto 对齐） */
@@ -80,13 +84,39 @@ export interface NurseStationOrderExecuteRowDto {
   /** 医嘱备注（随医嘱内容展示） */
   remark?: string;
   specificationText?: string;
+  /**
+   * 拆零比（目录 package_unit_ratio：1 包装 = N 拆零；仅药嘱）。
+   */
+  partPercent?: number | string | null;
+  /**
+   * 包装装量后缀（如 `1片x100`；仅药嘱）。
+   */
+  packageSplitRatioText?: string | null;
+  /**
+   * 包装单位展示名（目录包装单位术语；仅药嘱）。
+   * 摆药单一盒一点总量拼接用，禁止前端写死「盒」。
+   */
+  packageUnitDisplay?: string | null;
   dosageDisplay?: string;
+  /**
+   * 开立总量展示（如 `1盒`；仅临时/出院带药有值；长期为空）。
+   * 摆药单/用药单「总量」列优先用本字段，禁止用 dosageDisplay（每次量）冒充。
+   */
+  quantityDisplay?: string | null;
+  /**
+   * 日剂量友好展示（如 `每日三片`；长期药且频次可解析每日次数时有值）。
+   */
+  dailyDoseDisplay?: string | null;
   usageDisplay?: string;
   /** 给药途径/用法编码（仅药嘱；筛选输液等须用 code，禁止用 usageDisplay） */
   methodCode?: string;
   /** 是否输液/注射相关（仅药嘱 infusion_flag） */
   infusionFlag?: boolean;
   frequencyDisplay?: string;
+  /** 输液滴速编码（仅药嘱 speed_code） */
+  speedCode?: string;
+  /** 输液滴速展示名 */
+  speedDisplay?: string;
   /** 开立时间（后端 req_opened_time） */
   reqOpenedTime?: string;
   stopTime?: string;

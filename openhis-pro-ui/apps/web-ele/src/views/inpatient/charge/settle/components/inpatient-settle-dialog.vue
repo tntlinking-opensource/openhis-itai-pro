@@ -40,6 +40,10 @@ const props = withDefaults(
     insurancePreSettled?: boolean;
     loading?: boolean;
     payChannelOptions?: PayChannelOption[];
+    /** 库内预交金余额 */
+    prepayNetBalance?: number | string;
+    /** 本次预交金冲抵额 */
+    prepayOffsetAmount?: number | string;
     previewText?: string;
     receivableTotal?: number | string;
     scanPayEnabled?: boolean;
@@ -54,6 +58,8 @@ const props = withDefaults(
     insurancePreSettled: false,
     loading: false,
     payChannelOptions: () => [],
+    prepayNetBalance: undefined,
+    prepayOffsetAmount: undefined,
     previewText: '',
     receivableTotal: 0,
     scanPayEnabled: false,
@@ -105,11 +111,19 @@ function formatMoney(value: null | number | string | undefined) {
   return Number.isFinite(n) ? formatMoneyDisplay(n) : '0.00';
 }
 
+/** 需补交：预结算 displayAmount（预交金充足时为 0）。 */
 const payableDisplay = computed(() => {
-  if (props.insurancePreSettled && props.displayAmount != null) {
+  if (props.displayAmount != null && props.displayAmount !== '') {
     return formatMoney(props.displayAmount);
   }
   return formatMoney(props.receivableTotal);
+});
+
+const showPrepayStrip = computed(() => {
+  if (props.prepayNetBalance == null || props.prepayNetBalance === '') {
+    return false;
+  }
+  return Number.isFinite(Number(props.prepayNetBalance));
 });
 
 /** 预结算说明文案：后端 previewText 可能带 6 位小数，展示统一为 2 位 */
@@ -118,11 +132,17 @@ const formattedPreviewText = computed(() => {
   if (!text) {
     return '';
   }
+  if (text.startsWith('预交金冲抵医保个人现金')) {
+    return `预交金冲抵医保个人现金：${formatMoneyYuan(props.prepayOffsetAmount)}`;
+  }
   if (text.startsWith('预交金冲抵')) {
     return `预交金冲抵，应收合计：${formatMoneyYuan(props.receivableTotal)}`;
   }
+  if (text.startsWith('医保已覆盖')) {
+    return '医保已覆盖，无需补交';
+  }
   if (text.startsWith('患者实付')) {
-    return `患者实付：${formatMoneyYuan(props.displayAmount)}`;
+    return `需补交：${formatMoneyYuan(props.displayAmount)}`;
   }
   if (text.startsWith('应收合计')) {
     return `应收合计：${formatMoneyYuan(props.receivableTotal)}`;
@@ -131,7 +151,7 @@ const formattedPreviewText = computed(() => {
 });
 
 const payableAmountNum = computed(() => {
-  if (props.insurancePreSettled && props.displayAmount != null) {
+  if (props.displayAmount != null && props.displayAmount !== '') {
     return Number(props.displayAmount);
   }
   return Number(props.receivableTotal ?? 0);
@@ -160,12 +180,24 @@ function handleCancel() {
         {{ formattedPreviewText }}
       </p>
       <div class="settle-dialog-amount">
-        <span class="text-[var(--el-text-color-regular)]">患者实付</span>
+        <span class="text-[var(--el-text-color-regular)]">需补交</span>
         <strong class="text-[var(--el-color-primary)]">¥{{ payableDisplay }}</strong>
         <span v-if="insurancePreSettled" class="text-xs text-[var(--el-text-color-secondary)]">
           原价合计 ¥{{ formatMoney(receivableTotal) }}
         </span>
       </div>
+      <p
+        v-if="showPrepayStrip"
+        class="settle-dialog-prepay text-sm text-[var(--el-text-color-regular)]"
+      >
+        预交金余额 ¥{{ formatMoney(prepayNetBalance) }}
+        <template v-if="prepayOffsetAmount != null && prepayOffsetAmount !== ''">
+          · 本次冲抵 ¥{{ formatMoney(prepayOffsetAmount) }}
+        </template>
+        <span class="text-xs text-[var(--el-text-color-secondary)]">
+          （优先从预交金扣，不足部分需补交）
+        </span>
+      </p>
       <div v-if="insuranceBreakdownItems.length > 0" class="settle-dialog-section">
         <div class="settle-dialog-section__title">医保分项</div>
         <ElDescriptions :column="2" border size="small">
@@ -250,6 +282,11 @@ function handleCancel() {
 .settle-dialog-amount strong {
   font-size: 22px;
   font-weight: 700;
+}
+
+.settle-dialog-prepay {
+  margin: 0;
+  line-height: 1.5;
 }
 
 .settle-dialog-section {

@@ -36,6 +36,58 @@ export function parseDateTimeYmdHm(value?: string): { dateYmd: string; hm: strin
   return null;
 }
 
+/** 比较两个 HH:mm；左小返回负，相等返回 0，左大返回正 */
+export function compareHm(leftHm: string, rightHm: string): number {
+  const left = (leftHm ?? '').trim();
+  const right = (rightHm ?? '').trim();
+  if (left === right) {
+    return 0;
+  }
+  return left < right ? -1 : 1;
+}
+
+/** 解析入院日期 YYYY-MM-DD */
+export function resolveAdmissionDateYmd(admissionAt?: string): null | string {
+  return parseDateTimeYmdHm(admissionAt)?.dateYmd ?? null;
+}
+
+/**
+ * 录入日当天的测量时间下限 HH:mm。
+ * 仅入院日当天有下限（入院时分）；其他日期无限制时返回 null。
+ */
+export function resolveMinRecordHmForDate(recordDate: string, admissionAt?: string): null | string {
+  const admission = parseDateTimeYmdHm(admissionAt);
+  const dateYmd = (recordDate ?? '').trim();
+  if (!admission || !dateYmd) {
+    return null;
+  }
+  if (dateYmd !== admission.dateYmd) {
+    return null;
+  }
+  return admission.hm;
+}
+
+/** 录入日+时分是否早于入院时间 */
+export function isRecordDateTimeBeforeAdmission(
+  recordDate: string,
+  recordTimeHm: string,
+  admissionAt?: string,
+): boolean {
+  const admission = parseDateTimeYmdHm(admissionAt);
+  const dateYmd = (recordDate ?? '').trim();
+  const hm = (recordTimeHm ?? '').trim();
+  if (!admission || !dateYmd || !hm) {
+    return false;
+  }
+  if (dateYmd < admission.dateYmd) {
+    return true;
+  }
+  if (dateYmd > admission.dateYmd) {
+    return false;
+  }
+  return compareHm(hm, admission.hm) < 0;
+}
+
 /** 小时映射到三测时次（与测量区间一致） */
 export function resolveTemperatureSheetTimeSlotFromHour(hour: number): TemperatureSheetTimeSlot {
   if (hour >= 2 && hour <= 5) {

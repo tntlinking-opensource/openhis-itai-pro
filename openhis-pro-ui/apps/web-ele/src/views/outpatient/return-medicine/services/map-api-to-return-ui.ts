@@ -35,12 +35,23 @@ export function mapReturnPatientRowToQueuePatient(
   };
 }
 
+/** 明细行总价 → 可加总数值（非法/空为 null） */
+function parseDetailTotalPrice(value: null | number | string | undefined): null | number {
+  if (value === null || value === undefined || scalarToTrimmedString(value) === '') {
+    return null;
+  }
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 /** 明细 DTO → 表格行（仅 PENDING_REFUND 可勾选） */
 export function mapReturnDetailRowToUi(row: ReturnMedicineDetailRowDto): ReturnMedicineDetailRow {
   const refundEnum = row.refundEnum?.trim() || '';
   const q = scalarToTrimmedString(row.quantity);
   const dispenseId = String(row.dispenseId ?? '').trim();
   const requestId = String(row.requestId ?? '').trim();
+  // 保留数值供右上角合计；展示文案仍走 formatMoneyDisplay
+  const totalPrice = parseDetailTotalPrice(row.totalPrice);
   return {
     id: dispenseId,
     dispenseId,
@@ -49,10 +60,8 @@ export function mapReturnDetailRowToUi(row: ReturnMedicineDetailRowDto): ReturnM
     lotNumber: row.lotNumber?.trim() || '—',
     quantity: q || '—',
     unitText: row.unitCodeText?.trim() || '—',
-    totalPriceLabel:
-      row.totalPrice != null && scalarToTrimmedString(row.totalPrice) !== ''
-        ? formatMoneyDisplay(row.totalPrice)
-        : '—',
+    totalPrice,
+    totalPriceLabel: totalPrice == null ? '—' : formatMoneyDisplay(totalPrice),
     doctorName: row.doctorName?.trim() || '—',
     refundEnum,
     refundEnumText: row.refundEnumText?.trim() || '—',

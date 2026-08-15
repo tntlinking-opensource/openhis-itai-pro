@@ -50,13 +50,16 @@ function mapSheetHeaderFields(sheet: PrescriptionSheetData) {
   return {
     prescriptionNo: displayOrEmpty(sheet.prescriptionNo),
     hospitalName: displayOrEmpty(sheet.hospitalName),
-    prescriptionTypeLine1: '',
-    prescriptionTypeLine2: '',
+    // 与发药单笺面 / slip 打印同源
+    prescriptionTypeLine1: displayOrEmpty(sheet.prescriptionTypeLine1),
+    prescriptionTypeLine2: displayOrEmpty(sheet.prescriptionTypeLine2) || '当日有效',
     patientName: displayOrEmpty(sheet.patientName),
     ageText: displayOrEmpty(sheet.patientAgeLabel),
     genderEnumText: displayOrEmpty(sheet.patientGenderLabel),
     orderingDepartmentName: displayOrEmpty(sheet.deptName),
-    feeNatureText: displayOrEmpty(sheet.feeNatureLabel) || '自费',
+    // 与发药单笺面一致：有就诊类型（med_type）时优先；否则费用性质
+    feeNatureText:
+      displayOrEmpty(sheet.visitTypeLabel) || displayOrEmpty(sheet.feeNatureLabel) || '自费',
     prescriptionDateText: displayOrEmpty(sheet.prescriptionDate),
     encounterBusNo: displayOrEmpty(sheet.outpatientNoLabel),
     patientPhone: displayOrEmpty(sheet.patientPhone),
@@ -98,7 +101,23 @@ export function buildTcmPrintDataFromDoctorSheet(
     rpHeading: 'Rp :',
     tcmHerbRows: sheet.tcmHerbGridRows ?? [],
     tcmUsageText: displayOrEmpty(sheet.tcmUsageText),
+    decoctionActivityName: displayOrEmpty(sheet.decoctionActivityName),
+    decoctionChargeAmountLabel: displayOrEmpty(sheet.decoctionChargeAmountLabel),
+    decoctionChargeQuantityLabel: displayOrEmpty(sheet.decoctionChargeQuantityLabel),
+    tcmDecoctionFeeText: buildTcmDecoctionFeeText(sheet),
   };
+}
+
+/** 笺面代煎费 → 打印整行文案（与发药单一致） */
+function buildTcmDecoctionFeeText(sheet: PrescriptionSheetData): string {
+  const amount = displayOrEmpty(sheet.decoctionChargeAmountLabel);
+  if (!amount || amount === '—') return '';
+  const name = displayOrEmpty(sheet.decoctionActivityName) || '代煎中药';
+  const qty = displayOrEmpty(sheet.decoctionChargeQuantityLabel);
+  let line = name;
+  if (qty) line += ` X${qty}`;
+  line += ` 代煎费：${amount}`;
+  return line;
 }
 
 /** 是否中药处方笺 */

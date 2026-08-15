@@ -22,6 +22,8 @@ export interface ReturnMedicineDetailRow {
   lotNumber: string;
   quantity: string;
   unitText: string;
+  /** 行总价数值（合计用；无价时为 null） */
+  totalPrice: null | number;
   totalPriceLabel: string;
   doctorName: string;
   refundEnum: string;

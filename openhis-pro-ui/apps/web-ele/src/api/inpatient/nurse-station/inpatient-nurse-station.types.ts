@@ -54,7 +54,31 @@ export interface PatientQueueItemDto {
   bedName?: string;
   /** 费用性质/医保类型展示（有医保账户优先） */
   contractDisplay?: string;
+  /** 身份证号（完整号） */
+  idCardNo?: string;
+  /** 医保人员编号（平台 psn_no；有则返） */
+  insuranceNo?: string;
+  /** 住址全文 */
+  address?: string;
+  /** 联系电话 */
+  patientPhone?: string;
+  /** 病人院内编码 */
+  patientBusNo?: string;
+  /** 入院途径 code */
+  inWayCode?: string;
+  /** 入院途径展示 */
+  inWayCodeText?: string;
+  /** 入院状态展示 */
+  priorityEnumText?: string;
+  /** 险种类别 code */
+  insutype?: string;
+  /** 医疗类别 code */
+  medType?: string;
+  /** 医疗类别展示 */
+  medTypeDisplay?: string;
   diagnosisSummary?: string;
+  /** 诊断展示列表 */
+  diagnosisList?: string[];
   encounterBusNo?: string;
   encounterId: string;
   endTime?: string;
@@ -126,8 +150,6 @@ export interface AdmissionVitalSignSubmitDto {
 export interface PatientDetailDto extends PatientQueueItemDto {
   admissionVitalSigns?: AdmissionVitalSignSubmitDto;
   diagnosisList?: string[];
-  idCardNo?: string;
-  locationJson?: string;
   participants?: ParticipantDto[];
   patientPhone?: string;
 }

@@ -73,6 +73,8 @@ function westernPatchFromCatalogRow(row: ProductOption): Partial<AdviceDrugItem>
   const rc = row.rateCode?.trim();
   if (mc) patch.usage = mc;
   if (rc) patch.frequency = rc;
+  // 目录注射/输液标志：驱动编辑卡「滴速」显隐
+  patch.injectFlag = row.injectFlag === true;
   if (splitName) patch.doseMainUnit = splitName;
   if (doseName) patch.doseSubUnit = doseName;
   if (ratio !== undefined && Number.isFinite(ratio)) patch.doseConvertRatio = ratio;
@@ -135,6 +137,8 @@ function seedFromLastRow(last: AdviceDrugItem): Partial<AdviceDrugItem> {
     pharmacy: lastItemField(last, 'pharmacy'),
     skinTest: last.skinTest,
     usage: last.usage,
+    speedCode: last.speedCode,
+    injectFlag: last.injectFlag,
     groupId: String(last.groupId ?? '').trim() || undefined,
   };
 }

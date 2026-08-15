@@ -5,6 +5,7 @@
 import type { PageParams } from '#/types/api-response';
 
 import { publicRequestClient } from '#/api/request';
+import { reportLongRequestConfig } from '#/constants/report-request-timeout';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
 const BASE = '/inpatientPharmacyPatientMedicationUsage';
@@ -81,7 +82,11 @@ export interface InpatientMedicationDetailLineDto {
   quantityUnitDisplay?: string;
   unitPrice?: number | string;
   totalPrice?: number | string;
+  /** 计划发药时间（过滤/排序轴） */
   plannedDispenseTime?: string;
+  /** 客户可见执行时间（Procedure.recorded_time） */
+  recordedTime?: string;
+  procedureId?: string;
   statusEnum?: string;
   usageStatusCode?: string;
   usageStatusDisplay?: string;
@@ -147,5 +152,6 @@ export async function queryInpatientMedicationDetailApi(
   return publicRequestClient.post<QueryInpatientMedicationDetailResponse>(
     `${BASE}/queryInpatientPatientMedicationUsage`,
     body,
+    reportLongRequestConfig(),
   );
 }

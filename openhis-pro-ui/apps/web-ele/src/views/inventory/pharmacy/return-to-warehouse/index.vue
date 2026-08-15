@@ -24,10 +24,19 @@ import {
   resolveDefaultAllLocationsFilterValue,
 } from '#/utils/inventory/inventory-workbench-list';
 
+import {
+  clearInvDocClientDraftCachesForScene,
+  clearInvDocDraftCache,
+  INV_DOC_DRAFT_SCENE,
+  mergeInvDocDraftCardsIntoQueue,
+} from '#/utils/inventory/inv-doc-draft-cache';
+
 import ReturnToWarehouseAsidePane from './return-to-warehouse-aside-pane.vue';
 import ReturnToWarehouseMainPane from './return-to-warehouse-main-pane.vue';
 
 defineOptions({ name: 'InventoryPharmacyReturnToWarehousePage' });
+
+const RETURN_TO_WAREHOUSE_DRAFT_SCENE = INV_DOC_DRAFT_SCENE.pharmacyReturnToWarehouse;
 
 const route = useRoute();
 
@@ -65,13 +74,44 @@ function isDraftOrderRow(row?: null | Record<string, unknown>): boolean {
   return Boolean(row?._draft);
 }
 
-function createDraftOrderRow(): Record<string, unknown> {
+/** 新建或按已有 clientDraftId 恢复草稿卡片 */
+function createDraftOrderRow(
+  clientDraftId?: string,
+  cardMeta?: Record<string, unknown>,
+): Record<string, unknown> {
+  const id =
+    String(clientDraftId ?? '').trim() ||
+    `draft:${Date.now()}:${Math.random().toString(36).slice(2, 9)}`;
   return {
     _draft: true,
-    _clientDraftId: `draft:${Date.now()}:${Math.random().toString(36).slice(2, 9)}`,
-    statusEnum_enumText: '编辑中',
-    applyTime: formatDateTime(new Date()),
+    _clientDraftId: id,
+    statusEnum_enumText: String(cardMeta?.statusEnum_enumText ?? '编辑中'),
+    applyTime: String(cardMeta?.applyTime ?? formatDateTime(new Date())),
+    applicantId_dictText: String(cardMeta?.applicantId_dictText ?? ''),
+    totalAmount: cardMeta?.totalAmount,
   };
+}
+
+/** 丢弃侧栏上现有草稿卡片时同步清 session 缓存 */
+function discardSidebarDraftCaches(): void {
+  for (const row of orderList.value.filter((r) => r._draft)) {
+    const id = String(row._clientDraftId ?? '').trim();
+    if (id) clearInvDocDraftCache(RETURN_TO_WAREHOUSE_DRAFT_SCENE, id);
+  }
+  clearInvDocClientDraftCachesForScene(RETURN_TO_WAREHOUSE_DRAFT_SCENE);
+}
+
+/** 进入页时把 session 草稿卡片合并进队列，并选中最近一条 */
+function rehydrateDraftCardsFromSession(): void {
+  const merged = mergeInvDocDraftCardsIntoQueue({
+    scene: RETURN_TO_WAREHOUSE_DRAFT_SCENE,
+    orderList: orderList.value,
+    buildDraftRow: (clientDraftId, cardMeta) => createDraftOrderRow(clientDraftId, cardMeta),
+  });
+  orderList.value = merged.orderList;
+  if (!selectedOrder.value && merged.inserted[0]) {
+    selectedOrder.value = merged.inserted[0];
+  }
 }
 
 function resolveBusNo(row?: null | Record<string, unknown>): string | undefined {
@@ -87,6 +127,13 @@ function resolveBusNo(row?: null | Record<string, unknown>): string | undefined 
 
 const selectedBusNo = computed(() => resolveBusNo(selectedOrder.value) ?? '');
 const isDraftOrder = computed(() => Boolean(selectedOrder.value?._draft));
+
+/** 当前侧栏草稿的稳定客户端 id */
+const selectedClientDraftId = computed(() => {
+  const o = selectedOrder.value;
+  if (!o?._draft) return '';
+  return String(o._clientDraftId ?? '').trim();
+});
 
 function toQueueRow(r: Record<string, unknown>): Record<string, unknown> {
   return enrichStockOutQueueCardRow(r, {
@@ -137,7 +184,18 @@ async function getList() {
   }
 }
 
+/** 侧栏/欢迎态：新建空白退库单（自由选品） */
+function handleAdd() {
+  discardSidebarDraftCaches();
+  const draft = createDraftOrderRow();
+  orderList.value = [draft, ...orderList.value.filter((r) => !r._draft)];
+  selectedOrder.value = draft;
+  tableForm.value.applyTime = formatDateTime(new Date());
+  mainPaneResetKey.value += 1;
+}
+
 async function handleCreateFromUpstream(row: Record<string, unknown>) {
+  discardSidebarDraftCaches();
   const draft = createDraftOrderRow();
   orderList.value = [draft, ...orderList.value.filter((r) => !r._draft)];
   selectedOrder.value = draft;
@@ -165,6 +223,8 @@ async function handleDocumentSaved(payload: { busNo?: string }) {
 
 async function handleDocumentRemoved() {
   if (selectedOrder.value?._draft) {
+    const id = String(selectedOrder.value._clientDraftId ?? '').trim();
+    if (id) clearInvDocDraftCache(RETURN_TO_WAREHOUSE_DRAFT_SCENE, id);
     orderList.value = orderList.value.filter((r) => r !== selectedOrder.value);
     selectedOrder.value = null;
     mainPaneResetKey.value += 1;
@@ -196,6 +256,7 @@ watch(
 onMounted(async () => {
   await init();
   await getList();
+  rehydrateDraftCardsFromSession();
 });
 </script>
 
@@ -214,21 +275,25 @@ onMounted(async () => {
         :cabinet-list-options="cabinetListOptions"
         :orders="orderList"
         :selected-order="selectedOrder"
+        @add="handleAdd"
         @search="getList"
         @select="handleOrderClick"
       />
     </template>
 
     <ReturnToWarehouseMainPane
+      :queue-card-row="selectedOrder"
       ref="mainPaneRef"
       class="min-h-0 flex-1"
       :apply-time="tableForm.applyTime"
       :bus-no="selectedBusNo"
+      :client-draft-id="selectedClientDraftId"
       :is-draft-order="isDraftOrder"
       :reset-key="mainPaneResetKey"
       :show-welcome-empty="showWelcomeEmpty"
       :pharmacy-options="pharmacyRawOptions"
       :warehouse-options="warehouseRawOptions"
+      @create-blank="handleAdd"
       @create-from-upstream="handleCreateFromUpstream"
       @document-removed="handleDocumentRemoved"
       @document-saved="handleDocumentSaved"

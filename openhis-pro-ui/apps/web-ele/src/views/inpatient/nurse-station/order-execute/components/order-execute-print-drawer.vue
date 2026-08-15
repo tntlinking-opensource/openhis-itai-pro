@@ -19,7 +19,10 @@ export type OrderExecutePrintDocType =
   | 'lab_apply'
   | 'long_order'
   | 'oral_med_label'
+  | 'oral_med_sheet'
+  | 'order_dispense_sheet'
   | 'patrol_card'
+  | 'specimen_barcode'
   | 'temp_order';
 
 defineOptions({
@@ -57,13 +60,27 @@ const DOC_TYPE_OPTIONS: Array<{
     value: 'patrol_card',
     label: '输液巡视卡',
     singlePatient: false,
-    description: '按患者打印；须有待执行输液药品',
+    description: '按患者、按日打印；默认当天，含待执行/已执行输液药品',
   },
   {
     value: 'oral_med_label',
     label: '口服药贴',
     singlePatient: false,
     description: '按口服药医嘱打印药贴',
+  },
+  {
+    value: 'oral_med_sheet',
+    label: '患者用药单',
+    singlePatient: false,
+    description:
+      '按日列出当日已执行全部药品，勾选后一张连续打印多人（患者信息→药品表含剂量/用法/频次/备注→患者签字→下一患者）；院点一盒一点时口服长嘱总量按包装单位',
+  },
+  {
+    value: 'order_dispense_sheet',
+    label: '摆药单',
+    singlePatient: false,
+    description:
+      '按日列出当日已执行全部药品（含口服）；勾选后一张连续打印多人（患者信息在表外→药品表→下一患者），无患者签字',
   },
   {
     value: 'exam_apply',
@@ -78,25 +95,35 @@ const DOC_TYPE_OPTIONS: Array<{
     description: '按患者合并打印检验申请单',
   },
   {
+    value: 'specimen_barcode',
+    label: '采血贴',
+    singlePatient: false,
+    description: '按检验医嘱逐张打印采血贴',
+  },
+  {
     value: 'long_order',
     label: '长期医嘱',
     singlePatient: true,
-    description: '打印长嘱执行记录；按执行日区间筛选',
+    description: '打印已校对长期医嘱；按开嘱日区间筛选',
   },
   {
     value: 'temp_order',
     label: '临时医嘱',
     singlePatient: true,
-    description: '打印临嘱执行记录；按执行日区间筛选',
+    description: '打印已校对临时医嘱；按开嘱日区间筛选',
   },
 ];
 
 const activeDocType = ref<OrderExecutePrintDocType>('infusion_label');
-/** 长/临医嘱执行记录查询区间（默认入院日 ~ 今天） */
+/** 长/临医嘱查询区间（默认入院日 ~ 今天；按开嘱日） */
 const orderExecDateRange = ref<[string, string]>([
   dayjs().format('YYYY-MM-DD'),
   dayjs().format('YYYY-MM-DD'),
 ]);
+/** 输液贴 / 巡视卡：单日查询，每次打开或切到该类型默认当天 */
+const dayQueryDate = ref(dayjs().format('YYYY-MM-DD'));
+/** 患者用药单筛选：all 全部 / infusion 输液药 / non_infusion 非输液药 */
+const oralMedInfusionFilter = ref<'all' | 'infusion' | 'non_infusion'>('all');
 const pendingRows = ref<PrintPendingRow[]>([]);
 const selectedRowIds = ref<string[]>([]);
 const loadingPending = ref(false);
@@ -144,8 +171,45 @@ const isOrderExecDoc = computed(
   () => activeDocType.value === 'long_order' || activeDocType.value === 'temp_order',
 );
 
-/** 贴签类查询日：截止日所在自然日 */
+/** 是否为单日查询单据（输液贴 / 巡视卡 / 摆药单 / 患者用药单） */
+const isDayQueryDoc = computed(
+  () =>
+    activeDocType.value === 'infusion_label' ||
+    activeDocType.value === 'patrol_card' ||
+    activeDocType.value === 'order_dispense_sheet' ||
+    activeDocType.value === 'oral_med_sheet',
+);
+
+/** 摆药单 / 患者用药单：列表列与患者列宽同构 */
+const isMedSheetDoc = computed(
+  () => activeDocType.value === 'order_dispense_sheet' || activeDocType.value === 'oral_med_sheet',
+);
+
+/** 是否患者用药单 */
+const isOralMedSheetDoc = computed(() => activeDocType.value === 'oral_med_sheet');
+
+/** 列表展示行（患者用药单按全部/输液药/非输液药筛选） */
+const displayRows = computed(() => {
+  if (!isOralMedSheetDoc.value) {
+    return pendingRows.value;
+  }
+  const filter = oralMedInfusionFilter.value;
+  // 输液药
+  if (filter === 'infusion') {
+    return pendingRows.value.filter((row) => row.infusionFlag === true);
+  }
+  // 非输液药（输液判定取反）
+  if (filter === 'non_infusion') {
+    return pendingRows.value.filter((row) => row.infusionFlag !== true);
+  }
+  return pendingRows.value;
+});
+
+/** 单日查询日：默认当天，可切换 */
 const queryDate = computed(() => {
+  if (isDayQueryDoc.value) {
+    return dayQueryDate.value || dayjs().format('YYYY-MM-DD');
+  }
   const deadline = props.executionDeadline || dayjs().endOf('day').format('YYYY-MM-DD HH:mm:ss');
   return dayjs(deadline).format('YYYY-MM-DD');
 });
@@ -170,6 +234,9 @@ const effectiveDateTo = computed(() => {
 const effectiveDeadline = computed(() => {
   if (isOrderExecDoc.value) {
     return dayjs(effectiveDateTo.value).endOf('day').format('YYYY-MM-DD HH:mm:ss');
+  }
+  if (isDayQueryDoc.value) {
+    return dayjs(queryDate.value).endOf('day').format('YYYY-MM-DD HH:mm:ss');
   }
   return props.executionDeadline || dayjs().endOf('day').format('YYYY-MM-DD HH:mm:ss');
 });
@@ -205,6 +272,11 @@ const dateMetaText = computed(() => {
   }
   return `查询日 ${queryDate.value}`;
 });
+
+/** 单日查询重置为当天 */
+function resetDayQueryDateToToday() {
+  dayQueryDate.value = dayjs().format('YYYY-MM-DD');
+}
 
 /** 单人时完整患者信息（对齐护士站顶部信息条字段） */
 const singlePatientInfo = computed<NurseStationStickyPatientInfo | null>(() => {
@@ -254,7 +326,20 @@ function resolvePendingPatientDisplay(row: PrintPendingRow): string {
 /** 已勾选待打行 */
 const selectedRows = computed(() => {
   const idSet = new Set(selectedRowIds.value);
-  return pendingRows.value.filter((row) => idSet.has(row.id));
+  return displayRows.value.filter((row) => idSet.has(row.id));
+});
+
+/** 空态文案 */
+const emptyPendingDescription = computed(() => {
+  if (isOralMedSheetDoc.value) {
+    if (oralMedInfusionFilter.value === 'infusion') {
+      return `暂无「患者用药单」可打印数据（无已执行输液药品）`;
+    }
+    if (oralMedInfusionFilter.value === 'non_infusion') {
+      return `暂无「患者用药单」可打印数据（无已执行非输液药品）`;
+    }
+  }
+  return `暂无「${resolveDocLabel(activeDocType.value)}」可打印数据`;
 });
 
 /** 是否可确认打印 */
@@ -281,16 +366,16 @@ async function syncTableSelection(ids: string[]) {
   }
   table.clearSelection();
   // 默认勾选传入的待打行
-  for (const row of pendingRows.value) {
+  for (const row of displayRows.value) {
     if (ids.includes(row.id)) {
       table.toggleRowSelection(row, true);
     }
   }
 }
 
-/** 默认全选当前清单 */
+/** 默认全选当前可见清单 */
 function selectAllPendingRows() {
-  void syncTableSelection(pendingRows.value.map((row) => row.id));
+  void syncTableSelection(displayRows.value.map((row) => row.id));
 }
 
 /** 拉取当前单据待打清单并默认全选 */
@@ -323,12 +408,28 @@ function handleDocTypeChange() {
   if (isOrderExecDoc.value) {
     resetOrderExecDateRangeFromAdmission();
   }
+  // 切到单日单据时，默认当天
+  if (isDayQueryDoc.value) {
+    resetDayQueryDateToToday();
+  }
+  // 切离患者用药单时复位筛选
+  if (!isOralMedSheetDoc.value) {
+    oralMedInfusionFilter.value = 'all';
+  }
   void refreshPendingRows();
 }
 
 /** 长/临执行区间变更后重载 */
 function handleOrderExecDateChange() {
   if (!isOrderExecDoc.value) {
+    return;
+  }
+  void refreshPendingRows();
+}
+
+/** 单日查询日变更后重载 */
+function handleDayQueryDateChange() {
+  if (!isDayQueryDoc.value) {
     return;
   }
   void refreshPendingRows();
@@ -385,15 +486,25 @@ function handleClose() {
   visible.value = false;
 }
 
-// 打开抽屉：执行区间按入院日重置，再加载并默认全选；关闭时清空勾选态
+// 打开抽屉：执行区间按入院日重置，单日查询默认当天，再加载并默认全选；关闭时清空勾选态
 watch(visible, (open) => {
   if (open) {
     resetOrderExecDateRangeFromAdmission();
+    resetDayQueryDateToToday();
+    oralMedInfusionFilter.value = 'all';
     void refreshPendingRows();
     return;
   }
   pendingRows.value = [];
   selectedRowIds.value = [];
+});
+
+/** 用药单筛选变化时仅重勾选可见行 */
+watch(oralMedInfusionFilter, () => {
+  if (!isOralMedSheetDoc.value) {
+    return;
+  }
+  selectAllPendingRows();
 });
 </script>
 
@@ -481,6 +592,28 @@ watch(visible, (open) => {
             @change="handleOrderExecDateChange"
           />
         </div>
+
+        <div v-else-if="isDayQueryDoc" class="print-drawer__range">
+          <span class="print-drawer__range-label">查询日</span>
+          <ElDatePicker
+            v-model="dayQueryDate"
+            type="date"
+            size="default"
+            value-format="YYYY-MM-DD"
+            placeholder="查询日期"
+            class="print-drawer__day-picker"
+            :clearable="false"
+            @change="handleDayQueryDateChange"
+          />
+        </div>
+
+        <div v-if="isOralMedSheetDoc" class="print-drawer__range">
+          <ElRadioGroup v-model="oralMedInfusionFilter" size="small">
+            <ElRadio value="all">全部</ElRadio>
+            <ElRadio value="infusion">输液药</ElRadio>
+            <ElRadio value="non_infusion">非输液药</ElRadio>
+          </ElRadioGroup>
+        </div>
       </section>
 
       <section class="print-drawer__card print-drawer__card--list">
@@ -490,14 +623,14 @@ watch(visible, (open) => {
               {{ isOrderExecDoc ? '执行记录' : '待打清单' }}
             </span>
             <span class="print-drawer__list-count">
-              共 {{ pendingRows.length }} 条 · 已选 {{ selectedRowIds.length }}
+              共 {{ displayRows.length }} 条 · 已选 {{ selectedRowIds.length }}
             </span>
           </div>
           <div class="print-drawer__list-actions">
             <ElButton
               link
               type="primary"
-              :disabled="pendingRows.length < 1"
+              :disabled="displayRows.length < 1"
               @click="selectAllPendingRows"
             >
               全选
@@ -523,17 +656,14 @@ watch(visible, (open) => {
         <div v-else-if="!patientScopeOk" class="print-drawer__state">
           <ElEmpty :image-size="72" :description="scopeHint" />
         </div>
-        <div v-else-if="pendingRows.length === 0" class="print-drawer__state">
-          <ElEmpty
-            :image-size="72"
-            :description="`暂无「${resolveDocLabel(activeDocType)}」可打印数据`"
-          />
+        <div v-else-if="displayRows.length === 0" class="print-drawer__state">
+          <ElEmpty :image-size="72" :description="emptyPendingDescription" />
         </div>
         <div v-else class="print-drawer__table-wrap">
           <ElTable
             ref="pendingTableRef"
             class="print-drawer__table"
-            :data="pendingRows"
+            :data="displayRows"
             stripe
             size="default"
             row-key="id"
@@ -543,7 +673,8 @@ watch(visible, (open) => {
             <ElTableColumn type="selection" width="52" align="center" header-align="center" />
             <ElTableColumn
               label="患者"
-              min-width="200"
+              :width="isMedSheetDoc ? 88 : undefined"
+              :min-width="isMedSheetDoc ? undefined : 200"
               align="center"
               header-align="center"
               show-overflow-tooltip
@@ -554,23 +685,32 @@ watch(visible, (open) => {
             </ElTableColumn>
             <ElTableColumn
               prop="title"
-              label="内容"
+              :label="isMedSheetDoc ? '药品' : '内容'"
               min-width="220"
               align="center"
               header-align="center"
               show-overflow-tooltip
             />
             <ElTableColumn
-              v-if="isOrderExecDoc"
+              v-if="isMedSheetDoc"
+              prop="subtitle"
+              label="规格"
+              min-width="140"
+              align="center"
+              header-align="center"
+              show-overflow-tooltip
+            />
+            <ElTableColumn
+              v-if="isOrderExecDoc || isMedSheetDoc"
               prop="pageHint"
-              label="执行次数"
+              :label="isMedSheetDoc ? '总量' : '执行次数'"
               width="100"
               align="center"
               header-align="center"
             />
             <ElTableColumn
               prop="timeText"
-              :label="isOrderExecDoc ? '最近执行' : '时间'"
+              :label="isOrderExecDoc || isMedSheetDoc ? '最近执行' : '时间'"
               width="130"
               align="center"
               header-align="center"
@@ -793,6 +933,11 @@ watch(visible, (open) => {
 
 .print-drawer__range-picker {
   width: 280px;
+  max-width: 100%;
+}
+
+.print-drawer__day-picker {
+  width: 180px;
   max-width: 100%;
 }
 

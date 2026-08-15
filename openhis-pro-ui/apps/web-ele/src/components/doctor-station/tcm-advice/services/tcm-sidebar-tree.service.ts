@@ -1,4 +1,4 @@
-import type { TcmHistoryTreeItem } from './tcm-prescription.service';
+import type { TcmHerbTooltipItem, TcmHistoryTreeItem } from './tcm-prescription.service';
 
 import type {
   OrderTemplateBindingGroup,
@@ -16,7 +16,10 @@ export type TcmSidebarTreeNodeType = 'group' | 'history' | 'template';
 /** 中医 Tab 左侧树节点（组套 + 历史处方） */
 export interface TcmSidebarTreeNode {
   children?: TcmSidebarTreeNode[];
+  /** 是否本次就诊历史方 */
+  currentVisit?: boolean;
   header?: OrderTemplateHeaderItem;
+  herbItems?: TcmHerbTooltipItem[];
   herbSummary?: string;
   historyId?: string;
   id: string;
@@ -98,6 +101,8 @@ export function buildTcmSidebarTree(params: {
       label: item.treeLabel || item.summaryText || item.prescriptionNo,
       nodeType: 'history',
       historyId: item.id,
+      currentVisit: item.currentVisit,
+      herbItems: item.herbItems,
       herbSummary: item.herbSummary,
       // hover 展示药品名（非树节点摘要）
       tooltip: item.herbSummary || '暂无药品',
@@ -119,6 +124,40 @@ export function formatTcmHistoryNodeTooltip(item: TcmHistoryTreeItem | undefined
     return '暂无药品';
   }
   return String(item.herbSummary ?? '').trim() || '暂无药品';
+}
+
+/** 侧栏叶子 → Tooltip 结构化药材（历史有克数；组套仅药名） */
+export function resolveTcmSidebarLeafHerbItems(
+  data: TcmSidebarTreeNode,
+  options?: { templateProductSummary?: string },
+): TcmHerbTooltipItem[] {
+  if (data.nodeType === 'history') {
+    if (data.herbItems && data.herbItems.length > 0) {
+      return data.herbItems;
+    }
+    const summary = String(data.herbSummary ?? data.tooltip ?? '').trim();
+    if (!summary) {
+      return [];
+    }
+    // 无结构化时按顿号拆药名
+    return summary
+      .split(/[，,]/)
+      .map((name) => name.trim())
+      .filter(Boolean)
+      .map((name) => ({ name, doseText: '' }));
+  }
+  if (data.nodeType === 'template') {
+    const cached = String(options?.templateProductSummary ?? data.tooltip ?? '').trim();
+    if (!cached || cached === '加载中…' || cached === '暂无药品') {
+      return [];
+    }
+    return cached
+      .split(/[，,]/)
+      .map((name) => name.trim())
+      .filter(Boolean)
+      .map((name) => ({ name, doseText: '' }));
+  }
+  return [];
 }
 
 /** 侧栏叶子节点 Tooltip：历史/组套均展示药品名 */

@@ -33,6 +33,10 @@ export interface TerminologyOptionDto {
   sortOrder?: number;
   value?: string;
   busNo?: string;
+  /** 拼音检索码（申请单部位/样本模糊过滤） */
+  pyStr?: string;
+  /** 五笔检索码（申请单部位/样本模糊过滤） */
+  wbStr?: string;
   children?: TerminologyOptionDto[];
 }
 
@@ -44,6 +48,8 @@ export interface InitDoctorStationAdviceRequest {
 export interface InitDoctorStationAdviceResponse {
   medicationRateOptions?: TerminologyOptionDto[];
   medicationRouteOptions?: TerminologyOptionDto[];
+  /** 输液滴速下拉（术语 speed_code；住院输液/注射药开立） */
+  medicationSpeedOptions?: TerminologyOptionDto[];
   /** 费用性质（合同）下拉：value=contractId，label=合同名称 */
   feeNatureOptions?: TerminologyOptionDto[];
   /** 身体部位下拉（申请单检查行明细） */
@@ -94,7 +100,7 @@ export interface DoctorStationAdviceRowDto {
   chargeStatusEnumText?: string;
   /** 费用性质主键（药品：med_medication_request.contract_id） */
   contractId?: string;
-  /** 费用性质分类展示文案（自费/公费/省医保/市医保/职工医保） */
+  /** 费用性质分类展示文案（自费/公费/省医保/市医保/工伤保险） */
   feeNatureText?: string;
   skinTestFlag?: boolean;
   injectionFlag?: boolean;
@@ -136,6 +142,14 @@ export interface DoctorStationAdviceRowDto {
   dose?: number | string;
   doseUnitCode?: string;
   doseUnitName?: string;
+  /**
+   * 拆零比（目录 package_unit_ratio：1 包装 = N 拆零；未维护时为空）。
+   */
+  partPercent?: number | string | null;
+  /**
+   * 包装装量后缀（如 `1片x100`；与规格拼成 `5mg1片x100`；缺数据时为空）。
+   */
+  packageSplitRatioText?: string | null;
   /** 是否中药饮片行（tcm_flag） */
   tcmFlag?: boolean | null;
   /** 中药付数（方头 chinese_herbs_dose_quantity；非请求总量） */
@@ -145,6 +159,10 @@ export interface DoctorStationAdviceRowDto {
    * 例：`1支(2ml)/次` / `1片/次`
    */
   dosageDisplay?: string;
+  /**
+   * 日剂量友好展示（如 `每日三片`；长期药且频次可解析每日次数时有值）。
+   */
+  dailyDoseDisplay?: string | null;
   /** 单次剂量对应的最小单位数量 */
   splitDose?: number | string;
   splitDoseUnitCode?: string;
@@ -157,6 +175,10 @@ export interface DoctorStationAdviceRowDto {
   methodName?: string;
   rateCode?: string;
   rateName?: string;
+  /** 输液滴速编码（术语 speed_code） */
+  speedCode?: string;
+  /** 输液滴速展示名 */
+  speedName?: string;
   /** 用药天数（展示为 (N天)） */
   dispensePerDuration?: number | string | null;
   boundConditionName?: string;
@@ -244,6 +266,8 @@ export interface PageDoctorStationAdviceCatalogRequest {
   pricingFlag?: number;
   prepickedProductKeys?: PrepickedProductKeyDto[];
   sortMode?: string;
+  /** 仅看库存>0（药/耗后端分页过滤；诊疗不受影响） */
+  positiveQuantityOnly?: boolean;
 }
 
 export interface DoctorStationAdviceInventoryRowDto {
@@ -434,6 +458,8 @@ export interface SaveMedicationAdviceDraftLinePayload {
   dispensePerDuration?: number;
   methodCode?: string;
   rateCode?: string;
+  /** 输液滴速编码（术语 speed_code；可空；空串可清空） */
+  speedCode?: string;
   groupId?: string;
   dispenseLocationId?: string;
   /** 绑定就诊诊断有序 ids 串（有序；主诊第一；落库 encounter_diagnosis_ids） */
@@ -460,6 +486,8 @@ export interface SaveServiceAdviceDraftLinePayload {
   unitCode?: string;
   /** 绑定就诊诊断有序 ids 串（有序；主诊第一） */
   encounterDiagnosisIds?: string;
+  /** 费用性质/合同主键（落库 `wkf_service_request.contract_id`） */
+  contractId?: string;
   /** 套餐子项覆盖 JSON（仅套餐展开子项覆盖，不含频次/次数/单位） */
   childOverridesJson?: string;
   /**
@@ -480,6 +508,8 @@ export interface SaveDeviceAdviceDraftLinePayload {
   performOrgId?: string;
   /** 绑定就诊诊断有序 ids 串（有序；主诊第一） */
   encounterDiagnosisIds?: string;
+  /** 费用性质/合同主键（暂存挂账；与药品/诊疗同口径） */
+  contractId?: string;
 }
 
 export interface DoctorStationAdviceDraftLineRequest {

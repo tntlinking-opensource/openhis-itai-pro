@@ -199,3 +199,16 @@ export function buildSettlementFlowRows(
   }
   return flows.filter((flow) => !isFlowRowEmpty(flow));
 }
+
+/** 主表「期间业务」摘要：非零业务名称用顿号拼接。 */
+export function buildPeriodBusinessSummary(
+  row: PeriodBalanceDetailListRowDto,
+  columns: PeriodBalanceDetailColumnDto[],
+): string {
+  const flows = buildSettlementFlowRows(row, columns, { hideZeroRows: true });
+  if (flows.length === 0) {
+    return '—';
+  }
+  // 只展示业务名，数量看展开区
+  return flows.map((flow) => flow.label).join('、');
+}

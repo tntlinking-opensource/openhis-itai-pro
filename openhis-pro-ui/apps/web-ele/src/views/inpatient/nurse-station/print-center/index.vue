@@ -10,6 +10,7 @@ import { ElMessage, type TableInstance } from 'element-plus';
 import InpatientPatientInfoHeader from '#/components/inpatient/patient-info-header.vue';
 import SectionTitle from '#/components/layouts/section-title.vue';
 import StationTriPaneLayout from '#/components/layouts/station-tri-pane-layout.vue';
+import { PRINT_CENTER_HIDDEN_DOC_TYPES } from '#/views/inpatient/nurse-station/print-center/print-center-doc.config';
 
 import {
   buildNurseStationStickyPatientInfoFromModulePatient,
@@ -20,6 +21,9 @@ import { PRINT_CENTER_WIRED_DOC_TYPES, printInpatientPrintCenter } from './print
 import { findPrintDocType, PRINT_DOC_TYPES, resolvePrintScopeLabel } from './print-center.types';
 
 import './print-center.css';
+
+/** 院点可配置隐藏的单据 code（须 #/ 导入以走 override） */
+const hiddenPrintDocTypeSet = new Set<PrintDocType>(PRINT_CENTER_HIDDEN_DOC_TYPES);
 
 interface Props {
   patients?: NurseStationModulePatient[];
@@ -36,14 +40,12 @@ const props = withDefaults(defineProps<Props>(), {
 /** 主类型：T1 复杂工作站（打印中心壳）；附加：T3 待打列表勾选 */
 
 const activeDocType = ref<PrintDocType>('patrol_card');
-const dateRange = ref<[string, string]>([
-  dayjs().subtract(6, 'day').format('YYYY-MM-DD'),
-  dayjs().format('YYYY-MM-DD'),
-]);
-/** 输液贴单日查询（不可选区间；配合上一天/下一天） */
-const infusionQueryDate = ref(dayjs().format('YYYY-MM-DD'));
+/** 有时间条件的单据：单日查询，默认当天，配合上一天/下一天 */
+const dayQueryDate = ref(dayjs().format('YYYY-MM-DD'));
 const orderPrintMode = ref<'all' | 'unprinted' | 'continue'>('unprinted');
 const continueFromRow = ref(1);
+/** 患者用药单筛选：all 全部 / infusion 输液药 / non_infusion 非输液药 */
+const oralMedInfusionFilter = ref<'all' | 'infusion' | 'non_infusion'>('all');
 const copies = ref(1);
 const selectedRowIds = ref<string[]>([]);
 const pendingTableRef = ref<TableInstance>();
@@ -52,42 +54,39 @@ const loadingPending = ref(false);
 const pendingRows = ref<PrintPendingRow[]>([]);
 const docPendingCounts = ref<Partial<Record<PrintDocType, number>>>({});
 
-/** 长/临执行区间默认：勾选患者最早入院日 → 今天 */
-function resolveOrderExecDateRangeFromAdmission(
-  patients: NurseStationModulePatient[],
-): [string, string] {
-  const today = dayjs().format('YYYY-MM-DD');
-  let fromDay = today;
-  for (const patient of patients) {
-    const raw = String(patient.admissionAt ?? '').trim();
-    if (!raw) {
-      continue;
-    }
-    const parsed = dayjs(raw);
-    if (!parsed.isValid()) {
-      continue;
-    }
-    const day = parsed.format('YYYY-MM-DD');
-    if (day < fromDay) {
-      fromDay = day;
-    }
-  }
-  return [fromDay, today];
-}
-
 /** 当前是否为长/临执行记录单据 */
 function isOrderExecDocType(docType: PrintDocType): boolean {
   return docType === 'long_order' || docType === 'temp_order';
 }
 
-/** 医嘱/巡视等截止时间：默认今天末；输液贴锚定查询日末；长临执行记录锚定区间结束日末 */
+/**
+ * 当前是否为带时间查询条件的单据（统一单日 + 左右切换）。
+ * 无日期条件的单据（腕带/床头卡/口服药贴等）不展示日期控件。
+ */
+function isDayQueryDocType(docType: PrintDocType): boolean {
+  return (
+    docType === 'infusion_label' ||
+    docType === 'patrol_card' ||
+    docType === 'order_dispense_sheet' ||
+    docType === 'oral_med_sheet' ||
+    docType === 'long_order' ||
+    docType === 'temp_order' ||
+    docType === 'temp_sheet' ||
+    docType === 'nursing_record' ||
+    docType === 'fee_list' ||
+    docType === 'fee_detail' ||
+    docType === 'dispense_summary' ||
+    docType === 'dispense_sheet' ||
+    docType === 'exam_apply' ||
+    docType === 'lab_apply' ||
+    docType === 'specimen_barcode'
+  );
+}
+
+/** 医嘱/巡视等截止时间：有日期条件锚定查询日末，否则今天末 */
 const executionDeadline = computed(() => {
-  if (activeDocType.value === 'infusion_label') {
-    return `${infusionQueryDate.value} 23:59:59`;
-  }
-  if (activeDocType.value === 'long_order' || activeDocType.value === 'temp_order') {
-    const end = dateRange.value[1] || dayjs().format('YYYY-MM-DD');
-    return `${end} 23:59:59`;
+  if (isDayQueryDocType(activeDocType.value)) {
+    return `${dayQueryDate.value} 23:59:59`;
   }
   return `${dayjs().format('YYYY-MM-DD')} 23:59:59`;
 });
@@ -95,9 +94,9 @@ const executionDeadline = computed(() => {
 /** 当前单据是否已对接真实打印模板 */
 const isDocWired = computed(() => PRINT_CENTER_WIRED_DOC_TYPES.includes(activeDocType.value));
 
-/** 单据 Tab 列表（角标用实时待打数量） */
+/** 单据 Tab 列表（角标用实时待打数量；过滤院点隐藏项） */
 const docTypeOptions = computed(() =>
-  PRINT_DOC_TYPES.map((doc) => ({
+  PRINT_DOC_TYPES.filter((doc) => !hiddenPrintDocTypeSet.has(doc.code)).map((doc) => ({
     ...doc,
     pendingCount: docPendingCounts.value[doc.code],
   })),
@@ -160,7 +159,7 @@ const stickyPatientInfo = computed(() => {
   });
 });
 
-/** 列表展示行（医嘱续打 / 未打筛选） */
+/** 列表展示行（医嘱续打 / 未打 / 患者用药单输液筛选） */
 const displayRows = computed(() => {
   if (
     (activeDocType.value === 'long_order' || activeDocType.value === 'temp_order') &&
@@ -180,6 +179,17 @@ const displayRows = computed(() => {
         row.statusCode === 'executable' ||
         row.statusCode === 'ready',
     );
+  }
+  if (activeDocType.value === 'oral_med_sheet') {
+    const filter = oralMedInfusionFilter.value;
+    // 输液药
+    if (filter === 'infusion') {
+      return pendingRows.value.filter((row) => row.infusionFlag === true);
+    }
+    // 非输液药（输液判定取反）
+    if (filter === 'non_infusion') {
+      return pendingRows.value.filter((row) => row.infusionFlag !== true);
+    }
   }
   return pendingRows.value;
 });
@@ -227,10 +237,31 @@ const emptyDescription = computed(() => {
     return '体温单后续纯前端打印，暂不在此处理';
   }
   if (activeDocType.value === 'patrol_card') {
-    return '暂无待打数据：当前患者没有待执行的输液药品';
+    return `暂无待打数据：${dayQueryDate.value} 没有可打印的输液药品（含待执行/已执行）`;
   }
   if (activeDocType.value === 'infusion_label') {
-    return `暂无待打数据：${infusionQueryDate.value} 没有已校对的输液药品医嘱（含已执行/未执行）`;
+    return `暂无待打数据：${dayQueryDate.value} 没有已校对的输液药品医嘱（含已执行/未执行）`;
+  }
+  if (activeDocType.value === 'order_dispense_sheet') {
+    return `暂无待打数据：${dayQueryDate.value} 没有已执行的药品医嘱`;
+  }
+  if (activeDocType.value === 'oral_med_sheet') {
+    if (oralMedInfusionFilter.value === 'infusion') {
+      return `暂无待打数据：${dayQueryDate.value} 没有已执行的输液药品`;
+    }
+    if (oralMedInfusionFilter.value === 'non_infusion') {
+      return `暂无待打数据：${dayQueryDate.value} 没有已执行的非输液药品`;
+    }
+    return `暂无待打数据：${dayQueryDate.value} 没有已执行的药品医嘱`;
+  }
+  if (activeDocType.value === 'exam_apply') {
+    return `暂无待打数据：${dayQueryDate.value} 没有开立的检查申请`;
+  }
+  if (activeDocType.value === 'lab_apply') {
+    return `暂无待打数据：${dayQueryDate.value} 没有开立的检验申请`;
+  }
+  if (activeDocType.value === 'specimen_barcode') {
+    return `暂无待打数据：${dayQueryDate.value} 没有可打印的采血贴（检验申请）`;
   }
   return '暂无待打数据';
 });
@@ -279,20 +310,13 @@ async function refreshPendingRows(options?: { silent?: boolean }) {
 
   loadingPending.value = true;
   try {
-    const [dateFrom, dateTo] = dateRange.value;
-    // 输液贴：单日查询，dateFrom/dateTo 同为查询日
-    const infusionDate = infusionQueryDate.value || dayjs().format('YYYY-MM-DD');
+    // 带时间条件：dateFrom/dateTo 同为查询日；无日期单据亦传当天（加载侧忽略）
+    const dayDate = dayQueryDate.value || dayjs().format('YYYY-MM-DD');
     const rows = await loadPrintPendingRows({
       docType: activeDocType.value,
       patients: props.patients,
-      dateFrom:
-        activeDocType.value === 'infusion_label'
-          ? infusionDate
-          : dateFrom || dayjs().format('YYYY-MM-DD'),
-      dateTo:
-        activeDocType.value === 'infusion_label'
-          ? infusionDate
-          : dateTo || dayjs().format('YYYY-MM-DD'),
+      dateFrom: dayDate,
+      dateTo: dayDate,
       executionDeadline: executionDeadline.value,
     });
     pendingRows.value = rows;
@@ -316,9 +340,13 @@ function handleDocTypeChange(docType: PrintDocType) {
     return;
   }
   activeDocType.value = docType;
-  // 长/临执行记录：区间默认入院日~今天
-  if (isOrderExecDocType(docType)) {
-    dateRange.value = resolveOrderExecDateRangeFromAdmission(props.patients);
+  // 带时间条件的单据：切到该类型时默认当天
+  if (isDayQueryDocType(docType)) {
+    dayQueryDate.value = dayjs().format('YYYY-MM-DD');
+  }
+  // 切离患者用药单时复位筛选
+  if (docType !== 'oral_med_sheet') {
+    oralMedInfusionFilter.value = 'all';
   }
 }
 
@@ -332,14 +360,14 @@ function handleQuery() {
   void refreshPendingRows();
 }
 
-/** 输液贴：切换到上一天并刷新 */
-function handleInfusionPrevDay() {
-  infusionQueryDate.value = dayjs(infusionQueryDate.value).subtract(1, 'day').format('YYYY-MM-DD');
+/** 单日单据：切换到上一天并刷新 */
+function handleDayQueryPrevDay() {
+  dayQueryDate.value = dayjs(dayQueryDate.value).subtract(1, 'day').format('YYYY-MM-DD');
 }
 
-/** 输液贴：切换到下一天并刷新 */
-function handleInfusionNextDay() {
-  infusionQueryDate.value = dayjs(infusionQueryDate.value).add(1, 'day').format('YYYY-MM-DD');
+/** 单日单据：切换到下一天并刷新 */
+function handleDayQueryNextDay() {
+  dayQueryDate.value = dayjs(dayQueryDate.value).add(1, 'day').format('YYYY-MM-DD');
 }
 
 /** 全选当前可见待打行 */
@@ -370,21 +398,14 @@ async function handlePrint() {
   }
   printing.value = true;
   try {
-    const [dateFrom, dateTo] = dateRange.value;
-    const infusionDate = infusionQueryDate.value || dayjs().format('YYYY-MM-DD');
+    const dayDate = dayQueryDate.value || dayjs().format('YYYY-MM-DD');
     const result = await printInpatientPrintCenter({
       docType: activeDocType.value,
       patients: props.patients,
       selectedRows: selectedRows.value.length > 0 ? selectedRows.value : displayRows.value,
       copies: copies.value,
-      dateFrom:
-        activeDocType.value === 'infusion_label'
-          ? infusionDate
-          : dateFrom || dayjs().format('YYYY-MM-DD'),
-      dateTo:
-        activeDocType.value === 'infusion_label'
-          ? infusionDate
-          : dateTo || dayjs().format('YYYY-MM-DD'),
+      dateFrom: dayDate,
+      dateTo: dayDate,
       executionDeadline: executionDeadline.value,
     });
     if (result.ok) {
@@ -395,33 +416,17 @@ async function handlePrint() {
   }
 }
 
-/** 患者 / 单据 / 筛选变化时重新加载 */
+/** 患者 / 单据 / 查询日变化时重新加载 */
 watch(
-  [
-    () => props.patients.map((p) => p.id).join(','),
-    activeDocType,
-    () => dateRange.value.join(','),
-    infusionQueryDate,
-  ],
+  [() => props.patients.map((p) => p.id).join(','), activeDocType, dayQueryDate],
   () => {
     void refreshPendingRows({ silent: true });
   },
   { immediate: true },
 );
 
-/** 长/临单据下换患者时，执行区间回到入院日~今天 */
-watch(
-  () => props.patients.map((p) => `${p.id}:${p.admissionAt ?? ''}`).join(','),
-  () => {
-    if (!isOrderExecDocType(activeDocType.value)) {
-      return;
-    }
-    dateRange.value = resolveOrderExecDateRangeFromAdmission(props.patients);
-  },
-);
-
-/** 医嘱打印模式变化时仅重勾选，不重新请求 */
-watch([orderPrintMode, continueFromRow], () => {
+/** 医嘱打印模式 / 用药单是否输液变化时仅重勾选，不重新请求 */
+watch([orderPrintMode, continueFromRow, oralMedInfusionFilter], () => {
   selectDefaultPendingRows();
 });
 </script>
@@ -453,7 +458,7 @@ watch([orderPrintMode, continueFromRow], () => {
       <!-- 条件工具栏：筛选靠左，操作靠右 -->
       <div class="print-center-filters">
         <div class="print-center-filters__left flex flex-wrap items-center gap-2">
-          <template v-if="activeDocType === 'long_order' || activeDocType === 'temp_order'">
+          <template v-if="isOrderExecDocType(activeDocType)">
             <ElRadioGroup v-model="orderPrintMode" size="small">
               <ElRadioButton value="all">全部</ElRadioButton>
               <ElRadioButton value="unprinted">未打</ElRadioButton>
@@ -470,50 +475,30 @@ watch([orderPrintMode, continueFromRow], () => {
               />
               <span class="print-center-filters__hint">行起</span>
             </template>
-            <ElDatePicker
-              v-model="dateRange"
-              type="daterange"
-              size="small"
-              value-format="YYYY-MM-DD"
-              start-placeholder="执行开始"
-              end-placeholder="执行结束"
-              class="print-center-date"
-            />
           </template>
 
-          <template v-if="activeDocType === 'infusion_label'">
-            <ElButton size="small" plain @click="handleInfusionPrevDay">上一天</ElButton>
+          <template v-if="isDayQueryDocType(activeDocType)">
+            <ElButton size="small" plain @click="handleDayQueryPrevDay">上一天</ElButton>
             <ElDatePicker
-              v-model="infusionQueryDate"
+              v-model="dayQueryDate"
               type="date"
               size="small"
               value-format="YYYY-MM-DD"
               placeholder="查询日期"
               class="print-center-date-single"
             />
-            <ElButton size="small" plain @click="handleInfusionNextDay">下一天</ElButton>
+            <ElButton size="small" plain @click="handleDayQueryNextDay">下一天</ElButton>
           </template>
 
-          <template
-            v-if="
-              activeDocType === 'temp_sheet' ||
-              activeDocType === 'nursing_record' ||
-              activeDocType === 'fee_list' ||
-              activeDocType === 'dispense_summary' ||
-              activeDocType === 'dispense_sheet'
-            "
+          <ElRadioGroup
+            v-if="activeDocType === 'oral_med_sheet'"
+            v-model="oralMedInfusionFilter"
+            size="small"
           >
-            <ElDatePicker
-              v-model="dateRange"
-              type="daterange"
-              size="small"
-              value-format="YYYY-MM-DD"
-              start-placeholder="开始"
-              end-placeholder="结束"
-              class="print-center-date"
-            />
-          </template>
-
+            <ElRadio value="all">全部</ElRadio>
+            <ElRadio value="infusion">输液药</ElRadio>
+            <ElRadio value="non_infusion">非输液药</ElRadio>
+          </ElRadioGroup>
           <span v-if="activeDoc?.description" class="print-center-filters__desc">
             {{ activeDoc.description }}
           </span>
@@ -586,14 +571,22 @@ watch([orderPrintMode, continueFromRow], () => {
                   />
                   <ElTableColumn
                     prop="title"
-                    label="内容"
+                    :label="
+                      activeDocType === 'order_dispense_sheet' || activeDocType === 'oral_med_sheet'
+                        ? '药品'
+                        : '内容'
+                    "
                     min-width="200"
                     show-overflow-tooltip
                     header-align="center"
                   />
                   <ElTableColumn
                     prop="subtitle"
-                    label="说明"
+                    :label="
+                      activeDocType === 'order_dispense_sheet' || activeDocType === 'oral_med_sheet'
+                        ? '规格'
+                        : '说明'
+                    "
                     width="110"
                     align="center"
                     header-align="center"
@@ -601,7 +594,11 @@ watch([orderPrintMode, continueFromRow], () => {
                   />
                   <ElTableColumn
                     prop="timeText"
-                    label="时间"
+                    :label="
+                      activeDocType === 'order_dispense_sheet' || activeDocType === 'oral_med_sheet'
+                        ? '最近执行'
+                        : '时间'
+                    "
                     width="160"
                     align="center"
                     header-align="center"
@@ -630,7 +627,11 @@ watch([orderPrintMode, continueFromRow], () => {
                   </ElTableColumn>
                   <ElTableColumn
                     prop="pageHint"
-                    label="页/签"
+                    :label="
+                      activeDocType === 'order_dispense_sheet' || activeDocType === 'oral_med_sheet'
+                        ? '总量'
+                        : '页/签'
+                    "
                     width="80"
                     align="center"
                     header-align="center"

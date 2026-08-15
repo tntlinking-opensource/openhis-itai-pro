@@ -431,7 +431,8 @@ async function resetFormState() {
   editabilityCode.value = CATALOG_EDITABILITY_OK;
   editabilityMessage.value = '';
   await formApi.resetForm();
-  await formApi.setFieldValue('__checkbox_inline_group', {});
+  // 新建默认：勾选「收费耗材」↔ chargeableFlag=true
+  await formApi.setFieldValue('__checkbox_inline_group', { chargeableFlag: true });
 }
 
 /** 按 editabilityCode 同步表单字段 disabled */
@@ -585,6 +586,7 @@ async function loadDetailData() {
 
     const inlineGroupValue: Record<string, boolean> = {};
     CHECKBOX_INLINE_GROUP_FIELDS.forEach((key) => {
+      // 勾选与库字段同向：收费耗材 ↔ chargeableFlag=true
       inlineGroupValue[key] = coerceLegacyBool(normalizedData[key]);
     });
     await formApi.setFieldValue('__checkbox_inline_group', inlineGroupValue);
@@ -627,6 +629,7 @@ function buildSubmitData(formValues: Record<string, unknown>): Partial<DeviceCat
     const group = __checkbox_inline_group as Record<string, unknown>;
     CHECKBOX_INLINE_GROUP_FIELDS.forEach((key) => {
       const value = group[key];
+      // false 也会进入（false !== ''）：取消勾选 → 写入 false；与 chargeableFlag 同向
       if (value !== undefined && value !== null && value !== '') {
         mergedData[key] = value === true || value === 1 || value === '1' || value === 'true';
       }
@@ -1109,7 +1112,7 @@ const [Form, formApi] = useVbenForm(
             { fieldName: 'allergenFlag', label: '过敏标记' },
             { fieldName: 'ybFlag', label: '医保标记' },
             { fieldName: 'hvcmFlag', label: '高值耗材标志' },
-            { fieldName: 'chargeableFlag', label: '是否收费耗材' },
+            { fieldName: 'chargeableFlag', label: '收费耗材' },
           ],
         },
       },

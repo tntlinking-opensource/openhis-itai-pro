@@ -32,7 +32,9 @@ export interface ResendResult {
   errors?: string[];
 }
 
-const BASE = '/h22010402403MedSyncResend';
+const SITE =
+  String(import.meta.env.VITE_OPENHIS_PROJECT ?? 'H22010402403').trim() || 'H22010402403';
+const BASE = `/${SITE.toLowerCase()}MedSyncResend`;
 
 export async function pageFailedDispatchApi(params: PageFailedDispatchParams) {
   return publicRequestClient.post<ApiResponse<PageApiResponse<FailedDispatchItem>>>(

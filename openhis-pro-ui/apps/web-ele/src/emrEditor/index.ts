@@ -33,6 +33,9 @@ export type { ApplyEmrTemplatePayload, PatientInfoForEmrMetadata } from './emr-p
 export {
   applyMetadataValuesToContentJson,
   buildMetadataValuesFromPatientInfo,
+  CONTEXT_REFRESH_FIELD_KEYS,
   mergeEmrMetadataValues,
+  PATIENT_BOUND_FIELD_KEYS,
+  stripPatientBoundMetadataFromContentJson,
 } from './emr-patient-metadata';
 export type { EmrMetadataField } from './types';

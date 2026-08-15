@@ -28,6 +28,14 @@ export interface WorkInjuryFilingProbeResult {
   psnNo: string;
   psnName?: string;
   certno?: string;
+  /** 性别：平台 gend 1男/2女，已映射为 MALE/FEMALE */
+  genderCode?: 'FEMALE' | 'MALE';
+  /** 出生日期 YYYY-MM-DD */
+  birthDate?: string;
+  /** 年龄（字符串，与挂号表单一致） */
+  age?: string;
+  /** 联系电话（1101 若返回 tel/phone） */
+  phone?: string;
   injureAffirmId?: string;
   /** 1101 diagnosis.qualification_id（若有） */
   qualificationIdFrom1101?: string;
@@ -95,10 +103,34 @@ export function normalizeWorkInjuryWinOutput(output: unknown): Record<string, un
   return root;
 }
 
+function formatBirthday(value: unknown): string {
+  const digits = String(value ?? '').replaceAll(/\D/g, '');
+  if (digits.length !== 8) {
+    return '';
+  }
+  return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+}
+
+/** 工伤 gend：1男 2女 → HIS MALE/FEMALE */
+function mapWiGendToGenderCode(gend: unknown): 'FEMALE' | 'MALE' | undefined {
+  const code = String(gend ?? '').trim();
+  if (code === '1' || code === '男' || code.toUpperCase() === 'MALE') {
+    return 'MALE';
+  }
+  if (code === '2' || code === '女' || code.toUpperCase() === 'FEMALE') {
+    return 'FEMALE';
+  }
+  return undefined;
+}
+
 function parse1101Person(output: unknown): {
   psnNo: string;
   psnName?: string;
   certno?: string;
+  genderCode?: 'FEMALE' | 'MALE';
+  birthDate?: string;
+  age?: string;
+  phone?: string;
   diagnoses: WorkInjuryFilingProbeDiagnosis[];
   injureAffirmId?: string;
   qualificationIdFrom1101?: string;
@@ -108,6 +140,13 @@ function parse1101Person(output: unknown): {
   const psnNo = pickString(body.psn_no, body.psnNo);
   const psnName = pickString(body.psn_name, body.psnName) || undefined;
   const certno = pickString(body.certno, body.certNo) || undefined;
+  const genderCode = mapWiGendToGenderCode(body.gend ?? body.gender ?? body.sex);
+  const birthDate =
+    formatBirthday(body.birthday ?? body.brdy ?? body.birthDate ?? body.birth_date) || undefined;
+  const ageRaw = pickString(body.age, body.psn_age, body.psnAge);
+  const age = ageRaw ? String(Math.trunc(Number(ageRaw)) || ageRaw) : undefined;
+  const phone =
+    pickString(body.tel, body.phone, body.mobile, body.mob, body.psn_tel, body.psnTel) || undefined;
   const diagnoses: WorkInjuryFilingProbeDiagnosis[] = [];
   const rawDiag = body.diagnosis;
   if (Array.isArray(rawDiag)) {
@@ -149,6 +188,10 @@ function parse1101Person(output: unknown): {
     psnNo,
     psnName,
     certno,
+    genderCode,
+    birthDate,
+    age,
+    phone,
     diagnoses,
     injureAffirmId: diagnoses[0]?.injureAffirmId,
     qualificationIdFrom1101: diagnoses[0]?.qualificationId,
@@ -226,52 +269,96 @@ async function invokeInfno(
   });
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+function isRetryableProbeError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return /异常错误|未知错误|读卡忙冲突|外部组件|External component|Si_Busi/i.test(message);
+}
+
+/** 模块内串行：避免待遇区连点 / 读卡并发打爆 JLSiInterface。 */
+let probeChain: Promise<unknown> = Promise.resolve();
+
+async function invoke1101WithRetry(fixmedinsCode?: string): Promise<WorkInjuryWinInvokeResponse> {
+  const maxAttempts = 3;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await invokeInfno('1101', {}, fixmedinsCode);
+    } catch (error) {
+      lastError = error;
+      if (attempt >= maxAttempts || !isRetryableProbeError(error)) {
+        throw error;
+      }
+      await sleep(600 * attempt);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('工伤 1101 失败');
+}
+
 /**
  * Win 直查：1101（读卡）→ 9102（审批列表）。不写 Whale anchor。
  * 读卡器上需有社保卡（与 NEUSI idfi_mode=1 一致）。
  */
 export async function probeWorkInjuryFilingViaWin(): Promise<WorkInjuryFilingProbeResult> {
-  if (!(await isWorkInjuryPluginOnline())) {
-    throw new Error('请启动 OpenHIS.Win 并启用工伤模块（/api/work-injury/health）');
-  }
-  let fixmedinsCode: string | undefined;
-  try {
-    const cap = await httpWorkInjuryModuleCapability();
-    fixmedinsCode = cap?.fixmedinsCode?.trim() || undefined;
-  } catch {
-    // capability 失败不阻断，Win 用本地配置定点码
-  }
+  const run = async (): Promise<WorkInjuryFilingProbeResult> => {
+    if (!(await isWorkInjuryPluginOnline())) {
+      throw new Error('请启动 OpenHIS.Win 并启用工伤模块（/api/work-injury/health）');
+    }
+    let fixmedinsCode: string | undefined;
+    try {
+      const cap = await httpWorkInjuryModuleCapability();
+      fixmedinsCode = cap?.fixmedinsCode?.trim() || undefined;
+    } catch {
+      // capability 失败不阻断，Win 用本地配置定点码
+    }
 
-  const res1101 = await invokeInfno('1101', {}, fixmedinsCode);
-  const person = parse1101Person(res1101.output);
-  if (!person.psnNo) {
-    throw new Error('工伤 1101 未返回 psn_no，请确认已放卡且专线正常');
-  }
+    const res1101 = await invoke1101WithRetry(fixmedinsCode);
+    const person = parse1101Person(res1101.output);
+    if (!person.psnNo) {
+      throw new Error('工伤 1101 未返回 psn_no，请确认已放卡且专线正常');
+    }
 
-  const end = new Date();
-  const start = new Date();
-  // 院点审批跨度常超 30 天；预览查近 3 年
-  start.setFullYear(start.getFullYear() - 3);
-  const res9102 = await invokeInfno(
-    '9102',
-    {
-      psn_no: person.psnNo,
-      startTime: formatDay(start),
-      endTime: formatDay(end),
-    },
-    fixmedinsCode,
-  );
-  const rows = parse9102Rows(res9102.output);
+    const end = new Date();
+    const start = new Date();
+    // 院点审批跨度常超 30 天；预览查近 3 年
+    start.setFullYear(start.getFullYear() - 3);
+    const res9102 = await invokeInfno(
+      '9102',
+      {
+        psn_no: person.psnNo,
+        startTime: formatDay(start),
+        endTime: formatDay(end),
+      },
+      fixmedinsCode,
+    );
+    const rows = parse9102Rows(res9102.output);
 
-  return {
-    psnNo: person.psnNo,
-    psnName: person.psnName,
-    certno: person.certno,
-    injureAffirmId: person.injureAffirmId,
-    qualificationIdFrom1101: person.qualificationIdFrom1101,
-    diagnoses: person.diagnoses,
-    rows,
-    hasValidFiling: rows.length > 0,
-    queriedAt: new Date().toISOString(),
+    return {
+      psnNo: person.psnNo,
+      psnName: person.psnName,
+      certno: person.certno,
+      genderCode: person.genderCode,
+      birthDate: person.birthDate,
+      age: person.age,
+      phone: person.phone,
+      injureAffirmId: person.injureAffirmId,
+      qualificationIdFrom1101: person.qualificationIdFrom1101,
+      diagnoses: person.diagnoses,
+      rows,
+      hasValidFiling: rows.length > 0,
+      queriedAt: new Date().toISOString(),
+    };
   };
+
+  const next = probeChain.then(run, run);
+  probeChain = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  return next;
 }

@@ -1,5 +1,5 @@
-/** 医嘱校对 Tab：未校对 / 已校对 / 已停止 / 已作废 */
-export type NurseStationOrderAuditTab = 'pending' | 'passed' | 'stopped' | 'suspended';
+/** 医嘱校对 Tab：未校对 / 已校对（已停嘱校对并入已校对；无已停止/已作废 Tab） */
+export type NurseStationOrderAuditTab = 'pending' | 'passed';
 
 /** 长临筛选：全部 / 长期 / 临时 */
 export type NurseStationOrderAuditTherapyFilter = 'all' | 'long' | 'temp';
@@ -33,9 +33,25 @@ export interface NurseStationOrderAuditRowDto {
   /** 医嘱备注（随医嘱内容展示） */
   remark?: string;
   specificationText?: string;
+  /**
+   * 拆零比（目录 package_unit_ratio：1 包装 = N 拆零；仅药嘱）。
+   */
+  partPercent?: number | string | null;
+  /**
+   * 包装装量后缀（如 `1片x100`；仅药嘱）。
+   */
+  packageSplitRatioText?: string | null;
   dosageDisplay?: string;
+  /**
+   * 日剂量友好展示（如 `每日三片`；长期药且频次可解析每日次数时有值）。
+   */
+  dailyDoseDisplay?: string | null;
   usageDisplay?: string;
   frequencyDisplay?: string;
+  /** 输液滴速编码（仅药嘱） */
+  speedCode?: string;
+  /** 输液滴速展示名 */
+  speedDisplay?: string;
   /** 开立时间（后端 req_opened_time） */
   reqOpenedTime?: string;
   stopTime?: string;
@@ -45,6 +61,16 @@ export interface NurseStationOrderAuditRowDto {
   performerLocationDisplay?: string;
   /** 校对人姓名（已校对及后续 Tab 展示） */
   performerCheckName?: string;
+  /** 停嘱校对人主键 */
+  stopPerformerCheckId?: string;
+  /** 停嘱校对时间 */
+  stopCheckTime?: string;
+  /** 停嘱校对人姓名（打印/已停止 Tab） */
+  stopCheckerName?: string;
+  /**
+   * 是否停嘱待校：STOPPED 且长期且尚未停嘱校对（待校对列表醒目标识）。
+   */
+  stopAuditPending?: boolean;
   categoryEnum?: string;
   /** 类型列展示：药品/诊疗/出院/转科/护理 */
   orderKindDisplay?: string;

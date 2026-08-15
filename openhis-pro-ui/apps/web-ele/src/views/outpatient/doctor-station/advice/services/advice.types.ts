@@ -102,6 +102,8 @@ export interface ProductQueryParams {
   productTableNames?: string[];
   /** 排除药品 medication_category_code（如开立西药医嘱传 ["4"] 排除中草药） */
   excludeMedicationCategoryCodes?: string[];
+  /** 仅看库存>0；后端分页过滤，禁止前端筛当前页 */
+  positiveQuantityOnly?: boolean;
 }
 
 export interface AdviceProductOption {
@@ -216,6 +218,10 @@ export interface AdviceRowItem {
   serviceRequestDetails?: ServiceRequestDetailSummaryDto[];
   /** 目录类别 code：检验 PROOF、检查 TEST */
   catalogCategoryCode?: string;
+  /** 医保等级展示（甲类/乙类/丙类）；申请单编辑回显用 */
+  chrgitmLvText?: string;
   /** 费用性质主键（药品/诊疗合同） */
   contractId?: string;
+  /** 费用性质分类展示（自费/公费/省医保/市医保/工伤保险） */
+  feeNatureText?: string;
 }

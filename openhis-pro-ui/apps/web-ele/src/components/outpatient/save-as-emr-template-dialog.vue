@@ -8,15 +8,11 @@ import {
   ElFormItem,
   ElInput,
   ElMessage,
-  ElOption,
   ElRadio,
   ElRadioGroup,
-  ElSelect,
 } from 'element-plus';
 
-import { getOrganizationApiByLoginUser } from '#/api/core/auth';
 import { useAuthStore } from '#/store';
-import { unwrapApiList } from '#/utils/api/unwrap-api-list';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import {
   EMR_TEMPLATE_SCOPE_LEVEL,
@@ -35,53 +31,18 @@ const authStore = useAuthStore();
 
 const templateName = ref('');
 const scopeLevel = ref<EmrTemplateScopeLevel>(EMR_TEMPLATE_SCOPE_LEVEL.PERSONAL);
-const organizationId = ref('');
-const organizationOptions = ref<Array<{ label: string; value: string }>>([]);
-const orgLoading = ref(false);
 const confirmLoading = ref(false);
 
-const showOrganizationField = computed(
-  () => scopeLevel.value === EMR_TEMPLATE_SCOPE_LEVEL.DEPARTMENT,
+/** 当前登录科室（科室模板强制绑定，与后端会话 org 一致） */
+const loginOrganizationId = computed(
+  () => preserveApiIdForRequest(authStore.getSelectedOrganization()) ?? '',
 );
 
-async function loadOrganizationOptions() {
-  orgLoading.value = true;
-  try {
-    const response = await getOrganizationApiByLoginUser();
-    const list = unwrapApiList<{ displayName?: string; id?: number | string; name?: string }>(
-      response,
-    );
-    organizationOptions.value = list
-      .map((item) => {
-        const value = preserveApiIdForRequest(item.id);
-        if (!value) return null;
-        const label = (item.name ?? item.displayName ?? value).trim() || value;
-        return { label, value };
-      })
-      .filter((x): x is { label: string; value: string } => x != null);
-
-    const selected =
-      preserveApiIdForRequest(authStore.getSelectedOrganization()) ??
-      organizationOptions.value[0]?.value ??
-      '';
-    if (selected && organizationOptions.value.some((o) => o.value === selected)) {
-      organizationId.value = selected;
-    } else {
-      organizationId.value = organizationOptions.value[0]?.value ?? '';
-    }
-  } catch {
-    organizationOptions.value = [];
-    organizationId.value = '';
-  } finally {
-    orgLoading.value = false;
-  }
-}
+const showDepartmentHint = computed(() => scopeLevel.value === EMR_TEMPLATE_SCOPE_LEVEL.DEPARTMENT);
 
 function resetFormOnOpen() {
   templateName.value = '';
   scopeLevel.value = EMR_TEMPLATE_SCOPE_LEVEL.PERSONAL;
-  organizationId.value = '';
-  void loadOrganizationOptions();
 }
 
 function handleConfirm() {
@@ -91,9 +52,9 @@ function handleConfirm() {
     return;
   }
   if (scopeLevel.value === EMR_TEMPLATE_SCOPE_LEVEL.DEPARTMENT) {
-    const orgId = organizationId.value.trim();
+    const orgId = loginOrganizationId.value.trim();
     if (!orgId) {
-      ElMessage.warning('请选择适用科室');
+      ElMessage.warning('请先选择登录科室后再保存科室模板');
       return;
     }
     emit('confirm', {
@@ -152,22 +113,10 @@ defineExpose({
           <ElRadio :value="EMR_TEMPLATE_SCOPE_LEVEL.DEPARTMENT">科室模板</ElRadio>
         </ElRadioGroup>
       </ElFormItem>
-      <ElFormItem v-if="showOrganizationField" label="适用科室" required>
-        <ElSelect
-          v-model="organizationId"
-          class="w-full"
-          filterable
-          clearable
-          :loading="orgLoading"
-          placeholder="请选择科室"
-        >
-          <ElOption
-            v-for="opt in organizationOptions"
-            :key="opt.value"
-            :label="opt.label"
-            :value="opt.value"
-          />
-        </ElSelect>
+      <ElFormItem v-if="showDepartmentHint" label="适用科室">
+        <span class="text-sm" style="color: var(--el-text-color-regular)">
+          绑定当前登录科室（同科医生可见；请确认右上角登录科室正确）
+        </span>
       </ElFormItem>
     </ElForm>
 

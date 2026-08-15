@@ -8,6 +8,7 @@ import type {
 } from '#/api/outpatient/daily-settlement';
 
 import { publicRequestClient } from '#/api/request';
+import { dailySettlementLongRequestConfig } from '#/constants/daily-settlement-request-timeout';
 
 const BASE = '/cashierSettlementApproval';
 
@@ -120,11 +121,12 @@ export async function pageCashierSettlementApprovalsApi(
   );
 }
 
-/** 加载交账审批详情。 */
+/** 加载交账审批详情（按挂载现算，可能超过默认 10s）。 */
 export async function loadCashierSettlementApprovalDetailApi(settlementId: string) {
   return publicRequestClient.post<LoadCashierSettlementApprovalDetailResponse>(
     `${BASE}/loadCashierSettlementApprovalDetail`,
     { settlementId },
+    dailySettlementLongRequestConfig(),
   );
 }
 

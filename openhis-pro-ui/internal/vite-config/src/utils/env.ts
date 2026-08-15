@@ -19,14 +19,14 @@ const getNumber = (value: string | undefined, fallback: number) => Number(value)
 function getConfFiles() {
   const script = process.env.npm_lifecycle_script as string;
   const reg = /--mode ([\d_a-z]+)/;
-  const result = reg.exec(script);
-  let mode = 'production';
-  if (result) {
-    mode = result[1] as string;
-  }
+  const fromScript = reg.exec(script)?.[1];
+  const modeIndex = process.argv.indexOf('--mode');
+  const fromArgv =
+    modeIndex >= 0 && process.argv[modeIndex + 1] ? process.argv[modeIndex + 1] : undefined;
+  const mode = fromArgv || fromScript || 'production';
   const files = ['.env', '.env.local', `.env.${mode}`, `.env.${mode}.local`];
 
-  // 院点：直接读 projects/project-*/.env*（UTF-8），不写 apps/web-ele/.env.*.local
+  // 院点：直接读 projects/project-{id} 下 .env（UTF-8），供 HTML title / loading 使用
   const rawProject = (process.env.OPENHIS_PROJECT ?? process.env.VITE_OPENHIS_PROJECT ?? '').trim();
   if (rawProject) {
     const projectId = rawProject.startsWith('project-')
@@ -107,9 +107,15 @@ async function loadAndConvertEnv(
     .split(',')
     .filter((item) => item === 'brotli' || item === 'gzip');
 
-  // 院点脚本写入的 process.env 优先于 apps/web-ele/.env 文件值
+  // 院点：优先用 dotenv 读到的 UTF-8 文件值（Windows process.env 中文易乱码，会导致 loading 回退 OpenHis）
+  const isOpenHisProject = Boolean(
+    (process.env.OPENHIS_PROJECT ?? process.env.VITE_OPENHIS_PROJECT ?? '').trim(),
+  );
+
   return {
-    appTitle: getString(process.env.VITE_APP_TITLE || VITE_APP_TITLE, 'Vben Admin'),
+    appTitle: isOpenHisProject
+      ? getString(VITE_APP_TITLE || process.env.VITE_APP_TITLE, 'Vben Admin')
+      : getString(process.env.VITE_APP_TITLE || VITE_APP_TITLE, 'Vben Admin'),
     archiver: getBoolean(process.env.VITE_ARCHIVER || VITE_ARCHIVER),
     base: getString(process.env.VITE_BASE || VITE_BASE, '/'),
     compress: compressTypes.length > 0,

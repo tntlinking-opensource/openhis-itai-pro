@@ -112,3 +112,15 @@ export function contractSelectionFromValue(
     feeNature: label === '—' ? id : label,
   };
 }
+
+/** 医保等级→费用性质收窄：与门诊开立同构，避免住院副本漂移 */
+export {
+  CHRGITM_LV_SELF_PAY,
+  enrichFeeNatureOptionsWithCategory,
+  filterFeeNatureOptionsByChrgitmLv,
+  hasSelfPayOnlyChrgitmLvItem,
+  isSelfPayFeeNatureOption,
+  isSelfPayOnlyChrgitmLv,
+  resolveContractForChrgitmLv,
+  type FeeNatureOption,
+} from '#/views/outpatient/doctor-station/advice/services/advice-format';

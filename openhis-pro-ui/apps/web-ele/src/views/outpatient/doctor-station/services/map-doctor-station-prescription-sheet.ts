@@ -271,6 +271,8 @@ export function mapDoctorStationPatientToDispenseQueuePatient(
     visitNo: (patient.encounterBusNo ?? '').trim() || (patient.encounterId ?? '').trim() || '—',
     visitTimeLabel: start || '—',
     patientPhone: (patient.phone ?? '').trim() || undefined,
+    // 费用性质：与患者卡片同源（contractDisplay），供笺面/打印回显
+    feeNatureLabel: (patient.contractDisplay ?? '').trim() || undefined,
     rxCount: 0,
   };
 }
@@ -317,12 +319,15 @@ export function buildDoctorStationPrescriptionSheetData(
   const deptFromBlock = (block.deptName ?? '').trim();
   const deptFallback = (patient.organizationName ?? '').trim();
   const isHerbal = block.rxType === 'herbal';
+  // 费用性质优先患者信息（与卡片 contractDisplay 一致），不依赖医嘱行 feeNatureText
+  const patientFeeNature = (patient.feeNatureLabel ?? '').trim();
   // 开单医生/医师用 block.doctorName；调配/发药/划价（收费人）未回补前为空显示 —
   const data = buildPrescriptionSheetData(patientForSheet, block, {
     hospitalName: resolvePrintHospitalName() || undefined,
     // 医生站页眉用「处方单」，不用发药工作站的「发药单」
     documentTitle: isHerbal ? '中药处方单' : '处方单',
     tcmDiagnosisText: options?.tcmDiagnosisText,
+    feeNatureLabel: patientFeeNature || undefined,
   });
   return {
     ...data,

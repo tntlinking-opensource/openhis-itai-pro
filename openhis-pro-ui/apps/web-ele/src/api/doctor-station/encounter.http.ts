@@ -1,4 +1,6 @@
 import type {
+  CancelOutpatientReceptionRequest,
+  CancelOutpatientReceptionResponse,
   CompleteOutpatientEncounterRequest,
   CompleteOutpatientEncounterResponse,
   PageOutpatientInfoForDoctorStationRequest,
@@ -41,6 +43,19 @@ export async function httpCompleteOutpatientEncounter(
       operatorId: preserveApiIdForRequest(body.operatorId),
       completedAt: body.completedAt,
       summary: body.summary,
+    },
+  );
+}
+
+/** 医生站：取消接诊（在诊/暂离/完诊 → 已挂号；医生同意后方可窗口退号） */
+export async function httpCancelOutpatientReception(
+  body: CancelOutpatientReceptionRequest,
+): Promise<CancelOutpatientReceptionResponse> {
+  return publicRequestClient.post<CancelOutpatientReceptionResponse>(
+    '/doctorStationEncounterManage/cancelOutpatientReception',
+    {
+      encounterId: preserveApiIdForRequest(body.encounterId),
+      operatorId: preserveApiIdForRequest(body.operatorId),
     },
   );
 }

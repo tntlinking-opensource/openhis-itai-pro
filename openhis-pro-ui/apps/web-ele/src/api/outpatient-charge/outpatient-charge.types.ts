@@ -81,8 +81,10 @@ export interface PendingChargeItemRowDto {
   chrgitmLv?: null | number | string;
   /** 医保类别展示（甲类/乙类/丙类） */
   chrgitmLvText?: null | string;
-  /** 医疗类别 med_type */
+  /** 就诊类型 code（YbMedType / adm_encounter_diagnosis.med_type） */
   medTypeCode?: null | string;
+  /** 就诊类型展示（YbMedType 文案；供收费项目列表「就诊类型」列） */
+  medTypeDisplay?: null | string;
   quantityDisplay?: null | string;
   quantityUnit?: null | string;
   quantityValue?: null | number | string;
@@ -112,6 +114,8 @@ export interface ChargeSettlementSetlinfoDto {
   clrOptins?: null | string;
   clrType?: null | string;
   clrWay?: null | string;
+  /** 公务员标志（0=否 / 1=是） */
+  cvlservFlag?: null | string;
   cvlservPay?: null | number | string;
   fulamtOwnpayAmt?: null | number | string;
   fundPaySumamt?: null | number | string;
@@ -185,6 +189,8 @@ export interface SwitchEncounterChargeItemsAccountResponse {
 
 /** IF-OPC-04 / 05 请求 */
 export interface SwitchEncounterChargeItemsRequest {
+  /** 勾选收费项主键；空则后端按就诊整批可切换行处理 */
+  chargeItemIds?: string[];
   encounterId: string;
 }
 
@@ -262,9 +268,20 @@ export interface PreSettleOutpatientChargesResponse {
     errMsg?: string;
   };
   ybAcctPay?: null | number | string;
+  /** 实际支付起付线（2206 act_pay_dedc；仅展示） */
+  ybActPayDedc?: null | number | string;
   ybChrgBchno?: null | string;
+  /** 公务员标志（2206 cvlserv_flag；仅展示） */
+  ybCvlservFlag?: null | string;
+  /** 公务员医疗补助资金支出（2206 cvlserv_pay；仅展示） */
+  ybCvlservPay?: null | number | string;
+  /** 基金支付总额（fund_pay_sumamt；≠ 单列统筹） */
   ybFundPaySumamt?: null | number | string;
+  /** 基本医保统筹（hifp_pay） */
+  ybHifpPay?: null | number | string;
   ybMedfeeSumamt?: null | number | string;
+  /** 其他支出（oth_pay，含电子钱包等） */
+  ybOthPay?: null | number | string;
   ybPsnCashPay?: null | number | string;
 }
 
@@ -284,6 +301,12 @@ export interface ClientScanResultDto {
   txnAmtFen?: number;
 }
 
+/** 银联补收准备请求（平台已 2207、支付取消、收费项仍待收） */
+export interface PrepareUnionPayMakeupCollectRequest {
+  encounterId: string;
+  chargeItemIds: string[];
+}
+
 /** IF-OPC-07 正式结算请求 */
 export interface ConfirmOutpatientChargeSettlementRequest {
   billDate: string;
@@ -295,6 +318,20 @@ export interface ConfirmOutpatientChargeSettlementRequest {
   clientScanResult?: ClientScanResultDto;
   ybChrgBchno?: null | string;
   ybChrgBchnos?: string[];
+}
+
+/** 银联扫码前医保 2207 确认请求 */
+export interface ConfirmOutpatientInsuranceBeforeScanRequest {
+  paymentDraftId: string;
+  encounterId?: string;
+  ybChrgBchno?: null | string;
+  ybChrgBchnos?: string[];
+}
+
+/** 银联扫码前医保 2207 确认响应 */
+export interface ConfirmOutpatientInsuranceBeforeScanResponse {
+  confirmedBatchCount?: number;
+  reusedExisting?: boolean;
 }
 
 /** IF-OPC-07 正式结算响应 */
@@ -328,6 +365,12 @@ export interface ChargeReceiptSlipDto {
   fundPayText?: string;
   accountPayText?: string;
   deductibleLineText?: string;
+  /** 公务员待遇（是/否） */
+  cvlservFlagText?: string;
+  /** 公务员医疗补助金额 */
+  cvlservPayText?: string;
+  /** 其他支出（含电子钱包等） */
+  othPayText?: string;
   cashPayText?: string;
   wechatPayText?: string;
   alipayPayText?: string;

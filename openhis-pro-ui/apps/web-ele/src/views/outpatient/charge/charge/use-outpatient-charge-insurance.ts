@@ -9,9 +9,10 @@ import { httpGetInsurancePersonInfo } from '#/chs/api/insurance-person';
 import {
   DEFAULT_CARD_READER_HOST,
   DEFAULT_CARD_READER_PORT,
+  DEFAULT_SFZ_DRIVER_TYPE,
   formatYbPluginError,
+  invokeIdCardRead,
   invokeSocialCardRead,
-  invokeYbPlugin,
   isYbPluginOnline,
   resolveSocialCard1101Credential,
   YB_PLUGIN_FUNCTION_ID,
@@ -82,6 +83,21 @@ export function selectionIncludesInsuranceItems(rows: PendingChargeItemRowDto[])
     }
     const feeNature = String(row.feeNatureDisplay ?? '').trim();
     if (feeNature.includes('医保') || feeNature.includes('工伤')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** 勾选行是否含工伤费用性质（收费走 Win，跳过省医保读卡/1101/3101）。 */
+export function selectionIncludesWorkInjuryItems(rows: PendingChargeItemRowDto[]): boolean {
+  for (const row of rows) {
+    const contractCat = String(row.contractCategoryCode ?? '').trim();
+    if (isWorkInjuryContractCategory(contractCat)) {
+      return true;
+    }
+    const feeNature = String(row.feeNatureDisplay ?? '').trim();
+    if (feeNature.includes('工伤')) {
       return true;
     }
   }
@@ -192,22 +208,29 @@ export async function chooseOutpatientChargeInsuranceMedium(): Promise<null | Ou
 }
 
 async function resolveIdCardCredential(): Promise<null | SocialCard1101Credential> {
-  const payload = await invokeYbPlugin({
+  // 与挂号一致：用 invokeIdCardRead 解析 SignBuff；市医保 2207 对 02 明文证件号会解密失败
+  const card = await invokeIdCardRead({
     FunctionId: YB_PLUGIN_FUNCTION_ID.ID_CARD,
     IP: DEFAULT_CARD_READER_HOST,
     PORT: DEFAULT_CARD_READER_PORT,
     TIMEOUT: 60,
     LOG_PATH: 'C:/neu_log/',
-    SFZ_DRIVER_TYPE: 0,
+    SFZ_DRIVER_TYPE: DEFAULT_SFZ_DRIVER_TYPE,
   });
-  const certno = payload.trim().toUpperCase();
+  const certno = (card.idNumber ?? '').trim().toUpperCase();
   if (!certno) {
     ElMessage.warning('身份证读卡未返回有效证件号');
     return null;
   }
+  const cardCipher = (card.signBuff ?? '').trim();
+  if (!cardCipher) {
+    ElMessage.warning(
+      '读身份证未返回卡密（SignBuff），市医保结算可能失败，建议改刷社保卡或扫医保码',
+    );
+  }
   return {
     mdtrtCertType: '02',
-    mdtrtCertNo: certno,
+    mdtrtCertNo: cardCipher || certno,
     certno,
     psnCertType: '01',
   };
@@ -223,7 +246,7 @@ async function resolveSocialCardCredential(): Promise<{
     PORT: DEFAULT_CARD_READER_PORT,
     TIMEOUT: 60,
     LOG_PATH: 'C:/neu_log/',
-    SFZ_DRIVER_TYPE: 0,
+    SFZ_DRIVER_TYPE: DEFAULT_SFZ_DRIVER_TYPE,
   });
   const credential = resolveSocialCard1101Credential(card);
   if (credential.mdtrtCertType === '03' && !(credential.cardSn ?? '').trim()) {

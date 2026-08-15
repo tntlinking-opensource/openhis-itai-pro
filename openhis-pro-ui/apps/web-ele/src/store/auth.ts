@@ -57,6 +57,8 @@ export const useAuthStore = defineStore('auth', () => {
   const platformAdmin = ref(false);
   /** 当前用户是否具备财务审批登录角色（applicationConfiguration.canFinanceApprove） */
   const canFinanceApprove = ref(false);
+  /** 当前用户是否具备病案管理员登录角色（applicationConfiguration.canMrmsAdmin） */
+  const canMrmsAdmin = ref(false);
   /** 无可登录科室时是否已跳过选科（医院级会话） */
   const organizationUnitSkipped = ref(false);
 
@@ -126,6 +128,7 @@ export const useAuthStore = defineStore('auth', () => {
           }),
         );
         syncCanFinanceApproveFromConfiguration(configuration);
+        syncCanMrmsAdminFromConfiguration(configuration);
 
         if (accessStore.loginExpired) {
           accessStore.setLoginExpired(false);
@@ -268,8 +271,40 @@ export const useAuthStore = defineStore('auth', () => {
     setCanFinanceApprove(configuration?.currentUser?.canFinanceApprove === true);
   }
 
+  function setCanMrmsAdmin(value: boolean) {
+    canMrmsAdmin.value = value;
+  }
+
+  function getCanMrmsAdmin(): boolean {
+    return canMrmsAdmin.value;
+  }
+
+  /** 从 applicationConfiguration 同步病案管理员能力（登录 / 路由初始化时调用） */
+  function syncCanMrmsAdminFromConfiguration(
+    configuration: AuthApi.LoginConfiguration | null | undefined,
+  ) {
+    const fromFlag = configuration?.currentUser?.canMrmsAdmin === true;
+    // 兼容：框架 currentUser.roles 存的是 whale_roles.name（如 mrms_admin），非 ROLE_* code
+    const roleList = configuration?.currentUser?.roles ?? [];
+    let fromRoles = false;
+    for (const role of roleList) {
+      const normalized = String(role ?? '')
+        .trim()
+        .toUpperCase();
+      if (
+        normalized === 'ROLE_MRMS_ADMIN' ||
+        normalized === 'MRMS_ADMIN' ||
+        normalized === '病案管理员'
+      ) {
+        fromRoles = true;
+        break;
+      }
+    }
+    setCanMrmsAdmin(fromFlag || fromRoles);
+  }
+
   /**
-   * 科室/租户会话就绪后拉取 applicationConfiguration，刷新权限码与 canFinanceApprove。
+   * 科室/租户会话就绪后拉取 applicationConfiguration，刷新权限码与健康域登录能力。
    * 登录初次的 configuration 往往在选科之前，须以选科后会话为准；代理切换后亦依赖此刷新。
    */
   async function refreshApplicationConfiguration(): Promise<void> {
@@ -287,6 +322,7 @@ export const useAuthStore = defineStore('auth', () => {
         }),
       );
       syncCanFinanceApproveFromConfiguration(configuration);
+      syncCanMrmsAdminFromConfiguration(configuration);
       const { syncImpersonationMetaFromConfiguration } = await import(
         '#/composables/use-impersonation'
       );
@@ -417,6 +453,7 @@ export const useAuthStore = defineStore('auth', () => {
           userStore.setUserRoles(currentUser.roles);
         }
         syncCanFinanceApproveFromConfiguration(configuration);
+        syncCanMrmsAdminFromConfiguration(configuration);
         return userInfo as any;
       }
       return null;
@@ -457,11 +494,13 @@ export const useAuthStore = defineStore('auth', () => {
     getSelectedHospitalName,
     getPlatformAdmin,
     getCanFinanceApprove,
+    getCanMrmsAdmin,
     getSelectedOrganization,
     getSelectedTenant,
     getTenantList,
     isOrganizationUnitSkipped,
     canFinanceApprove,
+    canMrmsAdmin,
     loginLoading,
     logout,
     platformAdmin,
@@ -472,7 +511,9 @@ export const useAuthStore = defineStore('auth', () => {
     selectedTenantId,
     setPlatformAdmin,
     setCanFinanceApprove,
+    setCanMrmsAdmin,
     syncCanFinanceApproveFromConfiguration,
+    syncCanMrmsAdminFromConfiguration,
     refreshApplicationConfiguration,
     setOrganizationUnitSkipped,
     setSelectedHospital,

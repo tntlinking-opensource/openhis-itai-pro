@@ -27,10 +27,12 @@ import { ElMessage } from 'element-plus';
 import {
   DEFAULT_CARD_READER_HOST,
   DEFAULT_CARD_READER_PORT,
+  DEFAULT_SFZ_DRIVER_TYPE,
   formatYbPluginError,
   formatYbPluginOfflineMessage,
   getYbEcOrgId,
   getYbEcVoucherUrl,
+  invokeIdCardRead,
   invokeSocialCardRead,
   invokeYbPlugin,
   isYbPluginOnline,
@@ -97,20 +99,25 @@ export function useRegisterPatientIdentity(options: UseRegisterPatientIdentityOp
       return null;
     }
     try {
-      const payload = await invokeYbPlugin({
+      const card = await invokeIdCardRead({
         FunctionId: YB_PLUGIN_FUNCTION_ID.ID_CARD,
         IP: DEFAULT_CARD_READER_HOST,
         PORT: DEFAULT_CARD_READER_PORT,
         TIMEOUT: 60,
         LOG_PATH: 'C:/neu_log/',
-        SFZ_DRIVER_TYPE: 0,
+        SFZ_DRIVER_TYPE: DEFAULT_SFZ_DRIVER_TYPE,
       });
-      const idCardNo = payload.trim();
-      if (!idCardNo) {
+      if (!card.idNumber) {
         ElMessage.warning('读卡未返回有效信息');
         return null;
       }
-      return buildSnapshotFromIdCard(idCardNo);
+      if (!card.signBuff?.trim()) {
+        ElMessage.warning(
+          '读身份证未返回卡密（SignBuff），医保挂号可能失败，建议改刷社保卡或扫医保码',
+        );
+      }
+      const address = String(card.address ?? '').trim();
+      return buildSnapshotFromIdCard(card.idNumber, card.name, card.signBuff, address);
     } catch (error) {
       ElMessage.error(formatYbPluginError(error));
       return null;
@@ -129,7 +136,7 @@ export function useRegisterPatientIdentity(options: UseRegisterPatientIdentityOp
         PORT: DEFAULT_CARD_READER_PORT,
         TIMEOUT: 60,
         LOG_PATH: 'C:/neu_log/',
-        SFZ_DRIVER_TYPE: 0,
+        SFZ_DRIVER_TYPE: DEFAULT_SFZ_DRIVER_TYPE,
       });
       const snapshot = buildSnapshotFromSocialCard(card);
       if (!snapshot) {
@@ -190,7 +197,7 @@ export function useRegisterPatientIdentity(options: UseRegisterPatientIdentityOp
         PORT: DEFAULT_CARD_READER_PORT,
         TIMEOUT: 60,
         LOG_PATH: 'C:/neu_log/',
-        SFZ_DRIVER_TYPE: 0,
+        SFZ_DRIVER_TYPE: DEFAULT_SFZ_DRIVER_TYPE,
       };
       const payload = await invokeYbPlugin(ecInput, undefined, 65_000);
       const trimmed = payload.trim();
@@ -255,6 +262,21 @@ export function useRegisterPatientIdentity(options: UseRegisterPatientIdentityOp
 
     const matched = await selectPatientByKeyword(snapshot.patientMatchKeyword);
     if (matched) {
+      // 已匹配档案：读卡地址作为表单默认值（挂号员可改；空则不动）
+      const addressText = String(snapshot.address ?? '').trim();
+      const area = options.registerFormAreaRef.value;
+      if (area && addressText) {
+        const current = await area.getSubmitValues();
+        area.applyPatientRecord({
+          patientAge: String(current.medicalInsuranceNo ?? ''),
+          patientAddress: addressText,
+          patientBirthday: String(current.patientBirthday ?? ''),
+          patientGender: String(current.patientGender ?? ''),
+          patientIdCard: String(current.patientIdCard ?? ''),
+          patientName: String(current.patientName ?? ''),
+          patientPhone: String(current.patientPhone ?? ''),
+        });
+      }
       if (snapshotHasInsuranceCredential(snapshot)) {
         await options.onBootstrapBenefit();
       }

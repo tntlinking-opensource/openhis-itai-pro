@@ -23,6 +23,8 @@ export interface InpatientDoctorStationPatientDto {
   bedName?: string;
   /** 费用性质/医保类型展示（与预交金 contractDisplay 对齐，接口有则展示） */
   contractDisplay?: string;
+  /** 险种类型码（310 职工 / 390 城乡居民等） */
+  insutype?: string;
   diagnosisList?: string[];
   diagnosisSummary?: string;
   encounterBusNo?: string;

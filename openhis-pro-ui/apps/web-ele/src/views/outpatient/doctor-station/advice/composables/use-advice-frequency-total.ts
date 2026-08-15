@@ -14,7 +14,7 @@ import {
 import {
   doseConvertRatioSplitToDose,
   resolveAdviceLineUnitPrice,
-  roundMedicationQty,
+  roundMedicationSplitQty,
 } from '../services/medication-unit-bands';
 
 /**
@@ -54,7 +54,7 @@ export function useAdviceFrequencyTotal(options: {
         : doseConvertRatioSplitToDose(item.unitBands);
     const dq = Number(item.doseConvertRatio);
     if (k !== undefined && Number.isFinite(k) && k > 0 && Number.isFinite(dq) && dq > 0) {
-      return roundMedicationQty(dq / k);
+      return roundMedicationSplitQty(dq / k);
     }
     return undefined;
   }

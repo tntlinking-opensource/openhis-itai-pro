@@ -53,8 +53,8 @@ const props = withDefaults(
      */
     catalogScope?: 'ALL' | 'MEDICATION_ONLY';
     /**
-     * 已选项目时打开下拉是否保留输入框内名称（编辑态换药不闪空）。
-     * 默认 false；仅医生站开立编辑卡开启。
+     * 已选项目时，首次展开是否回填当前药名（编辑态换药不闪空）。
+     * 用户一旦改过检索，再展开不再强制回填旧名，直到换选新品；默认 false。
      */
     keepSelectedLabelOnOpen?: boolean;
     modelValue: string;
@@ -81,8 +81,8 @@ const emit = defineEmits<{
 const activeCategory = ref<AdviceCategory>('ALL');
 const showPopup = ref(false);
 const keyword = ref('');
-/** 只看库存>0；默认关=零库存与有库存均展示 */
-const onlyPositiveStock = ref(false);
+/** 只看库存>0；默认开=后端分页过滤，关则含零库存 */
+const onlyPositiveStock = ref(true);
 const loading = ref(false);
 const options = ref<AdviceProductOption[]>([]);
 const pageNo = ref(1);
@@ -142,6 +142,18 @@ const selectedLabel = computed(() => {
  * 未改过时已选药品继续显示名称，避免打开瞬间变空触发 clearable 清掉 selectedId。
  */
 const searchEdited = ref(false);
+/**
+ * 当前 selectedId 下用户已改过检索：再展开不再强制回填旧药名，直到换选新品。
+ */
+const skipSelectedLabelSeed = ref(false);
+
+/** 选中项变化：允许下一次展开再回填新药名 */
+watch(
+  () => props.modelValue,
+  () => {
+    skipSelectedLabelSeed.value = false;
+  },
+);
 
 /** 中药等「不保留上次选品」场景：清空检索词/分类/旧列表，避免下一味看起来像空列表 */
 function resetEphemeralSearchState() {
@@ -149,7 +161,7 @@ function resetEphemeralSearchState() {
   searchEdited.value = false;
   // 出院带药目录固定药品 Tab，其余回全部
   activeCategory.value = props.catalogScope === 'MEDICATION_ONLY' ? 'MEDICATION' : 'ALL';
-  onlyPositiveStock.value = false;
+  onlyPositiveStock.value = true;
   pageNo.value = 1;
   options.value = [];
   gridOptions.data = [];
@@ -159,10 +171,23 @@ function resetEphemeralSearchState() {
   keyboardRowIndex.value = -1;
 }
 
-/** 打开下拉前准备检索态：西药保留药名；中药强制空白重搜 */
+/** 标记用户正在换药检索，后续展开勿再灌回旧药名 */
+function markSearchingToReplaceSelection() {
+  searchEdited.value = true;
+  if (props.keepSelectedLabelOnOpen) {
+    skipSelectedLabelSeed.value = true;
+  }
+}
+
+/** 打开下拉前准备检索态：西药首次保留药名；已改检索则空白；中药强制空白重搜 */
 function prepareOpenKeyword() {
   searchEdited.value = false;
   if (props.keepSelectedLabelOnOpen) {
+    // 用户已改过检索（想换药）：空白重搜，勿把旧药名盖回去
+    if (skipSelectedLabelSeed.value) {
+      keyword.value = '';
+      return;
+    }
     if (props.modelValue) {
       const label = selectedLabel.value;
       if (label) {
@@ -176,11 +201,12 @@ function prepareOpenKeyword() {
 
 /** 点击输入框打开下拉 */
 function openPopup() {
-  prepareOpenKeyword();
+  // 已展开再点：只重拉，勿 prepareOpenKeyword（否则会把正在输入的词打回旧药名）
   if (showPopup.value) {
     void loadOptions();
     return;
   }
+  prepareOpenKeyword();
   showPopup.value = true;
 }
 
@@ -205,6 +231,7 @@ const inputValue = computed({
       props.keepSelectedLabelOnOpen &&
       props.modelValue &&
       !searchEdited.value &&
+      !skipSelectedLabelSeed.value &&
       keyword.value === ''
     ) {
       return selectedLabel.value;
@@ -212,7 +239,7 @@ const inputValue = computed({
     return keyword.value;
   },
   set(v: string) {
-    searchEdited.value = true;
+    markSearchingToReplaceSelection();
     keyword.value = v;
   },
 });
@@ -278,19 +305,10 @@ const syncGridCurrentRow = async () => {
   }
 };
 
-/** 当前页结果按「只看库存>0」过滤；无库存字段的行（如诊疗）仍保留。 */
-function applyPositiveStockFilter(list: AdviceProductOption[]): AdviceProductOption[] {
-  if (!onlyPositiveStock.value) {
-    return list;
-  }
-  return list.filter((row) => !isAdviceCatalogZeroStock(row));
-}
-
-/** 把 options 同步到表格（含库存开关过滤）并重置键盘高亮。 */
+/** 把 options 同步到表格并重置键盘高亮（库存过滤已在后端分页完成）。 */
 function syncGridDataFromOptions() {
-  const filtered = applyPositiveStockFilter(options.value);
-  gridOptions.data = filtered;
-  keyboardRowIndex.value = filtered.length > 0 ? 0 : -1;
+  gridOptions.data = options.value;
+  keyboardRowIndex.value = options.value.length > 0 ? 0 : -1;
 }
 
 const loadOptions = async () => {
@@ -302,6 +320,7 @@ const loadOptions = async () => {
       pageSize: pageSize.value,
       keyword: keyword.value.trim(),
       productTableNames: productTableNamesForCategory(activeCategory.value),
+      positiveQuantityOnly: onlyPositiveStock.value,
     });
     if (generation !== loadGeneration) {
       return;
@@ -394,7 +413,12 @@ watch(
     if (visible) {
       pageNo.value = 1;
       if (props.keepSelectedLabelOnOpen) {
-        if (props.modelValue && !searchEdited.value && !keyword.value) {
+        if (
+          props.modelValue &&
+          !searchEdited.value &&
+          !keyword.value &&
+          !skipSelectedLabelSeed.value
+        ) {
           const label = selectedLabel.value;
           if (label) {
             keyword.value = label;
@@ -412,7 +436,7 @@ watch(
     loadGeneration += 1;
     keyword.value = '';
     searchEdited.value = false;
-    onlyPositiveStock.value = false;
+    onlyPositiveStock.value = true;
     keyboardRowIndex.value = -1;
     if (!props.keepSelectedLabelOnOpen) {
       options.value = [];
@@ -440,8 +464,9 @@ watch(keyword, () => {
 
 watch(onlyPositiveStock, () => {
   if (!showPopup.value) return;
-  syncGridDataFromOptions();
-  void syncGridCurrentRow();
+  // 开关变更须重新请求后端分页，禁止只筛当前页
+  pageNo.value = 1;
+  void loadOptions();
 });
 
 /** 选品：零库存拦截并提示，不关闭下拉、不回写选中项 */
@@ -503,7 +528,7 @@ const handlePageChange: VxePagerEvents.PageChange = ({ currentPage, pageSize: si
  */
 function handleInputClear() {
   if (props.keepSelectedLabelOnOpen && props.modelValue) {
-    searchEdited.value = true;
+    markSearchingToReplaceSelection();
     keyword.value = '';
     pageNo.value = 1;
     showPopup.value = true;

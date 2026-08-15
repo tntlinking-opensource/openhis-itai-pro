@@ -26,18 +26,28 @@ export const PRINT_SCENARIO = {
   ipNursingRecordPrint: 'ip-nursingRecord-print',
   /** 住院费用清单（护士站打印中心） */
   ipFeeListPrint: 'ip-feeList-print',
-  /** 住院临嘱执行记录（护士站打印中心） */
+  /** 住院费用明细单（护士站费用明细；分类流水、无分类合计） */
+  ipFeeDetailPrint: 'ip-feeDetail-print',
+  /** 住院临时医嘱（护士站打印中心） */
   ipTempOrderPrint: 'ip-tempOrder-print',
-  /** 住院长嘱执行记录（护士站打印中心） */
+  /** 住院长期医嘱（护士站打印中心） */
   ipLongOrderPrint: 'ip-longOrder-print',
   /** 住院汇总领药单（护士站打印中心） */
   ipDispenseSummaryPrint: 'ip-dispenseSummary-print',
-  /** 住院摆药单（护士站打印中心） */
+  /** 住院摆药单（护士站打印中心·汇总领药） */
   ipDispenseSheetPrint: 'ip-dispenseSheet-print',
+  /** 住院医嘱执行摆药单（按日已执行全部药品，一单多人，无患者签字） */
+  ipOrderDispenseSheetPrint: 'ip-orderDispenseSheet-print',
+  /** 住院患者用药单（按日已执行药品，一单多人，每患者签字；院点一盒一点口服长嘱按包装单位计总量） */
+  ipOralMedSheetPrint: 'ip-oralMedSheet-print',
   /** 住院输液巡视卡（护士站打印中心） */
   ipPatrolCardPrint: 'ip-patrolCard-print',
   /** 住院腕带（护士站打印中心） */
   ipWristbandPrint: 'ip-wristband-print',
+  /** 住院床头卡（护士站打印中心 / 入院分床） */
+  ipBedCardPrint: 'ip-bedCard-print',
+  /** 住院预交金收据（收费处预交金） */
+  ipPrepayReceiptPrint: 'ip-prepayReceipt-print',
   /** 住院口服药贴（护士站打印中心） */
   ipOralMedLabelPrint: 'ip-oralMedLabel-print',
   /** 住院输液瓶签（护士站打印中心；勿复用门诊瓶签） */

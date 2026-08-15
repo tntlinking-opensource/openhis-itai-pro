@@ -2,10 +2,22 @@ import type { DoctorStationMedicationUnitBandDto } from '#/api/doctor-station/ad
 
 import { decimalDiv, decimalMul } from '#/utils/format/decimal-util';
 
-/** 单次用量/总量等小数位：保留 6 位小数。 */
+/** 剂量单位落库/传参及换算中间量：保留 6 位小数。 */
 export function roundMedicationQty(n: number): number {
   if (!Number.isFinite(n)) return 0;
   return Math.round(n * 1_000_000) / 1_000_000;
+}
+
+/** 剂量单位界面展示：保留 3 位小数（不改变落库 6 位精度源值）。 */
+export function roundMedicationDoseDisplayQty(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(n * 1_000) / 1_000;
+}
+
+/** 最小单位（拆零）换算结果：保留 2 位小数。 */
+export function roundMedicationSplitQty(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(n * 100) / 100;
 }
 
 function bandKindKeyOf(b: DoctorStationMedicationUnitBandDto): string {

@@ -87,7 +87,12 @@ export interface MedicationDispenseInventoryDetailDto {
   pharmacyOrganizationId: string;
   pharmacyDisplayName?: null | string;
   lotNumber?: null | string;
-  /** 后端可能序列化为 number */
+  /**
+   * 剩余库存（最小/拆零单位）。有值时优先于 availableQuantity。
+   * 后端可能序列化为 number。
+   */
+  remainingQuantity?: null | number | string;
+  /** 可用数量（最小/拆零单位；无 remainingQuantity 时回落） */
   availableQuantity: number | string;
   unitCode: string;
   unitText?: null | string;
@@ -137,6 +142,8 @@ export interface EncounterMedicationDispenseSlipRowDto {
   splitUnitCode?: null | string;
   /** 追溯码主档贴码单位（cus_trace_number；非目录） */
   traceUnitCode?: null | string;
+  /** 追溯码主档贴码单位展示文案（UNIT_CODE） */
+  traceUnitCodeText?: null | string;
   /** 追溯码主档贴码比例快照（1 码对应拆零量） */
   traceUnitRatio?: null | number | string;
   /** 主表该品批是否已有追溯码（有码批=true；无码批仅软提示） */
@@ -159,11 +166,17 @@ export interface EncounterMedicationDispenseSlipRowDto {
   infusionFlag?: null | number;
   partAttributeCode?: null | string;
   encounterMedicationTypeCode?: null | string;
+  /** 医保医疗类别展示（YbMedType；adm_encounter_diagnosis.med_type；一张方一种） */
   encounterMedicationTypeText?: null | string;
   dispenseEnum?: null | string;
   therapyEnum?: null | string;
   busNo?: null | string;
   inventoryDetailList?: null | MedicationDispenseInventoryDetailDto[];
+  /**
+   * 发放库房×本行批号当前账面剩余数量（最小单位，IF-OPP-03 现查；
+   * 与 inventoryDetailList 候选明细分列）
+   */
+  remainingQuantity?: null | number | string;
   patientName?: null | string;
   ageText?: null | string;
   genderEnumText?: null | string;

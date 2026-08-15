@@ -50,6 +50,8 @@ export async function loadNursingLevelCatalogOptions(params: {
     patientId,
     organizationUnitId: params.organizationUnitId,
     productTableNames: [...INPATIENT_NURSING_LEVEL_CATALOG_TABLE_NAMES],
+    // 下推 ActivityDef.category_code=26，避免全量诊疗前 200 条截断漏掉护理级别
+    categoryEnum: INPATIENT_NURSING_LEVEL_CATEGORY_CODE,
     pageNo: 1,
     pageSize: 200,
   });

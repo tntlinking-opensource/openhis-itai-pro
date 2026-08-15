@@ -83,6 +83,7 @@ function applyConfiguration(
     }),
   );
   authStore.syncCanFinanceApproveFromConfiguration(configuration);
+  authStore.syncCanMrmsAdminFromConfiguration(configuration);
 }
 
 /** 切换身份前丢弃上一身份的菜单/路由，避免界面短暂或持续显示 admin 菜单 */

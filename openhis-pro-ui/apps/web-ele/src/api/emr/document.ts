@@ -5,6 +5,7 @@
 import type { PageApiResponse, PageParams } from '#/types/api-response';
 
 import { publicRequestClient } from '#/api/request';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 /** 文书正文：后端 content 为 JSON 字符串 */
 export function serializeEmrDocumentContent(content: unknown): string {
@@ -72,6 +73,8 @@ export interface DocumentSummaryDto {
   deptName?: string;
   /** 保存人显示名 */
   savedByName?: string;
+  /** 主诉摘要（列表树展示；无则空） */
+  chiefComplaint?: string;
 }
 
 export interface QueryDocumentParams extends PageParams {
@@ -104,6 +107,18 @@ export async function saveDocumentApi(params: SaveDocumentParams) {
 
 export async function getDocumentListApi(params: QueryDocumentParams) {
   return publicRequestClient.post<PageApiResponse<DocumentSummaryDto>>('/document/getList', params);
+}
+
+export interface DeleteDocumentParams {
+  /** 雪花 ID，必须以字符串提交 */
+  documentId: string;
+}
+
+/** 软删除文书 → POST /document/delete（体为 { value }） */
+export async function deleteDocumentApi(params: DeleteDocumentParams) {
+  return publicRequestClient.post<void>('/document/delete', {
+    value: preserveApiIdForRequest(params.documentId),
+  });
 }
 
 /** 与后端 PrintConfig.MarginConfig 对齐（单位 mm） */

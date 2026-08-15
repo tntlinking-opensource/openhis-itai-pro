@@ -67,6 +67,8 @@ export function buildAdviceDrugItemSeedFromListRow(
   const nameMatch = content.match(/^(.*?)【/);
   const specMatch = content.match(/【(.*?)】/);
 
+  const contractId = String(row.contractId ?? '').trim() || undefined;
+
   return {
     orderType: (row.type.split('/')[0] || '').trim(),
     selectedId,
@@ -75,6 +77,8 @@ export function buildAdviceDrugItemSeedFromListRow(
     selectedDrugSpec: spec || specMatch?.[1] || '',
     diagnosis: options?.reuseAsNew ? '' : diagnosis,
     encounterDiagnosisIds,
+    // 列表合同主键回填编辑卡；展示名由 createAdviceDrugItem 按下拉解析
+    contractId,
     skinTest: row.skinTestFlag === true,
     injectFlag: row.injectionFlag === true,
     frequency: String(row.rateCode ?? '').trim(),

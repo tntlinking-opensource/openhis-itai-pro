@@ -16,7 +16,10 @@ export function mergeRefreshIntoPreSettlement(
         ? pre.totalAmount
         : Number(refresh.totalAmount),
     ybAcctPay: refresh.ybAcctPay ?? pre.ybAcctPay,
+    ybActPayDedc: refresh.ybActPayDedc ?? pre.ybActPayDedc,
     ybChrgBchno: refresh.ybChrgBchno ?? pre.ybChrgBchno,
+    ybCvlservFlag: refresh.ybCvlservFlag ?? pre.ybCvlservFlag,
+    ybCvlservPay: refresh.ybCvlservPay ?? pre.ybCvlservPay,
     ybFundPaySumamt: refresh.ybFundPaySumamt ?? pre.ybFundPaySumamt,
     ybMedfeeSumamt: refresh.ybMedfeeSumamt ?? pre.ybMedfeeSumamt,
     ybPsnCashPay: refresh.ybPsnCashPay ?? pre.ybPsnCashPay,

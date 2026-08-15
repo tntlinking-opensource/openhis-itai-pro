@@ -5,6 +5,8 @@
 const DEFAULT_PLUGIN_DATA_URL = 'http://127.0.0.1:5000/api/data/';
 export const DEFAULT_CARD_READER_HOST = 'ddjk.jlhs.gov.cn';
 export const DEFAULT_CARD_READER_PORT = 20215;
+/** 身份证驱动类型：1=华大，2=丰联（与吉林医保 OCX / conf.xml 一致；勿传 0） */
+export const DEFAULT_SFZ_DRIVER_TYPE = 1;
 const PLUGIN_FETCH_TIMEOUT_MS = 8_000;
 const PLUGIN_SIGN_MAC_TIMEOUT_MS = 65_000;
 const PLUGIN_HEALTH_TIMEOUT_MS = 3_000;
@@ -54,6 +56,21 @@ export interface YbEcVoucherQueryInput extends YbPluginInitInput {
 export interface SignEndpointPayload {
   mac: string;
   ip: string;
+}
+
+/** 身份证读卡结果（HeaSec ReadSFZ） */
+export interface YbIdCardReadResult {
+  idNumber: string;
+  name: string;
+  gender?: string;
+  ethnicity?: string;
+  birthDate?: string;
+  address?: string;
+  /**
+   * ReadSFZ 第二缓冲（pSignBuff / pOutBusiBuff）。
+   * 市医保 2201：非空时作为 mdtrt_cert_type=02 的 mdtrt_cert_no 卡密上送。
+   */
+  signBuff?: string;
 }
 
 /** 社保卡读卡结果（HeaSec ReadCardBas） */
@@ -398,7 +415,7 @@ export function formatYbPluginError(error: unknown, pluginUrl = getYbPluginDataU
     return enrichHeaSecPluginError(error.message);
   }
   if (error instanceof TypeError) {
-    return `无法连接 ${pluginUrl}，请确认 OpenHIS.Win 已启动并监听 5000 端口`;
+    return `无法连接 ${pluginUrl}，请确认 OpenHIS.Win 已启动并监听对应端口`;
   }
   if (error instanceof Error) {
     return enrichHeaSecPluginError(error.message);
@@ -408,11 +425,11 @@ export function formatYbPluginError(error: unknown, pluginUrl = getYbPluginDataU
 
 /** HeaSecReadInfo ReadCardBas / ReadSFZ 常见返回码说明（吉林社保卡 SDK） */
 const HEASEC_RETURN_CODE_HINT: Record<number, string> = {
-  [-1]: '卡类型不对',
-  [-2]: '无卡，请将社保卡插入读卡器',
+  [-1]: '卡类型不对或身份证驱动不匹配（请放二代身份证；华大读卡器 SFZ_DRIVER_TYPE=1，丰联=2；检查 Neu_SFZ*.dll）',
+  [-2]: '无卡，请将社保卡/身份证放在读卡器上',
   [-3]: '有卡未上电',
   [-4]: '卡无应答',
-  [-5]: '加载动态库失败，请检查读卡器驱动及 SSSE32.dll、SSCardDriver.dll 是否已部署到 OpenHIS.Win 目录',
+  [-5]: '加载动态库失败，请检查读卡器驱动及 SSSE32.dll、SSCardDriver.dll、Neu_SFZ*.dll 是否已部署到 OpenHIS.Win 目录',
   [-11]: '读卡器连接错',
   [-12]: '未建立连接',
   [-13]: '动态库不支持该命令',
@@ -666,11 +683,33 @@ function parsePluginPlainText(text: string, functionId: number): string {
     }
   }
 
+  // 身份证：invokeYbPlugin 仅需证件号；姓名请用 invokeIdCardRead
+  const idNumber = pickJsonString(json, 'IdNumber', 'idNumber', 'idCardNo', 'certno');
+  if (idNumber && (functionId === YB_PLUGIN_FUNCTION_ID.ID_CARD || functionId === undefined)) {
+    return idNumber;
+  }
+  if (functionId === YB_PLUGIN_FUNCTION_ID.ID_CARD) {
+    throw new YbPluginError('读身份证未返回有效证件号', 'EMPTY');
+  }
+
   if (typeof json.data === 'string' && json.data.trim()) {
     return json.data.trim();
   }
 
-  throw new YbPluginError('读卡插件未返回有效的 MAC/IP', 'EMPTY');
+  // FunctionId 5/6：MAC / IP 可能在 OUT_INFO 等字段
+  const plain =
+    pickJsonString(json, 'OUT_INFO', 'OutInfo', 'Mac', 'mac', 'Ip', 'ip') ||
+    (typeof json.result === 'string' ? json.result.trim() : '');
+  if (plain) {
+    return plain;
+  }
+
+  throw new YbPluginError(
+    functionId === YB_PLUGIN_FUNCTION_ID.SIGN_MAC || functionId === YB_PLUGIN_FUNCTION_ID.LOCAL_IP
+      ? '读卡插件未返回有效的 MAC/IP'
+      : '读卡插件未返回有效数据',
+    'EMPTY',
+  );
 }
 
 /** 调用本地医保读卡插件 */
@@ -708,6 +747,98 @@ export async function invokeYbPlugin(
   }
 
   return parsePluginPlainText(text, data.FunctionId);
+}
+
+function parseIdCardResponse(text: string): YbIdCardReadResult {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    throw new YbPluginError('读身份证未返回有效信息', 'EMPTY');
+  }
+
+  // 兼容旧插件：成功时直接返回证件号明文
+  if (!trimmed.startsWith('{')) {
+    const idNumber = trimmed.toUpperCase();
+    if (!idNumber) {
+      throw new YbPluginError('读身份证未返回有效证件号', 'EMPTY');
+    }
+    return { idNumber, name: '' };
+  }
+
+  let json: Record<string, unknown>;
+  try {
+    json = JSON.parse(trimmed) as Record<string, unknown>;
+  } catch {
+    throw new YbPluginError('读卡插件返回了无法解析的 JSON', 'PARSE');
+  }
+
+  const errText =
+    (typeof json.error === 'string' && json.error) ||
+    (typeof json.ErrorMessage === 'string' && json.ErrorMessage) ||
+    '';
+  const code = json.Code ?? json.code;
+  if (errText && (code === undefined || (code !== 0 && code !== '0'))) {
+    throw new YbPluginError(`读卡插件：${errText}`, 'DLL');
+  }
+  if (code !== undefined && code !== 0 && code !== '0') {
+    const msg =
+      (typeof json.ErrorMessage === 'string' && json.ErrorMessage) ||
+      (typeof json.message === 'string' && json.message) ||
+      '调用失败';
+    throw new YbPluginError(`读卡插件：${msg}`, 'DLL');
+  }
+
+  const idNumber = pickJsonString(json, 'IdNumber', 'idNumber', 'idCardNo', 'certno').toUpperCase();
+  if (!idNumber) {
+    throw new YbPluginError('读身份证未返回有效证件号', 'EMPTY');
+  }
+  const signBuff =
+    pickJsonString(json, 'SignBuff', 'signBuff', 'BusiCardInfo', 'busiCardInfo') || undefined;
+  return {
+    idNumber,
+    name: pickJsonString(json, 'Name', 'name', 'psnName'),
+    gender: pickJsonString(json, 'Gender', 'gender') || undefined,
+    ethnicity: pickJsonString(json, 'Ethnicity', 'ethnicity') || undefined,
+    birthDate: pickJsonString(json, 'BirthDate', 'birthDate') || undefined,
+    address: pickJsonString(json, 'Address', 'address') || undefined,
+    signBuff: signBuff || undefined,
+  };
+}
+
+/** 读身份证并解析证件号/姓名（挂号回填患者信息） */
+export async function invokeIdCardRead(
+  data: YbPluginInitInput,
+  pluginUrl = getYbPluginDataUrl(),
+  timeoutMs = PLUGIN_FETCH_TIMEOUT_MS,
+): Promise<YbIdCardReadResult> {
+  const url = normalizeDataUrl(pluginUrl);
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(
+      url,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        body: JSON.stringify({ ...data, FunctionId: YB_PLUGIN_FUNCTION_ID.ID_CARD }),
+      },
+      timeoutMs,
+    );
+  } catch (error) {
+    if (error instanceof YbPluginError) {
+      throw error;
+    }
+    throw new YbPluginError(formatYbPluginError(error, url), 'NETWORK', url);
+  }
+
+  const text = await response.text();
+  if (!response.ok) {
+    throw new YbPluginError(
+      `读卡插件 HTTP ${response.status}`,
+      'HTTP',
+      text.slice(0, 200) || undefined,
+    );
+  }
+
+  return parseIdCardResponse(text);
 }
 
 /** 读社保卡并解析就诊凭证（1101/2201 同口径：有卡串则 03，否则有证号则 02） */
@@ -760,7 +891,7 @@ export async function fetchSignEndpointFromPlugin(
       PORT: port,
       TIMEOUT: 60,
       LOG_PATH: 'C:/neu_log/',
-      SFZ_DRIVER_TYPE: 0,
+      SFZ_DRIVER_TYPE: DEFAULT_SFZ_DRIVER_TYPE,
     },
     pluginUrl,
     PLUGIN_SIGN_MAC_TIMEOUT_MS,

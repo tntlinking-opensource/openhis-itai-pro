@@ -67,6 +67,8 @@ export interface CommonDiagnosisRowDto {
   tcmSyndromeGroup?: null | string;
   sourceEnum?: null | number;
   sourceEnumText?: null | string;
+  /** 条件模板主键：个人/科室常用解绑用 */
+  templateId?: null | string;
 }
 
 /** 与后端 OptionDto 对齐 */
@@ -105,12 +107,35 @@ export interface OpspFilingDiagnosisRowDto {
   conditionDefinitionName?: null | string;
   matchField?: null | string;
   diagnosisKind?: null | string;
+  /** 医保医疗类别：140104 门诊慢病 / 140201 门诊特病（5302A 分查） */
+  medicalTypeCode?: null | string;
 }
 
 export interface PatientOpspFilingDiagnosisResponse {
   /** false 时前端隐藏「慢病备案」入口（无 CHS） */
   opspFilingImportEnabled?: boolean | null;
   filingList?: OpspFilingDiagnosisRowDto[] | null;
+}
+
+/** ensureOpspFilingDiagnosis：未匹配慢病备案点击时补录 chronic_spec */
+export interface EnsureOpspFilingDiagnosisRequest {
+  encounterId: string;
+  patientId: string;
+  opspDiseCode: string;
+  opspDiseName?: null | string;
+}
+
+export interface EnsureOpspFilingDiagnosisResponse {
+  opspDiseCode?: null | string;
+  opspDiseName?: null | string;
+  conditionDefinitionId?: null | string;
+  conditionCode?: null | string;
+  conditionDefinitionName?: null | string;
+  diagnosisKind?: null | string;
+  /** 医保医疗类别：140104 / 140201 */
+  medicalTypeCode?: null | string;
+  /** true：本次对 chronic_spec 新建或启用；false：复用已有目录未写库 */
+  created?: boolean | null;
 }
 
 /** getConditionDefinitionMetadata */
@@ -228,4 +253,32 @@ export interface BindCommonDiagnosisResponse {
   message?: null | string;
   personalBoundCount?: null | number;
   departmentBoundCount?: null | number;
+}
+
+/** listMaintainableCommonDiagnoses：可维护常用诊断行（含模板主键） */
+export interface MaintainableCommonDiagnosisRowDto {
+  templateId?: null | string;
+  conditionDefinitionId?: null | string;
+  conditionCode?: null | string;
+  conditionDefinitionName?: null | string;
+  diagnosisKind?: null | string;
+  diagnosisKindText?: null | string;
+  ybNo?: null | string;
+  sortWeight?: null | number;
+}
+
+export interface ListMaintainableCommonDiagnosesResponse {
+  personalList?: MaintainableCommonDiagnosisRowDto[] | null;
+  departmentList?: MaintainableCommonDiagnosisRowDto[] | null;
+}
+
+/** unbindCommonDiagnosis */
+export interface UnbindCommonDiagnosisRequest {
+  templateIds: string[];
+}
+
+export interface UnbindCommonDiagnosisResponse {
+  success?: boolean | null;
+  message?: null | string;
+  unboundCount?: null | number;
 }

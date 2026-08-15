@@ -99,30 +99,30 @@ export default defineConfig(async () => {
           // 公开健康检查（须在通用 /api 之前；后端在 /api/health，非 /api/app）
           '/api/health': {
             changeOrigin: true,
-            target: 'http://127.0.0.1:8081',
+            target: 'http://172.16.101.2:8882',
           },
           // iMEC 监护仪 API 代理（必须放在 /api 之前，优先匹配）
           // 前端 requestClient baseURL=/api，实际请求路径为 /api/imec/xxx
           '/api/imec': {
             changeOrigin: true,
             rewrite: (path: string) => path.replace(/^\/api/, ''),
-            target: 'http://127.0.0.1:8081',
+            target: 'http://172.16.101.2:8882',
           },
           // iMEC WebSocket STOMP 代理
           '/ws': {
             changeOrigin: true,
-            target: 'http://127.0.0.1:8081',
+            target: 'http://172.16.101.2:8882',
             ws: true,
           },
           '/api': {
             changeOrigin: true,
             rewrite: (path: string) => path.replace(/^\/api/, ''),
-            target: 'http://127.0.0.1:8081/api/app',
+            target: 'http://172.16.101.2:8882/api/app',
             ws: true,
           },
           '/uploads': {
             changeOrigin: true,
-            target: 'http://127.0.0.1:8081',
+            target: 'http://172.16.101.2:8882',
           },
         },
       },

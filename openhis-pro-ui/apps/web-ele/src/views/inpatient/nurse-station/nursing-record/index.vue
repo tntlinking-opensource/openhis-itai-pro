@@ -52,6 +52,15 @@ import {
 
 interface Props {
   patients?: NurseStationModulePatient[];
+  /** 只读：禁止新增/保存/删除与字段编辑，医生站查看用 */
+  readonly?: boolean;
+  /**
+   * 首选查询日起（yyyy-MM-dd）；病案首页等嵌入场景按入院日带入。
+   * 与 preferredDateTo 同时有值时覆盖默认「本周」。
+   */
+  preferredDateFrom?: string;
+  /** 首选查询日止（yyyy-MM-dd）；出院日或今日 */
+  preferredDateTo?: string;
 }
 
 interface NurseSignatureOption {
@@ -65,6 +74,9 @@ defineOptions({
 
 const props = withDefaults(defineProps<Props>(), {
   patients: () => [],
+  readonly: false,
+  preferredDateFrom: undefined,
+  preferredDateTo: undefined,
 });
 
 const userStore = useUserStore();
@@ -78,9 +90,19 @@ const savingAll = ref(false);
 const deletingRowId = ref('');
 const pageInitialized = ref(false);
 
-const defaultWeekRange = resolveCurrentWeekRange();
-/** 查询区间（默认本周，可改任意起止日） */
-const queryDateRange = ref<[string, string]>([defaultWeekRange.from, defaultWeekRange.to]);
+/** 解析嵌入场景首选日期区间；非法则回落本周 */
+function resolveInitialQueryRange(): [string, string] {
+  const from = (props.preferredDateFrom ?? '').trim().slice(0, 10);
+  const to = (props.preferredDateTo ?? '').trim().slice(0, 10);
+  if (from && to && from <= to) {
+    return [from, to];
+  }
+  const weekRange = resolveCurrentWeekRange();
+  return [weekRange.from, weekRange.to];
+}
+
+/** 查询区间（默认本周；病案嵌入可带入入院～出院/今日） */
+const queryDateRange = ref<[string, string]>(resolveInitialQueryRange());
 /** 护理记录打印中 */
 const printingRecord = ref(false);
 
@@ -235,6 +257,9 @@ function handleQueryCurrentWeek() {
 
 /** 纸质单新增额外时点行：带入当前时间与登录人签名 */
 function handlePaperAddRow() {
+  if (props.readonly) {
+    return;
+  }
   const now = getNowDateTime();
   const nurseSignature = defaultNurseSignatureValue.value || nurseOptions.value[0]?.value || '';
   recordList.value.push({
@@ -250,6 +275,9 @@ function handlePaperAddRow() {
 
 /** 纸质单批量保存全部未保存行 */
 async function handlePaperSaveAll() {
+  if (props.readonly) {
+    return;
+  }
   const context = selectedPatientContext.value;
   if (!context) {
     ElMessage.warning('请先选择患者');
@@ -282,6 +310,9 @@ async function handlePaperSaveAll() {
 
 /** 删除额外行；已落库行调删除接口 */
 async function handlePaperDeleteRow(id: string) {
+  if (props.readonly) {
+    return;
+  }
   const context = selectedPatientContext.value;
   const target = recordList.value.find((item) => item.id === id);
   if (!target || target.rowType !== 'extra') {
@@ -311,6 +342,9 @@ async function handlePaperDeleteRow(id: string) {
 
 /** 纸质单字段变更时标记未保存 */
 function handlePaperMarkDirty(id: string) {
+  if (props.readonly) {
+    return;
+  }
   const target = recordList.value.find((item) => item.id === id);
   if (!target) {
     return;
@@ -382,6 +416,24 @@ watch(
     void loadNursingRecords();
   },
 );
+
+/** 病案嵌入：父级带入首选日期后同步区间并重查 */
+watch(
+  () => [props.preferredDateFrom, props.preferredDateTo] as const,
+  ([fromRaw, toRaw]) => {
+    const from = (fromRaw ?? '').trim().slice(0, 10);
+    const to = (toRaw ?? '').trim().slice(0, 10);
+    if (!from || !to || from > to) {
+      return;
+    }
+    const [curFrom, curTo] = queryDateRange.value;
+    if (curFrom === from && curTo === to) {
+      return;
+    }
+    queryDateRange.value = [from, to];
+    void loadNursingRecords();
+  },
+);
 </script>
 
 <template>
@@ -407,6 +459,7 @@ watch(
         :default-nurse-signature-label="defaultNurseSignatureValue"
         :saving-all="savingAll"
         :unsaved-count="paperUnsavedCount"
+        :readonly="readonly"
         @add-row="handlePaperAddRow"
         @delete-row="handlePaperDeleteRow"
         @mark-dirty="handlePaperMarkDirty"

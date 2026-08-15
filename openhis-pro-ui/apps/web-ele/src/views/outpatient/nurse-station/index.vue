@@ -31,6 +31,8 @@ import { useUserStore } from '@vben/stores';
 import { useDebounceFn } from '@vueuse/core';
 import { ElMessage, ElMessageBox } from 'element-plus';
 
+import type { OptionDto } from '#/api/outpatient-registration';
+
 import {
   httpBatchCancelDisposition,
   httpBatchPerformDisposition,
@@ -44,9 +46,9 @@ import {
   httpQueryEncounterTreatmentSheet,
   httpSaveOutpatientSkinTestRecord,
 } from '#/api/outpatient-nurse-station/outpatient-nurse-station.http';
+import { httpListDepartments } from '#/api/outpatient-registration';
 import { usePrintClientWarmup } from '#/composables/use-print-client-warmup';
 import StationTriPaneLayout from '#/components/layouts/station-tri-pane-layout.vue';
-import { useAuthStore } from '#/store';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { getLocalDayRangeDateTimeStrings } from '#/utils/format/date-range-quick';
 import { NURSE_SUPPLY_ROOM_REQUIRED } from '#/views/outpatient/nurse-station/constants/nurse-supply-room.config';
@@ -105,12 +107,15 @@ function resolveEncounterIdForApi(raw: string): string {
   return preserveApiIdForRequest(raw) ?? '';
 }
 
-const authStore = useAuthStore();
 const userStore = useUserStore();
 
 const keyword = ref('');
 const defaultQueueListDate = new Date().toISOString().slice(0, 10);
 const selectedQueueListDate = ref(defaultQueueListDate);
+/** 开立科室筛选：空串=全部（默认） */
+const selectedOrgId = ref('');
+/** 可挂号科室下拉（开立科室选项） */
+const orgOptions = ref<OptionDto[]>([]);
 const selectedPatientId = ref('');
 const selectedExecuteKeys = ref<string[]>([]);
 const selectedSupplyIds = ref<string[]>([]);
@@ -338,15 +343,18 @@ const appendRecord = (payload: Omit<ActionRecord, 'id' | 'operator' | 'result' |
   });
 };
 
-/** 拉取护士站患者队列（按科室与就诊日） */
-async function loadPatientQueue() {
-  const organizationId = preserveApiIdForRequest(authStore.getSelectedOrganization()) ?? '';
-  if (!organizationId) {
-    ElMessage.warning('请先选择科室');
-    patients.value = [];
-    selectedPatientId.value = '';
-    return;
+/** 加载开立科室下拉（可挂号科室；失败不阻塞队列） */
+async function loadOrgOptions() {
+  try {
+    const res = await httpListDepartments({});
+    orgOptions.value = res?.departmentOptions ?? [];
+  } catch {
+    orgOptions.value = [];
   }
+}
+
+/** 拉取护士站患者队列（可选开立科室 + 就诊日；默认全部科室） */
+async function loadPatientQueue() {
   queueLoading.value = true;
   try {
     const day = selectedQueueListDate.value.trim();
@@ -357,8 +365,10 @@ async function loadPatientQueue() {
       selectedPatientId.value = '';
       return;
     }
+    // 空串不传 orgId，后端按全部开立科室返回
+    const orgId = preserveApiIdForRequest(selectedOrgId.value) || undefined;
     const res = await httpPageNurseStationPatientQueue({
-      organizationId,
+      orgId,
       keyword: keyword.value.trim() || undefined,
       startDate,
       endDate,
@@ -383,6 +393,11 @@ async function loadPatientQueue() {
   } finally {
     queueLoading.value = false;
   }
+}
+
+/** 开立科室变更：立即重拉队列 */
+function handleOrgChange() {
+  void loadPatientQueue();
 }
 
 const debouncedReloadQueueByKeyword = useDebounceFn(() => {
@@ -664,6 +679,7 @@ watch(keyword, () => {
 });
 
 onMounted(() => {
+  void loadOrgOptions();
   void loadPatientQueue();
   void loadSupplyRoomOptions();
   void loadSkinTestPageInit();
@@ -1164,9 +1180,12 @@ async function handleCancelProcedureDialogConfirm(procedureIds: string[]) {
       <NurseQueuePanel
         v-model:keyword="keyword"
         v-model:queue-date="selectedQueueListDate"
+        v-model:org-id="selectedOrgId"
         :filtered-patients="patients"
+        :org-options="orgOptions"
         :queue-loading="queueLoading"
         :selected-patient-id="selectedPatientId"
+        @org-change="handleOrgChange"
         @queue-date-change="handleQueueListDateChange"
         @refresh="loadPatientQueue"
         @select-patient="handleSelectPatient"

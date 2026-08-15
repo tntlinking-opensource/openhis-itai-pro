@@ -5,6 +5,7 @@ import type { ApiOptionItem, PageParams } from '#/types/api-response';
 import type { BinaryExportResult } from '#/utils/export/download-binary-export';
 
 import { publicRequestClient } from '#/api/request';
+import { reportLongRequestConfig } from '#/constants/report-request-timeout';
 
 const BASE = '/inpatientInOutDetailReport';
 
@@ -60,7 +61,13 @@ export interface InpatientInOutDetailRowDto {
   bedName?: string;
   startTime?: string;
   endTime?: string;
+  /** 住院天数（即进不计出；在院含当日）。 */
+  inpatientDays?: number | null;
   transferTargetText?: string;
+  /** 费用性质合同业务号（入院身份）。 */
+  feeNatureContractNo?: string;
+  /** 费用性质展示（入院身份：用什么入院就是什么）。 */
+  feeNatureDisplay?: string;
   settledFeeAmount?: number | string | null;
   transferred?: boolean;
 }
@@ -114,6 +121,7 @@ export async function pageInpatientInOutDetailReportApi(
   return publicRequestClient.post<PageInpatientInOutDetailReportResponse>(
     `${BASE}/pageInpatientInOutDetailReport`,
     body,
+    reportLongRequestConfig(),
   );
 }
 
@@ -124,5 +132,6 @@ export async function exportInpatientInOutDetailReportApi(
   return publicRequestClient.post<ExportInpatientInOutDetailReportResponse>(
     `${BASE}/exportInpatientInOutDetailReport`,
     body,
+    reportLongRequestConfig(),
   );
 }

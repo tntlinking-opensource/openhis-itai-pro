@@ -90,7 +90,7 @@ function handleRemoveCustomShortcut(routeName: string) {
         @remove="handleRemoveCustomShortcut"
       />
 
-      <div v-if="filteredGroups.length > 0" class="workbench-home__groups">
+      <div v-if="(filteredGroups?.length ?? 0) > 0" class="workbench-home__groups">
         <WorkbenchGroupSection
           v-for="group in filteredGroups"
           :key="group.config.id"
@@ -102,7 +102,7 @@ function handleRemoveCustomShortcut(routeName: string) {
       <ElEmpty
         v-else
         class="workbench-home__empty"
-        :description="totalShortcutCount > 0 ? '未找到匹配的菜单' : '暂无可用快捷入口'"
+        :description="(totalShortcutCount ?? 0) > 0 ? '未找到匹配的菜单' : '暂无可用快捷入口'"
       />
     </div>
   </Page>

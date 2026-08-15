@@ -197,6 +197,7 @@ onMounted(async () => {
     </template>
 
     <DepartmentStockInMainPane
+      :queue-card-row="selectedOrder"
       class="min-h-0 flex-1"
       :bus-no="selectedBusNo"
       :reset-key="mainPaneResetKey"

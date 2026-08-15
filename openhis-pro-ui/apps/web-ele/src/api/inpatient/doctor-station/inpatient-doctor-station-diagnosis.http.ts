@@ -19,6 +19,16 @@ export const httpGetInpatientConditionDefinitionMetadata =
 /** 全量保存就诊诊断（批次替换） */
 export const httpSaveInpatientDoctorDiagnosis = inpatientDiagnosisHttp.httpSaveDoctorDiagnosis;
 
+/** 追加个人/科室常用诊断模板绑定 */
+export const httpBindInpatientCommonDiagnosis = inpatientDiagnosisHttp.httpBindCommonDiagnosis;
+
+/** 列出当前登录可维护的个人/科室常用诊断 */
+export const httpListInpatientMaintainableCommonDiagnoses =
+  inpatientDiagnosisHttp.httpListMaintainableCommonDiagnoses;
+
+/** 解绑个人/科室常用诊断模板 */
+export const httpUnbindInpatientCommonDiagnosis = inpatientDiagnosisHttp.httpUnbindCommonDiagnosis;
+
 /** 删除一条就诊诊断事实 */
 export const httpDelInpatientEncounterDiagnosis = inpatientDiagnosisHttp.httpDelEncounterDiagnosis;
 

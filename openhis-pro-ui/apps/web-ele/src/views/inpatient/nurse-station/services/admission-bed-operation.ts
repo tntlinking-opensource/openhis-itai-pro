@@ -99,7 +99,7 @@ export function buildAdmissionBedOperationIntent(
 /** 弹窗标题 */
 export function admissionBedDialogTitle(intent: AdmissionBedOperationIntent | null): string {
   if (!intent) {
-    return '入科选床';
+    return '患者体征卡';
   }
   if (intent.type === 'swap') {
     return '换床 · 床位互换';
@@ -113,7 +113,8 @@ export function admissionBedDialogTitle(intent: AdmissionBedOperationIntent | nu
 /** 主按钮文案 */
 export function admissionBedConfirmLabel(intent: AdmissionBedOperationIntent | null): string {
   if (!intent) {
-    return '入科';
+    // 已入科维护：保存医护/病情并关闭；有床位意图时才显示入科/换床确认
+    return '保存入院信息';
   }
   if (intent.type === 'swap') {
     return '确认互换';

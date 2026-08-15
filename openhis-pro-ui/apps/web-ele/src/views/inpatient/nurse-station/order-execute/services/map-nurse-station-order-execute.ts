@@ -17,8 +17,22 @@ import { formatDateTime } from '@vben/utils';
 import dayjs from 'dayjs';
 
 import { mergeConsecutiveRowsByDrugGroup } from '#/utils/doctor-station/drug-group-table';
+import { formatLongTermMedicationDoseLine } from '#/utils/doctor-station/medication-dose-display';
+import {
+  buildMedicationContentTitleWithPackageSplit,
+  mergePackageSplitIntoSpec,
+} from '#/utils/doctor-station/package-split-ratio-display';
 import { formatMoneyYuanWithSymbol } from '#/utils/format/money-scale';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import {
+  SERVICE_CATEGORY_DISCHARGE,
+  SERVICE_CATEGORY_ENTRUST,
+  SERVICE_CATEGORY_NURSING,
+  SERVICE_CATEGORY_PROOF,
+  SERVICE_CATEGORY_TEST,
+  SERVICE_CATEGORY_TRANSFER,
+  SERVICE_CATEGORY_TREATMENT,
+} from '#/utils/print/constants/service-request-category-codes';
 
 /** 表格行：医嘱展示 + 当前 Tab 对应槽位分组 */
 export interface NurseStationOrderExecuteTableRow {
@@ -43,6 +57,11 @@ export interface NurseStationOrderExecuteTableRow {
   content: string;
   dosage: string;
   extension?: string;
+  /** 开立时间+开立人（BR-IP-ORD-031） */
+  startTimeDisplay: string;
+  /** 停嘱时间+停嘱人；无停嘱时为空 */
+  stopTimeDisplay?: string;
+  /** 开立/停嘱合并文案（兼容检索/导出） */
   startStopText: string;
   /** 请求状态 code */
   statusEnum?: string;
@@ -64,6 +83,10 @@ export interface NurseStationOrderExecuteTableRow {
   methodCode?: string;
   /** 是否输液相关（与 methodCode 一并用于贴签判定） */
   infusionFlag?: boolean;
+  /** 输液滴速编码（打印/回填；与 DTO speedCode 同源） */
+  speedCode?: string;
+  /** 输液滴速展示名（列表扩展行与瓶签打印用） */
+  speedDisplay?: string;
   planSchedules: NurseStationOrderExecutePlanSchedule[];
   bindItems: NurseStationOrderExecuteBindItemDto[];
   /**
@@ -95,7 +118,7 @@ export interface NurseStationOrderExecutePlanSlot {
   /** 计划时点（occurrence；写路径与勾选键始终用此值） */
   planTime: string;
   /**
-   * 待执行建议实际时分（后端 defaultActualTime；首次槽=开嘱、停嘱日末槽=停嘱）。
+   * 待执行建议实际时分（后端 defaultActualTime；首次槽=开立+2分钟、停嘱日末槽=停嘱）。
    * 写路径不改时分时优先于 planTime。
    */
   defaultActualTime?: string;
@@ -138,7 +161,7 @@ export function resolveExecuteScheduleColumnLabel(executeTab: NurseStationOrderE
 
 /**
  * 解析槽位「时间列」展示时刻（逻辑键 / 勾选 / 写路径仍锚 planTime）。
- * 待执行：优先 defaultActualTime（开嘱日首次=开嘱、停嘱日末=停嘱）；
+ * 待执行：优先 defaultActualTime（开嘱日首次=开立+2分钟、停嘱日末=停嘱）；
  * 已执行：优先 recordedTime。
  */
 function resolveSlotDisplayInstant(
@@ -211,7 +234,7 @@ function buildExecuteTypeLabel(dto: NurseStationOrderExecuteRowDto): string {
   return therapy === '—' ? kind || '—' : therapy;
 }
 
-/** 医嘱名称摘要：名称 + 规格；中药方折叠行仅用方级展示名 */
+/** 医嘱名称摘要：名称【5mg1片x100】；中药方折叠行仅用方级展示名 */
 function buildExecuteContentTitle(dto: NurseStationOrderExecuteRowDto): string {
   if (dto.tcmFlag === true) {
     const collapsedName = String(dto.adviceDisplayName ?? '').trim();
@@ -219,11 +242,11 @@ function buildExecuteContentTitle(dto: NurseStationOrderExecuteRowDto): string {
   }
   const name = String(dto.adviceDisplayName ?? '').trim();
   const spec = String(dto.specificationText ?? '').trim();
-  if (name && spec) return `${name}【${spec}】`;
-  return name || spec || '—';
+  const title = buildMedicationContentTitleWithPackageSplit(name, spec, dto.packageSplitRatioText);
+  return title || '—';
 }
 
-/** 剂量/数量：中药方展示各味单次量 + 付数 */
+/** 剂量/数量：长期「一次一片，每日三片」；中药方展示各味单次量 + 付数 */
 function buildExecuteDosageDisplay(dto: NurseStationOrderExecuteRowDto): string {
   if (dto.tcmFlag === true) {
     const singleDose = String(dto.dosageDisplay ?? '').trim();
@@ -236,6 +259,17 @@ function buildExecuteDosageDisplay(dto: NurseStationOrderExecuteRowDto): string 
       return `${singleDose} ${fuText}`;
     }
     return singleDose || fuText || '—';
+  }
+  // 长期药：单次量 + 日总量（频次在用法行）
+  const therapy = String(dto.therapyEnum ?? '')
+    .trim()
+    .toUpperCase();
+  if (therapy === 'LONG_TERM') {
+    const longTermLine = formatLongTermMedicationDoseLine({
+      dosageDisplay: dto.dosageDisplay,
+      dailyDoseDisplay: dto.dailyDoseDisplay,
+    });
+    if (longTermLine) return longTermLine;
   }
   return String(dto.dosageDisplay ?? '').trim() || '—';
 }
@@ -250,16 +284,19 @@ function mapLineRequestIds(
   return mapped.length > 0 ? mapped : undefined;
 }
 
-/** 用法、频次拼成扩展行 */
-/** 用法、频次、备注拼成扩展行 */
+/** 用法、频次、滴速、备注拼成扩展行 */
 function buildExecuteExtensionLine(dto: NurseStationOrderExecuteRowDto): string {
   const parts: string[] = [];
   const usage = String(dto.usageDisplay ?? '').trim();
   const freq = String(dto.frequencyDisplay ?? '').trim();
+  const speed = String(dto.speedDisplay ?? '').trim();
   if (usage && freq) {
     parts.push(`${usage}，${freq}`);
   } else if (usage || freq) {
     parts.push(usage || freq);
+  }
+  if (speed) {
+    parts.push(`滴速：${speed}`);
   }
   const remark = String(dto.remark ?? '').trim();
   if (remark) {
@@ -268,23 +305,24 @@ function buildExecuteExtensionLine(dto: NurseStationOrderExecuteRowDto): string 
   return parts.join('；');
 }
 
-/** 开始/终止时间展示 */
-function buildStartStopText(dto: NurseStationOrderExecuteRowDto): string {
+/** 开立/停嘱时间分行文案（时间后跟人名，BR-IP-ORD-031） */
+function buildStartStopParts(dto: NurseStationOrderExecuteRowDto): {
+  start: string;
+  stop: string;
+} {
   const startRaw = String(dto.reqOpenedTime ?? '').trim();
   const stopRaw = String(dto.stopTime ?? '').trim();
   const requester = String(dto.requesterName ?? '').trim();
   const stopper = String(dto.stopperName ?? '').trim();
   let start = startRaw ? formatDateTime(startRaw) : '';
   let stop = stopRaw ? formatDateTime(stopRaw) : '';
-  // 开立/停嘱时间后跟人名（BR-IP-ORD-031）
   if (start && requester) {
     start = `${start} ${requester}`;
   }
   if (stop && stopper) {
     stop = `${stop} ${stopper}`;
   }
-  if (start && stop) return `${start}\n${stop}`;
-  return start || stop || '—';
+  return { start: start || '—', stop };
 }
 
 /** 按 executeTab 取当前应展示的槽位列表 */
@@ -568,6 +606,8 @@ export function mapExecuteRowDtoToTableRow(
     .toUpperCase();
   const statusDisplay = String(dto.statusEnumText ?? '').trim() || '—';
   const groupId = String(dto.groupId ?? dto.groupNo ?? '').trim() || undefined;
+  // 开立/停嘱分行，供列表醒目展示停嘱行
+  const startStopParts = buildStartStopParts(dto);
 
   return {
     id,
@@ -588,7 +628,11 @@ export function mapExecuteRowDtoToTableRow(
     content: buildExecuteContentTitle(dto),
     dosage: buildExecuteDosageDisplay(dto),
     extension: buildExecuteExtensionLine(dto) || undefined,
-    startStopText: buildStartStopText(dto),
+    startTimeDisplay: startStopParts.start,
+    stopTimeDisplay: startStopParts.stop || undefined,
+    startStopText: startStopParts.stop
+      ? `${startStopParts.start}\n${startStopParts.stop}`
+      : startStopParts.start,
     statusEnum: statusEnum || undefined,
     statusDisplay,
     executeDeptDisplay: String(dto.performerCheckOrgDisplay ?? '').trim() || '—',
@@ -599,6 +643,8 @@ export function mapExecuteRowDtoToTableRow(
     stopTime: String(dto.stopTime ?? '').trim() || undefined,
     methodCode: String(dto.methodCode ?? '').trim() || undefined,
     infusionFlag: dto.infusionFlag === true ? true : dto.infusionFlag === false ? false : undefined,
+    speedCode: String(dto.speedCode ?? '').trim() || undefined,
+    speedDisplay: String(dto.speedDisplay ?? '').trim() || undefined,
     planSchedules: groupSlotsByDate(
       orderId,
       orderType,
@@ -617,17 +663,35 @@ export function mapExecuteRowDtoToTableRow(
 
 /** 成组括线展示项：对齐门诊护士站 */
 function executeDtoToDrugGroupItem(dto: NurseStationOrderExecuteRowDto): DrugGroupDisplayItem {
+  const therapy = String(dto.therapyEnum ?? '')
+    .trim()
+    .toUpperCase();
+  // 长期：单次+日总量；瓶贴打印与列表剂量列同源
+  const longTermDoseLine =
+    therapy === 'LONG_TERM'
+      ? formatLongTermMedicationDoseLine({
+          dosageDisplay: dto.dosageDisplay,
+          dailyDoseDisplay: dto.dailyDoseDisplay,
+        })
+      : '';
+  const doseText = longTermDoseLine || String(dto.dosageDisplay ?? '').trim();
   return {
     selectedDrugName: String(dto.adviceDisplayName ?? '').trim(),
-    selectedDrugSpec: String(dto.specificationText ?? '').trim(),
+    selectedDrugSpec: mergePackageSplitIntoSpec(
+      String(dto.specificationText ?? '').trim(),
+      dto.packageSplitRatioText,
+    ),
     pharmacy: '',
-    singleDose: String(dto.dosageDisplay ?? '').trim(),
+    singleDose: doseText,
     doseSubUnit: '',
     totalAmount: '',
     totalAmountUnit: '',
     usage: String(dto.usageDisplay ?? '').trim(),
     frequency: String(dto.frequencyDisplay ?? '').trim(),
     medicationDays: '',
+    dosageDisplay: doseText || undefined,
+    speedDisplay:
+      String(dto.speedDisplay ?? '').trim() || String(dto.speedCode ?? '').trim() || undefined,
   };
 }
 
@@ -646,6 +710,24 @@ function executeMedicationGroupMergeKey(dto: NurseStationOrderExecuteRowDto): Dr
   return gid === '' ? '' : gid;
 }
 
+/** 成组同滴速：取组内首条非空 speedDisplay/speedCode（溶媒首行常为空） */
+function pickGroupSpeedFromExecuteSlice(slice: readonly NurseStationOrderExecuteRowDto[]): {
+  speedCode?: string;
+  speedDisplay?: string;
+} {
+  for (const dto of slice) {
+    const speedDisplay = String(dto.speedDisplay ?? '').trim();
+    const speedCode = String(dto.speedCode ?? '').trim();
+    if (speedDisplay || speedCode) {
+      return {
+        speedCode: speedCode || undefined,
+        speedDisplay: speedDisplay || undefined,
+      };
+    }
+  }
+  return {};
+}
+
 /**
  * 相同 groupId 且连续的西药行合并为一行，挂 groupItems；槽位取代表行（组员同频次）。
  * 写路径回传 lineRequestIds，后端按成组/方级扩行。
@@ -660,21 +742,31 @@ function mergeExecuteMedicationRowsForDisplay(
     buildMergedRow: ({ slice, groupItems }) => {
       const members = slice.map((dto) => mapExecuteRowDtoToTableRow(dto, executeTab));
       const firstMember = members[0];
-      if (firstMember === undefined) {
+      const headDto = slice[0];
+      if (firstMember === undefined || headDto === undefined) {
         throw new Error('mergeExecuteMedicationRowsForDisplay: empty slice');
       }
       if (members.length === 1) {
         return { ...firstMember };
       }
       const lineRequestIds = members.map((m) => m.orderId).filter((id) => id.length > 0);
-      const gid = String(slice[0]?.groupId ?? slice[0]?.groupNo ?? '').trim();
+      const gid = String(headDto.groupId ?? headDto.groupNo ?? '').trim();
       const idPart = lineRequestIds.join('&');
+      const groupSpeed = pickGroupSpeedFromExecuteSlice(slice);
+      const extensionDto: NurseStationOrderExecuteRowDto = {
+        ...headDto,
+        speedCode: groupSpeed.speedCode ?? headDto.speedCode,
+        speedDisplay: groupSpeed.speedDisplay ?? headDto.speedDisplay,
+      };
       return {
         ...firstMember,
         id: gid ? `merged-med-${gid}-${idPart}` : `merged-med-${idPart}`,
         groupItems,
         mergedMedicationMembers: members,
         lineRequestIds,
+        speedCode: groupSpeed.speedCode ?? firstMember.speedCode,
+        speedDisplay: groupSpeed.speedDisplay ?? firstMember.speedDisplay,
+        extension: buildExecuteExtensionLine(extensionDto) || undefined,
       };
     },
   });
@@ -725,8 +817,10 @@ export function indexExecuteGroupsByEncounterId(
 }
 
 /**
- * 医嘱执行「项目类型」多选（UI code；与后端 medicineCategoryTab 不同）。
- * 检验 = categoryEnum 22；检查 = 23；治疗 = 21；嘱托 = 52。
+ * 医嘱执行「项目类型」快捷筛选（UI code；与后端 medicineCategoryTab 不同）。
+ * 检验=22、检查=23、治疗=21、嘱托=52。
+ * 空选=查全部（仅排除护理=26/转科=32/出院=34）；勾选才按快捷类型收窄。
+ * 会诊等未挂快捷项的医嘱不归类、也不因白名单被抹掉。
  */
 export type NurseStationOrderExecuteProjectType =
   | 'entrust'
@@ -736,7 +830,7 @@ export type NurseStationOrderExecuteProjectType =
   | 'treatment'
   | 'west';
 
-/** 项目类型全量（空选时按全选处理） */
+/** 快捷筛选可选项（仅用于勾选收窄；空选不依赖本列表） */
 export const NURSE_STATION_ORDER_EXECUTE_PROJECT_TYPES: NurseStationOrderExecuteProjectType[] = [
   'west',
   'tcm',
@@ -746,7 +840,17 @@ export const NURSE_STATION_ORDER_EXECUTE_PROJECT_TYPES: NurseStationOrderExecute
   'entrust',
 ];
 
-/** 行归属的项目类型（用 orderType / tcmFlag / categoryEnum，禁止用展示文案） */
+/** 执行列表永不展示的诊疗类目（护理级别 / 转科 / 出院） */
+const EXECUTE_LIST_EXCLUDED_SERVICE_CATEGORIES = new Set([
+  SERVICE_CATEGORY_NURSING,
+  SERVICE_CATEGORY_TRANSFER,
+  SERVICE_CATEGORY_DISCHARGE,
+]);
+
+/**
+ * 行是否命中某快捷筛选项（用 orderType / tcmFlag / categoryEnum）。
+ * 未挂快捷项的诊疗（如会诊）返回 null，空选时仍展示。
+ */
 export function resolveExecuteRowProjectType(
   row: Pick<NurseStationOrderExecuteTableRow, 'categoryEnum' | 'orderType' | 'tcmFlag'>,
 ): NurseStationOrderExecuteProjectType | null {
@@ -757,29 +861,44 @@ export function resolveExecuteRowProjectType(
     return 'west';
   }
   const category = String(row.categoryEnum ?? '').trim();
-  if (category === '22') {
+  if (EXECUTE_LIST_EXCLUDED_SERVICE_CATEGORIES.has(category)) {
+    return null;
+  }
+  if (category === SERVICE_CATEGORY_PROOF) {
     return 'lab';
   }
-  if (category === '23') {
+  if (category === SERVICE_CATEGORY_TEST) {
     return 'exam';
   }
-  if (category === '21') {
+  if (category === SERVICE_CATEGORY_TREATMENT) {
     return 'treatment';
   }
-  if (category === '52') {
+  if (category === SERVICE_CATEGORY_ENTRUST) {
     return 'entrust';
   }
   return null;
 }
 
-/** 按项目类型多选过滤表格行；selected 为空视为全选 */
+/**
+ * 项目类型快捷过滤：空选仅排除护理/转科/出院；有勾选再按快捷类型收窄。
+ */
 export function filterExecuteRowsByProjectTypes(
   rows: NurseStationOrderExecuteTableRow[],
   selected: readonly NurseStationOrderExecuteProjectType[],
 ): NurseStationOrderExecuteTableRow[] {
-  const effective = selected.length > 0 ? selected : NURSE_STATION_ORDER_EXECUTE_PROJECT_TYPES;
-  const allowed = new Set(effective);
+  const quickFilterOn = selected.length > 0;
+  const allowed = quickFilterOn ? new Set(selected) : null;
   return rows.filter((row) => {
+    const category = String(row.categoryEnum ?? '').trim();
+    // 排除法：护理/转科/出院永不展示
+    if (EXECUTE_LIST_EXCLUDED_SERVICE_CATEGORIES.has(category)) {
+      return false;
+    }
+    // 空选：其余医嘱全部保留（含会诊等未挂快捷项）
+    if (!allowed) {
+      return true;
+    }
+    // 快捷勾选：仅保留命中项；未挂快捷项的行不进入勾选结果
     const projectType = resolveExecuteRowProjectType(row);
     return projectType !== null && allowed.has(projectType);
   });
@@ -840,12 +959,12 @@ export function filterExecuteIndexByProjectTypes(
 }
 
 /**
- * 组装单槽位 actualTime：不改时分则优先 defaultActualTime（首次=开嘱、停嘱日末=停嘱），否则 planTime；
+ * 组装单槽位 actualTime：不改时分则优先 defaultActualTime（首次=开立+2分钟、停嘱日末=停嘱），否则 planTime；
  * 改则日期钉死计划日、仅替换 HH:mm。
  *
  * @param planTime 计划时点（逻辑锚点，原样回传）
  * @param adjustHHmm 该槽右键「修改时间」的时分（如 08:20）；空则按默认/计划
- * @param defaultActualTime 后端建议实际时分（首次=开嘱，停嘱日末=停嘱）
+ * @param defaultActualTime 后端建议实际时分（首次=开立+2分钟，停嘱日末=停嘱）
  */
 export function resolveExecuteActualTime(
   planTime: string,
@@ -858,7 +977,7 @@ export function resolveExecuteActualTime(
   }
   const trimmed = String(adjustHHmm ?? '').trim();
   if (!trimmed) {
-    // 有 defaultActualTime 则用建议值（开嘱/停嘱），否则回落 planTime
+    // 有 defaultActualTime 则用建议值（开立+2分钟/停嘱），否则回落 planTime
     const fallback = String(defaultActualTime ?? '').trim();
     if (fallback) {
       const suggested = dayjs(fallback);
@@ -899,7 +1018,7 @@ export function mapSelectedSlotsToWriteItems(
     for (const schedule of row.planSchedules) {
       for (const slot of schedule.slots) {
         if (!selectedSlotKeys.has(slot.slotKey)) continue;
-        // 每槽独立：右键改时优先；否则 defaultActualTime（首次=开嘱）/ planTime
+        // 每槽独立：右键改时优先；否则 defaultActualTime（首次=开立+2分钟）/ planTime
         const slotAdjustHHmm = String(adjustHHmmBySlotKey?.[slot.slotKey] ?? '').trim() || null;
         const actualTime = resolveExecuteActualTime(
           slot.planTime,

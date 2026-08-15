@@ -19,6 +19,31 @@ import {
 } from './register-benefit.service';
 import { applyInsuranceSnapshotToRefs } from './register-patient-identity.service';
 
+/**
+ * 1101 成功后待遇查询应使用的费用性质：
+ * 优先后端异地切通道后的 resolvedContractId，其次合同推荐，否则沿用当前选择。
+ */
+function resolveTreatmentContractId(
+  requestedContractId: string,
+  preview: YbRegisterBenefitPreviewDto | null | undefined,
+  match: RegisterContractMatchDto | null | undefined,
+): string {
+  const resolved = String(preview?.resolvedContractId ?? '').trim();
+  if (resolved) {
+    return resolved;
+  }
+  const recommended = String(match?.recommendedContractId ?? '').trim();
+  if (
+    recommended &&
+    recommended !== requestedContractId &&
+    match?.matchStatus &&
+    match.matchStatus !== 'MATCH'
+  ) {
+    return recommended;
+  }
+  return requestedContractId;
+}
+
 export function useRegisterBenefit() {
   const benefitSyncing = ref(false);
   /** 2001/5301/5206 异步拉取中（人员与省市匹配已返回） */
@@ -31,6 +56,11 @@ export function useRegisterBenefit() {
   const lastYbIssuingAreaCode = ref('');
   const lastYbMediumType = ref('03');
   const lastYbCredentialReadAt = ref<null | number>(null);
+  /**
+   * 读卡 1101 成功后的人员编号。
+   * 费用性质切换（含改工伤）不清空；仅整页清空 / 新读卡会话清除。
+   */
+  const lastYbPsnNo = ref('');
   const lastContractId = ref('');
   const lastStudentId = ref('');
   const lastContractMatch = ref<null | RegisterContractMatchDto>(null);
@@ -53,6 +83,7 @@ export function useRegisterBenefit() {
     lastYbPsnName.value = '';
     lastYbIssuingAreaCode.value = '';
     lastYbCredentialReadAt.value = null;
+    lastYbPsnNo.value = '';
     lastContractId.value = '';
     lastStudentId.value = '';
     lastContractMatch.value = null;
@@ -98,12 +129,15 @@ export function useRegisterBenefit() {
       cumulativeInfoList: treatment.cumulativeInfoList ?? base.cumulativeInfoList,
       opspFilingList: treatment.opspFilingList ?? base.opspFilingList,
       treatmentBlocked: treatment.treatmentBlocked,
+      treatmentCheckAlert: treatment.treatmentCheckAlert,
+      treatmentCheckHint: treatment.treatmentCheckHint,
       treatmentInfoList: treatment.treatmentInfoList ?? base.treatmentInfoList,
     };
   }
 
   /**
    * 人员+省市匹配已就绪后，异步补齐 2001/5301/5206。
+   * 2001 失败由后端写入 hint，不阻断慢特病列表合并。
    */
   function scheduleTreatmentLoad(params: {
     contractId: string;
@@ -144,6 +178,10 @@ export function useRegisterBenefit() {
         }
         const merged = mergeTreatmentIntoPreview(current, treatmentPreview);
         lastYbPreview.value = merged;
+        // 省内 2001 失败：弹警告；跨省仅面板内「暂不可查」
+        if (merged.treatmentCheckAlert && merged.treatmentCheckHint?.trim()) {
+          ElMessage.warning(merged.treatmentCheckHint.trim());
+        }
         await params.onTreatmentReady?.(merged);
       } catch {
         // 全局 request 拦截器已展示提示；人员信息仍可用
@@ -203,15 +241,22 @@ export function useRegisterBenefit() {
           return null;
         }
         lastYbPreview.value = preview;
-        lastContractId.value = params.contractId;
+        lastYbPsnNo.value = preview.psnNo.trim();
         lastContractMatch.value = previewResult.contractMatch ?? null;
+        // 1101 异地切省通道或合同推荐：后续待遇查询走实际/推荐费用性质，避免仍打市通道
+        const treatmentContractId = resolveTreatmentContractId(
+          params.contractId,
+          preview,
+          lastContractMatch.value,
+        );
+        lastContractId.value = treatmentContractId;
         const personResult = {
           preview,
           contractMatch: lastContractMatch.value ?? undefined,
         };
         await params.onPersonReady?.(personResult);
         scheduleTreatmentLoad({
-          contractId: params.contractId,
+          contractId: treatmentContractId,
           medType: params.medType,
           onTreatmentReady: params.onTreatmentReady,
           personPreview: preview,
@@ -286,6 +331,10 @@ export function useRegisterBenefit() {
     const preview = previewResult.ybPreview;
     if (preview) {
       lastYbPreview.value = preview;
+      const psnNo = preview.psnNo?.trim();
+      if (psnNo) {
+        lastYbPsnNo.value = psnNo;
+      }
     }
     return preview ?? null;
   }
@@ -330,6 +379,7 @@ export function useRegisterBenefit() {
     lastYbMediumType,
     lastYbCredentialReadAt,
     lastYbPreview,
+    lastYbPsnNo,
     fillInsurancePatientNameIfEmpty,
     loadStudentBenefit,
     refreshTreatmentCheck,

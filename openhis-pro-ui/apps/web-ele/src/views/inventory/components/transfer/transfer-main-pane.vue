@@ -1,4 +1,4 @@
-<!--
+﻿<!--
   调拨入库/出库右侧主区：InvMainShell + InvDocActions + 单头 + 明细表格。
 -->
 <script setup lang="ts">
@@ -7,7 +7,7 @@ import type { ApiOptionItem } from '#/types/api-response';
 
 import type { FormInstance } from 'element-plus';
 
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch, onBeforeUnmount, onDeactivated } from 'vue';
 
 import { Trash2 } from '@vben/icons';
 import { formatDateTime } from '@vben/utils';
@@ -32,6 +32,10 @@ import {
 import { useInvDocDetailGrid } from '#/composables/use-inv-doc-detail-grid';
 import { useInvDocGridRowOps } from '#/composables/use-inv-doc-grid-row-ops';
 import { useInvDocParentSyncSession } from '#/composables/use-inv-doc-parent-sync-session';
+import {
+  clearInvDocDraftCacheAfterSave,
+  INV_DOC_DRAFT_SCENE,
+} from '#/utils/inventory/inv-doc-draft-cache';
 import {
   agreeTransferInApi,
   createTransferInApi,
@@ -139,13 +143,19 @@ import {
   resolveDefaultPractitionerIdForSelect,
   resolveDocHeadProductPickLocationId,
   resolveFirstRealLocationIdFromInitOptions,
+  resolveInvDocPreparedByName,
+  resolveInvDocApprovedByName,
 } from '#/utils/inventory/inventory-workbench-list';
 import {
   buildInventoryLocationHeadFormRules,
   clearInventoryHeadFormValidation,
   validateInventoryHeadFormFields,
 } from '#/utils/inventory/inventory-doc-head-form-validation';
-import { buildInvDocumentTitle, printInvDocument } from '#/utils/print/print-inv-document';
+import {
+  buildInvDocumentTitle,
+  printInvDocument,
+  resolveInvPrintProductBusNo,
+} from '#/utils/print/print-inv-document';
 import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
 import { useUserStore } from '@vben/stores';
 
@@ -186,10 +196,14 @@ interface TransferPreviewRow {
 }
 
 interface Props {
+  /** 侧栏当前单据行（制单人/审批人与队列卡片同口径） */
+  queueCardRow?: null | Record<string, unknown>;
   variant: TransferVariant;
   domain?: TransferDomain;
   busNo?: string;
   isDraftOrder?: boolean;
+  /** 侧栏草稿稳定 id（_clientDraftId），用于 session 缓存隔离 */
+  clientDraftId?: string;
   resetKey?: number;
   warehouseOptions: ApiOptionItem[];
   pharmacyOptions: ApiOptionItem[];
@@ -199,9 +213,11 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  queueCardRow: null,
   domain: 'warehouse',
   busNo: '',
   isDraftOrder: false,
+  clientDraftId: '',
   resetKey: 0,
   warehouseOptions: () => [],
   pharmacyOptions: () => [],
@@ -573,7 +589,15 @@ function mapDetailLineToGrid(
 
   const row: TransferPreviewRow = {
     id: idStr,
-    medicinePick: name ? { id: itemIdRaw as number | string | undefined, name } : undefined,
+    medicinePick: name
+      ? {
+          id: itemIdRaw as number | string | undefined,
+          name,
+          ...(String(catalog?.productBusNo ?? '').trim()
+            ? { busNo: String(catalog?.productBusNo ?? '').trim() }
+            : {}),
+        }
+      : undefined,
     itemTable: ln.itemTable,
     itemId: itemIdRaw,
     productName: name,
@@ -935,7 +959,7 @@ function buildLinesPayload(rows: TransferPreviewRow[]): TransferInLineDto[] | Tr
       itemQuantity: persisted.itemQuantity,
       unitCode: unitCode || undefined,
       lotNumber: String(r.lotNumber ?? '').trim() || undefined,
-      traceNo: String(r.traceNo ?? '').trim() || undefined,
+      traceNo: String(r.traceNo ?? '').trim(),
       price: Number.isFinite(unit) ? unit : undefined,
       totalPrice,
       remake: String(r.remake ?? '').trim() || undefined,
@@ -1060,13 +1084,37 @@ async function persistTransfer(): Promise<string | undefined> {
   }
 }
 
+/** 落库成功后清 session 草稿缓存 */
+function clearDraftPersistAfterSave(busNo?: string) {
+  clearInvDocDraftCacheAfterSave({
+    scene:
+      props.domain === 'pharmacy'
+        ? props.variant === 'in'
+          ? INV_DOC_DRAFT_SCENE.pharmacyTransferIn
+          : INV_DOC_DRAFT_SCENE.pharmacyTransferOut
+        : props.domain === 'department'
+          ? props.variant === 'in'
+            ? INV_DOC_DRAFT_SCENE.deptTransferIn
+            : INV_DOC_DRAFT_SCENE.deptTransferOut
+          : props.variant === 'in'
+            ? INV_DOC_DRAFT_SCENE.warehouseTransferIn
+            : INV_DOC_DRAFT_SCENE.warehouseTransferOut,
+    clientDraftId: props.clientDraftId,
+    busNo,
+  });
+  parentSync.clearDraftSnap();
+}
+
 async function handleSaveDoc() {
-  await persistTransfer();
+  const no = await persistTransfer();
+  if (!no) return;
+  clearDraftPersistAfterSave(no);
 }
 
 async function handleSaveAndSubmitDoc() {
   const no = await persistTransfer();
   if (!no) return;
+  clearDraftPersistAfterSave(no);
   await handleSubmitApproval();
 }
 
@@ -1077,6 +1125,22 @@ async function handleRemoveDoc() {
     } catch {
       return;
     }
+    clearInvDocDraftCacheAfterSave({
+      scene:
+        props.domain === 'pharmacy'
+          ? props.variant === 'in'
+            ? INV_DOC_DRAFT_SCENE.pharmacyTransferIn
+            : INV_DOC_DRAFT_SCENE.pharmacyTransferOut
+          : props.domain === 'department'
+            ? props.variant === 'in'
+              ? INV_DOC_DRAFT_SCENE.deptTransferIn
+              : INV_DOC_DRAFT_SCENE.deptTransferOut
+            : props.variant === 'in'
+              ? INV_DOC_DRAFT_SCENE.warehouseTransferIn
+              : INV_DOC_DRAFT_SCENE.warehouseTransferOut,
+      clientDraftId: props.clientDraftId,
+    });
+    parentSync.discardDraftSession();
     resetDetailForCreate();
     emit('documentRemoved');
     return;
@@ -1105,6 +1169,7 @@ async function handleRemoveDoc() {
     } else {
       await removeTransferOutApi({ busNo: no });
     }
+    clearDraftPersistAfterSave(no);
     ElMessage.success('已删除');
     resetDetailForCreate();
     emit('documentRemoved');
@@ -1233,7 +1298,45 @@ interface TransferDraftSnap {
   rows: TransferPreviewRow[];
 }
 
-const parentSync = useInvDocParentSyncSession<TransferDraftSnap>();
+const parentSync = useInvDocParentSyncSession<TransferDraftSnap>({
+  scene: () => {
+    if (props.domain === 'pharmacy') {
+      return props.variant === 'in'
+        ? INV_DOC_DRAFT_SCENE.pharmacyTransferIn
+        : INV_DOC_DRAFT_SCENE.pharmacyTransferOut;
+    }
+    if (props.domain === 'department') {
+      return props.variant === 'in'
+        ? INV_DOC_DRAFT_SCENE.deptTransferIn
+        : INV_DOC_DRAFT_SCENE.deptTransferOut;
+    }
+    return props.variant === 'in'
+      ? INV_DOC_DRAFT_SCENE.warehouseTransferIn
+      : INV_DOC_DRAFT_SCENE.warehouseTransferOut;
+  },
+  getDocKey: () => {
+    const draftId = String(props.clientDraftId ?? '').trim();
+    if (props.isDraftOrder && draftId) return draftId;
+    return String(props.busNo ?? headerBusNo.value ?? '').trim() || undefined;
+  },
+  getCardMeta: () => ({
+    statusEnum_enumText: '编辑中',
+    applyTime: headApplyTime.value,
+  }),
+});
+
+/** 拍摄当前主区草稿快照（侧栏切单 / 落盘共用） */
+function captureTransferDraftSnap(): TransferDraftSnap {
+  return {
+    sourceLocationId: sourceLocationId.value,
+    purposeLocationId: purposeLocationId.value,
+    practitionerId: practitionerId.value,
+    headItemTableType: headItemTableType.value,
+    originalBusNo: originalBusNo.value,
+    headApplyTime: headApplyTime.value,
+    rows: collectGridRows().map((r) => ({ ...r })),
+  };
+}
 
 /** 侧栏切单：缓存/恢复本地草稿，避免已落库明细污染新建单 */
 async function syncFromParentContext() {
@@ -1241,15 +1344,7 @@ async function syncFromParentContext() {
     { isDraftOrder: Boolean(props.isDraftOrder), parentBusNo: props.busNo },
     {
       getLocalPersistedBusNo: () => headerBusNo.value,
-      captureDraft: () => ({
-        sourceLocationId: sourceLocationId.value,
-        purposeLocationId: purposeLocationId.value,
-        practitionerId: practitionerId.value,
-        headItemTableType: headItemTableType.value,
-        originalBusNo: originalBusNo.value,
-        headApplyTime: headApplyTime.value,
-        rows: collectGridRows().map((r) => ({ ...r })),
-      }),
+      captureDraft: captureTransferDraftSnap,
       restoreDraft: async (snap) => {
         headerBusNo.value = undefined;
         detailStatusEnum.value = undefined;
@@ -1273,6 +1368,21 @@ async function syncFromParentContext() {
     },
   );
 }
+/** 切菜单 / KeepAlive 停用前把未保存草稿写入 sessionStorage */
+function flushTransferDraftPersist(): void {
+  parentSync.flushPersist({
+    getLocalPersistedBusNo: () => headerBusNo.value,
+    captureDraft: captureTransferDraftSnap,
+  });
+}
+
+onBeforeUnmount(() => {
+  flushTransferDraftPersist();
+});
+
+onDeactivated(() => {
+  flushTransferDraftPersist();
+});
 
 watch(
   () => props.resetKey,
@@ -1282,7 +1392,7 @@ watch(
 );
 
 watch(
-  () => [props.busNo, props.isDraftOrder, props.resetKey] as const,
+  () => [props.busNo, props.isDraftOrder, props.resetKey, props.clientDraftId] as const,
   () => {
     void syncFromParentContext();
   },
@@ -1356,20 +1466,17 @@ async function handlePrint() {
     normalizedItemTableTypeOptions.value,
     headItemTableType.value,
   );
-  const practitionerName = resolvePrintOptionLabel(
-    effectivePractitionerOptions.value,
-    practitionerId.value,
+  const documentTitle = buildInvDocumentTitle(
+    props.variant === 'in' ? destName || sourceName : sourceName || destName,
+    props.variant === 'in' ? '调拨入库单' : '调拨出库单',
   );
-  const docKindLabel = props.variant === 'in' ? '调拨入库单' : '调拨出库单';
-  const titleLocation =
-    sourceName && destName ? `${sourceName}→${destName}` : sourceName || destName;
-  const documentTitle = buildInvDocumentTitle(titleLocation, docKindLabel);
   const applyTimeText = String(headApplyTime.value ?? '')
     .trim()
     .replace('T', ' ');
 
   // 按当前网格展示值组装 PrintData
   const lineRows = productRows.map((row) => ({
+    productBusNo: resolveInvPrintProductBusNo(row as unknown as Record<string, unknown>),
     productName: String(row.productName ?? '').trim(),
     specText: String(row.spec ?? '').trim(),
     manufacturerText: String(row.manufacturer ?? '').trim(),
@@ -1381,6 +1488,12 @@ async function handlePrint() {
     expiryText: '',
   }));
 
+  const preparedByName = resolveInvDocPreparedByName(
+    props.queueCardRow as null | Record<string, unknown>,
+  );
+  const approvedByName = resolveInvDocApprovedByName(
+    props.queueCardRow as null | Record<string, unknown>,
+  );
   await printInvDocument({
     family: 'movement',
     source: {
@@ -1394,10 +1507,9 @@ async function handlePrint() {
       linkDocText: String(originalBusNo.value ?? '').trim(),
       destLocationText: destName,
       invoiceNoText: '',
-      practitionerName,
       lineRows,
-      preparedByName: practitionerName,
-      approvedByName: '',
+      preparedByName,
+      approvedByName,
     },
     bizRef: {
       busNo,

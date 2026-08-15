@@ -84,6 +84,13 @@ export interface EncounterMedicationDispenseSlipRowDto {
   encounterBusNo?: null | string;
   dispenseId: string;
   medReqId: string;
+  /** 护士执行记录主键；按日虚拟发药单用 */
+  procedureId?: null | string;
+  /**
+   * 护士认定实际执行时刻（recorded_time）。
+   * 前端按自然日虚拟分发药单；与汇总领药 planned 无关。
+   */
+  recordedTime?: null | string;
   medicationId: string;
   dispenseLocationId: string;
   dispenseLocationName?: null | string;
@@ -123,10 +130,17 @@ export interface EncounterMedicationDispenseSlipRowDto {
   splitUnitCode?: null | string;
   /** 追溯码主档贴码单位（cus_trace_number） */
   traceUnitCode?: null | string;
+  /** 追溯码主档贴码单位展示文案（UNIT_CODE） */
+  traceUnitCodeText?: null | string;
   /** 追溯码主档贴码比例快照 */
   traceUnitRatio?: null | number | string;
   /** 主表该品批是否已有追溯码（有码批） */
   lotHasTraceMaster?: boolean | null;
+  /**
+   * 发放库房×批号当前剩余数量（最小单位，现查）。
+   * 住院笺面「剩余库存」回显用。
+   */
+  remainingQuantity?: null | number | string;
   dispensePerQuantity?: null | number;
   dispensePerSupplyDays?: null | number;
   requestQuantity?: null | number | string;
@@ -152,6 +166,12 @@ export interface EncounterMedicationDispenseSlipRowDto {
   busNo?: null | string;
   /** 费用性质展示（就诊合同名优先；与队列 contractDisplay / 门诊 slip 同口径） */
   feeNatureText?: null | string;
+  patientName?: null | string;
+  ageText?: null | string;
+  genderEnumText?: null | string;
+  patientPhone?: null | string;
+  preparerPractitionerName?: null | string;
+  pricingPractitionerName?: null | string;
 }
 
 export interface PageEncounterMedicationDispenseSlipsResponse {

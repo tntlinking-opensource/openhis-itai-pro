@@ -2,13 +2,18 @@
 import type {
   DailySettlementExpenseNatureSummaryDto,
   DailySettlementInsuranceTypeSummaryDto,
+  DailySettlementSummaryRowDto,
 } from '#/api/outpatient/daily-settlement';
 
-import { computed, ref, watch } from 'vue';
+import { computed } from 'vue';
 
-import { ElButton } from 'element-plus';
+import { ElTable, ElTableColumn } from 'element-plus';
 
 defineOptions({ name: 'DailySettlementSummaryPanel' });
+
+const props = defineProps<{
+  summary?: DailySettlementSummaryPanelSource | null;
+}>();
 
 export interface DailySettlementSummaryPanelSource {
   totalIncome?: string;
@@ -18,9 +23,15 @@ export interface DailySettlementSummaryPanelSource {
   cashAmount?: string;
   cashDueAmount?: string;
   insuranceCompensationAmount?: string;
+  /** 个人账户合计（各医保费用性质个人账户代数和） */
+  insuranceAccountAmount?: string;
+  /** 医保上传差额（零售−上传；勾稽项，不入总收入） */
+  chsRetailUploadDiffAmount?: string;
   depositAmount?: string;
   physicalExamCount?: number;
   expenseNatureSummaries?: DailySettlementExpenseNatureSummaryDto[];
+  /** 后端扁平行；字段缺省时回落取「医保上传差额」 */
+  summaryRows?: DailySettlementSummaryRowDto[];
 }
 
 interface MetricItem {
@@ -30,32 +41,64 @@ interface MetricItem {
   emphasize?: boolean;
 }
 
-interface InsutypeBlock {
+/** 费用性质明细表行（与打印 natureRows 同构） */
+interface NatureListRow {
   key: string;
-  title: string;
-  personCountText: string;
-  metrics: MetricItem[];
+  rowType: 'nature' | 'type';
+  name: string;
+  personCount: string;
+  cashAmount: string;
+  fundAmount: string;
+  accountAmount: string;
+  totalAmount: string;
 }
-
-interface NatureBlock {
-  key: string;
-  title: string;
-  personCountText: string;
-  insurance: boolean;
-  metrics: MetricItem[];
-  types: InsutypeBlock[];
-}
-
-const props = defineProps<{
-  summary?: DailySettlementSummaryPanelSource | null;
-}>();
 
 const UNKNOWN_CONTRACT_NAME = '未标注费用性质';
 const UNKNOWN_INSUTYPE_NAME = '未分险种';
+const TYPE_NAME_INDENT = '　';
 
-/** 医保费用性质下险种明细展开态（按 nature.key） */
-const expandedNatureKeys = ref<Record<string, boolean>>({});
+/** 按费用性质名称关键字取总额（渠道区市/省医保合计、自费合计） */
+function findNatureTotalAmount(
+  natures: DailySettlementExpenseNatureSummaryDto[] | undefined,
+  keyword: string,
+): string | undefined {
+  const hit = (natures ?? []).find((nature) => (nature?.contractName ?? '').includes(keyword));
+  return hit?.totalAmount;
+}
 
+/** 从 summaryRows 取扁平金额（兼容旧后端只落 summaryRows 的场景） */
+function findSummaryRowValue(
+  rows: DailySettlementSummaryRowDto[] | undefined,
+  key: string,
+): string | undefined {
+  const hit = (rows ?? []).find((row) => (row?.key ?? '').trim() === key);
+  const value = hit?.value?.trim();
+  return value || undefined;
+}
+
+/** 解析医保上传差额：专用字段 → summaryRows → 0.00 */
+function resolveRetailUploadDiffAmount(summary: DailySettlementSummaryPanelSource): string {
+  const direct = summary.chsRetailUploadDiffAmount?.trim();
+  if (direct) {
+    return direct;
+  }
+  return findSummaryRowValue(summary.summaryRows, 'chsRetailUploadDiffAmount') ?? '0.00';
+}
+
+/** 金额是否为 0（空、0、0.00、0 元） */
+function isZeroMoney(value: string | undefined): boolean {
+  const raw = (value ?? '')
+    .trim()
+    .replace(/\s*元$/, '')
+    .replace(/,/g, '');
+  if (!raw) {
+    return true;
+  }
+  const num = Number(raw);
+  return Number.isFinite(num) && num === 0;
+}
+
+/** 渠道区金额：带「元」 */
 function formatMoney(value: string | undefined): string {
   const raw = (value ?? '').trim();
   if (!raw) {
@@ -64,12 +107,21 @@ function formatMoney(value: string | undefined): string {
   return raw.includes('元') ? raw : `${raw} 元`;
 }
 
+/** 明细表金额：与打印一致，不加「元」（单位在表头） */
+function formatTableAmount(value: string | undefined, blankIfEmpty = false): string {
+  const raw = (value ?? '').trim().replace(/\s*元$/, '');
+  if (!raw) {
+    return blankIfEmpty ? '' : '0.00';
+  }
+  return raw;
+}
+
 function formatPersonCount(count: number | undefined): string {
-  return `${count ?? 0} 人`;
+  return String(count ?? 0);
 }
 
 function moneyMetrics(
-  parts: Array<{ key: string; label: string; value?: string; emphasize?: boolean }>,
+  parts: Array<{ emphasize?: boolean; key: string; label: string; value?: string }>,
 ): MetricItem[] {
   return parts.map((part) => ({
     key: part.key,
@@ -88,39 +140,33 @@ function chunkMetrics(items: MetricItem[]): MetricItem[][] {
   return rows;
 }
 
-function buildInsutypeBlocks(
+/** 组装险种子行 */
+function mapInsutypeRows(
   natureKey: string,
   types: DailySettlementInsuranceTypeSummaryDto[] | undefined,
-): InsutypeBlock[] {
-  const blocks: InsutypeBlock[] = [];
+): NatureListRow[] {
+  const rows: NatureListRow[] = [];
   (types ?? []).forEach((type, typeIndex) => {
     if (!type) {
       return;
     }
     const title = type.insutypeName?.trim() || UNKNOWN_INSUTYPE_NAME;
-    // 「未分险种」与费用性质汇总重复，不单独展示
     if (title === UNKNOWN_INSUTYPE_NAME) {
       return;
     }
     const typeKey = `${natureKey}-insu-${type.insutype ?? typeIndex}`;
-    blocks.push({
+    rows.push({
       key: typeKey,
-      title,
-      personCountText: formatPersonCount(type.personCount),
-      metrics: moneyMetrics([
-        { key: `${typeKey}-cash`, label: '现金', value: type.cashAmount },
-        { key: `${typeKey}-fund`, label: '统筹', value: type.fundAmount },
-        { key: `${typeKey}-account`, label: '账户', value: type.accountAmount },
-        {
-          key: `${typeKey}-total`,
-          label: '总额',
-          value: type.totalAmount,
-          emphasize: true,
-        },
-      ]),
+      rowType: 'type',
+      name: `${TYPE_NAME_INDENT}${title}`,
+      personCount: formatPersonCount(type.personCount),
+      cashAmount: formatTableAmount(type.cashAmount),
+      fundAmount: formatTableAmount(type.fundAmount),
+      accountAmount: formatTableAmount(type.accountAmount),
+      totalAmount: formatTableAmount(type.totalAmount),
     });
   });
-  return blocks;
+  return rows;
 }
 
 const channelMetrics = computed<MetricItem[]>(() => {
@@ -141,11 +187,53 @@ const channelMetrics = computed<MetricItem[]>(() => {
     },
     {
       key: 'insuranceCompensationAmount',
-      label: '医保补偿',
+      label: '医保统筹',
       value: summary.insuranceCompensationAmount,
       emphasize: true,
     },
+    {
+      key: 'insuranceAccountAmount',
+      label: '个人账户',
+      value: summary.insuranceAccountAmount,
+      emphasize: true,
+    },
   ]);
+  const retailDiff = resolveRetailUploadDiffAmount(summary);
+  if (!isZeroMoney(retailDiff)) {
+    items.push(
+      ...moneyMetrics([
+        {
+          key: 'chsRetailUploadDiffAmount',
+          label: '医保上传差额',
+          value: retailDiff,
+          emphasize: true,
+        },
+      ]),
+    );
+  }
+  const natures = summary.expenseNatureSummaries;
+  items.push(
+    ...moneyMetrics([
+      {
+        key: 'cityInsuranceTotal',
+        label: '市医保合计',
+        value: findNatureTotalAmount(natures, '市医保') ?? '0.00',
+        emphasize: true,
+      },
+      {
+        key: 'provinceInsuranceTotal',
+        label: '省医保合计',
+        value: findNatureTotalAmount(natures, '省医保') ?? '0.00',
+        emphasize: true,
+      },
+      {
+        key: 'selfPayTotal',
+        label: '自费合计',
+        value: findNatureTotalAmount(natures, '自费') ?? '0.00',
+        emphasize: true,
+      },
+    ]),
+  );
   if (summary.depositAmount !== undefined) {
     items.push({
       key: 'depositAmount',
@@ -156,9 +244,10 @@ const channelMetrics = computed<MetricItem[]>(() => {
   return items;
 });
 
-const natureBlocks = computed<NatureBlock[]>(() => {
+/** 费用性质 → 框线表行（与打印同构） */
+const natureListRows = computed<NatureListRow[]>(() => {
   const natures = props.summary?.expenseNatureSummaries ?? [];
-  const blocks: NatureBlock[] = [];
+  const rows: NatureListRow[] = [];
   natures.forEach((nature, index) => {
     if (!nature) {
       return;
@@ -166,95 +255,62 @@ const natureBlocks = computed<NatureBlock[]>(() => {
     const title = nature.contractName?.trim() || UNKNOWN_CONTRACT_NAME;
     const natureKey = `nature-${nature.contractNo ?? index}`;
     const insurance = Boolean(nature.insurance);
-    const metrics = insurance
-      ? moneyMetrics([
-          { key: `${natureKey}-cash`, label: '现金', value: nature.cashAmount },
-          { key: `${natureKey}-fund`, label: '统筹', value: nature.fundAmount },
-          { key: `${natureKey}-account`, label: '账户', value: nature.accountAmount },
-          {
-            key: `${natureKey}-total`,
-            label: '总额',
-            value: nature.totalAmount,
-            emphasize: true,
-          },
-        ])
-      : moneyMetrics([
-          {
-            key: `${natureKey}-total`,
-            label: '总额',
-            value: nature.totalAmount,
-            emphasize: true,
-          },
-        ]);
-    blocks.push({
+    if (insurance) {
+      rows.push(
+        {
+          key: natureKey,
+          rowType: 'nature',
+          name: title,
+          personCount: formatPersonCount(nature.personCount),
+          cashAmount: formatTableAmount(nature.cashAmount),
+          fundAmount: formatTableAmount(nature.fundAmount),
+          accountAmount: formatTableAmount(nature.accountAmount),
+          totalAmount: formatTableAmount(nature.totalAmount),
+        },
+        ...mapInsutypeRows(natureKey, nature.insuranceTypeSummaries),
+      );
+      return;
+    }
+    rows.push({
       key: natureKey,
-      title,
-      personCountText: formatPersonCount(nature.personCount),
-      insurance,
-      metrics,
-      types: insurance ? buildInsutypeBlocks(natureKey, nature.insuranceTypeSummaries) : [],
+      rowType: 'nature',
+      name: title,
+      personCount: formatPersonCount(nature.personCount),
+      cashAmount: '',
+      fundAmount: '',
+      accountAmount: '',
+      totalAmount: formatTableAmount(nature.totalAmount),
     });
   });
-  return blocks;
+  return rows;
 });
 
 const channelMetricRows = computed(() => chunkMetrics(channelMetrics.value));
 
-const hasContent = computed(() => channelMetrics.value.length > 0 || natureBlocks.value.length > 0);
-
-/**
- * 省/市医保默认展开险种；工伤费用性质有数据时也默认展开。
- * 其余费用性质默认收起，仍可手动切换。
- */
-function shouldExpandNatureTypesByDefault(block: NatureBlock): boolean {
-  if (!block.types.length) {
-    return false;
-  }
-  const title = block.title.trim();
-  if (title.includes('省医保') || title.includes('市医保')) {
-    return true;
-  }
-  if (title.includes('工伤')) {
-    return true;
-  }
-  return false;
-}
-
-watch(
-  natureBlocks,
-  (blocks) => {
-    const next: Record<string, boolean> = { ...expandedNatureKeys.value };
-    for (const block of blocks) {
-      if (!(block.key in next)) {
-        next[block.key] = shouldExpandNatureTypesByDefault(block);
-      }
-    }
-    expandedNatureKeys.value = next;
-  },
-  { immediate: true },
+const hasContent = computed(
+  () => channelMetrics.value.length > 0 || natureListRows.value.length > 0,
 );
 
-function isNatureExpanded(natureKey: string): boolean {
-  return Boolean(expandedNatureKeys.value[natureKey]);
+/** 表格行主键 */
+function resolveNatureRowKey(row: NatureListRow): string {
+  return row.key;
 }
 
-function toggleNatureTypes(natureKey: string) {
-  expandedNatureKeys.value = {
-    ...expandedNatureKeys.value,
-    [natureKey]: !expandedNatureKeys.value[natureKey],
-  };
+/** 性质汇总行加粗，与打印一致 */
+function resolveNatureRowClassName({ row }: { row: NatureListRow }): string {
+  return row.rowType === 'nature' ? 'ds-wire-row--nature' : 'ds-wire-row--type';
 }
 
 defineExpose({ hasContent });
 </script>
 
 <template>
-  <div v-if="hasContent" class="ds-summary flex flex-col gap-3">
-    <div v-if="channelMetricRows.length" class="flex flex-col gap-3">
+  <div v-if="hasContent" class="ds-summary flex flex-col gap-2">
+    <div v-if="channelMetricRows.length > 0" class="flex flex-col gap-1.5">
       <div
         v-for="(row, rowIndex) in channelMetricRows"
         :key="`channel-row-${rowIndex}`"
-        class="grid grid-cols-4 gap-x-6 gap-y-2 text-sm"
+        class="grid grid-cols-4 gap-x-5 gap-y-1 text-sm leading-snug"
       >
         <div
           v-for="item in row"
@@ -269,61 +325,134 @@ defineExpose({ hasContent });
       </div>
     </div>
 
-    <section
-      v-for="block in natureBlocks"
-      :key="block.key"
-      class="border-t border-[var(--el-border-color-lighter)] pt-3"
-    >
-      <div class="mb-1.5 flex items-center justify-between gap-3 text-sm">
-        <div class="flex min-w-0 items-baseline gap-2 text-[var(--el-text-color-primary)]">
-          <span class="font-medium">{{ block.title }}</span>
-          <span class="text-[var(--el-text-color-secondary)]">{{ block.personCountText }}</span>
-        </div>
-        <ElButton
-          v-if="block.types.length"
-          link
-          type="primary"
-          class="!h-auto shrink-0 !px-0 text-xs"
-          @click="toggleNatureTypes(block.key)"
-        >
-          {{ isNatureExpanded(block.key) ? '收起' : '展开险种' }}
-        </ElButton>
+    <div v-if="natureListRows.length > 0" class="ds-wire-block">
+      <div class="mb-1.5 text-sm font-semibold leading-tight text-[var(--el-text-color-primary)]">
+        费用性质明细
       </div>
-
-      <div class="grid grid-cols-4 gap-x-6 gap-y-2 text-sm">
-        <div
-          v-for="item in block.metrics"
-          :key="item.key"
-          class="flex justify-between gap-2 text-[var(--el-text-color-primary)]"
-        >
-          <span class="text-[var(--el-text-color-regular)]">{{ item.label }}：</span>
-          <span class="font-medium" :class="{ 'font-semibold': item.emphasize }">{{
-            item.value
-          }}</span>
-        </div>
-      </div>
-
-      <div
-        v-if="block.types.length && isNatureExpanded(block.key)"
-        class="mt-2 space-y-2 rounded bg-[var(--el-fill-color-lighter)] px-3 py-2"
+      <ElTable
+        class="ds-wire-table"
+        :data="natureListRows"
+        :row-key="resolveNatureRowKey"
+        :row-class-name="resolveNatureRowClassName"
+        border
+        :stripe="false"
+        empty-text="暂无数据"
       >
-        <div v-for="type in block.types" :key="type.key" class="space-y-1">
-          <div class="flex items-baseline gap-2 text-xs text-[var(--el-text-color-regular)]">
-            <span>{{ type.title }}</span>
-            <span class="text-[var(--el-text-color-secondary)]">{{ type.personCountText }}</span>
-          </div>
-          <div class="grid grid-cols-4 gap-x-6 gap-y-1 text-sm">
-            <div
-              v-for="item in type.metrics"
-              :key="item.key"
-              class="flex justify-between gap-2 text-[var(--el-text-color-primary)]"
-            >
-              <span class="text-[var(--el-text-color-secondary)]">{{ item.label }}：</span>
-              <span :class="item.emphasize ? 'font-medium' : ''">{{ item.value }}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
+        <ElTableColumn
+          prop="name"
+          label="费用性质/险种"
+          min-width="168"
+          align="left"
+          header-align="center"
+          show-overflow-tooltip
+        />
+        <ElTableColumn
+          prop="personCount"
+          label="人数"
+          width="72"
+          align="center"
+          header-align="center"
+        />
+        <ElTableColumn
+          prop="cashAmount"
+          label="医保现金(元)"
+          min-width="112"
+          align="right"
+          header-align="center"
+        />
+        <ElTableColumn
+          prop="fundAmount"
+          label="医保统筹(元)"
+          min-width="100"
+          align="right"
+          header-align="center"
+        />
+        <ElTableColumn
+          prop="accountAmount"
+          label="个人账户(元)"
+          min-width="112"
+          align="right"
+          header-align="center"
+        />
+        <ElTableColumn
+          prop="totalAmount"
+          label="总额(元)"
+          min-width="112"
+          align="right"
+          header-align="center"
+        />
+      </ElTable>
+    </div>
   </div>
 </template>
+
+<style scoped>
+.ds-wire-block {
+  padding-top: 12px;
+  border-top: 1px solid var(--el-border-color);
+}
+
+/* 纯框线表：白底、全边框、无斑马纹，贴近打印稿 */
+.ds-wire-table {
+  --el-table-border-color: #333;
+  --el-table-header-bg-color: #fff;
+  --el-table-tr-bg-color: #fff;
+  --el-table-row-hover-bg-color: #fff;
+  --el-table-bg-color: #fff;
+  --el-fill-color-blank: #fff;
+
+  width: 100%;
+  font-size: 12px;
+  color: #222;
+  /* 只补表头顶边，左右/底边交给单元格边框，避免叠线变粗 */
+  border: none;
+  border-top: 1px solid #333;
+}
+
+/* 去掉 EP 伪边线，改由外框 + 单元格边框闭合，避免表头顶边丢失 */
+.ds-wire-table :deep(.el-table__inner-wrapper::before),
+.ds-wire-table :deep(.el-table__inner-wrapper::after) {
+  display: none;
+}
+
+.ds-wire-table :deep(.el-table__border-left-patch) {
+  display: none;
+}
+
+.ds-wire-table :deep(th.el-table__cell) {
+  height: 36px;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #111;
+  background: #fff !important;
+  border-color: #333 !important;
+}
+
+.ds-wire-table :deep(td.el-table__cell) {
+  height: 34px;
+  padding: 0;
+  color: #222;
+  background: #fff !important;
+  border-color: #333 !important;
+}
+
+.ds-wire-table :deep(.el-table__body tr:hover > td.el-table__cell) {
+  background: #fff !important;
+}
+
+.ds-wire-table :deep(.cell) {
+  padding: 6px 8px;
+  line-height: 1.4;
+}
+
+.ds-wire-table :deep(.ds-wire-row--nature td.el-table__cell) {
+  font-weight: 700;
+  color: #111;
+}
+
+.ds-wire-table :deep(.ds-wire-row--type td.el-table__cell) {
+  font-weight: 400;
+  color: #333;
+}
+</style>

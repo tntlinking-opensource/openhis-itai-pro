@@ -673,11 +673,9 @@ onMounted(async () => {
               <ElSelect
                 v-model="queryForm.cashierIds"
                 multiple
-                collapse-tags
-                collapse-tags-tooltip
                 clearable
                 placeholder="不选=全部；仅列出本窗有流水者"
-                class="!w-[220px]"
+                class="!w-auto !min-w-[220px]"
                 filterable
                 @change="handleCashierIdsChange"
               >

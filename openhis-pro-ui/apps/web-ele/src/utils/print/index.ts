@@ -14,6 +14,13 @@ export {
 export type { OutpatientPrescriptionPrintData } from './mappers';
 export { printChargeReceipt, schedulePrintChargeReceipt } from './print-charge-receipt';
 export {
+  buildPrepayReceiptSourceFromCollect,
+  buildPrepayReceiptSourceFromRecord,
+  printInpatientPrepayReceipt,
+  resolvePrepayReceiptCashierName,
+  schedulePrintInpatientPrepayReceipt,
+} from './print-inpatient-prepay-receipt';
+export {
   printServiceApplyForms,
   printServiceApplyFromAdviceRows,
   type ServiceApplyPrintMeta,

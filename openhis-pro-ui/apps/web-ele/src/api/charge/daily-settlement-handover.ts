@@ -60,8 +60,12 @@ export interface DailySettlementHandoverSummaryDto {
   cashAmount?: string;
   /** 应交现金（与现金渠道同口径） */
   cashDueAmount?: string;
-  /** 医保补偿合计 */
+  /** 医保统筹合计 */
   insuranceCompensationAmount?: string;
+  /** 个人账户合计 */
+  insuranceAccountAmount?: string;
+  /** 医保上传差额合计（零售−上传；勾稽项，不入总收入） */
+  chsRetailUploadDiffAmount?: string;
   depositAmount?: string;
   physicalExamCount?: number;
   refundTotal?: string;

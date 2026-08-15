@@ -21,6 +21,7 @@ import {
   hydrateAdviceRowDoseFromBackend,
   resolveAdviceLineUnitPrice,
   roundMedicationQty,
+  roundMedicationSplitQty,
   totalAmountSplitToSalesFactor,
   unitCodeByBandKind,
   unitNameByBandKind,
@@ -315,11 +316,12 @@ export function buildWesternProductSelectPatch(
     patch.dosePresetKind = 'default';
   } else if (ratioK !== undefined && Number.isFinite(ratioK) && ratioK > 0) {
     patch.doseBandConvertK = ratioK;
-    if (Number.isFinite(curSd) && curSd > 0) {
-      patch.doseConvertRatio = roundMedicationQty(curSd * ratioK);
-    } else if (Number.isFinite(curDq) && curDq > 0) {
-      patch.singleDose = roundMedicationQty(curDq / ratioK);
+    // 剂量单位是落库真源：两侧都有时优先保留剂量，再反算两位最小单位
+    if (Number.isFinite(curDq) && curDq > 0) {
+      patch.singleDose = roundMedicationSplitQty(curDq / ratioK);
       patch.doseConvertRatio = roundMedicationQty(curDq);
+    } else if (Number.isFinite(curSd) && curSd > 0) {
+      patch.doseConvertRatio = roundMedicationQty(curSd * ratioK);
     }
     if (productChanged) {
       patch.dosePresetKind = undefined;

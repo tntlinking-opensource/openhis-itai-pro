@@ -49,6 +49,7 @@ import {
 } from '#/components/doctor-station/diagnosis/services/encounter-diagnosis-session';
 import { runOpDetailAuditGate } from '#/chs/composables/use-detail-audit-gate';
 import { pickFirstInsuranceContract } from '#/chs/utils/resolve-insurance-contract-bus-no';
+import { getChargeTypeListApi } from '#/api/core/common';
 import { useAuthStore } from '#/store';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { isStaleCrossRoleError } from '#/utils/http/stale-cross-role-error';
@@ -64,8 +65,14 @@ import {
   mergeCatalogIntoAdviceDrugItemForEdit,
   prepickedKeyFromListRow,
 } from '../services/advice-edit-hydrate';
-import { defaultContractSelection, firstTerminologyCode } from '../services/advice-format';
 import {
+  defaultContractSelection,
+  enrichFeeNatureOptionsWithCategory,
+  firstTerminologyCode,
+  type FeeNatureOption,
+} from '../services/advice-format';
+import {
+  enrichAdviceListFeeNatureText,
   excludeServiceApplyFormAdviceRows,
   flattenAdviceRowsForResourceOps,
   getAdviceStatusTagType,
@@ -113,7 +120,12 @@ export function useAdviceTab(
 
   const medicationRateOptions = ref<TerminologyOptionDto[]>([]);
   const medicationRouteOptions = ref<TerminologyOptionDto[]>([]);
-  const feeNatureOptions = ref<TerminologyOptionDto[]>([]);
+  /** 费用性质下拉（含 categoryEnum，供医保等级=自费时收窄） */
+  const feeNatureOptions = ref<FeeNatureOption[]>([]);
+  /**
+   * 换患者/就诊时递增；并行 init/list 回写前比对，避免慢请求覆盖新患者费用性质。
+   */
+  let adviceLoadGeneration = 0;
 
   const adviceTableRef = ref<InstanceType<typeof ElTable>>();
   const tableSelection = ref<AdviceRowItem[]>([]);
@@ -684,42 +696,64 @@ export function useAdviceTab(
       return;
     }
     adviceListLoading.value = true;
+    const loadGeneration = adviceLoadGeneration;
     try {
       const res = await httpListDoctorStationAdvice({
         encounterId,
         patientId,
         onlyMine: false,
       });
+      if (loadGeneration !== adviceLoadGeneration) return;
       const { content: list } = parsePagedRowsFromApiData<DoctorStationAdviceRowDto>(res);
       const merged = mergeMedicationAdviceRowsForListDisplay(list);
       // 检验/检查/治疗申请单仅在「申请单」页签展示
-      rows.value = excludeServiceApplyFormAdviceRows(merged);
+      const withoutApplyForms = excludeServiceApplyFormAdviceRows(merged);
+      // 费用性质：接口文案优先；空时用 init 合同下拉按 contractId 补展示
+      rows.value = enrichAdviceListFeeNatureText(withoutApplyForms, feeNatureOptions.value);
     } catch {
+      if (loadGeneration !== adviceLoadGeneration) return;
       rows.value = [];
     } finally {
-      adviceListLoading.value = false;
+      if (loadGeneration === adviceLoadGeneration) {
+        adviceListLoading.value = false;
+      }
     }
   }
 
-  /** IF-DOR-18：术语下拉 */
-  async function loadAdviceInit() {
+  /** 换患者时立刻丢掉术语/费用性质，避免新开医嘱默认带上上个患者合同 */
+  function clearAdviceInitOptions() {
+    medicationRateOptions.value = [];
+    medicationRouteOptions.value = [];
+    feeNatureOptions.value = [];
+  }
+
+  /** IF-DOR-18：术语下拉；loadGeneration 缺省取当前代际（供外部 reload 暴露） */
+  async function loadAdviceInit(loadGeneration: number = adviceLoadGeneration) {
     const encounterId = props.encounterId?.trim() || '';
     const patientId = props.patientId?.trim() || '';
     if (!encounterId || !patientId) {
-      medicationRateOptions.value = [];
-      medicationRouteOptions.value = [];
-      feeNatureOptions.value = [];
+      if (loadGeneration === adviceLoadGeneration) {
+        clearAdviceInitOptions();
+      }
       return;
     }
     try {
-      const res = await httpInitDoctorStationAdvice({ encounterId, patientId });
+      const [res, chargeTypes] = await Promise.all([
+        httpInitDoctorStationAdvice({ encounterId, patientId }),
+        getChargeTypeListApi().catch(() => []),
+      ]);
+      // 慢请求：已换患者则丢弃，防止费用性质首项串到新就诊
+      if (loadGeneration !== adviceLoadGeneration) return;
       medicationRateOptions.value = res.medicationRateOptions ?? [];
       medicationRouteOptions.value = res.medicationRouteOptions ?? [];
-      feeNatureOptions.value = res.feeNatureOptions ?? [];
+      // 补 categoryEnum：医保等级=自费时按 code 收窄可选合同
+      feeNatureOptions.value = enrichFeeNatureOptionsWithCategory(
+        res.feeNatureOptions ?? [],
+        chargeTypes,
+      );
     } catch {
-      medicationRateOptions.value = [];
-      medicationRouteOptions.value = [];
-      feeNatureOptions.value = [];
+      if (loadGeneration !== adviceLoadGeneration) return;
+      clearAdviceInitOptions();
     }
   }
 
@@ -747,6 +781,7 @@ export function useAdviceTab(
         excludeMedicationCategoryCodes: [
           ...WESTERN_ADVICE_CATALOG_EXCLUDE_MEDICATION_CATEGORY_CODES,
         ],
+        positiveQuantityOnly: params.positiveQuantityOnly,
       });
       const { content: rawRows, totalCount } =
         parsePagedRowsFromApiData<DoctorStationAdviceCatalogRowDto>(res);
@@ -885,10 +920,10 @@ export function useAdviceTab(
         : 'MEDICATION';
       if (kind === 'SERVICE') {
         ElMessage.warning(
-          `第${n}条诊疗医嘱：请完善数量、单位、执行次数与执行科室（单位须来自目录包装单位）`,
+          `第${n}条诊疗医嘱：请完善费用性质、数量、单位、执行次数与执行科室（单位须来自目录包装单位）`,
         );
       } else if (kind === 'DEVICE') {
-        ElMessage.warning(`第${n}条耗材医嘱：数量须大于 0，并须填写单位`);
+        ElMessage.warning(`第${n}条耗材医嘱：请完善费用性质、数量与单位`);
       } else {
         ElMessage.warning(
           `第${n}条药品医嘱：请完善诊断、费用性质、用法、频次、单次用量、总量与单位等必填项`,
@@ -1052,16 +1087,31 @@ export function useAdviceTab(
 
   /** Tab 激活或切换患者后拉列表（接诊仅在双击卡片或写操作前触发，不在此自动写库） */
   async function loadAdviceTabData() {
+    // 新一轮加载：作废在途 init/list，并先清空费用性质，杜绝默认值串患者
+    const loadGeneration = ++adviceLoadGeneration;
     const encounterId = props.encounterId?.trim() || '';
     const patientId = props.patientId?.trim() || '';
     if (!encounterId || !patientId) {
       rows.value = [];
-      medicationRateOptions.value = [];
-      medicationRouteOptions.value = [];
-      feeNatureOptions.value = [];
+      clearAdviceInitOptions();
       return;
     }
-    await Promise.all([loadAdviceList(), loadAdviceInit()]);
+    clearAdviceInitOptions();
+    await Promise.all([loadAdviceList(), loadAdviceInit(loadGeneration)]);
+    if (loadGeneration !== adviceLoadGeneration) return;
+    // init/list 并行：列表先返回时 options 可能仍空，两边都完成后再补一次费用性质
+    rows.value = enrichAdviceListFeeNatureText(rows.value, feeNatureOptions.value);
+  }
+
+  /** 换患者时关闭编辑卡并清选择（含非当前 Tab，避免 KeepAlive 脏态） */
+  function resetAdviceEditorOnPatientChange() {
+    if (showEditor.value) {
+      showEditor.value = false;
+      editorDirty.value = false;
+      editingAdviceResourceType.value = '';
+      editorInitialGroup.value = [];
+    }
+    clearAdviceTableSelection();
   }
 
   /** KeepAlive 内仅激活页签拉数；换患者时由 watch 刷新当前可见 Tab */
@@ -1073,13 +1123,12 @@ export function useAdviceTab(
       // 换患者/就诊：清空会话诊断记忆（医嘱 / 申请单共用）
       clearEncounterDiagnosisSession();
       lastSelectedEncounterDiagnosisIds.value = [];
+      // 无论是否当前 Tab：先作废在途请求并丢掉上个患者费用性质
+      adviceLoadGeneration += 1;
+      clearAdviceInitOptions();
+      resetAdviceEditorOnPatientChange();
+      rows.value = [];
       if (!isTabActive.value) return;
-      if (showEditor.value) {
-        showEditor.value = false;
-        editorDirty.value = false;
-        editingAdviceResourceType.value = '';
-      }
-      clearAdviceTableSelection();
       void loadAdviceTabData();
     },
   );

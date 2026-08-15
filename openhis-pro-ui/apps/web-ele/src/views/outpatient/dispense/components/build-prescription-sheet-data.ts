@@ -1,4 +1,8 @@
-import type { PrescriptionSheetData, PrescriptionSheetLine } from './prescription-sheet.types';
+import type {
+  PrescriptionSheetData,
+  PrescriptionSheetLine,
+  PrescriptionSheetStockLine,
+} from './prescription-sheet.types';
 import type {
   DispensePrescriptionBlock,
   DispensePrescriptionLine,
@@ -150,6 +154,8 @@ export function buildPrescriptionSheetData(
     block.feeNatureLabel?.trim() ||
     patient.feeNatureLabel?.trim() ||
     '自费';
+  // 就诊类型：处方块 encounterMedicationTypeText（med_type）；无则笺面仍展示费用性质
+  const visitTypeLabel = block.visitTypeLabel?.trim() || undefined;
   const isHerbal = block.rxType === 'herbal';
   const items = block.items ?? [];
 
@@ -196,6 +202,15 @@ export function buildPrescriptionSheetData(
       });
   const tcmHerbGridRows = isHerbal ? resolveHerbGridRows(block) : undefined;
 
+  // 库存弹窗：中西药均按药品明细装配（不含代煎费）
+  const stockLines: PrescriptionSheetStockLine[] = items
+    .filter((line) => (line.lineKind ?? 'medication') === 'medication')
+    .map((line) => ({
+      itemName: displayOrDash(line.itemName),
+      remainingStockText: displayOrDash(line.remainingStockText),
+      batchNo: displayOrDash(line.batchNo),
+    }));
+
   // 发放药房：按发放行库位名去重（与 med_medication_dispense.location_id 一致）
   const pharmacyUniques: string[] = [];
   for (const line of items) {
@@ -223,18 +238,22 @@ export function buildPrescriptionSheetData(
     statusLabel: blockStatusToLabel(block.status),
     documentTitle: options?.documentTitle?.trim() || (isHerbal ? '中药发药单' : '发药单'),
     hospitalName,
+    prescriptionTypeLine1: block.prescriptionTypeLine1?.trim() || undefined,
+    prescriptionTypeLine2: block.prescriptionTypeLine2?.trim() || undefined,
     prescriptionNo: block.rxNo,
     patientName: patient.patientName,
     patientAgeLabel: patient.ageLabel,
     patientGenderLabel: patient.genderLabel || '—',
     deptName: block.deptName,
     feeNatureLabel,
+    visitTypeLabel,
     prescriptionDate: toDatePart(block.issuedAt),
     outpatientNoLabel: patient.visitNo.trim() || '—',
     prescribingDoctorName: orderingDoctorName,
     diagnosis,
     patientPhone,
     dispensePharmacyLabel,
+    stockLines,
     lines,
     tcmHerbGridRows,
     tcmUsageText: isHerbal ? block.tcmUsageText?.trim() || undefined : undefined,

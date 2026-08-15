@@ -161,11 +161,19 @@ export const METADATA_SOURCE_PATH_BY_VALUE_SOURCE: Record<string, MetadataSource
     },
     {
       value: 'encounter.bedClearedAt',
-      label: 'encounter.bedClearedAt — 清床日期（yyyy-MM-dd）',
+      label: 'encounter.bedClearedAt — 清床日期（yyyy-MM-dd；非业务出院日）',
+    },
+    {
+      value: 'encounter.dischargeDate',
+      label: 'encounter.dischargeDate — 出院日期（计划出院/业务出院，yyyy-MM-dd）',
+    },
+    {
+      value: 'encounter.dischargeDateTime',
+      label: 'encounter.dischargeDateTime — 出院时间（计划出院，yyyy-MM-dd HH:mm）',
     },
     {
       value: 'encounter.lengthOfStayDays',
-      label: 'encounter.lengthOfStayDays — 住院天数（分床→清床）',
+      label: 'encounter.lengthOfStayDays — 住院天数（即进不计出；业务出院时间）',
     },
     { value: 'encounter.classEnum', label: 'encounter.classEnum — 类别 AMB/IMP' },
   ],

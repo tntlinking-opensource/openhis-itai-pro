@@ -9,6 +9,7 @@ import { ElMessage } from 'element-plus';
 import {
   DEFAULT_CARD_READER_HOST,
   DEFAULT_CARD_READER_PORT,
+  DEFAULT_SFZ_DRIVER_TYPE,
   formatYbPluginError,
   formatYbPluginOfflineMessage,
   getYbEcOrgId,
@@ -74,7 +75,7 @@ export async function readYbEcVoucherSnapshot(options?: {
       PORT: DEFAULT_CARD_READER_PORT,
       TIMEOUT: 60,
       LOG_PATH: 'C:/neu_log/',
-      SFZ_DRIVER_TYPE: 0,
+      SFZ_DRIVER_TYPE: DEFAULT_SFZ_DRIVER_TYPE,
     };
     const payload = await invokeYbPlugin(ecInput, undefined, 65_000);
     const trimmed = payload.trim();

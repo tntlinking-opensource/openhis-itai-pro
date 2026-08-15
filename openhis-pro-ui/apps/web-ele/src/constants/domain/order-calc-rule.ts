@@ -10,3 +10,14 @@ export const OrderCalcRuleCode = {
 } as const;
 
 export type OrderCalcRuleCodeValue = (typeof OrderCalcRuleCode)[keyof typeof OrderCalcRuleCode];
+
+/**
+ * 包装类拆分属性（整包不拆 / 包装单次取整）：
+ * 总量默认走包装带，总量单位下拉不展示拆零单位。
+ */
+export function isPackageBoundOrderCalcRule(ruleCode: string | undefined): boolean {
+  const code = String(ruleCode ?? '').trim();
+  return (
+    code === OrderCalcRuleCode.PACKAGE_NO_SPLIT || code === OrderCalcRuleCode.PACKAGE_SINGLE_CEIL
+  );
+}

@@ -42,7 +42,7 @@ function extractRoleCodes(roles: LoginUser['roles']): string[] {
   if (!Array.isArray(roles) || roles.length === 0) {
     return [];
   }
-  // 兼容 string / { value } / { roleName } / { roleKey } / { name }
+  // 兼容 string / { code } / { value } / { roleKey } / { roleName } / { name }
   return roles
     .map((role) => {
       if (typeof role === 'string') {
@@ -51,7 +51,7 @@ function extractRoleCodes(roles: LoginUser['roles']): string[] {
       if (!role || typeof role !== 'object') {
         return '';
       }
-      const code = role.value ?? role.roleKey ?? role.roleName ?? role.name ?? '';
+      const code = role.code ?? role.value ?? role.roleKey ?? role.roleName ?? role.name ?? '';
       return String(code).trim();
     })
     .filter((code) => code !== '');
@@ -103,8 +103,9 @@ export const useUserStore = defineStore('core-user', {
         this.setUserRoles(roles);
       }
     },
-    setUserRoles(roles: string[]) {
-      this.userRoles = roles;
+    setUserRoles(roles: LoginUser['roles'] | string[]) {
+      // 登录 configuration.roles 可能是 string[]（name）或对象数组，统一提取
+      this.userRoles = extractRoleCodes(roles as LoginUser['roles']);
     },
   },
   persist: {

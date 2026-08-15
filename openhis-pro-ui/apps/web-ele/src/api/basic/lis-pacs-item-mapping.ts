@@ -63,7 +63,10 @@ export interface BatchSaveLisPacsItemMappingResult {
   errors?: string[];
 }
 
-const BASE = '/h22010402403LisPacsItemMapping';
+/** 院点 AppService 前缀随 VITE_OPENHIS_PROJECT 变化（默认朝阳，兼容产品主线） */
+const SITE =
+  String(import.meta.env.VITE_OPENHIS_PROJECT ?? 'H22010402403').trim() || 'H22010402403';
+const BASE = `/${SITE.toLowerCase()}LisPacsItemMapping`;
 
 /** 已对码列表分页 */
 export async function pageLisPacsItemMappingApi(params: PageLisPacsItemMappingParams) {

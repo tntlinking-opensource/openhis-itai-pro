@@ -456,6 +456,17 @@ defineExpose({
             align="center"
           />
           <ElTableColumn
+            prop="feeNatureText"
+            label="费用性质"
+            :width="adviceTableColWidth.feeNature"
+            align="center"
+            show-overflow-tooltip
+          >
+            <template #default="{ row }">
+              <span v-if="!row.isEditor">{{ row.feeNatureText || '—' }}</span>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn
             prop="chargeStatus"
             label="费用状态"
             :width="adviceTableColWidth.chargeStatus"
@@ -518,7 +529,7 @@ defineExpose({
       @saved="handleSaveAsOrderTemplateSaved"
     />
 
-    <!-- MANUAL_USAGE_BIND 策略依赖：编辑卡保存时弹出用法绑定确认 -->
+    <!-- MANUAL_USAGE_BIND 策略依赖：编辑卡保存时弹出用法/诊疗绑定确认 -->
     <AdviceDraftBindDialog />
 
     <OrderTemplateApplyConfirmDialog />

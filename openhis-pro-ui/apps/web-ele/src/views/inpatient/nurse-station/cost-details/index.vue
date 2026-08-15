@@ -19,12 +19,16 @@ import {
   httpLoadNurseStationCostDetailPageInit,
   httpQueryNurseStationInpatientCostDetail,
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station-cost-detail.http';
-import type { PreSettleInpatientChargesResponse } from '#/api/inpatient-settle';
+import type {
+  InpatientSettleChargeLineDto,
+  PreSettleInpatientChargesResponse,
+} from '#/api/inpatient-settle';
 import DetailAuditRemindDialog from '#/chs/components/detail-audit-remind-dialog.vue';
 import InpatientClinicalPreSettlePreviewDialog from '#/chs/components/inpatient-clinical-pre-settle-preview-dialog.vue';
 import type { DetailAuditRemindDialogExpose } from '#/chs/composables/use-detail-audit-gate';
 import {
   buildClinicalPreSettleInsuranceBreakdown,
+  resolveClinicalPreSettlePrepayOffset,
   runInpatientClinicalPreSettle,
 } from '#/chs/composables/use-inpatient-clinical-pre-settle';
 import InpatientPatientInfoHeader from '#/components/inpatient/patient-info-header.vue';
@@ -47,6 +51,19 @@ type CostDetailQuickDay = 'today' | 'yesterday';
 
 interface Props {
   patients?: NurseStationModulePatient[];
+  /** 隐藏顶部吸顶患者信息（医生站外层已有患者栏时用） */
+  hidePatientHeader?: boolean;
+  /**
+   * 外部首选日期起（yyyy-MM-dd）；病案等场景按入院日打开。
+   * 有值时覆盖页 init 默认日期。
+   */
+  preferredDateFrom?: string;
+  /** 外部首选日期止（yyyy-MM-dd）；出院日或今日。 */
+  preferredDateTo?: string;
+  /** 外部首选费用状态；已结算患者建议传 SETTLED。 */
+  preferredStatusEnum?: NurseStationCostDetailStatusFilter;
+  /** 隐藏「完整预结算」工具条（病案费用清单等只读场景） */
+  hideClinicalPreSettle?: boolean;
 }
 
 defineOptions({
@@ -55,6 +72,11 @@ defineOptions({
 
 const props = withDefaults(defineProps<Props>(), {
   patients: () => [],
+  hidePatientHeader: false,
+  preferredDateFrom: undefined,
+  preferredDateTo: undefined,
+  preferredStatusEnum: undefined,
+  hideClinicalPreSettle: false,
 });
 
 const DEFAULT_PRESENTATION_OPTIONS: NurseStationCostDetailPresentationOptionDto[] = [
@@ -86,11 +108,14 @@ const totals = ref<NurseStationCostDetailTotalsDto | null>(null);
 const pageInitialized = ref(false);
 /** 费用清单打印中 */
 const printingFeeList = ref(false);
+/** 费用明细单打印中 */
+const printingFeeDetail = ref(false);
 
 const detailAuditDialogRef = ref<DetailAuditRemindDialogExpose | null>(null);
 const clinicalPreSettleLoading = ref(false);
 const clinicalPreSettleVisible = ref(false);
 const clinicalPreSettleSnapshot = ref<PreSettleInpatientChargesResponse | null>(null);
+const clinicalPreSettleChargeLines = ref<InpatientSettleChargeLineDto[]>([]);
 
 const initRequest = useRequest(httpLoadNurseStationCostDetailPageInit, { manual: true });
 const queryRequest = useRequest(httpQueryNurseStationInpatientCostDetail, { manual: true });
@@ -135,13 +160,25 @@ const stickyPatientInfo = computed(() => {
 
 /** 将服务端默认日期与费用状态筛选写入查询条件。 */
 function applyPageInitDefaults(dateFrom?: string, dateTo?: string, defaultStatusEnum?: string) {
-  const from = dateFrom?.trim();
-  const to = dateTo?.trim();
-  if (from && to) {
-    costDetailDateRange.value = [from, to];
+  const preferredFrom = props.preferredDateFrom?.trim().slice(0, 10);
+  const preferredTo = props.preferredDateTo?.trim().slice(0, 10);
+  // 病案等外嵌场景：优先入院～出院日，避免默认「今日」查空
+  if (preferredFrom && preferredTo) {
+    costDetailDateRange.value = [preferredFrom, preferredTo];
   } else {
-    const today = dayjs().format('YYYY-MM-DD');
-    costDetailDateRange.value = [today, today];
+    const from = dateFrom?.trim();
+    const to = dateTo?.trim();
+    if (from && to) {
+      costDetailDateRange.value = [from, to];
+    } else {
+      const today = dayjs().format('YYYY-MM-DD');
+      costDetailDateRange.value = [today, today];
+    }
+  }
+  const preferredStatus = props.preferredStatusEnum?.trim();
+  if (isCostDetailStatusFilter(preferredStatus)) {
+    costDetailStatusEnum.value = preferredStatus;
+    return;
   }
   const statusCode = defaultStatusEnum?.trim();
   if (isCostDetailStatusFilter(statusCode)) {
@@ -224,12 +261,61 @@ async function handlePrintFeeList() {
       dateFrom,
       dateTo,
       executionDeadline: `${dateTo} 23:59:59`,
+      costStatusEnum: costDetailStatusEnum.value,
     });
     if (result.ok) {
       ElMessage.success(`已发送打印：费用清单，共 ${result.count} 份`);
     }
   } finally {
     printingFeeList.value = false;
+  }
+}
+
+/** 按当前日期区间打印住院费用明细单（DETAIL 流水，按分类分组，无分类合计） */
+async function handlePrintFeeDetail() {
+  if (!canOperateCostDetail.value || props.patients.length !== 1) {
+    ElMessage.warning('费用明细单仅支持单选患者，请在左侧只勾选 1 位患者');
+    return;
+  }
+  const [dateFrom, dateTo] = costDetailDateRange.value;
+  if (!dateFrom || !dateTo) {
+    ElMessage.warning('请选择有效的查询日期');
+    return;
+  }
+  if (dayjs(dateFrom).isAfter(dayjs(dateTo))) {
+    ElMessage.warning('请选择有效的查询日期');
+    return;
+  }
+  if (printingFeeDetail.value) {
+    return;
+  }
+  printingFeeDetail.value = true;
+  try {
+    const selectedRows = await loadPrintPendingRows({
+      docType: 'fee_detail',
+      patients: props.patients,
+      dateFrom,
+      dateTo,
+      executionDeadline: `${dateTo} 23:59:59`,
+    });
+    if (selectedRows.length <= 0) {
+      ElMessage.warning('暂无「费用明细单」可打印数据');
+      return;
+    }
+    const result = await printInpatientPrintCenter({
+      docType: 'fee_detail',
+      patients: props.patients,
+      selectedRows,
+      dateFrom,
+      dateTo,
+      executionDeadline: `${dateTo} 23:59:59`,
+      costStatusEnum: costDetailStatusEnum.value,
+    });
+    if (result.ok) {
+      ElMessage.success(`已发送打印：费用明细单，共 ${result.count} 份`);
+    }
+  } finally {
+    printingFeeDetail.value = false;
   }
 }
 
@@ -298,6 +384,10 @@ watch(
       totals.value = null;
       return;
     }
+    // 挂载首帧由 onMounted 查询，避免与 watch 重复弹错
+    if (prevEncounterId === undefined) {
+      return;
+    }
     if (encounterId === prevEncounterId) {
       return;
     }
@@ -335,6 +425,7 @@ async function handleClinicalPreSettle() {
       return;
     }
     clinicalPreSettleSnapshot.value = result.snapshot;
+    clinicalPreSettleChargeLines.value = result.chargeLines;
     clinicalPreSettleVisible.value = true;
   } catch (error) {
     const message = error instanceof Error ? error.message : '完整预结算失败';
@@ -347,12 +438,17 @@ async function handleClinicalPreSettle() {
 const clinicalPreSettleInsuranceBreakdown = computed(() =>
   buildClinicalPreSettleInsuranceBreakdown(clinicalPreSettleSnapshot.value),
 );
+
+/** 本次预交金冲抵额（个人现金/应收 − 需补交）。 */
+const clinicalPreSettlePrepayOffset = computed(() =>
+  resolveClinicalPreSettlePrepayOffset(clinicalPreSettleSnapshot.value),
+);
 </script>
 
 <template>
   <div class="cost-details-page flex min-h-0 flex-1 flex-col">
-    <InpatientPatientInfoHeader :patient-info="stickyPatientInfo" />
-    <div class="cost-details-toolbar">
+    <InpatientPatientInfoHeader v-if="!hidePatientHeader" :patient-info="stickyPatientInfo" />
+    <div v-if="!hideClinicalPreSettle" class="cost-details-toolbar">
       <ElButton
         type="primary"
         :disabled="!canOperateCostDetail"
@@ -372,6 +468,7 @@ const clinicalPreSettleInsuranceBreakdown = computed(() =>
       :detail-lines="detailLines"
       :loading="queryRequest.loading.value || initRequest.loading.value"
       :printing="printingFeeList"
+      :printing-detail="printingFeeDetail"
       :presentation-mode="presentationMode"
       :presentation-options="presentationOptions"
       :quick-day="costDetailQuickDay"
@@ -380,6 +477,7 @@ const clinicalPreSettleInsuranceBreakdown = computed(() =>
       :totals="totals"
       @on-presentation-mode-change="handlePresentationModeChange"
       @on-print="handlePrintFeeList"
+      @on-print-detail="handlePrintFeeDetail"
       @on-query="handleCostDetailQuery"
       @on-quick-day-change="handleCostDetailQuickDayChange"
       @on-reset="handleCostDetailReset"
@@ -390,9 +488,12 @@ const clinicalPreSettleInsuranceBreakdown = computed(() =>
       v-model="clinicalPreSettleVisible"
       :display-amount="clinicalPreSettleSnapshot?.displayAmount ?? 0"
       :receivable-total="clinicalPreSettleSnapshot?.receivableTotal ?? 0"
+      :prepay-net-balance="clinicalPreSettleSnapshot?.prepayNetBalance"
+      :prepay-offset-amount="clinicalPreSettlePrepayOffset"
       :preview-text="clinicalPreSettleSnapshot?.previewText"
       :insurance-pre-settled="clinicalPreSettleSnapshot?.insurancePreSettled"
       :insurance-breakdown-items="clinicalPreSettleInsuranceBreakdown"
+      :charge-lines="clinicalPreSettleChargeLines"
     />
   </div>
 </template>

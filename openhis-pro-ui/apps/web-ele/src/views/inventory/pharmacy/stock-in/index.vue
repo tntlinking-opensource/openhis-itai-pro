@@ -236,6 +236,7 @@ onMounted(async () => {
     </template>
 
     <PharmacyStockInMainPane
+      :queue-card-row="selectedOrder"
       class="min-h-0 flex-1"
       :bus-no="selectedBusNo"
       :is-draft-order="isDraftOrder"

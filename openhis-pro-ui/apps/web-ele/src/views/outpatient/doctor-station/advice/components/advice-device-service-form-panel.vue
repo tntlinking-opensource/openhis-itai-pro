@@ -2,6 +2,7 @@
 import type { AdviceLineEditorKind } from '../services/advice-row';
 import type { AdviceDrugItem } from '../services/advice.types';
 
+import type { TerminologyOptionDto } from '#/api/doctor-station/advice.types';
 import type { EncounterDiagnosisRowDto } from '#/api/doctor-station/diagnosis.types';
 import type { DiagnosisItem } from '#/components/doctor-station/diagnosis';
 import type { PerformOrgOption } from '#/views/doctor-station/advice-shared/perform-org-options.service';
@@ -21,7 +22,13 @@ import {
 import { calcMoneyLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
 
 import { parseOptionalNumberInput } from '../services/advice-edit';
-import { formatMoneyStrYuan, formatUnitPriceYuan } from '../services/advice-format';
+import {
+  contractSelectionFromValue,
+  filterFeeNatureOptionsByChrgitmLv,
+  formatMoneyStrYuan,
+  formatUnitPriceYuan,
+  type FeeNatureOption,
+} from '../services/advice-format';
 import {
   parseColonDefinitionId,
   parseProductTableNameFromSelectedId,
@@ -40,6 +47,8 @@ const props = withDefaults(
     editorKind: Extract<AdviceLineEditorKind, 'DEVICE' | 'SERVICE'>;
     /** 诊疗可执行科室接口门控：与就诊一致 */
     encounterId?: string;
+    /** init 返回的费用性质（合同）下拉 */
+    feeNatureOptions?: FeeNatureOption[];
     item: AdviceDrugItem;
     /** 打开就诊诊断录入弹窗 */
     openDiagnosisDialog: () => void;
@@ -58,6 +67,7 @@ const props = withDefaults(
   }>(),
   {
     encounterId: '',
+    feeNatureOptions: () => [],
     patientDiagnoses: () => [],
     patientId: '',
     onEncounterDiagnosisDeleted: undefined,
@@ -65,6 +75,18 @@ const props = withDefaults(
     onEncounterDiagnosisOptionsRefreshed: undefined,
   },
 );
+
+/** 医保等级=自费时仅保留自费合同下拉 */
+const itemFeeNatureOptions = computed(() =>
+  filterFeeNatureOptionsByChrgitmLv(props.feeNatureOptions, props.item.chrgitmLv),
+);
+
+/** 用户切换费用性质：同步合同主键与展示名 */
+function patchContract(contractId: string) {
+  const sel = contractSelectionFromValue(contractId, itemFeeNatureOptions.value);
+  props.setField('contractId', sel.contractId as AdviceDrugItem['contractId']);
+  props.setField('feeNature', sel.feeNature as AdviceDrugItem['feeNature']);
+}
 
 const productInfoTitle = computed(() => (props.editorKind === 'DEVICE' ? '耗材信息' : '诊疗信息'));
 
@@ -304,9 +326,43 @@ function patchEncounterDiagnosisIds(value: unknown) {
           />
         </div>
       </div>
+      <div class="field-item fee-nature-field">
+        <span class="meta-label">费用性质</span>
+        <ElSelect
+          v-if="itemFeeNatureOptions.length > 1"
+          :model-value="item.contractId"
+          placeholder="请选择"
+          @update:model-value="(value: unknown) => patchContract(String(value || ''))"
+        >
+          <ElOption
+            v-for="opt in itemFeeNatureOptions"
+            :key="String(opt.value ?? '')"
+            :label="String(opt.label ?? opt.value ?? '')"
+            :value="String(opt.value ?? '')"
+          />
+        </ElSelect>
+        <span v-else class="fee-nature-readonly">{{ item.feeNature || '自费' }}</span>
+      </div>
     </div>
 
     <div v-if="editorKind === 'DEVICE'" class="drug-form-row simple-row device-qty-form">
+      <div class="field-item fee-nature-field">
+        <span class="meta-label">费用性质</span>
+        <ElSelect
+          v-if="itemFeeNatureOptions.length > 1"
+          :model-value="item.contractId"
+          placeholder="请选择"
+          @update:model-value="(value: unknown) => patchContract(String(value || ''))"
+        >
+          <ElOption
+            v-for="opt in itemFeeNatureOptions"
+            :key="String(opt.value ?? '')"
+            :label="String(opt.label ?? opt.value ?? '')"
+            :value="String(opt.value ?? '')"
+          />
+        </ElSelect>
+        <span v-else class="fee-nature-readonly">{{ item.feeNature || '自费' }}</span>
+      </div>
       <div class="field-item total-amount-item">
         <span class="meta-label">数量</span>
         <div class="total-amount-wrap device-qty-form__inputs">
@@ -413,10 +469,18 @@ function patchEncounterDiagnosisIds(value: unknown) {
   box-sizing: border-box;
 }
 
-/* 仅耗材「数量+单位」行：限制整行宽度 + 收窄单位控件；上方信息区保持默认样式 */
+/* 耗材：费用性质 + 数量行；上方信息区保持默认样式 */
 .device-qty-form {
-  max-width: 300px;
+  max-width: 460px;
   width: fit-content;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px 12px;
+}
+
+.fee-nature-field :deep(.el-select) {
+  width: 130px;
 }
 
 .device-qty-form__inputs :deep(.dose-qty-input) {

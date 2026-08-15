@@ -77,6 +77,8 @@ const emit = defineEmits<{
   'update:modelValue': [value: boolean];
   /** 刷新队列 */
   refresh: [];
+  /** 点击患者卡：选中患者并回到当前业务页 */
+  select: [payload: { patientId: string }];
   /** 快捷入口：选中患者并打开对应业务页签 */
   shortcut: [payload: { patientId: string; tab: OperationTab }];
 }>();
@@ -138,7 +140,15 @@ function handleRefresh() {
   emit('refresh');
 }
 
-/** 点击快捷入口：选中患者并切业务页签（暂不收起大屏，流程待定） */
+/** 点击患者卡：选中该患者并回到工作台业务区 */
+function handleCardClick(patient: PatientItem) {
+  if (props.recallListMode) {
+    return;
+  }
+  emit('select', { patientId: patient.id });
+}
+
+/** 点击快捷入口：选中患者并切业务页签 */
 function handleShortcutClick(patient: PatientItem, tab: OperationTab, event: MouseEvent) {
   event.stopPropagation();
   if (props.recallListMode) {
@@ -206,20 +216,7 @@ function formatAdmissionAt(row: PatientItem): string {
   return raw;
 }
 
-/** 入科时间展示 */
-function formatInWardAt(row: PatientItem): string {
-  const raw = (row.startTime ?? '').trim();
-  if (!raw) {
-    return '—';
-  }
-  const parsed = dayjs(raw);
-  if (parsed.isValid()) {
-    return parsed.format('YYYY-MM-DD HH:mm');
-  }
-  return raw;
-}
-
-/** 住院天数（入院日计第 1 天） */
+/** 住院天数：即进不计出（入院日计、出院日不计）；在院含当日 */
 function formatInpatientDays(row: PatientItem): string {
   const admissionRaw = (row.admissionTime ?? row.startTime ?? '').trim();
   if (!admissionRaw) {
@@ -230,9 +227,19 @@ function formatInpatientDays(row: PatientItem): string {
     return '—';
   }
   const endRaw = (row.endTime ?? '').trim();
-  const end = endRaw && dayjs(endRaw).isValid() ? dayjs(endRaw) : dayjs();
-  const days = end.startOf('day').diff(admission.startOf('day'), 'day') + 1;
-  return `${Math.max(1, days)}天`;
+  let hasDischarge = false;
+  let end = dayjs();
+  if (endRaw && dayjs(endRaw).isValid()) {
+    hasDischarge = true;
+    end = dayjs(endRaw);
+  }
+  const diff = end.startOf('day').diff(admission.startOf('day'), 'day');
+  // 已出院：即进不计出
+  if (hasDischarge) {
+    return `${Math.max(1, diff)}天`;
+  }
+  // 在院：含当日
+  return `${Math.max(1, diff + 1)}天`;
 }
 
 /** 预缴额展示 */
@@ -255,6 +262,101 @@ function formatStaffName(value: string | undefined): string {
 /** 就诊状态文案 */
 function formatStatusLabel(row: PatientItem): string {
   return encounterStatusToNurseStationLabel(row.statusEnum, row.statusEnumText);
+}
+
+/** 身份证号展示 */
+function formatIdCardNo(row: PatientItem): string {
+  return (row.idCardNo ?? '').trim() || '—';
+}
+
+/** 医保号（人员编号）展示 */
+function formatInsuranceNo(row: PatientItem): string {
+  return (row.insuranceNo ?? '').trim() || '—';
+}
+
+/** 住址展示 */
+function formatAddress(row: PatientItem): string {
+  return (row.address ?? '').trim() || '—';
+}
+
+/** 医保类型展示（合同/费用性质） */
+function formatInsuranceType(row: PatientItem): string {
+  return (row.feeType ?? '').trim() || '—';
+}
+
+/** 电话展示 */
+function formatPhone(row: PatientItem): string {
+  return (row.patientPhone ?? '').trim() || '—';
+}
+
+/** 病人 ID 展示 */
+function formatPatientBusNo(row: PatientItem): string {
+  return (row.patientBusNo ?? '').trim() || '—';
+}
+
+/** 入院途径展示 */
+function formatInWay(row: PatientItem): string {
+  return (row.inWayCodeText ?? '').trim() || '—';
+}
+
+/** 入院状态（病情）展示 */
+function formatAdmissionStatus(row: PatientItem): string {
+  return (row.priorityEnumText ?? '').trim() || '—';
+}
+
+/** 入院科室展示 */
+function formatOrganizationName(row: PatientItem): string {
+  return (row.organizationName ?? '').trim() || '—';
+}
+
+/** 医疗类别（居民医疗类型）展示 */
+function formatMedType(row: PatientItem): string {
+  return (row.medTypeDisplay ?? '').trim() || '—';
+}
+
+/** 险种类别展示 */
+function formatInsutype(row: PatientItem): string {
+  const code = (row.insutype ?? '').trim();
+  if (!code) {
+    return '—';
+  }
+  if (code === '1') {
+    return '1-医疗保险';
+  }
+  if (code.includes('-')) {
+    return code;
+  }
+  return code;
+}
+
+/** 欠费限额：当前无独立限额字段，占位展示 */
+function formatArrearsLimit(_row: PatientItem): string {
+  return '—';
+}
+
+/** 门诊号：队列暂无门诊来源号，占位展示 */
+function formatOutpatientBusNo(_row: PatientItem): string {
+  return '—';
+}
+
+/** 办理人：队列暂无登记操作人，占位展示 */
+function formatHandlerName(_row: PatientItem): string {
+  return '—';
+}
+
+/** 诊断行列表（优先 diagnosisList） */
+function formatDiagnosisLines(row: PatientItem): string[] {
+  if (row.diagnosisList?.length) {
+    return row.diagnosisList;
+  }
+  const summary = (row.diagnosis ?? '').trim();
+  if (!summary || summary === '—') {
+    return [];
+  }
+  return summary
+    .split(/[；;]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 /** 余额主文案 */
@@ -296,6 +398,25 @@ function resolveHouseName(row: PatientItem): string {
   return props.wardNameById[row.wardId] || '—';
 }
 
+/** 头部床号展示（未分床时文案固定） */
+function formatBedNoLabel(row: PatientItem): string {
+  return (row.bedNo ?? '').trim() || '未分床';
+}
+
+/** 头部病区/病房展示（不含床号，床号单独加重） */
+function formatWardHouseLabel(row: PatientItem): string {
+  const parts: string[] = [];
+  const ward = resolveRegionName(row);
+  const house = resolveHouseName(row);
+  if (ward && ward !== '—') {
+    parts.push(ward);
+  }
+  if (house && house !== '—') {
+    parts.push(house);
+  }
+  return parts.join(' · ');
+}
+
 watch(
   () => props.modelValue,
   (open) => {
@@ -328,7 +449,7 @@ onUnmounted(() => {
           <ElIcon class="nurse-ls__brand-icon" :size="16"><FullScreen /></ElIcon>
           <div class="nurse-ls__brand-text">
             <h1 class="nurse-ls__title">患者一览</h1>
-            <p class="nurse-ls__subtitle">患者一览 · 快捷入口直达业务（操作流程待定）</p>
+            <p class="nurse-ls__subtitle">点击患者卡进入业务页 · 底部按钮直达对应模块</p>
           </div>
         </div>
         <div class="nurse-ls__stats">
@@ -373,38 +494,146 @@ onUnmounted(() => {
               'is-recall': recallListMode,
               [`is-tone-${resolveStatusTone(row)}`]: true,
             }"
+            role="button"
+            :tabindex="recallListMode ? -1 : 0"
+            :title="recallListMode ? undefined : '点击进入该患者业务页'"
+            @click="handleCardClick(row)"
+            @keydown.enter.prevent="handleCardClick(row)"
           >
             <div class="nurse-ls-card__rail" aria-hidden="true"></div>
 
             <div class="nurse-ls-card__head">
               <div class="nurse-ls-card__head-row">
-                <span
-                  class="nurse-ls-card__bed"
-                  :class="{ 'is-unassigned': isNurseStationBedUnassigned(row.bedNo) }"
-                >
-                  {{ row.bedNo?.trim() || '未分床' }}
-                </span>
+                <div class="nurse-ls-card__head-main">
+                  <span
+                    class="nurse-ls-card__bed"
+                    :class="{ 'is-unassigned': isNurseStationBedUnassigned(row.bedNo) }"
+                  >
+                    {{ formatBedNoLabel(row) }}
+                  </span>
+                  <span class="nurse-ls-card__name">{{ row.name || '—' }}</span>
+                  <span
+                    v-if="formatWardHouseLabel(row)"
+                    class="nurse-ls-card__ward"
+                    :title="formatWardHouseLabel(row)"
+                  >
+                    {{ formatWardHouseLabel(row) }}
+                  </span>
+                </div>
                 <span class="nurse-ls-card__status" :class="`is-${resolveStatusTone(row)}`">
                   {{ formatStatusLabel(row) }}
                 </span>
               </div>
-              <div class="nurse-ls-card__identity">
-                <span class="nurse-ls-card__name">{{ row.name }}</span>
-                <span class="nurse-ls-card__meta">
-                  {{ row.gender || '—' }} · {{ formatAgeLabel(row) }}
+            </div>
+
+            <div class="nurse-ls-card__form">
+              <div class="nurse-ls-card__field">
+                <span class="nurse-ls-card__label">住院号</span>
+                <span class="nurse-ls-card__value">{{ formatEncounterBusNo(row) }}</span>
+              </div>
+              <div class="nurse-ls-card__field">
+                <span class="nurse-ls-card__label">入院途径</span>
+                <span class="nurse-ls-card__value">{{ formatInWay(row) }}</span>
+              </div>
+              <div class="nurse-ls-card__field">
+                <span class="nurse-ls-card__label">门诊号</span>
+                <span class="nurse-ls-card__value">{{ formatOutpatientBusNo(row) }}</span>
+              </div>
+              <div class="nurse-ls-card__field">
+                <span class="nurse-ls-card__label">护理级别</span>
+                <span class="nurse-ls-card__value">{{ formatNursingLevel(row) || '—' }}</span>
+              </div>
+              <div class="nurse-ls-card__field">
+                <span class="nurse-ls-card__label">病人ID</span>
+                <span class="nurse-ls-card__value">{{ formatPatientBusNo(row) }}</span>
+              </div>
+              <div class="nurse-ls-card__field">
+                <span class="nurse-ls-card__label">电话</span>
+                <span class="nurse-ls-card__value">{{ formatPhone(row) }}</span>
+              </div>
+              <div class="nurse-ls-card__field">
+                <span class="nurse-ls-card__label">姓名</span>
+                <span class="nurse-ls-card__value is-strong">{{ row.name || '—' }}</span>
+              </div>
+              <div class="nurse-ls-card__field">
+                <span class="nurse-ls-card__label">性别</span>
+                <span class="nurse-ls-card__value">{{ row.gender || '—' }}</span>
+              </div>
+              <div class="nurse-ls-card__field">
+                <span class="nurse-ls-card__label">身份证号</span>
+                <span class="nurse-ls-card__value is-mono">{{ formatIdCardNo(row) }}</span>
+              </div>
+              <div class="nurse-ls-card__field">
+                <span class="nurse-ls-card__label">年龄</span>
+                <span class="nurse-ls-card__value">{{ formatAgeLabel(row) }}</span>
+              </div>
+              <div class="nurse-ls-card__field nurse-ls-card__field--full">
+                <span class="nurse-ls-card__label">地址</span>
+                <span class="nurse-ls-card__value is-wrap" :title="formatAddress(row)">
+                  {{ formatAddress(row) }}
                 </span>
               </div>
-              <div class="nurse-ls-card__tags">
-                <span class="nurse-ls-card__tag">{{ resolveRegionName(row) }}</span>
-                <span class="nurse-ls-card__tag">{{ resolveHouseName(row) }}</span>
-                <span v-if="formatNursingLevel(row)" class="nurse-ls-card__tag is-level">
-                  {{ formatNursingLevel(row) }}
-                </span>
-                <span class="nurse-ls-card__tag">{{ row.feeType || '—' }}</span>
-                <span class="nurse-ls-card__tag">住院{{ formatInpatientDays(row) }}</span>
-                <span v-if="row.riskText" class="nurse-ls-card__tag is-risk">
-                  {{ row.riskText }}
-                </span>
+              <div class="nurse-ls-card__field">
+                <span class="nurse-ls-card__label">欠费限额</span>
+                <span class="nurse-ls-card__value">{{ formatArrearsLimit(row) }}</span>
+              </div>
+              <div class="nurse-ls-card__field">
+                <span class="nurse-ls-card__label">入院状态</span>
+                <span class="nurse-ls-card__value">{{ formatAdmissionStatus(row) }}</span>
+              </div>
+              <div class="nurse-ls-card__field">
+                <span class="nurse-ls-card__label">入院科室</span>
+                <span class="nurse-ls-card__value">{{ formatOrganizationName(row) }}</span>
+              </div>
+              <div class="nurse-ls-card__field">
+                <span class="nurse-ls-card__label">入院病区</span>
+                <span class="nurse-ls-card__value">{{ resolveRegionName(row) }}</span>
+              </div>
+              <div class="nurse-ls-card__field">
+                <span class="nurse-ls-card__label">主治医生</span>
+                <span class="nurse-ls-card__value">{{
+                  formatStaffName(row.attendingDoctorName)
+                }}</span>
+              </div>
+              <div class="nurse-ls-card__field">
+                <span class="nurse-ls-card__label">医保号</span>
+                <span class="nurse-ls-card__value is-mono">{{ formatInsuranceNo(row) }}</span>
+              </div>
+              <div class="nurse-ls-card__field">
+                <span class="nurse-ls-card__label">医保类型</span>
+                <span class="nurse-ls-card__value is-insure">{{ formatInsuranceType(row) }}</span>
+              </div>
+              <div class="nurse-ls-card__field">
+                <span class="nurse-ls-card__label">居民医疗类型</span>
+                <span class="nurse-ls-card__value">{{ formatMedType(row) }}</span>
+              </div>
+              <div class="nurse-ls-card__field nurse-ls-card__field--full">
+                <span class="nurse-ls-card__label">险种类别</span>
+                <span class="nurse-ls-card__value">{{ formatInsutype(row) }}</span>
+              </div>
+            </div>
+
+            <div class="nurse-ls-card__diag">
+              <div class="nurse-ls-card__diag-title">入院诊断</div>
+              <div class="nurse-ls-card__diag-table">
+                <div class="nurse-ls-card__diag-head">
+                  <span>名称</span>
+                  <span>编码/病情</span>
+                </div>
+                <template v-if="formatDiagnosisLines(row).length">
+                  <div
+                    v-for="(line, idx) in formatDiagnosisLines(row)"
+                    :key="`${row.id}-diag-${idx}`"
+                    class="nurse-ls-card__diag-row"
+                  >
+                    <span class="is-diag" :title="line">{{ line }}</span>
+                    <span>—</span>
+                  </div>
+                </template>
+                <div v-else class="nurse-ls-card__diag-row">
+                  <span>—</span>
+                  <span>—</span>
+                </div>
               </div>
             </div>
 
@@ -421,33 +650,9 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <div class="nurse-ls-card__info">
-              <div class="nurse-ls-card__info-cell">
-                <span class="nurse-ls-card__k">医生</span>
-                <span class="nurse-ls-card__v">{{ formatStaffName(row.attendingDoctorName) }}</span>
-              </div>
-              <div class="nurse-ls-card__info-cell">
-                <span class="nurse-ls-card__k">护士</span>
-                <span class="nurse-ls-card__v">{{ formatStaffName(row.primaryNurseName) }}</span>
-              </div>
-              <div class="nurse-ls-card__info-cell">
-                <span class="nurse-ls-card__k">住院号</span>
-                <span class="nurse-ls-card__v">{{ formatEncounterBusNo(row) }}</span>
-              </div>
-              <div class="nurse-ls-card__info-cell">
-                <span class="nurse-ls-card__k">入院</span>
-                <span class="nurse-ls-card__v">{{ formatAdmissionAt(row) }}</span>
-              </div>
-              <div class="nurse-ls-card__info-cell nurse-ls-card__info-cell--full">
-                <span class="nurse-ls-card__k">入科</span>
-                <span class="nurse-ls-card__v">{{ formatInWardAt(row) }}</span>
-              </div>
-              <div class="nurse-ls-card__info-cell nurse-ls-card__info-cell--full">
-                <span class="nurse-ls-card__k">诊断</span>
-                <span class="nurse-ls-card__v is-diag" :title="row.diagnosis">
-                  {{ row.diagnosis || '—' }}
-                </span>
-              </div>
+            <div class="nurse-ls-card__footer">
+              <span>办理人：{{ formatHandlerName(row) }}</span>
+              <span>入院时间：{{ formatAdmissionAt(row) }}</span>
             </div>
 
             <div class="nurse-ls-card__tasks">
@@ -460,6 +665,7 @@ onUnmounted(() => {
               >
                 执行 <b>{{ row.pendingExecute }}</b>
               </span>
+              <span class="nurse-ls-card__task"> 住院 {{ formatInpatientDays(row) }} </span>
             </div>
 
             <div class="nurse-ls-card__shortcuts" @click.stop>
@@ -598,7 +804,7 @@ onUnmounted(() => {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 12px;
+  padding: 8px;
 }
 
 .nurse-ls__empty {
@@ -611,25 +817,30 @@ onUnmounted(() => {
 
 .nurse-ls__grid {
   display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(auto-fill, minmax(308px, 1fr));
+  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
 }
 
 .nurse-ls-card {
   background: #fff;
   border: 1px solid #b8bfcb;
-  border-radius: 10px;
+  border-radius: 8px;
   box-shadow: 0 2px 8px rgb(15 23 42 / 6%);
   color: inherit;
-  cursor: default;
+  cursor: pointer;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 5px;
   outline: none;
   overflow: hidden;
-  padding: 0 0 8px;
+  padding: 0 0 5px;
   position: relative;
   text-align: left;
+}
+
+.nurse-ls-card:hover:not(.is-recall) {
+  border-color: var(--el-color-primary-light-5);
+  box-shadow: 0 4px 14px rgb(37 99 235 / 12%);
 }
 
 .nurse-ls-card.is-selected {
@@ -704,24 +915,33 @@ onUnmounted(() => {
 .nurse-ls-card__head {
   background: linear-gradient(180deg, #f7f9fc 0%, #fff 100%);
   border-bottom: 1px solid #e2e6ed;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px 8px 14px;
+  padding: 4px 8px 4px 10px;
 }
 
 .nurse-ls-card__head-row {
   align-items: center;
   display: flex;
-  gap: 8px;
+  gap: 6px;
   justify-content: space-between;
+  min-width: 0;
+}
+
+.nurse-ls-card__head-main {
+  align-items: baseline;
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  min-width: 0;
 }
 
 .nurse-ls-card__bed {
   color: var(--el-color-primary);
+  flex-shrink: 0;
   font-size: 18px;
+  font-variant-numeric: tabular-nums;
   font-weight: 800;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.02em;
   line-height: 1.15;
 }
 
@@ -729,13 +949,31 @@ onUnmounted(() => {
   color: var(--el-color-warning);
 }
 
+.nurse-ls-card__name {
+  color: var(--el-text-color-primary);
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+.nurse-ls-card__ward {
+  color: var(--el-text-color-regular);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .nurse-ls-card__status {
   border-radius: 999px;
   flex-shrink: 0;
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 600;
   line-height: 1;
-  padding: 4px 8px;
+  padding: 2px 6px;
 }
 
 .nurse-ls-card__status.is-registered {
@@ -765,60 +1003,141 @@ onUnmounted(() => {
   color: #64748b;
 }
 
-.nurse-ls-card__identity {
-  align-items: baseline;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 8px;
-  min-width: 0;
+.nurse-ls-card__form {
+  display: grid;
+  gap: 3px 5px;
+  grid-template-columns: 1fr 1fr;
+  padding: 0 8px 0 10px;
 }
 
-.nurse-ls-card__name {
-  color: var(--el-text-color-primary);
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1.2;
-}
-
-.nurse-ls-card__meta {
-  color: #4b5565;
-  font-size: 12px;
-}
-
-.nurse-ls-card__tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.nurse-ls-card__tag {
+.nurse-ls-card__field {
+  align-items: center;
   background: #eef2f7;
-  border-radius: 4px;
-  color: #334155;
+  border: 1px solid #d7dde7;
+  border-radius: 3px;
+  display: flex;
+  gap: 4px;
+  min-height: 22px;
+  min-width: 0;
+  padding: 1px 6px;
+}
+
+.nurse-ls-card__field--full {
+  grid-column: 1 / -1;
+}
+
+.nurse-ls-card__label {
+  color: var(--el-text-color-regular);
+  flex-shrink: 0;
   font-size: 11px;
-  font-weight: 500;
-  line-height: 1;
-  padding: 4px 6px;
+  line-height: 1.25;
+  width: 5em;
 }
 
-.nurse-ls-card__tag.is-level {
-  background: var(--el-color-primary-light-9);
+.nurse-ls-card__value {
+  color: var(--el-text-color-primary);
+  flex: 1;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.25;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nurse-ls-card__value.is-strong {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.nurse-ls-card__value.is-mono {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.nurse-ls-card__value.is-insure {
   color: var(--el-color-primary);
+  font-weight: 700;
 }
 
-.nurse-ls-card__tag.is-risk {
-  background: var(--el-color-danger-light-9);
-  color: var(--el-color-danger);
+.nurse-ls-card__value.is-wrap {
+  overflow: visible;
+  text-overflow: unset;
+  white-space: normal;
+  word-break: break-all;
+}
+
+.nurse-ls-card__diag {
+  margin: 0 8px 0 10px;
+}
+
+.nurse-ls-card__diag-title {
+  color: var(--el-text-color-primary);
+  font-size: 11px;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.nurse-ls-card__diag-table {
+  border: 1px solid #d7dde7;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.nurse-ls-card__diag-head,
+.nurse-ls-card__diag-row {
+  display: grid;
+  gap: 1px;
+  grid-template-columns: 1.4fr 1fr;
+}
+
+.nurse-ls-card__diag-head {
+  background: #e8edf4;
+}
+
+.nurse-ls-card__diag-head span,
+.nurse-ls-card__diag-row span {
+  background: #f8fafc;
+  font-size: 11px;
+  line-height: 1.25;
+  min-width: 0;
+  overflow: hidden;
+  padding: 2px 6px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nurse-ls-card__diag-head span {
+  background: #e8edf4;
+  color: var(--el-text-color-regular);
+  font-weight: 600;
+}
+
+.nurse-ls-card__diag-row span.is-diag {
+  color: #b42318;
+  font-weight: 600;
+  white-space: normal;
+  word-break: break-all;
+}
+
+.nurse-ls-card__footer {
+  color: var(--el-text-color-regular);
+  display: flex;
+  font-size: 11px;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 0 8px 0 10px;
 }
 
 .nurse-ls-card__money {
   display: grid;
   gap: 1px;
   grid-template-columns: 1fr 1fr;
-  margin: 0 12px 0 14px;
+  margin: 0 8px 0 10px;
   overflow: hidden;
   border: 1px solid #d7dde7;
-  border-radius: 6px;
+  border-radius: 4px;
   background: #d7dde7;
 }
 
@@ -826,14 +1145,14 @@ onUnmounted(() => {
   align-items: baseline;
   background: #f5f7fb;
   display: flex;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
-  padding: 7px 10px;
+  padding: 3px 8px;
 }
 
 .nurse-ls-card__money-val {
   color: var(--el-text-color-primary);
-  font-size: 14px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
   overflow: hidden;
@@ -855,57 +1174,24 @@ onUnmounted(() => {
 }
 
 .nurse-ls-card__k {
-  color: #64748b;
+  color: var(--el-text-color-regular);
   flex-shrink: 0;
-  font-size: 12px;
-}
-
-.nurse-ls-card__info {
-  display: grid;
-  gap: 4px 10px;
-  grid-template-columns: 1fr 1fr;
-  padding: 0 12px 0 14px;
-}
-
-.nurse-ls-card__info-cell {
-  align-items: baseline;
-  display: flex;
-  gap: 4px;
-  min-width: 0;
-}
-
-.nurse-ls-card__info-cell--full {
-  grid-column: 1 / -1;
-}
-
-.nurse-ls-card__v {
-  color: var(--el-text-color-primary);
-  font-size: 12px;
-  font-weight: 500;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.nurse-ls-card__v.is-diag {
-  color: #b42318;
-  font-weight: 600;
+  font-size: 11px;
 }
 
 .nurse-ls-card__tasks {
   display: flex;
-  gap: 6px;
-  padding: 0 12px 0 14px;
+  gap: 4px;
+  padding: 0 8px 0 10px;
 }
 
 .nurse-ls-card__task {
   background: #f1f4f8;
   border-radius: 999px;
-  color: #64748b;
-  font-size: 12px;
+  color: var(--el-text-color-regular);
+  font-size: 11px;
   line-height: 1;
-  padding: 4px 8px;
+  padding: 3px 6px;
 }
 
 .nurse-ls-card__task b {
@@ -931,23 +1217,23 @@ onUnmounted(() => {
 
 .nurse-ls-card__shortcuts {
   display: grid;
-  gap: 5px;
+  gap: 3px;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  margin-top: 2px;
-  padding: 0 12px 2px 14px;
+  margin-top: 0;
+  padding: 0 8px 1px 10px;
 }
 
 .nurse-ls-card__shortcut {
   background: #fff;
   border: 1px solid #c5ccd8;
-  border-radius: 5px;
-  color: #1f2937;
+  border-radius: 4px;
+  color: var(--el-text-color-primary);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  line-height: 1.2;
+  line-height: 1.15;
   min-width: 0;
-  padding: 6px 2px;
+  padding: 3px 1px;
   transition:
     border-color 0.15s ease,
     color 0.15s ease,
@@ -981,7 +1267,17 @@ onUnmounted(() => {
   }
 
   .nurse-ls__grid {
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .nurse-ls-card__form {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 1600px) {
+  .nurse-ls__grid {
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   }
 }
 </style>

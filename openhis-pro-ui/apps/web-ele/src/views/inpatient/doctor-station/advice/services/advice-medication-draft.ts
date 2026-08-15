@@ -57,6 +57,9 @@ function buildMedicationDraftLine(
   }
   const methodCode = String(item.usage || '').trim() || undefined;
   const rateCode = String(item.frequency || '').trim() || undefined;
+  // 非输液且无码：传空串清空；有码（含同组同步到溶媒）或输液药：落库
+  const rawSpeed = String(item.speedCode ?? '').trim();
+  const speedCode = item.injectFlag === true || rawSpeed ? rawSpeed : '';
   const { dose, doseUnitCode } = resolveMedicationDraftDosePayload(item);
   const daysRaw = Number(item.medicationDays ?? Number.NaN);
   const dispensePerDuration =
@@ -96,6 +99,8 @@ function buildMedicationDraftLine(
     ...(dispensePerDuration === undefined ? {} : { dispensePerDuration }),
     ...(methodCode ? { methodCode } : {}),
     ...(rateCode ? { rateCode } : {}),
+    // UPDATE 始终传 speedCode（含空串），域层可清空旧滴速
+    speedCode,
     ...(contractId ? { contractId } : {}),
     ...(gid ? { groupId: gid } : {}),
   };
@@ -160,13 +165,61 @@ function buildServiceDraftLine(
 }
 
 /**
+ * 同组药品滴速一致：把组内首条非空 speedCode 同步到同组全部药品行。
+ */
+export function syncGroupSpeedAcrossAdviceItems(items: AdviceDrugItem[]): AdviceDrugItem[] {
+  const indicesByGroup = new Map<string, number[]>();
+  items.forEach((item, index) => {
+    if (inferAdviceLineEditorKind(item) !== 'MEDICATION') {
+      return;
+    }
+    const gid = String(item.groupId ?? '').trim();
+    if (!gid) {
+      return;
+    }
+    const list = indicesByGroup.get(gid) ?? [];
+    list.push(index);
+    indicesByGroup.set(gid, list);
+  });
+  if (indicesByGroup.size === 0) {
+    return items;
+  }
+  const next = items.map((item) => ({ ...item }));
+  for (const indices of indicesByGroup.values()) {
+    if (indices.length < 2) {
+      continue;
+    }
+    let speed = '';
+    for (const index of indices) {
+      const code = String(next[index]?.speedCode ?? '').trim();
+      if (code) {
+        speed = code;
+        break;
+      }
+    }
+    if (!speed) {
+      continue;
+    }
+    for (const index of indices) {
+      const row = next[index];
+      if (!row) {
+        continue;
+      }
+      next[index] = { ...row, speedCode: speed };
+    }
+  }
+  return next;
+}
+
+/**
  * 将编辑卡多行组装为暂存批次 lines：按行区分药品 / 诊疗 / 耗材（与目录复合 selectedId、productTableName 一致）。
  * 住院开立不绑诊断，不传 encounterDiagnosisId / conditionDefinitionId。
  */
 export function buildAdviceDraftLines(
   items: AdviceDrugItem[],
 ): InpatientDoctorStationAdviceDraftLineRequest[] {
-  return items.map((item, index) => {
+  const synced = syncGroupSpeedAcrossAdviceItems(items);
+  return synced.map((item, index) => {
     const kind = inferAdviceLineEditorKind(item);
     if (kind === 'SERVICE') {
       return buildServiceDraftLine(item, index);

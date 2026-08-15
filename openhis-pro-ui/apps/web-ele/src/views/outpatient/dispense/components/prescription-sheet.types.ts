@@ -1,5 +1,15 @@
 import type { TcmHerbGridDisplayRow } from '#/utils/tcm-prescription-display';
 
+/** 发药单「查看库存」弹窗一行 */
+export interface PrescriptionSheetStockLine {
+  /** 药品名称 */
+  itemName: string;
+  /** 剩余库存展示（已换算） */
+  remainingStockText: string;
+  /** 批号（可选） */
+  batchNo?: string;
+}
+
 /**
  * 发药单正文一行药品（与列表明细字段对齐；序号由组件按数组顺序生成）。
  */
@@ -35,14 +45,25 @@ export interface PrescriptionSheetData {
   documentTitle?: string;
   /** 机构名称（页眉居中） */
   hospitalName: string;
+  /**
+   * 方头右上角第一行：普通处方 / 慢病处方 / 急诊处方等（与打印 prescriptionTypeLine1 同源）。
+   */
+  prescriptionTypeLine1?: string;
+  /** 方头右上角第二行（默认「当日有效」） */
+  prescriptionTypeLine2?: string;
   /** 处方号 */
   prescriptionNo: string;
   patientName: string;
   patientAgeLabel: string;
   patientGenderLabel: string;
   deptName: string;
-  /** 费用性质，如自费、医保 */
+  /** 费用性质（自费/市医保/职工医保/居民医保等；笺面本槽固定展示） */
   feeNatureLabel: string;
+  /**
+   * 就诊类型（医保医疗类别，如「普通门诊」「门诊慢病」）。
+   * 笺面方头用 prescriptionTypeLine*；本字段保留给打印/其它消费方。
+   */
+  visitTypeLabel?: string;
   /** 处方日期 YYYY-MM-DD */
   prescriptionDate: string;
   /** 门诊号/就诊号展示文案 */
@@ -54,6 +75,10 @@ export interface PrescriptionSheetData {
   patientPhone: string;
   /** 发放药房（明细行库房去重聚合，展示在基础信息区） */
   dispensePharmacyLabel: string;
+  /**
+   * 当前处方药品剩余库存（供「查看库存」弹窗；中西药均装配，与笺面明细版式解耦）。
+   */
+  stockLines?: PrescriptionSheetStockLine[];
   lines: PrescriptionSheetLine[];
   /** 中药：四列饮片网格（药名+克数，note* 为右上角特殊煎法） */
   tcmHerbGridRows?: TcmHerbGridDisplayRow[];

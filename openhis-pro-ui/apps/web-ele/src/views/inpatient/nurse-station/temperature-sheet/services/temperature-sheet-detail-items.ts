@@ -169,9 +169,10 @@ export function buildDetailItemsFromFillRow(
   const items: TemperatureSheetDetailItemDto[] = [];
 
   pushDetailItemIfPresent(items, TERM_VITAL_SIGNS_CODE, VITAL_ITEM_CODE.TEMP, row.temp);
+  // 前端合并脉搏/心率：只录脉搏，保存时同步写 PULSE 与 HR
   pushDetailItemIfPresent(items, TERM_VITAL_SIGNS_CODE, VITAL_ITEM_CODE.PULSE, row.pulse);
   pushDetailItemIfPresent(items, TERM_VITAL_SIGNS_CODE, VITAL_ITEM_CODE.RESP, row.respiratory);
-  pushDetailItemIfPresent(items, TERM_VITAL_SIGNS_CODE, VITAL_ITEM_CODE.HR, row.heartRate);
+  pushDetailItemIfPresent(items, TERM_VITAL_SIGNS_CODE, VITAL_ITEM_CODE.HR, row.pulse);
   pushDetailItemIfPresent(items, TERM_VITAL_SIGNS_CODE, VITAL_ITEM_CODE.SBP, row.systolic);
   pushDetailItemIfPresent(items, TERM_VITAL_SIGNS_CODE, VITAL_ITEM_CODE.DBP, row.diastolic);
 
@@ -278,9 +279,13 @@ export function applyDetailItemsToFillRow(
   detailItems: TemperatureSheetDetailItemDto[] | null | undefined,
 ): void {
   row.temp = readDetailItemValue(detailItems, TERM_VITAL_SIGNS_CODE, VITAL_ITEM_CODE.TEMP);
-  row.pulse = readDetailItemValue(detailItems, TERM_VITAL_SIGNS_CODE, VITAL_ITEM_CODE.PULSE);
+  // 回显优先脉搏，缺省时回退心率（历史仅录 HR 的数据）
+  const pulseOrHeartRate =
+    readDetailItemValue(detailItems, TERM_VITAL_SIGNS_CODE, VITAL_ITEM_CODE.PULSE) ||
+    readDetailItemValue(detailItems, TERM_VITAL_SIGNS_CODE, VITAL_ITEM_CODE.HR);
+  row.pulse = pulseOrHeartRate;
   row.respiratory = readDetailItemValue(detailItems, TERM_VITAL_SIGNS_CODE, VITAL_ITEM_CODE.RESP);
-  row.heartRate = readDetailItemValue(detailItems, TERM_VITAL_SIGNS_CODE, VITAL_ITEM_CODE.HR);
+  row.heartRate = pulseOrHeartRate;
   row.systolic = readDetailItemValue(detailItems, TERM_VITAL_SIGNS_CODE, VITAL_ITEM_CODE.SBP);
   row.diastolic = readDetailItemValue(detailItems, TERM_VITAL_SIGNS_CODE, VITAL_ITEM_CODE.DBP);
 
@@ -456,4 +461,33 @@ export function resolveSlot22DetailItems(
 ): TemperatureSheetDetailItemDto[] {
   const slot22 = (slotCells ?? []).find((cell) => (cell.timeSlot ?? '').trim() === '22');
   return slot22?.detailItems ?? [];
+}
+
+/**
+ * 读取当日身高/体重：优先 22:00 补充槽，缺省时回退到其它时次
+ * （入院体征写在入科时点，需能落到体温单底部汇总）。
+ */
+export function resolveDayHeightWeightDetailItems(
+  slotCells:
+    | Array<{ detailItems?: TemperatureSheetDetailItemDto[] | null; timeSlot?: null | string }>
+    | null
+    | undefined,
+): TemperatureSheetDetailItemDto[] {
+  const cells = slotCells ?? [];
+  const slot22Items = resolveSlot22DetailItems(cells);
+  const height22 = readVitalValueFromDetailItems(slot22Items, VITAL_ITEM_CODE.HEIGHT);
+  const weight22 = readVitalValueFromDetailItems(slot22Items, VITAL_ITEM_CODE.WEIGHT);
+  if (height22 || weight22) {
+    return slot22Items;
+  }
+  // 按 02→22 时次顺序取首个含身高或体重的槽（含入科时点归桶后的值）
+  for (const cell of cells) {
+    const items = cell.detailItems ?? [];
+    const height = readVitalValueFromDetailItems(items, VITAL_ITEM_CODE.HEIGHT);
+    const weight = readVitalValueFromDetailItems(items, VITAL_ITEM_CODE.WEIGHT);
+    if (height || weight) {
+      return items;
+    }
+  }
+  return slot22Items;
 }

@@ -76,7 +76,7 @@ const guideExpanded = ref(false);
 const chargeTypeOptions = ref<ChargeType[]>([]);
 
 /** 接近全屏宽度，上限 1480px */
-const dialogWidth = 'min(92vw, 1480px)';
+const dialogWidth = 'min(96vw, 1680px)';
 
 const viewportHeight = ref(typeof window === 'undefined' ? 900 : window.innerHeight);
 
@@ -98,7 +98,7 @@ const guideDescription = computed(() => {
   const detailLabel =
     detail === '1305' ? '1305 医疗服务明细' : detail === '1306' ? '1306 耗材明细' : '1301 西药明细';
   const aprvHint = showAprvnoFilter.value ? '；填写批准文号时查 1301 明细' : '';
-  return `仅查询本地已下载的国家目录镜像，不出站调用医保。结果已按已应用局文合成：停用码不可选；甲乙类/限价优先取局文补丁。默认 1312 去重，无结果时回退 ${detailLabel}${aprvHint}。无数据请先到「国家目录」页下载/导入（诊疗请先下 1305/1312）。`;
+  return `仅查询本地已下载的国家目录镜像，不出站调用医保。结果已按已应用局文合成：停用码不可选；甲乙类/限价优先取局文补丁。列表展示目录包装数/计价单位（来自 1301）。默认 1312 去重，无结果时回退 ${detailLabel}${aprvHint}。无数据请先到「国家目录」页下载/导入（诊疗请先下 1305/1312）。`;
 });
 
 function syncViewportHeight() {
@@ -284,6 +284,18 @@ function rowClassName({ row }: { row: CatalogMatchCandidate }) {
   return isRowSelectable(row) ? '' : 'catalog-picker-row--disabled';
 }
 
+/** 目录包装/计价单位提示（选码确认用） */
+function formatPackHint(row: CatalogMatchCandidate): string {
+  const cnt = String(row.minPacCnt ?? '').trim();
+  const pacunt = String(row.minPacunt ?? '').trim();
+  const prcunt = String(row.minPrcunt ?? '').trim();
+  const prepunt = String(row.minPrepunt ?? '').trim();
+  const pack = cnt || pacunt ? `目录包装：${cnt || '-'}${pacunt}` : '';
+  const priceUnit = prcunt ? `计价单位：${prcunt}` : '';
+  const prep = prepunt ? `制剂单位：${prepunt}` : '';
+  return [pack, priceUnit, prep].filter(Boolean).join('；');
+}
+
 async function handleConfirm() {
   if (!selectedRow.value?.hilistCode) {
     ElMessage.warning('请先选择一条国家目录记录');
@@ -298,10 +310,12 @@ async function handleConfirm() {
   const priceText = selectedRow.value.priceUplmtAmt
     ? `\n限价上限：${selectedRow.value.priceUplmtAmt}`
     : '';
+  const packHint = formatPackHint(selectedRow.value);
+  const packText = packHint ? `\n${packHint}` : '';
   const msg =
     level === 'UNIQUE_SUGGEST'
-      ? `确认选用医保编码 ${selectedRow.value.hilistCode}？\n${selectedRow.value.hilistName ?? ''}\n支付等级：${lvText}${priceText}`
-      : `当前为多条候选，请确认选用：\n${selectedRow.value.hilistCode} — ${selectedRow.value.hilistName ?? ''}\n支付等级：${lvText}${priceText}`;
+      ? `确认选用医保编码 ${selectedRow.value.hilistCode}？\n${selectedRow.value.hilistName ?? ''}\n支付等级：${lvText}${priceText}${packText}`
+      : `当前为多条候选，请确认选用：\n${selectedRow.value.hilistCode} — ${selectedRow.value.hilistName ?? ''}\n支付等级：${lvText}${priceText}${packText}`;
   try {
     await ElMessageBox.confirm(msg, '确认医保目录对码', {
       type: level === 'MULTI_CHOICE' ? 'warning' : 'info',
@@ -421,13 +435,13 @@ watch(
         :row-class-name="rowClassName"
         @current-change="handleCurrentChange"
       >
-        <ElTableColumn prop="matchScore" label="得分" width="64" />
-        <ElTableColumn prop="hilistCode" label="医保编码" width="140" />
-        <ElTableColumn prop="hilistName" label="名称" min-width="160" show-overflow-tooltip />
-        <ElTableColumn prop="chrgitmLv" label="等级" width="72">
+        <ElTableColumn prop="matchScore" label="得分" width="56" />
+        <ElTableColumn prop="hilistCode" label="医保编码" min-width="200" show-overflow-tooltip />
+        <ElTableColumn prop="hilistName" label="名称" min-width="220" show-overflow-tooltip />
+        <ElTableColumn prop="chrgitmLv" label="等级" width="56">
           <template #default="{ row }">{{ formatChrgitmLv(row.chrgitmLv) }}</template>
         </ElTableColumn>
-        <ElTableColumn label="可选" width="120">
+        <ElTableColumn label="可选" width="72">
           <template #default="{ row }">
             <ElTag v-if="isRowSelectable(row)" type="success" size="small">可选</ElTag>
             <ElTag v-else type="danger" size="small" :title="row.unselectableReason">
@@ -435,19 +449,26 @@ watch(
             </ElTag>
           </template>
         </ElTableColumn>
-        <ElTableColumn prop="priceUplmtAmt" label="限价" width="88" show-overflow-tooltip />
-        <ElTableColumn prop="dosform" label="剂型" width="88" show-overflow-tooltip />
-        <ElTableColumn prop="aprvno" label="批准文号" width="140" show-overflow-tooltip />
-        <ElTableColumn prop="prodentpName" label="生产企业" min-width="140" show-overflow-tooltip />
-        <ElTableColumn prop="spec" label="规格" width="100" show-overflow-tooltip />
-        <ElTableColumn prop="listType" label="类型" width="80">
+        <ElTableColumn prop="priceUplmtAmt" label="限价" width="72" show-overflow-tooltip />
+        <ElTableColumn label="目录包装" width="80" show-overflow-tooltip>
+          <template #default="{ row }">
+            {{ [row.minPacCnt, row.minPacunt].filter(Boolean).join('') || '-' }}
+          </template>
+        </ElTableColumn>
+        <ElTableColumn prop="minPrcunt" label="计价单位" width="72" show-overflow-tooltip />
+        <ElTableColumn prop="minPrepunt" label="制剂单位" width="72" show-overflow-tooltip />
+        <ElTableColumn prop="dosform" label="剂型" width="72" show-overflow-tooltip />
+        <ElTableColumn prop="aprvno" label="批准文号" min-width="160" show-overflow-tooltip />
+        <ElTableColumn prop="prodentpName" label="生产企业" min-width="200" show-overflow-tooltip />
+        <ElTableColumn prop="spec" label="规格" min-width="160" show-overflow-tooltip />
+        <ElTableColumn prop="listType" label="类型" width="64">
           <template #default="{ row }">{{ formatCatalogListType(row.listType) }}</template>
         </ElTableColumn>
-        <ElTableColumn prop="valiFlag" label="有效" width="64">
+        <ElTableColumn prop="valiFlag" label="有效" width="56">
           <template #default="{ row }">{{ formatValiFlag(row.valiFlag) }}</template>
         </ElTableColumn>
         <ElTableColumn prop="matchReason" label="命中" min-width="120" show-overflow-tooltip />
-        <ElTableColumn prop="sourceInfno" label="来源" width="64" />
+        <ElTableColumn prop="sourceInfno" label="来源" width="56" />
       </ElTable>
       <div v-if="showPager" class="flex justify-end">
         <ElButton :disabled="pageNo <= 1" @click="handlePageChange(pageNo - 1)"> 上一页 </ElButton>
@@ -487,7 +508,7 @@ watch(
 <style>
 /* append-to-body 后需非 scoped 才能作用到 dialog 本体 */
 .medication-catalog-picker-dialog.el-dialog {
-  max-width: 1480px;
+  max-width: 1680px;
 }
 
 .medication-catalog-picker-dialog .el-dialog__body {

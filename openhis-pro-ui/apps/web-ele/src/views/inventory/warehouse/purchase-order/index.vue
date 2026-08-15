@@ -350,6 +350,7 @@ onMounted(async () => {
     </template>
 
     <PurchaseOrderMainPane
+      :queue-card-row="selectedOrder"
       ref="mainPaneRef"
       class="min-h-0 flex-1"
       :apply-time="tableForm.applyTime"

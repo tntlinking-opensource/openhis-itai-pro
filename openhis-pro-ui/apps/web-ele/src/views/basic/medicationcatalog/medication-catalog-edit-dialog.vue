@@ -40,6 +40,7 @@ import {
   resolveCatalogRecordNavState,
   type CatalogRecordNavDirection,
 } from '#/views/basic/catalog/catalog-record-nav';
+import { resolveMedicationCatalogPriceDisplayDp } from '#/utils/format/money-scale';
 
 interface Props {
   modelValue: boolean;
@@ -88,6 +89,11 @@ const editabilityCode = ref(CATALOG_EDITABILITY_OK);
 const editabilityMessage = ref('');
 
 const catalogStructureLocked = computed(() => isCatalogStructureLocked(editabilityCode.value));
+
+/** 进售价 InputNumber 小数位：中草药 3，其余 2（随药品分类联动） */
+const catalogPriceInputDp = computed(() =>
+  resolveMedicationCatalogPriceDisplayDp(formData.value?.categoryCode),
+);
 
 interface OptionItem {
   label?: string;
@@ -782,6 +788,11 @@ const updateFormOptions = () => {
         fieldName: 'categoryCode',
         componentProps: {
           data: medicationCategoryCodeOptions.value,
+          // 与 schema 同源：切换分类刷新进售价小数位
+          onChange: (value: unknown) => {
+            const code = value === undefined || value === null ? '' : String(value);
+            formData.value = { ...formData.value, categoryCode: code };
+          },
         },
       },
       {
@@ -1058,6 +1069,11 @@ const [Form, formApi] = useVbenForm(
         rules: 'required',
         componentProps: {
           data: medicationCategoryCodeOptions.value,
+          // 切换分类后刷新进售价小数位（中草药 3 / 其余 2）
+          onChange: (value: unknown) => {
+            const code = value === undefined || value === null ? '' : String(value);
+            formData.value = { ...formData.value, categoryCode: code };
+          },
         },
       },
       {
@@ -1307,7 +1323,8 @@ const [Form, formApi] = useVbenForm(
         label: '采购参考价（包装单位）',
         rules: isNewMedication.value ? 'required' : undefined,
         componentProps: {
-          precision: 2,
+          // 中草药允许录入三位小数；西药/中成药仍两位
+          precision: catalogPriceInputDp.value,
           min: 0,
           disabled: !isNewMedication.value,
         },
@@ -1341,7 +1358,8 @@ const [Form, formApi] = useVbenForm(
         label: '销售参考价（包装单位）',
         rules: isNewMedication.value ? 'required' : undefined,
         componentProps: {
-          precision: 2,
+          // 中草药允许录入三位小数；西药/中成药仍两位
+          precision: catalogPriceInputDp.value,
           min: 0,
           disabled: !isNewMedication.value,
         },

@@ -29,6 +29,8 @@ interface Props {
   savingAll?: boolean;
   unsavedCount?: number;
   weekRangeLabel?: string;
+  /** 只读：隐藏写操作并禁用单元格编辑 */
+  readonly?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -38,6 +40,7 @@ const props = withDefaults(defineProps<Props>(), {
   savingAll: false,
   unsavedCount: 0,
   weekRangeLabel: '',
+  readonly: false,
 });
 
 const emit = defineEmits<{
@@ -52,6 +55,9 @@ const { isFullscreen, toggleFullscreen } = usePaperSheetFullscreen();
 
 /** 同步日期时间选择器到行字段（支持面板选择与手动输入）。 */
 function syncRowDatetime(row: NursingRecordViewRow, value: null | string | undefined) {
+  if (props.readonly) {
+    return;
+  }
   const parts = splitNursingRecordDatetime(value);
   row.recordDate = parts.recordDate;
   row.recordTime = parts.recordTime;
@@ -68,6 +74,9 @@ function datetimeModelValue(row: NursingRecordViewRow) {
  * 不标记 dirty：仅点选空行不应进入「未保存」，真正改字段时再 dirty。
  */
 function ensureRowDefaults(row: NursingRecordViewRow) {
+  if (props.readonly) {
+    return;
+  }
   const now = getNowDateTime();
   if (!row.recordTime?.trim()) {
     row.recordTime = now.time;
@@ -82,6 +91,9 @@ function ensureRowDefaults(row: NursingRecordViewRow) {
 
 /** 字段变更时标记未保存。 */
 function handleFieldDirty(row: NursingRecordViewRow) {
+  if (props.readonly) {
+    return;
+  }
   emit('markDirty', row.id);
 }
 
@@ -106,6 +118,9 @@ function syncAllObservationTextareaHeights() {
 /** 病情观察输入：自动增高并标记未保存。 */
 function handleObservationInput(row: NursingRecordViewRow, event: Event) {
   resizeObservationTextarea(event.target as HTMLTextAreaElement);
+  if (props.readonly) {
+    return;
+  }
   handleFieldDirty(row);
 }
 
@@ -133,7 +148,7 @@ onMounted(() => {
         <div class="paper-record__toolbar-main">
           <slot name="toolbar-main" />
           <span v-if="weekRangeLabel" class="paper-record__week">{{ weekRangeLabel }}</span>
-          <span v-if="unsavedCount > 0" class="paper-record__unsaved"
+          <span v-if="!readonly && unsavedCount > 0" class="paper-record__unsaved"
             >未保存 {{ unsavedCount }} 条</span
           >
         </div>
@@ -143,8 +158,10 @@ onMounted(() => {
           <ElButton plain @click="toggleFullscreen">
             {{ isFullscreen ? '退出全屏' : '全屏' }}
           </ElButton>
-          <ElButton type="primary" plain @click="emit('addRow')">新增行</ElButton>
-          <ElButton :loading="savingAll" type="primary" @click="emit('saveAll')">保存</ElButton>
+          <ElButton v-if="!readonly" type="primary" plain @click="emit('addRow')">新增行</ElButton>
+          <ElButton v-if="!readonly" :loading="savingAll" type="primary" @click="emit('saveAll')">
+            保存
+          </ElButton>
         </div>
       </div>
 
@@ -226,14 +243,15 @@ onMounted(() => {
                         value-format="YYYY-MM-DD HH:mm"
                         time-format="HH:mm"
                         placeholder=" "
-                        :editable="true"
+                        :editable="!readonly"
+                        :disabled="readonly"
                         :clearable="false"
                         :model-value="datetimeModelValue(row)"
                         data-nav-col="0"
                         @update:model-value="syncRowDatetime(row, $event as string | null)"
                       />
                       <button
-                        v-if="row.rowType === 'extra'"
+                        v-if="!readonly && row.rowType === 'extra'"
                         type="button"
                         class="paper-row-delete"
                         title="删除此行"
@@ -248,6 +266,7 @@ onMounted(() => {
                         class="paper-field"
                         type="text"
                         data-nav-col="1"
+                        :readonly="readonly"
                         @input="handleFieldDirty(row)"
                       />
                     </td>
@@ -257,6 +276,7 @@ onMounted(() => {
                         class="paper-field"
                         type="text"
                         data-nav-col="2"
+                        :readonly="readonly"
                         @input="handleFieldDirty(row)"
                       />
                     </td>
@@ -266,6 +286,7 @@ onMounted(() => {
                         class="paper-field"
                         type="text"
                         data-nav-col="3"
+                        :readonly="readonly"
                         @input="handleFieldDirty(row)"
                       />
                     </td>
@@ -275,6 +296,7 @@ onMounted(() => {
                         class="paper-field"
                         type="text"
                         data-nav-col="4"
+                        :readonly="readonly"
                         @input="handleFieldDirty(row)"
                       />
                     </td>
@@ -284,6 +306,7 @@ onMounted(() => {
                         class="paper-field"
                         type="text"
                         data-nav-col="5"
+                        :readonly="readonly"
                         @input="handleFieldDirty(row)"
                       />
                     </td>
@@ -293,6 +316,7 @@ onMounted(() => {
                         class="paper-field"
                         type="text"
                         data-nav-col="6"
+                        :readonly="readonly"
                         @input="handleFieldDirty(row)"
                       />
                     </td>
@@ -302,6 +326,7 @@ onMounted(() => {
                         class="paper-field"
                         type="text"
                         data-nav-col="7"
+                        :readonly="readonly"
                         @input="handleFieldDirty(row)"
                       />
                     </td>
@@ -311,6 +336,7 @@ onMounted(() => {
                         class="paper-field"
                         type="text"
                         data-nav-col="8"
+                        :readonly="readonly"
                         @input="handleFieldDirty(row)"
                       />
                     </td>
@@ -320,6 +346,7 @@ onMounted(() => {
                         class="paper-field"
                         type="text"
                         data-nav-col="9"
+                        :readonly="readonly"
                         @input="handleFieldDirty(row)"
                       />
                     </td>
@@ -329,6 +356,7 @@ onMounted(() => {
                         class="paper-field"
                         type="text"
                         data-nav-col="10"
+                        :readonly="readonly"
                         @input="handleFieldDirty(row)"
                       />
                     </td>
@@ -338,6 +366,7 @@ onMounted(() => {
                         class="paper-field"
                         type="text"
                         data-nav-col="11"
+                        :readonly="readonly"
                         @input="handleFieldDirty(row)"
                       />
                     </td>
@@ -347,6 +376,7 @@ onMounted(() => {
                         class="paper-field"
                         type="text"
                         data-nav-col="12"
+                        :readonly="readonly"
                         @input="handleFieldDirty(row)"
                       />
                     </td>
@@ -356,6 +386,7 @@ onMounted(() => {
                         class="paper-field"
                         type="text"
                         data-nav-col="13"
+                        :readonly="readonly"
                         @input="handleFieldDirty(row)"
                       />
                     </td>
@@ -365,6 +396,7 @@ onMounted(() => {
                         class="paper-field paper-field--textarea"
                         rows="1"
                         data-nav-col="14"
+                        :readonly="readonly"
                         @input="handleObservationInput(row, $event)"
                       />
                     </td>
@@ -376,6 +408,7 @@ onMounted(() => {
                         clearable
                         placeholder=" "
                         data-nav-col="15"
+                        :disabled="readonly"
                         @change="handleFieldDirty(row)"
                       >
                         <ElOption

@@ -3,7 +3,7 @@ import type { PrescriptionSheetData, PrescriptionSheetLine } from './prescriptio
 
 import { computed, ref } from 'vue';
 
-import { ElButton, ElCheckbox } from 'element-plus';
+import { ElButton, ElCheckbox, ElEmpty, ElTable, ElTableColumn } from 'element-plus';
 
 import AppDialog from '#/components/app-dialog.vue';
 import { splitTraceNoCommaString } from '#/utils/trace';
@@ -14,6 +14,11 @@ defineOptions({
 
 const props = withDefaults(
   defineProps<{
+    /**
+     * 笺面左上角单号标签。
+     * 门诊默认「处方号」；住院按日虚拟发药单传「发药单」。
+     */
+    prescriptionNoLabel?: string;
     /** 为 true 时略增大内边距与药品区高度，便于工作站阅读 */
     comfortable?: boolean;
     data: PrescriptionSheetData;
@@ -38,6 +43,7 @@ const props = withDefaults(
     printLoading?: boolean;
   }>(),
   {
+    prescriptionNoLabel: '处方号',
     comfortable: false,
     variant: 'dispense',
     workbenchActions: false,
@@ -61,8 +67,14 @@ const traceDialogVisible = ref(false);
 const traceDialogTitle = ref('追溯码');
 const traceDialogCodes = ref<string[]>([]);
 
+/** 库存剩余弹窗 */
+const stockDialogVisible = ref(false);
+
 /** 是否医生站处方单版式（无药房/追溯码/批号/厂家） */
 const isDoctorRx = computed(() => props.variant === 'doctorRx');
+
+/** 当前处方可查看的库存行 */
+const stockDialogRows = computed(() => props.data.stockLines ?? []);
 
 /** 印章色：按状态区分 */
 const statusSealTone = computed(() => {
@@ -96,6 +108,11 @@ function openTraceDialog(line: PrescriptionSheetLine) {
   traceDialogTitle.value = `追溯码 · ${name}`;
   traceDialogCodes.value = splitTraceNoCommaString(String(line.traceCode ?? ''));
   traceDialogVisible.value = true;
+}
+
+/** 打开当前处方药品剩余库存弹窗 */
+function openStockDialog() {
+  stockDialogVisible.value = true;
 }
 
 /** 医生站：规格展示（空/占位不输出） */
@@ -151,7 +168,7 @@ function formatDoctorRxUsage(usage: string | undefined): string {
             @click.stop
             @change="handleSelectChange"
           />
-          <span class="prescription-sheet-no__label">处方号</span>
+          <span class="prescription-sheet-no__label">{{ props.prescriptionNoLabel }}</span>
           <span class="prescription-sheet-no__value">{{ props.data.prescriptionNo }}</span>
         </div>
         <div v-if="props.workbenchActions" class="prescription-sheet-actions">
@@ -191,6 +208,17 @@ function formatDoctorRxUsage(usage: string | undefined): string {
       </div>
 
       <header class="prescription-sheet-header">
+        <div
+          v-if="props.data.prescriptionTypeLine1 || props.data.prescriptionTypeLine2"
+          class="prescription-sheet-type"
+        >
+          <div v-if="props.data.prescriptionTypeLine1" class="prescription-sheet-type__line">
+            {{ props.data.prescriptionTypeLine1 }}
+          </div>
+          <div v-if="props.data.prescriptionTypeLine2" class="prescription-sheet-type__line">
+            {{ props.data.prescriptionTypeLine2 }}
+          </div>
+        </div>
         <h2 class="prescription-sheet-hospital">{{ props.data.hospitalName }}</h2>
         <h3 class="prescription-sheet-doc-title">
           {{ props.data.documentTitle ?? '发药单' }}
@@ -219,6 +247,7 @@ function formatDoctorRxUsage(usage: string | undefined): string {
             <span class="item-value">{{ props.data.deptName }}</span>
           </div>
           <div class="prescription-sheet-field">
+            <!-- 费用性质固定本槽（职工/居民等）；就诊类型见方头「普通/慢病处方」 -->
             <span class="item-label">费用性质</span>
             <span class="item-value">{{ props.data.feeNatureLabel }}</span>
           </div>
@@ -257,6 +286,15 @@ function formatDoctorRxUsage(usage: string | undefined): string {
           <span v-if="!isDoctorRx" class="rp-pharmacy">
             <span class="rp-pharmacy__label">发放药房</span>
             <span class="rp-pharmacy__value">{{ props.data.dispensePharmacyLabel }}</span>
+            <ElButton
+              type="primary"
+              link
+              size="small"
+              class="rp-pharmacy__stock-btn"
+              @click.stop="openStockDialog"
+            >
+              查看库存
+            </ElButton>
           </span>
         </div>
         <!-- 西药：明细两行；中药：四列药名+克数，右上角特殊煎法 -->
@@ -393,6 +431,42 @@ function formatDoctorRxUsage(usage: string | undefined): string {
       </li>
     </ul>
     <div v-else class="sheet-trace-dialog-empty">暂无追溯码</div>
+  </AppDialog>
+
+  <AppDialog v-model="stockDialogVisible" title="药品剩余库存" width="560px" destroy-on-close>
+    <ElTable
+      v-if="stockDialogRows.length > 0"
+      :data="stockDialogRows"
+      size="small"
+      max-height="360"
+      class="sheet-stock-dialog-table w-full"
+    >
+      <ElTableColumn
+        prop="itemName"
+        label="药品名称"
+        min-width="180"
+        align="center"
+        header-align="center"
+        show-overflow-tooltip
+      />
+      <ElTableColumn
+        prop="batchNo"
+        label="批号"
+        width="120"
+        align="center"
+        header-align="center"
+        show-overflow-tooltip
+      />
+      <ElTableColumn
+        prop="remainingStockText"
+        label="剩余库存"
+        width="140"
+        align="center"
+        header-align="center"
+        show-overflow-tooltip
+      />
+    </ElTable>
+    <ElEmpty v-else description="暂无库存数据" :image-size="64" />
   </AppDialog>
 </template>
 
@@ -545,9 +619,25 @@ function formatDoctorRxUsage(usage: string | undefined): string {
 }
 
 .prescription-sheet-header {
+  position: relative;
   flex-shrink: 0;
   margin-bottom: 14px;
   text-align: center;
+}
+
+.prescription-sheet-type {
+  position: absolute;
+  top: 0;
+  right: 0;
+  max-width: 72px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--rx-ink);
+  text-align: center;
+}
+
+.prescription-sheet-type__line {
+  white-space: nowrap;
 }
 
 .prescription-sheet-no {
@@ -762,6 +852,16 @@ function formatDoctorRxUsage(usage: string | undefined): string {
   color: var(--rx-ink);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.rp-pharmacy__stock-btn {
+  flex-shrink: 0;
+  margin-left: 2px;
+  height: auto;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  vertical-align: baseline;
 }
 
 .medicen-list {

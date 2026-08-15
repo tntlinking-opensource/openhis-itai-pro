@@ -11,6 +11,8 @@ import type { EmrTemplateStationKind } from '#/views/basic/emr-template/emr-temp
 
 import { nextTick, onMounted, ref, watch } from 'vue';
 
+import { useUserStore } from '@vben/stores';
+
 import { Document, EditPen, Folder, FolderOpened, Tickets } from '@element-plus/icons-vue';
 import {
   ElDropdown,
@@ -18,21 +20,26 @@ import {
   ElDropdownMenu,
   ElIcon,
   ElMessage,
+  ElMessageBox,
   ElTree,
 } from 'element-plus';
 
 import { getDocumentTypeListApi } from '#/api/emr/document-type';
 import { getTemplateListApi, listTemplatesForStationApi } from '#/api/emr/template';
+import { useAuthStore } from '#/store';
 import { unwrapApiList } from '#/utils/api/unwrap-api-list';
-import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import {
+  preserveApiIdForRequest,
+  resolveLoginPractitionerIdForRequest,
+} from '#/utils/format/preserve-api-id';
 import {
   EMR_TEMPLATE_ENCOUNTER_CLASS,
+  EMR_TEMPLATE_SCOPE_LEVEL,
   EMR_TEMPLATE_STATION_KIND,
 } from '#/views/basic/emr-template/emr-template-scope.constants';
 
 import {
   buildEmrTemplateTree,
-  formatDocumentTreeDept,
   formatDocumentTreeSaver,
   formatDocumentTreeTime,
 } from './build-emr-template-tree';
@@ -45,10 +52,14 @@ const props = withDefaults(
   defineProps<{
     /** 当前激活文书 ID */
     currentDocumentId?: string;
-    /** 当前医生站就诊 ID；用于标记关联对端文书 */
+    /** 当前医生站就诊 ID；用于标记非本次就诊文书 */
     currentEncounterId?: string;
-    /** 当前患者下已有文书（挂到对应模板下） */
+    /** 可选：挂到对应模板下的文书（医生站已改为全部走 historyDocuments） */
     documents?: DocumentSummaryDto[];
+    /** 历史病历（本次 + 跨就诊，按就诊分组挂「历史病历」） */
+    historyDocuments?: DocumentSummaryDto[];
+    /** 「历史病历」根节点文案 */
+    historyRootLabel?: string;
     /** 仅展示启用文书类型；默认 true */
     documentTypesEnabledOnly?: boolean;
     /** 与外侧搜索框联动，筛选节点展示 */
@@ -59,16 +70,30 @@ const props = withDefaults(
     stationKind?: EmrTemplateStationKind;
     /** 仅加载启用模板；默认 true */
     templatesEnabledOnly?: boolean;
+    /** 只读调阅：不加载模板节点，禁止删除 */
+    viewOnly?: boolean;
+    /**
+     * 仅护士站病历调阅：侧栏只展示住院病历目录分类。
+     * 病案只读查阅勿开（同就诊下告知/手术等文书也要能看）。
+     */
+    restrictHistoryToInpatient?: boolean;
+    /** 当前编辑器是否可用来覆盖更新模板正文 */
+    canUpdateTemplateContent?: boolean;
   }>(),
   {
     currentDocumentId: '',
     currentEncounterId: '',
     documents: () => [],
+    historyDocuments: () => [],
+    historyRootLabel: '历史病历',
     documentTypesEnabledOnly: true,
     filterText: '',
     openDocumentIds: () => [],
     templatesEnabledOnly: true,
     stationKind: undefined,
+    viewOnly: false,
+    restrictHistoryToInpatient: false,
+    canUpdateTemplateContent: false,
   },
 );
 
@@ -76,8 +101,19 @@ const emit = defineEmits<{
   select: [node: EmrTemplateTreeNode];
   selectDocument: [row: DocumentSummaryDto];
   openDocumentInNewTab: [row: DocumentSummaryDto];
+  deleteDocument: [row: DocumentSummaryDto];
+  /** 历史/关联文书：复制正文到本次就诊新建草稿 */
+  reuseDocument: [row: DocumentSummaryDto];
+  /** 重命名个人/科室模板 */
+  renameTemplate: [tpl: TemplateDto];
+  /** 用当前病历正文覆盖模板 */
+  updateTemplateContent: [tpl: TemplateDto];
+  /** 删除个人/科室模板 */
+  deleteTemplate: [tpl: TemplateDto];
 }>();
 
+const userStore = useUserStore();
+const authStore = useAuthStore();
 const treeRef = ref<InstanceType<typeof ElTree>>();
 const loading = ref(false);
 const treeData = ref<EmrTemplateTreeNode[]>([]);
@@ -85,6 +121,89 @@ const cachedTypes = ref<DocumentTypeDto[]>([]);
 const cachedTemplates = ref<TemplateDto[]>([]);
 
 const PAGE_SIZE = 200;
+/** 病历侧栏树展开状态 localStorage 前缀（刷新保留） */
+const EXPAND_STORAGE_PREFIX = 'emr-template-tree-expanded';
+
+type TreeStoreNode = {
+  expanded?: boolean;
+  childNodes?: unknown[];
+};
+
+function resolveExpandStorageKey(): string {
+  const userId = preserveApiIdForRequest(userStore.userInfo?.id) ?? 'anon';
+  const station = props.stationKind ?? 'default';
+  const mode = props.viewOnly ? 'view' : 'edit';
+  return `${EXPAND_STORAGE_PREFIX}:${userId}:${station}:${mode}`;
+}
+
+function readCachedExpandedKeys(): string[] | null {
+  try {
+    const raw = localStorage.getItem(resolveExpandStorageKey());
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return null;
+    return parsed.filter((k): k is string => typeof k === 'string' && k.length > 0);
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedExpandedKeys(keys: string[]) {
+  try {
+    localStorage.setItem(resolveExpandStorageKey(), JSON.stringify(keys));
+  } catch {
+    // quota / 隐私模式：忽略
+  }
+}
+
+function getTreeNodesMap(): Record<string, TreeStoreNode> | undefined {
+  const store = treeRef.value?.store as undefined | { nodesMap?: Record<string, TreeStoreNode> };
+  return store?.nodesMap;
+}
+
+/** 收集当前已展开且有子节点的 nodeKey */
+function collectExpandedKeys(): string[] {
+  const nodesMap = getTreeNodesMap();
+  if (!nodesMap) return [];
+  const keys: string[] = [];
+  for (const [key, node] of Object.entries(nodesMap)) {
+    if (node.expanded && (node.childNodes?.length ?? 0) > 0) {
+      keys.push(key);
+    }
+  }
+  return keys;
+}
+
+/** 用户展开/收起后写入缓存 */
+function persistExpandedState() {
+  void nextTick(() => {
+    writeCachedExpandedKeys(collectExpandedKeys());
+  });
+}
+
+/**
+ * 恢复展开状态：有缓存则按缓存；首次无缓存则全部展开（不落盘，等用户操作后再存）。
+ */
+function restoreExpandedState() {
+  void nextTick(() => {
+    const nodesMap = getTreeNodesMap();
+    if (!nodesMap) return;
+    const cached = readCachedExpandedKeys();
+    if (!cached) {
+      for (const node of Object.values(nodesMap)) {
+        if ((node.childNodes?.length ?? 0) > 0) {
+          node.expanded = true;
+        }
+      }
+      return;
+    }
+    const expandedSet = new Set(cached);
+    for (const [key, node] of Object.entries(nodesMap)) {
+      if ((node.childNodes?.length ?? 0) === 0) continue;
+      node.expanded = expandedSet.has(key);
+    }
+  });
+}
 
 function resolveEncounterClassCode(kind: EmrTemplateStationKind | undefined): string | undefined {
   if (kind === EMR_TEMPLATE_STATION_KIND.OUTPATIENT) {
@@ -138,15 +257,13 @@ async function fetchTemplatesForTree(): Promise<TemplateDto[]> {
   }
 
   try {
+    // 医生站必须走可见性过滤（全院 + 当前登录科室 + 本人个人模板）；
+    // 空列表也是合法结果，禁止回退到 getList（否则会漏科室过滤或串科室）。
     const list = await listTemplatesForStationApi({
       stationKind: kind,
       enabled: props.templatesEnabledOnly ? true : undefined,
     });
-    const rows = unwrapApiList<TemplateDto>(list);
-    if (rows.length > 0) {
-      return rows;
-    }
-    return fetchTemplatesByPagedList(encounterClassCode);
+    return unwrapApiList<TemplateDto>(list);
   } catch (stationError) {
     console.warn('[EmrTemplateTree] listForStation failed, fallback to getList', stationError);
     return fetchTemplatesByPagedList(encounterClassCode);
@@ -154,25 +271,22 @@ async function fetchTemplatesForTree(): Promise<TemplateDto[]> {
 }
 
 function rebuildTree() {
+  // 仅护士站「住院病历调阅」收窄目录；病案只读/医生站按就诊打开须展示本就诊全部文书
+  const allowedCategories =
+    props.restrictHistoryToInpatient && props.stationKind === EMR_TEMPLATE_STATION_KIND.INPATIENT
+      ? ['INPATIENT']
+      : undefined;
   treeData.value = buildEmrTemplateTree(
     cachedTypes.value,
     cachedTemplates.value,
     props.documents ?? [],
+    props.historyDocuments ?? [],
+    {
+      allowedCategories,
+      currentEncounterId: props.currentEncounterId,
+      historyRootLabel: props.historyRootLabel,
+    },
   );
-}
-
-/** 全部展开（data 刷新后 default-expand-all 不会再生效） */
-function expandAllNodes() {
-  void nextTick(() => {
-    const store = treeRef.value?.store as
-      | undefined
-      | { nodesMap?: Record<string, { expanded: boolean }> };
-    const nodesMap = store?.nodesMap;
-    if (!nodesMap) return;
-    for (const node of Object.values(nodesMap)) {
-      node.expanded = true;
-    }
-  });
 }
 
 async function syncCurrentHighlight() {
@@ -182,7 +296,20 @@ async function syncCurrentHighlight() {
     treeRef.value?.setCurrentKey?.(undefined);
     return;
   }
-  treeRef.value?.setCurrentKey?.(`doc:${id}`);
+  // 本次文书用 doc:，历史节点用 hist-doc:
+  const docKey = `doc:${id}`;
+  const histKey = `hist-doc:${id}`;
+  const store = treeRef.value?.store as undefined | { nodesMap?: Record<string, unknown> };
+  const nodesMap = store?.nodesMap;
+  if (nodesMap?.[docKey]) {
+    treeRef.value?.setCurrentKey?.(docKey);
+    return;
+  }
+  if (nodesMap?.[histKey]) {
+    treeRef.value?.setCurrentKey?.(histKey);
+    return;
+  }
+  treeRef.value?.setCurrentKey?.(docKey);
 }
 
 async function loadTree() {
@@ -191,7 +318,8 @@ async function loadTree() {
   try {
     const [typesResult, templatesResult] = await Promise.allSettled([
       fetchDocumentTypesForTree(),
-      fetchTemplatesForTree(),
+      // 只读调阅仅需文书类型目录挂已有病历，不拉可新建模板
+      props.viewOnly ? Promise.resolve([] as TemplateDto[]) : fetchTemplatesForTree(),
     ]);
 
     const typeList =
@@ -203,7 +331,7 @@ async function loadTree() {
         ? templatesResult.value
         : ((partialFailure = true), console.error(templatesResult.reason), []);
 
-    if (typeList.length === 0 && templates.length === 0) {
+    if (typeList.length === 0 && templates.length === 0 && !props.viewOnly) {
       const reason =
         typesResult.status === 'rejected'
           ? typesResult.reason
@@ -223,7 +351,7 @@ async function loadTree() {
     }
     await nextTick();
     treeRef.value?.filter((props.filterText ?? '').trim());
-    expandAllNodes();
+    restoreExpandedState();
     await syncCurrentHighlight();
   } catch (error) {
     console.error(error);
@@ -250,13 +378,86 @@ function isDocumentActive(node: EmrTemplateTreeNode): boolean {
   return Boolean(id && current && id === current);
 }
 
-/** 文书归属就诊 ≠ 当前医生站就诊 → 关联对端文书 */
-function isLinkedDocument(doc: DocumentSummaryDto | undefined): boolean {
+/** 文书归属就诊 ≠ 当前医生站就诊 */
+function isOtherEncounterDocument(doc: DocumentSummaryDto | undefined): boolean {
   if (!doc) return false;
   const current = preserveApiIdForRequest(props.currentEncounterId) ?? '';
   if (!current) return false;
   const docEnc = preserveApiIdForRequest(doc.encounterId) ?? '';
   return Boolean(docEnc && docEnc !== current);
+}
+
+/** 是否本次就诊文书 */
+function isCurrentEncounterDocument(doc: DocumentSummaryDto | undefined): boolean {
+  if (!doc) return false;
+  const current = preserveApiIdForRequest(props.currentEncounterId) ?? '';
+  if (!current) return false;
+  const docEnc = preserveApiIdForRequest(doc.encounterId) ?? '';
+  return Boolean(docEnc && docEnc === current);
+}
+
+/** 卡片角标：本次 / 历史（有接诊上下文时始终展示） */
+function formatDocumentCardBadge(doc: DocumentSummaryDto | undefined): 'current' | 'history' | '' {
+  if (!doc) return '';
+  if (isCurrentEncounterDocument(doc)) return 'current';
+  if (isOtherEncounterDocument(doc)) return 'history';
+  return '';
+}
+
+/** 当前登录用户是否为文书创建人 */
+function isDocumentCreatedByCurrentUser(doc: DocumentSummaryDto | undefined): boolean {
+  if (!doc) return false;
+  const creatorId = preserveApiIdForRequest(doc.createdBy) ?? '';
+  const me = preserveApiIdForRequest(userStore.userInfo?.id) ?? '';
+  return Boolean(creatorId && me && creatorId === me);
+}
+
+/** 是否展示右键「删除病历」：本次就诊且本人创建 */
+function canDeleteDocument(node: EmrTemplateTreeNode): boolean {
+  if (props.viewOnly) return false;
+  if (!node.isDocument || !node.document) return false;
+  if (isOtherEncounterDocument(node.document)) return false;
+  const current = preserveApiIdForRequest(props.currentEncounterId) ?? '';
+  const docEnc = preserveApiIdForRequest(node.document.encounterId) ?? '';
+  if (!current || !docEnc || docEnc !== current) return false;
+  const id = preserveApiIdForRequest(node.document.id) ?? '';
+  if (!id) return false;
+  return isDocumentCreatedByCurrentUser(node.document);
+}
+
+/** 是否可「复用到本次就诊」：非本次就诊文书（非只读调阅） */
+function canReuseDocument(node: EmrTemplateTreeNode): boolean {
+  if (props.viewOnly) return false;
+  if (!node.isDocument || !node.document) return false;
+  const id = preserveApiIdForRequest(node.document.id) ?? '';
+  if (!id) return false;
+  return isOtherEncounterDocument(node.document);
+}
+
+/**
+ * 医生站可维护的模板：个人（本人）/ 科室（当前登录科室）；全院模板请走基础数据维护。
+ */
+function canManageTemplate(node: EmrTemplateTreeNode): boolean {
+  if (props.viewOnly) return false;
+  if (!node.isTemplate || !node.template) return false;
+  const id = preserveApiIdForRequest(node.template.id) ?? '';
+  if (!id) return false;
+  const scope = String(node.template.scopeLevel ?? '')
+    .trim()
+    .toUpperCase();
+  if (scope === EMR_TEMPLATE_SCOPE_LEVEL.PERSONAL) {
+    const ownerId = preserveApiIdForRequest(node.template.ownerPractitionerId) ?? '';
+    const me = resolveLoginPractitionerIdForRequest(
+      userStore.userInfo as Record<string, unknown> | undefined,
+    );
+    return Boolean(ownerId && me && ownerId === me);
+  }
+  if (scope === EMR_TEMPLATE_SCOPE_LEVEL.DEPARTMENT) {
+    const orgId = preserveApiIdForRequest(node.template.organizationId) ?? '';
+    const loginOrg = preserveApiIdForRequest(authStore.getSelectedOrganization()) ?? '';
+    return Boolean(orgId && loginOrg && orgId === loginOrg);
+  }
+  return false;
 }
 
 function isDocumentOpen(node: EmrTemplateTreeNode): boolean {
@@ -266,6 +467,43 @@ function isDocumentOpen(node: EmrTemplateTreeNode): boolean {
   return (props.openDocumentIds ?? []).some(
     (openId) => (preserveApiIdForRequest(openId) ?? '') === id,
   );
+}
+
+/** 卡片主诉（有则展示） */
+function formatDocumentCardChiefComplaint(doc: DocumentSummaryDto): string {
+  return (doc.chiefComplaint ?? '').trim();
+}
+
+/** 卡片时间 */
+function formatDocumentCardTime(doc: DocumentSummaryDto): string {
+  return formatDocumentTreeTime(doc) || '未保存';
+}
+
+/** 开立医生显示名 */
+function formatDocumentCardDoctor(doc: DocumentSummaryDto): string {
+  return formatDocumentTreeSaver(doc);
+}
+
+/** 悬停完整信息 */
+function formatDocumentCardTooltip(doc: DocumentSummaryDto): string {
+  const typeName =
+    (doc.documentTypeName ?? '').trim() ||
+    (doc.documentTypeCode ?? '').trim() ||
+    (doc.title ?? '').trim() ||
+    '病历';
+  const badge = formatDocumentCardBadge(doc);
+  let badgeText = '';
+  if (badge === 'current') badgeText = '本次';
+  else if (badge === 'history') badgeText = '历史';
+  const doctor = formatDocumentCardDoctor(doc);
+  const parts = [
+    badgeText,
+    typeName,
+    formatDocumentCardTime(doc),
+    doctor,
+    formatDocumentCardChiefComplaint(doc),
+  ].filter(Boolean);
+  return parts.join(' · ');
 }
 
 function handleNodeClick(
@@ -284,13 +522,87 @@ function handleNodeClick(
     return;
   }
   if (data.isTemplate || data.templateId) {
+    // 只读调阅不响应模板点击（目录中也不应出现模板节点）
+    if (props.viewOnly) return;
     emit('select', data);
   }
 }
 
-function handleDocumentCommand(command: string, doc: DocumentSummaryDto) {
+/** 文书右键菜单：复用 / 新标签打开 / 删除（仅创建人） */
+async function handleDocumentCommand(
+  command: string,
+  doc: DocumentSummaryDto,
+  node?: EmrTemplateTreeNode,
+) {
+  if (command === 'reuse') {
+    if (node && !canReuseDocument(node)) {
+      ElMessage.warning('仅历史或关联病历可复用到本次就诊');
+      return;
+    }
+    emit('reuseDocument', doc);
+    return;
+  }
   if (command === 'openInNewTab') {
     emit('openDocumentInNewTab', doc);
+    return;
+  }
+  if (command === 'delete') {
+    if (node && !canDeleteDocument(node)) {
+      ElMessage.warning('仅创建者可删除该病历');
+      return;
+    }
+    const title =
+      (doc.documentTypeName ?? '').trim() ||
+      (doc.title ?? '').trim() ||
+      (doc.documentTypeCode ?? '').trim() ||
+      '病历';
+    try {
+      await ElMessageBox.confirm(`确定删除病历「${title}」吗？删除后列表不再显示。`, '提示', {
+        cancelButtonText: '取消',
+        confirmButtonText: '确定',
+        type: 'warning',
+      });
+    } catch {
+      return;
+    }
+    emit('deleteDocument', doc);
+  }
+}
+
+/** 模板右键：重命名 / 用当前病历更新 / 删除 */
+async function handleTemplateCommand(
+  command: string,
+  tpl: TemplateDto,
+  node?: EmrTemplateTreeNode,
+) {
+  if (node && !canManageTemplate(node)) {
+    ElMessage.warning('仅可维护本人个人模板或本登录科室的科室模板');
+    return;
+  }
+  if (command === 'rename') {
+    emit('renameTemplate', tpl);
+    return;
+  }
+  if (command === 'updateContent') {
+    if (!props.canUpdateTemplateContent) {
+      ElMessage.warning('请先打开可编辑病历后再更新模板内容');
+      return;
+    }
+    emit('updateTemplateContent', tpl);
+    return;
+  }
+  if (command === 'delete') {
+    const title = (tpl.name ?? '').trim() || (tpl.code ?? '').trim() || '模板';
+    try {
+      await ElMessageBox.confirm(`确定删除模板「${title}」吗？删除后左侧树不再显示。`, '提示', {
+        cancelButtonText: '取消',
+        confirmButtonText: '确定',
+        type: 'warning',
+      });
+    } catch {
+      return;
+    }
+    emit('deleteTemplate', tpl);
   }
 }
 
@@ -309,12 +621,12 @@ watch(
 );
 
 watch(
-  () => props.documents,
+  () => [props.documents, props.historyDocuments, props.historyRootLabel] as const,
   () => {
     rebuildTree();
     void nextTick(async () => {
       treeRef.value?.filter((props.filterText ?? '').trim());
-      expandAllNodes();
+      restoreExpandedState();
       await syncCurrentHighlight();
     });
   },
@@ -350,12 +662,13 @@ defineExpose({
       ref="treeRef"
       :data="treeData"
       :props="{ children: 'children', label: 'label' }"
-      default-expand-all
       :expand-on-click-node="false"
       highlight-current
       node-key="nodeKey"
       :filter-node-method="filterNode"
       @node-click="handleNodeClick"
+      @node-expand="persistExpandedState"
+      @node-collapse="persistExpandedState"
     >
       <template #default="{ data, node }">
         <div
@@ -372,42 +685,89 @@ defineExpose({
             v-if="data.isDocument && data.document"
             trigger="contextmenu"
             class="emr-template-tree__doc-dropdown"
-            @command="(cmd) => handleDocumentCommand(String(cmd), data.document)"
+            @command="(cmd) => handleDocumentCommand(String(cmd), data.document, data)"
           >
             <div
               class="emr-template-tree__doc-card"
-              :title="'单击打开；Ctrl+单击或右键可在新标签打开'"
+              :title="
+                (canReuseDocument(data)
+                  ? '单击打开；右键可复用到本次就诊或新标签打开'
+                  : '单击打开；Ctrl+单击或右键可在新标签打开') +
+                (formatDocumentCardTooltip(data.document)
+                  ? `\n${formatDocumentCardTooltip(data.document)}`
+                  : '')
+              "
             >
-              <ElIcon class="emr-template-tree__icon emr-template-tree__icon--doc">
-                <EditPen />
-              </ElIcon>
-              <div class="emr-template-tree__doc-body">
-                <div class="emr-template-tree__doc-time">
-                  {{ formatDocumentTreeTime(data.document) || '未保存' }}
-                  <span
-                    v-if="isLinkedDocument(data.document)"
-                    class="emr-template-tree__doc-linked"
-                  >
-                    关联
-                  </span>
-                </div>
-                <div
-                  v-if="formatDocumentTreeDept(data.document)"
-                  class="emr-template-tree__doc-meta"
+              <div class="emr-template-tree__doc-line1">
+                <ElIcon class="emr-template-tree__icon emr-template-tree__icon--doc">
+                  <EditPen />
+                </ElIcon>
+                <span class="emr-template-tree__doc-time">
+                  {{ formatDocumentCardTime(data.document) }}
+                </span>
+                <span
+                  v-if="formatDocumentCardDoctor(data.document)"
+                  class="emr-template-tree__doc-doctor"
+                  :title="formatDocumentCardDoctor(data.document)"
                 >
-                  {{ formatDocumentTreeDept(data.document) }}
-                </div>
-                <div
-                  v-if="formatDocumentTreeSaver(data.document)"
-                  class="emr-template-tree__doc-meta"
+                  {{ formatDocumentCardDoctor(data.document) }}
+                </span>
+              </div>
+              <div class="emr-template-tree__doc-line2">
+                <span
+                  v-if="formatDocumentCardBadge(data.document) === 'current'"
+                  class="emr-template-tree__doc-badge emr-template-tree__doc-badge--current"
                 >
-                  {{ formatDocumentTreeSaver(data.document) }}
-                </div>
+                  本次
+                </span>
+                <span
+                  v-else-if="formatDocumentCardBadge(data.document) === 'history'"
+                  class="emr-template-tree__doc-badge emr-template-tree__doc-badge--history"
+                >
+                  历史
+                </span>
+                <span
+                  class="emr-template-tree__doc-complaint"
+                  :title="formatDocumentCardChiefComplaint(data.document) || '暂无主诉'"
+                >
+                  {{ formatDocumentCardChiefComplaint(data.document) || '暂无主诉' }}
+                </span>
               </div>
             </div>
             <template #dropdown>
               <ElDropdownMenu>
+                <ElDropdownItem v-if="canReuseDocument(data)" command="reuse">
+                  复用到本次就诊
+                </ElDropdownItem>
                 <ElDropdownItem command="openInNewTab">在新标签打开</ElDropdownItem>
+                <ElDropdownItem v-if="canDeleteDocument(data)" command="delete" divided>
+                  删除病历
+                </ElDropdownItem>
+              </ElDropdownMenu>
+            </template>
+          </ElDropdown>
+          <ElDropdown
+            v-else-if="data.isTemplate && data.template && canManageTemplate(data)"
+            trigger="contextmenu"
+            class="emr-template-tree__tpl-dropdown"
+            @command="(cmd) => handleTemplateCommand(String(cmd), data.template, data)"
+          >
+            <div
+              class="emr-template-tree__tpl-row"
+              :title="'单击使用该模板新建；右键可重命名、更新内容或删除'"
+            >
+              <ElIcon class="emr-template-tree__icon emr-template-tree__icon--tpl">
+                <Tickets />
+              </ElIcon>
+              <span class="emr-template-tree__label">{{ data.label }}</span>
+            </div>
+            <template #dropdown>
+              <ElDropdownMenu>
+                <ElDropdownItem command="rename">重命名</ElDropdownItem>
+                <ElDropdownItem command="updateContent" :disabled="!canUpdateTemplateContent">
+                  用当前病历更新内容
+                </ElDropdownItem>
+                <ElDropdownItem command="delete" divided>删除模板</ElDropdownItem>
               </ElDropdownMenu>
             </template>
           </ElDropdown>
@@ -440,7 +800,7 @@ defineExpose({
 <style scoped lang="scss">
 .emr-template-tree {
   :deep(.el-tree) {
-    --el-tree-node-indent: 8px;
+    --el-tree-node-indent: 10px;
   }
 
   :deep(.el-tree-node__content) {
@@ -488,13 +848,13 @@ defineExpose({
 }
 
 .emr-template-tree__icon--doc {
-  margin-top: 2px;
+  margin-top: 0;
   color: var(--el-color-success);
 }
 
 .emr-template-tree__node--doc {
   width: 100%;
-  margin: 2px 0;
+  margin: 1px 0;
 }
 
 .emr-template-tree__doc-dropdown {
@@ -503,12 +863,29 @@ defineExpose({
   min-width: 0;
 }
 
+.emr-template-tree__tpl-dropdown {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+}
+
+.emr-template-tree__tpl-row {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
 .emr-template-tree__doc-card {
   display: flex;
-  gap: 6px;
+  flex-direction: column;
+  gap: 2px;
   width: 100%;
   min-width: 0;
-  padding: 6px 8px;
+  padding: 5px 8px;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
   background: var(--el-fill-color-blank);
@@ -535,43 +912,72 @@ defineExpose({
   background: var(--el-fill-color-light);
 }
 
-.emr-template-tree__doc-body {
-  flex: 1;
+.emr-template-tree__doc-line1 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
 }
 
 .emr-template-tree__doc-time {
+  flex-shrink: 0;
   font-size: 12px;
   font-weight: 600;
   line-height: 1.35;
   color: var(--el-text-color-primary);
-  word-break: break-all;
-  white-space: normal;
-}
-
-.emr-template-tree__doc-linked {
-  margin-left: 6px;
-  padding: 0 4px;
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 1.4;
-  color: var(--el-color-warning);
-  border: 1px solid var(--el-color-warning-light-5);
-  border-radius: 3px;
-  vertical-align: middle;
-}
-
-.emr-template-tree__doc-meta {
-  margin-top: 2px;
-  font-size: 11px;
-  line-height: 1.35;
-  color: var(--el-text-color-secondary);
-  word-break: break-all;
-  white-space: normal;
 }
 
 .emr-template-tree__node--doc-active .emr-template-tree__doc-time {
   color: var(--el-color-primary);
+}
+
+.emr-template-tree__doc-doctor {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--el-text-color-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.emr-template-tree__doc-line2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.emr-template-tree__doc-badge {
+  flex-shrink: 0;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.4;
+  border-radius: 3px;
+}
+
+.emr-template-tree__doc-badge--current {
+  color: var(--el-color-success);
+  background: var(--el-color-success-light-9);
+  border: 1px solid var(--el-color-success-light-5);
+}
+
+.emr-template-tree__doc-badge--history {
+  color: var(--el-color-warning);
+  background: var(--el-color-warning-light-9);
+  border: 1px solid var(--el-color-warning-light-5);
+}
+
+.emr-template-tree__doc-complaint {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--el-text-color-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .emr-template-tree__label {

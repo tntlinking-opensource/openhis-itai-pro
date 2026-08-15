@@ -19,6 +19,7 @@ import {
   ElButton,
   ElDatePicker,
   ElFormItem,
+  ElInput,
   ElMessage,
   ElOption,
   ElRadioButton,
@@ -35,8 +36,9 @@ import {
   loadConsumableUsageReportPageInitApi,
   pageConsumableUsageReportDetailApi,
   SOURCE_CODE_ALL,
-  SUMMARY_DIMENSION_DEPARTMENT,
-  SUMMARY_DIMENSION_PATIENT,
+  SOURCE_CODE_DEPT_ISSUE,
+  SOURCE_CODE_PATIENT_DISPENSE,
+  SUMMARY_DIMENSION_LOCATION,
   summarizeConsumableUsageReportApi,
 } from '#/api/report/consumable-usage';
 import { useRequest } from '#/hooks/use-request';
@@ -78,6 +80,13 @@ interface QueryState {
   locationId?: string;
   exportTabCode: ConsumableUsageExportTab;
   feeNatureContractNo?: string;
+  recordTypeCode?: string;
+  deviceCategoryCodes: string[];
+  performerPractitionerId?: string;
+  deviceKeyword: string;
+  patientKeyword: string;
+  /** 患者=开立科室；领用=领用科室 */
+  organizationId?: string;
 }
 
 const props = defineProps<Props>();
@@ -86,6 +95,10 @@ const summaryDimensionOptions = ref<ApiOptionItem[]>([]);
 const sourceCodeOptions = ref<ApiOptionItem[]>([]);
 const locationOptions = ref<ApiOptionItem[]>([]);
 const feeNatureOptions = ref<ApiOptionItem[]>([]);
+const organizationOptions = ref<ApiOptionItem[]>([]);
+const categoryOptions = ref<ApiOptionItem[]>([]);
+const practitionerOptions = ref<ApiOptionItem[]>([]);
+const recordTypeOptions = ref<ApiOptionItem[]>([]);
 const summaryRows = ref<ConsumableUsageSummaryRowDto[]>([]);
 const detailRows = ref<ConsumableUsageDetailRowDto[]>([]);
 const total = ref(0);
@@ -99,10 +112,14 @@ const queryParams = reactive<QueryState>({
   pageSize: 20,
   dateFrom: '',
   dateTo: '',
-  summaryDimension: SUMMARY_DIMENSION_PATIENT,
-  sourceCode: SOURCE_CODE_ALL,
+  summaryDimension: SUMMARY_DIMENSION_LOCATION,
+  sourceCode: SOURCE_CODE_PATIENT_DISPENSE,
   exportTabCode: EXPORT_TAB_DETAIL,
   feeNatureContractNo: undefined,
+  deviceCategoryCodes: [],
+  deviceKeyword: '',
+  patientKeyword: '',
+  organizationId: undefined,
 });
 
 const pageTitle = computed(() =>
@@ -115,15 +132,17 @@ const defaultExportFileName = computed(() =>
 
 const isSummaryTab = computed(() => queryParams.exportTabCode === EXPORT_TAB_SUMMARY);
 
-const isPatientDimension = computed(
-  () => queryParams.summaryDimension === SUMMARY_DIMENSION_PATIENT,
-);
-
-const isDepartmentDimension = computed(
-  () => queryParams.summaryDimension === SUMMARY_DIMENSION_DEPARTMENT,
-);
-
 const encounterNoLabel = computed(() => (props.scope === 'outpatient' ? '门诊号' : '住院号'));
+
+/** 来源=领用时筛领用科室，否则开立科室。 */
+const organizationFilterLabel = computed(() =>
+  queryParams.sourceCode === SOURCE_CODE_DEPT_ISSUE ? '领用科室' : '开立科室',
+);
+
+/** 明细科室列随来源切换文案。 */
+const departmentColumnLabel = computed(() =>
+  queryParams.sourceCode === SOURCE_CODE_DEPT_ISSUE ? '领用科室' : '开立科室',
+);
 
 const dateRangeShortcuts = buildReportDateRangeShortcuts();
 
@@ -173,9 +192,16 @@ const { run: runInit, loading: initLoading } = useRequest(
     manual: true,
     onSuccess: (data) => {
       summaryDimensionOptions.value = optionDtosToSelectItems(data?.summaryDimensionOptions);
-      sourceCodeOptions.value = optionDtosToSelectItems(data?.sourceCodeOptions);
+      // 去掉遗留 ALL，默认患者使用
+      sourceCodeOptions.value = optionDtosToSelectItems(data?.sourceCodeOptions).filter(
+        (item) => String(item.value) !== SOURCE_CODE_ALL,
+      );
       locationOptions.value = optionDtosToSelectItems(data?.locationOptions);
       feeNatureOptions.value = optionDtosToSelectItems(data?.feeNatureOptions);
+      organizationOptions.value = optionDtosToSelectItems(data?.organizationOptions);
+      categoryOptions.value = optionDtosToSelectItems(data?.categoryOptions);
+      practitionerOptions.value = optionDtosToSelectItems(data?.practitionerOptions);
+      recordTypeOptions.value = optionDtosToSelectItems(data?.recordTypeOptions);
       queryParams.dateFrom =
         normalizeReportDateRangeYmd(data?.defaultDateFrom) || queryParams.dateFrom;
       queryParams.dateTo = normalizeReportDateRangeYmd(data?.defaultDateTo) || queryParams.dateTo;
@@ -186,6 +212,12 @@ const { run: runInit, loading: initLoading } = useRequest(
       const firstSource = sourceCodeOptions.value[0]?.value;
       if (firstSource) {
         queryParams.sourceCode = String(firstSource);
+      } else {
+        queryParams.sourceCode = SOURCE_CODE_PATIENT_DISPENSE;
+      }
+      const firstRecordType = recordTypeOptions.value[0]?.value;
+      if (firstRecordType) {
+        queryParams.recordTypeCode = String(firstRecordType);
       }
     },
   },
@@ -328,9 +360,18 @@ function buildFilterPayload() {
   return {
     dateFrom,
     dateTo,
-    sourceCode: queryParams.sourceCode || SOURCE_CODE_ALL,
+    sourceCode: queryParams.sourceCode || SOURCE_CODE_PATIENT_DISPENSE,
     locationId: preserveApiIdForRequest(queryParams.locationId),
     feeNatureContractNo: queryParams.feeNatureContractNo || undefined,
+    recordTypeCode:
+      queryParams.recordTypeCode ||
+      (recordTypeOptions.value[0]?.value ? String(recordTypeOptions.value[0].value) : undefined),
+    deviceCategoryCodes:
+      queryParams.deviceCategoryCodes.length > 0 ? [...queryParams.deviceCategoryCodes] : undefined,
+    performerPractitionerId: preserveApiIdForRequest(queryParams.performerPractitionerId),
+    deviceKeyword: queryParams.deviceKeyword.trim() || undefined,
+    patientKeyword: queryParams.patientKeyword.trim() || undefined,
+    organizationId: preserveApiIdForRequest(queryParams.organizationId),
   };
 }
 
@@ -343,7 +384,7 @@ async function getList() {
   if (isSummaryTab.value) {
     await runSummarize({
       ...filters,
-      summaryDimension: queryParams.summaryDimension || SUMMARY_DIMENSION_PATIENT,
+      summaryDimension: queryParams.summaryDimension || SUMMARY_DIMENSION_LOCATION,
     });
   } else {
     await runPageDetail({
@@ -354,6 +395,21 @@ async function getList() {
   }
   await nextTick();
   tableScrollRef.value?.updateTableHeight();
+}
+
+/** 记录类型变更：清空时回落到「全部」，避免 UI 空白而后端仍按 ALL。 */
+function handleRecordTypeChange(value: string | null | undefined) {
+  if (!value) {
+    const allCode = recordTypeOptions.value[0]?.value;
+    queryParams.recordTypeCode = allCode ? String(allCode) : undefined;
+  }
+  handleQuery();
+}
+
+/** 来源切换：清空科室筛，避免开立/领用串用。 */
+function handleSourceChange() {
+  queryParams.organizationId = undefined;
+  handleQuery();
 }
 
 /** 搜索：回到第一页再查。 */
@@ -378,7 +434,7 @@ async function handleExport() {
     ...filters,
     exportTabCode: queryParams.exportTabCode,
     summaryDimension: isSummaryTab.value
-      ? queryParams.summaryDimension || SUMMARY_DIMENSION_PATIENT
+      ? queryParams.summaryDimension || SUMMARY_DIMENSION_LOCATION
       : undefined,
   });
 }
@@ -388,11 +444,19 @@ async function handleReset() {
   queryParams.pageNo = 1;
   queryParams.pageSize = 20;
   queryParams.summaryDimension = String(
-    summaryDimensionOptions.value[0]?.value ?? SUMMARY_DIMENSION_PATIENT,
+    summaryDimensionOptions.value[0]?.value ?? SUMMARY_DIMENSION_LOCATION,
   );
-  queryParams.sourceCode = String(sourceCodeOptions.value[0]?.value ?? SOURCE_CODE_ALL);
+  queryParams.sourceCode = String(
+    sourceCodeOptions.value[0]?.value ?? SOURCE_CODE_PATIENT_DISPENSE,
+  );
   queryParams.locationId = undefined;
   queryParams.feeNatureContractNo = undefined;
+  queryParams.recordTypeCode = undefined;
+  queryParams.deviceCategoryCodes = [];
+  queryParams.performerPractitionerId = undefined;
+  queryParams.deviceKeyword = '';
+  queryParams.patientKeyword = '';
+  queryParams.organizationId = undefined;
   queryParams.exportTabCode = EXPORT_TAB_DETAIL;
   await runInit();
   void getList();
@@ -445,7 +509,7 @@ onMounted(async () => {
               <ElSelect
                 v-model="queryParams.sourceCode"
                 :class="REPORT_QUERY_CONTROL"
-                @change="handleQuery"
+                @change="handleSourceChange"
               >
                 <ElOption
                   v-for="item in toSelectOptions(sourceCodeOptions)"
@@ -455,7 +519,40 @@ onMounted(async () => {
                 />
               </ElSelect>
             </ElFormItem>
-            <ElFormItem label="库房">
+            <ElFormItem :label="organizationFilterLabel">
+              <ElSelect
+                v-model="queryParams.organizationId"
+                clearable
+                filterable
+                placeholder="全部"
+                :class="REPORT_QUERY_CONTROL"
+                @change="handleQuery"
+              >
+                <ElOption
+                  v-for="item in toSelectOptions(organizationOptions)"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="记录类型">
+              <ElSelect
+                v-model="queryParams.recordTypeCode"
+                clearable
+                placeholder="全部"
+                :class="REPORT_QUERY_CONTROL"
+                @change="handleRecordTypeChange"
+              >
+                <ElOption
+                  v-for="item in toSelectOptions(recordTypeOptions)"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="耗材房">
               <ElSelect
                 v-model="queryParams.locationId"
                 clearable
@@ -471,6 +568,63 @@ onMounted(async () => {
                   :value="item.value"
                 />
               </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="耗材类型">
+              <ElSelect
+                v-model="queryParams.deviceCategoryCodes"
+                clearable
+                filterable
+                multiple
+                collapse-tags
+                collapse-tags-tooltip
+                placeholder="全部"
+                :class="REPORT_QUERY_CONTROL"
+                @change="handleQuery"
+              >
+                <ElOption
+                  v-for="item in toSelectOptions(categoryOptions)"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="发耗材人">
+              <ElSelect
+                v-model="queryParams.performerPractitionerId"
+                clearable
+                filterable
+                placeholder="全部"
+                :class="REPORT_QUERY_CONTROL"
+                @change="handleQuery"
+              >
+                <ElOption
+                  v-for="item in toSelectOptions(practitionerOptions)"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="耗材">
+              <ElInput
+                v-model="queryParams.deviceKeyword"
+                clearable
+                placeholder="名称/拼音/编码"
+                :class="REPORT_QUERY_CONTROL"
+                @keyup.enter="handleQuery"
+                @clear="handleQuery"
+              />
+            </ElFormItem>
+            <ElFormItem label="患者">
+              <ElInput
+                v-model="queryParams.patientKeyword"
+                clearable
+                :placeholder="props.scope === 'outpatient' ? '姓名/门诊号等' : '姓名/住院号等'"
+                :class="REPORT_QUERY_CONTROL"
+                @keyup.enter="handleQuery"
+                @clear="handleQuery"
+              />
             </ElFormItem>
             <ElFormItem label="费用性质">
               <ElSelect
@@ -548,19 +702,9 @@ onMounted(async () => {
                 header-align="center"
               />
               <ElTableColumn
-                v-if="isPatientDimension"
-                prop="patientName"
-                label="患者"
-                min-width="120"
-                align="center"
-                header-align="center"
-                show-overflow-tooltip
-              />
-              <ElTableColumn
-                v-if="isDepartmentDimension"
-                prop="organizationName"
-                label="科室"
-                min-width="140"
+                prop="dimensionName"
+                label="维度"
+                min-width="160"
                 align="center"
                 header-align="center"
                 show-overflow-tooltip
@@ -696,7 +840,7 @@ onMounted(async () => {
               </template>
               <ElTableColumn
                 prop="organizationName"
-                label="科室"
+                :label="departmentColumnLabel"
                 width="120"
                 align="center"
                 header-align="center"
@@ -704,7 +848,7 @@ onMounted(async () => {
               />
               <ElTableColumn
                 prop="locationName"
-                label="库房"
+                label="耗材房"
                 width="120"
                 align="center"
                 header-align="center"
@@ -783,6 +927,14 @@ onMounted(async () => {
                 prop="lotNumber"
                 label="批号"
                 width="110"
+                align="center"
+                header-align="center"
+                show-overflow-tooltip
+              />
+              <ElTableColumn
+                prop="performerName"
+                label="执行人"
+                width="90"
                 align="center"
                 header-align="center"
                 show-overflow-tooltip

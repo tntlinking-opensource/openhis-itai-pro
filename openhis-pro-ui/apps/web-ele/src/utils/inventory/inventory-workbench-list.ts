@@ -522,6 +522,44 @@ export function normalizeInventoryItemTableTypeOptions(
   return [hit, ...mapped.slice(0, idx), ...mapped.slice(idx + 1)];
 }
 
+/**
+ * 打印/展示用制单人：与侧栏队列卡片同口径（applicantName → applicantId_dictText → creatorName）。
+ * 禁止用当前登录人/打印人冒充。
+ */
+export function resolveInvDocPreparedByName(source?: null | Record<string, unknown>): string {
+  if (!source) {
+    return '';
+  }
+  for (const c of [source.applicantName, source.applicantId_dictText, source.creatorName]) {
+    const s = String(c ?? '').trim();
+    if (s) {
+      return s;
+    }
+  }
+  return '';
+}
+
+/**
+ * 打印/展示用审批人：与侧栏队列卡片同口径。
+ */
+export function resolveInvDocApprovedByName(source?: null | Record<string, unknown>): string {
+  if (!source) {
+    return '';
+  }
+  for (const c of [
+    source.approverName,
+    source.approverId_dictText,
+    source.auditBy_dictText,
+    source.reviewerId_dictText,
+  ]) {
+    const s = String(c ?? '').trim();
+    if (s) {
+      return s;
+    }
+  }
+  return '';
+}
+
 /** 登录用户姓名，供经手人下拉兜底展示。 */
 export function resolveLoginPractitionerLabelFromUserInfo(
   userInfo: null | Record<string, unknown> | undefined,

@@ -9,7 +9,16 @@ import type {
   ServiceApplyPatientSummary,
 } from '#/views/outpatient/doctor-station/service-apply/service-apply.types';
 
-import { computed, nextTick, onDeactivated, onMounted, provide, ref, watch } from 'vue';
+import {
+  computed,
+  defineAsyncComponent,
+  nextTick,
+  onDeactivated,
+  onMounted,
+  provide,
+  ref,
+  watch,
+} from 'vue';
 
 import { useUserStore } from '@vben/stores';
 
@@ -22,6 +31,8 @@ import {
   ReportQuery,
   TcmAdvice,
 } from '#/components/doctor-station';
+import CommonDiagnosisMaintainDialog from '#/components/doctor-station/diagnosis/components/common-diagnosis-maintain-dialog.vue';
+import { COMMON_DIAGNOSIS_MAINTAIN_VERSION_KEY } from '#/components/doctor-station/diagnosis/common-diagnosis-maintain.context';
 import DoctorHeader from '#/components/outpatient/doctor-header.vue';
 import MedicalRecordForm from '#/components/outpatient/medical-record-form.vue';
 import PatientInfoBar from '#/components/outpatient/patient-info-bar.vue';
@@ -39,31 +50,56 @@ import InpatientDischargeAdviceDialog from './components/inpatient-discharge-adv
 import InpatientNursingAdviceDialog from './components/inpatient-nursing-advice-dialog.vue';
 import DoctorPatientList from './doctor-patient-list.vue';
 import { useInpatientDoctorPatientStore } from './doctorPatientStore';
+import { mapDoctorPatientToNurseModulePatient } from './map-doctor-patient-to-nurse-module-patient';
 import { useInpatientDoctorPatientQueue } from './use-inpatient-doctor-patient-queue';
+import type {
+  InpatientSettleChargeLineDto,
+  PreSettleInpatientChargesResponse,
+} from '#/api/inpatient-settle';
 import DetailAuditRemindDialog from '#/chs/components/detail-audit-remind-dialog.vue';
 import InpatientClinicalPreSettlePreviewDialog from '#/chs/components/inpatient-clinical-pre-settle-preview-dialog.vue';
 import type { DetailAuditRemindDialogExpose } from '#/chs/composables/use-detail-audit-gate';
 import {
   buildClinicalPreSettleInsuranceBreakdown,
+  resolveClinicalPreSettlePrepayOffset,
   runInpatientClinicalPreSettle,
 } from '#/chs/composables/use-inpatient-clinical-pre-settle';
-import type { PreSettleInpatientChargesResponse } from '#/api/inpatient-settle';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 defineOptions({
   name: 'InpatientDoctorStation',
 });
 
-// 标签枚举（住院侧不含门诊「电子处方」）
+// 标签枚举（住院侧不含门诊「电子处方」；体温单/护理记录/费用明细复用护士站模块）
 const DOCTOR_TABS = {
   MEDICAL_RECORD: '住院病历',
   DIAGNOSIS: '诊断录入',
   ORDER: '开立医嘱',
   TCM: '中医处方',
   REPORT_QUERY: '报告查询',
+  TEMPERATURE_SHEET: '体温单',
+  NURSING_RECORD: '护理记录',
+  COST_DETAILS: '费用明细',
 } as const;
 
 type DoctorTab = (typeof DOCTOR_TABS)[keyof typeof DOCTOR_TABS];
+
+/** 复用护士站模块的 Tab（入参为 patients[]） */
+const NURSE_REUSED_TABS = new Set<DoctorTab>([
+  DOCTOR_TABS.TEMPERATURE_SHEET,
+  DOCTOR_TABS.NURSING_RECORD,
+  DOCTOR_TABS.COST_DETAILS,
+]);
+
+const NurseStationTemperatureSheet = defineAsyncComponent(
+  () => import('#/views/inpatient/nurse-station/temperature-sheet/index.vue'),
+);
+const NurseStationNursingRecord = defineAsyncComponent(
+  () => import('#/views/inpatient/nurse-station/nursing-record/index.vue'),
+);
+const NurseStationCostDetails = defineAsyncComponent(
+  () => import('#/views/inpatient/nurse-station/cost-details/index.vue'),
+);
 
 const authStore = useAuthStore();
 const userStore = useUserStore();
@@ -75,6 +111,7 @@ const detailAuditDialogRef = ref<DetailAuditRemindDialogExpose | null>(null);
 const clinicalPreSettleLoading = ref(false);
 const clinicalPreSettleVisible = ref(false);
 const clinicalPreSettleSnapshot = ref<PreSettleInpatientChargesResponse | null>(null);
+const clinicalPreSettleChargeLines = ref<InpatientSettleChargeLineDto[]>([]);
 
 const { assertOrganizationSelected, inHospitalPatients, listKeyword, listLoading, loadQueue } =
   useInpatientDoctorPatientQueue();
@@ -115,11 +152,23 @@ const tabComponents = computed<Record<DoctorTab, Component>>(() => ({
   [DOCTOR_TABS.ORDER]: InpatientAdviceList,
   [DOCTOR_TABS.TCM]: TcmAdvice,
   [DOCTOR_TABS.REPORT_QUERY]: ReportQuery,
+  [DOCTOR_TABS.TEMPERATURE_SHEET]: NurseStationTemperatureSheet,
+  [DOCTOR_TABS.NURSING_RECORD]: NurseStationNursingRecord,
+  [DOCTOR_TABS.COST_DETAILS]: NurseStationCostDetails,
 }));
 
-/** 诊断/医嘱/病历等 Tab 注入就诊上下文 */
+/** 诊断/医嘱/病历等 Tab 注入就诊上下文；护士复用 Tab 传 patients[] */
 const doctorStationContextBindings = computed(() => {
   const tab = activeTab.value;
+  if (NURSE_REUSED_TABS.has(tab)) {
+    const patient = selectedPatient.value;
+    const patients = patient ? [mapDoctorPatientToNurseModulePatient(patient)] : [];
+    // 体温单/护理记录只读；费用明细隐藏模块内患者头（外层已有）
+    if (tab === DOCTOR_TABS.TEMPERATURE_SHEET || tab === DOCTOR_TABS.NURSING_RECORD) {
+      return { patients, readonly: true };
+    }
+    return { patients, hidePatientHeader: true };
+  }
   const base = {
     encounterId: selectedPatient.value?.encounterId ?? '',
     patientId: selectedPatient.value?.patientId ?? '',
@@ -260,6 +309,22 @@ const ensureReceptionForClinicalWork: EnsureClinicalReceptionFn = async () => {
 
 provide(ENSURE_CLINICAL_RECEPTION_KEY, ensureReceptionForClinicalWork);
 
+/** 常用诊断维护变更计数：诊断 Tab 注入后刷新快捷树 */
+const commonDxMaintainVersion = ref(0);
+provide(COMMON_DIAGNOSIS_MAINTAIN_VERSION_KEY, commonDxMaintainVersion);
+
+const commonDxMaintainDialogVisible = ref(false);
+
+/** 打开诊断维护（个人/科室常用） */
+function handleMaintainCommonDiagnosis() {
+  commonDxMaintainDialogVisible.value = true;
+}
+
+/** 维护弹窗变更后递增版本，驱动诊断快捷树刷新 */
+function handleCommonDiagnosisMaintainChanged() {
+  commonDxMaintainVersion.value += 1;
+}
+
 const handleFormUpdate = (data: Record<string, unknown>) => {
   medicalRecordData.value = data;
 };
@@ -312,6 +377,7 @@ async function handleClinicalPreSettle() {
       return;
     }
     clinicalPreSettleSnapshot.value = result.snapshot;
+    clinicalPreSettleChargeLines.value = result.chargeLines;
     clinicalPreSettleVisible.value = true;
   } catch (error) {
     const message = error instanceof Error ? error.message : '完整预结算失败';
@@ -323,6 +389,11 @@ async function handleClinicalPreSettle() {
 
 const clinicalPreSettleInsuranceBreakdown = computed(() =>
   buildClinicalPreSettleInsuranceBreakdown(clinicalPreSettleSnapshot.value),
+);
+
+/** 本次预交金冲抵额（个人现金/应收 − 需补交）。 */
+const clinicalPreSettlePrepayOffset = computed(() =>
+  resolveClinicalPreSettlePrepayOffset(clinicalPreSettleSnapshot.value),
 );
 
 const handleQuickAction = async (
@@ -498,6 +569,9 @@ const handleNursing = () => {
             <ElButton type="primary" link :disabled="adviceWriteDisabled" @click="handleNursing">
               护理
             </ElButton>
+            <ElButton type="primary" link @click="handleMaintainCommonDiagnosis">
+              诊断维护
+            </ElButton>
           </template>
         </DoctorHeader>
         <div class="flex min-h-0 flex-1 flex-col gap-0">
@@ -553,9 +627,18 @@ const handleNursing = () => {
       v-model="clinicalPreSettleVisible"
       :display-amount="clinicalPreSettleSnapshot?.displayAmount ?? 0"
       :receivable-total="clinicalPreSettleSnapshot?.receivableTotal ?? 0"
+      :prepay-net-balance="clinicalPreSettleSnapshot?.prepayNetBalance"
+      :prepay-offset-amount="clinicalPreSettlePrepayOffset"
       :preview-text="clinicalPreSettleSnapshot?.previewText"
       :insurance-pre-settled="clinicalPreSettleSnapshot?.insurancePreSettled"
       :insurance-breakdown-items="clinicalPreSettleInsuranceBreakdown"
+      :charge-lines="clinicalPreSettleChargeLines"
+    />
+
+    <CommonDiagnosisMaintainDialog
+      v-model="commonDxMaintainDialogVisible"
+      station-scope="inpatient"
+      @changed="handleCommonDiagnosisMaintainChanged"
     />
   </div>
 </template>

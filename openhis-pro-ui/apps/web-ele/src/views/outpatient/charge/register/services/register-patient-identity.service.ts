@@ -28,6 +28,8 @@ export interface PatientIdentitySnapshot {
   /** 18 位身份证号（若有） */
   certno: string;
   patientName: string;
+  /** 身份证读卡户籍地址全文（有则预结算上送，写入/回写患者主档） */
+  address?: string;
   /** 用于患者档案检索（证件号或卡号） */
   patientMatchKeyword: string;
   /** 参保地/发卡地，供费用性质推荐与 1101 路由 */
@@ -45,10 +47,16 @@ export interface InsuranceReadRefs {
   lastYbMediumType: { value: string };
 }
 
-export function buildFormRecordFromCertno(certno: string, patientName = ''): RegisterPatientRecord {
+export function buildFormRecordFromCertno(
+  certno: string,
+  patientName = '',
+  address = '',
+): RegisterPatientRecord {
   const parsed = parseChineseIdCard18(certno);
+  const addressText = address.trim();
   return {
     patientAge: parsed ? calcAgeFromBirthDate(parsed.birthDate) : '',
+    ...(addressText ? { patientAddress: addressText } : {}),
     patientBirthday: parsed?.birthDate ?? '',
     patientGender: parsed?.genderCode ?? '',
     patientIdCard: certno,
@@ -60,11 +68,13 @@ export function buildFormRecordFromCertno(certno: string, patientName = ''): Reg
 export function buildFormRecordFromSnapshot(
   snapshot: PatientIdentitySnapshot,
 ): RegisterPatientRecord {
+  const addressText = String(snapshot.address ?? '').trim();
   if (snapshot.certno) {
-    return buildFormRecordFromCertno(snapshot.certno, snapshot.patientName);
+    return buildFormRecordFromCertno(snapshot.certno, snapshot.patientName, addressText);
   }
   return {
     patientAge: '',
+    ...(addressText ? { patientAddress: addressText } : {}),
     patientBirthday: '',
     patientGender: '',
     patientIdCard: '',
@@ -73,22 +83,36 @@ export function buildFormRecordFromSnapshot(
   };
 }
 
-/** 身份证读卡 → 统一快照（1101 走 02+身份证号，与省内医保卡一致） */
-export function buildSnapshotFromIdCard(idCardNo: string): null | PatientIdentitySnapshot {
+/**
+ * 身份证读卡 → 统一快照。
+ * <p>{@code mdtrt_cert_type=02}；有 Win {@code SignBuff}（ReadSFZ 第二缓冲）时以其作为
+ * {@code mdtrt_cert_no}（市医保 2201 FMI 要求；联调已验证），否则回落明文身份证号。
+ * {@code certno} 始终为明文证件号，供患者匹配。</p>
+ */
+export function buildSnapshotFromIdCard(
+  idCardNo: string,
+  patientName = '',
+  signBuff = '',
+  address = '',
+): null | PatientIdentitySnapshot {
   const certno = idCardNo.trim().toUpperCase();
   if (!certno) {
     return null;
   }
+  const cardCipher = signBuff.trim();
+  const addressText = address.trim();
   return {
     source: 'id',
     sourceLabel: PATIENT_IDENTITY_SOURCE_LABEL.id,
     certno,
-    patientName: '',
+    patientName: patientName.trim(),
+    ...(addressText ? { address: addressText } : {}),
     patientMatchKeyword: certno,
     insuplcAdmdvs: '',
     insuranceCredential: {
       mdtrtCertType: '02',
-      mdtrtCertNo: certno,
+      // 市医保 2201：优先 SignBuff 卡密；无则明文（可能撞 FMI 解密卡串）
+      mdtrtCertNo: cardCipher || certno,
       certno,
       psnCertType: '01',
     },

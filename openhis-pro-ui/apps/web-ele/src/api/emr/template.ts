@@ -5,6 +5,7 @@
 import type { PageApiResponse } from '#/types/api-response';
 
 import { publicRequestClient } from '#/api/request';
+import { stripPatientBoundMetadataFromContentJson } from '#/emrEditor/emr-patient-metadata';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import type { DocumentTypeDto, QueryDocumentTypeParams } from './document-type';
@@ -29,11 +30,24 @@ export interface TemplateDto {
   updatedAt?: string;
 }
 
-/** 模板正文入库：后端 content 为 JSON 字符串 */
+/**
+ * 模板正文入库：后端 content 为 JSON 字符串。
+ * 入库前清空患者绑定与日期时间上下文元数据（电话/姓名、就诊/签字日期等），
+ * 避免「别人的病历存模板」把原患者信息或旧日期带进模板库。
+ */
 export function serializeEmrTemplateContent(content: unknown): string {
   if (content === undefined || content === null) return '{}';
-  if (typeof content === 'string') return content;
-  return JSON.stringify(content);
+  let doc: unknown = content;
+  if (typeof content === 'string') {
+    const raw = content.trim();
+    if (!raw) return '{}';
+    try {
+      doc = JSON.parse(raw) as unknown;
+    } catch {
+      return content;
+    }
+  }
+  return JSON.stringify(stripPatientBoundMetadataFromContentJson(doc));
 }
 
 export interface TemplateContentDto extends TemplateDto {

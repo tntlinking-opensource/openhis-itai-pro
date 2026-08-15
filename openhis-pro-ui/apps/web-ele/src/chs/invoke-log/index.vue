@@ -381,13 +381,10 @@ function handleReset() {
   void loadList(queryParams.value);
 }
 
-function handlePagination(pagination: { pageNo?: number; pageSize?: number }) {
-  if (pagination.pageNo) {
-    queryParams.value.pageNo = pagination.pageNo;
-  }
-  if (pagination.pageSize) {
-    queryParams.value.pageSize = pagination.pageSize;
-  }
+/** 分页变更（TableLayout 契约为 page/limit） */
+function handlePagination(pagination: { page: number; limit: number }) {
+  queryParams.value.pageNo = pagination.page;
+  queryParams.value.pageSize = pagination.limit;
   void loadList(queryParams.value);
 }
 

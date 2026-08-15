@@ -15,10 +15,14 @@ import {
   buildDetailItemsFromFillRow,
   hasDetailItemsContent,
   readVitalValueFromDetailItems,
+  resolveDayHeightWeightDetailItems,
   resolveSlot22DetailItems,
   VITAL_ITEM_CODE,
 } from './temperature-sheet-detail-items';
-import { resolveTemperatureSheetTimeSlotFromHm } from './temperature-sheet-time-format';
+import {
+  resolveAdmissionDateYmd as resolveAdmissionDateYmdFromAt,
+  resolveTemperatureSheetTimeSlotFromHm,
+} from './temperature-sheet-time-format';
 
 export const TEMPERATURE_SHEET_TIME_SLOTS: TemperatureSheetTimeSlot[] = [
   '02',
@@ -103,6 +107,30 @@ export const TEMPERATURE_SHEET_PREVIOUS_DAY_SUPPLEMENT_FIELDS = [
     'intake' | 'other' | 'stoolCount' | 'urine' | 'urineCount'
   >
 >;
+
+/** 录入日是否为入院日（入院日不填前一日入出量/大便等统计项） */
+export function isTemperatureSheetAdmissionRecordDate(
+  recordDateYmd: string,
+  admissionAt?: string,
+): boolean {
+  const recordDate = (recordDateYmd ?? '').trim();
+  if (!recordDate) {
+    return false;
+  }
+  const admissionDate = resolveAdmissionDateYmdFromAt(admissionAt);
+  return Boolean(admissionDate && recordDate === admissionDate);
+}
+
+/** 清空前一日统计补充项（入院日录入用） */
+export function clearTemperatureSheetPreviousDaySupplementFields(
+  extraRecord: TemperatureSheetExtraRecordDraft,
+): TemperatureSheetExtraRecordDraft {
+  const next: TemperatureSheetExtraRecordDraft = { ...extraRecord };
+  for (const field of TEMPERATURE_SHEET_PREVIOUS_DAY_SUPPLEMENT_FIELDS) {
+    next[field] = '';
+  }
+  return next;
+}
 
 /** 底部补充指标行（除呼吸、血压外），顺序与纸质体温单一致 */
 export const TEMPERATURE_SHEET_FOOTER_SUPPLEMENT_ROWS = [
@@ -327,11 +355,14 @@ export function buildChartPointsFromGridRows(
         temp: parseChartNumber(
           readVitalValueFromDetailItems(slot?.detailItems, VITAL_ITEM_CODE.TEMP),
         ),
+        // 曲线脉搏：优先 PULSE，缺省回退 HR（与录入合并口径一致）
         pulse: parseChartNumber(
-          readVitalValueFromDetailItems(slot?.detailItems, VITAL_ITEM_CODE.PULSE),
+          readVitalValueFromDetailItems(slot?.detailItems, VITAL_ITEM_CODE.PULSE) ||
+            readVitalValueFromDetailItems(slot?.detailItems, VITAL_ITEM_CODE.HR),
         ),
         heartRate: parseChartNumber(
-          readVitalValueFromDetailItems(slot?.detailItems, VITAL_ITEM_CODE.HR),
+          readVitalValueFromDetailItems(slot?.detailItems, VITAL_ITEM_CODE.HR) ||
+            readVitalValueFromDetailItems(slot?.detailItems, VITAL_ITEM_CODE.PULSE),
         ),
         respiratory:
           readVitalValueFromDetailItems(slot?.detailItems, VITAL_ITEM_CODE.RESP) || undefined,
@@ -431,12 +462,54 @@ export function isBloodPressureInputDisabled(
   return filledCount >= 2;
 }
 
-/** 由网格行构建底部按日汇总数据 */
+/**
+ * 将指定日 fillSlots 压成单日网格行（仅供底部「前一日统计」跨窗 peek，不参与表头列）。
+ * 同图表槽多条时保留较晚时分（与后端 resolveLatestHeaderInChartSlot 一致）。
+ */
+export function buildTemperatureSheetPeekGridRowFromFillSlots(
+  recordDate: string,
+  fillSlots: TemperatureSheetFillSlotDto[] | null | undefined,
+): TemperatureSheetGridRowDto {
+  const slotCells: TemperatureSheetGridSlotCellDto[] = TEMPERATURE_SHEET_TIME_SLOTS.map(
+    (timeSlot) => ({
+      timeSlot,
+      detailItems: [],
+    }),
+  );
+  const slotMap = new Map(slotCells.map((cell) => [cell.timeSlot, cell]));
+  const latestHmBySlot = new Map<TemperatureSheetTimeSlot, string>();
+
+  // 按实际时分归入图表槽；同槽取较晚 HH:mm 覆盖
+  for (const slot of fillSlots ?? []) {
+    const recordTime = normalizeTemperatureSheetRecordTime(slot.timeSlot);
+    const chartSlot = resolveTemperatureSheetTimeSlotFromHm(recordTime);
+    const target = slotMap.get(chartSlot);
+    if (!target) {
+      continue;
+    }
+    const previousHm = latestHmBySlot.get(chartSlot);
+    if (previousHm && previousHm.localeCompare(recordTime) > 0) {
+      continue;
+    }
+    latestHmBySlot.set(chartSlot, recordTime);
+    target.vitalSignId = slot.vitalSignId?.trim() || undefined;
+    target.detailItems = slot.detailItems ?? [];
+  }
+
+  return {
+    recordDate: recordDate.trim(),
+    slotCells,
+  };
+}
+
+/** 由网格行构建底部按日汇总数据；peekRows 用于窗口末日的 S+1（跨页录入日）补数 */
 export function buildFooterDayCellsFromGridRows(
   gridRows: TemperatureSheetGridRowDto[],
+  peekRows?: TemperatureSheetGridRowDto[] | null,
 ): TemperatureSheetFooterDayCell[] {
   const gridRowByDate = new Map<string, TemperatureSheetGridRowDto>();
-  for (const gridRow of gridRows) {
+  // 展示列 + 跨窗 peek（仅参与 S+1 查找，不生成额外底部列）
+  for (const gridRow of [...gridRows, ...(peekRows ?? [])]) {
     const recordDate = (gridRow.recordDate ?? '').trim();
     if (recordDate) {
       gridRowByDate.set(recordDate, gridRow);
@@ -448,7 +521,8 @@ export function buildFooterDayCellsFromGridRows(
     const slotMap = new Map(
       (gridRow.slotCells ?? []).map((slot) => [(slot.timeSlot ?? '').trim(), slot]),
     );
-    const detailItems22 = resolveSlot22DetailItems(gridRow.slotCells);
+    // 身高/体重：优先 22:00，兼容入院体征写在入科时点的数据
+    const heightWeightItems = resolveDayHeightWeightDetailItems(gridRow.slotCells);
     // 前一日统计项：展示列 S 读录入日 S+1 的 22:00 槽
     const previousDayEntryRow = recordDate
       ? gridRowByDate.get(addDaysToYmd(recordDate, 1))
@@ -480,8 +554,8 @@ export function buildFooterDayCellsFromGridRows(
       intake: readVitalValueFromDetailItems(previousDayDetailItems22, VITAL_ITEM_CODE.INTAKE),
       other: readVitalValueFromDetailItems(previousDayDetailItems22, VITAL_ITEM_CODE.OTHER),
       urine: readVitalValueFromDetailItems(previousDayDetailItems22, VITAL_ITEM_CODE.URINE_VOL),
-      weight: readVitalValueFromDetailItems(detailItems22, VITAL_ITEM_CODE.WEIGHT),
-      height: readVitalValueFromDetailItems(detailItems22, VITAL_ITEM_CODE.HEIGHT),
+      weight: readVitalValueFromDetailItems(heightWeightItems, VITAL_ITEM_CODE.WEIGHT),
+      height: readVitalValueFromDetailItems(heightWeightItems, VITAL_ITEM_CODE.HEIGHT),
     };
   });
 }
@@ -705,9 +779,15 @@ export function collectTemperatureSheetSaveRequests(
     .map((row) => mapFillRowToSaveRequest(row, extraRecord, recordDate, encounterId, patientId))
     .filter((item): item is SaveNurseStationTemperatureSheetAtRecordedTimeRequest => item !== null);
 
-  // 补充记录仅挂 22:00：有补充内容但当前行集无 22 槽时补提一条
+  // 补充记录仅挂图表 22 槽：有补充内容但请求中尚无 22 槽时补提 22:00
   const hasExtraContent = Object.values(extraRecord).some((value) => value.trim().length > 0);
-  if (hasExtraContent && !requests.some((request) => request.timeSlot === '22')) {
+  const hasChartSlot22Request = requests.some((request) => {
+    const chartSlot = resolveTemperatureSheetTimeSlotFromHm(
+      normalizeTemperatureSheetRecordTime(request.timeSlot),
+    );
+    return chartSlot === '22';
+  });
+  if (hasExtraContent && !hasChartSlot22Request) {
     const slot22Row = rows.find((row) => row.timeSlot === '22') ?? createEmptyFillRow('22');
     const extraRequest = mapFillRowToSaveRequest(
       slot22Row,

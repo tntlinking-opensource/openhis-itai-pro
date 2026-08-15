@@ -4,8 +4,8 @@ import type { DateRangeQuickSpec } from '#/utils/format/date-range-quick';
 
 import { ref, watch } from 'vue';
 
-import { Refresh } from '@element-plus/icons-vue';
-import { ElButton, ElDatePicker } from 'element-plus';
+import { ArrowDown, ArrowUp, Refresh } from '@element-plus/icons-vue';
+import { ElButton, ElDatePicker, ElIcon } from 'element-plus';
 
 import SectionTitle from '#/components/layouts/section-title.vue';
 import SelectFuzzyInput from '#/components/select-fuzzy-input.vue';
@@ -27,6 +27,7 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
+  collapsedChange: [boolean];
   dateRangeChange: [[string, string]];
   recordsChanged: [];
 }>();
@@ -37,11 +38,18 @@ const cancelledCount = ref(0);
 const activeCount = ref(0);
 const activeQuick = ref<'calendar-day' | 'calendar-month' | 'calendar-week'>('calendar-day');
 const historyKeyword = ref('');
+/** 收起后仅保留工具栏，上方挂号区占满剩余高度 */
+const collapsed = ref(false);
 
 /** 区间查询：展开面板默认快捷时间范围 */
 const dateRangeShortcuts = buildDefaultDateRangeShortcuts();
 
 const historyRef = ref<null | RegisterHistoryExpose>(null);
+
+function toggleCollapsed() {
+  collapsed.value = !collapsed.value;
+  emit('collapsedChange', collapsed.value);
+}
 
 async function refreshStats() {
   statsLoading.value = true;
@@ -99,56 +107,74 @@ void refreshStats();
 </script>
 
 <template>
-  <section class="register-history-section flex h-full min-h-0 flex-col overflow-hidden">
+  <section
+    class="register-history-section flex h-full min-h-0 flex-col overflow-hidden"
+    :class="{ 'is-collapsed': collapsed }"
+  >
     <div class="register-history-section__toolbar">
-      <SectionTitle class="register-history-section__title" title="历史就诊" />
+      <button
+        type="button"
+        class="register-history-section__collapse-btn"
+        :title="collapsed ? '展开历史就诊' : '收起历史就诊'"
+        :aria-label="collapsed ? '展开历史就诊' : '收起历史就诊'"
+        :aria-expanded="!collapsed"
+        @click="toggleCollapsed"
+      >
+        <SectionTitle class="register-history-section__title" title="历史就诊" />
+        <ElIcon class="register-history-section__collapse-icon">
+          <ArrowDown v-if="collapsed" />
+          <ArrowUp v-else />
+        </ElIcon>
+      </button>
 
-      <SelectFuzzyInput
-        v-model="historyKeyword"
-        class="register-history-section__keyword"
-        placeholder="患者姓名/就诊号"
-        @search="handleKeywordSearch"
-      />
-
-      <div class="register-history-section__date-wrap">
-        <ElDatePicker
-          :model-value="dateRange"
-          type="daterange"
-          range-separator="至"
-          start-placeholder="开始"
-          end-placeholder="结束"
-          value-format="YYYY-MM-DD"
-          :shortcuts="dateRangeShortcuts"
-          @update:model-value="handleDateRangeChange"
+      <template v-if="!collapsed">
+        <SelectFuzzyInput
+          v-model="historyKeyword"
+          class="register-history-section__keyword"
+          placeholder="患者姓名/就诊号"
+          @search="handleKeywordSearch"
         />
-      </div>
 
-      <div class="register-history-section__quick">
-        <button
-          type="button"
-          class="register-history-section__quick-btn"
-          :class="{ 'is-active': activeQuick === 'calendar-day' }"
-          @click="applyDateRangeQuick({ strategy: 'calendar-day' })"
-        >
-          今天
-        </button>
-        <button
-          type="button"
-          class="register-history-section__quick-btn"
-          :class="{ 'is-active': activeQuick === 'calendar-week' }"
-          @click="applyDateRangeQuick({ strategy: 'calendar-week' })"
-        >
-          本周
-        </button>
-        <button
-          type="button"
-          class="register-history-section__quick-btn"
-          :class="{ 'is-active': activeQuick === 'calendar-month' }"
-          @click="applyDateRangeQuick({ strategy: 'calendar-month' })"
-        >
-          本月
-        </button>
-      </div>
+        <div class="register-history-section__date-wrap">
+          <ElDatePicker
+            :model-value="dateRange"
+            type="daterange"
+            range-separator="至"
+            start-placeholder="开始"
+            end-placeholder="结束"
+            value-format="YYYY-MM-DD"
+            :shortcuts="dateRangeShortcuts"
+            @update:model-value="handleDateRangeChange"
+          />
+        </div>
+
+        <div class="register-history-section__quick">
+          <button
+            type="button"
+            class="register-history-section__quick-btn"
+            :class="{ 'is-active': activeQuick === 'calendar-day' }"
+            @click="applyDateRangeQuick({ strategy: 'calendar-day' })"
+          >
+            今天
+          </button>
+          <button
+            type="button"
+            class="register-history-section__quick-btn"
+            :class="{ 'is-active': activeQuick === 'calendar-week' }"
+            @click="applyDateRangeQuick({ strategy: 'calendar-week' })"
+          >
+            本周
+          </button>
+          <button
+            type="button"
+            class="register-history-section__quick-btn"
+            :class="{ 'is-active': activeQuick === 'calendar-month' }"
+            @click="applyDateRangeQuick({ strategy: 'calendar-month' })"
+          >
+            本月
+          </button>
+        </div>
+      </template>
 
       <div v-loading="statsLoading" class="register-history-section__stats">
         <span>当日挂号 {{ totalCount }}</span>
@@ -166,6 +192,7 @@ void refreshStats();
     </div>
 
     <History
+      v-show="!collapsed"
       ref="historyRef"
       v-model:keyword="historyKeyword"
       class="min-h-0 flex-1"
@@ -182,6 +209,14 @@ void refreshStats();
   border-top: 1px solid var(--el-border-color-lighter);
 }
 
+.register-history-section.is-collapsed {
+  padding-top: 4px;
+}
+
+.register-history-section.is-collapsed .register-history-section__toolbar {
+  margin-bottom: 0;
+}
+
 .register-history-section__toolbar {
   display: flex;
   flex-wrap: nowrap;
@@ -191,11 +226,32 @@ void refreshStats();
   overflow-x: auto;
 }
 
+.register-history-section__collapse-btn {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 4px;
+  align-items: center;
+  padding: 0;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+}
+
+.register-history-section__collapse-btn:hover .register-history-section__collapse-icon {
+  color: var(--el-color-primary);
+}
+
 .register-history-section__title {
   flex-shrink: 0;
   margin: 0;
   font-size: 15px;
   white-space: nowrap;
+}
+
+.register-history-section__collapse-icon {
+  font-size: 14px;
+  color: var(--el-text-color-secondary);
+  transition: color 0.2s ease;
 }
 
 .register-history-section__date-wrap {

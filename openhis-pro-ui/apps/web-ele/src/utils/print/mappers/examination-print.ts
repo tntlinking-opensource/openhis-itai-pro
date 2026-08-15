@@ -4,6 +4,7 @@ import type {
   ServiceApplySelectedItem,
 } from '#/views/outpatient/doctor-station/service-apply/service-apply.types';
 
+import { appendRehabTreatmentCourseRemark } from '#/utils/service-apply-display';
 import { detailTargetIds } from '#/views/outpatient/doctor-station/service-apply/service-apply.service';
 
 /** 检查申请单 PrintData（与 examination-print 模板 field 一致） */
@@ -149,7 +150,13 @@ export function buildExaminationPrintData(source: ExaminationPrintSource): Exami
   const examSiteText = joinUniqueNonEmpty(
     lines.map((line, index) => buildLineExamSiteText(source, line, index)),
   );
-  const precautionText = joinUniqueNonEmpty(lines.map((line) => line.remark));
+  const lineRemarkText = joinUniqueNonEmpty(lines.map((line) => line.remark));
+  // 治疗申请单且执行科室展示为康复科时，追加固定疗程说明
+  const precautionText = appendRehabTreatmentCourseRemark(
+    lineRemarkText,
+    source.applyKind,
+    source.performOrgName,
+  );
   return {
     hospitalName: str(source.hospitalName),
     patientName: str(source.patientName),

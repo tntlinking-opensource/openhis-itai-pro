@@ -30,9 +30,11 @@ import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import {
   buildChartPointsFromGridRows,
   buildFooterDayCellsFromGridRows,
+  buildTemperatureSheetPeekGridRowFromFillSlots,
   extendDerivedMetaForWindow,
   resolveMergedTemperatureSheetGridRows,
   resolveTemperatureSheetWindowStartDate,
+  shiftTemperatureSheetRecordDateYmd,
   TEMPERATURE_SHEET_FOOTER_SUPPLEMENT_ROWS,
 } from './services/map-nurse-station-temperature-sheet';
 import { printTemperatureSheetPaper } from './services/temperature-sheet-browser-print';
@@ -44,6 +46,7 @@ import {
   createEmptySpecialEventStore,
   TEMPERATURE_SHEET_PHYSICAL_COOLING_DELAY_MINUTES,
 } from './services/temperature-sheet-special-events';
+import { resolveAdmissionDateYmd } from './services/temperature-sheet-time-format';
 import {
   PAPER_SHEET_DESIGN_WIDTH,
   usePaperSheetViewportScale,
@@ -59,10 +62,13 @@ defineOptions({
 
 const props = withDefaults(defineProps<Props>(), {
   patients: () => [],
+  readonly: false,
 });
 
 interface Props {
   patients?: NurseStationModulePatient[];
+  /** 只读：隐藏填写/批量录入，医生站查看用 */
+  readonly?: boolean;
 }
 
 interface TooltipParamLike {
@@ -86,6 +92,8 @@ const initRequest = useRequest(httpLoadNurseStationTemperatureSheetInit, { manua
 const currentPage = ref(0);
 const chartPoints = ref<TemperatureSheetChartPoint[]>([]);
 const sheetGridRows = ref<TemperatureSheetGridRowDto[]>([]);
+/** 窗口末日次日网格（跨页时供底部前一日统计读 S+1） */
+const footerPeekGridRows = ref<TemperatureSheetGridRowDto[]>([]);
 const derivedMeta = ref<{
   hospitalizationDaysByDate: Record<string, number>;
   postoperativeDaysByDate: Record<string, number>;
@@ -181,7 +189,9 @@ function formatSheetPatientDate(value?: string): string {
 
 const visiblePoints = computed(() => chartPoints.value);
 
-const footerDayCells = computed(() => buildFooterDayCellsFromGridRows(sheetGridRows.value));
+const footerDayCells = computed(() =>
+  buildFooterDayCellsFromGridRows(sheetGridRows.value, footerPeekGridRows.value),
+);
 
 /** 按业务日期索引底部日汇总，与表头日期列对齐 */
 const footerDayCellByDate = computed(() => {
@@ -212,21 +222,43 @@ function goToNextPage() {
   }
 }
 
+/** 解析当前页窗口末日的次日（用于底部前一日统计跨页 peek） */
+function resolveFooterPeekFocusDate(admissionAt?: string, paginationDateTo?: string): string {
+  const admissionDate = resolveAdmissionDateYmd(admissionAt);
+  if (admissionDate) {
+    const windowDateFrom = shiftTemperatureSheetRecordDateYmd(
+      admissionDate,
+      currentPage.value * WINDOW_DAY_COUNT,
+    );
+    const windowDateTo = shiftTemperatureSheetRecordDateYmd(windowDateFrom, WINDOW_DAY_COUNT - 1);
+    return shiftTemperatureSheetRecordDateYmd(windowDateTo, 1);
+  }
+  const dateTo = (paginationDateTo ?? '').trim();
+  if (!dateTo) {
+    return '';
+  }
+  return shiftTemperatureSheetRecordDateYmd(dateTo, 1);
+}
+
 /** 加载体温单展示数据 */
 async function loadTemperatureSheetData() {
   const context = selectedPatientContext.value;
   if (!context) {
     chartPoints.value = [];
     sheetGridRows.value = [];
+    footerPeekGridRows.value = [];
     totalPages.value = 1;
     return;
   }
 
+  // 预计算窗口末日次日：同屏无 S+1 时用 fillSlots 补底部前一日统计
+  const peekFocusDate = resolveFooterPeekFocusDate(context.patient.admissionAt);
   const response = await dataRequest.run({
     encounterId: context.encounterId,
     patientId: context.patientId,
     windowRange: WINDOW_RANGE,
     pageIndex: currentPage.value,
+    focusRecordDate: peekFocusDate || undefined,
   });
 
   const windowDayCount = WINDOW_DAY_COUNT;
@@ -240,10 +272,40 @@ async function loadTemperatureSheetData() {
     windowDayCount,
   );
   specialEventStore.value = buildSpecialEventStoreFromGridRows(sheetGridRows.value);
+
+  // 窗口内已有次日列则不必 peek；否则用 focus 日 fillSlots 合成次日网格
+  const resolvedPeekDate =
+    peekFocusDate ||
+    resolveFooterPeekFocusDate(context.patient.admissionAt, response.pagination?.dateTo);
+  const peekAlreadyInWindow = sheetGridRows.value.some(
+    (row) => (row.recordDate ?? '').trim() === resolvedPeekDate,
+  );
+  if (resolvedPeekDate && !peekAlreadyInWindow && response.fillSlots?.length) {
+    footerPeekGridRows.value = [
+      buildTemperatureSheetPeekGridRowFromFillSlots(resolvedPeekDate, response.fillSlots),
+    ];
+  } else if (resolvedPeekDate && !peekAlreadyInWindow && !peekFocusDate) {
+    // 无入院日时首包未带 focus，补一次次日回显
+    const peekResponse = await dataRequest.run({
+      encounterId: context.encounterId,
+      patientId: context.patientId,
+      windowRange: WINDOW_RANGE,
+      pageIndex: currentPage.value,
+      focusRecordDate: resolvedPeekDate,
+    });
+    footerPeekGridRows.value = peekResponse.fillSlots?.length
+      ? [buildTemperatureSheetPeekGridRowFromFillSlots(resolvedPeekDate, peekResponse.fillSlots)]
+      : [];
+  } else {
+    footerPeekGridRows.value = [];
+  }
 }
 
 /** 打开按患者录入抽屉（先加载回显再打开，避免抽屉上弹） */
 async function openFillDrawer(): Promise<void> {
+  if (props.readonly) {
+    return;
+  }
   const context = selectedPatientContext.value;
   if (!context) {
     ElMessage.warning('请先选择患者');
@@ -269,6 +331,9 @@ function handleSingleFillSaved(): void {
 
 /** 打开按时点批量录入抽屉 */
 async function openBatchFillDrawer(): Promise<void> {
+  if (props.readonly) {
+    return;
+  }
   const drawer = batchFillDrawerRef.value;
   if (!drawer) {
     return;
@@ -682,7 +747,9 @@ watch(isFullscreen, () => {
   <Teleport to="body" :disabled="!isFullscreen">
     <div class="temperature-sheet" :class="{ 'is-fullscreen': isFullscreen }">
       <ElEmpty v-if="!canOperateSheet" description="请先从左侧选择一位患者查看体温单">
-        <ElButton type="primary" plain @click="openBatchFillDrawer">按时点批量录入</ElButton>
+        <ElButton v-if="!readonly" type="primary" plain @click="openBatchFillDrawer">
+          按时点批量录入
+        </ElButton>
       </ElEmpty>
 
       <div
@@ -870,23 +937,33 @@ watch(isFullscreen, () => {
               {{ isFullscreen ? '退出全屏' : '全屏' }}
             </ElButton>
             <ElButton size="small" type="primary" @click="handlePrint">打印当前页</ElButton>
-            <ElButton size="small" plain type="primary" @click="openBatchFillDrawer">
+            <ElButton
+              v-if="!readonly"
+              size="small"
+              plain
+              type="primary"
+              @click="openBatchFillDrawer"
+            >
               按时点批量录入
             </ElButton>
-            <ElButton size="small" type="success" @click="openFillDrawer">填写体温单</ElButton>
+            <ElButton v-if="!readonly" size="small" type="success" @click="openFillDrawer">
+              填写体温单
+            </ElButton>
           </div>
         </div>
       </div>
     </div>
   </Teleport>
 
-  <TemperatureSheetSingleFillDrawer ref="fillDrawerRef" @saved="handleSingleFillSaved" />
+  <template v-if="!readonly">
+    <TemperatureSheetSingleFillDrawer ref="fillDrawerRef" @saved="handleSingleFillSaved" />
 
-  <TemperatureSheetBatchFillDrawer
-    ref="batchFillDrawerRef"
-    v-model:visible="batchFillDrawerVisible"
-    @saved="handleBatchFillSaved"
-  />
+    <TemperatureSheetBatchFillDrawer
+      ref="batchFillDrawerRef"
+      v-model:visible="batchFillDrawerVisible"
+      @saved="handleBatchFillSaved"
+    />
+  </template>
 </template>
 
 <style scoped>

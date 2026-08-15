@@ -56,11 +56,11 @@ const coreRoutes: RouteRecordRaw[] = [
           title: '个人中心',
         },
       },
-      /** 病案首页全屏编辑（菜单入口为病案列表，component 由后台配置） */
+      /** 病案首页（大融合列表+编辑；菜单 path=/mrms/homepage） */
       {
         name: 'MrmsCaseRecordHomepage',
-        path: '/mrms/case-record/homepage/:caseRecordId',
-        component: () => import('#/views/mrms/case-record/homepage/index.vue'),
+        path: '/mrms/homepage/:caseRecordId?',
+        component: () => import('#/views/mrms/homepage/index.vue'),
         meta: {
           hideInMenu: true,
           title: '病案首页',
@@ -79,14 +79,14 @@ const coreRoutes: RouteRecordRaw[] = [
       /** 卷宗预览 */
       {
         name: 'MrmsCaseRecordVolume',
-        path: '/mrms/case-record/volume/:caseRecordId',
-        component: () => import('#/views/mrms/case-record/volume/index.vue'),
+        path: '/mrms/volume/:caseRecordId',
+        component: () => import('#/views/mrms/volume/index.vue'),
         meta: {
           hideInMenu: true,
           title: '卷宗预览',
         },
       },
-      /** 借阅复印（W3） */
+      /** 借阅复印 */
       {
         name: 'MrmsBorrowWorkbench',
         path: '/mrms/borrow',
@@ -96,14 +96,24 @@ const coreRoutes: RouteRecordRaw[] = [
           title: '借阅复印',
         },
       },
-      /** 4401 上传（W3） */
+      /** 门诊病历查询（菜单 path=/mrms/outpatient-emr） */
       {
-        name: 'MrmsUploadWorkbench',
-        path: '/mrms/upload',
-        component: () => import('#/views/mrms/upload/index.vue'),
+        name: 'MrmsOutpatientEmrQuery',
+        path: '/mrms/outpatient-emr',
+        component: () => import('#/views/mrms/outpatient-emr/index.vue'),
         meta: {
           hideInMenu: true,
-          title: '4401 上传',
+          title: '门诊病历查询',
+        },
+      },
+      /** 住院病例查询（菜单 path=/mrms/inpatient-emr；体温单/护理记录无独立菜单） */
+      {
+        name: 'MrmsInpatientEmrQuery',
+        path: '/mrms/inpatient-emr',
+        component: () => import('#/views/mrms/inpatient-emr/index.vue'),
+        meta: {
+          hideInMenu: true,
+          title: '住院病例查询',
         },
       },
     ],

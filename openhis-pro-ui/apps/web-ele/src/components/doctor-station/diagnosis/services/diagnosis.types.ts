@@ -37,6 +37,8 @@ export interface DiagnosisItem {
   encounterDiagnosisId?: string;
   /** 主诊断标记：1=主诊（多选序列须排第一） */
   mainDiagnosisFlag?: number;
+  /** 医疗类别码（慢病标识：14 / 140104 / 140201） */
+  medicalTypeCode?: string;
   /** 中医病证组键；有值时删除走整组删除 */
   tcmSyndromeGroup?: string;
 }

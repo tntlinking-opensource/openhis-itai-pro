@@ -3,6 +3,7 @@ export const ADVICE_TABLE_COL_WIDTH = {
   default: {
     status: 88,
     chargeStatus: 88,
+    feeNature: 96,
     type: 108,
     contentMin: 350,
     startTime: 170,
@@ -14,6 +15,7 @@ export const ADVICE_TABLE_COL_WIDTH = {
   compact: {
     status: 80,
     chargeStatus: 80,
+    feeNature: 88,
     type: 96,
     contentMin: 280,
     startTime: 156,

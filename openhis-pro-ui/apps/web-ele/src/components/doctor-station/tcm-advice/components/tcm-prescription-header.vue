@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import type { DiagnosisItem } from '#/components/doctor-station/diagnosis';
+import type { DoctorStationDiagnosisScope } from '#/components/doctor-station/diagnosis/services/encounter-diagnosis.service';
+import type { AdviceDiagnosisOptionsRefreshedPayload } from '#/components/doctor-station/diagnosis';
+
 import {
-  ElButton,
   ElCheckbox,
   ElForm,
   ElFormItem,
@@ -10,6 +13,8 @@ import {
   ElRadioGroup,
   ElSelect,
 } from 'element-plus';
+
+import { AdviceDiagnosisBindPanel } from '#/components/doctor-station/diagnosis';
 
 import './tcm-rx-header.css';
 
@@ -21,17 +26,28 @@ interface SelectOption {
 }
 
 interface Props {
+  /** 已签发未代煎：仅代煎勾选可点（补充代煎费） */
+  allowSufferingEdit?: boolean;
   disabled?: boolean;
+  /** 中医诊断候选项（多选绑定） */
+  diagnosisOptions?: DiagnosisItem[];
+  encounterId?: string;
   methodCodeOptions?: SelectOption[];
+  patientId?: string;
   rateCodeOptions?: SelectOption[];
-  syndromeGroupOptions?: SelectOption[];
   /** 住院：展示长临选择 */
   showTherapyType?: boolean;
+  stationScope?: DoctorStationDiagnosisScope;
 }
 
 export interface TcmPrescriptionHeaderForm {
   chineseHerbsDoseQuantity?: number;
+  /** 费用性质/合同主键 */
+  contractId: string;
   days?: number;
+  encounterDiagnosisIds: string[];
+  /** 费用性质展示名（与 contractId 同步） */
+  feeNatureText: string;
   methodCode: string;
   rateCode: string;
   sufferingFlag: boolean;
@@ -40,22 +56,34 @@ export interface TcmPrescriptionHeaderForm {
 }
 
 withDefaults(defineProps<Props>(), {
+  allowSufferingEdit: false,
   disabled: false,
+  diagnosisOptions: () => [],
+  encounterId: '',
   methodCodeOptions: () => [],
+  patientId: '',
   rateCodeOptions: () => [],
-  syndromeGroupOptions: () => [],
   showTherapyType: false,
+  stationScope: 'outpatient',
 });
 
 const emit = defineEmits<{
   addDiagnosis: [];
+  diagnosisDeleted: [encounterDiagnosisId: string];
+  diagnosisMainSwitched: [];
+  diagnosisOptionsRefreshed: [payload: AdviceDiagnosisOptionsRefreshedPayload];
+  'update:encounterDiagnosisIds': [value: string[]];
 }>();
 
 const model = defineModel<TcmPrescriptionHeaderForm>({ required: true });
 
-/** 打开添加诊断弹窗 */
-function handleAddDiagnosis() {
-  emit('addDiagnosis');
+/** 多选诊断写回：同步 ids，组号由父级按候选项推导 */
+function handleDiagnosisIdsUpdate(value: string[]) {
+  const ids = Array.isArray(value)
+    ? value.map((id) => String(id ?? '').trim()).filter(Boolean)
+    : [];
+  model.value.encounterDiagnosisIds = ids;
+  emit('update:encounterDiagnosisIds', ids);
 }
 </script>
 
@@ -66,31 +94,30 @@ function handleAddDiagnosis() {
     label-width="48px"
     class="tcm-rx-header"
     :class="{ 'tcm-rx-header--inpatient': showTherapyType }"
-    :disabled="disabled"
+    :disabled="disabled && !allowSufferingEdit"
   >
-    <div class="tcm-rx-header__row flex flex-wrap items-center gap-x-2.5 gap-y-1">
-      <ElFormItem label="诊断" class="tcm-rx-header__item tcm-rx-header__item--diagnosis shrink-0">
-        <div class="tcm-rx-header__diagnosis inline-flex items-center gap-1">
-          <ElSelect
-            v-model="model.tcmSyndromeGroup"
-            class="!w-[180px]"
-            filterable
-            clearable
-            placeholder="请选择诊断"
-          >
-            <ElOption
-              v-for="opt in syndromeGroupOptions"
-              :key="opt.value"
-              :label="opt.label"
-              :value="opt.value"
-            />
-          </ElSelect>
-          <ElButton link type="primary" @click="handleAddDiagnosis">添加</ElButton>
+    <div class="tcm-rx-header__row flex items-center gap-x-2.5 gap-y-1">
+      <ElFormItem label="诊断" class="tcm-rx-header__item tcm-rx-header__item--diagnosis min-w-0">
+        <div class="tcm-rx-header__diagnosis">
+          <AdviceDiagnosisBindPanel
+            :selected-ids="model.encounterDiagnosisIds"
+            :options="diagnosisOptions"
+            :encounter-id="encounterId"
+            :patient-id="patientId"
+            :station-scope="stationScope"
+            medicine-type-filter="tcm"
+            :disabled="disabled"
+            @update:selected-ids="handleDiagnosisIdsUpdate"
+            @add-diagnosis="emit('addDiagnosis')"
+            @deleted="(id) => emit('diagnosisDeleted', id)"
+            @main-switched="() => emit('diagnosisMainSwitched')"
+            @options-refreshed="(payload) => emit('diagnosisOptionsRefreshed', payload)"
+          />
         </div>
       </ElFormItem>
 
       <div v-if="showTherapyType" class="tcm-rx-header__therapy shrink-0">
-        <ElRadioGroup v-model="model.therapyEnum">
+        <ElRadioGroup v-model="model.therapyEnum" :disabled="disabled">
           <ElRadio label="LONG_TERM">长期</ElRadio>
           <ElRadio label="TEMPORARY">临时</ElRadio>
         </ElRadioGroup>
@@ -103,6 +130,7 @@ function handleAddDiagnosis() {
           filterable
           clearable
           placeholder="用法"
+          :disabled="disabled"
         >
           <ElOption
             v-for="opt in methodCodeOptions"
@@ -120,6 +148,7 @@ function handleAddDiagnosis() {
           filterable
           clearable
           placeholder="频次"
+          :disabled="disabled"
         >
           <ElOption
             v-for="opt in rateCodeOptions"
@@ -137,11 +166,16 @@ function handleAddDiagnosis() {
           :min="1"
           :max="30"
           :controls="false"
+          :disabled="disabled"
         />
       </ElFormItem>
 
       <ElFormItem label-width="0" class="tcm-rx-header__item tcm-rx-header__item--check shrink-0">
-        <ElCheckbox v-model="model.sufferingFlag" class="tcm-rx-header__suffering">
+        <ElCheckbox
+          v-model="model.sufferingFlag"
+          class="tcm-rx-header__suffering"
+          :disabled="disabled && !allowSufferingEdit"
+        >
           代煎
         </ElCheckbox>
       </ElFormItem>

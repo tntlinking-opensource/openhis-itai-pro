@@ -5,6 +5,7 @@ import type { ApiOptionItem, PageParams } from '#/types/api-response';
 import type { BinaryExportResult } from '#/utils/export/download-binary-export';
 
 import { publicRequestClient } from '#/api/request';
+import { reportLongRequestConfig } from '#/constants/report-request-timeout';
 
 export const PRESENTATION_MODE_SUMMARY = 'SUMMARY' as const;
 export const PRESENTATION_MODE_DETAIL = 'DETAIL' as const;
@@ -36,6 +37,8 @@ export interface LoadMedicationDispenseReportPageInitResponse {
   summaryDimensionOptions?: ApiOptionItem[];
   sourceOptions?: ApiOptionItem[];
   feeNatureOptions?: ApiOptionItem[];
+  /** 开立/领用科室下拉 */
+  organizationOptions?: ApiOptionItem[];
 }
 
 export interface MedicationDispenseReportFilter {
@@ -49,6 +52,8 @@ export interface MedicationDispenseReportFilter {
   patientKeyword?: string;
   sourceCode?: string;
   feeNatureContractNo?: string;
+  /** 患者侧=开立科室；领用侧=领用科室 */
+  organizationId?: string;
 }
 
 export interface SummarizeMedicationDispenseReportParams extends MedicationDispenseReportFilter {
@@ -189,6 +194,7 @@ export async function summarizeMedicationDispenseReportApi(
   return publicRequestClient.post<SummarizeMedicationDispenseReportResponse>(
     `${base}/${method}`,
     body,
+    reportLongRequestConfig(),
   );
 }
 
@@ -205,6 +211,7 @@ export async function pageMedicationDispenseReportDetailApi(
   return publicRequestClient.post<PageMedicationDispenseReportDetailResponse>(
     `${base}/${method}`,
     body,
+    reportLongRequestConfig(),
   );
 }
 
@@ -221,5 +228,6 @@ export async function exportMedicationDispenseReportApi(
   return publicRequestClient.post<ExportMedicationDispenseReportResponse>(
     `${base}/${method}`,
     body,
+    reportLongRequestConfig(),
   );
 }

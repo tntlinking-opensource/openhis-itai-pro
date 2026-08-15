@@ -86,6 +86,7 @@ const {
   lastYbIssuingAreaCode,
   lastYbMediumType,
   lastYbCredentialReadAt,
+  lastYbPsnNo,
   resetBenefitPreviewCache,
   resetBenefitState,
   resolveBenefitRequirement,
@@ -174,6 +175,8 @@ const isWorkInjuryRegister = computed(() =>
 /** 工伤预结算后保留 encounter/contract，供待遇区与确认框 2301 入口。 */
 const workInjuryPreEncounterId = ref<string | number | undefined>(undefined);
 const workInjuryPreContractId = ref<string | number | undefined>(undefined);
+/** 工伤待遇预查序号：切换费用性质时作废进行中的回写。 */
+let workInjuryBenefitProbeSeq = 0;
 
 function clearWorkInjuryPreContext() {
   workInjuryPreEncounterId.value = undefined;
@@ -181,11 +184,17 @@ function clearWorkInjuryPreContext() {
 }
 
 function handleContractCategoryChange(category: string) {
+  workInjuryBenefitProbeSeq += 1;
+  benefitSyncing.value = false;
+
+  // 工伤：允许直接选「工伤保险」，待遇区经 Win 做工伤 1101→9102（不必先省医保读卡）
   resetBenefitPreviewCache();
   registerFormAreaRef.value?.clearBenefitPreview();
   clearWorkInjuryPreContext();
   currentContractCategory.value = category;
-  void syncBenefitPreview();
+  void (async () => {
+    await syncBenefitPreview();
+  })();
 }
 
 async function syncBenefitPreview(options?: { autoApplyRecommend?: boolean }) {
@@ -243,8 +252,24 @@ async function syncBenefitPreview(options?: { autoApplyRecommend?: boolean }) {
     });
     if (result?.preview) {
       await applyInsurancePreview(result.preview, result.contractMatch ?? lastContractMatch.value);
+      // 身份证读卡可能未带回姓名：用 1101 姓名补全表单
+      const psnName = String(result.preview.psnName ?? '').trim();
+      if (psnName) {
+        const current = await area.getSubmitValues();
+        if (!String(current.patientName ?? '').trim()) {
+          area.applyPatientRecord({
+            patientAge: String(current.medicalInsuranceNo ?? ''),
+            patientBirthday: String(current.patientBirthday ?? ''),
+            patientGender: String(current.patientGender ?? ''),
+            patientIdCard: String(current.patientIdCard ?? ''),
+            patientName: psnName,
+            patientPhone: String(current.patientPhone ?? ''),
+            // 不传 patientAddress：保留读卡已写入的地址默认值
+          });
+        }
+      }
       if (options?.autoApplyRecommend) {
-        await maybeApplyRecommendedContract(result.contractMatch, true);
+        await maybeApplyResolvedOrRecommendedContract(result.preview, result.contractMatch, true);
       }
     }
     return;
@@ -260,48 +285,139 @@ async function syncBenefitPreview(options?: { autoApplyRecommend?: boolean }) {
     return;
   }
   if (requirement === 'WORK_INJURY') {
+    // 直接选工伤：经 Win 工伤 1101→9102 预查（不依赖省医保读卡）
+    const probeSeq = ++workInjuryBenefitProbeSeq;
     area.applyBenefitPreview({
       kind: 'WORK_INJURY',
-      eligibilityMessage: '工伤保险：挂号费须自费',
+      eligibilityMessage: '正在查询工伤备案…',
+      workInjury: { statusLabel: '查询中' },
     });
-    // 选工伤后后台预查（不阻塞 UI）；失败静默，详情弹窗可再查
-    void (async () => {
-      try {
-        const { probeWorkInjuryFilingViaWin } = await import(
-          '#/chs/work-injury/probe-work-injury-filing'
-        );
-        const { isWorkInjuryPluginOnline } = await import('#/chs/work-injury/work-injury-plugin');
-        if (!(await isWorkInjuryPluginOnline())) {
+    benefitSyncing.value = true;
+    try {
+      const { probeWorkInjuryFilingViaWin } = await import(
+        '#/chs/work-injury/probe-work-injury-filing'
+      );
+      const { isWorkInjuryPluginOnline } = await import('#/chs/work-injury/work-injury-plugin');
+      if (!(await isWorkInjuryPluginOnline())) {
+        if (probeSeq !== workInjuryBenefitProbeSeq) {
           return;
         }
-        const result = await probeWorkInjuryFilingViaWin();
-        const summary = result.hasValidFiling
-          ? `工伤保险：已查到 ${result.rows.length} 条审批，挂号费须自费`
-          : `工伤保险：已识别人员 ${result.psnNo}，暂无审批，挂号费须自费`;
         area.applyBenefitPreview({
           kind: 'WORK_INJURY',
-          eligibilityMessage: summary,
+          eligibilityMessage: '请先启动 OpenHIS.Win 后再查询工伤备案',
+          workInjury: {
+            errorMessage: '请先启动 OpenHIS.Win 后再查询工伤备案',
+            statusLabel: '查询失败',
+          },
         });
-      } catch {
-        // 预查失败不打断选费用性质
+        ElMessage.warning('请先启动 OpenHIS.Win 后再查询工伤备案');
+        return;
       }
-    })();
+      const result = await probeWorkInjuryFilingViaWin();
+      if (probeSeq !== workInjuryBenefitProbeSeq) {
+        return;
+      }
+      const validCount = result.rows.length;
+      const statusLabel = result.hasValidFiling
+        ? `审批 ${validCount} 条`
+        : result.psnNo
+          ? '暂无审批（须备案后才能完成挂号）'
+          : '未查询';
+      area.applyBenefitPreview({
+        kind: 'WORK_INJURY',
+        eligibilityMessage: statusLabel,
+        psnName: result.psnName,
+        psnNo: result.psnNo,
+        workInjury: {
+          hasValidFiling: result.hasValidFiling,
+          injureAffirmId: result.injureAffirmId,
+          psnName: result.psnName,
+          psnNo: result.psnNo,
+          rows: result.rows,
+          statusLabel,
+        },
+      });
+      // 工伤 1101 回写患者信息（空/未知则补全；优先平台字段，其次身份证解析）
+      {
+        const current = await area.getSubmitValues();
+        const certno = String(result.certno ?? current.patientIdCard ?? '').trim();
+        const { parseChineseIdCard18, calcAgeFromBirthDate } = await import(
+          '#/utils/format/id-card-cn'
+        );
+        const fromId = certno ? parseChineseIdCard18(certno) : null;
+        const curBirthday = String(current.patientBirthday ?? '').trim();
+        const curGender = String(current.patientGender ?? '').trim();
+        const curAge = String(current.medicalInsuranceNo ?? '').trim();
+        const curPhone = String(current.patientPhone ?? '').trim();
+        const curName = String(current.patientName ?? '').trim();
+        const birthDate = result.birthDate || fromId?.birthDate || curBirthday;
+        const genderCode =
+          result.genderCode ||
+          fromId?.genderCode ||
+          (curGender && curGender !== 'UNKNOWN' ? curGender : '');
+        const age = result.age || (birthDate ? calcAgeFromBirthDate(birthDate) : '') || curAge;
+        const phone = result.phone || curPhone;
+        const name = result.psnName || curName;
+        if (result.psnNo || name || birthDate || genderCode || age || phone || certno) {
+          area.applyPatientRecord({
+            patientAge: age,
+            patientBirthday: birthDate,
+            patientGender: genderCode || curGender,
+            patientIdCard: certno || String(current.patientIdCard ?? ''),
+            patientName: name,
+            patientPhone: phone,
+          });
+        }
+      }
+      if (!result.hasValidFiling && result.psnNo) {
+        ElMessage.warning('暂无有效工伤备案：点「确认挂号」后系统会引导备案，未备案不能完成挂号');
+      }
+    } catch (error) {
+      if (probeSeq !== workInjuryBenefitProbeSeq) {
+        return;
+      }
+      const detail = error instanceof Error ? error.message : '查询失败';
+      area.applyBenefitPreview({
+        kind: 'WORK_INJURY',
+        eligibilityMessage: detail,
+        workInjury: {
+          errorMessage: detail,
+          statusLabel: '查询失败',
+        },
+      });
+      ElMessage.warning(detail);
+    } finally {
+      if (probeSeq === workInjuryBenefitProbeSeq) {
+        benefitSyncing.value = false;
+      }
+    }
   }
 }
 
-async function maybeApplyRecommendedContract(
+async function maybeApplyResolvedOrRecommendedContract(
+  preview: import('#/api/outpatient-registration').YbRegisterBenefitPreviewDto | null | undefined,
   match: null | RegisterContractMatchDto | undefined,
   autoApply: boolean,
 ) {
   const area = registerFormAreaRef.value;
-  if (!area || !match?.recommendedContractId) {
+  if (!area || !autoApply) {
     return;
   }
   const values = await area.getSubmitValues();
   const currentId = String(values.contractId ?? '');
   const currentCategory = area.getContractCategory(values.contractId) ?? '';
+  const resolvedId = String(preview?.resolvedContractId ?? '').trim();
+  // 1101 已切省通道：表单费用性质同步到实际通道，避免后续挂号/结算仍用市医保
+  if (resolvedId && resolvedId !== currentId) {
+    await area.applyContractId(resolvedId);
+    ElMessage.success(`已切换费用性质为：${match?.recommendedContractName ?? '省医保'}`);
+    await syncBenefitPreview();
+    return;
+  }
+  if (!match?.recommendedContractId) {
+    return;
+  }
   const shouldApply =
-    autoApply &&
     match.recommendedContractId !== currentId &&
     (currentCategory === CHARGE_TYPE_CATEGORY.SELF_PAY ||
       !currentCategory ||
@@ -312,6 +428,13 @@ async function maybeApplyRecommendedContract(
   await area.applyContractId(match.recommendedContractId);
   ElMessage.success(`已切换费用性质为：${match.recommendedContractName ?? '推荐项'}`);
   await syncBenefitPreview();
+}
+
+async function maybeApplyRecommendedContract(
+  match: null | RegisterContractMatchDto | undefined,
+  autoApply: boolean,
+) {
+  await maybeApplyResolvedOrRecommendedContract(lastYbPreview.value, match, autoApply);
 }
 
 async function bootstrapBenefitAfterCardRead() {
@@ -382,6 +505,7 @@ const handlePatientSelect = async (
     p.age === undefined || p.age === null || String(p.age).trim() === '' ? '' : String(p.age);
   area?.applyPatientRecord({
     patientAge,
+    patientAddress: '',
     patientBirthday: String(p.birthDate ?? ''),
     patientGender: String(p.genderCode ?? ''),
     patientIdCard: String(p.idCardNoMasked ?? ''),
@@ -438,13 +562,17 @@ const benefitLoadingText = computed(() => {
     return `正在读取${PATIENT_IDENTITY_SOURCE_LABEL[action]}…`;
   }
   if (benefitSyncing.value) {
-    return '正在拉取人员与省市医保信息…';
+    return isWorkInjuryRegister.value
+      ? '正在查询工伤备案（1101→9102）…'
+      : '正在拉取人员与省市医保信息…';
   }
   return '';
 });
 
 /** 一键清空：挂号表单、患者下拉及患者行缓存 */
 const handleClear = () => {
+  workInjuryBenefitProbeSeq += 1;
+  benefitSyncing.value = false;
   resetBenefitState();
   clearWorkInjuryPreContext();
   registerFormAreaRef.value?.resetForClear();
@@ -488,6 +616,8 @@ defineExpose({
 });
 
 async function onRegisterPaidSuccess() {
+  workInjuryBenefitProbeSeq += 1;
+  benefitSyncing.value = false;
   resetBenefitState();
   clearWorkInjuryPreContext();
   await registerFormAreaRef.value?.resetForSubmitSuccess();
@@ -569,9 +699,27 @@ const handleSubmit = async () => {
     ElMessage.warning('医保挂号须先读卡获取人员编号');
     return;
   }
+  // 工伤：须已通过 Win 工伤 1101→9102 预查拿到人员/备案（不必先省医保读卡）
+  if (isWorkInjuryRegister.value) {
+    const wiBenefit = area.getWorkInjuryBenefitSummary?.();
+    if (!wiBenefit || wiBenefit.statusLabel === '未查询' || wiBenefit.statusLabel === '查询中') {
+      ElMessage.warning('请先完成工伤备案查询后再确认挂号');
+      return;
+    }
+    if (wiBenefit.errorMessage && !wiBenefit.psnNo) {
+      ElMessage.warning(wiBenefit.errorMessage || '工伤备案查询失败，请重试');
+      return;
+    }
+    if (!wiBenefit.psnNo?.trim()) {
+      ElMessage.warning('未识别到工伤人员信息，请确认 OpenHIS.Win 已启动并放置工伤卡后再查备案');
+      return;
+    }
+  }
 
   loading.value = true;
   try {
+    // 表单地址为真源（读卡默认 / 挂号员手填）；空串不上送，后端不覆盖主档（BR-REG-019）
+    const addressForSubmit = String(values.patientAddress ?? '').trim();
     const preRegisterBody = {
       birthDate: patientBirthday,
       contractId,
@@ -581,6 +729,7 @@ const handleSubmit = async () => {
       organizationId,
       patientId: submitPatientId,
       phone: patientPhone,
+      ...(addressForSubmit ? { address: addressForSubmit } : {}),
       practitionerId,
       serviceTypeId,
       slotId: selectedSlotId.value || undefined,
@@ -623,6 +772,45 @@ const handleSubmit = async () => {
         encounterId: pre.encounterId,
         contractId,
       });
+      // 无有效备案不打开确认窗：先尝试用待遇区已查到的审批静默绑定，再引导弹窗
+      let wiCtx = await httpWorkInjuryLoadEncounterContext(pre.encounterId);
+      if (!wiCtx?.qualificationValid) {
+        const wiBenefit = area.getWorkInjuryBenefitSummary?.();
+        const rows = wiBenefit?.rows ?? [];
+        const preferred = rows.find((r) => String(r.approveType ?? '').trim() === '12') ?? rows[0];
+        if (preferred?.qualificationId) {
+          try {
+            const { bindWorkInjuryQualification } = await import(
+              '#/chs/work-injury/use-work-injury-register'
+            );
+            await bindWorkInjuryQualification({
+              encounterId: pre.encounterId,
+              contractId,
+              qualificationId: preferred.qualificationId,
+            });
+            wiCtx = await httpWorkInjuryLoadEncounterContext(pre.encounterId);
+            if (wiCtx?.qualificationValid) {
+              ElMessage.success(`已自动绑定工伤审批 ${preferred.qualificationId}`);
+            }
+          } catch {
+            // 静默失败则走弹窗引导
+          }
+        }
+      }
+      if (!wiCtx?.qualificationValid) {
+        loading.value = false;
+        await nextTick();
+        const filed = await area.ensureWorkInjuryFilingReady();
+        if (!filed) {
+          ElMessage.warning('未完成工伤备案，已取消本次挂号确认');
+          return;
+        }
+        wiCtx = await httpWorkInjuryLoadEncounterContext(pre.encounterId);
+        if (!wiCtx?.qualificationValid) {
+          ElMessage.warning('未完成工伤备案，已取消本次挂号确认');
+          return;
+        }
+      }
     }
 
     let amountFromItems = 0;
@@ -658,21 +846,8 @@ const handleSubmit = async () => {
       rescanAndRefresh: (currentPre) => rescanEcAndRefreshPreSettlement(currentPre),
       workInjuryRegister: isWorkInjuryRegister.value,
       workInjuryContractId: isWorkInjuryRegister.value ? contractId : undefined,
+      workInjuryInjureAffirmId: area.getWorkInjuryBenefitSummary?.()?.injureAffirmId,
     });
-
-    // 确认框打开后：无有效 qualification 则弹出审批引导（绑定或 2301）
-    if (isWorkInjuryRegister.value && pre.encounterId) {
-      try {
-        const wiCtx = await httpWorkInjuryLoadEncounterContext(pre.encounterId);
-        if (!wiCtx?.qualificationValid) {
-          await nextTick();
-          area.openWorkInjuryApprovalGuide();
-        }
-      } catch {
-        await nextTick();
-        area.openWorkInjuryApprovalGuide();
-      }
-    }
   } finally {
     loading.value = false;
   }

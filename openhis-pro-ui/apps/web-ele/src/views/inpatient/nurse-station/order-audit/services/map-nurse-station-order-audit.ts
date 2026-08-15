@@ -11,6 +11,11 @@ import {
   type DrugGroupDisplayItem,
   type DrugGroupKey,
 } from '#/utils/doctor-station/drug-group-table';
+import { formatLongTermMedicationDoseLine } from '#/utils/doctor-station/medication-dose-display';
+import {
+  buildMedicationContentTitleWithPackageSplit,
+  mergePackageSplitIntoSpec,
+} from '#/utils/doctor-station/package-split-ratio-display';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 /** 表格行：与 AdviceOrderDisplayCell 及校对页列展示对齐 */
@@ -21,7 +26,13 @@ export interface NurseStationOrderAuditTableRow {
   encounterId: string;
   /** 诊疗类目 code（项目类型过滤：检验/检查/治疗/嘱托） */
   categoryEnum?: string;
+  /** 停嘱时间原文案（halt 判定；有停嘱时非空） */
   stopTime: string;
+  /** 开立时间展示（时间后跟开立人，BR-IP-ORD-031） */
+  executeTime: string;
+  /** 停嘱时间+停嘱医生合列展示；无停嘱为 — */
+  stopTimeDisplay: string;
+  /** 开立医生 */
   doctorName: string;
   typeLabel: string;
   /** 类型列文案（后端 orderKindDisplay，与 Tab 无关） */
@@ -33,9 +44,12 @@ export interface NurseStationOrderAuditTableRow {
   content: string;
   dosage: string;
   extension?: string;
-  executeTime: string;
   /** 校对人姓名（非未校对 Tab 展示） */
   performerCheckName: string;
+  /** 停嘱校对人姓名 */
+  stopCheckerName?: string;
+  /** 是否停嘱待校（待校对列表醒目标识） */
+  stopAuditPending?: boolean;
   halted?: boolean;
   statusEnum?: string;
   tcmFlag?: boolean;
@@ -106,7 +120,7 @@ function buildAuditTypeLabel(dto: NurseStationOrderAuditRowDto): string {
   return therapy || kind || '—';
 }
 
-/** 医嘱名称摘要：名称 + 规格；中药方折叠行仅用方级展示名 */
+/** 医嘱名称摘要：名称【5mg1片x100】；中药方折叠行仅用方级展示名 */
 function buildAuditContentTitle(dto: NurseStationOrderAuditRowDto): string {
   if (dto.tcmFlag === true) {
     const collapsedName = String(dto.adviceDisplayName ?? '').trim();
@@ -114,11 +128,11 @@ function buildAuditContentTitle(dto: NurseStationOrderAuditRowDto): string {
   }
   const name = String(dto.adviceDisplayName ?? '').trim();
   const spec = String(dto.specificationText ?? '').trim();
-  if (name && spec) return `${name}【${spec}】`;
-  return name || spec || '—';
+  const title = buildMedicationContentTitleWithPackageSplit(name, spec, dto.packageSplitRatioText);
+  return title || '—';
 }
 
-/** 剂量/数量：中药方展示各味单次量 + 付数 */
+/** 剂量/数量：长期「一次一片，每日三片」；中药方展示各味单次量 + 付数 */
 function buildAuditDosageDisplay(dto: NurseStationOrderAuditRowDto): string {
   if (dto.tcmFlag === true) {
     const singleDose = String(dto.dosageDisplay ?? '').trim();
@@ -128,6 +142,17 @@ function buildAuditDosageDisplay(dto: NurseStationOrderAuditRowDto): string {
       return `${singleDose} ${fuText}`;
     }
     return singleDose || fuText || '—';
+  }
+  // 长期药：单次量 + 日总量（频次在用法行）
+  const therapy = String(dto.therapyEnum ?? '')
+    .trim()
+    .toUpperCase();
+  if (therapy === 'LONG_TERM') {
+    const longTermLine = formatLongTermMedicationDoseLine({
+      dosageDisplay: dto.dosageDisplay,
+      dailyDoseDisplay: dto.dailyDoseDisplay,
+    });
+    if (longTermLine) return longTermLine;
   }
   return String(dto.dosageDisplay ?? '').trim() || '—';
 }
@@ -142,15 +167,19 @@ function mapAuditLineRequestIds(
   return mapped.length > 0 ? mapped : undefined;
 }
 
-/** 用法、频次、备注拼成扩展行 */
+/** 用法、频次、滴速、备注拼成扩展行 */
 function buildAuditExtensionLine(dto: NurseStationOrderAuditRowDto): string {
   const parts: string[] = [];
   const usage = String(dto.usageDisplay ?? '').trim();
   const freq = String(dto.frequencyDisplay ?? '').trim();
+  const speed = String(dto.speedDisplay ?? '').trim();
   if (usage && freq) {
     parts.push(`${usage}，${freq}`);
   } else if (usage || freq) {
     parts.push(usage || freq);
+  }
+  if (speed) {
+    parts.push(`滴速：${speed}`);
   }
   const remark = String(dto.remark ?? '').trim();
   if (remark) {
@@ -180,10 +209,10 @@ export function mapAuditRowDtoToTableRow(
   const stopperName = String(dto.stopperName ?? '').trim();
   const openedText = openedRaw ? formatDateTime(openedRaw) : '';
   const stopText = stopRaw ? formatDateTime(stopRaw) : '';
-  // 开立时间后跟开立人；停嘱时间后跟停嘱人（BR-IP-ORD-031）
+  // 开立时间后跟开立人；停嘱时间后跟停嘱人合列（BR-IP-ORD-031）
   const executeTime =
     openedText && doctorName !== '—' ? `${openedText} ${doctorName}` : openedText || '—';
-  const stopTimeDisplay = stopText && stopperName ? `${stopText} ${stopperName}` : stopText;
+  const stopTimeDisplay = stopText ? (stopperName ? `${stopText} ${stopperName}` : stopText) : '—';
   const statusEnum = String(dto.statusEnum ?? '')
     .trim()
     .toUpperCase();
@@ -196,7 +225,8 @@ export function mapAuditRowDtoToTableRow(
     orderType,
     encounterId: preserveApiIdForRequest(dto.encounterId) ?? '',
     categoryEnum: String(dto.categoryEnum ?? '').trim() || undefined,
-    stopTime: stopTimeDisplay,
+    stopTime: stopText,
+    stopTimeDisplay,
     doctorName,
     typeLabel: buildAuditTypeLabel(dto),
     orderKindLabel,
@@ -206,6 +236,8 @@ export function mapAuditRowDtoToTableRow(
     dosage: buildAuditDosageDisplay(dto),
     extension: buildAuditExtensionLine(dto) || undefined,
     performerCheckName: String(dto.performerCheckName ?? '').trim() || '—',
+    stopCheckerName: String(dto.stopCheckerName ?? '').trim() || undefined,
+    stopAuditPending: dto.stopAuditPending === true,
     executeTime,
     halted: statusEnum === 'STOPPED',
     statusEnum,
@@ -219,17 +251,34 @@ export function mapAuditRowDtoToTableRow(
 
 /** 成组括线展示项：对齐门诊护士站 / 医生站 DrugGroupDisplayItem */
 function auditDtoToDrugGroupItem(dto: NurseStationOrderAuditRowDto): DrugGroupDisplayItem {
+  const therapy = String(dto.therapyEnum ?? '')
+    .trim()
+    .toUpperCase();
+  const longTermDoseLine =
+    therapy === 'LONG_TERM'
+      ? formatLongTermMedicationDoseLine({
+          dosageDisplay: dto.dosageDisplay,
+          dailyDoseDisplay: dto.dailyDoseDisplay,
+        })
+      : '';
+  const doseText = longTermDoseLine || String(dto.dosageDisplay ?? '').trim();
   return {
     selectedDrugName: String(dto.adviceDisplayName ?? '').trim(),
-    selectedDrugSpec: String(dto.specificationText ?? '').trim(),
+    selectedDrugSpec: mergePackageSplitIntoSpec(
+      String(dto.specificationText ?? '').trim(),
+      dto.packageSplitRatioText,
+    ),
     pharmacy: '',
-    singleDose: String(dto.dosageDisplay ?? '').trim(),
+    singleDose: doseText,
     doseSubUnit: '',
     totalAmount: '',
     totalAmountUnit: '',
     usage: String(dto.usageDisplay ?? '').trim(),
     frequency: String(dto.frequencyDisplay ?? '').trim(),
     medicationDays: '',
+    dosageDisplay: doseText || undefined,
+    speedDisplay:
+      String(dto.speedDisplay ?? '').trim() || String(dto.speedCode ?? '').trim() || undefined,
   };
 }
 
@@ -244,6 +293,24 @@ function auditMedicationGroupMergeKey(dto: NurseStationOrderAuditRowDto): DrugGr
   }
   const gid = String(dto.groupId ?? dto.groupNo ?? '').trim();
   return gid === '' ? '' : gid;
+}
+
+/** 成组同滴速：取组内首条非空 speedDisplay/speedCode（溶媒首行常为空） */
+function pickGroupSpeedFromAuditSlice(slice: readonly NurseStationOrderAuditRowDto[]): {
+  speedCode?: string;
+  speedDisplay?: string;
+} {
+  for (const dto of slice) {
+    const speedDisplay = String(dto.speedDisplay ?? '').trim();
+    const speedCode = String(dto.speedCode ?? '').trim();
+    if (speedDisplay || speedCode) {
+      return {
+        speedCode: speedCode || undefined,
+        speedDisplay: speedDisplay || undefined,
+      };
+    }
+  }
+  return {};
 }
 
 /**
@@ -261,7 +328,8 @@ function mergeAuditMedicationRowsForDisplay(
         .map((dto) => mapAuditRowDtoToTableRow(dto))
         .filter((row): row is NurseStationOrderAuditTableRow => row != null);
       const firstMember = members[0];
-      if (firstMember === undefined) {
+      const headDto = slice[0];
+      if (firstMember === undefined || headDto === undefined) {
         throw new Error('mergeAuditMedicationRowsForDisplay: empty slice');
       }
       if (members.length === 1) {
@@ -269,10 +337,16 @@ function mergeAuditMedicationRowsForDisplay(
       }
       // 成组写路径：代表行 requestId + 全员 lineRequestIds（后端亦按 groupId 扩行）
       const lineRequestIds = members.map((m) => m.requestId).filter((id) => id.length > 0);
-      const gid = String(slice[0]?.groupId ?? slice[0]?.groupNo ?? '').trim();
+      const gid = String(headDto.groupId ?? headDto.groupNo ?? '').trim();
       const idPart = lineRequestIds.join('&');
       // 成组任一行需皮试则合并行展示皮试标记
       const skinTestFlag = members.some((m) => m.skinTestFlag === true) ? true : undefined;
+      const groupSpeed = pickGroupSpeedFromAuditSlice(slice);
+      const extensionDto: NurseStationOrderAuditRowDto = {
+        ...headDto,
+        speedCode: groupSpeed.speedCode ?? headDto.speedCode,
+        speedDisplay: groupSpeed.speedDisplay ?? headDto.speedDisplay,
+      };
       return {
         ...firstMember,
         id: gid ? `merged-med-${gid}-${idPart}` : `merged-med-${idPart}`,
@@ -280,6 +354,7 @@ function mergeAuditMedicationRowsForDisplay(
         mergedMedicationMembers: members,
         lineRequestIds,
         skinTestFlag,
+        extension: buildAuditExtensionLine(extensionDto) || undefined,
       };
     },
   });
@@ -326,14 +401,18 @@ export function indexAuditGroupsByEncounterId(
 }
 
 /**
- * 校对「项目类型」多选（与执行页同 code：west/tcm/lab/exam/treatment/entrust）。
- * 检验 = categoryEnum 22；检查 = 23；治疗 = 21；嘱托 = 52。
+ * 校对「项目类型」多选（code 驱动，禁止用展示文案）。
+ * 检验=22、检查=23、治疗=21、嘱托=52、护理=26、转科=32、出院=34。
+ * 特殊诊疗须可校对（BR-IP-AUD-006/011；护理级别 BR-IP-EXE-027 仅禁执行不禁校对）。
  */
 export type NurseStationOrderAuditProjectType =
+  | 'discharge'
   | 'entrust'
   | 'exam'
   | 'lab'
+  | 'nursing'
   | 'tcm'
+  | 'transfer'
   | 'treatment'
   | 'west';
 
@@ -345,6 +424,9 @@ export const NURSE_STATION_ORDER_AUDIT_PROJECT_TYPES: NurseStationOrderAuditProj
   'exam',
   'treatment',
   'entrust',
+  'nursing',
+  'transfer',
+  'discharge',
 ];
 
 /** 行归属的项目类型（用 orderType / tcmFlag / categoryEnum，禁止用展示文案） */
@@ -369,6 +451,19 @@ export function resolveAuditRowProjectType(
   }
   if (category === '52') {
     return 'entrust';
+  }
+  if (category === '26') {
+    return 'nursing';
+  }
+  if (category === '32') {
+    return 'transfer';
+  }
+  if (category === '34') {
+    return 'discharge';
+  }
+  // 其余诊疗行归入治疗，避免 west Tab 普通诊疗被二次过滤抹掉
+  if (row.orderType === 'SERVICE_REQUEST') {
+    return 'treatment';
   }
   return null;
 }

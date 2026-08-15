@@ -16,7 +16,7 @@ import { isInpatientLongTermMedicationTherapy } from '../services/advice-row';
 import {
   doseConvertRatioSplitToDose,
   resolveAdviceLineUnitPrice,
-  roundMedicationQty,
+  roundMedicationSplitQty,
 } from '../services/medication-unit-bands';
 
 /** 用药计划起点：本地「次日 00:00:00」ISO 串。 */
@@ -62,7 +62,7 @@ export function useAdviceFrequencyTotal(options: {
         : doseConvertRatioSplitToDose(item.unitBands);
     const dq = Number(item.doseConvertRatio);
     if (k !== undefined && Number.isFinite(k) && k > 0 && Number.isFinite(dq) && dq > 0) {
-      return roundMedicationQty(dq / k);
+      return roundMedicationSplitQty(dq / k);
     }
     return undefined;
   }

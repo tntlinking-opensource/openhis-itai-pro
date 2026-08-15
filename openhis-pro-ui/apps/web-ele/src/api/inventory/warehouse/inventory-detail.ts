@@ -50,6 +50,8 @@ export interface PageInventoryDetailCurrentRequest {
   warehouseIds?: string[];
   supplierIds?: string[];
   chrgitmLvList?: number[];
+  /** 基药标识（药典 basicFlag）；仅收窄药品行 */
+  basicFlag?: boolean;
   zeroStockOnly?: boolean;
   expireWithinDays?: number;
   inventoryStatusEnums?: string[];
@@ -140,6 +142,8 @@ export interface SumInventoryDetailCurrentRequest {
   warehouseIds?: string[];
   supplierIds?: string[];
   chrgitmLvList?: number[];
+  /** 基药标识（药典 basicFlag）；仅收窄药品行 */
+  basicFlag?: boolean;
   zeroStockOnly?: boolean;
   expireWithinDays?: number;
   inventoryStatusEnums?: string[];

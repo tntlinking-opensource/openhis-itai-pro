@@ -13,3 +13,4 @@ export * from './invoke-log';
 export * from './detail-audit-try';
 export * from './detail-audit-gate';
 export * from './detail-audit-stats';
+export * from './medcas-ops';

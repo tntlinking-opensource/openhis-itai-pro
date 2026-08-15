@@ -63,6 +63,11 @@ import {
   SETTLE_PRESENTATION_MODE,
   SETTLE_QUEUE_TAB,
 } from './inpatient-settle.constants';
+import {
+  buildClinicalPreSettleInsuranceBreakdown,
+  resolveClinicalPreSettlePrepayOffset,
+} from '#/chs/composables/use-inpatient-clinical-pre-settle';
+
 import InpatientSettleDialog from './components/inpatient-settle-dialog.vue';
 import {
   getInpatientContractBusNo,
@@ -70,12 +75,16 @@ import {
   type InpatientRegisterContractMeta,
 } from '../register/services/inpatient-register-contract-meta';
 import {
+  chooseInpatientSettleInsuranceMedium,
+  inpatientSettleReadCredentialFailHint,
+  inpatientSettleReadCredentialHint,
   isInpatientInsuranceRegistration,
   isZeroAmountDischargeFullSettle,
   inpatientSettleBlockedMessage,
   resolveInpatientSettleInsuranceContext,
   resolveInpatientSettleMode,
   verifyInpatientInsuranceCard,
+  type InpatientSettleInsuranceMedium,
 } from './use-inpatient-settle-insurance';
 import {
   INPATIENT_SETTLE_FOOTER_ACTION,
@@ -133,6 +142,8 @@ interface ReliefRow {
 interface SettlementHistoryRow {
   detailRows: FeeDetailRow[];
   operatorName: string;
+  /** 医保基金分摊（对齐门诊「本次谁付的」） */
+  payCompositionRows: Array<{ key: string; label: string; value: string }>;
   paymentId: string;
   paymentMethod: string;
   recallEnabled?: boolean;
@@ -194,6 +205,13 @@ interface SettlePatientView {
 }
 
 const paymentChannelCode = ref(FALLBACK_DEFAULT_PAY_CHANNEL);
+/** 医保结算凭证：身份证 / 社保卡 / 医保码（对齐门诊收费） */
+const insuranceMedium = ref<InpatientSettleInsuranceMedium>('yb-card');
+const insuranceMediumOptions: { label: string; value: InpatientSettleInsuranceMedium }[] = [
+  { label: '身份证', value: 'id' },
+  { label: '社保卡', value: 'yb-card' },
+  { label: '医保码', value: 'yb-ec' },
+];
 const contractMeta = ref<InpatientRegisterContractMeta>({
   contractCategoryById: {},
   contractInsuranceProfileById: {},
@@ -393,6 +411,19 @@ function formatBalanceHintDisplay(hint: null | number | string | undefined) {
   return `应补 ¥ ${formatMoneyDisplay(Math.abs(n))}`;
 }
 
+/** 医保预结算后：预交金 − 个人现金 → 应退/应补 */
+function formatInsurancePrepayBalanceHint(
+  prepayNet: null | number | string | undefined,
+  psnCashPay: null | number | string | undefined,
+) {
+  const prepay = Number(prepayNet ?? 0);
+  const psnCash = Number(psnCashPay ?? 0);
+  if (!Number.isFinite(prepay) || !Number.isFinite(psnCash)) {
+    return '—';
+  }
+  return formatBalanceHintDisplay(prepay - psnCash);
+}
+
 /** 费用明细行转表格展示结构 */
 function mapChargeLineToFeeDetailRow(line: InpatientSettleChargeLineDto): FeeDetailRow {
   const qty = line.quantityValue ?? '';
@@ -498,6 +529,11 @@ function resolveChannelPayableAmount() {
   return 0;
 }
 
+/** 本次预交金冲抵额（个人现金/应收 − 需补交）。 */
+const settlePrepayOffsetAmount = computed(() =>
+  resolveClinicalPreSettlePrepayOffset(preSettleSnapshot.value),
+);
+
 /** 患者实付金额：预结算后以 displayAmount（少补）为准 */
 const payableAmount = computed(() => {
   if (preSettleSnapshot.value) {
@@ -526,16 +562,11 @@ const insuranceReimbursementAmount = computed(() => {
 });
 
 const settlementInsuranceBreakdown = computed(() => {
-  const snap = preSettleSnapshot.value;
-  if (!snap?.insurancePreSettled) {
-    return [];
-  }
-  return [
-    { key: 'medfee', label: '医疗费总额', value: snap.ybMedfeeSumamt ?? 0 },
-    { key: 'fund', label: '基金支付', value: snap.ybFundPaySumamt ?? 0 },
-    { key: 'acct', label: '个人账户', value: snap.ybAcctPay ?? 0 },
-    { key: 'cash', label: '个人现金', value: snap.ybPsnCashPay ?? 0 },
-  ];
+  // 对齐门诊确认收费：统筹/其他/个账/起付线/公务员/现金 + 预交金冲抵
+  return buildClinicalPreSettleInsuranceBreakdown(preSettleSnapshot.value).filter((item) => {
+    const n = Number(item.value ?? 0);
+    return Number.isFinite(n) && Math.abs(n) >= 0.000_001;
+  });
 });
 
 const settlePayChannelOptions = computed(() => effectivePayChannelOptions.value);
@@ -607,7 +638,12 @@ const currentPatientDisplay = computed<SettlePatientView>(() => {
     insuranceType: row?.contractDisplay ?? '—',
     doctorName: '—',
     totalFee: settledMode
-      ? formatCurrencyDisplay(settled.receivableTotal)
+      ? formatCurrencyDisplay(
+          Number(settled.receivableTotal ?? 0) > 0
+            ? settled.receivableTotal
+            : (resolveActiveSettledPaymentBrief(settled)?.ybMedfeeSumamt ??
+                settled.receivableTotal),
+        )
       : formatCurrencyDisplay(s?.pendingSettlementTotal),
     reimbursementAmount:
       insuranceReimbursementAmount.value != null
@@ -617,22 +653,46 @@ const currentPatientDisplay = computed<SettlePatientView>(() => {
               Number(preSettleSnapshot.value.ybFundPaySumamt ?? 0) +
                 Number(preSettleSnapshot.value.ybAcctPay ?? 0),
             )
-          : '—',
+          : settledMode && resolveActiveSettledPaymentBrief(settled)?.insuranceSettled
+            ? formatCurrencyDisplay(
+                Number(resolveActiveSettledPaymentBrief(settled)?.ybFundPaySumamt ?? 0) +
+                  Number(resolveActiveSettledPaymentBrief(settled)?.ybAcctPay ?? 0),
+              )
+            : '—',
     selfPayAmount: preSettleSnapshot.value?.insurancePreSettled
-      ? formatCurrencyDisplay(
-          preSettleSnapshot.value.displayAmount ?? preSettleSnapshot.value.ybPsnCashPay,
-        )
-      : preSettleSnapshot.value?.displayAmount != null
-        ? formatCurrencyDisplay(preSettleSnapshot.value.displayAmount)
-        : settledMode
-          ? formatCurrencyDisplay(settled.receivableTotal)
-          : Number(s?.balanceHint ?? 0) < 0
-            ? formatBalanceHintDisplay(s?.balanceHint)
-            : formatCurrencyDisplay(0),
+      ? formatCurrencyDisplay(preSettleSnapshot.value.ybPsnCashPay)
+      : isInsuranceRegistration.value
+        ? '—'
+        : preSettleSnapshot.value?.displayAmount != null
+          ? formatCurrencyDisplay(preSettleSnapshot.value.displayAmount)
+          : settledMode && resolveActiveSettledPaymentBrief(settled)?.insuranceSettled
+            ? formatCurrencyDisplay(resolveActiveSettledPaymentBrief(settled)?.ybPsnCashPay)
+            : settledMode
+              ? formatCurrencyDisplay(settled.receivableTotal)
+              : Number(s?.balanceHint ?? 0) < 0
+                ? formatBalanceHintDisplay(s?.balanceHint)
+                : formatCurrencyDisplay(0),
     prepayTotal: settledMode ? '—' : formatCurrencyDisplay(s?.prepayNetBalance),
-    refundOrSupplement: settledMode ? '—' : formatBalanceHintDisplay(s?.balanceHint),
-    accountBalanceSummary: settledMode ? '—' : (s?.accountBalanceSummaryText ?? '—'),
-    accountBalanceSub: settledMode ? undefined : s?.accountBalanceSubText,
+    refundOrSupplement: settledMode
+      ? '—'
+      : preSettleSnapshot.value?.insurancePreSettled
+        ? formatInsurancePrepayBalanceHint(
+            s?.prepayNetBalance,
+            preSettleSnapshot.value.ybPsnCashPay,
+          )
+        : isInsuranceRegistration.value
+          ? '—'
+          : formatBalanceHintDisplay(s?.balanceHint),
+    accountBalanceSummary: settledMode
+      ? '—'
+      : isInsuranceRegistration.value && !preSettleSnapshot.value?.insurancePreSettled
+        ? formatCurrencyDisplay(s?.prepayNetBalance)
+        : (s?.accountBalanceSummaryText ?? '—'),
+    accountBalanceSub: settledMode
+      ? undefined
+      : isInsuranceRegistration.value && !preSettleSnapshot.value?.insurancePreSettled
+        ? '医保预结算后按个人现金冲抵预交金'
+        : s?.accountBalanceSubText,
     insuranceInFee: '—',
     insuranceOutFee: '—',
     settlementNo: settledMode
@@ -682,10 +742,28 @@ const insuranceKeyInfoRows = computed<InsuranceInfoRow[]>(() => {
     return [
       { field: '结算模式', value: currentSettleModeLabel.value },
       { field: '医疗费总额', value: formatCurrencyDisplay(snap.ybMedfeeSumamt) },
-      { field: '基金支付', value: formatCurrencyDisplay(snap.ybFundPaySumamt) },
+      { field: '基金支付合计', value: formatCurrencyDisplay(snap.ybFundPaySumamt) },
+      { field: '基本医保统筹', value: formatCurrencyDisplay(snap.ybHifpPay) },
+      { field: '其他支出', value: formatCurrencyDisplay(snap.ybOthPay) },
       { field: '个人账户支付', value: formatCurrencyDisplay(snap.ybAcctPay) },
+      { field: '起付线', value: formatCurrencyDisplay(snap.ybActPayDedc) },
+      { field: '公务员医疗补助', value: formatCurrencyDisplay(snap.ybCvlservPay) },
       { field: '个人现金支付', value: formatCurrencyDisplay(snap.ybPsnCashPay) },
       { field: '预结算快照 ID', value: snap.ybPreSettleId ?? '—' },
+    ];
+  }
+  const settledBrief = resolveActiveSettledPaymentBrief(settledPaymentView.value);
+  if (isSettledQueueTab.value && settledBrief?.insuranceSettled) {
+    return [
+      { field: '结算模式', value: currentSettleModeLabel.value },
+      { field: '医疗费总额', value: formatCurrencyDisplay(settledBrief.ybMedfeeSumamt) },
+      { field: '基金支付合计', value: formatCurrencyDisplay(settledBrief.ybFundPaySumamt) },
+      { field: '基本医保统筹', value: formatCurrencyDisplay(settledBrief.ybHifpPay) },
+      { field: '其他支出', value: formatCurrencyDisplay(settledBrief.ybOthPay) },
+      { field: '个人账户支付', value: formatCurrencyDisplay(settledBrief.ybAcctPay) },
+      { field: '起付线', value: formatCurrencyDisplay(settledBrief.ybActPayDedc) },
+      { field: '公务员医疗补助', value: formatCurrencyDisplay(settledBrief.ybCvlservPay) },
+      { field: '个人现金支付', value: formatCurrencyDisplay(settledBrief.ybPsnCashPay) },
     ];
   }
   return [
@@ -1019,22 +1097,61 @@ function resolveSettlementHistoryStatusCode(
   return 'SETTLED';
 }
 
+/** 从已结算支付摘要组装「本次谁付的」分项（非零才展示） */
+function buildPayCompositionFromBrief(
+  payment: SettledPaymentBriefDto,
+): Array<{ key: string; label: string; value: string }> {
+  if (!payment.insuranceSettled) {
+    return [];
+  }
+  const rows: Array<{ key: string; label: string; value: string }> = [];
+  const pushIf = (key: string, label: string, raw: null | number | string | undefined) => {
+    const n = Number(raw ?? 0);
+    if (!Number.isFinite(n) || Math.abs(n) < 0.000_001) {
+      return;
+    }
+    rows.push({ key, label, value: formatHistoryAmountDisplay(n) });
+  };
+  pushIf('hifpPay', '基本医保统筹', payment.ybHifpPay);
+  pushIf('othPay', '其他支出', payment.ybOthPay);
+  pushIf('cvlservPay', '公务员医疗补助', payment.ybCvlservPay);
+  pushIf('actPayDedc', '起付线', payment.ybActPayDedc);
+  pushIf('acctPay', '个人账户', payment.ybAcctPay);
+  pushIf('psnCashPay', '现金', payment.ybPsnCashPay);
+  pushIf('fundPaySumamt', '基金支付合计', payment.ybFundPaySumamt);
+  return rows;
+}
+
 /** 支付流水转历史结算表格行 */
 function mapPaymentToHistoryRow(
   payment: SettledPaymentBriefDto,
   view: { operatorName?: string },
 ): SettlementHistoryRow {
   const signedAmount = payment.signedAmount ?? payment.receivableTotal;
+  const signedNum = Number(signedAmount ?? 0);
+  const medfee = Number(payment.ybMedfeeSumamt ?? 0);
+  // 医保少补为 0 时渠道金额为 0，回落医疗费总额作「结算金额」展示
+  const totalSource =
+    Number.isFinite(signedNum) && Math.abs(signedNum) >= 0.000_001
+      ? signedAmount
+      : Number.isFinite(medfee) && medfee > 0
+        ? medfee
+        : signedAmount;
   const isReverse = payment.recordType === 'REVERSE';
   const statusCode = resolveSettlementHistoryStatusCode(payment);
+  const fund = Number(payment.ybFundPaySumamt ?? 0);
+  const acct = Number(payment.ybAcctPay ?? 0);
+  const cash = Number(payment.ybPsnCashPay ?? 0);
   return {
     paymentId: payment.paymentId,
     settlementNo: payment.paymentNo ?? payment.paymentId,
     settleTime: payment.settleTime ? formatHistorySettleTimeDisplay(payment.settleTime) : '—',
     settleType: isReverse ? '反结' : '结算',
-    totalAmount: formatHistoryAmountDisplay(signedAmount),
-    reimbursementAmount: '—',
-    selfPayAmount: formatHistoryAmountDisplay(signedAmount),
+    totalAmount: formatHistoryAmountDisplay(totalSource),
+    reimbursementAmount: payment.insuranceSettled ? formatHistoryAmountDisplay(fund + acct) : '—',
+    selfPayAmount: payment.insuranceSettled
+      ? formatHistoryAmountDisplay(cash)
+      : formatHistoryAmountDisplay(signedAmount),
     paymentMethod: payment.payMethodText ?? '—',
     operatorName: view.operatorName ?? '—',
     ticketNo: '—',
@@ -1044,6 +1161,7 @@ function mapPaymentToHistoryRow(
     reverseEnabled: payment.reverseEnabled,
     reverseDisabledReason: payment.reverseDisabledReason,
     recallEnabled: payment.recallEnabled,
+    payCompositionRows: buildPayCompositionFromBrief(payment),
     detailRows: [],
   };
 }
@@ -1251,8 +1369,19 @@ async function handleOpenSettleDialog() {
         ElMessage.warning('医保患者缺少合同信息，请检查住院登记');
         return;
       }
+      // 页脚已选介质优先；未选时弹窗选择（对齐门诊收费）
+      let medium = insuranceMedium.value;
+      if (!medium) {
+        const chosen = await chooseInpatientSettleInsuranceMedium();
+        if (!chosen) {
+          return;
+        }
+        medium = chosen;
+        insuranceMedium.value = chosen;
+      }
+      ElMessage.info(inpatientSettleReadCredentialHint(medium));
       try {
-        const insuranceCtx = await resolveInpatientSettleInsuranceContext(contractId);
+        const insuranceCtx = await resolveInpatientSettleInsuranceContext(contractId, medium);
         if (insuranceCtx) {
           insurancePayload = {
             contractId: insuranceCtx.contractId,
@@ -1263,9 +1392,8 @@ async function handleOpenSettleDialog() {
             ybMediumType: insuranceCtx.ybMediumType,
           };
         } else {
-          ElMessage.warning(
-            '本机 OpenHIS.Win 未启动，已跳过医保读卡；自费结算可继续，医保结算请先启动插件',
-          );
+          ElMessage.warning(inpatientSettleReadCredentialFailHint(medium));
+          return;
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : '医保读卡失败';
@@ -1391,25 +1519,31 @@ async function handleConfirmSettleFromDialog() {
     }
 
     const confirmRes = clientScanResult
-      ? await settleWithScanRecovery(clientScanResult, () =>
-          httpConfirmInpatientSettle({
-            billDate: dayjs().format('YYYY-MM-DD HH:mm:ss'),
-            encounterId,
-            patientId,
+      ? await settleWithScanRecovery(
+          clientScanResult,
+          () =>
+            httpConfirmInpatientSettle({
+              billDate: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+              encounterId,
+              patientId,
+              paymentDraftId: snap.paymentDraftId,
+              chargeItemIds,
+              ybPreSettleId: snap.ybPreSettleId,
+              clientScanResult,
+              paymentDetails:
+                payAmount > 0
+                  ? [
+                      {
+                        amount: payAmount,
+                        payChannelCode: settlePayChannelCode.value || resolvePayChannelCode(),
+                      },
+                    ]
+                  : [],
+            }),
+          {
             paymentDraftId: snap.paymentDraftId,
-            chargeItemIds,
-            ybPreSettleId: snap.ybPreSettleId,
-            clientScanResult,
-            paymentDetails:
-              payAmount > 0
-                ? [
-                    {
-                      amount: payAmount,
-                      payChannelCode: settlePayChannelCode.value || resolvePayChannelCode(),
-                    },
-                  ]
-                : [],
-          }),
+            refundAmountYuan: payAmount,
+          },
         )
       : await httpConfirmInpatientSettle({
           billDate: dayjs().format('YYYY-MM-DD HH:mm:ss'),
@@ -1464,6 +1598,13 @@ async function handleOpenSettlementDetail(row: SettlementHistoryRow) {
       presentationMode: SETTLE_PRESENTATION_MODE.DETAIL,
     });
     historyDetailRows.value = (res.lines ?? []).map((line) => mapChargeLineToFeeDetailRow(line));
+    // 用本次查阅回填的医保分项刷新摘要（避免列表缓存缺基金）
+    const brief = (res.payments ?? []).find(
+      (payment) => String(payment.paymentId) === String(row.paymentId),
+    );
+    if (brief) {
+      selectedSettlementHistory.value = mapPaymentToHistoryRow(brief, res);
+    }
   } else {
     historyDetailRows.value = row.detailRows;
   }
@@ -1834,12 +1975,20 @@ watch(settleQueueTab, () => {
               v-if="isInsuranceRegistration"
               class="payment-footer-hint text-xs text-[var(--el-text-color-secondary)]"
             >
-              医保登记患者，确认结算时将自动读卡预结算
+              医保登记患者：先选凭证预结算（不办理平台出院）；确认结算成功后再出院办理。个人现金优先冲抵预交金，不足再补交
             </p>
           </div>
 
           <div class="payment-footer-meta">
-            <div class="payment-footer-meta-line">
+            <div v-if="isInsuranceRegistration" class="payment-footer-meta-line">
+              <span class="payment-footer-meta-label">医保凭证：</span>
+              <ElRadioGroup v-model="insuranceMedium" class="payment-footer-pay-method">
+                <ElRadio v-for="opt in insuranceMediumOptions" :key="opt.value" :label="opt.value">
+                  {{ opt.label }}
+                </ElRadio>
+              </ElRadioGroup>
+            </div>
+            <div v-else class="payment-footer-meta-line">
               <span class="payment-footer-meta-label">实际支付方式：</span>
               <ElRadioGroup v-model="paymentChannelCode" class="payment-footer-pay-method">
                 <ElRadio
@@ -1939,6 +2088,17 @@ watch(settleQueueTab, () => {
             </ElTag>
           </div>
         </div>
+        <div v-if="selectedSettlementHistory.payCompositionRows.length > 0" class="mb-3">
+          <SectionTitle title="本次谁付的" />
+          <div
+            class="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-sm text-[var(--el-text-color-primary)] sm:grid-cols-3"
+          >
+            <div v-for="item in selectedSettlementHistory.payCompositionRows" :key="item.key">
+              <span class="text-[var(--el-text-color-secondary)]">{{ item.label }}：</span>
+              ¥{{ item.value }}
+            </div>
+          </div>
+        </div>
         <ElTable :data="historyDetailRows" stripe border max-height="420">
           <ElTableColumn type="index" label="序号" width="60" align="center" />
           <ElTableColumn prop="orderNo" label="医嘱号" min-width="140" show-overflow-tooltip />
@@ -1965,6 +2125,8 @@ watch(settleQueueTab, () => {
       :confirm-loading="confirmSettleLoading"
       :receivable-total="preSettleSnapshot?.receivableTotal ?? 0"
       :display-amount="preSettleSnapshot?.displayAmount ?? 0"
+      :prepay-net-balance="preSettleSnapshot?.prepayNetBalance ?? summary?.prepayNetBalance"
+      :prepay-offset-amount="settlePrepayOffsetAmount"
       :preview-text="preSettleSnapshot?.previewText"
       :insurance-pre-settled="preSettleSnapshot?.insurancePreSettled"
       :insurance-breakdown-items="settlementInsuranceBreakdown"

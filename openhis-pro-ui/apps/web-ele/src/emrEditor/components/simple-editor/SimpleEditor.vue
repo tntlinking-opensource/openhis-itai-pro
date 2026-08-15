@@ -3,6 +3,10 @@ import type { Editor, JSONContent } from '@tiptap/core';
 
 import type { EmrEditorCaps } from './use-emr-editor-caps';
 
+import {
+  CONTEXT_REFRESH_FIELD_KEYS,
+  PATIENT_BOUND_FIELD_KEYS,
+} from '#/emrEditor/emr-patient-metadata';
 import type { EmrMetadataField } from '#/emrEditor/types';
 
 import { uploadEditorImageApi } from '#/api/emr/editor-image';
@@ -83,6 +87,11 @@ const props = withDefaults(
      * document：填写文书（固定字无背景，与正文一致）
      */
     surface?: 'document' | 'template';
+    /**
+     * 是否展示左侧元数据拖拽栏。
+     * 默认：surface=template 时展示；医生站个人/科室模板维护可显式关闭。
+     */
+    showMetadataSidebar?: boolean;
     /** 是否显示排版工具栏；医生站书写病历时可关，模板制作保持默认 true */
     showToolbar?: boolean;
   }>(),
@@ -97,6 +106,7 @@ const props = withDefaults(
     placeholder: undefined,
     readOnly: false,
     surface: 'document',
+    showMetadataSidebar: undefined,
     layoutLocked: false,
     showToolbar: true,
   },
@@ -134,6 +144,14 @@ provide(
   'emrEditorLayoutLocked',
   computed(() => props.layoutLocked),
 );
+
+/** 元数据侧栏：显式 prop 优先，否则仅 template 表面展示 */
+const showMetadataSidebar = computed(() => {
+  if (props.showMetadataSidebar !== undefined) {
+    return props.showMetadataSidebar;
+  }
+  return props.surface === 'template';
+});
 
 const emrEditorCaps = computed<EmrEditorCaps>(() => ({
   layoutLocked: props.layoutLocked,
@@ -208,11 +226,17 @@ const mergedMetaValues = computed(() => ({
   ...(props.metadataValues ?? {}),
 }));
 
+/** 患者身份或日期时间上下文域：套模板后须强制覆盖 */
+function shouldForceOverwriteMetadataKey(key: string): boolean {
+  return PATIENT_BOUND_FIELD_KEYS.has(key) || CONTEXT_REFRESH_FIELD_KEYS.has(key);
+}
+
 /**
  * 将 metadata 写入正文中的元数据节点。
  * @param ed 编辑器实例
  * @param vals fieldKey / elementId → 展示值
  * @param readonlyOnly 为 true 时：只读域始终同步；可改域仅在当前值为空时预填（保留医生已录入）
+ * 患者绑定域与日期时间上下文域始终按 vals 强制覆盖，避免套用模板残留旧患者/旧日期。
  */
 function applyMetadataValuesToDocNodes(
   ed: Editor,
@@ -222,11 +246,12 @@ function applyMetadataValuesToDocNodes(
   const { tr, doc } = ed.state;
   doc.descendants((node, pos) => {
     if (node.type.name === 'emrMetadataChip') {
+      const fk = String(node.attrs.fieldKey ?? '');
+      if (!fk) return;
+      const forceOverwrite = shouldForceOverwriteMetadataKey(fk);
       const editable = node.attrs.editable !== false;
       const cur = String(node.attrs.value ?? '').trim();
-      if (readonlyOnly && editable && cur) return;
-      const fk = node.attrs.fieldKey as string;
-      if (!fk) return;
+      if (!forceOverwrite && readonlyOnly && editable && cur) return;
       const nextVal = vals[fk] ?? '';
       if (String(node.attrs.value ?? '') === String(nextVal)) return;
       tr.setNodeMarkup(pos, undefined, {
@@ -236,11 +261,12 @@ function applyMetadataValuesToDocNodes(
       return;
     }
     if (node.type.name === 'emrDataElement') {
-      const editable = node.attrs.editable !== false;
-      const cur = String(node.attrs.value ?? '').trim();
-      if (readonlyOnly && editable && cur) return;
       const id = String(node.attrs.elementId ?? '');
       if (!id) return;
+      const forceOverwrite = shouldForceOverwriteMetadataKey(id);
+      const editable = node.attrs.editable !== false;
+      const cur = String(node.attrs.value ?? '').trim();
+      if (!forceOverwrite && readonlyOnly && editable && cur) return;
       const nextVal = vals[id] ?? '';
       if (String(node.attrs.value ?? '') === String(nextVal)) return;
       tr.setNodeMarkup(pos, undefined, {
@@ -1108,7 +1134,7 @@ defineExpose({
     :style="pageMarginStyle"
   >
     <div class="simple-editor__body">
-      <aside v-if="surface === 'template'" class="simple-editor__sidebar" aria-label="元数据字段">
+      <aside v-if="showMetadataSidebar" class="simple-editor__sidebar" aria-label="元数据字段">
         <div class="simple-editor__sidebar-title">元数据</div>
         <p v-if="!layoutLocked" class="simple-editor__sidebar-hint">
           拖到正文插入字段：正文内仅展示取值；「只读」随患者信息更新，「可改」可手工修正。

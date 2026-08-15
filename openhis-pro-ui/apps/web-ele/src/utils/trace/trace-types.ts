@@ -19,23 +19,33 @@ export interface TraceBatchScanLine {
   spec?: string;
   rxNo?: string;
   /**
-   * 本行应扫追溯码数量（由业务页/桥接按「操作量 ÷ 每码追溯单位量」算好后传入；
-   * dialog 不再自行按原始数量推断）。
-   *
-   * <p>进货硬 Gate 仍用个数；消耗/流转优先 {@link operationSplitQty} 剩余覆盖。</p>
+   * 本行「建议应扫」个数（ceil(操作拆零÷每码拆零)）；弹窗「待扫」展示与半扫软确认用。
+   * 消耗侧<strong>不得</strong>当作绑码硬上限（硬上限见 {@link maxTraceCount}）。
    */
   requiredTraceCount?: number;
+  /**
+   * 消耗侧单行绑码硬上限（ceil(操作拆零)）：开 2 支最多 2 码。
+   * 缺省时回落 {@link operationSplitQty}；进货勿依赖本字段（仍走应扫硬 Gate）。
+   */
+  maxTraceCount?: number;
   /**
    * 本次操作拆零量（消耗/流转盖住判定用）；有值时扫码「够了」按剩余合计 ≥ 本值。
    */
   operationSplitQty?: number;
   /**
    * 主表该品批是否已有码（有码批=true）。
-   * false=无码批：扫码仅软提示数量，允许未建档码绑定；true=硬校验反查/在院。
+   * false=无码批：扫码仅软提示数量；true=有码批：消耗侧码身份仍软提示（仅进货硬拦），写流水盖不住跳过。
    */
   lotHasTraceMaster?: boolean;
-  /** 追溯码所贴单位（进货行可选；匹配仍按码→品+批） */
+  /** 追溯码所贴单位（发药取主档快照；进货/库房取目录；匹配仍按码→品+批） */
   traceUnitCode?: string;
+  /** 追溯码单位展示文案（术语/计量带 unitName；弹窗药品明细列） */
+  traceUnitCodeLabel?: string;
+  /**
+   * 1 个追溯码单位对应的拆零数量（发药取主档 `trace_unit_ratio`；库房取目录）。
+   * 弹窗「追溯码/拆零」列直出。
+   */
+  traceUnitRatio?: number;
   /** 操作（录入）单位；与 traceUnitCode 相同时应扫数 = ceil(操作量) */
   operationUnitCode?: string;
 }
@@ -91,8 +101,10 @@ export interface TraceScanScenePreset {
 export const TRACE_SCAN_SCENE_PRESETS = {
   dispense: {
     bindMode: 'comma',
-    allowNotFound: false,
-    rejectNotInHospital: true,
+    /** 未建档码可软录入；主档耗尽由扫码弹窗/后端硬拦 */
+    allowNotFound: true,
+    /** 发药耗尽硬拦走剩余判定，不依赖本开关整段拒不在院 */
+    rejectNotInHospital: false,
     resolveProvider: 'dispense',
     sceneContext: 'DISPENSE',
   },
@@ -104,8 +116,9 @@ export const TRACE_SCAN_SCENE_PRESETS = {
   },
   inventoryOut: {
     bindMode: 'comma',
-    allowNotFound: false,
-    rejectNotInHospital: true,
+    /** 库房出库等同消耗侧：码身份软提示，硬 Gate 仅进货 */
+    allowNotFound: true,
+    rejectNotInHospital: false,
     resolveProvider: 'dispense',
     sceneContext: 'INVENTORY',
   },

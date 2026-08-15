@@ -87,10 +87,35 @@ function collectAccessibleRouteNames(routes: RouteRecordRaw[]) {
   return names;
 }
 
+/** 路径含必填动态段（如 :caseRecordId）时不可作为工作台入口 */
+function hasRequiredPathParams(path: string | undefined): boolean {
+  if (!path) {
+    return false;
+  }
+  // 匹配 /:param 或开头 :param；排除可选 :param?
+  return /(?:^|\/):[A-Za-z0-9_]+(?!\?)/.test(path);
+}
+
+/**
+ * 安全解析快捷入口 path：无 name / 缺动态参数时 vue-router 会抛错，需吞掉并跳过。
+ */
+function createSafeResolvePath(resolve: (routeName: string) => { path: string }) {
+  return (routeName: string, pathHint?: string): null | string => {
+    if (hasRequiredPathParams(pathHint)) {
+      return null;
+    }
+    try {
+      return resolve(routeName).path;
+    } catch {
+      return null;
+    }
+  };
+}
+
 /** 基于 router 解析结果构建快捷入口索引，保证 path 与运行时一致 */
 function buildAccessibleRouteMap(
   accessibleNames: Set<string>,
-  resolvePath: (routeName: string) => string,
+  resolvePath: (routeName: string, pathHint?: string) => null | string,
   getRouteMeta: (routeName: string) => RouteRecordRaw | undefined,
 ) {
   const routeMap = new Map<string, RouteShortcutMeta>();
@@ -108,9 +133,14 @@ function buildAccessibleRouteMap(
       continue;
     }
 
+    const path = resolvePath(routeName, typeof route.path === 'string' ? route.path : undefined);
+    if (!path) {
+      continue;
+    }
+
     routeMap.set(routeName, {
       title: String(route.meta?.title ?? routeName),
-      path: resolvePath(routeName),
+      path,
       icon: typeof route.meta?.icon === 'string' ? route.meta.icon : undefined,
     });
   }
@@ -128,6 +158,10 @@ function isNavigableShortcutRoute(route: RouteRecordRaw): boolean {
   }
   // 纯布局目录（有子节点且无页面组件）不可单独跳转
   if (!route.component && route.children?.length) {
+    return false;
+  }
+  // 需业务主键才能打开的详情页不可进工作台
+  if (hasRequiredPathParams(typeof route.path === 'string' ? route.path : undefined)) {
     return false;
   }
   return true;
@@ -187,7 +221,7 @@ function pushStaffShortcut(
  */
 function buildStaffGroupedShortcuts(
   menuTree: RouteRecordRaw[],
-  resolvePath: (routeName: string) => string,
+  resolvePath: (routeName: string, pathHint?: string) => null | string,
 ): WorkbenchGroupView[] {
   const groups = new Map<string, StaffGroupBucket>();
 
@@ -204,6 +238,7 @@ function buildStaffGroupedShortcuts(
       const title = String(route.meta?.title ?? routeName);
       const children = route.children ?? [];
       const order = Number(route.meta?.orderNo ?? index);
+      const pathHint = typeof route.path === 'string' ? route.path : undefined;
 
       if (children.length > 0) {
         // 子菜单以当前节点为父级分组
@@ -211,6 +246,10 @@ function buildStaffGroupedShortcuts(
 
         // 父级本身也在白名单且可跳转时一并展示
         if (WORKBENCH_STAFF_ALLOWLIST.has(routeName) && isNavigableShortcutRoute(route)) {
+          const path = resolvePath(routeName, pathHint);
+          if (!path) {
+            return;
+          }
           const target = parent ?? {
             id: WORKBENCH_STAFF_ROOT_GROUP_ID,
             title: WORKBENCH_STAFF_ROOT_GROUP_TITLE,
@@ -218,7 +257,7 @@ function buildStaffGroupedShortcuts(
           };
           pushStaffShortcut(groups, target.id, target.title, target.order, routeName, {
             title,
-            path: resolvePath(routeName),
+            path,
             icon: typeof route.meta?.icon === 'string' ? route.meta.icon : undefined,
           });
         }
@@ -236,6 +275,11 @@ function buildStaffGroupedShortcuts(
         return;
       }
 
+      const path = resolvePath(routeName, pathHint);
+      if (!path) {
+        return;
+      }
+
       const target = parent ?? {
         id: WORKBENCH_STAFF_ROOT_GROUP_ID,
         title: WORKBENCH_STAFF_ROOT_GROUP_TITLE,
@@ -244,7 +288,7 @@ function buildStaffGroupedShortcuts(
 
       pushStaffShortcut(groups, target.id, target.title, target.order, routeName, {
         title,
-        path: resolvePath(routeName),
+        path,
         icon: typeof route.meta?.icon === 'string' ? route.meta.icon : undefined,
       });
     });
@@ -317,6 +361,10 @@ export function useWorkbenchShortcuts(searchKeyword: ComputedRef<string>) {
   /** 是否平台管理员（角色 admin / ROLE_ADMIN 或 admin 账号） */
   const isPlatformAdmin = computed(() => authStore.platformAdmin || authStore.getPlatformAdmin());
 
+  const resolveShortcutPath = createSafeResolvePath((routeName) =>
+    router.resolve({ name: routeName }),
+  );
+
   const accessibleRouteMap = computed(() => {
     const accessibleNames =
       accessStore.accessRoutes.length > 0
@@ -334,10 +382,8 @@ export function useWorkbenchShortcuts(searchKeyword: ComputedRef<string>) {
         .flatMap((route) => (route.name ? [[String(route.name), route] as const] : [])),
     );
 
-    return buildAccessibleRouteMap(
-      accessibleNames,
-      (routeName) => router.resolve({ name: routeName }).path,
-      (routeName) => routeByName.get(routeName),
+    return buildAccessibleRouteMap(accessibleNames, resolveShortcutPath, (routeName) =>
+      routeByName.get(routeName),
     );
   });
 
@@ -351,10 +397,7 @@ export function useWorkbenchShortcuts(searchKeyword: ComputedRef<string>) {
         ? accessStore.accessRoutes
         : (router.options.routes as RouteRecordRaw[]);
 
-    return buildStaffGroupedShortcuts(
-      menuTree,
-      (routeName) => router.resolve({ name: routeName }).path,
-    );
+    return buildStaffGroupedShortcuts(menuTree, resolveShortcutPath);
   });
 
   const filteredGroups = computed<WorkbenchGroupView[]>(() => {

@@ -31,7 +31,15 @@ import {
   normalizePharmacyStockInStatusSort,
   pharmacyStockInStatusLabel,
 } from '#/utils/inventory/pharmacy-stock-in-doc-actions';
-import { buildInvDocumentTitle, printInvDocument } from '#/utils/print/print-inv-document';
+import {
+  buildInvDocumentTitle,
+  printInvDocument,
+  resolveInvPrintProductBusNo,
+} from '#/utils/print/print-inv-document';
+import {
+  resolveInvDocApprovedByName,
+  resolveInvDocPreparedByName,
+} from '#/utils/inventory/inventory-workbench-list';
 import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
 
 defineOptions({ name: 'InventoryDepartmentStockInMainPane' });
@@ -60,6 +68,8 @@ interface StockInPreviewRow {
 }
 
 interface Props {
+  /** 侧栏当前单据行（制单人/审批人与队列卡片同口径） */
+  queueCardRow?: null | Record<string, unknown>;
   busNo?: string;
   resetKey?: number;
   warehouseOptions?: ApiOptionItem[];
@@ -67,6 +77,7 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  queueCardRow: null,
   busNo: '',
   resetKey: 0,
   warehouseOptions: () => [],
@@ -282,6 +293,7 @@ async function handlePrint() {
 
   // 网格行已在 loadDetail 时完成 SPLIT→展示换算，打印直接取展示值
   const lineRows = productRows.map((row) => ({
+    productBusNo: resolveInvPrintProductBusNo(row as unknown as Record<string, unknown>),
     productName: String(row.productName ?? '').trim(),
     specText: String(row.specification ?? '').trim(),
     manufacturerText: String(row.manufacturer ?? '').trim(),
@@ -290,9 +302,15 @@ async function handlePrint() {
     unitPrice: row.price,
     amount: row.totalPrice,
     lotNumber: String(row.lotNumber ?? '').trim(),
-    expiryText: [row.startTime, row.endTime].filter(Boolean).join(' ~ '),
+    expiryDate: String(row.endTime ?? '').trim(),
   }));
 
+  const preparedByName = resolveInvDocPreparedByName(
+    props.queueCardRow as null | Record<string, unknown>,
+  );
+  const approvedByName = resolveInvDocApprovedByName(
+    props.queueCardRow as null | Record<string, unknown>,
+  );
   await printInvDocument({
     family: 'movement',
     source: {
@@ -306,10 +324,9 @@ async function handlePrint() {
       linkDocText: String(originalBusNo.value ?? '').trim(),
       destLocationText: destName,
       invoiceNoText: '',
-      practitionerName: '',
       lineRows,
-      preparedByName: '',
-      approvedByName: '',
+      preparedByName,
+      approvedByName,
     },
     bizRef: { busNo, docKind: 'department-stock-in' },
     jobName: documentTitle,

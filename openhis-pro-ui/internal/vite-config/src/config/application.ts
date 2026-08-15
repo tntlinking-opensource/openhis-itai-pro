@@ -23,6 +23,8 @@ function defineApplicationConfig(userConfigPromise?: DefineApplicationOptions) {
     const root = process.cwd();
     const isBuild = command === 'build';
     const env = loadEnv(mode, root);
+    // loading / <title> 的 <%= VITE_APP_TITLE %> 走 vite-plugin-html；用 UTF-8 解析结果覆盖
+    env.VITE_APP_TITLE = appTitle;
 
     const plugins = await loadApplicationPlugins({
       archiver: true,

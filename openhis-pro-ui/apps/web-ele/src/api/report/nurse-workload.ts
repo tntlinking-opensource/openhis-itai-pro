@@ -4,6 +4,7 @@
 import type { PageParams } from '#/types/api-response';
 
 import { publicRequestClient } from '#/api/request';
+import { reportLongRequestConfig } from '#/constants/report-request-timeout';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
 const BASE = '/nurseWorkloadReport';
@@ -21,18 +22,28 @@ export interface OptionDto {
   label?: string;
 }
 
+export interface LoadNurseWorkloadFormInitRequest {
+  /** 就诊范围；切换门诊/住院时用于刷新开立科室下拉。 */
+  encounterScope?: EncounterScope;
+}
+
 export interface LoadNurseWorkloadFormInitResponse {
   defaultEncounterScope?: EncounterScope;
   defaultDateFrom?: string;
   defaultDateTo?: string;
   encounterScopeOptions?: OptionDto[];
   nurseOptions?: OptionDto[];
+  organizationOptions?: OptionDto[];
 }
 
 export interface NurseWorkloadQueryFilter {
   encounterScope: EncounterScope;
   dateFrom: string;
   dateTo: string;
+  /** 开立科室（ChargeItem.requesting_org_id）。 */
+  requestingOrgId?: string;
+  /** 遗留字段；与 requestingOrgId 同值提交。 */
+  organizationId?: string;
   practitionerId?: string;
 }
 
@@ -44,12 +55,14 @@ export interface NurseExecutionSummaryRowDto {
 
 export interface SummarizeNurseExecutionWorkloadResponse {
   rows?: NurseExecutionSummaryRowDto[];
-  totalAmount?: number | string;
+  totalSaleAmount?: number | string;
+  totalPurchaseAmount?: number | string | null;
   totalExecutionCount?: number;
 }
 
 export interface NurseExecutionDetailRowDto {
-  amount?: number | string;
+  saleAmount?: number | string;
+  purchaseAmount?: number | string | null;
   procedureId?: string;
   serviceRequestId?: string;
   itemName?: string;
@@ -85,12 +98,14 @@ export interface NurseConsumableSummaryRowDto {
 
 export interface SummarizeNurseConsumableWorkloadResponse {
   rows?: NurseConsumableSummaryRowDto[];
-  totalAmount?: number | string;
+  totalSaleAmount?: number | string;
+  totalPurchaseAmount?: number | string | null;
   totalQuantity?: number | string;
 }
 
 export interface NurseConsumableDetailRowDto {
-  amount?: number | string;
+  saleAmount?: number | string;
+  purchaseAmount?: number | string | null;
   dispenseId?: string;
   deviceDefId?: string;
   deviceName?: string;
@@ -135,11 +150,43 @@ export interface ExportNurseWorkloadDetailResponse {
   mainTabCode?: NurseMainTabCode;
 }
 
-/** 页面初始化：就诊范围、护士下拉与默认日期。 */
-export async function loadNurseWorkloadFormInitApi() {
+export interface NurseConsumableItemChipDto {
+  key?: string;
+  label?: string;
+  quantity?: number | string;
+}
+
+export interface NurseWorkloadNurseCardDto {
+  practitionerId?: string;
+  executionTotalCount?: number;
+  executionSaleAmountTotal?: number | string;
+  executionPurchaseAmountTotal?: number | string | null;
+  executionSummaryRows?: NurseExecutionSummaryRowDto[];
+  consumableTotalQuantity?: number | string;
+  consumableSaleAmountTotal?: number | string;
+  consumablePurchaseAmountTotal?: number | string | null;
+  consumableSummaryRows?: NurseConsumableSummaryRowDto[];
+  consumableItemChips?: NurseConsumableItemChipDto[];
+}
+
+export interface ListNurseWorkloadNurseCardsResponse {
+  cards?: NurseWorkloadNurseCardDto[];
+}
+
+/** 页面初始化：就诊范围、开立科室、护士下拉与默认日期。 */
+export async function loadNurseWorkloadFormInitApi(body?: LoadNurseWorkloadFormInitRequest) {
   return publicRequestClient.post<LoadNurseWorkloadFormInitResponse>(
     `${BASE}/loadNurseWorkloadFormInit`,
-    {},
+    body ?? {},
+  );
+}
+
+/** 护士卡片墙批量查询（一次扫库按人分桶；轻量 enrich）。 */
+export async function listNurseWorkloadNurseCardsApi(body: NurseWorkloadQueryFilter) {
+  return publicRequestClient.post<ListNurseWorkloadNurseCardsResponse>(
+    `${BASE}/listNurseWorkloadNurseCards`,
+    body,
+    reportLongRequestConfig(),
   );
 }
 
@@ -148,6 +195,7 @@ export async function summarizeNurseExecutionWorkloadApi(body: NurseWorkloadQuer
   return publicRequestClient.post<SummarizeNurseExecutionWorkloadResponse>(
     `${BASE}/summarizeNurseExecutionWorkload`,
     body,
+    reportLongRequestConfig(),
   );
 }
 
@@ -158,6 +206,7 @@ export async function pageNurseExecutionWorkloadDetailApi(
   const res = await publicRequestClient.post<PageNurseExecutionWorkloadDetailResponse>(
     `${BASE}/pageNurseExecutionWorkloadDetail`,
     body,
+    reportLongRequestConfig(),
   );
   const { content, totalCount } = parsePagedRowsFromApiData<NurseExecutionDetailRowDto>(res);
   return {
@@ -172,6 +221,7 @@ export async function summarizeNurseConsumableWorkloadApi(body: NurseWorkloadQue
   return publicRequestClient.post<SummarizeNurseConsumableWorkloadResponse>(
     `${BASE}/summarizeNurseConsumableWorkload`,
     body,
+    reportLongRequestConfig(),
   );
 }
 
@@ -182,6 +232,7 @@ export async function pageNurseConsumableWorkloadDetailApi(
   const res = await publicRequestClient.post<PageNurseConsumableWorkloadDetailResponse>(
     `${BASE}/pageNurseConsumableWorkloadDetail`,
     body,
+    reportLongRequestConfig(),
   );
   const { content, totalCount } = parsePagedRowsFromApiData<NurseConsumableDetailRowDto>(res);
   return {
@@ -196,5 +247,6 @@ export async function exportNurseWorkloadDetailApi(body: ExportNurseWorkloadDeta
   return publicRequestClient.post<ExportNurseWorkloadDetailResponse>(
     `${BASE}/exportNurseWorkloadDetail`,
     body,
+    reportLongRequestConfig(),
   );
 }

@@ -16,6 +16,7 @@ import {
 } from '@vben/utils';
 
 import { encounterQueueStatusDisplayText } from '#/utils/outpatient/encounter-queue-status-text';
+import { formatInsutype, formatInsutypeShort } from '#/chs/constants/reconciliation';
 
 defineOptions({
   name: 'PatientCard',
@@ -124,6 +125,23 @@ const feeChipLabel = computed(() => {
 });
 
 const paymentTypeConfig = computed(() => getPaymentTypeTagStyles(feeChipLabel.value || '自费'));
+
+/** 险种短标签：职工/居民；仅医生站展示 */
+const insutypeChipLabel = computed(() => {
+  if (variantResolved.value !== 'doctor') return '';
+  const ip = inpatient.value;
+  if (ip) return formatInsutypeShort(ip.insutype);
+  const o = outpatient.value;
+  if (!o) return '';
+  return formatInsutypeShort(o.insutype);
+});
+
+const insutypeChipTitle = computed(() => {
+  if (variantResolved.value !== 'doctor') return '';
+  const code = inpatient.value?.insutype ?? outpatient.value?.insutype;
+  const full = formatInsutype(code);
+  return full && full !== '—' ? full : '';
+});
 
 const defaultStatus = computed(() => (isInpatient.value ? '待入科' : '待诊'));
 
@@ -334,6 +352,13 @@ const handleSelect = () => {
             }"
           >
             {{ feeChipLabel }}
+          </span>
+          <span
+            v-if="insutypeChipLabel"
+            class="shrink-0 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700"
+            :title="insutypeChipTitle || undefined"
+          >
+            {{ insutypeChipLabel }}
           </span>
           <span
             v-if="showStatusChip"

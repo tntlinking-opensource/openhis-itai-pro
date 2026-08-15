@@ -1,10 +1,11 @@
 /**
  * 住院医护站「完整预结算」：3101(trig=9) → 对话框 → 2303，仅展示金额不落账。
- * 不要求护士出院；未 PENDING 时走 MID_SETTLE（跳过医保 2402）。
+ * 未护士出院传 MID_SETTLE（跳过 2402、放宽就诊态）；平台 mid_setl_flag 由后端写死为 0。
  */
 import type { Ref } from 'vue';
 
 import type {
+  InpatientSettleChargeLineDto,
   InpatientSettleQueueItemDto,
   PreSettleInpatientChargesResponse,
 } from '#/api/inpatient-settle';
@@ -34,6 +35,9 @@ import {
   SETTLE_QUEUE_TAB,
 } from '#/views/inpatient/charge/settle/inpatient-settle.constants';
 import {
+  chooseInpatientSettleInsuranceMedium,
+  inpatientSettleReadCredentialFailHint,
+  inpatientSettleReadCredentialHint,
   isInpatientInsuranceRegistration,
   isZeroAmountDischargeFullSettle,
   resolveInpatientSettleInsuranceContext,
@@ -51,6 +55,8 @@ export interface InpatientClinicalPreSettleParams {
 
 export interface InpatientClinicalPreSettleResult {
   chargeItemIds: string[];
+  /** 本批试算费用行（弹窗「结算费用」表） */
+  chargeLines: InpatientSettleChargeLineDto[];
   snapshot: PreSettleInpatientChargesResponse;
 }
 
@@ -94,7 +100,7 @@ async function resolveContractIdByDisplayName(
 }
 
 /**
- * 医护站结算模式：已办护士出院 → 出院全结；否则中途试算（不调 2402）。
+ * 医护站结算模式：PENDING → 出院全结；否则试算（跳过 2402，平台 mid 标志后端写死 0）。
  */
 function resolveClinicalSettleMode(
   statusEnum: string,
@@ -137,6 +143,8 @@ export async function runInpatientClinicalPreSettle(options: {
   const chargeItemIds = (charges.lines ?? [])
     .map((line) => preserveApiIdForRequest(line.chargeItemId))
     .filter(Boolean) as string[];
+  // 弹窗展示用：保留本批费用行快照（与 chargeItemIds 同序口径）
+  const chargeLines = charges.lines ?? [];
 
   const zeroAmount = isZeroAmountDischargeFullSettle(statusEnum, chargeItemIds, chargeItemIds);
   if (chargeItemIds.length === 0 && !zeroAmount) {
@@ -169,8 +177,13 @@ export async function runInpatientClinicalPreSettle(options: {
       ElMessage.warning('医保患者缺少合同信息，请检查住院登记');
       return null;
     }
+    const medium = await chooseInpatientSettleInsuranceMedium();
+    if (!medium) {
+      return null;
+    }
+    ElMessage.info(inpatientSettleReadCredentialHint(medium));
     try {
-      const insuranceCtx = await resolveInpatientSettleInsuranceContext(contractId);
+      const insuranceCtx = await resolveInpatientSettleInsuranceContext(contractId, medium);
       if (insuranceCtx) {
         insurancePayload = {
           contractId: insuranceCtx.contractId,
@@ -181,7 +194,7 @@ export async function runInpatientClinicalPreSettle(options: {
           ybMediumType: insuranceCtx.ybMediumType,
         };
       } else {
-        ElMessage.warning('本机 OpenHIS.Win 未启动，无法完成医保读卡预结算；请先启动插件');
+        ElMessage.warning(inpatientSettleReadCredentialFailHint(medium));
         return null;
       }
     } catch (error) {
@@ -225,20 +238,56 @@ export async function runInpatientClinicalPreSettle(options: {
     settleMode,
     ...insurancePayload,
   });
-  return { chargeItemIds, snapshot };
+  return { chargeItemIds, chargeLines, snapshot };
 }
 
-/** 从预结算快照组装医保分项展示。 */
+/**
+ * 预交金冲抵额：医保按个人现金 − 少补；自费按应收 − 少补。
+ */
+export function resolveClinicalPreSettlePrepayOffset(
+  snap: PreSettleInpatientChargesResponse | null | undefined,
+): number {
+  if (!snap) {
+    return 0;
+  }
+  const payable = Number(snap.displayAmount ?? 0);
+  const safePayable = Number.isFinite(payable) ? Math.max(0, payable) : 0;
+  if (snap.insurancePreSettled) {
+    const cash = Number(snap.ybPsnCashPay ?? 0);
+    const safeCash = Number.isFinite(cash) ? Math.max(0, cash) : 0;
+    return Math.max(0, safeCash - safePayable);
+  }
+  const receivable = Number(snap.receivableTotal ?? 0);
+  const safeReceivable = Number.isFinite(receivable) ? Math.max(0, receivable) : 0;
+  return Math.max(0, safeReceivable - safePayable);
+}
+
+/**
+ * 从预结算快照组装费用明细（对齐门诊确认收费弹窗基金分项 key）。
+ * 医保：个人现金与需补交分开；并附预交金余额/冲抵便于核对。
+ */
 export function buildClinicalPreSettleInsuranceBreakdown(
   snap: PreSettleInpatientChargesResponse | null | undefined,
-): Array<{ key: string; label: string; value: number | string }> {
+): Array<{ key: string; label: string; value: number }> {
   if (!snap?.insurancePreSettled) {
     return [];
   }
+  const prepayNet = Number(snap.prepayNetBalance ?? 0);
+  const prepayOffset = resolveClinicalPreSettlePrepayOffset(snap);
   return [
-    { key: 'medfee', label: '医疗费总额', value: snap.ybMedfeeSumamt ?? 0 },
-    { key: 'fund', label: '基金支付', value: snap.ybFundPaySumamt ?? 0 },
-    { key: 'acct', label: '个人账户', value: snap.ybAcctPay ?? 0 },
-    { key: 'cash', label: '个人现金', value: snap.ybPsnCashPay ?? 0 },
+    { key: 'fundPay', label: '基金支付合计', value: Number(snap.ybFundPaySumamt ?? 0) },
+    { key: 'poolingPay', label: '基本医保统筹', value: Number(snap.ybHifpPay ?? 0) },
+    { key: 'otherPay', label: '其他支出', value: Number(snap.ybOthPay ?? 0) },
+    { key: 'accountPay', label: '个人账户支付', value: Number(snap.ybAcctPay ?? 0) },
+    { key: 'deductibleLine', label: '起付线', value: Number(snap.ybActPayDedc ?? 0) },
+    { key: 'cvlservPay', label: '公务员医疗补助', value: Number(snap.ybCvlservPay ?? 0) },
+    { key: 'cashPay', label: '医保个人现金', value: Number(snap.ybPsnCashPay ?? 0) },
+    {
+      key: 'prepayBalance',
+      label: '预交金余额',
+      value: Number.isFinite(prepayNet) ? prepayNet : 0,
+    },
+    { key: 'prepayOffset', label: '预交金冲抵', value: prepayOffset },
+    { key: 'finalReceivable', label: '需补交', value: Number(snap.displayAmount ?? 0) },
   ];
 }

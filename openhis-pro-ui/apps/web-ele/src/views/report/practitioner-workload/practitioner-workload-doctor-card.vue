@@ -24,12 +24,17 @@ const emit = defineEmits<{
 }>();
 
 const metrics = computed(() => [
-  { label: '接诊人数', value: String(props.summaryTotals.encounterCountTotal ?? 0) },
+  {
+    label: '挂号人次',
+    value: String(
+      props.summaryTotals.registrationNetCountTotal ?? props.summaryTotals.encounterCountTotal ?? 0,
+    ),
+  },
   { label: '处方数量', value: String(props.summaryTotals.prescriptionCountTotal ?? 0) },
   { label: '诊疗项目', value: String(props.summaryTotals.activityItemCountTotal ?? 0) },
   {
-    label: '开单总金额',
-    value: fmtReportNumber(props.summaryTotals.receivableAmountTotal),
+    label: '售价合计',
+    value: fmtReportNumber(props.summaryTotals.saleAmountTotal),
     highlight: true,
   },
 ]);

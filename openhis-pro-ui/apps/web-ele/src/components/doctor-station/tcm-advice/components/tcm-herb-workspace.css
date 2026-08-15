@@ -18,8 +18,10 @@
   display: flex;
   flex-shrink: 0;
   align-items: center;
+  /* 兜底检索：约跳过 # + 药名 + 剂量，对齐特殊煎法 */
   gap: 12px;
   margin-bottom: 8px;
+  margin-left: 220px;
 }
 
 .tcm-herb-workspace__search {
@@ -31,7 +33,10 @@
 }
 
 .tcm-rx-panel__search-host .tcm-herb-workspace__search {
-  width: 320px;
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .tcm-rx-panel__search-host .advice-order-select-trigger-host {
@@ -151,7 +156,17 @@
 .tcm-herb-workspace__strips-head,
 .tcm-herb-strip {
   display: grid;
-  grid-template-columns: 50px repeat(6, minmax(0, 1fr));
+  /* # | 药名 | 剂量 | 特殊煎法 | 单价 | 小计 | 费用性质 | 费用状态 | 操作 —— fr 均分剩余宽度，整表占满 */
+  grid-template-columns:
+    40px
+    minmax(73px, 1fr)
+    minmax(72px, 0.9fr)
+    minmax(96px, 1fr)
+    minmax(72px, 0.9fr)
+    minmax(80px, 0.95fr)
+    minmax(72px, 0.85fr)
+    minmax(88px, 1fr)
+    56px;
   align-items: center;
   column-gap: 0;
   width: 100%;
@@ -333,6 +348,59 @@
   font-weight: 400;
 }
 
+.tcm-herb-strip__fee-nature,
+.tcm-herb-workspace__col-fee-nature {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: #2c4054;
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tcm-herb-strip__charge,
+.tcm-herb-workspace__col-charge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+}
+
+/* 药表费用状态 Tag：与顶栏同口径略加深 */
+.tcm-herb-strip__charge .el-tag {
+  --el-tag-font-size: 12px;
+  height: 22px;
+  padding: 0 8px;
+  font-weight: 500;
+}
+
+.tcm-herb-strip__charge .el-tag--success {
+  border-color: var(--el-color-success-light-5);
+  background: var(--el-color-success-light-8);
+  color: var(--el-color-success-dark-2);
+}
+
+.tcm-herb-strip__charge .el-tag--warning {
+  border-color: var(--el-color-warning-light-5);
+  background: var(--el-color-warning-light-8);
+  color: var(--el-color-warning-dark-2);
+}
+
+.tcm-herb-strip__charge .el-tag--danger {
+  border-color: var(--el-color-danger-light-5);
+  background: var(--el-color-danger-light-8);
+  color: var(--el-color-danger-dark-2);
+}
+
+.tcm-herb-strip__charge .el-tag--info,
+.tcm-herb-strip__charge .el-tag--primary {
+  border-color: var(--el-color-info-light-5);
+  background: var(--el-color-info-light-8);
+  color: var(--el-color-info-dark-2);
+}
+
 .tcm-herb-strip__ops,
 .tcm-herb-workspace__col-ops {
   display: inline-flex;
@@ -346,4 +414,20 @@
   .tcm-herb-strip > * {
     padding: 6px 8px;
   }
+}
+
+/* 重复药品提示：主色蓝底，区别于 warning 黄条 */
+.tcm-duplicate-herb-msg.el-message {
+  --el-message-bg-color: var(--el-color-primary-light-9);
+  --el-message-border-color: var(--el-color-primary-light-5);
+  --el-message-text-color: var(--el-color-primary);
+}
+
+.tcm-duplicate-herb-msg.el-message .el-message__content {
+  color: var(--el-color-primary);
+  font-weight: 600;
+}
+
+.tcm-duplicate-herb-msg.el-message .el-message__icon {
+  color: var(--el-color-primary);
 }

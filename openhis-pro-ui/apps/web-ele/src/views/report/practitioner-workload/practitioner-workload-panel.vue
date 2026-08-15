@@ -29,6 +29,7 @@ import {
 import {
   ENCOUNTER_SCOPE_INPATIENT,
   ENCOUNTER_SCOPE_OUTPATIENT,
+  listPractitionerWorkloadDoctorCardsApi,
   loadPractitionerWorkloadPageInitApi,
   queryPractitionerWorkloadSummaryApi,
 } from '#/api/report/practitioner-workload';
@@ -72,15 +73,12 @@ const props = withDefaults(defineProps<Props>(), {
   embedded: false,
 });
 
-const DOCTOR_SUMMARY_CONCURRENCY = 3;
-
 const encounterScopeOptions = ref<ApiOptionItem[]>([]);
 const organizationOptions = ref<ApiOptionItem[]>([]);
 const practitionerOptions = ref<ApiOptionItem[]>([]);
 const doctorCards = ref<DoctorWorkloadCardView[]>([]);
 const summaryTotals = ref<PractitionerWorkloadSummaryTotalsDto>({});
 const cardsLoading = ref(false);
-const cardsLoadProgress = ref('');
 const detailDialogVisible = ref(false);
 const selectedDoctor = ref<DoctorWorkloadCardView | null>(null);
 
@@ -97,6 +95,9 @@ const hasAppliedInitialScope = ref(false);
 
 /** 挂载初始化中：跳过科室/范围 watch，避免与 onMounted 竞态双发。 */
 const isInitializing = ref(true);
+
+/** 查询序号：切换科室/日期时丢弃过期汇总与卡片，避免顶栏停在「全部」量级。 */
+let querySeq = 0;
 
 const { run: runInit, loading: initLoading } = useRequest(loadPractitionerWorkloadPageInitApi, {
   manual: true,
@@ -118,9 +119,6 @@ const { run: runOverallSummary, loading: summaryLoading } = useRequest(
   queryPractitionerWorkloadSummaryApi,
   {
     manual: true,
-    onSuccess: (data) => {
-      summaryTotals.value = data?.summaryTotals ?? {};
-    },
   },
 );
 
@@ -151,11 +149,14 @@ const dateRange = computed<[string, string] | undefined>({
 
 const baseQueryFilter = computed<PractitionerWorkloadQueryFilter>(() => {
   const orgId = queryParams.organizationId;
+  const resolvedOrgId =
+    orgId && orgId !== ALL_ORG_VALUE ? preserveApiIdForRequest(orgId) : undefined;
   return {
     encounterScope: queryParams.encounterScope,
     dateFrom: queryParams.dateFrom,
     dateTo: queryParams.dateTo,
-    organizationId: orgId && orgId !== ALL_ORG_VALUE ? preserveApiIdForRequest(orgId) : undefined,
+    requestingOrgId: resolvedOrgId,
+    organizationId: resolvedOrgId,
   };
 });
 
@@ -164,78 +165,46 @@ function buildQueryFilter(): PractitionerWorkloadQueryFilter {
   return { ...baseQueryFilter.value };
 }
 
-/** 限制并发数批量执行异步任务。 */
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  concurrency: number,
-  mapper: (item: T, index: number) => Promise<R>,
-): Promise<R[]> {
-  if (items.length === 0) {
-    return [];
-  }
-  const results = new Array<R>(items.length);
-  let cursor = 0;
-  async function worker() {
-    while (cursor < items.length) {
-      const index = cursor;
-      cursor += 1;
-      results[index] = await mapper(items[index]!, index);
-    }
-  }
-  const workerCount = Math.min(concurrency, items.length);
-  await Promise.all(Array.from({ length: workerCount }, () => worker()));
-  return results;
-}
-
-/** 按医生并行拉汇总，填充卡片数据；单个医生失败不影响其它卡片。 */
-async function loadDoctorCards(filter: PractitionerWorkloadQueryFilter) {
+/** 一次批量拉卡片合计；fin_type/号源留给弹窗懒加载 IF-02。 */
+async function loadDoctorCards(filter: PractitionerWorkloadQueryFilter, seq: number) {
   const doctors = practitionerOptions.value;
-  if (doctors.length === 0) {
-    doctorCards.value = [];
-    return;
-  }
   cardsLoading.value = true;
-  cardsLoadProgress.value = `0 / ${doctors.length}`;
-  let failedCount = 0;
   try {
-    let finished = 0;
-    const cards = await mapWithConcurrency(doctors, DOCTOR_SUMMARY_CONCURRENCY, async (doctor) => {
-      try {
-        const data = await queryPractitionerWorkloadSummaryApi({
-          ...filter,
-          practitionerId: preserveApiIdForRequest(doctor.value),
-        });
-        return {
-          practitionerId: doctor.value,
-          practitionerName: doctor.label,
-          summaryTotals: data?.summaryTotals ?? {},
-          finTypeRows: data?.finTypeRows ?? [],
-          registrationRows: data?.registrationRows ?? [],
-        };
-      } catch {
-        failedCount += 1;
-        return null;
-      } finally {
-        finished += 1;
-        cardsLoadProgress.value = `${finished} / ${doctors.length}`;
-      }
+    // 医生主键须原样 string 提交，禁止 Number 精度丢失；空下拉仍请求以便后端补开单医生
+    const practitionerIds = doctors.map((doctor) => preserveApiIdForRequest(doctor.value));
+    const data = await listPractitionerWorkloadDoctorCardsApi({
+      ...filter,
+      practitionerIds: practitionerIds.filter((id): id is string => !!id),
     });
-    const validCards = cards.filter((card): card is DoctorWorkloadCardView => card !== null);
-    if (failedCount > 0) {
-      ElMessage.warning(`${failedCount} 位医生统计加载失败，已跳过`);
+    // 过期查询：切换科室后旧卡片不得覆盖新结果
+    if (seq !== querySeq) {
+      return;
     }
+    // 后端按开单/接诊并集回卡并带姓名；下拉仅作姓名回落
+    const nameById = new Map(doctors.map((doctor) => [String(doctor.value), doctor.label]));
+    const cards: DoctorWorkloadCardView[] = (data?.cards ?? []).map((card) => {
+      const practitionerId = String(card.practitionerId ?? '');
+      return {
+        practitionerId,
+        practitionerName: card.practitionerName || nameById.get(practitionerId) || practitionerId,
+        summaryTotals: card.summaryTotals ?? {},
+        finTypeRows: [],
+        registrationRows: [],
+      };
+    });
     // 开单金额高的医生排前，便于快速浏览
-    doctorCards.value = validCards.sort((left, right) => {
-      const leftAmount = Number(left.summaryTotals.receivableAmountTotal ?? 0);
-      const rightAmount = Number(right.summaryTotals.receivableAmountTotal ?? 0);
+    doctorCards.value = cards.sort((left, right) => {
+      const leftAmount = Number(left.summaryTotals.saleAmountTotal ?? 0);
+      const rightAmount = Number(right.summaryTotals.saleAmountTotal ?? 0);
       if (rightAmount !== leftAmount) {
         return rightAmount - leftAmount;
       }
       return left.practitionerName.localeCompare(right.practitionerName, 'zh-CN');
     });
   } finally {
-    cardsLoading.value = false;
-    cardsLoadProgress.value = '';
+    if (seq === querySeq) {
+      cardsLoading.value = false;
+    }
   }
 }
 
@@ -260,7 +229,7 @@ function hasOverallWorkloadData(totals: PractitionerWorkloadSummaryTotalsDto) {
     Number(totals.encounterCountTotal ?? 0) !== 0 ||
     Number(totals.prescriptionCountTotal ?? 0) !== 0 ||
     Number(totals.activityItemCountTotal ?? 0) !== 0 ||
-    Number(totals.receivableAmountTotal ?? 0) !== 0 ||
+    Number(totals.saleAmountTotal ?? 0) !== 0 ||
     Number(totals.registrationNetCountTotal ?? 0) !== 0
   );
 }
@@ -282,14 +251,20 @@ async function handleQuery() {
     ElMessage.warning('请选择统计日期');
     return;
   }
+  const seq = ++querySeq;
   const filter = buildQueryFilter();
   doctorCards.value = [];
-  await runOverallSummary(filter);
+  const summaryData = await runOverallSummary(filter);
+  // 过期汇总：勿用「全部」结果覆盖当前科室筛选
+  if (seq !== querySeq) {
+    return;
+  }
+  summaryTotals.value = summaryData?.summaryTotals ?? {};
   if (!hasOverallWorkloadData(summaryTotals.value)) {
     doctorCards.value = buildEmptyDoctorCards();
     return;
   }
-  await loadDoctorCards(filter);
+  await loadDoctorCards(filter, seq);
 }
 
 /** 打开指定医生明细弹窗。 */
@@ -361,7 +336,7 @@ onMounted(async () => {
             </ElRadioButton>
           </ElRadioGroup>
         </ElFormItem>
-        <ElFormItem label="科室">
+        <ElFormItem label="开立科室">
           <ElSelect
             v-model="queryParams.organizationId"
             clearable
@@ -413,9 +388,6 @@ onMounted(async () => {
     <div class="practitioner-workload-panel__list-wrap">
       <div class="practitioner-workload-panel__list-head">
         <span class="workload-panel__heading">医生工作量明细</span>
-        <span v-if="cardsLoadProgress" class="practitioner-workload-panel__progress">
-          加载中 {{ cardsLoadProgress }}
-        </span>
       </div>
 
       <div v-loading="isListLoading" class="practitioner-workload-panel__cards">
@@ -440,8 +412,6 @@ onMounted(async () => {
       :practitioner-id="selectedDoctor.practitionerId"
       :practitioner-name="selectedDoctor.practitionerName"
       :summary-totals="selectedDoctor.summaryTotals"
-      :fin-type-rows="selectedDoctor.finTypeRows"
-      :registration-rows="selectedDoctor.registrationRows"
     />
   </div>
 </template>
@@ -491,11 +461,6 @@ onMounted(async () => {
   gap: 8px;
   flex-shrink: 0;
   padding-bottom: 8px;
-}
-
-.practitioner-workload-panel__progress {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
 }
 
 .practitioner-workload-panel__cards {

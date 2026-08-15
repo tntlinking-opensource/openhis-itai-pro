@@ -44,8 +44,8 @@ const props = withDefaults(
      */
     focusTriggerNonce?: number;
     /**
-     * 已选项目时打开下拉是否保留输入框内名称（编辑态换药不闪空）。
-     * 默认 false；仅医生站开立编辑卡开启，其它复用处（如中药草药卡）保持打开清空便于重搜。
+     * 已选项目时，首次展开是否回填当前药名（编辑态换药不闪空）。
+     * 用户一旦改过检索，再展开不再强制回填旧名，直到换选新品；默认 false。
      */
     keepSelectedLabelOnOpen?: boolean;
     modelValue: string;
@@ -54,12 +54,28 @@ const props = withDefaults(
       content: AdviceProductOption[];
       totalElements: number;
     }>;
+    /**
+     * 下拉面板左侧最少留白（px，相对中药处方面板左缘）。
+     * 用于露出下方药名/剂量列；0 表示不调整。
+     */
+    dropdownLeftClearance?: number;
+    /**
+     * 中药处方：下拉左缘贴剂量列右侧，右缘贴处方面板行尾。
+     */
+    dropdownFillToHostRight?: boolean;
+    /**
+     * 中药处方：下拉左缘与检索输入框（表单）左缘对齐。
+     */
+    dropdownAlignTriggerLeft?: boolean;
   }>(),
   {
     displayLabel: '',
     expandNonce: 0,
     focusTriggerNonce: 0,
     keepSelectedLabelOnOpen: false,
+    dropdownLeftClearance: 0,
+    dropdownFillToHostRight: false,
+    dropdownAlignTriggerLeft: false,
   },
 );
 
@@ -78,8 +94,8 @@ const ADVICE_CATEGORY_TABS: Array<{ code: AdviceCategory; label: string }> = [
 const activeCategory = ref<AdviceCategory>('ALL');
 const showPopup = ref(false);
 const keyword = ref('');
-/** 只看库存>0；默认关=零库存与有库存均展示 */
-const onlyPositiveStock = ref(false);
+/** 只看库存>0；默认开=后端分页过滤，关则含零库存 */
+const onlyPositiveStock = ref(true);
 const loading = ref(false);
 const options = ref<AdviceProductOption[]>([]);
 const pageNo = ref(1);
@@ -116,13 +132,25 @@ const selectedLabel = computed(() => {
  * 未改过时已选药品继续显示名称，避免打开瞬间变空触发 clearable 清掉 selectedId。
  */
 const searchEdited = ref(false);
+/**
+ * 当前 selectedId 下用户已改过检索：再展开不再强制回填旧药名，直到换选新品。
+ */
+const skipSelectedLabelSeed = ref(false);
+
+/** 选中项变化：允许下一次展开再回填新药名 */
+watch(
+  () => props.modelValue,
+  () => {
+    skipSelectedLabelSeed.value = false;
+  },
+);
 
 /** 中药等「不保留上次选品」场景：清空检索词/分类/旧列表，避免下一味看起来像空列表 */
 function resetEphemeralSearchState() {
   keyword.value = '';
   searchEdited.value = false;
   activeCategory.value = 'ALL';
-  onlyPositiveStock.value = false;
+  onlyPositiveStock.value = true;
   pageNo.value = 1;
   options.value = [];
   gridOptions.data = [];
@@ -132,10 +160,23 @@ function resetEphemeralSearchState() {
   keyboardRowIndex.value = -1;
 }
 
-/** 打开下拉前准备检索态：西药保留药名；中药强制空白重搜 */
+/** 标记用户正在换药检索，后续展开勿再灌回旧药名 */
+function markSearchingToReplaceSelection() {
+  searchEdited.value = true;
+  if (props.keepSelectedLabelOnOpen) {
+    skipSelectedLabelSeed.value = true;
+  }
+}
+
+/** 打开下拉前准备检索态：西药首次保留药名；已改检索则空白；中药强制空白重搜 */
 function prepareOpenKeyword() {
   searchEdited.value = false;
   if (props.keepSelectedLabelOnOpen) {
+    // 用户已改过检索（想换药）：空白重搜，勿把旧药名盖回去
+    if (skipSelectedLabelSeed.value) {
+      keyword.value = '';
+      return;
+    }
     if (props.modelValue) {
       const label = selectedLabel.value;
       if (label) {
@@ -148,14 +189,213 @@ function prepareOpenKeyword() {
   resetEphemeralSearchState();
 }
 
+/**
+ * 展开后短时忽略 Enter 选中，避免：
+ * - 剂量框短时间双击回车展开后连带第三次回车误选首行
+ * - 检索框回车刚展开时连按误选
+ */
+const ENTER_SELECT_GUARD_MS = 450;
+let enterSelectGuardUntil = 0;
+
+/** 开启 Enter 选中防抖窗口 */
+function armEnterSelectGuard() {
+  enterSelectGuardUntil = Date.now() + ENTER_SELECT_GUARD_MS;
+}
+
+/** 当前是否处于 Enter 选中防抖期内 */
+function isEnterSelectGuarded() {
+  return Date.now() < enterSelectGuardUntil;
+}
+
+/** 查找当前实例已 transfer 到 body 的选品下拉面板 */
+function findTransferredDropdownPanel(): HTMLElement | null {
+  const nodes = document.querySelectorAll<HTMLElement>('.vxe-pulldown--panel');
+  for (const node of nodes) {
+    if (!node.querySelector('.advice-order-select-dropdown')) continue;
+    const style = getComputedStyle(node);
+    if (style.display === 'none' || style.visibility === 'hidden') continue;
+    return node;
+  }
+  return null;
+}
+
+/** 给元素写入宽高定位（!important，避免被 vxe / Tailwind 盖掉） */
+function setImportantStyle(el: HTMLElement, prop: string, value: string) {
+  el.style.setProperty(prop, value, 'important');
+}
+
+/** 中药选品列表固定宽度（小于原 820，避免超宽后被 vxe 左移再二次校正） */
+const TCM_DROPDOWN_WIDTH_PX = 680;
+
+function needsDropdownHostLayout() {
+  return (
+    Boolean(props.dropdownAlignTriggerLeft) ||
+    Boolean(props.dropdownFillToHostRight) ||
+    Number(props.dropdownLeftClearance ?? 0) > 0
+  );
+}
+
+/**
+ * 校正下拉定位（成功返回 true）：
+ * - alignTriggerLeft：左缘贴检索框，宽度固定 TCM_DROPDOWN_WIDTH_PX
+ * - fillToHostRight：左缘相对剂量列右缘，右缘撑满药表行尾
+ * - 否则仅按 dropdownLeftClearance 推左缘
+ */
+function applyDropdownHostLayout(): boolean {
+  const alignTriggerLeft = Boolean(props.dropdownAlignTriggerLeft);
+  const fillToHostRight = Boolean(props.dropdownFillToHostRight);
+  const clearance = Number(props.dropdownLeftClearance ?? 0);
+  if (!needsDropdownHostLayout()) return false;
+
+  const panel = findTransferredDropdownPanel();
+  if (!panel) return false;
+  const trigger = triggerWrapRef.value;
+  const host = trigger?.closest('.tcm-rx-panel') ?? trigger?.closest('.tcm-herb-workspace') ?? null;
+
+  // 优先：左缘贴齐检索表单 + 固定较小宽度（首帧完成，避免二次跳动）
+  if (alignTriggerLeft && trigger) {
+    const leftPx = `${Math.round(trigger.getBoundingClientRect().left)}px`;
+    const widthPx = `${TCM_DROPDOWN_WIDTH_PX}px`;
+    setImportantStyle(panel, 'left', leftPx);
+    setImportantStyle(panel, 'right', 'auto');
+    setImportantStyle(panel, 'width', widthPx);
+    setImportantStyle(panel, 'max-width', widthPx);
+    setImportantStyle(panel, 'min-width', '0');
+    setImportantStyle(panel, 'box-sizing', 'border-box');
+    const sized = panel.querySelectorAll<HTMLElement>(
+      '.advice-order-select-dropdown, .vxe-pulldown--wrapper, .vxe-pulldown--panel-wrapper',
+    );
+    sized.forEach((el) => {
+      setImportantStyle(el, 'width', '100%');
+      setImportantStyle(el, 'max-width', 'none');
+      setImportantStyle(el, 'min-width', '0');
+      setImportantStyle(el, 'box-sizing', 'border-box');
+    });
+    return true;
+  }
+
+  if (fillToHostRight && host) {
+    const hostRect = host.getBoundingClientRect();
+    const doseEl = host.querySelector('.tcm-herb-workspace__col-dose');
+    const stripsEl = host.querySelector('.tcm-herb-workspace__strips');
+    // 剂量右缘 -8（相对上一版再右移 20px）；右缘贴药表 strips 行尾
+    const left = doseEl
+      ? doseEl.getBoundingClientRect().right - 8
+      : hostRect.left + (clearance > 0 ? clearance : 220);
+    const right = (stripsEl ?? host).getBoundingClientRect().right;
+    const width = Math.max(360, Math.round(right - left));
+    const leftPx = `${Math.round(left)}px`;
+    const widthPx = `${width}px`;
+    setImportantStyle(panel, 'left', leftPx);
+    setImportantStyle(panel, 'right', 'auto');
+    setImportantStyle(panel, 'width', widthPx);
+    setImportantStyle(panel, 'max-width', widthPx);
+    setImportantStyle(panel, 'min-width', '0');
+    setImportantStyle(panel, 'box-sizing', 'border-box');
+    const sized = panel.querySelectorAll<HTMLElement>(
+      '.advice-order-select-dropdown, .vxe-pulldown--wrapper, .vxe-pulldown--panel-wrapper',
+    );
+    sized.forEach((el) => {
+      setImportantStyle(el, 'width', '100%');
+      setImportantStyle(el, 'max-width', 'none');
+      setImportantStyle(el, 'min-width', '0');
+      setImportantStyle(el, 'box-sizing', 'border-box');
+    });
+    return true;
+  }
+
+  if (!host || !(clearance > 0)) return false;
+  const baseLeft = host.getBoundingClientRect().left;
+  const minLeft = baseLeft + clearance;
+  const currentLeft = panel.getBoundingClientRect().left;
+  if (currentLeft >= minLeft - 0.5) return true;
+  const delta = minLeft - currentLeft;
+  const styleLeft = Number.parseFloat(panel.style.left || '');
+  if (Number.isFinite(styleLeft)) {
+    panel.style.left = `${styleLeft + delta}px`;
+    return true;
+  }
+  panel.style.left = `${minLeft}px`;
+  return true;
+}
+
+/** 清理 transfer 面板上的一次性定位标记，避免下次展开残留 */
+function resetTransferredDropdownLayoutMarks() {
+  const nodes = document.querySelectorAll<HTMLElement>('.vxe-pulldown--panel');
+  nodes.forEach((node) => {
+    if (!node.querySelector('.advice-order-select-dropdown')) return;
+    delete node.dataset.layoutReady;
+    node.style.removeProperty('opacity');
+  });
+}
+
+let dropdownLayoutObserver: MutationObserver | null = null;
+
+/** 面板插入后先透明再一次性定位，避免先错位再跳回 */
+function scheduleDropdownHostLayout() {
+  if (!needsDropdownHostLayout()) return;
+
+  const reveal = (panel: HTMLElement) => {
+    if (panel.dataset.layoutReady === '1') return true;
+    setImportantStyle(panel, 'opacity', '0');
+    if (!applyDropdownHostLayout()) return false;
+    panel.dataset.layoutReady = '1';
+    setImportantStyle(panel, 'opacity', '1');
+    return true;
+  };
+
+  const tryApply = () => {
+    const panel = findTransferredDropdownPanel();
+    if (!panel) return false;
+    return reveal(panel);
+  };
+
+  if (tryApply()) return;
+
+  dropdownLayoutObserver?.disconnect();
+  dropdownLayoutObserver = new MutationObserver(() => {
+    if (tryApply()) {
+      dropdownLayoutObserver?.disconnect();
+      dropdownLayoutObserver = null;
+    }
+  });
+  dropdownLayoutObserver.observe(document.body, { childList: true, subtree: true });
+
+  void nextTick(() => {
+    if (tryApply()) {
+      dropdownLayoutObserver?.disconnect();
+      dropdownLayoutObserver = null;
+    }
+  });
+
+  window.setTimeout(() => {
+    tryApply();
+    dropdownLayoutObserver?.disconnect();
+    dropdownLayoutObserver = null;
+  }, 120);
+}
+
+/** 中药对齐模式用更窄固定宽；撑满行尾时交给定位脚本 */
+const dropdownPanelClass = computed(() => {
+  const base =
+    'advice-order-select-dropdown border border-[#dcdfe6] bg-white p-2 shadow-[0_6px_16px_rgb(0_0_0_/_12%)]';
+  if (props.dropdownAlignTriggerLeft) {
+    return `${base} w-[680px] min-w-0 max-w-[min(100vw-48px,680px)]`;
+  }
+  if (props.dropdownFillToHostRight) {
+    return `${base} w-full min-w-0 max-w-none`;
+  }
+  return `${base} w-[min(100vw-48px,920px)] min-w-[820px]`;
+});
+
 /** 点击输入框打开下拉 */
 function openPopup() {
-  prepareOpenKeyword();
+  // 已展开再点：只重拉，勿 prepareOpenKeyword（否则会把正在输入的词打回旧药名）
   if (showPopup.value) {
-    // 已展开时再点：仍按当前模式重拉，避免残留关键字不刷新
     void loadOptions();
     return;
   }
+  prepareOpenKeyword();
   showPopup.value = true;
 }
 
@@ -180,6 +420,7 @@ const inputValue = computed({
       props.keepSelectedLabelOnOpen &&
       props.modelValue &&
       !searchEdited.value &&
+      !skipSelectedLabelSeed.value &&
       keyword.value === ''
     ) {
       return selectedLabel.value;
@@ -187,7 +428,7 @@ const inputValue = computed({
     return keyword.value;
   },
   set(v: string) {
-    searchEdited.value = true;
+    markSearchingToReplaceSelection();
     keyword.value = v;
   },
 });
@@ -264,19 +505,10 @@ const syncGridCurrentRow = async () => {
   }
 };
 
-/** 当前页结果按「只看库存>0」过滤；无库存字段的行（如诊疗）仍保留。 */
-function applyPositiveStockFilter(list: AdviceProductOption[]): AdviceProductOption[] {
-  if (!onlyPositiveStock.value) {
-    return list;
-  }
-  return list.filter((row) => !isAdviceCatalogZeroStock(row));
-}
-
-/** 把 options 同步到表格（含库存开关过滤）并重置键盘高亮。 */
+/** 把 options 同步到表格并重置键盘高亮（库存过滤已在后端分页完成）。 */
 function syncGridDataFromOptions() {
-  const filtered = applyPositiveStockFilter(options.value);
-  gridOptions.data = filtered;
-  keyboardRowIndex.value = filtered.length > 0 ? 0 : -1;
+  gridOptions.data = options.value;
+  keyboardRowIndex.value = options.value.length > 0 ? 0 : -1;
 }
 
 const loadOptions = async () => {
@@ -288,6 +520,7 @@ const loadOptions = async () => {
       pageSize: pageSize.value,
       keyword: keyword.value.trim(),
       productTableNames: productTableNamesForCategory(activeCategory.value),
+      positiveQuantityOnly: onlyPositiveStock.value,
     });
     // 关闭下拉或连续重开后丢弃过期响应，避免旧关键字结果盖住空白重搜
     if (generation !== loadGeneration) {
@@ -308,6 +541,10 @@ const loadOptions = async () => {
   }
   if (generation === loadGeneration) {
     await syncGridCurrentRow();
+    // 仅撑满行尾模式需要在数据回填后重算宽度；对齐模式禁止二次校正（会跳一下）
+    if (props.dropdownFillToHostRight) {
+      scheduleDropdownHostLayout();
+    }
   }
 };
 
@@ -346,6 +583,8 @@ watch(
     if (n === lastHandledExpandNonce.value) return;
     lastHandledExpandNonce.value = n;
     const alreadyOpen = showPopup.value;
+    // 剂量双击回车展开：短时吞掉紧随的 Enter，防止误选首行药品
+    armEnterSelectGuard();
     prepareOpenKeyword();
     showPopup.value = true;
     // 已展开时 showPopup watch 不触发，需显式重拉（中药连续加药常见）
@@ -353,6 +592,7 @@ watch(
       void loadOptions();
     }
     await focusTriggerInput();
+    scheduleDropdownHostLayout();
   },
 );
 
@@ -378,7 +618,12 @@ watch(
       pageNo.value = 1;
       // Enter 等未走 prepareOpenKeyword 的入口：按模式补齐检索态
       if (props.keepSelectedLabelOnOpen) {
-        if (props.modelValue && !searchEdited.value && !keyword.value) {
+        if (
+          props.modelValue &&
+          !searchEdited.value &&
+          !keyword.value &&
+          !skipSelectedLabelSeed.value
+        ) {
           const label = selectedLabel.value;
           if (label) {
             keyword.value = label;
@@ -389,13 +634,17 @@ watch(
         resetEphemeralSearchState();
       }
       void loadOptions();
+      scheduleDropdownHostLayout();
       return;
     }
     // 关闭：作废在途请求；中药额外清掉旧列表，避免下次先闪空/旧结果
     loadGeneration += 1;
+    dropdownLayoutObserver?.disconnect();
+    dropdownLayoutObserver = null;
+    resetTransferredDropdownLayoutMarks();
     keyword.value = '';
     searchEdited.value = false;
-    onlyPositiveStock.value = false;
+    onlyPositiveStock.value = true;
     keyboardRowIndex.value = -1;
     if (!props.keepSelectedLabelOnOpen) {
       options.value = [];
@@ -423,8 +672,9 @@ watch(keyword, () => {
 
 watch(onlyPositiveStock, () => {
   if (!showPopup.value) return;
-  syncGridDataFromOptions();
-  void syncGridCurrentRow();
+  // 开关变更须重新请求后端分页，禁止只筛当前页
+  pageNo.value = 1;
+  void loadOptions();
 });
 
 /** 选品：零库存拦截并提示，不关闭下拉、不回写选中项 */
@@ -443,6 +693,8 @@ const handleInputKeydown = (params: { $event: KeyboardEvent }) => {
   if (e.isComposing) return;
   if (e.key === 'Enter' && !showPopup.value) {
     e.preventDefault();
+    // 回车刚展开时同样防抖，避免连按直接选中首行
+    armEnterSelectGuard();
     openPopup();
     return;
   }
@@ -452,6 +704,8 @@ const handleInputKeydown = (params: { $event: KeyboardEvent }) => {
 
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
     e.preventDefault();
+    // 用户已主动上下选择，解除误选防抖
+    enterSelectGuardUntil = 0;
     let next = keyboardRowIndex.value;
     if (next < 0 || next >= len) {
       next = e.key === 'ArrowDown' ? 0 : len - 1;
@@ -467,6 +721,7 @@ const handleInputKeydown = (params: { $event: KeyboardEvent }) => {
 
   if (e.key === 'Enter') {
     e.preventDefault();
+    if (isEnterSelectGuarded()) return;
     let idx = keyboardRowIndex.value;
     if (idx < 0 || idx >= len) idx = 0;
     const row = gridOptions.data[idx];
@@ -486,7 +741,7 @@ const handlePageChange: VxePagerEvents.PageChange = ({ currentPage, pageSize: si
  */
 function handleInputClear() {
   if (props.keepSelectedLabelOnOpen && props.modelValue) {
-    searchEdited.value = true;
+    markSearchingToReplaceSelection();
     keyword.value = '';
     pageNo.value = 1;
     showPopup.value = true;
@@ -527,9 +782,7 @@ function handleInputClear() {
         </div>
       </template>
       <template #dropdown>
-        <div
-          class="advice-order-select-dropdown w-[min(100vw-24px,1280px)] min-w-[1120px] border border-[#dcdfe6] bg-white p-2 shadow-[0_6px_16px_rgb(0_0_0_/_12%)]"
-        >
+        <div :class="dropdownPanelClass">
           <div
             class="mb-2 flex items-center gap-1 rounded border border-[#d7e4f2] bg-[#f6fbff] p-1"
           >

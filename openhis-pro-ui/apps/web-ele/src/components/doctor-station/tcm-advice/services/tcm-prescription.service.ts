@@ -9,9 +9,11 @@ import type {
   TcmRxLineDto,
   WithdrawOrDeleteTcmRxRequest,
 } from '#/api/doctor-station/tcm.types';
+import type { DiagnosisItem } from '#/components/doctor-station/diagnosis';
 import type { AdviceProductOption } from '#/views/outpatient/doctor-station/advice';
 
 import { formatTcmDiagnosisDisplayName } from '#/components/doctor-station/diagnosis/services/tcm-diagnosis-display';
+import { parseEncounterDiagnosisIds } from '#/components/doctor-station/diagnosis/services/encounter-diagnosis-select';
 import {
   convertProductUnitPriceBetweenBandKinds,
   normalizeProductUnitBandsForPrice,
@@ -35,7 +37,7 @@ export const TCM_RX_STATUS_STOPPED = 'STOPPED';
 
 /**
  * 代煎 companion 诊疗项目名称（与后端 DoctorStationTcmConstants.DECOCTION_ACTIVITY_NAME 一致）。
- * 签发后代煎费挂在开立医嘱列表；应在中药处方页展示并自西药医嘱列表排除。
+ * 签发后代煎费挂在开立医嘱列表；中药处方页同步展示费用。
  */
 export const TCM_DECOCTION_ACTIVITY_NAME = '代煎中药';
 
@@ -72,6 +74,8 @@ export interface TcmPrescriptionLineUi {
   sortNumber: number;
   retailPrice: number;
   dispenseLocationId?: string;
+  /** 行级费用态码（ChargeItemStatus） */
+  chargeStatusEnum?: string;
   chargeStatusText?: string;
   lineStatusEnum?: string;
   /** 待提交删除的行 */
@@ -88,6 +92,10 @@ export interface TcmPrescriptionLineUi {
   chrgitmLv?: number | string;
   /** 医保等级展示名（甲类/乙类/自费等） */
   chrgitmLvText?: string;
+  /** 行级费用性质/合同主键（以行为主，自费等级仅本行切自费） */
+  contractId?: string;
+  /** 行级费用性质展示名 */
+  feeNatureText?: string;
   /**
    * 选品时当前 FIFO 批剩余（包装单位数值）；改剂量时软校验请求量是否超批。
    * 仅前端缓存，不落库。
@@ -106,6 +114,8 @@ export interface TcmPrescriptionUi {
   /** 住院方头长临 */
   therapyEnum?: string;
   tcmSyndromeGroup: string;
+  /** 方头绑定就诊诊断 id（多选，与西医开嘱同口径） */
+  encounterDiagnosisIds: string[];
   chineseHerbsDoseQuantity?: number;
   sufferingFlag: boolean;
   methodCode: string;
@@ -115,13 +125,29 @@ export interface TcmPrescriptionUi {
   days?: number;
   remark: string;
   statusEnum: string;
-  /** 方状态展示码（退费态优先于请求态） */
+  /** 方状态展示码（退费态优先于请求态；签发态与费用态分列后仅兼容保留） */
   displayStatusEnum?: string;
   /** 方状态展示文案 */
   displayStatusEnumText?: string;
+  /** 方级费用态码（ChargeItemStatus 归并） */
+  chargeStatusEnum?: string;
+  /** 方级费用态展示文案 */
+  chargeStatusText?: string;
+  /** 方头默认费用性质/合同主键（新开行回落；行可各自覆盖） */
+  contractId?: string;
+  /** 方头默认费用性质展示名 */
+  feeNatureText?: string;
   lines: TcmPrescriptionLineUi[];
   /** 方头相对上次暂存有改动 */
   headerDirty?: boolean;
+}
+
+/** 历史/组套侧栏 Tooltip 单味药 */
+export interface TcmHerbTooltipItem {
+  /** 药名 */
+  name: string;
+  /** 单剂克数文案，如 15g；无剂量时为空 */
+  doseText: string;
 }
 
 /** 历史处方侧栏节点 */
@@ -130,10 +156,14 @@ export interface TcmHistoryTreeItem {
   prescriptionNo: string;
   summaryText: string;
   herbSummary: string;
+  /** hover 结构化药材（含克数，优先来自 detail.lines） */
+  herbItems: TcmHerbTooltipItem[];
   /** 树节点展示：味数 · 开立人 · 日期 */
   treeLabel: string;
   authoredByName: string;
   openedDateText: string;
+  /** 是否本次就诊（侧栏「本次」标签） */
+  currentVisit: boolean;
   row: TcmRxHistoryRowDto;
 }
 
@@ -233,14 +263,11 @@ export function canCancelStopLongTermTcmPrescription(
   return toStr(rx.statusEnum).toUpperCase() === TCM_RX_STATUS_STOPPED;
 }
 
-/** 方状态 Tag 类型 */
+/** 方签发态 Tag 类型（仅认 statusEnum，退费走费用状态列） */
 export function resolveTcmRxStatusTagType(
   statusEnum?: null | string,
-  displayStatusEnum?: null | string,
 ): '' | 'danger' | 'info' | 'success' | 'warning' {
-  const status = toStr(displayStatusEnum || statusEnum).toUpperCase();
-  if (status === 'REFUNDED') return 'danger';
-  if (status === 'REFUNDING') return 'warning';
+  const status = toStr(statusEnum).toUpperCase();
   if (status === 'ACTIVE' || status === 'COMPLETED') return 'success';
   if (status === 'DRAFT') return 'info';
   if (status === 'STOPPED') return 'danger';
@@ -249,17 +276,8 @@ export function resolveTcmRxStatusTagType(
   return '';
 }
 
-/** 方状态展示文案 */
-export function resolveTcmRxStatusLabel(
-  statusEnum?: null | string,
-  displayStatusEnumText?: null | string,
-  displayStatusEnum?: null | string,
-): string {
-  const displayText = toStr(displayStatusEnumText);
-  if (displayText) return displayText;
-  const displayCode = toStr(displayStatusEnum).toUpperCase();
-  if (displayCode === 'REFUNDING') return '待退费';
-  if (displayCode === 'REFUNDED') return '已退费';
+/** 方签发态展示文案（与费用态分列，不再用退费 displayStatus 覆盖） */
+export function resolveTcmRxStatusLabel(statusEnum?: null | string): string {
   const status = toStr(statusEnum).toUpperCase();
   const map: Record<string, string> = {
     DRAFT: '草稿',
@@ -274,6 +292,20 @@ export function resolveTcmRxStatusLabel(
   return map[status] ?? (status || '草稿');
 }
 
+/**
+ * 方级费用状态展示文案：草稿/空统一「—」，与开立医嘱列表口径一致。
+ */
+export function resolveTcmRxChargeStatusLabel(
+  chargeStatusEnum?: null | string,
+  chargeStatusText?: null | string,
+): string {
+  const code = toStr(chargeStatusEnum).toUpperCase();
+  if (!code || code === 'DRAFT') {
+    return '—';
+  }
+  return toStr(chargeStatusText) || code || '—';
+}
+
 /** 读模型方头 → UI */
 export function mapApiHeaderToUi(dto: TcmRxHeaderDto): TcmPrescriptionUi {
   const groupKey = toStr(dto.prescriptionGroupKey) || createPrescriptionGroupKey();
@@ -282,6 +314,7 @@ export function mapApiHeaderToUi(dto: TcmRxHeaderDto): TcmPrescriptionUi {
     prescriptionNo: toStr(dto.prescriptionNo) || undefined,
     therapyEnum: toStr(dto.therapyEnum) || undefined,
     tcmSyndromeGroup: toStr(dto.tcmSyndromeGroup),
+    encounterDiagnosisIds: parseEncounterDiagnosisIds(dto.encounterDiagnosisIds),
     chineseHerbsDoseQuantity: toOptionalPositiveNum(dto.chineseHerbsDoseQuantity),
     sufferingFlag: Boolean(dto.sufferingFlag),
     methodCode: toStr(dto.methodCode),
@@ -293,6 +326,10 @@ export function mapApiHeaderToUi(dto: TcmRxHeaderDto): TcmPrescriptionUi {
     statusEnum: toStr(dto.statusEnum) || TCM_RX_STATUS_DRAFT,
     displayStatusEnum: toStr(dto.displayStatusEnum) || undefined,
     displayStatusEnumText: toStr(dto.displayStatusEnumText) || undefined,
+    chargeStatusEnum: toStr(dto.chargeStatusEnum) || undefined,
+    chargeStatusText: toStr(dto.chargeStatusText) || undefined,
+    contractId: toStr(dto.contractId) || undefined,
+    feeNatureText: toStr(dto.feeNatureText) || undefined,
     lines: sortTcmPrescriptionLines(dto.lines ?? []).map((line, index) =>
       mapApiLineToUi(line, index),
     ),
@@ -318,6 +355,7 @@ export function mapApiLineToUi(dto: TcmRxLineDto, index: number): TcmPrescriptio
     unitCode: toStr(dto.unitCode) || doseUnitCode || undefined,
     sortNumber: dto.sortNumber ?? index + 1,
     retailPrice: toNum(dto.retailUnitPrice, 0),
+    chargeStatusEnum: toStr(dto.chargeStatusEnum) || undefined,
     chargeStatusText: toStr(dto.chargeStatusText) || undefined,
     lineStatusEnum: toStr(dto.lineStatusEnum) || undefined,
     pendingDelete: false,
@@ -325,6 +363,8 @@ export function mapApiLineToUi(dto: TcmRxLineDto, index: number): TcmPrescriptio
     isNew: false,
     dosageInstructionCode: toStr(dto.dosageInstructionCode) || undefined,
     dosageInstructionText: toStr(dto.dosageInstructionText) || undefined,
+    contractId: toStr(dto.contractId) || undefined,
+    feeNatureText: toStr(dto.feeNatureText) || undefined,
   };
 }
 
@@ -359,23 +399,77 @@ export function formatTcmHistoryTreeLabel(params: {
   return parts.join(' · ');
 }
 
+/** 历史明细行 → 单剂克数展示（与药卡克数整数口径一致） */
+function formatHistoryLineDoseText(line: TcmRxLineDto): string {
+  const dose = toOptionalPositiveNum(line.dose);
+  if (dose == null) {
+    return '';
+  }
+  const unit = toStr(line.doseUnitName) || toStr(line.doseUnitCode) || 'g';
+  return `${Math.round(dose)}${unit}`;
+}
+
+/** 历史方 → Tooltip 药材列表（优先 detail 带克数，否则仅药名） */
+export function buildHistoryHerbTooltipItems(row: TcmRxHistoryRowDto): TcmHerbTooltipItem[] {
+  const detailLines = row.detail?.lines ?? [];
+  if (detailLines.length > 0) {
+    // 按 detail 行组装：药名 + 单剂克数
+    const fromDetail: TcmHerbTooltipItem[] = [];
+    for (const line of detailLines) {
+      const name = toStr(line.medicationName);
+      if (!name) {
+        continue;
+      }
+      fromDetail.push({
+        name,
+        doseText: formatHistoryLineDoseText(line),
+      });
+    }
+    if (fromDetail.length > 0) {
+      return fromDetail;
+    }
+  }
+  // 无 detail 时回落药名列表（无克数）
+  return (row.medicationNames ?? [])
+    .map((name) => toStr(name))
+    .filter((name) => Boolean(name))
+    .map((name) => ({ name, doseText: '' }));
+}
+
+/** Tooltip 药材列表 → 搜索用摘要文案 */
+function formatHerbSummaryFromItems(items: readonly TcmHerbTooltipItem[]): string {
+  return items
+    .map((item) => (item.doseText ? `${item.name} ${item.doseText}` : item.name))
+    .join('，');
+}
+
 /** 历史处方 → 侧栏节点 */
 export function mapHistoryRowToTreeItem(
   row: TcmRxHistoryRowDto,
   index: number,
+  options?: { currentEncounterId?: string },
 ): TcmHistoryTreeItem {
   const prescriptionNo = toStr(row.prescriptionNo) || `history-${index}`;
-  const names = (row.medicationNames ?? []).filter((n) => toStr(n));
+  const herbItems = buildHistoryHerbTooltipItems(row);
   const summaryText = toStr(row.summaryText) || prescriptionNo;
   const authoredByName = toStr(row.authoredByName);
   const openedDateText = formatHistoryOpenedDateText(row.reqOpenedTime);
+  const rowEncounterId = preserveApiIdForRequest(row.encounterId);
+  const currentEncounterId = preserveApiIdForRequest(options?.currentEncounterId);
+  // 优先后端 currentEncounterFlag；缺省时按就诊 id 对照
+  let currentVisit = row.currentEncounterFlag === true;
+  if (!currentVisit && currentEncounterId && rowEncounterId) {
+    currentVisit = rowEncounterId === currentEncounterId;
+  }
   return {
     id: `history-${prescriptionNo}-${index}`,
     prescriptionNo,
     summaryText,
-    herbSummary: names.join('，'),
+    herbItems,
+    herbSummary: formatHerbSummaryFromItems(herbItems),
     authoredByName,
     openedDateText,
+    currentVisit,
     treeLabel: formatTcmHistoryTreeLabel({
       summaryText,
       authoredByName,
@@ -392,11 +486,14 @@ export function createEmptyPrescription(
   defaultMethodCode = '',
   defaultRateCode = '',
   therapyEnum?: string,
+  defaultContractId = '',
+  defaultFeeNatureText = '',
 ): TcmPrescriptionUi {
   return {
     prescriptionGroupKey: createPrescriptionGroupKey(),
     therapyEnum: therapyEnum || undefined,
     tcmSyndromeGroup,
+    encounterDiagnosisIds: [],
     chineseHerbsDoseQuantity,
     sufferingFlag: false,
     methodCode: defaultMethodCode,
@@ -404,9 +501,60 @@ export function createEmptyPrescription(
     days: undefined,
     remark: '',
     statusEnum: TCM_RX_STATUS_DRAFT,
+    contractId: toStr(defaultContractId) || undefined,
+    feeNatureText: toStr(defaultFeeNatureText) || undefined,
     lines: [],
     headerDirty: false,
   };
+}
+
+/**
+ * 由已选就诊诊断推导方头病证组号（取首个带组号的中医项，供后端校验/content_json）。
+ */
+export function resolveTcmSyndromeGroupFromDiagnosisIds(
+  selectedIds: string[],
+  options: DiagnosisItem[],
+): string {
+  const idSet = new Set(parseEncounterDiagnosisIds(selectedIds));
+  for (const item of options) {
+    const id = String(item.encounterDiagnosisId ?? item.id ?? '').trim();
+    if (!id || !idSet.has(id)) {
+      continue;
+    }
+    const group = String(item.tcmSyndromeGroup ?? '').trim();
+    if (group) {
+      return group;
+    }
+  }
+  return '';
+}
+
+/**
+ * 方头诊断多选回显：优先已落库 ids；否则按病证组号匹配候选项。
+ */
+export function resolveTcmPrescriptionDiagnosisIds(
+  rx: Pick<TcmPrescriptionUi, 'encounterDiagnosisIds' | 'tcmSyndromeGroup'>,
+  options: DiagnosisItem[],
+): string[] {
+  const fromRx = parseEncounterDiagnosisIds(rx.encounterDiagnosisIds);
+  if (fromRx.length > 0) {
+    const valid = new Set(
+      options
+        .map((item) => String(item.encounterDiagnosisId ?? item.id ?? '').trim())
+        .filter(Boolean),
+    );
+    const kept = fromRx.filter((id) => valid.has(id));
+    if (kept.length > 0) {
+      return kept;
+    }
+  }
+  const group = toStr(rx.tcmSyndromeGroup);
+  if (!group) {
+    return [];
+  }
+  const hit = options.find((item) => String(item.tcmSyndromeGroup ?? '').trim() === group);
+  const id = String(hit?.encounterDiagnosisId ?? hit?.id ?? '').trim();
+  return id ? [id] : [];
 }
 
 /** 空白明细行 */
@@ -640,7 +788,12 @@ export function calcSingleDoseAmount(lines: TcmPrescriptionLineUi[]): number {
 export function validatePrescriptionHeaderFields(
   rx: Pick<
     TcmPrescriptionUi,
-    'chineseHerbsDoseQuantity' | 'methodCode' | 'rateCode' | 'tcmSyndromeGroup' | 'therapyEnum'
+    | 'chineseHerbsDoseQuantity'
+    | 'contractId'
+    | 'methodCode'
+    | 'rateCode'
+    | 'tcmSyndromeGroup'
+    | 'therapyEnum'
   >,
   options?: { requireTherapy?: boolean },
 ): null | string {
@@ -649,6 +802,9 @@ export function validatePrescriptionHeaderFields(
   }
   if (options?.requireTherapy && !String(rx.therapyEnum ?? '').trim()) {
     return '请选择医嘱类型（长期/临时）';
+  }
+  if (!String(rx.contractId ?? '').trim()) {
+    return '请选择费用性质';
   }
   if (!String(rx.methodCode ?? '').trim()) {
     return '请选择用法';
@@ -750,6 +906,11 @@ export function buildDraftSaveRequest(
         if (line.dispenseLocationId) {
           base.dispenseLocationId = line.dispenseLocationId;
         }
+        // 行级合同优先；空则后端回落方头默认
+        const lineContractId = toStr(line.contractId) || toStr(rx.contractId);
+        if (lineContractId) {
+          base.contractId = lineContractId;
+        }
         draftLines.push(base);
       });
       // 标记删除的已落库行（带上 dose，兼容未升级后端对 DELETE 仍算付数的路径）
@@ -762,16 +923,19 @@ export function buildDraftSaveRequest(
           doseUnitCode: line.doseUnitCode || 'g',
         });
       });
+      const encounterDiagnosisIds = parseEncounterDiagnosisIds(rx.encounterDiagnosisIds).join(',');
       return {
         prescriptionGroupKey: rx.prescriptionGroupKey,
         therapyEnum: rx.therapyEnum || undefined,
         tcmSyndromeGroup: rx.tcmSyndromeGroup,
+        ...(encounterDiagnosisIds ? { encounterDiagnosisIds } : {}),
         chineseHerbsDoseQuantity: rx.chineseHerbsDoseQuantity ?? 0,
         sufferingFlag: rx.sufferingFlag,
         methodCode: rx.methodCode || undefined,
         rateCode: rx.rateCode || undefined,
         days: rx.days || undefined,
         remark: rx.remark || undefined,
+        ...(toStr(rx.contractId) ? { contractId: toStr(rx.contractId) } : {}),
         lines: draftLines,
       };
     })
@@ -871,7 +1035,10 @@ export function syncHeaderFormToPrescription(
   rx: TcmPrescriptionUi,
   form: {
     chineseHerbsDoseQuantity?: number;
+    contractId?: string;
     days?: number;
+    encounterDiagnosisIds?: string[];
+    feeNatureText?: string;
     methodCode: string;
     rateCode: string;
     sufferingFlag: boolean;
@@ -880,6 +1047,7 @@ export function syncHeaderFormToPrescription(
   },
 ): void {
   rx.tcmSyndromeGroup = form.tcmSyndromeGroup;
+  rx.encounterDiagnosisIds = parseEncounterDiagnosisIds(form.encounterDiagnosisIds);
   if (form.therapyEnum !== undefined) {
     rx.therapyEnum = form.therapyEnum;
   }
@@ -888,6 +1056,8 @@ export function syncHeaderFormToPrescription(
   rx.methodCode = form.methodCode;
   rx.rateCode = form.rateCode;
   rx.days = form.days;
+  rx.contractId = toStr(form.contractId) || undefined;
+  rx.feeNatureText = toStr(form.feeNatureText) || undefined;
   rx.headerDirty = true;
 }
 
@@ -896,22 +1066,28 @@ export function loadHeaderFormFromPrescription(rx: null | TcmPrescriptionUi) {
   if (!rx) {
     return {
       tcmSyndromeGroup: '',
+      encounterDiagnosisIds: [] as string[],
       therapyEnum: '',
       chineseHerbsDoseQuantity: undefined,
       sufferingFlag: false,
       methodCode: '',
       rateCode: '',
       days: undefined,
+      contractId: '',
+      feeNatureText: '',
     };
   }
   return {
     tcmSyndromeGroup: rx.tcmSyndromeGroup,
+    encounterDiagnosisIds: [...(rx.encounterDiagnosisIds ?? [])],
     therapyEnum: rx.therapyEnum ?? '',
     chineseHerbsDoseQuantity: rx.chineseHerbsDoseQuantity,
     sufferingFlag: rx.sufferingFlag,
     methodCode: rx.methodCode,
     rateCode: rx.rateCode,
     days: rx.days,
+    contractId: rx.contractId ?? '',
+    feeNatureText: rx.feeNatureText ?? '',
   };
 }
 

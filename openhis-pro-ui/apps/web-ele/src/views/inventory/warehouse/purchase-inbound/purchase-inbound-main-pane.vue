@@ -17,12 +17,13 @@ import type {
 
 import type { FormInstance } from 'element-plus';
 
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onDeactivated, ref, watch } from 'vue';
 
 import { Trash2 } from '@vben/icons';
 import { formatDateTime } from '@vben/utils';
 
 import InvDocActions from '@inventory/components/inv-doc-actions.vue';
+import InvDocAmountSummaryBar from '@inventory/components/inv-doc-amount-summary-bar.vue';
 import InvDocDetailGridShell from '@inventory/components/inv-doc-detail-grid-shell.vue';
 import InvDocGridToolbar from '@inventory/components/inv-doc-grid-toolbar.vue';
 import InvDocTraceScanBridge from '@inventory/components/inv-doc-trace-scan-bridge.vue';
@@ -30,7 +31,6 @@ import InvDocLinkPickerDialog from '@inventory/components/inv-doc-link-picker-di
 import InvMainShell from '@inventory/components/inv-main-shell.vue';
 import InvPrimaryBtn from '@inventory/components/inv-primary-btn.vue';
 import {
-  ElAlert,
   ElButton,
   ElDatePicker,
   ElForm,
@@ -42,6 +42,7 @@ import {
   ElSelect,
 } from 'element-plus';
 
+import { useFinanceApprovalViewSummary } from '#/composables/use-finance-approval-view-summary';
 import { useInvDocDetailGrid } from '#/composables/use-inv-doc-detail-grid';
 import { useInvDocGridRowOps } from '#/composables/use-inv-doc-grid-row-ops';
 import { useInvDocParentSyncSession } from '#/composables/use-inv-doc-parent-sync-session';
@@ -58,12 +59,7 @@ import {
 } from '#/api/inventory/warehouse/inbound-receipt';
 import SectionTitle from '#/components/layouts/section-title.vue';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
-import {
-  INV_DOC_UPSTREAM_HINT,
-  INV_DOC_UPSTREAM_WELCOME,
-  hasNonEmptyBusNo,
-  warnInventoryDocRestriction,
-} from '#/utils/inventory/inventory-doc-restrictions';
+import { hasNonEmptyBusNo } from '#/utils/inventory/inventory-doc-restrictions';
 import PurchaseInboundBatchAddDialog from '#/views/inventory/warehouse/purchase-inbound/purchase-inbound-batch-add-dialog.vue';
 import {
   formatInventoryLineTotal,
@@ -102,6 +98,9 @@ import {
   isSpecificInventoryLocationId,
   resolveFirstRealLocationIdFromInitOptions,
   resolveSpecificInventoryLocationId,
+  warnInventoryLocationRequired,
+  resolveInvDocPreparedByName,
+  resolveInvDocApprovedByName,
 } from '#/utils/inventory/inventory-workbench-list';
 import {
   buildInventoryLocationHeadFormRules,
@@ -109,14 +108,28 @@ import {
   validateInventoryHeadFormFields,
 } from '#/utils/inventory/inventory-doc-head-form-validation';
 import { withInvDocLinkPickerEnrichedColumns } from '#/utils/inventory/inv-doc-link-picker-display';
-import { buildInvDocumentTitle, printInvDocument } from '#/utils/print/print-inv-document';
+import {
+  clearInvDocDraftCache,
+  clearInvDocDraftCacheAfterSave,
+  INV_DOC_DRAFT_SCENE,
+  mergeInvDocTraceIntoRows,
+} from '#/utils/inventory/inv-doc-draft-cache';
+import {
+  buildInvDocumentTitle,
+  printInvDocument,
+  resolveInvPrintProductBusNo,
+} from '#/utils/print/print-inv-document';
 import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
 
 interface Props {
+  /** 侧栏当前单据行（制单人/审批人与队列卡片同口径） */
+  queueCardRow?: null | Record<string, unknown>;
   /** 当前选中单据号（来自左侧列表） */
   busNo?: string;
   /** 当前为新增草稿（无后端单号） */
   isDraftOrder?: boolean;
+  /** 侧栏草稿稳定 id（_clientDraftId），用于 localStorage 缓存隔离 */
+  clientDraftId?: string;
   /** 详情拉取后明细行（后端字段，与 index tableData 同源） */
   inboundDetailRows?: Record<string, unknown>[];
   /** IF-WHS-IN-01 入库项目类型选项 */
@@ -133,7 +146,7 @@ interface Props {
   documentEditable?: boolean;
   /** IF-WHS-IN-04/05 经手人 practitionerId（医务人员主键），与 CreateInboundReceiptRequest 一致 */
   practitionerId?: number | string;
-  /** 未选中任何单据时展示欢迎空态（引导从订货单新建） */
+  /** 未选中任何单据时展示欢迎空态（引导空白新增或从订货单拉取） */
   showWelcomeEmpty?: boolean;
   /** init 制单人/经手人选项（关联弹窗制单人列解析） */
   practitionerOptions?: ApiOptionItem[];
@@ -142,8 +155,10 @@ interface Props {
 defineOptions({ name: 'PurchaseInboundMainPane' });
 
 const props = withDefaults(defineProps<Props>(), {
+  queueCardRow: null,
   busNo: '',
   isDraftOrder: false,
+  clientDraftId: '',
   inboundDetailRows: () => [],
   itemTableTypeOptions: () => [],
   resetKey: 0,
@@ -157,11 +172,15 @@ const props = withDefaults(defineProps<Props>(), {
 });
 
 const emit = defineEmits<{
+  createBlank: [];
   createFromUpstream: [row: LinkablePurchaseOrderListRowDto];
   documentChanged: [{ busNo?: string }];
   documentRemoved: [];
   documentSaved: [{ busNo?: string }];
 }>();
+
+/** 财务审批查看：页脚合计与列表金额列同口径 */
+const { showFinanceApprovalSummary, financeApprovalSummaryItems } = useFinanceApprovalViewSummary();
 
 interface HeadFormModel {
   busNo: string;
@@ -301,7 +320,8 @@ const hasLinkedUpstream = computed(() => {
   return hasNonEmptyBusNo(h as string | undefined);
 });
 
-const linesGridEditable = computed(() => props.documentEditable && hasLinkedUpstream.value);
+/** 明细可编辑：可手工选品，不强制关联订货单 */
+const linesGridEditable = computed(() => props.documentEditable);
 
 /** 单头「从订货单选择」：非草稿可先选后建；草稿可编辑时可更换关联 */
 const canEditOriginalBusNo = computed(() => !props.isDraftOrder || props.documentEditable);
@@ -317,12 +337,9 @@ const docActionFlags = computed(() => {
     statusRaw: (props.inboundDetailRows?.[0] as Record<string, unknown> | undefined)?.statusEnum,
     busy: saving.value,
   });
-  const upstreamRequired = props.isDraftOrder && !hasLinkedUpstream.value;
   const hasPersistedBusNo = Boolean(String(props.busNo ?? headForm.value.busNo ?? '').trim());
   return {
     ...base,
-    saveDisabled: base.saveDisabled || upstreamRequired,
-    saveAndSubmitDisabled: base.saveAndSubmitDisabled || upstreamRequired,
     // 已落库单据才可打印
     printDisabled: saving.value || !hasPersistedBusNo,
   };
@@ -613,12 +630,15 @@ function mapDetailRowToGrid(r: Record<string, unknown>): InboundPreviewRow {
   );
   const unitPrice = price === undefined || price === null ? 0 : Number(price);
   // 目录游离追溯单位：详情 productCatalog / 选品顶栏字段；保留 categoryCode 供中药单价三位展示
+  const productBusNo = String(catalog?.productBusNo ?? '').trim();
   const productCatalog: CatalogTraceUnitHint & {
     unitBands?: InboundProductUnitBand[];
     categoryCode?: string;
+    productBusNo?: string;
   } = {
     unitBands: hasBands ? unitBands : undefined,
     categoryCode: String(catalog?.categoryCode ?? r.categoryCode ?? '').trim() || undefined,
+    productBusNo: productBusNo || undefined,
     traceUnitCode: String(catalog?.traceUnitCode ?? '').trim() || undefined,
     traceUnitRatio: (() => {
       const n = Number(catalog?.traceUnitRatio ?? r.traceUnitRatio);
@@ -631,6 +651,7 @@ function mapDetailRowToGrid(r: Record<string, unknown>): InboundPreviewRow {
       ? {
           id: hasItemId ? (itemIdRaw as number | string) : idStr,
           name,
+          ...(productBusNo ? { busNo: productBusNo } : {}),
         }
       : undefined,
     itemTable: r.itemTable === undefined ? undefined : String(r.itemTable),
@@ -701,9 +722,11 @@ function syncRowFromInboundMedicinePick(pick: Record<string, unknown>, row: Inbo
   const pickTraceCode = String(pick.traceUnitCode ?? '').trim();
   const pickTraceRatio = Number(pick.traceUnitRatio);
   const pickCategoryCode = String(pick.categoryCode ?? '').trim() || undefined;
+  const pickProductBusNo = inventoryPickStringField(pick, 'productBusNo');
   row.productCatalog = {
     unitBands: bands.length > 0 ? bands : undefined,
     categoryCode: pickCategoryCode,
+    productBusNo: pickProductBusNo || undefined,
     traceUnitCode: pickTraceCode || undefined,
     traceUnitRatio:
       Number.isFinite(pickTraceRatio) && pickTraceRatio > 0 ? pickTraceRatio : undefined,
@@ -806,7 +829,22 @@ const columns: VxeGridPropTypes.Column[] = [
     title: '项目名称',
     minWidth: 200,
     fixed: 'left',
-    formatter: ({ row }: { row: InboundPreviewRow }) => resolveInboundRowProductName(row, 0),
+    editRender: {
+      name: 'PurchaseOrderMedicineSelect',
+      props: {
+        listSource: 'inbound-receipt',
+        placeholder: '请先选择项目类型后检索',
+        query: async () => ({
+          productTableName: headForm.value.itemTableType || undefined,
+          purposeLocationId: resolveInboundReceiptPickGateLocationId(),
+        }),
+        onSelected: (product: Record<string, unknown>, row: InboundPreviewRow) => {
+          if (!validateInboundPickItemTable(product)) return;
+          syncRowFromInboundMedicinePick(product, row);
+          handleInboundProductPick(row);
+        },
+      },
+    },
     showOverflow: true,
   },
   {
@@ -922,6 +960,7 @@ const columns: VxeGridPropTypes.Column[] = [
 ];
 
 const INBOUND_EDITABLE_COLUMN_FIELDS = new Set([
+  'medicinePick',
   '_qtyUnit',
   'batchNo',
   'traceNo',
@@ -931,6 +970,7 @@ const INBOUND_EDITABLE_COLUMN_FIELDS = new Set([
 ]);
 
 const INBOUND_EDIT_FIELD_ORDER = [
+  'medicinePick',
   '_qtyUnit',
   'unitPrice',
   'batchNo',
@@ -1009,9 +1049,111 @@ interface InboundDraftSnap {
   rows: InboundPreviewRow[];
 }
 
-const parentSync = useInvDocParentSyncSession<InboundDraftSnap>();
+const parentSync = useInvDocParentSyncSession<InboundDraftSnap>({
+  scene: INV_DOC_DRAFT_SCENE.warehousePurchaseInbound,
+  getDocKey: () => {
+    // 未落库草稿用客户端 id；已落库编辑用 busNo
+    const draftId = String(props.clientDraftId ?? '').trim();
+    if (props.isDraftOrder && draftId) return draftId;
+    return String(props.busNo ?? headForm.value.busNo ?? '').trim() || undefined;
+  },
+  getCardMeta: () => ({
+    statusEnum_enumText: '编辑中',
+    applyTime: headForm.value.applyTime,
+    supplierId_dictText:
+      props.supplierOptions.find((o) => String(o.value) === String(headForm.value.supplierId))
+        ?.label ?? '',
+  }),
+});
 
-/** 将父级已拉详情写入主区（含 loadGen 防异步串扰） */
+/** 拍摄当前主区草稿快照（侧栏切单 / 落盘共用） */
+function captureInboundDraftSnap(): InboundDraftSnap {
+  return {
+    head: {
+      ...headForm.value,
+      busNo: props.isDraftOrder ? '' : String(headForm.value.busNo ?? ''),
+    },
+    rows: collectGridRows().map((r) => ({ ...r })),
+  };
+}
+
+/** 侧栏切单：缓存/恢复本地草稿，避免已落库明细污染新建单 */
+async function syncFromParentContext() {
+  await parentSync.syncFromParentContext(
+    { isDraftOrder: Boolean(props.isDraftOrder), parentBusNo: props.busNo },
+    {
+      getLocalPersistedBusNo: () => {
+        const headNo = String(headForm.value.busNo ?? '').trim();
+        if (props.isDraftOrder) return headNo || undefined;
+        return String(props.busNo ?? headNo).trim() || undefined;
+      },
+      captureDraft: captureInboundDraftSnap,
+      restoreDraft: async (snap) => {
+        headForm.value = {
+          ...snap.head,
+          busNo: props.isDraftOrder ? '' : String(snap.head.busNo ?? ''),
+        };
+        inboundGridEdit.resetFormMode();
+        await nextTick();
+        gridApi?.grid?.loadData(snap.rows);
+        patchInboundGridEditConfig();
+      },
+      resetForCreate: () => {
+        inboundGridEdit.resetFormMode();
+        applyEmptyState();
+      },
+      loadByBusNo: async (_busNo, gen) => {
+        // 追溯码必须在 loadData 前合并进行；勿在 nextTick 后再补，否则会被空码详情冲掉
+        applyPersistedDetailFromParent(gen);
+      },
+    },
+  );
+}
+
+/** 切菜单 / KeepAlive 停用 / 扫码后把当前单写入 localStorage */
+function flushInboundDraftPersist(): void {
+  parentSync.flushPersist({
+    captureDraft: captureInboundDraftSnap,
+  });
+}
+
+/** 扫码弹窗写回明细后立即落盘 */
+function handleTraceBindingsChanged(): void {
+  // bridge 已就地改写行上的 traceNo；再 load 一次保证网格/collect 一致后再落盘
+  const rows = collectGridRows();
+  if (rows.length > 0) {
+    gridApi?.grid?.loadData(rows);
+  }
+  flushInboundDraftPersist();
+}
+
+onBeforeUnmount(() => {
+  flushInboundDraftPersist();
+});
+
+onDeactivated(() => {
+  flushInboundDraftPersist();
+});
+
+watch(
+  () => props.resetKey,
+  () => {
+    parentSync.discardDraftSession();
+    inboundGridEdit.resetFormMode();
+    applyEmptyState();
+    triggerPaneFlash();
+  },
+);
+
+watch(
+  () => [props.busNo, props.inboundDetailRows, props.isDraftOrder, props.clientDraftId] as const,
+  () => {
+    void syncFromParentContext();
+  },
+  { deep: true, immediate: true },
+);
+
+/** 将父级已拉详情写入主区（含 loadGen 防异步串扰）；落盘缓存的追溯码在 loadData 前同步补回 */
 function applyPersistedDetailFromParent(loadGen?: number) {
   if (loadGen !== undefined && parentSync.isLoadStale(loadGen)) return;
   if (!props.busNo) {
@@ -1035,7 +1177,12 @@ function applyPersistedDetailFromParent(loadGen?: number) {
     return;
   }
   syncHeadFromDetailRows(rows);
-  const gridRows = rows.map((r) => mapDetailRowToGrid(r));
+  const busNo = String(props.busNo ?? '').trim();
+  const cachedSnap = busNo ? (parentSync.readPersistByKey(busNo) as InboundDraftSnap | null) : null;
+  const gridRows = mergeInvDocTraceIntoRows(
+    rows.map((r) => mapDetailRowToGrid(r)),
+    cachedSnap?.rows,
+  );
   inboundGridEdit.resetFormMode();
   inboundGridEdit.clearGridEdit();
   void nextTick(() => {
@@ -1044,56 +1191,6 @@ function applyPersistedDetailFromParent(loadGen?: number) {
     patchInboundGridEditConfig();
   });
 }
-
-/** 侧栏切单：缓存/恢复本地草稿，避免已落库明细污染新建单 */
-async function syncFromParentContext() {
-  await parentSync.syncFromParentContext(
-    { isDraftOrder: Boolean(props.isDraftOrder), parentBusNo: props.busNo },
-    {
-      getLocalPersistedBusNo: () => {
-        const headNo = String(headForm.value.busNo ?? '').trim();
-        if (props.isDraftOrder) return headNo || undefined;
-        return String(props.busNo ?? headNo).trim() || undefined;
-      },
-      captureDraft: () => ({
-        head: { ...headForm.value, busNo: '' },
-        rows: collectGridRows().map((r) => ({ ...r })),
-      }),
-      restoreDraft: async (snap) => {
-        headForm.value = { ...snap.head, busNo: '' };
-        inboundGridEdit.resetFormMode();
-        await nextTick();
-        gridApi?.grid?.loadData(snap.rows);
-        patchInboundGridEditConfig();
-      },
-      resetForCreate: () => {
-        inboundGridEdit.resetFormMode();
-        applyEmptyState();
-      },
-      loadByBusNo: async (_busNo, gen) => {
-        applyPersistedDetailFromParent(gen);
-      },
-    },
-  );
-}
-
-watch(
-  () => props.resetKey,
-  () => {
-    parentSync.discardDraftSession();
-    inboundGridEdit.resetFormMode();
-    applyEmptyState();
-    triggerPaneFlash();
-  },
-);
-
-watch(
-  () => [props.busNo, props.inboundDetailRows, props.isDraftOrder] as const,
-  () => {
-    void syncFromParentContext();
-  },
-  { deep: true, immediate: true },
-);
 
 function pickApiErrMsg(e: unknown): string {
   if (e && typeof e === 'object' && 'response' in e) {
@@ -1220,6 +1317,7 @@ function buildLinesFromGrid(): InboundReceiptLineDto[] | null {
     itemLotSeen.set(dupKey, i);
     const price = Number(r.unitPrice);
     const { endTime, startTime } = mapProdExpiryToStartEnd(r.prodExpiry);
+    // 空串也要显式传给后端，不能用 || undefined（否则改空会被当成「未传」落不掉）
     const traceNo = String(r.traceNo ?? '').trim();
     lines.push({
       itemTable,
@@ -1227,7 +1325,7 @@ function buildLinesFromGrid(): InboundReceiptLineDto[] | null {
       itemQuantity: persisted.itemQuantity,
       unitCode,
       lotNumber,
-      traceNo: traceNo || undefined,
+      traceNo,
       price: Number.isFinite(price) ? price : undefined,
       totalPrice: parseLineTotalPrice(r),
       occurrenceTime,
@@ -1264,10 +1362,6 @@ function optionalSupplierId(s: string): number | string | undefined {
 }
 
 function validateHeadBeforeSave(): boolean {
-  if (props.isDraftOrder && !hasLinkedUpstream.value) {
-    warnInventoryDocRestriction(INV_DOC_UPSTREAM_HINT.purchaseInbound);
-    return false;
-  }
   if (!String(headForm.value.supplierId ?? '').trim()) {
     ElMessage.warning('请选择供应商');
     return false;
@@ -1397,6 +1491,14 @@ async function persistInbound(submitApproval: boolean): Promise<string | undefin
 async function handleSaveDoc() {
   const busNo = await persistInbound(false);
   if (!busNo) return;
+  // 落库成功：草稿 key 清掉；整单快照迁到 busNo，切单/刷新可从 localStorage 补码
+  const draftId = String(props.clientDraftId ?? '').trim();
+  if (draftId) {
+    clearInvDocDraftCache(INV_DOC_DRAFT_SCENE.warehousePurchaseInbound, draftId);
+  }
+  parentSync.bindActivePersistDocKey(busNo);
+  parentSync.writePersistToKey(busNo, captureInboundDraftSnap());
+  parentSync.clearDraftSnap({ clearActivePersist: false });
   ElMessage.success('保存成功');
   emit('documentSaved', { busNo });
 }
@@ -1404,6 +1506,13 @@ async function handleSaveDoc() {
 async function handleSaveAndSubmitDoc() {
   const busNo = await persistInbound(true);
   if (!busNo) return;
+  const draftId = String(props.clientDraftId ?? '').trim();
+  if (draftId) {
+    clearInvDocDraftCache(INV_DOC_DRAFT_SCENE.warehousePurchaseInbound, draftId);
+  }
+  parentSync.bindActivePersistDocKey(busNo);
+  parentSync.writePersistToKey(busNo, captureInboundDraftSnap());
+  parentSync.clearDraftSnap({ clearActivePersist: false });
   ElMessage.success('保存并提交审批成功');
   emit('documentSaved', { busNo });
 }
@@ -1455,6 +1564,11 @@ async function handleRemoveDoc() {
     } catch {
       return;
     }
+    clearInvDocDraftCacheAfterSave({
+      scene: INV_DOC_DRAFT_SCENE.warehousePurchaseInbound,
+      clientDraftId: props.clientDraftId,
+    });
+    parentSync.discardDraftSession();
     emit('documentRemoved');
     return;
   }
@@ -1470,6 +1584,11 @@ async function handleRemoveDoc() {
   }
   try {
     await removeInboundReceiptApi({ busNo });
+    clearInvDocDraftCacheAfterSave({
+      scene: INV_DOC_DRAFT_SCENE.warehousePurchaseInbound,
+      busNo,
+    });
+    parentSync.clearDraftSnap();
     ElMessage.success('已删除');
     emit('documentRemoved');
   } catch {
@@ -1541,11 +1660,16 @@ function resolvePrintWarehouseName(value: unknown): string {
   return String(hit?.name ?? hit?.label ?? '').trim();
 }
 
-/** 明细行当前计量单位展示文案 */
+/** 明细行当前计量单位展示文案（与网格 UnitSelect / selectedBandKind 一致） */
 function resolveInboundPrintUnitLabel(row: InboundPreviewRow): string {
+  const kind = String(row.selectedBandKind ?? '').trim();
+  const byKind = row.unitList?.find((item) => String(item.value ?? '') === kind);
+  if (byKind) {
+    return String(byKind.label ?? byKind.value_dictText ?? '').trim();
+  }
   const code = String(row.purchaseUnit ?? '').trim();
-  const hit = row.unitList?.find((item) => String(item.value ?? '') === code);
-  return String(hit?.label ?? hit?.value_dictText ?? code).trim();
+  const byCode = row.unitList?.find((item) => String(item.value ?? '') === code);
+  return String(byCode?.label ?? byCode?.value_dictText ?? code).trim();
 }
 
 /** 打印进货单（计价流转模版） */
@@ -1567,16 +1691,16 @@ async function handlePrint() {
     props.itemTableTypeOptions,
     headForm.value.itemTableType,
   );
-  const practitionerName = resolvePrintOptionLabel(props.practitionerOptions, props.practitionerId);
   const documentTitle = buildInvDocumentTitle(warehouseName, '进货单');
   const applyTimeText = String(headForm.value.applyTime ?? props.applyTime ?? '')
     .trim()
     .replace('T', ' ');
 
-  // 按当前网格展示值组装 PrintData（非 SPLIT 落库量）
+  // 按当前网格展示值组装 PrintData（非 SPLIT 落库量；效期仅打有效期至）
   const lineRows = productRows.map((row) => {
-    const { startTime, endTime } = mapProdExpiryToStartEnd(row.prodExpiry);
+    const { endTime } = mapProdExpiryToStartEnd(row.prodExpiry);
     return {
+      productBusNo: resolveInvPrintProductBusNo(row as unknown as Record<string, unknown>),
       productName: resolveInboundRowProductName(row, 0),
       specText: String(row.spec ?? '').trim(),
       manufacturerText: String(row.manufacturer ?? '').trim(),
@@ -1585,11 +1709,16 @@ async function handlePrint() {
       unitPrice: row.unitPrice,
       amount: parseLineTotalPrice(row),
       lotNumber: String(row.batchNo ?? '').trim(),
-      productionDate: startTime,
       expiryDate: endTime,
     };
   });
 
+  const preparedByName = resolveInvDocPreparedByName(
+    props.queueCardRow as null | Record<string, unknown>,
+  );
+  const approvedByName = resolveInvDocApprovedByName(
+    props.queueCardRow as null | Record<string, unknown>,
+  );
   await printInvDocument({
     family: 'movement',
     source: {
@@ -1603,10 +1732,9 @@ async function handlePrint() {
       linkDocText: String(headForm.value.originalBusNo ?? '').trim(),
       destLocationText: '',
       invoiceNoText: String(headForm.value.invoiceNo ?? '').trim(),
-      practitionerName,
       lineRows,
-      preparedByName: practitionerName,
-      approvedByName: '',
+      preparedByName,
+      approvedByName,
     },
     bizRef: { busNo, docKind: 'purchase-inbound' },
     jobName: documentTitle,
@@ -1638,16 +1766,22 @@ function createEmptyInboundRow(): InboundPreviewRow {
 
 const batchDialogVisible = ref(false);
 
+/** 添加入库明细空行（同药不同批号可多行，保存时按批号去重） */
 async function handleAddItem() {
   if (!props.documentEditable) return;
-  if (!hasLinkedUpstream.value) {
-    warnInventoryDocRestriction(INV_DOC_UPSTREAM_HINT.purchaseInbound);
+  if (!String(headForm.value.itemTableType ?? '').trim()) {
+    ElMessage.warning('请先在单头选择项目类型');
     return;
   }
-  if (!(await validateInventoryHeadFormFields(headFormRef.value, ['warehouseId', 'invoiceNo']))) {
+  if (!(await validateInventoryHeadFormFields(headFormRef.value, ['warehouseId']))) {
     return;
   }
   await addGridItem();
+}
+
+/** 欢迎空态：新建空白进货草稿 */
+function handleCreateBlank() {
+  emit('createBlank');
 }
 
 function openUpstreamPicker() {
@@ -1784,10 +1918,7 @@ watch(
 
 /** 打开批量选品弹窗（与单行选品共用单头项目类型） */
 function openBatchDialog() {
-  if (!linesGridEditable.value) {
-    warnInventoryDocRestriction(INV_DOC_UPSTREAM_HINT.purchaseInbound);
-    return;
-  }
+  if (!linesGridEditable.value) return;
   if (!String(headForm.value.itemTableType ?? '').trim()) {
     ElMessage.warning('请先在单头选择项目类型');
     return;
@@ -1871,8 +2002,11 @@ async function handleBatchConfirm(products: Record<string, unknown>[]) {
         v-if="showWelcomeEmpty"
         class="flex min-h-0 flex-1 flex-col items-center justify-center px-4 py-12"
       >
-        <el-empty :image-size="96" :description="INV_DOC_UPSTREAM_WELCOME.purchaseInbound">
-          <InvPrimaryBtn label="从订货单新建" @click="openUpstreamPicker" />
+        <el-empty :image-size="96" description="可手工新建进货单选品录入，或从已同意订货单拉取明细">
+          <div class="flex flex-wrap items-center justify-center gap-2">
+            <InvPrimaryBtn label="新增进货单" @click="handleCreateBlank" />
+            <ElButton @click="openUpstreamPicker">从订货单新建</ElButton>
+          </div>
         </el-empty>
       </div>
 
@@ -1971,7 +2105,7 @@ async function handleBatchConfirm(products: Record<string, unknown>[]) {
                     class="min-w-0 flex-1"
                     readonly
                     disabled
-                    placeholder="请选择订货单"
+                    placeholder="可选；须为已同意的订货单"
                   />
                   <ElButton
                     class="shrink-0"
@@ -1996,15 +2130,6 @@ async function handleBatchConfirm(products: Record<string, unknown>[]) {
           </ElForm>
         </div>
 
-        <ElAlert
-          v-if="documentEditable && !hasLinkedUpstream"
-          type="warning"
-          :closable="false"
-          show-icon
-          class="shrink-0"
-          :title="INV_DOC_UPSTREAM_HINT.purchaseInbound"
-        />
-
         <InvDocDetailGridShell
           :bind-grid-wrap="bindGridWrap"
           :on-grid-keydown="inboundGridEdit.onGridKeydown"
@@ -2013,8 +2138,10 @@ async function handleBatchConfirm(products: Record<string, unknown>[]) {
             <template #toolbar-actions>
               <InvDocGridToolbar
                 v-if="linesGridEditable"
-                :show-add="false"
+                show-batch-add
                 show-trace-scan
+                @add="handleAddItem"
+                @batch-add="openBatchDialog"
                 @delete-selected="deleteItem('select')"
                 @trace-scan="handleOpenTraceScan"
               />
@@ -2033,6 +2160,10 @@ async function handleBatchConfirm(products: Record<string, unknown>[]) {
           </Grid>
         </InvDocDetailGridShell>
       </div>
+      <InvDocAmountSummaryBar
+        v-if="showFinanceApprovalSummary"
+        :items="financeApprovalSummaryItems"
+      />
     </InvMainShell>
 
     <PurchaseInboundBatchAddDialog
@@ -2085,6 +2216,7 @@ async function handleBatchConfirm(products: Record<string, unknown>[]) {
     scene="inbound"
     lot-field="batchNo"
     :default-location-id="headForm.warehouseId"
+    @bindings-changed="handleTraceBindingsChanged"
   />
 </template>
 

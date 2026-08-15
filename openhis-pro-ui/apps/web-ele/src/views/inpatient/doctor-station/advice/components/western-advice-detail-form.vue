@@ -3,7 +3,7 @@ import type { TerminologyOptionDto } from '#/api/doctor-station/advice.types';
 
 import type { AdviceDrugItem, AdviceDrugPatchPayload } from '../services/advice.types';
 
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 
 import { ElCheckbox, ElInputNumber, ElOption, ElSelect } from 'element-plus';
 
@@ -12,14 +12,25 @@ import { formatPackagePerMinUnitText } from '#/utils/doctor-station/medication-p
 
 import {
   contractSelectionFromValue,
+  filterFeeNatureOptionsByChrgitmLv,
   formatMoneyStrYuan,
   formatUnitPriceYuan,
+  type FeeNatureOption,
 } from '../services/advice-format';
 import {
   convertTotalAmountWhenUnitChanges,
   resolveAdviceLineUnitPrice,
+  roundMedicationDoseDisplayQty,
   totalUnitSelectOptions,
 } from '../services/medication-unit-bands';
+
+/** 剂量单位输入框展示值：界面保留 3 位小数。 */
+function doseDisplayValue(raw: number | null | undefined): number | undefined {
+  if (raw === null || raw === undefined) return undefined;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return undefined;
+  return roundMedicationDoseDisplayQty(n);
+}
 
 const props = withDefaults(
   defineProps<{
@@ -28,13 +39,16 @@ const props = withDefaults(
     medicationRateOptions?: TerminologyOptionDto[];
     /** IF-DOR-18 用法选项 */
     medicationRouteOptions?: TerminologyOptionDto[];
+    /** IF-IP-DOR-18 输液滴速选项 */
+    medicationSpeedOptions?: TerminologyOptionDto[];
     /** init 返回的费用性质（合同）下拉 */
-    feeNatureOptions?: TerminologyOptionDto[];
+    feeNatureOptions?: FeeNatureOption[];
     calcTotalFee: (item: AdviceDrugItem) => string;
   }>(),
   {
     medicationRateOptions: () => [],
     medicationRouteOptions: () => [],
+    medicationSpeedOptions: () => [],
     feeNatureOptions: () => [],
   },
 );
@@ -47,17 +61,40 @@ const patch = <K extends keyof AdviceDrugItem>(key: K, value: AdviceDrugItem[K])
   emit('patch', { key, value });
 };
 
+/** 医保等级=自费时仅保留自费合同下拉 */
+const itemFeeNatureOptions = computed(() =>
+  filterFeeNatureOptionsByChrgitmLv(props.feeNatureOptions, props.item.chrgitmLv),
+);
+
 function patchContract(contractId: string) {
-  const sel = contractSelectionFromValue(contractId, props.feeNatureOptions);
+  const sel = contractSelectionFromValue(contractId, itemFeeNatureOptions.value);
   patch('contractId', sel.contractId);
   patch('feeNature', sel.feeNature);
 }
+
+/** 当前合同不在收窄后的下拉里时，自动切到可用项 */
+watch(
+  itemFeeNatureOptions,
+  (opts) => {
+    const cur = String(props.item.contractId ?? '').trim();
+    if (opts.length === 0) return;
+    if (cur && opts.some((o) => String(o.value ?? '').trim() === cur)) return;
+    const first = String(opts[0]?.value ?? '').trim();
+    if (first) patchContract(first);
+  },
+  { immediate: true },
+);
 
 /** 包装与最小单位不同时：「每盒30片」类文案 */
 const packagePerMinUnitText = computed(() => formatPackagePerMinUnitText(props.item));
 
 /** 选品库存：「库存：4盒6片」；无库存字段时为空 */
 const stockDisplayText = computed(() => formatAdviceDrugInfoStockText(props.item));
+
+/** 输液/注射药展示滴速 */
+const showSpeedField = computed(
+  () => props.item.injectFlag === true || Boolean(String(props.item.speedCode ?? '').trim()),
+);
 
 function handleTotalAmountUnitChange(value: unknown) {
   const nu = String(value ?? '').trim();
@@ -122,17 +159,19 @@ function handleTotalAmountUnitChange(value: unknown) {
       <div class="field-item">
         <span class="meta-label">费用性质</span>
         <ElSelect
+          v-if="itemFeeNatureOptions.length > 1"
           :model-value="item.contractId"
           placeholder="请选择"
           @update:model-value="(value: unknown) => patchContract(String(value || ''))"
         >
           <ElOption
-            v-for="opt in feeNatureOptions"
+            v-for="opt in itemFeeNatureOptions"
             :key="String(opt.value ?? '')"
             :label="String(opt.label ?? opt.value ?? '')"
             :value="String(opt.value ?? '')"
           />
         </ElSelect>
+        <span v-else class="fee-nature-readonly">{{ item.feeNature || '自费' }}</span>
       </div>
       <div class="field-item skin-test-item">
         <span class="meta-label">皮试</span>
@@ -151,6 +190,7 @@ function handleTotalAmountUnitChange(value: unknown) {
               class="dose-qty-input"
               :model-value="item.singleDose"
               :min="0"
+              :precision="2"
               :controls="false"
               @update:model-value="(value: unknown) => patch('singleDose', Number(value || 0))"
             />
@@ -162,8 +202,9 @@ function handleTotalAmountUnitChange(value: unknown) {
           <div class="dose-num-with-unit">
             <ElInputNumber
               class="dose-qty-input"
-              :model-value="item.doseConvertRatio"
+              :model-value="doseDisplayValue(item.doseConvertRatio)"
               :min="0"
+              :precision="3"
               :controls="false"
               @update:model-value="
                 (value: unknown) => patch('doseConvertRatio', Number(value || 0))
@@ -203,6 +244,25 @@ function handleTotalAmountUnitChange(value: unknown) {
         >
           <ElOption
             v-for="opt in medicationRateOptions"
+            :key="String(opt.value ?? '')"
+            :label="String(opt.label ?? opt.value ?? '')"
+            :value="String(opt.value ?? '')"
+          />
+        </ElSelect>
+      </div>
+      <div v-if="showSpeedField" class="field-item">
+        <span class="meta-label">滴速</span>
+        <ElSelect
+          :model-value="item.speedCode"
+          filterable
+          clearable
+          placeholder="请选择"
+          @update:model-value="
+            (value: unknown) => patch('speedCode', String(value || '') || undefined)
+          "
+        >
+          <ElOption
+            v-for="opt in medicationSpeedOptions"
             :key="String(opt.value ?? '')"
             :label="String(opt.label ?? opt.value ?? '')"
             :value="String(opt.value ?? '')"

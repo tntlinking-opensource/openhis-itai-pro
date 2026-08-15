@@ -24,6 +24,12 @@ import {
   isInboundReceiptDocumentEditableRaw,
 } from '#/utils/inventory/inbound-receipt-status';
 import {
+  clearInvDocClientDraftCachesForScene,
+  clearInvDocDraftCache,
+  INV_DOC_DRAFT_SCENE,
+  mergeInvDocDraftCardsIntoQueue,
+} from '#/utils/inventory/inv-doc-draft-cache';
+import {
   INV_ALL_LOCATIONS_FILTER_ID,
   pickWorkbenchOrderAfterSave,
   resolveDefaultAllLocationsFilterValue,
@@ -35,6 +41,8 @@ import PurchaseInboundMainPane from './purchase-inbound-main-pane.vue';
 defineOptions({
   name: 'InventoryWarehousePurchaseInbound',
 });
+
+const INBOUND_DRAFT_SCENE = INV_DOC_DRAFT_SCENE.warehousePurchaseInbound;
 
 /**
  * createInboundReceipt / updateInboundReceipt 必填经手人 {@code practitionerId}（医务人员主键）。
@@ -108,6 +116,7 @@ const inboundItemTableTypeOptions = ref<ApiOptionItem[]>([]);
 
 const orderList = ref<Record<string, any>[]>([]);
 const selectedOrder = ref<null | Record<string, any>>(null);
+const isAddDisabled = ref(false);
 
 const mainPaneResetKey = ref(0);
 const mainPaneRef = ref<InstanceType<typeof PurchaseInboundMainPane> | null>(null);
@@ -118,17 +127,47 @@ function isDraftOrderRow(row?: null | Record<string, any>): boolean {
   return Boolean(row?._draft);
 }
 
-function createDraftOrderRow(): Record<string, any> {
+/** 新建或按已有 clientDraftId 恢复草稿卡片 */
+function createDraftOrderRow(
+  clientDraftId?: string,
+  cardMeta?: Record<string, unknown>,
+): Record<string, any> {
+  const id =
+    String(clientDraftId ?? '').trim() ||
+    `draft:${Date.now()}:${Math.random().toString(36).slice(2, 9)}`;
   return {
     _draft: true,
-    _clientDraftId: `draft:${Date.now()}:${Math.random().toString(36).slice(2, 9)}`,
-    statusEnum_enumText: '编辑中',
-    supplierId_dictText: '',
-    typeEnum_enumText: '',
-    applyTime: formatDateTime(new Date()),
-    applicantId_dictText: '',
-    totalAmount: undefined,
+    _clientDraftId: id,
+    statusEnum_enumText: String(cardMeta?.statusEnum_enumText ?? '编辑中'),
+    supplierId_dictText: String(cardMeta?.supplierId_dictText ?? ''),
+    typeEnum_enumText: String(cardMeta?.typeEnum_enumText ?? ''),
+    applyTime: String(cardMeta?.applyTime ?? formatDateTime(new Date())),
+    applicantId_dictText: String(cardMeta?.applicantId_dictText ?? ''),
+    totalAmount: cardMeta?.totalAmount,
   };
+}
+
+/** 丢弃侧栏上现有草稿卡片时同步清 localStorage 缓存 */
+function discardSidebarDraftCaches(): void {
+  for (const row of orderList.value.filter((r) => r._draft)) {
+    const id = String(row._clientDraftId ?? '').trim();
+    if (id) clearInvDocDraftCache(INBOUND_DRAFT_SCENE, id);
+  }
+  clearInvDocClientDraftCachesForScene(INBOUND_DRAFT_SCENE);
+}
+
+/** 进入页时把 localStorage 草稿卡片合并进队列，并选中最近一条 */
+function rehydrateDraftCardsFromSession(): void {
+  const merged = mergeInvDocDraftCardsIntoQueue({
+    scene: INBOUND_DRAFT_SCENE,
+    orderList: orderList.value,
+    buildDraftRow: (clientDraftId, cardMeta) => createDraftOrderRow(clientDraftId, cardMeta),
+  });
+  orderList.value = merged.orderList;
+  if (!selectedOrder.value && merged.inserted[0]) {
+    selectedOrder.value = merged.inserted[0];
+    isAddDisabled.value = true;
+  }
 }
 
 const PURCHASE_ORDER_DETAIL_PAGE_SIZE = 2000;
@@ -151,6 +190,13 @@ const selectedBusNo = computed(() => {
 });
 
 const isDraftOrder = computed(() => Boolean(selectedOrder.value?._draft));
+
+/** 当前侧栏草稿的稳定客户端 id */
+const selectedClientDraftId = computed(() => {
+  const o = selectedOrder.value;
+  if (!o?._draft) return '';
+  return String(o._clientDraftId ?? '').trim();
+});
 
 /** 详情头或列表行上的状态（加载中空表时退回列表行） */
 const activeInboundStatusEnum = computed(() => {
@@ -238,6 +284,7 @@ async function getList() {
 
 async function handleCreateFromUpstream(row: LinkablePurchaseOrderListRowDto) {
   resetFormAndTableData();
+  discardSidebarDraftCaches();
   const draft = createDraftOrderRow();
   orderList.value = [draft, ...orderList.value.filter((r) => !r._draft)];
   selectedOrder.value = draft;
@@ -249,7 +296,26 @@ async function handleCreateFromUpstream(row: LinkablePurchaseOrderListRowDto) {
     locationId: tableForm.value.locationId,
   };
   await nextTick();
+  isAddDisabled.value = true;
   await mainPaneRef.value?.applyLinkablePurchaseOrderToDraft(row);
+}
+
+/** 空白新增进货草稿：可手填选品；订货单为可选关联 */
+function handleAdd() {
+  resetFormAndTableData();
+  discardSidebarDraftCaches();
+  const draft = createDraftOrderRow();
+  orderList.value = [draft, ...orderList.value.filter((r) => !r._draft)];
+  selectedOrder.value = draft;
+  mainPaneResetKey.value += 1;
+  tableForm.value = {
+    applicantId: resolveApplicantId(),
+    applyTime: formatDateTime(new Date()),
+    locationId: tableForm.value.locationId,
+  };
+  void nextTick(() => {
+    isAddDisabled.value = true;
+  });
 }
 
 function resetFormAndTableData() {
@@ -276,6 +342,7 @@ async function handleEdit(order?: null | Record<string, any>) {
       pageSize: PURCHASE_ORDER_DETAIL_PAGE_SIZE,
     });
     buildEditForm(detail.records ?? []);
+    isAddDisabled.value = false;
   } catch {
     ElMessage.error('加载进货单详情失败');
     resetFormAndTableData();
@@ -379,6 +446,7 @@ async function handleInboundDocumentSaved(payload: { busNo?: string }) {
   orderList.value = orderList.value.filter((r) => !r._draft);
   await getList();
   const busNo = payload.busNo?.trim();
+  isAddDisabled.value = false;
   if (!busNo) return;
   selectedOrder.value = pickWorkbenchOrderAfterSave(
     orderList.value,
@@ -394,16 +462,20 @@ async function handleInboundDocumentChanged(payload: { busNo?: string }) {
 
 async function handleInboundDocumentRemoved() {
   if (selectedOrder.value?._draft) {
+    const id = String(selectedOrder.value._clientDraftId ?? '').trim();
+    if (id) clearInvDocDraftCache(INBOUND_DRAFT_SCENE, id);
     orderList.value = orderList.value.filter((r) => r !== selectedOrder.value);
     selectedOrder.value = null;
     resetFormAndTableData();
     mainPaneResetKey.value += 1;
+    isAddDisabled.value = false;
     return;
   }
   orderList.value = orderList.value.filter((r) => !r._draft);
   resetFormAndTableData();
   selectedOrder.value = null;
   mainPaneResetKey.value += 1;
+  isAddDisabled.value = false;
   await getList();
 }
 
@@ -428,6 +500,7 @@ watch(
 onMounted(async () => {
   await init();
   await getList();
+  rehydrateDraftCardsFromSession();
 });
 </script>
 
@@ -444,11 +517,13 @@ onMounted(async () => {
         v-model:date-range="listDateRange"
         v-model:keyword="listKeywordModel"
         v-model:location-id="tableForm.locationId"
+        :add-disabled="isAddDisabled"
         :cabinet-list-options="cabinetListOptions"
         :orders="orderList"
         :practitioner-option="practitionerOption"
         :selected-order="selectedOrder"
         :show-supplier-in-queue="true"
+        @add="handleAdd"
         @location-change="handleLocationChange"
         @search="getList"
         @select="handleOrderClick"
@@ -456,10 +531,12 @@ onMounted(async () => {
     </template>
 
     <PurchaseInboundMainPane
+      :queue-card-row="selectedOrder"
       ref="mainPaneRef"
       class="min-h-0 flex-1"
       :apply-time="tableForm.applyTime"
       :bus-no="selectedBusNo"
+      :client-draft-id="selectedClientDraftId"
       :practitioner-id="INBOUND_RECEIPT_PRACTITIONER_ID_STUB"
       :document-editable="inboundDocumentEditable"
       :inbound-detail-rows="tableData"
@@ -470,6 +547,7 @@ onMounted(async () => {
       :practitioner-options="practitionerOption"
       :supplier-options="supplierOption"
       :warehouse-options="cabinetListOptions"
+      @create-blank="handleAdd"
       @create-from-upstream="handleCreateFromUpstream"
       @document-changed="handleInboundDocumentChanged"
       @document-removed="handleInboundDocumentRemoved"

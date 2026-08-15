@@ -16,12 +16,17 @@ export const PRINT_SCENARIO_LABELS: Record<PrintScenario, string> = {
   [PRINT_SCENARIO.testPrint]: '检验申请单',
   [PRINT_SCENARIO.ipNursingRecordPrint]: '护理记录单',
   [PRINT_SCENARIO.ipFeeListPrint]: '住院费用清单',
-  [PRINT_SCENARIO.ipTempOrderPrint]: '临嘱执行记录',
-  [PRINT_SCENARIO.ipLongOrderPrint]: '长嘱执行记录',
+  [PRINT_SCENARIO.ipFeeDetailPrint]: '住院费用明细单',
+  [PRINT_SCENARIO.ipTempOrderPrint]: '临时医嘱',
+  [PRINT_SCENARIO.ipLongOrderPrint]: '长期医嘱',
   [PRINT_SCENARIO.ipDispenseSummaryPrint]: '汇总领药单',
   [PRINT_SCENARIO.ipDispenseSheetPrint]: '摆药单',
+  [PRINT_SCENARIO.ipOrderDispenseSheetPrint]: '医嘱执行摆药单',
+  [PRINT_SCENARIO.ipOralMedSheetPrint]: '住院患者用药单',
   [PRINT_SCENARIO.ipPatrolCardPrint]: '输液巡视卡',
   [PRINT_SCENARIO.ipWristbandPrint]: '住院腕带',
+  [PRINT_SCENARIO.ipBedCardPrint]: '床头卡',
+  [PRINT_SCENARIO.ipPrepayReceiptPrint]: '住院预交金收据',
   [PRINT_SCENARIO.ipOralMedLabelPrint]: '住院口服药贴',
   [PRINT_SCENARIO.ipInfusionLabelPrint]: '住院瓶签',
   [PRINT_SCENARIO.ipExamApplyPrint]: '住院检查单',
@@ -87,6 +92,10 @@ export const PRINT_SCENARIO_ITEMS: Array<{ label: string; scenarioCode: PrintSce
     label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.ipFeeListPrint],
   },
   {
+    scenarioCode: PRINT_SCENARIO.ipFeeDetailPrint,
+    label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.ipFeeDetailPrint],
+  },
+  {
     scenarioCode: PRINT_SCENARIO.ipTempOrderPrint,
     label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.ipTempOrderPrint],
   },
@@ -103,12 +112,28 @@ export const PRINT_SCENARIO_ITEMS: Array<{ label: string; scenarioCode: PrintSce
     label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.ipDispenseSheetPrint],
   },
   {
+    scenarioCode: PRINT_SCENARIO.ipOrderDispenseSheetPrint,
+    label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.ipOrderDispenseSheetPrint],
+  },
+  {
+    scenarioCode: PRINT_SCENARIO.ipOralMedSheetPrint,
+    label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.ipOralMedSheetPrint],
+  },
+  {
     scenarioCode: PRINT_SCENARIO.ipPatrolCardPrint,
     label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.ipPatrolCardPrint],
   },
   {
     scenarioCode: PRINT_SCENARIO.ipWristbandPrint,
     label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.ipWristbandPrint],
+  },
+  {
+    scenarioCode: PRINT_SCENARIO.ipBedCardPrint,
+    label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.ipBedCardPrint],
+  },
+  {
+    scenarioCode: PRINT_SCENARIO.ipPrepayReceiptPrint,
+    label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.ipPrepayReceiptPrint],
   },
   {
     scenarioCode: PRINT_SCENARIO.ipOralMedLabelPrint,

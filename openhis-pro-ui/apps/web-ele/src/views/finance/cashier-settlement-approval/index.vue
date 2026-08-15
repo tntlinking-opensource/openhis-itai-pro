@@ -6,6 +6,7 @@ import type {
   CashierSettlementApprovalListItemDto,
   LoadCashierSettlementApprovalDetailResponse,
   PageCashierSettlementApprovalsParams,
+  PharmacyDailySettlementCategoryRowDto,
 } from '#/api/finance/cashier-settlement-approval';
 import type { ApiOptionItem } from '#/types/api-response';
 
@@ -38,7 +39,11 @@ import {
 } from '#/api/finance/cashier-settlement-approval';
 import DailySettlementSummaryPanel from '#/components/charge/daily-settlement-summary-panel.vue';
 import { useRequest } from '#/hooks/use-request';
+import { formatMoneyDisplay, sumMoneyThenSettle } from '#/utils/format/money-scale';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import { printDailySettlement } from '#/utils/print/print-daily-settlement';
+import { printPharmacyDailySettlement } from '#/utils/print/print-pharmacy-daily-settlement';
+import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
 import {
   REPORT_QUERY_CONTROL,
   REPORT_QUERY_CONTROL_DATERANGE,
@@ -55,12 +60,20 @@ import {
   normalizeReportDateRangeYmd,
 } from '#/views/report/shared/report-date-range-shortcuts';
 
+import { downloadCashierSettlementApprovalDetailExcel } from './export-cashier-settlement-approval-detail-excel';
+
 defineOptions({
   name: 'CashierSettlementApproval',
 });
 
 const SETTLEMENT_STATUS_SUBMITTED = 'SUBMITTED';
 const CATEGORY_PHARMACY = 'PHARMACY';
+/** 门诊/住院收款日结类型 code。 */
+const TYPE_OP_PAYMENT = 'OP_PAYMENT';
+const TYPE_IP_PAYMENT = 'IP_PAYMENT';
+/** 门诊/住院药房日结类型 code（金额展示用售价合计）。 */
+const TYPE_OP_PHARMACY = 'OP_PHARMACY';
+const TYPE_IP_PHARMACY = 'IP_PHARMACY';
 const PAGE_TITLE = '交账审批';
 
 interface QueryFormState {
@@ -77,6 +90,8 @@ const tableData = ref<CashierSettlementApprovalListItemDto[]>([]);
 const total = ref(0);
 const tableScrollRef = ref<InstanceType<typeof ReportTableScroll> | null>(null);
 const detailData = ref<LoadCashierSettlementApprovalDetailResponse | null>(null);
+/** 详情打印进行中。 */
+const printSubmitting = ref(false);
 
 const categoryOptions = ref<ApiOptionItem[]>([]);
 const statusOptions = ref<ApiOptionItem[]>([]);
@@ -233,6 +248,75 @@ function formatScopeLabel(row: CashierSettlementApprovalListItemDto): string {
   return '—';
 }
 
+/** 是否收款日结类型（按 type code）。 */
+function isPaymentSettlementType(typeEnum?: string): boolean {
+  return typeEnum === TYPE_OP_PAYMENT || typeEnum === TYPE_IP_PAYMENT;
+}
+
+/** 是否药房日结类型（按 type code）。 */
+function isPharmacySettlementType(typeEnum?: string): boolean {
+  return typeEnum === TYPE_OP_PHARMACY || typeEnum === TYPE_IP_PHARMACY;
+}
+
+/** 业务窗文案：起止时间。 */
+function formatSettlementPeriodText(dateFrom?: string, dateTo?: string): string {
+  const from = parseTime(dateFrom);
+  const to = parseTime(dateTo);
+  if (from === '—' && to === '—') {
+    return '';
+  }
+  return `${from} ~ ${to}`;
+}
+
+/** 打印作业名（按交账类型）。 */
+function resolvePrintJobName(typeEnum?: string, busNo?: string): string {
+  const no = busNo?.trim();
+  let title = '交账单';
+  if (typeEnum === TYPE_OP_PAYMENT) {
+    title = '门诊收费日结单';
+  } else if (typeEnum === TYPE_IP_PAYMENT) {
+    title = '住院收费日结单';
+  } else if (typeEnum === TYPE_OP_PHARMACY) {
+    title = '门诊药房日结单';
+  } else if (typeEnum === TYPE_IP_PHARMACY) {
+    title = '住院药房日结单';
+  }
+  return no ? `${title}-${no}` : title;
+}
+
+/** 当前详情是否可打印。 */
+const canPrintDetail = computed(() => {
+  const detail = detailData.value;
+  if (!detail?.header) {
+    return false;
+  }
+  const typeEnum = detail.header.typeEnum;
+  if (isPharmacySettlementType(typeEnum)) {
+    return (
+      (detail.pharmacyCategoryRows?.length ?? 0) > 0 ||
+      (detail.pharmacyProductRows?.length ?? 0) > 0
+    );
+  }
+  if (isPaymentSettlementType(typeEnum)) {
+    return Boolean(detail.paymentSummary);
+  }
+  return false;
+});
+
+/** 当前详情是否可导出（有头且有任一体现算区块）。 */
+const canExportDetail = computed(() => {
+  const detail = detailData.value;
+  if (!detail?.header) {
+    return false;
+  }
+  return (
+    (detail.paymentRows?.length ?? 0) > 0 ||
+    Boolean(detail.paymentSummary) ||
+    (detail.pharmacyCategoryRows?.length ?? 0) > 0 ||
+    (detail.pharmacyProductRows?.length ?? 0) > 0
+  );
+});
+
 /** 金额两位小数展示。 */
 function formatAmount(value?: string | number): string {
   if (value === null || value === undefined || value === '') {
@@ -242,7 +326,40 @@ function formatAmount(value?: string | number): string {
   if (Number.isNaN(num)) {
     return String(value);
   }
-  return num.toFixed(2);
+  return formatMoneyDisplay(num);
+}
+
+/** 大类行是否含有效进/售金额（排除驳回清挂载后的零占位）。 */
+function hasPharmacyCategoryAmount(
+  categoryRows?: PharmacyDailySettlementCategoryRowDto[],
+): boolean {
+  if (!categoryRows?.length) {
+    return false;
+  }
+  // 任一进/售非零即视为有挂载现算结果
+  return categoryRows.some((row) => {
+    const sale = Number(row.saleAmount);
+    const purchase = Number(row.purchaseAmount);
+    return (Number.isFinite(sale) && sale !== 0) || (Number.isFinite(purchase) && purchase !== 0);
+  });
+}
+
+/**
+ * 审批金额展示规则：
+ * 药房日结优先大类「售价总额」加总；收款日结 / 无有效大类时用头表 totalIncome。
+ */
+function resolveApprovalAmount(
+  totalIncome?: string | number,
+  typeEnum?: string,
+  categoryRows?: PharmacyDailySettlementCategoryRowDto[],
+): string {
+  // 药房 + 有效大类金额：与详情「大类汇总」售价之和对齐
+  if (isPharmacySettlementType(typeEnum) && hasPharmacyCategoryAmount(categoryRows)) {
+    // 收集各大类售价后 settle 到 2 位
+    const saleAmounts = (categoryRows ?? []).map((row) => row.saleAmount);
+    return formatAmount(sumMoneyThenSettle(saleAmounts));
+  }
+  return formatAmount(totalIncome);
 }
 
 /** 是否待审（按 status code）。 */
@@ -307,6 +424,87 @@ async function handleReject(row: CashierSettlementApprovalListItemDto) {
   await runReject({ settlementId, reason: reason || undefined });
   drawerApi.close();
   await getList();
+}
+
+/** 打印当前交账详情（收款/药房日结走既有模板）。 */
+async function handlePrintDetail() {
+  const detail = detailData.value;
+  const header = detail?.header;
+  if (!detail || !header) {
+    ElMessage.warning('请先打开交账详情');
+    return;
+  }
+  if (!canPrintDetail.value) {
+    ElMessage.warning('当前详情无可打印的日结汇总');
+    return;
+  }
+
+  const typeEnum = header.typeEnum;
+  const settlementId = preserveApiIdForRequest(header.settlementId) ?? '';
+  const jobName = resolvePrintJobName(typeEnum, header.busNo);
+  const settlementPeriodText = formatSettlementPeriodText(header.dateFrom, header.dateTo);
+
+  printSubmitting.value = true;
+  try {
+    if (isPharmacySettlementType(typeEnum)) {
+      // 售价合计：有大类则加总，否则回落头表 totalIncome
+      let pharmacyTotalIncome: string | number | undefined = header.totalIncome;
+      if (hasPharmacyCategoryAmount(detail.pharmacyCategoryRows)) {
+        pharmacyTotalIncome = sumMoneyThenSettle(
+          (detail.pharmacyCategoryRows ?? []).map((row) => row.saleAmount),
+        );
+      }
+      await printPharmacyDailySettlement({
+        jobName,
+        bizRef: settlementId ? { settlementId } : undefined,
+        source: {
+          hospitalName: resolvePrintHospitalName(),
+          documentTitle: resolvePrintJobName(typeEnum),
+          pharmacyName: formatScopeLabel(header),
+          settlementPeriodText,
+          dispenserNamesText: '—',
+          pendingCount: detail.mountedSourceCount ?? header.paymentCount ?? 0,
+          totalIncome: pharmacyTotalIncome,
+          categoryRows: detail.pharmacyCategoryRows,
+          productRows: detail.pharmacyProductRows,
+        },
+      });
+      return;
+    }
+
+    if (!detail.paymentSummary) {
+      ElMessage.warning('收款日结汇总不可用，无法打印');
+      return;
+    }
+    await printDailySettlement({
+      jobName,
+      bizRef: settlementId ? { settlementId } : undefined,
+      source: {
+        hospitalName: resolvePrintHospitalName(),
+        cashierName: header.submitterName?.trim() || '',
+        settlementPeriodText,
+        rows: detail.paymentRows,
+        summary: detail.paymentSummary,
+      },
+    });
+  } finally {
+    printSubmitting.value = false;
+  }
+}
+
+/** 导出当前交账详情 Excel。 */
+function handleExportDetail() {
+  const detail = detailData.value;
+  if (!detail?.header) {
+    ElMessage.warning('请先打开交账详情');
+    return;
+  }
+  if (!canExportDetail.value) {
+    ElMessage.warning('当前详情无可导出的明细');
+    return;
+  }
+  downloadCashierSettlementApprovalDetailExcel(detail);
+  ElMessage.success('导出成功');
 }
 
 /** 切换每页条数。 */
@@ -472,13 +670,16 @@ onMounted(async () => {
                 :class-name="REPORT_TABLE_NUM_CELL"
               />
               <ElTableColumn
-                prop="totalIncome"
                 label="金额"
                 width="100"
                 align="right"
                 header-align="right"
                 :class-name="REPORT_TABLE_NUM_CELL"
-              />
+              >
+                <template #default="{ row }">
+                  {{ resolveApprovalAmount(row.totalIncome, row.typeEnum) }}
+                </template>
+              </ElTableColumn>
               <ElTableColumn label="操作" width="200" fixed="right" align="center">
                 <template #default="{ row }">
                   <ElButton link type="primary" @click="handleViewDetail(row)">详情</ElButton>
@@ -535,7 +736,11 @@ onMounted(async () => {
             detailData.mountedSourceCount ?? detailData.header.paymentCount ?? '—'
           }}</ElDescriptionsItem>
           <ElDescriptionsItem label="金额">{{
-            detailData.header.totalIncome ?? '—'
+            resolveApprovalAmount(
+              detailData.header.totalIncome,
+              detailData.header.typeEnum,
+              detailData.pharmacyCategoryRows,
+            )
           }}</ElDescriptionsItem>
           <ElDescriptionsItem label="业务窗起">{{
             parseTime(detailData.header.dateFrom)
@@ -646,25 +851,35 @@ onMounted(async () => {
           </ElTable>
         </template>
 
-        <div
-          v-if="detailData.header && isPendingApproval(detailData.header)"
-          class="mt-4 flex gap-2"
-        >
+        <div v-if="detailData.header" class="mt-4 flex flex-wrap gap-2">
           <ElButton
-            type="primary"
-            :loading="approveLoading"
-            @click="handleApprove(detailData.header)"
-          >
-            通过
-          </ElButton>
-          <ElButton
-            type="danger"
             plain
-            :loading="rejectLoading"
-            @click="handleReject(detailData.header)"
+            :loading="printSubmitting"
+            :disabled="!canPrintDetail"
+            @click="handlePrintDetail"
           >
-            驳回
+            打印
           </ElButton>
+          <ElButton plain :disabled="!canExportDetail" @click="handleExportDetail"
+            >导出 Excel</ElButton
+          >
+          <template v-if="isPendingApproval(detailData.header)">
+            <ElButton
+              type="primary"
+              :loading="approveLoading"
+              @click="handleApprove(detailData.header)"
+            >
+              通过
+            </ElButton>
+            <ElButton
+              type="danger"
+              plain
+              :loading="rejectLoading"
+              @click="handleReject(detailData.header)"
+            >
+              驳回
+            </ElButton>
+          </template>
         </div>
       </template>
     </Drawer>

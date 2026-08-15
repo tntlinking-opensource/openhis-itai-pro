@@ -1,5 +1,5 @@
 <!--
-  门诊/住院发药报表：汇总/明细双 Tab；患者发退药 ∪ 科室领用/退领。
+  门诊/住院药品使用报表：汇总/明细双 Tab；来源仅患者使用 / 科室领用（禁止 ALL 并集）。
 -->
 <script setup lang="ts">
 import type {
@@ -86,6 +86,8 @@ interface QueryState {
   sourceCode: string;
   presentationMode: MedicationDispensePresentationMode;
   feeNatureContractNo?: string;
+  /** 患者=开立科室；领用=领用科室 */
+  organizationId?: string;
 }
 
 const props = defineProps<Props>();
@@ -96,6 +98,7 @@ const practitionerOptions = ref<ApiOptionItem[]>([]);
 const recordTypeOptions = ref<ApiOptionItem[]>([]);
 const summaryDimensionOptions = ref<ApiOptionItem[]>([]);
 const sourceOptions = ref<ApiOptionItem[]>([]);
+const organizationOptions = ref<ApiOptionItem[]>([]);
 const feeNatureOptions = ref<ApiOptionItem[]>([]);
 const summaryRows = ref<MedicationDispenseSummaryRowDto[]>([]);
 const detailRows = ref<MedicationDispenseDetailRowDto[]>([]);
@@ -114,10 +117,23 @@ const queryParams = reactive<QueryState>({
   drugKeyword: '',
   patientKeyword: '',
   summaryDimension: SUMMARY_DIMENSION_PHARMACY,
-  sourceCode: SOURCE_CODE_ALL,
+  sourceCode: SOURCE_CODE_PATIENT_DISPENSE,
   presentationMode: PRESENTATION_MODE_DETAIL,
   feeNatureContractNo: undefined,
+  organizationId: undefined,
 });
+
+/** 去掉遗留 SOURCE_ALL，默认患者使用。 */
+function normalizeSourceOptions(items: ApiOptionItem[]): ApiOptionItem[] {
+  const filtered = items.filter((item) => String(item.value) !== SOURCE_CODE_ALL);
+  if (filtered.length > 0) {
+    return filtered;
+  }
+  return [
+    { value: SOURCE_CODE_PATIENT_DISPENSE, label: '患者发药' },
+    { value: SOURCE_CODE_DEPT_ISSUE, label: '科室领用' },
+  ];
+}
 
 const pageTitle = computed(() =>
   props.scope === 'outpatient' ? '门诊药品使用明细' : '住院药品使用明细',
@@ -130,6 +146,16 @@ const defaultExportFileName = computed(() =>
 const isSummaryTab = computed(() => queryParams.presentationMode === PRESENTATION_MODE_SUMMARY);
 
 const encounterNoLabel = computed(() => (props.scope === 'outpatient' ? '门诊号' : '住院号'));
+
+/** 来源=领用时筛领用科室，否则开立科室。 */
+const organizationFilterLabel = computed(() =>
+  queryParams.sourceCode === SOURCE_CODE_DEPT_ISSUE ? '领用科室' : '开立科室',
+);
+
+/** 明细科室列随来源切换文案。 */
+const departmentColumnLabel = computed(() =>
+  queryParams.sourceCode === SOURCE_CODE_DEPT_ISSUE ? '领用科室' : '开立科室',
+);
 
 const dateRangeShortcuts = buildReportDateRangeShortcuts();
 
@@ -186,7 +212,8 @@ const { run: runInit, loading: initLoading } = useRequest(
       practitionerOptions.value = optionDtosToSelectItems(data?.practitionerOptions);
       recordTypeOptions.value = optionDtosToSelectItems(data?.recordTypeOptions);
       summaryDimensionOptions.value = optionDtosToSelectItems(data?.summaryDimensionOptions);
-      sourceOptions.value = optionDtosToSelectItems(data?.sourceOptions);
+      sourceOptions.value = normalizeSourceOptions(optionDtosToSelectItems(data?.sourceOptions));
+      organizationOptions.value = optionDtosToSelectItems(data?.organizationOptions);
       feeNatureOptions.value = optionDtosToSelectItems(data?.feeNatureOptions);
       queryParams.dateFrom =
         normalizeReportDateRangeYmd(data?.defaultDateFrom) || queryParams.dateFrom;
@@ -198,6 +225,8 @@ const { run: runInit, loading: initLoading } = useRequest(
       const firstSource = sourceOptions.value[0]?.value;
       if (firstSource) {
         queryParams.sourceCode = String(firstSource);
+      } else {
+        queryParams.sourceCode = SOURCE_CODE_PATIENT_DISPENSE;
       }
       const firstRecordType = recordTypeOptions.value[0]?.value;
       if (firstRecordType) {
@@ -364,8 +393,9 @@ function buildFilterPayload() {
     dispenserPractitionerId: preserveApiIdForRequest(queryParams.dispenserPractitionerId),
     drugKeyword: queryParams.drugKeyword.trim() || undefined,
     patientKeyword: queryParams.patientKeyword.trim() || undefined,
-    sourceCode: queryParams.sourceCode || SOURCE_CODE_ALL,
+    sourceCode: queryParams.sourceCode || SOURCE_CODE_PATIENT_DISPENSE,
     feeNatureContractNo: queryParams.feeNatureContractNo || undefined,
+    organizationId: preserveApiIdForRequest(queryParams.organizationId),
   };
 }
 
@@ -397,6 +427,12 @@ function handleRecordTypeChange(value: string | null | undefined) {
     const allCode = recordTypeOptions.value[0]?.value;
     queryParams.recordTypeCode = allCode ? String(allCode) : undefined;
   }
+  handleQuery();
+}
+
+/** 来源切换：清空科室筛，避免开立/领用串用。 */
+function handleSourceChange() {
+  queryParams.organizationId = undefined;
   handleQuery();
 }
 
@@ -440,8 +476,9 @@ async function handleReset() {
   queryParams.summaryDimension = String(
     summaryDimensionOptions.value[0]?.value ?? SUMMARY_DIMENSION_PHARMACY,
   );
-  queryParams.sourceCode = String(sourceOptions.value[0]?.value ?? SOURCE_CODE_ALL);
+  queryParams.sourceCode = String(sourceOptions.value[0]?.value ?? SOURCE_CODE_PATIENT_DISPENSE);
   queryParams.feeNatureContractNo = undefined;
+  queryParams.organizationId = undefined;
   queryParams.presentationMode = PRESENTATION_MODE_DETAIL;
   await runInit();
   void getList();
@@ -494,10 +531,27 @@ onMounted(async () => {
               <ElSelect
                 v-model="queryParams.sourceCode"
                 :class="REPORT_QUERY_CONTROL"
-                @change="handleQuery"
+                @change="handleSourceChange"
               >
                 <ElOption
                   v-for="item in toSelectOptions(sourceOptions)"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem :label="organizationFilterLabel">
+              <ElSelect
+                v-model="queryParams.organizationId"
+                clearable
+                filterable
+                placeholder="全部"
+                :class="REPORT_QUERY_CONTROL"
+                @change="handleQuery"
+              >
+                <ElOption
+                  v-for="item in toSelectOptions(organizationOptions)"
                   :key="item.value"
                   :label="item.label"
                   :value="item.value"
@@ -588,7 +642,7 @@ onMounted(async () => {
               <ElInput
                 v-model="queryParams.patientKeyword"
                 clearable
-                placeholder="姓名/门诊号等"
+                :placeholder="scope === 'outpatient' ? '姓名/门诊号' : '姓名/住院号'"
                 :class="REPORT_QUERY_CONTROL"
                 @keyup.enter="handleQuery"
                 @clear="handleQuery"
@@ -611,7 +665,7 @@ onMounted(async () => {
                 />
               </ElSelect>
             </ElFormItem>
-            <ElFormItem v-if="isSummaryTab" label="汇总维">
+            <ElFormItem v-if="isSummaryTab" label="汇总维度">
               <ElSelect
                 v-model="queryParams.summaryDimension"
                 :class="REPORT_QUERY_CONTROL"
@@ -917,7 +971,7 @@ onMounted(async () => {
               </ElTableColumn>
               <ElTableColumn
                 prop="departmentName"
-                label="科室"
+                :label="departmentColumnLabel"
                 width="120"
                 align="center"
                 header-align="center"

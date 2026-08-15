@@ -88,10 +88,7 @@ export const operationTabs: OperationTab[] = [
 ];
 
 /** 暂不上线的页签，不在导航栏展示 */
-const hiddenOperationTabs = new Set<OperationTab>([
-  OPERATION_TAB.MEDICAL_RECORD_REVIEW,
-  OPERATION_TAB.ORDER_VIEW,
-]);
+const hiddenOperationTabs = new Set<OperationTab>([OPERATION_TAB.ORDER_VIEW]);
 
 export const visibleOperationTabs = operationTabs.filter((tab) => !hiddenOperationTabs.has(tab));
 

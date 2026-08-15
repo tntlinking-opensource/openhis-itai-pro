@@ -1,7 +1,7 @@
 <!--
   财务审批：T3 带操作查询列表（报表同构布局）。
   筛选默认仅前端：类型空（全部）+ 待审 + 审批时间当月；金额列按单据类型动态切换；
-  支持导出；查看跳转业务工作站只读审驳。
+  支持导出；待审行展示通过/驳回（与交账审批同口径，角色由后端 Gate 校验）。
 -->
 <script setup lang="ts">
 import type {
@@ -35,7 +35,6 @@ import {
   pageFinanceApprovalDocumentsApi,
   rejectFinanceApprovalApi,
 } from '#/api/finance/approval';
-import { useFinanceApprovalAccess } from '#/composables/use-finance-approval-access';
 import { useRequest } from '#/hooks/use-request';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import {
@@ -56,6 +55,7 @@ import {
 
 import { downloadFinanceApprovalCsv } from './export-finance-approval-csv';
 import {
+  buildFinanceApprovalViewAmountQuery,
   FINANCE_APPROVAL_TYPE_PRICE,
   resolveFinanceApprovalAmountCell,
   resolveFinanceApprovalAmountColumns,
@@ -107,7 +107,6 @@ interface QueryFormState {
 }
 
 const router = useRouter();
-const { canFinanceApprove } = useFinanceApprovalAccess();
 
 const tableData = ref<FinanceApprovalDocumentRowDto[]>([]);
 const total = ref(0);
@@ -366,7 +365,15 @@ function handleView(row: FinanceApprovalDocumentRowDto) {
     ElMessage.warning('暂不支持查看该单据类型详情');
     return;
   }
-  void router.push({ path, query: { busNo, fromFinanceApproval: '1' } });
+  // 金额随深链带入详情页脚，与列表列口径一致（退货详情无行金额时尤需）
+  void router.push({
+    path,
+    query: {
+      busNo,
+      fromFinanceApproval: '1',
+      ...buildFinanceApprovalViewAmountQuery(row, typeCode),
+    },
+  });
 }
 
 /** 审批通过 */
@@ -728,7 +735,7 @@ onMounted(async () => {
                 <template #default="{ row }">
                   <ElButton link type="primary" @click="handleView(row)">查看</ElButton>
                   <ElButton
-                    v-if="isPendingApproval(row) && canFinanceApprove"
+                    v-if="isPendingApproval(row)"
                     link
                     type="primary"
                     @click="handleAgree(row)"
@@ -736,7 +743,7 @@ onMounted(async () => {
                     通过
                   </ElButton>
                   <ElButton
-                    v-if="isPendingApproval(row) && canFinanceApprove"
+                    v-if="isPendingApproval(row)"
                     link
                     type="danger"
                     @click="handleReject(row)"

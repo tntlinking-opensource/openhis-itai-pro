@@ -100,6 +100,11 @@ export interface RegistrationEncounterDto {
   attendingDoctorId?: string;
   /** 主治医生姓名 */
   attendingDoctorName?: string;
+  /**
+   * 费用性质（合同）ID。
+   * 已登记：优先医保账户合同，否则个人现金户；未开户可空。
+   */
+  contractId?: string;
 }
 
 /** 登记上下文加载响应 */

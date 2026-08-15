@@ -1,4 +1,4 @@
-<!--
+﻿<!--
   盘库/盘点单右侧主区：与进货单/入库单同构（工作站 + VXE 明细 + 审批操作条）。
 -->
 <script setup lang="ts">
@@ -7,13 +7,14 @@ import type { ApiOptionItem } from '#/types/api-response';
 import type { InboundProductUnitBand } from '#/utils/inventory/inbound-product-unit-bands';
 import type { FormInstance } from 'element-plus';
 
-import { computed, nextTick, reactive, ref, watch } from 'vue';
+import { computed, nextTick, reactive, ref, watch, onBeforeUnmount, onDeactivated } from 'vue';
 
 import { Trash2 } from '@vben/icons';
 import { useUserStore } from '@vben/stores';
 import { formatDateTime } from '@vben/utils';
 
 import InvDocActions from '@inventory/components/inv-doc-actions.vue';
+import InvDocAmountSummaryBar from '@inventory/components/inv-doc-amount-summary-bar.vue';
 import InvDocGridToolbar from '@inventory/components/inv-doc-grid-toolbar.vue';
 import InvDocTraceScanBridge from '@inventory/components/inv-doc-trace-scan-bridge.vue';
 import InvMainShell from '@inventory/components/inv-main-shell.vue';
@@ -30,10 +31,14 @@ import {
 } from 'element-plus';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
-import { useFromFinanceApproval } from '#/composables/use-from-finance-approval';
+import { useFinanceApprovalViewSummary } from '#/composables/use-finance-approval-view-summary';
 import { bindInvDocCompactColumns } from '#/composables/use-inv-doc-compact-columns';
 import { useInventoryDocGridEdit } from '#/composables/use-inventory-doc-grid-edit';
 import { useInvDocParentSyncSession } from '#/composables/use-inv-doc-parent-sync-session';
+import {
+  clearInvDocDraftCacheAfterSave,
+  INV_DOC_DRAFT_SCENE,
+} from '#/utils/inventory/inv-doc-draft-cache';
 import {
   agreePharmacyStocktakeApi,
   createPharmacyStocktakeApi,
@@ -117,6 +122,8 @@ import {
   resolveDefaultPractitionerIdForSelect,
   resolveDocHeadProductPickLocationId,
   warnInventoryLocationRequiredByLabel,
+  resolveInvDocPreparedByName,
+  resolveInvDocApprovedByName,
 } from '#/utils/inventory/inventory-workbench-list';
 import {
   buildInventoryLocationHeadFormRules,
@@ -167,9 +174,13 @@ interface StocktakePreviewRow {
 }
 
 interface Props {
+  /** 侧栏当前单据行（制单人/审批人与队列卡片同口径） */
+  queueCardRow?: null | Record<string, unknown>;
   variant: 'department' | 'pharmacy' | 'warehouse';
   busNo?: string;
   isDraftOrder?: boolean;
+  /** 侧栏草稿稳定 id（_clientDraftId），用于 session 缓存隔离 */
+  clientDraftId?: string;
   resetKey?: number;
   sidebarPurposeLocationId?: number | string;
   locationOptions:
@@ -185,8 +196,10 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  queueCardRow: null,
   busNo: '',
   isDraftOrder: false,
+  clientDraftId: '',
   resetKey: 0,
   sidebarPurposeLocationId: undefined,
   locationOptions: () => [],
@@ -274,7 +287,8 @@ const practitionerId = ref<number | string | undefined>(undefined);
 const saving = ref(false);
 
 const isNewDraft = computed(() => !headerBusNo.value);
-const { fromFinanceApproval } = useFromFinanceApproval();
+const { fromFinanceApproval, showFinanceApprovalSummary, financeApprovalSummaryItems } =
+  useFinanceApprovalViewSummary();
 
 const documentEditable = computed(
   () =>
@@ -1055,7 +1069,7 @@ function buildLinesPayload(
       profitLossAmount: Number.isFinite(plAmt) ? plAmt : undefined,
       unitCode: String(persistedActual.unitCode ?? r.unitCode ?? '').trim() || undefined,
       lotNumber: String(r.lotNumber ?? '').trim() || undefined,
-      traceNo: String(r.traceNo ?? '').trim() || undefined,
+      traceNo: String(r.traceNo ?? '').trim(),
       inventoryItemId: r.inventoryItemId,
       price: Number.isFinite(Number(r.price)) ? Number(r.price) : undefined,
       remake: String(r.remark ?? '').trim() || undefined,
@@ -1178,13 +1192,31 @@ async function persistStocktake(): Promise<string | undefined> {
   }
 }
 
+/** 落库成功后清 session 草稿缓存 */
+function clearDraftPersistAfterSave(busNo?: string) {
+  clearInvDocDraftCacheAfterSave({
+    scene:
+      props.variant === 'pharmacy'
+        ? INV_DOC_DRAFT_SCENE.pharmacyStocktake
+        : props.variant === 'department'
+          ? INV_DOC_DRAFT_SCENE.deptStocktake
+          : INV_DOC_DRAFT_SCENE.warehouseStocktake,
+    clientDraftId: props.clientDraftId,
+    busNo,
+  });
+  parentSync.clearDraftSnap();
+}
+
 async function handleSaveDoc() {
-  await persistStocktake();
+  const no = await persistStocktake();
+  if (!no) return;
+  clearDraftPersistAfterSave(no);
 }
 
 async function handleSaveAndSubmitDoc() {
   const no = await persistStocktake();
   if (!no) return;
+  clearDraftPersistAfterSave(no);
   await handleSubmitApproval();
 }
 
@@ -1195,6 +1227,16 @@ async function handleRemoveDoc() {
     } catch {
       return;
     }
+    clearInvDocDraftCacheAfterSave({
+      scene:
+        props.variant === 'pharmacy'
+          ? INV_DOC_DRAFT_SCENE.pharmacyStocktake
+          : props.variant === 'department'
+            ? INV_DOC_DRAFT_SCENE.deptStocktake
+            : INV_DOC_DRAFT_SCENE.warehouseStocktake,
+      clientDraftId: props.clientDraftId,
+    });
+    parentSync.discardDraftSession();
     resetDetailForCreate();
     emit('documentRemoved');
     return;
@@ -1219,6 +1261,7 @@ async function handleRemoveDoc() {
     } else {
       await removeWarehouseStocktakeApi({ busNo: no });
     }
+    clearDraftPersistAfterSave(no);
     ElMessage.success('已删除');
     resetDetailForCreate();
     emit('documentRemoved');
@@ -1367,17 +1410,9 @@ async function handlePrint() {
     normalizedItemTableTypeOptions.value,
     headItemTableType.value,
   );
-  const practitionerName = resolvePrintOptionLabel(
-    effectivePractitionerOptions.value,
-    practitionerId.value,
-  );
   const documentTitle = buildInvDocumentTitle(locationName, '盘点单');
-  // 取首行发生时间作制单时间展示（单头未单独缓存 applyTime）
-  const applyTimeText = String(productRows[0]?._occurrenceTime ?? '')
-    .trim()
-    .replace('T', ' ');
+  const applyTimeText = '';
 
-  // 按当前网格展示值组装盈亏明细
   const lineRows = productRows.map((row) => ({
     productName: resolveStocktakePrintProductName(row),
     specText: String(row.spec ?? '').trim(),
@@ -1393,6 +1428,12 @@ async function handlePrint() {
     reasonText: String(row.remark ?? '').trim(),
   }));
 
+  const preparedByName = resolveInvDocPreparedByName(
+    props.queueCardRow as null | Record<string, unknown>,
+  );
+  const approvedByName = resolveInvDocApprovedByName(
+    props.queueCardRow as null | Record<string, unknown>,
+  );
   await printInvDocument({
     family: 'stocktake',
     source: {
@@ -1403,10 +1444,9 @@ async function handlePrint() {
       itemTypeText,
       sourceLocationText: locationName,
       destLocationText: '',
-      practitionerName,
       lineRows,
-      preparedByName: practitionerName,
-      approvedByName: '',
+      preparedByName,
+      approvedByName,
     },
     bizRef: { busNo, docKind: 'stocktake', variant: props.variant },
     jobName: documentTitle,
@@ -1641,7 +1681,43 @@ interface StocktakeDraftSnap {
   batchPages?: [number, StocktakePreviewRow[]][];
 }
 
-const parentSync = useInvDocParentSyncSession<StocktakeDraftSnap>();
+const parentSync = useInvDocParentSyncSession<StocktakeDraftSnap>({
+  scene: () =>
+    props.variant === 'pharmacy'
+      ? INV_DOC_DRAFT_SCENE.pharmacyStocktake
+      : props.variant === 'department'
+        ? INV_DOC_DRAFT_SCENE.deptStocktake
+        : INV_DOC_DRAFT_SCENE.warehouseStocktake,
+  getDocKey: () => {
+    const draftId = String(props.clientDraftId ?? '').trim();
+    if (props.isDraftOrder && draftId) return draftId;
+    return String(props.busNo ?? headerBusNo.value ?? '').trim() || undefined;
+  },
+  getCardMeta: () => ({
+    statusEnum_enumText: '编辑中',
+    applyTime: '',
+  }),
+});
+
+/** 拍摄当前主区草稿快照（侧栏切单 / 落盘共用） */
+function captureStocktakeDraftSnap(): StocktakeDraftSnap {
+  if (batchMode.value) {
+    flushCurrentBatchPageToCache();
+  }
+  return {
+    purposeLocationId: purposeLocationId.value,
+    practitionerId: practitionerId.value,
+    rows: collectGridRows().map((r) => ({ ...r })),
+    batchMode: batchMode.value,
+    batchPageNo: batchPageNo.value,
+    batchTotal: batchTotal.value,
+    batchPages: batchMode.value
+      ? Array.from(batchPageCache.value.entries()).map(
+          ([pageNo, rows]) => [pageNo, cloneStocktakeRows(rows)] as [number, StocktakePreviewRow[]],
+        )
+      : undefined,
+  };
+}
 
 /** 侧栏切单：缓存/恢复本地草稿，避免已落库明细污染新建单 */
 async function syncFromParentContext() {
@@ -1649,25 +1725,7 @@ async function syncFromParentContext() {
     { isDraftOrder: Boolean(props.isDraftOrder), parentBusNo: props.busNo },
     {
       getLocalPersistedBusNo: () => headerBusNo.value,
-      captureDraft: () => {
-        if (batchMode.value) {
-          flushCurrentBatchPageToCache();
-        }
-        return {
-          purposeLocationId: purposeLocationId.value,
-          practitionerId: practitionerId.value,
-          rows: collectGridRows().map((r) => ({ ...r })),
-          batchMode: batchMode.value,
-          batchPageNo: batchPageNo.value,
-          batchTotal: batchTotal.value,
-          batchPages: batchMode.value
-            ? Array.from(batchPageCache.value.entries()).map(
-                ([pageNo, rows]) =>
-                  [pageNo, cloneStocktakeRows(rows)] as [number, StocktakePreviewRow[]],
-              )
-            : undefined,
-        };
-      },
+      captureDraft: captureStocktakeDraftSnap,
       restoreDraft: async (snap) => {
         headerBusNo.value = undefined;
         detailStatusEnum.value = undefined;
@@ -1702,6 +1760,21 @@ async function syncFromParentContext() {
     },
   );
 }
+/** 切菜单 / KeepAlive 停用前把未保存草稿写入 sessionStorage */
+function flushStocktakeDraftPersist(): void {
+  parentSync.flushPersist({
+    getLocalPersistedBusNo: () => headerBusNo.value,
+    captureDraft: captureStocktakeDraftSnap,
+  });
+}
+
+onBeforeUnmount(() => {
+  flushStocktakeDraftPersist();
+});
+
+onDeactivated(() => {
+  flushStocktakeDraftPersist();
+});
 
 watch(
   () => props.resetKey,
@@ -1711,7 +1784,7 @@ watch(
 );
 
 watch(
-  () => [props.busNo, props.isDraftOrder, props.resetKey] as const,
+  () => [props.busNo, props.isDraftOrder, props.resetKey, props.clientDraftId] as const,
   () => {
     void syncFromParentContext();
   },
@@ -1881,6 +1954,10 @@ watch(
           </div>
         </div>
       </div>
+      <InvDocAmountSummaryBar
+        v-if="showFinanceApprovalSummary"
+        :items="financeApprovalSummaryItems"
+      />
     </InvMainShell>
   </div>
   <InvDocTraceScanBridge

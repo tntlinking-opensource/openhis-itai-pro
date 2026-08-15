@@ -40,6 +40,8 @@ export interface OutpatientInfoItemDto {
   ageText?: null | string;
   idCard?: null | string;
   phone?: null | string;
+  /** 患者地址全文（主档；医生站卡片回显） */
+  address?: null | string;
   organizationId?: null | string;
   organizationName?: null | string;
   doctorId?: null | string;
@@ -64,6 +66,8 @@ export interface OutpatientInfoItemDto {
   workInjuryNeeds2301Upload?: boolean | null;
   /** 费用性质展示（有医保账户优先医保合同名） */
   contractDisplay?: null | string;
+  /** 险种类型码（310 职工 / 390 城乡居民等） */
+  insutype?: null | string;
 }
 
 /** IF-DOR-01 分页响应 */
@@ -101,6 +105,18 @@ export interface CompleteOutpatientEncounterRequest {
 
 /** IF-DOR-04 门诊完诊写响应 */
 export interface CompleteOutpatientEncounterResponse {
+  encounterId: string;
+  success: boolean;
+}
+
+/** IF-DOR-06 取消接诊写请求（医生同意退号，回退待诊） */
+export interface CancelOutpatientReceptionRequest {
+  encounterId: string;
+  operatorId: string;
+}
+
+/** IF-DOR-06 取消接诊写响应 */
+export interface CancelOutpatientReceptionResponse {
   encounterId: string;
   success: boolean;
 }

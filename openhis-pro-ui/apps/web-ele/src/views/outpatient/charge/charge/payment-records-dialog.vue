@@ -61,6 +61,41 @@ const selectedSetlinfo = computed(
   (): ChargeSettlementSetlinfoDto | null => selectedPayment.value?.setlinfo ?? null,
 );
 
+/** 患者可读「本次谁付的」：有 setlinfo 分项优先，否则回落摘要基金总额 */
+const patientPayCompositionRows = computed(() => {
+  const payment = selectedPayment.value;
+  if (!payment) {
+    return [];
+  }
+  const setl = selectedSetlinfo.value;
+  const rows: { key: string; label: string; value: number }[] = [];
+  const pushIf = (key: string, label: string, raw: null | number | string | undefined) => {
+    const n = Number(raw ?? 0);
+    if (!Number.isFinite(n) || Math.abs(n) < 0.000001) {
+      return;
+    }
+    rows.push({ key, label, value: n });
+  };
+  if (setl) {
+    pushIf('hifpPay', '基本医保统筹', setl.hifpPay);
+    pushIf('othPay', '其他支出', setl.othPay);
+    pushIf('cvlservPay', '公务员医疗补助', setl.cvlservPay);
+    pushIf('hifmiPay', '居民大病保险', setl.hifmiPay);
+    pushIf('hifobPay', '职工大额补助', setl.hifobPay);
+    pushIf('mafPay', '医疗救助', setl.mafPay);
+    pushIf('acctPay', '个人账户', setl.acctPay ?? payment.acctPay);
+    pushIf('psnCashPay', '现金', setl.psnCashPay ?? payment.psnCashPay);
+    pushIf('fundPaySumamt', '基金支付合计', setl.fundPaySumamt ?? payment.fundPaySumamt);
+  } else {
+    pushIf('fundPaySumamt', '基金支付合计', payment.fundPaySumamt);
+    pushIf('acctPay', '个人账户', payment.acctPay);
+    pushIf('psnCashPay', '现金', payment.psnCashPay);
+  }
+  return rows;
+});
+
+const showPatientPayComposition = computed(() => patientPayCompositionRows.value.length > 0);
+
 const showSetlinfoDetail = computed(() => {
   const setlinfo = selectedSetlinfo.value;
   if (!setlinfo) {
@@ -88,11 +123,16 @@ const setlinfoDisplayRows = computed(() => {
       continue;
     }
     // 金额/比例为 0 时仍展示（平台回执常见）
+    let display = formatSetlinfoField(raw, def.kind);
+    // 公务员标志按字典 0/1 转是/否，便于收银回看
+    if (def.key === 'cvlservFlag') {
+      display = formatCvlservFlagText(raw);
+    }
     rows.push({
       key: def.key,
       label: def.label,
       kind: def.kind,
-      value: formatSetlinfoField(raw, def.kind),
+      value: display,
     });
   }
   return rows;
@@ -255,6 +295,18 @@ function formatSetlinfoField(
   return `¥${formatMoney(num)}`;
 }
 
+/** 公务员标志展示：0→否 / 1→是，其余保留原文 */
+function formatCvlservFlagText(value: null | number | string | undefined) {
+  const text = String(value ?? '').trim();
+  if (text === '1') {
+    return '是';
+  }
+  if (text === '0') {
+    return '否';
+  }
+  return text || '—';
+}
+
 /** 列表金额：displayAmount 为 0 时回落医保医疗费总额 */
 function resolvePaymentListAmount(row: ChargeSettlementInsuranceSummaryDto) {
   const display = Number(row.displayAmount);
@@ -361,7 +413,7 @@ function handleClose() {
             <span>¥{{ formatMoney(selectedPayment.medfeeSumamt) }}</span>
           </div>
           <div class="payment-dialog__summary-item payment-dialog__summary-item--fund">
-            <span class="payment-dialog__summary-label">统筹</span>
+            <span class="payment-dialog__summary-label">基金支付合计</span>
             <span>¥{{ formatMoney(selectedPayment.fundPaySumamt) }}</span>
           </div>
           <div class="payment-dialog__summary-item payment-dialog__summary-item--fund">
@@ -371,6 +423,21 @@ function handleClose() {
           <div class="payment-dialog__summary-item">
             <span class="payment-dialog__summary-label">自付</span>
             <span>¥{{ formatMoney(selectedPayment.psnCashPay) }}</span>
+          </div>
+        </div>
+      </section>
+
+      <section v-if="selectedPayment && showPatientPayComposition" class="payment-dialog__section">
+        <SectionTitle title="本次谁付的" />
+        <div class="payment-dialog__summary payment-dialog__summary--compose mt-2">
+          <div
+            v-for="row in patientPayCompositionRows"
+            :key="row.key"
+            class="payment-dialog__summary-item"
+            :class="{ 'payment-dialog__summary-item--fund': row.key !== 'psnCashPay' }"
+          >
+            <span class="payment-dialog__summary-label">{{ row.label }}</span>
+            <span>¥{{ formatMoney(row.value) }}</span>
           </div>
         </div>
       </section>
@@ -438,6 +505,10 @@ function handleClose() {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
+}
+
+.payment-dialog__summary--compose {
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
 }
 
 .payment-dialog__summary-item {

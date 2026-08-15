@@ -26,6 +26,10 @@ import {
   normalizePricingCatalogRow,
   PRICING_PRODUCT_TABLE_DEVICE,
   PRICING_PRODUCT_TABLE_SERVICE,
+  resolvePricingDefaultBandKind,
+  resolvePricingDisplayUnitCode,
+  resolvePricingDisplayUnitName,
+  resolvePricingDisplayUnitPrice,
 } from './map-nurse-station-inpatient-billing';
 
 /** 与后端 PRODUCT_DEFINITION_RM_PAGE_SIZE_MAX 对齐 */
@@ -37,12 +41,19 @@ export interface PricingOrderTemplateSelectedItem {
   catalog: NurseStationPricingCatalogRowDto;
   category: PricingCatalogCategory;
   quantity: number;
+  selectedBandKind: string;
+  displayUnitPrice: number;
+  displayUnitCode: string;
+  displayUnitName: string;
 }
 
 /** 划价组套套用入参 */
 export interface ApplyPricingOrderTemplateParams {
   orderTemplateId: string;
+  /** 住院科室（取药模板键回落） */
   organizationUnitId?: string;
+  /** 就诊主键（耗材目录优先按就诊科室取药模板） */
+  encounterId?: string;
   /** 已选清单：同项目累加数量 */
   existingSelected?: PricingOrderTemplateSelectedItem[];
 }
@@ -135,6 +146,7 @@ function groupPrepickedKeysByTable(
 async function fetchPricingCatalogRowsByPrepickedKeys(
   keys: PrepickedProductKeyDto[],
   organizationUnitId?: string,
+  encounterId?: string,
 ): Promise<NurseStationPricingCatalogRowDto[]> {
   if (keys.length === 0) {
     return [];
@@ -153,6 +165,7 @@ async function fetchPricingCatalogRowsByPrepickedKeys(
         productTableNames: [productTableName],
         prepickedProductKeys: chunk,
         organizationUnitId,
+        encounterId,
       });
       const { content } = parsePagedRowsFromApiData<NurseStationPricingCatalogRowDto>(res);
       rows.push(...content);
@@ -173,6 +186,36 @@ function resolveTemplateLineQuantity(line: OrderTemplateLineRowItem): number {
 /** 目录行 → 划价选品类别 */
 function resolveCatalogCategory(catalog: NurseStationPricingCatalogRowDto): PricingCatalogCategory {
   return isPricingDeviceCatalogRow(catalog) ? 'device' : 'service';
+}
+
+/** 组套/已选行补齐默认单位槽与展示单价。 */
+function withPricingBandFields(
+  item: Omit<
+    PricingOrderTemplateSelectedItem,
+    'selectedBandKind' | 'displayUnitPrice' | 'displayUnitCode' | 'displayUnitName'
+  > &
+    Partial<
+      Pick<
+        PricingOrderTemplateSelectedItem,
+        'selectedBandKind' | 'displayUnitPrice' | 'displayUnitCode' | 'displayUnitName'
+      >
+    >,
+): PricingOrderTemplateSelectedItem {
+  const selectedBandKind =
+    item.selectedBandKind || resolvePricingDefaultBandKind(item.catalog, item.category);
+  return {
+    rowKey: item.rowKey,
+    catalog: item.catalog,
+    category: item.category,
+    quantity: item.quantity,
+    selectedBandKind,
+    displayUnitPrice:
+      item.displayUnitPrice ?? resolvePricingDisplayUnitPrice(item.catalog, selectedBandKind),
+    displayUnitCode:
+      item.displayUnitCode ?? resolvePricingDisplayUnitCode(item.catalog, selectedBandKind),
+    displayUnitName:
+      item.displayUnitName ?? resolvePricingDisplayUnitName(item.catalog, selectedBandKind),
+  };
 }
 
 /**
@@ -221,36 +264,38 @@ export async function applyPricingOrderTemplateToSelectedItems(
   const catalogRows = await fetchPricingCatalogRowsByPrepickedKeys(
     lineKeys.map((item) => item.key),
     params.organizationUnitId,
+    params.encounterId,
   );
-  // 目录主键 → 归一化行
-  const catalogByKey = new Map<string, NurseStationPricingCatalogRowDto>();
+  // 目录：定义键 → 首条批号/品级行（组套按品匹配，取首批）
+  const catalogByDefinitionKey = new Map<string, NurseStationPricingCatalogRowDto>();
   for (const raw of catalogRows) {
     const categoryHint: PricingCatalogCategory =
       String(raw.productTableName ?? '').toLowerCase() === PRICING_PRODUCT_TABLE_DEVICE
         ? 'device'
         : 'service';
     const catalog = normalizePricingCatalogRow(raw, categoryHint);
-    const rowKey = buildPricingCatalogRowKey(catalog, categoryHint);
-    if (rowKey && rowKey !== ':') {
-      catalogByKey.set(rowKey, catalog);
+    const definitionId = preserveApiIdForRequest(catalog.productDefinitionId) ?? '';
+    const tableName = String(catalog.productTableName ?? '').trim();
+    if (!definitionId || !tableName) {
+      continue;
+    }
+    const definitionKey = `${tableName}:${definitionId}`;
+    // 同品多批号：保留首条（FIFO 序与目录装配一致）
+    if (!catalogByDefinitionKey.has(definitionKey)) {
+      catalogByDefinitionKey.set(definitionKey, catalog);
     }
   }
 
   // 以已选清单为底，同项目累加数量
   const selectedMap = new Map<string, PricingOrderTemplateSelectedItem>();
   for (const item of params.existingSelected ?? []) {
-    selectedMap.set(item.rowKey, {
-      rowKey: item.rowKey,
-      catalog: item.catalog,
-      category: item.category,
-      quantity: item.quantity,
-    });
+    selectedMap.set(item.rowKey, withPricingBandFields(item));
   }
 
   let appliedLineCount = 0;
   for (const { line, key } of lineKeys) {
     const lookupKey = `${key.productTableName}:${key.productDefinitionId}`;
-    const catalog = catalogByKey.get(lookupKey);
+    const catalog = catalogByDefinitionKey.get(lookupKey);
     const name = String(line.productName ?? catalog?.name ?? '').trim() || '未命名项目';
     if (!catalog) {
       missingProductNames.push(name);
@@ -263,12 +308,15 @@ export async function applyPricingOrderTemplateToSelectedItems(
     if (existing) {
       existing.quantity += quantity;
     } else {
-      selectedMap.set(rowKey, {
+      selectedMap.set(
         rowKey,
-        catalog,
-        category,
-        quantity,
-      });
+        withPricingBandFields({
+          rowKey,
+          catalog,
+          category,
+          quantity,
+        }),
+      );
     }
     appliedLineCount += 1;
   }

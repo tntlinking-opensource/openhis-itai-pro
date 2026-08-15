@@ -7,6 +7,7 @@ import TraceBatchScanDialog from '#/components/trace/trace-batch-scan-dialog.vue
 import type { TraceBatchScanLine } from '#/utils/trace';
 
 import {
+  resolveDispenseMaxTraceCount,
   resolveDispenseOperationSplitQty,
   resolveDispenseRequiredTraceCount,
   resolveDispenseTraceScanInventory,
@@ -47,10 +48,17 @@ const scanLines = computed((): TraceBatchScanLine[] =>
       lotNumber: inventory.lotNumber,
       itemName: row.itemName,
       spec: row.spec,
-      rxNo: row.rxNo,
+      // 处方号回显易截断且易歧义，扫码弹窗不再展示
+      // 待扫硬上限=ceil(操作量)；码倍只进 operationSplitQty 做盖住
       requiredTraceCount: resolveDispenseRequiredTraceCount(row),
+      maxTraceCount: resolveDispenseMaxTraceCount(row),
       operationSplitQty: resolveDispenseOperationSplitQty(row),
+      operationUnitCode: String(row.unitCode ?? '').trim() || undefined,
       lotHasTraceMaster: row.lotHasTraceMaster === true,
+      // 主档贴码优先、无则药典：药品明细列与待扫换算同源
+      traceUnitCode: row.traceUnitCode,
+      traceUnitCodeLabel: row.traceUnitCodeText,
+      traceUnitRatio: row.traceUnitRatio,
       traceNo: row.traceCode === '—' ? '' : String(row.traceCode ?? '').trim(),
     };
   }),
@@ -65,6 +73,5 @@ const scanLines = computed((): TraceBatchScanLine[] =>
     scene="dispense"
     :subtitle="props.patientName ? `患者：${props.patientName}` : ''"
     :default-location-id="props.defaultLocationId"
-    show-rx-no-column
   />
 </template>

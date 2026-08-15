@@ -47,6 +47,8 @@ export const BUILTIN_ROLE_STAFF_SCOPES: Record<string, StaffScopeCode[]> = {
   ROLE_PHARMACIST: [STAFF_SCOPE.PHARMACY_LOCATION],
   ROLE_WAREHOUSE: [STAFF_SCOPE.WAREHOUSE_LOCATION, STAFF_SCOPE.PHARMACY_LOCATION],
   ROLE_ACCOUNTANT: [],
+  /** 病案管理员无人员维护块（与财务审批类似） */
+  ROLE_MRMS_ADMIN: [],
 };
 
 export interface StaffOrgLocationItem {

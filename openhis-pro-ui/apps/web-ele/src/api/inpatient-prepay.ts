@@ -58,6 +58,8 @@ export interface PrepayPaymentRecordDto {
   amount: number | string;
   bizTypeText: string;
   operatorName?: string;
+  /** 支付渠道 code：CASH / WECHAT / ALIPAY / BANK_CARD 等 */
+  payChannelCode?: string;
   payMethodText?: string;
   paymentEnum: string;
   paymentId: string;

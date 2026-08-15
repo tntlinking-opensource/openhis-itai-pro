@@ -37,6 +37,7 @@ import {
   defaultMedicationRateCode,
   formatMoneyStrYuan,
   formatUnitPriceYuan,
+  resolveContractForChrgitmLv,
 } from '../services/advice-format';
 import { isAdviceCatalogZeroStock } from '../services/advice-list';
 import {
@@ -54,6 +55,7 @@ import {
   convertTotalAmountWhenUnitChanges,
   resolveAdviceLineUnitPrice,
   roundMedicationQty,
+  roundMedicationSplitQty,
 } from '../services/medication-unit-bands';
 import AdviceDeviceServiceFormPanel from './advice-device-service-form-panel.vue';
 import AdviceOrderSelect from './advice-order-select.vue';
@@ -66,6 +68,8 @@ const props = withDefaults(
     initialGroup?: AdviceDrugItem[];
     medicationRateOptions?: TerminologyOptionDto[];
     medicationRouteOptions?: TerminologyOptionDto[];
+    /** IF-IP-DOR-18 输液滴速选项 */
+    medicationSpeedOptions?: TerminologyOptionDto[];
     modelValue: AdviceEditForm;
     orderSelectExpandNonce?: number;
     orderSelectFocusNonce?: number;
@@ -86,6 +90,7 @@ const props = withDefaults(
     encounterId: '',
     medicationRateOptions: () => [],
     medicationRouteOptions: () => [],
+    medicationSpeedOptions: () => [],
     orderSelectExpandNonce: 0,
     orderSelectFocusNonce: 0,
     patientId: '',
@@ -179,6 +184,26 @@ const setField = <K extends keyof AdviceDrugItem>(
   const current = next[index];
   if (!current) return;
   next[index] = { ...current, [key]: value };
+  // 同组滴速一致：改一条同步到同 groupId 全部药品行
+  if (key === 'speedCode') {
+    const gid = String(next[index]?.groupId ?? '').trim();
+    const speed = String(value ?? '').trim() || undefined;
+    if (gid) {
+      for (let i = 0; i < next.length; i += 1) {
+        if (i === index) {
+          continue;
+        }
+        const row = next[i];
+        if (!row || inferAdviceLineEditorKind(row) !== 'MEDICATION') {
+          continue;
+        }
+        if (String(row.groupId ?? '').trim() !== gid) {
+          continue;
+        }
+        next[i] = { ...row, speedCode: speed };
+      }
+    }
+  }
   drugItems.value = next;
 };
 
@@ -277,6 +302,15 @@ function applySplitDoseToDoseSide(index: number, singleDose: number) {
   const item = drugItems.value[index];
   const k = item?.doseBandConvertK;
   if (k === undefined || !Number.isFinite(k) || k <= 0) return;
+  const currentDose = Number(item.doseConvertRatio);
+  // 剂量侧改完会同步左侧片数；若片数只是剂量反算结果，禁止再用两位片数反推剂量（否则 35.625→0.75→35.63）
+  if (Number.isFinite(currentDose) && currentDose > 0) {
+    const splitFromDose = roundMedicationSplitQty(currentDose / k);
+    if (roundMedicationSplitQty(singleDose) === splitFromDose) {
+      return;
+    }
+  }
+  // 剂量侧落库口径保留 6 位；界面另按 3 位展示
   setField(index, 'doseConvertRatio', roundMedicationQty(singleDose * k));
 }
 
@@ -284,7 +318,7 @@ function applyDoseQtyToSplitSide(index: number, doseQty: number) {
   const item = drugItems.value[index];
   const k = item?.doseBandConvertK;
   if (k === undefined || !Number.isFinite(k) || k <= 0) return;
-  setField(index, 'singleDose', roundMedicationQty(doseQty / k));
+  setField(index, 'singleDose', roundMedicationSplitQty(doseQty / k));
 }
 
 function handleTotalAmountUnitSelect(index: number, value: unknown) {
@@ -343,6 +377,8 @@ const clearMedicationOnlyFields = (): Partial<AdviceDrugItem> => ({
   doseBandConvertK: undefined,
   frequency: '',
   usage: '',
+  speedCode: undefined,
+  injectFlag: undefined,
   medicationDays: undefined,
   skinTest: false,
   pharmacy: '',
@@ -457,6 +493,27 @@ const handleProductSelect = (index: number, row: AdviceProductOption) => {
     ...item,
     expanded: itemIndex === index,
   }));
+  let mergedRow = drugItems.value[index];
+  // 医保等级=自费：强制费用性质为自费合同，避免仍挂医保
+  if (mergedRow && !isTcm.value) {
+    const contractSel = resolveContractForChrgitmLv(
+      props.feeNatureOptions ?? [],
+      mergedRow.chrgitmLv,
+      mergedRow.contractId,
+    );
+    if (
+      contractSel.contractId &&
+      (contractSel.contractId !== String(mergedRow.contractId ?? '').trim() ||
+        contractSel.feeNature !== String(mergedRow.feeNature ?? '').trim())
+    ) {
+      mergedRow = {
+        ...mergedRow,
+        contractId: contractSel.contractId || undefined,
+        feeNature: contractSel.feeNature,
+      };
+      drugItems.value[index] = mergedRow;
+    }
+  }
   void focusWesternPrimarySingleDose();
 };
 
@@ -539,6 +596,8 @@ const handleAddDrug = () => {
     pharmacy: lastItem.pharmacy,
     usage: lastItem.usage,
     frequency: lastItem.frequency,
+    speedCode: lastItem.speedCode,
+    injectFlag: lastItem.injectFlag,
     medicationDays: isInpatientLongTermMedicationTherapy(therapyType.value)
       ? undefined
       : lastItem.medicationDays,
@@ -782,6 +841,7 @@ onMounted(() => {
               :fee-nature-options="feeNatureOptions"
               :medication-rate-options="medicationRateOptions"
               :medication-route-options="medicationRouteOptions"
+              :medication-speed-options="medicationSpeedOptions"
             />
             <AdviceDeviceServiceFormPanel
               v-else

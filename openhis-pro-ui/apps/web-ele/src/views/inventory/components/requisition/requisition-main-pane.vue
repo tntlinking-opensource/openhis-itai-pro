@@ -39,6 +39,7 @@ import {
   DEPT_REQUISITION_CATEGORY_ENUM,
   DEPT_REQUISITION_TYPE_ENUM,
   getDepartmentRequisitionDetailApi,
+  pageProductsForDepartmentRequisitionApi,
   rejectDepartmentRequisitionApi,
   removeDepartmentRequisitionApi,
   submitDepartmentRequisitionApprovalApi,
@@ -51,6 +52,7 @@ import {
   agreePharmacyRequisitionApi,
   createPharmacyRequisitionApi,
   getPharmacyRequisitionDetailApi,
+  pageProductsForPharmacyRequisitionApi,
   PHA_REQUISITION_CATEGORY_ENUM,
   PHA_REQUISITION_PURPOSE_TYPE_ENUM,
   PHA_REQUISITION_SOURCE_TYPE_ENUM,
@@ -64,6 +66,7 @@ import {
   type PharmacyRequisitionLineDto,
 } from '#/api/inventory/pharmacy/requisition';
 import SectionTitle from '#/components/layouts/section-title.vue';
+import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { resolveLoginPractitionerIdForRequest } from '#/utils/format/preserve-api-id';
 import {
   applyHydratedInventoryDetailQtyToRow,
@@ -93,15 +96,20 @@ import {
   resolveFirstRealLocationIdFromOptionItems,
   resolveSpecificInventoryLocationId,
   resolveDefaultPractitionerIdForSelect,
+  resolveInvDocPreparedByName,
+  resolveInvDocApprovedByName,
 } from '#/utils/inventory/inventory-workbench-list';
 import {
+  inventoryPickAvailableQtyAsStockDisplay,
   inventoryPickMedicineCell,
   inventoryPickNumberField,
   inventoryPickStringField,
+  mapInventoryProductPickListRow,
 } from '#/utils/inventory/inventory-product-pick-list';
 import { formatInventoryLineTotal, inventoryLineTotalNumber } from '#/utils/format/money-scale';
 import {
   canConvertDisplayQtyToSplitForBands,
+  convertInboundQtyBetweenBandKinds,
   persistDisplayQtyAsSplitForBands,
   resolveInboundLinePersistUnitCodeForBands,
 } from '#/utils/inventory/inbound-product-unit-bands';
@@ -112,7 +120,11 @@ import {
   stockOutStatusLabel,
   normalizeStockOutStatusSort,
 } from '#/utils/inventory/stock-out-doc-actions';
-import { buildInvDocumentTitle, printInvDocument } from '#/utils/print/print-inv-document';
+import {
+  buildInvDocumentTitle,
+  printInvDocument,
+  resolveInvPrintProductBusNo,
+} from '#/utils/print/print-inv-document';
 import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
 
 defineOptions({ name: 'InventoryRequisitionMainPane' });
@@ -143,6 +155,8 @@ interface RequisitionPreviewRow {
 }
 
 interface Props {
+  /** 侧栏当前单据行（制单人/审批人与队列卡片同口径） */
+  queueCardRow?: null | Record<string, unknown>;
   variant: RequisitionVariant;
   busNo?: string;
   isDraftOrder?: boolean;
@@ -156,6 +170,7 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  queueCardRow: null,
   busNo: '',
   isDraftOrder: false,
   resetKey: 0,
@@ -243,6 +258,11 @@ const headItemTableType = ref(firstItemTableTypeValue());
 const detailStatusEnum = ref<number | string | undefined>(undefined);
 const headApplyTime = ref(formatDateTime(new Date()));
 const saving = ref(false);
+/** 一键请领：分页拉取选品中 */
+const oneClickLoading = ref(false);
+
+/** 一键请领分页大小（仅前端循环拉全量，不改保存契约） */
+const ONE_CLICK_PAGE_SIZE = 100;
 
 const isNewDraft = computed(() => !headerBusNo.value);
 const documentEditable = computed(
@@ -363,6 +383,47 @@ function syncRowFromProductPick(pick: Record<string, unknown>, row: RequisitionP
   recalcRequisitionLineTotal(row);
 }
 
+/**
+ * 一键请领数量：按当前行计量带把 SPLIT 剩余量换成展示数；
+ * 无计量带时与选品「库存数量」列同源。
+ */
+function resolveRequisitionQtyFromPick(
+  pick: Record<string, unknown>,
+  row: RequisitionPreviewRow,
+): number {
+  const bands = row.unitBands ?? [];
+  const kind = String(row.selectedBandKind ?? '')
+    .trim()
+    .toUpperCase();
+  const splitAvail = inventoryPickNumberField(pick, 'availableQuantity');
+  if (bands.length > 0 && kind && kind !== 'LEGACY') {
+    const converted = convertInboundQtyBetweenBandKinds(splitAvail, 'SPLIT', kind, bands);
+    if (converted !== undefined && Number.isFinite(converted)) {
+      return converted;
+    }
+  }
+  if (
+    Object.prototype.hasOwnProperty.call(pick, 'stockAvailableQty') &&
+    pick.stockAvailableQty !== undefined &&
+    pick.stockAvailableQty !== null
+  ) {
+    return inventoryPickNumberField(pick, 'stockAvailableQty');
+  }
+  return inventoryPickAvailableQtyAsStockDisplay(pick);
+}
+
+/** 选品行 → 请领明细（数量默认=剩余库存） */
+function mapPickToRequisitionRow(pick: Record<string, unknown>): RequisitionPreviewRow {
+  const mapped = mapInventoryProductPickListRow(pick);
+  const row = createEmptyRow();
+  syncRowFromProductPick(mapped, row);
+  const qty = resolveRequisitionQtyFromPick(mapped, row);
+  // 仅带入有剩余量的库存行
+  row.itemQuantity = qty > 0 ? qty : undefined;
+  recalcRequisitionLineTotal(row);
+  return row;
+}
+
 function handleRequisitionUnitBandChanged(row: RequisitionPreviewRow) {
   handleWarehouseNonInboundUnitBandChanged(row, {
     getQty: () => Number(row.itemQuantity),
@@ -384,13 +445,21 @@ function mapDetailLineToGrid(
   const totalRaw = ln.totalPrice;
   const unitCodeStr = String(ln.unitCode ?? '');
   const rawQty = ln.itemQuantity === undefined ? undefined : Number(ln.itemQuantity);
-  const catalog = (ln as { productCatalog?: { unitBands?: unknown } }).productCatalog;
+  const catalog = (ln as { productCatalog?: { unitBands?: unknown; productBusNo?: string } })
+    .productCatalog;
   const unitCodeDictText = String(
     ('unitCodeDictText' in ln ? ln.unitCodeDictText : undefined) ?? ln.unitCode ?? '',
   );
+  const productBusNo = String(catalog?.productBusNo ?? '').trim();
   const row: RequisitionPreviewRow = {
     id: idStr,
-    medicinePick: name ? { id: itemIdRaw as number | string | undefined, name } : undefined,
+    medicinePick: name
+      ? {
+          id: itemIdRaw as number | string | undefined,
+          name,
+          ...(productBusNo ? { busNo: productBusNo } : {}),
+        }
+      : undefined,
     itemTable: ln.itemTable,
     itemId: itemIdRaw,
     inventoryItemId: ln.inventoryItemId,
@@ -570,6 +639,97 @@ async function addItem() {
     return;
   }
   await addRequisitionRow();
+}
+
+/** 按页请求源药库选品（仅库存>0），与单行选品同源接口 */
+async function fetchRequisitionPickPage(pageNo: number, pageSize: number) {
+  const sourceLocationIdForPick = resolveRequisitionProductPickSourceLocationId();
+  const productTableName = String(headItemTableType.value ?? '').trim();
+  const body = {
+    sourceLocationId: sourceLocationIdForPick as number | string,
+    productTableName,
+    pageNo,
+    pageSize,
+    positiveQuantityOnly: true,
+  };
+  if (isPharmacyVariant.value) {
+    return pageProductsForPharmacyRequisitionApi(body);
+  }
+  return pageProductsForDepartmentRequisitionApi(body);
+}
+
+/**
+ * 一键请领：分页拉齐源药库有库存选品，数量=剩余量写入明细；
+ * 不改保存/提交契约，仅相当于批量选品填表。
+ */
+async function startOneClickRequisition() {
+  if (!documentEditable.value || oneClickLoading.value) return;
+  if (
+    !(await validateInventoryHeadFormFields(headFormRef.value, [
+      'sourceLocationId',
+      'purposeLocationId',
+    ]))
+  ) {
+    return;
+  }
+  const productTableName = String(headItemTableType.value ?? '').trim();
+  if (!productTableName) {
+    ElMessage.warning('请先选择项目类型');
+    return;
+  }
+  if (!resolveRequisitionProductPickSourceLocationId()) {
+    ElMessage.warning('请先选择源药库');
+    return;
+  }
+
+  const existing = collectGridRows().filter((r) => isPresentItemId(r.itemId));
+  if (existing.length > 0) {
+    try {
+      await ElMessageBox.confirm(
+        '一键请领将按当前源药库与项目类型加载全部有库存明细，现有明细将被替换，是否继续？',
+        '一键请领',
+        { type: 'warning', confirmButtonText: '继续', cancelButtonText: '取消' },
+      );
+    } catch {
+      return;
+    }
+  }
+
+  requisitionGridEdit.clearGridEdit();
+  requisitionGridEdit.resetFormMode();
+  oneClickLoading.value = true;
+  try {
+    const allRows: RequisitionPreviewRow[] = [];
+    let pageNo = 1;
+    let totalCount = 0;
+    // 分页拼齐选品列表，过滤无剩余量行
+    while (true) {
+      const res = await fetchRequisitionPickPage(pageNo, ONE_CLICK_PAGE_SIZE);
+      const parsed = parsePagedRowsFromApiData<Record<string, unknown>>(res.data);
+      totalCount = parsed.totalCount;
+      for (const raw of parsed.content) {
+        const row = mapPickToRequisitionRow(raw);
+        if (!isPresentItemId(row.itemId)) continue;
+        if (row.itemQuantity === undefined || Number(row.itemQuantity) <= 0) continue;
+        allRows.push(row);
+      }
+      if (parsed.content.length === 0) break;
+      if (pageNo * ONE_CLICK_PAGE_SIZE >= totalCount) break;
+      pageNo += 1;
+    }
+
+    gridApi?.grid?.loadData(allRows);
+    if (allRows.length === 0) {
+      ElMessage.warning('当前源药库暂无有库存可请领项目');
+      return;
+    }
+    ElMessage.success(`已载入 ${allRows.length} 条请领明细（数量=剩余库存）`);
+  } catch {
+    gridApi?.grid?.loadData([]);
+    ElMessage.error('一键请领加载失败');
+  } finally {
+    oneClickLoading.value = false;
+  }
 }
 
 function resetDetailForCreate() {
@@ -1088,17 +1248,13 @@ async function handlePrint() {
     normalizedItemTableTypeOptions.value,
     headItemTableType.value,
   );
-  const practitionerName = resolvePrintOptionLabel(
-    effectivePractitionerOptions.value,
-    practitionerId.value,
-  );
-  const documentTitle = buildInvDocumentTitle(sourceName || destName, '请领单');
+  const documentTitle = buildInvDocumentTitle(destName || sourceName, '请领单');
   const applyTimeText = String(headApplyTime.value ?? '')
     .trim()
     .replace('T', ' ');
 
-  // 按当前网格展示值组装 PrintData
   const lineRows = productRows.map((row) => ({
+    productBusNo: resolveInvPrintProductBusNo(row as unknown as Record<string, unknown>),
     productName: String(row.productName ?? '').trim(),
     specText: String(row.spec ?? '').trim(),
     manufacturerText: String(row.manufacturer ?? '').trim(),
@@ -1107,11 +1263,15 @@ async function handlePrint() {
     unitPrice: row.price,
     amount: row.totalPrice,
     lotNumber: String(row.lotNumber ?? '').trim(),
-    expiryDate: String(row.expirationDate ?? '')
-      .trim()
-      .slice(0, 10),
+    expiryText: String(row.expirationDate ?? '').trim(),
   }));
 
+  const preparedByName = resolveInvDocPreparedByName(
+    props.queueCardRow as null | Record<string, unknown>,
+  );
+  const approvedByName = resolveInvDocApprovedByName(
+    props.queueCardRow as null | Record<string, unknown>,
+  );
   await printInvDocument({
     family: 'movement',
     source: {
@@ -1125,10 +1285,9 @@ async function handlePrint() {
       linkDocText: '',
       destLocationText: destName,
       invoiceNoText: '',
-      practitionerName,
       lineRows,
-      preparedByName: practitionerName,
-      approvedByName: '',
+      preparedByName,
+      approvedByName,
     },
     bizRef: { busNo, docKind: 'requisition', variant: props.variant },
     jobName: documentTitle,
@@ -1266,8 +1425,11 @@ async function handlePrint() {
           <Grid class="min-h-0 flex-1">
             <template #toolbar-actions>
               <InvDocGridToolbar
-                :disabled="!documentEditable"
+                :disabled="!documentEditable || oneClickLoading"
+                show-batch-add
+                batch-add-label="一键请领"
                 @add="addItem"
+                @batch-add="startOneClickRequisition"
                 @delete-selected="deleteItem('select')"
               />
             </template>

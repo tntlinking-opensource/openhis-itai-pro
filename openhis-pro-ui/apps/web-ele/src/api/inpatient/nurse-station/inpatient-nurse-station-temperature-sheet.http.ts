@@ -1,4 +1,6 @@
 import type {
+  DeleteNurseStationTemperatureSheetRequest,
+  DeleteNurseStationTemperatureSheetResponse,
   GetNurseStationTemperatureSheetDataRequest,
   GetNurseStationTemperatureSheetDataResponse,
   LoadNurseStationTemperatureSheetInitResponse,
@@ -34,6 +36,16 @@ export async function httpSaveNurseStationTemperatureSheetAtRecordedTime(
 ): Promise<SaveNurseStationTemperatureSheetAtRecordedTimeResponse> {
   return publicRequestClient.post<SaveNurseStationTemperatureSheetAtRecordedTimeResponse>(
     `${BASE}/saveNurseStationTemperatureSheetAtRecordedTime`,
+    body,
+  );
+}
+
+/** 删除一条已保存的体温单记录 */
+export async function httpDeleteNurseStationTemperatureSheet(
+  body: DeleteNurseStationTemperatureSheetRequest,
+): Promise<DeleteNurseStationTemperatureSheetResponse> {
+  return publicRequestClient.post<DeleteNurseStationTemperatureSheetResponse>(
+    `${BASE}/deleteNurseStationTemperatureSheet`,
     body,
   );
 }

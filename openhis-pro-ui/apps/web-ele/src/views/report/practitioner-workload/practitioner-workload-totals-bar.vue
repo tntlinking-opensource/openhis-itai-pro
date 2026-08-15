@@ -40,9 +40,9 @@ const totals = computed(() => props.summaryTotals ?? {});
           <IconifyIcon icon="lucide:user-check" />
         </span>
         <div class="practitioner-workload-stats__content">
-          <span class="practitioner-workload-stats__label">接诊人数</span>
+          <span class="practitioner-workload-stats__label">挂号人次</span>
           <span class="practitioner-workload-stats__value">{{
-            totals.encounterCountTotal ?? 0
+            totals.registrationNetCountTotal ?? totals.encounterCountTotal ?? 0
           }}</span>
         </div>
       </div>
@@ -52,11 +52,11 @@ const totals = computed(() => props.summaryTotals ?? {});
           <IconifyIcon icon="lucide:banknote" />
         </span>
         <div class="practitioner-workload-stats__content">
-          <span class="practitioner-workload-stats__label">开单总金额</span>
+          <span class="practitioner-workload-stats__label">售价合计</span>
           <span
             class="practitioner-workload-stats__value practitioner-workload-stats__value--amount"
           >
-            {{ fmtReportNumber(totals.receivableAmountTotal) }}
+            {{ fmtReportNumber(totals.saleAmountTotal) }}
           </span>
         </div>
       </div>
@@ -96,11 +96,11 @@ const totals = computed(() => props.summaryTotals ?? {});
           <IconifyIcon icon="lucide:wallet" />
         </span>
         <div class="practitioner-workload-stats__content">
-          <span class="practitioner-workload-stats__label">实收合计</span>
+          <span class="practitioner-workload-stats__label">进价合计</span>
           <span
             class="practitioner-workload-stats__value practitioner-workload-stats__value--amount-total"
           >
-            {{ fmtReportNumber(totals.actualReceivedAmountTotal) }}
+            {{ fmtReportNumber(totals.purchaseAmountTotal) }}
           </span>
         </div>
       </div>

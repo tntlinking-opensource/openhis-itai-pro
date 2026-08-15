@@ -5,15 +5,23 @@ import type { ApiOptionItem, PageParams } from '#/types/api-response';
 import type { BinaryExportResult } from '#/utils/export/download-binary-export';
 
 import { publicRequestClient } from '#/api/request';
+import { reportLongRequestConfig } from '#/constants/report-request-timeout';
 
 export const EXPORT_TAB_SUMMARY = 'SUMMARY' as const;
 export const EXPORT_TAB_DETAIL = 'DETAIL' as const;
 export type ConsumableUsageExportTab = typeof EXPORT_TAB_DETAIL | typeof EXPORT_TAB_SUMMARY;
 
-export const SUMMARY_DIMENSION_PATIENT = 'PATIENT' as const;
+export const SUMMARY_DIMENSION_LOCATION = 'LOCATION' as const;
+export const SUMMARY_DIMENSION_ITEM = 'ITEM' as const;
+export const SUMMARY_DIMENSION_CATEGORY = 'CATEGORY' as const;
 export const SUMMARY_DIMENSION_DEPARTMENT = 'DEPARTMENT' as const;
+/** @deprecated 产品已收敛；不入默认维 */
+export const SUMMARY_DIMENSION_PATIENT = 'PATIENT' as const;
 export type ConsumableUsageSummaryDimension =
+  | typeof SUMMARY_DIMENSION_CATEGORY
   | typeof SUMMARY_DIMENSION_DEPARTMENT
+  | typeof SUMMARY_DIMENSION_ITEM
+  | typeof SUMMARY_DIMENSION_LOCATION
   | typeof SUMMARY_DIMENSION_PATIENT;
 
 export const SOURCE_CODE_ALL = 'ALL' as const;
@@ -37,6 +45,12 @@ export interface LoadConsumableUsageReportPageInitResponse {
   organizationOptions?: ApiOptionItem[];
   locationOptions?: ApiOptionItem[];
   feeNatureOptions?: ApiOptionItem[];
+  /** 耗材类型下拉 */
+  categoryOptions?: ApiOptionItem[];
+  /** 执行人（发耗材人）下拉 */
+  practitionerOptions?: ApiOptionItem[];
+  /** 记录类型下拉 ALL/DISPENSE/REFUND */
+  recordTypeOptions?: ApiOptionItem[];
 }
 
 export interface ConsumableUsageReportFilter {
@@ -45,6 +59,13 @@ export interface ConsumableUsageReportFilter {
   sourceCode?: string;
   locationId?: string;
   feeNatureContractNo?: string;
+  recordTypeCode?: string;
+  deviceCategoryCodes?: string[];
+  performerPractitionerId?: string;
+  deviceKeyword?: string;
+  patientKeyword?: string;
+  /** 患者侧=开立科室；领用侧=领用科室 */
+  organizationId?: string;
 }
 
 export interface SummarizeConsumableUsageReportParams extends ConsumableUsageReportFilter {
@@ -54,6 +75,8 @@ export interface SummarizeConsumableUsageReportParams extends ConsumableUsageRep
 export interface ConsumableUsageSummaryRowDto {
   dimensionKey?: string;
   summaryDimension?: string;
+  /** 维度展示名（耗材房/品规/类型/科室） */
+  dimensionName?: string;
   patientId?: string;
   patientName?: string;
   organizationId?: string;
@@ -62,6 +85,8 @@ export interface ConsumableUsageSummaryRowDto {
   locationName?: string;
   deviceDefId?: string;
   deviceName?: string;
+  /** 耗材类型 code（CATEGORY 维） */
+  categoryCode?: string;
   netQuantity?: number | string;
   /** 进价净额 */
   purchaseNetAmount?: number | string;
@@ -126,6 +151,10 @@ export interface ConsumableUsageDetailRowDto {
   feeNatureDisplay?: string;
   medType?: string;
   medTypeDisplay?: string;
+  /** 执行人（发耗材人）主键 */
+  performerId?: string;
+  /** 执行人（发耗材人）姓名 */
+  performerName?: string;
 }
 
 export interface PageConsumableUsageReportDetailResponse {
@@ -163,7 +192,7 @@ export async function loadConsumableUsageReportPageInitApi(scope: ConsumableUsag
   );
 }
 
-/** 按患者/科室净汇总。 */
+/** 按耗材房/品规/类型/科室净汇总。 */
 export async function summarizeConsumableUsageReportApi(
   scope: ConsumableUsageReportScope,
   body: SummarizeConsumableUsageReportParams,
@@ -176,6 +205,7 @@ export async function summarizeConsumableUsageReportApi(
   return publicRequestClient.post<SummarizeConsumableUsageReportResponse>(
     `${base}/${method}`,
     body,
+    reportLongRequestConfig(),
   );
 }
 
@@ -192,6 +222,7 @@ export async function pageConsumableUsageReportDetailApi(
   return publicRequestClient.post<PageConsumableUsageReportDetailResponse>(
     `${base}/${method}`,
     body,
+    reportLongRequestConfig(),
   );
 }
 
@@ -205,5 +236,9 @@ export async function exportConsumableUsageReportApi(
     scope === 'inpatient'
       ? 'exportInpatientConsumableUsageReport'
       : 'exportOutpatientConsumableUsageReport';
-  return publicRequestClient.post<ExportConsumableUsageReportResponse>(`${base}/${method}`, body);
+  return publicRequestClient.post<ExportConsumableUsageReportResponse>(
+    `${base}/${method}`,
+    body,
+    reportLongRequestConfig(),
+  );
 }

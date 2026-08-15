@@ -15,9 +15,13 @@ interface Props {
   methodLabel?: string;
   /** 是否勾选代煎（即使暂无金额也展示） */
   showDecoctionFee?: boolean;
+  /** 已签发未代煎：可补充代煎费 */
+  showSupplementDecoctionAction?: boolean;
   /** 已签发方可单独取消代煎费 */
   showVoidDecoctionAction?: boolean;
   singleDoseAmount: number;
+  /** 补充代煎费请求中 */
+  supplementDecoctionLoading?: boolean;
   totalAmount: number;
   /** 取消代煎费请求中 */
   voidDecoctionLoading?: boolean;
@@ -28,11 +32,14 @@ withDefaults(defineProps<Props>(), {
   decoctionFeeLabel: '代煎中药',
   methodLabel: '',
   showDecoctionFee: false,
+  showSupplementDecoctionAction: false,
   showVoidDecoctionAction: false,
+  supplementDecoctionLoading: false,
   voidDecoctionLoading: false,
 });
 
 const emit = defineEmits<{
+  'supplement-decoction': [];
   'void-decoction': [];
 }>();
 </script>
@@ -50,6 +57,18 @@ const emit = defineEmits<{
       </template>
       <span class="tcm-prescription-summary__sep">·</span>
       <span>单剂 {{ formatMoneyDisplay(singleDoseAmount) }} 元</span>
+      <template v-if="showSupplementDecoctionAction">
+        <span class="tcm-prescription-summary__sep">·</span>
+        <button
+          type="button"
+          class="tcm-prescription-summary__supplement-decoction"
+          :disabled="supplementDecoctionLoading"
+          :aria-busy="supplementDecoctionLoading ? 'true' : undefined"
+          @click="emit('supplement-decoction')"
+        >
+          {{ supplementDecoctionLoading ? '补充中…' : '补充代煎费' }}
+        </button>
+      </template>
       <template v-if="showDecoctionFee">
         <span class="tcm-prescription-summary__sep">·</span>
         <span class="tcm-prescription-summary__decoction">

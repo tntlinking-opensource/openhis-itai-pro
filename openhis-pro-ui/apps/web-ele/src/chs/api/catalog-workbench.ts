@@ -6,6 +6,7 @@ import type { ApiResponse } from '#/types/api-response';
 import type { PageParams } from '#/types/api-response';
 
 import { requestClient } from '#/api/request';
+import { chsLongRequestConfig } from '#/chs/constants/request-timeout';
 
 const BASE = '/insuranceCatalogWorkbench';
 
@@ -149,6 +150,7 @@ export async function queryInstitutionCatalogMatchPageApi(
 
 /**
  * 从平台同步 1317（落库 + 正向回写院内对码）。
+ * <p>会翻页拉取平台目录并回写院内，耗时常超过默认 10s，需走长超时。</p>
  */
 export async function refreshFromPlatform1317Api(
   params: Refresh1317Params,
@@ -156,6 +158,7 @@ export async function refreshFromPlatform1317Api(
   const res = await requestClient.post<ApiResponse<Refresh1317Result>>(
     `${BASE}/refreshFromPlatform1317`,
     params,
+    chsLongRequestConfig(),
   );
   return res.data ?? { upserted: 0, writtenBack: 0, skipped: 0, pagesFetched: 0 };
 }

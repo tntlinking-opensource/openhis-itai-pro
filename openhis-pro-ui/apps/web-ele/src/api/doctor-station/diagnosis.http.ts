@@ -13,6 +13,9 @@ export const httpGetConditionDefinitionBusinessClass =
 export const httpGetPatientOpspFilingDiagnosis =
   outpatientDiagnosisHttp.httpGetPatientOpspFilingDiagnosis;
 
+/** 未匹配慢病备案点击：幂等补录 chronic_spec 并返回可导入定义 */
+export const httpEnsureOpspFilingDiagnosis = outpatientDiagnosisHttp.httpEnsureOpspFilingDiagnosis;
+
 /** 分页检索已发布诊断定义 */
 export const httpGetConditionDefinitionMetadata =
   outpatientDiagnosisHttp.httpGetConditionDefinitionMetadata;
@@ -22,6 +25,13 @@ export const httpSaveDoctorDiagnosis = outpatientDiagnosisHttp.httpSaveDoctorDia
 
 /** 追加个人/科室常用诊断模板绑定 */
 export const httpBindCommonDiagnosis = outpatientDiagnosisHttp.httpBindCommonDiagnosis;
+
+/** 列出当前登录可维护的个人/科室常用诊断 */
+export const httpListMaintainableCommonDiagnoses =
+  outpatientDiagnosisHttp.httpListMaintainableCommonDiagnoses;
+
+/** 解绑个人/科室常用诊断模板 */
+export const httpUnbindCommonDiagnosis = outpatientDiagnosisHttp.httpUnbindCommonDiagnosis;
 
 /** 删除一条就诊诊断事实 */
 export const httpDelEncounterDiagnosis = outpatientDiagnosisHttp.httpDelEncounterDiagnosis;

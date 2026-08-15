@@ -71,6 +71,8 @@ export const PLATFORM_ROLE_CODE = {
   WAREHOUSE: 'ROLE_WAREHOUSE',
   ACCOUNTANT: 'ROLE_ACCOUNTANT',
   FINANCE_APPROVER: 'ROLE_FINANCE_APPROVER',
+  /** 病案管理员：门诊/住院「归档病例 / 解档病例」 */
+  MRMS_ADMIN: 'ROLE_MRMS_ADMIN',
 } as const;
 
 /** 岗位分配可选内置角色（服务端解析 id，勿写死种子 id） */

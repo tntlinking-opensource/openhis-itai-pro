@@ -1,12 +1,23 @@
 import type { ComputedRef, InjectionKey, Ref } from 'vue';
 
-import type { PatientItem, PatientStatusFilter, RegionItem, WardItem } from '../types';
+import type {
+  PatientAdmissionFilter,
+  PatientItem,
+  PatientStatusFilter,
+  RegionItem,
+  WardItem,
+} from '../types';
 
-export type { PatientStatusFilter };
+export type { PatientAdmissionFilter, PatientStatusFilter };
 
 export interface StatusOptionItem {
   label: string;
   value: PatientStatusFilter;
+}
+
+export interface AdmissionOptionItem {
+  label: string;
+  value: PatientAdmissionFilter;
 }
 
 export interface NurseStationPatientListPanelContext {
@@ -15,10 +26,12 @@ export interface NurseStationPatientListPanelContext {
   pendingExecuteCount: ComputedRef<number>;
   keyword: Ref<string>;
   statusFilter: Ref<PatientStatusFilter>;
+  admissionFilter: Ref<PatientAdmissionFilter>;
   selectedRegionIds: Ref<string[]>;
   selectedWardIds: Ref<string[]>;
   filterPanelExpanded: Ref<boolean>;
   statusOptions: StatusOptionItem[];
+  admissionOptions: AdmissionOptionItem[];
   regionOptions: Ref<RegionItem[]>;
   availableWards: ComputedRef<WardItem[]>;
   filteredPatients: ComputedRef<PatientItem[]>;
@@ -26,6 +39,7 @@ export interface NurseStationPatientListPanelContext {
   wardNameByIdRecord: ComputedRef<Record<string, string>>;
   changeKeyword: (value: string) => void;
   changeStatusFilter: (value: PatientStatusFilter) => void;
+  changeAdmissionFilter: (value: PatientAdmissionFilter) => void;
   changeRegionIds: (value: string[]) => void;
   changeWardIds: (value: string[]) => void;
   toggleFilterPanel: () => void;
@@ -33,7 +47,7 @@ export interface NurseStationPatientListPanelContext {
   /** 出院医嘱校对等变更就诊态后，同步刷新入出转床位图（含出 Tab） */
   refreshWorkbenchAfterEncounterFlowChange: () => Promise<void>;
   togglePatientCardSelection: (id: string) => void;
-  /** 双击患者卡片打开入科选床弹窗 */
+  /** 双击患者卡片打开患者体征卡 */
   onPatientCardDblClick: (patient: PatientItem) => void;
   togglePatientSelection: (id: string, value: boolean) => void;
   onPatientDragStart: (event: DragEvent, patient: PatientItem) => void;

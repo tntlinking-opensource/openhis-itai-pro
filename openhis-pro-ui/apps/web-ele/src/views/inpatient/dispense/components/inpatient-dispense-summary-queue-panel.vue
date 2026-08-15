@@ -8,6 +8,7 @@ import { RotateCw, Search } from '@vben/icons';
 import { ElButton, ElDatePicker, ElInput, ElRadio, ElRadioGroup, ElTag } from 'element-plus';
 
 import SectionTitle from '#/components/layouts/section-title.vue';
+import { getDateRangeQuick } from '#/utils/format/date-range-quick';
 
 import { formatSummaryApplyTime } from '../services/map-summary-dispense-ui';
 
@@ -47,15 +48,14 @@ function handleRefresh() {
   }, 400);
 }
 
-/** 日期范围变更：空值回退为当天 */
+/** 日期范围变更：空值回退为近半个月 */
 function handleDateRangeChange(range: [string, string] | null) {
   if (range && range[0] && range[1]) {
     summaryDateRange.value = range;
     emit('dateRangeChange', range);
     return;
   }
-  const today = new Date().toISOString().slice(0, 10);
-  const fallback: [string, string] = [today, today];
+  const fallback = getDateRangeQuick({ strategy: 'rolling-days', spanDays: 15 });
   summaryDateRange.value = fallback;
   emit('dateRangeChange', fallback);
 }

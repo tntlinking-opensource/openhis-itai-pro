@@ -4,6 +4,7 @@ import type { PrintDocType, PrintPendingRow } from './print-center.types';
 import { ElMessage } from 'element-plus';
 import dayjs from 'dayjs';
 
+import type { NurseStationCostDetailStatusFilter } from '#/api/inpatient/nurse-station/inpatient-nurse-station-cost-detail.types';
 import { resolvePrintScenarioLabel } from '#/utils/print/constants/print-scenario-labels';
 import { printInfusionLabel } from '#/utils/print/print-nurse-station';
 import { print, PRINT_SCENARIO } from '#/utils/print/runtime';
@@ -12,12 +13,16 @@ import type { PrintResult } from '#/utils/print/runtime/types';
 import {
   buildDispenseSheetPrintSource,
   buildDispenseSummaryPrintSource,
+  buildFeeDetailPrintSource,
   buildFeeListPrintSource,
   buildInfusionPrintSource,
   buildLongOrderPrintSource,
   buildNursingRecordPrintSource,
   buildOralMedLabelPrintSource,
+  buildOrderDispenseSheetPrintSource,
+  buildOralMedSheetPrintSource,
   buildPatrolCardPrintSource,
+  buildBedCardPrintSource,
   buildServiceApplyPrintSources,
   buildTempOrderPrintSource,
   buildWristbandPrintSource,
@@ -31,16 +36,21 @@ import {
 export const PRINT_CENTER_WIRED_DOC_TYPES: readonly PrintDocType[] = [
   'patrol_card',
   'wristband',
+  'bed_card',
   'infusion_label',
   'oral_med_label',
   'exam_apply',
   'lab_apply',
+  'specimen_barcode',
   'nursing_record',
   'long_order',
   'temp_order',
   'fee_list',
+  'fee_detail',
   'dispense_summary',
   'dispense_sheet',
+  'order_dispense_sheet',
+  'oral_med_sheet',
 ] as const;
 
 export interface PrintInpatientPrintCenterOptions {
@@ -51,6 +61,13 @@ export interface PrintInpatientPrintCenterOptions {
   dateFrom: string;
   dateTo: string;
   executionDeadline: string;
+  /** 费用清单/明细单：与费用明细页「费用状态」一致；未传则待结算 */
+  costStatusEnum?: NurseStationCostDetailStatusFilter;
+  /**
+   * 长期/临时医嘱明细按开立时间排序；true=正序（先开在上）。
+   * 仅病案首页临床侧栏传 true；护士站打印中心不传，保持原序。
+   */
+  orderOpenedTimeAsc?: boolean;
 }
 
 async function printOnce(options: {
@@ -81,6 +98,8 @@ export async function printInpatientPrintCenter(
     dateFrom,
     dateTo,
     executionDeadline,
+    costStatusEnum = 'PENDING_SETTLEMENT',
+    orderOpenedTimeAsc = false,
   } = options;
   const rows = selectedRows;
 
@@ -160,6 +179,24 @@ export async function printInpatientPrintCenter(
       return { ok: printedCount > 0, count: printedCount };
     }
 
+    if (docType === 'bed_card') {
+      let printedCount = 0;
+      for (const row of rows) {
+        const patient = resolvePatient(patients, row);
+        const result = await printOnce({
+          scenarioCode: PRINT_SCENARIO.ipBedCardPrint,
+          source: buildBedCardPrintSource(patients, row),
+          copies,
+          jobName: `床头卡·${row.bedNo}${row.patientName}`,
+          bizRef: { encounterId: patient?.id, bedNo: row.bedNo },
+        });
+        if (result.ok) {
+          printedCount += 1;
+        }
+      }
+      return { ok: printedCount > 0, count: printedCount };
+    }
+
     if (docType === 'oral_med_label') {
       let printedCount = 0;
       for (const row of rows) {
@@ -184,7 +221,14 @@ export async function printInpatientPrintCenter(
       const scenarioCode =
         docType === 'exam_apply' ? PRINT_SCENARIO.ipExamApplyPrint : PRINT_SCENARIO.ipLabApplyPrint;
       const jobPrefix = docType === 'exam_apply' ? '住院检查单' : '住院检验单';
-      const sources = await buildServiceApplyPrintSources(patients, rows, executionDeadline, kind);
+      const sources = await buildServiceApplyPrintSources(
+        patients,
+        rows,
+        executionDeadline,
+        kind,
+        dateFrom,
+        dateTo,
+      );
       if (sources.length <= 0) {
         ElMessage.warning(`没有可打印的${jobPrefix}`);
         return { ok: false, count: 0 };
@@ -205,6 +249,39 @@ export async function printInpatientPrintCenter(
       return { ok: printedCount > 0, count: printedCount };
     }
 
+    // 采血贴：复用门诊模板 op-specimenBarcode-print，按检验申请主键逐张打
+    if (docType === 'specimen_barcode') {
+      let printedCount = 0;
+      for (const row of rows) {
+        const patient = resolvePatient(patients, row);
+        const encounterId = String(patient?.id ?? row.encounterId ?? '').trim();
+        const serviceRequestId = String(row.orderId ?? '').trim();
+        if (!encounterId || !serviceRequestId) {
+          continue;
+        }
+        const result = await printOnce({
+          scenarioCode: PRINT_SCENARIO.opSpecimenBarcodePrint,
+          source: {
+            patientName: String(patient?.name ?? row.patientName ?? '').trim(),
+            genderEnumText: String(patient?.gender ?? '').trim(),
+            ageText: patient?.age == null ? '' : `${patient.age}岁`,
+            itemName: String(row.title ?? '').trim(),
+            serviceRequestId,
+          },
+          copies,
+          jobName: `采血贴·${row.bedNo}${row.patientName}`,
+          bizRef: { encounterId, serviceRequestId },
+        });
+        if (result.ok) {
+          printedCount += 1;
+        }
+      }
+      if (printedCount <= 0) {
+        ElMessage.warning('没有可打印的采血贴');
+      }
+      return { ok: printedCount > 0, count: printedCount };
+    }
+
     if (docType === 'nursing_record') {
       const source = await buildNursingRecordPrintSource(patients, dateFrom, dateTo);
       const result = await printOnce({
@@ -217,9 +294,28 @@ export async function printInpatientPrintCenter(
     }
 
     if (docType === 'fee_list') {
-      const source = await buildFeeListPrintSource(patients, dateFrom, dateTo);
+      const source = await buildFeeListPrintSource(patients, dateFrom, dateTo, costStatusEnum);
+      if ((source.feeRows ?? []).length <= 0) {
+        ElMessage.warning('没有可打印的费用清单');
+        return { ok: false, count: 0 };
+      }
       const result = await printOnce({
         scenarioCode: PRINT_SCENARIO.ipFeeListPrint,
+        source,
+        copies,
+        bizRef: { encounterId: patients[0]?.id },
+      });
+      return { ok: result.ok, count: result.ok ? 1 : 0 };
+    }
+
+    if (docType === 'fee_detail') {
+      const source = await buildFeeDetailPrintSource(patients, dateFrom, dateTo, costStatusEnum);
+      if ((source.feeRows ?? []).length <= 0) {
+        ElMessage.warning('没有可打印的费用明细');
+        return { ok: false, count: 0 };
+      }
+      const result = await printOnce({
+        scenarioCode: PRINT_SCENARIO.ipFeeDetailPrint,
         source,
         copies,
         bizRef: { encounterId: patients[0]?.id },
@@ -234,6 +330,7 @@ export async function printInpatientPrintCenter(
         executionDeadline,
         dateFrom,
         dateTo,
+        orderOpenedTimeAsc,
       );
       if (source.orderRows.length <= 0) {
         ElMessage.warning('没有可打印的临时医嘱');
@@ -255,6 +352,7 @@ export async function printInpatientPrintCenter(
         executionDeadline,
         dateFrom,
         dateTo,
+        orderOpenedTimeAsc,
       );
       if (source.orderRows.length <= 0) {
         ElMessage.warning('没有可打印的长期医嘱');
@@ -264,7 +362,7 @@ export async function printInpatientPrintCenter(
         scenarioCode: PRINT_SCENARIO.ipLongOrderPrint,
         source,
         copies,
-        jobName: '长嘱执行记录',
+        jobName: '长期医嘱',
         bizRef: { encounterId: patients[0]?.id, therapyType: 'long' },
       });
       return { ok: result.ok, count: result.ok ? 1 : 0 };
@@ -312,6 +410,42 @@ export async function printInpatientPrintCenter(
         }
       }
       return { ok: okCount > 0, count: okCount };
+    }
+
+    if (docType === 'order_dispense_sheet') {
+      // 一张连续多人：勾选药品按患者分块排在同一 PrintData（含口服）
+      const queryDate = dateFrom || dateTo || dayjs().format('YYYY-MM-DD');
+      const source = await buildOrderDispenseSheetPrintSource(patients, rows, queryDate);
+      if ((source.patientBlocks ?? []).length <= 0) {
+        ElMessage.warning('没有可打印的已执行药品');
+        return { ok: false, count: 0 };
+      }
+      const result = await printOnce({
+        scenarioCode: PRINT_SCENARIO.ipOrderDispenseSheetPrint,
+        source,
+        copies,
+        jobName: `摆药单·${queryDate}`,
+        bizRef: { queryDate, rowCount: rows.length },
+      });
+      return { ok: result.ok, count: result.ok ? 1 : 0 };
+    }
+
+    if (docType === 'oral_med_sheet') {
+      // 一张连续多人：勾选药品按患者分块排在同一 PrintData（每块含患者签字）
+      const queryDate = dateFrom || dateTo || dayjs().format('YYYY-MM-DD');
+      const source = await buildOralMedSheetPrintSource(patients, rows, queryDate);
+      if ((source.patientBlocks ?? []).length <= 0) {
+        ElMessage.warning('没有可打印的已执行药品');
+        return { ok: false, count: 0 };
+      }
+      const result = await printOnce({
+        scenarioCode: PRINT_SCENARIO.ipOralMedSheetPrint,
+        source,
+        copies,
+        jobName: `患者用药单·${queryDate}`,
+        bizRef: { queryDate, rowCount: rows.length },
+      });
+      return { ok: result.ok, count: result.ok ? 1 : 0 };
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : '打印数据准备失败';

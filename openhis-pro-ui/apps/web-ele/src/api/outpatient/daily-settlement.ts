@@ -9,6 +9,7 @@ import type {
 import type { ApiOptionItem } from '#/types/api-response';
 
 import { publicRequestClient } from '#/api/request';
+import { dailySettlementLongRequestConfig } from '#/constants/daily-settlement-request-timeout';
 
 export type {
   DailySettlementHandoverChannelRowDto,
@@ -93,8 +94,12 @@ export interface DailySettlementSummaryDto {
   cashAmount?: string;
   /** 应交现金（与现金渠道同口径） */
   cashDueAmount?: string;
-  /** 医保补偿合计（各医保费用性质统筹代数和） */
+  /** 医保统筹合计（各医保费用性质统筹代数和） */
   insuranceCompensationAmount?: string;
+  /** 个人账户合计（各医保费用性质个人账户代数和） */
+  insuranceAccountAmount?: string;
+  /** 医保上传差额合计（零售−上传；勾稽项，不入总收入） */
+  chsRetailUploadDiffAmount?: string;
   physicalExamCount?: number;
   refundTotal?: string;
   expenseNatureSummaries?: DailySettlementExpenseNatureSummaryDto[];
@@ -238,6 +243,7 @@ export async function previewOutpatientDailySettlementApi(
   return publicRequestClient.post<PreviewOutpatientDailySettlementResponse>(
     `${BASE}/previewOutpatientDailySettlement`,
     body,
+    dailySettlementLongRequestConfig(),
   );
 }
 
@@ -248,6 +254,7 @@ export async function submitOutpatientDailySettlementApi(
   return publicRequestClient.post<SubmitOutpatientDailySettlementResponse>(
     `${BASE}/submitOutpatientDailySettlement`,
     body,
+    dailySettlementLongRequestConfig(),
   );
 }
 
@@ -261,11 +268,12 @@ export async function pageOutpatientCashierSettlementHistoryApi(
   );
 }
 
-/** 加载门诊交账原单快照（历史重打）。 */
+/** 加载门诊交账原单（历史重打：挂载现算）。 */
 export async function loadOutpatientCashierSettlementVoucherApi(settlementId: string) {
   return publicRequestClient.post<LoadOutpatientCashierSettlementVoucherResponse>(
     `${BASE}/loadOutpatientCashierSettlementVoucher`,
     { settlementId },
+    dailySettlementLongRequestConfig(),
   );
 }
 

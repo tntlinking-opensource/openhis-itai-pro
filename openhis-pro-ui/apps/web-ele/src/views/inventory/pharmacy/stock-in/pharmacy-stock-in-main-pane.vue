@@ -1,4 +1,4 @@
-<!--
+﻿<!--
   药房入库单右侧主区：与药库出库单同构；契约对齐 AS-INV-PHA-001-SDD（枚举以领域 getCode() 字符串提交）。
 -->
 <script setup lang="ts">
@@ -10,7 +10,7 @@ import type { ApiOptionItem } from '#/types/api-response';
 import type { InboundProductUnitBand } from '#/utils/inventory/inbound-product-unit-bands';
 import type { FormInstance } from 'element-plus';
 
-import { computed, nextTick, reactive, ref, watch } from 'vue';
+import { computed, nextTick, reactive, ref, watch, onBeforeUnmount, onDeactivated } from 'vue';
 
 import { Trash2 } from '@vben/icons';
 import { useUserStore } from '@vben/stores';
@@ -37,6 +37,10 @@ import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import { useInventoryDocGridEdit } from '#/composables/use-inventory-doc-grid-edit';
 import { bindInvDocCompactColumns } from '#/composables/use-inv-doc-compact-columns';
 import { useInvDocParentSyncSession } from '#/composables/use-inv-doc-parent-sync-session';
+import {
+  clearInvDocDraftCacheAfterSave,
+  INV_DOC_DRAFT_SCENE,
+} from '#/utils/inventory/inv-doc-draft-cache';
 import {
   getLinkablePharmacyRequisitionDetailApi,
   pageLinkablePharmacyRequisitionsApi,
@@ -68,8 +72,9 @@ import { resolveLoginPractitionerIdForRequest } from '#/utils/format/preserve-ap
 import {
   requireAnySpecificInventoryLocationId,
   resolveFirstRealLocationIdFromOptionItems,
-  resolveLoginPractitionerLabelFromUserInfo,
   resolveSpecificInventoryLocationId,
+  resolveInvDocPreparedByName,
+  resolveInvDocApprovedByName,
 } from '#/utils/inventory/inventory-workbench-list';
 import {
   buildInventoryLocationHeadFormRules,
@@ -104,7 +109,11 @@ import {
   pharmacyStockInStatusLabel,
 } from '#/utils/inventory/pharmacy-stock-in-doc-actions';
 import { isStockOutDocumentRemovableStatus } from '#/utils/inventory/stock-out-doc-actions';
-import { buildInvDocumentTitle, printInvDocument } from '#/utils/print/print-inv-document';
+import {
+  buildInvDocumentTitle,
+  printInvDocument,
+  resolveInvPrintProductBusNo,
+} from '#/utils/print/print-inv-document';
 import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
 
 defineOptions({ name: 'InventoryPharmacyStockInMainPane' });
@@ -149,8 +158,12 @@ interface PharmacyStockInPreviewRow {
 }
 
 interface Props {
+  /** 侧栏当前单据行（制单人/审批人与队列卡片同口径） */
+  queueCardRow?: null | Record<string, unknown>;
   busNo?: string;
   isDraftOrder?: boolean;
+  /** 侧栏草稿稳定 id（_clientDraftId），用于 session 缓存隔离 */
+  clientDraftId?: string;
   resetKey?: number;
   sidebarSourceLocationId?: number | string;
   sidebarPurposeLocationId?: number | string;
@@ -161,8 +174,10 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  queueCardRow: null,
   busNo: '',
   isDraftOrder: false,
+  clientDraftId: '',
   resetKey: 0,
   sidebarPurposeLocationId: undefined,
   sidebarSourceLocationId: undefined,
@@ -431,6 +446,9 @@ function mapPharmacyStockInDetailLineToGrid(
       ? {
           id: hasItemId ? (itemIdRaw as number | string) : idStr,
           name,
+          ...(String(catalog?.productBusNo ?? '').trim()
+            ? { busNo: String(catalog?.productBusNo ?? '').trim() }
+            : {}),
         }
       : undefined,
     itemTable: ln.itemTable === undefined ? undefined : String(ln.itemTable),
@@ -877,7 +895,7 @@ function buildLinesPayload(rows: PharmacyStockInPreviewRow[]): PharmacyStockInLi
       itemQuantity: persisted.itemQuantity,
       unitCode: unitCode || undefined,
       lotNumber: String(r.lotNumber ?? '').trim() || undefined,
-      traceNo: String(r.traceNo ?? '').trim() || undefined,
+      traceNo: String(r.traceNo ?? '').trim(),
       price: Number.isFinite(unit) ? unit : undefined,
       totalPrice,
       occurrenceTime: r._occurrenceTime?.trim() || undefined,
@@ -980,13 +998,26 @@ async function persistPharmacyStockIn(): Promise<string | undefined> {
   }
 }
 
+/** 落库成功后清 session 草稿缓存 */
+function clearDraftPersistAfterSave(busNo?: string) {
+  clearInvDocDraftCacheAfterSave({
+    scene: INV_DOC_DRAFT_SCENE.pharmacyStockIn,
+    clientDraftId: props.clientDraftId,
+    busNo,
+  });
+  parentSync.clearDraftSnap();
+}
+
 async function handleSaveDoc() {
-  await persistPharmacyStockIn();
+  const no = await persistPharmacyStockIn();
+  if (!no) return;
+  clearDraftPersistAfterSave(no);
 }
 
 async function handleSaveAndSubmitDoc() {
   const no = await persistPharmacyStockIn();
   if (!no) return;
+  clearDraftPersistAfterSave(no);
   await handleSubmitApproval();
 }
 
@@ -997,6 +1028,11 @@ async function handleRemoveDoc() {
     } catch {
       return;
     }
+    clearInvDocDraftCacheAfterSave({
+      scene: INV_DOC_DRAFT_SCENE.pharmacyStockIn,
+      clientDraftId: props.clientDraftId,
+    });
+    parentSync.discardDraftSession();
     resetDetailForCreate();
     emit('documentRemoved');
     return;
@@ -1015,6 +1051,11 @@ async function handleRemoveDoc() {
   }
   try {
     await removePharmacyStockInApi({ busNo: no });
+    clearInvDocDraftCacheAfterSave({
+      scene: INV_DOC_DRAFT_SCENE.pharmacyStockIn,
+      busNo: no,
+    });
+    parentSync.clearDraftSnap();
     ElMessage.success('已删除');
     resetDetailForCreate();
     emit('documentRemoved');
@@ -1246,7 +1287,29 @@ interface PharmacyStockInDraftSnap {
   rows: PharmacyStockInPreviewRow[];
 }
 
-const parentSync = useInvDocParentSyncSession<PharmacyStockInDraftSnap>();
+const parentSync = useInvDocParentSyncSession<PharmacyStockInDraftSnap>({
+  scene: INV_DOC_DRAFT_SCENE.pharmacyStockIn,
+  getDocKey: () => {
+    const draftId = String(props.clientDraftId ?? '').trim();
+    if (props.isDraftOrder && draftId) return draftId;
+    return String(props.busNo ?? headerBusNo.value ?? '').trim() || undefined;
+  },
+  getCardMeta: () => ({
+    statusEnum_enumText: '编辑中',
+    applyTime: '',
+  }),
+});
+
+/** 拍摄当前主区草稿快照（侧栏切单 / 落盘共用） */
+function capturePharmacyStockInDraftSnap(): PharmacyStockInDraftSnap {
+  return {
+    originalBusNo: originalBusNo.value,
+    detailSourceLocationId: detailSourceLocationId.value,
+    purposeLocationId: purposeLocationId.value,
+    headItemTableType: headItemTableType.value,
+    rows: collectGridRows().map((r) => ({ ...r })),
+  };
+}
 
 /** 侧栏切单：缓存/恢复本地草稿，避免已落库明细污染新建单 */
 async function syncFromParentContext() {
@@ -1254,13 +1317,7 @@ async function syncFromParentContext() {
     { isDraftOrder: Boolean(props.isDraftOrder), parentBusNo: props.busNo },
     {
       getLocalPersistedBusNo: () => headerBusNo.value,
-      captureDraft: () => ({
-        originalBusNo: originalBusNo.value,
-        detailSourceLocationId: detailSourceLocationId.value,
-        purposeLocationId: purposeLocationId.value,
-        headItemTableType: headItemTableType.value,
-        rows: collectGridRows().map((r) => ({ ...r })),
-      }),
+      captureDraft: capturePharmacyStockInDraftSnap,
       restoreDraft: async (snap) => {
         headerBusNo.value = undefined;
         detailStatusEnum.value = undefined;
@@ -1282,9 +1339,24 @@ async function syncFromParentContext() {
     },
   );
 }
+/** 切菜单 / KeepAlive 停用前把未保存草稿写入 sessionStorage */
+function flushPharmacyStockInDraftPersist(): void {
+  parentSync.flushPersist({
+    getLocalPersistedBusNo: () => headerBusNo.value,
+    captureDraft: capturePharmacyStockInDraftSnap,
+  });
+}
+
+onBeforeUnmount(() => {
+  flushPharmacyStockInDraftPersist();
+});
+
+onDeactivated(() => {
+  flushPharmacyStockInDraftPersist();
+});
 
 watch(
-  () => [props.busNo, props.isDraftOrder, props.resetKey] as const,
+  () => [props.busNo, props.isDraftOrder, props.resetKey, props.clientDraftId] as const,
   () => {
     void syncFromParentContext();
   },
@@ -1345,16 +1417,12 @@ async function handlePrint() {
   const sourceName = resolvePrintLocationName(props.warehouseOptions, detailSourceLocationId.value);
   const destName = resolvePrintLocationName(props.pharmacyOptions, purposeLocationId.value);
   const itemTypeText = resolvePrintOptionLabel(props.itemTableTypeOptions, headItemTableType.value);
-  const practitionerName = resolveLoginPractitionerLabelFromUserInfo(
-    userStore.userInfo as null | Record<string, unknown>,
-  );
   const documentTitle = buildInvDocumentTitle(destName || sourceName, '入库单');
-  const applyTimeText = String(productRows[0]?._occurrenceTime ?? '')
-    .trim()
-    .replace('T', ' ');
+  const applyTimeText = '';
 
   // 按当前网格展示值组装 PrintData
   const lineRows = productRows.map((row) => ({
+    productBusNo: resolveInvPrintProductBusNo(row as unknown as Record<string, unknown>),
     productName: resolvePharmacyStockInPrintProductName(row),
     specText: String(row.spec ?? '').trim(),
     manufacturerText: String(row.manufacturer ?? '').trim(),
@@ -1366,6 +1434,12 @@ async function handlePrint() {
     expiryText: '',
   }));
 
+  const preparedByName = resolveInvDocPreparedByName(
+    props.queueCardRow as null | Record<string, unknown>,
+  );
+  const approvedByName = resolveInvDocApprovedByName(
+    props.queueCardRow as null | Record<string, unknown>,
+  );
   await printInvDocument({
     family: 'movement',
     source: {
@@ -1379,10 +1453,9 @@ async function handlePrint() {
       linkDocText: String(originalBusNo.value ?? '').trim(),
       destLocationText: destName,
       invoiceNoText: '',
-      practitionerName,
       lineRows,
-      preparedByName: practitionerName,
-      approvedByName: '',
+      preparedByName,
+      approvedByName,
     },
     bizRef: { busNo, docKind: 'pharmacy-stock-in' },
     jobName: documentTitle,

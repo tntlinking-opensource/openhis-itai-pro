@@ -14,9 +14,9 @@ defineOptions({ name: 'NurseWorkloadNurseCard' });
 interface Props {
   consumableItemChips?: NurseConsumableItemChip[];
   consumableItemCount?: number;
-  consumableTotalAmount?: number | string;
+  consumableSaleAmountTotal?: number | string;
   executionChips?: NurseExecutionItemChip[];
-  executionTotalAmount?: number | string;
+  executionSaleAmountTotal?: number | string;
   executionTotalCount?: number;
   loading?: boolean;
   practitionerName: string;
@@ -25,9 +25,9 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   consumableItemChips: () => [],
   consumableItemCount: 0,
-  consumableTotalAmount: 0,
+  consumableSaleAmountTotal: 0,
   executionChips: () => [],
-  executionTotalAmount: 0,
+  executionSaleAmountTotal: 0,
   executionTotalCount: 0,
   loading: false,
 });
@@ -39,8 +39,8 @@ const emit = defineEmits<{
 const hasExecution = computed(() => props.executionChips.length > 0);
 const hasConsumable = computed(() => props.consumableItemChips.length > 0);
 
-const amountTotal = computed(
-  () => Number(props.executionTotalAmount ?? 0) + Number(props.consumableTotalAmount ?? 0),
+const saleTotal = computed(
+  () => Number(props.executionSaleAmountTotal ?? 0) + Number(props.consumableSaleAmountTotal ?? 0),
 );
 </script>
 
@@ -54,7 +54,7 @@ const amountTotal = computed(
           <span class="nurse-workload-card__summary-dot">·</span>
           耗材 <strong>{{ consumableItemCount }}</strong> 项
           <span class="nurse-workload-card__summary-dot">·</span>
-          金额合计 <strong>{{ fmtReportNumber(amountTotal, 2) }}</strong>
+          售价合计 <strong>{{ fmtReportNumber(saleTotal, 2) }}</strong>
         </span>
       </div>
 

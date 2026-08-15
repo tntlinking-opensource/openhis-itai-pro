@@ -25,10 +25,24 @@ withDefaults(defineProps<Props>(), {
   layout: 'sizes, prev, pager, next, jumper',
 });
 
-defineEmits<{
+const emit = defineEmits<{
   sizeChange: [size: number];
   currentChange: [page: number];
+  'update:currentPage': [page: number];
+  'update:pageSize': [size: number];
 }>();
+
+/** 页码变更：同步 v-model 并上抛，避免受控模式下视觉回弹。 */
+function onCurrentChange(page: number) {
+  emit('update:currentPage', page);
+  emit('currentChange', page);
+}
+
+/** 每页条数变更：同步 v-model 并上抛。 */
+function onSizeChange(size: number) {
+  emit('update:pageSize', size);
+  emit('sizeChange', size);
+}
 </script>
 
 <template>
@@ -54,8 +68,8 @@ defineEmits<{
       :page-sizes="pageSizes"
       :total="total"
       :layout="layout"
-      @size-change="(size: number) => $emit('sizeChange', size)"
-      @current-change="(page: number) => $emit('currentChange', page)"
+      @update:current-page="onCurrentChange"
+      @update:page-size="onSizeChange"
     />
   </footer>
 </template>

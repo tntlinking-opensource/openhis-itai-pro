@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type {
   TcmHistoryTreeItem,
+  TcmPrescriptionLineUi,
   TcmPrescriptionUi,
 } from '#/components/doctor-station/tcm-advice/services/tcm-prescription.service';
 import type { TcmSidebarTreeNode } from '#/components/doctor-station/tcm-advice/services/tcm-sidebar-tree.service';
@@ -10,7 +11,12 @@ import type {
   DoctorStationAdviceCatalogRowDto,
   TerminologyOptionDto,
 } from '#/api/doctor-station/advice.types';
+import type { EncounterDiagnosisRowDto } from '#/api/doctor-station/diagnosis.types';
 import type { TcmDiagnosisGroupRowDto } from '#/api/doctor-station/tcm.types';
+import type {
+  AdviceDiagnosisOptionsRefreshedPayload,
+  DiagnosisItem,
+} from '#/components/doctor-station/diagnosis';
 import type { AdviceProductOption } from '#/views/outpatient/doctor-station/advice';
 
 import { computed, nextTick, onActivated, onDeactivated, reactive, ref, watch } from 'vue';
@@ -42,15 +48,31 @@ import * as outpatientAdviceHttp from '#/api/doctor-station/advice.http';
 import * as inpatientTcmHttp from '#/api/inpatient/doctor-station/inpatient-doctor-station-tcm.http';
 import * as inpatientAdviceHttp from '#/api/inpatient/doctor-station/inpatient-doctor-station-advice.http';
 import { DiagnosisPickerDialog } from '#/components/doctor-station/diagnosis';
+import {
+  mapEncounterRowToDiagnosisItem,
+  orderEncounterDiagnosisIdsPrimaryFirst,
+  parseEncounterDiagnosisIds,
+} from '#/components/doctor-station/diagnosis/services/encounter-diagnosis-select';
+import { fetchEncounterDiagnosisDisplayList } from '#/components/doctor-station/diagnosis/services/encounter-diagnosis.service';
 import TcmHerbPanel from '#/components/doctor-station/tcm-advice/components/tcm-herb-panel.vue';
 import TcmPrescriptionHeader from '#/components/doctor-station/tcm-advice/components/tcm-prescription-header.vue';
 import TcmPrescriptionSummary from '#/components/doctor-station/tcm-advice/components/tcm-prescription-summary.vue';
+import TcmSidebarHerbTipContent from '#/components/doctor-station/tcm-advice/components/tcm-sidebar-herb-tip-content.vue';
 
 import './tcm-advice-layout.css';
 import { useAuthStore } from '#/store';
+import { resolveAdviceChargeStatusTagTypeFromCode } from '#/utils/advice/advice-status-display';
 import { decimalAdd } from '#/utils/format/decimal-util';
 import { ACTIVITY_DEFINITION_TABLE } from '#/views/outpatient/doctor-station/advice/services/advice-tab.constants';
 import { mapCatalogRowToOption } from '#/views/outpatient/doctor-station/advice/services/advice-list';
+import {
+  defaultContractSelection,
+  enrichFeeNatureOptionsWithCategory,
+  resolveContractForChrgitmLv,
+  terminologyLabel,
+  type FeeNatureOption,
+} from '#/views/outpatient/doctor-station/advice/services/advice-format';
+import { getChargeTypeListApi } from '#/api/core/common';
 import {
   buildTcmDosageInstructionSelectOptions,
   resolveTcmDosageInstructionLabel,
@@ -83,7 +105,6 @@ import {
   createEmptyLine,
   createEmptyPrescription,
   findDuplicateHerbInPrescription,
-  formatTcmSyndromeGroupOptionLabel,
   hasPersistableDraftChanges,
   INPATIENT_IMMEDIATE_RATE_CODE,
   isTcmLineRequestExceedCurrentLot,
@@ -93,8 +114,11 @@ import {
   mapHistoryRowToTreeItem,
   resolvePrescriptionTabLabel,
   resolveTcmMethodLabel,
+  resolveTcmPrescriptionDiagnosisIds,
+  resolveTcmRxChargeStatusLabel,
   resolveTcmRxStatusLabel,
   resolveTcmRxStatusTagType,
+  resolveTcmSyndromeGroupFromDiagnosisIds,
   syncHeaderFormToPrescription,
   TCM_DECOCTION_ACTIVITY_NAME,
   TCM_THERAPY_LONG_TERM,
@@ -105,6 +129,7 @@ import {
 } from '#/components/doctor-station/tcm-advice/services/tcm-prescription.service';
 import {
   buildTcmSidebarTree,
+  resolveTcmSidebarLeafHerbItems,
   resolveTcmSidebarLeafTooltip,
 } from '#/components/doctor-station/tcm-advice/services/tcm-sidebar-tree.service';
 import { useEnsureClinicalReception } from '#/components/doctor-station/use-ensure-clinical-reception';
@@ -155,13 +180,38 @@ const diagnosisDialogVisible = ref(false);
 /** 代煎中药目录单价（勾选代煎后计入合计） */
 const decoctionUnitPrice = ref(0);
 /** 朝阳：药材工作区（检索聚焦） */
-const herbPanelRef = ref<{ bumpAddFocus?: () => void } | null>(null);
+const herbPanelRef = ref<{
+  bumpAddFocus?: () => void;
+  focusDoseByLineKey?: (lineKey: string) => void;
+} | null>(null);
 
 const diagnosisGroups = ref<TcmDiagnosisGroupRowDto[]>([]);
+/** 就诊诊断展示行（主诊排序 / 多选回显） */
+const encounterDiagnosisDisplayRows = ref<EncounterDiagnosisRowDto[]>([]);
+/** 中医诊断候选项（方头多选绑定） */
+const tcmDiagnosisOptions = ref<DiagnosisItem[]>([]);
 const tcmMethodCodeOptions = ref<TerminologyOptionDto[]>([]);
 const medicationRateOptions = ref<TerminologyOptionDto[]>([]);
 const dosageInstructionOptions = ref<TerminologyOptionDto[]>([]);
+/** 费用性质选项（含 categoryEnum）：方头默认 + 行级按医保等级收窄 */
+const feeNatureOptions = ref<FeeNatureOption[]>([]);
+/** 换患者/就诊时递增，丢弃过期 init 回写，避免费用性质默认串患者 */
+let tcmTabLoadGeneration = 0;
 const historyItems = ref<TcmHistoryTreeItem[]>([]);
+
+/** 方头默认费用性质文案（行缺省回落；有 contractId 无文案时从下拉回填） */
+const activePrescriptionFeeNatureText = computed(() => {
+  const fromForm = String(prescriptionForm.feeNatureText ?? '').trim();
+  if (fromForm) return fromForm;
+  const fromRx = String(activePrescription.value?.feeNatureText ?? '').trim();
+  if (fromRx) return fromRx;
+  const contractId =
+    String(prescriptionForm.contractId ?? '').trim() ||
+    String(activePrescription.value?.contractId ?? '').trim();
+  if (!contractId) return '';
+  const label = terminologyLabel(feeNatureOptions.value, contractId);
+  return label === '—' ? '' : label;
+});
 const templateGroups = ref<OrderTemplateBindingGroup>();
 const prescriptions = ref<TcmPrescriptionUi[]>([]);
 /** 饮片目录查询附带的发药库位缓存 */
@@ -183,15 +233,64 @@ const contextReady = computed(
   () => Boolean(props.encounterId?.trim()) && Boolean(props.patientId?.trim()),
 );
 
-/** 病证组下拉选项 */
-const syndromeGroupOptions = computed(() =>
-  diagnosisGroups.value
-    .filter((g) => (g.tcmSyndromeGroup ?? '').trim())
-    .map((g) => ({
-      value: String(g.tcmSyndromeGroup),
-      label: formatTcmSyndromeGroupOptionLabel(g),
-    })),
+/** 病证组首项（新建方默认绑定） */
+const firstSyndromeGroupKey = computed(() => {
+  const hit = diagnosisGroups.value.find((g) => (g.tcmSyndromeGroup ?? '').trim());
+  if (hit) {
+    return String(hit.tcmSyndromeGroup).trim();
+  }
+  const fromOpt = tcmDiagnosisOptions.value.find((item) =>
+    String(item.tcmSyndromeGroup ?? '').trim(),
+  );
+  return String(fromOpt?.tcmSyndromeGroup ?? '').trim();
+});
+
+/** 历史/组套套用时的病证组值列表 */
+const syndromeGroupValues = computed(() =>
+  diagnosisGroups.value.map((g) => String(g.tcmSyndromeGroup ?? '').trim()).filter(Boolean),
 );
+
+/** 将展示行同步为中医诊断候选项 */
+function applyTcmDiagnosisOptionsFromRows(rows: EncounterDiagnosisRowDto[]) {
+  encounterDiagnosisDisplayRows.value = rows;
+  tcmDiagnosisOptions.value = rows
+    .map((row) => mapEncounterRowToDiagnosisItem(row))
+    .filter((item): item is DiagnosisItem => item !== null && item.medicineType === 'tcm');
+}
+
+/** 拉取就诊中医诊断候选项（方头多选） */
+async function loadTcmDiagnosisOptions() {
+  const encounterId = props.encounterId.trim();
+  const patientId = props.patientId.trim();
+  if (!encounterId || !patientId) {
+    encounterDiagnosisDisplayRows.value = [];
+    tcmDiagnosisOptions.value = [];
+    return;
+  }
+  try {
+    const rows = await fetchEncounterDiagnosisDisplayList(
+      { encounterId, patientId },
+      props.stationScope,
+    );
+    applyTcmDiagnosisOptionsFromRows(rows);
+  } catch {
+    encounterDiagnosisDisplayRows.value = [];
+    tcmDiagnosisOptions.value = [];
+  }
+}
+
+/**
+ * 方头多选诊断写回：主诊优先排序，并推导病证组号。
+ */
+function applyEncounterDiagnosisIdsToForm(ids: string[]) {
+  const ordered = orderEncounterDiagnosisIdsPrimaryFirst(ids, encounterDiagnosisDisplayRows.value);
+  prescriptionForm.encounterDiagnosisIds = ordered;
+  prescriptionForm.tcmSyndromeGroup = resolveTcmSyndromeGroupFromDiagnosisIds(
+    ordered,
+    tcmDiagnosisOptions.value,
+  );
+  syncActivePrescriptionHeaderFromForm();
+}
 
 /** 中药用法下拉选项（仅 tcm_method_code 术语） */
 const methodCodeOptions = computed(() =>
@@ -228,7 +327,7 @@ const activePrescription = computed(() => {
 /** 当前处方是否只读 */
 const isPrescriptionReadonly = computed(() => isTcmPrescriptionReadonly(activePrescription.value));
 
-/** 已签发且代煎中：可单独取消代煎费（仅门诊） */
+/** 已签发且代煎中：可单独取消代煎费（仅门诊；已收费代煎由后端拒绝，走退费） */
 const canVoidDecoctionCharge = computed(() => {
   if (isInpatientScope.value) {
     return false;
@@ -243,29 +342,82 @@ const canVoidDecoctionCharge = computed(() => {
   return Boolean(String(rx.prescriptionNo ?? '').trim());
 });
 
+/** 已签发未代煎：可补充代煎费（药材已收费亦可；仅门诊） */
+const canSupplementDecoctionCharge = computed(() => {
+  if (isInpatientScope.value) {
+    return false;
+  }
+  const rx = activePrescription.value;
+  if (!rx || !isTcmPrescriptionReadonly(rx)) {
+    return false;
+  }
+  if (rx.sufferingFlag) {
+    return false;
+  }
+  return Boolean(String(rx.prescriptionNo ?? '').trim());
+});
+
 const prescriptionStatusTagType = computed(() => {
-  const status = String(
-    activePrescription.value?.displayStatusEnum || activePrescription.value?.statusEnum || '',
-  )
+  const status = String(activePrescription.value?.statusEnum || '')
     .trim()
     .toUpperCase();
   // 草稿/待签发：用 warning 更醒目（系统默认 info+plain 过淡）
   if (status === 'DRAFT') {
     return 'warning';
   }
-  return resolveTcmRxStatusTagType(
-    activePrescription.value?.statusEnum,
-    activePrescription.value?.displayStatusEnum,
-  );
+  return resolveTcmRxStatusTagType(activePrescription.value?.statusEnum);
 });
 
 const prescriptionStatusLabel = computed(() =>
-  resolveTcmRxStatusLabel(
-    activePrescription.value?.statusEnum,
-    activePrescription.value?.displayStatusEnumText,
-    activePrescription.value?.displayStatusEnum,
-  ),
+  resolveTcmRxStatusLabel(activePrescription.value?.statusEnum),
 );
+
+/**
+ * 方级费用态：优先方头字段；旧接口无方头费用态时回落首行明细。
+ */
+function resolveActivePrescriptionCharge(): {
+  chargeStatusEnum?: string;
+  chargeStatusText?: string;
+} {
+  const rx = activePrescription.value;
+  if (!rx) {
+    return {};
+  }
+  const headerCode = String(rx.chargeStatusEnum ?? '').trim();
+  const headerText = String(rx.chargeStatusText ?? '').trim();
+  if (headerCode || headerText) {
+    return {
+      chargeStatusEnum: headerCode || undefined,
+      chargeStatusText: headerText || undefined,
+    };
+  }
+  // 兼容未升级接口：从药材行取首个非空费用态
+  for (const line of rx.lines) {
+    if (line.pendingDelete) {
+      continue;
+    }
+    const lineCode = String(line.chargeStatusEnum ?? '').trim();
+    const lineText = String(line.chargeStatusText ?? '').trim();
+    if (lineCode || lineText) {
+      return {
+        chargeStatusEnum: lineCode || undefined,
+        chargeStatusText: lineText || undefined,
+      };
+    }
+  }
+  return {};
+}
+
+/** 方级费用状态 Tag 类型：仅认 chargeStatusEnum */
+const prescriptionChargeStatusTagType = computed(() =>
+  resolveAdviceChargeStatusTagTypeFromCode(resolveActivePrescriptionCharge().chargeStatusEnum),
+);
+
+/** 方级费用状态文案（草稿/空显示 —） */
+const prescriptionChargeStatusLabel = computed(() => {
+  const charge = resolveActivePrescriptionCharge();
+  return resolveTcmRxChargeStatusLabel(charge.chargeStatusEnum, charge.chargeStatusText);
+});
 
 /** 当前处方可见药材行 */
 const visibleLines = computed(() => {
@@ -319,12 +471,16 @@ function createEmptyPrescriptionForScope(tcmSyndromeGroup = ''): TcmPrescription
     therapyEnum,
     medicationRateOptions.value,
   );
+  // 费用性质默认取下拉首项（后端已将就诊优先合同排首位）
+  const defaultContract = defaultContractSelection(feeNatureOptions.value);
   return createEmptyPrescription(
     tcmSyndromeGroup,
     undefined,
     defaultMethodCode,
     defaultRateCode,
     therapyEnum || undefined,
+    defaultContract.contractId,
+    defaultContract.feeNature,
   );
 }
 
@@ -340,12 +496,13 @@ const productColumns = computed(() => {
   const base = [
     { prop: 'code', label: '项目编码', width: 108 },
     { prop: 'name', label: '项目名称', width: 120 },
+    // 数量/金额紧挨项目名，便于选品时一眼对比可开量与价格
+    { prop: 'availableQuantity', label: '库存数量', width: 110 },
+    { prop: 'price', label: '单价', width: 64 },
     { prop: 'manufacturer', label: '厂家', width: 200 },
     { prop: 'category', label: '类别', width: 64 },
     { prop: 'spec', label: '规格', width: 64 },
     { prop: 'chrgitmLvText', label: '医保等级', width: 72 },
-    { prop: 'availableQuantity', label: '库存数量', width: 110 },
-    { prop: 'price', label: '单价', width: 64 },
   ];
   if (isInpatientScope.value) {
     // 住院选品不展示库存列（与院点原口径一致）
@@ -356,11 +513,21 @@ const productColumns = computed(() => {
 
 const { loading: pageLoading, run: runLoadTcmTab } = useRequest(
   async () => {
+    const loadGeneration = ++tcmTabLoadGeneration;
     const encounterId = props.encounterId.trim();
     const patientId = props.patientId.trim();
     const keyword = sidebarKeyword.value.trim() || undefined;
     const api = tcmHttp.value;
-    const [groupRes, rxRes, historyRes, initRes, templateGroupRes] = await Promise.all([
+    const [
+      groupRes,
+      rxRes,
+      historyRes,
+      initRes,
+      adviceInitRes,
+      templateGroupRes,
+      diagnosisDisplayRows,
+      chargeTypes,
+    ] = await Promise.all([
       api.httpListTcmDiagnosisGroups({ encounterId, patientId }),
       api.httpListTcmHerbalPrescriptions({
         encounterId,
@@ -372,27 +539,45 @@ const { loading: pageLoading, run: runLoadTcmTab } = useRequest(
         keyword,
       }),
       api.httpInitDoctorStationTcm({ encounterId, patientId }),
+      // 费用性质下拉与西药开立同源（门诊/住院 init*.feeNatureOptions）
+      (isInpatientScope.value
+        ? inpatientAdviceHttp.httpInitInpatientDoctorStationAdvice({ encounterId, patientId })
+        : outpatientAdviceHttp.httpInitDoctorStationAdvice({ encounterId, patientId })
+      ).catch(() => null),
       fetchMergedDoctorStationOrderTemplateGroups({
         encounterId,
         patientId,
         templateKindEnum: ORDER_TEMPLATE_KIND_TCM,
         searchKey: keyword,
       }),
+      fetchEncounterDiagnosisDisplayList({ encounterId, patientId }, props.stationScope).catch(
+        () => [] as EncounterDiagnosisRowDto[],
+      ),
+      getChargeTypeListApi().catch(() => []),
     ]);
+    // 慢请求：已换患者则整包丢弃
+    if (loadGeneration !== tcmTabLoadGeneration) return;
     diagnosisGroups.value = groupRes.groups ?? [];
+    applyTcmDiagnosisOptionsFromRows(diagnosisDisplayRows);
     tcmMethodCodeOptions.value = initRes.tcmMethodCodeOptions ?? [];
     medicationRateOptions.value = initRes.medicationRateOptions ?? [];
     dosageInstructionOptions.value = initRes.dosageInstructionOptions ?? [];
+    // 补 categoryEnum：方内自费等级药材时按 code 收窄可选合同
+    feeNatureOptions.value = enrichFeeNatureOptionsWithCategory(
+      adviceInitRes?.feeNatureOptions ?? [],
+      chargeTypes,
+    );
     templateGroups.value = templateGroupRes;
     templateProductTooltipCache.value = {};
     templateProductTooltipPending.clear();
     const mapped = (rxRes.prescriptions ?? []).map((dto) => mapApiHeaderToUi(dto));
+    enrichPrescriptionFeeNatureDisplay(mapped);
     prescriptions.value = mapped;
     historyItems.value = (historyRes.historyRows ?? []).map((row, index) =>
-      mapHistoryRowToTreeItem(row, index),
+      mapHistoryRowToTreeItem(row, index, { currentEncounterId: encounterId }),
     );
     if (mapped.length === 0) {
-      const empty = createEmptyPrescriptionForScope(syndromeGroupOptions.value[0]?.value ?? '');
+      const empty = createEmptyPrescriptionForScope(firstSyndromeGroupKey.value);
       prescriptions.value = [empty];
       activePrescriptionKey.value = empty.prescriptionGroupKey;
     } else if (!mapped.some((rx) => rx.prescriptionGroupKey === activePrescriptionKey.value)) {
@@ -471,6 +656,12 @@ const { loading: voidDecoctionLoading, run: runVoidTcmDecoctionCharge } = useReq
   { manual: true, showErrorMessage: true },
 );
 
+/** 补充代煎费仅门诊 AppService 提供 */
+const { loading: supplementDecoctionLoading, run: runSupplementTcmDecoctionCharge } = useRequest(
+  (body) => outpatientTcmHttp.httpSupplementTcmDecoctionCharge(body),
+  { manual: true, showErrorMessage: true },
+);
+
 const { loading: stopLongTermLoading, run: runStopLongTerm } = useRequest(
   (body) => inpatientTcmHttp.httpStopLongTermTcmHerbalPrescription(body),
   { manual: true, showErrorMessage: true },
@@ -487,6 +678,7 @@ const mutationLoading = computed(
     signLoading.value ||
     withdrawLoading.value ||
     voidDecoctionLoading.value ||
+    supplementDecoctionLoading.value ||
     stopLongTermLoading.value ||
     cancelStopLongTermLoading.value,
 );
@@ -504,10 +696,11 @@ async function refreshPrescriptionsFromServer() {
     patientId,
   });
   const mapped = (rxRes.prescriptions ?? []).map((dto) => mapApiHeaderToUi(dto));
+  enrichPrescriptionFeeNatureDisplay(mapped);
   const activeKey = activePrescriptionKey.value;
   // 服务端无方时保留一张空白页签，避免整排页签被清空
   if (mapped.length === 0) {
-    const empty = createEmptyPrescriptionForScope(syndromeGroupOptions.value[0]?.value ?? '');
+    const empty = createEmptyPrescriptionForScope(firstSyndromeGroupKey.value);
     prescriptions.value = [empty];
     activePrescriptionKey.value = empty.prescriptionGroupKey;
   } else {
@@ -678,10 +871,14 @@ function hasUnsavedLocalPrescriptionDrafts(): boolean {
 
 /** 清空中药 Tab 内存态（无就诊上下文或换患者后失效） */
 function clearTcmTabLocalState() {
+  tcmTabLoadGeneration += 1;
   diagnosisGroups.value = [];
+  encounterDiagnosisDisplayRows.value = [];
+  tcmDiagnosisOptions.value = [];
   tcmMethodCodeOptions.value = [];
   medicationRateOptions.value = [];
   dosageInstructionOptions.value = [];
+  feeNatureOptions.value = [];
   historyItems.value = [];
   templateGroups.value = undefined;
   templateProductTooltipCache.value = {};
@@ -728,6 +925,9 @@ onDeactivated(() => {
 watch(
   () => [props.encounterId, props.patientId],
   () => {
+    // 换患者：先作废在途拉数并丢掉费用性质，避免新开方默认串上个就诊
+    tcmTabLoadGeneration += 1;
+    feeNatureOptions.value = [];
     if (!isTabActive.value) {
       // 非当前 Tab 换患者：使缓存上下文失效，下次激活强制重拉（避免脏草稿串患者）
       loadedTcmTabContextKey.value = '';
@@ -745,6 +945,28 @@ watch(
     syncHeaderFormToPrescription(activePrescription.value, prescriptionForm);
   },
   { deep: true },
+);
+
+/** 已签发未代煎：勾选代煎即触发补充代煎费（已代煎不可通过勾选取消，退费走收银） */
+watch(
+  () => prescriptionForm.sufferingFlag,
+  (next, prev) => {
+    if (headerFormLoadSuppressed.value) return;
+    if (!isPrescriptionReadonly.value) return;
+    if (next === true && prev === false && canSupplementDecoctionCharge.value) {
+      void handleSupplementDecoctionCharge();
+      return;
+    }
+    // 服务端已是代煎：禁止勾选取消（未收费用「取消代煎」，已收费走退费）
+    if (next === false && prev === true && !canSupplementDecoctionCharge.value) {
+      prescriptionForm.sufferingFlag = true;
+      if (canVoidDecoctionCharge.value) {
+        ElMessage.info('取消未收费代煎请使用底部「取消代煎」；已收费请走退费流程');
+      } else {
+        ElMessage.info('已收费代煎请走退费流程，医生站仅支持补充代煎费');
+      }
+    }
+  },
 );
 
 /** 付数变更后：已选药材超可用库存时即时提示 */
@@ -768,13 +990,29 @@ watch(
 function loadActivePrescriptionForm(options?: { preserveDirty?: boolean }) {
   headerFormLoadSuppressed.value = true;
   const form = loadHeaderFormFromPrescription(activePrescription.value);
-  prescriptionForm.tcmSyndromeGroup = form.tcmSyndromeGroup;
+  const diagnosisIds = resolveTcmPrescriptionDiagnosisIds(
+    {
+      encounterDiagnosisIds: form.encounterDiagnosisIds,
+      tcmSyndromeGroup: form.tcmSyndromeGroup,
+    },
+    tcmDiagnosisOptions.value,
+  );
+  const orderedIds = orderEncounterDiagnosisIdsPrimaryFirst(
+    diagnosisIds,
+    encounterDiagnosisDisplayRows.value,
+  );
+  prescriptionForm.encounterDiagnosisIds = orderedIds;
+  prescriptionForm.tcmSyndromeGroup =
+    resolveTcmSyndromeGroupFromDiagnosisIds(orderedIds, tcmDiagnosisOptions.value) ||
+    form.tcmSyndromeGroup;
   prescriptionForm.therapyEnum = form.therapyEnum ?? resolveDefaultTherapyEnumForNewPrescription();
   prescriptionForm.chineseHerbsDoseQuantity = form.chineseHerbsDoseQuantity;
   prescriptionForm.sufferingFlag = form.sufferingFlag;
   prescriptionForm.methodCode = form.methodCode;
   prescriptionForm.rateCode = form.rateCode;
   prescriptionForm.days = form.days;
+  prescriptionForm.contractId = form.contractId;
+  prescriptionForm.feeNatureText = form.feeNatureText;
   if (activePrescription.value && !options?.preserveDirty) {
     activePrescription.value.headerDirty = false;
   }
@@ -825,27 +1063,6 @@ function handleSwitchPrescription(id: number | string) {
 }
 
 /**
- * 当前可编辑处方是否有未保存变更（先同步方头）。
- * 用于套用组套/历史等会覆盖当前方的操作提示，不再用于拦截页签切换。
- */
-function hasUnsavedActiveDraftChanges(): boolean {
-  if (!activePrescription.value || isPrescriptionReadonly.value) {
-    return false;
-  }
-  syncActivePrescriptionHeaderFromForm();
-  return hasPersistableDraftChanges(activePrescription.value);
-}
-
-/** 有未保存变更时提示并拦截（返回 false 表示不可继续） */
-function ensureActiveDraftSavedOrWarn(actionLabel = '继续操作'): boolean {
-  if (!hasUnsavedActiveDraftChanges()) {
-    return true;
-  }
-  ElMessage.warning(`当前处方有未保存变更，请先点击「保存」后再${actionLabel}`);
-  return false;
-}
-
-/**
  * 切换页签前：结束卡片编辑并把方头写回「离开的那一方」，始终允许切换。
  * ElTabs before-leave 时 v-model 尚未变更，activePrescription 仍是旧方。
  */
@@ -864,17 +1081,24 @@ async function handleBeforeLeavePrescription(
   return true;
 }
 
-/** 新增处方页签并聚焦检索加药（当前方未保存也允许，先写回本地再开新方） */
-async function handleAddPrescription() {
+/**
+ * 新增处方页签（当前方未保存也允许，先写回本地再开新方）。
+ * focusSearch 默认 true：手动点「新增」时展开检索加药；组套/历史套用新建方时传 false，避免套用后下拉误展开。
+ */
+async function handleAddPrescription(options?: { focusSearch?: boolean }) {
+  // 套用场景不自动展开选品；手动新增仍聚焦检索
+  const focusSearch = options?.focusSearch !== false;
   if (editingLineKey.value) {
     await handleHerbEditEnd(editingLineKey.value);
   }
   syncActivePrescriptionHeaderFromForm();
-  const defaultGroup = syndromeGroupOptions.value[0]?.value ?? '';
-  const newRx = createEmptyPrescriptionForScope(defaultGroup);
+  const newRx = createEmptyPrescriptionForScope(firstSyndromeGroupKey.value);
   prescriptions.value.push(newRx);
   activePrescriptionKey.value = newRx.prescriptionGroupKey;
   loadActivePrescriptionForm();
+  if (!focusSearch) {
+    return;
+  }
   void nextTick(() => {
     herbPanelRef.value?.bumpAddFocus?.();
   });
@@ -920,21 +1144,53 @@ function handleOpenDiagnosisDialog() {
   diagnosisDialogVisible.value = true;
 }
 
-/** 诊断保存后刷新病证组下拉，并选中新开立组 */
+/** 方头多选变更（与西医绑定面板一致） */
+function handleEncounterDiagnosisIdsUpdate(ids: string[]) {
+  if (isPrescriptionReadonly.value) {
+    return;
+  }
+  applyEncounterDiagnosisIdsToForm(ids);
+}
+
+/** 选择诊断弹窗内删除已开立诊断后：刷新候选项并清理方头绑定 */
+async function handleDiagnosisDeleted(deletedId: string) {
+  const id = String(deletedId ?? '').trim();
+  await loadTcmDiagnosisOptions();
+  if (!id || isPrescriptionReadonly.value) {
+    return;
+  }
+  const next = parseEncounterDiagnosisIds(prescriptionForm.encounterDiagnosisIds).filter(
+    (x) => x !== id,
+  );
+  applyEncounterDiagnosisIdsToForm(next);
+}
+
+/** 选择诊断弹窗内切换主诊后：仅刷新候选项 */
+async function handleDiagnosisMainSwitched() {
+  await loadTcmDiagnosisOptions();
+}
+
+/** 「选择诊断」打开时面板已拉取最新列表：同步候选项 */
+function handleDiagnosisOptionsRefreshed(payload: AdviceDiagnosisOptionsRefreshedPayload) {
+  applyTcmDiagnosisOptionsFromRows(payload.displayRows ?? []);
+}
+
+/** 诊断保存后刷新候选项，并把新开立诊断并入方头多选 */
 async function handleDiagnosisPickerSaved() {
   const encounterId = props.encounterId.trim();
   const patientId = props.patientId.trim();
   if (!encounterId || !patientId) {
     return;
   }
-  const prevGroupKeys = new Set(
-    diagnosisGroups.value
-      .map((group) => String(group.tcmSyndromeGroup ?? '').trim())
+  const prevIds = new Set(
+    tcmDiagnosisOptions.value
+      .map((item) => String(item.encounterDiagnosisId ?? item.id ?? '').trim())
       .filter(Boolean),
   );
   try {
     const res = await tcmHttp.value.httpListTcmDiagnosisGroups({ encounterId, patientId });
     diagnosisGroups.value = res.groups ?? [];
+    await loadTcmDiagnosisOptions();
   } catch {
     ElMessage.error('刷新诊断列表失败，请稍后重试');
     return;
@@ -942,21 +1198,26 @@ async function handleDiagnosisPickerSaved() {
   if (isPrescriptionReadonly.value) {
     return;
   }
-  const newlyAdded = diagnosisGroups.value.find((group) => {
-    const key = String(group.tcmSyndromeGroup ?? '').trim();
-    return Boolean(key) && !prevGroupKeys.has(key);
-  });
-  const nextGroupKey = String(newlyAdded?.tcmSyndromeGroup ?? '').trim();
-  if (nextGroupKey) {
-    prescriptionForm.tcmSyndromeGroup = nextGroupKey;
-    syncActivePrescriptionHeaderFromForm();
+  const newlyAddedIds = tcmDiagnosisOptions.value
+    .map((item) => String(item.encounterDiagnosisId ?? item.id ?? '').trim())
+    .filter((id) => Boolean(id) && !prevIds.has(id));
+  if (newlyAddedIds.length > 0) {
+    applyEncounterDiagnosisIdsToForm([
+      ...parseEncounterDiagnosisIds(prescriptionForm.encounterDiagnosisIds),
+      ...newlyAddedIds,
+    ]);
     return;
   }
-  if (!String(prescriptionForm.tcmSyndromeGroup ?? '').trim()) {
-    const first = syndromeGroupOptions.value[0]?.value;
-    if (first) {
-      prescriptionForm.tcmSyndromeGroup = first;
-      syncActivePrescriptionHeaderFromForm();
+  if (parseEncounterDiagnosisIds(prescriptionForm.encounterDiagnosisIds).length === 0) {
+    const fallbackIds = resolveTcmPrescriptionDiagnosisIds(
+      {
+        encounterDiagnosisIds: [],
+        tcmSyndromeGroup: firstSyndromeGroupKey.value,
+      },
+      tcmDiagnosisOptions.value,
+    );
+    if (fallbackIds.length > 0) {
+      applyEncounterDiagnosisIdsToForm(fallbackIds);
     }
   }
 }
@@ -1021,6 +1282,8 @@ async function handleIssuePrescription() {
   await runSignBatch(signBody);
   ElMessage.success('处方已签发');
   await refreshPrescriptionsFromServer();
+  // 签发后刷新侧栏，使本次方进入「历史处方」并带「本次」标识
+  void reloadSidebarSources();
 }
 
 /** 撤回当前处方 */
@@ -1040,9 +1303,11 @@ async function handleRevokePrescription() {
   await runWithdrawOrDelete(body);
   ElMessage.success('处方已撤回');
   await refreshPrescriptionsFromServer();
+  // 撤回后刷新侧栏，去掉已撤回的本次方
+  void reloadSidebarSources();
 }
 
-/** 单独取消已签发方的代煎费（不撤回处方） */
+/** 单独取消已签发方的代煎费（不撤回处方；已收费代煎须走退费） */
 async function handleVoidDecoctionCharge() {
   if (!canVoidDecoctionCharge.value || !activePrescription.value) {
     ElMessage.warning('当前处方不可取消代煎费');
@@ -1050,7 +1315,7 @@ async function handleVoidDecoctionCharge() {
   }
   try {
     await ElMessageBox.confirm(
-      '确认取消本方代煎中药费？将撤回未结算的代煎费用，并取消代煎勾选。',
+      '确认取消本方代煎中药费？将撤回未结算的代煎费用，并取消代煎勾选。已收费代煎请走退费流程。',
       '取消代煎费',
       {
         confirmButtonText: '确认取消',
@@ -1069,6 +1334,49 @@ async function handleVoidDecoctionCharge() {
     prescriptionGroupKey: activePrescription.value.prescriptionGroupKey,
   });
   ElMessage.success('代煎费已取消');
+  await refreshPrescriptionsFromServer();
+}
+
+/** 已签发方补充代煎费（药材已收费亦可；仅新增代煎 PLANNED） */
+async function handleSupplementDecoctionCharge() {
+  if (supplementDecoctionLoading.value) {
+    return;
+  }
+  if (!canSupplementDecoctionCharge.value || !activePrescription.value) {
+    ElMessage.warning('当前处方不可补充代煎费');
+    prescriptionForm.sufferingFlag = false;
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      '确认为本方补充代煎中药费？将按当前付数生成待收费代煎费用；取消已收费代煎请走退费流程。',
+      '补充代煎费',
+      {
+        confirmButtonText: '确认补充',
+        cancelButtonText: '返回',
+        type: 'info',
+      },
+    );
+  } catch {
+    prescriptionForm.sufferingFlag = false;
+    return;
+  }
+  const ok = await ensureReceptionBeforeWrite();
+  if (!ok) {
+    prescriptionForm.sufferingFlag = false;
+    return;
+  }
+  try {
+    await runSupplementTcmDecoctionCharge({
+      encounterId: props.encounterId.trim(),
+      patientId: props.patientId.trim(),
+      prescriptionGroupKey: activePrescription.value.prescriptionGroupKey,
+    });
+  } catch {
+    prescriptionForm.sufferingFlag = false;
+    return;
+  }
+  ElMessage.success('代煎费已补充');
   await refreshPrescriptionsFromServer();
 }
 
@@ -1152,7 +1460,7 @@ async function handleDeletePrescription(targetKey?: string) {
   const isLastPrescription = prescriptions.value.length <= 1;
   if (isLastPrescription) {
     // 唯一页签：本地重置为空方头+空明细，不摘掉页签
-    const empty = createEmptyPrescriptionForScope(syndromeGroupOptions.value[0]?.value ?? '');
+    const empty = createEmptyPrescriptionForScope(firstSyndromeGroupKey.value);
     prescriptions.value = [empty];
     activePrescriptionKey.value = empty.prescriptionGroupKey;
     editingLineKey.value = null;
@@ -1277,7 +1585,14 @@ function handleUpdateHerbProduct(lineKey: string, product: AdviceProductOption) 
         String(duplicate.medicationName ?? '').trim() ||
         String(product.name ?? '').trim() ||
         '该药品';
-      ElMessage.warning(`同一处方中不允许重复药品：${name}`);
+      ElMessage({
+        type: 'info',
+        message: `同一处方中不允许重复药品：${name}`,
+        duration: 3200,
+        customClass: 'tcm-duplicate-herb-msg',
+      });
+      // 定位到已选行的剂量输入，便于直接改量
+      herbPanelRef.value?.focusDoseByLineKey?.(duplicate.clientLineKey);
       return;
     }
   }
@@ -1286,6 +1601,8 @@ function handleUpdateHerbProduct(lineKey: string, product: AdviceProductOption) 
   if (locId) {
     line.dispenseLocationId = locId;
   }
+  // 费用性质以行为主：自费等级仅本行切自费，不动方头与其它味
+  applyLineFeeNatureByChrgitmLv(line, activePrescription.value?.contractId);
   // 选药后即时提示：无库存或请求量超可用库存
   const doseQty = activePrescription.value.chineseHerbsDoseQuantity ?? 1;
   const lotCap = line.catalogCurrentLotPackageQty;
@@ -1328,12 +1645,93 @@ function handleRemoveHerb(lineKey: string) {
   removeLineLocally(lineKey);
 }
 
-/** 套用组套前补齐方头必填项（病证组/用法/频次），便于自动暂存 */
+/**
+ * 列表回显：补齐方头默认合同，并按行回填费用性质（不标 dirty）。
+ * 行已落库 contract 优先；缺则回落方头，避免首行自费拖整方展示。
+ */
+function enrichPrescriptionFeeNatureDisplay(list: TcmPrescriptionUi[]) {
+  const defaultContract = defaultContractSelection(feeNatureOptions.value);
+  for (const rx of list) {
+    if (!String(rx.contractId ?? '').trim() && defaultContract.contractId) {
+      rx.contractId = defaultContract.contractId;
+      rx.feeNatureText = defaultContract.feeNature;
+    } else if (String(rx.contractId ?? '').trim() && !String(rx.feeNatureText ?? '').trim()) {
+      const label = terminologyLabel(feeNatureOptions.value, String(rx.contractId));
+      if (label && label !== '—') {
+        rx.feeNatureText = label;
+      }
+    }
+    for (const line of rx.lines) {
+      if (line.pendingDelete) continue;
+      if (!String(line.contractId ?? '').trim()) {
+        line.contractId = rx.contractId;
+        line.feeNatureText = rx.feeNatureText;
+        continue;
+      }
+      if (!String(line.feeNatureText ?? '').trim()) {
+        const label = terminologyLabel(feeNatureOptions.value, String(line.contractId));
+        if (label && label !== '—') {
+          line.feeNatureText = label;
+        }
+      }
+    }
+  }
+}
+
+/**
+ * 按药材医保等级写本行费用性质：自费等级仅本行切自费；否则优先保留方头默认合同。
+ * 不动方头与其它味。
+ */
+function applyLineFeeNatureByChrgitmLv(line: TcmPrescriptionLineUi, preferredContractId?: string) {
+  const preferred =
+    String(preferredContractId ?? '').trim() ||
+    String(prescriptionForm.contractId ?? '').trim() ||
+    String(activePrescription.value?.contractId ?? '').trim();
+  const sel = resolveContractForChrgitmLv(feeNatureOptions.value, line.chrgitmLv, preferred);
+  if (!sel.contractId) return;
+  line.contractId = sel.contractId;
+  line.feeNatureText = sel.feeNature;
+}
+
+/** 套用后：仅新建行/缺合同行按医保等级补齐；已有合同不覆盖（回显行常无 chrgitmLv） */
+function syncLinesFeeNatureForPrescription(rx: TcmPrescriptionUi) {
+  const preferred = String(rx.contractId ?? '').trim();
+  for (const line of rx.lines) {
+    if (line.pendingDelete || !line.medicationDefinitionId) continue;
+    if (line.isNew || !String(line.contractId ?? '').trim()) {
+      applyLineFeeNatureByChrgitmLv(line, preferred);
+      continue;
+    }
+    if (!String(line.feeNatureText ?? '').trim()) {
+      const label = terminologyLabel(feeNatureOptions.value, String(line.contractId));
+      if (label && label !== '—') {
+        line.feeNatureText = label;
+      }
+    }
+  }
+}
+
+/** 套用组套/历史前补齐方头必填项（病证组/费用性质/长临），便于自动暂存 */
 function ensurePrescriptionHeaderForTemplateApply(rx: TcmPrescriptionUi) {
   if (!rx.tcmSyndromeGroup.trim()) {
-    const firstGroup = syndromeGroupOptions.value[0]?.value;
+    const firstGroup = firstSyndromeGroupKey.value;
     if (firstGroup) {
       rx.tcmSyndromeGroup = firstGroup;
+      rx.headerDirty = true;
+    }
+  }
+  if (parseEncounterDiagnosisIds(rx.encounterDiagnosisIds).length === 0) {
+    const ids = resolveTcmPrescriptionDiagnosisIds(rx, tcmDiagnosisOptions.value);
+    if (ids.length > 0) {
+      rx.encounterDiagnosisIds = ids;
+      rx.headerDirty = true;
+    }
+  }
+  if (!String(rx.contractId ?? '').trim()) {
+    const defaultContract = defaultContractSelection(feeNatureOptions.value);
+    if (defaultContract.contractId) {
+      rx.contractId = defaultContract.contractId;
+      rx.feeNatureText = defaultContract.feeNature;
       rx.headerDirty = true;
     }
   }
@@ -1352,9 +1750,9 @@ function hasActivePrescriptionHerbs(): boolean {
   return rx.lines.some((line) => !line.pendingDelete && line.medicationDefinitionId);
 }
 
-/** 新建空白草稿方并清空行编辑态 */
-function createBlankPrescriptionForApply(): null | TcmPrescriptionUi {
-  handleAddPrescription();
+/** 新建空白草稿方并清空行编辑态（须 await，避免写到旧页签；不展开选品下拉） */
+async function createBlankPrescriptionForApply(): Promise<null | TcmPrescriptionUi> {
+  await handleAddPrescription({ focusSearch: false });
   editingLineKey.value = null;
   autofocusProductLineKey.value = null;
   selectedLineKeys.value = new Set();
@@ -1385,7 +1783,7 @@ async function resolvePrescriptionTargetForTemplateApply(): Promise<null | {
         },
       );
       return {
-        prescription: createBlankPrescriptionForApply(),
+        prescription: await createBlankPrescriptionForApply(),
         createdNew: true,
         applyHeader: true,
       };
@@ -1409,7 +1807,7 @@ async function resolvePrescriptionTargetForTemplateApply(): Promise<null | {
     };
   }
   return {
-    prescription: createBlankPrescriptionForApply(),
+    prescription: await createBlankPrescriptionForApply(),
     createdNew: true,
     applyHeader: true,
   };
@@ -1420,9 +1818,7 @@ async function handleApplyHistoryPrescription(data: TcmSidebarTreeNode) {
   if (data.nodeType !== 'history' || templateApplyLoading.value) {
     return;
   }
-  if (!ensureActiveDraftSavedOrWarn('套用历史处方')) {
-    return;
-  }
+  // 允许未保存直接套用（与新增页签一致）；有药时 resolve 会询问新开/追加，套用后自动暂存
   const item = historyItems.value.find((row) => row.id === data.id);
   if (!item) {
     ElMessage.warning('未找到历史处方');
@@ -1437,6 +1833,10 @@ async function handleApplyHistoryPrescription(data: TcmSidebarTreeNode) {
   if (!receptionOk) {
     return;
   }
+  // 先结束行编辑，再解析目标方，避免「新开」时未 await 写到旧页签
+  if (editingLineKey.value) {
+    await handleHerbEditEnd(editingLineKey.value);
+  }
   const target = await resolvePrescriptionTargetForTemplateApply();
   if (!target) {
     return;
@@ -1445,9 +1845,6 @@ async function handleApplyHistoryPrescription(data: TcmSidebarTreeNode) {
   if (!targetRx) {
     ElMessage.warning('无法创建新处方');
     return;
-  }
-  if (editingLineKey.value) {
-    await handleHerbEditEnd(editingLineKey.value);
   }
   templateApplyLoading.value = true;
   selectedSidebarNodeId.value = data.id;
@@ -1459,17 +1856,51 @@ async function handleApplyHistoryPrescription(data: TcmSidebarTreeNode) {
       prescription: targetRx,
       applyHeader,
       catalogDispenseLocationMap: catalogDispenseLocationMap.value,
-      currentSyndromeGroupValues: syndromeGroupOptions.value.map((opt) => opt.value),
+      currentSyndromeGroupValues: syndromeGroupValues.value,
+      stationScope: props.stationScope,
+      // detail 优先；无 detail 时回落 list（门诊历史就诊可用）
       listTcmHerbalPrescriptions: tcmHttp.value.httpListTcmHerbalPrescriptions,
       pageTcmHerbalMedicationCatalog: tcmHttp.value.httpPageTcmHerbalMedicationCatalog,
     });
     // 写方头时补齐病证组等再 rx→表单；增量追加不改方头
     if (applyHeader) {
+      // 历史诊断落到本次后：刷新候选项，并整方覆盖写回方头多选
+      if (result.diagnosisBinding) {
+        try {
+          const groupRes = await tcmHttp.value.httpListTcmDiagnosisGroups({
+            encounterId,
+            patientId,
+          });
+          diagnosisGroups.value = groupRes.groups ?? [];
+          await loadTcmDiagnosisOptions();
+        } catch {
+          // 候选项刷新失败不阻断引用；下方仍按 binding 写 ids
+        }
+        targetRx.tcmSyndromeGroup = result.diagnosisBinding.tcmSyndromeGroup;
+        targetRx.encounterDiagnosisIds = [...result.diagnosisBinding.encounterDiagnosisIds];
+        targetRx.headerDirty = true;
+      }
       ensurePrescriptionHeaderForTemplateApply(targetRx);
-      loadActivePrescriptionForm();
+      loadActivePrescriptionForm({ preserveDirty: true });
+      if (result.diagnosisBinding) {
+        // ids 写回表单；组号以 binding 为准，避免空 ids 推导冲掉
+        if (result.diagnosisBinding.encounterDiagnosisIds.length > 0) {
+          applyEncounterDiagnosisIdsToForm(result.diagnosisBinding.encounterDiagnosisIds);
+        }
+        if (result.diagnosisBinding.tcmSyndromeGroup) {
+          targetRx.tcmSyndromeGroup = result.diagnosisBinding.tcmSyndromeGroup;
+          prescriptionForm.tcmSyndromeGroup = result.diagnosisBinding.tcmSyndromeGroup;
+          syncActivePrescriptionHeaderFromForm();
+        }
+      }
     }
+    // 引用药材按行补费用性质（自费仅本行）
+    syncLinesFeeNatureForPrescription(targetRx);
     const saved = await persistActivePrescriptionDraft({ silent: true });
     const label = item.treeLabel || item.summaryText || item.prescriptionNo;
+    if (result.diagnosisCoveredExisting) {
+      ElMessage.info('已用历史处方诊断覆盖当前方诊断');
+    }
     if (saved) {
       ElMessage.success(
         createdNewPrescription
@@ -1526,9 +1957,7 @@ async function handleSidebarTreeNodeClick(data: TcmSidebarTreeNode) {
     ElMessage.warning('请选用中药组套');
     return;
   }
-  if (!ensureActiveDraftSavedOrWarn('套用组套')) {
-    return;
-  }
+  // 允许未保存直接套用（与新增页签一致）；有药时 resolve 会询问新开/追加，套用后自动暂存
   const orderTemplateId = preserveApiIdForRequest(header.orderTemplateId);
   const encounterId = preserveApiIdForRequest(props.encounterId);
   const patientId = preserveApiIdForRequest(props.patientId);
@@ -1539,6 +1968,10 @@ async function handleSidebarTreeNodeClick(data: TcmSidebarTreeNode) {
   if (!receptionOk) {
     return;
   }
+  // 先结束行编辑，再解析目标方，避免「新开」时写到旧页签
+  if (editingLineKey.value) {
+    await handleHerbEditEnd(editingLineKey.value);
+  }
   const target = await resolvePrescriptionTargetForTemplateApply();
   if (!target) {
     return;
@@ -1547,9 +1980,6 @@ async function handleSidebarTreeNodeClick(data: TcmSidebarTreeNode) {
   if (!targetRx) {
     ElMessage.warning('无法创建新处方');
     return;
-  }
-  if (editingLineKey.value) {
-    await handleHerbEditEnd(editingLineKey.value);
   }
   templateApplyLoading.value = true;
   selectedSidebarNodeId.value = data.id;
@@ -1581,6 +2011,8 @@ async function handleSidebarTreeNodeClick(data: TcmSidebarTreeNode) {
       ensurePrescriptionHeaderForTemplateApply(targetRx);
       loadActivePrescriptionForm();
     }
+    // 组套药材按行补费用性质（自费仅本行）
+    syncLinesFeeNatureForPrescription(targetRx);
     const saved = await persistActivePrescriptionDraft({ silent: true });
     const templateName = previewHeader.name ?? '';
     if (saved) {
@@ -1644,7 +2076,7 @@ async function reloadSidebarSources() {
     }),
   ]);
   historyItems.value = (historyRes.historyRows ?? []).map((row, index) =>
-    mapHistoryRowToTreeItem(row, index),
+    mapHistoryRowToTreeItem(row, index, { currentEncounterId: encounterId }),
   );
   templateGroups.value = templateGroupRes;
   templateProductTooltipCache.value = {};
@@ -1655,6 +2087,14 @@ async function reloadSidebarSources() {
 function resolveSidebarLeafTooltip(data: TcmSidebarTreeNode): string {
   const templateId = preserveApiIdForRequest(data.templateId);
   return resolveTcmSidebarLeafTooltip(data, {
+    templateProductSummary: templateId ? templateProductTooltipCache.value[templateId] : undefined,
+  });
+}
+
+/** 侧栏叶子 Tooltip 结构化药材（历史含克数） */
+function resolveSidebarLeafHerbItems(data: TcmSidebarTreeNode) {
+  const templateId = preserveApiIdForRequest(data.templateId);
+  return resolveTcmSidebarLeafHerbItems(data, {
     templateProductSummary: templateId ? templateProductTooltipCache.value[templateId] : undefined,
   });
 }
@@ -1717,24 +2157,44 @@ watch(sidebarKeyword, () => {
           @node-click="handleSidebarTreeNodeClick"
         >
           <template #default="{ data }">
-            <div class="tcm-tree-node-label" @mouseenter="handleSidebarNodeMouseEnter(data)">
-              <ElTooltip
-                v-if="data.nodeType === 'template' || data.nodeType === 'history'"
-                :content="resolveSidebarLeafTooltip(data)"
-                placement="right"
-                effect="dark"
-                :show-after="300"
-                :hide-after="100"
-              >
-                <div class="w-full truncate text-sm text-[var(--el-text-color-regular)]">
+            <div
+              class="tcm-tree-node-label"
+              :class="{
+                'tcm-tree-node-label--history': data.nodeType === 'history',
+                'tcm-tree-node-label--current': data.currentVisit,
+              }"
+              @mouseenter="handleSidebarNodeMouseEnter(data)"
+            >
+              <!-- 历史方固定前缀列：本次标记占位，与其它行文案对齐、不换行 -->
+              <span v-if="data.nodeType === 'history'" class="tcm-history-lead">
+                <span v-if="data.currentVisit" class="tcm-history-current-badge">本次</span>
+              </span>
+              <div class="tcm-tree-node-main">
+                <ElTooltip
+                  v-if="data.nodeType === 'template' || data.nodeType === 'history'"
+                  placement="right"
+                  effect="light"
+                  :show-after="280"
+                  :hide-after="80"
+                  popper-class="tcm-sidebar-herb-tip"
+                >
+                  <template #content>
+                    <TcmSidebarHerbTipContent
+                      :title="data.nodeType === 'history' ? '历史方药材' : '组套药品'"
+                      :items="resolveSidebarLeafHerbItems(data)"
+                      :empty-text="resolveSidebarLeafTooltip(data)"
+                    />
+                  </template>
+                  <div class="truncate text-sm text-[var(--el-text-color-regular)]">
+                    {{ data.label }}
+                  </div>
+                </ElTooltip>
+                <div
+                  v-else
+                  class="truncate text-sm font-medium text-[var(--el-text-color-primary)]"
+                >
                   {{ data.label }}
                 </div>
-              </ElTooltip>
-              <div
-                v-else
-                class="w-full truncate text-sm font-medium text-[var(--el-text-color-primary)]"
-              >
-                {{ data.label }}
               </div>
             </div>
           </template>
@@ -1764,17 +2224,34 @@ watch(sidebarKeyword, () => {
             />
           </ElTabs>
 
-          <ElTag
-            class="tcm-rx-panel__status shrink-0"
-            :type="prescriptionStatusTagType"
-            size="small"
-            effect="light"
-            round
-          >
-            {{ prescriptionStatusLabel }}
-          </ElTag>
+          <div class="tcm-rx-panel__status-group shrink-0">
+            <span class="tcm-rx-panel__status-label">医嘱状态</span>
+            <ElTag
+              class="tcm-rx-panel__status"
+              title="医嘱状态"
+              :type="prescriptionStatusTagType"
+              size="small"
+              effect="light"
+              round
+            >
+              {{ prescriptionStatusLabel }}
+            </ElTag>
+          </div>
 
           <div class="tcm-rx-panel__toolbar shrink-0">
+            <div class="tcm-rx-panel__charge-group">
+              <span class="tcm-rx-panel__charge-label">费用状态</span>
+              <ElTag
+                class="tcm-rx-panel__charge-status"
+                title="费用状态"
+                :type="prescriptionChargeStatusTagType"
+                size="small"
+                effect="light"
+                round
+              >
+                {{ prescriptionChargeStatusLabel }}
+              </ElTag>
+            </div>
             <ElButton type="primary" @click="handleAddPrescription">＋ 新增处方</ElButton>
             <ElButton type="success" :loading="mutationLoading" @click="handleSaveAllDrafts">
               保存
@@ -1823,12 +2300,20 @@ watch(sidebarKeyword, () => {
             <div class="tcm-rx-panel__info">
               <TcmPrescriptionHeader
                 v-model="prescriptionForm"
-                :syndrome-group-options="syndromeGroupOptions"
+                :diagnosis-options="tcmDiagnosisOptions"
+                :encounter-id="encounterId"
+                :patient-id="patientId"
+                :station-scope="stationScope"
                 :method-code-options="methodCodeOptions"
                 :rate-code-options="rateCodeOptions"
                 :show-therapy-type="isInpatientScope"
                 :disabled="isPrescriptionReadonly"
+                :allow-suffering-edit="canSupplementDecoctionCharge"
                 @add-diagnosis="handleOpenDiagnosisDialog"
+                @update:encounter-diagnosis-ids="handleEncounterDiagnosisIdsUpdate"
+                @diagnosis-deleted="(id) => void handleDiagnosisDeleted(id)"
+                @diagnosis-main-switched="() => void handleDiagnosisMainSwitched()"
+                @diagnosis-options-refreshed="handleDiagnosisOptionsRefreshed"
               />
             </div>
 
@@ -1840,6 +2325,7 @@ watch(sidebarKeyword, () => {
               <TcmHerbPanel
                 ref="herbPanelRef"
                 :lines="visibleLines"
+                :fee-nature-text="activePrescriptionFeeNatureText"
                 :chinese-herbs-dose-quantity="prescriptionForm.chineseHerbsDoseQuantity"
                 :dosage-instruction-options="dosageInstructionSelectOptions"
                 :product-columns="productColumns"
@@ -1862,9 +2348,12 @@ watch(sidebarKeyword, () => {
               :decoction-fee-amount="decoctionFeeAmount"
               :decoction-fee-label="TCM_DECOCTION_ACTIVITY_NAME"
               :show-decoction-fee="prescriptionForm.sufferingFlag"
+              :show-supplement-decoction-action="canSupplementDecoctionCharge"
+              :supplement-decoction-loading="supplementDecoctionLoading"
               :show-void-decoction-action="canVoidDecoctionCharge"
               :void-decoction-loading="voidDecoctionLoading"
               :total-amount="totalPrescriptionAmount"
+              @supplement-decoction="handleSupplementDecoctionCharge"
               @void-decoction="handleVoidDecoctionCharge"
             />
           </footer>
@@ -1879,6 +2368,7 @@ watch(sidebarKeyword, () => {
     :station-scope="stationScope"
     :encounter-id="encounterId"
     :patient-id="patientId"
+    :existing-diagnosis-list="encounterDiagnosisDisplayRows"
     @saved="handleDiagnosisPickerSaved"
   />
 </template>

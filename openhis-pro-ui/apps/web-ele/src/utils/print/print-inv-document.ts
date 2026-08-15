@@ -52,7 +52,7 @@ export async function printInvDocument(options: PrintInvDocumentOptions): Promis
   });
 }
 
-export { buildInvDocumentTitle } from './mappers/inv-common';
+export { buildInvDocumentTitle, resolveInvPrintProductBusNo } from './mappers/inv-common';
 export type { InvMovementPrintSource } from './mappers/inv-movement';
 export type { InvReturnPrintSource } from './mappers/inv-return';
 export type { InvStocktakePrintSource } from './mappers/inv-stocktake';

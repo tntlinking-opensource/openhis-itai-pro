@@ -7,7 +7,10 @@ import type {
   OutpatientRefundQueueRowDto,
 } from '#/api/outpatient-refund/outpatient-refund.types';
 import type { BillingPatientCardPatient } from '#/components/charge/billing-patient-card.types';
-import type { PayChannelOption } from '#/utils/payment/payment-channel-options';
+import type {
+  PayChannelOption,
+  RefundChannelDisplayItem,
+} from '#/utils/payment/payment-channel-options';
 
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 
@@ -45,7 +48,10 @@ import { useRequest } from '#/hooks/use-request';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { buildDefaultDateRangeShortcuts } from '#/utils/format/date-picker-shortcuts';
 import { sumMoneyThenSettle } from '#/utils/format/money-scale';
-import { optionDtosToPayChannelOptions } from '#/utils/payment/payment-channel-options';
+import {
+  buildRefundChannelDisplayItems,
+  optionDtosToPayChannelOptions,
+} from '#/utils/payment/payment-channel-options';
 import {
   clearCachedClientRefundResult,
   submitScanRefund,
@@ -153,6 +159,21 @@ const settlementSummaryInsurance = computed(
 const settlementSummarySelfPay = computed(() =>
   Number(settlementSnapshot.value?.selfPayAmount ?? 0),
 );
+
+/** 退费确认弹窗：原路渠道 + 金额拆分 */
+const settlementRefundChannelItems = computed((): RefundChannelDisplayItem[] => {
+  const snap = settlementSnapshot.value;
+  if (!snap) {
+    return [];
+  }
+  return buildRefundChannelDisplayItems({
+    originalPayChannelCodes: snap.originalPayChannelCodes,
+    payChannelOptions: payChannelOptions.value,
+    selfPayAmount: snap.selfPayAmount,
+    ybAcctPay: snap.ybAcctPay,
+    ybFundPaySumamt: snap.ybFundPaySumamt,
+  });
+});
 
 const detailTableQueryParams = reactive({
   pageNo: 1,
@@ -1037,6 +1058,7 @@ onMounted(() => {
       :insurance-breakdown-items="settlementInsuranceBreakdown"
       :summary-insurance-amount="settlementSummaryInsurance"
       :summary-self-pay-amount="settlementSummarySelfPay"
+      :refund-channel-items="settlementRefundChannelItems"
       :previews="settlementSnapshot?.previews ?? []"
       :selected-charge-count="settlementSnapshot?.refundingChargeItemIds.length ?? 0"
       @confirm-charge="handleConfirmRefund"

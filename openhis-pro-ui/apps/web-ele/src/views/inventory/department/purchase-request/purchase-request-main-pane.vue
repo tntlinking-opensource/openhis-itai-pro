@@ -86,16 +86,24 @@ import {
   coercePractitionerIdForSelect,
   resolveDefaultPractitionerIdForSelect,
   resolveFirstRealLocationIdFromInitOptions,
+  resolveInvDocPreparedByName,
+  resolveInvDocApprovedByName,
 } from '#/utils/inventory/inventory-workbench-list';
 import {
   buildInventoryLocationHeadFormRules,
   clearInventoryHeadFormValidation,
   validateInventoryHeadFormFields,
 } from '#/utils/inventory/inventory-doc-head-form-validation';
-import { buildInvDocumentTitle, printInvDocument } from '#/utils/print/print-inv-document';
+import {
+  buildInvDocumentTitle,
+  printInvDocument,
+  resolveInvPrintProductBusNo,
+} from '#/utils/print/print-inv-document';
 import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
 
 interface Props {
+  /** 侧栏当前单据行（制单人/审批人与队列卡片同口径） */
+  queueCardRow?: null | Record<string, unknown>;
   busNo?: string;
   isDraftOrder?: boolean;
   orderDetail?: GetDeptPurchaseRequestDetailResponse | null;
@@ -110,6 +118,7 @@ interface Props {
 defineOptions({ name: 'InventoryDepartmentPurchaseRequestMainPane' });
 
 const props = withDefaults(defineProps<Props>(), {
+  queueCardRow: null,
   busNo: '',
   isDraftOrder: false,
   orderDetail: null,
@@ -399,10 +408,15 @@ function mapDetailLineToGrid(
       unitCodeStr,
     },
   );
+  const productBusNo = String(catalog?.productBusNo ?? '').trim();
   return {
     id: idStr,
     medicinePick: name
-      ? { id: itemIdRaw === undefined ? undefined : String(itemIdRaw), name }
+      ? {
+          id: itemIdRaw === undefined ? undefined : String(itemIdRaw),
+          name,
+          ...(productBusNo ? { busNo: productBusNo } : {}),
+        }
       : undefined,
     itemTable: ln.itemTable,
     itemId: itemIdRaw,
@@ -1118,10 +1132,6 @@ async function handlePrint() {
     props.itemTableTypeOptions,
     headForm.value.itemTableType,
   );
-  const practitionerName = resolvePrintOptionLabel(
-    effectivePractitionerOptions.value,
-    practitionerId.value,
-  );
   const documentTitle = buildInvDocumentTitle(pharmacyName, '采购申请单');
   const applyTimeText = String(headForm.value.applyTime ?? props.applyTime ?? '')
     .trim()
@@ -1129,6 +1139,7 @@ async function handlePrint() {
 
   // 按当前网格展示值组装 PrintData
   const lineRows = productRows.map((row) => ({
+    productBusNo: resolveInvPrintProductBusNo(row as unknown as Record<string, unknown>),
     productName: resolveRequestPrintProductName(row),
     specText: String(row.spec ?? '').trim(),
     manufacturerText: String(row.manufacturer ?? '').trim(),
@@ -1140,6 +1151,12 @@ async function handlePrint() {
     expiryText: '',
   }));
 
+  const preparedByName = resolveInvDocPreparedByName(
+    props.queueCardRow as null | Record<string, unknown>,
+  );
+  const approvedByName = resolveInvDocApprovedByName(
+    props.queueCardRow as null | Record<string, unknown>,
+  );
   await printInvDocument({
     family: 'movement',
     source: {
@@ -1153,10 +1170,11 @@ async function handlePrint() {
       linkDocText: '',
       destLocationText: '',
       invoiceNoText: '',
-      practitionerName,
       lineRows,
-      preparedByName: practitionerName,
-      approvedByName: '',
+      preparedByName,
+      approvedByName,
+      // 仅采购申请单：模板据此展示经办人/科室责任人/业务主管院长/院长
+      purchaseRequestSignOff: true,
     },
     bizRef: { busNo, docKind: 'purchase-request' },
     jobName: documentTitle,

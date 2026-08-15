@@ -12,7 +12,7 @@ export interface PageNurseStationPricingCatalogRequest extends PageParams {
   patientId?: string;
   keyword?: string;
   productTableNames?: string[];
-  /** 自动计费床位选品传 51（床位服务） */
+  /** 类目 code；不传则不按类目收窄（自动计费查全部诊疗项目） */
   categoryCode?: string;
   organizationUnitId?: string;
   pharmacyLocationId?: string;
@@ -21,12 +21,14 @@ export interface PageNurseStationPricingCatalogRequest extends PageParams {
   prepickedProductKeys?: PrepickedProductKeyDto[];
 }
 
-/** 目录行单位 band（与产品读模型对齐） */
+/** 目录行单位 band（与产品读模型对齐；各槽可含 unitPrice） */
 export interface NurseStationPricingCatalogUnitBandDto {
   bandKind?: string;
   unitCode?: string;
   unitName?: string;
   ratioToSplit?: number | string;
+  /** 该槽单位单价（包装锚线性换算） */
+  unitPrice?: number | string;
 }
 
 /** 划价选品目录行 */
@@ -35,6 +37,10 @@ export interface NurseStationPricingCatalogRowDto {
   productTableName?: string;
   busNo?: string;
   name?: string;
+  /** 规格/装量（产品 totalVolume） */
+  totalVolume?: string;
+  /** 货位展示名（库存库位名 / 产品默认库位名） */
+  locationName?: string;
   pyCode?: string;
   wbCode?: string;
   categoryCode?: string;
@@ -52,6 +58,16 @@ export interface NurseStationPricingCatalogRowDto {
   defaultDispenseLocationId?: string;
   /** 默认发放库房展示名（可选） */
   defaultDispenseLocationName?: string;
+  /** 耗材库存项主键（批号行） */
+  inventoryItemId?: string;
+  /** 耗材批号 */
+  lotNumber?: string;
+  /** 批号剩余数量（拆零净量） */
+  remainingQuantity?: number | string;
+  /** 剩余数量展示文案（如 4盒6支） */
+  availableQuantityText?: string;
+  /** 效期截止时刻 */
+  expirationDate?: string;
   childrenJson?: string;
   oxygenOrEcgFlag?: boolean;
 }
@@ -88,11 +104,15 @@ export interface NurseStationPricingWriteItemDto {
   performLocation?: string;
   encounterDiagnosisId?: string;
   parentRequestAnchor?: NurseStationPricingParentRequestAnchorDto;
+  /** 耗材选中批号（目录 lotNumber 回传；锁定批号价） */
+  lotNumber?: string;
 }
 
 /** 直接划价确认 */
 export interface ConfirmDirectNurseStationPricingRequest {
   items: NurseStationPricingWriteItemDto[];
+  /** 整批划价客户可见时刻，YYYY-MM-DD HH:mm:ss；空则服务端取当前时刻 */
+  pricingTime?: string;
 }
 
 export interface ConfirmDirectNurseStationPricingResponse {
@@ -161,6 +181,8 @@ export interface NurseStationSupplementParentGroupDto {
 /** 医嘱补费确认 */
 export interface ConfirmSupplementNurseStationPricingRequest {
   items: NurseStationPricingWriteItemDto[];
+  /** 整批划价客户可见时刻，YYYY-MM-DD HH:mm:ss；空则服务端取当前时刻 */
+  pricingTime?: string;
 }
 
 export interface ConfirmSupplementNurseStationPricingResponse {
@@ -234,6 +256,19 @@ export interface CancelNurseStationPricingResponse {
   cancelledDeviceRequestIds?: string[];
 }
 
+/** 修改划价展示时间（行键与冲销同构） */
+export interface ChangeNurseStationPricingBusinessTimeRequest {
+  items: NurseStationPricingCancelItemDto[];
+  /** 新的客户可见时刻，YYYY-MM-DD HH:mm:ss */
+  newTime: string;
+}
+
+export interface ChangeNurseStationPricingBusinessTimeResponse {
+  success?: boolean;
+  processedCount?: number;
+  message?: string;
+}
+
 /** 自动计费配置列表查询 */
 export interface ListAutoRollConfigsRequest {
   encounterId: string;
@@ -258,6 +293,10 @@ export interface NurseStationAutoRollConfigRowDto {
   performingOrgId?: string;
   priority?: number;
   remark?: string;
+  /** 滚费业务时刻 HH:mm:ss */
+  businessTime?: string;
+  billingPractitionerId?: string;
+  billingPractitionerName?: string;
 }
 
 /** 护理级别只读区 */
@@ -280,6 +319,8 @@ export interface NurseStationAutoRollNursingReadonlyDto {
 export interface ListAutoRollConfigsResponse {
   configs?: NurseStationAutoRollConfigRowDto[];
   nursingLevelReadonly?: NurseStationAutoRollNursingReadonlyDto | null;
+  /** 计费人护士下拉 */
+  nurseOptions?: { value?: string; label?: string; sort?: string | number }[];
 }
 
 /** 自动计费配置已滚费用记录查询（IF-IP-ARG-09） */
@@ -322,6 +363,9 @@ export interface CreateAutoGenRuleRequest {
   performingOrgId?: string;
   priority?: number;
   remark?: string;
+  /** 滚费业务时刻 HH:mm:ss，默认 23:59:59 */
+  businessTime?: string;
+  billingPractitionerId?: string;
 }
 
 export interface CreateAutoGenRuleResponse {
@@ -340,6 +384,8 @@ export interface UpdateAutoGenRuleRequest {
   performingOrgId?: string;
   priority?: number;
   remark?: string;
+  businessTime?: string;
+  billingPractitionerId?: string;
 }
 
 export interface UpdateAutoGenRuleResponse {

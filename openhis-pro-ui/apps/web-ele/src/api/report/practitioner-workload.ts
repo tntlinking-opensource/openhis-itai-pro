@@ -4,6 +4,7 @@
 import type { PageParams } from '#/types/api-response';
 
 import { publicRequestClient } from '#/api/request';
+import { reportLongRequestConfig } from '#/constants/report-request-timeout';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
 const BASE = '/practitionerWorkload';
@@ -23,6 +24,7 @@ export interface OptionDto {
 export interface LoadPractitionerWorkloadPageInitRequest {
   encounterScope?: EncounterScope;
   organizationId?: string;
+  requestingOrgId?: string;
 }
 
 export interface LoadPractitionerWorkloadPageInitResponse {
@@ -39,6 +41,9 @@ export interface PractitionerWorkloadQueryFilter {
   encounterScope: EncounterScope;
   dateFrom: string;
   dateTo: string;
+  /** 开立科室（ChargeItem.requesting_org_id）。 */
+  requestingOrgId?: string;
+  /** 遗留字段；与 requestingOrgId 同值提交。 */
   organizationId?: string;
   practitionerId?: string;
 }
@@ -46,10 +51,8 @@ export interface PractitionerWorkloadQueryFilter {
 export interface PractitionerWorkloadFinTypeRowDto {
   finTypeCode?: string;
   finTypeDisplay?: string;
-  receivableAmount?: number | string;
-  actualReceivedAmount?: number | string;
-  costAmount?: number | string;
-  netIncomeAmount?: number | string;
+  saleAmount?: number | string;
+  purchaseAmount?: number | string;
 }
 
 export interface PractitionerWorkloadRegistrationRowDto {
@@ -59,14 +62,12 @@ export interface PractitionerWorkloadRegistrationRowDto {
 }
 
 export interface PractitionerWorkloadSummaryTotalsDto {
-  receivableAmountTotal?: number | string;
-  actualReceivedAmountTotal?: number | string;
-  costAmountTotal?: number | string;
-  netIncomeAmountTotal?: number | string;
+  saleAmountTotal?: number | string;
+  purchaseAmountTotal?: number | string;
   registrationNetCountTotal?: number;
   /** 接诊人数（distinct encounter）。 */
   encounterCountTotal?: number;
-  /** 处方数量（distinct 药品医嘱）。 */
+  /** 处方数量（仅药品；按药品请求 prescription_no 去重，同方多味计 1）。 */
   prescriptionCountTotal?: number;
   /** 诊疗项目总数量（distinct 诊疗 + 耗材医嘱）。 */
   activityItemCountTotal?: number;
@@ -83,7 +84,6 @@ export interface QueryPractitionerWorkloadSummaryResponse {
 
 export interface PractitionerWorkloadDetailLineDto {
   chargeItemId?: string;
-  paymentId?: string;
   requestingOrgId?: string;
   requestingOrgName?: string;
   catalogTypeDisplay?: string;
@@ -93,9 +93,8 @@ export interface PractitionerWorkloadDetailLineDto {
   practitionerId?: string;
   practitionerName?: string;
   enteredDate?: string;
-  receivableAmount?: number | string;
-  actualReceivedAmount?: number | string;
-  costAmount?: number | string;
+  saleAmount?: number | string;
+  purchaseAmount?: number | string;
 }
 
 export interface PagePractitionerWorkloadDetailRequest
@@ -135,6 +134,35 @@ export async function queryPractitionerWorkloadSummaryApi(body: PractitionerWork
   return publicRequestClient.post<QueryPractitionerWorkloadSummaryResponse>(
     `${BASE}/queryPractitionerWorkloadSummary`,
     body,
+    reportLongRequestConfig(),
+  );
+}
+
+export interface ListPractitionerWorkloadDoctorCardsRequest
+  extends PractitionerWorkloadQueryFilter {
+  /** 医生主键列表（须原样 string，禁止 Number）。 */
+  practitionerIds: string[];
+}
+
+export interface PractitionerWorkloadDoctorCardDto {
+  practitionerId?: string;
+  /** 医生姓名（后端补齐；可含科室下拉外的开单/接诊医生）。 */
+  practitionerName?: string;
+  summaryTotals?: PractitionerWorkloadSummaryTotalsDto;
+}
+
+export interface ListPractitionerWorkloadDoctorCardsResponse {
+  cards?: PractitionerWorkloadDoctorCardDto[];
+}
+
+/** 医生卡片墙批量查询（一次扫库按人分桶；卡片仅 summaryTotals）。 */
+export async function listPractitionerWorkloadDoctorCardsApi(
+  body: ListPractitionerWorkloadDoctorCardsRequest,
+) {
+  return publicRequestClient.post<ListPractitionerWorkloadDoctorCardsResponse>(
+    `${BASE}/listPractitionerWorkloadDoctorCards`,
+    body,
+    reportLongRequestConfig(),
   );
 }
 
@@ -145,6 +173,7 @@ export async function pagePractitionerWorkloadDetailApi(
   const res = await publicRequestClient.post<PagePractitionerWorkloadDetailResponse>(
     `${BASE}/pagePractitionerWorkloadDetail`,
     body,
+    reportLongRequestConfig(),
   );
   const { content, totalCount } = parsePagedRowsFromApiData<PractitionerWorkloadDetailLineDto>(res);
   return {
@@ -161,5 +190,6 @@ export async function exportPractitionerWorkloadDetailApi(
   return publicRequestClient.post<ExportPractitionerWorkloadDetailResponse>(
     `${BASE}/exportPractitionerWorkloadDetail`,
     body,
+    reportLongRequestConfig(),
   );
 }

@@ -27,7 +27,10 @@ import type { MedicationCatalogImportProgressResult } from '#/api';
 import { PublicationStatusCode } from '#/constants/domain/publication-status';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { downloadBinaryExportFile } from '#/utils/export/download-binary-export';
-import { formatMoneyDisplay } from '#/utils/format/money-scale';
+import {
+  formatMoneyUnitPriceDisplay,
+  resolveMedicationCatalogPriceDisplayDp,
+} from '#/utils/format/money-scale';
 
 import { BASIC_TABLE_MAX_HEIGHT } from '../basic-table-max-height';
 import CatalogLotPriceDialog from '../catalog/catalog-lot-price-dialog.vue';
@@ -49,6 +52,8 @@ const queryParams = ref({
   keyword: '',
   /** 药品分类筛选；空字符串表示「全部」 */
   categoryCode: '',
+  /** 基药标识；空字符串表示「全部」 */
+  basicFlag: '' as '' | boolean,
 });
 
 const tableData = ref<MedicationCatalogItem[]>([]);
@@ -206,6 +211,13 @@ const tableColumns: TableColumn[] = [
     showOverflowTooltip: true,
   },
   {
+    prop: 'purchaseUnitRatio',
+    label: '采购拆零比例',
+    width: 120,
+    align: 'right',
+    headerAlign: 'right',
+  },
+  {
     prop: 'statusEnum',
     label: '状态',
     slot: 'statusEnum',
@@ -243,12 +255,26 @@ const tableColumns: TableColumn[] = [
   },
 ];
 
-function formatRetailPriceWithUnit(price: unknown, unitText: unknown): string {
+/**
+ * 列表价格列：中草药三位、其余两位，附包装单位文案。
+ *
+ * @param price 销售参考价
+ * @param unitText 包装单位展示名
+ * @param categoryCode medication_category_code
+ */
+function formatRetailPriceWithUnit(
+  price: unknown,
+  unitText: unknown,
+  categoryCode?: unknown,
+): string {
   if (price === null || price === undefined || price === '') {
     return '';
   }
-  const num = Number(price);
-  const formatted = Number.isFinite(num) ? formatMoneyDisplay(num) : String(price);
+  const dp = resolveMedicationCatalogPriceDisplayDp(categoryCode);
+  const formatted = formatMoneyUnitPriceDisplay(price, dp);
+  if (!formatted) {
+    return String(price);
+  }
   const unit = typeof unitText === 'string' && unitText.trim() ? unitText.trim() : '';
   return unit ? `${formatted}/${unit}` : formatted;
 }
@@ -272,6 +298,19 @@ const formItems = computed<FormItemConfig[]>(() => [
     multiple: false,
     options: categoryCodeOptions.value,
   },
+  {
+    type: 'select',
+    prop: 'basicFlag',
+    label: '基药',
+    placeholder: '全部',
+    clearable: true,
+    multiple: false,
+    options: [
+      { label: '全部', value: '' },
+      { label: '是', value: true },
+      { label: '否', value: false },
+    ],
+  },
 ]);
 
 /** 分类筛选归一：空/数组转可提交的 string（对齐耗材目录） */
@@ -291,6 +330,17 @@ function normalizeCategoryCodeForApi(raw: unknown): string | undefined {
   return s === '' ? undefined : s;
 }
 
+/** 基药筛选归一：空/全部 → undefined；是/否 → boolean */
+function normalizeBasicFlagForApi(raw: unknown): boolean | undefined {
+  if (raw === true || raw === 'true') {
+    return true;
+  }
+  if (raw === false || raw === 'false') {
+    return false;
+  }
+  return undefined;
+}
+
 const handleQuery = async (params: Record<string, unknown>) => {
   queryParams.value = {
     ...queryParams.value,
@@ -303,6 +353,7 @@ const handleQuery = async (params: Record<string, unknown>) => {
       pageSize: queryParams.value.pageSize,
       keyword: queryParams.value.keyword || undefined,
       categoryCode: normalizeCategoryCodeForApi(queryParams.value.categoryCode),
+      basicFlag: normalizeBasicFlagForApi(queryParams.value.basicFlag),
     });
 
     const parsed = parsePagedRowsFromApiData<MedicationCatalogItem>(response.data);
@@ -324,6 +375,7 @@ const handleReset = () => {
     pageSize: 10,
     keyword: '',
     categoryCode: '',
+    basicFlag: '',
   };
   handleQuery(queryParams.value);
 };
@@ -412,6 +464,7 @@ const handleExportCatalog = async () => {
     const result = await exportMedicationCatalogApi({
       keyword: queryParams.value.keyword || undefined,
       categoryCode: queryParams.value.categoryCode || undefined,
+      basicFlag: normalizeBasicFlagForApi(queryParams.value.basicFlag),
     });
     if (!result?.fileBytes?.trim()) {
       ElMessage.warning('导出内容为空');
@@ -789,7 +842,9 @@ initPage();
       </template>
 
       <template #retailPrice="{ row }">
-        {{ formatRetailPriceWithUnit(row.retailPrice, row.packageUnitCode_dictText) }}
+        {{
+          formatRetailPriceWithUnit(row.retailPrice, row.packageUnitCode_dictText, row.categoryCode)
+        }}
       </template>
 
       <template #action="{ row }">

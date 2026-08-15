@@ -12,9 +12,15 @@ defineOptions({ name: 'InpatientDoctorStationAdviceList' });
 const props = withDefaults(
   defineProps<{
     encounterId?: string;
+    /** 外部强制只读（病案菜单编辑门禁） */
+    forceWriteDisabled?: boolean;
     patientId?: string;
+    /**
+     * 开立时间默认排序；病案首页临床侧栏传 asc。
+     */
+    defaultTimeSortOrder?: 'asc' | 'desc';
   }>(),
-  { encounterId: '', patientId: '' },
+  { encounterId: '', forceWriteDisabled: false, patientId: '', defaultTimeSortOrder: undefined },
 );
 
 const emit = defineEmits<{

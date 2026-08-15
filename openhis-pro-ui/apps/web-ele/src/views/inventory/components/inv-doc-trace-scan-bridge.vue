@@ -1,4 +1,4 @@
-<!--
+﻿<!--
   库存单据批量追溯码扫码桥接：映射网格行 ↔ 弹窗，确认后写回 traceNo。
   应扫个数按目录 product.traceUnitCode + traceUnitRatio（半盒 ceil）算好，弹窗只消费 requiredTraceCount。
   打开时批量查主表品批是否有码（lotHasTraceMaster），供有码硬/无码软分叉。
@@ -10,7 +10,7 @@ import type {
 } from '#/utils/inventory/inbound-product-unit-bands';
 import type { TraceBatchScanLine, TraceScanSceneKey } from '#/utils/trace';
 
-import { computed, ref } from 'vue';
+import { computed, onBeforeUnmount, ref } from 'vue';
 
 import { batchExistsTraceMasterByItemLotApi } from '#/api/inventory/warehouse/inventory-detail';
 import TraceBatchScanDialog from '#/components/trace/trace-batch-scan-dialog.vue';
@@ -273,6 +273,31 @@ function resolveScanLineLocationId(row: InvDocTraceRow): string | undefined {
   return fromHead || undefined;
 }
 
+/**
+ * 从计量带解析追溯码单位展示名（同 code 优先 TRACE 槽 unitName）。
+ *
+ * @param code 追溯码单位 code
+ * @param bands 行/目录计量带
+ */
+function resolveTraceUnitLabelFromBands(
+  code: string | undefined,
+  bands: InboundProductUnitBand[] | undefined,
+): string | undefined {
+  const unitCode = String(code ?? '').trim();
+  if (!unitCode || !bands?.length) return undefined;
+  const traceBand = bands.find(
+    (b) =>
+      String(b?.bandKind ?? '').toUpperCase() === 'TRACE' &&
+      String(b?.unitCode ?? '').trim() === unitCode,
+  );
+  const traceName = String(traceBand?.unitName ?? '').trim();
+  if (traceName) return traceName;
+  // 游离追溯单位可能与包装等同码：回落任意同 code 的 unitName
+  const anyBand = bands.find((b) => String(b?.unitCode ?? '').trim() === unitCode);
+  const anyName = String(anyBand?.unitName ?? '').trim();
+  return anyName || undefined;
+}
+
 const scanLines = computed((): TraceBatchScanLine[] =>
   activeRows.value.map((row) => {
     const bands = row.unitBands ?? row.productCatalog?.unitBands ?? [];
@@ -285,7 +310,10 @@ const scanLines = computed((): TraceBatchScanLine[] =>
       itemName: resolveItemName(row),
       spec: row.spec,
       traceNo: row.traceNo,
+      // 目录贴码单位/比例：药品明细列与应扫个数同源
       traceUnitCode: catalogHint?.traceUnitCode,
+      traceUnitCodeLabel: resolveTraceUnitLabelFromBands(catalogHint?.traceUnitCode, bands),
+      traceUnitRatio: catalogHint?.traceUnitRatio,
       operationUnitCode: resolveOperationUnitCode(row) || undefined,
       requiredTraceCount: resolveRequiredTraceCount(row),
       // 消耗/流转：盖住判定用拆零量（进货 scene 不传，保持个数硬控）
@@ -310,9 +338,8 @@ async function open(rows?: InvDocTraceRow[]): Promise<void> {
   visible.value = true;
 }
 
-/** 弹窗关闭后将绑定结果写回网格行 */
-function handleDialogClosed(open: boolean): void {
-  if (open) return;
+/** 将弹窗绑定表写回网格行（确定/取消关窗或页卸载时） */
+function flushTraceBindingsToRows(): void {
   for (const row of activeRows.value) {
     const bound = traceByLineId.value[row.id];
     if (bound !== undefined) {
@@ -320,6 +347,25 @@ function handleDialogClosed(open: boolean): void {
     }
   }
 }
+
+const emit = defineEmits<{
+  /** 绑定表已写回网格（父页可据此落 localStorage 缓存） */
+  bindingsChanged: [];
+}>();
+
+/** 弹窗关闭后将绑定结果写回网格行 */
+function handleDialogClosed(open: boolean): void {
+  if (open) return;
+  flushTraceBindingsToRows();
+  emit('bindingsChanged');
+}
+
+/** 切菜单时弹窗可能仍开着：卸载前先写回，避免扫码只停在弹窗内存 */
+onBeforeUnmount(() => {
+  if (!visible.value) return;
+  flushTraceBindingsToRows();
+  emit('bindingsChanged');
+});
 
 defineExpose({ open });
 </script>

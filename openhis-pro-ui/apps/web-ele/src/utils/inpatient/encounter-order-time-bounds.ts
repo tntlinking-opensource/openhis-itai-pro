@@ -148,20 +148,18 @@ export function validateOpenedTimeBeforeStop(
 }
 
 /**
- * 改开立时间：入院下界 + 出院上界 + 已有停嘱上界。
+ * 改开立时间：仅入院下界 + 出院上界（与停嘱交叉由业务自行把握，前端不拦）。
  */
 export function validateChangeOpenedBusinessTime(
   newOpenedTime: string,
   bounds: {
     admissionTime?: null | string;
     dischargeTime?: null | string;
-    stopTime?: null | string;
   },
 ): null | string {
   return (
     validateOpenedTimeNotBeforeAdmission(newOpenedTime, bounds.admissionTime) ||
-    validateOpenedTimeNotAfterDischarge(newOpenedTime, bounds.dischargeTime) ||
-    validateOpenedTimeBeforeStop(newOpenedTime, bounds.stopTime)
+    validateOpenedTimeNotAfterDischarge(newOpenedTime, bounds.dischargeTime)
   );
 }
 
@@ -197,7 +195,10 @@ export function validateExecuteActualNotBeforeOpened(
     return null;
   }
   if (actualSecond.isBefore(opened)) {
-    return '执行时间不能早于开立时间';
+    return (
+      `执行时间不能早于开立时间` +
+      `（开立 ${opened.format('YYYY-MM-DD HH:mm:ss')}，改后 ${actualSecond.format('YYYY-MM-DD HH:mm:ss')}）`
+    );
   }
   return null;
 }
@@ -217,13 +218,20 @@ export function validateNurseExecuteActualTimeBounds(
   if (!actualMinute) {
     return null;
   }
+  const actualText = actualMinute.format('YYYY-MM-DD HH:mm:ss');
   const admission = toComparableMinute(admissionTime);
   if (admission && actualMinute.isBefore(admission)) {
-    return '执行时间不能早于入院时间';
+    return (
+      `执行时间不能早于入院时间` +
+      `（入院 ${admission.format('YYYY-MM-DD HH:mm:ss')}，改后 ${actualText}）`
+    );
   }
   const discharge = toComparableMinute(dischargeTime);
   if (discharge && actualMinute.isAfter(discharge)) {
-    return '执行时间不能晚于出院时间';
+    return (
+      `执行时间不能晚于出院时间` +
+      `（出院 ${discharge.format('YYYY-MM-DD HH:mm:ss')}，改后 ${actualText}）`
+    );
   }
   // 相对开立/停嘱用秒级，与改时交叉校验同口径
   const beforeOpened = validateExecuteActualNotBeforeOpened(actualTime, openedTime);
@@ -236,7 +244,10 @@ export function validateNurseExecuteActualTimeBounds(
   }
   const stop = toComparableSecond(stopTime);
   if (stop && actualSecond.isAfter(stop)) {
-    return '执行时间不能晚于停嘱时间';
+    return (
+      `执行时间不能晚于停嘱时间` +
+      `（停嘱 ${stop.format('YYYY-MM-DD HH:mm:ss')}，改后 ${actualSecond.format('YYYY-MM-DD HH:mm:ss')}）`
+    );
   }
   return null;
 }

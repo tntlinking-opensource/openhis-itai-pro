@@ -1,5 +1,6 @@
 import type { DoctorStationMedicationUnitBandDto } from '#/api/doctor-station/advice.types';
 
+import { isPackageBoundOrderCalcRule } from '#/constants/domain/order-calc-rule';
 import {
   convertProductUnitPriceBetweenBandKinds,
   PRODUCT_CATALOG_PRICE_SOURCE_BAND_KIND,
@@ -9,7 +10,9 @@ import {
   defaultTotalAmountUnitCode,
   findBandByUnitCode,
   resolveBandKindByUnitCode,
+  roundMedicationDoseDisplayQty,
   roundMedicationQty,
+  roundMedicationSplitQty,
   unitCodeByBandKind,
 } from '#/utils/doctor-station/medication-unit-band-query';
 
@@ -53,7 +56,9 @@ export {
   defaultTotalAmountUnitCode,
   findBandByUnitCode,
   resolveBandKindByUnitCode,
+  roundMedicationDoseDisplayQty,
   roundMedicationQty,
+  roundMedicationSplitQty,
   unitCodeByBandKind,
 };
 
@@ -98,8 +103,12 @@ export function resolveAdviceLineUnitPrice(params: {
   return converted !== undefined && Number.isFinite(converted) ? converted : catalogPrice;
 }
 
-/** 总量单位下拉：包装 PACKAGE、售卖 SALES、拆零 SPLIT（同 unitCode 去重）。 */
+/**
+ * 总量单位下拉：包装 PACKAGE、售卖 SALES、拆零 SPLIT（同 unitCode 去重）。
+ * 包装类拆分属性（整包不拆等）不展示拆零单位；若无任何包装/售卖可选则回落拆零。
+ */
 export function totalUnitSelectOptions(item: {
+  partAttributeEnum?: string;
   totalUnitPackageCode?: string;
   totalUnitPackageName?: string;
   totalUnitSplitCode?: string;
@@ -117,7 +126,10 @@ export function totalUnitSelectOptions(item: {
   };
   push(String(item.totalUnitPackageCode ?? ''), String(item.totalUnitPackageName ?? ''));
   push(String(item.totalUnitSalesCode ?? ''), String(item.totalUnitSalesName ?? ''));
-  push(String(item.totalUnitSplitCode ?? ''), String(item.totalUnitSplitName ?? ''));
+  const hideSplit = isPackageBoundOrderCalcRule(item.partAttributeEnum) && out.length > 0;
+  if (!hideSplit) {
+    push(String(item.totalUnitSplitCode ?? ''), String(item.totalUnitSplitName ?? ''));
+  }
   return out;
 }
 
@@ -166,7 +178,7 @@ export function resolveLongTermMedicationQuantityPayload(item: {
   unitBands?: DoctorStationMedicationUnitBandDto[];
 }): { quantity: number; unitCode: string } {
   const qtyRaw = Number(item.singleDose ?? Number.NaN);
-  const quantity = Number.isFinite(qtyRaw) && qtyRaw > 0 ? qtyRaw : 1;
+  const quantity = Number.isFinite(qtyRaw) && qtyRaw > 0 ? roundMedicationSplitQty(qtyRaw) : 1;
   const unitCode =
     unitCodeByBandKind(item.unitBands, 'SPLIT') ||
     unitCodeByUnitName(item.unitBands, item.doseMainUnit) ||
@@ -174,7 +186,7 @@ export function resolveLongTermMedicationQuantityPayload(item: {
   return { quantity, unitCode };
 }
 
-/** 草稿保存：单次剂量取 DOSE 带数值（右侧剂量单位），单位取 DOSE unitCode。 */
+/** 草稿保存：单次剂量取 DOSE 带数值（右侧剂量单位，落库 6 位），单位取 DOSE unitCode。 */
 export function resolveMedicationDraftDosePayload(item: {
   singleDose?: number;
   doseConvertRatio?: number;
@@ -189,13 +201,14 @@ export function resolveMedicationDraftDosePayload(item: {
   const doseQtyRaw = Number(item.doseConvertRatio ?? Number.NaN);
   if (Number.isFinite(doseQtyRaw) && doseQtyRaw > 0) {
     return {
-      dose: doseQtyRaw,
+      dose: roundMedicationQty(doseQtyRaw),
       ...(doseUnitCode ? { doseUnitCode } : {}),
     };
   }
 
   const singleRaw = Number(item.singleDose ?? Number.NaN);
-  const dose = Number.isFinite(singleRaw) && singleRaw > 0 ? singleRaw : undefined;
+  const dose =
+    Number.isFinite(singleRaw) && singleRaw > 0 ? roundMedicationQty(singleRaw) : undefined;
   const fallbackUnitCode = unitCodeByBandKind(item.unitBands, 'SPLIT') || doseUnitCode;
   return {
     ...(dose === undefined ? {} : { dose }),
@@ -203,7 +216,7 @@ export function resolveMedicationDraftDosePayload(item: {
   };
 }
 
-/** 后端 dose（DOSE 带）→ 编辑行单次剂量双字段。 */
+/** 后端 dose（DOSE 带）→ 编辑行单次剂量双字段（剂量存 6 位，最小单位 2 位）。 */
 export function hydrateAdviceRowDoseFromBackend(params: {
   dose?: null | number | string;
   doseUnitCode?: null | string;
@@ -237,14 +250,14 @@ export function hydrateAdviceRowDoseFromBackend(params: {
     return {
       ...base,
       doseConvertRatio: roundMedicationQty(doseQty),
-      singleDose: roundMedicationQty(doseQty / k),
+      singleDose: roundMedicationSplitQty(doseQty / k),
     };
   }
 
   return {
     ...base,
-    singleDose: doseQty,
-    doseConvertRatio: doseQty,
+    singleDose: roundMedicationSplitQty(doseQty),
+    doseConvertRatio: roundMedicationQty(doseQty),
   };
 }
 

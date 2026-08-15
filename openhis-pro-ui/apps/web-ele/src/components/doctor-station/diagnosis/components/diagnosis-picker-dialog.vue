@@ -57,6 +57,10 @@ const props = withDefaults(
     modelValue: boolean;
     patientDiagnoses?: DiagnosisItem[];
     patientId?: string;
+    /**
+     * 仅选目录回传（病案首页等）：与住院开诊断同一检索弹窗，确定时不写就诊诊断。
+     */
+    pickOnly?: boolean;
     stationScope?: DoctorStationDiagnosisScope;
   }>(),
   {
@@ -65,6 +69,7 @@ const props = withDefaults(
     existingDiagnosisList: () => [],
     patientDiagnoses: () => [],
     patientId: '',
+    pickOnly: false,
     stationScope: 'outpatient',
   },
 );
@@ -85,10 +90,15 @@ const diagnosisHttp = computed(() =>
 
 const tcmHttp = computed(() => resolveTcmDiagnosisHttp(props.stationScope));
 
-/** 有就诊上下文时走检索定义 + 确定并保存；否则走医嘱侧本地候选 */
+/** 有就诊上下文或 pickOnly：走目录检索 UI；否则走医嘱侧本地候选 */
 const encounterMode = computed(
-  () => Boolean(props.encounterId?.trim()) && Boolean(props.patientId?.trim()),
+  () =>
+    props.pickOnly === true ||
+    (Boolean(props.encounterId?.trim()) && Boolean(props.patientId?.trim())),
 );
+
+/** 底部主按钮文案 */
+const encounterConfirmLabel = computed(() => (props.pickOnly === true ? '加入列表' : '确定并保存'));
 
 // —— 就诊检索模式（接口分页） ——
 const medicineTypeCode = ref<'1' | '2'>('1');
@@ -332,8 +342,17 @@ function handleEncounterRowDblclick(row: ConditionDefinitionRowResponse) {
   if (!row) return;
   selectedRow.value = row;
   applyEncounterRowPick(row);
-  // 中医须病+证齐备后再保存，双击仅写入当前侧候选
-  if (isTcmMode.value) return;
+  // 中医须病+证齐备才保存；未齐备时双击仅写入当前侧候选
+  if (isTcmMode.value) {
+    if (
+      !tcmDiseasePick.value?.conditionDefinitionId ||
+      !tcmSyndromePick.value?.conditionDefinitionId
+    ) {
+      return;
+    }
+    void handleEncounterConfirmSave();
+    return;
+  }
   void handleEncounterConfirmSave(row);
 }
 
@@ -351,11 +370,69 @@ function buildEncounterAppendRow(): EncounterDiagnosisRowDto | null {
   };
 }
 
+/** pickOnly：组装 confirm 载荷并关闭（不落就诊诊断） */
+async function handlePickOnlyConfirm() {
+  if (isTcmMode.value) {
+    if (!tcmDiseasePick.value?.conditionDefinitionId) {
+      ElMessage.warning('请先选择中医疾病');
+      return;
+    }
+    if (!tcmSyndromePick.value?.conditionDefinitionId) {
+      ElMessage.warning('请先选择中医证候');
+      return;
+    }
+    const displayName = formatTcmDiagnosisDisplayName(
+      tcmDiseasePick.value.conditionName,
+      tcmSyndromePick.value.conditionName,
+    );
+    emit('confirm', {
+      selected: {
+        id: tcmDiseasePick.value.conditionDefinitionId,
+        code: tcmDiseasePick.value.conditionCode,
+        name: displayName,
+        medicineType: 'tcm',
+        conditionDefinitionId: tcmDiseasePick.value.conditionDefinitionId,
+      },
+      saveAsMainDiagnosis: saveAsMainDiagnosis.value,
+      saveAsCommon: false,
+      saveAsPersonal: false,
+      saveAsDepartment: false,
+    });
+    closeDialog();
+    return;
+  }
+  const resolved = selectedRow.value;
+  if (!resolved?.conditionDefinitionId) {
+    ElMessage.warning('请先在上方列表中选择诊断');
+    return;
+  }
+  emit('confirm', {
+    selected: {
+      id: resolved.conditionDefinitionId,
+      code: resolved.conditionCode ?? '',
+      name: resolved.conditionName ?? '',
+      medicineType: 'western',
+      conditionDefinitionId: resolved.conditionDefinitionId,
+    },
+    saveAsMainDiagnosis: saveAsMainDiagnosis.value,
+    saveAsCommon: false,
+    saveAsPersonal: false,
+    saveAsDepartment: false,
+  });
+  closeDialog();
+}
+
 /** 选中定义并入列表并提交保存；中医走病证组批次，西医走就诊诊断批次 */
 async function handleEncounterConfirmSave(pick?: ConditionDefinitionRowResponse | null) {
   if (pick) {
     selectedRow.value = pick;
     applyEncounterRowPick(pick);
+  }
+
+  // 病案首页等：只回传选中结果，绝不调就诊诊断保存（避免「当前患者不可编辑诊断」）
+  if (props.pickOnly === true) {
+    await handlePickOnlyConfirm();
+    return;
   }
 
   const eid = props.encounterId.trim();
@@ -669,8 +746,10 @@ const legacyConfirmDisabled = computed(() => {
       </div>
       <div class="form-row checkbox-row flex flex-wrap items-center gap-5">
         <ElCheckbox v-model="saveAsMainDiagnosis">主诊断</ElCheckbox>
-        <ElCheckbox v-model="saveAsPersonal">存个人常用</ElCheckbox>
-        <ElCheckbox v-model="saveAsDepartment">存科室常用</ElCheckbox>
+        <template v-if="pickOnly !== true">
+          <ElCheckbox v-model="saveAsPersonal">存个人常用</ElCheckbox>
+          <ElCheckbox v-model="saveAsDepartment">存科室常用</ElCheckbox>
+        </template>
       </div>
       <div class="flex justify-end">
         <ElPagination
@@ -760,8 +839,10 @@ const legacyConfirmDisabled = computed(() => {
       </div>
       <div class="form-row checkbox-row flex flex-wrap items-center gap-5">
         <ElCheckbox v-model="saveAsMainDiagnosis">主诊断</ElCheckbox>
-        <ElCheckbox v-model="saveAsPersonal">存个人常用</ElCheckbox>
-        <ElCheckbox v-model="saveAsDepartment">存科室常用</ElCheckbox>
+        <template v-if="pickOnly !== true">
+          <ElCheckbox v-model="saveAsPersonal">存个人常用</ElCheckbox>
+          <ElCheckbox v-model="saveAsDepartment">存科室常用</ElCheckbox>
+        </template>
       </div>
     </div>
 
@@ -774,7 +855,7 @@ const legacyConfirmDisabled = computed(() => {
           :loading="saveLoading"
           @click="() => handleEncounterConfirmSave()"
         >
-          确定并保存
+          {{ encounterConfirmLabel }}
         </ElButton>
       </div>
       <div v-else class="dialog-footer flex justify-end gap-2">

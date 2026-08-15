@@ -20,10 +20,10 @@ export interface InvReturnPrintData {
   supplierText: string;
   linkDocText: string;
   destLocationText: string;
-  practitionerName: string;
   invoiceNoText: string;
   lineRows: InvReturnPrintLineRow[];
   totalAmountText: string;
+  /** 制单人（单据创建人，非当前打印人） */
   preparedByName: string;
   approvedByName: string;
 }
@@ -49,7 +49,6 @@ export interface InvReturnPrintSource {
   supplierText?: string;
   linkDocText?: string;
   destLocationText?: string;
-  practitionerName?: string;
   invoiceNoText?: string;
   lineRows?: InvReturnPrintLineSource[];
   totalAmountText?: string;
@@ -81,7 +80,6 @@ export function buildInvReturnPrintData(source: InvReturnPrintSource): InvReturn
     supplierText: invPrintStr(source.supplierText),
     linkDocText: invPrintStr(source.linkDocText),
     destLocationText: invPrintStr(source.destLocationText),
-    practitionerName: invPrintStr(source.practitionerName),
     invoiceNoText: invPrintStr(source.invoiceNoText),
     lineRows: (source.lineRows ?? []).map((row, index) => mapLine(row, index)),
     totalAmountText: invPrintStr(source.totalAmountText),

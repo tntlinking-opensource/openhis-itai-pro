@@ -7,9 +7,12 @@ import type { OrderTemplateHeaderItem } from '#/api/basic/order-template';
 
 import { h, ref } from 'vue';
 
+import { CaretBottom, CaretTop } from '@element-plus/icons-vue';
+import dayjs from 'dayjs';
 import {
   ElButton,
   ElDatePicker,
+  ElIcon,
   ElMessage,
   ElMessageBox,
   ElRadio,
@@ -53,7 +56,9 @@ defineOptions({ name: 'InpatientDoctorStationAdviceWorkspace' });
 
 const props = withDefaults(defineProps<UseInpatientAdviceTabProps>(), {
   encounterId: '',
+  forceWriteDisabled: false,
   patientId: '',
+  defaultTimeSortOrder: undefined,
 });
 
 const emit = defineEmits<{
@@ -100,6 +105,8 @@ const {
   beginInlineBusinessTimeEdit,
   bindInlineBusinessTimePickerRef,
   confirmInlineBusinessTime,
+  handleBatchChangeOpenedBusinessTime,
+  resolveBatchOpenedBusinessTimeTargets,
   handleInlineBusinessTimeVisible,
   inlineBusinessTimeEdit,
   isInlineBusinessTimeEditing,
@@ -107,6 +114,7 @@ const {
   loadAdviceInit,
   medicationRateOptions,
   medicationRouteOptions,
+  medicationSpeedOptions,
   onAdviceSelectionChange,
   orderSelectExpandNonce,
   orderSelectFocusNonce,
@@ -116,6 +124,8 @@ const {
   reload,
   setListTherapyFilter,
   validateWesternRow,
+  timeSortOrder,
+  toggleTimeSortOrder,
 } = useInpatientAdviceTab(props);
 
 /** 双击：申请单草稿弹窗编辑；其余走医嘱编辑卡 */
@@ -181,6 +191,67 @@ async function promptInpatientTemplateTherapyType(): Promise<InpatientAdviceTher
   } catch {
     return null;
   }
+}
+
+/** 勾选批量改开立时间：弹窗选同一时刻 */
+async function promptBatchOpenedBusinessTime(): Promise<null | string> {
+  let picked = dayjs().format('YYYY-MM-DD HH:mm');
+  try {
+    await ElMessageBox({
+      title: '批量改开立时间',
+      message: h({
+        setup() {
+          const value = ref(picked);
+          return () =>
+            h('div', { class: 'ip-advice-batch-opened-time-prompt' }, [
+              h(
+                'p',
+                { style: 'margin: 0 0 12px; color: var(--el-text-color-regular)' },
+                '所选医嘱将统一改为以下开立时间（不得早于入院、不得晚于出院）。',
+              ),
+              h(ElDatePicker, {
+                modelValue: value.value,
+                'onUpdate:modelValue': (v: unknown) => {
+                  const next = String(v ?? '').trim();
+                  value.value = next;
+                  picked = next;
+                },
+                type: 'datetime',
+                valueFormat: 'YYYY-MM-DD HH:mm',
+                format: 'YYYY-MM-DD HH:mm',
+                timeFormat: 'HH:mm',
+                clearable: false,
+                teleported: true,
+                style: 'width: 100%',
+                popperClass: 'ip-advice-time-picker-popper',
+              }),
+            ]);
+        },
+      }),
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      distinguishCancelAndClose: true,
+    });
+    return picked.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/** 工具栏：批量改开立时间为同一时刻 */
+async function handleToolbarBatchChangeOpenedTime() {
+  if (adviceWriteDisabled.value) {
+    return;
+  }
+  if (resolveBatchOpenedBusinessTimeTargets().length === 0) {
+    ElMessage.warning('请勾选至少一条可改开立时间的医嘱');
+    return;
+  }
+  const picked = await promptBatchOpenedBusinessTime();
+  if (!picked) {
+    return;
+  }
+  await handleBatchChangeOpenedBusinessTime(picked);
 }
 
 /** 侧栏点击组套：确认长临后预览并套用至当前就诊草稿 */
@@ -340,6 +411,15 @@ function adviceOrderingDoctorLabel(row: AdviceRowItem): string {
           plain
           :disabled="adviceWriteDisabled"
           :loading="adviceMutationLoading"
+          @click="handleToolbarBatchChangeOpenedTime()"
+        >
+          改开立时间
+        </ElButton>
+        <ElButton
+          type="primary"
+          plain
+          :disabled="adviceWriteDisabled"
+          :loading="adviceMutationLoading"
           @click="handleAppendSkinTest()"
         >
           追加皮试
@@ -430,6 +510,7 @@ function adviceOrderingDoctorLabel(row: AdviceRowItem): string {
                 :encounter-id="encounterId"
                 :medication-rate-options="medicationRateOptions"
                 :medication-route-options="medicationRouteOptions"
+                :medication-speed-options="medicationSpeedOptions"
                 :order-select-expand-nonce="orderSelectExpandNonce"
                 :order-select-focus-nonce="orderSelectFocusNonce"
                 :patient-id="patientId"
@@ -448,6 +529,7 @@ function adviceOrderingDoctorLabel(row: AdviceRowItem): string {
                     :fee-nature-options="feeNatureOptions"
                     :medication-rate-options="medicationRateOptions"
                     :medication-route-options="medicationRouteOptions"
+                    :medication-speed-options="medicationSpeedOptions"
                     :calc-total-fee="calcDrugLineTotalFee"
                     @patch="scope.patch"
                   />
@@ -505,7 +587,35 @@ function adviceOrderingDoctorLabel(row: AdviceRowItem): string {
               <span v-if="!row.isEditor">{{ row.chrgitmLvText || '—' }}</span>
             </template>
           </ElTableColumn>
-          <ElTableColumn label="起止时间" width="228" align="center">
+          <ElTableColumn width="240" align="center">
+            <template #header>
+              <button
+                type="button"
+                class="ip-advice-time-sort-header"
+                :title="
+                  timeSortOrder === 'desc'
+                    ? '当前：倒序（后开在上），点击切换为升序'
+                    : '当前：升序（先开在上），点击切换为倒序'
+                "
+                @click.stop="toggleTimeSortOrder"
+              >
+                <span>起止时间</span>
+                <span class="ip-advice-time-sort-header__carets" aria-hidden="true">
+                  <ElIcon
+                    class="ip-advice-time-sort-header__caret"
+                    :class="{ 'is-active': timeSortOrder === 'asc' }"
+                  >
+                    <CaretTop />
+                  </ElIcon>
+                  <ElIcon
+                    class="ip-advice-time-sort-header__caret"
+                    :class="{ 'is-active': timeSortOrder === 'desc' }"
+                  >
+                    <CaretBottom />
+                  </ElIcon>
+                </span>
+              </button>
+            </template>
             <template #default="{ row }">
               <div v-if="!row.isEditor" class="ip-advice-time-range">
                 <!-- 临时：单行开立时间 + 开立人，无开/停前缀 -->
@@ -740,6 +850,49 @@ function adviceOrderingDoctorLabel(row: AdviceRowItem): string {
   white-space: nowrap;
 }
 
+.ip-advice-time-sort-header {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ip-advice-time-sort-header:hover {
+  color: var(--el-color-primary);
+}
+
+.ip-advice-time-sort-header__carets {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  width: 14px;
+  height: 16px;
+  line-height: 1;
+}
+
+.ip-advice-time-sort-header__caret {
+  width: 12px;
+  height: 8px;
+  color: var(--el-text-color-placeholder);
+}
+
+.ip-advice-time-sort-header__caret.is-active {
+  color: var(--el-color-primary);
+}
+
+.ip-advice-time-sort-header__caret :deep(svg) {
+  width: 12px;
+  height: 12px;
+}
+
 .ip-advice-time-range__line {
   display: inline-flex;
   align-items: center;
@@ -859,6 +1012,7 @@ function adviceOrderingDoctorLabel(row: AdviceRowItem): string {
 <!-- 面板 teleported 到 body，需非 scoped 覆盖 -->
 <style>
 .ip-advice-time-picker-popper.el-picker__popper {
+  z-index: 3200 !important;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
   box-shadow: 0 6px 18px rgb(15 23 42 / 10%);
@@ -869,9 +1023,13 @@ function adviceOrderingDoctorLabel(row: AdviceRowItem): string {
   box-shadow: none;
 }
 
-/* 去掉顶部「日期 + 时间」双输入条，只保留日历与时分列 */
+/* 顶部「日期 + 时间」输入条：时间输入点击后展开时分面板，勿隐藏 */
 .ip-advice-time-picker-popper .el-date-picker__time-header {
-  display: none;
+  padding: 8px 12px 4px;
+}
+
+.ip-advice-time-picker-popper .el-date-picker__editor-wrap .el-input__wrapper {
+  box-shadow: 0 0 0 1px var(--el-border-color) inset;
 }
 
 .ip-advice-time-picker-popper .el-picker-panel__footer {

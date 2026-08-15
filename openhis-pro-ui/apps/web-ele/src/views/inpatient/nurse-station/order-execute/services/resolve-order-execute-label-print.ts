@@ -144,11 +144,64 @@ function str(value: null | number | string | undefined): string {
   return String(value).trim();
 }
 
+/** 瓶签滴速：优先展示名（与列表扩展行一致），否则回落编码 */
+function resolveInfusionSpeedPrintText(
+  speedDisplay?: null | string,
+  speedCode?: null | string,
+): string {
+  return str(speedDisplay) || str(speedCode);
+}
+
+/** 从执行行（含成组成员）取首条非空滴速 */
+function resolveSpeedPrintTextFromExecuteRow(row: NurseStationOrderExecuteTableRow): string {
+  for (const member of row.mergedMedicationMembers ?? []) {
+    const text = resolveInfusionSpeedPrintText(member.speedDisplay, member.speedCode);
+    if (text) {
+      return text;
+    }
+  }
+  return resolveInfusionSpeedPrintText(row.speedDisplay, row.speedCode);
+}
+
 function ageTextOf(patient: NurseStationModulePatient): string {
   if (patient.age == null) {
     return '';
   }
   return `${patient.age}岁`;
+}
+
+/** 入院时间展示（优先 admissionAt，回落入科时间） */
+function formatAdmissionTimeText(patient: NurseStationModulePatient): string {
+  const raw = str(patient.admissionAt) || str(patient.inWardAt);
+  if (!raw) {
+    return '';
+  }
+  const parsed = dayjs(raw);
+  if (!parsed.isValid()) {
+    return raw;
+  }
+  return parsed.format('YYYY-MM-DD HH:mm');
+}
+
+/** 去掉病房/床后缀，便于拼「301-6床」 */
+function stripRoomBedSuffix(raw: string): string {
+  return raw.replace(/病房$/u, '').replace(/房$/u, '').replace(/床$/u, '').trim();
+}
+
+/**
+ * 病房床位展示：仅病房 + 床号，形如「301-6床」。
+ * ModulePatient.wardName 为病房名（非病区）；不拼病区。
+ */
+function formatWardBedText(patient: NurseStationModulePatient): string {
+  const room = stripRoomBedSuffix(str(patient.wardName));
+  const bed = stripRoomBedSuffix(str(patient.bedNo));
+  if (room && bed) {
+    return `${room}-${bed}床`;
+  }
+  if (bed) {
+    return `${bed}床`;
+  }
+  return room;
 }
 
 function formatApplyOrderDateText(raw?: string): string {
@@ -217,7 +270,7 @@ function resolveUsageDisplayText(row: NurseStationOrderExecuteTableRow): string 
   return extension.split(/[，,]/)[0]?.trim() || extension;
 }
 
-/** 查询日对应执行时点文案 */
+/** 查询日对应执行时点文案（瓶贴宽度紧，只印到分钟） */
 function resolveExecuteTimeTextForQueryDate(
   row: NurseStationOrderExecuteTableRow,
   queryDate: string,
@@ -228,14 +281,39 @@ function resolveExecuteTimeTextForQueryDate(
   const slot = schedule?.slots?.[0] ?? row.planSchedules?.[0]?.slots?.[0];
   const timeLabel = String(slot?.timeLabel ?? slot?.planTime ?? '').trim();
   if (timeLabel && dayjs(timeLabel).isValid()) {
-    return dayjs(timeLabel).format('YYYY-MM-DD HH:mm:ss');
+    return dayjs(timeLabel).format('YYYY-MM-DD HH:mm');
   }
-  if (timeLabel.length >= 8 && timeLabel.includes(':')) {
+  if (timeLabel.includes(':')) {
     // 仅 HH:mm 时拼查询日
-    const hhmm = timeLabel.length <= 5 ? `${timeLabel}:00` : timeLabel;
+    const hhmm = timeLabel.length <= 5 ? timeLabel : timeLabel.slice(0, 5);
     return `${queryDate} ${hhmm}`;
   }
-  return `${queryDate} 00:00:00`;
+  return `${queryDate} 00:00`;
+}
+
+/** 执行行剂量展示（与列表「剂量」列同源；瓶贴总量列印此串） */
+function resolveExecuteRowDoseDisplayText(
+  row: Pick<NurseStationOrderExecuteTableRow, 'dosage'>,
+  groupItem?: { dosageDisplay?: string; singleDose?: number | string },
+  member?: Pick<NurseStationOrderExecuteTableRow, 'dosage'>,
+): string {
+  const fromGroup = String(groupItem?.dosageDisplay ?? '').trim();
+  if (fromGroup) {
+    return fromGroup;
+  }
+  const fromMember = String(member?.dosage ?? '').trim();
+  if (fromMember && fromMember !== '—') {
+    return fromMember;
+  }
+  const fromSingle = String(groupItem?.singleDose ?? '').trim();
+  if (fromSingle) {
+    return fromSingle;
+  }
+  const fromRow = String(row.dosage ?? '').trim();
+  if (fromRow && fromRow !== '—') {
+    return fromRow;
+  }
+  return '';
 }
 
 /** 由列表行组装输液贴药品行（成组用 groupItems / 成员行，无组则单行） */
@@ -258,19 +336,18 @@ function buildInfusionMedicationLinesFromExecuteRow(
       if (!requestId) {
         return;
       }
+      const doseText = resolveExecuteRowDoseDisplayText(row, item, member);
       lines.push({
         requestId,
         requestTable: 'MED_REQUEST',
         groupId,
         itemName: String(item.selectedDrugName ?? '').trim(),
         specText: String(item.selectedDrugSpec ?? '').trim(),
-        dosageDisplay:
-          String(item.dosageDisplay ?? '').trim() ||
-          String(member?.dosage ?? item.singleDose ?? '').trim(),
+        dosageDisplay: doseText,
         methodCode: String(member?.methodCode ?? methodCode).trim() || methodCode,
         methodName: String(item.usage ?? '').trim() || methodName,
         infusionFlag: true,
-        quantity: 1,
+        // 住院无发药 quantity；总量列走 dosageDisplay
         unitName: '',
         sortNumber: index + 1,
         // 住院执行页按选定日打一张，禁止再按用药天数展开
@@ -286,17 +363,17 @@ function buildInfusionMedicationLinesFromExecuteRow(
       if (!requestId) {
         return;
       }
+      const doseText = resolveExecuteRowDoseDisplayText(member);
       lines.push({
         requestId,
         requestTable: 'MED_REQUEST',
         groupId,
         itemName: String(member.content ?? '').trim(),
         specText: '',
-        dosageDisplay: String(member.dosage ?? '').trim(),
+        dosageDisplay: doseText,
         methodCode: String(member.methodCode ?? methodCode).trim() || methodCode,
         methodName: resolveUsageDisplayText(member) || methodName,
         infusionFlag: true,
-        quantity: 1,
         unitName: '',
         sortNumber: index + 1,
         dispensePerDuration: 1,
@@ -308,17 +385,17 @@ function buildInfusionMedicationLinesFromExecuteRow(
   if (!orderId) {
     return lines;
   }
+  const doseText = resolveExecuteRowDoseDisplayText(row);
   lines.push({
     requestId: orderId,
     requestTable: 'MED_REQUEST',
     groupId,
     itemName: String(row.content ?? '').trim(),
     specText: '',
-    dosageDisplay: String(row.dosage ?? '').trim(),
+    dosageDisplay: doseText,
     methodCode,
     methodName,
     infusionFlag: true,
-    quantity: 1,
     unitName: '',
     sortNumber: 1,
     dispensePerDuration: 1,
@@ -339,8 +416,12 @@ export function buildInfusionPrintSourceFromExecuteRow(
     patientName: str(patient.name),
     genderEnumText: str(patient.gender),
     ageText: ageTextOf(patient),
-    registerTimeText: `${queryDate} 00:00:00`,
+    // 住院模板标题「入院时间」；field 仍为 registerTimeText（与门诊共用 PrintData）
+    registerTimeText: formatAdmissionTimeText(patient),
+    wardBedText: formatWardBedText(patient),
     medicationLines,
+    // 模板 field=speedCode；值用展示名（同列表「滴速：xx」）
+    speedCode: resolveSpeedPrintTextFromExecuteRow(row),
     executorName: '',
     executeTimeText: resolveExecuteTimeTextForQueryDate(row, queryDate),
   };

@@ -252,16 +252,27 @@ async function applyPatientSnapshotToForm(
 }
 
 async function maybeApplyRecommendedContract(
+  preview: YbRegisterBenefitPreviewDto | null | undefined,
   match: RegisterContractMatchDto | null | undefined,
   autoApply: boolean,
 ) {
-  if (!match?.recommendedContractId) {
+  if (!autoApply) {
     return;
   }
   const currentId = String(registerForm.contractId ?? '');
   const currentCategory = getInpatientContractCategory(currentId, contractMeta.value) ?? '';
+  const resolvedId = String(preview?.resolvedContractId ?? '').trim();
+  if (resolvedId && resolvedId !== currentId) {
+    registerForm.contractId = resolvedId;
+    await inpatientInfoFormApi.setFieldValue('contractId', registerForm.contractId);
+    ElMessage.success(`已切换费用性质为：${match?.recommendedContractName ?? '省医保'}`);
+    await syncBenefitPreview();
+    return;
+  }
+  if (!match?.recommendedContractId) {
+    return;
+  }
   const shouldApply =
-    autoApply &&
     match.recommendedContractId !== currentId &&
     (currentCategory === CHARGE_TYPE_CATEGORY.SELF_PAY ||
       !currentCategory ||
@@ -324,6 +335,7 @@ async function syncBenefitPreview(options?: { autoApplyRecommend?: boolean }) {
   if (result?.preview) {
     applyInpatientPreview(result.preview);
     await maybeApplyRecommendedContract(
+      result.preview,
       result.contractMatch ?? lastContractMatch.value,
       Boolean(options?.autoApplyRecommend),
     );
@@ -803,7 +815,7 @@ const [InpatientInfoForm, inpatientInfoFormApi] = useVbenForm(
       {
         component: 'Select',
         fieldName: 'inWayCode',
-        label: '入院方式',
+        label: '入院途径',
         componentProps: {
           clearable: true,
           placeholder: '请选择',
@@ -1084,7 +1096,8 @@ async function applyContextToDialog(context: LoadRegistrationContextResult) {
   registerForm.encounterBusNo = encounter?.encounterBusNo ?? '';
   registerForm.organizationId = preserveApiIdForRequest(encounter?.organizationId) ?? '';
   registerForm.wardId = preserveApiIdForRequest(encounter?.wardId) ?? '';
-  registerForm.contractId = '';
+  // 已有就诊：回显优先合同；仅无档/未开户时才默认下拉第一项（避免一律落成自费）。
+  registerForm.contractId = preserveApiIdForRequest(encounter?.contractId) ?? '';
   applyDefaultContractIdIfEmpty();
   registerForm.startTime = normalizeStartTimeForForm(encounter?.startTime);
   registerForm.admitSourceCode =
@@ -1628,6 +1641,10 @@ async function handleOpenRegister(row: RegistrationQueueItemDto) {
 /** 打开查看弹窗（只读）。 */
 async function handleOpenView(row: RegistrationQueueItemDto) {
   await handleOpenRegister(row);
+  // 兜底：列表「查看」入口一律只读（与后端 Gate 对齐，防已结算等状态漏标 readOnly）
+  dialogReadOnly.value = true;
+  admissionDiagnosisReadonly.value = true;
+  await setDialogFormsDisabled(true);
 }
 
 /** 无档登记：打开空白弹窗。 */
@@ -1903,12 +1920,9 @@ function canRegister(row: RegistrationQueueItemDto) {
   return row.statusEnum === ENCOUNTER_STATUS.PLANNED;
 }
 
-/** 是否展示「查看」按钮（待入科、已入科）。 */
+/** 是否展示「查看」：非待登记均可查阅（含在院/待结算/已结算/已出院等）。 */
 function canView(row: RegistrationQueueItemDto) {
-  return (
-    row.statusEnum === ENCOUNTER_STATUS.REGISTERED ||
-    row.statusEnum === ENCOUNTER_STATUS.IN_PROGRESS
-  );
+  return row.statusEnum !== ENCOUNTER_STATUS.PLANNED;
 }
 
 onMounted(() => {

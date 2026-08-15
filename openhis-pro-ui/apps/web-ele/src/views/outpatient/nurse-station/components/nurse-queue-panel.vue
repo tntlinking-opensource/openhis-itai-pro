@@ -5,10 +5,11 @@ import type {
   OutpatientPatientCardPayload,
   PatientCardPatient,
 } from '#/components/outpatient/patient-card.types';
+import type { OptionDto } from '#/api/outpatient-registration';
 
 import { RotateCw, Search } from '@vben/icons';
 
-import { ElButton, ElDatePicker, ElInput } from 'element-plus';
+import { ElButton, ElDatePicker, ElInput, ElSelect, ElOption } from 'element-plus';
 
 import SectionTitle from '#/components/layouts/section-title.vue';
 import PatientCard from '#/components/outpatient/patient-card.vue';
@@ -20,9 +21,13 @@ defineOptions({
   name: 'NurseQueuePanel',
 });
 
-const props = defineProps<Props>();
+const props = withDefaults(defineProps<Props>(), {
+  queueLoading: false,
+  orgOptions: () => [],
+});
 
 const emit = defineEmits<{
+  orgChange: [orgId: string];
   queueDateChange: [date: string | undefined];
   refresh: [];
   selectPatient: [patient: { id: string }];
@@ -30,12 +35,16 @@ const emit = defineEmits<{
 
 interface Props {
   filteredPatients: NursePatient[];
+  /** 开立科室下拉（空 value 表示「全部」由父级用空串表达） */
+  orgOptions?: OptionDto[];
   queueLoading?: boolean;
   selectedPatientId: string;
 }
 
 const keyword = defineModel<string>('keyword', { required: true });
 const queueDate = defineModel<string>('queueDate', { required: true });
+/** 开立科室：空串=全部 */
+const orgId = defineModel<string>('orgId', { required: true });
 
 const { dateShortcuts, singleDayPopperClass } = useSingleDayDatePickerShortcuts(
   () => queueDate.value,
@@ -50,6 +59,13 @@ const handleRefresh = () => {
   emit('refresh');
 };
 
+/** 开立科室变更：通知父级立即重查（默认全部） */
+function handleOrgChange(value: string | number | boolean | undefined) {
+  const next = value === undefined || value === null ? '' : String(value);
+  orgId.value = next;
+  emit('orgChange', next);
+}
+
 function onPatientCardSelect(card: PatientCardPatient) {
   if ('patientType' in card && card.patientType === 'inpatient') {
     emit('selectPatient', { id: card.id });
@@ -63,6 +79,22 @@ function onPatientCardSelect(card: PatientCardPatient) {
   <div class="flex h-full min-h-0 flex-col">
     <div class="mb-1.5 flex flex-col gap-1.5 px-2 pt-1.5">
       <SectionTitle title="患者队列" />
+      <ElSelect
+        :model-value="orgId || undefined"
+        clearable
+        filterable
+        placeholder="开立科室（全部）"
+        class="w-full"
+        @change="handleOrgChange"
+        @clear="handleOrgChange(undefined)"
+      >
+        <ElOption
+          v-for="opt in props.orgOptions"
+          :key="opt.value"
+          :label="opt.label"
+          :value="opt.value"
+        />
+      </ElSelect>
       <ElInput v-model="keyword" clearable placeholder="姓名 / 排队号" class="flex-1">
         <template #prefix>
           <Search class="h-4 w-4" />

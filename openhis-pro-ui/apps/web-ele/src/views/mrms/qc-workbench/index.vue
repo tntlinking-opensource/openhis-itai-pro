@@ -52,7 +52,7 @@ import {
   CASE_RECORD_STATUS_LABEL,
   CASE_RECORD_STATUS_OPTIONS,
   CASE_RECORD_STATUS_TAG,
-} from '../case-record/case-record.constants';
+} from '../mrms.constants';
 import {
   QC_DEFECT_SEVERITY_LABEL,
   QC_DEFECT_SEVERITY_OPTIONS,
@@ -252,9 +252,10 @@ function handleReset() {
   getList();
 }
 
-function handlePagination(payload: { pageNo: number; pageSize: number }) {
-  queryParams.pageNo = payload.pageNo;
-  queryParams.pageSize = payload.pageSize;
+/** 分页变更（TableLayout 契约为 page/limit） */
+function handlePagination(pagination: { page: number; limit: number }) {
+  queryParams.pageNo = pagination.page;
+  queryParams.pageSize = pagination.limit;
   getList();
 }
 
@@ -395,7 +396,7 @@ function openHomepage() {
   if (!id) {
     return;
   }
-  router.push({ name: 'MrmsCaseRecordHomepage', params: { caseRecordId: id } });
+  router.push({ name: 'MrmsCaseRecordHomepage', query: { caseRecordId: id } });
 }
 
 onMounted(async () => {

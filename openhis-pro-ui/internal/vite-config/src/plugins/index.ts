@@ -185,7 +185,17 @@ async function loadApplicationPlugins(options: ApplicationPluginOptions): Promis
     },
     {
       condition: !!html,
-      plugins: () => [viteHtmlPlugin({ minify: true })],
+      plugins: () => [
+        viteHtmlPlugin({
+          minify: true,
+          // 显式注入，避免院点中文标题只存在于 process.env / 院点 .env 时 HTML 仍用主线 OpenHis
+          inject: {
+            data: {
+              ...env,
+            },
+          },
+        }),
+      ],
     },
     {
       condition: isBuild && importmap,

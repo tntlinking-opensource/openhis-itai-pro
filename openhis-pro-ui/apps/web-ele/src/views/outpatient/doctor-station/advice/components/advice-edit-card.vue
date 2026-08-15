@@ -48,7 +48,11 @@ import {
   pickCatalogChrgitmLvPatch,
   resolveDefaultDrugRowDiagnosisBinding,
 } from '../services/advice-edit';
-import { formatMoneyStrYuan, formatUnitPriceYuan } from '../services/advice-format';
+import {
+  formatMoneyStrYuan,
+  formatUnitPriceYuan,
+  resolveContractForChrgitmLv,
+} from '../services/advice-format';
 import { isAdviceCatalogZeroStock } from '../services/advice-list';
 import { validateMedicationGroupSharedFields } from '../services/advice-medication-draft';
 import { inferAdviceLineEditorKind, validateWesternEditLineItem } from '../services/advice-row';
@@ -56,6 +60,7 @@ import {
   convertTotalAmountWhenUnitChanges,
   resolveAdviceLineUnitPrice,
   roundMedicationQty,
+  roundMedicationSplitQty,
 } from '../services/medication-unit-bands';
 import AdviceDeviceServiceFormPanel from './advice-device-service-form-panel.vue';
 import AdviceOrderSelect from './advice-order-select.vue';
@@ -361,6 +366,15 @@ function applySplitDoseToDoseSide(index: number, singleDose: number) {
   const item = drugItems.value[index];
   const k = item?.doseBandConvertK;
   if (k === undefined || !Number.isFinite(k) || k <= 0) return;
+  const currentDose = Number(item.doseConvertRatio);
+  // 剂量侧改完会同步左侧片数；若片数只是剂量反算结果，禁止再用两位片数反推剂量（否则 35.625→0.75→35.63）
+  if (Number.isFinite(currentDose) && currentDose > 0) {
+    const splitFromDose = roundMedicationSplitQty(currentDose / k);
+    if (roundMedicationSplitQty(singleDose) === splitFromDose) {
+      return;
+    }
+  }
+  // 剂量侧落库口径保留 6 位；界面另按 3 位展示
   setField(index, 'doseConvertRatio', roundMedicationQty(singleDose * k));
 }
 
@@ -368,7 +382,7 @@ function applyDoseQtyToSplitSide(index: number, doseQty: number) {
   const item = drugItems.value[index];
   const k = item?.doseBandConvertK;
   if (k === undefined || !Number.isFinite(k) || k <= 0) return;
-  setField(index, 'singleDose', roundMedicationQty(doseQty / k));
+  setField(index, 'singleDose', roundMedicationSplitQty(doseQty / k));
 }
 
 function handleTotalAmountUnitSelect(index: number, value: unknown) {
@@ -544,7 +558,27 @@ const handleProductSelect = (index: number, row: AdviceProductOption) => {
     ...item,
     expanded: itemIndex === index,
   }));
-  const mergedRow = drugItems.value[index];
+  let mergedRow = drugItems.value[index];
+  // 医保等级=自费：强制费用性质为自费合同，避免仍挂医保
+  if (mergedRow && !isTcm.value) {
+    const contractSel = resolveContractForChrgitmLv(
+      props.feeNatureOptions ?? [],
+      mergedRow.chrgitmLv,
+      mergedRow.contractId,
+    );
+    if (
+      contractSel.contractId &&
+      (contractSel.contractId !== String(mergedRow.contractId ?? '').trim() ||
+        contractSel.feeNature !== String(mergedRow.feeNature ?? '').trim())
+    ) {
+      mergedRow = {
+        ...mergedRow,
+        contractId: contractSel.contractId || undefined,
+        feeNature: contractSel.feeNature,
+      };
+      drugItems.value[index] = mergedRow;
+    }
+  }
   if (infusionMode.value && mergedRow) {
     const gid = String(mergedRow.groupId ?? '').trim();
     if (gid) {
@@ -1277,6 +1311,7 @@ onMounted(() => {
               :editor-kind="inferAdviceLineEditorKind(item) === 'DEVICE' ? 'DEVICE' : 'SERVICE'"
               :encounter-id="props.encounterId"
               :patient-id="props.patientId"
+              :fee-nature-options="feeNatureOptions"
               :item="item"
               :patient-diagnoses="patientDiagnoses"
               :set-field="(k, v) => setField(index, k, v)"

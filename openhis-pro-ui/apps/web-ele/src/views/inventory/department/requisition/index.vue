@@ -240,6 +240,7 @@ onMounted(async () => {
     </template>
 
     <RequisitionMainPane
+      :queue-card-row="selectedOrder"
       class="min-h-0 flex-1"
       variant="department"
       :bus-no="selectedBusNo"

@@ -55,6 +55,7 @@ function buildDecoctionFeeTableRow(
     batchNo: '—',
     amount: block.decoctionChargeAmountLabel?.trim() || '—',
     pharmacy: '—',
+    remainingStockText: '—',
     factory: '—',
     diagnosis: '—',
     freq: '—',

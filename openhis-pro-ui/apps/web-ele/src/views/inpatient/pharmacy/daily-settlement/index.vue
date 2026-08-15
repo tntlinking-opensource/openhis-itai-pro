@@ -613,7 +613,7 @@ onMounted(async () => {
               {{ hasQueried ? (previewResult?.pendingCount ?? 0) : '—' }}
             </div>
             <div>
-              <span class="text-[var(--el-text-color-regular)]">关联净收入：</span>
+              <span class="text-[var(--el-text-color-regular)]">日结利润：</span>
               {{ previewResult?.totalIncome ?? '—' }}
             </div>
           </div>
@@ -869,7 +869,7 @@ onMounted(async () => {
           align="right"
           header-align="right"
         />
-        <ElTableColumn label="金额" width="110" align="right" header-align="right">
+        <ElTableColumn label="日结利润" width="110" align="right" header-align="right">
           <template #default="{ row }">
             {{ formatHistoryAmount(row.totalIncome) }}
           </template>

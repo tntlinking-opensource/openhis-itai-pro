@@ -2,6 +2,8 @@ import type { ComputedRef, Ref } from 'vue';
 
 import { computed } from 'vue';
 
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+
 import type { PatientItem } from './types';
 
 interface UseNurseStationPatientProjectionsOptions {
@@ -39,9 +41,14 @@ export function useNurseStationPatientProjections(
       age: item.age,
       nurseLevel: item.level,
       feeType: item.feeType,
+      attendingDoctorName: item.attendingDoctorName,
       diagnosis: item.diagnosis,
-      regionName: regionNameByIdRecord.value[item.regionId] || '-',
-      wardName: wardNameByIdRecord.value[item.wardId] || '-',
+      // 病区：优先读模型 wardName，再 regionId 反查
+      organizationName: (item.organizationName ?? '').trim() || undefined,
+      organizationId: preserveApiIdForRequest(item.organizationId) ?? undefined,
+      regionName: (item.wardName ?? '').trim() || regionNameByIdRecord.value[item.regionId] || '-',
+      // 病房：优先读模型 houseName，再 wardId 反查（字段名 wardName 为历史兼容）
+      wardName: (item.houseName ?? '').trim() || wardNameByIdRecord.value[item.wardId] || '-',
       pendingAudit: item.pendingAudit,
       pendingExecute: item.pendingExecute,
       accountId: item.accountId,

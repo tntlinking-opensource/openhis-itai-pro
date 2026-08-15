@@ -56,6 +56,16 @@ const props = withDefaults(
     rxKindBadgeCounts?: DispenseRxKindBadgeCounts;
     /** 是否启用发药单视图（住院按患者发药关闭，仅列表明细） */
     enableSheetView?: boolean;
+    /**
+     * 左侧合并列「单号」表头文案。
+     * 门诊默认「处方号」；住院按日虚拟发药单传「发药单」。
+     */
+    groupNoColumnLabel?: string;
+    /**
+     * 发药单笺面左上角单号标签（传给 PrescriptionSheetView）。
+     * 门诊默认「处方号」；住院传「发药单」。
+     */
+    sheetNoLabel?: string;
     selectedPatient: DispenseQueuePatient | null;
   }>(),
   {
@@ -65,6 +75,8 @@ const props = withDefaults(
     sheetLoading: false,
     traceCodeByLineId: () => ({}),
     enableSheetView: true,
+    groupNoColumnLabel: '处方号',
+    sheetNoLabel: '处方号',
   },
 );
 
@@ -93,8 +105,8 @@ const inventoryPickByLineId = defineModel<Record<string, string>>('inventoryPick
 
 /** 左侧合并列数：仅前三列（多选、处方号、状态） */
 const RX_TABLE_META_COLS = 3;
-/** 西药 tab 列数（与模板列数一致，供间隔行 colspan） */
-const RX_TABLE_WESTERN_COLS = 13;
+/** 西药 tab 列数（与模板列数一致，供间隔行 colspan；含剩余库存列） */
+const RX_TABLE_WESTERN_COLS = 14;
 
 const rxTableRef = ref<null | TableInstance>(null);
 
@@ -196,8 +208,14 @@ const prescriptionSheetViewItems = computed(() => {
       tcmDiagnosisText: props.sheetTcmDiagnosisText,
       traceCodeByLineId: props.traceCodeByLineId,
     }),
-    /** 该处方下发放行主键（批量/单张发药取 id；排除代煎费合成行） */
-    lineIds: block.items.filter((line) => line.lineKind !== 'decoctionFee').map((line) => line.id),
+    /** 该发药单下发放行主键（批量/单张发药取 id；排除代煎费；合并行展开 sourceDispenseIds） */
+    lineIds: block.items
+      .filter((line) => line.lineKind !== 'decoctionFee')
+      .flatMap((line) =>
+        line.sourceDispenseIds && line.sourceDispenseIds.length > 0
+          ? line.sourceDispenseIds
+          : [line.id],
+      ),
   }));
 });
 
@@ -240,7 +258,7 @@ function isSheetSelected(rxId: string): boolean {
 /** 发药单空态文案 */
 const sheetEmptyText = computed(() => {
   if (!props.selectedPatient) return '请从左侧选择患者';
-  return '当前类型下无处方，请切换上方西药/中药';
+  return `当前类型下无${props.groupNoColumnLabel}，请切换上方西药/中药`;
 });
 
 /** 无患者或无处方时用空表数据，表头与表格框架仍展示 */
@@ -249,10 +267,10 @@ const rxTableBodyRows = computed<DispenseRxTableRow[]>(() => {
   return props.displayTableRows;
 });
 
-/** 空表时区分未选患者与已选但无处方 */
+/** 空表时区分未选患者与已选但无明细 */
 const rxTableEmptyText = computed(() => {
   if (!props.selectedPatient) return '请从左侧选择患者';
-  return '当前类型下无处方，请切换上方西药/中药';
+  return `当前类型下无${props.groupNoColumnLabel}，请切换上方西药/中药`;
 });
 
 /** 仅中西药均有处方时展示 tab 角标，提示另一侧待发 */
@@ -284,8 +302,9 @@ function isSpacerRow(row: DispenseRxTableRow): row is DispenseRxTableSpacerRow {
 }
 
 /**
- * 取勾选处方下的全部发放行主键。
+ * 取勾选发药单下的全部发放行主键。
  * 发药单视图用笺面多选；列表明细视图用表格多选。
+ * 住院同医嘱合并展示行通过 sourceDispenseIds 展开为底层 dispenseId。
  */
 function getSelectedDispenseLineIds(): string[] {
   if (resolvedViewMode.value === 'sheet') {
@@ -310,7 +329,13 @@ function getSelectedDispenseLineIds(): string[] {
     if (isSpacerRow(row)) continue;
     // 代煎费为合成展示行，不参与发药提交
     if (row.lineKind === 'decoctionFee') continue;
-    if (rxIds.has(row.rxId)) ids.push(row.id);
+    if (!rxIds.has(row.rxId)) continue;
+    // 合并展示行：提交须覆盖全部底层发放事实
+    if (row.sourceDispenseIds && row.sourceDispenseIds.length > 0) {
+      ids.push(...row.sourceDispenseIds);
+    } else {
+      ids.push(row.id);
+    }
   }
   return ids;
 }
@@ -499,6 +524,7 @@ function handleRxTableRowClick(row: DispenseRxTableRow) {
               :key="item.key"
               class="dispense-rx-sheet-card shrink-0"
               :data="item.data"
+              :prescription-no-label="props.sheetNoLabel"
               comfortable
               workbench-actions
               :selected="isSheetSelected(item.rxId)"
@@ -544,7 +570,7 @@ function handleRxTableRowClick(row: DispenseRxTableRow) {
           />
           <ElTableColumn
             prop="rxNo"
-            label="处方号"
+            :label="props.groupNoColumnLabel"
             width="160"
             fixed="left"
             align="center"
@@ -585,6 +611,20 @@ function handleRxTableRowClick(row: DispenseRxTableRow) {
             header-align="center"
             show-overflow-tooltip
           />
+          <ElTableColumn
+            prop="remainingStockText"
+            label="剩余库存"
+            width="120"
+            align="center"
+            header-align="center"
+            show-overflow-tooltip
+          >
+            <template #default="{ row }">
+              <template v-if="!isSpacerRow(row)">
+                {{ row.lineKind === 'decoctionFee' ? '—' : (row.remainingStockText ?? '—') }}
+              </template>
+            </template>
+          </ElTableColumn>
           <ElTableColumn
             prop="spec"
             label="规格"
@@ -956,6 +996,28 @@ function handleRxTableRowClick(row: DispenseRxTableRow) {
 
 .dispense-rx-sheet-row {
   padding-bottom: 4px;
+  /* 发药单多时底部横向滚动条默认偏浅，加深便于辨认 */
+  scrollbar-width: thin;
+  scrollbar-color: var(--el-text-color-secondary) var(--el-fill-color);
+}
+
+.dispense-rx-sheet-row::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+.dispense-rx-sheet-row::-webkit-scrollbar-track {
+  background: var(--el-fill-color);
+  border-radius: 4px;
+}
+
+.dispense-rx-sheet-row::-webkit-scrollbar-thumb {
+  background: var(--el-text-color-secondary);
+  border-radius: 4px;
+}
+
+.dispense-rx-sheet-row::-webkit-scrollbar-thumb:hover {
+  background: var(--el-text-color-regular);
 }
 
 .dispense-rx-sheet-card :deep(.prescription-dialog-wrapper) {

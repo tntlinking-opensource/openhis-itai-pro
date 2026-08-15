@@ -1,6 +1,6 @@
 import type { DoctorStationMedicationUnitBandDto } from '#/api/doctor-station/advice.types';
 
-import { OrderCalcRuleCode } from '#/constants/domain/order-calc-rule';
+import { isPackageBoundOrderCalcRule, OrderCalcRuleCode } from '#/constants/domain/order-calc-rule';
 import {
   defaultTotalAmountUnitCode,
   resolveBandKindByUnitCode,
@@ -13,11 +13,7 @@ import { convertInboundQtyBetweenBandKinds } from '#/utils/inventory/inbound-pro
 export function preferredTotalUnitBandKindFromOrderCalcRule(
   ruleCode: string | undefined,
 ): 'PACKAGE' | 'SPLIT' {
-  const code = String(ruleCode ?? '').trim();
-  if (
-    code === OrderCalcRuleCode.PACKAGE_NO_SPLIT ||
-    code === OrderCalcRuleCode.PACKAGE_SINGLE_CEIL
-  ) {
+  if (isPackageBoundOrderCalcRule(ruleCode)) {
     return 'PACKAGE';
   }
   return 'SPLIT';
@@ -38,10 +34,7 @@ function ruleOutputBandKind(
   ruleCode: string,
   bands: DoctorStationMedicationUnitBandDto[] | undefined,
 ): string {
-  if (
-    ruleCode === OrderCalcRuleCode.PACKAGE_NO_SPLIT ||
-    ruleCode === OrderCalcRuleCode.PACKAGE_SINGLE_CEIL
-  ) {
+  if (isPackageBoundOrderCalcRule(ruleCode)) {
     if (unitCodeByBandKind(bands, 'PACKAGE')) return 'PACKAGE';
     if (unitCodeByBandKind(bands, 'SALES')) return 'SALES';
     return 'SPLIT';

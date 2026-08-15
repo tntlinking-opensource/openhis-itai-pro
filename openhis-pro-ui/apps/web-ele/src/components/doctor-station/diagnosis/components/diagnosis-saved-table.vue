@@ -13,6 +13,8 @@ import { Table } from '@vben-core/table-layout-ui';
 
 import type { DoctorStationDiagnosisScope } from '../services/encounter-diagnosis.service';
 
+import { resolveChronicMedicalTypeTag } from '#/utils/chronic-medical-type';
+
 import { formatDiagnosisYbNoDisplay } from '../services/tcm-diagnosis-display';
 
 defineOptions({ name: 'DiagnosisSavedTable' });
@@ -140,6 +142,11 @@ function resolveMedicalTypeLabel(code: string): string {
   return MEDICAL_TYPE_LABELS[code] ?? `医疗类别 ${code}`;
 }
 
+/** 诊断名旁角标：慢 / 特 / 慢特 */
+function medicalTypeTagOf(row: EncounterDiagnosisRowDto): string {
+  return resolveChronicMedicalTypeTag(row.medicalTypeCode);
+}
+
 /** 按医疗类别分组；仅一种类别时不分组展示；组内主诊置顶 */
 const medicalTypeGroups = computed<MedicalTypeGroup[]>(() => {
   const bucket = new Map<string, EncounterDiagnosisRowDto[]>();
@@ -192,7 +199,7 @@ const tableColumns = computed<TableColumn[]>(() => {
       width: 160,
       slot: 'ybNo',
     },
-    { prop: 'conditionDefinitionName', label: '诊断名称', minWidth: 200 },
+    { prop: 'conditionDefinitionName', label: '诊断名称', minWidth: 200, slot: 'dxName' },
     {
       prop: 'diagnosisKindText',
       label: '类别',
@@ -290,6 +297,16 @@ function onIptTypeSelectChange(
         >
           <template #ybNo="{ row }">
             <span>{{ formatDiagnosisYbNoDisplay(row.ybNo) }}</span>
+          </template>
+          <template #dxName="{ row }">
+            <span class="dx-name-cell">
+              <span class="dx-name-cell__text" :title="row.conditionDefinitionName">
+                {{ row.conditionDefinitionName }}
+              </span>
+              <span v-if="medicalTypeTagOf(row)" class="dx-chronic-tag">
+                {{ medicalTypeTagOf(row) }}
+              </span>
+            </span>
           </template>
           <template #iptType="{ row }">
             <ElSelect
@@ -451,5 +468,36 @@ function onIptTypeSelectChange(
   background: var(--el-color-primary-light-7);
   border-color: var(--el-color-primary-light-5);
   color: var(--el-color-primary);
+}
+
+.dx-name-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.dx-name-cell__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dx-chronic-tag {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border: 1.5px solid #0f766e;
+  border-radius: 3px;
+  background: transparent;
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
 }
 </style>

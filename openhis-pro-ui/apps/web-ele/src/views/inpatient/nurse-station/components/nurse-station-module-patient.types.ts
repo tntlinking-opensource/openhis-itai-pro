@@ -15,9 +15,21 @@ export interface NurseStationModulePatient {
   gender: string;
   age: number;
   nurseLevel: string;
+  /** 费用性质/医保类型展示（读模型 contractDisplay）。 */
   feeType?: string;
+  /** 主治医生姓名（读模型 attendingDoctorName）。 */
+  attendingDoctorName?: string;
   diagnosis?: string;
+  /** 入院科室名称（读模型 organizationName）。 */
+  organizationName?: string;
+  /** 入院/当前住院科室主键（读模型 organizationId；划价取药模板键）。 */
+  organizationId?: string;
+  /** 病区名称（读模型 wardName / regionId 反查）。 */
   regionName: string;
+  /**
+   * 病房名称（读模型 houseName / wardId 反查）。
+   * 历史字段名 wardName，语义为病房而非病区。
+   */
   wardName: string;
   pendingAudit: number;
   pendingExecute: number;

@@ -4,6 +4,7 @@ import type { JSONContent } from '@tiptap/core';
 import type { EmrTemplateTreeNode } from './build-emr-template-tree';
 
 import type { DocumentSummaryDto, EmrPrintConfigPayload } from '#/api/emr/document';
+import type { TemplateDto } from '#/api/emr/template';
 import type { ApplyEmrTemplatePayload } from '#/emrEditor';
 import type { EmrTemplateStationKind } from '#/views/basic/emr-template/emr-template-scope.constants';
 
@@ -24,10 +25,11 @@ import { ChevronLeft, ChevronRight } from '@vben/icons';
 import { useUserStore } from '@vben/stores';
 
 import { Close } from '@element-plus/icons-vue';
-import { ElButton, ElIcon, ElMessage } from 'element-plus';
+import { ElButton, ElIcon, ElMessage, ElMessageBox } from 'element-plus';
 
 import {
   createDocumentApi,
+  deleteDocumentApi,
   generateDocumentPdfApi,
   getDocumentContentApi,
   getDocumentListApi,
@@ -36,8 +38,10 @@ import {
 import { resolveEncounterMetadataApi } from '#/api/emr/encounter-metadata';
 import {
   createTemplateApi,
+  deleteTemplateApi,
   getTemplateContentApi,
   serializeEmrTemplateContent,
+  updateTemplateApi,
 } from '#/api/emr/template';
 import { ENSURE_CLINICAL_RECEPTION_KEY } from '#/components/doctor-station';
 import { useCompactViewport } from '#/composables/use-compact-viewport';
@@ -68,6 +72,7 @@ import {
   type EmrTemplateScopeLevel,
 } from '#/views/basic/emr-template/emr-template-scope.constants';
 
+import { resolveEmrDirectoryCategory } from './build-emr-template-tree';
 import EmrImportAdviceDialog from './emr-import/emr-import-advice-dialog.vue';
 import EmrImportDiagnosisDialog from './emr-import/emr-import-diagnosis-dialog.vue';
 import {
@@ -87,6 +92,10 @@ const props = withDefaults(defineProps<Props>(), {
   stationKind: undefined,
   patientId: '',
   encounterId: '',
+  forceReadOnly: false,
+  restrictHistoryToInpatient: false,
+  encounterScoped: false,
+  initialDocumentId: '',
 });
 
 interface Props {
@@ -104,6 +113,20 @@ interface Props {
   };
   patientId?: string;
   encounterId?: string;
+  /** 强制只读（如护士站病历调阅 / 病案只读）：不可新建/编辑/删除，仅查看与打印 */
+  forceReadOnly?: boolean;
+  /**
+   * 历史列表仅允许打开住院目录文书（护士站病历调阅专用）。
+   * 病案门诊/住院只读查阅勿开：可看不可改，不限制门诊文书。
+   */
+  restrictHistoryToInpatient?: boolean;
+  /**
+   * 按就诊收窄侧栏：仅本 encounter 文书，不拉患者跨就诊历史。
+   * 病案「门诊/住院病例查询」打开时必开（列表行锚点为就诊）。
+   */
+  encounterScoped?: boolean;
+  /** 打开时自动加载的文书主键（门诊列表行 documentId） */
+  initialDocumentId?: string;
 }
 
 type PageMargins = { bottom: string; left: string; right: string; top: string };
@@ -123,6 +146,8 @@ interface EmrOpenTab {
   recordDoc: JSONContent | null;
   savedContentSnapshot: JSONContent;
   serverMetadataValues: Record<string, string>;
+  /** 打开历史/已有文书时的来源模板，复用创建时带回 */
+  sourceTemplateId: string;
   templateLayoutLocked: boolean;
 }
 
@@ -161,6 +186,7 @@ function createBlankTab(): EmrOpenTab {
     documentTypeCode: '',
     documentTypeName: '',
     documentTitle: '',
+    sourceTemplateId: '',
     serverMetadataValues: {},
     recordDoc: blank,
     savedContentSnapshot: structuredClone(blank),
@@ -211,7 +237,7 @@ const activeTab = computed(
 
 const documentId = computed(() => activeTab.value.documentId);
 const pendingTemplateId = computed(() => activeTab.value.pendingTemplateId);
-const documentReadOnly = computed(() => activeTab.value.documentReadOnly);
+const documentReadOnly = computed(() => props.forceReadOnly || activeTab.value.documentReadOnly);
 const documentTypeCode = computed(() => activeTab.value.documentTypeCode);
 
 const openDocumentIds = computed(() =>
@@ -366,7 +392,7 @@ function editorDocIdForTab(tab: EmrOpenTab): string {
 function remoteSaveForTab(tabKey: string) {
   return async (content: JSONContent) => {
     const tab = openTabs.value.find((t) => t.key === tabKey);
-    if (!tab?.documentId || tab.documentReadOnly) return;
+    if (!tab?.documentId || tab.documentReadOnly || props.forceReadOnly) return;
     await saveDocumentApi({
       documentId: tab.documentId,
       content,
@@ -376,7 +402,9 @@ function remoteSaveForTab(tabKey: string) {
 }
 
 function remoteSaveHandlerForTab(tab: EmrOpenTab) {
-  return tab.documentId && !tab.documentReadOnly ? remoteSaveForTab(tab.key) : undefined;
+  return tab.documentId && !tab.documentReadOnly && !props.forceReadOnly
+    ? remoteSaveForTab(tab.key)
+    : undefined;
 }
 
 function isTabDirty(tabKey: string): boolean {
@@ -441,6 +469,7 @@ function resetTabContent(tab: EmrOpenTab) {
   tab.documentTypeCode = '';
   tab.documentTypeName = '';
   tab.documentTitle = '';
+  tab.sourceTemplateId = '';
   tab.serverMetadataValues = {};
   const blank = structuredClone(defaultEmrEditorDoc);
   tab.recordDoc = blank;
@@ -545,6 +574,7 @@ function applyDocumentDtoToTab(
     id?: number | string;
     metadataValues?: Record<string, string>;
     readOnly?: boolean;
+    sourceTemplateId?: number | string;
     title?: string;
   },
 ) {
@@ -563,11 +593,15 @@ function applyDocumentDtoToTab(
   if (dto.title !== undefined) {
     tab.documentTitle = (dto.title ?? '').trim();
   }
+  const sourceTpl = preserveApiIdForRequest(dto.sourceTemplateId);
+  if (sourceTpl) {
+    tab.sourceTemplateId = sourceTpl;
+  }
   const currentEncounterId = preserveApiIdForRequest(props.encounterId) ?? '';
   const docEncounterId = preserveApiIdForRequest(dto.encounterId) ?? '';
   const linkedPeerReadOnly =
     Boolean(currentEncounterId) && Boolean(docEncounterId) && docEncounterId !== currentEncounterId;
-  tab.documentReadOnly = Boolean(dto.readOnly) || linkedPeerReadOnly;
+  tab.documentReadOnly = props.forceReadOnly || Boolean(dto.readOnly) || linkedPeerReadOnly;
   if (dto.metadataValues) {
     tab.serverMetadataValues = { ...dto.metadataValues };
   }
@@ -660,11 +694,13 @@ async function applyTemplateLocallyToTab(
     // await 期间接诊/切患者可能重建 Tab：落到仍存活的会话上
     const liveTab = openTabs.value.find((t) => t.key === tab.key) ?? activeTab.value;
     liveTab.documentId = '';
-    liveTab.documentReadOnly = false;
+    // 强制只读场景不应落到可编辑新建态
+    liveTab.documentReadOnly = props.forceReadOnly;
     liveTab.documentTypeCode = typeCode;
     liveTab.documentTypeName = (options?.documentTypeName ?? '').trim();
     liveTab.documentTitle = '';
     liveTab.pendingTemplateId = tplId;
+    liveTab.sourceTemplateId = tplId;
     // 本地患者条 + 服务端解析一并落库到 tab，并烘进正文，避免首屏 watch 竞态空白
     const serverMeta = await resolveMetadataForCurrentPatient();
     const mergedMeta = mergeEmrMetadataValues(
@@ -714,15 +750,21 @@ async function resolveMetadataForCurrentPatient(): Promise<Record<string, string
   }
 }
 
-/** 保存前确保已有服务端文书：未创建则按待选模板 create */
+/** 保存前确保已有服务端文书：未创建则按待选模板（或仅文书类型）create */
 async function ensureDocumentCreated(): Promise<null | string> {
+  if (props.forceReadOnly) {
+    ElMessage.warning('病历调阅仅支持查看，不可保存');
+    return null;
+  }
   const tab = activeTab.value;
   if (tab.documentId) return tab.documentId;
   const tplId = tab.pendingTemplateId;
   const typeCode = tab.documentTypeCode.trim();
   const patientId = (props.patientId ?? '').trim();
   const encounterId = (props.encounterId ?? '').trim();
-  if (!tplId || !typeCode) return null;
+  // 历史复用草稿可能无 pendingTemplateId，仅需文书类型 + 本地正文
+  if (!typeCode) return null;
+  if (!tplId && !tab.recordDoc) return null;
   if (!patientId) {
     ElMessage.warning('请先选择患者');
     return null;
@@ -732,13 +774,20 @@ async function ensureDocumentCreated(): Promise<null | string> {
     const ok = await ensureClinicalReception();
     if (!ok) return null;
   }
+  // 保留本地正文：create 可能返回默认模板内容，不能覆盖已复用/已编辑草稿
+  const localContent = getEditor(tab.key)?.getJSON?.() ?? tab.recordDoc;
   const created = await createDocumentApi({
     patientId,
     encounterId: encounterId || undefined,
     documentTypeCode: typeCode,
-    templateId: tplId,
+    templateId: tplId || undefined,
   });
-  applyDocumentDtoToTab(tab, created);
+  applyDocumentDtoToTab(tab, {
+    ...created,
+    content: localContent ?? created.content,
+    documentTypeName: tab.documentTypeName || undefined,
+    sourceTemplateId: tplId || undefined,
+  });
   if (isInpatientStation.value) {
     await refreshProgressNoteNavList();
   }
@@ -809,10 +858,22 @@ async function reloadCurrentDocument(options?: { silent?: boolean }) {
   }
 }
 
-/** 是否可保存：已有文书，或已选模板待首次落库 */
-const canSaveDocument = computed(() =>
-  Boolean(documentId.value || (pendingTemplateId.value && documentTypeCode.value)),
-);
+/** 是否可保存：已有文书，或已选模板/复用草稿待首次落库 */
+const canSaveDocument = computed(() => {
+  if (documentId.value) return true;
+  if (!documentTypeCode.value) return false;
+  if (pendingTemplateId.value) return true;
+  // 历史复用：已有类型与正文、且可编辑
+  return !documentReadOnly.value && Boolean(activeTab.value.recordDoc);
+});
+
+/** 当前只读文书可复用到本次就诊（历史/关联打开态；调阅除外） */
+const canReuseActiveDocument = computed(() => {
+  if (props.forceReadOnly) return false;
+  if (!documentReadOnly.value) return false;
+  if (!documentId.value) return false;
+  return Boolean((props.encounterId ?? '').trim());
+});
 
 /** 有正文即可生成 PDF（未保存也可，走 content 入参） */
 const canPrintDocument = computed(() => Boolean(activeTab.value.recordDoc));
@@ -824,6 +885,9 @@ const canSaveAsTemplate = computed(
     !documentReadOnly.value &&
     Boolean(activeTab.value.recordDoc),
 );
+
+/** 侧栏「用当前病历更新模板」：与存为模版同前提 */
+const canUpdateTemplateContent = computed(() => canSaveAsTemplate.value);
 
 /** 门诊病历纸质底边戒烟提示（与 emr 元数据 smokeFreeFooter / 模板 printFooter 一致） */
 const OUTPATIENT_EMR_SMOKE_FREE_FOOTER =
@@ -1053,6 +1117,103 @@ async function handleConfirmSaveAsTemplate(payload: {
   }
 }
 
+/** 侧栏：重命名个人/科室模板 */
+async function handleRenameTemplate(tpl: TemplateDto) {
+  if (props.forceReadOnly) {
+    ElMessage.warning('病历调阅仅支持查看，不可修改模板');
+    return;
+  }
+  const id = preserveApiIdForRequest(tpl.id) ?? '';
+  if (!id) {
+    ElMessage.warning('该模板缺少有效 ID');
+    return;
+  }
+  const currentName = (tpl.name ?? '').trim();
+  try {
+    const { value } = await ElMessageBox.prompt('请输入新的模板名称', '重命名模板', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      inputValue: currentName,
+      inputPattern: /\S+/,
+      inputErrorMessage: '模板名称不能为空',
+    });
+    const name = String(value ?? '').trim();
+    if (!name) {
+      ElMessage.warning('模板名称不能为空');
+      return;
+    }
+    if (name === currentName) return;
+    await updateTemplateApi({ id, name });
+    ElMessage.success('已重命名');
+    void historyPanelRef.value?.refreshTemplateTree?.();
+  } catch {
+    // 取消或错误由拦截器提示
+  }
+}
+
+/** 侧栏：用当前病历正文覆盖模板内容 */
+async function handleUpdateTemplateContent(tpl: TemplateDto) {
+  if (props.forceReadOnly) {
+    ElMessage.warning('病历调阅仅支持查看，不可修改模板');
+    return;
+  }
+  if (!canUpdateTemplateContent.value) {
+    ElMessage.warning('请先打开可编辑病历后再更新模板内容');
+    return;
+  }
+  const id = preserveApiIdForRequest(tpl.id) ?? '';
+  if (!id) {
+    ElMessage.warning('该模板缺少有效 ID');
+    return;
+  }
+  const content = getActiveEditor()?.getJSON?.() ?? activeTab.value.recordDoc;
+  if (!content) {
+    ElMessage.warning('没有可写入模板的内容');
+    return;
+  }
+  const title = (tpl.name ?? '').trim() || (tpl.code ?? '').trim() || '模板';
+  try {
+    await ElMessageBox.confirm(
+      `确定用当前病历内容覆盖模板「${title}」吗？覆盖后不可恢复。`,
+      '更新模板内容',
+      {
+        type: 'warning',
+        confirmButtonText: '覆盖更新',
+        cancelButtonText: '取消',
+      },
+    );
+  } catch {
+    return;
+  }
+  try {
+    await updateTemplateApi({ id, content });
+    ElMessage.success('模板内容已更新');
+    void historyPanelRef.value?.refreshTemplateTree?.();
+  } catch {
+    // 业务/网络错误已由 request 拦截器提示
+  }
+}
+
+/** 侧栏：删除个人/科室模板 */
+async function handleDeleteTemplate(tpl: TemplateDto) {
+  if (props.forceReadOnly) {
+    ElMessage.warning('病历调阅仅支持查看，不可删除模板');
+    return;
+  }
+  const id = preserveApiIdForRequest(tpl.id) ?? '';
+  if (!id) {
+    ElMessage.warning('该模板缺少有效 ID');
+    return;
+  }
+  try {
+    await deleteTemplateApi({ id });
+    ElMessage.success('模板已删除');
+    void historyPanelRef.value?.refreshTemplateTree?.();
+  } catch {
+    // 业务/网络错误已由 request 拦截器提示
+  }
+}
+
 /** 手动保存：无文书时先 create，再 save */
 async function handleSave() {
   if (!canSaveDocument.value) {
@@ -1108,6 +1269,16 @@ async function openDocumentFromSummary(
   options?: { silent?: boolean; skipUnsavedConfirm?: boolean; openInNewTab?: boolean },
 ) {
   if (documentLoading.value) return;
+  // 护士站调阅：仅允许打开住院目录文书；病案只读查阅不限制（可看不可改）
+  if (
+    props.restrictHistoryToInpatient &&
+    resolveEmrDirectoryCategory(row.documentTypeCode ?? '') !== 'INPATIENT'
+  ) {
+    if (!options?.silent) {
+      ElMessage.warning('病历调阅仅支持查看住院病历');
+    }
+    return;
+  }
   const id = preserveApiIdForRequest(row.id) ?? '';
   if (!id) {
     if (!options?.silent) ElMessage.warning('该病历缺少有效 ID');
@@ -1156,6 +1327,7 @@ async function openDocumentFromSummary(
       documentTypeCode: dto.documentTypeCode ?? row.documentTypeCode,
       documentTypeName: row.documentTypeName,
       encounterId: dto.encounterId ?? row.encounterId,
+      sourceTemplateId: row.sourceTemplateId,
       title: dto.title ?? row.title,
     });
     if (!options?.silent) {
@@ -1177,6 +1349,186 @@ async function handleSelectDocument(row: DocumentSummaryDto) {
 /** 历史列表 Ctrl/右键：新标签打开 */
 async function handleOpenDocumentInNewTab(row: DocumentSummaryDto) {
   await openDocumentFromSummary(row, { openInNewTab: true });
+}
+
+/**
+ * 历史/关联病历复用到本次就诊：复制正文 → 新建草稿并保存。
+ * 不修改原就诊文书；患者元数据按当前就诊重烤。
+ */
+async function handleReuseDocument(row: DocumentSummaryDto) {
+  if (props.forceReadOnly) {
+    ElMessage.warning('病历调阅仅支持查看，不可复用');
+    return;
+  }
+  if (documentLoading.value) return;
+
+  const sourceId = preserveApiIdForRequest(row.id) ?? '';
+  if (!sourceId) {
+    ElMessage.warning('该病历缺少有效 ID');
+    return;
+  }
+  if (!requireEncounterIdForDocument()) return;
+
+  const title =
+    (row.documentTypeName ?? '').trim() ||
+    (row.title ?? '').trim() ||
+    (row.documentTypeCode ?? '').trim() ||
+    '历史病历';
+  try {
+    await ElMessageBox.confirm(
+      `将「${title}」内容复制到本次就诊并新建病历草稿，不会修改原病历。是否继续？`,
+      '复用历史病历',
+      {
+        type: 'info',
+        confirmButtonText: '复用',
+        cancelButtonText: '取消',
+      },
+    );
+  } catch {
+    return;
+  }
+
+  const proceed = await confirmDiscardUnsavedIfNeeded('replace');
+  if (!proceed) return;
+
+  if (ensureClinicalReception) {
+    const ok = await ensureClinicalReception();
+    if (!ok) return;
+  }
+
+  const patientId = (props.patientId ?? '').trim();
+  const encounterId = (props.encounterId ?? '').trim();
+  if (!patientId) {
+    ElMessage.warning('请先选择患者');
+    return;
+  }
+
+  documentLoading.value = true;
+  saveLoading.value = true;
+  try {
+    await nextTick();
+    const dto = await getDocumentContentApi({ documentId: sourceId });
+    const typeCode = (dto.documentTypeCode ?? row.documentTypeCode ?? '').trim();
+    if (!typeCode) {
+      ElMessage.warning('该病历缺少文书类型，无法复用');
+      return;
+    }
+
+    const sourceTplId = preserveApiIdForRequest(row.sourceTemplateId) ?? '';
+
+    // 按当前患者/就诊重烤只读元数据芯片；临床自由文本原样保留
+    const serverMeta = await resolveMetadataForCurrentPatient();
+    const mergedMeta = mergeEmrMetadataValues(
+      buildMetadataValuesFromPatientInfo(props.patientInfo),
+      serverMeta,
+    );
+    const bakedDoc = applyMetadataValuesToContentJson(
+      normalizeEmrRootDoc(dto.content),
+      mergedMeta,
+      true,
+    );
+
+    const created = await createDocumentApi({
+      patientId,
+      encounterId: encounterId || undefined,
+      documentTypeCode: typeCode,
+      templateId: sourceTplId || undefined,
+    });
+    const newId = preserveApiIdForRequest(created.id);
+    if (!newId) {
+      ElMessage.error('复用失败：未返回新文书 ID');
+      return;
+    }
+    await saveDocumentApi({
+      documentId: newId,
+      content: bakedDoc,
+    });
+
+    const tab = activeTab.value;
+    applyDocumentDtoToTab(tab, {
+      ...created,
+      content: bakedDoc,
+      documentTypeCode: typeCode,
+      documentTypeName: (row.documentTypeName ?? '').trim() || tab.documentTypeName,
+      encounterId,
+      id: newId,
+      metadataValues: mergedMeta,
+      readOnly: false,
+      sourceTemplateId: sourceTplId || undefined,
+      title: created.title ?? '',
+    });
+    ElMessage.success('已复用到本次就诊');
+    void historyPanelRef.value?.refreshHistory?.();
+    if (isInpatientStation.value) {
+      await refreshProgressNoteNavList();
+    }
+  } catch {
+    // 业务/网络错误已由 request 拦截器提示
+  } finally {
+    documentLoading.value = false;
+    saveLoading.value = false;
+  }
+}
+
+/** 工具栏：将当前打开的只读历史/关联病历复用到本次就诊 */
+async function handleReuseActiveDocument() {
+  const tab = activeTab.value;
+  const id = preserveApiIdForRequest(tab.documentId) ?? '';
+  if (!id) {
+    ElMessage.warning('当前没有可复用的病历');
+    return;
+  }
+  await handleReuseDocument({
+    id,
+    documentTypeCode: tab.documentTypeCode,
+    documentTypeName: tab.documentTypeName,
+    sourceTemplateId: tab.sourceTemplateId || undefined,
+    title: tab.documentTitle,
+  });
+}
+
+/** 关闭已打开的被删文书 Tab（不弹未保存确认） */
+function closeDeletedDocumentTab(documentId: string) {
+  const tab = findTabByDocumentId(documentId);
+  if (!tab) return;
+  if (openTabs.value.length <= 1) {
+    resetTabContent(tab);
+    return;
+  }
+  const idx = openTabs.value.findIndex((t) => t.key === tab.key);
+  openTabs.value = openTabs.value.filter((t) => t.key !== tab.key);
+  editorRefMap.delete(tab.key);
+  const nextDirty = { ...tabDirtyMap.value };
+  delete nextDirty[tab.key];
+  tabDirtyMap.value = nextDirty;
+  if (activeTabKey.value === tab.key) {
+    const next = openTabs.value[Math.max(0, idx - 1)] ?? openTabs.value[0];
+    activeTabKey.value = next!.key;
+  }
+}
+
+/** 侧栏右键软删病历（仅创建人；后端二次校验） */
+async function handleDeleteDocument(row: DocumentSummaryDto) {
+  if (props.forceReadOnly) {
+    ElMessage.warning('病历调阅仅支持查看，不可删除');
+    return;
+  }
+  const id = preserveApiIdForRequest(row.id) ?? '';
+  if (!id) {
+    ElMessage.warning('该病历缺少有效 ID');
+    return;
+  }
+  try {
+    await deleteDocumentApi({ documentId: id });
+    ElMessage.success('删除成功');
+    closeDeletedDocumentTab(id);
+    void historyPanelRef.value?.refreshHistory?.();
+    if (isInpatientStation.value) {
+      await refreshProgressNoteNavList();
+    }
+  } catch {
+    // 业务/网络错误已由 request 拦截器提示
+  }
 }
 
 /** 住院：静默打开最新病程（侧栏保持模版 Tab） */
@@ -1220,6 +1572,10 @@ function applyEmrTemplate(payload?: ApplyEmrTemplatePayload) {
 
 async function handleHistorySelect(item: EmrTemplateTreeNode) {
   if (item.isDocumentType || item.isGroup || item.isDocument) return;
+  if (props.forceReadOnly) {
+    ElMessage.warning('病历调阅仅支持查看，不可新建');
+    return;
+  }
   if (documentLoading.value) return;
 
   const typeCode = (item.documentTypeCode ?? item.template?.documentTypeCode ?? '').trim();
@@ -1304,7 +1660,40 @@ onDeactivated(() => {
 
 onMounted(() => {
   registerEmrUnsavedGuard(confirmDiscardUnsavedIfNeeded);
+  void tryOpenInitialDocument();
 });
+
+/**
+ * 病案列表带入 documentId 时自动打开该文书（仅本就诊收窄场景）。
+ */
+async function tryOpenInitialDocument() {
+  if (!props.encounterScoped) {
+    return;
+  }
+  const id = preserveApiIdForRequest(props.initialDocumentId);
+  if (!id) {
+    return;
+  }
+  // 已打开同文书则跳过
+  if (findTabByDocumentId(id)) {
+    return;
+  }
+  await openDocumentFromSummary(
+    {
+      id,
+      encounterId: props.encounterId,
+      patientId: props.patientId,
+    } as DocumentSummaryDto,
+    { silent: true, skipUnsavedConfirm: true },
+  );
+}
+
+watch(
+  () => [props.initialDocumentId, props.encounterId, props.encounterScoped] as const,
+  () => {
+    void tryOpenInitialDocument();
+  },
+);
 
 onUnmounted(() => {
   registerEmrUnsavedGuard(null);
@@ -1323,6 +1712,7 @@ defineExpose({
   applyEmrTemplate,
   confirmDiscardUnsavedIfNeeded,
   reload: reloadCurrentDocument,
+  refreshTemplateTree: () => historyPanelRef.value?.refreshTemplateTree?.(),
   save: handleSave,
 });
 </script>
@@ -1343,9 +1733,18 @@ defineExpose({
           :encounter-id="encounterId"
           :current-document-id="documentId"
           :open-document-ids="openDocumentIds"
+          :view-only="forceReadOnly"
+          :encounter-scoped="encounterScoped"
+          :restrict-history-to-inpatient="restrictHistoryToInpatient"
+          :can-update-template-content="canUpdateTemplateContent"
           @select="handleHistorySelect"
           @select-document="handleSelectDocument"
           @open-document-in-new-tab="handleOpenDocumentInNewTab"
+          @delete-document="handleDeleteDocument"
+          @reuse-document="handleReuseDocument"
+          @rename-template="handleRenameTemplate"
+          @update-template-content="handleUpdateTemplateContent"
+          @delete-template="handleDeleteTemplate"
         />
       </div>
     </div>
@@ -1397,33 +1796,34 @@ defineExpose({
       <div
         class="medical-record-form__toolbar flex h-[42px] flex-shrink-0 flex-wrap items-center gap-1 border-b px-3"
       >
-        <ElButton
-          type="primary"
-          plain
-          :disabled="!canImportClinicalText"
-          title="勾选当前就诊诊断，插入到光标或辅助检查填写区"
-          @click="openImportDiagnosisDialog"
-        >
-          插入诊断
-        </ElButton>
-        <ElButton
-          type="primary"
-          plain
-          :disabled="!canImportClinicalText"
-          title="勾选当前就诊医嘱，插入到光标或辅助检查填写区"
-          @click="openImportAdviceDialog"
-        >
-          带入医嘱
-        </ElButton>
-        <ElButton
-          type="primary"
-          :loading="saveAsTemplateLoading"
-          :disabled="!canSaveAsTemplate"
-          @click="handleSaveAsTemplate"
-        >
-          存为模版
-        </ElButton>
-        <ElButton :loading="documentLoading" @click="reloadCurrentDocument">刷新</ElButton>
+        <template v-if="!forceReadOnly">
+          <ElButton
+            type="primary"
+            plain
+            :disabled="!canImportClinicalText"
+            title="勾选当前就诊诊断，插入到光标或辅助检查填写区"
+            @click="openImportDiagnosisDialog"
+          >
+            插入诊断
+          </ElButton>
+          <ElButton
+            type="primary"
+            plain
+            :disabled="!canImportClinicalText"
+            title="勾选当前就诊医嘱，插入到光标或辅助检查填写区"
+            @click="openImportAdviceDialog"
+          >
+            带入医嘱
+          </ElButton>
+          <ElButton
+            type="primary"
+            :loading="saveAsTemplateLoading"
+            :disabled="!canSaveAsTemplate"
+            @click="handleSaveAsTemplate"
+          >
+            存为模版
+          </ElButton>
+        </template>
         <template v-if="showProgressNoteNav">
           <ElButton
             :disabled="!canProgressNotePrev || documentLoading"
@@ -1438,41 +1838,51 @@ defineExpose({
             下一张
           </ElButton>
         </template>
-        <ElButton :disabled="!canSaveDocument" @click="handleReset">重置</ElButton>
-        <ElButton
-          type="primary"
-          :loading="saveLoading"
-          :disabled="!canSaveDocument || documentReadOnly"
-          @click="handleSave"
-        >
-          保存
-        </ElButton>
-        <ElButton :loading="pdfLoading" :disabled="!canPrintDocument" @click="handlePrintPreview">
-          打印预览
-        </ElButton>
-        <ElButton
-          type="primary"
-          plain
-          :loading="pdfLoading"
-          :disabled="!canPrintDocument"
-          @click="handlePrint"
-        >
-          打印
-        </ElButton>
+        <template v-if="!forceReadOnly">
+          <ElButton
+            type="primary"
+            :loading="saveLoading"
+            :disabled="!canSaveDocument || documentReadOnly"
+            @click="handleSave"
+          >
+            保存
+          </ElButton>
+        </template>
         <span
-          v-if="documentReadOnly"
+          v-if="documentReadOnly || forceReadOnly"
           class="ml-2 text-xs"
           style="color: var(--el-text-color-secondary)"
         >
           只读
         </span>
-        <span
-          class="ml-auto text-xs"
-          style="color: var(--el-text-color-secondary)"
-          title="树上病历：Ctrl+单击 或 右键「在新标签打开」"
+        <ElButton
+          v-if="canReuseActiveDocument"
+          type="primary"
+          plain
+          :loading="documentLoading || saveLoading"
+          title="将当前历史/关联病历复制到本次就诊新建草稿"
+          @click="handleReuseActiveDocument"
         >
-          Ctrl+单击病历可多开（最多 {{ MAX_OPEN_TABS }}）
-        </span>
+          复用到本次就诊
+        </ElButton>
+        <div class="ml-auto flex flex-wrap items-center gap-1">
+          <ElButton :loading="documentLoading" @click="reloadCurrentDocument">刷新</ElButton>
+          <ElButton v-if="!forceReadOnly" :disabled="!canSaveDocument" @click="handleReset">
+            重置
+          </ElButton>
+          <ElButton :loading="pdfLoading" :disabled="!canPrintDocument" @click="handlePrintPreview">
+            打印预览
+          </ElButton>
+          <ElButton
+            type="primary"
+            plain
+            :loading="pdfLoading"
+            :disabled="!canPrintDocument"
+            @click="handlePrint"
+          >
+            打印
+          </ElButton>
+        </div>
       </div>
       <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div
@@ -1491,11 +1901,15 @@ defineExpose({
             class="medical-record-form__editor"
             :surface="tab.editorSurface"
             :doc-id="editorDocIdForTab(tab)"
-            :read-only="tab.documentReadOnly"
+            :read-only="tab.documentReadOnly || forceReadOnly"
             :remote-save="remoteSaveHandlerForTab(tab)"
             :on-remote-save-error="handleRemoteSaveError"
             :show-toolbar="false"
-            placeholder="请选择左侧模板新建，或打开模板下的已有病历…"
+            :placeholder="
+              forceReadOnly
+                ? '请选择左侧已有病历进行查看…'
+                : '请选择左侧模板新建，或打开模板下的已有病历…'
+            "
             :metadata-values="
               mergeEmrMetadataValues(
                 buildMetadataValuesFromPatientInfo(patientInfo),

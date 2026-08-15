@@ -4,7 +4,7 @@ export interface InpatientPatrolCardRow {
   drugName: string;
   specText: string;
   doseText: string;
-  /** 滴速：打印留空，护士手写 */
+  /** 滴速：回显医嘱 speedDisplay（组内共享）；无则留空可手写 */
   dripRate: string;
   /** 巡视时间：打印留空，护士手写 */
   timeText: string;

@@ -1,8 +1,21 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 
+import { ElMessage } from 'element-plus';
+
+import { compareHm } from '../services/temperature-sheet-time-format';
+
 defineOptions({
   name: 'TemperatureSheetBottomTimePicker',
+});
+
+interface Props {
+  /** 可选最早时分 HH:mm；早于该值的选项禁用 */
+  minHm?: string;
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  minHm: '',
 });
 
 const modelValue = defineModel<string>({ default: '' });
@@ -15,6 +28,14 @@ const minuteListRef = ref<HTMLElement | null>(null);
 
 const hourOptions = Array.from({ length: 24 }, (_, hour) => hour);
 const minuteOptions = Array.from({ length: 60 }, (_, minute) => minute);
+
+const minParsed = computed(() => {
+  const text = props.minHm?.trim();
+  if (!text) {
+    return null;
+  }
+  return parseHm(text);
+});
 
 const displayText = computed(() => {
   const text = modelValue.value?.trim();
@@ -40,11 +61,66 @@ function parseHm(value: string): { hour: number; minute: number } {
   };
 }
 
-/** 打开时同步草稿时分 */
+/** 时是否早于下限 */
+function isHourDisabled(hour: number): boolean {
+  const min = minParsed.value;
+  if (!min) {
+    return false;
+  }
+  return hour < min.hour;
+}
+
+/** 分是否早于下限（仅当前草稿小时等于下限小时时） */
+function isMinuteDisabled(minute: number): boolean {
+  const min = minParsed.value;
+  if (!min) {
+    return false;
+  }
+  if (draftHour.value !== min.hour) {
+    return false;
+  }
+  return minute < min.minute;
+}
+
+/** 打开时同步草稿时分；若低于下限则抬到下限 */
 function syncDraftFromModel(): void {
   const parsed = parseHm(modelValue.value);
   draftHour.value = parsed.hour;
   draftMinute.value = parsed.minute;
+  clampDraftToMin();
+}
+
+/** 将草稿抬到不低于 minHm */
+function clampDraftToMin(): void {
+  const min = minParsed.value;
+  if (!min) {
+    return;
+  }
+  if (draftHour.value < min.hour) {
+    draftHour.value = min.hour;
+    draftMinute.value = min.minute;
+    return;
+  }
+  if (draftHour.value === min.hour && draftMinute.value < min.minute) {
+    draftMinute.value = min.minute;
+  }
+}
+
+/** 选择小时；禁用项忽略，并按需抬升分钟 */
+function handleSelectHour(hour: number): void {
+  if (isHourDisabled(hour)) {
+    return;
+  }
+  draftHour.value = hour;
+  clampDraftToMin();
+}
+
+/** 选择分钟；禁用项忽略 */
+function handleSelectMinute(minute: number): void {
+  if (isMinuteDisabled(minute)) {
+    return;
+  }
+  draftMinute.value = minute;
 }
 
 /** 滚动列表使当前项居中 */
@@ -68,8 +144,14 @@ async function handleVisibleChange(open: boolean): Promise<void> {
   await scrollOptionIntoView(minuteListRef.value, draftMinute.value);
 }
 
-/** 确认并写回 */
+/** 确认并写回；低于下限时拦截 */
 function handleConfirm(): void {
+  const minHm = props.minHm?.trim();
+  if (minHm && compareHm(draftTimeText.value, minHm) < 0) {
+    ElMessage.warning(`测量时间不能早于入院时间 ${minHm}`);
+    clampDraftToMin();
+    return;
+  }
   modelValue.value = draftTimeText.value;
   visible.value = false;
 }
@@ -118,10 +200,11 @@ watch(visible, async (open) => {
             v-for="hour in hourOptions"
             :key="`h-${hour}`"
             class="time-field-option"
-            :class="{ 'is-active': hour === draftHour }"
+            :class="{ 'is-active': hour === draftHour, 'is-disabled': isHourDisabled(hour) }"
             :data-value="hour"
+            :disabled="isHourDisabled(hour)"
             type="button"
-            @click="draftHour = hour"
+            @click="handleSelectHour(hour)"
           >
             {{ String(hour).padStart(2, '0') }}
           </button>
@@ -131,10 +214,14 @@ watch(visible, async (open) => {
             v-for="minute in minuteOptions"
             :key="`m-${minute}`"
             class="time-field-option"
-            :class="{ 'is-active': minute === draftMinute }"
+            :class="{
+              'is-active': minute === draftMinute,
+              'is-disabled': isMinuteDisabled(minute),
+            }"
             :data-value="minute"
+            :disabled="isMinuteDisabled(minute)"
             type="button"
-            @click="draftMinute = minute"
+            @click="handleSelectMinute(minute)"
           >
             {{ String(minute).padStart(2, '0') }}
           </button>
@@ -210,6 +297,11 @@ watch(visible, async (open) => {
   background: var(--el-color-primary-light-9);
   color: var(--el-color-primary);
   font-weight: 700;
+}
+.time-field-option.is-disabled {
+  color: var(--el-text-color-disabled);
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 .time-field-footer {
   display: flex;

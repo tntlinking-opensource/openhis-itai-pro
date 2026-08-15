@@ -4,6 +4,7 @@
 import type { PageParams } from '#/types/api-response';
 
 import { publicRequestClient } from '#/api/request';
+import { reportLongRequestConfig } from '#/constants/report-request-timeout';
 
 const BASE = '/inventoryPeriodBalanceDetail';
 
@@ -108,6 +109,7 @@ export async function pagePeriodBalanceDetailApi(body: PagePeriodBalanceDetailRe
   return publicRequestClient.post<PagePeriodBalanceDetailResponse>(
     `${BASE}/pagePeriodBalanceDetail`,
     body,
+    reportLongRequestConfig(),
   );
 }
 
@@ -116,5 +118,6 @@ export async function exportPeriodBalanceDetailApi(body: ExportPeriodBalanceDeta
   return publicRequestClient.post<ExportPeriodBalanceDetailResponse>(
     `${BASE}/exportPeriodBalanceDetail`,
     body,
+    reportLongRequestConfig(),
   );
 }

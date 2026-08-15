@@ -71,16 +71,19 @@ export const INSURANCE_CONTRACT_CATEGORY_PRIORITY = [
   CHARGE_TYPE_CATEGORY.MUNICIPAL_INSURANCE,
 ] as const;
 
-/** 发卡地/参保地前缀 → 推荐医保费用性质类别（吉林：2299 省 / 2201 市） */
+/**
+ * 发卡地/参保地前缀 → 推荐医保费用性质类别。
+ * 2201→市；其余有效参保地（省内异地/省本级/省外，长度≥4）→省；无效码不推荐。
+ */
 export function inferInsuranceCategoryFromInsuplc(insuplcAdmdvs?: string): null | string {
   const insu = String(insuplcAdmdvs ?? '').replaceAll(/\D/g, '');
-  if (insu.startsWith('2299')) {
-    return CHARGE_TYPE_CATEGORY.PROVINCIAL_INSURANCE;
+  if (insu.length < 4) {
+    return null;
   }
   if (insu.startsWith('2201')) {
     return CHARGE_TYPE_CATEGORY.MUNICIPAL_INSURANCE;
   }
-  return null;
+  return CHARGE_TYPE_CATEGORY.PROVINCIAL_INSURANCE;
 }
 
 export function normalizeInsuplcAdmdvs(admdvs?: string): string {

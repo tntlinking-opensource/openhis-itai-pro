@@ -1,12 +1,15 @@
 import type {
   ConfirmOutpatientChargeSettlementRequest,
   ConfirmOutpatientChargeSettlementResponse,
+  ConfirmOutpatientInsuranceBeforeScanRequest,
+  ConfirmOutpatientInsuranceBeforeScanResponse,
   LoadChargePageInitRequest,
   LoadChargePageInitResponse,
   LoadPendingChargeItemsRequest,
   LoadPendingChargeItemsResponse,
   PageOutpatientChargeQueueRequest,
   PageOutpatientChargeQueueResponse,
+  PrepareUnionPayMakeupCollectRequest,
   PreSettleOutpatientChargesRequest,
   PreSettleOutpatientChargesResponse,
   PrintChargeReceiptParams,
@@ -79,6 +82,16 @@ export async function httpPreSettleOutpatientCharges(
   );
 }
 
+/** 银联补收：复用已确认 2207，生成可扫码落账草稿（不重新预结算） */
+export async function httpPrepareUnionPayMakeupCollect(
+  body: PrepareUnionPayMakeupCollectRequest,
+): Promise<PreSettleOutpatientChargesResponse> {
+  return publicRequestClient.post<PreSettleOutpatientChargesResponse>(
+    '/outpatientCharge/prepareUnionPayMakeupCollect',
+    body,
+  );
+}
+
 /** 门诊正式结算（确认收费；含医保 2207，使用长超时） */
 export async function httpConfirmOutpatientChargeSettlement(
   body: ConfirmOutpatientChargeSettlementRequest,
@@ -86,6 +99,28 @@ export async function httpConfirmOutpatientChargeSettlement(
   return publicRequestClient.post<ConfirmOutpatientChargeSettlementResponse>(
     '/outpatientCharge/confirmOutpatientChargeSettlement',
     body,
+    chsLongRequestConfig(),
+  );
+}
+
+/** 银联扫码前先完成医保 2207（失败则不发起 Win 扣款） */
+export async function httpConfirmOutpatientInsuranceBeforeScan(
+  body: ConfirmOutpatientInsuranceBeforeScanRequest,
+): Promise<ConfirmOutpatientInsuranceBeforeScanResponse> {
+  return publicRequestClient.post<ConfirmOutpatientInsuranceBeforeScanResponse>(
+    '/outpatientCharge/confirmOutpatientInsuranceBeforeScan',
+    body,
+    chsLongRequestConfig(),
+  );
+}
+
+/** 冲正草稿上已确认的医保 2207（Win 失败或运维补偿；参数名对齐 AppService） */
+export async function httpCompensateInsuranceSettlementsByPayment(body: {
+  paymentDraftId: string;
+}): Promise<void> {
+  await publicRequestClient.post(
+    '/outpatientCharge/compensateInsuranceSettlementsByPayment',
+    { paymentDraftId: body.paymentDraftId },
     chsLongRequestConfig(),
   );
 }

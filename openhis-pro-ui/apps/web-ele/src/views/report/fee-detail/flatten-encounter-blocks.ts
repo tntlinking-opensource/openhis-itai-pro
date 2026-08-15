@@ -10,7 +10,9 @@ export type FeeDetailTableRow = FeeDetailLineDto & {
   encounterLineCount?: number;
   isFirstLineInEncounter?: boolean;
   patientName?: string;
+  /** 开立科室优先；无则回落就诊科室名 */
   registrationDepartmentName?: string;
+  requestingOrgName?: string;
   rowKey: string;
   rowType: 'line' | 'subtotal';
 };
@@ -36,9 +38,12 @@ export function flattenEncounterBlocksToTableRows(
         isFirstLineInEncounter: lineIndex === 0,
         patientName: block.patientName,
         busNo: block.busNo,
-        registrationDepartmentName: block.registrationDepartmentName,
+        // 列「开立科室」：优先块级 requestingOrgName
+        registrationDepartmentName: block.requestingOrgName ?? block.registrationDepartmentName,
+        requestingOrgName: block.requestingOrgName,
         encounterDate: block.encounterDate,
-        feeNatureDisplay: block.feeNatureDisplay,
+        // 行级账单账户费用性质优先；缺省回落块级首行
+        feeNatureDisplay: line.feeNatureDisplay ?? block.feeNatureDisplay,
         medTypeDisplay: block.medTypeDisplay,
       });
     });
@@ -52,7 +57,6 @@ export function flattenEncounterBlocksToTableRows(
         patientName: '就诊小计',
         purchaseAmount: subtotal.purchaseAmountTotal,
         saleAmount: subtotal.saleAmountTotal,
-        actualReceivedAmount: subtotal.actualReceivedAmountTotal,
       });
     }
   }

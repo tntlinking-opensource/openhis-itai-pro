@@ -7,6 +7,7 @@ import { ref } from 'vue';
 import { RotateCw, Search } from '@vben/icons';
 
 import InvAsideShell from '@inventory/components/inv-aside-shell.vue';
+import InvPrimaryBtn from '@inventory/components/inv-primary-btn.vue';
 import InvQueueCards from '@inventory/components/inv-queue-cards.vue';
 import dayjs from 'dayjs';
 import isoWeek from 'dayjs/plugin/isoWeek';
@@ -23,6 +24,7 @@ defineProps<{
 }>();
 
 const emit = defineEmits<{
+  add: [];
   search: [];
   select: [row: Record<string, unknown>];
 }>();
@@ -96,6 +98,11 @@ function handleRefreshClick() {
 function handleQueueSelect(row: Record<string, unknown>) {
   emit('select', row);
 }
+
+/** 底部/空态：新建空白退库单 */
+function handleAdd() {
+  emit('add');
+}
 </script>
 
 <template>
@@ -160,9 +167,14 @@ function handleQueueSelect(row: Record<string, unknown>) {
         :orders="orders"
         :selected-order="selectedOrder"
         empty-description="暂无退库单"
-        :show-empty-add="false"
+        empty-add-label="新增退库单"
+        @add="handleAdd"
         @select="handleQueueSelect"
       />
+    </template>
+
+    <template #footer>
+      <InvPrimaryBtn label="新增退库单" @click="handleAdd" />
     </template>
   </InvAsideShell>
 </template>

@@ -198,7 +198,19 @@ function formatSummaryQty(row: InpatientMedicationSummaryLineDto) {
   return parts.join(' + ');
 }
 
-/** 计划发药时间展示。 */
+/** 明细行客户可见执行时间：优先 recorded，回落 planned。 */
+function resolveUsageDisplayTime(row: {
+  recordedTime?: string;
+  plannedDispenseTime?: string;
+}): string {
+  const recorded = String(row.recordedTime ?? '').trim();
+  if (recorded) {
+    return recorded;
+  }
+  return String(row.plannedDispenseTime ?? '').trim();
+}
+
+/** 执行/计划时间展示。 */
 function formatDateTime(value?: string) {
   const text = String(value ?? '').trim();
   if (!text) {
@@ -537,15 +549,15 @@ onMounted(async () => {
                 </template>
               </ElTableColumn>
               <ElTableColumn
-                prop="plannedDispenseTime"
-                label="计划发药时间"
+                prop="recordedTime"
+                label="执行时间"
                 width="168"
                 align="center"
                 header-align="center"
                 show-overflow-tooltip
               >
                 <template #default="{ row }">
-                  {{ formatDateTime(row.plannedDispenseTime) }}
+                  {{ formatDateTime(resolveUsageDisplayTime(row)) }}
                 </template>
               </ElTableColumn>
               <ElTableColumn

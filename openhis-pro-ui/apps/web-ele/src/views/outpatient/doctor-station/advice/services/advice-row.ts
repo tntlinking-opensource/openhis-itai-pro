@@ -62,14 +62,19 @@ export function validateWesternEditLineItem(item: AdviceDrugItem): boolean {
   if (!String(item.selectedId ?? '').trim()) return false;
   const kind = inferAdviceLineEditorKind(item);
   if (kind === 'DEVICE') {
-    return Number(item.totalAmount) > 0 && String(item.totalAmountUnit ?? '').trim() !== '';
+    return (
+      Number(item.totalAmount) > 0 &&
+      String(item.totalAmountUnit ?? '').trim() !== '' &&
+      Boolean(String(item.contractId ?? '').trim())
+    );
   }
   if (kind === 'SERVICE') {
     return (
       Number(item.serviceQuantity) > 0 &&
       Number(item.totalAmount) > 0 &&
       String(item.totalAmountUnit ?? '').trim() !== '' &&
-      String(item.performOrgId ?? '').trim() !== ''
+      String(item.performOrgId ?? '').trim() !== '' &&
+      Boolean(String(item.contractId ?? '').trim())
     );
   }
   return validateWesternMedicationLineItem(item);

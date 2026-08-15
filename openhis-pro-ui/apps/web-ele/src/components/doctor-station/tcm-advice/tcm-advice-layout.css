@@ -15,9 +15,55 @@
 }
 
 .tcm-tree-node-label {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.tcm-tree-node-main {
   flex: 1;
   min-width: 0;
   overflow: hidden;
+}
+
+/* 历史叶子：收掉树自带箭头空白，改用左侧固定 lead 列放「本次」 */
+.tcm-template-tree
+  .el-tree-node__content:has(.tcm-tree-node-label--history)
+  > .el-tree-node__expand-icon.is-leaf {
+  width: 0 !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden;
+  visibility: hidden;
+}
+
+.tcm-history-lead {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  margin-right: 4px;
+}
+
+.tcm-history-current-badge {
+  display: inline-block;
+  box-sizing: border-box;
+  width: 24px;
+  height: 16px;
+  border: 1px solid var(--el-color-primary-light-5);
+  border-radius: 2px;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: -1px;
+  line-height: 14px;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .tcm-template-tree .el-tree-node__content:hover {
@@ -78,12 +124,75 @@
   gap: 8px;
 }
 
-/* 待签发/草稿状态：warning light，比默认 info plain 更清晰 */
-.tcm-rx-panel__status.el-tag--warning {
+/* 医嘱状态：紧邻页签右侧 */
+.tcm-rx-panel__status-group {
+  display: inline-flex;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  gap: 6px;
+  align-items: center;
+}
+
+/* 费用状态：放在操作按钮左侧，与页签旁医嘱状态拉开 */
+.tcm-rx-panel__charge-group {
+  display: inline-flex;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  gap: 6px;
+  align-items: center;
+  margin-right: 4px;
+  padding-right: 12px;
+  border-right: 1px solid var(--el-border-color-lighter);
+}
+
+.tcm-rx-panel__status-label,
+.tcm-rx-panel__charge-label {
+  flex-shrink: 0;
+  color: var(--el-text-color-primary);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 20px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* 顶栏状态 Tag：略加深即可，避免过重 */
+.tcm-rx-panel__status.el-tag,
+.tcm-rx-panel__charge-status.el-tag {
+  --el-tag-font-size: 12px;
+  height: 22px;
+  padding: 0 8px;
+  font-weight: 500;
+}
+
+.tcm-rx-panel__status.el-tag--success,
+.tcm-rx-panel__charge-status.el-tag--success {
+  border-color: var(--el-color-success-light-5);
+  background: var(--el-color-success-light-8);
+  color: var(--el-color-success-dark-2);
+}
+
+.tcm-rx-panel__status.el-tag--warning,
+.tcm-rx-panel__charge-status.el-tag--warning {
   border-color: var(--el-color-warning-light-5);
   background: var(--el-color-warning-light-8);
   color: var(--el-color-warning-dark-2);
-  font-weight: 600;
+}
+
+.tcm-rx-panel__status.el-tag--danger,
+.tcm-rx-panel__charge-status.el-tag--danger {
+  border-color: var(--el-color-danger-light-5);
+  background: var(--el-color-danger-light-8);
+  color: var(--el-color-danger-dark-2);
+}
+
+.tcm-rx-panel__status.el-tag--info,
+.tcm-rx-panel__charge-status.el-tag--info,
+.tcm-rx-panel__status.el-tag--primary,
+.tcm-rx-panel__charge-status.el-tag--primary {
+  border-color: var(--el-color-info-light-5);
+  background: var(--el-color-info-light-8);
+  color: var(--el-color-info-dark-2);
 }
 
 /* 处方面板：贴顶栏，无圆角，无内边距外壳 */
@@ -135,8 +244,18 @@
 }
 
 .tcm-rx-panel__search {
-  display: flex;
+  /* 与下方药表同栅格，选品检索从特殊煎法列起 */
+  display: grid;
   flex-shrink: 0;
+  grid-template-columns:
+    40px
+    minmax(73px, 1fr)
+    minmax(72px, 0.9fr)
+    minmax(96px, 1fr)
+    minmax(72px, 0.9fr)
+    minmax(80px, 0.95fr)
+    minmax(88px, 1fr)
+    56px;
   align-items: center;
   margin: 0;
   padding: 12px 12px 10px;
@@ -146,11 +265,17 @@
 }
 
 .tcm-rx-panel__search-host {
+  /* 检索从剂量列偏右起，搜索框宽度撑到行尾 */
   display: flex;
   flex-shrink: 0;
+  grid-column: 3 / -1;
   align-items: center;
-  width: 320px;
+  justify-self: stretch;
+  width: auto;
   max-width: 100%;
+  min-width: 0;
+  margin-left: 60px;
+  box-sizing: border-box;
 }
 
 .tcm-rx-panel__search-host:empty {
@@ -180,4 +305,104 @@
   padding: 8px 12px;
   background: #fff;
   border-top: 0;
+}
+
+/* 侧栏历史/组套药材 Tooltip（teleport 到 body，不走 SFC scoped） */
+.tcm-sidebar-herb-tip.el-popper {
+  padding: 0 !important;
+  border: 1px solid var(--el-border-color-lighter) !important;
+  border-radius: 8px !important;
+  background: #fff !important;
+  box-shadow:
+    0 8px 24px rgb(15 23 42 / 10%),
+    0 2px 6px rgb(15 23 42 / 6%) !important;
+}
+
+.tcm-sidebar-herb-tip.el-popper .el-popper__arrow::before {
+  border: 1px solid var(--el-border-color-lighter);
+  background: #fff;
+}
+
+.tcm-herb-tip {
+  min-width: 168px;
+  max-width: 248px;
+  padding: 10px 12px;
+}
+
+.tcm-herb-tip__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--el-border-color-extra-light);
+}
+
+.tcm-herb-tip__title {
+  color: var(--el-text-color-primary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.tcm-herb-tip__count {
+  flex-shrink: 0;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.tcm-herb-tip__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.tcm-herb-tip__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 22px;
+  padding: 2px 0;
+}
+
+.tcm-herb-tip__name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--el-text-color-regular);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tcm-herb-tip__dose {
+  flex-shrink: 0;
+  color: var(--el-color-primary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.tcm-herb-tip__dose--empty {
+  color: var(--el-text-color-placeholder);
+  font-weight: 400;
+}
+
+.tcm-herb-tip__empty {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 18px;
 }

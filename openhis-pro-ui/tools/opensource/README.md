@@ -34,12 +34,12 @@ powershell -File tools\opensource\export-opensource.ps1 -Force -OutputDir dist\o
 
 ## 排除项
 
-| 路径 | 原因 |
-| --- | --- |
-| `projects/` | 院点 env、overrides（客户定制） |
-| `.cursor/` | 私有 Agent/规则 |
-| `node_modules/`、`dist/`、`.turbo/` | 构建产物与依赖 |
-| 根目录临时打印 JSON、`vite.config.local.mts` 等 | 本地联调/草稿 |
+| 路径                                            | 原因                            |
+| ----------------------------------------------- | ------------------------------- |
+| `projects/`                                     | 院点 env、overrides（客户定制） |
+| `.cursor/`                                      | 私有 Agent/规则                 |
+| `node_modules/`、`dist/`、`.turbo/`             | 构建产物与依赖                  |
+| 根目录临时打印 JSON、`vite.config.local.mts` 等 | 本地联调/草稿                   |
 
 完整列表见 `opensource-export-manifest.json`（含 `DefaultOutputDir`）。
 

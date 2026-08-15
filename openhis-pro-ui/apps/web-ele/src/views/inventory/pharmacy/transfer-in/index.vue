@@ -167,6 +167,7 @@ onMounted(async () => {
       />
     </template>
     <TransferMainPane
+      :queue-card-row="selectedOrder"
       class="min-h-0 flex-1"
       domain="pharmacy"
       variant="in"

@@ -56,6 +56,15 @@ const chsRoutes: RouteRecordRaw[] = [
       title: '事前提醒统计',
     },
   },
+  {
+    name: 'ChsInpatientMedcasOps',
+    path: '/chs/medcas-ops',
+    component: () => import('#/chs/medcas-ops/index.vue'),
+    meta: {
+      hideInMenu: true,
+      title: '住院业务上报',
+    },
+  },
 ];
 
 export default chsRoutes;

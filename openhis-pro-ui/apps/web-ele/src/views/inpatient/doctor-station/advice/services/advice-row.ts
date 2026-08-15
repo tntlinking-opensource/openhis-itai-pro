@@ -195,7 +195,7 @@ export function rowLooksDraft(row: AdviceRowItem): boolean {
   return /待签发|草稿|DRAFT|暂存|新开/i.test(text);
 }
 
-/** 住院长期医嘱停嘱：已签发且 therapy 为 LONG_TERM，且未停嘱 */
+/** 住院长期医嘱停嘱：须已开嘱校对（VERIFIED），therapy 为 LONG_TERM，且未停嘱 */
 export function rowLooksStopLongTermEligible(row: AdviceRowItem): boolean {
   if (row.isEditor) return false;
   if (!resourceKeyFromRow(row)) return false;
@@ -207,13 +207,27 @@ export function rowLooksStopLongTermEligible(row: AdviceRowItem): boolean {
   const statusCode = String(row.statusEnum ?? '')
     .trim()
     .toUpperCase();
-  if (statusCode === 'STOPPED') return false;
-  const blob = `${row.status ?? ''} ${row.statusEnum ?? ''}`.toUpperCase();
-  if (/\bSTOPPED\b|已停嘱/.test(blob)) return false;
+  // 未开嘱校对禁止停嘱（业务上应撤回）；仅 VERIFIED 可停
+  if (statusCode !== 'VERIFIED') return false;
   return true;
 }
 
-/** 住院长期医嘱取消停嘱：已停嘱且 therapy 为 LONG_TERM */
+/** 是否已停嘱（含展示文案） */
+export function rowLooksStopped(row: AdviceRowItem): boolean {
+  const statusCode = String(row.statusEnum ?? '')
+    .trim()
+    .toUpperCase();
+  if (statusCode === 'STOPPED') return true;
+  const blob = `${row.status ?? ''} ${row.statusEnum ?? ''}`.toUpperCase();
+  return /\bSTOPPED\b|已停嘱/.test(blob);
+}
+
+/** 是否已完成停嘱校对（有停嘱校对人则医生不可直接取消停嘱） */
+export function rowLooksStopChecked(row: AdviceRowItem): boolean {
+  return Boolean(String(row.stopPerformerCheckId ?? '').trim());
+}
+
+/** 住院长期医嘱取消停嘱：已停嘱、长期，且护士尚未完成停嘱校对 */
 export function rowLooksCancelStopLongTermEligible(row: AdviceRowItem): boolean {
   if (row.isEditor) return false;
   if (!resourceKeyFromRow(row)) return false;
@@ -221,12 +235,9 @@ export function rowLooksCancelStopLongTermEligible(row: AdviceRowItem): boolean 
     .trim()
     .toUpperCase();
   if (therapy && therapy !== 'LONG_TERM') return false;
-  const statusCode = String(row.statusEnum ?? '')
-    .trim()
-    .toUpperCase();
-  if (statusCode === 'STOPPED') return true;
-  const blob = `${row.status ?? ''} ${row.statusEnum ?? ''}`.toUpperCase();
-  return /\bSTOPPED\b|已停嘱/.test(blob);
+  // 已停嘱校对时须护士先取消停嘱校对
+  if (rowLooksStopChecked(row)) return false;
+  return rowLooksStopped(row);
 }
 
 /** 住院长期皮试药追加皮试检查：已勾皮试、长期、未停嘱（IF-IP-DOR-27） */

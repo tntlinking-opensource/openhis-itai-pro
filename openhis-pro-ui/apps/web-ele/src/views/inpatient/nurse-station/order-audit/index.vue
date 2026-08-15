@@ -50,7 +50,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const WRITE_BATCH_LIMIT = 50;
 
-/** 项目类型多选选项（value=code，label 仅展示） */
+/** 项目类型多选选项（value=code，label 仅展示；含须校对的特殊诊疗） */
 const projectTypeOptions: Array<{ label: string; value: NurseStationOrderAuditProjectType }> = [
   { label: '西药', value: 'west' },
   { label: '中药', value: 'tcm' },
@@ -58,6 +58,9 @@ const projectTypeOptions: Array<{ label: string; value: NurseStationOrderAuditPr
   { label: '检查', value: 'exam' },
   { label: '治疗', value: 'treatment' },
   { label: '嘱托', value: 'entrust' },
+  { label: '护理', value: 'nursing' },
+  { label: '转科', value: 'transfer' },
+  { label: '出院', value: 'discharge' },
 ];
 
 const listPanelContext = inject(nurseStationPatientListPanelContextKey, null);
@@ -65,8 +68,6 @@ const listPanelContext = inject(nurseStationPatientListPanelContextKey, null);
 const statusTabs: Array<{ label: string; value: AuditStatus }> = [
   { label: '未校对', value: 'pending' },
   { label: '已校对', value: 'passed' },
-  { label: '已停止', value: 'stopped' },
-  { label: '已作废', value: 'suspended' },
 ];
 
 const activeStatus = ref<AuditStatus>('pending');
@@ -89,16 +90,31 @@ const encounterIds = computed(() =>
 /** 未校对 Tab 才允许批量校对 */
 const verifyActionsEnabled = computed(() => activeStatus.value === 'pending');
 
-/** 未校对/已校对 Tab 允许批量退回（已校对须后端校验无净执行/待发退/不可回退费用） */
-const rejectActionsEnabled = computed(
+/**
+ * 行勾选：pending / passed 均可勾选。
+ * 停嘱待校须可勾选以便「停嘱校对」。
+ */
+const rowSelectionEnabled = computed(
   () => activeStatus.value === 'pending' || activeStatus.value === 'passed',
 );
 
-/** 非未校对 Tab 展示校对人列 */
-const showPerformerCheckColumn = computed(() => activeStatus.value !== 'pending');
+/**
+ * 取消校对按钮：
+ * - passed：有停嘱校对人 → 取消停嘱校对；否则取消开嘱校对
+ * - pending：仅当勾选含开嘱待校行
+ */
+const rejectActionsEnabled = computed(() => {
+  if (activeStatus.value === 'passed') {
+    return true;
+  }
+  if (activeStatus.value !== 'pending') {
+    return false;
+  }
+  return collectSelectedRows().some((r) => r.stopAuditPending !== true);
+});
 
-/** 当前 Tab 是否允许勾选医嘱（与退回范围一致） */
-const rowSelectionEnabled = computed(() => rejectActionsEnabled.value);
+/** 已校对 Tab：同时展示开嘱校对人与停嘱校对人 */
+const showCheckerColumns = computed(() => activeStatus.value === 'passed');
 
 /** 将接口分组与左侧已选患者合并为折叠卡片数据 */
 const visibleCards = computed<PatientOrderCard[]>(() => {
@@ -272,7 +288,7 @@ async function afterWriteSuccess(message: string) {
   }
 }
 
-/** 批量校对通过 */
+/** 批量校对通过（开嘱校对或停嘱校对，由后端按状态分支） */
 async function handleVerifyOrders() {
   if (!verifyActionsEnabled.value) return;
   const rows = collectSelectedRows();
@@ -293,16 +309,89 @@ async function handleVerifyOrders() {
   await afterWriteSuccess(`已成功校对 ${n} 条医嘱`);
 }
 
-/** 批量退回（可选统一原因） */
+/**
+ * 是否已停嘱校对行（已校对 Tab 内：STOPPED 且非停嘱待校）。
+ *
+ * @param row 表格行
+ */
+function isStopCheckedAuditRow(row: NurseStationOrderAuditTableRow): boolean {
+  if (row.stopAuditPending === true) {
+    return false;
+  }
+  const status = String(row.statusEnum ?? '')
+    .trim()
+    .toUpperCase();
+  if (status === 'STOPPED' || row.halted === true) {
+    return true;
+  }
+  // 停嘱校对人有值亦视为已停嘱校对
+  return Boolean(row.stopCheckerName && row.stopCheckerName !== '—');
+}
+
+/**
+ * 退回：已校对且已停嘱 → 取消停嘱校对（确认框）；否则开嘱退回草稿（原因可选）。
+ */
 async function handleRejectOrders() {
   if (!rejectActionsEnabled.value) return;
   const rows = collectSelectedRows();
   if (!assertBatchWithinLimit(rows.length)) return;
 
+  // pending 上误勾停嘱待校：剔除后仅退回开嘱待校行
+  const rejectRows =
+    activeStatus.value === 'pending' ? rows.filter((r) => r.stopAuditPending !== true) : rows;
+  if (rejectRows.length === 0) {
+    ElMessage.warning('停嘱待校医嘱请先「校对通过」，不可退回');
+    return;
+  }
+  if (!assertBatchWithinLimit(rejectRows.length)) return;
+
+  // 已校对：STOPPED → 取消停嘱校对；VERIFIED → 退回草稿
+  if (activeStatus.value === 'passed') {
+    const stopCheckedRows = rejectRows.filter((r) => isStopCheckedAuditRow(r));
+    const openCheckedRows = rejectRows.filter((r) => !isStopCheckedAuditRow(r));
+    // 已停嘱校对：确认框取消停嘱校对（不填原因）
+    if (stopCheckedRows.length > 0) {
+      try {
+        await ElMessageBox.confirm(
+          `确认取消已选 ${stopCheckedRows.length} 条医嘱的停嘱校对？取消后医生可取消停嘱。`,
+          '取消停嘱校对',
+          { type: 'warning', confirmButtonText: '确定', cancelButtonText: '取消' },
+        );
+      } catch {
+        return;
+      }
+      const res = await rejectRequest.run({ items: mapTableRowsToWriteItems(stopCheckedRows) });
+      const n = res.processedCount ?? stopCheckedRows.length;
+      await afterWriteSuccess(`已取消 ${n} 条停嘱校对`);
+    }
+    // 仅开嘱校对：退回草稿
+    if (openCheckedRows.length > 0) {
+      let reason = '';
+      try {
+        const { value } = await ElMessageBox.prompt('请输入退回原因（可选）', '退回', {
+          confirmButtonText: '确定',
+          cancelButtonText: '取消',
+          inputType: 'textarea',
+          inputPlaceholder: '退回原因',
+        });
+        reason = String(value ?? '').trim();
+      } catch {
+        return;
+      }
+      const res = await rejectRequest.run({
+        items: mapTableRowsToWriteItems(openCheckedRows),
+        reason: reason || undefined,
+      });
+      const n = res.processedCount ?? openCheckedRows.length;
+      await afterWriteSuccess(`已退回 ${n} 条医嘱`);
+    }
+    return;
+  }
+
   let reason = '';
   try {
-    const { value } = await ElMessageBox.prompt('请输入退回原因（可选）', '退回医嘱', {
-      confirmButtonText: '确定退回',
+    const { value } = await ElMessageBox.prompt('请输入退回原因（可选）', '退回', {
+      confirmButtonText: '确定',
       cancelButtonText: '取消',
       inputType: 'textarea',
       inputPlaceholder: '退回原因',
@@ -313,11 +402,11 @@ async function handleRejectOrders() {
   }
 
   const res = await rejectRequest.run({
-    items: mapTableRowsToWriteItems(rows),
+    items: mapTableRowsToWriteItems(rejectRows),
     reason: reason || undefined,
   });
-  const n = res.processedCount ?? rows.length;
-  await afterWriteSuccess(`已成功退回 ${n} 条医嘱`);
+  const n = res.processedCount ?? rejectRows.length;
+  await afterWriteSuccess(`已退回 ${n} 条医嘱`);
 }
 </script>
 
@@ -448,21 +537,55 @@ async function handleRejectOrders() {
                     >
                       皮试
                     </span>
-                    <span v-if="row.halted && row.stopTime" class="halt-pill" title="已停嘱">
+                    <span
+                      v-if="row.stopAuditPending"
+                      class="stop-audit-pill"
+                      title="医生已停嘱，待护士停嘱校对"
+                    >
+                      停嘱待校
+                    </span>
+                    <span v-else-if="row.halted && row.stopTime" class="halt-pill" title="已停嘱">
                       停
                     </span>
                   </div>
                 </template>
               </ElTableColumn>
               <ElTableColumn
-                v-if="showPerformerCheckColumn"
+                v-if="showCheckerColumns"
                 prop="performerCheckName"
                 align="center"
                 label="校对人"
                 min-width="96"
               />
-              <ElTableColumn prop="executeTime" align="center" label="开立时间" min-width="160" />
-              <ElTableColumn prop="doctorName" align="center" label="开立医生" min-width="96" />
+              <ElTableColumn
+                v-if="showCheckerColumns"
+                prop="stopCheckerName"
+                align="center"
+                label="停嘱校对人"
+                min-width="108"
+              >
+                <template #default="{ row }">
+                  {{ row.stopCheckerName || '—' }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn align="center" label="开立/停嘱" min-width="200">
+                <template #default="{ row }">
+                  <div class="start-stop-cell">
+                    <div class="start-stop-line start-stop-line--start">
+                      <span class="start-stop-tag">开</span>
+                      <span class="start-stop-text">{{ row.executeTime }}</span>
+                    </div>
+                    <div
+                      v-if="row.stopTime"
+                      class="start-stop-line start-stop-line--stop"
+                      title="停嘱时间 / 停嘱医生"
+                    >
+                      <span class="start-stop-tag">停</span>
+                      <span class="start-stop-text">{{ row.stopTimeDisplay }}</span>
+                    </div>
+                  </div>
+                </template>
+              </ElTableColumn>
             </ElTable>
             <div v-else class="py-6 text-center text-sm text-[var(--el-text-color-secondary)]">
               当前筛选下暂无医嘱
@@ -531,6 +654,21 @@ async function handleRejectOrders() {
   text-align: center;
 }
 
+/** 停嘱待校醒目标识：与开嘱待校行区分 */
+.stop-audit-pill {
+  flex-shrink: 0;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--el-color-danger);
+  color: var(--el-color-white);
+  font-size: 12px;
+  line-height: 20px;
+  text-align: center;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
 .skin-test-pill {
   flex-shrink: 0;
   height: 20px;
@@ -541,6 +679,59 @@ async function handleRejectOrders() {
   font-size: 12px;
   line-height: 20px;
   text-align: center;
+  white-space: nowrap;
+}
+
+/* 开立/停嘱分行；停嘱行用危险色加粗醒目 */
+.start-stop-cell {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  line-height: 1.35;
+}
+
+.start-stop-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.start-stop-tag {
+  flex-shrink: 0;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  border-radius: 3px;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  font-weight: 600;
+}
+
+.start-stop-line--start {
+  color: var(--el-text-color-regular);
+}
+
+.start-stop-line--start .start-stop-tag {
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color);
+}
+
+.start-stop-line--stop {
+  color: var(--el-color-danger);
+  font-weight: 600;
+}
+
+.start-stop-line--stop .start-stop-tag {
+  color: var(--el-color-white);
+  background: var(--el-color-danger);
+}
+
+.start-stop-text {
   white-space: nowrap;
 }
 </style>

@@ -3,6 +3,7 @@ import type { AdviceDrugItem, AdviceProductOption, AdviceRowItem } from './advic
 import type {
   DoctorStationAdviceCatalogRowDto,
   DoctorStationAdviceRowDto,
+  TerminologyOptionDto,
 } from '#/api/doctor-station/advice.types';
 import type { DrugGroupDisplayItem, DrugGroupKey } from '#/utils/doctor-station/drug-group-table';
 
@@ -25,7 +26,7 @@ import {
   resolveServiceApplyFormSortKey,
 } from '#/utils/service-apply-form-group-display';
 
-import { formatUnitPriceYuan } from './advice-format';
+import { formatUnitPriceYuan, terminologyLabel } from './advice-format';
 import { normalizeCatalogUnitBands } from './medication-unit-bands';
 
 /** 医嘱列表映射、成组合并、目录选品、库存展示、旧行回填 */
@@ -328,6 +329,7 @@ export function mapAdviceListRowDto(dto: DoctorStationAdviceRowDto): AdviceRowIt
     extension,
     lineTotalAmount: formatAdviceRowTotalPrice(dto),
     contractId: String(dto.contractId ?? '').trim() || undefined,
+    feeNatureText: String(dto.feeNatureText ?? '').trim() || undefined,
     diagnosisSummary:
       (
         dto.conditionDefinitionName ||
@@ -391,6 +393,9 @@ export function mapAdviceListRowDto(dto: DoctorStationAdviceRowDto): AdviceRowIt
     serviceRequestDetails: dto.serviceRequestDetails ?? undefined,
     catalogCategoryCode:
       String(dto.catalogCategoryCode ?? dto.categoryCode ?? '').trim() || undefined,
+    ...(String(dto.chrgitmLvText ?? '').trim()
+      ? { chrgitmLvText: String(dto.chrgitmLvText).trim() }
+      : {}),
   };
 }
 
@@ -651,6 +656,8 @@ function doctorStationAdviceRowDtoToDrugGroupItem(
     usage: String(dto.methodName ?? dto.methodCode ?? '').trim(),
     frequency: String(dto.rateName ?? dto.rateCode ?? '').trim(),
     medicationDays: dto.dispensePerDuration ?? '',
+    speedDisplay:
+      String(dto.speedName ?? '').trim() || String(dto.speedCode ?? '').trim() || undefined,
     dosageDisplay: String(dto.dosageDisplay ?? '').trim() || undefined,
     splitDose: dto.splitDose ?? undefined,
     splitDoseUnitCode: String(dto.splitDoseUnitCode ?? '').trim() || undefined,
@@ -676,6 +683,28 @@ function parseAdviceLineAmountYuan(text: string): number {
     .replaceAll(/[^\d.-]/g, '');
   const n = Number(normalized);
   return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * 列表「费用性质」回填：优先接口 feeNatureText；缺省时用 init 下拉按 contractId 取合同名。
+ * 后端未识别 category_enum 数字码时仍可先展示合同名，避免列恒为 —。
+ */
+export function enrichAdviceListFeeNatureText(
+  rows: readonly AdviceRowItem[],
+  feeNatureOptions: readonly TerminologyOptionDto[] | undefined,
+): AdviceRowItem[] {
+  if (!rows.length) return [...rows];
+  const options = feeNatureOptions ?? [];
+  return rows.map((row) => {
+    if (row.isEditor) return row;
+    const fromApi = String(row.feeNatureText ?? '').trim();
+    if (fromApi) return row;
+    const contractId = String(row.contractId ?? '').trim();
+    if (!contractId) return row;
+    const label = terminologyLabel(options, contractId);
+    if (!label || label === '—') return row;
+    return { ...row, feeNatureText: label };
+  });
 }
 
 /** 汇总医嘱列表各明细行总金额（排除嵌入编辑卡虚拟行；成组行按合并后行金额计一次） */

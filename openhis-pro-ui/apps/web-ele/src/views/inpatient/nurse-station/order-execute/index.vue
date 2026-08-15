@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { NurseStationModulePatient } from '../components/nurse-station-module-patient.types';
 import type {
+  NurseStationOrderExecutePlanSchedule,
   NurseStationOrderExecutePlanSlot,
   NurseStationOrderExecuteProjectType,
   NurseStationOrderExecuteTableRow,
@@ -8,10 +9,11 @@ import type {
 
 import type { NurseStationOrderExecuteTab } from '#/api/inpatient/nurse-station/inpatient-nurse-station-order-execute.types';
 
-import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, h, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
+import { ArrowRight } from '@element-plus/icons-vue';
 import dayjs from 'dayjs';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessage, ElMessageBox, ElTimePicker } from 'element-plus';
 
 import { httpCancelNurseStationOrderExecutions } from '#/api/inpatient/nurse-station/inpatient-nurse-station-order-cancel-execute.http';
 import {
@@ -34,7 +36,8 @@ import {
   adviceTherapyTypeClass,
   getAdviceStatusTagType,
 } from '#/views/inpatient/doctor-station/advice/services/advice-list';
-import { printInfusionLabel } from '#/utils/print/print-nurse-station';
+import { SERVICE_CATEGORY_PROOF } from '#/utils/print/constants/service-request-category-codes';
+import { printInfusionLabel, printSpecimenBarcode } from '#/utils/print/print-nurse-station';
 import { print, PRINT_SCENARIO } from '#/utils/print/runtime';
 
 import NurseStationPatientOrderCollapseTitle from '../components/nurse-station-patient-order-collapse-title.vue';
@@ -48,7 +51,6 @@ import {
   mapSelectedSlotsToSkipItems,
   mapSelectedSlotsToWriteItems,
   mergeExecutePatientGroups,
-  NURSE_STATION_ORDER_EXECUTE_PROJECT_TYPES,
   resolveExecuteActualTime,
   resolveExecuteBindItemDisplayText,
   resolveExecuteBindItemKey,
@@ -70,6 +72,14 @@ type ExecuteTab = NurseStationOrderExecuteTab;
 type TimeTypeFilter = 'all' | 'long' | 'temp';
 /** 右键行打印类型文案 */
 type OrderRowPrintDocType = NonNullable<ReturnType<typeof resolveExecuteRowPrintDocType>>;
+/** 批量改时跳过项（弹窗分行展示） */
+interface BatchAdjustSkipReason {
+  patientLabel: string;
+  orderLabel: string;
+  planLabel: string;
+  actualLabel: string;
+  reason: string;
+}
 
 defineOptions({
   name: 'InpatientNurseStationOrderExecuteModule',
@@ -90,8 +100,6 @@ interface ExecutePatientCard {
 interface Props {
   patients?: NurseStationModulePatient[];
 }
-
-const WRITE_BATCH_LIMIT = 50;
 
 /** 项目类型多选选项（value=code，label 仅展示） */
 const projectTypeOptions: Array<{ label: string; value: NurseStationOrderExecuteProjectType }> = [
@@ -126,6 +134,11 @@ const slotAdjustHHmmByKey = ref<Record<string, string>>({});
 const slotTimeEditingByKey = ref<Record<string, boolean>>({});
 /** 就地 TimePicker 实例（用于「修改时间」后自动展开面板） */
 const slotTimePickerInstByKey = new Map<string, { handleOpen?: () => void }>();
+/**
+ * 多日时点展开态（按医嘱行 id）；未记录视为折叠。
+ * 默认折叠，避免长期医嘱时间列过长。
+ */
+const scheduleExpandedByRowId = ref<Record<string, boolean>>({});
 const ordersByEncounterId = ref<Map<string, NurseStationOrderExecuteTableRow[]>>(new Map());
 const executeDeadline = ref(dayjs().endOf('day').format('YYYY-MM-DD HH:mm:ss'));
 
@@ -259,12 +272,13 @@ function buildSelectedSlotKeySet(): Set<string> {
   return keys;
 }
 
-/** 清空槽位勾选、改时覆盖与就地编辑态 */
+/** 清空槽位勾选、改时覆盖、就地编辑态与时点折叠展开态 */
 function clearSlotSelection() {
   slotSelectionByKey.value = {};
   slotAdjustHHmmByKey.value = {};
   slotTimeEditingByKey.value = {};
   slotTimePickerInstByKey.clear();
+  scheduleExpandedByRowId.value = {};
 }
 
 /** 勾选当前 Tab 下全部可操作时点 */
@@ -423,6 +437,53 @@ function resolveSlotCheckboxLabel(slot: NurseStationOrderExecutePlanSlot): strin
   return operator ? `${override} ${operator}` : override;
 }
 
+/** MM-DD → M.D（折叠摘要用，如 08-04 → 8.4） */
+function formatScheduleDateShort(mmDd: string): string {
+  const [monthPart, dayPart] = String(mmDd ?? '')
+    .trim()
+    .split('-');
+  const month = Number(monthPart);
+  const day = Number(dayPart);
+  if (!Number.isFinite(month) || !Number.isFinite(day)) {
+    return String(mmDd ?? '').trim();
+  }
+  return `${month}.${day}`;
+}
+
+/** 多日时点折叠摘要：首日-末日，如 8.4-8.6 */
+function resolveScheduleDateRangeText(schedules: NurseStationOrderExecutePlanSchedule[]): string {
+  if (schedules.length === 0) {
+    return '';
+  }
+  const first = formatScheduleDateShort(schedules[0]!.date);
+  if (schedules.length === 1) {
+    return first;
+  }
+  const last = formatScheduleDateShort(schedules[schedules.length - 1]!.date);
+  return `${first}-${last}`;
+}
+
+/** 是否可折叠时点（跨日才折叠；单日直接展示） */
+function canCollapseRowSchedules(row: NurseStationOrderExecuteTableRow): boolean {
+  return (row.planSchedules?.length ?? 0) > 1;
+}
+
+/** 该行时点是否已展开（默认折叠） */
+function isScheduleExpanded(rowId: string): boolean {
+  return !!scheduleExpandedByRowId.value[rowId];
+}
+
+/** 切换医嘱行时点折叠/展开 */
+function toggleScheduleExpanded(rowId: string) {
+  const next = { ...scheduleExpandedByRowId.value };
+  if (next[rowId]) {
+    delete next[rowId];
+  } else {
+    next[rowId] = true;
+  }
+  scheduleExpandedByRowId.value = next;
+}
+
 /** 关闭医嘱行/时点右键菜单 */
 function closeSlotContextMenu() {
   slotContextMenuVisible.value = false;
@@ -438,6 +499,15 @@ const contextMenuRowPrintDocType = computed(() => {
     return null;
   }
   return resolveExecuteRowPrintDocType(row);
+});
+
+/** 右键行是否可打采血贴（检验 categoryEnum=22） */
+const contextMenuCanPrintSpecimenBarcode = computed(() => {
+  const row = slotContextMenuRow.value;
+  if (!row || row.orderType !== 'SERVICE_REQUEST') {
+    return false;
+  }
+  return String(row.categoryEnum ?? '').trim() === SERVICE_CATEGORY_PROOF;
 });
 
 /** 右键打印菜单文案 */
@@ -545,6 +615,21 @@ function collectSelectedSlotsOnRow(
       if (selected.has(slot.slotKey)) {
         slots.push(slot);
       }
+    }
+  }
+  return slots;
+}
+
+/** 收集当前 Tab 下全部已勾选槽位（跨患者） */
+function collectSelectedSlots(): NurseStationOrderExecutePlanSlot[] {
+  const selected = buildSelectedSlotKeySet();
+  if (selected.size === 0) {
+    return [];
+  }
+  const slots: NurseStationOrderExecutePlanSlot[] = [];
+  for (const slot of allVisiblePlanSlots.value) {
+    if (selected.has(slot.slotKey)) {
+      slots.push(slot);
     }
   }
   return slots;
@@ -662,6 +747,199 @@ function bindSlotTimePickerRef(slotKey: string, el: unknown) {
   slotTimePickerInstByKey.delete(slotKey);
 }
 
+/** 弹窗选择统一改时 HH:mm（日期仍跟各点计划日） */
+async function promptBatchExecuteHHmm(slotCount: number): Promise<null | string> {
+  let picked = dayjs().format('HH:mm');
+  try {
+    await ElMessageBox({
+      title: '批量修改执行时间',
+      message: h({
+        setup() {
+          const value = ref(picked);
+          return () =>
+            h('div', { class: 'execute-batch-time-prompt' }, [
+              h(
+                'p',
+                { style: 'margin: 0 0 12px; color: var(--el-text-color-regular)' },
+                `已选 ${slotCount} 个计划点，将统一改为以下时分（日期仍跟各点计划日）。`,
+              ),
+              h(ElTimePicker, {
+                modelValue: value.value,
+                'onUpdate:modelValue': (v: unknown) => {
+                  const next = String(v ?? '').trim();
+                  value.value = next;
+                  picked = next;
+                },
+                format: 'HH:mm',
+                valueFormat: 'HH:mm',
+                clearable: false,
+                teleported: true,
+                style: 'width: 100%',
+              }),
+            ]);
+        },
+      }),
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      distinguishCancelAndClose: true,
+    });
+    return normalizeSlotHHmm(picked) || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 将同一 HH:mm 写入多个槽位改时覆盖（逐槽校验入院~出院、开立~停嘱）。
+ * @returns applied 成功数；skipped 未通过数；skipReasons 逐条原因
+ */
+function applyBatchSlotAdjustHHmm(
+  slots: NurseStationOrderExecutePlanSlot[],
+  hhmm: string,
+): { applied: number; skipReasons: BatchAdjustSkipReason[]; skipped: number } {
+  const normalized = normalizeSlotHHmm(hhmm);
+  if (!normalized || slots.length === 0) {
+    return { applied: 0, skipped: slots.length, skipReasons: [] };
+  }
+  clearSlotTimeEditing();
+  const adjustNext = { ...slotAdjustHHmmByKey.value };
+  let applied = 0;
+  const skipReasons: BatchAdjustSkipReason[] = [];
+  // 跨患者时窗不同：逐槽校验，通过的写入覆盖
+  for (const slot of slots) {
+    const boundErr = validateSlotAdjustAgainstEncounterBounds(slot, normalized);
+    if (boundErr) {
+      skipReasons.push(formatSlotAdjustSkipReason(slot, normalized, boundErr));
+      continue;
+    }
+    adjustNext[slot.slotKey] = normalized;
+    applied += 1;
+  }
+  slotAdjustHHmmByKey.value = adjustNext;
+  return { applied, skipped: skipReasons.length, skipReasons };
+}
+
+/**
+ * 组装单槽跳过原因（弹窗分行展示用）。
+ */
+function formatSlotAdjustSkipReason(
+  slot: NurseStationOrderExecutePlanSlot,
+  hhmm: string,
+  reason: string,
+): BatchAdjustSkipReason {
+  const row = findExecuteRowBySlotKey(slot.slotKey);
+  const patient = row ? findModulePatientByEncounterId(String(row.encounterId ?? '')) : undefined;
+  const patientLabel = patient
+    ? `${patient.bedNo || '-'}床 ${patient.name || ''}`.trim()
+    : '未知患者';
+  const orderLabel = String(row?.content ?? '').trim() || '医嘱';
+  const planLabel = String(slot.planTime ?? '').trim() || '-';
+  const actualLabel =
+    resolveExecuteActualTime(slot.planTime, hhmm, slot.defaultActualTime) || `${hhmm}`;
+  return {
+    patientLabel,
+    orderLabel,
+    planLabel,
+    actualLabel,
+    reason,
+  };
+}
+
+/** 反馈批量改时结果（有跳过则弹窗分行列原因） */
+async function notifyBatchAdjustResult(
+  applied: number,
+  skipped: number,
+  hhmm: string,
+  skipReasons: BatchAdjustSkipReason[],
+) {
+  if (applied > 0 && skipped === 0) {
+    ElMessage.success(`已将 ${applied} 个计划点统一改为 ${hhmm}`);
+    return;
+  }
+  if (skipReasons.length === 0) {
+    ElMessage.warning(
+      applied === 0
+        ? '所选计划点均未通过时间校验，未修改'
+        : `已将 ${applied} 个计划点改为 ${hhmm}，另有 ${skipped} 个未通过校验已跳过`,
+    );
+    return;
+  }
+  const summary =
+    applied === 0
+      ? `所选 ${skipped} 个计划点均未通过校验，未修改：`
+      : `已将 ${applied} 个计划点改为 ${hhmm}，另有 ${skipped} 个未通过校验已跳过：`;
+  const previewReasons = skipReasons.slice(0, 20);
+  const moreCount = skipReasons.length - previewReasons.length;
+  await ElMessageBox.alert(
+    h('div', { class: 'execute-batch-adjust-result' }, [
+      h(
+        'p',
+        {
+          style:
+            'margin: 0 0 10px; color: var(--el-text-color-primary); line-height: 1.5; font-weight: 500',
+        },
+        summary,
+      ),
+      h(
+        'ul',
+        {
+          style: 'margin: 0; padding: 0; list-style: none; max-height: 360px; overflow: auto',
+        },
+        previewReasons.map((item, index) =>
+          h(
+            'li',
+            {
+              style:
+                'margin: 0 0 10px; padding: 8px 10px; border-radius: 4px; background: var(--el-fill-color-light); line-height: 1.55; color: var(--el-text-color-regular)',
+            },
+            [
+              h(
+                'div',
+                { style: 'color: var(--el-text-color-primary)' },
+                `${index + 1}. ${item.patientLabel} · ${item.orderLabel}`,
+              ),
+              h('div', null, `计划 ${item.planLabel} → ${item.actualLabel}`),
+              h('div', { style: 'color: var(--el-color-warning)' }, `原因：${item.reason}`),
+            ],
+          ),
+        ),
+      ),
+      moreCount > 0
+        ? h(
+            'p',
+            {
+              style: 'margin: 0; color: var(--el-text-color-secondary); line-height: 1.5',
+            },
+            `…另有 ${moreCount} 条未列出`,
+          )
+        : null,
+    ]),
+    '批量修改执行时间',
+    {
+      type: 'warning',
+      confirmButtonText: '知道了',
+    },
+  );
+}
+
+/** 工具栏：勾选后批量改执行时间为同一时分 */
+async function handleToolbarBatchAdjustTime() {
+  if (!executeActionsEnabled.value) {
+    return;
+  }
+  const slots = collectSelectedSlots();
+  if (slots.length === 0) {
+    ElMessage.warning('请先勾选要改时间的计划点');
+    return;
+  }
+  const picked = await promptBatchExecuteHHmm(slots.length);
+  if (!picked) {
+    return;
+  }
+  const { applied, skipped, skipReasons } = applyBatchSlotAdjustHHmm(slots, picked);
+  await notifyBatchAdjustResult(applied, skipped, picked, skipReasons);
+}
+
 /** 右键「修改时间」：仅当前槽就地编辑，并自动展开时分面板 */
 async function handleContextMenuAdjustCurrentTime() {
   if (!executeActionsEnabled.value) {
@@ -677,8 +955,8 @@ async function handleContextMenuAdjustCurrentTime() {
   slotTimePickerInstByKey.get(slot.slotKey)?.handleOpen?.();
 }
 
-/** 右键「修改当前医嘱已选时间」：仅当前医嘱内已勾选时点就地编辑 */
-function handleContextMenuAdjustSelectedTime() {
+/** 右键「修改当前医嘱已选时间」：弹窗选同一时分写入当前医嘱已勾选点 */
+async function handleContextMenuAdjustSelectedTime() {
   if (!executeActionsEnabled.value) {
     return;
   }
@@ -692,21 +970,37 @@ function handleContextMenuAdjustSelectedTime() {
     ElMessage.warning('当前医嘱没有勾选的计划时点');
     return;
   }
-  enterSlotTimeEditing(slots);
+  const picked = await promptBatchExecuteHHmm(slots.length);
+  if (!picked) {
+    return;
+  }
+  const { applied, skipped, skipReasons } = applyBatchSlotAdjustHHmm(slots, picked);
+  await notifyBatchAdjustResult(applied, skipped, picked, skipReasons);
 }
 
-/** 就地 TimePicker 变更：校验入院/出院窗后同步覆盖值 */
+/** 就地 TimePicker 变更：仅在时分真正变化时校验并写入（忽略打开面板回写） */
 function handleSlotInlineTimeChange(slot: NurseStationOrderExecutePlanSlot, value: null | string) {
   if (!value) {
     return;
   }
-  const boundErr = validateSlotAdjustAgainstEncounterBounds(slot, value);
+  const normalized = normalizeSlotHHmm(value);
+  if (!normalized) {
+    return;
+  }
+  // 打开/展开面板时 TimePicker 会回写当前展示时分；值未变则忽略，避免一点「修改时间」就误报
+  const baseline = normalizeSlotHHmm(
+    String(slotAdjustHHmmByKey.value[slot.slotKey] ?? resolveSlotCurrentHHmm(slot)),
+  );
+  if (baseline && baseline === normalized) {
+    return;
+  }
+  const boundErr = validateSlotAdjustAgainstEncounterBounds(slot, normalized);
   if (boundErr) {
     ElMessage.warning(boundErr);
     endSlotTimeEditing(slot.slotKey);
     return;
   }
-  applySlotAdjustHHmm(slot.slotKey, value);
+  applySlotAdjustHHmm(slot.slotKey, normalized);
 }
 
 /** TimePicker 面板关闭后退出该槽编辑态 */
@@ -861,13 +1155,11 @@ async function loadExecuteList() {
     return;
   }
 
-  // 空选按全选；决定需打 west（西药+诊疗）/ tcm（中药方）哪个后端 Tab
-  const selected =
-    selectedProjectTypes.value.length > 0
-      ? selectedProjectTypes.value
-      : NURSE_STATION_ORDER_EXECUTE_PROJECT_TYPES;
-  const needTcm = selected.includes('tcm');
-  const needWest = selected.some((t) => t !== 'tcm');
+  // 空选=查全部：西药 Tab（含诊疗）+ 中药 Tab 都拉；勾选再决定打哪个后端 Tab
+  const selected = selectedProjectTypes.value;
+  const quickFilterOn = selected.length > 0;
+  const needTcm = !quickFilterOn || selected.includes('tcm');
+  const needWest = !quickFilterOn || selected.some((t) => t !== 'tcm');
 
   const base = {
     encounterIds: encounterIds.value,
@@ -893,6 +1185,7 @@ async function loadExecuteList() {
     const indexed = indexExecuteGroupsByEncounterId(mergedGroups, activeStatus.value);
     // 长期带出量：本地记忆覆盖模板（与后端上次执行回显互补）
     const withMemory = applyLongTermBindQtyMemoryToIndex(indexed);
+    // 空选原样传 []：仅排除护理/转科/出院，不按快捷白名单二次过滤
     ordersByEncounterId.value = filterExecuteIndexByProjectTypes(withMemory, selected);
     // 列表加载后默认全选当前 Tab 可操作时点（护士可再取消个别点）
     selectAllVisiblePlanSlots();
@@ -1032,14 +1325,54 @@ async function handleContextMenuPrintLabel() {
   }
 }
 
-/** 校验批量槽位数并提示 */
+/** 右键打印当前行采血贴（检验医嘱，复用门诊采血贴模板） */
+async function handleContextMenuPrintSpecimenBarcode() {
+  const row = slotContextMenuRow.value;
+  closeSlotContextMenu();
+  if (!row || orderPrinting.value) {
+    return;
+  }
+  const encounterId = String(row.encounterId ?? '').trim();
+  const serviceRequestId = String(row.orderId ?? '').trim();
+  const patient = props.patients.find((p) => String(p.id).trim() === encounterId);
+  if (!patient) {
+    ElMessage.warning('未找到当前行对应患者');
+    return;
+  }
+  if (!serviceRequestId) {
+    ElMessage.warning('当前医嘱缺少申请主键，无法打印采血贴');
+    return;
+  }
+  orderPrinting.value = true;
+  try {
+    const result = await printSpecimenBarcode({
+      encounterId,
+      patientName: String(patient.name ?? '').trim(),
+      genderEnumText: String(patient.gender ?? '').trim(),
+      ageText: patient.age == null ? '' : `${patient.age}岁`,
+      items: [
+        {
+          serviceRequestId,
+          itemName: String(row.content ?? '').trim(),
+        },
+      ],
+      jobName: `采血贴·${patient.bedNo}${patient.name}`,
+    });
+    if (result.ok) {
+      ElMessage.success(`已发送打印：采血贴，共 ${result.count} 份`);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '打印采血贴失败';
+    ElMessage.error(message);
+  } finally {
+    orderPrinting.value = false;
+  }
+}
+
+/** 校验批量槽位数并提示（暂不卡单批上限，仅拦空勾选） */
 function assertBatchWithinLimit(count: number): boolean {
   if (count <= 0) {
     ElMessage.warning('请先勾选计划执行时点');
-    return false;
-  }
-  if (count > WRITE_BATCH_LIMIT) {
-    ElMessage.warning(`单次最多处理 ${WRITE_BATCH_LIMIT} 个计划点`);
     return false;
   }
   return true;
@@ -1344,6 +1677,14 @@ onBeforeUnmount(() => {
         <ElButton v-if="executeActionsEnabled" type="primary" @click="handleExecuteOrders">
           执行医嘱
         </ElButton>
+        <ElButton
+          v-if="executeActionsEnabled"
+          type="primary"
+          plain
+          @click="handleToolbarBatchAdjustTime"
+        >
+          批量修改时间
+        </ElButton>
         <ElButton v-if="skipActionsEnabled" type="warning" plain @click="handleSkipOrders">
           不执行
         </ElButton>
@@ -1537,9 +1878,22 @@ onBeforeUnmount(() => {
                   </div>
                 </template>
               </ElTableColumn>
-              <ElTableColumn align="center" label="开始/终止" min-width="200">
+              <ElTableColumn align="center" label="开立/停嘱" min-width="220">
                 <template #default="{ row }">
-                  <span class="start-stop-cell">{{ row.startStopText }}</span>
+                  <div class="start-stop-cell">
+                    <div class="start-stop-line start-stop-line--start">
+                      <span class="start-stop-tag">开</span>
+                      <span class="start-stop-text">{{ row.startTimeDisplay }}</span>
+                    </div>
+                    <div
+                      v-if="row.stopTimeDisplay"
+                      class="start-stop-line start-stop-line--stop"
+                      title="停嘱时间 / 停嘱医生"
+                    >
+                      <span class="start-stop-tag">停</span>
+                      <span class="start-stop-text">{{ row.stopTimeDisplay }}</span>
+                    </div>
+                  </div>
                 </template>
               </ElTableColumn>
               <ElTableColumn align="center" label="执行科室" min-width="120">
@@ -1547,63 +1901,106 @@ onBeforeUnmount(() => {
                   <span class="execute-dept-cell">{{ row.executeDeptDisplay }}</span>
                 </template>
               </ElTableColumn>
-              <ElTableColumn :label="scheduleColumnLabel" min-width="260">
+              <ElTableColumn
+                :label="scheduleColumnLabel"
+                min-width="260"
+                class-name="execute-schedule-column"
+              >
                 <template #default="{ row }">
-                  <div class="execute-schedule-list">
-                    <div
-                      v-for="schedule in row.planSchedules"
-                      :key="`${row.id}-${schedule.date}`"
-                      class="execute-schedule-row"
-                    >
-                      <span class="execute-schedule-date">{{ schedule.date }}</span>
-                      <div class="execute-schedule-slots">
-                        <template v-if="slotSelectionEnabled">
-                          <template v-for="slot in schedule.slots" :key="slot.slotKey">
-                            <span
-                              v-if="slotTimeEditingByKey[slot.slotKey]"
-                              class="execute-slot-time-edit-wrap"
-                            >
-                              <ElTimePicker
-                                :ref="(el) => bindSlotTimePickerRef(slot.slotKey, el)"
-                                :model-value="resolveSlotCurrentHHmm(slot)"
-                                format="HH:mm"
-                                value-format="HH:mm"
-                                size="small"
-                                :clearable="false"
-                                teleported
-                                class="execute-slot-time-edit"
-                                style="width: 64px; height: 24px"
-                                @update:model-value="
-                                  (v: string | null) => handleSlotInlineTimeChange(slot, v)
-                                "
-                                @visible-change="
-                                  (open: boolean) => handleSlotTimePickerVisible(slot, open)
-                                "
-                              />
-                            </span>
-                            <ElCheckbox
-                              v-else
-                              :model-value="!!slotSelectionByKey[slot.slotKey]"
-                              border
-                              size="small"
-                              @update:model-value="(v: boolean) => toggleSlotSelection(slot, v)"
-                              @contextmenu="(e: MouseEvent) => openSlotContextMenu(e, slot, row)"
-                            >
-                              <span>{{ resolveSlotCheckboxLabel(slot) }}</span>
-                            </ElCheckbox>
-                          </template>
-                        </template>
-                        <template v-else>
-                          <span
-                            v-for="slot in schedule.slots"
-                            :key="slot.slotKey"
-                            class="execute-slot-readonly"
-                          >
-                            {{ slot.timeLabel }}
-                          </span>
-                        </template>
-                      </div>
+                  <div
+                    class="execute-schedule-cell"
+                    :class="{
+                      'execute-schedule-cell--collapsible': canCollapseRowSchedules(row),
+                    }"
+                  >
+                    <div class="execute-schedule-list">
+                      <!-- 跨日折叠：摘要/时点在左；三角绝对定位在单元格右侧垂直居中 -->
+                      <button
+                        v-if="canCollapseRowSchedules(row) && !isScheduleExpanded(row.id)"
+                        type="button"
+                        class="execute-schedule-fold-btn execute-schedule-fold-btn--range"
+                        title="展开时点"
+                        :aria-expanded="false"
+                        @click.stop="toggleScheduleExpanded(row.id)"
+                      >
+                        <span class="execute-schedule-range">
+                          {{ resolveScheduleDateRangeText(row.planSchedules) }}
+                        </span>
+                      </button>
+                      <template v-if="!canCollapseRowSchedules(row) || isScheduleExpanded(row.id)">
+                        <div
+                          v-for="schedule in row.planSchedules"
+                          :key="`${row.id}-${schedule.date}`"
+                          class="execute-schedule-row"
+                        >
+                          <span class="execute-schedule-date">{{ schedule.date }}</span>
+                          <div class="execute-schedule-slots">
+                            <template v-if="slotSelectionEnabled">
+                              <template v-for="slot in schedule.slots" :key="slot.slotKey">
+                                <span
+                                  v-if="slotTimeEditingByKey[slot.slotKey]"
+                                  class="execute-slot-time-edit-wrap"
+                                >
+                                  <ElTimePicker
+                                    :ref="(el) => bindSlotTimePickerRef(slot.slotKey, el)"
+                                    :model-value="resolveSlotCurrentHHmm(slot)"
+                                    format="HH:mm"
+                                    value-format="HH:mm"
+                                    size="small"
+                                    :clearable="false"
+                                    teleported
+                                    class="execute-slot-time-edit"
+                                    style="width: 64px; height: 24px"
+                                    @update:model-value="
+                                      (v: string | null) => handleSlotInlineTimeChange(slot, v)
+                                    "
+                                    @visible-change="
+                                      (open: boolean) => handleSlotTimePickerVisible(slot, open)
+                                    "
+                                  />
+                                </span>
+                                <ElCheckbox
+                                  v-else
+                                  :model-value="!!slotSelectionByKey[slot.slotKey]"
+                                  border
+                                  size="small"
+                                  @update:model-value="(v: boolean) => toggleSlotSelection(slot, v)"
+                                  @contextmenu="
+                                    (e: MouseEvent) => openSlotContextMenu(e, slot, row)
+                                  "
+                                >
+                                  <span>{{ resolveSlotCheckboxLabel(slot) }}</span>
+                                </ElCheckbox>
+                              </template>
+                            </template>
+                            <template v-else>
+                              <span
+                                v-for="slot in schedule.slots"
+                                :key="slot.slotKey"
+                                class="execute-slot-readonly"
+                              >
+                                {{ slot.timeLabel }}
+                              </span>
+                            </template>
+                          </div>
+                        </div>
+                      </template>
                     </div>
+                    <button
+                      v-if="canCollapseRowSchedules(row)"
+                      type="button"
+                      class="execute-schedule-fold-btn execute-schedule-fold-btn--end"
+                      :title="isScheduleExpanded(row.id) ? '收起时点' : '展开时点'"
+                      :aria-expanded="isScheduleExpanded(row.id)"
+                      @click.stop="toggleScheduleExpanded(row.id)"
+                    >
+                      <ElIcon
+                        class="execute-schedule-fold-caret"
+                        :class="{ 'is-expanded': isScheduleExpanded(row.id) }"
+                      >
+                        <ArrowRight />
+                      </ElIcon>
+                    </button>
                   </div>
                 </template>
               </ElTableColumn>
@@ -1663,7 +2060,7 @@ onBeforeUnmount(() => {
           :class="{ 'is-disabled': !executeActionsEnabled }"
           @click="handleContextMenuAdjustSelectedTime"
         >
-          修改当前医嘱已选时间
+          已选时点改为同一时间
         </li>
         <li class="execute-slot-context-menu__item" @click="handleContextMenuSelectAllOnRow">
           全选当前医嘱时点
@@ -1679,14 +2076,23 @@ onBeforeUnmount(() => {
         >
           执行当前医嘱已选时点
         </li>
-        <template v-if="contextMenuRowPrintDocType">
+        <template v-if="contextMenuRowPrintDocType || contextMenuCanPrintSpecimenBarcode">
           <li class="execute-slot-context-menu__divider"></li>
           <li
+            v-if="contextMenuRowPrintDocType"
             class="execute-slot-context-menu__item"
             :class="{ 'is-disabled': orderPrinting }"
             @click="handleContextMenuPrintLabel"
           >
             {{ contextMenuRowPrintLabel }}
+          </li>
+          <li
+            v-if="contextMenuCanPrintSpecimenBarcode"
+            class="execute-slot-context-menu__item"
+            :class="{ 'is-disabled': orderPrinting }"
+            @click="handleContextMenuPrintSpecimenBarcode"
+          >
+            打印采血贴
           </li>
         </template>
       </ul>
@@ -1748,13 +2154,57 @@ onBeforeUnmount(() => {
   color: var(--el-color-primary);
 }
 
-/* 开立/停嘱各占一行；同行内「时间 + 人名」不换行（BR-IP-ORD-031） */
+/* 开立/停嘱分行；停嘱行用危险色加粗醒目（BR-IP-ORD-031） */
 .start-stop-cell {
-  display: inline-block;
-  white-space: pre;
-  font-size: 14px;
-  line-height: 1.4;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
   text-align: left;
+  line-height: 1.35;
+}
+
+.start-stop-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.start-stop-tag {
+  flex-shrink: 0;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  border-radius: 3px;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  font-weight: 600;
+}
+
+.start-stop-line--start {
+  color: var(--el-text-color-regular);
+}
+
+.start-stop-line--start .start-stop-tag {
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color);
+}
+
+.start-stop-line--stop {
+  color: var(--el-color-danger);
+  font-weight: 600;
+}
+
+.start-stop-line--stop .start-stop-tag {
+  color: var(--el-color-white);
+  background: var(--el-color-danger);
+}
+
+.start-stop-text {
+  white-space: nowrap;
 }
 
 .execute-slot-readonly {
@@ -1766,6 +2216,75 @@ onBeforeUnmount(() => {
   border-radius: var(--el-border-radius-small);
   font-size: 14px;
   color: var(--el-text-color-regular);
+}
+
+/*
+ * 多日时点折叠：三角相对整格 td 固定右上角（不跟内容块走）。
+ * .cell 设 static，绝对定位才能锚到 td，展开/收起才不漂。
+ */
+.order-execute-table :deep(td.execute-schedule-column.el-table__cell) {
+  position: relative;
+  vertical-align: top;
+}
+
+.order-execute-table :deep(td.execute-schedule-column > .cell) {
+  position: static;
+  padding-right: 20px;
+}
+
+.execute-schedule-cell {
+  min-width: 0;
+}
+
+.execute-schedule-cell--collapsible .execute-schedule-list {
+  min-width: 0;
+}
+
+.execute-schedule-fold-btn {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--el-text-color-regular);
+  font-size: 14px;
+  line-height: 24px;
+  cursor: pointer;
+  user-select: none;
+
+  &:hover {
+    color: var(--el-color-primary);
+  }
+}
+
+.execute-schedule-fold-btn--range {
+  justify-content: flex-start;
+  width: 100%;
+  text-align: left;
+}
+
+.execute-schedule-fold-btn--end {
+  position: absolute;
+  top: 10px;
+  right: 6px;
+  z-index: 1;
+  height: 24px;
+  padding: 0 2px;
+}
+
+.execute-schedule-fold-caret {
+  flex: 0 0 auto;
+  font-size: 12px;
+  transition: transform 0.15s ease;
+
+  &.is-expanded {
+    transform: rotate(90deg);
+  }
+}
+
+.execute-schedule-range {
+  white-space: nowrap;
 }
 
 .execute-slot-context-menu {

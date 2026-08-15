@@ -19,6 +19,9 @@ export const MONEY_DISPLAY_DP = 2;
 /** 中药（饮片/中草药）单价 UI 展示刻度：3 位，禁止压成 2 位 */
 export const MONEY_TCM_UNIT_PRICE_DP = 3;
 
+/** 与医嘱域 / 库存单据一致：medication_category_code 中草药码 */
+export const HERBAL_MEDICATION_CATEGORY_CODE = '4';
+
 Decimal.set({
   precision: 28,
   rounding: Decimal.ROUND_HALF_UP,
@@ -35,6 +38,19 @@ const toMoneyDecimal = (value: MoneyInput): Decimal => {
   }
   return new Decimal(value as number | string);
 };
+
+/**
+ * 药品目录进售价 InputNumber / 列表单价小数位：中草药 3，其余 2。
+ *
+ * @param categoryCode medication_category_code（中草药为 {@link HERBAL_MEDICATION_CATEGORY_CODE}）
+ */
+export function resolveMedicationCatalogPriceDisplayDp(categoryCode: unknown): number {
+  const code = String(categoryCode ?? '').trim();
+  if (code === HERBAL_MEDICATION_CATEGORY_CODE) {
+    return MONEY_TCM_UNIT_PRICE_DP;
+  }
+  return MONEY_DISPLAY_DP;
+}
 
 /** 计算刻度：6 位 HALF_UP，返回 number */
 export function scaleMoneyCalc(value: MoneyInput): number {
@@ -58,8 +74,9 @@ export function calcMoneyLineTotal(unitPrice: MoneyInput, quantity: MoneyInput):
 }
 
 /**
- * 拆零最小单位数量 + 每包装单位价 → 行金额（BR-INV-DTL-007，6 位）。
- * 库房单据侧栏/列表在仅有拆零数量与包装价时使用。
+ * 拆零最小单位数量 + 每包装单位价 → 行金额（BR-INV-DTL-007 / BR-MON-PKG-001，6 位）。
+ * 满包 = 整包数×包装价；零头 = 包装价×余量/ratio（单步）。禁止先算拆零单价再乘数量。
+ * 库房单据侧栏/列表在仅有拆零数量与包装价时使用（草稿预览；权威以后端为准）。
  */
 export function calcWarehouseSplitLineTotal(
   splitQuantity: MoneyInput,
@@ -78,12 +95,15 @@ export function calcWarehouseSplitLineTotal(
   }
   const wholePackages = qty.div(ratio).floor();
   const remainder = qty.minus(wholePackages.mul(ratio));
-  const perSplit = price.div(ratio).toDecimalPlaces(MONEY_CALC_DP, Decimal.ROUND_HALF_UP);
-  return wholePackages
-    .mul(price)
-    .add(remainder.mul(perSplit))
-    .toDecimalPlaces(MONEY_CALC_DP, Decimal.ROUND_HALF_UP)
-    .toNumber();
+  // 满包：整包数 × 包装价
+  let total = wholePackages.mul(price);
+  // 零头：包装价 × 余量 / ratio（单步线性，不先派生拆零单价）
+  if (!remainder.isZero()) {
+    total = total.add(
+      price.mul(remainder).div(ratio).toDecimalPlaces(MONEY_CALC_DP, Decimal.ROUND_HALF_UP),
+    );
+  }
+  return total.toDecimalPlaces(MONEY_CALC_DP, Decimal.ROUND_HALF_UP).toNumber();
 }
 
 /** 多个行级金额加总后 settle 到 2 位（支付/页脚合计） */
@@ -111,6 +131,26 @@ export function formatMoneyDisplay(value: MoneyInput): string {
     return '0.00';
   }
   return n.toFixed(MONEY_DISPLAY_DP);
+}
+
+/**
+ * 按指定小数位 format 单价（纯展示；默认 2 位）。
+ * 药典中药进售价传 {@link MONEY_TCM_UNIT_PRICE_DP}，禁止一律压成两位。
+ */
+export function formatMoneyUnitPriceDisplay(
+  value: MoneyInput,
+  displayDp: number = MONEY_DISPLAY_DP,
+): string {
+  if (value === null || value === undefined || value === '') {
+    return '';
+  }
+  const n = Number(value);
+  if (!Number.isFinite(n)) {
+    return String(value).trim();
+  }
+  const dp =
+    Number.isFinite(displayDp) && displayDp >= 0 ? Math.floor(displayDp) : MONEY_DISPLAY_DP;
+  return toMoneyDecimal(n).toDecimalPlaces(dp, Decimal.ROUND_HALF_UP).toFixed(dp);
 }
 
 /** 格式化为带「元」的展示文案 */

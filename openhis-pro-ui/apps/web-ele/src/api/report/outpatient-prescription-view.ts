@@ -7,6 +7,7 @@
 import type { PageParams } from '#/types/api-response';
 
 import { publicRequestClient } from '#/api/request';
+import { reportLongRequestConfig } from '#/constants/report-request-timeout';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
 const BASE = '/outpatientPharmacyPrescriptionQuery';
@@ -146,6 +147,10 @@ export interface PageOutpatientPrescriptionViewResponse {
   pageSize?: number;
   records?: OutpatientPrescriptionDrugLineDto[];
   content?: OutpatientPrescriptionDrugLineDto[];
+  /** 总处方量：筛选窗内处方号去重（后端 COUNT DISTINCT） */
+  prescriptionCount?: number;
+  /** 就诊人数：筛选窗内就诊主键去重（后端 COUNT DISTINCT） */
+  visitPatientCount?: number;
 }
 
 /** 页初始化：筛选项与默认本月开方日期。 */
@@ -163,11 +168,14 @@ export async function pageOutpatientPrescriptionViewApi(
   const res = await publicRequestClient.post<PageOutpatientPrescriptionViewResponse>(
     `${BASE}/pageOutpatientPharmacyPrescriptionQuery`,
     body,
+    reportLongRequestConfig(),
   );
   const { content, totalCount } = parsePagedRowsFromApiData<OutpatientPrescriptionDrugLineDto>(res);
   return {
     ...res,
     records: content.length > 0 ? content : (res.records ?? []),
     total: totalCount || Number(res.total ?? res.totalCount ?? 0),
+    prescriptionCount: Number(res.prescriptionCount ?? 0),
+    visitPatientCount: Number(res.visitPatientCount ?? 0),
   };
 }

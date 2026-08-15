@@ -53,13 +53,11 @@ export function parseDispenseLineQuantity(row: DispensePrescriptionItemRow): num
 
 export interface ResolveDispenseRequiredTraceCountOpts {
   /**
-   * 追溯码主档贴码单位（cus_trace_number.trace_unit_code）。
-   * 扫码反查或行上主档快照优先于包装单位。
+   * 贴码单位（行上已是主档优先、无主档则药典；再回落包装单位）。
    */
   traceUnitCode?: string;
   /**
-   * 追溯码主档贴码比例（cus_trace_number.trace_unit_ratio；1 码对应拆零量）。
-   * 有值时按主表换算应扫数，禁止用目录比顶替。
+   * 贴码比例（1 码单位 = N 拆零；行上主档优先否则药典）。
    */
   traceUnitRatio?: number;
 }
@@ -117,10 +115,33 @@ export function resolveDispenseOperationSplitQty(
 }
 
 /**
- * 门诊发药应绑追溯码个数（进货式提示用；消耗侧交互优先剩余盖住）。
+ * 门诊/住院发药单行绑码硬上限（=弹窗「待扫」真源）：{@code ceil(操作量)}。
+ *
+ * <p>开 2 支→2、开 1 盒→1。码倍/拆零只用于盖住判定，<strong>不</strong>参与个数。</p>
+ *
+ * @param row 发药行
+ * @param _opts 保留签名兼容；个数不读贴码比例
+ * @returns ≥1
+ */
+export function resolveDispenseMaxTraceCount(
+  row: DispensePrescriptionItemRow,
+  _opts?: ResolveDispenseRequiredTraceCountOpts,
+): number {
+  const opQty =
+    row.quantityValue !== undefined &&
+    row.quantityValue !== null &&
+    Number.isFinite(Number(row.quantityValue)) &&
+    Number(row.quantityValue) > 0
+      ? Number(row.quantityValue)
+      : parseDispenseLineQuantity(row);
+  return Math.max(1, Math.ceil(opQty));
+}
+
+/**
+ * 门诊发药「建议应扫」个数（待扫展示 / 半扫软确认；非绑码硬上限）。
  *
  * <p>贴码单位/比例优先取追溯码主表快照；操作量仍用包装/拆零把业务单位换到拆零后，
- * 再 ceil(行拆零 / 主表 ratio)。缺主表快照时回落历史包装口径。</p>
+ * 再 ceil(行拆零 / 主表 ratio)。硬上限见 {@link resolveDispenseMaxTraceCount}。</p>
  */
 export function resolveDispenseRequiredTraceCount(
   row: DispensePrescriptionItemRow,

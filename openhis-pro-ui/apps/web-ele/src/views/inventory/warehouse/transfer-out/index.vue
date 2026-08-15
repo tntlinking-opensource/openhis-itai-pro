@@ -13,6 +13,13 @@ import {
   pageTransferOutWorkbenchListApi,
   WHS_TRANSFER_OUT_TYPE_ENUM,
 } from '#/api/inventory/warehouse/transfer-out';
+import {
+  clearInvDocClientDraftCachesForScene,
+  clearInvDocDraftCache,
+  INV_DOC_DRAFT_SCENE,
+  mergeInvDocDraftCardsIntoQueue,
+} from '#/utils/inventory/inv-doc-draft-cache';
+
 import WarehouseDocWorkstation from '#/components/warehouse/warehouse-doc-workstation.vue';
 import {
   INV_ALL_LOCATIONS_FILTER_ID,
@@ -26,6 +33,8 @@ import TransferAsidePane from './transfer-out-aside-pane.vue';
 import TransferMainPane from './transfer-out-main-pane.vue';
 
 defineOptions({ name: 'InventoryWarehouseTransferOutPage' });
+
+const TRANSFER_OUT_DRAFT_SCENE = INV_DOC_DRAFT_SCENE.warehouseTransferOut;
 
 const route = useRoute();
 
@@ -75,6 +84,13 @@ function resolveBusNo(row?: null | Record<string, unknown>): string | undefined 
 
 const selectedBusNo = computed(() => resolveBusNo(selectedOrder.value) ?? '');
 const isDraftOrder = computed(() => Boolean(selectedOrder.value?._draft));
+
+/** 当前侧栏草稿的稳定客户端 id */
+const selectedClientDraftId = computed(() => {
+  const o = selectedOrder.value;
+  if (!o?._draft) return '';
+  return String(o._clientDraftId ?? '').trim();
+});
 
 async function init() {
   try {
@@ -132,12 +148,50 @@ async function getList() {
   }
 }
 
-function handleAdd() {
-  const draft = {
+/** 新建或按已有 clientDraftId 恢复草稿卡片 */
+function createDraftOrderRow(
+  clientDraftId?: string,
+  cardMeta?: Record<string, unknown>,
+): Record<string, unknown> {
+  const id =
+    String(clientDraftId ?? '').trim() ||
+    `draft:${Date.now()}:${Math.random().toString(36).slice(2, 9)}`;
+  return {
     _draft: true,
-    statusEnum_enumText: '编辑中',
-    applyTime: formatDateTime(new Date()),
+    _clientDraftId: id,
+    statusEnum_enumText: String(cardMeta?.statusEnum_enumText ?? '编辑中'),
+    applyTime: String(cardMeta?.applyTime ?? formatDateTime(new Date())),
+    applicantId_dictText: String(cardMeta?.applicantId_dictText ?? ''),
+    totalAmount: cardMeta?.totalAmount,
   };
+}
+
+/** 丢弃侧栏上现有草稿卡片时同步清 session 缓存 */
+function discardSidebarDraftCaches(): void {
+  for (const row of orderList.value.filter((r) => r._draft)) {
+    const id = String(row._clientDraftId ?? '').trim();
+    if (id) clearInvDocDraftCache(TRANSFER_OUT_DRAFT_SCENE, id);
+  }
+  clearInvDocClientDraftCachesForScene(TRANSFER_OUT_DRAFT_SCENE);
+}
+
+/** 进入页时把 session 草稿卡片合并进队列，并选中最近一条 */
+function rehydrateDraftCardsFromSession(): void {
+  const merged = mergeInvDocDraftCardsIntoQueue({
+    scene: TRANSFER_OUT_DRAFT_SCENE,
+    orderList: orderList.value,
+    buildDraftRow: (clientDraftId, cardMeta) => createDraftOrderRow(clientDraftId, cardMeta),
+  });
+  orderList.value = merged.orderList;
+  if (!selectedOrder.value && merged.inserted[0]) {
+    selectedOrder.value = merged.inserted[0];
+    isAddDisabled.value = true;
+  }
+}
+
+function handleAdd() {
+  discardSidebarDraftCaches();
+  const draft = createDraftOrderRow();
   orderList.value = [draft, ...orderList.value.filter((r) => !r._draft)];
   selectedOrder.value = draft;
   mainPaneResetKey.value += 1;
@@ -166,6 +220,8 @@ async function handleDocumentSaved(payload: { busNo?: string }) {
 
 async function handleDocumentRemoved() {
   if (selectedOrder.value?._draft) {
+    const id = String(selectedOrder.value._clientDraftId ?? '').trim();
+    if (id) clearInvDocDraftCache(TRANSFER_OUT_DRAFT_SCENE, id);
     orderList.value = orderList.value.filter((r) => r !== selectedOrder.value);
     selectedOrder.value = null;
     mainPaneResetKey.value += 1;
@@ -194,6 +250,7 @@ watch(
 onMounted(async () => {
   await init();
   await getList();
+  rehydrateDraftCardsFromSession();
 });
 </script>
 
@@ -221,9 +278,11 @@ onMounted(async () => {
       />
     </template>
     <TransferMainPane
+      :queue-card-row="selectedOrder"
       class="min-h-0 flex-1"
       variant="out"
       :bus-no="selectedBusNo"
+      :client-draft-id="selectedClientDraftId"
       :is-draft-order="isDraftOrder"
       :reset-key="mainPaneResetKey"
       :warehouse-options="warehouseOptions"

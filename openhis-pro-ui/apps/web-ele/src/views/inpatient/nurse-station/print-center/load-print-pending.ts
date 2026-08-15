@@ -1,6 +1,7 @@
 import type { NurseStationModulePatient } from '../components/nurse-station-module-patient.types';
 import type { PrintDocType, PrintPendingRow } from './print-center.types';
 
+import type { NurseStationOrderAuditRowDto } from '#/api/inpatient/nurse-station/inpatient-nurse-station-order-audit.types';
 import type { NurseStationOrderExecuteRowDto } from '#/api/inpatient/nurse-station/inpatient-nurse-station-order-execute.types';
 
 import dayjs from 'dayjs';
@@ -10,6 +11,7 @@ import {
   httpPagePendingDispenseSummaryLines,
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station-dispense-summary.http';
 import { httpListNurseStationNursingRecords } from '#/api/inpatient/nurse-station/inpatient-nurse-station-nursing-record.http';
+import { httpListNurseStationOrderAudit } from '#/api/inpatient/nurse-station/inpatient-nurse-station-order-audit.http';
 import { httpListNurseStationOrderExecute } from '#/api/inpatient/nurse-station/inpatient-nurse-station-order-execute.http';
 import {
   INFUSION_METHOD_CODES,
@@ -18,10 +20,16 @@ import {
   normalizeMedicationMethodCode,
 } from '#/utils/print/constants/medication-method-codes';
 import {
+  SERVICE_CATEGORY_NURSING,
   SERVICE_CATEGORY_PROOF,
   SERVICE_CATEGORY_TEST,
 } from '#/utils/print/constants/service-request-category-codes';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import {
+  formatOrderDispenseTotalQuantityText,
+  shouldUsePackageBatchDispenseQuantity,
+} from '#/utils/print/mappers/inpatient-order-dispense-sheet';
+import { resolveStandingOrderPackageBatchSiteEnabled } from '#/utils/print/standing-order-package-batch-site';
 
 export interface LoadPrintPendingQuery {
   docType: PrintDocType;
@@ -104,12 +112,32 @@ function isInfusionExecuteOrder(order: NurseStationOrderExecuteRowDto): boolean 
 }
 
 /**
- * 输液巡视卡待打：待汇总明细中有输液途径药品的患者各一行。
- * 无输液药品 → 空列表（不可打）。
+ * 患者用药单「输液药 / 非输液药品」筛选用（双判定，任一成立即输液）：
+ * ① 药嘱/目录回传的 infusionFlag === true（后端可对空标记回落 inject_flag）
+ * ② 用法 methodCode 为静滴(405/IVD) 或 静脉注射(404)
+ * 二者皆无时按非输液。
+ */
+function resolveMedSheetInfusionFlag(order: NurseStationOrderExecuteRowDto): boolean {
+  // ① 输液标记
+  if (order.infusionFlag === true) {
+    return true;
+  }
+  // ② 用法（禁止用 usageDisplay）
+  const methodCode = str(order.methodCode);
+  if (methodCode.length > 0) {
+    return isInfusionMethodCode(methodCode) || isIvInjectionMethodCode(methodCode);
+  }
+  return false;
+}
+
+/**
+ * 输液巡视卡待打：查询日有待执行或已执行槽位的输液药患者各一行。
+ * 与输液贴同源（医嘱执行双 Tab），执行过的也可打。
  */
 async function loadPatrolPending(
   patients: NurseStationModulePatient[],
   executionDeadline: string,
+  queryDate?: string,
 ): Promise<PrintPendingRow[]> {
   const encounterIds = patients
     .map((p) => preserveApiIdForRequest(p.id))
@@ -118,50 +146,112 @@ async function loadPatrolPending(
     return [];
   }
 
-  const res = await httpPagePendingDispenseSummaryLines({
+  const date =
+    str(queryDate) ||
+    (executionDeadline
+      ? dayjs(executionDeadline).format('YYYY-MM-DD')
+      : dayjs().format('YYYY-MM-DD'));
+  const deadline = str(executionDeadline) || dayjs(date).endOf('day').format('YYYY-MM-DD HH:mm:ss');
+  const listBody = {
     encounterIds,
-    medicineCategoryTab: 'west',
-    therapyFilter: 'all',
-    queryDeadline: executionDeadline,
-    pageNo: 1,
-    pageSize: 500,
-  });
+    therapyType: 'all' as const,
+    medicineCategoryTab: 'west' as const,
+    executionDeadline: deadline,
+  };
+  const [pendingRes, executedRes] = await Promise.all([
+    httpListNurseStationOrderExecute({ ...listBody, executeTab: 'pending' }),
+    httpListNurseStationOrderExecute({ ...listBody, executeTab: 'executed' }),
+  ]);
+
+  /** 按就诊归并：查询日有槽位的输液药嘱 */
+  const byEncounter = new Map<
+    string,
+    {
+      encounterId: string;
+      patientId: string;
+      groupKeys: Set<string>;
+      drugNames: string[];
+      hasPending: boolean;
+      hasExecuted: boolean;
+    }
+  >();
+
+  function mergeTabOrders(
+    groups: { encounterId?: string; orders?: NurseStationOrderExecuteRowDto[] }[],
+    tab: 'executed' | 'pending',
+  ) {
+    for (const group of groups) {
+      const encounterId = str(group.encounterId);
+      if (!encounterId) {
+        continue;
+      }
+      for (const order of group.orders ?? []) {
+        if (!isInfusionExecuteOrder(order)) {
+          continue;
+        }
+        const slots = tab === 'pending' ? (order.pendingSlots ?? []) : (order.executedSlots ?? []);
+        if (!slots.some((slot) => isSlotOnQueryDate(slot, date))) {
+          continue;
+        }
+        const existing = byEncounter.get(encounterId);
+        const groupKey = str(order.groupId) || `r:${str(order.orderId)}`;
+        const drugName = str(order.adviceDisplayName);
+        if (!existing) {
+          byEncounter.set(encounterId, {
+            encounterId,
+            patientId: str(order.patientId),
+            groupKeys: new Set([groupKey]),
+            drugNames: drugName ? [drugName] : [],
+            hasPending: tab === 'pending',
+            hasExecuted: tab === 'executed',
+          });
+          continue;
+        }
+        existing.groupKeys.add(groupKey);
+        if (drugName && !existing.drugNames.includes(drugName)) {
+          existing.drugNames.push(drugName);
+        }
+        if (tab === 'pending') {
+          existing.hasPending = true;
+        } else {
+          existing.hasExecuted = true;
+        }
+      }
+    }
+  }
+
+  mergeTabOrders(pendingRes.groups ?? [], 'pending');
+  mergeTabOrders(executedRes.groups ?? [], 'executed');
 
   const rows: PrintPendingRow[] = [];
-  for (const group of res.patientGroups ?? []) {
-    const encounterId = str(group.encounterId);
-    if (!encounterId) {
-      continue;
-    }
-    // 仅保留输液途径药品，按 groupId / medReqId 成组计数
-    const infusionOrders = (group.orderRows ?? []).filter((order) =>
-      isInfusionMethodCode(order.methodCode),
-    );
-    if (infusionOrders.length <= 0) {
-      continue;
-    }
-    const groupKeys = new Set<string>();
-    for (const order of infusionOrders) {
-      groupKeys.add(str(order.groupId) || `r:${str(order.medReqId)}`);
-    }
-    const drugNames = infusionOrders.map((order) => str(order.medicationName)).filter(Boolean);
+  for (const bucket of byEncounter.values()) {
+    const patient = patientByEncounter(patients, bucket.encounterId);
+    const meta = bedNameOf(patient);
+    const groupCount = bucket.groupKeys.size;
     const namePreview =
-      drugNames.length > 0
-        ? `${drugNames.slice(0, 2).join('、')}${drugNames.length > 2 ? '…' : ''}`
-        : `${infusionOrders.length} 种药`;
-    const patient = patientByEncounter(patients, encounterId);
+      bucket.drugNames.length > 0
+        ? `${bucket.drugNames.slice(0, 2).join('、')}${bucket.drugNames.length > 2 ? '…' : ''}`
+        : `${groupCount} 组`;
+    let statusCode: PrintPendingRow['statusCode'] = 'pending';
+    let statusText = '待打';
+    if (bucket.hasPending && bucket.hasExecuted) {
+      statusText = '部分已执行';
+    } else if (bucket.hasExecuted) {
+      statusCode = 'executable';
+      statusText = '已执行';
+    }
     rows.push({
-      id: `patrol-${encounterId}`,
-      bedNo: str(group.bedDisplay) || bedNameOf(patient).bedNo,
-      patientName: str(group.patientName) || bedNameOf(patient).patientName,
+      id: `patrol-${bucket.encounterId}`,
+      bedNo: meta.bedNo,
+      patientName: meta.patientName,
       title: '输液巡视卡',
-      subtitle: `共 ${groupKeys.size} 组 · ${namePreview}`,
-      timeText: dayjs().format('YYYY-MM-DD'),
-      statusCode: 'pending',
-      statusText: '待打',
-      pageHint: `${groupKeys.size} 组`,
-      encounterId,
-      patientId: str(group.patientId) || str(patient?.patientId),
+      subtitle: `共 ${groupCount} 组 · ${namePreview}`,
+      timeText: date,
+      statusCode,
+      statusText,
+      pageHint: `${groupCount} 组`,
+      encounterId: bucket.encounterId,
+      patientId: bucket.patientId || str(patient?.patientId),
     });
   }
   return rows;
@@ -181,6 +271,26 @@ function buildWristbandPending(patients: NurseStationModulePatient[]): PrintPend
       statusCode: 'pending' as const,
       statusText: '待打',
       pageHint: '腕带',
+      encounterId: str(patient.id),
+      patientId: str(patient.patientId),
+    };
+  });
+}
+
+/** 床头卡：每位选中患者一行 */
+function buildBedCardPending(patients: NurseStationModulePatient[]): PrintPendingRow[] {
+  return patients.map((patient) => {
+    const meta = bedNameOf(patient);
+    return {
+      id: `bed-card-${str(patient.id)}`,
+      bedNo: meta.bedNo,
+      patientName: meta.patientName,
+      title: '床头卡',
+      subtitle: str(patient.encounterBusNo) || str(patient.wardName),
+      timeText: dayjs().format('YYYY-MM-DD'),
+      statusCode: 'pending' as const,
+      statusText: '待打',
+      pageHint: '床头卡',
       encounterId: str(patient.id),
       patientId: str(patient.patientId),
     };
@@ -215,64 +325,217 @@ function buildFeeListPending(
   ];
 }
 
-/** 医嘱执行列表 → 待打行（仅已执行；可按执行日区间过滤槽位） */
-function mapOrderExecuteToPending(
-  groups: { encounterId?: string; orders?: NurseStationOrderExecuteRowDto[] }[],
+/** 费用明细单：当前日期区间一行（与费用明细 DETAIL 流水同源） */
+function buildFeeDetailPending(
+  patients: NurseStationModulePatient[],
+  dateFrom: string,
+  dateTo: string,
+): PrintPendingRow[] {
+  const patient = patients[0];
+  if (!patient) {
+    return [];
+  }
+  const meta = bedNameOf(patient);
+  return [
+    {
+      id: `fee-detail-${str(patient.id)}`,
+      bedNo: meta.bedNo,
+      patientName: meta.patientName,
+      title: '住院费用明细单',
+      subtitle: `${dateFrom} ~ ${dateTo}`,
+      timeText: dayjs().format('YYYY-MM-DD'),
+      statusCode: 'pending',
+      statusText: '待打',
+      pageHint: '明细',
+      encounterId: str(patient.id),
+      patientId: str(patient.patientId ?? patient.id),
+    },
+  ];
+}
+
+/** 医嘱校对列表 → 待打行（已校对/已停止；可按开嘱日区间过滤） */
+function mapOrderAuditToPending(
+  orders: NurseStationOrderAuditRowDto[],
   patients: NurseStationModulePatient[],
   therapyLabel: string,
   dateFrom?: string,
   dateTo?: string,
+  /** 长期待打时护理级别不受开嘱日区间裁掉 */
+  keepNursingLevelOutsideRange?: boolean,
 ): PrintPendingRow[] {
   const rows: PrintPendingRow[] = [];
   const fromDay = str(dateFrom);
   const toDay = str(dateTo);
-  for (const group of groups) {
-    const encounterId = str(group.encounterId);
+  for (const order of orders) {
+    const encounterId = str(order.encounterId);
     const patient = patientByEncounter(patients, encounterId);
     const meta = bedNameOf(patient);
-    for (const order of group.orders ?? []) {
-      const listRowKey = str(order.listRowKey) || `${str(order.orderId)}-${str(order.orderType)}`;
-      const executedSlots = order.executedSlots ?? [];
-      // 有区间时只保留落在执行日内的槽；无区间则整单已执行槽
-      const slotsInRange =
-        fromDay && toDay
-          ? executedSlots.filter((slot) => {
-              const at = str(slot.recordedTime) || str(slot.planTime);
-              if (!at) {
-                return false;
-              }
-              const day = dayjs(at).isValid() ? dayjs(at).format('YYYY-MM-DD') : '';
-              return Boolean(day) && day >= fromDay && day <= toDay;
-            })
-          : executedSlots;
-      if (slotsInRange.length <= 0) {
+    const listRowKey = str(order.listRowKey) || `${str(order.requestId)}-${str(order.orderType)}`;
+    const opened = str(order.reqOpenedTime);
+    const isNursingLevel =
+      keepNursingLevelOutsideRange && str(order.categoryEnum) === SERVICE_CATEGORY_NURSING;
+    if (!isNursingLevel && fromDay && toDay && opened && dayjs(opened).isValid()) {
+      const day = dayjs(opened).format('YYYY-MM-DD');
+      if (day < fromDay || day > toDay) {
         continue;
       }
-      // 时间列优先展示区间内最近一次执行时刻
-      const latestSlot = slotsInRange[slotsInRange.length - 1];
-      const latestAt = str(latestSlot?.recordedTime) || str(latestSlot?.planTime);
-      rows.push({
-        id: listRowKey,
-        bedNo: meta.bedNo,
-        patientName: meta.patientName,
-        title: str(order.adviceDisplayName) || '—',
-        subtitle: therapyLabel,
-        timeText: latestAt ? dayjs(latestAt).format('MM-DD HH:mm') : str(order.reqOpenedTime),
-        statusCode: 'executable',
-        statusText: '已执行',
-        pageHint: `${slotsInRange.length} 次执行`,
-        encounterId,
-        patientId: str(order.patientId) || str(patient?.patientId),
-        listRowKey,
-        orderId: str(order.orderId),
-        groupId: str(order.groupId),
-      });
     }
+    const title =
+      str(order.adviceDisplayName) || (isNursingLevel ? str(patient?.nurseLevel) : '') || '—';
+    rows.push({
+      id: listRowKey,
+      bedNo: meta.bedNo,
+      patientName: meta.patientName,
+      title,
+      subtitle: therapyLabel,
+      timeText: opened && dayjs(opened).isValid() ? dayjs(opened).format('MM-DD HH:mm') : '',
+      statusCode: 'executable',
+      statusText: '已校对',
+      pageHint: therapyLabel,
+      encounterId,
+      patientId: str(order.patientId) || str(patient?.patientId),
+      listRowKey,
+      orderId: str(order.requestId),
+      groupId: str(order.groupId),
+    });
   }
   return rows;
 }
 
-/** 加载临嘱/长嘱待打：只拉已执行列表（可按执行日区间收窄） */
+/**
+ * 医嘱执行摆药单待打：查询日已执行全部药品（同医嘱多次执行合并为一行）。
+ * 不过滤口服/非口服；西药/中药分 Tab 拉取后合并；仅 MED_REQUEST。
+ */
+async function loadOrderDispenseSheetPending(
+  patients: NurseStationModulePatient[],
+  queryDate: string,
+): Promise<PrintPendingRow[]> {
+  return loadExecutedMedSheetPending(patients, queryDate, 'all');
+}
+
+/** 患者用药单待打：按日已执行全部药品（打印时按就诊合块、一张多人；勾选打印） */
+async function loadOralMedSheetPending(
+  patients: NurseStationModulePatient[],
+  queryDate: string,
+): Promise<PrintPendingRow[]> {
+  return loadExecutedMedSheetPending(patients, queryDate, 'patient_med');
+}
+
+/**
+ * 按日已执行药品待打行。
+ * mode=all → 摆药单；mode=patient_med → 患者用药单（全部药品，勾选打印）。
+ */
+async function loadExecutedMedSheetPending(
+  patients: NurseStationModulePatient[],
+  queryDate: string,
+  mode: 'all' | 'patient_med',
+): Promise<PrintPendingRow[]> {
+  const encounterIds = patients
+    .map((p) => preserveApiIdForRequest(p.id))
+    .filter((id): id is string => Boolean(id));
+  if (encounterIds.length === 0) {
+    return [];
+  }
+  const date = queryDate || dayjs().format('YYYY-MM-DD');
+  const executionDeadline = dayjs(date).endOf('day').format('YYYY-MM-DD HH:mm:ss');
+  const listBody = {
+    encounterIds,
+    therapyType: 'all' as const,
+    executionDeadline,
+    executeTab: 'executed' as const,
+  };
+  // 后端 medicineCategoryTab 单值：西药与中药各拉一次再合并
+  const [westRes, tcmRes, packageBatchSiteEnabled] = await Promise.all([
+    httpListNurseStationOrderExecute({ ...listBody, medicineCategoryTab: 'west' }),
+    httpListNurseStationOrderExecute({ ...listBody, medicineCategoryTab: 'tcm' }),
+    resolveStandingOrderPackageBatchSiteEnabled(),
+  ]);
+
+  const seenOrderKeys = new Set<string>();
+  const rows: PrintPendingRow[] = [];
+  const idPrefix = mode === 'patient_med' ? 'patient-med-sheet' : 'order-dispense';
+
+  function accumulateGroups(
+    groups: { encounterId?: string; orders?: NurseStationOrderExecuteRowDto[] }[],
+  ) {
+    for (const group of groups) {
+      const encounterId = str(group.encounterId);
+      if (!encounterId) {
+        continue;
+      }
+      const patient = patientByEncounter(patients, encounterId);
+      const meta = bedNameOf(patient);
+      for (const order of group.orders ?? []) {
+        if (str(order.orderType).toUpperCase() !== 'MED_REQUEST') {
+          continue;
+        }
+        const orderKey =
+          str(order.listRowKey) || `${encounterId}-${str(order.orderId)}-${str(order.orderType)}`;
+        if (!orderKey || seenOrderKeys.has(orderKey)) {
+          continue;
+        }
+        const slotsOnDay = (order.executedSlots ?? []).filter((slot) => {
+          const at = str(slot.recordedTime) || str(slot.planTime);
+          if (!at) {
+            return false;
+          }
+          if (at.startsWith(date)) {
+            return true;
+          }
+          return dayjs(at).isValid() && dayjs(at).format('YYYY-MM-DD') === date;
+        });
+        if (slotsOnDay.length <= 0) {
+          continue;
+        }
+        seenOrderKeys.add(orderKey);
+        const latestSlot = slotsOnDay[slotsOnDay.length - 1];
+        const latestAt = str(latestSlot?.recordedTime) || str(latestSlot?.planTime);
+        const packageBatchQuantity = shouldUsePackageBatchDispenseQuantity({
+          packageBatchSiteEnabled,
+          isOral: isOralMethodCode(order.methodCode),
+          therapyEnum: order.therapyEnum,
+          packageSplitRatioText: order.packageSplitRatioText,
+          packageUnitDisplay: order.packageUnitDisplay,
+        });
+        rows.push({
+          id: `${idPrefix}-${orderKey}`,
+          bedNo: meta.bedNo,
+          patientName: meta.patientName,
+          title: str(order.adviceDisplayName) || '—',
+          subtitle: str(order.specificationText),
+          timeText: latestAt ? dayjs(latestAt).format('HH:mm') : date,
+          statusCode: 'executable',
+          statusText: '已执行',
+          pageHint: formatOrderDispenseTotalQuantityText(order.dosageDisplay, slotsOnDay.length, {
+            orderTotalQuantityText: order.quantityDisplay,
+            packageBatchQuantity,
+            packageUnitDisplay: order.packageUnitDisplay,
+          }),
+          encounterId,
+          patientId: str(order.patientId) || str(patient?.patientId),
+          listRowKey: orderKey,
+          orderId: str(order.orderId),
+          groupId: str(order.groupId),
+          infusionFlag: resolveMedSheetInfusionFlag(order),
+        });
+      }
+    }
+  }
+
+  accumulateGroups(westRes.groups ?? []);
+  accumulateGroups(tcmRes.groups ?? []);
+
+  rows.sort((a, b) => {
+    const bedCmp = a.bedNo.localeCompare(b.bedNo, 'zh-CN');
+    if (bedCmp !== 0) {
+      return bedCmp;
+    }
+    return a.title.localeCompare(b.title, 'zh-CN');
+  });
+  return rows;
+}
+
+/** 加载临嘱/长嘱待打：已校对 + 已停止（可按开嘱日区间收窄） */
 async function loadOrderPending(
   patients: NurseStationModulePatient[],
   therapyType: 'long' | 'temp',
@@ -286,20 +549,33 @@ async function loadOrderPending(
   if (encounterIds.length === 0) {
     return [];
   }
-  const executedRes = await httpListNurseStationOrderExecute({
+  // 已校对 Tab 已含已停嘱校对行（同一条只一行）
+  const passedRes = await httpListNurseStationOrderAudit({
     encounterIds,
+    auditTab: 'passed',
     therapyType,
-    executionDeadline,
-    executeTab: 'executed',
   });
+  const seen = new Set<string>();
+  const orders: NurseStationOrderAuditRowDto[] = [];
+  for (const group of passedRes.groups ?? []) {
+    for (const order of group.orders ?? []) {
+      const key = str(order.listRowKey) || `${str(order.requestId)}-${str(order.orderType)}`;
+      if (!key || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      orders.push(order);
+    }
+  }
   const rangeTo =
     str(dateTo) || (executionDeadline ? dayjs(executionDeadline).format('YYYY-MM-DD') : '');
-  return mapOrderExecuteToPending(
-    executedRes.groups ?? [],
+  return mapOrderAuditToPending(
+    orders,
     patients,
     therapyType === 'temp' ? '临时' : '长期',
     str(dateFrom) || undefined,
     rangeTo || undefined,
+    therapyType === 'long',
   );
 }
 
@@ -547,13 +823,15 @@ function isServiceApplyOrder(order: NurseStationOrderExecuteRowDto, categoryCode
 
 /**
  * 检查/检验申请单待打：已校对诊疗医嘱（待执行+已执行）中匹配类目的申请行。
- * categoryEnum：检查=23，检验=22。
+ * categoryEnum：检查=23，检验=22；开嘱日区间交后端 reqOpenedTimeFrom/To 过滤。
  */
 async function loadServiceApplyPending(
   patients: NurseStationModulePatient[],
   categoryCode: string,
   executionDeadline: string,
   pageHint: string,
+  dateFrom?: string,
+  dateTo?: string,
 ): Promise<PrintPendingRow[]> {
   const encounterIds = patients
     .map((p) => preserveApiIdForRequest(p.id))
@@ -561,11 +839,16 @@ async function loadServiceApplyPending(
   if (encounterIds.length <= 0) {
     return [];
   }
+  const fromDay = str(dateFrom);
+  const toDay = str(dateTo);
   const listBody = {
     encounterIds,
     therapyType: 'all' as const,
     medicineCategoryTab: 'west' as const,
     executionDeadline,
+    // 有查询日时传开嘱日闭区间，后端按 reqOpenedTime 收窄
+    reqOpenedTimeFrom: fromDay ? `${fromDay} 00:00:00` : undefined,
+    reqOpenedTimeTo: toDay ? `${toDay} 23:59:59` : undefined,
   };
   const [pendingRes, executedRes] = await Promise.all([
     httpListNurseStationOrderExecute({ ...listBody, executeTab: 'pending' }),
@@ -731,13 +1014,19 @@ export async function loadPrintPendingRows(
 
   try {
     if (docType === 'patrol_card') {
-      return await loadPatrolPending(patients, executionDeadline);
+      return await loadPatrolPending(patients, executionDeadline, dateFrom || dateTo);
     }
     if (docType === 'wristband') {
       return buildWristbandPending(patients);
     }
+    if (docType === 'bed_card') {
+      return buildBedCardPending(patients);
+    }
     if (docType === 'fee_list') {
       return buildFeeListPending(patients, dateFrom, dateTo);
+    }
+    if (docType === 'fee_detail') {
+      return buildFeeDetailPending(patients, dateFrom, dateTo);
     }
     if (docType === 'temp_order') {
       return await loadOrderPending(patients, 'temp', executionDeadline, dateFrom, dateTo);
@@ -758,6 +1047,8 @@ export async function loadPrintPendingRows(
         SERVICE_CATEGORY_TEST,
         executionDeadline,
         '检查',
+        dateFrom,
+        dateTo,
       );
     }
     if (docType === 'lab_apply') {
@@ -766,6 +1057,19 @@ export async function loadPrintPendingRows(
         SERVICE_CATEGORY_PROOF,
         executionDeadline,
         '检验',
+        dateFrom,
+        dateTo,
+      );
+    }
+    // 采血贴与检验单同源（categoryEnum=22），每张贴对应一条检验申请
+    if (docType === 'specimen_barcode') {
+      return await loadServiceApplyPending(
+        patients,
+        SERVICE_CATEGORY_PROOF,
+        executionDeadline,
+        '采血贴',
+        dateFrom,
+        dateTo,
       );
     }
     if (docType === 'dispense_summary') {
@@ -773,6 +1077,12 @@ export async function loadPrintPendingRows(
     }
     if (docType === 'dispense_sheet') {
       return await loadSummarySlipPending('dispense_sheet', dateFrom, dateTo);
+    }
+    if (docType === 'order_dispense_sheet') {
+      return await loadOrderDispenseSheetPending(patients, dateFrom || dateTo);
+    }
+    if (docType === 'oral_med_sheet') {
+      return await loadOralMedSheetPending(patients, dateFrom || dateTo);
     }
     if (docType === 'nursing_record') {
       return await loadNursingPending(patients, dateFrom, dateTo);

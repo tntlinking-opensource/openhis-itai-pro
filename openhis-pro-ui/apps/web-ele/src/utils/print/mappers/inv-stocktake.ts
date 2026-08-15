@@ -30,9 +30,9 @@ export interface InvStocktakePrintData {
   itemTypeText: string;
   sourceLocationText: string;
   destLocationText: string;
-  practitionerName: string;
   lineRows: InvStocktakePrintLineRow[];
   totalAmountText: string;
+  /** 制单人（单据创建人，非当前打印人） */
   preparedByName: string;
   approvedByName: string;
 }
@@ -65,7 +65,6 @@ export interface InvStocktakePrintSource {
   itemTypeText?: string;
   sourceLocationText?: string;
   destLocationText?: string;
-  practitionerName?: string;
   lineRows?: InvStocktakePrintLineSource[];
   totalAmountText?: string;
   preparedByName?: string;
@@ -119,7 +118,6 @@ export function buildInvStocktakePrintData(source: InvStocktakePrintSource): Inv
     itemTypeText: invPrintStr(source.itemTypeText),
     sourceLocationText: invPrintStr(source.sourceLocationText),
     destLocationText: invPrintStr(source.destLocationText),
-    practitionerName: invPrintStr(source.practitionerName),
     lineRows,
     totalAmountText,
     preparedByName: invPrintStr(source.preparedByName),

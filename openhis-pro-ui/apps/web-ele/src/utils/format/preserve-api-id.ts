@@ -28,3 +28,24 @@ export function resolveLoginPractitionerIdForRequest(
   const raw = userInfo.practitionerId ?? ext.PractitionerId ?? ext.practitionerId;
   return preserveApiIdForRequest(raw);
 }
+
+/**
+ * 当前登录科室 id：优先登录所选科室，其次医务人员所属科室。
+ * 禁止 Number(organizationId) 再传参。
+ *
+ * @param userInfo 登录用户信息
+ * @param selectedOrganizationId 登录页所选科室（可空）
+ */
+export function resolveLoginOrganizationIdForRequest(
+  userInfo: null | Record<string, unknown> | undefined,
+  selectedOrganizationId?: null | string,
+): string | undefined {
+  const selected = preserveApiIdForRequest(selectedOrganizationId);
+  if (selected) {
+    return selected;
+  }
+  if (!userInfo) return undefined;
+  const ext = (userInfo.extraProperties ?? {}) as Record<string, unknown>;
+  const raw = userInfo.organizationId ?? ext.OrganizationId ?? ext.organizationId;
+  return preserveApiIdForRequest(raw);
+}

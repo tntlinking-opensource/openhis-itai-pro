@@ -106,13 +106,10 @@ function handleReset() {
   void getList();
 }
 
-function handlePagination(pagination: { pageNo?: number; pageSize?: number }) {
-  if (pagination.pageNo) {
-    queryParams.pageNo = pagination.pageNo;
-  }
-  if (pagination.pageSize) {
-    queryParams.pageSize = pagination.pageSize;
-  }
+/** 分页变更（TableLayout 契约为 page/limit） */
+function handlePagination(pagination: { page: number; limit: number }) {
+  queryParams.pageNo = pagination.page;
+  queryParams.pageSize = pagination.limit;
   void getList();
 }
 

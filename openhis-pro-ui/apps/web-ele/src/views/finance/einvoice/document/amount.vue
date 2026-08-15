@@ -272,7 +272,19 @@ onMounted(() => {
 
       <ElTable :data="editableLines" border stripe>
         <ElTableColumn prop="lineNo" label="行" width="60" />
-        <ElTableColumn prop="chargeName" label="项目名称" min-width="140" />
+        <ElTableColumn label="项目名称" min-width="160" show-overflow-tooltip>
+          <template #default="{ row }">
+            {{ row.itemName?.trim() || row.chargeName || '—' }}
+            <span
+              v-if="
+                row.itemName?.trim() && row.chargeName && row.itemName.trim() !== row.chargeName
+              "
+              class="ml-1 text-xs text-[var(--el-text-color-secondary)]"
+            >
+              （{{ row.chargeName }}）
+            </span>
+          </template>
+        </ElTableColumn>
         <ElTableColumn label="标准金额" width="110">
           <template #default="{ row }">
             <span class="text-[var(--el-text-color-secondary)]">
@@ -295,7 +307,9 @@ onMounted(() => {
         </ElTableColumn>
         <ElTableColumn label="备注" min-width="100">
           <template #default="{ row }">
-            <span v-if="row.adjusted" class="text-[var(--el-color-warning)]">已调整</span>
+            <span v-if="row.listRemark">{{ row.listRemark }}</span>
+            <span v-else-if="row.adjusted" class="text-[var(--el-color-warning)]">已调整</span>
+            <span v-else class="text-[var(--el-text-color-secondary)]">—</span>
           </template>
         </ElTableColumn>
       </ElTable>

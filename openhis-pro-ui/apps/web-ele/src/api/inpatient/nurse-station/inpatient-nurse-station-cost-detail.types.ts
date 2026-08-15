@@ -30,6 +30,11 @@ export interface QueryNurseStationInpatientCostDetailRequest {
   statusEnum: NurseStationCostDetailStatusFilter;
   /** 项目关键字：名称或院内编码模糊（可选） */
   keyword?: string;
+  /**
+   * 费用清单打印：成对剔除冲销留痕（原行+冲销行均不返回；
+   * 冲销可在日期窗外仍剔除窗内原行）。页面 Tab 勿传。
+   */
+  excludeOffsetPairs?: boolean;
 }
 
 /** 查询住院费用明细响应 */
@@ -53,7 +58,7 @@ export interface NurseStationCostDetailLineDto {
   unitPrice?: number | string;
   totalPrice?: number | string;
   businessDateTime?: string;
-  /** 展示时间（执行 recorded；无则回落 businessDateTime） */
+  /** 展示时间（与业务时间同源：recorded / 发放 / 滚费 occurrence） */
   displayDateTime?: string;
   statusEnum?: string;
   statusDisplay?: string;
@@ -62,6 +67,10 @@ export interface NurseStationCostDetailLineDto {
   refundHighlight?: boolean;
   serviceTable?: string;
   expenseBlockCode?: string;
+  /** 产品实际分类 code（明细单按分类分组） */
+  categoryCode?: string;
+  /** 产品实际分类展示名 */
+  categoryDisplay?: string;
 }
 
 /** 费用汇总行 */

@@ -29,6 +29,7 @@ import {
 } from '../services/temperature-sheet-batch-fill';
 import {
   isBloodPressureInputDisabled,
+  isTemperatureSheetAdmissionRecordDate,
   normalizeTemperatureSheetRecordTime,
   syncFillRowChartTimeSlot,
 } from '../services/map-nurse-station-temperature-sheet';
@@ -97,6 +98,8 @@ function mapPatientItemToModulePatient(item: PatientItem): NurseStationModulePat
     nurseLevel: item.level,
     feeType: item.feeType,
     diagnosis: item.diagnosis,
+    organizationName: (item.organizationName ?? '').trim() || undefined,
+    organizationId: item.organizationId,
     regionName,
     wardName,
     pendingAudit: item.pendingAudit,
@@ -245,6 +248,11 @@ function isRowBloodPressureDisabled(row: TemperatureSheetBatchFillRowDraft): boo
   return isBloodPressureInputDisabled(row.slotRow, row.dayRows);
 }
 
+/** 判断该患者当前批量录入日是否为入院日 */
+function isBatchRowAdmissionDay(row: TemperatureSheetBatchFillRowDraft): boolean {
+  return isTemperatureSheetAdmissionRecordDate(recordDate.value, row.admissionAt);
+}
+
 /** 保存前校验各行特殊事件 */
 function validateBatchSpecialEvents(): string | null {
   for (const row of batchRows.value) {
@@ -269,6 +277,7 @@ async function openSingleFillForRow(row: TemperatureSheetBatchFillRowDraft): Pro
       bedNo: row.bedNo,
       name: row.name,
       gender: row.gender,
+      admissionAt: row.admissionAt,
     },
     recordDate: recordDate.value,
     activeTimeSlot: resolveTemperatureSheetTimeSlotFromHm(activeRecordTime.value),
@@ -408,7 +417,6 @@ defineExpose({
             <span>体温(℃)</span>
             <span>脉搏</span>
             <span>呼吸</span>
-            <span>心率</span>
             <span>收缩压</span>
             <span>舒张压</span>
             <span>特殊</span>
@@ -467,11 +475,6 @@ defineExpose({
                   </ElInput>
                 </div>
                 <div class="nav-cell" :data-nav-col="3" :data-nav-row="index">
-                  <ElInput v-model="row.slotRow.heartRate" placeholder="心率">
-                    <template #suffix>bpm</template>
-                  </ElInput>
-                </div>
-                <div class="nav-cell" :data-nav-col="4" :data-nav-row="index">
                   <ElInput
                     v-model="row.slotRow.systolic"
                     :disabled="isRowBloodPressureDisabled(row)"
@@ -480,7 +483,7 @@ defineExpose({
                     <template #suffix>mmHg</template>
                   </ElInput>
                 </div>
-                <div class="nav-cell" :data-nav-col="5" :data-nav-row="index">
+                <div class="nav-cell" :data-nav-col="4" :data-nav-row="index">
                   <ElInput
                     v-model="row.slotRow.diastolic"
                     :disabled="isRowBloodPressureDisabled(row)"
@@ -504,7 +507,7 @@ defineExpose({
                     <template #suffix>kg</template>
                   </ElInput>
                 </div>
-                <div class="batch-extra-item">
+                <div v-if="!isBatchRowAdmissionDay(row)" class="batch-extra-item">
                   <span class="batch-extra-label">小便</span>
                   <ElInput v-model="row.extraRecord.urineCount" placeholder="次数" size="small">
                     <template #suffix>次</template>
@@ -520,7 +523,7 @@ defineExpose({
                     <template #suffix>cm</template>
                   </ElInput>
                 </div>
-                <div class="batch-extra-item">
+                <div v-if="!isBatchRowAdmissionDay(row)" class="batch-extra-item">
                   <span class="batch-extra-label">大便</span>
                   <ElInput v-model="row.extraRecord.stoolCount" placeholder="次数" size="small">
                     <template #suffix>次</template>
@@ -532,19 +535,19 @@ defineExpose({
                     <template #suffix>cm</template>
                   </ElInput>
                 </div>
-                <div class="batch-extra-item">
+                <div v-if="!isBatchRowAdmissionDay(row)" class="batch-extra-item">
                   <span class="batch-extra-label">入量</span>
                   <ElInput v-model="row.extraRecord.intake" placeholder="入量" size="small">
                     <template #suffix>ml</template>
                   </ElInput>
                 </div>
-                <div class="batch-extra-item">
+                <div v-if="!isBatchRowAdmissionDay(row)" class="batch-extra-item">
                   <span class="batch-extra-label">尿量</span>
                   <ElInput v-model="row.extraRecord.urine" placeholder="尿量" size="small">
                     <template #suffix>ml</template>
                   </ElInput>
                 </div>
-                <div class="batch-extra-item">
+                <div v-if="!isBatchRowAdmissionDay(row)" class="batch-extra-item">
                   <span class="batch-extra-label">其他</span>
                   <ElInput v-model="row.extraRecord.other" placeholder="其他" size="small">
                     <template #suffix>ml</template>
@@ -643,7 +646,7 @@ defineExpose({
 .batch-grid-head,
 .batch-vital-row {
   display: grid;
-  grid-template-columns: 88px 88px repeat(6, 160px) minmax(0, 1fr);
+  grid-template-columns: 88px 88px repeat(5, 160px) minmax(0, 1fr);
   gap: 8px;
   align-items: start;
 }

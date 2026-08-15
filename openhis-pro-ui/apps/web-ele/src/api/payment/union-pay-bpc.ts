@@ -43,6 +43,38 @@ export async function httpPrepareConsumerScan(body: PrepareConsumerScanRequest) 
   return publicRequestClient.post<PrepareConsumerScanResponse>(`${BASE}/prepareConsumerScan`, body);
 }
 
+/** Win 被扫成功后立即落 BPC SUCCESS（独立于 settle 事务，防半成功丢单） */
+export interface ApplyClientScanResultRequest {
+  paymentId: number | string;
+  detailIndex?: number;
+  amount: number | string;
+  merTradeNo: string;
+  tradeNo: string;
+  payType: string;
+  respCode: string;
+  respMsg?: string;
+  txnAmtFen?: number;
+}
+
+export async function httpApplyClientScanResult(body: ApplyClientScanResultRequest) {
+  return publicRequestClient.post(`${BASE}/applyClientScanResult`, body);
+}
+
+/** Win 退货成功后落 BPC REFUNDED（HIS 未落账的半成功退货收口） */
+export interface ApplyClientRefundResultRequest {
+  paymentId: number | string;
+  merTradeNo: string;
+  tradeNo: string;
+  refundAmount: number | string;
+  respCode: string;
+  respMsg?: string;
+  refundMerTradeNo?: string;
+}
+
+export async function httpApplyClientRefundResult(body: ApplyClientRefundResultRequest) {
+  return publicRequestClient.post(`${BASE}/applyClientRefundResult`, body);
+}
+
 export async function httpGetBpcOrdersByPayment(paymentId: number | string) {
   return publicRequestClient.post<BpcOrderSummaryDto[]>(`${BASE}/getOrderByPayment`, {
     paymentId,

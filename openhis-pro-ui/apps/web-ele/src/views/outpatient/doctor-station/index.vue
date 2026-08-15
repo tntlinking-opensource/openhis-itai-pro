@@ -18,6 +18,7 @@ import { ElButton, ElMessage, ElMessageBox } from 'element-plus';
 import { storeToRefs } from 'pinia';
 
 import {
+  httpCancelOutpatientReception,
   httpCompleteOutpatientEncounter,
   httpPageOutpatientInfoForDoctorStation,
   httpStartOutpatientReception,
@@ -29,9 +30,13 @@ import {
   ReportQuery,
   TcmAdvice,
 } from '#/components/doctor-station';
+import CommonDiagnosisMaintainDialog from '#/components/doctor-station/diagnosis/components/common-diagnosis-maintain-dialog.vue';
+import { COMMON_DIAGNOSIS_MAINTAIN_VERSION_KEY } from '#/components/doctor-station/diagnosis/common-diagnosis-maintain.context';
 import DoctorHeader from '#/components/outpatient/doctor-header.vue';
+import EmrTemplateMaintainDialog from '#/components/outpatient/emr-template-maintain-dialog.vue';
 import MedicalRecordForm from '#/components/outpatient/medical-record-form.vue';
 import PatientInfoBar from '#/components/outpatient/patient-info-bar.vue';
+import { EMR_TEMPLATE_STATION_KIND } from '#/views/basic/emr-template/emr-template-scope.constants';
 import { confirmEmrDiscardUnsaved } from '#/emrEditor';
 import { clearEncounterDiagnosisSession } from '#/components/doctor-station/diagnosis/services/encounter-diagnosis-session';
 import { useAuthStore } from '#/store';
@@ -57,13 +62,18 @@ import {
   readDoctorOrderTabPreference,
   writeDoctorOrderTabPreference,
 } from './services/order-tab-preference.service';
-import WorkInjuryDoctorApprovalAction from '#/chs/work-injury/work-injury-doctor-approval-action.vue';
 
 defineOptions({
   name: 'Doctor',
 });
 
 const QUEUE_IN_PROGRESS = 'IN_PROGRESS';
+
+/**
+ * IF-DOR-01 单页条数。
+ * 待诊/在诊/完诊共用同一次四态并集结果再本地筛。
+ */
+const DOCTOR_STATION_QUEUE_PAGE_SIZE = 150;
 
 /** 患者队列 Tab 内：全部 / 待诊 / 在诊 / 完诊状态筛选 */
 type DoctorWaitingQueueStatusFilter = 'all' | 'completed' | 'in-progress' | 'waiting';
@@ -204,6 +214,8 @@ const listLoading = ref(false);
 const acceptingEncounterId = ref<null | string>(null);
 /** 正在提交完诊，避免重复触发 */
 const completingEncounterId = ref<null | string>(null);
+/** 正在提交取消接诊，避免重复触发 */
+const cancellingReceptionEncounterId = ref<null | string>(null);
 
 const filteredPatients = computed(() => {
   if (patientQueue.value === 'current') return currentPatients.value;
@@ -338,7 +350,7 @@ async function loadDoctorStationLists(options?: {
       startDate,
       endDate,
       pageNo: 1,
-      pageSize: 50,
+      pageSize: DOCTOR_STATION_QUEUE_PAGE_SIZE,
     });
 
     const { content: waitingRows } = parsePagedRowsFromApiData<DoctorStationPatient>(waitingRes);
@@ -629,6 +641,10 @@ const ensureReceptionForClinicalWork: EnsureClinicalReceptionFn = async () => {
 
 provide(ENSURE_CLINICAL_RECEPTION_KEY, ensureReceptionForClinicalWork);
 
+/** 常用诊断维护变更计数：诊断 Tab 注入后刷新快捷树 */
+const commonDxMaintainVersion = ref(0);
+provide(COMMON_DIAGNOSIS_MAINTAIN_VERSION_KEY, commonDxMaintainVersion);
+
 // 双击待诊卡片：RECEPTION_WRITE_STATUSES 内调接诊写接口；其余不调接口，仅切在诊并选中。
 const handlePatientAccept = async (patient: DoctorStationPatient) => {
   if (acceptingEncounterId.value !== null) return;
@@ -736,19 +752,109 @@ async function handleCompleteVisit(): Promise<void> {
   }
 }
 
+/**
+ * 取消接诊：在诊/暂离/完诊回退待诊，表示医生同意窗口退号。
+ * 待诊不可取消；成功后清空当前接诊并刷新队列。
+ */
+async function handleCancelReception(): Promise<void> {
+  if (!ensurePatientSelected()) return;
+  if (cancellingReceptionEncounterId.value !== null) {
+    ElMessage.warning('取消接诊处理中，请稍候');
+    return;
+  }
+
+  const patient = selectedPatient.value;
+  if (!patient) return;
+
+  const status = statusEnumForReceptionDecision(patient, currentPatientInfo.value);
+  // 仅已接诊后的状态可取消（与后端 assertCancelReceptionAllowed 对齐）。
+  if (WAITING_STATUS_CODES.has(status)) {
+    ElMessage.warning('当前患者尚未接诊，无需取消接诊');
+    return;
+  }
+  if (!IN_PROGRESS_STATUS_CODES.has(status) && !COMPLETED_STATUS_CODES.has(status)) {
+    ElMessage.warning('当前状态不允许取消接诊');
+    return;
+  }
+
+  const ok = await guardEmrUnsavedBeforeLeaveMedicalRecord();
+  if (!ok) return;
+
+  const patientName = (patient.patientName ?? '').trim() || '当前患者';
+  try {
+    await ElMessageBox.confirm(
+      `取消接诊后患者将回到「待诊」，收费窗口方可退号。确定取消患者【${patientName}】的接诊？`,
+      '取消接诊确认',
+      { type: 'warning', confirmButtonText: '确定取消接诊', cancelButtonText: '取消' },
+    );
+  } catch {
+    return;
+  }
+
+  const operatorId = resolveStaffPractitionerIdForInProgressQueue();
+  if (!operatorId) {
+    ElMessage.warning('当前账号未关联医师身份，无法取消接诊');
+    return;
+  }
+
+  const encounterId = (patient.encounterId ?? '').trim();
+  if (!encounterId) {
+    ElMessage.warning('缺少就诊标识，无法取消接诊');
+    return;
+  }
+
+  cancellingReceptionEncounterId.value = encounterId;
+  try {
+    await httpCancelOutpatientReception({
+      encounterId,
+      operatorId,
+    });
+    ElMessage.success('已取消接诊');
+    doctorPatientStore.setSelectedPatient(null);
+    currentPatients.value = [];
+    patientQueue.value = 'waiting';
+    await loadDoctorStationLists();
+  } catch (error) {
+    ElMessage.error(resolveRequestErrorMessage(error, '取消接诊失败，请稍后重试'));
+  } finally {
+    cancellingReceptionEncounterId.value = null;
+  }
+}
+
 const handleTemporaryLeave = () => {
   if (!ensurePatientSelected()) return;
   ElMessage.info('暂离功能待实现');
 };
 
-/** 工伤 2301 完成后刷新队列（更新审批角标）。 */
-const handleWorkInjuryApprovalCompleted = () => {
-  void loadDoctorStationLists({ skipDefaultSelection: true });
-};
-
 const refundDialogVisible = ref(false);
 const admissionDialogVisible = ref(false);
 const prescriptionSheetDialogVisible = ref(false);
+const commonDxMaintainDialogVisible = ref(false);
+const emrTemplateMaintainDialogVisible = ref(false);
+
+/** 打开病历模板维护（个人/科室） */
+function handleMaintainEmrTemplate() {
+  emrTemplateMaintainDialogVisible.value = true;
+}
+
+/** 模板维护变更后：若当前在病历 Tab 则刷新侧栏模板树 */
+function handleEmrTemplateMaintainChanged() {
+  if (activeTab.value !== DOCTOR_TABS.MEDICAL_RECORD) return;
+  const inst = tabPanelRef.value as null | { refreshTemplateTree?: () => unknown };
+  if (inst && typeof inst.refreshTemplateTree === 'function') {
+    void inst.refreshTemplateTree();
+  }
+}
+
+/** 打开诊断维护（个人/科室常用） */
+function handleMaintainCommonDiagnosis() {
+  commonDxMaintainDialogVisible.value = true;
+}
+
+/** 维护弹窗变更后递增版本，驱动诊断快捷树刷新 */
+function handleCommonDiagnosisMaintainChanged() {
+  commonDxMaintainVersion.value += 1;
+}
 const prescriptionPrintSubmitting = ref(false);
 
 /** 打开申请退费弹窗（须已选就诊；打开前自动接诊） */
@@ -856,12 +962,9 @@ const handleAdmission = async () => {
           @action="handleAction"
         >
           <template #actions>
-            <WorkInjuryDoctorApprovalAction
-              :patient="selectedPatient"
-              @completed="handleWorkInjuryApprovalCompleted"
-            />
             <ElButton type="primary" link @click="handleToolbarRefresh">刷新</ElButton>
             <ElButton type="primary" link @click="handleCompleteVisit">完诊</ElButton>
+            <ElButton type="primary" link @click="handleCancelReception">取消接诊</ElButton>
             <ElButton type="primary" link @click="handleTemporaryLeave"> 暂离 </ElButton>
             <ElButton type="primary" link @click="handleRefund">退费</ElButton>
             <ElButton type="primary" link @click="handlePrescription"> 处方单 </ElButton>
@@ -872,6 +975,10 @@ const handleAdmission = async () => {
               @click="handlePrintPrescription"
             >
               打印处方
+            </ElButton>
+            <ElButton type="primary" link @click="handleMaintainEmrTemplate"> 病历模板 </ElButton>
+            <ElButton type="primary" link @click="handleMaintainCommonDiagnosis">
+              诊断维护
             </ElButton>
             <ElButton type="primary" link @click="handleAdmission">办理住院</ElButton>
           </template>
@@ -928,6 +1035,18 @@ const handleAdmission = async () => {
       :patient="serviceApplyPatientSummary"
       :print-meta="serviceApplyPrintMeta"
       @saved="handleServiceApplyPersisted"
+    />
+
+    <CommonDiagnosisMaintainDialog
+      v-model="commonDxMaintainDialogVisible"
+      station-scope="outpatient"
+      @changed="handleCommonDiagnosisMaintainChanged"
+    />
+
+    <EmrTemplateMaintainDialog
+      v-model="emrTemplateMaintainDialogVisible"
+      :station-kind="EMR_TEMPLATE_STATION_KIND.OUTPATIENT"
+      @changed="handleEmrTemplateMaintainChanged"
     />
   </div>
 </template>

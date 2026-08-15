@@ -32,8 +32,13 @@ import {
   httpRefundPrepayAdvanceDeposit,
 } from '#/api/inpatient-prepay';
 import { isScanPayChannel, useUnionPayScanPay } from '#/composables/payment/useUnionPayScanPay';
-import { submitPrepayScanPayment } from '#/utils/payment/submit-scan-payment';
+import {
+  findBpcSuccessOrder,
+  submitPrepayScanPayment,
+  toClientScanFromBpcOrder,
+} from '#/utils/payment/submit-scan-payment';
 import { settleWithScanRecovery } from '#/utils/payment/scan-settle-recovery';
+import { httpGetBpcOrdersByPayment } from '#/api/payment/union-pay-bpc';
 import {
   clearCachedClientRefundResult,
   submitScanRefund,
@@ -50,6 +55,12 @@ import {
   formatInpatientAccountBalanceSecondaryText,
   resolveInpatientAccountBalanceLabel,
 } from '#/utils/inpatient/account-balance-display';
+import {
+  buildPrepayReceiptSourceFromCollect,
+  buildPrepayReceiptSourceFromRecord,
+  printInpatientPrepayReceipt,
+  schedulePrintInpatientPrepayReceipt,
+} from '#/utils/print/print-inpatient-prepay-receipt';
 
 import InpatientQueuePanel from './components/inpatient-queue-panel.vue';
 import {
@@ -148,7 +159,20 @@ const recordTableColumns: TableColumn[] = [
     align: 'center',
     headerAlign: 'center',
   },
+  {
+    prop: 'action',
+    label: '操作',
+    width: 160,
+    slot: 'action',
+    align: 'center',
+    headerAlign: 'center',
+    fixed: 'right',
+  },
 ];
+
+const draftSettlePaymentId = ref('');
+const reprintPaymentId = ref('');
+const printLatestLoading = ref(false);
 
 const currentPatient = computed(
   () => queueData.value.find((item) => item.encounterId === selectedEncounterId.value) ?? null,
@@ -335,11 +359,169 @@ function handleOpenRefundDialog() {
   refundDialogVisible.value = true;
 }
 
+/** 草稿行是否可补结算（银联已扣、院内未落账） */
+function canCompleteDraftSettlement(row: PrepayPaymentRecordDto): boolean {
+  return (
+    row.statusEnum === 'DRAFT' &&
+    row.paymentEnum !== 'UN_PAY' &&
+    String(row.paymentId ?? '').trim() !== ''
+  );
+}
+
+/** 成功收取流水可补打预交金收据 */
+function canReprintPrepayReceipt(row: PrepayPaymentRecordDto): boolean {
+  return (
+    row.statusEnum === 'SUCCESS' &&
+    row.paymentEnum !== 'UN_PAY' &&
+    String(row.paymentId ?? '').trim() !== ''
+  );
+}
+
+/** 当前患者是否有可打印的成功收取流水 */
+const canPrintLatestPrepayReceipt = computed(() =>
+  prepayRecordData.value.some((row) => canReprintPrepayReceipt(row)),
+);
+
+/** 最近一笔成功收取流水（供工具栏打印） */
+function resolveLatestCollectRecord(
+  records: PrepayPaymentRecordDto[],
+): PrepayPaymentRecordDto | undefined {
+  const collectRows = records.filter((row) => canReprintPrepayReceipt(row));
+  if (collectRows.length === 0) {
+    return undefined;
+  }
+  const sorted = [...collectRows].sort((a, b) =>
+    String(b.tradeTime ?? '').localeCompare(String(a.tradeTime ?? '')),
+  );
+  return sorted[0];
+}
+
+/**
+ * 对半成功草稿补结算：复用 BPC SUCCESS 凭证，不重复扫码扣款。
+ *
+ * @param row 预交金流水草稿行
+ */
+async function handleCompleteDraftSettlement(row: PrepayPaymentRecordDto) {
+  const paymentDraftId = preserveApiIdForRequest(row.paymentId);
+  const encounterId = preserveApiIdForRequest(selectedEncounterId.value);
+  const patientId = preserveApiIdForRequest(currentPatient.value?.patientId);
+  const amountNum = Number(row.amount);
+  if (!paymentDraftId || !encounterId || !patientId) {
+    ElMessage.warning('缺少就诊或支付草稿信息，无法补结算');
+    return;
+  }
+  if (!Number.isFinite(amountNum) || amountNum <= 0) {
+    ElMessage.warning('草稿金额无效');
+    return;
+  }
+  if (!canOperatePrepay.value) {
+    ElMessage.warning('当前就诊状态不可收取预交金');
+    return;
+  }
+  draftSettlePaymentId.value = String(paymentDraftId);
+  try {
+    const orders = (await httpGetBpcOrdersByPayment(paymentDraftId)) ?? [];
+    const successOrder = findBpcSuccessOrder(orders);
+    if (!successOrder) {
+      ElMessage.error('未找到银联成功扣款凭证，请联系信息科，勿重复扫码');
+      return;
+    }
+    const clientScanResult = toClientScanFromBpcOrder(successOrder);
+    const collectResult = await settleWithScanRecovery(
+      clientScanResult,
+      () =>
+        httpCollectPrepayAdvanceDeposit({
+          encounterId,
+          patientId,
+          amount: amountNum,
+          paymentDraftId,
+          paymentDetails: [{ payChannelCode: 'SCAN_PAY', amount: amountNum }],
+          clientScanResult,
+          operatorId: resolveLoginPractitionerIdForRequest(userStore.userInfo),
+        }),
+      {
+        paymentDraftId,
+        refundAmountYuan: amountNum,
+      },
+    );
+    await refreshQueueAfterBalanceChange();
+    await queryPrepayRecords();
+    ElMessage.success('补结算成功');
+    schedulePrintInpatientPrepayReceipt({
+      source: buildPrepayReceiptSourceFromCollect({
+        patient: currentPatient.value,
+        amount: amountNum,
+        payChannelCode: 'SCAN_PAY',
+        scanPayType: clientScanResult.payType,
+      }),
+      encounterId,
+      paymentId: collectResult?.paymentId ?? paymentDraftId,
+      jobName: '住院预交金收据',
+    });
+  } finally {
+    draftSettlePaymentId.value = '';
+  }
+}
+
+/** 补打预交金收据（按成功收取流水） */
+async function handleReprintPrepayReceipt(row: PrepayPaymentRecordDto) {
+  if (!canReprintPrepayReceipt(row)) {
+    return;
+  }
+  if (!currentPatient.value) {
+    ElMessage.warning('请先选择患者');
+    return;
+  }
+  const paymentId = String(row.paymentId ?? '').trim();
+  reprintPaymentId.value = paymentId;
+  try {
+    await printInpatientPrepayReceipt({
+      source: buildPrepayReceiptSourceFromRecord({
+        patient: currentPatient.value,
+        record: row,
+      }),
+      encounterId: selectedEncounterId.value,
+      paymentId,
+      jobName: '住院预交金收据（补打）',
+    });
+  } finally {
+    reprintPaymentId.value = '';
+  }
+}
+
+/** 工具栏打印：打印当前患者最近一笔成功收取收据 */
+async function handlePrintLatestPrepayReceipt() {
+  if (!currentPatient.value) {
+    ElMessage.warning('请先选择患者');
+    return;
+  }
+  const record = resolveLatestCollectRecord(prepayRecordData.value);
+  if (!record) {
+    ElMessage.warning('暂无成功收取流水，无法打印');
+    return;
+  }
+  printLatestLoading.value = true;
+  try {
+    await printInpatientPrepayReceipt({
+      source: buildPrepayReceiptSourceFromRecord({
+        patient: currentPatient.value,
+        record,
+      }),
+      encounterId: selectedEncounterId.value,
+      paymentId: record.paymentId,
+      jobName: '住院预交金收据',
+    });
+  } finally {
+    printLatestLoading.value = false;
+  }
+}
+
 /** 提交收取预交金并刷新余额与流水 */
 async function handleCollectPrepay() {
   const amount = parsePositiveAmount(prepayForm.amount);
   const encounterId = preserveApiIdForRequest(selectedEncounterId.value);
   const patientId = preserveApiIdForRequest(currentPatient.value?.patientId);
+  const payChannelCode = prepayForm.payChannelCode;
   if (!encounterId || !patientId) {
     ElMessage.warning('请先选择患者');
     return;
@@ -352,7 +534,7 @@ async function handleCollectPrepay() {
     ElMessage.warning('请输入正确的收费金额');
     return;
   }
-  if (isScanPayChannel(prepayForm.payChannelCode) && !prepayForm.scanCode.trim()) {
+  if (isScanPayChannel(payChannelCode) && !prepayForm.scanCode.trim()) {
     ElMessage.warning('请输入付款码');
     return;
   }
@@ -361,7 +543,7 @@ async function handleCollectPrepay() {
   try {
     let paymentDraftId: string | undefined;
     let clientScanResult;
-    if (isScanPayChannel(prepayForm.payChannelCode)) {
+    if (isScanPayChannel(payChannelCode)) {
       await refreshUnionPayCapabilities();
       if (!scanPayEnabled.value) {
         ElMessage.error('请启动本地客户端（OpenHIS.Win）并确认银联组件已安装');
@@ -373,7 +555,7 @@ async function handleCollectPrepay() {
         patientId,
         amount,
         scanCode: prepayForm.scanCode,
-        payChannelCode: prepayForm.payChannelCode,
+        payChannelCode,
         operatorId: resolveLoginPractitionerIdForRequest(userStore.userInfo),
         remark: prepayForm.remark.trim() || undefined,
       });
@@ -387,7 +569,7 @@ async function handleCollectPrepay() {
       amount,
       paymentDetails: [
         {
-          payChannelCode: prepayForm.payChannelCode,
+          payChannelCode,
           amount,
         },
       ],
@@ -396,12 +578,18 @@ async function handleCollectPrepay() {
       remark: prepayForm.remark.trim() || undefined,
     };
 
+    let collectResult: Awaited<ReturnType<typeof httpCollectPrepayAdvanceDeposit>> | undefined;
     if (clientScanResult) {
-      await settleWithScanRecovery(clientScanResult, () =>
-        httpCollectPrepayAdvanceDeposit({ ...collectBody, clientScanResult }),
+      collectResult = await settleWithScanRecovery(
+        clientScanResult,
+        () => httpCollectPrepayAdvanceDeposit({ ...collectBody, clientScanResult }),
+        {
+          paymentDraftId,
+          refundAmountYuan: amount,
+        },
       );
     } else {
-      await httpCollectPrepayAdvanceDeposit(collectBody);
+      collectResult = await httpCollectPrepayAdvanceDeposit(collectBody);
     }
     await refreshQueueAfterBalanceChange();
     prepayForm.amount = '';
@@ -409,6 +597,17 @@ async function handleCollectPrepay() {
     prepayForm.scanCode = '';
     await queryPrepayRecords();
     ElMessage.success('预交金收取成功');
+    schedulePrintInpatientPrepayReceipt({
+      source: buildPrepayReceiptSourceFromCollect({
+        patient: currentPatient.value,
+        amount,
+        payChannelCode,
+        scanPayType: clientScanResult?.payType,
+      }),
+      encounterId,
+      paymentId: collectResult?.paymentId,
+      jobName: '住院预交金收据',
+    });
   } finally {
     collectSubmitting.value = false;
   }
@@ -629,6 +828,14 @@ onMounted(async () => {
                 <ElButton plain :disabled="!canOperatePrepay" @click="handleOpenRefundDialog">
                   退预交金
                 </ElButton>
+                <ElButton
+                  plain
+                  :disabled="!canPrintLatestPrepayReceipt"
+                  :loading="printLatestLoading"
+                  @click="handlePrintLatestPrepayReceipt"
+                >
+                  打印
+                </ElButton>
               </div>
             </div>
 
@@ -701,6 +908,35 @@ onMounted(async () => {
                   <ElTag :type="row.statusEnum === 'SUCCESS' ? 'success' : 'info'" effect="light">
                     {{ row.statusEnumText }}
                   </ElTag>
+                </template>
+                <template #action="{ row }">
+                  <div class="flex flex-wrap items-center justify-center gap-1">
+                    <ElButton
+                      v-if="canCompleteDraftSettlement(row)"
+                      type="primary"
+                      link
+                      :loading="draftSettlePaymentId === String(row.paymentId)"
+                      :disabled="!canOperatePrepay || collectSubmitting"
+                      @click="handleCompleteDraftSettlement(row)"
+                    >
+                      补结算
+                    </ElButton>
+                    <ElButton
+                      v-if="canReprintPrepayReceipt(row)"
+                      type="primary"
+                      link
+                      :loading="reprintPaymentId === String(row.paymentId)"
+                      @click="handleReprintPrepayReceipt(row)"
+                    >
+                      补打
+                    </ElButton>
+                    <span
+                      v-if="!canCompleteDraftSettlement(row) && !canReprintPrepayReceipt(row)"
+                      class="text-[var(--el-text-color-placeholder)]"
+                    >
+                      —
+                    </span>
+                  </div>
                 </template>
               </RegisterStyleTableLayout>
             </div>

@@ -45,6 +45,7 @@ export function mapInpatientDoctorStationPatientToCardPayload(
     visitNo: (row.encounterBusNo ?? '').trim() || undefined,
     status: (row.statusEnumText ?? '').trim() || '在院',
     paymentType,
+    insutype: (row.insutype ?? '').trim() || undefined,
     priority: bedLabel,
     isRegistered: true,
     accountBalanceSummary: formatInpatientAccountBalancePrimaryText(row),

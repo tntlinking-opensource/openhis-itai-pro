@@ -17,6 +17,12 @@ export interface BossLineDto {
   lineNo?: number;
   chargeCode?: string;
   chargeName?: string;
+  /** 具体项目/药品名；展示优先于 chargeName。 */
+  itemName?: string;
+  /** 甲类/乙类/丙类/自费。 */
+  listRemark?: string;
+  listMedicalCareType?: string;
+  unit?: string;
   stdAmount?: number;
   amount?: number;
   adjusted?: boolean;

@@ -67,6 +67,9 @@ export function buildAdviceDrugItemSeedFromListRow(row: AdviceRowItem): AdviceDr
     skinTest: row.skinTestFlag === true,
     frequency: String(row.rateCode ?? '').trim(),
     usage: String(row.methodCode ?? '').trim(),
+    speedCode: String(row.speedCode ?? '').trim() || undefined,
+    // 列表 infusion_flag 可能未落库；有滴速码时仍展示滴速编辑
+    injectFlag: row.injectionFlag === true || Boolean(String(row.speedCode ?? '').trim()),
     medicationDays: isInpatientLongTermMedicationTherapy(row.therapyTypeCode)
       ? undefined
       : positiveInt(row.dispensePerDuration),
@@ -130,6 +133,8 @@ export function mergeCatalogIntoAdviceDrugItemForEdit(
     feeNature: seed.feeNature,
     frequency: seed.frequency,
     usage: seed.usage,
+    speedCode: seed.speedCode,
+    injectFlag: seed.injectFlag === true,
     medicationDays: isInpatientLongTermMedicationTherapy(opts?.therapyTypeCode ?? seed.therapyEnum)
       ? undefined
       : seed.medicationDays,

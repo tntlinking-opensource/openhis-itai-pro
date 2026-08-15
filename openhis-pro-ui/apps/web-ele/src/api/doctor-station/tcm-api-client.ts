@@ -23,6 +23,8 @@ import type {
   SignTcmRxBatchResponse,
   StopLongTermTcmHerbalPrescriptionRequest,
   StopLongTermTcmHerbalPrescriptionResponse,
+  SupplementTcmDecoctionChargeRequest,
+  SupplementTcmDecoctionChargeResponse,
   VoidTcmDecoctionChargeRequest,
   VoidTcmDecoctionChargeResponse,
   WithdrawOrDeleteTcmRxRequest,
@@ -63,6 +65,9 @@ export interface DoctorStationTcmHttpClient {
   httpVoidTcmDecoctionCharge: (
     body: VoidTcmDecoctionChargeRequest,
   ) => Promise<VoidTcmDecoctionChargeResponse>;
+  httpSupplementTcmDecoctionCharge: (
+    body: SupplementTcmDecoctionChargeRequest,
+  ) => Promise<SupplementTcmDecoctionChargeResponse>;
   httpWithdrawOrDeleteTcmHerbalPrescription: (
     body: WithdrawOrDeleteTcmRxRequest,
   ) => Promise<WithdrawOrDeleteTcmRxResponse>;
@@ -96,6 +101,7 @@ export function createDoctorStationTcmHttpClient(basePath: string): DoctorStatio
       post('saveTcmHerbalPrescriptionDraftBatch', body),
     httpSignTcmHerbalPrescriptionBatch: (body) => post('signTcmHerbalPrescriptionBatch', body),
     httpVoidTcmDecoctionCharge: (body) => post('voidTcmDecoctionCharge', body),
+    httpSupplementTcmDecoctionCharge: (body) => post('supplementTcmDecoctionCharge', body),
     httpWithdrawOrDeleteTcmHerbalPrescription: (body) =>
       post('withdrawOrDeleteTcmHerbalPrescription', body),
     httpListPatientTcmHerbalPrescriptionHistory: (body) =>

@@ -13,19 +13,17 @@ import {
 
 /** 须从上游拉取的单据：欢迎空态引导文案 */
 export const INV_DOC_UPSTREAM_WELCOME = {
-  purchaseInbound: '进货单须关联已同意的订货单，明细将从订货单带入，不支持自由选品',
   returnToSupplier: '退货单须关联已同意的进货单，可退明细将从进货单带入，不支持自由选品',
-  returnToWarehouse: '退库单须关联已同意的入库单，可退明细将从入库单带入，不支持自由选品',
-  deptReturn: '科室退库单须关联已同意的入库单，可退明细将从入库单带入，不支持自由选品',
+  returnToWarehouse: '可新建空白退库单自行选品，也可从已同意入库单带入可退明细',
+  deptReturn: '可新建空白退库单自行选品，也可从已同意入库单带入可退明细',
   deptIssueReturn: '科室退领单须关联已同意的领用单，可退明细将从领用单带入，不支持自由选品',
 } as const;
 
 /** 须从上游单据拉取明细的单据提示文案 */
 export const INV_DOC_UPSTREAM_HINT = {
-  purchaseInbound: '请先关联已同意的订货单，明细将从订货单带入，不支持自由选品',
   returnToSupplier: '药库退货单禁止自由选品，请先选择进货单并通过「从进货单选择」拉取可退明细',
-  returnToWarehouse: '药房退库单禁止自由选品，请先选择入库单并通过「从入库单选择」拉取可退明细',
-  deptReturn: '科室退库单禁止自由选品，请先选择入库单并通过「从入库单选择」拉取可退明细',
+  returnToWarehouse: '可直接在明细中选品退库；也可通过「从入库单选择」带入可退明细',
+  deptReturn: '可直接在明细中选品退库；也可通过「从入库单选择」带入可退明细',
   deptIssueReturn: '科室退领单须关联已同意领用单，请点击「从领用单选择」拉取可退明细，禁止自由选品',
 } as const;
 

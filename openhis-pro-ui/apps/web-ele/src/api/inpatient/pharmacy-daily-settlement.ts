@@ -4,6 +4,7 @@
 import type { ApiOptionItem } from '#/types/api-response';
 
 import { publicRequestClient } from '#/api/request';
+import { dailySettlementLongRequestConfig } from '#/constants/daily-settlement-request-timeout';
 
 import type {
   PharmacyDailySettlementCategoryRowDto,
@@ -43,6 +44,7 @@ export interface PreviewInpatientPharmacyDailySettlementResponse {
   categoryRows?: PharmacyDailySettlementCategoryRowDto[];
   productRows?: PharmacyDailySettlementProductRowDto[];
   items?: PharmacyDailySettlementDispenseItemDto[];
+  /** 日结利润：售价合计 − 进价合计（与大类汇总同口径） */
   totalIncome?: string | number;
   gapHardBlockEarliestAt?: string;
   gapHardBlockMessage?: string;
@@ -114,6 +116,7 @@ export async function previewInpatientPharmacyDailySettlementApi(
   return publicRequestClient.post<PreviewInpatientPharmacyDailySettlementResponse>(
     `${BASE}/previewInpatientPharmacyDailySettlement`,
     body,
+    dailySettlementLongRequestConfig(),
   );
 }
 
@@ -124,6 +127,7 @@ export async function submitInpatientPharmacyDailySettlementApi(
   return publicRequestClient.post<SubmitInpatientPharmacyDailySettlementResponse>(
     `${BASE}/submitInpatientPharmacyDailySettlement`,
     body,
+    dailySettlementLongRequestConfig(),
   );
 }
 

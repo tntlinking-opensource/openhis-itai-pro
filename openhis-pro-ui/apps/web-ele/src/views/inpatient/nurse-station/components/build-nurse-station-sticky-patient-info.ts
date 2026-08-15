@@ -29,7 +29,12 @@ function formatNurseStationPatientDateTime(value?: string): string | undefined {
   return text;
 }
 
-/** 按自然日计算住院天数（入院日计第 1 天；已出院时截至出院日）。 */
+/**
+ * 住院天数：即进不计出（入院日计、出院日不计）；在院未出院含当日。
+ *
+ * @param admissionAt 入院时间
+ * @param dischargeAt 出院时间；空则按在院含当日
+ */
 function calcNurseStationInpatientDays(
   admissionAt?: string,
   dischargeAt?: string,
@@ -43,9 +48,19 @@ function calcNurseStationInpatientDays(
     return undefined;
   }
   const dischargeRaw = (dischargeAt ?? '').trim();
-  const end = dischargeRaw && dayjs(dischargeRaw).isValid() ? dayjs(dischargeRaw) : dayjs();
-  const days = end.startOf('day').diff(admission.startOf('day'), 'day') + 1;
-  return Math.max(1, days);
+  let hasDischarge = false;
+  let end = dayjs();
+  if (dischargeRaw && dayjs(dischargeRaw).isValid()) {
+    hasDischarge = true;
+    end = dayjs(dischargeRaw);
+  }
+  const diff = end.startOf('day').diff(admission.startOf('day'), 'day');
+  // 已出院：即进不计出（11→13=2）
+  if (hasDischarge) {
+    return Math.max(1, diff);
+  }
+  // 在院：含当日
+  return Math.max(1, diff + 1);
 }
 
 /** 由护士站模块患者入参构造顶部信息条数据。 */

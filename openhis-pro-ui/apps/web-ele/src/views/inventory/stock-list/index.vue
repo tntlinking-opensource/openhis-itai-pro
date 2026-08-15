@@ -81,6 +81,8 @@ interface InventoryDetailFormState {
   deviceCategoryCodes?: string[];
   inventoryStatusEnums?: string[];
   chrgitmLvList?: string[];
+  /** 基药标识；undefined 表示不限 */
+  basicFlag?: boolean;
   zeroStockFilter?: typeof INVENTORY_RANGE_ZERO_CODE | typeof INVENTORY_RANGE_GT_ZERO_CODE;
   expireWithinDays?: string;
   warningMode?: InventoryWarningMode;
@@ -354,6 +356,7 @@ function buildPageRequest() {
     deviceCategoryCodes: emptyToUndef(queryParams.deviceCategoryCodes),
     inventoryStatusEnums: emptyToUndef(queryParams.inventoryStatusEnums),
     chrgitmLvList: toChrgitmLvInts(queryParams.chrgitmLvList),
+    basicFlag: queryParams.basicFlag,
     zeroStockOnly: z,
     expireWithinDays,
     warningMode: queryParams.warningMode,
@@ -370,6 +373,7 @@ function buildSumExportFilter(): SumInventoryDetailCurrentRequest {
     medicationCategoryCodes: p.medicationCategoryCodes,
     deviceCategoryCodes: p.deviceCategoryCodes,
     chrgitmLvList: p.chrgitmLvList,
+    basicFlag: p.basicFlag,
     zeroStockOnly: p.zeroStockOnly,
     expireWithinDays: p.expireWithinDays,
     inventoryStatusEnums: p.inventoryStatusEnums,
@@ -528,6 +532,7 @@ function handleReset() {
   queryParams.deviceCategoryCodes = undefined;
   queryParams.inventoryStatusEnums = undefined;
   queryParams.chrgitmLvList = undefined;
+  queryParams.basicFlag = undefined;
   queryParams.zeroStockFilter = INVENTORY_RANGE_GT_ZERO_CODE;
   queryParams.warningMode = undefined;
   queryParams.pageNo = 1;
@@ -788,6 +793,18 @@ watch(
                   :label="item.label"
                   :value="item.value"
                 />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="基药">
+              <ElSelect
+                v-model="queryParams.basicFlag"
+                clearable
+                placeholder="全部"
+                :class="REPORT_QUERY_CONTROL"
+                @change="handleQuery"
+              >
+                <ElOption label="是" :value="true" />
+                <ElOption label="否" :value="false" />
               </ElSelect>
             </ElFormItem>
             <ElFormItem label="库存范围">

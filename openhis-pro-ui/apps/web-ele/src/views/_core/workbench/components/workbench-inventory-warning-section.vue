@@ -1,5 +1,5 @@
 <!--
-  工作台库存/效期预警入口：仅库管、药师可见；
+  工作台库存/效期预警入口：后端按库存明细菜单权限（Navigation.Invstocklist）返回 visible；
   点击跳转库存明细并带 warningMode；效期预警额外带 expireWithinDays 供查询区回填。
 -->
 <script setup lang="ts">

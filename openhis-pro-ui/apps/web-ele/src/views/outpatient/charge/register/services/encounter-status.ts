@@ -19,11 +19,16 @@ export const ENCOUNTER_STATUS_CODE = {
   TRIAGED: 'TRIAGED',
 } as const;
 
-/** 窗口「退号」可展示的状态（与 Encounter.assertCancelable 门诊口径一致） */
+/**
+ * 窗口「退号」按钮可展示的状态。
+ * 含已接诊/完诊：仍展示按钮，提交时由后端 IF-REG-09 提示须先取消接诊；
+ * 真正可退仅 REGISTERED/TRIAGED（与 Encounter.assertCancelable 一致）。
+ */
 export const ENCOUNTER_CANCELABLE_STATUS_CODES: ReadonlySet<string> = new Set([
   ENCOUNTER_STATUS_CODE.REGISTERED,
   ENCOUNTER_STATUS_CODE.TRIAGED,
   ENCOUNTER_STATUS_CODE.IN_PROGRESS,
+  ENCOUNTER_STATUS_CODE.ON_HOLD,
   ENCOUNTER_STATUS_CODE.DISCHARGED,
 ]);
 

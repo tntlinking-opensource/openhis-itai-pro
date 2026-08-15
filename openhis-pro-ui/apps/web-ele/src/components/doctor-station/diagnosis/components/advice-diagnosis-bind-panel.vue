@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { EncounterDiagnosisRowDto } from '#/api/doctor-station/diagnosis.types';
 
-import type { DiagnosisItem } from '../services/diagnosis.types';
+import type { DiagnosisItem, DiagnosisMedicineType } from '../services/diagnosis.types';
 import type { DoctorStationDiagnosisScope } from '../services/encounter-diagnosis.service';
 
 import type { TableInstance } from 'element-plus';
@@ -18,6 +18,8 @@ import {
   ElTableColumn,
   ElTag,
 } from 'element-plus';
+
+import { resolveChronicMedicalTypeTag } from '#/utils/chronic-medical-type';
 
 import { mapEncounterRowToDiagnosisItem } from '../services/encounter-diagnosis-select';
 import {
@@ -40,6 +42,10 @@ interface Props {
   patientId?: string;
   /** 门诊/住院诊断删除路由 */
   stationScope?: DoctorStationDiagnosisScope;
+  /** 只读：仅展示已选，不可打开选择/删除芯片 */
+  disabled?: boolean;
+  /** 仅展示指定医学类型（中药方头传 tcm） */
+  medicineTypeFilter?: DiagnosisMedicineType | '';
 }
 
 /** 打开选择弹窗后重新拉取的就诊诊断（父级同步候选项/快照） */
@@ -54,6 +60,8 @@ const props = withDefaults(defineProps<Props>(), {
   encounterId: '',
   patientId: '',
   stationScope: 'outpatient',
+  disabled: false,
+  medicineTypeFilter: '',
 });
 
 const emit = defineEmits<{
@@ -72,6 +80,8 @@ interface DiagnosisChip {
   id: string;
   name: string;
   isMain: boolean;
+  /** 慢 / 特 / 慢特；非慢特病为空 */
+  medicalTypeTag: string;
 }
 
 interface PickRow {
@@ -79,6 +89,8 @@ interface PickRow {
   name: string;
   code: string;
   isMain: boolean;
+  /** 慢 / 特 / 慢特；非慢特病为空 */
+  medicalTypeTag: string;
   medicineType: 'tcm' | 'western';
   tcmSyndromeGroup?: string;
 }
@@ -99,9 +111,25 @@ const optionsLoading = ref(false);
 const liveOptions = ref<DiagnosisItem[] | null>(null);
 /** 并发打开时丢弃过期响应 */
 let optionsRefreshSeq = 0;
+/**
+ * 已点「追加诊断」、等待录入弹窗保存落库。
+ * 保存后把本次新增诊断直接带入医嘱，避免回到本弹窗再勾一次。
+ */
+const appendPending = ref(false);
+/** 点击「追加诊断」时的候选项 id 快照（相对此快照识别本次新增） */
+const appendBaselineIds = ref<string[]>([]);
+
+/** 按医学类型过滤候选项（中药方仅中医病证） */
+function filterByMedicineType(items: DiagnosisItem[]): DiagnosisItem[] {
+  const filter = String(props.medicineTypeFilter ?? '').trim();
+  if (!filter) {
+    return items;
+  }
+  return items.filter((item) => item.medicineType === filter);
+}
 
 /** 弹窗打开用最新拉取结果，关闭后用父级 props */
-const effectiveOptions = computed(() => liveOptions.value ?? props.options);
+const effectiveOptions = computed(() => filterByMedicineType(liveOptions.value ?? props.options));
 
 /** 同列表已存在主诊行（用于前端二次提示；后端仍强制唯一） */
 const existingMainRow = computed(() => pickRows.value.find((row) => row.isMain));
@@ -130,6 +158,7 @@ const pickRows = computed((): PickRow[] => {
       name,
       code: String(item.code ?? '').trim(),
       isMain: Number(item.mainDiagnosisFlag) === 1,
+      medicalTypeTag: resolveChronicMedicalTypeTag(item.medicalTypeCode),
       medicineType: item.medicineType === 'tcm' ? 'tcm' : 'western',
       ...(tcmSyndromeGroup ? { tcmSyndromeGroup } : {}),
     });
@@ -160,6 +189,7 @@ const selectedChips = computed((): DiagnosisChip[] => {
       id,
       name,
       isMain: Number(hit?.mainDiagnosisFlag) === 1,
+      medicalTypeTag: resolveChronicMedicalTypeTag(hit?.medicalTypeCode),
     });
   }
   return chips;
@@ -176,6 +206,7 @@ const draftResultChips = computed((): DiagnosisChip[] => {
       id,
       name,
       isMain: Number(hit?.mainDiagnosisFlag) === 1,
+      medicalTypeTag: resolveChronicMedicalTypeTag(hit?.medicalTypeCode),
     });
   }
   return chips;
@@ -238,9 +269,11 @@ async function refreshOptionsOnOpen() {
     if (seq !== optionsRefreshSeq || !pickOpen.value) {
       return;
     }
-    const items = displayRows
-      .map((row) => mapEncounterRowToDiagnosisItem(row))
-      .filter((item): item is DiagnosisItem => item !== null);
+    const items = filterByMedicineType(
+      displayRows
+        .map((row) => mapEncounterRowToDiagnosisItem(row))
+        .filter((item): item is DiagnosisItem => item !== null),
+    );
     liveOptions.value = items;
     emit('optionsRefreshed', { displayRows, items });
     // 剔除已不存在的草稿勾选
@@ -256,12 +289,33 @@ async function refreshOptionsOnOpen() {
   }
 }
 
-/** 打开勾选弹窗（每次打开都重新拉取最新诊断） */
+/** 打开勾选弹窗 */
 function openPickDialog() {
+  if (props.disabled) {
+    return;
+  }
   draftIds.value = [...(props.selectedIds ?? [])];
   pickOpen.value = true;
+}
+
+/**
+ * 弹窗 @open：每次打开都重新拉取已开立诊断（不复用上次缓存）。
+ * 放在 @open 而非仅 click，避免 destroy-on-close / 关闭动画竞态漏拉。
+ */
+function onPickDialogOpen() {
+  draftIds.value = [...(props.selectedIds ?? [])];
+  // 先清空 live，强制走本次接口结果，避免闪旧数据
+  liveOptions.value = null;
   void syncTableSelection();
   void refreshOptionsOnOpen();
+}
+
+/** 弹窗完全关闭后清理（勿再写 pickOpen，避免与再次打开竞态） */
+function onPickDialogClosed() {
+  clearAppendPending();
+  liveOptions.value = null;
+  optionsLoading.value = false;
+  optionsRefreshSeq += 1;
 }
 
 /** 表格多选变更：同步草稿勾选 */
@@ -288,19 +342,66 @@ function onPickRowClick(row: PickRow, _column: unknown, event: Event) {
   table.toggleRowSelection(row, !selected);
 }
 
+/** 从候选项提取就诊诊断 id */
+function collectOptionIds(items: DiagnosisItem[] | undefined): string[] {
+  const ids: string[] = [];
+  // 保序去重，供追加前后对比
+  for (const item of items ?? []) {
+    const id = String(item.encounterDiagnosisId ?? item.id ?? '').trim();
+    if (!id || ids.includes(id)) continue;
+    ids.push(id);
+  }
+  return ids;
+}
+
+/** 清理追加诊断等待态 */
+function clearAppendPending() {
+  appendPending.value = false;
+  appendBaselineIds.value = [];
+}
+
+/**
+ * 追加诊断保存成功后：合并本次新增 id，直接写回并关闭「选择诊断」。
+ * @returns 是否已完成带入
+ */
+function applyAppendedDiagnoses(candidateIds: string[]): boolean {
+  if (!appendPending.value || !pickOpen.value) {
+    return false;
+  }
+  const baseline = new Set(appendBaselineIds.value);
+  // 只带入相对追加前快照的新增项，避免打开时刷新误触发
+  const incoming = candidateIds
+    .map((id) => String(id ?? '').trim())
+    .filter((id) => Boolean(id) && !baseline.has(id));
+  if (incoming.length === 0) {
+    return false;
+  }
+  // 草稿已有 + 本次新增，主诊优先
+  const merged = orderIdsPrimaryFirst([...draftIds.value, ...incoming]);
+  draftIds.value = merged;
+  clearAppendPending();
+  emit('update:selectedIds', merged);
+  pickOpen.value = false;
+  return true;
+}
+
 /** 确定：主诊优先后写回 */
 function confirmPick() {
+  clearAppendPending();
   emit('update:selectedIds', orderIdsPrimaryFirst(draftIds.value));
   pickOpen.value = false;
 }
 
-/** 关闭弹窗 */
+/** 取消：仅关闭，清理交给 @closed */
 function cancelPick() {
   pickOpen.value = false;
 }
 
 /** 外侧删除单条绑定 */
 function removeChip(id: string) {
+  if (props.disabled) {
+    return;
+  }
   const next = (props.selectedIds ?? []).filter((x) => String(x ?? '').trim() !== id);
   emit('update:selectedIds', orderIdsPrimaryFirst(next));
 }
@@ -311,8 +412,15 @@ function removeDraftChip(id: string) {
   void syncTableSelection();
 }
 
-/** 弹窗内追加诊断 */
+/** 弹窗内追加诊断：打开录入弹窗，保存后自动带入 */
 function handleAppendDiagnosis() {
+  if (optionsLoading.value) {
+    ElMessage.warning('诊断列表加载中，请稍候再追加');
+    return;
+  }
+  appendPending.value = true;
+  // 以当前列表为基线，保存后只自动带入新增项
+  appendBaselineIds.value = collectOptionIds(effectiveOptions.value);
   emit('addDiagnosis');
 }
 
@@ -420,32 +528,36 @@ watch(
     if (!pickOpen.value) return;
     // 追加诊断/父级刷新后同步 live，避免挡住最新候选项
     liveOptions.value = [...next];
-    const valid = new Set(
-      next.map((item) => String(item.encounterDiagnosisId ?? item.id ?? '').trim()).filter(Boolean),
-    );
+    const valid = new Set(collectOptionIds(next));
     draftIds.value = draftIds.value.filter((id) => valid.has(id));
+    if (appendPending.value) {
+      const baseline = new Set(appendBaselineIds.value);
+      // 相对追加前快照新出现的候选项 = 本次录入保存的诊断
+      const appearedIds = collectOptionIds(next).filter((id) => !baseline.has(id));
+      if (applyAppendedDiagnoses(appearedIds)) {
+        return;
+      }
+    }
     void syncTableSelection();
   },
 );
 
 watch(
-  () => pickOpen.value,
-  (open) => {
-    if (open) {
-      draftIds.value = [...(props.selectedIds ?? [])];
-      void syncTableSelection();
-      return;
-    }
-    // 关闭后回落父级 props，避免残留过期 live 列表
-    liveOptions.value = null;
-    optionsLoading.value = false;
-    optionsRefreshSeq += 1;
+  () => props.selectedIds,
+  (next) => {
+    if (!pickOpen.value || !appendPending.value) return;
+    const baseline = new Set(appendBaselineIds.value);
+    // 父级（如中药方头）已把新开立诊断写入绑定时，同步带入并关闭
+    const addedIds = (next ?? [])
+      .map((id) => String(id ?? '').trim())
+      .filter((id) => Boolean(id) && !baseline.has(id));
+    applyAppendedDiagnoses(addedIds);
   },
 );
 </script>
 
 <template>
-  <div class="dx-bind">
+  <div class="dx-bind" :class="{ 'dx-bind--disabled': disabled }">
     <div
       class="dx-bind__panel"
       :class="{ 'dx-bind__panel--empty': selectedChips.length === 0 }"
@@ -464,7 +576,11 @@ watch(
         >
           <span v-if="chip.isMain" class="dx-bind__badge">主</span>
           <span class="dx-bind__name" :title="chip.name">{{ chip.name }}</span>
+          <span v-if="chip.medicalTypeTag" class="dx-bind__badge dx-bind__badge--chronic">{{
+            chip.medicalTypeTag
+          }}</span>
           <button
+            v-if="!disabled"
             type="button"
             class="dx-bind__remove"
             aria-label="移除诊断"
@@ -476,7 +592,13 @@ watch(
       </template>
       <span v-else class="dx-bind__placeholder">点击选择诊断</span>
     </div>
-    <ElButton link type="primary" class="dx-bind__pick-btn" @click="openPickDialog">
+    <ElButton
+      v-if="!disabled"
+      link
+      type="primary"
+      class="dx-bind__pick-btn"
+      @click="openPickDialog"
+    >
       选择诊断
     </ElButton>
   </div>
@@ -487,14 +609,23 @@ watch(
     width="920px"
     append-to-body
     destroy-on-close
-    @closed="cancelPick"
+    @open="onPickDialogOpen"
+    @closed="onPickDialogClosed"
   >
     <div class="diagnosis-dialog flex flex-col gap-3">
       <div class="toolbar-row">
         <p class="toolbar-tip">
           以下为本次就诊已开立的诊断，请勾选后绑定到本条医嘱；若需新增请点击「追加诊断」。
         </p>
-        <ElButton type="primary" plain @click="handleAppendDiagnosis">追加诊断</ElButton>
+        <ElButton
+          type="primary"
+          plain
+          :loading="optionsLoading"
+          :disabled="optionsLoading"
+          @click="handleAppendDiagnosis"
+        >
+          追加诊断
+        </ElButton>
       </div>
 
       <div
@@ -539,7 +670,12 @@ watch(
           </ElTableColumn>
           <ElTableColumn label="诊断名称" min-width="200" show-overflow-tooltip>
             <template #default="{ row }">
-              {{ row.name }}
+              <span class="dx-pick__name-cell">
+                <span>{{ row.name }}</span>
+                <span v-if="row.medicalTypeTag" class="dx-pick__chronic-tag">{{
+                  row.medicalTypeTag
+                }}</span>
+              </span>
             </template>
           </ElTableColumn>
           <ElTableColumn label="类型" width="88" align="center">
@@ -563,7 +699,14 @@ watch(
       </div>
       <div v-else class="table-wrap dx-pick__empty-wrap" v-loading="optionsLoading">
         <ElEmpty description="本次就诊暂无已开立诊断，请先点击右上角「追加诊断」" :image-size="72">
-          <ElButton type="primary" @click="handleAppendDiagnosis">追加诊断</ElButton>
+          <ElButton
+            type="primary"
+            :loading="optionsLoading"
+            :disabled="optionsLoading"
+            @click="handleAppendDiagnosis"
+          >
+            追加诊断
+          </ElButton>
         </ElEmpty>
       </div>
 
@@ -582,6 +725,9 @@ watch(
             >
               <span v-if="chip.isMain" class="result-tag__main">主</span>
               {{ chip.name }}
+              <span v-if="chip.medicalTypeTag" class="result-tag__chronic">{{
+                chip.medicalTypeTag
+              }}</span>
             </ElTag>
           </template>
           <span v-else class="result-placeholder"
@@ -607,6 +753,10 @@ watch(
   gap: 4px;
   min-width: 0;
   flex: 1;
+}
+
+.dx-bind--disabled .dx-bind__panel {
+  cursor: default;
 }
 
 .dx-bind__panel {
@@ -679,6 +829,13 @@ watch(
   font-size: 11px;
   line-height: 18px;
   text-align: center;
+}
+
+.dx-bind__badge--chronic {
+  background: transparent;
+  border: 1.5px solid #0f766e;
+  color: #0f766e;
+  font-weight: 700;
 }
 
 .dx-bind__name {
@@ -784,6 +941,31 @@ watch(
   color: var(--el-color-primary);
 }
 
+.dx-pick__name-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.dx-pick__chronic-tag {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border: 1.5px solid #0f766e;
+  border-radius: 3px;
+  background: transparent;
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .form-row {
   display: flex;
   align-items: flex-start;
@@ -829,6 +1011,24 @@ watch(
 .result-tag__main {
   margin-right: 4px;
   font-weight: 600;
+}
+
+.result-tag__chronic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border: 1.5px solid #0f766e;
+  border-radius: 3px;
+  background: transparent;
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: middle;
 }
 
 .dialog-footer {

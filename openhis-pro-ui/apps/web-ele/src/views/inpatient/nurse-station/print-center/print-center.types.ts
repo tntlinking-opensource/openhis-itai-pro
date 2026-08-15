@@ -7,15 +7,20 @@ export type PrintDocType =
   | 'nursing_record'
   | 'patrol_card'
   | 'wristband'
+  | 'bed_card'
   | 'long_order'
   | 'temp_order'
   | 'infusion_label'
   | 'oral_med_label'
+  | 'oral_med_sheet'
   | 'exam_apply'
   | 'lab_apply'
+  | 'specimen_barcode'
   | 'dispense_summary'
   | 'dispense_sheet'
-  | 'fee_list';
+  | 'order_dispense_sheet'
+  | 'fee_list'
+  | 'fee_detail';
 
 /** 单据对左侧患者选择的要求 */
 export type PrintPatientScope = 'single' | 'multiple' | 'ward';
@@ -64,6 +69,8 @@ export interface PrintPendingRow {
   orderId?: string;
   /** 输液成组号 */
   groupId?: string;
+  /** 是否输液（患者用药单筛选用；标记 infusionFlag 或 用法 methodCode） */
+  infusionFlag?: boolean;
 }
 
 export const PRINT_DOC_CATEGORIES: PrintDocCategoryOption[] = [
@@ -80,7 +87,7 @@ export const PRINT_DOC_TYPES: PrintDocTypeOption[] = [
     category: 'care',
     scope: 'multiple',
     previewKind: 'paper',
-    description: '按患者打印；须有待执行输液药品，无药不可打',
+    description: '按患者、按日打印；默认当天，含待执行/已执行输液药品，无药不可打',
   },
   {
     code: 'wristband',
@@ -88,7 +95,15 @@ export const PRINT_DOC_TYPES: PrintDocTypeOption[] = [
     category: 'care',
     scope: 'multiple',
     previewKind: 'label',
-    description: '按患者打印住院腕带（100×20mm）',
+    description: '按患者打印住院腕带（TD-2020A/K1a：25×140mm 走纸）',
+  },
+  {
+    code: 'bed_card',
+    label: '床头卡',
+    category: 'care',
+    scope: 'multiple',
+    previewKind: 'paper',
+    description: '按患者打印床头卡（长21cm×宽13cm）',
   },
   {
     code: 'infusion_label',
@@ -107,12 +122,21 @@ export const PRINT_DOC_TYPES: PrintDocTypeOption[] = [
     description: '按口服药医嘱打印药贴（50×30mm）',
   },
   {
+    code: 'oral_med_sheet',
+    label: '患者用药单',
+    category: 'order',
+    scope: 'multiple',
+    previewKind: 'table',
+    description:
+      '按日列出已执行药品，勾选后打印；一张连续多人（患者信息→药品表含备注→患者签字→下一患者）；院点一盒一点时口服长嘱总量按包装单位；同医嘱多次执行合计为一行',
+  },
+  {
     code: 'exam_apply',
     label: '检查单',
     category: 'order',
     scope: 'multiple',
     previewKind: 'paper',
-    description: '按患者合并打印检查申请单（categoryEnum=23）',
+    description: '按开嘱日查询；按患者合并打印检查申请单（categoryEnum=23）',
   },
   {
     code: 'lab_apply',
@@ -120,7 +144,15 @@ export const PRINT_DOC_TYPES: PrintDocTypeOption[] = [
     category: 'order',
     scope: 'multiple',
     previewKind: 'paper',
-    description: '按患者合并打印检验申请单（categoryEnum=22）',
+    description: '按开嘱日查询；按患者合并打印检验申请单（categoryEnum=22）',
+  },
+  {
+    code: 'specimen_barcode',
+    label: '采血贴',
+    category: 'order',
+    scope: 'multiple',
+    previewKind: 'label',
+    description: '按开嘱日查询；按检验医嘱逐张打印采血贴（categoryEnum=22，50×30mm）',
   },
   {
     code: 'temp_sheet',
@@ -136,7 +168,7 @@ export const PRINT_DOC_TYPES: PrintDocTypeOption[] = [
     category: 'care',
     scope: 'single',
     previewKind: 'paper',
-    description: '按日期区间打印护理记录单',
+    description: '按日打印护理记录单',
   },
   {
     code: 'long_order',
@@ -160,7 +192,15 @@ export const PRINT_DOC_TYPES: PrintDocTypeOption[] = [
     category: 'fee',
     scope: 'single',
     previewKind: 'table',
-    description: '按日期区间打印费用明细清单',
+    description: '按日打印费用汇总清单（同品合并 + 分类合计）',
+  },
+  {
+    code: 'fee_detail',
+    label: '费用明细单',
+    category: 'fee',
+    scope: 'single',
+    previewKind: 'table',
+    description: '按日打印费用流水明细（按分类分组，无分类合计）',
   },
   {
     code: 'dispense_summary',
@@ -177,6 +217,15 @@ export const PRINT_DOC_TYPES: PrintDocTypeOption[] = [
     scope: 'ward',
     previewKind: 'table',
     description: '按发药批次打印摆药明细',
+  },
+  {
+    code: 'order_dispense_sheet',
+    label: '摆药单',
+    category: 'order',
+    scope: 'multiple',
+    previewKind: 'table',
+    description:
+      '按日打印已执行全部药品（含口服）；一张连续多人（患者信息在表外→药品表→下一患者），无患者签字；打不下自动分页且每页有医院头；同医嘱多次执行合计为一行',
   },
 ];
 

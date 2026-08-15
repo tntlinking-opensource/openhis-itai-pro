@@ -126,24 +126,19 @@ export async function submitWorkInjury9102WinResult(params: {
   contractId: string | number;
 }): Promise<Record<string, unknown>> {
   const winRes = await invokeWorkInjuryPlugin(params.step);
+  const normalizedOutput = normalizeWorkInjuryWinOutput(winRes.output);
   const sub = await httpWorkInjurySubmitInvokeResult({
     sessionId: params.step.sessionId!,
     stepToken: params.step.stepToken!,
     success: winRes.success !== false,
     infcode: winRes.infcode != null ? String(winRes.infcode) : '0',
     errMsg: winRes.errMsg,
-    output:
-      winRes.output && typeof winRes.output === 'object'
-        ? (winRes.output as Record<string, unknown>)
-        : {},
+    output: normalizedOutput,
     winMsgid: winRes.msgid,
     winRawInput: winRes.rawInput,
   });
   if (sub.nextAction === 'FAILED') {
     throw new Error(sub.errMsg || '9102 失败');
   }
-  return (winRes.output && typeof winRes.output === 'object' ? winRes.output : {}) as Record<
-    string,
-    unknown
-  >;
+  return normalizedOutput;
 }

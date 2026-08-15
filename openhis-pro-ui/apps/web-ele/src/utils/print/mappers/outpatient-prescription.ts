@@ -1,6 +1,10 @@
 import type { EncounterMedicationDispenseSlipRowDto } from '#/api/outpatient-pharmacy-dispense/outpatient-pharmacy-dispense.types';
 
 import { unionDiagnosisDisplayNames } from '#/utils/diagnosis/union-diagnosis-display-names';
+import {
+  resolvePrescriptionPaperTypeLine1,
+  resolvePrescriptionPaperTypeLine2,
+} from '#/utils/print/resolve-prescription-paper-type';
 
 /** 处方打印表格行（字段与模板 medicationLines 列一致） */
 export interface OutpatientPrescriptionMedicationLine {
@@ -20,6 +24,7 @@ export interface OutpatientPrescriptionPrintData {
   ageText: string;
   genderEnumText: string;
   orderingDepartmentName: string;
+  /** 就诊类型展示（优先 med_type / YbMedType；无则费用性质；模板标题「就诊类型」） */
   feeNatureText: string;
   prescriptionDateText: string;
   encounterBusNo: string;
@@ -95,14 +100,19 @@ export function buildOutpatientPrescriptionPrintData(
   return {
     prescriptionNo: str(head.prescriptionNo),
     hospitalName: str(head.hospitalName),
-    prescriptionTypeLine1: str(head.prescriptionTypeLine1),
-    prescriptionTypeLine2: str(head.prescriptionTypeLine2),
+    // 方头分类：与发药单同源（慢病 med_type → 慢病处方，否则沿用后端纸质分类）
+    prescriptionTypeLine1: resolvePrescriptionPaperTypeLine1({
+      prescriptionTypeLine1: head.prescriptionTypeLine1,
+      encounterMedicationTypeCode: head.encounterMedicationTypeCode,
+    }),
+    prescriptionTypeLine2: resolvePrescriptionPaperTypeLine2(head.prescriptionTypeLine2),
     prescriptionDocumentTitle: str(head.prescriptionDocumentTitle) || '处方笺',
     patientName: str(head.patientName),
     ageText: str(head.ageText),
     genderEnumText: str(head.genderEnumText),
     orderingDepartmentName: str(head.orderingDepartmentName),
-    feeNatureText: str(head.feeNatureText) || '自费',
+    // 与发药单笺面一致：优先医保医疗类别（med_type）；无则费用性质；再空回落自费
+    feeNatureText: str(head.encounterMedicationTypeText) || str(head.feeNatureText) || '自费',
     prescriptionDateText: str(head.prescriptionDateText),
     encounterBusNo: str(head.encounterBusNo),
     patientPhone: str(head.patientPhone),

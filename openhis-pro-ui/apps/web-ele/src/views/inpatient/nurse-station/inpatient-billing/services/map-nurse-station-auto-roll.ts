@@ -6,9 +6,20 @@ import type {
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station-inpatient-billing.types';
 
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import {
+  SERVICE_CATEGORY_DISCHARGE,
+  SERVICE_CATEGORY_ENTRUST,
+  SERVICE_CATEGORY_NURSING,
+  SERVICE_CATEGORY_TRANSFER,
+} from '#/utils/print/constants/service-request-category-codes';
 
-/** 床位服务类目 code（自动计费选品过滤） */
-export const AUTO_ROLL_BED_SERVICE_CATEGORY_CODE = '51';
+/** 禁止配置自动计费的诊疗类目（护理防双计；转科/出院/嘱托不计费）。 */
+const AUTO_ROLL_EXCLUDED_CATEGORY_CODES = new Set([
+  SERVICE_CATEGORY_NURSING,
+  SERVICE_CATEGORY_TRANSFER,
+  SERVICE_CATEGORY_DISCHARGE,
+  SERVICE_CATEGORY_ENTRUST,
+]);
 
 export type AutoRollConfigStatus = 'ACTIVE' | 'INACTIVE';
 
@@ -29,6 +40,10 @@ export interface AutoRollConfigTableRow {
   activityId: string;
   chargeDefinitionId: string;
   isActive: boolean;
+  /** 业务时刻 HH:mm:ss */
+  businessTime: string;
+  billingPractitionerId: string;
+  billingPractitionerName: string;
 }
 
 /** 配置展开：已滚费用展示行 */
@@ -49,9 +64,15 @@ export interface AutoRollPostedChargeTableRow {
 export interface AutoRollConfigFormModel {
   quantityValue: number;
   remark: string;
+  /** 业务时刻 HH:mm:ss */
+  businessTime: string;
+  billingPractitionerId: string;
 }
 
-/** 选中的床位服务目录项 */
+/** 默认滚费业务时刻（与后端日末口径一致）。 */
+export const AUTO_ROLL_DEFAULT_BUSINESS_TIME = '23:59:59';
+
+/** 选中的诊疗项目目录项 */
 export interface AutoRollSelectedCatalogItem {
   rowKey: string;
   catalog: NurseStationPricingCatalogRowDto;
@@ -67,6 +88,7 @@ export function mapAutoRollConfigRowToTableRow(
   ) as AutoRollConfigStatus;
   const quantity = Number(row.quantityValue ?? 1);
   const performingOrgId = preserveApiIdForRequest(row.performingOrgId);
+  const businessTime = String(row.businessTime ?? '').trim() || AUTO_ROLL_DEFAULT_BUSINESS_TIME;
   return {
     id: ruleId,
     ruleId,
@@ -83,6 +105,9 @@ export function mapAutoRollConfigRowToTableRow(
     activityId: preserveApiIdForRequest(row.triggerSourceId) ?? '',
     chargeDefinitionId: preserveApiIdForRequest(row.chargeDefinitionId) ?? '',
     isActive: statusEnum === 'ACTIVE',
+    businessTime,
+    billingPractitionerId: preserveApiIdForRequest(row.billingPractitionerId) ?? '',
+    billingPractitionerName: row.billingPractitionerName?.trim() || '—',
   };
 }
 
@@ -136,18 +161,35 @@ export function mapAutoRollPostedChargeRows(
   return rows;
 }
 
-/** 构建床位服务选品目录行 key。 */
+/** 构建诊疗项目选品目录行 key。 */
 export function buildAutoRollCatalogRowKey(row: NurseStationPricingCatalogRowDto): string {
   const activityId = preserveApiIdForRequest(row.activityId ?? row.productId) ?? '';
   const chargeDefinitionId = preserveApiIdForRequest(row.chargeItemDefinitionId) ?? '';
   return `${activityId}::${chargeDefinitionId}`;
 }
 
+/**
+ * 目录行是否允许配置自动计费。
+ * 排除护理/转科/出院/嘱托；类目缺失时放行交由后端校验。
+ */
+export function isAutoRollConfigurableCatalogRow(
+  row: NurseStationPricingCatalogRowDto | null | undefined,
+): boolean {
+  if (!row) {
+    return false;
+  }
+  const categoryCode = String(row.categoryCode ?? '').trim();
+  if (!categoryCode) {
+    return true;
+  }
+  return !AUTO_ROLL_EXCLUDED_CATEGORY_CODES.has(categoryCode);
+}
+
 /** 根据选品行生成默认规则名称。 */
 export function buildDefaultAutoRollRuleName(catalog: NurseStationPricingCatalogRowDto): string {
   const name = catalog.name?.trim();
   if (!name) {
-    return '床位自动计费';
+    return '自动计费';
   }
   return `${name}自动计费`;
 }
@@ -159,6 +201,8 @@ export function buildAutoRollFormFromTableRow(
   return {
     quantityValue: row.quantityValue,
     remark: row.remark,
+    businessTime: row.businessTime || AUTO_ROLL_DEFAULT_BUSINESS_TIME,
+    billingPractitionerId: row.billingPractitionerId,
   };
 }
 

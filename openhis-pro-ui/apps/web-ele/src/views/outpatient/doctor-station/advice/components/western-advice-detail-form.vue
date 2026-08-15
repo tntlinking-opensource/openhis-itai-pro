@@ -5,7 +5,7 @@ import type { TerminologyOptionDto } from '#/api/doctor-station/advice.types';
 import type { EncounterDiagnosisRowDto } from '#/api/doctor-station/diagnosis.types';
 import type { DiagnosisConfirmPayload, DiagnosisItem } from '#/components/doctor-station/diagnosis';
 
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 import { ElCheckbox, ElInputNumber, ElMessage, ElOption, ElSelect } from 'element-plus';
 
@@ -18,8 +18,10 @@ import { formatPackagePerMinUnitText } from '#/utils/doctor-station/medication-p
 
 import {
   contractSelectionFromValue,
+  filterFeeNatureOptionsByChrgitmLv,
   formatMoneyStrYuan,
   formatUnitPriceYuan,
+  type FeeNatureOption,
 } from '../services/advice-format';
 import {
   convertTotalAmountWhenUnitChanges,
@@ -33,7 +35,7 @@ const props = withDefaults(
   defineProps<{
     calcTotalFee: (item: AdviceDrugItem) => string;
     /** init 返回的费用性质（合同）下拉 */
-    feeNatureOptions?: TerminologyOptionDto[];
+    feeNatureOptions?: FeeNatureOption[];
     item: AdviceDrugItem;
     /** IF-DOR-18 频次选项（与父级 `initDoctorStationAdvice` 一致） */
     medicationRateOptions?: TerminologyOptionDto[];
@@ -69,11 +71,29 @@ const patch = <K extends keyof AdviceDrugItem>(key: K, value: AdviceDrugItem[K])
   emit('patch', { key, value });
 };
 
+/** 医保等级=自费时仅保留自费合同下拉 */
+const itemFeeNatureOptions = computed(() =>
+  filterFeeNatureOptionsByChrgitmLv(props.feeNatureOptions, props.item.chrgitmLv),
+);
+
 function patchContract(contractId: string) {
-  const sel = contractSelectionFromValue(contractId, props.feeNatureOptions);
+  const sel = contractSelectionFromValue(contractId, itemFeeNatureOptions.value);
   patch('contractId', sel.contractId);
   patch('feeNature', sel.feeNature);
 }
+
+/** 当前合同不在收窄后的下拉里时，自动切到可用项 */
+watch(
+  itemFeeNatureOptions,
+  (opts) => {
+    const cur = String(props.item.contractId ?? '').trim();
+    if (opts.length === 0) return;
+    if (cur && opts.some((o) => String(o.value ?? '').trim() === cur)) return;
+    const first = String(opts[0]?.value ?? '').trim();
+    if (first) patchContract(first);
+  },
+  { immediate: true },
+);
 
 /** 包装与最小单位不同时：「每盒30片」类文案 */
 const packagePerMinUnitText = computed(() => formatPackagePerMinUnitText(props.item));
@@ -244,18 +264,21 @@ function handleDiagnosisDialogVisibleChange(visible: boolean) {
       </div>
       <div class="field-item fee-nature-field">
         <span class="meta-label">费用性质</span>
+        <!-- 单自费户或医保等级=自费：无下拉；双账户且非自费等级才可选医保/自费 -->
         <ElSelect
+          v-if="itemFeeNatureOptions.length > 1"
           :model-value="item.contractId"
           placeholder="请选择"
           @update:model-value="(value: unknown) => patchContract(String(value || ''))"
         >
           <ElOption
-            v-for="opt in feeNatureOptions"
+            v-for="opt in itemFeeNatureOptions"
             :key="String(opt.value ?? '')"
             :label="String(opt.label ?? opt.value ?? '')"
             :value="String(opt.value ?? '')"
           />
         </ElSelect>
+        <span v-else class="fee-nature-readonly">{{ item.feeNature || '自费' }}</span>
       </div>
       <div class="field-item skin-test-item">
         <span class="meta-label">皮试</span>

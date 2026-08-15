@@ -38,19 +38,39 @@ export function invPrintQtyUnitText(
 }
 
 /**
- * 生产日~效期：模板 formatter 按 ~ 拆两行。
- * 仅一端有值时仍返回单端。
+ * 打印用有效期（仅效期日，不含生产日）。
+ * 若传入 `start~end` / `start～end` 预拼串，取末段。
+ */
+export function invPrintExpiryDateText(
+  expiryDate?: null | string,
+  expiryText?: null | string,
+): string {
+  const fromDate = invPrintStr(expiryDate).slice(0, 10);
+  if (fromDate) {
+    return fromDate;
+  }
+  const raw = invPrintStr(expiryText);
+  if (!raw) {
+    return '';
+  }
+  const parts = raw
+    .split(/[~～\n]+/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (parts.length === 0) {
+    return '';
+  }
+  return parts[parts.length - 1]!.slice(0, 10);
+}
+
+/**
+ * @deprecated 打印已改为仅展示有效期，请用 {@link invPrintExpiryDateText}
  */
 export function invPrintExpiryRangeText(
   start: null | string | undefined,
   end: null | string | undefined,
 ): string {
-  const s = invPrintStr(start).slice(0, 10);
-  const e = invPrintStr(end).slice(0, 10);
-  if (s && e) {
-    return `${s}~${e}`;
-  }
-  return s || e;
+  return invPrintExpiryDateText(end, start && end ? `${start}~${end}` : start || end || '');
 }
 
 /** 具体单据标题：位置名 + 单据名，如「中心药库进货单」 */
@@ -61,4 +81,33 @@ export function buildInvDocumentTitle(locationName: string, docKindLabel: string
     return kind;
   }
   return `${loc}${kind}`;
+}
+
+/**
+ * 打印用项目编码（药品/耗材 busNo）。
+ * 优先 medicinePick.busNo → productCatalog.productBusNo → 行上 productBusNo；
+ * 不用单据号字段 row.busNo（常为进货单号/请领单号）。
+ */
+export function resolveInvPrintProductBusNo(row?: null | Record<string, unknown>): string {
+  if (!row) {
+    return '';
+  }
+  const pick = row.medicinePick;
+  if (pick && typeof pick === 'object') {
+    const fromPick = invPrintStr(
+      (pick as { busNo?: unknown; productBusNo?: unknown }).busNo ??
+        (pick as { productBusNo?: unknown }).productBusNo,
+    );
+    if (fromPick) {
+      return fromPick;
+    }
+  }
+  const catalog = row.productCatalog;
+  if (catalog && typeof catalog === 'object') {
+    const fromCat = invPrintStr((catalog as { productBusNo?: unknown }).productBusNo);
+    if (fromCat) {
+      return fromCat;
+    }
+  }
+  return invPrintStr(row.productBusNo);
 }

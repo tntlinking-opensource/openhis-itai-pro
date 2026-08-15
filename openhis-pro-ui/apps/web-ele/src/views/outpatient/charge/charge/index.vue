@@ -20,6 +20,7 @@ import {
   runWorkInjuryChargePreSettleInvoke,
   runWorkInjuryRefundReverse,
 } from '#/chs/work-injury/use-work-injury-settle';
+import WorkInjuryFilingDetailDialog from '#/chs/work-injury/work-injury-filing-detail-dialog.vue';
 import dayjs from 'dayjs';
 import {
   ElBadge,
@@ -35,10 +36,13 @@ import {
 } from 'element-plus';
 
 import {
+  httpCompensateInsuranceSettlementsByPayment,
   httpConfirmOutpatientChargeSettlement,
+  httpConfirmOutpatientInsuranceBeforeScan,
   httpLoadChargePageInit,
   httpLoadPendingChargeItems,
   httpPageOutpatientChargeQueue,
+  httpPrepareUnionPayMakeupCollect,
   httpPreSettleOutpatientCharges,
   httpSwitchEncounterChargeItemsToSelfPay,
 } from '#/api/outpatient-charge/outpatient-charge.http';
@@ -53,13 +57,27 @@ import { isScanPayChannel, useUnionPayScanPay } from '#/composables/payment/useU
 import { useRequest } from '#/hooks/use-request';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { buildDefaultDateRangeShortcuts } from '#/utils/format/date-picker-shortcuts';
+import {
+  getDateRangeQuick,
+  getLocalDayRangeDateTimeStrings,
+} from '#/utils/format/date-range-quick';
 import { sumMoneyThenSettle } from '#/utils/format/money-scale';
 import {
   FALLBACK_DEFAULT_PAY_CHANNEL,
   optionDtosToPayChannelOptions,
 } from '#/utils/payment/payment-channel-options';
-import { settleWithScanRecovery } from '#/utils/payment/scan-settle-recovery';
+import {
+  cacheClientScanResult,
+  clearCachedClientScanResult,
+  hasCachedClientScanSuccess,
+} from '#/utils/payment/scan-settle-cache';
+import {
+  ScanSettleIncompleteError,
+  ScanSettleRefundedError,
+  settleWithScanRecovery,
+} from '#/utils/payment/scan-settle-recovery';
 import { submitScanPayment } from '#/utils/payment/submit-scan-payment';
+import { httpGetBpcOrdersByPayment } from '#/api/payment/union-pay-bpc';
 import { printChargeReceipt, schedulePrintChargeReceipt } from '#/utils/print/print-charge-receipt';
 
 import {
@@ -79,8 +97,10 @@ import {
   outpatientChargeReadCredentialFailHint,
   outpatientChargeReadCredentialHint,
   outpatientChargeReadCredentialLabel,
+  resolveInsuranceContractId,
   resolveOutpatientChargeInsuranceContext,
   selectionIncludesInsuranceItems,
+  selectionIncludesWorkInjuryItems,
 } from './use-outpatient-charge-insurance';
 import { isStaleCrossRoleError } from '#/utils/http/stale-cross-role-error';
 import { isUnmappedYbNoComplianceError } from '#/utils/http/format-catalog-unmapped-yb-error';
@@ -98,6 +118,18 @@ defineOptions({
   name: 'ChargeOpCharge',
 });
 
+/** 主列表展平行：同一收费单（支付单/单据号）合并勾选 */
+interface ChargeDetailTableRow extends PendingChargeItemRowDto {
+  billGroupKey: string;
+  billGroupLineCount: number;
+  isFirstLineInBillGroup: boolean;
+  paymentId?: string;
+  paymentNo?: string;
+}
+
+/** 同一收费单内需纵向合并的列 */
+const BILL_GROUP_MERGE_FIELDS = new Set(['paymentNo', 'busNo']);
+
 usePrintClientWarmup();
 
 const detailAuditDialogRef = ref<DetailAuditRemindDialogExpose | null>(null);
@@ -110,7 +142,8 @@ const QUEUE_TAB = {
 
 const queueTabCode = ref<string>(QUEUE_TAB.PENDING);
 const keyword = ref('');
-const dateRange = ref<[string, string] | null>(null);
+/** 默认查当天；请求时再拼本地日 00:00:00～23:59:59 */
+const dateRange = ref<[string, string] | null>(getDateRangeQuick({ strategy: 'calendar-day' }));
 /** 区间查询：展开面板默认快捷时间范围 */
 const dateRangeShortcuts = buildDefaultDateRangeShortcuts();
 const queuePager = reactive({
@@ -122,7 +155,14 @@ const queueTotal = ref(0);
 const queueLoading = ref(false);
 
 const selectedEncounterId = ref('');
+/** 工伤收费缺类型12审批时，引导一键备案用的 contractId */
+const workInjuryFilingContractId = ref<string | number | undefined>(undefined);
+const workInjuryFilingDialogRef = ref<InstanceType<typeof WorkInjuryFilingDetailDialog> | null>(
+  null,
+);
 const pendingItems = ref<PendingChargeItemRowDto[]>([]);
+/** 是否允许转医保/转自费（须双账户；纯自费挂号为 false） */
+const accountSwitchEnabled = ref(false);
 /** 本就诊全部成功支付摘要（账单时间倒序） */
 const settlementInsuranceOptions = ref<ChargeSettlementInsuranceSummaryDto[]>([]);
 /** 当前选中的支付流水主键（支付记录弹窗 / 补打回落） */
@@ -130,6 +170,8 @@ const selectedSettlementPaymentId = ref('');
 /** 支付记录弹窗 */
 const paymentRecordsVisible = ref(false);
 const selectedChargeRows = ref<PendingChargeItemRowDto[]>([]);
+/** 主列表勾选的已结算支付单（补打小票） */
+const selectedSettledPaymentIds = ref<string[]>([]);
 
 const preSettleSnapshot = ref<null | PreSettleOutpatientChargesResponse>(null);
 /** 预结算成功时锁定勾选 id，避免弹窗打开后表格勾选变化导致与草稿不一致 */
@@ -173,12 +215,30 @@ const settlementInsuranceBreakdown = computed(() => {
   if (!snap?.insurancePreSettled) {
     return [];
   }
+  // 基金合计 ≠ 统筹：统筹用 hifp，其他支出（含电子钱包）用 oth
   return [
-    { key: 'poolingPay', label: '统筹基金支付', value: Number(snap.ybFundPaySumamt ?? 0) },
+    { key: 'fundPay', label: '基金支付合计', value: Number(snap.ybFundPaySumamt ?? 0) },
+    { key: 'poolingPay', label: '基本医保统筹', value: Number(snap.ybHifpPay ?? 0) },
+    { key: 'otherPay', label: '其他支出', value: Number(snap.ybOthPay ?? 0) },
     { key: 'accountPay', label: '个人账户支付', value: Number(snap.ybAcctPay ?? 0) },
+    { key: 'deductibleLine', label: '起付线', value: Number(snap.ybActPayDedc ?? 0) },
+    { key: 'cvlservPay', label: '公务员医疗补助', value: Number(snap.ybCvlservPay ?? 0) },
     { key: 'cashPay', label: '现金补缴', value: Number(snap.ybPsnCashPay ?? 0) },
     { key: 'finalReceivable', label: '最终应收', value: Number(snap.displayAmount ?? 0) },
   ];
+});
+
+/** 预结算透传的公务员标志（账户信息区展示） */
+const settlementCvlservFlag = computed(() => {
+  const flag = preSettleSnapshot.value?.ybCvlservFlag;
+  if (flag === undefined || flag === null) {
+    return undefined;
+  }
+  const text = String(flag).trim();
+  if (!text) {
+    return undefined;
+  }
+  return text;
 });
 const settlementSummaryInsurance = computed(() =>
   Number(preSettleSnapshot.value?.ybMedfeeSumamt ?? 0),
@@ -189,6 +249,9 @@ const settlementSummarySelfPay = computed(() =>
 const settlementInsuranceGroups = computed(() => preSettleSnapshot.value?.insuranceGroups ?? []);
 const settlementVisible = ref(false);
 const preSettleLoading = ref(false);
+/** 银联补收：复用已确认 2207，禁止扫码失败/落账失败时误冲正医保 */
+const unionPayMakeupCollectMode = ref(false);
+const makeupCollectLoading = ref(false);
 
 /** 确认收费过程进度（读卡 / 预结算 / 正式结算） */
 const chargeProgressVisible = ref(false);
@@ -253,6 +316,15 @@ const settlementScanPayEnabled = computed(
   () => hasScanPayChannel.value && settlementCashPay.value > 0.001,
 );
 
+/** 半成功：本机已有银联成功凭证时锁定付款码，禁止重扫 */
+const settlementScanInputLocked = computed(() => {
+  const draftId = preSettleSnapshot.value?.paymentDraftId;
+  if (draftId == null || draftId === '') {
+    return false;
+  }
+  return hasCachedClientScanSuccess(draftId);
+});
+
 const chargeTableQueryParams = reactive({
   pageNo: 1,
   pageSize: 20,
@@ -311,6 +383,100 @@ function isOutpatientChargeStaleSettlementError(error: unknown) {
   return isStaleCrossRoleError(error);
 }
 
+/**
+ * 预结算/工伤 Win 错误文案。
+ * <p>{@code RequestClient} 失败时 throw 的是 {@code response.data}（普通对象，非 Error），
+ * 只读 {@code instanceof Error} 会落到无意义兜底并盖住拦截器已提示的真实原因。</p>
+ * @returns 需本地再弹的文案；空串表示拦截器已处理、勿再弹
+ */
+function resolveOutpatientPreSettleErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error) {
+    return error.message.trim() || fallback;
+  }
+  if (error && typeof error === 'object') {
+    const row = error as {
+      message?: unknown;
+      msg?: unknown;
+      error?: unknown;
+      errorCode?: unknown;
+      data?: { message?: unknown; msg?: unknown };
+      response?: { data?: { message?: unknown; msg?: unknown; error?: unknown } };
+    };
+    const candidates = [
+      row.response?.data?.message,
+      row.response?.data?.msg,
+      row.response?.data?.error,
+      row.message,
+      row.msg,
+      row.error,
+      row.data?.message,
+      row.data?.msg,
+    ];
+    let extracted = '';
+    for (const candidate of candidates) {
+      if (typeof candidate === 'string' && candidate.trim()) {
+        extracted = candidate.trim();
+        break;
+      }
+    }
+    const errorCode = typeof row.errorCode === 'string' ? row.errorCode : '';
+    // request.ts 对工伤 MODULE_NOT_AVAILABLE / NOT_FOUND 故意不弹，需本地补弹
+    if (errorCode === 'MODULE_NOT_AVAILABLE' || errorCode === 'NOT_FOUND') {
+      return extracted || fallback;
+    }
+    // 其余业务 Result：拦截器已 ElMessage，返回空避免二次兜底覆盖
+    if (errorCode || row.message != null || row.msg != null) {
+      return '';
+    }
+    return extracted || fallback;
+  }
+  if (typeof error === 'string' && error.trim()) {
+    return error.trim();
+  }
+  return fallback;
+}
+
+/** 抽出预结算错误原文（含拦截器已提示的业务 message），供判断是否引导一键备案。 */
+function extractOutpatientPreSettleRawMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message.trim();
+  }
+  if (error && typeof error === 'object') {
+    const row = error as {
+      message?: unknown;
+      msg?: unknown;
+      error?: unknown;
+      data?: { message?: unknown; msg?: unknown };
+      response?: { data?: { message?: unknown; msg?: unknown; error?: unknown } };
+    };
+    const candidates = [
+      row.response?.data?.message,
+      row.response?.data?.msg,
+      row.response?.data?.error,
+      row.message,
+      row.msg,
+      row.error,
+      row.data?.message,
+      row.data?.msg,
+    ];
+    for (const candidate of candidates) {
+      if (typeof candidate === 'string' && candidate.trim()) {
+        return candidate.trim();
+      }
+    }
+  }
+  if (typeof error === 'string' && error.trim()) {
+    return error.trim();
+  }
+  return '';
+}
+
+function shouldGuideWorkInjuryFiling(message: string): boolean {
+  return /类型\s*12|一键备案|审批类型\s*10|联网结算未开通|就医类型|缺少有效门诊工伤审批/.test(
+    message,
+  );
+}
+
 async function resetSettlementAfterAdviceChanged() {
   settlementVisible.value = false;
   scanCode.value = '';
@@ -322,26 +488,105 @@ async function resetSettlementAfterAdviceChanged() {
 }
 
 /**
- * vxe 列 `checkMethod` 签名为 `({ row })`，TableColumn 的 `selectable` 类型为 `(row, index)`，二者兼容处理。
+ * vxe 列 `checkMethod` 签名为 `({ row })`，TableColumn 的 `selectable` 类型为 `(row, index)`。
+ * 同一收费单仅组首行可勾选；待收整单收费，已结算整单补打。
  */
 function chargeItemSelectionSelectable(arg0: Record<string, unknown>, _index: number) {
   const row = (
     arg0 && typeof arg0 === 'object' && 'row' in arg0
-      ? (arg0 as { row: PendingChargeItemRowDto }).row
+      ? (arg0 as { row: ChargeDetailTableRow }).row
       : arg0
-  ) as PendingChargeItemRowDto;
-  return isPendingChargeItemSelectable(row);
+  ) as ChargeDetailTableRow;
+  if (row.isFirstLineInBillGroup !== true) {
+    return false;
+  }
+  if (isPendingChargeItemSelectable(row)) {
+    return true;
+  }
+  return Boolean(String(row.paymentId ?? '').trim());
+}
+
+/** 按组首行勾选结果展开为整单行 */
+function expandSelectionToWholeBillGroups(selection: ChargeDetailTableRow[]) {
+  const selectedGroupKeys = new Set<string>();
+  for (const row of displayedPendingItems.value) {
+    if (!row.isFirstLineInBillGroup) {
+      continue;
+    }
+    const checked = selection.some((item) => item.chargeItemId === row.chargeItemId);
+    if (checked) {
+      selectedGroupKeys.add(row.billGroupKey);
+    }
+  }
+  return displayedPendingItems.value.filter((row) => selectedGroupKeys.has(row.billGroupKey));
+}
+
+/** 从整单勾选结果拆出待收行与可补打支付单 */
+function applyExpandedChargeSelection(expanded: ChargeDetailTableRow[]) {
+  selectedChargeRows.value = expanded.filter((row) => isPendingChargeItemSelectable(row));
+  const paymentIds: string[] = [];
+  const seen = new Set<string>();
+  for (const row of expanded) {
+    if (!isOutpatientChargeItemSettled(row)) {
+      continue;
+    }
+    const paymentId = String(row.paymentId ?? '').trim();
+    if (!paymentId || seen.has(paymentId)) {
+      continue;
+    }
+    seen.add(paymentId);
+    paymentIds.push(paymentId);
+  }
+  selectedSettledPaymentIds.value = paymentIds;
+}
+
+/** 将勾选状态同步到底层 VxeGrid（整单行一并勾选） */
+function applyChargeGridCheckboxSelection(
+  rows: ChargeDetailTableRow[],
+  grid?: null | Record<string, unknown>,
+) {
+  const doApply = (targetGrid: Record<string, unknown>) => {
+    if (typeof targetGrid.setCheckboxRow !== 'function') {
+      return;
+    }
+    const selectedIds = new Set(rows.map((row) => row.chargeItemId));
+    const tableDataResult =
+      typeof targetGrid.getTableData === 'function'
+        ? (targetGrid.getTableData() as {
+            fullData?: ChargeDetailTableRow[];
+            tableData?: ChargeDetailTableRow[];
+          })
+        : null;
+    const tableRows =
+      tableDataResult?.fullData ?? tableDataResult?.tableData ?? displayedPendingItems.value;
+    for (const row of tableRows) {
+      targetGrid.setCheckboxRow(row, selectedIds.has(row.chargeItemId));
+    }
+  };
+  if (grid) {
+    doApply(grid);
+    return;
+  }
+  void nextTick(() => {
+    const targetGrid = getChargeVxeGrid();
+    if (targetGrid) {
+      doApply(targetGrid);
+    }
+  });
 }
 
 /**
- * 选中患者并加载待收明细后：仅勾选可收费行。
+ * 选中患者并加载明细后：默认勾选全部待收整单。
  * Table.vue 在 tableData 变更后会 post-flush → clearSelection（再 await nextTick），
  * 必须等清空完成后再勾，否则会被冲掉。
  */
-async function selectAllPendingRowsInGrid(items: PendingChargeItemRowDto[]) {
-  const selectable = items.filter((r) => isPendingChargeItemSelectable(r));
+async function selectAllPendingRowsInGrid(items: ChargeDetailTableRow[]) {
+  const selectable = items.filter(
+    (r) => r.isFirstLineInBillGroup === true && isPendingChargeItemSelectable(r),
+  );
+  const expanded = expandSelectionToWholeBillGroups(selectable);
   syncingChargeSelection.value = true;
-  selectedChargeRows.value = selectable.length > 0 ? [...selectable] : [];
+  applyExpandedChargeSelection(expanded);
 
   // 对齐 Table.clearSelection：flush post + 其内部 nextTick；再 macro task 兜底
   await nextTick();
@@ -356,34 +601,17 @@ async function selectAllPendingRowsInGrid(items: PendingChargeItemRowDto[]) {
     grid = getChargeVxeGrid();
   }
 
-  if (grid && selectable.length > 0) {
-    // 优先全选（checkMethod 会跳过已结算）；避免 setCheckboxRow 行引用对不上
-    if (typeof grid.setAllCheckboxRow === 'function') {
-      grid.setAllCheckboxRow(true);
-    } else if (typeof grid.setCheckboxRow === 'function') {
-      const selectedIds = new Set(selectable.map((row) => row.chargeItemId));
-      const tableDataResult =
-        typeof grid.getTableData === 'function'
-          ? (grid.getTableData() as {
-              fullData?: PendingChargeItemRowDto[];
-              tableData?: PendingChargeItemRowDto[];
-            })
-          : null;
-      const tableRows =
-        tableDataResult?.fullData ?? tableDataResult?.tableData ?? pendingItems.value;
-      for (const row of tableRows) {
-        if (!isPendingChargeItemSelectable(row)) {
-          continue;
-        }
-        grid.setCheckboxRow(row, selectedIds.has(row.chargeItemId));
-      }
+  if (grid) {
+    if (typeof grid.clearCheckboxRow === 'function') {
+      grid.clearCheckboxRow();
     }
-  } else if (grid && typeof grid.clearCheckboxRow === 'function') {
-    grid.clearCheckboxRow();
+    if (expanded.length > 0) {
+      applyChargeGridCheckboxSelection(expanded, grid);
+    }
   }
 
   await nextTick();
-  selectedChargeRows.value = selectable.length > 0 ? [...selectable] : [];
+  applyExpandedChargeSelection(expanded);
   syncingChargeSelection.value = false;
 }
 
@@ -413,24 +641,40 @@ const chargeItemQuantityFormatter: NonNullable<TableColumn['formatter']> = (
   return unit ? `${display}${unit}` : display;
 };
 
+/** 就诊类型列：优先 medTypeDisplay，缺省回落 medTypeCode */
+const chargeItemMedTypeFormatter: NonNullable<TableColumn['formatter']> = (
+  row,
+  _col,
+  cellValue,
+) => {
+  const display = chargeItemDashFormatter(row, _col, cellValue);
+  if (display !== '—') {
+    return display;
+  }
+  return chargeItemDashFormatter(row, _col, (row as PendingChargeItemRowDto).medTypeCode);
+};
+
 /**
- * 收费项 → 收费时间：取成功支付摘要 billDate（与小票收费时间同源）。
+ * 收费项 → 成功支付摘要：paymentId / paymentNo / billDate。
  * 同一明细若出现在多笔支付中，保留 options 中先遇到的一笔（摘要按账单时间倒序）。
  */
-const chargeTimeByItemId = computed(() => {
-  const map = new Map<string, string>();
+const paymentMetaByItemId = computed(() => {
+  const map = new Map<string, { billDate: string; paymentId: string; paymentNo: string }>();
   for (const payment of settlementInsuranceOptions.value) {
-    const billDate = String(payment.billDate ?? '').trim();
-    if (!billDate) {
+    const paymentId = String(payment.paymentId ?? '').trim();
+    if (!paymentId) {
       continue;
     }
+    const paymentNo = String(payment.paymentNo ?? '').trim() || paymentId;
+    const billDate = String(payment.billDate ?? '').trim();
+    const meta = { paymentId, paymentNo, billDate };
     // 优先 chargeItemIds；缺省时从 chargeLines 回落
     const ids = payment.chargeItemIds ?? [];
     if (ids.length > 0) {
       for (const rawId of ids) {
         const id = String(rawId ?? '').trim();
         if (id && !map.has(id)) {
-          map.set(id, billDate);
+          map.set(id, meta);
         }
       }
       continue;
@@ -438,12 +682,87 @@ const chargeTimeByItemId = computed(() => {
     for (const line of payment.chargeLines ?? []) {
       const id = String(line.chargeItemId ?? '').trim();
       if (id && !map.has(id)) {
-        map.set(id, billDate);
+        map.set(id, meta);
       }
     }
   }
   return map;
 });
+
+/** 收费项 → 收费时间（兼容原 formatter） */
+const chargeTimeByItemId = computed(() => {
+  const map = new Map<string, string>();
+  for (const [id, meta] of paymentMetaByItemId.value) {
+    if (meta.billDate) {
+      map.set(id, meta.billDate);
+    }
+  }
+  return map;
+});
+
+/**
+ * 将收银台明细按收费单分组：已结算按 paymentId，待收按单据号；同组相邻并打合并标记。
+ */
+function buildChargeDetailTableRows(items: PendingChargeItemRowDto[]): ChargeDetailTableRow[] {
+  const metaByItemId = paymentMetaByItemId.value;
+  // 摘要未回填明细时，用当前选中/队列支付流水兜底，保证已结算行仍可整单勾选补打
+  const fallbackPaymentId =
+    String(selectedSettlementPaymentId.value ?? '').trim() ||
+    String(currentQueueRow.value?.paymentId ?? '').trim();
+  const decorated = items.map((item, originalIndex) => {
+    const chargeItemId = String(item.chargeItemId ?? '').trim();
+    const meta = chargeItemId ? metaByItemId.get(chargeItemId) : undefined;
+    let paymentId = meta?.paymentId ?? '';
+    let paymentNo = meta?.paymentNo ?? '';
+    if (!paymentId && isOutpatientChargeItemSettled(item) && fallbackPaymentId) {
+      paymentId = fallbackPaymentId;
+      paymentNo = fallbackPaymentId;
+    }
+    const busNo = String(item.busNo ?? '').trim();
+    // 已关联支付单用支付主键分组；待收按单据号整单勾选
+    const billGroupKey = paymentId
+      ? `pay:${paymentId}`
+      : `bus:${busNo || chargeItemId || String(originalIndex)}`;
+    return {
+      item,
+      originalIndex,
+      billGroupKey,
+      paymentId,
+      paymentNo,
+      settled: isOutpatientChargeItemSettled(item),
+    };
+  });
+  decorated.sort((a, b) => {
+    // 待收整单置顶，便于收费；已结算按支付单聚拢，便于补打勾选
+    if (a.settled !== b.settled) {
+      return a.settled ? 1 : -1;
+    }
+    const keyCompare = a.billGroupKey.localeCompare(b.billGroupKey);
+    if (keyCompare !== 0) {
+      return keyCompare;
+    }
+    return a.originalIndex - b.originalIndex;
+  });
+  const groupCounts = new Map<string, number>();
+  for (const row of decorated) {
+    groupCounts.set(row.billGroupKey, (groupCounts.get(row.billGroupKey) ?? 0) + 1);
+  }
+  const seenGroups = new Set<string>();
+  return decorated.map((row) => {
+    const isFirstLineInBillGroup = !seenGroups.has(row.billGroupKey);
+    if (isFirstLineInBillGroup) {
+      seenGroups.add(row.billGroupKey);
+    }
+    return {
+      ...row.item,
+      paymentId: row.paymentId || undefined,
+      paymentNo: row.paymentNo || undefined,
+      billGroupKey: row.billGroupKey,
+      isFirstLineInBillGroup,
+      billGroupLineCount: groupCounts.get(row.billGroupKey) ?? 1,
+    };
+  });
+}
 
 /** 收费时间列：已结算行按支付 billDate 格式化；待收或无支付关联显示「—」 */
 const chargeItemChargeTimeFormatter: NonNullable<TableColumn['formatter']> = (row) => {
@@ -456,14 +775,25 @@ const chargeItemChargeTimeFormatter: NonNullable<TableColumn['formatter']> = (ro
   return parsed.isValid() ? parsed.format('YYYY-MM-DD HH:mm:ss') : '—';
 };
 
+/** 单价列：空值显示「—」，有值按金额两位展示 */
+const chargeItemUnitPriceFormatter: NonNullable<TableColumn['formatter']> = (
+  row,
+  _col,
+  cellValue,
+) => {
+  const raw =
+    cellValue === null || cellValue === undefined
+      ? (row as PendingChargeItemRowDto).unitPrice
+      : cellValue;
+  if (raw === null || raw === undefined || raw === '') {
+    return '—';
+  }
+  return `¥${formatMoney(raw)}`;
+};
+
 /** 当前选中队列行 */
 const currentQueueRow = computed(
   () => queueRecords.value.find((r) => r.encounterId === selectedEncounterId.value) ?? null,
-);
-
-/** 当前就诊是否可补打收费小票（已有成功支付流水） */
-const canReprintChargeReceipt = computed(() =>
-  Boolean(String(currentQueueRow.value?.paymentId ?? '').trim()),
 );
 
 /** 性别：优先 `genderEnumText`，否则 `genderCode`（与医生站读模型一致） */
@@ -488,8 +818,16 @@ const chargePatientFeeSummary = computed(() => {
   return summarizeOutpatientChargeFeeAmounts(pendingItems.value, isOutpatientChargeItemSettled);
 });
 
-/** 主区收费明细始终全量展示 */
-const displayedPendingItems = computed(() => pendingItems.value);
+/** 主区收费明细：按收费单分组后全量展示 */
+const displayedPendingItems = computed(() => buildChargeDetailTableRows(pendingItems.value));
+
+/** 当前就诊是否可补打：主列表存在已关联支付单的已结算行，或队列上回落 paymentId */
+const canReprintChargeReceipt = computed(() => {
+  if (displayedPendingItems.value.some((row) => Boolean(String(row.paymentId ?? '').trim()))) {
+    return true;
+  }
+  return Boolean(String(currentQueueRow.value?.paymentId ?? '').trim());
+});
 
 const paymentRecordsCount = computed(() => settlementInsuranceOptions.value.length);
 
@@ -532,6 +870,7 @@ const { run: runLoadPending, loading: tableLoading } = useRequest(httpLoadPendin
   onSuccess: (data) => {
     const items = data.items ?? [];
     pendingItems.value = items;
+    accountSwitchEnabled.value = Boolean(data.accountSwitchEnabled);
     const options = data.settlementInsuranceOptions ?? [];
     settlementInsuranceOptions.value = options;
     selectedSettlementPaymentId.value = String(
@@ -555,8 +894,9 @@ const loadChargeQueue = async () => {
     };
     const range = dateRange.value;
     if (range?.[0] && range[1]) {
-      body.startDate = `${range[0]} 00:00:00`;
-      body.endDate = `${range[1]} 23:59:59`;
+      // 起止日各自落到本地日历日边界，避免漏当天首尾时段
+      body.startDate = getLocalDayRangeDateTimeStrings(range[0]).startDate;
+      body.endDate = getLocalDayRangeDateTimeStrings(range[1]).endDate;
     }
     const res = await httpPageOutpatientChargeQueue(body);
     const { content, totalCount } = parsePagedRowsFromApiData<ChargeQueueRowDto>(res);
@@ -572,10 +912,12 @@ const loadPendingForSelectedEncounter = async () => {
   const eid = selectedEncounterId.value;
   if (!eid) {
     pendingItems.value = [];
+    accountSwitchEnabled.value = false;
     settlementInsuranceOptions.value = [];
     selectedSettlementPaymentId.value = '';
     paymentRecordsVisible.value = false;
     selectedChargeRows.value = [];
+    selectedSettledPaymentIds.value = [];
     void nextTick(() => {
       const grid = getChargeVxeGrid();
       if (grid && typeof grid.clearCheckboxRow === 'function') {
@@ -620,6 +962,7 @@ watch(selectedEncounterId, () => {
   paymentRecordsVisible.value = false;
   lockedChargeItemIds.value = [];
   selectedChargeRows.value = [];
+  selectedSettledPaymentIds.value = [];
   void loadPendingForSelectedEncounter();
 });
 
@@ -648,6 +991,7 @@ const handleChoosePatient = (patient: BillingPatientCardPatient) => {
     settlementInsuranceBalc.value = null;
     lockedChargeItemIds.value = [];
     selectedChargeRows.value = [];
+    selectedSettledPaymentIds.value = [];
     void loadPendingForSelectedEncounter();
     return;
   }
@@ -670,13 +1014,44 @@ const handleQueueSizeChange = () => {
   void loadChargeQueue();
 };
 
-/** 表格勾选变更：缓存已选收费项（全选等场景下过滤掉不可勾选的已结算行） */
-const handleChargeSelectionChange = (selection: PendingChargeItemRowDto[]) => {
+/** 表格勾选变更：按收费单整单展开；待收供收费，已结算支付单供补打 */
+const handleChargeSelectionChange = (selection: ChargeDetailTableRow[]) => {
   if (syncingChargeSelection.value) {
     return;
   }
-  selectedChargeRows.value = selection.filter((r) => isPendingChargeItemSelectable(r));
+  const expanded = expandSelectionToWholeBillGroups(selection);
+  applyExpandedChargeSelection(expanded);
+
+  const expandedIds = new Set(expanded.map((row) => row.chargeItemId));
+  const rawIds = new Set(selection.map((row) => row.chargeItemId));
+  const needsSync =
+    expandedIds.size !== rawIds.size || [...expandedIds].some((id) => !rawIds.has(id));
+  if (needsSync) {
+    syncingChargeSelection.value = true;
+    applyChargeGridCheckboxSelection(expanded, getChargeVxeGrid());
+    void nextTick(() => {
+      syncingChargeSelection.value = false;
+    });
+  }
 };
+
+/** VxeGrid spanMethod：勾选列与支付单号/单据号按收费单分组纵向合并 */
+function handleChargeDetailSpanMethod(params: {
+  column: Record<string, unknown>;
+  row: Record<string, unknown>;
+}) {
+  const row = params.row as ChargeDetailTableRow;
+  const column = params.column as { field?: string; type?: string };
+  const field = column.field;
+  const shouldMerge = (field && BILL_GROUP_MERGE_FIELDS.has(field)) || column.type === 'checkbox';
+  if (!shouldMerge) {
+    return undefined;
+  }
+  if (row.isFirstLineInBillGroup) {
+    return { rowspan: row.billGroupLineCount ?? 1, colspan: 1 };
+  }
+  return { rowspan: 0, colspan: 0 };
+}
 
 /** 收费状态：按枚举 code 映射标签；未知 code 时回退接口 statusText */
 const chargeItemStatusTag = (row: PendingChargeItemRowDto) => {
@@ -702,6 +1077,15 @@ const chargeTableColumns: TableColumn[] = [
     align: 'center',
     headerAlign: 'center',
     selectable: chargeItemSelectionSelectable,
+  },
+  {
+    prop: 'paymentNo',
+    label: '支付单号',
+    minWidth: 150,
+    align: 'center',
+    headerAlign: 'center',
+    formatter: chargeItemDashFormatter,
+    showOverflowTooltip: true,
   },
   {
     prop: 'busNo',
@@ -767,12 +1151,30 @@ const chargeTableColumns: TableColumn[] = [
     showOverflowTooltip: true,
   },
   {
+    prop: 'medTypeDisplay',
+    label: '就诊类型',
+    minWidth: 100,
+    align: 'center',
+    headerAlign: 'center',
+    formatter: chargeItemMedTypeFormatter,
+    showOverflowTooltip: true,
+  },
+  {
     prop: 'statusCode',
     label: '收费状态',
     minWidth: 100,
     align: 'center',
     headerAlign: 'center',
     slot: 'statusCell',
+    showOverflowTooltip: true,
+  },
+  {
+    prop: 'unitPrice',
+    label: '单价',
+    minWidth: 88,
+    align: 'right',
+    headerAlign: 'center',
+    formatter: chargeItemUnitPriceFormatter,
     showOverflowTooltip: true,
   },
   {
@@ -805,21 +1207,32 @@ const chargeTableColumns: TableColumn[] = [
 
 const switchAccountLoading = ref(false);
 
-/** 就诊维度转自费：将待收明细 accountId 批量切至自费账户（IF-OPC-05） */
+/** 勾选明细转自费：将所选待收行 accountId 切至自费账户（IF-OPC-05） */
 const handleSwitchSelfPay = async () => {
   const eid = selectedEncounterId.value;
   if (!eid) {
     ElMessage.warning('请先选择就诊');
     return;
   }
-  await ElMessageBox.confirm('将当前就诊下待收费用项批量切换到自费记账账户，是否继续？', '转自费', {
+  if (selectedChargeRows.value.length === 0) {
+    ElMessage.warning('请勾选需要转自费的费用项');
+    return;
+  }
+  await ElMessageBox.confirm('将勾选的待收费用项切换到自费记账账户，是否继续？', '转自费', {
     cancelButtonText: '取消',
     confirmButtonText: '确定',
     type: 'warning',
   });
   switchAccountLoading.value = true;
   try {
-    const res = await httpSwitchEncounterChargeItemsToSelfPay({ encounterId: eid });
+    // 勾选行主键串：保持 string，避免雪花 Long 精度丢失
+    const chargeItemIds = selectedChargeRows.value
+      .map((row) => String(row.chargeItemId ?? '').trim())
+      .filter((id) => id !== '');
+    const res = await httpSwitchEncounterChargeItemsToSelfPay({
+      encounterId: eid,
+      chargeItemIds,
+    });
     if (res.success) {
       ElMessage.success('已切换为自费记账');
       await loadPendingForSelectedEncounter();
@@ -843,9 +1256,11 @@ const handleOpenSettlement = async () => {
     return;
   }
   const rows = selectedChargeRows.value;
-  const needInsurance = selectionIncludesInsuranceItems(rows);
+  // 工伤与省/市医保隔离：工伤走 Win 2201→2206，不读省医保卡、不跑 3101
+  const isWorkInjury = selectionIncludesWorkInjuryItems(rows);
+  const needChsInsurance = selectionIncludesInsuranceItems(rows) && !isWorkInjury;
   let insuranceMedium: Awaited<ReturnType<typeof chooseOutpatientChargeInsuranceMedium>> = null;
-  if (needInsurance) {
+  if (needChsInsurance) {
     insuranceMedium = await chooseOutpatientChargeInsuranceMedium();
     if (!insuranceMedium) {
       return;
@@ -854,26 +1269,34 @@ const handleOpenSettlement = async () => {
   const readCredentialLabel = insuranceMedium
     ? outpatientChargeReadCredentialLabel(insuranceMedium)
     : '读取医保凭证';
-  const progressSteps: ChargeProgressStep[] = needInsurance
+  const progressSteps: ChargeProgressStep[] = isWorkInjury
     ? [
-        { key: 'read-card', label: readCredentialLabel },
-        { key: 'person-1101', label: '核验参保人员信息（1101）' },
-        { key: 'detail-audit', label: '医保事前提醒（3101）' },
-        { key: 'pre-settle', label: '医保预结算通信（2201→2206）' },
+        { key: 'pre-settle', label: '工伤预结算（9102→2206）' },
         { key: 'open-dialog', label: '打开结算确认' },
       ]
-    : [
-        { key: 'pre-settle', label: '生成支付草稿与应收' },
-        { key: 'open-dialog', label: '打开结算确认' },
-      ];
+    : needChsInsurance
+      ? [
+          { key: 'read-card', label: readCredentialLabel },
+          { key: 'person-1101', label: '核验参保人员信息（1101）' },
+          { key: 'detail-audit', label: '医保事前提醒（3101）' },
+          { key: 'pre-settle', label: '医保预结算通信（2201→2206）' },
+          { key: 'open-dialog', label: '打开结算确认' },
+        ]
+      : [
+          { key: 'pre-settle', label: '生成支付草稿与应收' },
+          { key: 'open-dialog', label: '打开结算确认' },
+        ];
 
   preSettleLoading.value = true;
   openChargeProgress('确认收费处理中', progressSteps, '正在准备…');
   await nextTick();
+  let openSettlementAfterProgress = false;
+  let pendingWorkInjuryFilingGuide = false;
   try {
     let insuranceCtx: Awaited<ReturnType<typeof resolveOutpatientChargeInsuranceContext>> = null;
     settlementInsuranceBalc.value = null;
-    if (needInsurance && insuranceMedium) {
+
+    if (needChsInsurance && insuranceMedium) {
       insuranceCtx = await resolveOutpatientChargeInsuranceContext(rows, {
         medium: insuranceMedium,
         onPhase: (phase) => {
@@ -894,7 +1317,7 @@ const handleOpenSettlement = async () => {
           : insuranceCtx.balc;
     }
 
-    if (needInsurance && insuranceCtx) {
+    if (needChsInsurance && insuranceCtx) {
       setChargeProgressStep(2, '医保事前提醒分析中（3101），请稍候…');
       const resolved = await resolveInsuranceContractById(insuranceCtx.contractId);
       try {
@@ -925,12 +1348,20 @@ const handleOpenSettlement = async () => {
       }
     }
 
-    const preSettleStepIndex = needInsurance ? 3 : 0;
-    const openDialogStepIndex = needInsurance ? 4 : 1;
+    const preSettleStepIndex = isWorkInjury ? 0 : needChsInsurance ? 3 : 0;
+    const openDialogStepIndex = isWorkInjury ? 1 : needChsInsurance ? 4 : 1;
     setChargeProgressStep(
       preSettleStepIndex,
-      needInsurance ? '医保预结算通信中（2201→2206），请稍候…' : '正在计算应收并生成支付草稿…',
+      isWorkInjury
+        ? '工伤预结算通信中（9102→2206），请稍候…'
+        : needChsInsurance
+          ? '医保预结算通信中（2201→2206），请稍候…'
+          : '正在计算应收并生成支付草稿…',
     );
+    const workInjuryContractId = isWorkInjury ? resolveInsuranceContractId(rows) : undefined;
+    if (isWorkInjury) {
+      workInjuryFilingContractId.value = workInjuryContractId;
+    }
     const res = await httpPreSettleOutpatientCharges({
       chargeItemIds: rows.map((r) => r.chargeItemId),
       encounterId: eid,
@@ -943,7 +1374,9 @@ const handleOpenSettlement = async () => {
             insutype: insuranceCtx.insutype,
             contractId: insuranceCtx.contractId,
           }
-        : {}),
+        : workInjuryContractId
+          ? { contractId: workInjuryContractId }
+          : {}),
     });
     if (res.settlementComposition === 'WORK_INJURY_INVOKE') {
       setChargeProgressStep(preSettleStepIndex, '工伤医保逐步通信中…');
@@ -954,23 +1387,138 @@ const handleOpenSettlement = async () => {
             res,
             eid,
             rows.map((r) => r.chargeItemId),
+            workInjuryContractId,
           )
         : res;
     setChargeProgressStep(openDialogStepIndex, '预结算完成，即将打开确认窗口…');
     lockedChargeItemIds.value = selectedChargeRows.value.map((r) => r.chargeItemId);
+    unionPayMakeupCollectMode.value = false;
     const cashPay = Number(preSettleSnapshot.value?.displayAmount ?? 0);
     paymentForm.payChannelCode =
       Number.isFinite(cashPay) && cashPay > 0.001
         ? DEFAULT_OUTPATIENT_CHARGE_PAY_CHANNEL_CODE
         : FALLBACK_DEFAULT_PAY_CHANNEL;
-    settlementVisible.value = true;
+    // 先关进度弹窗再开结算窗，避免同 tick 双 Dialog 互相顶掉
+    openSettlementAfterProgress = true;
+  } catch (error: unknown) {
+    // Win/本地 Error 必弹；HTTP 业务体拦截器已提示时 message 为空，勿用兜底覆盖
+    const message = resolveOutpatientPreSettleErrorMessage(error, '预结算失败，请重试');
+    const rawMessage = message || extractOutpatientPreSettleRawMessage(error);
+    if (message) {
+      ElMessage.error(message);
+    }
+    if (shouldGuideWorkInjuryFiling(rawMessage) && selectedEncounterId.value) {
+      // contractId 可能稍后才解析到；先记下，关进度后再开备案窗（避免与进度 Dialog 互顶闪退）
+      if (workInjuryFilingContractId.value == null) {
+        workInjuryFilingContractId.value = resolveInsuranceContractId(selectedChargeRows.value);
+      }
+      pendingWorkInjuryFilingGuide = true;
+    }
   } finally {
     closeChargeProgress();
     preSettleLoading.value = false;
   }
+  if (pendingWorkInjuryFilingGuide) {
+    await nextTick();
+    // 等进度弹窗关闭动画结束，再开备案（与结算窗同样防互顶）
+    await new Promise((resolve) => window.setTimeout(resolve, 200));
+    if (workInjuryFilingContractId.value == null) {
+      ElMessage.warning('无法打开一键备案：缺少工伤费用性质，请确认已选工伤收费项');
+    } else {
+      ElMessage.info('请完成门诊工伤备案（类型12）后再确认收费');
+      workInjuryFilingDialogRef.value?.openDialog({ autoGuideApproval: true });
+    }
+  }
+  if (openSettlementAfterProgress) {
+    await nextTick();
+    // 等进度弹窗关闭动画结束，避免两个 AppDialog 互顶导致结算窗不显示
+    await new Promise((resolve) => window.setTimeout(resolve, 80));
+    settlementVisible.value = true;
+  }
 };
 
-/** 正式结算：按草稿与渠道实付落账 */
+/** 银联补收：复用已确认 2207，打开扫码弹窗补收现金段（如 ¥79.06） */
+const handleOpenUnionPayMakeupCollect = async () => {
+  const eid = selectedEncounterId.value;
+  if (!eid) {
+    ElMessage.warning('请先选择就诊');
+    return;
+  }
+  if (selectedChargeRows.value.length === 0) {
+    ElMessage.warning('请勾选需要银联补收的费用项');
+    return;
+  }
+  await refreshUnionPayCapabilities();
+  if (!scanPayEnabled.value) {
+    ElMessage.error('请启动本地客户端（OpenHIS.Win）并确认银联组件已安装');
+    return;
+  }
+  makeupCollectLoading.value = true;
+  openChargeProgress(
+    '银联补收准备中',
+    [{ key: 'prepare', label: '复用已确认医保结算' }],
+    '正在准备…',
+  );
+  await nextTick();
+  try {
+    const chargeItemIds = selectedChargeRows.value
+      .map((row) => String(row.chargeItemId ?? '').trim())
+      .filter((id) => id !== '');
+    const res = await httpPrepareUnionPayMakeupCollect({
+      encounterId: eid,
+      chargeItemIds,
+    });
+    preSettleSnapshot.value = res;
+    lockedChargeItemIds.value = chargeItemIds;
+    unionPayMakeupCollectMode.value = true;
+    settlementInsuranceBalc.value = null;
+    paymentForm.payChannelCode = 'SCAN_PAY';
+    scanCode.value = '';
+    scanStatusText.value = '';
+    // 半成功：服务端已有 BPC SUCCESS 时预热本机凭证，弹窗锁定勿重复扫码
+    let alreadyPaid = false;
+    try {
+      const orders = (await httpGetBpcOrdersByPayment(res.paymentDraftId)) ?? [];
+      const successOrder = orders.find(
+        (row) =>
+          row.status === 'SUCCESS' &&
+          (row.tranType === 'C' || !row.tranType) &&
+          row.tradeNo &&
+          row.merTradeNo,
+      );
+      if (successOrder) {
+        cacheClientScanResult(res.paymentDraftId, {
+          merTradeNo: String(successOrder.merTradeNo ?? ''),
+          tradeNo: String(successOrder.tradeNo ?? ''),
+          payType: String(successOrder.payType ?? ''),
+          respCode: '00',
+          respMsg: successOrder.respMsg || '银联已扣款，请补结算',
+          txnAmtFen: successOrder.txnAmtFen,
+        });
+        alreadyPaid = true;
+        scanStatusText.value = '银联已扣款，请直接确认补收（不会重复扣款）';
+      }
+    } catch {
+      // 查单失败仍可打开弹窗；确认时再走 submitScanPayment
+    }
+    settlementVisible.value = true;
+    ElMessage.success(
+      alreadyPaid
+        ? `银联已扣 ¥${Number(res.displayAmount ?? 0).toFixed(2)}，请直接确认补收`
+        : `请扫码补收 ¥${Number(res.displayAmount ?? 0).toFixed(2)}（医保已确认，不再重新结算）`,
+    );
+  } catch (error) {
+    if (!isStaleCrossRoleError(error) && !isUnmappedYbNoComplianceError(error)) {
+      const message = error instanceof Error ? error.message : '银联补收准备失败';
+      ElMessage.error(message);
+    }
+  } finally {
+    closeChargeProgress();
+    makeupCollectLoading.value = false;
+  }
+};
+
+/** 正式结算：医保 2207（若需）→ 银联扫码 → 院内落账 */
 const handleConfirmSettlement = async () => {
   const snap = preSettleSnapshot.value;
   const eid = selectedEncounterId.value;
@@ -981,24 +1529,37 @@ const handleConfirmSettlement = async () => {
   const cashPay = Number(snap.displayAmount ?? 0);
   const payableCash = Number.isFinite(cashPay) ? cashPay : 0;
   const needScanPay = payableCash > 0.001 && isScanPayChannel(paymentForm.payChannelCode);
-  if (needScanPay && !scanCode.value.trim()) {
+  const halfSuccessLocked = hasCachedClientScanSuccess(snap.paymentDraftId);
+  // 银联补收半成功：允许空付款码，由 submitScanPayment 查 BPC SUCCESS 复用凭证
+  if (
+    needScanPay &&
+    !halfSuccessLocked &&
+    !scanCode.value.trim() &&
+    !unionPayMakeupCollectMode.value
+  ) {
     ElMessage.warning('请输入付款码');
     return;
   }
 
-  const hasInsuranceSettle = Boolean(
-    snap.workInjurySessionId ||
-      snap.ybChrgBchno ||
+  const hasChsInsuranceSettle = Boolean(
+    snap.ybChrgBchno ||
       (snap.insuranceGroups?.some((g) => String(g.chrgBchno ?? '').trim()) ?? false),
   );
+  const hasInsuranceSettle = Boolean(snap.workInjurySessionId || hasChsInsuranceSettle);
+  /** 国家医保 + 扫码：先 2207 再 Win，避免串码超时仍扣银联 */
+  const chsBeforeScan = hasChsInsuranceSettle && needScanPay && !snap.workInjurySessionId;
+
   const progressSteps: ChargeProgressStep[] = [];
   if (snap.workInjurySessionId) {
     progressSteps.push({ key: 'wi-2207', label: '工伤医保正式结算（2207）' });
   }
+  if (chsBeforeScan) {
+    progressSteps.push({ key: 'yb-2207', label: '医保正式结算（2207）' });
+  }
   if (needScanPay) {
     progressSteps.push({ key: 'scan-pay', label: '银联扫码支付' });
   }
-  if (hasInsuranceSettle && !snap.workInjurySessionId) {
+  if (hasInsuranceSettle && !snap.workInjurySessionId && !chsBeforeScan) {
     progressSteps.push({ key: 'yb-2207', label: '医保正式结算（2207）' });
   }
   progressSteps.push({ key: 'local-settle', label: '院内落账与出票' });
@@ -1009,29 +1570,17 @@ const handleConfirmSettlement = async () => {
   await nextTick();
   let step = 0;
   let workInjury2207Done = false;
+  let chs2207BeforeScanDone = false;
   try {
     if (snap.workInjurySessionId) {
       setChargeProgressStep(step, '工伤医保正式结算通信中…');
-      await runWorkInjuryCharge2207Invoke(snap, eid, lockedChargeItemIds.value);
+      await runWorkInjuryCharge2207Invoke(
+        snap,
+        eid,
+        lockedChargeItemIds.value,
+        resolveInsuranceContractId(selectedChargeRows.value),
+      );
       workInjury2207Done = true;
-      step += 1;
-    }
-    let clientScanResult;
-    if (needScanPay) {
-      await refreshUnionPayCapabilities();
-      if (!scanPayEnabled.value) {
-        ElMessage.error('请启动本地客户端（OpenHIS.Win）并确认银联组件已安装');
-        return;
-      }
-      setChargeProgressStep(step, '等待银联支付结果…');
-      scanStatusText.value = '等待支付结果…';
-      const scanOutcome = await submitScanPayment({
-        paymentDraftId: snap.paymentDraftId,
-        amount: payableCash,
-        scanCode: scanCode.value,
-      });
-      clientScanResult = scanOutcome.clientScanResult;
-      scanStatusText.value = `支付成功${scanOutcome.clientScanResult.tradeNo ? `，单号 ${scanOutcome.clientScanResult.tradeNo}` : ''}`;
       step += 1;
     }
 
@@ -1039,6 +1588,57 @@ const handleConfirmSettlement = async () => {
       snap.insuranceGroups
         ?.map((group) => String(group.chrgBchno ?? '').trim())
         .filter((value) => value.length > 0) ?? [];
+
+    if (chsBeforeScan) {
+      setChargeProgressStep(step, '医保正式结算通信中（2207）…');
+      await httpConfirmOutpatientInsuranceBeforeScan({
+        paymentDraftId: String(snap.paymentDraftId),
+        encounterId: eid,
+        ...(insuranceGroupBchnos.length > 0
+          ? { ybChrgBchnos: insuranceGroupBchnos }
+          : snap.ybChrgBchno
+            ? { ybChrgBchno: snap.ybChrgBchno }
+            : {}),
+      });
+      chs2207BeforeScanDone = true;
+      step += 1;
+    }
+
+    let clientScanResult;
+    if (needScanPay) {
+      await refreshUnionPayCapabilities();
+      if (!scanPayEnabled.value) {
+        ElMessage.error('请启动本地客户端（OpenHIS.Win）并确认银联组件已安装');
+        return;
+      }
+      setChargeProgressStep(step, halfSuccessLocked ? '使用已成功银联凭证…' : '等待银联支付结果…');
+      scanStatusText.value = halfSuccessLocked ? '银联已扣款，正在补结算…' : '等待支付结果…';
+      try {
+        const scanOutcome = await submitScanPayment({
+          paymentDraftId: snap.paymentDraftId,
+          amount: payableCash,
+          scanCode: scanCode.value,
+        });
+        clientScanResult = scanOutcome.clientScanResult;
+        scanStatusText.value = `支付成功${scanOutcome.clientScanResult.tradeNo ? `，单号 ${scanOutcome.clientScanResult.tradeNo}` : ''}`;
+        step += 1;
+      } catch (scanError) {
+        // 扫码前已 2207：Win 失败则冲正医保，避免平台已收、银联未收
+        // 银联补收复用已确认结算：禁止冲正
+        if (chs2207BeforeScanDone && !unionPayMakeupCollectMode.value) {
+          try {
+            await httpCompensateInsuranceSettlementsByPayment({
+              paymentDraftId: String(snap.paymentDraftId),
+            });
+            ElMessage.warning('银联支付失败，已冲正医保结算；请重新确认收费');
+          } catch {
+            ElMessage.error('银联支付失败，且医保冲正未完成，请联系医保办，勿重复收费');
+          }
+        }
+        throw scanError;
+      }
+    }
+
     // 零现金：占位 CASH 金额 0（禁止 SCAN_PAY）；有现金：按所选渠道提交应付额
     const paymentDetails =
       payableCash > 0.001
@@ -1054,44 +1654,43 @@ const handleConfirmSettlement = async () => {
               payChannelCode: FALLBACK_DEFAULT_PAY_CHANNEL,
             },
           ];
-    setChargeProgressStep(step, hasInsuranceSettle ? '医保正式结算与院内落账中…' : '院内落账中…');
+    setChargeProgressStep(step, hasInsuranceSettle ? '医保确认与院内落账中…' : '院内落账中…');
+    const settleBody = {
+      billDate: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+      chargeItemIds: lockedChargeItemIds.value,
+      encounterId: eid,
+      outcomeEnum: OUTPATIENT_CHARGE_SETTLE_OUTCOME_COMPLETED,
+      paymentDetails,
+      paymentDraftId: snap.paymentDraftId,
+      ...(insuranceGroupBchnos.length > 0
+        ? { ybChrgBchnos: insuranceGroupBchnos }
+        : snap.ybChrgBchno
+          ? { ybChrgBchno: snap.ybChrgBchno }
+          : {}),
+    };
     const payResult = await (clientScanResult
-      ? settleWithScanRecovery(clientScanResult, () =>
-          httpConfirmOutpatientChargeSettlement({
-            billDate: dayjs().format('YYYY-MM-DD HH:mm:ss'),
-            chargeItemIds: lockedChargeItemIds.value,
-            encounterId: eid,
-            outcomeEnum: OUTPATIENT_CHARGE_SETTLE_OUTCOME_COMPLETED,
-            paymentDetails,
+      ? settleWithScanRecovery(
+          clientScanResult,
+          () =>
+            httpConfirmOutpatientChargeSettlement({
+              ...settleBody,
+              clientScanResult,
+            }),
+          {
             paymentDraftId: snap.paymentDraftId,
-            clientScanResult,
-            ...(insuranceGroupBchnos.length > 0
-              ? { ybChrgBchnos: insuranceGroupBchnos }
-              : snap.ybChrgBchno
-                ? { ybChrgBchno: snap.ybChrgBchno }
-                : {}),
-          }),
+            refundAmountYuan: payableCash,
+          },
         )
-      : httpConfirmOutpatientChargeSettlement({
-          billDate: dayjs().format('YYYY-MM-DD HH:mm:ss'),
-          chargeItemIds: lockedChargeItemIds.value,
-          encounterId: eid,
-          outcomeEnum: OUTPATIENT_CHARGE_SETTLE_OUTCOME_COMPLETED,
-          paymentDetails,
-          paymentDraftId: snap.paymentDraftId,
-          ...(insuranceGroupBchnos.length > 0
-            ? { ybChrgBchnos: insuranceGroupBchnos }
-            : snap.ybChrgBchno
-              ? { ybChrgBchno: snap.ybChrgBchno }
-              : {}),
-        }));
-    ElMessage.success('收费成功');
+      : httpConfirmOutpatientChargeSettlement(settleBody));
+    clearCachedClientScanResult(snap.paymentDraftId);
+    ElMessage.success(unionPayMakeupCollectMode.value ? '银联补收成功' : '收费成功');
     settlementVisible.value = false;
     scanCode.value = '';
     scanStatusText.value = '';
     preSettleSnapshot.value = null;
     settlementInsuranceBalc.value = null;
     lockedChargeItemIds.value = [];
+    unionPayMakeupCollectMode.value = false;
     void loadChargeQueue().then(() => loadPendingForSelectedEncounter());
     schedulePrintChargeReceipt({
       encounterId: eid,
@@ -1099,6 +1698,16 @@ const handleConfirmSettlement = async () => {
       jobName: '收费小票',
     });
   } catch (error) {
+    if (error instanceof ScanSettleRefundedError) {
+      ElMessage.warning(error.message);
+      scanStatusText.value = '';
+      return;
+    }
+    if (error instanceof ScanSettleIncompleteError) {
+      ElMessage.error(error.message);
+      scanStatusText.value = '银联已扣款，请补结算或银联退货，勿重复扫码';
+      return;
+    }
     if (workInjury2207Done) {
       try {
         await runWorkInjuryRefundReverse({
@@ -1127,26 +1736,48 @@ const handleConfirmSettlement = async () => {
   }
 };
 
-/** 补打收费小票（按队列行最近一次成功支付流水） */
+/** 补打收费小票：按主列表勾选的已结算支付单打印 */
 async function handleReprintChargeReceipt() {
-  const row = currentQueueRow.value;
   const eid = selectedEncounterId.value;
-  if (!row || !eid) {
+  if (!eid) {
     return;
   }
-  const paymentId =
-    String(selectedSettlementPaymentId.value ?? '').trim() || String(row.paymentId ?? '').trim();
-  if (!paymentId) {
-    ElMessage.warning('暂无支付流水，无法补打收费小票');
+  let paymentIds = selectedSettledPaymentIds.value
+    .map((id) => String(id ?? '').trim())
+    .filter(Boolean);
+  // 未勾选已结算单时，若仅有一笔可补打支付单则直接打，避免无摘要时完全不可用
+  if (paymentIds.length === 0) {
+    const available = [
+      ...new Set(
+        displayedPendingItems.value
+          .map((row) => String(row.paymentId ?? '').trim())
+          .filter(Boolean),
+      ),
+    ];
+    if (available.length === 1) {
+      paymentIds = available;
+    } else if (available.length === 0) {
+      const fallback = String(currentQueueRow.value?.paymentId ?? '').trim();
+      if (fallback) {
+        paymentIds = [fallback];
+      }
+    }
+  }
+  if (paymentIds.length === 0) {
+    ElMessage.warning('请勾选要补打的已结算收费单');
     return;
   }
   reprintLoading.value = true;
   try {
-    await printChargeReceipt({
-      encounterId: eid,
-      paymentId,
-      jobName: '收费小票（补打）',
-    });
+    // 多笔支付单按勾选顺序逐张补打
+    for (const paymentId of paymentIds) {
+      selectedSettlementPaymentId.value = paymentId;
+      await printChargeReceipt({
+        encounterId: eid,
+        paymentId,
+        jobName: '收费小票（补打）',
+      });
+    }
   } finally {
     reprintLoading.value = false;
   }
@@ -1310,6 +1941,16 @@ onMounted(() => {
               <div class="mb-2 flex flex-wrap items-center gap-2">
                 <SectionTitle title="收费项目列表" />
                 <div class="flex-1"></div>
+                <ElButton
+                  type="warning"
+                  plain
+                  class="mr-1"
+                  :disabled="!selectedEncounterId || selectedChargeRows.length === 0"
+                  :loading="makeupCollectLoading"
+                  @click="handleOpenUnionPayMakeupCollect"
+                >
+                  银联补收
+                </ElButton>
                 <ElBadge
                   :hidden="paymentRecordsCount < 1"
                   :max="99"
@@ -1320,10 +1961,13 @@ onMounted(() => {
                     支付记录
                   </ElButton>
                 </ElBadge>
-                <!-- 临时隐藏：门诊转自费 -->
                 <ElButton
-                  v-if="false"
-                  :disabled="!selectedEncounterId || switchAccountLoading"
+                  :disabled="
+                    !selectedEncounterId ||
+                    !accountSwitchEnabled ||
+                    selectedChargeRows.length === 0 ||
+                    switchAccountLoading
+                  "
                   :loading="switchAccountLoading"
                   class="mr-1"
                   @click="handleSwitchSelfPay"
@@ -1362,6 +2006,7 @@ onMounted(() => {
                   :show-top-query="false"
                   :max-height="600"
                   row-key="chargeItemId"
+                  :span-method="handleChargeDetailSpanMethod"
                   @selection-change="handleChargeSelectionChange"
                 >
                   <template #statusCell="{ row }">
@@ -1375,9 +2020,12 @@ onMounted(() => {
                   <template #totalPrice="{ row }">¥{{ formatMoney(row.totalPrice) }}</template>
                 </RegisterStyleTableLayout>
                 <div class="ml-4 mt-2 text-sm text-[var(--el-text-color-regular)]">
-                  已选 {{ selectedChargeRows.length }} 项，合计 ¥{{
+                  已选待收 {{ selectedChargeRows.length }} 项，合计 ¥{{
                     formatMoney(selectedChargeSum)
                   }}
+                  <template v-if="selectedSettledPaymentIds.length > 0">
+                    ；已选补打 {{ selectedSettledPaymentIds.length }} 笔
+                  </template>
                 </div>
               </div>
             </div>
@@ -1397,9 +2045,12 @@ onMounted(() => {
       v-model="settlementVisible"
       v-model:pay-channel-code="paymentForm.payChannelCode"
       v-model:scan-code="scanCode"
+      :dialog-title="unionPayMakeupCollectMode ? '银联补收' : '确认收费'"
+      :primary-button-text="unionPayMakeupCollectMode ? '确认补收' : '确认收费'"
       :loading="confirmSettleLoading"
       :display-amount="preSettleSnapshot?.displayAmount ?? 0"
       :insurance-account-balance="settlementInsuranceBalc"
+      :insurance-cvlserv-flag="settlementCvlservFlag"
       :insurance-breakdown-items="settlementInsuranceBreakdown"
       :insurance-groups="settlementInsuranceGroups"
       :previews="settlementPreviews"
@@ -1408,6 +2059,7 @@ onMounted(() => {
       :summary-self-pay-amount="settlementSummarySelfPay"
       :pay-channel-options="settlementPayChannelOptions"
       :scan-pay-enabled="settlementScanPayEnabled"
+      :scan-input-locked="settlementScanInputLocked"
       :scan-status-text="scanStatusText"
       @confirm-charge="handleConfirmSettlement"
     />
@@ -1421,5 +2073,12 @@ onMounted(() => {
     />
 
     <DetailAuditRemindDialog ref="detailAuditDialogRef" warn-type="1" />
+
+    <WorkInjuryFilingDetailDialog
+      ref="workInjuryFilingDialogRef"
+      :encounter-id="selectedEncounterId"
+      :contract-id="workInjuryFilingContractId"
+      @completed="ElMessage.success('工伤备案已完成，请重新确认收费')"
+    />
   </div>
 </template>

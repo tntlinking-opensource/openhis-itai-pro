@@ -2,14 +2,21 @@
 import type {
   CommonDiagnosesResponse,
   EncounterDiagnosisRowDto,
+  OpspFilingDiagnosisRowDto,
   PatientOpspFilingDiagnosisResponse,
 } from '#/api/doctor-station/diagnosis.types';
+
+import { httpEnsureOpspFilingDiagnosis } from '#/api/doctor-station/diagnosis.http';
+import { createDoctorStationDiagnosisHttpClient } from '#/api/doctor-station/diagnosis-api-client';
 
 import { computed, inject, onActivated, onDeactivated, ref, watch } from 'vue';
 
 import { ElEmpty, ElMessage, ElMessageBox } from 'element-plus';
 
 import { ENSURE_CLINICAL_RECEPTION_KEY } from '#/components/doctor-station/clinical-reception-context';
+import { COMMON_DIAGNOSIS_MAINTAIN_VERSION_KEY } from '#/components/doctor-station/diagnosis/common-diagnosis-maintain.context';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import { resolveOpspMedicalTypeCode } from '#/utils/chronic-medical-type';
 
 import DiagnosisPickerDialog from '#/components/doctor-station/diagnosis/components/diagnosis-picker-dialog.vue';
 import DiagnosisQuickTree from './components/diagnosis-quick-tree.vue';
@@ -49,11 +56,22 @@ const businessClass = ref<CommonDiagnosesResponse | null>(null);
 const opspFiling = ref<null | PatientOpspFilingDiagnosisResponse>(null);
 const listLoading = ref(false);
 const quickSaveLoading = ref(false);
+const unbindCommonLoading = ref(false);
 const pickerOpen = ref(false);
 /** 正在切换主诊的就诊诊断行主键 */
 const switchingMainId = ref('');
 
+const diagnosisHttp = computed(() =>
+  createDoctorStationDiagnosisHttpClient(
+    props.stationScope === 'inpatient'
+      ? '/inpatientDoctorStationDiagnosis'
+      : '/doctorStationDiagnosis',
+  ),
+);
+
 const ensureClinicalReception = inject(ENSURE_CLINICAL_RECEPTION_KEY, undefined);
+/** 工具栏维护常用诊断后递增，用于刷新快捷树 */
+const commonDxMaintainVersion = inject(COMMON_DIAGNOSIS_MAINTAIN_VERSION_KEY, null);
 
 const contextReady = computed(
   () => Boolean(props.encounterId?.trim()) && Boolean(props.patientId?.trim()),
@@ -115,6 +133,17 @@ watch(
   },
 );
 
+/** 工具栏维护常用诊断变更后刷新快捷树（KeepAlive 下即使未激活也更新，激活时即可见） */
+watch(
+  () => commonDxMaintainVersion?.value,
+  (ver, prev) => {
+    if (ver === undefined || ver === null) return;
+    if (prev === undefined) return;
+    if (ver === prev) return;
+    void reload();
+  },
+);
+
 /** 合并后的全量列表提交保存并刷新 */
 async function persistMergedRows(rows: EncounterDiagnosisRowDto[]) {
   if (!contextReady.value) {
@@ -144,6 +173,113 @@ async function handleAddDiagnosisClick() {
     if (!ok) return;
   }
   pickerOpen.value = true;
+}
+
+/**
+ * 未匹配慢病备案点击：调用 IF-DOR-06C 仅补录 chronic_spec 后导入。
+ * @param src 侧栏慢病备案行
+ */
+async function handleEnsureOpspAppend(src: OpspFilingDiagnosisRowDto) {
+  // 住院站无慢病备案导入
+  if (props.stationScope !== 'outpatient') {
+    ElMessage.warning(src.matchHint || '该慢病备案不可导入');
+    return;
+  }
+  if (ensureClinicalReception) {
+    const ok = await ensureClinicalReception();
+    if (!ok) return;
+  }
+  const encounterId = props.encounterId?.trim();
+  const patientId = props.patientId?.trim();
+  const opspDiseCode = String(src.opspDiseCode ?? '').trim();
+  // 缺就诊/患者/备案码时无法补录
+  if (!encounterId || !patientId || !opspDiseCode) {
+    ElMessage.warning(src.matchHint || '该慢病备案不可导入');
+    return;
+  }
+  quickSaveLoading.value = true;
+  try {
+    const ensured = await httpEnsureOpspFilingDiagnosis({
+      encounterId,
+      patientId,
+      opspDiseCode,
+      opspDiseName: src.opspDiseName ?? undefined,
+    });
+    const defId = String(ensured.conditionDefinitionId ?? '').trim();
+    if (!defId) {
+      ElMessage.warning('慢病目录补录失败，请联系信息科');
+      return;
+    }
+    // 本地把该备案行标为已匹配，避免重复点击再补录
+    if (opspFiling.value?.filingList) {
+      opspFiling.value = {
+        ...opspFiling.value,
+        filingList: opspFiling.value.filingList.map((row) => {
+          if (String(row.opspDiseCode ?? '').trim() !== opspDiseCode) {
+            return row;
+          }
+          return {
+            ...row,
+            matchStatus: 'matched',
+            matchHint: undefined,
+            conditionDefinitionId: defId,
+            conditionCode: ensured.conditionCode ?? opspDiseCode,
+            conditionDefinitionName:
+              ensured.conditionDefinitionName ?? row.opspDiseName ?? undefined,
+            diagnosisKind: ensured.diagnosisKind ?? row.diagnosisKind,
+            medicalTypeCode: ensured.medicalTypeCode ?? row.medicalTypeCode,
+          };
+        }),
+      };
+    }
+    // 已在当前就诊列表：只提示，不重复保存
+    if (diagnosisRows.value.some((r) => String(r.conditionDefinitionId ?? '').trim() === defId)) {
+      if (ensured.created) {
+        ElMessage.info('已补录慢病目录，该诊断已在当前列表中');
+      } else {
+        ElMessage.info('该诊断已在当前列表中');
+      }
+      return;
+    }
+    await persistMergedRows([
+      ...diagnosisRows.value,
+      {
+        conditionDefinitionId: defId,
+        conditionCode: ensured.conditionCode ?? opspDiseCode,
+        conditionDefinitionName: ensured.conditionDefinitionName ?? src.opspDiseName ?? '',
+        medicineType: ensured.diagnosisKind ?? src.diagnosisKind ?? undefined,
+        diagnosisKind: ensured.diagnosisKind ?? src.diagnosisKind ?? undefined,
+        medicalTypeCode: resolveOpspMedicalTypeCode(ensured.medicalTypeCode ?? src.medicalTypeCode),
+      },
+    ]);
+  } catch (e: unknown) {
+    let msg = '';
+    if (e && typeof e === 'object' && 'message' in e) {
+      msg = String((e as { message?: unknown }).message ?? '');
+    }
+    ElMessage.warning(msg || src.matchHint || '慢病目录补录失败');
+  } finally {
+    quickSaveLoading.value = false;
+  }
+}
+
+/** 侧栏个人/科室常用：解绑模板并刷新快捷树 */
+async function handleQuickTreeUnbind(templateId: string) {
+  const id = preserveApiIdForRequest(templateId) ?? String(templateId ?? '').trim();
+  if (!id) {
+    ElMessage.warning('缺少模板标识，无法删除');
+    return;
+  }
+  unbindCommonLoading.value = true;
+  try {
+    await diagnosisHttp.value.httpUnbindCommonDiagnosis({ templateIds: [id] });
+    ElMessage.success('已删除常用诊断');
+    await reload();
+  } catch {
+    ElMessage.error('删除常用诊断失败，请稍后重试');
+  } finally {
+    unbindCommonLoading.value = false;
+  }
 }
 
 /** 侧栏常用树选中叶子：并入列表并保存 */
@@ -407,7 +543,10 @@ async function handleMove(row: EncounterDiagnosisRowDto, direction: 'down' | 'up
           :business-class="businessClass"
           :display-rows="displayDiagnosisRows"
           :opsp-filing="opspFiling"
+          :unbind-loading="unbindCommonLoading"
           @append="handleQuickAppend"
+          @ensure-opsp-append="handleEnsureOpspAppend"
+          @unbind="handleQuickTreeUnbind"
         />
         <DiagnosisSavedTable
           :rows="displayDiagnosisRows"

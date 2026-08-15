@@ -42,6 +42,7 @@ import {
   isRemainingCoverageReached,
   isTraceSlotEmpty,
   pickTraceBindTargetLine,
+  resolveMaxTraceCount,
   resolveRequiredTraceCount,
   splitTraceNoCommaString,
   sumBoundRemainingSplit,
@@ -132,10 +133,10 @@ const isCommaMode = computed(() => scenePreset().bindMode === 'comma');
 /** 实际参与绑定的明细行 */
 const effectiveLines = computed((): TraceBatchScanLine[] => props.lines);
 
-/** 某行当前展示的追溯码 */
+/** 某行当前展示的追溯码（绑定表有键含空串=已清除，禁止回落 lines.traceNo） */
 function effectiveTrace(row: TraceBatchScanLine): string {
   const v = traceByLineId.value[row.id];
-  if (v !== undefined && v.trim() !== '') return v.trim();
+  if (v !== undefined) return v.trim();
   return (row.traceNo ?? '').trim();
 }
 
@@ -206,7 +207,7 @@ function handleDialogOpened(): void {
   });
 }
 
-/** 行是否仍需扫码（消耗侧：剩余未盖住；否则按个数待扫） */
+/** 行是否仍需扫码（消耗侧：剩余未盖住或硬上限未满；进货按应扫个数） */
 function lineStillNeedsScan(row: TraceBatchScanLine): boolean {
   const preset = scenePreset();
   if (preset.bindMode === 'comma') {
@@ -214,7 +215,7 @@ function lineStillNeedsScan(row: TraceBatchScanLine): boolean {
     const covered = isRemainingCoverageReached(row.operationSplitQty, opts?.boundRemainingSum);
     if (covered === true) return false;
     if (covered === false) return true;
-    const pending = countPendingTraceScan(row, effectiveTrace(row), preset.bindMode);
+    const pending = countPendingTraceScan(row, effectiveTrace(row), preset.bindMode, opts);
     if (pending === null) return lineDisplayStatus(row) === 'pending';
     return pending > 0;
   }
@@ -369,7 +370,8 @@ function advanceAfterBind(row: TraceBatchScanLine): void {
     return;
   }
   if (covered === false) return;
-  const pending = countPendingTraceScan(row, effectiveTrace(row), preset.bindMode);
+  // 缺剩余时按硬上限待扫；扫满上限再跳下一行（便于拼码）
+  const pending = countPendingTraceScan(row, effectiveTrace(row), preset.bindMode, opts);
   if (pending === 0) advanceToNextPendingLine();
 }
 
@@ -410,10 +412,15 @@ function pickFallbackTargetLine(): TraceBatchScanLine | undefined {
   return undefined;
 }
 
-/** 当前锁定行为无码批时，允许 NOT_FOUND 软录入 */
+/**
+ * 当前锁定行允许 NOT_FOUND 软录入：
+ * - 发药：已锁定即落到该行（锁定=专扫目标，与门诊/汇总同口径）；
+ * - 其它场景：仅无码批。
+ */
 function softFallbackOk(): boolean {
   const row = currentLine.value;
   if (!row) return false;
+  if (props.scene === 'dispense') return true;
   return !isHardTraceLine(row);
 }
 
@@ -447,9 +454,14 @@ function lineScannedCount(row: TraceBatchScanLine): number {
   return countBoundTraceCodesOnLine(effectiveTrace(row), scenePreset().bindMode);
 }
 
-/** 行剩余待扫数量 */
+/** 行剩余待扫数量（发药按硬上限；已盖住为 0） */
 function linePendingScan(row: TraceBatchScanLine): number | null {
-  return countPendingTraceScan(row, effectiveTrace(row), scenePreset().bindMode);
+  return countPendingTraceScan(
+    row,
+    effectiveTrace(row),
+    scenePreset().bindMode,
+    lineCoverageOpts(row),
+  );
 }
 
 /** 解析行库房（行上优先，否则弹窗 defaultLocationId） */
@@ -470,6 +482,17 @@ function unitDisplayLabel(code?: string, label?: string): string {
   if (text) return text;
   const raw = String(code ?? '').trim();
   return raw || '-';
+}
+
+/**
+ * 药品明细「码倍」列：1 追溯码单位 = N 拆零（展示 ×N，省表头宽度）；无正数比例时「-」。
+ *
+ * @param row 扫码明细行
+ */
+function traceUnitRatioDisplay(row: TraceBatchScanLine): string {
+  const ratio = Number(row.traceUnitRatio);
+  if (!Number.isFinite(ratio) || ratio <= 0) return '-';
+  return `×${ratio}`;
 }
 
 /** 展开行展示：主档拆零剩余量文案 */
@@ -591,6 +614,59 @@ function isTraceBoundInSession(traceNo: string, boundPool: Set<string>): boolean
   return boundPool.has(traceNo.trim());
 }
 
+/**
+ * 发药允许同一追溯码跨行复用（箱码/同品多明细共扫一码；BR-TRC-023）。
+ * 进货等场景仍单内全局唯一。行内重复始终拒绝。
+ */
+function allowCrossRowSameTraceCode(): boolean {
+  return props.scene === 'dispense';
+}
+
+/**
+ * 确定时跨行共扫同码剩余软提示（仅提示，不拦截）。
+ *
+ * <p>仅当同一码实际绑在 ≥2 行，且多行操作拆零合计 &gt; 主档剩余时提示。
+ * 扫码过程不弹：避免「单行数量&gt;1、多码拼盖」误报。</p>
+ */
+function softWarnCrossRowRemainingOnConfirm(): void {
+  if (!allowCrossRowSameTraceCode()) return;
+  const bindMode = scenePreset().bindMode;
+  // 码 → 已绑该码的行数 / 操作拆零合计
+  const lineCountByCode = new Map<string, number>();
+  const plannedByCode = new Map<string, number>();
+
+  for (const line of effectiveLines.value) {
+    const cur = effectiveTrace(line);
+    if (isTraceSlotEmpty(cur)) continue;
+    const codes =
+      bindMode === 'single' ? [cur.trim()].filter(Boolean) : splitTraceNoCommaString(cur);
+    const op = Number(line.operationSplitQty);
+    if (!Number.isFinite(op) || op <= 0) continue;
+    // 行内同码只计一次
+    const seenOnLine = new Set<string>();
+    for (const code of codes) {
+      if (!code || seenOnLine.has(code)) continue;
+      seenOnLine.add(code);
+      lineCountByCode.set(code, (lineCountByCode.get(code) ?? 0) + 1);
+      plannedByCode.set(code, (plannedByCode.get(code) ?? 0) + op);
+    }
+  }
+
+  let shortage = false;
+  for (const [code, plannedSplit] of plannedByCode) {
+    // 单行多码拼盖不算跨行共扫
+    if ((lineCountByCode.get(code) ?? 0) < 2) continue;
+    const rem = Number(remainingByTraceNo.value[code]);
+    if (!Number.isFinite(rem) || rem < 0) continue;
+    if (plannedSplit > rem + 1e-9) {
+      shortage = true;
+      break;
+    }
+  }
+  if (!shortage) return;
+  ElMessage.warning('追溯码数量小于发药数量，请确认无误后核发');
+}
+
 function markNotInHospitalLines(itemId: string, lotNumber: string): void {
   const candidates = findTraceMatchCandidateLines(effectiveLines.value, itemId, lotNumber);
   if (candidates.length === 1) markLineError(candidates[0]!.id);
@@ -599,8 +675,9 @@ function markNotInHospitalLines(itemId: string, lotNumber: string): void {
 /**
  * 行已扫满/已盖住时是否拒绝再绑。
  *
- * <p>进货（{@link enforceScanCountGate}）超限一律硬拒，避免新批无码时误走软放行。
- * 发药/出库等：有码批硬拒；无码批仅提示仍允许绑（BR-TRC-020）。</p>
+ * <p>进货（{@link enforceScanCountGate}）超限一律硬拒。
+ * 消耗侧：超过 {@code maxTraceCount} 或剩余已盖住 → 硬拒（扫多）；
+ * 有码批同拒；无码批仅因「建议应扫」触顶时软提示仍可绑（BR-TRC-020）。</p>
  */
 function rejectIfLineScanFull(row: TraceBatchScanLine, code: string): boolean {
   const preset = scenePreset();
@@ -610,12 +687,21 @@ function rejectIfLineScanFull(row: TraceBatchScanLine, code: string): boolean {
   const msg = traceLineScanFullMessage(row, preset.bindMode, opts);
   pushLog(code, 'invalid', msg);
   ElMessage.warning(msg);
-  // 进货硬 Gate，或有码批：拒绝再绑
-  if (enforceScanCountGate.value || isHardTraceLine(row)) {
+
+  const bound = countBoundTraceCodesOnLine(cur, preset.bindMode);
+  const maxCodes = resolveMaxTraceCount(row);
+  const covered = isRemainingCoverageReached(row.operationSplitQty, opts?.boundRemainingSum);
+  // 进货硬 Gate / 扫多硬上限 / 已盖住 / 有码批：硬拒
+  if (
+    enforceScanCountGate.value ||
+    (maxCodes !== null && bound >= maxCodes) ||
+    covered === true ||
+    isHardTraceLine(row)
+  ) {
     markLineError(row.id);
     return true;
   }
-  // 无码批软提示：继续允许录入
+  // 无码批且仅触「建议应扫」：软提示不拦
   return false;
 }
 
@@ -636,10 +722,13 @@ function bindManualCodeToLine(row: TraceBatchScanLine, rawCode: string): boolean
   }
 
   const preset = scenePreset();
-  const boundPool = collectBoundTraceCodes(effectiveLines.value, traceByLineId.value);
-  if (isTraceBoundInSession(trimmed, boundPool)) {
-    ElMessage.warning('该追溯码已绑定');
-    return false;
+  // 发药：不跨行去重；其它场景码在弹窗内全局唯一
+  if (!allowCrossRowSameTraceCode()) {
+    const boundPool = collectBoundTraceCodes(effectiveLines.value, traceByLineId.value);
+    if (isTraceBoundInSession(trimmed, boundPool)) {
+      ElMessage.warning('该追溯码已绑定');
+      return false;
+    }
   }
 
   const cur = effectiveTrace(row);
@@ -676,8 +765,10 @@ function bindResolvedItem(
 ): BindResult {
   const preset = scenePreset();
   const trimmed = traceNo.trim();
+  const crossRowOk = allowCrossRowSameTraceCode();
 
-  if (isTraceBoundInSession(trimmed, boundPool)) {
+  // 进货等：弹窗内全局去重；发药允许同码跨行（箱码复用）
+  if (!crossRowOk && isTraceBoundInSession(trimmed, boundPool)) {
     stats.duplicate += 1;
     return 'duplicate';
   }
@@ -740,17 +831,20 @@ function bindResolvedItem(
     return 'not_found';
   }
 
-  const boundElsewhere = effectiveLines.value.some(
-    (r) =>
-      r.id !== target!.id &&
-      !isTraceSlotEmpty(effectiveTrace(r)) &&
-      (preset.bindMode === 'single'
-        ? effectiveTrace(r) === trimmed
-        : traceNoCommaContains(effectiveTrace(r), trimmed)),
-  );
-  if (boundElsewhere) {
-    stats.duplicate += 1;
-    return 'duplicate';
+  // 非发药：码已在其它行则拒；发药仅行内去重
+  if (!crossRowOk) {
+    const boundElsewhere = effectiveLines.value.some(
+      (r) =>
+        r.id !== target!.id &&
+        !isTraceSlotEmpty(effectiveTrace(r)) &&
+        (preset.bindMode === 'single'
+          ? effectiveTrace(r) === trimmed
+          : traceNoCommaContains(effectiveTrace(r), trimmed)),
+    );
+    if (boundElsewhere) {
+      stats.duplicate += 1;
+      return 'duplicate';
+    }
   }
 
   const cur = effectiveTrace(target);
@@ -772,12 +866,40 @@ function bindResolvedItem(
     ...traceByLineId.value,
     [target.id]: applyTraceBind(cur, trimmed, preset.bindMode),
   };
-  boundPool.add(trimmed);
+  // 发药跨行复用时不把码写入全局占用池，便于下一行再绑同码
+  if (!crossRowOk) {
+    boundPool.add(trimmed);
+  }
   clearLineError(target.id);
   stats.bound += 1;
   pushLog(trimmed, 'ok', `已绑定 → ${lineDisplayName(target)}`);
   advanceAfterBind(target);
   return 'bound';
+}
+
+/**
+ * 发药场景：主档已存在且剩余耗尽须硬拦（与后端 assertMasterCodesNotExhaustedForDispense 同口径）。
+ */
+function rejectExhaustedMasterOnScene(): boolean {
+  return props.scene === 'dispense';
+}
+
+/**
+ * 反查结果是否主档耗尽：NOT_IN_HOSPITAL，或剩余拆零 ≤ 0。
+ *
+ * @param resolveStatus 反查状态
+ * @param remainingSplit 主档剩余拆零（可空）
+ */
+function isMasterExhausted(
+  resolveStatus: string,
+  remainingSplit?: null | number | string,
+): boolean {
+  if (resolveStatus === 'NOT_IN_HOSPITAL') return true;
+  if (remainingSplit === undefined || remainingSplit === null || remainingSplit === '') {
+    return false;
+  }
+  const rem = Number(remainingSplit);
+  return Number.isFinite(rem) && rem <= 0;
 }
 
 function bindFailedResolveItem(
@@ -794,6 +916,15 @@ function bindFailedResolveItem(
     return 'duplicate';
   }
 
+  // 发药：主档耗尽硬拦（剩余为 0 / 不在院）
+  if (resolveStatus === 'NOT_IN_HOSPITAL' && rejectExhaustedMasterOnScene()) {
+    stats.notInHospital += 1;
+    pushLog(trimmed, 'not_in_hospital', '追溯码剩余已耗尽，不可再使用');
+    ElMessage.error('追溯码剩余已耗尽，不可再使用');
+    return 'not_in_hospital';
+  }
+
+  // 进货等仍可硬拒不在院
   if (resolveStatus === 'NOT_IN_HOSPITAL' && preset.rejectNotInHospital) {
     stats.notInHospital += 1;
     pushLog(trimmed, 'not_in_hospital', '追溯码不在院内或已耗尽');
@@ -801,13 +932,17 @@ function bindFailedResolveItem(
     return 'not_in_hospital';
   }
 
-  if (resolveStatus === 'NOT_FOUND' && (preset.allowNotFound || softFallbackOk())) {
-    if (isTraceBoundInSession(trimmed, boundPool)) {
+  // 未建档软录入（发药耗尽/不在院硬拦不走此支）；不在院仅非发药软场景可落入
+  const softIdentity =
+    resolveStatus === 'NOT_FOUND' ||
+    (resolveStatus === 'NOT_IN_HOSPITAL' && !rejectExhaustedMasterOnScene());
+  if (softIdentity && (preset.allowNotFound || softFallbackOk())) {
+    if (!allowCrossRowSameTraceCode() && isTraceBoundInSession(trimmed, boundPool)) {
       stats.duplicate += 1;
       return 'duplicate';
     }
     const fb = pickFallbackTargetLine();
-    if (fb && (preset.allowNotFound || !isHardTraceLine(fb))) {
+    if (fb && (preset.allowNotFound || !isHardTraceLine(fb) || softFallbackOk())) {
       if (rejectIfLineScanFull(fb, trimmed)) {
         stats.invalid += 1;
         return 'invalid';
@@ -819,20 +954,26 @@ function bindFailedResolveItem(
       boundPool.add(trimmed);
       clearLineError(fb.id);
       stats.bound += 1;
-      pushLog(trimmed, 'ok', `新码录入 → ${lineDisplayName(fb)}`);
+      // 仅「批内已有主档、本码却不在院」软提示；整批无主档静默记入
+      if (props.scene === 'dispense' && isHardTraceLine(fb)) {
+        pushLog(trimmed, 'ok', `不在院内 → ${lineDisplayName(fb)}`);
+        ElMessage.warning('追溯码不在院内请确认无误后发药');
+      } else {
+        pushLog(trimmed, 'ok', `已录入 → ${lineDisplayName(fb)}`);
+      }
       advanceAfterBind(fb);
       return 'bound';
     }
     stats.notFound += 1;
-    pushLog(trimmed, 'not_found', '未建档，请先点选要录入的药品');
-    ElMessage.warning('未建档，请先点选要录入的药品');
+    pushLog(trimmed, 'not_found', '请先点选右侧要录入的药品');
+    ElMessage.warning('请先点选右侧要录入的药品');
     return 'not_found';
   }
 
   stats.notFound += 1;
-  const msg = resolveStatus === 'NOT_FOUND' ? '库中未找到该追溯码' : '无法使用该追溯码';
+  const msg = resolveStatus === 'NOT_FOUND' ? '未找到该追溯码' : '无法使用该追溯码';
   pushLog(trimmed, 'not_found', msg);
-  ElMessage.warning(resolveStatus === 'NOT_FOUND' ? '未找到该追溯码' : '无法使用该追溯码');
+  ElMessage.warning(msg);
   return 'not_found';
 }
 
@@ -857,18 +998,26 @@ async function processBatchBind(codes: string[]): Promise<BatchBindStats> {
   }
 
   const preset = scenePreset();
-  const boundPool = collectBoundTraceCodes(effectiveLines.value, traceByLineId.value);
+  const crossRowOk = allowCrossRowSameTraceCode();
+  // 发药不把其它行已绑码当占用，否则同箱码无法再绑到下一行氯化钠
+  const boundPool = crossRowOk
+    ? new Set<string>()
+    : collectBoundTraceCodes(effectiveLines.value, traceByLineId.value);
   const toResolve = filterNewTraceCodes(codes, boundPool);
   stats.duplicate += codes.length - toResolve.length;
   if (toResolve.length === 0) return stats;
 
   /**
-   * 无码批锁定行 / 进货盘点锁定行：直接录入，跳过反查。
-   * 有码批仍走反查（本库优先、否则全院）。
+   * 进货/盘点/损益锁定行：可跳过反查直接录入。
+   * 发药锁定行仍须反查——主档耗尽要硬拦，未建档再软落到本行。
    */
-  if (currentLine.value && (preset.allowNotFound || !isHardTraceLine(currentLine.value))) {
+  if (
+    currentLine.value &&
+    props.scene !== 'dispense' &&
+    (preset.allowNotFound || !isHardTraceLine(currentLine.value))
+  ) {
     for (const trimmed of toResolve) {
-      if (isTraceBoundInSession(trimmed, boundPool)) {
+      if (!crossRowOk && isTraceBoundInSession(trimmed, boundPool)) {
         stats.duplicate += 1;
         continue;
       }
@@ -885,7 +1034,7 @@ async function processBatchBind(codes: string[]): Promise<BatchBindStats> {
     const res = await batchResolveTraceIdentityByPreset(toResolve, preset);
 
     for (const trimmed of toResolve) {
-      if (isTraceBoundInSession(trimmed, boundPool)) {
+      if (!crossRowOk && isTraceBoundInSession(trimmed, boundPool)) {
         stats.duplicate += 1;
         continue;
       }
@@ -912,6 +1061,18 @@ async function processBatchBind(codes: string[]): Promise<BatchBindStats> {
       const itemId = String(item.itemId ?? '').trim();
       const lotNumber = String(item.lotNumber ?? '').trim();
 
+      // 发药：主档存在且剩余耗尽 → 硬拦（含 NOT_IN_HOSPITAL / remaining≤0）
+      if (
+        rejectExhaustedMasterOnScene() &&
+        isMasterExhausted(resolveStatus, item.remainingSplitQuantity)
+      ) {
+        stats.notInHospital += 1;
+        if (itemId && lotNumber) markNotInHospitalLines(itemId, lotNumber);
+        pushLog(trimmed, 'not_in_hospital', '追溯码剩余已耗尽，不可再使用');
+        ElMessage.error('追溯码剩余已耗尽，不可再使用');
+        continue;
+      }
+
       if (resolveStatus === 'NOT_IN_HOSPITAL' && preset.rejectNotInHospital) {
         stats.notInHospital += 1;
         if (itemId && lotNumber) markNotInHospitalLines(itemId, lotNumber);
@@ -920,7 +1081,19 @@ async function processBatchBind(codes: string[]): Promise<BatchBindStats> {
         continue;
       }
 
-      if (resolveStatus === 'NOT_FOUND' && preset.allowNotFound) {
+      // 非发药消耗侧：不在院不硬拦，仍按品批匹配绑定（发药耗尽已在上方硬拦）
+      if (resolveStatus === 'NOT_IN_HOSPITAL' && !preset.rejectNotInHospital) {
+        if (itemId && lotNumber) {
+          rememberTraceRemaining(trimmed, item.remainingSplitQuantity);
+          bindResolvedItem(trimmed, itemId, lotNumber, boundPool, stats);
+          continue;
+        }
+        bindFailedResolveItem(trimmed, resolveStatus, boundPool, stats);
+        continue;
+      }
+
+      // 未建档软录入（发药锁定行 softFallback / 进货 allowNotFound）
+      if (resolveStatus === 'NOT_FOUND' && (preset.allowNotFound || softFallbackOk())) {
         bindFailedResolveItem(trimmed, resolveStatus, boundPool, stats);
         continue;
       }
@@ -938,7 +1111,7 @@ async function processBatchBind(codes: string[]): Promise<BatchBindStats> {
     let anyBound = false;
     for (const code of toResolve) {
       if (
-        preset.allowNotFound &&
+        (preset.allowNotFound || softFallbackOk()) &&
         currentLine.value &&
         bindManualCodeToLine(currentLine.value, code)
       ) {
@@ -1135,15 +1308,18 @@ function handleCancel(): void {
   visible.value = false;
 }
 
+/** 确定：跨行同码剩余不足仅提示一次，不拦截关闭 */
 function handleConfirm(): void {
+  softWarnCrossRowRemainingOnConfirm();
   visible.value = false;
 }
 
-/** 清除指定行已绑追溯码 */
+/** 清除指定行已绑追溯码（写空串保留键，避免 effectiveTrace 回落行上旧码） */
 function clearLineTrace(row: TraceBatchScanLine): void {
-  traceByLineId.value = Object.fromEntries(
-    Object.entries(traceByLineId.value).filter(([k]) => k !== row.id),
-  );
+  traceByLineId.value = {
+    ...traceByLineId.value,
+    [row.id]: '',
+  };
   clearLineError(row.id);
   pushLog('—', 'ok', `已清除 ${lineDisplayName(row)}`);
   scheduleFocusScanInput();
@@ -1346,7 +1522,17 @@ function clearLineTrace(row: TraceBatchScanLine): void {
               width="96"
               show-overflow-tooltip
             />
-            <ElTableColumn label="追溯码" min-width="260">
+            <ElTableColumn label="追溯码单位" width="88" align="center" show-overflow-tooltip>
+              <template #default="{ row }">
+                {{ unitDisplayLabel(row.traceUnitCode, row.traceUnitCodeLabel) }}
+              </template>
+            </ElTableColumn>
+            <ElTableColumn label="码倍" width="56" align="center" show-overflow-tooltip>
+              <template #default="{ row }">
+                {{ traceUnitRatioDisplay(row) }}
+              </template>
+            </ElTableColumn>
+            <ElTableColumn label="追溯码" min-width="240">
               <template #default="{ row }">
                 <TraceCodeTooltip :value="effectiveTrace(row)" />
               </template>

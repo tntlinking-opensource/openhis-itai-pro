@@ -6,9 +6,13 @@ import type { ServiceRequestDetailSummaryDto } from '#/api/doctor-station/advice
 
 /** 分页查询护士站患者队列 */
 export interface PageNurseStationPatientQueueRequest {
-  organizationId: string;
   endDate?: null | string;
   keyword?: string;
+  /**
+   * 开立科室（可选）。空/未传=全部；非空等值匹配就诊 organization_id。
+   * 须经 preserveApiIdForRequest，禁止 Number()。
+   */
+  orgId?: null | string;
   /** 1-based，与后端 AbstractPageQuery 一致（B.10.11） */
   pageNo?: number;
   pageSize?: number;

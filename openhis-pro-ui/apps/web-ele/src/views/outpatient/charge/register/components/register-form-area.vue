@@ -43,6 +43,7 @@ import { listPractitioners, loadRegisterFormInit } from '../services/register.se
 import { displayBenefitDash } from './register-benefit-display.utils';
 import RegisterBenefitPreviewPanel from './register-benefit-preview-panel.vue';
 import RegisterPatientEncounterHistory from './register-patient-encounter-history.vue';
+import WorkInjuryBenefitSummary from '#/chs/work-injury/work-injury-benefit-summary.vue';
 import WorkInjuryFilingDetailAction from '#/chs/work-injury/work-injury-filing-detail-action.vue';
 
 defineOptions({
@@ -55,6 +56,15 @@ const workInjuryFilingActionRef = ref<InstanceType<typeof WorkInjuryFilingDetail
 
 function openWorkInjuryApprovalGuide() {
   workInjuryFilingActionRef.value?.openApprovalGuide();
+}
+
+/** 挂号门禁：无有效备案则引导备案，成功返回 true。 */
+async function ensureWorkInjuryFilingReady(): Promise<boolean> {
+  return (await workInjuryFilingActionRef.value?.ensureFilingReady()) ?? false;
+}
+
+function getWorkInjuryBenefitSummary() {
+  return benefitInfo.value.workInjury;
 }
 
 const props = withDefaults(
@@ -137,9 +147,6 @@ const genderOptions = ref<OptionDto[]>([]);
 
 /** 预约带入后锁定科室/医生/号源类型 */
 const bookingLocked = ref(false);
-
-/** 全局开关：挂号时医生是否必选（IF-REG-01 registrationDoctorRequired，默认否） */
-const registrationDoctorRequired = ref(false);
 
 /** 表单区展示用金额占位（实际金额以预结算 / 正式结算接口为准） */
 const registerFeeAmount = ref(0);
@@ -507,6 +514,18 @@ const [PatientForm, patientFormApi] = useVbenForm(
           clearable: true,
         },
       },
+      {
+        component: 'Input',
+        fieldName: 'patientAddress',
+        label: '地址',
+        // BR-REG-019：可选；读卡户籍地址默认写入，挂号员可改；空不回写主档
+        required: false,
+        formItemClass: 'register-patient-item--address',
+        componentProps: {
+          placeholder: '请输入地址（可选）',
+          clearable: true,
+        },
+      },
     ]),
     showDefaultActions: false,
   }),
@@ -526,6 +545,19 @@ const [RegisterForm, registerFormApi] = useVbenForm(
     schema: computed(() => [
       {
         component: 'Select',
+        fieldName: 'contractId',
+        label: '费用性质',
+        required: true,
+        componentProps: {
+          placeholder: '请选择费用性质',
+          clearable: true,
+          filterable: true,
+          options: contractOptions.value,
+          onChange: handleContractChange,
+        },
+      },
+      {
+        component: 'Select',
         fieldName: 'departmentId',
         label: '科室',
         required: true,
@@ -540,26 +572,14 @@ const [RegisterForm, registerFormApi] = useVbenForm(
         component: 'Select',
         fieldName: 'doctorId',
         label: '医生',
-        // 跟随全局开关 registrationDoctorRequired；非必选时可只挂科室
-        required: registrationDoctorRequired.value,
+        // BR-REG-001：医生统一可选；未选则挂到科室（BR-DOR-009 待诊科室共享）
+        required: false,
         componentProps: {
-          placeholder: registrationDoctorRequired.value ? '请选择医生' : '可不选（挂到科室）',
-          clearable: !registrationDoctorRequired.value,
+          placeholder: '可不选（挂到科室）',
+          clearable: true,
           filterable: true,
           options: doctorOptions.value,
           onChange: handleDoctorChange,
-        },
-      },
-      {
-        component: 'Select',
-        fieldName: 'contractId',
-        label: '费用性质',
-        required: true,
-        componentProps: {
-          placeholder: '请选择费用性质',
-          filterable: true,
-          options: contractOptions.value,
-          onChange: handleContractChange,
         },
       },
       {
@@ -622,7 +642,12 @@ const hasBenefitDisplay = computed(() => {
     return Boolean(info.studentNo || info.studentName);
   }
   if (info.kind === 'WORK_INJURY') {
-    return Boolean(info.eligibilityMessage);
+    return Boolean(
+      info.workInjury?.psnNo ||
+        info.workInjury?.statusLabel ||
+        info.workInjury?.errorMessage ||
+        info.eligibilityMessage,
+    );
   }
   return false;
 });
@@ -908,11 +933,13 @@ function clearPatientFields() {
     patientBirthday: '',
     patientIdCard: '',
     medicalInsuranceNo: '',
+    patientAddress: '',
   });
 }
 
 /**
  * 把父页选中的患者写入患者信息表单。
+ * <p>{@code patientAddress} 为 undefined 时不覆盖表单已有地址（待遇回写姓名等场景）。</p>
  */
 function applyPatientRecord(patient: RegisterPatientRecord) {
   historyPatientKeyword.value = (patient.patientIdCard ?? '').trim();
@@ -923,6 +950,7 @@ function applyPatientRecord(patient: RegisterPatientRecord) {
     patientBirthday: patient.patientBirthday,
     patientIdCard: patient.patientIdCard,
     medicalInsuranceNo: patient.patientAge ?? '',
+    ...(patient.patientAddress !== undefined ? { patientAddress: patient.patientAddress } : {}),
   });
 }
 
@@ -939,6 +967,7 @@ defineExpose<RegisterFormAreaExpose>({
   clearPatientFields,
   findBootstrapInsuranceContractId,
   findBootstrapInsuranceContractIdByInsuplc,
+  findDefaultSelfPayContractId,
   getContractBusNo,
   focusFirstField,
   getContractCategory,
@@ -951,6 +980,8 @@ defineExpose<RegisterFormAreaExpose>({
   resetForSubmitSuccess,
   validateForSubmit,
   openWorkInjuryApprovalGuide,
+  ensureWorkInjuryFilingReady,
+  getWorkInjuryBenefitSummary,
 });
 
 /**
@@ -966,8 +997,6 @@ onMounted(async () => {
   serviceTypeOptions.value = [...init.serviceTypeOptions];
   serviceTypeFeeById.value = { ...init.serviceTypeFeeById };
   genderOptions.value = [...init.genderOptions];
-  // 医生必选开关：未下发或 false 时允许只挂科室（与种子默认 0 一致）
-  registrationDoctorRequired.value = init.registrationDoctorRequired === true;
   await refreshDoctorOptions();
   patientFormApi.updateSchema([
     {
@@ -986,10 +1015,10 @@ onMounted(async () => {
     },
     {
       fieldName: 'doctorId',
-      required: registrationDoctorRequired.value,
+      required: false,
       componentProps: {
-        placeholder: registrationDoctorRequired.value ? '请选择医生' : '可不选（挂到科室）',
-        clearable: !registrationDoctorRequired.value,
+        placeholder: '可不选（挂到科室）',
+        clearable: true,
         filterable: true,
         options: doctorOptions.value,
         onChange: handleDoctorChange,
@@ -998,6 +1027,8 @@ onMounted(async () => {
     {
       fieldName: 'contractId',
       componentProps: {
+        clearable: true,
+        filterable: true,
         options: contractOptions.value,
         onChange: handleContractChange,
       },
@@ -1050,6 +1081,7 @@ onMounted(async () => {
               link
               :encounter-id="workInjuryPreEncounterId"
               :contract-id="workInjuryPreContractId"
+              :injure-affirm-id-hint="benefitInfo.workInjury?.injureAffirmId"
             />
           </div>
           <SectionTitle v-else class="register-workspace-layout__section-title" title="待遇信息" />
@@ -1105,15 +1137,16 @@ onMounted(async () => {
               v-else-if="benefitInfo.kind === 'WORK_INJURY' || workInjurySelected"
               class="space-y-2"
             >
-              <div
-                class="register-workspace-layout__benefit-hint register-workspace-layout__benefit-hint--warning"
-              >
-                {{
-                  benefitInfo.kind === 'WORK_INJURY'
-                    ? benefitInfo.eligibilityMessage || '工伤保险：挂号费须自费'
-                    : '工伤保险：挂号费须自费'
-                }}
-              </div>
+              <WorkInjuryBenefitSummary
+                :error-message="benefitInfo.workInjury?.errorMessage"
+                :has-valid-filing="benefitInfo.workInjury?.hasValidFiling"
+                :injure-affirm-id="benefitInfo.workInjury?.injureAffirmId"
+                :loading-hint="benefitLoading ? '正在查询工伤备案…' : undefined"
+                :psn-name="benefitInfo.workInjury?.psnName || benefitInfo.psnName"
+                :psn-no="benefitInfo.workInjury?.psnNo || benefitInfo.psnNo"
+                :rows="benefitInfo.workInjury?.rows"
+                :status-label="benefitInfo.workInjury?.statusLabel"
+              />
             </div>
             <template v-else-if="hasBenefitDisplay">
               <ElAlert
@@ -1277,20 +1310,25 @@ onMounted(async () => {
                 class="space-y-2"
               >
                 <div class="flex flex-wrap items-center justify-between gap-2">
-                  <div class="text-sm text-[var(--el-color-warning)]">
-                    {{
-                      benefitInfo.kind === 'WORK_INJURY'
-                        ? benefitInfo.eligibilityMessage || '工伤保险：挂号费须自费'
-                        : '工伤保险：挂号费须自费'
-                    }}
-                  </div>
+                  <span class="text-sm text-[var(--el-text-color-secondary)]">工伤备案</span>
                   <WorkInjuryFilingDetailAction
                     ref="workInjuryFilingActionRef"
                     link
                     :encounter-id="workInjuryPreEncounterId"
                     :contract-id="workInjuryPreContractId"
+                    :injure-affirm-id-hint="benefitInfo.workInjury?.injureAffirmId"
                   />
                 </div>
+                <WorkInjuryBenefitSummary
+                  :error-message="benefitInfo.workInjury?.errorMessage"
+                  :has-valid-filing="benefitInfo.workInjury?.hasValidFiling"
+                  :injure-affirm-id="benefitInfo.workInjury?.injureAffirmId"
+                  :loading-hint="benefitLoading ? '正在查询工伤备案…' : undefined"
+                  :psn-name="benefitInfo.workInjury?.psnName || benefitInfo.psnName"
+                  :psn-no="benefitInfo.workInjury?.psnNo || benefitInfo.psnNo"
+                  :rows="benefitInfo.workInjury?.rows"
+                  :status-label="benefitInfo.workInjury?.statusLabel"
+                />
               </div>
               <template v-else>
                 <ElAlert
@@ -1703,6 +1741,10 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px 16px;
+}
+
+.register-workspace-layout__panel--left :deep(.register-patient-item--address) {
+  grid-column: 1 / -1;
 }
 
 .register-workspace-layout__panel--left :deep(.register-patient-grid .flex-col) {

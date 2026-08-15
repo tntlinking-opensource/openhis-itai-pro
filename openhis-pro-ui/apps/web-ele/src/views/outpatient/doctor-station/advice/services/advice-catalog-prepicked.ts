@@ -21,7 +21,7 @@ export type PrepickedCatalogRequestBase = Omit<
  * 按 prepickedProductKeys 批量拉目录行。
  *
  * 按 productTableName 分组并显式传 productTableNames，走后端单表路径，
- * 避免「全部」三表均分 pageSize 导致同表多项被截断（历史复用/组套回填误报未找到）。
+ * 避免多表合并时表序拼接/mergeCap 截断导致同表多项丢失（历史复用/组套回填误报未找到）。
  * 单表超过后端页上限时按 100 分片请求。
  */
 export async function fetchAdviceCatalogRowsByPrepickedKeys(

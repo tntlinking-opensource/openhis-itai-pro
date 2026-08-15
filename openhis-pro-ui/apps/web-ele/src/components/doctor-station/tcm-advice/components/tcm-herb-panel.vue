@@ -9,8 +9,18 @@ import type {
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
-import { ElButton, ElInputNumber, ElMessage, ElOption, ElScrollbar, ElSelect } from 'element-plus';
+import {
+  ElButton,
+  ElInputNumber,
+  ElMessage,
+  ElOption,
+  ElScrollbar,
+  ElSelect,
+  ElTag,
+} from 'element-plus';
 
+import { resolveTcmRxChargeStatusLabel } from '#/components/doctor-station/tcm-advice/services/tcm-prescription.service';
+import { resolveAdviceChargeStatusTagTypeFromCode } from '#/utils/advice/advice-status-display';
 import { decimalMul } from '#/utils/format/decimal-util';
 import { calcMoneyLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
@@ -30,6 +40,8 @@ interface Props {
   chineseHerbsDoseQuantity?: number;
   dosageInstructionOptions?: DosageInstructionOption[];
   editingLineKey?: null | string;
+  /** 方头默认费用性质文案：行缺省时回落展示 */
+  feeNatureText?: string;
   lines?: TcmHerbCardItem[];
   productColumns?: ProductColumn[];
   queryProductOptions?: (params: ProductQueryParams) => Promise<{
@@ -45,6 +57,7 @@ const props = withDefaults(defineProps<Props>(), {
   chineseHerbsDoseQuantity: undefined,
   dosageInstructionOptions: () => [],
   editingLineKey: null,
+  feeNatureText: '',
   lines: () => [],
   productColumns: () => [],
   queryProductOptions: undefined,
@@ -73,6 +86,8 @@ const focusDoseLineKey = ref<null | string>(null);
 const doseInputRefs = ref<Record<string, { focus?: () => void; $el?: HTMLElement } | null>>({});
 /** 信息栏检索挂载点是否已就绪 */
 const searchHostReady = ref(false);
+/** 末行剂量已按过一次回车：再按一次才展开选品（统计双击） */
+let doseEnterArmedLineKey: null | string = null;
 
 /** 已选药材行 */
 const displayLines = computed(() =>
@@ -211,6 +226,23 @@ function decoctionReadonlyText(item: TcmHerbCardItem): string {
   return '正常';
 }
 
+/** 行费用状态文案（草稿/空显示 —）；半方收费时行与行可不同 */
+function chargeStatusLabel(item: TcmHerbCardItem): string {
+  return resolveTcmRxChargeStatusLabel(item.chargeStatusEnum, item.chargeStatusText);
+}
+
+/** 行费用状态 Tag 类型：仅认 chargeStatusEnum */
+function chargeStatusTagType(item: TcmHerbCardItem) {
+  return resolveAdviceChargeStatusTagTypeFromCode(item.chargeStatusEnum);
+}
+
+/** 行费用性质：优先行级文案，缺省回落方头默认，再 — */
+function rowFeeNatureText(item: TcmHerbCardItem): string {
+  const fromLine = String(item.feeNatureText ?? '').trim();
+  if (fromLine) return fromLine;
+  return String(props.feeNatureText ?? '').trim() || '—';
+}
+
 /** 解析目录主键 */
 function resolveDefinitionId(row: AdviceProductOption): string {
   return preserveApiIdForRequest(row.productDefinitionId) ?? preserveApiIdForRequest(row.id) ?? '';
@@ -223,17 +255,48 @@ function isAlreadySelected(row: AdviceProductOption): boolean {
   return selectedDefinitionIds.value.includes(id);
 }
 
+/** 滚动并聚焦指定行剂量框（重复拦截 / 外部定位） */
+function focusDoseByLineKey(lineKey: string) {
+  const key = String(lineKey ?? '').trim();
+  if (!key) return;
+  const doseEl = document.querySelector(
+    `.tcm-herb-strip__dose[data-dose-key="${CSS.escape(key)}"]`,
+  );
+  doseEl?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  focusDoseLineKey.value = key;
+}
+
+/** 重复药品提示：蓝色高亮，不用 warning 黄条 */
+function showDuplicateHerbMessage(name: string) {
+  ElMessage({
+    type: 'info',
+    message: `同一处方中不允许重复药品：${name}`,
+    duration: 3200,
+    customClass: 'tcm-duplicate-herb-msg',
+  });
+}
+
 /** 通用下拉选药：加入处方后清空检索（中药不保留上一味），并聚焦新行剂量 */
 async function handleSearchSelect(row: AdviceProductOption) {
   if (props.readonly) return;
   if (isAlreadySelected(row)) {
-    ElMessage.warning('该药品已在处方中');
+    const id = resolveDefinitionId(row);
+    const existing = displayLines.value.find(
+      (line) => preserveApiIdForRequest(line.medicationDefinitionId) === id,
+    );
+    const name =
+      String(existing?.medicationName ?? '').trim() || String(row.name ?? '').trim() || '该药品';
+    showDuplicateHerbMessage(name);
     searchProductId.value = '';
+    if (existing) {
+      focusDoseByLineKey(existing.clientLineKey);
+    }
     return;
   }
   emit('addProduct', row);
   // 先清空 v-model，避免共用选品实例残留上一味 id/展示名
   searchProductId.value = '';
+  doseEnterArmedLineKey = null;
   await nextTick();
   await nextTick();
   const last = displayLines.value[displayLines.value.length - 1];
@@ -247,16 +310,28 @@ function handleRowDoseChange(lineKey: string, value: number | undefined) {
   emit('updateDose', lineKey, Math.round(Number(value ?? 0)));
 }
 
-/** 剂量回车：下一味或回到检索 */
+/**
+ * 剂量回车：
+ * - 有下一味：跳到下一味剂量
+ * - 末行：统计双击（连按两次，不限时间窗口）才展开选品下拉
+ */
 function handleRowDoseEnter(lineKey: string) {
   const keys = displayLines.value.map((l) => l.clientLineKey);
   const idx = keys.indexOf(lineKey);
   const nextKey = idx >= 0 ? keys[idx + 1] : undefined;
   if (nextKey) {
+    doseEnterArmedLineKey = null;
     focusDoseLineKey.value = nextKey;
     return;
   }
-  bumpAddFocus();
+
+  // 末行：第一次回车仅确认剂量；第二次回车再展开选品
+  if (doseEnterArmedLineKey === lineKey) {
+    doseEnterArmedLineKey = null;
+    bumpAddFocus();
+    return;
+  }
+  doseEnterArmedLineKey = lineKey;
 }
 
 /**
@@ -272,6 +347,7 @@ function handleRowDoseKeydown(lineKey: string, event: KeyboardEvent) {
   if (idx < 0) return;
   const targetKey = event.key === 'ArrowUp' ? keys[idx - 1] : keys[idx + 1];
   if (!targetKey) return;
+  doseEnterArmedLineKey = null;
   focusDoseLineKey.value = targetKey;
 }
 
@@ -291,7 +367,7 @@ function bumpAddFocus() {
   searchExpandNonce.value += 1;
 }
 
-defineExpose({ bumpAddFocus });
+defineExpose({ bumpAddFocus, focusDoseByLineKey });
 </script>
 
 <template>
@@ -308,6 +384,7 @@ defineExpose({ bumpAddFocus });
           :columns="productColumns"
           :remote-method="queryProductOptions"
           :expand-nonce="searchExpandNonce"
+          :dropdown-align-trigger-left="true"
           placeholder="药名/拼音"
           @select="handleSearchSelect"
         />
@@ -326,6 +403,7 @@ defineExpose({ bumpAddFocus });
           :columns="productColumns"
           :remote-method="queryProductOptions"
           :expand-nonce="searchExpandNonce"
+          :dropdown-align-trigger-left="true"
           placeholder="药名/拼音"
           @select="handleSearchSelect"
         />
@@ -342,6 +420,8 @@ defineExpose({ bumpAddFocus });
             <span class="tcm-herb-workspace__col-decoction">特殊煎法</span>
             <span class="tcm-herb-workspace__col-price">单价</span>
             <span class="tcm-herb-workspace__col-total">小计</span>
+            <span class="tcm-herb-workspace__col-fee-nature">费用性质</span>
+            <span class="tcm-herb-workspace__col-charge">费用状态</span>
             <span class="tcm-herb-workspace__col-ops">操作</span>
           </div>
 
@@ -416,6 +496,21 @@ defineExpose({ bumpAddFocus });
             <strong class="tcm-herb-strip__total">
               <span class="tcm-herb-strip__currency">¥</span>{{ lineTotalDisplayText(line) }}
             </strong>
+
+            <div class="tcm-herb-strip__fee-nature" :title="rowFeeNatureText(line)">
+              {{ rowFeeNatureText(line) }}
+            </div>
+
+            <div class="tcm-herb-strip__charge">
+              <ElTag
+                :type="chargeStatusTagType(line)"
+                size="small"
+                effect="light"
+                class="tcm-herb-strip__charge-tag"
+              >
+                {{ chargeStatusLabel(line) }}
+              </ElTag>
+            </div>
 
             <div class="tcm-herb-strip__ops">
               <ElButton

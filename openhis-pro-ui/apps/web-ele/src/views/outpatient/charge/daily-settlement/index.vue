@@ -3,6 +3,7 @@ import type {
   DailySettlementChannelRowDto,
   DailySettlementSummaryDto,
   LoadOutpatientDailySettlementPageInitResponse,
+  OutpatientCashierSettlementHistoryItemDto,
   PreviewOutpatientDailySettlementResponse,
 } from '#/api/outpatient/daily-settlement';
 import type { ApiOptionItem } from '#/types/api-response';
@@ -40,7 +41,6 @@ import {
   submitOutpatientDailySettlementApi,
   withdrawOutpatientDailySettlementApi,
 } from '#/api/outpatient/daily-settlement';
-import type { OutpatientCashierSettlementHistoryItemDto } from '#/api/outpatient/daily-settlement';
 import DailySettlementHandoverDialog from '#/components/charge/daily-settlement-handover-dialog.vue';
 import DailySettlementSummaryPanel from '#/components/charge/daily-settlement-summary-panel.vue';
 import { usePrintClientWarmup } from '#/composables/use-print-client-warmup';
@@ -138,9 +138,7 @@ const cashierOptions = ref<ApiOptionItem[]>([]);
 
 /** 当前下拉选项中的全部收款人 id（保序） */
 function listCashierOptionIds(): string[] {
-  return cashierOptions.value
-    .map((item) => preserveApiIdForRequest(item.value))
-    .filter((value): value is string => Boolean(value));
+  return cashierOptions.value.map((item) => preserveApiIdForRequest(item.value)).filter(Boolean);
 }
 
 /** 是否勾选了当前选项列表中的全部人（仅展示用，请求仍传明确 id） */
@@ -152,21 +150,21 @@ const isAllSelectedCashiers = computed(() => {
 
 const selectedCashierLabel = computed(() => {
   const selected = queryForm.cashierIds;
-  if (!selected.length) {
+  if (selected.length === 0) {
     return '—';
   }
   if (isAllSelectedCashiers.value) {
     return (
       selected
         .map((id) => cashierOptions.value.find((item) => item.value === id)?.label?.trim())
-        .filter((label): label is string => Boolean(label))
+        .filter(Boolean)
         .join('、') || '—'
     );
   }
   const labels = selected
     .map((id) => cashierOptions.value.find((item) => item.value === id)?.label?.trim())
-    .filter((label): label is string => Boolean(label));
-  return labels.length ? labels.join('、') : '—';
+    .filter(Boolean);
+  return labels.length > 0 ? labels.join('、') : '—';
 });
 
 const hasGapHardBlock = computed(() =>
@@ -264,7 +262,7 @@ const isZeroNetIncome = computed(() => {
 });
 
 /** 将后端默认日结时间规范为 YYYY-MM-DD HH:mm:ss（结束默认当前时刻）。 */
-function normalizeDateTimeBound(raw: null | string | undefined, bound: 'start' | 'end') {
+function normalizeDateTimeBound(raw: null | string | undefined, bound: 'end' | 'start') {
   const text = String(raw ?? '').trim();
   if (!text) {
     return bound === 'start' ? resolveTodayStart() : nowEnd();
@@ -306,11 +304,9 @@ function resolveOrgIdForRequest(): string | undefined {
 
 // 组装预览请求体：日结时间、收款人与费用性质展示过滤。
 function buildCashierFilterPayload() {
-  const cashierIds = queryForm.cashierIds
-    .map((id) => preserveApiIdForRequest(id))
-    .filter((id): id is string => Boolean(id));
+  const cashierIds = queryForm.cashierIds.map((id) => preserveApiIdForRequest(id)).filter(Boolean);
   return {
-    cashierIds: cashierIds.length ? cashierIds : undefined,
+    cashierIds: cashierIds.length > 0 ? cashierIds : undefined,
   };
 }
 
@@ -347,7 +343,7 @@ const skipCashierChangeSearch = ref(false);
 /**
  * 收款人下拉仅保留本窗有流水者；空选且本窗有人时自动带出。
  */
-function syncCashierOptionsFromPreview(data: PreviewOutpatientDailySettlementResponse | null) {
+function syncCashierOptionsFromPreview(data: null | PreviewOutpatientDailySettlementResponse) {
   const fromWindow = data?.practitionerOptions ?? [];
   const options: ApiOptionItem[] = [];
   const windowIds: string[] = [];
@@ -361,14 +357,14 @@ function syncCashierOptionsFromPreview(data: PreviewOutpatientDailySettlementRes
   }
   cashierOptions.value = options;
   // 已选中若不在本窗则剔除；空选且本窗有人时自动带出
-  if (queryForm.cashierIds.length) {
+  if (queryForm.cashierIds.length > 0) {
     const allowed = new Set(windowIds);
     const retained = queryForm.cashierIds.filter((id) => allowed.has(id));
     if (retained.length !== queryForm.cashierIds.length) {
       skipCashierChangeSearch.value = true;
       queryForm.cashierIds = retained;
     }
-  } else if (windowIds.length) {
+  } else if (windowIds.length > 0) {
     skipCashierChangeSearch.value = true;
     queryForm.cashierIds = windowIds;
   }
@@ -537,7 +533,7 @@ function formatHistoryScope(row: OutpatientCashierSettlementHistoryItemDto): str
 }
 
 /** 历史金额两位小数展示。 */
-function formatHistoryAmount(value?: string | number): string {
+function formatHistoryAmount(value?: number | string): string {
   if (value === null || value === undefined || value === '') {
     return '—';
   }
@@ -623,7 +619,7 @@ async function handlePrintSettlement() {
         cashierName: selectedCashierLabel.value === '—' ? '' : selectedCashierLabel.value,
         settlementPeriodText: headerDateRangeText.value === '—' ? '' : headerDateRangeText.value,
         rows: previewResult.value.rows,
-        summary: previewResult.value.summary,
+        summary: resolvedSummary.value,
       },
     });
   } finally {
@@ -664,8 +660,11 @@ onActivated(() => {
     class="daily-settlement-page min-h-0 bg-[var(--el-fill-color-light)] p-2"
     content-class="!flex !h-full !min-h-0 !min-w-0 !flex-col !overflow-hidden !p-0"
   >
-    <div class="daily-settlement-layout flex h-full min-h-0 flex-1 flex-col gap-2 overflow-hidden">
-      <ElCard shadow="never" class="shrink-0">
+    <!-- 整页内容约 70% 宽，右侧留白，版心更接近打印稿 -->
+    <div
+      class="daily-settlement-layout flex h-full min-h-0 w-[70%] min-w-0 max-w-[70%] shrink-0 flex-col gap-2 self-start overflow-hidden"
+    >
+      <ElCard shadow="never" class="daily-settlement-query-card shrink-0">
         <ElForm
           :inline="true"
           :model="queryForm"
@@ -705,11 +704,9 @@ onActivated(() => {
             <ElSelect
               v-model="queryForm.cashierIds"
               multiple
-              collapse-tags
-              collapse-tags-tooltip
               clearable
               placeholder="不选=全部；仅列出本窗有流水者"
-              class="!w-[220px]"
+              class="!w-auto !min-w-[220px]"
               filterable
               @change="handleCashierIdsChange"
             >
@@ -754,9 +751,9 @@ onActivated(() => {
       </ElCard>
 
       <ElCard shadow="never" class="daily-settlement-card min-h-0 flex-1 overflow-hidden">
-        <div class="flex h-full min-h-0 flex-col gap-4 overflow-y-auto">
+        <div class="flex h-full min-h-0 flex-col gap-2.5 overflow-y-auto">
           <h3
-            class="text-center text-xl font-semibold tracking-wide text-[var(--el-text-color-primary)]"
+            class="text-center text-lg font-semibold leading-tight tracking-wide text-[var(--el-text-color-primary)]"
           >
             门诊收费日结单
           </h3>
@@ -766,7 +763,7 @@ onActivated(() => {
             type="error"
             :closable="false"
             show-icon
-            class="mb-2"
+            class="daily-settlement-alert"
             :title="gapHardBlockMessage"
           />
           <ElAlert
@@ -774,11 +771,13 @@ onActivated(() => {
             type="warning"
             :closable="false"
             show-icon
-            class="mb-2"
+            class="daily-settlement-alert"
             :title="`截止后仍有 ${gapSoftWarnCount} 笔未交账（仅提醒，不拦截提交）`"
           />
 
-          <div class="grid grid-cols-4 gap-4 border-b border-[var(--el-border-color)] pb-3 text-sm">
+          <div
+            class="grid grid-cols-4 gap-x-4 gap-y-1 border-b border-[var(--el-border-color)] pb-2.5 text-sm leading-snug"
+          >
             <div>
               <span class="text-[var(--el-text-color-regular)]">收款人：</span>
               {{ selectedCashierLabel }}
@@ -801,11 +800,11 @@ onActivated(() => {
           </div>
 
           <template v-if="hasFinTypeDisplay">
-            <div class="flex flex-col gap-3 border-b border-[var(--el-border-color)] pb-4">
+            <div class="flex flex-col gap-1.5 border-b border-[var(--el-border-color)] pb-2.5">
               <div
                 v-for="(row, rowIndex) in channelSummaryColumns"
                 :key="`fin-type-${rowIndex}`"
-                class="grid grid-cols-4 gap-x-6 gap-y-2 text-sm"
+                class="grid grid-cols-4 gap-x-5 gap-y-1 text-sm leading-snug"
               >
                 <div
                   v-for="item in row"
@@ -826,7 +825,7 @@ onActivated(() => {
           <ElEmpty
             v-if="hasQueried && !queryLoading && !hasFinTypeDisplay && !hasSummaryDisplay"
             description="当前日结时间范围内暂无收费汇总"
-            class="py-8"
+            class="py-6"
           />
         </div>
       </ElCard>
@@ -930,18 +929,31 @@ onActivated(() => {
 </template>
 
 <style scoped>
+.daily-settlement-query-card :deep(.el-card__body) {
+  padding: 10px 14px;
+}
+
 .daily-settlement-card :deep(.el-card__body) {
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  padding: 12px;
+  padding: 10px 14px;
   overflow: hidden;
 }
 
 .daily-settlement-query-form :deep(.el-form-item) {
   margin-right: 12px;
   margin-bottom: 0;
+}
+
+.daily-settlement-alert {
+  --el-alert-padding: 8px 12px;
+}
+
+.daily-settlement-alert :deep(.el-alert__title) {
+  font-size: 13px;
+  line-height: 1.35;
 }
 
 .daily-settlement-history-dialog :deep(.el-dialog__body) {

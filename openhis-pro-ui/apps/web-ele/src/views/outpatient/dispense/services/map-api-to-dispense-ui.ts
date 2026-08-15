@@ -12,11 +12,16 @@ import { unionDiagnosisDisplayNamesOrDash } from '#/utils/diagnosis/union-diagno
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
 import { formatMedicationNameWithMerchandise } from '#/utils/medication/format-medication-name-with-merchandise';
 import {
+  resolvePrescriptionPaperTypeLine1,
+  resolvePrescriptionPaperTypeLine2,
+} from '#/utils/print/resolve-prescription-paper-type';
+import {
   buildTcmHerbGridRowsFromSlipRows,
   buildTcmPrescriptionUsageTextFromSlipHead,
 } from '#/utils/tcm-prescription-display';
 import { HERBAL_MEDICATION_CATEGORY_CODE } from '#/views/outpatient/doctor-station/advice/services/advice-tab.constants';
 
+import { formatDispenseRemainingStockFromInventoryList } from './format-dispense-remaining-stock';
 import { encodeInventoryPick } from './inventory-pick-codec';
 
 /** 接口 number/string 统一为展示用字符串 */
@@ -161,14 +166,26 @@ export function mapSlipRowsToPrescriptionBlocks(
           formatMedicationNameWithMerchandise(line.medicationName, line.merchandiseName) || '—',
         quantity: formatDispenseQuantityLabel(line),
         unitCode: String(line.unitCode ?? '').trim() || undefined,
+        unitText: line.unitText?.trim() || line.doseUnitText?.trim() || undefined,
         quantityValue: parseSlipQuantityValue(line.quantity),
         packageUnitCode: String(line.packageUnitCode ?? '').trim() || undefined,
         packageUnitRatio: parseOptionalPositiveNumber(line.packageUnitRatio),
         splitUnitCode: String(line.splitUnitCode ?? '').trim() || undefined,
-        // 主档贴码快照：待扫个数换算真源
+        // 主档贴码快照：待扫个数换算真源 + 扫码弹窗展示
         traceUnitCode: String(line.traceUnitCode ?? '').trim() || undefined,
+        traceUnitCodeText: String(line.traceUnitCodeText ?? '').trim() || undefined,
         traceUnitRatio: parseOptionalPositiveNumber(line.traceUnitRatio),
         lotHasTraceMaster: line.lotHasTraceMaster === true,
+        // 剩余库存：remainingQuantity/availableQuantity 为最小单位，汇总后换算展示
+        remainingStockText: formatDispenseRemainingStockFromInventoryList(invList, {
+          unitCode: line.unitCode,
+          unitText: line.unitText,
+          packageUnitCode: line.packageUnitCode,
+          packageUnitRatio: line.packageUnitRatio,
+          splitUnitCode: line.splitUnitCode,
+          doseUnitCode: line.doseUnitCode,
+          doseUnitText: line.doseUnitText,
+        }),
         spec: line.specificationText?.trim() || '—',
         traceCode: line.traceNo?.trim() || '—',
         batchNo: line.lotNumber?.trim() || '—',
@@ -185,7 +202,8 @@ export function mapSlipRowsToPrescriptionBlocks(
         inventoryPickOptions,
         factory: line.manufacturerName?.trim() || '—',
         diagnosis: line.conditionSummaryText?.trim() || '—',
-        freq: line.frequencyText?.trim() || line.frequencyCode?.trim() || '—',
+        // 用法+频次+剂量+天数（西药/中成药笺面跟在药名后；与医生站口径一致）
+        freq: formatDispenseUsageInstructionText(line),
         dosageInstructionText:
           line.dosageInstructionText?.trim() || line.dosageInstructionCode?.trim() || '—',
       };
@@ -212,8 +230,16 @@ export function mapSlipRowsToPrescriptionBlocks(
       pricingPractitionerName: head.pricingPractitionerName?.trim() || undefined,
       // 费用性质：接口 feeNatureText；空时由 buildPrescriptionSheetData 用患者信息补偿
       feeNatureLabel: head.feeNatureText?.trim() || undefined,
+      // 就诊类型：绑定诊断 med_type → YbMedType 文案（一张方一种）
+      visitTypeLabel: head.encounterMedicationTypeText?.trim() || undefined,
       // 患者手机号（打印 enrich 回填）
       patientPhone: head.patientPhone?.trim() || undefined,
+      // 方头分类：与打印 prescriptionTypeLine* 同源（慢病 med_type → 慢病处方）
+      prescriptionTypeLine1: resolvePrescriptionPaperTypeLine1({
+        prescriptionTypeLine1: head.prescriptionTypeLine1,
+        encounterMedicationTypeCode: head.encounterMedicationTypeCode,
+      }),
+      prescriptionTypeLine2: resolvePrescriptionPaperTypeLine2(head.prescriptionTypeLine2),
       issuedAt: issued,
       status: blockStatusFromRows(groupRows),
       items,
@@ -238,6 +264,38 @@ function formatDispenseQuantityLabel(line: EncounterMedicationDispenseSlipRowDto
   if (!u) return q || '—';
   if (!q) return u;
   return `${q}${u}`;
+}
+
+/**
+ * 发药笺面用法用量段（西药/中成药）：途径 + 频次 + 单次剂量 + 用药天数。
+ * 与医生站 formatAdviceFreqLabel / 打印 enrich 同源字段；仅天数有效时也输出「N天」。
+ */
+export function formatDispenseUsageInstructionText(
+  line: EncounterMedicationDispenseSlipRowDto,
+): string {
+  const parts: string[] = [];
+  // 用法（给药途径 routeText；码仅作术语未解析时的兜底）
+  const route = line.routeText?.trim() || line.routeCode?.trim() || '';
+  if (route) {
+    parts.push(route);
+  }
+  const freq = line.frequencyText?.trim() || line.frequencyCode?.trim() || '';
+  if (freq) {
+    parts.push(freq);
+  }
+  const dose = scalarToTrimmedString(line.doseValue);
+  const doseUnit = line.doseUnitText?.trim() || line.doseUnitCode?.trim() || '';
+  if (dose) {
+    parts.push(doseUnit ? `每次${dose}${doseUnit}` : `每次${dose}`);
+  }
+  const daysRaw = line.dispensePerSupplyDays;
+  if (daysRaw !== null && daysRaw !== undefined && String(daysRaw).trim() !== '') {
+    const days = Number(daysRaw);
+    if (Number.isFinite(days) && days > 0) {
+      parts.push(`${Math.trunc(days)}天`);
+    }
+  }
+  return parts.length > 0 ? parts.join(' ') : '—';
 }
 
 /** slip.quantity → 数值；无效时 undefined */

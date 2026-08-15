@@ -13,6 +13,8 @@ export interface PageMedicationCatalogParams {
   pageSize?: number;
   name?: string;
   categoryCode?: string;
+  /** 基药标识；undefined 表示不限 */
+  basicFlag?: boolean;
 }
 
 /**
@@ -27,6 +29,8 @@ export interface MedicationCatalogItem {
   medicationDefId?: string | number;
   /** 医保对码等布尔标志位（与后端 Boolean JSON 一致） */
   ybMatchFlag?: boolean;
+  /** 采购→拆零换算比（1 采购单位 = N 拆零） */
+  purchaseUnitRatio?: null | number | string;
   /** 五类单位槽（采购/拆零/包装/库存/剂量），对齐门诊医生站目录 */
   unitBands?: DoctorStationMedicationUnitBandDto[];
   unitBandsJson?: string;
@@ -258,6 +262,8 @@ export async function downloadMedicationCatalogImportTemplateApi(): Promise<Medi
 export interface ExportMedicationCatalogParams {
   keyword?: string;
   categoryCode?: string;
+  /** 基药标识；undefined 表示不限 */
+  basicFlag?: boolean;
 }
 
 /** 药品目录导出响应 */
@@ -883,7 +889,7 @@ export interface CreateDeviceCatalogParams {
   locationId_dictText?: string;
   modelNumber?: string;
   hvcmFlag?: boolean;
-  /** 是否为收费耗材标记 */
+  /** 收费耗材标记（true=收费；界面「收费耗材」勾选对应 true） */
   chargeableFlag?: boolean;
   /** 病案结算类型编码（术语 mr_settlement_type_code） */
   mrSettlementTypeCode?: string;

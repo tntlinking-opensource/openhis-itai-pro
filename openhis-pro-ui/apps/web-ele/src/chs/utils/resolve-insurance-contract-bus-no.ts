@@ -1,10 +1,14 @@
 /**
- * 按合同主键解析医保契约 busNo（费用性质列表）。
+ * 按合同主键解析省/市医保契约 busNo（费用性质列表）。
+ *
+ * <p>仅用于 CHS 事前提醒 3101 / OAuth 签到等省医保链路；
+ * 工伤（WORKER_INSURANCE / *-GS）走 Win，不得当作 CHS 契约。</p>
  */
 import type { ChargeType } from '#/api/core/common';
 
 import { getChargeTypeListApi } from '#/api/core/common';
 import { isSelfChargeCategory } from '#/chs/constants/insurance-contract';
+import { isWorkInjuryContractCategory } from '#/views/outpatient/charge/register/services/charge-type-category';
 
 export interface ResolvedInsuranceContract {
   categoryEnum?: string;
@@ -12,13 +16,20 @@ export interface ResolvedInsuranceContract {
   contractId: string;
 }
 
-/** 是否可作为医保契约（有 busNo 且非自费）。 */
+/** 是否可作为省/市医保 CHS 契约（有 busNo、非自费、非工伤）。 */
 function isInsuranceEligible(item: ChargeType): boolean {
   const busNo = String(item.busNo ?? '').trim();
   if (!busNo) {
     return false;
   }
-  return !isSelfChargeCategory(item.categoryEnum);
+  if (isSelfChargeCategory(item.categoryEnum)) {
+    return false;
+  }
+  // 工伤契约无省医保 OAuth，3101/9001 会报「契约未配置 OAuth 密码」
+  if (isWorkInjuryContractCategory(item.categoryEnum) || busNo.endsWith('-GS')) {
+    return false;
+  }
+  return true;
 }
 
 /** 按 contractId 解析可走医保的契约；自费或不存在则 undefined。 */

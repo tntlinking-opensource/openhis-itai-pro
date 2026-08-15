@@ -48,6 +48,68 @@ export interface ServiceApplyInitOptions {
   specimenDefinitionOptions: TerminologyOptionDto[];
 }
 
+/**
+ * 下拉选项是否命中关键字（名称/业务编码/拼音/五笔/值，不区分大小写）。
+ *
+ * @param option 术语或主数据 Option
+ * @param keyword 用户输入；空则视为全部命中
+ */
+export function matchTerminologyOptionKeyword(
+  option: TerminologyOptionDto,
+  keyword: string,
+): boolean {
+  const q = String(keyword ?? '')
+    .trim()
+    .toLowerCase();
+  if (!q) {
+    return true;
+  }
+  // 与后端 B.2.1 检索列口径对齐：名称、编码、拼音、五笔
+  const fields = [option.label, option.busNo, option.pyStr, option.wbStr, option.value];
+  for (const field of fields) {
+    if (field && String(field).toLowerCase().includes(q)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * ElTreeSelect filter-node-method：当前节点命中关键字则保留（子命中时由组件保留祖先）。
+ *
+ * @param keyword 过滤框输入
+ * @param data 树节点 Option
+ */
+export function matchBodyStructureTreeFilterNode(
+  keyword: string,
+  data: TerminologyOptionDto,
+): boolean {
+  return matchTerminologyOptionKeyword(data, keyword);
+}
+
+/**
+ * 按关键字过滤样本平面下拉（名称/编码/拼音/五笔）。
+ *
+ * @param options 全量样本选项
+ * @param keyword 用户输入
+ */
+export function filterSpecimenDefinitionOptions(
+  options: readonly TerminologyOptionDto[],
+  keyword: string,
+): TerminologyOptionDto[] {
+  const q = String(keyword ?? '').trim();
+  if (!q) {
+    return [...options];
+  }
+  const matched: TerminologyOptionDto[] = [];
+  for (const option of options) {
+    if (matchTerminologyOptionKeyword(option, q)) {
+      matched.push(option);
+    }
+  }
+  return matched;
+}
+
 export interface ServiceApplyOrgOption {
   value: string;
   label: string;
@@ -177,6 +239,11 @@ export function catalogRowKey(row: DoctorStationAdviceCatalogRowDto): string {
 /** 目录行展示类别 */
 export function catalogRowCategoryLabel(row: DoctorStationAdviceCatalogRowDto): string {
   return String(row.categoryCodeDictText ?? row.categoryCode ?? '').trim() || '—';
+}
+
+/** 目录行医保等级展示文案（甲类/乙类/自费等；仅展示，不参与分支） */
+export function catalogRowChrgitmLvText(row: DoctorStationAdviceCatalogRowDto): string {
+  return String(row.chrgitmLvText ?? '').trim();
 }
 
 /** 目录行展示单价 */
@@ -480,6 +547,7 @@ export function buildServiceApplySelectedItemsFromAdviceRows(
         quantity,
         unitCode: String(line.listUnitCode ?? '').trim(),
         unitPrice,
+        chrgitmLvText: String(line.chrgitmLvText ?? '').trim() || undefined,
         remark: String(line.remark ?? '').trim() || undefined,
         detailItems: mapServiceRequestDetailsToDetailItems(line.serviceRequestDetails, applyKind),
       };

@@ -70,8 +70,6 @@ interface QueryState {
 }
 
 const PAGE_TITLE = '门诊处方查看';
-/** 汇总统计拉数上限（与当前查询条件一致的全量去重）。 */
-const SUMMARY_FETCH_LIMIT = 5000;
 
 const tableScrollRef = ref<InstanceType<typeof ReportTableScroll> | null>(null);
 const detailDrawerRef = ref<InstanceType<typeof OutpatientPrescriptionViewDetailDrawer> | null>(
@@ -95,7 +93,7 @@ const queryParams = reactive<QueryState>({
   pageSize: 50,
 });
 
-const tableLoading = computed(() => initLoading.value || pageLoading.value || summaryLoading.value);
+const tableLoading = computed(() => initLoading.value || pageLoading.value);
 
 const footerSummaryItems = computed(() => [
   { label: '总处方量', value: prescriptionCount.value, primary: true },
@@ -201,27 +199,6 @@ function applyTableRecords(records: OutpatientPrescriptionDrugLineDto[]) {
   tableData.value = buildPrescriptionSummaryRows(records);
 }
 
-/** 从行集合统计总处方量、就诊人数（按查询条件全量行）。 */
-function countSummaryFromRows(rows: OutpatientPrescriptionDrugLineDto[]) {
-  const prescriptionNos = new Set<string>();
-  const visitKeys = new Set<string>();
-  // 去重处方号与就诊（优先 encounterId，否则 patientId）
-  for (const row of rows) {
-    const rxNo = String(row.prescriptionNo ?? '').trim();
-    if (rxNo) {
-      prescriptionNos.add(rxNo);
-    }
-    const encounterId = String(row.encounterId ?? '').trim();
-    const patientId = String(row.patientId ?? '').trim();
-    const visitKey = encounterId || patientId;
-    if (visitKey) {
-      visitKeys.add(visitKey);
-    }
-  }
-  prescriptionCount.value = prescriptionNos.size;
-  visitPatientCount.value = visitKeys.size;
-}
-
 /** 组装筛选请求体（不含分页窗口）。 */
 function buildFilterBody(): Omit<PageOutpatientPrescriptionViewRequest, 'pageNo' | 'pageSize'> {
   return {
@@ -281,62 +258,26 @@ const { run: runPage, loading: pageLoading } = useRequest(pageOutpatientPrescrip
   onSuccess: (data) => {
     applyTableRecords(data?.records ?? []);
     total.value = Number(data?.total ?? 0);
+    // 页脚汇总由后端同条件 COUNT DISTINCT 带回，禁止二次拉全量明细
+    prescriptionCount.value = Number(data?.prescriptionCount ?? 0);
+    visitPatientCount.value = Number(data?.visitPatientCount ?? 0);
   },
 });
 
-const { run: runSummaryPage, loading: summaryLoading } = useRequest(
-  pageOutpatientPrescriptionViewApi,
-  {
-    manual: true,
-    showErrorMessage: false,
-  },
-);
-
-/** 按当前查询条件刷新页脚总处方量 / 就诊人数。 */
-async function refreshSummaryCounts(
-  listTotal: number,
-  pageRows: OutpatientPrescriptionDrugLineDto[],
-) {
-  if (listTotal <= 0) {
-    prescriptionCount.value = 0;
-    visitPatientCount.value = 0;
-    return;
-  }
-  // 当前页已覆盖全量时直接去重，避免二次请求
-  if (pageRows.length >= listTotal) {
-    countSummaryFromRows(pageRows);
-    return;
-  }
-  const fetchSize = Math.min(listTotal, SUMMARY_FETCH_LIMIT);
-  const summaryData = await runSummaryPage({
-    ...buildFilterBody(),
-    pageNo: 1,
-    pageSize: fetchSize,
-  });
-  countSummaryFromRows(summaryData?.records ?? []);
-  if (listTotal > SUMMARY_FETCH_LIMIT) {
-    ElMessage.warning(`统计仅基于前 ${SUMMARY_FETCH_LIMIT} 行明细，结果可能偏小`);
-  }
-}
-
-/** 拉取平铺明细后聚合成方级列表；筛选变化时同步页脚统计。 */
-async function getList(options?: { refreshSummary?: boolean }) {
+/** 拉取平铺明细后聚合成方级列表。 */
+async function getList() {
   if (!ensureQueryReady()) {
     return;
   }
-  const shouldRefreshSummary = options?.refreshSummary !== false;
-  const data = await runPage(buildPageRequest());
-  if (shouldRefreshSummary) {
-    await refreshSummaryCounts(Number(data?.total ?? 0), data?.records ?? []);
-  }
+  await runPage(buildPageRequest());
   await nextTick();
   tableScrollRef.value?.updateTableHeight();
 }
 
-/** 查询回到第一页，并按新条件刷新统计。 */
+/** 查询回到第一页。 */
 function handleQuery() {
   queryParams.pageNo = 1;
-  void getList({ refreshSummary: true });
+  void getList();
 }
 
 /** 重置筛选并重新初始化默认日期后查询。 */
@@ -357,17 +298,17 @@ async function handleReset() {
   await getList();
 }
 
-/** 切换每页条数（后端仍按明细行分页；翻页不重算统计）。 */
+/** 切换每页条数（后端仍按明细行分页）。 */
 function handlePageSizeChange(size: number) {
   queryParams.pageSize = size;
   queryParams.pageNo = 1;
-  void getList({ refreshSummary: false });
+  void getList();
 }
 
 /** 切换页码。 */
 function handleCurrentPageChange(page: number) {
   queryParams.pageNo = page;
-  void getList({ refreshSummary: false });
+  void getList();
 }
 
 /** 点击行打开详情（整方明细 + 打印）。 */
@@ -387,7 +328,7 @@ function handleOpenDetail(row: OutpatientPrescriptionSummaryRow) {
 
 onMounted(async () => {
   await runInit();
-  await getList({ refreshSummary: true });
+  await getList();
 });
 </script>
 

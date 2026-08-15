@@ -15,7 +15,7 @@ export {
   FALLBACK_PAY_CHANNEL_OPTIONS,
 } from '#/utils/payment/payment-channel-options';
 
-/** 结算模式：收费处正式结算仅出院全结；医护站完整预结算可走中途试算 */
+/** 结算模式：收费处仅出院全结；医护站试算可传 MID_SETTLE（平台 mid_setl_flag 仍为 0） */
 export const INPATIENT_SETTLE_MODE = {
   DISCHARGE_FULL: 'DISCHARGE_FULL',
   MID_SETTLE: 'MID_SETTLE',
