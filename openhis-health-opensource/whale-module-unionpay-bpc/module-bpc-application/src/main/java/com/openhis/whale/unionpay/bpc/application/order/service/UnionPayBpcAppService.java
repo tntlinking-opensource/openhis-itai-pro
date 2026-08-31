@@ -11,12 +11,14 @@ import com.openhis.whale.unionpay.bpc.domain.service.BpcSettleDomainService;
 import com.openhis.whale.unionpay.bpc.domain.order.entity.BpcOrder;
 import com.openhis.whale.unionpay.bpc.domain.order.entity.BpcOrderStatus;
 import com.openhis.whale.unionpay.bpc.domain.refund.command.ApplyClientRefundCommand;
+import com.openhis.whale.unionpay.bpc.domain.scan.command.AbandonPendingScanCommand;
 import com.openhis.whale.unionpay.bpc.domain.scan.command.ApplyClientScanCommand;
-import com.openhis.whale.unionpay.bpc.domain.query.command.PageBpcOrdersCommand;
 import com.openhis.whale.unionpay.bpc.domain.scan.command.PrepareConsumerScanCommand;
+import com.openhis.whale.unionpay.bpc.domain.query.command.PageBpcOrdersCommand;
 import com.openhis.whale.unionpay.bpc.domain.query.command.QueryBpcOrderCommand;
 import com.openhis.whale.unionpay.bpc.domain.query.command.RetrySettleFromBpcOrderCommand;
 import com.openhis.whale.unionpay.bpc.domain.refund.result.ApplyClientRefundResult;
+import com.openhis.whale.unionpay.bpc.domain.scan.result.AbandonPendingScanResult;
 import com.openhis.whale.unionpay.bpc.domain.scan.result.ApplyClientScanResult;
 import com.openhis.whale.unionpay.bpc.domain.query.result.PageBpcOrdersResult;
 import com.openhis.whale.unionpay.bpc.domain.scan.result.PrepareConsumerScanResult;
@@ -51,6 +53,10 @@ public class UnionPayBpcAppService {
 
     public ApplyClientScanResult applyClientScanResult(ApplyClientScanCommand command) {
         return settleDomainService.applyClientScanResult(command);
+    }
+
+    public AbandonPendingScanResult abandonPendingScan(AbandonPendingScanCommand command) {
+        return settleDomainService.abandonPendingScan(command);
     }
 
     public ApplyClientRefundResult applyClientRefundResult(ApplyClientRefundCommand command) {

@@ -6,6 +6,7 @@ package com.openhis.health.application.report.consumableusage.outpatient.request
 
 import java.util.List;
 
+import com.openhis.whale.core.application.dto.ExcelExportColumnDto;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -33,6 +34,12 @@ public class ExportOutpatientConsumableUsageReportRequest {
      */
     @Schema(description = "导出 Tab SUMMARY/DETAIL", requiredMode = Schema.RequiredMode.REQUIRED)
     private String exportTabCode;
+
+    /**
+     * 导出自选列（前端按页面列清单下发；空则导出全部 {@code @Excel} 列）。
+     */
+    @Schema(description = "导出自选列 field+title")
+    private List<ExcelExportColumnDto> exportColumns;
 
     /**
      * 汇总维（仅 SUMMARY Tab）：LOCATION / ITEM / CATEGORY / DEPARTMENT。

@@ -60,7 +60,7 @@ import {
   type PurchaseOrderTableColWidthPreset,
 } from '#/constants/layout/inventory-doc-compact-presets';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
-import { formatInventoryLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
+import { formatInventoryLineTotal, formatPurchaseMoneyDisplay } from '#/utils/format/money-scale';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import {
   inboundReceiptPickMedicineCell,
@@ -99,9 +99,10 @@ import {
   INV_ALL_LOCATIONS_FILTER_ID,
   isSpecificInventoryLocationId,
   resolveFirstRealLocationIdFromInitOptions,
-  resolveSpecificInventoryLocationId,
-  resolveInvDocPreparedByName,
   resolveInvDocApprovedByName,
+  resolveInvDocPreparedByName,
+  resolveInvDocPrintApplyTimeText,
+  resolveSpecificInventoryLocationId,
 } from '#/utils/inventory/inventory-workbench-list';
 import {
   buildInventoryLocationHeadFormRules,
@@ -174,7 +175,7 @@ interface OrderPreviewRow {
   medicinePick?: Record<string, unknown>;
   itemTable?: string;
   itemId?: number | string;
-  /** 药品分类码；中药=4 时单价三位展示 */
+  /** 药品分类码；中药=4 时进价三位展示 */
   categoryCode?: string;
   spec: string;
   manufacturer: string;
@@ -496,6 +497,9 @@ function mapDetailLineToGrid(
     },
   );
   const productBusNo = String(catalog?.productBusNo ?? '').trim();
+  const categoryCode =
+    String(catalog?.categoryCode ?? (ln as { categoryCode?: string }).categoryCode ?? '').trim() ||
+    undefined;
   return {
     id: idStr,
     medicinePick: name
@@ -520,13 +524,10 @@ function mapDetailLineToGrid(
       total === undefined || total === null
         ? ''
         : typeof total === 'number'
-          ? formatMoneyDisplay(total)
+          ? formatPurchaseMoneyDisplay(total, categoryCode)
           : String(total),
     remark: String(ln.remake ?? ''),
-    categoryCode:
-      String(
-        catalog?.categoryCode ?? (ln as { categoryCode?: string }).categoryCode ?? '',
-      ).trim() || undefined,
+    categoryCode,
   };
 }
 
@@ -1323,8 +1324,8 @@ function resolveOrderPrintUnitLabel(row: OrderPreviewRow): string {
   return String(byCode?.label ?? byCode?.value_dictText ?? code).trim();
 }
 
-/** 打印订货单（计价流转模版） */
-async function handlePrint() {
+/** 打印或预览订货单（计价流转模版） */
+async function handlePrint(payload?: { preview?: boolean }) {
   const busNo = currentPersistedBusNo();
   if (!busNo) {
     ElMessage.warning('请先保存单据后再打印');
@@ -1343,9 +1344,10 @@ async function handlePrint() {
     headForm.value.itemTableType,
   );
   const documentTitle = buildInvDocumentTitle(warehouseName, '订货单');
-  const applyTimeText = String(headForm.value.applyTime ?? props.applyTime ?? '')
-    .trim()
-    .replace('T', ' ');
+  // 打印制单时间取侧栏单据实际审批时间，禁止用单头缺省「当前时刻」冒充
+  const applyTimeText = resolveInvDocPrintApplyTimeText({
+    queueCardRow: props.queueCardRow as null | Record<string, unknown>,
+  });
 
   // 按当前网格展示值组装 PrintData
   const lineRows = productRows.map((row) => ({
@@ -1386,6 +1388,7 @@ async function handlePrint() {
     },
     bizRef: { busNo, docKind: 'purchase-order' },
     jobName: documentTitle,
+    preview: payload?.preview === true,
   });
 }
 

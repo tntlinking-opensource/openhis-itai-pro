@@ -9,6 +9,7 @@ import com.openhis.chs.bridge.inpatient.invoker.Ip2301Invoker;
 import com.openhis.chs.bridge.inpatient.invoker.Ip2303Invoker;
 import com.openhis.chs.bridge.inpatient.invoker.Ip2401Invoker;
 import com.openhis.chs.bridge.outpatient.mapper.SetlinfoIntegrationMapper;
+import com.openhis.chs.bridge.settlement.support.ChsFeeDetailBatchSupport;
 import com.openhis.chs.bridge.settlement.support.ChsFeeUploadNettingSupport;
 import com.openhis.chs.domain.inpatient.command.IpPreSettleCommand;
 import com.openhis.chs.domain.inpatient.command.IpSettleChargeLine;
@@ -182,15 +183,19 @@ public class IpPlatformReadmitForSettleSupport {
         if (uploadLines.isEmpty()) {
             uploadLines = lines;
         }
-        Ip2301Input input2301 = IpInpatientSettleInputAssembler.assemble2301(context, mdtrtId, uploadLines);
-        ResultBody body2301 = ip2301Invoker.invoke(context.getContractBusNo(), input2301, invokeContext);
-        inpatientFeeUploadDomainService.persistFrom2301(
-            context.getEncounterId(),
-            mdtrtId,
-            uploadLines,
-            IpFeeUploadResultIndexer.indexByFeedetlSn(body2301),
-            body2301.getOutput(),
-            tenantId);
+        // Pre：长春平台 feedetail 单次最多 100 行，超限则分批 2301
+        for (List<IpSettleChargeLine> batch : ChsFeeDetailBatchSupport.partition(
+            uploadLines, ChsFeeDetailBatchSupport.PLATFORM_MAX_FEEDTAIL_ROWS)) {
+            Ip2301Input input2301 = IpInpatientSettleInputAssembler.assemble2301(context, mdtrtId, batch);
+            ResultBody body2301 = ip2301Invoker.invoke(context.getContractBusNo(), input2301, invokeContext);
+            inpatientFeeUploadDomainService.persistFrom2301(
+                context.getEncounterId(),
+                mdtrtId,
+                batch,
+                IpFeeUploadResultIndexer.indexByFeedetlSn(body2301),
+                body2301.getOutput(),
+                tenantId);
+        }
         if (!netPlan.locallyClosedLines().isEmpty()) {
             inpatientFeeUploadDomainService.persistFrom2301(
                 context.getEncounterId(),
@@ -232,7 +237,8 @@ public class IpPlatformReadmitForSettleSupport {
         if (!failures.isEmpty() && failures.size() == inHospital.size()) {
             throw new BusinessException(
                 ChsErrorCodes.PLATFORM_FAILED,
-                "重新入院前无法撤销平台在院就诊：" + String.join("；", failures));
+                "【多在院】重新入院前无法撤销平台在院就诊；请打开「平台在院对齐」或医保信息查询(5201)处理。详情："
+                    + String.join("；", failures));
         }
     }
 

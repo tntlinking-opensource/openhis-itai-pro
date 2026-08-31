@@ -93,7 +93,7 @@ public class InpatientInOutDetailReportAppService {
     private final InpatientInOutDetailReportMapper mapper;
 
     /**
-     * IF-RPT-IOE-01：页面初始化（默认当日窗、状态选项、入院科室；病区初始空）。
+     * IF-RPT-IOE-01：页面初始化（默认近一个月窗、状态选项、入院科室；病区初始空）。
      *
      * @param request 空体占位
      * @return 初始化响应
@@ -107,12 +107,15 @@ public class InpatientInOutDetailReportAppService {
             "页面初始化失败，请稍后重试");
         try {
             LocalDate today = LocalDate.now();
-            LocalDateTime defaultFrom = today.atStartOfDay();
+            // Pre：默认业务窗 = 今日往前 N 个自然月～今日（BR-RPT-IOE-001）
+            LocalDate fromDay = today.minusMonths(
+                InpatientInOutDetailReportConstants.DEFAULT_LOOKBACK_MONTHS);
+            LocalDateTime defaultFrom = fromDay.atStartOfDay();
             LocalDateTime defaultTo = today.atTime(LocalTime.of(23, 59, 59));
             // Pre：入院科室下拉 + 入出状态选项；病区初始空（BR-RPT-IOE-005a）
             List<OptionDto> organizationOptions = this.buildOrganizationOptions();
             List<OptionDto> movementStatusOptions = this.buildMovementStatusOptions();
-            // Asm：默认当日闭区间 + 下拉；wardOptions 强制空列表
+            // Asm：默认近一个月闭区间 + 下拉；wardOptions 强制空列表
             return this.mapper.toPageInitResponse(
                 defaultFrom,
                 defaultTo,
@@ -292,7 +295,8 @@ public class InpatientInOutDetailReportAppService {
             byte[] body = AnnotatedExcelExporter.exportToXlsxBytes(
                 InpatientInOutDetailReportConstants.EXPORT_SHEET_NAME,
                 exportRows,
-                InpatientInOutDetailRowDto.class);
+                InpatientInOutDetailRowDto.class,
+                request.getExportColumns());
             String fileName = InpatientInOutDetailReportConstants.EXPORT_FILE_PREFIX
                 + request.getDateFrom().format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER)
                 + GeneralSharedConstants.DASH

@@ -73,6 +73,7 @@ public class GetInboundReceiptDetailResponse {
 
     /**
      * 采购发票号（同单共享；进销存 {@code purc_invo_no}）。
+     * <p>选填回显；历史空白或未填保存后为占位 {@code 0}。</p>
      */
     @Schema(description = "采购发票号 invoiceNo")
     private String invoiceNo;

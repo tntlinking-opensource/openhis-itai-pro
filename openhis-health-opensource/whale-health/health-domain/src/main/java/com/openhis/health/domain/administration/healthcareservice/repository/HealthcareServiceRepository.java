@@ -26,4 +26,13 @@ public interface HealthcareServiceRepository extends JpaRepository<HealthcareSer
 
     /** 按多个状态枚举查询医疗服务（挂号类型维护台等需同时展示启用与停用）。 */
     List<HealthcareService> findAllByStatusEnumIn(Collection<String> statusEnums);
+
+    /**
+     * 按业务编号与状态查询医疗服务（产品级号源识别，如历史号复诊）。
+     *
+     * @param busNo 业务编号
+     * @param statusEnum 状态码
+     * @return 命中实体；不存在时 empty
+     */
+    Optional<HealthcareService> findByBusNoAndStatusEnum(String busNo, String statusEnum);
 }

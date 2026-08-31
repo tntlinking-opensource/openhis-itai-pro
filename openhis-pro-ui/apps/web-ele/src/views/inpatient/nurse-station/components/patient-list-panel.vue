@@ -376,9 +376,13 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
                     </div>
                     <div class="nurse-patient-card__line2">
                       <div class="nurse-patient-card__location truncate">
-                        <span>{{ regionNameByIdRecord[row.regionId] || '-' }}</span>
+                        <span class="nurse-patient-card__loc-ward">{{
+                          regionNameByIdRecord[row.regionId] || '-'
+                        }}</span>
                         <span class="nurse-patient-card__location-sep">|</span>
-                        <span>{{ wardNameByIdRecord[row.wardId] || '-' }}</span>
+                        <span class="nurse-patient-card__loc-room">{{
+                          wardNameByIdRecord[row.wardId] || '-'
+                        }}</span>
                         <span class="nurse-patient-card__location-sep">|</span>
                         <span
                           class="nurse-patient-card__bed"
@@ -695,7 +699,7 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
   color: var(--el-text-color-primary);
   flex-shrink: 0;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 700;
   line-height: 1.2;
 }
 .nurse-patient-card__level-wrap {
@@ -748,16 +752,27 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
 }
 .nurse-patient-card__location {
   align-items: center;
+  color: var(--el-text-color-primary);
   display: flex;
   flex: 1;
+  font-weight: 600;
   gap: 4px;
 }
 .nurse-patient-card__location-sep {
   color: #9ca3af;
+  font-weight: 400;
+}
+.nurse-patient-card__loc-ward,
+.nurse-patient-card__loc-room {
+  font-weight: 700;
+}
+.nurse-patient-card__bed {
+  color: var(--el-color-primary);
+  font-weight: 800;
 }
 .nurse-patient-card__bed.is-unassigned {
   color: #e6a23c;
-  font-weight: 600;
+  font-weight: 800;
 }
 .nurse-patient-card__tasks {
   align-items: center;

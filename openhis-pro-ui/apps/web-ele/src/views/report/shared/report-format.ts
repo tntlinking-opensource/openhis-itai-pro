@@ -1,5 +1,7 @@
 import type { ApiOptionItem } from '#/types/api-response';
 
+import { formatPurchaseMoneyDisplay } from '#/utils/format/money-scale';
+
 /** OptionDto → 下拉选项（value 一律 string）。 */
 export function optionDtosToSelectItems(
   list?: { label?: string; value?: null | number | string }[],
@@ -31,4 +33,13 @@ export function fmtReportNumber(v: unknown, fractionDigits = 2): string {
     minimumFractionDigits: fractionDigits,
     maximumFractionDigits: fractionDigits,
   });
+}
+
+/**
+ * 报表进价侧金额（单价/净额/合计/盈亏）：中药可至三位。
+ * 空值返回 ''（与 {@link fmtReportNumber} 一致）。
+ */
+export function fmtReportPurchaseMoney(v: unknown, categoryCode?: unknown): string {
+  if (v === null || v === undefined || v === '') return '';
+  return formatPurchaseMoneyDisplay(v, categoryCode);
 }

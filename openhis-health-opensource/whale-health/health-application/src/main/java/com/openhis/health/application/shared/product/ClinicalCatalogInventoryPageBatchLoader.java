@@ -115,6 +115,7 @@ public class ClinicalCatalogInventoryPageBatchLoader {
                 clinicalCatalogDispenseLocationResolver.resolveDistributionCategoryCode(productRow),
                 productRow.getProductDefinitionId(),
                 productRow.getMethodCode(),
+                productRow.getTypeCode(),
                 pharmacyLocationId
             );
             batch.putCandidateLocationIds(productKey, candidateLocs);

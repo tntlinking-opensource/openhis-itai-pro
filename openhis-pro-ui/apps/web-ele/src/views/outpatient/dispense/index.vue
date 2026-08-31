@@ -12,12 +12,11 @@ import type {
   PendingDispenseEncounterQueueRowDto,
   PractitionerOptionDto,
 } from '#/api/outpatient-pharmacy-dispense/outpatient-pharmacy-dispense.types';
-import type { ChargeType } from '#/chs/constants/insurance-contract';
 
 import { computed, nextTick, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue';
 
 import { useDebounceFn } from '@vueuse/core';
-import { ElMessage, ElMessageBox, ElOption, ElSelect } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 
 import { getChargeTypeListApi } from '#/api/core/common';
 import {
@@ -27,20 +26,29 @@ import {
   httpPagePendingDispenseEncounterQueue,
   httpSavePrepareOutpatientMedicationDispense,
 } from '#/api/outpatient-pharmacy-dispense/outpatient-pharmacy-dispense.http';
+import { createAutoReviewAfterDispenseApi } from '#/api/pharmacy/prescription-review';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import {
   filterInsuranceChargeTypes,
   resolveDefaultInsuranceBusNo,
 } from '#/chs/constants/insurance-contract';
 import { fetchEncounterTcmDiagnosisDisplayText } from '#/components/doctor-station/diagnosis/services/fetch-encounter-tcm-diagnosis-text';
 import StationTriPaneLayout from '#/components/layouts/station-tri-pane-layout.vue';
+import { useCompactViewport } from '#/composables/use-compact-viewport';
 import { usePrintClientWarmup } from '#/composables/use-print-client-warmup';
+import { PHARMACY_DISPENSE_SIDEBAR_WIDTH_PX } from '#/constants/layout/viewport-breakpoints';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import { formatLocalDateYmd } from '#/utils/format/date-range-quick';
 import {
   DISPENSE_TRACE_CACHE_SCENE,
   readDispenseTraceCache,
   removeDispenseTraceCacheLines,
   writeDispenseTraceCache,
 } from '#/utils/medication/dispense-trace-cache';
+import {
+  readAutoReviewPreference,
+  writeAutoReviewPreference,
+} from '#/utils/medication/auto-review-preference';
 import {
   resolvePreparerSelection,
   writePreparerPreference,
@@ -54,6 +62,7 @@ import {
   loadRemainingSplitByTraceNos,
   splitTraceNoCommaString,
 } from '#/utils/trace';
+import { MSFX_HIS_SCENE } from '#/msfx/constants';
 
 import DispenseQueuePanel from './components/dispense-queue-panel.vue';
 import DispenseRxCenter from './components/dispense-rx-center.vue';
@@ -64,6 +73,7 @@ import {
   isBatchDispenseActionableStatus,
   PENDING_DISPENSE_STATUS_FILTER,
 } from './services/dispense-batch-workflow';
+import { filterInventoryByLockedPharmacy } from './services/dispense-lot-pick';
 import { decodeInventoryPick, encodeInventoryPick } from './services/inventory-pick-codec';
 import {
   mapPendingQueueRowToPatient,
@@ -84,14 +94,21 @@ defineOptions({
 
 usePrintClientWarmup();
 
+/** 左侧队列宽：≥1680 default 264，<1680 compact 228 */
+const { pickPreset } = useCompactViewport();
+const leftAsideWidthPx = pickPreset(PHARMACY_DISPENSE_SIDEBAR_WIDTH_PX);
+const leftTrack = computed(() => `${leftAsideWidthPx.value}px`);
+
 const keyword = ref('');
-const today = new Date().toISOString().slice(0, 10);
+const today = formatLocalDateYmd();
 const queueDateRange = ref<[string, string] | null>([today, today]);
 const selectedPatientId = ref<null | string>(null);
 const activeRxKind = ref<'herbal' | 'western'>('western');
 const rxKindBadgeCounts = ref<DispenseRxKindBadgeCounts>({ western: 0, herbal: 0 });
 const selectedPrescriptionId = ref<null | string>(null);
 const selectedDispenserId = ref<string | undefined>(undefined);
+/** 发药核发成功后是否自动写入合理点评（按登录用户缓存在本机）。 */
+const autoReviewEnabled = ref(readAutoReviewPreference());
 
 const rxCenterRef = ref<InstanceType<typeof DispenseRxCenter> | null>(null);
 
@@ -123,8 +140,8 @@ const slipLoading = ref(false);
 const batchSubmitting = ref(false);
 const printSubmitting = ref(false);
 const initLoading = ref(false);
+/** 发药提交用默认医保契约 busNo（页面不展示选择器，进页静默取默认） */
 const insuranceContractBusNo = ref<string>();
-const insuranceChargeTypeOptions = ref<ChargeType[]>([]);
 
 const selectedPatient = computed(() => {
   const id = selectedPatientId.value;
@@ -132,7 +149,41 @@ const selectedPatient = computed(() => {
   return queuePatients.value.find((p) => p.id === id) ?? null;
 });
 
-const filteredQueuePatients = computed(() => queuePatients.value);
+const filteredQueuePatients = computed(() => {
+  const range = queueDateRange.value;
+  const startDay = normalizeQueueDay(range?.[0]);
+  const endDay = normalizeQueueDay(range?.[1]);
+  if (!startDay || !endDay) {
+    return queuePatients.value;
+  }
+  // 与后端「就诊 startTime」同轴：按卡片就诊日再收一层，避免后端未重启时日期控件看似无效
+  return queuePatients.value.filter((p) => {
+    const visitDay = normalizeQueueDay(p.visitTimeLabel);
+    if (!visitDay) {
+      return true;
+    }
+    return visitDay >= startDay && visitDay <= endDay;
+  });
+});
+
+/** 日期控件值统一为 YYYY-MM-DD（兼容 Date / ISO / 展示串） */
+function normalizeQueueDay(raw: Date | null | string | undefined): string {
+  if (raw == null || raw === '') {
+    return '';
+  }
+  if (raw instanceof Date) {
+    if (Number.isNaN(raw.getTime())) {
+      return '';
+    }
+    return formatLocalDateYmd(raw);
+  }
+  const text = String(raw).trim();
+  const ymd = text.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+    return ymd;
+  }
+  return '';
+}
 
 const prescriptionBlocks = computed(() => {
   if (!selectedPatientId.value) return [];
@@ -142,10 +193,16 @@ const prescriptionBlocks = computed(() => {
 const prescriptionList = computed(() => flattenPrescriptionBlocks(prescriptionBlocks.value));
 
 const prescriptionListWithTrace = computed(() =>
-  prescriptionList.value.map((row) => ({
-    ...row,
-    traceCode: traceCodeByLineId.value[row.id] ?? row.traceCode,
-  })),
+  prescriptionList.value.map((row) => {
+    // 已发药：只信服务端落库码，禁止本地扫码缓存盖住（否则弹窗码与主档扣减不一致）
+    if (row.status === 'completed') {
+      return row;
+    }
+    return {
+      ...row,
+      traceCode: traceCodeByLineId.value[row.id] ?? row.traceCode,
+    };
+  }),
 );
 
 const displayTableRows = computed<DispenseRxTableRow[]>(() => {
@@ -193,21 +250,36 @@ watch(selectedDispenserId, (id) => {
   writePreparerPreference(id);
 });
 
+/** 自动点评开关变更：写入本机缓存，并提示开/关后的发药行为 */
+watch(autoReviewEnabled, (enabled) => {
+  writeAutoReviewPreference(enabled);
+  if (enabled) {
+    ElMessage.success('已开启发药完成自动点评：核发成功后将自动写入合理用药点评');
+    return;
+  }
+  ElMessage.info('已关闭发药完成自动点评：核发成功后需到处方点评页手工点评');
+});
+
 /** 按时间范围、队列类型与关键字拉取就诊队列 */
 async function reloadQueue() {
   queueLoading.value = true;
   try {
     const range = queueDateRange.value;
-    if (!range?.[0] || !range?.[1]) {
+    const startDay = normalizeQueueDay(range?.[0]);
+    const endDay = normalizeQueueDay(range?.[1]);
+    if (!startDay || !endDay) {
       queuePatients.value = [];
       return;
     }
-    const [startDay, endDay] = range;
+    // 控件偶发回写 Date：写回规范字符串，避免请求拼出非法时间
+    if (range?.[0] !== startDay || range?.[1] !== endDay) {
+      queueDateRange.value = [startDay, endDay];
+    }
     const dispenseStatusEnumIn =
       queueScope.value === 'pending' ? [...PENDING_DISPENSE_STATUS_FILTER] : ['COMPLETED'];
     const res = await httpPagePendingDispenseEncounterQueue({
-      startTime: `${startDay} 00:00:00`,
-      endTime: `${endDay} 23:59:59`,
+      startDate: `${startDay} 00:00:00`,
+      endDate: `${endDay} 23:59:59`,
       keyword: keyword.value.trim() || undefined,
       dispenseStatusEnumIn,
       pageNo: 1,
@@ -361,7 +433,7 @@ function clearTransientStateForDispensedLines(lineIds: string[]) {
 }
 
 /**
- * 库存下拉默认值：优先对齐发放行库位+批号，避免默认到模板其它候选药房。
+ * 库存下拉默认值：优先对齐发放行库位+批号（选项已锁本库）。
  *
  * @param row 展开后的发药明细行
  * @returns 选项 value；无候选时 undefined
@@ -369,32 +441,48 @@ function clearTransientStateForDispensedLines(lineIds: string[]) {
 function resolveDefaultInventoryPickValue(row: DispensePrescriptionItemRow): string | undefined {
   const opts = row.inventoryPickOptions;
   if (!opts?.length) return undefined;
-  const locId = (row.dispenseLocationId ?? '').trim();
   const lotRaw = (row.batchNo ?? '').trim();
   const lot = lotRaw && lotRaw !== '—' ? lotRaw : '';
-  // 先库位+批号精确对齐发放行
-  if (locId) {
+  // 先按行上已锚定批号对齐
+  if (lot) {
     for (const opt of opts) {
       try {
         const decoded = decodeInventoryPick(opt.value);
-        if (String(decoded.pharmacyOrganizationId) !== locId) continue;
-        if (lot && (decoded.lotNumber ?? '') !== lot) continue;
-        return opt.value;
-      } catch {
-        /* 非法编码跳过 */
-      }
-    }
-    // 再仅按发放库位对齐（批号候选不完全一致时）
-    for (const opt of opts) {
-      try {
-        const decoded = decodeInventoryPick(opt.value);
-        if (String(decoded.pharmacyOrganizationId) === locId) return opt.value;
+        if ((decoded.lotNumber ?? '') === lot) return opt.value;
       } catch {
         /* 非法编码跳过 */
       }
     }
   }
   return opts[0]?.value;
+}
+
+/**
+ * 将处方块行的批号默认选中合并进 inventoryPickByLineId（笺面全量 / 当前 tab 共用）。
+ *
+ * @param lines 处方明细行
+ */
+function mergeDefaultInventoryPicksFromLines(
+  lines: {
+    id: string;
+    batchNo?: string;
+    dispenseLocationId?: string;
+    inventoryPickOptions?: DispensePrescriptionItemRow['inventoryPickOptions'];
+  }[],
+) {
+  if (lines.length === 0) return;
+  const next = { ...inventoryPickByLineId.value };
+  for (const line of lines) {
+    const opts = line.inventoryPickOptions;
+    if (!opts?.length) continue;
+    const prev = next[line.id];
+    // 已选手动选择且仍在候选内则保留
+    if (prev && opts.some((o) => o.value === prev)) continue;
+    const keep = resolveDefaultInventoryPickValue(line as DispensePrescriptionItemRow);
+    if (!keep) continue;
+    next[line.id] = keep;
+  }
+  inventoryPickByLineId.value = next;
 }
 
 watch(selectedPatientId, (enc, prevEnc) => {
@@ -441,10 +529,10 @@ watch(
     if (!cur || !list.some((r) => r.rxId === cur)) {
       selectedPrescriptionId.value = list[0]?.rxId ?? null;
     }
-    // 合并当前 tab 库房选择；保留另一 tab 行上的已选，避免切 tab 冲掉
+    // 合并当前 tab 批号选择；保留另一 tab 行上的已选，避免切 tab 冲掉
     const currentIds = new Set(list.map((row) => row.id));
     const next: Record<string, string> = {};
-    // 先保留非当前 tab 行（另一侧中西药）的库房选择
+    // 先保留非当前 tab 行（另一侧中西药）的批号选择
     for (const [id, pick] of Object.entries(inventoryPickByLineId.value)) {
       if (!currentIds.has(id)) next[id] = pick;
     }
@@ -452,7 +540,7 @@ watch(
       const opts = row.inventoryPickOptions;
       if (!opts?.length) continue;
       const prev = inventoryPickByLineId.value[row.id];
-      // 已选手动选择且仍在候选内则保留；否则优先对齐发放行库位/批号
+      // 已选手动选择且仍在候选内则保留；否则对齐发放行批号
       const keep =
         prev && opts.some((o) => o.value === prev) ? prev : resolveDefaultInventoryPickValue(row);
       if (!keep) continue;
@@ -461,6 +549,16 @@ watch(
     inventoryPickByLineId.value = next;
   },
   { immediate: true },
+);
+
+watch(
+  sheetViewBlocks,
+  (blocks) => {
+    // 笺面全量处方块也需默认批号，避免默认视图改批/发药缺 pick
+    const lines = blocks.flatMap((b) => b.items.filter((i) => i.lineKind !== 'decoctionFee'));
+    mergeDefaultInventoryPicksFromLines(lines);
+  },
+  { deep: false },
 );
 
 watch(
@@ -537,9 +635,11 @@ onDeactivated(() => {
 });
 
 /** 时间范围变更：清空时回退为当天 */
-function handleQueueDateRangeChange(range: [string, string] | null) {
-  if (range && range[0] && range[1]) {
-    queueDateRange.value = range;
+function handleQueueDateRangeChange(range: [Date | string, Date | string] | null) {
+  const startDay = normalizeQueueDay(range?.[0]);
+  const endDay = normalizeQueueDay(range?.[1]);
+  if (startDay && endDay) {
+    queueDateRange.value = [startDay, endDay];
     return;
   }
   queueDateRange.value = [today, today];
@@ -571,8 +671,7 @@ function handleBatchTraceScan() {
 /**
  * 发药前追溯码：可不扫；已扫但剩余盖不住须弹窗确认后方可继续（BR-OPP-015 / DD §7）。
  *
- * <p>用户确认「仍继续」后：不足行清空内存中的追溯码再提交，避免带着盖不住码串写 OUT，
- * 与「不扫只影响追溯账、不挡主流程」一致。</p>
+ * <p>用户确认「仍继续」后：保留已扫码并提交，避免扫码落库被清掉；覆盖不足仅作软提示。</p>
  *
  * @param lineIds 待发发放行 id
  * @returns 用户确认继续或无需确认时为 true；取消则为 false
@@ -591,7 +690,6 @@ async function confirmTraceCodesBeforeDispense(lineIds: string[]): Promise<boole
   const remainingByTraceNo = await loadRemainingSplitByTraceNos(allCodes);
 
   const insufficient: string[] = [];
-  const insufficientIds: string[] = [];
   for (const id of lineIds) {
     const row = rowById.get(id);
     if (!row) continue;
@@ -610,7 +708,6 @@ async function confirmTraceCodesBeforeDispense(lineIds: string[]): Promise<boole
       continue;
     }
     const boundCount = splitTraceNoCommaString(traceRaw).length;
-    insufficientIds.push(id);
     insufficient.push(
       `「${row.itemName}」已扫码剩余未盖住发药拆零（建议约 ${needCount} 码，当前 ${boundCount} 个）`,
     );
@@ -620,7 +717,7 @@ async function confirmTraceCodesBeforeDispense(lineIds: string[]): Promise<boole
   }
   try {
     await ElMessageBox.confirm(
-      `${insufficient.join('\n')}\n\n确认后将按「未扫够」继续发药（不足行的追溯码不提交），追溯账可能不完整。`,
+      `${insufficient.join('\n')}\n\n确认后仍提交已扫追溯码并发药（覆盖可能不足，追溯账或不全）。`,
       '追溯码覆盖不足',
       {
         type: 'warning',
@@ -628,13 +725,7 @@ async function confirmTraceCodesBeforeDispense(lineIds: string[]): Promise<boole
         cancelButtonText: '返回补扫',
       },
     );
-    // 确认继续：清掉不足行已绑码，禁止带着盖不住码串写 OUT
-    const dropIds = new Set(insufficientIds);
-    const next: Record<string, string> = {};
-    for (const [id, code] of Object.entries(traceCodeByLineId.value)) {
-      if (!dropIds.has(id)) next[id] = code;
-    }
-    traceCodeByLineId.value = next;
+    // 确认继续：保留已扫码写入发放行，避免「扫了又被清掉」
     return true;
   } catch {
     return false;
@@ -742,6 +833,7 @@ async function printSlipGroups(
         scenarioCode,
         source: group,
         bizRef: {
+          scenarioCode,
           encounterId: encounterId ?? undefined,
           prescriptionNo: prescriptionNo || undefined,
         },
@@ -824,31 +916,52 @@ async function executeDispenseForLineIds(
         alreadyPreparedIds.push(id);
         continue;
       }
-      let pickRaw = inventoryPickByLineId.value[id];
-      const inv0 = row.inventoryDetailList?.[0];
-      if (!pickRaw && inv0) {
-        pickRaw = encodeInventoryPick({
-          pharmacyOrganizationId: String(inv0.pharmacyOrganizationId),
-          lotNumber: inv0.lotNumber,
-        });
-      }
-      if (!pickRaw) {
-        ElMessage.error(`请为「${row.medicationName ?? '药品'}」选择发放库房`);
+      // 发放药房锁死为发药单行库房；批号来自本库候选选中项
+      const lockedLocationId = String(row.dispenseLocationId ?? '').trim();
+      if (!lockedLocationId) {
+        ElMessage.error(`「${row.medicationName ?? '药品'}」缺少发放库房，无法发药`);
         return;
       }
-      let dispenseLocationId: string;
+      let pickRaw = inventoryPickByLineId.value[id];
+      // 无手动选择时：本库候选中按行上批号默认，再回落本库首批
+      if (!pickRaw) {
+        const lockedInv = filterInventoryByLockedPharmacy(
+          row.inventoryDetailList,
+          lockedLocationId,
+        );
+        const anchoredLot = String(row.lotNumber ?? '').trim();
+        const invHit =
+          (anchoredLot
+            ? lockedInv.find((inv) => (inv.lotNumber?.trim() || '') === anchoredLot)
+            : undefined) ?? lockedInv[0];
+        if (invHit) {
+          pickRaw = encodeInventoryPick({
+            pharmacyOrganizationId: lockedLocationId,
+            lotNumber: invHit.lotNumber,
+          });
+        } else if (anchoredLot) {
+          // 本库暂无账面候选但仍有行上批号：按行批号提交，由后端库存断言决定成败
+          pickRaw = encodeInventoryPick({
+            pharmacyOrganizationId: lockedLocationId,
+            lotNumber: anchoredLot,
+          });
+        }
+      }
+      if (!pickRaw) {
+        ElMessage.error(`请为「${row.medicationName ?? '药品'}」选择批号`);
+        return;
+      }
       let lotNumber: string | undefined;
       try {
         const decoded = decodeInventoryPick(pickRaw);
-        dispenseLocationId = decoded.pharmacyOrganizationId;
         lotNumber = decoded.lotNumber;
       } catch {
-        ElMessage.error(`「${row.medicationName ?? '药品'}」库房选择数据无效，请重新选择`);
+        ElMessage.error(`「${row.medicationName ?? '药品'}」批号选择无效，请重新选择`);
         return;
       }
       prepLines.push({
         dispenseId: id,
-        dispenseLocationId,
+        dispenseLocationId: lockedLocationId,
         lotNumber,
         quantity: String(row.quantity),
         traceNo: traceCodeByLineId.value[id] || row.traceNo || undefined,
@@ -869,7 +982,17 @@ async function executeDispenseForLineIds(
     const res = await httpDispenseOutpatientMedications({
       encounterId: enc,
       contractBusNo: insuranceContractBusNo.value,
-      lines: dispenseIds.map((dispenseId) => ({ dispenseId })),
+      // 核发须带当前界面最终扫码：已配药跳过 savePrepare 时否则仍按旧码扣主档
+      lines: dispenseIds.map((dispenseId) => {
+        const row = slipById.get(dispenseId);
+        const fromCache = String(traceCodeByLineId.value[dispenseId] ?? '').trim();
+        const fromRow = String(row?.traceNo ?? '').trim();
+        const traceNo = fromCache || fromRow || undefined;
+        return {
+          dispenseId,
+          traceNo: traceNo || null,
+        };
+      }),
     });
     const message = res.message?.trim() || '发药提交成功';
     if (message.includes('EX-OPP-207')) {
@@ -877,6 +1000,8 @@ async function executeDispenseForLineIds(
     } else {
       ElMessage.success(message);
     }
+    // 核发成功后再自动点评：失败只软提示，绝不影响已成功发药
+    await tryAutoReviewAfterDispense(dispenseIds, slipById, preparerId);
     // 只清本批已发，保留同患者其余待发行的批量扫码
     clearTransientStateForDispensedLines(dispenseIds);
     await reloadEncounterSlipsFromServer(false);
@@ -901,6 +1026,55 @@ async function handleBatchDispense() {
   await executeDispenseForLineIds(selectedIds, '批量发药');
 }
 
+/**
+ * 发药成功后按开关触发自动点评；softFailed 仅提示手工补评。
+ *
+ * @param dispenseIds 本批已核发行 id
+ * @param slipById 核发前的发放行快照
+ * @param dispenserId 调配药师（点评人）
+ */
+async function tryAutoReviewAfterDispense(
+  dispenseIds: string[],
+  slipById: Map<string, EncounterMedicationDispenseSlipRowDto>,
+  dispenserId: string,
+) {
+  if (!autoReviewEnabled.value) {
+    return;
+  }
+  // 本批涉及处方号去重
+  const prescriptionNos: string[] = [];
+  const seen = new Set<string>();
+  for (const id of dispenseIds) {
+    const rxNo = String(slipById.get(id)?.prescriptionNo ?? '').trim();
+    if (!rxNo || seen.has(rxNo)) {
+      continue;
+    }
+    seen.add(rxNo);
+    prescriptionNos.push(rxNo);
+  }
+  if (prescriptionNos.length === 0) {
+    return;
+  }
+  const dispenserIdForRequest = preserveApiIdForRequest(dispenserId);
+  if (!dispenserIdForRequest) {
+    ElMessage.warning('发药成功，但自动点评未写入（缺少发药人），请稍后手工点评');
+    return;
+  }
+  try {
+    const autoRes = await createAutoReviewAfterDispenseApi({
+      prescriptionNos,
+      dispenserId: dispenserIdForRequest,
+      autoReviewEnabled: true,
+    });
+    if (autoRes?.softFailed) {
+      ElMessage.warning('发药成功，但自动点评未写入，请稍后手工点评');
+    }
+  } catch {
+    // 接口异常也不阻断发药成功事实
+    ElMessage.warning('发药成功，但自动点评未写入，请稍后手工点评');
+  }
+}
+
 /** 处方单视图：按单张处方块发药 */
 async function handleSinglePrescriptionDispense(rxId: string) {
   // 取该处方块在当前 tab 下列表中的全部发放行
@@ -916,12 +1090,12 @@ onMounted(async () => {
   await loadPageInit();
   try {
     const chargeTypes = await getChargeTypeListApi();
-    const eligible = filterInsuranceChargeTypes(chargeTypes);
-    insuranceChargeTypeOptions.value = eligible;
-    insuranceContractBusNo.value = resolveDefaultInsuranceBusNo(eligible);
+    // 仅解析默认契约供发药请求，不再展示左上角选择器
+    insuranceContractBusNo.value = resolveDefaultInsuranceBusNo(
+      filterInsuranceChargeTypes(chargeTypes),
+    );
   } catch {
     insuranceContractBusNo.value = undefined;
-    insuranceChargeTypeOptions.value = [];
   }
   await reloadQueue();
 });
@@ -936,34 +1110,12 @@ onMounted(async () => {
       :show-right="false"
       :show-footer="false"
       class="pharmacy-dispense-outpatient min-h-0 min-w-0 flex-1"
-      left-track="minmax(240px, 264px)"
-      left-track-lg="minmax(240px, 264px)"
+      :left-track="leftTrack"
+      :left-track-lg="leftTrack"
       center-track="minmax(0, 1fr)"
     >
       <template #left>
         <div class="flex h-full min-h-0 flex-col">
-          <div
-            v-if="insuranceChargeTypeOptions.length > 0"
-            class="border-b border-solid border-[var(--el-border-color-lighter)] px-2 pb-2"
-          >
-            <div class="flex min-w-0 items-center gap-1.5">
-              <span class="shrink-0 text-xs text-[var(--el-text-color-secondary)]">医保契约</span>
-              <ElSelect
-                v-model="insuranceContractBusNo"
-                class="!min-w-0 flex-1"
-                placeholder="请选择医保契约"
-                filterable
-                clearable
-              >
-                <ElOption
-                  v-for="item in insuranceChargeTypeOptions"
-                  :key="item.busNo"
-                  :label="item.busNo ? `${item.label}（${item.busNo}）` : item.label"
-                  :value="item.busNo"
-                />
-              </ElSelect>
-            </div>
-          </div>
           <div class="min-h-0 flex-1 overflow-hidden">
             <DispenseQueuePanel
               v-model:keyword="keyword"
@@ -986,6 +1138,7 @@ onMounted(async () => {
           v-model:active-rx-kind="activeRxKind"
           v-model:inventory-pick-by-line-id="inventoryPickByLineId"
           v-model:selected-dispenser-id="selectedDispenserId"
+          v-model:auto-review-enabled="autoReviewEnabled"
           v-model:selected-prescription-id="selectedPrescriptionId"
           :batch-dispense-disabled="queueScope === 'completed' || batchSubmitting || slipLoading"
           :print-prescriptions-disabled="printSubmitting || slipLoading"
@@ -999,6 +1152,8 @@ onMounted(async () => {
           :prescription-row-count="prescriptionList.length"
           :dispenser-options="dispenserOptions"
           :rx-kind-badge-counts="rxKindBadgeCounts"
+          :msfx-his-scene="MSFX_HIS_SCENE.OP_DISPENSE"
+          :show-auto-review-switch="true"
           @batch-dispense="handleBatchDispense"
           @batch-trace-scan="handleBatchTraceScan"
           @dispense-prescription="handleSinglePrescriptionDispense"

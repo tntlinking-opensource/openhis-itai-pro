@@ -27,6 +27,7 @@ import type { DeviceCatalogImportProgressResult } from '#/api';
 import { PublicationStatusCode } from '#/constants/domain/publication-status';
 import StatusEnumTag from '#/components/status-enum-tag.vue';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import { DEVICE_CATALOG_EXPORT_COLUMNS } from '#/utils/export/catalog-excel-export-columns';
 import { downloadBinaryExportFile } from '#/utils/export/download-binary-export';
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
 
@@ -414,6 +415,7 @@ const handleExportCatalog = async () => {
     const result = await exportDeviceCatalogApi({
       keyword: queryParams.value.keyword || undefined,
       categoryCode: normalizeCategoryCodeForApi(queryParams.value.categoryCode),
+      exportColumns: DEVICE_CATALOG_EXPORT_COLUMNS,
     });
     if (!result?.fileBytes?.trim()) {
       ElMessage.warning('导出内容为空');

@@ -16,6 +16,7 @@ public final class CampusArchiveApplicationConstants {
     public static final String CHANGE_SOURCE_MANUAL = "MANUAL";
     public static final String CHANGE_SOURCE_SYNC = "SYNC";
     public static final String CHANGE_SOURCE_SYSTEM = "SYSTEM";
+    public static final String CHANGE_SOURCE_PEIS_ROSTER_IMPORT = "PEIS_ROSTER_IMPORT";
 
     public static final String TRANSFER_SOURCE_MANUAL = "MANUAL";
     public static final String TRANSFER_TYPE_CAMPUS = "CAMPUS";

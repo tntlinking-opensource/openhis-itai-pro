@@ -7,6 +7,7 @@ package com.openhis.health.application.report.inoutdetail.dto;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.openhis.health.domain.share.constants.ChargeItemAmountScaleConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.whale.core.application.annotation.Excel;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -92,10 +93,10 @@ public class InpatientInOutDetailRowDto {
     private LocalDateTime endTime;
 
     /**
-     * 住院天数：自然日，入院日计第 1 天；有出院日截至出院日，否则截至当天。
+     * 住院天数：即进不计出（入院日计、出院日不计；同日 1 天）；在院未出院含当日。
      */
     @Excel(name = "住院天数", sort = 12)
-    @Schema(description = "住院天数（入院日计第1天；未出院用当天）")
+    @Schema(description = "住院天数（即进不计出；在院含当日）")
     private Integer inpatientDays;
 
     /** 转往科室文案；无转科可空。 */
@@ -113,9 +114,9 @@ public class InpatientInOutDetailRowDto {
     private String feeNatureDisplay;
 
     /**
-     * 已结费用净额；无有效净额或待重结为 null（禁止 0）。
+     * 已结费用净额；无有效净额或待重结为 null（禁止 0）；展示 2 位。
      */
-    @Excel(name = "已结费用", sort = 15)
+    @Excel(name = "已结费用", sort = 15, scale = ChargeItemAmountScaleConstants.CHARGE_MONETARY_DISPLAY_SCALE)
     @Schema(description = "已结费用净额；空表示未结/待重结")
     private BigDecimal settledFeeAmount;
 

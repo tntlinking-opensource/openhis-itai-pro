@@ -25,10 +25,31 @@ export interface ListNurseStationOrderExecuteRequest {
   therapyType?: NurseStationOrderExecuteTherapyFilter;
   medicineCategoryTab?: NurseStationOrderExecuteMedicineCategoryTab;
   executionDeadline: string;
+}
+
+/**
+ * 打印中心 · 医嘱执行列表查询（与医嘱执行页 IF-IP-EXE-01 隔离）。
+ * 含计划点下界、开嘱日区间等打印专用过滤字段。
+ */
+export interface ListNurseStationOrderExecuteForPrintRequest {
+  encounterIds: string[];
+  executeTab: NurseStationOrderExecuteTab;
+  therapyType?: NurseStationOrderExecuteTherapyFilter;
+  medicineCategoryTab?: NurseStationOrderExecuteMedicineCategoryTab;
+  executionDeadline: string;
+  /**
+   * 计划执行日起（含）YYYY-MM-DD HH:mm:ss；空表示不下界过滤。
+   * 与 executionDeadline 组成计划点闭区间。
+   */
+  planTimeFrom?: string;
   /** 开嘱日起（含）YYYY-MM-DD HH:mm:ss；空表示不下界过滤 */
   reqOpenedTimeFrom?: string;
   /** 开嘱日止（含）YYYY-MM-DD HH:mm:ss；空表示不上界过滤 */
   reqOpenedTimeTo?: string;
+  /**
+   * 执行记录历史模式：true=事实行（含对冲前 COMPLETED）；医生站/病案弹窗传 true。
+   */
+  executionRecordHistory?: boolean;
 }
 
 /** 执行槽位（与后端 NurseStationOrderExecuteSlotDto 对齐） */
@@ -155,6 +176,10 @@ export interface NurseStationOrderExecuteRowDto {
   lineRequestIds?: string[];
   sufferingFlag?: boolean;
   chineseHerbsDoseQuantity?: number | string;
+  /** 诊疗定义主键（检验合管反查） */
+  activityDefinitionId?: string;
+  /** 合管检验设备主键（采血贴分组） */
+  specimenTubeMergeDeviceId?: string;
 }
 
 /** 按就诊分组的医嘱列表 */
@@ -180,6 +205,12 @@ export interface NurseStationOrderExecuteWriteSlotDto {
   prescriptionNo?: string;
   /** 中药方内全部药品申请主键（列表 lineRequestIds 回传） */
   lineRequestIds?: string[];
+  /** 是否命中口服一盒一点剩余规则 */
+  oralPackageBatchInventoryApplied?: boolean;
+  oralPackageConsumedSplitQuantity?: number | string;
+  oralPackageRemainSplitQuantity?: number | string;
+  oralPackageSplitUnitDisplay?: string;
+  oralPackageNextClaimDate?: string;
 }
 
 /** 批量执行医嘱 */

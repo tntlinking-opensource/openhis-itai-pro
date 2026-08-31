@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ApiOptionItem } from '#/types/api-response';
+import type { ExcelExportSourceColumn } from '#/utils/export/build-excel-export-columns';
 
 import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 
@@ -44,6 +45,7 @@ import {
 } from '#/api/pharmacy/outpatient-dispense-record';
 import TraceCodeTooltip from '#/components/trace/trace-code-tooltip.vue';
 import { useRequest } from '#/hooks/use-request';
+import { buildExcelExportColumns } from '#/utils/export/build-excel-export-columns';
 import { downloadBinaryExportFile } from '#/utils/export/download-binary-export';
 import { formatMoneyDisplay, formatMoneyYuan } from '#/utils/format/money-scale';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
@@ -67,6 +69,30 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {});
+
+/** 与表格可见列对齐的导出目录（数量单独展开为 quantity+unitText）。 */
+const DISPENSE_RECORD_EXPORT_COLUMNS: ExcelExportSourceColumn[] = [
+  { field: 'prescriptionNo', title: '处方号' },
+  { field: 'recordTypeText', title: '类型' },
+  { field: 'patientName', title: '患者' },
+  { field: 'encounterBusNo', title: '门诊号' },
+  { field: 'inpatientNo', title: '住院号' },
+  { field: 'wardName', title: '病区' },
+  { field: 'bedName', title: '床号' },
+  { field: 'medicationName', title: '药品名称' },
+  { field: 'medicationSpec', title: '规格' },
+  { field: 'quantityDisplay', title: '数量' },
+  { field: 'unitPrice', title: '单价' },
+  { field: 'totalAmount', title: '金额' },
+  { field: 'lotNumber', title: '批号' },
+  { field: 'traceNo', title: '追溯码' },
+  { field: 'manufacturerText', title: '厂家' },
+  { field: 'summaryNo', title: '汇总单号' },
+  { field: 'orderingDepartmentName', title: '开单科室' },
+  { field: 'dispenseTime', title: '发药时间' },
+  { field: 'pharmacyLocationName', title: '药房' },
+  { field: 'dispenserName', title: '发药人' },
+];
 
 interface QueryFormState {
   pageNo: number;
@@ -349,13 +375,32 @@ function handleQuery() {
   void getList();
 }
 
-/** 导出当前筛选条件下的全部记录。 */
+/** 导出当前筛选条件下的全部记录（列清单与表格可见列一致）。 */
 async function handleExport() {
   const filters = buildFilterPayload();
   if (!filters) {
     return;
   }
-  await runExport(filters);
+  // 门诊不导住院专属列；数量展开为可求和 + 单位
+  const catalog =
+    props.scope === 'outpatient'
+      ? DISPENSE_RECORD_EXPORT_COLUMNS.filter(
+          (col) =>
+            col.field !== 'inpatientNo' && col.field !== 'wardName' && col.field !== 'bedName',
+        )
+      : DISPENSE_RECORD_EXPORT_COLUMNS;
+  const exportColumns = buildExcelExportColumns(catalog, {
+    fieldExpand: {
+      quantityDisplay: [
+        { field: 'quantity', title: '数量' },
+        { field: 'unitText', title: '单位' },
+      ],
+    },
+  });
+  await runExport({
+    ...filters,
+    exportColumns,
+  });
 }
 
 /** 重置筛选项为初始化默认值。 */

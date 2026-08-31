@@ -39,7 +39,12 @@ import {
 } from '#/api/finance/cashier-settlement-approval';
 import DailySettlementSummaryPanel from '#/components/charge/daily-settlement-summary-panel.vue';
 import { useRequest } from '#/hooks/use-request';
-import { formatMoneyDisplay, sumMoneyThenSettle } from '#/utils/format/money-scale';
+import {
+  formatMoneyDisplay,
+  formatPurchaseMoneyDisplay,
+  formatPurchaseUnitPriceDisplay,
+  sumMoneyThenSettle,
+} from '#/utils/format/money-scale';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import { printDailySettlement } from '#/utils/print/print-daily-settlement';
 import { printPharmacyDailySettlement } from '#/utils/print/print-pharmacy-daily-settlement';
@@ -71,7 +76,7 @@ const CATEGORY_PHARMACY = 'PHARMACY';
 /** 门诊/住院收款日结类型 code。 */
 const TYPE_OP_PAYMENT = 'OP_PAYMENT';
 const TYPE_IP_PAYMENT = 'IP_PAYMENT';
-/** 门诊/住院药房日结类型 code（金额展示用售价合计）。 */
+/** 门诊/住院药房日结类型 code（列表金额=头表售价合计快照；详情金额优先大类售价合计）。 */
 const TYPE_OP_PHARMACY = 'OP_PHARMACY';
 const TYPE_IP_PHARMACY = 'IP_PHARMACY';
 const PAGE_TITLE = '交账审批';
@@ -317,7 +322,30 @@ const canExportDetail = computed(() => {
   );
 });
 
-/** 金额两位小数展示。 */
+/** 取可比较金额；非法值按 0。 */
+function toComparableAmount(value: unknown): number {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : 0;
+}
+
+/** 按售价总额倒序（金额大在上）。 */
+function sortBySaleAmountDesc<T extends { saleAmount?: string | number }>(rows: T[]): T[] {
+  return [...rows].sort(
+    (a, b) => toComparableAmount(b.saleAmount) - toComparableAmount(a.saleAmount),
+  );
+}
+
+/** 详情大类汇总（售价总额倒序）。 */
+const detailPharmacyCategoryRows = computed(() =>
+  sortBySaleAmountDesc(detailData.value?.pharmacyCategoryRows ?? []),
+);
+
+/** 详情品规汇总（售价总额倒序）。 */
+const detailPharmacyProductRows = computed(() =>
+  sortBySaleAmountDesc(detailData.value?.pharmacyProductRows ?? []),
+);
+
+/** 金额两位小数展示（售价/结算）。 */
 function formatAmount(value?: string | number): string {
   if (value === null || value === undefined || value === '') {
     return '—';
@@ -327,6 +355,22 @@ function formatAmount(value?: string | number): string {
     return String(value);
   }
   return formatMoneyDisplay(num);
+}
+
+/** 进价侧金额：最多三位去尾零。 */
+function formatPurchaseAmount(value?: string | number, categoryCode?: unknown): string {
+  if (value === null || value === undefined || value === '') {
+    return '—';
+  }
+  return formatPurchaseMoneyDisplay(value, categoryCode) || '—';
+}
+
+/** 进价单价：最多三位去尾零。 */
+function formatPurchaseUnitPrice(value?: string | number): string {
+  if (value === null || value === undefined || value === '') {
+    return '—';
+  }
+  return formatPurchaseUnitPriceDisplay(value) || '—';
 }
 
 /** 大类行是否含有效进/售金额（排除驳回清挂载后的零占位）。 */
@@ -346,7 +390,8 @@ function hasPharmacyCategoryAmount(
 
 /**
  * 审批金额展示规则：
- * 药房日结优先大类「售价总额」加总；收款日结 / 无有效大类时用头表 totalIncome。
+ * 详情药房优先大类「售价总额」加总；列表 / 收款 / 无有效大类时用头表 totalIncome 快照
+ *（药房头表快照=售价合计，与主区同口径）。
  */
 function resolveApprovalAmount(
   totalIncome?: string | number,
@@ -465,8 +510,8 @@ async function handlePrintDetail() {
           dispenserNamesText: '—',
           pendingCount: detail.mountedSourceCount ?? header.paymentCount ?? 0,
           totalIncome: pharmacyTotalIncome,
-          categoryRows: detail.pharmacyCategoryRows,
-          productRows: detail.pharmacyProductRows,
+          categoryRows: detailPharmacyCategoryRows.value,
+          productRows: detailPharmacyProductRows.value,
         },
       });
       return;
@@ -481,6 +526,7 @@ async function handlePrintDetail() {
       bizRef: settlementId ? { settlementId } : undefined,
       source: {
         hospitalName: resolvePrintHospitalName(),
+        documentTitle: resolvePrintJobName(typeEnum),
         cashierName: header.submitterName?.trim() || '',
         settlementPeriodText,
         rows: detail.paymentRows,
@@ -503,7 +549,11 @@ function handleExportDetail() {
     ElMessage.warning('当前详情无可导出的明细');
     return;
   }
-  downloadCashierSettlementApprovalDetailExcel(detail);
+  downloadCashierSettlementApprovalDetailExcel({
+    ...detail,
+    pharmacyCategoryRows: detailPharmacyCategoryRows.value,
+    pharmacyProductRows: detailPharmacyProductRows.value,
+  });
   ElMessage.success('导出成功');
 }
 
@@ -783,10 +833,10 @@ onMounted(async () => {
         </template>
 
         <!-- 药房日结体现算 -->
-        <template v-if="detailData.pharmacyCategoryRows?.length">
+        <template v-if="detailPharmacyCategoryRows.length">
           <h4 class="mb-2 text-sm font-medium">大类汇总</h4>
           <ElTable
-            :data="detailData.pharmacyCategoryRows"
+            :data="detailPharmacyCategoryRows"
             border
             size="small"
             class="mb-3"
@@ -795,7 +845,7 @@ onMounted(async () => {
             <ElTableColumn prop="categoryLabel" label="大类" min-width="100" align="center" />
             <ElTableColumn label="进价总额" width="100" align="right" header-align="right">
               <template #default="{ row }">
-                {{ formatAmount(row.purchaseAmount) }}
+                {{ formatPurchaseAmount(row.purchaseAmount, row.categoryCode) }}
               </template>
             </ElTableColumn>
             <ElTableColumn label="售价总额" width="100" align="right" header-align="right">
@@ -805,10 +855,10 @@ onMounted(async () => {
             </ElTableColumn>
           </ElTable>
         </template>
-        <template v-if="detailData.pharmacyProductRows?.length">
+        <template v-if="detailPharmacyProductRows.length">
           <h4 class="mb-2 text-sm font-medium">品规汇总</h4>
           <ElTable
-            :data="detailData.pharmacyProductRows"
+            :data="detailPharmacyProductRows"
             border
             size="small"
             class="mb-3"
@@ -830,7 +880,7 @@ onMounted(async () => {
             </ElTableColumn>
             <ElTableColumn label="进价单价" width="100" align="right" header-align="right">
               <template #default="{ row }">
-                {{ formatAmount(row.purchaseUnitPrice) }}
+                {{ formatPurchaseUnitPrice(row.purchaseUnitPrice) }}
               </template>
             </ElTableColumn>
             <ElTableColumn label="售价单价" width="100" align="right" header-align="right">
@@ -840,7 +890,7 @@ onMounted(async () => {
             </ElTableColumn>
             <ElTableColumn label="进价总额" width="100" align="right" header-align="right">
               <template #default="{ row }">
-                {{ formatAmount(row.purchaseAmount) }}
+                {{ formatPurchaseAmount(row.purchaseAmount) }}
               </template>
             </ElTableColumn>
             <ElTableColumn label="售价总额" width="100" align="right" header-align="right">

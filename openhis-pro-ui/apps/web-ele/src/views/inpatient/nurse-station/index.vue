@@ -66,7 +66,9 @@ const { bedBoardGroups, bedBoardLoading, bedBoardPanel, loadBedBoard } = useNurs
 });
 const {
   activePatientId,
+  clearSelectedPatients,
   initSelectionState,
+  keepFirstSelectedPatient,
   patientListPanelSelectionContext,
   selectedPatientIds,
   setActivePatient,
@@ -128,6 +130,13 @@ const operationBlockedByUnassignedBed = computed(() => {
 
 /** 根据当前导航拼装组件入参，保证 KeepAlive 缓存切换不丢状态。 */
 const currentOperationProps = computed<Record<string, unknown>>(() => {
+  if (activeOperationTab.value === OPERATION_TAB.PRINT_CENTER) {
+    return {
+      patients: filterBedAssignedModulePatients(selectedPatients.value),
+      onKeepFirstPatient: keepFirstSelectedPatient,
+      onClearPatients: clearSelectedPatients,
+    };
+  }
   if (MULTI_PATIENT_OPERATION_TABS.has(activeOperationTab.value)) {
     return { patients: filterBedAssignedModulePatients(selectedPatients.value) };
   }

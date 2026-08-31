@@ -1,11 +1,10 @@
 /**
  * 门诊费用明细 — POST /api/app/outpatientFeeDetail/<method>
  */
+import { reportPost } from '#/constants/report-request-timeout';
 import type { ApiOptionItem, PageParams } from '#/types/api-response';
+import type { ExcelExportColumnPayload } from '#/utils/export/build-excel-export-columns';
 import type { BinaryExportResult } from '#/utils/export/download-binary-export';
-
-import { publicRequestClient } from '#/api/request';
-import { reportLongRequestConfig } from '#/constants/report-request-timeout';
 
 const BASE = '/outpatientFeeDetail';
 
@@ -100,7 +99,10 @@ export interface PageOutpatientFeeDetailResponse {
 export type ExportOutpatientFeeDetailParams = Omit<
   PageOutpatientFeeDetailParams,
   'pageNo' | 'pageSize'
->;
+> & {
+  /** 当前可见列 → 后端 Excel 列裁剪 */
+  exportColumns?: ExcelExportColumnPayload[];
+};
 
 export interface ExportOutpatientFeeDetailResponse extends BinaryExportResult {
   rowCount?: number;
@@ -108,7 +110,7 @@ export interface ExportOutpatientFeeDetailResponse extends BinaryExportResult {
 
 /** 加载门诊费用明细页筛选项与默认日期。 */
 export async function loadOutpatientFeeDetailPageInitApi() {
-  return publicRequestClient.post<LoadOutpatientFeeDetailPageInitResponse>(
+  return reportPost<LoadOutpatientFeeDetailPageInitResponse>(
     `${BASE}/loadOutpatientFeeDetailPageInit`,
     {},
   );
@@ -116,18 +118,10 @@ export async function loadOutpatientFeeDetailPageInitApi() {
 
 /** 按筛选条件分页查询就诊块与全量合计。 */
 export async function pageOutpatientFeeDetailApi(body: PageOutpatientFeeDetailParams) {
-  return publicRequestClient.post<PageOutpatientFeeDetailResponse>(
-    `${BASE}/pageOutpatientFeeDetail`,
-    body,
-    reportLongRequestConfig(),
-  );
+  return reportPost<PageOutpatientFeeDetailResponse>(`${BASE}/pageOutpatientFeeDetail`, body);
 }
 
 /** 按当前筛选条件导出门诊费用明细 Excel。 */
 export async function exportOutpatientFeeDetailApi(body: ExportOutpatientFeeDetailParams) {
-  return publicRequestClient.post<ExportOutpatientFeeDetailResponse>(
-    `${BASE}/exportOutpatientFeeDetail`,
-    body,
-    reportLongRequestConfig(),
-  );
+  return reportPost<ExportOutpatientFeeDetailResponse>(`${BASE}/exportOutpatientFeeDetail`, body);
 }

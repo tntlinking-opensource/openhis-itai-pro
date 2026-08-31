@@ -1,11 +1,10 @@
 /**
  * 门诊/住院发药报表 — POST /api/app/{outpatient|inpatient}MedicationDispenseReport/{method}
  */
+import { reportPost } from '#/constants/report-request-timeout';
 import type { ApiOptionItem, PageParams } from '#/types/api-response';
 import type { BinaryExportResult } from '#/utils/export/download-binary-export';
-
-import { publicRequestClient } from '#/api/request';
-import { reportLongRequestConfig } from '#/constants/report-request-timeout';
+import type { ExcelExportColumnPayload } from '#/utils/export/build-excel-export-columns';
 
 export const PRESENTATION_MODE_SUMMARY = 'SUMMARY' as const;
 export const PRESENTATION_MODE_DETAIL = 'DETAIL' as const;
@@ -69,6 +68,16 @@ export interface MedicationDispenseSummaryRowDto {
   categoryCode?: string;
   organizationId?: string;
   netQuantity?: number | string;
+  /** 药品编码（仅品规汇总） */
+  medicationCode?: string;
+  /** 最小单位净数量（仅品规汇总） */
+  minUnitQuantity?: number | string;
+  /** 包装单位名（仅品规汇总；数量列拼接） */
+  packageUnitName?: string;
+  /** 最小单位名（仅品规汇总；最小数量列拼接） */
+  minUnitName?: string;
+  purchaseUnitPrice?: number | string;
+  saleUnitPrice?: number | string;
   /** 进价净额 */
   purchaseNetAmount?: number | string;
   /** 售价净额 */
@@ -154,6 +163,8 @@ export interface PageMedicationDispenseReportDetailResponse {
 export interface ExportMedicationDispenseReportParams extends MedicationDispenseReportFilter {
   presentationMode: MedicationDispensePresentationMode;
   summaryDimension?: string;
+  /** 页面列清单；后端按 field 白名单裁剪写出 */
+  exportColumns?: ExcelExportColumnPayload[];
 }
 
 export type ExportMedicationDispenseReportResponse = BinaryExportResult;
@@ -175,13 +186,10 @@ export async function loadMedicationDispenseReportPageInitApi(
     scope === 'inpatient'
       ? 'loadInpatientMedicationDispenseReportPageInit'
       : 'loadOutpatientMedicationDispenseReportPageInit';
-  return publicRequestClient.post<LoadMedicationDispenseReportPageInitResponse>(
-    `${base}/${method}`,
-    {},
-  );
+  return reportPost<LoadMedicationDispenseReportPageInitResponse>(`${base}/${method}`, {});
 }
 
-/** 按药房/品规/类型/科室净汇总。 */
+/** 按药房/品规/类型/科室净汇总（跨多日常超过 Axios 默认 10s）。 */
 export async function summarizeMedicationDispenseReportApi(
   scope: MedicationDispenseReportScope,
   body: SummarizeMedicationDispenseReportParams,
@@ -191,11 +199,7 @@ export async function summarizeMedicationDispenseReportApi(
     scope === 'inpatient'
       ? 'summarizeInpatientMedicationDispenseReport'
       : 'summarizeOutpatientMedicationDispenseReport';
-  return publicRequestClient.post<SummarizeMedicationDispenseReportResponse>(
-    `${base}/${method}`,
-    body,
-    reportLongRequestConfig(),
-  );
+  return reportPost<SummarizeMedicationDispenseReportResponse>(`${base}/${method}`, body);
 }
 
 /** 明细分页（患者发退药 ∪ 科室领用/退领）。 */
@@ -208,11 +212,7 @@ export async function pageMedicationDispenseReportDetailApi(
     scope === 'inpatient'
       ? 'pageInpatientMedicationDispenseReportDetail'
       : 'pageOutpatientMedicationDispenseReportDetail';
-  return publicRequestClient.post<PageMedicationDispenseReportDetailResponse>(
-    `${base}/${method}`,
-    body,
-    reportLongRequestConfig(),
-  );
+  return reportPost<PageMedicationDispenseReportDetailResponse>(`${base}/${method}`, body);
 }
 
 /** 导出当前 Tab（汇总 / 明细）xlsx。 */
@@ -225,9 +225,5 @@ export async function exportMedicationDispenseReportApi(
     scope === 'inpatient'
       ? 'exportInpatientMedicationDispenseReport'
       : 'exportOutpatientMedicationDispenseReport';
-  return publicRequestClient.post<ExportMedicationDispenseReportResponse>(
-    `${base}/${method}`,
-    body,
-    reportLongRequestConfig(),
-  );
+  return reportPost<ExportMedicationDispenseReportResponse>(`${base}/${method}`, body);
 }

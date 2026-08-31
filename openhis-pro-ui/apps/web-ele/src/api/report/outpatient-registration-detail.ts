@@ -2,11 +2,11 @@
  * 门诊挂号明细报表 — POST /api/app/outpatientRegistrationDetailReport/{methodName}
  * AS-RPT-007 IF-RPT-ORG-01～04
  */
+import { reportPost } from '#/constants/report-request-timeout';
 import type { ApiOptionItem, PageParams } from '#/types/api-response';
+import type { ExcelExportColumnPayload } from '#/utils/export/build-excel-export-columns';
 import type { BinaryExportResult } from '#/utils/export/download-binary-export';
 
-import { publicRequestClient } from '#/api/request';
-import { reportLongRequestConfig } from '#/constants/report-request-timeout';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
 const BASE = '/outpatientRegistrationDetailReport';
@@ -111,13 +111,15 @@ export interface PageOutpatientRegistrationDetailReportDetailResponse {
 export interface ExportOutpatientRegistrationDetailReportRequest
   extends OutpatientRegistrationDetailQueryFilter {
   presentationMode: PresentationModeCode | string;
+  /** 当前 Tab 可见列 → 后端 Excel 列裁剪 */
+  exportColumns?: ExcelExportColumnPayload[];
 }
 
 export type ExportOutpatientRegistrationDetailReportResponse = BinaryExportResult;
 
 /** IF-01：页初始化。 */
 export async function loadOutpatientRegistrationDetailReportPageInitApi() {
-  return publicRequestClient.post<LoadOutpatientRegistrationDetailReportPageInitResponse>(
+  return reportPost<LoadOutpatientRegistrationDetailReportPageInitResponse>(
     `${BASE}/loadOutpatientRegistrationDetailReportPageInit`,
     {},
   );
@@ -127,10 +129,9 @@ export async function loadOutpatientRegistrationDetailReportPageInitApi() {
 export async function summarizeOutpatientRegistrationDetailReportApi(
   body: OutpatientRegistrationDetailQueryFilter,
 ) {
-  return publicRequestClient.post<SummarizeOutpatientRegistrationDetailReportResponse>(
+  return reportPost<SummarizeOutpatientRegistrationDetailReportResponse>(
     `${BASE}/summarizeOutpatientRegistrationDetailReport`,
     body,
-    reportLongRequestConfig(),
   );
 }
 
@@ -138,10 +139,9 @@ export async function summarizeOutpatientRegistrationDetailReportApi(
 export async function pageOutpatientRegistrationDetailReportDetailApi(
   body: PageOutpatientRegistrationDetailReportDetailRequest,
 ) {
-  const res = await publicRequestClient.post<PageOutpatientRegistrationDetailReportDetailResponse>(
+  const res = await reportPost<PageOutpatientRegistrationDetailReportDetailResponse>(
     `${BASE}/pageOutpatientRegistrationDetailReportDetail`,
     body,
-    reportLongRequestConfig(),
   );
   const { content, totalCount } =
     parsePagedRowsFromApiData<OutpatientRegistrationDetailRowDto>(res);
@@ -156,9 +156,8 @@ export async function pageOutpatientRegistrationDetailReportDetailApi(
 export async function exportOutpatientRegistrationDetailReportApi(
   body: ExportOutpatientRegistrationDetailReportRequest,
 ) {
-  return publicRequestClient.post<ExportOutpatientRegistrationDetailReportResponse>(
+  return reportPost<ExportOutpatientRegistrationDetailReportResponse>(
     `${BASE}/exportOutpatientRegistrationDetailReport`,
     body,
-    reportLongRequestConfig(),
   );
 }

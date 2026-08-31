@@ -100,6 +100,12 @@ public class PrintConfigResolver {
         if (p.getLeftMm() > 0) {
             t.setLeftMm(p.getLeftMm());
         }
+        if (p.getContentTopMm() > 0) {
+            t.setContentTopMm(p.getContentTopMm());
+        }
+        if (p.getContentBottomMm() > 0) {
+            t.setContentBottomMm(p.getContentBottomMm());
+        }
     }
 
     private static void mergeHeader(PrintConfig.HeaderConfig t, PrintConfig.HeaderConfig p) {

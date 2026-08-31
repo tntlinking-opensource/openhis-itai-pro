@@ -1,4 +1,5 @@
-import type { ApiResponse } from '#/types/api-response';
+import type { ApiOptionItem, ApiResponse } from '#/types/api-response';
+import type { ExcelExportColumnPayload } from '#/utils/export/build-excel-export-columns';
 
 import type { DoctorStationMedicationUnitBandDto } from '#/api/doctor-station/advice.types';
 import { requestClient } from '#/api/request';
@@ -13,8 +14,8 @@ export interface PageMedicationCatalogParams {
   pageSize?: number;
   name?: string;
   categoryCode?: string;
-  /** 基药标识；undefined 表示不限 */
-  basicFlag?: boolean;
+  /** 重点药类型（KeyDrugType code）；undefined 表示不限 */
+  keyDrugType?: string;
 }
 
 /**
@@ -27,6 +28,10 @@ export interface MedicationCatalogItem {
   /** PublicationStatus#getCode()，如 ACTIVE、INACTIVE（字符串，勿与枚举序列号混用） */
   statusEnum?: string;
   medicationDefId?: string | number;
+  /** 生产厂家主键（写请求须 string） */
+  manufacturerId?: string;
+  /** 生产厂家展示名（只读；列表/详情由后端按 manufacturerId 回填） */
+  manufacturerText?: string;
   /** 医保对码等布尔标志位（与后端 Boolean JSON 一致） */
   ybMatchFlag?: boolean;
   /** 采购→拆零换算比（1 采购单位 = N 拆零） */
@@ -196,6 +201,8 @@ export async function listMedicationLotPricesApi(
  * 药品目录初始化响应
  */
 export interface MedicationCatalogInitResponse {
+  /** 生产厂家下拉（cus_supplier type=1；value=id 字符串） */
+  manufacturerOptions?: ApiOptionItem[];
   [key: string]: unknown;
 }
 
@@ -262,8 +269,10 @@ export async function downloadMedicationCatalogImportTemplateApi(): Promise<Medi
 export interface ExportMedicationCatalogParams {
   keyword?: string;
   categoryCode?: string;
-  /** 基药标识；undefined 表示不限 */
-  basicFlag?: boolean;
+  /** 重点药类型（KeyDrugType code）；undefined 表示不限 */
+  keyDrugType?: string;
+  /** 导入模板表头序（编号 + COLUMN_HEADERS）；后端按中文表头匹配 */
+  exportColumns?: ExcelExportColumnPayload[];
 }
 
 /** 药品目录导出响应 */
@@ -293,6 +302,8 @@ export interface ExportDeviceCatalogParams {
   keyword?: string;
   categoryCode?: string;
   typeCode?: string;
+  /** 导入模板表头序（编号 + COLUMN_HEADERS）；后端按中文表头匹配 */
+  exportColumns?: ExcelExportColumnPayload[];
 }
 
 /** 耗材目录导出响应 */
@@ -321,6 +332,8 @@ export async function exportDeviceCatalogApi(
 export interface ExportServiceCatalogParams {
   keyword?: string;
   categoryCode?: string;
+  /** 导入模板表头序（编号 + COLUMN_HEADERS）；后端按中文表头匹配 */
+  exportColumns?: ExcelExportColumnPayload[];
 }
 
 /** 诊疗目录导出响应 */
@@ -899,9 +912,12 @@ export interface CreateDeviceCatalogParams {
   ybFlag?: boolean;
   ybNo?: string;
   ybMatchFlag?: boolean;
-  manufacturerId?: number;
+  /** 生产厂家主键（cus_supplier type=1；写请求须 string，避免雪花精度丢失） */
+  manufacturerId?: string;
+  /** 生产厂家展示名（只读；后端按 manufacturerId 解析） */
   manufacturerText?: string;
-  supplyId?: number;
+  /** 供应商主键（写请求须 string） */
+  supplyId?: string;
   description?: string;
   jurisdiction?: string;
   version?: string;
@@ -943,6 +959,10 @@ export async function createDeviceCatalogApi(
  * 设备目录初始化响应
  */
 export interface DeviceCatalogInitResponse {
+  /** 生产厂家下拉（cus_supplier type=1；value=id 字符串） */
+  manufacturerOptions?: ApiOptionItem[];
+  /** 供应商下拉（兼容旧字段） */
+  supplierListOptions?: ApiOptionItem[];
   [key: string]: unknown;
 }
 

@@ -471,6 +471,13 @@ public class MedicationDetailDto extends MedicationDto {
     @Schema(description = "是否为基本药物 1-是 0-否", example = "1", allowableValues = {"0", "1"})
     /** 是否为基本药物 1-是 0-否。 */
     private Boolean basicFlag;
+    /** 是否国家重点监控药品；勾选=是，口径对齐基药标识。 */
+    @Schema(description = "是否国家重点监控药品 1-是 0-否", example = "0", allowableValues = {"0", "1"})
+    private Boolean nationalMonitorFlag;
+
+    /** 是否集采药品；勾选=是，口径对齐基药标识。 */
+    @Schema(description = "是否集采药品 1-是 0-否", example = "0", allowableValues = {"0", "1"})
+    private Boolean centralPurchaseFlag;
 
 
     @Schema(description = "是否需要皮试 1-是 0-否", example = "0", allowableValues = {"0", "1"})

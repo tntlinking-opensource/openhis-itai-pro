@@ -3,7 +3,7 @@
  */
 export interface Catalog1312FilterParams {
   listType?: string;
-  /** 名称关键字，同时匹配 hilist_name / pinyin */
+  /** 名称关键字，同时匹配 hilist_name / pinyin / hilist_code */
   keyword?: string;
   hilistCode?: string;
   hilistName?: string;

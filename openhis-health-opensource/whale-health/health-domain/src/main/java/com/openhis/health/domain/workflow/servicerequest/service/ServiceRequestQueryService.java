@@ -181,6 +181,85 @@ public class ServiceRequestQueryService {
     }
 
     /**
+     * 按就诊集合批量加载未删除服务申请（列表/报表 enrich 用，禁止循环单条查）。
+     *
+     * @param encounterIds 就诊主键集合
+     * @return 实体列表；空入参返回空列表
+     */
+    public List<ServiceRequest> listByEncounterIds(Collection<Long> encounterIds) {
+        if (encounterIds == null || encounterIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        LinkedHashSet<Long> distinctEncounterIds = new LinkedHashSet<>();
+        for (Long encounterId : encounterIds) {
+            if (encounterId != null) {
+                distinctEncounterIds.add(encounterId);
+            }
+        }
+        if (distinctEncounterIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return serviceRequestRepository.findByEncounterIdInAndIsDeletedFalse(distinctEncounterIds);
+    }
+
+    /**
+     * 按就诊集合批量解析出院医嘱计划时间（{@code occurrence_start_time}）。
+     *
+     * <p>仅出院类目；跳过已取消；同就诊多条取最后一条有计划时间的。
+     * 无计划时间的就诊不入 Map（由调用方回落 Encounter.endTime）。</p>
+     *
+     * @param encounterIds 就诊主键集合
+     * @return encounterId → 计划出院时间
+     */
+    public Map<Long, LocalDateTime> mapDischargePlannedTimeByEncounterIds(Collection<Long> encounterIds) {
+        List<ServiceRequest> rows = this.listByEncounterIds(encounterIds);
+        if (rows.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        // 按主键升序，同就诊多条有效嘱时后者（更大 id）覆盖，避免 IN 查询无序导致抖动
+        rows = new ArrayList<>(rows);
+        rows.sort((left, right) -> {
+            Long leftId = null;
+            Long rightId = null;
+            if (left != null) {
+                leftId = left.getId();
+            }
+            if (right != null) {
+                rightId = right.getId();
+            }
+            if (leftId == null && rightId == null) {
+                return 0;
+            }
+            if (leftId == null) {
+                return -1;
+            }
+            if (rightId == null) {
+                return 1;
+            }
+            return Long.compare(leftId, rightId);
+        });
+        Map<Long, LocalDateTime> plannedByEncounter = new HashMap<>();
+        for (ServiceRequest row : rows) {
+            if (row == null || row.getEncounterId() == null) {
+                continue;
+            }
+            // 非出院类跳过
+            if (!ServiceRequestCategoryConstants.SERVICE_CATEGORY_DISCHARGE.equals(row.getCategoryEnum())) {
+                continue;
+            }
+            // 已取消出院嘱不参与业务出院时间
+            if (RequestStatus.CANCELLED.getCode().equals(row.getStatusEnum())) {
+                continue;
+            }
+            // 多条有效嘱后者覆盖
+            if (row.getOccurrenceStartTime() != null) {
+                plannedByEncounter.put(row.getEncounterId(), row.getOccurrenceStartTime());
+            }
+        }
+        return plannedByEncounter;
+    }
+
+    /**
      * 按就诊列出全部服务申请摘要。
      *
      * @param encounterId 就诊标识

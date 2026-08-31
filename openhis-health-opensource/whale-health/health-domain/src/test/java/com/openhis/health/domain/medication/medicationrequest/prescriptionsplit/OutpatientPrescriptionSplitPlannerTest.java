@@ -170,6 +170,60 @@ class OutpatientPrescriptionSplitPlannerTest {
     }
 
     @Test
+    void psychTwoMedicinePropertyGetsPsychTwoRxType() {
+        // 精二入西药轨装箱，但整方 rx_type 须落术语 355 码 8
+        List<PrescriptionSplitLineContext> lines = List.of(
+            lineWithMedicineProperty(
+                1L,
+                9401L,
+                PrescriptionSplitConstants.MEDICINE_PROPERTY_PSYCH_TWO,
+                DailySettlementSharedConstants.MEDICATION_CATEGORY_WESTERN_CODE)
+        );
+        List<OutpatientPrescriptionSplitPlanner.PrescriptionUnitPlan> plans =
+            OutpatientPrescriptionSplitPlanner.plan(lines, disabledAmountLimit());
+        assertEquals(1, plans.size());
+        assertEquals(PrescriptionSplitConstants.RX_TYPE_PSYCH_TWO, plans.get(0).getRxTypeCode());
+    }
+
+    @Test
+    void ordinaryPlusPsychTwoOnSameWesternTrackGetsPsychTwoRxType() {
+        // 普通 + 精二可同方；任一行精二则整方类别为精二
+        List<PrescriptionSplitLineContext> lines = List.of(
+            lineWithMedicineProperty(
+                1L,
+                9501L,
+                PrescriptionSplitConstants.MEDICINE_PROPERTY_NORMAL,
+                DailySettlementSharedConstants.MEDICATION_CATEGORY_WESTERN_CODE),
+            lineWithMedicineProperty(
+                2L,
+                9502L,
+                PrescriptionSplitConstants.MEDICINE_PROPERTY_PSYCH_TWO,
+                DailySettlementSharedConstants.MEDICATION_CATEGORY_WESTERN_CODE)
+        );
+        List<OutpatientPrescriptionSplitPlanner.PrescriptionUnitPlan> plans =
+            OutpatientPrescriptionSplitPlanner.plan(lines, disabledAmountLimit());
+        assertEquals(1, plans.size());
+        assertEquals(2, plans.get(0).getRequestIds().size());
+        assertEquals(PrescriptionSplitConstants.RX_TYPE_PSYCH_TWO, plans.get(0).getRxTypeCode());
+    }
+
+    @Test
+    void psychTwoChinesePatentGetsPsychTwoRxTypeNotPatent() {
+        // 精二中成药仍走中成药轨装箱，但方头类别优先为精二而非 10/11/12
+        List<PrescriptionSplitLineContext> lines = List.of(
+            lineWithMedicineProperty(
+                1L,
+                9601L,
+                PrescriptionSplitConstants.MEDICINE_PROPERTY_PSYCH_TWO,
+                DailySettlementSharedConstants.MEDICATION_CATEGORY_PATENT_CHINESE_CODE)
+        );
+        List<OutpatientPrescriptionSplitPlanner.PrescriptionUnitPlan> plans =
+            OutpatientPrescriptionSplitPlanner.plan(lines, disabledAmountLimit());
+        assertEquals(1, plans.size());
+        assertEquals(PrescriptionSplitConstants.RX_TYPE_PSYCH_TWO, plans.get(0).getRxTypeCode());
+    }
+
+    @Test
     void overlappingDiagnosisSetsMayStayOnSamePrescription() {
         // A 绑 B+C，D 仅绑 B：有交集 → 同方
         PrescriptionSplitLineContext drugA = line(1L, 9001L, null, "PO", "BID", null, null);

@@ -256,6 +256,28 @@ public interface DoctorStationAdviceConstants {
     String MSG_SIGN_FIFO_INSUFFICIENT_STOCK_FOR_DEVICE = "【%s】候选库位可用库存不足以覆盖耗材医嘱数量，拒绝签发";
 
     /**
+     * EX-ORD-309：门诊皮试药单批库存不足、需医生确认跨批暂存（IF-DOR-14 · BR-ORD-034）。
+     */
+    String EX_ORD_309 = "EX-ORD-309";
+
+    /**
+     * 门诊皮试药：无一单批够量，跨批可能多次皮试（{@code %s} 为药品展示名）。
+     */
+    String MSG_SIGN_SKIN_TEST_CROSS_LOT_CONFIRM =
+        "【%s】单独批号数量不够本次就诊使用，跨批号可能需要多次皮试，是否确认开立？";
+
+    /**
+     * EX-ORD-310：药耗签发 FIFO 跨批次取用，须医生确认分段数量与金额（IF-DOR-15 · BR-ORD-035）。
+     */
+    String EX_ORD_310 = "EX-ORD-310";
+
+    /**
+     * 跨批次签发确认文案：{@code %1$s} 品名；{@code %2$s} 分段明细；{@code %3$s} 合计展示金额。
+     */
+    String MSG_SIGN_CROSS_LOT_PRICING_CONFIRM =
+        "【%1$s】需跨批次取用：%2$s；合计 %3$s元。是否确认签发？";
+
+    /**
      * 药品/耗材医嘱草稿单位码缺省占位（与门诊 Mapper 口径一致，待主数据补齐后由域层校验）。
      */
     String DEFAULT_MEDICATION_REQUEST_UNIT_CODE_PLACEHOLDER = "U";
@@ -352,4 +374,22 @@ public interface DoctorStationAdviceConstants {
 
     /** IF-IP-DOR-27：药品不属于当前就诊。 */
     String MSG_APPEND_SKIN_TEST_ENCOUNTER_MISMATCH = "皮试药不属于当前就诊，无法追加皮试检查";
+
+    /** IF-IP-DOR-28：源药嘱主键必填。 */
+    String MSG_CHANGE_DOSE_SOURCE_ID_REQUIRED = "改量源药品医嘱主键不能为空";
+
+    /** IF-IP-DOR-28：新嘱药品载荷必填。 */
+    String MSG_CHANGE_DOSE_PAYLOAD_REQUIRED = "改量须提交新嘱药品载荷";
+
+    /** IF-IP-DOR-28：仅长期药品可改量。 */
+    String MSG_CHANGE_DOSE_LONG_TERM_MED_ONLY = "仅长期药品医嘱可改量";
+
+    /** IF-IP-DOR-28：源嘱须 VERIFIED 或 STOPPED。 */
+    String MSG_CHANGE_DOSE_STATUS_INVALID = "仅已校对或已停嘱的长期药品可改量";
+
+    /** IF-IP-DOR-28：禁止更换药品。 */
+    String MSG_CHANGE_DOSE_MEDICATION_MISMATCH = "改量不可更换药品，仅可调整剂量频次等";
+
+    /** IF-IP-DOR-28：源嘱不属于当前就诊。 */
+    String MSG_CHANGE_DOSE_ENCOUNTER_MISMATCH = "改量源医嘱不属于当前就诊";
 }

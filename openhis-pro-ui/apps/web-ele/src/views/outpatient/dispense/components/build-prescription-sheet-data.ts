@@ -71,6 +71,31 @@ function displayOrDash(raw: string | undefined): string {
   return t || '—';
 }
 
+/** 仅待发可改批号（已配药一键重试不会再走 savePrepare） */
+function blockAllowsLotChange(status: DispensePrescriptionBlock['status']): boolean {
+  return status === 'pending';
+}
+
+/**
+ * 明细行 → 笺面批号可改能力（本库有候选 + 处方可发）。
+ *
+ * @param line 处方明细
+ * @param blockCanChange 方头状态是否允许
+ */
+function resolveLineLotPick(
+  line: DispensePrescriptionLine,
+  blockCanChange: boolean,
+): {
+  canChangeLot: boolean;
+  lotPickOptions?: DispensePrescriptionLine['inventoryPickOptions'];
+} {
+  const opts = line.inventoryPickOptions;
+  if (!blockCanChange || !opts?.length || line.lineKind === 'decoctionFee') {
+    return { canChangeLot: false };
+  }
+  return { canChangeLot: true, lotPickOptions: opts };
+}
+
 /**
  * 笺面「发放药房」只取发放行库位名（接口 dispenseLocationName），
  * 不用库存下拉选中项——下拉含模板候选多库房，默认第一项常与发放行不一致。
@@ -183,33 +208,48 @@ export function buildPrescriptionSheetData(
     : undefined;
 
   // 西药按明细行展开；中药笺面用四列饮片网格，不走明细行版式
+  const blockCanChangeLot = blockAllowsLotChange(block.status);
+  const preferServerTrace = block.status === 'completed';
   const lines: PrescriptionSheetLine[] = isHerbal
     ? []
     : items.map((line) => {
         const freq = (line.freq ?? '').trim();
         const dosage = (line.dosageInstructionText ?? '').trim();
+        const lotPick = resolveLineLotPick(line, blockCanChangeLot);
+        // 已发：只展示落库码；待发才允许本地扫码缓存盖住
+        const traceRaw = preferServerTrace
+          ? line.traceCode
+          : options?.traceCodeByLineId?.[line.id] || line.traceCode;
         return {
+          dispenseId: line.id,
           itemName: displayOrDash(line.itemName),
           quantity: displayOrDash(line.quantity),
           spec: displayOrDash(line.spec),
           dosageInstructionText: dosage || undefined,
           batchNo: displayOrDash(line.batchNo),
-          amount: displayOrDash(line.amount),
-          traceCode: displayOrDash(options?.traceCodeByLineId?.[line.id] || line.traceCode),
+          unitPrice: displayOrDash(line.unitPrice),
+          traceCode: displayOrDash(traceRaw),
           factory: displayOrDash(line.factory),
           usage: freq && freq !== '—' ? freq : undefined,
+          remainingStockText: displayOrDash(line.remainingStockText),
+          ...lotPick,
         };
       });
   const tcmHerbGridRows = isHerbal ? resolveHerbGridRows(block) : undefined;
 
-  // 库存弹窗：中西药均按药品明细装配（不含代煎费）
+  // 库存弹窗：中西药均按药品明细装配（不含代煎费）；中药笺面改批号也走此弹窗
   const stockLines: PrescriptionSheetStockLine[] = items
     .filter((line) => (line.lineKind ?? 'medication') === 'medication')
-    .map((line) => ({
-      itemName: displayOrDash(line.itemName),
-      remainingStockText: displayOrDash(line.remainingStockText),
-      batchNo: displayOrDash(line.batchNo),
-    }));
+    .map((line) => {
+      const lotPick = resolveLineLotPick(line, blockCanChangeLot);
+      return {
+        dispenseId: line.id,
+        itemName: displayOrDash(line.itemName),
+        remainingStockText: displayOrDash(line.remainingStockText),
+        batchNo: displayOrDash(line.batchNo),
+        ...lotPick,
+      };
+    });
 
   // 发放药房：按发放行库位名去重（与 med_medication_dispense.location_id 一致）
   const pharmacyUniques: string[] = [];

@@ -379,6 +379,10 @@ public class DoctorStationTcmAppService {
                 String op = trimToEmpty(line.getLineOp()).toUpperCase(java.util.Locale.ROOT);
                 // DELETE 仅需 medicationRequestId，不要求 dose / 付数；先作废未计费费用草稿再删药品申请
                 if (DoctorStationAdviceConstants.LINE_OP_DELETE.equals(op)) {
+                    // Gate：删除行必须属于当前就诊/患者
+                    this.assertMedicationRequestBelongsToEncounterPatient(
+                        request.getEncounterId(), request.getPatientId(),
+                        this.requireMedicationRequestListModel(line.getMedicationRequestId()));
                     chargeItemDomainService.voidUnbilledDraftChargeItemsByServiceAnchors(
                         request.getEncounterId(), TableNameConstants.MED_MEDICATION_REQUEST, List.of(line.getMedicationRequestId()));
                     medicationRequestDomainService.removeMedicationOrderDraft(
@@ -419,6 +423,10 @@ public class DoctorStationTcmAppService {
                     createHerbalCharge(request, accountId, orgId, operatorId, newId, header, line, quantity);
                     newIds.add(newId);
                 } else if (DoctorStationAdviceConstants.LINE_OP_UPDATE.equals(op)) {
+                    // Gate：更新行必须属于当前就诊/患者
+                    this.assertMedicationRequestBelongsToEncounterPatient(
+                        request.getEncounterId(), request.getPatientId(),
+                        this.requireMedicationRequestListModel(line.getMedicationRequestId()));
                     chargeItemDomainService.voidUnbilledDraftChargeItemsByServiceAnchor(
                         doctorStationAdviceMapper.toVoidDraftChargeAnchor(
                             request.getEncounterId(), TableNameConstants.MED_MEDICATION_REQUEST,
@@ -485,6 +493,9 @@ public class DoctorStationTcmAppService {
             if (row == null || !Boolean.TRUE.equals(row.getTcmFlag())) {
                 throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT, "请在对应 Tab 签发");
             }
+            // Gate：医嘱必须属于当前就诊/患者，防止切患者后串挂费
+            this.assertMedicationRequestBelongsToEncounterPatient(
+                request.getEncounterId(), request.getPatientId(), row);
             if (!RequestStatus.DRAFT.getCode().equals(row.getStatusEnum())) {
                 throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_RULE_CONFLICT, "当前状态不允许签发");
             }
@@ -1233,4 +1244,44 @@ public class DoctorStationTcmAppService {
         }
         return encounterChargeAccountOpener.resolveChargeAccountId(encounterId, contractBusNo, preferInsurance);
     }
+
+    /**
+     * Gate：药品申请必须属于当前就诊与患者，防止切患者后旧处方行串挂费。
+     *
+     * @param encounterId 当前请求就诊
+     * @param patientId   当前请求患者
+     * @param row         已装载的药品申请列表模型
+     */
+    private void assertMedicationRequestBelongsToEncounterPatient(
+        Long encounterId, Long patientId, MedicationRequestListQueryModel row) {
+        if (row == null) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_NOT_FOUND, "药品申请不存在");
+        }
+        if (!java.util.Objects.equals(encounterId, row.getEncounterId())
+            || !java.util.Objects.equals(patientId, row.getPatientId())) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_RULE_CONFLICT,
+                "处方不属于当前患者/就诊，请刷新后重试");
+        }
+    }
+
+    /**
+     * 按主键装载药品申请列表模型；不存在则抛业务异常。
+     *
+     * @param medicationRequestId 药品申请主键
+     * @return 列表模型
+     */
+    private MedicationRequestListQueryModel requireMedicationRequestListModel(Long medicationRequestId) {
+        if (medicationRequestId == null) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT, "药品申请主键不能为空");
+        }
+        List<MedicationRequestListQueryModel> rows =
+            medicationRequestQueryService.listMedicationRequestListModelsByIds(List.of(medicationRequestId));
+        if (rows == null || rows.isEmpty() || rows.get(0) == null) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_NOT_FOUND, "药品申请不存在");
+        }
+        return rows.get(0);
+    }
+
+
 }

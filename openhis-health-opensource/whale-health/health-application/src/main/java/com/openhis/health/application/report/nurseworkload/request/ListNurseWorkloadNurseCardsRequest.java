@@ -37,13 +37,21 @@ public class ListNurseWorkloadNurseCardsRequest {
     @Schema(description = "统计日止", requiredMode = Schema.RequiredMode.REQUIRED)
     private LocalDate dateTo;
 
-    /** 开立科室主键（可选）。 */
+    /**
+     * 开立科室主键（可选；仅金额按 requesting_org_id 二次收窄）。
+     *
+     * <p>科室工作量请传 {@link #organizationId}。</p>
+     */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "开立科室主键（可选）")
+    @Schema(description = "开立科室主键（可选；金额二次收窄）")
     private Long requestingOrgId;
 
-    /** 科室主键（遗留；请用 requestingOrgId）。 */
+    /**
+     * 默认登录科室主键（可选；{@code Practitioner.org_id}）。
+     *
+     * <p>已选时仅汇总该科下护士岗人员卡片。</p>
+     */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "科室主键（遗留；请用 requestingOrgId）")
+    @Schema(description = "默认登录科室主键（可选；Practitioner.org_id）")
     private Long organizationId;
 }

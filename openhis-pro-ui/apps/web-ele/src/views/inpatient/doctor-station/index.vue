@@ -58,12 +58,14 @@ import type {
 } from '#/api/inpatient-settle';
 import DetailAuditRemindDialog from '#/chs/components/detail-audit-remind-dialog.vue';
 import InpatientClinicalPreSettlePreviewDialog from '#/chs/components/inpatient-clinical-pre-settle-preview-dialog.vue';
+import InsuranceProgressDialog from '#/chs/components/insurance-progress-dialog.vue';
 import type { DetailAuditRemindDialogExpose } from '#/chs/composables/use-detail-audit-gate';
 import {
   buildClinicalPreSettleInsuranceBreakdown,
   resolveClinicalPreSettlePrepayOffset,
   runInpatientClinicalPreSettle,
 } from '#/chs/composables/use-inpatient-clinical-pre-settle';
+import { useInsuranceProgressDialog } from '#/chs/composables/use-insurance-progress-dialog';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 defineOptions({
@@ -109,6 +111,16 @@ const { selectedPatient, currentPatientInfo } = storeToRefs(doctorPatientStore);
 const activeTab = ref<DoctorTab>(DOCTOR_TABS.MEDICAL_RECORD);
 const detailAuditDialogRef = ref<DetailAuditRemindDialogExpose | null>(null);
 const clinicalPreSettleLoading = ref(false);
+const {
+  activeIndex: clinicalPreSettleProgressActiveIndex,
+  countCurrent: clinicalPreSettleProgressCountCurrent,
+  countTotal: clinicalPreSettleProgressCountTotal,
+  detail: clinicalPreSettleProgressDetail,
+  progress: clinicalPreSettleProgress,
+  steps: clinicalPreSettleProgressSteps,
+  title: clinicalPreSettleProgressTitle,
+  visible: clinicalPreSettleProgressVisible,
+} = useInsuranceProgressDialog();
 const clinicalPreSettleVisible = ref(false);
 const clinicalPreSettleSnapshot = ref<PreSettleInpatientChargesResponse | null>(null);
 const clinicalPreSettleChargeLines = ref<InpatientSettleChargeLineDto[]>([]);
@@ -127,12 +139,17 @@ const adviceWriteDisabled = computed(() =>
   isEncounterClinicalOrderMutationBlocked(selectedPatient.value?.statusEnum),
 );
 
-/** 病历编辑器元数据：性别优先读模型文本字段 */
+/** 病历编辑器元数据：性别优先读模型文本字段；病房优先 houseName；床号随当前就诊带出 */
 const emrPatientInfo = computed(() => {
   const p = selectedPatient.value;
   if (!p) return undefined;
   const ageRaw = (p.ageText ?? '').trim();
   const age = ageRaw.replace(/岁\s*$/u, '');
+  const wardName = (p.houseName ?? '').trim() || (p.wardName ?? '').trim();
+  const bedRaw = (p.bedName ?? '').trim();
+  // 召回/清床展示「原房-床（未占床）」时页眉只带中间段
+  const unoccupiedMatch = /^原(.+)（未占床）$/.exec(bedRaw);
+  const bedNo = (unoccupiedMatch?.[1] ?? bedRaw).trim();
   return {
     name: p.patientName ?? '',
     gender: (p.genderEnumText ?? '').trim(),
@@ -141,6 +158,9 @@ const emrPatientInfo = computed(() => {
     insurance: (p.contractDisplay ?? '').trim(),
     medicalRecordNo: (p.encounterBusNo ?? '').trim(),
     idCard: '',
+    deptName: (p.organizationName ?? '').trim(),
+    wardName,
+    bedNo,
   };
 });
 
@@ -362,6 +382,7 @@ async function handleClinicalPreSettle() {
     return;
   }
   clinicalPreSettleLoading.value = true;
+  let openPreviewAfterProgress = false;
   try {
     const result = await runInpatientClinicalPreSettle({
       params: {
@@ -372,18 +393,23 @@ async function handleClinicalPreSettle() {
         contractDisplay: p.contractDisplay,
       },
       dialogRef: detailAuditDialogRef,
+      progress: clinicalPreSettleProgress,
     });
     if (!result) {
       return;
     }
     clinicalPreSettleSnapshot.value = result.snapshot;
     clinicalPreSettleChargeLines.value = result.chargeLines;
-    clinicalPreSettleVisible.value = true;
+    openPreviewAfterProgress = true;
   } catch (error) {
     const message = error instanceof Error ? error.message : '完整预结算失败';
     ElMessage.error(message);
   } finally {
     clinicalPreSettleLoading.value = false;
+  }
+  if (openPreviewAfterProgress) {
+    await nextTick();
+    clinicalPreSettleVisible.value = true;
   }
 }
 
@@ -391,7 +417,7 @@ const clinicalPreSettleInsuranceBreakdown = computed(() =>
   buildClinicalPreSettleInsuranceBreakdown(clinicalPreSettleSnapshot.value),
 );
 
-/** 本次预交金冲抵额（个人现金/应收 − 需补交）。 */
+/** 本次预交金冲抵额 O（后端 depositOffsetAmount）。 */
 const clinicalPreSettlePrepayOffset = computed(() =>
   resolveClinicalPreSettlePrepayOffset(clinicalPreSettleSnapshot.value),
 );
@@ -623,12 +649,23 @@ const handleNursing = () => {
     />
 
     <DetailAuditRemindDialog ref="detailAuditDialogRef" warn-type="1" />
+    <InsuranceProgressDialog
+      v-model="clinicalPreSettleProgressVisible"
+      :title="clinicalPreSettleProgressTitle"
+      :steps="clinicalPreSettleProgressSteps"
+      :active-index="clinicalPreSettleProgressActiveIndex"
+      :detail="clinicalPreSettleProgressDetail"
+      :count-current="clinicalPreSettleProgressCountCurrent"
+      :count-total="clinicalPreSettleProgressCountTotal"
+    />
     <InpatientClinicalPreSettlePreviewDialog
       v-model="clinicalPreSettleVisible"
       :display-amount="clinicalPreSettleSnapshot?.displayAmount ?? 0"
       :receivable-total="clinicalPreSettleSnapshot?.receivableTotal ?? 0"
       :prepay-net-balance="clinicalPreSettleSnapshot?.prepayNetBalance"
       :prepay-offset-amount="clinicalPreSettlePrepayOffset"
+      :prepay-refund-amount="clinicalPreSettleSnapshot?.prepayRefundAmount"
+      :prepay-full-refund="Boolean(clinicalPreSettleSnapshot?.prepayFullRefund)"
       :preview-text="clinicalPreSettleSnapshot?.previewText"
       :insurance-pre-settled="clinicalPreSettleSnapshot?.insurancePreSettled"
       :insurance-breakdown-items="clinicalPreSettleInsuranceBreakdown"

@@ -37,8 +37,10 @@ export interface LoadPharmacyDispensePageInitResponse {
 }
 
 export interface PagePendingDispenseEncounterQueueRequest {
-  startTime?: null | string;
-  endTime?: null | string;
+  /** 时间窗下限（含），对齐 AbstractPageQuery.startDate；按就诊 startTime 收窄 */
+  startDate?: null | string;
+  /** 时间窗上限（含），对齐 AbstractPageQuery.endDate；按就诊 startTime 收窄 */
+  endDate?: null | string;
   keyword?: null | string;
   /** 待发药 Tab：PREPARATION + IN_PROGRESS；已发药 Tab：COMPLETED；空则由后端按约定默认 */
   dispenseStatusEnumIn?: null | string[];
@@ -237,6 +239,8 @@ export interface SavePrepareOutpatientMedicationDispenseResponse {
 
 export interface DispenseMedicationLineSubmitDto {
   dispenseId: string;
+  /** 核发前最终追溯码；已配药重试改扫时须带上，否则仍按旧码扣主档 */
+  traceNo?: null | string;
 }
 
 export interface DispenseOutpatientMedicationsRequest {

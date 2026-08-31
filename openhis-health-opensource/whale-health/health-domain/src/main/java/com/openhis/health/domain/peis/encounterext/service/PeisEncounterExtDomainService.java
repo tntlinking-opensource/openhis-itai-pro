@@ -67,6 +67,8 @@ public class PeisEncounterExtDomainService {
         entity.setGroupBatchId(cmd.getGroupBatchId());
         entity.setBookingAppointmentId(cmd.getBookingAppointmentId());
         entity.setBusNo(trimToNull(cmd.getBusNo()));
+        entity.setReferrerName(trimToNull(cmd.getReferrerName()));
+        entity.setBreakfastFlag(cmd.getBreakfastFlag());
         entity.setIsDeleted(Boolean.FALSE);
         entity.setCreatedAt(now);
         entity.setUpdatedAt(now);

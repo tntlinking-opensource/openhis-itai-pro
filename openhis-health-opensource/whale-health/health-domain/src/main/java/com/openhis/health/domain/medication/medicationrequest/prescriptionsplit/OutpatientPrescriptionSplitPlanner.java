@@ -26,7 +26,8 @@ import java.util.Set;
  *
  * <p>纯领域算法，无 Spring 依赖；由 {@code MedicationRequestDomainService#splitPrescription} 调用。
  * 特殊管理药品判读字段为 {@code pharmacologyCategoryCode}（术语 medicine_properties），
- * 禁止使用门诊拆分属性 {@code part_attribute_enum}。</p>
+ * 禁止使用门诊拆分属性 {@code part_attribute_enum}。
+ * 精二可与同轨普通药同方，但单元含精二时整方 {@code rx_type_code} 固定为术语 355 码 {@code 8}。</p>
  *
  * <p>诊断：硬分区键不含诊断集；同分区内装箱时两包诊断集<strong>有交集即可同方</strong>
  * （两侧皆空亦相容；一侧空一侧非空不相容）。方头展示诊断并集由读侧按 {@code prescription_no} 聚合。</p>
@@ -327,6 +328,8 @@ public final class OutpatientPrescriptionSplitPlanner {
         private BigDecimal amountSum = BigDecimal.ZERO;
         private String splitTrack;
         private String medType;
+        /** 桶内是否含精二药品性质行（同方任一行命中则整方 rx_type=精二）。 */
+        private boolean containsPsychTwo;
         /** 已装入行的诊断 id 并集（方头全集口径）。 */
         private final Set<Long> diagnosisIdUnion = new LinkedHashSet<>();
 
@@ -369,20 +372,34 @@ public final class OutpatientPrescriptionSplitPlanner {
             return EncounterDiagnosisIdsSupport.compatibleForSamePrescription(binKey, packKey);
         }
 
+        /**
+         * 将原子包并入本桶，并累计精二标记与诊断并集。
+         *
+         * @param pack 已通过 {@link #canAbsorb} 的原子包
+         */
         void absorb(PrescriptionSplitPack pack) {
             entries.addAll(pack.entries);
             amountSum = amountSum.add(pack.amountSum);
             splitTrack = pack.splitTrack;
             medType = pack.medType;
+            // 并入包含精二时抬升整方处方类别为精二
+            if (pack.containsPsychTwo) {
+                containsPsychTwo = true;
+            }
             diagnosisIdUnion.addAll(pack.diagnosisIds);
         }
 
+        /**
+         * 封桶为处方单元计划（申请主键列表 + 推导的 {@code rx_type_code}）。
+         *
+         * @return 单元计划
+         */
         PrescriptionUnitPlan toPlan() {
             List<Long> requestIds = new ArrayList<>();
             for (PrescriptionSplitLineEntry entry : entries) {
                 requestIds.add(entry.requestId);
             }
-            String rxType = deriveRxTypeCode(splitTrack, medType);
+            String rxType = deriveRxTypeCode(splitTrack, medType, containsPsychTwo);
             return new PrescriptionUnitPlan(requestIds, rxType);
         }
     }
@@ -397,6 +414,8 @@ public final class OutpatientPrescriptionSplitPlanner {
         private final Set<Long> diagnosisIds = new LinkedHashSet<>();
         private String splitTrack;
         private Long pharmacyLocationId;
+        /** 包内是否含精二药品性质行。 */
+        private boolean containsPsychTwo;
 
         static PrescriptionSplitPack fromLine(PrescriptionSplitLineContext line) {
             PrescriptionSplitPack pack = new PrescriptionSplitPack();
@@ -404,6 +423,11 @@ public final class OutpatientPrescriptionSplitPlanner {
             return pack;
         }
 
+        /**
+         * 将一行快照并入本原子包（成组多行共用同一 {@code group_id}）。
+         *
+         * @param line 分方行快照
+         */
         void mergeLine(PrescriptionSplitLineContext line) {
             entries.add(PrescriptionSplitLineEntry.fromLine(line));
             BigDecimal lineAmount = line.getChargeTotalPrice();
@@ -415,6 +439,10 @@ public final class OutpatientPrescriptionSplitPlanner {
             diagnosisIds.addAll(EncounterDiagnosisIdsSupport.toIdSetLenient(line.getDiagnosisSetKey()));
             splitTrack = resolveSplitTrack(line);
             pharmacyLocationId = line.getPharmacyLocationId();
+            // 任一行药品性质为精二 → 整包标记，供单元级回写 rx_type=8
+            if (isPsychTwoMedicineProperty(line.getPharmacologyCategoryCode())) {
+                containsPsychTwo = true;
+            }
         }
 
         boolean hasDuplicateMedicationUsage() {
@@ -467,8 +495,9 @@ public final class OutpatientPrescriptionSplitPlanner {
     /**
      * 按药品性质、饮片标志与目录分类判定分方轨道（特殊药品 / 饮片 / 中成药 / 西药）。
      *
-     * <p>先看 {@code pharmacologyCategoryCode}（药品性质）：非普通药走麻/精一/毒性独占轨；
-     * 普通药（含空值按普通）再按 {@code medicationCategoryCode} 分西药/中成药轨。
+     * <p>先看 {@code pharmacologyCategoryCode}（药品性质）：麻/精一/毒性走独占轨；
+     * 普通药与精二（含空值按普通）再按 {@code medicationCategoryCode} 分西药/中成药轨。
+     * 精二不独占轨道，但单元级 {@code rx_type_code} 见 {@link #deriveRxTypeCode}。
      * 饮片以 {@code tcmFlag} 优先。不得读取门诊拆分属性。</p>
      *
      * @param line 行快照
@@ -494,11 +523,24 @@ public final class OutpatientPrescriptionSplitPlanner {
         if (PrescriptionSplitConstants.MEDICINE_PROPERTY_TOXIC.equals(medicineProperty)) {
             return PrescriptionSplitConstants.SPLIT_TRACK_TOXIC;
         }
-        // 普通药（含精二）：中成药与西药分轨
+        // 普通药与精二：中成药与西药分轨（精二不独占轨道，可与同轨普通药同方）
         if (isChinesePatentCategory(line.getMedicationCategoryCode())) {
             return PrescriptionSplitConstants.SPLIT_TRACK_CHINESE_PATENT;
         }
         return PrescriptionSplitConstants.SPLIT_TRACK_WESTERN;
+    }
+
+    /**
+     * 判定药品性质是否为二类精神药品（术语 medicine_properties code {@code 5}）。
+     *
+     * @param pharmacologyCategoryCode 目录 {@code pharmacology_category_code}
+     * @return 精二时 true
+     */
+    private static boolean isPsychTwoMedicineProperty(String pharmacologyCategoryCode) {
+        if (StringUtils.isEmpty(pharmacologyCategoryCode)) {
+            return false;
+        }
+        return PrescriptionSplitConstants.MEDICINE_PROPERTY_PSYCH_TWO.equals(pharmacologyCategoryCode.trim());
     }
 
     /**
@@ -516,13 +558,21 @@ public final class OutpatientPrescriptionSplitPlanner {
     }
 
     /**
-     * 按轨道与医保医疗类别推导处方类别码（355）。
+     * 按轨道、医保医疗类别与是否含精二推导处方类别码（355）。
      *
-     * @param splitTrack 分方轨道
-     * @param medType    医保医疗类别 code
+     * <p>含精二时整方固定为术语码 {@code 8}（优先于西药/中成药急诊、儿科抬升）；
+     * 麻/精一独占轨仍为 {@code 7}。</p>
+     *
+     * @param splitTrack         分方轨道
+     * @param medType            医保医疗类别 code
+     * @param containsPsychTwo   单元内是否含精二药品性质行
      * @return {@code rx_type_code}
      */
-    private static String deriveRxTypeCode(String splitTrack, String medType) {
+    private static String deriveRxTypeCode(String splitTrack, String medType, boolean containsPsychTwo) {
+        // 单元含精二 → 处方类别固定为 8（可与同轨普通药同方，方头须标精二）
+        if (containsPsychTwo) {
+            return PrescriptionSplitConstants.RX_TYPE_PSYCH_TWO;
+        }
         // 麻/精一处方类别固定为 7
         if (PrescriptionSplitConstants.SPLIT_TRACK_NARCOTIC_PSYCH_ONE.equals(splitTrack)) {
             return PrescriptionSplitConstants.RX_TYPE_NARCOTIC_PSYCH_ONE;

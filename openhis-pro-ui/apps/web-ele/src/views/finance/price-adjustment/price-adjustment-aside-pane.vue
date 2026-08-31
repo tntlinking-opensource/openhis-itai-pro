@@ -14,8 +14,7 @@ import isoWeek from 'dayjs/plugin/isoWeek';
 import { ElButton, ElDatePicker, ElInput } from 'element-plus';
 
 import SectionTitle from '#/components/layouts/section-title.vue';
-
-import { formatAdjustmentAmount } from '../price-adjustment-detail/utils/format-amount';
+import { formatMoneyDisplay, formatPurchaseMoneyDisplay } from '#/utils/format/money-scale';
 
 defineOptions({ name: 'PriceAdjustmentAsidePane' });
 
@@ -97,10 +96,10 @@ function resolveQueueImpactLine(row: Record<string, unknown>): string | undefine
   }
   const parts: string[] = [];
   if (hasPurchase) {
-    parts.push(`进 ${formatAdjustmentAmount(purchase)}`);
+    parts.push(`进 ${formatPurchaseMoneyDisplay(purchase as string | number)}`);
   }
   if (hasSelling) {
-    parts.push(`售 ${formatAdjustmentAmount(selling)}`);
+    parts.push(`售 ${formatMoneyDisplay(selling as string | number)}`);
   }
   return parts.join(' · ');
 }

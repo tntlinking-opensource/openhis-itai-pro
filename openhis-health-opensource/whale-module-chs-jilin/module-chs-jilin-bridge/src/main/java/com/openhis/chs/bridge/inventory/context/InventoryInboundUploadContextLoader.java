@@ -136,7 +136,8 @@ public class InventoryInboundUploadContextLoader {
         cmd.setManuLotnum(line.getLotNumber());
         // aprvno ← 批准文号；中药等无国药准字时占位，避免平台 3503 拒收
         cmd.setAprvno(resolveAprvnoOrDefault(medication.getApprovalNumber()));
-        cmd.setProdentpName(medication.getManufacturerText());
+        // 生产厂家：目录已无 manufacturer_text，按 manufacturerId 解析 cus_supplier.name
+        cmd.setProdentpName(this.resolveManufacturerName(medication.getManufacturerId()));
         // 库房：拆零数量 → 操作单位数量；单价与 unitCode 同单位
         InventoryUploadQtyPriceResult qtyPrice = InventoryUploadQuantityAssembler.resolveWarehouseQtyAndPrice(
             medication, line.getUnitCode(), line.getItemQuantity(), line.getPrice(), line.getUnitCode());
@@ -186,6 +187,19 @@ public class InventoryInboundUploadContextLoader {
         }
         // 中药饮片等常无准字：占位上报，避免 3503 必填字段拒收
         return ChsInventoryConstants.DEFAULT_APRVNO;
+    }
+
+    /**
+     * 按生产厂家主键解析平台生产企业名称（{@code prodentp_name}）。
+     *
+     * @param manufacturerId 药品定义 {@code manufacturer_id}（cus_supplier 生产厂家）
+     * @return 供应商名称；无主键或未命中时为 {@code null}
+     */
+    private String resolveManufacturerName(Long manufacturerId) {
+        if (manufacturerId == null) {
+            return null;
+        }
+        return supplierQueryService.findSupplierNameIfPresent(manufacturerId).orElse(null);
     }
 
     /**

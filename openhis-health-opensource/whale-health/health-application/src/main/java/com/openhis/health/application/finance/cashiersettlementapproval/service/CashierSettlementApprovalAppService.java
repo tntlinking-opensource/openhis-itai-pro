@@ -60,7 +60,7 @@ import java.util.List;
  *   <li>{@link CashierSettlementQueryService}：头表读与审批分页（本聚合）</li>
  *   <li>{@link CashierSettlementDomainService}：approve/reject 写侧</li>
  *   <li>{@link CashierSettlementApprovalMapper}：DTO 装配</li>
- *   <li>{@link CashierSettlementApprovalDisplayEnricher}：交账人/审批人/药房/科室名；药房金额展示为售价合计</li>
+ *   <li>{@link CashierSettlementApprovalDisplayEnricher}：交账人/审批人/药房/科室名；列表金额用头表快照，详情药房头覆盖为售价合计</li>
  *   <li>{@link CurrentOperatorResolver} / {@link CurrentPractitionerResolver}：会话 Gate 与审批人</li>
  * </ul>
  *
@@ -181,7 +181,7 @@ public class CashierSettlementApprovalAppService {
                 rows.add(row);
             }
         }
-        // Asm：回填交账人/审批人/药房/科室名
+        // Asm：回填交账人/审批人/药房/科室名（金额保持头表快照，禁挂载现算）
         this.cashierSettlementApprovalDisplayEnricher.enrichListItems(rows);
         PageCashierSettlementApprovalsResponse response = new PageCashierSettlementApprovalsResponse();
         return PagedResultBuilder.build(response, rows, page);

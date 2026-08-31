@@ -73,9 +73,12 @@ function resolveAuditOrderType(orderTypeRaw: string): NurseStationOrderAuditOrde
   return null;
 }
 
-/** 类型列：优先读后端 orderKindDisplay，回落本地推导 */
-function resolveAuditOrderKindLabel(dto: NurseStationOrderAuditRowDto): string {
+/** 类型列：优先读后端 orderKindDisplay，回落本地推导（药品细化为西药/中药） */
+export function resolveAuditOrderKindLabel(dto: NurseStationOrderAuditRowDto): string {
   const fromApi = String(dto.orderKindDisplay ?? '').trim();
+  if (fromApi === '药品') {
+    return dto.tcmFlag === true ? '中药' : '西药';
+  }
   if (fromApi) return fromApi;
   const category = String(dto.categoryEnum ?? '').trim();
   if (category === '34') return '出院';
@@ -84,7 +87,9 @@ function resolveAuditOrderKindLabel(dto: NurseStationOrderAuditRowDto): string {
   // 嘱托类目 52：禁止回落「诊疗」（BR-IP-ORD-028）
   if (category === '52') return '嘱托';
   const orderType = resolveAuditOrderType(String(dto.orderType ?? ''));
-  if (orderType === 'MED_REQUEST') return '药品';
+  if (orderType === 'MED_REQUEST') {
+    return dto.tcmFlag === true ? '中药' : '西药';
+  }
   if (orderType === 'SERVICE_REQUEST') return '诊疗';
   return '—';
 }

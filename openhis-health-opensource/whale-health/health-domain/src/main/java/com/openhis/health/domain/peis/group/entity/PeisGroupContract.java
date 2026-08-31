@@ -11,6 +11,7 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 @Getter
@@ -36,4 +37,12 @@ public class PeisGroupContract extends BaseAuditedEntity {
 
     @Column(name = "valid_to")
     private LocalDate validTo;
+
+    /** 合同金额（元）。 */
+    @Column(name = "contract_amount", precision = 18, scale = 2)
+    private BigDecimal contractAmount;
+
+    /** 合同支付状态：{@link com.openhis.health.domain.share.constants.PeisGroupContractConstants}。 */
+    @Column(name = "pay_status_code", nullable = false, length = 32)
+    private String payStatusCode;
 }

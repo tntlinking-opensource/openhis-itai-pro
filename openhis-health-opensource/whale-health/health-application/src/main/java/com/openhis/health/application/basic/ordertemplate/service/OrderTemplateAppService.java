@@ -30,6 +30,7 @@ import com.openhis.health.application.basic.ordertemplate.response.PreviewOrderT
 import com.openhis.health.application.basic.ordertemplate.response.SaveMaintainedOrderTemplateHeaderResponse;
 import com.openhis.health.application.basic.ordertemplate.response.SaveMaintainedOrderTemplateLinesResponse;
 import com.openhis.health.application.basic.ordertemplate.response.SaveOrderTemplateFromAdviceResponse;
+import com.openhis.health.application.basic.ordertemplate.support.OrderTemplateHeaderOwnerEnrichAssembler;
 import com.openhis.health.application.basic.ordertemplate.support.OrderTemplateLineCatalogEnrichAssembler;
 import com.openhis.health.application.basic.ordertemplate.support.dto.OrderTemplateLineEnrichRow;
 import com.openhis.health.application.basic.ordertemplate.support.OrderTemplateScopeResolver;
@@ -110,6 +111,9 @@ public class OrderTemplateAppService {
 
     /** 行目录 enrich。 */
     private final OrderTemplateLineCatalogEnrichAssembler orderTemplateLineCatalogEnrichAssembler;
+
+    /** 头行归属对象展示名 enrich。 */
+    private final OrderTemplateHeaderOwnerEnrichAssembler orderTemplateHeaderOwnerEnrichAssembler;
 
     /** 绑定 → 归属对象 id。 */
     private final OrderTemplateScopeResolver orderTemplateScopeResolver;
@@ -199,7 +203,11 @@ public class OrderTemplateAppService {
         );
         // Asm：映射为分页响应，并按 keyword/searchKey 过滤当前页（SDD searchKey 与 B.10.11 keyword 二选一）
         String pageKeyword = resolvePageKeyword(request);
-        return orderTemplateMapper.toPageMaintainedOrderTemplateResponse(page, pageKeyword);
+        PageMaintainedOrderTemplateResponse response =
+            orderTemplateMapper.toPageMaintainedOrderTemplateResponse(page, pageKeyword);
+        // Asm：填充归属对象展示名，供维护树个人/科室二次分组
+        orderTemplateHeaderOwnerEnrichAssembler.enrichObjectNames(response.getContent());
+        return response;
     }
 
     /**
@@ -217,6 +225,8 @@ public class OrderTemplateAppService {
         if (response == null) {
             throw new BusinessException(ErrorCodeConstants.ORDER_TEMPLATE_NOT_FOUND, "组套不存在或已删除");
         }
+        // Asm：归属展示名（右侧模板属性回显）
+        orderTemplateHeaderOwnerEnrichAssembler.enrichObjectName(response.getHeader());
         // Asm：批量 enrich 目录/术语/执行科室展示
         this.enrichOrderTemplateDetailLines(response.getLines());
         return response;

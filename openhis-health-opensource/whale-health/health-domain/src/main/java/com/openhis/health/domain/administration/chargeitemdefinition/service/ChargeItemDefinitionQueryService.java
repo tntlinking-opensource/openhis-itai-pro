@@ -312,6 +312,41 @@ public class ChargeItemDefinitionQueryService {
     }
 
     /**
+     * 列出实例+批号下全部未软删定价行主键（含 ACTIVE/INACTIVE、各价类 COST/PRICE；BR-WHS-IN-018）。
+     *
+     * <p>供同批号异价门禁解析曾挂费的 {@code ChargeItem.definition_id}；不过滤 {@code status_enum}。</p>
+     *
+     * @param instanceTable 实例物理表
+     * @param instanceId    实例主键
+     * @param lotNo         批号字面值
+     * @return 定义主键列表；参数不全或无命中时为空列表
+     */
+    public List<Long> listDefinitionIdsByInstanceAndLot(
+        String instanceTable, Long instanceId, String lotNo) {
+        // Gate：键不全无法解析定义
+        if (StringUtils.isEmpty(instanceTable) || instanceId == null || StringUtils.isEmpty(lotNo)) {
+            return Collections.emptyList();
+        }
+        List<ChargeItemDefinition> rows = repository.findAllByInstanceTableAndInstanceIdAndLotNo(
+            instanceTable.trim(), instanceId, lotNo.trim());
+        if (rows == null || rows.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Long> ids = new ArrayList<>();
+        for (ChargeItemDefinition row : rows) {
+            // 软删定价行不参与挂费存在性判定
+            if (row == null || row.getId() == null) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(row.getIsDeleted())) {
+                continue;
+            }
+            ids.add(row.getId());
+        }
+        return ids;
+    }
+
+    /**
      * 批量按实例主键集合加载定价行（用于组套/多项目一次取价）。
      *
      * <p>若 {@link ChargeItemDefinitionQueryCommand#getPriceTypeCodes()} 非空，则仓储侧按价类 IN 收窄，

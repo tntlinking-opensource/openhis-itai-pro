@@ -69,9 +69,10 @@ public class PageOutpatientPharmacyPrescriptionQueryRequest extends AbstractHeal
     private String contractCategoryCode;
 
     /**
-     * 患者姓名等模糊关键字；与门诊队列关键字同族。
+     * 患者关键字（可选）：与门诊队列同族，模糊匹配姓名/院内编码/身份证/拼音/五笔；
+     * 重名时可用身份证精确定位（领域侧先精确后模糊，B.2.1）。
      */
-    @Schema(description = "患者关键字")
+    @Schema(description = "患者关键字（姓名/身份证/门诊号等）")
     private String patientKeyword;
 
     /**
@@ -85,4 +86,25 @@ public class PageOutpatientPharmacyPrescriptionQueryRequest extends AbstractHeal
      */
     @Schema(description = "处方号精确匹配；空=不限")
     private String prescriptionNo;
+
+    /**
+     * 点评状态筛：{@code PENDING}（已发药且待点评）/ {@code REVIEWED}（已点评）；空表示不限。
+     * <p>与 {@link #reasonableFlag} 组合：待点评且传是否合理 → 空结果；仅传是否合理视为已点评收窄。
+     * PENDING 另叠加发放 COMPLETED，排除未发药等不可评方。</p>
+     */
+    @Schema(description = "点评状态 PENDING=已发药待点评 / REVIEWED；空=不限")
+    private String reviewStatusEnum;
+
+    /**
+     * 是否合理筛；空表示不限。单独传时按已点评且该结论收窄。
+     */
+    @Schema(description = "是否合理；空=不限")
+    private Boolean reasonableFlag;
+
+    /**
+     * 药品类型 code（药典术语 {@code medication_category_code}，目录 {@code category_code}）；空表示不限。
+     * <p>方级：任一行命中该类型则整方明细入选（与含输液 YES 同构）。</p>
+     */
+    @Schema(description = "药品类型（药典 category_code）；空=不限")
+    private String medicationCategoryCode;
 }

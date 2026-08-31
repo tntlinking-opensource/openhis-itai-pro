@@ -11,6 +11,11 @@ export interface InpatientOralMedSheetDrugRow {
   totalQuantityText: string;
   /** 医嘱备注 */
   remarkText: string;
+  /**
+   * 同方「频次 / 总量」合并行数。
+   * 方头 >1 表示 rowspan；续行 0 表示跳过单元格；西药 1。
+   */
+  tcmGroupRowSpan?: number;
 }
 
 /**
@@ -50,6 +55,8 @@ function str(value: null | number | string | undefined): string {
 }
 
 function mapDrugRow(row: InpatientOralMedSheetDrugRow): InpatientOralMedSheetDrugRow {
+  const spanRaw = row.tcmGroupRowSpan;
+  const tcmGroupRowSpan = typeof spanRaw === 'number' && Number.isFinite(spanRaw) ? spanRaw : 1;
   return {
     drugName: str(row.drugName),
     specText: str(row.specText),
@@ -58,6 +65,7 @@ function mapDrugRow(row: InpatientOralMedSheetDrugRow): InpatientOralMedSheetDru
     freqText: str(row.freqText),
     totalQuantityText: str(row.totalQuantityText),
     remarkText: str(row.remarkText),
+    tcmGroupRowSpan,
   };
 }
 

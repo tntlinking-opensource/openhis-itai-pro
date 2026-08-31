@@ -8,12 +8,13 @@ import type {
   MovementStatusCode,
 } from '#/api/report/inpatient-in-out-detail';
 import type { ApiOptionItem } from '#/types/api-response';
+import type { ReportPrintColumnDef } from '#/utils/print/print-report-list';
 
 import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
-import { Download, Refresh, Search } from '@element-plus/icons-vue';
+import { Download, Printer, Refresh, Search, Setting } from '@element-plus/icons-vue';
 import {
   ElButton,
   ElDatePicker,
@@ -32,6 +33,7 @@ import {
   pageInpatientInOutDetailReportApi,
 } from '#/api/report/inpatient-in-out-detail';
 import { useRequest } from '#/hooks/use-request';
+import { buildExcelExportColumns } from '#/utils/export/build-excel-export-columns';
 import { downloadBinaryExportFile } from '#/utils/export/download-binary-export';
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
@@ -43,8 +45,12 @@ import {
   ReportListPageLayout,
   ReportListToolbar,
   ReportPageFooter,
+  ReportPrintFieldDialog,
   ReportQueryBar,
   ReportTableScroll,
+  mapReportPrintRow,
+  reportPrintFieldsOf,
+  useReportListPrint,
 } from '#/views/report/shared';
 import {
   buildReportDateRangeShortcuts,
@@ -66,6 +72,27 @@ interface QueryState {
 }
 
 const PAGE_TITLE = '住院患者入出明细';
+/** 打印字段偏好键（本机记住）。 */
+const PRINT_REPORT_CODE = 'report-inpatient-in-out-detail';
+
+/** 入出明细可打印列目录（转往列始终可选，未展示时打印为空）。 */
+const PRINT_COLUMNS: ReportPrintColumnDef[] = [
+  { field: 'busNo', title: '住院号', align: 'center', widthWeight: 1.1 },
+  { field: 'patientName', title: '患者姓名', align: 'center', widthWeight: 1 },
+  { field: 'genderText', title: '性别', align: 'center', widthWeight: 0.6 },
+  { field: 'ageText', title: '年龄', align: 'center', widthWeight: 0.7 },
+  { field: 'admissionOrganizationName', title: '入院科室', align: 'center', widthWeight: 1.1 },
+  { field: 'admissionWardName', title: '入院病区', align: 'center', widthWeight: 1.1 },
+  { field: 'wardName', title: '病区', align: 'center', widthWeight: 1 },
+  { field: 'houseName', title: '病房', align: 'center', widthWeight: 0.9 },
+  { field: 'bedName', title: '床位', align: 'center', widthWeight: 0.8 },
+  { field: 'startTime', title: '入院时间', align: 'center', widthWeight: 1.3 },
+  { field: 'endTime', title: '出院时间', align: 'center', widthWeight: 1.3 },
+  { field: 'inpatientDays', title: '住院天数', align: 'right', widthWeight: 0.9 },
+  { field: 'transferTargetText', title: '转往', align: 'center', widthWeight: 1.2 },
+  { field: 'feeNatureDisplay', title: '费用性质', align: 'center', widthWeight: 1 },
+  { field: 'settledFeeAmount', title: '已结费用', align: 'right', widthWeight: 1.1 },
+];
 
 const movementStatusOptions = ref<ApiOptionItem[]>([]);
 const organizationOptions = ref<ApiOptionItem[]>([]);
@@ -185,16 +212,6 @@ const { run: runExport, loading: exportLoading } = useRequest(exportInpatientInO
   },
 });
 
-const tableLoading = computed(() => initLoading.value || pageLoading.value || wardLoading.value);
-
-/** 下拉选项转为 ElSelect 结构。 */
-function toSelectOptions(items: ApiOptionItem[]) {
-  return items.map((item) => ({
-    label: String(item.label ?? ''),
-    value: String(item.value ?? ''),
-  }));
-}
-
 /** 金额单元格：空占位（禁止把未结显示成 0）。 */
 function formatMoneyCell(value: unknown): string {
   if (value === undefined || value === null || value === '') {
@@ -207,6 +224,49 @@ function formatMoneyCell(value: unknown): string {
 function formatTextCell(value: unknown): string {
   const text = String(value ?? '').trim();
   return text || '—';
+}
+
+const { printFieldDialogRef, printSubmitting, handleOpenPrintFields, handlePrintCurrentPage } =
+  useReportListPrint({
+    getReportCode: () => PRINT_REPORT_CODE,
+    getColumnCatalog: () => PRINT_COLUMNS,
+    getReportTitle: () => PAGE_TITLE,
+    getPrintRows: () =>
+      rows.value.map((r) =>
+        mapReportPrintRow(
+          r as unknown as Record<string, unknown>,
+          reportPrintFieldsOf(PRINT_COLUMNS),
+          {
+            busNo: (v) => formatTextCell(v),
+            patientName: (v) => formatTextCell(v),
+            genderText: (v) => formatTextCell(v),
+            ageText: (v) => formatTextCell(v),
+            admissionOrganizationName: (v) => formatTextCell(v),
+            admissionWardName: (v) => formatTextCell(v),
+            wardName: (v) => formatTextCell(v),
+            houseName: (v) => formatTextCell(v),
+            bedName: (v) => formatTextCell(v),
+            startTime: (v) => formatTextCell(v),
+            endTime: (v) => formatTextCell(v),
+            inpatientDays: (v) => formatTextCell(v),
+            transferTargetText: (v) => formatTextCell(v),
+            feeNatureDisplay: (v) => formatTextCell(v),
+            settledFeeAmount: (v) => formatMoneyCell(v),
+          },
+        ),
+      ),
+  });
+
+const tableLoading = computed(
+  () => initLoading.value || pageLoading.value || wardLoading.value || printSubmitting.value,
+);
+
+/** 下拉选项转为 ElSelect 结构。 */
+function toSelectOptions(items: ApiOptionItem[]) {
+  return items.map((item) => ({
+    label: String(item.label ?? ''),
+    value: String(item.value ?? ''),
+  }));
 }
 
 /** 明细行稳定 key。 */
@@ -276,13 +336,17 @@ async function handleOrganizationChange() {
   handleQuery();
 }
 
-/** 导出当前筛选。 */
+/** 导出当前筛选（列清单与打印列目录一致）。 */
 async function handleExport() {
   const filters = buildFilterPayload();
   if (!filters) {
     return;
   }
-  await runExport(filters);
+  const exportColumns = buildExcelExportColumns(PRINT_COLUMNS);
+  await runExport({
+    ...filters,
+    exportColumns,
+  });
 }
 
 /** 重置为初始化默认值。 */
@@ -401,6 +465,23 @@ onMounted(async () => {
       <template #toolbar>
         <ReportListToolbar :title="PAGE_TITLE" :total="total">
           <template #actions>
+            <ElButton
+              plain
+              :icon="Setting"
+              :disabled="printSubmitting"
+              @click="handleOpenPrintFields"
+            >
+              打印设置
+            </ElButton>
+            <ElButton
+              type="primary"
+              plain
+              :icon="Printer"
+              :loading="printSubmitting"
+              @click="handlePrintCurrentPage"
+            >
+              打印
+            </ElButton>
             <ElButton plain :icon="Download" :loading="exportLoading" @click="handleExport">
               导出
             </ElButton>
@@ -620,5 +701,10 @@ onMounted(async () => {
         />
       </template>
     </ReportListPageLayout>
+    <ReportPrintFieldDialog
+      ref="printFieldDialogRef"
+      :report-code="PRINT_REPORT_CODE"
+      :column-catalog="PRINT_COLUMNS"
+    />
   </Page>
 </template>

@@ -8,13 +8,17 @@ import com.openhis.health.application.physicalexam.financial.charge.dto.Physical
 import com.openhis.health.application.physicalexam.financial.charge.dto.PhysicalExamChargeQueueRowDto;
 import com.openhis.health.application.physicalexam.financial.charge.dto.PhysicalExamPaymentDetailSubmitDto;
 import com.openhis.health.application.physicalexam.financial.charge.dto.PhysicalExamPreSettleLinePreviewDto;
+import com.openhis.health.application.physicalexam.financial.charge.request.AdjustPhysicalExamChargePricesRequest;
 import com.openhis.health.application.physicalexam.financial.charge.request.ConfirmPhysicalExamChargeSettlementRequest;
 import com.openhis.health.application.physicalexam.financial.charge.response.ConfirmPhysicalExamChargeSettlementResponse;
 import com.openhis.health.application.physicalexam.financial.charge.response.LoadPhysicalExamChargePageInitResponse;
 import com.openhis.health.application.physicalexam.financial.charge.response.PagePhysicalExamChargeQueueResponse;
 import com.openhis.health.application.physicalexam.financial.charge.response.PreSettlePhysicalExamChargesResponse;
+import com.openhis.health.application.physicalexam.financial.charge.response.PreviewPhysicalExamRefundResponse;
+import com.openhis.health.application.physicalexam.financial.charge.response.RefundPhysicalExamChargesResponse;
 import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.domain.administration.chargeitem.command.BatchChargeItemIdsCommand;
+import com.openhis.health.domain.administration.chargeitem.command.ManualOverridePlannedChargeItemPricesCommand;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.encounter.entity.Encounter;
 import com.openhis.health.domain.administration.invoice.command.CreateDraftInvoiceCommand;
@@ -22,14 +26,18 @@ import com.openhis.health.domain.financial.paymentreconciliation.command.CreateP
 import com.openhis.health.domain.financial.paymentreconciliation.command.PaymentDetailItemCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.SettleOutpatientPaymentCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentReconciliationQueryModel;
+import com.openhis.health.domain.administration.patient.queries.model.PatientInpatientProjectionSnapshot;
 import com.openhis.health.domain.peis.encounterext.queries.model.PeisEncounterExtModel;
 import com.openhis.health.domain.share.constants.PhysicalExamChargeConstants;
 import com.openhis.health.domain.share.constants.PhysicalExamChargeQueueTab;
+import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.domain.share.enums.AdministrativeGender;
 import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.enums.PaymentChannel;
 import com.openhis.health.domain.share.enums.PaymentKind;
 import com.openhis.health.domain.share.enums.PaymentStatus;
 import com.openhis.health.domain.share.enums.PaymentType;
+import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.util.StringUtils;
@@ -234,7 +242,7 @@ public class PhysicalExamChargeMapperImpl implements PhysicalExamChargeMapper {
      *
      * @param encounterIds           就诊主键（分页顺序）
      * @param encounterById          就诊实体映射
-     * @param patientNames           患者姓名映射
+     * @param patientSnapshotsById   患者人口学快照
      * @param extByEncounter         体检扩展映射
      * @param chargeItemsByEncounter 收费明细映射
      * @return 队列行
@@ -243,7 +251,7 @@ public class PhysicalExamChargeMapperImpl implements PhysicalExamChargeMapper {
     public List<PhysicalExamChargeQueueRowDto> toQueueRows(
         List<Long> encounterIds,
         Map<Long, Encounter> encounterById,
-        Map<Long, String> patientNames,
+        Map<Long, PatientInpatientProjectionSnapshot> patientSnapshotsById,
         Map<Long, PeisEncounterExtModel> extByEncounter,
         Map<Long, List<ChargeItem>> chargeItemsByEncounter) {
         List<PhysicalExamChargeQueueRowDto> rows = new ArrayList<>();
@@ -260,10 +268,23 @@ public class PhysicalExamChargeMapperImpl implements PhysicalExamChargeMapper {
             if (encounter != null) {
                 row.setPatientId(encounter.getPatientId());
                 row.setStartTime(encounter.getStartTime());
-                if (encounter.getPatientId() != null) {
-                    String patientName = patientNames.get(encounter.getPatientId());
-                    if (StringUtils.isNotEmpty(patientName)) {
-                        row.setPatientName(patientName);
+                if (encounter.getPatientId() != null && patientSnapshotsById != null) {
+                    PatientInpatientProjectionSnapshot snapshot = patientSnapshotsById.get(encounter.getPatientId());
+                    if (snapshot != null) {
+                        if (StringUtils.isNotEmpty(snapshot.getPatientName())) {
+                            row.setPatientName(snapshot.getPatientName());
+                        }
+                        if (StringUtils.isNotEmpty(snapshot.getGenderEnum())) {
+                            row.setGenderCode(snapshot.getGenderEnum());
+                            AdministrativeGender gender =
+                                EnumUtil.fromCode(AdministrativeGender.class, snapshot.getGenderEnum());
+                            if (gender != null) {
+                                row.setGenderEnumText(gender.getDisplay());
+                            }
+                        }
+                        if (StringUtils.isNotEmpty(snapshot.getAgeText())) {
+                            row.setAgeText(snapshot.getAgeText());
+                        }
                     }
                 }
             }
@@ -271,6 +292,7 @@ public class PhysicalExamChargeMapperImpl implements PhysicalExamChargeMapper {
             if (ext != null) {
                 row.setBusNo(ext.getBusNo());
                 row.setPackageName(resolvePackageName(ext));
+                row.setGroupFlag(ext.getGroupFlag());
             }
             List<ChargeItem> chargeItems = chargeItemsByEncounter.get(encounterId);
             BigDecimal planned = BigDecimal.ZERO;
@@ -334,6 +356,23 @@ public class PhysicalExamChargeMapperImpl implements PhysicalExamChargeMapper {
             item.setTotalPrice(row.getTotalPrice());
             item.setUnitPrice(row.getUnitPrice());
             item.setQuantity(row.getQuantityValue());
+            item.setCatalogUnitPrice(row.getBaseAmount());
+            item.setOverrideReasonCode(row.getOverrideReasonCode());
+            item.setServiceTable(row.getServiceTable());
+            boolean priceEditable = false;
+            // 仅待收费可改价；套餐整单锚 AD，加项锚 SR
+            if (ChargeItemStatus.PLANNED.getCode().equals(row.getStatusEnum())) {
+                if (TableNameConstants.WKF_SERVICE_REQUEST.equals(row.getServiceTable())) {
+                    priceEditable = true;
+                } else if (TableNameConstants.WKF_ACTIVITY_DEFINITION.equals(row.getServiceTable())) {
+                    priceEditable = true;
+                }
+            }
+            item.setPriceEditable(priceEditable);
+            // 加项行带回 SR，供登记台按服务申请改价
+            if (TableNameConstants.WKF_SERVICE_REQUEST.equals(row.getServiceTable())) {
+                item.setServiceRequestId(row.getServiceId());
+            }
             items.add(item);
         }
         return items;
@@ -369,6 +408,85 @@ public class PhysicalExamChargeMapperImpl implements PhysicalExamChargeMapper {
             previews.add(preview);
         }
         return previews;
+    }
+
+    /**
+     * 装配手工改价领域命令。
+     *
+     * @param request    改价请求
+     * @param operatorId 操作人
+     * @return 改价命令
+     */
+    @Override
+    public ManualOverridePlannedChargeItemPricesCommand toManualOverridePlannedChargeItemPricesCommand(
+        AdjustPhysicalExamChargePricesRequest request,
+        Long operatorId) {
+        ManualOverridePlannedChargeItemPricesCommand cmd = new ManualOverridePlannedChargeItemPricesCommand();
+        cmd.setOperatorId(operatorId);
+        cmd.setEncounterId(request.getEncounterId());
+        List<ManualOverridePlannedChargeItemPricesCommand.Item> items = new ArrayList<>();
+        if (request.getItems() != null) {
+            for (AdjustPhysicalExamChargePricesRequest.Item row : request.getItems()) {
+                if (row == null) {
+                    continue;
+                }
+                ManualOverridePlannedChargeItemPricesCommand.Item item =
+                    new ManualOverridePlannedChargeItemPricesCommand.Item();
+                item.setChargeItemId(row.getChargeItemId());
+                item.setUnitPrice(row.getUnitPrice());
+                String reasonCode = row.getOverrideReasonCode();
+                if (StringUtils.isEmpty(reasonCode)) {
+                    reasonCode = PhysicalExamChargeConstants.OVERRIDE_REASON_PEIS_MANUAL;
+                }
+                item.setOverrideReasonCode(reasonCode);
+                item.setOverrideReasonText(row.getOverrideReasonText());
+                items.add(item);
+            }
+        }
+        cmd.setItems(items);
+        return cmd;
+    }
+
+    /**
+     * 装配退费预览响应。
+     *
+     * @param originalPaymentId       原支付主键
+     * @param refundableAmount        应退金额
+     * @param originalPayChannelCodes 原支付渠道码
+     * @param refundingChargeItemIds  拟退收费项
+     * @param previews                拟退行预览
+     * @return 预览响应
+     */
+    @Override
+    public PreviewPhysicalExamRefundResponse toPreviewRefundResponse(
+        Long originalPaymentId,
+        BigDecimal refundableAmount,
+        List<String> originalPayChannelCodes,
+        List<Long> refundingChargeItemIds,
+        List<PhysicalExamPreSettleLinePreviewDto> previews) {
+        PreviewPhysicalExamRefundResponse response = new PreviewPhysicalExamRefundResponse();
+        response.setOriginalPaymentId(originalPaymentId);
+        response.setRefundableAmount(refundableAmount);
+        response.setOriginalPayChannelCodes(originalPayChannelCodes);
+        response.setRefundingChargeItemIds(refundingChargeItemIds);
+        response.setPreviews(previews);
+        return response;
+    }
+
+    /**
+     * 装配退费执行响应。
+     *
+     * @param originalPaymentId 原支付主键
+     * @param reversePaymentId  逆向支付主键
+     * @return 执行响应
+     */
+    @Override
+    public RefundPhysicalExamChargesResponse toRefundChargesResponse(Long originalPaymentId, Long reversePaymentId) {
+        RefundPhysicalExamChargesResponse response = new RefundPhysicalExamChargesResponse();
+        response.setSuccess(Boolean.TRUE);
+        response.setOriginalPaymentId(originalPaymentId);
+        response.setReversePaymentId(reversePaymentId);
+        return response;
     }
 
     /**

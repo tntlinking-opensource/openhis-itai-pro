@@ -23,4 +23,10 @@ public class SearchCatalogRequest extends AbstractHealthPageRequest {
 
     /** 发布状态精确过滤。 */
     private String statusEnum;
+
+    /**
+     * 穿梭候选轻量模式：为 true 时不装小项绑定/原价/科室/引用次数，仅列表主键与名称等，
+     * 供编辑弹窗候选加载，避免打开编辑时卡住。
+     */
+    private Boolean pickerMode;
 }

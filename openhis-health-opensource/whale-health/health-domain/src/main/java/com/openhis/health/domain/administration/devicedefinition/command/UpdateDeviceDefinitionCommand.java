@@ -69,7 +69,7 @@ public class UpdateDeviceDefinitionCommand extends BatchCommand<UpdateDeviceDefi
         private String modelNumber;
         /** 高值器材标志（0/1）。 */
         private Integer hvcmFlag;
-        /** 收费耗材标记（0/1；1=收费；界面「不收费耗材」勾选对应 0）。 */
+        /** 收费耗材标记（0/1；1=收费；与界面「收费耗材」勾选同向）。 */
         private Integer chargeableFlag;
         /** 病案结算类型编码。 */
         private String mrSettlementTypeCode;
@@ -89,10 +89,8 @@ public class UpdateDeviceDefinitionCommand extends BatchCommand<UpdateDeviceDefi
         private Integer chrgitmLv;
         /** 主要成分描述。 */
         private String substanceText;
-        /** 生产厂家标识。 */
+        /** 生产厂家标识（cus_supplier.id，type=生产厂家）。 */
         private Long manufacturerId;
-        /** 生产厂家名称。 */
-        private String manufacturerText;
         /** 供应商标识。 */
         private Long supplyId;
         /** 过敏标记（0/1）。 */

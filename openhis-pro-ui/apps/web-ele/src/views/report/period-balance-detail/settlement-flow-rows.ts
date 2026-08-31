@@ -3,7 +3,8 @@ import type {
   PeriodBalanceDetailListRowDto,
 } from '#/api/report/period-balance-detail';
 
-import { fmtReportNumber } from '#/views/report/shared/report-format';
+import { formatPurchaseMoneyDisplay } from '#/utils/format/money-scale';
+import { fmtReportNumber, fmtReportPurchaseMoney } from '#/views/report/shared/report-format';
 
 /** 展开区单行期间流水（统一表行，固定列头）。 */
 export interface SettlementFlowRow {
@@ -50,21 +51,20 @@ function formatFlowQuantity(value: unknown, unitLabel?: string | null): string {
   return formatMinUnitQuantity(value, unitLabel);
 }
 
-/** 展开区金额：无数据按 0 展示。 */
+/** 展开区进价金额：中药可至三位。 */
 function formatFlowAmount(value: unknown): string {
   if (value === null || value === undefined || value === '') {
-    return formatFlowCell(0);
+    return fmtReportPurchaseMoney(0) || '0.00';
   }
-  return formatFlowCell(value);
+  return fmtReportPurchaseMoney(value) || '—';
 }
 
-/** 格式化流水单元格：数量/金额空值占位。 */
-function formatFlowCell(value: unknown, fractionDigits = 2): string {
+/** 展开区包装进价：最多三位去尾零（中药第三位可见）。 */
+function formatFlowCostPackageUnitPrice(value: unknown): string {
   if (value === null || value === undefined || value === '') {
-    return '—';
+    return formatPurchaseMoneyDisplay(0) || '0.00';
   }
-  const text = fmtReportNumber(value, fractionDigits);
-  return text || '—';
+  return formatPurchaseMoneyDisplay(value) || '—';
 }
 
 /** 主表左侧信息区宽度（展开列 + 编码 + 名称 + 商品名 + 规格），子表与期初列对齐。 */
@@ -167,7 +167,7 @@ function buildStandardFlowRow(
     key: groupCode,
     label: groupLabel,
     quantityText: formatFlowQuantity(row[qtyCol?.columnCode ?? ''], row.minUnitCodeLabel),
-    costPackageUnitPriceText: formatFlowAmount(row[costPkgCol?.columnCode ?? '']),
+    costPackageUnitPriceText: formatFlowCostPackageUnitPrice(row[costPkgCol?.columnCode ?? '']),
     costAmountText: formatFlowAmount(row[costCol?.columnCode ?? '']),
   };
 }

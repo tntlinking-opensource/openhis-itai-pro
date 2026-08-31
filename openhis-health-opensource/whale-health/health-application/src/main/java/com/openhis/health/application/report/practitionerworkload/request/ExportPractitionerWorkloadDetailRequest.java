@@ -6,11 +6,14 @@ package com.openhis.health.application.report.practitionerworkload.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.openhis.whale.core.application.dto.ExcelExportColumnDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+
+import java.util.List;
 
 /**
  * 导出科室/医生工作量明细入参（IF-RPT-WKL-04）。
@@ -50,4 +53,10 @@ public class ExportPractitionerWorkloadDetailRequest {
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "医生主键（可选）")
     private Long practitionerId;
+
+    /**
+     * 前端下发的导出列；空则导出全部 {@code @Excel} 列。
+     */
+    @Schema(description = "导出列清单（页面可见列）")
+    private List<ExcelExportColumnDto> exportColumns;
 }

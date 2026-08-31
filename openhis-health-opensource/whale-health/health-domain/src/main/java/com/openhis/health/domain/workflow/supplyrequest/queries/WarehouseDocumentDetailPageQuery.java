@@ -62,8 +62,19 @@ public class WarehouseDocumentDetailPageQuery extends AbstractPageQuery {
      */
     private List<Long> purposeLocationIds;
 
+    /**
+     * 供应商主键等值筛选（可选）；空则该维不过滤。
+     */
+    private Long supplierId;
+
     /** 物品 ID 筛选（可选）。 */
     private Long itemId;
+
+    /**
+     * 项目分类 / 物品表筛选（可选）：{@code med_medication_definition}（药品）或
+     * {@code adm_device_definition}（耗材）；空则不限。
+     */
+    private String itemTable;
 
     /** 批号精确匹配（可选）；与 {@link #lotNumberKeyword} 互斥，关键字非空时优先 LIKE。 */
     private String lotNumber;

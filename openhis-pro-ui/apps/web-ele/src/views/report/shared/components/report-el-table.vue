@@ -139,6 +139,25 @@ function resolveHeaderCellStyle({
   :deep(.el-table-fixed-column--left.is-last-column::before) {
     box-shadow: inset 8px 0 8px -8px rgb(15 23 42 / 10%);
   }
+
+  /*
+   * 退费/退药/冲减：整行 danger，覆盖单元格默认色与金额列强调色。
+   * ElTag 自带色不强制覆盖。
+   */
+  :deep(.el-table__body tr.report-list-page__refund-row > td.el-table__cell),
+  :deep(.el-table__body tr.report-list-page__refund-row > td.el-table-fixed-column--left),
+  :deep(.el-table__body tr.report-list-page__refund-row > td.el-table-fixed-column--right),
+  :deep(.el-table__body tr.report-list-page__refund-row > td.el-table__cell .cell),
+  :deep(.el-table__body tr.report-list-page__refund-row .report-list-page__amount-cell .cell),
+  :deep(.el-table__body tr.report-list-page__refund-row .report-list-page__busno) {
+    color: var(--el-color-danger);
+  }
+
+  :deep(.el-table__body tr.report-list-page__refund-row:hover > td.el-table__cell),
+  :deep(.el-table__body tr.report-list-page__refund-row:hover > td.el-table-fixed-column--left),
+  :deep(.el-table__body tr.report-list-page__refund-row:hover > td.el-table-fixed-column--right) {
+    color: var(--el-color-danger);
+  }
 }
 </style>
 

@@ -97,8 +97,8 @@ public class OutpatientPharmacyDailySettlementHistoryItemDto implements CashierS
     @Schema(description = "挂载发药笔数")
     private Integer paymentCount;
 
-    /** 交账日结利润快照（售价合计 − 进价合计）。 */
-    @Schema(description = "日结利润（售价-进价）")
+    /** 交账售价合计快照（与大类售价总额之和同口径）。 */
+    @Schema(description = "售价合计")
     private BigDecimal totalIncome;
 
     /** 交账状态 code。 */

@@ -30,7 +30,20 @@ public class RegisterPersonalCheckInCommand {
     private Long operatorId;
 
     /**
-     * 体检类型：freshman / annual / staff / other；空则按 Campus 身份与是否首检推断。
+     * 体检类型：personal / group / freshman / annual / staff / other；
+     * 空则默认 personal。
      */
     private String examKind;
+
+    /** 团检单位（examKind=group 时必填）。 */
+    private Long companyId;
+
+    /** 团检分组/批次（examKind=group 时必填）。 */
+    private Long groupBatchId;
+
+    /** 本次体检推荐人。 */
+    private String referrerName;
+
+    /** 本次体检是否提供早餐。 */
+    private Boolean breakfastFlag;
 }

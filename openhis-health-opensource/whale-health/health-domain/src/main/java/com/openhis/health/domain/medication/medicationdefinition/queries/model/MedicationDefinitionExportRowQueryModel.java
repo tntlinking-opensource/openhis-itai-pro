@@ -21,6 +21,8 @@ public class MedicationDefinitionExportRowQueryModel {
     private String categoryCode;
     /** 状态枚举编码。 */
     private String statusEnum;
-    /** manufacturer文本。 */
+    /**
+     * 生产厂家展示名（非持久化列；导出时由 AppService 按 manufacturerId 解析后回填）。
+     */
     private String manufacturerText;
 }

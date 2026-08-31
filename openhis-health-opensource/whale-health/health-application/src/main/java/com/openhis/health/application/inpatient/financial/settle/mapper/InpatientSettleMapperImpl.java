@@ -185,6 +185,8 @@ public class InpatientSettleMapperImpl implements InpatientSettleMapper {
         dto.setOrganizationName(firstNonBlank(contextRow.getOrganizationName(), overlayOrgName));
         dto.setWardName(firstNonBlank(contextRow.getWardName(), overlayWardName));
         dto.setBedName(firstNonBlank(contextRow.getBedName(), overlayBedName));
+        // Asm：主治医生来自住院上下文展示参与者（活动优先 / 末次 COMPLETED）。
+        dto.setAttendingDoctorName(contextRow.getAttendingDoctorName());
         dto.setStatusEnum(contextRow.getStatusEnum());
         String statusText = firstNonBlank(contextRow.getStatusEnumText(), overlayStatusText);
         if (StringUtils.isEmpty(statusText)) {
@@ -245,6 +247,8 @@ public class InpatientSettleMapperImpl implements InpatientSettleMapper {
             response.setOrganizationName(contextRow.getOrganizationName());
             response.setWardName(contextRow.getWardName());
             response.setBedName(contextRow.getBedName());
+            // Asm：摘要抬头主治医生与队列同源（展示参与者口径）。
+            response.setAttendingDoctorName(contextRow.getAttendingDoctorName());
             response.setStatusEnum(contextRow.getStatusEnum());
             String statusText = contextRow.getStatusEnumText();
             if (StringUtils.isEmpty(statusText)) {
@@ -526,7 +530,7 @@ public class InpatientSettleMapperImpl implements InpatientSettleMapper {
     }
 
     /**
-     * 出院全结多退 → 退还预交金领域命令（现金退现占位明细）。
+     * 出院全结多退 → 退还预交金领域命令（现金渠道；不挂原收款）。
      *
      * @param encounterId  就诊 ID
      * @param patientId    患者 ID
@@ -551,7 +555,7 @@ public class InpatientSettleMapperImpl implements InpatientSettleMapper {
         command.setKindEnum(PaymentKind.HOSPITAL_DEPOSIT);
         command.setPaymentEnum(PaymentType.UN_PAY.getCode());
         PaymentDetailItemCommand detail = new PaymentDetailItemCommand();
-        detail.setPayEnum(PaymentChannel.CASHIER.getCode());
+        detail.setPayEnum(PaymentChannel.CASH.getCode());
         detail.setAmount(refundAmount);
         detail.setAccountId(accountId);
         List<PaymentDetailItemCommand> details = new ArrayList<>();
@@ -561,7 +565,51 @@ public class InpatientSettleMapperImpl implements InpatientSettleMapper {
     }
 
     /**
-     * 结算少补 → 收取预交金领域命令（复用用户渠道实付明细）。
+     * 医保出院原路退预交金 → 退还命令（单笔渠道明细）。
+     *
+     * @param encounterId    就诊 ID
+     * @param patientId      患者 ID
+     * @param accountId      登记个人现金户 ID
+     * @param refundAmount   本笔退费金额
+     * @param payChannelCode 退费渠道码；空则收银台
+     * @param operatorId     操作员 ID
+     * @return 退还命令
+     */
+    @Override
+    public RefundAdvanceDepositCommand toDischargeDepositRefundByChannelCommand(
+        Long encounterId,
+        Long patientId,
+        Long accountId,
+        BigDecimal refundAmount,
+        String payChannelCode,
+        Long operatorId) {
+        RefundAdvanceDepositCommand command = new RefundAdvanceDepositCommand();
+        command.setEncounterId(encounterId);
+        command.setPatientId(patientId);
+        command.setEntererId(operatorId);
+        command.setTenderedAmount(refundAmount);
+        command.setDisplayAmount(refundAmount);
+        command.setKindEnum(PaymentKind.HOSPITAL_DEPOSIT);
+        command.setPaymentEnum(PaymentType.UN_PAY.getCode());
+        PaymentDetailItemCommand detail = new PaymentDetailItemCommand();
+        String channel = payChannelCode;
+        if (StringUtils.isBlank(channel)) {
+            channel = PaymentChannel.CASHIER.getCode();
+        }
+        detail.setPayEnum(channel);
+        detail.setAmount(refundAmount);
+        detail.setAccountId(accountId);
+        List<PaymentDetailItemCommand> details = new ArrayList<>();
+        details.add(detail);
+        command.setPaymentDetails(details);
+        return command;
+    }
+
+    /**
+     * 结算少补 → 收取预交金领域命令。
+     *
+     * <p><strong>已废除</strong>（DD 住院预交金结算口径纠错）：少补改为结算渠道实付，禁止再调本方法落
+     * {@code HOSPITAL_DEPOSIT} PAY。保留签名仅防编译残留引用。</p>
      *
      * @param encounterId      就诊 ID
      * @param patientId        患者 ID
@@ -570,7 +618,9 @@ public class InpatientSettleMapperImpl implements InpatientSettleMapper {
      * @param paymentDetails   用户渠道实付明细
      * @param operatorId       操作员 ID
      * @return 收取命令
+     * @deprecated 禁止调用；确认结算须走冲抵明细 + 渠道实付
      */
+    @Deprecated
     @Override
     public CollectAdvanceDepositCommand toSettleSupplementCollectCommand(
         Long encounterId,

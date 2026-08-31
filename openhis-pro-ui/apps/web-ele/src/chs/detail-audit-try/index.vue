@@ -428,11 +428,15 @@ onMounted(() => {
 
       <div class="mb-1 mt-3 text-sm text-gray-500">选中行 · 违规明细</div>
       <ElTable :data="detailRows" max-height="220" stripe>
-        <ElTableColumn label="jrdId" min-width="220" prop="jrdId" show-overflow-tooltip />
+        <ElTableColumn label="药品/项目" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">
+            {{ row.itemName || '—' }}
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="处方/医嘱" min-width="140" prop="rxId" show-overflow-tooltip />
         <ElTableColumn label="明细类型" min-width="90" prop="volaItemType" />
-        <ElTableColumn label="处方/医嘱ID" min-width="140" prop="rxId" />
         <ElTableColumn label="金额" min-width="90" prop="volaAmt" />
-        <ElTableColumn label="就诊ID" min-width="120" prop="mdtrtId" />
+        <ElTableColumn label="jrdId" min-width="200" prop="jrdId" show-overflow-tooltip />
       </ElTable>
     </ElCard>
 

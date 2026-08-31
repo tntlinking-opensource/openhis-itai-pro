@@ -146,6 +146,7 @@ public class ReturnMedicineDetailLoader {
             }
             row.setServiceTable(TableNameConstants.MED_MEDICATION_REQUEST);
             row.setTraceNo(this.resolveTraceNo(md));
+            row.setBusNo(this.resolveBusNo(md));
             rows.add(row);
         }
         return rows;
@@ -170,6 +171,19 @@ public class ReturnMedicineDetailLoader {
     private String resolveTraceNo(MedicationDispense current) {
         if (current != null && StringUtils.isNotEmpty(current.getTraceNo())) {
             return current.getTraceNo().trim();
+        }
+        return GeneralSharedConstants.EMPTY_STRING;
+    }
+
+    /**
+     * 退药发放 busNo（码上放心 116 / TraceNumber 退药 IN 组码键）。
+     *
+     * @param current 退药发放行
+     * @return 非空 busNo；无则空串
+     */
+    private String resolveBusNo(MedicationDispense current) {
+        if (current != null && StringUtils.isNotEmpty(current.getBusNo())) {
+            return current.getBusNo().trim();
         }
         return GeneralSharedConstants.EMPTY_STRING;
     }

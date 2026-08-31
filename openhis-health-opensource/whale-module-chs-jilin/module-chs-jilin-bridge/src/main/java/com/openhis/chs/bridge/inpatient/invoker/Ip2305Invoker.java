@@ -70,7 +70,11 @@ public class Ip2305Invoker {
             command.getSetlId(),
             tenantId);
         if (YbSettlementVoucherStatus.REVOKED.equals(record.getStatus())) {
-            throw new BusinessException(ChsErrorCodes.PLATFORM_FAILED, "结算回执已撤销");
+            // Pre：本地已撤销则幂等返回，供反结/召回重试
+            return new IpRevokeSettleResult()
+                .setSettlementRecordId(record.getId())
+                .setSetlId(record.getSetlId())
+                .setMdtrtId(record.getMdtrtId());
         }
         ChsInvokeLogContextHolder.set(new ChsInvokeLogContext()
             .setContractId(record.getContractId())

@@ -38,6 +38,10 @@ public class SupplierListItemQueryModel {
      */
     private String pyStr;
     /**
+     * 五笔码（可空；前端 filterable 下拉与拼音一并匹配）。
+     */
+    private String wbStr;
+    /**
      * 地址（可空）。
      */
     private String address;

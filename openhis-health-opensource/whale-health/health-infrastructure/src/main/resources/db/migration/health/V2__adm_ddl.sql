@@ -219,8 +219,28 @@ COMMENT ON COLUMN adm_charge_item_definition.lot_no IS '批次或效期批次号
 COMMENT ON COLUMN adm_charge_item_definition.price_value IS '价格数值（元，与 { adm_charge_item} 金额列同口径）';
 COMMENT ON COLUMN adm_charge_item_definition.priority IS '同实例多价时的优先级（数值越小越优先，由产品约定）';
 
+CREATE INDEX IF NOT EXISTS idx_cid_instance_price_type
+    ON adm_charge_item_definition (instance_table, instance_id, price_type_code)
+    WHERE is_deleted = FALSE;
+COMMENT ON INDEX idx_cid_instance_price_type IS
+    '收费定义：实例表+主键+价类（取 SALE）';
+
 -- seed: adm_charge_item_definition
 -- ----- seed sync from DB (adm_charge_item_definition, 23 rows) -----
+-- 产品种子：历史号复诊零售价 0 元（fin_type 1012 诊察费）
+INSERT INTO adm_charge_item_definition (
+    id, tenant_id, created_at, updated_at, created_by, updated_by,
+    is_deleted, deleted_at, deleted_by, version,
+    instance_table, instance_id, charge_name, status_enum, org_id,
+    type_code, yb_type, price_type_code, lot_no, price_value, priority
+)
+VALUES (
+    322957328119180161, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, 1,
+    false, NULL, NULL, 0,
+    'adm_healthcare_service', 322957328119180160, '历史号复诊', 'ACTIVE', NULL,
+    '1012', NULL, 'SALE', NULL, 0.000000, NULL
+)
+ON CONFLICT (id) DO NOTHING;
 
 -- from V5__adm_device_definition.sql
 -- adm_device_definition（建表 + 种子数据）
@@ -264,7 +284,6 @@ CREATE TABLE IF NOT EXISTS "public"."adm_device_definition" (
     "stock_unit_code" varchar(255),
     "approval_number" varchar(255),
     "manufacturer_id" int8,
-    "manufacturer_text" varchar(255),
     "supply_id" int8,
     "description" varchar(255),
     "jurisdiction" varchar(255),
@@ -324,8 +343,7 @@ COMMENT ON COLUMN adm_device_definition.dose_unit_code IS '剂量单位（5类�
 COMMENT ON COLUMN adm_device_definition.package_unit_code IS '销售单位（5类单位之一）';
 COMMENT ON COLUMN adm_device_definition.stock_unit_code IS '库存单位（5类单位之一）';
 COMMENT ON COLUMN adm_device_definition.approval_number IS '批准文号';
-COMMENT ON COLUMN adm_device_definition.manufacturer_id IS '生产厂家标识';
-COMMENT ON COLUMN adm_device_definition.manufacturer_text IS '生产厂家名称';
+COMMENT ON COLUMN adm_device_definition.manufacturer_id IS '生产厂家标识（cus_supplier.id，type=生产厂家）';
 COMMENT ON COLUMN adm_device_definition.supply_id IS '供应商标识';
 COMMENT ON COLUMN adm_device_definition.description IS '器材说明';
 COMMENT ON COLUMN adm_device_definition.jurisdiction IS '适用范围描述';
@@ -743,6 +761,20 @@ COMMENT ON COLUMN adm_healthcare_service.extra_details IS '扩展详情（JSON �
 COMMENT ON COLUMN adm_healthcare_service.contact IS '联系方式（JSON 字符串），医疗服务对外联系信息，可为空';
 
 -- seed: adm_healthcare_service
+-- 产品种子：历史号复诊（BR-REG-020；写侧按 bus_no=HS_HIST_FOLLOW_UP 识别）
+INSERT INTO adm_healthcare_service (
+    id, tenant_id, created_at, updated_at, created_by, updated_by,
+    is_deleted, deleted_at, deleted_by, version,
+    name, type_code, category_code, offered_org_id, specialty_code, location_id,
+    status_enum, active_flag, appointment_required_flag, yb_no, bus_no, comment, extra_details, contact
+)
+VALUES (
+    322957328119180160, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, 1,
+    false, NULL, NULL, 0,
+    '历史号复诊', '4', NULL, NULL, NULL, NULL,
+    'ACTIVE', true, false, '004', 'HS_HIST_FOLLOW_UP', NULL, NULL, NULL
+)
+ON CONFLICT (id) DO NOTHING;
 
 -- from V14__adm_invoice.sql
 -- adm_invoice（建表）
@@ -969,6 +1001,7 @@ CREATE TABLE IF NOT EXISTS "public"."adm_patient" (
     "organization_id" int8 NOT NULL,
     "merged_target_patient_id" int8,
     "merged_at" timestamptz(6),
+    "education_level_code" varchar(32),
     CONSTRAINT "adm_patient_pkey" PRIMARY KEY ("id")
 );
 COMMENT ON TABLE adm_patient IS '管理域 patient';
@@ -1017,6 +1050,8 @@ COMMENT ON COLUMN adm_patient.deceased_reason IS '死亡原因';
 COMMENT ON COLUMN adm_patient.organization_id IS '建档机构标识';
 COMMENT ON COLUMN adm_patient.merged_target_patient_id IS '合并目标患者标识';
 COMMENT ON COLUMN adm_patient.merged_at IS '合并时间';
+COMMENT ON COLUMN adm_patient.education_level_code IS
+    '学历层次字典编码（EducationLevel，如 PREPARATORY/UNDERGRADUATE/POSTGRADUATE/DOCTORAL）';
 
 -- from V18__adm_patient_identifier.sql
 -- adm_patient_identifier（建表）
@@ -1212,6 +1247,34 @@ COMMENT ON COLUMN adm_pr_assign_service.assignment_id IS '岗位服务项子实�
 COMMENT ON COLUMN adm_pr_assign_service.healthcare_service_id IS '医疗服务标识，关联 { adm_healthcare_service.id}';
 
 -- seed: adm_pr_assign_service
+-- 产品种子：全部未删岗位挂上历史号复诊（BR-REG-014；新库若尚无岗位则为 0 行）
+INSERT INTO adm_pr_assign_service (
+    id, tenant_id, created_at, updated_at, created_by, updated_by,
+    is_deleted, deleted_at, deleted_by, version,
+    assignment_id, healthcare_service_id
+)
+SELECT
+    a.id + 500000000000000000,
+    COALESCE(a.tenant_id, 1),
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    COALESCE(a.created_by, 1),
+    COALESCE(a.updated_by, 1),
+    false,
+    NULL,
+    NULL,
+    0,
+    a.id,
+    322957328119180160
+FROM adm_pr_assign a
+WHERE a.is_deleted = false
+  AND NOT EXISTS (
+    SELECT 1
+    FROM adm_pr_assign_service s
+    WHERE s.assignment_id = a.id
+      AND s.healthcare_service_id = 322957328119180160
+      AND s.is_deleted = false
+  );
 
 -- from V23__adm_practitioner.sql
 -- adm_practitioner（建表 + 种子数据）

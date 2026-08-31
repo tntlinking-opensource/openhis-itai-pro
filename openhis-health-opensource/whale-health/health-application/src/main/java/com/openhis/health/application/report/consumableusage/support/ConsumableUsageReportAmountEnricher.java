@@ -39,7 +39,8 @@ import lombok.RequiredArgsConstructor;
  *
  * <p>患者侧：售价来自 ChargeItem.total_price；进价来自 {@link HistoricalChargeItemPurchasePriceSupport}
  *（批号 {@code LOT_NUMBER_COST}，缺则同批号 {@code LOT_NUMBER_PRICE}）；
- * 行进价合计走包装锚三参；展示进价单价 {@link ChargeItemPackageUnitRatioSupport#toSplitUnitDisplayPrice}。
+ * 行进价合计走包装锚三参；展示进价单价与操作单位对齐（#4M-OP）。
+ * 匹配：仅发放精确锚（本发放 / basedOn）；无命中保持 null 禁止假 0.00。禁止请求级兼容回挂。
  * 科室领用侧：仅 Supply 落库进价；售价字段一律置空（领用非销售，禁止目录 SALE / 批号售价）。</p>
  *
  * <p>DOC-CONFLICT→已按 DD-报表中心-进售价口径与开立科室-2026-08 收敛。</p>
@@ -99,6 +100,9 @@ public class ConsumableUsageReportAmountEnricher {
     /**
      * 回填患者发放明细行进价/售价（6 位行刻度；amount 保持售价别名）。
      *
+     * <p>按发放/basedOn 精确锚匹配账单。无命中时售/进价保持 {@code null}（前端「—」），
+     * 禁止 {@code scaleCalc} 编成假 0.00；禁止请求级兼容回挂。</p>
+     *
      * @param lines 待 enrich 行；须已填 encounterId / dispenseId / deviceReqId / quantity
      */
     public void enrichPatientDispenseAmounts(List<PatientDispenseAmountLine> lines) {
@@ -130,44 +134,41 @@ public class ConsumableUsageReportAmountEnricher {
                 purchaseUnitByChargeItemId,
                 packageUnitRatioByChargeItemId,
                 productByCompositeKey);
+        // Pre：跨行全局消费，避免同账单被多发放行各加一遍
+        Set<Long> consumedChargeItemIds = new HashSet<>();
         for (PatientDispenseAmountLine line : lines) {
             if (line == null) {
                 continue;
             }
-            BigDecimal saleAmount = MonetaryAmountSupport.scaleCalc(this.sumMatchedSaleAmount(line, chargeItems));
-            line.setAmount(saleAmount);
-            line.setSaleAmount(saleAmount);
-            BigDecimal saleUnit = this.resolveSaleUnitPrice(line, saleAmount);
-            line.setSaleUnitPrice(saleUnit);
-            BigDecimal purchaseAmount = MonetaryAmountSupport.scaleCalc(
-                this.sumMatchedPurchaseAmount(line, chargeItems, purchaseByChargeItemId));
-            line.setPurchaseAmount(purchaseAmount);
-            // 展示进价单价：与收费 quantity_unit 对齐（禁止行额÷数量反推）
-            BigDecimal purchaseUnit = this.resolvePurchaseDisplayUnitPrice(
+            List<ChargeItem> matched =
+                this.collectMatchedCharges(line, chargeItems, consumedChargeItemIds);
+            this.applyMatchedChargeAmounts(
                 line,
+                matched,
                 chargeItems,
+                purchaseByChargeItemId,
                 purchaseUnitByChargeItemId,
                 packageUnitRatioByChargeItemId,
                 productByCompositeKey);
-            line.setPurchaseUnitPrice(purchaseUnit);
         }
     }
 
     /**
      * 回填科室领用明细行进价；售价一律置空。
      *
-     * <p>进价取 Supply 落库价；展示单价按包装倍数折拆零。领用非销售，禁止编售价 / 目录 SALE。</p>
+     * <p>进价取 Supply 落库价；展示单价与操作单位对齐（#4M-OP）。领用非销售，禁止编售价 / 目录 SALE。</p>
      *
-     * @param line 已映射明细行；须含 deviceDefId / quantity / 进价字段
+     * @param line 已映射明细行；须含 deviceDefId / quantity / unitCode / 进价字段
      */
     public void enrichDeptIssueAmounts(PatientDispenseAmountLine line) {
         if (line == null) {
             return;
         }
         BigDecimal packagePurchaseUnit = MonetaryAmountSupport.scaleCalc(line.getPurchaseUnitPrice());
-        BigDecimal ratio = this.resolveDevicePackageUnitRatio(line.getDeviceDefId());
-        BigDecimal purchaseUnit =
-            this.chargeItemPackageUnitRatioSupport.toSplitUnitDisplayPrice(packagePurchaseUnit, ratio);
+        ProductDefinitionDisplayDto product = this.resolveDeviceProductDisplay(line.getDeviceDefId());
+        BigDecimal ratio = this.resolvePackageUnitRatio(product);
+        BigDecimal purchaseUnit = this.chargeItemPackageUnitRatioSupport.toAlignedPurchaseDisplayUnitPrice(
+            packagePurchaseUnit, ratio, line.getUnitCode(), product);
         BigDecimal purchaseAmount = MonetaryAmountSupport.scaleCalc(line.getPurchaseAmount());
         line.setPurchaseAmount(purchaseAmount);
         line.setPurchaseUnitPrice(purchaseUnit);
@@ -204,17 +205,31 @@ public class ConsumableUsageReportAmountEnricher {
         List<? extends ConsumableUsagePurchaseSaleDetailLine> detailRows,
         String dimension,
         Map<Long, String> categoryCodeByDeviceDefId) {
-        if (summaryRows == null || summaryRows.isEmpty() || detailRows == null || detailRows.isEmpty()) {
+        if (summaryRows == null || summaryRows.isEmpty()) {
             return;
         }
-        Map<String, ConsumableUsagePurchaseSaleSummaryLine> summaryByKey = new LinkedHashMap<>();
-        for (ConsumableUsagePurchaseSaleSummaryLine summaryRow : summaryRows) {
-            if (summaryRow != null && summaryRow.getDimensionKey() != null) {
-                summaryByKey.put(summaryRow.getDimensionKey(), summaryRow);
-            }
+        SummaryAmountBuckets buckets = new SummaryAmountBuckets();
+        this.accumulateDetailRowsIntoSummaryBuckets(
+            buckets, detailRows, dimension, categoryCodeByDeviceDefId);
+        this.applySummaryAmountBuckets(summaryRows, buckets);
+    }
+
+    /**
+     * 将一批已定价明细累加进汇总金额桶（可多次调用后一次 {@link #applySummaryAmountBuckets}）。
+     *
+     * @param buckets                   金额/展示单价累加桶
+     * @param detailRows                本批已 enrich 明细
+     * @param dimension                 汇总维
+     * @param categoryCodeByDeviceDefId CATEGORY 维品规→类型
+     */
+    public void accumulateDetailRowsIntoSummaryBuckets(
+        SummaryAmountBuckets buckets,
+        List<? extends ConsumableUsagePurchaseSaleDetailLine> detailRows,
+        String dimension,
+        Map<Long, String> categoryCodeByDeviceDefId) {
+        if (buckets == null || detailRows == null || detailRows.isEmpty()) {
+            return;
         }
-        Map<String, List<BigDecimal>> purchaseAmountsByKey = new HashMap<>();
-        Map<String, List<BigDecimal>> saleAmountsByKey = new HashMap<>();
         for (ConsumableUsagePurchaseSaleDetailLine detailRow : detailRows) {
             if (detailRow == null) {
                 continue;
@@ -224,18 +239,104 @@ public class ConsumableUsageReportAmountEnricher {
             if (bucketKey == null) {
                 continue;
             }
-            this.accumulateAmount(purchaseAmountsByKey, bucketKey, detailRow.getPurchaseAmount());
-            this.accumulateAmount(saleAmountsByKey, bucketKey, detailRow.getSaleAmount());
+            this.accumulateAmount(buckets.purchaseAmountsByKey, bucketKey, detailRow.getPurchaseAmount());
+            this.accumulateAmount(buckets.saleAmountsByKey, bucketKey, detailRow.getSaleAmount());
+            this.collectSummaryDisplayUnitPrice(
+                buckets.purchaseUnitsByKey, bucketKey, detailRow.getPurchaseUnitPrice());
+            this.collectSummaryDisplayUnitPrice(
+                buckets.saleUnitsByKey, bucketKey, detailRow.getSaleUnitPrice());
         }
-        for (Map.Entry<String, ConsumableUsagePurchaseSaleSummaryLine> entry : summaryByKey.entrySet()) {
-            String key = entry.getKey();
-            ConsumableUsagePurchaseSaleSummaryLine summary = entry.getValue();
-            BigDecimal purchaseNet = this.sumThenSettleOrNull(purchaseAmountsByKey.get(key));
-            BigDecimal saleNet = this.sumThenSettleOrNull(saleAmountsByKey.get(key));
-            summary.setPurchaseNetAmount(purchaseNet);
-            summary.setSaleNetAmount(saleNet);
-            summary.setNetAmount(saleNet);
+    }
+
+    /**
+     * 将累加桶写回汇总行进/售净额与展示单价。
+     *
+     * @param summaryRows 汇总行
+     * @param buckets     已累加金额桶
+     */
+    public void applySummaryAmountBuckets(
+        List<? extends ConsumableUsagePurchaseSaleSummaryLine> summaryRows,
+        SummaryAmountBuckets buckets) {
+        if (summaryRows == null || summaryRows.isEmpty() || buckets == null) {
+            return;
         }
+        for (ConsumableUsagePurchaseSaleSummaryLine summaryRow : summaryRows) {
+            if (summaryRow == null || summaryRow.getDimensionKey() == null) {
+                continue;
+            }
+            String key = summaryRow.getDimensionKey();
+            BigDecimal purchaseNet = this.sumThenSettleOrNull(buckets.purchaseAmountsByKey.get(key));
+            BigDecimal saleNet = this.sumThenSettleOrNull(buckets.saleAmountsByKey.get(key));
+            summaryRow.setPurchaseNetAmount(purchaseNet);
+            summaryRow.setSaleNetAmount(saleNet);
+            summaryRow.setNetAmount(saleNet);
+            summaryRow.setPurchaseUnitPrice(
+                this.resolveUniqueDisplayUnitPrice(buckets.purchaseUnitsByKey.get(key)));
+            summaryRow.setSaleUnitPrice(
+                this.resolveUniqueDisplayUnitPrice(buckets.saleUnitsByKey.get(key)));
+        }
+    }
+
+    /**
+     * 汇总金额分块累加桶（避免全窗明细 DTO 常驻后再一次聚合）。
+     */
+    public static final class SummaryAmountBuckets {
+
+        /** 分桶 → 进价行额列表。 */
+        private final Map<String, List<BigDecimal>> purchaseAmountsByKey = new HashMap<>();
+
+        /** 分桶 → 售价行额列表。 */
+        private final Map<String, List<BigDecimal>> saleAmountsByKey = new HashMap<>();
+
+        /** 分桶 → 进价展示单价集合。 */
+        private final Map<String, Set<BigDecimal>> purchaseUnitsByKey = new HashMap<>();
+
+        /** 分桶 → 售价展示单价集合。 */
+        private final Map<String, Set<BigDecimal>> saleUnitsByKey = new HashMap<>();
+    }
+
+    /**
+     * 收集同桶明细行的批号/账单单价（已 enrich）。
+     *
+     * @param bucketUnits 分桶 → 展示单价集合
+     * @param bucketKey   分桶键
+     * @param unitPrice   明细行进/售单价
+     */
+    private void collectSummaryDisplayUnitPrice(
+        Map<String, Set<BigDecimal>> bucketUnits,
+        String bucketKey,
+        BigDecimal unitPrice) {
+        if (unitPrice == null) {
+            return;
+        }
+        bucketUnits
+            .computeIfAbsent(bucketKey, ignored -> new LinkedHashSet<>())
+            .add(MonetaryAmountSupport.scaleCalc(unitPrice));
+    }
+
+    /**
+     * 同桶多行批号/账单单价一致时返回该单价；不一致则 null。
+     *
+     * @param candidates 候选展示单价
+     * @return 唯一单价或 null
+     */
+    private BigDecimal resolveUniqueDisplayUnitPrice(Set<BigDecimal> candidates) {
+        if (candidates == null || candidates.isEmpty()) {
+            return null;
+        }
+        BigDecimal unique = null;
+        for (BigDecimal candidate : candidates) {
+            if (candidate == null) {
+                continue;
+            }
+            BigDecimal scaled = MonetaryAmountSupport.scaleCalc(candidate);
+            if (unique == null) {
+                unique = scaled;
+            } else if (unique.compareTo(scaled) != 0) {
+                return null;
+            }
+        }
+        return unique;
     }
 
     /**
@@ -269,14 +370,13 @@ public class ConsumableUsageReportAmountEnricher {
     }
 
     /**
-     * 批量加载与患者发放行相关的 ChargeItem（仅发放/请求锚点；禁止按就诊拉全量费用）。
+     * 批量加载与患者发放行相关的 ChargeItem（仅发放锚点；禁止按请求兼容拉账单）。
      *
      * @param lines 明细行
      * @return 去重收费明细
      */
     private List<ChargeItem> loadChargeItems(List<PatientDispenseAmountLine> lines) {
         LinkedHashSet<Long> dispenseIds = new LinkedHashSet<>();
-        LinkedHashSet<Long> deviceReqIds = new LinkedHashSet<>();
         for (PatientDispenseAmountLine line : lines) {
             if (line == null) {
                 continue;
@@ -284,34 +384,28 @@ public class ConsumableUsageReportAmountEnricher {
             if (line.getDispenseId() != null) {
                 dispenseIds.add(line.getDispenseId());
             }
-            if (line.getDeviceReqId() != null) {
-                deviceReqIds.add(line.getDeviceReqId());
+            // Pre：退药行账单锚在源发放；须一并纳入 dispense_id IN
+            if (line.getBasedOnDispenseId() != null) {
+                dispenseIds.add(line.getBasedOnDispenseId());
             }
         }
         Map<Long, ChargeItem> chargeItemById = new HashMap<>();
+        // Pre：无发放锚则不拉账单（禁止请求级兼容）
+        if (dispenseIds.isEmpty()) {
+            return new ArrayList<>();
+        }
         // Pre：dispense_table 锚点一次 IN（报表汇总主路径）
-        if (!dispenseIds.isEmpty()) {
-            this.mergeChargeItems(
-                chargeItemById,
-                this.chargeItemQueryService.listChargeItemsForDeviceDispensePricingByDispenseIds(
-                    dispenseIds, true));
-            // Pre：遗留仅 service 锚定发放表时仍需 service_id IN
-            ChargeItemQueryCommand dispenseAsServiceCmd = new ChargeItemQueryCommand();
-            dispenseAsServiceCmd.setServiceIds(dispenseIds);
-            dispenseAsServiceCmd.setExcludeSupersededSettledLines(true);
-            this.mergeChargeItems(
-                chargeItemById,
-                this.chargeItemQueryService.listChargeItemsByServiceIds(dispenseAsServiceCmd));
-        }
-        // Pre：请求锚点挂费（未写 dispense 列的历史行）
-        if (!deviceReqIds.isEmpty()) {
-            ChargeItemQueryCommand requestCmd = new ChargeItemQueryCommand();
-            requestCmd.setServiceIds(deviceReqIds);
-            requestCmd.setExcludeSupersededSettledLines(true);
-            this.mergeChargeItems(
-                chargeItemById,
-                this.chargeItemQueryService.listChargeItemsByServiceIds(requestCmd));
-        }
+        this.mergeChargeItems(
+            chargeItemById,
+            this.chargeItemQueryService.listChargeItemsForDeviceDispensePricingByDispenseIds(
+                dispenseIds, true));
+        // Pre：service 表锚定发放主键时仍需 service_id IN
+        ChargeItemQueryCommand dispenseAsServiceCmd = new ChargeItemQueryCommand();
+        dispenseAsServiceCmd.setServiceIds(dispenseIds);
+        dispenseAsServiceCmd.setExcludeSupersededSettledLines(true);
+        this.mergeChargeItems(
+            chargeItemById,
+            this.chargeItemQueryService.listChargeItemsByServiceIds(dispenseAsServiceCmd));
         return new ArrayList<>(this.chargeItemQueryService.filterOutSupersededSettledLinesGroupedByEncounter(
             new ArrayList<>(chargeItemById.values())));
     }
@@ -335,45 +429,133 @@ public class ConsumableUsageReportAmountEnricher {
     }
 
     /**
-     * 汇总与发放行匹配的 ChargeItem 售价金额。
+     * 收集本行命中的收费明细，并记入全局已消费集合。
+     *
+     * <p>精确锚（本发放 / basedOn）命中；禁止请求级兼容回挂。</p>
+     *
+     * @param line                   发放行
+     * @param chargeItems            候选账单
+     * @param consumedChargeItemIds  跨行已消费主键
+     * @return 本行命中列表（顺序与候选一致）
      */
-    private BigDecimal sumMatchedSaleAmount(PatientDispenseAmountLine line, List<ChargeItem> chargeItems) {
-        Set<Long> usedIds = new HashSet<>();
-        BigDecimal total = BigDecimal.ZERO;
+    private List<ChargeItem> collectMatchedCharges(
+        PatientDispenseAmountLine line,
+        List<ChargeItem> chargeItems,
+        Set<Long> consumedChargeItemIds) {
+        List<ChargeItem> matched = new ArrayList<>();
         for (ChargeItem chargeItem : chargeItems) {
+            if (chargeItem == null || chargeItem.getId() == null) {
+                continue;
+            }
+            if (consumedChargeItemIds.contains(chargeItem.getId())) {
+                continue;
+            }
             if (!this.matches(line, chargeItem)) {
                 continue;
             }
-            if (!usedIds.add(chargeItem.getId())) {
-                continue;
-            }
-            total = total.add(this.salePriceOf(chargeItem));
+            matched.add(chargeItem);
+            consumedChargeItemIds.add(chargeItem.getId());
         }
-        return total;
+        return matched;
     }
 
     /**
-     * 汇总与发放行匹配的 ChargeItem 进价金额。
+     * 将已命中收费明细的进售价写回发放行；无命中时保持 null（禁止假 0.00）。
+     *
+     * @param line                           发放行
+     * @param matchedCharges                 本行命中账单（可空）
+     * @param allChargeItems                 全量候选（展示进价单价扫描用）
+     * @param purchaseByChargeItemId         行进价
+     * @param purchaseUnitByChargeItemId     包装进价单价
+     * @param packageUnitRatioByChargeItemId 包装倍数
+     * @param productByCompositeKey          产品 Map
      */
-    private BigDecimal sumMatchedPurchaseAmount(
+    private void applyMatchedChargeAmounts(
         PatientDispenseAmountLine line,
-        List<ChargeItem> chargeItems,
-        Map<Long, BigDecimal> purchaseByChargeItemId) {
-        Set<Long> usedIds = new HashSet<>();
-        BigDecimal total = BigDecimal.ZERO;
-        for (ChargeItem chargeItem : chargeItems) {
-            if (!this.matches(line, chargeItem)) {
-                continue;
-            }
-            if (!usedIds.add(chargeItem.getId())) {
-                continue;
-            }
+        List<ChargeItem> matchedCharges,
+        List<ChargeItem> allChargeItems,
+        Map<Long, BigDecimal> purchaseByChargeItemId,
+        Map<Long, BigDecimal> purchaseUnitByChargeItemId,
+        Map<Long, BigDecimal> packageUnitRatioByChargeItemId,
+        Map<String, ProductDefinitionDisplayDto> productByCompositeKey) {
+        if (line == null) {
+            return;
+        }
+        if (matchedCharges == null || matchedCharges.isEmpty()) {
+            return;
+        }
+        BigDecimal saleTotal = BigDecimal.ZERO;
+        BigDecimal purchaseTotal = BigDecimal.ZERO;
+        boolean anyPurchase = false;
+        for (ChargeItem chargeItem : matchedCharges) {
+            saleTotal = saleTotal.add(this.saleAmountForLine(line, chargeItem));
             BigDecimal purchase = purchaseByChargeItemId.get(chargeItem.getId());
             if (purchase != null) {
-                total = total.add(purchase);
+                purchaseTotal = purchaseTotal.add(this.scaleAmountForRefundLine(line, chargeItem, purchase));
+                anyPurchase = true;
             }
         }
-        return total;
+        BigDecimal saleAmount = MonetaryAmountSupport.scaleCalc(saleTotal);
+        line.setAmount(saleAmount);
+        line.setSaleAmount(saleAmount);
+        line.setSaleUnitPrice(this.resolveSaleUnitPrice(line, saleAmount));
+        if (anyPurchase) {
+            line.setPurchaseAmount(MonetaryAmountSupport.scaleCalc(purchaseTotal));
+        }
+        // 展示进价单价：优先在本行命中账单上取；与收费 quantity_unit 对齐
+        BigDecimal purchaseUnit = this.resolvePurchaseDisplayUnitPrice(
+            line,
+            matchedCharges,
+            purchaseUnitByChargeItemId,
+            packageUnitRatioByChargeItemId,
+            productByCompositeKey);
+        if (purchaseUnit == null) {
+            purchaseUnit = this.resolvePurchaseDisplayUnitPrice(
+                line,
+                allChargeItems,
+                purchaseUnitByChargeItemId,
+                packageUnitRatioByChargeItemId,
+                productByCompositeKey);
+        }
+        line.setPurchaseUnitPrice(purchaseUnit);
+    }
+
+    /**
+     * 行售价：账单总额；退药按数量折算。
+     *
+     * @param line       发放行
+     * @param chargeItem 命中账单
+     * @return 行售价（正数；退药符号由 Support 再取负）
+     */
+    private BigDecimal saleAmountForLine(PatientDispenseAmountLine line, ChargeItem chargeItem) {
+        return this.scaleAmountForRefundLine(line, chargeItem, this.salePriceOf(chargeItem));
+    }
+
+    /**
+     * 退药行按本行数量 / 账单数量线性折算金额；正向行原样返回。
+     *
+     * @param line       发放行
+     * @param chargeItem 命中账单
+     * @param amount     账单全额（进或售）
+     * @return 折算后金额
+     */
+    private BigDecimal scaleAmountForRefundLine(
+        PatientDispenseAmountLine line,
+        ChargeItem chargeItem,
+        BigDecimal amount) {
+        if (amount == null || line == null || line.getBasedOnDispenseId() == null) {
+            return MonetaryAmountSupport.nullToZero(amount);
+        }
+        BigDecimal billQty = chargeItem.getQuantityValue();
+        BigDecimal lineQty = line.getQuantity();
+        if (billQty == null || billQty.signum() == 0 || lineQty == null) {
+            return amount;
+        }
+        BigDecimal absLineQty = lineQty.abs();
+        if (absLineQty.compareTo(billQty) == 0) {
+            return amount;
+        }
+        return MonetaryAmountSupport.proportionAtCalcScale(amount, absLineQty, billQty);
     }
 
     /**
@@ -434,12 +616,12 @@ public class ConsumableUsageReportAmountEnricher {
     }
 
     /**
-     * 解析耗材品规包装倍数（领用侧展示折算）。
+     * 解析耗材品规产品展示（领用侧操作单位对齐用）。
      *
      * @param deviceDefId 耗材定义主键
-     * @return 包装倍数；无法解析时 null
+     * @return 产品展示；无法解析时 null
      */
-    private BigDecimal resolveDevicePackageUnitRatio(Long deviceDefId) {
+    private ProductDefinitionDisplayDto resolveDeviceProductDisplay(Long deviceDefId) {
         if (deviceDefId == null) {
             return null;
         }
@@ -453,7 +635,16 @@ public class ConsumableUsageReportAmountEnricher {
         if (compositeKey == null) {
             return null;
         }
-        ProductDefinitionDisplayDto product = productByKey.get(compositeKey);
+        return productByKey.get(compositeKey);
+    }
+
+    /**
+     * 从产品展示解析包装倍数。
+     *
+     * @param product 产品展示
+     * @return 包装倍数；无法解析时 null
+     */
+    private BigDecimal resolvePackageUnitRatio(ProductDefinitionDisplayDto product) {
         if (product == null || product.getPackageUnitRatio() == null) {
             return null;
         }
@@ -465,21 +656,38 @@ public class ConsumableUsageReportAmountEnricher {
 
     /**
      * ChargeItem 是否锚定本发放行。
+     *
+     * <p>仅：① 本发放 {@code dispense_id}/{@code service} 锚；② 退药 {@code based_on} 源发放锚。
+     * 禁止请求级兼容回挂（即使账单 {@code dispense_id} 为空）。</p>
      */
     private boolean matches(PatientDispenseAmountLine line, ChargeItem chargeItem) {
-        if (line.getDispenseId() != null) {
-            if (TableNameConstants.WKF_DEVICE_DISPENSE.equals(chargeItem.getServiceTable())
-                && line.getDispenseId().equals(chargeItem.getServiceId())) {
-                return true;
-            }
-            if (TableNameConstants.WKF_DEVICE_DISPENSE.equals(chargeItem.getDispenseTable())
-                && line.getDispenseId().equals(chargeItem.getDispenseId())) {
-                return true;
-            }
+        if (this.matchesDeviceDispenseAnchor(line.getDispenseId(), chargeItem)) {
+            return true;
         }
-        if (line.getDeviceReqId() != null
-            && TableNameConstants.WKF_DEVICE_REQUEST.equals(chargeItem.getServiceTable())
-            && line.getDeviceReqId().equals(chargeItem.getServiceId())) {
+        // 退药行：账单仍挂源 COMPLETED 发放，经 based_on 回挂后再由调用方按数量符号取负
+        if (this.matchesDeviceDispenseAnchor(line.getBasedOnDispenseId(), chargeItem)) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 发放主键是否与 ChargeItem 的发放/服务锚一致。
+     *
+     * @param dispenseId 发放主键；空则否
+     * @param chargeItem 收费明细
+     * @return 是否命中
+     */
+    private boolean matchesDeviceDispenseAnchor(Long dispenseId, ChargeItem chargeItem) {
+        if (dispenseId == null || chargeItem == null) {
+            return false;
+        }
+        if (TableNameConstants.WKF_DEVICE_DISPENSE.equals(chargeItem.getServiceTable())
+            && dispenseId.equals(chargeItem.getServiceId())) {
+            return true;
+        }
+        if (TableNameConstants.WKF_DEVICE_DISPENSE.equals(chargeItem.getDispenseTable())
+            && dispenseId.equals(chargeItem.getDispenseId())) {
             return true;
         }
         return false;
@@ -676,6 +884,13 @@ public class ConsumableUsageReportAmountEnricher {
         /** @return 发放主键 */
         Long getDispenseId();
 
+        /**
+         * 退药源发放主键（{@code based_on_id}）；正向行返回 null。
+         *
+         * @return 源发放主键；可空
+         */
+        Long getBasedOnDispenseId();
+
         /** @return 耗材请求主键；可空 */
         Long getDeviceReqId();
 
@@ -715,6 +930,9 @@ public class ConsumableUsageReportAmountEnricher {
         /** @return 数量 */
         BigDecimal getQuantity();
 
+        /** @return 操作单位码 */
+        String getUnitCode();
+
         /** @return 售价别名 amount */
         BigDecimal getAmount();
 
@@ -751,6 +969,9 @@ public class ConsumableUsageReportAmountEnricher {
         /** @return 维度键 */
         String getDimensionKey();
 
+        /** @return 净数量 */
+        BigDecimal getNetQuantity();
+
         /** @return 进价净额 */
         BigDecimal getPurchaseNetAmount();
 
@@ -768,5 +989,11 @@ public class ConsumableUsageReportAmountEnricher {
 
         /** @param netAmount 售价净额别名 */
         void setNetAmount(BigDecimal netAmount);
+
+        /** @param purchaseUnitPrice 进价单价 */
+        void setPurchaseUnitPrice(BigDecimal purchaseUnitPrice);
+
+        /** @param saleUnitPrice 售价单价 */
+        void setSaleUnitPrice(BigDecimal saleUnitPrice);
     }
 }

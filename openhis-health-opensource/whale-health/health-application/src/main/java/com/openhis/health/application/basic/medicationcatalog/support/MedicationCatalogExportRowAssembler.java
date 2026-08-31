@@ -132,6 +132,8 @@ public class MedicationCatalogExportRowAssembler {
         values[52] = this.yesNoLabel(detail.getRestrictedFlag());
         values[53] = this.yesNoLabel(detail.getAntibioticFlag());
         values[54] = this.yesNoLabel(detail.getRxFlag());
+        values[55] = this.yesNoLabel(detail.getNationalMonitorFlag());
+        values[56] = this.yesNoLabel(detail.getCentralPurchaseFlag());
         return values;
     }
 

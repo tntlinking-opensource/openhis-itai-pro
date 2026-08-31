@@ -1,3 +1,5 @@
+import '../core/jquery';
+
 import { hiprint } from 'vue-plugin-hiprint';
 
 import { functionCodeOptionItems, paperSizeOptionItems } from './option-items';

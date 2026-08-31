@@ -21,6 +21,12 @@ public interface InpatientInOutDetailReportConstants {
     /** 明细分页默认页大小。 */
     int DEFAULT_PAGE_SIZE = 20;
 
+    /**
+     * 默认业务日期回看月数：初始化日起 = 今日往前 N 个自然月（含今日，闭区间）。
+     * <p>例：今日 2026-08-14 且本值为 1 → 默认窗 2026-07-14～2026-08-14。</p>
+     */
+    int DEFAULT_LOOKBACK_MONTHS = 1;
+
     /** 明细分页上限。 */
     int MAX_PAGE_SIZE = 100000;
 

@@ -24,7 +24,7 @@ import java.util.List;
 @Schema(description = "住院患者入出明细报表页初始化响应")
 public class LoadInpatientInOutDetailReportPageInitResponse {
 
-    /** 默认日起（当日 00:00:00）。 */
+    /** 默认日起（今日往前 1 个自然月 00:00:00）。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     @Schema(description = "默认开始时间")
     private LocalDateTime defaultDateFrom;

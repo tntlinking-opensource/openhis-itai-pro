@@ -12,6 +12,7 @@ import com.openhis.chs.domain.audit.command.AuditFeedback3103Command;
 import com.openhis.chs.domain.audit.result.AuditAnalyzeResult;
 import com.openhis.chs.domain.audit.snapshot.AuditFeeSnapshot;
 import com.openhis.chs.domain.audit.snapshot.AuditFeeSnapshotProjector;
+import com.openhis.chs.domain.audit.support.AuditViolationItemNameSupport;
 import com.openhis.chs.domain.catalog.access.ChsContractPropertiesAccess;
 import com.openhis.chs.domain.outpatient.command.OpPreSettleCommand;
 import com.openhis.chs.domain.outpatient.loader.OpPreSettleContextLoader;
@@ -103,7 +104,9 @@ public class InsuranceDetailAuditTryAppService {
         command.setContractBusNo(busNo);
         command.setContractId(request.getContractId());
         // Cmd：出站 3101
-        return audit3101Invoker.invoke(command);
+        AuditAnalyzeResult result = audit3101Invoker.invoke(command);
+        AuditViolationItemNameSupport.enrichItemNames(result, snap);
+        return result;
     }
 
     /**

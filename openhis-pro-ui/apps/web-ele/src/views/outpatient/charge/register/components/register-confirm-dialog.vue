@@ -381,20 +381,27 @@ async function executeRegisterPayment() {
   payLoading.value = true;
   scanStatusText.value = '';
   let chs2207BeforeScanDone = false;
+  let payCash = payableCashAmount.value;
   try {
     if (chsBeforeScan) {
-      await httpConfirmOutpatientInsuranceBeforeScan({
+      const ybConfirm = await httpConfirmOutpatientInsuranceBeforeScan({
         paymentDraftId: String(pre.paymentDraftId),
         encounterId:
           pre.encounterId === null || pre.encounterId === undefined
             ? undefined
             : String(pre.encounterId),
       });
+      if (ybConfirm?.patientCashAmount != null && ybConfirm.patientCashAmount !== '') {
+        const ybCash = Number(ybConfirm.patientCashAmount);
+        if (Number.isFinite(ybCash)) {
+          payCash = Math.max(0, ybCash);
+        }
+      }
       chs2207BeforeScanDone = true;
     }
 
     let clientScanResult;
-    if (needScanPay) {
+    if (needScanPay && payCash > 0.001) {
       await refreshUnionPayCapabilities();
       if (!scanPayEnabled.value) {
         ElMessage.error('请启动本地客户端（OpenHIS.Win）并确认银联组件已安装');
@@ -404,7 +411,7 @@ async function executeRegisterPayment() {
       try {
         const scanOutcome = await submitScanPayment({
           paymentDraftId: pre.paymentDraftId,
-          amount: payableCashAmount.value,
+          amount: payCash,
           scanCode: scanCode.value,
         });
         clientScanResult = scanOutcome.clientScanResult;
@@ -423,6 +430,15 @@ async function executeRegisterPayment() {
       }
     }
 
+    const cashDetails =
+      payCash > 0.001
+        ? [
+            {
+              payAmount: payCash,
+              payChannelCode: payChannelCode.value,
+            },
+          ]
+        : [];
     const result = clientScanResult
       ? await settleWithScanRecovery(
           clientScanResult,
@@ -432,20 +448,13 @@ async function executeRegisterPayment() {
                 pre.appointmentId === null || pre.appointmentId === undefined
                   ? undefined
                   : String(pre.appointmentId),
-              paymentDetails: showCashPaySection.value
-                ? [
-                    {
-                      payAmount: payableCashAmount.value,
-                      payChannelCode: payChannelCode.value,
-                    },
-                  ]
-                : [],
+              paymentDetails: cashDetails,
               paymentDraftId: pre.paymentDraftId,
               clientScanResult,
             }),
           {
             paymentDraftId: pre.paymentDraftId,
-            refundAmountYuan: payableCashAmount.value,
+            refundAmountYuan: payCash,
           },
         )
       : await payRegisterFee({
@@ -453,14 +462,7 @@ async function executeRegisterPayment() {
             pre.appointmentId === null || pre.appointmentId === undefined
               ? undefined
               : String(pre.appointmentId),
-          paymentDetails: showCashPaySection.value
-            ? [
-                {
-                  payAmount: payableCashAmount.value,
-                  payChannelCode: payChannelCode.value,
-                },
-              ]
-            : [],
+          paymentDetails: cashDetails,
           paymentDraftId: pre.paymentDraftId,
         });
     clearCachedClientScanResult(pre.paymentDraftId);

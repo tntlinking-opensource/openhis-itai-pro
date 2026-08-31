@@ -402,6 +402,8 @@ public class OutpatientRefundAppService {
         }
         List<PaymentRecDetailQueryModel> originalPaymentDetails =
             paymentReconciliationQueryService.listPaymentRecDetailsByPaymentId(request.getOriginalPaymentId());
+        // Gate：原单明细须与收费项合计勾稽，禁止把少记/多记自付复制到逆向单（BR-REF-024）
+        this.assertOriginalPaymentDetailsBalancedWithCharges(originalPayment, originalPaymentDetails);
         // 原路返回：实退分桶一律取自原支付明细（含医保统筹/个账）；忽略前端自选支付方式。
         // 产品半退时资金侧仍对该 paymentId 整单冲退（AS-OP-FIN-003 §1.3），渠道合计取原支付全额。
         List<RefundPaymentDetailSubmitDto> effectiveRefundPaymentDetails =
@@ -1490,6 +1492,94 @@ public class OutpatientRefundAppService {
                         "各渠道实退额须与原支付分桶一致"));
             }
         }
+    }
+
+    /**
+     * IF-REF-05 Gate：原支付渠道明细合计须等于挂载收费项合计（BR-REF-024）。
+     *
+     * <p>历史脏例：多笔 2207 后现金只落了首笔 psn_cash，明细合计&lt;收费项；原路退会把缺口复制到逆向单。</p>
+     *
+     * @param originalPayment         原支付读模型
+     * @param originalPaymentDetails  原支付明细
+     * @throws BusinessException 勾稽失败 → EX-REF-307
+     */
+    private void assertOriginalPaymentDetailsBalancedWithCharges(
+        PaymentReconciliationQueryModel originalPayment,
+        List<PaymentRecDetailQueryModel> originalPaymentDetails) {
+        if (originalPayment == null) {
+            return;
+        }
+        List<Long> chargeItemIds = this.parseChargeItemIds(originalPayment.getChargeItemIds());
+        // 无挂载收费项（预交金等）不走本勾稽
+        if (chargeItemIds.isEmpty()) {
+            return;
+        }
+        ChargeItemQueryCommand loadCmd = new ChargeItemQueryCommand();
+        loadCmd.setIds(chargeItemIds);
+        List<ChargeItem> chargeItems = chargeItemQueryService.loadChargeItemsByIds(loadCmd);
+        BigDecimal chargeTotal = BigDecimal.ZERO;
+        if (chargeItems != null) {
+            for (ChargeItem item : chargeItems) {
+                if (item == null || item.getTotalPrice() == null) {
+                    continue;
+                }
+                chargeTotal = chargeTotal.add(item.getTotalPrice());
+            }
+        }
+        chargeTotal = MonetaryAmountSupport.scaleSettle(chargeTotal);
+        BigDecimal detailTotal = BigDecimal.ZERO;
+        if (originalPaymentDetails != null) {
+            for (PaymentRecDetailQueryModel detail : originalPaymentDetails) {
+                if (detail == null || detail.getAmount() == null) {
+                    continue;
+                }
+                BigDecimal line = detail.getAmount();
+                if (detail.getReturnAmount() != null) {
+                    line = line.subtract(detail.getReturnAmount());
+                }
+                detailTotal = detailTotal.add(line);
+            }
+        }
+        detailTotal = MonetaryAmountSupport.scaleSettle(detailTotal);
+        // 明细合计须等于收费项：与收费落账 BR-OPC-024 同精神，挡住脏原单被原路复制
+        if (!MonetaryAmountSupport.equalsAtSettleScale(detailTotal, chargeTotal)) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT,
+                this.buildMessage(
+                    OutpatientRefundConstants.MESSAGE_CODE_REFUND_ORIGINAL_DETAIL_UNBALANCED,
+                    "原支付渠道明细合计与收费项不一致，请先修正原单后再退费"));
+        }
+    }
+
+    /**
+     * 解析支付头挂载的收费明细 id 串。
+     *
+     * @param rawChargeItemIds 逗号分隔 id
+     * @return 去重后的主键列表；空串返回空列表
+     */
+    private List<Long> parseChargeItemIds(String rawChargeItemIds) {
+        List<Long> ids = new ArrayList<>();
+        if (StringUtils.isEmpty(rawChargeItemIds)) {
+            return ids;
+        }
+        String[] parts = rawChargeItemIds.split(",");
+        LinkedHashSet<Long> unique = new LinkedHashSet<>();
+        for (String part : parts) {
+            if (StringUtils.isEmpty(part)) {
+                continue;
+            }
+            String trimmed = part.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            try {
+                unique.add(Long.valueOf(trimmed));
+            } catch (NumberFormatException ignored) {
+                // 脏串跳过，后续空列表会跳过勾稽或由其它 Gate 拦截
+            }
+        }
+        ids.addAll(unique);
+        return ids;
     }
 
     /**

@@ -4,6 +4,7 @@
  */
 package com.openhis.chs.domain.notice.port;
 
+import com.openhis.chs.domain.notice.model.HisMappedProduct;
 import com.openhis.chs.domain.notice.model.HisProductLvChange;
 
 import java.util.List;
@@ -35,4 +36,11 @@ public interface CatalogNoticeHisProductPort {
      * @return 国标等级字符串；无命中返回 null
      */
     String findProductChrgitmLv(Long tenantId, String hilistCode, String projectCode);
+
+    /**
+     * 列出已启用且需走医保的院内目录项（诊疗套餐父项除外），并带上 SALE 售价。
+     *
+     * @return 诊疗 / 药品 / 耗材；无则空列表
+     */
+    List<HisMappedProduct> listActiveInsuranceProducts();
 }

@@ -283,12 +283,21 @@ public class EmrContentJsonRenderer {
     }
 
     private void renderFreeText(JsonNode node) throws Exception {
-        if (node.has(CONTENT)) {
+        if (node.has(CONTENT) && node.get(CONTENT).isArray() && !node.get(CONTENT).isEmpty()) {
             Paragraph p = buildParagraphFromInline(node.get(CONTENT), bodyFont);
             if (p != null) {
                 document.add(p);
             }
+            return;
         }
+        // 方案 B atom：值在 attrs.value，无 content
+        String value = extractDataElementDisplay(node);
+        if (!StringUtils.hasText(value)) {
+            return;
+        }
+        Paragraph p = new Paragraph(value, bodyFont);
+        p.setLeading(bodyFont.getSize() * printConfig.getFont().getLineHeight());
+        document.add(p);
     }
 
     private void renderHeading(JsonNode node) throws Exception {
@@ -1251,7 +1260,8 @@ public class EmrContentJsonRenderer {
                 || "emrtextfield".equals(type)
                 || "emrselectfield".equals(type)
                 || "emrcheckboxfield".equals(type)
-                || "emrmetadatachip".equals(type);
+                || "emrmetadatachip".equals(type)
+                || "emrfreetext".equals(type);
     }
 
     private static String normalizeType(String type) {

@@ -30,8 +30,13 @@ export interface AdviceEditForm {
   frequency: string;
   usage: string;
   medicationDays?: number;
+  /**
+   * 药品/耗材：开立总量；诊疗：执行次数（提交前与 {@link serviceQuantity} 相乘得账单 quantity）。
+   */
   totalAmount?: number;
-  /** 诊疗开立数量（与 servicePayload.quantity 对应；执行次数仍用 totalAmount） */
+  /**
+   * 诊疗：单次执行数量（UI 录入）；提交时 `quantity = serviceQuantity × totalAmount(执行次数)`。
+   */
   serviceQuantity?: number;
 }
 

@@ -20,6 +20,7 @@ import com.openhis.chs.domain.audit.result.DetailAuditGateResult;
 import com.openhis.chs.domain.audit.snapshot.AuditFeeOrderLine;
 import com.openhis.chs.domain.audit.snapshot.AuditFeeSnapshot;
 import com.openhis.chs.domain.audit.snapshot.AuditFeeSnapshotProjector;
+import com.openhis.chs.domain.audit.support.AuditViolationItemNameSupport;
 import com.openhis.chs.domain.catalog.access.ChsContractPropertiesAccess;
 import com.openhis.chs.domain.catalog.access.ChsInsuranceContractReader;
 import com.openhis.chs.domain.contract.ChsContractSnapshot;
@@ -270,6 +271,8 @@ public class DetailAuditGateInvokerImpl implements DetailAuditGateInvoker {
         analyze.setContractId(contractId);
         // Cmd：出站 3101（落库在 Audit3101Invoker）
         AuditAnalyzeResult result = audit3101Invoker.invoke(analyze);
+        // Pre：平台明细无品名，按 Snapshot 医嘱行回填药品/项目名称供弹窗展示
+        AuditViolationItemNameSupport.enrichItemNames(result, snap);
         return new DetailAuditGateResult()
             .setSkipped(false)
             .setMdtrtId(mdtrtId)

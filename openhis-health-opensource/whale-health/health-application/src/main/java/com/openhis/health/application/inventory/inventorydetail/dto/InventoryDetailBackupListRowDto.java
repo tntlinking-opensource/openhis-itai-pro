@@ -202,6 +202,14 @@ public class InventoryDetailBackupListRowDto {
     @Schema(description = "拆零↔包装倍数")
     private BigDecimal packageUnitRatio;
 
+    /**
+     * 包装拆零比例展示（服务端拼装），形如 {@code 1盒/36片}。
+     *
+     * <p>与临床医嘱装量后缀 {@code 1片x100} 口径不同；由静表倍数 + 包装/拆零单位名拼装。</p>
+     */
+    @Schema(description = "包装拆零比例展示，如 1盒/36片")
+    private String packageSplitRatioText;
+
     /** 库存（包装单位）展示。 */
 
     @Schema(description = "库存（包装单位）展示")

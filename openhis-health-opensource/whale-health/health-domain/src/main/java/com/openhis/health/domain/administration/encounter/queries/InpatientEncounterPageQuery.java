@@ -47,7 +47,7 @@ public class InpatientEncounterPageQuery extends AbstractPageQuery {
     private LocalDate dischargeDateFrom;
     /** 出院日止（含自然日）；语义同 {@link #dischargeDateFrom}。 */
     private LocalDate dischargeDateTo;
-    /** 为 {@code true} 时仅返回预交金页左侧队列可见就诊（清床前，含 {@code COMPLETED} 待清床）。 */
+    /** 为 {@code true} 时仅返回预交金页左侧队列可见就诊（资格态：在院四态 + COMPLETED + DISCHARGED）。 */
     private Boolean prepayEligibleOnly;
     /**
      * 是否在上下文组装时加载诊断快照（{@code diagnosisJson}）。
@@ -75,7 +75,7 @@ public class InpatientEncounterPageQuery extends AbstractPageQuery {
      * <p>空=默认在院；历史 {@code SETTLED_DISCHARGED} 已迁出，应用层应置 null。</p>
      */
     private String nurseStationStatusFilter;
-    /** 就诊状态持久化码集合（{@code status_enum IN}）；由应用层或读侧解析 {@code nurseStationStatusFilter} 后写入。 */
+    /** 就诊状态持久化码集合（{@code status_enum IN}）；护士站由应用层预解析；预交金队列与资格态求交（在院/不在院）。 */
     private Collection<String> statusEnumIn;
     /** 为 {@code true} 时仅返回结算队列候选就诊。 */
     private Boolean settleQueue;

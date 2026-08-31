@@ -18,6 +18,8 @@ public class LoadArchiveResponse {
     private String familyHistory;
     private String habitSummary;
     private String allergySummary;
+    /** 体检标签编码。 */
+    private String tagCode;
     private String remark;
     /** includeCompleteness=true 时返回 */
     private ArchiveCompletenessDto completeness;

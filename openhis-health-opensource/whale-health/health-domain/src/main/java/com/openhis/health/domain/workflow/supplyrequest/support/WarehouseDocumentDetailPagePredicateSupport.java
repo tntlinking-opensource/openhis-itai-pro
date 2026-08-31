@@ -124,8 +124,16 @@ public final class WarehouseDocumentDetailPagePredicateSupport {
         } else if (query.getPurposeLocationId() != null) {
             predicates.add(cb.equal(root.get(FieldNameConstants.PURPOSE_LOCATION_ID), query.getPurposeLocationId()));
         }
+        // 供应商：等值筛 wkf_supply_request.supplier_id；空则该维不过滤
+        if (query.getSupplierId() != null) {
+            predicates.add(cb.equal(root.get(FieldNameConstants.SUPPLIER_ID), query.getSupplierId()));
+        }
         if (query.getItemId() != null) {
             predicates.add(cb.equal(root.get(FieldNameConstants.ITEM_ID), query.getItemId()));
+        }
+        // 项目分类：按 item_table 等值（药品 / 耗材）
+        if (StringUtils.isNotEmpty(query.getItemTable())) {
+            predicates.add(cb.equal(root.get(FieldNameConstants.ITEM_TABLE), query.getItemTable().trim()));
         }
         // 批号：关键字 LIKE 优先于精确匹配（AS-INV-RPT-002 · BR-INV-DDC-006）
         if (StringUtils.isNotEmpty(query.getLotNumberKeyword())) {

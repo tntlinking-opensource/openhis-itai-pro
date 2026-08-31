@@ -44,4 +44,9 @@ public class MedicationRequestFifoSignContext {
 
     /** 给药途径编码（模板 calcScore 维度）。 */
     private String methodCode;
+
+    /**
+     * 是否皮试药（门诊签发 FIFO 单批优先；住院不消费此字段做单批门禁）。
+     */
+    private Boolean skinTestFlag;
 }

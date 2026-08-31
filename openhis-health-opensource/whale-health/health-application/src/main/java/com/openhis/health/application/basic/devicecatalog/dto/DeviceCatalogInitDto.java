@@ -14,7 +14,7 @@ import java.util.Map;
  * 耗材目录维护页初始化数据。
  *
  * <p>当前 {@link com.openhis.health.application.basic.devicecatalog.service.DeviceCatalogAppService#init()}
- * 填充计量维度下拉、供应商列表、耗材种类（{@code device_type_code}）等（均为 {@code label/value} 行列表，兼容旧表格数据源）。</p>
+ * 填充计量维度下拉、供应商列表、生产厂家（type=1）、耗材种类（{@code device_type_code}）等（均为 {@code label/value} 行列表，兼容旧表格数据源）。</p>
  */
 @Data
 public class DeviceCatalogInitDto {
@@ -43,6 +43,10 @@ public class DeviceCatalogInitDto {
     private List<Map<String, Object>> exeOrganizations;
     /** 供应商下拉（label/value 行，value 为供应商 id 字符串）。 */
     private List<Map<String, Object>> supplierListOptions;
+    /**
+     * 生产厂家下拉（{@code cus_supplier.type_enum=1} 启用态；label/value 行，value=id 字符串）。
+     */
+    private List<Map<String, Object>> manufacturerOptions;
     /** 医保类别（术语体系 {@code med_chrgitm_type}，与药品/诊疗目录一致）。 */
     private List<Map<String, Object>> ybCategories;
     /** 财务类型（术语体系 {@code fin_type_code}，与药品目录初始化一致）。 */
@@ -65,6 +69,7 @@ public class DeviceCatalogInitDto {
         dto.setEquipmentTypes(Collections.emptyList());
         dto.setExeOrganizations(Collections.emptyList());
         dto.setSupplierListOptions(Collections.emptyList());
+        dto.setManufacturerOptions(Collections.emptyList());
         dto.setUnitCodeOptions(Collections.emptyList());
         dto.setPackUnits(Collections.emptyList());
         dto.setSaleUnits(Collections.emptyList());

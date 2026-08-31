@@ -33,9 +33,9 @@ public class NursingRecordPaperHeaderDto {
     @Schema(description = "床号")
     private String bedNo;
 
-    /** 出院时间。 */
+    /** 出院时间（业务真源：出院医嘱计划时间 / Encounter.endTime；非清床时刻）。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
-    @Schema(description = "出院时间")
+    @Schema(description = "出院时间（计划出院时间）")
     private LocalDateTime dischargeAt;
 
     /** 性别。 */

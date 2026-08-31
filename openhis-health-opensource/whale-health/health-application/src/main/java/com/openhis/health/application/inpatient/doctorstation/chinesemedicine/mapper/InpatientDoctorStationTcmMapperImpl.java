@@ -327,6 +327,8 @@ public class InpatientDoctorStationTcmMapperImpl implements InpatientDoctorStati
         cmd.setUnitCode(resolveHerbalBusinessUnitCode(line));
         cmd.setMethodCode(header.getMethodCode());
         cmd.setRateCode(header.getRateCode());
+        // 方头长临写入创建命令，避免领域层默认临时导致保存后仍显示临时
+        cmd.setTherapyEnum(header.getTherapyEnum());
         cmd.setDispensePerDuration(header.getDays());
         cmd.setContentJson(contentJson);
         cmd.setRemark(header.getRemark());

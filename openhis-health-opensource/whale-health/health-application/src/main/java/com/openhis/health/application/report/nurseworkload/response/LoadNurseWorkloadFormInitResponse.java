@@ -42,7 +42,9 @@ public class LoadNurseWorkloadFormInitResponse {
     @Schema(description = "护士下拉")
     private List<OptionDto> nurseOptions;
 
-    /** 开立科室下拉（门诊挂号科室 / 住院入院科室，随默认就诊范围）。 */
-    @Schema(description = "开立科室下拉")
+    /**
+     * 默认登录科室下拉（门诊挂号科室 / 住院入院科室，随就诊范围；对应 {@code Practitioner.org_id}）。
+     */
+    @Schema(description = "默认登录科室下拉")
     private List<OptionDto> organizationOptions;
 }

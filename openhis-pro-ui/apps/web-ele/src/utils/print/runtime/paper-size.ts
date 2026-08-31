@@ -38,6 +38,8 @@ const SCENARIO_PAGE_SIZE: Partial<Record<PrintScenario, string>> = {
   [PRINT_SCENARIO.examinationPrint]: 'A5',
   [PRINT_SCENARIO.testPrint]: 'A5',
   [PRINT_SCENARIO.pharmacyDailySettlementPrint]: 'A4',
+  /** 报表列表：纸张固定 A4，横竖靠 panel 宽高推 landscape */
+  [PRINT_SCENARIO.reportListPrint]: 'A4',
 };
 
 export interface HiprintPageSizeOptions {

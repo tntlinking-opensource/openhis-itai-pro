@@ -14,6 +14,7 @@ import com.openhis.chs.bridge.inpatient.invoker.Ip2404Invoker;
 import com.openhis.chs.bridge.inpatient.invoker.Ip2405Invoker;
 import com.openhis.chs.bridge.inpatient.workflow.IpInpatientPreSettleOrchestrator;
 import com.openhis.chs.bridge.inpatient.workflow.IpPlatformAdmissionOrchestrator;
+import com.openhis.chs.bridge.inpatient.support.IpPlatformVisitAlignSupport;
 import com.openhis.chs.bridge.inpatient.assembler.InpatientSettleCommandAssembler;
 import com.openhis.chs.bridge.inpatient.support.IpPlatformDischargeRevokeSupport;
 import com.openhis.chs.domain.catalog.access.ChsInsuranceContractReader;
@@ -25,6 +26,7 @@ import com.openhis.chs.domain.inpatient.command.IpEncounterCommand;
 import com.openhis.chs.domain.inpatient.command.IpSettleContext;
 import com.openhis.chs.domain.inpatient.queries.model.IpPlatformAdmissionQueryModel;
 import com.openhis.chs.domain.inpatient.command.IpPreSettleCommand;
+import com.openhis.chs.domain.inpatient.result.IpFeeUploadBatchResult;
 import com.openhis.chs.domain.inpatient.result.IpPreSettleResult;
 import com.openhis.chs.domain.inpatient.command.IpRevokeFeeDetailCommand;
 import com.openhis.chs.domain.inpatient.result.IpRevokeFeeDetailResult;
@@ -47,12 +49,16 @@ import com.openhis.health.infrastructure.integration.insurance.inpatient.Extensi
 import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionIn.InpatientChargePreSettleExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionIn.InpatientChargeRevokeFeeDetailExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionIn.InpatientChargeRevokeSettleExtensionIn;
+import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionIn.InpatientChargeUploadFeeBatchExtensionIn;
+import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionIn.InpatientPlatformVisitAlignExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionOut.InpatientChargeAdmissionExtensionOut;
 import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionOut.InpatientChargeAdmissionPlatformQueryExtensionOut;
 import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionOut.InpatientChargeConfirmExtensionOut;
 import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionOut.InpatientChargePreSettleExtensionOut;
 import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionOut.InpatientChargeRevokeFeeDetailExtensionOut;
 import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionOut.InpatientChargeRevokeSettleExtensionOut;
+import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionOut.InpatientChargeUploadFeeBatchExtensionOut;
+import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionOut.InpatientPlatformVisitAlignExtensionOut;
 import com.openhis.whale.core.infrastructure.multitenancy.TenantUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -84,6 +90,7 @@ public class InpatientChargeInsuranceExtensionImpl implements InpatientChargeIns
     private final IpPlatformAdmissionOrchestrator platformAdmissionOrchestrator;
     private final IpAdmissionOrchestrator admissionOrchestrator;
     private final IpInpatientPreSettleOrchestrator preSettleOrchestrator;
+    private final IpPlatformVisitAlignSupport platformVisitAlignSupport;
     private final Ip2304Invoker ip2304Invoker;
     private final Ip2305Invoker ip2305Invoker;
     private final Ip2302Invoker ip2302Invoker;
@@ -145,6 +152,30 @@ public class InpatientChargeInsuranceExtensionImpl implements InpatientChargeIns
         IpPreSettleResult chsResult = preSettleOrchestrator.invoke(
             contextLoader.enrichPreSettle(toChsPreSettleCommand(command)));
         return toNeutralPreSettleResult(chsResult);
+    }
+
+    /** 【2301】单批费用上传（最多 100 行），供前端进度条。 */
+    @Override
+    public InpatientChargeUploadFeeBatchExtensionOut uploadPendingFeeBatch(
+            InpatientChargeUploadFeeBatchExtensionIn command) {
+        IpFeeUploadBatchResult chsResult = preSettleOrchestrator.uploadPendingFeeBatch(
+            contextLoader.enrichPreSettle(toChsUploadFeeBatchCommand(command)),
+            command.getPreferredMdtrtId());
+        return toNeutralUploadFeeBatchResult(chsResult);
+    }
+
+    /** 本地：诊断平台在院态与本地 map。 */
+    @Override
+    public InpatientPlatformVisitAlignExtensionOut diagnosePlatformVisit(
+            InpatientPlatformVisitAlignExtensionIn command) {
+        return platformVisitAlignSupport.diagnose(command);
+    }
+
+    /** 本地：按诊断结果轻量修复。 */
+    @Override
+    public InpatientPlatformVisitAlignExtensionOut repairPlatformVisit(
+            InpatientPlatformVisitAlignExtensionIn command) {
+        return platformVisitAlignSupport.repair(command);
     }
 
     /** 【2402→2304→（2402 幂等）】本地落账前住院正式结算确认；长春出院全结须先离院再 2304。 */
@@ -340,6 +371,29 @@ public class InpatientChargeInsuranceExtensionImpl implements InpatientChargeIns
     }
 
     /**
+     * 将单批费用上传 ExtensionIn 映射为 CHS 预结算命令（复用 enrich 装载明细）。
+     *
+     * @param command 单批上传扩展入参
+     * @return CHS 预结算命令（无 paymentDraftId）
+     */
+    private static IpPreSettleCommand toChsUploadFeeBatchCommand(InpatientChargeUploadFeeBatchExtensionIn command) {
+        IpPreSettleCommand chsCommand = new IpPreSettleCommand();
+        chsCommand.setEncounterId(command.getEncounterId());
+        chsCommand.setChargeItemIds(command.getChargeItemIds());
+        chsCommand.setContractId(command.getContractId());
+        chsCommand.setMdtrtCertType(command.getPayerCertType());
+        chsCommand.setMdtrtCertNo(command.getPayerCertNo());
+        chsCommand.setPsnNo(command.getInsuredPersonNo());
+        chsCommand.setInsuplcAdmdvs(command.getInsuplcAdmdvs());
+        chsCommand.setInsutype(command.getInsutype());
+        chsCommand.setMedType(command.getMedType());
+        chsCommand.setSettleMode(command.getSettleMode());
+        chsCommand.setAcctUsedFlag(command.getAcctUsedFlag());
+        chsCommand.setPsnSetlway(command.getPsnSetlway());
+        return chsCommand;
+    }
+
+    /**
      * 将撤销费用明细 ExtensionIn 映射为 CHS 撤销命令。
      *
      * @param command 撤销费用明细扩展入参
@@ -408,7 +462,29 @@ public class InpatientChargeInsuranceExtensionImpl implements InpatientChargeIns
         result.setCvlservPay(chsResult.getCvlservPay());
         result.setHifpPay(chsResult.getHifpPay());
         result.setOthPay(chsResult.getOthPay());
+        result.setFulamtOwnpayAmt(chsResult.getFulamtOwnpayAmt());
+        result.setPreselfpayAmt(chsResult.getPreselfpayAmt());
+        result.setInscpScpAmt(chsResult.getInscpScpAmt());
+        result.setOverlmtSelfpay(chsResult.getOverlmtSelfpay());
         return result;
+    }
+
+    /**
+     * 将 CHS 单批费用上传结果映射为中性 ExtensionOut。
+     *
+     * @param chsResult CHS 单批上传结果
+     * @return 扩展出参；入参为 {@code null} 时返回 {@code null}
+     */
+    private static InpatientChargeUploadFeeBatchExtensionOut toNeutralUploadFeeBatchResult(
+            IpFeeUploadBatchResult chsResult) {
+        if (chsResult == null) {
+            return null;
+        }
+        return new InpatientChargeUploadFeeBatchExtensionOut()
+            .setBatchUploaded(chsResult.getBatchUploaded())
+            .setRemainingAfter(chsResult.getRemainingAfter())
+            .setDone(chsResult.isDone())
+            .setMdtrtId(chsResult.getMdtrtId());
     }
 
     /**
@@ -467,6 +543,10 @@ public class InpatientChargeInsuranceExtensionImpl implements InpatientChargeIns
             .setMedfeeSumamt(row.getMedfeeSumamt())
             .setFundPaySumamt(row.getFundPaySumamt())
             .setAcctPay(row.getAcctPay())
-            .setPsnCashPay(row.getPsnCashPay());
+            .setPsnCashPay(row.getPsnCashPay())
+            .setFulamtOwnpayAmt(row.getFulamtOwnpayAmt())
+            .setPreselfpayAmt(row.getPreselfpayAmt())
+            .setInscpScpAmt(row.getInscpScpAmt())
+            .setOverlmtSelfpay(row.getOverlmtSelfpay());
     }
 }

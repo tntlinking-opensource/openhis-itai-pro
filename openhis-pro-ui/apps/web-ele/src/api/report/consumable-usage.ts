@@ -1,11 +1,10 @@
 /**
  * 门诊/住院耗材使用报表 — POST /api/app/{outpatient|inpatient}ConsumableUsageReport/{method}
  */
+import { reportPost } from '#/constants/report-request-timeout';
 import type { ApiOptionItem, PageParams } from '#/types/api-response';
 import type { BinaryExportResult } from '#/utils/export/download-binary-export';
-
-import { publicRequestClient } from '#/api/request';
-import { reportLongRequestConfig } from '#/constants/report-request-timeout';
+import type { ExcelExportColumnPayload } from '#/utils/export/build-excel-export-columns';
 
 export const EXPORT_TAB_SUMMARY = 'SUMMARY' as const;
 export const EXPORT_TAB_DETAIL = 'DETAIL' as const;
@@ -88,6 +87,8 @@ export interface ConsumableUsageSummaryRowDto {
   /** 耗材类型 code（CATEGORY 维） */
   categoryCode?: string;
   netQuantity?: number | string;
+  purchaseUnitPrice?: number | string;
+  saleUnitPrice?: number | string;
   /** 进价净额 */
   purchaseNetAmount?: number | string;
   /** 售价净额 */
@@ -167,6 +168,8 @@ export interface PageConsumableUsageReportDetailResponse {
 export interface ExportConsumableUsageReportParams extends ConsumableUsageReportFilter {
   exportTabCode: ConsumableUsageExportTab;
   summaryDimension?: string;
+  /** 页面列清单；后端按 field 白名单裁剪写出 */
+  exportColumns?: ExcelExportColumnPayload[];
 }
 
 export type ExportConsumableUsageReportResponse = BinaryExportResult;
@@ -186,10 +189,7 @@ export async function loadConsumableUsageReportPageInitApi(scope: ConsumableUsag
     scope === 'inpatient'
       ? 'loadInpatientConsumableUsageReportPageInit'
       : 'loadOutpatientConsumableUsageReportPageInit';
-  return publicRequestClient.post<LoadConsumableUsageReportPageInitResponse>(
-    `${base}/${method}`,
-    {},
-  );
+  return reportPost<LoadConsumableUsageReportPageInitResponse>(`${base}/${method}`, {});
 }
 
 /** 按耗材房/品规/类型/科室净汇总。 */
@@ -202,11 +202,7 @@ export async function summarizeConsumableUsageReportApi(
     scope === 'inpatient'
       ? 'summarizeInpatientConsumableUsageReport'
       : 'summarizeOutpatientConsumableUsageReport';
-  return publicRequestClient.post<SummarizeConsumableUsageReportResponse>(
-    `${base}/${method}`,
-    body,
-    reportLongRequestConfig(),
-  );
+  return reportPost<SummarizeConsumableUsageReportResponse>(`${base}/${method}`, body);
 }
 
 /** 明细分页（患者发放 ∪ 科室领用）。 */
@@ -219,11 +215,7 @@ export async function pageConsumableUsageReportDetailApi(
     scope === 'inpatient'
       ? 'pageInpatientConsumableUsageReportDetail'
       : 'pageOutpatientConsumableUsageReportDetail';
-  return publicRequestClient.post<PageConsumableUsageReportDetailResponse>(
-    `${base}/${method}`,
-    body,
-    reportLongRequestConfig(),
-  );
+  return reportPost<PageConsumableUsageReportDetailResponse>(`${base}/${method}`, body);
 }
 
 /** 导出当前 Tab（汇总 / 明细）xlsx。 */
@@ -236,9 +228,5 @@ export async function exportConsumableUsageReportApi(
     scope === 'inpatient'
       ? 'exportInpatientConsumableUsageReport'
       : 'exportOutpatientConsumableUsageReport';
-  return publicRequestClient.post<ExportConsumableUsageReportResponse>(
-    `${base}/${method}`,
-    body,
-    reportLongRequestConfig(),
-  );
+  return reportPost<ExportConsumableUsageReportResponse>(`${base}/${method}`, body);
 }

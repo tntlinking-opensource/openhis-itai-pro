@@ -40,6 +40,13 @@ public class ServiceLocationTemplate extends BaseAuditedEntity {
     @Column(name = "item_definition_id")
     private Long itemDefinitionId;
 
+    /**
+     * 耗材种类编码（术语 {@code device_type_code}）；空为通配。
+     * 药品行通常为空；用于同大类下按种类拆发材房。
+     */
+    @Column(name = "type_code")
+    private String typeCode;
+
     @Column(name = "method_code")
     private String methodCode;
 

@@ -4,6 +4,7 @@
  */
 package com.openhis.health.application.inventory.inventorydetail.request;
 
+import com.openhis.whale.core.application.dto.ExcelExportColumnDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
@@ -44,10 +45,10 @@ public class ExportInventoryDetailCurrentRequest {
     private List<Integer> chrgitmLvList;
 
     /**
-     * 基药标识筛选（药典 {@code basic_flag}）；仅收窄药品行；{@code null} 不限。
+     * 重点药类型筛选（KeyDrugType code）；仅收窄药品行；空/null 不限。
      */
-    @Schema(description = "基药标识：true/false；null 不限（仅药品）")
-    private Boolean basicFlag;
+    @Schema(description = "重点药类型：BASIC/NATIONAL_MONITOR/CENTRAL_PURCHASE；null 不限（仅药品）")
+    private String keyDrugType;
 
     /** 库存范围：true 数量等于0，false 数量大于0，null 不限。 */
     @Schema(description = "库存范围：true 数量等于0，false 数量大于0，null 不限")
@@ -64,4 +65,16 @@ public class ExportInventoryDetailCurrentRequest {
     /** 预警模式：expire=效期预警，lowStock=库存预警。 */
     @Schema(description = "预警模式：expire=效期预警，lowStock=库存预警")
     private String warningMode;
+
+    /**
+     * 项目类型：药品/耗材定义表名；空/null 不限。
+     */
+    @Schema(description = "项目类型：med_medication_definition=药品，adm_device_definition=耗材；null 不限")
+    private String itemTable;
+
+    /**
+     * 前端下发的导出列；空则导出全部 {@code @Excel} 列。
+     */
+    @Schema(description = "导出列清单（页面可见列）")
+    private List<ExcelExportColumnDto> exportColumns;
 }

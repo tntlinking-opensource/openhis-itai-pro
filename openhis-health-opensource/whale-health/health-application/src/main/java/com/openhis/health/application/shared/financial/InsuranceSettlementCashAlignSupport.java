@@ -19,8 +19,8 @@ import java.util.List;
  * 医保正式结算后，将患者自付渠道金额与头表现金对齐到 2207 权威口径。
  *
  * <p>基金/个账已按回执逐笔写入；现金若仍信前端/2206 草稿，多批次 2207 时会出现
- * 「fin_type=Σmedfee、渠道少 Σpsn_cash」勾稽差。本工具以 {@code Σ psn_cash_pay + 自费原价}
- * 覆盖患者自付渠道行，供门诊收费/挂号落账共用。</p>
+ * 「fin_type=Σmedfee、渠道少/多记 Σpsn_cash」勾稽差。本工具以 {@code Σ psn_cash_pay + 自费原价}
+ * 覆盖患者自付渠道行，并提供明细合计勾稽（**BR-OPC-024**），供门诊收费/挂号落账共用。</p>
  */
 public final class InsuranceSettlementCashAlignSupport {
 
@@ -156,6 +156,63 @@ public final class InsuranceSettlementCashAlignSupport {
         String code = payEnum.trim();
         return PaymentChannel.INSURANCE_FUND.getCode().equals(code)
             || PaymentChannel.INSURANCE_ACCT.getCode().equals(code);
+    }
+
+    /**
+     * 明细行金额代数和（结算 2 位刻度）；空列表为 0。
+     *
+     * <p>供落账前勾稽：基金+个账+自付渠道合计须等于本次收费项合计，防止自付多记/少记穿透成功态。</p>
+     *
+     * @param allLines 已对齐后的完整明细
+     * @return 结算刻度合计
+     */
+    public static BigDecimal sumLineAmounts(List<PaymentDetailItemCommand> allLines) {
+        BigDecimal total = BigDecimal.ZERO;
+        if (allLines == null || allLines.isEmpty()) {
+            return MonetaryAmountSupport.scaleSettle(total);
+        }
+        for (PaymentDetailItemCommand line : allLines) {
+            if (line == null) {
+                continue;
+            }
+            total = total.add(nullToZero(line.getAmount()));
+        }
+        return MonetaryAmountSupport.scaleSettle(total);
+    }
+
+    /**
+     * 患者自付渠道（非医保基金/个账）金额代数和。
+     *
+     * @param allLines 已对齐后的完整明细
+     * @return 结算刻度自付合计
+     */
+    public static BigDecimal sumPatientLineAmounts(List<PaymentDetailItemCommand> allLines) {
+        BigDecimal total = BigDecimal.ZERO;
+        if (allLines == null || allLines.isEmpty()) {
+            return MonetaryAmountSupport.scaleSettle(total);
+        }
+        for (PaymentDetailItemCommand line : allLines) {
+            if (line == null || isInsuranceChannel(line.getPayEnum())) {
+                continue;
+            }
+            total = total.add(nullToZero(line.getAmount()));
+        }
+        return MonetaryAmountSupport.scaleSettle(total);
+    }
+
+    /**
+     * 判断明细合计是否与收费项合计一致（均为结算 2 位）。
+     *
+     * @param allLines        已对齐明细
+     * @param chargeItemTotal 本次收费项 totalPrice 合计
+     * @return true=勾稽通过
+     */
+    public static boolean isDetailSumMatchedChargeTotal(
+        List<PaymentDetailItemCommand> allLines,
+        BigDecimal chargeItemTotal) {
+        BigDecimal detailSum = sumLineAmounts(allLines);
+        BigDecimal chargeSum = MonetaryAmountSupport.scaleSettle(nullToZero(chargeItemTotal));
+        return detailSum.compareTo(chargeSum) == 0;
     }
 
     private static List<PaymentDetailItemCommand> alignPatientOnly(

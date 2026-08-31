@@ -5,10 +5,12 @@
 package com.openhis.health.application.peis.orchestration;
 
 import com.openhis.health.application.peis.history.support.PeisPackageSnapshotSupport;
+import com.openhis.health.application.shared.advice.ServiceAdviceCommandAssembler;
 import com.openhis.health.application.peis.orchestration.command.AdjustPeServiceRequestsCommand;
 import com.openhis.health.application.peis.orchestration.command.RegisterGroupAfterPaidCommand;
 import com.openhis.health.application.peis.orchestration.command.RegisterPersonalCheckInCommand;
 import com.openhis.health.application.peis.orchestration.result.RegisterPersonalCheckInResult;
+import com.openhis.health.domain.administration.chargeitem.service.ChargeItemDomainService;
 import com.openhis.health.domain.administration.encounter.command.RegisterPhysicalExamEncounterCommand;
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDetailQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterDomainService;
@@ -29,8 +31,7 @@ import com.openhis.health.domain.share.constants.PeisCatalogConstants;
 import com.openhis.health.domain.share.constants.PeisExamKindConstants;
 import com.openhis.health.domain.share.constants.PeisExecStatusConstants;
 import com.openhis.health.domain.share.constants.ServiceRequestCategoryConstants;
-import com.openhis.health.domain.share.extension.campus.PeisCampusIdentityPort;
-import com.openhis.health.domain.share.extension.campus.PeisCampusIdentityView;
+import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.ActivityType;
 import com.openhis.health.domain.share.enums.EncounterClass;
 import com.openhis.health.domain.share.enums.EncounterStatus;
@@ -45,6 +46,8 @@ import com.openhis.health.domain.workflow.activitydefinition.queries.model.Activ
 import com.openhis.health.domain.workflow.activitydefinition.service.ActivityDefinitionQueryService;
 import com.openhis.health.domain.workflow.servicerequest.command.CancelServiceRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.CreateServiceRequestDraftCommand;
+import com.openhis.health.domain.workflow.servicerequest.command.RemoveServiceRequestDraftCommand;
+import com.openhis.health.domain.workflow.servicerequest.command.SignServiceRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestQueryModel;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestDomainService;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
@@ -54,10 +57,10 @@ import com.openhis.whale.core.application.util.StringUtils;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
 import com.openhis.whale.core.infrastructure.multitenancy.TenantUtils;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -80,10 +83,10 @@ public class PeisRegistrationOrchestrator {
     private final PeisEncounterExtQueryService peisEncounterExtQueryService;
     private final ServiceRequestDomainService serviceRequestDomainService;
     private final ServiceRequestQueryService serviceRequestQueryService;
+    private final ChargeItemDomainService chargeItemDomainService;
     private final PeisServiceRequestExtDomainService peisServiceRequestExtDomainService;
     private final PeisServiceRequestExtQueryService peisServiceRequestExtQueryService;
     private final IDomainEventPublisher domainEventPublisher;
-    private final ObjectProvider<PeisCampusIdentityPort> peisCampusIdentityPort;
 
     /**
      * 个检登记：创建 PE Encounter、扩展、套餐展开 SR 与执行扩展。
@@ -120,17 +123,21 @@ public class PeisRegistrationOrchestrator {
         if (children == null) {
             children = List.of();
         }
-        boolean hasChildren = Boolean.TRUE.equals(base.getChildrenFlag()) || !children.isEmpty();
-        if (!hasChildren || children.isEmpty()) {
-            throw new BusinessException(ErrorCodeConstants.PEIS_REG_PACKAGE_INACTIVE, "套餐无有效子项");
+        // P1-5：允许空白套餐先建单，后续在登记台/筹备补项
+
+        String examKind = resolveExamKind(cmd.getExamKind());
+        if (PeisExamKindConstants.GROUP.equals(examKind)) {
+            throw new ValidationException("团体体检请通过团检名册办理，不可在个检登记台直接建单");
         }
 
         // Pre：防重复在检
         if (encounterQueryService.existsActivePeEncounter(cmd.getPatientId())) {
             throw new BusinessException(ErrorCodeConstants.PEIS_REG_ENCOUNTER_ALREADY_ACTIVE, "已有在检记录");
         }
-        // BR-PE-ANNUAL-01
-        if (encounterQueryService.existsPeEncounterInCalendarYear(cmd.getPatientId(), java.time.Year.now().getValue())) {
+        // BR-PE-ANNUAL-01（校医院类型）
+        if (!PeisExamKindConstants.isHospitalPeKind(examKind)
+            && encounterQueryService.existsPeEncounterInCalendarYear(
+                cmd.getPatientId(), java.time.Year.now().getValue())) {
             throw new BusinessException("PEIS_ANNUAL_DUPLICATE", "该学生本年度已有有效体检");
         }
 
@@ -149,7 +156,6 @@ public class PeisRegistrationOrchestrator {
                 childActivityIds.add(child.getChildrenId());
             }
         }
-        String examKind = resolveExamKind(cmd.getExamKind(), cmd.getPatientId());
         String snapshotJson = PeisPackageSnapshotSupport.build(
             cmd.getPackageActivityId(), childActivityIds, base.getName(), examKind);
 
@@ -158,9 +164,14 @@ public class PeisRegistrationOrchestrator {
         extCmd.setEncounterId(encounterId);
         extCmd.setPackageActivityId(cmd.getPackageActivityId());
         extCmd.setPackageSnapshotJson(snapshotJson);
-        extCmd.setGroupFlag(Boolean.FALSE);
+        extCmd.setGroupFlag(false);
+        extCmd.setCompanyId(null);
+        extCmd.setContractId(null);
+        extCmd.setGroupBatchId(null);
         extCmd.setBookingAppointmentId(cmd.getBookingAppointmentId());
         extCmd.setBusNo(encounter.getBusNo());
+        extCmd.setReferrerName(cmd.getReferrerName());
+        extCmd.setBreakfastFlag(cmd.getBreakfastFlag());
         extCmd.setTenantId(TenantUtils.getCurrentTenantId());
         extCmd.setOrgId(cmd.getOrgId());
         peisEncounterExtDomainService.createForRegistration(extCmd);
@@ -208,9 +219,7 @@ public class PeisRegistrationOrchestrator {
         if (encounterQueryService.existsActivePeEncounter(cmd.getPatientId())) {
             throw new BusinessException(ErrorCodeConstants.PEIS_REG_ENCOUNTER_ALREADY_ACTIVE, "已有在检记录");
         }
-        if (encounterQueryService.existsPeEncounterInCalendarYear(cmd.getPatientId(), java.time.Year.now().getValue())) {
-            throw new BusinessException("PEIS_ANNUAL_DUPLICATE", "该学生本年度已有有效体检");
-        }
+        String examKind = PeisExamKindConstants.GROUP;
 
         ActivityDefinitionDetailQueryModel packageDetail =
             activityDefinitionQueryService.getServiceCatalog(cmd.getPackageActivityId());
@@ -218,11 +227,12 @@ public class PeisRegistrationOrchestrator {
         if (base == null || !isActivePublication(base.getStatusEnum())) {
             throw new BusinessException(ErrorCodeConstants.PEIS_REG_PACKAGE_INACTIVE, "套餐不存在或未启用");
         }
+        if (!PeisCatalogConstants.ACTIVITY_CATEGORY_PEIS.equals(base.getCategoryCode())) {
+            throw new BusinessException(ErrorCodeConstants.PEIS_REG_PACKAGE_INACTIVE, "套餐类目非法");
+        }
         List<ActivityDefinitionChildQueryModel> children =
             packageDetail.getChildren() == null ? List.of() : packageDetail.getChildren();
-        if (children.isEmpty()) {
-            throw new BusinessException(ErrorCodeConstants.PEIS_REG_PACKAGE_INACTIVE, "套餐无有效子项");
-        }
+        // P1-5：团检允许空白套餐先建 Encounter，后续补项
 
         RegisterPhysicalExamEncounterCommand registerCmd = new RegisterPhysicalExamEncounterCommand();
         registerCmd.setPatientId(cmd.getPatientId());
@@ -237,7 +247,6 @@ public class PeisRegistrationOrchestrator {
                 childActivityIds.add(child.getChildrenId());
             }
         }
-        String examKind = resolveExamKind(cmd.getExamKind(), cmd.getPatientId());
         String snapshotJson = PeisPackageSnapshotSupport.build(
             cmd.getPackageActivityId(), childActivityIds, base.getName(), examKind);
 
@@ -245,7 +254,7 @@ public class PeisRegistrationOrchestrator {
         extCmd.setEncounterId(encounterId);
         extCmd.setPackageActivityId(cmd.getPackageActivityId());
         extCmd.setPackageSnapshotJson(snapshotJson);
-        extCmd.setGroupFlag(Boolean.TRUE);
+        extCmd.setGroupFlag(true);
         extCmd.setCompanyId(cmd.getCompanyId());
         extCmd.setContractId(cmd.getContractId());
         extCmd.setGroupBatchId(cmd.getGroupBatchId());
@@ -322,14 +331,7 @@ public class PeisRegistrationOrchestrator {
                     throw new BusinessException(
                         ErrorCodeConstants.PEIS_REG_SR_ALREADY_EXECUTED, "项目已执行不可减项");
                 }
-                CancelServiceRequestCommand cancelCmd = new CancelServiceRequestCommand();
-                cancelCmd.setOperatorId(cmd.getOperatorId());
-                CancelServiceRequestCommand.CancelServiceRequestItemCommand item =
-                    new CancelServiceRequestCommand.CancelServiceRequestItemCommand();
-                item.setId(srId);
-                item.setCancelReason("体检减项");
-                cancelCmd.setItem(item);
-                serviceRequestDomainService.cancelServiceRequest(cancelCmd);
+                removePeServiceRequest(srId, cmd.getEncounterId(), cmd.getOperatorId());
                 removedSrIds.add(srId);
             }
         }
@@ -438,12 +440,50 @@ public class PeisRegistrationOrchestrator {
         return createdSrIds;
     }
 
+    /**
+     * 体检减项：草稿态删草稿；已发送/已校对走取消，并同步清理未结算费用与执行扩展。
+     */
+    private void removePeServiceRequest(Long srId, Long encounterId, Long operatorId) {
+        ServiceRequestQueryModel sr = serviceRequestQueryService.mustGetServiceRequest(srId);
+        voidPeUnbilledCharges(encounterId, srId, operatorId);
+        if (RequestStatus.DRAFT.getCode().equals(sr.getStatusEnum())) {
+            RemoveServiceRequestDraftCommand removeCmd =
+                ServiceAdviceCommandAssembler.toRemoveServiceRequestDraftCommand(srId, operatorId);
+            serviceRequestDomainService.removeServiceRequestDraft(removeCmd);
+        } else {
+            CancelServiceRequestCommand cancelCmd = new CancelServiceRequestCommand();
+            cancelCmd.setOperatorId(operatorId);
+            CancelServiceRequestCommand.CancelServiceRequestItemCommand item =
+                new CancelServiceRequestCommand.CancelServiceRequestItemCommand();
+            item.setId(srId);
+            item.setCancelReason("体检减项");
+            cancelCmd.setItem(item);
+            serviceRequestDomainService.cancelServiceRequest(cancelCmd);
+        }
+        peisServiceRequestExtDomainService.removeForServiceRequest(srId, operatorId);
+    }
+
+    /**
+     * 清理本服务申请锚点下未结算费用（DRAFT / PLANNED）。
+     */
+    private void voidPeUnbilledCharges(Long encounterId, Long srId, Long operatorId) {
+        chargeItemDomainService.voidUnbilledDraftChargeItemsByServiceAnchor(
+            ServiceAdviceCommandAssembler.toVoidDraftChargeAnchor(
+                encounterId, TableNameConstants.WKF_SERVICE_REQUEST, srId, operatorId));
+        chargeItemDomainService.rollbackPlannedChargeItemsAfterAdviceSignedOff(
+            encounterId, TableNameConstants.WKF_SERVICE_REQUEST, srId);
+        chargeItemDomainService.voidUnbilledDraftChargeItemsByServiceAnchor(
+            ServiceAdviceCommandAssembler.toVoidDraftChargeAnchor(
+                encounterId, TableNameConstants.WKF_SERVICE_REQUEST, srId, operatorId));
+    }
+
     private Long createPeServiceRequestDraft(
             Long encounterId, Long patientId, Long activityId, Long orgId, Long operatorId) {
         ActivityDefinitionDetailQueryModel detail =
             activityDefinitionQueryService.getServiceCatalog(activityId);
         ActivityDefinitionBaseQueryModel childBase = detail == null ? null : detail.getBaseInfo();
-        String unitCode = "1";
+        // 缺省计价单位：术语 unit_code=6（次）；禁止回落为 1（片）
+        String unitCode = "6";
         String typeEnum = null;
         Long performOrgId = orgId;
         if (childBase != null) {
@@ -474,7 +514,25 @@ public class PeisRegistrationOrchestrator {
         item.setOrgId(performOrgId);
         item.setRequesterId(operatorId);
         draftCmd.setItem(item);
-        return serviceRequestDomainService.createServiceRequestDraft(draftCmd);
+        Long serviceRequestId = serviceRequestDomainService.createServiceRequestDraft(draftCmd);
+        this.signPeServiceRequest(serviceRequestId, operatorId);
+        return serviceRequestId;
+    }
+
+    /** 体检登记项目须签发为 ACTIVE，否则门诊收费 Gate 拒绝正式结算（EX-OPC-411）。 */
+    private void signPeServiceRequest(Long serviceRequestId, Long operatorId) {
+        if (serviceRequestId == null || operatorId == null) {
+            return;
+        }
+        SignServiceRequestCommand signCmd = new SignServiceRequestCommand();
+        signCmd.setOperatorId(operatorId);
+        SignServiceRequestCommand.SignServiceRequestItemCommand signItem =
+            new SignServiceRequestCommand.SignServiceRequestItemCommand();
+        signItem.setId(serviceRequestId);
+        signItem.setSignerId(operatorId);
+        signItem.setSignTime(LocalDateTime.now());
+        signCmd.setItem(signItem);
+        serviceRequestDomainService.signServiceRequest(signCmd);
     }
 
     private static String mapCategoryFromActivityType(String typeEnum) {
@@ -497,31 +555,13 @@ public class PeisRegistrationOrchestrator {
     }
 
     /**
-     * 解析体检类型：显式优先；否则 Campus 教职工→staff，学生首检→freshman，否则 annual；未知→other。
+     * 解析体检类型：请求显式值优先；未传时默认个人体检（不再自动推断）。
      */
-    private String resolveExamKind(String requested, Long patientId) {
+    private String resolveExamKind(String requested) {
         String normalized = PeisExamKindConstants.normalizeOrNull(requested);
-        if (normalized != null && !PeisExamKindConstants.OTHER.equals(normalized)) {
-            return normalized;
-        }
-        PeisCampusIdentityPort port = peisCampusIdentityPort.getIfAvailable();
-        if (port != null && patientId != null) {
-            java.util.Optional<PeisCampusIdentityView> identity =
-                port.resolveByPatientId(TenantUtils.getCurrentTenantId(), patientId);
-            if (identity.isPresent()) {
-                if ("STAFF".equals(identity.get().getSubjectType())) {
-                    return PeisExamKindConstants.STAFF;
-                }
-                if ("STUDENT".equals(identity.get().getSubjectType())) {
-                    return encounterQueryService.existsAnyNonCancelledPeEncounter(patientId)
-                        ? PeisExamKindConstants.ANNUAL
-                        : PeisExamKindConstants.FRESHMAN;
-                }
-            }
-        }
         if (normalized != null) {
             return normalized;
         }
-        return PeisExamKindConstants.OTHER;
+        return PeisExamKindConstants.PERSONAL;
     }
 }

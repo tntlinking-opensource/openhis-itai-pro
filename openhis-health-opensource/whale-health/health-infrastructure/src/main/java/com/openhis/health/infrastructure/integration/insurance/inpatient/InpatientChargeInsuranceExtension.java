@@ -11,12 +11,16 @@ import com.openhis.health.infrastructure.integration.insurance.inpatient.Extensi
 import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionIn.InpatientChargeRevokeFeeDetailExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionIn.InpatientChargeRevokeSettleExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionIn.InpatientChargeAdmissionPlatformQueryExtensionIn;
+import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionIn.InpatientChargeUploadFeeBatchExtensionIn;
+import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionIn.InpatientPlatformVisitAlignExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionOut.InpatientChargeAdmissionPlatformQueryExtensionOut;
 import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionOut.InpatientChargeAdmissionExtensionOut;
 import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionOut.InpatientChargeConfirmExtensionOut;
 import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionOut.InpatientChargePreSettleExtensionOut;
 import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionOut.InpatientChargeRevokeFeeDetailExtensionOut;
 import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionOut.InpatientChargeRevokeSettleExtensionOut;
+import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionOut.InpatientChargeUploadFeeBatchExtensionOut;
+import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionOut.InpatientPlatformVisitAlignExtensionOut;
 
 import java.util.Collections;
 import java.util.List;
@@ -32,6 +36,7 @@ import java.util.List;
  * <p><b>infno 对照（吉林）</b>：</p>
  * <ul>
  *   <li>{@link #ensureAdmission} — 2401</li>
+ *   <li>{@link #uploadPendingFeeBatch} — 2301（单批）</li>
  *   <li>{@link #preSettle} — 2301→2303</li>
  *   <li>{@link #confirmBeforeLocalSettle} — 2304</li>
  *   <li>{@link #revokeSettle} — 2305</li>
@@ -72,6 +77,35 @@ public interface InpatientChargeInsuranceExtension {
      * @return 分摊金额；同 paymentDraft 重复预结算会取消旧 ACTIVE 快照
      */
     default InpatientChargePreSettleExtensionOut preSettle(InpatientChargePreSettleExtensionIn command) {
+        throw new UnsupportedOperationException("第三方结算未装配");
+    }
+
+    /**
+     * 上传一批待传住院费用明细（2301，平台单次上限 100 行）。
+     *
+     * <p>供前端进度条分批调用；{@code preferredMdtrtId} 非空时跳过 2401。</p>
+     *
+     * @param command 读卡字段 + chargeItemIds + 可选 preferredMdtrtId
+     * @return 本批进度；未装配时抛异常
+     */
+    default InpatientChargeUploadFeeBatchExtensionOut uploadPendingFeeBatch(
+            InpatientChargeUploadFeeBatchExtensionIn command) {
+        throw new UnsupportedOperationException("第三方结算未装配");
+    }
+
+    /**
+     * 诊断本地平台就诊映射与 5201 在院态是否一致。
+     */
+    default InpatientPlatformVisitAlignExtensionOut diagnosePlatformVisit(
+            InpatientPlatformVisitAlignExtensionIn command) {
+        throw new UnsupportedOperationException("第三方结算未装配");
+    }
+
+    /**
+     * 按诊断结果执行轻量修复（清多余在院 / 软删死映射）。
+     */
+    default InpatientPlatformVisitAlignExtensionOut repairPlatformVisit(
+            InpatientPlatformVisitAlignExtensionIn command) {
         throw new UnsupportedOperationException("第三方结算未装配");
     }
 

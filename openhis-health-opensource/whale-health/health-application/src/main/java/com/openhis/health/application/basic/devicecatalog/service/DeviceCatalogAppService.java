@@ -62,6 +62,7 @@ import com.openhis.health.domain.administration.devicedefinition.service.DeviceD
 import com.openhis.health.domain.administration.devicedefinition.service.DeviceDefinitionQueryService;
 import com.openhis.health.domain.custom.supplier.queries.model.SupplierListItemQueryModel;
 import com.openhis.health.domain.custom.supplier.service.SupplierQueryService;
+import com.openhis.health.domain.share.enums.SupplierType;
 import com.openhis.health.domain.share.utils.OptionDtoLegacyRowUtil;
 import com.openhis.health.domain.share.utils.GatewayIdParseUtil;
 import com.openhis.health.application.basic.catalog.support.CatalogEditabilityQueryModel;
@@ -72,6 +73,7 @@ import com.openhis.whale.core.application.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import com.openhis.whale.core.application.util.StringUtils;
+import com.openhis.whale.core.infrastructure.util.ChineseConvertUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 
@@ -151,7 +153,7 @@ public class DeviceCatalogAppService {
     private final DeviceCatalogExportRowAssembler deviceCatalogExportRowAssembler;
 
     /**
-     * 耗材维护页初始化：单位类下拉、供应商列表、耗材分类（{@code device_category_code}）、耗材种类（{@code device_type_code}）、财务类型（{@code fin_type_code}）、医保类别/等级等。
+     * 耗材维护页初始化：单位类下拉、供应商列表、生产厂家（type=1）、耗材分类（{@code device_category_code}）、耗材种类（{@code device_type_code}）、财务类型（{@code fin_type_code}）、医保类别/等级等。
      *
      * <p>返回结构中部分列表为 {@link OptionDtoLegacyRowUtil} 映射的 label/value 行，兼容旧前端表格数据源。</p>
      *
@@ -161,7 +163,7 @@ public class DeviceCatalogAppService {
         // Gate：只读页初始化，无写侧操作人
         DeviceCatalogInitDto dto = DeviceCatalogInitDto.empty();
 
-        // Pre：加载计量单位、供应商与耗材分类/种类/财务类型下拉
+        // Pre：加载计量单位、供应商/生产厂家与耗材分类/种类/财务类型下拉
         // 计量单位统一 unit_code；剂量单独 dose_unit
         List<Map<String, Object>> unitOptions =
             terminologyOptionLoader.loadLegacyRows(TerminologyCodeSystemNameConstants.UNIT_CODE);
@@ -174,6 +176,8 @@ public class DeviceCatalogAppService {
             terminologyOptionLoader.loadLegacyRows(TerminologyCodeSystemNameConstants.DOSE_UNIT));
 
         dto.setSupplierListOptions(loadSupplierLegacyRows());
+        // 生产厂家：仅 type=1 启用主数据，与进货供应商（type=2）分离
+        dto.setManufacturerOptions(loadManufacturerLegacyRows());
         dto.setDeviceCategories(
             terminologyOptionLoader.loadLegacyRows(TerminologyCodeSystemNameConstants.DEVICE_CATEGORY_CODE));
         dto.setEquipmentTypes(
@@ -204,6 +208,78 @@ public class DeviceCatalogAppService {
             SupplierListItemQueryModel::getName,
             0L);
         return OptionDtoLegacyRowUtil.toLabelValueRows(options);
+    }
+
+    /**
+     * 加载启用态生产厂家下拉为可拼音/五笔过滤的 label/value 行。
+     *
+     * <p>value=供应商主键字符串；迁移占位拼音 {@code MFG} 按名称现场重算。</p>
+     *
+     * @return 生产厂家下拉行列表；无数据时为空列表
+     */
+    private List<Map<String, Object>> loadManufacturerLegacyRows() {
+        List<SupplierListItemQueryModel> manufacturers =
+            supplierQueryService.listSuppliersByTypeAndActive(SupplierType.MANUFACTURER.getCode());
+        List<OptionDto> options = new ArrayList<>();
+        if (manufacturers == null || manufacturers.isEmpty()) {
+            return OptionDtoLegacyRowUtil.toSearchableLabelValueRows(options);
+        }
+        // Loop：装配可检索厂家选项（名称 + 拼音/五笔 + 编号）
+        for (SupplierListItemQueryModel item : manufacturers) {
+            if (item == null || item.getId() == null) {
+                continue;
+            }
+            OptionDto option = new OptionDto();
+            option.setValue(String.valueOf(item.getId()));
+            option.setLabel(item.getName());
+            option.setBusNo(item.getBusNo());
+            option.setPyStr(this.resolveManufacturerPyStr(item));
+            option.setWbStr(this.resolveManufacturerWbStr(item));
+            options.add(option);
+        }
+        return OptionDtoLegacyRowUtil.toSearchableLabelValueRows(options);
+    }
+
+    /**
+     * 解析厂家拼音检索码：空或迁移占位 {@code MFG} 时按名称重算。
+     *
+     * @param item 厂家列表行
+     * @return 拼音码；名称也空时返回原值（可空）
+     */
+    private String resolveManufacturerPyStr(SupplierListItemQueryModel item) {
+        if (item == null) {
+            return null;
+        }
+        String pyStr = item.getPyStr();
+        if (StringUtils.isNotEmpty(pyStr) && !"MFG".equals(pyStr)) {
+            return pyStr;
+        }
+        String name = item.getName();
+        if (StringUtils.isEmpty(name)) {
+            return pyStr;
+        }
+        return ChineseConvertUtils.toPinyinFirstLetter(name.trim());
+    }
+
+    /**
+     * 解析厂家五笔检索码：空或迁移占位 {@code MFG} 时按名称重算。
+     *
+     * @param item 厂家列表行
+     * @return 五笔码；名称也空时返回原值（可空）
+     */
+    private String resolveManufacturerWbStr(SupplierListItemQueryModel item) {
+        if (item == null) {
+            return null;
+        }
+        String wbStr = item.getWbStr();
+        if (StringUtils.isNotEmpty(wbStr) && !"MFG".equals(wbStr)) {
+            return wbStr;
+        }
+        String name = item.getName();
+        if (StringUtils.isEmpty(name)) {
+            return wbStr;
+        }
+        return ChineseConvertUtils.toWBFirstLetter(name.trim());
     }
 
     /**
@@ -363,6 +439,10 @@ public class DeviceCatalogAppService {
         }
         if (request.getCategoryCode() == null || request.getCategoryCode().trim().isEmpty()) {
             throw new ValidationException("更新耗材失败：耗材分类不能为空");
+        }
+        // Gate：种类必填（取药科室 type_code 中间维依赖目录 typeCode）
+        if (request.getTypeCode() == null || request.getTypeCode().trim().isEmpty()) {
+            throw new ValidationException("更新耗材失败：耗材种类不能为空");
         }
         this.normalizeUnitFieldsForWrite(request);
         this.normalizeDoseUnitDefaultsForWrite(request);
@@ -674,7 +754,8 @@ public class DeviceCatalogAppService {
             dataRows.add(deviceCatalogExportRowAssembler.toColumnValues(
                 detail, priceLines, deviceCatalogImportTerminologyIndex));
         }
-        byte[] bytes = deviceCatalogImportTemplateBuilder.buildExport(dataRows);
+        byte[] bytes = deviceCatalogImportTemplateBuilder.buildExport(
+            dataRows, safeRequest.getExportColumns());
         String fileName = DeviceCatalogImportConstants.EXPORT_FILE_NAME_PREFIX
             + LocalDateTime.now().format(
                 DateTimeFormatter.ofPattern(DeviceCatalogImportConstants.EXPORT_FILE_NAME_TIME_PATTERN))
@@ -734,6 +815,10 @@ public class DeviceCatalogAppService {
         }
         if (request.getCategoryCode() == null || request.getCategoryCode().trim().isEmpty()) {
             throw new ValidationException("创建耗材失败：耗材分类不能为空");
+        }
+        // Gate：种类必填（取药科室 type_code 中间维依赖目录 typeCode）
+        if (request.getTypeCode() == null || request.getTypeCode().trim().isEmpty()) {
+            throw new ValidationException("创建耗材失败：耗材种类不能为空");
         }
         this.normalizeUnitFieldsForWrite(request);
         this.normalizeDoseUnitDefaultsForWrite(request);
@@ -952,12 +1037,13 @@ public class DeviceCatalogAppService {
                 String supName = supplierNameById.get(dto.getSupplyId());
                 if (supName != null) {
                     dto.setSupplyId_dictText(supName);
-                    String mt = dto.getManufacturerText();
-                    if (mt == null || mt.isBlank()
-                        || mt.chars().allMatch(Character::isDigit)
-                        || mt.equals(String.valueOf(dto.getSupplyId()))) {
-                        dto.setManufacturerText(supName);
-                    }
+                }
+            }
+            // 厂家展示名：优先按 manufacturerId 解析；未填时不回落 supply 名称到 manufacturerText
+            if (dto.getManufacturerId() != null) {
+                String mfgName = supplierNameById.get(dto.getManufacturerId());
+                if (mfgName != null) {
+                    dto.setManufacturerText(mfgName);
                 }
             }
         }
@@ -1025,7 +1111,8 @@ public class DeviceCatalogAppService {
     }
 
     /**
-     * 写入前收敛生产厂家与供应商：避免 manufacturer_id 空而 supply_id 有值、或 manufacturer_text 误存为 id 串。
+     * 写入前收敛生产厂家主键：manufacturer_id 空而 supply_id 有值时，用 supply_id 回填 manufacturer_id。
+     * 不再把厂家名称写入实体；展示名由读路径按 id 解析。
      *
      * @param request 创建或更新请求（就地修改）
      */
@@ -1035,32 +1122,9 @@ public class DeviceCatalogAppService {
         }
         Long supplyId = request.getSupplyId();
         Long manufacturerId = request.getManufacturerId();
+        // 历史兼容：仅填了供应商时，把 supplyId 视为厂家主键写入 manufacturerId
         if (supplyId != null && manufacturerId == null) {
             request.setManufacturerId(supplyId);
-            manufacturerId = supplyId;
-        }
-        String mt = request.getManufacturerText();
-        if (mt != null && !mt.isBlank()) {
-            String trimmed = mt.trim();
-            if (trimmed.chars().allMatch(Character::isDigit)) {
-                boolean matchesSupply = supplyId != null && trimmed.equals(String.valueOf(supplyId));
-                boolean matchesMfg = manufacturerId != null && trimmed.equals(String.valueOf(manufacturerId));
-                if (matchesSupply || matchesMfg) {
-                    Long resolveId;
-                    if (manufacturerId != null) {
-                        resolveId = manufacturerId;
-                    } else {
-                        resolveId = supplyId;
-                    }
-                    request.setManufacturerText(
-                        supplierQueryService.findSupplierNameIfPresent(resolveId).orElse(null));
-                }
-            }
-        }
-        if ((request.getManufacturerText() == null || request.getManufacturerText().isBlank())
-            && request.getManufacturerId() != null) {
-            request.setManufacturerText(
-                supplierQueryService.findSupplierNameIfPresent(request.getManufacturerId()).orElse(null));
         }
     }
 

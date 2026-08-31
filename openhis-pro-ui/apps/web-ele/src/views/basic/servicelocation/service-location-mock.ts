@@ -212,6 +212,7 @@ export function getMockInitData(): ServiceLocationInitResponse & {
     defLocationOptions: MOCK_DEF_LOCATION_OPTIONS,
     methodCodeOptions: MOCK_WESTERN_METHOD_OPTIONS,
     tcmMethodCodeOptions: MOCK_TCM_METHOD_OPTIONS,
+    deviceTypeCodeOptions: [],
   };
 }
 

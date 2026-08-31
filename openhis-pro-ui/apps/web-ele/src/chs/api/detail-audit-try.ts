@@ -16,6 +16,8 @@ export interface AuditViolationDetail {
   rxId?: string;
   volaItemType?: string;
   volaAmt?: number;
+  /** 院内回填的药品/项目名称 */
+  itemName?: string;
 }
 
 /** 3101 违规头 */

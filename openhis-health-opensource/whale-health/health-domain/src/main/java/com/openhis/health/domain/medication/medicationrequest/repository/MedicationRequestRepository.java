@@ -107,4 +107,22 @@ public interface MedicationRequestRepository extends JpaRepository<MedicationReq
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<MedicationRequest> findWithLockById(Long id);
+
+    /**
+     * 按 based_on 锚点查询子嘱（住院长嘱改量链向下找子；皮试 companion 不在本表）。
+     *
+     * @param basedOnTable 来源表名（如 {@code med_medication_request}）
+     * @param basedOnId    来源主键
+     * @return 以该锚为 based_on 的药品申请（可能多条；改量场景通常至多一条有效链尾）
+     */
+    List<MedicationRequest> findByBasedOnTableAndBasedOnId(String basedOnTable, Long basedOnId);
+
+    /**
+     * 按 based_on 锚点批量查询子嘱（改量链批量装配）。
+     *
+     * @param basedOnTable 来源表名
+     * @param basedOnIds   来源主键集合
+     * @return 子嘱集合
+     */
+    List<MedicationRequest> findByBasedOnTableAndBasedOnIdIn(String basedOnTable, Collection<Long> basedOnIds);
 }

@@ -6,6 +6,7 @@ package com.openhis.health.application.report.nurseworkload.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.openhis.whale.core.application.dto.ExcelExportColumnDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
@@ -13,6 +14,7 @@ import lombok.Setter;
 import lombok.experimental.Accessors;
 
 import java.time.LocalDate;
+import java.util.List;
 
 /**
  * 护士工作量明细导出入参（IF-RPT-NWL-06）。
@@ -48,13 +50,23 @@ public class ExportNurseWorkloadDetailRequest {
     @Schema(description = "护士执业者主键（可选）")
     private Long practitionerId;
 
-    /** 开立科室主键（可选）。 */
+    /** 开立科室主键（可选；金额二次收窄）。 */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "开立科室主键（可选）")
+    @Schema(description = "开立科室主键（可选；金额二次收窄）")
     private Long requestingOrgId;
 
-    /** 科室主键（遗留；请用 requestingOrgId）。 */
+    /**
+     * 默认登录科室主键（可选；{@code Practitioner.org_id}）。
+     *
+     * <p>未传单护士时按该科下全部护士收窄。</p>
+     */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "科室主键（遗留；请用 requestingOrgId）")
+    @Schema(description = "默认登录科室主键（可选；Practitioner.org_id）")
     private Long organizationId;
+
+    /**
+     * 前端下发的导出列；空则导出全部 {@code @Excel} 列。
+     */
+    @Schema(description = "导出列清单（页面可见列）")
+    private List<ExcelExportColumnDto> exportColumns;
 }

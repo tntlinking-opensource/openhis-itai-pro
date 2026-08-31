@@ -35,6 +35,8 @@ public class BatchInsertDistributionRulesCommand extends BatchCommand<BatchInser
         private Long defLocationId;
         /** 项目录主键。 */
         private Long itemDefinitionId;
+        /** 耗材种类编码（device_type_code）；空为通配。 */
+        private String typeCode;
         /** method编码。 */
         private String methodCode;
         /** 开始时间。 */

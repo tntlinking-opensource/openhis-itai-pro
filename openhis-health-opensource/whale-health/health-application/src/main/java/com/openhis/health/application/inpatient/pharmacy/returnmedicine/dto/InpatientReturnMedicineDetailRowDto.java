@@ -78,6 +78,13 @@ public class InpatientReturnMedicineDetailRowDto implements Serializable {
     @Schema(description = "追溯码（逗号分隔）")
     private String traceNo;
 
+    /**
+     * 退药发放业务单号。
+     * <p>码上放心 116 上传键；与 TraceNumber {@code MEDICATION_RETURN_IN} 的 bus_no 一致。</p>
+     */
+    @Schema(description = "退药发放业务单号（码上放心上传键）")
+    private String busNo;
+
     /** 是否可勾选确认；仅 PENDING_REFUND 为 true。 */
     @Schema(description = "是否可勾选确认")
     private Boolean selectable;

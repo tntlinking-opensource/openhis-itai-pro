@@ -17,6 +17,7 @@ import com.openhis.health.domain.peis.encounterprogress.queries.query.MasterRevi
 import org.springframework.data.domain.Page;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -57,6 +58,16 @@ public interface PeisMasterReviewMapper {
      * @return DTO 列表
      */
     List<MasterObservationRowDto> toObservationRows(List<ObservationModel> models);
+
+    /**
+     * 观察读模型转 DTO（含 OD 展示名 enrich）。
+     *
+     * @param models            观察列表
+     * @param definitionDisplay 定义展示名映射
+     * @return DTO 列表
+     */
+    List<MasterObservationRowDto> toObservationRows(
+        List<ObservationModel> models, Map<Long, String> definitionDisplay);
 
     /**
      * 组装汇总响应。

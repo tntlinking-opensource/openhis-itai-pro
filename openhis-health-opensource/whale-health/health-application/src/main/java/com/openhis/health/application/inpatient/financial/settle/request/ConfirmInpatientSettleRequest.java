@@ -8,6 +8,7 @@ import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.openhis.health.application.inpatient.financial.settle.dto.InpatientSettleClientRefundItemDto;
 import com.openhis.health.application.inpatient.financial.settle.dto.InpatientSettlePaymentDetailDto;
 import com.openhis.health.infrastructure.integration.payment.dto.ClientScanResultDto;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -71,7 +72,13 @@ public class ConfirmInpatientSettleRequest {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long ybPreSettleId;
 
-    /** 银联被扫 Win 回传（少补扫码收款时必填）。 */
+    /** 银联被扫 Win 回传（渠道现付扫码收款时必填）。 */
     @Schema(description = "银联被扫 Win 回传")
     private ClientScanResultDto clientScanResult;
+
+    /**
+     * 医保出院原路退预交金：按原收款单挂接的 Win 退货回传列表。
+     */
+    @Schema(description = "医保出院预交金原路退 Win 回传列表")
+    private List<InpatientSettleClientRefundItemDto> clientRefundResults;
 }

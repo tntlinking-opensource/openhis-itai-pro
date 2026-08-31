@@ -12,7 +12,9 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.MedicationCatalogImportConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.domain.share.enums.KeyDrugType;
 import com.openhis.health.domain.share.enums.PublicationStatus;
+import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.query.ProductDefinitionCatalogPageQuery;
 import com.openhis.health.domain.share.query.ProductDefinitionPurchasePageQuery;
@@ -135,6 +137,8 @@ public class MedicationDefinitionQueryService {
         purchase.setExcludeMedicationCategoryCodes(query.getExcludeMedicationCategoryCodes());
         purchase.setActiveFlag(query.getActiveFlag());
         purchase.setSupplierId(query.getSupplierId());
+        purchase.setManufacturerId(query.getManufacturerId());
+        purchase.setManufacturerIds(query.getManufacturerIds());
         purchase.setManufacturer(query.getManufacturer());
         purchase.setKeyword(query.getKeyword());
         purchase.setPrepickedProductKeys(query.getPrepickedProductKeys());
@@ -296,7 +300,9 @@ public class MedicationDefinitionQueryService {
         model.setMaxUnit(definition.getMaxUnit());
         model.setLocationId(definition.getLocationId());
         model.setSupplyId(definition.getSupplyId());
-        model.setManufacturerText(definition.getManufacturerText());
+        model.setManufacturerId(definition.getManufacturerId());
+        // 展示名由 AppService 按 manufacturerId 解析供应商名称回填，此处不读已删除的 text 列
+        model.setManufacturerText(null);
         model.setRxFlag(definition.getRxFlag());
         model.setPurchaseUnitCode(definition.getPurchaseUnitCode());
         model.setSplitUnitCode(definition.getSplitUnitCode());
@@ -313,7 +319,7 @@ public class MedicationDefinitionQueryService {
     }
 
     /**
-     * 药品目录维护分页谓词：未删除 + 分类 + 基药标识 + 关键字（名称/助记码/业务号）。
+     * 药品目录维护分页谓词：未删除 + 分类 + 重点药类型 + 关键字（名称/助记码/业务号）。
      *
      * @param query 目录查询条件
      * @return JPA Specification
@@ -326,9 +332,10 @@ public class MedicationDefinitionQueryService {
                 if (StringUtils.isNotEmpty(query.getCategoryCode())) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.CATEGORY_CODE), query.getCategoryCode().trim()));
                 }
-                // 基药筛选：仅在入参非空时等值匹配 basic_flag（null 不限；与列表/导出同口径）
-                if (query.getBasicFlag() != null) {
-                    predicates.add(cb.equal(root.get(FieldNameConstants.BASIC_FLAG), query.getBasicFlag()));
+                // 重点药类型：非空时对应药典布尔标识为 true（null/空不限；与列表/导出同口径）
+                String keyDrugFlagField = this.resolveKeyDrugFlagFieldName(query.getKeyDrugType());
+                if (keyDrugFlagField != null) {
+                    predicates.add(cb.equal(root.get(keyDrugFlagField), Boolean.TRUE));
                 }
                 if (StringUtils.isNotEmpty(query.getKeyword())) {
                     String trimmed = query.getKeyword().trim();
@@ -393,9 +400,8 @@ public class MedicationDefinitionQueryService {
                 if (query.getSupplierId() != null) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.SUPPLY_ID), query.getSupplierId()));
                 }
-                if (StringUtils.isNotEmpty(query.getManufacturer())) {
-                    predicates.add(cb.equal(root.get(FieldNameConstants.MANUFACTURER_TEXT), query.getManufacturer().trim()));
-                }
+                this.appendManufacturerIdPredicates(predicates, root, cb, query.getManufacturerId(),
+                    query.getManufacturerIds(), query.getManufacturer());
                 Predicate keywordPred = this.buildPurchaseKeywordPredicate(root, cb, query.getKeyword());
                 Predicate prepPred = this.buildMedicationPrepickedPredicate(root, cb, query.getPrepickedProductKeys());
                 this.appendKeywordOrPrepicked(predicates, cb, keywordPred, prepPred);
@@ -633,6 +639,8 @@ public class MedicationDefinitionQueryService {
         model.setDomainEnum(definition.getDomainEnum());
         model.setApprovalNumber(definition.getApprovalNumber());
         model.setBasicFlag(definition.getBasicFlag());
+        model.setNationalMonitorFlag(definition.getNationalMonitorFlag());
+        model.setCentralPurchaseFlag(definition.getCentralPurchaseFlag());
         model.setSkinTestFlag(definition.getSkinTestFlag());
         model.setInjectFlag(definition.getInjectFlag());
         model.setChildrenFlag(definition.getChildrenFlag());
@@ -655,7 +663,8 @@ public class MedicationDefinitionQueryService {
         model.setLocationId(definition.getLocationId());
         model.setSupplyId(definition.getSupplyId());
         model.setManufacturerId(definition.getManufacturerId());
-        model.setManufacturerText(definition.getManufacturerText());
+        // 展示名由 AppService 按 manufacturerId 解析供应商名称回填，此处不读已删除的 text 列
+        model.setManufacturerText(null);
         model.setPyStr(definition.getPyStr());
         model.setWbStr(definition.getWbStr());
         model.setMerchandiseName(definition.getMerchandiseName());
@@ -867,7 +876,7 @@ public class MedicationDefinitionQueryService {
             String candidateToken = this.buildDuplicateKeyToken(
                 row.getName(),
                 row.getTotalVolume(),
-                row.getManufacturerText(),
+                row.getManufacturerId(),
                 this.extractLegacyCode(row.getDefinition()));
             if (tokenSet.contains(candidateToken)) {
                 existing.add(candidateToken);
@@ -888,21 +897,111 @@ public class MedicationDefinitionQueryService {
     }
 
     /**
-     * 构造与导入校验一致的唯一键 token。
+     * 构造与导入校验一致的唯一键 token（厂家段为 manufacturerId 字符串，空 id 用空串）。
+     *
+     * @param name           药品名称
+     * @param totalVolume    规格
+     * @param manufacturerId 生产厂家主键；null 时厂家段为空串
+     * @param legacyCode     旧系统编码；非空时走 L: 分支
+     * @return token 字符串
      */
     private String buildDuplicateKeyToken(
         String name,
         String totalVolume,
-        String manufacturerText,
+        Long manufacturerId,
         String legacyCode
     ) {
         String n = this.trimToEmpty(name);
-        String m = this.trimToEmpty(manufacturerText);
+        String m = this.manufacturerIdToken(manufacturerId);
         String legacy = this.trimToEmpty(legacyCode);
+        // 有旧系统编码时按名称+厂家+L:legacy 去重，忽略规格
         if (!legacy.isEmpty()) {
             return n + '\u0001' + m + '\u0001' + "L:" + legacy;
         }
         return n + '\u0001' + m + '\u0001' + "V:" + this.normalizeVolume(this.trimToEmpty(totalVolume));
+    }
+
+    /**
+     * 将生产厂家主键转为重复键中的厂家段（null→空串，否则 {@code String.valueOf}）。
+     *
+     * @param manufacturerId 生产厂家主键
+     * @return 非 null 字符串
+     */
+    private String manufacturerIdToken(Long manufacturerId) {
+        if (manufacturerId == null) {
+            return "";
+        }
+        return String.valueOf(manufacturerId);
+    }
+
+    /**
+     * 追加生产厂家筛选谓词：优先 {@code manufacturerId}/{@code manufacturerIds}；
+     * 兼容旧 {@code manufacturer} 字符串——仅当可解析为 Long 时按主键等值过滤，否则忽略
+     * （名称→id 须由 AppService 解析后写入 manufacturerId）。
+     *
+     * @param predicates       外层 AND 列表（就地追加）
+     * @param root             药品定义根
+     * @param cb               CriteriaBuilder
+     * @param manufacturerId   单值主键；可空
+     * @param manufacturerIds  主键集合；可空
+     * @param manufacturerText 兼容旧字符串入参；可空
+     */
+    private void appendManufacturerIdPredicates(
+        List<Predicate> predicates,
+        Root<MedicationDefinition> root,
+        CriteriaBuilder cb,
+        Long manufacturerId,
+        List<Long> manufacturerIds,
+        String manufacturerText
+    ) {
+        List<Long> ids = new ArrayList<>();
+        if (manufacturerId != null) {
+            ids.add(manufacturerId);
+        }
+        if (manufacturerIds != null) {
+            for (Long id : manufacturerIds) {
+                if (id != null) {
+                    ids.add(id);
+                }
+            }
+        }
+        // 旧入参仅传名称串：仅数字可当 id；名称解析留 AppService
+        if (ids.isEmpty() && StringUtils.isNotEmpty(manufacturerText)) {
+            Long parsed = this.tryParseLongId(manufacturerText.trim());
+            if (parsed != null) {
+                ids.add(parsed);
+            }
+        }
+        if (ids.isEmpty()) {
+            return;
+        }
+        if (ids.size() == 1) {
+            predicates.add(cb.equal(root.get(FieldNameConstants.MANUFACTURER_ID), ids.get(0)));
+            return;
+        }
+        predicates.add(root.get(FieldNameConstants.MANUFACTURER_ID).in(ids));
+    }
+
+    /**
+     * 尝试将纯数字字符串解析为 Long；非数字或溢出时返回 null（不抛异常）。
+     *
+     * @param raw 已 trim 的候选串
+     * @return 解析成功的主键，或 null
+     */
+    private Long tryParseLongId(String raw) {
+        if (StringUtils.isEmpty(raw)) {
+            return null;
+        }
+        for (int i = 0; i < raw.length(); i++) {
+            if (!Character.isDigit(raw.charAt(i))) {
+                return null;
+            }
+        }
+        try {
+            return Long.valueOf(raw);
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 
     private String extractLegacyCode(String definition) {
@@ -964,27 +1063,56 @@ public class MedicationDefinitionQueryService {
     }
 
     /**
-     * 按基药标识解析药品定义主键（库存明细基药筛选预解析，B.6.4 禁止 inventory 跨包 JOIN）。
+     * 按重点药类型解析药品定义主键（库存明细筛选预解析，B.6.4 禁止 inventory 跨包 JOIN）。
      *
-     * @param basicFlag {@code true}/{@code false}；{@code null} 时返回空列表
-     * @return 未删除且 {@code basic_flag} 等于入参的目录主键列表
+     * <p>仅收窄「对应标识为 true」的未删除药品；未知/空 code 返回空列表。</p>
+     *
+     * @param keyDrugTypeCode {@link KeyDrugType#getCode()}；空时返回空列表
+     * @return 命中的目录主键列表
      */
-    public List<Long> listIdsByBasicFlag(Boolean basicFlag) {
-        if (basicFlag == null) {
+    public List<Long> listIdsByKeyDrugType(String keyDrugTypeCode) {
+        String flagField = this.resolveKeyDrugFlagFieldName(keyDrugTypeCode);
+        if (flagField == null) {
             return Collections.emptyList();
         }
         Specification<MedicationDefinition> specification = (root, criteriaQuery, cb) -> cb.and(
             cb.isFalse(root.get(FieldNameConstants.IS_DELETED)),
-            cb.equal(root.get(FieldNameConstants.BASIC_FLAG), basicFlag));
+            cb.equal(root.get(flagField), Boolean.TRUE));
         List<MedicationDefinition> rows = this.medicationDefinitionRepository.findAll(specification);
         List<Long> ids = new ArrayList<>();
-        // Loop：收集命中基药标识的目录主键，供库存明细 InventoryCatalogFilter 写入 resolved 字段
+        // Loop：收集命中重点药类型的目录主键，供库存明细 InventoryCatalogFilter 写入 resolved 字段
         for (MedicationDefinition row : rows) {
             if (row != null && row.getId() != null) {
                 ids.add(row.getId());
             }
         }
         return ids;
+    }
+
+    /**
+     * 将重点药类型 code 映射为药典布尔字段属性名；空或未知码返回 null（表示不筛）。
+     *
+     * @param keyDrugTypeCode {@link KeyDrugType#getCode()}
+     * @return {@link FieldNameConstants} 中的 flag 属性名；无法解析时 null
+     */
+    private String resolveKeyDrugFlagFieldName(String keyDrugTypeCode) {
+        if (StringUtils.isEmpty(keyDrugTypeCode)) {
+            return null;
+        }
+        KeyDrugType type = EnumUtil.fromCode(KeyDrugType.class, keyDrugTypeCode.trim());
+        if (type == null) {
+            return null;
+        }
+        if (type == KeyDrugType.BASIC) {
+            return FieldNameConstants.BASIC_FLAG;
+        }
+        if (type == KeyDrugType.NATIONAL_MONITOR) {
+            return FieldNameConstants.NATIONAL_MONITOR_FLAG;
+        }
+        if (type == KeyDrugType.CENTRAL_PURCHASE) {
+            return FieldNameConstants.CENTRAL_PURCHASE_FLAG;
+        }
+        return null;
     }
 
 }

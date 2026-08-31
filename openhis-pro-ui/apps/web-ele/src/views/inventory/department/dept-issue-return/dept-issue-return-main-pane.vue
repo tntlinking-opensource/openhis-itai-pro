@@ -68,7 +68,7 @@ import {
 } from '#/utils/inventory/inventory-doc-restrictions';
 import { withInvDocLinkPickerEnrichedColumns } from '#/utils/inventory/inv-doc-link-picker-display';
 import { resolveLoginPractitionerIdForRequest } from '#/utils/format/preserve-api-id';
-import { formatInventoryLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
+import { formatInventoryLineTotal, formatPurchaseMoneyDisplay } from '#/utils/format/money-scale';
 import {
   applyHydratedInventoryDetailQtyToRow,
   applyInventoryRowQtyUnitList,
@@ -409,6 +409,12 @@ function mapLinkableLineToGrid(ln: LinkableIssueReturnLineDto, idx: number): Ret
   const unitCode = String(ln.unitCode ?? '');
   const unitLabel = String(ln.unitCodeDictText ?? '').trim() || unitCode;
   const totalRaw = ln.totalPrice;
+  const categoryCode =
+    String(
+      (ln.productCatalog as { categoryCode?: string } | null | undefined)?.categoryCode ??
+        (ln as { categoryCode?: string }).categoryCode ??
+        '',
+    ).trim() || undefined;
   const row: ReturnPreviewRow = {
     id: `ln-${idx}`,
     itemTable: ln.itemTable,
@@ -423,7 +429,7 @@ function mapLinkableLineToGrid(ln: LinkableIssueReturnLineDto, idx: number): Ret
     totalPrice:
       totalRaw === undefined || totalRaw === null || totalRaw === ''
         ? ''
-        : formatMoneyDisplay(totalRaw),
+        : formatPurchaseMoneyDisplay(totalRaw, categoryCode),
     lotNumber: String(ln.lotNumber ?? ''),
     expirationDate: formatReturnExpirationDisplay(ln.endTime),
     traceNo: String(ln.traceNo ?? ''),
@@ -451,6 +457,13 @@ function mapLinkableLineToGrid(ln: LinkableIssueReturnLineDto, idx: number): Ret
 function mapDetailLineToGrid(ln: DeptIssueReturnDetailLineDto, idx: number): ReturnPreviewRow {
   const name = String(ln.productName ?? ln.itemName ?? '').trim();
   const totalRaw = ln.totalPrice;
+  const catalog = ln.productCatalog;
+  const categoryCode =
+    String(
+      (catalog as { categoryCode?: string } | null | undefined)?.categoryCode ??
+        (ln as { categoryCode?: string }).categoryCode ??
+        '',
+    ).trim() || undefined;
   const row: ReturnPreviewRow = {
     id: `ln-${ln.id ?? idx}`,
     itemTable: ln.itemTable,
@@ -465,13 +478,12 @@ function mapDetailLineToGrid(ln: DeptIssueReturnDetailLineDto, idx: number): Ret
     totalPrice:
       totalRaw === undefined || totalRaw === null || totalRaw === ''
         ? ''
-        : formatMoneyDisplay(totalRaw),
+        : formatPurchaseMoneyDisplay(totalRaw, categoryCode),
     lotNumber: String(ln.lotNumber ?? ''),
     expirationDate: formatReturnExpirationDisplay(ln.endTime),
     traceNo: String(ln.traceNo ?? ''),
     remark: String(ln.remake ?? ''),
   };
-  const catalog = ln.productCatalog;
   const hydrated = hydrateInventoryDetailLineQtyForGrid({
     itemQuantity: row.itemQuantity,
     unitCode: row.unitCode,
@@ -1026,8 +1038,8 @@ function resolveIssueReturnPrintUnitLabel(row: ReturnPreviewRow): string {
   return String(row.unitCodeDictText ?? row.unitCode ?? '').trim();
 }
 
-/** 打印发放退回单 */
-async function handlePrint() {
+/** 打印或预览发放退回单 */
+async function handlePrint(payload?: { preview?: boolean }) {
   const busNo = String(headerBusNo.value ?? '').trim();
   if (!busNo) {
     ElMessage.warning('请先保存单据后再打印');
@@ -1077,6 +1089,7 @@ async function handlePrint() {
     },
     bizRef: { busNo, docKind: 'dept-issue-return' },
     jobName: documentTitle,
+    preview: payload?.preview === true,
   });
 }
 </script>

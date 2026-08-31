@@ -29,6 +29,9 @@ public class MasterObservationRowDto implements Serializable {
     /** 分类编码（含 dept_conclusion）。 */
     private String categoryCode;
 
+    /** 小项展示名。 */
+    private String definitionDisplay;
+
     /** 数值结果。 */
     private BigDecimal valueQuantity;
 

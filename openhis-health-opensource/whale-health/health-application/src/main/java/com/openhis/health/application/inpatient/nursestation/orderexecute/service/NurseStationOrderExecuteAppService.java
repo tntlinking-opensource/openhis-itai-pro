@@ -27,6 +27,7 @@ import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.Nu
 import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.NurseStationOrderExecuteWriteSlotDto;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.mapper.NurseStationOrderExecuteMapper;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.request.ExecuteNurseStationOrdersRequest;
+import com.openhis.health.application.inpatient.nursestation.orderexecute.request.ListNurseStationOrderExecuteForPrintRequest;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.request.ListNurseStationOrderExecuteRequest;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.request.SkipNurseStationOrderSlotsRequest;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.response.ExecuteNurseStationOrdersResponse;
@@ -43,6 +44,8 @@ import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQue
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
 import com.openhis.health.domain.administration.chargeitemdefinition.query.ChargeItemDefinitionQueryCommand;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
+import com.openhis.health.domain.administration.account.entity.Account;
+import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.clinical.allergyintolerance.queries.model.AllergyIntoleranceRecordQueryModel;
 import com.openhis.health.domain.clinical.allergyintolerance.service.AllergyIntoleranceQueryService;
 import com.openhis.health.domain.clinical.procedure.command.CreateProcedureRecordCommand;
@@ -82,6 +85,7 @@ import com.openhis.health.application.shared.nursestation.DeviceDispenseNurseWor
 import com.openhis.health.application.shared.nursestation.ProcedureExecutionPerformerOrchestrator;
 import com.openhis.health.domain.workflow.activitydefinition.service.ActivityDefinitionQueryService;
 import com.openhis.health.domain.workflow.devicerequest.service.DeviceRequestDomainService;
+import com.openhis.health.domain.workflow.devicedispense.queries.model.DeviceDispenseListModel;
 import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseDomainService;
 import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseQueryService;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemDomainService;
@@ -107,7 +111,8 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 住院护士站医嘱执行应用服务（AS-IP-NUR-004，IF-IP-EXE-01/02/04）。
+ * 住院护士站医嘱执行应用服务（AS-IP-NUR-004，IF-IP-EXE-01/02/04；打印中心读列表另见
+ * {@link #listNurseStationOrderExecuteForPrint}）。
  *
  * <p>职责边界：</p>
  * <ul>
@@ -205,21 +210,46 @@ public class NurseStationOrderExecuteAppService {
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     /** 发放库房模板解析（绑定耗材 performLocation，对齐护士划价）。 */
     private final ClinicalCatalogDispenseLocationResolver clinicalCatalogDispenseLocationResolver;
+    /** 就诊挂账账户：医保入院强制医保户。 */
+    private final AccountQueryService accountQueryService;
     /** 住院长嘱是否可拆；不可拆时口服长嘱一盒一点整包装写量。 */
     private final InpatientStandingOrderSplittableSettingResolver standingOrderSplittableSettingResolver;
     /** 用法术语码 → 展示名（口服类判定）。 */
     private final TerminologyOptionLoader terminologyOptionLoader;
 
     /**
-     * IF-IP-EXE-01：医嘱执行列表查询。
+     * IF-IP-EXE-01：医嘱执行列表查询（医嘱执行页）。
+     *
+     * <p>仅上界 {@code executionDeadline}；打印中心日期区间请走
+     * {@link #listNurseStationOrderExecuteForPrint}。</p>
      *
      * @param request 多选就诊、Tab、长临、截止时间
      * @return 按就诊分组的医嘱行（含槽位与 bindItems）
      */
     public ListNurseStationOrderExecuteResponse listNurseStationOrderExecute(ListNurseStationOrderExecuteRequest request) {
+        // Pre：Request → EXE-01 读查询（无打印区间字段）
+        // Asm：Loader 装载后映射分组响应
         return nurseStationOrderExecuteMapper.toListResponse(
             nurseStationOrderExecuteListLoader.listNurseStationOrderExecute(
                 nurseStationOrderExecuteMapper.toListQuery(request)));
+    }
+
+    /**
+     * 打印中心 · 医嘱执行列表查询（与 IF-IP-EXE-01 契约隔离）。
+     *
+     * <p>可选 {@code planTimeFrom}/{@code executionDeadline} 组成计划点闭区间；
+     * 可选 {@code reqOpenedTimeFrom}/{@code reqOpenedTimeTo} 按开嘱日收窄行。</p>
+     *
+     * @param request 打印中心列表请求（含区间字段）
+     * @return 按就诊分组的医嘱行（含槽位与 bindItems）
+     */
+    public ListNurseStationOrderExecuteResponse listNurseStationOrderExecuteForPrint(
+        ListNurseStationOrderExecuteForPrintRequest request) {
+        // Pre：Request → 打印读查询（计划点下界 + 开嘱日区间）
+        // Asm：与 EXE-01 共用 Loader，仅入参契约隔离
+        return nurseStationOrderExecuteMapper.toListResponse(
+            nurseStationOrderExecuteListLoader.listNurseStationOrderExecute(
+                nurseStationOrderExecuteMapper.toListQueryForPrint(request)));
     }
 
     /**
@@ -249,6 +279,8 @@ public class NurseStationOrderExecuteAppService {
             this.expandExecuteWriteSlotsByTcmPrescription(request.getItems());
         // Pre：OrderInfo、可见性、药诊明细、Procedure 历史——避免写循环内单条查库
         WriteContextBundle context = this.prepareWriteContext(items);
+        // Pre：医保入院费用挂医保户（覆盖前端可能回传的个人现金户）
+        this.applyAuthoritativeChargeAccounts(items, context);
         // Pre：首次槽 actualTime 默认开立延后；其余回落 planTime（BR-IP-ORD-030⑥ / BR-IP-EXE-030/032）
         this.applyExecutionActualTimeDefaults(items, context);
         // Pre：临嘱双轨收敛——planTime 与 actualTime 强制同值（改不改时分都一样）
@@ -785,13 +817,25 @@ public class NurseStationOrderExecuteAppService {
             operatorId,
             performerId,
             context.getDeviceInventoryDecreaseAccumulator());
-        Long dispenseId = deviceDispenseQueryService.resolvePrimaryDispenseIdForDeviceRequest(deviceReqId);
+        DeviceDispenseListModel primaryDispense =
+            deviceDispenseQueryService.resolvePrimaryDispenseForDeviceRequest(deviceReqId);
+        Long dispenseId = null;
+        String executionLotNumber = null;
+        if (primaryDispense != null) {
+            dispenseId = primaryDispense.getId();
+            executionLotNumber = primaryDispense.getLotNumber();
+        }
+        // Pre：FIFO 实发批号优先定 LOT_NUMBER_PRICE；有实发批号时禁止优先复用绑定项可能串批的 definitionId
+        Long preferredDefinitionId = null;
+        if (StringUtils.isEmpty(executionLotNumber)) {
+            preferredDefinitionId = bindItem.getChargeItemDefinitionId();
+        }
         ChargeItemDefinition priceLine = this.requirePriceLineForExecution(
             context,
             TableNameConstants.ADM_DEVICE_DEFINITION,
             deviceDefId,
-            bindItem.getChargeItemDefinitionId(),
-            null);
+            preferredDefinitionId,
+            executionLotNumber);
         chargeItemDomainService.createPlannedChargeItemFromOrderExecution(
             nurseStationOrderExecuteMapper.toCreatePlannedChargeItemFromBindExecutionCommand(
                 order.getPatientId(),
@@ -834,8 +878,12 @@ public class NurseStationOrderExecuteAppService {
         if (deviceProduct != null && StringUtils.isNotEmpty(deviceProduct.getCategoryCode())) {
             distributionCategory = deviceProduct.getCategoryCode();
         }
+        String typeCode = null;
+        if (deviceProduct != null) {
+            typeCode = deviceProduct.getTypeCode();
+        }
         Long performLocation = clinicalCatalogDispenseLocationResolver.matchDefaultDeviceDispenseLocationId(
-            orgId, deviceDefId, distributionCategory);
+            orgId, deviceDefId, distributionCategory, typeCode);
         if (performLocation == null) {
             throw new BusinessException(
                 InpatientNurseStationConstants.EX_IP_EXE_304,
@@ -1381,11 +1429,14 @@ public class NurseStationOrderExecuteAppService {
      * <p>优先顺序：① 调用方已解析的 {@code preferredDefinitionId}（绑定项/诊嘱模板）；② 按实例批量查价，
      * 药耗路径按 {@code executionLotNumber} 命中批号售价；③ 产品读模型 {@code chargeItemDefinitionId} 回落。</p>
      *
+     * <p>绑定耗材在 {@code finalizeInpatientTemporaryPathDispense} 后须传入主发放 {@code lotNumber}，
+     * 且有实发批号时 {@code preferredDefinitionId} 应为空，避免列表预填 definition 与 FIFO 批号串批。</p>
+     *
      * @param context                写上下文缓存
      * @param instanceTable          定价实例表
      * @param instanceId             定价实例主键
      * @param preferredDefinitionId  列表或模板已选定价主键；无则 {@code null}
-     * @param executionLotNumber     FIFO/执行批号；仅药嘱长期执行传入
+     * @param executionLotNumber     FIFO/执行批号（药嘱分段或绑定耗材主发放批号）
      * @return 用于比例换算的定价行
      * @throws BusinessException 实例与回落均无法命中开立口径定价时抛出
      */
@@ -2130,11 +2181,59 @@ public class NurseStationOrderExecuteAppService {
                 }
             }
             if (executePath && item.getAccountId() == null) {
-                // 执行新建费用须锚定就诊账户，由 IF-IP-NUR-02/IF-IP-EXE-01 列表回传后原样提交
+                // 执行新建费用须锚定就诊挂账账户；服务端会按医保优先覆盖，此处仅防空
                 throw new BusinessException(
                     ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT,
                     DoctorStationAdviceConstants.MSG_SELF_PAY_ACCOUNT_REQUIRED_FOR_DRAFT_CHARGE);
             }
+        }
+    }
+
+    /**
+     * 写路径覆盖挂账账户：医保入院强制医保户，纯自费个人现金户。
+     *
+     * <p>预交金余额仍读个人现金户；本方法只改 ChargeItem {@code account_id} 真源。</p>
+     *
+     * @param items   写槽位（就地改 accountId）
+     * @param context 已加载 OrderInfo 的写上下文
+     */
+    private void applyAuthoritativeChargeAccounts(
+        List<NurseStationOrderExecuteWriteSlotDto> items,
+        WriteContextBundle context) {
+        // Gate：无槽位或上下文未就绪则跳过（不执行不计费）
+        if (items == null || items.isEmpty() || context == null) {
+            return;
+        }
+        // Pre：从已加载 OrderInfo 收集本批就诊，批量解析挂账账户（避免 N+1）
+        LinkedHashSet<Long> encounterIds = new LinkedHashSet<>();
+        for (NurseStationOrderExecuteWriteSlotDto item : items) {
+            if (item == null) {
+                continue;
+            }
+            InpatientOrderListSkeleton order = context.orderByKey.get(this.buildOrderKey(item));
+            if (order != null && order.getEncounterId() != null) {
+                encounterIds.add(order.getEncounterId());
+            }
+        }
+        Map<Long, Account> chargeAccountByEncounterId =
+            accountQueryService.mapDefaultChargeAccountsByEncounterIds(encounterIds);
+        // Cmd：覆盖前端回传的 accountId——医保入院强制医保户，纯自费个人现金户
+        for (NurseStationOrderExecuteWriteSlotDto item : items) {
+            if (item == null) {
+                continue;
+            }
+            InpatientOrderListSkeleton order = context.orderByKey.get(this.buildOrderKey(item));
+            // 扩行/骨架缺失时跳过，后续 Gate 会拦空账户
+            if (order == null || order.getEncounterId() == null) {
+                continue;
+            }
+            Account chargeAccount = chargeAccountByEncounterId.get(order.getEncounterId());
+            if (chargeAccount == null || chargeAccount.getId() == null) {
+                throw new BusinessException(
+                    ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT,
+                    DoctorStationAdviceConstants.MSG_SELF_PAY_ACCOUNT_REQUIRED_FOR_DRAFT_CHARGE);
+            }
+            item.setAccountId(chargeAccount.getId());
         }
     }
 

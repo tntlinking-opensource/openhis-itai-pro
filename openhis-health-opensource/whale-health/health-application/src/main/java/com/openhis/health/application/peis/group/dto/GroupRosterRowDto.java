@@ -18,6 +18,7 @@ public class GroupRosterRowDto {
     private Long batchId;
     private Long patientId;
     private String fullName;
+    private String genderEnum;
     private String idCardNo;
     private String studentNo;
     private String employeeNo;

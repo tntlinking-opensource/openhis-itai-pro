@@ -8,7 +8,7 @@ INSERT INTO emr_metadata_field_def (
 ) VALUES
 (323100000000000052, 'insuranceName', '医保', 'string', FALSE, 'INSURANCE', 'insurance.payorName', 'NONE', 16, TRUE, NULL, TIMESTAMP '2026-07-23 00:00:00+00', FALSE, 1, 1),
 (323100000000000053, 'doctorName', '接诊医生', 'string', FALSE, 'PRACTITIONER', 'practitioner.name', 'NONE', 17, TRUE, NULL, TIMESTAMP '2026-07-23 00:00:00+00', FALSE, 1, 1),
-(323100000000000054, 'visitTime', '就诊日期', 'date', FALSE, 'ENCOUNTER', 'encounter.startDate', 'NONE', 18, TRUE, NULL, TIMESTAMP '2026-07-23 00:00:00+00', FALSE, 1, 1),
+(323100000000000054, 'visitTime', '就诊日期', 'date', FALSE, 'SYSTEM', 'system.today', 'NONE', 18, TRUE, NULL, TIMESTAMP '2026-07-23 00:00:00+00', FALSE, 1, 1),
 (323100000000000055, 'chiefComplaint', '主诉', 'string', TRUE, 'MANUAL', NULL, 'NONE', 70, TRUE, NULL, TIMESTAMP '2026-07-23 00:00:00+00', FALSE, 1, 1),
 (323100000000000056, 'presentIllness', '现病史', 'string', TRUE, 'MANUAL', NULL, 'NONE', 71, TRUE, NULL, TIMESTAMP '2026-07-23 00:00:00+00', FALSE, 1, 1),
 (323100000000000057, 'pastHistory', '既往史', 'string', TRUE, 'MANUAL', NULL, 'NONE', 72, TRUE, NULL, TIMESTAMP '2026-07-23 00:00:00+00', FALSE, 1, 1),
@@ -100,12 +100,12 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = TIMESTAMP '2026-07-24 00:00:00+00',
     updated_by = 1;
 
--- 就诊日期仅日期；入院/记录时间为 yyyy-MM-dd HH:mm（终态 upsert，避免独立 UPDATE）
+-- 就诊日期默认当天；入院/记录时间为 yyyy-MM-dd HH:mm（终态 upsert，避免独立 UPDATE）
 INSERT INTO emr_metadata_field_def (
     id, field_key, label, data_type, editable_default, value_source, source_path,
     format_pattern, mask_rule, sort_order, is_enabled, default_value, created_at, is_deleted, tenant_id, created_by
 ) VALUES
-(323100000000000054, 'visitTime', '就诊日期', 'date', FALSE, 'ENCOUNTER', 'encounter.startDate',
+(323100000000000054, 'visitTime', '就诊日期', 'date', FALSE, 'SYSTEM', 'system.today',
  'yyyy-MM-dd', 'NONE', 18, TRUE, NULL, TIMESTAMP '2026-07-23 00:00:00+00', FALSE, 1, 1),
 (323100000000000075, 'admissionDateTime', '入院时间', 'datetime', FALSE, 'ENCOUNTER', 'encounter.admissionDateTime',
  'yyyy-MM-dd HH:mm', 'NONE', 94, TRUE, NULL, TIMESTAMP '2026-07-24 00:00:00+00', FALSE, 1, 1),
@@ -113,6 +113,7 @@ INSERT INTO emr_metadata_field_def (
  'yyyy-MM-dd HH:mm', 'NONE', 95, TRUE, NULL, TIMESTAMP '2026-07-24 00:00:00+00', FALSE, 1, 1)
 ON CONFLICT (id) DO UPDATE SET
     data_type = EXCLUDED.data_type,
+    value_source = EXCLUDED.value_source,
     source_path = EXCLUDED.source_path,
     format_pattern = EXCLUDED.format_pattern,
     is_deleted = FALSE,

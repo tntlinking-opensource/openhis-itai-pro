@@ -9,6 +9,7 @@ import type {
   SumInventoryDetailCurrentRequest,
 } from '#/api/inventory/warehouse/inventory-detail';
 import type { ApiOptionItem } from '#/types/api-response';
+import type { ReportPrintColumnDef, ReportPrintSummaryItem } from '#/utils/print/print-report-list';
 
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -16,7 +17,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { Page } from '@vben/common-ui';
 import { formatDate } from '@vben/utils';
 
-import { Download, Refresh, Search } from '@element-plus/icons-vue';
+import { Download, Printer, Refresh, Search, Setting } from '@element-plus/icons-vue';
 import {
   ElAlert,
   ElButton,
@@ -30,17 +31,22 @@ import {
 } from 'element-plus';
 
 import { downloadBinaryExportFile } from '#/utils/export/download-binary-export';
+import { buildExcelExportColumns } from '#/utils/export/build-excel-export-columns';
 
 import {
   exportInventoryDetailBackupApi,
   exportInventoryDetailCurrentApi,
   fmtPackageUnitPrice,
+  INVENTORY_DETAIL_ITEM_TABLE_DEVICE,
+  INVENTORY_DETAIL_ITEM_TABLE_MEDICATION,
   listInventoryDetailBackupBusNoApi,
   loadInventoryDetailFormInitApi,
   pageInventoryDetailBackupApi,
   pageInventoryDetailCurrentApi,
   resumeInventoryItemsApi,
   retireInventoryItemsApi,
+  sumInventoryDetailBackupApi,
+  sumInventoryDetailCurrentApi,
   INVENTORY_WARNING_MODE_EXPIRE,
   INVENTORY_WARNING_MODE_LOW_STOCK,
   type InventoryWarningMode,
@@ -48,8 +54,13 @@ import {
 import TraceCodeListDialog from '#/components/trace/trace-code-list-dialog.vue';
 import { PublicationStatusCode } from '#/constants/domain/publication-status';
 import { useRequest } from '#/hooks/use-request';
-import { sumMoneyThenCalc } from '#/utils/format/money-scale';
+import { formatPurchaseMoneyDisplay, sumMoneyThenCalc } from '#/utils/format/money-scale';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import {
+  getReportPrintColumnPreference,
+  normalizeReportPrintScope,
+  printReportList,
+} from '#/utils/print/print-report-list';
 import {
   REPORT_QUERY_CONTROL,
   REPORT_TABLE_NUM_CELL,
@@ -57,6 +68,7 @@ import {
   ReportListPageLayout,
   ReportListToolbar,
   ReportPageFooter,
+  ReportPrintFieldDialog,
   ReportQueryBar,
   ReportTableScroll,
 } from '#/views/report/shared';
@@ -68,12 +80,54 @@ const INVENTORY_RANGE_ZERO_CODE = '2';
 const INVENTORY_RANGE_GT_ZERO_CODE = '3';
 const DEFAULT_EXPIRE_WARNING_DAYS = 180;
 const PAGE_TITLE = '药库库存明细';
+/** 打印字段偏好键（本机记住）。 */
+const STOCK_LIST_PRINT_REPORT_CODE = 'inventory-stock-list';
+/** 跨页打印每次分页条数；直调分页接口，不改列表 tableData。 */
+const PRINT_ALL_PAGE_SIZE = 1000;
+/** 跨页打印行数上限，与现库汇总/导出 cap 对齐。 */
+const PRINT_ALL_MAX_ROWS = 30000;
+
+/** 关键字占位：现库与备份均支持批号模糊。 */
+const KEYWORD_PLACEHOLDER = '名称、编码、商品名、拼音、五笔、批号';
+
+/** 项目类型下拉：value 为 item_table 物理表名。 */
+const itemTableSelectOptions = [
+  { label: '药品', value: INVENTORY_DETAIL_ITEM_TABLE_MEDICATION },
+  { label: '耗材', value: INVENTORY_DETAIL_ITEM_TABLE_DEVICE },
+];
+
+/** 库存明细可打印列目录（与表格 prop 对齐；首次默认全选）。 */
+const STOCK_LIST_PRINT_COLUMNS: ReportPrintColumnDef[] = [
+  { field: 'productBusNo', title: '编码', align: 'center', widthWeight: 1.1 },
+  { field: 'name', title: '项目名称', align: 'center', widthWeight: 1.6 },
+  { field: 'merchandiseName', title: '商品名称', align: 'center', widthWeight: 1.4 },
+  { field: 'totalVolume', title: '规格', align: 'center', widthWeight: 1.1 },
+  { field: 'packageSplitRatioText', title: '包装拆零比例', align: 'center', widthWeight: 1.1 },
+  { field: 'categoryLabel', title: '项目类别', align: 'center', widthWeight: 1 },
+  { field: 'lotNumber', title: '批号', align: 'center', widthWeight: 1 },
+  { field: 'packageStockText', title: '库存(包装)', align: 'right', widthWeight: 1 },
+  { field: 'splitStockText', title: '库存(最小)', align: 'right', widthWeight: 1 },
+  { field: 'lotCostPrice', title: '进价', align: 'right', widthWeight: 1 },
+  { field: 'lotSalePrice', title: '售价', align: 'right', widthWeight: 1 },
+  { field: 'lineCostTotal', title: '进价总额', align: 'right', widthWeight: 1.1 },
+  { field: 'linePriceTotal', title: '售价总额', align: 'right', widthWeight: 1.1 },
+  { field: 'manufacturer', title: '厂家', align: 'center', widthWeight: 1.2 },
+  { field: 'expirationDate', title: '效期', align: 'center', widthWeight: 1 },
+  { field: 'productionDate', title: '生产日期', align: 'center', widthWeight: 1 },
+  { field: 'remainingDays', title: '剩余天数', align: 'center', widthWeight: 0.9 },
+  { field: 'inventoryStatusLabel', title: '供应状态', align: 'center', widthWeight: 0.9 },
+  { field: 'warehouseName', title: '库房', align: 'center', widthWeight: 1 },
+  { field: 'supplierName', title: '供应商', align: 'center', widthWeight: 1.3 },
+  { field: 'doseFormLabel', title: '剂型', align: 'center', widthWeight: 0.8 },
+];
 
 /** 筛选 + 分页；有 backupBusNo 时走备份读，否则走现库。 */
 interface InventoryDetailFormState {
   pageNo: number;
   pageSize: number;
   keyword?: string;
+  /** 项目类型：药品/耗材定义表名；undefined 表示不限 */
+  itemTable?: string;
   backupBusNo?: string;
   warehouseIds?: string[];
   supplierIds?: string[];
@@ -81,8 +135,8 @@ interface InventoryDetailFormState {
   deviceCategoryCodes?: string[];
   inventoryStatusEnums?: string[];
   chrgitmLvList?: string[];
-  /** 基药标识；undefined 表示不限 */
-  basicFlag?: boolean;
+  /** 重点药类型 code；undefined 表示不限 */
+  keyDrugType?: string;
   zeroStockFilter?: typeof INVENTORY_RANGE_ZERO_CODE | typeof INVENTORY_RANGE_GT_ZERO_CODE;
   expireWithinDays?: string;
   warningMode?: InventoryWarningMode;
@@ -93,6 +147,8 @@ const total = ref(0);
 const sumLineCostTotal = ref('');
 const sumLinePriceTotal = ref('');
 const tableScrollRef = ref<InstanceType<typeof ReportTableScroll> | null>(null);
+const printFieldDialogRef = ref<InstanceType<typeof ReportPrintFieldDialog> | null>(null);
+const printSubmitting = ref(false);
 
 const chrgitmLvOptions = ref<ApiOptionItem[]>([]);
 const inventoryStatusOptions = ref<ApiOptionItem[]>([]);
@@ -145,15 +201,9 @@ const tableLoading = computed(
     exportLoading.value ||
     backupExportLoading.value ||
     retireLoading.value ||
-    resumeLoading.value,
+    resumeLoading.value ||
+    printSubmitting.value,
 );
-
-const keywordPlaceholder = computed(() => {
-  if (isBackupQuery.value) {
-    return '名称、编码、商品名、拼音、五笔';
-  }
-  return '名称、编码、商品名、拼音、五笔、批号';
-});
 
 /** 解析路由中的预警模式参数。 */
 function parseRouteWarningMode(raw: unknown): InventoryWarningMode | undefined {
@@ -223,12 +273,18 @@ function fmtUnitPriceCell(price: unknown, unitName?: string): string {
   return fmtPackageUnitPrice(price as string | number | null | undefined, unitName);
 }
 
-/** 金额/数量类展示：空则空白，否则本地化数字。 */
+/** 售价总额等金额展示：空则空白，否则本地化数字（两位起）。 */
 function fmtAmt(v: unknown): string {
   if (v === null || v === undefined || v === '') return '';
   const n = typeof v === 'number' ? v : Number(v);
   if (!Number.isFinite(n)) return '';
   return n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+}
+
+/** 进价总额展示：中药可至三位（无分类码时最多三位去尾零）。 */
+function fmtPurchaseAmt(v: unknown): string {
+  if (v === null || v === undefined || v === '') return '';
+  return formatPurchaseMoneyDisplay(v);
 }
 
 /** 用当前页行金额加总页脚合计（不再调全量汇总 IF-03/05）。 */
@@ -240,7 +296,7 @@ function applyPageFooterSum(rows: InventoryDetailListRowDto[]) {
     costValues.push(row.lineCostTotal);
     priceValues.push(row.linePriceTotal);
   }
-  sumLineCostTotal.value = fmtAmt(sumMoneyThenCalc(costValues));
+  sumLineCostTotal.value = fmtPurchaseAmt(sumMoneyThenCalc(costValues));
   sumLinePriceTotal.value = fmtAmt(sumMoneyThenCalc(priceValues));
 }
 
@@ -350,13 +406,14 @@ function buildPageRequest() {
     pageNo: queryParams.pageNo,
     pageSize: queryParams.pageSize,
     keyword: queryParams.keyword?.trim() || undefined,
+    itemTable: queryParams.itemTable?.trim() || undefined,
     warehouseIds: preserveApiIdListForRequest(queryParams.warehouseIds),
     supplierIds: preserveApiIdListForRequest(queryParams.supplierIds),
     medicationCategoryCodes: emptyToUndef(queryParams.medicationCategoryCodes),
     deviceCategoryCodes: emptyToUndef(queryParams.deviceCategoryCodes),
     inventoryStatusEnums: emptyToUndef(queryParams.inventoryStatusEnums),
     chrgitmLvList: toChrgitmLvInts(queryParams.chrgitmLvList),
-    basicFlag: queryParams.basicFlag,
+    keyDrugType: queryParams.keyDrugType,
     zeroStockOnly: z,
     expireWithinDays,
     warningMode: queryParams.warningMode,
@@ -368,12 +425,13 @@ function buildSumExportFilter(): SumInventoryDetailCurrentRequest {
   const p = buildPageRequest();
   return {
     keyword: p.keyword,
+    itemTable: p.itemTable,
     warehouseIds: p.warehouseIds,
     supplierIds: p.supplierIds,
     medicationCategoryCodes: p.medicationCategoryCodes,
     deviceCategoryCodes: p.deviceCategoryCodes,
     chrgitmLvList: p.chrgitmLvList,
-    basicFlag: p.basicFlag,
+    keyDrugType: p.keyDrugType,
     zeroStockOnly: p.zeroStockOnly,
     expireWithinDays: p.expireWithinDays,
     inventoryStatusEnums: p.inventoryStatusEnums,
@@ -477,6 +535,16 @@ const { run: runBackupExport, loading: backupExportLoading } = useRequest(
   },
 );
 
+const { run: runSum } = useRequest(sumInventoryDetailCurrentApi, {
+  manual: true,
+  showErrorMessage: true,
+});
+
+const { run: runBackupSum } = useRequest(sumInventoryDetailBackupApi, {
+  manual: true,
+  showErrorMessage: true,
+});
+
 const { run: runRetire, loading: retireLoading } = useRequest(retireInventoryItemsApi, {
   manual: true,
   onSuccess: (data) => {
@@ -524,6 +592,7 @@ function clearWarningFilter() {
 /** 清空筛选并回到第一页。 */
 function handleReset() {
   queryParams.keyword = undefined;
+  queryParams.itemTable = undefined;
   queryParams.backupBusNo = undefined;
   queryParams.warehouseIds = undefined;
   queryParams.supplierIds = undefined;
@@ -532,7 +601,7 @@ function handleReset() {
   queryParams.deviceCategoryCodes = undefined;
   queryParams.inventoryStatusEnums = undefined;
   queryParams.chrgitmLvList = undefined;
-  queryParams.basicFlag = undefined;
+  queryParams.keyDrugType = undefined;
   queryParams.zeroStockFilter = INVENTORY_RANGE_GT_ZERO_CODE;
   queryParams.warningMode = undefined;
   queryParams.pageNo = 1;
@@ -540,12 +609,34 @@ function handleReset() {
   void getList();
 }
 
-/** 按当前筛选导出 Excel（有备份单号则导备份）。 */
+/** 按当前筛选导出 Excel（有备份单号则导备份；列与打印目录一致）。 */
 async function handleExportExcel() {
   const defaultFileName = isBackupQuery.value ? '库存明细备份.xlsx' : '库存明细.xlsx';
+  // 包装/最小库存展示列展开为可求和数量 + 单位
+  const exportColumns = buildExcelExportColumns(STOCK_LIST_PRINT_COLUMNS, {
+    fieldExpand: {
+      packageStockText: [
+        { field: 'packageQuantity', title: '库存数量（包装）' },
+        { field: 'packageUnitName', title: '包装单位' },
+      ],
+      splitStockText: [
+        { field: 'minUnitQuantity', title: '库存数量（最小）' },
+        { field: 'minUnitName', title: '最小单位' },
+      ],
+    },
+    fieldAliases: {
+      packageSplitRatioText: 'packageUnitRatio',
+    },
+  });
   const data = isBackupQuery.value
-    ? await runBackupExport(buildBackupSumExportFilter())
-    : await runExport(buildSumExportFilter());
+    ? await runBackupExport({
+        ...buildBackupSumExportFilter(),
+        exportColumns,
+      })
+    : await runExport({
+        ...buildSumExportFilter(),
+        exportColumns,
+      });
   if (!data?.body?.trim()) {
     ElMessage.warning('导出内容为空');
     return;
@@ -555,6 +646,150 @@ async function handleExportExcel() {
     ElMessage.warning('导出数据已触达行数上限，部分记录未包含在文件中');
   } else {
     ElMessage.success(`导出成功，共 ${data.exportedRowCount ?? 0} 行`);
+  }
+}
+
+/** 打开打印字段勾选弹窗。 */
+function handleOpenPrintFields() {
+  printFieldDialogRef.value?.open();
+}
+
+/** 将一行库存明细格式化为打印单元格文案。 */
+function mapStockListPrintRow(row: InventoryDetailListRowDto): Record<string, string> {
+  return {
+    productBusNo: row.productBusNo ?? '',
+    name: row.name ?? '',
+    merchandiseName: row.merchandiseName ?? '',
+    totalVolume: row.totalVolume ?? '',
+    packageSplitRatioText: row.packageSplitRatioText ?? '',
+    categoryLabel: row.categoryLabel ?? '',
+    lotNumber: row.lotNumber ?? '',
+    packageStockText: row.packageStockText ?? '',
+    splitStockText: row.splitStockText ?? '',
+    lotCostPrice: fmtUnitPriceCell(row.lotCostPrice, row.packageUnitName),
+    lotSalePrice: fmtUnitPriceCell(row.lotSalePrice, row.packageUnitName),
+    lineCostTotal: fmtPurchaseAmt(row.lineCostTotal),
+    linePriceTotal: fmtAmt(row.linePriceTotal),
+    manufacturer: row.manufacturer ?? '',
+    expirationDate: fmtDateOnly(row.expirationDate),
+    productionDate: fmtDateOnly(row.productionDate),
+    remainingDays:
+      row.remainingDays === null || row.remainingDays === undefined
+        ? ''
+        : String(row.remainingDays),
+    inventoryStatusLabel: row.inventoryStatusLabel ?? '',
+    warehouseName: row.warehouseName ?? '',
+    supplierName: row.supplierName ?? '',
+    doseFormLabel: row.doseFormLabel ?? '',
+  };
+}
+
+/** 拉当前筛选下全量进价/售价合计（有值才进打印，空项不印）。 */
+async function loadStockListPrintGrandTotals(): Promise<ReportPrintSummaryItem[]> {
+  const data = isBackupQuery.value
+    ? await runBackupSum(buildBackupSumExportFilter())
+    : await runSum(buildSumExportFilter());
+  const items: ReportPrintSummaryItem[] = [];
+  const costText = fmtPurchaseAmt(data?.sumLineCostTotal);
+  if (costText) {
+    items.push({ label: '进价合计', value: costText });
+  }
+  const priceText = fmtAmt(data?.sumLinePriceTotal);
+  if (priceText) {
+    items.push({ label: '售价合计', value: priceText });
+  }
+  return items;
+}
+
+/** 跨页打印：按当前筛选分页拉全量行，不改列表 tableData / 页脚。 */
+async function fetchStockListPrintRowsAll(): Promise<{
+  rows: InventoryDetailListRowDto[];
+  truncated: boolean;
+}> {
+  const collected: InventoryDetailListRowDto[] = [];
+  let pageNo = 1;
+  let truncated = false;
+  const maxPages = Math.ceil(PRINT_ALL_MAX_ROWS / PRINT_ALL_PAGE_SIZE);
+  while (pageNo <= maxPages && collected.length < PRINT_ALL_MAX_ROWS) {
+    const remaining = PRINT_ALL_MAX_ROWS - collected.length;
+    const pageSize = Math.min(PRINT_ALL_PAGE_SIZE, remaining);
+    // 直调分页 API，避免 runPage 覆盖当前列表
+    const page = isBackupQuery.value
+      ? await pageInventoryDetailBackupApi({
+          ...buildBackupPageRequest(),
+          pageNo,
+          pageSize,
+        })
+      : await pageInventoryDetailCurrentApi({
+          ...buildPageRequest(),
+          pageNo,
+          pageSize,
+        });
+    const batch = page.rows ?? [];
+    if (batch.length === 0) {
+      break;
+    }
+    collected.push(...batch);
+    const totalElements = Number(page.totalElements ?? 0);
+    if (batch.length < pageSize || collected.length >= totalElements) {
+      truncated = totalElements > collected.length;
+      break;
+    }
+    if (collected.length >= PRINT_ALL_MAX_ROWS) {
+      truncated = totalElements > PRINT_ALL_MAX_ROWS;
+      break;
+    }
+    pageNo += 1;
+  }
+  return { rows: collected, truncated };
+}
+
+/** 按打印设置范围打库存明细（表尾打全量合计，非本页加总）。 */
+async function handlePrintCurrentPage() {
+  const printScope = normalizeReportPrintScope(
+    getReportPrintColumnPreference(STOCK_LIST_PRINT_REPORT_CODE)?.printScope,
+  );
+  const printAll = printScope === 'all';
+  if (printAll) {
+    if (total.value <= 0 && tableData.value.length === 0) {
+      ElMessage.warning('当前无可打印数据');
+      return;
+    }
+  } else if (tableData.value.length === 0) {
+    ElMessage.warning('当前无可打印数据');
+    return;
+  }
+  printSubmitting.value = true;
+  try {
+    const fetched = printAll
+      ? await fetchStockListPrintRowsAll()
+      : { rows: tableData.value, truncated: false };
+    if (fetched.rows.length === 0) {
+      ElMessage.warning('当前无可打印数据');
+      return;
+    }
+    const summaryItems = await loadStockListPrintGrandTotals();
+    const result = await printReportList({
+      reportCode: STOCK_LIST_PRINT_REPORT_CODE,
+      columnCatalog: STOCK_LIST_PRINT_COLUMNS,
+      reportTitle: PAGE_TITLE,
+      rows: fetched.rows.map((row) => mapStockListPrintRow(row)),
+      jobName: PAGE_TITLE,
+      summaryItems,
+    });
+    if (result.ok) {
+      if (fetched.truncated) {
+        ElMessage.warning(`打印数据已触达 ${PRINT_ALL_MAX_ROWS} 行上限，部分记录未包含`);
+      }
+      const scopeText = printAll
+        ? `共 ${fetched.rows.length} 行`
+        : `本页 ${fetched.rows.length} 行`;
+      ElMessage.success(`已提交打印（${scopeText}）`);
+    }
+  } catch {
+    // 全量合计或分页拉取失败时 useRequest/拦截器已提示，不再提交打印
+  } finally {
+    printSubmitting.value = false;
   }
 }
 
@@ -665,7 +900,7 @@ watch(
               <ElInput
                 v-model="queryParams.keyword"
                 clearable
-                :placeholder="keywordPlaceholder"
+                :placeholder="KEYWORD_PLACEHOLDER"
                 :class="REPORT_QUERY_CONTROL"
                 @keyup.enter="handleQuery"
                 @clear="handleQuery"
@@ -795,16 +1030,17 @@ watch(
                 />
               </ElSelect>
             </ElFormItem>
-            <ElFormItem label="基药">
+            <ElFormItem label="重点药类型">
               <ElSelect
-                v-model="queryParams.basicFlag"
+                v-model="queryParams.keyDrugType"
                 clearable
                 placeholder="全部"
                 :class="REPORT_QUERY_CONTROL"
                 @change="handleQuery"
               >
-                <ElOption label="是" :value="true" />
-                <ElOption label="否" :value="false" />
+                <ElOption label="基药" value="BASIC" />
+                <ElOption label="国家重点监控药品" value="NATIONAL_MONITOR" />
+                <ElOption label="集采药品" value="CENTRAL_PURCHASE" />
               </ElSelect>
             </ElFormItem>
             <ElFormItem label="库存范围">
@@ -815,6 +1051,22 @@ watch(
               >
                 <ElOption
                   v-for="item in toSelectOptions(inventoryRangeOptions)"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="项目类型">
+              <ElSelect
+                v-model="queryParams.itemTable"
+                clearable
+                placeholder="全部"
+                :class="REPORT_QUERY_CONTROL"
+                @change="handleQuery"
+              >
+                <ElOption
+                  v-for="item in itemTableSelectOptions"
                   :key="item.value"
                   :label="item.label"
                   :value="item.value"
@@ -847,6 +1099,23 @@ watch(
       <template #toolbar>
         <ReportListToolbar :title="`${PAGE_TITLE} · 明细列表`" :total="total">
           <template #actions>
+            <ElButton
+              plain
+              :icon="Setting"
+              :disabled="printSubmitting"
+              @click="handleOpenPrintFields"
+            >
+              打印设置
+            </ElButton>
+            <ElButton
+              type="primary"
+              plain
+              :icon="Printer"
+              :loading="printSubmitting"
+              @click="handlePrintCurrentPage"
+            >
+              打印
+            </ElButton>
             <ElButton
               type="primary"
               plain
@@ -931,6 +1200,14 @@ watch(
                 show-overflow-tooltip
               />
               <ElTableColumn
+                prop="packageSplitRatioText"
+                label="包装拆零比例"
+                min-width="120"
+                align="center"
+                header-align="center"
+                show-overflow-tooltip
+              />
+              <ElTableColumn
                 prop="categoryLabel"
                 label="项目类别"
                 width="100"
@@ -994,7 +1271,7 @@ watch(
                 header-align="right"
                 :class-name="REPORT_TABLE_NUM_CELL"
               >
-                <template #default="{ row }">{{ fmtAmt(row.lineCostTotal) }}</template>
+                <template #default="{ row }">{{ fmtPurchaseAmt(row.lineCostTotal) }}</template>
               </ElTableColumn>
               <ElTableColumn
                 label="售价总额"
@@ -1117,6 +1394,12 @@ watch(
     </ReportListPageLayout>
 
     <TraceCodeListDialog ref="traceCodeListDialogRef" />
+    <ReportPrintFieldDialog
+      ref="printFieldDialogRef"
+      :report-code="STOCK_LIST_PRINT_REPORT_CODE"
+      :column-catalog="STOCK_LIST_PRINT_COLUMNS"
+      :show-print-scope="true"
+    />
   </Page>
 </template>
 

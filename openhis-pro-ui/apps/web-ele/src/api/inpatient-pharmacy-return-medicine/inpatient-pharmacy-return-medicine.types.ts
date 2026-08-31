@@ -65,6 +65,8 @@ export interface InpatientReturnMedicineDetailRowDto {
   refundEnumText?: string;
   serviceTable?: string;
   traceNo?: string;
+  /** 退药发放业务单号（码上放心 116 上传键） */
+  busNo?: string;
   selectable?: boolean;
 }
 

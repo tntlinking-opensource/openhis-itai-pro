@@ -132,6 +132,11 @@ public class MedicationRequestDomainService {
         if (command.getRemark() != null) {
             request.setRemark(command.getRemark());
         }
+        // Pre：住院长嘱改量 based_on 链（药嘱→药嘱）；无 basedOn 时保持空，手停重开不续算。
+        if (command.getBasedOnTable() != null && command.getBasedOnId() != null) {
+            request.setBasedOnTable(command.getBasedOnTable());
+            request.setBasedOnId(command.getBasedOnId());
+        }
         request.validateDosageSemantics();
         // Pre：开立时间仅首次暂存写入 req_opened_time；签发时刻由 sign 写 req_authored_time，二者不得混用。
         request.setReqOpenedTime(LocalDateTime.now());
@@ -925,7 +930,15 @@ public class MedicationRequestDomainService {
         request.setContentJson(command.getContentJson());
         request.setDosageInstruction(command.getDosageInstruction());
         request.setRemark(command.getRemark());
-        request.setTherapyEnum(TherapyType.TEMPORARY.getCode());
+        // 长临：命令有值用命令（住院方头）；未传回落临时（门诊中药兼容）
+        String therapyEnum = command.getTherapyEnum();
+        if (therapyEnum != null) {
+            therapyEnum = therapyEnum.trim();
+        }
+        if (therapyEnum == null || therapyEnum.isEmpty()) {
+            therapyEnum = TherapyType.TEMPORARY.getCode();
+        }
+        request.setTherapyEnum(therapyEnum);
         request.setQuantity(command.getQuantity());
         if (command.getUnitCode() != null) {
             request.setUnitCode(command.getUnitCode());

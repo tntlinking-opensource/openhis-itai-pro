@@ -4,12 +4,9 @@
  */
 package com.openhis.whale.einvoice.boss.bridge.issue.support;
 
-import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.JSONObject;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.einvoice.boss.domain.issue.access.BossIssueOutboundAccess;
 import com.openhis.whale.einvoice.boss.domain.issue.result.IssueInvokeOutcome;
-import com.openhis.whale.einvoice.boss.domain.issue.result.IssuePartOutcome;
 import com.openhis.whale.einvoice.boss.domain.invoke.access.BossInvokeLogAccess;
 import com.openhis.whale.einvoice.boss.bridge.issue.invoker.EinvIssueInvoker;
 import com.openhis.whale.einvoice.boss.domain.document.entity.EinvBossDocument;
@@ -28,8 +25,6 @@ import org.apache.commons.lang3.StringUtils;
 import com.openhis.whale.einvoice.boss.domain.invoke.result.BossInvokeResult;
 import org.springframework.stereotype.Component;
 
-import java.math.BigDecimal;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,8 +33,8 @@ import java.util.Map;
  * 开具出站支撑：payload 组装 → {@link EinvIssueInvoker} → {@link IssueOutputParser}。
  *
  * <p>由 {@link com.openhis.whale.einvoice.boss.application.internal.issue.BossIssueWorkerService} 调用；
- * 日志写入失败不阻断主流程。明细超过 {@link BossPayloadSupport#MAX_LINES_PER_BILL} 时按
- * {@code eBillRelateNo} 拆多张开具；返回结果含全部分片，由 Worker 各落一条单据。</p>
+ * 日志写入失败不阻断主流程。医院要求一结算一票：{@code listDetail} 全量出站，
+ * {@code chargeDetail} 按统计大类聚合；大类超院点上限时失败，不拆多张。</p>
  */
 @Slf4j
 @Component
@@ -53,14 +48,14 @@ public class BossIssueOutboundSupport implements BossIssueOutboundAccess {
     private final BossQuantityUnitDisplayResolver quantityUnitDisplayResolver;
 
     /**
-     * 执行博思开具出站并映射为领域结果（超行数时拆多张）。
+     * 执行博思开具出站并映射为领域结果（单票，不拆）。
      *
      * @param task 关联任务（写 invoke 日志）
-     * @param document boss 主单据（拆票时仅临时改 busNo/totalAmt，出站后还原）
+     * @param document boss 单据
      * @param lines 明细行（已按 lineNo 排序）
      * @param snapshot health 读模型
-     * @return 全部分片结果（首张供 health 回写；Worker 按分片各落库）
-     * @throws BusinessException 博思拒收，错误码 {@link EinvBossErrorCodes#EINV_BOSS_REJECT}
+     * @return 单张开具结果
+     * @throws BusinessException 大类超限或博思拒收
      */
     @Override
     public IssueInvokeOutcome invokeIssue(
@@ -70,109 +65,21 @@ public class BossIssueOutboundSupport implements BossIssueOutboundAccess {
             BossIssueSnapshot snapshot) {
         enrichLinesFromSnapshot(lines, snapshot);
         normalizeLineUnits(lines);
-        List<List<EinvBossLine>> chunks =
-                BossPayloadSupport.partitionLines(lines, BossPayloadSupport.MAX_LINES_PER_BILL);
-        if (chunks.isEmpty()) {
-            chunks = List.of(List.of());
-        }
-        if (chunks.size() == 1) {
-            return new IssueInvokeOutcome(
-                    List.of(invokeSingle(task, document, chunks.get(0), snapshot, null, 0)));
-        }
-
-        String relateNo = document.getBusNo();
-        BigDecimal fullTotal = BossPayloadSupport.scale2(document.getTotalAmt());
-        BigDecimal allocated = BigDecimal.ZERO.setScale(2);
-        List<IssuePartOutcome> parts = new ArrayList<>();
-        List<String> issuedBillNos = new ArrayList<>();
-
-        for (int i = 0; i < chunks.size(); i++) {
-            List<EinvBossLine> chunk = chunks.get(i);
-            BigDecimal chunkTotal;
-            if (i == chunks.size() - 1) {
-                chunkTotal = BossPayloadSupport.scale2(fullTotal.subtract(allocated));
-            } else {
-                chunkTotal = BossPayloadSupport.sumLineAmounts(chunk);
-                allocated = allocated.add(chunkTotal);
-            }
-            String chunkBusNo;
-            if (i == 0) {
-                chunkBusNo = relateNo;
-            } else {
-                chunkBusNo = relateNo + "-" + (i + 1);
-            }
-            BossIssueSnapshot chunkSnapshot =
-                    BossPayloadSupport.copyWithScaledSettlement(snapshot, chunkTotal, fullTotal);
-
-            IssuePartOutcome part =
-                    invokeChunk(task, document, chunk, chunkSnapshot, chunkBusNo, chunkTotal, relateNo, i);
-            parts.add(part);
-            issuedBillNos.add(part.issueResult().getBillNo());
-        }
-        log.info(
-                "Split einvoice issued, relateNo={}, parts={}, billNos={}",
-                relateNo,
-                chunks.size(),
-                issuedBillNos);
-        return new IssueInvokeOutcome(parts);
-    }
-
-    /**
-     * 单张（或拆票中的一片）开具。
-     *
-     * @param partIndex 分片序号
-     */
-    private IssuePartOutcome invokeSingle(
-            EinvBossIssueTask task,
-            EinvBossDocument document,
-            List<EinvBossLine> lines,
-            BossIssueSnapshot snapshot,
-            String relateNo,
-            int partIndex) {
+        assertChargeDetailWithinLimit(lines);
         String serviceId = payloadBuilder.resolveServiceId(document.getIssueKind());
         String payload = payloadBuilder.build(document, lines, snapshot);
-        if (StringUtils.isNotBlank(relateNo)) {
-            payload = withRelateNo(payload, relateNo);
-        }
-        return invokeAndParse(
-                task, document.getBusNo(), document.getTotalAmt(), serviceId, payload, lines, partIndex);
-    }
-
-    private IssuePartOutcome invokeChunk(
-            EinvBossIssueTask task,
-            EinvBossDocument document,
-            List<EinvBossLine> chunkLines,
-            BossIssueSnapshot chunkSnapshot,
-            String chunkBusNo,
-            BigDecimal chunkTotal,
-            String relateNo,
-            int partIndex) {
-        String originalBusNo = document.getBusNo();
-        BigDecimal originalTotal = document.getTotalAmt();
-        document.setBusNo(chunkBusNo);
-        document.setTotalAmt(chunkTotal);
-        try {
-            return invokeSingle(task, document, chunkLines, chunkSnapshot, relateNo, partIndex);
-        } finally {
-            document.setBusNo(originalBusNo);
-            document.setTotalAmt(originalTotal);
-        }
-    }
-
-    private IssuePartOutcome invokeAndParse(
-            EinvBossIssueTask task,
-            String busNo,
-            BigDecimal totalAmt,
-            String serviceId,
-            String payload,
-            List<EinvBossLine> chunkLines,
-            int partIndex) {
         long started = System.currentTimeMillis();
         BossInvokeResult invokeResult = issueInvoker.invoke(serviceId, payload);
         int durationMs = (int) (System.currentTimeMillis() - started);
         try {
             invokeLogWriter.write(
-                    task, serviceId, busNo, invokeResult, durationMs, payload, invokeResult.getRawMessage());
+                    task,
+                    serviceId,
+                    document.getBusNo(),
+                    invokeResult,
+                    durationMs,
+                    payload,
+                    invokeResult.getRawMessage());
         } catch (Exception logEx) {
             log.warn("Persist boss invoke log failed, taskId={}", task.getId(), logEx);
         }
@@ -181,20 +88,24 @@ public class BossIssueOutboundSupport implements BossIssueOutboundAccess {
             throw new BusinessException(EinvBossErrorCodes.EINV_BOSS_REJECT, "博思返回: " + rejectDetail);
         }
         BossInvoiceIssueResult issueResult =
-                issueOutputParser.toIssueResult(invokeResult, busNo, totalAmt);
-        List<EinvBossLine> partLines;
-        if (chunkLines == null) {
-            partLines = List.of();
-        } else {
-            partLines = List.copyOf(chunkLines);
-        }
-        return new IssuePartOutcome(partIndex, busNo, totalAmt, partLines, issueResult, payload);
+                issueOutputParser.toIssueResult(invokeResult, document.getBusNo(), document.getTotalAmt());
+        return IssueInvokeOutcome.ofSingle(issueResult, payload, lines);
     }
 
-    private static String withRelateNo(String payload, String relateNo) {
-        JSONObject body = JSON.parseObject(payload);
-        body.put("eBillRelateNo", relateNo);
-        return body.toJSONString();
+    /**
+     * 院点票据代码限定收费项目（chargeDetail）行数；清单 listDetail 不限。超限禁止拆票，直接失败。
+     */
+    private static void assertChargeDetailWithinLimit(List<EinvBossLine> lines) {
+        int chargeRows = BossPayloadSupport.aggregateByChargeCode(lines).size();
+        if (chargeRows > BossPayloadSupport.MAX_CHARGE_DETAIL_ROWS) {
+            throw new BusinessException(
+                    EinvBossErrorCodes.EINV_CHARGE_DETAIL_LIMIT,
+                    "收费项目大类行数 "
+                            + chargeRows
+                            + " 超过院点上限 "
+                            + BossPayloadSupport.MAX_CHARGE_DETAIL_ROWS
+                            + "，请检查收费对照后重开（医院不允许拆票）");
+        }
     }
 
     /**
@@ -253,7 +164,6 @@ public class BossIssueOutboundSupport implements BossIssueOutboundAccess {
                 line.setListRemark(snap.getListRemark().trim());
             }
             if (StringUtils.isNotBlank(snap.getUnit())) {
-                // 快照单位若已是中文，优先生效（随后 normalizeLineUnits 幂等）
                 line.setUnit(snap.getUnit().trim());
             }
         }

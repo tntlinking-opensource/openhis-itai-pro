@@ -675,7 +675,8 @@ public class ServiceCatalogAppService {
             dataRows.add(serviceCatalogExportRowAssembler.toColumnValues(
                 detail, priceLines, serviceCatalogImportTerminologyIndex));
         }
-        byte[] bytes = serviceCatalogImportTemplateBuilder.buildExport(dataRows);
+        byte[] bytes = serviceCatalogImportTemplateBuilder.buildExport(
+            dataRows, safeRequest.getExportColumns());
         String fileName = ServiceCatalogImportConstants.EXPORT_FILE_NAME_PREFIX
             + LocalDateTime.now().format(
                 DateTimeFormatter.ofPattern(ServiceCatalogImportConstants.EXPORT_FILE_NAME_TIME_PATTERN))

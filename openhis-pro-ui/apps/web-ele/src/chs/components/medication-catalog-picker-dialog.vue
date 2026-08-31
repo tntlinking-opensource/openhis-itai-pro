@@ -24,6 +24,7 @@ import {
   formatCatalogListType,
   formatChrgitmLv,
   formatValiFlag,
+  resolveCatalogDetailSourceInfno,
   YB_CATALOG_LIST_TYPE_OPTIONS,
 } from '#/chs/constants/catalog-list-type';
 import {
@@ -65,7 +66,7 @@ const pageNo = ref(1);
 const pageSize = ref(20);
 /** suggest=推荐列表（不分页）；page=本地镜像分页浏览 */
 const resultMode = ref<'suggest' | 'page'>('suggest');
-/** page 模式下实际查询的来源：优先 1312，空结果再按目录类型回退 1301/1305/1306 */
+/** page 模式下实际查询的来源：优先 1312，空结果再按目录类型回退 1301/1302/1305/1306 */
 const pageSourceInfno = ref<string>('1312');
 const recommendLevel = ref<string>();
 const recommendHint = ref<string>();
@@ -80,25 +81,25 @@ const dialogWidth = 'min(96vw, 1680px)';
 
 const viewportHeight = ref(typeof window === 'undefined' ? 900 : window.innerHeight);
 
-/** 医疗服务/耗材无批准文号维度 */
-const showAprvnoFilter = computed(() => {
-  const t = listType.value;
-  return t !== '201' && t !== '301';
-});
+/** 仅西药中成药(101)有批准文号维度；饮片/诊疗/耗材不展示 */
+const showAprvnoFilter = computed(() => listType.value === '101');
 
 /** 按目录类型解析 1312 空结果时的明细回退接口号 */
 function resolveDetailSourceInfno(type: string | undefined): string {
-  if (type === '201') return '1305';
-  if (type === '301') return '1306';
-  return '1301';
+  return resolveCatalogDetailSourceInfno(type);
 }
 
 const guideDescription = computed(() => {
   const detail = resolveDetailSourceInfno(listType.value);
-  const detailLabel =
-    detail === '1305' ? '1305 医疗服务明细' : detail === '1306' ? '1306 耗材明细' : '1301 西药明细';
+  const detailLabelMap: Record<string, string> = {
+    '1301': '1301 西药中成药明细',
+    '1302': '1302 中药饮片明细',
+    '1305': '1305 医疗服务明细',
+    '1306': '1306 耗材明细',
+  };
+  const detailLabel = detailLabelMap[detail] ?? detail;
   const aprvHint = showAprvnoFilter.value ? '；填写批准文号时查 1301 明细' : '';
-  return `仅查询本地已下载的国家目录镜像，不出站调用医保。结果已按已应用局文合成：停用码不可选；甲乙类/限价优先取局文补丁。列表展示目录包装数/计价单位（来自 1301）。默认 1312 去重，无结果时回退 ${detailLabel}${aprvHint}。无数据请先到「国家目录」页下载/导入（诊疗请先下 1305/1312）。`;
+  return `仅查询本地已下载的国家目录镜像，不出站调用医保。结果已按已应用局文合成：停用码不可选；甲乙类/限价优先取局文补丁。默认 1312 去重，无结果时回退 ${detailLabel}${aprvHint}。无数据请先到「国家目录」页下载/导入（饮片请先下 1302；若仅有 1301/1312，饮片关键字会放宽检索）。`;
 });
 
 function syncViewportHeight() {
@@ -209,7 +210,8 @@ async function loadContracts() {
 async function runPageBrowse(page: number) {
   const hasAprvno = showAprvnoFilter.value && Boolean(aprvno.value?.trim());
   const detailSource = resolveDetailSourceInfno(listType.value);
-  pageSourceInfno.value = hasAprvno ? '1301' : '1312';
+  // 有批准文号时直查明细源；否则先 1312，空再回退明细
+  pageSourceInfno.value = hasAprvno ? detailSource : '1312';
   await runPage(buildPageParams(page, pageSourceInfno.value));
   // 无批准文号且 1312 无结果时，按目录类型回退本地明细（去重）
   if (!hasAprvno && !tableData.value.length) {
@@ -236,26 +238,22 @@ async function runSearch(resetPage = true) {
   const approvalNumber = showAprvnoFilter.value
     ? trimOrUndef(aprvno.value) || trimOrUndef(props.context.approvalNumber)
     : undefined;
+  // 输入框像医保码时同时走 nationalDrugCode，便于精确命中
+  const codeLike = searchName && /^[A-Za-z0-9]{6,50}$/.test(searchName) ? searchName : undefined;
   await runSuggest({
     contractBusNo: contractBusNo.value,
     listType: listType.value,
     name: searchName,
     approvalNumber,
-    nationalDrugCode: showAprvnoFilter.value
-      ? trimOrUndef(props.context.nationalDrugCode)
-      : undefined,
+    nationalDrugCode:
+      codeLike ||
+      (showAprvnoFilter.value ? trimOrUndef(props.context.nationalDrugCode) : undefined),
     totalVolume: showAprvnoFilter.value ? trimOrUndef(props.context.totalVolume) : undefined,
     queryPlatformIfMiss: false,
     maxCandidates: 30,
   });
-  // 有检索条件时 suggest 已含 1312→明细回退，不再串行 page，避免重复查库
-  const hasCriteria = Boolean(
-    searchName ||
-      approvalNumber ||
-      (showAprvnoFilter.value && trimOrUndef(props.context.nationalDrugCode)) ||
-      (showAprvnoFilter.value && trimOrUndef(props.context.totalVolume)),
-  );
-  if (!hasCriteria && (recommendLevel.value === 'NO_MATCH' || !tableData.value.length)) {
+  // suggest 无结果时再走分页浏览（含 1302/1301 明细回退），避免有关键字时跳过本地文件镜像
+  if (recommendLevel.value === 'NO_MATCH' || !tableData.value.length) {
     await runPageBrowse(pageNo.value);
   }
 }
@@ -330,7 +328,7 @@ async function handleConfirm() {
 }
 
 watch(listType, (t) => {
-  if (t === '201' || t === '301') {
+  if (t !== '101') {
     aprvno.value = '';
   }
 });
@@ -341,10 +339,7 @@ watch(
     if (!open) return;
     keyword.value = props.context.name ?? '';
     listType.value = props.context.listType ?? '101';
-    aprvno.value =
-      listType.value === '201' || listType.value === '301'
-        ? ''
-        : (props.context.approvalNumber ?? '');
+    aprvno.value = listType.value === '101' ? (props.context.approvalNumber ?? '') : '';
     selectedRow.value = null;
     tableData.value = [];
     total.value = 0;
@@ -404,7 +399,13 @@ watch(
             :value="opt.value"
           />
         </ElSelect>
-        <ElInput v-model="keyword" placeholder="名称关键字" clearable style="width: 160px" />
+        <ElInput
+          v-model="keyword"
+          placeholder="名称 / 医保码"
+          clearable
+          style="width: 200px"
+          @keyup.enter="runSearch(true)"
+        />
         <ElInput
           v-if="showAprvnoFilter"
           v-model="aprvno"

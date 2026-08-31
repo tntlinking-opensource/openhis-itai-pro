@@ -4,6 +4,7 @@
  */
 package com.openhis.health.application.outpatient.financial.feedetail.dto;
 
+import com.openhis.health.domain.share.constants.ChargeItemAmountScaleConstants;
 import com.openhis.whale.core.application.annotation.Excel;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -59,8 +60,8 @@ public class OutpatientFeeDetailExportRowDto {
     @Excel(name = "规格", sort = 10)
     private String specification;
 
-    /** 数量。 */
-    @Excel(name = "数量", sort = 11)
+    /** 数量（导出整数）。 */
+    @Excel(name = "数量", sort = 11, scale = 0)
     private BigDecimal quantityValue;
 
     /** 单位。 */
@@ -91,23 +92,23 @@ public class OutpatientFeeDetailExportRowDto {
     @Excel(name = "医保类型", sort = 18)
     private String insuranceTypeDisplay;
 
-    /** 进价单价。 */
-    @Excel(name = "进价单价", sort = 19)
+    /** 进价单价（展示 2 位）。 */
+    @Excel(name = "进价单价", sort = 19, scale = ChargeItemAmountScaleConstants.CHARGE_MONETARY_DISPLAY_SCALE)
     private BigDecimal purchaseUnitPrice;
 
-    /** 进价总价。 */
-    @Excel(name = "进价总价", sort = 20)
+    /** 进价总价（展示 2 位）。 */
+    @Excel(name = "进价总价", sort = 20, scale = ChargeItemAmountScaleConstants.CHARGE_MONETARY_DISPLAY_SCALE)
     private BigDecimal purchaseAmount;
 
-    /** 售价单价。 */
-    @Excel(name = "售价单价", sort = 21)
+    /** 售价单价（展示 2 位）。 */
+    @Excel(name = "售价单价", sort = 21, scale = ChargeItemAmountScaleConstants.CHARGE_MONETARY_DISPLAY_SCALE)
     private BigDecimal saleUnitPrice;
 
-    /** 售价总价。 */
-    @Excel(name = "售价总价", sort = 22)
+    /** 售价总价（展示 2 位）。 */
+    @Excel(name = "售价总价", sort = 22, scale = ChargeItemAmountScaleConstants.CHARGE_MONETARY_DISPLAY_SCALE)
     private BigDecimal saleAmount;
 
-    /** 实收金额。 */
-    @Excel(name = "实收金额", sort = 23)
+    /** 实收金额（展示 2 位）。 */
+    @Excel(name = "实收金额", sort = 23, scale = ChargeItemAmountScaleConstants.CHARGE_MONETARY_DISPLAY_SCALE)
     private BigDecimal actualReceivedAmount;
 }

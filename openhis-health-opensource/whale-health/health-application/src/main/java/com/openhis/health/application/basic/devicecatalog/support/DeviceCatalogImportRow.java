@@ -10,7 +10,7 @@ import lombok.Setter;
 import java.math.BigDecimal;
 
 /**
- * 耗材目录导入内部行模型（模板 v1.3，32 列）。
+ * 耗材目录导入内部行模型（模板 v1.4，32 列）。
  *
  * <p>术语列先存中文/原始文本，校验成功后由 {@link DeviceCatalogImportRowValidator} 回填 code 与数值/布尔。</p>
  */
@@ -86,7 +86,7 @@ public class DeviceCatalogImportRow {
     private String ybFlagText;
     /** 高值耗材标志原文。 */
     private String hvcmFlagText;
-    /** 不收费耗材原文（是/否；写入前取反为 chargeableFlag）。 */
+    /** 收费耗材原文（是/否；与 chargeableFlag 同向）。 */
     private String chargeableFlagText;
     /** 说明。 */
     private String descriptionText;
@@ -136,6 +136,6 @@ public class DeviceCatalogImportRow {
     private Boolean ybFlag;
     /** 高值耗材标志。 */
     private Boolean hvcmFlag;
-    /** 收费耗材标记（true=收费；导入「不收费耗材」是对应 false）。 */
+    /** 收费耗材标记（true=收费；与界面「收费耗材」勾选同向）。 */
     private Boolean chargeableFlag;
 }

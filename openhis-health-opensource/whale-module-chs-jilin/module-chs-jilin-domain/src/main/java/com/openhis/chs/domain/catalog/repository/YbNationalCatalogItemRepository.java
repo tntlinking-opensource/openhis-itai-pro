@@ -34,4 +34,7 @@ public interface YbNationalCatalogItemRepository extends JpaRepository<YbNationa
 
     long countByContractIdAndListTypeAndTenantIdAndIsDeletedFalse(
         Long contractId, String listType, Long tenantId);
+
+    /** 租户下是否已有国家目录镜像（目录检查：无镜像时不报「镜像无此码」）。 */
+    long countByTenantIdAndIsDeletedFalse(Long tenantId);
 }

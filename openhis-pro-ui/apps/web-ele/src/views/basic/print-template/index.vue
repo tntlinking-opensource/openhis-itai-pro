@@ -34,7 +34,7 @@ import {
 import JsonEditorDialog from '#/hiprint/components/JsonEditorDialog.vue';
 import PreviewDialog from '#/hiprint/components/PreviewDialog.vue';
 import { buildPreviewPrintData } from '#/hiprint/utils/print-data';
-import { validatePrintJson } from '#/hiprint/utils/print-json';
+import { readPrintJsonFromTemplateDto, validatePrintJson } from '#/hiprint/utils/print-json';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { PRINT_SCENARIO_ITEMS } from '#/utils/print/constants/print-scenario-labels';
 
@@ -273,7 +273,7 @@ async function handlePreview(row: PrtTemplateListItem): Promise<void> {
   previewLoadingBusNo.value = busNo;
   try {
     const dto = await getByBusNoApi(busNo);
-    const printJson = dto.PrintJson ?? { schemaVersion: 1, engine: 'Print', panels: [] };
+    const printJson = readPrintJsonFromTemplateDto(dto);
     const printData = buildPreviewPrintData(printJson, { samplePrintData: dto.samplePrintData });
     await previewRef.value?.show(printJson, printData);
   } catch {
@@ -328,10 +328,7 @@ async function handleEditJson(row: PrtTemplateListItem) {
       scenarioCode: dto.scenarioCode ?? row.scenarioCode,
       samplePrintData: dto.samplePrintData,
     };
-    jsonEditorRef.value?.open(
-      dto.PrintJson ?? { schemaVersion: 1, engine: 'Print', panels: [] },
-      `编辑 PrintJson · ${busNo}`,
-    );
+    jsonEditorRef.value?.open(readPrintJsonFromTemplateDto(dto), `编辑 PrintJson · ${busNo}`);
   } catch {
     ElMessage.error('加载模板失败');
     editingDraftMeta.value = null;

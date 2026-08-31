@@ -47,6 +47,13 @@ public class PageDocumentDetailsRequest extends AbstractHealthPageRequest {
     @Schema(description = "目的库位 purposeLocationId")
     private Long purposeLocationId;
 
+    /**
+     * 供应商 supplierId；空则该维不过滤（BR-INV-DDC-004）。
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "供应商 supplierId")
+    private Long supplierId;
+
     /** 审批时间起 approvalTimeStart。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     @Schema(description = "审批时间起 approvalTimeStart")
@@ -56,6 +63,13 @@ public class PageDocumentDetailsRequest extends AbstractHealthPageRequest {
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     @Schema(description = "审批时间止 approvalTimeEnd")
     private LocalDateTime approvalTimeEnd;
+
+    /**
+     * 项目分类 itemTable：{@code med_medication_definition}（药品）/
+     * {@code adm_device_definition}（耗材）；空则不限。
+     */
+    @Schema(description = "项目分类 itemTable：med_medication_definition/adm_device_definition")
+    private String itemTable;
 
     /** 品名/编码关键字 productKeyword。 */
     @Schema(description = "品名/编码关键字 productKeyword")

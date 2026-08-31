@@ -438,7 +438,7 @@ function resolveOrderTemplateApplyLineGap(item: AdviceDrugItem): string | undefi
   }
   if (kind === 'SERVICE') {
     if (!(Number(item.serviceQuantity) > 0)) {
-      return '诊疗数量须大于 0';
+      return '诊疗单次执行数量须大于 0';
     }
     if (!(Number(item.totalAmount) > 0)) {
       return '诊疗执行次数须大于 0';
@@ -799,6 +799,7 @@ function buildTemplateConfirmRows(
       : `第 ${index + 1} 项`;
 
     if (lineKind === 'SERVICE' && item) {
+      // 确认框展示单次量；计费总量 = 单次 × 次数（提交时由草稿组装）
       const quantity =
         Number.isFinite(Number(item.serviceQuantity)) && Number(item.serviceQuantity) > 0
           ? Number(item.serviceQuantity)
@@ -806,7 +807,9 @@ function buildTemplateConfirmRows(
       const unitName = resolveTemplateConfirmUnitLabel(item, lineKind);
       const execCount = Number(item.totalAmount);
       const dosageText =
-        Number.isFinite(execCount) && execCount > 0 ? `执行 ${execCount} 次` : undefined;
+        Number.isFinite(execCount) && execCount > 0
+          ? `单次数量 ${quantity}，执行 ${execCount} 次`
+          : undefined;
       return {
         key: `tpl-${String(line.lineId ?? index)}`,
         lineIndex: index,

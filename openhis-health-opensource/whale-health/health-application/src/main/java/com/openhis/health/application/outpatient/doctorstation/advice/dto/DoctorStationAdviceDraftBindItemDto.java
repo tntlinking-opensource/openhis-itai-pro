@@ -100,4 +100,9 @@ public class DoctorStationAdviceDraftBindItemDto {
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "派生医嘱 based_on 主键")
     private Long basedOnRequestId;
+
+    /** 合管检验设备主键；合管派生绑定时有值，供同批去重与护士站打印分组。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "合管检验设备主键")
+    private Long specimenTubeMergeDeviceId;
 }

@@ -30,4 +30,16 @@ public class MasterReviewRowModel {
 
     /** 到检/就诊开始时间。 */
     private LocalDateTime checkInTime;
+
+    /** 患者主键。 */
+    private Long patientId;
+
+    /** 患者年龄（岁）。 */
+    private Integer patientAge;
+
+    /** 性别编码。 */
+    private String genderEnum;
+
+    /** 团检标志。 */
+    private Boolean groupFlag;
 }

@@ -6,6 +6,7 @@ package com.openhis.health.domain.clinical.diagnosticreport.service;
 
 import com.openhis.health.domain.clinical.diagnosticreport.command.CreateForEncounterCommand;
 import com.openhis.health.domain.clinical.diagnosticreport.command.FinalizeMasterCommand;
+import com.openhis.health.domain.clinical.diagnosticreport.command.IncreaseDiagnosticReportPrintCountCommand;
 import com.openhis.health.domain.clinical.diagnosticreport.command.SaveMasterDraftCommand;
 import com.openhis.health.domain.clinical.diagnosticreport.entity.DiagnosticReport;
 import com.openhis.health.domain.clinical.diagnosticreport.repository.DiagnosticReportRepository;
@@ -135,5 +136,34 @@ public class DiagnosticReportDomainService {
         domainEventPublisher.publish(new DiagnosticReportFinalizedEvent(
             saved.getId(), saved.getEncounterId(), saved.getPatientId(), saved.getStatusEnum()));
         return saved;
+    }
+
+    /**
+     * 累加总检报告打印次数（REP-03）。
+     *
+     * @param cmd 命令
+     * @return 更新后的实体
+     */
+    public DiagnosticReport increasePrintCount(IncreaseDiagnosticReportPrintCountCommand cmd) {
+        if (cmd == null || cmd.getDiagnosticReportId() == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.DIAGNOSTIC_REPORT_INVALID_ARGUMENT, "总检报告标识不能为空");
+        }
+        if (cmd.getOperatorId() == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.DIAGNOSTIC_REPORT_INVALID_ARGUMENT, "操作人不能为空");
+        }
+        int increaseBy = cmd.getIncreaseBy() == null ? 1 : cmd.getIncreaseBy();
+        DiagnosticReport entity = repository.findById(cmd.getDiagnosticReportId())
+            .filter(row -> !Boolean.TRUE.equals(row.getIsDeleted()))
+            .orElseThrow(() -> new BusinessException(
+                ErrorCodeConstants.DIAGNOSTIC_REPORT_NOT_FOUND, "总检报告不存在"));
+        if (!DiagnosticReportStatusConstants.STATUS_FINAL.equals(entity.getStatusEnum())) {
+            throw new BusinessException(ErrorCodeConstants.REPORT_NOT_FINAL, "总检报告未定稿，不可记录打印");
+        }
+        entity.increasePrintCount(increaseBy);
+        entity.setUpdatedAt(LocalDateTime.now());
+        entity.setUpdatedBy(cmd.getOperatorId());
+        return repository.save(entity);
     }
 }

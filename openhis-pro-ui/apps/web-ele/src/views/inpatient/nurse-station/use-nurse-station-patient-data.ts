@@ -35,8 +35,8 @@ export function useNurseStationPatientData() {
   const patients = ref<PatientItem[]>([]);
   const keyword = ref('');
   const statusFilter = ref<PatientStatusFilter>('all');
-  /** 入科状态筛选（本地过滤；后端列表状态筛选已废止）。 */
-  const admissionFilter = ref<PatientAdmissionFilter>('all');
+  /** 入科状态筛选（本地过滤；后端列表状态筛选已废止；默认在科）。 */
+  const admissionFilter = ref<PatientAdmissionFilter>('in-ward');
   const selectedRegionIds = ref<string[]>([]);
   const selectedWardIds = ref<string[]>([]);
   /** 病区/病房筛选区是否展开。 */
@@ -48,8 +48,9 @@ export function useNurseStationPatientData() {
     { label: '待执行', value: 'pending-execute' },
     { label: '已处理', value: 'processed' },
   ];
+  /** 在科 / 待入科：互斥；在科=队列内未清床且非 REGISTERED。 */
   const admissionOptions: Array<{ label: string; value: PatientAdmissionFilter }> = [
-    { label: '全部', value: 'all' },
+    { label: '在科', value: 'in-ward' },
     { label: '待入科', value: 'pending-admission' },
   ];
   const regionMap = computed(() => new Map(regionOptions.value.map((i) => [i.id, i.name])));
@@ -78,13 +79,17 @@ export function useNurseStationPatientData() {
   const filteredPatients = computed(() => {
     const regionIds = selectedRegionIds.value;
     const wardIds = selectedWardIds.value;
-    const onlyPendingAdmission = admissionFilter.value === 'pending-admission';
+    const admission = admissionFilter.value;
     return patients.value.filter((item) => {
       if (!item.regionId) {
         return false;
       }
-      // 待入科：仅保留 REGISTERED
-      if (onlyPendingAdmission && item.statusEnum !== ENCOUNTER_STATUS_REGISTERED) {
+      // 待入科：仅 REGISTERED（未分床）
+      if (admission === 'pending-admission' && item.statusEnum !== ENCOUNTER_STATUS_REGISTERED) {
+        return false;
+      }
+      // 在科：未清床且已入科轨（排除 REGISTERED；COMPLETED 待清床仍算在科）
+      if (admission === 'in-ward' && item.statusEnum === ENCOUNTER_STATUS_REGISTERED) {
         return false;
       }
       const matchRegion = regionIds.length === 0 || regionIds.includes(item.regionId);
@@ -213,7 +218,7 @@ export function useNurseStationPatientData() {
   async function refreshPatientFilters() {
     keyword.value = '';
     statusFilter.value = 'all';
-    admissionFilter.value = 'all';
+    admissionFilter.value = 'in-ward';
     await loadPatientQueue();
   }
 

@@ -65,7 +65,7 @@ import {
 } from '#/utils/inventory/inventory-product-pick-list';
 import {
   formatInventoryLineTotal,
-  formatMoneyDisplay,
+  formatPurchaseMoneyDisplay,
   inventoryLineTotalNumber,
   sumMoneyThenSettle,
 } from '#/utils/format/money-scale';
@@ -454,6 +454,12 @@ function mapDetailLineToGrid(ln: InventoryOpeningDetailLineDto, rowIdx: number):
   const unitCodeDictText = String(ln.unitCodeDictText ?? ln.unitCode ?? '');
   const catalogTraceCode = String(catalog?.traceUnitCode ?? '').trim();
   const catalogTraceRatio = Number(catalog?.traceUnitRatio);
+  const categoryCode =
+    String(
+      (catalog as { categoryCode?: string } | undefined)?.categoryCode ??
+        (ln as { categoryCode?: string }).categoryCode ??
+        '',
+    ).trim() || undefined;
   const row: OpeningPreviewRow = {
     id: idStr,
     medicinePick: name ? { id: itemIdRaw as number | string | undefined, name } : undefined,
@@ -479,7 +485,8 @@ function mapDetailLineToGrid(ln: InventoryOpeningDetailLineDto, rowIdx: number):
       ln.supplierId !== undefined && ln.supplierId !== null && String(ln.supplierId).trim() !== ''
         ? String(ln.supplierId)
         : undefined,
-    totalAmount: formatMoneyDisplay(ln.totalPrice ?? ''),
+    categoryCode,
+    totalAmount: formatPurchaseMoneyDisplay(ln.totalPrice ?? '', categoryCode),
     lineTotalPrice:
       ln.totalPrice !== undefined && ln.totalPrice !== null && String(ln.totalPrice).trim() !== ''
         ? Number(ln.totalPrice)
@@ -525,7 +532,10 @@ function mapDetailLineToGrid(ln: InventoryOpeningDetailLineDto, rowIdx: number):
   const persistedTotal = Number(ln.totalPrice);
   if (Number.isFinite(persistedTotal) && String(ln.totalPrice ?? '').trim() !== '') {
     row.lineTotalPrice = persistedTotal;
-    row.totalAmount = formatMoneyDisplay(ln.totalPrice ?? '');
+    row.totalAmount = formatPurchaseMoneyDisplay(
+      ln.totalPrice ?? '',
+      row.categoryCode ?? categoryCode,
+    );
     schedulePurchaseAmountSummaryRefresh();
   } else {
     recalcLine(row);
@@ -762,7 +772,9 @@ function refreshPurchaseAmountSummary() {
   detailLineCount.value = lineCount;
   // 与侧栏一致：先按行额（6 位）加总，再 settle 到 2 位；禁止「每行先 2 位再相加」
   purchaseTotalText.value =
-    lineCount === 0 || amounts.length === 0 ? '' : formatMoneyDisplay(sumMoneyThenSettle(amounts));
+    lineCount === 0 || amounts.length === 0
+      ? ''
+      : formatPurchaseMoneyDisplay(sumMoneyThenSettle(amounts));
 }
 
 let purchaseSummaryTimer: ReturnType<typeof setTimeout> | undefined;

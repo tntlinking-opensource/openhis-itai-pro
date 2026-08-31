@@ -33,6 +33,12 @@ import java.util.List;
 @Component
 public class PeisCatalogMapperImpl implements PeisCatalogMapper {
 
+    /**
+     * 小项读模型 → 列表/详情 DTO（科室名与引用次数由 AppService enrich）。
+     *
+     * @param source 观察定义读模型
+     * @return PEIS 小项 DTO；source 为空时返回 null
+     */
     @Override
     public PeisObservationDefDto toPeisObservationDefDto(ObservationDefinitionModel source) {
         if (source == null) {
@@ -46,6 +52,8 @@ public class PeisCatalogMapperImpl implements PeisCatalogMapper {
         dto.setCategoryCode(source.getCategoryCode());
         dto.setUnitCode(source.getUnitCode());
         dto.setStatusEnum(source.getStatusEnum());
+        // 执行科室主键；名称由 AppService enrich
+        dto.setOrgId(source.getOrgId());
         return dto;
     }
 
@@ -65,6 +73,13 @@ public class PeisCatalogMapperImpl implements PeisCatalogMapper {
         return command;
     }
 
+    /**
+     * 项目分页行 + 绑定小项 id → 列表 DTO（科室名与原价由 AppService enrich）。
+     *
+     * @param source 诊疗定义分页行
+     * @param observationDefinitionIds 绑定小项主键（可空）
+     * @return PEIS 项目 DTO；source 为空时返回 null
+     */
     @Override
     public PeisActivityDto toPeisActivityDto(
             ActivityDefinitionPageQueryModel source, List<Long> observationDefinitionIds) {
@@ -78,6 +93,17 @@ public class PeisCatalogMapperImpl implements PeisCatalogMapper {
         dto.setTypeEnum(source.getTypeEnum());
         dto.setStatusEnum(toPeisLifecycleStatus(source.getStatusEnum()));
         dto.setObservationDefinitionIds(observationDefinitionIds);
+        // 列表「绑定小项数」列直接用，避免前端再算
+        if (observationDefinitionIds == null) {
+            dto.setObservationCount(0);
+        } else {
+            dto.setObservationCount(observationDefinitionIds.size());
+        }
+        dto.setOrgId(source.getOrgId());
+        dto.setPermittedGenderEnum(source.getPermittedGenderEnum());
+        dto.setSortOrder(source.getSortOrder());
+        dto.setPricingFlag(source.getPricingFlag());
+        dto.setPyStr(source.getPyStr());
         return dto;
     }
 
@@ -94,6 +120,8 @@ public class PeisCatalogMapperImpl implements PeisCatalogMapper {
         item.setStatusEnum(toPublicationStatusCode(request.getStatusEnum()));
         item.setOrgId(request.getOrgId());
         item.setChildrenFlag(Boolean.FALSE);
+        item.setPermittedGenderEnum(request.getPermittedGenderEnum());
+        item.setSortOrder(request.getSortOrder());
         if (StringUtils.isNotEmpty(request.getCode())) {
             item.setDescriptionText(request.getCode());
         }
@@ -114,6 +142,8 @@ public class PeisCatalogMapperImpl implements PeisCatalogMapper {
         item.setTypeEnum(request.getTypeEnum());
         item.setOrgId(request.getOrgId());
         item.setChildrenFlag(Boolean.FALSE);
+        item.setPermittedGenderEnum(request.getPermittedGenderEnum());
+        item.setSortOrder(request.getSortOrder());
         if (StringUtils.isNotEmpty(request.getCode())) {
             item.setDescriptionText(request.getCode());
         }

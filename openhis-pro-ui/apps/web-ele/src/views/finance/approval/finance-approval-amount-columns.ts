@@ -3,7 +3,7 @@
  */
 import type { FinanceApprovalDocumentRowDto } from '#/api/finance/approval';
 
-import { formatMoneyDisplay } from '#/utils/format/money-scale';
+import { formatMoneyDisplay, formatPurchaseMoneyDisplay } from '#/utils/format/money-scale';
 
 /** 列表类型码：全部 */
 export const FINANCE_APPROVAL_TYPE_ALL = 'ALL';
@@ -134,6 +134,10 @@ export function resolveFinanceApprovalAmountCell(
 ): string {
   const raw = resolveFinanceApprovalAmountRaw(row, key);
   if (raw === undefined) return '';
+  // 进价盈亏 / 供应进价金额：进价侧三位口径；售价盈亏仍两位
+  if (key === 'purchaseImpact' || key === 'amount') {
+    return formatPurchaseMoneyDisplay(raw);
+  }
   return formatMoneyDisplay(raw);
 }
 
@@ -190,9 +194,10 @@ export function resolveFinanceApprovalViewSummaryItems(
     const raw = query[key];
     const text = Array.isArray(raw) ? String(raw[0] ?? '').trim() : String(raw ?? '').trim();
     if (!text) continue;
+    const isPurchaseSide = col.key === 'purchaseImpact' || col.key === 'amount';
     items.push({
       label: `${col.label}合计`,
-      value: formatMoneyDisplay(text),
+      value: isPurchaseSide ? formatPurchaseMoneyDisplay(text) : formatMoneyDisplay(text),
     });
   }
   return items;

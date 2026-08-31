@@ -23,10 +23,17 @@ type ProductOption = AdviceProductOption;
 
 import { calcMoneyLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
 
-/** 单价 × 总量草稿预览（6 位计算、2 位展示）；入账以预结算/ChargeItem 为准。 */
+import { inferAdviceLineEditorKind } from '../services/advice-row';
+import { resolveServicePreviewBillQuantity } from '../services/service-quantity-calc';
+
+/** 单价 × 计价量草稿预览（诊疗=单次×次数；药/材=总量）；入账以 ChargeItem 为准。 */
 export function calcAdviceTotalFee(item: AdviceDrugItem) {
   const price = Number(item.selectedDrugPrice || 0);
-  const amount = Number(item.totalAmount || 0);
+  const kind = inferAdviceLineEditorKind(item);
+  const amount =
+    kind === 'SERVICE'
+      ? resolveServicePreviewBillQuantity(item.serviceQuantity, item.totalAmount)
+      : Number(item.totalAmount || 0);
   if (price <= 0 || amount <= 0) {
     return '0.00';
   }

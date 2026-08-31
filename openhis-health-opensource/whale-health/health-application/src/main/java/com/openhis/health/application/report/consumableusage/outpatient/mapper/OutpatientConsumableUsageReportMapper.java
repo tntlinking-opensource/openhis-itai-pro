@@ -55,7 +55,7 @@ public interface OutpatientConsumableUsageReportMapper {
     List<OptionDto> buildRecordTypeOptions();
 
     /**
-     * 明细行 → 导出行。
+     * 明细行 → 导出行（并集 DTO；实际列由前端 exportColumns 裁剪）。
      *
      * @param row 明细行；null 时返回 null
      * @return 导出行
@@ -63,7 +63,7 @@ public interface OutpatientConsumableUsageReportMapper {
     OutpatientConsumableUsageExportRowDto toExportRowFromDetail(OutpatientConsumableUsageDetailRowDto row);
 
     /**
-     * 汇总行 → 导出行。
+     * 汇总行 → 导出行（并集 DTO；实际列由前端 exportColumns 裁剪）。
      *
      * @param row 汇总行；null 时返回 null
      * @return 导出行

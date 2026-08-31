@@ -36,6 +36,15 @@ public class OutpatientConsumableUsageDetailRowDto implements ConsumableUsageRep
     @Schema(description = "发放主键")
     private Long dispenseId;
 
+    /**
+     * 源发放主键（退药 {@code based_on}；正向空）。
+     *
+     * <p>不落前端展示；金额 enrich 回挂原账单用。</p>
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "源发放主键（退药）", hidden = true)
+    private Long basedOnDispenseId;
+
     /** 耗材请求主键；可空。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "耗材请求主键")

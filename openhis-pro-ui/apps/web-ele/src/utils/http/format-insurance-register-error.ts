@@ -1,11 +1,13 @@
-/** 进销存交易号 3501–3513（含查询 3508–3513）。 */
-const INV_INFNO_RE = /35(?:0[1-9]|1[0-3])/;
+import { isPersistenceConcurrencyMessage } from '#/utils/http/format-persistence-error';
+
+/** 进销存交易号 3501–3513（含查询 3508–3513）；须为独立交易号，避免雪花 ID 误匹配。 */
+const INV_INFNO_RE = /(?:^|[^\d])(35(?:0[1-9]|1[0-3]))(?!\d)/;
 
 /** 从错误原文识别进销存交易号；无交易号时用字段特征兜底。 */
 function detectInventoryInfno(msg: string): null | string {
   const match = msg.match(INV_INFNO_RE);
   if (match) {
-    return match[0];
+    return match[1];
   }
   // 平台有时把查询行 JSON 直接放进 errMsg，无「3510 平台失败」前缀
   if (
@@ -45,6 +47,10 @@ export function formatInsuranceRegisterError(
 ): null | { message: string; title: string } {
   const msg = String(rawMessage ?? '').trim();
   if (!msg) {
+    return null;
+  }
+
+  if (isPersistenceConcurrencyMessage(msg)) {
     return null;
   }
 

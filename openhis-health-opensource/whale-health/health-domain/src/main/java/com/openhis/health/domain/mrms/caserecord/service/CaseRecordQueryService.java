@@ -177,6 +177,7 @@ public class CaseRecordQueryService {
     private CaseRecordListItemQueryModel toListItemQueryModel(CaseRecord record) {
         CaseRecordListItemQueryModel model = new CaseRecordListItemQueryModel();
         model.setId(record.getId());
+        model.setEncounterId(record.getEncounterId());
         model.setMedcasno(record.getMedcasno());
         model.setPsnName(record.getPsnName());
         model.setIptNo(record.getIptNo());

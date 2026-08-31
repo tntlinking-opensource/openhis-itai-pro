@@ -8,12 +8,13 @@ import type {
   PresentationModeCode,
 } from '#/api/report/outpatient-registration-detail';
 import type { ApiOptionItem } from '#/types/api-response';
+import type { ReportPrintColumnDef } from '#/utils/print/print-report-list';
 
 import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
-import { Download, Refresh, Search } from '@element-plus/icons-vue';
+import { Download, Printer, Refresh, Search, Setting } from '@element-plus/icons-vue';
 import {
   ElButton,
   ElDatePicker,
@@ -39,10 +40,13 @@ import {
   summarizeOutpatientRegistrationDetailReportApi,
 } from '#/api/report/outpatient-registration-detail';
 import { useRequest } from '#/hooks/use-request';
+import { buildExcelExportColumns } from '#/utils/export/build-excel-export-columns';
 import { downloadBinaryExportFile } from '#/utils/export/download-binary-export';
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import {
+  isReportRefundBySignedFields,
+  mapReportPrintRow,
   REPORT_QUERY_CONTROL,
   REPORT_QUERY_CONTROL_DATERANGE,
   REPORT_TABLE_AMOUNT_CELL,
@@ -51,8 +55,12 @@ import {
   ReportListPageLayout,
   ReportListToolbar,
   ReportPageFooter,
+  ReportPrintFieldDialog,
   ReportQueryBar,
   ReportTableScroll,
+  reportPrintFieldsOf,
+  resolveReportRefundRowClassName,
+  useReportListPrint,
 } from '#/views/report/shared';
 import {
   buildReportDateRangeShortcuts,
@@ -222,8 +230,73 @@ const { run: runExport, loading: exportLoading } = useRequest(
   },
 );
 
+/** 当前 Tab / 汇总视角对应的可打印列目录。 */
+const printColumnCatalog = computed<ReportPrintColumnDef[]>(() => {
+  if (isSummaryTab.value) {
+    const cols: ReportPrintColumnDef[] = [];
+    if (isDoctorView.value) {
+      cols.push({ field: 'practitionerName', title: '接诊医生', align: 'center' });
+    }
+    cols.push(
+      { field: 'organizationName', title: '科室', align: 'center' },
+      { field: 'serviceTypeName', title: '号源类型', align: 'center' },
+      { field: 'netRegistrationCount', title: '净挂号笔数', align: 'right' },
+      { field: 'registrationFeeAmount', title: '挂号费合计', align: 'right' },
+    );
+    return cols;
+  }
+  return [
+    { field: 'patientName', title: '患者姓名', align: 'center' },
+    { field: 'busNo', title: '门诊号', align: 'center' },
+    { field: 'organizationName', title: '挂号科室', align: 'center' },
+    { field: 'admitterDoctorName', title: '接诊医生', align: 'center' },
+    { field: 'serviceTypeName', title: '号源类型', align: 'center' },
+    { field: 'statusEnum_enumText', title: '状态', align: 'center' },
+    { field: 'registrationTime', title: '挂号时间', align: 'center' },
+    { field: 'feeNatureDisplay', title: '费用性质', align: 'center' },
+    { field: 'insuranceTypeDisplay', title: '医保类型', align: 'center' },
+    { field: 'registrationFeeAmount', title: '挂号费', align: 'right' },
+  ];
+});
+
+/** 打印偏好键：明细固定；汇总按科室/医生视角分键（列不同）。 */
+function resolveReportPrintCode() {
+  if (isSummaryTab.value) {
+    const view = queryParams.summaryView || SUMMARY_VIEW_DEPARTMENT;
+    return `report-outpatient-registration-summary-${view}`;
+  }
+  return 'report-outpatient-registration-detail';
+}
+
+/** 将当前 Tab 表格行映射为打印单元格文案。 */
+function mapCurrentPrintRows(): Record<string, string>[] {
+  const fields = reportPrintFieldsOf(printColumnCatalog.value);
+  if (isSummaryTab.value) {
+    return summaryRows.value.map((row) =>
+      mapReportPrintRow(row as unknown as Record<string, unknown>, fields, {
+        netRegistrationCount: (value) => formatCountCell(value),
+        registrationFeeAmount: (value) => formatMoneyCell(value),
+      }),
+    );
+  }
+  return detailRows.value.map((row) =>
+    mapReportPrintRow(row as unknown as Record<string, unknown>, fields, {
+      statusEnum_enumText: (_value, raw) => String(raw.statusEnum_enumText ?? raw.statusEnum ?? ''),
+      registrationFeeAmount: (value) => formatMoneyCell(value),
+    }),
+  );
+}
+
+const { printFieldDialogRef, printSubmitting, handleOpenPrintFields, handlePrintCurrentPage } =
+  useReportListPrint({
+    getReportCode: () => resolveReportPrintCode(),
+    getColumnCatalog: () => printColumnCatalog.value,
+    getReportTitle: () => PAGE_TITLE,
+    getPrintRows: () => mapCurrentPrintRows(),
+  });
+
 const tableLoading = computed(
-  () => initLoading.value || summarizeLoading.value || detailLoading.value,
+  () => initLoading.value || summarizeLoading.value || detailLoading.value || printSubmitting.value,
 );
 
 /** 下拉选项转为 ElSelect 结构。 */
@@ -250,13 +323,32 @@ function formatCountCell(value: unknown): string {
   return String(value);
 }
 
-/** 负净笔数标红（退号冲减后仍可能为负）。 */
-function resolveSignedNumberClass(value: unknown): string {
-  const num = Number(value);
-  if (Number.isFinite(num) && num < 0) {
-    return 'text-[var(--el-color-danger)]';
-  }
-  return '';
+/** 汇总行是否净退号冲减（净笔数/金额为负）。 */
+function isRegistrationSummaryRefundRow(row: OutpatientRegistrationDetailSummaryRowDto): boolean {
+  return isReportRefundBySignedFields(row as Record<string, unknown>, [
+    'netRegistrationCount',
+    'registrationFeeAmount',
+  ]);
+}
+
+/** 明细行是否已退号。 */
+function isRegistrationDetailRefundRow(row: OutpatientRegistrationDetailRowDto): boolean {
+  const code = String(row.statusEnum ?? '').trim();
+  return code === 'CANCELLED' || code === 'ENTERED_IN_ERROR';
+}
+
+/** 汇总退冲减整行标红。 */
+function resolveSummaryRowClassName({
+  row,
+}: {
+  row: OutpatientRegistrationDetailSummaryRowDto;
+}): string {
+  return resolveReportRefundRowClassName(isRegistrationSummaryRefundRow(row));
+}
+
+/** 明细退号整行标红。 */
+function resolveDetailRowClassName({ row }: { row: OutpatientRegistrationDetailRowDto }): string {
+  return resolveReportRefundRowClassName(isRegistrationDetailRefundRow(row));
 }
 
 /** 就诊状态 Tag（按 EncounterStatus code，不用展示文案分支）。 */
@@ -341,18 +433,20 @@ function handleTabChange() {
   void getList();
 }
 
-/** 导出当前 Tab。 */
+/** 导出当前 Tab（列清单与页面可见列一致）。 */
 async function handleExport() {
   const filters = buildFilterPayload();
   if (!filters) {
     return;
   }
+  const exportColumns = buildExcelExportColumns(printColumnCatalog.value);
   await runExport({
     ...filters,
     presentationMode: queryParams.presentationMode,
     summaryView: isSummaryTab.value
       ? queryParams.summaryView || SUMMARY_VIEW_DEPARTMENT
       : undefined,
+    exportColumns,
   });
 }
 
@@ -488,6 +582,23 @@ onMounted(async () => {
               <ElRadioButton :value="PRESENTATION_MODE_SUMMARY">汇总</ElRadioButton>
               <ElRadioButton :value="PRESENTATION_MODE_DETAIL">明细</ElRadioButton>
             </ElRadioGroup>
+            <ElButton
+              plain
+              :icon="Setting"
+              :disabled="printSubmitting"
+              @click="handleOpenPrintFields"
+            >
+              打印设置
+            </ElButton>
+            <ElButton
+              type="primary"
+              plain
+              :icon="Printer"
+              :loading="printSubmitting"
+              @click="handlePrintCurrentPage"
+            >
+              打印
+            </ElButton>
             <ElButton plain :icon="Download" :loading="exportLoading" @click="handleExport">
               导出
             </ElButton>
@@ -504,6 +615,7 @@ onMounted(async () => {
               :data="summaryRows"
               :height="tableHeight"
               :row-key="resolveSummaryRowKey"
+              :row-class-name="resolveSummaryRowClassName"
             >
               <ElTableColumn
                 type="index"
@@ -555,9 +667,7 @@ onMounted(async () => {
                 :class-name="REPORT_TABLE_NUM_CELL"
               >
                 <template #default="{ row }">
-                  <span :class="resolveSignedNumberClass(row.netRegistrationCount)">
-                    {{ formatCountCell(row.netRegistrationCount) }}
-                  </span>
+                  {{ formatCountCell(row.netRegistrationCount) }}
                 </template>
               </ElTableColumn>
               <ElTableColumn
@@ -579,6 +689,7 @@ onMounted(async () => {
               :data="detailRows"
               :height="tableHeight"
               :row-key="resolveDetailRowKey"
+              :row-class-name="resolveDetailRowClassName"
             >
               <ElTableColumn
                 prop="patientName"
@@ -679,5 +790,11 @@ onMounted(async () => {
         />
       </template>
     </ReportListPageLayout>
+
+    <ReportPrintFieldDialog
+      ref="printFieldDialogRef"
+      :report-code="resolveReportPrintCode()"
+      :column-catalog="printColumnCatalog"
+    />
   </Page>
 </template>

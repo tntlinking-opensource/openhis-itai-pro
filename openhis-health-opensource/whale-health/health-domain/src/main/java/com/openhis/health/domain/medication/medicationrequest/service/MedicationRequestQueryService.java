@@ -18,10 +18,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.OutpatientPharmacyPrescriptionQueryConstants;
+import com.openhis.health.domain.share.constants.PrescriptionSplitConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.utils.EncounterDiagnosisIdsPredicates;
+import com.openhis.health.domain.share.utils.IdInQueryChunkSupport;
 import com.openhis.whale.core.application.exception.BusinessException;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.criteria.CriteriaBuilder;
@@ -110,6 +113,50 @@ public class MedicationRequestQueryService {
             return List.of();
         }
         List<MedicationRequest> rows = medicationRequestRepository.findAllById(ids);
+        List<MedicationRequest> result = new ArrayList<>();
+        for (MedicationRequest row : rows) {
+            if (row != null && !Boolean.TRUE.equals(row.getIsDeleted())) {
+                result.add(row);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 按 based_on 锚点查询子药品申请（住院长嘱改量链；仅本聚合 Repository）。
+     *
+     * @param basedOnTable 来源表名
+     * @param basedOnId    来源主键
+     * @return 未软删子嘱；入参空则空列表
+     */
+    public List<MedicationRequest> listByBasedOnAnchor(String basedOnTable, Long basedOnId) {
+        if (basedOnTable == null || basedOnTable.isBlank() || basedOnId == null) {
+            return List.of();
+        }
+        List<MedicationRequest> rows =
+            medicationRequestRepository.findByBasedOnTableAndBasedOnId(basedOnTable.trim(), basedOnId);
+        List<MedicationRequest> result = new ArrayList<>();
+        for (MedicationRequest row : rows) {
+            if (row != null && !Boolean.TRUE.equals(row.getIsDeleted())) {
+                result.add(row);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 按 based_on 锚点批量查询子药品申请（改量链批量装配；仅本聚合 Repository）。
+     *
+     * @param basedOnTable 来源表名
+     * @param basedOnIds   来源主键集合
+     * @return 未软删子嘱
+     */
+    public List<MedicationRequest> listByBasedOnAnchors(String basedOnTable, Collection<Long> basedOnIds) {
+        if (basedOnTable == null || basedOnTable.isBlank() || basedOnIds == null || basedOnIds.isEmpty()) {
+            return List.of();
+        }
+        List<MedicationRequest> rows =
+            medicationRequestRepository.findByBasedOnTableAndBasedOnIdIn(basedOnTable.trim(), basedOnIds);
         List<MedicationRequest> result = new ArrayList<>();
         for (MedicationRequest row : rows) {
             if (row != null && !Boolean.TRUE.equals(row.getIsDeleted())) {
@@ -250,6 +297,8 @@ public class MedicationRequestQueryService {
         ctx.setQuantity(request.getQuantity());
         ctx.setUnitCode(request.getUnitCode());
         ctx.setMethodCode(request.getMethodCode());
+        // 门诊皮试单批 FIFO（BR-ORD-034）依赖此标志；住院签发路径不消费
+        ctx.setSkinTestFlag(request.getSkinTestFlag());
         return ctx;
     }
 
@@ -1216,8 +1265,12 @@ public class MedicationRequestQueryService {
      * 跨聚合筛选项须由应用层预写 {@link OutpatientSignedPrescriptionDrugLinePageQuery} 的 {@code resolved*} 字段；
      * 含输液 YES/NO 在同聚合内按注射目录主键解析处方号后再展开整方行（B.6.4，不跨根 EXISTS）。</p>
      *
+     * <p>分页口径：{@code pageSize}/{@code totalElements} 按<strong>明细行条数</strong>；
+     * 页脚总处方量另由 {@link #countOutpatientSignedPrescriptionSummary} 对 {@code prescription_no} 做 COUNT DISTINCT（一号一方），
+     * 与分页条数分口径，禁止把 totalElements 当作处方量。</p>
+     *
      * @param query 分页与预解析筛选；{@code null} 时按空条件分页（仍要求已签发）
-     * @return 列表读模型页；无匹配时为空页
+     * @return 列表读模型页；无匹配时为空页；{@code totalElements} = 明细行条数
      */
     public Page<MedicationRequestListQueryModel> pageOutpatientSignedPrescriptionDrugLines(
         OutpatientSignedPrescriptionDrugLinePageQuery query) {
@@ -1234,10 +1287,11 @@ public class MedicationRequestQueryService {
             Sort.Order.asc(FieldNameConstants.PRESCRIPTION_NO),
             Sort.Order.asc(FieldNameConstants.SORT_NUMBER),
             Sort.Order.asc(FieldNameConstants.ID));
+        // 按明细行条数分页（页脚处方量另走 COUNT DISTINCT，不与本 total 混用）
         PageRequest pageable = PageRequest.of(pageNo, pageSize, sort);
         Specification<MedicationRequest> specification =
             this.buildOutpatientSignedPrescriptionDrugLineSpecification(effectiveQuery);
-        Page<MedicationRequest> page = medicationRequestRepository.findAll(specification, pageable);
+        Page<MedicationRequest> page = this.medicationRequestRepository.findAll(specification, pageable);
         List<MedicationRequestListQueryModel> models = new ArrayList<>();
         // Loop：页内实体转列表读模型，供应用层再装配收费/发药/目录展示
         for (MedicationRequest row : page.getContent()) {
@@ -1267,42 +1321,45 @@ public class MedicationRequestQueryService {
             this.buildOutpatientSignedPrescriptionDrugLineSpecification(effectiveQuery);
         OutpatientSignedPrescriptionSummaryCountQueryModel model =
             new OutpatientSignedPrescriptionSummaryCountQueryModel();
-        // Asm：处方号去重 → 总处方量
-        long prescriptionCount =
-            this.countDistinctMedicationRequestField(specification, FieldNameConstants.PRESCRIPTION_NO);
-        // Asm：就诊主键去重 → 就诊人数
-        long visitPatientCount =
-            this.countDistinctMedicationRequestField(specification, FieldNameConstants.ENCOUNTER_ID);
-        model.setPrescriptionCount(toBoundedIntCount(prescriptionCount));
-        model.setVisitPatientCount(toBoundedIntCount(visitPatientCount));
+        // Asm：一次 Criteria 双 COUNT DISTINCT，避免同规约跑两趟
+        long[] distinctCounts = this.countDistinctPrescriptionNoAndEncounterId(specification);
+        model.setPrescriptionCount(toBoundedIntCount(distinctCounts[0]));
+        model.setVisitPatientCount(toBoundedIntCount(distinctCounts[1]));
         return model;
     }
 
     /**
-     * 读侧 Criteria 按指定字段去重计数。
+     * 读侧一次查询：处方号去重 + 就诊主键去重。
      *
      * @param specification JPA 规约
-     * @param fieldName     实体属性名（FieldNameConstants）
-     * @return 不重复数量
+     * @return {@code [prescriptionCount, visitPatientCount]}
      */
-    private long countDistinctMedicationRequestField(
-        Specification<MedicationRequest> specification,
-        String fieldName) {
+    private long[] countDistinctPrescriptionNoAndEncounterId(
+        Specification<MedicationRequest> specification) {
         CriteriaBuilder cb = this.entityManager.getCriteriaBuilder();
-        CriteriaQuery<Long> cq = cb.createQuery(Long.class);
+        CriteriaQuery<Object[]> cq = cb.createQuery(Object[].class);
         Root<MedicationRequest> root = cq.from(MedicationRequest.class);
-        cq.select(cb.countDistinct(root.get(fieldName)));
+        cq.multiselect(
+            cb.countDistinct(root.get(FieldNameConstants.PRESCRIPTION_NO)),
+            cb.countDistinct(root.get(FieldNameConstants.ENCOUNTER_ID)));
         if (specification != null) {
             Predicate predicate = specification.toPredicate(root, cq, cb);
             if (predicate != null) {
                 cq.where(predicate);
             }
         }
-        Long totalRow = this.entityManager.createQuery(cq).getSingleResult();
-        if (totalRow == null) {
-            return 0L;
+        Object[] row = this.entityManager.createQuery(cq).getSingleResult();
+        long prescriptionCount = 0L;
+        long visitPatientCount = 0L;
+        if (row != null && row.length >= 2) {
+            if (row[0] instanceof Number prescriptionNumber) {
+                prescriptionCount = prescriptionNumber.longValue();
+            }
+            if (row[1] instanceof Number visitNumber) {
+                visitPatientCount = visitNumber.longValue();
+            }
         }
-        return totalRow.longValue();
+        return new long[] {prescriptionCount, visitPatientCount};
     }
 
     /**
@@ -1340,8 +1397,9 @@ public class MedicationRequestQueryService {
                 RequestStatus.ACTIVE.getCode(),
                 RequestStatus.COMPLETED.getCode()));
             this.applyReqOpenedTimeWindow(predicates, root, cb, query);
-            String rxTypeCode = StringUtils.trimToNull(query.getRxTypeCode());
-            // 处方类别精确匹配（术语 355）
+            String rxTypeCode = PrescriptionSplitConstants.normalizeRxTypeCode(
+                StringUtils.trimToNull(query.getRxTypeCode()));
+            // 处方类别精确匹配（术语 355；中药饮片历史码 9 已归一为 2）
             if (rxTypeCode != null) {
                 predicates.add(cb.equal(root.get(FieldNameConstants.RX_TYPE_CODE), rxTypeCode));
             }
@@ -1365,6 +1423,8 @@ public class MedicationRequestQueryService {
             this.applyResolvedIdInOrReject(
                 predicates, root, cb, FieldNameConstants.ENCOUNTER_ID, query.getResolvedEncounterIds());
             this.applyInfusionPrescriptionFilter(predicates, root, cb, query);
+            this.applyMedicationCategoryPrescriptionFilter(predicates, root, cb, query);
+            this.applyReviewPrescriptionFilter(predicates, root, cb, query);
             return cb.and(predicates.toArray(new Predicate[0]));
         };
     }
@@ -1464,8 +1524,14 @@ public class MedicationRequestQueryService {
             predicates.add(cb.equal(cb.literal(1), cb.literal(0)));
             return;
         }
-        Set<String> infusionPrescriptionNos = this.listSignedPrescriptionNosByMedicationIdsInWindow(
-            injectMedicationIds, query.getStartDate(), query.getEndDate());
+        // 优先用应用层一次预解析的方号，避免 Spec 多次 toPredicate 重复扫
+        Set<String> infusionPrescriptionNos;
+        if (query.getResolvedPrescriptionNosForInfusionFilter() != null) {
+            infusionPrescriptionNos = new HashSet<>(query.getResolvedPrescriptionNosForInfusionFilter());
+        } else {
+            infusionPrescriptionNos = this.listSignedPrescriptionNosByMedicationIdsInWindow(
+                injectMedicationIds, query.getStartDate(), query.getEndDate());
+        }
         if (OutpatientPharmacyPrescriptionQueryConstants.INFUSION_FILTER_YES.equals(infusionFilter)) {
             // 含输液：返回命中处方号下全部明细行
             if (infusionPrescriptionNos.isEmpty()) {
@@ -1488,9 +1554,224 @@ public class MedicationRequestQueryService {
     }
 
     /**
-     * 同聚合：在开立时间窗内，收集命中给定药品定义主键的已签发处方号集合。
+     * 方级药品类型筛：目录 {@code category_code}（药典 medication_category_code）预解析主键后，
+     * 同聚合收集处方号并展开整方行（口径对齐含输液 YES）。
      *
-     * <p>时间轴与主列表一致：{@code COALESCE(req_opened_time, req_authored_time)}，签发仅作空开立回落。</p>
+     * @param predicates 谓词收集器
+     * @param root       药品申请根
+     * @param cb         CriteriaBuilder
+     * @param query      分页入参（含 resolvedMedicationIdsForCategory）
+     */
+    private void applyMedicationCategoryPrescriptionFilter(
+        List<Predicate> predicates,
+        Root<MedicationRequest> root,
+        CriteriaBuilder cb,
+        OutpatientSignedPrescriptionDrugLinePageQuery query) {
+        List<Long> categoryMedicationIds = query.getResolvedMedicationIdsForCategory();
+        // null：未筛药品类型，跳过
+        if (categoryMedicationIds == null) {
+            return;
+        }
+        // 空列表：目录无命中，拒查
+        if (categoryMedicationIds.isEmpty()) {
+            predicates.add(cb.equal(cb.literal(1), cb.literal(0)));
+            return;
+        }
+        Set<String> categoryPrescriptionNos;
+        // 优先用一次预解析方号
+        if (query.getResolvedPrescriptionNosForCategoryFilter() != null) {
+            categoryPrescriptionNos = new HashSet<>(query.getResolvedPrescriptionNosForCategoryFilter());
+        } else {
+            categoryPrescriptionNos = this.listSignedPrescriptionNosByMedicationIdsInWindow(
+                categoryMedicationIds, query.getStartDate(), query.getEndDate());
+        }
+        // 开立窗内无该类型药品方：拒查
+        if (categoryPrescriptionNos.isEmpty()) {
+            predicates.add(cb.equal(cb.literal(1), cb.literal(0)));
+            return;
+        }
+        predicates.add(root.get(FieldNameConstants.PRESCRIPTION_NO).in(categoryPrescriptionNos));
+    }
+
+    /**
+     * 方级点评态筛：应用层预写有效点评处方号 + INCLUDE/EXCLUDE 模式（B.6.4，禁止本聚合读点评表）。
+     *
+     * @param predicates 谓词收集器
+     * @param root       药品申请根
+     * @param cb         CriteriaBuilder
+     * @param query      分页入参
+     */
+    private void applyReviewPrescriptionFilter(
+        List<Predicate> predicates,
+        Root<MedicationRequest> root,
+        CriteriaBuilder cb,
+        OutpatientSignedPrescriptionDrugLinePageQuery query) {
+        String mode = StringUtils.trimToNull(query.getReviewPrescriptionFilterMode());
+        // 模式空：不按点评收窄
+        if (mode == null) {
+            return;
+        }
+        List<String> reviewPrescriptionNos = query.getResolvedPrescriptionNosForReview();
+        // 已点评 / 按是否合理：方号须 IN；空集合拒查
+        if (OutpatientPharmacyPrescriptionQueryConstants.REVIEW_PRESCRIPTION_FILTER_INCLUDE.equals(mode)) {
+            if (reviewPrescriptionNos == null || reviewPrescriptionNos.isEmpty()) {
+                predicates.add(cb.equal(cb.literal(1), cb.literal(0)));
+                return;
+            }
+            predicates.add(root.get(FieldNameConstants.PRESCRIPTION_NO).in(reviewPrescriptionNos));
+            return;
+        }
+        // 待点评：排除有效点评方；无有效点评时无需 NOT IN
+        if (OutpatientPharmacyPrescriptionQueryConstants.REVIEW_PRESCRIPTION_FILTER_EXCLUDE.equals(mode)) {
+            if (reviewPrescriptionNos == null || reviewPrescriptionNos.isEmpty()) {
+                return;
+            }
+            predicates.add(cb.not(root.get(FieldNameConstants.PRESCRIPTION_NO).in(reviewPrescriptionNos)));
+            return;
+        }
+        // 未知模式：拒查，避免静默忽略
+        predicates.add(cb.equal(cb.literal(1), cb.literal(0)));
+    }
+
+    /**
+     * 开立窗 + AMB 就诊范围内，投影已签发药品申请主键（仅 id，供窗口化 Pre）。
+     *
+     * @param startDate    开立起；可空
+     * @param endDate      开立止；可空
+     * @param encounterIds 就诊主键；null=不按就诊收窄；空列表=无命中
+     * @return 去重药品申请主键；无命中为空列表
+     */
+    public List<Long> listOutpatientSignedMedicationRequestIdsInOpenedWindow(
+        LocalDateTime startDate,
+        LocalDateTime endDate,
+        List<Long> encounterIds) {
+        // 就诊范围已判定无命中：直接空，避免无谓扫表
+        if (encounterIds != null && encounterIds.isEmpty()) {
+            return List.of();
+        }
+        CriteriaBuilder cb = this.entityManager.getCriteriaBuilder();
+        CriteriaQuery<Long> cq = cb.createQuery(Long.class);
+        Root<MedicationRequest> root = cq.from(MedicationRequest.class);
+        cq.select(root.get(FieldNameConstants.ID));
+        cq.distinct(true);
+        List<Predicate> predicates = new ArrayList<>();
+        predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+        predicates.add(cb.isNotNull(root.get(FieldNameConstants.PRESCRIPTION_NO)));
+        predicates.add(cb.notEqual(root.get(FieldNameConstants.PRESCRIPTION_NO), ""));
+        predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(
+            RequestStatus.ACTIVE.getCode(),
+            RequestStatus.COMPLETED.getCode()));
+        jakarta.persistence.criteria.Expression<LocalDateTime> openedAxis = cb.coalesce(
+            root.get(FieldNameConstants.REQ_OPENED_TIME),
+            root.get(FieldNameConstants.REQ_AUTHORED_TIME));
+        if (startDate != null || endDate != null) {
+            predicates.add(cb.isNotNull(openedAxis));
+        }
+        if (startDate != null) {
+            predicates.add(cb.greaterThanOrEqualTo(openedAxis, startDate));
+        }
+        if (endDate != null) {
+            predicates.add(cb.lessThanOrEqualTo(openedAxis, endDate));
+        }
+        if (encounterIds != null) {
+            predicates.add(this.buildChunkedInPredicate(cb, root.get(FieldNameConstants.ENCOUNTER_ID), encounterIds));
+        }
+        cq.where(predicates.toArray(new Predicate[0]));
+        List<Long> ids = this.entityManager.createQuery(cq).getResultList();
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        return IdInQueryChunkSupport.distinctNonNullIds(ids);
+    }
+
+    /**
+     * 按药品申请主键投影去重处方号（分批 IN）。
+     *
+     * @param medicationRequestIds 药品申请主键
+     * @return 去重处方号；空入参为空列表
+     */
+    public List<String> listDistinctPrescriptionNosByMedicationRequestIds(
+        Collection<Long> medicationRequestIds) {
+        List<Long> idList = IdInQueryChunkSupport.distinctNonNullIds(medicationRequestIds);
+        if (idList.isEmpty()) {
+            return List.of();
+        }
+        LinkedHashSet<String> prescriptionNos = new LinkedHashSet<>();
+        int chunkSize = GeneralSharedConstants.ID_IN_QUERY_CHUNK_SIZE;
+        for (int fromIndex = 0; fromIndex < idList.size(); fromIndex += chunkSize) {
+            int toIndex = Math.min(fromIndex + chunkSize, idList.size());
+            List<Long> chunk = idList.subList(fromIndex, toIndex);
+            CriteriaBuilder cb = this.entityManager.getCriteriaBuilder();
+            CriteriaQuery<String> cq = cb.createQuery(String.class);
+            Root<MedicationRequest> root = cq.from(MedicationRequest.class);
+            cq.select(root.get(FieldNameConstants.PRESCRIPTION_NO));
+            cq.distinct(true);
+            cq.where(
+                cb.isFalse(root.get(FieldNameConstants.IS_DELETED)),
+                cb.isNotNull(root.get(FieldNameConstants.PRESCRIPTION_NO)),
+                cb.notEqual(root.get(FieldNameConstants.PRESCRIPTION_NO), ""),
+                root.get(FieldNameConstants.ID).in(chunk));
+            List<String> chunkNos = this.entityManager.createQuery(cq).getResultList();
+            if (chunkNos == null) {
+                continue;
+            }
+            for (String no : chunkNos) {
+                if (StringUtils.isNotEmpty(no)) {
+                    prescriptionNos.add(no.trim());
+                }
+            }
+        }
+        return new ArrayList<>(prescriptionNos);
+    }
+
+    /**
+     * 开立窗内、命中给定目录主键的已签发处方号（投影，供含输液/药品类型方级筛一次解析）。
+     *
+     * @param medicationIds 目录主键
+     * @param startDate     开立起
+     * @param endDate       开立止
+     * @return 处方号列表；无命中为空
+     */
+    public List<String> listSignedPrescriptionNosByMedicationIdsInOpenedWindow(
+        Collection<Long> medicationIds,
+        LocalDateTime startDate,
+        LocalDateTime endDate) {
+        Set<String> nos = this.listSignedPrescriptionNosByMedicationIdsInWindow(
+            medicationIds, startDate, endDate);
+        if (nos.isEmpty()) {
+            return List.of();
+        }
+        return new ArrayList<>(nos);
+    }
+
+    /**
+     * 超长 IN 拆 OR（encounter 等主键列表）。
+     *
+     * @param cb     CriteriaBuilder
+     * @param path   字段路径
+     * @param values 主键列表（调用方保证非空）
+     * @return IN 或 OR(IN…) 谓词
+     */
+    private Predicate buildChunkedInPredicate(
+        CriteriaBuilder cb,
+        jakarta.persistence.criteria.Path<Long> path,
+        List<Long> values) {
+        int chunkSize = GeneralSharedConstants.ID_IN_QUERY_CHUNK_SIZE;
+        if (values.size() <= chunkSize) {
+            return path.in(values);
+        }
+        List<Predicate> chunkPredicates = new ArrayList<>();
+        for (int fromIndex = 0; fromIndex < values.size(); fromIndex += chunkSize) {
+            int toIndex = Math.min(fromIndex + chunkSize, values.size());
+            chunkPredicates.add(path.in(values.subList(fromIndex, toIndex)));
+        }
+        return cb.or(chunkPredicates.toArray(new Predicate[0]));
+    }
+
+    /**
+     * 同聚合：在开立时间窗内，投影命中给定药品定义主键的已签发处方号集合。
+     *
+     * <p>时间轴与主列表一致：{@code COALESCE(req_opened_time, req_authored_time)}。</p>
      *
      * @param medicationIds 目录主键
      * @param startDate     开立起（可空）
@@ -1499,15 +1780,31 @@ public class MedicationRequestQueryService {
      */
     private Set<String> listSignedPrescriptionNosByMedicationIdsInWindow(
         Collection<Long> medicationIds,
-        java.time.LocalDateTime startDate,
-        java.time.LocalDateTime endDate) {
-        Specification<MedicationRequest> specification = (root, criteriaQuery, cb) -> {
+        LocalDateTime startDate,
+        LocalDateTime endDate) {
+        if (medicationIds == null || medicationIds.isEmpty()) {
+            return Collections.emptySet();
+        }
+        List<Long> idList = IdInQueryChunkSupport.distinctNonNullIds(medicationIds);
+        if (idList.isEmpty()) {
+            return Collections.emptySet();
+        }
+        Set<String> prescriptionNos = new HashSet<>();
+        int chunkSize = GeneralSharedConstants.ID_IN_QUERY_CHUNK_SIZE;
+        // 目录主键分批，投影处方号避免整实体物化
+        for (int fromIndex = 0; fromIndex < idList.size(); fromIndex += chunkSize) {
+            int toIndex = Math.min(fromIndex + chunkSize, idList.size());
+            List<Long> chunk = idList.subList(fromIndex, toIndex);
+            CriteriaBuilder cb = this.entityManager.getCriteriaBuilder();
+            CriteriaQuery<String> cq = cb.createQuery(String.class);
+            Root<MedicationRequest> root = cq.from(MedicationRequest.class);
+            cq.select(root.get(FieldNameConstants.PRESCRIPTION_NO));
+            cq.distinct(true);
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
             predicates.add(cb.isNotNull(root.get(FieldNameConstants.PRESCRIPTION_NO)));
             predicates.add(cb.notEqual(root.get(FieldNameConstants.PRESCRIPTION_NO), ""));
-            predicates.add(root.get(FieldNameConstants.MEDICATION_ID).in(medicationIds));
-            // 含输液方级筛与主分页同一开立轴，避免改开立后 YES/NO 与列表窗不一致。
+            predicates.add(root.get(FieldNameConstants.MEDICATION_ID).in(chunk));
             jakarta.persistence.criteria.Expression<LocalDateTime> openedAxis = cb.coalesce(
                 root.get(FieldNameConstants.REQ_OPENED_TIME),
                 root.get(FieldNameConstants.REQ_AUTHORED_TIME));
@@ -1520,22 +1817,19 @@ public class MedicationRequestQueryService {
             if (endDate != null) {
                 predicates.add(cb.lessThanOrEqualTo(openedAxis, endDate));
             }
-            return cb.and(predicates.toArray(new Predicate[0]));
-        };
-        List<MedicationRequest> rows = medicationRequestRepository.findAll(specification);
-        Set<String> prescriptionNos = new HashSet<>();
-        // Loop：从注射目录命中的已签发行收集处方号，供方级 YES/NO 展开
-        for (MedicationRequest row : rows) {
-            if (row != null && StringUtils.isNotEmpty(row.getPrescriptionNo())) {
-                prescriptionNos.add(row.getPrescriptionNo());
+            cq.where(predicates.toArray(new Predicate[0]));
+            List<String> chunkNos = this.entityManager.createQuery(cq).getResultList();
+            if (chunkNos == null) {
+                continue;
+            }
+            for (String no : chunkNos) {
+                if (StringUtils.isNotEmpty(no)) {
+                    prescriptionNos.add(no);
+                }
             }
         }
         return prescriptionNos;
     }
-
-    /**
-     * 合并方内多行状态：ACTIVE 优先于 DRAFT，COMPLETED 优先于 ACTIVE。
-     */
     private String mergeTcmPrescriptionStatusEnum(String current, String incoming) {
         if (StringUtils.isEmpty(current)) {
             return incoming;

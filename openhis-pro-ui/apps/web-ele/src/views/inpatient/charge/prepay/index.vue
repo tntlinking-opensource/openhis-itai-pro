@@ -71,6 +71,8 @@ import {
   DEFAULT_PAY_CHANNEL_CODE,
   PAY_CHANNEL_OPTIONS,
   PREPAY_ALLOWED_ENCOUNTER_STATUSES,
+  PREPAY_STAY_SCOPE,
+  type PrepayStayScope,
 } from './inpatient-prepay.constants';
 import './inpatient-prepay-panel.css';
 
@@ -83,6 +85,7 @@ const userStore = useUserStore();
 const queueFilter = reactive({
   admissionDate: '',
   keyword: '',
+  stayScope: PREPAY_STAY_SCOPE.IN_HOSPITAL as PrepayStayScope,
 });
 
 const queuePager = reactive({
@@ -278,13 +281,14 @@ async function refreshQueueAfterBalanceChange() {
   await queryQueueData();
 }
 
-/** 根据左侧筛选条件刷新在院患者队列 */
+/** 根据左侧筛选条件刷新患者队列 */
 async function queryQueueData() {
   queueLoading.value = true;
   try {
     const result = await httpPagePrepayPatientQueue({
       keyword: queueFilter.keyword.trim() || undefined,
       admissionDate: queueFilter.admissionDate.trim() || undefined,
+      stayScope: queueFilter.stayScope,
       pageNo: queuePager.pageNo,
       pageSize: queuePager.pageSize,
     });
@@ -334,7 +338,7 @@ function handleChoosePatient(patient: BillingPatientCardPatient) {
 /** 刷新左侧患者队列 */
 async function handleRefreshQueue() {
   await queryQueueData();
-  ElMessage.success('在院患者列表已刷新');
+  ElMessage.success('患者列表已刷新');
 }
 
 /** 快捷金额用于快速写入预交金金额 */
@@ -683,7 +687,7 @@ watch(
 );
 
 watch(
-  () => [queueFilter.keyword, queueFilter.admissionDate],
+  () => [queueFilter.keyword, queueFilter.admissionDate, queueFilter.stayScope],
   () => {
     queuePager.pageNo = 1;
     queryQueueData();
@@ -719,6 +723,7 @@ onMounted(async () => {
         <InpatientQueuePanel
           v-model:keyword="queueFilter.keyword"
           v-model:date="queueFilter.admissionDate"
+          v-model:stay-scope="queueFilter.stayScope"
           :list="queueCardList"
           :selected-id="selectedEncounterId"
           :loading="queueLoading"

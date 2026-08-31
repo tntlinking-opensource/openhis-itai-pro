@@ -20,11 +20,11 @@ import java.util.Map;
 /**
  * 门诊费用明细分页读查询（DM-ADM-011 §6.2.25～6.2.26；AS-OP-FIN-005 IF-OP-FDT-02/03）。
  *
- * <p>时间窗 {@code billDateFrom/To} 映射 ChargeItem {@code entered_date}；收费人
- * {@code cashierId}/{@code entererMatchIds} 匹配账单 {@code enterer_id}。由
+ * <p>时间窗 {@code billDateFrom/To} 与收费人筛选映射 Payment {@code bill_date}/{@code enterer_id}
+ * （BR-OP-FDT-003；与日结同轴）。由
  * {@link com.openhis.health.application.outpatient.financial.feedetail.support.OutpatientFeeDetailLoader}
- * 写入合成链路与 resolved scope，<strong>禁止扫 Payment</strong>。门诊默认仅 {@code SETTLED}；
- * 住院可通过 {@link #allowedChargeItemStatusCodes} 扩展待结算。</p>
+ * 写入 payment→chargeItem 链路与 resolved scope。ChargeItem 状态白名单默认
+ * {@code SETTLED}∪{@code REFUNDING}∪{@code REFUNDED}（写路径退费会改行态；行额符号看 payment 收退上下文）。</p>
  */
 @Getter
 @Setter
@@ -78,10 +78,11 @@ public class OutpatientFeeDetailPageQuery extends AbstractPageQuery {
     private String tradeDirection;
 
     /**
-     * 允许纳入的收费状态码白名单（如 {@code SETTLED}、{@code PENDING_SETTLEMENT}）。
+     * 允许纳入的收费状态码白名单（门诊费用明细由 Loader 写入
+     * {@code SETTLED}/{@code REFUNDING}/{@code REFUNDED}；住院可含 {@code PENDING_SETTLEMENT}）。
      *
-     * <p>空或 null 时费用明细候选行默认仅 {@code SETTLED}（门诊报表口径）；住院报表由 Support
-     * 按结算状态筛写入。</p>
+     * <p>空或 null 时域层候选行回落仅 {@code SETTLED}；门诊读路径须由
+     * {@code OutpatientFeeDetailLoader} 显式写入三态，避免退费中行被静默丢弃。</p>
      */
     private List<String> allowedChargeItemStatusCodes;
 

@@ -10,7 +10,7 @@ import com.openhis.health.application.shared.advice.InpatientOrderListMergeAssem
 import com.openhis.health.application.shared.validator.CurrentManagedWardLocationIdsResolver;
 import com.openhis.health.application.shared.encounter.EncounterContextReader;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.NurseStationOrderExecutePatientGroupDto;
-import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
+import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.NurseStationOrderExecuteRowDto;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
@@ -25,6 +25,7 @@ import lombok.RequiredArgsConstructor;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -58,13 +59,12 @@ public class NurseStationOrderExecuteListLoader {
     public NurseStationOrderExecuteListResult listNurseStationOrderExecute(NurseStationOrderExecuteListQuery query) {
         try {
             assertListExecuteQueryValid(query);
-            // Gate：解析管辖病区并校验所选就诊可见（BR-IP-TRC-001）
+            // Gate：读列表在科优先；未命中按就诊主键回落（病案侧栏/出院后调阅打印）
             List<Long> managedWardIds = managedWardLocationIdsResolver.listManagedWardLocationIdsOrEmpty();
             List<Long> requestedEncounterIds = distinctEncounterIds(query.getEncounterIds());
-            InpatientEncounterPageQuery visibilityQuery =
-                nurseStationOrderExecuteListReadAssembler.toInpatientEncounterPageQuery(requestedEncounterIds, managedWardIds);
             List<InpatientEncounterContextQueryModel> visibleRows =
-                EncounterContextReader.listInpatientEncounterContexts(visibilityQuery);
+                EncounterContextReader.listNurseStationReadableEncounterContexts(
+                    requestedEncounterIds, managedWardIds);
             List<Long> visibleEncounterIds = retainRequestedVisibleEncounterIds(requestedEncounterIds, visibleRows);
             if (visibleEncounterIds.isEmpty()) {
                 throw new BusinessException(
@@ -110,7 +110,7 @@ public class NurseStationOrderExecuteListLoader {
                 inpatientNurseStationTcmOrchestrator.indexMedDetailById(medByEncounter);
             skeleton = inpatientNurseStationTcmOrchestrator.filterSkeletonByMedicineCategory(
                 skeleton, medDetailById, medicineCategoryTab);
-            // Asm：展开执行槽位并按 executeTab 收窄
+            // Asm：展开执行槽位并按 executeTab 收窄（历史模式供医生站执行记录弹窗）
             List<NurseStationOrderExecutePatientGroupDto> groups =
                 nurseStationOrderExecuteListReadAssembler.assemblePatientGroups(
                     skeleton,
@@ -119,7 +119,12 @@ public class NurseStationOrderExecuteListLoader {
                     query.getExecutionDeadline(),
                     query.getExecuteTab(),
                     encounterOrgIds,
-                    medicineCategoryTab);
+                    medicineCategoryTab,
+                    query.getPlanTimeFrom(),
+                    Boolean.TRUE.equals(query.getExecutionRecordHistory()));
+            // Asm：可选按开嘱日区间收窄行（打印中心检查/检验/采血贴）；两端皆空则原样返回
+            groups = this.filterGroupsByReqOpenedTimeRange(
+                groups, query.getReqOpenedTimeFrom(), query.getReqOpenedTimeTo());
             return nurseStationOrderExecuteListReadAssembler.toListResult(groups);
         } catch (BusinessException ex) {
             throw ex;
@@ -143,6 +148,17 @@ public class NurseStationOrderExecuteListLoader {
         if (query.getExecutionDeadline() == null) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "截止时间不能为空");
         }
+        // Gate：计划点下界不得晚于截止上界
+        LocalDateTime planFrom = query.getPlanTimeFrom();
+        if (planFrom != null && planFrom.isAfter(query.getExecutionDeadline())) {
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "计划执行日起不能晚于截止时间");
+        }
+        // Gate：开嘱日区间同时传时须 from ≤ to，避免空结果难排查
+        LocalDateTime openedFrom = query.getReqOpenedTimeFrom();
+        LocalDateTime openedTo = query.getReqOpenedTimeTo();
+        if (openedFrom != null && openedTo != null && openedFrom.isAfter(openedTo)) {
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "开嘱日起不能晚于开嘱日止");
+        }
         String tab = trimToEmpty(query.getExecuteTab());
         if (StringUtils.isEmpty(tab) || !isAllowedExecuteTab(tab)) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "执行 Tab 不合法");
@@ -155,6 +171,82 @@ public class NurseStationOrderExecuteListLoader {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "长临筛选不合法");
         }
         inpatientNurseStationTcmOrchestrator.resolveMedicineCategoryTabOrDefault(query.getMedicineCategoryTab());
+    }
+
+    /**
+     * 按开嘱日区间过滤分组内医嘱行；两端皆空则原样返回。
+     *
+     * <p>比对字段为行 {@code reqOpenedTime}（读侧已按开立/签发回落）；时刻为空的行保留，避免缺字段时误杀。</p>
+     *
+     * @param groups 已装配的患者分组
+     * @param from   开嘱日起（含）；可空
+     * @param to     开嘱日止（含）；可空
+     * @return 过滤后的分组（无行组丢弃）
+     */
+    private List<NurseStationOrderExecutePatientGroupDto> filterGroupsByReqOpenedTimeRange(
+        List<NurseStationOrderExecutePatientGroupDto> groups,
+        LocalDateTime from,
+        LocalDateTime to) {
+        if (from == null && to == null) {
+            return groups;
+        }
+        if (groups == null || groups.isEmpty()) {
+            return groups;
+        }
+        List<NurseStationOrderExecutePatientGroupDto> filtered = new ArrayList<>();
+        for (NurseStationOrderExecutePatientGroupDto group : groups) {
+            if (group == null) {
+                continue;
+            }
+            List<NurseStationOrderExecuteRowDto> orders = group.getOrders();
+            if (orders == null || orders.isEmpty()) {
+                continue;
+            }
+            List<NurseStationOrderExecuteRowDto> kept = new ArrayList<>();
+            // 仅保留开嘱时刻落在 [from, to] 内的行；缺开嘱时刻不拦
+            for (NurseStationOrderExecuteRowDto row : orders) {
+                if (this.isRowWithinReqOpenedTimeRange(row, from, to)) {
+                    kept.add(row);
+                }
+            }
+            if (kept.isEmpty()) {
+                continue;
+            }
+            NurseStationOrderExecutePatientGroupDto next = new NurseStationOrderExecutePatientGroupDto();
+            next.setEncounterId(group.getEncounterId());
+            next.setOrders(kept);
+            filtered.add(next);
+        }
+        return filtered;
+    }
+
+    /**
+     * 判断医嘱行开嘱时刻是否落在可选闭区间内。
+     *
+     * @param row  医嘱执行行
+     * @param from 下界（含）；可空
+     * @param to   上界（含）；可空
+     * @return true 表示保留
+     */
+    private boolean isRowWithinReqOpenedTimeRange(
+        NurseStationOrderExecuteRowDto row,
+        LocalDateTime from,
+        LocalDateTime to) {
+        if (row == null) {
+            return false;
+        }
+        LocalDateTime opened = row.getReqOpenedTime();
+        // 缺开嘱时刻：不按区间剔除（与打印中心原前端口径一致）
+        if (opened == null) {
+            return true;
+        }
+        if (from != null && opened.isBefore(from)) {
+            return false;
+        }
+        if (to != null && opened.isAfter(to)) {
+            return false;
+        }
+        return true;
     }
 
     /**

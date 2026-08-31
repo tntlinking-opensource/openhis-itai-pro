@@ -53,6 +53,19 @@ public interface ChargeItemDefinitionRepository extends JpaRepository<ChargeItem
     List<ChargeItemDefinition> findAllByInstanceTableAndInstanceIdAndPriceTypeCodeAndLotNo(String instanceTable, Long instanceId, String priceTypeCode, String lotNo);
 
     /**
+     * 按实例表 + 实例主键 + 批号列出全部价行（含各价类/状态；调用方滤软删）。
+     *
+     * <p>规模：单实例单批号通常仅数行；供同批号异价门禁解析曾挂费定义主键。</p>
+     *
+     * @param instanceTable 实例物理表
+     * @param instanceId    实例主键
+     * @param lotNo         批号字面值
+     * @return 命中价行；无命中为空列表
+     */
+    List<ChargeItemDefinition> findAllByInstanceTableAndInstanceIdAndLotNo(
+        String instanceTable, Long instanceId, String lotNo);
+
+    /**
      * 仅按实例主键列出（历史派生路径，instanceTable 由调用方上下文保证一致时使用）。
      */
     List<ChargeItemDefinition> findAllByInstanceId(Long instanceId);

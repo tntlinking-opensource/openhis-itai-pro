@@ -7,6 +7,9 @@ import ElementPlus from 'element-plus';
 
 import App from './app.vue';
 
+// hiprint hidraggable 挂在全局 jQuery 上，须在任何 vue-plugin-hiprint 加载前就绪
+import './hiprint/core/jquery';
+
 // 全局主题样式必须在 mount 前同步加载；异步 import 会导致生产环境 CSS chunk 晚于首屏，样式爆炸
 import '@vben/styles';
 import 'element-plus/dist/index.css';
@@ -14,6 +17,7 @@ import '@vben/styles/ele';
 import './styles/layout-viewport-compact.css';
 import './styles/doctor-station-viewport-compact.css';
 import './styles/inventory-viewport-compact.css';
+import './styles/pharmacy-dispense-viewport-compact.css';
 import './styles/persistent-error-messagebox.css';
 import './styles/date-picker-shortcuts-bottom.css';
 

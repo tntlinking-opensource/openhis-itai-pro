@@ -51,4 +51,10 @@ public class LoadPhysicalExamChargeItemsResponse {
     /** 已收合计。 */
     @Schema(description = "已收合计")
     private BigDecimal settledTotalAmount;
+
+    /**
+     * 懒生成非阻断警告（如应收项目缺 SALE）；有值时前端提示，不阻断明细加载。
+     */
+    @Schema(description = "定价/挂费警告列表")
+    private List<String> pricingWarnings;
 }

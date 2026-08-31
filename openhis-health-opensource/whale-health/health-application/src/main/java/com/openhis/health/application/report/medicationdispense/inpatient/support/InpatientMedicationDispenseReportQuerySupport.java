@@ -14,6 +14,7 @@ import com.openhis.health.application.report.medicationdispense.support.Medicati
 import com.openhis.health.application.shared.advice.OrderCatalogDisplayAssembler;
 import com.openhis.health.application.shared.encounter.EncounterContextReader;
 import com.openhis.health.application.shared.option.TerminologyOptionLoader;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.application.shared.report.PatientSettlementContextRow;
 import com.openhis.health.application.shared.report.ReportPatientSettlementContextAssembler;
@@ -27,6 +28,7 @@ import com.openhis.health.domain.administration.practitioner.entity.Practitioner
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
 import com.openhis.health.domain.medication.medicationdefinition.service.MedicationDefinitionQueryService;
+import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseReportSummaryBundle;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseReportSummaryRow;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseSlipQueryModel;
 import com.openhis.health.domain.medication.medicationdispense.query.MedicationDispenseRecordPageQuery;
@@ -39,17 +41,18 @@ import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.InpatientMedicationDispenseReportConstants;
 import com.openhis.health.domain.share.constants.MedicationDispenseReportConstants;
 import com.openhis.health.domain.share.constants.PharmacyDispenseRecordConstants;
-import com.openhis.health.domain.share.constants.PharmacyDispenseRecordExportConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.health.domain.share.enums.DispenseStatus;
+import com.openhis.health.domain.share.enums.MedicationDispenseType;
 import com.openhis.health.domain.share.enums.SupplyType;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.DeptIssueReportLineQueryModel;
+import com.openhis.health.domain.workflow.supplyrequest.queries.model.DeptIssueReportSummaryBundle;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.DeptIssueReportSummaryRow;
 import com.openhis.health.domain.workflow.supplyrequest.query.DeptIssueReportPageQuery;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQueryService;
@@ -63,6 +66,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -292,11 +296,13 @@ public class InpatientMedicationDispenseReportQuerySupport {
         summaryQuery.setResolvedMedicationIdsForCategory(recordQuery.getResolvedMedicationIdsForCategory());
         summaryQuery.setResolvedMedReqIdsForOrderingDepartment(
             recordQuery.getResolvedMedReqIdsForOrderingDepartment());
-        summaryQuery.setSummaryDimension(summaryDimension);
-        // CATEGORY 维：先抽样发放行收集品规再批量读类型，避免空映射整桶落入空类型
+        // CATEGORY：领域先按 ITEM 分桶；应用层用同窗 slip 全量品规解析类型后再重分桶，
+        // 禁止 EXPORT_MAX_ROWS 抽样导致跨日类型映射漏品规
+        String domainDimension = summaryDimension;
         if (MedicationDispenseReportConstants.SUMMARY_DIMENSION_CATEGORY.equals(summaryDimension)) {
-            summaryQuery.setCategoryCodeByMedicationId(this.resolveCategoryCodeByMedicationId(recordQuery));
+            domainDimension = MedicationDispenseReportConstants.SUMMARY_DIMENSION_ITEM;
         }
+        summaryQuery.setSummaryDimension(domainDimension);
         return summaryQuery;
     }
 
@@ -392,7 +398,18 @@ public class InpatientMedicationDispenseReportQuerySupport {
      * @return 领域汇总行
      */
     public List<MedicationDispenseReportSummaryRow> summarizePatient(MedicationDispenseReportSummaryQuery query) {
-        return this.medicationDispenseQueryService.summarizeMedicationDispenseReport(query);
+        return this.summarizePatientWithSlips(query).getSummaryRows();
+    }
+
+    /**
+     * 患者侧净汇总并同次产出 slip（供汇总进售价复用，避免二次扫描）。
+     *
+     * @param query 汇总入参
+     * @return 汇总行 + 同窗 slip
+     */
+    public MedicationDispenseReportSummaryBundle summarizePatientWithSlips(
+        MedicationDispenseReportSummaryQuery query) {
+        return this.medicationDispenseQueryService.summarizeMedicationDispenseReportWithSlips(query);
     }
 
     /**
@@ -402,7 +419,17 @@ public class InpatientMedicationDispenseReportQuerySupport {
      * @return 领域汇总行
      */
     public List<DeptIssueReportSummaryRow> summarizeDept(DeptIssueReportPageQuery query) {
-        return this.supplyRequestQueryService.summarizeDeptIssueReport(query);
+        return this.summarizeDeptWithLines(query).getSummaryRows();
+    }
+
+    /**
+     * 科室侧净汇总并同次产出领用事实行（供汇总进价复用，避免二次扫描）。
+     *
+     * @param query 领用查询
+     * @return 汇总行 + 同窗明细事实
+     */
+    public DeptIssueReportSummaryBundle summarizeDeptWithLines(DeptIssueReportPageQuery query) {
+        return this.supplyRequestQueryService.summarizeDeptIssueReportWithLines(query);
     }
 
     /**
@@ -602,6 +629,10 @@ public class InpatientMedicationDispenseReportQuerySupport {
     /**
      * 汇总金额专用：患者侧仅 map 聚合字段 + ChargeItem 进售价，跳过药嘱/品名/住院上下文/settlement。
      *
+     * <p>退药行若无自身账单，须与明细路径同口径补原正向发放售价
+     *（{@link PharmacyDispenseRecordChargePricingAssembler#supplementRefundPricingFromOriginMedicationRequests}），
+     * 再对售价总额取负；禁止只回落批号进价导致汇总进价净额被冲、售价净额不冲。</p>
+     *
      * @param slipRows 发放事实
      * @return 仅含定价与分桶键字段的明细行
      */
@@ -610,12 +641,20 @@ public class InpatientMedicationDispenseReportQuerySupport {
         if (slipRows == null || slipRows.isEmpty()) {
             return List.of();
         }
-        // Pre：跨就诊一次批量拉 ChargeItem（含待结算），售价/进价同批复用
+        // Pre：跨就诊一次批量拉 ChargeItem（含待结算；售价/进价同批复用，禁止按就诊 N+1 与二次打库）
         List<ChargeItem> chargeRows = this.loadChargeItemsForDispensePricing(slipRows, true);
         Map<Long, BigDecimal> chargeUnitPriceByDispenseId = new HashMap<>();
         Map<Long, BigDecimal> chargeTotalPriceByDispenseId = new HashMap<>();
         this.mergeChargePricingFromChargeItems(
             chargeRows, chargeUnitPriceByDispenseId, chargeTotalPriceByDispenseId);
+        // Pre：仅退药行需药嘱索引做原正向补价；正向行不进索引，避免全窗药嘱 IN
+        Map<Long, MedicationRequestListQueryModel> medicationRequestByMedReqId =
+            this.indexMedicationRequestsForRefundSupplement(slipRows);
+        this.pharmacyDispenseRecordChargePricingAssembler.supplementRefundPricingFromOriginMedicationRequests(
+            slipRows,
+            medicationRequestByMedReqId,
+            chargeUnitPriceByDispenseId,
+            chargeTotalPriceByDispenseId);
         List<InpatientMedicationDispenseDetailRowDto> rows = new ArrayList<>(slipRows.size());
         for (MedicationDispenseSlipQueryModel slip : slipRows) {
             if (slip == null) {
@@ -635,25 +674,108 @@ public class InpatientMedicationDispenseReportQuerySupport {
             if (quantity == null) {
                 quantity = BigDecimal.ZERO;
             }
+            boolean refundRow = this.isRefundSlipRow(slip);
             // 已退药冲减：数量取负（与明细展示口径对齐，供进价汇总）
-            if (DispenseStatus.REFUNDED.equals(slip.getStatusEnum()) && quantity.signum() > 0) {
+            if (refundRow && quantity.signum() > 0) {
                 quantity = quantity.negate();
             }
             row.setQuantity(quantity);
             if (slip.getDispenseId() != null) {
                 row.setUnitPrice(chargeUnitPriceByDispenseId.get(slip.getDispenseId()));
-                row.setTotalAmount(chargeTotalPriceByDispenseId.get(slip.getDispenseId()));
+                BigDecimal totalAmount = chargeTotalPriceByDispenseId.get(slip.getDispenseId());
+                // 退药售价总额与明细 ReadAssembler 同号：补价结果为正，汇总须取负
+                if (totalAmount != null && refundRow) {
+                    row.setTotalAmount(totalAmount.negate());
+                } else {
+                    row.setTotalAmount(totalAmount);
+                }
             }
             rows.add(row);
         }
-        // Asm：进价/售价别名写回；住院账单缺失（含正向）回落批号价，与日结轧差对齐
+        // Asm：进价/售价别名写回；批号回落仅针对账单仍缺价行（品规按需加载，禁止全窗预热）
         this.medicationDispenseReportPricingEnricher.enrichPatientDetailPurchaseSaleFromChargeItems(
             rows,
             chargeRows,
             slipRows,
-            this.loadProductByMedicationId(slipRows),
+            null,
             true);
         return rows;
+    }
+
+    /**
+     * 按发放行批量索引药嘱（供退药补价解析原 {@code med_req_id}）。
+     *
+     * @param slipRows 发放事实
+     * @return medReqId → 药嘱读模型；无药嘱时为空 Map
+     */
+    private Map<Long, MedicationRequestListQueryModel> indexMedicationRequestsBySlipRows(
+        List<MedicationDispenseSlipQueryModel> slipRows) {
+        LinkedHashSet<Long> medReqIds = new LinkedHashSet<>();
+        for (MedicationDispenseSlipQueryModel slip : slipRows) {
+            if (slip != null && slip.getMedReqId() != null) {
+                medReqIds.add(slip.getMedReqId());
+            }
+        }
+        return this.loadMedicationRequestIndexByIds(medReqIds);
+    }
+
+    /**
+     * 汇总定价专用：仅索引退药行药嘱（正向行不参与补价索引，显著减负全窗药嘱 IN）。
+     *
+     * @param slipRows 发放事实
+     * @return 退药相关 medReqId → 药嘱读模型
+     */
+    private Map<Long, MedicationRequestListQueryModel> indexMedicationRequestsForRefundSupplement(
+        List<MedicationDispenseSlipQueryModel> slipRows) {
+        LinkedHashSet<Long> medReqIds = new LinkedHashSet<>();
+        if (slipRows == null) {
+            return Map.of();
+        }
+        for (MedicationDispenseSlipQueryModel slip : slipRows) {
+            // Gate：非退药行无需药嘱补价索引
+            if (slip == null || !this.isRefundSlipRow(slip) || slip.getMedReqId() == null) {
+                continue;
+            }
+            medReqIds.add(slip.getMedReqId());
+        }
+        return this.loadMedicationRequestIndexByIds(medReqIds);
+    }
+
+    /**
+     * 按药嘱主键批量装载读模型索引。
+     *
+     * @param medReqIds 药嘱主键
+     * @return medReqId → 药嘱
+     */
+    private Map<Long, MedicationRequestListQueryModel> loadMedicationRequestIndexByIds(
+        Collection<Long> medReqIds) {
+        Map<Long, MedicationRequestListQueryModel> medicationRequestByMedReqId = new HashMap<>();
+        if (medReqIds == null || medReqIds.isEmpty()) {
+            return medicationRequestByMedReqId;
+        }
+        for (MedicationRequestListQueryModel req
+            : this.medicationRequestQueryService.listMedicationRequestListModelsByIds(medReqIds)) {
+            if (req != null && req.getId() != null) {
+                medicationRequestByMedReqId.put(req.getId(), req);
+            }
+        }
+        return medicationRequestByMedReqId;
+    }
+
+    /**
+     * 判定发放事实是否退药行（类型 REFUND 或状态 REFUNDED）。
+     *
+     * @param slip 发放事实
+     * @return 退药为 true
+     */
+    private boolean isRefundSlipRow(MedicationDispenseSlipQueryModel slip) {
+        if (slip == null) {
+            return false;
+        }
+        if (slip.getDispenseEnum() == MedicationDispenseType.REFUND) {
+            return true;
+        }
+        return DispenseStatus.REFUNDED.equals(slip.getStatusEnum());
     }
 
     /**
@@ -809,48 +931,67 @@ public class InpatientMedicationDispenseReportQuerySupport {
     }
 
     /**
-     * 按明细行 enrich 汇总行进价/售价净额（BR-PRICE-SRC-001）。
+     * 汇总进售价：复用数量汇总同次扫描的事实行，全窗一次装配定价后累加写回。
      *
-     * @param summaryRows              已合并汇总行
-     * @param patientRecordQuery       患者侧筛选；不查患者时为 null
-     * @param deptIssueQuery           领用侧筛选；不查领用时为 null
-     * @param queryPatient             是否纳入患者侧
-     * @param queryDept                是否纳入领用侧
-     * @param summaryDimension         汇总维度
+     * <p>禁止对同一筛选窗再 {@code page*} 二次扫描；禁止囤积全窗定价明细后再一次聚合。</p>
+     *
+     * @param summaryRows                已合并汇总行
+     * @param patientSlips               患者侧同窗 slip；不查患者时为 null/空
+     * @param deptLines                  领用侧同窗事实；不查领用时为 null/空
+     * @param summaryDimension           汇总维度
      * @param categoryCodeByMedicationId CATEGORY 维品规→类型；可空
+     * @param organizationIdByPurposeLocationId 领用科室维药房→组织；可空
      */
     public void enrichSummaryPurchaseSaleAmounts(
         List<InpatientMedicationDispenseSummaryRowDto> summaryRows,
-        MedicationDispenseRecordPageQuery patientRecordQuery,
-        DeptIssueReportPageQuery deptIssueQuery,
-        boolean queryPatient,
-        boolean queryDept,
+        List<MedicationDispenseSlipQueryModel> patientSlips,
+        List<DeptIssueReportLineQueryModel> deptLines,
         String summaryDimension,
-        Map<Long, String> categoryCodeByMedicationId) {
+        Map<Long, String> categoryCodeByMedicationId,
+        Map<Long, Long> organizationIdByPurposeLocationId) {
+        // 无汇总行：无需回刷进售价
         if (summaryRows == null || summaryRows.isEmpty()) {
             return;
         }
-        List<InpatientMedicationDispenseDetailRowDto> detailRows = new ArrayList<>();
-        if (queryPatient && patientRecordQuery != null) {
-            List<MedicationDispenseSlipQueryModel> slips =
-                this.listPatientSlips(patientRecordQuery);
-            // Pre：汇总定价仅装最小字段 + ChargeItem 进售价，跳过展示 enrich
-            detailRows.addAll(this.assemblePatientDetailRowsForSummaryPricing(slips));
-        }
-        if (queryDept && deptIssueQuery != null) {
-            List<DeptIssueReportLineQueryModel> deptLines = this.listDeptLines(deptIssueQuery);
-            detailRows.addAll(this.assembleDeptDetailRowsForSummaryPricing(deptLines));
-        }
         Map<Long, Long> orgByLocation = new HashMap<>();
-        if (deptIssueQuery != null && deptIssueQuery.getOrganizationIdByPurposeLocationId() != null) {
-            orgByLocation.putAll(deptIssueQuery.getOrganizationIdByPurposeLocationId());
+        if (organizationIdByPurposeLocationId != null) {
+            orgByLocation.putAll(organizationIdByPurposeLocationId);
         }
-        this.medicationDispenseReportPricingEnricher.aggregateSummaryPurchaseSaleAmounts(
-            summaryRows,
-            detailRows,
-            summaryDimension,
-            categoryCodeByMedicationId,
-            orgByLocation);
+        MedicationDispenseReportPricingEnricher.SummaryAmountBuckets buckets =
+            new MedicationDispenseReportPricingEnricher.SummaryAmountBuckets();
+        // Pre：患者侧 ChargeItem 一次 IN + 直累加金额桶（禁止物化全窗定价明细 DTO）
+        if (patientSlips != null && !patientSlips.isEmpty()) {
+            List<ChargeItem> chargeRows =
+                this.loadChargeItemsForDispensePricing(patientSlips, true);
+            Map<Long, BigDecimal> chargeUnitPriceByDispenseId = new HashMap<>();
+            Map<Long, BigDecimal> chargeTotalPriceByDispenseId = new HashMap<>();
+            this.mergeChargePricingFromChargeItems(
+                chargeRows, chargeUnitPriceByDispenseId, chargeTotalPriceByDispenseId);
+            Map<Long, MedicationRequestListQueryModel> medicationRequestByMedReqId =
+                this.indexMedicationRequestsForRefundSupplement(patientSlips);
+            this.pharmacyDispenseRecordChargePricingAssembler.supplementRefundPricingFromOriginMedicationRequests(
+                patientSlips,
+                medicationRequestByMedReqId,
+                chargeUnitPriceByDispenseId,
+                chargeTotalPriceByDispenseId);
+            this.medicationDispenseReportPricingEnricher.accumulatePatientSlipsIntoSummaryBuckets(
+                buckets,
+                patientSlips,
+                chargeRows,
+                summaryDimension,
+                categoryCodeByMedicationId,
+                orgByLocation,
+                chargeUnitPriceByDispenseId,
+                chargeTotalPriceByDispenseId,
+                true);
+        }
+        // Pre：领用侧直累加进价（批量品规，禁止逐行打库）
+        if (deptLines != null && !deptLines.isEmpty()) {
+            this.medicationDispenseReportPricingEnricher.accumulateDeptLinesIntoSummaryBuckets(
+                buckets, deptLines, summaryDimension, orgByLocation);
+        }
+        // Asm：一次写回各 dimensionKey 进/售净额
+        this.medicationDispenseReportPricingEnricher.applySummaryAmountBuckets(summaryRows, buckets);
     }
 
     /**
@@ -899,51 +1040,91 @@ public class InpatientMedicationDispenseReportQuerySupport {
     }
 
     /**
-     * CATEGORY 维：解析品规→类型映射。
+     * 由同窗 slip 收集品规主键并批量解析类型码（CATEGORY 重分桶用；全窗去重，禁止抽样截断）。
      *
-     * <p>优先复用记录筛选已预解析的 medicationId（空列表表示筛无命中，禁止再全窗抽样）；
-     * 仅完全无预解析时才抽样发放行。</p>
-     *
-     * @param recordQuery 同筛选记录查询
-     * @return 品规→类型
+     * @param slipRows 同次汇总扫描的发放事实
+     * @return 品规→类型；无品规时为空 Map
      */
-    private Map<Long, String> resolveCategoryCodeByMedicationId(MedicationDispenseRecordPageQuery recordQuery) {
+    public Map<Long, String> resolveCategoryCodesFromSlips(List<MedicationDispenseSlipQueryModel> slipRows) {
         LinkedHashSet<Long> medicationIds = new LinkedHashSet<>();
-        List<Long> categoryResolved = recordQuery.getResolvedMedicationIdsForCategory();
-        List<Long> keywordResolved = recordQuery.getResolvedMedicationIdsForDrugKeyword();
-        // Pre：已有类型或关键字预解析则直接用，空列表=无命中不再扫发放窗
-        if (categoryResolved != null) {
-            medicationIds.addAll(categoryResolved);
-        } else if (keywordResolved != null) {
-            medicationIds.addAll(keywordResolved);
-        } else {
-            MedicationDispenseRecordPageQuery probe = new MedicationDispenseRecordPageQuery();
-            probe.setPageNo(1);
-            probe.setPageSize(PharmacyDispenseRecordExportConstants.EXPORT_MAX_ROWS);
-            probe.setStartDate(recordQuery.getStartDate());
-            probe.setEndDate(recordQuery.getEndDate());
-            probe.setRecordTypeCode(recordQuery.getRecordTypeCode());
-            probe.setOutpatientMedicationOnly(recordQuery.getOutpatientMedicationOnly());
-            probe.setInpatientMedicationOnly(recordQuery.getInpatientMedicationOnly());
-            probe.setLocationId(recordQuery.getLocationId());
-            probe.setPractitionerId(recordQuery.getPractitionerId());
-            probe.setResolvedEncounterIdsForScene(recordQuery.getResolvedEncounterIdsForScene());
-            probe.setResolvedMedicationIdsForDrugKeyword(recordQuery.getResolvedMedicationIdsForDrugKeyword());
-            probe.setResolvedEncounterIdsForPatientKeyword(recordQuery.getResolvedEncounterIdsForPatientKeyword());
-            probe.setResolvedMedicationIdsForCategory(recordQuery.getResolvedMedicationIdsForCategory());
-            List<MedicationDispenseSlipQueryModel> slips =
-                this.medicationDispenseQueryService.listMedicationDispenseRecords(probe);
-            for (MedicationDispenseSlipQueryModel slip : slips) {
+        if (slipRows != null) {
+            for (MedicationDispenseSlipQueryModel slip : slipRows) {
                 if (slip != null && slip.getMedicationId() != null) {
                     medicationIds.add(slip.getMedicationId());
                 }
             }
         }
+        return this.resolveCategoryCodeByMedicationIds(medicationIds);
+    }
+
+    /**
+     * ITEM 净汇总行重分桶为 CATEGORY（同耗材报表 ITEM→CATEGORY 口径）。
+     *
+     * @param itemRows                   ITEM 维领域汇总行
+     * @param categoryCodeByMedicationId 品规→类型
+     * @return CATEGORY 维领域汇总行
+     */
+    public List<MedicationDispenseReportSummaryRow> rebucketItemSummaryRowsToCategory(
+        List<MedicationDispenseReportSummaryRow> itemRows,
+        Map<Long, String> categoryCodeByMedicationId) {
+        Map<String, MedicationDispenseReportSummaryRow> bucket = new LinkedHashMap<>();
+        if (itemRows == null || itemRows.isEmpty()) {
+            return new ArrayList<>();
+        }
+        Map<Long, String> categoryMap = categoryCodeByMedicationId;
+        if (categoryMap == null) {
+            categoryMap = Map.of();
+        }
+        for (MedicationDispenseReportSummaryRow itemRow : itemRows) {
+            if (itemRow == null) {
+                continue;
+            }
+            String categoryCode = "";
+            if (itemRow.getMedicationId() != null) {
+                String mapped = categoryMap.get(itemRow.getMedicationId());
+                if (mapped != null) {
+                    categoryCode = mapped;
+                }
+            }
+            String key = "CATEGORY:" + categoryCode;
+            MedicationDispenseReportSummaryRow existing = bucket.get(key);
+            if (existing == null) {
+                MedicationDispenseReportSummaryRow categoryRow = new MedicationDispenseReportSummaryRow();
+                categoryRow.setDimensionKey(key);
+                categoryRow.setSummaryDimension(
+                    MedicationDispenseReportConstants.SUMMARY_DIMENSION_CATEGORY);
+                categoryRow.setCategoryCode(categoryCode);
+                categoryRow.setNetQuantity(BigDecimal.ZERO);
+                categoryRow.setLineCount(0L);
+                if (itemRow.getNetQuantity() != null) {
+                    categoryRow.setNetQuantity(itemRow.getNetQuantity());
+                }
+                if (itemRow.getLineCount() > 0L) {
+                    categoryRow.setLineCount(itemRow.getLineCount());
+                }
+                bucket.put(key, categoryRow);
+                continue;
+            }
+            if (itemRow.getNetQuantity() != null) {
+                existing.setNetQuantity(existing.getNetQuantity().add(itemRow.getNetQuantity()));
+            }
+            existing.setLineCount(existing.getLineCount() + itemRow.getLineCount());
+        }
+        return new ArrayList<>(bucket.values());
+    }
+
+    /**
+     * 批量解析品规→类型码。
+     *
+     * @param medicationIds 品规主键集合
+     * @return 品规→类型
+     */
+    private Map<Long, String> resolveCategoryCodeByMedicationIds(Collection<Long> medicationIds) {
         Map<Long, String> categoryById = new HashMap<>();
-        if (medicationIds.isEmpty()) {
+        if (medicationIds == null || medicationIds.isEmpty()) {
             return categoryById;
         }
-        // 批量读定义表 category_code；缺失映射落入空类型桶由领域处理
+        // 批量读定义表 category_code；缺失映射落入空类型桶
         for (MedicationDefinition definition : this.medicationDefinitionQueryService.findAllByIds(medicationIds)) {
             if (definition != null && definition.getId() != null) {
                 categoryById.put(definition.getId(), definition.getCategoryCode());
@@ -990,12 +1171,17 @@ public class InpatientMedicationDispenseReportQuerySupport {
                 TerminologyCodeSystemNameConstants.MEDICATION_CATEGORY_CODE);
         }
         for (InpatientMedicationDispenseSummaryRowDto row : rows) {
-            // 品规维：展示药品通用名
+            // 品规维：展示药品通用名 + 编码 + 最小单位数量（仅 ITEM 维落字段；其它维前端不展示）
             if (MedicationDispenseReportConstants.SUMMARY_DIMENSION_ITEM.equals(dimension)) {
                 ProductDefinitionDisplayDto product = productById.get(row.getMedicationId());
+                // 有目录：回填通用名、院内编码与包装/拆零单位名
                 if (product != null) {
                     row.setDimensionName(product.getProductName());
+                    row.setMedicationCode(product.getProductBusNo());
+                    row.setPackageUnitName(this.resolvePackageUnitName(product));
+                    row.setMinUnitName(this.resolveMinUnitName(product));
                 }
+                row.setMinUnitQuantity(this.resolveMinUnitQuantity(row.getNetQuantity(), product));
             } else if (MedicationDispenseReportConstants.SUMMARY_DIMENSION_CATEGORY.equals(dimension)) {
                 String categoryCode = row.getCategoryCode();
                 String categoryLabel =
@@ -1015,6 +1201,63 @@ public class InpatientMedicationDispenseReportQuerySupport {
                 row.setDimensionName(locationNameById.get(row.getLocationId()));
             }
         }
+    }
+
+    /**
+     * 品规维最小单位数量：净数量 × 包装相对拆零倍数；无有效倍数时回落净数量。
+     *
+     * @param netQuantity 汇总净数量（操作/包装口径）
+     * @param product     品规读模型，可 null
+     * @return 最小单位数量；净数量为空时 null
+     */
+    private BigDecimal resolveMinUnitQuantity(
+        BigDecimal netQuantity,
+        ProductDefinitionDisplayDto product) {
+        // 无净数量则不填最小数量列
+        if (netQuantity == null) {
+            return null;
+        }
+        // 无品规：无法乘倍数，回落净数量
+        if (product == null) {
+            return netQuantity;
+        }
+        BigDecimal packageRatio = product.getPackageUnitRatio();
+        // 倍数缺失或非正：视为已是最小单位口径
+        if (packageRatio == null || packageRatio.compareTo(BigDecimal.ZERO) <= 0) {
+            return netQuantity;
+        }
+        // 倍数为 1（如克/克）：包装量即最小量
+        if (packageRatio.compareTo(BigDecimal.ONE) == 0) {
+            return netQuantity;
+        }
+        // 净数量按包装口径 × 包装倍数 → 拆零最小量
+        return netQuantity.multiply(packageRatio);
+    }
+
+    /**
+     * 包装单位展示名：字典文案优先，否则按包装单位码从目录解析。
+     *
+     * @param product 品规读模型，非 null
+     * @return 如「盒」「克」；无法解析时 null
+     */
+    private String resolvePackageUnitName(ProductDefinitionDisplayDto product) {
+        return StringUtils.firstNonBlank(
+            product.getPackageUnitCodeDictText(),
+            ProductDefinitionCatalogUnitBandsAssembler.resolveUnitDisplayName(
+                null, product.getPackageUnitCode(), product));
+    }
+
+    /**
+     * 最小（拆零）单位展示名：字典文案优先，否则按拆零单位码从目录解析。
+     *
+     * @param product 品规读模型，非 null
+     * @return 如「片」「克」；无法解析时 null
+     */
+    private String resolveMinUnitName(ProductDefinitionDisplayDto product) {
+        return StringUtils.firstNonBlank(
+            product.getSplitUnitCodeDictText(),
+            ProductDefinitionCatalogUnitBandsAssembler.resolveUnitDisplayName(
+                null, product.getSplitUnitCode(), product));
     }
 
     private InpatientMedicationDispenseDetailRowDto toPatientDetailRow(PharmacyDispenseRecordQueryRowDto source) {
@@ -1107,14 +1350,19 @@ public class InpatientMedicationDispenseReportQuerySupport {
 
     private Map<Long, ProductDefinitionDisplayDto> loadProductByMedicationId(
         List<MedicationDispenseSlipQueryModel> slipRows) {
-        List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
-        for (MedicationDispenseSlipQueryModel slip : slipRows) {
-            if (slip == null || slip.getMedicationId() == null) {
-                continue;
+        LinkedHashSet<Long> medicationIds = new LinkedHashSet<>();
+        if (slipRows != null) {
+            for (MedicationDispenseSlipQueryModel slip : slipRows) {
+                if (slip != null && slip.getMedicationId() != null) {
+                    medicationIds.add(slip.getMedicationId());
+                }
             }
+        }
+        List<ProductDefinitionBatchLookup> lookups = new ArrayList<>(medicationIds.size());
+        for (Long medicationId : medicationIds) {
             ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
             lookup.setProductTableName(TableNameConstants.MED_MEDICATION_DEFINITION);
-            lookup.setProductDefinitionId(slip.getMedicationId());
+            lookup.setProductDefinitionId(medicationId);
             lookups.add(lookup);
         }
         return this.indexProductByDefinitionId(lookups);

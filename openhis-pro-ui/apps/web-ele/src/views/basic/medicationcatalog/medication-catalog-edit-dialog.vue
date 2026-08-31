@@ -1,4 +1,4 @@
-﻿<script lang="ts" setup>
+<script lang="ts" setup>
 import type { MedicationCatalogInitResponse, MedicationCatalogItem } from '#/api';
 
 import type { NationalCatalogItem } from '#/chs/api';
@@ -23,6 +23,12 @@ import { uploadMedicationCatalog3301Api, revokeMedicationCatalog3302Api } from '
 import MedicationCatalogPickerDialog from '#/chs/components/medication-catalog-picker-dialog.vue';
 import { catalogChrgitmLvToFormValue } from '#/chs/constants/catalog-chrgitm-lv';
 import {
+  formatCatalogListType,
+  resolveFinTypeCodeByListType,
+  resolveFinTypeLabelsByListType,
+  resolveMedicationCategoryCodeByListType,
+} from '#/chs/constants/catalog-list-type';
+import {
   filterInsuranceChargeTypes,
   resolveDefaultInsuranceBusNo,
 } from '#/chs/constants/insurance-contract';
@@ -40,7 +46,12 @@ import {
   resolveCatalogRecordNavState,
   type CatalogRecordNavDirection,
 } from '#/views/basic/catalog/catalog-record-nav';
-import { resolveMedicationCatalogPriceDisplayDp } from '#/utils/format/money-scale';
+import {
+  HERBAL_MEDICATION_CATEGORY_CODE,
+  resolveMedicationCatalogPurchasePriceDisplayDp,
+} from '#/utils/format/money-scale';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import { matchSelectOptionKeyword } from '#/utils/select-option-keyword';
 
 interface Props {
   modelValue: boolean;
@@ -90,18 +101,21 @@ const editabilityMessage = ref('');
 
 const catalogStructureLocked = computed(() => isCatalogStructureLocked(editabilityCode.value));
 
-/** 进售价 InputNumber 小数位：中草药 3，其余 2（随药品分类联动） */
-const catalogPriceInputDp = computed(() =>
-  resolveMedicationCatalogPriceDisplayDp(formData.value?.categoryCode),
+/** 采购参考价 InputNumber 小数位：中草药 3，其余 2（随药品分类联动）；售价固定 2 */
+const catalogPurchasePriceInputDp = computed(() =>
+  resolveMedicationCatalogPurchasePriceDisplayDp(formData.value?.categoryCode),
 );
 
 interface OptionItem {
-  label?: string;
-  value: number | string;
-  info?: string;
-  text?: string;
-  name?: string;
+  busNo?: string;
   children?: OptionItem[];
+  info?: string;
+  label?: string;
+  name?: string;
+  pyStr?: string;
+  text?: string;
+  value: number | string;
+  wbStr?: string;
 }
 
 const convertOptions = (
@@ -121,6 +135,28 @@ const convertOptions = (
   }));
 };
 
+/** 厂家等可拼音过滤选项：保留 pyStr/wbStr/busNo */
+const convertSearchableOptions = (
+  options: null | OptionItem[] | undefined,
+): Array<{
+  busNo?: string;
+  label: string;
+  pyStr?: string;
+  value: string;
+  wbStr?: string;
+}> => {
+  if (!options || !Array.isArray(options)) {
+    return [];
+  }
+  return options.map((item) => ({
+    label: item.label || item.info || item.text || item.name || String(item.value),
+    value: String(item.value),
+    busNo: item.busNo || undefined,
+    pyStr: item.pyStr || undefined,
+    wbStr: item.wbStr || undefined,
+  }));
+};
+
 // 选项数据的 computed 属性
 const createOptionsComputed = (key: string) =>
   computed(() => convertOptions((initOptions.value?.[key] as OptionItem[]) || null));
@@ -128,6 +164,45 @@ const createOptionsComputed = (key: string) =>
 const statusFlagOptions = createOptionsComputed('statusFlagOptions');
 const domainFlagOptions = createOptionsComputed('domainFlagOptions');
 const medicationCategoryCodeOptions = createOptionsComputed('medicationCategoryCodeOptions');
+/** 生产厂家全量选项（含拼音五笔；filterMethod 从此裁剪） */
+const manufacturerOptionsAll = computed(() =>
+  convertSearchableOptions((initOptions.value?.manufacturerOptions as OptionItem[]) || null),
+);
+/** 生产厂家下拉当前可见项 */
+const manufacturerOptions = ref(manufacturerOptionsAll.value);
+watch(
+  manufacturerOptionsAll,
+  (list) => {
+    manufacturerOptions.value = list;
+  },
+  { immediate: true },
+);
+
+/**
+ * 厂家下拉：按名称 / 编号 / 拼音 / 五笔过滤。
+ *
+ * @param query 输入框关键字
+ */
+function filterManufacturerOptions(query: string) {
+  const all = manufacturerOptionsAll.value;
+  if (!String(query ?? '').trim()) {
+    manufacturerOptions.value = all;
+    return;
+  }
+  manufacturerOptions.value = all.filter((item) => matchSelectOptionKeyword(item, query));
+}
+
+/**
+ * 下拉收起时恢复全量，避免下次打开仍是上次过滤结果。
+ *
+ * @param visible 是否展开
+ */
+function onManufacturerSelectVisibleChange(visible: boolean) {
+  if (!visible) {
+    manufacturerOptions.value = manufacturerOptionsAll.value;
+  }
+}
+
 const unitCodeOptions = createOptionsComputed('unitCodeOptions');
 const doseUnitCodeOptions = createOptionsComputed('doseUnitCodeOptions');
 const dddUnitCodeOptions = createOptionsComputed('dddUnitCodeOptions');
@@ -393,6 +468,8 @@ function handleDialogClosed() {
 /** 业务信息内联复选组（不含临床段的皮试/注射） */
 const CHECKBOX_INLINE_GROUP_FIELDS = [
   'basicFlag',
+  'nationalMonitorFlag',
+  'centralPurchaseFlag',
   'childrenFlag',
   'selfFlag',
   'activeFlag',
@@ -462,6 +539,7 @@ function normalizeFormSelectValues(data: Record<string, unknown>) {
     'chrgitmLv',
     'mrSettlementTypeCode',
     'categoryCode',
+    'manufacturerId',
     'purchaseUnitCode',
     'splitUnitCode',
     'packageUnitCode',
@@ -546,8 +624,9 @@ async function applyDetailFormValues(raw: Record<string, unknown>) {
       await formApi.setFieldValue(field, v);
     }
   }
-  // 单位下拉依赖 options；options 就绪后再写一次，避免只回显 code
+  // 单位/厂家下拉依赖 options；options 就绪后再写一次，避免只回显 code
   for (const field of [
+    'manufacturerId',
     'doseUnitCode',
     'purchaseUnitCode',
     'splitUnitCode',
@@ -616,14 +695,23 @@ async function loadDetailData() {
 
 const pickerContext = computed(() => {
   const values = (formApi?.getValues?.() ?? formData.value) as Record<string, unknown>;
+  const categoryCode = String(values.categoryCode ?? formData.value?.categoryCode ?? '').trim();
+  // 中草药 → 中药饮片(102)；其余默认西药/中成药(101)
+  const listType = categoryCode === HERBAL_MEDICATION_CATEGORY_CODE ? '102' : '101';
   return {
     name: String(values.name ?? ''),
     approvalNumber: String(values.approvalNumber ?? ''),
     nationalDrugCode: String(values.nationalDrugCode ?? ''),
     totalVolume: String(values.totalVolume ?? ''),
-    listType: '101',
+    listType,
   };
 });
+
+/** 3301/3302 上传用 list_type：随药品分类切换 */
+function resolveMedicationYbListType(): string {
+  const categoryCode = String(formData.value?.categoryCode ?? '').trim();
+  return categoryCode === HERBAL_MEDICATION_CATEGORY_CODE ? '102' : '101';
+}
 
 const canUpload3301 = computed(
   () => props.medicationDefId !== 'new' && Boolean(String(formData.value?.ybNo ?? '').trim()),
@@ -650,19 +738,313 @@ function openCatalogPicker() {
   pickerVisible.value = true;
 }
 
-function applyCatalogSelection(row: NationalCatalogItem) {
-  formApi.setFieldValue('ybNo', row.hilistCode ?? '');
-  const lv = catalogChrgitmLvToFormValue(row.chrgitmLv);
-  if (lv !== undefined) {
-    formApi.setFieldValue('chrgitmLv', lv);
+/** 解析目录限价上限为表单数字 */
+function parseCatalogPriceUplmt(value: string | undefined | null): number | undefined {
+  if (value === null || value === undefined || value === '') {
+    return undefined;
   }
-  formApi.setFieldValue('ybMatchFlag', false);
-  formData.value = {
-    ...formData.value,
-    ybNo: row.hilistCode,
-    chrgitmLv: lv as MedicationCatalogItem['chrgitmLv'],
+  const num = Number(String(value).trim());
+  return Number.isFinite(num) && num >= 0 ? num : undefined;
+}
+
+type LabeledOption = { children?: LabeledOption[]; label: string; value: string };
+
+/** 展平树形下拉（药品分类 ApiTreeSelect） */
+function flattenLabeledOptions(options: LabeledOption[]): Array<{ label: string; value: string }> {
+  const result: Array<{ label: string; value: string }> = [];
+  const walk = (nodes: LabeledOption[]) => {
+    for (const node of nodes) {
+      result.push({ label: node.label, value: node.value });
+      if (node.children?.length) {
+        walk(node.children);
+      }
+    }
+  };
+  walk(options);
+  return result;
+}
+
+/**
+ * 按下拉 label 匹配选项 value：精确优先，其次互为包含；多命中取最短 label。
+ */
+function resolveOptionValueByLabel(
+  options: LabeledOption[],
+  rawLabel: string | undefined | null,
+): string | undefined {
+  const text = String(rawLabel ?? '').trim();
+  const flat = flattenLabeledOptions(options);
+  if (!text || flat.length === 0) {
+    return undefined;
+  }
+  const normalized = text.toLowerCase();
+  const exact = flat.find((item) => item.label.trim().toLowerCase() === normalized);
+  if (exact) {
+    return exact.value;
+  }
+  // 目录「注射剂」与院内「注射液」等近似文案：互为包含
+  const fuzzy = flat.filter((item) => {
+    const label = item.label.trim().toLowerCase();
+    return label.includes(normalized) || normalized.includes(label);
+  });
+  if (fuzzy.length === 0) {
+    return undefined;
+  }
+  if (fuzzy.length === 1) {
+    return fuzzy[0]!.value;
+  }
+  fuzzy.sort((a, b) => a.label.length - b.label.length);
+  return fuzzy[0]!.value;
+}
+
+/** 厂家名归一化：去空白/括号段/公司后缀，便于目录名与院内主数据对齐 */
+function normalizeManufacturerName(raw: string): string {
+  return String(raw ?? '')
+    .trim()
+    .toLowerCase()
+    .replaceAll(/[（(][^）)]*[）)]/g, '')
+    .replaceAll(/有限责任公司|股份有限公司|有限公司|集团公司|集团|制药厂|药业|制药|公司/g, '')
+    .replaceAll(/[\s·・.。，,、]/g, '');
+}
+
+/**
+ * 按目录生产企业匹配院内厂家下拉：精确 → 归一化精确 → 包含/核心名；多命中取最短 label。
+ */
+function resolveManufacturerOptionValue(
+  options: Array<{ label: string; value: string }>,
+  rawName: string | undefined | null,
+): string | undefined {
+  const text = String(rawName ?? '').trim();
+  if (!text || options.length === 0) {
+    return undefined;
+  }
+  const lower = text.toLowerCase();
+  const exact = options.find((item) => item.label.trim().toLowerCase() === lower);
+  if (exact) {
+    return exact.value;
+  }
+
+  const normalizedCatalog = normalizeManufacturerName(text);
+  if (normalizedCatalog) {
+    const normExact = options.filter(
+      (item) => normalizeManufacturerName(item.label) === normalizedCatalog,
+    );
+    if (normExact.length === 1) {
+      return normExact[0]!.value;
+    }
+    if (normExact.length > 1) {
+      normExact.sort((a, b) => a.label.length - b.label.length);
+      return normExact[0]!.value;
+    }
+  }
+
+  // 「津药和平(天津)制药有限公司」→ 核心「津药和平」再包含匹配
+  const core = text.split(/[（(]/)[0]?.trim() ?? text;
+  const coreNorm = normalizeManufacturerName(core);
+  const candidates = options.filter((item) => {
+    const label = item.label.trim().toLowerCase();
+    const labelNorm = normalizeManufacturerName(item.label);
+    if (label.includes(lower) || lower.includes(label)) {
+      return true;
+    }
+    if (normalizedCatalog && labelNorm) {
+      if (labelNorm.includes(normalizedCatalog) || normalizedCatalog.includes(labelNorm)) {
+        return true;
+      }
+    }
+    if (coreNorm && labelNorm && (labelNorm.includes(coreNorm) || coreNorm.includes(labelNorm))) {
+      return true;
+    }
+    return false;
+  });
+  if (candidates.length === 0) {
+    return undefined;
+  }
+  if (candidates.length === 1) {
+    return candidates[0]!.value;
+  }
+  candidates.sort((a, b) => a.label.length - b.label.length);
+  return candidates[0]!.value;
+}
+
+/** 选项中是否存在指定 value */
+function hasOptionValue(options: LabeledOption[], value: string | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+  return flattenLabeledOptions(options).some((item) => item.value === value);
+}
+
+/**
+ * 按医保 list_type 解析财务类型：优先平台标准码，否则按「西药费/中成药费」等 label 匹配。
+ */
+function resolveFinTypeCodeFromListType(
+  listType: string | undefined | null,
+  options: LabeledOption[],
+): string | undefined {
+  const preferredCode = resolveFinTypeCodeByListType(listType);
+  if (hasOptionValue(options, preferredCode)) {
+    return preferredCode;
+  }
+  // 院点 fin_type 字典码可能与平台标准码不一致，改按名称兜底
+  for (const label of resolveFinTypeLabelsByListType(listType)) {
+    const matched = resolveOptionValueByLabel(options, label);
+    if (matched) {
+      return matched;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * 按医保 list_type 解析药品分类：优先标准短码（西药 2 / 中草药 4），否则按「西药中成药/中药饮片/中草药」名称匹配。
+ */
+function resolveCategoryCodeFromListType(
+  listType: string | undefined | null,
+  options: LabeledOption[],
+): string | undefined {
+  const preferredCode = resolveMedicationCategoryCodeByListType(listType);
+  if (hasOptionValue(options, preferredCode)) {
+    return preferredCode;
+  }
+  const listTypeLabel = formatCatalogListType(String(listType ?? '').trim());
+  if (listTypeLabel && listTypeLabel !== '-') {
+    const byListLabel = resolveOptionValueByLabel(options, listTypeLabel);
+    if (byListLabel) {
+      return byListLabel;
+    }
+  }
+  // 饮片对院内「中草药」
+  if (String(listType ?? '').trim() === '102') {
+    return resolveOptionValueByLabel(options, '中草药');
+  }
+  return undefined;
+}
+
+/** 字段未锁定且目录有值时写入（可编辑锁定态跳过） */
+function canApplyCatalogField(fieldName: string, catalogHasValue: boolean): boolean {
+  if (!catalogHasValue) {
+    return false;
+  }
+  return !isMedicationCatalogFieldLocked(editabilityCode.value, fieldName);
+}
+
+/**
+ * 国家医保目录选码回填：医保码/等级必带；分类/财务类型/名称/规格/厂家/剂型/单位等尽量带入（不回填拼音）。
+ */
+async function applyCatalogSelection(row: NationalCatalogItem) {
+  const patch: Record<string, unknown> = {
+    ybNo: row.hilistCode ?? '',
     ybMatchFlag: false,
   };
+  const lv = catalogChrgitmLvToFormValue(row.chrgitmLv);
+  if (lv !== undefined) {
+    patch.chrgitmLv = lv;
+  }
+
+  const hilistName = String(row.hilistName ?? '').trim();
+  if (canApplyCatalogField('name', Boolean(hilistName))) {
+    patch.name = hilistName;
+  }
+  if (canApplyCatalogField('merchandiseName', Boolean(hilistName))) {
+    patch.merchandiseName = hilistName;
+  }
+
+  // 西药中成药(101)→默认西药；中药饮片(102)→中草药
+  const categoryCode = resolveCategoryCodeFromListType(
+    row.listType,
+    medicationCategoryCodeOptions.value as LabeledOption[],
+  );
+  if (canApplyCatalogField('categoryCode', Boolean(categoryCode))) {
+    patch.categoryCode = categoryCode;
+  }
+  const typeCode = resolveFinTypeCodeFromListType(
+    row.listType,
+    finTypeCodeOptions.value as LabeledOption[],
+  );
+  if (canApplyCatalogField('typeCode', Boolean(typeCode))) {
+    patch.typeCode = typeCode;
+  }
+
+  const aprvno = String(row.aprvno ?? '').trim();
+  if (canApplyCatalogField('approvalNumber', Boolean(aprvno))) {
+    patch.approvalNumber = aprvno;
+  }
+
+  const spec = String(row.spec ?? '').trim();
+  if (canApplyCatalogField('totalVolume', Boolean(spec))) {
+    patch.totalVolume = spec;
+  }
+
+  // 厂家：目录生产企业 → 院内 cus_supplier；未命中不瞎填，仅提示
+  const prodentpName = String(row.prodentpName ?? '').trim();
+  const manufacturerId = resolveManufacturerOptionValue(manufacturerOptionsAll.value, prodentpName);
+  if (canApplyCatalogField('manufacturerId', Boolean(manufacturerId))) {
+    manufacturerOptions.value = manufacturerOptionsAll.value;
+    patch.manufacturerId = manufacturerId;
+  } else if (prodentpName) {
+    ElMessage.warning(`未匹配到生产厂家「${prodentpName}」，请手动选择或先维护厂家主数据`);
+  }
+
+  const doseFormCode = resolveOptionValueByLabel(doseFormCodeOptions.value, row.dosform);
+  if (canApplyCatalogField('doseFormCode', Boolean(doseFormCode))) {
+    patch.doseFormCode = doseFormCode;
+  }
+
+  const pacuntCode = resolveOptionValueByLabel(unitCodeOptions.value, row.minPacunt);
+  if (canApplyCatalogField('purchaseUnitCode', Boolean(pacuntCode))) {
+    patch.purchaseUnitCode = pacuntCode;
+  }
+  if (canApplyCatalogField('packageUnitCode', Boolean(pacuntCode))) {
+    patch.packageUnitCode = pacuntCode;
+  }
+  if (canApplyCatalogField('stockUnitCode', Boolean(pacuntCode))) {
+    patch.stockUnitCode = pacuntCode;
+  }
+
+  const prepuntInvCode = resolveOptionValueByLabel(unitCodeOptions.value, row.minPrepunt);
+  if (canApplyCatalogField('splitUnitCode', Boolean(prepuntInvCode))) {
+    patch.splitUnitCode = prepuntInvCode;
+  }
+
+  // 剂量单位优先制剂单位，其次计价单位
+  const doseUnitCode =
+    resolveOptionValueByLabel(doseUnitCodeOptions.value, row.minPrepunt) ??
+    resolveOptionValueByLabel(doseUnitCodeOptions.value, row.minPrcunt) ??
+    resolveOptionValueByLabel(doseUnitCodeOptions.value, row.minPacunt);
+  if (canApplyCatalogField('doseUnitCode', Boolean(doseUnitCode))) {
+    patch.doseUnitCode = doseUnitCode;
+  }
+
+  const pacCntRaw = String(row.minPacCnt ?? '').trim();
+  const pacCnt = Number(pacCntRaw);
+  if (
+    canApplyCatalogField('purchaseUnitRatio', Boolean(pacCntRaw)) &&
+    Number.isFinite(pacCnt) &&
+    pacCnt > 0
+  ) {
+    patch.purchaseUnitRatio = pacCnt;
+  }
+
+  const maxPrice = parseCatalogPriceUplmt(row.priceUplmtAmt);
+  if (canApplyCatalogField('maximumRetailPrice', maxPrice !== undefined)) {
+    patch.maximumRetailPrice = maxPrice;
+  }
+
+  // 剂型含「注射」时勾选注射标志（未锁定才写）
+  const dosformText = String(row.dosform ?? '');
+  if (canApplyCatalogField('injectFlag', dosformText.includes('注射'))) {
+    patch.injectFlag = true;
+  }
+
+  for (const [field, value] of Object.entries(patch)) {
+    await formApi.setFieldValue(field, value);
+  }
+
+  formData.value = {
+    ...formData.value,
+    ...patch,
+  } as Partial<MedicationCatalogItem>;
+
   ElMessage.success(`已选用医保编码 ${row.hilistCode}，保存药品后可上传 3301`);
 }
 
@@ -684,7 +1066,7 @@ async function handleUpload3301() {
     const result = await uploadMedicationCatalog3301Api({
       contractBusNo: defaultContractBusNo.value,
       medicationDefId: medId,
-      listType: '101',
+      listType: resolveMedicationYbListType(),
     });
     if (result.allSuccess) {
       ElMessage.success(result.summary ?? '3301 上传成功');
@@ -728,7 +1110,7 @@ async function handleRevoke3302() {
     const result = await revokeMedicationCatalog3302Api({
       contractBusNo: defaultContractBusNo.value,
       medicationDefId: medId,
-      listType: '101',
+      listType: resolveMedicationYbListType(),
     });
     if (result.allSuccess) {
       ElMessage.success(result.summary ?? '3302 撤销成功');
@@ -788,12 +1170,23 @@ const updateFormOptions = () => {
         fieldName: 'categoryCode',
         componentProps: {
           data: medicationCategoryCodeOptions.value,
-          // 与 schema 同源：切换分类刷新进售价小数位
+          // 与 schema 同源：切换分类刷新进价小数位
           onChange: (value: unknown) => {
             const code = value === undefined || value === null ? '' : String(value);
             formData.value = { ...formData.value, categoryCode: code };
           },
         },
+      },
+      {
+        fieldName: 'manufacturerId',
+        componentProps: () => ({
+          options: manufacturerOptions.value,
+          filterable: true,
+          clearable: true,
+          placeholder: '请选择生产厂家',
+          filterMethod: filterManufacturerOptions,
+          onVisibleChange: onManufacturerSelectVisibleChange,
+        }),
       },
       {
         fieldName: 'purchaseUnitCode',
@@ -975,6 +1368,14 @@ async function handleSubmit() {
     delete mergedData.finTypeCode;
     // 药品目录不再维护供应商（详情回显里的历史 supplyId 也不提交）
     delete mergedData.supplyId;
+    // manufacturerText 仅展示；持久化只提交 manufacturerId（雪花 string）
+    delete mergedData.manufacturerText;
+    const manufacturerId = preserveApiIdForRequest(mergedData.manufacturerId);
+    if (manufacturerId) {
+      mergedData.manufacturerId = manufacturerId;
+    } else {
+      delete mergedData.manufacturerId;
+    }
 
     const submitData: Partial<MedicationCatalogItem> = {};
     Object.keys(mergedData).forEach((key) => {
@@ -1069,7 +1470,7 @@ const [Form, formApi] = useVbenForm(
         rules: 'required',
         componentProps: {
           data: medicationCategoryCodeOptions.value,
-          // 切换分类后刷新进售价小数位（中草药 3 / 其余 2）
+          // 切换分类后刷新进价小数位（中草药进价 3 / 其余 2；售价恒 2）
           onChange: (value: unknown) => {
             const code = value === undefined || value === null ? '' : String(value);
             formData.value = { ...formData.value, categoryCode: code };
@@ -1077,16 +1478,18 @@ const [Form, formApi] = useVbenForm(
         },
       },
       {
-        component: 'Input',
-        fieldName: 'manufacturerText',
+        component: 'Select',
+        fieldName: 'manufacturerId',
         label: '生产厂家',
         rules: 'required',
-        componentProps: {
-          maxlength: 200,
-          showWordLimit: true,
+        componentProps: () => ({
+          options: manufacturerOptions.value,
+          filterable: true,
           clearable: true,
-          placeholder: '请输入生产厂家及产地（纯文本）',
-        },
+          placeholder: '请选择生产厂家',
+          filterMethod: filterManufacturerOptions,
+          onVisibleChange: onManufacturerSelectVisibleChange,
+        }),
       },
       {
         component: 'Input',
@@ -1323,8 +1726,8 @@ const [Form, formApi] = useVbenForm(
         label: '采购参考价（包装单位）',
         rules: isNewMedication.value ? 'required' : undefined,
         componentProps: {
-          // 中草药允许录入三位小数；西药/中成药仍两位
-          precision: catalogPriceInputDp.value,
+          // 中草药进价允许录入三位小数；西药/中成药仍两位
+          precision: catalogPurchasePriceInputDp.value,
           min: 0,
           disabled: !isNewMedication.value,
         },
@@ -1358,8 +1761,8 @@ const [Form, formApi] = useVbenForm(
         label: '销售参考价（包装单位）',
         rules: isNewMedication.value ? 'required' : undefined,
         componentProps: {
-          // 中草药允许录入三位小数；西药/中成药仍两位
-          precision: catalogPriceInputDp.value,
+          // 售价固定两位（与收费/批号售价展示一致；中药也不例外）
+          precision: 2,
           min: 0,
           disabled: !isNewMedication.value,
         },
@@ -1545,6 +1948,8 @@ const [Form, formApi] = useVbenForm(
         componentProps: {
           fields: [
             { fieldName: 'basicFlag', label: '基药标识' },
+            { fieldName: 'nationalMonitorFlag', label: '国家重点监控药品' },
+            { fieldName: 'centralPurchaseFlag', label: '集采药品' },
             { fieldName: 'childrenFlag', label: '儿童用药标志' },
             { fieldName: 'selfFlag', label: '自制药标识' },
             { fieldName: 'activeFlag', label: '是否活性' },
@@ -1787,6 +2192,7 @@ watch(
       catalog-type="medication"
       :item-id="medicationDefId"
       :item-name="String(formData?.name ?? '')"
+      :category-code="String(formData?.categoryCode ?? '')"
     />
   </ElDialog>
 </template>

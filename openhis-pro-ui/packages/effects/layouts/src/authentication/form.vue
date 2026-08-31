@@ -28,7 +28,9 @@ defineProps<{
 
     <!-- Footer Copyright -->
 
-    <div class="text-muted-foreground absolute bottom-3 flex text-center text-xs">
+    <div
+      class="text-muted-foreground absolute bottom-3 left-0 right-0 flex w-full justify-center text-center text-xs"
+    >
       <slot name="copyright"> </slot>
     </div>
   </div>

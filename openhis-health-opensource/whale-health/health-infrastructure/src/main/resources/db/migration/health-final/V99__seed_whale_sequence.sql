@@ -216,3 +216,34 @@ WHERE max_suffix > 0
 ON CONFLICT (seq_key) DO UPDATE
 SET current_value = GREATEST(whale_sequence.current_value, EXCLUDED.current_value),
     updated_at = CURRENT_TIMESTAMP;
+
+-- SP：供应商/生产厂家共用前缀（含 health-dev 种子 SP0000201+）
+INSERT INTO whale_sequence (seq_key, current_value, updated_at)
+SELECT tenant_id || ':SP', max_suffix, CURRENT_TIMESTAMP
+FROM (
+    SELECT
+        tenant_id,
+        MAX(CAST(substring(bus_no FROM 3) AS BIGINT)) AS max_suffix
+    FROM cus_supplier
+    WHERE NOT is_deleted
+      AND tenant_id IS NOT NULL
+      AND bus_no ~ '^SP[0-9]+$'
+    GROUP BY tenant_id
+) s
+WHERE max_suffix > 0
+ON CONFLICT (seq_key) DO UPDATE
+SET current_value = GREATEST(whale_sequence.current_value, EXCLUDED.current_value),
+    updated_at = CURRENT_TIMESTAMP;
+
+INSERT INTO whale_sequence (seq_key, current_value, updated_at)
+SELECT 'SP', max_suffix, CURRENT_TIMESTAMP
+FROM (
+    SELECT MAX(CAST(substring(bus_no FROM 3) AS BIGINT)) AS max_suffix
+    FROM cus_supplier
+    WHERE NOT is_deleted
+      AND bus_no ~ '^SP[0-9]+$'
+) s
+WHERE max_suffix > 0
+ON CONFLICT (seq_key) DO UPDATE
+SET current_value = GREATEST(whale_sequence.current_value, EXCLUDED.current_value),
+    updated_at = CURRENT_TIMESTAMP;

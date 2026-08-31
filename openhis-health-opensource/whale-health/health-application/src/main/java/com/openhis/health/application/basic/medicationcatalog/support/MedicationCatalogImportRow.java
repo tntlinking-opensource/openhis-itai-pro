@@ -82,6 +82,8 @@ public class MedicationCatalogImportRow {
     private String restrictedFlagText;
     private String antibioticFlagText;
     private String rxFlagText;
+    private String nationalMonitorFlagText;
+    private String centralPurchaseFlagText;
 
     // —— 解析结果 ——
     private String categoryCode;
@@ -127,6 +129,8 @@ public class MedicationCatalogImportRow {
     private Boolean restrictedFlag;
     private Boolean antibioticFlag;
     private Boolean rxFlag;
+    private Boolean nationalMonitorFlag;
+    private Boolean centralPurchaseFlag;
 
     /**
      * 库内已存在相同药品（名称+厂家+院内旧编码；无旧编码则名称+厂家+规格）：写段跳过，不报错（支持整文件重导）。

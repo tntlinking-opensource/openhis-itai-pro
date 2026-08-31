@@ -11,6 +11,7 @@ import com.openhis.whale.einvoice.boss.application.document.response.BossDocumen
 import com.openhis.whale.einvoice.boss.application.document.service.EinvoiceBossDocumentAppService;
 import com.openhis.whale.einvoice.boss.application.internal.issue.BossWriteOffService;
 import com.openhis.whale.einvoice.boss.application.internal.issue.BossWriteOffStatusSupport;
+import com.openhis.whale.einvoice.boss.application.internal.issue.EinvoiceBossIssueService;
 import com.openhis.whale.einvoice.boss.application.list.response.BossDocumentListItem;
 import com.openhis.whale.einvoice.boss.application.writeoff.request.ManualWriteOffRequest;
 import com.openhis.whale.einvoice.boss.application.writeoff.request.PageWriteOffDocumentsRequest;
@@ -57,6 +58,7 @@ public class EinvoiceBossWriteOffAppService {
     private final EinvoiceIssueSnapshotContextLoader issueSnapshotContextLoader;
     private final BossWriteOffStatusSupport writeOffStatusSupport;
     private final BossWriteOffService writeOffService;
+    private final EinvoiceBossIssueService issueService;
     private final EinvoiceInvoiceWritebackLoader invoiceWritebackLoader;
     private final EinvoiceBossDocumentAppService documentAppService;
     private final CurrentOperatorResolver currentOperatorResolver;
@@ -154,6 +156,29 @@ public class EinvoiceBossWriteOffAppService {
             response.setWriteOffBatchCode(result.getBatchCode());
         }
         return response;
+    }
+
+    /**
+     * 冲销并按修正后的明细重开蓝票（新 busNo）。
+     *
+     * @param request 单据/票据与原因
+     * @return 冲红结果，含 {@code reissueInvoiceId}
+     */
+    public ManualWriteOffResponse manualWriteOffAndReissue(ManualWriteOffRequest request) {
+        ManualWriteOffResponse writtenOff = manualWriteOff(request);
+        try {
+            EinvBossDocument document = resolveDocument(writtenOff.getDocumentId(), writtenOff.getInvoiceId());
+            Long operatorId = currentOperatorResolver.requireOperatorId("AUTH-001", "当前登录用户不能为空");
+            Long newInvoiceId = invoiceWritebackLoader.createDraftInvoiceForReissue(
+                    document.getInvoiceId(), operatorId);
+            issueService.scheduleIssueAsync(newInvoiceId);
+            writtenOff.setReissueInvoiceId(newInvoiceId);
+            writtenOff.setMessage("冲红成功，已重新开具");
+        } catch (Exception ex) {
+            log.error("Write-off succeeded but reissue failed, invoiceId={}", writtenOff.getInvoiceId(), ex);
+            writtenOff.setMessage("冲红成功，但重开失败：" + ex.getMessage());
+        }
+        return writtenOff;
     }
 
     private EinvBossDocument resolveDocument(Long documentId, Long invoiceId) {

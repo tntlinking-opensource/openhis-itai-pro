@@ -148,7 +148,8 @@ public class InventoryPurchaseReturnUploadContextLoader {
         cmd.setManuLotnum(line.getLotNumber());
         // aprvno ← 批准文号；空则占位，与进货 3503 同口径
         cmd.setAprvno(resolveAprvnoOrDefault(medication.getApprovalNumber()));
-        cmd.setProdentpName(medication.getManufacturerText());
+        // 生产厂家：目录已无 manufacturer_text，按 manufacturerId 解析 cus_supplier.name
+        cmd.setProdentpName(this.resolveManufacturerName(medication.getManufacturerId()));
         InventoryUploadQtyPriceResult qtyPrice = InventoryUploadQuantityAssembler.resolveWarehouseQtyAndPrice(
             medication, line.getUnitCode(), line.getItemQuantity(), line.getPrice(), line.getUnitCode());
         cmd.setPurcRetnCnt(qtyPrice.getOperationQuantity());
@@ -201,7 +202,7 @@ public class InventoryPurchaseReturnUploadContextLoader {
                 return fromInbound;
             }
         }
-        // 进货侧亦无：占位 0，不拦退货业务
+        // 进货侧亦无：占位 0，不拦退货业务（与 DEFAULT_PURC_INVO_NO / 进货落库同口径）
         return ChsInventoryConstants.DEFAULT_PURC_INVO_NO;
     }
 
@@ -219,6 +220,19 @@ public class InventoryPurchaseReturnUploadContextLoader {
         }
         // 中药等无准字：占位上报，避免 3504 必填字段拒收
         return ChsInventoryConstants.DEFAULT_APRVNO;
+    }
+
+    /**
+     * 按生产厂家主键解析平台生产企业名称（{@code prodentp_name}）。
+     *
+     * @param manufacturerId 药品定义 {@code manufacturer_id}（cus_supplier 生产厂家）
+     * @return 供应商名称；无主键或未命中时为 {@code null}
+     */
+    private String resolveManufacturerName(Long manufacturerId) {
+        if (manufacturerId == null) {
+            return null;
+        }
+        return supplierQueryService.findSupplierNameIfPresent(manufacturerId).orElse(null);
     }
 
     /**

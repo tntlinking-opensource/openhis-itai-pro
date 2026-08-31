@@ -18,8 +18,8 @@ import java.time.LocalDateTime;
  * 博思电子票据单据聚合根（双存储：博思字段仅存本表）。
  *
  * <p>对应表 {@code einv_boss_document}；与 {@code adm_invoice} 以 {@code invoice_id} 关联
- *（通用票 COM 可无 invoiceId）。正常一票一单；票种清单行超上限拆多张时，同一 invoice 可有
- * 主票（busNo=health）+ 续票（busNo-2…）多条单据。生命周期：初始化 → 可选调额 → 异步开具落蓝票 → 作废冲红落红票。</p>
+ *（通用票 COM 可无 invoiceId）。正常一结算一票一条单据（医院不允许拆票）。
+ * 生命周期：初始化 → 可选调额 → 异步开具落蓝票 → 作废冲红落红票。</p>
  *
  * <p>幂等键：{@code bus_no}；冲红并发由 {@code claimWriteOffProcessing} 原子抢占。</p>
  */

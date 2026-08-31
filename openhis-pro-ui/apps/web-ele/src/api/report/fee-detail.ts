@@ -1,11 +1,11 @@
 /**
  * 门诊/住院费用明细报表 — outpatientFeeDetailReport / inpatientFeeDetailReport
  */
+import { reportPost } from '#/constants/report-request-timeout';
 import type { ApiOptionItem, PageParams } from '#/types/api-response';
+import type { ExcelExportColumnPayload } from '#/utils/export/build-excel-export-columns';
 import type { BinaryExportResult } from '#/utils/export/download-binary-export';
 
-import { publicRequestClient } from '#/api/request';
-import { reportLongRequestConfig } from '#/constants/report-request-timeout';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
 /** 报表场景：门诊或住院。 */
@@ -104,22 +104,30 @@ export interface FeeDetailReportSummaryRowDto {
   /** FIN_TYPE 维兼容。 */
   finTypeCode?: string;
   finTypeDisplay?: string;
+  /** 数量合计（带符号代数和）。 */
+  quantityTotal?: number | string;
+  purchaseUnitPrice?: number | string;
+  saleUnitPrice?: number | string;
   purchaseAmountTotal?: number | string;
   saleAmountTotal?: number | string;
   actualReceivedAmountTotal?: number | string;
   receivableAmountTotal?: number | string;
   discountedAmountTotal?: number | string;
   lineAmountTotal?: number | string;
+  /** @deprecated 汇总 Tab 不展示 */
   lineCount?: number;
 }
 
 export interface FeeDetailReportSummaryFooterDto {
+  /** 数量合计。 */
+  quantityTotal?: number | string;
   purchaseAmountTotal?: number | string;
   saleAmountTotal?: number | string;
   actualReceivedAmountTotal?: number | string;
   receivableAmountTotal?: number | string;
   discountedAmountTotal?: number | string;
   lineAmountTotal?: number | string;
+  /** @deprecated 汇总 Tab 不展示 */
   lineCountTotal?: number;
 }
 
@@ -207,11 +215,19 @@ export interface PageFeeDetailReportResponse {
   totalCount?: number;
   pageNo?: number;
   pageSize?: number;
+  /** 页脚合计；进价合计可能延后由列角 IF 回填。 */
   summary?: FeeDetailAmountSummaryDto;
+}
+
+/** 明细分页进价列角（异步回填页脚进价合计）。 */
+export interface SummarizeFeeDetailPurchaseCornerResponse {
+  purchaseAmountTotal?: number | string;
 }
 
 export interface ExportFeeDetailReportParams extends FeeDetailReportQueryFilter {
   presentationMode: PresentationModeCode | string;
+  /** 当前 Tab 可见列 → 后端 Excel 列裁剪 */
+  exportColumns?: ExcelExportColumnPayload[];
 }
 
 export type ExportFeeDetailReportResponse = BinaryExportResult & {
@@ -225,7 +241,7 @@ export async function loadFeeDetailReportPageInitApi(scope: FeeDetailReportScope
     scope === 'inpatient'
       ? 'loadInpatientFeeDetailReportPageInit'
       : 'loadOutpatientFeeDetailReportPageInit';
-  return publicRequestClient.post<LoadFeeDetailReportPageInitResponse>(`${base}/${method}`, {});
+  return reportPost<LoadFeeDetailReportPageInitResponse>(`${base}/${method}`, {});
 }
 
 /** 费用类型净汇总。 */
@@ -238,11 +254,7 @@ export async function summarizeFeeDetailReportApi(
     scope === 'inpatient'
       ? 'summarizeInpatientFeeDetailReport'
       : 'summarizeOutpatientFeeDetailReport';
-  return publicRequestClient.post<SummarizeFeeDetailReportResponse>(
-    `${base}/${method}`,
-    body,
-    reportLongRequestConfig(),
-  );
+  return reportPost<SummarizeFeeDetailReportResponse>(`${base}/${method}`, body);
 }
 
 /** 就诊块明细分页。 */
@@ -253,11 +265,7 @@ export async function pageFeeDetailReportApi(
   const base = resolveReportBase(scope);
   const method =
     scope === 'inpatient' ? 'pageInpatientFeeDetailReport' : 'pageOutpatientFeeDetailReport';
-  const res = await publicRequestClient.post<PageFeeDetailReportResponse>(
-    `${base}/${method}`,
-    body,
-    reportLongRequestConfig(),
-  );
+  const res = await reportPost<PageFeeDetailReportResponse>(`${base}/${method}`, body);
   // 统一剥分页包装，避免 totalCount 丢失导致「共 N 条」为 0、翻页控件不可用
   const { content, totalCount, pageNo, pageSize } =
     parsePagedRowsFromApiData<FeeDetailEncounterBlockDto>(res);
@@ -271,6 +279,24 @@ export async function pageFeeDetailReportApi(
   } satisfies PageFeeDetailReportResponse;
 }
 
+/**
+ * 明细分页进价列角：与 page 同筛选，异步回填页脚「进价合计」。
+ *
+ * @param scope 门诊/住院
+ * @param body 与明细分页同筛选（分页可省略）
+ */
+export async function summarizeFeeDetailPurchaseCornerApi(
+  scope: FeeDetailReportScope,
+  body: FeeDetailReportQueryFilter,
+) {
+  const base = resolveReportBase(scope);
+  const method =
+    scope === 'inpatient'
+      ? 'summarizeInpatientFeeDetailPurchaseCorner'
+      : 'summarizeOutpatientFeeDetailPurchaseCorner';
+  return reportPost<SummarizeFeeDetailPurchaseCornerResponse>(`${base}/${method}`, body);
+}
+
 /** 按当前 Tab 导出。 */
 export async function exportFeeDetailReportApi(
   scope: FeeDetailReportScope,
@@ -279,9 +305,5 @@ export async function exportFeeDetailReportApi(
   const base = resolveReportBase(scope);
   const method =
     scope === 'inpatient' ? 'exportInpatientFeeDetailReport' : 'exportOutpatientFeeDetailReport';
-  return publicRequestClient.post<ExportFeeDetailReportResponse>(
-    `${base}/${method}`,
-    body,
-    reportLongRequestConfig(),
-  );
+  return reportPost<ExportFeeDetailReportResponse>(`${base}/${method}`, body);
 }

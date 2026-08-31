@@ -6,11 +6,13 @@ package com.openhis.health.application.report.medicationdispense.support;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.springframework.stereotype.Component;
 
@@ -20,6 +22,7 @@ import com.openhis.health.application.shared.product.ChargeItemProductLookupHelp
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
+import com.openhis.health.domain.administration.chargeitemdefinition.query.ChargeItemDefinitionLotBatchKey;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseSlipQueryModel;
 import com.openhis.health.domain.share.constants.DeptIssueReportConstants;
 import com.openhis.health.domain.share.constants.MedicationDispenseReportConstants;
@@ -138,14 +141,109 @@ public class MedicationDispenseReportPricingEnricher {
         this.mergePurchasePricingFromChargeItems(
             chargeRows, purchaseUnitByDispenseId, purchaseTotalByDispenseId);
         this.applyPurchaseSaleAliases(lines, purchaseUnitByDispenseId, purchaseTotalByDispenseId);
+        // Pre：仅账单仍缺进价（住院另含缺售价）的行才开批号会话，避免全窗重复解析
+        List<MedicationDispensePurchaseSaleDetailLine> needingLot = new ArrayList<>();
+        for (MedicationDispensePurchaseSaleDetailLine line : lines) {
+            if (line == null) {
+                continue;
+            }
+            if (this.needsLotPricingFallback(line, allowInpatientLotSaleWhenChargeMissing)) {
+                needingLot.add(line);
+            }
+        }
+        if (needingLot.isEmpty()) {
+            return;
+        }
+        Map<Long, ProductDefinitionDisplayDto> products = productByMedicationId;
+        if (products == null || products.isEmpty()) {
+            products = this.loadProductsForLotFallback(needingLot, slipRows);
+        }
         this.supplementLotPricingWhenChargeMissing(
-            lines, slipRows, productByMedicationId, allowInpatientLotSaleWhenChargeMissing);
+            needingLot, slipRows, products, allowInpatientLotSaleWhenChargeMissing);
+    }
+
+    /**
+     * 判断汇总/明细行是否仍需批号进价（住院另含批号售价）回落。
+     *
+     * @param line                                   已写 ChargeItem 别名后的行
+     * @param allowInpatientLotSaleWhenChargeMissing 住院是否允许批号售价
+     * @return true 需要批号回落
+     */
+    private boolean needsLotPricingFallback(
+        MedicationDispensePurchaseSaleDetailLine line,
+        boolean allowInpatientLotSaleWhenChargeMissing) {
+        boolean needPurchase =
+            line.getPurchaseUnitPrice() == null && line.getPurchaseAmount() == null;
+        if (needPurchase) {
+            return true;
+        }
+        // 住院：账单缺失售价时允许批号 LOT_NUMBER_PRICE
+        if (allowInpatientLotSaleWhenChargeMissing
+            && line.getSaleUnitPrice() == null
+            && line.getSaleAmount() == null) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 仅为待批号回落行装载品规展示（包装比）；去重 medicationId。
+     *
+     * @param needingLot 待回落行
+     * @param slipRows   发放事实
+     * @return medicationId → 品规展示
+     */
+    private Map<Long, ProductDefinitionDisplayDto> loadProductsForLotFallback(
+        List<? extends MedicationDispensePurchaseSaleDetailLine> needingLot,
+        List<MedicationDispenseSlipQueryModel> slipRows) {
+        Map<Long, MedicationDispenseSlipQueryModel> slipByDispenseId = new HashMap<>();
+        if (slipRows != null) {
+            for (MedicationDispenseSlipQueryModel slip : slipRows) {
+                if (slip != null && slip.getDispenseId() != null) {
+                    slipByDispenseId.put(slip.getDispenseId(), slip);
+                }
+            }
+        }
+        LinkedHashSet<Long> medicationIds = new LinkedHashSet<>();
+        for (MedicationDispensePurchaseSaleDetailLine line : needingLot) {
+            if (line == null || line.getDispenseId() == null) {
+                continue;
+            }
+            MedicationDispenseSlipQueryModel slip = slipByDispenseId.get(line.getDispenseId());
+            if (slip != null && slip.getMedicationId() != null) {
+                medicationIds.add(slip.getMedicationId());
+            } else if (line.getMedicationId() != null) {
+                medicationIds.add(line.getMedicationId());
+            }
+        }
+        if (medicationIds.isEmpty()) {
+            return Map.of();
+        }
+        List<ProductDefinitionBatchLookup> lookups = new ArrayList<>(medicationIds.size());
+        for (Long medicationId : medicationIds) {
+            ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
+            lookup.setProductTableName(TableNameConstants.MED_MEDICATION_DEFINITION);
+            lookup.setProductDefinitionId(medicationId);
+            lookups.add(lookup);
+        }
+        Map<String, ProductDefinitionDisplayDto> productByKey =
+            this.productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
+        Map<Long, ProductDefinitionDisplayDto> productById = new HashMap<>();
+        for (Long medicationId : medicationIds) {
+            String key = ProductDefinitionKeyUtil.buildCompositeKey(
+                TableNameConstants.MED_MEDICATION_DEFINITION, medicationId);
+            ProductDefinitionDisplayDto product = productByKey.get(key);
+            if (product != null) {
+                productById.put(medicationId, product);
+            }
+        }
+        return productById;
     }
 
     /**
      * 回填科室领用明细行进价（退领数量/金额已为负）；售价一律置空。
      *
-     * <p>进价取 Supply 落库价；展示单价按包装倍数折拆零（仅展示）。领用非销售，禁止编售价 / 目录 SALE。</p>
+     * <p>进价取 Supply 落库价；展示单价与操作单位对齐（#4M-OP）。领用非销售，禁止编售价 / 目录 SALE。</p>
      *
      * @param line                明细行
      * @param deptLine            领用领域行
@@ -160,11 +258,11 @@ public class MedicationDispenseReportPricingEnricher {
         if (line == null || deptLine == null) {
             return;
         }
-        // 展示进价单价：Supply 包装价 → 拆零（仅展示；行额仍用落库 total）
         BigDecimal packagePurchaseUnit = MonetaryAmountSupport.scaleCalc(deptLine.getPrice());
-        BigDecimal ratio = this.resolveMedicationPackageUnitRatio(deptLine.getItemId());
-        BigDecimal purchaseUnit =
-            this.chargeItemPackageUnitRatioSupport.toSplitUnitDisplayPrice(packagePurchaseUnit, ratio);
+        ProductDefinitionDisplayDto product = this.resolveMedicationProductDisplay(deptLine.getItemId());
+        BigDecimal ratio = this.resolvePackageUnitRatio(product);
+        BigDecimal purchaseUnit = this.chargeItemPackageUnitRatioSupport.toAlignedPurchaseDisplayUnitPrice(
+            packagePurchaseUnit, ratio, deptLine.getUnitCode(), product);
         BigDecimal purchaseAmount = MonetaryAmountSupport.scaleCalc(signedPurchaseTotal);
         line.setPurchaseUnitPrice(purchaseUnit);
         line.setPurchaseAmount(purchaseAmount);
@@ -190,14 +288,36 @@ public class MedicationDispenseReportPricingEnricher {
         String dimension,
         Map<Long, String> categoryCodeByMedicationId,
         Map<Long, Long> organizationIdByPharmacyLocationId) {
-        if (summaryRows == null || summaryRows.isEmpty() || detailRows == null || detailRows.isEmpty()) {
+        if (summaryRows == null || summaryRows.isEmpty()) {
             return;
         }
-        Map<String, MedicationDispensePurchaseSaleSummaryLine> summaryByKey = new LinkedHashMap<>();
-        for (MedicationDispensePurchaseSaleSummaryLine summaryRow : summaryRows) {
-            if (summaryRow != null && StringUtils.isNotEmpty(summaryRow.getDimensionKey())) {
-                summaryByKey.put(summaryRow.getDimensionKey(), summaryRow);
-            }
+        SummaryAmountBuckets buckets = new SummaryAmountBuckets();
+        this.accumulateDetailRowsIntoSummaryBuckets(
+            buckets,
+            detailRows,
+            dimension,
+            categoryCodeByMedicationId,
+            organizationIdByPharmacyLocationId);
+        this.applySummaryAmountBuckets(summaryRows, buckets);
+    }
+
+    /**
+     * 将一批已定价明细累加进汇总金额桶（可多次调用后一次 {@link #applySummaryAmountBuckets}）。
+     *
+     * @param buckets               金额/展示单价累加桶
+     * @param detailRows            本批已 enrich 明细
+     * @param dimension             汇总维度码
+     * @param categoryCodeByMedicationId 品规→类型
+     * @param organizationIdByPharmacyLocationId 药房→科室
+     */
+    public void accumulateDetailRowsIntoSummaryBuckets(
+        SummaryAmountBuckets buckets,
+        List<? extends MedicationDispensePurchaseSaleDetailLine> detailRows,
+        String dimension,
+        Map<Long, String> categoryCodeByMedicationId,
+        Map<Long, Long> organizationIdByPharmacyLocationId) {
+        if (buckets == null || detailRows == null || detailRows.isEmpty()) {
+            return;
         }
         Map<Long, String> categoryMap = categoryCodeByMedicationId;
         if (categoryMap == null) {
@@ -207,8 +327,6 @@ public class MedicationDispenseReportPricingEnricher {
         if (orgByLocation == null) {
             orgByLocation = Map.of();
         }
-        Map<String, List<BigDecimal>> purchaseAmountsByKey = new HashMap<>();
-        Map<String, List<BigDecimal>> saleAmountsByKey = new HashMap<>();
         for (MedicationDispensePurchaseSaleDetailLine detailRow : detailRows) {
             if (detailRow == null) {
                 continue;
@@ -218,18 +336,245 @@ public class MedicationDispenseReportPricingEnricher {
             if (bucketKey == null) {
                 continue;
             }
-            this.accumulateAmount(purchaseAmountsByKey, bucketKey, detailRow.getPurchaseAmount());
-            this.accumulateAmount(saleAmountsByKey, bucketKey, detailRow.getSaleAmount());
+            this.accumulateAmount(buckets.purchaseAmountsByKey, bucketKey, detailRow.getPurchaseAmount());
+            this.accumulateAmount(buckets.saleAmountsByKey, bucketKey, detailRow.getSaleAmount());
+            this.collectSummaryDisplayUnitPrice(
+                buckets.purchaseUnitsByKey, bucketKey, detailRow.getPurchaseUnitPrice());
+            this.collectSummaryDisplayUnitPrice(
+                buckets.saleUnitsByKey, bucketKey, detailRow.getSaleUnitPrice());
         }
-        for (Map.Entry<String, MedicationDispensePurchaseSaleSummaryLine> entry : summaryByKey.entrySet()) {
-            String key = entry.getKey();
-            MedicationDispensePurchaseSaleSummaryLine summary = entry.getValue();
-            BigDecimal purchaseNet = this.sumThenSettleOrNull(purchaseAmountsByKey.get(key));
-            BigDecimal saleNet = this.sumThenSettleOrNull(saleAmountsByKey.get(key));
-            summary.setPurchaseNetAmount(purchaseNet);
-            summary.setSaleNetAmount(saleNet);
-            summary.setNetAmount(saleNet);
+    }
+
+    /**
+     * 汇总专用：按发放事实直累加进/售价桶，禁止物化全窗明细 DTO。
+     *
+     * @param buckets                          金额桶
+     * @param slipRows                         同窗发放事实
+     * @param chargeRows                       已加载 ChargeItem（与售价同批）
+     * @param dimension                        汇总维
+     * @param categoryCodeByMedicationId       CATEGORY 维品规→类型
+     * @param organizationIdByPharmacyLocationId 领用科室维回落；患者侧可空
+     * @param saleUnitByDispenseId             已合并售价单价
+     * @param saleTotalByDispenseId            已合并售价总额（退药补价后为正，本方法按退药取负）
+     * @param allowInpatientLotSaleWhenChargeMissing 住院批号售价回落
+     */
+    public void accumulatePatientSlipsIntoSummaryBuckets(
+        SummaryAmountBuckets buckets,
+        List<MedicationDispenseSlipQueryModel> slipRows,
+        List<ChargeItem> chargeRows,
+        String dimension,
+        Map<Long, String> categoryCodeByMedicationId,
+        Map<Long, Long> organizationIdByPharmacyLocationId,
+        Map<Long, BigDecimal> saleUnitByDispenseId,
+        Map<Long, BigDecimal> saleTotalByDispenseId,
+        boolean allowInpatientLotSaleWhenChargeMissing) {
+        if (buckets == null || slipRows == null || slipRows.isEmpty()) {
+            return;
         }
+        Map<Long, String> categoryMap = categoryCodeByMedicationId;
+        if (categoryMap == null) {
+            categoryMap = Map.of();
+        }
+        Map<Long, BigDecimal> purchaseUnitByDispenseId = new HashMap<>();
+        Map<Long, BigDecimal> purchaseTotalByDispenseId = new HashMap<>();
+        if (chargeRows != null && !chargeRows.isEmpty()) {
+            this.mergePurchasePricingFromChargeItems(
+                chargeRows, purchaseUnitByDispenseId, purchaseTotalByDispenseId);
+        }
+        Map<Long, BigDecimal> saleUnitMap = saleUnitByDispenseId;
+        if (saleUnitMap == null) {
+            saleUnitMap = Map.of();
+        }
+        Map<Long, BigDecimal> saleTotalMap = saleTotalByDispenseId;
+        if (saleTotalMap == null) {
+            saleTotalMap = Map.of();
+        }
+        List<PatientSlipPricingState> needingLot = new ArrayList<>();
+        for (MedicationDispenseSlipQueryModel slip : slipRows) {
+            if (slip == null || slip.getDispenseId() == null) {
+                continue;
+            }
+            Long dispenseId = slip.getDispenseId();
+            boolean refundRow = this.isRefundSlipRow(slip);
+            BigDecimal saleUnit = saleUnitMap.get(dispenseId);
+            BigDecimal saleTotal = saleTotalMap.get(dispenseId);
+            if (saleUnit != null) {
+                saleUnit = MonetaryAmountSupport.scaleCalc(saleUnit);
+            }
+            if (saleTotal != null) {
+                saleTotal = MonetaryAmountSupport.scaleCalc(saleTotal);
+                if (refundRow) {
+                    saleTotal = saleTotal.negate();
+                }
+            }
+            BigDecimal purchaseUnit = purchaseUnitByDispenseId.get(dispenseId);
+            BigDecimal purchaseTotal = purchaseTotalByDispenseId.get(dispenseId);
+            if (purchaseTotal != null
+                && saleTotal != null
+                && saleTotal.signum() < 0
+                && purchaseTotal.signum() > 0) {
+                purchaseTotal = purchaseTotal.negate();
+            }
+            if (this.slipNeedsLotPricingFallback(
+                purchaseUnit, purchaseTotal, saleUnit, saleTotal, allowInpatientLotSaleWhenChargeMissing)) {
+                needingLot.add(new PatientSlipPricingState(
+                    slip, purchaseUnit, purchaseTotal, saleUnit, saleTotal));
+                continue;
+            }
+            String bucketKey = this.resolvePatientSlipDimensionKey(slip, dimension, categoryMap);
+            if (bucketKey == null) {
+                continue;
+            }
+            this.accumulateSlipPricingIntoBuckets(
+                buckets, bucketKey, purchaseUnit, purchaseTotal, saleUnit, saleTotal);
+        }
+        if (!needingLot.isEmpty()) {
+            this.supplementLotPricingIntoSummaryBucketsForSlips(
+                buckets,
+                needingLot,
+                dimension,
+                categoryMap,
+                allowInpatientLotSaleWhenChargeMissing);
+        }
+    }
+
+    /**
+     * 汇总专用：科室领用事实直累加进价桶（批量品规展示，禁止逐行打库）。
+     *
+     * @param buckets                          金额桶
+     * @param lines                            领用事实行
+     * @param dimension                        汇总维
+     * @param organizationIdByPharmacyLocationId 药房→科室回落
+     */
+    public void accumulateDeptLinesIntoSummaryBuckets(
+        SummaryAmountBuckets buckets,
+        List<DeptIssueReportLineQueryModel> lines,
+        String dimension,
+        Map<Long, Long> organizationIdByPharmacyLocationId) {
+        if (buckets == null || lines == null || lines.isEmpty()) {
+            return;
+        }
+        Map<Long, Long> orgByLocation = organizationIdByPharmacyLocationId;
+        if (orgByLocation == null) {
+            orgByLocation = Map.of();
+        }
+        LinkedHashSet<Long> itemIds = new LinkedHashSet<>();
+        for (DeptIssueReportLineQueryModel line : lines) {
+            if (line != null && line.getItemId() != null) {
+                itemIds.add(line.getItemId());
+            }
+        }
+        Map<Long, ProductDefinitionDisplayDto> productByItemId =
+            this.loadProductByMedicationIds(itemIds);
+        for (DeptIssueReportLineQueryModel line : lines) {
+            if (line == null) {
+                continue;
+            }
+            BigDecimal signedPurchaseTotal = this.resolveDeptSignedPurchaseTotal(line);
+            BigDecimal packagePurchaseUnit = MonetaryAmountSupport.scaleCalc(line.getPrice());
+            ProductDefinitionDisplayDto product = productByItemId.get(line.getItemId());
+            BigDecimal ratio = this.resolvePackageUnitRatio(product);
+            BigDecimal purchaseUnit = this.chargeItemPackageUnitRatioSupport.toAlignedPurchaseDisplayUnitPrice(
+                packagePurchaseUnit, ratio, line.getUnitCode(), product);
+            BigDecimal purchaseAmount = MonetaryAmountSupport.scaleCalc(signedPurchaseTotal);
+            String bucketKey = this.resolveDeptLineDimensionKey(line, dimension, orgByLocation);
+            if (bucketKey == null) {
+                continue;
+            }
+            this.accumulateSlipPricingIntoBuckets(
+                buckets, bucketKey, purchaseUnit, purchaseAmount, null, null);
+        }
+    }
+
+    /**
+     * 将累加桶写回汇总行进/售净额与展示单价。
+     *
+     * @param summaryRows 汇总行
+     * @param buckets     已累加金额桶
+     */
+    public void applySummaryAmountBuckets(
+        List<? extends MedicationDispensePurchaseSaleSummaryLine> summaryRows,
+        SummaryAmountBuckets buckets) {
+        if (summaryRows == null || summaryRows.isEmpty() || buckets == null) {
+            return;
+        }
+        for (MedicationDispensePurchaseSaleSummaryLine summaryRow : summaryRows) {
+            if (summaryRow == null || StringUtils.isEmpty(summaryRow.getDimensionKey())) {
+                continue;
+            }
+            String key = summaryRow.getDimensionKey();
+            BigDecimal purchaseNet = this.sumThenSettleOrNull(buckets.purchaseAmountsByKey.get(key));
+            BigDecimal saleNet = this.sumThenSettleOrNull(buckets.saleAmountsByKey.get(key));
+            summaryRow.setPurchaseNetAmount(purchaseNet);
+            summaryRow.setSaleNetAmount(saleNet);
+            summaryRow.setNetAmount(saleNet);
+            summaryRow.setPurchaseUnitPrice(
+                this.resolveUniqueDisplayUnitPrice(buckets.purchaseUnitsByKey.get(key)));
+            summaryRow.setSaleUnitPrice(
+                this.resolveUniqueDisplayUnitPrice(buckets.saleUnitsByKey.get(key)));
+        }
+    }
+
+    /**
+     * 汇总金额分块累加桶（避免全窗明细 DTO 常驻后再一次聚合）。
+     */
+    public static final class SummaryAmountBuckets {
+
+        /** 分桶 → 进价行额列表。 */
+        private final Map<String, List<BigDecimal>> purchaseAmountsByKey = new HashMap<>();
+
+        /** 分桶 → 售价行额列表。 */
+        private final Map<String, List<BigDecimal>> saleAmountsByKey = new HashMap<>();
+
+        /** 分桶 → 进价展示单价集合。 */
+        private final Map<String, Set<BigDecimal>> purchaseUnitsByKey = new HashMap<>();
+
+        /** 分桶 → 售价展示单价集合。 */
+        private final Map<String, Set<BigDecimal>> saleUnitsByKey = new HashMap<>();
+    }
+
+    /**
+     * 收集同桶明细行的批号/账单单价（已 enrich）。
+     *
+     * @param bucketUnits 分桶 → 展示单价集合
+     * @param bucketKey   分桶键
+     * @param unitPrice   明细行进/售单价
+     */
+    private void collectSummaryDisplayUnitPrice(
+        Map<String, Set<BigDecimal>> bucketUnits,
+        String bucketKey,
+        BigDecimal unitPrice) {
+        if (unitPrice == null) {
+            return;
+        }
+        bucketUnits
+            .computeIfAbsent(bucketKey, ignored -> new LinkedHashSet<>())
+            .add(MonetaryAmountSupport.scaleCalc(unitPrice));
+    }
+
+    /**
+     * 同桶多行批号/账单单价一致时返回该单价；不一致则 null。
+     *
+     * @param candidates 候选展示单价
+     * @return 唯一单价或 null
+     */
+    private BigDecimal resolveUniqueDisplayUnitPrice(Set<BigDecimal> candidates) {
+        if (candidates == null || candidates.isEmpty()) {
+            return null;
+        }
+        BigDecimal unique = null;
+        for (BigDecimal candidate : candidates) {
+            if (candidate == null) {
+                continue;
+            }
+            BigDecimal scaled = MonetaryAmountSupport.scaleCalc(candidate);
+            if (unique == null) {
+                unique = scaled;
+            } else if (unique.compareTo(scaled) != 0) {
+                return null;
+            }
+        }
+        return unique;
     }
 
     /**
@@ -347,11 +692,333 @@ public class MedicationDispenseReportPricingEnricher {
     }
 
     /**
+     * 患者发放事实 → dimensionKey（与明细行分桶键同构）。
+     */
+    private String resolvePatientSlipDimensionKey(
+        MedicationDispenseSlipQueryModel slip,
+        String dimension,
+        Map<Long, String> categoryCodeByMedicationId) {
+        if (MedicationDispenseReportConstants.SUMMARY_DIMENSION_ITEM.equals(dimension)) {
+            Long medicationId = slip.getMedicationId();
+            if (medicationId == null) {
+                return "ITEM:";
+            }
+            return "ITEM:" + medicationId;
+        }
+        if (MedicationDispenseReportConstants.SUMMARY_DIMENSION_CATEGORY.equals(dimension)) {
+            String categoryCode = "";
+            if (slip.getMedicationId() != null) {
+                String mapped = categoryCodeByMedicationId.get(slip.getMedicationId());
+                if (mapped != null) {
+                    categoryCode = mapped;
+                }
+            }
+            return "CATEGORY:" + categoryCode;
+        }
+        Long locationId = slip.getLocationId();
+        if (locationId == null) {
+            return "PHARMACY:";
+        }
+        return "PHARMACY:" + locationId;
+    }
+
+    /**
+     * 科室领用事实 → dimensionKey。
+     */
+    private String resolveDeptLineDimensionKey(
+        DeptIssueReportLineQueryModel line,
+        String dimension,
+        Map<Long, Long> organizationIdByPharmacyLocationId) {
+        if (DeptIssueReportConstants.SUMMARY_DIMENSION_ITEM.equals(dimension)) {
+            Long itemId = line.getItemId();
+            if (itemId == null) {
+                return "ITEM:";
+            }
+            return "ITEM:" + itemId;
+        }
+        if (DeptIssueReportConstants.SUMMARY_DIMENSION_PHARMACY.equals(dimension)) {
+            Long locationId = line.getPurposeLocationId();
+            if (locationId == null) {
+                return "PHARMACY:";
+            }
+            return "PHARMACY:" + locationId;
+        }
+        Long orgId = line.getConsumingOrganizationId();
+        if (orgId == null && line.getPurposeLocationId() != null) {
+            orgId = organizationIdByPharmacyLocationId.get(line.getPurposeLocationId());
+        }
+        if (orgId == null) {
+            return "DEPARTMENT:";
+        }
+        return "DEPARTMENT:" + orgId;
+    }
+
+    /**
+     * 判断发放事实是否仍需批号进价（住院另含批号售价）回落。
+     */
+    private boolean slipNeedsLotPricingFallback(
+        BigDecimal purchaseUnit,
+        BigDecimal purchaseTotal,
+        BigDecimal saleUnit,
+        BigDecimal saleTotal,
+        boolean allowInpatientLotSaleWhenChargeMissing) {
+        boolean needPurchase = purchaseUnit == null && purchaseTotal == null;
+        if (needPurchase) {
+            return true;
+        }
+        if (allowInpatientLotSaleWhenChargeMissing && saleUnit == null && saleTotal == null) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 将单条发放/领用定价累加进汇总金额桶。
+     */
+    private void accumulateSlipPricingIntoBuckets(
+        SummaryAmountBuckets buckets,
+        String bucketKey,
+        BigDecimal purchaseUnit,
+        BigDecimal purchaseTotal,
+        BigDecimal saleUnit,
+        BigDecimal saleTotal) {
+        this.accumulateAmount(buckets.purchaseAmountsByKey, bucketKey, purchaseTotal);
+        this.accumulateAmount(buckets.saleAmountsByKey, bucketKey, saleTotal);
+        this.collectSummaryDisplayUnitPrice(buckets.purchaseUnitsByKey, bucketKey, purchaseUnit);
+        this.collectSummaryDisplayUnitPrice(buckets.saleUnitsByKey, bucketKey, saleUnit);
+    }
+
+    /**
+     * 批号回落后直写汇总桶（禁止再物化明细 DTO）。
+     */
+    private void supplementLotPricingIntoSummaryBucketsForSlips(
+        SummaryAmountBuckets buckets,
+        List<PatientSlipPricingState> states,
+        String dimension,
+        Map<Long, String> categoryCodeByMedicationId,
+        boolean allowInpatientLotSaleWhenChargeMissing) {
+        if (buckets == null || states == null || states.isEmpty()) {
+            return;
+        }
+        LinkedHashSet<Long> medicationIds = new LinkedHashSet<>();
+        LinkedHashSet<ChargeItemDefinitionLotBatchKey> lotKeys = new LinkedHashSet<>();
+        for (PatientSlipPricingState state : states) {
+            MedicationDispenseSlipQueryModel slip = state.slip;
+            if (slip != null
+                && slip.getMedicationId() != null
+                && !StringUtils.isEmpty(slip.getLotNumber())) {
+                medicationIds.add(slip.getMedicationId());
+                ChargeItemDefinitionLotBatchKey lotKey = ChargeItemDefinitionLotBatchKey.maybeOf(
+                    TableNameConstants.MED_MEDICATION_DEFINITION,
+                    slip.getMedicationId(),
+                    slip.getLotNumber());
+                // Pre：收集结果批号键，供会话与调价键 map 匹配
+                if (lotKey != null) {
+                    lotKeys.add(lotKey);
+                }
+            }
+        }
+        Map<Long, ProductDefinitionDisplayDto> productByMedicationId =
+            this.loadProductByMedicationIds(medicationIds);
+        // Pre：先拎调价品规+批号，再按本批 lotKeys 匹配后才拉历史
+        HistoricalChargeItemPurchasePriceSupport.LotPriceResolveSession lotSession =
+            this.historicalChargeItemPurchasePriceSupport.beginLotPriceSession(
+                TableNameConstants.MED_MEDICATION_DEFINITION, medicationIds, lotKeys);
+        Map<String, BigDecimal> packagePurchaseCache = new HashMap<>();
+        Map<String, BigDecimal> packageSaleCache = new HashMap<>();
+        for (PatientSlipPricingState state : states) {
+            MedicationDispenseSlipQueryModel slip = state.slip;
+            if (slip == null || slip.getDispenseId() == null) {
+                continue;
+            }
+            boolean refundRow = this.isRefundSlipRow(slip);
+            ProductDefinitionDisplayDto product = productByMedicationId.get(slip.getMedicationId());
+            BigDecimal packageUnitRatio = null;
+            if (product != null) {
+                packageUnitRatio = product.getPackageUnitRatio();
+            }
+            BigDecimal quantity = slip.getDispenseQuantity();
+            if (quantity == null) {
+                quantity = slip.getQuantity();
+            }
+            if (quantity == null || quantity.compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            String cacheKey = this.buildLotPriceCacheKey(slip);
+            boolean skipPurchaseLotBecauseOpRefundSaleMissing =
+                !allowInpatientLotSaleWhenChargeMissing
+                    && refundRow
+                    && state.saleUnit == null
+                    && state.saleTotal == null;
+            if (!skipPurchaseLotBecauseOpRefundSaleMissing
+                && state.purchaseUnit == null
+                && state.purchaseTotal == null
+                && slip.getMedicationId() != null
+                && !StringUtils.isEmpty(slip.getLotNumber())) {
+                BigDecimal packagePurchase = packagePurchaseCache.get(cacheKey);
+                if (!packagePurchaseCache.containsKey(cacheKey)) {
+                    packagePurchase = this.historicalChargeItemPurchasePriceSupport.resolveLotPurchaseUnitPrice(
+                        TableNameConstants.MED_MEDICATION_DEFINITION,
+                        slip.getMedicationId(),
+                        slip.getLotNumber(),
+                        slip.getDispenseTime(),
+                        lotSession);
+                    packagePurchaseCache.put(cacheKey, packagePurchase);
+                }
+                if (packagePurchase != null) {
+                    BigDecimal displayPurchase =
+                        this.chargeItemPackageUnitRatioSupport.toAlignedPurchaseDisplayUnitPrice(
+                            packagePurchase, packageUnitRatio, slip.getUnitCode(), product);
+                    BigDecimal purchaseLine = this.chargeItemPackageUnitRatioSupport.computePurchaseLineAmount(
+                        packagePurchase, packageUnitRatio, quantity, slip.getUnitCode(), product);
+                    if (displayPurchase != null) {
+                        state.purchaseUnit = MonetaryAmountSupport.scaleCalc(displayPurchase);
+                    }
+                    if (purchaseLine != null) {
+                        BigDecimal signedPurchase = purchaseLine;
+                        if (refundRow) {
+                            signedPurchase = purchaseLine.negate();
+                        }
+                        state.purchaseTotal = MonetaryAmountSupport.scaleCalc(signedPurchase);
+                    }
+                }
+            }
+            if (allowInpatientLotSaleWhenChargeMissing
+                && state.saleUnit == null
+                && state.saleTotal == null
+                && slip.getMedicationId() != null
+                && !StringUtils.isEmpty(slip.getLotNumber())) {
+                BigDecimal packageSale = packageSaleCache.get(cacheKey);
+                if (!packageSaleCache.containsKey(cacheKey)) {
+                    packageSale = this.historicalChargeItemPurchasePriceSupport.resolveLotSaleUnitPrice(
+                        TableNameConstants.MED_MEDICATION_DEFINITION,
+                        slip.getMedicationId(),
+                        slip.getLotNumber(),
+                        slip.getDispenseTime(),
+                        lotSession);
+                    packageSaleCache.put(cacheKey, packageSale);
+                }
+                if (packageSale != null) {
+                    BigDecimal displaySale =
+                        this.chargeItemPackageUnitRatioSupport.toAlignedPurchaseDisplayUnitPrice(
+                            packageSale, packageUnitRatio, slip.getUnitCode(), product);
+                    BigDecimal saleLine = this.chargeItemPackageUnitRatioSupport.computePurchaseLineAmount(
+                        packageSale, packageUnitRatio, quantity, slip.getUnitCode(), product);
+                    if (displaySale != null) {
+                        state.saleUnit = MonetaryAmountSupport.scaleCalc(displaySale);
+                    }
+                    if (saleLine != null) {
+                        BigDecimal signedSale = saleLine;
+                        if (refundRow) {
+                            signedSale = saleLine.negate();
+                        }
+                        state.saleTotal = MonetaryAmountSupport.scaleCalc(signedSale);
+                    }
+                }
+            }
+            String bucketKey = this.resolvePatientSlipDimensionKey(slip, dimension, categoryCodeByMedicationId);
+            if (bucketKey == null) {
+                continue;
+            }
+            this.accumulateSlipPricingIntoBuckets(
+                buckets,
+                bucketKey,
+                state.purchaseUnit,
+                state.purchaseTotal,
+                state.saleUnit,
+                state.saleTotal);
+        }
+    }
+
+    /**
+     * 批量装载品规展示（去重 medicationId）。
+     */
+    private Map<Long, ProductDefinitionDisplayDto> loadProductByMedicationIds(Collection<Long> medicationIds) {
+        if (medicationIds == null || medicationIds.isEmpty()) {
+            return Map.of();
+        }
+        List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
+        for (Long medicationId : medicationIds) {
+            if (medicationId == null) {
+                continue;
+            }
+            ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
+            lookup.setProductTableName(TableNameConstants.MED_MEDICATION_DEFINITION);
+            lookup.setProductDefinitionId(medicationId);
+            lookups.add(lookup);
+        }
+        if (lookups.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, ProductDefinitionDisplayDto> byCompositeKey =
+            this.productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
+        Map<Long, ProductDefinitionDisplayDto> byMedicationId = new HashMap<>();
+        for (Long medicationId : medicationIds) {
+            if (medicationId == null) {
+                continue;
+            }
+            String compositeKey = ProductDefinitionKeyUtil.buildCompositeKey(
+                TableNameConstants.MED_MEDICATION_DEFINITION, medicationId);
+            if (compositeKey != null) {
+                ProductDefinitionDisplayDto product = byCompositeKey.get(compositeKey);
+                if (product != null) {
+                    byMedicationId.put(medicationId, product);
+                }
+            }
+        }
+        return byMedicationId;
+    }
+
+    /**
+     * 汇总批号回落前患者侧已解析的售价/进价快照。
+     */
+    private static final class PatientSlipPricingState {
+
+        /** 发放事实。 */
+        private final MedicationDispenseSlipQueryModel slip;
+
+        /** 进价单价。 */
+        private BigDecimal purchaseUnit;
+
+        /** 进价总额。 */
+        private BigDecimal purchaseTotal;
+
+        /** 售价单价。 */
+        private BigDecimal saleUnit;
+
+        /** 售价总额。 */
+        private BigDecimal saleTotal;
+
+        /**
+         * @param slip          发放事实
+         * @param purchaseUnit  已解析进价单价
+         * @param purchaseTotal 已解析进价总额
+         * @param saleUnit      已解析售价单价
+         * @param saleTotal     已解析售价总额
+         */
+        private PatientSlipPricingState(
+            MedicationDispenseSlipQueryModel slip,
+            BigDecimal purchaseUnit,
+            BigDecimal purchaseTotal,
+            BigDecimal saleUnit,
+            BigDecimal saleTotal) {
+            this.slip = slip;
+            this.purchaseUnit = purchaseUnit;
+            this.purchaseTotal = purchaseTotal;
+            this.saleUnit = saleUnit;
+            this.saleTotal = saleTotal;
+        }
+    }
+
+    /**
      * 账单缺失时按发放批号回落进价；住院白名单另回落批号售价（正/退同行）。
      *
      * <p>取消执行删待结算账单后，正向 {@code COMPLETED} 与退药 {@code REFUNDED} 往往均无 ChargeItem。
      * 若仅退药回落批号价、正向仍空，汇总净额会少掉该品一整笔（日结两侧均回落则轧差为 0）。
      * 进价：门/住账单缺失均可回落 {@code LOT_NUMBER_COST}；售价：仅住院白名单回落 {@code LOT_NUMBER_PRICE}。</p>
+     *
+     * <p>门诊禁批号售价：退药行若售价仍空（原正向补价失败），禁止单独回落批号进价，
+     * 否则会出现「进价冲了、售价不冲」的非对称净额（#4M-RFND）。</p>
      *
      * @param lines                                  明细行
      * @param slipRows                               发放事实
@@ -368,8 +1035,18 @@ public class MedicationDispenseReportPricingEnricher {
         }
         Map<Long, MedicationDispenseSlipQueryModel> slipByDispenseId = new HashMap<>();
         LinkedHashSet<Long> medicationIds = new LinkedHashSet<>();
+        LinkedHashSet<Long> needingDispenseIds = new LinkedHashSet<>();
+        for (MedicationDispensePurchaseSaleDetailLine line : lines) {
+            if (line != null && line.getDispenseId() != null) {
+                needingDispenseIds.add(line.getDispenseId());
+            }
+        }
         for (MedicationDispenseSlipQueryModel slip : slipRows) {
             if (slip == null || slip.getDispenseId() == null) {
+                continue;
+            }
+            // Gate：本批未要求回落的发放行不进批号会话
+            if (!needingDispenseIds.contains(slip.getDispenseId())) {
                 continue;
             }
             // Pre：正/退均纳入候选；无批号无法回落（禁目录 PURCHASE/SALE）
@@ -382,9 +1059,23 @@ public class MedicationDispenseReportPricingEnricher {
         if (slipByDispenseId.isEmpty()) {
             return;
         }
+        LinkedHashSet<ChargeItemDefinitionLotBatchKey> lotKeys = new LinkedHashSet<>();
+        for (MedicationDispenseSlipQueryModel slip : slipByDispenseId.values()) {
+            // Pre：本批需回落的发放行组批号键
+            if (slip == null || slip.getMedicationId() == null || StringUtils.isEmpty(slip.getLotNumber())) {
+                continue;
+            }
+            ChargeItemDefinitionLotBatchKey lotKey = ChargeItemDefinitionLotBatchKey.maybeOf(
+                TableNameConstants.MED_MEDICATION_DEFINITION,
+                slip.getMedicationId(),
+                slip.getLotNumber());
+            if (lotKey != null) {
+                lotKeys.add(lotKey);
+            }
+        }
         HistoricalChargeItemPurchasePriceSupport.LotPriceResolveSession lotSession =
             this.historicalChargeItemPurchasePriceSupport.beginLotPriceSession(
-                TableNameConstants.MED_MEDICATION_DEFINITION, medicationIds);
+                TableNameConstants.MED_MEDICATION_DEFINITION, medicationIds, lotKeys);
         Map<String, BigDecimal> packagePurchaseCache = new HashMap<>();
         Map<String, BigDecimal> packageSaleCache = new HashMap<>();
         for (MedicationDispensePurchaseSaleDetailLine line : lines) {
@@ -412,8 +1103,16 @@ public class MedicationDispenseReportPricingEnricher {
             }
             boolean refundRow = this.isRefundSlipRow(slip);
             String cacheKey = this.buildLotPriceCacheKey(slip);
+            // Gate：门诊退药且售价仍空 → 跳过批号进价，避免进价单边冲减
+            boolean skipPurchaseLotBecauseOpRefundSaleMissing =
+                !allowInpatientLotSaleWhenChargeMissing
+                    && refundRow
+                    && line.getSaleUnitPrice() == null
+                    && line.getSaleAmount() == null;
             // Asm：进价缺失 → 批号进价（正/退；退药行额取负）
-            if (line.getPurchaseUnitPrice() == null && line.getPurchaseAmount() == null) {
+            if (!skipPurchaseLotBecauseOpRefundSaleMissing
+                && line.getPurchaseUnitPrice() == null
+                && line.getPurchaseAmount() == null) {
                 BigDecimal packagePurchase = packagePurchaseCache.get(cacheKey);
                 if (!packagePurchaseCache.containsKey(cacheKey)) {
                     packagePurchase = this.historicalChargeItemPurchasePriceSupport.resolveLotPurchaseUnitPrice(
@@ -598,12 +1297,12 @@ public class MedicationDispenseReportPricingEnricher {
     }
 
     /**
-     * 解析药品品规包装倍数（领用侧展示折算；单条查产品）。
+     * 解析药品品规产品展示（领用侧操作单位对齐用）。
      *
      * @param medicationId 药品定义主键
-     * @return 包装倍数；无法解析时 null
+     * @return 产品展示；无法解析时 null
      */
-    private BigDecimal resolveMedicationPackageUnitRatio(Long medicationId) {
+    private ProductDefinitionDisplayDto resolveMedicationProductDisplay(Long medicationId) {
         if (medicationId == null) {
             return null;
         }
@@ -617,7 +1316,16 @@ public class MedicationDispenseReportPricingEnricher {
         if (compositeKey == null) {
             return null;
         }
-        ProductDefinitionDisplayDto product = productByKey.get(compositeKey);
+        return productByKey.get(compositeKey);
+    }
+
+    /**
+     * 从产品展示解析包装倍数。
+     *
+     * @param product 产品展示
+     * @return 包装倍数；无法解析时 null
+     */
+    private BigDecimal resolvePackageUnitRatio(ProductDefinitionDisplayDto product) {
         if (product == null || product.getPackageUnitRatio() == null) {
             return null;
         }
@@ -801,6 +1509,9 @@ public class MedicationDispenseReportPricingEnricher {
         /** @return 维度键 */
         String getDimensionKey();
 
+        /** @return 净数量 */
+        BigDecimal getNetQuantity();
+
         /** @return 进价净额 */
         BigDecimal getPurchaseNetAmount();
 
@@ -818,5 +1529,11 @@ public class MedicationDispenseReportPricingEnricher {
 
         /** @param netAmount 售价净额别名 */
         void setNetAmount(BigDecimal netAmount);
+
+        /** @param purchaseUnitPrice 进价单价 */
+        void setPurchaseUnitPrice(BigDecimal purchaseUnitPrice);
+
+        /** @param saleUnitPrice 售价单价 */
+        void setSaleUnitPrice(BigDecimal saleUnitPrice);
     }
 }

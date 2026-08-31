@@ -36,6 +36,7 @@ export interface InpatientSettleQueueItemDto {
   availableBalance?: null | number | string;
   lowBalanceWarning?: boolean;
   ageText?: string;
+  attendingDoctorName?: string;
   bedName?: string;
   contractDisplay?: string;
   contractId?: string;
@@ -69,9 +70,19 @@ export interface LoadInpatientSettleSummaryResponse {
   accountBalanceDisplayMode?: string;
   accountBalanceSubText?: string;
   accountBalanceSummaryText?: string;
+  attendingDoctorName?: string;
   availableBalance?: number | string;
+  /**
+   * 差额提示：库内余额 − 选中合计（调试保留；UI 主路径勿当应付）。
+   */
   balanceHint: number | string;
   bedName?: string;
+  /** 渠道实付 C 预估（自费摘要；医保挂账户时为空，须预结算） */
+  channelPayable?: null | number | string;
+  /** 预交金冲抵 O 预估 */
+  depositOffsetAmount?: null | number | string;
+  /** 轧差分支 R1～R7（自费预估） */
+  depositSettleRuleCode?: null | string;
   displayAccountBalance: number | string;
   lowBalanceWarning?: boolean;
   encounterBusNo: string;
@@ -80,7 +91,13 @@ export interface LoadInpatientSettleSummaryResponse {
   patientId: string;
   patientName: string;
   pendingSettlementTotal: number | string;
+  /** 个人现金应付 P 预估（自费≈选中合计；医保须预结算） */
+  personalCashPayable?: null | number | string;
+  /** 是否全额退预交金预估 */
+  prepayFullRefund?: boolean | null;
   prepayNetBalance: number | string;
+  /** 应退预交金预估 */
+  prepayRefundAmount?: null | number | string;
   selectedTotal: number | string;
   statusEnum: string;
   statusEnumText: string;
@@ -101,6 +118,10 @@ export interface InpatientSettleChargeLineDto {
   categoryCode?: string;
   categoryDisplay?: string;
   chargeItemId: string;
+  /** 医保等级 code */
+  chrgitmLv?: null | number | string;
+  /** 医保等级展示（甲类/乙类/丙类） */
+  chrgitmLvText?: string;
   itemName?: string;
   lineAmount: number | string;
   occurrenceTime?: string;
@@ -148,14 +169,84 @@ export interface PreSettleInpatientChargesRequest {
   ybMediumType?: string;
 }
 
+/** 住院费用明细单批上传请求（2301 进度条） */
+export interface UploadInpatientFeeDetailsBatchRequest {
+  acctUsedFlag?: string;
+  chargeItemIds: string[];
+  contractId?: string;
+  encounterId: string;
+  insuplcAdmdvs?: string;
+  insutype?: string;
+  /** 上批返回的平台就诊 ID；首批可空 */
+  mdtrtId?: string;
+  patientId: string;
+  psnNo?: string;
+  psnSetlway?: string;
+  settleMode?: string;
+  ybCardInfo?: string;
+  ybMediumType?: string;
+}
+
+/** 住院费用明细单批上传响应 */
+export interface UploadInpatientFeeDetailsBatchResponse {
+  batchUploaded: number;
+  done: boolean;
+  mdtrtId?: string;
+  remainingAfter: number;
+}
+
+/** 住院平台在院对齐请求 */
+export interface AlignInpatientPlatformVisitRequest {
+  contractId: string;
+  encounterId: string;
+  insuplcAdmdvs?: string;
+  patientId: string;
+  psnNo: string;
+}
+
+/** 住院平台在院对齐响应 */
+export interface AlignInpatientPlatformVisitResponse {
+  advice?: string;
+  localMdtrtId?: string;
+  mismatchCode?: string;
+  platformInHospitalMdtrtIds?: string[];
+  repaired?: boolean;
+  repairSummary?: string;
+}
+
+/** 医保出院预交金原路退计划项 */
+export interface InpatientPrepayRefundPlanItemDto {
+  amount: number | string;
+  originalPaymentId?: string;
+  payChannelCode?: string;
+  requiresClientRefund?: boolean;
+}
+
 /** 住院预结算响应 */
 export interface PreSettleInpatientChargesResponse {
-  /** 渠道实付/少补（预交金充足时为 0） */
+  /**
+   * 渠道实付 C（确认 `paymentDetails` 合计须等于本值；C=0 可空明细）。
+   * 不再表示「自费少补 / 医保全额」双语义。
+   */
   displayAmount?: null | number | string;
+  /** 预交金冲抵额 O */
+  depositOffsetAmount?: null | number | string;
+  /** 轧差分支 R1～R7 */
+  depositSettleRuleCode?: null | string;
   insurancePreSettled?: boolean;
   paymentDraftId: string;
-  /** 库内预交金余额（冲抵口径） */
+  /** 个人现金应付 P（结算主单金额；医保=psnCashPay，自费=本批应收） */
+  personalCashPayable?: null | number | string;
+  /** 是否全额退清预交金 D（R4 / R6 含银联） */
+  prepayFullRefund?: boolean | null;
+  /** 库内预交金余额 D */
   prepayNetBalance?: null | number | string;
+  /** 应退预交金金额（R3=D−P；R4/R6=D；R1/R2=0） */
+  prepayRefundAmount?: null | number | string;
+  /** 预交金是否够用（D≥P） */
+  prepaySufficient?: boolean;
+  /** 出院原路退预交金拆分计划（自费/医保共用） */
+  prepayRefundPlan?: InpatientPrepayRefundPlanItemDto[];
   previewText?: string;
   receivableTotal: number | string;
   settlementComposition?: string;
@@ -165,9 +256,13 @@ export interface PreSettleInpatientChargesResponse {
   ybCvlservFlag?: null | string;
   ybCvlservPay?: null | number | string;
   ybFundPaySumamt?: null | number | string;
+  ybFulamtOwnpayAmt?: null | number | string;
   ybHifpPay?: null | number | string;
+  ybInscpScpAmt?: null | number | string;
   ybMedfeeSumamt?: null | number | string;
   ybOthPay?: null | number | string;
+  ybOverlmtSelfpay?: null | number | string;
+  ybPreselfpayAmt?: null | number | string;
   ybPreSettleId?: string;
   ybPsnCashPay?: null | number | string;
 }
@@ -178,10 +273,17 @@ export interface InpatientSettlePaymentDetailDto {
   payChannelCode: string;
 }
 
+/** 确认住院结算：预交金原路退 Win 回传项 */
+export interface InpatientSettleClientRefundItemDto {
+  clientRefundResult: import('#/api/payment/payment.types').ClientRefundResultDto;
+  originalPaymentId: string;
+}
+
 /** 确认住院结算请求 */
 export interface ConfirmInpatientSettleRequest {
   billDate?: string;
   chargeItemIds: string[];
+  clientRefundResults?: InpatientSettleClientRefundItemDto[];
   clientScanResult?: import('#/api/payment/payment.types').ClientScanResultDto;
   encounterId: string;
   patientId: string;
@@ -198,19 +300,36 @@ export interface ConfirmInpatientSettleResponse {
   invoiceDraftId?: string;
   invoiceStatus?: string;
   paymentId: string;
+  /** 预交金扫码原路退是否待第二阶段 */
+  prepayRefundPending?: boolean;
+  /** 待原路退计划（pending 时有值） */
+  prepayRefundPlan?: InpatientPrepayRefundPlanItemDto[];
   successMessageCode?: string;
   ybSetlId?: string;
 }
 
+/** 医保出院第二阶段：预交金原路退完结请求 */
+export interface CompleteInpatientDischargePrepayRefundRequest {
+  clientRefundResults?: InpatientSettleClientRefundItemDto[];
+  encounterId: string;
+  patientId: string;
+}
+
 /** 已结算/反结历史支付单摘要（IF-IP-STL-07 增量） */
 export interface SettledPaymentBriefDto {
+  /** 渠道实收合计 C（现金/微信等；不含冲抵与医保基金） */
+  channelPayable?: null | number | string;
+  /** 预交金冲抵额 O */
+  depositOffsetAmount?: null | number | string;
   /** 是否已关联医保正式结算回执 */
   insuranceSettled?: boolean;
   payMethodText?: string;
   paymentId: string;
   /** 支付业务单号（fin_payment_reconciliation.payment_no） */
   paymentNo?: string;
-  /** 展示绝对值，不含反结符号 */
+  /** 个人现金应付 P（与主单 display/tendered 一致） */
+  personalCashPayable?: null | number | string;
+  /** 展示绝对值，不含反结符号（优先认 P） */
   receivableTotal: number | string;
   /** FORWARD 正向结单 / REVERSE 逆向反结单 */
   recordType?: 'FORWARD' | 'REVERSE' | string;
@@ -222,7 +341,7 @@ export interface SettledPaymentBriefDto {
   reverseEnabled?: boolean;
   /** 是否可在收银台点击召回（已离院 DISCHARGED） */
   recallEnabled?: boolean;
-  /** 带符号展示金额：正向为正、逆向为负 */
+  /** 带符号展示金额：正向为正、逆向为负（认 P） */
   signedAmount?: number | string;
   settleTime: string;
   /** PaymentStatus code，如 SUCCESS / REFUNDED */
@@ -230,11 +349,17 @@ export interface SettledPaymentBriefDto {
   ybAcctPay?: null | number | string;
   ybActPayDedc?: null | number | string;
   ybCvlservPay?: null | number | string;
+  ybFulamtOwnpayAmt?: null | number | string;
   ybFundPaySumamt?: null | number | string;
   ybHifpPay?: null | number | string;
+  ybInscpScpAmt?: null | number | string;
   ybMedfeeSumamt?: null | number | string;
   ybOthPay?: null | number | string;
+  ybOverlmtSelfpay?: null | number | string;
+  ybPreselfpayAmt?: null | number | string;
   ybPsnCashPay?: null | number | string;
+  /** 结算模式：DISCHARGE_FULL / MID_SETTLE */
+  settleMode?: string;
 }
 
 /** 已结算单查阅请求 */

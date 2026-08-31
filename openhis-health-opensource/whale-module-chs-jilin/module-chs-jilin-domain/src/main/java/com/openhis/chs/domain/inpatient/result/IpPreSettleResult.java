@@ -58,4 +58,16 @@ public class IpPreSettleResult {
 
     /** 其他支出（2303 oth_pay，只读展示） */
     private BigDecimal othPay;
+
+    /** 全自费金额 */
+    private BigDecimal fulamtOwnpayAmt;
+
+    /** 先行自付 */
+    private BigDecimal preselfpayAmt;
+
+    /** 符合政策范围金额 */
+    private BigDecimal inscpScpAmt;
+
+    /** 超限价自费 */
+    private BigDecimal overlmtSelfpay;
 }

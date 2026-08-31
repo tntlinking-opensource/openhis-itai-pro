@@ -220,11 +220,11 @@ const settlementInsuranceBreakdown = computed(() => {
     { key: 'fundPay', label: '基金支付合计', value: Number(snap.ybFundPaySumamt ?? 0) },
     { key: 'poolingPay', label: '基本医保统筹', value: Number(snap.ybHifpPay ?? 0) },
     { key: 'otherPay', label: '其他支出', value: Number(snap.ybOthPay ?? 0) },
-    { key: 'accountPay', label: '个人账户支付', value: Number(snap.ybAcctPay ?? 0) },
+    { key: 'accountPay', label: '医保个人账户', value: Number(snap.ybAcctPay ?? 0) },
     { key: 'deductibleLine', label: '起付线', value: Number(snap.ybActPayDedc ?? 0) },
     { key: 'cvlservPay', label: '公务员医疗补助', value: Number(snap.ybCvlservPay ?? 0) },
-    { key: 'cashPay', label: '现金补缴', value: Number(snap.ybPsnCashPay ?? 0) },
-    { key: 'finalReceivable', label: '最终应收', value: Number(snap.displayAmount ?? 0) },
+    { key: 'cashPay', label: '个人现金（医保口径）', value: Number(snap.ybPsnCashPay ?? 0) },
+    { key: 'finalReceivable', label: '个人现金（待收）', value: Number(snap.displayAmount ?? 0) },
   ];
 });
 
@@ -1525,9 +1525,9 @@ const handleConfirmSettlement = async () => {
   if (!snap || !eid) {
     return;
   }
-  // 应收为 0（如医保全额覆盖）时无需银联扫码/付款码
+  // 应收为 0（如医保全额覆盖）时无需银联扫码/付款码；有医保时扫码额以 2207 回写为准
   const cashPay = Number(snap.displayAmount ?? 0);
-  const payableCash = Number.isFinite(cashPay) ? cashPay : 0;
+  let payableCash = Number.isFinite(cashPay) ? cashPay : 0;
   const needScanPay = payableCash > 0.001 && isScanPayChannel(paymentForm.payChannelCode);
   const halfSuccessLocked = hasCachedClientScanSuccess(snap.paymentDraftId);
   // 银联补收半成功：允许空付款码，由 submitScanPayment 查 BPC SUCCESS 复用凭证
@@ -1591,7 +1591,9 @@ const handleConfirmSettlement = async () => {
 
     if (chsBeforeScan) {
       setChargeProgressStep(step, '医保正式结算通信中（2207）…');
-      await httpConfirmOutpatientInsuranceBeforeScan({
+      const expectedBatches =
+        insuranceGroupBchnos.length > 0 ? insuranceGroupBchnos.length : snap.ybChrgBchno ? 1 : 0;
+      const ybConfirm = await httpConfirmOutpatientInsuranceBeforeScan({
         paymentDraftId: String(snap.paymentDraftId),
         encounterId: eid,
         ...(insuranceGroupBchnos.length > 0
@@ -1600,12 +1602,22 @@ const handleConfirmSettlement = async () => {
             ? { ybChrgBchno: snap.ybChrgBchno }
             : {}),
       });
+      if (expectedBatches > 0 && (ybConfirm?.confirmedBatchCount ?? 0) < expectedBatches) {
+        ElMessage.error('医保结算批次不完整，请勿扫码，请重试确认收费');
+        return;
+      }
+      if (ybConfirm?.patientCashAmount != null && ybConfirm.patientCashAmount !== '') {
+        const ybCash = Number(ybConfirm.patientCashAmount);
+        if (Number.isFinite(ybCash)) {
+          payableCash = Math.max(0, ybCash);
+        }
+      }
       chs2207BeforeScanDone = true;
       step += 1;
     }
 
     let clientScanResult;
-    if (needScanPay) {
+    if (needScanPay && payableCash > 0.001) {
       await refreshUnionPayCapabilities();
       if (!scanPayEnabled.value) {
         ElMessage.error('请启动本地客户端（OpenHIS.Win）并确认银联组件已安装');

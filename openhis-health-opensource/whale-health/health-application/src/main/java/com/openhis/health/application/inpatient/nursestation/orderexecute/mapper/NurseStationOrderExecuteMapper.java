@@ -5,6 +5,7 @@
 package com.openhis.health.application.inpatient.nursestation.orderexecute.mapper;
 
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.inpatient.nursestation.orderexecute.request.ListNurseStationOrderExecuteForPrintRequest;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.request.ListNurseStationOrderExecuteRequest;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.support.NurseStationOrderExecuteListQuery;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.NurseStationOrderExecuteRowDto;
@@ -37,7 +38,21 @@ import java.util.List;
  */
 public interface NurseStationOrderExecuteMapper {
 
+    /**
+     * IF-IP-EXE-01：医嘱执行页列表查询映射（不含打印专用区间字段）。
+     *
+     * @param request 医嘱执行列表请求
+     * @return Loader 读查询
+     */
     NurseStationOrderExecuteListQuery toListQuery(ListNurseStationOrderExecuteRequest request);
+
+    /**
+     * 打印中心医嘱执行列表查询映射（含计划点下界与开嘱日区间）。
+     *
+     * @param request 打印中心列表请求
+     * @return Loader 读查询
+     */
+    NurseStationOrderExecuteListQuery toListQueryForPrint(ListNurseStationOrderExecuteForPrintRequest request);
 
     ListNurseStationOrderExecuteResponse toListResponse(NurseStationOrderExecuteListResult result);
 
@@ -59,16 +74,19 @@ public interface NurseStationOrderExecuteMapper {
     String resolveTherapyEnum(String therapyType);
 
     /**
-     * 按 executeTab 收窄槽位：医嘱展示字段不变，仅当前 Tab 对应类别保留 planTime ≤ deadline 的计划点（BR-IP-EXE-010）。
+     * 按 executeTab 收窄槽位：医嘱展示字段不变，仅当前 Tab 对应类别保留
+     * planTime ∈ [planTimeFrom, deadline] 的计划点（BR-IP-EXE-010）；下界可空。
      *
      * @param row                已装配四类槽位的医嘱行；原地改写槽位字段
      * @param executeTab         pending / executed / skipped / cancelled
      * @param executionDeadline  截止时间
+     * @param planTimeFrom       计划点下界（含）；可空
      */
     void applyExecuteTabSlotFilter(
         NurseStationOrderExecuteRowDto row,
         String executeTab,
-        LocalDateTime executionDeadline);
+        LocalDateTime executionDeadline,
+        LocalDateTime planTimeFrom);
 
     /**
      * 批量执行成功响应。

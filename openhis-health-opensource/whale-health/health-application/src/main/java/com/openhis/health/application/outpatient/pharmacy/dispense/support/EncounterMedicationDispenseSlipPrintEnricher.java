@@ -406,7 +406,7 @@ public class EncounterMedicationDispenseSlipPrintEnricher {
      *
      * @param rxTypeCode  {@code rx_type_code}
      * @param medTypeCode {@code YbMedType#getCode()}（可空）
-     * @return 普通/慢病/急诊/儿科/麻精一文案
+     * @return 普通/慢病/急诊/儿科/麻精一/精二文案
      */
     private static String resolvePrescriptionPaperTypeLine1(String rxTypeCode, String medTypeCode) {
         String code = trimToNull(rxTypeCode);
@@ -425,6 +425,10 @@ public class EncounterMedicationDispenseSlipPrintEnricher {
         // 麻精一专用类别
         if (PrescriptionSplitConstants.RX_TYPE_NARCOTIC_PSYCH_ONE.equals(code)) {
             return "麻精一";
+        }
+        // 精二类别（可与普通西药/中成药同方，方头须标精二）
+        if (PrescriptionSplitConstants.RX_TYPE_PSYCH_TWO.equals(code)) {
+            return "精二";
         }
         // 慢病/慢特病/特病医疗类别 → 慢病处方（与发药单 med_type 对齐）
         if (isChronicMedTypeCode(medTypeCode)) {

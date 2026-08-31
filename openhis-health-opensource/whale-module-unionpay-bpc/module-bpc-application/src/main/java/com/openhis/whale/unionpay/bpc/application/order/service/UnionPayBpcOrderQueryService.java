@@ -366,6 +366,7 @@ public class UnionPayBpcOrderQueryService {
                 .setTradeNo(order.getTradeNo())
                 .setTranType(order.getTranType())
                 .setTxnAmtFen(order.getTxnAmtFen())
+                .setPaidAmtFen(order.getPaidAmtFen())
                 .setPayType(order.getPayType())
                 .setStatus(order.getStatus())
                 .setRespCode(order.getRespCode())

@@ -8,6 +8,7 @@ package com.openhis.health.domain.workflow.activitydefinition.service;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+import com.openhis.health.domain.share.constants.PeisCatalogConstants;
 import com.openhis.health.domain.share.constants.ServiceRequestCategoryConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
@@ -395,7 +396,10 @@ public class ActivityDefinitionQueryService {
     }
 
     /**
-     * 私有方法：toPageModel。
+     * 将诊疗定义实体投影为目录分页行（含执行科室、计价与拼音，供 PEIS/服务目录列表）。
+     *
+     * @param definition 诊疗定义实体
+     * @return 分页行读模型
      */
     private ActivityDefinitionPageQueryModel toPageModel(ActivityDefinition definition) {
         ActivityDefinitionPageQueryModel model = new ActivityDefinitionPageQueryModel();
@@ -409,6 +413,11 @@ public class ActivityDefinitionQueryService {
         model.setStatusEnum(definition.getStatusEnum());
         model.setYbFlag(definition.getYbFlag());
         model.setChildrenFlag(definition.getChildrenFlag());
+        model.setPermittedGenderEnum(definition.getPermittedGenderEnum());
+        model.setSortOrder(definition.getSortOrder());
+        model.setOrgId(definition.getOrgId());
+        model.setPricingFlag(definition.getPricingFlag());
+        model.setPyStr(definition.getPyStr());
         return model;
     }
 
@@ -446,6 +455,8 @@ public class ActivityDefinitionQueryService {
         model.setMrSettlementTypeCode(definition.getMrSettlementTypeCode());
         model.setChildrenJson(definition.getChildrenJson());
         model.setChildrenFlag(definition.getChildrenFlag());
+        model.setPermittedGenderEnum(definition.getPermittedGenderEnum());
+        model.setSortOrder(definition.getSortOrder());
         return model;
     }
 
@@ -493,6 +504,11 @@ public class ActivityDefinitionQueryService {
             if (query != null) {
                 if (StringUtils.isNotEmpty(query.getCategoryCode())) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.CATEGORY_CODE), query.getCategoryCode().trim()));
+                } else {
+                    // 未指定类目时排除体检 PEIS，避免诊疗维护列表混入体检项目
+                    predicates.add(cb.notEqual(
+                        root.get(FieldNameConstants.CATEGORY_CODE),
+                        PeisCatalogConstants.ACTIVITY_CATEGORY_PEIS));
                 }
                 if (query.getStatusEnum() != null) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), query.getStatusEnum()));
@@ -612,6 +628,10 @@ public class ActivityDefinitionQueryService {
                 prepickedExemption = this.buildActivityPrepickedPredicate(root, cb, query.getPrepickedProductKeys());
             }
             predicates.add(this.buildNotReferencedPackageChildPredicate(root, cq, cb, prepickedExemption));
+            // 医嘱开立目录永不暴露体检类目（PEIS）；体检维护走 pageServiceCatalog + category=PEIS
+            predicates.add(cb.notEqual(
+                root.get(FieldNameConstants.CATEGORY_CODE),
+                PeisCatalogConstants.ACTIVITY_CATEGORY_PEIS));
             if (query != null) {
                 if (StringUtils.isNotEmpty(query.getCategoryCode())) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.CATEGORY_CODE), query.getCategoryCode().trim()));

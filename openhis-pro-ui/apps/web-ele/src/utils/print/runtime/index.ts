@@ -4,9 +4,16 @@ import { ElMessage } from 'element-plus';
 
 import { confirmPrintApi, preparePrintApi } from '#/api/print/print-job';
 
+import {
+  clampFormCopies,
+  isInvFormTriplePaper,
+  normalizeInvFormPaperKind,
+} from '../form-print-preference';
 import { resolvePrintData } from '../mappers/registry';
+import { openPrintPreviewDialog } from '../open-print-preview-dialog';
 import { resolvePrinterForPrint } from '../resolve-printer';
 import { resolvePrintErrorMessage } from './errors';
+import { countHiprintPreviewFolds, renderHiprintPreviewHtml } from './hiprint-client';
 import { notifyPrintError } from './print-user-error';
 import { postHiprintPrintWithRetry } from './retry';
 import { PRINT_CLIENT_TYPE, PRINT_ERROR_CODE } from './types';
@@ -43,9 +50,12 @@ export function scheduleBackgroundPrint(task: () => Promise<unknown>): void {
   });
 }
 
-/** 业务打印统一入口：mapper → prepare → electron-hiprint 静默直打 → confirm（不抛异常） */
+/** 业务打印统一入口：mapper → prepare → 预览或 electron-hiprint 静默直打 → confirm（不抛异常） */
 export async function print<TSource>(options: PrintOptions<TSource>): Promise<PrintResult> {
   try {
+    if (options.preview) {
+      return await runPreview(options);
+    }
     return await runPrint(options);
   } catch (error) {
     const message =
@@ -82,12 +92,32 @@ function reportPrintUserMessage(options: PrintOptions, message: string): void {
   ElMessage.error(message);
 }
 
-async function runPrint<TSource>(options: PrintOptions<TSource>): Promise<PrintResult> {
+interface PreparedPrintContext {
+  printJson: Record<string, unknown>;
+  sourcePrintJson: Record<string, unknown>;
+  printData: Record<string, unknown>;
+  traceId: string;
+  busNo: string;
+  scenarioCode: string;
+  templateVersion?: number;
+}
+
+type PreparePrintContextResult =
+  | { ok: true; ctx: PreparedPrintContext }
+  | { ok: false; result: PrintResult };
+
+/** mapper + preparePrint，预览与静默打印共用 */
+async function resolvePreparedPrintContext<TSource>(
+  options: PrintOptions<TSource>,
+): Promise<PreparePrintContextResult> {
   const scenarioCode = options.scenarioCode?.trim();
   if (!scenarioCode) {
     const message = 'scenarioCode 不能为空';
     reportPrintUserMessage(options, message);
-    return { ok: false, errorCode: PRINT_ERROR_CODE.INVALID_OPTIONS, errorMessage: message };
+    return {
+      ok: false,
+      result: { ok: false, errorCode: PRINT_ERROR_CODE.INVALID_OPTIONS, errorMessage: message },
+    };
   }
 
   const hasSource = options.source !== undefined && options.source !== null;
@@ -95,20 +125,9 @@ async function runPrint<TSource>(options: PrintOptions<TSource>): Promise<PrintR
   if (hasSource === hasPrintData) {
     const message = 'source 与 printData 须二选一';
     reportPrintUserMessage(options, message);
-    return { ok: false, errorCode: PRINT_ERROR_CODE.INVALID_OPTIONS, errorMessage: message };
-  }
-
-  const resolvedPrinter = await resolvePrinterForPrint({
-    scenarioCode,
-    scenarioLabel: options.scenarioLabel,
-    printer: options.printer,
-    selectPrinter: options.selectPrinter,
-  });
-  if (resolvedPrinter.cancelled) {
     return {
       ok: false,
-      errorCode: PRINT_ERROR_CODE.USER_CANCELLED,
-      errorMessage: '已取消打印',
+      result: { ok: false, errorCode: PRINT_ERROR_CODE.INVALID_OPTIONS, errorMessage: message },
     };
   }
 
@@ -125,8 +144,7 @@ async function runPrint<TSource>(options: PrintOptions<TSource>): Promise<PrintR
     reportPrintUserMessage(options, message);
     return {
       ok: false,
-      errorCode: PRINT_ERROR_CODE.MAPPER_NOT_FOUND,
-      errorMessage: message,
+      result: { ok: false, errorCode: PRINT_ERROR_CODE.MAPPER_NOT_FOUND, errorMessage: message },
     };
   }
 
@@ -141,54 +159,228 @@ async function runPrint<TSource>(options: PrintOptions<TSource>): Promise<PrintR
     reportPrintUserMessage(options, message);
     return {
       ok: false,
-      errorCode: PRINT_ERROR_CODE.PREPARE_FAILED,
-      errorMessage: message,
+      result: { ok: false, errorCode: PRINT_ERROR_CODE.PREPARE_FAILED, errorMessage: message },
     };
   }
 
   const traceId = prepared.traceId?.trim();
   const resolvedBusNo = prepared.busNo?.trim();
-  const printJson = prepared.PrintJson;
-  if (!traceId || !resolvedBusNo || !printJson || Object.keys(printJson).length === 0) {
+  const preparedJson = prepared.PrintJson;
+  if (!traceId || !resolvedBusNo || !preparedJson || Object.keys(preparedJson).length === 0) {
     const message = resolvePrintErrorMessage(PRINT_ERROR_CODE.MISSING_PRINT_JSON);
     reportPrintUserMessage(options, message);
     return {
       ok: false,
-      traceId,
-      busNo: resolvedBusNo,
-      scenarioCode,
-      errorCode: PRINT_ERROR_CODE.MISSING_PRINT_JSON,
-      errorMessage: message,
+      result: {
+        ok: false,
+        traceId,
+        busNo: resolvedBusNo,
+        scenarioCode,
+        errorCode: PRINT_ERROR_CODE.MISSING_PRINT_JSON,
+        errorMessage: message,
+      },
     };
   }
 
-  const hiprintResult = await postHiprintPrintWithRetry({
-    PrintJson: printJson,
-    printData,
-    scenarioCode,
-    printer: resolvedPrinter.printer ?? options.printer,
-    copies: options.copies ?? 1,
-    silent: options.silent ?? true,
-    jobName: options.jobName ?? resolvedBusNo,
-  });
+  // 报表/库房纸张等场景可在送打前改列；默认深拷贝后原样使用
+  const sourcePrintJson: Record<string, unknown> = structuredClone(preparedJson);
+  let printJson: Record<string, unknown> = sourcePrintJson;
+  if (options.transformPrintJson) {
+    try {
+      printJson = options.transformPrintJson(structuredClone(sourcePrintJson), {
+        formPaperKind: options.formPaperKind,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '打印模板列转换失败';
+      reportPrintUserMessage(options, message);
+      return {
+        ok: false,
+        result: {
+          ok: false,
+          traceId,
+          busNo: resolvedBusNo,
+          scenarioCode,
+          errorCode: PRINT_ERROR_CODE.PREPARE_FAILED,
+          errorMessage: message,
+        },
+      };
+    }
+  }
 
-  if (hiprintResult.ok) {
-    await safeConfirmPrint({
+  return {
+    ok: true,
+    ctx: {
+      printJson,
+      sourcePrintJson,
+      printData,
       traceId,
       busNo: resolvedBusNo,
       scenarioCode,
       templateVersion: prepared.templateVersion,
+    },
+  };
+}
+
+/** 转义预览失败文案，避免塞进 v-html */
+function escapePreviewErrorText(text: string): string {
+  return text
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
+}
+
+/** 屏幕预览：hiprint getHtml；预览内打印走 print2，不写预览审计 */
+async function runPreview<TSource>(options: PrintOptions<TSource>): Promise<PrintResult> {
+  const prepared = await resolvePreparedPrintContext(options);
+  if (!prepared.ok) {
+    return prepared.result;
+  }
+  const { ctx } = prepared;
+  const showFormPaperKind = options.showFormPaperKind === true;
+  let currentPaperKind = options.formPaperKind
+    ? normalizeInvFormPaperKind(options.formPaperKind)
+    : undefined;
+
+  /** 按纸张从源模板重建 PrintJson */
+  function rebuildPrintJson(kind: NonNullable<typeof currentPaperKind>): Record<string, unknown> {
+    if (!options.transformPrintJson) {
+      return structuredClone(ctx.sourcePrintJson);
+    }
+    return options.transformPrintJson(structuredClone(ctx.sourcePrintJson), {
+      formPaperKind: kind,
+    });
+  }
+
+  /** 渲染当前模板预览 HTML */
+  function renderPreviewHtml(printJson: Record<string, unknown>): string {
+    try {
+      return renderHiprintPreviewHtml(printJson, ctx.printData);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '未知错误';
+      console.warn('[print] hiprint 预览渲染失败', error);
+      return `<p style="padding:16px;color:#c0392b;">预览渲染失败：${escapePreviewErrorText(message)}</p>`;
+    }
+  }
+
+  const previewHtml = renderPreviewHtml(ctx.printJson);
+  const isTriple = currentPaperKind ? isInvFormTriplePaper(currentPaperKind) : false;
+  try {
+    await openPrintPreviewDialog({
+      previewHtml,
+      foldCount: countHiprintPreviewFolds(previewHtml),
+      copies: options.copies ?? 1,
+      continuousForm: options.repeatPrintData === true || (showFormPaperKind && isTriple),
+      formPaperKind: currentPaperKind,
+      showFormPaperKind,
+      onFormPaperKindChange: showFormPaperKind
+        ? (kind) => {
+            currentPaperKind = kind;
+            ctx.printJson = rebuildPrintJson(kind);
+            const html = renderPreviewHtml(ctx.printJson);
+            return {
+              previewHtml: html,
+              foldCount: countHiprintPreviewFolds(html),
+            };
+          }
+        : undefined,
+      onPrint: (copies, formPaperKind) => {
+        const nextCopies = clampFormCopies(copies);
+        const nextKind = formPaperKind
+          ? normalizeInvFormPaperKind(formPaperKind)
+          : currentPaperKind;
+        const nextIsTriple = nextKind ? isInvFormTriplePaper(nextKind) : false;
+        if (showFormPaperKind && nextKind) {
+          ctx.printJson = rebuildPrintJson(nextKind);
+        }
+        return executePreparedPrint(
+          {
+            ...options,
+            copies: nextCopies,
+            repeatPrintData: showFormPaperKind ? nextIsTriple : options.repeatPrintData,
+            formPaperKind: nextKind,
+          },
+          ctx,
+        );
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '打印预览失败';
+    reportPrintUserMessage(options, message);
+    return {
+      ok: false,
+      traceId: ctx.traceId,
+      busNo: ctx.busNo,
+      scenarioCode: ctx.scenarioCode,
+      errorCode: PRINT_ERROR_CODE.PRINT_FAILED,
+      errorMessage: message,
+    };
+  }
+  return {
+    ok: true,
+    traceId: ctx.traceId,
+    busNo: ctx.busNo,
+    scenarioCode: ctx.scenarioCode,
+  };
+}
+
+/** 已准备模板：选打印机后 hiprint print2 + 审计 */
+async function executePreparedPrint<TSource>(
+  options: PrintOptions<TSource>,
+  ctx: PreparedPrintContext,
+): Promise<PrintResult> {
+  const resolvedPrinter = await resolvePrinterForPrint({
+    scenarioCode: ctx.scenarioCode,
+    scenarioLabel: options.scenarioLabel,
+    printer: options.printer,
+    selectPrinter: options.selectPrinter,
+    showPaperKind: options.showPaperKind,
+    initialPaperKind: options.formPaperKind,
+  });
+  if (resolvedPrinter.cancelled) {
+    return {
+      ok: false,
+      errorCode: PRINT_ERROR_CODE.USER_CANCELLED,
+      errorMessage: '已取消打印',
+    };
+  }
+  return sendPreparedToHiprint(options, ctx, resolvedPrinter.printer ?? options.printer);
+}
+
+/** hiprint print2 直打并 confirm（不走浏览器 window.print） */
+async function sendPreparedToHiprint<TSource>(
+  options: PrintOptions<TSource>,
+  ctx: PreparedPrintContext,
+  printer?: string,
+): Promise<PrintResult> {
+  const hiprintResult = await postHiprintPrintWithRetry({
+    PrintJson: ctx.printJson,
+    printData: ctx.printData,
+    scenarioCode: ctx.scenarioCode,
+    printer,
+    copies: options.copies ?? 1,
+    silent: options.silent ?? true,
+    jobName: options.jobName ?? ctx.busNo,
+    repeatPrintData: options.repeatPrintData,
+  });
+
+  if (hiprintResult.ok) {
+    await safeConfirmPrint({
+      traceId: ctx.traceId,
+      busNo: ctx.busNo,
+      scenarioCode: ctx.scenarioCode,
+      templateVersion: ctx.templateVersion,
       status: 'SUCCESS',
-      printData,
+      printData: ctx.printData,
       bizRef: options.bizRef,
       copies: hiprintResult.copies ?? options.copies,
-      printer: hiprintResult.printer ?? resolvedPrinter.printer ?? options.printer,
+      printer: hiprintResult.printer ?? printer,
     });
     return {
       ok: true,
-      traceId,
-      busNo: resolvedBusNo,
-      scenarioCode,
+      traceId: ctx.traceId,
+      busNo: ctx.busNo,
+      scenarioCode: ctx.scenarioCode,
       printer: hiprintResult.printer,
       copies: hiprintResult.copies,
     };
@@ -197,27 +389,71 @@ async function runPrint<TSource>(options: PrintOptions<TSource>): Promise<PrintR
   const errorCode = normalizeHiprintErrorCode(hiprintResult.code, hiprintResult.message);
   const errorMessage = hiprintResult.message || resolvePrintErrorMessage(errorCode);
   await safeConfirmPrint({
-    traceId,
-    busNo: resolvedBusNo,
-    scenarioCode,
-    templateVersion: prepared.templateVersion,
+    traceId: ctx.traceId,
+    busNo: ctx.busNo,
+    scenarioCode: ctx.scenarioCode,
+    templateVersion: ctx.templateVersion,
     status: 'FAILED',
-    printData,
+    printData: ctx.printData,
     bizRef: options.bizRef,
     copies: options.copies,
-    printer: resolvedPrinter.printer ?? options.printer,
+    printer,
     errorCode,
     errorMessage: hiprintResult.message || errorMessage,
   });
   reportPrintUserError(options, errorCode, errorMessage);
   return {
     ok: false,
-    traceId,
-    busNo: resolvedBusNo,
-    scenarioCode,
+    traceId: ctx.traceId,
+    busNo: ctx.busNo,
+    scenarioCode: ctx.scenarioCode,
     errorCode,
     errorMessage,
   };
+}
+
+async function runPrint<TSource>(options: PrintOptions<TSource>): Promise<PrintResult> {
+  const scenarioCode = options.scenarioCode?.trim();
+  if (!scenarioCode) {
+    const message = 'scenarioCode 不能为空';
+    reportPrintUserMessage(options, message);
+    return { ok: false, errorCode: PRINT_ERROR_CODE.INVALID_OPTIONS, errorMessage: message };
+  }
+
+  const resolvedPrinter = await resolvePrinterForPrint({
+    scenarioCode,
+    scenarioLabel: options.scenarioLabel,
+    printer: options.printer,
+    selectPrinter: options.selectPrinter,
+    showPaperKind: options.showPaperKind,
+    initialPaperKind: options.formPaperKind,
+  });
+  if (resolvedPrinter.cancelled) {
+    return {
+      ok: false,
+      errorCode: PRINT_ERROR_CODE.USER_CANCELLED,
+      errorMessage: '已取消打印',
+    };
+  }
+
+  let printOptions = options;
+  if (options.showPaperKind && resolvedPrinter.paperKind) {
+    printOptions = {
+      ...options,
+      formPaperKind: resolvedPrinter.paperKind,
+      repeatPrintData: isInvFormTriplePaper(resolvedPrinter.paperKind),
+    };
+  }
+
+  const prepared = await resolvePreparedPrintContext(printOptions);
+  if (!prepared.ok) {
+    return prepared.result;
+  }
+  return sendPreparedToHiprint(
+    printOptions,
+    prepared.ctx,
+    resolvedPrinter.printer ?? printOptions.printer,
+  );
 }
 
 interface ConfirmPayload {
@@ -270,4 +506,4 @@ function normalizeHiprintErrorCode(code: string, message?: string): string {
   return code || PRINT_ERROR_CODE.PRINT_FAILED;
 }
 
-export type { PrintOptions, PrintResult } from './types';
+export type { PrintOptions, PrintResult, PrintTransformContext } from './types';

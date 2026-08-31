@@ -45,6 +45,7 @@ export async function printChargeReceipt(options: PrintChargeReceiptOptions) {
     scenarioCode: PRINT_SCENARIO.chargeReceipt,
     source: slip,
     bizRef: {
+      scenarioCode: PRINT_SCENARIO.chargeReceipt,
       encounterId: slip.encounterId ?? (encounterId || undefined),
       paymentId: paymentId || undefined,
     },

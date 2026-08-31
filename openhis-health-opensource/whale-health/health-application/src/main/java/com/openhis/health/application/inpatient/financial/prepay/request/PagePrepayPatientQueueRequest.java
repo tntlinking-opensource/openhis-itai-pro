@@ -27,4 +27,11 @@ public class PagePrepayPatientQueueRequest extends AbstractHealthPageRequest {
     @Schema(description = "入院日期筛选")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_DISPLAY_PATTERN)
     private LocalDate admissionDate;
+
+    /**
+     * 在院范围：{@code IN_HOSPITAL} / {@code NOT_IN_HOSPITAL} / {@code ALL}；
+     * 空或未知按 {@code ALL}（清床前全部可见态）。
+     */
+    @Schema(description = "在院范围：IN_HOSPITAL / NOT_IN_HOSPITAL / ALL")
+    private String stayScope;
 }

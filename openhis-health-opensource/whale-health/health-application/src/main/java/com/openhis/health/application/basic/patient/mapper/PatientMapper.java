@@ -85,6 +85,7 @@ public class PatientMapper {
         }
 
         dto.setNationalityCode(entity.getNationalityCode());
+        dto.setEducationLevelCode(entity.getEducationLevelCode());
 
         BloodType bt = entity.getBloodType();
         if (bt != null) {
@@ -168,6 +169,7 @@ public class PatientMapper {
         dto.setAddressDistrict(detail.getPatient().getAddressDistrict());
         dto.setAddressStreet(detail.getPatient().getAddressStreet());
         dto.setNationalityCode(detail.getPatient().getNationalityCode());
+        dto.setEducationLevelCode(detail.getPatient().getEducationLevelCode());
         dto.setBloodAbo(detail.getPatient().getBloodTypeAbo());
         dto.setBloodRh(detail.getPatient().getBloodTypeRh());
         dto.setMaritalStatusEnum(detail.getPatient().getMaritalStatusEnum());
@@ -244,6 +246,7 @@ public class PatientMapper {
         }
         item.setIdCard(trimToNull(request.getIdCard()));
         item.setPhone(trimToNull(request.getPhone()));
+        item.setEducationLevelCode(trimToNull(request.getEducationLevelCode()));
         // 患者管理菜单建档为正式档案，非临时建档（与门诊挂号 toRegisterPatientCommand 一致）。
         item.setTempFlag(Boolean.FALSE);
         item.setOrganizationId(null);
@@ -277,6 +280,7 @@ public class PatientMapper {
         item.setPrfsEnum(request.getPrfsEnum());
         item.setPhone(trimToNull(request.getPhone()));
         item.setNationalityCode(trimToNull(request.getNationalityCode()));
+        item.setEducationLevelCode(trimToNull(request.getEducationLevelCode()));
         item.setWorkCompany(trimToNull(request.getWorkCompany()));
         item.setAddress(trimToNull(request.getAddress()));
         item.setAddressProvince(trimToNull(request.getAddressProvince()));

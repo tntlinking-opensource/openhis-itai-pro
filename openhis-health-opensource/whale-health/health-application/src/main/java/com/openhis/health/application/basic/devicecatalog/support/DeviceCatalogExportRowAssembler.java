@@ -53,7 +53,8 @@ public class DeviceCatalogExportRowAssembler {
             terminologyIndex, DeviceCatalogImportTerminologyIndex.DICT_CATEGORY, entity.getCategoryCode());
         values[4] = this.labelOrEmpty(
             terminologyIndex, DeviceCatalogImportTerminologyIndex.DICT_DEVICE_TYPE, entity.getTypeCode());
-        values[5] = this.textOrEmpty(entity.getManufacturerText());
+        values[5] = "";
+        // 厂家展示名由导出编排按 manufacturerId 解析后写入；实体已无 manufacturer_text 列
         values[6] = this.labelOrEmpty(
             terminologyIndex, DeviceCatalogImportTerminologyIndex.DICT_FIN_TYPE, prices.typeCode);
         values[7] = this.textOrEmpty(entity.getTotalVolume());
@@ -92,8 +93,8 @@ public class DeviceCatalogExportRowAssembler {
         values[28] = this.yesNoLabel(entity.getAllergenFlag());
         values[29] = this.yesNoLabel(entity.getYbFlag());
         values[30] = this.yesNoLabel(entity.getHvcmFlag());
-        // 「不收费耗材」列：库 chargeableFlag=true(收费)→否；false→是
-        values[31] = this.nonChargeableYesNoLabel(entity.getChargeableFlag());
+        // 「收费耗材」与 chargeableFlag 同向
+        values[31] = this.yesNoLabel(entity.getChargeableFlag());
         values[32] = this.textOrEmpty(descriptionParts.descriptionText);
         return values;
     }
@@ -214,22 +215,6 @@ public class DeviceCatalogExportRowAssembler {
             return "是";
         }
         return "否";
-    }
-
-    /**
-     * 收费标记 → 「不收费耗材」列是/否（与导入列语义一致）。
-     *
-     * @param chargeableFlag 库字段：true=收费
-     * @return 是/否/空
-     */
-    private String nonChargeableYesNoLabel(Boolean chargeableFlag) {
-        if (chargeableFlag == null) {
-            return "";
-        }
-        if (Boolean.TRUE.equals(chargeableFlag)) {
-            return "否";
-        }
-        return "是";
     }
 
     /**

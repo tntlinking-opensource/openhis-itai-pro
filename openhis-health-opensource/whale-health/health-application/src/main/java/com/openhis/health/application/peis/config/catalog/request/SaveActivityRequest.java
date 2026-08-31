@@ -34,4 +34,10 @@ public class SaveActivityRequest {
 
     /** 执行科室机构主键。 */
     private Long orgId;
+
+    /** 适用性别（BOTH/MALE/FEMALE）。 */
+    private String permittedGenderEnum;
+
+    /** 目录展示顺序。 */
+    private Integer sortOrder;
 }

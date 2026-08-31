@@ -102,7 +102,11 @@ export interface PatientItem {
 
 export type PatientStatusFilter = 'all' | 'pending-audit' | 'pending-execute' | 'processed';
 
-/** 入科状态筛选：全部 / 待入科（REGISTERED） */
-export type PatientAdmissionFilter = 'all' | 'pending-admission';
+/**
+ * 入科状态筛选（本地过滤；队列本身已排除已清床 DISCHARGED）。
+ * - in-ward：在科 — 未清床且非 REGISTERED（含 ON_HOLD/PENDING/COMPLETED）
+ * - pending-admission：待入科 — REGISTERED
+ */
+export type PatientAdmissionFilter = 'in-ward' | 'pending-admission';
 
 export type SelectionPolicy = 'multiple' | 'single';

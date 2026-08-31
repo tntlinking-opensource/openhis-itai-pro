@@ -17,6 +17,7 @@ import { isSameBookingId } from '#/api/booking/booking-id';
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 
 import { ElAlert, ElButton, ElTabPane, ElTabs } from 'element-plus';
+import { z } from 'zod';
 
 import { useVbenForm } from '#/adapter/form';
 import SectionTitle from '#/components/layouts/section-title.vue';
@@ -28,6 +29,9 @@ import {
 import { calcAgeFromBirthDate, parseChineseIdCard18 } from '#/utils/format/id-card-cn';
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
 import { REGISTRATION_PHONE_REQUIRED } from '#/views/outpatient/charge/register/constants/register-phone.config';
+
+/** 中国大陆手机号：1 开头第二位 3–9，共 11 位（与后端 PHONE_REGEX 对齐） */
+const CN_MOBILE_PHONE_REGEX = /^1[3-9]\d{9}$/;
 
 import {
   inferInsuranceCategoryFromInsuplc,
@@ -476,13 +480,19 @@ const [PatientForm, patientFormApi] = useVbenForm(
         component: 'Input',
         fieldName: 'patientPhone',
         label: '联系电话',
-        // 跟随院点开关 REGISTRATION_PHONE_REQUIRED；主线默认非必填
+        // 必填仅由院点开关控制；与格式无关——只要填了就必须是合法 11 位手机号
         required: REGISTRATION_PHONE_REQUIRED,
         componentProps: {
-          placeholder: '请输入联系电话',
+          placeholder: '请输入11位手机号',
           clearable: true,
           maxlength: 11,
         },
+        rules: z.preprocess(
+          (v) => (v === null || v === undefined ? '' : String(v)).trim(),
+          z.string().refine((val) => val === '' || CN_MOBILE_PHONE_REGEX.test(val), {
+            message: '请输入正确的11位手机号',
+          }),
+        ),
       },
       {
         component: 'DatePicker',

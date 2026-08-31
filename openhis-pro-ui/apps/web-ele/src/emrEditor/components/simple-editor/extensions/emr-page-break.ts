@@ -34,8 +34,17 @@ export const EmrPageBreak = Node.create({
     return {
       insertEmrPageBreak:
         () =>
-        ({ commands }) =>
-          commands.insertContent({ type: this.name }),
+        ({ chain }) => {
+          return chain()
+            .insertContent([{ type: this.name }, { type: 'paragraph' }])
+            .run();
+        },
+    };
+  },
+
+  addKeyboardShortcuts() {
+    return {
+      'Mod-Enter': () => this.editor.commands.insertEmrPageBreak(),
     };
   },
 });

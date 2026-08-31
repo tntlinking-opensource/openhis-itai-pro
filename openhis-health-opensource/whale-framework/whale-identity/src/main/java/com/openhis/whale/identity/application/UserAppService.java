@@ -6,6 +6,7 @@ package com.openhis.whale.identity.application;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
+import com.openhis.whale.core.application.IUserIdsByVisitingOrganizationQuery;
 import com.openhis.whale.core.application.dto.PagedResult;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.exception.EntityNotFoundException;
@@ -27,10 +28,12 @@ import com.openhis.whale.identity.infrastructure.repository.UserClaimRepository;
 import com.openhis.whale.identity.infrastructure.repository.UserRepository;
 import com.openhis.whale.identity.infrastructure.repository.UserRoleRepository;
 import com.openhis.whale.identity.infrastructure.repository.UserTenantRepository;
+import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 import jakarta.persistence.criteria.Subquery;
 import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.jpa.domain.Specification;
@@ -82,6 +85,12 @@ public class UserAppService {
     private IDomainEventPublisher domainEventPublisher;
 
     /**
+     * 按出诊科室解析用户主键（health 装配；纯 identity 进程可缺省）。
+     */
+    @Autowired
+    private ObjectProvider<IUserIdsByVisitingOrganizationQuery> userIdsByVisitingOrganizationQuery;
+
+    /**
      * 判断平台用户是否存在（含软删过滤前的存在性由仓储过滤器决定）。
      */
     public boolean existsById(Long id) {
@@ -102,9 +111,14 @@ public class UserAppService {
     }
 
     /**
-     * 获取用户列表
+     * 分页查询用户（关键词、启用/锁定、角色、出诊科室可组合）。
+     *
+     * @param request 分页与筛选条件；{@code organizationId} 有值时只保留该科室出诊医生账号
+     * @return 用户分页结果
      */
     public PagedResult<UserDto> getList(UserQueryRequest request) {
+        // Gate：分页窗口由 PageRequestUtils 约束；科室筛选缺 Port 时拒绝，避免悄悄返回未过滤全集
+        // Pre：按关键词/状态/角色/出诊科室组装 Specification
         Specification<User> spec = buildSpecification(request);
         var pageRequest = PageRequestUtils.createDefault(
                 request.getPageNo(),
@@ -112,6 +126,7 @@ public class UserAppService {
         );
 
         Page<User> page = userRepository.findAll(spec, pageRequest);
+        // Asm：实体映射为用户列表 DTO（页码 1-based 由 PagedResult.fromPage 换算）
         return PagedResult.fromPage(page.map(this::toDto));
     }
 
@@ -133,7 +148,12 @@ public class UserAppService {
         user.setEmail(trimToNull(request.getEmail()));
         user.setPhoneNumber(trimToNull(request.getPhoneNumber()));
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
-        user.setIsActive(request.getIsActive() != null ? request.getIsActive() : true);
+        boolean isActive = true;
+        if (request.getIsActive() != null) {
+            // 请求显式指定启用态；缺省视为启用
+            isActive = request.getIsActive();
+        }
+        user.setIsActive(isActive);
         user.setExtraProperties(request.getExtraProperties());
 
         user = userRepository.save(user);
@@ -366,8 +386,12 @@ public class UserAppService {
 
         List<UserRole> allRoles = userRoleRepository.findAllByUserId(id);
 
-        Set<Long> newRoleIds = new HashSet<>(
-            request.getRoleIds() != null ? request.getRoleIds() : List.of());
+        List<Long> requestedRoleIds = request.getRoleIds();
+        if (requestedRoleIds == null) {
+            // 未传角色列表视为清空（admin 随后仍会被补全全部角色）
+            requestedRoleIds = List.of();
+        }
+        Set<Long> newRoleIds = new HashSet<>(requestedRoleIds);
         ensureAllRolesForAdminUser(user, newRoleIds);
         Set<Long> satisfiedRoleIds = new HashSet<>();
 
@@ -740,7 +764,10 @@ public class UserAppService {
     }
 
     /**
-     * 构建查询条件
+     * 组装用户列表 Specification（租户可见性 + 未删 + 业务筛选）。
+     *
+     * @param request 查询条件
+     * @return 组合后的 Specification
      */
     private Specification<User> buildSpecification(UserQueryRequest request) {
         return userTenantVisibilitySpec()
@@ -749,6 +776,7 @@ public class UserAppService {
                 List<Predicate> predicates = new ArrayList<>();
 
                 if (request.getKeyword() != null && !request.getKeyword().trim().isEmpty()) {
+                    // 关键词命中用户名/姓名/邮箱/手机号任一即保留
                     String keyword = "%" + request.getKeyword().trim() + "%";
                     Predicate userNameLike = cb.like(root.get("userName"), keyword);
                     Predicate emailLike = cb.like(root.get("email"), keyword);
@@ -759,10 +787,12 @@ public class UserAppService {
                 }
 
                 if (request.getIsActive() != null) {
+                    // 按启用/停用精确过滤
                     predicates.add(cb.equal(root.get("isActive"), request.getIsActive()));
                 }
 
                 if (request.getIsLockedOut() != null) {
+                    // 按锁定状态精确过滤
                     predicates.add(cb.equal(root.get("isLockedOut"), request.getIsLockedOut()));
                 }
 
@@ -780,12 +810,81 @@ public class UserAppService {
                     predicates.add(cb.exists(roleSub));
                 }
 
-                return predicates.isEmpty() ? cb.conjunction() : cb.and(predicates.toArray(new Predicate[0]));
+                // 出诊科室：只保留该科室挂了激活医师岗的平台用户（与 roleIds 取交集）
+                this.appendVisitingOrganizationPredicate(root, cb, predicates, request.getOrganizationId());
+
+                if (predicates.isEmpty()) {
+                    // 无业务筛选：仅租户可见性 + 未删
+                    return cb.conjunction();
+                }
+                // 有筛选：条件全部同时成立（科室与角色为交集）
+                return cb.and(predicates.toArray(new Predicate[0]));
             });
     }
 
     /**
-     * 转换为DTO
+     * 按 HIS 出诊科室把用户主键 IN 条件追加到列表筛选。
+     *
+     * @param root           用户根
+     * @param cb             Criteria 构造器
+     * @param predicates     已累积谓词
+     * @param organizationId HIS 科室主键；空则不追加
+     */
+    private void appendVisitingOrganizationPredicate(
+            Root<User> root,
+            CriteriaBuilder cb,
+            List<Predicate> predicates,
+            Long organizationId) {
+        if (organizationId == null) {
+            // 未选科室：不按出诊岗收窄
+            return;
+        }
+        IUserIdsByVisitingOrganizationQuery visitingQuery =
+            userIdsByVisitingOrganizationQuery.getIfAvailable();
+        if (visitingQuery == null) {
+            // 未装配 health Port：拒绝查询，避免管理员以为已按科室过滤却看到全院用户
+            throw new ValidationException("当前服务未装配出诊科室检索能力");
+        }
+        List<Long> userIds = visitingQuery.findUserIdsByVisitingOrganizationId(organizationId);
+        if (userIds == null || userIds.isEmpty()) {
+            // 该科室无出诊医生：强制空结果
+            predicates.add(cb.disjunction());
+            return;
+        }
+        predicates.add(this.buildUserIdInPredicate(root, cb, userIds));
+    }
+
+    /**
+     * 用户主键 IN 谓词；超过分批上限时拆成 OR 连接的多段 IN。
+     *
+     * @param root    用户根
+     * @param cb      Criteria 构造器
+     * @param userIds 非空用户主键
+     * @return IN 或 OR(IN, …) 谓词
+     */
+    private Predicate buildUserIdInPredicate(
+            Root<User> root,
+            CriteriaBuilder cb,
+            List<Long> userIds) {
+        int chunkSize = IdentityQueryConstants.ID_IN_QUERY_CHUNK_SIZE;
+        if (userIds.size() <= chunkSize) {
+            // 单批可下推：一次 IN 即可
+            return root.get("id").in(userIds);
+        }
+        List<Predicate> chunks = new ArrayList<>();
+        // 超长科室医生名单：分段 IN 再 OR，避免单次参数过多
+        for (int fromIndex = 0; fromIndex < userIds.size(); fromIndex += chunkSize) {
+            int toIndex = Math.min(fromIndex + chunkSize, userIds.size());
+            chunks.add(root.get("id").in(userIds.subList(fromIndex, toIndex)));
+        }
+        return cb.or(chunks.toArray(new Predicate[0]));
+    }
+
+    /**
+     * 将用户实体转为列表/详情 DTO，并回填租户主键（多租户绑定时取首个）。
+     *
+     * @param user 用户实体
+     * @return 用户 DTO
      */
     private UserDto toDto(User user) {
         UserDto dto = new UserDto();
@@ -793,7 +892,12 @@ public class UserAppService {
         List<Long> tenantIds = userTenantRepository.findByUserId(user.getId()).stream()
             .map(UserTenant::getTenantId)
             .toList();
-        dto.setTenantId(tenantIds.isEmpty() ? null : tenantIds.get(0));
+        if (tenantIds.isEmpty()) {
+            // 无租户绑定时不回填 tenantId
+            dto.setTenantId(null);
+        } else {
+            dto.setTenantId(tenantIds.get(0));
+        }
         return dto;
     }
 
@@ -846,8 +950,12 @@ public class UserAppService {
             return;
         }
         if (userRepository.exists(activeUserByEmailSpec(email.trim(), excludeUserId))) {
-            throw new ValidationException(
-                excludeUserId == null ? "邮箱已存在" : "邮箱已被其他用户使用");
+            String message = "邮箱已被其他用户使用";
+            if (excludeUserId == null) {
+                // 新建场景：邮箱已被占用
+                message = "邮箱已存在";
+            }
+            throw new ValidationException(message);
         }
     }
 
@@ -863,9 +971,19 @@ public class UserAppService {
             .and(excludeUserIdSpec(excludeUserId));
     }
 
+    /**
+     * 占用校验时排除当前用户自身（编辑场景）。
+     *
+     * @param excludeUserId 编辑中的用户主键；新建时为空
+     * @return 排除自身的 Specification；新建时恒真
+     */
     private Specification<User> excludeUserIdSpec(Long excludeUserId) {
-        return (root, query, cb) -> excludeUserId == null
-            ? cb.conjunction()
-            : cb.notEqual(root.get("id"), excludeUserId);
+        return (root, query, cb) -> {
+            if (excludeUserId == null) {
+                // 新建：不排除任何用户
+                return cb.conjunction();
+            }
+            return cb.notEqual(root.get("id"), excludeUserId);
+        };
     }
 }

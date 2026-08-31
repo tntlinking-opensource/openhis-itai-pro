@@ -74,7 +74,7 @@ public class OutpatientPharmacyDailySettlementMapperImpl implements OutpatientPh
     /**
      * 提交请求转领域命令（IF-OP-PDC-03）。
      *
-     * <p>头表 {@code total_income} 由 AppService 传入勾选发药日结利润（售价合计 − 进价合计）。</p>
+     * <p>头表 {@code total_income} 由 AppService 传入勾选发药<strong>售价合计</strong>（与主区大类售价之和同口径）。</p>
      *
      * @param request              提交请求
      * @param typeEnum             交账类型 code
@@ -83,7 +83,7 @@ public class OutpatientPharmacyDailySettlementMapperImpl implements OutpatientPh
      * @param selectedDispenseIds  勾选发药行
      * @param practitionerIds      发药人快照
      * @param paymentCount         挂载条数
-     * @param totalIncome          日结利润（售价−进价）
+     * @param totalIncome          售价合计（与大类售价之和同口径）
      * @return 提交命令
      */
     @Override

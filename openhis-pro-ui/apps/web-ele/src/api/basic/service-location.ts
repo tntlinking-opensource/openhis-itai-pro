@@ -15,6 +15,9 @@ export interface ServiceLocationItem {
   defLocationName?: string;
   itemDefinitionId?: string;
   itemDefinitionName?: string;
+  /** 耗材种类（device_type_code） */
+  typeCode?: string;
+  typeCode_dictText?: string;
   methodCode?: string;
   methodCode_dictText?: string;
   startTime?: string;
@@ -34,6 +37,8 @@ export interface ServiceLocationInitResponse {
   methodCodeOptions?: ApiOptionItem[];
   /** 中药用法（tcm_method_code） */
   tcmMethodCodeOptions?: ApiOptionItem[];
+  /** 耗材种类（device_type_code） */
+  deviceTypeCodeOptions?: ApiOptionItem[];
 }
 
 export interface ListServiceLocationByOrganizationParams {
@@ -45,6 +50,8 @@ export interface SaveServiceLocationConfigItem {
   distributionCategoryCode: string;
   defLocationId: string;
   itemDefinitionId?: string;
+  /** 耗材种类（device_type_code）；仅耗材行 */
+  typeCode?: string;
   methodCode?: string;
   startTime?: string;
   endTime?: string;

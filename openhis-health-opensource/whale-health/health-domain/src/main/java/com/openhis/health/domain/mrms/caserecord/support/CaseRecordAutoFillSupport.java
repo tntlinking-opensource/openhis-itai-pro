@@ -16,6 +16,7 @@ import com.openhis.health.domain.administration.encounter.queries.model.Encounte
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterContextQueryService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
+import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.organization.entity.Organization;
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
@@ -43,14 +44,15 @@ import com.openhis.health.domain.mrms.caserecord.vo.TransferLineSnapshot;
 import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
 import com.openhis.health.domain.medication.medicationdefinition.service.MedicationDefinitionQueryService;
 import com.openhis.health.domain.share.constants.CustomConstants;
+import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.MrmsConstants;
 import com.openhis.health.domain.share.constants.ServiceRequestCategoryConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
-import com.openhis.health.domain.share.enums.AdministrativeGender;
 import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.enums.EncounterParticipantRole;
 import com.openhis.health.domain.share.enums.IptPatientDiseaseDiagType;
 import com.openhis.health.domain.share.enums.LocationForm;
+import com.openhis.health.domain.share.utils.AdministrativeGenderOutboundUtil;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.domain.workflow.activitydefinition.entity.ActivityDefinition;
@@ -126,7 +128,7 @@ public class CaseRecordAutoFillSupport {
         PatientSnapshot snap = new PatientSnapshot();
         snap.setPatientId(patient.getId());
         snap.setName(patient.getName());
-        snap.setGenderCode(this.toHomepageGenderCode(patient.getGenderEnum()));
+        snap.setGenderCode(AdministrativeGenderOutboundUtil.toHomepageGenderCode(patient.getGenderEnum()));
         snap.setBirthDate(patient.getBirthDate());
         snap.setCertno(patient.getIdCard());
         snap.setPhone(patient.getPhone());
@@ -153,6 +155,9 @@ public class CaseRecordAutoFillSupport {
     /**
      * 加载就诊快照：出入院时间、科室、病区床位、入院途径、参与者。
      *
+     * <p>出院时间优先取出院医嘱计划时间（{@code occurrence_start_time}），
+     * 再回落 {@code Encounter.endTime}（护士办理出院写入；清床/结算不得覆盖）。</p>
+     *
      * @param encounterId 就诊主键
      * @return 快照；不存在时返回 null
      */
@@ -170,13 +175,36 @@ public class CaseRecordAutoFillSupport {
         snap.setPatientId(encounter.getPatientId());
         snap.setIptNo(encounter.getBusNo());
         snap.setAdmTime(encounter.getStartTime());
-        snap.setDscgTime(encounter.getEndTime());
+        // 业务出院时间：出院医嘱计划时间优先，避免历史脏 end_time（清床/结算误写）污染首页
+        snap.setDscgTime(this.resolveBusinessDischargeTime(encounterId, encounter.getEndTime()));
         // 入院途径：in_way 与 4401 adm_way 同码（V28）；禁止拷贝入院类型 admit_source（如 6=常规）
         snap.setAdmWayCode(MrmsConstants.mapInWayCodeToAdmWayCode(encounter.getInWayCode()));
         applyDepartments(snap, encounter);
         applyWardAndBed(snap, encounterId);
-        applyParticipants(snap, encounterQueryService.listActiveEncounterParticipants(encounterId));
+        applyParticipants(snap, encounterQueryService.listDisplayEncounterParticipants(encounterId));
         return snap;
+    }
+
+    /**
+     * 解析业务出院时间：有效出院类医嘱的计划时间优先，否则回落 encounter.endTime。
+     *
+     * <p>跳过已取消出院嘱；多条有效嘱时取扫描到的最后一条（通常为最近一次）。</p>
+     *
+     * @param encounterId      就诊主键
+     * @param encounterEndTime 就诊结束时间（办理出院写入的计划时间；可空）
+     * @return 业务出院时间；皆空则 null
+     */
+    private LocalDateTime resolveBusinessDischargeTime(Long encounterId, LocalDateTime encounterEndTime) {
+        if (encounterId == null) {
+            return encounterEndTime;
+        }
+        Map<Long, LocalDateTime> planned =
+                serviceRequestQueryService.mapDischargePlannedTimeByEncounterIds(List.of(encounterId));
+        LocalDateTime fromAdvice = planned.get(encounterId);
+        if (fromAdvice != null) {
+            return fromAdvice;
+        }
+        return encounterEndTime;
     }
 
     /**
@@ -480,7 +508,7 @@ public class CaseRecordAutoFillSupport {
      * 按参与者角色映射首页人员字段（主治/主任/住院医师/责任护士）。
      *
      * @param snap         就诊快照
-     * @param participants 有效参与者读模型
+     * @param participants 展示参与者（活动优先，无则末次 COMPLETED）
      */
     private void applyParticipants(EncounterSnapshot snap, List<EncounterParticipantQueryModel> participants) {
         if (participants == null || participants.isEmpty()) {
@@ -1051,10 +1079,10 @@ public class CaseRecordAutoFillSupport {
         Long earliestWardId = this.findEarliestLocationId(locations, LocationForm.WARD.getCode());
         Long earliestBedId = this.findEarliestLocationId(locations, LocationForm.BED.getCode());
         if (earliestWardId != null) {
-            snap.setAdmWardName(trimToNull(locationQueryService.findNameById(earliestWardId)));
+            snap.setAdmWardName(this.resolveLocationDisplayName(earliestWardId));
         }
         if (earliestBedId != null) {
-            snap.setAdmBedName(trimToNull(locationQueryService.findNameById(earliestBedId)));
+            snap.setAdmBedName(this.resolveLocationDisplayName(earliestBedId));
         }
         // 出院侧：优先当前活动上下文；无则末次完成 WARD/BED
         Optional<InpatientEncounterContextQueryModel> ctxOpt =
@@ -1062,7 +1090,11 @@ public class CaseRecordAutoFillSupport {
         if (ctxOpt.isPresent()) {
             InpatientEncounterContextQueryModel ctx = ctxOpt.get();
             String wardName = trimToNull(ctx.getWardName());
-            String bedName = trimToNull(ctx.getBedName());
+            // 床位以 locationId 名称/业务号为准，避免把「原房-床（未占床）」写入首页床位格
+            String bedName = this.resolveLocationDisplayName(ctx.getBedId());
+            if (bedName == null) {
+                bedName = this.stripUnoccupiedLastBedDisplay(ctx.getBedName());
+            }
             if (wardName != null) {
                 snap.setDscgWardName(wardName);
             }
@@ -1073,7 +1105,7 @@ public class CaseRecordAutoFillSupport {
         // 上下文无病区时回落末次完成 WARD
         if (snap.getDscgWardName() == null) {
             encounterQueryService.findLastCompletedWardLocationIdByEncounterId(encounterId)
-                    .ifPresent(wardId -> snap.setDscgWardName(trimToNull(locationQueryService.findNameById(wardId))));
+                    .ifPresent(wardId -> snap.setDscgWardName(this.resolveLocationDisplayName(wardId)));
         }
         // 上下文无床位时回落末次完成 BED
         if (snap.getDscgBedName() == null) {
@@ -1081,7 +1113,7 @@ public class CaseRecordAutoFillSupport {
                     encounterQueryService.mapLastCompletedBedLocationIdByEncounterIds(List.of(encounterId));
             Long bedId = bedMap.get(encounterId);
             if (bedId != null) {
-                snap.setDscgBedName(trimToNull(locationQueryService.findNameById(bedId)));
+                snap.setDscgBedName(this.resolveLocationDisplayName(bedId));
             }
         }
         // 入院病区空时用当前/出院病区兜底（未分床前仅有当前）
@@ -1091,6 +1123,47 @@ public class CaseRecordAutoFillSupport {
         if (snap.getAdmBedName() == null && snap.getDscgBedName() != null) {
             snap.setAdmBedName(snap.getDscgBedName());
         }
+    }
+
+    /**
+     * 位置展示名：名称优先，空则业务号（床位 name 偶发空白时仍能带出床号）。
+     *
+     * @param locationId 位置主键
+     * @return 展示名；无实体或皆空时 null
+     */
+    private String resolveLocationDisplayName(Long locationId) {
+        if (locationId == null) {
+            return null;
+        }
+        Optional<Location> locOpt = locationQueryService.findOptionalById(locationId);
+        if (locOpt.isEmpty()) {
+            return null;
+        }
+        Location location = locOpt.get();
+        String name = trimToNull(location.getName());
+        if (name != null) {
+            return name;
+        }
+        return trimToNull(location.getBusNo());
+    }
+
+    /**
+     * 去掉护士站「原{房}-{床}（未占床）」包装，首页床位格只留中间段。
+     *
+     * @param bedDisplay 上下文床位展示文案
+     * @return 中间段或原 trim；空则 null
+     */
+    private String stripUnoccupiedLastBedDisplay(String bedDisplay) {
+        String raw = trimToNull(bedDisplay);
+        if (raw == null) {
+            return null;
+        }
+        String prefix = InpatientNurseStationConstants.UNOCCUPIED_LAST_BED_DISPLAY_PREFIX;
+        String suffix = InpatientNurseStationConstants.UNOCCUPIED_LAST_BED_DISPLAY_SUFFIX;
+        if (raw.startsWith(prefix) && raw.endsWith(suffix) && raw.length() > prefix.length() + suffix.length()) {
+            return trimToNull(raw.substring(prefix.length(), raw.length() - suffix.length()));
+        }
+        return raw;
     }
 
     /**
@@ -1170,27 +1243,6 @@ public class CaseRecordAutoFillSupport {
             return;
         }
         sb.append(value);
-    }
-
-    /**
-     * AdministrativeGender → 首页/4401 性别码（1 男 2 女）。
-     *
-     * @param genderEnum 患者 gender_enum
-     * @return 首页 gend_code
-     */
-    private String toHomepageGenderCode(String genderEnum) {
-        String code = trimToNull(genderEnum);
-        if (code == null) {
-            return null;
-        }
-        if (AdministrativeGender.MALE.getCode().equals(code)) {
-            return "1";
-        }
-        if (AdministrativeGender.FEMALE.getCode().equals(code)) {
-            return "2";
-        }
-        // 已是 1/2 等首页码则原样保留
-        return code;
     }
 
     /**

@@ -31,8 +31,6 @@ import {
   ENCOUNTER_SCOPE_OUTPATIENT,
   listNurseWorkloadNurseCardsApi,
   loadNurseWorkloadFormInitApi,
-  summarizeNurseConsumableWorkloadApi,
-  summarizeNurseExecutionWorkloadApi,
 } from '#/api/report/nurse-workload';
 import { useRequest } from '#/hooks/use-request';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
@@ -42,6 +40,7 @@ import {
   REPORT_QUERY_CONTROL,
   REPORT_QUERY_CONTROL_DATERANGE,
   ReportQueryBar,
+  sumReportPurchaseCornerFromRows,
 } from '#/views/report/shared';
 
 import {
@@ -63,7 +62,7 @@ interface QueryState {
   encounterScope: EncounterScope;
   dateFrom: string;
   dateTo: string;
-  /** 开立科室；UI 用 ALL_ORG_VALUE 表示全部。 */
+  /** 默认登录科室；UI 用 ALL_ORG_VALUE 表示全部。 */
   organizationId?: string;
 }
 
@@ -108,7 +107,7 @@ const queryParams = reactive<QueryState>({
   dateTo: '',
 });
 
-/** 开立科室「全部」哨兵值（与医生工作量同构）。 */
+/** 默认登录科室「全部」哨兵值。 */
 const ALL_ORG_VALUE = '__ALL__';
 
 /** 是否已应用过后端返回的默认就诊范围（仅首次初始化）。 */
@@ -130,39 +129,9 @@ const { run: runInit, loading: initLoading } = useRequest(loadNurseWorkloadFormI
   },
 });
 
-const { run: runOverallExecutionSummary, loading: overallExecutionLoading } = useRequest(
-  summarizeNurseExecutionWorkloadApi,
-  {
-    manual: true,
-    onSuccess: (data) => {
-      overallExecutionTotal.value = Number(data?.totalExecutionCount ?? 0);
-      overallExecutionSaleAmount.value = data?.totalSaleAmount ?? 0;
-      overallExecutionPurchaseAmount.value = data?.totalPurchaseAmount ?? null;
-    },
-  },
-);
-
-const { run: runOverallConsumableSummary, loading: overallConsumableLoading } = useRequest(
-  summarizeNurseConsumableWorkloadApi,
-  {
-    manual: true,
-    onSuccess: (data) => {
-      overallConsumableTotal.value = data?.totalQuantity ?? 0;
-      overallConsumableSaleAmount.value = data?.totalSaleAmount ?? 0;
-      overallConsumablePurchaseAmount.value = data?.totalPurchaseAmount ?? null;
-    },
-  },
-);
-
 const nurseCountLabel = computed(() => nurseCards.value.length);
 
-const isListLoading = computed(
-  () =>
-    initLoading.value ||
-    overallExecutionLoading.value ||
-    overallConsumableLoading.value ||
-    cardsLoading.value,
-);
+const isListLoading = computed(() => initLoading.value || cardsLoading.value);
 
 const dateRangeShortcuts = buildReportDateRangeShortcuts();
 
@@ -181,47 +150,61 @@ const dateRange = computed<[string, string] | undefined>({
 
 const baseQueryFilter = computed<NurseWorkloadQueryFilter>(() => {
   const orgId = queryParams.organizationId;
-  // 「全部」或空值不传开立科室，避免哨兵串进后端 Long
+  // 「全部」或空值不传默认登录科室，避免哨兵串进后端 Long
   const resolvedOrgId =
     orgId && orgId !== ALL_ORG_VALUE ? preserveApiIdForRequest(orgId) : undefined;
   return {
     encounterScope: queryParams.encounterScope,
     dateFrom: queryParams.dateFrom,
     dateTo: queryParams.dateTo,
-    requestingOrgId: resolvedOrgId,
     organizationId: resolvedOrgId,
   };
 });
 
-/** 组装查询筛选（不含护士）。 */
+/** 组装查询筛选（不含单护士）。 */
 function buildQueryFilter(): NurseWorkloadQueryFilter {
   return { ...baseQueryFilter.value };
 }
 
 /**
- * 重新加载下拉（切换门诊/住院时清空已选开立科室）。
+ * 重新加载下拉（切换门诊/住院或默认登录科室时刷新护士列表）。
  * @param clearOrganization 是否重置科室为「全部」
  */
 async function reloadInitOptions(clearOrganization = false) {
   if (clearOrganization) {
     queryParams.organizationId = ALL_ORG_VALUE;
   }
+  const orgId = queryParams.organizationId;
+  const resolvedOrgId =
+    orgId && orgId !== ALL_ORG_VALUE ? preserveApiIdForRequest(orgId) : undefined;
   await runInit({
     encounterScope: queryParams.encounterScope,
+    organizationId: resolvedOrgId,
   });
 }
 
-/** 开立科室变更：clearable 清空时回落「全部」再查询。 */
-function handleOrganizationChange(value?: string) {
+/** 默认登录科室变更：clearable 清空时回落「全部」，并刷新该科护士下拉后再查询。 */
+async function handleOrganizationChange(value?: string) {
   if (!value) {
     queryParams.organizationId = ALL_ORG_VALUE;
   }
-  void handleQuery();
+  await reloadInitOptions(false);
+  await handleQuery();
 }
 
 /** 判断全院合计是否存在有效数据。 */
 function hasOverallWorkloadData(executionTotal: number, consumableTotal: number | string) {
   return executionTotal !== 0 || Number(consumableTotal) !== 0;
+}
+
+/** 清空页脚合计（无数据或查询前）。 */
+function resetOverallTotals() {
+  overallExecutionTotal.value = 0;
+  overallConsumableTotal.value = 0;
+  overallExecutionSaleAmount.value = 0;
+  overallExecutionPurchaseAmount.value = null;
+  overallConsumableSaleAmount.value = 0;
+  overallConsumablePurchaseAmount.value = null;
 }
 
 /** 用护士下拉生成零值行（无数据时仍展示全部护士）。 */
@@ -274,13 +257,14 @@ function mapNurseCardView(
 }
 
 /**
- * 一次批量拉护士卡片；与下拉并集合并零值行。
- * 禁止前端翻页全量明细后再分桶。
+ * 一次拉卡片墙 + 页脚合计（同源事实，禁止再打 IF-02/04 全窗扫库）。
+ * 下拉全员与零值行合并；有数据护士排前。
  */
 async function loadNurseCards(filter: NurseWorkloadQueryFilter) {
   const nurses = nurseOptions.value;
   if (nurses.length === 0) {
     nurseCards.value = [];
+    resetOverallTotals();
     return;
   }
   cardsLoading.value = true;
@@ -295,6 +279,23 @@ async function loadNurseCards(filter: NurseWorkloadQueryFilter) {
       }
       const nurseName = nurses.find((nurse) => String(nurse.value) === nurseId)?.label ?? nurseId;
       cardByNurseId.set(nurseId, mapNurseCardView(card, nurseName));
+    }
+    // Type B：页脚耗材进价=当次卡片行加总（与筛选同请求、与卡片进价一致）
+    const cardViews = [...cardByNurseId.values()];
+    const purchaseCorner = sumReportPurchaseCornerFromRows(
+      cardViews as unknown as Array<Record<string, unknown>>,
+      'consumablePurchaseAmountTotal',
+    );
+    overallExecutionTotal.value = Number(data?.totalExecutionCount ?? 0);
+    overallExecutionSaleAmount.value = data?.totalExecutionSaleAmount ?? 0;
+    overallExecutionPurchaseAmount.value = null;
+    overallConsumableTotal.value = data?.totalConsumableQuantity ?? 0;
+    overallConsumableSaleAmount.value = data?.totalConsumableSaleAmount ?? 0;
+    overallConsumablePurchaseAmount.value = purchaseCorner === '' ? null : purchaseCorner;
+    // 无业务数据：仍展示下拉全员零值卡
+    if (!hasOverallWorkloadData(overallExecutionTotal.value, overallConsumableTotal.value)) {
+      nurseCards.value = buildEmptyNurseCards();
+      return;
     }
     // 下拉全员展示：无命中补零值卡
     const cards: NurseWorkloadCardView[] = nurses.map((nurse) => {
@@ -337,7 +338,7 @@ async function loadNurseCards(filter: NurseWorkloadQueryFilter) {
   }
 }
 
-/** 查询全院合计与各护士卡片。 */
+/** 查询：只打卡片墙一次（页脚合计随响应带回）。 */
 async function handleQuery() {
   if (!queryParams.dateFrom || !queryParams.dateTo) {
     ElMessage.warning('请选择统计日期');
@@ -345,11 +346,7 @@ async function handleQuery() {
   }
   const filter = buildQueryFilter();
   nurseCards.value = [];
-  await Promise.all([runOverallExecutionSummary(filter), runOverallConsumableSummary(filter)]);
-  if (!hasOverallWorkloadData(overallExecutionTotal.value, overallConsumableTotal.value)) {
-    nurseCards.value = buildEmptyNurseCards();
-    return;
-  }
+  resetOverallTotals();
   await loadNurseCards(filter);
 }
 
@@ -405,7 +402,7 @@ onMounted(async () => {
             </ElRadioButton>
           </ElRadioGroup>
         </ElFormItem>
-        <ElFormItem label="开立科室">
+        <ElFormItem label="科室">
           <ElSelect
             v-model="queryParams.organizationId"
             clearable

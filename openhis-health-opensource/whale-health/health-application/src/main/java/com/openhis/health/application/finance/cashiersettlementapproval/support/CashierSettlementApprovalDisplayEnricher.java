@@ -18,10 +18,11 @@ import java.math.BigDecimal;
 import java.util.List;
 
 /**
- * 交账审批列表/详情头展示 enrich（展示名 + 药房金额展示口径）。
+ * 交账审批列表/详情头展示 enrich（展示名 + 详情药房金额展示口径）。
  *
- * <p>收款日结 {@code totalIncome} 保持头表快照（总收入）；药房日结审批展示覆盖为挂载发药
- * <strong>售价合计</strong>（与大类「售价总额」之和同口径），不改库内利润快照落库语义。</p>
+ * <p>列表 {@code totalIncome} 一律保留头表快照（收款=总收入；药房=售价合计），禁止按挂载逐条现算。
+ * 详情头对药房日结覆盖为挂载发药 <strong>售价合计</strong>（与大类「售价总额」之和同口径），
+ * 与新提交头表快照同口径；历史利润快照行亦以现算售价展示。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -30,34 +31,19 @@ public class CashierSettlementApprovalDisplayEnricher {
     /** 共享交账人/审批人/药房/科室名 enrich。 */
     private final CashierSettlementPartyNamesEnricher cashierSettlementPartyNamesEnricher;
 
-    /** 发药挂载读侧（药房金额现算）。 */
+    /** 发药挂载读侧（详情药房金额现算）。 */
     private final MedicationDispenseQueryService medicationDispenseQueryService;
 
     /** 药房进/售汇总（售价合计）。 */
     private final PharmacyDailySettlementPricingSupport pharmacyDailySettlementPricingSupport;
 
     /**
-     * 批量回填列表行展示名，并将药房日结金额覆盖为售价合计。
+     * 批量回填列表行展示名；金额保持头表快照（禁 N+1 现算）。
      *
      * @param rows 列表行；可空
      */
     public void enrichListItems(List<CashierSettlementApprovalListItemDto> rows) {
         this.cashierSettlementPartyNamesEnricher.enrich(rows);
-        if (rows == null || rows.isEmpty()) {
-            return;
-        }
-        // Asm：药房行金额 = 挂载发药售价合计（收款行不动）
-        for (CashierSettlementApprovalListItemDto row : rows) {
-            if (row == null) {
-                continue;
-            }
-            BigDecimal saleTotal =
-                this.resolvePharmacySaleTotal(row.getSettlementId(), row.getTypeEnum());
-            if (saleTotal == null) {
-                continue;
-            }
-            row.setTotalIncome(saleTotal);
-        }
     }
 
     /**
@@ -70,7 +56,7 @@ public class CashierSettlementApprovalDisplayEnricher {
             return;
         }
         this.cashierSettlementPartyNamesEnricher.enrich(List.of(header));
-        // Asm：药房详情头金额与列表同口径（Header/ListItem 平级，不可共用 List 泛型）
+        // Asm：详情头药房金额现算为售价合计（列表仍用头表快照）
         BigDecimal saleTotal =
             this.resolvePharmacySaleTotal(header.getSettlementId(), header.getTypeEnum());
         if (saleTotal == null) {

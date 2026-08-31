@@ -541,6 +541,10 @@ public class DailySettlementPaymentDetailLoader {
             return null;
         }
         PaymentChannel channel = PaymentChannel.fromCode(payEnum);
+        if (PaymentChannel.DEPOSIT_OFFSET.equals(channel)) {
+            // 预交金冲抵不进交账「实收渠道」小计（DD Q7）。
+            return null;
+        }
         if (PaymentChannel.CASHIER.equals(channel)) {
             return this.resolveCashierHandoverPayMethodDisplayName(hasInsurance, kindEnum);
         }

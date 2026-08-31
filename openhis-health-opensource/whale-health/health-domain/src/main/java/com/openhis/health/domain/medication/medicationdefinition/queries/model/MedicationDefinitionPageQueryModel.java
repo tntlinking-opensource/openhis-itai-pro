@@ -41,7 +41,11 @@ public class MedicationDefinitionPageQueryModel {
     private Long locationId;
     /** 供应商主键。 */
     private Long supplyId;
-    /** 生产厂家文本。 */
+    /** 生产厂家主键（cus_supplier.id，type=生产厂家）。 */
+    private Long manufacturerId;
+    /**
+     * 生产厂家展示名（非持久化列；由 AppService 按 {@link #manufacturerId} 解析供应商名称回填）。
+     */
     private String manufacturerText;
     /** 处方药标志。 */
     private Boolean rxFlag;

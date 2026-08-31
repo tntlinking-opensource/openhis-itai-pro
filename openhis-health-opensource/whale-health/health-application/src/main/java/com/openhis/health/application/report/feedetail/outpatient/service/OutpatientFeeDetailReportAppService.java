@@ -22,6 +22,7 @@ import com.openhis.health.application.report.feedetail.outpatient.request.Summar
 import com.openhis.health.application.report.feedetail.outpatient.response.ExportOutpatientFeeDetailReportResponse;
 import com.openhis.health.application.report.feedetail.outpatient.response.LoadOutpatientFeeDetailReportPageInitResponse;
 import com.openhis.health.application.report.feedetail.outpatient.response.PageOutpatientFeeDetailReportResponse;
+import com.openhis.health.application.report.feedetail.outpatient.response.SummarizeOutpatientFeeDetailPurchaseCornerResponse;
 import com.openhis.health.application.report.feedetail.outpatient.response.SummarizeOutpatientFeeDetailReportResponse;
 import com.openhis.health.application.report.feedetail.support.FeeDetailReportFinTypeSummaryAssembler;
 import com.openhis.health.application.shared.financial.PaymentEntererMatchResolver;
@@ -42,20 +43,21 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 门诊费用明细报表应用服务（AS-RPT-008，IF-RPT-OFD-01～04）。
+ * 门诊费用明细报表应用服务（AS-RPT-008，IF-RPT-OFD-01～05）。
  *
  * <p>职责边界：</p>
  * <ul>
  *   <li>Gate：登录、日期窗、呈现模式（SUMMARY/DETAIL）、汇总维度白名单。</li>
  *   <li>Pre：明细 IF 门面委托 {@link OutpatientFeeDetailAppService}；汇总走
  *       {@link OutpatientFeeDetailLoader} + {@link ChargeItemQueryService#summarizeOutpatientFeeDetailByFinType}
- *      （缓存 chargeRows 供多维分桶）。</li>
+ *      （缓存 chargeRows 供多维分桶）；进价列角 IF-05 独立异步回填。</li>
  *   <li>Cmd：无写库（只读报表）。</li>
  *   <li>Asm：{@link FeeDetailReportFinTypeSummaryAssembler#assembleSummaryRows} 按
  *       {@code summaryDimension}（FIN_TYPE / DEPARTMENT / FEE_CATEGORY / ITEM）分桶与页脚结算刻度。</li>
@@ -153,7 +155,7 @@ public class OutpatientFeeDetailReportAppService {
             // Asm：Request → Query，Mapper 内强制 tradeDirection=ALL
             OutpatientFeeDetailPageQuery query = this.outpatientFeeDetailReportMapper.toSummarizeQuery(request);
             this.applyEntererMatchToFeeDetailQuery(query);
-            // Pre：汇总不展示医保分摊列；按账单 occurrence 窗取 scope（禁止扫 Payment）
+            // Pre：汇总不展示医保分摊列；按 Payment bill_date 窗取 scope（与日结同轴；退费冲减）
             query.setSkipYbFundAmountAttach(Boolean.TRUE);
             this.outpatientFeeDetailLoader.prepareOutpatientFeeDetailSummarizeScopesFromChargeBill(query);
             // Pre：域层按 definition_id 代数净汇总（含退负号；同时缓存 chargeRows 供多维分桶）
@@ -217,6 +219,52 @@ public class OutpatientFeeDetailReportAppService {
     }
 
     /**
+     * IF-RPT-OFD-05：明细分页进价列角（异步回填页脚「进价合计」）。
+     *
+     * <p>与 IF-03 筛选同口径（日期/科室/收退/大类等；分页字段忽略）；不返回就诊块。
+     * 列表首屏应先调 IF-03（售价列角已出），再调本 IF。正确性：全命中 scope 进价代数和，
+     * 与导出全窗行进价同管线（DD §2.4 Type A / BR-RPT-PUR-CORNER-001～002）。</p>
+     *
+     * @param request 与明细分页同筛选（分页字段忽略）
+     * @return 进价合计
+     * @throws BusinessException 前身校验失败原样上抛；其它运行时映射 {@code EX-RPT-OFD-103}
+     */
+    public SummarizeOutpatientFeeDetailPurchaseCornerResponse summarizeOutpatientFeeDetailPurchaseCorner(
+        PageOutpatientFeeDetailReportRequest request) {
+        // Gate：登录入口统一报表码
+        this.currentOperatorResolver.requireOperatorId(
+            OutpatientFeeDetailReportConstants.EX_RPT_OFD_101,
+            "费用明细查询失败，请稍后重试");
+        try {
+            // Asm：报表 Request → 前身分页 Request（筛选同构；分页占位由前身校验）
+            PageOutpatientFeeDetailRequest detailRequest =
+                this.outpatientFeeDetailReportMapper.toPageOutpatientFeeDetailRequest(request);
+            // Pre：列角不依赖分页页码，补默认避免空 page 校验拒
+            if (detailRequest.getPageNo() == null || detailRequest.getPageNo() < 1) {
+                detailRequest.setPageNo(1);
+            }
+            if (detailRequest.getPageSize() == null || detailRequest.getPageSize() < 1) {
+                detailRequest.setPageSize(OutpatientFeeDetailReportConstants.DEFAULT_PAGE_SIZE);
+            }
+            // Pre：委托前身仅算历史进价合计
+            BigDecimal purchaseAmountTotal =
+                this.outpatientFeeDetailAppService.summarizeOutpatientFeeDetailPurchaseCorner(detailRequest);
+            // Asm：包装列角响应
+            SummarizeOutpatientFeeDetailPurchaseCornerResponse response =
+                new SummarizeOutpatientFeeDetailPurchaseCornerResponse();
+            response.setPurchaseAmountTotal(purchaseAmountTotal);
+            return response;
+        } catch (BusinessException businessException) {
+            throw businessException;
+        } catch (RuntimeException runtimeException) {
+            log.error("门诊费用明细进价列角失败", runtimeException);
+            throw new BusinessException(
+                OutpatientFeeDetailReportConstants.EX_RPT_OFD_103,
+                "费用明细查询失败，请稍后重试");
+        }
+    }
+
+    /**
      * IF-RPT-OFD-04：导出当前 Tab（仅 SUMMARY 或 DETAIL，BR-RPT-OFD-004）。
      *
      * @param request 筛选 + presentationMode
@@ -266,11 +314,12 @@ public class OutpatientFeeDetailReportAppService {
                 exportRows = new ArrayList<>(
                     exportRows.subList(0, OutpatientFeeDetailReportConstants.EXPORT_MAX_ROWS));
             }
-            // Asm：AnnotatedExcelExporter 按 @Excel 列导出
+            // Asm：AnnotatedExcelExporter 按 @Excel 列导出（前端 exportColumns 裁剪）
             byte[] body = AnnotatedExcelExporter.exportToXlsxBytes(
                 OutpatientFeeDetailReportConstants.EXPORT_SHEET_NAME_SUMMARY,
                 exportRows,
-                FeeDetailReportSummaryRowDto.class);
+                FeeDetailReportSummaryRowDto.class,
+                request.getExportColumns());
             log.info("门诊费用明细报表汇总导出成功 operatorId={} rowCount={} truncated={}",
                 operatorId, exportRows.size(), truncated);
             return this.outpatientFeeDetailReportMapper.toSummaryExportResponse(

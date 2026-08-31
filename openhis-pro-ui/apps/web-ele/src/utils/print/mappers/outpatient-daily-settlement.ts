@@ -47,6 +47,7 @@ export interface OutpatientDailySettlementPrintNatureRow {
  */
 export interface OutpatientDailySettlementPrintData {
   hospitalName: string;
+  documentTitle: string;
   cashierName: string;
   settlementPeriodText: string;
   finTypeRows: OutpatientDailySettlementPrintGridRow[];
@@ -57,10 +58,16 @@ export interface OutpatientDailySettlementPrintData {
 /** 日结 mapper 入参（P：日结预览/凭证；C：机构名） */
 export interface OutpatientDailySettlementPrintSource {
   hospitalName?: string;
+  /** 单据标题：门诊收费日结单 / 住院收费日结单 */
+  documentTitle?: string;
   cashierName?: string;
   settlementPeriodText?: string;
   rows?: DailySettlementChannelRowDto[];
-  summary?: DailySettlementSummaryDto & { depositAmount?: string };
+  summary?: DailySettlementSummaryDto & {
+    depositAmount?: string;
+    depositRefundAmount?: string;
+    settleSupplementAmount?: string;
+  };
 }
 
 const UNKNOWN_CONTRACT_NAME = '未标注费用性质';
@@ -232,6 +239,19 @@ function mapChannelItems(
       valueText: formatMoneyText(summary.depositAmount),
     });
   }
+  // 住院多退少补拆列：与页面 summary 同字段，打印一并带出
+  if (summary.depositRefundAmount !== undefined) {
+    items.push({
+      labelText: '退预交金',
+      valueText: formatMoneyText(summary.depositRefundAmount),
+    });
+  }
+  if (summary.settleSupplementAmount !== undefined) {
+    items.push({
+      labelText: '结算补收',
+      valueText: formatMoneyText(summary.settleSupplementAmount),
+    });
+  }
   return items;
 }
 
@@ -334,6 +354,7 @@ export function buildOutpatientDailySettlementPrintData(
   const summary = source.summary;
   return {
     hospitalName: str(source.hospitalName),
+    documentTitle: str(source.documentTitle) || '门诊收费日结单',
     cashierName: str(source.cashierName),
     settlementPeriodText: str(source.settlementPeriodText) || str(summary?.dateRange),
     finTypeRows: chunkToGridRows(mapFinTypeItems(source.rows)),

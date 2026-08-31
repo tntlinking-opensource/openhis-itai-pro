@@ -105,4 +105,17 @@ public interface EncounterRepository extends JpaRepository<Encounter, Long>, Jpa
         Long patientId,
         String classEnum,
         Collection<String> excludedStatusEnums);
+
+    /**
+     * 列出指定类别、状态不在排除集合中的未软删就诊（最近开始的在前）。
+     *
+     * @param patientId           患者主键
+     * @param classEnum           就诊类别（体检为 {@code PE}）
+     * @param excludedStatusEnums 排除的终态集合
+     * @return 在检就诊，按开始时间倒序
+     */
+    List<Encounter> findByPatientIdAndClassEnumAndStatusEnumNotInAndIsDeletedFalseOrderByStartTimeDesc(
+        Long patientId,
+        String classEnum,
+        Collection<String> excludedStatusEnums);
 }

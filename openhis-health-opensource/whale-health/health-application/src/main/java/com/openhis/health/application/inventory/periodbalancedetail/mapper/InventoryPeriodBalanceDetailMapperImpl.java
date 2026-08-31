@@ -21,6 +21,7 @@ import com.openhis.health.application.inventory.periodbalancedetail.support.Peri
 import com.openhis.health.domain.document.inventoryitemsnapshot.queries.DocInventoryItemSnapshotPageQuery;
 import com.openhis.health.domain.medication.medicationdefinition.queries.MedicationDefinitionCatalogPageQuery;
 import com.openhis.health.domain.medication.medicationdispense.query.MedicationDispenseRecordPageQuery;
+import com.openhis.health.domain.share.constants.ChargeItemAmountScaleConstants;
 import com.openhis.health.domain.share.constants.InventoryPeriodBalanceDetailExportConstants;
 import com.openhis.health.domain.share.constants.PharmacyDispenseRecordConstants;
 import com.openhis.health.domain.share.constants.PharmacyDispenseRecordExportConstants;
@@ -28,6 +29,7 @@ import com.openhis.health.domain.share.enums.DispenseStatus;
 import com.openhis.health.domain.workflow.devicedispense.queries.DeviceDispenseSettlementWindowQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyRequestSettlementWindowQuery;
 import com.openhis.health.application.shared.pagination.PageQueryBinder;
+import com.openhis.whale.core.application.dto.ExcelExportColumnDto;
 import com.openhis.whale.core.application.util.TabularColumnDef;
 import com.openhis.whale.core.application.util.TabularExcelExporter;
 
@@ -214,16 +216,17 @@ public class InventoryPeriodBalanceDetailMapperImpl implements InventoryPeriodBa
     }
 
     /**
-     * 动态列 Excel 写出。
+     * 动态列 Excel 写出（可按前端列清单裁剪）。
      *
-     * @param exportRows 导出行
-     * @param columns 动态列元数据
-     * @param sheetName 工作表名
+     * @param exportRows     导出行
+     * @param columns        动态列元数据
+     * @param sheetName      工作表名
+     * @param exportColumns  前端自选列；null/空则全部动态列
      * @return xlsx 字节
      */
     @Override
     public byte[] buildExcelBytes(List<PeriodBalanceDetailExportRowDto> exportRows, List<PeriodBalanceDetailColumnDto> columns,
-        String sheetName) {
+        String sheetName, List<ExcelExportColumnDto> exportColumns) {
         List<TabularColumnDef> tabularColumns = new ArrayList<>();
         this.appendFixedExportColumns(tabularColumns);
         if (columns != null) {
@@ -231,7 +234,11 @@ public class InventoryPeriodBalanceDetailMapperImpl implements InventoryPeriodBa
                 if (column == null || StringUtils.isEmpty(column.getColumnCode())) {
                     continue;
                 }
-                tabularColumns.add(new TabularColumnDef(column.getColumnCode(), column.getColumnTitle()));
+                // 动态列按 valueType 定小数位：数量 0、金额/单价 2
+                tabularColumns.add(new TabularColumnDef(
+                    column.getColumnCode(),
+                    column.getColumnTitle(),
+                    this.resolveExportScale(column.getValueType())));
             }
         }
         this.appendBalanceExportColumns(tabularColumns);
@@ -241,7 +248,7 @@ public class InventoryPeriodBalanceDetailMapperImpl implements InventoryPeriodBa
                 rowMaps.add(this.toRowMap(exportRow, tabularColumns));
             }
         }
-        return TabularExcelExporter.exportToXlsxBytes(sheetName, tabularColumns, rowMaps);
+        return TabularExcelExporter.exportToXlsxBytes(sheetName, tabularColumns, rowMaps, exportColumns);
     }
 
     /**
@@ -250,6 +257,7 @@ public class InventoryPeriodBalanceDetailMapperImpl implements InventoryPeriodBa
      * @param tabularColumns 列定义列表
      */
     private void appendFixedExportColumns(List<TabularColumnDef> tabularColumns) {
+        int moneyScale = ChargeItemAmountScaleConstants.CHARGE_MONETARY_DISPLAY_SCALE;
         tabularColumns.add(new TabularColumnDef(InventoryPeriodBalanceDetailExportConstants.FIELD_ITEM_NO,
             InventoryPeriodBalanceDetailExportConstants.LABEL_ITEM_NO));
         tabularColumns.add(new TabularColumnDef(InventoryPeriodBalanceDetailExportConstants.FIELD_PRODUCT_NAME,
@@ -262,24 +270,31 @@ public class InventoryPeriodBalanceDetailMapperImpl implements InventoryPeriodBa
                 InventoryPeriodBalanceDetailExportConstants.LABEL_MANUFACTURER_TEXT));
         tabularColumns.add(new TabularColumnDef(
             InventoryPeriodBalanceDetailExportConstants.FIELD_BEGIN_COST_PACKAGE_UNIT_PRICE,
-            InventoryPeriodBalanceDetailExportConstants.LABEL_BEGIN_COST_PACKAGE_UNIT_PRICE));
+            InventoryPeriodBalanceDetailExportConstants.LABEL_BEGIN_COST_PACKAGE_UNIT_PRICE,
+            moneyScale));
         tabularColumns.add(new TabularColumnDef(
             InventoryPeriodBalanceDetailExportConstants.FIELD_BEGIN_QUANTITY,
-            InventoryPeriodBalanceDetailExportConstants.LABEL_BEGIN_QUANTITY));
+            InventoryPeriodBalanceDetailExportConstants.LABEL_BEGIN_QUANTITY,
+            0));
         tabularColumns
             .add(new TabularColumnDef(InventoryPeriodBalanceDetailExportConstants.FIELD_BEGIN_COST_AMOUNT,
-                InventoryPeriodBalanceDetailExportConstants.LABEL_BEGIN_COST_AMOUNT));
+                InventoryPeriodBalanceDetailExportConstants.LABEL_BEGIN_COST_AMOUNT,
+                moneyScale));
         tabularColumns.add(new TabularColumnDef(
             InventoryPeriodBalanceDetailExportConstants.FIELD_END_COST_PACKAGE_UNIT_PRICE,
-            InventoryPeriodBalanceDetailExportConstants.LABEL_END_COST_PACKAGE_UNIT_PRICE));
+            InventoryPeriodBalanceDetailExportConstants.LABEL_END_COST_PACKAGE_UNIT_PRICE,
+            moneyScale));
         tabularColumns.add(new TabularColumnDef(
             InventoryPeriodBalanceDetailExportConstants.FIELD_END_QUANTITY,
-            InventoryPeriodBalanceDetailExportConstants.LABEL_END_QUANTITY));
+            InventoryPeriodBalanceDetailExportConstants.LABEL_END_QUANTITY,
+            0));
         tabularColumns.add(new TabularColumnDef(InventoryPeriodBalanceDetailExportConstants.FIELD_END_COST_AMOUNT,
-            InventoryPeriodBalanceDetailExportConstants.LABEL_END_COST_AMOUNT));
+            InventoryPeriodBalanceDetailExportConstants.LABEL_END_COST_AMOUNT,
+            moneyScale));
         tabularColumns.add(new TabularColumnDef(
             InventoryPeriodBalanceDetailExportConstants.FIELD_PRICE_ADJUSTMENT_COST_AMOUNT,
-            InventoryPeriodBalanceDetailExportConstants.LABEL_PRICE_ADJUSTMENT_COST_AMOUNT));
+            InventoryPeriodBalanceDetailExportConstants.LABEL_PRICE_ADJUSTMENT_COST_AMOUNT,
+            moneyScale));
     }
 
     /**
@@ -288,18 +303,47 @@ public class InventoryPeriodBalanceDetailMapperImpl implements InventoryPeriodBa
      * @param tabularColumns 列定义列表
      */
     private void appendBalanceExportColumns(List<TabularColumnDef> tabularColumns) {
+        int moneyScale = ChargeItemAmountScaleConstants.CHARGE_MONETARY_DISPLAY_SCALE;
         tabularColumns
             .add(new TabularColumnDef(InventoryPeriodBalanceDetailExportConstants.FIELD_COMPUTED_END_QUANTITY,
-                InventoryPeriodBalanceDetailExportConstants.LABEL_COMPUTED_END_QUANTITY));
+                InventoryPeriodBalanceDetailExportConstants.LABEL_COMPUTED_END_QUANTITY,
+                0));
         tabularColumns
             .add(new TabularColumnDef(InventoryPeriodBalanceDetailExportConstants.FIELD_COMPUTED_END_COST_AMOUNT,
-                InventoryPeriodBalanceDetailExportConstants.LABEL_COMPUTED_END_COST_AMOUNT));
+                InventoryPeriodBalanceDetailExportConstants.LABEL_COMPUTED_END_COST_AMOUNT,
+                moneyScale));
         tabularColumns.add(new TabularColumnDef(InventoryPeriodBalanceDetailExportConstants.FIELD_QUANTITY_DIFF,
-            InventoryPeriodBalanceDetailExportConstants.LABEL_QUANTITY_DIFF));
+            InventoryPeriodBalanceDetailExportConstants.LABEL_QUANTITY_DIFF,
+            0));
         tabularColumns.add(new TabularColumnDef(InventoryPeriodBalanceDetailExportConstants.FIELD_COST_AMOUNT_DIFF,
-            InventoryPeriodBalanceDetailExportConstants.LABEL_COST_AMOUNT_DIFF));
+            InventoryPeriodBalanceDetailExportConstants.LABEL_COST_AMOUNT_DIFF,
+            moneyScale));
         tabularColumns.add(new TabularColumnDef(InventoryPeriodBalanceDetailExportConstants.FIELD_IS_BALANCE,
             InventoryPeriodBalanceDetailExportConstants.LABEL_IS_BALANCE));
+    }
+
+    /**
+     * 动态列 valueType → 导出小数位。
+     *
+     * <p>QUANTITY→0；AMOUNT_COST/AMOUNT_SALE→展示 2 位；未知类型不强制（仍写数字）。</p>
+     *
+     * @param valueType 列值类型（与 {@link PeriodBalanceDetailColumnDto#getValueType()} 对齐）
+     * @return 小数位；未知为 {@link TabularColumnDef#SCALE_UNSET}
+     */
+    private int resolveExportScale(String valueType) {
+        // 无类型：不强制格式，由 ExcelCellWriter 按原值写 NUMERIC
+        if (valueType == null || valueType.isBlank()) {
+            return TabularColumnDef.SCALE_UNSET;
+        }
+        // 数量列：整数显示
+        if ("QUANTITY".equals(valueType)) {
+            return 0;
+        }
+        // 进价/售价额：展示 2 位（BR-MON-001 展示层，非入账 6 位）
+        if ("AMOUNT_COST".equals(valueType) || "AMOUNT_SALE".equals(valueType)) {
+            return ChargeItemAmountScaleConstants.CHARGE_MONETARY_DISPLAY_SCALE;
+        }
+        return TabularColumnDef.SCALE_UNSET;
     }
 
     /**

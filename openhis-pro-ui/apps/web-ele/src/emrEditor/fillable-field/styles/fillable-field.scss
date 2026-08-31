@@ -1,0 +1,351 @@
+/**
+ * 可填域（元数据/自由文本）样式 — 与分页/页眉解耦。
+ * 由 simple-editor.scss @import；改 pointer-events 须跑 fillable-field.verify.ts。
+ */
+
+.ProseMirror .emr-bracket-field--node {
+  background: transparent;
+  border-radius: 2px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.ProseMirror .emr-bracket-field--node::before {
+  content: '[';
+  color: #93c5fd;
+  font-weight: 600;
+  pointer-events: none;
+  user-select: none;
+}
+
+.ProseMirror .emr-bracket-field--node::after {
+  content: ']';
+  color: #93c5fd;
+  font-weight: 600;
+  pointer-events: none;
+  user-select: none;
+}
+
+.ProseMirror .emr-bracket-field--node.is-active::before,
+.ProseMirror .emr-bracket-field--node.is-active::after,
+.ProseMirror .emr-bracket-field--node.emr-fillable--active::before,
+.ProseMirror .emr-bracket-field--node.emr-fillable--active::after {
+  color: #2563eb;
+}
+
+.ProseMirror .emr-bracket-field--node:hover {
+  background: #eff6ff;
+}
+
+.ProseMirror .emr-bracket-field--node.is-active,
+.ProseMirror .emr-bracket-field--node.emr-fillable--active {
+  background: #f0f7ff;
+  caret-color: #2563eb;
+}
+
+.ProseMirror .emr-bracket-field--node.emr-fillable--empty::before {
+  content: '[' attr(data-placeholder);
+  color: #9ca3af;
+  font-weight: 400;
+  pointer-events: none;
+  user-select: none;
+}
+
+.ProseMirror .emr-bracket-field--node.emr-fillable--empty::after {
+  content: ']';
+  color: #9ca3af;
+  font-weight: 400;
+  pointer-events: none;
+  user-select: none;
+}
+
+.ProseMirror .emr-bracket-field--node.emr-fillable--empty.emr-fillable--active::before {
+  content: '[';
+  color: #2563eb;
+  font-weight: 600;
+}
+
+.ProseMirror .emr-bracket-field--node.emr-fillable--empty.emr-fillable--active::after {
+  content: ']';
+  color: #2563eb;
+  font-weight: 600;
+}
+
+.ProseMirror .emr-fillable--dataElement,
+.ProseMirror .emr-bracket-field--css:not(.emr-fillable--freeText):not(.emr-fillable--metadata) {
+  background: transparent;
+  border-radius: 2px;
+  box-shadow: none;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.ProseMirror .emr-fillable--freeText,
+.ProseMirror .emr-fillable--metadata,
+.ProseMirror .emr-bracket-field--css.emr-fillable--freeText,
+.ProseMirror .emr-bracket-field--css.emr-fillable--metadata {
+  background: #eff6ff;
+  border-radius: 2px;
+  box-shadow: none;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+/* 只读元数据：无底色，避免看起来像可编辑 */
+.ProseMirror .emr-fillable--metadata.emr-fillable--readonly,
+.ProseMirror .emr-fillable--metadata.emr-metadata-chip--readonly,
+.ProseMirror .emr-bracket-field--css.emr-fillable--metadata.emr-fillable--readonly {
+  background: transparent;
+}
+
+.ProseMirror .emr-fillable--freeText:hover,
+.ProseMirror .emr-fillable--metadata:hover,
+.ProseMirror .emr-fillable--dataElement:hover,
+.ProseMirror .emr-bracket-field--css:hover {
+  background: #eff6ff;
+}
+
+.ProseMirror .emr-fillable--freeText.is-active,
+.ProseMirror .emr-fillable--metadata.is-active,
+.ProseMirror .emr-fillable--dataElement.is-active,
+.ProseMirror .emr-bracket-field--css.is-active,
+.ProseMirror .emr-fillable--active,
+.ProseMirror .emr-bracket-field--css:has(> .emr-fillable--active),
+.ProseMirror .emr-bracket-field--css.emr-fillable--active {
+  background: #f0f7ff;
+  box-shadow: none;
+  caret-color: #2563eb;
+}
+
+.ProseMirror .emr-bracket-field--css::before,
+.ProseMirror .emr-bracket-field--css::after {
+  content: none !important;
+}
+
+.ProseMirror .emr-fillable-bracket {
+  color: #93c5fd;
+  font-weight: 600;
+  user-select: none;
+}
+
+.ProseMirror .emr-fillable-bracket.is-active {
+  color: #2563eb;
+}
+
+.ProseMirror .emr-bracket-field--css:has(> .emr-fillable--empty)::before,
+.ProseMirror .emr-bracket-field--css:has(> .emr-fillable--empty)::after {
+  content: none !important;
+}
+
+.ProseMirror .emr-fillable--empty {
+  display: inline !important;
+  min-width: 0 !important;
+  padding: 0;
+  vertical-align: baseline;
+  border-radius: 0;
+  box-shadow: none;
+  caret-color: #1d4ed8;
+}
+
+/* 空槽：自由文本/可编辑元数据保留淡底；其余保持透明 */
+.ProseMirror .emr-fillable--empty:not(.emr-fillable--freeText):not(.emr-fillable--metadata) {
+  background: transparent;
+}
+
+.ProseMirror .emr-fillable--empty.emr-fillable--freeText,
+.ProseMirror
+  .emr-fillable--empty.emr-fillable--metadata:not(.emr-fillable--readonly):not(
+    .emr-metadata-chip--readonly
+  ) {
+  background: #eff6ff;
+  border-radius: 2px;
+}
+
+.ProseMirror .emr-fillable--empty:not(:has(.emr-fillable-field__shell))::before {
+  content: attr(data-placeholder);
+  color: #9ca3af;
+  font-weight: 400;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* 方案 B NodeView：占位仅槽内 contenteditable / 只读空槽，外壳不再叠字 */
+.ProseMirror .emr-bracket-field--css.emr-fillable--empty:has(.emr-fillable-field__shell)::before {
+  content: none !important;
+}
+
+.ProseMirror
+  .emr-bracket-field--css.emr-fillable--empty:not(:has(.emr-fillable-field__shell))::before {
+  content: attr(data-placeholder) !important;
+  color: #9ca3af !important;
+  font-weight: 400 !important;
+}
+
+.ProseMirror .emr-bracket-field--css.emr-fillable--empty::after {
+  content: none !important;
+}
+
+.ProseMirror .emr-fillable--active.emr-fillable--empty,
+.ProseMirror .emr-fillable--empty.emr-fillable--active,
+.ProseMirror .emr-bracket-field--css:has(> .emr-fillable--empty.emr-fillable--active),
+.ProseMirror .emr-bracket-field--css.emr-fillable--empty.emr-fillable--active {
+  background: #f0f7ff;
+  box-shadow: none;
+  caret-color: #2563eb;
+}
+
+.ProseMirror .emr-fillable--required-empty,
+.ProseMirror .emr-de--required-empty {
+  box-shadow: inset 0 -1.5px 0 0 #ef4444;
+  border-radius: 1px;
+}
+
+/* 文书/模板面：自由文本/可编辑元数据默认淡底；数据元与只读元数据仍透明 */
+.simple-editor--surface-document .simple-editor__content .emr-fillable--freeText,
+.simple-editor--surface-template .simple-editor__content .emr-fillable--freeText,
+.simple-editor--surface-document
+  .simple-editor__content
+  .emr-fillable--metadata:not(.emr-fillable--readonly):not(.emr-metadata-chip--readonly),
+.simple-editor--surface-template
+  .simple-editor__content
+  .emr-fillable--metadata:not(.emr-fillable--readonly):not(.emr-metadata-chip--readonly) {
+  background: #eff6ff;
+  box-shadow: none;
+}
+
+.simple-editor--surface-document .simple-editor__content .emr-fillable--dataElement,
+.simple-editor--surface-template .simple-editor__content .emr-fillable--dataElement,
+.simple-editor--surface-document
+  .simple-editor__content
+  .emr-fillable--metadata.emr-fillable--readonly,
+.simple-editor--surface-template
+  .simple-editor__content
+  .emr-fillable--metadata.emr-fillable--readonly,
+.simple-editor--surface-document
+  .simple-editor__content
+  .emr-fillable--metadata.emr-metadata-chip--readonly,
+.simple-editor--surface-template
+  .simple-editor__content
+  .emr-fillable--metadata.emr-metadata-chip--readonly {
+  background: transparent;
+  box-shadow: none;
+}
+
+.simple-editor--surface-document .simple-editor__content .emr-fillable--active,
+.simple-editor--surface-template .simple-editor__content .emr-fillable--active,
+.simple-editor--surface-document
+  .simple-editor__content
+  .emr-bracket-field--css:has(> .emr-fillable--active),
+.simple-editor--surface-template
+  .simple-editor__content
+  .emr-bracket-field--css:has(> .emr-fillable--active),
+.simple-editor--surface-document
+  .simple-editor__content
+  .emr-bracket-field--css.emr-fillable--active,
+.simple-editor--surface-template
+  .simple-editor__content
+  .emr-bracket-field--css.emr-fillable--active {
+  background: #f0f7ff;
+  box-shadow: none;
+  caret-color: #2563eb;
+}
+
+.ProseMirror .emr-fillable.emr-bracket-field--css,
+.ProseMirror [data-node-view-wrapper].emr-fillable {
+  display: inline;
+  max-width: none;
+}
+
+/* 方案 B NodeView：括号用 shell 伪元素，inline 流式排版（不独占一行） */
+.ProseMirror .emr-fillable-field__shell {
+  display: inline;
+  vertical-align: baseline;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  white-space: normal;
+}
+
+.ProseMirror .emr-fillable-field__shell::before {
+  content: '[';
+  color: #93c5fd;
+  font-weight: 600;
+  user-select: none;
+}
+
+.ProseMirror .emr-fillable-field__shell::after {
+  content: ']';
+  color: #93c5fd;
+  font-weight: 600;
+  user-select: none;
+}
+
+/* 元数据芯片：不画蓝括号（与 EmrFillableFieldView --plain 双保险） */
+.ProseMirror .emr-fillable--metadata .emr-fillable-field__shell::before,
+.ProseMirror .emr-fillable--metadata .emr-fillable-field__shell::after,
+.ProseMirror .emr-fillable-field__shell--plain::before,
+.ProseMirror .emr-fillable-field__shell--plain::after {
+  content: none !important;
+}
+
+.ProseMirror .emr-fillable-field__shell .emr-fillable-field__input {
+  display: inline;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  outline: none;
+  min-width: 0.5em;
+  vertical-align: baseline;
+  caret-color: #111827;
+}
+
+.ProseMirror .emr-fillable-field__shell .emr-fillable-field__input:focus:empty::before,
+.ProseMirror .emr-fillable-field__shell .emr-fillable-field__input:focus-visible:empty::before {
+  content: none;
+}
+
+.ProseMirror .emr-fillable-field__shell .emr-fillable-field__input:focus:empty,
+.ProseMirror .emr-fillable-field__shell .emr-fillable-field__input:focus-visible:empty {
+  min-width: 1ch;
+}
+
+.ProseMirror .emr-fillable-field__shell .emr-fillable-field__input:focus:empty::after,
+.ProseMirror .emr-fillable-field__shell .emr-fillable-field__input:focus-visible:empty::after {
+  content: '';
+  display: inline-block;
+  width: 1px;
+  height: 1.05em;
+  background: #111827;
+  vertical-align: text-bottom;
+  animation: emr-fillable-caret-blink 1s step-end infinite;
+}
+
+@keyframes emr-fillable-caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.ProseMirror .emr-fillable-field__shell .emr-fillable-field__readonly-text {
+  display: inline;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.ProseMirror .emr-fillable--active .emr-fillable-field__shell::before,
+.ProseMirror .emr-fillable--active .emr-fillable-field__shell::after {
+  color: #2563eb;
+}
+
+@media print {
+  .simple-editor__content .ProseMirror .emr-bracket-field--css,
+  .simple-editor__content .ProseMirror .emr-fillable {
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  .simple-editor__content .ProseMirror .emr-bracket-field--css::before,
+  .simple-editor__content .ProseMirror .emr-bracket-field--css::after {
+    content: none !important;
+  }
+}

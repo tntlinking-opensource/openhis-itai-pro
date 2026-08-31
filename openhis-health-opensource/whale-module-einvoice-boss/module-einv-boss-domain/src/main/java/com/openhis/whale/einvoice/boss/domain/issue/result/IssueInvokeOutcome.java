@@ -10,10 +10,10 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * 开具出站结果：可含多张拆票分片。
+ * 开具出站结果：单票（医院不允许拆票）。
  *
- * <p>{@link #issueResult()} / {@link #payloadJson()} 取首张（主票），供 health 回写与任务收尾；
- * 全部分片经 {@link #parts()} 落多条 {@code einv_boss_document}。</p>
+ * <p>{@link #issueResult()} / {@link #payloadJson()} 取首张，供 health 回写与任务收尾；
+ * {@link #parts()} 恒为单元素列表，由 Worker 落一条 {@code einv_boss_document}。</p>
  */
 public record IssueInvokeOutcome(List<IssuePartOutcome> parts) {
 

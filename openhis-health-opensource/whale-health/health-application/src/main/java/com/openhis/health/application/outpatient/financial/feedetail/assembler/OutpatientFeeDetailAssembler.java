@@ -317,11 +317,11 @@ public class OutpatientFeeDetailAssembler {
      * 明细分页页脚：装配售价合计 + 进价合计（均已 settle）。
      *
      * <p>售价来自 SQL SUM / 投影代数和；进价来自命中 scope 批量历史进价（
-     * {@code FeeDetailMatchedScopePurchaseTotalSupport}），禁止为页脚再
-     * {@code listOutpatientFeeDetailChargeRows}。</p>
+     * {@code FeeDetailMatchedScopePurchaseTotalSupport}）。
+     * {@code purchaseAmountTotal == null} 表示进价列角延后（由独立 IF 回填），禁止写成 0 误导。</p>
      *
      * @param saleAmountTotal     全窗售价代数和（结算刻度；可为 null，按 0）
-     * @param purchaseAmountTotal 全窗进价代数和（结算刻度；可为 null，按 0）
+     * @param purchaseAmountTotal 全窗进价代数和（结算刻度；null=延后列角）
      * @return 页脚 summary
      */
     public OutpatientFeeDetailAmountSummaryDto assembleDetailPageFooterSaleSummary(
@@ -335,11 +335,15 @@ public class OutpatientFeeDetailAssembler {
         summary.setActualReceivedAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
         summary.setInsuranceAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
         summary.setSelfPayAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
-        // Asm：售价/进价均 settle 后回填页脚（进价含诊疗按 0 的代数和）
+        // Asm：售价 settle 后回填；进价 null 表示列角另 IF 异步刷
         BigDecimal settledSale = MonetaryAmountSupport.scaleSettle(saleAmountTotal);
         summary.setSaleAmountTotal(settledSale);
         summary.setLineAmountTotal(settledSale);
-        summary.setPurchaseAmountTotal(MonetaryAmountSupport.scaleSettle(purchaseAmountTotal));
+        if (purchaseAmountTotal == null) {
+            summary.setPurchaseAmountTotal(null);
+        } else {
+            summary.setPurchaseAmountTotal(MonetaryAmountSupport.scaleSettle(purchaseAmountTotal));
+        }
         return summary;
     }
 

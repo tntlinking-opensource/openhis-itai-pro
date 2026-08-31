@@ -4,6 +4,7 @@
  */
 package com.openhis.health.application.report.medicationdispense.outpatient.request;
 
+import com.openhis.whale.core.application.dto.ExcelExportColumnDto;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -65,6 +66,12 @@ public class ExportOutpatientMedicationDispenseReportRequest {
     /** 呈现模式：SUMMARY / DETAIL（当前 Tab）。 */
     @Schema(description = "导出呈现模式 SUMMARY|DETAIL", requiredMode = Schema.RequiredMode.REQUIRED)
     private String presentationMode;
+
+    /**
+     * 导出自选列（前端按页面列清单下发；空则导出全部 {@code @Excel} 列）。
+     */
+    @Schema(description = "导出自选列 field+title")
+    private List<ExcelExportColumnDto> exportColumns;
 
     /** 费用性质合同业务号（{@code fin_contract.bus_no}）；空则不筛选。 */
     @Schema(description = "费用性质合同业务号")

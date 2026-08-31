@@ -33,6 +33,9 @@ import { ENCOUNTER_STATUS_ON_HOLD, ENCOUNTER_STATUS_PENDING } from './inpatient-
 
 export type InpatientSettleInsuranceMedium = OutpatientChargeInsuranceMedium;
 
+/** 住院读卡相位（供预结算进度条文案切换）。 */
+export type InpatientSettleInsurancePhase = 'plugin' | 'read-card' | 'person-1101';
+
 export interface InpatientSettleInsuranceContext {
   contractId: string;
   insuplcAdmdvs?: string;
@@ -227,11 +230,17 @@ async function resolveEcVoucherCredential(): Promise<{
 export async function resolveInpatientSettleInsuranceContext(
   contractId: string,
   medium: InpatientSettleInsuranceMedium,
+  options?: {
+    onPhase?: (phase: InpatientSettleInsurancePhase) => void;
+  },
 ): Promise<InpatientSettleInsuranceContext | null> {
+  const onPhase = options?.onPhase;
+  onPhase?.('plugin');
   if (!(await isYbPluginOnline())) {
     return null;
   }
   try {
+    onPhase?.('read-card');
     let credential: SocialCard1101Credential;
     let psnName: string | undefined;
     let issuingAdmdvs: string | undefined;
@@ -258,6 +267,7 @@ export async function resolveInpatientSettleInsuranceContext(
       psnName = social.psnName;
     }
 
+    onPhase?.('person-1101');
     const person = await httpGetInsurancePersonInfo({
       cardSn: credential.cardSn,
       certno: credential.certno,

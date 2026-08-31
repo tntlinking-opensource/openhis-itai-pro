@@ -303,6 +303,8 @@ public class MedicationCatalogImportRowValidator {
         row.setRestrictedFlag(this.resolveYesNoDefaultFalse(row, row.getRestrictedFlagText(), "限制使用", errors));
         row.setAntibioticFlag(this.resolveYesNoDefaultFalse(row, row.getAntibioticFlagText(), "抗生素", errors));
         row.setRxFlag(this.resolveYesNoDefaultFalse(row, row.getRxFlagText(), "处方药标志", errors));
+        row.setNationalMonitorFlag(this.resolveYesNoDefaultFalse(row, row.getNationalMonitorFlagText(), "国家重点监控药品", errors));
+        row.setCentralPurchaseFlag(this.resolveYesNoDefaultFalse(row, row.getCentralPurchaseFlagText(), "集采药品", errors));
     }
 
     private void resolveChrgitmLv(

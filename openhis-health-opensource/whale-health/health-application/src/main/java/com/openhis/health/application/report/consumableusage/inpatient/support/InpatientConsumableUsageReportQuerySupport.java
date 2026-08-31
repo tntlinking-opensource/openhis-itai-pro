@@ -27,7 +27,6 @@ import com.openhis.health.application.shared.report.PatientSettlementContextRow;
 import com.openhis.health.application.shared.report.ReportPatientSettlementContextAssembler;
 import com.openhis.health.domain.administration.devicedefinition.entity.DeviceDefinition;
 import com.openhis.health.domain.administration.devicedefinition.service.DeviceDefinitionQueryService;
-import com.openhis.health.domain.administration.encounter.entity.EncounterLocation;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
@@ -36,17 +35,19 @@ import com.openhis.health.domain.administration.practitioner.entity.Practitioner
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.share.constants.ConsumableUsageReportConstants;
 import com.openhis.health.domain.share.constants.DeptIssueReportConstants;
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.enums.DispenseStatus;
 import com.openhis.health.domain.share.enums.EncounterClass;
-import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.SupplyType;
 import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.domain.workflow.devicedispense.queries.model.ConsumableUsageDispenseLineQueryModel;
+import com.openhis.health.domain.workflow.devicedispense.queries.model.ConsumableUsageDispenseSummaryBundle;
 import com.openhis.health.domain.workflow.devicedispense.queries.model.ConsumableUsageDispenseSummaryRow;
 import com.openhis.health.domain.workflow.devicedispense.query.ConsumableUsageReportPageQuery;
 import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseQueryService;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.DeptIssueReportLineQueryModel;
+import com.openhis.health.domain.workflow.supplyrequest.queries.model.DeptIssueReportSummaryBundle;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.DeptIssueReportSummaryRow;
 import com.openhis.health.domain.workflow.supplyrequest.query.DeptIssueReportPageQuery;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQueryService;
@@ -60,9 +61,9 @@ import lombok.RequiredArgsConstructor;
  *
  * <p>领域白名单（AS Gap / DM-WKF-007 §6.2.23～24、DM-WKF-006 §6.2.15）：
  * {@code pageConsumableUsageDispenseLines} / {@code listConsumableUsageDispenseLines} /
- * {@code summarizeConsumableUsageDispense}；
+ * {@code summarizeConsumableUsageDispenseWithLines}；
  * {@code pageDeptIssueReportLines} / {@code listDeptIssueReportLines} /
- * {@code summarizeDeptIssueReport}。住院域由本 Support 预写 IMP encounter scope，明细 enrich 住院号/病区/床号。</p>
+ * {@code summarizeDeptIssueReportWithLines}。住院域由本 Support 预写 IMP encounter scope，明细 enrich 住院号/病区/床号。</p>
  *
  * <p>禁止 ALL 两路并集；禁止 import 本 Feature Request/Response。</p>
  */
@@ -122,7 +123,9 @@ public class InpatientConsumableUsageReportQuerySupport {
         String patientDomainDimension = this.resolvePatientDomainDimension(dimension);
         String deptDomainDimension = this.resolveDeptDomainDimension(dimension);
         List<InpatientConsumableUsageSummaryRowDto> rows = new ArrayList<>();
-        // Pre：按来源收窄一路或两路
+        List<ConsumableUsageDispenseLineQueryModel> patientLineRows = new ArrayList<>();
+        List<DeptIssueReportLineQueryModel> deptLineRows = new ArrayList<>();
+        // Pre：按来源收窄一路或两路；同次扫描保留事实行供汇总定价
         if (this.includePatient(source)) {
             ConsumableUsageReportPageQuery patientQuery = new ConsumableUsageReportPageQuery();
             this.preparePatientDispenseQueryWithFeeNature(
@@ -130,9 +133,12 @@ public class InpatientConsumableUsageReportQuerySupport {
                 EncounterClass.IMP.getCode(),
                 filter,
                 patientDomainDimension);
-            List<ConsumableUsageDispenseSummaryRow> patientSummaries =
-                this.deviceDispenseQueryService.summarizeConsumableUsageDispense(patientQuery);
-            rows.addAll(this.mapPatientSummaries(patientSummaries, dimension));
+            ConsumableUsageDispenseSummaryBundle patientBundle =
+                this.deviceDispenseQueryService.summarizeConsumableUsageDispenseWithLines(patientQuery);
+            rows.addAll(this.mapPatientSummaries(patientBundle.getSummaryRows(), dimension));
+            if (patientBundle.getLineRows() != null) {
+                patientLineRows = patientBundle.getLineRows();
+            }
         }
         if (this.includeDept(source)) {
             DeptIssueReportPageQuery deptQuery = new DeptIssueReportPageQuery();
@@ -141,9 +147,12 @@ public class InpatientConsumableUsageReportQuerySupport {
                 EncounterClass.IMP.getCode(),
                 filter,
                 deptDomainDimension);
-            List<DeptIssueReportSummaryRow> deptSummaries =
-                this.supplyRequestQueryService.summarizeDeptIssueReport(deptQuery);
-            rows = this.mergeSummaryRows(rows, this.mapDeptSummaries(deptSummaries, dimension));
+            DeptIssueReportSummaryBundle deptBundle =
+                this.supplyRequestQueryService.summarizeDeptIssueReportWithLines(deptQuery);
+            rows = this.mergeSummaryRows(rows, this.mapDeptSummaries(deptBundle.getSummaryRows(), dimension));
+            if (deptBundle.getLineRows() != null) {
+                deptLineRows = deptBundle.getLineRows();
+            }
         }
         Map<Long, String> categoryCodeByDeviceDefId = null;
         // CATEGORY：ITEM 行再按类型分桶（含科室领用）
@@ -153,19 +162,18 @@ public class InpatientConsumableUsageReportQuerySupport {
         }
         // Asm：回填统一 dimensionName
         this.enrichSummaryDisplay(rows, dimension);
-        // Pre：汇总金额仅拉定价所需明细，禁止姓名/品名等展示 enrich
-        List<InpatientConsumableUsageDetailRowDto> detailRows =
-            this.listDetailForSummaryAmounts(filter);
-        // CATEGORY：明细可能多出品规，补全映射避免金额落入空类型桶
+        // CATEGORY：事实行可能多出品规，补全映射避免金额落入空类型桶
         if (ConsumableUsageReportConstants.SUMMARY_DIMENSION_CATEGORY.equals(dimension)) {
-            LinkedHashSet<Long> allDeviceDefIds = this.collectDeviceDefIdsFromDetails(detailRows);
+            LinkedHashSet<Long> allDeviceDefIds =
+                this.collectDeviceDefIdsFromLineRows(patientLineRows, deptLineRows);
             if (categoryCodeByDeviceDefId != null) {
                 allDeviceDefIds.addAll(categoryCodeByDeviceDefId.keySet());
             }
             categoryCodeByDeviceDefId = this.resolveCategoryCodeByDeviceDefIds(allDeviceDefIds);
         }
-        this.consumableUsageReportAmountEnricher.aggregateSummaryPurchaseSaleAmounts(
-            rows, detailRows, dimension, categoryCodeByDeviceDefId);
+        // Pre：复用同窗事实行分块 enrich，禁止二次 page 扫描
+        this.enrichSummaryPurchaseSaleAmounts(
+            rows, patientLineRows, deptLineRows, dimension, categoryCodeByDeviceDefId);
         InpatientConsumableUsageSummaryResult response =
             new InpatientConsumableUsageSummaryResult();
         response.setRows(rows);
@@ -235,26 +243,45 @@ public class InpatientConsumableUsageReportQuerySupport {
     }
 
     /**
-     * 汇总金额专用明细列表：单源有界装载；仅补 organizationId + 进售价，禁止展示 enrich。
+     * 汇总进售价：复用数量汇总同次扫描的事实行，按 IN 分块装配定价后累加写回。
      *
-     * @param filter 报表筛选
-     * @return 仅含聚合/定价字段的明细行
+     * <p>禁止对同一筛选窗再 {@code page*} 二次扫描；禁止囤积全窗定价明细后再一次聚合。</p>
+     *
+     * @param summaryRows                已合并汇总行
+     * @param patientLineRows            患者侧同窗事实行；不查患者时为 null/空
+     * @param deptLineRows               领用侧同窗事实行；不查领用时为 null/空
+     * @param dimension                  汇总维度
+     * @param categoryCodeByDeviceDefId  CATEGORY 维品规→类型；可空
      */
-    public List<InpatientConsumableUsageDetailRowDto> listDetailForSummaryAmounts(
-        ConsumableUsageReportQueryFilter filter) {
-        String source = this.resolveSourceCode(filter.getSourceCode());
-        // Pre：单来源金额-only；禁止回刷全窗展示明细
-        if (ConsumableUsageReportConstants.SOURCE_CODE_PATIENT_DISPENSE.equals(source)) {
-            return this.listPatientDetailsForSummaryAmounts(
-                filter, ConsumableUsageReportConstants.EXPORT_MAX_ROWS);
+    private void enrichSummaryPurchaseSaleAmounts(
+        List<InpatientConsumableUsageSummaryRowDto> summaryRows,
+        List<ConsumableUsageDispenseLineQueryModel> patientLineRows,
+        List<DeptIssueReportLineQueryModel> deptLineRows,
+        String dimension,
+        Map<Long, String> categoryCodeByDeviceDefId) {
+        // 无汇总行：无需回刷进售价
+        if (summaryRows == null || summaryRows.isEmpty()) {
+            return;
         }
-        if (ConsumableUsageReportConstants.SOURCE_CODE_DEPT_ISSUE.equals(source)) {
-            return this.listDeptDetailsForSummaryAmounts(
-                filter, ConsumableUsageReportConstants.EXPORT_MAX_ROWS);
+        ConsumableUsageReportAmountEnricher.SummaryAmountBuckets buckets =
+            new ConsumableUsageReportAmountEnricher.SummaryAmountBuckets();
+        // Pre：患者侧全窗一次装定价（禁止按 500 反复开 ChargeItem/批号会话）
+        if (patientLineRows != null && !patientLineRows.isEmpty()) {
+            List<InpatientConsumableUsageDetailRowDto> priced =
+                this.mapPatientDetailLines(patientLineRows);
+            this.enrichDetailAmountsOnly(priced);
+            this.consumableUsageReportAmountEnricher.accumulateDetailRowsIntoSummaryBuckets(
+                buckets, priced, dimension, categoryCodeByDeviceDefId);
         }
-        throw new BusinessException(
-            ConsumableUsageReportConstants.EX_RPT_ICU_103,
-            "禁止全部来源混查");
+        // Pre：领用侧全窗一次装进价
+        if (deptLineRows != null && !deptLineRows.isEmpty()) {
+            List<InpatientConsumableUsageDetailRowDto> priced = this.mapDeptDetailLines(deptLineRows);
+            this.enrichDetailAmountsOnly(priced);
+            this.consumableUsageReportAmountEnricher.accumulateDetailRowsIntoSummaryBuckets(
+                buckets, priced, dimension, categoryCodeByDeviceDefId);
+        }
+        // Asm：一次写回各 dimensionKey 进/售净额
+        this.consumableUsageReportAmountEnricher.applySummaryAmountBuckets(summaryRows, buckets);
     }
 
     /**
@@ -410,47 +437,6 @@ public class InpatientConsumableUsageReportQuerySupport {
     }
 
     /**
-     * 汇总金额：患者侧有界明细（仅 organizationId + 进售价）。
-     *
-     * @param filter  报表筛选
-     * @param maxRows 有界上限
-     * @return 金额聚合用患者明细
-     */
-    private List<InpatientConsumableUsageDetailRowDto> listPatientDetailsForSummaryAmounts(
-        ConsumableUsageReportQueryFilter filter,
-        int maxRows) {
-        ConsumableUsageReportPageQuery query = new ConsumableUsageReportPageQuery();
-        this.preparePatientDispenseQueryWithFeeNature(
-            query, EncounterClass.IMP.getCode(), filter, null);
-        query.setPageSize(maxRows);
-        List<ConsumableUsageDispenseLineQueryModel> models =
-            this.deviceDispenseQueryService.listConsumableUsageDispenseLines(query);
-        List<InpatientConsumableUsageDetailRowDto> rows = this.mapPatientDetailLines(models);
-        this.enrichDetailAmountsOnly(rows);
-        return rows;
-    }
-
-    /**
-     * 汇总金额：科室侧有界明细（仅 organizationId + 进售价）。
-     *
-     * @param filter  报表筛选
-     * @param maxRows 有界上限
-     * @return 金额聚合用科室明细
-     */
-    private List<InpatientConsumableUsageDetailRowDto> listDeptDetailsForSummaryAmounts(
-        ConsumableUsageReportQueryFilter filter,
-        int maxRows) {
-        DeptIssueReportPageQuery query = new DeptIssueReportPageQuery();
-        this.prepareDeptIssueQuery(query, EncounterClass.IMP.getCode(), filter, null);
-        query.setPageSize(maxRows);
-        List<DeptIssueReportLineQueryModel> models =
-            this.supplyRequestQueryService.listDeptIssueReportLines(query);
-        List<InpatientConsumableUsageDetailRowDto> rows = this.mapDeptDetailLines(models);
-        this.enrichDetailAmountsOnly(rows);
-        return rows;
-    }
-
-    /**
      * 患者侧明细映射；退药数量取负。
      *
      * @param models 领域发放行
@@ -470,6 +456,7 @@ public class InpatientConsumableUsageReportQuerySupport {
             row.setSourceCode(ConsumableUsageReportConstants.SOURCE_CODE_PATIENT_DISPENSE);
             row.setSourceCode_dictText("患者使用");
             row.setDispenseId(model.getDispenseId());
+            row.setBasedOnDispenseId(model.getBasedOnDispenseId());
             row.setDeviceReqId(model.getDeviceReqId());
             row.setDeviceDefId(model.getDeviceDefId());
             row.setEncounterId(model.getEncounterId());
@@ -658,23 +645,14 @@ public class InpatientConsumableUsageReportQuerySupport {
         Map<Long, String> performerNameById = this.loadPerformerNameById(performerIds);
         Map<String, String> unitLabelMap =
             this.terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.UNIT_CODE);
-        // Pre：住院上下文——活动病区/床位轨迹
+        // Pre：住院上下文——展示病区/床位（活动优先，无则末次 COMPLETED）
         Map<Long, Long> wardLocationIdByEncounterId = new HashMap<>();
         Map<Long, Long> bedLocationIdByEncounterId = new HashMap<>();
         if (!encounterIds.isEmpty()) {
-            List<EncounterLocation> activeLocations =
-                this.encounterQueryService.listActiveEncounterLocationEntitiesByEncounterIds(encounterIds);
-            for (EncounterLocation locationRow : activeLocations) {
-                if (locationRow == null || locationRow.getEncounterId() == null || locationRow.getLocationId() == null) {
-                    continue;
-                }
-                if (LocationForm.WARD.getCode().equals(locationRow.getFormEnum())) {
-                    wardLocationIdByEncounterId.putIfAbsent(locationRow.getEncounterId(), locationRow.getLocationId());
-                }
-                if (LocationForm.BED.getCode().equals(locationRow.getFormEnum())) {
-                    bedLocationIdByEncounterId.putIfAbsent(locationRow.getEncounterId(), locationRow.getLocationId());
-                }
-            }
+            wardLocationIdByEncounterId.putAll(
+                this.encounterQueryService.mapDisplayWardLocationIdByEncounterIds(encounterIds));
+            bedLocationIdByEncounterId.putAll(
+                this.encounterQueryService.mapDisplayBedLocationIdByEncounterIds(encounterIds));
         }
         LinkedHashSet<Long> wardBedLocationIds = new LinkedHashSet<>();
         wardBedLocationIds.addAll(wardLocationIdByEncounterId.values());
@@ -685,7 +663,10 @@ public class InpatientConsumableUsageReportQuerySupport {
             DeviceDefinition device = deviceById.get(row.getDeviceDefId());
             if (device != null) {
                 row.setDeviceName(device.getName());
-                row.setSpecText(device.getModelNumber());
+                // 规格取包装规格 totalVolume（与护士工作量/药品规格口径一致）；modelNumber 为产品型号
+                if (device.getTotalVolume() != null) {
+                    row.setSpecText(device.getTotalVolume().trim());
+                }
             }
             if (row.getPatientId() != null) {
                 row.setPatientName(patientNameById.get(row.getPatientId()));
@@ -837,7 +818,7 @@ public class InpatientConsumableUsageReportQuerySupport {
             row.setDeviceDefId(summary.getDeviceDefId());
             row.setNetQuantity(summary.getNetQuantity());
             row.setLineCount(summary.getLineCount());
-            row.setNetAmount(BigDecimal.ZERO);
+            // 进售价由金额 enrich 回填；禁止预置 0 伪装「已算价」
             rows.add(row);
         }
         return rows;
@@ -869,7 +850,7 @@ public class InpatientConsumableUsageReportQuerySupport {
             row.setDeviceDefId(summary.getItemId());
             row.setNetQuantity(summary.getNetQuantity());
             row.setLineCount(summary.getLineCount());
-            row.setNetAmount(BigDecimal.ZERO);
+            // 进售价由金额 enrich 回填；禁止预置 0 伪装「已算价」
             rows.add(row);
         }
         return rows;
@@ -1162,20 +1143,28 @@ public class InpatientConsumableUsageReportQuerySupport {
     }
 
     /**
-     * 收集明细行品规主键。
+     * 收集事实行品规主键（CATEGORY 维补全类型映射）。
      *
-     * @param detailRows 明细行
+     * @param patientLineRows 患者侧同窗事实行
+     * @param deptLineRows    领用侧同窗事实行
      * @return 去重品规 id
      */
-    private LinkedHashSet<Long> collectDeviceDefIdsFromDetails(
-        List<InpatientConsumableUsageDetailRowDto> detailRows) {
+    private LinkedHashSet<Long> collectDeviceDefIdsFromLineRows(
+        List<ConsumableUsageDispenseLineQueryModel> patientLineRows,
+        List<DeptIssueReportLineQueryModel> deptLineRows) {
         LinkedHashSet<Long> deviceDefIds = new LinkedHashSet<>();
-        if (detailRows == null) {
-            return deviceDefIds;
+        if (patientLineRows != null) {
+            for (ConsumableUsageDispenseLineQueryModel line : patientLineRows) {
+                if (line != null && line.getDeviceDefId() != null) {
+                    deviceDefIds.add(line.getDeviceDefId());
+                }
+            }
         }
-        for (InpatientConsumableUsageDetailRowDto row : detailRows) {
-            if (row != null && row.getDeviceDefId() != null) {
-                deviceDefIds.add(row.getDeviceDefId());
+        if (deptLineRows != null) {
+            for (DeptIssueReportLineQueryModel line : deptLineRows) {
+                if (line != null && line.getItemId() != null) {
+                    deviceDefIds.add(line.getItemId());
+                }
             }
         }
         return deviceDefIds;
@@ -1241,7 +1230,7 @@ public class InpatientConsumableUsageReportQuerySupport {
                 categoryRow.setCategoryCode(categoryCode);
                 categoryRow.setNetQuantity(itemRow.getNetQuantity());
                 categoryRow.setLineCount(itemRow.getLineCount());
-                categoryRow.setNetAmount(BigDecimal.ZERO);
+                // 进售价由金额 enrich 回填；禁止预置 0
                 bucket.put(key, categoryRow);
                 continue;
             }

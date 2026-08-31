@@ -17,4 +17,7 @@ public final class PeisPrintScenarioConstants {
 
     /** 体检毕业合打（预留；当前前端逐份调用 REPORT_PRINT）。 */
     public static final String REPORT_GRAD_COMBINED = "peis-report-grad-print";
+
+    /** 体检指引单（登记台导检单）。 */
+    public static final String GUIDE_PRINT = "peis-guide-print";
 }

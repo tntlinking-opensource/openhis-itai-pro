@@ -37,16 +37,17 @@ import {
   httpInitDoctorStationAdvice,
   httpListDoctorStationAdvice,
   httpPageDoctorStationAdviceCatalog,
-  httpSignDoctorStationAdviceBatch,
   httpUpdateDoctorStationMedicationAdviceGroups,
   httpWithdrawDoctorStationAdviceBatch,
 } from '#/api/doctor-station/advice.http';
 import { httpGetEncounterDiagnosis } from '#/api/doctor-station/diagnosis.http';
 import { useEnsureClinicalReception } from '#/components/doctor-station/use-ensure-clinical-reception';
+import { mapEncounterRowToDiagnosisItem } from '#/components/doctor-station/diagnosis/services/encounter-diagnosis-select';
 import {
   clearEncounterDiagnosisSession,
   readEncounterDiagnosisSession,
 } from '#/components/doctor-station/diagnosis/services/encounter-diagnosis-session';
+import { fetchEncounterDiagnosisDisplayList } from '#/components/doctor-station/diagnosis/services/encounter-diagnosis.service';
 import { runOpDetailAuditGate } from '#/chs/composables/use-detail-audit-gate';
 import { pickFirstInsuranceContract } from '#/chs/utils/resolve-insurance-contract-bus-no';
 import { getChargeTypeListApi } from '#/api/core/common';
@@ -59,6 +60,7 @@ import {
   saveAdviceDraftBatchDirect,
   saveAdviceDraftBatchWithManualUsageBind,
 } from '../services/advice-draft-save.service';
+import { signDoctorStationAdviceBatchWithCrossLotPricingConfirm } from '../services/advice-cross-lot-pricing-confirm';
 import { createAdviceDrugItem, inferDoseBandConvertK } from '../services/advice-edit';
 import {
   buildAdviceDrugItemSeedFromListRow,
@@ -179,10 +181,27 @@ export function useAdviceTab(
 
   const editorForm = ref<AdviceEditForm>(createEditForm());
   const editorPatientDiagnoses = ref<DiagnosisItem[]>([]);
+  /** 列表「诊断」列慢病角标：与编辑卡无关，随就诊拉数 */
+  const listDiagnosisItems = ref<DiagnosisItem[]>([]);
   /** 当前就诊开立会话内上次选中的诊断 ids（刷新页面后清空） */
   const lastSelectedEncounterDiagnosisIds = ref<string[]>(
     readEncounterDiagnosisSession(props.encounterId),
   );
+
+  /** 列表优先用编辑卡已刷新诊断，否则用独立拉数结果 */
+  const diagnosisItemsForList = computed(() => {
+    if (editorPatientDiagnoses.value.length > 0) {
+      return editorPatientDiagnoses.value;
+    }
+    return listDiagnosisItems.value;
+  });
+
+  /** 编辑卡诊断变更时同步列表角标数据 */
+  watch(editorPatientDiagnoses, (items) => {
+    if (items.length > 0) {
+      listDiagnosisItems.value = items;
+    }
+  });
   /** 双击进入编辑时带入的列表行资源类型；空表示新增西药医嘱卡片 */
   const editingAdviceResourceType = ref('');
   /** 递增后让编辑卡内当前展开行的选药下拉自动展开 */
@@ -391,7 +410,7 @@ export function useAdviceTab(
     const insuranceContract = await pickFirstInsuranceContract(draftRows.map((r) => r.contractId));
     await withAdviceMutationLoading(async () => {
       try {
-        const res = await httpSignDoctorStationAdviceBatch({
+        const res = await signDoctorStationAdviceBatchWithCrossLotPricingConfirm({
           encounterId,
           patientId,
           signTargets: targets,
@@ -450,6 +469,10 @@ export function useAdviceTab(
         clearAdviceTableSelection();
         await loadAdviceList();
       } catch (error: unknown) {
+        // 跨批次金额确认框取消：不提示失败
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          return;
+        }
         const msg =
           error && typeof error === 'object' && 'message' in error
             ? String((error as { message?: unknown }).message)
@@ -686,12 +709,41 @@ export function useAdviceTab(
     }
   };
 
+  /** 拉取当前就诊诊断，供列表诊断列慢病角标 */
+  async function loadListDiagnosisItems(loadGeneration: number = adviceLoadGeneration) {
+    const encounterId = props.encounterId?.trim() || '';
+    const patientId = props.patientId?.trim() || '';
+    if (!encounterId || !patientId) {
+      if (loadGeneration === adviceLoadGeneration) {
+        listDiagnosisItems.value = [];
+      }
+      return;
+    }
+    try {
+      const displayList = await fetchEncounterDiagnosisDisplayList(
+        { encounterId, patientId },
+        'outpatient',
+      );
+      if (loadGeneration !== adviceLoadGeneration) {
+        return;
+      }
+      listDiagnosisItems.value = displayList
+        .map((row) => mapEncounterRowToDiagnosisItem(row))
+        .filter((item): item is DiagnosisItem => item !== null);
+    } catch {
+      if (loadGeneration === adviceLoadGeneration) {
+        listDiagnosisItems.value = [];
+      }
+    }
+  }
+
   /** 选中就诊变化时拉取医嘱主表 */
   async function loadAdviceList() {
     const encounterId = props.encounterId?.trim() || '';
     const patientId = props.patientId?.trim() || '';
     if (!encounterId || !patientId) {
       rows.value = [];
+      listDiagnosisItems.value = [];
       adviceListLoading.value = false;
       return;
     }
@@ -920,7 +972,7 @@ export function useAdviceTab(
         : 'MEDICATION';
       if (kind === 'SERVICE') {
         ElMessage.warning(
-          `第${n}条诊疗医嘱：请完善费用性质、数量、单位、执行次数与执行科室（单位须来自目录包装单位）`,
+          `第${n}条诊疗医嘱：请完善费用性质、单次执行数量、单位、执行次数与执行科室（单位须来自目录包装单位）`,
         );
       } else if (kind === 'DEVICE') {
         ElMessage.warning(`第${n}条耗材医嘱：请完善费用性质、数量与单位`);
@@ -971,6 +1023,10 @@ export function useAdviceTab(
           });
         });
       } catch (error: unknown) {
+        // 皮试跨批确认框取消：不提示失败
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          return;
+        }
         const msg =
           error && typeof error === 'object' && 'message' in error
             ? String((error as { message?: unknown }).message)
@@ -1093,11 +1149,16 @@ export function useAdviceTab(
     const patientId = props.patientId?.trim() || '';
     if (!encounterId || !patientId) {
       rows.value = [];
+      listDiagnosisItems.value = [];
       clearAdviceInitOptions();
       return;
     }
     clearAdviceInitOptions();
-    await Promise.all([loadAdviceList(), loadAdviceInit(loadGeneration)]);
+    await Promise.all([
+      loadAdviceList(),
+      loadAdviceInit(loadGeneration),
+      loadListDiagnosisItems(loadGeneration),
+    ]);
     if (loadGeneration !== adviceLoadGeneration) return;
     // init/list 并行：列表先返回时 options 可能仍空，两边都完成后再补一次费用性质
     rows.value = enrichAdviceListFeeNatureText(rows.value, feeNatureOptions.value);
@@ -1180,6 +1241,7 @@ export function useAdviceTab(
     editorInitialGroup,
     editorOpening,
     editorPatientDiagnoses,
+    diagnosisItemsForList,
     encounterId: computed(() => props.encounterId ?? ''),
     getAdviceStatusTagType,
     getCellClassName,
@@ -1210,6 +1272,8 @@ export function useAdviceTab(
     queryProductOptions,
     reload,
     showEditor,
+    /** 列表勾选（排除编辑卡虚拟行）；复制/签发等共用 */
+    tableSelection,
     validateWesternRow,
   };
 }

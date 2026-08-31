@@ -236,12 +236,14 @@ public class DeviceDispense extends BaseAuditedEntity {
     }
 
     /**
-     * 新行进入待退状态（由领域服务复制字段后调用）。
+     * 新行进入待退状态（由领域服务复制源发放后调用）。
+     *
+     * <p>保留源单签发 {@code lot_number}，供退库按原批回补；仅清空发放量与拣配/发放操作字段。</p>
      */
     public void toPendingRefund(BigDecimal refundQuantity) {
         this.quantity = refundQuantity;
         this.dispenseQuantity = null;
-        this.lotNumber = null;
+        // 保留 lot_number：退库须按原签发批号回补，禁止置空
         this.traceNo = null;
         this.prepareTime = null;
         this.dispenseTime = null;
@@ -266,11 +268,16 @@ public class DeviceDispense extends BaseAuditedEntity {
     }
 
     /**
-     * 待发拣配 → 已配药（或待发中，默认已配药）。
+     * 待发拣配 → 已配药。
+     *
+     * <p>传入批号为空时保留行上已有签发批号，禁止用空值覆盖。</p>
      */
     public void preparationToPreparedOrInProgress(Long preparerId, String lotNumber, String traceNo, BigDecimal quantity, LocalDateTime now) {
         this.preparerId = preparerId;
-        this.lotNumber = lotNumber;
+        // 有真实传入批号才覆盖；空则保留签发锁定值
+        if (lotNumber != null && !lotNumber.trim().isEmpty()) {
+            this.lotNumber = lotNumber.trim();
+        }
         this.traceNo = traceNo;
         if (quantity != null) {
             this.quantity = quantity;
@@ -487,11 +494,13 @@ public class DeviceDispense extends BaseAuditedEntity {
     }
 
     /**
-     * → 草稿。
+     * → 草稿：清空拣配操作字段，保留已锁定批号（若有）。
+     *
+     * <p>未发回退草稿后若再签发，FIFO 会软删重建发放行；此处不置空批号，避免中间态丢批。</p>
      */
     public void toDraft() {
         assertRollbackableUndispensed();
-        this.lotNumber = null;
+        // 保留 lot_number：禁止回退路径清签发批号
         this.traceNo = null;
         this.prepareTime = null;
         this.preparerId = null;
@@ -602,11 +611,13 @@ public class DeviceDispense extends BaseAuditedEntity {
     }
 
     /**
-     * 已配药 → 待发并清空拣配追溯字段（护士取消执行与 IF-NUR-04 已配药分支对称）。
+     * 已配药 → 待发：清空拣配人/时间/追溯码，保留医生签发批号（BR-DD-009 / BR-NUR-007）。
+     *
+     * <p>门诊护士取消执行不重跑 FIFO、不改批号；仅允许换库房。批号须全程沿用签发锁定值。</p>
      */
     public void preparedToPreparation() {
         this.assertPreparedBatchRevertable();
-        this.lotNumber = null;
+        // 保留 lot_number：签发 FIFO 锁定批号，取消执行禁止置空
         this.traceNo = null;
         this.prepareTime = null;
         this.preparerId = null;
@@ -623,11 +634,13 @@ public class DeviceDispense extends BaseAuditedEntity {
     }
 
     /**
-     * 已发放 → 待发并清空追溯字段（BR-DD-009）。
+     * 已发放 → 待发：清空发放量/发放人/时间/追溯码，保留医生签发批号（BR-DD-009 / BR-NUR-007）。
+     *
+     * <p>与护士换房口径一致：批号不变；库存回补仍按回退前快照的签发批号+库房执行。</p>
      */
     public void completedToPreparation() {
         assertCompletedBatchRevertable();
-        this.lotNumber = null;
+        // 保留 lot_number：签发 FIFO 锁定批号，取消执行禁止置空
         this.traceNo = null;
         this.dispenseQuantity = null;
         this.dispenseTime = null;

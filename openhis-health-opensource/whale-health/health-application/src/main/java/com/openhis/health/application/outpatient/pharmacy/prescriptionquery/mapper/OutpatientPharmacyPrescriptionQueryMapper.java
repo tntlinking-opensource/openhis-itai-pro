@@ -25,15 +25,18 @@ public interface OutpatientPharmacyPrescriptionQueryMapper {
     /**
      * 装配页初始化响应。
      *
-     * @param defaultFrom              默认开方日起
-     * @param defaultTo                默认开方日止
-     * @param chargeStatusOptions      收费状态下拉
-     * @param dispenseStatusOptions    发药状态下拉
-     * @param rxTypeOptions            处方类别下拉
-     * @param medTypeOptions           医保类别下拉
-     * @param contractCategoryOptions  费用性质分类下拉
-     * @param infusionFilterOptions    含输液三态
-     * @param organizationOptions      开单科室下拉
+     * @param defaultFrom                 默认开方日起
+     * @param defaultTo                   默认开方日止
+     * @param chargeStatusOptions         收费状态下拉
+     * @param dispenseStatusOptions       发药状态下拉
+     * @param rxTypeOptions               处方类别下拉
+     * @param medTypeOptions              医保类别下拉
+     * @param contractCategoryOptions     费用性质分类下拉
+     * @param infusionFilterOptions       含输液三态
+     * @param organizationOptions         开单科室下拉
+     * @param reviewStatusOptions         点评状态下拉
+     * @param reasonableOptions           是否合理下拉
+     * @param medicationCategoryOptions   药品类型下拉（药典）
      * @return 初始化响应
      */
     LoadOutpatientPharmacyPrescriptionQueryPageInitResponse toLoadPageInitResponse(
@@ -45,7 +48,10 @@ public interface OutpatientPharmacyPrescriptionQueryMapper {
         List<OptionDto> medTypeOptions,
         List<OptionDto> contractCategoryOptions,
         List<OptionDto> infusionFilterOptions,
-        List<OptionDto> organizationOptions);
+        List<OptionDto> organizationOptions,
+        List<OptionDto> reviewStatusOptions,
+        List<OptionDto> reasonableOptions,
+        List<OptionDto> medicationCategoryOptions);
 
     /**
      * 分页请求 + 患者范围 → 领域分页查询入参（不含收费/发药/注射/合同 resolved，由 AppService 续写）。

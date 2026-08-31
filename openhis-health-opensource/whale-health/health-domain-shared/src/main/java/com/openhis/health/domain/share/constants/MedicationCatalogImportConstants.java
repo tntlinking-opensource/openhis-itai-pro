@@ -7,8 +7,8 @@ package com.openhis.health.domain.share.constants;
 /**
  * 药品目录批量导入字面量（AS-BAS-CAT-002 / SDD CAT-IMP-SDD-R-002～003）。
  *
- * <p>模板 v1.6：与「新增药品」手工表单可填字段对齐（54 列）；相对 v1.5 在包装单位后补回
- * 「追溯码单位」「追溯码/拆零倍数」。导入仍兼容 v1.5 / v1.4（无追溯码列时默认与包装单位同阶）。</p>
+ * <p>模板 v1.7：相对 v1.6 在业务信息末追加「国家重点监控药品」「集采药品」（56 列）；导入仍兼容 v1.6 / v1.5 / v1.4。
+ * 相对 v1.5 在包装单位后补回「追溯码单位」「追溯码/拆零倍数」。无追溯码列时默认与包装单位同阶。</p>
  */
 public interface MedicationCatalogImportConstants {
 
@@ -16,7 +16,10 @@ public interface MedicationCatalogImportConstants {
     String TEMPLATE_CODE = "MED_CATALOG_IMPORT";
 
     /** 当前模板版本（新下载）。 */
-    String TEMPLATE_VERSION = "v1.6";
+    String TEMPLATE_VERSION = "v1.7";
+
+    /** 兼容导入：v1.6（54 列，无国家重点监控/集采两列）。 */
+    String TEMPLATE_VERSION_V16 = "v1.6";
 
     /** 兼容导入：v1.5（无追溯码列，表头「输液标记」）。 */
     String TEMPLATE_VERSION_V15 = "v1.5";
@@ -42,6 +45,13 @@ public interface MedicationCatalogImportConstants {
     /** 用户数据起始行（0-based，对应 Excel 第 5 行）。 */
     int DATA_START_ROW_INDEX = 4;
 
+    /**
+     * 「③可选值一览」Sheet 中可选值数据起始行（0-based）。
+     *
+     * <p>第 0 行为各列标题；自本行起写 label 列表，供命名区域/下拉引用。</p>
+     */
+    int OPTION_DATA_START_ROW_INDEX = 1;
+
     /** 单文件有效行上限。 */
     int IMPORT_MAX_ROWS = 3000;
 
@@ -64,7 +74,7 @@ public interface MedicationCatalogImportConstants {
     long ERROR_FILE_MAX_BYTES = 15L * 1024L * 1024L;
 
     /** 下载模板默认文件名。 */
-    String TEMPLATE_FILE_NAME = "药品目录导入模板_v1.6.xlsx";
+    String TEMPLATE_FILE_NAME = "药品目录导入模板_v1.7.xlsx";
 
     /** 导出文件名时间戳格式。 */
     String EXPORT_FILE_NAME_TIME_PATTERN = "yyyyMMddHHmmss";
@@ -79,6 +89,27 @@ public interface MedicationCatalogImportConstants {
      * 导出首列：系统药品编号（busNo）；导入模板无此列（导入由系统采番）。
      */
     String EXPORT_BUS_NO_HEADER = "编号";
+
+    /**
+     * 导出须写 NUMERIC 的<strong>导入表头名</strong>（倍率/剂量/价格/警戒线）。
+     *
+     * <p>导出列下标 = 导入列下标 + 1（首列「编号」偏移）；编号列禁止进此集合。</p>
+     */
+    String[] EXPORT_NUMERIC_HEADER_NAMES = {
+        "剂量/拆零倍数",
+        "单次剂量",
+        "单次最小剂量",
+        "单次最大剂量",
+        "采购/拆零倍数",
+        "包装/拆零倍数",
+        "追溯码/拆零倍数",
+        "库存/拆零倍数",
+        "购入价",
+        "零售价",
+        "最高零售价",
+        "警戒线最低值",
+        "警戒线最高值"
+    };
 
     /** 单次导出最大行数（与导入上限对齐，避免同步导出撑爆内存）。 */
     int EXPORT_MAX_ROWS = 3000;
@@ -102,9 +133,9 @@ public interface MedicationCatalogImportConstants {
     String HEADER_INJECT_FLAG_LEGACY = "注射药品";
 
     /**
-     * 字段表头规范名（去 * 后，列序即指纹源）。共 54 列，对齐新增药品表单分区。
+     * 字段表头规范名（去 * 后，列序即指纹源）。共 56 列，对齐新增药品表单分区。
      *
-     * <p>A 基础 0～11；B 临床 12～29；C 库存单位 30～45；D 业务 46～53。</p>
+     * <p>A 基础 0～11；B 临床 12～29；C 库存单位 30～45；D 业务 46～55。</p>
      */
     String[] COLUMN_HEADERS = {
         // A 基础信息（12）
@@ -156,7 +187,7 @@ public interface MedicationCatalogImportConstants {
         "住院临时医嘱拆分属性",
         "警戒线最低值",
         "警戒线最高值",
-        // D 业务信息（8）
+        // D 业务信息（10）
         "院内旧编码",
         "69码",
         "基药标识",
@@ -164,7 +195,9 @@ public interface MedicationCatalogImportConstants {
         "自制药标识",
         "限制使用",
         "抗生素",
-        "处方药标志"
+        "处方药标志",
+        "国家重点监控药品",
+        "集采药品"
     };
 
     /** 必填列规范名（用于表头 * 与校验，对齐手工新建表单）。 */

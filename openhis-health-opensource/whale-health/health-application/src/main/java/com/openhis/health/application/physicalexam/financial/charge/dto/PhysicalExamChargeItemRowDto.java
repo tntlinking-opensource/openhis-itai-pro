@@ -44,4 +44,28 @@ public class PhysicalExamChargeItemRowDto {
     /** 数量。 */
     @Schema(description = "数量")
     private BigDecimal quantity;
+
+    /** 目录原价（base_amount，改价前参考）。 */
+    @Schema(description = "目录原价")
+    private BigDecimal catalogUnitPrice;
+
+    /** 是否可改价（待收费且锚加项 SR 或套餐 AD）。 */
+    @Schema(description = "是否可改价")
+    private Boolean priceEditable;
+
+    /**
+     * 收费锚点表名。
+     * 个检套餐整单为 {@code wkf_activity_definition}，加项为 {@code wkf_service_request}。
+     */
+    @Schema(description = "收费锚点表名")
+    private String serviceTable;
+
+    /** 服务申请主键（wkf_service_request 锚点时）。 */
+    @Schema(description = "服务申请主键")
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long serviceRequestId;
+
+    /** 改价原因码。 */
+    @Schema(description = "改价原因码")
+    private String overrideReasonCode;
 }

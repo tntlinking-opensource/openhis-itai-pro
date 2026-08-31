@@ -1,12 +1,14 @@
 import type { App } from 'vue';
 
 import type { HiprintPrinterItem } from './fetch-printer-list';
+import type { InvFormPaperKind } from './form-print-preference';
 
 import { createApp } from 'vue';
 
 import ElementPlus from 'element-plus';
 
 import PrinterSelectDialogHost from './components/printer-select-dialog-host.vue';
+import { INV_FORM_PAPER_KIND } from './form-print-preference';
 
 export interface OpenPrinterSelectDialogOptions {
   bindingLabel?: string;
@@ -16,11 +18,16 @@ export interface OpenPrinterSelectDialogOptions {
   initialSkipPrompt?: boolean;
   unavailableHint?: string;
   loadPrinters: () => Promise<HiprintPrinterItem[]>;
+  /** 库房单据：同窗选择三联单 / A4 */
+  showPaperKind?: boolean;
+  initialPaperKind?: InvFormPaperKind;
+  showSkipPrompt?: boolean;
 }
 
 export interface PrinterSelectDialogResult {
   printerName: string;
   skipPrompt: boolean;
+  paperKind?: InvFormPaperKind;
 }
 
 /** 函数式打开打印机选择弹窗（供 print 运行时调用） */
@@ -48,6 +55,9 @@ export function openPrinterSelectDialog(
       initialSkipPrompt: options.initialSkipPrompt,
       unavailableHint: options.unavailableHint,
       loadPrinters: options.loadPrinters,
+      showPaperKind: options.showPaperKind === true,
+      initialPaperKind: options.initialPaperKind ?? INV_FORM_PAPER_KIND.triple,
+      showSkipPrompt: options.showSkipPrompt !== false,
       onConfirm: (payload: PrinterSelectDialogResult) => {
         cleanup();
         resolve(payload);

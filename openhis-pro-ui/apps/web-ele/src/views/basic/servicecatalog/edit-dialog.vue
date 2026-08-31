@@ -26,6 +26,12 @@ import {
   resolveDefaultInsuranceBusNo,
 } from '#/chs/constants/insurance-contract';
 import { ensureInsuranceSignIn } from '#/chs/utils/ensure-insurance-sign-in';
+import {
+  parseCatalogPriceUplmt,
+  resolveOptionValueByLabel,
+  resolveOptionValueByLabels,
+  type CatalogLabeledOption,
+} from '#/chs/utils/apply-national-catalog-fields';
 import ServiceCatalogSelect from '#/components/select-service-catalog.vue';
 import {
   calcMoneyLineTotal,
@@ -244,39 +250,113 @@ async function openCatalogPicker() {
 }
 
 function parsePriceUplmt(value: string | undefined | null): number | undefined {
-  if (value === null || value === undefined || value === '') {
-    return undefined;
-  }
-  const num = Number(String(value).trim());
-  return Number.isFinite(num) && num >= 0 ? num : undefined;
+  return parseCatalogPriceUplmt(value);
 }
 
-async function applyCatalogSelection(row: NationalCatalogItem) {
-  const currentValues = (await formApi.getValues()) as Record<string, unknown>;
-  const currentName = String(currentValues.name ?? '').trim();
-  const hilistName = String(row.hilistName ?? '').trim();
-  const shouldFillName = !isEditMode.value || !currentName;
+/** 字段未锁定且目录有值时写入 */
+function canApplyServiceCatalogField(fieldName: string, catalogHasValue: boolean): boolean {
+  if (!catalogHasValue) {
+    return false;
+  }
+  return !isServiceCatalogFieldLocked(editabilityCode.value, fieldName);
+}
 
-  formApi.setFieldValue('ybNo', row.hilistCode ?? '');
-  formApi.setFieldValue('ybFlag', 'YES');
+/**
+ * 国家医保目录选码回填：医保码/等级必带；名称/单位/限价/分类/财务类型/说明等尽量带入（不回填拼音）。
+ */
+async function applyCatalogSelection(row: NationalCatalogItem) {
+  const patch: Record<string, unknown> = {
+    ybNo: row.hilistCode ?? '',
+    ybFlag: 'YES',
+    ybMatchFlag: 'NO',
+  };
   const lv = catalogChrgitmLvToFormValue(row.chrgitmLv);
   if (lv !== undefined) {
-    formApi.setFieldValue('chrgitmLv', lv);
+    patch.chrgitmLv = lv;
   }
-  formApi.setFieldValue('ybMatchFlag', 'NO');
-  if (shouldFillName && hilistName) {
-    formApi.setFieldValue('name', hilistName);
+
+  const hilistName = String(row.hilistName ?? '').trim();
+  if (canApplyServiceCatalogField('name', Boolean(hilistName))) {
+    patch.name = hilistName;
   }
+
+  const categoryOptions = convertOptions(
+    props.initOptions?.diagnosisCategoryOptions,
+  ) as CatalogLabeledOption[];
+  const categoryCode = resolveOptionValueByLabels(categoryOptions, [
+    '医疗服务',
+    '医疗服务项目',
+    '诊疗',
+    '检查',
+    '化验',
+    '治疗',
+  ]);
+  if (canApplyServiceCatalogField('categoryCode', Boolean(categoryCode))) {
+    patch.categoryCode = categoryCode;
+  }
+
+  const finOptions = convertOptions(
+    props.initOptions?.finTypeCodeOptions,
+  ) as CatalogLabeledOption[];
+  // 财务类型：优先目录名称关键词，再兜底「一般诊疗费」
+  const itemTypeFromName = hilistName
+    ? resolveOptionValueByLabels(
+        finOptions,
+        [
+          hilistName.includes('化验') || hilistName.includes('检验') ? '化验费' : '',
+          hilistName.includes('检查') ? '检查费' : '',
+          hilistName.includes('治疗') ? '治疗费' : '',
+          hilistName.includes('手术') ? '手术费' : '',
+        ].filter(Boolean),
+      )
+    : undefined;
+  const itemTypeCode =
+    itemTypeFromName ??
+    resolveOptionValueByLabels(finOptions, ['一般诊疗费', '诊疗费', '医疗服务']);
+  if (canApplyServiceCatalogField('itemTypeCode', Boolean(itemTypeCode))) {
+    patch.itemTypeCode = itemTypeCode;
+  }
+
+  const unitOptions = convertTreeOptions(
+    props.initOptions?.unitCodeOptions,
+  ) as CatalogLabeledOption[];
+  const packageUnitCode =
+    resolveOptionValueByLabel(unitOptions, row.minPrcunt) ??
+    resolveOptionValueByLabel(unitOptions, row.minPrepunt) ??
+    resolveOptionValueByLabel(unitOptions, row.minPacunt);
+  if (canApplyServiceCatalogField('packageUnitCode', Boolean(packageUnitCode))) {
+    patch.packageUnitCode = packageUnitCode;
+  }
+
   const maxPrice = parsePriceUplmt(row.priceUplmtAmt);
-  if (maxPrice !== undefined) {
-    formApi.setFieldValue('maximumRetailPrice', maxPrice);
+  if (canApplyServiceCatalogField('maximumRetailPrice', maxPrice !== undefined)) {
+    patch.maximumRetailPrice = maxPrice;
   }
+
+  // 说明：目录规格/剂型拼进 descriptionText（空才写，避免冲掉已有说明）
+  const spec = String(row.spec ?? '').trim();
+  const dosform = String(row.dosform ?? '').trim();
+  const descBits = [spec && `规格：${spec}`, dosform && `剂型：${dosform}`].filter(Boolean);
+  if (descBits.length > 0 && canApplyServiceCatalogField('descriptionText', true)) {
+    const currentDesc = String(
+      ((await formApi.getValues()) as Record<string, unknown>).descriptionText ?? '',
+    ).trim();
+    if (!currentDesc) {
+      patch.descriptionText = descBits.join('；');
+    }
+  }
+
+  for (const [field, value] of Object.entries(patch)) {
+    await formApi.setFieldValue(field, value);
+  }
+
   syncInsuranceFormData({
     ...insuranceFormData.value,
-    name: shouldFillName && hilistName ? hilistName : currentName || insuranceFormData.value.name,
+    name: (patch.name as string | undefined) ?? insuranceFormData.value.name,
     ybNo: row.hilistCode,
     chrgitmLv: lv,
     ybMatchFlag: 'NO',
+    ybFlag: 'YES',
   });
   ElMessage.success(`已选用医保编码 ${row.hilistCode}，保存诊疗后可上传 3301`);
 }

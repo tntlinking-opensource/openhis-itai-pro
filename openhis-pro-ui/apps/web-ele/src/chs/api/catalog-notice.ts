@@ -531,3 +531,57 @@ export async function closeNoticeTodoApi(
   );
   return res.data ?? {};
 }
+
+export interface CatalogCheckIssueRow {
+  issueCode?: string;
+  issueLabel?: string;
+  message?: string;
+  productKind?: string;
+  productTable?: string;
+  productId?: number | string;
+  projectCode?: string;
+  productName?: string;
+  hilistCode?: string;
+  enddate?: string;
+  valiFlag?: string;
+  salePrice?: number | string;
+  limitAmt?: number | string;
+}
+
+export interface CheckCatalogIssuesParams {
+  contractId?: number | string;
+  contractBusNo?: string;
+  productKind?: string;
+}
+
+export interface CheckCatalogIssuesResult {
+  asOf?: string;
+  scannedCount?: number;
+  catalogItemCount?: number;
+  issueCount?: number;
+  expiredCount?: number;
+  disabledCount?: number;
+  noticeStopCount?: number;
+  noticeExpiredCount?: number;
+  noticeNotEffectiveCount?: number;
+  priceOverCount?: number;
+  missingYbNoCount?: number;
+  notInCatalogCount?: number;
+  issues?: CatalogCheckIssueRow[];
+}
+
+/** 目录检查（只读，不落待办） */
+export async function checkCatalogIssuesApi(
+  params: CheckCatalogIssuesParams = {},
+): Promise<CheckCatalogIssuesResult> {
+  const res = await requestClient.post<ApiResponse<CheckCatalogIssuesResult>>(
+    `${BASE}/checkCatalogIssues`,
+    params,
+    chsLongRequestConfig(),
+  );
+  const data = res.data ?? {};
+  return {
+    ...data,
+    issues: Array.isArray(data.issues) ? data.issues : [],
+  };
+}

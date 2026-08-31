@@ -11,8 +11,7 @@ import { handleInlineFieldKeydown } from '../use-inline-field-keydown';
 const key = new PluginKey('emrInlineFieldPmArrow');
 
 /**
- * 选区在 ProseMirror 正文内、紧贴可编辑行内域（元数据/自由文本等）外侧时，
- * 按方向键进入域内，避免 PM 原子节点被方向键「跳过」后无法回到 contenteditable。
+ * 行内可填域岛屿方向键：PM 正文 ↔ contenteditable 跳进跳出。
  */
 export const EmrInlineFieldPmArrow = Extension.create({
   name: 'emrInlineFieldPmArrow',

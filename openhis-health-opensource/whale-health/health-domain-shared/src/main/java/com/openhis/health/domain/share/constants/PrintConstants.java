@@ -23,6 +23,18 @@ public final class PrintConstants {
     /** 打印相关列表接口 {@code pageSize} 上限。 */
     public static final int PAGE_SIZE_MAX = 1000;
 
+    /** 按业务主键回查已打印：单批 keys 上限（PRT-GLOBAL-001 §6）。 */
+    public static final int QUERY_PRINTED_KEYS_MAX = 500;
+
+    /** 按业务主键回查已打印：扫描 SUCCESS 日志条数上限。 */
+    public static final int QUERY_PRINTED_LOG_SCAN_MAX = 2000;
+
+    /** 回查默认回溯天数（未传 queryDate 时）。 */
+    public static final int QUERY_PRINTED_DEFAULT_LOOKBACK_DAYS = 30;
+
+    /** bizRef 合打主键数组默认字段名（摆药单 / 用药单）。 */
+    public static final String BIZ_REF_KEY_FIELD_LIST_ROW_KEYS = "listRowKeys";
+
     /** 日汇总默认回溯天数（未传 dateFrom 时）。 */
     public static final int DAILY_SUMMARY_DEFAULT_LOOKBACK_DAYS = 7;
 

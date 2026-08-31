@@ -6,8 +6,8 @@ import { print, PRINT_SCENARIO } from './runtime';
 
 export interface PrintPharmacyDailySettlementOptions {
   source: PharmacyDailySettlementPrintSource;
-  /** 打印作业业务引用（可选） */
-  bizRef?: Record<string, number | string>;
+  /** 打印作业业务引用（交账单 settlementId，或预览窗 locationId+日期+发药人） */
+  bizRef?: Record<string, unknown>;
   jobName?: string;
 }
 
@@ -23,7 +23,10 @@ export async function printPharmacyDailySettlement(options: PrintPharmacyDailySe
   return print({
     scenarioCode: PRINT_SCENARIO.pharmacyDailySettlementPrint,
     source: options.source,
-    bizRef: options.bizRef,
+    bizRef: {
+      scenarioCode: PRINT_SCENARIO.pharmacyDailySettlementPrint,
+      ...(options.bizRef ?? {}),
+    },
     jobName: options.jobName ?? '药房日结单',
   });
 }

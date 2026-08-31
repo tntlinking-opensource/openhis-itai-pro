@@ -42,6 +42,7 @@ let resolvePromise: ((continued: boolean) => void) | null = null;
 const violations = computed(() => analyzeResult.value?.violations ?? []);
 const details = computed(() => selected.value?.details ?? []);
 const mdtrtId = computed(() => selected.value?.mdtrtId || violations.value[0]?.mdtrtId || '—');
+const selectedVolaCont = computed(() => String(selected.value?.volaCont ?? '').trim());
 const effectiveBusNo = computed(
   () => runtimeContractBusNo.value.trim() || props.contractBusNo?.trim() || '',
 );
@@ -179,52 +180,74 @@ defineExpose({ openAndWait });
     :show-close="false"
     destroy-on-close
     title="医保事前提醒"
-    width="860px"
+    width="960px"
   >
-    <div class="mb-2 text-sm">
-      发现 {{ violations.length }} 条规则提醒 · 就诊号 {{ mdtrtId }}
-      <div class="text-gray-500">请处理后再继续。严重程度见列表。</div>
-    </div>
+    <div class="audit-remind">
+      <div class="audit-remind__summary">
+        <div>
+          发现 {{ violations.length }} 条规则提醒
+          <span class="audit-remind__muted">请处理后再继续。严重程度见列表。</span>
+        </div>
+        <div class="audit-remind__mdtrt">就诊号 {{ mdtrtId }}</div>
+      </div>
 
-    <ElTable
-      :data="violations"
-      highlight-current-row
-      max-height="240"
-      stripe
-      @current-change="(row: AuditViolation | null) => (selected = row)"
-    >
-      <ElTableColumn label="严重程度" min-width="100">
-        <template #default="{ row }">
-          {{ formatSevDeg(row.sevDeg) }}
-        </template>
-      </ElTableColumn>
-      <ElTableColumn label="规则名称" min-width="160" prop="ruleName" />
-      <ElTableColumn label="违规内容" min-width="240" prop="volaCont" show-overflow-tooltip />
-      <ElTableColumn label="违规金额" min-width="90" prop="volaAmt" />
-    </ElTable>
+      <ElTable
+        :data="violations"
+        class="audit-remind__table"
+        highlight-current-row
+        max-height="220"
+        stripe
+        @current-change="(row: AuditViolation | null) => (selected = row)"
+      >
+        <ElTableColumn label="严重程度" width="110">
+          <template #default="{ row }">
+            {{ formatSevDeg(row.sevDeg) }}
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="规则名称" min-width="220">
+          <template #default="{ row }">
+            <div class="audit-remind__wrap">{{ row.ruleName || '—' }}</div>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="违规金额" width="100" prop="volaAmt" align="right" />
+      </ElTable>
 
-    <div class="mb-1 mt-3 text-sm text-gray-500">选中行 · 违规明细</div>
-    <ElTable :data="details" max-height="160" stripe>
-      <ElTableColumn label="jrdId" min-width="200" prop="jrdId" show-overflow-tooltip />
-      <ElTableColumn label="类型" min-width="80" prop="volaItemType" />
-      <ElTableColumn label="处方/医嘱" min-width="120" prop="rxId" />
-      <ElTableColumn label="金额" min-width="80" prop="volaAmt" />
-    </ElTable>
+      <div class="audit-remind__section-title">选中行 · 违规内容</div>
+      <div class="audit-remind__content">
+        {{ selectedVolaCont || '（无违规内容）' }}
+      </div>
 
-    <div class="mt-4">
-      <div class="mb-2 text-sm">处理方式</div>
-      <ElRadioGroup v-model="dspoWay">
-        <ElRadio v-for="opt in DETAIL_AUDIT_DSPO_WAY_OPTIONS" :key="opt.value" :value="opt.value">
-          {{ opt.label }}
-        </ElRadio>
-      </ElRadioGroup>
-      <ElInput
-        v-model="dspoWayRea"
-        :rows="2"
-        class="mt-2"
-        placeholder="继续执行时必填处置原因"
-        type="textarea"
-      />
+      <div class="audit-remind__section-title">选中行 · 违规明细</div>
+      <ElTable :data="details" class="audit-remind__table" max-height="240" stripe>
+        <ElTableColumn label="药品/项目" min-width="220">
+          <template #default="{ row }">
+            <div class="audit-remind__wrap">{{ row.itemName || '—' }}</div>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="处方/医嘱" min-width="160">
+          <template #default="{ row }">
+            <div class="audit-remind__wrap">{{ row.rxId || '—' }}</div>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="类型" width="72" prop="volaItemType" align="center" />
+        <ElTableColumn label="金额" width="96" prop="volaAmt" align="right" />
+      </ElTable>
+
+      <div class="audit-remind__action">
+        <div class="audit-remind__section-title audit-remind__section-title--flush">处理方式</div>
+        <ElRadioGroup v-model="dspoWay">
+          <ElRadio v-for="opt in DETAIL_AUDIT_DSPO_WAY_OPTIONS" :key="opt.value" :value="opt.value">
+            {{ opt.label }}
+          </ElRadio>
+        </ElRadioGroup>
+        <ElInput
+          v-model="dspoWayRea"
+          :rows="2"
+          class="audit-remind__reason"
+          placeholder="继续执行时必填处置原因"
+          type="textarea"
+        />
+      </div>
     </div>
 
     <template #footer>
@@ -235,3 +258,78 @@ defineExpose({ openAndWait });
     </template>
   </AppDialog>
 </template>
+
+<style scoped>
+.audit-remind {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.audit-remind__summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.audit-remind__muted {
+  margin-left: 8px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.audit-remind__mdtrt {
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.45;
+  word-break: break-all;
+}
+
+.audit-remind__section-title {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.audit-remind__section-title--flush {
+  margin-top: 0;
+  margin-bottom: 6px;
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.audit-remind__content {
+  max-height: 160px;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #0f172a;
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.audit-remind__wrap {
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.45;
+}
+
+.audit-remind__table :deep(.el-table .cell) {
+  line-height: 1.45;
+}
+
+.audit-remind__action {
+  margin-top: 6px;
+}
+
+.audit-remind__reason {
+  margin-top: 8px;
+}
+</style>

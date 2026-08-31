@@ -69,6 +69,7 @@ public class UpdateInboundReceiptRequest {
 
     /**
      * 采购发票号（同单共享，落库 {@code invoice_no}）。
+     * <p>选填；空白时 Mapper 落库占位 {@code 0}（库 DEFAULT / 医保上报同口径）。</p>
      */
     @Schema(description = "采购发票号 invoiceNo")
     private String invoiceNo;

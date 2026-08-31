@@ -10,6 +10,7 @@ import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.utils.EncounterDiagnosisIdsPredicates;
+import com.openhis.health.domain.share.utils.IdInQueryChunkSupport;
 import com.openhis.health.domain.workflow.devicerequest.entity.DeviceRequest;
 import com.openhis.health.domain.workflow.devicerequest.queries.model.DeviceRequestFifoSignContext;
 import com.openhis.health.domain.workflow.devicerequest.queries.model.DeviceRequestHistoryModel;
@@ -168,6 +169,33 @@ public class DeviceRequestQueryService {
         List<DeviceRequest> requests = deviceRequestRepository.findByEncounterId(encounterId);
         List<DeviceRequestListModel> models = new ArrayList<>();
         for (DeviceRequest request : requests) {
+            models.add(this.toListModel(request));
+        }
+        return models;
+    }
+
+    /**
+     * 按就诊主键集合批量加载耗材请求（仅本聚合 Repository；软删行剔除；IN 分批）。
+     *
+     * <p>返回该页就诊下全部未删请求；是否「已完成非退单」由护士站 AppService 按 BR-NUR-017 再筛。</p>
+     *
+     * @param encounterIds 本页就诊主键集合
+     * @return 列表模型；空入参返回空表
+     */
+    public List<DeviceRequestListModel> listDeviceRequestsByEncounterIds(Collection<Long> encounterIds) {
+        // Gate：无就诊主键则无需查耗材请求
+        if (encounterIds == null || encounterIds.isEmpty()) {
+            return List.of();
+        }
+        List<DeviceRequest> rows = IdInQueryChunkSupport.loadByIdInChunks(
+            encounterIds,
+            chunkIds -> this.deviceRequestRepository.findByEncounterIdIn(chunkIds));
+        List<DeviceRequestListModel> models = new ArrayList<>();
+        // 软删行不进入护士站处置单，队列红点同样排除
+        for (DeviceRequest request : rows) {
+            if (request == null || Boolean.TRUE.equals(request.getIsDeleted())) {
+                continue;
+            }
             models.add(this.toListModel(request));
         }
         return models;

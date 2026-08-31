@@ -30,10 +30,16 @@ public class MedicationManageInitDto {
     private List<OptionDto> domainFlagOptions;
 
     /**
-     * 供应商下拉选项（兼容字段；药品目录维护已不再下发，恒为 null/空）。
+     * 供应商下拉选项（兼容字段；药品目录维护已不再下发进货供应商，恒为 null/空）。
      */
     @Schema(description = "供应商下拉选项（已废弃，不再下发）")
     private List<OptionDto> supplierListOptions;
+
+    /**
+     * 生产厂家下拉（{@code cus_supplier.type_enum=1} 启用态；value=id，label=name）。
+     */
+    @Schema(description = "生产厂家下拉选项")
+    private List<OptionDto> manufacturerOptions;
 
     /** 页面药品分类树（value/label/children）。 */
     @Schema(description = "页面药品分类树（value/label/children）")

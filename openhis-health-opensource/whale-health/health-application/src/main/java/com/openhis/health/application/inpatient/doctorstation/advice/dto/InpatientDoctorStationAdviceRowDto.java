@@ -4,6 +4,7 @@
  */
 package com.openhis.health.application.inpatient.doctorstation.advice.dto;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.ServiceRequestDetailSummaryDto;
@@ -473,4 +474,38 @@ public class InpatientDoctorStationAdviceRowDto {
     /** 服务申请明细摘要（申请单行）。 */
     @Schema(description = "服务申请明细摘要（申请单行）")
     private List<ServiceRequestDetailSummaryDto> serviceRequestDetails;
+
+    /**
+     * 改量链 based_on 表名（药嘱→药嘱时为 {@code med_medication_request}）；非改量可空。
+     */
+    @Schema(description = "改量链 based_on 表名")
+    private String basedOnTable;
+
+    /**
+     * 改量链 based_on 源嘱主键；与皮试 companion 的 basedOnMedicationRequestId 语义不同。
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "改量链 based_on 源嘱主键")
+    private Long basedOnId;
+
+    /** 是否命中口服一盒一点剩余规则（BR-IP-EXE-038）。 */
+    @Schema(description = "是否命中口服包装剩余规则")
+    private Boolean oralPackageBatchInventoryApplied;
+
+    /** 已吃拆零量。 */
+    @Schema(description = "已吃拆零量")
+    private BigDecimal oralPackageConsumedSplitQuantity;
+
+    /** 剩余拆零量。 */
+    @Schema(description = "剩余拆零量")
+    private BigDecimal oralPackageRemainSplitQuantity;
+
+    /** 拆零单位展示。 */
+    @Schema(description = "拆零单位展示")
+    private String oralPackageSplitUnitDisplay;
+
+    /** 预计下次领盒日。 */
+    @Schema(description = "预计下次领盒日")
+    @JsonFormat(pattern = com.openhis.health.domain.share.constants.GeneralSharedConstants.DATE_DISPLAY_PATTERN)
+    private java.time.LocalDate oralPackageNextClaimDate;
 }

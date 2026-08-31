@@ -32,6 +32,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -60,8 +62,9 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
         WarehouseInventoryDetailPageQuery q = new WarehouseInventoryDetailPageQuery();
         PageQueryBinder.bind(request, q);
         this.applyFilters(q, request.getMedicationCategoryCodes(), request.getDeviceCategoryCodes(),
-            request.getSupplierIds(), request.getChrgitmLvList(), request.getBasicFlag(),
-            request.getZeroStockOnly(), request.getExpireWithinDays(), request.getInventoryStatusEnums());
+            request.getSupplierIds(), request.getChrgitmLvList(), request.getKeyDrugType(),
+            request.getZeroStockOnly(), request.getExpireWithinDays(), request.getInventoryStatusEnums(),
+            request.getItemTable());
         q.setEffectiveWarehouseIds(effectiveWarehouseIds);
         return q;
     }
@@ -81,8 +84,9 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
         WarehouseInventoryDetailPageQuery q = new WarehouseInventoryDetailPageQuery();
         q.setKeyword(request.getKeyword());
         this.applyFilters(q, request.getMedicationCategoryCodes(), request.getDeviceCategoryCodes(),
-            request.getSupplierIds(), request.getChrgitmLvList(), request.getBasicFlag(),
-            request.getZeroStockOnly(), request.getExpireWithinDays(), request.getInventoryStatusEnums());
+            request.getSupplierIds(), request.getChrgitmLvList(), request.getKeyDrugType(),
+            request.getZeroStockOnly(), request.getExpireWithinDays(), request.getInventoryStatusEnums(),
+            request.getItemTable());
         q.setEffectiveWarehouseIds(effectiveWarehouseIds);
         return q;
     }
@@ -102,8 +106,9 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
         WarehouseInventoryDetailPageQuery q = new WarehouseInventoryDetailPageQuery();
         q.setKeyword(request.getKeyword());
         this.applyFilters(q, request.getMedicationCategoryCodes(), request.getDeviceCategoryCodes(),
-            request.getSupplierIds(), request.getChrgitmLvList(), request.getBasicFlag(),
-            request.getZeroStockOnly(), request.getExpireWithinDays(), request.getInventoryStatusEnums());
+            request.getSupplierIds(), request.getChrgitmLvList(), request.getKeyDrugType(),
+            request.getZeroStockOnly(), request.getExpireWithinDays(), request.getInventoryStatusEnums(),
+            request.getItemTable());
         q.setEffectiveWarehouseIds(effectiveWarehouseIds);
         return q;
     }
@@ -116,10 +121,11 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
      * @param deviceCategoryCodes     耗材分类编码列表
      * @param supplierIds             供应商主键列表
      * @param chrgitmLvList           医保等级列表（与读模型列语义一致）
-     * @param basicFlag               基药标识（null 不限）
+     * @param keyDrugType               重点药类型 code（null/空不限）
      * @param zeroStockOnly           库存范围（true 数量等于0，false 数量大于0）
      * @param expireWithinDays        近效期天数
      * @param inventoryStatusEnums    供应状态持久化码列表
+     * @param itemTable               项目类型（药品/耗材定义表名）；空/null 不限
      */
     private void applyFilters(
         WarehouseInventoryDetailPageQuery q,
@@ -127,19 +133,24 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
         List<String> deviceCategoryCodes,
         List<Long> supplierIds,
         List<Integer> chrgitmLvList,
-        Boolean basicFlag,
+        String keyDrugType,
         Boolean zeroStockOnly,
         Integer expireWithinDays,
-        List<String> inventoryStatusEnums
+        List<String> inventoryStatusEnums,
+        String itemTable
     ) {
         q.setMedicationCategoryCodes(medicationCategoryCodes);
         q.setDeviceCategoryCodes(deviceCategoryCodes);
         q.setSupplierIds(supplierIds);
         q.setChrgitmLvList(chrgitmLvList);
-        q.setBasicFlag(basicFlag);
+        q.setKeyDrugType(keyDrugType);
         q.setZeroStockOnly(zeroStockOnly);
         q.setExpireWithinDays(expireWithinDays);
         q.setInventoryStatusEnums(inventoryStatusEnums);
+        // 项目类型非空时按药品/耗材定义表名收窄
+        if (StringUtils.isNotEmpty(itemTable)) {
+            q.setItemTable(itemTable.trim());
+        }
     }
 
     /**
@@ -222,13 +233,14 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
     }
 
     /**
-     * 将已装配列表行投影为导出行 DTO（列映射见 {@link InventoryDetailCurrentExportRowDto}）。
+     * 将已装配列表行投影为导出行 DTO（包装/最小数量与各自单位分列）。
      *
      * @param row 列表行，调用方保证非 null
      * @return 导出行
      */
     @Override
     public InventoryDetailCurrentExportRowDto toCurrentExportRowDto(InventoryDetailListRowDto row) {
+        BigDecimal splitQty = row.getQuantity();
         return new InventoryDetailCurrentExportRowDto()
             .setProductBusNo(row.getProductBusNo())
             .setName(row.getName())
@@ -238,8 +250,11 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
             .setTotalVolume(row.getTotalVolume())
             .setManufacturer(row.getManufacturer())
             .setLotNumber(row.getLotNumber())
-            .setPackageStockText(StringUtils.defaultString(row.getPackageStockText()))
-            .setSplitStockText(StringUtils.defaultString(row.getSplitStockText()))
+            // 满包整数 + 包装单位；最小量 = 拆零账面 + 拆零单位
+            .setPackageQuantity(this.toExportPackageQuantity(splitQty, row.getPackageUnitRatio()))
+            .setPackageUnitName(row.getPackageUnitName())
+            .setMinUnitQuantity(this.toExportMinUnitQuantity(splitQty))
+            .setMinUnitName(row.getSplitUnitName())
             .setPackageUnitRatio(row.getPackageUnitRatio())
             .setLotCostPrice(row.getLotCostPrice())
             .setLotSalePrice(row.getLotSalePrice())
@@ -280,10 +295,11 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
             request.getDeviceCategoryCodes(),
             request.getSupplierIds(),
             request.getChrgitmLvList(),
-            request.getBasicFlag(),
+            request.getKeyDrugType(),
             request.getZeroStockOnly(),
             request.getExpireWithinDays(),
-            request.getInventoryStatusEnums()
+            request.getInventoryStatusEnums(),
+            request.getItemTable()
         );
         query.setWarehouseIds(effectiveWarehouseIds);
         return query;
@@ -315,10 +331,11 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
             request.getDeviceCategoryCodes(),
             request.getSupplierIds(),
             request.getChrgitmLvList(),
-            request.getBasicFlag(),
+            request.getKeyDrugType(),
             request.getZeroStockOnly(),
             request.getExpireWithinDays(),
-            request.getInventoryStatusEnums()
+            request.getInventoryStatusEnums(),
+            request.getItemTable()
         );
         query.setWarehouseIds(effectiveWarehouseIds);
         return query;
@@ -350,10 +367,11 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
             request.getDeviceCategoryCodes(),
             request.getSupplierIds(),
             request.getChrgitmLvList(),
-            request.getBasicFlag(),
+            request.getKeyDrugType(),
             request.getZeroStockOnly(),
             request.getExpireWithinDays(),
-            request.getInventoryStatusEnums()
+            request.getInventoryStatusEnums(),
+            request.getItemTable()
         );
         query.setWarehouseIds(effectiveWarehouseIds);
         return query;
@@ -367,10 +385,11 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
      * @param deviceCategoryCodes     耗材分类
      * @param supplierIds             供应商
      * @param chrgitmLvList           医保等级
-     * @param basicFlag               基药标识（null 不限）
+     * @param keyDrugType               重点药类型 code（null/空不限）
      * @param zeroStockOnly           零库存筛选
      * @param expireWithinDays        近效期
      * @param inventoryStatusEnums    供应状态
+     * @param itemTable               项目类型（药品/耗材定义表名）；空/null 不限
      */
     private void applySnapshotFilters(
         DocInventoryItemSnapshotPageQuery query,
@@ -378,21 +397,26 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
         List<String> deviceCategoryCodes,
         List<Long> supplierIds,
         List<Integer> chrgitmLvList,
-        Boolean basicFlag,
+        String keyDrugType,
         Boolean zeroStockOnly,
         Integer expireWithinDays,
-        List<String> inventoryStatusEnums
+        List<String> inventoryStatusEnums,
+        String itemTable
     ) {
         query.setMedicationCategoryCodes(medicationCategoryCodes);
         query.setDeviceCategoryCodes(deviceCategoryCodes);
         query.setSupplierIds(supplierIds);
         query.setChrgitmLvs(chrgitmLvList);
-        query.setBasicFlag(basicFlag);
+        query.setKeyDrugType(keyDrugType);
         query.setInventoryStatusEnums(inventoryStatusEnums);
         if (zeroStockOnly != null) {
             query.setZeroStockFlag(zeroStockOnly);
         }
         query.setRemainingDaysLe(expireWithinDays);
+        // 项目类型非空时按药品/耗材定义表名收窄
+        if (StringUtils.isNotEmpty(itemTable)) {
+            query.setItemTable(itemTable.trim());
+        }
     }
 
     /**
@@ -448,13 +472,14 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
     }
 
     /**
-     * 备份列表行 → 导出行 DTO。
+     * 备份列表行 → 导出行 DTO（包装/最小数量与各自单位分列）。
      *
      * @param row 列表行，调用方保证非 null
      * @return 导出行
      */
     @Override
     public InventoryDetailBackupExportRowDto toBackupExportRowDto(InventoryDetailBackupListRowDto row) {
+        BigDecimal splitQty = row.getQuantity();
         return new InventoryDetailBackupExportRowDto()
             .setProductBusNo(row.getProductBusNo())
             .setName(row.getName())
@@ -464,8 +489,10 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
             .setTotalVolume(row.getTotalVolume())
             .setManufacturer(row.getManufacturer())
             .setLotNumber(row.getLotNumber())
-            .setPackageStockText(StringUtils.defaultString(row.getPackageStockText()))
-            .setSplitStockText(StringUtils.defaultString(row.getSplitStockText()))
+            .setPackageQuantity(this.toExportPackageQuantity(splitQty, row.getPackageUnitRatio()))
+            .setPackageUnitName(row.getPackageUnitName())
+            .setMinUnitQuantity(this.toExportMinUnitQuantity(splitQty))
+            .setMinUnitName(row.getSplitUnitName())
             .setPackageUnitRatio(row.getPackageUnitRatio())
             .setLotCostPrice(row.getLotCostPrice())
             .setLotSalePrice(row.getLotSalePrice())
@@ -478,6 +505,38 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
             .setProductionDate(row.getProductionDate())
             .setExpirationDate(row.getExpirationDate())
             .setRemainingDays(row.getRemainingDays());
+    }
+
+    /**
+     * 导出包装满包整数：拆零量 ÷ 包装倍数向下取整；倍数缺失时与最小量同值。
+     *
+     * @param splitQuantity    拆零账面量
+     * @param packageUnitRatio 1 包装 = ratio 拆零
+     * @return 包装数量整数；拆零量为 null 时 null
+     */
+    private BigDecimal toExportPackageQuantity(BigDecimal splitQuantity, BigDecimal packageUnitRatio) {
+        if (splitQuantity == null) {
+            return null;
+        }
+        BigDecimal ratio = packageUnitRatio;
+        // 无有效倍数：包装列与最小列同量，避免空白
+        if (ratio == null || ratio.compareTo(BigDecimal.ZERO) <= 0) {
+            return splitQuantity.setScale(0, RoundingMode.HALF_UP);
+        }
+        return splitQuantity.divide(ratio, 0, RoundingMode.DOWN);
+    }
+
+    /**
+     * 导出最小单位数量（拆零账面，整数刻度）。
+     *
+     * @param splitQuantity 拆零账面量
+     * @return 整数 BigDecimal 或 null
+     */
+    private BigDecimal toExportMinUnitQuantity(BigDecimal splitQuantity) {
+        if (splitQuantity == null) {
+            return null;
+        }
+        return splitQuantity.setScale(0, RoundingMode.HALF_UP);
     }
 
     /**

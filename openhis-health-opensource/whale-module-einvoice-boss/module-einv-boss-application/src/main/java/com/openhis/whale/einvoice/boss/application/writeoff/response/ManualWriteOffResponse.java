@@ -28,4 +28,8 @@ public class ManualWriteOffResponse {
     private String writeOffBillNo;
     /** 红票批次号。 */
     private String writeOffBatchCode;
+
+    /** 冲销重开后的新草稿票据主键。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long reissueInvoiceId;
 }

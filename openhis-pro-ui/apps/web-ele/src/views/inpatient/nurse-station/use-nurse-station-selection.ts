@@ -170,9 +170,37 @@ export function useNurseStationSelection(options: UseNurseStationSelectionOption
     togglePatientSelection,
   };
 
+  /** 多选收敛为只保留当前集合中的第一人（打印中心单人单据快捷纠正） */
+  function keepFirstSelectedPatient() {
+    const firstId =
+      (activePatientId.value && selectedPatientIds.value.has(activePatientId.value)
+        ? activePatientId.value
+        : null) ||
+      (lastTouchedPatientId.value && selectedPatientIds.value.has(lastTouchedPatientId.value)
+        ? lastTouchedPatientId.value
+        : null) ||
+      [...selectedPatientIds.value][0] ||
+      null;
+    if (!firstId) {
+      return;
+    }
+    selectedPatientIds.value = new Set([firstId]);
+    activePatientId.value = firstId;
+    syncPatientSelectedFlags();
+  }
+
+  /** 清空左侧患者勾选（打印中心范围纠正） */
+  function clearSelectedPatients() {
+    selectedPatientIds.value.clear();
+    activePatientId.value = null;
+    syncPatientSelectedFlags();
+  }
+
   return {
     activePatientId,
+    clearSelectedPatients,
     initSelectionState,
+    keepFirstSelectedPatient,
     patientListPanelSelectionContext,
     selectedPatientIds,
     selectionPolicy,

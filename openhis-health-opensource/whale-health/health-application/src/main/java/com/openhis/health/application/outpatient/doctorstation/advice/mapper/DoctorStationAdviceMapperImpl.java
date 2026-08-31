@@ -28,6 +28,7 @@ import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.application.shared.product.ProductDefinitionPageQuery;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.PeisCatalogConstants;
 import com.openhis.health.domain.share.constants.ServiceRequestCategoryConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
@@ -127,8 +128,10 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
         if (request.getExcludeMedicationCategoryCodes() != null && !request.getExcludeMedicationCategoryCodes().isEmpty()) {
             q.setExcludeMedicationCategoryCodes(new ArrayList<>(request.getExcludeMedicationCategoryCodes()));
         }
-        // Pre：门诊目录恒排除嘱托（category_code=52；BR-ORD-032 / BR-IP-ORD-028②）
-        q.setExcludeCategoryCodes(List.of(ServiceRequestCategoryConstants.SERVICE_CATEGORY_ENTRUST));
+        // Pre：门诊目录恒排除嘱托与体检类目（category_code=52 / PEIS）
+        q.setExcludeCategoryCodes(List.of(
+            ServiceRequestCategoryConstants.SERVICE_CATEGORY_ENTRUST,
+            PeisCatalogConstants.ACTIVITY_CATEGORY_PEIS));
         if (StringUtils.isNotEmpty(request.getCategoryEnum())) {
             q.setCategoryCode(ServiceApplyFormOrchestrator.resolveApplyFormCategoryCode(request.getCategoryEnum()));
         }

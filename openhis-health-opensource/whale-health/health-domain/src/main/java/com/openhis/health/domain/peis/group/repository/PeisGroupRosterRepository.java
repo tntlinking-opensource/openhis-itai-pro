@@ -18,7 +18,11 @@ public interface PeisGroupRosterRepository
 
     List<PeisGroupRoster> findByBatchIdAndPayStatusCodeAndIsDeletedFalse(Long batchId, String payStatusCode);
 
+    List<PeisGroupRoster> findByPatientIdAndIsDeletedFalseOrderByUpdatedAtDesc(Long patientId);
+
     Optional<PeisGroupRoster> findByIdAndIsDeletedFalse(Long id);
+
+    Optional<PeisGroupRoster> findByEncounterIdAndIsDeletedFalse(Long encounterId);
 
     boolean existsByBatchIdAndPatientIdAndIsDeletedFalse(Long batchId, Long patientId);
 }

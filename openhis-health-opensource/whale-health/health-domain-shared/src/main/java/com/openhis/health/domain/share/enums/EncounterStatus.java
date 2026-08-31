@@ -90,4 +90,20 @@ public enum EncounterStatus implements EnumInterface {
         return OUTPATIENT_DUPLICATE_BLOCKING_STATUS_CODES;
     }
 
+    /** 门诊已接诊态（历史号复诊资格 BR-REG-020；不含已挂号未接诊）。 */
+    private static final List<String> OUTPATIENT_RECEPTION_STARTED_STATUS_CODES = Collections.unmodifiableList(Arrays.asList(
+        IN_PROGRESS.getCode(),
+        ON_HOLD.getCode(),
+        DISCHARGED.getCode()
+    ));
+
+    /**
+     * 门诊医生已接诊（在诊/暂离/完诊）状态 code 列表。
+     *
+     * @return 不可变状态 code 列表
+     */
+    public static List<String> outpatientReceptionStartedStatusCodes() {
+        return OUTPATIENT_RECEPTION_STARTED_STATUS_CODES;
+    }
+
 }

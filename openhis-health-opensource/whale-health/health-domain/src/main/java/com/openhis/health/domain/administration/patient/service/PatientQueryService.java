@@ -557,6 +557,7 @@ public class PatientQueryService {
         }
         model.setAddressExtendJson(patient.getAddressExtendJson());
         model.setNationalityCode(patient.getNationalityCode());
+        model.setEducationLevelCode(patient.getEducationLevelCode());
         model.setPyStr(patient.getPyStr());
         model.setWbStr(patient.getWbStr());
         if (patient.getBloodType() == null) {

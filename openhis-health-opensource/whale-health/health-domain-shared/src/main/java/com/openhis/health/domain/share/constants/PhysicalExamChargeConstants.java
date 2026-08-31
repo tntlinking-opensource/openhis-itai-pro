@@ -65,4 +65,28 @@ public interface PhysicalExamChargeConstants {
 
     /** 明细展示占位。 */
     String CHARGE_ITEM_DISPLAY_FALLBACK = "收费项目";
+
+    /** 团检合同议价覆盖目录价（override_reason_code）。 */
+    String OVERRIDE_REASON_PEIS_GROUP_CONTRACT = "PEIS_GROUP_CONTRACT";
+
+    /** 个检/加项手工改价（override_reason_code）。 */
+    String OVERRIDE_REASON_PEIS_MANUAL = "PEIS_MANUAL";
+
+    /** 个检套餐议价（override_reason_code）。 */
+    String OVERRIDE_REASON_PEIS_PACKAGE = "PEIS_PACKAGE_PRICE";
+
+    /** 改价失败（EX-PE-CHG-203）。 */
+    String MESSAGE_CODE_ADJUST_PRICE_FAILED = "EX-PE-CHG-203";
+
+    /** 退费失败（EX-PE-CHG-204）。 */
+    String MESSAGE_CODE_REFUND_FAILED = "EX-PE-CHG-204";
+
+    /** 退费失败：未找到可退原支付。 */
+    String MESSAGE_CODE_REFUND_NO_PAYMENT = "EX-PE-CHG-204";
+
+    /** 退费失败：所选项目分属多笔支付。 */
+    String MESSAGE_CODE_REFUND_MULTI_PAYMENT = "EX-PE-CHG-204";
+
+    /** 退费失败：收费项状态不可退。 */
+    String MESSAGE_CODE_REFUND_STATUS_INVALID = "EX-PE-CHG-204";
 }

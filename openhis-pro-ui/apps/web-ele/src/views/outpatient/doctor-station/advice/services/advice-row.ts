@@ -2,7 +2,9 @@ import type { AdviceDrugItem, AdviceRowItem } from './advice.types';
 
 import type { DoctorStationAdviceResourceKeyDto } from '#/api/doctor-station/advice.types';
 
-import { ADVICE_ROW_PRODUCT_TABLE_FALLBACK } from './advice-tab.constants';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+
+import { ADVICE_ROW_PRODUCT_TABLE_FALLBACK, DEVICE_DEFINITION_TABLE } from './advice-tab.constants';
 
 /** 复合 selectedId：`{productTableName}:{definitionId}` */
 
@@ -78,6 +80,57 @@ export function validateWesternEditLineItem(item: AdviceDrugItem): boolean {
     );
   }
   return validateWesternMedicationLineItem(item);
+}
+
+/** 诊疗绑定带出的耗材行（派生 DeviceRequest，basedOnServiceRequestId 锚定父诊疗） */
+export function isAdviceRowBoundConsumableFromService(row: AdviceRowItem): boolean {
+  const basedOn = String(row.basedOnServiceRequestId ?? '').trim();
+  if (!basedOn) {
+    return false;
+  }
+  const rt = String(row.resourceType ?? '')
+    .trim()
+    .toUpperCase();
+  if (rt === 'DEVICE') {
+    return true;
+  }
+  const tbl = String(row.productTableName ?? '')
+    .trim()
+    .toLowerCase();
+  return tbl === DEVICE_DEFINITION_TABLE || tbl.includes('device');
+}
+
+function normalizeAdviceRowRequestId(value: unknown): string {
+  const preserved = preserveApiIdForRequest(value);
+  if (preserved) {
+    return preserved;
+  }
+  return String(value ?? '').trim();
+}
+
+/** 申请单诊疗带出的绑定耗材（父诊疗行带 applyFormNo）；不含正常开立医嘱诊疗耗材 */
+export function isAdviceRowServiceApplyFormBoundConsumable(
+  row: AdviceRowItem,
+  allRows: readonly AdviceRowItem[],
+): boolean {
+  if (!isAdviceRowBoundConsumableFromService(row)) {
+    return false;
+  }
+  if (String(row.applyFormNo ?? '').trim()) {
+    return true;
+  }
+  const anchorId = normalizeAdviceRowRequestId(row.basedOnServiceRequestId);
+  if (!anchorId) {
+    return false;
+  }
+  for (const parent of allRows) {
+    const parentId = normalizeAdviceRowRequestId(parent.requestId);
+    if (parentId !== anchorId) {
+      continue;
+    }
+    return Boolean(String(parent.applyFormNo ?? '').trim());
+  }
+  return false;
 }
 
 export function productTableNameForAdviceRow(row: AdviceRowItem): string | undefined {

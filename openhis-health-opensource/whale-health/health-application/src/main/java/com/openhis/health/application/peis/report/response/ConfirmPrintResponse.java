@@ -20,4 +20,7 @@ public class ConfirmPrintResponse {
 
     /** 总检报告主键。 */
     private Long diagnosticReportId;
+
+    /** 累计打印次数。 */
+    private Integer printCount;
 }

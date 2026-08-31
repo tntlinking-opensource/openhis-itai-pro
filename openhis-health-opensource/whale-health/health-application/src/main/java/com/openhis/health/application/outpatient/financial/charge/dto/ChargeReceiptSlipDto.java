@@ -62,8 +62,8 @@ public class ChargeReceiptSlipDto {
     @Schema(description = "其他支出展示")
     private String othPayText;
 
-    /** 个人账户支付格式化文案。 */
-    @Schema(description = "个人账户支付展示")
+    /** 医保个人账户支付展示文案。 */
+    @Schema(description = "医保个人账户支付展示")
     private String accountPayText;
 
     /** 起付线格式化文案。 */
@@ -86,20 +86,20 @@ public class ChargeReceiptSlipDto {
     @Schema(description = "公务员补助展示")
     private String cvlservPayText;
 
-    /** 现金渠道支付格式化文案。 */
-    @Schema(description = "现金支付展示")
+    /** 现金实收展示文案（CASH 渠道；无扫码渠道时可能回落医保个人现金）。 */
+    @Schema(description = "现金实收展示")
     private String cashPayText;
 
-    /** 微信渠道支付格式化文案。 */
-    @Schema(description = "微信支付展示")
+    /** 微信实收展示文案。 */
+    @Schema(description = "微信实收展示")
     private String wechatPayText;
 
-    /** 支付宝渠道支付格式化文案。 */
-    @Schema(description = "支付宝支付展示")
+    /** 支付宝实收展示文案。 */
+    @Schema(description = "支付宝实收展示")
     private String alipayPayText;
 
-    /** 医保个人账户余额展示文案。 */
-    @Schema(description = "账户余额展示")
+    /** 医保个账余额展示文案。 */
+    @Schema(description = "医保个账余额展示")
     private String accountBalanceText;
 
     /** 收费员展示名。 */

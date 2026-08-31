@@ -77,7 +77,7 @@ public interface NurseStationEncounterManageMapper {
      * @param enrichment        展示增补；可 null
      * @param displayOverlay    队列展示覆盖；可 null
      * @param priorityEnum      病情/优先级 code（就诊主档批量解析）；可 null
-     * @param accountId         就诊默认个人现金账户主键；未开立可 null
+     * @param accountId         就诊默认挂账账户主键（医保优先）；未开立可 null
      * @return 列表行 DTO；row 为 null 时返回 null
      */
     PatientQueueItemDto toPatientQueueItemDto(
@@ -103,7 +103,7 @@ public interface NurseStationEncounterManageMapper {
      *
      * @param base         列表同源字段（含诊断列表/摘要）
      * @param patientPhone 电话
-     * @param idCardNo     证件号（已脱敏）
+     * @param idCardNo     证件号（完整号，不脱敏）
      * @param participants        全角色参与者
      * @param admissionVitalSigns 入科时点体征回填（锚点 {@code start_time}）；未入科可 null
      * @return 详情 DTO

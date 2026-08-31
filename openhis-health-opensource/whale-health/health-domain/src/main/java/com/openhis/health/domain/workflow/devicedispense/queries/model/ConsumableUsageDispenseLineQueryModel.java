@@ -20,6 +20,13 @@ public class ConsumableUsageDispenseLineQueryModel {
     /** 发放单主键。 */
     private Long dispenseId;
 
+    /**
+     * 源发放主键（退药行 {@code based_on_id}；正向行为空）。
+     *
+     * <p>账单仍锚在源 COMPLETED 发放上；报表售价须经此字段回挂 ChargeItem。</p>
+     */
+    private Long basedOnDispenseId;
+
     /** 耗材申请主键。 */
     private Long deviceReqId;
 

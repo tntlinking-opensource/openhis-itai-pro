@@ -17,7 +17,7 @@ import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import { getStockInDetailApi } from '#/api/inventory/department/stock-in';
 import SectionTitle from '#/components/layouts/section-title.vue';
 import { INV_DOC_READONLY_SHELL_HINT } from '#/utils/inventory/inventory-doc-restrictions';
-import { formatMoneyDisplay } from '#/utils/format/money-scale';
+import { formatPurchaseMoneyDisplay } from '#/utils/format/money-scale';
 import {
   createInventoryQtyUnitReadonlyColumn,
   hydrateInventoryDetailLineQtyForGrid,
@@ -111,8 +111,12 @@ const docActionFlags = computed(() => {
 
 /** 详情行 → 网格：先 SPLIT→展示数量，再拼只读列（勿在列 formatter 里再 hydrate，易把后续列打没） */
 function mapDetailLineToGrid(ln: StockInDetailLineDto, rowIdx: number): StockInPreviewRow {
-  const catalog = (ln as { productCatalog?: { unitBands?: unknown; unitBandsJson?: unknown } })
-    .productCatalog;
+  const catalog = (
+    ln as {
+      productCatalog?: { unitBands?: unknown; unitBandsJson?: unknown; categoryCode?: string };
+      categoryCode?: string;
+    }
+  ).productCatalog;
   const rawQty =
     ln.itemQuantity === undefined || ln.itemQuantity === null ? undefined : Number(ln.itemQuantity);
   const hydrated = hydrateInventoryDetailLineQtyForGrid({
@@ -123,6 +127,9 @@ function mapDetailLineToGrid(ln: StockInDetailLineDto, rowIdx: number): StockInP
   });
   const totalRaw =
     ln.totalPrice === undefined || ln.totalPrice === null ? undefined : Number(ln.totalPrice);
+  const categoryCode =
+    String(catalog?.categoryCode ?? (ln as { categoryCode?: string }).categoryCode ?? '').trim() ||
+    undefined;
   return {
     id: `ln-${ln.id ?? rowIdx}`,
     itemId: ln.itemId,
@@ -139,7 +146,9 @@ function mapDetailLineToGrid(ln: StockInDetailLineDto, rowIdx: number): StockInP
     price: ln.price === undefined || ln.price === null ? undefined : Number(ln.price),
     totalPrice: totalRaw,
     totalPriceText:
-      totalRaw === undefined || !Number.isFinite(totalRaw) ? '' : formatMoneyDisplay(totalRaw),
+      totalRaw === undefined || !Number.isFinite(totalRaw)
+        ? ''
+        : formatPurchaseMoneyDisplay(totalRaw, categoryCode),
     occurrenceTime: String(ln.occurrenceTime ?? '').trim(),
     startTime: String((ln as { startTime?: string }).startTime ?? '').trim(),
     endTime: String((ln as { endTime?: string }).endTime ?? '').trim(),
@@ -271,8 +280,8 @@ function resolvePrintOptionLabel(options: ApiOptionItem[] | undefined, value: un
   return String(hit?.label ?? '').trim();
 }
 
-/** 打印科室入库单（计价流转模版） */
-async function handlePrint() {
+/** 打印或预览科室入库单（计价流转模版） */
+async function handlePrint(payload?: { preview?: boolean }) {
   const busNo = String(headerBusNo.value ?? '').trim();
   if (!busNo) {
     ElMessage.warning('请先选择单据后再打印');
@@ -330,6 +339,7 @@ async function handlePrint() {
     },
     bizRef: { busNo, docKind: 'department-stock-in' },
     jobName: documentTitle,
+    preview: payload?.preview === true,
   });
 }
 </script>

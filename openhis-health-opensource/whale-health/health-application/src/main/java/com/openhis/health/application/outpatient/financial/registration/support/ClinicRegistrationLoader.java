@@ -260,8 +260,9 @@ public class ClinicRegistrationLoader {
         bundle.organizationNameById.putAll(organizationQueryService.mapNamesByIds(organizationIds));
         bundle.healthcareServiceById.putAll(healthcareServiceQueryService.loadHealthcareServiceMapByIds(serviceTypeIds));
         if (!encounterIds.isEmpty()) {
+            // 展示口径：活动参与者优先；退号收口后回落末次 COMPLETED，避免医生列空白。
             for (EncounterParticipant participant :
-                encounterQueryService.listActiveParticipantEntitiesByEncounterIds(encounterIds)) {
+                encounterQueryService.listDisplayParticipantEntitiesByEncounterIds(encounterIds)) {
                 if (participant.getEncounterId() == null) {
                     continue;
                 }

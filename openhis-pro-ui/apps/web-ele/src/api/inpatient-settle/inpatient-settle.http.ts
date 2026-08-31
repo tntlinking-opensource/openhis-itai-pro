@@ -5,6 +5,7 @@ import type {
   RecallInpatientDischargeResponse,
   ConfirmInpatientSettleRequest,
   ConfirmInpatientSettleResponse,
+  CompleteInpatientDischargePrepayRefundRequest,
   LoadInpatientSettlePageInitResponse,
   LoadInpatientSettleSummaryRequest,
   LoadInpatientSettleSummaryResponse,
@@ -16,6 +17,10 @@ import type {
   PreSettleInpatientChargesResponse,
   QueryInpatientSettleChargesRequest,
   QueryInpatientSettleChargesResponse,
+  UploadInpatientFeeDetailsBatchRequest,
+  UploadInpatientFeeDetailsBatchResponse,
+  AlignInpatientPlatformVisitRequest,
+  AlignInpatientPlatformVisitResponse,
 } from './inpatient-settle.types';
 
 import { chsLongRequestConfig } from '#/chs/constants/request-timeout';
@@ -72,12 +77,56 @@ export async function httpPreSettleInpatientCharges(
   );
 }
 
+/** 住院费用明细单批上传（2301，≤100 行；进度条分批调用） */
+export async function httpUploadInpatientFeeDetailsBatch(
+  body: UploadInpatientFeeDetailsBatchRequest,
+): Promise<UploadInpatientFeeDetailsBatchResponse> {
+  return publicRequestClient.post<UploadInpatientFeeDetailsBatchResponse>(
+    `${BASE}/uploadInpatientFeeDetailsBatch`,
+    body,
+    chsLongRequestConfig(),
+  );
+}
+
+/** 诊断本地 map 与 5201 在院态 */
+export async function httpDiagnoseInpatientPlatformVisit(
+  body: AlignInpatientPlatformVisitRequest,
+): Promise<AlignInpatientPlatformVisitResponse> {
+  return publicRequestClient.post<AlignInpatientPlatformVisitResponse>(
+    `${BASE}/diagnoseInpatientPlatformVisit`,
+    body,
+    chsLongRequestConfig(),
+  );
+}
+
+/** 按诊断结果轻量修复平台在院不一致 */
+export async function httpRepairInpatientPlatformVisit(
+  body: AlignInpatientPlatformVisitRequest,
+): Promise<AlignInpatientPlatformVisitResponse> {
+  return publicRequestClient.post<AlignInpatientPlatformVisitResponse>(
+    `${BASE}/repairInpatientPlatformVisit`,
+    body,
+    chsLongRequestConfig(),
+  );
+}
+
 /** 确认住院结算（正式结算；医保可能 5201/2404/2405/重新入院/2304，须长超时） */
 export async function httpConfirmInpatientSettle(
   body: ConfirmInpatientSettleRequest,
 ): Promise<ConfirmInpatientSettleResponse> {
   return publicRequestClient.post<ConfirmInpatientSettleResponse>(
     `${BASE}/confirmInpatientSettle`,
+    body,
+    chsLongRequestConfig(),
+  );
+}
+
+/** 医保出院第二阶段：预交金原路退后财务完结 */
+export async function httpCompleteInpatientDischargePrepayRefund(
+  body: CompleteInpatientDischargePrepayRefundRequest,
+): Promise<ConfirmInpatientSettleResponse> {
+  return publicRequestClient.post<ConfirmInpatientSettleResponse>(
+    `${BASE}/completeInpatientDischargePrepayRefund`,
     body,
     chsLongRequestConfig(),
   );

@@ -14,8 +14,11 @@ import lombok.Setter;
 @Setter
 public class RosterImportRowDto {
 
+    /** 前端勿传；导入时由后台按身份证匹配或自动建档。 */
     private Long patientId;
     private String fullName;
+    /** 性别编码（AdministrativeGender，如 MALE/FEMALE/UNKNOWN）。 */
+    private String genderEnum;
     private String studentNo;
     private String employeeNo;
     private Long collegeId;

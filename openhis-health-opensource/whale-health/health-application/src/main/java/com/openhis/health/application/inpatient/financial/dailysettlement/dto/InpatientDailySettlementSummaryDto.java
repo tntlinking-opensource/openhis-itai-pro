@@ -14,7 +14,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 住院日结收入汇总（IF-IP-DCL-02）；公共头 + 费用性质动态块；含住院特有预交金。
+ * 住院日结收入汇总（IF-IP-DCL-02）；公共头 + 费用性质动态块；
+ * 含住院特有预交金及多退少补拆列（{@code depositRefundAmount}/{@code settleSupplementAmount}）。
  */
 @Data
 @Accessors(chain = true)
@@ -84,6 +85,20 @@ public class InpatientDailySettlementSummaryDto {
     /** 预交金小计（住院特有；独立汇总，不参与 totalIncome 及其他下半区加和）。 */
     @Schema(description = "预交金小计（独立展示，不参与总收入加和）")
     private String depositAmount;
+
+    /**
+     * 退预交金合计（多退）：窗内 {@code HOSPITAL_DEPOSIT} 逆向流水绝对值代数和；
+     * 含出院结算多退现金与预交金页手工退；独立展示，不参与 totalIncome。
+     */
+    @Schema(description = "退预交金合计（多退；不参与总收入）")
+    private String depositRefundAmount;
+
+    /**
+     * 结算补收合计（少补）：住院结算单上自付渠道实付代数和（DD 的 C；现金/微信/银联等）；
+     * 不是补预交金；排除统筹/个账/冲抵；独立展示，不参与 totalIncome。
+     */
+    @Schema(description = "结算补收合计（结算渠道实付；不参与总收入）")
+    private String settleSupplementAmount;
 
     /** 退还合计。 */
     @Schema(description = "退还合计")

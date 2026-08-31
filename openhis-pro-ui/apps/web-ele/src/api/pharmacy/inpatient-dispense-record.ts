@@ -2,6 +2,7 @@
  * 住院发退药记录 — POST /api/app/inpatientPharmacyDispenseRecord/<method>
  */
 import type { ApiOptionItem, PageParams } from '#/types/api-response';
+import type { ExcelExportColumnPayload } from '#/utils/export/build-excel-export-columns';
 import type { BinaryExportResult } from '#/utils/export/download-binary-export';
 
 import { publicRequestClient } from '#/api/request';
@@ -73,7 +74,10 @@ export interface PageInpatientPharmacyDispenseRecordsResponse {
 export type ExportInpatientPharmacyDispenseRecordsParams = Omit<
   PageInpatientPharmacyDispenseRecordsParams,
   'pageNo' | 'pageSize'
->;
+> & {
+  /** 页面可见列 → 后端 Excel 列裁剪 */
+  exportColumns?: ExcelExportColumnPayload[];
+};
 
 export type ExportInpatientPharmacyDispenseRecordsResponse = BinaryExportResult;
 

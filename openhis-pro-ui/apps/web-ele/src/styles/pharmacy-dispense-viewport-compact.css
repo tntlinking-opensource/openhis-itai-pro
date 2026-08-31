@@ -1,0 +1,140 @@
+/**
+ * 门诊发药工作站窄屏（html.layout-viewport-compact）样式。
+ * 与 useLayoutCompactViewport 联动；≥1680 不受影响。
+ * 侧栏宽度常量见 PHARMACY_DISPENSE_SIDEBAR_WIDTH_PX；
+ * 笺面宽度常量见 PHARMACY_DISPENSE_SHEET_WIDTH_PX。
+ * 选择器落在 `.pharmacy-dispense-outpatient-root`，勿写业务组件内散落 @media。
+ *
+ * 原则：只做「轻度腾高/用宽」，避免患者卡与工具条过度挤压。
+ */
+
+/* ========== 页根：笺面保持纸质宽 500（不加宽） ========== */
+html.layout-viewport-compact .pharmacy-dispense-outpatient-root {
+  --dispense-sheet-width: 500px;
+}
+
+/* ========== 侧栏检索栈：仅略收间距，保留可读性 ========== */
+html.layout-viewport-compact .pharmacy-dispense-outpatient-root .dispense-queue-panel__filters {
+  gap: 0.375rem;
+  margin-bottom: 0.375rem;
+  padding-top: 0.375rem;
+}
+
+html.layout-viewport-compact
+  .pharmacy-dispense-outpatient-root
+  .dispense-queue-panel__filters
+  .section-title {
+  margin-bottom: 0;
+}
+
+html.layout-viewport-compact
+  .pharmacy-dispense-outpatient-root
+  .dispense-queue-scope.el-radio-group {
+  gap: 0.25rem 1rem;
+}
+
+html.layout-viewport-compact .pharmacy-dispense-outpatient-root .queue-list {
+  padding-bottom: 0.375rem;
+}
+
+html.layout-viewport-compact
+  .pharmacy-dispense-outpatient-root
+  .queue-list.space-y-1\.5
+  > :not([hidden])
+  ~ :not([hidden]) {
+  margin-top: 0.375rem;
+}
+
+/* ========== 左侧患者卡：几乎保持 default，仅略减内边距 ========== */
+html.layout-viewport-compact
+  .pharmacy-dispense-outpatient-root
+  .queue-list
+  .group.rounded-xl
+  > .relative.p-3 {
+  padding: 10px 12px;
+}
+
+html.layout-viewport-compact
+  .pharmacy-dispense-outpatient-root
+  .queue-list
+  .group.rounded-xl
+  .mb-3 {
+  margin-bottom: 8px;
+}
+
+/* 就诊号过长时允许换行，避免 EN 号被截断 */
+html.layout-viewport-compact
+  .pharmacy-dispense-outpatient-root
+  .queue-list
+  .patient-card__footer-no {
+  overflow: visible;
+  text-overflow: unset;
+  white-space: normal;
+  word-break: break-all;
+  line-height: 1.35;
+}
+
+/* ========== 右侧工具条：轻度收紧 ========== */
+html.layout-viewport-compact .pharmacy-dispense-outpatient-root .dispense-rx-toolbar {
+  gap: 0.375rem;
+  padding-bottom: 0.5rem;
+}
+
+html.layout-viewport-compact .pharmacy-dispense-outpatient-root .dispense-rx-toolbar-bar {
+  gap: 6px 10px;
+}
+
+html.layout-viewport-compact .pharmacy-dispense-outpatient-root .dispense-rx-center__body {
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
+/* ========== 发药单笺面：加宽 + 轻度收 padding（不压字号） ========== */
+html.layout-viewport-compact .pharmacy-dispense-outpatient-root .dispense-rx-sheet-row {
+  gap: 1rem;
+}
+
+html.layout-viewport-compact .pharmacy-dispense-outpatient-root .prescription-container--workbench {
+  width: var(--dispense-sheet-width, 500px);
+  max-width: 500px;
+  padding: 12px 14px 14px;
+}
+
+html.layout-viewport-compact
+  .pharmacy-dispense-outpatient-root
+  .prescription-dialog-wrapper--comfortable
+  .prescription-container--workbench {
+  padding: 12px 14px 14px;
+}
+
+html.layout-viewport-compact
+  .pharmacy-dispense-outpatient-root
+  .prescription-container--workbench
+  .prescription-sheet-header {
+  margin-bottom: 12px;
+}
+
+html.layout-viewport-compact
+  .pharmacy-dispense-outpatient-root
+  .prescription-container--workbench
+  .prescription-sheet-patient {
+  gap: 7px;
+  padding: 10px 11px;
+  margin-bottom: 10px;
+}
+
+html.layout-viewport-compact
+  .pharmacy-dispense-outpatient-root
+  .prescription-container--workbench
+  .prescription-sheet-rx {
+  margin-bottom: 10px;
+}
+
+html.layout-viewport-compact
+  .pharmacy-dispense-outpatient-root
+  .prescription-container--workbench
+  .prescription-sheet-footer {
+  gap: 7px;
+  padding-top: 10px;
+}

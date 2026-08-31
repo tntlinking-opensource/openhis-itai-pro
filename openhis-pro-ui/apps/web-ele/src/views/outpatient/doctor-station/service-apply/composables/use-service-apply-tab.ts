@@ -2,7 +2,6 @@ import type { AdviceRowItem } from '../../advice/services/advice.types';
 
 import type {
   DoctorStationAdviceDraftLineRequest,
-  DoctorStationAdviceResourceKeyDto,
   DoctorStationAdviceRowDto,
 } from '#/api/doctor-station/advice.types';
 import type { ServiceApplyPrintMeta } from '#/utils/print/print-service-apply';
@@ -17,7 +16,6 @@ import { groupServiceApplyRowsByFormNo } from '../service-apply-doc-groups';
 
 import {
   httpListDoctorStationAdvice,
-  httpSignDoctorStationAdviceBatch,
   httpWithdrawDoctorStationAdviceBatch,
 } from '#/api/doctor-station/advice.http';
 import { useEnsureClinicalReception } from '#/components/doctor-station';
@@ -32,6 +30,12 @@ import { printServiceApplyFromAdviceRows } from '#/utils/print/print-service-app
 
 import { saveAdviceDraftBatchDirect } from '../../advice/services/advice-draft-save.service';
 import {
+  buildServiceApplyBoundConsumableDeleteLines,
+  expandServiceApplyResourceTargetsWithBinds,
+  loadServiceApplyAdviceRowItems,
+  signServiceApplyDraftAdviceRowsWithBind,
+} from '../service-apply.service';
+import {
   filterServiceApplyFormAdviceRows,
   flattenAdviceRowsForResourceOps,
   getAdviceChargeStatusTagType,
@@ -40,7 +44,6 @@ import {
 } from '../../advice/services/advice-list';
 import {
   productTableNameForAdviceRow,
-  resourceKeyFromRow,
   rowLooksDeletable,
   rowLooksDraft,
   rowLooksDraftForSign,
@@ -52,6 +55,8 @@ export interface UseServiceApplyTabProps {
   patientId?: string;
   serviceApplyPatient?: ServiceApplyPatientSummary;
   serviceApplyPrintMeta?: ServiceApplyPrintMeta;
+  /** 门诊 / 住院：列表签发与绑定解析 HTTP */
+  stationScope?: 'inpatient' | 'outpatient';
 }
 
 /** 门诊医生站「申请单」页签：检验/检查申请列表、签发/撤回/删除与打印 */
@@ -62,6 +67,8 @@ export function useServiceApplyTab(
   const { ensureReceptionBeforeClinicalWork } = useEnsureClinicalReception();
   const detailAuditDialogRef = options?.detailAuditDialogRef;
   const rows = ref<AdviceRowItem[]>([]);
+  /** 就诊全量医嘱（含绑定耗材），供申请单聚组展示子行 */
+  const allAdviceRowsForBind = ref<AdviceRowItem[]>([]);
   const tableSelection = ref<AdviceRowItem[]>([]);
   const listLoading = ref(false);
   const mutationLoading = ref(false);
@@ -71,7 +78,7 @@ export function useServiceApplyTab(
 
   /** 按申请单号聚组后的单据列表（检验/检查同页） */
   const documentGroups = computed<ServiceApplyDocumentGroup[]>(() =>
-    groupServiceApplyRowsByFormNo(rows.value),
+    groupServiceApplyRowsByFormNo(rows.value, allAdviceRowsForBind.value),
   );
 
   /** 清空已选申请单 */
@@ -119,6 +126,7 @@ export function useServiceApplyTab(
     const patientId = props.patientId?.trim() || '';
     if (!encounterId || !patientId) {
       rows.value = [];
+      allAdviceRowsForBind.value = [];
       listLoading.value = false;
       return;
     }
@@ -131,9 +139,11 @@ export function useServiceApplyTab(
       });
       const { content: list } = parsePagedRowsFromApiData<DoctorStationAdviceRowDto>(res);
       const merged = mergeMedicationAdviceRowsForListDisplay(list);
+      allAdviceRowsForBind.value = merged;
       rows.value = filterServiceApplyFormAdviceRows(merged);
     } catch {
       rows.value = [];
+      allAdviceRowsForBind.value = [];
     } finally {
       listLoading.value = false;
     }
@@ -151,24 +161,20 @@ export function useServiceApplyTab(
     const draftRows = flattenAdviceRowsForResourceOps(rows.value).filter((r) =>
       rowLooksDraftForSign(r),
     );
-    const targets = draftRows
-      .map((r) => resourceKeyFromRow(r))
-      .filter(Boolean) as DoctorStationAdviceResourceKeyDto[];
-    if (targets.length === 0) {
+    if (draftRows.length === 0) {
       ElMessage.warning('当前列表没有状态为 DRAFT 的申请单可签发');
       return;
     }
+    const stationScope = props.stationScope ?? 'outpatient';
     await withMutationLoading(async () => {
       try {
-        const res = await httpSignDoctorStationAdviceBatch({
+        await signServiceApplyDraftAdviceRowsWithBind({
           encounterId,
           patientId,
-          signTargets: targets,
+          draftRows,
+          stationScope: props.stationScope ?? 'outpatient',
+          existingAdviceRows: allAdviceRowsForBind.value,
         });
-        if (res.success === false) {
-          ElMessage.error(String(res.message || '').trim() || '签发失败');
-          return;
-        }
         const insuranceContract = await pickFirstInsuranceContract(
           draftRows.map((r) => r.contractId),
         );
@@ -184,10 +190,18 @@ export function useServiceApplyTab(
               dialogRef: detailAuditDialogRef,
             });
             if (!continued) {
+              const withdrawTargets = expandServiceApplyResourceTargetsWithBinds(
+                draftRows,
+                await loadServiceApplyAdviceRowItems({
+                  encounterId,
+                  patientId,
+                  stationScope,
+                }),
+              );
               const withdrawRes = await httpWithdrawDoctorStationAdviceBatch({
                 encounterId,
                 patientId,
-                targets,
+                targets: withdrawTargets,
               });
               if (withdrawRes.success === false) {
                 ElMessage.error(
@@ -203,10 +217,18 @@ export function useServiceApplyTab(
             }
           } catch (auditError: unknown) {
             try {
+              const withdrawTargets = expandServiceApplyResourceTargetsWithBinds(
+                draftRows,
+                await loadServiceApplyAdviceRowItems({
+                  encounterId,
+                  patientId,
+                  stationScope,
+                }),
+              );
               await httpWithdrawDoctorStationAdviceBatch({
                 encounterId,
                 patientId,
-                targets,
+                targets: withdrawTargets,
               });
             } catch {
               /* 签退失败时仍抛出审核错误 */
@@ -218,7 +240,7 @@ export function useServiceApplyTab(
             return;
           }
         }
-        ElMessage.success(String(res.message || '').trim() || '签发成功');
+        ElMessage.success('签发成功');
         clearTableSelection();
         await loadApplyFormList();
       } catch (error: unknown) {
@@ -242,9 +264,10 @@ export function useServiceApplyTab(
     if (!receptionOk) return;
     const flatSel = flattenAdviceRowsForResourceOps(tableSelection.value);
     const withdrawable = flatSel.filter((r) => rowLooksWithdrawable(r, rowLooksDraft));
-    const targets = withdrawable
-      .map((r) => resourceKeyFromRow(r))
-      .filter(Boolean) as DoctorStationAdviceResourceKeyDto[];
+    const targets = expandServiceApplyResourceTargetsWithBinds(
+      withdrawable,
+      allAdviceRowsForBind.value,
+    );
     if (targets.length === 0) {
       ElMessage.warning('请勾选至少一条已签发且可签退的申请单');
       return;
@@ -297,7 +320,12 @@ export function useServiceApplyTab(
         ...(ptn ? { productTableName: ptn } : {}),
       };
     });
-    if (lines.length === 0) {
+    const bindDeleteLines = buildServiceApplyBoundConsumableDeleteLines(
+      deletable,
+      allAdviceRowsForBind.value,
+    );
+    const allDeleteLines = [...lines, ...bindDeleteLines];
+    if (allDeleteLines.length === 0) {
       ElMessage.warning('请勾选至少一条可删除的草稿申请单');
       return;
     }
@@ -306,7 +334,7 @@ export function useServiceApplyTab(
         const res = await saveAdviceDraftBatchDirect({
           encounterId,
           patientId,
-          lines,
+          lines: allDeleteLines,
         });
         if (res.success === false) {
           ElMessage.error(String(res.message || '').trim() || '删除失败');

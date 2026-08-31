@@ -6,6 +6,11 @@ import { resolveSignEndpointForSignIn } from '#/chs/utils/yb-plugin';
 export interface EnsureInsuranceSignInOptions {
   /** 改由服务端 sign_mac 签到时是否提示（默认 true） */
   warnOnServerFallback?: boolean;
+  /**
+   * 仅走服务端签到（不探测本机 OpenHIS.Win）。
+   * 对账清算等无读卡场景使用；服务端用契约 sign_mac / 已有会话。
+   */
+  preferServerSignIn?: boolean;
 }
 
 /**
@@ -16,6 +21,10 @@ export async function ensureInsuranceSignIn(
   contractBusNo: string,
   options?: EnsureInsuranceSignInOptions,
 ): Promise<string> {
+  if (options?.preferServerSignIn) {
+    return insuranceSignInApi({ contractBusNo });
+  }
+
   const warn = options?.warnOnServerFallback !== false;
   const endpoint = await resolveSignEndpointForSignIn();
 

@@ -42,6 +42,7 @@ import {
   prepareOrderTemplateApplyConfirm,
 } from '../services/order-template-apply.service';
 import AdviceDraftBindDialog from './advice-draft-bind-dialog.vue';
+import AdviceDiagnosisSummaryCell from './advice-diagnosis-summary-cell.vue';
 import AdviceEditCard from './advice-edit-card.vue';
 import HistoryAdviceDrawer from './history-advice-drawer.vue';
 import OrderTemplateApplyConfirmDialog from './order-template-apply-confirm-dialog.vue';
@@ -70,6 +71,7 @@ const {
   editorInitialGroup,
   editorOpening,
   editorPatientDiagnoses,
+  diagnosisItemsForList,
   encounterId,
   getAdviceStatusTagType,
   getCellClassName,
@@ -97,6 +99,7 @@ const {
   productColumns,
   queryProductOptions,
   reload,
+  tableSelection,
   validateWesternRow,
 } = useAdviceTab(props, { detailAuditDialogRef });
 
@@ -237,8 +240,11 @@ async function handleOpenSaveAsOrderTemplateDialog() {
   saveAsOrderTemplateDialogVisible.value = true;
 }
 
-/** 历史医嘱复用：拉目录、校验库存、静默写入草稿 */
-async function handleHistoryAdviceReuse(rows: HistoryAdviceRowItem[]) {
+/** 将勾选/历史行按「新开草稿」写入当前就诊（复用与复制共用） */
+async function applyAdviceRowsAsNewDraft(
+  rows: HistoryAdviceRowItem[],
+  options?: { successMessage?: string; closeHistoryDrawer?: boolean },
+) {
   if (rows.length === 0) {
     return;
   }
@@ -269,8 +275,22 @@ async function handleHistoryAdviceReuse(rows: HistoryAdviceRowItem[]) {
       feeNatureOptions: feeNatureOptions.value,
       existingAdviceRows: getTableRows().filter((row) => !row.isEditor),
     });
-    ElMessage.success(`已复用 ${result.appliedLineCount} 条历史医嘱`);
-    historyAdviceDrawerVisible.value = false;
+    if (options?.successMessage) {
+      ElMessage.success(options.successMessage);
+    } else if (result.importedDiagnosisCount > 0) {
+      ElMessage.success(
+        `已复用 ${result.appliedLineCount} 条历史医嘱，并同步 ${result.importedDiagnosisCount} 条诊断`,
+      );
+    } else {
+      ElMessage.success(`已复用 ${result.appliedLineCount} 条历史医嘱`);
+    }
+    // 慢病备案未过检：诊断仍带入为普通，单独提示原因
+    if (result.chronicSkippedHints && result.chronicSkippedHints.length > 0) {
+      ElMessage.warning(result.chronicSkippedHints.join('；'));
+    }
+    if (options?.closeHistoryDrawer) {
+      historyAdviceDrawerVisible.value = false;
+    }
     await reload();
   } catch (error) {
     if (error instanceof HistoryAdviceApplyError) {
@@ -281,6 +301,31 @@ async function handleHistoryAdviceReuse(rows: HistoryAdviceRowItem[]) {
   } finally {
     historyAdviceApplyLoading.value = false;
   }
+}
+
+/** 历史医嘱复用：拉目录、校验库存、导入对应诊断、静默写入草稿 */
+async function handleHistoryAdviceReuse(rows: HistoryAdviceRowItem[]) {
+  await applyAdviceRowsAsNewDraft(rows, { closeHistoryDrawer: true });
+}
+
+/** 复制勾选医嘱（含退费）：与历史复用同一落库；成组行按 mergedAdviceRows 整组展开 */
+async function handleCopySelectedAdvice() {
+  const selected = tableSelection.value.filter((row) => !row.isEditor);
+  if (selected.length === 0) {
+    ElMessage.warning('请先勾选要复制的医嘱');
+    return;
+  }
+  const encounter = preserveApiIdForRequest(encounterId.value);
+  if (!encounter) {
+    ElMessage.warning('请先选择就诊');
+    return;
+  }
+  // 勾选行补 encounterId，成组展示行保留 mergedAdviceRows 供 apply 整组展开
+  const rows: HistoryAdviceRowItem[] = selected.map((row) => ({
+    ...row,
+    encounterId: encounter,
+  }));
+  await applyAdviceRowsAsNewDraft(rows, { successMessage: '已复制' });
 }
 
 defineExpose({
@@ -314,6 +359,14 @@ defineExpose({
           </ElButton>
           <ElButton type="danger" plain :loading="adviceMutationLoading" @click="handleDelete()">
             删除
+          </ElButton>
+          <ElButton
+            type="success"
+            plain
+            :loading="historyAdviceApplyLoading"
+            @click="handleCopySelectedAdvice"
+          >
+            复制
           </ElButton>
           <ElButton plain @click="handleMedicationUngroup">拆组</ElButton>
           <ElButton plain @click="handleMedicationAssignGroup">并组</ElButton>
@@ -400,6 +453,7 @@ defineExpose({
                     :calc-total-fee="calcDrugLineTotalFee"
                     :medication-rate-options="medicationRateOptions"
                     :medication-route-options="medicationRouteOptions"
+                    :patient-diagnoses="scope.patientDiagnoses"
                   />
                 </template>
               </AdviceEditCard>
@@ -484,7 +538,16 @@ defineExpose({
             :min-width="adviceTableColWidth.diagnosisMin"
             align="center"
             show-overflow-tooltip
-          />
+          >
+            <template #default="{ row }">
+              <AdviceDiagnosisSummaryCell
+                v-if="!row.isEditor"
+                :diagnosis-summary="row.diagnosisSummary"
+                :encounter-diagnosis-ids="row.encounterDiagnosisIds"
+                :diagnosis-items="diagnosisItemsForList"
+              />
+            </template>
+          </ElTableColumn>
           <ElTableColumn
             prop="orderingDoctor"
             label="开立医生"

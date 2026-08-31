@@ -20,6 +20,7 @@ import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.NurseWorkloadConstants;
 import com.openhis.health.domain.share.constants.NurseWorkloadExportConstants;
 import com.openhis.health.domain.workflow.devicedispense.queries.model.NurseConsumableWorkloadDetailQueryModel;
+import com.openhis.whale.core.application.dto.ExcelExportColumnDto;
 import com.openhis.whale.core.application.util.AnnotatedExcelExporter;
 import org.springframework.stereotype.Component;
 
@@ -45,8 +46,8 @@ public class NurseWorkloadReportMapperImpl implements NurseWorkloadReportMapper 
         query.setDateFrom(request.getDateFrom());
         query.setDateTo(request.getDateTo());
         query.setPractitionerId(request.getPractitionerId());
-        query.setRequestingOrgId(this.resolveRequestingOrgId(
-            request.getRequestingOrgId(), request.getOrganizationId()));
+        // 开立科室仅认显式 requestingOrgId；organizationId 改由 AppService 解析为默认登录科室护士集合
+        query.setRequestingOrgId(request.getRequestingOrgId());
         return query;
     }
 
@@ -63,8 +64,7 @@ public class NurseWorkloadReportMapperImpl implements NurseWorkloadReportMapper 
         query.setDateFrom(request.getDateFrom());
         query.setDateTo(request.getDateTo());
         query.setPractitionerId(request.getPractitionerId());
-        query.setRequestingOrgId(this.resolveRequestingOrgId(
-            request.getRequestingOrgId(), request.getOrganizationId()));
+        query.setRequestingOrgId(request.getRequestingOrgId());
         query.setPageNo(this.resolvePageNo(request.getPageNo()));
         query.setPageSize(this.resolvePageSize(request.getPageSize()));
         return query;
@@ -83,8 +83,7 @@ public class NurseWorkloadReportMapperImpl implements NurseWorkloadReportMapper 
         query.setDateFrom(request.getDateFrom());
         query.setDateTo(request.getDateTo());
         query.setPractitionerId(request.getPractitionerId());
-        query.setRequestingOrgId(this.resolveRequestingOrgId(
-            request.getRequestingOrgId(), request.getOrganizationId()));
+        query.setRequestingOrgId(request.getRequestingOrgId());
         query.setPageNo(this.resolvePageNo(request.getPageNo()));
         query.setPageSize(this.resolvePageSize(request.getPageSize()));
         return query;
@@ -103,23 +102,8 @@ public class NurseWorkloadReportMapperImpl implements NurseWorkloadReportMapper 
         query.setDateFrom(request.getDateFrom());
         query.setDateTo(request.getDateTo());
         query.setPractitionerId(request.getPractitionerId());
-        query.setRequestingOrgId(this.resolveRequestingOrgId(
-            request.getRequestingOrgId(), request.getOrganizationId()));
+        query.setRequestingOrgId(request.getRequestingOrgId());
         return query;
-    }
-
-    /**
-     * 开立科室优先；仅传遗留 organizationId 时回填 requestingOrgId。
-     *
-     * @param requestingOrgId  开立科室
-     * @param organizationId   遗留科室
-     * @return 解析后的开立科室 id
-     */
-    private Long resolveRequestingOrgId(Long requestingOrgId, Long organizationId) {
-        if (requestingOrgId != null) {
-            return requestingOrgId;
-        }
-        return organizationId;
     }
 
     /**
@@ -237,31 +221,39 @@ public class NurseWorkloadReportMapperImpl implements NurseWorkloadReportMapper 
     }
 
     /**
-     * 诊疗执行明细导出行 → Excel 字节。
+     * 诊疗执行明细导出行 → Excel 字节（可按前端列清单裁剪）。
      *
-     * @param rows 导出行列表；调用方保证非 null
+     * @param rows    导出行列表；调用方保证非 null
+     * @param columns 前端自选列；null/空则全部 {@code @Excel} 列
      * @return xlsx 二进制
      */
     @Override
-    public byte[] buildExecutionExcelBytes(List<NurseExecutionDetailExportRowDto> rows) {
+    public byte[] buildExecutionExcelBytes(
+        List<NurseExecutionDetailExportRowDto> rows,
+        List<ExcelExportColumnDto> columns) {
         return AnnotatedExcelExporter.exportToXlsxBytes(
             NurseWorkloadExportConstants.EXECUTION_SHEET_NAME,
             rows,
-            NurseExecutionDetailExportRowDto.class);
+            NurseExecutionDetailExportRowDto.class,
+            columns);
     }
 
     /**
-     * 耗材使用明细导出行 → Excel 字节。
+     * 耗材使用明细导出行 → Excel 字节（可按前端列清单裁剪）。
      *
-     * @param rows 导出行列表；调用方保证非 null
+     * @param rows    导出行列表；调用方保证非 null
+     * @param columns 前端自选列；null/空则全部 {@code @Excel} 列
      * @return xlsx 二进制
      */
     @Override
-    public byte[] buildConsumableExcelBytes(List<NurseConsumableDetailExportRowDto> rows) {
+    public byte[] buildConsumableExcelBytes(
+        List<NurseConsumableDetailExportRowDto> rows,
+        List<ExcelExportColumnDto> columns) {
         return AnnotatedExcelExporter.exportToXlsxBytes(
             NurseWorkloadExportConstants.CONSUMABLE_SHEET_NAME,
             rows,
-            NurseConsumableDetailExportRowDto.class);
+            NurseConsumableDetailExportRowDto.class,
+            columns);
     }
 
     /**

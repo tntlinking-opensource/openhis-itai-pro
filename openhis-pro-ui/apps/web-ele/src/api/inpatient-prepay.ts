@@ -11,6 +11,11 @@ import { publicRequestClient } from '#/api/request';
 export interface PagePrepayPatientQueueParams extends PageParams {
   admissionDate?: string;
   keyword?: string;
+  /**
+   * 在院范围：IN_HOSPITAL / NOT_IN_HOSPITAL / ALL
+   * （与后端 InpatientPrepayStayScope 一致）
+   */
+  stayScope?: string;
 }
 
 /** 在院患者队列行 */

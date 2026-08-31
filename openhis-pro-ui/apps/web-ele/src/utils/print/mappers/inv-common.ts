@@ -1,4 +1,6 @@
 /** 库存单据打印：公共字符串/金额/日期格式化（mapper 内用） */
+import { formatPurchaseMoneyDisplay } from '#/utils/format/money-scale';
+
 export function invPrintStr(value: null | number | string | undefined): string {
   if (value === null || value === undefined) {
     return '';
@@ -6,7 +8,7 @@ export function invPrintStr(value: null | number | string | undefined): string {
   return String(value).trim();
 }
 
-/** 金额展示串，空或非法返回 '' */
+/** 金额展示串（固定两位），空或非法返回 '' */
 export function invPrintAmountText(value: null | number | string | undefined): string {
   if (value === null || value === undefined || value === '') {
     return '';
@@ -16,6 +18,28 @@ export function invPrintAmountText(value: null | number | string | undefined): s
     return '';
   }
   return num.toFixed(2);
+}
+
+/**
+ * 进价侧金额打印串（单价/总额/盈亏）：与 {@link formatPurchaseMoneyDisplay} 同口径。
+ * 售价 / 非进价请继续用 {@link invPrintAmountText}。
+ */
+export function invPrintPurchaseMoneyText(
+  value: null | number | string | undefined,
+  categoryCode?: null | string,
+): string {
+  if (value === null || value === undefined || value === '') {
+    return '';
+  }
+  return formatPurchaseMoneyDisplay(value, categoryCode ?? undefined);
+}
+
+/** @deprecated 请改用 {@link invPrintPurchaseMoneyText} */
+export function invPrintPurchaseUnitPriceText(
+  value: null | number | string | undefined,
+  categoryCode?: null | string,
+): string {
+  return invPrintPurchaseMoneyText(value, categoryCode);
 }
 
 /** 数量+单位，如「10盒」 */

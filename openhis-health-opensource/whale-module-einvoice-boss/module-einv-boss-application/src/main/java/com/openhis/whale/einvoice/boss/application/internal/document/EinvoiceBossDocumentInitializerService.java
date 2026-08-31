@@ -220,9 +220,7 @@ public class EinvoiceBossDocumentInitializerService {
             Long tenantId, String issueKind, BossChargeLineSnapshot chargeLine, EinvBossLine line) {
         String internalCode = chargeLine.getInternalCode();
         if (tenantId == null || internalCode == null || internalCode.isBlank()) {
-            String fallback = internalCode != null ? internalCode : "UNKNOWN";
-            line.setChargeCode(BossLegacyStatisticCode1Mapping.toOutboundChargeCode(issueKind, fallback));
-            line.setChargeName(line.getChargeCode());
+            applyOtherChargeFallback(issueKind, line, internalCode);
             return;
         }
         try {
@@ -240,8 +238,19 @@ public class EinvoiceBossDocumentInitializerService {
         } catch (Exception ex) {
             log.warn("Resolve boss charge contrast failed, tenantId={}, internalCode={}", tenantId, internalCode, ex);
         }
-        line.setChargeCode(BossLegacyStatisticCode1Mapping.toOutboundChargeCode(issueKind, internalCode));
-        String displayName = chargeLine.getItemName();
-        line.setChargeName(displayName != null && !displayName.isBlank() ? displayName : internalCode);
+        applyOtherChargeFallback(issueKind, line, internalCode);
+    }
+
+    /**
+     * 对照缺失时归入固定「其它」大类，避免 FIN_/DEF_ 散开导致 chargeDetail 超院点行数上限。
+     */
+    private void applyOtherChargeFallback(String issueKind, EinvBossLine line, String internalCode) {
+        line.setChargeCode(BossLegacyStatisticCode1Mapping.fallbackOtherChargeCode(issueKind));
+        line.setChargeName(BossLegacyStatisticCode1Mapping.fallbackOtherChargeName());
+        log.warn(
+                "Boss charge contrast missing, fallback to other category, issueKind={}, internalCode={}, chargeCode={}",
+                issueKind,
+                internalCode,
+                line.getChargeCode());
     }
 }

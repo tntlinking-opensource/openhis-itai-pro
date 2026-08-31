@@ -123,7 +123,7 @@ public class OutpatientPharmacyDailySettlementAppService {
     /** 主区预览装配（大类/品规/明细）。 */
     private final PharmacyDailySettlementPreviewAssembler pharmacyDailySettlementPreviewAssembler;
 
-    /** 进/售读价与日结利润（售价−进价）。 */
+    /** 进/售读价与售价合计（头表 total_income 同口径）。 */
     private final PharmacyDailySettlementPricingSupport pharmacyDailySettlementPricingSupport;
 
     /** 漏交硬栏文案。 */
@@ -219,9 +219,9 @@ public class OutpatientPharmacyDailySettlementAppService {
             List<PharmacyDailySettlementDispenseItemDto> items =
                 this.pharmacyDailySettlementPreviewAssembler.toDispenseItems(
                     unsettledDispenses, false, unitLabels, purchaseSaleSnapshot);
-            // Asm：待交笔数按源行条数计（BR-CS-011：一发一退=2）；日结利润=主区售价合计−进价合计（复用进/售快照）
+            // Asm：待交笔数按源行条数计（BR-CS-011：一发一退=2）；头表金额=主区售价合计（复用进/售快照）
             BigDecimal totalIncome =
-                this.pharmacyDailySettlementPricingSupport.sumPurchaseSaleProfit(purchaseSaleSnapshot);
+                this.pharmacyDailySettlementPricingSupport.sumSaleAmount(purchaseSaleSnapshot);
             PreviewOutpatientPharmacyDailySettlementResponse response = new PreviewOutpatientPharmacyDailySettlementResponse();
             response.setCategoryRows(categoryRows);
             response.setProductRows(productRows);
@@ -250,8 +250,8 @@ public class OutpatientPharmacyDailySettlementAppService {
     /**
      * IF-OP-PDC-03：确认门诊药房交账。
      *
-     * <p>头表 {@code total_income} 为勾选发药售价合计 − 进价合计（与主区批号价同口径，见
-     * {@link PharmacyDailySettlementPricingSupport#sumPurchaseSaleProfitByDispenseIds}）。</p>
+     * <p>头表 {@code total_income} 为勾选发药<strong>售价合计</strong>（与主区大类售价之和同口径，见
+     * {@link PharmacyDailySettlementPricingSupport#sumSaleAmountByDispenseIds}）。</p>
      *
      * @param request 与预览相同业务窗、药房与勾选发药行
      * @return 交账头标识、单号与挂载条数
@@ -309,8 +309,8 @@ public class OutpatientPharmacyDailySettlementAppService {
                 request.getDateTo());
         String practitionerIds =
             this.dailySettlementOrgLocationScopeSupport.joinPractitionerIds(practitionerIdsInWindow);
-        // Cmd：勾选发药日结利润（售价−进价）落头表 total_income
-        BigDecimal totalIncome = this.pharmacyDailySettlementPricingSupport.sumPurchaseSaleProfitByDispenseIds(
+        // Cmd：勾选发药售价合计落头表 total_income（列表/审批金额同口径，非利润）
+        BigDecimal totalIncome = this.pharmacyDailySettlementPricingSupport.sumSaleAmountByDispenseIds(
             selectedDispenseIds,
             false);
         SubmitCashierSettlementCommand command = this.outpatientPharmacyDailySettlementMapper.toSubmitCommand(

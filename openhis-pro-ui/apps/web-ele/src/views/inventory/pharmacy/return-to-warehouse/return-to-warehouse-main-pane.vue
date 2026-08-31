@@ -1309,8 +1309,8 @@ function resolveReturnPrintUnitLabel(row: ReturnPreviewRow): string {
   return String(row.unitCodeDictText ?? row.unitCode ?? '').trim();
 }
 
-/** 打印药房退库单 */
-async function handlePrint() {
+/** 打印或预览药房退库单 */
+async function handlePrint(payload?: { preview?: boolean }) {
   const busNo = String(headerBusNo.value ?? '').trim();
   if (!busNo) {
     ElMessage.warning('请先保存单据后再打印');
@@ -1329,10 +1329,12 @@ async function handlePrint() {
     .trim()
     .replace('T', ' ');
 
-  // 按当前网格展示值组装退货明细
+  // 按当前网格展示值组装退货明细（列对齐流转单：规格/厂家/单价金额/效期/原因）
   const lineRows = productRows.map((row) => ({
     productBusNo: resolveInvPrintProductBusNo(row as unknown as Record<string, unknown>),
     productName: String(row.productName ?? '').trim(),
+    specText: String(row.specification ?? '').trim(),
+    manufacturerText: String(row.manufacturer ?? '').trim(),
     qty: row.itemQuantity,
     unitLabel: resolveReturnPrintUnitLabel(row),
     lotNumber: String(row.lotNumber ?? '').trim(),
@@ -1364,6 +1366,7 @@ async function handlePrint() {
     },
     bizRef: { busNo, docKind: 'return-to-warehouse' },
     jobName: documentTitle,
+    preview: payload?.preview === true,
   });
 }
 </script>

@@ -25,8 +25,20 @@ public class CreateRegistrationRequest {
     private Long bookingAppointmentId;
 
     /**
-     * 体检类型：freshman（新生）/ annual（在校年检）/ staff（教职工）/ other；
-     * 空则后端按 Campus 身份与是否首检推断。
+     * 体检类型：personal（个人）/ group（团体）/ freshman（新生）/ annual（在校年检）/
+     * staff（教职工）/ other；空则默认 personal。
      */
     private String examKind;
+
+    /** 团检单位（examKind=group 时必填）。 */
+    private Long companyId;
+
+    /** 团检分组/批次（examKind=group 时必填）。 */
+    private Long groupBatchId;
+
+    /** 本次体检推荐人。 */
+    private String referrerName;
+
+    /** 本次体检是否提供早餐。 */
+    private Boolean breakfastFlag;
 }

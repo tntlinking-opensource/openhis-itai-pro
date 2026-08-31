@@ -6,6 +6,7 @@ package com.openhis.health.application.outpatient.financial.registration.service
 
 import com.openhis.health.application.outpatient.financial.registration.dto.*;
 import com.openhis.health.application.outpatient.financial.registration.support.OutpatientRegistrationCancelBlockResult;
+import com.openhis.health.application.outpatient.financial.registration.support.OutpatientHistoricalFollowUpRegistrationGate;
 import com.openhis.health.application.outpatient.financial.registration.support.OutpatientRegistrationCancelGate;
 import com.openhis.health.application.outpatient.financial.registration.support.RegisterBenefitAreaHintHelper;
 import com.openhis.health.application.outpatient.financial.registration.support.RegisterContractMatchResolver;
@@ -213,6 +214,8 @@ public class OutpatientRegistrationAppService {
     private final ClinicRegistrationLoader clinicRegistrationLoader;
     /** 退号收费前置门禁（BR-REG-015；仅账单三态）。 */
     private final OutpatientRegistrationCancelGate outpatientRegistrationCancelGate;
+    /** 历史号复诊资格门禁（BR-REG-020）。 */
+    private final OutpatientHistoricalFollowUpRegistrationGate outpatientHistoricalFollowUpRegistrationGate;
     /** 账户写侧领域服务。 */
     private final AccountDomainService accountDomainService;
     /** 账户读侧查询服务。 */
@@ -577,6 +580,9 @@ public class OutpatientRegistrationAppService {
         if (contract == null || organization == null || healthcareService == null) {
             throw new BusinessException("REG-BIZ-404", "主数据失效，请刷新");
         }
+        // Gate：历史号复诊须同科室接诊后 72 小时内（BR-REG-020）；下拉可见，写侧拦截
+        outpatientHistoricalFollowUpRegistrationGate.assertEligibleForHistoricalFollowUpRegistration(
+            patientId, request.getOrganizationId(), healthcareService, occurredAt);
         String contractBusNo = null;
         if (StringUtils.isNotBlank(contract.getBusNo())) {
             contractBusNo = contract.getBusNo().trim();
@@ -891,6 +897,14 @@ public class OutpatientRegistrationAppService {
                 request.getClientScanResult(),
                 operatorId,
                 orgId);
+            // Gate：扫码后的终态勾稽；纯自费与医保混结均须明细合计=号费（BR-OPC-024 终态）
+            if (!InsuranceSettlementCashAlignSupport.isDetailSumMatchedChargeTotal(
+                settleOutpatientPaymentCommand.getPayReceiptDetails(),
+                registrationChargeLine.getTotalPrice())) {
+                throw new BusinessException(
+                    ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT,
+                    "挂号落账明细合计与收费项不一致");
+            }
             Long paymentId = paymentReconciliationSettleOrchestration.settleOutpatientPayment(settleOutpatientPaymentCommand);
             BatchChargeItemIdsCommand settleItemsCommand = outpatientRegistrationMapper.toSingleChargeItemBatchCommand(chargeItemId);
             // Cmd：收费人/收费时间写入 enterer_*（与 payment.enterer_id / bill_date 同源，BR-OPC-016）
@@ -2872,7 +2886,8 @@ public class OutpatientRegistrationAppService {
         List<OutpatientChargeConfirmExtensionOut> reused =
             this.tryReuseRegisterConfirmedInsuranceResults(request.getPaymentDraftId(), chrgBchnos);
         if (!reused.isEmpty()) {
-            return reused;
+            // 请求批次可能是子集：复用后仍须并入草稿上其它已 CONFIRMED 回执
+            return this.mergeRegisterConfirmedInsuranceResults(request.getPaymentDraftId(), reused);
         }
         // Pre：批次解析失败但草稿上仍有 CONFIRMED → 全量复用，禁止再当「无医保」只落现金
         if (chrgBchnos.isEmpty()) {
@@ -3190,9 +3205,45 @@ public class OutpatientRegistrationAppService {
             fallbackAccountCode,
             billDate,
             settleCommand.getOutcomeEnum());
+        // Gate：挂号医保落账与门诊收费同口径——自付=权威现金，全明细=收费项合计
+        this.assertRegisterInsuranceSettleDetailAligned(
+            merged, targetPatientCash, chargeItemTotal);
         settleCommand.setPayReceiptDetails(merged);
         settleCommand.setDisplayAmount(targetPatientCash);
         settleCommand.setTenderedAmount(targetPatientCash);
+    }
+
+    /**
+     * 挂号医保落账勾稽（与门诊收费 {@code assertInsuranceSettleDetailAligned} 同精神）。
+     *
+     * @param merged            已对齐明细
+     * @param targetPatientCash 权威个人现金
+     * @param chargeItemTotal   挂号收费项合计
+     * @throws BusinessException 勾稽失败
+     */
+    private void assertRegisterInsuranceSettleDetailAligned(
+        List<PaymentDetailItemCommand> merged,
+        BigDecimal targetPatientCash,
+        BigDecimal chargeItemTotal) {
+        BigDecimal patientSum = InsuranceSettlementCashAlignSupport.sumPatientLineAmounts(merged);
+        BigDecimal targetCash;
+        if (targetPatientCash == null) {
+            targetCash = MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO);
+        } else {
+            targetCash = MonetaryAmountSupport.scaleSettle(targetPatientCash);
+        }
+        // 自付渠道合计须等于权威现金，否则号费支付明细会污染日结渠道
+        if (patientSum.compareTo(targetCash) != 0) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT,
+                "挂号医保落账自付渠道合计与权威个人现金不一致");
+        }
+        // 全明细合计须等于收费项合计
+        if (!InsuranceSettlementCashAlignSupport.isDetailSumMatchedChargeTotal(merged, chargeItemTotal)) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT,
+                "挂号医保落账明细合计与收费项不一致");
+        }
     }
 
     /**

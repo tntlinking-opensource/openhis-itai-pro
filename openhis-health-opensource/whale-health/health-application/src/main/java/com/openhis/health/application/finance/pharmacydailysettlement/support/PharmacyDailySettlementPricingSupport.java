@@ -44,19 +44,21 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 药房日结进/售读价与日结利润汇总（DD §2；患者侧与发药报表同口径）。
+ * 药房日结进/售读价与售价合计汇总（DD §2；患者侧与发药报表同口径）。
  *
  * <p><strong>售价</strong>优先发放锚点 {@code ChargeItem} 行额（账单实收，不回放）；
- * 退药行常无自有 {@code dispense_id} 账单锚点，须按原正向发放补售价后再取负轧差
- * （与发退药记录 / 发药报表 {@link PharmacyDispenseRecordChargePricingAssembler} 同口径）。
- * 账单仍缺失（如住院取消执行逻辑删待结算行）时：回落批号 {@code LOT_NUMBER_PRICE}，
+ * 退药写路径<strong>不</strong>生成自身账单（设计），须按原正向发放补售价后再取负轧差
+ * （与发退药记录 / 发药报表 {@link PharmacyDispenseRecordChargePricingAssembler} 同口径；
+ * 同数量时总额绝对值与正向 {@code total_price} 一致）。
+ * 原正向仍不可得（如住院取消执行逻辑删待结算行）时：回落批号 {@code LOT_NUMBER_PRICE}，
  * 同批号调价回放与进价同构，按发药 {@code unitCode} 分支计行额；
  * <strong>禁止</strong>回落目录 {@code SALE}。
  * <strong>进价</strong>取批号 {@code LOT_NUMBER_COST}（包装锚），按发药 {@code unitCode} 分支计行额
  * （包装单位→包装价×数量；拆零→满包×包装价+零头单步，BR-MON-PKG-001）；
  * 仅当调价明细批号与发药批号一致时才做发药时刻回放；
  * <strong>禁止</strong>串批回放、禁止回落维护态 {@code PURCHASE}、禁止包装价÷ratio 得拆零价再×数量。
- * 头表 {@code total_income} = 售价合计 − 进价合计（与主区同口径，不读 payment）。</p>
+ * 头表 {@code total_income} = <strong>售价合计</strong>（与主区大类售价总额之和同口径，不读 payment；
+ * 不为售价−进价利润）。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -145,37 +147,7 @@ public class PharmacyDailySettlementPricingSupport {
     }
 
     /**
-     * 由进/售快照计算药房日结利润：售价合计 − 进价合计。
-     *
-     * <p>与大类主区同口径：品规已结算 2 位金额代数加总后再 {@link MonetaryAmountSupport#scaleSettle}；
-     * 退药行进/售为负，轧差后利润可为负。</p>
-     *
-     * @param snapshot 进/售汇总快照（可与主区大类/品规共用）
-     * @return 日结利润（结算 2 位）；快照为空时 0
-     */
-    public BigDecimal sumPurchaseSaleProfit(PharmacyDailySettlementPurchaseSaleSnapshot snapshot) {
-        if (snapshot == null || snapshot.productBuckets.isEmpty()) {
-            return BigDecimal.ZERO;
-        }
-        BigDecimal purchaseTotal = BigDecimal.ZERO;
-        BigDecimal saleTotal = BigDecimal.ZERO;
-        // Asm：按品规已结算进/售加总（与大类 = 品规之和一致）
-        for (ProductPurchaseSaleBucket bucket : snapshot.productBuckets.values()) {
-            if (bucket == null) {
-                continue;
-            }
-            if (bucket.getPurchaseAmount() != null) {
-                purchaseTotal = purchaseTotal.add(bucket.getPurchaseAmount());
-            }
-            if (bucket.getSaleAmount() != null) {
-                saleTotal = saleTotal.add(bucket.getSaleAmount());
-            }
-        }
-        return MonetaryAmountSupport.scaleSettle(saleTotal.subtract(purchaseTotal));
-    }
-
-    /**
-     * 按发药实体集合现算售价合计（审批列表/详情展示用）。
+     * 按发药实体集合现算售价合计（审批详情现算 / 提交未复用主区快照时）。
      *
      * @param dispenses     发药实体
      * @param inpatientMode 住院时收费态含待结算
@@ -190,28 +162,15 @@ public class PharmacyDailySettlementPricingSupport {
     }
 
     /**
-     * 按发药实体集合现算日结利润（提交勾选行 / 未复用主区快照时）。
+     * 按发药主键集合现算售价合计（提交落头表 {@code total_income}）。
      *
-     * @param dispenses     发药实体
-     * @param inpatientMode 住院时收费态含待结算
-     * @return 售价合计 − 进价合计；无发药时 0
-     */
-    public BigDecimal sumPurchaseSaleProfitFromDispenses(
-        List<MedicationDispense> dispenses,
-        boolean inpatientMode) {
-        PharmacyDailySettlementPurchaseSaleSnapshot snapshot =
-            this.buildPurchaseSaleSnapshot(dispenses, inpatientMode);
-        return this.sumPurchaseSaleProfit(snapshot);
-    }
-
-    /**
-     * 按发药主键集合现算日结利润（提交落头表 {@code total_income}）。
+     * <p>与预览 {@link #sumSaleAmount}、审批详情大类售价之和同口径；退药行售价为负，轧差后可为负。</p>
      *
      * @param selectedDispenseIds 本次勾选挂载发药主键
      * @param inpatientMode       住院时收费态含待结算
-     * @return 售价合计 − 进价合计；无勾选时 0
+     * @return 售价合计（结算 2 位）；无勾选时 0
      */
-    public BigDecimal sumPurchaseSaleProfitByDispenseIds(
+    public BigDecimal sumSaleAmountByDispenseIds(
         List<Long> selectedDispenseIds,
         boolean inpatientMode) {
         if (selectedDispenseIds == null || selectedDispenseIds.isEmpty()) {
@@ -219,7 +178,7 @@ public class PharmacyDailySettlementPricingSupport {
         }
         List<MedicationDispense> dispenses =
             this.medicationDispenseQueryService.listMedicationDispensesByIds(selectedDispenseIds);
-        return this.sumPurchaseSaleProfitFromDispenses(dispenses, inpatientMode);
+        return this.sumSaleAmountFromDispenses(dispenses, inpatientMode);
     }
 
     /**
@@ -377,11 +336,11 @@ public class PharmacyDailySettlementPricingSupport {
             dispenseIds, inpatientMode, saleUnitByDispenseId, saleTotalByDispenseId);
         // Pre：退药行常无自有 dispense 账单锚点，按原正向发放补售价（漏补则日结少扣退费）
         this.supplementMissingRefundSalePricing(slipRows, saleUnitByDispenseId, saleTotalByDispenseId);
-        // Pre：一次筛有调价品规并预取历史；无调价者后续只读批号进/售
+        // Pre：单独查调价品规+批号键；warm 时与本批 lotKeys 匹配后再拉历史
         HistoricalChargeItemPurchasePriceSupport.LotPriceResolveSession lotSession =
             this.historicalChargeItemPurchasePriceSupport.beginLotPriceSession(
                 TableNameConstants.MED_MEDICATION_DEFINITION, medicationIds);
-        // Pre：批号进/售一次预热，消灭逐 (品规,批号) 查库
+        // Pre：批号进/售一次预热，并仅对命中调价键的品规预取历史
         this.historicalChargeItemPurchasePriceSupport.warmCurrentLotPrices(lotSession, lotKeys);
         // Pre：品规展示一次装载 — 判 unitCode 是否包装 + 取 packageUnitRatio
         List<ProductDefinitionBatchLookup> productLookups = new ArrayList<>();

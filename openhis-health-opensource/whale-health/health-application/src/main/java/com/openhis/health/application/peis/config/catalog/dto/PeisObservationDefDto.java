@@ -39,4 +39,10 @@ public class PeisObservationDefDto {
     /** 执行科室机构主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
     private Long orgId;
+
+    /** 执行科室名称（列表展示 enrich）。 */
+    private String orgName;
+
+    /** 被多少个体检项目引用（未软删绑定，按 AD 去重）。 */
+    private Integer linkedActivityCount;
 }

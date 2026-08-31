@@ -8,18 +8,31 @@ import {
   formatMedicationDoseDisplay,
   formatMedicationDoseSummaryLine,
 } from '#/utils/doctor-station/medication-dose-display';
+import { parseTcmCollapsedHerbDisplay } from '#/utils/tcm-prescription-display';
 
 defineOptions({ name: 'AdviceOrderDisplayCell' });
 
-const props = defineProps<{
-  /** 申请单整单号（有值时在部位/扩展行右侧展示 Tag） */
-  applyFormNo?: null | string;
-  content?: null | string;
-  dosageText?: null | string;
-  extension?: null | string;
-  groupItems?: AdviceDrugLineSource[] | null;
-  rowKey: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    /** 申请单整单号（有值时在部位/扩展行右侧展示 Tag） */
+    applyFormNo?: null | string;
+    content?: null | string;
+    dosageText?: null | string;
+    extension?: null | string;
+    groupItems?: AdviceDrugLineSource[] | null;
+    rowKey: string;
+    /** 中药方折叠行：药名+剂量改流式网格，避免横排 nowrap 挤成竖字 */
+    tcmFlag?: boolean;
+  }>(),
+  {
+    applyFormNo: undefined,
+    content: undefined,
+    dosageText: undefined,
+    extension: undefined,
+    groupItems: undefined,
+    tcmFlag: false,
+  },
+);
 
 /**
  * 与医嘱编辑保存项展示字段对齐（仅声明本组件用到的键；调用方传入完整 DTO 亦可）。
@@ -130,12 +143,29 @@ const dosageTrim = computed(() => str(props.dosageText));
 const extensionTrim = computed(() => str(props.extension));
 const applyFormNoTrim = computed(() => str(props.applyFormNo));
 
+/** 中药折叠行：空格并列药名/剂量 → 配对单元；付数拆到扩展行旁 */
+const tcmCollapsed = computed(() => {
+  if (props.tcmFlag !== true) {
+    return null;
+  }
+  return parseTcmCollapsedHerbDisplay(props.content, props.dosageText);
+});
+
+const tcmHerbPairs = computed(() => tcmCollapsed.value?.pairs ?? []);
+
+const tcmDoseCountText = computed(() => tcmCollapsed.value?.doseCountText ?? '');
+
+const tcmDosageFallback = computed(() => tcmCollapsed.value?.dosageWithoutCount ?? '');
+
 const showFallbackMain = computed(
   () => contentTrim.value.length > 0 || dosageTrim.value.length > 0,
 );
 
 const showExtensionRow = computed(
-  () => extensionTrim.value.length > 0 || applyFormNoTrim.value.length > 0,
+  () =>
+    extensionTrim.value.length > 0 ||
+    applyFormNoTrim.value.length > 0 ||
+    tcmDoseCountText.value.length > 0,
 );
 
 /** 无组或空数组时交给 DrugOrderGroupCell #fallback */
@@ -166,11 +196,31 @@ const shellItems = computed(() => {
       </div>
     </template>
     <template #fallback>
-      <div v-if="showFallbackMain" class="advice-order-line-row">
+      <!-- 中药方：药名+剂量流式网格，避免横排 nowrap 挤成逐字竖排 -->
+      <template v-if="tcmFlag">
+        <div v-if="tcmHerbPairs.length > 0" class="tcm-herb-grid">
+          <span
+            v-for="(pair, index) in tcmHerbPairs"
+            :key="`${rowKey}-tcm-${index}`"
+            class="tcm-herb-chip"
+          >
+            <span class="tcm-herb-name">{{ pair.name }}</span>
+            <span v-if="pair.dose" class="tcm-herb-dose">{{ pair.dose }}</span>
+          </span>
+        </div>
+        <div v-else-if="showFallbackMain" class="advice-order-tcm-stack">
+          <span v-if="contentTrim" class="drug-main-text">{{ contentTrim }}</span>
+          <span v-if="tcmDosageFallback" class="group-drug-dose group-drug-dose--wrap">
+            {{ tcmDosageFallback }}
+          </span>
+        </div>
+      </template>
+      <div v-else-if="showFallbackMain" class="advice-order-line-row">
         <span v-if="contentTrim" class="drug-main-text">{{ contentTrim }}</span>
         <span v-if="dosageTrim" class="group-drug-dose">{{ dosageTrim }}</span>
       </div>
       <div v-if="showExtensionRow" class="normal-drug-shared advice-order-extension-row">
+        <span v-if="tcmDoseCountText" class="advice-order-tcm-fu">{{ tcmDoseCountText }}</span>
         <span v-if="extensionTrim" class="advice-order-extension-text">{{ extensionTrim }}</span>
         <ElTag
           v-if="applyFormNoTrim"
@@ -207,6 +257,57 @@ const shellItems = computed(() => {
   flex: 0 0 auto;
   text-align: right;
   white-space: nowrap;
+}
+
+/* 中药方：药名与剂量同芯片，自动换行，避免长剂量 nowrap 挤扁药名 */
+.tcm-herb-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  width: 100%;
+  min-width: 0;
+  line-height: 1.45;
+}
+
+.tcm-herb-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+.tcm-herb-name {
+  color: var(--el-text-color-primary);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.tcm-herb-dose {
+  color: var(--el-text-color-regular);
+  font-size: 12px;
+}
+
+/* 配对失败时纵向堆叠，剂量允许换行 */
+.advice-order-tcm-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+}
+
+.advice-order-tcm-stack .group-drug-dose--wrap {
+  flex: none;
+  text-align: left;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.advice-order-tcm-fu {
+  flex: 0 0 auto;
+  color: var(--el-text-color-primary);
+  font-weight: 600;
 }
 
 /* 部位/样本等扩展文案居左，申请单号 Tag 居右 */

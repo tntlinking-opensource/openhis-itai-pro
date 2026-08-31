@@ -26,6 +26,7 @@ import com.openhis.health.domain.administration.organization.entity.Organization
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
+import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseReportSummaryBundle;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseReportSummaryRow;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseSlipQueryModel;
 import com.openhis.health.domain.medication.medicationdispense.query.MedicationDispenseRecordPageQuery;
@@ -37,6 +38,7 @@ import com.openhis.health.domain.share.constants.PharmacyDispenseRecordConstants
 import com.openhis.health.domain.share.constants.PharmacyDispenseRecordExportConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.DeptIssueReportLineQueryModel;
+import com.openhis.health.domain.workflow.supplyrequest.queries.model.DeptIssueReportSummaryBundle;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.DeptIssueReportSummaryRow;
 import com.openhis.health.domain.workflow.supplyrequest.query.DeptIssueReportPageQuery;
 import com.openhis.whale.core.application.dto.OptionDto;
@@ -185,17 +187,18 @@ public class OutpatientMedicationDispenseReportAppService {
                     request.getSummaryDimension());
             List<MedicationDispenseReportSummaryRow> patientRows = List.of();
             List<DeptIssueReportSummaryRow> deptRows = List.of();
-            MedicationDispenseRecordPageQuery recordQuery = null;
-            DeptIssueReportPageQuery deptQuery = null;
+            List<MedicationDispenseSlipQueryModel> patientSlips = List.of();
+            List<DeptIssueReportLineQueryModel> deptLines = List.of();
+            Map<Long, Long> organizationIdByPurposeLocationId = null;
             Map<Long, String> categoryCodeByMedicationId = null;
             // Pre：科室维仅领用侧有组织主键；类型维仅患者侧有 category；按来源+维度决定查哪一路
             boolean queryPatient = this.outpatientMedicationDispenseReportQuerySupport.includePatientDispense(sourceCode)
                 && !MedicationDispenseReportConstants.SUMMARY_DIMENSION_DEPARTMENT.equals(summaryDimension);
             boolean queryDept = this.outpatientMedicationDispenseReportQuerySupport.includeDeptIssue(sourceCode)
                 && !MedicationDispenseReportConstants.SUMMARY_DIMENSION_CATEGORY.equals(summaryDimension);
-            // 患者侧：发放净数量分桶（金额由明细 enrich 后汇总）
+            // 患者侧：一次扫描净数量分桶 + slip（金额复用 slip，禁止二次 findAll）
             if (queryPatient) {
-                recordQuery =
+                MedicationDispenseRecordPageQuery recordQuery =
                     this.outpatientMedicationDispenseReportQuerySupport.buildPatientRecordQuery(
                         request.getDispenseDateFrom(),
                         request.getDispenseDateTo(),
@@ -212,14 +215,23 @@ public class OutpatientMedicationDispenseReportAppService {
                 MedicationDispenseReportSummaryQuery summaryQuery =
                     this.outpatientMedicationDispenseReportQuerySupport.buildPatientSummaryQuery(
                         recordQuery, summaryDimension);
-                patientRows = this.outpatientMedicationDispenseReportQuerySupport.summarizePatient(summaryQuery);
+                MedicationDispenseReportSummaryBundle patientBundle =
+                    this.outpatientMedicationDispenseReportQuerySupport.summarizePatientWithSlips(summaryQuery);
+                patientRows = patientBundle.getSummaryRows();
+                patientSlips = patientBundle.getSlipRows();
+                // CATEGORY：领域按 ITEM 分桶；用同窗 slip 全量解析类型后重分桶（禁止 EXPORT 抽样漏品规）
                 if (MedicationDispenseReportConstants.SUMMARY_DIMENSION_CATEGORY.equals(summaryDimension)) {
-                    categoryCodeByMedicationId = summaryQuery.getCategoryCodeByMedicationId();
+                    categoryCodeByMedicationId =
+                        this.outpatientMedicationDispenseReportQuerySupport.resolveCategoryCodesFromSlips(
+                            patientSlips);
+                    patientRows =
+                        this.outpatientMedicationDispenseReportQuerySupport.rebucketItemSummaryRowsToCategory(
+                            patientRows, categoryCodeByMedicationId);
                 }
             }
-            // 领用侧：已同意 DEPT_ISSUE/RETURN 药品行净数量（与患者侧同维键可合并）
+            // 领用侧：一次扫描净数量 + 事实行
             if (queryDept) {
-                deptQuery =
+                DeptIssueReportPageQuery deptQuery =
                     this.outpatientMedicationDispenseReportQuerySupport.buildDeptIssueQuery(
                         request.getDispenseDateFrom(),
                         request.getDispenseDateTo(),
@@ -230,7 +242,11 @@ public class OutpatientMedicationDispenseReportAppService {
                         summaryDimension,
                         1,
                         PharmacyDispenseRecordExportConstants.EXPORT_MAX_ROWS);
-                deptRows = this.outpatientMedicationDispenseReportQuerySupport.summarizeDept(deptQuery);
+                DeptIssueReportSummaryBundle deptBundle =
+                    this.outpatientMedicationDispenseReportQuerySupport.summarizeDeptWithLines(deptQuery);
+                deptRows = deptBundle.getSummaryRows();
+                deptLines = deptBundle.getLineRows();
+                organizationIdByPurposeLocationId = deptQuery.getOrganizationIdByPurposeLocationId();
             }
             // Asm：同 dimensionKey 净数量相加并回填维度展示名
             List<OutpatientMedicationDispenseSummaryRowDto> rows =
@@ -238,12 +254,11 @@ public class OutpatientMedicationDispenseReportAppService {
                     patientRows, deptRows, summaryDimension);
             this.outpatientMedicationDispenseReportQuerySupport.enrichSummaryPurchaseSaleAmounts(
                 rows,
-                recordQuery,
-                deptQuery,
-                queryPatient,
-                queryDept,
+                patientSlips,
+                deptLines,
                 summaryDimension,
-                categoryCodeByMedicationId);
+                categoryCodeByMedicationId,
+                organizationIdByPurposeLocationId);
             BigDecimal totalQuantity = BigDecimal.ZERO;
             BigDecimal purchaseTotalAmount = null;
             BigDecimal saleTotalAmount = null;
@@ -387,8 +402,8 @@ public class OutpatientMedicationDispenseReportAppService {
             if (presentationMode == null) {
                 presentationMode = MedicationDispenseReportConstants.PRESENTATION_MODE_DETAIL;
             }
-            List<OutpatientMedicationDispenseExportRowDto> exportRows = new ArrayList<>();
             boolean truncated = false;
+            List<OutpatientMedicationDispenseExportRowDto> exportRows = new ArrayList<>();
             // Pre：按当前 Tab 走汇总全量或明细上限列表（BR-RPT-OMD-008）
             if (MedicationDispenseReportConstants.PRESENTATION_MODE_SUMMARY.equals(presentationMode)) {
                 SummarizeOutpatientMedicationDispenseReportRequest summarizeRequest =
@@ -405,9 +420,9 @@ public class OutpatientMedicationDispenseReportAppService {
                 summarizeRequest.setSourceCode(request.getSourceCode());
                 SummarizeOutpatientMedicationDispenseReportResponse summaryResponse =
                     this.summarizeOutpatientMedicationDispenseReport(summarizeRequest);
-                // 汇总导出行：维度名 + 净量净额
                 for (OutpatientMedicationDispenseSummaryRowDto row : summaryResponse.getRows()) {
-                    exportRows.add(this.outpatientMedicationDispenseReportMapper.toExportRowFromSummary(row));
+                    exportRows.add(
+                        this.outpatientMedicationDispenseReportMapper.toExportRowFromSummary(row));
                 }
             } else {
                 // 明细导出：两路合并后截断至 EXPORT_MAX_ROWS
@@ -415,14 +430,16 @@ public class OutpatientMedicationDispenseReportAppService {
                     this.loadDetailRowsForExport(request);
                 truncated = detailRows.size() >= PharmacyDispenseRecordExportConstants.EXPORT_MAX_ROWS;
                 for (OutpatientMedicationDispenseDetailRowDto row : detailRows) {
-                    exportRows.add(this.outpatientMedicationDispenseReportMapper.toExportRowFromDetail(row));
+                    exportRows.add(
+                        this.outpatientMedicationDispenseReportMapper.toExportRowFromDetail(row));
                 }
             }
-            // Asm：生成 xlsx
+            // Asm：并集导出行 + 前端 exportColumns 裁剪列头
             byte[] body = AnnotatedExcelExporter.exportToXlsxBytes(
                 OutpatientMedicationDispenseReportConstants.EXPORT_SHEET_NAME,
                 exportRows,
-                OutpatientMedicationDispenseExportRowDto.class);
+                OutpatientMedicationDispenseExportRowDto.class,
+                request.getExportColumns());
             return this.outpatientMedicationDispenseReportMapper.toExportResponse(
                 body, exportRows.size(), truncated);
         } catch (BusinessException ex) {

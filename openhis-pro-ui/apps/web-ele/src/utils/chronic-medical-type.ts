@@ -4,6 +4,28 @@
  */
 const CHRONIC_MEDICAL_TYPE_CODES = new Set(['14', '140104', '140201']);
 
+/** 普通门诊（YbMedType code=11）；保存缺省与空码回落一致 */
+export const GENERAL_OUTPATIENT_MEDICAL_TYPE_CODE = '11';
+
+export interface OutpatientDiagnosisMedicalTypeOption {
+  label: string;
+  value: string;
+}
+
+/** 门诊诊断类型下拉兜底（后端 medicalTypeOptions 缺失时） */
+export const FALLBACK_OUTPATIENT_DIAGNOSIS_MEDICAL_TYPE_OPTIONS: OutpatientDiagnosisMedicalTypeOption[] =
+  [
+    { value: GENERAL_OUTPATIENT_MEDICAL_TYPE_CODE, label: '普通门诊' },
+    { value: '13', label: '急诊' },
+    { value: '14', label: '门诊慢特病' },
+    { value: '140104', label: '门诊慢病' },
+    { value: '140201', label: '门诊特病' },
+    { value: '16', label: '中医特色门诊' },
+    { value: '15', label: '特药' },
+    { value: '51', label: '生育门诊' },
+    { value: '81', label: '意外伤害门诊' },
+  ];
+
 /** 备案导入允许的二级医疗类别 */
 const OPSP_IMPORT_MEDICAL_TYPE_CODES = new Set(['140104', '140201']);
 

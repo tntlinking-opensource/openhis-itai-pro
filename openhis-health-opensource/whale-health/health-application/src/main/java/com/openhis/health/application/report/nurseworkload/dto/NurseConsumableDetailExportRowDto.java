@@ -45,8 +45,8 @@ public class NurseConsumableDetailExportRowDto {
     @Excel(name = "业务时间", sort = 6)
     private String businessTimeText;
 
-    /** 数量。 */
-    @Excel(name = "数量", sort = 7)
+    /** 数量（导出整数）。 */
+    @Excel(name = "数量", sort = 7, scale = 0)
     private BigDecimal quantity;
 
     /** 单位展示名。 */

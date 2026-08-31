@@ -3,7 +3,7 @@ import type {
   PharmacyDailySettlementProductRowDto,
 } from '#/api/outpatient/pharmacy-daily-settlement';
 
-import { invPrintAmountText, invPrintStr } from './inv-common';
+import { invPrintAmountText, invPrintPurchaseMoneyText, invPrintStr } from './inv-common';
 
 /** 大类汇总行（模板 HTML 一行卡片读 categoryRows） */
 export interface PharmacyDailySettlementCategoryPrintRow {
@@ -54,9 +54,17 @@ export interface PharmacyDailySettlementPrintSource {
   productRows?: PharmacyDailySettlementProductRowDto[];
 }
 
-/** 金额空值展示为 0.00（与页面汇总口径一致） */
+/** 金额空值展示为 0.00（售价/数量；与页面汇总口径一致） */
 function moneyText(value: null | number | string | undefined): string {
   return invPrintAmountText(value) || '0.00';
+}
+
+/** 进价侧金额空值展示为 0.00（中药可至三位） */
+function purchaseMoneyText(
+  value: null | number | string | undefined,
+  categoryCode?: unknown,
+): string {
+  return invPrintPurchaseMoneyText(value, categoryCode) || '0.00';
 }
 
 /** 大类行 → 打印行 */
@@ -65,7 +73,7 @@ function mapCategoryRow(
 ): PharmacyDailySettlementCategoryPrintRow {
   return {
     categoryLabel: invPrintStr(row.categoryLabel) || '—',
-    purchaseAmountText: moneyText(row.purchaseAmount),
+    purchaseAmountText: purchaseMoneyText(row.purchaseAmount, row.categoryCode),
     saleAmountText: moneyText(row.saleAmount),
   };
 }
@@ -80,9 +88,9 @@ function mapProductRow(
     specification: invPrintStr(row.specification),
     manufacturer: invPrintStr(row.manufacturer),
     netQuantityText: moneyText(row.netQuantity),
-    purchaseUnitPriceText: moneyText(row.purchaseUnitPrice),
+    purchaseUnitPriceText: purchaseMoneyText(row.purchaseUnitPrice),
     saleUnitPriceText: moneyText(row.saleUnitPrice),
-    purchaseAmountText: moneyText(row.purchaseAmount),
+    purchaseAmountText: purchaseMoneyText(row.purchaseAmount),
     saleAmountText: moneyText(row.saleAmount),
   };
 }

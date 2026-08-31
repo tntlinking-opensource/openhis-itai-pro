@@ -4,6 +4,7 @@
  */
 package com.openhis.health.application.outpatient.pharmacy.dispenserecord.dto;
 
+import com.openhis.health.domain.share.constants.ChargeItemAmountScaleConstants;
 import com.openhis.whale.core.application.annotation.Excel;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -59,20 +60,20 @@ public class PharmacyDispenseRecordExportRowDto {
     @Excel(name = "规格", sort = 10)
     private String medicationSpec;
 
-    /** 数量（绝对值）。 */
-    @Excel(name = "数量", sort = 11)
+    /** 数量（绝对值；导出整数）。 */
+    @Excel(name = "数量", sort = 11, scale = 0)
     private BigDecimal quantity;
 
     /** 单位展示。 */
     @Excel(name = "单位", sort = 12)
     private String unitText;
 
-    /** 单价。 */
-    @Excel(name = "单价", sort = 13)
+    /** 单价（展示 2 位）。 */
+    @Excel(name = "单价", sort = 13, scale = ChargeItemAmountScaleConstants.CHARGE_MONETARY_DISPLAY_SCALE)
     private BigDecimal unitPrice;
 
-    /** 金额（退药为负）。 */
-    @Excel(name = "金额", sort = 14)
+    /** 金额（退药为负；展示 2 位）。 */
+    @Excel(name = "金额", sort = 14, scale = ChargeItemAmountScaleConstants.CHARGE_MONETARY_DISPLAY_SCALE)
     private BigDecimal totalAmount;
 
     /** 批号。 */

@@ -316,6 +316,7 @@ async function loadFormData() {
     } else {
       originalData.value = {};
       await formApi.resetForm();
+      formApi.setFieldValue('displayOrder', 0);
       updateHospitalFieldVisibility(undefined);
     }
   }
@@ -517,6 +518,7 @@ const formConfig = reactive({
       component: 'InputNumber',
       fieldName: 'displayOrder',
       label: '显示顺序',
+      defaultValue: 0,
       componentProps: {
         min: 0,
         controlsPosition: 'right',

@@ -6,7 +6,7 @@ import type {
   SaveDoctorStationAdviceDraftBatchResponse,
 } from '#/api/doctor-station/advice.types';
 
-import { httpSaveDoctorStationAdviceDraftBatch } from '#/api/doctor-station/advice.http';
+import { saveDoctorStationAdviceDraftBatchWithSkinTestCrossLotConfirm } from './advice-skin-test-cross-lot-confirm';
 
 import { saveAdviceDraftBatchWithBindResolution } from './advice-draft-bind.service';
 
@@ -55,7 +55,7 @@ export async function saveAdviceDraftBatchDirect(
   options: SaveAdviceDraftBatchOptions,
 ): Promise<SaveDoctorStationAdviceDraftBatchResponse> {
   const { encounterId, patientId, lines, pricingSourceCode } = options;
-  return httpSaveDoctorStationAdviceDraftBatch({
+  return saveDoctorStationAdviceDraftBatchWithSkinTestCrossLotConfirm({
     encounterId,
     patientId,
     lines,

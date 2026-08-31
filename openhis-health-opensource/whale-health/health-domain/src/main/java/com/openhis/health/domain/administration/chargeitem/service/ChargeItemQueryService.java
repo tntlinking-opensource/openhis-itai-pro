@@ -13,6 +13,7 @@ import com.openhis.health.domain.administration.chargeitem.query.OutpatientFeeDe
 import com.openhis.health.domain.administration.chargeitem.query.OutpatientFeeDetailEncounterBlockQueryModel;
 import com.openhis.health.domain.administration.chargeitem.query.OutpatientFeeDetailPageQuery;
 import com.openhis.health.domain.administration.chargeitem.query.FeeDetailFinTypeSummaryQueryModel;
+import com.openhis.health.domain.administration.chargeitem.query.KeyMedicationUsageAggQueryModel;
 import com.openhis.health.domain.administration.chargeitem.query.PractitionerWorkloadChargeRowQueryModel;
 import com.openhis.health.domain.administration.chargeitem.query.PractitionerWorkloadFinTypeOrgSummaryQueryModel;
 import com.openhis.health.domain.administration.chargeitem.query.PractitionerWorkloadOverviewSummaryQueryModel;
@@ -183,6 +184,50 @@ public class ChargeItemQueryService {
         List<ChargeItem> rows = repository.findAll(specification);
         LinkedHashSet<Long> serviceIds = new LinkedHashSet<>();
         // Loop：收费明细 → 药品申请主键去重，供处方查询 id IN
+        for (ChargeItem row : rows) {
+            if (row != null && row.getServiceId() != null) {
+                serviceIds.add(row.getServiceId());
+            }
+        }
+        return new ArrayList<>(serviceIds);
+    }
+
+    /**
+     * 按收费状态 + service_table + service_id 范围解析去重 service_id（窗口化，避免租户全量状态扫描）。
+     *
+     * <p>主键过多时按 {@link GeneralSharedConstants#ID_IN_QUERY_CHUNK_SIZE} 分批 IN。</p>
+     *
+     * @param statusEnum     收费状态 code
+     * @param serviceTable   服务表名
+     * @param serviceIdScope 服务主键范围（药品申请 id）；空则空列表
+     * @return 去重 service_id
+     */
+    public List<Long> listDistinctServiceIdsByStatusEnumAndServiceTableAndServiceIdIn(
+        String statusEnum,
+        String serviceTable,
+        Collection<Long> serviceIdScope) {
+        String normalizedStatus = StringUtils.trimToNull(statusEnum);
+        String normalizedTable = StringUtils.trimToNull(serviceTable);
+        if (normalizedStatus == null || normalizedTable == null) {
+            return List.of();
+        }
+        List<Long> scopeIds = IdInQueryChunkSupport.distinctNonNullIds(serviceIdScope);
+        if (scopeIds.isEmpty()) {
+            return List.of();
+        }
+        List<ChargeItem> rows = IdInQueryChunkSupport.loadByIdInChunks(
+            scopeIds,
+            chunkIds -> {
+                Specification<ChargeItem> specification = (root, criteriaQuery, cb) -> cb.and(
+                    cb.isFalse(root.get(FieldNameConstants.IS_DELETED)),
+                    cb.equal(root.get(FieldNameConstants.STATUS_ENUM), normalizedStatus),
+                    cb.equal(root.get(FieldNameConstants.SERVICE_TABLE), normalizedTable),
+                    cb.isNotNull(root.get(FieldNameConstants.SERVICE_ID)),
+                    root.get(FieldNameConstants.SERVICE_ID).in(chunkIds));
+                return repository.findAll(specification);
+            });
+        LinkedHashSet<Long> serviceIds = new LinkedHashSet<>();
+        // Loop：窗口内收费行 → service_id 去重
         for (ChargeItem row : rows) {
             if (row != null && row.getServiceId() != null) {
                 serviceIds.add(row.getServiceId());
@@ -1471,14 +1516,14 @@ public class ChargeItemQueryService {
     // -------------------------------------------------------------------------
 
     /**
-     * 门诊费用明细：补全 payment {@code charge_item_ids} 快照截断漏挂的已结/已退行（DM-ADM-011 §6.2.25 扩展）。
+     * 门诊费用明细：补全 payment {@code charge_item_ids} 快照截断漏挂的已结/退费中/已退行（DM-ADM-011 §6.2.25 扩展）。
      *
      * <p>当 payment 快照 JSON 截断时，Support 按就诊 + 状态 + 收费人 SQL 补全候选行（AS-OP-FIN-005 **BR-OP-FDT-009**）。
      * 收费人匹配 {@code enterer_id}（与 **BR-OPC-016** 结算写入口径一致）。</p>
      *
      * @param encounterIds          bill_date 筛选命中 payment 涉及的就诊主键
      * @param excludedChargeItemIds 已由快照解析的主键；空集合表示不排除
-     * @param allowedStatusCodes    收退 Tab 映射的状态白名单（SETTLED / REFUNDED）
+     * @param allowedStatusCodes    收退 Tab 映射的状态白名单（SETTLED / REFUNDING / REFUNDED）
      * @param entererMatchIds       收费人白名单；非空时优先于 {@code cashierId}
      * @param cashierId             单值收费人；{@code entererMatchIds} 为空时生效
      * @return 补全候选收费明细；无命中时空列表
@@ -2511,9 +2556,8 @@ public class ChargeItemQueryService {
      */
     public List<FeeDetailFinTypeSummaryQueryModel> summarizeOutpatientFeeDetailByFinType(
         OutpatientFeeDetailPageQuery query) {
-        // Pre：复用门诊费用明细候选行装载
-        // Asm：按 definition 分桶（见 summarizeFeeDetailRowsByDefinition）
-        return this.summarizeFeeDetailRowsByDefinition(this.listOutpatientFeeDetailChargeRows(query));
+        // Pre：按 payment 链路轻量分桶，禁止默认 FIN_TYPE 路径物化 cachedChargeRows
+        return this.summarizeFeeDetailRowsByDefinitionFromPaymentLinks(query);
     }
 
     /**
@@ -2540,8 +2584,204 @@ public class ChargeItemQueryService {
      */
     public List<FeeDetailFinTypeSummaryQueryModel> summarizeInpatientFeeDetailByFinType(
         OutpatientFeeDetailPageQuery query) {
-        // Pre/Asm：与门诊 fin_type 汇总同实现，仅 scope 不同
-        return this.summarizeFeeDetailRowsByDefinition(this.listOutpatientFeeDetailChargeRows(query));
+        // Pre/Asm：与门诊同轻量链路分桶，仅 scope 不同
+        return this.summarizeFeeDetailRowsByDefinitionFromPaymentLinks(query);
+    }
+
+    /**
+     * 重点药品使用统计：费用明细 scope 内按药典 productId 汇总净人次与售价净额（DM-ADM-011 §6.2.35；AS-RPT-011）。
+     *
+     * <p>仅保留 {@code productTable = med_medication_definition} 且 {@code productId} 落在入参集合的行；
+     * 售价带收退符号代数和；净人次 = 按就诊汇总净售价 &gt; 0 的 distinct encounter。药典主键须由应用层预解析，
+     * 本方法禁止 JOIN 药典表。{@code productDefinitionIds} 空则直接返回 0。</p>
+     *
+     * @param query                 已写入费用明细 payment/账单 scope；可复用 {@code cachedChargeRows}
+     * @param productDefinitionIds  重点药类型对应的药典主键集合
+     * @return 汇总读模型；无命中时人次 0、金额 0
+     */
+    public KeyMedicationUsageAggQueryModel summarizeKeyMedicationUsage(
+        OutpatientFeeDetailPageQuery query,
+        Collection<Long> productDefinitionIds) {
+        KeyMedicationUsageAggQueryModel result = new KeyMedicationUsageAggQueryModel();
+        result.setEncounterNetCount(0L);
+        result.setSaleAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
+        // Gate：无 query 或无药典主键 → 全 0，禁止为 0 结果再物化候选行
+        if (query == null || productDefinitionIds == null || productDefinitionIds.isEmpty()) {
+            return result;
+        }
+        Set<Long> productIdSet = new HashSet<>();
+        // Loop：去空主键，供 O(1) 命中判定
+        for (Long productDefinitionId : productDefinitionIds) {
+            if (productDefinitionId != null) {
+                productIdSet.add(productDefinitionId);
+            }
+        }
+        if (productIdSet.isEmpty()) {
+            // Gate：去空后仍无主键 → 全 0
+            return result;
+        }
+        // Pre：复用费用明细候选行（同就诊类型多次重点药类型可共享缓存）
+        List<OutpatientFeeDetailChargeRowQueryModel> rows = this.listOutpatientFeeDetailChargeRows(query);
+        Map<Long, BigDecimal> netSaleByEncounterId = new LinkedHashMap<>();
+        BigDecimal saleSum = BigDecimal.ZERO;
+        // Loop：筛药典产品行并按就诊累计带符号售价
+        for (OutpatientFeeDetailChargeRowQueryModel row : rows) {
+            // 脏行跳过
+            if (row == null || row.getChargeItem() == null) {
+                continue;
+            }
+            ChargeItem chargeItem = row.getChargeItem();
+            // 仅药典产品行（BR-RPT-KDU-005）
+            if (!TableNameConstants.MED_MEDICATION_DEFINITION.equals(chargeItem.getProductTable())) {
+                continue;
+            }
+            Long productId = chargeItem.getProductId();
+            // 非本重点药类型目录主键跳过
+            if (productId == null || !productIdSet.contains(productId)) {
+                continue;
+            }
+            BigDecimal signedSale = this.applyPractitionerWorkloadPaymentSign(
+                this.nullToZero(chargeItem.getTotalPrice()),
+                row.getPaymentContext());
+            saleSum = saleSum.add(signedSale);
+            Long encounterId = chargeItem.getEncounterId();
+            // 无就诊锚点的脏行仍计入金额，但不参与人次
+            if (encounterId == null) {
+                continue;
+            }
+            BigDecimal encounterNet = netSaleByEncounterId.get(encounterId);
+            // 首次命中该就诊时从 0 起累加
+            if (encounterNet == null) {
+                encounterNet = BigDecimal.ZERO;
+            }
+            netSaleByEncounterId.put(encounterId, encounterNet.add(signedSale));
+        }
+        long encounterNetCount = 0L;
+        // Loop：净售价 > 0 才计 1 人次（BR-RPT-KDU-003 方案 A）
+        for (BigDecimal encounterNet : netSaleByEncounterId.values()) {
+            // 全退或净额为 0 的就诊不计人次
+            if (encounterNet != null && encounterNet.compareTo(BigDecimal.ZERO) > 0) {
+                encounterNetCount = encounterNetCount + 1L;
+            }
+        }
+        // Asm：结算刻度售价合计
+        result.setEncounterNetCount(encounterNetCount);
+        result.setSaleAmountTotal(MonetaryAmountSupport.scaleSettle(saleSum));
+        return result;
+    }
+
+    /**
+     * 重点药品矩阵：一次遍历费用明细候选行，按多套 productId 集合同时分桶（AS-RPT-011）。
+     *
+     * <p>同一就诊类型下多重点药类型禁止重复调用 {@link #listOutpatientFeeDetailChargeRows}；
+     * 净人次/售价口径与 {@link #summarizeKeyMedicationUsage} 一致。</p>
+     *
+     * @param query                 已写入费用明细 scope
+     * @param productIdsByBucketKey 分桶键（重点药类型 code）→ 药典主键集合
+     * @return 分桶键 → 汇总读模型；缺失键补 0
+     */
+    public Map<String, KeyMedicationUsageAggQueryModel> summarizeKeyMedicationUsageMatrix(
+        OutpatientFeeDetailPageQuery query,
+        Map<String, ? extends Collection<Long>> productIdsByBucketKey) {
+        Map<String, KeyMedicationUsageAggQueryModel> resultByKey = new LinkedHashMap<>();
+        if (productIdsByBucketKey == null || productIdsByBucketKey.isEmpty()) {
+            return resultByKey;
+        }
+        Map<String, Set<Long>> productIdSetByKey = new LinkedHashMap<>();
+        Map<String, Map<Long, BigDecimal>> netSaleByEncounterByKey = new LinkedHashMap<>();
+        Map<String, BigDecimal> saleSumByKey = new LinkedHashMap<>();
+        // Pre：为每个分桶初始化累加器与 O(1) 产品命中集合
+        for (Map.Entry<String, ? extends Collection<Long>> entry : productIdsByBucketKey.entrySet()) {
+            String bucketKey = entry.getKey();
+            if (StringUtils.isEmpty(bucketKey)) {
+                continue;
+            }
+            resultByKey.put(bucketKey, this.emptyKeyMedicationUsageAgg());
+            Set<Long> productIdSet = new HashSet<>();
+            Collection<Long> productIds = entry.getValue();
+            if (productIds != null) {
+                for (Long productId : productIds) {
+                    if (productId != null) {
+                        productIdSet.add(productId);
+                    }
+                }
+            }
+            productIdSetByKey.put(bucketKey, productIdSet);
+            netSaleByEncounterByKey.put(bucketKey, new LinkedHashMap<>());
+            saleSumByKey.put(bucketKey, BigDecimal.ZERO);
+        }
+        if (resultByKey.isEmpty()) {
+            return resultByKey;
+        }
+        // Gate：无 query 时各桶保持 0
+        if (query == null) {
+            return resultByKey;
+        }
+        // Pre：候选行只物化一次
+        List<OutpatientFeeDetailChargeRowQueryModel> rows = this.listOutpatientFeeDetailChargeRows(query);
+        // Loop：药典产品行按桶累加带符号售价与就诊净额
+        for (OutpatientFeeDetailChargeRowQueryModel row : rows) {
+            if (row == null || row.getChargeItem() == null) {
+                continue;
+            }
+            ChargeItem chargeItem = row.getChargeItem();
+            if (!TableNameConstants.MED_MEDICATION_DEFINITION.equals(chargeItem.getProductTable())) {
+                continue;
+            }
+            Long productId = chargeItem.getProductId();
+            if (productId == null) {
+                continue;
+            }
+            BigDecimal signedSale = this.applyPractitionerWorkloadPaymentSign(
+                this.nullToZero(chargeItem.getTotalPrice()),
+                row.getPaymentContext());
+            Long encounterId = chargeItem.getEncounterId();
+            for (Map.Entry<String, Set<Long>> bucketEntry : productIdSetByKey.entrySet()) {
+                String bucketKey = bucketEntry.getKey();
+                Set<Long> allowedProductIds = bucketEntry.getValue();
+                if (allowedProductIds == null || !allowedProductIds.contains(productId)) {
+                    continue;
+                }
+                saleSumByKey.put(bucketKey, saleSumByKey.get(bucketKey).add(signedSale));
+                if (encounterId == null) {
+                    continue;
+                }
+                Map<Long, BigDecimal> netSaleByEncounter = netSaleByEncounterByKey.get(bucketKey);
+                BigDecimal encounterNet = netSaleByEncounter.get(encounterId);
+                if (encounterNet == null) {
+                    encounterNet = BigDecimal.ZERO;
+                }
+                netSaleByEncounter.put(encounterId, encounterNet.add(signedSale));
+            }
+        }
+        // Asm：各桶结算刻度售价 + 净人次（净售价 &gt; 0）
+        for (String bucketKey : resultByKey.keySet()) {
+            KeyMedicationUsageAggQueryModel agg = resultByKey.get(bucketKey);
+            long encounterNetCount = 0L;
+            Map<Long, BigDecimal> netSaleByEncounter = netSaleByEncounterByKey.get(bucketKey);
+            if (netSaleByEncounter != null) {
+                for (BigDecimal encounterNet : netSaleByEncounter.values()) {
+                    if (encounterNet != null && encounterNet.compareTo(BigDecimal.ZERO) > 0) {
+                        encounterNetCount = encounterNetCount + 1L;
+                    }
+                }
+            }
+            agg.setEncounterNetCount(encounterNetCount);
+            agg.setSaleAmountTotal(MonetaryAmountSupport.scaleSettle(saleSumByKey.get(bucketKey)));
+        }
+        return resultByKey;
+    }
+
+    /**
+     * 构造全 0 的重点药品汇总读模型。
+     *
+     * @return 人次 0、金额结算刻度 0
+     */
+    private KeyMedicationUsageAggQueryModel emptyKeyMedicationUsageAgg() {
+        KeyMedicationUsageAggQueryModel agg = new KeyMedicationUsageAggQueryModel();
+        agg.setEncounterNetCount(0L);
+        agg.setSaleAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
+        return agg;
     }
 
     /**
@@ -2569,21 +2809,95 @@ public class ChargeItemQueryService {
                 summary.setDefinitionId(definitionId);
                 bucketByDefinition.put(definitionId, summary);
             }
-            BigDecimal receivable = this.applyPractitionerWorkloadPaymentSign(
-                this.resolveOutpatientFeeDetailReceivableAmount(chargeItem),
-                row.getPaymentContext());
-            BigDecimal discounted = this.applyPractitionerWorkloadPaymentSign(
-                this.resolveOutpatientFeeDetailDiscountedAmount(chargeItem),
-                row.getPaymentContext());
-            BigDecimal lineAmount = this.applyPractitionerWorkloadPaymentSign(
-                this.nullToZero(chargeItem.getTotalPrice()),
-                row.getPaymentContext());
-            summary.setReceivableAmountTotal(summary.getReceivableAmountTotal().add(receivable));
-            summary.setDiscountedAmountTotal(summary.getDiscountedAmountTotal().add(discounted));
-            summary.setLineAmountTotal(summary.getLineAmountTotal().add(lineAmount));
-            summary.setLineCount(summary.getLineCount() + 1L);
+            this.accumulateFeeDetailDefinitionSummaryFromRow(summary, chargeItem, row.getPaymentContext());
         }
         return new ArrayList<>(bucketByDefinition.values());
+    }
+
+    /**
+     * 按 payment 链路轻量分桶 definition 净汇总（AS-RPT-008/009 汇总 Tab 默认路径）。
+     *
+     * <p>禁止写入 {@code cachedChargeRows}；非 FIN_TYPE 维由应用层按需再物化候选行。</p>
+     *
+     * @param query 须含 resolved payment 快照
+     * @return 汇总行；无命中为空列表
+     */
+    private List<FeeDetailFinTypeSummaryQueryModel> summarizeFeeDetailRowsByDefinitionFromPaymentLinks(
+        OutpatientFeeDetailPageQuery query) {
+        if (query == null) {
+            return Collections.emptyList();
+        }
+        List<OutpatientFeeDetailChargePaymentLinkQueryModel> paymentLinks =
+            query.getResolvedPaymentChargeItemLinks();
+        if (paymentLinks == null || paymentLinks.isEmpty()) {
+            return Collections.emptyList();
+        }
+        LinkedHashSet<Long> chargeItemIds = new LinkedHashSet<>();
+        for (OutpatientFeeDetailChargePaymentLinkQueryModel link : paymentLinks) {
+            if (link != null && link.getChargeItemId() != null) {
+                chargeItemIds.add(link.getChargeItemId());
+            }
+        }
+        if (chargeItemIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        Map<Long, ChargeItem> chargeItemById =
+            this.resolveOutpatientFeeDetailChargeItemMap(query, chargeItemIds);
+        this.enrichOutpatientFeeDetailPaymentSnapshotDenominators(chargeItemById, paymentLinks);
+        Set<String> allowedStatusCodes = this.resolveOutpatientFeeDetailAllowedStatusCodes(query);
+        Map<Long, FeeDetailFinTypeSummaryQueryModel> bucketByDefinition = new LinkedHashMap<>();
+        for (OutpatientFeeDetailChargePaymentLinkQueryModel link : paymentLinks) {
+            if (link == null || link.getChargeItemId() == null || link.getPaymentContext() == null) {
+                continue;
+            }
+            ChargeItem chargeItem = chargeItemById.get(link.getChargeItemId());
+            if (!this.matchesOutpatientFeeDetailRowFilters(chargeItem, query, allowedStatusCodes)) {
+                continue;
+            }
+            Long definitionId = chargeItem.getDefinitionId();
+            if (definitionId == null) {
+                continue;
+            }
+            FeeDetailFinTypeSummaryQueryModel summary = bucketByDefinition.get(definitionId);
+            if (summary == null) {
+                summary = new FeeDetailFinTypeSummaryQueryModel();
+                summary.setDefinitionId(definitionId);
+                bucketByDefinition.put(definitionId, summary);
+            }
+            this.accumulateFeeDetailDefinitionSummaryFromRow(
+                summary, chargeItem, link.getPaymentContext());
+        }
+        return new ArrayList<>(bucketByDefinition.values());
+    }
+
+    /**
+     * 将单条 charge 行带符号金额/数量累加到 definition 汇总桶。
+     *
+     * @param summary        目标桶
+     * @param chargeItem     收费明细
+     * @param paymentContext 账单上下文（收退符号）
+     */
+    private void accumulateFeeDetailDefinitionSummaryFromRow(
+        FeeDetailFinTypeSummaryQueryModel summary,
+        ChargeItem chargeItem,
+        OutpatientFeeDetailPaymentContextQueryModel paymentContext) {
+        BigDecimal receivable = this.applyPractitionerWorkloadPaymentSign(
+            this.resolveOutpatientFeeDetailReceivableAmount(chargeItem),
+            paymentContext);
+        BigDecimal discounted = this.applyPractitionerWorkloadPaymentSign(
+            this.resolveOutpatientFeeDetailDiscountedAmount(chargeItem),
+            paymentContext);
+        BigDecimal lineAmount = this.applyPractitionerWorkloadPaymentSign(
+            this.nullToZero(chargeItem.getTotalPrice()),
+            paymentContext);
+        BigDecimal signedQuantity = this.applyPractitionerWorkloadPaymentSign(
+            this.nullToZero(chargeItem.getQuantityValue()),
+            paymentContext);
+        summary.setReceivableAmountTotal(summary.getReceivableAmountTotal().add(receivable));
+        summary.setDiscountedAmountTotal(summary.getDiscountedAmountTotal().add(discounted));
+        summary.setLineAmountTotal(summary.getLineAmountTotal().add(lineAmount));
+        summary.setLineCount(summary.getLineCount() + 1L);
+        summary.setQuantityTotal(summary.getQuantityTotal().add(signedQuantity));
     }
 
     /**
@@ -2646,8 +2960,9 @@ public class ChargeItemQueryService {
     /**
      * 在 payment 预解析 scope 内加载并过滤门诊费用明细候选行（仅本聚合 Repository）。
      *
-     * <p>筛选链：状态白名单（缺省仅 {@code SETTLED}；住院报表可含 {@code PENDING_SETTLEMENT}）
-     * → 就诊 scope → 费用大类多选（费用明细净口径：退费不入统计）。
+     * <p>筛选链：状态白名单（缺省仅 {@code SETTLED}；门诊费用明细由 Loader 写入
+     * {@code SETTLED}∪{@code REFUNDING}∪{@code REFUNDED}；住院报表可含 {@code PENDING_SETTLEMENT}）
+     * → 就诊 scope → 费用大类多选。
      * 加载后可补全读上下文金额分母。同请求优先复用 {@link OutpatientFeeDetailPageQuery#getCachedChargeRows()}
      * 与 Support 写入的 {@link OutpatientFeeDetailPageQuery#getPreloadedChargeItemsById()}，避免 page/summary
      * 重复 IN 全量 ChargeItem。</p>
@@ -2729,6 +3044,9 @@ public class ChargeItemQueryService {
     /**
      * 解析费用明细候选 ChargeItem Map：优先 Support 预加载，否则按 id 批量 IN（仅本聚合 Repository）。
      *
+     * <p>同请求写回 {@link OutpatientFeeDetailPageQuery#setPreloadedChargeItemsById}，
+     * 供明细分页页脚进价 / 售价 / 汇总二次读取复用，禁止同窗重复全量 IN。</p>
+     *
      * @param query         可含 {@code preloadedChargeItemsById}
      * @param chargeItemIds 待解析主键
      * @return id → ChargeItem
@@ -2736,33 +3054,51 @@ public class ChargeItemQueryService {
     private Map<Long, ChargeItem> resolveOutpatientFeeDetailChargeItemMap(
         OutpatientFeeDetailPageQuery query,
         LinkedHashSet<Long> chargeItemIds) {
-        Map<Long, ChargeItem> preloaded = query.getPreloadedChargeItemsById();
-        if (preloaded != null && !preloaded.isEmpty()) {
-            Map<Long, ChargeItem> reuse = new LinkedHashMap<>();
-            for (Long chargeItemId : chargeItemIds) {
-                if (chargeItemId == null) {
-                    continue;
-                }
-                ChargeItem chargeItem = preloaded.get(chargeItemId);
-                if (chargeItem != null) {
-                    reuse.put(chargeItemId, chargeItem);
-                }
+        Map<Long, ChargeItem> result = new LinkedHashMap<>();
+        if (chargeItemIds == null || chargeItemIds.isEmpty()) {
+            return result;
+        }
+        Map<Long, ChargeItem> preloaded = null;
+        if (query != null) {
+            preloaded = query.getPreloadedChargeItemsById();
+        }
+        LinkedHashSet<Long> missingIds = new LinkedHashSet<>();
+        // Pre：先吃预载，仅收集缺口 id
+        for (Long chargeItemId : chargeItemIds) {
+            if (chargeItemId == null) {
+                continue;
             }
-            // 预加载覆盖全部所需 id 时跳过二次 Repository 读
-            if (reuse.size() == chargeItemIds.size()) {
-                return reuse;
+            ChargeItem fromPreload = null;
+            if (preloaded != null) {
+                fromPreload = preloaded.get(chargeItemId);
+            }
+            if (fromPreload != null) {
+                result.put(chargeItemId, fromPreload);
+            } else {
+                missingIds.add(chargeItemId);
             }
         }
-        ChargeItemQueryCommand loadCmd = new ChargeItemQueryCommand();
-        loadCmd.setIds(new ArrayList<>(chargeItemIds));
-        List<ChargeItem> chargeItems = this.loadChargeItemsByIds(loadCmd);
-        Map<Long, ChargeItem> chargeItemById = new LinkedHashMap<>();
-        for (ChargeItem chargeItem : chargeItems) {
-            if (chargeItem != null && chargeItem.getId() != null) {
-                chargeItemById.put(chargeItem.getId(), chargeItem);
+        // Pre：缺口分批 IN，禁止预载已覆盖时仍整窗重载
+        if (!missingIds.isEmpty()) {
+            ChargeItemQueryCommand loadCmd = new ChargeItemQueryCommand();
+            loadCmd.setIds(new ArrayList<>(missingIds));
+            List<ChargeItem> loaded = this.loadChargeItemsByIds(loadCmd);
+            for (ChargeItem chargeItem : loaded) {
+                if (chargeItem != null && chargeItem.getId() != null) {
+                    result.put(chargeItem.getId(), chargeItem);
+                }
             }
         }
-        return chargeItemById;
+        // Asm：合并写回预载，供同 Query 页脚进价 / 汇总复用
+        if (query != null && !result.isEmpty()) {
+            Map<Long, ChargeItem> mergedPreload = new LinkedHashMap<>();
+            if (preloaded != null && !preloaded.isEmpty()) {
+                mergedPreload.putAll(preloaded);
+            }
+            mergedPreload.putAll(result);
+            query.setPreloadedChargeItemsById(mergedPreload);
+        }
+        return result;
     }
 
     /**
@@ -3207,6 +3543,54 @@ public class ChargeItemQueryService {
     }
 
     /**
+     * 过滤工作量明细分支候选 charge 行（仅诊疗/药品/耗材三类 request 表；不含挂号费）。
+     *
+     * @param chargeRows 已按 scope 过滤的 charge 行
+     * @return 可展开为明细链路的行；无命中时空列表
+     */
+    public List<PractitionerWorkloadChargeRowQueryModel> filterPractitionerWorkloadAdviceChargeRows(
+        List<PractitionerWorkloadChargeRowQueryModel> chargeRows) {
+        List<PractitionerWorkloadChargeRowQueryModel> filtered = new ArrayList<>();
+        if (chargeRows == null || chargeRows.isEmpty()) {
+            return filtered;
+        }
+        for (PractitionerWorkloadChargeRowQueryModel row : chargeRows) {
+            if (row == null || row.getChargeItem() == null || row.getPaymentContext() == null) {
+                continue;
+            }
+            if (!this.isPractitionerWorkloadAdviceServiceTable(row.getChargeItem().getServiceTable())) {
+                continue;
+            }
+            filtered.add(row);
+        }
+        return filtered;
+    }
+
+    /**
+     * 对已排序的 charge 行做内存分页切片（明细分页：先排序 charge 行再展开当前页，禁止全窗明细物化）。
+     *
+     * @param sortedRows 已按开立时间 DESC 排好序的 charge 行
+     * @param query      分页参数
+     * @return 当前页 charge 行切片；total 为全窗条数
+     */
+    public Page<PractitionerWorkloadChargeRowQueryModel> slicePractitionerWorkloadChargeRows(
+        List<PractitionerWorkloadChargeRowQueryModel> sortedRows,
+        PractitionerWorkloadPageQuery query) {
+        if (sortedRows == null) {
+            sortedRows = Collections.emptyList();
+        }
+        int pageNo = this.resolvePractitionerWorkloadPageNo(query);
+        int pageSize = this.resolvePractitionerWorkloadPageSize(query);
+        long total = sortedRows.size();
+        int fromIndex = pageNo * pageSize;
+        if (fromIndex >= sortedRows.size()) {
+            return new PageImpl<>(Collections.emptyList(), PageRequest.of(pageNo, pageSize), total);
+        }
+        int toIndex = Math.min(fromIndex + pageSize, sortedRows.size());
+        return new PageImpl<>(sortedRows.subList(fromIndex, toIndex), PageRequest.of(pageNo, pageSize), total);
+    }
+
+    /**
      * 在 payment 预解析 scope 内加载并过滤工作量候选 chargeItem 行（仅本聚合 Repository）。
      *
      * @param query                须含 {@link PractitionerWorkloadPageQuery#getResolvedPaymentChargeItemLinks()}
@@ -3633,5 +4017,31 @@ public class ChargeItemQueryService {
             return Integer.MAX_VALUE;
         }
         return (int) count;
+    }
+
+    /**
+     * 判断未软删收费行是否曾锚定给定定价定义主键集合（任意状态含已退费；BR-WHS-IN-018）。
+     *
+     * <p>定义主键过多时按 {@link GeneralSharedConstants#ID_IN_QUERY_CHUNK_SIZE} 分批 exists，命中即短路。</p>
+     *
+     * @param definitionIds 定价定义主键集合
+     * @return 存在任一未软删收费行则为 true
+     */
+    public boolean existsByDefinitionIdIn(Collection<Long> definitionIds) {
+        List<Long> idList = IdInQueryChunkSupport.distinctNonNullIds(definitionIds);
+        // Gate：无定义主键视为从未挂费
+        if (idList.isEmpty()) {
+            return false;
+        }
+        int chunkSize = GeneralSharedConstants.ID_IN_QUERY_CHUNK_SIZE;
+        for (int fromIndex = 0; fromIndex < idList.size(); fromIndex += chunkSize) {
+            int toIndex = Math.min(fromIndex + chunkSize, idList.size());
+            List<Long> chunk = idList.subList(fromIndex, toIndex);
+            // 任一批命中即拒绝同批号改价
+            if (repository.existsByDefinitionIdInAndIsDeletedFalse(chunk)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

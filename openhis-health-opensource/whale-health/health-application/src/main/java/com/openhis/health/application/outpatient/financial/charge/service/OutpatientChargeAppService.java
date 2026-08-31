@@ -930,6 +930,11 @@ public class OutpatientChargeAppService {
                 this.collectThirdPartyConfirmResults(request, chargeItems);
             ybConfirmResults = confirmCollect.results();
             insuranceConfirmAllReused = confirmCollect.allReused();
+            if (!this.isWorkInjuryChargeSettlement(request, chargeItems)) {
+                // 落账前再并一次草稿上全部 CONFIRMED，避免请求批次子集漏算现金
+                ybConfirmResults = this.mergeConfirmedInsuranceResults(
+                    request.getPaymentDraftId(), ybConfirmResults);
+            }
             // Gate：本地落账前须已持有 Win 扫码回执（可与扫码前独立 2207 搭配）。
             this.assertClientScanResultPresentForScanPay(request);
             boolean workInjurySettle = this.isWorkInjuryChargeSettlement(request, chargeItems);
@@ -951,6 +956,10 @@ public class OutpatientChargeAppService {
                 operatorId,
                 null);
             this.attachDraftAccountsToPayReceiptDetails(settleCommand.getPayReceiptDetails(), details);
+            // Gate：扫码/账户拆行后的终态勾稽；纯自费与医保混结均须明细合计=收费项（BR-OPC-024 终态）
+            this.assertSettleCommandDetailSumMatchedCharge(
+                settleCommand,
+                this.sumChargeItemAmount(chargeItems));
             Long paymentId = paymentReconciliationSettleOrchestration.settleOutpatientPayment(settleCommand);
             if (workInjurySettle) {
                 this.bindWorkInjuryPaymentAfterLocalSettle(request, paymentId, ybConfirmResults);
@@ -1013,7 +1022,7 @@ public class OutpatientChargeAppService {
      * <p>若草稿上已有匹配 CONFIRMED 回执则复用，避免二次出站。</p>
      *
      * @param request 支付草稿与批次号
-     * @return 确认批次数与是否复用
+     * @return 确认批次数、是否复用、以及全部 2207 后的权威个人现金
      */
     public ConfirmOutpatientInsuranceBeforeScanResponse confirmOutpatientInsuranceBeforeScan(
         ConfirmOutpatientInsuranceBeforeScanRequest request) {
@@ -1045,16 +1054,25 @@ public class OutpatientChargeAppService {
         settleLike.setEncounterId(encounterId);
         settleLike.setYbChrgBchno(request.getYbChrgBchno());
         settleLike.setYbChrgBchnos(request.getYbChrgBchnos());
-        List<String> targetBatches = this.resolveYbChrgBchnos(settleLike);
-        if (targetBatches.isEmpty()) {
-            targetBatches = this.resolveActivePreSettleChrgBchnos(request.getPaymentDraftId());
-        }
-        // Cmd：出站 2207 或复用已确认回执。
+        // Cmd：出站 2207 或复用已确认回执（collect 会并入草稿上全部 CONFIRMED）。
         InsuranceConfirmCollectResult collected = this.collectInsuranceConfirmResults(settleLike);
-        // Asm：返回批次数供前端进度展示。
+        BigDecimal patientCash = null;
+        if (!collected.results().isEmpty()) {
+            BigDecimal chargeTotal = this.resolveDraftChargeItemTotal(payment);
+            patientCash = this.resolvePatientCashFromConfirmedSettlements(
+                request.getPaymentDraftId(), chargeTotal);
+            if (patientCash != null) {
+                List<PaymentRecDetailQueryModel> details =
+                    paymentReconciliationQueryService.listPaymentRecDetailsByPaymentId(
+                        request.getPaymentDraftId());
+                this.resyncInsuranceDraftCashIfDrifted(
+                    request.getPaymentDraftId(), details, patientCash);
+            }
+        }
         return new ConfirmOutpatientInsuranceBeforeScanResponse()
             .setConfirmedBatchCount(collected.results().size())
-            .setReusedExisting(collected.allReused());
+            .setReusedExisting(collected.allReused())
+            .setPatientCashAmount(patientCash);
     }
 
     /**
@@ -1766,6 +1784,22 @@ public class OutpatientChargeAppService {
             }
         }
         return total;
+    }
+
+    /**
+     * 草稿绑定收费项合计；无绑定行时返回 0（挂号费等仅 Σ psn_cash 的场景）。
+     *
+     * @param payment 支付草稿
+     * @return 收费项 totalPrice 合计
+     */
+    private BigDecimal resolveDraftChargeItemTotal(PaymentReconciliationQueryModel payment) {
+        List<Long> ids = this.parseIds(payment.getChargeItemIds());
+        if (ids.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        ChargeItemQueryCommand queryCommand = new ChargeItemQueryCommand();
+        queryCommand.setIds(ids);
+        return this.sumChargeItemAmount(chargeItemQueryService.loadChargeItemsByIds(queryCommand));
     }
 
     /**
@@ -3485,7 +3519,9 @@ public class OutpatientChargeAppService {
         List<OutpatientChargeConfirmExtensionOut> reused =
             this.tryReuseConfirmedInsuranceResults(request.getPaymentDraftId(), chrgBchnos);
         if (!reused.isEmpty()) {
-            return new InsuranceConfirmCollectResult(reused, true);
+            // 请求批次可能是子集：复用后仍须并入草稿上其它已 CONFIRMED 回执
+            return new InsuranceConfirmCollectResult(
+                this.mergeConfirmedInsuranceResults(request.getPaymentDraftId(), reused), true);
         }
         List<OutpatientChargeConfirmExtensionOut> results = new ArrayList<>();
         int succeededBatches = 0;
@@ -3774,9 +3810,77 @@ public class OutpatientChargeAppService {
             fallbackAccountCode,
             billDate,
             outcomeEnum);
+        // Gate：对齐后自付合计须等于权威现金，且全明细合计须等于收费项合计（防微信/现金多记穿透）
+        this.assertInsuranceSettleDetailAligned(
+            merged, targetPatientCash, chargeItemTotal);
         settleCommand.setPayReceiptDetails(merged);
         settleCommand.setDisplayAmount(targetPatientCash);
         settleCommand.setTenderedAmount(targetPatientCash);
+    }
+
+    /**
+     * 落账终态勾稽：{@code payReceiptDetails} 代数和须等于收费项合计（BR-OPC-024 终态）。
+     *
+     * <p>须在 {@code applyScanBeforeSettle}、{@code attachDraftAccountsToPayReceiptDetails} 之后调用，
+     * 覆盖纯自费少记渠道（如支付宝 1705.50/1706）与混结对齐后仍被拆行扰动的场景。</p>
+     *
+     * @param settleCommand     待落库命令
+     * @param chargeItemTotal   本次收费项 totalPrice 合计
+     * @throws BusinessException 勾稽失败 → EX-OPC-405
+     */
+    private void assertSettleCommandDetailSumMatchedCharge(
+        SettleOutpatientPaymentCommand settleCommand,
+        BigDecimal chargeItemTotal) {
+        List<PaymentDetailItemCommand> lines = null;
+        if (settleCommand != null) {
+            lines = settleCommand.getPayReceiptDetails();
+        }
+        if (!InsuranceSettlementCashAlignSupport.isDetailSumMatchedChargeTotal(lines, chargeItemTotal)) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT,
+                this.buildMessage(
+                    OutpatientChargeConstants.MESSAGE_CODE_SETTLE_AMOUNT_MISMATCH,
+                    "落账明细合计与收费项不一致"));
+        }
+    }
+
+    /**
+     * 医保落账勾稽：自付渠道合计=权威现金，且基金+个账+自付=收费项合计。
+     *
+     * <p>历史脏例：三笔 2207 后微信误写为 display 偏高（含一笔 fund），导致日结「四渠道&gt;总收入」。</p>
+     *
+     * @param merged            已对齐明细
+     * @param targetPatientCash 权威个人现金
+     * @param chargeItemTotal   本次收费项合计
+     * @throws BusinessException 勾稽失败 → EX-OPC-405
+     */
+    private void assertInsuranceSettleDetailAligned(
+        List<PaymentDetailItemCommand> merged,
+        BigDecimal targetPatientCash,
+        BigDecimal chargeItemTotal) {
+        BigDecimal patientSum = InsuranceSettlementCashAlignSupport.sumPatientLineAmounts(merged);
+        BigDecimal targetCash;
+        if (targetPatientCash == null) {
+            targetCash = MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO);
+        } else {
+            targetCash = MonetaryAmountSupport.scaleSettle(targetPatientCash);
+        }
+        // 自付渠道被对齐后仍与权威现金不一致：拒绝落账，避免日结渠道虚高
+        if (patientSum.compareTo(targetCash) != 0) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT,
+                this.buildMessage(
+                    OutpatientChargeConstants.MESSAGE_CODE_SETTLE_AMOUNT_MISMATCH,
+                    "医保落账自付渠道合计与权威个人现金不一致"));
+        }
+        // 全明细合计须等于收费项：基金/个账多记或自付多记都会在此拦住
+        if (!InsuranceSettlementCashAlignSupport.isDetailSumMatchedChargeTotal(merged, chargeItemTotal)) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT,
+                this.buildMessage(
+                    OutpatientChargeConstants.MESSAGE_CODE_SETTLE_AMOUNT_MISMATCH,
+                    "医保落账明细合计与收费项不一致"));
+        }
     }
 
     /**

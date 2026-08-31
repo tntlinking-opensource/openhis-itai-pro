@@ -25,6 +25,7 @@ import {
 } from './advice-sort-number';
 import { MEDICATION_DEFINITION_TABLE } from './advice-tab.constants';
 import { resolveMedicationDraftDosePayload } from './medication-unit-bands';
+import { resolveServiceBillingQuantity } from './service-quantity-calc';
 
 function normalizeMedicationDaysForGroupCompare(raw: unknown): number | undefined {
   const n = Number(raw);
@@ -327,7 +328,9 @@ function buildMedicationDraftLine(
   };
 }
 
-/** 诊疗：定义主键、数量、频次、执行次数、单位等与 `servicePayload` 顶层字段一致。 */
+/**
+ * 诊疗：定义主键、单次量×次数→quantity、频次、执行次数、单位等与 `servicePayload` 顶层一致。
+ */
 function buildServiceDraftLine(
   item: AdviceDrugItem,
   encounterRows: EncounterDiagnosisRowDto[],
@@ -343,10 +346,14 @@ function buildServiceDraftLine(
     parseProductTableNameFromSelectedId(item.selectedId) ||
     'wkf_activity_definition';
   const performOrgRaw = String(item.performOrgId ?? '').trim();
-  const qtyRaw = Number(item.serviceQuantity ?? Number.NaN);
-  const quantity = Number.isFinite(qtyRaw) && qtyRaw > 0 ? qtyRaw : 1;
   const execRaw = Number(item.totalAmount ?? 0);
-  const executionCount = Number.isFinite(execRaw) && execRaw > 0 ? execRaw : 1;
+  const executionCount = Number.isFinite(execRaw) && execRaw > 0 ? Math.trunc(execRaw) : 1;
+  // 账单 quantity = 单次执行数量 × 执行次数（后端仍只认总量）
+  const billingQty = resolveServiceBillingQuantity(item.serviceQuantity, executionCount);
+  if (billingQty === undefined) {
+    throw new Error('请填写大于 0 的单次执行数量与执行次数');
+  }
+  const quantity = billingQty;
   const unitCode = String(item.totalAmountUnit ?? '').trim();
   if (!unitCode) {
     throw new Error(

@@ -33,4 +33,14 @@ public class ActivityDefinitionPageQueryModel {
     private Boolean ybFlag;
     /** children标志。 */
     private Boolean childrenFlag;
+    /** 适用性别枚举编码。 */
+    private String permittedGenderEnum;
+    /** 目录展示顺序。 */
+    private Integer sortOrder;
+    /** 执行科室机构主键（{@code adm_organization.id}）。 */
+    private Long orgId;
+    /** 是否收费/计价。 */
+    private Boolean pricingFlag;
+    /** 拼音检索码。 */
+    private String pyStr;
 }

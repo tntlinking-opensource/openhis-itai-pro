@@ -392,6 +392,9 @@ public class NurseStationCostDetailAssembler {
                 summaryLine.setItemSpec(product.getTotalVolume());
                 summaryLine.setCategoryCode(product.getCategoryCode());
                 summaryLine.setCategoryDisplay(product.getCategoryCodeDictText());
+                // 医保等级：目录对照回填，汇总表与明细/打印同源
+                summaryLine.setChrgitmLv(product.getChrgitmLv());
+                summaryLine.setChrgitmLvText(product.getChrgitmLvText());
                 summaryLine.setPackageUnitCode(product.getPackageUnitCode());
                 summaryLine.setPackageUnitDisplay(product.getPackageUnitCodeDictText());
                 summaryLine.setSplitUnitCode(product.getSplitUnitCode());

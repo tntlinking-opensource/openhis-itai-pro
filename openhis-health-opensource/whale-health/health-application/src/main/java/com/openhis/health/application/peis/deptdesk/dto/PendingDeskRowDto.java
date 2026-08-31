@@ -40,6 +40,11 @@ public class PendingDeskRowDto {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long serviceRequestId;
 
+    /** 诊疗活动定义主键。 */
+    @Schema(description = "诊疗活动主键")
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long activityId;
+
     /** 项目展示名。 */
     @Schema(description = "项目展示名")
     private String activityDisplay;
@@ -51,4 +56,16 @@ public class PendingDeskRowDto {
     /** LIS 外发状态 code。 */
     @Schema(description = "LIS 外发状态")
     private String lisDispatchEnum;
+
+    /** 患者年龄。 */
+    @Schema(description = "患者年龄")
+    private Integer patientAge;
+
+    /** 是否团检。 */
+    @Schema(description = "是否团检")
+    private Boolean groupFlag;
+
+    /** 就诊检查状态 code。 */
+    @Schema(description = "就诊检查状态")
+    private String encounterStatusEnum;
 }

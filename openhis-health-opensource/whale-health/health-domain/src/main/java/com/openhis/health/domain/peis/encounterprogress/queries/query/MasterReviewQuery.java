@@ -16,4 +16,7 @@ import lombok.Setter;
 public class MasterReviewQuery extends AbstractPageQuery {
 
     private static final long serialVersionUID = 1L;
+
+    /** 团检标志过滤：{@code true} 仅团检；{@code false} 仅个检；{@code null} 不限。 */
+    private Boolean groupFlag;
 }

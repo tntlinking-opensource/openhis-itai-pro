@@ -1,6 +1,8 @@
 @echo off
 setlocal EnableExtensions
 REM 与后端 tools/sync-opensource 对称：把非院点前端同步到 openhis-itai-pro\openhis-pro-ui
+REM 改版本示例：sync-to-opensource.bat -Force -NewVersion 2.0.6
+REM 前后端一起：请用 whale-sever\tools\sync-opensource\sync-to-opensource.bat
 cd /d "%~dp0..\.."
 
 echo.

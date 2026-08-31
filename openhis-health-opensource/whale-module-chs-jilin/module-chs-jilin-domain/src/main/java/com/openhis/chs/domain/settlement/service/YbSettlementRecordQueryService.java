@@ -487,38 +487,34 @@ public class YbSettlementRecordQueryService {
         String setlId,
         Long tenantId) {
         if (settlementRecordId != null) {
-            YbSettlementRecord record = settlementRecordRepository
+            return settlementRecordRepository
                 .findFirstByIdAndTenantIdAndIsDeletedFalse(settlementRecordId, tenantId)
                 .orElseThrow(() -> new BusinessException(ChsErrorCodes.PLATFORM_FAILED, "未找到结算回执"));
-            if (YbSettlementVoucherStatus.REVOKED.equals(record.getStatus())) {
-                throw new BusinessException(ChsErrorCodes.PLATFORM_FAILED, "结算回执已撤销");
-            }
-            return record;
         }
         if (isNotEmpty(setlId)) {
-            YbSettlementRecord record = settlementRecordRepository
+            return settlementRecordRepository
                 .findFirstBySetlIdAndTenantIdAndIsDeletedFalse(setlId.trim(), tenantId)
                 .orElseThrow(() -> new BusinessException(ChsErrorCodes.PLATFORM_FAILED, "未找到结算回执"));
-            if (YbSettlementVoucherStatus.REVOKED.equals(record.getStatus())) {
-                throw new BusinessException(ChsErrorCodes.PLATFORM_FAILED, "结算回执已撤销");
-            }
-            return record;
         }
         if (paymentId != null) {
-            List<YbSettlementRecord> records = settlementRecordRepository
-                .findAllByPaymentIdAndTenantIdAndIsDeletedFalseOrderByCreatedAtAsc(paymentId, tenantId)
-                .stream()
-                .filter(row -> !YbSettlementVoucherStatus.REVOKED.equals(row.getStatus()))
-                .collect(Collectors.toList());
-            if (records.isEmpty()) {
+            List<YbSettlementRecord> all = settlementRecordRepository
+                .findAllByPaymentIdAndTenantIdAndIsDeletedFalseOrderByCreatedAtAsc(paymentId, tenantId);
+            if (all == null || all.isEmpty()) {
                 throw new BusinessException(ChsErrorCodes.PLATFORM_FAILED, "未找到结算回执");
             }
-            if (records.size() > 1) {
+            List<YbSettlementRecord> active = all.stream()
+                .filter(row -> !YbSettlementVoucherStatus.REVOKED.equals(row.getStatus()))
+                .collect(Collectors.toList());
+            if (active.isEmpty()) {
+                // Pre：仅剩已撤销回执 → 交由 Invoker 幂等返回
+                return all.get(all.size() - 1);
+            }
+            if (active.size() > 1) {
                 throw new BusinessException(
                     ChsErrorCodes.SETTLEMENT_AMBIGUOUS,
                     "同一 payment 存在多笔医保结算，请指定 settlementRecordId 或 setlId");
             }
-            return records.get(0);
+            return active.get(0);
         }
         throw new BusinessException(ChsErrorCodes.PLATFORM_FAILED, "缺少 settlementRecordId/paymentId/setlId");
     }

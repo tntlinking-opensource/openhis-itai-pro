@@ -53,12 +53,12 @@ public class NurseStationOrderExecuteWriteSlotDto {
     private LocalDateTime actualTime;
 
     /**
-     * 就诊默认自费账户主键（由 IF-IP-NUR-02 患者列表或 IF-IP-EXE-01 分组回传；IF-IP-EXE-02 执行必填）。
+     * 就诊默认挂账账户主键（医保入院=医保户，否则个人现金户；由护士站列表回传，服务端仍按医保优先覆盖）。
      */
     @NotNull(message = "就诊账户标识不能为空")
-    @Schema(description = "就诊默认自费账户主键", required = true)
+    @Schema(description = "就诊默认挂账账户主键（医保优先）", required = true)
     @JsonSerialize(using = ToStringSerializer.class)
-    /** 就诊默认自费账户主键。 */
+    /** 就诊默认挂账账户主键。 */
     private Long accountId;
 
     /** 列表回传的绑定项。 */

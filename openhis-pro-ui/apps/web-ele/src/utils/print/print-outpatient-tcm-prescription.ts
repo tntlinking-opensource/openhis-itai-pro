@@ -31,6 +31,7 @@ export async function printOutpatientTcmPrescription(options: {
     scenarioCode: PRINT_SCENARIO.outpatientTcmRx,
     printData,
     bizRef: {
+      scenarioCode: PRINT_SCENARIO.outpatientTcmRx,
       encounterId: encounterId || undefined,
       prescriptionNo: prescriptionNo || undefined,
     },

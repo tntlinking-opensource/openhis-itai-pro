@@ -57,8 +57,8 @@ public class SaveEncounterDiagnosisChildRequest {
     @Schema(description = "诊断排序号")
     private Integer diagnosisSortNo;
 
-    /** 医疗类型代码（YbMedType code；空=普通门诊）。 */
-    @Schema(description = "医疗类型代码（YbMedType code；空=普通门诊）")
+    /** 医疗类型代码（YbMedType code；空=普通住院）。 */
+    @Schema(description = "医疗类型代码（YbMedType code；空=普通住院）")
     private String medicalTypeCode;
 
     /** 诊断描述。 */

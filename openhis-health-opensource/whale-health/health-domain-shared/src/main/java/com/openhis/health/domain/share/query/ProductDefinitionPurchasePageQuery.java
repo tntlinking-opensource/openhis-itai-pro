@@ -33,7 +33,20 @@ public class ProductDefinitionPurchasePageQuery extends AbstractPageQuery {
     /** 供应商标识（药品/耗材 {@code supply_id}）。 */
     private Long supplierId;
 
-    /** 厂家名称。 */
+    /**
+     * 生产厂家主键筛选（cus_supplier.id）；优先于 {@link #manufacturer} 字符串。
+     */
+    private Long manufacturerId;
+
+    /**
+     * 生产厂家主键集合筛选（IN）。
+     */
+    private List<Long> manufacturerIds;
+
+    /**
+     * 厂家名称（兼容旧入参；QueryService 仅在可解析为 Long 时按 manufacturerId 等值过滤，
+     * 否则忽略——名称→id 由 AppService 解析后写入 {@link #manufacturerId}）。
+     */
     private String manufacturer;
 
     /** 预选产品键，与关键字 OR 组合。 */

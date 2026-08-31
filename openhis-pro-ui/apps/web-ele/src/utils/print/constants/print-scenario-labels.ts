@@ -35,7 +35,9 @@ export const PRINT_SCENARIO_LABELS: Record<PrintScenario, string> = {
   [PRINT_SCENARIO.invStocktakePrint]: '库存盘点盈亏单',
   [PRINT_SCENARIO.invReturnPrint]: '库存退货单',
   [PRINT_SCENARIO.peisReportPrint]: '体检总检报告',
+  [PRINT_SCENARIO.peisGuidePrint]: '体检指引单',
   [PRINT_SCENARIO.finPriceAdjustmentPrint]: '调价单',
+  [PRINT_SCENARIO.reportListPrint]: '报表列表',
 };
 
 export const PRINT_SCENARIO_ITEMS: Array<{ label: string; scenarioCode: PrintScenario }> = [
@@ -168,8 +170,16 @@ export const PRINT_SCENARIO_ITEMS: Array<{ label: string; scenarioCode: PrintSce
     label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.peisReportPrint],
   },
   {
+    scenarioCode: PRINT_SCENARIO.peisGuidePrint,
+    label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.peisGuidePrint],
+  },
+  {
     scenarioCode: PRINT_SCENARIO.finPriceAdjustmentPrint,
     label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.finPriceAdjustmentPrint],
+  },
+  {
+    scenarioCode: PRINT_SCENARIO.reportListPrint,
+    label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.reportListPrint],
   },
 ];
 

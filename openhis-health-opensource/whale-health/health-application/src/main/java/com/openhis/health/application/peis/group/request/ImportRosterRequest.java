@@ -22,4 +22,13 @@ public class ImportRosterRequest {
 
     /** 名册行列表。 */
     private List<RosterImportRowDto> rows;
+
+    /** 导入成功后自动免收费建单（默认 true；须批次已绑套餐）。 */
+    private Boolean autoEnroll;
+
+    /** 人员类型：STUDENT / STAFF / ENTERPRISE。 */
+    private String memberKind;
+
+    /** 教职工是否同步 Campus（默认 true；仅 STAFF 生效）。 */
+    private Boolean syncCampus;
 }

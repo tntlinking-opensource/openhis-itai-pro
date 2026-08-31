@@ -12,14 +12,17 @@ import com.openhis.health.application.inventory.documentdetail.response.ExportDo
 import com.openhis.health.application.inventory.documentdetail.response.PageDocumentDetailsResponse;
 import com.openhis.health.application.inventory.documentdetail.response.SummarizeDocumentDetailsResponse;
 import com.openhis.health.application.inventory.documentdetail.support.DocumentDetailDomainScope;
+import com.openhis.health.domain.share.constants.ChargeItemAmountScaleConstants;
 import com.openhis.health.domain.share.constants.DocumentDetailExportConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.InventoryWarehouseDetailExportConstants;
+import com.openhis.whale.core.application.dto.ExcelExportColumnDto;
 import com.openhis.whale.core.application.util.TabularColumnDef;
 import com.openhis.whale.core.application.util.TabularExcelExporter;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -48,8 +51,11 @@ public class InventoryDocumentDetailMapperImpl implements InventoryDocumentDetai
         filter.setTypeEnum(request.getTypeEnum());
         filter.setSourceLocationId(request.getSourceLocationId());
         filter.setPurposeLocationId(request.getPurposeLocationId());
+        // 供应商等值筛；空则该维不过滤
+        filter.setSupplierId(request.getSupplierId());
         filter.setApprovalTimeStart(request.getApprovalTimeStart());
         filter.setApprovalTimeEnd(request.getApprovalTimeEnd());
+        filter.setItemTable(request.getItemTable());
         filter.setProductKeyword(request.getProductKeyword());
         filter.setLotNumberKeyword(request.getLotNumberKeyword());
         filter.setBusNo(request.getBusNo());
@@ -139,15 +145,20 @@ public class InventoryDocumentDetailMapperImpl implements InventoryDocumentDetai
             exportRow.setSpecification(row.getSpecification());
             exportRow.setManufacturer(row.getManufacturer());
             exportRow.setLotNumber(row.getLotNumber());
+            // 操作/包装/最小：数量 NUMERIC + 各自单位列（禁止合并文案替代）
+            exportRow.setItemQuantity(this.toExportQuantity(row.getItemQuantity()));
             exportRow.setUnitCodeDictText(row.getUnitCodeDictText());
-            exportRow.setItemQuantity(this.formatDecimal(row.getItemQuantity()));
-            exportRow.setPrice(this.formatDecimal(row.getPrice()));
-            exportRow.setTotalPrice(this.formatDecimal(row.getTotalPrice()));
-            exportRow.setBookQuantity(this.formatDecimal(row.getBookQuantity()));
-            exportRow.setActualQuantity(this.formatDecimal(row.getActualQuantity()));
-            exportRow.setGainLossQuantity(this.formatDecimal(row.getGainLossQuantity()));
-            exportRow.setActualAmount(this.formatDecimal(row.getActualAmount()));
-            exportRow.setGainLossAmount(this.formatDecimal(row.getGainLossAmount()));
+            exportRow.setPackageQuantity(this.toExportQuantity(row.getPackageQuantity()));
+            exportRow.setPackageUnitName(row.getPackageUnitName());
+            exportRow.setMinUnitQuantity(this.toExportQuantity(row.getMinUnitQuantity()));
+            exportRow.setMinUnitName(row.getMinUnitName());
+            exportRow.setPrice(this.toExportMoney(row.getPrice()));
+            exportRow.setTotalPrice(this.toExportMoney(row.getTotalPrice()));
+            exportRow.setBookQuantity(this.toExportQuantity(row.getBookQuantity()));
+            exportRow.setActualQuantity(this.toExportQuantity(row.getActualQuantity()));
+            exportRow.setGainLossQuantity(this.toExportQuantity(row.getGainLossQuantity()));
+            exportRow.setActualAmount(this.toExportMoney(row.getActualAmount()));
+            exportRow.setGainLossAmount(this.toExportMoney(row.getGainLossAmount()));
             exportRow.setRemake(row.getRemake());
             exportRows.add(exportRow);
         }
@@ -155,21 +166,25 @@ public class InventoryDocumentDetailMapperImpl implements InventoryDocumentDetai
     }
 
     /**
-     * 写出 xlsx 字节。
+     * 写出 xlsx 字节（可按前端列清单裁剪）。
      *
      * @param exportRows 导出行
+     * @param columns    前端自选列；null/空则全部动态列
      * @return xlsx 字节
      */
     @Override
-    public byte[] buildExcelBytes(List<DocumentDetailExportRowDto> exportRows) {
-        List<TabularColumnDef> columns = this.buildExportColumns();
+    public byte[] buildExcelBytes(
+        List<DocumentDetailExportRowDto> exportRows,
+        List<ExcelExportColumnDto> columns) {
+        List<TabularColumnDef> tabularColumns = this.buildExportColumns();
         List<Map<String, Object>> rowMaps = new ArrayList<>();
         if (exportRows != null) {
             for (DocumentDetailExportRowDto exportRow : exportRows) {
-                rowMaps.add(this.toRowMap(exportRow, columns));
+                rowMaps.add(this.toRowMap(exportRow, tabularColumns));
             }
         }
-        return TabularExcelExporter.exportToXlsxBytes(DocumentDetailExportConstants.SHEET_NAME, columns, rowMaps);
+        return TabularExcelExporter.exportToXlsxBytes(
+            DocumentDetailExportConstants.SHEET_NAME, tabularColumns, rowMaps, columns);
     }
 
     /**
@@ -225,15 +240,24 @@ public class InventoryDocumentDetailMapperImpl implements InventoryDocumentDetai
         columns.add(new TabularColumnDef("specification", "规格"));
         columns.add(new TabularColumnDef("manufacturer", "厂家"));
         columns.add(new TabularColumnDef("lotNumber", "批号"));
-        columns.add(new TabularColumnDef("unitCodeDictText", "单位"));
-        columns.add(new TabularColumnDef("itemQuantity", "数量"));
-        columns.add(new TabularColumnDef("price", "单价"));
-        columns.add(new TabularColumnDef("totalPrice", "金额"));
-        columns.add(new TabularColumnDef("bookQuantity", "账面数量"));
-        columns.add(new TabularColumnDef("actualQuantity", "实盘数量"));
-        columns.add(new TabularColumnDef("gainLossQuantity", "盈亏数量"));
-        columns.add(new TabularColumnDef("actualAmount", "实盘金额"));
-        columns.add(new TabularColumnDef("gainLossAmount", "盈亏金额"));
+        // 数量在前、单位紧随：操作 / 包装 / 最小各一对
+        columns.add(new TabularColumnDef("itemQuantity", "操作单位数量", 0));
+        columns.add(new TabularColumnDef("unitCodeDictText", "操作单位"));
+        columns.add(new TabularColumnDef("packageQuantity", "包装单位数量", 0));
+        columns.add(new TabularColumnDef("packageUnitName", "包装单位"));
+        columns.add(new TabularColumnDef("minUnitQuantity", "最小单位数量", 0));
+        columns.add(new TabularColumnDef("minUnitName", "最小单位"));
+        columns.add(new TabularColumnDef(
+            "price", "单价", ChargeItemAmountScaleConstants.CHARGE_MONETARY_DISPLAY_SCALE));
+        columns.add(new TabularColumnDef(
+            "totalPrice", "金额", ChargeItemAmountScaleConstants.CHARGE_MONETARY_DISPLAY_SCALE));
+        columns.add(new TabularColumnDef("bookQuantity", "账面数量", 0));
+        columns.add(new TabularColumnDef("actualQuantity", "实盘数量", 0));
+        columns.add(new TabularColumnDef("gainLossQuantity", "盈亏数量", 0));
+        columns.add(new TabularColumnDef(
+            "actualAmount", "实盘金额", ChargeItemAmountScaleConstants.CHARGE_MONETARY_DISPLAY_SCALE));
+        columns.add(new TabularColumnDef(
+            "gainLossAmount", "盈亏金额", ChargeItemAmountScaleConstants.CHARGE_MONETARY_DISPLAY_SCALE));
         columns.add(new TabularColumnDef("remake", "备注"));
         return columns;
     }
@@ -267,8 +291,12 @@ public class InventoryDocumentDetailMapperImpl implements InventoryDocumentDetai
         map.put("specification", exportRow.getSpecification());
         map.put("manufacturer", exportRow.getManufacturer());
         map.put("lotNumber", exportRow.getLotNumber());
-        map.put("unitCodeDictText", exportRow.getUnitCodeDictText());
         map.put("itemQuantity", exportRow.getItemQuantity());
+        map.put("unitCodeDictText", exportRow.getUnitCodeDictText());
+        map.put("packageQuantity", exportRow.getPackageQuantity());
+        map.put("packageUnitName", exportRow.getPackageUnitName());
+        map.put("minUnitQuantity", exportRow.getMinUnitQuantity());
+        map.put("minUnitName", exportRow.getMinUnitName());
         map.put("price", exportRow.getPrice());
         map.put("totalPrice", exportRow.getTotalPrice());
         map.put("bookQuantity", exportRow.getBookQuantity());
@@ -294,15 +322,30 @@ public class InventoryDocumentDetailMapperImpl implements InventoryDocumentDetai
     }
 
     /**
-     * 数值格式化。
+     * 导出数量：整数刻度；null 保持空单元格。
      *
-     * @param value 数值
-     * @return 字符串或 null
+     * @param value 数量
+     * @return 整数 BigDecimal 或 null
      */
-    private String formatDecimal(BigDecimal value) {
+    private BigDecimal toExportQuantity(BigDecimal value) {
+        // 空数量：保持空单元格，避免写成 0 混淆「无值」
         if (value == null) {
             return null;
         }
-        return value.toPlainString();
+        return value.setScale(0, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * 导出金额：展示 2 位（{@link ChargeItemAmountScaleConstants#CHARGE_MONETARY_DISPLAY_SCALE}）；null 保持空单元格。
+     *
+     * @param value 金额
+     * @return 2 位 BigDecimal 或 null
+     */
+    private BigDecimal toExportMoney(BigDecimal value) {
+        if (value == null) {
+            return null;
+        }
+        return value.setScale(
+            ChargeItemAmountScaleConstants.CHARGE_MONETARY_DISPLAY_SCALE, RoundingMode.HALF_UP);
     }
 }

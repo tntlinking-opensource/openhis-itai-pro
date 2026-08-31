@@ -6,32 +6,26 @@ package com.openhis.health.application.outpatient.financial.feedetail.support;
 
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
-import com.openhis.health.domain.administration.chargeitem.query.FeeDetailChargeItemFilterProjection;
 import com.openhis.health.domain.administration.chargeitem.query.OutpatientFeeDetailPageQuery;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.encounter.entity.Encounter;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.domain.administration.patient.service.PatientQueryService;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.OutpatientFeeDetailChargePaymentLinkQueryModel;
-import com.openhis.health.domain.share.constants.OutpatientFeeDetailConstants;
+import com.openhis.health.domain.financial.paymentreconciliation.service.PaymentReconciliationQueryService;
 import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.enums.EncounterClass;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
-import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.application.shared.financial.DailySettlementFinTypeAmountLoader;
 import com.openhis.health.application.shared.product.ChargeItemProductLookupHelper;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
-import com.openhis.health.application.shared.report.ReportChargeBillSummarizeScopeSupport;
 import com.openhis.health.application.shared.report.ReportPatientSettlementContextAssembler;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import lombok.RequiredArgsConstructor;
 import com.openhis.whale.core.application.util.StringUtils;
-import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -44,11 +38,15 @@ import java.util.Set;
 /**
  * 门诊费用明细读路径 scope 预解析（B.6.1；AS-OP-FIN-005 / AS-RPT-008）。
  *
- * <p>本类只读、不写库。<strong>费用明细（明细+汇总+导出）统一 ChargeItem-only</strong>：按
- * {@code entered_date} 窗拉已结账单，禁止扫 Payment。退费态不入统计（净额=仍有效收费）。
- * ChargeItem 批量读委托 ADM-011 QueryService；产品展示经
- * {@link ProductDefinitionDisplayTerminologyAssembler} 批量加载（禁止跨聚合 Repository）。</p>
- * <p>细分类筛选与展示取定价行 {@code type_code}（fin_type_code），与日结 fin_type 字典码一致。</p>
+ * <p>本类只读、不写库。<strong>时间轴 / 收退 Tab 以 Payment {@code bill_date} 为准</strong>
+ * （与日结同轴；BR-OP-FDT-002/003/009）：收费 SUCCESS 正、退费 REFUNDED 负。
+ * 写路径退费会把原行改成 {@code REFUNDED}/{@code REFUNDING} 并覆盖 {@code entered_date}，故禁止仅靠 ChargeItem
+ * 日窗统计；挂载快照仍指向原 chargeItemId，收退各保留一行链路。</p>
+ * <p>ChargeItem 状态白名单为 {@code SETTLED}∪{@code REFUNDING}∪{@code REFUNDED}
+ * （行额符号看 payment 上下文，不看状态）。{@code REFUNDING} 表示退费进行中、原收费 SUCCESS 快照仍挂该行，
+ * 须计入已收净额直至退费 Payment 落库冲减，避免与日结 {@code fin_payment_rec_static} 少计。</p>
+ * <p>产品展示经 {@link ProductDefinitionDisplayTerminologyAssembler} 批量加载；细分类取定价行
+ * {@code type_code}（与日结 fin_type 一致）。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -63,271 +61,116 @@ public class OutpatientFeeDetailLoader {
     /** 费用性质筛选：按收费行挂账账户 contract_no（非就诊优先账户）。 */
     private final ReportPatientSettlementContextAssembler reportPatientSettlementContextAssembler;
 
-    /** 账单行合成读侧链路上下文（无真实 paymentId）。 */
-    private final ReportChargeBillSummarizeScopeSupport reportChargeBillSummarizeScopeSupport;
+    /** Payment 日窗 / 收退 Tab → chargeItem 快照链路（DM-FIN-002 §6.2.17）。 */
+    private final PaymentReconciliationQueryService paymentReconciliationQueryService;
 
     /**
-     * 明细分页/导出：按账单收费时间窗预解析 scope（与汇总同口径，禁止扫 Payment）。
+     * 明细导出：按 Payment {@code bill_date} 预解析全日窗 scope（与汇总同口径）。
      *
-     * <p>须在调用 {@link ChargeItemQueryService#pageOutpatientFeeDetailEncounterBlocks} 之前执行。
-     * <strong>导出/兼容</strong>仍可走本方法（全日窗实体）；明细分页请改用
-     * {@link #prepareOutpatientFeeDetailPageScopes}。</p>
+     * <p>须在调用 {@link ChargeItemQueryService#pageOutpatientFeeDetailEncounterBlocks} /
+     * 全量 list 之前执行。</p>
      *
      * @param query 须含 {@code billDateFrom}/{@code billDateTo}
-     * @throws IllegalArgumentException {@code query} 为空
+     * @throws IllegalArgumentException {@code query} 为空或缺日窗
      */
     public void prepareOutpatientFeeDetailQueryScopes(OutpatientFeeDetailPageQuery query) {
-        this.prepareOutpatientFeeDetailScopesFromChargeBill(query);
+        this.prepareOutpatientFeeDetailScopesFromPayment(query);
     }
 
     /**
-     * 明细分页专路径：DB encounter 分页 + 仅本页装实体，禁止一个月全日窗 ChargeItem 预载。
+     * 明细分页：Payment 日窗收退链路 + 就诊块内存分页（{@code pageScopeOnly=false}）。
      *
-     * <p>汇总 Tab / 导出仍走 {@link #prepareOutpatientFeeDetailScopesFromChargeBill}。
-     * 写入 {@code pageScopeOnly=true}、{@code resolvedEncounterPageTotal} 与命中就诊全集供页脚 SUM。</p>
+     * <p>与汇总/导出同 Payment 口径；禁止再走 ChargeItem {@code entered_date} 日窗（退费会抹收费日事实）。</p>
      *
      * @param query 须含日期窗与分页键
      * @throws IllegalArgumentException {@code query} 为空或缺日窗
      */
     public void prepareOutpatientFeeDetailPageScopes(OutpatientFeeDetailPageQuery query) {
-        if (query == null) {
-            throw new IllegalArgumentException("outpatient fee detail query is required");
-        }
-        if (query.getBillDateFrom() == null || query.getBillDateTo() == null) {
-            throw new IllegalArgumentException("billDateFrom and billDateTo are required");
-        }
-        // Gate：退费 Tab 在净口径下无行（退费不入统计）
-        if (OutpatientFeeDetailConstants.TRADE_DIRECTION_REFUND.equals(query.getTradeDirection())) {
-            this.clearOutpatientFeeDetailScopesToEmpty(query);
-            query.setPageScopeOnly(Boolean.TRUE);
-            query.setResolvedEncounterPageTotal(0L);
-            query.setResolvedFeeDetailMatchedEncounterIds(List.of());
-            query.setResolvedSaleAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
-            return;
-        }
-        LocalDateTime enteredFrom = query.getBillDateFrom().atStartOfDay();
-        LocalDateTime enteredToExclusive = query.getBillDateTo().plusDays(1).atStartOfDay();
-        List<String> statusCodes = List.of(ChargeItemStatus.SETTLED.getCode());
-        List<String> serviceTables =
-            this.chargeItemQueryService.resolveServiceTablesForFeeCategories(query.getFeeCategoryCodes());
-        CollectionOrNull serviceTableFilter = this.toServiceTableFilter(serviceTables);
-        // Pre：日窗 distinct encounterId（仅 Long），再筛 AMB + 患者/挂号科室
-        List<Long> windowEncounterIds =
-            this.chargeItemQueryService.listDistinctEncounterIdsByEnteredDateWindow(
-                enteredFrom, enteredToExclusive, statusCodes, query.getEntererMatchIds());
-        Set<Long> ambEncounterIds = this.filterEncounterIdsByClass(
-            new LinkedHashSet<>(windowEncounterIds), EncounterClass.AMB);
-        Set<Long> allowedEncounterIds = this.resolveAllowedEncounterIds(query, ambEncounterIds);
-        if (allowedEncounterIds.isEmpty()) {
-            this.clearOutpatientFeeDetailScopesToEmpty(query);
-            query.setPageScopeOnly(Boolean.TRUE);
-            query.setResolvedEncounterPageTotal(0L);
-            query.setResolvedFeeDetailMatchedEncounterIds(List.of());
-            query.setResolvedSaleAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
-            return;
-        }
-        boolean needChargeLevelHardFilter = this.needsChargeLevelHardFilter(query);
-        List<Long> matchedEncounterIds;
-        List<FeeDetailChargeItemFilterProjection> matchedProjections = List.of();
-        BigDecimal projectionSaleSum = null;
-        // Pre：项目/细分类/费用性质 → 轻量投影过滤命中 encounter（禁止全日窗实体进 preloaded）
-        if (needChargeLevelHardFilter) {
-            List<FeeDetailChargeItemFilterProjection> projections =
-                this.chargeItemQueryService.listFeeDetailChargeItemFilterProjections(
-                    enteredFrom,
-                    enteredToExclusive,
-                    statusCodes,
-                    query.getEntererMatchIds(),
-                    query.getRequestingOrgId(),
-                    allowedEncounterIds,
-                    serviceTableFilter.value);
-            matchedProjections = this.filterProjectionsByChargeLevelHardFilters(projections, query);
-            LinkedHashSet<Long> matchedEncounterSet = new LinkedHashSet<>();
-            LinkedHashSet<Long> matchedChargeItemIdSet = new LinkedHashSet<>();
-            BigDecimal saleSum = BigDecimal.ZERO;
-            for (FeeDetailChargeItemFilterProjection projection : matchedProjections) {
-                if (projection == null || projection.getEncounterId() == null) {
-                    continue;
-                }
-                matchedEncounterSet.add(projection.getEncounterId());
-                if (projection.getId() != null) {
-                    matchedChargeItemIdSet.add(projection.getId());
-                }
-                if (projection.getTotalPrice() != null) {
-                    saleSum = saleSum.add(projection.getTotalPrice());
-                }
-            }
-            matchedEncounterIds = new ArrayList<>(matchedEncounterSet);
-            projectionSaleSum = MonetaryAmountSupport.scaleSettle(saleSum);
-            // Asm：硬筛命中 chargeItemId 全集，供页脚进价按 id IN 装载
-            query.setResolvedFeeDetailMatchedChargeItemIds(new ArrayList<>(matchedChargeItemIdSet));
-        } else {
-            matchedEncounterIds = new ArrayList<>(allowedEncounterIds);
-            query.setResolvedFeeDetailMatchedChargeItemIds(null);
-        }
-        if (matchedEncounterIds.isEmpty()) {
-            this.clearOutpatientFeeDetailScopesToEmpty(query);
-            query.setPageScopeOnly(Boolean.TRUE);
-            query.setResolvedEncounterPageTotal(0L);
-            query.setResolvedFeeDetailMatchedEncounterIds(List.of());
-            query.setResolvedSaleAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
-            return;
-        }
-        int pageNoZeroBased = 0;
-        if (query.getPageNo() != null && query.getPageNo() >= 1) {
-            pageNoZeroBased = query.springPageIndex();
-        }
-        int pageSize = OutpatientFeeDetailConstants.DEFAULT_PAGE_SIZE;
-        if (query.getPageSize() != null && query.getPageSize() > 0) {
-            pageSize = query.getBoundedPageSize();
-        }
-        // Pre：DB GROUP BY encounter 分页（ORDER BY MAX(entered_date) DESC）
-        Page<Long> encounterPage =
-            this.chargeItemQueryService.pageFeeDetailEncounterIdsByEnteredDateWindow(
-                enteredFrom,
-                enteredToExclusive,
-                statusCodes,
-                query.getEntererMatchIds(),
-                query.getRequestingOrgId(),
-                matchedEncounterIds,
-                serviceTableFilter.value,
-                pageNoZeroBased,
-                pageSize);
-        List<Long> pageEncounterIds = encounterPage.getContent();
-        // Asm：回写钳制后的实际页码（1-based），与域层 Page 一致
-        query.setPageNo(encounterPage.getNumber() + 1);
-        query.setResolvedEncounterPageTotal(encounterPage.getTotalElements());
-        query.setResolvedFeeDetailMatchedEncounterIds(matchedEncounterIds);
-        query.setPageScopeOnly(Boolean.TRUE);
-        if (projectionSaleSum != null) {
-            query.setResolvedSaleAmountTotal(projectionSaleSum);
-        } else {
-            query.setResolvedSaleAmountTotal(null);
-        }
-        if (pageEncounterIds == null || pageEncounterIds.isEmpty()) {
-            this.clearOutpatientFeeDetailScopesToEmpty(query);
-            query.setPageScopeOnly(Boolean.TRUE);
-            query.setResolvedEncounterPageTotal(encounterPage.getTotalElements());
-            query.setResolvedFeeDetailMatchedEncounterIds(matchedEncounterIds);
-            if (projectionSaleSum != null) {
-                query.setResolvedSaleAmountTotal(projectionSaleSum);
-            }
-            return;
-        }
-        List<ChargeItem> pageChargeItems;
-        // Pre：有行级硬筛时只装本页命中投影对应实体；否则按本页 encounter IN 装日窗实体
-        if (needChargeLevelHardFilter) {
-            LinkedHashSet<Long> pageEncounterSet = new LinkedHashSet<>(pageEncounterIds);
-            LinkedHashSet<Long> pageChargeItemIds = new LinkedHashSet<>();
-            for (FeeDetailChargeItemFilterProjection projection : matchedProjections) {
-                if (projection == null || projection.getId() == null || projection.getEncounterId() == null) {
-                    continue;
-                }
-                if (!pageEncounterSet.contains(projection.getEncounterId())) {
-                    continue;
-                }
-                pageChargeItemIds.add(projection.getId());
-            }
-            ChargeItemQueryCommand loadCmd = new ChargeItemQueryCommand();
-            loadCmd.setIds(new ArrayList<>(pageChargeItemIds));
-            pageChargeItems = this.chargeItemQueryService.loadChargeItemsByIds(loadCmd);
-        } else {
-            pageChargeItems = this.chargeItemQueryService.listChargeItemsByEncounterIdsInEnteredDateWindow(
-                pageEncounterIds,
-                enteredFrom,
-                enteredToExclusive,
-                statusCodes,
-                query.getEntererMatchIds(),
-                query.getRequestingOrgId());
-            // 费用大类已下推 service_table；此处无需再滤
-        }
-        List<OutpatientFeeDetailChargePaymentLinkQueryModel> links =
-            this.reportChargeBillSummarizeScopeSupport.buildSyntheticPaymentLinks(pageChargeItems);
-        Map<Long, ChargeItem> preloadedById = new LinkedHashMap<>();
-        LinkedHashSet<Long> pageChargeItemIdSet = new LinkedHashSet<>();
-        for (ChargeItem chargeItem : pageChargeItems) {
-            if (chargeItem != null && chargeItem.getId() != null) {
-                preloadedById.put(chargeItem.getId(), chargeItem);
-                pageChargeItemIdSet.add(chargeItem.getId());
-            }
-        }
-        query.setPaymentChargeItemLinks(links);
-        query.setPaymentContextByChargeItemId(
-            this.reportChargeBillSummarizeScopeSupport.buildSyntheticPaymentContextByChargeItemId(pageChargeItems));
-        query.setPreloadedChargeItemsById(preloadedById);
-        query.setPaymentsInScope(List.of());
-        query.setResolvedChargeItemScope(new ArrayList<>(pageChargeItemIdSet));
-        query.setResolvedEncounterScope(new ArrayList<>(pageEncounterIds));
-        query.setResolvedPaymentChargeItemLinks(links);
-        query.setCachedChargeRows(null);
+        this.prepareOutpatientFeeDetailScopesFromPayment(query);
     }
 
     /**
-     * 汇总 Tab：与明细分页同路径（ChargeItem-only + 仅 SETTLED）。
+     * 汇总 Tab：Payment {@code bill_date} + 收退并集净额（退费冲减）。
      *
      * @param query 须含日期窗
      */
     public void prepareOutpatientFeeDetailSummarizeScopesFromChargeBill(OutpatientFeeDetailPageQuery query) {
-        this.prepareOutpatientFeeDetailScopesFromChargeBill(query);
+        this.prepareOutpatientFeeDetailScopesFromPayment(query);
     }
 
     /**
-     * 费用明细统一 scope：{@code entered_date} 窗 + 仅 SETTLED + 门诊就诊；退费 Tab 直接空结果。
+     * 费用明细统一 scope：Payment 日窗 + 收退 Tab + 门诊 AMB + 硬筛收窄。
      *
-     * <p>供<strong>汇总/导出</strong>全日窗路径；明细分页禁止调用本方法装满月实体。</p>
+     * <p>CHARGE→SUCCESS；REFUND→REFUNDED；ALL→两者。退费 Tab 出退费 payment 负向行，不再恒空。</p>
      *
-     * @param query 须含日期窗；可含收费人白名单
+     * @param query 须含日期窗；可含收费人白名单 / 收退 Tab
      */
-    private void prepareOutpatientFeeDetailScopesFromChargeBill(OutpatientFeeDetailPageQuery query) {
+    private void prepareOutpatientFeeDetailScopesFromPayment(OutpatientFeeDetailPageQuery query) {
         if (query == null) {
             throw new IllegalArgumentException("outpatient fee detail query is required");
         }
         if (query.getBillDateFrom() == null || query.getBillDateTo() == null) {
             throw new IllegalArgumentException("billDateFrom and billDateTo are required");
         }
-        // Gate：退费 Tab 在净口径下无行（退费不入统计）
-        if (OutpatientFeeDetailConstants.TRADE_DIRECTION_REFUND.equals(query.getTradeDirection())) {
+        // Pre：已结 + 退费中 + 已退；退费中仍挂原 SUCCESS 快照，须计入直至退费 Payment 冲减
+        query.setAllowedChargeItemStatusCodes(List.of(
+            ChargeItemStatus.SETTLED.getCode(),
+            ChargeItemStatus.REFUNDING.getCode(),
+            ChargeItemStatus.REFUNDED.getCode()));
+        // Pre：按 bill_date / 收费人 / 收退 Tab 解析 payment→chargeItem 快照链路（与日结同轴）
+        this.paymentReconciliationQueryService.listOutpatientFeeDetailChargeItemIdsByPaymentFilter(query);
+        List<OutpatientFeeDetailChargePaymentLinkQueryModel> paymentLinks = query.getPaymentChargeItemLinks();
+        if (paymentLinks == null || paymentLinks.isEmpty()) {
             this.clearOutpatientFeeDetailScopesToEmpty(query);
             return;
         }
-        LocalDateTime enteredFrom = query.getBillDateFrom().atStartOfDay();
-        LocalDateTime enteredToExclusive = query.getBillDateTo().plusDays(1).atStartOfDay();
-        // Pre：仅已结账单；收费人按 enterer_id（结算写入口径）
-        List<ChargeItem> windowChargeItems =
-            this.chargeItemQueryService.listSettledChargeItemsByEnteredDateWindow(
-                enteredFrom, enteredToExclusive, query.getEntererMatchIds());
-        LinkedHashSet<Long> encounterIds = new LinkedHashSet<>();
-        for (ChargeItem chargeItem : windowChargeItems) {
-            if (chargeItem != null && chargeItem.getEncounterId() != null) {
-                encounterIds.add(chargeItem.getEncounterId());
-            }
-        }
-        Set<Long> ambEncounterIds = this.filterEncounterIdsByClass(encounterIds, EncounterClass.AMB);
-        List<ChargeItem> ambChargeItems = new ArrayList<>();
-        for (ChargeItem chargeItem : windowChargeItems) {
-            if (chargeItem == null || chargeItem.getId() == null || chargeItem.getEncounterId() == null) {
+        // Pre：先收窄门诊 AMB，再套挂号科室/患者等硬筛
+        LinkedHashSet<Long> candidateEncounterIds = new LinkedHashSet<>();
+        for (OutpatientFeeDetailChargePaymentLinkQueryModel link : paymentLinks) {
+            if (link == null || link.getPaymentContext() == null) {
                 continue;
             }
-            if (!ambEncounterIds.contains(chargeItem.getEncounterId())) {
+            if (link.getPaymentContext().getEncounterId() != null) {
+                candidateEncounterIds.add(link.getPaymentContext().getEncounterId());
+            }
+        }
+        Set<Long> ambEncounterIds = this.filterEncounterIdsByClass(candidateEncounterIds, EncounterClass.AMB);
+        if (ambEncounterIds.isEmpty()) {
+            this.clearOutpatientFeeDetailScopesToEmpty(query);
+            return;
+        }
+        // Asm：非 AMB 就诊从候选链路剔除（门诊费用明细不入住院结算单）
+        List<OutpatientFeeDetailChargePaymentLinkQueryModel> ambLinks = new ArrayList<>();
+        for (OutpatientFeeDetailChargePaymentLinkQueryModel link : paymentLinks) {
+            if (link == null || link.getPaymentContext() == null) {
                 continue;
             }
-            ambChargeItems.add(chargeItem);
-        }
-        List<OutpatientFeeDetailChargePaymentLinkQueryModel> links =
-            this.reportChargeBillSummarizeScopeSupport.buildSyntheticPaymentLinks(ambChargeItems);
-        Map<Long, ChargeItem> preloadedById = new LinkedHashMap<>();
-        for (ChargeItem chargeItem : ambChargeItems) {
-            if (chargeItem != null && chargeItem.getId() != null) {
-                preloadedById.put(chargeItem.getId(), chargeItem);
+            Long encounterId = link.getPaymentContext().getEncounterId();
+            if (encounterId == null || !ambEncounterIds.contains(encounterId)) {
+                continue;
             }
+            ambLinks.add(link);
         }
-        query.setPaymentChargeItemLinks(links);
-        query.setPaymentContextByChargeItemId(
-            this.reportChargeBillSummarizeScopeSupport.buildSyntheticPaymentContextByChargeItemId(ambChargeItems));
-        query.setPreloadedChargeItemsById(preloadedById);
-        query.setPaymentsInScope(List.of());
+        if (ambLinks.isEmpty()) {
+            this.clearOutpatientFeeDetailScopesToEmpty(query);
+            return;
+        }
+        query.setPaymentChargeItemLinks(ambLinks);
+        // Pre：明细分页走 links 内存就诊块分页；页脚售价走链路带符号加总
         query.setPageScopeOnly(Boolean.FALSE);
+        query.setResolvedSaleAmountTotal(null);
         this.narrowOutpatientFeeDetailScopesAfterCandidates(query);
+        // Asm：进价页脚按命中 chargeItemId IN 装载（与售价 scope 同集合）
+        List<Long> resolvedChargeItemScope = query.getResolvedChargeItemScope();
+        if (resolvedChargeItemScope != null && !resolvedChargeItemScope.isEmpty()) {
+            query.setResolvedFeeDetailMatchedChargeItemIds(new ArrayList<>(resolvedChargeItemScope));
+            List<Long> resolvedEncounterScope = query.getResolvedEncounterScope();
+            if (resolvedEncounterScope == null) {
+                query.setResolvedFeeDetailMatchedEncounterIds(List.of());
+            } else {
+                query.setResolvedFeeDetailMatchedEncounterIds(new ArrayList<>(resolvedEncounterScope));
+            }
+        }
     }
 
     /**
@@ -345,127 +188,10 @@ public class OutpatientFeeDetailLoader {
         query.setResolvedPaymentChargeItemLinks(List.of());
         query.setCachedChargeRows(null);
         query.setResolvedFeeDetailMatchedChargeItemIds(List.of());
-    }
-
-    /**
-     * 是否需要行级硬筛选（项目关键字 / 细分类 / 费用性质）——须轻量投影，禁止全日窗实体。
-     *
-     * @param query 查询
-     * @return 需要时 {@code true}
-     */
-    private boolean needsChargeLevelHardFilter(OutpatientFeeDetailPageQuery query) {
-        if (StringUtils.isNotEmpty(query.getProductNameKeyword())
-            || StringUtils.isNotEmpty(query.getProductCodeKeyword())) {
-            return true;
-        }
-        if (query.getSubCategoryCodes() != null && !query.getSubCategoryCodes().isEmpty()) {
-            return true;
-        }
-        if (StringUtils.isNotEmpty(query.getFeeNatureContractNo())) {
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * service_table 过滤包装：空列表表示不过滤（传 null 给域层）。
-     *
-     * @param serviceTables 大类映射表名
-     * @return 包装；value 可为 null
-     */
-    private CollectionOrNull toServiceTableFilter(List<String> serviceTables) {
-        CollectionOrNull wrapper = new CollectionOrNull();
-        if (serviceTables == null || serviceTables.isEmpty()) {
-            wrapper.value = null;
-        } else {
-            wrapper.value = serviceTables;
-        }
-        return wrapper;
-    }
-
-    /**
-     * 对轻量投影套用项目关键字 / 细分类 / 费用性质（用 stub ChargeItem 复用既有匹配逻辑）。
-     *
-     * @param projections 日窗投影
-     * @param query       筛选条件
-     * @return 命中投影
-     */
-    private List<FeeDetailChargeItemFilterProjection> filterProjectionsByChargeLevelHardFilters(
-        List<FeeDetailChargeItemFilterProjection> projections,
-        OutpatientFeeDetailPageQuery query) {
-        if (projections == null || projections.isEmpty()) {
-            return List.of();
-        }
-        List<ChargeItem> stubs = new ArrayList<>(projections.size());
-        Map<Long, FeeDetailChargeItemFilterProjection> projectionById = new LinkedHashMap<>();
-        for (FeeDetailChargeItemFilterProjection projection : projections) {
-            if (projection == null || projection.getId() == null) {
-                continue;
-            }
-            ChargeItem stub = new ChargeItem();
-            stub.setId(projection.getId());
-            stub.setEncounterId(projection.getEncounterId());
-            stub.setProductTable(projection.getProductTable());
-            stub.setProductId(projection.getProductId());
-            stub.setAccountId(projection.getAccountId());
-            stub.setDefinitionId(projection.getDefinitionId());
-            stub.setTotalPrice(projection.getTotalPrice());
-            stubs.add(stub);
-            projectionById.put(projection.getId(), projection);
-        }
-        if (stubs.isEmpty()) {
-            return List.of();
-        }
-        Set<Long> feeNatureMatchedChargeItemIds =
-            this.reportPatientSettlementContextAssembler.filterChargeItemIdsByAccountContractNo(
-                stubs, query.getFeeNatureContractNo());
-        // 费用性质有筛选但无命中时短路
-        if (feeNatureMatchedChargeItemIds != null && feeNatureMatchedChargeItemIds.isEmpty()) {
-            return List.of();
-        }
-        boolean filterByProductKeyword = StringUtils.isNotEmpty(query.getProductNameKeyword())
-            || StringUtils.isNotEmpty(query.getProductCodeKeyword());
-        boolean filterBySubCategory = query.getSubCategoryCodes() != null
-            && !query.getSubCategoryCodes().isEmpty();
-        Map<String, ProductDefinitionDisplayDto> productMap = Map.of();
-        if (filterByProductKeyword) {
-            productMap = this.loadProductMapForChargeItems(stubs);
-        }
-        Map<Long, String> finTypeByChargeItemId = Map.of();
-        if (filterBySubCategory) {
-            finTypeByChargeItemId =
-                this.dailySettlementFinTypeAmountLoader.mapFinTypeCodeByChargeItemId(stubs);
-        }
-        List<FeeDetailChargeItemFilterProjection> matched = new ArrayList<>();
-        for (ChargeItem stub : stubs) {
-            if (stub == null || stub.getId() == null) {
-                continue;
-            }
-            if (feeNatureMatchedChargeItemIds != null
-                && !feeNatureMatchedChargeItemIds.contains(stub.getId())) {
-                continue;
-            }
-            if (filterByProductKeyword && !this.matchesProductKeywords(stub, productMap, query)) {
-                continue;
-            }
-            if (filterBySubCategory
-                && !this.matchesSubCategoryCodes(stub, finTypeByChargeItemId, query.getSubCategoryCodes())) {
-                continue;
-            }
-            FeeDetailChargeItemFilterProjection projection = projectionById.get(stub.getId());
-            if (projection != null) {
-                matched.add(projection);
-            }
-        }
-        return matched;
-    }
-
-    /**
-     * 可空 service_table 集合包装（避免三元）。
-     */
-    private static final class CollectionOrNull {
-        /** 非空时下推 service_table IN；null 表示不过滤。 */
-        private List<String> value;
+        query.setResolvedFeeDetailMatchedEncounterIds(List.of());
+        query.setResolvedEncounterPageTotal(0L);
+        query.setResolvedSaleAmountTotal(null);
+        query.setPageScopeOnly(Boolean.FALSE);
     }
 
     /**
@@ -571,7 +297,7 @@ public class OutpatientFeeDetailLoader {
                 continue;
             }
             if (!this.isOutpatientFeeDetailChargeStatus(chargeItem.getStatusEnum())) {
-                // 净口径仅保留已结；退费退出统计
+                // 写路径退费后行可能已是 REFUNDING/REFUNDED；符号看 payment 链路，白名单内都须保留
                 continue;
             }
             if (chargeItem.getEncounterId() == null || !allowedEncounterIdSet.contains(chargeItem.getEncounterId())) {
@@ -817,12 +543,23 @@ public class OutpatientFeeDetailLoader {
     }
 
     /**
-     * 门诊费用明细纳入的 ChargeItem 状态：仅已结（退费不入统计）。
+     * 门诊费用明细纳入的 ChargeItem 状态：已结、退费中或已退费（BR-OP-FDT-002）。
+     *
+     * <p>退费写路径会把原行改成 {@code REFUNDING}/{@code REFUNDED}；收费日仍靠原 SUCCESS payment
+     * 快照挂载同 id，故三态均须可读。{@code REFUNDING} 尚未产生退费 Payment 时仍计正向已收，
+     * 与日结 static 同口径。行金额正负由 payment 收退上下文决定（BR-OP-FDT-012）。</p>
      *
      * @param statusEnum 账单状态码
-     * @return 已结时 {@code true}
+     * @return 白名单内状态为 {@code true}
      */
     private boolean isOutpatientFeeDetailChargeStatus(String statusEnum) {
-        return ChargeItemStatus.SETTLED.getCode().equals(statusEnum);
+        if (ChargeItemStatus.SETTLED.getCode().equals(statusEnum)) {
+            return true;
+        }
+        // 退费中：原收费已入账，未完成退费前须计入净额
+        if (ChargeItemStatus.REFUNDING.getCode().equals(statusEnum)) {
+            return true;
+        }
+        return ChargeItemStatus.REFUNDED.getCode().equals(statusEnum);
     }
 }

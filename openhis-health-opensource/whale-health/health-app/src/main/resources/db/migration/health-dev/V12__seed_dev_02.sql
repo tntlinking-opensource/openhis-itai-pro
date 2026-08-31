@@ -13,8 +13,41 @@ VALUES
 ('322972360708722690', '1', '2026-06-10 05:36:51.329+00', '2026-06-10 05:36:51.329+00', '1', '1', false, NULL, NULL, 0, '322972360708722688', '322957296852799488'),
 ('322972377024565248', '1', '2026-06-10 05:36:55.219+00', '2026-06-10 05:36:55.219+00', '1', '1', false, NULL, NULL, 0, '322972377024565248', '322957224354254848'),
 ('322972377024565249', '1', '2026-06-10 05:36:55.219+00', '2026-06-10 05:36:55.219+00', '1', '1', false, NULL, NULL, 0, '322972377024565248', '322957264586018816'),
-('322972377024565250', '1', '2026-06-10 05:36:55.219+00', '2026-06-10 05:36:55.219+00', '1', '1', false, NULL, NULL, 0, '322972377024565248', '322957296852799488')
+('322972377024565250', '1', '2026-06-10 05:36:55.219+00', '2026-06-10 05:36:55.219+00', '1', '1', false, NULL, NULL, 0, '322972377024565248', '322957296852799488'),
+('322965878831321094', '1', '2026-06-10 05:11:05.929+00', '2026-06-10 05:11:05.929+00', '1', '1', false, NULL, NULL, 0, '322965878827126784', '322957328119180160'),
+('322965878831321095', '1', '2026-06-10 05:11:05.929+00', '2026-06-10 05:11:05.929+00', '1', '1', false, NULL, NULL, 0, '322965878831321088', '322957328119180160'),
+('322972360708722691', '1', '2026-06-10 05:36:51.329+00', '2026-06-10 05:36:51.329+00', '1', '1', false, NULL, NULL, 0, '322972360708722688', '322957328119180160'),
+('322972377024565251', '1', '2026-06-10 05:36:55.219+00', '2026-06-10 05:36:55.219+00', '1', '1', false, NULL, NULL, 0, '322972377024565248', '322957328119180160')
 ON CONFLICT ("id") DO NOTHING;
+
+-- 其余 dev 岗位批量挂上历史号复诊（与平台 V2 adm_pr_assign_service 种子同口径）
+INSERT INTO adm_pr_assign_service (
+    id, tenant_id, created_at, updated_at, created_by, updated_by,
+    is_deleted, deleted_at, deleted_by, version,
+    assignment_id, healthcare_service_id
+)
+SELECT
+    a.id + 500000000000000000,
+    COALESCE(a.tenant_id, 1),
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    COALESCE(a.created_by, 1),
+    COALESCE(a.updated_by, 1),
+    false,
+    NULL,
+    NULL,
+    0,
+    a.id,
+    322957328119180160
+FROM adm_pr_assign a
+WHERE a.is_deleted = false
+  AND NOT EXISTS (
+    SELECT 1
+    FROM adm_pr_assign_service s
+    WHERE s.assignment_id = a.id
+      AND s.healthcare_service_id = 322957328119180160
+      AND s.is_deleted = false
+  );
 
 INSERT INTO "cln_condition_definition" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "source_enum", "condition_code", "name", "py_str", "wb_str", "type_code", "description", "yb_flag", "yb_no", "yb_match_flag", "status_enum")
 VALUES

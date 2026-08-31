@@ -32,6 +32,7 @@ import { buildPreviewPrintData } from '../utils/print-data';
 import {
   createInitialDesignerTemplate,
   normalizePrintJson,
+  readPrintJsonFromTemplateDto,
   toSavePayload,
   validatePrintJson,
 } from '../utils/print-json';
@@ -180,7 +181,8 @@ async function mountInitialDesigner(): Promise<void> {
     setPaper(DEFAULT_PAPER_PRESET);
     await nextTick();
     await syncPaperFromTemplate(getTemplateJson());
-  } catch {
+  } catch (error) {
+    console.error('[hiprint] 设计器初始化失败', error);
     ElMessage.error('设计器初始化失败');
   } finally {
     loading.value = false;
@@ -204,7 +206,7 @@ async function mountFromBackend(busNo: string): Promise<void> {
       scenarioCode: dto.scenarioCode,
     };
     samplePrintData.value = dto.samplePrintData ?? {};
-    const normalized = normalizePrintJson(dto.PrintJson ?? createInitialDesignerTemplate());
+    const normalized = normalizePrintJson(readPrintJsonFromTemplateDto(dto));
     await mountDesigner(normalized, {
       designSelector: DESIGN_SELECTOR,
       settingSelector: SETTING_SELECTOR,
@@ -213,7 +215,8 @@ async function mountFromBackend(busNo: string): Promise<void> {
     syncSamplePrintData(normalized, dto.samplePrintData ?? {});
     await nextTick();
     await syncPaperFromTemplate(normalized);
-  } catch {
+  } catch (error) {
+    console.error('[hiprint] 加载模板失败', error);
     ElMessage.error('加载模板失败');
     await mountInitialDesigner();
   } finally {

@@ -2,6 +2,7 @@
 import type { OptionDto } from '#/api/inpatient-registration';
 import type {
   ConfirmInpatientSettleResponse,
+  InpatientPrepayRefundPlanItemDto,
   InpatientSettleChargeLineDto,
   InpatientSettleQueueItemDto,
   LoadInpatientSettleSummaryResponse,
@@ -35,6 +36,9 @@ import {
   httpReverseInpatientSettle,
   httpRecallInpatientDischarge,
   httpConfirmInpatientSettle,
+  httpDiagnoseInpatientPlatformVisit,
+  httpRepairInpatientPlatformVisit,
+  httpCompleteInpatientDischargePrepayRefund,
   httpLoadInpatientSettlePageInit,
   httpLoadInpatientSettleSummary,
   httpLoadSettledInpatientPaymentView,
@@ -42,6 +46,7 @@ import {
   httpPreSettleInpatientCharges,
   httpQueryInpatientSettleCharges,
 } from '#/api/inpatient-settle';
+import type { AlignInpatientPlatformVisitResponse } from '#/api/inpatient-settle';
 import AppDialog from '#/components/app-dialog.vue';
 import EinvoiceBillAmountMismatchBanner from '#/components/einvoice/EinvoiceBillAmountMismatchBanner.vue';
 import EinvoiceIssueStatusPanel from '#/components/einvoice/EinvoiceIssueStatusPanel.vue';
@@ -50,11 +55,16 @@ import SelectTable from '#/components/select-table.vue';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { isExpectedEmptyResponseError } from '#/utils/http/expected-empty-response-errors';
 import { formatMoneyDisplay, formatMoneyYuan } from '#/utils/format/money-scale';
+import { decimalAdd, decimalDiv, decimalMul } from '#/utils/format/decimal-util';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import { optionDtosToPayChannelOptions } from '#/utils/payment/payment-channel-options';
 import { isScanPayChannel, useUnionPayScanPay } from '#/composables/payment/useUnionPayScanPay';
 import { submitScanPayment } from '#/utils/payment/submit-scan-payment';
 import { settleWithScanRecovery } from '#/utils/payment/scan-settle-recovery';
+import {
+  clearCachedClientRefundResult,
+  submitScanRefund,
+} from '#/utils/payment/submit-scan-refund';
 
 import {
   FALLBACK_DEFAULT_PAY_CHANNEL,
@@ -65,7 +75,10 @@ import {
 } from './inpatient-settle.constants';
 import {
   buildClinicalPreSettleInsuranceBreakdown,
+  resolveClinicalPreSettleChannelPayable,
+  resolveClinicalPreSettlePersonalCashPayable,
   resolveClinicalPreSettlePrepayOffset,
+  uploadInpatientFeeDetailsWithProgress,
 } from '#/chs/composables/use-inpatient-clinical-pre-settle';
 
 import InpatientSettleDialog from './components/inpatient-settle-dialog.vue';
@@ -78,6 +91,7 @@ import {
   chooseInpatientSettleInsuranceMedium,
   inpatientSettleReadCredentialFailHint,
   inpatientSettleReadCredentialHint,
+  inpatientSettleReadCredentialLabel,
   isInpatientInsuranceRegistration,
   isZeroAmountDischargeFullSettle,
   inpatientSettleBlockedMessage,
@@ -94,16 +108,39 @@ import {
   type InpatientSettleToolbarActionCode,
 } from './settle-toolbar-action';
 import DetailAuditRemindDialog from '#/chs/components/detail-audit-remind-dialog.vue';
+import InsuranceProgressDialog from '#/chs/components/insurance-progress-dialog.vue';
 import {
   runIpDetailAuditGate,
   type DetailAuditRemindDialogExpose,
 } from '#/chs/composables/use-detail-audit-gate';
+import { useInsuranceProgressDialog } from '#/chs/composables/use-insurance-progress-dialog';
 
 defineOptions({
   name: 'ChargeIpSettle',
 });
 
 const detailAuditDialogRef = ref<DetailAuditRemindDialogExpose | null>(null);
+const {
+  activeIndex: settleProgressActiveIndex,
+  countCurrent: settleProgressCountCurrent,
+  countLabelText: settleProgressCountLabelText,
+  countTotal: settleProgressCountTotal,
+  detail: settleProgressDetail,
+  progress: settleProgress,
+  steps: settleProgressSteps,
+  title: settleProgressTitle,
+  visible: settleProgressVisible,
+} = useInsuranceProgressDialog();
+
+/** 第二阶段原路退半成功上下文（关弹窗后仍可重试） */
+const pendingPrepayRefundContext = ref<{
+  confirmRes: ConfirmInpatientSettleResponse;
+  encounterId: string;
+  patientId: string;
+  payAmount: number;
+  payChannelCode: string;
+  plan: InpatientPrepayRefundPlanItemDto[];
+} | null>(null);
 
 interface FeeCategoryRow {
   amount: string;
@@ -399,29 +436,52 @@ function formatHistorySettleTimeDisplay(value: null | string | undefined) {
   return parsed.format('YYYY-MM-DD HH:mm');
 }
 
-/** 格式化为差额提示文案 */
-function formatBalanceHintDisplay(hint: null | number | string | undefined) {
-  const n = Number(hint ?? 0);
-  if (!Number.isFinite(n) || n === 0) {
-    return '—';
+/**
+ * 摘要/预结「应付 / 原路退」卡：认 C 与应退，禁止 balanceHint。
+ */
+function formatDepositSettlePayableCardHint(source: {
+  channelPayable?: null | number | string;
+  depositOffsetAmount?: null | number | string;
+  prepayFullRefund?: boolean | null;
+  prepayRefundAmount?: null | number | string;
+}): string {
+  const parts: string[] = [];
+  const channel = Number(source.channelPayable ?? NaN);
+  if (Number.isFinite(channel) && channel > 0) {
+    parts.push(`应付 ¥ ${formatMoneyDisplay(channel)}`);
   }
-  if (n > 0) {
-    return `应退 ¥ ${formatMoneyDisplay(n)}`;
+  const refund = Number(source.prepayRefundAmount ?? NaN);
+  if (Number.isFinite(refund) && refund > 0) {
+    const full = source.prepayFullRefund === true;
+    parts.push(
+      full
+        ? `全额退现金 ¥ ${formatMoneyDisplay(refund)}`
+        : `退现金 ¥ ${formatMoneyDisplay(refund)}`,
+    );
   }
-  return `应补 ¥ ${formatMoneyDisplay(Math.abs(n))}`;
+  if (parts.length > 0) {
+    return parts.join(' · ');
+  }
+  const offset = Number(source.depositOffsetAmount ?? 0);
+  if (Number.isFinite(offset) && offset > 0) {
+    return '预交金冲抵，无需收退';
+  }
+  if (Number.isFinite(channel) && channel === 0) {
+    return '无需收退';
+  }
+  return '—';
 }
 
-/** 医保预结算后：预交金 − 个人现金 → 应退/应补 */
-function formatInsurancePrepayBalanceHint(
-  prepayNet: null | number | string | undefined,
-  psnCashPay: null | number | string | undefined,
-) {
-  const prepay = Number(prepayNet ?? 0);
-  const psnCash = Number(psnCashPay ?? 0);
-  if (!Number.isFinite(prepay) || !Number.isFinite(psnCash)) {
+/** 预交押金：D≥0 展示金额，禁止正余额显示「—」。 */
+function formatPrepayDepositDisplay(value: null | number | string | undefined) {
+  if (value === null || value === undefined || value === '') {
     return '—';
   }
-  return formatBalanceHintDisplay(prepay - psnCash);
+  const n = Number(value);
+  if (!Number.isFinite(n)) {
+    return '—';
+  }
+  return `¥ ${formatMoneyDisplay(n)}`;
 }
 
 /** 费用明细行转表格展示结构 */
@@ -438,7 +498,7 @@ function mapChargeLineToFeeDetailRow(line: InpatientSettleChargeLineDto): FeeDet
     quantity: `${qty}${unit}`,
     priceQuantity: `${formatCurrencyDisplay(line.unitPrice)} × ${qty}${unit}`,
     amount: formatCurrencyDisplay(line.lineAmount),
-    insuranceFlag: '—',
+    insuranceFlag: line.chrgitmLvText?.trim() || '—',
     selected: Boolean(line.selected),
   };
 }
@@ -453,24 +513,79 @@ function resolveActiveSettledPaymentBrief(
   return view.payments?.find((payment) => String(payment.paymentId) === activeId);
 }
 
+/** 大类医保内/自费分摊：用结算回执符合范围、全自费+先行自付按大类金额占比拆分 */
+interface CategoryInsuranceSplitSource {
+  fulamtOwnpayAmt?: null | number | string;
+  inscpScpAmt?: null | number | string;
+  medfeeSumamt?: null | number | string;
+  preselfpayAmt?: null | number | string;
+}
+
 /** 大类汇总转表格展示结构 */
 function mapCategoryRows(
-  categories: { amount: number | string; categoryDisplay: string; lineCount: number }[],
+  categories: {
+    amount: number | string;
+    categoryCode?: string;
+    categoryDisplay?: string;
+    insuranceAmount?: null | number | string;
+    lineCount: number;
+    selfAmount?: null | number | string;
+  }[],
   pendingTotal: number | string,
+  insuranceSplit?: CategoryInsuranceSplitSource | null,
 ): FeeCategoryRow[] {
   const total = Number(pendingTotal ?? 0);
+  const medfee = Number(insuranceSplit?.medfeeSumamt ?? 0);
+  const inscp = Number(insuranceSplit?.inscpScpAmt ?? 0);
+  const ownSelf = decimalAdd(
+    Number(insuranceSplit?.fulamtOwnpayAmt ?? 0),
+    Number(insuranceSplit?.preselfpayAmt ?? 0),
+  );
+  const canSplit = Number.isFinite(medfee) && medfee > 0.000_001;
   return categories.map((row) => {
     const amount = Number(row.amount ?? 0);
+    // 占总费用比：大类费用金额 / 住院总费用（非大类内医保/自费比）
     const ratio =
       total > 0 && Number.isFinite(amount) ? `${((amount / total) * 100).toFixed(2)}%` : '—';
+    let insuranceRaw: null | number | string | undefined = row.insuranceAmount;
+    let selfRaw: null | number | string | undefined = row.selfAmount;
+    // 接口未给行级分摊时：按医疗费占比拆「符合范围 / 全自费+先行自付」（对齐结算图一口径）
+    if (
+      canSplit &&
+      Number.isFinite(amount) &&
+      (insuranceRaw == null || insuranceRaw === '') &&
+      (selfRaw == null || selfRaw === '')
+    ) {
+      const share = decimalDiv(amount, medfee, 8);
+      insuranceRaw = decimalMul(share, inscp, 2);
+      selfRaw = decimalMul(share, ownSelf, 2);
+    }
+    const hasInsuranceSplit =
+      insuranceRaw != null && insuranceRaw !== '' && Number.isFinite(Number(insuranceRaw));
+    const hasSelfSplit = selfRaw != null && selfRaw !== '' && Number.isFinite(Number(selfRaw));
     return {
-      category: row.categoryDisplay,
+      category: row.categoryDisplay?.trim() || row.categoryCode || '—',
       amount: formatCurrencyDisplay(row.amount),
-      insuranceAmount: '—',
-      selfAmount: formatCurrencyDisplay(row.amount),
+      insuranceAmount: hasInsuranceSplit ? formatCurrencyDisplay(insuranceRaw) : '—',
+      selfAmount: hasSelfSplit ? formatCurrencyDisplay(selfRaw) : '—',
       ratio,
     };
   });
+}
+
+/** 从已结算支付摘要取大类分摊基数（图一：符合范围 / 全自费 / 先行自付） */
+function resolveCategoryInsuranceSplitFromBrief(
+  payment: SettledPaymentBriefDto | null | undefined,
+): CategoryInsuranceSplitSource | null {
+  if (!payment?.insuranceSettled) {
+    return null;
+  }
+  return {
+    medfeeSumamt: payment.ybMedfeeSumamt,
+    inscpScpAmt: payment.ybInscpScpAmt,
+    fulamtOwnpayAmt: payment.ybFulamtOwnpayAmt,
+    preselfpayAmt: payment.ybPreselfpayAmt,
+  };
 }
 
 /** 全部待结算明细 ID */
@@ -482,6 +597,10 @@ const currentSettleMode = computed(() => {
   if (snapMode) {
     return snapMode;
   }
+  const settledModeCode = resolveActiveSettledPaymentBrief(settledPaymentView.value)?.settleMode;
+  if (settledModeCode) {
+    return settledModeCode;
+  }
   const status = summary.value?.statusEnum ?? currentQueueRow.value?.statusEnum;
   return resolveInpatientSettleMode(
     status,
@@ -491,8 +610,12 @@ const currentSettleMode = computed(() => {
 });
 
 const currentSettleModeLabel = computed(() => {
-  if (currentSettleMode.value === INPATIENT_SETTLE_MODE.DISCHARGE_FULL) {
+  const mode = currentSettleMode.value;
+  if (mode === INPATIENT_SETTLE_MODE.DISCHARGE_FULL) {
     return '出院全结';
+  }
+  if (mode === INPATIENT_SETTLE_MODE.MID_SETTLE) {
+    return '中途结算';
   }
   return '—';
 });
@@ -513,41 +636,26 @@ const isInsuranceRegistration = computed(() =>
   isInpatientInsuranceRegistration(currentQueueRow.value, contractMeta.value.contractCategoryById),
 );
 
-/** 解析本次渠道实付（少补/医保现金）；预交金充足时为 0。 */
+/** 解析本次渠道实付 C；预结算 displayAmount 优先，摘要回落 channelPayable。 */
 function resolveChannelPayableAmount() {
   const snap = preSettleSnapshot.value;
-  if (snap?.insurancePreSettled && snap.displayAmount != null) {
-    return Number(snap.displayAmount);
+  if (snap) {
+    return resolveClinicalPreSettleChannelPayable(snap);
   }
-  if (snap?.displayAmount != null) {
-    return Number(snap.displayAmount);
-  }
-  const hint = Number(summary.value?.balanceHint ?? 0);
-  if (Number.isFinite(hint) && hint < 0) {
-    return Math.abs(hint);
+  const fromSummary = Number(summary.value?.channelPayable ?? NaN);
+  if (Number.isFinite(fromSummary) && fromSummary >= 0) {
+    return fromSummary;
   }
   return 0;
 }
 
-/** 本次预交金冲抵额（个人现金/应收 − 需补交）。 */
+/** 本次预交金冲抵额 O（自费=医保同一套）。 */
 const settlePrepayOffsetAmount = computed(() =>
   resolveClinicalPreSettlePrepayOffset(preSettleSnapshot.value),
 );
 
-/** 患者实付金额：预结算后以 displayAmount（少补）为准 */
-const payableAmount = computed(() => {
-  if (preSettleSnapshot.value) {
-    return resolveChannelPayableAmount();
-  }
-  const hint = Number(summary.value?.balanceHint ?? 0);
-  if (Number.isFinite(hint) && hint < 0) {
-    return Math.abs(hint);
-  }
-  if (Number.isFinite(hint) && hint >= 0) {
-    return 0;
-  }
-  return Number(summary.value?.selectedTotal ?? 0);
-});
+/** 患者渠道实付：预结算后以 displayAmount=C 为准；摘要用 channelPayable。 */
+const payableAmount = computed(() => resolveChannelPayableAmount());
 
 /** 医保报销合计（预结算后展示） */
 const insuranceReimbursementAmount = computed(() => {
@@ -593,15 +701,12 @@ const billAmountMismatchContext = computed(() => {
   }
   const selectedLines = chargeLines.value.filter((line) => line.selected);
   const lineAmounts = selectedLines.map((line) => line.lineAmount);
-  let paymentAmount = summary.value?.selectedTotal;
+  // 勾稽对照：费用行 vs 渠道实付 C（非个人现金 P、非旧 balanceHint）
+  let paymentAmount: null | number | string | undefined = summary.value?.channelPayable;
   const snap = preSettleSnapshot.value;
-  if (snap?.insurancePreSettled && snap.displayAmount != null) {
+  if (snap?.displayAmount != null) {
     paymentAmount = snap.displayAmount;
-  } else if (snap?.displayAmount != null) {
-    paymentAmount = snap.displayAmount;
-  } else if (Number(summary.value?.balanceHint ?? 0) < 0) {
-    paymentAmount = Math.abs(Number(summary.value?.balanceHint ?? 0));
-  } else if (snap?.receivableTotal != null) {
+  } else if (snap?.receivableTotal != null && Number(snap.displayAmount ?? 0) === 0) {
     paymentAmount = 0;
   }
   return {
@@ -636,13 +741,22 @@ const currentPatientDisplay = computed<SettlePatientView>(() => {
     bedNo: s?.bedName ?? row?.bedName ?? '—',
     admissionDate: admission,
     insuranceType: row?.contractDisplay ?? '—',
-    doctorName: '—',
+    // 主治医生：队列/摘要同源 attendingDoctorName（后端展示参与者口径）
+    doctorName: (s?.attendingDoctorName ?? row?.attendingDoctorName ?? '').trim() || '—',
     totalFee: settledMode
       ? formatCurrencyDisplay(
-          Number(settled.receivableTotal ?? 0) > 0
-            ? settled.receivableTotal
-            : (resolveActiveSettledPaymentBrief(settled)?.ybMedfeeSumamt ??
-                settled.receivableTotal),
+          (() => {
+            const brief = resolveActiveSettledPaymentBrief(settled);
+            const medfee = Number(brief?.ybMedfeeSumamt ?? 0);
+            // 已结算医保：总费用对齐图一医疗费总额，避免误用个人现金 display
+            if (brief?.insuranceSettled && Number.isFinite(medfee) && medfee > 0) {
+              return brief.ybMedfeeSumamt;
+            }
+            if (Number(settled.receivableTotal ?? 0) > 0) {
+              return settled.receivableTotal;
+            }
+            return brief?.ybMedfeeSumamt ?? settled.receivableTotal;
+          })(),
         )
       : formatCurrencyDisplay(s?.pendingSettlementTotal),
     reimbursementAmount:
@@ -659,42 +773,102 @@ const currentPatientDisplay = computed<SettlePatientView>(() => {
                   Number(resolveActiveSettledPaymentBrief(settled)?.ybAcctPay ?? 0),
               )
             : '—',
-    selfPayAmount: preSettleSnapshot.value?.insurancePreSettled
-      ? formatCurrencyDisplay(preSettleSnapshot.value.ybPsnCashPay)
-      : isInsuranceRegistration.value
-        ? '—'
-        : preSettleSnapshot.value?.displayAmount != null
-          ? formatCurrencyDisplay(preSettleSnapshot.value.displayAmount)
-          : settledMode && resolveActiveSettledPaymentBrief(settled)?.insuranceSettled
-            ? formatCurrencyDisplay(resolveActiveSettledPaymentBrief(settled)?.ybPsnCashPay)
-            : settledMode
-              ? formatCurrencyDisplay(settled.receivableTotal)
-              : Number(s?.balanceHint ?? 0) < 0
-                ? formatBalanceHintDisplay(s?.balanceHint)
-                : formatCurrencyDisplay(0),
-    prepayTotal: settledMode ? '—' : formatCurrencyDisplay(s?.prepayNetBalance),
-    refundOrSupplement: settledMode
-      ? '—'
-      : preSettleSnapshot.value?.insurancePreSettled
-        ? formatInsurancePrepayBalanceHint(
-            s?.prepayNetBalance,
-            preSettleSnapshot.value.ybPsnCashPay,
-          )
-        : isInsuranceRegistration.value
-          ? '—'
-          : formatBalanceHintDisplay(s?.balanceHint),
+    selfPayAmount: (() => {
+      // 已结算：个人现金认 P（医保优先 ybPsnCashPay，否则 personalCashPayable/signed）
+      if (settledMode) {
+        const brief = resolveActiveSettledPaymentBrief(settled);
+        if (brief?.insuranceSettled) {
+          return formatCurrencyDisplay(brief.ybPsnCashPay);
+        }
+        if (brief?.personalCashPayable != null && brief.personalCashPayable !== '') {
+          return formatCurrencyDisplay(brief.personalCashPayable);
+        }
+        return formatCurrencyDisplay(settled.receivableTotal);
+      }
+      // 预结算后：个人自费金额 = P（非渠道实付 C）
+      const personalFromSnap = resolveClinicalPreSettlePersonalCashPayable(preSettleSnapshot.value);
+      if (personalFromSnap != null) {
+        return formatCurrencyDisplay(personalFromSnap);
+      }
+      if (isInsuranceRegistration.value) {
+        return '—';
+      }
+      if (s?.personalCashPayable != null && s.personalCashPayable !== '') {
+        return formatCurrencyDisplay(s.personalCashPayable);
+      }
+      return formatCurrencyDisplay(s?.selectedTotal);
+    })(),
+    prepayTotal: settledMode ? '—' : formatPrepayDepositDisplay(s?.prepayNetBalance),
+    refundOrSupplement: (() => {
+      if (settledMode) {
+        const brief = resolveActiveSettledPaymentBrief(settled);
+        if (brief?.insuranceSettled) {
+          return `个人现金应付 ¥ ${formatMoneyDisplay(brief.ybPsnCashPay)}`;
+        }
+        return formatDepositSettlePayableCardHint({
+          channelPayable: brief?.channelPayable,
+          depositOffsetAmount: brief?.depositOffsetAmount,
+        });
+      }
+      const snap = preSettleSnapshot.value;
+      if (snap) {
+        return formatDepositSettlePayableCardHint({
+          channelPayable: snap.displayAmount,
+          depositOffsetAmount: snap.depositOffsetAmount,
+          prepayFullRefund: snap.prepayFullRefund,
+          prepayRefundAmount: snap.prepayRefundAmount,
+        });
+      }
+      if (isInsuranceRegistration.value) {
+        return '—';
+      }
+      return formatDepositSettlePayableCardHint({
+        channelPayable: s?.channelPayable,
+        depositOffsetAmount: s?.depositOffsetAmount,
+        prepayFullRefund: s?.prepayFullRefund,
+        prepayRefundAmount: s?.prepayRefundAmount,
+      });
+    })(),
     accountBalanceSummary: settledMode
       ? '—'
       : isInsuranceRegistration.value && !preSettleSnapshot.value?.insurancePreSettled
-        ? formatCurrencyDisplay(s?.prepayNetBalance)
+        ? formatPrepayDepositDisplay(s?.prepayNetBalance)
         : (s?.accountBalanceSummaryText ?? '—'),
     accountBalanceSub: settledMode
       ? undefined
       : isInsuranceRegistration.value && !preSettleSnapshot.value?.insurancePreSettled
-        ? '医保预结算后按个人现金冲抵预交金'
+        ? '医保预结算后按冲抵/补收/原路退展示'
         : s?.accountBalanceSubText,
-    insuranceInFee: '—',
-    insuranceOutFee: '—',
+    insuranceInFee: (() => {
+      if (settledMode) {
+        const brief = resolveActiveSettledPaymentBrief(settled);
+        if (brief?.insuranceSettled && brief.ybInscpScpAmt != null) {
+          return formatCurrencyDisplay(brief.ybInscpScpAmt);
+        }
+      }
+      if (
+        preSettleSnapshot.value?.insurancePreSettled &&
+        preSettleSnapshot.value.ybInscpScpAmt != null
+      ) {
+        return formatCurrencyDisplay(preSettleSnapshot.value.ybInscpScpAmt);
+      }
+      return '—';
+    })(),
+    insuranceOutFee: (() => {
+      if (settledMode) {
+        const brief = resolveActiveSettledPaymentBrief(settled);
+        if (brief?.insuranceSettled && brief.ybFulamtOwnpayAmt != null) {
+          return formatCurrencyDisplay(brief.ybFulamtOwnpayAmt);
+        }
+      }
+      if (
+        preSettleSnapshot.value?.insurancePreSettled &&
+        preSettleSnapshot.value.ybFulamtOwnpayAmt != null
+      ) {
+        return formatCurrencyDisplay(preSettleSnapshot.value.ybFulamtOwnpayAmt);
+      }
+      return '—';
+    })(),
     settlementNo: settledMode
       ? (resolveActiveSettledPaymentBrief(settled)?.paymentNo ??
         resolveActiveSettledPaymentBrief(settled)?.paymentId ??
@@ -721,7 +895,7 @@ const coreSettlementSummary = computed(() => {
     { label: '医保报销金额', value: currentPatientDisplay.value.reimbursementAmount },
     { label: '个人自费金额', value: currentPatientDisplay.value.selfPayAmount },
     { label: '预交押金总额', value: currentPatientDisplay.value.prepayTotal },
-    { label: '应补金额 / 应退金额', value: currentPatientDisplay.value.refundOrSupplement },
+    { label: '应付个人现金 / 预交金原路退', value: currentPatientDisplay.value.refundOrSupplement },
   ];
   if (!isSettledQueueTab.value && currentPatientDisplay.value.accountBalanceSummary !== '—') {
     rows.push({
@@ -759,11 +933,14 @@ const insuranceKeyInfoRows = computed<InsuranceInfoRow[]>(() => {
       { field: '医疗费总额', value: formatCurrencyDisplay(settledBrief.ybMedfeeSumamt) },
       { field: '基金支付合计', value: formatCurrencyDisplay(settledBrief.ybFundPaySumamt) },
       { field: '基本医保统筹', value: formatCurrencyDisplay(settledBrief.ybHifpPay) },
+      { field: '公务员医疗补助', value: formatCurrencyDisplay(settledBrief.ybCvlservPay) },
       { field: '其他支出', value: formatCurrencyDisplay(settledBrief.ybOthPay) },
       { field: '个人账户支付', value: formatCurrencyDisplay(settledBrief.ybAcctPay) },
-      { field: '起付线', value: formatCurrencyDisplay(settledBrief.ybActPayDedc) },
-      { field: '公务员医疗补助', value: formatCurrencyDisplay(settledBrief.ybCvlservPay) },
       { field: '个人现金支付', value: formatCurrencyDisplay(settledBrief.ybPsnCashPay) },
+      { field: '全自费', value: formatCurrencyDisplay(settledBrief.ybFulamtOwnpayAmt) },
+      { field: '先行自付', value: formatCurrencyDisplay(settledBrief.ybPreselfpayAmt) },
+      { field: '符合范围金额', value: formatCurrencyDisplay(settledBrief.ybInscpScpAmt) },
+      { field: '起付线', value: formatCurrencyDisplay(settledBrief.ybActPayDedc) },
     ];
   }
   return [
@@ -1029,6 +1206,7 @@ async function loadSettledWorkspace(
     categoryDisplayRows.value = mapCategoryRows(
       summaryRes.categories ?? [],
       detailRes.receivableTotal ?? summaryRes.receivableTotal ?? 0,
+      resolveCategoryInsuranceSplitFromBrief(resolveActiveSettledPaymentBrief(detailRes)),
     );
     settlementHistoryRows.value = (detailRes.payments ?? []).map((p) =>
       mapPaymentToHistoryRow(p, detailRes),
@@ -1101,9 +1279,6 @@ function resolveSettlementHistoryStatusCode(
 function buildPayCompositionFromBrief(
   payment: SettledPaymentBriefDto,
 ): Array<{ key: string; label: string; value: string }> {
-  if (!payment.insuranceSettled) {
-    return [];
-  }
   const rows: Array<{ key: string; label: string; value: string }> = [];
   const pushIf = (key: string, label: string, raw: null | number | string | undefined) => {
     const n = Number(raw ?? 0);
@@ -1112,13 +1287,19 @@ function buildPayCompositionFromBrief(
     }
     rows.push({ key, label, value: formatHistoryAmountDisplay(n) });
   };
-  pushIf('hifpPay', '基本医保统筹', payment.ybHifpPay);
-  pushIf('othPay', '其他支出', payment.ybOthPay);
-  pushIf('cvlservPay', '公务员医疗补助', payment.ybCvlservPay);
-  pushIf('actPayDedc', '起付线', payment.ybActPayDedc);
-  pushIf('acctPay', '个人账户', payment.ybAcctPay);
-  pushIf('psnCashPay', '现金', payment.ybPsnCashPay);
-  pushIf('fundPaySumamt', '基金支付合计', payment.ybFundPaySumamt);
+  if (payment.insuranceSettled) {
+    pushIf('hifpPay', '基本医保统筹', payment.ybHifpPay);
+    pushIf('othPay', '其他支出', payment.ybOthPay);
+    pushIf('cvlservPay', '公务员医疗补助', payment.ybCvlservPay);
+    pushIf('actPayDedc', '起付线', payment.ybActPayDedc);
+    pushIf('acctPay', '个人账户', payment.ybAcctPay);
+    pushIf('psnCashPay', '个人现金', payment.ybPsnCashPay);
+    pushIf('fundPaySumamt', '基金支付合计', payment.ybFundPaySumamt);
+  } else {
+    pushIf('personalCash', '个人现金应付', payment.personalCashPayable ?? payment.signedAmount);
+  }
+  pushIf('depositOffset', '预交金冲抵', payment.depositOffsetAmount);
+  pushIf('channelPayable', '渠道实收', payment.channelPayable);
   return rows;
 }
 
@@ -1130,13 +1311,15 @@ function mapPaymentToHistoryRow(
   const signedAmount = payment.signedAmount ?? payment.receivableTotal;
   const signedNum = Number(signedAmount ?? 0);
   const medfee = Number(payment.ybMedfeeSumamt ?? 0);
-  // 医保少补为 0 时渠道金额为 0，回落医疗费总额作「结算金额」展示
+  // 医保结算：结算金额优先医疗费总额（图一口径），避免 display=0 显示成 0.00
   const totalSource =
-    Number.isFinite(signedNum) && Math.abs(signedNum) >= 0.000_001
-      ? signedAmount
-      : Number.isFinite(medfee) && medfee > 0
-        ? medfee
-        : signedAmount;
+    payment.insuranceSettled && Number.isFinite(medfee) && medfee > 0
+      ? medfee
+      : Number.isFinite(signedNum) && Math.abs(signedNum) >= 0.000_001
+        ? signedAmount
+        : Number.isFinite(medfee) && medfee > 0
+          ? medfee
+          : signedAmount;
   const isReverse = payment.recordType === 'REVERSE';
   const statusCode = resolveSettlementHistoryStatusCode(payment);
   const fund = Number(payment.ybFundPaySumamt ?? 0);
@@ -1151,7 +1334,7 @@ function mapPaymentToHistoryRow(
     reimbursementAmount: payment.insuranceSettled ? formatHistoryAmountDisplay(fund + acct) : '—',
     selfPayAmount: payment.insuranceSettled
       ? formatHistoryAmountDisplay(cash)
-      : formatHistoryAmountDisplay(signedAmount),
+      : formatHistoryAmountDisplay(payment.personalCashPayable ?? signedAmount),
     paymentMethod: payment.payMethodText ?? '—',
     operatorName: view.operatorName ?? '—',
     ticketNo: '—',
@@ -1196,7 +1379,7 @@ async function reloadWorkspace() {
 }
 
 /** 顶部工具栏占位动作 */
-function handleToolbarAction(actionCode: InpatientSettleToolbarActionCode) {
+async function handleToolbarAction(actionCode: InpatientSettleToolbarActionCode) {
   if (actionCode === INPATIENT_SETTLE_TOOLBAR_ACTION.REFRESH_FEES) {
     void reloadWorkspace().then(() => ElMessage.success('费用已刷新'));
     return;
@@ -1210,7 +1393,87 @@ function handleToolbarAction(actionCode: InpatientSettleToolbarActionCode) {
     void verifyInpatientInsuranceCard(contractId);
     return;
   }
+  if (actionCode === INPATIENT_SETTLE_TOOLBAR_ACTION.ALIGN_PLATFORM_VISIT) {
+    await handleAlignPlatformVisit();
+    return;
+  }
   ElMessage.success(`${INPATIENT_SETTLE_TOOLBAR_ACTION_LABEL[actionCode] ?? actionCode}已触发`);
+}
+
+/** 平台在院对齐：先诊断，必要时一键修复 */
+async function handleAlignPlatformVisit() {
+  if (!isInsuranceRegistration.value) {
+    ElMessage.warning('当前非医保登记患者');
+    return;
+  }
+  const { encounterId, patientId } = resolveActiveSettlePatientIds();
+  const contractId = preserveApiIdForRequest(currentQueueRow.value?.contractId);
+  if (!encounterId || !patientId || !contractId) {
+    ElMessage.warning('请先选择医保患者');
+    return;
+  }
+  let medium = insuranceMedium.value;
+  if (!medium) {
+    const chosen = await chooseInpatientSettleInsuranceMedium();
+    if (!chosen) {
+      return;
+    }
+    medium = chosen;
+    insuranceMedium.value = chosen;
+  }
+  try {
+    const insuranceCtx = await resolveInpatientSettleInsuranceContext(contractId, medium);
+    if (!insuranceCtx?.psnNo) {
+      ElMessage.warning(inpatientSettleReadCredentialFailHint(medium));
+      return;
+    }
+    const payload = {
+      encounterId,
+      patientId,
+      contractId,
+      psnNo: insuranceCtx.psnNo,
+      insuplcAdmdvs: insuranceCtx.insuplcAdmdvs,
+    };
+    const diagnosed = await httpDiagnoseInpatientPlatformVisit(payload);
+    await showPlatformVisitAlignResult(diagnosed, false);
+    const code = String(diagnosed.mismatchCode ?? 'OK');
+    if (code === 'OK' || code === 'NO_LOCAL_MAP' || code === 'PLATFORM_ORPHAN_INHOSP') {
+      return;
+    }
+    try {
+      await ElMessageBox.confirm(
+        `${diagnosed.advice ?? '存在平台在院不一致'}。是否执行一键修复？`,
+        '平台在院对齐',
+        { type: 'warning', confirmButtonText: '修复', cancelButtonText: '取消' },
+      );
+    } catch {
+      return;
+    }
+    const repaired = await httpRepairInpatientPlatformVisit(payload);
+    await showPlatformVisitAlignResult(repaired, true);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '平台在院对齐失败';
+    ElMessage.error(message);
+  }
+}
+
+async function showPlatformVisitAlignResult(
+  result: AlignInpatientPlatformVisitResponse,
+  afterRepair: boolean,
+) {
+  const platformIds = (result.platformInHospitalMdtrtIds ?? []).join('、') || '（无）';
+  const lines = [
+    `不一致码：${result.mismatchCode ?? '—'}`,
+    `本地 mdtrt：${result.localMdtrtId ?? '（无）'}`,
+    `平台在院：${platformIds}`,
+    `建议：${result.advice ?? '—'}`,
+  ];
+  if (afterRepair) {
+    lines.push(`修复：${result.repairSummary ?? (result.repaired ? '已执行' : '未执行')}`);
+  }
+  await ElMessageBox.alert(lines.join('\n'), afterRepair ? '平台在院对齐结果' : '平台在院诊断', {
+    confirmButtonText: '知道了',
+  });
 }
 
 /** 底部结算 */
@@ -1361,6 +1624,7 @@ async function handleOpenSettleDialog() {
     return;
   }
   preSettleLoading.value = true;
+  let progressOpened = false;
   try {
     let insurancePayload: Record<string, string | undefined> = {};
     if (isInsuranceRegistration.value) {
@@ -1379,9 +1643,31 @@ async function handleOpenSettleDialog() {
         medium = chosen;
         insuranceMedium.value = chosen;
       }
-      ElMessage.info(inpatientSettleReadCredentialHint(medium));
+      const readCredentialLabel = inpatientSettleReadCredentialLabel(medium);
+      settleProgress.open(
+        '住院预结算处理中',
+        [
+          { key: 'read-card', label: readCredentialLabel },
+          { key: 'person-1101', label: '核验参保人员信息（1101）' },
+          { key: 'detail-audit', label: '医保事前提醒（3101）' },
+          { key: 'fee-upload', label: '费用明细上传（2301）' },
+          { key: 'pre-settle', label: '医保预结算通信（2303）' },
+          { key: 'open-dialog', label: '打开结算确认' },
+        ],
+        '正在准备…',
+      );
+      progressOpened = true;
+      await nextTick();
       try {
-        const insuranceCtx = await resolveInpatientSettleInsuranceContext(contractId, medium);
+        const insuranceCtx = await resolveInpatientSettleInsuranceContext(contractId, medium, {
+          onPhase: (phase) => {
+            if (phase === 'plugin' || phase === 'read-card') {
+              settleProgress.setStep(0, inpatientSettleReadCredentialHint(medium));
+              return;
+            }
+            settleProgress.setStep(1, '正在核验参保人员信息（1101）…');
+          },
+        });
         if (insuranceCtx) {
           insurancePayload = {
             contractId: insuranceCtx.contractId,
@@ -1401,6 +1687,7 @@ async function handleOpenSettleDialog() {
         return;
       }
       try {
+        settleProgress.setStep(2, '医保事前提醒分析中（3101），请稍候…');
         const contractBusNo = getInpatientContractBusNo(contractId, contractMeta.value);
         const { continued } = await runIpDetailAuditGate({
           params: {
@@ -1415,7 +1702,6 @@ async function handleOpenSettleDialog() {
             insutype: insurancePayload.insutype,
           },
           dialogRef: detailAuditDialogRef,
-          loadingHint: '医保事前提醒分析中（3101）…',
         });
         if (!continued) {
           ElMessage.info('已按事前提醒返回修改，未继续预结算');
@@ -1426,6 +1712,25 @@ async function handleOpenSettleDialog() {
         ElMessage.error(message);
         return;
       }
+      try {
+        await uploadInpatientFeeDetailsWithProgress({
+          payload: {
+            encounterId,
+            patientId,
+            chargeItemIds,
+            settleMode,
+            ...insurancePayload,
+          },
+          progress: settleProgress,
+          stepIndex: 3,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '费用明细上传失败';
+        ElMessage.error(message);
+        return;
+      }
+      settleProgress.clearCount();
+      settleProgress.setStep(4, '医保预结算通信中（2303），请稍候…');
     }
     const pre = await httpPreSettleInpatientCharges({
       encounterId,
@@ -1434,12 +1739,213 @@ async function handleOpenSettleDialog() {
       settleMode,
       ...insurancePayload,
     });
+    if (progressOpened) {
+      settleProgress.setStep(5, '预结算完成，即将打开确认窗口…');
+    }
     preSettleSnapshot.value = pre;
     lockedChargeItemIds.value = [...chargeItemIds];
     settlePayChannelCode.value = resolvePayChannelCode();
     settleDialogVisible.value = true;
   } finally {
+    if (progressOpened) {
+      settleProgress.close();
+    }
     preSettleLoading.value = false;
+  }
+}
+
+/** 按场景组装正式结算进度步骤 */
+function buildFormalSettleProgressSteps(
+  snap: PreSettleInpatientChargesResponse,
+  payAmount: number,
+): Array<{ key: string; label: string }> {
+  const steps: Array<{ key: string; label: string }> = [];
+  if (snap.insurancePreSettled) {
+    if (payAmount > 0) {
+      steps.push({ key: 'collect-cash', label: '收个人现金' });
+    }
+    steps.push(
+      { key: 'platform-discharge', label: '平台出院办理（2402）' },
+      { key: 'confirm-2304', label: '医保正式结算（2304）' },
+      { key: 'local-settle', label: '院内落账' },
+    );
+    const planLen = (snap.prepayRefundPlan ?? []).length;
+    if (planLen > 0) {
+      steps.push({ key: 'prepay-refund', label: '预交金原路退' });
+    }
+    steps.push({ key: 'financial-complete', label: '财务完结' });
+    return steps;
+  }
+  if (payAmount > 0) {
+    steps.push({ key: 'collect-cash', label: '收补交' });
+  }
+  steps.push(
+    { key: 'local-settle', label: '院内落账与多退' },
+    { key: 'financial-complete', label: '财务完结' },
+  );
+  return steps;
+}
+
+function settleProgressStepIndex(key: string): number {
+  return settleProgressSteps.value.findIndex((step) => step.key === key);
+}
+
+function goSettleProgressStep(key: string, detail: string) {
+  const idx = settleProgressStepIndex(key);
+  if (idx >= 0) {
+    settleProgress.setStep(idx, detail);
+  }
+}
+
+function resolvePayChannelLabel(code: string): string {
+  const hit = paymentChannelSelectOptions.value.find((item) => item.value === code);
+  return hit?.label || code || '—';
+}
+
+function formatPrepayRefundSummary(plan: InpatientPrepayRefundPlanItemDto[]): string {
+  if (!plan.length) {
+    return '无预交金退回';
+  }
+  let total = 0;
+  const channelMap = new Map<string, number>();
+  for (const item of plan) {
+    const amt = Number(item.amount ?? 0);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      continue;
+    }
+    total += amt;
+    const code = String(item.payChannelCode ?? '').trim() || '未知渠道';
+    channelMap.set(code, (channelMap.get(code) ?? 0) + amt);
+  }
+  if (total <= 0) {
+    return '无预交金退回';
+  }
+  const channelText = [...channelMap.entries()]
+    .map(([code, amt]) => `${resolvePayChannelLabel(code)} ¥${formatMoneyDisplay(amt)}`)
+    .join('；');
+  return `合计 ¥${formatMoneyDisplay(total)}${channelText ? `（${channelText}）` : ''}`;
+}
+
+/** 结算成功摘要弹窗 */
+async function showSettleSuccessSummary(options: {
+  confirmRes: ConfirmInpatientSettleResponse;
+  payAmount: number;
+  payChannelCode: string;
+  prepayRefundPlan?: InpatientPrepayRefundPlanItemDto[];
+}) {
+  const cashLine =
+    options.payAmount > 0
+      ? `个人现金实收：¥${formatMoneyDisplay(options.payAmount)}（${resolvePayChannelLabel(options.payChannelCode)}）`
+      : '个人现金实收：无';
+  const refundLine = `预交金退回：${formatPrepayRefundSummary(options.prepayRefundPlan ?? [])}`;
+  const lines = [cashLine, refundLine];
+  if (options.confirmRes.insuranceSettled && options.confirmRes.ybSetlId) {
+    lines.push(`医保结算号：${options.confirmRes.ybSetlId}`);
+  }
+  const safeLines = lines.map((line) =>
+    line.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'),
+  );
+  await ElMessageBox.alert(
+    `<div style="line-height:1.75">${safeLines.map((line) => `<div>${line}</div>`).join('')}</div>`,
+    '结算成功',
+    {
+      confirmButtonText: '知道了',
+      type: 'success',
+      dangerouslyUseHTMLString: true,
+    },
+  );
+}
+
+/**
+ * 第二阶段：Win 原路退 + complete API。
+ * @returns true 已退完；false 半成功（用户选稍后或仍失败）
+ */
+async function runPendingPrepayRefundStage(options: {
+  encounterId: string;
+  patientId: string;
+  plan: InpatientPrepayRefundPlanItemDto[];
+  progressOpened: boolean;
+}): Promise<{
+  completed: boolean;
+  confirmRes?: ConfirmInpatientSettleResponse;
+}> {
+  const pendingItems = options.plan.filter((item) => {
+    const originalPaymentId = String(item.originalPaymentId ?? '').trim();
+    const refundAmountYuan = Number(item.amount ?? 0);
+    return (
+      !!originalPaymentId &&
+      item.requiresClientRefund &&
+      Number.isFinite(refundAmountYuan) &&
+      refundAmountYuan > 0
+    );
+  });
+  const total = pendingItems.length;
+
+  const executeOnce = async (): Promise<ConfirmInpatientSettleResponse> => {
+    const clientRefundResults: Array<{
+      clientRefundResult: NonNullable<Awaited<ReturnType<typeof submitScanRefund>>>;
+      originalPaymentId: string;
+    }> = [];
+    for (let i = 0; i < pendingItems.length; i += 1) {
+      const item = pendingItems[i]!;
+      const originalPaymentId = String(item.originalPaymentId ?? '').trim();
+      const refundAmountYuan = Number(item.amount ?? 0);
+      settleScanStatusText.value = `预交金原路退第 ${i + 1}/${total} 笔…`;
+      if (options.progressOpened) {
+        settleProgress.setCount(i + 1, total, `原路退 ${i + 1}/${total}`);
+        goSettleProgressStep('prepay-refund', `预交金原路退第 ${i + 1}/${total} 笔，请稍候…`);
+      }
+      const clientRefundResult = await submitScanRefund({
+        originalPaymentId,
+        refundAmountYuan,
+        originalPayChannelCodes: item.payChannelCode ? [item.payChannelCode] : undefined,
+      });
+      if (clientRefundResult) {
+        clientRefundResults.push({ originalPaymentId, clientRefundResult });
+      }
+    }
+    if (options.progressOpened) {
+      settleProgress.clearCount();
+      goSettleProgressStep('financial-complete', '财务完结处理中…');
+    }
+    const confirmRes = await httpCompleteInpatientDischargePrepayRefund({
+      encounterId: options.encounterId,
+      patientId: options.patientId,
+      ...(clientRefundResults.length > 0 ? { clientRefundResults } : {}),
+    });
+    for (const item of clientRefundResults) {
+      clearCachedClientRefundResult(item.originalPaymentId);
+    }
+    return confirmRes;
+  };
+
+  // 失败后可重试原路退，或选稍后处理退出
+  for (;;) {
+    try {
+      const confirmRes = await executeOnce();
+      return { completed: true, confirmRes };
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : '结算已成功，但预交金原路退失败，请稍后重试';
+      ElMessage.error(message);
+      if (options.progressOpened) {
+        settleProgress.clearCount();
+      }
+      try {
+        await ElMessageBox.confirm(
+          '费用已结算，预交金尚未退完。可重试原路退，或稍后再试。',
+          '预交金待退完',
+          {
+            confirmButtonText: '重试原路退',
+            cancelButtonText: '稍后处理',
+            type: 'warning',
+            distinguishCancelAndClose: true,
+          },
+        );
+      } catch {
+        return { completed: false };
+      }
+    }
   }
 }
 
@@ -1448,13 +1954,9 @@ async function finalizeAfterSettleSuccess(confirmRes: ConfirmInpatientSettleResp
   if (confirmRes.paymentId != null) {
     lastSettlePaymentId.value = String(confirmRes.paymentId);
   }
-  if (confirmRes.insuranceSettled && confirmRes.ybSetlId) {
-    ElMessage.success(`住院结算成功（医保结算号：${confirmRes.ybSetlId}）`);
-  } else {
-    ElMessage.success('住院结算成功');
-  }
   preSettleSnapshot.value = null;
   lockedChargeItemIds.value = [];
+  pendingPrepayRefundContext.value = null;
   if (confirmRes.dischargeFullSettle) {
     const keepEncounterId = selectedEncounterId.value;
     const keepRow = currentQueueRow.value;
@@ -1468,10 +1970,6 @@ async function finalizeAfterSettleSuccess(confirmRes: ConfirmInpatientSettleResp
   if (selectedEncounterId.value) {
     await reloadWorkspace();
   }
-}
-
-function handleBillBannerFocusAdjust() {
-  activeTab.value = 'fee-detail';
 }
 
 /** 弹窗内确认正式结算 */
@@ -1491,6 +1989,7 @@ async function handleConfirmSettleFromDialog() {
     return;
   }
   const payAmount = resolveChannelPayableAmount();
+  const payChannelCode = settlePayChannelCode.value || resolvePayChannelCode();
   if (
     isScanPayChannel(settlePayChannelCode.value) &&
     payAmount > 0 &&
@@ -1501,74 +2000,205 @@ async function handleConfirmSettleFromDialog() {
   }
   confirmSettleLoading.value = true;
   settleScanStatusText.value = '';
+  let confirmProgressOpened = false;
+  const progressSteps = buildFormalSettleProgressSteps(snap, payAmount);
+  const hasCollectCashStep = progressSteps.some((step) => step.key === 'collect-cash');
+
   try {
+    settleProgress.open(
+      '住院正式结算处理中',
+      progressSteps,
+      hasCollectCashStep
+        ? snap.insurancePreSettled
+          ? '正在收取个人现金…'
+          : '正在收取补交…'
+        : snap.insurancePreSettled
+          ? '正在办理平台出院并正式结算…'
+          : '正在院内落账…',
+    );
+    confirmProgressOpened = true;
+    await nextTick();
+
     let clientScanResult;
-    if (isScanPayChannel(settlePayChannelCode.value) && payAmount > 0) {
-      await refreshUnionPayCapabilities();
-      if (!scanPayEnabled.value) {
-        ElMessage.error('请启动本地客户端（OpenHIS.Win）并确认银联组件已安装');
-        return;
+    if (hasCollectCashStep) {
+      goSettleProgressStep(
+        'collect-cash',
+        snap.insurancePreSettled ? '收取个人现金中…' : '收取补交中…',
+      );
+      if (isScanPayChannel(settlePayChannelCode.value) && payAmount > 0) {
+        await refreshUnionPayCapabilities();
+        if (!scanPayEnabled.value) {
+          ElMessage.error('请启动本地客户端（OpenHIS.Win）并确认银联组件已安装');
+          return;
+        }
+        settleScanStatusText.value = '等待支付结果…';
+        const scanOutcome = await submitScanPayment({
+          paymentDraftId: snap.paymentDraftId,
+          amount: payAmount,
+          scanCode: settleScanCode.value,
+        });
+        clientScanResult = scanOutcome.clientScanResult;
       }
-      settleScanStatusText.value = '等待支付结果…';
-      const scanOutcome = await submitScanPayment({
-        paymentDraftId: snap.paymentDraftId,
-        amount: payAmount,
-        scanCode: settleScanCode.value,
-      });
-      clientScanResult = scanOutcome.clientScanResult;
     }
 
-    const confirmRes = clientScanResult
+    if (snap.insurancePreSettled) {
+      goSettleProgressStep('platform-discharge', '平台出院办理中（2402），请稍候…');
+      // 同 HTTP 内 2402→2304：请求发出时切到 2304 文案占位（非实时）
+      goSettleProgressStep('confirm-2304', '医保正式结算通信中（2304），请稍候…');
+    } else {
+      goSettleProgressStep('local-settle', '院内落账处理中…');
+    }
+
+    const paymentDetails =
+      payAmount > 0
+        ? [
+            {
+              amount: payAmount,
+              payChannelCode,
+            },
+          ]
+        : [];
+    const confirmBody = {
+      billDate: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+      encounterId,
+      patientId,
+      paymentDraftId: snap.paymentDraftId,
+      chargeItemIds,
+      ybPreSettleId: snap.ybPreSettleId,
+      paymentDetails,
+      ...(clientScanResult ? { clientScanResult } : {}),
+    };
+
+    let confirmRes = clientScanResult
       ? await settleWithScanRecovery(
           clientScanResult,
-          () =>
-            httpConfirmInpatientSettle({
-              billDate: dayjs().format('YYYY-MM-DD HH:mm:ss'),
-              encounterId,
-              patientId,
-              paymentDraftId: snap.paymentDraftId,
-              chargeItemIds,
-              ybPreSettleId: snap.ybPreSettleId,
-              clientScanResult,
-              paymentDetails:
-                payAmount > 0
-                  ? [
-                      {
-                        amount: payAmount,
-                        payChannelCode: settlePayChannelCode.value || resolvePayChannelCode(),
-                      },
-                    ]
-                  : [],
-            }),
+          () => httpConfirmInpatientSettle(confirmBody),
           {
             paymentDraftId: snap.paymentDraftId,
             refundAmountYuan: payAmount,
           },
         )
-      : await httpConfirmInpatientSettle({
-          billDate: dayjs().format('YYYY-MM-DD HH:mm:ss'),
-          encounterId,
-          patientId,
-          paymentDraftId: snap.paymentDraftId,
-          chargeItemIds,
-          ybPreSettleId: snap.ybPreSettleId,
-          paymentDetails:
-            payAmount > 0
-              ? [
-                  {
-                    amount: payAmount,
-                    payChannelCode: settlePayChannelCode.value || resolvePayChannelCode(),
-                  },
-                ]
-              : [],
+      : await httpConfirmInpatientSettle(confirmBody);
+
+    const refundPlan = confirmRes?.prepayRefundPlan ?? snap.prepayRefundPlan ?? [];
+
+    if (confirmRes?.prepayRefundPending) {
+      // 若预结算未预留原路退步，动态补上（避免步骤列表缺项）；勿 reopen，以免进度归零
+      if (settleProgressStepIndex('prepay-refund') < 0) {
+        const insertAt = Math.max(settleProgressSteps.value.length - 1, 0);
+        settleProgressSteps.value.splice(insertAt, 0, {
+          key: 'prepay-refund',
+          label: '预交金原路退',
         });
+      }
+      goSettleProgressStep('local-settle', '院内落账完成，准备原路退…');
+      goSettleProgressStep('prepay-refund', '预交金原路退货中…');
+
+      pendingPrepayRefundContext.value = {
+        confirmRes,
+        encounterId,
+        patientId,
+        payAmount,
+        payChannelCode,
+        plan: refundPlan,
+      };
+
+      const stage = await runPendingPrepayRefundStage({
+        encounterId,
+        patientId,
+        plan: refundPlan,
+        progressOpened: confirmProgressOpened,
+      });
+
+      if (!stage.completed || !stage.confirmRes) {
+        settleDialogVisible.value = false;
+        settleScanCode.value = '';
+        ElMessage.warning({
+          message: '费用已结算，预交金待退完。可点击「重试原路退」继续处理。',
+          duration: 6000,
+        });
+        if (selectedEncounterId.value) {
+          await reloadWorkspace();
+        }
+        return;
+      }
+      confirmRes = stage.confirmRes;
+      pendingPrepayRefundContext.value = null;
+    } else if (snap.insurancePreSettled) {
+      goSettleProgressStep('local-settle', '院内落账完成…');
+    }
+
+    goSettleProgressStep('financial-complete', '财务完结完成');
     settleDialogVisible.value = false;
     settleScanCode.value = '';
+
+    await showSettleSuccessSummary({
+      confirmRes,
+      payAmount,
+      payChannelCode,
+      prepayRefundPlan: refundPlan,
+    });
     await finalizeAfterSettleSuccess(confirmRes);
   } catch (error) {
     const message = error instanceof Error ? error.message : '住院结算失败';
     ElMessage.error(message);
   } finally {
+    if (confirmProgressOpened) {
+      settleProgress.close();
+    }
+    confirmSettleLoading.value = false;
+  }
+}
+
+function handleBillBannerFocusAdjust() {
+  activeTab.value = 'fee-detail';
+}
+
+/** 稍后处理后，基于缓存上下文重试原路退 */
+async function retryPendingPrepayRefundFromContext() {
+  const ctx = pendingPrepayRefundContext.value;
+  if (!ctx) {
+    ElMessage.warning('暂无待退的预交金原路退任务');
+    return;
+  }
+  confirmSettleLoading.value = true;
+  let progressOpened = false;
+  try {
+    settleProgress.open(
+      '预交金原路退处理中',
+      [
+        { key: 'prepay-refund', label: '预交金原路退' },
+        { key: 'financial-complete', label: '财务完结' },
+      ],
+      '预交金原路退货中…',
+    );
+    progressOpened = true;
+    await nextTick();
+    const stage = await runPendingPrepayRefundStage({
+      encounterId: ctx.encounterId,
+      patientId: ctx.patientId,
+      plan: ctx.plan,
+      progressOpened,
+    });
+    if (!stage.completed || !stage.confirmRes) {
+      ElMessage.warning('预交金仍未退完，请稍后重试');
+      return;
+    }
+    pendingPrepayRefundContext.value = null;
+    await showSettleSuccessSummary({
+      confirmRes: stage.confirmRes,
+      payAmount: ctx.payAmount,
+      payChannelCode: ctx.payChannelCode,
+      prepayRefundPlan: ctx.plan,
+    });
+    await finalizeAfterSettleSuccess(stage.confirmRes);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '预交金原路退失败';
+    ElMessage.error(message);
+  } finally {
+    if (progressOpened) {
+      settleProgress.close();
+    }
     confirmSettleLoading.value = false;
   }
 }
@@ -1685,6 +2315,13 @@ watch(settleQueueTab, () => {
               @click="handleToolbarAction(INPATIENT_SETTLE_TOOLBAR_ACTION.VERIFY_INSURANCE)"
             >
               {{ INPATIENT_SETTLE_TOOLBAR_ACTION_LABEL.VERIFY_INSURANCE }}
+            </ElButton>
+            <ElButton
+              type="warning"
+              plain
+              @click="handleToolbarAction(INPATIENT_SETTLE_TOOLBAR_ACTION.ALIGN_PLATFORM_VISIT)"
+            >
+              {{ INPATIENT_SETTLE_TOOLBAR_ACTION_LABEL.ALIGN_PLATFORM_VISIT }}
             </ElButton>
           </div>
         </div>
@@ -1816,7 +2453,7 @@ watch(settleQueueTab, () => {
                       min-width="130"
                       align="right"
                     />
-                    <ElTableColumn prop="ratio" label="占比" min-width="90" align="center" />
+                    <ElTableColumn prop="ratio" label="占总费用比" min-width="110" align="center" />
                   </ElTable>
                 </ElTabPane>
 
@@ -1897,21 +2534,27 @@ watch(settleQueueTab, () => {
                 <ElTableColumn
                   prop="settlementNo"
                   label="单据号"
-                  min-width="130"
+                  min-width="168"
                   align="center"
                   show-overflow-tooltip
                 />
                 <ElTableColumn prop="settleTime" label="结算时间" min-width="140" align="center" />
                 <ElTableColumn prop="settleType" label="结算类型" width="90" align="center" />
-                <ElTableColumn prop="totalAmount" label="结算金额" width="88" align="right" />
+                <ElTableColumn prop="totalAmount" label="结算金额" width="100" align="right" />
                 <ElTableColumn
                   prop="reimbursementAmount"
                   label="医保报销"
-                  width="88"
+                  width="100"
                   align="right"
                 />
-                <ElTableColumn prop="selfPayAmount" label="个人自付" width="88" align="right" />
-                <ElTableColumn prop="paymentMethod" label="支付方式" width="90" align="center" />
+                <ElTableColumn prop="selfPayAmount" label="个人自付" width="100" align="right" />
+                <ElTableColumn
+                  prop="paymentMethod"
+                  label="支付方式"
+                  min-width="120"
+                  align="center"
+                  show-overflow-tooltip
+                />
                 <ElTableColumn prop="operatorName" label="操作员" width="90" align="center" />
                 <ElTableColumn prop="status" label="状态" width="90" align="center">
                   <template #default="{ row }">
@@ -1966,7 +2609,7 @@ watch(settleQueueTab, () => {
           <div class="payment-footer-left">
             <SectionTitle title="结算支付信息" />
             <div class="payment-footer-amount-line">
-              <span class="payment-footer-amount-label">本次患者实付：</span>
+              <span class="payment-footer-amount-label">应付个人现金：</span>
               <strong class="settle-payable-amount">
                 ¥{{ Number.isFinite(payableAmount) ? formatMoneyDisplay(payableAmount) : '0.00' }}
               </strong>
@@ -2020,8 +2663,18 @@ watch(settleQueueTab, () => {
 
           <div class="payment-footer-actions">
             <ElButton
+              v-if="pendingPrepayRefundContext"
+              type="warning"
+              :loading="confirmSettleLoading"
+              @click="retryPendingPrepayRefundFromContext"
+            >
+              重试原路退
+            </ElButton>
+            <ElButton
               v-if="!isSettledQueueTab"
               type="primary"
+              size="large"
+              class="payment-footer-settle-btn !h-11 !min-w-[128px] shrink-0 !px-8 !text-base !font-bold"
               :disabled="settleActionDisabled"
               :title="settleActionBlockedMessage ?? undefined"
               :loading="preSettleLoading || confirmSettleLoading"
@@ -2127,6 +2780,8 @@ watch(settleQueueTab, () => {
       :display-amount="preSettleSnapshot?.displayAmount ?? 0"
       :prepay-net-balance="preSettleSnapshot?.prepayNetBalance ?? summary?.prepayNetBalance"
       :prepay-offset-amount="settlePrepayOffsetAmount"
+      :prepay-refund-amount="preSettleSnapshot?.prepayRefundAmount"
+      :prepay-full-refund="Boolean(preSettleSnapshot?.prepayFullRefund)"
       :preview-text="preSettleSnapshot?.previewText"
       :insurance-pre-settled="preSettleSnapshot?.insurancePreSettled"
       :insurance-breakdown-items="settlementInsuranceBreakdown"
@@ -2138,6 +2793,16 @@ watch(settleQueueTab, () => {
     />
 
     <DetailAuditRemindDialog ref="detailAuditDialogRef" warn-type="1" />
+    <InsuranceProgressDialog
+      v-model="settleProgressVisible"
+      :title="settleProgressTitle"
+      :steps="settleProgressSteps"
+      :active-index="settleProgressActiveIndex"
+      :detail="settleProgressDetail"
+      :count-current="settleProgressCountCurrent"
+      :count-total="settleProgressCountTotal"
+      :count-label-text="settleProgressCountLabelText"
+    />
   </Page>
 </template>
 
@@ -2463,6 +3128,16 @@ watch(settleQueueTab, () => {
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/* 底栏主操作「结算」：加大字号/高度，收费员一眼能点到 */
+.settle-page :deep(.payment-footer-settle-btn.el-button) {
+  min-width: 128px;
+  height: 44px;
+  padding: 0 32px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
 }
 
 .settle-history-detail-summary {

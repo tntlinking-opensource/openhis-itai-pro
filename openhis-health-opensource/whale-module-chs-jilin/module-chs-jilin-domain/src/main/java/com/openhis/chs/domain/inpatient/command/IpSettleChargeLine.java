@@ -24,6 +24,10 @@ public class IpSettleChargeLine {
     private String initFeedetlSn;
     private String medListCodg;
     private String medinsListCodg;
+    /**
+     * 医院目录/项目名称（3101 {@code hilist_name}/{@code hosplist_name}；2301 可忽略）。
+     */
+    private String itemName;
     private BigDecimal detItemFeeSumamt;
     private BigDecimal cnt;
     private BigDecimal pric;

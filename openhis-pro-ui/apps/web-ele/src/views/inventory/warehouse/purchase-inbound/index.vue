@@ -18,7 +18,11 @@ import {
 } from '#/api/warehouse/purchase-inbound';
 import WarehouseDocWorkstation from '#/components/warehouse/warehouse-doc-workstation.vue';
 import { useFromFinanceApproval } from '#/composables/use-from-finance-approval';
-import { calcWarehouseSplitLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
+import {
+  calcWarehouseSplitLineTotal,
+  formatMoneyDisplay,
+  formatPurchaseMoneyDisplay,
+} from '#/utils/format/money-scale';
 import {
   inboundReceiptStatusLabel,
   isInboundReceiptDocumentEditableRaw,
@@ -360,8 +364,9 @@ function buildUnitList(item: Record<string, any>) {
     unit.retailPriceMask = isMaxUnit
       ? item.retailPrice
       : item.retailPrice / Number.parseInt(String(item.partPercent), 10);
-    unit.totalPriceMask = formatMoneyDisplay(
+    unit.totalPriceMask = formatPurchaseMoneyDisplay(
       calcWarehouseSplitLineTotal(item.itemQuantity, item.partPercent, item.price),
+      item.categoryCode,
     );
     unit.totalRetailPriceMask = formatMoneyDisplay(
       calcWarehouseSplitLineTotal(item.itemQuantity, item.partPercent, item.retailPrice),

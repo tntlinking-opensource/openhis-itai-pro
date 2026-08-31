@@ -49,9 +49,23 @@ public class SettledPaymentBriefDto {
     @Schema(description = "历史条类型：FORWARD/REVERSE")
     private String recordType;
 
-    /** 带符号展示金额：正向为正、逆向为负。 */
-    @Schema(description = "带符号展示金额")
+    /** 带符号展示金额：正向为正、逆向为负（新单认个人现金应付 P=displayAmount）。 */
+    @Schema(description = "带符号展示金额（个人现金应付 P）")
     private BigDecimal signedAmount;
+
+    /**
+     * 个人现金应付 P（与主单 display/tendered 一致；有冲抵时不等于渠道实收合计）。
+     */
+    @Schema(description = "个人现金应付 P")
+    private BigDecimal personalCashPayable;
+
+    /** 本单冲抵明细合计 O（无冲抵为 0）。 */
+    @Schema(description = "预交金冲抵额 O")
+    private BigDecimal depositOffsetAmount;
+
+    /** 本单用户渠道实收合计 C（现金/微信等；不含冲抵与医保基金）。 */
+    @Schema(description = "渠道实收合计 C")
+    private BigDecimal channelPayable;
 
     /** 支付流水状态 code（SUCCESS/REFUNDED 等）。 */
     @Schema(description = "支付流水状态 code")
@@ -113,4 +127,24 @@ public class SettledPaymentBriefDto {
     /** 公务员医疗补助资金支出。 */
     @Schema(description = "公务员医疗补助")
     private BigDecimal ybCvlservPay;
+
+    /** 结算模式：DISCHARGE_FULL / MID_SETTLE。 */
+    @Schema(description = "结算模式")
+    private String settleMode;
+
+    /** 全自费金额（setlinfo.fulamt_ownpay_amt）。 */
+    @Schema(description = "全自费金额")
+    private BigDecimal ybFulamtOwnpayAmt;
+
+    /** 先行自付金额（setlinfo.preselfpay_amt）。 */
+    @Schema(description = "先行自付")
+    private BigDecimal ybPreselfpayAmt;
+
+    /** 符合政策范围金额（setlinfo.inscp_scp_amt）。 */
+    @Schema(description = "符合范围金额")
+    private BigDecimal ybInscpScpAmt;
+
+    /** 超限价自费（setlinfo.overlmt_selfpay）。 */
+    @Schema(description = "超限价自费")
+    private BigDecimal ybOverlmtSelfpay;
 }

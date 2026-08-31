@@ -105,6 +105,13 @@ const tableColumns: TableColumn[] = [
     headerAlign: 'center',
   },
   {
+    prop: 'displayOrder',
+    label: '排序号',
+    width: 88,
+    align: 'center',
+    headerAlign: 'center',
+  },
+  {
     prop: 'statusEnum_dictText',
     label: '状态',
     slot: 'statusEnum',
@@ -273,16 +280,20 @@ const loadAllData = async () => {
       const sorted = [...items].toSorted((a, b) => {
         const aOrder = a.displayOrder;
         const bOrder = b.displayOrder;
-        if (aOrder !== undefined && aOrder !== null && bOrder !== undefined && bOrder !== null) {
+        const aHasOrder = aOrder !== undefined && aOrder !== null;
+        const bHasOrder = bOrder !== undefined && bOrder !== null;
+        if (aHasOrder && bHasOrder) {
           return aOrder - bOrder;
         }
-        if (aOrder !== undefined && aOrder !== null) {
+        if (aHasOrder) {
           return -1;
         }
-        if (bOrder !== undefined && bOrder !== null) {
+        if (bHasOrder) {
           return 1;
         }
-        return 0;
+        const aId = a.id == null ? 0 : Number(a.id);
+        const bId = b.id == null ? 0 : Number(b.id);
+        return aId - bId;
       });
       for (const item of sorted) {
         if (item.children && item.children.length > 0) {

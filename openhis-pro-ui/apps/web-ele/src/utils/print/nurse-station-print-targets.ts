@@ -18,8 +18,13 @@ import {
 
 export interface SpecimenBarcodePrintTarget {
   serviceRequestId: string;
-  /** 检验项目名称（content / name） */
+  /** 检验项目名称（content / name；合管时为多项拼接） */
   itemName: string;
+  /** 合管检验设备主键；无合管配置时为 undefined */
+  specimenTubeMergeDeviceId?: string;
+  encounterId?: string;
+  bedNo?: string;
+  patientName?: string;
 }
 
 export interface TreatmentExecutePrintTarget {
@@ -75,24 +80,77 @@ function filterServiceExecuteRows(
   return serviceRows.filter(isExecuteRowPending);
 }
 
-/** 采血条码：每个检验医嘱一张标签（主键作条码，附带项目名） */
+/** 采血条码：合管设备一组一张标签（条码暂用组内首条 SR；LIS 外发阶段再改 + 拼接） */
 export function groupSpecimenBarcodePrintTargets(
   rows: NurseAdviceExecuteRow[],
   selectedKeys?: string[],
 ): SpecimenBarcodePrintTarget[] {
   const keyed = filterServiceExecuteRows(rows, selectedKeys).filter(isLabSpecimenExecuteRow);
-  const targets: SpecimenBarcodePrintTarget[] = [];
-  const seen = new Set<string>();
+  const groupMap = new Map<string, SpecimenBarcodePrintTarget>();
   for (const row of keyed) {
     const requestId = String(row.requestId ?? '').trim();
-    if (!requestId || seen.has(requestId)) {
+    if (!requestId) {
       continue;
     }
-    seen.add(requestId);
     const itemName = String(row.content ?? row.name ?? '').trim();
-    targets.push({ serviceRequestId: requestId, itemName });
+    const mergeDeviceId = String(
+      (row as NurseAdviceExecuteRow & { specimenTubeMergeDeviceId?: string })
+        .specimenTubeMergeDeviceId ?? '',
+    ).trim();
+    const groupKey = mergeDeviceId ? `merge:${mergeDeviceId}` : `sr:${requestId}`;
+    const existing = groupMap.get(groupKey);
+    if (!existing) {
+      groupMap.set(groupKey, {
+        serviceRequestId: requestId,
+        itemName,
+        ...(mergeDeviceId ? { specimenTubeMergeDeviceId: mergeDeviceId } : {}),
+      });
+      continue;
+    }
+    if (itemName && !existing.itemName.includes(itemName)) {
+      existing.itemName = existing.itemName ? `${existing.itemName}、${itemName}` : itemName;
+    }
   }
-  return targets;
+  return [...groupMap.values()];
+}
+
+/** 住院打印中心采血贴：按合管设备分组（无 device 则逐 SR） */
+export function groupPrintPendingSpecimenBarcodeRows(
+  rows: readonly {
+    orderId?: string;
+    title?: string;
+    specimenTubeMergeDeviceId?: string;
+    encounterId?: string;
+    bedNo?: string;
+    patientName?: string;
+  }[],
+): SpecimenBarcodePrintTarget[] {
+  const groupMap = new Map<string, SpecimenBarcodePrintTarget>();
+  for (const row of rows) {
+    const requestId = String(row.orderId ?? '').trim();
+    if (!requestId) {
+      continue;
+    }
+    const itemName = String(row.title ?? '').trim();
+    const mergeDeviceId = String(row.specimenTubeMergeDeviceId ?? '').trim();
+    const groupKey = mergeDeviceId ? `merge:${mergeDeviceId}` : `sr:${requestId}`;
+    const existing = groupMap.get(groupKey);
+    if (!existing) {
+      groupMap.set(groupKey, {
+        serviceRequestId: requestId,
+        itemName,
+        encounterId: String(row.encounterId ?? '').trim() || undefined,
+        bedNo: String(row.bedNo ?? '').trim() || undefined,
+        patientName: String(row.patientName ?? '').trim() || undefined,
+        ...(mergeDeviceId ? { specimenTubeMergeDeviceId: mergeDeviceId } : {}),
+      });
+      continue;
+    }
+    if (itemName && !existing.itemName.includes(itemName)) {
+      existing.itemName = existing.itemName ? `${existing.itemName}、${itemName}` : itemName;
+    }
+  }
+  return [...groupMap.values()];
 }
 
 /** 处置执行单：一张 A4 汇总所选（或全部待执行）非检验处置行 */

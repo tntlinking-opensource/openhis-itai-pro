@@ -329,7 +329,8 @@ public class InventoryPeriodBalanceDetailAppService {
             byte[] bytes = this.periodBalanceDetailMapper.buildExcelBytes(
                 exportRows,
                 columns,
-                InventoryPeriodBalanceDetailExportConstants.PERIOD_BALANCE_DETAIL_SHEET_NAME
+                InventoryPeriodBalanceDetailExportConstants.PERIOD_BALANCE_DETAIL_SHEET_NAME,
+                request.getExportColumns()
             );
             response.setFileBytes(bytes);
         } catch (RuntimeException ex) {

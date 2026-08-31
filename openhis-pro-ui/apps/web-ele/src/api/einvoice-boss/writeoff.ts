@@ -40,6 +40,7 @@ export interface ManualWriteOffResponse {
   busNo?: string;
   writeOffBillNo?: string;
   writeOffBatchCode?: string;
+  reissueInvoiceId?: string;
 }
 
 export function pageWriteOffDocumentsApi(request: PageWriteOffDocumentsRequest) {
@@ -58,6 +59,13 @@ export function getWriteOffDetailApi(documentId: string) {
 export function manualWriteOffApi(request: ManualWriteOffRequest) {
   return publicRequestClient.post<ManualWriteOffResponse>(
     `${WRITEOFF_BASE}/manualWriteOff`,
+    request,
+  );
+}
+
+export function manualWriteOffAndReissueApi(request: ManualWriteOffRequest) {
+  return publicRequestClient.post<ManualWriteOffResponse>(
+    `${WRITEOFF_BASE}/manualWriteOffAndReissue`,
     request,
   );
 }

@@ -3,7 +3,8 @@ import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
 
 import type { MedicationCatalogInitResponse, MedicationCatalogItem } from '#/api';
 
-import { computed, onActivated, ref } from 'vue';
+import { computed, onActivated, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
@@ -26,16 +27,17 @@ import {
 import type { MedicationCatalogImportProgressResult } from '#/api';
 import { PublicationStatusCode } from '#/constants/domain/publication-status';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import { MEDICATION_CATALOG_EXPORT_COLUMNS } from '#/utils/export/catalog-excel-export-columns';
 import { downloadBinaryExportFile } from '#/utils/export/download-binary-export';
-import {
-  formatMoneyUnitPriceDisplay,
-  resolveMedicationCatalogPriceDisplayDp,
-} from '#/utils/format/money-scale';
+import { formatMoneyUnitPriceDisplay } from '#/utils/format/money-scale';
 
 import { BASIC_TABLE_MAX_HEIGHT } from '../basic-table-max-height';
 import CatalogLotPriceDialog from '../catalog/catalog-lot-price-dialog.vue';
 import { resolveCatalogRecordNavigation } from '../catalog/catalog-record-nav';
 import MedicationCatalogEditDialog from './medication-catalog-edit-dialog.vue';
+
+const route = useRoute();
+const router = useRouter();
 
 function isMedicationPublicationActive(row: MedicationCatalogItem): boolean {
   return row.statusEnum === PublicationStatusCode.ACTIVE;
@@ -52,8 +54,8 @@ const queryParams = ref({
   keyword: '',
   /** 药品分类筛选；空字符串表示「全部」 */
   categoryCode: '',
-  /** 基药标识；空字符串表示「全部」 */
-  basicFlag: '' as '' | boolean,
+  /** 重点药类型；空字符串表示「全部」 */
+  keyDrugType: '' as string,
 });
 
 const tableData = ref<MedicationCatalogItem[]>([]);
@@ -75,6 +77,7 @@ const catalogNavLoading = ref(false);
 const lotPriceOpen = ref(false);
 const lotPriceItemId = ref('');
 const lotPriceItemName = ref('');
+const lotPriceCategoryCode = ref('');
 
 const importFileInputRef = ref<HTMLInputElement | null>(null);
 const importLoading = ref(false);
@@ -256,22 +259,16 @@ const tableColumns: TableColumn[] = [
 ];
 
 /**
- * 列表价格列：中草药三位、其余两位，附包装单位文案。
+ * 列表价格列：销售参考价固定两位，附包装单位文案。
  *
  * @param price 销售参考价
  * @param unitText 包装单位展示名
- * @param categoryCode medication_category_code
  */
-function formatRetailPriceWithUnit(
-  price: unknown,
-  unitText: unknown,
-  categoryCode?: unknown,
-): string {
+function formatRetailPriceWithUnit(price: unknown, unitText: unknown): string {
   if (price === null || price === undefined || price === '') {
     return '';
   }
-  const dp = resolveMedicationCatalogPriceDisplayDp(categoryCode);
-  const formatted = formatMoneyUnitPriceDisplay(price, dp);
+  const formatted = formatMoneyUnitPriceDisplay(price, 2);
   if (!formatted) {
     return String(price);
   }
@@ -300,15 +297,16 @@ const formItems = computed<FormItemConfig[]>(() => [
   },
   {
     type: 'select',
-    prop: 'basicFlag',
-    label: '基药',
+    prop: 'keyDrugType',
+    label: '重点药类型',
     placeholder: '全部',
     clearable: true,
     multiple: false,
     options: [
       { label: '全部', value: '' },
-      { label: '是', value: true },
-      { label: '否', value: false },
+      { label: '基药', value: 'BASIC' },
+      { label: '国家重点监控药品', value: 'NATIONAL_MONITOR' },
+      { label: '集采药品', value: 'CENTRAL_PURCHASE' },
     ],
   },
 ]);
@@ -330,15 +328,16 @@ function normalizeCategoryCodeForApi(raw: unknown): string | undefined {
   return s === '' ? undefined : s;
 }
 
-/** 基药筛选归一：空/全部 → undefined；是/否 → boolean */
-function normalizeBasicFlagForApi(raw: unknown): boolean | undefined {
-  if (raw === true || raw === 'true') {
-    return true;
+/** 重点药类型筛选归一：空/全部 → undefined；否则传 KeyDrugType code */
+function normalizeKeyDrugTypeForApi(raw: unknown): string | undefined {
+  if (raw === undefined || raw === null) {
+    return undefined;
   }
-  if (raw === false || raw === 'false') {
-    return false;
+  const s = String(raw).trim();
+  if (s === '' || s === '全部') {
+    return undefined;
   }
-  return undefined;
+  return s;
 }
 
 const handleQuery = async (params: Record<string, unknown>) => {
@@ -353,7 +352,7 @@ const handleQuery = async (params: Record<string, unknown>) => {
       pageSize: queryParams.value.pageSize,
       keyword: queryParams.value.keyword || undefined,
       categoryCode: normalizeCategoryCodeForApi(queryParams.value.categoryCode),
-      basicFlag: normalizeBasicFlagForApi(queryParams.value.basicFlag),
+      keyDrugType: normalizeKeyDrugTypeForApi(queryParams.value.keyDrugType),
     });
 
     const parsed = parsePagedRowsFromApiData<MedicationCatalogItem>(response.data);
@@ -375,7 +374,7 @@ const handleReset = () => {
     pageSize: 10,
     keyword: '',
     categoryCode: '',
-    basicFlag: '',
+    keyDrugType: '',
   };
   handleQuery(queryParams.value);
 };
@@ -464,7 +463,8 @@ const handleExportCatalog = async () => {
     const result = await exportMedicationCatalogApi({
       keyword: queryParams.value.keyword || undefined,
       categoryCode: queryParams.value.categoryCode || undefined,
-      basicFlag: normalizeBasicFlagForApi(queryParams.value.basicFlag),
+      keyDrugType: normalizeKeyDrugTypeForApi(queryParams.value.keyDrugType),
+      exportColumns: MEDICATION_CATALOG_EXPORT_COLUMNS,
     });
     if (!result?.fileBytes?.trim()) {
       ElMessage.warning('导出内容为空');
@@ -607,6 +607,7 @@ function handleViewLotPrices(row: MedicationCatalogItem) {
   }
   lotPriceItemId.value = id;
   lotPriceItemName.value = typeof row.name === 'string' ? row.name : '';
+  lotPriceCategoryCode.value = String(row.categoryCode ?? '').trim();
   lotPriceOpen.value = true;
 }
 
@@ -773,7 +774,38 @@ onActivated(() => {
   }
 });
 
+/** 目录检查等引导跳转：按 openId 打开编辑，或按 keyword 预填检索 */
+async function applyRouteDeepLink() {
+  const openId = String(route.query.openId ?? '').trim();
+  const keyword = String(route.query.keyword ?? '').trim();
+  if (keyword) {
+    queryParams.value.keyword = keyword;
+  }
+  if (openId) {
+    openCatalogEditor(openId);
+  }
+  if (openId || keyword) {
+    const nextQuery = { ...route.query };
+    delete nextQuery.openId;
+    delete nextQuery.keyword;
+    void router.replace({ path: route.path, query: nextQuery });
+  }
+  if (keyword && !openId) {
+    handleQuery(queryParams.value);
+  }
+}
+
+watch(
+  () => [route.query.openId, route.query.keyword],
+  () => {
+    if (String(route.query.openId ?? '').trim() || String(route.query.keyword ?? '').trim()) {
+      void applyRouteDeepLink();
+    }
+  },
+);
+
 initPage();
+void applyRouteDeepLink();
 </script>
 
 <template>
@@ -842,9 +874,7 @@ initPage();
       </template>
 
       <template #retailPrice="{ row }">
-        {{
-          formatRetailPriceWithUnit(row.retailPrice, row.packageUnitCode_dictText, row.categoryCode)
-        }}
+        {{ formatRetailPriceWithUnit(row.retailPrice, row.packageUnitCode_dictText) }}
       </template>
 
       <template #action="{ row }">
@@ -890,6 +920,7 @@ initPage();
       catalog-type="medication"
       :item-id="lotPriceItemId"
       :item-name="lotPriceItemName"
+      :category-code="lotPriceCategoryCode"
     />
 
     <ElDialog

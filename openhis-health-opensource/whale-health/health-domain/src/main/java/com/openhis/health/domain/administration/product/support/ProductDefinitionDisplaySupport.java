@@ -64,7 +64,9 @@ public final class ProductDefinitionDisplaySupport {
         dto.setDefEncounterUnitCode(definition.getDefEncounterUnitCode());
         dto.setDefInhospitalUnitCode(definition.getDefInhospitalUnitCode());
         dto.setTotalVolume(definition.getTotalVolume());
-        dto.setManufacturer(trimToNull(definition.getManufacturerText()));
+        // 厂家展示名由应用层按 manufacturerId 解析；此处仅投影主键
+        dto.setManufacturer(null);
+        dto.setManufacturerId(definition.getManufacturerId());
         dto.setLocationId(definition.getLocationId());
         dto.setSupplierId(definition.getSupplyId());
         dto.setStatusEnum(definition.getStatusEnum());
@@ -141,6 +143,7 @@ public final class ProductDefinitionDisplaySupport {
         dto.setProductName(definition.getName());
         dto.setMerchandiseName(definition.getMerchandiseName());
         dto.setCategoryCode(definition.getCategoryCode());
+        dto.setTypeCode(definition.getTypeCode());
         dto.setPurchaseUnitCode(definition.getPurchaseUnitCode());
         dto.setSplitUnitCode(definition.getSplitUnitCode());
         dto.setPackageUnitCode(definition.getPackageUnitCode());
@@ -158,7 +161,9 @@ public final class ProductDefinitionDisplaySupport {
         dto.setDefEncounterUnitCode(definition.getDefEncounterUnitCode());
         dto.setDefInhospitalUnitCode(definition.getDefInhospitalUnitCode());
         dto.setTotalVolume(definition.getTotalVolume());
-        dto.setManufacturer(trimToNull(definition.getManufacturerText()));
+        // 厂家展示名由应用层按 manufacturerId 解析；此处仅投影主键
+        dto.setManufacturer(null);
+        dto.setManufacturerId(definition.getManufacturerId());
         dto.setLocationId(definition.getLocationId());
         dto.setSupplierId(definition.getSupplyId());
         dto.setStatusEnum(definition.getStatusEnum());

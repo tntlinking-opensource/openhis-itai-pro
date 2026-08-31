@@ -38,12 +38,23 @@ import {
   buildCatalogEditabilitySchemaPatches,
   CATALOG_EDITABILITY_OK,
   isCatalogStructureLocked,
+  isDeviceCatalogFieldLocked,
 } from '#/views/basic/catalog/catalog-editability';
 import CatalogLotPriceDialog from '#/views/basic/catalog/catalog-lot-price-dialog.vue';
 import {
   resolveCatalogRecordNavState,
   type CatalogRecordNavDirection,
 } from '#/views/basic/catalog/catalog-record-nav';
+import {
+  parseCatalogPackCount,
+  parseCatalogPriceUplmt,
+  resolveManufacturerOptionValue,
+  resolveOptionValueByLabel,
+  resolveOptionValueByLabels,
+  type CatalogLabeledOption,
+} from '#/chs/utils/apply-national-catalog-fields';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import { matchSelectOptionKeyword } from '#/utils/select-option-keyword';
 
 interface Props {
   modelValue: boolean;
@@ -82,12 +93,15 @@ const emit = defineEmits<{
 }>();
 
 type OptionItem = {
+  busNo?: string;
   children?: OptionItem[];
   info?: string;
   label?: string;
   name?: string;
+  pyStr?: string;
   text?: string;
   value: number | string;
+  wbStr?: string;
 };
 
 const loading = ref(false);
@@ -130,7 +144,6 @@ const CHECKBOX_INLINE_GROUP_FIELDS = [
 
 /** 已从表单移除、提交时须剔除的字段 */
 const REMOVED_FORM_FIELDS = [
-  'typeCode',
   'modelNumber',
   'substanceText',
   'orgId',
@@ -179,11 +192,79 @@ const convertOptions = (
   }));
 };
 
+/** 厂家等可拼音过滤选项：保留 pyStr/wbStr/busNo */
+function convertSearchableOptions(options: null | OptionItem[] | undefined): Array<{
+  busNo?: string;
+  label: string;
+  pyStr?: string;
+  value: string;
+  wbStr?: string;
+}> {
+  if (!options || !Array.isArray(options)) {
+    return [];
+  }
+  return options.map((item) => ({
+    label: item.label || item.info || item.text || item.name || String(item.value),
+    value: String(item.value),
+    busNo: item.busNo || undefined,
+    pyStr: item.pyStr || undefined,
+    wbStr: item.wbStr || undefined,
+  }));
+}
+
 const createOptionsComputed = (key: string) =>
   computed(() => convertOptions((initOptions.value?.[key] as OptionItem[]) || null));
 
 const deviceCategories = createOptionsComputed('deviceCategories');
+const equipmentTypes = createOptionsComputed('equipmentTypes');
 const supplierListOptions = createOptionsComputed('supplierListOptions');
+/** 生产厂家全量：优先 manufacturerOptions；无则回落供应商列表（无拼音时仅按名称） */
+const manufacturerOptionsAll = computed(() => {
+  const dedicated = convertSearchableOptions(
+    (initOptions.value?.manufacturerOptions as OptionItem[] | undefined) ?? null,
+  );
+  if (dedicated.length > 0) {
+    return dedicated;
+  }
+  return convertSearchableOptions(
+    (initOptions.value?.supplierListOptions as OptionItem[] | undefined) ?? null,
+  );
+});
+/** 生产厂家下拉当前可见项 */
+const manufacturerOptions = ref(manufacturerOptionsAll.value);
+watch(
+  manufacturerOptionsAll,
+  (list) => {
+    manufacturerOptions.value = list;
+  },
+  { immediate: true },
+);
+
+/**
+ * 厂家下拉：按名称 / 编号 / 拼音 / 五笔过滤。
+ *
+ * @param query 输入框关键字
+ */
+function filterManufacturerOptions(query: string) {
+  const all = manufacturerOptionsAll.value;
+  if (!String(query ?? '').trim()) {
+    manufacturerOptions.value = all;
+    return;
+  }
+  manufacturerOptions.value = all.filter((item) => matchSelectOptionKeyword(item, query));
+}
+
+/**
+ * 下拉收起时恢复全量，避免下次打开仍是上次过滤结果。
+ *
+ * @param visible 是否展开
+ */
+function onManufacturerSelectVisibleChange(visible: boolean) {
+  if (!visible) {
+    manufacturerOptions.value = manufacturerOptionsAll.value;
+  }
+}
+
 /** 五类计量单位统一候选（unit_code），与药品目录一致；旧 init 无 unitCodeOptions 时回落 packUnits */
 const unitCodeOptions = computed(() => {
   const unified = convertOptions((initOptions.value?.unitCodeOptions as OptionItem[]) || null);
@@ -262,19 +343,131 @@ function openCatalogPicker() {
   pickerVisible.value = true;
 }
 
-function applyCatalogSelection(row: NationalCatalogItem) {
-  formApi.setFieldValue('ybNo', row.hilistCode ?? '');
+/** 字段未锁定且目录有值时写入 */
+function canApplyDeviceCatalogField(fieldName: string, catalogHasValue: boolean): boolean {
+  if (!catalogHasValue) {
+    return false;
+  }
+  return !isDeviceCatalogFieldLocked(editabilityCode.value, fieldName);
+}
+
+/**
+ * 国家医保目录选码回填：医保码/等级必带；名称/规格/厂家/单位/限价/财务类型等尽量带入（不回填拼音）。
+ */
+async function applyCatalogSelection(row: NationalCatalogItem) {
+  const patch: Record<string, unknown> = {
+    ybNo: row.hilistCode ?? '',
+    ybMatchFlag: false,
+    ybFlag: true,
+  };
   const lv = catalogChrgitmLvToFormValue(row.chrgitmLv);
   if (lv !== undefined) {
-    formApi.setFieldValue('chrgitmLv', lv);
+    patch.chrgitmLv = lv;
   }
-  formApi.setFieldValue('ybMatchFlag', false);
+
+  const hilistName = String(row.hilistName ?? '').trim();
+  if (canApplyDeviceCatalogField('name', Boolean(hilistName))) {
+    patch.name = hilistName;
+  }
+  if (canApplyDeviceCatalogField('merchandiseName', Boolean(hilistName))) {
+    patch.merchandiseName = hilistName;
+  }
+
+  const aprvno = String(row.aprvno ?? '').trim();
+  if (canApplyDeviceCatalogField('approvalNumber', Boolean(aprvno))) {
+    patch.approvalNumber = aprvno;
+  }
+
+  const spec = String(row.spec ?? '').trim();
+  if (canApplyDeviceCatalogField('totalVolume', Boolean(spec))) {
+    patch.totalVolume = spec;
+  }
+
+  // 分类/财务：按「医用材料/耗材」等名称尽量命中院内下拉
+  const categoryCode = resolveOptionValueByLabels(
+    deviceCategories.value as CatalogLabeledOption[],
+    ['医用材料', '医用耗材', '耗材', '卫生材料'],
+  );
+  if (canApplyDeviceCatalogField('categoryCode', Boolean(categoryCode))) {
+    patch.categoryCode = categoryCode;
+  }
+  const itemTypeCode = resolveOptionValueByLabels(financialTypes.value as CatalogLabeledOption[], [
+    '医用耗材',
+    '卫生材料费',
+    '卫生材料',
+    '耗材',
+  ]);
+  if (canApplyDeviceCatalogField('itemTypeCode', Boolean(itemTypeCode))) {
+    patch.itemTypeCode = itemTypeCode;
+  }
+
+  const prodentpName = String(row.prodentpName ?? '').trim();
+  const manufacturerId = resolveManufacturerOptionValue(manufacturerOptionsAll.value, prodentpName);
+  if (canApplyDeviceCatalogField('manufacturerId', Boolean(manufacturerId))) {
+    manufacturerOptions.value = manufacturerOptionsAll.value;
+    patch.manufacturerId = manufacturerId;
+  } else if (prodentpName) {
+    ElMessage.warning(`未匹配到生产厂家「${prodentpName}」，请手动选择或先维护厂家主数据`);
+  }
+
+  const unitOptions = unitCodeOptions.value as CatalogLabeledOption[];
+  const pacuntCode = resolveOptionValueByLabel(unitOptions, row.minPacunt);
+  if (canApplyDeviceCatalogField('purchaseUnitCode', Boolean(pacuntCode))) {
+    patch.purchaseUnitCode = pacuntCode;
+  }
+  if (canApplyDeviceCatalogField('packageUnitCode', Boolean(pacuntCode))) {
+    patch.packageUnitCode = pacuntCode;
+  }
+  if (canApplyDeviceCatalogField('stockUnitCode', Boolean(pacuntCode))) {
+    patch.stockUnitCode = pacuntCode;
+  }
+
+  const prepuntCode =
+    resolveOptionValueByLabel(unitOptions, row.minPrepunt) ??
+    resolveOptionValueByLabel(unitOptions, row.minPrcunt);
+  if (canApplyDeviceCatalogField('splitUnitCode', Boolean(prepuntCode))) {
+    patch.splitUnitCode = prepuntCode;
+  }
+  if (canApplyDeviceCatalogField('doseUnitCode', Boolean(prepuntCode))) {
+    patch.doseUnitCode = prepuntCode;
+  }
+
+  const pacCnt = parseCatalogPackCount(row.minPacCnt);
+  if (canApplyDeviceCatalogField('purchaseUnitRatio', pacCnt !== undefined)) {
+    patch.purchaseUnitRatio = pacCnt;
+  }
+
+  const maxPrice = parseCatalogPriceUplmt(row.priceUplmtAmt);
+  if (canApplyDeviceCatalogField('maximumRetailPrice', maxPrice !== undefined)) {
+    patch.maximumRetailPrice = maxPrice;
+  }
+
+  const dosformText = String(row.dosform ?? '').trim();
+  if (dosformText && canApplyDeviceCatalogField('description', true)) {
+    const currentDesc = String(formData.value?.description ?? '').trim();
+    if (!currentDesc) {
+      patch.description = `剂型/型号：${dosformText}`;
+    }
+  }
+
+  for (const [field, value] of Object.entries(patch)) {
+    await formApi.setFieldValue(field, value);
+  }
+  // 业务信息内联复选组需同步 ybFlag
+  if (patch.ybFlag === true) {
+    const group = ((await formApi.getValues()) as Record<string, unknown>)
+      .__checkbox_inline_group as Record<string, unknown> | undefined;
+    await formApi.setFieldValue('__checkbox_inline_group', {
+      ...(group && typeof group === 'object' ? group : {}),
+      ybFlag: true,
+    });
+  }
+
   formData.value = {
     ...formData.value,
-    ybNo: row.hilistCode,
-    chrgitmLv: lv as DeviceCatalogItem['chrgitmLv'],
-    ybMatchFlag: false,
-  };
+    ...patch,
+  } as Partial<DeviceCatalogItem>;
+
   ElMessage.success(`已选用医保编码 ${row.hilistCode}，保存耗材后可上传 3301`);
 }
 
@@ -508,6 +701,8 @@ function normalizeUnitFieldNames(values: Record<string, unknown>): Record<string
 function normalizeFormSelectValues(data: Record<string, unknown>) {
   const selectFieldNames = [
     'categoryCode',
+    'typeCode',
+    'manufacturerId',
     'supplyId',
     'doseUnitCode',
     'purchaseUnitCode',
@@ -590,8 +785,10 @@ async function loadDetailData() {
       inlineGroupValue[key] = coerceLegacyBool(normalizedData[key]);
     });
     await formApi.setFieldValue('__checkbox_inline_group', inlineGroupValue);
-    // 单位 options 就绪后再写一次，避免 Select 只回显 code
+    // 单位/厂家/供应商 options 就绪后再写一次，避免 Select 只回显 code
     for (const field of [
+      'manufacturerId',
+      'supplyId',
       'doseUnitCode',
       'purchaseUnitCode',
       'splitUnitCode',
@@ -640,6 +837,20 @@ function buildSubmitData(formValues: Record<string, unknown>): Partial<DeviceCat
   mapLegacyPackageUnitFields(mergedData);
   delete mergedData.salesUnitCode;
   delete mergedData.salesUnitRatio;
+  // manufacturerText 仅展示；写请求只提交 manufacturerId（雪花 string）
+  delete mergedData.manufacturerText;
+  const manufacturerId = preserveApiIdForRequest(mergedData.manufacturerId);
+  if (manufacturerId) {
+    mergedData.manufacturerId = manufacturerId;
+  } else {
+    delete mergedData.manufacturerId;
+  }
+  const supplyId = preserveApiIdForRequest(mergedData.supplyId);
+  if (supplyId) {
+    mergedData.supplyId = supplyId;
+  } else {
+    delete mergedData.supplyId;
+  }
   REMOVED_FORM_FIELDS.forEach((field) => {
     delete mergedData[field];
   });
@@ -811,15 +1022,29 @@ const [Form, formApi] = useVbenForm(
         },
       },
       {
-        component: 'Input',
-        fieldName: 'manufacturerText',
-        label: '生产厂家',
+        component: 'Select',
+        fieldName: 'typeCode',
+        label: '耗材种类',
+        rules: 'required',
         componentProps: {
-          maxlength: 200,
-          showWordLimit: true,
-          clearable: true,
-          placeholder: '请输入生产厂家',
+          options: equipmentTypes.value,
+          filterable: true,
+          placeholder: '请选择耗材种类（取药路由用）',
+          clearable: false,
         },
+      },
+      {
+        component: 'Select',
+        fieldName: 'manufacturerId',
+        label: '生产厂家',
+        componentProps: () => ({
+          options: manufacturerOptions.value,
+          filterable: true,
+          clearable: true,
+          placeholder: '请选择生产厂家',
+          filterMethod: filterManufacturerOptions,
+          onVisibleChange: onManufacturerSelectVisibleChange,
+        }),
       },
       {
         component: 'Select',

@@ -140,6 +140,7 @@ public class DeviceCatalogImportRowValidator {
     ) {
         this.assertRequired(row, row.getName(), "耗材名称", errors);
         this.assertRequired(row, row.getCategory(), "耗材分类", errors);
+        this.assertRequired(row, row.getDeviceType(), "耗材种类", errors);
         this.assertRequired(row, row.getFinType(), "财务类型", errors);
         this.assertRequired(row, row.getTotalVolume(), "包装规格", errors);
         this.assertRequired(row, row.getPurchaseUnit(), "采购单位", errors);
@@ -207,10 +208,9 @@ public class DeviceCatalogImportRowValidator {
     ) {
         this.resolveTerm(row, index, DeviceCatalogImportTerminologyIndex.DICT_CATEGORY,
             row.getCategory(), "耗材分类", errors, ResolvedField.CATEGORY);
-        if (StringUtils.isNotEmpty(row.getDeviceType())) {
-            this.resolveTerm(row, index, DeviceCatalogImportTerminologyIndex.DICT_DEVICE_TYPE,
-                row.getDeviceType(), "耗材种类", errors, ResolvedField.DEVICE_TYPE);
-        }
+        // 种类与分类同为维护必填；解析失败时由 resolveTerm 写入行错误
+        this.resolveTerm(row, index, DeviceCatalogImportTerminologyIndex.DICT_DEVICE_TYPE,
+            row.getDeviceType(), "耗材种类", errors, ResolvedField.DEVICE_TYPE);
         this.resolveTerm(row, index, DeviceCatalogImportTerminologyIndex.DICT_FIN_TYPE,
             row.getFinType(), "财务类型", errors, ResolvedField.FIN_TYPE);
         // 采购/拆零/包装/库存均解析自统一计量单位术语 unit_code
@@ -239,8 +239,8 @@ public class DeviceCatalogImportRowValidator {
         row.setAllergenFlag(this.resolveYesNoDefaultFalse(row, row.getAllergenFlagText(), "过敏标记", errors));
         row.setYbFlag(this.resolveYesNoDefaultFalse(row, row.getYbFlagText(), "医保标记", errors));
         row.setHvcmFlag(this.resolveYesNoDefaultFalse(row, row.getHvcmFlagText(), "高值耗材标志", errors));
-        // 「不收费耗材」是→chargeableFlag=false；否→true；空白保持 false
-        this.resolveNonChargeableFlag(row, errors);
+        // 「收费耗材」与 chargeableFlag 同向；空白默认 true（对齐新建默认勾选）
+        row.setChargeableFlag(this.resolveYesNoDefaultTrue(row, row.getChargeableFlagText(), "收费耗材", errors));
     }
 
     /**
@@ -448,33 +448,18 @@ public class DeviceCatalogImportRowValidator {
     }
 
     /**
-     * 解析「不收费耗材」列并写入 chargeableFlag（库语义：true=收费）。
-     *
-     * <p>是→false；否→true；空白或非法文案保持 false（与历史默认一致）。</p>
-     *
-     * @param row 导入行
-     * @param errors 错误收集
+     * 是/否：空白默认 true（用于「收费耗材」等默认勾选字段）。
      */
-    private void resolveNonChargeableFlag(
+    private Boolean resolveYesNoDefaultTrue(
         DeviceCatalogImportRow row,
+        String raw,
+        String columnName,
         List<ImportDeviceCatalogErrorItemDto> errors
     ) {
-        String raw = row.getChargeableFlagText();
         if (StringUtils.isEmpty(raw)) {
-            row.setChargeableFlag(Boolean.FALSE);
-            return;
+            return Boolean.TRUE;
         }
-        int errorCountBefore = errors.size();
-        Boolean nonChargeable = this.parseYesNo(row, raw, "不收费耗材", errors);
-        if (errors.size() > errorCountBefore) {
-            row.setChargeableFlag(Boolean.FALSE);
-            return;
-        }
-        if (Boolean.TRUE.equals(nonChargeable)) {
-            row.setChargeableFlag(Boolean.FALSE);
-            return;
-        }
-        row.setChargeableFlag(Boolean.TRUE);
+        return this.parseYesNo(row, raw, columnName, errors);
     }
 
     /**

@@ -7,6 +7,7 @@ package com.openhis.health.application.peis.registration.service;
 import com.openhis.health.application.peis.orchestration.PeisRegistrationOrchestrator;
 import com.openhis.health.application.peis.orchestration.result.RegisterPersonalCheckInResult;
 import com.openhis.health.application.peis.registration.dto.CustomerRowDto;
+import com.openhis.health.application.peis.registration.dto.PeisGuidePrintSlipDto;
 import com.openhis.health.application.peis.registration.dto.PersonalRegistrationHistoryRowDto;
 import com.openhis.health.application.peis.registration.mapper.PeisRegistrationMapper;
 import com.openhis.health.application.peis.registration.request.AdjustServiceRequestsRequest;
@@ -14,13 +15,17 @@ import com.openhis.health.application.peis.registration.request.CreateRegistrati
 import com.openhis.health.application.peis.registration.request.GetChargeLaunchContextRequest;
 import com.openhis.health.application.peis.registration.request.GetChargeStatusRequest;
 import com.openhis.health.application.peis.registration.request.GetCheckOrderDetailRequest;
+import com.openhis.health.application.peis.registration.request.ListActivePersonalRegistrationsRequest;
+import com.openhis.health.application.peis.registration.request.LoadGuidePrintSlipRequest;
 import com.openhis.health.application.peis.registration.request.PagePersonalRegistrationsRequest;
 import com.openhis.health.application.peis.registration.request.SearchCustomerRequest;
 import com.openhis.health.application.peis.registration.response.ChargeLaunchContextResponse;
 import com.openhis.health.application.peis.registration.response.ChargeStatusResponse;
 import com.openhis.health.application.peis.registration.response.CheckOrderDetailResponse;
 import com.openhis.health.application.peis.registration.response.CreateRegistrationResponse;
+import com.openhis.health.application.peis.registration.response.ListActivePersonalRegistrationsResponse;
 import com.openhis.health.application.peis.registration.response.SearchCustomerResponse;
+import com.openhis.health.application.peis.registration.support.PeisGuidePrintSlipAssembler;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
@@ -86,6 +91,7 @@ public class PeisPersonalRegistrationAppService {
     private final ActivityDefinitionQueryService activityDefinitionQueryService;
     private final ChargeItemQueryService chargeItemQueryService;
     private final CurrentPractitionerResolver currentPractitionerResolver;
+    private final PeisGuidePrintSlipAssembler peisGuidePrintSlipAssembler;
 
     /**
      * 检索体检客户（REG-01）。
@@ -141,6 +147,16 @@ public class PeisPersonalRegistrationAppService {
             throw new ValidationException("查询体检单失败：就诊标识不能为空");
         }
         return loadCheckOrderDetail(request.getEncounterId());
+    }
+
+    /**
+     * 加载体检指引单打印 slip。
+     */
+    public PeisGuidePrintSlipDto loadGuidePrintSlip(LoadGuidePrintSlipRequest request) {
+        if (request == null || request.getEncounterId() == null) {
+            throw new ValidationException("打印指引单失败：就诊标识不能为空");
+        }
+        return peisGuidePrintSlipAssembler.assemble(request.getEncounterId());
     }
 
     /**
@@ -274,63 +290,27 @@ public class PeisPersonalRegistrationAppService {
         Page<Encounter> page = encounterQueryService.pageEncounterEntities(spec, pageable);
 
         List<Encounter> content = page.getContent();
-        List<Long> encounterIds = new ArrayList<>();
-        List<Long> patientIds = new ArrayList<>();
-        for (Encounter row : content) {
-            if (row.getId() != null) {
-                encounterIds.add(row.getId());
-            }
-            if (row.getPatientId() != null) {
-                patientIds.add(row.getPatientId());
-            }
-        }
-
-        Map<Long, PeisEncounterExtModel> extByEncounter =
-            peisEncounterExtQueryService.mapByEncounterIds(encounterIds);
-        Map<Long, BatchPatientDetailQueryModel> patientById =
-            patientQueryService.batchLoadPatientDetails(patientIds);
-        Map<Long, Boolean> paidByEncounter = resolvePaidByEncounterIds(encounterIds);
-
-        List<PersonalRegistrationHistoryRowDto> rows = new ArrayList<>();
-        for (Encounter encounter : content) {
-            PersonalRegistrationHistoryRowDto dto = new PersonalRegistrationHistoryRowDto();
-            dto.setEncounterId(encounter.getId());
-            dto.setBusNo(encounter.getBusNo());
-            dto.setPatientId(encounter.getPatientId());
-            dto.setRegisteredAt(encounter.getStartTime());
-            dto.setStatusEnum(encounter.getStatusEnum());
-
-            BatchPatientDetailQueryModel patientBatch = patientById.get(encounter.getPatientId());
-            if (patientBatch != null
-                && patientBatch.getPatientDetail() != null
-                && patientBatch.getPatientDetail().getPatient() != null) {
-                PatientCoreQueryModel core = patientBatch.getPatientDetail().getPatient();
-                dto.setPatientName(core.getName());
-                dto.setGenderCode(core.getGenderEnum());
-                dto.setPhone(core.getPhone());
-            }
-
-            PeisEncounterExtModel ext = extByEncounter.get(encounter.getId());
-            if (ext != null) {
-                dto.setPackageActivityId(ext.getPackageActivityId());
-                dto.setPackageName(extractPackageName(ext.getPackageSnapshotJson()));
-                if (StringUtils.isEmpty(dto.getBusNo())) {
-                    dto.setBusNo(ext.getBusNo());
-                }
-            }
-
-            Boolean paid = paidByEncounter.get(encounter.getId());
-            if (paid == null) {
-                dto.setPaid(Boolean.FALSE);
-                dto.setChargeUnknown(Boolean.TRUE);
-            } else {
-                dto.setPaid(paid);
-                dto.setChargeUnknown(Boolean.FALSE);
-            }
-            rows.add(dto);
-        }
-
+        List<PersonalRegistrationHistoryRowDto> rows = this.toHistoryRows(content);
         return PagedResult.of(rows, page.getTotalElements(), page.getNumber() + 1, page.getSize());
+    }
+
+    /**
+     * 检索确认患者后列出其在检体检单（未终态 PE 就诊）。
+     *
+     * @param request 患者主键
+     * @return 在检列表，按开始时间倒序
+     */
+    public ListActivePersonalRegistrationsResponse listActivePersonalRegistrations(
+        ListActivePersonalRegistrationsRequest request) {
+        ListActivePersonalRegistrationsResponse response = new ListActivePersonalRegistrationsResponse();
+        response.setRows(List.of());
+        if (request == null || request.getPatientId() == null) {
+            // 未确认患者时不查在检单
+            return response;
+        }
+        List<Encounter> encounters = encounterQueryService.listActivePeEncounters(request.getPatientId());
+        response.setRows(this.toHistoryRows(encounters));
+        return response;
     }
 
     private Set<Long> resolvePatientIdsByKeyword(String keyword) {
@@ -346,6 +326,75 @@ public class PeisPersonalRegistrationAppService {
             }
         }
         return ids;
+    }
+
+    /**
+     * 把体检就诊装配为登记历史行（套餐名、收费态）。
+     *
+     * @param content 就诊实体
+     * @return 历史行
+     */
+    private List<PersonalRegistrationHistoryRowDto> toHistoryRows(List<Encounter> content) {
+        List<PersonalRegistrationHistoryRowDto> rows = new ArrayList<>();
+        if (content == null || content.isEmpty()) {
+            // 无就诊则无需批量补套餐名与收费态
+            return rows;
+        }
+        List<Long> encounterIds = new ArrayList<>();
+        List<Long> patientIds = new ArrayList<>();
+        for (Encounter row : content) {
+            // 收集就诊主键供扩展与收费态批量查询
+            if (row.getId() != null) {
+                encounterIds.add(row.getId());
+            }
+            // 收集患者主键供姓名电话批量查询
+            if (row.getPatientId() != null) {
+                patientIds.add(row.getPatientId());
+            }
+        }
+        Map<Long, PeisEncounterExtModel> extByEncounter =
+            peisEncounterExtQueryService.mapByEncounterIds(encounterIds);
+        Map<Long, BatchPatientDetailQueryModel> patientById =
+            patientQueryService.batchLoadPatientDetails(patientIds);
+        Map<Long, Boolean> paidByEncounter = resolvePaidByEncounterIds(encounterIds);
+        for (Encounter encounter : content) {
+            PersonalRegistrationHistoryRowDto dto = new PersonalRegistrationHistoryRowDto();
+            dto.setEncounterId(encounter.getId());
+            dto.setBusNo(encounter.getBusNo());
+            dto.setPatientId(encounter.getPatientId());
+            dto.setRegisteredAt(encounter.getStartTime());
+            dto.setStatusEnum(encounter.getStatusEnum());
+            BatchPatientDetailQueryModel patientBatch = patientById.get(encounter.getPatientId());
+            // 补客户展示字段，历史列表与在检条共用
+            if (patientBatch != null
+                && patientBatch.getPatientDetail() != null
+                && patientBatch.getPatientDetail().getPatient() != null) {
+                PatientCoreQueryModel core = patientBatch.getPatientDetail().getPatient();
+                dto.setPatientName(core.getName());
+                dto.setGenderCode(core.getGenderEnum());
+                dto.setPhone(core.getPhone());
+            }
+            PeisEncounterExtModel ext = extByEncounter.get(encounter.getId());
+            if (ext != null) {
+                dto.setPackageActivityId(ext.getPackageActivityId());
+                dto.setPackageName(extractPackageName(ext.getPackageSnapshotJson()));
+                // 就诊未写流水号时回落体检扩展流水号
+                if (StringUtils.isEmpty(dto.getBusNo())) {
+                    dto.setBusNo(ext.getBusNo());
+                }
+            }
+            Boolean paid = paidByEncounter.get(encounter.getId());
+            // 读收费失败时标记未知，避免把未结显示成已收
+            if (paid == null) {
+                dto.setPaid(Boolean.FALSE);
+                dto.setChargeUnknown(Boolean.TRUE);
+            } else {
+                dto.setPaid(paid);
+                dto.setChargeUnknown(Boolean.FALSE);
+            }
+            rows.add(dto);
+        }
+        return rows;
     }
 
     private Map<Long, Boolean> resolvePaidByEncounterIds(List<Long> encounterIds) {

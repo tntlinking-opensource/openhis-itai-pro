@@ -4,11 +4,13 @@
  */
 package com.openhis.health.application.report.tracenumber.request;
 
+import com.openhis.whale.core.application.dto.ExcelExportColumnDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * IF-TRC-RPT-05：追溯码查询报表导出入参（筛选与 IF-02 同构，无分页键）。
@@ -53,4 +55,10 @@ public class ExportTraceNumberReportRequest {
     /** 流水时间上限。 */
     @Schema(description = "流水时间上限")
     private LocalDateTime flowTimeEnd;
+
+    /**
+     * 前端下发的导出列；空则导出全部 {@code @Excel} 列。
+     */
+    @Schema(description = "导出列清单（页面可见列）")
+    private List<ExcelExportColumnDto> exportColumns;
 }

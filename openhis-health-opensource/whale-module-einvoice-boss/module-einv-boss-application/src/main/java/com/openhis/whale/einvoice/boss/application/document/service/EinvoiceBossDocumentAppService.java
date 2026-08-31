@@ -76,7 +76,7 @@ public class EinvoiceBossDocumentAppService {
         if (paymentId == null) {
             return dto;
         }
-        documentRepository.findFirstByPaymentIdAndIsDeletedFalseOrderByIdAsc(paymentId).ifPresent(document -> {
+        documentRepository.findFirstByPaymentIdAndIsDeletedFalseOrderByIdDesc(paymentId).ifPresent(document -> {
             dto.setDocumentId(document.getId());
             dto.setInvoiceId(document.getInvoiceId());
         });

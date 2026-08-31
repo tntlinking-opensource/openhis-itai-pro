@@ -35,7 +35,8 @@ import java.util.Map;
  * 门诊医生站签发相位：按模板库位优先序 + 批次效期/入库序（与目录可用量查询一致）做 FIFO 拆分，产出发放草稿分段命令行。
  *
  * <p>口径对齐 IF-DOR-11：仅在模板给出的候选库位集合上与库存求交，并扣减同就诊未完结发放占用。
- * 跨批次切分以医嘱开立单位为最小粒度：拆零开立可部分切分，盒等整包装开立每段须为整数个开立单位。</p>
+ * 跨批次切分以医嘱开立单位为最小粒度：拆零开立可部分切分，盒等整包装开立每段须为整数个开立单位。
+ * 门诊皮试药（BR-ORD-034）优先整量落在 FIFO 序第一个够量的单批；无一单批够量时须医生确认后方可跨批。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -74,6 +75,49 @@ public class DoctorStationAdviceFifoAllocationAssembler {
             String businessUnitCode,
             BigDecimal totalQuantity
     ) {
+        // 默认非皮试单批优先（住院/普通门诊药线）
+        return allocateMedicationFifo(
+            orgId,
+            encounterId,
+            medicationDefinitionId,
+            categoryCode,
+            methodCode,
+            businessUnitCode,
+            totalQuantity,
+            false,
+            false);
+    }
+
+    /**
+     * 药品 FIFO 分段（门诊皮试可单批优先，见 BR-ORD-034）。
+     *
+     * <p>当 {@code outpatientSkinTestPreferSingleLot=true}：按 FIFO 序找第一个单批够量的批号整量落批；
+     * 无一单批够量且未确认跨批时，若多批合计够量则抛 {@link DoctorStationAdviceConstants#EX_ORD_309}；
+     * 已确认或非皮试则走普通跨批 FIFO。</p>
+     *
+     * @param orgId                              开立/接诊机构
+     * @param encounterId                        就诊主键
+     * @param medicationDefinitionId             药品定义主键
+     * @param categoryCode                       目录 categoryCode
+     * @param methodCode                         给药途径编码
+     * @param businessUnitCode                   开立单位
+     * @param totalQuantity                      开立总量
+     * @param outpatientSkinTestPreferSingleLot  门诊皮试药：优先单批覆盖
+     * @param confirmCrossLotSkinTest            医生已确认可跨批（应对 EX-ORD-309）
+     * @return 有序分段列表
+     * @throws BusinessException 库存不足、需确认跨批或参数非法时
+     */
+    public List<ReplaceFifoMedicationDispenseDraftsCommand.Segment> allocateMedicationFifo(
+            Long orgId,
+            Long encounterId,
+            Long medicationDefinitionId,
+            String categoryCode,
+            String methodCode,
+            String businessUnitCode,
+            BigDecimal totalQuantity,
+            boolean outpatientSkinTestPreferSingleLot,
+            boolean confirmCrossLotSkinTest
+    ) {
         if (orgId == null) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "签发 FIFO 分配缺少 orgId");
         }
@@ -94,6 +138,7 @@ public class DoctorStationAdviceFifoAllocationAssembler {
                 distributionCategory,
                 medicationDefinitionId,
                 methodCode,
+                null,
                 null);
         if (candidateLocs.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_RULE_CONFLICT, "未解析到候选发放库位，无法按 FIFO 拆分发药");
@@ -103,6 +148,21 @@ public class DoctorStationAdviceFifoAllocationAssembler {
         sortInventoryRowsForTemplateFifo(physical, candidateLocs);
         inventoryItemQueryService.lockInventoryRowsForCatalogAvailability(physical);
         Map<String, BigDecimal> occ = buildMedicationOccupancy(candidateLocs, medicationDefinitionId, productRow);
+        // 门诊皮试：FIFO 序优先整量落在第一个够量的单批，避免一次就诊被拆成多批逼出多次皮试
+        if (outpatientSkinTestPreferSingleLot) {
+            DoctorStationAdviceFifoSegmentDraft singleLotDraft =
+                DoctorStationAdviceInventoryUnitQuantityHelper.tryAllocateSingleLotCoveringTotalInDoctorBusinessUnit(
+                    physical,
+                    occ,
+                    TableNameConstants.MED_MEDICATION_DEFINITION,
+                    productRow,
+                    businessUnitCode,
+                    totalQuantity);
+            // 已找到够量单批：整量落该批，不再跨批
+            if (singleLotDraft != null) {
+                return toMedicationDispenseSegments(List.of(singleLotDraft));
+            }
+        }
         DoctorStationAdviceFifoAllocationResult fifoResult = DoctorStationAdviceInventoryUnitQuantityHelper.allocateFifoSegmentsInDoctorBusinessUnit(
                 physical, occ, TableNameConstants.MED_MEDICATION_DEFINITION, productRow, businessUnitCode, totalQuantity);
         if (fifoResult.getRemainingSplitQuantity().compareTo(BigDecimal.ZERO) > 0) {
@@ -113,7 +173,103 @@ public class DoctorStationAdviceFifoAllocationAssembler {
                             DoctorStationAdviceConstants.MSG_SIGN_FIFO_INSUFFICIENT_STOCK_FOR_ADVICE,
                             resolveFifoProductDisplayName(productRow, "药品")));
         }
-        return toMedicationDispenseSegments(fifoResult.getSegments());
+        List<DoctorStationAdviceFifoSegmentDraft> segments = fifoResult.getSegments();
+        // 门诊皮试：无一单批够量但多批合计够量 → 未确认则提示医生（确认后本批允许跨批）
+        if (outpatientSkinTestPreferSingleLot
+            && !confirmCrossLotSkinTest
+            && segments != null
+            && segments.size() > 1) {
+            throw new BusinessException(
+                DoctorStationAdviceConstants.EX_ORD_309,
+                String.format(
+                    DoctorStationAdviceConstants.MSG_SIGN_SKIN_TEST_CROSS_LOT_CONFIRM,
+                    resolveFifoProductDisplayName(productRow, "药品")));
+        }
+        return toMedicationDispenseSegments(segments);
+    }
+
+    /**
+     * IF-DOR-14 暂存门控：门诊皮试药无一单批够量且须跨批时，未确认则抛 {@link DoctorStationAdviceConstants#EX_ORD_309}。
+     *
+     * <p>只读试算，不加库存行锁；签发相位仍走 {@link #allocateMedicationFifo}。</p>
+     *
+     * @param orgId                      开立机构
+     * @param encounterId                就诊主键
+     * @param medicationDefinitionId     药品定义主键
+     * @param categoryCode               目录 categoryCode
+     * @param methodCode                 给药途径
+     * @param businessUnitCode           开立单位
+     * @param totalQuantity              开立总量
+     * @param confirmCrossLotSkinTest    医生已确认可跨批
+     * @throws BusinessException 须确认跨批或参数非法时
+     */
+    public void assertOutpatientSkinTestCrossLotConfirmedOrThrow(
+        Long orgId,
+        Long encounterId,
+        Long medicationDefinitionId,
+        String categoryCode,
+        String methodCode,
+        String businessUnitCode,
+        BigDecimal totalQuantity,
+        boolean confirmCrossLotSkinTest
+    ) {
+        // 已确认：保存/签发均不再弹窗
+        if (confirmCrossLotSkinTest) {
+            return;
+        }
+        if (orgId == null) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "皮试 FIFO 试算缺少 orgId");
+        }
+        if (encounterId == null || medicationDefinitionId == null) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "皮试 FIFO 试算缺少 encounterId/medicationDefinitionId");
+        }
+        if (totalQuantity == null || totalQuantity.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "皮试 FIFO 试算数量必须大于 0");
+        }
+        ProductDefinitionDisplayDto productRow = DoctorStationAdviceInventoryUnitQuantityHelper.requireProductDefinition(
+            productDefinitionDisplayTerminologyAssembler,
+            TableNameConstants.MED_MEDICATION_DEFINITION,
+            medicationDefinitionId);
+        String distributionCategory = StringUtils.firstNonBlank(categoryCode, MedicationCommonConstants.DEFAULT_SERVICE_LOCATION_DISTRIBUTION_CATEGORY_CODE);
+        List<Long> candidateLocs = clinicalCatalogDispenseLocationResolver.listApplicableCandidateLocationIds(
+            orgId,
+            TableNameConstants.MED_MEDICATION_DEFINITION,
+            distributionCategory,
+            medicationDefinitionId,
+            methodCode,
+            null,
+            null);
+        if (candidateLocs.isEmpty()) {
+            return;
+        }
+        List<InventoryCatalogAvailabilityRowModel> physical = inventoryItemQueryService.findAvailableCatalogRowsForOrder(
+            TableNameConstants.MED_MEDICATION_DEFINITION, List.of(medicationDefinitionId), candidateLocs);
+        sortInventoryRowsForTemplateFifo(physical, candidateLocs);
+        Map<String, BigDecimal> occ = buildMedicationOccupancy(candidateLocs, medicationDefinitionId, productRow);
+        DoctorStationAdviceFifoSegmentDraft singleLotDraft =
+            DoctorStationAdviceInventoryUnitQuantityHelper.tryAllocateSingleLotCoveringTotalInDoctorBusinessUnit(
+                physical,
+                occ,
+                TableNameConstants.MED_MEDICATION_DEFINITION,
+                productRow,
+                businessUnitCode,
+                totalQuantity);
+        if (singleLotDraft != null) {
+            return;
+        }
+        DoctorStationAdviceFifoAllocationResult fifoResult = DoctorStationAdviceInventoryUnitQuantityHelper.allocateFifoSegmentsInDoctorBusinessUnit(
+            physical, occ, TableNameConstants.MED_MEDICATION_DEFINITION, productRow, businessUnitCode, totalQuantity);
+        if (fifoResult.getRemainingSplitQuantity().compareTo(BigDecimal.ZERO) > 0) {
+            return;
+        }
+        List<DoctorStationAdviceFifoSegmentDraft> segments = fifoResult.getSegments();
+        if (segments != null && segments.size() > 1) {
+            throw new BusinessException(
+                DoctorStationAdviceConstants.EX_ORD_309,
+                String.format(
+                    DoctorStationAdviceConstants.MSG_SIGN_SKIN_TEST_CROSS_LOT_CONFIRM,
+                    resolveFifoProductDisplayName(productRow, "药品")));
+        }
     }
 
     /**
@@ -137,9 +293,55 @@ public class DoctorStationAdviceFifoAllocationAssembler {
         String businessUnitCode,
         BigDecimal totalQuantity
     ) {
+        // 默认非皮试口径
+        return resolvePrimaryMedicationDispenseLocationId(
+            orgId,
+            encounterId,
+            medicationDefinitionId,
+            categoryCode,
+            methodCode,
+            businessUnitCode,
+            totalQuantity,
+            false);
+    }
+
+    /**
+     * 解析药品签发 FIFO 主发放库位（皮试药优先单批落点库位，见 BR-ORD-034）。
+     *
+     * <p>分方试算不抛 EX-ORD-309：皮试无一单批够量时按已确认跨批走普通 FIFO 取首段库位。</p>
+     *
+     * @param orgId                  开立机构
+     * @param encounterId            就诊主键
+     * @param medicationDefinitionId 药品定义主键
+     * @param categoryCode           药品目录 categoryCode
+     * @param methodCode             给药途径编码
+     * @param businessUnitCode       开立单位
+     * @param totalQuantity          开立总量
+     * @param outpatientSkinTestPreferSingleLot 门诊皮试药优先单批
+     * @return 首段发放库位；无法分配时返回 null
+     */
+    public Long resolvePrimaryMedicationDispenseLocationId(
+        Long orgId,
+        Long encounterId,
+        Long medicationDefinitionId,
+        String categoryCode,
+        String methodCode,
+        String businessUnitCode,
+        BigDecimal totalQuantity,
+        boolean outpatientSkinTestPreferSingleLot
+    ) {
         try {
+            // 分方仅需库位：皮试也按「可跨批」试算，避免 EX-ORD-309 打断分方
             List<ReplaceFifoMedicationDispenseDraftsCommand.Segment> segments = allocateMedicationFifo(
-                orgId, encounterId, medicationDefinitionId, categoryCode, methodCode, businessUnitCode, totalQuantity);
+                orgId,
+                encounterId,
+                medicationDefinitionId,
+                categoryCode,
+                methodCode,
+                businessUnitCode,
+                totalQuantity,
+                outpatientSkinTestPreferSingleLot,
+                true);
             // 无可用分段时不阻塞分方，库位留空由后续装箱按 null 分区
             if (segments == null || segments.isEmpty()) {
                 return null;
@@ -158,23 +360,34 @@ public class DoctorStationAdviceFifoAllocationAssembler {
     /**
      * FIFO 草稿分段 → 药品发放替换命令分段。
      *
+     * <p>每段须带真实库存批号（对齐 **BR-ORD-033** / 药品 FIFO 签发）；空批号拒绝进入签发与挂费。</p>
+     *
      * @param drafts 分配结果
      * @return 命令分段列表
+     * @throws BusinessException 任一段批号为空时
      */
     private static List<ReplaceFifoMedicationDispenseDraftsCommand.Segment> toMedicationDispenseSegments(
             List<DoctorStationAdviceFifoSegmentDraft> drafts
     ) {
         List<ReplaceFifoMedicationDispenseDraftsCommand.Segment> segments = new ArrayList<>();
+        // Gate：无草稿则返回空列表
         if (drafts == null) {
             return segments;
         }
         for (DoctorStationAdviceFifoSegmentDraft draft : drafts) {
+            // Skip：空草稿不入分段
             if (draft == null) {
                 continue;
             }
+            // Gate：库存 FIFO 段须带真实批号，禁止空批进入签发/挂费
+            if (StringUtils.isEmpty(draft.getLotNumber())) {
+                throw new BusinessException(
+                    ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT,
+                    "库存可用行缺少批号，无法按 FIFO 签发");
+            }
             ReplaceFifoMedicationDispenseDraftsCommand.Segment segment = new ReplaceFifoMedicationDispenseDraftsCommand.Segment();
             segment.setLocationId(draft.getLocationId());
-            segment.setLotNumber(draft.getLotNumber());
+            segment.setLotNumber(draft.getLotNumber().trim());
             segment.setQuantity(draft.getQuantity());
             segments.add(segment);
         }
@@ -221,6 +434,7 @@ public class DoctorStationAdviceFifoAllocationAssembler {
                 distributionCategory,
                 deviceDefinitionId,
                 null,
+                productRow.getTypeCode(),
                 null);
         if (candidateLocs.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_RULE_CONFLICT, "未解析到候选发放库位，无法按 FIFO 拆分耗材发放");
@@ -295,23 +509,34 @@ public class DoctorStationAdviceFifoAllocationAssembler {
     /**
      * FIFO 草稿分段 → 耗材发放替换命令分段。
      *
+     * <p>每段须带真实库存批号（对齐 **PR-DD-LOT-002** / **BR-ORD-033**）；空批号拒绝进入签发与挂费。</p>
+     *
      * @param drafts 分配结果
      * @return 命令分段列表
+     * @throws BusinessException 任一段批号为空时
      */
     private static List<ReplaceFifoDeviceDispenseDraftsCommand.Segment> toDeviceDispenseSegments(
             List<DoctorStationAdviceFifoSegmentDraft> drafts
     ) {
         List<ReplaceFifoDeviceDispenseDraftsCommand.Segment> segments = new ArrayList<>();
+        // Gate：无草稿则返回空列表
         if (drafts == null) {
             return segments;
         }
         for (DoctorStationAdviceFifoSegmentDraft draft : drafts) {
+            // Skip：空草稿不入分段
             if (draft == null) {
                 continue;
             }
+            // Gate：库存 FIFO 段须带真实批号，禁止空批进入签发/挂费
+            if (StringUtils.isEmpty(draft.getLotNumber())) {
+                throw new BusinessException(
+                    ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT,
+                    "库存可用行缺少批号，无法按 FIFO 签发");
+            }
             ReplaceFifoDeviceDispenseDraftsCommand.Segment segment = new ReplaceFifoDeviceDispenseDraftsCommand.Segment();
             segment.setLocationId(draft.getLocationId());
-            segment.setLotNumber(draft.getLotNumber());
+            segment.setLotNumber(draft.getLotNumber().trim());
             segment.setQuantity(draft.getQuantity());
             segments.add(segment);
         }

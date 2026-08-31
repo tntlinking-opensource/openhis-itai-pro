@@ -35,6 +35,13 @@ public interface ServiceCatalogImportConstants {
     /** 用户数据起始行（0-based，对应 Excel 第 5 行）。 */
     int DATA_START_ROW_INDEX = 4;
 
+    /**
+     * 「③可选值一览」Sheet 中可选值数据起始行（0-based）。
+     *
+     * <p>第 0 行为各列标题；自本行起写 label 列表，供命名区域/下拉引用。</p>
+     */
+    int OPTION_DATA_START_ROW_INDEX = 1;
+
     /** 单文件有效行上限。 */
     int IMPORT_MAX_ROWS = 3000;
 
@@ -70,6 +77,17 @@ public interface ServiceCatalogImportConstants {
 
     /** 导出首列：系统编号（busNo）。 */
     String EXPORT_BUS_NO_HEADER = "编号";
+
+    /**
+     * 导出须写 NUMERIC 的<strong>导入表头名</strong>（成本价/零售价/最高零售价）。
+     *
+     * <p>导出列下标 = 导入列下标 + 1（首列「编号」偏移）。</p>
+     */
+    String[] EXPORT_NUMERIC_HEADER_NAMES = {
+        "成本价",
+        "零售价",
+        "最高零售价"
+    };
 
     /** 单次导出最大行数。 */
     int EXPORT_MAX_ROWS = 3000;

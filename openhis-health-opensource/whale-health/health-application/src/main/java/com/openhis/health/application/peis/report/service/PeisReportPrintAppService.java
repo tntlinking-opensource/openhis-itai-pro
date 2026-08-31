@@ -26,6 +26,9 @@ import com.openhis.health.application.peis.report.support.PeisReportPrintSlipAss
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.health.application.shared.validator.PageWindowGate;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
+import com.openhis.health.domain.clinical.diagnosticreport.command.IncreaseDiagnosticReportPrintCountCommand;
+import com.openhis.health.domain.clinical.diagnosticreport.entity.DiagnosticReport;
+import com.openhis.health.domain.clinical.diagnosticreport.service.DiagnosticReportDomainService;
 import com.openhis.health.domain.clinical.diagnosticreport.queries.model.DiagnosticReportModel;
 import com.openhis.health.domain.clinical.diagnosticreport.service.DiagnosticReportQueryService;
 import com.openhis.health.domain.peis.encounterprogress.queries.PeisEncounterProgressQuery;
@@ -60,6 +63,7 @@ import java.util.Optional;
 public class PeisReportPrintAppService {
     private final PeisEncounterProgressQuery peisEncounterProgressQuery;
     private final DiagnosticReportQueryService diagnosticReportQueryService;
+    private final DiagnosticReportDomainService diagnosticReportDomainService;
     private final EncounterQueryService encounterQueryService;
     private final PeisExamHistoryAppService peisExamHistoryAppService;
     private final PeisReportPrintMapper peisReportPrintMapper;
@@ -101,7 +105,7 @@ public class PeisReportPrintAppService {
             throw new BusinessException(
                 ErrorCodeConstants.DIAGNOSTIC_REPORT_INVALID_ARGUMENT, "就诊标识不能为空");
         }
-        PeisReportPrintSlipDto slip = peisReportPrintSlipAssembler.assemble(request.getEncounterId());
+        PeisReportPrintSlipDto slip = peisReportPrintSlipAssembler.assembleForPreview(request.getEncounterId());
         PreviewReportResponse response = new PreviewReportResponse();
         response.setEncounterId(slip.getEncounterId());
         response.setDiagnosticReportId(slip.getDiagnosticReportId());
@@ -115,7 +119,14 @@ public class PeisReportPrintAppService {
         response.setBusNo(slip.getBusNo());
         response.setCheckDateText(slip.getCheckDateText());
         response.setObservationLines(slip.getObservationLines());
-        response.setPreviewHint("内容预览；出纸走 PrintTemplate/OpenHIS.Win");
+        Optional<DiagnosticReportModel> reportOpt =
+            diagnosticReportQueryService.getByEncounterId(request.getEncounterId());
+        if (reportOpt.isPresent()
+            && !DiagnosticReportStatusConstants.STATUS_FINAL.equals(reportOpt.get().getStatusEnum())) {
+            response.setPreviewHint("总检未定稿，仅可预览；完成总检后方可打印发布");
+        } else {
+            response.setPreviewHint("内容预览；出纸走 PrintTemplate/OpenHIS.Win");
+        }
         return response;
     }
 
@@ -130,12 +141,18 @@ public class PeisReportPrintAppService {
         Long operatorId = currentPractitionerResolver.requirePractitionerId(
             ErrorCodeConstants.DIAGNOSTIC_REPORT_INVALID_ARGUMENT, "请先登录后再确认打印");
         DiagnosticReportModel report = requireFinalReport(request.getEncounterId());
+        IncreaseDiagnosticReportPrintCountCommand increaseCmd = new IncreaseDiagnosticReportPrintCountCommand();
+        increaseCmd.setDiagnosticReportId(report.getId());
+        increaseCmd.setOperatorId(operatorId);
+        increaseCmd.setIncreaseBy(1);
+        DiagnosticReport updated = diagnosticReportDomainService.increasePrintCount(increaseCmd);
         domainEventPublisher.publish(new PeisReportPrintedEvent(
             request.getEncounterId(), report.getId(), operatorId));
         ConfirmPrintResponse response = new ConfirmPrintResponse();
         response.setAccepted(Boolean.TRUE);
         response.setDiagnosticReportId(report.getId());
-        response.setMessage("业务侧已记录打印事件（版式经 PrintTemplate）");
+        response.setPrintCount(updated.getPrintCount());
+        response.setMessage("已记录打印（第 " + updated.getPrintCount() + " 次）");
         return response;
     }
 

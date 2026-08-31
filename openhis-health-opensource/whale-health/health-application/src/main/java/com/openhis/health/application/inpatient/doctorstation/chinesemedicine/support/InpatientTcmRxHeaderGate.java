@@ -22,7 +22,7 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * BR-IP-TCM-005/006：住院中药方头长临与方头一致性校验。
+ * 住院中药方头长临与方头一致性校验（长期禁止立即频次；同方头字段须一致）。
  */
 @Component
 public class InpatientTcmRxHeaderGate {
@@ -94,8 +94,11 @@ public class InpatientTcmRxHeaderGate {
     /**
      * 校验单方头长临与频次组合是否合法。
      *
+     * <p>长期方禁止「立即」频次；临时方允许医生改频次（与西药 BR-IP-ORD-015 一致，
+     * 仅新建默认立即，后端不再强制 STAT）。</p>
+     *
      * @param header 方头请求
-     * @throws BusinessException 长临为空/非法，或长临与频次不匹配时
+     * @throws BusinessException 长临为空/非法，或长期方频次为立即时
      */
     private void validateSingleHeaderTherapyAndRate(TcmRxDraftHeaderRequest header) {
         // 方头长临必填
@@ -108,15 +111,7 @@ public class InpatientTcmRxHeaderGate {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT, "方头长临参数非法");
         }
         String rateCode = header.getRateCode();
-        // 临嘱频次须为「立即」
-        if (therapyType == TherapyType.TEMPORARY) {
-            if (!InpatientDoctorStationTcmConstants.IMMEDIATE_RATE_CODE.equals(StringUtils.trimToEmpty(rateCode))) {
-                throw new BusinessException(
-                    ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT,
-                    InpatientDoctorStationTcmConstants.MSG_TEMPORARY_RATE_NOT_IMMEDIATE);
-            }
-        }
-        // 长嘱频次禁止「立即」
+        // 长嘱频次禁止「立即」；临嘱频次由医生选择，不再强制 STAT
         if (therapyType == TherapyType.LONG_TERM) {
             if (InpatientDoctorStationTcmConstants.IMMEDIATE_RATE_CODE.equals(StringUtils.trimToEmpty(rateCode))) {
                 throw new BusinessException(

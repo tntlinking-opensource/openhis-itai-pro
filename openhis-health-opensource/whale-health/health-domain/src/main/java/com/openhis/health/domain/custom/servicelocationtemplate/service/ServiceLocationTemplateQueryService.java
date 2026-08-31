@@ -23,7 +23,8 @@ import lombok.RequiredArgsConstructor;
 /**
  * 取药/发药科室路由模板读侧查询服务。
  *
- * <p>职责：维护「开立/接诊科室 + 物品维度 + 时段」到默认发药库位的规则解析，供摆药与发药路径推荐及医生站目录与库存求交；仅查询不写库。</p>
+ * <p>职责：维护「开立/接诊科室 + 物品维度 + 时段」到默认发药库位的规则解析，供摆药与发药路径推荐及医生站目录与库存求交；仅查询不写库。
+ * 适用匹配含具体项 / 耗材种类 / 用法三维 calcScore（具体项 → 种类 → 用法 → 仅大类）。</p>
  *
  * <p>聚合边界：仅本聚合 {@link ServiceLocationTemplateRepository}。</p>
  */
@@ -114,10 +115,10 @@ public class ServiceLocationTemplateQueryService {
     }
 
     /**
-     * 列出在指定时刻、开立科室与物品表 + 类别维度下、对<strong>具体物品定义与用法</strong>适用（{@link #calcScore}≥0）
+     * 列出在指定时刻、开立科室与物品表 + 类别维度下、对<strong>具体物品定义、种类与用法</strong>适用（{@link #calcScore}≥0）
      * 的候选发药库位有序列表。
      *
-     * <p>排序口径与 {@link #pickBest} 一致：匹配粒度（指定物品优先于类别默认）→ {@code priority} → {@code id}；
+     * <p>排序口径与 {@link #pickBest} 一致：匹配粒度（具体项 → 种类 → 用法 → 仅大类）→ {@code priority} → {@code id}；
      * <strong>不</strong>使用 {@code display_order}。供医生站 IF-DOR-11 目录、签发 FIFO 与定价 FIFO 与物理库存求交
      *（AS {@code BR-ORD-011} / {@code DM-CUS-006}）。</p>
      *
@@ -127,6 +128,7 @@ public class ServiceLocationTemplateQueryService {
      *        （药品 {@code medication_category_code} / 耗材 {@code device_category_code}）
      * @param itemDefinitionId 具体药品/耗材定义主键；模板通配行在 calcScore 中与之匹配
      * @param methodCode 给药途径等用法编码；耗材场景通常为 null，模板 {@code method_code} 通配行仍可命中
+     * @param typeCode 耗材种类编码（{@code device_type_code}）；药品通常为 null；空则仅能命中种类通配模板行
      * @param atTime 判定时段；空则当前时刻
      * @return 适用库位标识列表；参数不全时返回空列表
      */
@@ -136,6 +138,7 @@ public class ServiceLocationTemplateQueryService {
         String distributionCategoryCode,
         Long itemDefinitionId,
         String methodCode,
+        String typeCode,
         LocalTime atTime
     ) {
         if (organizationId == null || StringUtils.isEmpty(itemTable) || StringUtils.isEmpty(distributionCategoryCode)) {
@@ -144,7 +147,7 @@ public class ServiceLocationTemplateQueryService {
         LocalTime effectiveTime = this.resolveTemplateEffectiveTime(atTime);
         List<ServiceLocationTemplate> effective = this.collectEffectiveTemplateRows(
             organizationId, itemTable, distributionCategoryCode, effectiveTime);
-        return this.extractApplicableLocationIds(effective, itemDefinitionId, methodCode);
+        return this.extractApplicableLocationIds(effective, itemDefinitionId, methodCode, typeCode);
     }
 
     /**
@@ -155,6 +158,7 @@ public class ServiceLocationTemplateQueryService {
      * @param distributionCategoryCode 模板类别 code
      * @param itemDefinitionId         具体定义主键
      * @param methodCode               用法编码
+     * @param typeCode                 耗材种类编码
      * @param atTime                   判定时段；空则当前时刻
      * @return 适用库位标识列表
      */
@@ -164,6 +168,7 @@ public class ServiceLocationTemplateQueryService {
         String distributionCategoryCode,
         Long itemDefinitionId,
         String methodCode,
+        String typeCode,
         LocalTime atTime
     ) {
         if (StringUtils.isEmpty(itemTable) || StringUtils.isEmpty(distributionCategoryCode)) {
@@ -172,7 +177,7 @@ public class ServiceLocationTemplateQueryService {
         LocalTime effectiveTime = this.resolveTemplateEffectiveTime(atTime);
         List<ServiceLocationTemplate> effective = this.filterEffectiveTemplateRows(
             organizationRows, itemTable, distributionCategoryCode, effectiveTime);
-        return this.extractApplicableLocationIds(effective, itemDefinitionId, methodCode);
+        return this.extractApplicableLocationIds(effective, itemDefinitionId, methodCode, typeCode);
     }
 
     /**
@@ -213,6 +218,7 @@ public class ServiceLocationTemplateQueryService {
      *        （药品 {@code medication_category_code} / 耗材 {@code device_category_code}）
      * @param itemDefinitionId 具体物品定义，可为空表示请求侧不约束具体项（仅匹配模板通配行）
      * @param methodCode 给药途径等细化条件，可为空表示请求侧不约束用法（仅匹配模板通配行）
+     * @param typeCode 耗材种类编码，可为空表示请求侧不约束种类（仅匹配种类通配行）
      * @param atTime 判定生效时段的时刻；为空则取当前时刻
      * @return 默认发药库位标识；无适用规则时为 null
      */
@@ -222,6 +228,7 @@ public class ServiceLocationTemplateQueryService {
         String distributionCategoryCode,
         Long itemDefinitionId,
         String methodCode,
+        String typeCode,
         LocalTime atTime
     ) {
         // 无开立科室无法界定规则归属，直接拒绝避免静默落到错误库位
@@ -239,7 +246,7 @@ public class ServiceLocationTemplateQueryService {
         LocalTime effectiveTime = this.resolveTemplateEffectiveTime(atTime);
         List<ServiceLocationTemplate> candidates = this.collectEffectiveTemplateRows(
             organizationId, itemTable, distributionCategoryCode, effectiveTime);
-        ServiceLocationTemplate best = this.pickBest(candidates, itemDefinitionId, methodCode);
+        ServiceLocationTemplate best = this.pickBest(candidates, itemDefinitionId, methodCode, typeCode);
         // 无任何候选命中时调用方需自行降级（如提示人工选库位）
         if (best == null) {
             return null;
@@ -255,6 +262,7 @@ public class ServiceLocationTemplateQueryService {
      * @param distributionCategoryCode 模板类别 code
      * @param itemDefinitionId         具体定义主键
      * @param methodCode               用法编码
+     * @param typeCode                 耗材种类编码
      * @param atTime                   判定时段；空则当前时刻
      * @return 默认发药库位；无命中为 null
      */
@@ -264,6 +272,7 @@ public class ServiceLocationTemplateQueryService {
         String distributionCategoryCode,
         Long itemDefinitionId,
         String methodCode,
+        String typeCode,
         LocalTime atTime
     ) {
         // 物品主表缺失则无法与模板行对齐
@@ -277,7 +286,7 @@ public class ServiceLocationTemplateQueryService {
         LocalTime effectiveTime = this.resolveTemplateEffectiveTime(atTime);
         List<ServiceLocationTemplate> candidates = this.filterEffectiveTemplateRows(
             organizationRows, itemTable, distributionCategoryCode, effectiveTime);
-        ServiceLocationTemplate best = this.pickBest(candidates, itemDefinitionId, methodCode);
+        ServiceLocationTemplate best = this.pickBest(candidates, itemDefinitionId, methodCode, typeCode);
         if (best == null) {
             return null;
         }
@@ -290,13 +299,19 @@ public class ServiceLocationTemplateQueryService {
      * @param candidates 候选模板行
      * @param itemDefinitionId 请求侧物品定义，用于与模板通配/精确比对
      * @param methodCode 请求侧途径编码，用于与模板通配/精确比对
+     * @param typeCode 请求侧耗材种类编码，用于与模板通配/精确比对
      * @return 最优模板行；候选全不匹配（分数为负）时返回 null
      */
-    private ServiceLocationTemplate pickBest(List<ServiceLocationTemplate> candidates, Long itemDefinitionId, String methodCode) {
+    private ServiceLocationTemplate pickBest(
+        List<ServiceLocationTemplate> candidates,
+        Long itemDefinitionId,
+        String methodCode,
+        String typeCode
+    ) {
         ServiceLocationTemplate best = null;
         for (ServiceLocationTemplate row : candidates) {
-            int score = this.calcScore(row, itemDefinitionId, methodCode);
-            // 物品与途径组合与模板约束冲突时该行无效
+            int score = this.calcScore(row, itemDefinitionId, methodCode, typeCode);
+            // 物品/种类/途径与模板约束冲突时该行无效
             if (score < 0) {
                 continue;
             }
@@ -305,8 +320,8 @@ public class ServiceLocationTemplateQueryService {
                 best = row;
                 continue;
             }
-            int bestScore = this.calcScore(best, itemDefinitionId, methodCode);
-            // 更高匹配粒度覆盖较低者（例如精确物品+途径优于通配）
+            int bestScore = this.calcScore(best, itemDefinitionId, methodCode, typeCode);
+            // 更高匹配粒度覆盖较低者（例如单品优于种类，种类优于仅大类）
             if (score > bestScore) {
                 best = row;
                 continue;
@@ -327,31 +342,75 @@ public class ServiceLocationTemplateQueryService {
     /**
      * 计算单条模板与当前请求的组合匹配分：分值越高表示约束越「贴脸」，负分表示不兼容。
      *
+     * <p>择优序：具体项命中 → 种类命中 → 用法命中 → 仅大类通配（DM-CUS-006 §4.3）。</p>
+     *
      * @param row 模板行
      * @param itemDefinitionId 请求物品定义标识
      * @param methodCode 请求途径编码
-     * @return 4=物品+途径均精确；3/2=其一通配；1=双通配；-1=冲突
+     * @param typeCode 请求耗材种类编码
+     * @return 正分=可用；-1=冲突
      */
-    private int calcScore(ServiceLocationTemplate row, Long itemDefinitionId, String methodCode) {
-        boolean itemMatched = itemDefinitionId != null && itemDefinitionId.equals(row.getItemDefinitionId());
-        boolean methodMatched = methodCode != null && methodCode.equals(row.getMethodCode());
+    private int calcScore(
+        ServiceLocationTemplate row,
+        Long itemDefinitionId,
+        String methodCode,
+        String typeCode
+    ) {
         boolean itemWildcard = row.getItemDefinitionId() == null;
-        boolean methodWildcard = row.getMethodCode() == null;
+        boolean typeWildcard = StringUtils.isEmpty(row.getTypeCode());
+        boolean methodWildcard = StringUtils.isEmpty(row.getMethodCode());
 
-        // 物品与途径均与模板精确一致，最可信
-        if (itemMatched && methodMatched) {
-            return 4;
+        boolean itemMatched = false;
+        if (!itemWildcard && itemDefinitionId != null && itemDefinitionId.equals(row.getItemDefinitionId())) {
+            itemMatched = true;
         }
-        // 物品精确、途径由模板通配承接
-        if (itemMatched && methodWildcard) {
-            return 3;
+        boolean typeMatched = false;
+        if (!typeWildcard && StringUtils.isNotEmpty(typeCode) && typeCode.equals(row.getTypeCode())) {
+            typeMatched = true;
         }
-        // 物品通配、途径精确命中
-        if (itemWildcard && methodMatched) {
-            return 2;
+        boolean methodMatched = false;
+        if (!methodWildcard && StringUtils.isNotEmpty(methodCode) && methodCode.equals(row.getMethodCode())) {
+            methodMatched = true;
         }
-        // 双维度均通配，兜底命中但弱于上述情形
-        if (itemWildcard && methodWildcard) {
+
+        // 模板指定了具体项但请求未命中 → 冲突
+        if (!itemWildcard && !itemMatched) {
+            return -1;
+        }
+        // 模板指定了种类但请求未命中 → 冲突
+        if (!typeWildcard && !typeMatched) {
+            return -1;
+        }
+        // 模板指定了用法但请求未命中 → 冲突
+        if (!methodWildcard && !methodMatched) {
+            return -1;
+        }
+
+        // 具体项命中：最高档；种类/用法精确再加分便于同分细分
+        if (itemMatched) {
+            int score = 1000;
+            if (typeMatched) {
+                score = score + 10;
+            }
+            if (methodMatched) {
+                score = score + 1;
+            }
+            return score;
+        }
+        // 种类命中（无具体项）：耗材同大类拆房主路径
+        if (typeMatched) {
+            int score = 100;
+            if (methodMatched) {
+                score = score + 1;
+            }
+            return score;
+        }
+        // 用法命中（无具体项、无种类）：药品途径细化
+        if (methodMatched) {
+            return 20;
+        }
+        // 双/三通配：仅发放类别兜底
+        if (itemWildcard && typeWildcard && methodWildcard) {
             return 1;
         }
         return -1;
@@ -371,6 +430,7 @@ public class ServiceLocationTemplateQueryService {
         model.setDistributionCategoryCode(row.getDistributionCategoryCode());
         model.setDefLocationId(row.getDefLocationId());
         model.setItemDefinitionId(row.getItemDefinitionId());
+        model.setTypeCode(row.getTypeCode());
         model.setMethodCode(row.getMethodCode());
         model.setStartTime(row.getStartTime());
         model.setEndTime(row.getEndTime());
@@ -450,30 +510,33 @@ public class ServiceLocationTemplateQueryService {
     /**
      * 对已生效模板行做 calcScore≥0 过滤，再按「匹配粒度 → 优先级 → 主键」排序后提取库位 id。
      *
-     * <p>保证指定物品规则排在类别默认之前，与配置页「指定物品优先于类别默认」及 {@link #pickBest} 一致；
+     * <p>保证指定物品 / 种类规则排在类别默认之前，与配置页意图及 {@link #pickBest} 一致；
      * 库存不足时仍可落到后续类别默认库位做 FIFO 拆分。</p>
      *
      * @param effective          已按 priority → id 排过序的生效行（本方法会按匹配粒度重排）
      * @param itemDefinitionId   具体定义主键
      * @param methodCode         用法编码
-     * @return 适用库位标识列表（指定药房在前）
+     * @param typeCode           耗材种类编码
+     * @return 适用库位标识列表（更贴脸的药房在前）
      */
     private List<Long> extractApplicableLocationIds(
         List<ServiceLocationTemplate> effective,
         Long itemDefinitionId,
-        String methodCode
+        String methodCode,
+        String typeCode
     ) {
         List<ServiceLocationTemplate> applicable = new ArrayList<>();
         for (ServiceLocationTemplate row : effective) {
-            int score = this.calcScore(row, itemDefinitionId, methodCode);
-            // 物品或途径与模板约束冲突时该行不进候选
+            int score = this.calcScore(row, itemDefinitionId, methodCode, typeCode);
+            // 物品/种类/途径与模板约束冲突时该行不进候选
             if (score < 0) {
                 continue;
             }
             applicable.add(row);
         }
-        // 先指定物品（分数高），再类别通配；同分看 priority，再看 id
-        applicable.sort((left, right) -> this.compareApplicableRouteOrder(left, right, itemDefinitionId, methodCode));
+        // 先指定物品/种类（分数高），再类别通配；同分看 priority，再看 id
+        applicable.sort((left, right) -> this.compareApplicableRouteOrder(
+            left, right, itemDefinitionId, methodCode, typeCode));
         return this.extractOrderedDefLocationIds(applicable);
     }
 
@@ -484,17 +547,19 @@ public class ServiceLocationTemplateQueryService {
      * @param right            右侧模板行
      * @param itemDefinitionId 请求物品定义
      * @param methodCode       请求用法
+     * @param typeCode         请求种类
      * @return 负值表示 left 应排在 right 前
      */
     private int compareApplicableRouteOrder(
         ServiceLocationTemplate left,
         ServiceLocationTemplate right,
         Long itemDefinitionId,
-        String methodCode
+        String methodCode,
+        String typeCode
     ) {
-        int scoreLeft = this.calcScore(left, itemDefinitionId, methodCode);
-        int scoreRight = this.calcScore(right, itemDefinitionId, methodCode);
-        // 分数高者（更贴脸，如指定物品）排前
+        int scoreLeft = this.calcScore(left, itemDefinitionId, methodCode, typeCode);
+        int scoreRight = this.calcScore(right, itemDefinitionId, methodCode, typeCode);
+        // 分数高者（更贴脸，如指定物品/种类）排前
         if (scoreLeft != scoreRight) {
             return Integer.compare(scoreRight, scoreLeft);
         }

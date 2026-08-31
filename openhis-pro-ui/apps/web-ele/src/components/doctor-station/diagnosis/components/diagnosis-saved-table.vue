@@ -13,7 +13,11 @@ import { Table } from '@vben-core/table-layout-ui';
 
 import type { DoctorStationDiagnosisScope } from '../services/encounter-diagnosis.service';
 
-import { resolveChronicMedicalTypeTag } from '#/utils/chronic-medical-type';
+import {
+  FALLBACK_OUTPATIENT_DIAGNOSIS_MEDICAL_TYPE_OPTIONS,
+  GENERAL_OUTPATIENT_MEDICAL_TYPE_CODE,
+  resolveChronicMedicalTypeTag,
+} from '#/utils/chronic-medical-type';
 
 import { formatDiagnosisYbNoDisplay } from '../services/tcm-diagnosis-display';
 
@@ -23,6 +27,8 @@ const props = defineProps<{
   rows: EncounterDiagnosisRowDto[];
   stationScope?: DoctorStationDiagnosisScope;
   iptDiseaseTypeOptions?: DiagnosisOptionDto[];
+  /** 门诊：诊断类型（医保医疗类别）下拉 */
+  medicalTypeOptions?: DiagnosisOptionDto[];
   /** 正在切换主诊的就诊诊断行主键 */
   switchingMainId?: string;
 }>();
@@ -31,6 +37,8 @@ const emit = defineEmits<{
   'add-click': [];
   remove: [row: EncounterDiagnosisRowDto];
   'ipt-type-change': [row: EncounterDiagnosisRowDto, code: string | undefined];
+  /** 门诊：诊断类型（普通门诊/门诊慢病等）变更 */
+  'medical-type-change': [row: EncounterDiagnosisRowDto, code: string | undefined];
   /** 住院：按展示列表整体顺序上移/下移 */
   move: [row: EncounterDiagnosisRowDto, direction: 'down' | 'up'];
   /** 点击非主诊「主」标签：切换主诊断 */
@@ -109,21 +117,38 @@ const MEDICAL_TYPE_LABELS: Record<string, string> = {
   '14': '门诊慢特病',
   '15': '特药',
   '16': '中医特色门诊',
+  '21': '普通住院',
+  '22': '外伤住院',
+  '23': '转外诊治住院',
+  '24': '急诊转住院',
+  '25': '异地住院',
+  '26': '单病种住院',
+  '28': '日间手术',
+  '52': '生育住院',
+  '81': '意外伤害门诊',
   '140104': '门诊慢病',
   '140201': '门诊特病',
-  '81': '意外伤害门诊',
+  '2114': '舒缓疗护住院',
   '990404': '门诊特检特治',
 };
 
 const MEDICAL_TYPE_SORT: Record<string, number> = {
-  '11': 1,
-  '13': 2,
-  '14': 3,
-  '140104': 4,
-  '140201': 5,
-  '16': 6,
-  '15': 7,
-  '12': 8,
+  '21': 1,
+  '11': 2,
+  '13': 3,
+  '24': 4,
+  '22': 5,
+  '25': 6,
+  '26': 7,
+  '28': 8,
+  '52': 9,
+  '14': 10,
+  '140104': 11,
+  '140201': 12,
+  '16': 13,
+  '15': 14,
+  '12': 15,
+  '81': 16,
 };
 
 type MedicalTypeGroup = {
@@ -132,14 +157,16 @@ type MedicalTypeGroup = {
   rows: EncounterDiagnosisRowDto[];
 };
 
-/** 空码与后端保存默认一致，按普通门诊归组 */
+/** 空码与后端保存默认一致：住院→21，门诊→11 */
 function resolveMedicalTypeKey(row: EncounterDiagnosisRowDto): string {
   const code = String(row.medicalTypeCode ?? '').trim();
-  return code || '11';
+  if (code) return code;
+  return isInpatient.value ? '21' : GENERAL_OUTPATIENT_MEDICAL_TYPE_CODE;
 }
 
 function resolveMedicalTypeLabel(code: string): string {
-  return MEDICAL_TYPE_LABELS[code] ?? `医疗类别 ${code}`;
+  const name = MEDICAL_TYPE_LABELS[code];
+  return name ? `医疗类别：${name}` : `医疗类别：${code}`;
 }
 
 /** 诊断名旁角标：慢 / 特 / 慢特 */
@@ -217,6 +244,15 @@ const tableColumns = computed<TableColumn[]>(() => {
       headerAlign: 'center',
       slot: 'iptType',
     });
+  } else {
+    cols.push({
+      prop: 'medicalTypeCode',
+      label: '诊断类型',
+      width: 168,
+      align: 'center',
+      headerAlign: 'center',
+      slot: 'medType',
+    });
   }
   cols.push(
     {
@@ -255,6 +291,35 @@ function onIptTypeSelectChange(
 ) {
   const code = val === undefined || val === null || val === '' ? undefined : String(val);
   emit('ipt-type-change', row, code);
+}
+
+/** 门诊诊断类型（医疗类别）当前选中码；空码回落普通门诊 */
+function resolveMedicalTypeSelectValue(row: EncounterDiagnosisRowDto): string {
+  const code = String(row.medicalTypeCode ?? '').trim();
+  return code || GENERAL_OUTPATIENT_MEDICAL_TYPE_CODE;
+}
+
+/** 门诊诊断类型下拉：后端选项优先，缺省用兜底；当前码不在列表时补一项以免空白 */
+function resolveMedicalTypeSelectOptions(row: EncounterDiagnosisRowDto): DiagnosisOptionDto[] {
+  const backend = (props.medicalTypeOptions ?? []).filter((opt) =>
+    Boolean(String(opt.value ?? '').trim()),
+  );
+  const base = backend.length > 0 ? backend : FALLBACK_OUTPATIENT_DIAGNOSIS_MEDICAL_TYPE_OPTIONS;
+  const current = resolveMedicalTypeSelectValue(row);
+  if (base.some((opt) => String(opt.value ?? '').trim() === current)) {
+    return base;
+  }
+  const extraLabel = MEDICAL_TYPE_LABELS[current] ?? current;
+  return [...base, { value: current, label: extraLabel }];
+}
+
+/** 门诊：诊断类型变更后通知父级保存 */
+function onMedicalTypeSelectChange(
+  row: EncounterDiagnosisRowDto,
+  val: string | number | boolean | undefined,
+) {
+  const code = val === undefined || val === null || val === '' ? undefined : String(val);
+  emit('medical-type-change', row, code);
 }
 </script>
 
@@ -319,6 +384,22 @@ function onIptTypeSelectChange(
             >
               <ElOption
                 v-for="opt in props.iptDiseaseTypeOptions ?? []"
+                :key="opt.value ?? opt.label"
+                :label="opt.label ?? opt.value"
+                :value="opt.value ?? ''"
+              />
+            </ElSelect>
+          </template>
+          <template #medType="{ row }">
+            <ElSelect
+              :model-value="resolveMedicalTypeSelectValue(row)"
+              filterable
+              placeholder="选择诊断类型"
+              class="w-full"
+              @change="(val) => onMedicalTypeSelectChange(row, val)"
+            >
+              <ElOption
+                v-for="opt in resolveMedicalTypeSelectOptions(row)"
                 :key="opt.value ?? opt.label"
                 :label="opt.label ?? opt.value"
                 :value="opt.value ?? ''"

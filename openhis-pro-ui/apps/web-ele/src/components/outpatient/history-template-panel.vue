@@ -54,7 +54,7 @@ interface Props {
   viewOnly?: boolean;
   /**
    * 按就诊收窄：仅拉取本 encounter 文书，不拉患者跨就诊历史。
-   * 病案「门诊/住院病例查询」打开编辑时使用（列表行锚点即就诊）。
+   * 病案「门诊/住院病例查询」打开编辑时使用（列表行锚点为就诊）。
    */
   encounterScoped?: boolean;
   /**
@@ -75,6 +75,11 @@ const templateTreeRef = ref<InstanceType<typeof EmrTemplateTree> | null>(null);
 /** 侧栏根节点文案：就诊收窄时不用「历史」以免误解 */
 const historyRootLabel = computed(() =>
   props.encounterScoped || props.viewOnly ? '本次就诊病历' : '历史病历',
+);
+
+/** 搜索框占位 */
+const searchPlaceholder = computed(() =>
+  props.viewOnly || props.encounterScoped ? '搜索本次就诊病历…' : '搜索本诊病历或模板…',
 );
 
 /** 按 id 去重合并文书列表（保留先出现的项） */
@@ -160,6 +165,11 @@ async function fetchHistoryList() {
   }
 }
 
+/** 刷新左侧模板树（存为模版后） */
+function refreshTemplateTree() {
+  void templateTreeRef.value?.reload?.();
+}
+
 watch(
   () => [props.patientId, props.encounterId, props.viewOnly, props.encounterScoped] as const,
   () => {
@@ -167,11 +177,6 @@ watch(
   },
   { immediate: true },
 );
-
-/** 刷新左侧模板树（存为模版后） */
-function refreshTemplateTree() {
-  void templateTreeRef.value?.reload?.();
-}
 
 defineExpose({
   refreshHistory: fetchHistoryList,
@@ -184,12 +189,7 @@ defineExpose({
     <div
       class="history-template-panel__search flex h-[42px] flex-shrink-0 items-center border-b px-[10px]"
     >
-      <ElInput
-        v-model="searchKeyword"
-        clearable
-        size="small"
-        :placeholder="viewOnly || encounterScoped ? '搜索本次就诊病历…' : '搜索模板或病历…'"
-      />
+      <ElInput v-model="searchKeyword" clearable size="small" :placeholder="searchPlaceholder" />
     </div>
 
     <div v-loading="historyLoading" class="min-h-0 flex-1 overflow-y-auto p-3">
@@ -200,7 +200,7 @@ defineExpose({
         {{
           viewOnly || encounterScoped
             ? '缺少患者主键，无法加载本次就诊病历'
-            : '请先选择患者；可先浏览模板，已写病历在「历史病历」中查看'
+            : '请先选择患者；本诊已写在顶部，模板在下方'
         }}
       </div>
       <EmrTemplateTree
@@ -228,3 +228,9 @@ defineExpose({
     </div>
   </div>
 </template>
+
+<style scoped>
+.history-template-panel__hint {
+  color: var(--el-text-color-secondary);
+}
+</style>

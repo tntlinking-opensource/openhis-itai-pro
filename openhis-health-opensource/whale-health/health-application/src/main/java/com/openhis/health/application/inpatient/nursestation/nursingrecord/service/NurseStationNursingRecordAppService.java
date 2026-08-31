@@ -5,6 +5,7 @@
 package com.openhis.health.application.inpatient.nursestation.nursingrecord.service;
 
 import com.openhis.health.application.inpatient.nursestation.nursingrecord.assembler.NursingRecordRowAssembler;
+import com.openhis.health.application.inpatient.nursestation.nursingrecord.dto.NursingRecordPaperHeaderDto;
 import com.openhis.health.application.inpatient.nursestation.nursingrecord.dto.NursingRecordRowDto;
 import com.openhis.health.application.inpatient.nursestation.nursingrecord.mapper.NursingRecordMapper;
 import com.openhis.health.application.inpatient.nursestation.nursingrecord.request.DeleteNurseStationNursingRecordRequest;
@@ -41,6 +42,7 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.VitalSignConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
+import com.openhis.health.application.shared.inpatient.BusinessDischargeTimeResolver;
 import com.openhis.health.application.shared.option.TerminologyOptionLoader;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.whale.core.application.dto.OptionDto;
@@ -110,7 +112,8 @@ public class NurseStationNursingRecordAppService {
     /** 写路径操作人解析。 */
     private final CurrentPractitionerResolver currentPractitionerResolver;
 
-    /** 写路径记录人（Practitioner）解析。 */
+    /** 业务出院时间（出院医嘱计划时间优先，供纸质抬头/打印）。 */
+    private final BusinessDischargeTimeResolver businessDischargeTimeResolver;
 
     /**
      * IF-IP-NRC-01：护理记录 Tab 页初始化。
@@ -164,7 +167,7 @@ public class NurseStationNursingRecordAppService {
         // Asm：行列表 + 纸质抬头
         ListNurseStationNursingRecordsResponse response = new ListNurseStationNursingRecordsResponse();
         response.setRows(rows);
-        response.setPaperHeader(nursingRecordMapper.toPaperHeaderDto(encounterSnapshot));
+        response.setPaperHeader(this.toPaperHeaderWithBusinessDischarge(encounterSnapshot));
         return response;
     }
 
@@ -324,7 +327,7 @@ public class NurseStationNursingRecordAppService {
         GetNurseStationNursingRecordPrintDataResponse response = new GetNurseStationNursingRecordPrintDataResponse();
         response.setTemplateCode(InpatientNurseStationConstants.NURSING_RECORD_PRINT_TEMPLATE_CODE);
         response.setRows(rows);
-        response.setPaperHeader(nursingRecordMapper.toPaperHeaderDto(encounterSnapshot));
+        response.setPaperHeader(this.toPaperHeaderWithBusinessDischarge(encounterSnapshot));
         return response;
     }
 
@@ -690,5 +693,24 @@ public class NurseStationNursingRecordAppService {
             return true;
         }
         return false;
+    }
+
+    /**
+     * 纸质抬头：出院时间覆盖为业务出院时间（出院医嘱计划时间优先，防历史脏 end_time）。
+     *
+     * @param encounterSnapshot 就诊上下文
+     * @return 抬头 DTO；snapshot 空则 null
+     */
+    private NursingRecordPaperHeaderDto toPaperHeaderWithBusinessDischarge(
+        InpatientEncounterContextQueryModel encounterSnapshot) {
+        NursingRecordPaperHeaderDto header = nursingRecordMapper.toPaperHeaderDto(encounterSnapshot);
+        if (header == null || encounterSnapshot == null) {
+            return header;
+        }
+        // Asm：打印/纸质抬头出院日须为计划出院时间，不得用清床时刻
+        header.setDischargeAt(
+            businessDischargeTimeResolver.resolve(
+                encounterSnapshot.getEncounterId(), encounterSnapshot.getEndTime()));
+        return header;
     }
 }

@@ -262,8 +262,8 @@ public class OutpatientConsumableUsageReportAppService {
                 "导出失败，请稍后重试");
         }
         try {
-            List<OutpatientConsumableUsageExportRowDto> exportRows = new ArrayList<>();
             boolean truncated = false;
+            List<OutpatientConsumableUsageExportRowDto> exportRows = new ArrayList<>();
             // Pre：仅当前 Tab 全量（BR-RPT-OCU-006；受导出行上限）
             if (ConsumableUsageReportConstants.EXPORT_TAB_SUMMARY.equals(exportTab)) {
                 // Pre：汇总 Tab → 同 IF-02 净汇总后截断导出行
@@ -280,9 +280,9 @@ public class OutpatientConsumableUsageReportAppService {
                     truncated = true;
                     rows = rows.subList(0, ConsumableUsageReportConstants.EXPORT_MAX_ROWS);
                 }
-                // Asm：汇总行映射导出行
                 for (OutpatientConsumableUsageSummaryRowDto row : rows) {
-                    exportRows.add(this.outpatientConsumableUsageReportMapper.toExportRowFromSummary(row));
+                    exportRows.add(
+                        this.outpatientConsumableUsageReportMapper.toExportRowFromSummary(row));
                 }
             } else {
                 // Pre：明细 Tab（含非 SUMMARY 的兜底）→ 有界并集列表
@@ -293,16 +293,17 @@ public class OutpatientConsumableUsageReportAppService {
                     // Gate：list 已按上限截取，触顶即视为可能截断
                     truncated = true;
                 }
-                // Asm：明细行映射导出行
                 for (OutpatientConsumableUsageDetailRowDto row : detailRows) {
-                    exportRows.add(this.outpatientConsumableUsageReportMapper.toExportRowFromDetail(row));
+                    exportRows.add(
+                        this.outpatientConsumableUsageReportMapper.toExportRowFromDetail(row));
                 }
             }
-            // Asm：生成 xlsx 字节并装配响应
+            // Asm：并集导出行 + 前端 exportColumns 裁剪列头
             byte[] body = AnnotatedExcelExporter.exportToXlsxBytes(
                 ConsumableUsageReportConstants.OUTPATIENT_SHEET_NAME,
                 exportRows,
-                OutpatientConsumableUsageExportRowDto.class);
+                OutpatientConsumableUsageExportRowDto.class,
+                request.getExportColumns());
             return this.outpatientConsumableUsageReportMapper.toExportResponse(
                 body, exportRows.size(), truncated);
         } catch (BusinessException ex) {

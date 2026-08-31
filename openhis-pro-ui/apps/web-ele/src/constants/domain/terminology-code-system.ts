@@ -31,6 +31,7 @@ export const TerminologyCodeSystemName = {
   /** 耗材分类 → 实体 category_code */
   DEVICE_CATEGORY_CODE: 'device_category_code',
   /** 耗材种类/类型 → 实体 type_code */
+  DEVICE_TYPE_CODE: 'device_type_code',
   IN_WAY_CODE: 'in_way_code',
   ADMIT_SOURCE_CODE: 'admit_source_code',
   /** 入院时情况/患者病情（对应 adm_encounter.priority_enum） */

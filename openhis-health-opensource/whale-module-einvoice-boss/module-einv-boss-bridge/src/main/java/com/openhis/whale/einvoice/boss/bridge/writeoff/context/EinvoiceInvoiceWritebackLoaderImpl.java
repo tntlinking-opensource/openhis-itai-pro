@@ -5,12 +5,15 @@
 package com.openhis.whale.einvoice.boss.bridge.writeoff.context;
 
 import com.openhis.health.domain.administration.invoice.command.CancelInvoiceCommand;
+import com.openhis.health.domain.administration.invoice.command.CreateDraftInvoiceCommand;
 import com.openhis.health.domain.administration.invoice.command.IssueElectronicInvoiceCommand;
 import com.openhis.health.domain.administration.invoice.entity.Invoice;
 import com.openhis.health.domain.administration.invoice.service.InvoiceDomainService;
 import com.openhis.health.domain.administration.invoice.service.InvoiceQueryService;
 import com.openhis.health.domain.share.enums.InvoiceStatus;
+import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.einvoice.boss.domain.issue.result.BossInvoiceIssueResult;
+import com.openhis.whale.einvoice.boss.domain.share.EinvBossErrorCodes;
 import com.openhis.whale.einvoice.boss.domain.writeoff.loader.EinvoiceInvoiceWritebackLoader;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Primary;
@@ -70,5 +73,23 @@ public class EinvoiceInvoiceWritebackLoaderImpl implements EinvoiceInvoiceWriteb
         command.setReason(StringUtils.hasText(reason) ? reason.trim() : "手动冲红");
         command.setOperatorId(operatorId);
         invoiceDomainService.writeoffInvoiceAndCreateRedRecord(command);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public Long createDraftInvoiceForReissue(Long writtenOffInvoiceId, Long operatorId) {
+        Invoice source = invoiceQueryService.findOptionalInvoiceEntityById(writtenOffInvoiceId).orElse(null);
+        if (source == null) {
+            throw new BusinessException(EinvBossErrorCodes.EINV_DOCUMENT_NOT_FOUND, "原票据不存在，无法重开");
+        }
+        CreateDraftInvoiceCommand command = new CreateDraftInvoiceCommand();
+        command.setPatientId(source.getPatientId());
+        command.setPaymentId(source.getPaymentId());
+        command.setTypeCode(source.getTypeCode());
+        command.setAmount(source.getAmount());
+        command.setOperatorId(operatorId);
+        return invoiceDomainService.createDraftInvoiceAfterPayment(command);
     }
 }

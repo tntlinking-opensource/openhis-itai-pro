@@ -32,6 +32,8 @@ export interface BpcOrderSummaryDto {
   tradeNo?: string;
   tranType?: string;
   txnAmtFen?: number;
+  /** 银联/POS 回传实付（分） */
+  paidAmtFen?: number;
   payType?: string;
   status?: string;
   respCode?: string;
@@ -58,6 +60,23 @@ export interface ApplyClientScanResultRequest {
 
 export async function httpApplyClientScanResult(body: ApplyClientScanResultRequest) {
   return publicRequestClient.post(`${BASE}/applyClientScanResult`, body);
+}
+
+/** 关闭未确认的被扫 PENDING（取消/超时）；不调银联关单 S */
+export interface AbandonPendingScanRequest {
+  paymentId?: number | string;
+  merTradeNo?: string;
+  reason?: string;
+  /** TO=超时/CL=取消/AB=作废；默认服务端 AB */
+  respCode?: string;
+}
+
+export interface AbandonPendingScanResponse {
+  abandonedCount?: number;
+}
+
+export async function httpAbandonPendingScan(body: AbandonPendingScanRequest) {
+  return publicRequestClient.post<AbandonPendingScanResponse>(`${BASE}/abandonPendingScan`, body);
 }
 
 /** Win 退货成功后落 BPC REFUNDED（HIS 未落账的半成功退货收口） */
@@ -130,6 +149,7 @@ export interface BpcOrderListItemDto {
   tradeNo?: string;
   tranType?: string;
   txnAmtFen?: number;
+  paidAmtFen?: number;
   payType?: string;
   status?: string;
   respCode?: string;
@@ -167,6 +187,7 @@ export async function httpQueryBpcOrder(body: {
     status?: string;
     payType?: string;
     txnAmtFen?: number;
+    paidAmtFen?: number;
   }>(`${BASE}/queryOrder`, body);
 }
 

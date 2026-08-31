@@ -176,6 +176,7 @@ public class OutpatientPharmacyReturnMedicineMapperImpl implements OutpatientPha
             dto.setReqStatusText(row.getReqStatusText());
             dto.setServiceTable(row.getServiceTable());
             dto.setTraceNo(row.getTraceNo());
+            dto.setBusNo(row.getBusNo());
             list.add(dto);
         }
         return list;

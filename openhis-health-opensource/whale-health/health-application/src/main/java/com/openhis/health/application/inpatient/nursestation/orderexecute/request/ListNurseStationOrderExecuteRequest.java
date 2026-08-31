@@ -22,6 +22,9 @@ import java.util.List;
  *
  * <p>护士左侧多选患者后加载执行列表；{@code executionDeadline} 驱动长期频次展开上界，
  * {@code executeTab} 收窄当前 Tab 计划点，{@code therapyType} 可选收窄长临。</p>
+ *
+ * <p>打印中心日期区间/开嘱日过滤请走 {@link ListNurseStationOrderExecuteForPrintRequest}，
+ * 勿向本契约追加打印专用字段。</p>
  */
 @Data
 @Accessors(chain = true)
@@ -54,4 +57,13 @@ public class ListNurseStationOrderExecuteRequest {
     /** 中西药 Tab：west / tcm；默认 west。 */
     @Schema(description = "中西药 Tab：west / tcm；默认 west")
     private String medicineCategoryTab;
+
+    /**
+     * 执行记录历史模式（医生站/病案「执行记录」只读弹窗）。
+     *
+     * <p>true：按 Procedure 事实行分桶（已被 CANCEL 对冲的 COMPLETED 仍进已执行），
+     * 不做护士站净态折叠；false/空：护士站操作列表净态口径（默认）。</p>
+     */
+    @Schema(description = "执行记录历史模式：true=事实行（含对冲前 COMPLETED）；默认 false")
+    private Boolean executionRecordHistory;
 }

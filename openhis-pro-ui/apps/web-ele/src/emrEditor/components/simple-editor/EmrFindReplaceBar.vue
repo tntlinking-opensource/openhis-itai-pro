@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import type { Editor } from '@tiptap/core';
 
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 
 import { ArrowDown, ArrowUp, Close } from '@element-plus/icons-vue';
-import { ElButton, ElCheckbox, ElIcon, ElInput } from 'element-plus';
+import { ElButton, ElCheckbox, ElIcon, ElInput, ElMessage } from 'element-plus';
 
 defineOptions({
   name: 'EmrFindReplaceBar',
@@ -12,10 +12,10 @@ defineOptions({
 
 const props = defineProps<{
   editor?: Editor | null;
+  /** 固定模板：替换仅作用于可填域（由命令层过滤） */
+  layoutLocked?: boolean;
   /** 只读：可查找，不可替换 */
   readOnly?: boolean;
-  /** 固定模板等场景禁止替换正文 */
-  replaceDisabled?: boolean;
   visible?: boolean;
 }>();
 
@@ -26,6 +26,7 @@ const emit = defineEmits<{
 const searchTerm = ref('');
 const replaceTerm = ref('');
 const caseSensitive = ref(false);
+const findInputRef = ref<{ focus?: () => void } | null>(null);
 
 const findStorage = computed(() => props.editor?.storage.emrFindReplace);
 
@@ -39,8 +40,10 @@ const counterLabel = computed(() => {
   return `${cur} / ${total}`;
 });
 
-const canReplace = computed(
-  () => !props.readOnly && !props.replaceDisabled && Boolean(props.editor?.isEditable),
+const canReplace = computed(() => !props.readOnly && Boolean(props.editor?.isEditable));
+
+const replaceHint = computed(() =>
+  props.layoutLocked ? '固定模板下仅替换可填内容，结构文字不会被改' : '',
 );
 
 function closeBar() {
@@ -66,7 +69,10 @@ function runReplaceCurrent() {
   if (!canReplace.value) return;
   const ed = props.editor;
   if (!ed || ed.isDestroyed) return;
-  ed.commands.emrReplaceCurrent(replaceTerm.value);
+  const ok = ed.commands.emrReplaceCurrent(replaceTerm.value);
+  if (!ok && props.layoutLocked) {
+    ElMessage.info('当前匹配在结构文字上，固定模板下不可替换；请查找可填内容');
+  }
 }
 
 function runReplaceAll() {
@@ -78,12 +84,14 @@ function runReplaceAll() {
 
 watch(
   () => props.visible,
-  (open) => {
+  async (open) => {
     if (!open) return;
     const stored = findStorage.value?.searchTerm;
     if (stored && !searchTerm.value) {
       searchTerm.value = stored;
     }
+    await nextTick();
+    findInputRef.value?.focus?.();
   },
 );
 
@@ -118,6 +126,7 @@ function clearSearchInput() {
     <div class="emr-find-replace-bar__row">
       <span class="emr-find-replace-bar__label">查找</span>
       <ElInput
+        ref="findInputRef"
         v-model="searchTerm"
         class="emr-find-replace-bar__input"
         placeholder="输入查找内容"
@@ -138,11 +147,24 @@ function clearSearchInput() {
         placeholder="替换为"
         clearable
         :disabled="!canReplace"
+        :title="replaceHint"
         @keyup.enter="runReplaceCurrent"
       />
-      <ElButton size="small" :disabled="!canReplace" @click="runReplaceCurrent">替换</ElButton>
-      <ElButton size="small" :disabled="!canReplace" @click="runReplaceAll">全部替换</ElButton>
+      <ElButton
+        size="small"
+        :disabled="!canReplace"
+        :title="replaceHint"
+        @click="runReplaceCurrent"
+      >
+        替换
+      </ElButton>
+      <ElButton size="small" :disabled="!canReplace" :title="replaceHint" @click="runReplaceAll">
+        全部替换
+      </ElButton>
       <ElCheckbox v-model="caseSensitive" label="区分大小写" />
+      <span v-if="layoutLocked && canReplace" class="emr-find-replace-bar__hint">
+        仅可填域可替换
+      </span>
       <span class="emr-find-replace-bar__spacer"></span>
       <ElButton class="emr-find-replace-bar__close" text size="small" @click="closeBar">
         <ElIcon><Close /></ElIcon>
@@ -184,6 +206,11 @@ function clearSearchInput() {
   font-size: 12px;
   color: #64748b;
   min-width: 48px;
+}
+
+.emr-find-replace-bar__hint {
+  font-size: 11px;
+  color: #94a3b8;
 }
 
 .emr-find-replace-bar__spacer {

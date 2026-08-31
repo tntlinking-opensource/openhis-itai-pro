@@ -11,12 +11,22 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.List;
 
 /**
  * 收费员交账头仓储。
  */
 public interface CashierSettlementRepository
     extends JpaRepository<CashierSettlement, Long>, JpaSpecificationExecutor<CashierSettlement> {
+
+    /**
+     * 按类型集合列出未软删交账头（药房售价合计回刷等一次性批处理）。
+     *
+     * @param typeEnums 类型 code 集合（如 OP_PHARMACY / IP_PHARMACY）
+     * @return 交账头列表；无匹配时空列表
+     */
+    List<CashierSettlement> findByTypeEnumInAndIsDeletedFalse(Collection<String> typeEnums);
 
     /**
      * 判断租户下交账单号是否已存在。

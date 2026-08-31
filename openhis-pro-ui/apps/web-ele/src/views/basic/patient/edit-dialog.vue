@@ -15,10 +15,14 @@ import dayjs from 'dayjs';
 import {
   ElButton,
   ElDatePicker,
+  ElForm,
+  ElFormItem,
   ElInput,
   ElMessage,
   ElOption,
   ElSelect,
+  ElTabPane,
+  ElTabs,
   ElTable,
   ElTableColumn,
 } from 'element-plus';
@@ -26,6 +30,7 @@ import countryList from 'province-city-china/dist/country.json';
 
 import { useVbenForm, z } from '#/adapter/form';
 import { createPatientApi, editPatientApi } from '#/api/basic/patient';
+import { loadArchiveApi, saveArchiveApi } from '#/api/peis/health-archive';
 import SelectArea from '#/components/select-area.vue';
 import { parseChineseIdCard18 } from '#/utils/format/id-card-cn';
 
@@ -36,6 +41,7 @@ const props = withDefaults(defineProps<Props>(), {
   bloodTypeAboOptions: () => [],
   bloodTypeRhOptions: () => [],
   sexOptions: () => [],
+  educationLevelOptions: () => [],
   formData: null,
 });
 
@@ -66,28 +72,88 @@ interface Props {
   bloodTypeRhOptions?: ApiOptionItem[];
   /** 性别（来自 init.sex，与门诊挂号 AdministrativeGender code 一致） */
   sexOptions?: ApiOptionItem[];
+  /** 学历（来自 init.educationLevelOptions，并与院内通用项合并） */
+  educationLevelOptions?: ApiOptionItem[];
   formData?: null | Partial<Patient>;
 }
 
 const isEditMode = computed(() => !!props.formData?.id);
 
+const activeTab = ref('basic');
+
+const educationOptions = computed(() => props.educationLevelOptions || []);
+
+const TAG_OPTIONS = [
+  { label: '成人', value: 'ADULT' },
+  { label: '儿童', value: 'CHILD' },
+];
+
+const peisForm = reactive({
+  educationLevelCode: '' as string,
+  pastHistory: '',
+  allergySummary: '',
+  familyHistory: '',
+  habitSummary: '',
+  tagCode: '' as string,
+  remark: '',
+});
+
+function resetPeisForm() {
+  peisForm.educationLevelCode = '';
+  peisForm.pastHistory = '';
+  peisForm.allergySummary = '';
+  peisForm.familyHistory = '';
+  peisForm.habitSummary = '';
+  peisForm.tagCode = '';
+  peisForm.remark = '';
+}
+
+async function loadPeisArchive(patientId?: string | number) {
+  resetPeisForm();
+  peisForm.educationLevelCode = String(props.formData?.educationLevelCode ?? '');
+  if (patientId == null || patientId === '') return;
+  try {
+    const res = await loadArchiveApi({ patientId });
+    peisForm.pastHistory = res.pastHistory || '';
+    peisForm.allergySummary = res.allergySummary || '';
+    peisForm.familyHistory = res.familyHistory || '';
+    peisForm.habitSummary = res.habitSummary || '';
+    peisForm.tagCode = res.tagCode || '';
+    peisForm.remark = res.remark || '';
+  } catch {
+    // 无档案时保持空表
+  }
+}
+
+async function savePeisArchive(patientId: string | number) {
+  await saveArchiveApi({
+    patientId,
+    pastHistory: peisForm.pastHistory.trim() || undefined,
+    allergySummary: peisForm.allergySummary.trim() || undefined,
+    familyHistory: peisForm.familyHistory.trim() || undefined,
+    habitSummary: peisForm.habitSummary.trim() || undefined,
+    tagCode: peisForm.tagCode || undefined,
+    remark: peisForm.remark.trim() || undefined,
+  });
+}
+
 /** 供 schema 内异步回调使用（useVbenForm 初始化后赋值） */
 const formApiHolder: { current?: ReturnType<typeof useVbenForm>[1] } = {};
 
-/** 从中国居民身份证 15/18 位解析出生日期字符串（与后端展示格式一致） */
+/** 从中国居民身份证 15/18 位解析出生日期（YYYY-MM-DD） */
 function parseChineseIdBirth(idRaw: string): null | string {
   const s = String(idRaw || '').trim();
   if (s.length === 18) {
     const y = s.slice(6, 10);
     const m = s.slice(10, 12);
     const d = s.slice(12, 14);
-    return `${y}-${m}-${d} 00:00:00`;
+    return `${y}-${m}-${d}`;
   }
   if (s.length === 15) {
     const y = `19${s.slice(6, 8)}`;
     const m = s.slice(8, 10);
     const d = s.slice(10, 12);
-    return `${y}-${m}-${d} 00:00:00`;
+    return `${y}-${m}-${d}`;
   }
   return null;
 }
@@ -126,7 +192,7 @@ function syncBirthAgeFromIdCardInput(raw: string) {
   if (trimmed.length === 18) {
     const parsed = parseChineseIdCard18(trimmed);
     if (parsed) {
-      void api.setFieldValue('birthDate', `${parsed.birthDate} 00:00:00`);
+      void api.setFieldValue('birthDate', parsed.birthDate);
       void api.setFieldValue('age', dayjs().diff(dayjs(parsed.birthDate), 'year'));
       void api.setFieldValue('genderEnum', parsed.genderCode);
       return;
@@ -205,6 +271,7 @@ function normalizePatientIdInfoListForSubmit(
 async function handleSubmit() {
   const { valid } = await formApi.validate();
   if (!valid) {
+    activeTab.value = 'basic';
     return;
   }
 
@@ -218,6 +285,7 @@ async function handleSubmit() {
       addressProvince: regionCodes[0] as string,
       addressCity: regionCodes[1] as string,
       addressDistrict: regionCodes[2] as string,
+      educationLevelCode: peisForm.educationLevelCode || undefined,
       patientIdInfoList: normalizePatientIdInfoListForSubmit(patientIdInfoList.value),
     };
 
@@ -231,10 +299,14 @@ async function handleSubmit() {
         id: props.formData.id,
       };
       await editPatientApi(params);
+      await savePeisArchive(props.formData.id);
       ElMessage.success('编辑患者成功');
       emit('success');
     } else {
       const created = await createPatientApi(baseParams);
+      if (created?.id != null) {
+        await savePeisArchive(created.id);
+      }
       ElMessage.success('创建患者成功');
       emit('success', created);
     }
@@ -249,7 +321,9 @@ async function handleSubmit() {
 }
 
 async function resetForm() {
+  activeTab.value = 'basic';
   await formApi.resetForm();
+  resetPeisForm();
 
   if (props.formData && Object.keys(props.formData).length > 0) {
     const regionCodes: string[] = [];
@@ -257,8 +331,13 @@ async function resetForm() {
     if (props.formData.addressCity) regionCodes.push(props.formData.addressCity);
     if (props.formData.addressDistrict) regionCodes.push(props.formData.addressDistrict);
 
+    const rawBirth = props.formData.birthDate;
+    const birthDateYmd =
+      rawBirth && dayjs(rawBirth).isValid() ? dayjs(rawBirth).format('YYYY-MM-DD') : rawBirth;
+
     await formApi.setValues({
       ...props.formData,
+      birthDate: birthDateYmd,
       regionCodes,
       bloodAbo: Number(props.formData.bloodAbo) || undefined,
       bloodRh: Number(props.formData.bloodRh) || undefined,
@@ -286,7 +365,7 @@ async function resetForm() {
       ) {
         await formApi.setFieldValue(
           'birthDate',
-          dayjs().subtract(Number(vals.age), 'year').format('YYYY-MM-DD HH:mm:ss'),
+          dayjs().subtract(Number(vals.age), 'year').format('YYYY-MM-DD'),
         );
       }
     }
@@ -300,6 +379,7 @@ async function resetForm() {
       startTime: item.startTime ?? '',
       endTime: item.endTime ?? '',
     }));
+    await loadPeisArchive(props.formData.id);
   } else {
     await formApi.setValues({
       name: '',
@@ -450,7 +530,7 @@ const formConfig = reactive({
                 if (val !== null && val !== undefined && !Number.isNaN(Number(val))) {
                   await api.setFieldValue(
                     'birthDate',
-                    dayjs().subtract(Number(val), 'year').format('YYYY-MM-DD HH:mm:ss'),
+                    dayjs().subtract(Number(val), 'year').format('YYYY-MM-DD'),
                   );
                 }
               })();
@@ -472,8 +552,8 @@ const formConfig = reactive({
       componentProps: {
         type: 'date',
         style: { width: '220px' },
-        format: 'YYYY-MM-DD HH:mm:ss',
-        valueFormat: 'YYYY-MM-DD HH:mm:ss',
+        format: 'YYYY-MM-DD',
+        valueFormat: 'YYYY-MM-DD',
       },
       dependencies: {
         componentProps(values: Record<string, unknown>) {
@@ -735,47 +815,119 @@ watch(
 
 <template>
   <Modal
-    class="w-[800px]"
+    class="w-[840px]"
     :title="isEditMode ? '编辑患者' : '新增患者'"
     :close-on-click-modal="false"
     :close-on-press-escape="false"
   >
-    <Form />
-    <!-- 其他证件信息（身份证以外，可多条，存 adm_patient_identifier） -->
-    <div class="mt-4">
-      <div class="mb-2 flex items-center justify-between">
-        <span class="text-sm font-medium text-gray-700">其他证件信息</span>
-        <ElButton type="primary" size="small" @click="addCertRow">新增一行</ElButton>
-      </div>
-      <ElTable :data="patientIdInfoList" border size="small" max-height="280">
-        <ElTableColumn v-for="col in certTableColumns" :key="col.key" v-bind="col.columnProps">
-          <template #default="{ row, $index: idx }">
-            <template v-if="col.type === 'action'">
-              <ElButton type="danger" link size="small" @click="removeCertRow(idx)">删除</ElButton>
-            </template>
-            <template v-else>
-              <component :is="col.component" v-bind="col.getProps?.(row, idx)">
-                <template v-if="col.key === 'typeCode'">
-                  <ElOption
-                    v-for="opt in certTypeOptions"
-                    :key="String(opt.value)"
-                    :label="opt.label"
-                    :value="opt.value ?? ''"
-                  />
+    <ElTabs v-model="activeTab">
+      <ElTabPane label="基本信息" name="basic">
+        <Form />
+        <!-- 其他证件信息（身份证以外，可多条，存 adm_patient_identifier） -->
+        <div class="mt-4">
+          <div class="mb-2 flex items-center justify-between">
+            <span class="text-sm font-medium text-gray-700">其他证件信息</span>
+            <ElButton type="primary" size="small" @click="addCertRow">新增一行</ElButton>
+          </div>
+          <ElTable :data="patientIdInfoList" border size="small" max-height="280">
+            <ElTableColumn v-for="col in certTableColumns" :key="col.key" v-bind="col.columnProps">
+              <template #default="{ row, $index: idx }">
+                <template v-if="col.type === 'action'">
+                  <ElButton type="danger" link size="small" @click="removeCertRow(idx)">
+                    删除
+                  </ElButton>
                 </template>
-                <template v-else-if="col.key === 'useEnum'">
-                  <ElOption
-                    v-for="opt in USE_ENUM_OPTIONS"
-                    :key="opt.value"
-                    :label="opt.label"
-                    :value="opt.value"
-                  />
+                <template v-else>
+                  <component :is="col.component" v-bind="col.getProps?.(row, idx)">
+                    <template v-if="col.key === 'typeCode'">
+                      <ElOption
+                        v-for="opt in certTypeOptions"
+                        :key="String(opt.value)"
+                        :label="opt.label"
+                        :value="opt.value ?? ''"
+                      />
+                    </template>
+                    <template v-else-if="col.key === 'useEnum'">
+                      <ElOption
+                        v-for="opt in USE_ENUM_OPTIONS"
+                        :key="opt.value"
+                        :label="opt.label"
+                        :value="opt.value"
+                      />
+                    </template>
+                  </component>
                 </template>
-              </component>
-            </template>
-          </template>
-        </ElTableColumn>
-      </ElTable>
-    </div>
+              </template>
+            </ElTableColumn>
+          </ElTable>
+        </div>
+      </ElTabPane>
+
+      <ElTabPane label="体检" name="peis">
+        <ElForm label-width="88px" class="pr-2">
+          <ElFormItem label="学历">
+            <ElSelect
+              v-model="peisForm.educationLevelCode"
+              clearable
+              filterable
+              placeholder="请选择"
+              style="width: 220px"
+            >
+              <ElOption
+                v-for="opt in educationOptions"
+                :key="String(opt.value)"
+                :label="opt.label"
+                :value="String(opt.value)"
+              />
+            </ElSelect>
+          </ElFormItem>
+          <ElFormItem label="标签">
+            <ElSelect
+              v-model="peisForm.tagCode"
+              clearable
+              placeholder="请选择"
+              style="width: 220px"
+            >
+              <ElOption
+                v-for="opt in TAG_OPTIONS"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              />
+            </ElSelect>
+          </ElFormItem>
+          <ElFormItem label="既往史">
+            <ElInput
+              v-model="peisForm.pastHistory"
+              type="textarea"
+              :rows="2"
+              placeholder="如：高血压；无则填「无」"
+            />
+          </ElFormItem>
+          <ElFormItem label="过敏史">
+            <ElInput
+              v-model="peisForm.allergySummary"
+              type="textarea"
+              :rows="2"
+              placeholder="如：青霉素过敏；无则填「无」"
+            />
+          </ElFormItem>
+          <ElFormItem label="家族史">
+            <ElInput
+              v-model="peisForm.familyHistory"
+              type="textarea"
+              :rows="2"
+              placeholder="选填"
+            />
+          </ElFormItem>
+          <ElFormItem label="生活习惯">
+            <ElInput v-model="peisForm.habitSummary" type="textarea" :rows="2" placeholder="选填" />
+          </ElFormItem>
+          <ElFormItem label="备注">
+            <ElInput v-model="peisForm.remark" type="textarea" :rows="2" placeholder="选填" />
+          </ElFormItem>
+        </ElForm>
+      </ElTabPane>
+    </ElTabs>
   </Modal>
 </template>

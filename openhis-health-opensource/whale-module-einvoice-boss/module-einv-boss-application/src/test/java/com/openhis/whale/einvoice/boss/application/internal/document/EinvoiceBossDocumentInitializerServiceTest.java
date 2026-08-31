@@ -126,6 +126,8 @@ class EinvoiceBossDocumentInitializerServiceTest {
         assertEquals(new BigDecimal("262.50"), line.getAmount());
         assertEquals(new BigDecimal("50"), line.getQuantity());
         assertEquals("当归", line.getItemName());
+        assertEquals("YLMZ10", line.getChargeCode());
+        assertEquals("其它", line.getChargeName());
     }
 
     @Test
@@ -169,5 +171,7 @@ class EinvoiceBossDocumentInitializerServiceTest {
         assertEquals(new BigDecimal("6.00"), line.getStdAmount());
         assertEquals(new BigDecimal("6.00"), line.getAmount());
         assertEquals(BigDecimal.ONE, line.getQuantity());
+        assertEquals("YLMZ10", line.getChargeCode());
+        assertEquals("其它", line.getChargeName());
     }
 }

@@ -31,7 +31,10 @@ export async function loadRemainingSplitByTraceNos(
     const res = await batchResolveTraceIdentityByPreset(unique, preset);
     for (const item of res.items ?? []) {
       const code = String(item.traceNo ?? '').trim();
-      const rem = Number(item.remainingSplitQuantity);
+      const rawRem = item.remainingSplitQuantity;
+      // null/undefined/空串禁止 Number()：Number(null)===0 会把缺剩余误当成耗尽
+      if (rawRem === null || rawRem === undefined || String(rawRem).trim() === '') continue;
+      const rem = Number(rawRem);
       // 仅缓存有效非负剩余
       if (!code || !Number.isFinite(rem) || rem < 0) continue;
       out[code] = rem;
@@ -43,7 +46,11 @@ export async function loadRemainingSplitByTraceNos(
 }
 
 /**
- * 发药行已扫码是否「不足」（须半扫确认）：优先剩余盖住；缺数据回落个数。
+ * 发药行已扫码是否「不足」（须半扫确认）。
+ *
+ * <p>口径对齐 TRC-SDD-R-009 / BR-TRC-021：半扫确认以<strong>个数</strong>为准。
+ * 剩余合计已盖住可用更少码放行；个数已达建议应扫则不再弹窗
+ * （避免「建议约 N 码，当前 N 个」仍报覆盖不足）；剩余盖不住由核发写 OUT 软跳过。</p>
  *
  * @param args.traceRaw 行上逗号码串
  * @param args.operationSplitQty 本行操作拆零
@@ -65,11 +72,10 @@ export function isDispenseScannedTraceInsufficient(args: {
 
   const boundSum = sumBoundRemainingSplit(raw, args.remainingByTraceNo);
   const covered = isRemainingCoverageReached(args.operationSplitQty, boundSum);
-  // 剩余合计已盖住：合法
+  // 剩余合计已盖住：合法（可用更少码）
   if (covered === true) return false;
-  // 有剩余口径且未盖住：不足
-  if (covered === false) return true;
-
-  // 缺剩余/拆零数据：回落「建议个数」
-  return codes.length < args.needCount;
+  // 个数已达建议应扫：不弹半扫确认（与弹窗「待扫=0」一致）
+  if (codes.length >= args.needCount) return false;
+  // 个数不足：须确认
+  return true;
 }

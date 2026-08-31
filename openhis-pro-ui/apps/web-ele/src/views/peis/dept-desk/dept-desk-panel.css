@@ -1,0 +1,249 @@
+/**
+ * 分科诊台（分诊台）工作站样式。
+ * 复用收费工作台患者信息条与筛选区栅格，避免 scoped 在院点构建下丢失。
+ */
+
+.dept-desk-filter-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dept-desk-filter-toolbar__date .el-input__wrapper {
+  width: 100%;
+}
+
+.dept-desk-queue-scroll {
+  min-height: 200px;
+}
+
+.dept-desk-patient-table .el-table__cell {
+  padding: 10px 10px;
+}
+
+.dept-desk-center-split {
+  display: flex;
+  gap: 10px;
+  min-height: 0;
+}
+
+.dept-desk-center-projects {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 300px;
+  min-width: 280px;
+  max-width: 340px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 10px;
+  background: var(--el-fill-color-blank);
+  padding: 10px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 4%);
+}
+
+.dept-desk-center-projects__title {
+  color: var(--el-text-color-primary);
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 2px;
+  flex-shrink: 0;
+}
+
+.dept-desk-center-projects__hint {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  margin: 0 0 8px;
+  flex-shrink: 0;
+}
+
+.dept-desk-center-projects__scroll {
+  min-height: 120px;
+}
+
+.dept-desk-center-observations {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+}
+
+.dept-desk-observation-scroll {
+  min-height: 200px;
+  padding-right: 2px;
+  width: 100%;
+}
+
+.dept-desk-obs-block {
+  width: 100%;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 10px;
+  background: var(--el-fill-color-blank);
+  margin-bottom: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 5%);
+}
+
+.dept-desk-obs-table {
+  width: 100%;
+}
+
+.dept-desk-obs-block--active {
+  border-color: var(--el-color-primary-light-5);
+  box-shadow: 0 0 0 2px var(--el-color-primary-light-7);
+}
+
+.dept-desk-obs-block__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: linear-gradient(
+    90deg,
+    var(--el-fill-color-light) 0%,
+    var(--el-fill-color-blank) 100%
+  );
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+
+.dept-desk-obs-block--active .dept-desk-obs-block__head {
+  background: linear-gradient(
+    90deg,
+    var(--el-color-primary-light-9) 0%,
+    var(--el-fill-color-blank) 100%
+  );
+}
+
+.dept-desk-obs-block__name {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dept-desk-obs-block__count {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.dept-desk-obs-block__empty {
+  padding: 16px 14px;
+}
+
+.dept-desk-patient-bar__emphasis {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--el-color-primary);
+}
+
+.dept-desk-patient-status {
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+}
+
+.dept-desk-table-header-nowrap .el-table__header .el-table__cell {
+  overflow: visible;
+}
+
+.dept-desk-table-header-nowrap .el-table__header .cell {
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.dept-desk-side-table .el-table__cell {
+  padding: 10px 8px;
+  font-size: 14px;
+}
+
+.dept-desk-obs-table .el-table__cell {
+  padding: 12px 10px;
+  font-size: 14px;
+}
+
+.dept-desk-obs-table .el-table__header .el-table__cell {
+  background: var(--el-fill-color-light);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.dept-desk-obs-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--el-text-color-primary);
+}
+
+.dept-desk-result-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.dept-desk-inline-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.dept-desk-inline-input .el-input__wrapper {
+  padding: 6px 10px;
+  font-size: 14px;
+}
+
+.dept-desk-inline-select {
+  width: 100%;
+}
+
+.dept-desk-inline-select .el-input__wrapper {
+  padding: 4px 8px;
+  font-size: 14px;
+}
+
+.dept-desk-interpret-col .cell {
+  overflow: visible;
+}
+
+.dept-desk-interpret-col .dept-desk-inline-select .el-select__selected-item,
+.dept-desk-interpret-col .dept-desk-inline-select .el-select__placeholder,
+.dept-desk-interpret-col .dept-desk-inline-select .el-select__selection-text {
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.dept-desk-common-btn {
+  flex-shrink: 0;
+  font-size: 13px;
+  padding: 0 4px;
+}
+
+.dept-desk-status-cell .cell {
+  overflow: visible;
+}
+
+.dept-desk-status-tag {
+  max-width: none;
+}
+
+.dept-desk-status-tag .el-tag__content {
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.dept-desk-entry-form {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 10px;
+  background: var(--el-fill-color-blank);
+  padding: 14px;
+}
+
+.dept-desk-entry-form__title {
+  color: var(--el-text-color-primary);
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}

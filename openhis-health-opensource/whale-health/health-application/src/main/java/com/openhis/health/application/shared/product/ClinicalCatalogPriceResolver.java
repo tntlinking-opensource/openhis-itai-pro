@@ -336,6 +336,7 @@ public class ClinicalCatalogPriceResolver {
                 .productDefinitionId(productDefinitionId)
                 .categoryCode(categoryCode)
                 .methodCode(methodCode)
+                .typeCode(resolveProductTypeCode(productRow))
                 .organizationId(organizationId)
                 .encounterId(encounterId)
                 .clientResolvedDispenseLocationId(clientResolvedDispenseLocationId)
@@ -467,6 +468,7 @@ public class ClinicalCatalogPriceResolver {
                 command.getCategoryCode(),
                 command.getProductDefinitionId(),
                 resolveMethodCode(command),
+                resolveTypeCode(command),
                 command.getPharmacyLocationId()
             );
         }
@@ -484,16 +486,16 @@ public class ClinicalCatalogPriceResolver {
             command.getProductRowForOccupancy(),
             candidateLocs
         );
+        Map<String, BigDecimal> remainingOcc =
+            DoctorStationAdviceInventoryUnitQuantityHelper.copyOccupancyRemaining(occupancy);
         for (InventoryCatalogAvailabilityRowModel row : physical) {
             if (row == null) {
+                // 预取行可能含空槽，跳过以免空指针中断首批解析
                 continue;
             }
-            BigDecimal net = row.getQuantity();
-            if (net == null) {
-                net = BigDecimal.ZERO;
-            }
-            String occKey = ProductTableNameHelper.tripleCompositeKey(row.getItemTable(), row.getItemId(), row.getLocationId());
-            net = net.subtract(occupancy.getOrDefault(occKey, BigDecimal.ZERO));
+            BigDecimal net = DoctorStationAdviceInventoryUnitQuantityHelper.consumeLocationOccupancyForLot(
+                remainingOcc, row.getItemTable(), row.getItemId(), row.getLocationId(), row.getQuantity());
+            // 扣完本批能消化的预占后仍有量，即为 FIFO 首条净可用批号。
             if (net.compareTo(BigDecimal.ZERO) > 0) {
                 return row.getLotNumber();
             }
@@ -557,6 +559,7 @@ public class ClinicalCatalogPriceResolver {
                     rowCategoryCode,
                     productRow.getProductDefinitionId(),
                     productRow.getMethodCode(),
+                    productRow.getTypeCode(),
                     pharmacyLocationId
                 );
             candidateLocsByProductId.put(productRow.getProductDefinitionId(), candidateLocs);
@@ -622,20 +625,23 @@ public class ClinicalCatalogPriceResolver {
                 continue;
             }
             Map<String, BigDecimal> occupancy = occupancyByProductId.getOrDefault(productDefinitionId, Map.of());
+            Map<String, BigDecimal> remainingOcc =
+                DoctorStationAdviceInventoryUnitQuantityHelper.copyOccupancyRemaining(occupancy);
             for (InventoryCatalogAvailabilityRowModel inventoryRow : physicalRows) {
                 if (inventoryRow == null || !productDefinitionId.equals(inventoryRow.getItemId())) {
                     continue;
                 }
                 if (!productCandidateLocs.contains(inventoryRow.getLocationId())) {
+                    // 非本产品候选库位的批次不参与本行 FIFO 首批
                     continue;
                 }
-                BigDecimal netQuantity = inventoryRow.getQuantity();
-                if (netQuantity == null) {
-                    netQuantity = BigDecimal.ZERO;
-                }
-                String occupancyKey = ProductTableNameHelper.tripleCompositeKey(
-                    inventoryRow.getItemTable(), inventoryRow.getItemId(), inventoryRow.getLocationId());
-                netQuantity = netQuantity.subtract(occupancy.getOrDefault(occupancyKey, BigDecimal.ZERO));
+                BigDecimal netQuantity = DoctorStationAdviceInventoryUnitQuantityHelper.consumeLocationOccupancyForLot(
+                    remainingOcc,
+                    inventoryRow.getItemTable(),
+                    inventoryRow.getItemId(),
+                    inventoryRow.getLocationId(),
+                    inventoryRow.getQuantity());
+                // 扣完本批能消化的预占后仍有量，记为该产品 FIFO 首条批号
                 if (netQuantity.compareTo(BigDecimal.ZERO) > 0) {
                     String productKey = ProductDefinitionKeyUtil.buildCompositeKey(
                         productTableName, productDefinitionId);
@@ -656,6 +662,7 @@ public class ClinicalCatalogPriceResolver {
         String categoryCode,
         Long productDefinitionId,
         String methodCode,
+        String typeCode,
         Long pharmacyLocationId
     ) {
         return clinicalCatalogDispenseLocationResolver.listApplicableCandidateLocationIds(
@@ -664,12 +671,16 @@ public class ClinicalCatalogPriceResolver {
             categoryCode,
             productDefinitionId,
             methodCode,
+            typeCode,
             pharmacyLocationId
         );
     }
 
     /**
      * 从单价解析命令取用法编码：显式字段优先，否则回落产品读模型默认用法。
+     *
+     * @param command 单价查询命令
+     * @return 用法编码；可空
      */
     private static String resolveMethodCode(ClinicalCatalogUnitPriceQuery command) {
         if (command == null) {
@@ -682,6 +693,38 @@ public class ClinicalCatalogPriceResolver {
             return command.getProductRowForOccupancy().getMethodCode();
         }
         return null;
+    }
+
+    /**
+     * 从单价解析命令取耗材种类：显式字段优先，否则回落产品读模型。
+     *
+     * @param command 单价查询命令
+     * @return 种类编码；可空
+     */
+    private static String resolveTypeCode(ClinicalCatalogUnitPriceQuery command) {
+        if (command == null) {
+            return null;
+        }
+        if (StringUtils.isNotEmpty(command.getTypeCode())) {
+            return command.getTypeCode();
+        }
+        if (command.getProductRowForOccupancy() != null) {
+            return command.getProductRowForOccupancy().getTypeCode();
+        }
+        return null;
+    }
+
+    /**
+     * 自产品读模型取种类编码（写路径构造单价命令时用）。
+     *
+     * @param productRow 产品读模型
+     * @return 种类编码；可空
+     */
+    private static String resolveProductTypeCode(ProductDefinitionDisplayDto productRow) {
+        if (productRow == null) {
+            return null;
+        }
+        return productRow.getTypeCode();
     }
 
     /**

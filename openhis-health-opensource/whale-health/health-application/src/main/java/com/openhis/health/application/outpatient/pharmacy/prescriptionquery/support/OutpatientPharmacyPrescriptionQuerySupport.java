@@ -11,9 +11,11 @@ import com.openhis.health.domain.administration.patient.service.PatientQueryServ
 import com.openhis.health.domain.financial.contract.queries.model.ContractListItemQueryModel;
 import com.openhis.health.domain.financial.contract.service.ContractQueryService;
 import com.openhis.health.domain.share.constants.OutpatientPharmacyPrescriptionQueryConstants;
+import com.openhis.health.domain.share.constants.OutpatientPharmacyPrescriptionReviewConstants;
 import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.enums.ContractCategory;
 import com.openhis.health.domain.share.enums.DispenseStatus;
+import com.openhis.health.domain.share.enums.PrescriptionReviewStatus;
 import com.openhis.health.domain.share.enums.YbMedType;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.util.StringUtils;
@@ -191,7 +193,7 @@ public class OutpatientPharmacyPrescriptionQuerySupport {
      * 无关键字：Loader 策略为按开方时间窗对齐就诊 {@code start_time} 拉取全院 AMB 主键
      * （{@link EncounterQueryService#listOutpatientAmbEncounterIdsForCashierScope}），不得留空 {@code null}。</p>
      *
-     * @param patientKeyword     患者姓名/门诊号等；可空
+     * @param patientKeyword     患者姓名/身份证/门诊号等；可空；身份证用于重名区分
      * @param authoredStartInclusive 开方时间窗起点（日初）；无关键字时用于 AMB 窗
      * @param authoredEndInclusive   开方时间窗终点（日末）；无关键字时用于 AMB 窗
      * @return 患者范围；{@code resolvedEncounterIds} 恒非 null（可为空列表）
@@ -210,7 +212,7 @@ public class OutpatientPharmacyPrescriptionQuerySupport {
             scope.setResolvedEncounterIds(ambIds);
             return scope;
         }
-        // 有关键字：门诊号命中 ∪ 患者姓名关键字命中，再二次过滤为 AMB
+        // 有关键字：门诊号命中 ∪ 患者列表关键字命中（姓名/身份证/拼音/五笔等同族），再二次过滤为 AMB
         String keyword = patientKeyword.trim();
         LinkedHashSet<Long> union = new LinkedHashSet<>();
         union.addAll(this.encounterQueryService.filterOutpatientAmbEncounterIds(
@@ -249,6 +251,38 @@ public class OutpatientPharmacyPrescriptionQuerySupport {
             }
             options.add(option);
         }
+        return options;
+    }
+
+    /**
+     * 点评状态下拉：待点评 / 已点评（与点评记录页同码）。
+     *
+     * @return 非空选项列表
+     */
+    public List<OptionDto> buildReviewStatusOptions() {
+        List<OptionDto> options = new ArrayList<>();
+        options.add(this.toOption(
+            PrescriptionReviewStatus.PENDING.getCode(),
+            PrescriptionReviewStatus.PENDING.getDisplay()));
+        options.add(this.toOption(
+            PrescriptionReviewStatus.REVIEWED.getCode(),
+            PrescriptionReviewStatus.REVIEWED.getDisplay()));
+        return options;
+    }
+
+    /**
+     * 是否合理下拉：合理 / 不合理（value 为字符串化布尔，与点评记录页同口径）。
+     *
+     * @return 非空选项列表
+     */
+    public List<OptionDto> buildReasonableOptions() {
+        List<OptionDto> options = new ArrayList<>();
+        options.add(this.toOption(
+            OutpatientPharmacyPrescriptionReviewConstants.REASONABLE_TRUE_VALUE,
+            OutpatientPharmacyPrescriptionReviewConstants.REASONABLE_TRUE_LABEL));
+        options.add(this.toOption(
+            OutpatientPharmacyPrescriptionReviewConstants.REASONABLE_FALSE_VALUE,
+            OutpatientPharmacyPrescriptionReviewConstants.REASONABLE_FALSE_LABEL));
         return options;
     }
 

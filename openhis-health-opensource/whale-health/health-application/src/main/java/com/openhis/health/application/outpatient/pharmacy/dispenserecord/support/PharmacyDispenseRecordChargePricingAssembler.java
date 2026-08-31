@@ -28,7 +28,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 发退药记录定价补充：退药行优先按原正向发放 {@code dispense_id} 锚点读价，与正向发药行同源。
+ * 发退药记录定价补充：退药写路径<strong>不</strong>生成自身 {@code ChargeItem}（设计如此），
+ * 读侧须按原正向发放账单补售价，与发药行同源轧差（#4M-RFND）。
+ *
+ * <p>禁止只 JOIN 退药自身 {@code dispense_id}；同数量时退药售价总额绝对值须与正向账单
+ * {@code total_price} 一致，禁止用单价×数量另算产生尾差。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -38,15 +42,15 @@ public class PharmacyDispenseRecordChargePricingAssembler {
     private final MedicationDispenseQueryService medicationDispenseQueryService;
 
     /**
-     * 为尚未命中 dispense 锚点定价的退药行补单价/金额。
+     * 为尚无可用售价的退药行补单价/金额（写入为正额绝对值，调用方按退药取负）。
      *
-     * <p>优先级：① 同页正向发放行已算价 → ② 原正向发放单 charge（dispense_id） →
-     * ③ 原药嘱 service 下单条 charge 的 {@code unit_price}（禁止累加整单金额）。</p>
+     * <p>退药不查自身账单。优先级：① 同窗正向已算价 → ② 原正向发放
+     * {@code dispense_id} 账单 → ③ 原药嘱 service 锚点单价。同数量抄正向总额；部分退按数量比例折算。</p>
      *
      * @param slipRows                    发放事实读模型
-     * @param medicationRequestByMedReqId 药嘱索引（含负向与原药嘱）
+     * @param medicationRequestByMedReqId 药嘱索引（须含退药行，以解析 {@code refundMedicineId}）
      * @param unitPriceOut                dispenseId → 单价（可写）
-     * @param totalPriceOut               dispenseId → 金额（可写）
+     * @param totalPriceOut               dispenseId → 金额（可写；退药为正额）
      */
     public void supplementRefundPricingFromOriginMedicationRequests(
         List<MedicationDispenseSlipQueryModel> slipRows,
@@ -63,14 +67,18 @@ public class PharmacyDispenseRecordChargePricingAssembler {
             if (slip == null) {
                 continue;
             }
+            // Pre：正向行仅建展示匹配键，供同窗一发一退配对
             if (!this.isRefundSlipRow(slip)) {
                 forwardSlipByPresentationKey.put(this.buildPresentationMatchKey(slip), slip);
                 continue;
             }
-            if (slip.getDispenseId() == null || totalPriceOut.containsKey(slip.getDispenseId())) {
+            // Gate：无 dispenseId 或已有非 0 售价则跳过（0 元占位仍须补原正向）
+            if (slip.getDispenseId() == null
+                || this.hasUsableSalePricing(slip.getDispenseId(), unitPriceOut, totalPriceOut)) {
                 continue;
             }
             Long originRequestId = this.resolveOriginMedicationRequestId(slip, medicationRequestByMedReqId);
+            // Gate：无法解析原药嘱则无法补价（禁止冒充退药自身账单）
             if (originRequestId == null) {
                 continue;
             }
@@ -141,13 +149,21 @@ public class PharmacyDispenseRecordChargePricingAssembler {
                 .add(chargeRow);
         }
         for (RefundPricingTarget target : serviceFallbackRefunds) {
+            BigDecimal refundQuantity = this.resolveSlipQuantity(target.slip());
+            // Gate：无退药数量则无法按单价折行额
+            if (refundQuantity == null || refundQuantity.compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
             BigDecimal unitPrice = this.resolveUnitPriceFromServiceCharges(
                 serviceChargeRowsByOriginRequestId.get(target.originRequestId()),
-                this.resolveSlipQuantity(target.slip()));
+                refundQuantity);
+            // Gate：service 锚点仍无单价则本退药行售价保持空（禁止批号冒充）
             if (unitPrice == null) {
                 continue;
             }
-            this.writeRefundPricing(target.slip(), unitPrice, unitPriceOut, totalPriceOut);
+            // Asm：末级兜底仅有单价时用单价×数量；优先路径已保证与正向总额同额
+            BigDecimal totalAbs = MonetaryAmountSupport.lineTotal(unitPrice, refundQuantity);
+            this.writeRefundPricing(target.slip(), unitPrice, totalAbs, unitPriceOut, totalPriceOut);
         }
     }
 
@@ -177,7 +193,7 @@ public class PharmacyDispenseRecordChargePricingAssembler {
     }
 
     /**
-     * 从正向 dispense 定价映射或 charge 行回填退药定价。
+     * 从正向 dispense 定价映射或 charge 行回填退药定价（同量抄总额，部分退按量折算）。
      *
      * @param refundSlip           退药 slip
      * @param forwardDispenseId    原正向发放 id
@@ -197,53 +213,227 @@ public class PharmacyDispenseRecordChargePricingAssembler {
         if (refundSlip == null || refundSlip.getDispenseId() == null || forwardDispenseId == null) {
             return false;
         }
-        BigDecimal unitPrice = null;
-        if (unitPriceOut != null) {
-            unitPrice = unitPriceOut.get(forwardDispenseId);
-        }
-        if (unitPrice == null && forwardSlip != null) {
-            BigDecimal forwardTotal = null;
-            if (totalPriceOut != null) {
-                forwardTotal = totalPriceOut.get(forwardDispenseId);
-            }
-            BigDecimal forwardQuantity = this.resolveSlipQuantity(forwardSlip);
-            if (forwardTotal != null && forwardQuantity != null && forwardQuantity.compareTo(BigDecimal.ZERO) > 0) {
-                unitPrice = MonetaryAmountSupport.unitPriceFromLineTotal(forwardTotal, forwardQuantity);
-            }
-        }
-        if (unitPrice == null) {
-            unitPrice = this.resolveUnitPriceFromDispenseCharges(forwardChargeRows, forwardDispenseId);
-        }
-        if (unitPrice == null) {
+        BigDecimal refundQuantity = this.resolveSlipQuantity(refundSlip);
+        // Gate：退药数量无效则无法与正向对齐金额
+        if (refundQuantity == null || refundQuantity.compareTo(BigDecimal.ZERO) <= 0) {
             return false;
         }
-        this.writeRefundPricing(refundSlip, unitPrice, unitPriceOut, totalPriceOut);
+        ForwardSaleSnapshot forwardSale = this.resolveForwardSaleSnapshot(
+            forwardDispenseId, forwardSlip, unitPriceOut, totalPriceOut, forwardChargeRows);
+        // Gate：原正向无可用售价则本路径失败，交由 service 锚点兜底
+        if (forwardSale == null || forwardSale.totalAbs() == null) {
+            return false;
+        }
+        BigDecimal refundTotalAbs = this.resolveRefundTotalAbsFromForward(
+            forwardSale.totalAbs(), forwardSale.quantityAbs(), refundQuantity);
+        // Gate：折算失败则不写假 0
+        if (refundTotalAbs == null) {
+            return false;
+        }
+        BigDecimal refundUnit = forwardSale.unitPrice();
+        // Pre：缺单价时用退药行额反推，保证单价与总额同阶
+        if (refundUnit == null) {
+            refundUnit = MonetaryAmountSupport.unitPriceFromLineTotal(refundTotalAbs, refundQuantity);
+        }
+        this.writeRefundPricing(refundSlip, refundUnit, refundTotalAbs, unitPriceOut, totalPriceOut);
         return true;
     }
 
     /**
-     * 写入退药 slip 的单价与按退药数量折算的行金额。
+     * 解析原正向售价快照：优先输出映射，其次 charge 行代数和。
+     *
+     * @param forwardDispenseId 原正向发放 id
+     * @param forwardSlip       同窗正向 slip（可空）
+     * @param unitPriceOut      已合并单价映射
+     * @param totalPriceOut     已合并总额映射
+     * @param forwardChargeRows 原正向 charge（可空）
+     * @return 正向售价快照；无法解析则 null
+     */
+    private ForwardSaleSnapshot resolveForwardSaleSnapshot(
+        Long forwardDispenseId,
+        MedicationDispenseSlipQueryModel forwardSlip,
+        Map<Long, BigDecimal> unitPriceOut,
+        Map<Long, BigDecimal> totalPriceOut,
+        List<ChargeItem> forwardChargeRows) {
+        BigDecimal unitPrice = null;
+        BigDecimal totalAbs = null;
+        BigDecimal quantityAbs = null;
+        if (unitPriceOut != null) {
+            unitPrice = unitPriceOut.get(forwardDispenseId);
+        }
+        if (totalPriceOut != null) {
+            BigDecimal mappedTotal = totalPriceOut.get(forwardDispenseId);
+            if (mappedTotal != null) {
+                totalAbs = mappedTotal.abs();
+            }
+        }
+        if (forwardSlip != null) {
+            quantityAbs = this.resolveSlipQuantity(forwardSlip);
+            // Pre：映射有总额无单价时，用正向数量反推单价
+            if (unitPrice == null && totalAbs != null && quantityAbs != null
+                && quantityAbs.compareTo(BigDecimal.ZERO) > 0) {
+                unitPrice = MonetaryAmountSupport.unitPriceFromLineTotal(totalAbs, quantityAbs);
+            }
+        }
+        // Pre：跨窗补价时从原正向 charge 汇总总额/数量/单价
+        if (totalAbs == null || quantityAbs == null || unitPrice == null) {
+            ForwardSaleSnapshot fromCharges =
+                this.resolveForwardSaleSnapshotFromCharges(forwardChargeRows, forwardDispenseId);
+            if (fromCharges != null) {
+                if (totalAbs == null) {
+                    totalAbs = fromCharges.totalAbs();
+                }
+                if (quantityAbs == null) {
+                    quantityAbs = fromCharges.quantityAbs();
+                }
+                if (unitPrice == null) {
+                    unitPrice = fromCharges.unitPrice();
+                }
+            }
+        }
+        // Gate：至少要有总额才能与发药钱对齐
+        if (totalAbs == null || totalAbs.compareTo(BigDecimal.ZERO) == 0) {
+            return null;
+        }
+        return new ForwardSaleSnapshot(unitPrice, totalAbs, quantityAbs);
+    }
+
+    /**
+     * 从原正向发放锚点 charge 汇总售价总额、数量与单价。
+     *
+     * @param chargeRows charge 行
+     * @param dispenseId 正向发放 id
+     * @return 快照；无可用行则 null
+     */
+    private ForwardSaleSnapshot resolveForwardSaleSnapshotFromCharges(
+        List<ChargeItem> chargeRows,
+        Long dispenseId) {
+        if (chargeRows == null || chargeRows.isEmpty() || dispenseId == null) {
+            return null;
+        }
+        BigDecimal directUnitPrice = null;
+        BigDecimal totalVal = null;
+        BigDecimal qtyVal = null;
+        for (ChargeItem chargeRow : chargeRows) {
+            if (chargeRow == null || !dispenseId.equals(chargeRow.getDispenseId())) {
+                continue;
+            }
+            // Gate：仅发药划价关心的收费态参与补价
+            if (!this.isMedicationDispensePricingChargeStatus(chargeRow.getStatusEnum())) {
+                continue;
+            }
+            if (chargeRow.getUnitPrice() != null && directUnitPrice == null) {
+                directUnitPrice = chargeRow.getUnitPrice();
+            }
+            if (chargeRow.getTotalPrice() != null) {
+                if (totalVal == null) {
+                    totalVal = chargeRow.getTotalPrice();
+                } else {
+                    totalVal = totalVal.add(chargeRow.getTotalPrice());
+                }
+            }
+            if (chargeRow.getQuantityValue() != null) {
+                if (qtyVal == null) {
+                    qtyVal = chargeRow.getQuantityValue();
+                } else {
+                    qtyVal = qtyVal.add(chargeRow.getQuantityValue());
+                }
+            }
+        }
+        if (totalVal == null) {
+            return null;
+        }
+        BigDecimal totalAbs = totalVal.abs();
+        BigDecimal quantityAbs = null;
+        if (qtyVal != null) {
+            quantityAbs = qtyVal.abs();
+        }
+        BigDecimal unitPrice = directUnitPrice;
+        if (unitPrice == null && quantityAbs != null && quantityAbs.compareTo(BigDecimal.ZERO) > 0) {
+            unitPrice = MonetaryAmountSupport.unitPriceFromLineTotal(totalAbs, quantityAbs);
+        }
+        return new ForwardSaleSnapshot(unitPrice, totalAbs, quantityAbs);
+    }
+
+    /**
+     * 由正向总额推导退药正额：同数量则原样抄总额；部分退按数量比例折算。
+     *
+     * @param forwardTotalAbs 正向售价总额绝对值
+     * @param forwardQtyAbs   正向数量绝对值；可空（仅同量无法判定时回落失败）
+     * @param refundQtyAbs    退药数量绝对值
+     * @return 退药售价正额；无法对齐则 null
+     */
+    private BigDecimal resolveRefundTotalAbsFromForward(
+        BigDecimal forwardTotalAbs,
+        BigDecimal forwardQtyAbs,
+        BigDecimal refundQtyAbs) {
+        if (forwardTotalAbs == null || refundQtyAbs == null) {
+            return null;
+        }
+        // 同数量：与发药钱绝对值一致，禁止单价×数量另算
+        if (forwardQtyAbs != null && forwardQtyAbs.compareTo(refundQtyAbs) == 0) {
+            return MonetaryAmountSupport.scaleCalc(forwardTotalAbs);
+        }
+        // 部分退：须有正向数量作分母
+        if (forwardQtyAbs == null || forwardQtyAbs.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+        return MonetaryAmountSupport.proportionAtCalcScale(
+            forwardTotalAbs, refundQtyAbs, forwardQtyAbs);
+    }
+
+    /**
+     * 写入退药 slip 的单价与正额行金额（调用方再取负）。
      *
      * @param refundSlip     退药 slip
      * @param unitPrice      单价
+     * @param totalAbs       售价总额正额（已与正向对齐）
      * @param unitPriceOut   单价输出
      * @param totalPriceOut  金额输出
      */
     private void writeRefundPricing(
         MedicationDispenseSlipQueryModel refundSlip,
         BigDecimal unitPrice,
+        BigDecimal totalAbs,
         Map<Long, BigDecimal> unitPriceOut,
         Map<Long, BigDecimal> totalPriceOut) {
-        if (refundSlip == null || refundSlip.getDispenseId() == null || unitPrice == null) {
+        if (refundSlip == null || refundSlip.getDispenseId() == null || totalAbs == null) {
             return;
         }
-        unitPriceOut.put(refundSlip.getDispenseId(), unitPrice);
-        BigDecimal refundQuantity = this.resolveSlipQuantity(refundSlip);
-        if (refundQuantity != null && refundQuantity.compareTo(BigDecimal.ZERO) > 0) {
-            totalPriceOut.put(
-                refundSlip.getDispenseId(),
-                MonetaryAmountSupport.lineTotal(unitPrice, refundQuantity));
+        if (unitPrice != null) {
+            unitPriceOut.put(refundSlip.getDispenseId(), MonetaryAmountSupport.scaleCalc(unitPrice));
         }
+        totalPriceOut.put(refundSlip.getDispenseId(), MonetaryAmountSupport.scaleCalc(totalAbs));
+    }
+
+    /**
+     * 退药行是否已有可用售价（非空且非 0；0 元占位须继续补原正向）。
+     *
+     * @param dispenseId    发放主键
+     * @param unitPriceOut  单价映射
+     * @param totalPriceOut 总额映射
+     * @return 已有可用售价为 true
+     */
+    private boolean hasUsableSalePricing(
+        Long dispenseId,
+        Map<Long, BigDecimal> unitPriceOut,
+        Map<Long, BigDecimal> totalPriceOut) {
+        if (dispenseId == null) {
+            return false;
+        }
+        if (unitPriceOut != null) {
+            BigDecimal unit = unitPriceOut.get(dispenseId);
+            if (unit != null && unit.compareTo(BigDecimal.ZERO) != 0) {
+                return true;
+            }
+        }
+        if (totalPriceOut != null) {
+            BigDecimal total = totalPriceOut.get(dispenseId);
+            if (total != null && total.compareTo(BigDecimal.ZERO) != 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -264,6 +454,7 @@ public class PharmacyDispenseRecordChargePricingAssembler {
             if (forward == null || forward.getMedReqId() == null || forward.getId() == null) {
                 continue;
             }
+            // Gate：仅 COMPLETED 正向参与补价锚点
             if (forward.getStatusEnum() != DispenseStatus.COMPLETED) {
                 continue;
             }
@@ -374,54 +565,6 @@ public class PharmacyDispenseRecordChargePricingAssembler {
             + this.normalizeMatchText(slip.getLotNumber())
             + "|"
             + this.normalizeMatchText(slip.getTraceNo());
-    }
-
-    /**
-     * 从 dispense 锚点 charge 解析单价：优先 {@code unit_price}，否则行合计 ÷ 数量。
-     *
-     * @param chargeRows  charge 行
-     * @param dispenseId  发放 id
-     * @return 单价；无法解析则 null
-     */
-    private BigDecimal resolveUnitPriceFromDispenseCharges(List<ChargeItem> chargeRows, Long dispenseId) {
-        if (chargeRows == null || chargeRows.isEmpty() || dispenseId == null) {
-            return null;
-        }
-        BigDecimal directUnitPrice = null;
-        BigDecimal totalVal = null;
-        BigDecimal qtyVal = null;
-        for (ChargeItem chargeRow : chargeRows) {
-            if (chargeRow == null || !dispenseId.equals(chargeRow.getDispenseId())) {
-                continue;
-            }
-            if (!this.isMedicationDispensePricingChargeStatus(chargeRow.getStatusEnum())) {
-                continue;
-            }
-            if (chargeRow.getUnitPrice() != null && directUnitPrice == null) {
-                directUnitPrice = chargeRow.getUnitPrice();
-            }
-            if (chargeRow.getTotalPrice() != null) {
-                if (totalVal == null) {
-                    totalVal = chargeRow.getTotalPrice();
-                } else {
-                    totalVal = totalVal.add(chargeRow.getTotalPrice());
-                }
-            }
-            if (chargeRow.getQuantityValue() != null) {
-                if (qtyVal == null) {
-                    qtyVal = chargeRow.getQuantityValue();
-                } else {
-                    qtyVal = qtyVal.add(chargeRow.getQuantityValue());
-                }
-            }
-        }
-        if (directUnitPrice != null) {
-            return directUnitPrice;
-        }
-        if (totalVal != null && qtyVal != null && qtyVal.compareTo(BigDecimal.ZERO) > 0) {
-            return MonetaryAmountSupport.unitPriceFromLineTotal(totalVal, qtyVal);
-        }
-        return null;
     }
 
     /**
@@ -589,5 +732,15 @@ public class PharmacyDispenseRecordChargePricingAssembler {
 
     /** 待补价退药行上下文。 */
     private record RefundPricingTarget(MedicationDispenseSlipQueryModel slip, Long originRequestId) {
+    }
+
+    /**
+     * 原正向发放售价快照（金额为正额绝对值）。
+     *
+     * @param unitPrice    售价单价；可空
+     * @param totalAbs     售价总额绝对值
+     * @param quantityAbs  正向数量绝对值；可空
+     */
+    private record ForwardSaleSnapshot(BigDecimal unitPrice, BigDecimal totalAbs, BigDecimal quantityAbs) {
     }
 }

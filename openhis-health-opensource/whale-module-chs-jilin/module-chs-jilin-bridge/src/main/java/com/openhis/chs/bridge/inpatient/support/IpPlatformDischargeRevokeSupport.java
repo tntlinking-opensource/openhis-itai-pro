@@ -80,7 +80,7 @@ public class IpPlatformDischargeRevokeSupport {
             if (cleaned <= 0) {
                 throw new BusinessException(
                     ChsErrorCodes.PLATFORM_FAILED,
-                    "平台存在其他在院就诊，无法办理出院；请用医保信息查询(5201)核对并撤销多余入院登记后再结算。原因："
+                    "【多在院】平台存在其他在院就诊，无法办理出院；请打开「平台在院对齐」或医保信息查询(5201)撤销多余入院后再结算。原因："
                         + firstEx.getMessage());
             }
             this.invoke2402IgnoreIfAlreadyDischarged(ctx, mdtrtId);
@@ -172,7 +172,7 @@ public class IpPlatformDischargeRevokeSupport {
             if (cleaned <= 0) {
                 throw new BusinessException(
                     ChsErrorCodes.PLATFORM_FAILED,
-                    "平台存在其他在院就诊，无法撤销本就诊出院；请用医保信息查询(5201)核对并撤销多余入院登记后再结算。原因："
+                    "【多在院】平台存在其他在院就诊，无法撤销本就诊出院；请打开「平台在院对齐」或医保信息查询(5201)核对后再试。原因："
                         + firstEx.getMessage());
             }
             this.invoke2405IgnoreIfNotDischarged(ctx, keepMdtrtId);
@@ -210,7 +210,7 @@ public class IpPlatformDischargeRevokeSupport {
      * @param keepMdtrtId 本单 mdtrt_id
      * @return 成功撤销的条数
      */
-    private int revokeOtherInHospitalAdmissions(IpSettleContext ctx, String keepMdtrtId) {
+    public int revokeOtherInHospitalAdmissions(IpSettleContext ctx, String keepMdtrtId) {
         Set<String> otherInHospital = this.listOtherInHospitalMdtrtIds(ctx, keepMdtrtId);
         if (otherInHospital.isEmpty()) {
             return 0;

@@ -45,7 +45,7 @@ import {
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
 import SectionTitle from '#/components/layouts/section-title.vue';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
-import { formatMoneyDisplay } from '#/utils/format/money-scale';
+import { formatMoneyDisplay, formatPurchaseMoneyDisplay } from '#/utils/format/money-scale';
 import { printPriceAdjustment } from '#/utils/print/print-price-adjustment';
 import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
 
@@ -151,7 +151,7 @@ const impactSummary = computed(() => {
 });
 
 const approveSummaryText = computed(() => {
-  return `进价盈亏合计 ${formatMoneyDisplay(impactSummary.value.totalPurchaseImpact)} 元 · 售价盈亏合计 ${formatMoneyDisplay(impactSummary.value.totalSellingImpact)} 元`;
+  return `进价盈亏合计 ${formatPurchaseMoneyDisplay(impactSummary.value.totalPurchaseImpact)} 元 · 售价盈亏合计 ${formatMoneyDisplay(impactSummary.value.totalSellingImpact)} 元`;
 });
 
 /** 用网格全量数据刷新底部行数展示 */
@@ -183,6 +183,18 @@ function formatAmount(value: unknown, placeholder = '—'): string {
     return placeholder;
   }
   return formatMoneyDisplay(n);
+}
+
+/** 进价单价/盈亏展示：最多三位去尾零（中药第三位可见）。 */
+function formatPurchaseUnitPriceAmount(value: unknown, placeholder = '—'): string {
+  if (value === undefined || value === null || value === '') {
+    return placeholder;
+  }
+  const n = Number(value);
+  if (!Number.isFinite(n)) {
+    return placeholder;
+  }
+  return formatPurchaseMoneyDisplay(n) || placeholder;
 }
 
 function formatQuantity(value: unknown, placeholder = '—'): string {
@@ -227,10 +239,18 @@ function resolveEditablePriceCellClass(params: {
   return '';
 }
 
-/** 调后价格展示：空值在可编辑态提示「请填写」 */
-function formatEditablePrice(value: unknown, editable: boolean, placeholder = '请填写'): string {
+/** 调后价格展示：空值在可编辑态提示「请填写」；进价走三位刻度 */
+function formatEditablePrice(
+  value: unknown,
+  editable: boolean,
+  placeholder = '请填写',
+  asPurchaseUnitPrice = false,
+): string {
   if (isEmptyEditablePrice(value)) {
     return editable ? placeholder : '—';
+  }
+  if (asPurchaseUnitPrice) {
+    return formatPurchaseUnitPriceAmount(value);
   }
   return formatAmount(value);
 }
@@ -536,8 +556,8 @@ function resolveOptionLabel(options: ApiOptionItem[] | undefined, value: unknown
   return String(hit?.label ?? code).trim();
 }
 
-/** 打印：按当前页单头/明细/审批区组装 PrintData */
-async function handlePrint() {
+/** 打印或预览：按当前页单头/明细/审批区组装 PrintData */
+async function handlePrint(payload?: { preview?: boolean }) {
   const busNo = currentPersistedBusNo();
   if (!busNo) {
     ElMessage.warning('请先保存单据后再打印');
@@ -594,6 +614,7 @@ async function handlePrint() {
     },
     bizRef: { busNo, docKind: 'price-adjustment' },
     jobName: `调价单-${busNo}`,
+    preview: payload?.preview === true,
   });
 }
 
@@ -779,7 +800,9 @@ const columns: VxeGridPropTypes.Columns<PriceAdjustmentLineRow> = [
     align: 'right',
     headerAlign: 'center',
     formatter: ({ cellValue, row }) =>
-      isLogisticsRow(row as PriceAdjustmentLineRow) ? formatAmount(cellValue) : '—',
+      isLogisticsRow(row as PriceAdjustmentLineRow)
+        ? formatPurchaseUnitPriceAmount(cellValue)
+        : '—',
   },
   {
     field: 'currentSellingPrice',
@@ -816,11 +839,11 @@ const columns: VxeGridPropTypes.Columns<PriceAdjustmentLineRow> = [
     formatter: ({ cellValue, row }) => {
       const line = row as PriceAdjustmentLineRow;
       if (!isLogisticsRow(line)) return '—';
-      return formatEditablePrice(cellValue, props.documentEditable);
+      return formatEditablePrice(cellValue, props.documentEditable, '请填写', true);
     },
     editRender: {
       name: 'ElInput',
-      props: { type: 'number', min: 0, step: 0.01, clearable: true, placeholder: '请填写' },
+      props: { type: 'number', min: 0, step: 0.001, clearable: true, placeholder: '请填写' },
     },
   },
   {
@@ -1043,7 +1066,7 @@ watch(
         >
           进价盈亏合计
           <strong class="tabular-nums text-[var(--el-text-color-primary)]">{{
-            formatMoneyDisplay(impactSummary.totalPurchaseImpact)
+            formatPurchaseMoneyDisplay(impactSummary.totalPurchaseImpact)
           }}</strong>
           元 · 售价盈亏合计
           <strong class="tabular-nums text-[var(--el-text-color-primary)]">{{

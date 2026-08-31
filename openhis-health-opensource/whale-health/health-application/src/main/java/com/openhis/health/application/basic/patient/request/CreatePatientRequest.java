@@ -23,6 +23,8 @@ public class CreatePatientRequest {
     private String name;
     /** 国籍编码。 */
     private String nationalityCode;
+    /** 学历层次字典编码（EducationLevel）。 */
+    private String educationLevelCode;
     /** 性别枚举编码（AdministrativeGender#getCode()）。 */
     private String genderEnum;
     /** 是否启用患者主档。 */

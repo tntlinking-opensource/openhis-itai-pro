@@ -1,7 +1,7 @@
 /**
  * 库存单据明细：数量 + 单位合并单元格展示（与 vxe `InventoryQtyUnitCell` 配套）。
  * 默认单价/金额 UI 展示 2 位（BR-MON-001）；
- * **中药**（medication_category_code=`4`）单价展示 3 位；
+ * **中药进价**（medication_category_code=`4`，库房单价列=进价）展示 3 位；售价仍 2 位；
  * **期初单**单价特例展示 6 位（与 MONEY_CALC_DP 对齐）。
  */
 
@@ -10,7 +10,7 @@ import {
   MONEY_CALC_DP,
   MONEY_DISPLAY_DP,
   MONEY_TCM_UNIT_PRICE_DP,
-  formatMoneyDisplay,
+  formatPurchaseMoneyDisplay,
   toMoneyDecimal,
 } from '#/utils/format/money-scale';
 
@@ -47,11 +47,14 @@ export function formatInventoryQtyUnitCellText(
   return `${qtyPart} ${unitPart}`;
 }
 
-/** 金额展示两位小数（HALF_UP）；空值返回空串；非数字原样 trim。 */
-export function formatInventoryMoneyTwoDecimals(value: unknown): string {
+/**
+ * 库存进价金额展示（行额/合计）；中药可至三位。
+ * 空值返回空串；非数字原样 trim。
+ */
+export function formatInventoryMoneyTwoDecimals(value: unknown, categoryCode?: unknown): string {
   if (value === undefined || value === null || value === '') return '';
   const n = Number(value);
-  if (Number.isFinite(n)) return formatMoneyDisplay(n);
+  if (Number.isFinite(n)) return formatPurchaseMoneyDisplay(n, categoryCode);
   return String(value).trim();
 }
 
@@ -76,7 +79,8 @@ export function isInventoryHerbalMedicationRow(row?: null | Record<string, unkno
 }
 
 /**
- * 单价展示小数位：显式传入优先（如期初 6）；否则中药 3、其余 2。
+ * 进价单价展示小数位：显式传入优先（如期初 6）；否则中药进价 3、其余 2。
+ * 库房网格单价列口径为进价；售价列勿复用本方法。
  */
 export function resolveInventoryUnitPriceDisplayDp(
   row?: null | Record<string, unknown>,
@@ -92,7 +96,7 @@ export function resolveInventoryUnitPriceDisplayDp(
 }
 
 /**
- * 将分类码写入行模型，供单价单元格按中药三位展示。
+ * 将分类码写入行模型，供进价单元格按中药三位展示。
  * `source` 可为选品行、详情行或 `productCatalog` 自身。
  */
 export function applyInventoryRowCategoryCode(
@@ -106,8 +110,8 @@ export function applyInventoryRowCategoryCode(
 }
 
 /**
- * 单价回显 + `元`。
- * @param displayDp 展示小数位：默认 2；中药 3；期初单传 {@link MONEY_CALC_DP}（6）
+ * 进价单价回显 + `元`。
+ * @param displayDp 展示小数位：默认 2；中药进价 3；期初单传 {@link MONEY_CALC_DP}（6）
  */
 export function formatInventoryUnitPriceDisplay(
   row: Record<string, unknown>,
@@ -136,12 +140,15 @@ export function formatInventoryUnitPriceDecimals(
   return toMoneyDecimal(n).toDecimalPlaces(dp, Decimal.ROUND_HALF_UP).toFixed(dp);
 }
 
-/** 总金额回显：两位小数 + `元`，如 `150.00 元` */
+/** 总金额回显：进价侧刻度 + `元`，如 `150.125 元` */
 export function formatInventoryTotalAmountDisplay(
   row: Record<string, unknown>,
   amountField: string,
 ): string {
-  const money = formatInventoryMoneyTwoDecimals(row[amountField]);
+  const money = formatInventoryMoneyTwoDecimals(
+    row[amountField],
+    resolveInventoryRowCategoryCode(row),
+  );
   if (!money) return '';
   return `${money} 元`;
 }

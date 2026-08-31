@@ -42,6 +42,7 @@ import {
   buildEmrTemplateTree,
   formatDocumentTreeSaver,
   formatDocumentTreeTime,
+  type EmrSidebarTreeMode,
 } from './build-emr-template-tree';
 
 defineOptions({
@@ -79,6 +80,13 @@ const props = withDefaults(
     restrictHistoryToInpatient?: boolean;
     /** 当前编辑器是否可用来覆盖更新模板正文 */
     canUpdateTemplateContent?: boolean;
+    /**
+     * 侧栏分页内容：整树 / 仅模板 / 仅已写文书。
+     * documents 时不拉模板；templates 时不挂历史根。
+     */
+    sidebarMode?: EmrSidebarTreeMode;
+    /** documentsOnly 时分组：本诊扁平 none，历史按科室 dept */
+    documentGroupBy?: 'none' | 'dept';
   }>(),
   {
     currentDocumentId: '',
@@ -94,6 +102,8 @@ const props = withDefaults(
     viewOnly: false,
     restrictHistoryToInpatient: false,
     canUpdateTemplateContent: false,
+    sidebarMode: 'all',
+    documentGroupBy: 'dept',
   },
 );
 
@@ -133,7 +143,8 @@ function resolveExpandStorageKey(): string {
   const userId = preserveApiIdForRequest(userStore.userInfo?.id) ?? 'anon';
   const station = props.stationKind ?? 'default';
   const mode = props.viewOnly ? 'view' : 'edit';
-  return `${EXPAND_STORAGE_PREFIX}:${userId}:${station}:${mode}`;
+  const sidebar = props.sidebarMode ?? 'all';
+  return `${EXPAND_STORAGE_PREFIX}:${userId}:${station}:${mode}:${sidebar}`;
 }
 
 function readCachedExpandedKeys(): string[] | null {
@@ -182,7 +193,10 @@ function persistExpandedState() {
 }
 
 /**
- * 恢复展开状态：有缓存则按缓存；首次无缓存则全部展开（不落盘，等用户操作后再存）。
+ * 恢复展开状态：有缓存则按缓存；首次无缓存时：
+ * - 医生站整树：本诊展开；住院/门诊模板展开个人科室；告知书/全院/历史默认收起
+ * - 仅模板页：同上述模板规则
+ * - 其余：全部展开
  */
 function restoreExpandedState() {
   void nextTick(() => {
@@ -190,6 +204,31 @@ function restoreExpandedState() {
     if (!nodesMap) return;
     const cached = readCachedExpandedKeys();
     if (!cached) {
+      const collapseTemplateNoise =
+        props.sidebarMode === 'templatesOnly' || props.sidebarMode === 'all';
+      if (collapseTemplateNoise) {
+        for (const [key, node] of Object.entries(nodesMap)) {
+          if ((node.childNodes?.length ?? 0) === 0) continue;
+          // 本诊置顶区始终展开
+          if (key === 'cat:CURRENT') {
+            node.expanded = true;
+            continue;
+          }
+          // 告知书/手术/其他/跨就诊历史默认收起；全院范围默认收起
+          if (
+            key === 'cat:NOTICE' ||
+            key === 'cat:SURGERY' ||
+            key === 'cat:OTHER' ||
+            key === 'cat:HISTORY' ||
+            key.endsWith(`:${EMR_TEMPLATE_SCOPE_LEVEL.HOSPITAL}`)
+          ) {
+            node.expanded = false;
+            continue;
+          }
+          node.expanded = true;
+        }
+        return;
+      }
       for (const node of Object.values(nodesMap)) {
         if ((node.childNodes?.length ?? 0) > 0) {
           node.expanded = true;
@@ -200,6 +239,11 @@ function restoreExpandedState() {
     const expandedSet = new Set(cached);
     for (const [key, node] of Object.entries(nodesMap)) {
       if ((node.childNodes?.length ?? 0) === 0) continue;
+      // 本诊已写始终展开，不被旧缓存压扁
+      if (key === 'cat:CURRENT') {
+        node.expanded = true;
+        continue;
+      }
       node.expanded = expandedSet.has(key);
     }
   });
@@ -276,15 +320,18 @@ function rebuildTree() {
     props.restrictHistoryToInpatient && props.stationKind === EMR_TEMPLATE_STATION_KIND.INPATIENT
       ? ['INPATIENT']
       : undefined;
+  const sidebarMode = props.sidebarMode ?? 'all';
   treeData.value = buildEmrTemplateTree(
     cachedTypes.value,
-    cachedTemplates.value,
+    sidebarMode === 'documentsOnly' ? [] : cachedTemplates.value,
     props.documents ?? [],
-    props.historyDocuments ?? [],
+    sidebarMode === 'templatesOnly' ? [] : (props.historyDocuments ?? []),
     {
       allowedCategories,
       currentEncounterId: props.currentEncounterId,
       historyRootLabel: props.historyRootLabel,
+      sidebarMode,
+      documentGroupBy: props.documentGroupBy,
     },
   );
 }
@@ -315,11 +362,13 @@ async function syncCurrentHighlight() {
 async function loadTree() {
   loading.value = true;
   let partialFailure = false;
+  const sidebarMode = props.sidebarMode ?? 'all';
+  const skipTemplates = props.viewOnly || sidebarMode === 'documentsOnly';
   try {
     const [typesResult, templatesResult] = await Promise.allSettled([
       fetchDocumentTypesForTree(),
-      // 只读调阅仅需文书类型目录挂已有病历，不拉可新建模板
-      props.viewOnly ? Promise.resolve([] as TemplateDto[]) : fetchTemplatesForTree(),
+      // 只读 / 仅文书页：不拉可新建模板
+      skipTemplates ? Promise.resolve([] as TemplateDto[]) : fetchTemplatesForTree(),
     ]);
 
     const typeList =
@@ -331,7 +380,12 @@ async function loadTree() {
         ? templatesResult.value
         : ((partialFailure = true), console.error(templatesResult.reason), []);
 
-    if (typeList.length === 0 && templates.length === 0 && !props.viewOnly) {
+    if (
+      typeList.length === 0 &&
+      templates.length === 0 &&
+      !skipTemplates &&
+      sidebarMode !== 'documentsOnly'
+    ) {
       const reason =
         typesResult.status === 'rejected'
           ? typesResult.reason
@@ -358,7 +412,7 @@ async function loadTree() {
     cachedTypes.value = [];
     cachedTemplates.value = [];
     treeData.value = [];
-    ElMessage.error('加载病历模板树失败');
+    ElMessage.error(sidebarMode === 'documentsOnly' ? '加载已写病历失败' : '加载病历模板树失败');
   } finally {
     loading.value = false;
   }
@@ -469,7 +523,17 @@ function isDocumentOpen(node: EmrTemplateTreeNode): boolean {
   );
 }
 
-/** 卡片主诉（有则展示） */
+/** 卡片主行：文书类型名优先，其次标题/主诉 */
+function formatDocumentCardPrimary(doc: DocumentSummaryDto): string {
+  return (
+    (doc.documentTypeName ?? '').trim() ||
+    (doc.title ?? '').trim() ||
+    (doc.chiefComplaint ?? '').trim() ||
+    '病历'
+  );
+}
+
+/** 卡片副行主诉（有类型名时才单独展示主诉） */
 function formatDocumentCardChiefComplaint(doc: DocumentSummaryDto): string {
   return (doc.chiefComplaint ?? '').trim();
 }
@@ -621,6 +685,13 @@ watch(
 );
 
 watch(
+  () => [props.sidebarMode, props.documentGroupBy] as const,
+  () => {
+    void loadTree();
+  },
+);
+
+watch(
   () => [props.documents, props.historyDocuments, props.historyRootLabel] as const,
   () => {
     rebuildTree();
@@ -652,10 +723,13 @@ defineExpose({
 <template>
   <div v-loading="loading" class="emr-template-tree min-h-[120px]">
     <div v-if="!loading && treeData.length === 0" class="text-text-sub py-8 text-center text-sm">
-      <p>暂无文书类型或模板</p>
-      <p v-if="stationKind === EMR_TEMPLATE_STATION_KIND.INPATIENT" class="mt-2 text-xs">
-        请在「基础数据 → 病历模板」维护住院（IMP）文书类型与模板，或联系管理员配置全院模板
-      </p>
+      <p v-if="sidebarMode === 'documentsOnly'">暂无已写病历</p>
+      <template v-else>
+        <p>暂无文书类型或模板</p>
+        <p v-if="stationKind === EMR_TEMPLATE_STATION_KIND.INPATIENT" class="mt-2 text-xs">
+          请在「基础数据 → 病历模板」维护住院（IMP）文书类型与模板，或联系管理员配置全院模板
+        </p>
+      </template>
     </div>
     <ElTree
       v-else
@@ -728,9 +802,9 @@ defineExpose({
                 </span>
                 <span
                   class="emr-template-tree__doc-complaint"
-                  :title="formatDocumentCardChiefComplaint(data.document) || '暂无主诉'"
+                  :title="formatDocumentCardPrimary(data.document)"
                 >
-                  {{ formatDocumentCardChiefComplaint(data.document) || '暂无主诉' }}
+                  {{ formatDocumentCardPrimary(data.document) }}
                 </span>
               </div>
             </div>

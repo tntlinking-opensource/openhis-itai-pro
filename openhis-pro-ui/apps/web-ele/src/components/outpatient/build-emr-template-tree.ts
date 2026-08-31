@@ -165,6 +165,9 @@ function toDocumentLeaf(
   };
 }
 
+/** 侧栏树内容模式：整树 / 仅模板 / 仅已写文书 */
+export type EmrSidebarTreeMode = 'all' | 'templatesOnly' | 'documentsOnly';
+
 /** 按科室聚合历史文书；时间放在卡片内展示 */
 function buildHistoryDocumentTree(
   historyDocuments: DocumentSummaryDto[],
@@ -206,6 +209,38 @@ function buildHistoryDocumentTree(
     isDocumentType: true,
     children: groups.map((g) => g.node),
   };
+}
+
+/**
+ * 仅已写文书树（本诊扁平 / 历史按科室）。
+ * 供侧栏「本诊病历」「历史」分页使用，不混入模板。
+ */
+export function buildEmrDocumentOnlyTree(
+  documents: DocumentSummaryDto[],
+  options?: {
+    currentEncounterId?: string;
+    /** none=本诊扁平列表；dept=按科室分组（跨就诊历史） */
+    groupBy?: 'none' | 'dept';
+    rootLabel?: string;
+  },
+): EmrTemplateTreeNode[] {
+  const currentEncounterId = options?.currentEncounterId;
+  const groupBy = options?.groupBy ?? 'none';
+  if (documents.length === 0) return [];
+
+  if (groupBy === 'none') {
+    // 本诊：直接叶子列表，避免再套「历史」根节点占行
+    return sortDocuments(documents).map((d) =>
+      toDocumentLeaf(d, { history: true, currentEncounterId }),
+    );
+  }
+
+  const root = buildHistoryDocumentTree(
+    documents,
+    currentEncounterId,
+    options?.rootLabel?.trim() || '历史',
+  );
+  return root ? [root] : [];
 }
 
 function toTemplateNode(
@@ -315,6 +350,7 @@ export function filterDocumentsByDirectoryCategories(
  * 以目录分类为父、范围（个人/科室/全院）为子、模板为孙；
  * documents 若传入仍可挂在对应模板下（兼容）；医生站侧栏已改为全部走 historyDocuments；
  * 追加顶级「历史病历」（按科室合并）。
+ * sidebarMode=templatesOnly 时不挂历史；documentsOnly 时仅返回文书树。
  */
 export function buildEmrTemplateTree(
   documentTypes: DocumentTypeDto[],
@@ -326,11 +362,16 @@ export function buildEmrTemplateTree(
     currentEncounterId?: string;
     /** 「历史病历」根节点文案；病案按就诊打开时可改为「本次就诊病历」 */
     historyRootLabel?: string;
+    /** 侧栏分页：整树 / 仅模板 / 仅文书 */
+    sidebarMode?: EmrSidebarTreeMode;
+    /** documentsOnly 时：none 扁平，dept 按科室 */
+    documentGroupBy?: 'none' | 'dept';
   },
 ): EmrTemplateTreeNode[] {
   const currentEncounterId = options?.currentEncounterId;
   const allowedCategories = options?.allowedCategories;
   const historyRootLabel = options?.historyRootLabel?.trim() || '历史病历';
+  const sidebarMode = options?.sidebarMode ?? 'all';
   const scopedDocuments = filterDocumentsByDirectoryCategories(
     documents,
     documentTypes,
@@ -341,6 +382,51 @@ export function buildEmrTemplateTree(
     documentTypes,
     allowedCategories,
   );
+
+  if (sidebarMode === 'documentsOnly') {
+    return buildEmrDocumentOnlyTree(scopedHistoryDocuments, {
+      currentEncounterId,
+      groupBy: options?.documentGroupBy ?? 'dept',
+      rootLabel: historyRootLabel,
+    });
+  }
+
+  // 本诊 / 跨就诊拆分：本诊置顶，历史垫底，中间才是模板
+  const currentEncId = preserveApiIdForRequest(currentEncounterId) ?? '';
+  const currentEncounterDocs: DocumentSummaryDto[] = [];
+  const crossEncounterDocs: DocumentSummaryDto[] = [];
+  if (currentEncId) {
+    for (const doc of scopedHistoryDocuments) {
+      const docEnc = preserveApiIdForRequest(doc.encounterId) ?? '';
+      if (docEnc && docEnc === currentEncId) {
+        currentEncounterDocs.push(doc);
+      } else {
+        crossEncounterDocs.push(doc);
+      }
+    }
+  } else {
+    crossEncounterDocs.push(...scopedHistoryDocuments);
+  }
+
+  const nodes: EmrTemplateTreeNode[] = [];
+
+  // 本诊已写置顶（有文书才挂根节点，避免空文件夹挡模板）
+  if (sidebarMode !== 'templatesOnly' && currentEncounterDocs.length > 0) {
+    const currentLabel =
+      historyRootLabel === '本次就诊病历'
+        ? `${historyRootLabel} (${currentEncounterDocs.length})`
+        : `本诊已写 (${currentEncounterDocs.length})`;
+    nodes.push({
+      nodeKey: 'cat:CURRENT',
+      label: currentLabel,
+      categoryCode: 'CURRENT',
+      isDocumentType: true,
+      children: sortDocuments(currentEncounterDocs).map((d) =>
+        toDocumentLeaf(d, { history: true, currentEncounterId }),
+      ),
+    });
+  }
+
   const typeByCode = new Map<string, DocumentTypeDto>();
   for (const dt of documentTypes) {
     const code = String(dt.code ?? '').trim();
@@ -418,7 +504,6 @@ export function buildEmrTemplateTree(
     typeByCode.set(typeCode, placeholder);
   }
 
-  const nodes: EmrTemplateTreeNode[] = [];
   const allowedCategorySet = allowedCategories?.length
     ? new Set(allowedCategories.map((c) => c.trim().toUpperCase()).filter(Boolean))
     : null;
@@ -526,13 +611,16 @@ export function buildEmrTemplateTree(
     }
   }
 
-  const historyRoot = buildHistoryDocumentTree(
-    scopedHistoryDocuments,
-    currentEncounterId,
-    historyRootLabel,
-  );
-  if (historyRoot) {
-    nodes.push(historyRoot);
+  if (sidebarMode !== 'templatesOnly') {
+    // 仅跨就诊进「历史」；本诊已在顶部，避免重复
+    const historyRoot = buildHistoryDocumentTree(
+      currentEncId ? crossEncounterDocs : scopedHistoryDocuments,
+      currentEncounterId,
+      currentEncId ? '历史病历' : historyRootLabel,
+    );
+    if (historyRoot) {
+      nodes.push(historyRoot);
+    }
   }
 
   return nodes;

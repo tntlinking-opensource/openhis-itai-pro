@@ -33,7 +33,7 @@ public class PatientInitDto {
     private List<OptionDto> identityDocumentType;
     /** 是否类通用选项 */
     private List<OptionDto> whetherStatus;
-    /** 学籍-学历层次（EducationLevel） */
+    /** 学籍-学历层次字典（EducationLevel） */
     private List<OptionDto> educationLevelOptions;
     /** 学籍-学习形式（StudyMode） */
     private List<OptionDto> studyModeOptions;

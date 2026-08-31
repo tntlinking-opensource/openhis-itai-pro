@@ -403,18 +403,21 @@ function formatBedNoLabel(row: PatientItem): string {
   return (row.bedNo ?? '').trim() || '未分床';
 }
 
-/** 头部病区/病房展示（不含床号，床号单独加重） */
-function formatWardHouseLabel(row: PatientItem): string {
-  const parts: string[] = [];
+/** 头部病区展示文案（空则不渲染） */
+function formatWardLabel(row: PatientItem): string {
   const ward = resolveRegionName(row);
+  return ward && ward !== '—' ? ward : '';
+}
+
+/** 头部病房/房号展示文案（空则不渲染） */
+function formatHouseLabel(row: PatientItem): string {
   const house = resolveHouseName(row);
-  if (ward && ward !== '—') {
-    parts.push(ward);
-  }
-  if (house && house !== '—') {
-    parts.push(house);
-  }
-  return parts.join(' · ');
+  return house && house !== '—' ? house : '';
+}
+
+/** 头部病区/病房完整标题（含床号外的位置信息） */
+function formatWardHouseLabel(row: PatientItem): string {
+  return [formatWardLabel(row), formatHouseLabel(row)].filter(Boolean).join(' · ');
 }
 
 watch(
@@ -517,7 +520,18 @@ onUnmounted(() => {
                     class="nurse-ls-card__ward"
                     :title="formatWardHouseLabel(row)"
                   >
-                    {{ formatWardHouseLabel(row) }}
+                    <span v-if="formatWardLabel(row)" class="nurse-ls-card__ward-name">
+                      {{ formatWardLabel(row) }}
+                    </span>
+                    <span
+                      v-if="formatWardLabel(row) && formatHouseLabel(row)"
+                      class="nurse-ls-card__ward-sep"
+                    >
+                      ·
+                    </span>
+                    <span v-if="formatHouseLabel(row)" class="nurse-ls-card__house">
+                      {{ formatHouseLabel(row) }}
+                    </span>
                   </span>
                 </div>
                 <span class="nurse-ls-card__status" :class="`is-${resolveStatusTone(row)}`">
@@ -560,22 +574,24 @@ onUnmounted(() => {
                 <span class="nurse-ls-card__value">{{ row.gender || '—' }}</span>
               </div>
               <div class="nurse-ls-card__field">
-                <span class="nurse-ls-card__label">身份证号</span>
-                <span class="nurse-ls-card__value is-mono">{{ formatIdCardNo(row) }}</span>
-              </div>
-              <div class="nurse-ls-card__field">
                 <span class="nurse-ls-card__label">年龄</span>
                 <span class="nurse-ls-card__value">{{ formatAgeLabel(row) }}</span>
+              </div>
+              <div class="nurse-ls-card__field">
+                <span class="nurse-ls-card__label">欠费限额</span>
+                <span class="nurse-ls-card__value">{{ formatArrearsLimit(row) }}</span>
+              </div>
+              <div class="nurse-ls-card__field nurse-ls-card__field--full">
+                <span class="nurse-ls-card__label">身份证号</span>
+                <span class="nurse-ls-card__value is-mono is-wrap" :title="formatIdCardNo(row)">
+                  {{ formatIdCardNo(row) }}
+                </span>
               </div>
               <div class="nurse-ls-card__field nurse-ls-card__field--full">
                 <span class="nurse-ls-card__label">地址</span>
                 <span class="nurse-ls-card__value is-wrap" :title="formatAddress(row)">
                   {{ formatAddress(row) }}
                 </span>
-              </div>
-              <div class="nurse-ls-card__field">
-                <span class="nurse-ls-card__label">欠费限额</span>
-                <span class="nurse-ls-card__value">{{ formatArrearsLimit(row) }}</span>
               </div>
               <div class="nurse-ls-card__field">
                 <span class="nurse-ls-card__label">入院状态</span>
@@ -595,9 +611,11 @@ onUnmounted(() => {
                   formatStaffName(row.attendingDoctorName)
                 }}</span>
               </div>
-              <div class="nurse-ls-card__field">
+              <div class="nurse-ls-card__field nurse-ls-card__field--full">
                 <span class="nurse-ls-card__label">医保号</span>
-                <span class="nurse-ls-card__value is-mono">{{ formatInsuranceNo(row) }}</span>
+                <span class="nurse-ls-card__value is-mono is-wrap" :title="formatInsuranceNo(row)">
+                  {{ formatInsuranceNo(row) }}
+                </span>
               </div>
               <div class="nurse-ls-card__field">
                 <span class="nurse-ls-card__label">医保类型</span>
@@ -938,7 +956,7 @@ onUnmounted(() => {
 .nurse-ls-card__bed {
   color: var(--el-color-primary);
   flex-shrink: 0;
-  font-size: 18px;
+  font-size: 20px;
   font-variant-numeric: tabular-nums;
   font-weight: 800;
   letter-spacing: 0.02em;
@@ -957,14 +975,32 @@ onUnmounted(() => {
 }
 
 .nurse-ls-card__ward {
-  color: var(--el-text-color-regular);
-  font-size: 11px;
-  font-weight: 500;
+  align-items: baseline;
+  color: var(--el-text-color-primary);
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 4px;
   line-height: 1.2;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.nurse-ls-card__ward-name {
+  font-weight: 700;
+}
+
+.nurse-ls-card__ward-sep {
+  color: var(--el-text-color-secondary);
+  font-weight: 500;
+}
+
+.nurse-ls-card__house {
+  color: var(--el-color-primary);
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
 }
 
 .nurse-ls-card__status {

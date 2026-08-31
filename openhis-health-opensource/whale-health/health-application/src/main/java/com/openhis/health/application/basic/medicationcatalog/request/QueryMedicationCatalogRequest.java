@@ -25,9 +25,9 @@ public class QueryMedicationCatalogRequest extends AbstractHealthPageRequest {
     private String categoryCode;
 
     /**
-     * 基药标识筛选（对应药典 {@code basic_flag}）；{@code null} 表示不限。
+     * 重点药类型筛选（{@link com.openhis.health.domain.share.enums.KeyDrugType#getCode()}）；空/{@code null} 表示不限，非空时筛对应标识为 true 的药品。
      */
-    private Boolean basicFlag;
+    private String keyDrugType;
 
     {
         List<String> where = new ArrayList<>();

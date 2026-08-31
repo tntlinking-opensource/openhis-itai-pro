@@ -5,6 +5,7 @@
 package com.openhis.health.application.inpatient.nursestation.orderexecute.mapper;
 
 import com.openhis.health.application.shared.advice.OrderChargePricingAssembler;
+import com.openhis.health.application.inpatient.nursestation.orderexecute.request.ListNurseStationOrderExecuteForPrintRequest;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.request.ListNurseStationOrderExecuteRequest;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.support.NurseStationOrderExecuteListQuery;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.support.NurseStationOrderExecuteListReadAssembler;
@@ -61,12 +62,31 @@ public class NurseStationOrderExecuteMapperImpl implements NurseStationOrderExec
         if (request == null) {
             return new NurseStationOrderExecuteListQuery();
         }
+        // EXE-01：不下发打印专用区间；planTimeFrom / 开嘱日区间保持空
         return new NurseStationOrderExecuteListQuery()
             .setEncounterIds(request.getEncounterIds())
             .setExecuteTab(request.getExecuteTab())
             .setTherapyType(request.getTherapyType())
             .setExecutionDeadline(request.getExecutionDeadline())
             .setMedicineCategoryTab(request.getMedicineCategoryTab());
+    }
+
+    @Override
+    public NurseStationOrderExecuteListQuery toListQueryForPrint(ListNurseStationOrderExecuteForPrintRequest request) {
+        if (request == null) {
+            return new NurseStationOrderExecuteListQuery();
+        }
+        // 打印中心：透传计划点下界与开嘱日闭区间
+        return new NurseStationOrderExecuteListQuery()
+            .setEncounterIds(request.getEncounterIds())
+            .setExecuteTab(request.getExecuteTab())
+            .setTherapyType(request.getTherapyType())
+            .setExecutionDeadline(request.getExecutionDeadline())
+            .setPlanTimeFrom(request.getPlanTimeFrom())
+            .setReqOpenedTimeFrom(request.getReqOpenedTimeFrom())
+            .setReqOpenedTimeTo(request.getReqOpenedTimeTo())
+            .setMedicineCategoryTab(request.getMedicineCategoryTab())
+            .setExecutionRecordHistory(request.getExecutionRecordHistory());
     }
 
     @Override
@@ -94,8 +114,9 @@ public class NurseStationOrderExecuteMapperImpl implements NurseStationOrderExec
     public void applyExecuteTabSlotFilter(
         NurseStationOrderExecuteRowDto row,
         String executeTab,
-        LocalDateTime executionDeadline) {
-        readAssembler.applyExecuteTabSlotFilter(row, executeTab, executionDeadline);
+        LocalDateTime executionDeadline,
+        LocalDateTime planTimeFrom) {
+        readAssembler.applyExecuteTabSlotFilter(row, executeTab, executionDeadline, planTimeFrom);
     }
 
     /**

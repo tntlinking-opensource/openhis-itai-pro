@@ -7,6 +7,7 @@ package com.openhis.chs.application.notice.service;
 import com.openhis.chs.application.notice.dto.NoticeScanImportResultDto;
 import com.openhis.chs.application.notice.mapper.InsuranceCatalogNoticeMapper;
 import com.openhis.chs.application.notice.request.ApplyNoticeDocRequest;
+import com.openhis.chs.application.notice.request.CheckCatalogIssuesRequest;
 import com.openhis.chs.application.notice.request.CloseNoticeTodoRequest;
 import com.openhis.chs.application.notice.request.ConfirmNoticeScanImportRequest;
 import com.openhis.chs.application.notice.request.DownloadNoticePackRequest;
@@ -21,6 +22,7 @@ import com.openhis.chs.application.notice.request.RerunNoticeComplianceRequest;
 import com.openhis.chs.application.notice.request.ResumeConfirmNoticeScanImportRequest;
 import com.openhis.chs.application.notice.request.ScanNoticeCanonicalDirRequest;
 import com.openhis.chs.application.notice.response.ApplyNoticeDocResponse;
+import com.openhis.chs.application.notice.response.CheckCatalogIssuesResponse;
 import com.openhis.chs.application.notice.response.CloseNoticeTodoResponse;
 import com.openhis.chs.application.notice.response.ConfirmNoticeScanImportResponse;
 import com.openhis.chs.application.notice.response.DownloadNoticePackResponse;
@@ -49,11 +51,14 @@ import com.openhis.chs.application.notice.support.dto.NoticeImportJob;
 import com.openhis.chs.application.notice.support.dto.NoticeScanCachedItem;
 import com.openhis.chs.application.notice.support.dto.NoticeScanJob;
 import com.openhis.chs.application.notice.support.dto.NoticeScanSession;
+import com.openhis.chs.domain.catalog.access.ChsInsuranceContractReader;
+import com.openhis.chs.domain.contract.ChsContractSnapshot;
 import com.openhis.chs.domain.notice.command.ApplyNoticeDocCommand;
 import com.openhis.chs.domain.notice.command.CloseNoticeTodoCommand;
 import com.openhis.chs.domain.notice.command.RunComplianceCommand;
 import com.openhis.chs.domain.notice.model.ApplyNoticeDocResult;
 import com.openhis.chs.domain.notice.model.ApplyPreviewView;
+import com.openhis.chs.domain.notice.model.CatalogCheckResult;
 import com.openhis.chs.domain.notice.model.CloseNoticeTodoResult;
 import com.openhis.chs.domain.notice.model.ComplianceReportView;
 import com.openhis.chs.domain.notice.model.GetComplianceReportQuery;
@@ -68,6 +73,7 @@ import com.openhis.chs.domain.notice.model.PageNoticeTodoQuery;
 import com.openhis.chs.domain.notice.model.PreviewApplyQuery;
 import com.openhis.chs.domain.notice.model.RunComplianceResult;
 import com.openhis.chs.domain.notice.port.CatalogNoticePackStorePort;
+import com.openhis.chs.domain.notice.queryservice.CatalogCheckQueryService;
 import com.openhis.chs.domain.notice.queryservice.CatalogNoticeApplyPreviewQueryService;
 import com.openhis.chs.domain.notice.queryservice.CatalogNoticeComplianceQueryService;
 import com.openhis.chs.domain.notice.queryservice.CatalogNoticeDocQueryService;
@@ -107,8 +113,10 @@ public class InsuranceCatalogNoticeAppService {
     private final CatalogNoticeApplyPreviewQueryService catalogNoticeApplyPreviewQueryService;
     private final CatalogNoticeComplianceQueryService catalogNoticeComplianceQueryService;
     private final CatalogNoticeTodoQueryService catalogNoticeTodoQueryService;
+    private final CatalogCheckQueryService catalogCheckQueryService;
     private final CatalogNoticePackStorePort catalogNoticePackStorePort;
     private final InsuranceCatalogNoticeMapper insuranceCatalogNoticeMapper;
+    private final ChsInsuranceContractReader chsInsuranceContractReader;
 
     /**
      * 扫描配置目录下标准落地包（IF-CHS-CAT-005-W-01）。
@@ -694,6 +702,29 @@ public class InsuranceCatalogNoticeAppService {
         NoticePageResult<NoticeTodoView> pageResult = catalogNoticeTodoQueryService.pageTodos(query);
         // Asm：装配汇总与分页响应
         return insuranceCatalogNoticeMapper.toPageTodoResponse(summary, pageResult);
+    }
+
+    /**
+     * 目录检查（只读）：对照院内已启用医保项与国家目录、已应用局文的有效期 / 启用 / 限价。
+     * <p>不写待办；人工改目录后再查，查不到即视为已处理。</p>
+     *
+     * @param request 可选契约、目录类别
+     * @return 扫描统计与问题行
+     */
+    public CheckCatalogIssuesResponse checkCatalogIssues(CheckCatalogIssuesRequest request) {
+        CheckCatalogIssuesRequest safe = request;
+        if (safe == null) {
+            safe = new CheckCatalogIssuesRequest();
+        }
+        Long contractId = safe.getContractId();
+        String contractBusNo = safe.getContractBusNo();
+        if (contractId != null || (contractBusNo != null && !contractBusNo.isBlank())) {
+            ChsContractSnapshot contract = chsInsuranceContractReader.requireContract(contractBusNo, contractId);
+            contractId = contract.id();
+        }
+        CatalogCheckResult result = catalogCheckQueryService.check(
+            TenantUtils.getCurrentTenantId(), contractId, safe.getProductKind());
+        return insuranceCatalogNoticeMapper.toCheckCatalogResponse(result);
     }
 
     private GetConfirmNoticeScanImportProgressResponse toImportProgressResponse(NoticeImportJob job) {

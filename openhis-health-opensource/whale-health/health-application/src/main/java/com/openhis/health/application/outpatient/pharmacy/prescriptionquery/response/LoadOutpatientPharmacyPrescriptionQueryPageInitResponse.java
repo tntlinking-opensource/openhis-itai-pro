@@ -55,4 +55,16 @@ public class LoadOutpatientPharmacyPrescriptionQueryPageInitResponse {
     /** 开单科室下拉（门诊启用科室；value=组织主键字符串）。 */
     @Schema(description = "开单科室下拉")
     private List<OptionDto> organizationOptions;
+
+    /** 点评状态下拉（PENDING / REVIEWED）。 */
+    @Schema(description = "点评状态下拉")
+    private List<OptionDto> reviewStatusOptions;
+
+    /** 是否合理下拉（合理 / 不合理；value 为字符串化布尔）。 */
+    @Schema(description = "是否合理下拉")
+    private List<OptionDto> reasonableOptions;
+
+    /** 药品类型下拉（药典术语 medication_category_code）。 */
+    @Schema(description = "药品类型下拉")
+    private List<OptionDto> medicationCategoryOptions;
 }

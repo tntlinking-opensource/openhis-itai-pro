@@ -26,14 +26,17 @@ import com.openhis.health.domain.medication.medicationrequest.command.CreateMedi
 import com.openhis.health.domain.medication.medicationrequest.command.RemoveMedicationOrderDraftCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.SignMedicationOrderCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.SignOffMedicationOrderCommand;
+import com.openhis.health.application.inpatient.doctorstation.advice.dto.SaveInpatientMedicationAdviceDraftLinePayload;
 import com.openhis.health.application.inpatient.doctorstation.advice.dto.StopLongTermAdviceLineRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.request.ChangeInpatientDoctorStationAdviceBusinessTimeRequest;
+import com.openhis.health.application.inpatient.doctorstation.advice.request.ChangeLongTermMedicationDoseInpatientDoctorStationAdviceRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.request.CreateDischargeInpatientDoctorStationAdviceRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.response.CreateDischargeInpatientDoctorStationAdviceResponse;
 import com.openhis.health.domain.custom.encounterhistory.command.RecordDischargeMilestoneCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.CancelStopLongTermMedicationOrderCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.ChangeMedicationRequestBusinessTimeCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.StopLongTermMedicationOrderCommand;
+import com.openhis.health.domain.medication.medicationrequest.entity.MedicationRequest;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.enums.EncounterStatus;
@@ -638,6 +641,91 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
         } else {
             cmd.setStopTime(LocalDateTime.now());
         }
+        return cmd;
+    }
+
+    /**
+     * 装配长期药品改量停嘱命令（IF-IP-DOR-28）。
+     *
+     * @param request    改量请求
+     * @param operatorId 停嘱人
+     * @return 停嘱命令
+     */
+    @Override
+    public StopLongTermMedicationOrderCommand toStopLongTermMedicationOrderCommandForDoseChange(
+        ChangeLongTermMedicationDoseInpatientDoctorStationAdviceRequest request,
+        Long operatorId
+    ) {
+        StopLongTermMedicationOrderCommand cmd = new StopLongTermMedicationOrderCommand();
+        cmd.setOperatorId(operatorId);
+        cmd.setId(request.getSourceMedicationRequestId());
+        // 医生可指定停嘱时刻；空则当前，与 IF-IP-DOR-20 同口径
+        if (request.getStopTime() != null) {
+            cmd.setStopTime(request.getStopTime());
+        } else {
+            cmd.setStopTime(LocalDateTime.now());
+        }
+        return cmd;
+    }
+
+    /**
+     * 装配长期药品改量新建草稿命令（强制长期 + based_on→源嘱；药品不可换）。
+     *
+     * @param request    改量请求
+     * @param source     源嘱
+     * @param operatorId 开嘱人
+     * @param orgId      开立机构
+     * @return 创建草稿命令
+     */
+    @Override
+    public CreateMedicationOrderDraftCommand toCreateMedicationOrderDraftCommandForDoseChange(
+        ChangeLongTermMedicationDoseInpatientDoctorStationAdviceRequest request,
+        MedicationRequest source,
+        Long operatorId,
+        Long orgId
+    ) {
+        SaveInpatientMedicationAdviceDraftLinePayload payload = request.getMedicationPayload();
+        if (payload == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT,
+                DoctorStationAdviceConstants.MSG_CHANGE_DOSE_PAYLOAD_REQUIRED);
+        }
+        CreateMedicationOrderDraftCommand cmd = new CreateMedicationOrderDraftCommand();
+        cmd.setOperatorId(operatorId);
+        cmd.setEncounterId(request.getEncounterId());
+        cmd.setPatientId(request.getPatientId());
+        // 药品锁定为源嘱，忽略前端误传其它定义
+        cmd.setMedicationId(source.getMedicationId());
+        cmd.setTherapyEnum(TherapyType.LONG_TERM.getCode());
+        BigDecimal medQty = payload.getQuantity();
+        if (medQty == null) {
+            medQty = BigDecimal.ONE;
+        }
+        cmd.setQuantity(medQty);
+        cmd.setUnitCode(StringUtils.firstNonBlank(
+            payload.getUnitCode(),
+            DoctorStationAdviceConstants.DEFAULT_MEDICATION_REQUEST_UNIT_CODE_PLACEHOLDER));
+        cmd.setMethodCode(payload.getMethodCode());
+        cmd.setRateCode(payload.getRateCode());
+        cmd.setSpeedCode(payload.getSpeedCode());
+        cmd.setGenerateSourceEnum(GenerateSource.DOCTOR_PRESCRIPTION.getCode());
+        cmd.setOrgId(orgId);
+        cmd.setRecorderId(operatorId);
+        // 改量新嘱独立开立：禁止继承源嘱/载荷组号，避免与旧嘱并组展示
+        cmd.setGroupId(null);
+        cmd.setDose(payload.getDose());
+        cmd.setDoseUnitCode(payload.getDoseUnitCode());
+        // 改量恒为长期：允许首日量
+        cmd.setFirstDose(payload.getFirstDose());
+        cmd.setFirstDoseUnitCode(payload.getFirstDoseUnitCode());
+        cmd.setDispensePerDuration(payload.getDispensePerDuration());
+        cmd.setSkinTestFlag(payload.getSkinTestFlag());
+        cmd.setEncounterDiagnosisIds(payload.getEncounterDiagnosisIds());
+        cmd.setContractId(payload.getContractId());
+        cmd.setRemark(payload.getRemark());
+        // 改量链：药嘱→药嘱
+        cmd.setBasedOnTable(TableNameConstants.MED_MEDICATION_REQUEST);
+        cmd.setBasedOnId(source.getId());
         return cmd;
     }
 

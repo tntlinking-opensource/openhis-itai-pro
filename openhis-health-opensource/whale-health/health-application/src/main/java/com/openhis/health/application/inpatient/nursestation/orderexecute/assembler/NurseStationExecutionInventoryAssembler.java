@@ -454,6 +454,7 @@ public class NurseStationExecutionInventoryAssembler {
                 category,
                 line.getMedicationId(),
                 line.getMethodCode(),
+                null,
                 null);
             for (Long locId : locs) {
                 merged.add(locId);

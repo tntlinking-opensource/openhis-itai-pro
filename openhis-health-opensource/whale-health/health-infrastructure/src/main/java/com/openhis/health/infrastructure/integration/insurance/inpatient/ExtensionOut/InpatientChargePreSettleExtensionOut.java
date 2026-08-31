@@ -62,4 +62,16 @@ public class InpatientChargePreSettleExtensionOut {
      * <p>只读展示；不参与本地应收重算。</p>
      */
     private BigDecimal othPay;
+
+    /** 全自费金额（setlinfo.fulamt_ownpay_amt）。 */
+    private BigDecimal fulamtOwnpayAmt;
+
+    /** 先行自付（setlinfo.preselfpay_amt）。 */
+    private BigDecimal preselfpayAmt;
+
+    /** 符合政策范围金额（setlinfo.inscp_scp_amt）。 */
+    private BigDecimal inscpScpAmt;
+
+    /** 超限价自费（setlinfo.overlmt_selfpay）。 */
+    private BigDecimal overlmtSelfpay;
 }

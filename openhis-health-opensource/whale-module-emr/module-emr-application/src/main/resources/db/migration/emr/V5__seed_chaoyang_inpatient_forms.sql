@@ -6,7 +6,7 @@ INSERT INTO emr_metadata_field_def (
     id, field_key, label, data_type, editable_default, value_source, source_path,
     mask_rule, sort_order, is_enabled, default_value, created_at, is_deleted, tenant_id, created_by
 ) VALUES
-(323100000000000150, 'wardName', '病房', 'string', TRUE, 'MANUAL', NULL, 'NONE', 150, TRUE, NULL, TIMESTAMP '2026-07-24 12:00:00+00', FALSE, 1, 1),
+(323100000000000150, 'wardName', '病房', 'string', TRUE, 'ENCOUNTER', 'encounter.houseName', 'NONE', 150, TRUE, NULL, TIMESTAMP '2026-07-24 12:00:00+00', FALSE, 1, 1),
 (323100000000000151, 'admissionDiagnosisText', '入院诊断', 'string', TRUE, 'DIAGNOSIS', 'diagnosis.primaryDisplay', 'NONE', 151, TRUE, NULL, TIMESTAMP '2026-07-24 12:00:00+00', FALSE, 1, 1),
 (323100000000000152, 'treatmentResult', '治疗结果', 'string', TRUE, 'MANUAL', NULL, 'NONE', 152, TRUE, NULL, TIMESTAMP '2026-07-24 12:00:00+00', FALSE, 1, 1),
 (323100000000000153, 'admissionCondition', '入院情况', 'string', TRUE, 'MANUAL', NULL, 'NONE', 153, TRUE, NULL, TIMESTAMP '2026-07-24 12:00:00+00', FALSE, 1, 1),

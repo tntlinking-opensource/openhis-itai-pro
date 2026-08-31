@@ -9,11 +9,16 @@ export interface MasterPendingRowDto {
   checkInTime?: null | string;
   deptCompleteRatio?: null | string;
   encounterId: string;
+  genderEnum?: null | string;
+  groupFlag?: boolean | null;
+  patientAge?: null | number;
+  patientId?: null | string;
   patientName?: null | string;
 }
 
 export interface SearchPendingMasterRequest {
   endDate?: null | string;
+  groupFlag?: boolean | null;
   keyword?: string;
   pageNo: number;
   pageSize: number;
@@ -27,6 +32,7 @@ export interface SearchPendingMasterResponse {
 
 export interface MasterObservationRowDto {
   categoryCode?: null | string;
+  definitionDisplay?: null | string;
   definitionId?: null | string;
   id?: null | string;
   interpretationCode?: null | string;
@@ -37,16 +43,24 @@ export interface MasterObservationRowDto {
 }
 
 export interface DeptSummarySectionDto {
+  activityDisplay?: null | string;
+  execStatusEnum?: null | string;
   observations: MasterObservationRowDto[];
   serviceRequestId?: null | string;
 }
 
 export interface MasterSummaryResponse {
+  busNo?: null | string;
   conclusionText?: null | string;
+  deptCompleteRatio?: null | string;
   deptSections: DeptSummarySectionDto[];
   diagnosticReportId?: null | string;
   encounterId: string;
+  genderEnum?: null | string;
+  groupFlag?: boolean | null;
+  patientAge?: null | number;
   patientId?: null | string;
+  patientName?: null | string;
   reportStatusEnum?: null | string;
   summaryText?: null | string;
 }

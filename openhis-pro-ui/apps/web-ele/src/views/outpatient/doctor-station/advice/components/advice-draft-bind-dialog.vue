@@ -12,6 +12,7 @@ import {
   ElTable,
   ElTableColumn,
 } from 'element-plus';
+import type { CheckboxGroupValueType } from 'element-plus';
 
 import {
   adviceDraftBindDialogOpen,
@@ -66,7 +67,8 @@ function handleRemoveRow(index: number) {
 }
 
 /** 更新「不再提示」勾选 */
-function handleSkipSourceChange(keys: string[]) {
+function handleSkipSourceChange(val: CheckboxGroupValueType) {
+  const keys = Array.isArray(val) ? val.map((item) => String(item)) : [];
   replaceAdviceDraftBindDialogSkipSourceKeys(keys);
 }
 

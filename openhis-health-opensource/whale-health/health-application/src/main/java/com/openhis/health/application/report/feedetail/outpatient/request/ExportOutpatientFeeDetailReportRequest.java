@@ -6,6 +6,7 @@ package com.openhis.health.application.report.feedetail.outpatient.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.openhis.whale.core.application.dto.ExcelExportColumnDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
@@ -80,4 +81,10 @@ public class ExportOutpatientFeeDetailReportRequest {
      */
     @Schema(description = "汇总维度 FIN_TYPE/DEPARTMENT/FEE_CATEGORY/ITEM")
     private String summaryDimension;
+
+    /**
+     * 前端下发的导出列；空则导出全部 {@code @Excel} 列。
+     */
+    @Schema(description = "导出列清单（页面可见列）")
+    private List<ExcelExportColumnDto> exportColumns;
 }

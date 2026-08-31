@@ -31,6 +31,23 @@ export function resolveEmrAssetUrl(url: string): string {
   return `/${raw}`;
 }
 
+/** 探测图片 URL 是否可被 <img> 加载（无 Authorization，与编辑器展示一致） */
+export function probeEmrImageSrc(src: string): Promise<boolean> {
+  const url = src.trim();
+  if (!url) {
+    return Promise.resolve(false);
+  }
+  if (url.startsWith('data:')) {
+    return Promise.resolve(true);
+  }
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(true);
+    img.onerror = () => resolve(false);
+    img.src = url;
+  });
+}
+
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -47,5 +64,9 @@ export async function uploadEditorImageApi(file: File): Promise<string> {
     fileName: file.name,
     mimeType: file.type || undefined,
   } satisfies UploadEditorImageParams);
-  return resolveEmrAssetUrl(dto.url);
+  const url = resolveEmrAssetUrl(dto?.url ?? '');
+  if (!url) {
+    throw new Error('uploadEditorImage 未返回可访问 url');
+  }
+  return url;
 }

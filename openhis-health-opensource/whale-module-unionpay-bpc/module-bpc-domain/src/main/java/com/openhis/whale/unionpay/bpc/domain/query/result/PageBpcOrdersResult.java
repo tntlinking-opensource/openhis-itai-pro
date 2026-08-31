@@ -37,6 +37,9 @@ public class PageBpcOrdersResult {
 
         private Long txnAmtFen;
 
+        /** 银联/POS 回传实付（分） */
+        private Long paidAmtFen;
+
         private String payType;
 
         private String status;

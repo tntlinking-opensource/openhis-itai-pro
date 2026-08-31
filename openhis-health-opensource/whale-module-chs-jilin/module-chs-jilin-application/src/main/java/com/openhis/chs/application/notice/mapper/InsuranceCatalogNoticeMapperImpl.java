@@ -5,12 +5,14 @@
 package com.openhis.chs.application.notice.mapper;
 
 import com.openhis.chs.application.notice.dto.ApplyPreviewSampleDto;
+import com.openhis.chs.application.notice.dto.CatalogCheckIssueDto;
 import com.openhis.chs.application.notice.dto.ComplianceIssueDto;
 import com.openhis.chs.application.notice.dto.NoticeDocRowDto;
 import com.openhis.chs.application.notice.dto.NoticeLineRowDto;
 import com.openhis.chs.application.notice.dto.NoticeScanItemDto;
 import com.openhis.chs.application.notice.dto.NoticeTodoRowDto;
 import com.openhis.chs.application.notice.response.ApplyNoticeDocResponse;
+import com.openhis.chs.application.notice.response.CheckCatalogIssuesResponse;
 import com.openhis.chs.application.notice.response.CloseNoticeTodoResponse;
 import com.openhis.chs.application.notice.response.GetComplianceReportResponse;
 import com.openhis.chs.application.notice.response.NoticeTodoSummaryResponse;
@@ -27,6 +29,8 @@ import com.openhis.chs.domain.notice.command.PersistNoticeLineCommand;
 import com.openhis.chs.domain.notice.model.ApplyNoticeDocResult;
 import com.openhis.chs.domain.notice.model.ApplyPreviewSampleView;
 import com.openhis.chs.domain.notice.model.ApplyPreviewView;
+import com.openhis.chs.domain.notice.model.CatalogCheckIssueView;
+import com.openhis.chs.domain.notice.model.CatalogCheckResult;
 import com.openhis.chs.domain.notice.model.CloseNoticeTodoResult;
 import com.openhis.chs.domain.notice.model.ComplianceIssueView;
 import com.openhis.chs.domain.notice.model.ComplianceReportView;
@@ -427,6 +431,54 @@ public class InsuranceCatalogNoticeMapperImpl implements InsuranceCatalogNoticeM
             }
         }
         response.setRecords(rows);
+        return response;
+    }
+
+    /**
+     * 将目录检查领域结果装配为 HTTP 响应。
+     *
+     * @param result 扫描结果；可空
+     * @return 响应；result 空时计数为 0
+     */
+    @Override
+    public CheckCatalogIssuesResponse toCheckCatalogResponse(CatalogCheckResult result) {
+        CheckCatalogIssuesResponse response = new CheckCatalogIssuesResponse();
+        if (result == null) {
+            return response;
+        }
+        response.setAsOf(result.getAsOf());
+        response.setScannedCount(result.getScannedCount());
+        response.setCatalogItemCount(result.getCatalogItemCount());
+        response.setIssueCount(result.getIssueCount());
+        response.setExpiredCount(result.getExpiredCount());
+        response.setDisabledCount(result.getDisabledCount());
+        response.setNoticeStopCount(result.getNoticeStopCount());
+        response.setNoticeExpiredCount(result.getNoticeExpiredCount());
+        response.setNoticeNotEffectiveCount(result.getNoticeNotEffectiveCount());
+        response.setPriceOverCount(result.getPriceOverCount());
+        response.setMissingYbNoCount(result.getMissingYbNoCount());
+        response.setNotInCatalogCount(result.getNotInCatalogCount());
+        List<CatalogCheckIssueDto> rows = new ArrayList<>();
+        if (result.getIssues() != null) {
+            for (CatalogCheckIssueView view : result.getIssues()) {
+                CatalogCheckIssueDto dto = new CatalogCheckIssueDto();
+                dto.setIssueCode(view.getIssueCode());
+                dto.setIssueLabel(view.getIssueLabel());
+                dto.setMessage(view.getMessage());
+                dto.setProductKind(view.getProductKind());
+                dto.setProductTable(view.getProductTable());
+                dto.setProductId(view.getProductId());
+                dto.setProjectCode(view.getProjectCode());
+                dto.setProductName(view.getProductName());
+                dto.setHilistCode(view.getHilistCode());
+                dto.setEnddate(view.getEnddate());
+                dto.setValiFlag(view.getValiFlag());
+                dto.setSalePrice(view.getSalePrice());
+                dto.setLimitAmt(view.getLimitAmt());
+                rows.add(dto);
+            }
+        }
+        response.setIssues(rows);
         return response;
     }
 }

@@ -72,6 +72,11 @@ public interface GeneralSharedConstants {
     String DASH = "-";
 
     /**
+     * 斜杠分隔符（路径片段、库房包装拆零比例展示 {@code 1盒/36片} 等）。
+     */
+    String SLASH = "/";
+
+    /**
      * 手机号正则（中国大陆）。
      */
     String PHONE_REGEX = "^1[3-9]\\d{9}$";
@@ -241,6 +246,18 @@ public interface GeneralSharedConstants {
 
 /** GeneralShared 共享常量：ZERO，值 {@code 0}。 */
     String ZERO = "0";
+
+    /**
+     * 展示用数字「1」（包装拆零比例前缀 {@code 1盒/36片}、装量后缀 {@code 1片x100} 等）。
+     *
+     * <p>与整型 {@link #ONE}、开关字面量 {@link #WHALE_SETTING_SWITCH_ON} 语义不同：本常量仅作字符串拼接。</p>
+     */
+    String DIGIT_ONE = "1";
+
+    /**
+     * 临床包装装量倍数标记（{@code 1片x100} 中的 {@code x}）。
+     */
+    String CLINICAL_PACKAGE_SPLIT_RATIO_MARK = "x";
 
     /**
      * {@code whale_settings} 开关型配置开启值（如自动扣库、住院长嘱可拆等）。

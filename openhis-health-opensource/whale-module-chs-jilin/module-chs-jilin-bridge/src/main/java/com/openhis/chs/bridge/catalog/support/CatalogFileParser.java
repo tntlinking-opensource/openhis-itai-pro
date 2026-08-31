@@ -9,10 +9,13 @@ import static com.openhis.whale.core.application.util.StringUtils.isNotEmpty;
 import static com.openhis.whale.core.application.util.StringUtils.isEmpty;
 import com.alibaba.fastjson2.JSON;
 import com.openhis.chs.domain.catalog.command.UpsertNationalCatalogRowCommand;
+import com.openhis.chs.domain.catalog.support.NationalCatalog1301FieldExtractor;
 import com.openhis.chs.domain.catalog.support.NationalCatalogPackFieldExtractor;
 import com.openhis.chs.domain.share.constants.ChsCatalogConstants;
 import com.openhis.chs.domain.share.constants.ChsErrorCodes;
+import com.openhis.chs.domain.share.constants.ChsInfNo;
 import com.openhis.whale.core.application.exception.BusinessException;
+import com.openhis.whale.core.infrastructure.util.ChineseConvertUtils;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
@@ -403,6 +406,8 @@ public final class CatalogFileParser {
         cmd.setChrgitmLv(column(cols, spec.idxChrgitmLv()));
         cmd.setBegndate(parseDate(column(cols, spec.idxBegndate())));
         cmd.setEnddate(parseDate(column(cols, spec.idxEnddate())));
+        apply1301Fallbacks(spec, cols, cmd);
+        fillPinyinIfMissing(cmd);
         cmd.setUpdtTime(ChsDateTimeParseUtil.parseLocalDateTime(column(cols, spec.idxUpdtTime())));
         cmd.setSourceInfno(spec.sourceInfno());
         cmd.setSourceLineNo(lineNo);
@@ -458,20 +463,50 @@ public final class CatalogFileParser {
         return max;
     }
 
+    /** 1301：通用名为占位符时回退注册名/商品名；日期回退生效/失效时间。 */
+    private static void apply1301Fallbacks(
+            CatalogFileParserSpec spec, String[] cols, UpsertNationalCatalogRowCommand cmd) {
+        if (!ChsInfNo.DRUG_CATALOG_DOWNLOAD.equals(spec.infno())) {
+            return;
+        }
+        NationalCatalog1301FieldExtractor.DisplayFields extra =
+            NationalCatalog1301FieldExtractor.fromColumns(cols);
+        if (cmd.getHilistName() == null) {
+            cmd.setHilistName(extra.hilistName());
+        }
+        if (cmd.getChrgitmLv() == null) {
+            cmd.setChrgitmLv(extra.chrgitmLv());
+        }
+        if (cmd.getLmtUsedFlag() == null) {
+            cmd.setLmtUsedFlag(extra.lmtUsedFlag());
+        }
+        if (cmd.getBegndate() == null) {
+            cmd.setBegndate(parseDate(extra.begndate()));
+        }
+        if (cmd.getEnddate() == null) {
+            cmd.setEnddate(parseDate(extra.enddate()));
+        }
+        if (cmd.getPinyin() == null) {
+            cmd.setPinyin(extra.pinyin());
+        }
+    }
+
+    /** 文件未给拼音时按名称生成首字母，避免页面出现字面量 null。 */
+    private static void fillPinyinIfMissing(UpsertNationalCatalogRowCommand cmd) {
+        if (cmd.getPinyin() != null || isEmpty(cmd.getHilistName())) {
+            return;
+        }
+        String pinyin = ChineseConvertUtils.toPinyinFirstLetter(cmd.getHilistName());
+        if (isNotEmpty(pinyin)) {
+            cmd.setPinyin(pinyin);
+        }
+    }
+
     private static String column(String[] cols, int index) {
         if (cols == null || index < 0 || index >= cols.length) {
             return null;
         }
-        String value = cols[index];
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        String trimmed = value.trim();
-        // 国家局 TXT 空字段常写作字面量 "null"，不能当有效编码/名称入库
-        if ("null".equalsIgnoreCase(trimmed)) {
-            return null;
-        }
-        return trimmed;
+        return NationalCatalog1301FieldExtractor.clean(cols[index]);
     }
 
     private static LocalDate parseDate(String value) {
@@ -485,7 +520,11 @@ public final class CatalogFileParser {
             text = value;
         }
         try {
-            return LocalDate.parse(text);
+            LocalDate date = LocalDate.parse(text);
+            if (date.getYear() <= 1) {
+                return null;
+            }
+            return date;
         } catch (DateTimeParseException ex) {
             return null;
         }

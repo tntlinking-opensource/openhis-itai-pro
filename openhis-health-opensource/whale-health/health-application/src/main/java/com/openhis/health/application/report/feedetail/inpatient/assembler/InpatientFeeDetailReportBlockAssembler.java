@@ -317,27 +317,28 @@ public class InpatientFeeDetailReportBlockAssembler {
             }
         }
         // Asm：回填历史进价（与售价同号；诊疗无进价留空）
-        this.applyPurchasePrices(lineDto, chargeItemId, bundle);
+        this.applyPurchasePrices(lineDto, row.getChargeItem(), bundle);
         return lineDto;
     }
 
     /**
      * 将批量进价回填到明细行（退费行与售价同号；诊疗无进价则留空）。
      *
-     * <p>单价按包装价折算为拆零展示价；行额为包装锚合计（已在 bundle 中算好）。</p>
+     * <p>单价与收费数量单位对齐（包装操作单位展示包装价；拆零操作单位才折展示拆零价）；行额为包装锚合计（已在 bundle 中算好）。</p>
      *
      * @param lineDto      已装配售价/实收的明细行
-     * @param chargeItemId 收费明细主键
+     * @param chargeItem   收费明细实体
      * @param bundle       enrichment 上下文
      */
     private void applyPurchasePrices(
         OutpatientFeeDetailLineDto lineDto,
-        Long chargeItemId,
+        ChargeItem chargeItem,
         FeeDetailEnrichmentBundle bundle) {
         BigDecimal signMultiplier = BigDecimal.ONE;
         if (OutpatientFeeDetailConstants.TRADE_DIRECTION_REFUND.equals(lineDto.getTradeDirection())) {
             signMultiplier = new BigDecimal("-1");
         }
+        Long chargeItemId = chargeItem != null ? chargeItem.getId() : null;
         BigDecimal purchaseUnit = null;
         BigDecimal purchaseAmount = null;
         if (chargeItemId != null) {
@@ -354,9 +355,22 @@ public class InpatientFeeDetailReportBlockAssembler {
         if (chargeItemId != null && bundle.packageUnitRatioByChargeItemId != null) {
             ratio = bundle.packageUnitRatioByChargeItemId.get(chargeItemId);
         }
-        // 展示单价：包装价 → 拆零单位（仅展示）
-        BigDecimal displayUnit =
-            this.chargeItemPackageUnitRatioSupport.toSplitUnitDisplayPrice(purchaseUnit, ratio);
+        ProductDefinitionDisplayDto product = null;
+        if (chargeItem != null && bundle.productByCompositeKey != null) {
+            ProductDefinitionBatchLookup lookup =
+                ChargeItemProductLookupHelper.buildLookupFromChargeItem(chargeItem);
+            if (lookup != null
+                && lookup.getProductTableName() != null
+                && lookup.getProductDefinitionId() != null) {
+                String compositeKey = ProductDefinitionKeyUtil.buildCompositeKey(
+                    lookup.getProductTableName(), lookup.getProductDefinitionId());
+                if (compositeKey != null) {
+                    product = bundle.productByCompositeKey.get(compositeKey);
+                }
+            }
+        }
+        BigDecimal displayUnit = this.chargeItemPackageUnitRatioSupport.toChargeAlignedPurchaseDisplayUnitPrice(
+            purchaseUnit, ratio, chargeItem, product);
         if (displayUnit != null) {
             lineDto.setPurchaseUnitPrice(
                 MonetaryAmountSupport.applySignAtCalcScale(displayUnit, signMultiplier));

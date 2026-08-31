@@ -30,8 +30,8 @@ public class PatientQueueItemDto implements InpatientAccountBalanceDisplayDtoApp
     /** 就诊主键。 */
     private Long encounterId;
 
-    /** 就诊默认自费账户主键。 */
-    @Schema(description = "就诊默认自费账户主键")
+    /** 就诊默认挂账账户主键（医保入院=医保户，否则个人现金户；执行/划价回传）。 */
+    @Schema(description = "就诊默认挂账账户主键（医保优先）")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long accountId;
 
@@ -90,9 +90,9 @@ public class PatientQueueItemDto implements InpatientAccountBalanceDisplayDtoApp
     /**
      * 床号展示。
      *
-     * <p>无活动床（召回未占床）时为「原{床名}（未占床）」。</p>
+     * <p>无活动床（召回未占床）时为「原{房名}-{床名}（未占床）」。</p>
      */
-    @Schema(description = "床号；未占床时含「原…（未占床）」")
+    @Schema(description = "床号；未占床时为「原房-床（未占床）」")
     private String bedName;
 
     /** 科室主键。 */

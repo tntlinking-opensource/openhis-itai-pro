@@ -98,14 +98,11 @@ const POSITIVE_QTY_SUPPORTED_SOURCES = new Set<ProductPickListSource>([
   'dept-return',
 ]);
 
-/** 出库/调出/退库：默认仅查账面量>0 */
-const POSITIVE_QTY_DEFAULT_TRUE_SOURCES = new Set<ProductPickListSource>([
-  'stock-out',
-  'warehouse-transfer-out',
-  'pharmacy-transfer-out',
-  'dept-transfer-out',
-  'return-to-warehouse',
-  'dept-return',
+/** 盘点：默认含零库存；其余已支持 positiveQuantityOnly 的库房操作默认仅查账面量>0 */
+const POSITIVE_QTY_STOCKTAKE_SOURCES = new Set<ProductPickListSource>([
+  'warehouse-stocktake',
+  'pharmacy-stocktake',
+  'dept-stocktake',
 ]);
 
 interface Props {
@@ -146,9 +143,11 @@ const showPositiveQuantityFilter = computed(() =>
   POSITIVE_QTY_SUPPORTED_SOURCES.has(props.listSource ?? 'purchase-request'),
 );
 
-/** 按选品来源重置「仅库存>0」默认值 */
+/** 按选品来源重置「仅库存>0」默认值（盘点除外默认勾选） */
 function resetPositiveQuantityOnlyDefault(listSource: ProductPickListSource) {
-  positiveQuantityOnly.value = POSITIVE_QTY_DEFAULT_TRUE_SOURCES.has(listSource);
+  positiveQuantityOnly.value =
+    POSITIVE_QTY_SUPPORTED_SOURCES.has(listSource) &&
+    !POSITIVE_QTY_STOCKTAKE_SOURCES.has(listSource);
 }
 
 watch(

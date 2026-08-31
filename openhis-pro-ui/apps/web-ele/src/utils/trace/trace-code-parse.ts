@@ -1,6 +1,15 @@
 /** 国家药品追溯码标准长度 */
 export const TRACE_CODE_LENGTH = 20;
 
+/** 非标追溯码（如 GS1）单码长度上限（医保采集字段建议 100） */
+export const TRACE_CODE_NON_STANDARD_MAX_LENGTH = 100;
+
+/**
+ * 非标追溯码药名关键字：名称包含任一关键字则不强制 20 位，绑码按名称匹配。
+ * 当前：依洛尤单抗注射液（进口/GS1 码，位数非 20）。
+ */
+export const NON_STANDARD_TRACE_DRUG_NAME_KEYWORDS = ['依洛尤单抗'] as const;
+
 /** 单次批量反查上限（与后端 BR-TRC-015 一致） */
 export const TRACE_BATCH_RESOLVE_MAX = 50;
 
@@ -10,8 +19,49 @@ export function isTraceSlotEmpty(value: string | undefined): boolean {
   return t === '' || t === '—';
 }
 
+/** 药品名称是否属于非标追溯码品（按关键字包含匹配） */
+export function isNonStandardTraceDrugName(itemName: string | undefined): boolean {
+  const name = String(itemName ?? '').trim();
+  if (!name) return false;
+  return NON_STANDARD_TRACE_DRUG_NAME_KEYWORDS.some((kw) => name.includes(kw));
+}
+
+/** 是否为标准 20 位追溯码 */
+export function isStandardTraceCode(code: string | undefined): boolean {
+  const t = String(code ?? '').trim();
+  return t.length === TRACE_CODE_LENGTH;
+}
+
+/**
+ * 是否允许作为非标长度追溯码（非 20 位、非空、不超过上限）。
+ * 纯数字且长度为 20 的倍数仍走标准切分，不落此分支。
+ */
+export function isNonStandardLengthTraceCode(code: string | undefined): boolean {
+  const t = String(code ?? '').trim();
+  if (!t) return false;
+  if (t.length === TRACE_CODE_LENGTH) return false;
+  if (t.length > TRACE_CODE_NON_STANDARD_MAX_LENGTH) return false;
+  // 连续粘贴的多段 20 位纯数字仍按标准码切分，不当非标整码
+  if (t.length > TRACE_CODE_LENGTH && t.length % TRACE_CODE_LENGTH === 0 && /^\d+$/.test(t)) {
+    return false;
+  }
+  return true;
+}
+
+export type ExtractTraceCodesOptions = {
+  /**
+   * 为 true 时：允许非 20 位整段入 ok（GS1 等）。
+   * 仅当明细中存在非标药名行时由扫码弹窗打开。
+   */
+  allowNonStandardLength?: boolean;
+};
+
 /** 将输入按换行拆分，并支持无换行时连续 20 位一段 */
-export function extractTraceCodes(raw: string): { bad: string[]; ok: string[] } {
+export function extractTraceCodes(
+  raw: string,
+  options?: ExtractTraceCodesOptions,
+): { bad: string[]; ok: string[] } {
+  const allowNonStandard = options?.allowNonStandardLength === true;
   const normalized = raw.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
   const segments = normalized.split('\n');
   const ok: string[] = [];
@@ -23,10 +73,15 @@ export function extractTraceCodes(raw: string): { bad: string[]; ok: string[] } 
       ok.push(t);
       continue;
     }
-    if (t.length > TRACE_CODE_LENGTH && t.length % TRACE_CODE_LENGTH === 0) {
+    // 纯数字且为 20 倍数：按标准国家码连续粘贴切分
+    if (t.length > TRACE_CODE_LENGTH && t.length % TRACE_CODE_LENGTH === 0 && /^\d+$/.test(t)) {
       for (let i = 0; i < t.length; i += TRACE_CODE_LENGTH) {
         ok.push(t.slice(i, i + TRACE_CODE_LENGTH));
       }
+      continue;
+    }
+    if (allowNonStandard && isNonStandardLengthTraceCode(t)) {
+      ok.push(t);
       continue;
     }
     bad.push(t.length > 40 ? `${t.slice(0, 40)}…` : t);

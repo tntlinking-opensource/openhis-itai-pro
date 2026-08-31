@@ -1410,6 +1410,22 @@ public interface ErrorCodeConstants {
      */
     String SPECIMEN_DEFINITION_RULE_CONFLICT = "SPECIMEN_DEFINITION_005";
 
+    /** 检验设备错误码：参数非法。 */
+    String LAB_DEVICE_INVALID_ARGUMENT = "LAB_DEVICE_001";
+    /** 检验设备错误码：资源不存在。 */
+    String LAB_DEVICE_NOT_FOUND = "LAB_DEVICE_002";
+    /** 检验设备错误码：状态不允许。 */
+    String LAB_DEVICE_INVALID_STATUS = "LAB_DEVICE_003";
+    /** 检验设备错误码：业务编码冲突。 */
+    String LAB_DEVICE_BUS_NO_CONFLICT = "LAB_DEVICE_004";
+
+    /** 标本合管配置错误码：参数非法。 */
+    String SPECIMEN_TUBE_MERGE_INVALID_ARGUMENT = "SPECIMEN_TUBE_MERGE_001";
+    /** 标本合管配置错误码：资源不存在。 */
+    String SPECIMEN_TUBE_MERGE_NOT_FOUND = "SPECIMEN_TUBE_MERGE_002";
+    /** 标本合管配置错误码：绑定目标冲突。 */
+    String SPECIMEN_TUBE_MERGE_TARGET_CONFLICT = "SPECIMEN_TUBE_MERGE_003";
+
     /**
      * 供应商错误码：参数非法。
      */
@@ -1783,6 +1799,13 @@ public interface ErrorCodeConstants {
     /** PEIS 登记错误码：就诊状态不允许调整项目。 */
     String PEIS_REG_ENCOUNTER_STATUS_INVALID = "PEIS_REG_006";
 
+    /** PEIS 体检历史错误码：参数非法。 */
+    String PEIS_HIST_INVALID_ARGUMENT = "PEIS_HIST_001";
+    /** PEIS 体检历史错误码：就诊状态不允许取消。 */
+    String PEIS_HIST_INVALID_STATUS = "PEIS_HIST_002";
+    /** PEIS 体检历史错误码：已收费不可取消。 */
+    String PEIS_HIST_PAID = "PEIS_HIST_003";
+
     /** 手术定义错误码：参数非法。 */
     String PROCEDURE_DEFINITION_INVALID_ARGUMENT = "PROCEDURE_DEFINITION_001";
     /** 手术定义错误码：资源不存在。 */
@@ -1848,4 +1871,21 @@ public interface ErrorCodeConstants {
      * 画布打印错误码：参数或版式非法。
      */
     String PRT_INVALID = "PRT-422";
+
+    /**
+     * 处方点评错误码：参数非法。
+     */
+    String PRESCRIPTION_REVIEW_INVALID_ARGUMENT = "PRESCRIPTION_REVIEW_001";
+    /**
+     * 处方点评错误码：有效点评不存在。
+     */
+    String PRESCRIPTION_REVIEW_NOT_FOUND = "PRESCRIPTION_REVIEW_002";
+    /**
+     * 处方点评错误码：该处方已有有效点评。
+     */
+    String PRESCRIPTION_REVIEW_ALREADY_EXISTS = "PRESCRIPTION_REVIEW_003";
+    /**
+     * 处方点评错误码：不合理时原因必填。
+     */
+    String PRESCRIPTION_REVIEW_REASON_REQUIRED = "PRESCRIPTION_REVIEW_004";
 }

@@ -291,6 +291,72 @@ export async function saveInpatientEncounterDiagnosisIptTypeRows(
   });
 }
 
+/**
+ * 门诊：同步诊断类型（med_type / 普通门诊、门诊慢病等）。
+ * 西医走就诊诊断保存；中医病证组走专管接口，只改医疗类别。
+ */
+export async function saveOutpatientEncounterDiagnosisMedicalTypeRows(
+  encounterId: string,
+  patientId: string,
+  rows: EncounterDiagnosisRowDto[],
+): Promise<void> {
+  const westernRows = filterWesternEncounterDiagnosisRowsForSave(rows);
+  const http = resolveDiagnosisHttp('outpatient');
+  if (westernRows.length > 0) {
+    await http.httpSaveDoctorDiagnosis({
+      encounterId,
+      patientId,
+      diagnosisChildList: buildDiagnosisChildList(westernRows, { preserveSortNo: true }),
+    });
+  }
+
+  const tcmRows = rows.filter((row) => isTcmDiagnosisRow(row));
+  if (tcmRows.length === 0) {
+    return;
+  }
+  const tcmHttp = resolveTcmDiagnosisHttp('outpatient');
+  const listRes = await tcmHttp.httpListTcmDiagnosisGroups({ encounterId, patientId });
+  const existingGroups = listRes.groups ?? [];
+  if (existingGroups.length === 0) {
+    return;
+  }
+
+  // 已有组转保存子项，按展示行回写 medicalTypeCode
+  const groups = existingGroups
+    .map((group) => {
+      const groupKey = String(group.tcmSyndromeGroup ?? '').trim();
+      const matched = tcmRows.find((row) => {
+        const displayKey = String(row.tcmSyndromeGroup ?? '').trim();
+        if (groupKey && displayKey && groupKey === displayKey) {
+          return true;
+        }
+        return (
+          String(row.conditionDefinitionId ?? '').trim() ===
+            String(group.diseaseDefinitionId ?? '').trim() &&
+          String(row.syndromeDefinitionId ?? '').trim() ===
+            String(group.syndromeDefinitionId ?? '').trim()
+        );
+      });
+      if (!matched) {
+        return mapTcmGroupRowToSaveItem(group);
+      }
+      return mapTcmGroupRowToSaveItem({
+        ...group,
+        medicalTypeCode: matched.medicalTypeCode ?? group.medicalTypeCode,
+      });
+    })
+    .filter((item): item is TcmDiagnosisGroupItemRequest => item !== null);
+
+  if (groups.length === 0) {
+    return;
+  }
+  await tcmHttp.httpSaveTcmDiagnosisGroupsBatch({
+    encounterId,
+    patientId,
+    groups,
+  });
+}
+
 /** 删除一条就诊诊断 */
 export async function deleteEncounterDiagnosisRow(
   encounterId: string,

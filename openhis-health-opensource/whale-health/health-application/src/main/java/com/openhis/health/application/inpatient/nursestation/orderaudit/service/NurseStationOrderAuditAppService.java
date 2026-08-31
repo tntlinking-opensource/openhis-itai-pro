@@ -127,10 +127,10 @@ public class NurseStationOrderAuditAppService {
             this.assertListAuditRequestValid(request);
             List<Long> managedWardIds = managedWardLocationIdsResolver.listManagedWardLocationIdsOrEmpty();
             List<Long> requestedEncounterIds = this.distinctEncounterIds(request.getEncounterIds());
-            InpatientEncounterPageQuery visibilityQuery =
-                nurseStationOrderAuditMapper.toInpatientEncounterPageQueryForAudit(requestedEncounterIds, managedWardIds);
+            // Gate：读列表在科优先；未命中按就诊主键回落（病案侧栏打印出院患者长/临嘱）
             List<InpatientEncounterContextQueryModel> visibleRows =
-                EncounterContextReader.listInpatientEncounterContexts(visibilityQuery);
+                EncounterContextReader.listNurseStationReadableEncounterContexts(
+                    requestedEncounterIds, managedWardIds);
             List<Long> visibleEncounterIds = this.extractEncounterIds(visibleRows);
             if (visibleEncounterIds.isEmpty()) {
                 throw new BusinessException(
@@ -929,8 +929,11 @@ public class NurseStationOrderAuditAppService {
         String summary = null;
         ServiceRequestListModel detail = serviceDetailById.get(serviceRequestId);
         if (detail != null) {
-            // AS-SDD：dischargedAt 优先诊嘱开立时刻 reqOpenedTime（空回落 reqAuthoredTime，再回落 checkTime/now）。
-            if (detail.getReqOpenedTime() != null) {
+            // 校对出院：dischargedAt 取计划出院时间 occurrenceStartTime（与办理出院/AS-IP-NUR-002 同口径）；
+            // 领域 dischargeInpatientEncounter 不写 end_time，仍须传对以免后续误用开立时刻。
+            if (detail.getOccurrenceStartTime() != null) {
+                dischargedAt = detail.getOccurrenceStartTime();
+            } else if (detail.getReqOpenedTime() != null) {
                 dischargedAt = detail.getReqOpenedTime();
             } else if (detail.getReqAuthoredTime() != null) {
                 dischargedAt = detail.getReqAuthoredTime();

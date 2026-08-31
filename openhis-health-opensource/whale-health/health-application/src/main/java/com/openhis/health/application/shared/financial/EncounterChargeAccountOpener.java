@@ -21,9 +21,9 @@ import org.springframework.stereotype.Component;
 /**
  * 门诊挂号 / 住院登记共用：幂等开立就诊挂账账户。
  *
- * <p>口径：人人必有默认 {@link AccountTypeCode#PERSONAL_CASH_ACCOUNT}（{@code contract_no}=自费合同）；
+ * <p>口径：人人必有默认 {@link AccountTypeCode#PERSONAL_CASH_ACCOUNT}（{@code contract_no}=自费合同，供预交金余额）；
  * 省/市医保或工伤等并行费用性质另开 {@link AccountTypeCode#MEDICAL_INSURANCE}
- * （{@code contract_no}=挂号/入院所选合同）。已存在账户不改写 {@code contract_no}（历史错挂兼容）。</p>
+ * （{@code contract_no}=挂号/入院所选合同，住院费用挂账真源）。已存在账户不改写 {@code contract_no}（历史错挂兼容）。</p>
  *
  * <p>禁止依赖 outpatient/inpatient feature DTO；仅编排 Account 写侧与自费合同解析。</p>
  */

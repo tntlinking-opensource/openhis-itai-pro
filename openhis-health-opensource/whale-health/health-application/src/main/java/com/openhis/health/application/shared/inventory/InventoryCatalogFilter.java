@@ -34,7 +34,7 @@ public class InventoryCatalogFilter {
     private final DeviceDefinitionQueryService deviceDefinitionQueryService;
 
     /**
-     * 将类型/医保等级/基药筛选解析为定义主键列表并写入 {@link WarehouseInventoryDetailPageQuery}。
+     * 将类型/医保等级/重点药类型筛选解析为定义主键列表并写入 {@link WarehouseInventoryDetailPageQuery}。
      *
      * @param query 药库库存明细筛选入参（原地写入 resolved* 字段）
      */
@@ -47,7 +47,7 @@ public class InventoryCatalogFilter {
         boolean hasDeviceCategory = query.getDeviceCategoryCodes() != null
             && !query.getDeviceCategoryCodes().isEmpty();
         boolean hasChrgitmLv = query.getChrgitmLvList() != null && !query.getChrgitmLvList().isEmpty();
-        boolean hasBasicFlag = query.getBasicFlag() != null;
+        boolean hasKeyDrugType = StringUtils.isNotEmpty(query.getKeyDrugType());
         if (hasMedicationCategory) {
             query.setResolvedMedicationDefinitionIds(
                 this.medicationDefinitionQueryService.listIdsByCategoryCodesIn(query.getMedicationCategoryCodes()));
@@ -72,39 +72,41 @@ public class InventoryCatalogFilter {
                 query.setResolvedDeviceDefinitionIds(devByLv);
             }
         }
-        // 基药仅作用于药品定义：与类目/医保等级已解析主键求交；无前置条件时直接写入
-        if (hasBasicFlag) {
-            List<Long> medByBasic =
-                this.medicationDefinitionQueryService.listIdsByBasicFlag(query.getBasicFlag());
+        // 重点药类型仅作用于药品定义：与类目/医保等级已解析主键求交；无前置条件时直接写入
+        if (hasKeyDrugType) {
+            List<Long> medByKeyDrug =
+                this.medicationDefinitionQueryService.listIdsByKeyDrugType(query.getKeyDrugType());
             if (hasMedicationCategory || hasChrgitmLv) {
                 query.setResolvedMedicationDefinitionIds(
-                    this.intersectIds(query.getResolvedMedicationDefinitionIds(), medByBasic));
+                    this.intersectIds(query.getResolvedMedicationDefinitionIds(), medByKeyDrug));
             } else {
-                query.setResolvedMedicationDefinitionIds(medByBasic);
+                query.setResolvedMedicationDefinitionIds(medByKeyDrug);
             }
         }
     }
 
     /**
-     * 备份静表：按基药标识预解析药品定义主键并写入 {@link DocInventoryItemSnapshotPageQuery}。
+     * 备份静表：按重点药类型预解析药品定义主键并写入 {@link DocInventoryItemSnapshotPageQuery}。
      *
-     * <p>静表无 {@code basic_flag} 列，须经药典 QueryService 预解析后按 {@code item_id} 收窄（B.6.4）。</p>
+     * <p>静表无药典标识列，须经药典 QueryService 预解析后按 {@code item_id} 收窄（B.6.4）。</p>
      *
      * @param query 备份筛选入参（原地写入 resolvedMedicationDefinitionIds）
      */
-    public void enrichSnapshotBasicFlagDefinitionIds(DocInventoryItemSnapshotPageQuery query) {
+    public void enrichSnapshotKeyDrugTypeDefinitionIds(DocInventoryItemSnapshotPageQuery query) {
         if (query == null) {
             return;
         }
-        if (query.getBasicFlag() == null) {
+        if (StringUtils.isEmpty(query.getKeyDrugType())) {
             return;
         }
         query.setResolvedMedicationDefinitionIds(
-            this.medicationDefinitionQueryService.listIdsByBasicFlag(query.getBasicFlag()));
+            this.medicationDefinitionQueryService.listIdsByKeyDrugType(query.getKeyDrugType()));
     }
 
     /**
      * 将关键字解析为药品/耗材定义主键列表并写入 {@link WarehouseInventoryDetailPageQuery}（与 openhis 编码/商品名检索对齐）。
+     *
+     * <p>已指定 {@code itemTable} 时只解析对应定义表，避免多余全表扫。</p>
      *
      * @param query 药库库存明细筛选入参（原地写入 resolved*ForKeyword 字段）
      */
@@ -115,10 +117,25 @@ public class InventoryCatalogFilter {
         if (StringUtils.isEmpty(query.getKeyword())) {
             return;
         }
-        query.setResolvedMedicationDefinitionIdsForKeyword(
-            this.medicationDefinitionQueryService.listIdsByInventoryDetailKeyword(query.getKeyword()));
-        query.setResolvedDeviceDefinitionIdsForKeyword(
-            this.deviceDefinitionQueryService.listIdsByInventoryDetailKeyword(query.getKeyword()));
+        String itemTable = null;
+        // 已指定项目类型时只扫对应定义表
+        if (StringUtils.isNotEmpty(query.getItemTable())) {
+            itemTable = query.getItemTable().trim();
+        }
+        // 未指定表或药品表：解析药品定义（含商品名/编码）
+        boolean resolveMedication = itemTable == null
+            || TableNameConstants.MED_MEDICATION_DEFINITION.equals(itemTable);
+        // 未指定表或耗材表：解析耗材定义（含商品名/编码）
+        boolean resolveDevice = itemTable == null
+            || TableNameConstants.ADM_DEVICE_DEFINITION.equals(itemTable);
+        if (resolveMedication) {
+            query.setResolvedMedicationDefinitionIdsForKeyword(
+                this.medicationDefinitionQueryService.listIdsByInventoryDetailKeyword(query.getKeyword()));
+        }
+        if (resolveDevice) {
+            query.setResolvedDeviceDefinitionIdsForKeyword(
+                this.deviceDefinitionQueryService.listIdsByInventoryDetailKeyword(query.getKeyword()));
+        }
     }
 
     /**
@@ -168,10 +185,23 @@ public class InventoryCatalogFilter {
         if (StringUtils.isEmpty(query.getProductKeyword())) {
             return;
         }
-        query.setResolvedMedicationDefinitionIdsForKeyword(
-            this.medicationDefinitionQueryService.listIdsByInventoryDetailKeyword(query.getProductKeyword()));
-        query.setResolvedDeviceDefinitionIdsForKeyword(
-            this.deviceDefinitionQueryService.listIdsByInventoryDetailKeyword(query.getProductKeyword()));
+        String itemTable = null;
+        if (StringUtils.isNotEmpty(query.getItemTable())) {
+            itemTable = query.getItemTable().trim();
+        }
+        // 已指定项目分类时只解析对应定义表，与库存选品口径一致
+        boolean resolveMedication = itemTable == null
+            || TableNameConstants.MED_MEDICATION_DEFINITION.equals(itemTable);
+        boolean resolveDevice = itemTable == null
+            || TableNameConstants.ADM_DEVICE_DEFINITION.equals(itemTable);
+        if (resolveMedication) {
+            query.setResolvedMedicationDefinitionIdsForKeyword(
+                this.medicationDefinitionQueryService.listIdsByInventoryDetailKeyword(query.getProductKeyword()));
+        }
+        if (resolveDevice) {
+            query.setResolvedDeviceDefinitionIdsForKeyword(
+                this.deviceDefinitionQueryService.listIdsByInventoryDetailKeyword(query.getProductKeyword()));
+        }
     }
 
     /**

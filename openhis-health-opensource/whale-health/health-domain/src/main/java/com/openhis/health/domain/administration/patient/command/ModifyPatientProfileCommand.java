@@ -106,6 +106,11 @@ public class ModifyPatientProfileCommand extends BatchCommand<ModifyPatientProfi
         private String nationalityCode;
 
         /**
+         * 学历层次字典编码（EducationLevel）。
+         */
+        private String educationLevelCode;
+
+        /**
          * 工作单位。
          */
         private String workCompany;

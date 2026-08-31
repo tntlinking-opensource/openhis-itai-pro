@@ -314,7 +314,11 @@ public class DailySettlementExpenseNatureDetailAccumulator {
             if (channel == null) {
                 continue;
             }
-            if (PaymentChannel.CASH.equals(channel)) {
+            if (PaymentChannel.DEPOSIT_OFFSET.equals(channel)) {
+                // 冲抵占用不计入日结现金/渠道小计。
+                continue;
+            }
+            if (PaymentChannel.CASH.equals(channel) || PaymentChannel.CASHIER.equals(channel)) {
                 natureBucket.addCash(lineAmount);
                 if (insutypeBucket != null) {
                     insutypeBucket.addCash(lineAmount);
@@ -362,6 +366,10 @@ public class DailySettlementExpenseNatureDetailAccumulator {
         if (natureBucket == null || channel == null) {
             return;
         }
+        if (PaymentChannel.DEPOSIT_OFFSET.equals(channel)) {
+            // 预交金冲抵不计入费用性质自付/医保现金小计。
+            return;
+        }
         if (PaymentChannel.INSURANCE_FUND.equals(channel)) {
             // 统筹：仅医保账户且桥表允许计入
             if (insurance && countInsuranceFundOrAcct) {
@@ -383,8 +391,8 @@ public class DailySettlementExpenseNatureDetailAccumulator {
             return;
         }
         if (insurance) {
-            // 医保现金：仅现金补差；微信/支付宝等自付渠道不进「医保现金」列（与既有展示口径一致）
-            if (PaymentChannel.CASH.equals(channel)) {
+            // 医保现金：现金补差 + 内部 CASHIER 占位（落库常为 CASHIER，展示回落现金）
+            if (PaymentChannel.CASH.equals(channel) || PaymentChannel.CASHIER.equals(channel)) {
                 natureBucket.addCash(lineAmount);
                 if (insutypeBucket != null) {
                     insutypeBucket.addCash(lineAmount);

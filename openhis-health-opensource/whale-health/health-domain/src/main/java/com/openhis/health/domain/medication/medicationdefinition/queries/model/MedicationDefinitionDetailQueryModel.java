@@ -35,6 +35,10 @@ public class MedicationDefinitionDetailQueryModel {
     private String approvalNumber;
     /** basic标志。 */
     private Boolean basicFlag;
+    /** 国家重点监控药品标志（勾选=是）。 */
+    private Boolean nationalMonitorFlag;
+    /** 集采药品标志（勾选=是）。 */
+    private Boolean centralPurchaseFlag;
     /** 皮肤试验标志。 */
     private Boolean skinTestFlag;
     /** inject标志。 */
@@ -75,9 +79,11 @@ public class MedicationDefinitionDetailQueryModel {
     private Long locationId;
     /** 物资主键。 */
     private Long supplyId;
-    /** 厂家主键。 */
+    /** 生产厂家主键（cus_supplier.id，type=生产厂家）。 */
     private Long manufacturerId;
-    /** manufacturer文本。 */
+    /**
+     * 生产厂家展示名（非持久化列；由 AppService 按 {@link #manufacturerId} 解析供应商名称回填）。
+     */
     private String manufacturerText;
     /** 药品拼音码。 */
     private String pyStr;

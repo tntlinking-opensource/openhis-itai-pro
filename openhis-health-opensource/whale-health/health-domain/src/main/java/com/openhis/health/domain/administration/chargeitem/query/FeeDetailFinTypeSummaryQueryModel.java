@@ -32,4 +32,9 @@ public class FeeDetailFinTypeSummaryQueryModel {
 
     /** 命中行数（含退费行）。 */
     private long lineCount;
+
+    /**
+     * 带收退符号的数量代数和（FIN_TYPE 维汇总用；禁止为数量再物化全窗 RowQueryModel）。
+     */
+    private BigDecimal quantityTotal = BigDecimal.ZERO;
 }

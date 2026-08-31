@@ -5,6 +5,7 @@
 package com.openhis.health.domain.workflow.activitydefinition.entity;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.enums.ActivityPermittedGender;
 import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -146,6 +147,20 @@ public class ActivityDefinition extends BaseAuditedEntity {
     private Boolean childrenFlag;
 
     /**
+     * 适用性别枚举编码（{@link com.openhis.health.domain.share.enums.ActivityPermittedGender}）。
+     *
+     * <p>体检目录用于男/女适用过滤；缺省 {@code BOTH}。</p>
+     */
+    @Column(name = "permitted_gender_enum", nullable = false)
+    private String permittedGenderEnum;
+
+    /**
+     * 目录展示顺序（数值越小越靠前；可空表示未排序）。
+     */
+    @Column(name = "sort_order")
+    private Integer sortOrder;
+
+    /**
      * 校验创建/维护时的必填字段。
      *
      * @throws BusinessException 参数非法
@@ -159,6 +174,10 @@ public class ActivityDefinition extends BaseAuditedEntity {
         }
         if (this.typeEnum == null) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "诊疗项目类型不能为空");
+        }
+        // 适用性别缺省不限，避免存量/导入漏写导致校验失败
+        if (StringUtils.isEmpty(this.permittedGenderEnum)) {
+            this.permittedGenderEnum = ActivityPermittedGender.BOTH.getCode();
         }
     }
 

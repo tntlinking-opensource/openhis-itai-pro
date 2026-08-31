@@ -1259,7 +1259,11 @@ async function handleContextMenuPrintLabel() {
         scenarioCode: PRINT_SCENARIO.ipExamApplyPrint,
         source,
         jobName: `住院检查单·${patient.bedNo}${patient.name}`,
-        bizRef: { encounterId, orderId: row.orderId },
+        bizRef: {
+          scenarioCode: PRINT_SCENARIO.ipExamApplyPrint,
+          encounterId,
+          serviceRequestId: row.orderId,
+        },
       });
       if (result.ok) {
         ElMessage.success(`已发送打印：${label}，共 1 份`);
@@ -1277,7 +1281,11 @@ async function handleContextMenuPrintLabel() {
         scenarioCode: PRINT_SCENARIO.ipLabApplyPrint,
         source,
         jobName: `住院检验单·${patient.bedNo}${patient.name}`,
-        bizRef: { encounterId, orderId: row.orderId },
+        bizRef: {
+          scenarioCode: PRINT_SCENARIO.ipLabApplyPrint,
+          encounterId,
+          serviceRequestId: row.orderId,
+        },
       });
       if (result.ok) {
         ElMessage.success(`已发送打印：${label}，共 1 份`);
@@ -1312,7 +1320,12 @@ async function handleContextMenuPrintLabel() {
       scenarioCode: PRINT_SCENARIO.ipOralMedLabelPrint,
       source,
       jobName: `口服药贴·${patient.bedNo}${patient.name}`,
-      bizRef: { encounterId, orderId: row.orderId },
+      bizRef: {
+        scenarioCode: PRINT_SCENARIO.ipOralMedLabelPrint,
+        encounterId,
+        orderId: row.orderId,
+        listRowKey: row.id,
+      },
     });
     if (result.ok) {
       ElMessage.success(`已发送打印：${label}，共 1 份`);
@@ -1808,6 +1821,7 @@ onBeforeUnmount(() => {
                         :dosage-text="row.dosage"
                         :extension="row.extension"
                         :group-items="row.groupItems"
+                        :tcm-flag="row.tcmFlag === true"
                       />
                     </template>
                     <template v-else-if="row.bindItems?.length">
@@ -1825,6 +1839,7 @@ onBeforeUnmount(() => {
                       :content="executeOrderDisplayedContent(row)"
                       :dosage-text="row.dosage"
                       :extension="row.extension"
+                      :tcm-flag="row.tcmFlag === true"
                     />
                     <div
                       v-if="row.bindItems?.length"

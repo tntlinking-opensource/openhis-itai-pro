@@ -15,6 +15,7 @@ import com.openhis.health.domain.medication.medicationdefinition.queries.Medicat
 import com.openhis.health.domain.medication.medicationdispense.query.MedicationDispenseRecordPageQuery;
 import com.openhis.health.domain.workflow.devicedispense.queries.DeviceDispenseSettlementWindowQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyRequestSettlementWindowQuery;
+import com.openhis.whale.core.application.dto.ExcelExportColumnDto;
 
 import java.util.List;
 
@@ -134,16 +135,18 @@ public interface InventoryPeriodBalanceDetailMapper {
     );
 
     /**
-     * 动态列 Excel 写出。
+     * 动态列 Excel 写出（可按前端列清单裁剪）。
      *
-     * @param exportRows 导出行
-     * @param columns    动态列元数据
-     * @param sheetName  工作表名
+     * @param exportRows     导出行
+     * @param columns        动态列元数据
+     * @param sheetName      工作表名
+     * @param exportColumns  前端自选列；null/空则全部动态列
      * @return xlsx 字节
      */
     byte[] buildExcelBytes(
         List<PeriodBalanceDetailExportRowDto> exportRows,
         List<PeriodBalanceDetailColumnDto> columns,
-        String sheetName
+        String sheetName,
+        List<ExcelExportColumnDto> exportColumns
     );
 }

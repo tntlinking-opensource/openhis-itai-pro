@@ -18,6 +18,8 @@ import com.openhis.health.domain.clinical.procedure.queries.model.NurseExecution
 import com.openhis.health.domain.clinical.procedure.queries.model.NurseExecutionWorkloadDetailQueryModel;
 import com.openhis.health.domain.workflow.devicedispense.queries.model.NurseConsumableWorkloadDetailQueryModel;
 
+import com.openhis.whale.core.application.dto.ExcelExportColumnDto;
+
 import java.util.List;
 
 /**
@@ -105,16 +107,22 @@ public interface NurseWorkloadReportMapper {
     /**
      * 诊疗执行明细导出行 → Excel 字节。
      *
-     * @param rows 导出行列表；调用方保证非 null
+     * @param rows    导出行列表；调用方保证非 null
+     * @param columns 前端自选列；null/空则全部 {@code @Excel} 列
      * @return xlsx 二进制
      */
-    byte[] buildExecutionExcelBytes(List<NurseExecutionDetailExportRowDto> rows);
+    byte[] buildExecutionExcelBytes(
+        List<NurseExecutionDetailExportRowDto> rows,
+        List<ExcelExportColumnDto> columns);
 
     /**
      * 耗材使用明细导出行 → Excel 字节。
      *
-     * @param rows 导出行列表；调用方保证非 null
+     * @param rows    导出行列表；调用方保证非 null
+     * @param columns 前端自选列；null/空则全部 {@code @Excel} 列
      * @return xlsx 二进制
      */
-    byte[] buildConsumableExcelBytes(List<NurseConsumableDetailExportRowDto> rows);
+    byte[] buildConsumableExcelBytes(
+        List<NurseConsumableDetailExportRowDto> rows,
+        List<ExcelExportColumnDto> columns);
 }

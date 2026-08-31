@@ -9,6 +9,7 @@ import { getEnabledMetadataFieldListApi, mapMetadataFieldDtoToEmr } from '#/api/
 import { resolveEncounterMetadataApi } from '#/api/emr/encounter-metadata';
 import {
   buildMetadataValuesFromPatientInfo,
+  ensureContextDateMetadataDefaults,
   mergeEmrMetadataValues,
 } from '#/emrEditor/emr-patient-metadata';
 
@@ -26,7 +27,9 @@ export interface UseEmrMetadataOptions {
 function localFallbackValues(
   patientInfo: PatientInfoForEmrMetadata | null | undefined,
 ): Record<string, string> {
-  return buildMetadataValuesFromPatientInfo(patientInfo ?? undefined);
+  return ensureContextDateMetadataDefaults(
+    buildMetadataValuesFromPatientInfo(patientInfo ?? undefined),
+  );
 }
 
 /**

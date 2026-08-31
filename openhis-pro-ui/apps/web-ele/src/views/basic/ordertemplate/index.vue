@@ -46,6 +46,7 @@ import {
   buildOrderTemplateMaintenanceTree,
   findOrderTemplateHeaderInTree,
 } from './order-template-maintenance-tree';
+import SaveBindingDialog from './save-binding-dialog.vue';
 
 defineOptions({ name: 'BasicOrderTemplate' });
 
@@ -60,6 +61,7 @@ const panelFormData = ref<Partial<OrderTemplateHeaderItem>>({
 const panelVersion = ref(0);
 const treeRef = ref<InstanceType<typeof ElTree>>();
 const editPanelRef = ref<InstanceType<typeof EditPanel> | null>(null);
+const saveBindingDialogRef = ref<InstanceType<typeof SaveBindingDialog> | null>(null);
 
 const queryParams = ref<PageMaintainedOrderTemplateParams>({
   pageNo: 1,
@@ -112,6 +114,23 @@ const panelTitle = computed(() => {
     return name;
   }
   return '组套维护';
+});
+
+/** 右侧标题旁归属标签文案 */
+const ownerTagText = computed(() => {
+  const header = selectedHeader.value;
+  const objectName = String(header?.objectName ?? '').trim();
+  if (!objectName) {
+    return '';
+  }
+  const binding = String(header?.bindingEnum ?? '').trim();
+  if (binding === ORDER_TEMPLATE_BINDING_PERSONAL) {
+    return `人员：${objectName}`;
+  }
+  if (binding === ORDER_TEMPLATE_BINDING_DEPARTMENT) {
+    return `科室：${objectName}`;
+  }
+  return objectName;
 });
 
 /** 状态标签颜色 */
@@ -187,7 +206,7 @@ function handleKindChange(kind: number | string) {
 
 /** 选中左侧树节点，加载到右侧编辑区 */
 function handleTreeNodeClick(node: OrderTemplateMaintenanceTreeNode) {
-  if (node.nodeType === 'group') {
+  if (node.nodeType !== 'template') {
     return;
   }
   const templateId = preserveApiIdForRequest(node.header?.orderTemplateId);
@@ -201,9 +220,29 @@ function handleTreeNodeClick(node: OrderTemplateMaintenanceTreeNode) {
   };
 }
 
-/** 按绑定类型保存当前组套内容 */
+/** 按绑定类型保存；个人/科室先选归属对象 */
 function handleSaveAsBinding(bindingEnum: string) {
+  if (
+    bindingEnum === ORDER_TEMPLATE_BINDING_PERSONAL ||
+    bindingEnum === ORDER_TEMPLATE_BINDING_DEPARTMENT
+  ) {
+    const presetObjectId =
+      selectedHeader.value?.bindingEnum === bindingEnum
+        ? preserveApiIdForRequest(selectedHeader.value?.objectId)
+        : undefined;
+    void saveBindingDialogRef.value?.open?.(bindingEnum, presetObjectId);
+    return;
+  }
   void editPanelRef.value?.submit?.(bindingEnum);
+}
+
+/** 归属弹窗确认后提交保存 */
+function handleSaveBindingConfirm(payload: {
+  bindingEnum: string;
+  objectId: string;
+  objectName: string;
+}) {
+  void editPanelRef.value?.submit?.(payload.bindingEnum, payload.objectId, payload.objectName);
 }
 
 /** 新开空白组套（取消左侧选中并重置右侧编辑区） */
@@ -315,6 +354,9 @@ onActivated(() => {
               >
                 {{ selectedHeader?.statusEnumText || selectedHeader?.statusEnum }}
               </ElTag>
+              <ElTag v-if="ownerTagText" type="info" effect="plain">
+                {{ ownerTagText }}
+              </ElTag>
             </div>
             <ElSpace wrap>
               <ElButton
@@ -387,6 +429,8 @@ onActivated(() => {
         </section>
       </div>
     </div>
+
+    <SaveBindingDialog ref="saveBindingDialogRef" @confirm="handleSaveBindingConfirm" />
   </Page>
 </template>
 

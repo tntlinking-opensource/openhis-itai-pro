@@ -23,6 +23,7 @@ import com.openhis.health.application.shared.inventoryopening.InventoryOpeningVo
 import com.openhis.health.application.shared.pagination.PageQueryBinder;
 import com.openhis.health.application.shared.product.ProductDefinitionCatalogEditorHintsAssembler;
 import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.application.shared.pricing.CatalogReferencePriceSyncSupport;
 import com.openhis.health.application.shared.pricing.LotNumberPurchasePriceConsistencyGate;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.application.shared.product.ProductDefinitionPageQuery;
@@ -34,6 +35,7 @@ import com.openhis.health.application.shared.validator.CurrentPractitionerResolv
 import com.openhis.health.application.shared.validator.PageWindowGate;
 import com.openhis.health.domain.administration.chargeitemdefinition.command.DeactivateActivePriceLinesCommand;
 import com.openhis.health.domain.administration.chargeitemdefinition.command.SavePriceLineCommand;
+import com.openhis.health.domain.administration.chargeitemdefinition.query.ChargeItemDefinitionQueryCommand;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionDomainService;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
 import com.openhis.health.domain.administration.devicedefinition.entity.DeviceDefinition;
@@ -125,6 +127,7 @@ public class BasicInventoryOpeningAppService {
     private final ProductDefinitionPurchasePageLoader productDefinitionPurchasePageLoader;
     private final ChargeItemDefinitionDomainService chargeItemDefinitionDomainService;
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
+    private final CatalogReferencePriceSyncSupport catalogReferencePriceSyncSupport;
     private final TraceNumberSupplyAgreeTraceOrchestrator traceNumberSupplyAgreeTraceOrchestrator;
     private final TraceNumberRecordOrchestrator traceNumberRecordOrchestrator;
     private final TraceNumberQueryService traceNumberQueryService;
@@ -1005,11 +1008,11 @@ public class BasicInventoryOpeningAppService {
     }
 
     /**
-     * 按本单写/覆盖批号进价与售价。
+     * 按本单写/覆盖批号进价与售价，并回写目录参考价 {@code PURCHASE}/{@code SALE}。
      *
      * <p>行 {@code price} 恒为<strong>每包装单位价</strong>，与 {@code unitCode}（操作/数量单位）无关；
-     * 直接写入 {@code LOT_NUMBER_COST}/{@code LOT_NUMBER_PRICE}（同值）。中草药 ×1.25 由院点 AOP 处理。</p>
-     * <p>进价可空（药房/耗材房）；空则跳过写价。先停用同实例同批号旧 ACTIVE 价线再写入（期初覆盖语义）。</p>
+     * 直接写入 {@code LOT_NUMBER_COST}/{@code LOT_NUMBER_PRICE}（同值）。中草药 ×1.25 由院点 AOP 处理后再抬 {@code SALE}。</p>
+     * <p>进价可空（药房/耗材房）；空则跳过写价与参考价。同批号进价同值跳过批号写，仍回写参考价；异价（门禁已过）或无价：停用旧 ACTIVE 后写入（BR-WHS-IN-018）。</p>
      *
      * @param line         供应行
      * @param product      产品（财务类型）
@@ -1027,58 +1030,77 @@ public class BasicInventoryOpeningAppService {
         if (costSource == null) {
             return;
         }
+        // 禁止按 unitCode 再换算：price 已是包装单位价
+        BigDecimal priceVal = costSource.setScale(
+            ChargeItemAmountScaleConstants.CHARGE_MONETARY_SCALE, RoundingMode.HALF_UP);
+        BigDecimal existingPurchase = chargeItemDefinitionQueryService.resolveFirstLotNumberCostPriceValue(
+            line.getItemTable().trim(), line.getItemId(), resolvedLot);
         String pricingTypeCode = ChargePricingTypeCodeResolver.resolveTypeCodeForLotPriceLine(
             line.getItemTable().trim(), line.getItemId(), product, chargeItemDefinitionQueryService);
         if (StringUtils.isEmpty(pricingTypeCode)) {
             throw new BusinessException(ErrorCodeConstants.BAS_INV_OPN_009, "批号维定价缺少财务类型");
         }
-        // 停用同实例同批号旧 ACTIVE 价线，再写入本单（覆盖）
-        DeactivateActivePriceLinesCommand deactivate = new DeactivateActivePriceLinesCommand();
-        deactivate.setOperatorId(operatorId);
-        List<DeactivateActivePriceLinesCommand.Item> deactivateItems = new ArrayList<>();
-        DeactivateActivePriceLinesCommand.Item costDeact = new DeactivateActivePriceLinesCommand.Item();
-        costDeact.setInstanceTable(line.getItemTable().trim());
-        costDeact.setInstanceId(line.getItemId());
-        costDeact.setPriceTypeCode(PriceType.LOT_NUMBER_COST.getCode());
-        costDeact.setLotNo(resolvedLot);
-        deactivateItems.add(costDeact);
-        DeactivateActivePriceLinesCommand.Item saleDeact = new DeactivateActivePriceLinesCommand.Item();
-        saleDeact.setInstanceTable(line.getItemTable().trim());
-        saleDeact.setInstanceId(line.getItemId());
-        saleDeact.setPriceTypeCode(PriceType.LOT_NUMBER_PRICE.getCode());
-        saleDeact.setLotNo(resolvedLot);
-        deactivateItems.add(saleDeact);
-        deactivate.setItems(deactivateItems);
-        chargeItemDefinitionDomainService.deactivateActivePriceLinesByCommand(deactivate);
+        // 同批号进价已相同：跳过批号写价，仍回写目录参考价
+        boolean skipLotWrite = existingPurchase != null && existingPurchase.compareTo(priceVal) == 0;
+        if (!skipLotWrite) {
+            ChargeItemDefinitionQueryCommand priceDedupQuery = new ChargeItemDefinitionQueryCommand();
+            priceDedupQuery.setInstanceTable(line.getItemTable().trim());
+            priceDedupQuery.setInstanceId(line.getItemId());
+            priceDedupQuery.setLotNo(resolvedLot);
+            // 异价或仅有售价残留：先停用旧 ACTIVE 再写入
+            if (chargeItemDefinitionQueryService.existsLotNumberCostOrLotNumberPriceForInstanceAndLot(priceDedupQuery)) {
+                DeactivateActivePriceLinesCommand deactivate = new DeactivateActivePriceLinesCommand();
+                deactivate.setOperatorId(operatorId);
+                List<DeactivateActivePriceLinesCommand.Item> deactivateItems = new ArrayList<>();
+                DeactivateActivePriceLinesCommand.Item costDeact = new DeactivateActivePriceLinesCommand.Item();
+                costDeact.setInstanceTable(line.getItemTable().trim());
+                costDeact.setInstanceId(line.getItemId());
+                costDeact.setPriceTypeCode(PriceType.LOT_NUMBER_COST.getCode());
+                costDeact.setLotNo(resolvedLot);
+                deactivateItems.add(costDeact);
+                DeactivateActivePriceLinesCommand.Item saleDeact = new DeactivateActivePriceLinesCommand.Item();
+                saleDeact.setInstanceTable(line.getItemTable().trim());
+                saleDeact.setInstanceId(line.getItemId());
+                saleDeact.setPriceTypeCode(PriceType.LOT_NUMBER_PRICE.getCode());
+                saleDeact.setLotNo(resolvedLot);
+                deactivateItems.add(saleDeact);
+                deactivate.setItems(deactivateItems);
+                chargeItemDefinitionDomainService.deactivateActivePriceLinesByCommand(deactivate);
+            }
 
-        // 禁止按 unitCode 再换算：price 已是包装单位价
-        BigDecimal priceVal = costSource.setScale(
-            ChargeItemAmountScaleConstants.CHARGE_MONETARY_SCALE, RoundingMode.HALF_UP);
+            SavePriceLineCommand costCmd = new SavePriceLineCommand();
+            costCmd.setOperatorId(operatorId);
+            SavePriceLineCommand.Item costItem = new SavePriceLineCommand.Item();
+            costItem.setInstanceTable(line.getItemTable().trim());
+            costItem.setInstanceId(line.getItemId());
+            costItem.setTypeCode(pricingTypeCode);
+            costItem.setPriceTypeCode(PriceType.LOT_NUMBER_COST.getCode());
+            costItem.setLotNo(resolvedLot);
+            costItem.setPriceValue(priceVal);
+            costCmd.setItem(costItem);
+            chargeItemDefinitionDomainService.addLotPurchasePrice(costCmd);
 
-        SavePriceLineCommand costCmd = new SavePriceLineCommand();
-        costCmd.setOperatorId(operatorId);
-        SavePriceLineCommand.Item costItem = new SavePriceLineCommand.Item();
-        costItem.setInstanceTable(line.getItemTable().trim());
-        costItem.setInstanceId(line.getItemId());
-        costItem.setTypeCode(pricingTypeCode);
-        costItem.setPriceTypeCode(PriceType.LOT_NUMBER_COST.getCode());
-        costItem.setLotNo(resolvedLot);
-        costItem.setPriceValue(priceVal);
-        costCmd.setItem(costItem);
-        chargeItemDefinitionDomainService.addLotPurchasePrice(costCmd);
-
-        // LOT_NUMBER_PRICE 与进价同值；朝阳院点同意后 AOP 再对中草药 ×1.25
-        SavePriceLineCommand saleCmd = new SavePriceLineCommand();
-        saleCmd.setOperatorId(operatorId);
-        SavePriceLineCommand.Item saleItem = new SavePriceLineCommand.Item();
-        saleItem.setInstanceTable(line.getItemTable().trim());
-        saleItem.setInstanceId(line.getItemId());
-        saleItem.setTypeCode(pricingTypeCode);
-        saleItem.setPriceTypeCode(PriceType.LOT_NUMBER_PRICE.getCode());
-        saleItem.setLotNo(resolvedLot);
-        saleItem.setPriceValue(priceVal);
-        saleCmd.setItem(saleItem);
-        chargeItemDefinitionDomainService.addLotSalePrice(saleCmd);
+            // LOT_NUMBER_PRICE 与进价同值；朝阳院点同意后 AOP 再对中草药 ×1.25
+            SavePriceLineCommand saleCmd = new SavePriceLineCommand();
+            saleCmd.setOperatorId(operatorId);
+            SavePriceLineCommand.Item saleItem = new SavePriceLineCommand.Item();
+            saleItem.setInstanceTable(line.getItemTable().trim());
+            saleItem.setInstanceId(line.getItemId());
+            saleItem.setTypeCode(pricingTypeCode);
+            saleItem.setPriceTypeCode(PriceType.LOT_NUMBER_PRICE.getCode());
+            saleItem.setLotNo(resolvedLot);
+            saleItem.setPriceValue(priceVal);
+            saleCmd.setItem(saleItem);
+            chargeItemDefinitionDomainService.addLotSalePrice(saleCmd);
+        }
+        // Cmd：目录参考价跟本行包装进价（核心进售同值；中草药院点 after 再抬 SALE）
+        this.catalogReferencePriceSyncSupport.syncPurchaseAndSaleIfChanged(
+            line.getItemTable().trim(),
+            line.getItemId(),
+            pricingTypeCode,
+            priceVal,
+            priceVal,
+            operatorId);
     }
 
     // —— 内部：装载 / 类型映射 / 展示增强 ——

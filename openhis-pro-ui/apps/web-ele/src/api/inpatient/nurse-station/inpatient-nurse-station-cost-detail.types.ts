@@ -71,6 +71,10 @@ export interface NurseStationCostDetailLineDto {
   categoryCode?: string;
   /** 产品实际分类展示名 */
   categoryDisplay?: string;
+  /** 医保等级 code（CHRGITM_LV） */
+  chrgitmLv?: number | string;
+  /** 医保等级展示（甲类/乙类/丙类等） */
+  chrgitmLvText?: string;
 }
 
 /** 费用汇总行 */
@@ -81,6 +85,10 @@ export interface NurseStationCostSummaryLineDto {
   itemSpec?: string;
   categoryCode?: string;
   categoryDisplay?: string;
+  /** 医保等级 code（CHRGITM_LV） */
+  chrgitmLv?: number | string;
+  /** 医保等级展示（甲类/乙类/丙类等） */
+  chrgitmLvText?: string;
   unitPrice?: number | string;
   lineTotalAmount?: number | string;
   packageQuantity?: number;

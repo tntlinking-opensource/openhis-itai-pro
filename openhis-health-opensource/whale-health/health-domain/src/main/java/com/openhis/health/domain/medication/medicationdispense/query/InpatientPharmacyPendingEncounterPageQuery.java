@@ -11,10 +11,10 @@ import lombok.Setter;
 import java.util.List;
 
 /**
- * 住院发药就诊队列分页查询（存在药品发放事实且在院就诊的主键分页）。
+ * 住院发药就诊队列分页查询（存在药品发放事实且队列可见就诊的主键分页）。
  *
  * <p>对齐 AS-IP-PHA-001 IF-IPP-02：库房集合、发放状态子集、可选病区与关键字；
- * 在院状态与关键字经 {@code hisrm_inpatient_info} 存在性子查询收敛；不按 {@code status_changed_time} 时间窗筛选。</p>
+ * 可见态含在院与出院轨（PENDING/COMPLETED/DISCHARGED）；不按 {@code status_changed_time} 时间窗筛选。</p>
  */
 @Getter
 @Setter
@@ -38,7 +38,7 @@ public class InpatientPharmacyPendingEncounterPageQuery extends AbstractPageQuer
     private Long wardId;
 
     /**
-     * 应用层预解析的在院就诊主键集合（含病区/关键字收窄）；由 {@code PharmacyEncounterQueueLoader} 写入，领域层仅 {@code IN} 过滤。
+     * 应用层预解析的队列可见就诊主键集合（含病区/关键字收窄）；由 {@code PharmacyEncounterQueueLoader} 写入，领域层仅 {@code IN} 过滤。
      */
     private List<Long> resolvedEncounterScope;
 }

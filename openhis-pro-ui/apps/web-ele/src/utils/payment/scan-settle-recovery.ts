@@ -34,7 +34,7 @@ export class ScanSettleRefundedError extends Error {
 export interface SettleWithScanRecoveryOptions {
   /** 支付草稿主键：退货成功后清缓存并落 BPC REFUNDED */
   paymentDraftId?: number | string;
-  /** 退货金额（元）；缺省按 txnAmtFen */
+  /** 退货金额（元）；缺省按 paidAmtFen / txnAmtFen */
   refundAmountYuan?: number | string;
 }
 
@@ -48,8 +48,9 @@ function resolveRefundAmountYuan(
   clientScanResult: ClientScanResultDto,
   fallback?: number | string,
 ): string {
-  if (clientScanResult.txnAmtFen != null && Number(clientScanResult.txnAmtFen) > 0) {
-    return formatMoneyDisplay(Number(clientScanResult.txnAmtFen) / 100);
+  const paidFen = Number(clientScanResult.paidAmtFen ?? clientScanResult.txnAmtFen ?? 0);
+  if (Number.isFinite(paidFen) && paidFen > 0) {
+    return formatMoneyDisplay(paidFen / 100);
   }
   return formatMoneyDisplay(fallback ?? 0);
 }

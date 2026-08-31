@@ -21,7 +21,7 @@ public class MedicationDefinitionCatalogPageQuery extends AbstractPageQuery {
     private String categoryCode;
 
     /**
-     * 基药标识（可选）；{@code null} 表示不限，非空时按 {@code basic_flag} 等值筛选。
+     * 重点药类型 code（可选，见 {@code KeyDrugType}）；空表示不限，非空时筛选对应标识为 {@code true} 的药品。
      */
-    private Boolean basicFlag;
+    private String keyDrugType;
 }

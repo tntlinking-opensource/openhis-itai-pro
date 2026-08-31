@@ -67,6 +67,8 @@ public class PatientDto {
     private String addressStreet;
     /** 国籍编码。 */
     private String nationalityCode;
+    /** 学历层次字典编码（EducationLevel）。 */
+    private String educationLevelCode;
     /** ABO 血型编码。 */
     private Integer bloodAbo;
     /** ABO 展示文案。 */

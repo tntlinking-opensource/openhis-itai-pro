@@ -34,6 +34,12 @@ public class ClinicalCatalogUnitPriceQuery {
     /** 给药途径等用法编码（药品模板 calcScore 维度；可空）。 */
     private final String methodCode;
 
+    /**
+     * 耗材种类编码（模板 calcScore 种类维，对齐 {@code device_type_code}；可空）。
+     * 药品通常为空；亦可由 {@link #productRowForOccupancy}{@code typeCode} 回落。
+     */
+    private final String typeCode;
+
     /** 机构/科室所属组织（取药科室模板解析）。 */
     private final Long organizationId;
 

@@ -1,10 +1,10 @@
 /**
  * 单据详情报表 — POST /api/app/inventoryDocumentDetail/{methodName}
  */
+import { reportPost } from '#/constants/report-request-timeout';
 import type { PageParams } from '#/types/api-response';
+import type { ExcelExportColumnPayload } from '#/utils/export/build-excel-export-columns';
 
-import { publicRequestClient } from '#/api/request';
-import { reportLongRequestConfig } from '#/constants/report-request-timeout';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
 const BASE = '/inventoryDocumentDetail';
@@ -16,6 +16,14 @@ export type DocumentDetailDomainScope =
   | typeof DOCUMENT_DETAIL_DOMAIN_DEPARTMENT
   | typeof DOCUMENT_DETAIL_DOMAIN_PHARMACY
   | typeof DOCUMENT_DETAIL_DOMAIN_WAREHOUSE;
+
+/** 项目分类：药品定义表。 */
+export const DOCUMENT_DETAIL_ITEM_TABLE_MEDICATION = 'med_medication_definition' as const;
+/** 项目分类：耗材定义表。 */
+export const DOCUMENT_DETAIL_ITEM_TABLE_DEVICE = 'adm_device_definition' as const;
+export type DocumentDetailItemTable =
+  | typeof DOCUMENT_DETAIL_ITEM_TABLE_DEVICE
+  | typeof DOCUMENT_DETAIL_ITEM_TABLE_MEDICATION;
 
 export interface OptionDto {
   value?: string;
@@ -31,6 +39,8 @@ export interface LoadDocumentDetailFormInitResponse {
   defaultTypeEnum?: string;
   sourceLocationOptions?: OptionDto[];
   purposeLocationOptions?: OptionDto[];
+  /** 供应商下拉；空=全部不过滤 */
+  supplierOptions?: OptionDto[];
   defaultApprovalTimeStart?: string;
   defaultApprovalTimeEnd?: string;
 }
@@ -42,8 +52,12 @@ export interface DocumentDetailQueryFilter {
   typeEnum?: string;
   sourceLocationId?: string;
   purposeLocationId?: string;
+  /** 供应商主键；空=该维不过滤 */
+  supplierId?: string;
   approvalTimeStart?: string;
   approvalTimeEnd?: string;
+  /** 项目分类：med_medication_definition / adm_device_definition；空=全部 */
+  itemTable?: DocumentDetailItemTable | string;
   productKeyword?: string;
   lotNumberKeyword?: string;
   busNo?: string;
@@ -69,8 +83,16 @@ export interface DocumentDetailRowDto {
   /** 操作单位编码（持久化录入单位，非 SPLIT 码） */
   unitCode?: string;
   unitCodeDictText?: string;
-  /** 操作单位展示数量（后端 {@link DocumentDetailQuantityConversionSupport} 已由 SPLIT 换算） */
+  /** 操作单位展示数量（后端已由 SPLIT 换算；与单价同口径） */
   itemQuantity?: number | string;
+  /** 包装单位数量（拆零量 ÷ 包装倍数） */
+  packageQuantity?: number | string;
+  /** 包装单位展示名 */
+  packageUnitName?: string;
+  /** 最小（拆零）单位数量 */
+  minUnitQuantity?: number | string;
+  /** 最小单位展示名 */
+  minUnitName?: string;
   price?: number | string;
   totalPrice?: number | string;
   applicantName?: string;
@@ -104,7 +126,13 @@ export interface SummarizeDocumentDetailsResponse {
   rowCount?: number;
 }
 
-export type ExportDocumentDetailsRequest = Omit<DocumentDetailQueryFilter, 'pageNo' | 'pageSize'>;
+export type ExportDocumentDetailsRequest = Omit<
+  DocumentDetailQueryFilter,
+  'pageNo' | 'pageSize'
+> & {
+  /** 页面可见列 → 后端 Excel 列裁剪 */
+  exportColumns?: ExcelExportColumnPayload[];
+};
 
 export interface ExportDocumentDetailsResponse {
   fileName?: string;
@@ -114,19 +142,12 @@ export interface ExportDocumentDetailsResponse {
 
 /** 页面初始化：单据类型与库位下拉、默认审批时间窗。 */
 export async function loadDocumentDetailFormInitApi(body: LoadDocumentDetailFormInitRequest) {
-  return publicRequestClient.post<LoadDocumentDetailFormInitResponse>(
-    `${BASE}/loadDocumentDetailFormInit`,
-    body,
-  );
+  return reportPost<LoadDocumentDetailFormInitResponse>(`${BASE}/loadDocumentDetailFormInit`, body);
 }
 
 /** 单据详情明细分页。 */
 export async function pageDocumentDetailsApi(body: PageDocumentDetailsRequest) {
-  const res = await publicRequestClient.post<PageDocumentDetailsResponse>(
-    `${BASE}/pageDocumentDetails`,
-    body,
-    reportLongRequestConfig(),
-  );
+  const res = await reportPost<PageDocumentDetailsResponse>(`${BASE}/pageDocumentDetails`, body);
   const { content, totalCount } = parsePagedRowsFromApiData<DocumentDetailRowDto>(res);
   return {
     ...res,
@@ -137,18 +158,10 @@ export async function pageDocumentDetailsApi(body: PageDocumentDetailsRequest) {
 
 /** 单据详情合计。 */
 export async function summarizeDocumentDetailsApi(body: ExportDocumentDetailsRequest) {
-  return publicRequestClient.post<SummarizeDocumentDetailsResponse>(
-    `${BASE}/summarizeDocumentDetails`,
-    body,
-    reportLongRequestConfig(),
-  );
+  return reportPost<SummarizeDocumentDetailsResponse>(`${BASE}/summarizeDocumentDetails`, body);
 }
 
 /** 导出单据详情 Excel。 */
 export async function exportDocumentDetailsApi(body: ExportDocumentDetailsRequest) {
-  return publicRequestClient.post<ExportDocumentDetailsResponse>(
-    `${BASE}/exportDocumentDetails`,
-    body,
-    reportLongRequestConfig(),
-  );
+  return reportPost<ExportDocumentDetailsResponse>(`${BASE}/exportDocumentDetails`, body);
 }

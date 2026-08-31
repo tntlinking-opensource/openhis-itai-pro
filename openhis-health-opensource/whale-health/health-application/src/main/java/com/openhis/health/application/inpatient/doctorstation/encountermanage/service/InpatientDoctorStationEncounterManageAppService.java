@@ -5,6 +5,7 @@
 package com.openhis.health.application.inpatient.doctorstation.encountermanage.service;
 
 import com.openhis.health.application.shared.inpatient.AdmissionPrimaryDiagnosisAssembler;
+import com.openhis.health.application.shared.inpatient.BusinessDischargeTimeResolver;
 import com.openhis.health.application.shared.inpatient.InpatientAccountBalanceDisplayAssembler;
 import com.openhis.health.application.shared.inpatient.InpatientAccountBalanceDisplayDtoApplier;
 import com.openhis.health.application.shared.inpatient.InpatientAccountBalanceDisplayResult;
@@ -43,6 +44,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -87,6 +89,8 @@ public class InpatientDoctorStationEncounterManageAppService {
     private final InpatientPatientQueueNursingLevelEnrichAssembler inpatientPatientQueueNursingLevelEnrichAssembler;
     /** 险种展示：账户/读卡缓存/预结算回落。 */
     private final EncounterInsutypeDisplayAssembler encounterInsutypeDisplayAssembler;
+    /** 业务出院时间：出院医嘱计划时间优先（粘性条/费用清单继承 endTime）。 */
+    private final BusinessDischargeTimeResolver businessDischargeTimeResolver;
 
     /**
      * 分页查询住院医生站在院患者队列（IF-IP-DOR-01）。
@@ -140,6 +144,15 @@ public class InpatientDoctorStationEncounterManageAppService {
             // Pre：当前页批量解析护理级别展示（BR-IP-DOR-009）
             Map<Long, InpatientPatientQueueNursingLevelDisplayRow> nursingLevelByEncounterId =
                 inpatientPatientQueueNursingLevelEnrichAssembler.enrichByEncounterIds(pageEncounterIds, LocalDate.now());
+            // Pre：本页业务出院时间（出院医嘱计划时间优先，覆盖脏 end_time）
+            Map<Long, LocalDateTime> endTimeByEncounter = new HashMap<>();
+            for (InpatientEncounterContextQueryModel row : page.getContent()) {
+                if (row != null && row.getEncounterId() != null) {
+                    endTimeByEncounter.put(row.getEncounterId(), row.getEndTime());
+                }
+            }
+            Map<Long, LocalDateTime> businessEndByEncounter =
+                businessDischargeTimeResolver.mapByEncounterIds(pageEncounterIds, endTimeByEncounter);
             List<DoctorStationPatientQueueItemDto> content = new ArrayList<>();
             for (InpatientEncounterContextQueryModel row : page.getContent()) {
                 // 跳过空行，避免装配脏分页结果。
@@ -189,6 +202,10 @@ public class InpatientDoctorStationEncounterManageAppService {
                         enrichment);
                 InpatientAccountBalanceDisplayDtoApplier.apply(item, accountBalanceDisplay);
                 this.applyNursingLevelDisplay(item, nursingLevelByEncounterId.get(row.getEncounterId()));
+                // Asm：队列 endTime 展示业务出院时间（粘性条/打印/费用止日同源）
+                if (row.getEncounterId() != null && businessEndByEncounter.containsKey(row.getEncounterId())) {
+                    item.setEndTime(businessEndByEncounter.get(row.getEncounterId()));
+                }
                 content.add(item);
             }
             // Asm：封装分页响应

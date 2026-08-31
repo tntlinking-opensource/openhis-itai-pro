@@ -42,6 +42,10 @@ public class LoadDocumentDetailFormInitResponse {
     /** 目的库位下拉。 */
     private List<OptionDto> purposeLocationOptions;
 
+    @Schema(description = "供应商下拉")
+    /** 供应商下拉（租户内全部有效供应商；筛选用）。 */
+    private List<OptionDto> supplierOptions;
+
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     @Schema(description = "默认审批时间起")
     /** 默认审批时间起。 */

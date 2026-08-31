@@ -8,6 +8,7 @@ import com.openhis.health.application.shared.product.ClinicalCatalogInventoryPag
 import com.openhis.health.application.shared.product.ClinicalCatalogInventoryPageBatchLoader;
 import com.openhis.health.application.shared.product.ClinicalCatalogPriceResolver;
 import com.openhis.health.application.shared.product.ClinicalCatalogUnitPriceQuery;
+import com.openhis.health.application.shared.product.DoctorStationAdviceInventoryUnitQuantityHelper;
 import com.openhis.health.application.shared.product.ProductTableNameHelper;
 import com.openhis.health.application.inpatient.doctorstation.advice.dto.InpatientDoctorStationAdviceCatalogRowDto;
 import com.openhis.health.application.inpatient.doctorstation.advice.dto.InpatientDoctorStationAdviceInventoryRowDto;
@@ -223,17 +224,16 @@ public class InpatientDoctorStationAdviceCatalogAssembler {
     ) {
         List<InventoryCatalogAvailabilityRowModel> physical = inventoryBatch.getPhysicalRows(productCompositeKey);
         Map<String, BigDecimal> occupancy = inventoryBatch.getOccupancy(productCompositeKey);
+        Map<String, BigDecimal> remainingOcc =
+            DoctorStationAdviceInventoryUnitQuantityHelper.copyOccupancyRemaining(occupancy);
         for (InventoryCatalogAvailabilityRowModel row : physical) {
             if (row == null) {
+                // 预取行可能含空槽，跳过以免空指针中断首批解析
                 continue;
             }
-            BigDecimal net = row.getQuantity();
-            if (net == null) {
-                net = BigDecimal.ZERO;
-            }
-            String occKey = ProductTableNameHelper.tripleCompositeKey(
-                row.getItemTable(), row.getItemId(), row.getLocationId());
-            net = net.subtract(occupancy.getOrDefault(occKey, BigDecimal.ZERO));
+            BigDecimal net = DoctorStationAdviceInventoryUnitQuantityHelper.consumeLocationOccupancyForLot(
+                remainingOcc, row.getItemTable(), row.getItemId(), row.getLocationId(), row.getQuantity());
+            // 扣完本批能消化的预占后仍有量，即为 FIFO 首条净可用批。
             if (net.compareTo(BigDecimal.ZERO) > 0) {
                 return row.getLotNumber();
             }
@@ -305,17 +305,17 @@ public class InpatientDoctorStationAdviceCatalogAssembler {
                 List<InventoryCatalogAvailabilityRowModel> physical =
                     inventoryBatch.getPhysicalRows(productCompositeKey);
                 Map<String, BigDecimal> occ = inventoryBatch.getOccupancy(productCompositeKey);
+                // 库位级预占按批次遍历顺序消耗一次，避免同库多批重复扣整库占用。
+                Map<String, BigDecimal> remainingOcc =
+                    DoctorStationAdviceInventoryUnitQuantityHelper.copyOccupancyRemaining(occ);
                 List<InpatientDoctorStationAdviceInventoryRowDto> invDtos = new ArrayList<>();
                 BigDecimal sumNetSplit = BigDecimal.ZERO;
                 int order = 0;
                 for (InventoryCatalogAvailabilityRowModel row : physical) {
-                    String k = ProductTableNameHelper.tripleCompositeKey(row.getItemTable(), row.getItemId(), row.getLocationId());
-                    BigDecimal net = row.getQuantity();
-                    if (net == null) {
-                        net = BigDecimal.ZERO;
-                    }
-                    net = net.subtract(occ.getOrDefault(k, BigDecimal.ZERO));
+                    BigDecimal net = DoctorStationAdviceInventoryUnitQuantityHelper.consumeLocationOccupancyForLot(
+                        remainingOcc, row.getItemTable(), row.getItemId(), row.getLocationId(), row.getQuantity());
                     if (net.compareTo(BigDecimal.ZERO) <= 0) {
+                        // 本批被预占消化完，不进入可开明细
                         continue;
                     }
                     InpatientDoctorStationAdviceInventoryRowDto inv = new InpatientDoctorStationAdviceInventoryRowDto();

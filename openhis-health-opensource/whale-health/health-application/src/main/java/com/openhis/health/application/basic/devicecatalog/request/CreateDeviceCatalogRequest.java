@@ -66,7 +66,7 @@ public class CreateDeviceCatalogRequest {
     private String modelNumber;
     /** 是否高值耗材。 */
     private Boolean hvcmFlag;
-    /** 收费耗材标记（true=收费；界面「不收费耗材」勾选对应 false）。 */
+    /** 收费耗材标记（true=收费；与界面「收费耗材」勾选同向）。 */
     private Boolean chargeableFlag;
     /** 病案结算类型编码（术语 mr_settlement_type_code）。 */
     private String mrSettlementTypeCode;
@@ -82,9 +82,11 @@ public class CreateDeviceCatalogRequest {
     private Integer chrgitmLv;
     /** 成分或材质说明。 */
     private String substanceText;
-    /** 生产厂家主键。 */
+    /** 生产厂家主键（写路径落库；cus_supplier.id，type=生产厂家）。 */
     private Long manufacturerId;
-    /** 生产厂家名称。 */
+    /**
+     * 生产厂家名称（可选；仅导入 Excel 文本，由 AppService 解析为 {@link #manufacturerId}；不写入实体 text 列）。
+     */
     private String manufacturerText;
     /** 供应商主键。 */
     private Long supplyId;

@@ -1,8 +1,9 @@
 import type { HiprintPageSizeOptions } from './paper-size';
 
-import { autoConnect, defaultElementTypeProvider, hiprint } from 'vue-plugin-hiprint';
+import { $, installHiprintJquery } from '#/hiprint/core/jquery';
+import { markHiprintEngineInited } from '#/hiprint/core/engine-state';
 
-import $ from 'jquery';
+import { autoConnect, defaultElementTypeProvider, hiprint } from 'vue-plugin-hiprint';
 
 import {
   getHiprintSocketHost,
@@ -33,6 +34,10 @@ export interface HiprintPrintRequest {
   scenarioCode?: string;
   printer?: string;
   copies?: number;
+  /**
+   * 针式联单：同一 PrintData 连打 N 页，print2 的 copies 固定为 1。
+   */
+  repeatPrintData?: boolean;
   silent?: boolean;
   jobName?: string;
   pageSize?: HiprintPageSizeOptions['pageSize'];
@@ -54,19 +59,23 @@ export interface HiprintPrintFailure {
 
 export type HiprintPrintResponse = HiprintPrintFailure | HiprintPrintSuccess;
 
+interface HiprintPrint2Options {
+  copies?: number;
+  landscape?: boolean;
+  pageSize?: HiprintPageSizeOptions['pageSize'];
+  printer?: string;
+  silent?: boolean;
+  styleHandler?: () => string;
+  title?: string;
+}
+
 interface HiprintPrintTemplate {
   print2: (
-    data: Record<string, unknown>,
-    options?: {
-      copies?: number;
-      landscape?: boolean;
-      pageSize?: HiprintPageSizeOptions['pageSize'];
-      printer?: string;
-      silent?: boolean;
-      styleHandler?: () => string;
-      title?: string;
-    },
+    data: Record<string, unknown> | Record<string, unknown>[],
+    options?: HiprintPrint2Options,
   ) => void;
+  /** 把已渲染 HTML 送给 electron-hiprint（一折一折打，避免第二页被裁） */
+  printByHtml2?: (html: HTMLElement, options?: HiprintPrint2Options) => void;
   /** 生成打印 HTML（jQuery 包装）；panelPageRule=none 时用于实测内容高度 */
   getHtml?: (data: Record<string, unknown>) => JQueryLike;
   on: (event: string, handler: (data?: unknown) => void) => void;
@@ -195,14 +204,68 @@ function buildContentHeightPrintStyleHandler(heightMm: number): () => string {
 </style>`;
 }
 
+/** 联单定高：每折固定高度；overflow:hidden 会让 Chromium 丢掉第二折 */
+function buildFormFoldPrintStyleHandler(heightMm: number): () => string {
+  const h = Math.max(heightMm, 1).toFixed(2);
+  return () =>
+    `<style>
+.hiprint-printPaper{
+  height:${h}mm !important;
+  min-height:${h}mm !important;
+  max-height:${h}mm !important;
+  overflow:visible !important;
+  page-break-after:always !important;
+  break-after:page !important;
+}
+.hiprint-printPanel .hiprint-printPaper:last-child{
+  page-break-after:avoid !important;
+  break-after:auto !important;
+}
+.hiprint-paperNumber,.hiprint-paperNumber-disabled{display:none !important;}
+</style>`;
+}
+
+/** 只要最外层纸张，排除套在里面的节点 */
+function isTopLevelHiprintPaper(el: HTMLElement): boolean {
+  return !el.parentElement?.closest('.hiprint-printPaper');
+}
+
+/** 从 getHtml 结果里拆出每一折最外层 .hiprint-printPaper */
+function listHiprintPapers(htmlResult: unknown): HTMLElement[] {
+  const $html = $(htmlResult as never);
+  const nested = $html.find('.hiprint-printPaper').toArray() as HTMLElement[];
+  const self = $html.filter('.hiprint-printPaper').toArray() as HTMLElement[];
+  const papers = [...new Set([...self, ...nested])].filter(isTopLevelHiprintPaper);
+  if (papers.length > 0) {
+    return papers;
+  }
+  const root = $html.get?.(0);
+  return root ? [root] : [];
+}
+
+/** 单折包一层 template/panel，给 printByHtml2 */
+function wrapHiprintPaper(paper: HTMLElement): HTMLElement {
+  const templateEl = document.createElement('div');
+  templateEl.className = 'hiprint-printTemplate';
+  const panelEl = document.createElement('div');
+  panelEl.className = 'hiprint-printPanel';
+  panelEl.append(paper.cloneNode(true));
+  templateEl.append(panelEl);
+  return templateEl;
+}
+
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
 let runtimeInited = false;
 let lastHost = '';
 let printLockCssPrefetched = false;
 
 function ensureJquery(): void {
-  const w = window as Window & { $?: typeof $; jQuery?: typeof $ };
-  w.$ = $;
-  w.jQuery = $;
+  installHiprintJquery();
 }
 
 /** 预取 print-lock.css，减轻 print2 内同步 XHR 等待 */
@@ -234,6 +297,7 @@ function ensureHiprintPrintRuntime(host: string): void {
   });
   runtimeInited = true;
   lastHost = host;
+  markHiprintEngineInited();
 }
 
 /** 打印用 Socket 地址（同步兜底，优先 env / 缓存 / 默认 17521） */
@@ -385,6 +449,56 @@ function toHiprintTemplateJson(raw: Record<string, unknown>): Record<string, unk
   return result;
 }
 
+/** 屏幕预览加载 print-lock（index.html 仅 media=print，对话框内不生效） */
+function ensureScreenPrintLockCss(): void {
+  if (document.querySelector('#hiprint-print-lock-screen')) {
+    return;
+  }
+  const link = document.createElement('link');
+  link.id = 'hiprint-print-lock-screen';
+  link.rel = 'stylesheet';
+  link.href = '/print-lock.css';
+  document.head.append(link);
+}
+
+/** 与 print2 同一套模板实例，用 getHtml 做屏幕预览（不走设计器 init / 浏览器 print） */
+export function renderHiprintPreviewHtml(
+  printJson: Record<string, unknown>,
+  printData: Record<string, unknown>,
+): string {
+  ensureJquery();
+  ensureScreenPrintLockCss();
+  ensureHiprintPrintRuntime(getHiprintSocketHost());
+  const templateJson = toHiprintTemplateJson(printJson);
+  if (!Array.isArray(templateJson.panels) || templateJson.panels.length === 0) {
+    throw new Error('打印模板缺少 panels，无法预览');
+  }
+  const template = new hiprint.PrintTemplate({
+    template: templateJson,
+  }) as unknown as HiprintPrintTemplate;
+  if (typeof template.getHtml !== 'function') {
+    throw new Error('hiprint 不支持 getHtml 预览');
+  }
+  const htmlResult = template.getHtml(printData);
+  if (typeof htmlResult === 'string') {
+    return htmlResult;
+  }
+  return (
+    $('<div></div>')
+      .append(htmlResult as never)
+      .html() ?? ''
+  );
+}
+
+/** 统计预览 HTML 中的联单折数（只计最外层纸张） */
+export function countHiprintPreviewFolds(previewHtml: string): number {
+  const doc = new DOMParser().parseFromString(previewHtml, 'text/html');
+  const papers = [...doc.querySelectorAll('.hiprint-printPaper')].filter((el) =>
+    isTopLevelHiprintPaper(el as HTMLElement),
+  );
+  return Math.max(1, papers.length);
+}
+
 function extractErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -398,18 +512,9 @@ function extractErrorMessage(error: unknown): string {
   return '打印失败';
 }
 
-function printOnce(
+function waitPrintJob(
   template: HiprintPrintTemplate,
-  printData: Record<string, unknown>,
-  options: {
-    copies?: number;
-    landscape?: boolean;
-    pageSize?: HiprintPageSizeOptions['pageSize'];
-    printer?: string;
-    silent?: boolean;
-    styleHandler?: () => string;
-    title?: string;
-  },
+  start: () => void,
   timeoutMs = DEFAULT_PRINT_TIMEOUT_MS,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -443,6 +548,22 @@ function printOnce(
     template.on('printSuccess', onSuccess);
     template.on('printError', onError);
     try {
+      start();
+    } catch (error) {
+      onError(error);
+    }
+  });
+}
+
+function printOnce(
+  template: HiprintPrintTemplate,
+  printData: Record<string, unknown> | Record<string, unknown>[],
+  options: HiprintPrint2Options,
+  timeoutMs = DEFAULT_PRINT_TIMEOUT_MS,
+): Promise<void> {
+  return waitPrintJob(
+    template,
+    () => {
       template.print2(printData, {
         printer: options.printer ?? '',
         title: options.title ?? 'OpenHIS',
@@ -452,10 +573,72 @@ function printOnce(
         copies: options.copies ?? 1,
         silent: options.silent ?? true,
       });
-    } catch (error) {
-      onError(error);
+    },
+    timeoutMs,
+  );
+}
+
+/** 一折 HTML 送 printByHtml2 */
+function printHtmlOnce(
+  template: HiprintPrintTemplate,
+  html: HTMLElement,
+  options: HiprintPrint2Options,
+  timeoutMs = DEFAULT_PRINT_TIMEOUT_MS,
+): Promise<void> {
+  if (typeof template.printByHtml2 !== 'function') {
+    throw new Error('hiprint 不支持按折打印');
+  }
+  return waitPrintJob(
+    template,
+    () => {
+      template.printByHtml2?.(html, {
+        printer: options.printer ?? '',
+        title: options.title ?? 'OpenHIS',
+        pageSize: options.pageSize,
+        landscape: options.landscape,
+        styleHandler: options.styleHandler,
+        copies: 1,
+        silent: options.silent ?? true,
+      });
+    },
+    timeoutMs,
+  );
+}
+
+/** 联单：按预览的每一折依次送打，避免第二折被裁进第一折 */
+async function printFormFolds(
+  template: HiprintPrintTemplate,
+  printData: Record<string, unknown>,
+  copies: number,
+  options: HiprintPrint2Options,
+): Promise<void> {
+  if (typeof template.getHtml !== 'function' || typeof template.printByHtml2 !== 'function') {
+    await printOnce(
+      template,
+      copies > 1 ? Array.from({ length: copies }, () => printData) : printData,
+      {
+        ...options,
+        copies: 1,
+      },
+    );
+    return;
+  }
+  let printed = 0;
+  // 每一份是完整单据；表格超出一折时 hiprint 会拆成多张 paper
+  for (let copyIndex = 0; copyIndex < copies; copyIndex += 1) {
+    const papers = listHiprintPapers(template.getHtml(printData));
+    if (papers.length === 0) {
+      throw new Error('联单预览未生成纸张，无法打印');
     }
-  });
+    // 与预览一致：第 1 折、第 2 折依次送针式
+    for (const paper of papers) {
+      if (printed > 0) {
+        await sleepMs(400);
+      }
+      await printHtmlOnce(template, wrapHiprintPaper(paper), options);
+      printed += 1;
+    }
+  }
 }
 
 /** 经 electron-hiprint（17521）静默直打 */
@@ -485,61 +668,63 @@ export async function postHiprintPrint(
   const printer = request.printer?.trim() || undefined;
   const title = request.jobName?.trim() || 'OpenHIS';
   const panel = readFirstPanel(printJson);
-  let pageOpts =
+  const pageOpts =
     request.pageSize !== undefined || request.landscape !== undefined
       ? { pageSize: request.pageSize, landscape: request.landscape }
       : resolveHiprintPageSize(printJson, scenarioCode);
 
-  // 库房三套单据：即使库里模板尚未刷到 panelPageRule=none，也按内容高度出纸（针式连续纸）
-  const forceInvContentHeight =
-    scenarioCode === PRINT_SCENARIO.invMovementPrint ||
-    scenarioCode === PRINT_SCENARIO.invStocktakePrint ||
-    scenarioCode === PRINT_SCENARIO.invReturnPrint;
+  // 仅非联单且模板声明 panelPageRule=none 时按内容撑高（瓶签等）
   const useContentHeight =
     request.pageSize === undefined &&
-    (isContentHeightPanel(panel) || forceInvContentHeight) &&
+    request.repeatPrintData !== true &&
+    isContentHeightPanel(panel) &&
     panel &&
     typeof panel.width === 'number' &&
     panel.width > 0;
 
   let contentHeightStyleHandler: (() => string) | undefined;
-  if (useContentHeight) {
+  let resolvedPageOpts = pageOpts;
+  if (useContentHeight && panel && typeof panel.width === 'number') {
     const contentHeightMm = measurePrintContentHeightMm(template, request.printData);
     if (contentHeightMm != null && contentHeightMm > 0) {
-      // 合计/签批下行留一点尾白，避免贴边
       const widthMm = panel.width;
       const heightMm = contentHeightMm + 8;
-      // 注意：短内容时 widthMm > heightMm，绝不能改 panel.height / 写 @page size，否则会被当成横向整页旋转
-      pageOpts = {
+      resolvedPageOpts = {
         pageSize: mmToMicronPageSize(widthMm, heightMm),
         landscape: false,
       };
       contentHeightStyleHandler = buildContentHeightPrintStyleHandler(heightMm);
-      console.info('[print] inv content-height', {
-        scenarioCode,
-        contentHeightMm: Number(contentHeightMm.toFixed(2)),
-        heightMm: Number(heightMm.toFixed(2)),
-        pageSize: pageOpts.pageSize,
-        landscape: false,
-      });
     } else {
-      console.warn('[print] inv content-height measure failed, fallback panel size', {
+      console.warn('[print] content-height measure failed, fallback panel size', {
         scenarioCode,
         contentHeightMm,
       });
     }
+  } else if (
+    request.repeatPrintData === true &&
+    panel &&
+    typeof panel.height === 'number' &&
+    panel.height > 0
+  ) {
+    contentHeightStyleHandler = buildFormFoldPrintStyleHandler(panel.height);
   }
 
+  const printOptions: HiprintPrint2Options = {
+    printer,
+    title,
+    pageSize: resolvedPageOpts.pageSize,
+    landscape: false,
+    styleHandler: contentHeightStyleHandler,
+    copies: request.repeatPrintData === true ? 1 : copies,
+    silent: request.silent ?? true,
+  };
+
   try {
-    await printOnce(template, request.printData, {
-      printer,
-      title,
-      pageSize: pageOpts.pageSize,
-      landscape: false,
-      styleHandler: contentHeightStyleHandler,
-      copies,
-      silent: request.silent ?? true,
-    });
+    if (request.repeatPrintData === true) {
+      await printFormFolds(template, request.printData, copies, printOptions);
+    } else {
+      await printOnce(template, request.printData, printOptions);
+    }
     return {
       ok: true,
       printer,

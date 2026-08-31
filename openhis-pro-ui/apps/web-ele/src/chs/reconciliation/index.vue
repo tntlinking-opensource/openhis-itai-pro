@@ -587,7 +587,7 @@ function requireContractBusNo(): string {
 }
 
 async function withSignIn<T>(runner: () => Promise<T>): Promise<T> {
-  await ensureInsuranceSignIn(requireContractBusNo());
+  await ensureInsuranceSignIn(requireContractBusNo(), { preferServerSignIn: true });
   return runner();
 }
 

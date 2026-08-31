@@ -8,6 +8,7 @@ import com.openhis.health.application.inpatient.doctorstation.advice.dto.CancelS
 import com.openhis.health.application.inpatient.doctorstation.advice.dto.InpatientDoctorStationAdviceDraftLineRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.dto.StopLongTermAdviceLineRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.request.ChangeInpatientDoctorStationAdviceBusinessTimeRequest;
+import com.openhis.health.application.inpatient.doctorstation.advice.request.ChangeLongTermMedicationDoseInpatientDoctorStationAdviceRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.request.CreateDischargeInpatientDoctorStationAdviceRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.request.PageInpatientDoctorStationAdviceCatalogRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.request.SaveInpatientDoctorStationAdviceDraftBatchRequest;
@@ -22,6 +23,7 @@ import com.openhis.health.domain.medication.medicationrequest.command.RemoveMedi
 import com.openhis.health.domain.medication.medicationrequest.command.SignMedicationOrderCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.SignOffMedicationOrderCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.StopLongTermMedicationOrderCommand;
+import com.openhis.health.domain.medication.medicationrequest.entity.MedicationRequest;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.application.shared.product.ProductDefinitionPageQuery;
 import com.openhis.health.domain.workflow.servicerequest.command.CancelStopServiceRequestCommand;
@@ -274,6 +276,34 @@ public interface InpatientDoctorStationAdviceMapper {
     ChangeServiceRequestBusinessTimeCommand toChangeServiceRequestBusinessTimeCommand(
         ChangeInpatientDoctorStationAdviceBusinessTimeRequest request,
         Long operatorId
+    );
+
+    /**
+     * 装配长期药品改量：停嘱命令（IF-IP-DOR-28，源嘱 VERIFIED 时）。
+     *
+     * @param request    改量请求（含可选 stopTime）
+     * @param operatorId 操作人（停嘱人）
+     * @return 停嘱领域命令
+     */
+    StopLongTermMedicationOrderCommand toStopLongTermMedicationOrderCommandForDoseChange(
+        ChangeLongTermMedicationDoseInpatientDoctorStationAdviceRequest request,
+        Long operatorId
+    );
+
+    /**
+     * 装配长期药品改量：新建草稿命令（IF-IP-DOR-28；强制 LONG_TERM + basedOn→源嘱）。
+     *
+     * @param request    改量请求
+     * @param source     源药品申请（同就诊、同药锁定）
+     * @param operatorId 开嘱人
+     * @param orgId      开立机构
+     * @return 创建草稿命令
+     */
+    CreateMedicationOrderDraftCommand toCreateMedicationOrderDraftCommandForDoseChange(
+        ChangeLongTermMedicationDoseInpatientDoctorStationAdviceRequest request,
+        MedicationRequest source,
+        Long operatorId,
+        Long orgId
     );
 
     /**

@@ -199,7 +199,7 @@ public class OutpatientMedicationDispenseReportMapperImpl implements OutpatientM
     }
 
     /**
-     * 明细行 → 导出行。
+     * 明细行 → 导出行（并集 DTO；列裁剪交给 AnnotatedExcelExporter + exportColumns）。
      *
      * @param row 明细；null 返回 null
      * @return 导出行
@@ -213,13 +213,9 @@ public class OutpatientMedicationDispenseReportMapperImpl implements OutpatientM
         OutpatientMedicationDispenseExportRowDto exportRow = new OutpatientMedicationDispenseExportRowDto();
         exportRow.setSourceText(row.getSourceText());
         exportRow.setRecordTypeText(row.getRecordTypeText());
-        exportRow.setBusinessTimeOrDimension(row.getBusinessTime());
+        exportRow.setBusinessTime(row.getBusinessTime());
         exportRow.setPharmacyLocationName(row.getPharmacyLocationName());
-        if (row.getPatientName() != null) {
-            exportRow.setPatientOrDepartmentName(row.getPatientName());
-        } else {
-            exportRow.setPatientOrDepartmentName(row.getDepartmentName());
-        }
+        exportRow.setPatientName(row.getPatientName());
         exportRow.setEncounterNo(row.getEncounterBusNo());
         exportRow.setFeeNatureDisplay(row.getFeeNatureDisplay());
         exportRow.setMedTypeDisplay(row.getMedTypeDisplay());
@@ -228,19 +224,21 @@ public class OutpatientMedicationDispenseReportMapperImpl implements OutpatientM
         exportRow.setMedicationSpec(row.getMedicationSpec());
         exportRow.setQuantity(row.getQuantity());
         exportRow.setUnitText(row.getUnitText());
-        exportRow.setUnitPrice(row.getUnitPrice());
-        exportRow.setTotalAmount(row.getTotalAmount());
         exportRow.setPurchaseUnitPrice(row.getPurchaseUnitPrice());
         exportRow.setPurchaseAmount(row.getPurchaseAmount());
         exportRow.setSaleUnitPrice(row.getSaleUnitPrice());
         exportRow.setSaleAmount(row.getSaleAmount());
         exportRow.setLotNumber(row.getLotNumber());
+        exportRow.setTraceNo(row.getTraceNo());
+        exportRow.setDepartmentName(row.getDepartmentName());
+        exportRow.setDispenserName(row.getDispenserName());
         exportRow.setBusNo(row.getBusNo());
+        exportRow.setPrescriptionNo(row.getPrescriptionNo());
         return exportRow;
     }
 
     /**
-     * 汇总行 → 导出行。
+     * 汇总行 → 导出行（并集 DTO；列裁剪交给 AnnotatedExcelExporter + exportColumns）。
      *
      * @param row 汇总；null 返回 null
      * @return 导出行
@@ -252,12 +250,17 @@ public class OutpatientMedicationDispenseReportMapperImpl implements OutpatientM
             return null;
         }
         OutpatientMedicationDispenseExportRowDto exportRow = new OutpatientMedicationDispenseExportRowDto();
-        exportRow.setBusinessTimeOrDimension(row.getDimensionName());
-        exportRow.setQuantity(row.getNetQuantity());
-        exportRow.setTotalAmount(row.getSaleNetAmount());
-        exportRow.setPurchaseAmount(row.getPurchaseNetAmount());
-        exportRow.setSaleAmount(row.getSaleNetAmount());
-        exportRow.setMedicationName(row.getDimensionName());
+        exportRow.setDimensionName(row.getDimensionName());
+        exportRow.setMedicationCode(row.getMedicationCode());
+        exportRow.setNetQuantity(row.getNetQuantity());
+        // 数量 ↔ 包装单位；最小数量 ↔ 最小单位
+        exportRow.setPackageUnitName(row.getPackageUnitName());
+        exportRow.setMinUnitQuantity(row.getMinUnitQuantity());
+        exportRow.setMinUnitName(row.getMinUnitName());
+        exportRow.setPurchaseUnitPrice(row.getPurchaseUnitPrice());
+        exportRow.setSaleUnitPrice(row.getSaleUnitPrice());
+        exportRow.setPurchaseNetAmount(row.getPurchaseNetAmount());
+        exportRow.setSaleNetAmount(row.getSaleNetAmount());
         return exportRow;
     }
 

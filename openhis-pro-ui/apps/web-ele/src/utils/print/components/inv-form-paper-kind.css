@@ -1,0 +1,130 @@
+/**
+ * 库房单据纸张选择：预览顶栏分段开关 + 打印前卡片。
+ * 不走 SFC scoped：预览/弹窗均 teleport 到 body。
+ */
+
+.inv-paper-switch {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: stretch;
+  padding: 3px;
+  background: var(--el-fill-color);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+}
+
+.inv-paper-switch-item {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  padding: 4px 14px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+  color: var(--el-text-color-regular);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  outline: none;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.inv-paper-switch-item:hover:not(.is-active) {
+  color: var(--el-text-color-primary);
+  background: var(--el-fill-color-light);
+}
+
+.inv-paper-switch-item.is-active {
+  color: var(--el-color-primary);
+  background: var(--el-bg-color);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
+}
+
+.inv-paper-switch-item:focus-visible {
+  box-shadow: 0 0 0 2px var(--el-color-primary-light-7);
+}
+
+.inv-paper-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.inv-paper-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 14px 12px;
+  text-align: left;
+  cursor: pointer;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color);
+  border-radius: 10px;
+  outline: none;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.inv-paper-card:hover {
+  border-color: var(--el-color-primary-light-5);
+}
+
+.inv-paper-card.is-active {
+  background: var(--el-color-primary-light-9);
+  border-color: var(--el-color-primary);
+  box-shadow: 0 0 0 1px var(--el-color-primary);
+}
+
+.inv-paper-card:focus-visible {
+  box-shadow: 0 0 0 2px var(--el-color-primary-light-7);
+}
+
+.inv-paper-card-thumb {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  height: 72px;
+  background: var(--el-fill-color-lighter);
+  border-radius: 6px;
+}
+
+.inv-paper-card-sheet {
+  background: #fff;
+  border: 1px solid var(--el-border-color-lighter);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 8%);
+}
+
+.inv-paper-card-sheet.is-triple {
+  width: 52px;
+  height: 28px;
+  margin-bottom: 10px;
+  border-bottom: 1px dashed var(--el-border-color);
+}
+
+.inv-paper-card-sheet.is-a4 {
+  width: 34px;
+  height: 48px;
+  margin-bottom: 8px;
+}
+
+.inv-paper-card-name {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 22px;
+  color: var(--el-text-color-primary);
+}
+
+.inv-paper-card-hint {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--el-text-color-regular);
+}

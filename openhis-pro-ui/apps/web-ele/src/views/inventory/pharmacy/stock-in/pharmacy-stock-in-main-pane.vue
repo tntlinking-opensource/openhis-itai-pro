@@ -1,4 +1,4 @@
-﻿<!--
+<!--
   药房入库单右侧主区：与药库出库单同构；契约对齐 AS-INV-PHA-001-SDD（枚举以领域 getCode() 字符串提交）。
 -->
 <script setup lang="ts">
@@ -65,7 +65,7 @@ import {
 import SectionTitle from '#/components/layouts/section-title.vue';
 import {
   formatInventoryLineTotal,
-  formatMoneyDisplay,
+  formatPurchaseMoneyDisplay,
   inventoryLineTotalNumber,
 } from '#/utils/format/money-scale';
 import { resolveLoginPractitionerIdForRequest } from '#/utils/format/preserve-api-id';
@@ -131,7 +131,7 @@ interface PharmacyStockInPreviewRow {
   itemId?: number | string;
   /** 选品库存行 id（下拉行唯一键），不落库 */
   inventoryItemId?: number | string;
-  /** 药品分类码；中药=4 时单价三位展示 */
+  /** 药品分类码；中药=4 时进价三位展示 */
   categoryCode?: string;
   spec: string;
   manufacturer: string;
@@ -322,11 +322,11 @@ function triggerPaneFlash() {
 }
 
 /** 详情回显：持久化 total_price 原样格式化。 */
-function formatPharmacyStockInDetailTotalPrice(total: unknown): string {
+function formatPharmacyStockInDetailTotalPrice(total: unknown, categoryCode?: unknown): string {
   if (total === undefined || total === null || total === '') return '';
   const n = Number(total);
   if (!Number.isFinite(n)) return String(total).trim();
-  return formatMoneyDisplay(n);
+  return formatPurchaseMoneyDisplay(n, categoryCode);
 }
 
 /** 编辑态：按数量 × 单价刷新合计（详情 load 不调用）。 */
@@ -461,7 +461,7 @@ function mapPharmacyStockInDetailLineToGrid(
     unitList: [{ value: 'LEGACY', label: unitCodeStr.trim() === '' ? '单位' : unitCodeStr }],
     __prevBandKind: 'LEGACY',
     price: ln.price === undefined || ln.price === null ? 0 : Number(ln.price),
-    totalPrice: formatPharmacyStockInDetailTotalPrice(ln.totalPrice),
+    totalPrice: formatPharmacyStockInDetailTotalPrice(ln.totalPrice, catalog?.categoryCode),
     lotNumber: String(ln.lotNumber ?? '').trim(),
     traceNo: String(ln.traceNo ?? '').trim(),
     remark: String(ln.remake ?? ''),
@@ -1401,8 +1401,8 @@ function resolvePharmacyStockInPrintUnitLabel(row: PharmacyStockInPreviewRow): s
   return String(row.unitCode ?? '').trim();
 }
 
-/** 打印药房入库单（计价流转模版） */
-async function handlePrint() {
+/** 打印或预览药房入库单（计价流转模版） */
+async function handlePrint(payload?: { preview?: boolean }) {
   const busNo = String(headerBusNo.value ?? '').trim();
   if (!busNo) {
     ElMessage.warning('请先保存单据后再打印');
@@ -1459,6 +1459,7 @@ async function handlePrint() {
     },
     bizRef: { busNo, docKind: 'pharmacy-stock-in' },
     jobName: documentTitle,
+    preview: payload?.preview === true,
   });
 }
 </script>

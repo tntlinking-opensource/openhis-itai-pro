@@ -12,6 +12,7 @@ import com.openhis.health.application.inventory.documentdetail.response.ExportDo
 import com.openhis.health.application.inventory.documentdetail.response.PageDocumentDetailsResponse;
 import com.openhis.health.application.inventory.documentdetail.response.SummarizeDocumentDetailsResponse;
 import com.openhis.health.application.inventory.documentdetail.support.DocumentDetailDomainScope;
+import com.openhis.whale.core.application.dto.ExcelExportColumnDto;
 
 import java.util.List;
 
@@ -70,9 +71,12 @@ public interface InventoryDocumentDetailMapper {
      * 写出 xlsx 字节。
      *
      * @param exportRows 导出行
+     * @param columns    前端自选列；null/空则全部动态列
      * @return xlsx 字节
      */
-    byte[] buildExcelBytes(List<DocumentDetailExportRowDto> exportRows);
+    byte[] buildExcelBytes(
+        List<DocumentDetailExportRowDto> exportRows,
+        List<ExcelExportColumnDto> columns);
 
     /**
      * 构建导出文件名（含时间戳）。

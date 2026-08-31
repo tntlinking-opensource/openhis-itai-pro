@@ -16,6 +16,7 @@ export function toPatientCardPatient(p: NursePatient): OutpatientPatientCardPayl
     statusEnumText: p.status,
     contractDisplay: p.paymentType ?? null,
     pendingExecuteCount: p.pendingExecuteCount,
+    hasPendingSupply: p.hasPendingSupply === true,
     riskHint: p.riskHint,
   };
 }

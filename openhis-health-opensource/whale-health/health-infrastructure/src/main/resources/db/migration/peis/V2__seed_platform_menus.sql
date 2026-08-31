@@ -1,8 +1,8 @@
--- PEIS ModularFlyway V2 · platform seeds（menus / perms / ter_concept / print template）
+-- PEIS ModularFlyway V2 · platform seeds（menus / perms / ter_concept / print template）最终态
 -- history: flyway_schema_history_peis
--- folded: V2–V13 seed content（dependency-safe order；菜单 sort_order 取终态）
+-- folded: V2–V13 菜单/术语/打印 + 指引单 peis-guide-print + 团检合同对账；菜单名「体检登记」
 -- 权限挂角色 provider_key=1（与 Booking 种子一致）
--- 终态菜单序：登记(0) → 收费(1) → 目录(2) → 诊断(3) → 参数(4) / 公告(4) → 团检(5) → 分科(6) → 总检(7) → 报告打印(8) → 报告发放(9) → 复查(10) → 体检历史(11)
+-- 终态菜单序：登记(0) → 收费(1) → 目录(2) → 诊断(3) → 参数(4) / 公告(4) → 团检(5) → 分科(6) → 总检(7) → 报告打印(8) → 报告发放(9) → 复查(10) → 体检历史(11) → 团检合同对账(12)
 
 -- ========== from V2__seed_platform_menus.sql（Catalog/Diagnosis/Settings sort_order 已含 V5 终态） ==========
 
@@ -131,7 +131,7 @@ ON CONFLICT ("id") DO UPDATE SET
     updated_at = EXCLUDED.updated_at;
 
 -- ========== from V4__seed_personal_registration_menu.sql ==========
--- PEIS 个检登记菜单（挂 PeisHub 下，sort_order=0 优先于目录）
+-- PEIS 体检登记菜单（挂 PeisHub 下，sort_order=0 优先于目录）
 -- 权限挂角色 provider_key=1（与 V2 种子一致）
 
 INSERT INTO whale_permissions (
@@ -139,7 +139,7 @@ INSERT INTO whale_permissions (
     tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
 )
 VALUES
-    ('311100000000000005', 'Peis.Registration.View', '个检登记', 'Peis',
+    ('311100000000000005', 'Peis.Registration.View', '体检登记', 'Peis',
      '菜单入口: PeisPersonalRegistration', NULL,
      TIMESTAMP '2026-07-19 00:00:00+00', TIMESTAMP '2026-07-19 00:00:00+00', 1, 1, FALSE, NULL, NULL)
 ON CONFLICT (id) DO UPDATE SET
@@ -158,7 +158,7 @@ INSERT INTO whale_menus (
     tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
 )
 VALUES
-    ('311100000000000105', 'PeisPersonalRegistration', 'PeisPersonalRegistration', '个检登记', 'lucide:clipboard-list',
+    ('311100000000000105', 'PeisPersonalRegistration', 'PeisPersonalRegistration', '体检登记', 'lucide:clipboard-list',
      '/peis/personal-register', '/peis/personal-register/index', 'Peis.Registration.View', '311100000000000100', 0,
      TRUE, FALSE, FALSE, '', 'menu', 'PeisPersonalRegistrationAppService · AS-PEIS-REG-001', NULL,
      TIMESTAMP '2026-07-19 00:00:00+00', TIMESTAMP '2026-07-19 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE)
@@ -194,7 +194,7 @@ ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
     updated_at = TIMESTAMP '2026-07-19 00:00:00+00';
 
 -- ========== from V5__seed_physical_exam_charge_menu.sql ==========
--- PEIS 体检收费菜单（health · AS-PE-FIN-001，挂 PeisHub；sort_order=1，紧随个检登记）
+-- PEIS 体检收费菜单（health · AS-PE-FIN-001，挂 PeisHub；sort_order=1，紧随体检登记）
 -- 权限挂角色 provider_key=1（与 V2/V4 种子一致）
 
 INSERT INTO whale_permissions (
@@ -264,8 +264,8 @@ INSERT INTO whale_permissions (
     tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
 )
 VALUES
-    ('311100000000000007', 'Peis.GroupCheck.View', '团检管理', 'Peis',
-     '菜单入口: PeisGroupCheckAdmin · AS-PEIS-GRP-001', NULL,
+    ('311100000000000007', 'Peis.GroupCheck.View', '团检筹备', 'Peis',
+     '菜单入口: PeisGroupCheckAdmin · 团检筹备（单位/合同/批次/名册导入）', NULL,
      TIMESTAMP '2026-07-19 00:00:00+00', TIMESTAMP '2026-07-19 00:00:00+00', 1, 1, FALSE, NULL, NULL)
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
@@ -279,9 +279,9 @@ INSERT INTO whale_menus (
     tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
 )
 VALUES
-    ('311100000000000107', 'PeisGroupCheck', 'PeisGroupCheck', '团检管理', 'lucide:users',
+    ('311100000000000107', 'PeisGroupCheck', 'PeisGroupCheck', '团检筹备', 'lucide:users',
      '/peis/group-check', '/peis/group-check/index', 'Peis.GroupCheck.View', '311100000000000100', 5,
-     TRUE, FALSE, FALSE, '', 'menu', 'PeisGroupCheckAdminAppService · AS-PEIS-GRP-001', NULL,
+     TRUE, FALSE, FALSE, '', 'menu', 'PeisGroupCheckAdminAppService · 团检筹备', NULL,
      TIMESTAMP '2026-07-19 00:00:00+00', TIMESTAMP '2026-07-19 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE)
 ON CONFLICT (id) DO UPDATE SET
     path = EXCLUDED.path,
@@ -775,3 +775,103 @@ ON CONFLICT (id) DO UPDATE SET
     deleted_by = NULL,
     updated_at = EXCLUDED.updated_at;
 
+-- ========== folded: 团检合同对账菜单（原 V3）· IDs 015/115/215 ==========
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('311100000000000015', 'Peis.ContractReconciliation.View', '团检合同对账', 'Peis',
+     '菜单入口: PeisGroupCheckAdmin · listContractReconciliation', NULL,
+     TIMESTAMP '2026-08-22 00:00:00+00', TIMESTAMP '2026-08-22 00:00:00+00', 1, 1, FALSE, NULL, NULL)
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    display_name = EXCLUDED.display_name,
+    parent_name = EXCLUDED.parent_name,
+    description = EXCLUDED.description,
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES
+    ('311100000000000115', 'PeisContractReconciliation', 'PeisContractReconciliation', '团检合同对账',
+     'lucide:file-spreadsheet',
+     '/peis/report/contract-reconciliation', '/peis/report/contract-reconciliation/index',
+     'Peis.ContractReconciliation.View', '311100000000000100', 12,
+     TRUE, FALSE, FALSE, '', 'menu',
+     'PeisGroupCheckAdminAppService · listContractReconciliation · GRP-08', NULL,
+     TIMESTAMP '2026-08-22 00:00:00+00', TIMESTAMP '2026-08-22 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE)
+ON CONFLICT (id) DO UPDATE SET
+    code = EXCLUDED.code,
+    name = EXCLUDED.name,
+    display_name = EXCLUDED.display_name,
+    icon = EXCLUDED.icon,
+    path = EXCLUDED.path,
+    component = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order,
+    is_enabled = EXCLUDED.is_enabled,
+    remark = EXCLUDED.remark,
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('311100000000000215', 'Peis.ContractReconciliation.View', 'R', '1', NULL,
+     TIMESTAMP '2026-08-22 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
+ON CONFLICT (id) DO UPDATE SET
+    permission_name = EXCLUDED.permission_name,
+    provider_name = EXCLUDED.provider_name,
+    provider_key = EXCLUDED.provider_key,
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-08-22 00:00:00+00';
+
+-- ========== folded: peis-guide-print template（原 V5） ==========
+
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    329000000000000002,
+    1,
+    NULL,
+    'PT202608200001',
+    '体检指引单',
+    'published',
+    1,
+    '{"schemaVersion":1,"engine":"Print","panels":[{"name":"1","index":0,"width":210,"height":297,"paperType":"A4","paperFooter":575.4,"paperHeader":0,"printElements":[{"options":{"top":16,"left":28.3,"field":"hospitalName","width":539.4,"height":24,"fontSize":16,"hideTitle":true,"textAlign":"center","fontWeight":"bold","testData":"示例医院"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":44,"left":28.3,"title":"体检指引单","width":539.4,"height":18,"fontSize":13,"textAlign":"center","fontWeight":"bold"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":72,"left":28.3,"field":"patientName","title":"姓名","width":120,"height":16,"fontSize":10,"textAlign":"left"},"printElementType":{"type":"text","title":"姓名"}},{"options":{"top":72,"left":160,"field":"genderEnumText","title":"性别","width":80,"height":16,"fontSize":10,"textAlign":"left"},"printElementType":{"type":"text","title":"性别"}},{"options":{"top":72,"left":252,"field":"ageText","title":"年龄","width":80,"height":16,"fontSize":10,"textAlign":"left"},"printElementType":{"type":"text","title":"年龄"}},{"options":{"top":92,"left":28.3,"field":"busNo","title":"流水号","width":200,"height":16,"fontSize":10,"textAlign":"left"},"printElementType":{"type":"text","title":"流水号"}},{"options":{"top":92,"left":240,"field":"registeredAtText","title":"登记时间","width":200,"height":16,"fontSize":10,"textAlign":"left"},"printElementType":{"type":"text","title":"登记时间"}},{"options":{"top":112,"left":28.3,"field":"packageName","title":"套餐","width":400,"height":16,"fontSize":10,"textAlign":"left"},"printElementType":{"type":"text","title":"套餐"}},{"options":{"top":136,"left":28.3,"width":539.4,"height":1,"borderWidth":1},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":148,"left":28.3,"title":"体检项目","width":539.4,"height":14,"fontSize":10,"fontWeight":"bold","textAlign":"left"},"printElementType":{"type":"text","title":"文本"}},{"options":{"top":164,"left":28.3,"field":"guideLines","width":539.4,"height":320,"fontSize":9,"textAlign":"center","lineHeight":14,"tableBorder":"border","tableHeaderBorder":"border","tableHeaderRepeat":"first","tableBodyRowBorder":"border","tableBodyRowHeight":22,"tableBodyCellBorder":"border","tableHeaderRowHeight":24,"tableHeaderCellBorder":"border","columns":[[{"title":"序号","field":"seqText","width":48,"colspan":1,"rowspan":1,"align":"center","checked":true,"columnId":"seqText"},{"title":"科室","field":"deptName","width":120,"colspan":1,"rowspan":1,"align":"left","checked":true,"columnId":"deptName"},{"title":"项目","field":"itemName","width":220,"colspan":1,"rowspan":1,"align":"left","checked":true,"columnId":"itemName"},{"title":"地点","field":"locationText","width":151.4,"colspan":1,"rowspan":1,"align":"left","checked":true,"columnId":"locationText"}]]},"printElementType":{"type":"table","title":"表格","editable":true,"columnResizable":true}}],"paperNumberContinue":true,"paperNumberDisabled":true,"watermarkOptions":{"width":200,"format":"YYYY-MM-DD HH:mm","height":200,"rotate":25,"content":"","fontSize":"14px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0}}]}'::jsonb,
+    1,
+    '{"hospitalName":"示例医院","patientName":"张三","genderEnumText":"男","ageText":"45岁","busNo":"HN2026-08-2000001","registeredAtText":"2026-08-20 09:30","packageName":"2026常规体检套餐","guideLines":[{"seqText":"1","deptName":"检验科","itemName":"血常规","locationText":""},{"seqText":"2","deptName":"检验科","itemName":"肝功五项","locationText":""},{"seqText":"3","deptName":"影像科","itemName":"腹部彩超","locationText":""}]}'::jsonb,
+    TIMESTAMP '2026-08-20 02:00:00+08',
+    TIMESTAMP '2026-08-20 02:00:00+08',
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'peis-guide-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "version" = EXCLUDED."version",
+    "updated_at" = EXCLUDED."updated_at";

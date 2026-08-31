@@ -95,6 +95,10 @@ public class PrintConfig {
         private float rightMm = 31.8f;
         private float bottomMm = 25.4f;
         private float leftMm = 31.8f;
+        /** 屏上 ProseMirror padding 实测：正文顶边距（mm），优先于 topMm+header */
+        private float contentTopMm;
+        /** 屏上 ProseMirror padding 实测：正文底边距（mm），优先于 bottomMm+footer */
+        private float contentBottomMm;
 
         public static MarginConfig printStandard() {
             return new MarginConfig();
@@ -105,7 +109,9 @@ public class PrintConfig {
                     .setTopMm(topMm)
                     .setRightMm(rightMm)
                     .setBottomMm(bottomMm)
-                    .setLeftMm(leftMm);
+                    .setLeftMm(leftMm)
+                    .setContentTopMm(contentTopMm)
+                    .setContentBottomMm(contentBottomMm);
         }
     }
 

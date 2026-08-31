@@ -53,10 +53,10 @@ public class InpatientEncounterContextQueryModel {
     /** 当前科室名称。 */
     private String organizationName;
 
-    /** 当前病区 ID。 */
+    /** 当前病区 ID（活动病区；无活动时可为末次已完成病区，仅展示）。 */
     private Long wardId;
 
-    /** 当前病区名称。 */
+    /** 当前病区名称（展示口径同 {@link #wardId}）。 */
     private String wardName;
 
     /** 当前床位 ID（活动床；无活动床时可为末次已完成床，仅展示）。 */
@@ -65,20 +65,20 @@ public class InpatientEncounterContextQueryModel {
     /**
      * 当前床位名称。
      *
-     * <p>无活动床（召回未占床轨）时为「原{床名}（未占床）」文案。</p>
+     * <p>无活动床（召回/清床未占床轨）时为「原{房名}-{床名}（未占床）」；无病房名时退化为「原{床名}（未占床）」。</p>
      */
     private String bedName;
 
-    /** 主治医生 ID。 */
+    /** 主治医生 ID（活动优先；清床/召回后可为末次已完成参与者，仅展示）。 */
     private Long attendingDoctorId;
 
-    /** 主治医生姓名。 */
+    /** 主治医生姓名（展示口径同 {@link #attendingDoctorId}）。 */
     private String attendingDoctorName;
 
-    /** 责任护士 ID。 */
+    /** 责任护士 ID（活动优先；无活动行时可为末次已完成，仅展示）。 */
     private Long primaryNurseId;
 
-    /** 责任护士姓名。 */
+    /** 责任护士姓名（展示口径同 {@link #primaryNurseId}）。 */
     private String primaryNurseName;
 
     /** 入院时间。 */

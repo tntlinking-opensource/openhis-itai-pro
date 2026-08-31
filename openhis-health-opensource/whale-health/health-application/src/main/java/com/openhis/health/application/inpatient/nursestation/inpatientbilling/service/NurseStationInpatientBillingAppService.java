@@ -62,6 +62,8 @@ import com.openhis.health.application.inpatient.nursestation.inpatientbilling.su
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.support.NurseStationInpatientBillingProcedureOrchestrator;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
+import com.openhis.health.domain.administration.account.entity.Account;
+import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemDomainService;
@@ -206,6 +208,8 @@ public class NurseStationInpatientBillingAppService {
     private final PractitionerQueryService practitionerQueryService;
     /** 在职护士下拉（配置计费人）。 */
     private final PractitionerRoleScopeLoader practitionerRoleScopeLoader;
+    /** 就诊挂账账户：医保入院强制医保户。 */
+    private final AccountQueryService accountQueryService;
 
     /**
      * IF-IP-PRC-01：划价选品目录分页。
@@ -1350,11 +1354,11 @@ public class NurseStationInpatientBillingAppService {
                         billDate);
                     continue;
                 }
-                // Gate：无个人账户无法落 Charge，整 encounter 跳过
+                // Gate：无挂账账户无法落 Charge，整 encounter 跳过
                 if (ctx.getAccountId() == null) {
                     skippedCount++;
                     log.warn(
-                        "住院滚费跳过 encounterId={} reason=noPersonalCashAccount patientId={}",
+                        "住院滚费跳过 encounterId={} reason=noChargeAccount patientId={}",
                         ctx.getEncounterId(),
                         ctx.getPatientId());
                     continue;
@@ -1507,6 +1511,23 @@ public class NurseStationInpatientBillingAppService {
             }
         }
         this.assertEncountersVisibleForChargeWrite(new ArrayList<>(encounterIds));
+        // Pre：医保入院费用挂医保户（覆盖前端可能回传的个人现金户）
+        Map<Long, Account> chargeAccountByEncounterId =
+            accountQueryService.mapDefaultChargeAccountsByEncounterIds(encounterIds);
+        for (NurseStationPricingWriteItemDto row : items) {
+            // 空行或无就诊锚点跳过，后续 validateWriteRow 会拦
+            if (row == null || row.getEncounterId() == null) {
+                continue;
+            }
+            Account chargeAccount = chargeAccountByEncounterId.get(row.getEncounterId());
+            // 无挂账账户则整批拒绝，避免落到空 account_id
+            if (chargeAccount == null || chargeAccount.getId() == null) {
+                throw new BusinessException(
+                    InpatientNurseStationConstants.EX_IP_PRC_204,
+                    "划价项目无效或价格异常，请重新选品");
+            }
+            row.setAccountId(chargeAccount.getId());
+        }
         // 写路径入账价：耗材 performLocation 须由 IF-IP-PRC-01 目录回传，不再服务端 match 模板
         nurseStationInpatientBillingWriteAssembler.reapplyAuthoritativeWritePricing(
             items,
@@ -1561,7 +1582,15 @@ public class NurseStationInpatientBillingAppService {
                     deviceReqId, operatorId, requesterId, inventoryDecreaseAccumulator);
                 this.assertNursePricingDeviceDispenseFinalized(
                     deviceReqId, operatorId, requesterId, inventoryDecreaseAccumulator);
-                Long dispenseId = deviceDispenseQueryService.resolvePrimaryDispenseIdForDeviceRequest(deviceReqId);
+                DeviceDispenseListModel primaryDispense =
+                    deviceDispenseQueryService.resolvePrimaryDispenseForDeviceRequest(deviceReqId);
+                Long dispenseId = null;
+                if (primaryDispense != null) {
+                    dispenseId = primaryDispense.getId();
+                }
+                // Pre：FIFO 实发批号可能与预划价 lot 不一致；按主发放批号重算 definitionId/单价后再挂账
+                this.repriceDeviceWriteRowFromFinalizedDispenseLot(
+                    row, primaryDispense, new ArrayList<>(encounterIds));
                 // Cmd：客户可见划价时刻回写发放/拣配展示轴（与 IF-07 同域能力）
                 if (dispenseId != null) {
                     AmendDeviceDispenseDisplayTimeCommand amendCmd = new AmendDeviceDispenseDisplayTimeCommand();
@@ -1938,6 +1967,32 @@ public class NurseStationInpatientBillingAppService {
             groups.add(group);
         }
         return groups;
+    }
+
+    /**
+     * 护士划价耗材：FIFO 定批后按实发批号重算入账价，避免 ChargeItem.definitionId 与发放 lot_number 串批。
+     *
+     * @param row              写行（就地回写 lotNumber / chargeItemDefinitionId / unitPrice）
+     * @param primaryDispense  主发放读模型；可空则跳过
+     * @param encounterIds     本批就诊主键（供 WriteAssembler 解析开立机构）
+     */
+    private void repriceDeviceWriteRowFromFinalizedDispenseLot(
+        NurseStationPricingWriteItemDto row,
+        DeviceDispenseListModel primaryDispense,
+        List<Long> encounterIds) {
+        if (row == null || primaryDispense == null) {
+            return;
+        }
+        // 无实发批号则保持预划价，避免空批号触发跨批「择优」LOT_NUMBER_PRICE
+        if (StringUtils.isEmpty(primaryDispense.getLotNumber())) {
+            return;
+        }
+        // Pre：写行批号与 FIFO 主发放对齐后再走权威价重算
+        row.setLotNumber(primaryDispense.getLotNumber());
+        nurseStationInpatientBillingWriteAssembler.reapplyAuthoritativeWritePricing(
+            List.of(row),
+            encounterIds,
+            managedWardLocationIdsResolver.listManagedWardLocationIdsOrEmpty());
     }
 
     /**

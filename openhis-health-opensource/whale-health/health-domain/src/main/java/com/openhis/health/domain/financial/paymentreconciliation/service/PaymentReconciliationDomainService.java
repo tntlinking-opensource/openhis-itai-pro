@@ -29,6 +29,8 @@ import lombok.RequiredArgsConstructor;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -799,11 +801,13 @@ public class PaymentReconciliationDomainService {
      *
      * <p>优先按 {@code settlementRecordId} 定位；未命中时回落 {@code setlId}。
      * 日结汇总依赖 CONFIRMED 桥表行计入个账/统筹，须与 {@code yb_settlement_record} 同态。</p>
+     * <p>独立事务提交：2208/2601 平台成功后调用方外层若回滚，桥表仍保持 REVOKED，避免日结虚增。</p>
      *
      * @param settlementRecordId CHS {@code yb_settlement_record.id}；可空
      * @param setlId             平台结算号；可空（与 settlementRecordId 至少一个有效）
      * @return 实际改为 REVOKED 的行数（已是 REVOKED 的不计入）
      */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public int markYbSettlementsRevoked(Long settlementRecordId, String setlId) {
         List<PaymentYbSettlement> rows = new ArrayList<>();
         // Pre：优先按结算回执主键定位桥表

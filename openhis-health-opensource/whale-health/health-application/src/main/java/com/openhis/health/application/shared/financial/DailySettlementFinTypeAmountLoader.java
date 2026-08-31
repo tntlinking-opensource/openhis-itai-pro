@@ -32,7 +32,7 @@ import java.util.Set;
  * 门/住院日结：按 {@code fin_type_code} 汇总展示金额（只读 enrich，B.6.1 querysupport）。
  *
  * <p>仅读取 {@code fin_payment_rec_static} 快照；禁止回落 {@code charge_item.total_price}。
- * 结算时分类快照由 {@link PaymentFinTypeStaticSnapshotWriter} 写入。
+ * 结算时分类快照由 {@link PaymentFinTypeStaticSnapshotWriter} 写入（金额=收费行 <strong>代数和</strong>，禁绝对值）。
  * 号源/挂号收费在写快照时已强制归入
  * {@link DailySettlementSharedConstants#CONSULTATION_FEE_FIN_TYPE_CODE}（诊察费 1012）。</p>
  */
@@ -135,7 +135,7 @@ public class DailySettlementFinTypeAmountLoader {
             if (lineAmount == null) {
                 lineAmount = BigDecimal.ZERO;
             }
-            lineAmount = lineAmount.abs();
+            // 保留快照代数符号（冲正负行已在写快照时入账）；退费单再整体取负
             if (negate) {
                 lineAmount = lineAmount.negate();
             }

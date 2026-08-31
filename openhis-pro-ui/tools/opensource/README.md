@@ -23,13 +23,22 @@ tools\opensource\导出开源源码树.bat
 tools\opensource\export-opensource.bat -Force -VerifyBuild
 ```
 
+改开源仓业务版本（只写目标根目录 `VERSION`，不改 `package.json` 的 Vben 5.x）：
+
+```bat
+tools\opensource\export-opensource.bat -Force -NewVersion 2.0.6
+```
+
+前后端一起同步（推荐）：在 `whale-sever` 双击  
+`tools\sync-opensource\sync-to-opensource.bat`（会调本导出并写入同一版本号）。
+
 **默认输出**：`../openhis-itai-pro/openhis-pro-ui`  
 （即 `D:\workSpace\openhis-itai-pro\openhis-pro-ui`，与私有仓同级）
 
 自定义输出：
 
 ```powershell
-powershell -File tools\opensource\export-opensource.ps1 -Force -OutputDir dist\openhis-pro-ui-opensource
+powershell -File tools\opensource\export-opensource.ps1 -Force -NewVersion 2.0.6 -OutputDir dist\openhis-pro-ui-opensource
 ```
 
 ## 排除项

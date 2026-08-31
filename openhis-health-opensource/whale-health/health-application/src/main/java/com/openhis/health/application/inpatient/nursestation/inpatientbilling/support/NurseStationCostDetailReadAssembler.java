@@ -126,6 +126,9 @@ public class NurseStationCostDetailReadAssembler {
                 // 与汇总行同源：明细单打印按产品实际分类（中药/西药/检验等）分组
                 line.setCategoryCode(product.getCategoryCode());
                 line.setCategoryDisplay(product.getCategoryCodeDictText());
+                // 医保等级：目录对照回填，费用明细/打印「医保等级」列同源
+                line.setChrgitmLv(product.getChrgitmLv());
+                line.setChrgitmLvText(product.getChrgitmLvText());
             }
             line.setQuantityValue(charge.getQuantityValue());
             line.setQuantityUnit(charge.getQuantityUnit());

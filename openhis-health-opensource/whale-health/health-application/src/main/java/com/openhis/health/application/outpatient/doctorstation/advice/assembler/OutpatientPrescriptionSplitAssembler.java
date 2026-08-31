@@ -226,7 +226,12 @@ public class OutpatientPrescriptionSplitAssembler {
                     categoryCode = product.getCategoryCode();
                 }
                 String fifoCacheKey = buildFifoLocationCacheKey(
-                    row.getMedicationId(), row.getUnitCode(), row.getQuantity(), categoryCode, row.getMethodCode());
+                    row.getMedicationId(),
+                    row.getUnitCode(),
+                    row.getQuantity(),
+                    categoryCode,
+                    row.getMethodCode(),
+                    Boolean.TRUE.equals(row.getSkinTestFlag()));
                 pharmacyLocationId = fifoLocationByCacheKey.get(fifoCacheKey);
                 if (pharmacyLocationId == null && !fifoLocationByCacheKey.containsKey(fifoCacheKey)) {
                     pharmacyLocationId = doctorStationAdviceFifoAllocationAssembler.resolvePrimaryMedicationDispenseLocationId(
@@ -236,7 +241,8 @@ public class OutpatientPrescriptionSplitAssembler {
                         categoryCode,
                         row.getMethodCode(),
                         row.getUnitCode(),
-                        row.getQuantity());
+                        row.getQuantity(),
+                        Boolean.TRUE.equals(row.getSkinTestFlag()));
                     fifoLocationByCacheKey.put(fifoCacheKey, pharmacyLocationId);
                 }
             }
@@ -306,13 +312,14 @@ public class OutpatientPrescriptionSplitAssembler {
     }
 
     /**
-     * 构建 FIFO 主库位缓存键（药品+开立单位+数量+目录分类）。
+     * 构建 FIFO 主库位缓存键（药品+开立单位+数量+目录分类+皮试单批优先）。
      *
-     * @param medicationId  药品定义主键
-     * @param unitCode      开立单位
-     * @param quantity      开立数量
-     * @param categoryCode  药品目录 categoryCode
-     * @param methodCode    给药途径编码
+     * @param medicationId            药品定义主键
+     * @param unitCode                开立单位
+     * @param quantity                开立数量
+     * @param categoryCode            药品目录 categoryCode
+     * @param methodCode              给药途径编码
+     * @param skinTestPreferSingleLot 皮试单批优先（BR-ORD-034），与非皮试分行缓存
      * @return 缓存键
      */
     private static String buildFifoLocationCacheKey(
@@ -320,7 +327,8 @@ public class OutpatientPrescriptionSplitAssembler {
         String unitCode,
         BigDecimal quantity,
         String categoryCode,
-        String methodCode
+        String methodCode,
+        boolean skinTestPreferSingleLot
     ) {
         String unit;
         if (unitCode == null) {
@@ -346,6 +354,12 @@ public class OutpatientPrescriptionSplitAssembler {
         } else {
             method = methodCode;
         }
+        String skinPart;
+        if (skinTestPreferSingleLot) {
+            skinPart = "ST1";
+        } else {
+            skinPart = "ST0";
+        }
         return medicationId
             + PrescriptionSplitConstants.PARTITION_KEY_SEPARATOR
             + unit
@@ -354,7 +368,9 @@ public class OutpatientPrescriptionSplitAssembler {
             + PrescriptionSplitConstants.PARTITION_KEY_SEPARATOR
             + category
             + PrescriptionSplitConstants.PARTITION_KEY_SEPARATOR
-            + method;
+            + method
+            + PrescriptionSplitConstants.PARTITION_KEY_SEPARATOR
+            + skinPart;
     }
 
     /**

@@ -77,6 +77,8 @@ class BossPayloadSupportTest {
         assertEquals("西药费", item.getString("chargeName"));
         assertEquals("1", item.getString("medicalCareType"));
         assertEquals("甲类", item.getString("remark"));
+        assertEquals("YB001", item.getString("medCareItemCode"));
+        assertEquals("阿莫西林胶囊", item.getString("medCareItemName"));
     }
 
     @Test
@@ -155,41 +157,18 @@ class BossPayloadSupportTest {
     }
 
     @Test
-    void partitionLines_splitsByMax() {
+    void buildChargeDetail_aggregatesManyListLinesToOneCategory() {
         List<EinvBossLine> lines = new ArrayList<>();
         for (int i = 1; i <= 20; i++) {
             lines.add(line(i, "YLMZ08", "中药饮片费", "1.00", "1"));
         }
-        List<List<EinvBossLine>> chunks =
-                BossPayloadSupport.partitionLines(lines, BossPayloadSupport.MAX_LINES_PER_BILL);
-        assertEquals(2, chunks.size());
-        assertEquals(18, chunks.get(0).size());
-        assertEquals(2, chunks.get(1).size());
-        assertEquals(0, new BigDecimal("18.00").compareTo(BossPayloadSupport.sumLineAmounts(chunks.get(0))));
-    }
-
-    @Test
-    void copyWithScaledSettlement_keepsChannelFeasible() {
-        BossIssueSnapshot source = new BossIssueSnapshot();
-        source.setInsuranceSettled(true);
-        source.setPatientName("张三");
-        source.setAccountPay(new BigDecimal("20.00"));
-        source.setFundPay(new BigDecimal("60.00"));
-        source.setOtherfundPay(BigDecimal.ZERO);
-        source.setSelfCashPay(new BigDecimal("20.00"));
-
-        BossIssueSnapshot chunk =
-                BossPayloadSupport.copyWithScaledSettlement(source, new BigDecimal("50.00"), new BigDecimal("100.00"));
-        assertTrue(chunk.isInsuranceSettled());
-        assertEquals("张三", chunk.getPatientName());
-        assertEquals(0, new BigDecimal("10.00").compareTo(chunk.getAccountPay()));
-        assertEquals(0, new BigDecimal("30.00").compareTo(chunk.getFundPay()));
-        JSONArray channels = BossPayloadSupport.buildPayChannelDetail(chunk, new BigDecimal("50.00"));
-        BigDecimal sum = BigDecimal.ZERO;
-        for (int i = 0; i < channels.size(); i++) {
-            sum = sum.add(channels.getJSONObject(i).getBigDecimal("payChannelValue"));
-        }
-        assertEquals(0, new BigDecimal("50.00").compareTo(BossPayloadSupport.scale2(sum)));
+        JSONArray chargeDetail = BossPayloadSupport.buildChargeDetail(lines);
+        JSONArray listDetail = BossPayloadSupport.buildListDetail(lines);
+        assertEquals(1, chargeDetail.size());
+        assertEquals(20, listDetail.size());
+        assertTrue(chargeDetail.size() <= BossPayloadSupport.MAX_CHARGE_DETAIL_ROWS);
+        assertEquals(0, new BigDecimal("20.00").compareTo(chargeDetail.getJSONObject(0).getBigDecimal("amt")));
+        assertEquals(0, new BigDecimal("20.00").compareTo(BossPayloadSupport.sumLineAmounts(lines)));
     }
 
     private static EinvBossLine line(int lineNo, String code, String name, String amount, String qty) {

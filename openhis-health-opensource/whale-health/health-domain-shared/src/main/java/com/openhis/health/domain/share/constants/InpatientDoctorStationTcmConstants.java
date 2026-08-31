@@ -11,7 +11,7 @@ import com.openhis.health.domain.share.enums.TherapyType;
  */
 public interface InpatientDoctorStationTcmConstants {
 
-    /** BR-IP-TCM-005：临嘱立即执行频次码（术语 {@code STAT}）。 */
+    /** 住院立即执行频次码（术语 {@code STAT}；新建临嘱默认值，非强制）。 */
     String IMMEDIATE_RATE_CODE = "STAT";
 
     /** IF-IP-TCM-29：长临筛选默认值。 */
@@ -47,7 +47,7 @@ public interface InpatientDoctorStationTcmConstants {
     /** EX-IP-TCM-207：状态不允许。 */
     String MSG_STATUS_NOT_ALLOWED = "当前状态不允许操作";
 
-    /** EX-IP-TCM-208：临嘱频次非立即。 */
+    /** EX-IP-TCM-208：临嘱频次非立即（存量提示文案；后端已不再以此拒绝保存）。 */
     String MSG_TEMPORARY_RATE_NOT_IMMEDIATE = "临时中药方频次须为立即执行";
 
     /** EX-IP-TCM-209：同方方头不一致。 */

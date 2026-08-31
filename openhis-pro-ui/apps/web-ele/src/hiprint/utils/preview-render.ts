@@ -1,7 +1,7 @@
 import type { HiprintTemplateInstance } from '../core/types';
 import type { BuildPreviewPrintDataOptions } from './print-data';
 
-import { $, ensureHiprintReady, hiprint } from '../core/bootstrap';
+import { $, ensureHiprintPrintEngine, hiprint } from '../core/bootstrap';
 import { buildPreviewPrintData } from './print-data';
 import { normalizePrintJson } from './print-json';
 
@@ -23,14 +23,37 @@ export function ensurePreviewPrintLockCss(): void {
 
 /** 用当前 PrintJson 创建非 design 态模板实例（预览/打印与画布 design 分离） */
 export function createPreviewTemplate(json: Record<string, unknown>): HiprintTemplateInstance {
-  ensureHiprintReady();
+  ensureHiprintPrintEngine();
   ensurePreviewPrintLockCss();
+  const normalized = normalizePrintJson(json);
+  const panels = normalized.panels;
+  const template: Record<string, unknown> = {
+    panels: Array.isArray(panels) ? panels : [],
+  };
+  if (normalized.engine !== undefined) {
+    template.engine = normalized.engine;
+  }
+  if (normalized.schemaVersion !== undefined) {
+    template.schemaVersion = normalized.schemaVersion;
+  }
   return new hiprint.PrintTemplate({
-    template: normalizePrintJson(json),
+    template,
   }) as unknown as HiprintTemplateInstance;
 }
 
-/** 渲染预览 HTML 字符串 */
+/** 把 hiprint getHtml 结果转成 HTML 字符串 */
+function htmlFromTemplateResult(htmlResult: unknown): string {
+  if (typeof htmlResult === 'string') {
+    return htmlResult;
+  }
+  return (
+    $('<div></div>')
+      .append(htmlResult as never)
+      .html() ?? ''
+  );
+}
+
+/** 渲染预览 HTML 字符串（设计器：合并 testData / sample） */
 export function renderPreviewHtml(
   templateJson: Record<string, unknown>,
   data: Record<string, unknown>,
@@ -41,13 +64,14 @@ export function renderPreviewHtml(
     ...options,
     samplePrintData: data,
   });
-  const htmlResult = tpl.getHtml(printData);
-  if (typeof htmlResult === 'string') {
-    return htmlResult;
-  }
-  return (
-    $('<div></div>')
-      .append(htmlResult as never)
-      .html() ?? ''
-  );
+  return htmlFromTemplateResult(tpl.getHtml(printData));
+}
+
+/** 业务预览：只用传入 PrintData，不合并模板 testData */
+export function renderPrintDataHtml(
+  templateJson: Record<string, unknown>,
+  data: Record<string, unknown>,
+): string {
+  const tpl = createPreviewTemplate(templateJson);
+  return htmlFromTemplateResult(tpl.getHtml(data));
 }

@@ -111,6 +111,8 @@ public class ServiceLocationTemplateAppService {
             terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.METHOD_CODE));
         dto.setTcmMethodCodeOptions(
             terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.TCM_METHOD_CODE));
+        dto.setDeviceTypeCodeOptions(
+            terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.DEVICE_TYPE_CODE));
         return dto;
     }
 
@@ -182,6 +184,8 @@ public class ServiceLocationTemplateAppService {
             terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.METHOD_CODE);
         Map<String, String> tcmMethodLabels =
             terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.TCM_METHOD_CODE);
+        Map<String, String> deviceTypeLabels =
+            terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.DEVICE_TYPE_CODE);
         List<SaveServiceLocationTemplateConfigItemRequest> items = request.getItems();
         if (items == null || items.isEmpty()) {
             return;
@@ -229,6 +233,20 @@ public class ServiceLocationTemplateAppService {
                 throw new BusinessException(
                     ErrorCodeConstants.SERVICE_LOCATION_TEMPLATE_INVALID_ARGUMENT,
                     "生效开始时间必须早于结束时间");
+            }
+            String typeCode = trimToNull(item.getTypeCode());
+            // 种类维仅允许耗材行；药品误填拒绝，避免配置歧义（BR-SLT-014）
+            if (typeCode != null) {
+                if (!TableNameConstants.ADM_DEVICE_DEFINITION.equals(itemTable)) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.SERVICE_LOCATION_TEMPLATE_INVALID_ARGUMENT,
+                        "种类编码仅适用于耗材规则行");
+                }
+                if (!deviceTypeLabels.containsKey(typeCode)) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.SERVICE_LOCATION_TEMPLATE_INVALID_ARGUMENT,
+                        "耗材种类编码不在字典范围内: " + typeCode);
+                }
             }
             String methodCode = trimToNull(item.getMethodCode());
             if (methodCode != null) {
@@ -289,6 +307,8 @@ public class ServiceLocationTemplateAppService {
             terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.METHOD_CODE);
         Map<String, String> tcmMethodLabels =
             terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.TCM_METHOD_CODE);
+        Map<String, String> deviceTypeLabels =
+            terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.DEVICE_TYPE_CODE);
         for (ServiceLocationTemplateDto row : rows) {
             if (row == null) {
                 continue;
@@ -304,6 +324,9 @@ public class ServiceLocationTemplateAppService {
             }
             row.setDistributionCategoryCode_dictText(
                 OrderCatalogDisplayAssembler.resolveCategoryDisplay(categoryLabels, row.getDistributionCategoryCode()));
+            if (StringUtils.isNotEmpty(row.getTypeCode())) {
+                row.setTypeCode_dictText(deviceTypeLabels.get(row.getTypeCode()));
+            }
             Boolean herbalCategoryFlag = null;
             if (TableNameConstants.MED_MEDICATION_DEFINITION.equals(row.getItemTable())) {
                 herbalCategoryFlag = this.isHerbalMedicationCategory(row.getDistributionCategoryCode());

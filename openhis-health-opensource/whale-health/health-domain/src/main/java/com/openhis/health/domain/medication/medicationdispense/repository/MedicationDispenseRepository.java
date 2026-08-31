@@ -109,6 +109,15 @@ public interface MedicationDispenseRepository extends JpaRepository<MedicationDi
     boolean existsByMedicationId(Long medicationId);
 
     /**
+     * 判断同品同批号是否存在未软删发药行（任意状态；BR-WHS-IN-018 同批号异价门禁）。
+     *
+     * @param medicationId 药品定义主键
+     * @param lotNumber    批号字面值
+     * @return 存在则为 true
+     */
+    boolean existsByMedicationIdAndLotNumberAndIsDeletedFalse(Long medicationId, String lotNumber);
+
+    /**
      * 按执行记录主键集合批量查询未删除发放记录（取消执行 Dispense 分轨定位，DM-MED-002 §6.2.14）。
      *
      * @param procedureIds 执行记录主键集合

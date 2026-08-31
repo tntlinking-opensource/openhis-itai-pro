@@ -48,6 +48,9 @@ public class PhysicalExamChargeEncounterQueueLoader {
         codes.add(ChargeItemStatus.PLANNED.getCode());
         codes.add(ChargeItemStatus.SETTLED.getCode());
         List<Long> scope = this.resolvePeCashierEncounterScope(query);
+        if (query.getPeGroupFlag() != null) {
+            scope = peisEncounterExtQueryService.filterEncounterIdsByGroupFlag(scope, query.getPeGroupFlag());
+        }
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.PRACTITIONER_INVALID_ARGUMENT,
             "当前会话操作人不能为空");

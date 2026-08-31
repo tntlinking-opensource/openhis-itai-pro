@@ -174,6 +174,25 @@ public class EncounterDomainService {
     }
 
     /**
+     * 撤销体检在检就诊：{@code PE + IN_PROGRESS} → {@code ENTERED_IN_ERROR}（团检筹备撤销建单）。
+     *
+     * @param encounterId 就诊主键
+     */
+    public void voidPhysicalExamEncounter(Long encounterId) {
+        if (encounterId == null) {
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "就诊标识不能为空");
+        }
+        Encounter encounter = encounterRepository.findById(encounterId)
+            .orElseThrow(() -> new BusinessException(ErrorCodeConstants.ENCOUNTER_NOT_FOUND, "就诊记录不存在"));
+        encounter.assertClass(EncounterClass.PE.getCode());
+        if (!EncounterStatus.IN_PROGRESS.getCode().equals(encounter.getStatusEnum())) {
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS, "仅在检中的体检就诊可撤销建单");
+        }
+        encounter.transitToEnteredInError();
+        encounterRepository.save(encounter);
+    }
+
+    /**
      * 体检总检完成后结束就诊（AS-PEIS-MAS-001 MAS-04 / BR-MAS-05）。
      *
      * @param command 结束命令
@@ -262,7 +281,9 @@ public class EncounterDomainService {
     /**
      * 门诊取消接诊：在诊/暂离/完诊回退为已挂号，收口活动接诊医生，供窗口退号前由医生明示同意。
      *
-     * <p>与账单门禁无关；持久化后发布 {@link OutpatientReceptionCancelledEvent}。</p>
+     * <p>与账单门禁无关；本聚合仅迁移就诊状态与 ADMITTER。本诊病历/诊断/医嘱须已删净的门禁在
+     * 应用层 IF-DOR-06 Pre（BR-DOR-011）完成，不在此跨聚合校验。
+     * 持久化后发布 {@link OutpatientReceptionCancelledEvent}。</p>
      *
      * @param command 取消接诊命令
      */
@@ -1384,7 +1405,9 @@ public class EncounterDomainService {
      * 护士站办理出院：待出院 → 待出院结算（{@code ON_HOLD} → {@code PENDING}，GAP-ATD-005）。
      *
      * <p>前置由应用层保证为「待出院」分流（非待转科）；本方法仅校验 {@code IMP+ON_HOLD}。
-     * 已为 {@code PENDING} 时幂等跳过。按就诊 id 升序悲观行锁后迁移。</p>
+     * 已为 {@code PENDING} 时幂等跳过。按就诊 id 升序悲观行锁后迁移。
+     * {@code dischargedAt} 须为出院医嘱计划时间（应用层自 {@code occurrence_start_time} 解析）；
+     * 写入 {@code end_time} 作为业务出院时间真源，后续清床/结算不得覆盖。</p>
      *
      * @param command 命令
      */
@@ -1438,7 +1461,9 @@ public class EncounterDomainService {
      *
      * <p>仅适用于 {@code IMP}；前置态须为 {@code PENDING}。中途结算不得调用本动作。
      * 有活动床时落到 {@code COMPLETED}（仍须清床）；无活动床（召回未占床轨）直接
-     * {@code DISCHARGED} 并收口活动位置，不再走清床。</p>
+     * {@code DISCHARGED} 并收口活动位置，不再走清床。
+     * 无床直接离院时 {@code transitToDischarged} <strong>不覆盖</strong>已有 {@code end_time}
+     *（业务出院时间仍为办理出院写入的计划出院时间；仅 end 为空时才回落结算时刻）。</p>
      *
      * @param command 命令
      */
@@ -1573,6 +1598,9 @@ public class EncounterDomainService {
 
     /**
      * 清床离院（{@code COMPLETED} → {@code DISCHARGED}，GAP-ATD-005）。
+     *
+     * <p>收口活动位置/参与者并迁移主档终态；{@code end_time} 若已由护士办理出院写入则保留
+     *（业务出院时间=出院医嘱计划时间），清床时刻仅作空 end 时的回落。</p>
      *
      * @param command 命令
      */

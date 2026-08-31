@@ -29,10 +29,14 @@ import type {
   ChangeInpatientDoctorStationAdviceBusinessTimeResponse,
   AppendSkinTestCompanionForLongTermMedicationRequest,
   AppendSkinTestCompanionForLongTermMedicationResponse,
+  ChangeLongTermMedicationDoseInpatientDoctorStationAdviceRequest,
+  ChangeLongTermMedicationDoseInpatientDoctorStationAdviceResponse,
   UpdateInpatientDoctorStationMedicationAdviceGroupsRequest,
   UpdateInpatientDoctorStationMedicationAdviceGroupsResponse,
   WithdrawInpatientDoctorStationAdviceBatchRequest,
   WithdrawInpatientDoctorStationAdviceBatchResponse,
+  ResolveDoctorStationAdviceDraftBindsRequest,
+  ResolveDoctorStationAdviceDraftBindsResponse,
 } from './inpatient-doctor-station-advice.types';
 
 import { publicRequestClient } from '#/api/request';
@@ -77,6 +81,9 @@ export interface InpatientDoctorStationAdviceHttpClient {
   httpAppendSkinTestCompanionForLongTermMedication: (
     body: AppendSkinTestCompanionForLongTermMedicationRequest,
   ) => Promise<AppendSkinTestCompanionForLongTermMedicationResponse>;
+  httpChangeLongTermMedicationDoseInpatientDoctorStationAdvice: (
+    body: ChangeLongTermMedicationDoseInpatientDoctorStationAdviceRequest,
+  ) => Promise<ChangeLongTermMedicationDoseInpatientDoctorStationAdviceResponse>;
   httpCreateDischargeInpatientDoctorStationAdvice: (
     body: CreateDischargeInpatientDoctorStationAdviceRequest,
   ) => Promise<CreateDischargeInpatientDoctorStationAdviceResponse>;
@@ -90,6 +97,9 @@ export interface InpatientDoctorStationAdviceHttpClient {
   httpComputeMedicationFrequencyExecutions: (
     body: ComputeMedicationFrequencyExecutionsRequest,
   ) => Promise<ComputeMedicationFrequencyExecutionsResponse>;
+  httpResolveInpatientDoctorStationAdviceDraftBinds: (
+    body: ResolveDoctorStationAdviceDraftBindsRequest,
+  ) => Promise<ResolveDoctorStationAdviceDraftBindsResponse>;
 }
 
 /** 住院医生站医嘱开立应用服务 HTTP 客户端（方法名与后端 AppService 一致） */
@@ -124,6 +134,8 @@ export function createInpatientDoctorStationAdviceHttpClient(
       post('changeInpatientDoctorStationAdviceBusinessTime', body),
     httpAppendSkinTestCompanionForLongTermMedication: (body) =>
       post('appendSkinTestCompanionForLongTermMedication', body),
+    httpChangeLongTermMedicationDoseInpatientDoctorStationAdvice: (body) =>
+      post('changeLongTermMedicationDoseInpatientDoctorStationAdvice', body),
     httpCreateDischargeInpatientDoctorStationAdvice: (body) =>
       post('createDischargeInpatientDoctorStationAdvice', body),
     httpSaveInpatientDoctorStationServiceApplyForm: (body) =>
@@ -132,5 +144,7 @@ export function createInpatientDoctorStationAdviceHttpClient(
       post('listInpatientDoctorStationServiceApplyForms', body),
     httpComputeMedicationFrequencyExecutions: (body) =>
       post('computeMedicationFrequencyExecutions', body),
+    httpResolveInpatientDoctorStationAdviceDraftBinds: (body) =>
+      post('resolveInpatientDoctorStationAdviceDraftBinds', body),
   };
 }

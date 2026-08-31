@@ -1,4 +1,4 @@
-﻿<!--
+<!--
   盘库/盘点单右侧主区：与进货单/入库单同构（工作站 + VXE 明细 + 审批操作条）。
 -->
 <script setup lang="ts">
@@ -84,7 +84,7 @@ import {
 import SectionTitle from '#/components/layouts/section-title.vue';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { decimalAdd, decimalSub } from '#/utils/format/decimal-util';
-import { formatInventoryLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
+import { formatInventoryLineTotal, formatPurchaseMoneyDisplay } from '#/utils/format/money-scale';
 import {
   buildStocktakeDocActionFlags,
   normalizeStocktakeStatusSort,
@@ -121,9 +121,10 @@ import {
   resolveDefaultInventoryItemTableType,
   resolveDefaultPractitionerIdForSelect,
   resolveDocHeadProductPickLocationId,
-  warnInventoryLocationRequiredByLabel,
-  resolveInvDocPreparedByName,
   resolveInvDocApprovedByName,
+  resolveInvDocPreparedByName,
+  resolveInvDocPrintApplyTimeText,
+  warnInventoryLocationRequiredByLabel,
 } from '#/utils/inventory/inventory-workbench-list';
 import {
   buildInventoryLocationHeadFormRules,
@@ -152,7 +153,7 @@ interface StocktakePreviewRow {
   itemTable?: string;
   itemId?: number | string;
   inventoryItemId?: number | string;
-  /** 药品分类码；中药=4 时单价三位展示 */
+  /** 药品分类码；中药=4 时进价三位展示 */
   categoryCode?: string;
   spec: string;
   manufacturer: string;
@@ -366,11 +367,11 @@ function handleStocktakeUnitBandChanged(row: StocktakePreviewRow) {
 }
 
 /** 详情回显：持久化金额原样格式化，禁止 load 时用单价×数量重算覆盖后端 total_price。 */
-function formatStocktakeDetailPersistedAmount(total: unknown): string {
+function formatStocktakeDetailPersistedAmount(total: unknown, categoryCode?: unknown): string {
   if (total === undefined || total === null || total === '') return '';
   const n = Number(total);
   if (!Number.isFinite(n)) return String(total).trim();
-  return formatMoneyDisplay(n);
+  return formatPurchaseMoneyDisplay(n, categoryCode);
 }
 
 function refreshStocktakeLineAmounts(row: StocktakePreviewRow) {
@@ -587,8 +588,11 @@ function mapDetailLineToGrid(
     selectedBandKind: 'LEGACY',
     unitList: [{ value: 'LEGACY', label: unitCodeStr.trim() === '' ? '单位' : unitCodeStr }],
     price: ln.price === undefined || ln.price === null ? 0 : Number(ln.price),
-    actualAmount: formatStocktakeDetailPersistedAmount(ln.actualAmount),
-    profitLossAmount: formatStocktakeDetailPersistedAmount(ln.profitLossAmount),
+    actualAmount: formatStocktakeDetailPersistedAmount(ln.actualAmount, catalog?.categoryCode),
+    profitLossAmount: formatStocktakeDetailPersistedAmount(
+      ln.profitLossAmount,
+      catalog?.categoryCode,
+    ),
     remark: String(ln.remake ?? ''),
     _occurrenceTime: ln.occurrenceTime,
   };
@@ -1391,8 +1395,8 @@ function resolveStocktakePrintUnitLabel(row: StocktakePreviewRow): string {
   return String(row.unitCode ?? '').trim();
 }
 
-/** 打印盘点单 */
-async function handlePrint() {
+/** 打印或预览盘点单 */
+async function handlePrint(payload?: { preview?: boolean }) {
   const busNo = String(headerBusNo.value ?? '').trim();
   if (!busNo) {
     ElMessage.warning('请先保存单据后再打印');
@@ -1411,7 +1415,10 @@ async function handlePrint() {
     headItemTableType.value,
   );
   const documentTitle = buildInvDocumentTitle(locationName, '盘点单');
-  const applyTimeText = '';
+  // 打印制单时间取侧栏单据实际审批时间（盘点详情无单头 applyTime 时勿用打印时刻冒充）
+  const applyTimeText = resolveInvDocPrintApplyTimeText({
+    queueCardRow: props.queueCardRow as null | Record<string, unknown>,
+  });
 
   const lineRows = productRows.map((row) => ({
     productName: resolveStocktakePrintProductName(row),
@@ -1450,6 +1457,7 @@ async function handlePrint() {
     },
     bizRef: { busNo, docKind: 'stocktake', variant: props.variant },
     jobName: documentTitle,
+    preview: payload?.preview === true,
   });
 }
 
@@ -1527,8 +1535,8 @@ async function fetchStocktakePickPage(pageNo: number, pageSize: number) {
     productTableName,
     pageNo,
     pageSize,
-    // 与单行选品默认一致：含零库存
-    positiveQuantityOnly: false,
+    // 批量盘点只拉账面量>0 的库存行，零库存不得入单；单行选品仍可含零库存
+    positiveQuantityOnly: true,
   };
   if (props.variant === 'pharmacy') {
     return pageProductsForPharmacyStocktakeApi(body);

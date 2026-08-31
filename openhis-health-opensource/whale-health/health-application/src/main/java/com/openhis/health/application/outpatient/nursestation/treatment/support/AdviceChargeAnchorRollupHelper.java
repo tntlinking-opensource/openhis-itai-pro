@@ -35,6 +35,13 @@ public final class AdviceChargeAnchorRollupHelper {
         private String chargeStatusEnum;
         /** 锚点下收费明细金额合计（元）。 */
         private BigDecimal sumTotalPrice = BigDecimal.ZERO;
+        /**
+         * 单价展示：取锚点下 {@code adm_charge_item.id} 升序首条的 {@code unit_price}
+         * （与护士站收费状态「升序首条」口径一致，BR-NUR-002）。
+         */
+        private BigDecimal unitPrice;
+        /** 已选作单价来源的收费明细主键（升序择首）。 */
+        private Long unitPriceSourceChargeItemId;
 
         public String getChargeStatusEnum() {
             return chargeStatusEnum;
@@ -42,6 +49,13 @@ public final class AdviceChargeAnchorRollupHelper {
 
         public BigDecimal getSumTotalPrice() {
             return sumTotalPrice;
+        }
+
+        /**
+         * @return 升序首条账单单价；无账单时为 null
+         */
+        public BigDecimal getUnitPrice() {
+            return unitPrice;
         }
     }
 
@@ -122,6 +136,20 @@ public final class AdviceChargeAnchorRollupHelper {
             BigDecimal piece = chargeItem.getTotalPrice();
             if (piece != null) {
                 agg.sumTotalPrice = agg.sumTotalPrice.add(piece);
+            }
+            // 单价：同锚点多账单时取 id 升序首条（与收费状态首条口径对齐）
+            Long chargeItemId = chargeItem.getId();
+            if (chargeItemId != null) {
+                boolean takeAsUnitPriceSource = false;
+                if (agg.unitPriceSourceChargeItemId == null) {
+                    takeAsUnitPriceSource = true;
+                } else if (chargeItemId < agg.unitPriceSourceChargeItemId) {
+                    takeAsUnitPriceSource = true;
+                }
+                if (takeAsUnitPriceSource) {
+                    agg.unitPriceSourceChargeItemId = chargeItemId;
+                    agg.unitPrice = chargeItem.getUnitPrice();
+                }
             }
         }
         return result;

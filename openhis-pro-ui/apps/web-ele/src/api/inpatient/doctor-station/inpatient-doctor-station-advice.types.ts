@@ -6,6 +6,7 @@ export type {
   ComputeMedicationFrequencyExecutionsRequest,
   ComputeMedicationFrequencyExecutionsResponse,
   DoctorStationAdviceCatalogRowDto,
+  DoctorStationAdviceDraftBindItemDto,
   DoctorStationAdviceOrderBindRowDto,
   DoctorStationAdviceResourceKeyDto,
   ListActivityExecutionLocationsRequest,
@@ -13,6 +14,8 @@ export type {
   ListDoctorStationServiceApplyFormsRequest,
   ListDoctorStationServiceApplyFormsResponse,
   PrepickedProductKeyDto,
+  ResolveDoctorStationAdviceDraftBindsRequest,
+  ResolveDoctorStationAdviceDraftBindsResponse,
   SaveDeviceAdviceDraftLinePayload,
   SaveDoctorStationServiceApplyFormRequest,
   SaveDoctorStationServiceApplyFormResponse,
@@ -40,6 +43,7 @@ import type {
   SaveDoctorStationAdviceDraftBatchResponse,
   SaveDoctorStationServiceApplyFormRequest,
   SaveDoctorStationServiceApplyFormResponse,
+  SaveMedicationAdviceDraftLinePayload,
   SignDoctorStationAdviceBatchRequest,
   SignDoctorStationAdviceBatchResponse,
   UpdateDoctorStationMedicationAdviceGroupsRequest,
@@ -60,6 +64,38 @@ export interface InpatientDoctorStationAdviceRowDto extends DoctorStationAdviceR
   conditionDefinitionId?: string;
   /** 长嘱皮试药换批提示：建议追加皮试检查（IF-IP-DOR-27） */
   needAppendSkinTestFlag?: boolean;
+  /** 改量链 based_on 表名 */
+  basedOnTable?: string;
+  /** 改量链 based_on 源嘱主键 */
+  basedOnId?: string;
+  /** 是否命中口服一盒一点剩余规则（BR-IP-EXE-038） */
+  oralPackageBatchInventoryApplied?: boolean;
+  /** 已吃拆零量 */
+  oralPackageConsumedSplitQuantity?: number | string;
+  /** 剩余拆零量 */
+  oralPackageRemainSplitQuantity?: number | string;
+  /** 拆零单位展示 */
+  oralPackageSplitUnitDisplay?: string;
+  /** 预计下次领盒日 yyyy-MM-dd */
+  oralPackageNextClaimDate?: string;
+}
+
+/** 长期药品改量（IF-IP-DOR-28：停旧+同药草稿，待签发） */
+export interface ChangeLongTermMedicationDoseInpatientDoctorStationAdviceRequest {
+  encounterId: string;
+  patientId: string;
+  sourceMedicationRequestId: string;
+  /** 在用改量时可传停嘱时间；已停忽略 */
+  stopTime?: string;
+  medicationPayload: SaveMedicationAdviceDraftLinePayload;
+}
+
+export interface ChangeLongTermMedicationDoseInpatientDoctorStationAdviceResponse {
+  success?: boolean;
+  message?: string;
+  newMedicationRequestId?: string;
+  sourceMedicationRequestId?: string;
+  basedOnId?: string;
 }
 
 /** 改开立/停嘱时间（IF-IP-DOR-26；禁止改签发） */

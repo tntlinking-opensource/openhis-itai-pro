@@ -26,6 +26,7 @@ import {
 import {
   initServiceLocationApi,
   isMedicationItemTable,
+  isDeviceItemTable,
   listServiceLocationByOrganizationApi,
   normalizeServiceLocationOptionItems,
   resolveCategoryOptionsForItemTable,
@@ -55,6 +56,7 @@ interface CopiedRuleTemplate {
   distributionCategoryCode?: string;
   itemDefinitionId?: string;
   itemDefinitionName?: string;
+  typeCode?: string;
   methodCode?: string;
   defLocationId?: string;
   startTime?: string;
@@ -82,6 +84,7 @@ const deviceCategoryOptions = ref<ApiOptionItem[]>([]);
 const defLocationOptions = ref<ApiOptionItem[]>([]);
 const westernMethodOptions = ref<ApiOptionItem[]>([]);
 const tcmMethodOptions = ref<ApiOptionItem[]>([]);
+const deviceTypeCodeOptions = ref<ApiOptionItem[]>([]);
 
 const queryParams = ref({ pageNo: 1, pageSize: 20 });
 
@@ -124,10 +127,18 @@ const tableColumns: TableColumn[] = [
   {
     prop: 'itemDefinitionId',
     label: '具体物品',
-    width: '14%',
+    width: '12%',
     align: 'center',
     headerAlign: 'center',
     slot: 'itemDefinition',
+  },
+  {
+    prop: 'typeCode',
+    label: '耗材种类',
+    width: '9%',
+    align: 'center',
+    headerAlign: 'center',
+    slot: 'typeCode',
   },
   {
     prop: 'methodCode',
@@ -196,6 +207,7 @@ function serializeRows(rows: ServiceLocationItem[]) {
       itemTable: row.itemTable ?? '',
       distributionCategoryCode: row.distributionCategoryCode ?? '',
       itemDefinitionId: row.itemDefinitionId ?? '',
+      typeCode: row.typeCode ?? '',
       methodCode: row.methodCode ?? '',
       defLocationId: row.defLocationId ?? '',
       startTime: row.startTime ?? '',
@@ -215,6 +227,7 @@ function buildRuleConfigKey(row: ServiceLocationItem) {
     row.itemTable ?? '',
     row.distributionCategoryCode ?? '',
     row.itemDefinitionId ?? '',
+    row.typeCode ?? '',
     row.methodCode ?? '',
     row.startTime ?? '',
     row.endTime ?? '',
@@ -222,14 +235,23 @@ function buildRuleConfigKey(row: ServiceLocationItem) {
   ].join('|');
 }
 
-/** 优先级竞争组：物品表 + 发放类别 + 具体项（同组内按行序/priority 排候选库） */
+/** 优先级竞争组：同匹配条件（不含药房）才互相比优先级；含种类/用法/时段 */
 function buildPriorityGroupKey(row: ServiceLocationItem) {
-  return [row.itemTable ?? '', row.distributionCategoryCode ?? '', row.itemDefinitionId ?? ''].join(
-    '|',
-  );
+  return [
+    row.itemTable ?? '',
+    row.distributionCategoryCode ?? '',
+    row.itemDefinitionId ?? '',
+    row.typeCode ?? '',
+    row.methodCode ?? '',
+    row.startTime ?? '',
+    row.endTime ?? '',
+  ].join('|');
 }
 
-/** 计算行在竞争组内的组内优先级（按表格自上而下，从 1 起） */
+/**
+ * 展示用组内优先级：同条件多药房时才是 1、2、3；单药房或不同品类/种类均为 1。
+ * （匹配先比粒度：单品→种类→用法→仅大类；同粒度才用本数字排候选库房）
+ */
 function resolveGroupPriority(row: DraftRow, rows: DraftRow[] = draftRows.value) {
   if (!row.itemTable || !row.distributionCategoryCode) {
     return undefined;
@@ -309,9 +331,10 @@ function handleDistributionCategoryChange(row: DraftRow) {
   row.methodCode = undefined;
 }
 
-/** 物品类型变更时清空已选发放类别与用法 */
+/** 物品类型变更时清空已选发放类别、种类与用法 */
 function handleItemTableChange(row: DraftRow) {
   row.distributionCategoryCode = undefined;
+  row.typeCode = undefined;
   row.methodCode = undefined;
 }
 
@@ -413,6 +436,7 @@ function toCopiedTemplates(rows: DraftRow[]): CopiedRuleTemplate[] {
     distributionCategoryCode: row.distributionCategoryCode,
     itemDefinitionId: row.itemDefinitionId,
     itemDefinitionName: row.itemDefinitionName,
+    typeCode: row.typeCode,
     methodCode: row.methodCode,
     defLocationId: row.defLocationId,
     startTime: row.startTime,
@@ -447,6 +471,9 @@ async function initPage() {
       defLocationOptions.value = normalizeServiceLocationOptionItems(initData.defLocationOptions);
       westernMethodOptions.value = normalizeServiceLocationOptionItems(initData.methodCodeOptions);
       tcmMethodOptions.value = normalizeServiceLocationOptionItems(initData.tcmMethodCodeOptions);
+      deviceTypeCodeOptions.value = normalizeServiceLocationOptionItems(
+        initData.deviceTypeCodeOptions,
+      );
       return;
     }
     const initData = await initServiceLocationApi();
@@ -477,6 +504,9 @@ async function initPage() {
     defLocationOptions.value = normalizeServiceLocationOptionItems(initData.defLocationOptions);
     westernMethodOptions.value = normalizeServiceLocationOptionItems(initData.methodCodeOptions);
     tcmMethodOptions.value = normalizeServiceLocationOptionItems(initData.tcmMethodCodeOptions);
+    deviceTypeCodeOptions.value = normalizeServiceLocationOptionItems(
+      initData.deviceTypeCodeOptions,
+    );
   } finally {
     treeLoading.value = false;
   }
@@ -615,16 +645,20 @@ function validateNoDuplicateRules(rows: ServiceLocationItem[]): boolean {
   return true;
 }
 
-/** 按表格行序写入全局 priority/displayOrder（后端要求 1..N 连续）；组内优先级由行序推导 */
+/** 按竞争组写入 priority（组内 1..N）；displayOrder 仅配置页展示序，用整表行序 */
 function normalizePriorities(rows: DraftRow[]) {
+  const groupSeq = new Map<string, number>();
   rows.forEach((row, index) => {
-    const next = index + 1;
+    const key = buildPriorityGroupKey(row);
+    const next = (groupSeq.get(key) ?? 0) + 1;
+    groupSeq.set(key, next);
+    // 同匹配条件多药房：1=首选，2=次选（无库存再落下一房）；不同条件各自从 1 起
     row.priority = next;
-    row.displayOrder = next;
+    row.displayOrder = index + 1;
   });
 }
 
-/** 在竞争组内与相邻行交换位置，并同步全局 priority */
+/** 在竞争组内与相邻行交换位置，并同步组内 priority */
 function handleMoveRow(row: DraftRow, direction: -1 | 1) {
   const rows = [...draftRows.value];
   const index = rows.findIndex((item) => item._clientKey === row._clientKey);
@@ -749,6 +783,7 @@ function handlePaste() {
       distributionCategoryCode: template.distributionCategoryCode,
       itemDefinitionId: template.itemDefinitionId,
       itemDefinitionName: template.itemDefinitionName,
+      typeCode: template.typeCode,
       methodCode: template.methodCode,
       defLocationId: template.defLocationId,
       startTime: timeRange.startTime,
@@ -832,6 +867,7 @@ async function handleSaveAll() {
           distributionCategoryCode: row.distributionCategoryCode ?? '',
           defLocationId: row.defLocationId ?? '',
           itemDefinitionId: row.itemDefinitionId,
+          typeCode: row.typeCode,
           methodCode: row.methodCode,
           startTime: row.startTime,
           endTime: row.endTime,
@@ -900,9 +936,10 @@ onActivated(() => {
         </div>
 
         <p class="slt-panel__desc m-0 text-sm text-[var(--el-text-color-regular)]">
-          按发放类别配置取药药房；可通过「添加指定物品」为单个药品/耗材单独配置。可勾选规则后从其他科室复制，再切换到目标科室粘贴新增。匹配顺序固定为：指定物品+用法
-          → 指定物品 → 类别+用法 →
-          仅类别；全部一样时再按优先级（数字越小越优先）排候选药房。同条件可配多个药房。
+          按发放类别配置取药药房；可通过「添加指定物品」为单个药品/耗材单独配置。可勾选规则后从其他科室复制，再切换到目标科室粘贴新增。匹配从细到粗：具体物品
+          → 耗材种类 → 用法 → 仅发放类别。左侧「优先级」只在同一匹配条件配了多个药房时有意义（1
+          先试，无库存再试 2）；不同品类/种类互不竞争，通常都是
+          1。耗材日常用「种类」拆房，单品仅作例外；「不限种类」作大类兜底，勿与种类行同房重复配置。
         </p>
 
         <TableLayout
@@ -1026,6 +1063,23 @@ onActivated(() => {
             <span v-else class="slt-readonly-cell slt-readonly-cell--muted">
               {{ isMedicationItemTable(row.itemTable) || row.itemTable ? '全部' : '-' }}
             </span>
+          </template>
+
+          <template #typeCode="{ row }">
+            <ElSelect
+              v-model="row.typeCode"
+              clearable
+              :disabled="!isDeviceItemTable(row.itemTable)"
+              :placeholder="isDeviceItemTable(row.itemTable) ? '不限种类' : '仅耗材'"
+              class="cell-control"
+            >
+              <ElOption
+                v-for="item in deviceTypeCodeOptions"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </ElSelect>
           </template>
 
           <template #methodCode="{ row }">

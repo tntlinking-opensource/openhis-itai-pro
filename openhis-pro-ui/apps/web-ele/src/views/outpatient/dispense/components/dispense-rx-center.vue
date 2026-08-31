@@ -19,6 +19,7 @@ import {
   ElRadioButton,
   ElRadioGroup,
   ElSelect,
+  ElSwitch,
   ElTable,
   ElTableColumn,
   ElTag,
@@ -26,6 +27,13 @@ import {
 
 import SectionTitle from '#/components/layouts/section-title.vue';
 import TraceCodeTooltip from '#/components/trace/trace-code-tooltip.vue';
+import { MSFX_HIS_SCENE } from '#/msfx/constants';
+import MsfxUploadStatusBar from '#/msfx/components/msfx-upload-status-bar.vue';
+
+import {
+  resolveBatchNoByPick,
+  resolveRemainingStockTextByPick,
+} from '../services/dispense-lot-pick';
 
 import { buildPrescriptionSheetData } from './build-prescription-sheet-data';
 import PrescriptionSheetView from './prescription-sheet-view.vue';
@@ -67,6 +75,12 @@ const props = withDefaults(
      */
     sheetNoLabel?: string;
     selectedPatient: DispenseQueuePatient | null;
+    /** 码上放心 HIS 场景（门诊/住院发药） */
+    msfxHisScene?: string;
+    /**
+     * 是否展示「发药完成自动点评」开关（门诊发药开启；住院等可关）。
+     */
+    showAutoReviewSwitch?: boolean;
   }>(),
   {
     prescriptionSheetBlocks: () => [],
@@ -77,8 +91,15 @@ const props = withDefaults(
     enableSheetView: true,
     groupNoColumnLabel: '处方号',
     sheetNoLabel: '处方号',
+    msfxHisScene: MSFX_HIS_SCENE.OP_DISPENSE,
+    showAutoReviewSwitch: false,
   },
 );
+
+/** 发药完成自动点评开关（与父级双向绑定）。 */
+const autoReviewEnabled = defineModel<boolean>('autoReviewEnabled', {
+  default: false,
+});
 
 const emit = defineEmits<{
   batchDispense: [];
@@ -115,11 +136,6 @@ const rxTableTotalCols = computed(() =>
   activeRxKind.value === 'herbal' ? RX_TABLE_WESTERN_COLS + 1 : RX_TABLE_WESTERN_COLS,
 );
 
-/** 发放库房：双击后进入下拉编辑；下拉曾展开再收起则退出编辑 */
-const inventoryPickEditLineId = ref<null | string>(null);
-const inventoryPickDidOpen = ref(false);
-const inventoryPickSelectRef = ref<null | { focus?: () => void }>(null);
-
 /** 右侧工作区：发药单（默认）/ 列表明细；enableSheetView=false 时强制明细 */
 const workbenchViewMode = ref<'list' | 'sheet'>(props.enableSheetView ? 'sheet' : 'list');
 /** 发药单视图多选的处方块 id（批量发药） */
@@ -131,8 +147,6 @@ const resolvedViewMode = computed(() => (props.enableSheetView ? workbenchViewMo
 watch(
   () => props.selectedPatient?.id,
   () => {
-    inventoryPickEditLineId.value = null;
-    inventoryPickDidOpen.value = false;
     selectedSheetRxIds.value = [];
     // 换患者后：有笺面则回发药单，否则保持明细
     workbenchViewMode.value = props.enableSheetView ? 'sheet' : 'list';
@@ -147,11 +161,8 @@ watch(
 );
 
 watch(activeRxKind, () => {
-  inventoryPickEditLineId.value = null;
-  inventoryPickDidOpen.value = false;
   selectedSheetRxIds.value = [];
 });
-
 /** 处方组首行且可批量发药：待发 / 已配药 / 部分可发（已发、拦截不默认勾选） */
 function isDefaultSelectableRxGroupHead(
   row: DispenseRxTableRow,
@@ -380,41 +391,37 @@ function rxStatusTagRow(row: DispensePrescriptionItemRow) {
   return { text: '待发', type: 'success' as const };
 }
 
-/** 更新单行库房选择，避免直接改对象引用导致表格不刷新 */
+/** 更新单行批号选择（库房已锁定，选项仅换批号） */
 function setInventoryPick(lineId: string, value: string) {
   inventoryPickByLineId.value = { ...inventoryPickByLineId.value, [lineId]: value };
 }
 
-/** 非编辑态：有选中库存项则显示选项文案，否则显示后端库房名 */
-function inventoryLineDisplayLabel(row: DispenseRxTableRow): string {
-  if (isSpacerRow(row)) return '';
-  const pick = inventoryPickByLineId.value[row.id];
-  if (!pick || !row.inventoryPickOptions?.length) return row.pharmacy;
-  const hit = row.inventoryPickOptions.find((o) => o.value === pick);
-  return hit?.label ?? row.pharmacy;
+/** 仅待发（PREPARATION）可改批号；已配药提交会跳过 savePrepare，改了也不会落库 */
+function canChangeLotOnRow(row: DispenseRxTableRow): boolean {
+  if (isSpacerRow(row) || row.lineKind === 'decoctionFee') return false;
+  if (row.status !== 'pending') return false;
+  return Boolean(row.inventoryPickOptions?.length);
 }
 
-function openInventoryPickEditor(row: DispenseRxTableRow) {
-  if (isSpacerRow(row) || !row.inventoryPickOptions?.length) return;
-  inventoryPickDidOpen.value = false;
-  inventoryPickEditLineId.value = row.id;
-  void nextTick(() => {
-    inventoryPickSelectRef.value?.focus?.();
-  });
+/** 剩余库存随当前选中批号变化 */
+function remainingStockDisplay(row: DispenseRxTableRow): string {
+  if (isSpacerRow(row) || row.lineKind === 'decoctionFee') return '—';
+  return resolveRemainingStockTextByPick(
+    row.inventoryPickOptions,
+    inventoryPickByLineId.value[row.id],
+    row.remainingStockText,
+  );
 }
 
-function onInventoryPickVisibleChange(lineId: string, visible: boolean) {
-  if (inventoryPickEditLineId.value !== lineId) return;
-  if (visible) {
-    inventoryPickDidOpen.value = true;
-    return;
-  }
-  if (inventoryPickDidOpen.value) {
-    inventoryPickEditLineId.value = null;
-    inventoryPickDidOpen.value = false;
-  }
+/** 批次号列展示：有选中项取批号字面量，否则行上默认 */
+function batchNoDisplay(row: DispenseRxTableRow): string {
+  if (isSpacerRow(row) || row.lineKind === 'decoctionFee') return '—';
+  return resolveBatchNoByPick(
+    row.inventoryPickOptions,
+    inventoryPickByLineId.value[row.id],
+    row.batchNo,
+  );
 }
-
 /** 行样式：组块圆角、选中底、间隔行压平 */
 function prescriptionTableRowClassName({ row }: { row: DispenseRxTableRow }) {
   if (isSpacerRow(row)) return 'dispense-rx-gap-row';
@@ -430,11 +437,27 @@ function handleRxTableRowClick(row: DispenseRxTableRow) {
   if (isSpacerRow(row)) return;
   selectedPrescriptionId.value = row.rxId;
 }
+
+/** 当前选中处方块的发放 busNo（码上放心上传键） */
+const msfxDispenseBusNo = computed(() => {
+  const id = selectedPrescriptionId.value;
+  if (!id) {
+    // 未选中：取当前列表首块
+    const first = props.prescriptionBlocks[0] ?? props.prescriptionSheetBlocks?.[0];
+    return String(first?.dispenseBusNo ?? '').trim();
+  }
+  const hit =
+    props.prescriptionBlocks.find((b) => b.id === id) ??
+    props.prescriptionSheetBlocks?.find((b) => b.id === id);
+  return String(hit?.dispenseBusNo ?? '').trim();
+});
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col overflow-hidden">
-    <div class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-3 pb-2 pt-2">
+  <div class="dispense-rx-center flex h-full min-h-0 flex-col overflow-hidden">
+    <div
+      class="dispense-rx-center__body flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-3 pb-2 pt-2"
+    >
       <div
         class="dispense-rx-toolbar flex flex-col gap-1.5 border-b border-[var(--el-border-color-lighter)] pb-2"
       >
@@ -464,6 +487,13 @@ function handleRxTableRowClick(row: DispenseRxTableRow) {
             >
               处方打印
             </ElButton>
+            <MsfxUploadStatusBar
+              class="ml-1"
+              :bus-no="msfxDispenseBusNo"
+              :his-scene-enum="msfxHisScene"
+              :need-supplier-ent-id="false"
+              compact
+            />
           </div>
           <div class="dispense-rx-toolbar-split" aria-hidden="true"></div>
           <div class="dispense-rx-toolbar-group">
@@ -492,6 +522,18 @@ function handleRxTableRowClick(row: DispenseRxTableRow) {
                 />
               </ElSelect>
             </div>
+            <div
+              v-if="props.showAutoReviewSwitch"
+              class="flex shrink-0 items-center gap-1.5 whitespace-nowrap"
+            >
+              <span class="text-xs text-[var(--el-text-color-regular)]">发药完成自动点评</span>
+              <ElSwitch
+                v-model="autoReviewEnabled"
+                inline-prompt
+                active-text="开"
+                inactive-text="关"
+              />
+            </div>
           </div>
           <template v-if="props.enableSheetView">
             <div class="dispense-rx-toolbar-spacer"></div>
@@ -508,7 +550,7 @@ function handleRxTableRowClick(row: DispenseRxTableRow) {
         </div>
       </div>
       <div class="dispense-rx-body-wrap flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <!-- 发药单视图（默认）：居左横向多张；笺内勾选可批量发药 -->
+        <!-- 发药单视图（默认）：居左横向多张；宽度不够换行，纵向滚动；笺内勾选可批量发药 -->
         <div
           v-if="props.enableSheetView"
           v-show="resolvedViewMode === 'sheet'"
@@ -517,14 +559,15 @@ function handleRxTableRowClick(row: DispenseRxTableRow) {
         >
           <div
             v-if="prescriptionSheetViewItems.length > 0"
-            class="dispense-rx-sheet-row flex h-full min-h-0 items-start justify-start gap-4 overflow-x-auto overflow-y-auto"
+            class="dispense-rx-sheet-row flex h-full min-h-0 flex-wrap content-start items-stretch justify-start gap-4 overflow-y-auto overflow-x-hidden"
           >
             <PrescriptionSheetView
               v-for="item in prescriptionSheetViewItems"
               :key="item.key"
-              class="dispense-rx-sheet-card shrink-0"
+              class="dispense-rx-sheet-card h-full min-h-0 shrink-0"
               :data="item.data"
               :prescription-no-label="props.sheetNoLabel"
+              v-model:inventory-pick-by-line-id="inventoryPickByLineId"
               comfortable
               workbench-actions
               :selected="isSheetSelected(item.rxId)"
@@ -621,7 +664,7 @@ function handleRxTableRowClick(row: DispenseRxTableRow) {
           >
             <template #default="{ row }">
               <template v-if="!isSpacerRow(row)">
-                {{ row.lineKind === 'decoctionFee' ? '—' : (row.remainingStockText ?? '—') }}
+                {{ remainingStockDisplay(row) }}
               </template>
             </template>
           </ElTableColumn>
@@ -645,42 +688,23 @@ function handleRxTableRowClick(row: DispenseRxTableRow) {
           <ElTableColumn
             prop="batchNo"
             label="批次号"
-            width="150"
+            min-width="200"
             align="center"
             header-align="center"
-            show-overflow-tooltip
-          />
-          <ElTableColumn
-            prop="amount"
-            label="金额"
-            width="100"
-            align="center"
-            header-align="center"
-          />
-          <ElTableColumn label="发放库房" width="200" align="center" header-align="center">
+          >
             <template #default="{ row }">
               <template v-if="!isSpacerRow(row)">
-                <span
-                  v-if="row.lineKind === 'decoctionFee'"
-                  class="text-[var(--el-text-color-regular)]"
-                >
-                  —
-                </span>
                 <div
-                  v-else-if="row.inventoryPickOptions?.length"
-                  class="flex min-h-8 min-w-[140px] items-center justify-center"
+                  v-if="canChangeLotOnRow(row)"
+                  class="flex min-h-8 min-w-[160px] items-center justify-center"
                   @click.stop
-                  @dblclick.stop
                 >
                   <ElSelect
-                    v-if="inventoryPickEditLineId === row.id"
-                    ref="inventoryPickSelectRef"
                     :model-value="inventoryPickByLineId[row.id]"
                     filterable
-                    placeholder="选择库房"
-                    class="dispense-inv-pick-select !w-full"
-                    @update:model-value="(v: string) => setInventoryPick(row.id, v)"
-                    @visible-change="(v: boolean) => onInventoryPickVisibleChange(row.id, v)"
+                    placeholder="选择批号"
+                    class="dispense-lot-pick-select !w-full"
+                    @update:model-value="(v) => setInventoryPick(row.id, String(v ?? ''))"
                   >
                     <ElOption
                       v-for="opt in row.inventoryPickOptions"
@@ -689,16 +713,26 @@ function handleRxTableRowClick(row: DispenseRxTableRow) {
                       :value="opt.value"
                     />
                   </ElSelect>
-                  <span
-                    v-else
-                    class="inline-block max-w-full cursor-default truncate text-[var(--el-text-color-regular)]"
-                    title="双击选择库房/批号"
-                    @dblclick.stop="openInventoryPickEditor(row)"
-                  >
-                    {{ inventoryLineDisplayLabel(row) }}
-                  </span>
                 </div>
-                <span v-else class="text-[var(--el-text-color-regular)]">{{ row.pharmacy }}</span>
+                <span v-else class="text-[var(--el-text-color-regular)]">
+                  {{ batchNoDisplay(row) }}
+                </span>
+              </template>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn
+            prop="amount"
+            label="金额"
+            width="100"
+            align="center"
+            header-align="center"
+          />
+          <ElTableColumn label="发放库房" width="160" align="center" header-align="center">
+            <template #default="{ row }">
+              <template v-if="!isSpacerRow(row)">
+                <span class="text-[var(--el-text-color-regular)]">
+                  {{ row.lineKind === 'decoctionFee' ? '—' : row.pharmacy }}
+                </span>
               </template>
             </template>
           </ElTableColumn>
@@ -995,15 +1029,16 @@ function handleRxTableRowClick(row: DispenseRxTableRow) {
 }
 
 .dispense-rx-sheet-row {
+  padding-right: 4px;
   padding-bottom: 4px;
-  /* 发药单多时底部横向滚动条默认偏浅，加深便于辨认 */
+  /* 发药单多时纵向滚动条默认偏浅，加深便于辨认 */
   scrollbar-width: thin;
   scrollbar-color: var(--el-text-color-secondary) var(--el-fill-color);
 }
 
 .dispense-rx-sheet-row::-webkit-scrollbar {
-  height: 10px;
   width: 10px;
+  height: 10px;
 }
 
 .dispense-rx-sheet-row::-webkit-scrollbar-track {
@@ -1020,7 +1055,19 @@ function handleRxTableRowClick(row: DispenseRxTableRow) {
   background: var(--el-text-color-regular);
 }
 
+.dispense-rx-sheet-card {
+  max-height: 100%;
+}
+
 .dispense-rx-sheet-card :deep(.prescription-dialog-wrapper) {
-  width: 100%;
+  width: auto;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+}
+
+.dispense-rx-sheet-card :deep(.prescription-container) {
+  height: min(660px, 100%);
+  max-height: 100%;
 }
 </style>

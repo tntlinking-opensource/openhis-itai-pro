@@ -46,10 +46,10 @@ public class PageInventoryDetailBackupRequest extends AbstractHealthPageRequest 
     private List<Integer> chrgitmLvList;
 
     /**
-     * 基药标识筛选（药典 {@code basic_flag}）；仅收窄药品行；{@code null} 不限。
+     * 重点药类型筛选（KeyDrugType code）；仅收窄药品行；空/null 不限。
      */
-    @Schema(description = "基药标识：true/false；null 不限（仅药品）")
-    private Boolean basicFlag;
+    @Schema(description = "重点药类型：BASIC/NATIONAL_MONITOR/CENTRAL_PURCHASE；null 不限（仅药品）")
+    private String keyDrugType;
 
     /** 库存范围：true 数量等于0，false 数量大于0，null 不限。 */
     @Schema(description = "库存范围：true 数量等于0，false 数量大于0，null 不限")
@@ -62,4 +62,10 @@ public class PageInventoryDetailBackupRequest extends AbstractHealthPageRequest 
     /** 供应状态码多选（PublicationStatus#getCode）。 */
     @Schema(description = "供应状态码多选（PublicationStatus#getCode）")
     private List<String> inventoryStatusEnums;
+
+    /**
+     * 项目类型：药品/耗材定义表名；空/null 不限。
+     */
+    @Schema(description = "项目类型：med_medication_definition=药品，adm_device_definition=耗材；null 不限")
+    private String itemTable;
 }

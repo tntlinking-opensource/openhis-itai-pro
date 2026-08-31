@@ -5,11 +5,15 @@
 import { publicRequestClient } from '#/api/request';
 
 export interface PendingDeskRowDto {
+  activityDisplay?: null | string;
+  activityId?: null | string;
   busNo?: null | string;
   encounterId: string;
-  activityDisplay?: null | string;
+  encounterStatusEnum?: null | string;
   execStatusEnum?: null | string;
+  groupFlag?: boolean | null;
   lisDispatchEnum?: null | string;
+  patientAge?: null | number;
   patientId: string;
   patientName?: null | string;
   serviceRequestId: string;
@@ -60,6 +64,11 @@ export interface SaveObservationResponse {
   statusEnum?: null | string;
 }
 
+export interface BatchSaveObservationsResponse {
+  results?: SaveObservationResponse[];
+  successCount?: number;
+}
+
 export interface ApplyCommonResultRequest {
   commonResultId: string;
   deptOrgId?: null | string;
@@ -67,13 +76,16 @@ export interface ApplyCommonResultRequest {
   serviceRequestId: string;
 }
 
-export interface SaveDeptConclusionRequest {
+export interface SaveProjectConclusionRequest {
   conditionDefinitionId?: null | string;
-  definitionId: string;
+  definitionId?: string;
   deptOrgId?: null | string;
   serviceRequestId: string;
   valueString: string;
 }
+
+/** @deprecated 使用 {@link SaveProjectConclusionRequest} */
+export type SaveDeptConclusionRequest = SaveProjectConclusionRequest;
 
 export async function httpSearchPendingDeptDesk(
   body: SearchPendingRequest,
@@ -82,6 +94,7 @@ export async function httpSearchPendingDeptDesk(
 }
 
 export async function httpLoadObservationsByServiceRequest(body: {
+  activityId?: null | string;
   serviceRequestId: string;
 }): Promise<ObservationListResponse> {
   return publicRequestClient.post<ObservationListResponse>(
@@ -99,6 +112,15 @@ export async function httpSaveObservation(
   );
 }
 
+export async function httpBatchSaveObservations(body: {
+  items: SaveObservationRequest[];
+}): Promise<BatchSaveObservationsResponse> {
+  return publicRequestClient.post<BatchSaveObservationsResponse>(
+    '/peisDeptExamDesk/batchSaveObservations',
+    body,
+  );
+}
+
 export async function httpApplyCommonResult(
   body: ApplyCommonResultRequest,
 ): Promise<SaveObservationResponse> {
@@ -108,13 +130,20 @@ export async function httpApplyCommonResult(
   );
 }
 
-export async function httpSaveDeptConclusion(
-  body: SaveDeptConclusionRequest,
+export async function httpSaveProjectConclusion(
+  body: SaveProjectConclusionRequest,
 ): Promise<SaveObservationResponse> {
   return publicRequestClient.post<SaveObservationResponse>(
-    '/peisDeptExamDesk/saveDeptConclusion',
+    '/peisDeptExamDesk/saveProjectConclusion',
     body,
   );
+}
+
+/** @deprecated 使用 {@link httpSaveProjectConclusion} */
+export async function httpSaveDeptConclusion(
+  body: SaveProjectConclusionRequest,
+): Promise<SaveObservationResponse> {
+  return httpSaveProjectConclusion(body);
 }
 
 export async function httpProjectResults(body: { serviceRequestId: string }): Promise<void> {

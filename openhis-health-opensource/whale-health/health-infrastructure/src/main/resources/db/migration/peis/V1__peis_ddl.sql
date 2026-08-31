@@ -1,8 +1,9 @@
--- PEIS ModularFlyway V1 · peis_* DDL（greenfield baseline）
+-- PEIS ModularFlyway V1 · peis_* DDL（greenfield baseline · 最终态）
 -- history: flyway_schema_history_peis
 -- switch: openhis.modules.peis.enabled
 -- CLN / AOL 仍在 health 核心，本脚本仅 peis_* 表
--- folded: V1 + V6（团检）+ V7（健康档案）+ V10（复查任务）DDL
+-- folded: V1 + V6（团检）+ V7（健康档案）+ V10（复查任务）+ V14–V17（合同多套餐/金额/支付状态）DDL
+-- final: peis_encounter_ext.referrer_name / breakfast_flag；peis_patient_health_archive.tag_code
 
 -- peis_service_request_ext（建表）
 -- DM-PEIS-001
@@ -80,6 +81,8 @@ CREATE TABLE IF NOT EXISTS "public"."peis_encounter_ext" (
     "group_batch_id" int8,
     "booking_appointment_id" int8,
     "bus_no" varchar(255),
+    "referrer_name" varchar(128),
+    "breakfast_flag" boolean,
     CONSTRAINT "peis_encounter_ext_pkey" PRIMARY KEY ("encounter_id")
 );
 CREATE INDEX IF NOT EXISTS "idx_peis_enc_ext_bus_no"
@@ -106,6 +109,8 @@ COMMENT ON COLUMN peis_encounter_ext.contract_id IS '合约标识';
 COMMENT ON COLUMN peis_encounter_ext.group_batch_id IS '团检批次标识';
 COMMENT ON COLUMN peis_encounter_ext.booking_appointment_id IS '预约队列标识';
 COMMENT ON COLUMN peis_encounter_ext.bus_no IS '业务编号';
+COMMENT ON COLUMN peis_encounter_ext.referrer_name IS '本次体检推荐人';
+COMMENT ON COLUMN peis_encounter_ext.breakfast_flag IS '本次体检是否提供早餐（true有 / false无 / null未填）';
 
 -- peis_common_result（建表）
 -- DM-PEIS-003
@@ -300,10 +305,12 @@ CREATE TABLE IF NOT EXISTS peis_group_contract (
     tenant_id BIGINT NOT NULL,
     org_id BIGINT,
     company_id BIGINT NOT NULL,
-    package_activity_id BIGINT NOT NULL,
+    package_activity_id BIGINT,
     contract_name VARCHAR(128),
     valid_from DATE,
     valid_to DATE,
+    contract_amount NUMERIC(18, 2),
+    pay_status_code VARCHAR(32) NOT NULL DEFAULT 'UNPAID',
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ,
     created_by BIGINT,
@@ -313,6 +320,36 @@ CREATE TABLE IF NOT EXISTS peis_group_contract (
     deleted_by BIGINT,
     version INT NOT NULL DEFAULT 0
 );
+
+COMMENT ON COLUMN peis_group_contract.package_activity_id IS '兼容字段：默认套餐（取关联表第一项）';
+COMMENT ON COLUMN peis_group_contract.contract_amount IS '合同金额（元）';
+COMMENT ON COLUMN peis_group_contract.pay_status_code IS '合同支付状态：UNPAID/PAID';
+
+CREATE TABLE IF NOT EXISTS peis_group_contract_package (
+    id BIGINT PRIMARY KEY,
+    tenant_id BIGINT NOT NULL,
+    contract_id BIGINT NOT NULL,
+    package_activity_id BIGINT NOT NULL,
+    sort_order INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ,
+    created_by BIGINT,
+    updated_by BIGINT,
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at TIMESTAMPTZ,
+    deleted_by BIGINT,
+    version INT NOT NULL DEFAULT 0
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_peis_group_contract_pkg
+    ON peis_group_contract_package (contract_id, package_activity_id)
+    WHERE is_deleted = false;
+
+CREATE INDEX IF NOT EXISTS idx_peis_group_contract_pkg_contract
+    ON peis_group_contract_package (contract_id)
+    WHERE is_deleted = false;
+
+COMMENT ON TABLE peis_group_contract_package IS '团检合同可选套餐（一个合同可绑多个套餐）';
 
 CREATE TABLE IF NOT EXISTS peis_group_batch (
     id BIGINT PRIMARY KEY,
@@ -373,6 +410,7 @@ CREATE TABLE IF NOT EXISTS peis_patient_health_archive (
     family_history TEXT,
     habit_summary TEXT,
     allergy_summary TEXT,
+    tag_code varchar(64),
     remark TEXT,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ,
@@ -387,6 +425,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_peis_health_archive_patient
     ON peis_patient_health_archive (tenant_id, patient_id)
     WHERE is_deleted = false;
 COMMENT ON TABLE peis_patient_health_archive IS '体检健康档案（既往史/习惯等）';
+COMMENT ON COLUMN peis_patient_health_archive.tag_code IS '体检标签（如 ADULT成人 / CHILD儿童）';
 
 -- ========== folded from V10__seed_report_print_grant_recheck_menus.sql (DDL only) ==========
 -- PEIS V10：复查任务表（AS-PEIS-REC-001）

@@ -3,9 +3,9 @@ import type { JSONContent } from '@tiptap/core';
 
 import type { EmrTemplateTreeNode } from './build-emr-template-tree';
 
-import type { DocumentSummaryDto, EmrPrintConfigPayload } from '#/api/emr/document';
+import type { DocumentSummaryDto } from '#/api/emr/document';
 import type { TemplateDto } from '#/api/emr/template';
-import type { ApplyEmrTemplatePayload } from '#/emrEditor';
+import type { ApplyEmrTemplatePayload, PatientInfoForEmrMetadata } from '#/emrEditor';
 import type { EmrTemplateStationKind } from '#/views/basic/emr-template/emr-template-scope.constants';
 
 import {
@@ -24,8 +24,7 @@ import { onBeforeRouteLeave } from 'vue-router';
 import { ChevronLeft, ChevronRight } from '@vben/icons';
 import { useUserStore } from '@vben/stores';
 
-import { Close } from '@element-plus/icons-vue';
-import { ElButton, ElIcon, ElMessage, ElMessageBox } from 'element-plus';
+import { ElButton, ElMessage, ElMessageBox } from 'element-plus';
 
 import {
   createDocumentApi,
@@ -35,6 +34,7 @@ import {
   getDocumentListApi,
   saveDocumentApi,
 } from '#/api/emr/document';
+import { getDocumentTypeListApi } from '#/api/emr/document-type';
 import { resolveEncounterMetadataApi } from '#/api/emr/encounter-metadata';
 import {
   createTemplateApi,
@@ -47,18 +47,36 @@ import { ENSURE_CLINICAL_RECEPTION_KEY } from '#/components/doctor-station';
 import { useCompactViewport } from '#/composables/use-compact-viewport';
 import { DOCTOR_STATION_SIDEBAR_WIDTH_PX } from '#/constants/layout/viewport-breakpoints';
 import {
+  applyDiagnosisMetadataToContentJson,
   applyMetadataValuesToContentJson,
   buildMetadataValuesFromPatientInfo,
+  EMR_DIAGNOSIS_METADATA_FIELD_KEYS,
   isForceLogoutSession,
   mergeEmrMetadataValues,
   normalizeEmrRootDoc,
+  parseEmrContentToDoc,
   registerEmrUnsavedGuard,
   SimpleEditor,
 } from '#/emrEditor';
 import {
+  packEmrDocWithSidecar,
+  readEmrDocSidecar,
+  stripEmrDocSidecar,
+} from '#/emrEditor/components/simple-editor/emr-doc-sidecar';
+import {
+  DEFAULT_EDITOR_PAGE_MARGINS,
   defaultEmrEditorDoc,
-  EDITOR_PAGE_MARGIN_PRESETS,
 } from '#/emrEditor/components/simple-editor/editor-defaults';
+import {
+  createDefaultEmrPageChrome,
+  cloneEmrPageChrome,
+  type EmrPageChrome,
+} from '#/emrEditor/components/simple-editor/emr-page-chrome';
+import { requestEmrPaginationRelayout } from '#/emrEditor/components/simple-editor/extensions/emr-pagination';
+import {
+  buildEmrPrintConfigPayload,
+  collectScreenPrintMetricsFromDom,
+} from '#/emrEditor/components/simple-editor/emr-print-config';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import {
   preserveApiIdForRequest,
@@ -76,8 +94,10 @@ import { resolveEmrDirectoryCategory } from './build-emr-template-tree';
 import EmrImportAdviceDialog from './emr-import/emr-import-advice-dialog.vue';
 import EmrImportDiagnosisDialog from './emr-import/emr-import-diagnosis-dialog.vue';
 import {
+  captureEmrEditorInsertSelection,
   captureEmrIslandInsertTarget,
   insertEmrImportText,
+  type EmrEditorInsertSelection,
   type EmrIslandInsertTarget,
 } from './emr-import/insert-emr-import-text';
 import EmrPdfPreviewDialog from './emr-pdf-preview-dialog.vue';
@@ -101,16 +121,7 @@ const props = withDefaults(defineProps<Props>(), {
 interface Props {
   /** 门诊 OUTPATIENT / 住院 INPATIENT，决定模板树可见范围 */
   stationKind?: EmrTemplateStationKind;
-  patientInfo?: {
-    age?: string;
-    gender?: string;
-    idCard?: string;
-    /** 医保/费用性质展示 */
-    insurance?: string;
-    medicalRecordNo?: string;
-    name?: string;
-    phone?: string;
-  };
+  patientInfo?: PatientInfoForEmrMetadata;
   patientId?: string;
   encounterId?: string;
   /** 强制只读（如护士站病历调阅 / 病案只读）：不可新建/编辑/删除，仅查看与打印 */
@@ -141,6 +152,7 @@ interface EmrOpenTab {
   documentTypeName: string;
   editorSurface: 'document' | 'template';
   key: string;
+  pageChrome: EmrPageChrome;
   pageMargins: PageMargins;
   pendingTemplateId: string;
   recordDoc: JSONContent | null;
@@ -148,10 +160,16 @@ interface EmrOpenTab {
   serverMetadataValues: Record<string, string>;
   /** 打开历史/已有文书时的来源模板，复用创建时带回 */
   sourceTemplateId: string;
-  templateLayoutLocked: boolean;
+  /** Tab 展示：病历头（文书类型名，无时间后缀） */
+  tabHead: string;
+  /** Tab 展示：患者姓名 */
+  tabPatientName: string;
+  /** Tab 展示：书写/保存医生 */
+  tabAuthorName: string;
 }
 
-const MAX_OPEN_TABS = 4;
+const MAX_OPEN_TABS_OUTPATIENT = 4;
+const MAX_OPEN_TABS_INPATIENT = 8;
 
 const ensureClinicalReception = inject(ENSURE_CLINICAL_RECEPTION_KEY, undefined);
 const userStore = useUserStore();
@@ -159,16 +177,8 @@ const userStore = useUserStore();
 const editorRefMap = new Map<string, InstanceType<typeof SimpleEditor>>();
 const historyPanelRef = ref<InstanceType<typeof HistoryTemplatePanel> | null>(null);
 
-const printStandardMargins: PageMargins = EDITOR_PAGE_MARGIN_PRESETS.find(
-  (p) => p.label === '打印标准',
-)?.value ??
-  EDITOR_PAGE_MARGIN_PRESETS[2]?.value ??
-  EDITOR_PAGE_MARGIN_PRESETS[0]?.value ?? {
-    top: '0',
-    right: '0',
-    bottom: '0',
-    left: '0',
-  };
+/** 文书编辑默认页边距：贴近 Word/WPS，避免国标左右 31.8mm 屏上过空 */
+const defaultEditorMargins: PageMargins = { ...DEFAULT_EDITOR_PAGE_MARGINS };
 
 let tabKeySeq = 0;
 function nextTabKey(): string {
@@ -191,8 +201,11 @@ function createBlankTab(): EmrOpenTab {
     recordDoc: blank,
     savedContentSnapshot: structuredClone(blank),
     editorSurface: 'document',
-    templateLayoutLocked: false,
-    pageMargins: { ...printStandardMargins },
+    pageMargins: { ...defaultEditorMargins },
+    pageChrome: createDefaultEmrPageChrome(),
+    tabHead: '',
+    tabPatientName: '',
+    tabAuthorName: '',
   };
 }
 
@@ -212,23 +225,39 @@ const pdfPreviewTitle = ref('打印预览');
 
 const importDiagnosisDialogOpen = ref(false);
 const importAdviceDialogOpen = ref(false);
-/** 最近一次聚焦的辅助检查等数据元岛（工具栏点击会抢焦点，需提前记住） */
+/** 最近一次聚焦的填写岛（自由文本 contenteditable / 辅助检查 input；工具栏抢焦前须快照） */
 const lastIslandInsertTarget = ref<EmrIslandInsertTarget | null>(null);
+/** 最近一次正文选区（Word 化后诊断/医嘱带入用） */
+const lastEditorInsertSelection = ref<EmrEditorInsertSelection | null>(null);
 /** 打开带入弹窗时冻结的插入目标 */
 const pendingIslandInsertTarget = ref<EmrIslandInsertTarget | null>(null);
+const pendingEditorInsertSelection = ref<EmrEditorInsertSelection | null>(null);
 
-function onEditorWrapFocusIn(ev: FocusEvent) {
-  const target = ev.target;
-  if (!(target instanceof HTMLElement)) return;
+/** 记录插入落点：优先自由文本/数据元岛，否则正文选区 */
+function trackImportInsertTarget() {
   const hit = captureEmrIslandInsertTarget();
   if (hit) {
     lastIslandInsertTarget.value = hit;
+    lastEditorInsertSelection.value = null;
     return;
   }
-  // 焦点回到正文时清除岛目标，避免误写入上次的辅助检查
-  if (target.closest('.ProseMirror') || target.classList.contains('ProseMirror')) {
+  const ae = document.activeElement;
+  if (!(ae instanceof HTMLElement)) return;
+  // 焦点在正文：记选区，并清岛目标，避免误写入上次的填写岛
+  if (ae.closest('.ProseMirror') || ae.classList.contains('ProseMirror')) {
     lastIslandInsertTarget.value = null;
+    const editor = getActiveEditor()?.getEditor?.() ?? null;
+    lastEditorInsertSelection.value = captureEmrEditorInsertSelection(editor);
   }
+}
+
+function onEditorWrapFocusIn() {
+  trackImportInsertTarget();
+}
+
+/** 岛内挪光标/拖选后刷新快照（工具栏 mousedown 会抢焦，须提前记住） */
+function onEditorWrapCaretTrack() {
+  trackImportInsertTarget();
 }
 
 const activeTab = computed(
@@ -279,22 +308,37 @@ const canImportClinicalText = computed(() => {
 
 function resolveIslandInsertTarget(): EmrIslandInsertTarget | null {
   const last = lastIslandInsertTarget.value;
-  if (last?.el?.isConnected && !last.el.disabled && !last.el.readOnly) {
-    const start = last.el.selectionStart ?? last.el.value.length;
-    const end = last.el.selectionEnd ?? start;
-    return { el: last.el, start, end };
+  if (last?.el?.isConnected) {
+    if (last.kind === 'contentEditable') {
+      // contenteditable 失焦后选区即丢，必须用聚焦时快照的 start/end
+      return last;
+    }
+    if (!last.el.disabled && !last.el.readOnly) {
+      const start = last.el.selectionStart ?? last.el.value.length;
+      const end = last.el.selectionEnd ?? start;
+      return { kind: 'input', el: last.el, start, end };
+    }
   }
   return captureEmrIslandInsertTarget();
 }
 
-function openImportDiagnosisDialog() {
-  // 工具栏按钮会抢走焦点；用最近聚焦过的数据元岛（含辅助检查）
+function freezeImportInsertTargets() {
+  // 工具栏按钮会抢走焦点；优先填写岛，否则用打开前记住的正文选区
+  // 建议在按钮 mousedown.prevent 时先调一次，此时岛内焦点尚未丢
   pendingIslandInsertTarget.value = resolveIslandInsertTarget();
+  const editor = getActiveEditor()?.getEditor?.() ?? null;
+  pendingEditorInsertSelection.value = pendingIslandInsertTarget.value
+    ? null
+    : (lastEditorInsertSelection.value ?? captureEmrEditorInsertSelection(editor));
+}
+
+function openImportDiagnosisDialog() {
+  freezeImportInsertTargets();
   importDiagnosisDialogOpen.value = true;
 }
 
 function openImportAdviceDialog() {
-  pendingIslandInsertTarget.value = resolveIslandInsertTarget();
+  freezeImportInsertTargets();
   importAdviceDialogOpen.value = true;
 }
 
@@ -305,8 +349,10 @@ function handleImportInsert(text: string) {
     editor,
     text,
     islandTarget: pendingIslandInsertTarget.value,
+    editorSelection: pendingEditorInsertSelection.value,
   });
   pendingIslandInsertTarget.value = null;
+  pendingEditorInsertSelection.value = null;
   if (!ok) {
     ElMessage.warning('插入失败：请先将光标置于病历正文或辅助检查等可编辑处');
     return;
@@ -378,6 +424,56 @@ function captureContentSnapshot(tab: EmrOpenTab, doc: JSONContent) {
   tab.savedContentSnapshot = structuredClone(doc);
 }
 
+/** 从接口 content 读出页眉页脚/页边距，正文去掉侧车字段 */
+function loadEmrContentIntoTab(tab: EmrOpenTab, raw: unknown): JSONContent {
+  const sidecar = readEmrDocSidecar(raw);
+  tab.pageChrome = cloneEmrPageChrome(sidecar.pageChrome);
+  tab.pageMargins = { ...sidecar.pageMargins };
+  const parsed = parseEmrContentToDoc(raw);
+  const body = parsed ? stripEmrDocSidecar(parsed) : raw;
+  return normalizeEmrRootDoc(body);
+}
+
+/** 页眉/页边距写入后强制重算分页，避免第二页起正文与页眉错位 */
+function relayoutEditorForTab(tabKey: string) {
+  const run = () => {
+    const ed = getEditor(tabKey)?.getEditor?.();
+    if (ed && !ed.isDestroyed) {
+      requestEmrPaginationRelayout(ed);
+    }
+  };
+  run();
+  // 查看页/弹层冷加载：NodeView、字体、图片未就绪时单次 nextTick 会量错；延迟多拍对齐编辑态
+  void nextTick(() => {
+    run();
+    requestAnimationFrame(() => {
+      run();
+      window.setTimeout(run, 80);
+      window.setTimeout(run, 250);
+      window.setTimeout(run, 600);
+    });
+  });
+  if (typeof document !== 'undefined' && document.fonts?.ready) {
+    void document.fonts.ready.then(run);
+  }
+}
+
+function activateTab(key: string) {
+  if (openTabs.value.some((t) => t.key === key)) {
+    activeTabKey.value = key;
+    // v-show 从隐藏切出时几何为 0，须可见后再排
+    void nextTick(() => relayoutEditorForTab(key));
+  }
+}
+
+/** 存盘/打印：把当前 Tab 的页眉页脚写回 content 侧车 */
+function packTabContentForSave(tab: EmrOpenTab, doc: JSONContent): JSONContent {
+  return packEmrDocWithSidecar(stripEmrDocSidecar(doc), {
+    pageChrome: tab.pageChrome,
+    pageMargins: tab.pageMargins,
+  });
+}
+
 function editorDocIdForTab(tab: EmrOpenTab): string {
   if (tab.documentId) return `emr-doc-${tab.documentId}`;
   const tplId = tab.pendingTemplateId;
@@ -393,11 +489,12 @@ function remoteSaveForTab(tabKey: string) {
   return async (content: JSONContent) => {
     const tab = openTabs.value.find((t) => t.key === tabKey);
     if (!tab?.documentId || tab.documentReadOnly || props.forceReadOnly) return;
+    const packed = packTabContentForSave(tab, content);
     await saveDocumentApi({
       documentId: tab.documentId,
-      content,
+      content: packed,
     });
-    captureContentSnapshot(tab, content);
+    captureContentSnapshot(tab, stripEmrDocSidecar(packed));
   };
 }
 
@@ -445,12 +542,109 @@ function looksLikeDocumentTypeCode(text: string): boolean {
 }
 
 function tabDisplayTitle(tab: EmrOpenTab): string {
+  const head = (tab.tabHead ?? '').trim();
+  if (head) return head;
   const title = (tab.documentTitle ?? '').trim();
   if (title && !looksLikeDocumentTypeCode(title)) return title;
   const typeName = (tab.documentTypeName ?? '').trim();
   if (typeName) return typeName;
   if (tab.pendingTemplateId) return '新建文书';
   return '未命名';
+}
+
+/** 去掉后端 title 自动拼接的时间后缀 */
+function stripDocumentTitleTimestamp(title: string): string {
+  return title.replace(/-\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?.*$/u, '').trim();
+}
+
+/** 从 Tab 文书字段解析病历头（优先文书类型名） */
+function resolveTabDocumentHead(tab: EmrOpenTab): string {
+  const typeName = (tab.documentTypeName ?? '').trim();
+  if (typeName) return typeName;
+  const title = (tab.documentTitle ?? '').trim();
+  if (title && !looksLikeDocumentTypeCode(title)) {
+    const stripped = stripDocumentTitleTimestamp(title);
+    return stripped || title;
+  }
+  if (tab.pendingTemplateId) return '新建文书';
+  return '未命名';
+}
+
+function resolveLoginDoctorDisplayName(): string {
+  const u = userStore.userInfo as Record<string, unknown> | null;
+  if (!u) return '';
+  const candidates = [u.realName, u.name, u.userName, u.username];
+  for (const raw of candidates) {
+    const text = String(raw ?? '').trim();
+    if (text) return text;
+  }
+  return '';
+}
+
+function resolvePatientDisplayName(metadata?: Record<string, string>): string {
+  const fromMeta = (metadata?.patientName ?? '').trim();
+  if (fromMeta) return fromMeta;
+  return (props.patientInfo?.name ?? '').trim();
+}
+
+/**
+ * 同步 Tab 页签展示文案（病历头 / 患者 / 医生）。
+ *
+ * @param tab 目标 Tab
+ * @param options.authorName 列表 savedByName 或保存后当前医生
+ * @param options.metadataValues 患者名优先从元数据取
+ */
+function syncTabHeader(
+  tab: EmrOpenTab,
+  options?: { authorName?: string; metadataValues?: Record<string, string> },
+) {
+  tab.tabHead = resolveTabDocumentHead(tab);
+  const meta = options?.metadataValues ?? tab.serverMetadataValues;
+  tab.tabPatientName = resolvePatientDisplayName(meta);
+  const authorHint = (options?.authorName ?? '').trim();
+  if (authorHint) {
+    tab.tabAuthorName = authorHint;
+    return;
+  }
+  if (!tab.documentId && tab.pendingTemplateId) {
+    tab.tabAuthorName = resolveLoginDoctorDisplayName();
+    return;
+  }
+  if (!tab.tabAuthorName) {
+    tab.tabAuthorName = resolveLoginDoctorDisplayName();
+  }
+}
+
+/** Tab 第二行：患者 · 医生 */
+function tabMetaLine(tab: EmrOpenTab): string {
+  const parts = [(tab.tabPatientName ?? '').trim(), (tab.tabAuthorName ?? '').trim()].filter(
+    Boolean,
+  );
+  if (parts.length === 0) return '—';
+  return parts.join(' · ');
+}
+
+/** 悬停完整标题 */
+function tabFullTooltip(tab: EmrOpenTab): string {
+  const parts = [
+    (tab.tabHead ?? '').trim() || tabDisplayTitle(tab),
+    (tab.tabPatientName ?? '').trim(),
+    (tab.tabAuthorName ?? '').trim(),
+  ].filter(Boolean);
+  return parts.join(' · ');
+}
+
+/** Tab 展示用短标题（兼容旧引用） */
+function tabShortTitle(tab: EmrOpenTab): string {
+  const head = (tab.tabHead ?? '').trim();
+  if (head) return head;
+  const full = tabDisplayTitle(tab);
+  const stripped = stripDocumentTitleTimestamp(full);
+  return stripped || full;
+}
+
+function isTabReadOnly(tab: EmrOpenTab): boolean {
+  return props.forceReadOnly || tab.documentReadOnly;
 }
 
 function revertTabToSavedSnapshot(tab: EmrOpenTab) {
@@ -471,12 +665,15 @@ function resetTabContent(tab: EmrOpenTab) {
   tab.documentTitle = '';
   tab.sourceTemplateId = '';
   tab.serverMetadataValues = {};
+  tab.tabHead = '';
+  tab.tabPatientName = '';
+  tab.tabAuthorName = '';
   const blank = structuredClone(defaultEmrEditorDoc);
   tab.recordDoc = blank;
   captureContentSnapshot(tab, blank);
   tab.editorSurface = 'document';
-  tab.templateLayoutLocked = false;
-  tab.pageMargins = { ...printStandardMargins };
+  tab.pageMargins = { ...defaultEditorMargins };
+  tab.pageChrome = createDefaultEmrPageChrome();
   void nextTick(() => {
     getEditor(tab.key)?.markSaved?.();
     markTabClean(tab.key);
@@ -563,6 +760,40 @@ function requireEncounterIdForDocument(options?: { silent?: boolean }): boolean 
   return true;
 }
 
+/** 文书类型 code → 显示名（页眉标题回退） */
+let documentTypeNameByCode: Map<string, string> | null = null;
+
+async function ensureDocumentTypeNameByCode(): Promise<Map<string, string>> {
+  if (documentTypeNameByCode) return documentTypeNameByCode;
+  const map = new Map<string, string>();
+  try {
+    const list = await getDocumentTypeListApi({ enabled: true });
+    for (const dt of list ?? []) {
+      const code = String(dt.code ?? '').trim();
+      const name = String(dt.name ?? '').trim();
+      if (code && name) map.set(code, name);
+    }
+  } catch {
+    /* 列表失败时保持空表，由调用方用其它来源兜底 */
+  }
+  documentTypeNameByCode = map;
+  return map;
+}
+
+async function resolveDocumentTypeDisplayName(
+  typeCode: string,
+  ...hints: Array<string | undefined>
+): Promise<string> {
+  for (const h of hints) {
+    const t = (h ?? '').trim();
+    if (t) return t;
+  }
+  const code = typeCode.trim();
+  if (!code) return '';
+  const map = await ensureDocumentTypeNameByCode();
+  return map.get(code) ?? '';
+}
+
 /** 将接口文书 DTO 写入指定 Tab */
 function applyDocumentDtoToTab(
   tab: EmrOpenTab,
@@ -576,6 +807,8 @@ function applyDocumentDtoToTab(
     readOnly?: boolean;
     sourceTemplateId?: number | string;
     title?: string;
+    /** 列表 savedByName，用于 Tab 医生展示 */
+    authorName?: string;
   },
 ) {
   const id = preserveApiIdForRequest(dto.id);
@@ -605,12 +838,16 @@ function applyDocumentDtoToTab(
   if (dto.metadataValues) {
     tab.serverMetadataValues = { ...dto.metadataValues };
   }
-  const doc = normalizeEmrRootDoc(dto.content);
+  const doc = loadEmrContentIntoTab(tab, dto.content);
   tab.recordDoc = doc;
   captureContentSnapshot(tab, doc);
   tab.editorSurface = 'document';
-  tab.templateLayoutLocked = false;
+  syncTabHeader(tab, {
+    authorName: dto.authorName,
+    metadataValues: dto.metadataValues ?? tab.serverMetadataValues,
+  });
   void nextTick(() => {
+    relayoutEditorForTab(tab.key);
     getEditor(tab.key)?.markSaved?.();
     getEditor(tab.key)?.clearDraft?.();
     markTabClean(tab.key);
@@ -632,16 +869,41 @@ function findTabByDocumentId(id: string): EmrOpenTab | undefined {
   return openTabs.value.find((t) => t.documentId === id);
 }
 
-function canOpenNewTab(): boolean {
-  if (openTabs.value.length < MAX_OPEN_TABS) return true;
-  ElMessage.warning(`最多同时打开 ${MAX_OPEN_TABS} 份病历，请先关闭部分标签`);
-  return false;
+function resolveMaxOpenTabs(): number {
+  return isInpatientStation.value ? MAX_OPEN_TABS_INPATIENT : MAX_OPEN_TABS_OUTPATIENT;
 }
 
-function activateTab(key: string) {
-  if (openTabs.value.some((t) => t.key === key)) {
-    activeTabKey.value = key;
+/** 当前 Tab 是否已占用（已有文书、待保存模板或已选类型） */
+function activeTabHasDraftSession(tab: EmrOpenTab): boolean {
+  if (tab.documentId) return true;
+  if (tab.pendingTemplateId) return true;
+  return Boolean(tab.documentTypeCode.trim());
+}
+
+/**
+ * 住院：在已有会话的标签上再选模板时，自动新开子 Tab，避免覆盖上一份病历。
+ *
+ * @return 套用模板的 Tab；无法新开时返回 null
+ */
+function resolveTabForNewTemplateSession(): EmrOpenTab | null {
+  const current = activeTab.value;
+  if (!isInpatientStation.value || !activeTabHasDraftSession(current)) {
+    return current;
   }
+  if (!canOpenNewTab()) {
+    return null;
+  }
+  const blank = createBlankTab();
+  openTabs.value = [...openTabs.value, blank];
+  activeTabKey.value = blank.key;
+  return blank;
+}
+
+function canOpenNewTab(): boolean {
+  const max = resolveMaxOpenTabs();
+  if (openTabs.value.length < max) return true;
+  ElMessage.warning(`最多同时打开 ${max} 份病历，请先关闭部分标签`);
+  return false;
 }
 
 /** 关闭文书子 Tab；最后一页则清空为空白会话 */
@@ -673,6 +935,7 @@ async function closeTab(tabKey: string) {
   if (activeTabKey.value === tabKey) {
     const next = openTabs.value[Math.max(0, idx - 1)] ?? openTabs.value[0];
     activeTabKey.value = next!.key;
+    void nextTick(() => relayoutEditorForTab(next!.key));
   }
 }
 
@@ -697,7 +960,11 @@ async function applyTemplateLocallyToTab(
     // 强制只读场景不应落到可编辑新建态
     liveTab.documentReadOnly = props.forceReadOnly;
     liveTab.documentTypeCode = typeCode;
-    liveTab.documentTypeName = (options?.documentTypeName ?? '').trim();
+    liveTab.documentTypeName = await resolveDocumentTypeDisplayName(
+      typeCode,
+      options?.documentTypeName,
+      tpl.documentTypeName,
+    );
     liveTab.documentTitle = '';
     liveTab.pendingTemplateId = tplId;
     liveTab.sourceTemplateId = tplId;
@@ -709,15 +976,18 @@ async function applyTemplateLocallyToTab(
     );
     liveTab.serverMetadataValues = mergedMeta;
     const doc = applyMetadataValuesToContentJson(
-      normalizeEmrRootDoc(tpl.content),
+      loadEmrContentIntoTab(liveTab, tpl.content),
       mergedMeta,
       true,
     );
     liveTab.recordDoc = doc;
     captureContentSnapshot(liveTab, doc);
     liveTab.editorSurface = 'document';
-    liveTab.templateLayoutLocked = false;
+    syncTabHeader(liveTab, {
+      metadataValues: mergedMeta,
+    });
     void nextTick(() => {
+      relayoutEditorForTab(liveTab.key);
       getEditor(liveTab.key)?.markSaved?.();
       getEditor(liveTab.key)?.clearDraft?.();
       markTabClean(liveTab.key);
@@ -750,6 +1020,49 @@ async function resolveMetadataForCurrentPatient(): Promise<Record<string, string
   }
 }
 
+/** 从解析结果中取出中/西医诊断展示值 */
+function pickDiagnosisMetadataValues(vals: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const key of EMR_DIAGNOSIS_METADATA_FIELD_KEYS) {
+    const text = String(vals[key] ?? '').trim();
+    if (text) {
+      out[key] = text;
+    }
+  }
+  return out;
+}
+
+/**
+ * 将已开立诊断填入当前打开文书的中/西医诊断空槽。
+ * 不覆盖医生已写内容，也不改患者/日期元数据。
+ */
+async function refreshDiagnosisMetadataIntoOpenTabs() {
+  if (props.forceReadOnly) return;
+  if (!(props.patientId ?? '').trim() || !(props.encounterId ?? '').trim()) return;
+  const writableTabs = openTabs.value.filter((tab) => tab.recordDoc && !tab.documentReadOnly);
+  if (writableTabs.length === 0) return;
+
+  const serverMeta = await resolveMetadataForCurrentPatient();
+  const mergedMeta = mergeEmrMetadataValues(
+    buildMetadataValuesFromPatientInfo(props.patientInfo),
+    serverMeta,
+  );
+  const diagnosisVals = pickDiagnosisMetadataValues(mergedMeta);
+  if (Object.keys(diagnosisVals).length === 0) return;
+
+  for (const tab of writableTabs) {
+    const editorComp = getEditor(tab.key);
+    if (editorComp?.fillEmptyDiagnosisMetadata) {
+      editorComp.fillEmptyDiagnosisMetadata(diagnosisVals);
+      continue;
+    }
+    tab.recordDoc = applyDiagnosisMetadataToContentJson(
+      tab.recordDoc as JSONContent,
+      diagnosisVals,
+    );
+  }
+}
+
 /** 保存前确保已有服务端文书：未创建则按待选模板（或仅文书类型）create */
 async function ensureDocumentCreated(): Promise<null | string> {
   if (props.forceReadOnly) {
@@ -775,7 +1088,8 @@ async function ensureDocumentCreated(): Promise<null | string> {
     if (!ok) return null;
   }
   // 保留本地正文：create 可能返回默认模板内容，不能覆盖已复用/已编辑草稿
-  const localContent = getEditor(tab.key)?.getJSON?.() ?? tab.recordDoc;
+  const localRaw = getEditor(tab.key)?.getJSON?.() ?? tab.recordDoc;
+  const localContent = localRaw ? packTabContentForSave(tab, localRaw) : null;
   const created = await createDocumentApi({
     patientId,
     encounterId: encounterId || undefined,
@@ -889,75 +1203,31 @@ const canSaveAsTemplate = computed(
 /** 侧栏「用当前病历更新模板」：与存为模版同前提 */
 const canUpdateTemplateContent = computed(() => canSaveAsTemplate.value);
 
-/** 门诊病历纸质底边戒烟提示（与 emr 元数据 smokeFreeFooter / 模板 printFooter 一致） */
-const OUTPATIENT_EMR_SMOKE_FREE_FOOTER =
-  '为了您和家人的健康，请勿吸烟！如需戒烟帮助，请咨询戒烟医生。';
-
-/** 编辑器页边距 → PrintConfig.margins（仅 mm；px 预设走服务端默认） */
-function buildPrintConfigFromPageMargins(margins: PageMargins): EmrPrintConfigPayload | undefined {
-  const parseMm = (raw: string): number | undefined => {
-    const m = String(raw ?? '')
-      .trim()
-      .match(/^([\d.]+)\s*mm$/i);
-    if (!m) return undefined;
-    const n = Number(m[1]);
-    return Number.isFinite(n) && n > 0 ? n : undefined;
-  };
-  const topMm = parseMm(margins.top);
-  const rightMm = parseMm(margins.right);
-  const bottomMm = parseMm(margins.bottom);
-  const leftMm = parseMm(margins.left);
-
-  const isOutpatientRecord = documentTypeCode.value.trim() === 'OUTPATIENT_RECORD';
-  const footer = isOutpatientRecord
-    ? {
-        enabled: true,
-        heightMm: 20,
-        template: `${OUTPATIENT_EMR_SMOKE_FREE_FOOTER}　第 {page} 页`,
-        showPageNumber: true,
-      }
-    : undefined;
-
-  if (topMm == null && rightMm == null && bottomMm == null && leftMm == null && !footer) {
-    return undefined;
-  }
-
-  let resolvedBottom = bottomMm;
-  if (isOutpatientRecord && (resolvedBottom == null || resolvedBottom < 28)) {
-    resolvedBottom = 28;
-  }
-
-  return {
-    ...(topMm != null || rightMm != null || resolvedBottom != null || leftMm != null
-      ? {
-          margins: {
-            ...(topMm != null ? { topMm } : {}),
-            ...(rightMm != null ? { rightMm } : {}),
-            ...(resolvedBottom != null ? { bottomMm: resolvedBottom } : {}),
-            ...(leftMm != null ? { leftMm } : {}),
-          },
-        }
-      : {}),
-    ...(footer ? { footer } : {}),
-  };
-}
-
 async function requestDocumentPdf(previewMode: boolean) {
   if (!canPrintDocument.value) {
     ElMessage.warning('请先选择模板或打开病历');
     return null;
   }
   const tab = activeTab.value;
-  const content = getActiveEditor()?.getJSON?.() ?? tab.recordDoc;
-  if (!content) {
+  const mergedMeta = mergeEmrMetadataValues(
+    buildMetadataValuesFromPatientInfo(props.patientInfo),
+    tab.serverMetadataValues,
+  );
+  const rawContent = getActiveEditor()?.getJSON?.() ?? tab.recordDoc;
+  if (!rawContent) {
     ElMessage.warning('没有可打印的内容');
     return null;
   }
+  const baked = applyMetadataValuesToContentJson(rawContent, mergedMeta, true);
+  const content = packTabContentForSave(tab, baked);
   // 正式打印且可写：先落库，保证归档与纸质一致
   if (!previewMode && canSaveDocument.value && !documentReadOnly.value) {
     const dirty = isTabDirty(tab.key) || getActiveEditor()?.isDirty?.() === true;
     if (dirty || !tab.documentId) {
-      await handleSave();
+      const saved = await handleSave();
+      if (!saved) {
+        return null;
+      }
       if (!tab.documentId && !documentId.value) {
         return null;
       }
@@ -965,6 +1235,8 @@ async function requestDocumentPdf(previewMode: boolean) {
   }
 
   const docId = preserveApiIdForRequest(tab.documentId) ?? '';
+  const pm = getActiveEditor()?.getEditor?.()?.view?.dom;
+  const screenMetrics = pm instanceof HTMLElement ? collectScreenPrintMetricsFromDom(pm) : null;
   const result = await generateDocumentPdfApi({
     documentId: docId || undefined,
     content,
@@ -973,13 +1245,11 @@ async function requestDocumentPdf(previewMode: boolean) {
     encounterId: props.encounterId || undefined,
     documentTitle: (tab.documentTitle || tab.documentTypeName || '病历').trim(),
     documentTypeName: (tab.documentTypeName || '').trim() || undefined,
-    metadata: {
-      ...mergeEmrMetadataValues(
-        buildMetadataValuesFromPatientInfo(props.patientInfo),
-        tab.serverMetadataValues,
-      ),
-    },
-    printConfig: buildPrintConfigFromPageMargins(tab.pageMargins),
+    metadata: mergedMeta,
+    printConfig: buildEmrPrintConfigPayload(tab.pageMargins, tab.pageChrome, {
+      isOutpatientRecord: documentTypeCode.value.trim() === 'OUTPATIENT_RECORD',
+      screenMetrics,
+    }),
   });
   if (!result?.pdfBase64?.trim()) {
     ElMessage.warning('未生成 PDF 内容');
@@ -991,6 +1261,8 @@ async function requestDocumentPdf(previewMode: boolean) {
 /** 打印预览：OpenPDF previewMode=true */
 async function handlePrintPreview() {
   if (pdfLoading.value) return;
+  getActiveEditor()?.exitPageChromeEdit?.();
+  await nextTick();
   pdfLoading.value = true;
   try {
     const result = await requestDocumentPdf(true);
@@ -1010,6 +1282,8 @@ async function handlePrintPreview() {
 /** 正式打印：previewMode=false，打开预览并调起系统打印 */
 async function handlePrint() {
   if (pdfLoading.value) return;
+  getActiveEditor()?.exitPageChromeEdit?.();
+  await nextTick();
   pdfLoading.value = true;
   try {
     const result = await requestDocumentPdf(false);
@@ -1053,8 +1327,8 @@ function handleSaveAsTemplate() {
     }
     return;
   }
-  const content = getActiveEditor()?.getJSON?.() ?? activeTab.value.recordDoc;
-  if (!content) {
+  const rawContent = getActiveEditor()?.getJSON?.() ?? activeTab.value.recordDoc;
+  if (!rawContent) {
     ElMessage.warning('没有可保存为模板的内容');
     return;
   }
@@ -1066,11 +1340,12 @@ async function handleConfirmSaveAsTemplate(payload: {
   organizationId?: string;
   scopeLevel: EmrTemplateScopeLevel;
 }) {
-  const content = getActiveEditor()?.getJSON?.() ?? activeTab.value.recordDoc;
-  if (!content) {
+  const rawContent = getActiveEditor()?.getJSON?.() ?? activeTab.value.recordDoc;
+  if (!rawContent) {
     ElMessage.warning('没有可保存为模板的内容');
     return;
   }
+  const content = packTabContentForSave(activeTab.value, rawContent);
   if (payload.scopeLevel === EMR_TEMPLATE_SCOPE_LEVEL.PERSONAL) {
     const practitionerId = resolveLoginPractitionerIdForRequest(
       userStore.userInfo as Record<string, unknown> | undefined,
@@ -1166,11 +1441,12 @@ async function handleUpdateTemplateContent(tpl: TemplateDto) {
     ElMessage.warning('该模板缺少有效 ID');
     return;
   }
-  const content = getActiveEditor()?.getJSON?.() ?? activeTab.value.recordDoc;
-  if (!content) {
+  const rawContent = getActiveEditor()?.getJSON?.() ?? activeTab.value.recordDoc;
+  if (!rawContent) {
     ElMessage.warning('没有可写入模板的内容');
     return;
   }
+  const content = packTabContentForSave(activeTab.value, rawContent);
   const title = (tpl.name ?? '').trim() || (tpl.code ?? '').trim() || '模板';
   try {
     await ElMessageBox.confirm(
@@ -1214,42 +1490,51 @@ async function handleDeleteTemplate(tpl: TemplateDto) {
   }
 }
 
-/** 手动保存：无文书时先 create，再 save */
-async function handleSave() {
+/** 手动保存：无文书时先 create，再 save。返回是否保存成功。 */
+async function handleSave(): Promise<boolean> {
   if (!canSaveDocument.value) {
     ElMessage.warning('请先在左侧选择模板');
-    return;
+    return false;
   }
   if (documentReadOnly.value) {
     ElMessage.warning('当前病历为只读，无法保存');
-    return;
+    return false;
   }
   const tab = activeTab.value;
-  const content = getActiveEditor()?.getJSON?.() ?? tab.recordDoc;
-  if (!content) {
-    ElMessage.warning('没有可保存的内容');
-    return;
+  const activeEditor = getActiveEditor();
+  if (activeEditor?.validateRequired && !activeEditor.validateRequired()) {
+    return false;
   }
+  const rawContent = activeEditor?.getJSON?.() ?? tab.recordDoc;
+  if (!rawContent) {
+    ElMessage.warning('没有可保存的内容');
+    return false;
+  }
+  const content = packTabContentForSave(tab, rawContent);
   saveLoading.value = true;
   try {
     const id = await ensureDocumentCreated();
-    if (!id) return;
+    if (!id) return false;
     await saveDocumentApi({
       documentId: id,
       content,
     });
-    captureContentSnapshot(tab, content);
-    tab.recordDoc = content;
+    captureContentSnapshot(tab, stripEmrDocSidecar(content));
+    tab.recordDoc = stripEmrDocSidecar(content);
     getActiveEditor()?.markSaved?.();
     await getActiveEditor()?.clearDraft?.();
     markTabClean(tab.key);
     ElMessage.success('保存成功');
+    tab.tabAuthorName = resolveLoginDoctorDisplayName() || tab.tabAuthorName;
+    syncTabHeader(tab);
     void historyPanelRef.value?.refreshHistory?.();
     if (isInpatientStation.value) {
       await refreshProgressNoteNavList();
     }
+    return true;
   } catch {
     // 业务/网络错误已由 request 拦截器提示
+    return false;
   } finally {
     saveLoading.value = false;
   }
@@ -1322,14 +1607,23 @@ async function openDocumentFromSummary(
       activeTabKey.value = blank.key;
       target = blank;
     }
+    const typeCode = (dto.documentTypeCode ?? row.documentTypeCode ?? '').trim();
+    const typeName = await resolveDocumentTypeDisplayName(
+      typeCode,
+      row.documentTypeName,
+      dto.documentTypeName,
+    );
     applyDocumentDtoToTab(target, {
       ...dto,
-      documentTypeCode: dto.documentTypeCode ?? row.documentTypeCode,
-      documentTypeName: row.documentTypeName,
+      documentTypeCode: typeCode || dto.documentTypeCode || row.documentTypeCode,
+      // 列表行可能无类型名：勿用 undefined 盖掉 content 接口返回值；再按 code 查字典
+      documentTypeName: typeName || undefined,
       encounterId: dto.encounterId ?? row.encounterId,
       sourceTemplateId: row.sourceTemplateId,
       title: dto.title ?? row.title,
+      authorName: (row.savedByName ?? '').trim() || undefined,
     });
+    void refreshDiagnosisMetadataIntoOpenTabs();
     if (!options?.silent) {
       ElMessage.success(openInNewTab ? '已在新标签打开病历' : '已打开病历');
     }
@@ -1341,9 +1635,16 @@ async function openDocumentFromSummary(
   }
 }
 
-/** 从历史列表按 documentId 打开已有文书（替换当前） */
+/** 从历史列表打开已有文书：住院且当前 Tab 已有其它会话时自动新标签打开 */
 async function handleSelectDocument(row: DocumentSummaryDto) {
-  await openDocumentFromSummary(row);
+  const rowId = preserveApiIdForRequest(row.id) ?? '';
+  const activeId = preserveApiIdForRequest(activeTab.value.documentId) ?? '';
+  const openInNewTab =
+    isInpatientStation.value &&
+    activeTabHasDraftSession(activeTab.value) &&
+    rowId &&
+    activeId !== rowId;
+  await openDocumentFromSummary(row, openInNewTab ? { openInNewTab: true } : undefined);
 }
 
 /** 历史列表 Ctrl/右键：新标签打开 */
@@ -1422,11 +1723,15 @@ async function handleReuseDocument(row: DocumentSummaryDto) {
       buildMetadataValuesFromPatientInfo(props.patientInfo),
       serverMeta,
     );
+    const sidecar = readEmrDocSidecar(dto.content);
     const bakedDoc = applyMetadataValuesToContentJson(
-      normalizeEmrRootDoc(dto.content),
+      normalizeEmrRootDoc(
+        stripEmrDocSidecar(parseEmrContentToDoc(dto.content) ?? (dto.content as JSONContent)),
+      ),
       mergedMeta,
       true,
     );
+    const packedDoc = packEmrDocWithSidecar(bakedDoc, sidecar);
 
     const created = await createDocumentApi({
       patientId,
@@ -1441,13 +1746,13 @@ async function handleReuseDocument(row: DocumentSummaryDto) {
     }
     await saveDocumentApi({
       documentId: newId,
-      content: bakedDoc,
+      content: packedDoc,
     });
 
     const tab = activeTab.value;
     applyDocumentDtoToTab(tab, {
       ...created,
-      content: bakedDoc,
+      content: packedDoc,
       documentTypeCode: typeCode,
       documentTypeName: (row.documentTypeName ?? '').trim() || tab.documentTypeName,
       encounterId,
@@ -1456,6 +1761,7 @@ async function handleReuseDocument(row: DocumentSummaryDto) {
       readOnly: false,
       sourceTemplateId: sourceTplId || undefined,
       title: created.title ?? '',
+      authorName: resolveLoginDoctorDisplayName(),
     });
     ElMessage.success('已复用到本次就诊');
     void historyPanelRef.value?.refreshHistory?.();
@@ -1531,7 +1837,7 @@ async function handleDeleteDocument(row: DocumentSummaryDto) {
   }
 }
 
-/** 住院：静默打开最新病程（侧栏保持模版 Tab） */
+/** 住院：静默打开最新病程（侧栏默认「本诊」分页） */
 async function loadInpatientLatestProgressNote(options?: { silent?: boolean }) {
   if (!isInpatientStation.value) return;
   const patientId = (props.patientId ?? '').trim();
@@ -1584,8 +1890,15 @@ async function handleHistorySelect(item: EmrTemplateTreeNode) {
     return;
   }
 
-  const proceed = await confirmDiscardUnsavedIfNeeded('replace');
-  if (!proceed) return;
+  const targetTab = resolveTabForNewTemplateSession();
+  if (!targetTab) {
+    return;
+  }
+  const needDiscardConfirm = targetTab.key === activeTabKey.value;
+  if (needDiscardConfirm) {
+    const proceed = await confirmDiscardUnsavedIfNeeded('replace');
+    if (!proceed) return;
+  }
   if (!requireEncounterIdForDocument()) {
     return;
   }
@@ -1601,9 +1914,13 @@ async function handleHistorySelect(item: EmrTemplateTreeNode) {
   }
   // 接诊会刷新选中患者：等 props 落稳后再套模板，避免元数据解析用到旧上下文
   await nextTick();
-  await applyTemplateLocallyToTab(activeTab.value, typeCode, tplId, {
+  await applyTemplateLocallyToTab(targetTab, typeCode, tplId, {
     documentTypeName: (item.documentTypeName ?? '').trim(),
+    silent: needDiscardConfirm ? undefined : true,
   });
+  if (!needDiscardConfirm) {
+    ElMessage.success('已在新标签载入模板，编辑后请点击保存');
+  }
 }
 
 /** 切换患者/就诊时清空会话并（住院）加载最新病程 */
@@ -1636,7 +1953,11 @@ watch(
 
 onActivated(() => {
   isTabActive.value = true;
-  if (!pendingPatientEncounterReload.value && !skipPatientEncounterWatch) return;
+  // 普通切回病历 Tab：按当前就诊重填空的中/西医诊断槽
+  if (!pendingPatientEncounterReload.value && !skipPatientEncounterWatch) {
+    void refreshDiagnosisMetadataIntoOpenTabs();
+    return;
+  }
   pendingPatientEncounterReload.value = false;
   void (async () => {
     if (skipPatientEncounterWatch) {
@@ -1644,6 +1965,7 @@ onActivated(() => {
       if (isInpatientStation.value && props.patientId) {
         await loadInpatientLatestProgressNote({ silent: true });
       }
+      void refreshDiagnosisMetadataIntoOpenTabs();
       return;
     }
     resetDocumentSession();
@@ -1651,6 +1973,7 @@ onActivated(() => {
     if (isInpatientStation.value && props.patientId) {
       await loadInpatientLatestProgressNote({ silent: true });
     }
+    void refreshDiagnosisMetadataIntoOpenTabs();
   })();
 });
 
@@ -1761,34 +2084,41 @@ defineExpose({
     </div>
 
     <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
-      <div
-        class="medical-record-form__doc-tabs flex h-[36px] flex-shrink-0 items-stretch gap-0.5 overflow-x-auto border-b bg-[#f5f7fa] px-2"
-      >
+      <div class="medical-record-form__doc-tabs">
         <div
           v-for="tab in openTabs"
           :key="tab.key"
-          class="medical-record-form__doc-tab group relative flex min-w-[88px] max-w-[180px] cursor-pointer items-center gap-1 px-2.5 text-xs"
+          class="medical-record-form__doc-tab"
           :class="{
             'medical-record-form__doc-tab--active': tab.key === activeTabKey,
+            'medical-record-form__doc-tab--readonly': isTabReadOnly(tab),
           }"
-          :title="tabDisplayTitle(tab)"
+          :title="tabFullTooltip(tab)"
           @click="activateTab(tab.key)"
         >
-          <span class="truncate">{{ tabDisplayTitle(tab) }}</span>
-          <span
-            v-if="isTabDirty(tab.key)"
-            class="medical-record-form__doc-tab-dirty"
-            title="未保存"
-          >
-            •
-          </span>
+          <div class="medical-record-form__doc-tab-main">
+            <div class="medical-record-form__doc-tab-head-row">
+              <span
+                v-if="isTabDirty(tab.key)"
+                class="medical-record-form__doc-tab-dirty"
+                title="未保存"
+              />
+              <span class="medical-record-form__doc-tab-head">{{ tabShortTitle(tab) }}</span>
+              <span v-if="isTabReadOnly(tab)" class="medical-record-form__doc-tab-badge">
+                只读
+              </span>
+            </div>
+            <div v-if="tabMetaLine(tab)" class="medical-record-form__doc-tab-meta">
+              {{ tabMetaLine(tab) }}
+            </div>
+          </div>
           <button
             type="button"
-            class="medical-record-form__doc-tab-close ml-auto flex h-4 w-4 flex-shrink-0 items-center justify-center rounded opacity-60 hover:bg-black/10 hover:opacity-100"
+            class="medical-record-form__doc-tab-close"
             title="关闭"
             @click.stop="closeTab(tab.key)"
           >
-            <ElIcon :size="10"><Close /></ElIcon>
+            ×
           </button>
         </div>
       </div>
@@ -1801,7 +2131,8 @@ defineExpose({
             type="primary"
             plain
             :disabled="!canImportClinicalText"
-            title="勾选当前就诊诊断，插入到光标或辅助检查填写区"
+            title="勾选当前就诊诊断，插入到光标、自由文本或辅助检查填写区"
+            @mousedown.prevent="freezeImportInsertTargets"
             @click="openImportDiagnosisDialog"
           >
             插入诊断
@@ -1810,7 +2141,8 @@ defineExpose({
             type="primary"
             plain
             :disabled="!canImportClinicalText"
-            title="勾选当前就诊医嘱，插入到光标或辅助检查填写区"
+            title="勾选当前就诊医嘱，插入到光标、自由文本或辅助检查填写区"
+            @mousedown.prevent="freezeImportInsertTargets"
             @click="openImportAdviceDialog"
           >
             带入医嘱
@@ -1889,35 +2221,44 @@ defineExpose({
           v-loading="documentLoading"
           class="medical-record-form__editor-wrap h-full border-t p-3"
           @focusin="onEditorWrapFocusIn"
+          @mouseup="onEditorWrapCaretTrack"
+          @keyup="onEditorWrapCaretTrack"
         >
-          <SimpleEditor
+          <div
             v-for="tab in openTabs"
-            v-show="tab.key === activeTabKey"
             :key="tab.key"
-            :ref="(el) => setEditorRef(tab.key, el as InstanceType<typeof SimpleEditor> | null)"
-            v-model="tab.recordDoc"
-            v-model:layout-locked="tab.templateLayoutLocked"
-            v-model:page-margins="tab.pageMargins"
-            class="medical-record-form__editor"
-            :surface="tab.editorSurface"
-            :doc-id="editorDocIdForTab(tab)"
-            :read-only="tab.documentReadOnly || forceReadOnly"
-            :remote-save="remoteSaveHandlerForTab(tab)"
-            :on-remote-save-error="handleRemoteSaveError"
-            :show-toolbar="false"
-            :placeholder="
-              forceReadOnly
-                ? '请选择左侧已有病历进行查看…'
-                : '请选择左侧模板新建，或打开模板下的已有病历…'
-            "
-            :metadata-values="
-              mergeEmrMetadataValues(
-                buildMetadataValuesFromPatientInfo(patientInfo),
-                tab.serverMetadataValues,
-              )
-            "
-            @change="onEditorChange(tab.key)"
-          />
+            class="medical-record-form__editor-pane"
+            :class="{ 'medical-record-form__editor-pane--active': tab.key === activeTabKey }"
+          >
+            <SimpleEditor
+              :ref="(el) => setEditorRef(tab.key, el as InstanceType<typeof SimpleEditor> | null)"
+              v-model="tab.recordDoc"
+              v-model:page-margins="tab.pageMargins"
+              v-model:page-chrome="tab.pageChrome"
+              :document-type-name="tab.documentTypeName"
+              :document-title="(tab.documentTypeName || tab.documentTitle || '').trim()"
+              class="medical-record-form__editor"
+              :surface="tab.editorSurface"
+              :doc-id="editorDocIdForTab(tab)"
+              :read-only="tab.documentReadOnly || forceReadOnly"
+              :remote-save="remoteSaveHandlerForTab(tab)"
+              :on-remote-save-error="handleRemoteSaveError"
+              :show-toolbar="true"
+              :placeholder="
+                forceReadOnly
+                  ? '请选择左侧已有病历进行查看…'
+                  : '请选择左侧模板新建，或打开模板下的已有病历…'
+              "
+              :metadata-values="
+                mergeEmrMetadataValues(
+                  buildMetadataValuesFromPatientInfo(patientInfo),
+                  tab.serverMetadataValues,
+                )
+              "
+              @change="onEditorChange(tab.key)"
+              @print="handlePrint"
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -1952,31 +2293,145 @@ defineExpose({
 </template>
 
 <style scoped lang="scss">
+.medical-record-form__doc-tabs {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: #f5f7fa;
+  border-bottom: 1px solid #e4e7ed;
+  scrollbar-width: thin;
+
+  &::-webkit-scrollbar {
+    height: 3px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.12);
+  }
+}
+
 .medical-record-form__doc-tab {
-  border-bottom: 2px solid transparent;
-  color: var(--el-text-color-regular);
+  display: flex;
+  flex-shrink: 0;
+  align-items: flex-start;
+  gap: 4px;
+  max-width: 168px;
+  padding: 5px 6px 5px 9px;
+  border: 1px solid #dcdfe6;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
   transition:
-    color 0.15s,
-    background-color 0.15s,
-    border-color 0.15s;
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
 
   &:hover {
-    background-color: var(--el-fill-color);
+    border-color: #c0c4cc;
   }
 
   &--active {
-    border-bottom-color: var(--el-color-primary);
-    background-color: #fff;
-    color: var(--el-color-primary);
-    font-weight: 500;
+    border-color: var(--el-color-primary-light-5);
+    background: #fff;
+    box-shadow: inset 0 -2px 0 0 var(--el-color-primary);
+
+    .medical-record-form__doc-tab-head {
+      color: var(--el-color-primary);
+      font-weight: 600;
+    }
   }
+
+  &--readonly:not(.medical-record-form__doc-tab--active) {
+    background: #fafafa;
+
+    .medical-record-form__doc-tab-head {
+      color: #909399;
+    }
+  }
+}
+
+.medical-record-form__doc-tab-main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.medical-record-form__doc-tab-head-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.medical-record-form__doc-tab-head {
+  overflow: hidden;
+  color: #303133;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.medical-record-form__doc-tab-meta {
+  overflow: hidden;
+  color: #909399;
+  font-size: 11px;
+  line-height: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .medical-record-form__doc-tab-dirty {
   flex-shrink: 0;
-  color: var(--el-color-warning);
-  font-size: 16px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--el-color-warning);
+}
+
+.medical-record-form__doc-tab-badge {
+  flex-shrink: 0;
+  padding: 0 4px;
+  border-radius: 2px;
+  background: #f0f2f5;
+  color: #909399;
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.medical-record-form__doc-tab--active .medical-record-form__doc-tab-badge {
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+}
+
+.medical-record-form__doc-tab-close {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: #c0c4cc;
+  font-size: 14px;
   line-height: 1;
+  cursor: pointer;
+
+  &:hover {
+    background: #f0f2f5;
+    color: #606266;
+  }
 }
 
 .medical-record-form__editor-wrap {
@@ -1984,6 +2439,19 @@ defineExpose({
   flex: 1;
   min-height: 0;
   flex-direction: column;
+  overflow: hidden;
+}
+
+/** 子 Tab 与编辑器 1:1：非激活面板不占位、不展示（避免多份编辑器纵向叠在一起） */
+.medical-record-form__editor-pane {
+  display: none !important;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+
+  &--active {
+    display: flex !important;
+  }
 }
 
 .medical-record-form__editor {

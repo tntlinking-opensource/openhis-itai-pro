@@ -14,7 +14,7 @@ import type { TerminologyOptionDto } from '#/api/doctor-station/advice.types';
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
-import { ElButton, ElMessage, ElRadio, ElRadioGroup } from 'element-plus';
+import { ElButton, ElDatePicker, ElMessage, ElRadio, ElRadioGroup } from 'element-plus';
 
 import { useAdviceDrugFormKeyboard } from '../composables/use-advice-drug-form-keyboard';
 import { calcAdviceTotalFee } from '../composables/use-advice-drug-list';
@@ -63,6 +63,12 @@ import AdviceWesternDrugFormPanel from './advice-western-drug-form-panel.vue';
 
 const props = withDefaults(
   defineProps<{
+    /** 改量模式：锁定药品与长嘱类型 */
+    changeDoseMode?: boolean;
+    /** 改量且源嘱在用：展示可改停嘱时间 */
+    doseChangeStopTimeEditable?: boolean;
+    /** 改量停嘱时间（YYYY-MM-DD HH:mm） */
+    doseChangeStopTime?: string;
     encounterId?: string;
     feeNatureOptions?: TerminologyOptionDto[];
     initialGroup?: AdviceDrugItem[];
@@ -86,6 +92,9 @@ const props = withDefaults(
     variant?: 'tcm' | 'western';
   }>(),
   {
+    changeDoseMode: false,
+    doseChangeStopTimeEditable: false,
+    doseChangeStopTime: '',
     feeNatureOptions: () => [],
     encounterId: '',
     medicationRateOptions: () => [],
@@ -102,9 +111,17 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   close: [];
+  'update:doseChangeStopTime': [value: string];
   editorDirtyChange: [value: boolean];
   saveGroup: [value: AdviceDrugItem[]];
 }>();
+
+const doseChangeStopTimeModel = computed({
+  get: () => props.doseChangeStopTime ?? '',
+  set: (value: string) => {
+    emit('update:doseChangeStopTime', String(value ?? '').trim());
+  },
+});
 
 const isTcm = computed(() => props.variant === 'tcm');
 
@@ -403,6 +420,10 @@ const clearMedicationOnlyFields = (): Partial<AdviceDrugItem> => ({
 });
 
 const handleProductSelect = (index: number, row: AdviceProductOption) => {
+  if (props.changeDoseMode) {
+    ElMessage.warning('改量不可更换药品');
+    return;
+  }
   if (isAdviceCatalogZeroStock(row)) {
     ElMessage.warning('库存不足');
     return;
@@ -582,6 +603,10 @@ const handleDeleteDrug = (index: number) => {
 };
 
 const handleAddDrug = () => {
+  if (props.changeDoseMode) {
+    ElMessage.warning('改量仅允许调整当前药品剂量与频次等');
+    return;
+  }
   const lastItem = drugItems.value[drugItems.value.length - 1];
   if (!lastItem) return;
   const lastKind = inferAdviceLineEditorKind(lastItem);
@@ -700,17 +725,33 @@ onMounted(() => {
 <template>
   <div class="advice-card rounded-xl border">
     <div class="advice-card-header flex items-center justify-between px-3 py-2 text-white">
-      <div class="flex items-center gap-2 text-sm">
-        <ElRadioGroup v-if="!isTcm" v-model="therapyType">
+      <div class="flex flex-wrap items-center gap-2 text-sm">
+        <ElRadioGroup v-if="!isTcm && !changeDoseMode" v-model="therapyType">
           <ElRadio label="LONG_TERM">长期</ElRadio>
           <ElRadio label="TEMPORARY">临时</ElRadio>
           <ElRadio v-if="!isEntrustEditor" label="DISCHARGE_MEDICATION">出院带药</ElRadio>
         </ElRadioGroup>
+        <span v-else-if="changeDoseMode" class="text-sm">改量 · 长期药品</span>
         <span v-if="isTcm && tcmGroupNo">组号 {{ tcmGroupNo }}</span>
+        <template v-if="doseChangeStopTimeEditable">
+          <span class="text-sm opacity-90">原嘱停嘱时间</span>
+          <ElDatePicker
+            v-model="doseChangeStopTimeModel"
+            type="datetime"
+            value-format="YYYY-MM-DD HH:mm"
+            format="YYYY-MM-DD HH:mm"
+            time-format="HH:mm"
+            :clearable="false"
+            teleported
+            size="small"
+            class="change-dose-stop-time-picker"
+            popper-class="ip-advice-time-picker-popper"
+          />
+        </template>
       </div>
       <div class="flex items-center gap-2">
         <ElButton
-          v-if="!isEntrustEditor"
+          v-if="!isEntrustEditor && !changeDoseMode"
           size="small"
           link
           class="card-header-btn"
@@ -891,6 +932,14 @@ onMounted(() => {
 .card-header-btn {
   color: rgb(255 255 255 / 95%) !important;
   font-size: 14px !important;
+}
+
+.change-dose-stop-time-picker {
+  width: 168px;
+}
+
+.change-dose-stop-time-picker :deep(.el-input__wrapper) {
+  background: rgb(255 255 255 / 92%);
 }
 
 .drug-entry-actions {

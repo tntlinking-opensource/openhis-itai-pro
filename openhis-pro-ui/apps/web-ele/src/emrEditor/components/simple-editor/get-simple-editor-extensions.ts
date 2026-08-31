@@ -2,7 +2,6 @@ import type { Extensions } from '@tiptap/core';
 
 import Color from '@tiptap/extension-color';
 import Highlight from '@tiptap/extension-highlight';
-import Image from '@tiptap/extension-image';
 import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
 import Subscript from '@tiptap/extension-subscript';
@@ -19,20 +18,21 @@ import StarterKit from '@tiptap/starter-kit';
 
 import { EmrBlockLayout } from './extensions/emr-block-layout';
 import { EmrCheckboxField } from './extensions/emr-checkbox-field';
-import { EmrContentLock } from './extensions/emr-content-lock';
 import { EmrDataElement } from './extensions/emr-data-element';
 import { EmrFindReplace } from './extensions/emr-find-replace';
 import { EmrFixedText } from './extensions/emr-fixed-text';
-import { EmrFreeText } from './extensions/emr-free-text';
 import { EmrHorizontalDashed } from './extensions/emr-horizontal-dashed';
-import { EmrInlineFieldPmArrow } from './extensions/emr-inline-field-pm-arrow';
-import { EmrMetadataChip } from './extensions/emr-metadata-chip';
+import { EmrImage } from './extensions/emr-image';
 import { EmrPageBreak } from './extensions/emr-page-break';
+import { EmrPagination } from './extensions/emr-pagination';
 import { EmrSelectField } from './extensions/emr-select-field';
 import { EmrStyledHorizontalRule } from './extensions/emr-styled-horizontal-rule';
+import { EmrTableNavigation } from './extensions/emr-table-navigation';
 import { EmrTextField } from './extensions/emr-text-field';
 import { EmrTable, EmrTableCell } from './extensions/emr-table';
 import { EmrToc } from './extensions/emr-toc';
+import { EmrWordlikePaste } from './extensions/emr-wordlike-paste';
+import { EmrFillableFieldKit } from '../../fillable-field';
 
 /**
  * 与官方 Simple Editor 模板对齐的基础扩展集（MIT 开源扩展）。
@@ -48,8 +48,8 @@ export function getSimpleEditorExtensions(options?: { placeholder?: string }): E
     TaskItem.configure({ nested: true }),
     Link.configure({ openOnClick: false, autolink: true }),
     Underline,
-    // inline：院徽可与医院名称同一段落紧挨显示
-    Image.configure({ inline: true, allowBase64: true }),
+    // inline + 拖拽缩放；院徽可与医院名称同一段落紧挨显示
+    EmrImage,
     Placeholder.configure({
       /**
        * 仅整篇为空时显示（空白 Tab 引导文案）。
@@ -69,7 +69,6 @@ export function getSimpleEditorExtensions(options?: { placeholder?: string }): E
     TableHeader,
     EmrTableCell,
     EmrBlockLayout,
-    EmrContentLock,
     EmrFindReplace,
     Color,
     Highlight.configure({ multicolor: true }),
@@ -80,11 +79,12 @@ export function getSimpleEditorExtensions(options?: { placeholder?: string }): E
       alignments: ['left', 'center', 'right', 'justify'],
     }),
     EmrDataElement,
-    EmrMetadataChip,
-    EmrFreeText,
-    EmrInlineFieldPmArrow,
+    EmrFillableFieldKit,
+    EmrWordlikePaste,
+    EmrTableNavigation,
     EmrFixedText,
     EmrPageBreak,
+    EmrPagination,
     EmrHorizontalDashed,
     EmrStyledHorizontalRule,
     EmrToc,

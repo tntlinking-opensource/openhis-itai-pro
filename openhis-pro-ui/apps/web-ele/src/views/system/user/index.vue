@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
 
+import type { ResponsibilityDept } from '#/api/core/common';
 import type { RoleInfo } from '#/api/user/role';
 import type { UserInfo, UserListParams } from '#/api/user/user';
 
@@ -14,6 +15,7 @@ import { ElButton, ElMessage, ElMessageBox, ElTag } from 'element-plus';
 
 import { useAccess } from '@vben/access';
 
+import { getTreeForResponsibilityDeptApi } from '#/api/core/common';
 import { getRoleListApi } from '#/api/user/role';
 import {
   deleteUserApi,
@@ -23,6 +25,7 @@ import {
   getUserRolesApi,
   unlockUserApi,
 } from '#/api/user/user';
+import { unwrapApiList } from '#/utils/api/unwrap-api-list';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import ChangePasswordDialog from './components/change-password-dialog.vue';
@@ -53,6 +56,7 @@ const initQueryParams: UserListParams = {
   isActive: undefined,
   isLockedOut: undefined,
   roleIds: [],
+  organizationId: undefined,
 };
 
 const queryParams = reactive<UserListParams>({ ...initQueryParams, roleIds: [] });
@@ -61,6 +65,7 @@ const tableData = ref<UserTableRow[]>([]);
 const loading = ref(false);
 const total = ref(0);
 const roleOptions = ref<RoleSelectOption[]>([]);
+const departmentOptions = ref<RoleSelectOption[]>([]);
 
 const tableColumns: TableColumn[] = [
   {
@@ -204,6 +209,56 @@ async function loadRoleOptions() {
   }
 }
 
+/**
+ * 判断节点是否为科室层级（排除医院根）。
+ * 兼容数字 2、code=DEPARTMENT。
+ */
+function isDepartmentTypeEnum(typeEnum: unknown): boolean {
+  if (typeEnum === 2 || typeEnum === '2') {
+    // 科室层级 sortOrder
+    return true;
+  }
+  if (typeof typeEnum === 'string' && typeEnum.toUpperCase() === 'DEPARTMENT') {
+    // 科室 code
+    return true;
+  }
+  // 医院根或其它非科室节点不进筛选
+  return false;
+}
+
+/** 将责任科室树拍平为可搜索下拉（仅真实科室节点，主键保持 string） */
+function flattenDepartmentOptions(nodes: ResponsibilityDept[] | undefined): RoleSelectOption[] {
+  if (!nodes?.length) {
+    // 空树：无科室可选
+    return [];
+  }
+  const options: RoleSelectOption[] = [];
+  // 深度优先：树里的每个科室节点都可作为出诊科室筛选值
+  for (const node of nodes) {
+    const id = preserveApiIdForRequest(node.id);
+    if (id && isDepartmentTypeEnum(node.typeEnum) && node.name) {
+      // 仅科室节点进入筛选项，医院根不作为出诊科室
+      options.push({ label: node.name, value: id });
+    }
+    if (node.children?.length) {
+      // 子树继续拍平，保证下级科室也能筛到出诊医生
+      options.push(...flattenDepartmentOptions(node.children));
+    }
+  }
+  return options;
+}
+
+/** 加载出诊科室下拉（与用户编辑「出诊科室」同源树） */
+async function loadDepartmentOptions() {
+  try {
+    const data = unwrapApiList<ResponsibilityDept>(await getTreeForResponsibilityDeptApi());
+    departmentOptions.value = flattenDepartmentOptions(data);
+  } catch {
+    // 科室树失败不阻断用户列表
+    departmentOptions.value = [];
+  }
+}
+
 /** 规范化查询用的角色 id 列表 */
 function normalizeQueryRoleIds(roleIds: unknown): string[] {
   if (!Array.isArray(roleIds)) {
@@ -240,6 +295,16 @@ const formItems = computed<FormItemConfig[]>(() => [
   },
   {
     type: 'select',
+    prop: 'organizationId',
+    label: '科室',
+    placeholder: '请选择出诊科室',
+    clearable: true,
+    filterable: true,
+    multiple: false,
+    options: departmentOptions.value,
+  },
+  {
+    type: 'select',
     prop: 'isActive',
     label: '状态',
     placeholder: '请选择状态',
@@ -264,17 +329,25 @@ const formItems = computed<FormItemConfig[]>(() => [
   },
 ]);
 
+/** 按当前筛选条件分页加载用户列表 */
 const loadData = async () => {
   loading.value = true;
   try {
     const roleIds = normalizeQueryRoleIds(queryParams.roleIds);
+    let roleIdsForQuery: string[] | undefined;
+    if (roleIds.length > 0) {
+      // 未选角色时不传该字段，避免后端按空列表误筛
+      roleIdsForQuery = roleIds;
+    }
+    const organizationId = preserveApiIdForRequest(queryParams.organizationId);
     const response = await getUserListApi({
       pageNo: queryParams.pageNo,
       pageSize: queryParams.pageSize,
       keyword: queryParams.keyword,
       isActive: queryParams.isActive,
       isLockedOut: queryParams.isLockedOut,
-      roleIds: roleIds.length > 0 ? roleIds : undefined,
+      roleIds: roleIdsForQuery,
+      organizationId,
     });
     tableData.value = await enrichUsersWithRoles(response.content ?? []);
     total.value = response.totalCount ?? 0;
@@ -287,24 +360,34 @@ const loadData = async () => {
   }
 };
 
+/** 点搜索：回到第一页并带上关键词/角色/出诊科室等条件 */
 const handleQuery = (params: {
   isActive?: string;
   isLockedOut?: string;
   keyword?: string;
+  organizationId?: string;
   roleIds?: string[];
 }) => {
   queryParams.pageNo = 1;
   if (params.keyword !== undefined) {
+    // 关键词允许空串，表示不按姓名/用户名过滤
     queryParams.keyword = params.keyword || '';
   }
   if (params.isActive !== undefined) {
+    // 启用/停用；未选则不改写
     queryParams.isActive = params.isActive;
   }
   if (params.isLockedOut !== undefined) {
+    // 锁定状态；未选则不改写
     queryParams.isLockedOut = params.isLockedOut;
   }
   if (params.roleIds !== undefined) {
+    // 角色多选规范化为 string 主键，避免雪花精度丢失
     queryParams.roleIds = normalizeQueryRoleIds(params.roleIds);
+  }
+  if (params.organizationId !== undefined) {
+    // 清空科室时 preserve 得到 undefined，即不按出诊岗收窄
+    queryParams.organizationId = preserveApiIdForRequest(params.organizationId);
   }
   void loadData();
 };
@@ -469,6 +552,7 @@ const handleDelete = async (row: UserInfo) => {
 
 onMounted(() => {
   void loadRoleOptions();
+  void loadDepartmentOptions();
   void loadData();
 });
 </script>

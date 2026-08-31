@@ -84,6 +84,8 @@ export interface CommonDiagnosesResponse {
   organizationList?: CommonDiagnosisRowDto[] | null;
   /** 住院医生站：诊断类型列（患者疾病诊断类型）下拉 */
   iptDiseaseTypeOptions?: DiagnosisOptionDto[] | null;
+  /** 门诊医生站：诊断类型列（医保医疗类别 YbMedType）下拉 */
+  medicalTypeOptions?: DiagnosisOptionDto[] | null;
 }
 
 /** getPatientOpspFilingDiagnosis */

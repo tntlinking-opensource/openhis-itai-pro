@@ -754,7 +754,7 @@ async function handleCompleteVisit(): Promise<void> {
 
 /**
  * 取消接诊：在诊/暂离/完诊回退待诊，表示医生同意窗口退号。
- * 待诊不可取消；成功后清空当前接诊并刷新队列。
+ * 须先删净本诊病历/诊断/医嘱；待诊不可取消；成功后清空当前接诊并刷新队列。
  */
 async function handleCancelReception(): Promise<void> {
   if (!ensurePatientSelected()) return;
@@ -783,7 +783,7 @@ async function handleCancelReception(): Promise<void> {
   const patientName = (patient.patientName ?? '').trim() || '当前患者';
   try {
     await ElMessageBox.confirm(
-      `取消接诊后患者将回到「待诊」，收费窗口方可退号。确定取消患者【${patientName}】的接诊？`,
+      `取消接诊前须已删除本诊全部病历、诊断与医嘱；确认后患者将回到「待诊」，收费窗口方可退号。确定取消患者【${patientName}】的接诊？`,
       '取消接诊确认',
       { type: 'warning', confirmButtonText: '确定取消接诊', cancelButtonText: '取消' },
     );

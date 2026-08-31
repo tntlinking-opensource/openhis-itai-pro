@@ -29,6 +29,7 @@ import {
 import { shouldInventoryRowShowPersistedForm } from '#/utils/inventory/inventory-doc-grid-edit';
 
 import ProductSelectTable from '../components/select-product.vue';
+import InventoryTraceNoEditCell from '../components/trace/inventory-trace-no-edit-cell.vue';
 import TraceCodeTooltip from '../components/trace/trace-code-tooltip.vue';
 import SelectPriceAdjustmentItem from '../components/select-price-adjustment-item.vue';
 import SelectPurchaseOrderMedicine from '../components/select-purchase-order-medicine.vue';
@@ -401,18 +402,17 @@ setupVbenVxeTable({
     };
     vxeUI.renderer.add('InventoryPersistElInput', inventoryPersistElInputRenderer);
 
-    /** 追溯码：未完成行常驻 ElInput；只读回显 TraceCodeTooltip */
+    /** 追溯码：未完成行常驻输入+个数；只读回显 TraceCodeTooltip（亦常显共 N 个） */
     const inventoryTraceNoCellRenderer = {
       autofocus: '.el-input__inner',
       renderTableEdit(renderOpts, { row, column }) {
         const { props } = renderOpts;
         const maxlength = props?.maxlength as number | undefined;
         const clearable = props?.clearable === true;
-        return h(ElInput, {
-          class: '!w-full',
-          clearable,
-          maxlength,
+        return h(InventoryTraceNoEditCell, {
           modelValue: String(row[column.field] ?? ''),
+          maxlength,
+          clearable,
           'onUpdate:modelValue': (val: string) => {
             row[column.field] = val;
           },

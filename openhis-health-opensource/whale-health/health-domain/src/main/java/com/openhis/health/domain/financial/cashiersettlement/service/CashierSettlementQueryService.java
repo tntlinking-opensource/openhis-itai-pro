@@ -40,6 +40,40 @@ public class CashierSettlementQueryService {
     private final CashierSettlementRepository cashierSettlementRepository;
 
     /**
+     * 按类型集合列出未软删交账头摘要（药房售价合计回刷批处理；仅本聚合）。
+     *
+     * @param typeEnums 类型 code 集合
+     * @return 头表读模型列表；空入参返回空列表
+     */
+    public List<CashierSettlementHeaderQueryModel> listHeadersByTypeEnums(Collection<String> typeEnums) {
+        if (typeEnums == null || typeEnums.isEmpty()) {
+            return new ArrayList<>();
+        }
+        LinkedHashSet<String> distinctTypes = new LinkedHashSet<>();
+        for (String typeEnum : typeEnums) {
+            if (StringUtils.isNotEmpty(typeEnum)) {
+                distinctTypes.add(typeEnum.trim());
+            }
+        }
+        if (distinctTypes.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<CashierSettlement> rows =
+            this.cashierSettlementRepository.findByTypeEnumInAndIsDeletedFalse(distinctTypes);
+        if (rows == null || rows.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<CashierSettlementHeaderQueryModel> headers = new ArrayList<>(rows.size());
+        for (CashierSettlement settlement : rows) {
+            if (settlement == null) {
+                continue;
+            }
+            headers.add(this.toHeaderQueryModel(settlement));
+        }
+        return headers;
+    }
+
+    /**
      * 按交账头主键读取交账单号（提交成功后装配响应用）。
      *
      * @param settlementId 交账头主键

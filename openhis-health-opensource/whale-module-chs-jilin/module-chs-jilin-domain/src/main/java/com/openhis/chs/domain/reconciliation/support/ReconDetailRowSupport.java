@@ -7,7 +7,6 @@ package com.openhis.chs.domain.reconciliation.support;
 import static com.openhis.whale.core.application.util.StringUtils.isEmpty;
 import static com.openhis.whale.core.application.util.StringUtils.isNotEmpty;
 
-import com.openhis.chs.domain.inpatient.entity.YbInpatientPreSettle;
 import com.openhis.chs.domain.reconciliation.result.ReconDetailRowResult;
 import com.openhis.chs.domain.settlement.constants.ChsSettleEncounterClass;
 import com.openhis.chs.domain.settlement.entity.YbSettlementRecord;
@@ -35,12 +34,13 @@ public final class ReconDetailRowSupport {
     }
 
     /**
-     * 门诊结算快照转为 3202 输入文件行（正向，{@code refd_setl_flag=0}）。
+     * 正式结算回执转为 3202 输入文件行（正向，{@code refd_setl_flag=0}）。
+     * <p>门诊与住院共用 {@code yb_settlement_record}；住院不再走预结算快照，避免与 2304 回执重复。</p>
      *
-     * @param rows 门诊正式结算记录
+     * @param rows 门诊/住院正式结算记录
      * @return 有效结算行（setl_id / mdtrt_id 非空）
      */
-    public static List<ReconDetailRowResult> fromOutpatientRows(List<YbSettlementRecord> rows) {
+    public static List<ReconDetailRowResult> fromSettlementRows(List<YbSettlementRecord> rows) {
         List<ReconDetailRowResult> result = new ArrayList<>();
         if (rows == null) {
             return result;
@@ -58,36 +58,7 @@ public final class ReconDetailRowSupport {
                 .setAcctPay(row.getAcctPay())
                 .setPsnCashPay(row.getPsnCashPay())
                 .setRefdSetlFlag(REFD_SETL_FLAG_NORMAL)
-                .setSource("OP"));
-        }
-        return result;
-    }
-
-    /**
-     * 住院结算快照转为 3202 输入文件行（正向，{@code refd_setl_flag=0}）。
-     *
-     * @param rows 住院已结算预结算记录
-     * @return 有效结算行（setl_id / mdtrt_id 非空）
-     */
-    public static List<ReconDetailRowResult> fromInpatientRows(List<YbInpatientPreSettle> rows) {
-        List<ReconDetailRowResult> result = new ArrayList<>();
-        if (rows == null) {
-            return result;
-        }
-        for (YbInpatientPreSettle row : rows) {
-            if (isEmpty(row.getSetlId()) || isEmpty(row.getMdtrtId())) {
-                continue;
-            }
-            result.add(new ReconDetailRowResult()
-                .setSetlId(row.getSetlId().trim())
-                .setMdtrtId(row.getMdtrtId().trim())
-                .setPsnNo(row.getPsnNo())
-                .setMedfeeSumamt(row.getMedfeeSumamt())
-                .setFundPaySumamt(row.getFundPaySumamt())
-                .setAcctPay(row.getAcctPay())
-                .setPsnCashPay(row.getPsnCashPay())
-                .setRefdSetlFlag(REFD_SETL_FLAG_NORMAL)
-                .setSource("IP"));
+                .setSource(resolveSettlementSource(row)));
         }
         return result;
     }
@@ -157,6 +128,19 @@ public final class ReconDetailRowSupport {
             byId.put(row.getId(), row);
         }
         return byId;
+    }
+
+    /**
+     * 解析结算回执来源标记。
+     *
+     * @param row 结算回执
+     * @return {@code OP} / {@code IP}
+     */
+    private static String resolveSettlementSource(YbSettlementRecord row) {
+        if (row != null && ChsSettleEncounterClass.IMP.equals(row.getEncounterClass())) {
+            return "IP";
+        }
+        return "OP";
     }
 
     /**

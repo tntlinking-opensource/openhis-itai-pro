@@ -57,7 +57,9 @@ public class YbNationalCatalogQueryService {
 
     /**
      * 选码推荐候选池；药品有批准文号/规格时查 1301 明细，否则先 1312 摘要去重，
-     * 空结果再按 listType 回退明细（101/102→1301，201→1305，301→1306）。
+     * 空结果再按 listType 回退明细（101→1301，102→1302，201→1305，301→1306）。
+     * <p>饮片(102)在 1302/本类型 1312 皆空时，再放宽到不限 list_type（兼容仅下了 1301/1312、
+     * 饮片码落在 101 的现场）。</p>
      */
     public List<YbNationalCatalogItem> listForMedicationMatch(
             Long contractId,
@@ -73,7 +75,7 @@ public class YbNationalCatalogQueryService {
         }
         String detailSource = resolveDetailSourceInfno(listType);
         int bound = Math.max(1, limit);
-        // 仅药品目录在有批准文号/规格时直查 1301 明细
+        // 仅西药中成药在有批准文号/规格时直查 1301 明细
         if ("1301".equals(detailSource) && prefers1301Detail(aprvno, spec)) {
             return catalogItemLookup.listDetailForMedicationMatch(
                 contractId,
@@ -99,8 +101,8 @@ public class YbNationalCatalogQueryService {
         if (!pool1312.isEmpty()) {
             return pool1312;
         }
-        // 本地仅下载了文件型明细（1301/1305/1306）时，关键词选码也应能命中
-        return catalogItemLookup.listDetailForMedicationMatch(
+        // 按目录类型回退文件明细（饮片→1302，西药→1301 等）
+        List<YbNationalCatalogItem> detailPool = catalogItemLookup.listDetailForMedicationMatch(
             contractId,
             tenantId,
             trimToNull(listType),
@@ -111,10 +113,40 @@ public class YbNationalCatalogQueryService {
             trimToNull(hilistCodeExact),
             ValiFlag.VALID.getCode(),
             bound);
+        if (!detailPool.isEmpty()) {
+            return detailPool;
+        }
+        // 饮片：未下 1302 或码落在 101 时，放宽 list_type 再搜 1312→1301
+        if (ListType.HERB.getCode().equals(trimToNull(listType))) {
+            List<YbNationalCatalogItem> relaxed1312 = catalogItemLookup.listDistinctForMedicationMatch(
+                contractId,
+                tenantId,
+                null,
+                trimToNull(keyword),
+                trimToNull(aprvno),
+                trimToNull(spec),
+                trimToNull(hilistCodeExact),
+                bound);
+            if (!relaxed1312.isEmpty()) {
+                return relaxed1312;
+            }
+            return catalogItemLookup.listDetailForMedicationMatch(
+                contractId,
+                tenantId,
+                null,
+                ChsInfNo.DRUG_CATALOG_DOWNLOAD,
+                trimToNull(keyword),
+                trimToNull(aprvno),
+                trimToNull(spec),
+                trimToNull(hilistCodeExact),
+                ValiFlag.VALID.getCode(),
+                bound);
+        }
+        return detailPool;
     }
 
     /**
-     * 按目录类别解析明细回退源：医疗服务→1305，耗材→1306，其余（西药等）→1301。
+     * 按目录类别解析明细回退源：医疗服务→1305，耗材→1306，中药饮片→1302，其余（西药中成药）→1301。
      */
     public static String resolveDetailSourceInfno(String listType) {
         String code = trimToNull(listType);
@@ -123,6 +155,9 @@ public class YbNationalCatalogQueryService {
         }
         if (ListType.MEDICAL_CONSUMABLE.getCode().equals(code)) {
             return ChsInfNo.MEDICAL_CONSUMABLE_CATALOG_DOWNLOAD;
+        }
+        if (ListType.HERB.getCode().equals(code)) {
+            return ChsInfNo.HERB_CATALOG_DOWNLOAD;
         }
         return ChsInfNo.DRUG_CATALOG_DOWNLOAD;
     }

@@ -55,6 +55,33 @@ public class OutpatientMedicationDispenseSummaryRowDto
     @Schema(description = "净数量")
     private BigDecimal netQuantity;
 
+    /** 药品编码（品规维）；其它维为空。 */
+    @Schema(description = "药品编码")
+    private String medicationCode;
+
+    /**
+     * 最小单位净数量：品规维按包装倍数将 {@code netQuantity} 换算为拆零量；
+     * 无倍数或非品规维时与 {@code netQuantity} 同值或为空。
+     */
+    @Schema(description = "最小单位净数量")
+    private BigDecimal minUnitQuantity;
+
+    /** 包装单位展示名（品规维；如盒、克）；供「数量」列拼接。 */
+    @Schema(description = "包装单位名称")
+    private String packageUnitName;
+
+    /** 最小单位展示名（品规维；如片、克）；供「最小数量」列拼接。 */
+    @Schema(description = "最小单位名称")
+    private String minUnitName;
+
+    /** 进价单价（批号进价同明细 enrich；同桶多批号不一致则为空）。 */
+    @Schema(description = "进价单价")
+    private BigDecimal purchaseUnitPrice;
+
+    /** 售价单价（账单/批号售价同明细 enrich；同桶不一致则为空）。 */
+    @Schema(description = "售价单价")
+    private BigDecimal saleUnitPrice;
+
     /** 进价净额（结算 2 位）。 */
     @Schema(description = "进价净额")
     private BigDecimal purchaseNetAmount;
@@ -67,7 +94,12 @@ public class OutpatientMedicationDispenseSummaryRowDto
     @Schema(description = "净金额")
     private BigDecimal netAmount;
 
-    /** 命中明细行数。 */
-    @Schema(description = "命中行数")
+    /**
+     * 命中明细行数（内部统计，前端汇总 Tab 不展示）。
+     *
+     * @deprecated 汇总展示改数量/进售单价/进售合计
+     */
+    @Deprecated
+    @Schema(description = "命中行数（内部）")
     private Long lineCount;
 }

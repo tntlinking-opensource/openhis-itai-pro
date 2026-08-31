@@ -37,7 +37,7 @@ public class EinvoiceBossCashierAppService {
      */
     public BossIssueStatus getIssueStatus(Long paymentId) {
         BossIssueStatus dto = new BossIssueStatus();
-        Optional<EinvBossDocument> document = documentRepository.findFirstByPaymentIdAndIsDeletedFalseOrderByIdAsc(paymentId);
+        Optional<EinvBossDocument> document = documentRepository.findFirstByPaymentIdAndIsDeletedFalseOrderByIdDesc(paymentId);
         if (document.isEmpty()) {
             return dto;
         }
@@ -61,7 +61,7 @@ public class EinvoiceBossCashierAppService {
      */
     public BossCashierQr getQr(Long paymentId) {
         BossCashierQr dto = new BossCashierQr();
-        Optional<EinvBossDocument> document = documentRepository.findFirstByPaymentIdAndIsDeletedFalseOrderByIdAsc(paymentId);
+        Optional<EinvBossDocument> document = documentRepository.findFirstByPaymentIdAndIsDeletedFalseOrderByIdDesc(paymentId);
         if (document.isEmpty()) {
             return dto;
         }

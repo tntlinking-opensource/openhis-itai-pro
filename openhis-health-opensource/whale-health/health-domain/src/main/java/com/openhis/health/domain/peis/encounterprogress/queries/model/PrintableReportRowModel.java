@@ -36,4 +36,7 @@ public class PrintableReportRowModel {
 
     /** PDF 存储键（可为空，待 PrintTemplate 回写）。 */
     private String pdfStorageKey;
+
+    /** 打印次数。 */
+    private Integer printCount;
 }

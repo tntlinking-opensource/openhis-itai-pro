@@ -15,7 +15,7 @@ public class ListPatientExamHistoryRequest {
     private Long patientId;
     private String studentNo;
     private String employeeNo;
-    /** 可选过滤：freshman/annual/staff/other */
+    /** 可选过滤：personal/group/freshman/annual/staff/other */
     private List<String> examKinds;
     /** 仅返回总检 final 的行 */
     private Boolean onlyFinal;

@@ -10,10 +10,15 @@ import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQue
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
 import com.openhis.health.domain.administration.product.service.ProductDefinitionQueryService;
+import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
+import com.openhis.health.domain.medication.medicationrequest.entity.MedicationRequest;
+import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
+import com.openhis.health.domain.workflow.devicerequest.service.DeviceRequestQueryService;
+import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
 import com.openhis.whale.einvoice.boss.bridge.issue.support.BossQuantityUnitDisplayResolver;
 import com.openhis.whale.einvoice.boss.domain.issue.result.BossChargeLineSnapshot;
 import org.junit.jupiter.api.Test;
@@ -45,6 +50,14 @@ class EinvoiceChargeItemContextLoaderTest {
     private ProductDefinitionQueryService productDefinitionQueryService;
     @Mock
     private BossQuantityUnitDisplayResolver quantityUnitDisplayResolver;
+    @Mock
+    private MedicationRequestQueryService medicationRequestQueryService;
+    @Mock
+    private MedicationDispenseQueryService medicationDispenseQueryService;
+    @Mock
+    private DeviceRequestQueryService deviceRequestQueryService;
+    @Mock
+    private ServiceRequestQueryService serviceRequestQueryService;
 
     @InjectMocks
     private EinvoiceChargeItemContextLoader loader;
@@ -109,5 +122,76 @@ class EinvoiceChargeItemContextLoaderTest {
         assertEquals(1, captor.getValue().size());
         assertEquals(TableNameConstants.MED_MEDICATION_DEFINITION, captor.getValue().get(0).getProductTableName());
         assertEquals(301L, captor.getValue().get(0).getProductDefinitionId());
+    }
+
+    @Test
+    void loadByIds_selfPay_prefersMedicationRequestOverGenericInstance() {
+        ChargeItem row = new ChargeItem();
+        row.setId(101L);
+        row.setDefinitionId(201L);
+        row.setTotalPrice(new BigDecimal("20.29"));
+        row.setQuantityValue(new BigDecimal("2"));
+        row.setUnitPrice(new BigDecimal("10.145"));
+        row.setQuantityUnit("次");
+        row.setProductTable(null);
+        row.setProductId(null);
+        row.setServiceTable(TableNameConstants.MED_MEDICATION_REQUEST);
+        row.setServiceId(401L);
+
+        ChargeItemDefinition definition = new ChargeItemDefinition();
+        definition.setId(201L);
+        definition.setTypeCode("1002");
+        definition.setChargeName("中成药费");
+        definition.setInstanceTable(TableNameConstants.ADM_HEALTHCARE_SERVICE);
+        definition.setInstanceId(999L);
+
+        MedicationRequest request = new MedicationRequest();
+        request.setId(401L);
+        request.setMedicationId(301L);
+
+        ProductDefinitionDisplayDto product = new ProductDefinitionDisplayDto();
+        product.setProductTableName(TableNameConstants.MED_MEDICATION_DEFINITION);
+        product.setProductDefinitionId(301L);
+        product.setProductName("藿香正气胶囊");
+        product.setYbNo("ZC08AAA001");
+        product.setChrgitmLv(2);
+        product.setPackageUnitCode("box");
+        product.setDefEncounterUnitCode("box");
+
+        when(chargeItemQueryService.loadChargeItemsByIds(any(ChargeItemQueryCommand.class)))
+                .thenReturn(List.of(row));
+        when(chargeItemDefinitionQueryService.findAllDefinitionsByIdIn(List.of(201L)))
+                .thenReturn(Map.of(201L, definition));
+        when(medicationRequestQueryService.listByIds(any())).thenReturn(List.of(request));
+        when(quantityUnitDisplayResolver.warmLabelMap()).thenReturn(Map.of());
+        when(quantityUnitDisplayResolver.toDisplay(any(), any())).thenAnswer(invocation -> {
+            String code = invocation.getArgument(0);
+            if ("box".equals(code)) {
+                return "盒";
+            }
+            return code;
+        });
+        when(productDefinitionQueryService.batchLoadByKeys(anyList())).thenAnswer(invocation -> {
+            List<ProductDefinitionBatchLookup> lookups = invocation.getArgument(0);
+            Map<String, ProductDefinitionDisplayDto> map = new java.util.HashMap<>();
+            for (ProductDefinitionBatchLookup lookup : lookups) {
+                String key = ProductDefinitionKeyUtil.buildCompositeKey(
+                        lookup.getProductTableName(), lookup.getProductDefinitionId());
+                if (key != null && Long.valueOf(301L).equals(lookup.getProductDefinitionId())) {
+                    map.put(key, product);
+                }
+            }
+            return map;
+        });
+
+        List<BossChargeLineSnapshot> lines = loader.loadByIds(List.of(101L), false);
+
+        assertEquals(1, lines.size());
+        BossChargeLineSnapshot line = lines.get(0);
+        assertEquals("藿香正气胶囊", line.getItemName());
+        assertEquals("甲类", line.getListRemark());
+        assertEquals("1", line.getListMedicalCareType());
+        assertEquals("盒", line.getUnit());
+        assertEquals("ZC08AAA001", line.getItemCode());
     }
 }

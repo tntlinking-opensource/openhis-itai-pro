@@ -108,10 +108,15 @@ public interface InpatientNurseStationConstants {
     /** 出院召回：领域持久化失败（历史码；写入口已迁 FIN-004 IF-IP-RCL-01）。 */
     String EX_IP_ATD_504 = "EX-IP-ATD-504";
 
-    /** 无活动床时末次床展示前缀（召回未占床轨）。 */
+    /** 无活动床时末次床展示前缀（召回/清床未占床轨）。 */
     String UNOCCUPIED_LAST_BED_DISPLAY_PREFIX = "原";
 
-    /** 无活动床时末次床展示后缀（召回未占床轨）。 */
+    /**
+     * 无活动床时末次床展示后缀（召回/清床未占床轨）。
+     *
+     * <p>完整文案由 {@code EncounterContextQueryService} 装配为「原{房名}-{床名}（未占床）」；
+     * 无病房名时退化为「原{床名}（未占床）」。</p>
+     */
     String UNOCCUPIED_LAST_BED_DISPLAY_SUFFIX = "（未占床）";
 
     /** 床位列表面板：入科 Tab（IF-IP-NUR-ATD-01）。 */

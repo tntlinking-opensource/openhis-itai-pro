@@ -69,6 +69,10 @@ public class DiagnosticReport extends BaseAuditedEntity {
     @Column(name = "finalized_by")
     private Long finalizedBy;
 
+    /** 打印次数。 */
+    @Column(name = "print_count")
+    private Integer printCount;
+
     @Version
     @Column(name = "version", nullable = false)
     private Integer version;
@@ -125,5 +129,19 @@ public class DiagnosticReport extends BaseAuditedEntity {
         this.statusEnum = DiagnosticReportStatusConstants.STATUS_FINAL;
         this.finalizedAt = LocalDateTime.now();
         this.finalizedBy = operatorId;
+    }
+
+    /**
+     * 累加打印次数（REP-03；null 视为 0）。
+     *
+     * @param increaseBy 增量，须大于 0
+     */
+    public void increasePrintCount(int increaseBy) {
+        if (increaseBy <= 0) {
+            throw new BusinessException(
+                ErrorCodeConstants.DIAGNOSTIC_REPORT_INVALID_ARGUMENT, "打印次数增量必须大于 0");
+        }
+        int origin = printCount == null ? 0 : printCount;
+        this.printCount = origin + increaseBy;
     }
 }

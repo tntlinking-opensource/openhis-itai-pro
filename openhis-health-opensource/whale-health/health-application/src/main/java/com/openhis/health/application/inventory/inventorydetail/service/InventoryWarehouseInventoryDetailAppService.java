@@ -450,7 +450,8 @@ public class InventoryWarehouseInventoryDetailAppService {
             byte[] body = AnnotatedExcelExporter.exportToXlsxBytes(
                 InventoryWarehouseDetailExportConstants.INVENTORY_DETAIL_SHEET_NAME,
                 exportRows,
-                InventoryDetailCurrentExportRowDto.class
+                InventoryDetailCurrentExportRowDto.class,
+                request.getExportColumns()
             );
             response.setBody(body);
         } catch (RuntimeException ex) {
@@ -557,8 +558,8 @@ public class InventoryWarehouseInventoryDetailAppService {
         List<Long> effectiveWarehouseIds = this.resolveEffectiveWarehouseIds(request.getWarehouseIds());
         DocInventoryItemSnapshotPageQuery query = this.inventoryWarehouseInventoryDetailMapper.toSnapshotPageQuery(
             request, tenantId, resolvedBusNo, effectiveWarehouseIds);
-        // Pre：基药标识经药典预解析 item_id（静表无 basic_flag 列）
-        this.inventoryCatalogFilter.enrichSnapshotBasicFlagDefinitionIds(query);
+        // Pre：重点药类型经药典预解析 item_id（静表无药典标识列）
+        this.inventoryCatalogFilter.enrichSnapshotKeyDrugTypeDefinitionIds(query);
         Sort sort = Sort.by(Sort.Order.asc(FieldNameConstants.PY_STR));
         Pageable pageable = PageRequest.of(request.springPageIndex(), request.getBoundedPageSize(), sort);
         Page<DocInventoryItemSnapshotRowQueryModel> page;
@@ -608,8 +609,8 @@ public class InventoryWarehouseInventoryDetailAppService {
         List<Long> effectiveWarehouseIds = this.resolveEffectiveWarehouseIds(request.getWarehouseIds());
         DocInventoryItemSnapshotPageQuery query = this.inventoryWarehouseInventoryDetailMapper.toSnapshotPageQuery(
             request, tenantId, resolvedBusNo, effectiveWarehouseIds);
-        // Pre：基药标识经药典预解析 item_id（静表无 basic_flag 列）
-        this.inventoryCatalogFilter.enrichSnapshotBasicFlagDefinitionIds(query);
+        // Pre：重点药类型经药典预解析 item_id（静表无药典标识列）
+        this.inventoryCatalogFilter.enrichSnapshotKeyDrugTypeDefinitionIds(query);
         List<DocInventoryItemSnapshotRowQueryModel> models;
         try {
             // Cmd：拉取汇总候选行（禁止重算定价）
@@ -666,7 +667,8 @@ public class InventoryWarehouseInventoryDetailAppService {
                 byte[] body = AnnotatedExcelExporter.exportToXlsxBytes(
                     InventoryWarehouseDetailExportConstants.INVENTORY_DETAIL_SHEET_NAME,
                     Collections.emptyList(),
-                    InventoryDetailBackupExportRowDto.class
+                    InventoryDetailBackupExportRowDto.class,
+                    request.getExportColumns()
                 );
                 response.setBody(body);
             } catch (RuntimeException ex) {
@@ -678,8 +680,8 @@ public class InventoryWarehouseInventoryDetailAppService {
         List<Long> effectiveWarehouseIds = this.resolveEffectiveWarehouseIds(request.getWarehouseIds());
         DocInventoryItemSnapshotPageQuery query = this.inventoryWarehouseInventoryDetailMapper.toSnapshotPageQuery(
             request, tenantId, resolvedBusNo, effectiveWarehouseIds);
-        // Pre：基药标识经药典预解析 item_id（静表无 basic_flag 列）
-        this.inventoryCatalogFilter.enrichSnapshotBasicFlagDefinitionIds(query);
+        // Pre：重点药类型经药典预解析 item_id（静表无药典标识列）
+        this.inventoryCatalogFilter.enrichSnapshotKeyDrugTypeDefinitionIds(query);
         List<DocInventoryItemSnapshotRowQueryModel> models;
         try {
             // Cmd：拉取导出行（上限 10 万）
@@ -708,7 +710,8 @@ public class InventoryWarehouseInventoryDetailAppService {
             byte[] body = AnnotatedExcelExporter.exportToXlsxBytes(
                 InventoryWarehouseDetailExportConstants.INVENTORY_DETAIL_SHEET_NAME,
                 exportRows,
-                InventoryDetailBackupExportRowDto.class
+                InventoryDetailBackupExportRowDto.class,
+                request.getExportColumns()
             );
             response.setBody(body);
         } catch (RuntimeException ex) {
@@ -1316,6 +1319,11 @@ public class InventoryWarehouseInventoryDetailAppService {
         BigDecimal splitToPackageRatio = this.resolveBackupSplitToPackageRatio(row);
         String packageUnitName = trimToNull(row.getPackageUnitName());
         String splitUnitName = trimToNull(row.getSplitUnitName());
+        // 包装拆零比例：1盒/36片（静表倍数 + 单位名；禁止重算金额）
+        row.setPackageSplitRatioText(MedicationPackageSplitQuantityDisplayAssembler.buildInventoryPackageSplitRatioText(
+            row.getPackageUnitRatio(),
+            packageUnitName,
+            splitUnitName));
         BigDecimal splitQty = row.getQuantity();
         if (splitQty != null) {
             row.setPackageStockText(MedicationPackageSplitQuantityDisplayAssembler.buildPackageStockDisplayText(
@@ -1591,6 +1599,11 @@ public class InventoryWarehouseInventoryDetailAppService {
         BigDecimal splitToPackageRatio = this.resolveSplitToPackageRatio(row);
         String packageUnitName = trimToNull(row.getPackageUnitName());
         String splitUnitName = trimToNull(row.getSplitUnitName());
+        // 包装拆零比例：1盒/36片（与临床装量后缀 1片x100 口径不同）
+        row.setPackageSplitRatioText(MedicationPackageSplitQuantityDisplayAssembler.buildInventoryPackageSplitRatioText(
+            row.getPackageUnitRatio(),
+            packageUnitName,
+            splitUnitName));
         BigDecimal splitQty = row.getQuantity();
         if (splitQty != null) {
             row.setPackageStockText(MedicationPackageSplitQuantityDisplayAssembler.buildPackageStockDisplayText(

@@ -162,9 +162,7 @@ public class CashierSettlementApprovalDetailBodySupport {
         }
         response.setPaymentRows(mountedVoucher.getRows());
         response.setPaymentSummary(mountedVoucher.getSummary());
-        if (mountedVoucher.getPaymentIds() != null) {
-            response.setMountedSourceCount(mountedVoucher.getPaymentIds().size());
-        }
+        // 笔数保持头表口径（不含工伤）；挂载仍含工伤 payment，禁止用全量挂载数覆盖快照
     }
 
     /**
@@ -207,7 +205,7 @@ public class CashierSettlementApprovalDetailBodySupport {
                     "当前交账无挂载发药（可能已撤回/驳回清挂载）；大类为零值占位，品规为空。");
                 return;
             }
-            // Asm：有挂载时详情头金额与大类售价总额之和对齐（覆盖头表利润快照的展示值）
+            // Asm：有挂载时详情头金额与大类售价总额之和对齐（覆盖头表快照展示值）
             this.overlayPharmacyHeaderSaleTotal(response, categoryRows);
             response.setDetailBodyRecomputeNote(
                 "药房日结大类/品规按挂载发药现算（对齐" + scopeLabel + "药房日结主区）。");

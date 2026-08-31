@@ -68,6 +68,7 @@ public class PeisReportPrintMapperImpl implements PeisReportPrintMapper {
             dto.setBusNo(row.getBusNo());
             dto.setFinalizedAt(row.getFinalizedAt());
             dto.setPdfStorageKey(row.getPdfStorageKey());
+            dto.setPrintCount(row.getPrintCount());
             result.add(dto);
         }
         return result;

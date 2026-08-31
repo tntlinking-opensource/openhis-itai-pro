@@ -16,7 +16,7 @@ import java.util.List;
  * 门诊发药就诊队列分页请求。
  *
  * <p>分页与通用检索字段见 {@link AbstractHealthPageRequest}（代码生成通用规范 B.10.11）；待发药队列库房范围由服务端依据当前登录用户会话机构解析，调用方不传库房主键。</p>
- * <p>本接口不使用 {@code startDate}/{@code endDate}（发放事实不以 {@code status_changed_time} 时间窗筛选）。</p>
+ * <p>{@code startDate}/{@code endDate} 为可选时间窗，按就诊 {@code startTime} 收窄（与门诊收费队列同口径）；不使用发放行 {@code status_changed_time}。</p>
  */
 @Data
 @EqualsAndHashCode(callSuper = true)

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { PrintableReportRowDto } from '#/api/peis/report-print';
-import { onMounted, reactive, ref } from 'vue';
+import { onMounted, reactive, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { httpPreviewReport, httpSearchPrintable } from '#/api/peis/report-print';
 import SectionTitle from '#/components/layouts/section-title.vue';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
@@ -16,6 +17,7 @@ import {
   ElTableColumn,
 } from 'element-plus';
 defineOptions({ name: 'PeisReportPrint' });
+const route = useRoute();
 const keyword = ref('');
 const dateRange = ref<[string, string]>(
   getDateRangeQuick({ strategy: 'calendar-day' }) as [string, string],
@@ -49,6 +51,26 @@ async function loadList() {
     total.value = parsed.totalCount;
   } finally {
     loading.value = false;
+  }
+}
+
+async function openPreviewByEncounterId(encounterId: string) {
+  previewVisible.value = true;
+  previewLoading.value = true;
+  const queryName = String(route.query.patientName ?? '').trim();
+  const queryBusNo = String(route.query.busNo ?? '').trim();
+  selectedRow.value = {
+    encounterId,
+    patientName: queryName,
+    busNo: queryBusNo,
+  };
+  try {
+    const res = await httpPreviewReport({ encounterId });
+    previewSummary.value = res.summaryText ?? '';
+    previewConclusion.value = res.conclusionText ?? '';
+    previewHint.value = res.previewHint ?? '';
+  } finally {
+    previewLoading.value = false;
   }
 }
 
@@ -87,9 +109,27 @@ async function handlePrint(row: PrintableReportRowDto) {
     printing.value = false;
   }
 }
-onMounted(() => {
-  loadList();
+onMounted(async () => {
+  await loadList();
+  const encounterId = String(route.query.encounterId ?? '').trim();
+  const autoPreview = String(route.query.autoPreview ?? '') === '1';
+  if (encounterId && autoPreview) {
+    const matched = records.value.find((row) => String(row.encounterId) === encounterId);
+    if (matched) {
+      selectedRow.value = matched;
+    }
+    await openPreviewByEncounterId(encounterId);
+  }
 });
+
+watch(
+  () => route.query.encounterId,
+  async (encounterId) => {
+    const id = String(encounterId ?? '').trim();
+    if (!id || String(route.query.autoPreview ?? '') !== '1') return;
+    await openPreviewByEncounterId(id);
+  },
+);
 </script>
 
 <template>
@@ -117,6 +157,11 @@ onMounted(() => {
       <ElTableColumn prop="patientName" label="姓名" min-width="90" />
       <ElTableColumn prop="busNo" label="流水号" min-width="120" />
       <ElTableColumn prop="finalizedAt" label="定稿时间" min-width="160" />
+      <ElTableColumn prop="printCount" label="打印次数" width="100" align="center">
+        <template #default="{ row }">
+          {{ row.printCount ?? 0 }}
+        </template>
+      </ElTableColumn>
       <ElTableColumn label="操作" width="160" fixed="right">
         <template #default="{ row }">
           <ElButton link type="primary" @click="handlePreview(row)"> 预览 </ElButton>

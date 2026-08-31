@@ -12,8 +12,10 @@ import com.openhis.health.application.shared.advice.AdviceChargeDisplayStatusAss
 import com.openhis.health.application.shared.option.FrequencyOptionLoader;
 import com.openhis.health.application.shared.option.TerminologyOptionLoader;
 import com.openhis.health.application.shared.advice.InpatientEntrustOrderGateSupport;
+import com.openhis.health.application.shared.advice.InpatientStandingOrderSplittableSettingResolver;
 import com.openhis.health.application.shared.advice.OrderCatalogDisplayAssembler;
 import com.openhis.health.application.shared.advice.OrderRequestCatalogWarmAssembler;
+import com.openhis.health.application.shared.advice.StandingOrderOralPackageInventorySupport;
 import com.openhis.health.application.shared.product.MedicationDailyDoseDisplayAssembler;
 import com.openhis.health.application.shared.product.MedicationDosageDisplayAssembler;
 import com.openhis.health.application.shared.product.MedicationDosageDisplayAssembler.MedicationDosageDisplayResult;
@@ -35,6 +37,8 @@ import com.openhis.health.domain.clinical.conditiondefinition.queries.model.Cond
 import com.openhis.health.domain.clinical.conditiondefinition.service.ConditionDefinitionQueryService;
 import com.openhis.health.domain.clinical.allergyintolerance.queries.model.AllergyIntoleranceRecordQueryModel;
 import com.openhis.health.domain.clinical.allergyintolerance.service.AllergyIntoleranceQueryService;
+import com.openhis.health.domain.clinical.procedure.queries.model.ProcedureRecordQueryModel;
+import com.openhis.health.domain.clinical.procedure.service.ProcedureQueryService;
 import com.openhis.health.domain.custom.encounterhistory.queries.model.EncounterHistoryMilestoneQueryModel;
 import com.openhis.health.domain.custom.encounterhistory.service.EncounterHistoryQueryService;
 import com.openhis.health.domain.share.constants.CustomConstants;
@@ -42,6 +46,7 @@ import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
 import com.openhis.health.domain.medication.medicationdispense.entity.MedicationDispense;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
+import com.openhis.health.domain.medication.medicationrequest.entity.MedicationRequest;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
 import com.openhis.health.application.shared.advice.InpatientOrderListSkeleton;
@@ -82,6 +87,7 @@ import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -146,6 +152,15 @@ public class InpatientDoctorStationAdviceListAssembler {
 
     /** 嘱托医嘱展示名解析（BR-IP-ORD-028④；与护士站医嘱查看同源）。 */
     private final InpatientEntrustOrderGateSupport inpatientEntrustOrderGateSupport;
+
+    /** 口服一盒一点剩余（BR-IP-EXE-038，与护士站同源）。 */
+    private final StandingOrderOralPackageInventorySupport standingOrderOralPackageInventorySupport;
+
+    /** 院点长嘱可拆开关。 */
+    private final InpatientStandingOrderSplittableSettingResolver standingOrderSplittableSettingResolver;
+
+    /** 执行 Procedure 只读（剩余领入事实）。 */
+    private final ProcedureQueryService procedureQueryService;
 
     /**
      * 装配住院医生站医嘱统一列表行。
@@ -476,9 +491,91 @@ public class InpatientDoctorStationAdviceListAssembler {
                         applyFormDetailsByRequestId.get(serviceDetail.getId()))));
             }
         }
+        // 口服一盒一点剩余展示（BR-IP-EXE-038；与 IF-IP-EXE-01 同源）
+        this.enrichOralPackageInventory(unifiedRows, productByKey, methodLabelByCode);
         // 列表默认排序：开立时间（reqOpenedTime，空则回落 reqAuthoredTime）倒序；成组药按组内最晚开立时刻聚邻。
         this.sortUnifiedAdviceRowsByOpenedTimeDesc(unifiedRows);
         return unifiedRows;
+    }
+
+    /**
+     * 为命中一盒一点的长期药行回填剩余/已吃/下次领盒日；改量链 basedOn 回显。
+     *
+     * @param unifiedRows       统一行
+     * @param productByKey      目录
+     * @param methodLabelByCode 用法名
+     */
+    private void enrichOralPackageInventory(
+        List<InpatientDoctorStationAdviceRowDto> unifiedRows,
+        Map<String, ProductDefinitionDisplayDto> productByKey,
+        Map<String, String> methodLabelByCode) {
+        if (unifiedRows == null || unifiedRows.isEmpty()) {
+            return;
+        }
+        boolean applyPackageBatch = !standingOrderSplittableSettingResolver.isSplittable();
+        if (!applyPackageBatch) {
+            return;
+        }
+        LocalDate asOf = LocalDate.now();
+        for (InpatientDoctorStationAdviceRowDto line : unifiedRows) {
+            if (line == null || line.getRequestId() == null) {
+                continue;
+            }
+            if (!TableNameConstants.MED_MEDICATION_DEFINITION.equals(line.getProductTableName())) {
+                continue;
+            }
+            MedicationRequest display = medicationRequestQueryService.findById(line.getRequestId());
+            if (display == null) {
+                continue;
+            }
+            // 改量链回显（无论是否命中剩余规则）
+            if (TableNameConstants.MED_MEDICATION_REQUEST.equals(display.getBasedOnTable())) {
+                line.setBasedOnTable(display.getBasedOnTable());
+                line.setBasedOnId(display.getBasedOnId());
+            }
+            if (!TherapyType.LONG_TERM.getCode().equals(display.getTherapyEnum())) {
+                continue;
+            }
+            ProductDefinitionDisplayDto product = null;
+            if (display.getMedicationId() != null && productByKey != null) {
+                String key = ProductDefinitionKeyUtil.buildCompositeKey(
+                    TableNameConstants.MED_MEDICATION_DEFINITION, display.getMedicationId());
+                product = productByKey.get(key);
+            }
+            List<MedicationRequest> chain =
+                standingOrderOralPackageInventorySupport.loadDoseChangeChain(display.getId());
+            Map<Long, List<ProcedureRecordQueryModel>> proceduresByRequestId = new HashMap<>();
+            for (MedicationRequest mr : chain) {
+                if (mr == null || mr.getId() == null) {
+                    continue;
+                }
+                proceduresByRequestId.put(
+                    mr.getId(),
+                    procedureQueryService.getProcedureRecords(
+                        mr.getId(), TableNameConstants.MED_MEDICATION_REQUEST));
+            }
+            StandingOrderOralPackageInventorySupport.OralPackageInventorySnapshot snap =
+                standingOrderOralPackageInventorySupport.compute(
+                    display,
+                    proceduresByRequestId,
+                    product,
+                    methodLabelByCode,
+                    asOf,
+                    true);
+            if (!snap.isApplied() || !snap.isDisplayHost()) {
+                continue;
+            }
+            // 从未有效领盒：不回填已吃/剩余/下次领盒（避免「已吃0/剩余0」误导）
+            if (snap.getClaimedSplitQuantity() == null
+                || snap.getClaimedSplitQuantity().compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            line.setOralPackageBatchInventoryApplied(Boolean.TRUE);
+            line.setOralPackageConsumedSplitQuantity(snap.getConsumedSplitQuantity());
+            line.setOralPackageRemainSplitQuantity(snap.getRemainSplitQuantity());
+            line.setOralPackageSplitUnitDisplay(snap.getSplitUnitDisplay());
+            line.setOralPackageNextClaimDate(snap.getNextClaimDate());
+        }
     }
 
     /**

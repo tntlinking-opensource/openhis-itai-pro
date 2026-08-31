@@ -92,7 +92,7 @@ public class DeviceDefinition extends BaseAuditedEntity {
     /** 高值器材标志。 */
     @Column(name = "hvcm_flag")
     private Boolean hvcmFlag;
-    /** 收费耗材标记（true=收费；界面「不收费耗材」勾选对应 false）。 */
+    /** 收费耗材标记（true=收费；与界面「收费耗材」勾选同向）。 */
     @Column(name = "chargeable_flag")
     private Boolean chargeableFlag;
     /** 病案结算类型编码（术语 {@code mr_settlement_type_code}）。 */
@@ -143,12 +143,9 @@ public class DeviceDefinition extends BaseAuditedEntity {
     /** 批准文号。 */
     @Column(name = "approval_number")
     private String approvalNumber;
-    /** 生产厂家标识。 */
+    /** 生产厂家标识（cus_supplier.id，type=生产厂家）。 */
     @Column(name = "manufacturer_id")
     private Long manufacturerId;
-    /** 生产厂家名称。 */
-    @Column(name = "manufacturer_text")
-    private String manufacturerText;
     /** 供应商标识。 */
     @Column(name = "supply_id")
     private Long supplyId;

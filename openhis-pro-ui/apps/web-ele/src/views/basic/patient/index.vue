@@ -143,6 +143,7 @@ const maritalStatusOptions = ref<ApiOptionItem[]>([]);
 const bloodTypeAboOptions = ref<ApiOptionItem[]>([]);
 const bloodTypeRhOptions = ref<ApiOptionItem[]>([]);
 const sexOptions = ref<ApiOptionItem[]>([]);
+const educationLevelOptions = ref<ApiOptionItem[]>([]);
 
 const dialogVisible = ref(false);
 const dialogFormData = ref<null | Partial<Patient>>(null);
@@ -204,6 +205,7 @@ onMounted(async () => {
     bloodTypeAboOptions.value = initRes?.bloodTypeABO ?? [];
     bloodTypeRhOptions.value = initRes?.bloodTypeRH ?? [];
     sexOptions.value = initRes?.sex ?? [];
+    educationLevelOptions.value = initRes?.educationLevelOptions ?? [];
   } catch (error) {
     console.error('患者管理初始化失败:', error);
   }
@@ -243,6 +245,7 @@ onMounted(async () => {
       :blood-type-abo-options="bloodTypeAboOptions"
       :blood-type-rh-options="bloodTypeRhOptions"
       :sex-options="sexOptions"
+      :education-level-options="educationLevelOptions"
       :form-data="dialogFormData || undefined"
       @success="handleQuery"
     />

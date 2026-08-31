@@ -96,12 +96,31 @@ public interface OrganizationRepository extends JpaRepository<Organization, Long
     List<Organization> findAllByStatusEnum(String statusEnum);
 
     /**
+     * 按启用状态查询机构列表（通用树/字典：含 ACTIVE 平铺后组树）。
+     *
+     * @param statusEnum 状态 code（通常为 ACTIVE）
+     * @return 按 displayOrder、id 升序的平铺列表
+     */
+    List<Organization> findAllByStatusEnumOrderByDisplayOrderAscIdAsc(String statusEnum);
+
+    /**
      * 按条件查询列表。
      * @param statusEnum 条件
      * @param classEnum 条件
      * @return 查询结果
      */
     List<Organization> findAllByStatusEnumAndClassEnum(String statusEnum, com.openhis.health.domain.share.enums.OrganizationClassification classEnum);
+
+    /**
+     * 按状态与业务分类查询机构列表（门诊挂号/入院/护士站等场景下拉）。
+     *
+     * @param statusEnum 状态 code
+     * @param classEnum  机构业务分类
+     * @return 按 displayOrder、id 升序的平铺列表
+     */
+    List<Organization> findAllByStatusEnumAndClassEnumOrderByDisplayOrderAscIdAsc(
+        String statusEnum,
+        com.openhis.health.domain.share.enums.OrganizationClassification classEnum);
 
     /**
      * 按条件查询列表。

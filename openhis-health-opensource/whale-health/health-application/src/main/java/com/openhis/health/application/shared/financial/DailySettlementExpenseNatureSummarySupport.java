@@ -354,8 +354,11 @@ public final class DailySettlementExpenseNatureSummarySupport {
      * @param insuranceAccountAmount        个人账户合计
      * @param chsRetailUploadDiffAmount     医保上传差额（零售−上传）；null 跳过
      * @param depositAmount                 预交金（住院）；门诊传 null 跳过
+     * @param depositRefundAmount           退预交金（住院多退）；门诊传 null 跳过
+     * @param settleSupplementAmount        结算补收（住院少补渠道实付）；门诊传 null 跳过
      * @param natures                       费用性质块
      * @param physicalExamCount             体检人次；null 跳过
+     * @return 下半区扁平行
      */
     public static List<DailySettlementSummaryRowDto> buildSummaryRows(
         String totalIncome,
@@ -367,6 +370,8 @@ public final class DailySettlementExpenseNatureSummarySupport {
         String insuranceAccountAmount,
         String chsRetailUploadDiffAmount,
         String depositAmount,
+        String depositRefundAmount,
+        String settleSupplementAmount,
         List<DailySettlementExpenseNatureSummaryDto> natures,
         Integer physicalExamCount) {
         List<DailySettlementSummaryRowDto> rows = new ArrayList<>();
@@ -384,20 +389,32 @@ public final class DailySettlementExpenseNatureSummarySupport {
         if (depositAmount != null) {
             rows.add(row("depositAmount", "预交金", depositAmount, "元", 0));
         }
+        // 住院多退少补拆列：与 depositAmount 同为独立展示，不入总收入
+        if (depositRefundAmount != null) {
+            rows.add(row("depositRefundAmount", "退预交金", depositRefundAmount, "元", 0));
+        }
+        if (settleSupplementAmount != null) {
+            rows.add(row("settleSupplementAmount", "结算补收", settleSupplementAmount, "元", 0));
+        }
         if (natures != null) {
             int natureIndex = 0;
             for (DailySettlementExpenseNatureSummaryDto nature : natures) {
                 if (nature == null) {
                     continue;
                 }
-                String name = StringUtils.isNotEmpty(nature.getContractName())
-                    ? nature.getContractName()
-                    : UNLABELED_CONTRACT_NAME;
+                String name = UNLABELED_CONTRACT_NAME;
+                if (StringUtils.isNotEmpty(nature.getContractName())) {
+                    name = nature.getContractName();
+                }
                 String prefix = "nature." + natureIndex;
+                String personCountText = "0";
+                if (nature.getPersonCount() != null) {
+                    personCountText = String.valueOf(nature.getPersonCount());
+                }
                 rows.add(row(
                     prefix + ".personCount",
                     name + "人次",
-                    nature.getPersonCount() == null ? "0" : String.valueOf(nature.getPersonCount()),
+                    personCountText,
                     "人",
                     0));
                 if (Boolean.TRUE.equals(nature.getInsurance())) {
@@ -412,18 +429,23 @@ public final class DailySettlementExpenseNatureSummarySupport {
                             if (type == null) {
                                 continue;
                             }
-                            String typeName = StringUtils.isNotEmpty(type.getInsutypeName())
-                                ? type.getInsutypeName()
-                                : UNKNOWN_INSUTYPE_NAME;
+                            String typeName = UNKNOWN_INSUTYPE_NAME;
+                            if (StringUtils.isNotEmpty(type.getInsutypeName())) {
+                                typeName = type.getInsutypeName();
+                            }
                             // 「未分险种」与费用性质块重复，不输出子行
                             if (UNKNOWN_INSUTYPE_NAME.equals(typeName)) {
                                 continue;
                             }
                             String typePrefix = prefix + ".insu." + typeIndex;
+                            String typePersonCountText = "0";
+                            if (type.getPersonCount() != null) {
+                                typePersonCountText = String.valueOf(type.getPersonCount());
+                            }
                             rows.add(row(
                                 typePrefix + ".personCount",
                                 typeName + "人次",
-                                type.getPersonCount() == null ? "0" : String.valueOf(type.getPersonCount()),
+                                typePersonCountText,
                                 "人",
                                 1));
                             rows.add(row(typePrefix + ".cashAmount", typeName + "现金", type.getCashAmount(), "元", 1));

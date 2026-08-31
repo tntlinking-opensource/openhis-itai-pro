@@ -63,11 +63,12 @@ import { hasNonEmptyBusNo } from '#/utils/inventory/inventory-doc-restrictions';
 import PurchaseInboundBatchAddDialog from '#/views/inventory/warehouse/purchase-inbound/purchase-inbound-batch-add-dialog.vue';
 import {
   formatInventoryLineTotal,
-  formatMoneyDisplay,
+  formatPurchaseMoneyDisplay,
   inventoryLineTotalNumber,
 } from '#/utils/format/money-scale';
 import {
   canConvertDisplayQtyToSplitForBands,
+  defaultInboundUnitBandKind,
   findInboundUnitBandByKind,
   hydrateInboundDetailQtyFromPersisted,
   inboundUnitBandSelectOptions,
@@ -97,10 +98,11 @@ import {
   INV_ALL_WAREHOUSES_LABEL,
   isSpecificInventoryLocationId,
   resolveFirstRealLocationIdFromInitOptions,
+  resolveInvDocApprovedByName,
+  resolveInvDocPreparedByName,
+  resolveInvDocPrintApplyTimeText,
   resolveSpecificInventoryLocationId,
   warnInventoryLocationRequired,
-  resolveInvDocPreparedByName,
-  resolveInvDocApprovedByName,
 } from '#/utils/inventory/inventory-workbench-list';
 import {
   buildInventoryLocationHeadFormRules,
@@ -114,6 +116,25 @@ import {
   INV_DOC_DRAFT_SCENE,
   mergeInvDocTraceIntoRows,
 } from '#/utils/inventory/inv-doc-draft-cache';
+import {
+  applyMsfxUpstreamToInboundApi,
+  getMsfxUpstreamImportByHisBusNoApi,
+} from '#/api/msfx/inbound-upstream';
+import { getMsfxSupplierMapBySupplierIdApi, pageMsfxSupplierMapApi } from '#/api/msfx/supplier-map';
+import { uploadAndExpandInboundSmallCodesApi } from '#/api/msfx/upload';
+import { MSFX_HIS_SCENE } from '#/msfx/constants';
+import { assignMsfxTraceCodesToRows } from '#/msfx/utils/assign-trace-codes';
+import MsfxUploadStatusBar from '#/msfx/components/msfx-upload-status-bar.vue';
+import MsfxUpstreamPullDialog from '#/msfx/components/msfx-upstream-pull-dialog.vue';
+import MsfxUpstreamGenerateConfirmDialog from '#/msfx/components/msfx-upstream-generate-confirm-dialog.vue';
+import type { MsfxGenerateConfirmLine } from '#/msfx/utils/generate-confirm';
+import {
+  isMsfxQtyCodeMismatch,
+  resolveMsfxDisplayQtyAsSplit,
+  resolveMsfxWriteableTraceCodes,
+} from '#/msfx/utils/generate-confirm';
+import { expandTraceBoxCodes } from '#/utils/trace/trace-box-expand';
+import type { MsfxUpstreamBillRowDto } from '#/api/msfx/types';
 import {
   buildInvDocumentTitle,
   printInvDocument,
@@ -304,14 +325,7 @@ const headFormRules = computed(() => ({
   ...buildInventoryLocationHeadFormRules({
     warehouseId: '库房',
   }),
-  // 暂定前台必填；后端/上报仍可对空值占位 0
-  invoiceNo: [
-    {
-      required: true,
-      message: '请填写发票号',
-      trigger: 'blur',
-    },
-  ],
+  // 发票号非必填；空则后端/进销存上报占位 0（09 §4.5e）
 }));
 
 const hasLinkedUpstream = computed(() => {
@@ -564,7 +578,9 @@ function applyInboundDetailUnitListDictText(
   if (!opts.hasBands) {
     return [{ value: 'LEGACY', label: dictText || opts.unitCodeStr || '单位' }];
   }
-  const k = opts.selectedBandKind.trim().toUpperCase();
+  const k = String(opts.selectedBandKind ?? '')
+    .trim()
+    .toUpperCase();
   const band = findInboundUnitBandByKind(opts.unitBands, k);
   const code = String(band?.unitCode ?? opts.unitCodeStr).trim();
   return unitList.map((o) => {
@@ -629,7 +645,7 @@ function mapDetailRowToGrid(r: Record<string, unknown>): InboundPreviewRow {
     },
   );
   const unitPrice = price === undefined || price === null ? 0 : Number(price);
-  // 目录游离追溯单位：详情 productCatalog / 选品顶栏字段；保留 categoryCode 供中药单价三位展示
+  // 目录游离追溯单位：详情 productCatalog / 选品顶栏字段；保留 categoryCode 供中药进价三位展示
   const productBusNo = String(catalog?.productBusNo ?? '').trim();
   const productCatalog: CatalogTraceUnitHint & {
     unitBands?: InboundProductUnitBand[];
@@ -670,7 +686,7 @@ function mapDetailRowToGrid(r: Record<string, unknown>): InboundPreviewRow {
       total === undefined || total === null || total === ''
         ? ''
         : typeof total === 'number'
-          ? formatMoneyDisplay(total)
+          ? formatPurchaseMoneyDisplay(total, productCatalog.categoryCode)
           : String(total),
     batchNo: String(r.lotNumber ?? ''),
     traceNo: String(r.traceNo ?? '').trim(),
@@ -767,7 +783,7 @@ interface InboundPreviewRow {
   medicinePick?: MedicinePickCell | Record<string, unknown>;
   itemTable?: string;
   itemId?: number | string;
-  /** 药品分类码；中药=4 时单价三位展示 */
+  /** 药品分类码；中药=4 时进价三位展示 */
   categoryCode?: string;
   spec: string;
   manufacturer: string;
@@ -917,7 +933,8 @@ const columns: VxeGridPropTypes.Column[] = [
     field: 'traceNo',
     title: '追溯码',
     minWidth: 140,
-    editRender: { name: 'InventoryTraceNoCell', props: { maxlength: 512, clearable: true } },
+    // 64 盒小码逗号串约 1.3k+；512 会截断。与后端 TRACE_NO_WIDE_MAX_LENGTH 对齐
+    editRender: { name: 'InventoryTraceNoCell', props: { maxlength: 50000, clearable: true } },
   },
   {
     field: 'prodExpiry',
@@ -1374,10 +1391,7 @@ function validateHeadBeforeSave(): boolean {
     warnInventoryLocationRequired('warehouse');
     return false;
   }
-  if (!String(headForm.value.invoiceNo ?? '').trim()) {
-    ElMessage.warning('请填写发票号');
-    return false;
-  }
+  // 发票号可选：未填由后端落库/上报占位 0，不在此拦截
   return true;
 }
 
@@ -1501,6 +1515,53 @@ async function handleSaveDoc() {
   parentSync.clearDraftSnap({ clearActivePersist: false });
   ElMessage.success('保存成功');
   emit('documentSaved', { busNo });
+  await flushPendingMsfxImportBind(busNo);
+}
+
+/** 生成行后若当时未落库，保存成功后补绑定上游导入账（支持多选） */
+async function flushPendingMsfxImportBind(busNo: string) {
+  const binds = pendingMsfxBinds.value;
+  if (!binds.length) return;
+  const no = String(busNo ?? '').trim();
+  if (!no) return;
+  try {
+    await bindMsfxImportsToHisBusNo(binds, no);
+    pendingMsfxBinds.value = [];
+    msfxUploadBarRef.value?.reload();
+    ElMessage.success(
+      binds.length > 1 ? `已绑定 ${binds.length} 张上游出库单` : '已绑定上游出库单',
+    );
+  } catch (error) {
+    ElMessage.warning(`进货单已保存，但上游单绑定失败：${pickApiErrMsg(error)}`);
+  }
+}
+
+function toMsfxImportBinds(
+  importIds: Array<number | string>,
+  billCodeJoined?: string,
+): Array<{ importId: string; billCode?: string }> {
+  const ids = importIds.map((id) => String(id ?? '').trim()).filter(Boolean);
+  const bills = String(billCodeJoined ?? '')
+    .split('、')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return ids.map((importId, i) => ({
+    importId,
+    billCode: bills.length === ids.length ? bills[i] : bills[0],
+  }));
+}
+
+async function bindMsfxImportsToHisBusNo(
+  binds: Array<{ importId: string; billCode?: string }>,
+  hisBusNo: string,
+) {
+  for (const bind of binds) {
+    await applyMsfxUpstreamToInboundApi({
+      importId: bind.importId,
+      hisBusNo,
+      upstreamBillCode: bind.billCode,
+    });
+  }
 }
 
 async function handleSaveAndSubmitDoc() {
@@ -1515,6 +1576,7 @@ async function handleSaveAndSubmitDoc() {
   parentSync.clearDraftSnap({ clearActivePersist: false });
   ElMessage.success('保存并提交审批成功');
   emit('documentSaved', { busNo });
+  await flushPendingMsfxImportBind(busNo);
 }
 
 function applyClockForSubmit(): string | undefined {
@@ -1672,8 +1734,8 @@ function resolveInboundPrintUnitLabel(row: InboundPreviewRow): string {
   return String(byCode?.label ?? byCode?.value_dictText ?? code).trim();
 }
 
-/** 打印进货单（计价流转模版） */
-async function handlePrint() {
+/** 打印或预览进货单（计价流转模版） */
+async function handlePrint(payload?: { preview?: boolean }) {
   const busNo = currentPersistedBusNo();
   if (!busNo) {
     ElMessage.warning('请先保存单据后再打印');
@@ -1692,9 +1754,10 @@ async function handlePrint() {
     headForm.value.itemTableType,
   );
   const documentTitle = buildInvDocumentTitle(warehouseName, '进货单');
-  const applyTimeText = String(headForm.value.applyTime ?? props.applyTime ?? '')
-    .trim()
-    .replace('T', ' ');
+  // 打印制单时间取侧栏单据实际审批时间，禁止用单头缺省「当前时刻」冒充
+  const applyTimeText = resolveInvDocPrintApplyTimeText({
+    queueCardRow: props.queueCardRow as null | Record<string, unknown>,
+  });
 
   // 按当前网格展示值组装 PrintData（非 SPLIT 落库量；效期仅打有效期至）
   const lineRows = productRows.map((row) => {
@@ -1738,6 +1801,7 @@ async function handlePrint() {
     },
     bizRef: { busNo, docKind: 'purchase-inbound' },
     jobName: documentTitle,
+    preview: payload?.preview === true,
   });
 }
 
@@ -1765,6 +1829,649 @@ function createEmptyInboundRow(): InboundPreviewRow {
 }
 
 const batchDialogVisible = ref(false);
+
+/** 码上放心：供应商企业 ent_id（102 上传必填；可由对照表 / 上游拉单带出） */
+const msfxSupplierEntId = ref('');
+const msfxSupplierEntName = ref('');
+/** 打开拉单时：有明细才硬锁 preferred 上游企业 */
+const msfxLockPreferredSupplier = ref(true);
+const msfxUpstreamVisible = ref(false);
+const msfxGenerateConfirmVisible = ref(false);
+const msfxGenerateDrugRows = ref<MsfxUpstreamBillRowDto[]>([]);
+const msfxGenerateConfirmRef = ref<InstanceType<typeof MsfxUpstreamGenerateConfirmDialog> | null>(
+  null,
+);
+const msfxUploadBarRef = ref<InstanceType<typeof MsfxUploadStatusBar> | null>(null);
+
+function onMsfxInboundCodesExpanded() {
+  const busNo = currentPersistedBusNo();
+  if (!busNo) return;
+  emit('documentSaved', { busNo });
+}
+
+/** 确认窗尚未落库时，用上游导入账做 102 单号（不要求先选供应商/保存进货单）。 */
+function resolvePullSmallCodesBusNo(): string {
+  const existing = currentPersistedBusNo();
+  if (existing) return existing;
+  const importId = String(pendingMsfxApplyPayload.value?.importId ?? '').trim();
+  if (importId) return `MSFX-IN-${importId}`;
+  const bill = String(pendingMsfxApplyPayload.value?.billCode ?? '')
+    .trim()
+    .replace(/[^A-Za-z0-9_-]/g, '');
+  if (bill) return `MSFX-IN-${bill.slice(-24)}`;
+  return `MSFX-IN-${Date.now()}`;
+}
+
+/** 按拉单上游企业回填 HIS 供应商，方便稍后保存；失败不拦截拉取小码。 */
+async function ensureHisSupplierFromUpstreamPull() {
+  if (String(headForm.value.supplierId ?? '').trim()) return;
+  const entId = String(pendingMsfxApplyPayload.value?.fromEntId ?? '').trim();
+  const entName = String(pendingMsfxApplyPayload.value?.fromEntName ?? '').trim();
+  if (entId) {
+    try {
+      const res = await pageMsfxSupplierMapApi({ pageNo: 1, pageSize: 200 });
+      const hit = (res.data?.content ?? []).find((m) => String(m.msfxEntId ?? '').trim() === entId);
+      if (
+        hit?.supplierId !== undefined &&
+        hit.supplierId !== null &&
+        String(hit.supplierId).trim()
+      ) {
+        headForm.value.supplierId = String(hit.supplierId);
+        msfxSupplierEntId.value = entId;
+        const mappedName = String(hit.msfxEntName ?? '').trim();
+        if (mappedName) msfxSupplierEntName.value = mappedName;
+        return;
+      }
+    } catch {
+      /* 对照查不到时再按下文名称匹配 */
+    }
+  }
+  if (entName) {
+    const opts = props.supplierOptions ?? [];
+    const exact = opts.find((o) => String(o.label ?? '').trim() === entName);
+    const fuzzy =
+      exact ||
+      opts.find((o) => {
+        const lab = String(o.label ?? '').trim();
+        return Boolean(lab && (lab.includes(entName) || entName.includes(lab)));
+      });
+    if (fuzzy?.value !== undefined && fuzzy.value !== null && String(fuzzy.value).trim()) {
+      headForm.value.supplierId = String(fuzzy.value);
+    }
+  }
+  if (entId) msfxSupplierEntId.value = entId;
+  if (entName && !String(msfxSupplierEntName.value ?? '').trim()) {
+    msfxSupplierEntName.value = entName;
+  }
+}
+
+function resolveMsfxUploadSupplierName(): string {
+  return (
+    String(pendingMsfxApplyPayload.value?.fromEntName ?? '').trim() ||
+    String(pendingMsfxApplyPayload.value?.drugRows?.[0]?.fromEntName ?? '').trim() ||
+    String(msfxSupplierEntName.value ?? '').trim()
+  );
+}
+
+function resolveMsfxUploadSupplierRef(): string {
+  return String(pendingMsfxApplyPayload.value?.drugRows?.[0]?.fromRefUserId ?? '').trim();
+}
+
+async function handlePullSmallCodes(payload: {
+  key: string;
+  packCodes: string[];
+  oneLevelOnly?: boolean;
+  rank?: 'LARGE' | 'MEDIUM' | 'SMALL';
+}) {
+  const packCodes = (payload.packCodes ?? []).map((c) => String(c ?? '').trim()).filter(Boolean);
+  if (packCodes.length === 0) {
+    ElMessage.warning('本行没有可展开的中大码');
+    return;
+  }
+  await ensureHisSupplierFromUpstreamPull();
+  const busNo = resolvePullSmallCodesBusNo();
+  let supplierEntId =
+    String(pendingMsfxApplyPayload.value?.fromEntId ?? '').trim() ||
+    String(msfxSupplierEntId.value ?? '').trim();
+  if (!supplierEntId) {
+    try {
+      const { value } = await ElMessageBox.prompt(
+        '上报采购入库须填写码上放心上游企业 ID（须与出库单发货企业一致，不要填成其他企业）',
+        '填写上游企业 ID',
+        {
+          confirmButtonText: '确定',
+          cancelButtonText: '取消',
+          inputPlaceholder: 'ent_id',
+        },
+      );
+      supplierEntId = String(value ?? '').trim();
+      if (supplierEntId) {
+        msfxSupplierEntId.value = supplierEntId;
+      }
+    } catch {
+      return;
+    }
+  }
+  if (!supplierEntId) {
+    ElMessage.warning('未填写上游企业 ID，无法上报入库');
+    return;
+  }
+  const oneLevelOnly = Boolean(payload.oneLevelOnly);
+  msfxGenerateConfirmRef.value?.setRowPulling(payload.key, true, payload.rank);
+  const loading = ElMessage({
+    message: oneLevelOnly
+      ? '正在上报入库并逐级展开，请勿关闭…'
+      : '正在上报入库并拉取小码，约 1 分钟，请勿关闭…',
+    type: 'info',
+    duration: 0,
+  });
+  try {
+    const res = await uploadAndExpandInboundSmallCodesApi({
+      busNo,
+      hisSceneEnum: MSFX_HIS_SCENE.WAREHOUSE_PURCHASE_IN,
+      supplierEntId,
+      supplierEntName: resolveMsfxUploadSupplierName() || undefined,
+      supplierRefEntId: resolveMsfxUploadSupplierRef() || undefined,
+      billTime: String(headForm.value.applyTime ?? '').trim() || undefined,
+      traceCodes: packCodes,
+      oneLevelOnly: oneLevelOnly || undefined,
+    });
+    const data = res.data ?? {};
+    const codeItems = data.codeItems ?? [];
+    const smallCodes = (data.smallCodes ?? []).map((c) => String(c ?? '').trim()).filter(Boolean);
+    msfxUploadBarRef.value?.reload();
+    const incomingCodes = codeItems.map((item) => String(item.code ?? '').trim()).filter(Boolean);
+    const expanded =
+      incomingCodes.length > 0 &&
+      (incomingCodes.length !== packCodes.length ||
+        incomingCodes.some((c) => !packCodes.includes(c)));
+    if (expanded) {
+      msfxGenerateConfirmRef.value?.applyExpandedCodes(
+        payload.key,
+        packCodes,
+        codeItems,
+        oneLevelOnly ? 'MEDIUM' : 'SMALL',
+      );
+      ElMessage.success(data.hint || `已展开为 ${incomingCodes.length} 个码`);
+      return;
+    }
+    if (smallCodes.length > packCodes.length) {
+      msfxGenerateConfirmRef.value?.applySmallCodes(payload.key, smallCodes);
+      ElMessage.success(data.hint || `已展开为 ${smallCodes.length} 个小码`);
+      return;
+    }
+    ElMessage.warning(data.hint || '平台尚未返回下一级码，请确认企业 ID 正确后稍后再试');
+  } catch (error) {
+    ElMessage.warning(pickApiErrMsg(error) || '逐级拉取失败，请查看码上放心提示后重试');
+  } finally {
+    loading.close();
+    msfxGenerateConfirmRef.value?.setRowPulling(payload.key, false);
+  }
+}
+/** 已生成行但尚未落库绑定时，保存成功后补 markApplied（支持多选） */
+const pendingMsfxBinds = ref<Array<{ importId: string; billCode?: string }>>([]);
+/** 确认生成弹窗打开时暂存拉单套用上下文 */
+const pendingMsfxApplyPayload = ref<{
+  importId: number | string;
+  importIds?: Array<number | string>;
+  fromEntId?: string;
+  fromEntName?: string;
+  billCode?: string;
+  drugRows?: MsfxUpstreamBillRowDto[];
+  traceCodes: string[];
+} | null>(null);
+
+/** 选择 HIS 供应商时按对照表回填 ent_id */
+watch(
+  () => headForm.value.supplierId,
+  (supplierId) => {
+    void hydrateMsfxSupplierEntFromMap(supplierId);
+  },
+);
+
+/** 已落库单号变化时尝试回填上游导入账的 fromEntId */
+watch(
+  () => currentPersistedBusNo(),
+  (busNo) => {
+    void hydrateMsfxSupplierEntFromImport(busNo);
+  },
+  { immediate: true },
+);
+
+async function hydrateMsfxSupplierEntFromMap(supplierId: string | number | undefined | null) {
+  const id = String(supplierId ?? '').trim();
+  if (!id) {
+    msfxSupplierEntId.value = '';
+    msfxSupplierEntName.value = '';
+    return;
+  }
+  // 误把 HIS 供应商 id 写进 ent_id 时清掉
+  if (String(msfxSupplierEntId.value ?? '').trim() === id) {
+    msfxSupplierEntId.value = '';
+    msfxSupplierEntName.value = '';
+  }
+  try {
+    const res = await getMsfxSupplierMapBySupplierIdApi({ supplierId: id });
+    const ent = String(res.data?.msfxEntId ?? '').trim();
+    if (ent && ent !== id) {
+      msfxSupplierEntId.value = ent;
+      const name = String(res.data?.msfxEntName ?? '').trim();
+      msfxSupplierEntName.value =
+        name && name !== ent ? name : String(res.data?.supplierName ?? '').trim();
+    } else {
+      // 新供应商无对照：清空旧 ent，避免拉单仍锁定上一家
+      msfxSupplierEntId.value = '';
+      msfxSupplierEntName.value = '';
+    }
+  } catch {
+    // 模块未启用：忽略；有旧值时保留以免打断已拉单上下文
+  }
+}
+
+async function hydrateMsfxSupplierEntFromImport(busNo: string) {
+  const no = String(busNo ?? '').trim();
+  if (!no || String(msfxSupplierEntId.value ?? '').trim()) return;
+  try {
+    const res = await getMsfxUpstreamImportByHisBusNoApi({ hisBusNo: no });
+    const ent = String(res.data?.fromEntId ?? '').trim();
+    const supplierId = String(headForm.value.supplierId ?? '').trim();
+    if (ent && ent !== supplierId) {
+      msfxSupplierEntId.value = ent;
+      const name = String(res.data?.fromEntName ?? '').trim();
+      if (name && name !== ent) msfxSupplierEntName.value = name;
+    }
+  } catch {
+    // 模块未启用或无导入账：忽略
+  }
+}
+function openMsfxUpstreamPull() {
+  if (!props.documentEditable && !props.isDraftOrder) {
+    ElMessage.warning('当前单据不可编辑，无法套用上游码');
+    return;
+  }
+  if (!String(headForm.value.itemTableType ?? '').trim()) {
+    ElMessage.warning('请先在单头选择项目类型');
+    return;
+  }
+  if (!isSpecificInventoryLocationId(headForm.value.warehouseId)) {
+    ElMessage.warning('请先选择库房，再拉单生成明细');
+    return;
+  }
+  const hasLines = collectGridRows().some((r) => isPresentItemId(r.itemId));
+  msfxLockPreferredSupplier.value = hasLines;
+  // 明细已空：按单头供应商对照重填，解除上次拉单企业硬锁，便于换供应商
+  if (!hasLines) {
+    void hydrateMsfxSupplierEntFromMap(headForm.value.supplierId).finally(() => {
+      msfxUpstreamVisible.value = true;
+    });
+    return;
+  }
+  msfxUpstreamVisible.value = true;
+}
+
+/**
+ * 上游拉单套用：有药品行则打开确认生成（可追加到已有明细，同供应商可多次拉）；
+ * 仅有追溯码时套到本单空码行。
+ */
+async function handleMsfxUpstreamApply(payload: {
+  importId: number | string;
+  importIds?: Array<number | string>;
+  fromEntId?: string;
+  fromEntName?: string;
+  billCode?: string;
+  drugRows?: MsfxUpstreamBillRowDto[];
+  traceCodes: string[];
+}) {
+  if (!String(headForm.value.itemTableType ?? '').trim()) {
+    ElMessage.warning('请先在单头选择项目类型');
+    return;
+  }
+  if (!(await validateInventoryHeadFormFields(headFormRef.value, ['warehouseId']))) {
+    return;
+  }
+
+  const incomingEnt = String(payload.fromEntId ?? '').trim();
+  const hasProductLines = collectGridRows().some((row) => isPresentItemId(row.itemId));
+  // 已有明细才校验同供应商；明细空时允许换上游企业（并在套用后改写对照）
+  if (hasProductLines) {
+    let boundEnt = String(msfxSupplierEntId.value ?? '').trim();
+    if (!boundEnt) {
+      const sid = String(headForm.value.supplierId ?? '').trim();
+      if (sid) {
+        try {
+          const res = await getMsfxSupplierMapBySupplierIdApi({ supplierId: sid });
+          boundEnt = String(res.data?.msfxEntId ?? '').trim();
+        } catch {
+          // 无对照时不在此拦截，由拉单弹窗约束同企业勾选
+        }
+      }
+    }
+    if (incomingEnt && boundEnt && incomingEnt !== boundEnt) {
+      ElMessage.warning(
+        '拉单上游企业与本单供应商不一致，不能混入其他供应商的出库单。请先清空明细后更换单头供应商，或另建进货单',
+      );
+      return;
+    }
+  }
+
+  const drugRows = payload.drugRows ?? [];
+  // 有上游药品：确认生成/追加明细（同供应商可多次拉）
+  if (drugRows.length > 0) {
+    pendingMsfxApplyPayload.value = payload;
+    msfxGenerateDrugRows.value = drugRows;
+    msfxGenerateConfirmVisible.value = true;
+    return;
+  }
+
+  const existingProductRows = collectGridRows().filter((row) => isPresentItemId(row.itemId));
+  if (existingProductRows.length === 0) {
+    ElMessage.warning('上游明细无药品行，无法生成');
+    return;
+  }
+  if (!payload.traceCodes?.length) {
+    ElMessage.warning('上游无可套用的药品或追溯码');
+    return;
+  }
+  const assignedResult = assignMsfxTraceCodesToRows(existingProductRows, payload.traceCodes);
+  if (assignedResult.unassignedCount > 0) {
+    ElMessage.warning(
+      `有 ${assignedResult.unassignedCount} 个追溯码未分配到空码行（不再自动追加到末行，请增行后重套或手工粘贴）`,
+    );
+  }
+  const emptyTail = collectGridRows().filter((row) => !isPresentItemId(row.itemId));
+  gridApi?.grid?.loadData([...assignedResult.rows, ...emptyTail]);
+  await finishMsfxUpstreamApplyAfterGridChange(payload, {
+    generatedCount: 0,
+    unmatchedNames: [],
+  });
+}
+
+/**
+ * 拆零入库且码数少于入库支数时，用 query.relation 把中大码展开成最小码后再写入。
+ * 例：50 盒码 → 500 支码。
+ */
+async function expandMsfxLineCodesToSmallest(line: MsfxGenerateConfirmLine): Promise<void> {
+  if (String(line.drug.inboundCodeRank ?? '').toUpperCase() === 'PACK') {
+    return;
+  }
+  const writeable = resolveMsfxWriteableTraceCodes(line.drug);
+  const qty = Number(line.purchaseQty);
+  if (writeable.length === 0 || !Number.isFinite(qty) || qty <= 0) {
+    return;
+  }
+  const bands = normalizeInboundProductUnitBands(line.product?.unitBands);
+  const splitQty =
+    resolveMsfxDisplayQtyAsSplit({
+      purchaseQty: qty,
+      selectedBandKind: line.selectedBandKind,
+      bands,
+      drug: line.drug,
+    }) ?? qty;
+  if (writeable.length + 0.0001 >= splitQty) {
+    return;
+  }
+  const { expanded } = await expandTraceBoxCodes(writeable);
+  const uniq = [...new Set(expanded.map((c) => String(c ?? '').trim()).filter(Boolean))];
+  if (uniq.length <= writeable.length) {
+    return;
+  }
+  line.drug.traceCodes = uniq;
+  line.drug.packTraceCodes = [];
+}
+
+/** 确认面板：写入选中的进货行后走落盘/绑定 */
+async function handleMsfxGenerateConfirm(lines: MsfxGenerateConfirmLine[]) {
+  const payload = pendingMsfxApplyPayload.value;
+  if (!payload) {
+    ElMessage.warning('拉单上下文已失效，请重新拉单');
+    return;
+  }
+  const loading = ElMessage({
+    message: '正在写入进货明细…',
+    type: 'info',
+    duration: 0,
+  });
+  try {
+    for (const line of lines) {
+      await expandMsfxLineCodesToSmallest(line);
+    }
+  } finally {
+    loading.close();
+  }
+  const mismatched = lines.filter((line) => {
+    const bands = normalizeInboundProductUnitBands(line.product?.unitBands);
+    return isMsfxQtyCodeMismatch(line.purchaseQty, line.drug, {
+      selectedBandKind: line.selectedBandKind,
+      bands,
+      product: line.product,
+    });
+  });
+  if (mismatched.length > 0) {
+    ElMessage.warning('追溯码数量与入库数量不一致，不允许带入');
+    return;
+  }
+  const inserted = await insertConfirmedMsfxInboundLines(lines);
+  if (inserted <= 0) {
+    ElMessage.warning('未写入任何明细行');
+    return;
+  }
+  await finishMsfxUpstreamApplyAfterGridChange(payload, {
+    generatedCount: inserted,
+    unmatchedNames: [],
+  });
+  pendingMsfxApplyPayload.value = null;
+  msfxGenerateDrugRows.value = [];
+}
+
+async function finishMsfxUpstreamApplyAfterGridChange(
+  payload: {
+    importId: number | string;
+    importIds?: Array<number | string>;
+    fromEntId?: string;
+    fromEntName?: string;
+    billCode?: string;
+    traceCodes: string[];
+  },
+  meta: { generatedCount: number; unmatchedNames: string[] },
+) {
+  const { generatedCount, unmatchedNames } = meta;
+  flushInboundDraftPersist();
+
+  if (payload.fromEntId) {
+    msfxSupplierEntId.value = payload.fromEntId;
+  }
+  if (payload.fromEntName) {
+    msfxSupplierEntName.value = payload.fromEntName;
+  }
+
+  const importIds =
+    payload.importIds && payload.importIds.length > 0 ? payload.importIds : [payload.importId];
+  const binds = toMsfxImportBinds(importIds, payload.billCode);
+
+  let busNo = currentPersistedBusNo();
+  if (!busNo) {
+    busNo = (await persistInbound(false)) ?? '';
+    if (!busNo) {
+      if (generatedCount > 0) {
+        pendingMsfxBinds.value = binds;
+        ElMessage.warning(
+          `已追加 ${generatedCount} 行，请补全批号/数量后点保存；保存成功后将自动绑定上游单`,
+        );
+      } else {
+        ElMessage.warning('追溯码已写入明细，但保存失败；请手工保存后再绑定上游单');
+      }
+      return;
+    }
+    const draftId = String(props.clientDraftId ?? '').trim();
+    if (draftId) {
+      clearInvDocDraftCache(INV_DOC_DRAFT_SCENE.warehousePurchaseInbound, draftId);
+    }
+    parentSync.bindActivePersistDocKey(busNo);
+    if (!inboundRowsNeedMsfxSmallCodeExpand()) {
+      emit('documentSaved', { busNo });
+    }
+  } else if (props.documentEditable) {
+    const saved = await persistInbound(false);
+    if (!saved) {
+      if (generatedCount > 0) {
+        pendingMsfxBinds.value = binds;
+        ElMessage.warning(
+          `已追加 ${generatedCount} 行，请补全批号/数量后点保存；保存成功后将自动绑定上游单`,
+        );
+      } else {
+        ElMessage.warning('追溯码已写入网格，但落盘失败；请手工保存后再绑定');
+      }
+      return;
+    }
+  }
+
+  pendingMsfxBinds.value = [];
+  try {
+    await bindMsfxImportsToHisBusNo(binds, busNo);
+    const billHint = payload.billCode ? ` ${payload.billCode}` : '';
+    const billCountHint = importIds.length > 1 ? `（共 ${importIds.length} 张）` : '';
+    if (generatedCount > 0) {
+      const miss =
+        unmatchedNames.length > 0
+          ? `；未匹配 ${unmatchedNames.length} 种：${unmatchedNames.slice(0, 3).join('、')}${unmatchedNames.length > 3 ? '…' : ''}`
+          : '';
+      ElMessage.success(
+        `已追加 ${generatedCount} 行进货明细（上游单${billHint}${billCountHint}）${miss}`,
+      );
+    } else {
+      ElMessage.success(
+        `已套用上游单${billHint}${billCountHint}，共 ${payload.traceCodes.length} 码`,
+      );
+    }
+    msfxUploadBarRef.value?.reload();
+  } catch (error) {
+    ElMessage.warning(`进货明细已写入，上游单绑定未完成：${pickApiErrMsg(error)}`);
+  }
+
+  await tryMsfxUploadAndExpandAfterPull(busNo);
+}
+
+/** 拆零入库仍是中大码（码数 < 入库支数）时，用本进货单号正式 102 再展开支码 */
+function inboundRowsNeedMsfxSmallCodeExpand(): boolean {
+  for (const row of collectGridRows()) {
+    const codes = String(row.traceNo ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const qty = Number(row.purchaseQty);
+    if (codes.length > 0 && Number.isFinite(qty) && qty > 0 && codes.length + 0.0001 < qty) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function tryMsfxUploadAndExpandAfterPull(busNo: string): Promise<void> {
+  const no = String(busNo ?? '').trim();
+  if (!no || !inboundRowsNeedMsfxSmallCodeExpand()) return;
+  const loading = ElMessage({
+    message: '正在用本进货单上报码上放心（102）并展开支码，约 1 分钟，请勿关闭页面…',
+    type: 'info',
+    duration: 0,
+  });
+  try {
+    const res = await uploadAndExpandInboundSmallCodesApi({
+      busNo: no,
+      hisSceneEnum: MSFX_HIS_SCENE.WAREHOUSE_PURCHASE_IN,
+      supplierEntId: String(msfxSupplierEntId.value ?? '').trim() || undefined,
+      supplierEntName: resolveMsfxUploadSupplierName() || undefined,
+      supplierRefEntId: resolveMsfxUploadSupplierRef() || undefined,
+      billTime: String(headForm.value.applyTime ?? '').trim() || undefined,
+    });
+    const data = res.data ?? {};
+    msfxUploadBarRef.value?.reload();
+    if (data.wroteToLines) {
+      ElMessage.success(data.hint || `已展开为 ${data.afterCodeCount ?? 0} 个支码`);
+      emit('documentSaved', { busNo: no });
+      return;
+    }
+    const hint = String(data.hint ?? '').trim();
+    ElMessage.warning(hint || '进货已保存。支码尚未展开，请在单头点「上报并展开支码」');
+    emit('documentSaved', { busNo: no });
+  } catch {
+    ElMessage.warning('进货已保存。码上放心展开支码未完成，请在单头点「上报并展开支码」');
+    emit('documentSaved', { busNo: no });
+  } finally {
+    loading.close();
+  }
+}
+
+/** 将确认面板选中的行写入进货网格 */
+async function insertConfirmedMsfxInboundLines(lines: MsfxGenerateConfirmLine[]): Promise<number> {
+  const docType = String(headForm.value.itemTableType ?? '').trim();
+  const $grid = gridApi?.grid;
+  if (!$grid || lines.length === 0) return 0;
+
+  inboundGridEdit.clearGridEdit();
+  await removeEmptyInboundRows();
+  const insertedRows: InboundPreviewRow[] = [];
+  for (const line of lines) {
+    const pickTable = inventoryPickStringField(line.product, 'productTableName');
+    if (pickTable && docType && pickTable !== docType) {
+      continue;
+    }
+    const record = createEmptyInboundRow();
+    syncRowFromInboundMedicinePick(line.product, record);
+    const bands = record.unitBands ?? [];
+    const kind =
+      String(line.selectedBandKind ?? '').trim() ||
+      (bands.length ? defaultInboundUnitBandKind(bands) : 'LEGACY');
+    record.selectedBandKind = kind;
+    record.__prevBandKind = kind;
+    record.unitList =
+      bands.length > 0 ? inboundUnitBandSelectOptions(bands) : [{ value: 'LEGACY', label: '单位' }];
+    const band = findInboundUnitBandByKind(bands, kind);
+    const unitCode = String(band?.unitCode ?? record.purchaseUnit ?? '').trim();
+    if (unitCode) {
+      record.purchaseUnit = unitCode;
+    }
+    const bandPrice = Number(band?.unitPrice);
+    if (Number.isFinite(bandPrice) && bandPrice >= 0) {
+      record.unitPrice = bandPrice;
+    } else {
+      const resolved = warehouseNonInboundResolveDisplayUnitPrice({
+        bands,
+        displayBandKind: kind,
+        legacyUnitPrice: record.unitPrice,
+      });
+      if (resolved !== undefined && resolved !== null) {
+        record.unitPrice = resolved;
+      }
+    }
+    if (line.purchaseQty !== undefined && line.purchaseQty !== null) {
+      const qty = Number(line.purchaseQty);
+      if (Number.isFinite(qty) && qty > 0) {
+        record.purchaseQty = qty;
+      }
+    }
+    recalcInboundLineTotal(record);
+    record.batchNo = String(line.drug.produceBatchNo ?? '').trim();
+    // 优先已展开小码；确认前会尽量把中大码 relation 成最小码
+    const codeParts = resolveMsfxWriteableTraceCodes(line.drug);
+    if (codeParts.length) {
+      record.traceNo = codeParts.join(',');
+    }
+    record.prodExpiry = mapStartEndToProdExpiry(line.drug.produceDate, line.drug.validEndDate);
+    const { row } = await $grid.insertAt(record, null);
+    if (row) {
+      insertedRows.push(row as InboundPreviewRow);
+      inboundGridEdit.markRowFormMode(row as InboundPreviewRow);
+    }
+  }
+  await $grid.$nextTick();
+  await nextTick();
+  const firstInserted = insertedRows[0];
+  if (firstInserted && isPresentItemId(firstInserted.itemId)) {
+    await $grid.scrollToRow(firstInserted);
+    await inboundGridEdit.enterRowFormMode(firstInserted, '_qtyUnit');
+  }
+  return insertedRows.length;
+}
 
 /** 添加入库明细空行（同药不同批号可多行，保存时按批号去重） */
 async function handleAddItem() {
@@ -2017,11 +2724,22 @@ async function handleBatchConfirm(products: Record<string, unknown>[]) {
       >
         <div class="shrink-0">
           <SectionTitle title="进货单信息" />
-          <div class="mt-1 flex flex-wrap items-center gap-2">
-            <span class="text-xs" style="color: var(--el-text-color-regular)">状态</span>
-            <span class="text-sm" style="color: var(--el-text-color-primary)">{{
-              inboundHeaderStatusText
-            }}</span>
+          <div class="mt-1 flex flex-wrap items-start gap-x-4 gap-y-2">
+            <div class="flex items-center gap-2 pt-1.5">
+              <span class="text-xs" style="color: var(--el-text-color-regular)">状态</span>
+              <span class="text-sm" style="color: var(--el-text-color-primary)">{{
+                inboundHeaderStatusText
+              }}</span>
+            </div>
+            <MsfxUploadStatusBar
+              ref="msfxUploadBarRef"
+              :bus-no="currentPersistedBusNo()"
+              :his-scene-enum="MSFX_HIS_SCENE.WAREHOUSE_PURCHASE_IN"
+              v-model:supplier-ent-id="msfxSupplierEntId"
+              :supplier-ent-name="msfxSupplierEntName"
+              :bill-time="headForm.applyTime"
+              @inbound-codes-expanded="onMsfxInboundCodesExpanded"
+            />
           </div>
           <ElForm
             ref="headFormRef"
@@ -2116,13 +2834,13 @@ async function handleBatchConfirm(products: Record<string, unknown>[]) {
                   </ElButton>
                 </div>
               </ElFormItem>
-              <ElFormItem label="发票号" prop="invoiceNo" required>
+              <ElFormItem label="发票号" prop="invoiceNo">
                 <ElInput
                   v-model="headForm.invoiceNo"
                   class="w-full"
                   clearable
                   maxlength="255"
-                  placeholder="请填写采购发票号"
+                  placeholder="选填；未填上报占位 0"
                   :disabled="!documentEditable"
                 />
               </ElFormItem>
@@ -2145,6 +2863,9 @@ async function handleBatchConfirm(products: Record<string, unknown>[]) {
                 @delete-selected="deleteItem('select')"
                 @trace-scan="handleOpenTraceScan"
               />
+              <ElButton v-if="linesGridEditable" class="mr-2" @click="openMsfxUpstreamPull">
+                码上放心拉单
+              </ElButton>
             </template>
             <template #action="{ row }">
               <ElButton
@@ -2171,6 +2892,28 @@ async function handleBatchConfirm(products: Record<string, unknown>[]) {
       :pick-gate-location-id="resolveInboundReceiptPickGateLocationId()"
       :product-table-name="headForm.itemTableType"
       @confirm="handleBatchConfirm"
+    />
+
+    <MsfxUpstreamPullDialog
+      v-model="msfxUpstreamVisible"
+      :his-supplier-id="headForm.supplierId"
+      :his-supplier-name="
+        resolvePrintOptionLabel(props.supplierOptions, headForm.supplierId) || undefined
+      "
+      :preferred-from-ent-id="msfxSupplierEntId"
+      :preferred-from-ent-name="msfxSupplierEntName"
+      :lock-preferred-supplier="msfxLockPreferredSupplier"
+      @apply="handleMsfxUpstreamApply"
+    />
+
+    <MsfxUpstreamGenerateConfirmDialog
+      ref="msfxGenerateConfirmRef"
+      v-model="msfxGenerateConfirmVisible"
+      :drug-rows="msfxGenerateDrugRows"
+      :product-table-name="headForm.itemTableType"
+      :purpose-location-id="resolveInboundReceiptPickGateLocationId()"
+      @confirm="handleMsfxGenerateConfirm"
+      @pull-small-codes="handlePullSmallCodes"
     />
 
     <InvDocLinkPickerDialog

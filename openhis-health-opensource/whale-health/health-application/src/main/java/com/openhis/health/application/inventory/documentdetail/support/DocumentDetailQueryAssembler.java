@@ -5,14 +5,15 @@
 package com.openhis.health.application.inventory.documentdetail.support;
 
 import com.openhis.health.application.inventory.documentdetail.request.DocumentDetailFilterRequest;
+import com.openhis.health.application.shared.inventory.InventoryCatalogFilter;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.SupplyStatus;
 import com.openhis.health.domain.share.enums.SupplyType;
 import com.openhis.health.domain.workflow.supplyrequest.queries.WarehouseDocumentDetailPageQuery;
-import com.openhis.health.application.shared.inventory.InventoryCatalogFilter;
 import com.openhis.whale.core.application.exception.BusinessException;
-import lombok.RequiredArgsConstructor;
 import com.openhis.whale.core.application.util.StringUtils;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -163,10 +164,32 @@ public class DocumentDetailQueryAssembler {
         query.setTenantId(tenantId);
         query.setSourceLocationId(request.getSourceLocationId());
         query.setPurposeLocationId(request.getPurposeLocationId());
+        // Asm：供应商等值筛；空则该维不过滤
+        query.setSupplierId(request.getSupplierId());
+        query.setItemTable(this.normalizeOptionalItemTable(request.getItemTable()));
         query.setBusNo(StringUtils.trimToNull(request.getBusNo()));
         query.setLotNumberKeyword(StringUtils.trimToNull(request.getLotNumberKeyword()));
         query.setProductKeyword(StringUtils.trimToNull(request.getProductKeyword()));
         this.inventoryCatalogFilter.enrichDocumentDetailKeywordDefinitionIds(query);
         return query;
+    }
+
+    /**
+     * 归一化可选项目分类：仅允许药品/耗材定义表；空则不限。
+     *
+     * @param itemTable 请求 itemTable
+     * @return 归一化表名；空入参返回 null
+     * @throws BusinessException {@code INV_DDC_202} 非法表名
+     */
+    private String normalizeOptionalItemTable(String itemTable) {
+        String trimmed = StringUtils.trimToNull(itemTable);
+        if (trimmed == null) {
+            return null;
+        }
+        if (TableNameConstants.MED_MEDICATION_DEFINITION.equals(trimmed)
+            || TableNameConstants.ADM_DEVICE_DEFINITION.equals(trimmed)) {
+            return trimmed;
+        }
+        throw new BusinessException(ErrorCodeConstants.INV_DDC_202, "项目分类无效");
     }
 }

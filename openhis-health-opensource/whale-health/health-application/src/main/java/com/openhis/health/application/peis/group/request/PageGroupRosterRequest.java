@@ -23,6 +23,12 @@ public class PageGroupRosterRequest extends AbstractHealthPageRequest {
     /** 支付状态过滤（可选）。 */
     private String payStatusCode;
 
+    /** 建单过滤：UNENROLLED | ENROLLED（可选，优先于 payStatusCode）。 */
+    private String enrollmentFilter;
+
+    /** 到检状态过滤（可选）。 */
+    private String arrivalStatusCode;
+
     /** 学院主键（可选）。 */
     private Long collegeId;
 

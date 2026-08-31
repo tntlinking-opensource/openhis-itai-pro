@@ -12,8 +12,10 @@ import {
   appendRehabTreatmentCourseRemark,
   buildServiceApplyFormDetailHint,
 } from '#/utils/service-apply-display';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import { rowLooksDraftForSign } from '../advice/services/advice-row';
+import { resolveServicePerExecutionQuantity } from '../advice/services/service-quantity-calc';
 import {
   inferServiceApplyKindFromAdviceRow,
   sumServiceApplyDocumentTotalAmount,
@@ -74,7 +76,29 @@ const documentTitle = computed(() => {
 const detailColumnLabel = computed(() => (applyKind.value === 'lab' ? '样本' : '部位'));
 
 /** 合计金额 */
-const totalAmountText = computed(() => sumServiceApplyDocumentTotalAmount(props.group.lines));
+const totalAmountText = computed(() =>
+  sumServiceApplyDocumentTotalAmount(props.group.lines, props.group.boundConsumablesByRequestId),
+);
+
+/** 取诊疗行下绑定耗材子行 */
+function resolveBoundConsumableRows(line: AdviceRowItem): AdviceRowItem[] {
+  const requestId = trimText(line.requestId);
+  if (!requestId) {
+    return [];
+  }
+  const preserved = preserveApiIdForRequest(requestId) ?? requestId;
+  return props.group.boundConsumablesByRequestId.get(preserved) ?? [];
+}
+
+/** 绑定耗材数量展示（含单位） */
+function resolveBoundConsumableQuantityText(line: AdviceRowItem): string {
+  const quantity = resolveQuantityText(line);
+  const unit = trimText(line.listUnitName);
+  if (unit) {
+    return `${quantity}${unit}`;
+  }
+  return quantity;
+}
 
 /** 注意事项：合并各行 remark（去重）；康复科治疗单追加固定疗程说明 */
 const precautionText = computed(() => {
@@ -104,11 +128,17 @@ function resolveLineDetailText(line: AdviceRowItem): string {
   return hint;
 }
 
-/** 开立数量展示 */
+/** 单次执行数量展示（落库总量 ÷ 执行次数） */
 function resolveQuantityText(line: AdviceRowItem): string {
-  const quantity = line.listQuantity;
-  if (typeof quantity === 'number' && Number.isFinite(quantity) && quantity > 0) {
-    return String(quantity);
+  const totalQty = line.listQuantity;
+  const execCount = line.listExecutionCount;
+  if (typeof totalQty === 'number' && Number.isFinite(totalQty) && totalQty > 0) {
+    const count =
+      typeof execCount === 'number' && Number.isFinite(execCount) && execCount > 0
+        ? Math.trunc(execCount)
+        : 1;
+    const per = resolveServicePerExecutionQuantity(totalQty, count);
+    return String(per ?? totalQty);
   }
   return '1';
 }
@@ -222,23 +252,42 @@ function handleCardClick() {
           <span class="col-index">序号</span>
           <span class="col-name">项目名称</span>
           <span class="col-detail">{{ detailColumnLabel }}</span>
-          <span class="col-qty">数量</span>
+          <span class="col-qty">单次数量</span>
           <span class="col-count">次数</span>
           <span class="col-charge">费用状态</span>
           <span class="col-amount">金额</span>
         </div>
-        <div v-for="(line, index) in group.lines" :key="line.key" class="items-row">
-          <span class="col-index">{{ index + 1 }}</span>
-          <span class="col-name">{{ line.content }}</span>
-          <span class="col-detail">{{ resolveLineDetailText(line) || '—' }}</span>
-          <span class="col-qty">{{ resolveQuantityText(line) }}</span>
-          <span class="col-count">{{ resolveExecutionCountText(line) }}</span>
-          <span class="col-charge">
-            <ElTag :type="getChargeStatusTagType(line)" size="small" effect="light">
-              {{ line.chargeStatus || '—' }}
-            </ElTag>
-          </span>
-          <span class="col-amount">{{ line.lineTotalAmount }}</span>
+        <div v-for="(line, index) in group.lines" :key="line.key">
+          <div class="items-row">
+            <span class="col-index">{{ index + 1 }}</span>
+            <span class="col-name">{{ line.content }}</span>
+            <span class="col-detail">{{ resolveLineDetailText(line) || '—' }}</span>
+            <span class="col-qty">{{ resolveQuantityText(line) }}</span>
+            <span class="col-count">{{ resolveExecutionCountText(line) }}</span>
+            <span class="col-charge">
+              <ElTag :type="getChargeStatusTagType(line)" size="small" effect="light">
+                {{ line.chargeStatus || '—' }}
+              </ElTag>
+            </span>
+            <span class="col-amount">{{ line.lineTotalAmount }}</span>
+          </div>
+          <div
+            v-for="boundRow in resolveBoundConsumableRows(line)"
+            :key="boundRow.key"
+            class="items-row items-row--bound"
+          >
+            <span class="col-index" />
+            <span class="col-name">{{ boundRow.content }}</span>
+            <span class="col-detail">—</span>
+            <span class="col-qty">{{ resolveBoundConsumableQuantityText(boundRow) }}</span>
+            <span class="col-count">—</span>
+            <span class="col-charge">
+              <ElTag :type="getChargeStatusTagType(boundRow)" size="small" effect="light">
+                {{ boundRow.chargeStatus || '—' }}
+              </ElTag>
+            </span>
+            <span class="col-amount">{{ boundRow.lineTotalAmount }}</span>
+          </div>
         </div>
       </div>
 
@@ -446,6 +495,27 @@ function handleCardClick() {
 
 .items-row:last-child {
   border-bottom: none;
+}
+
+.items-row--bound {
+  background: var(--el-fill-color-blank);
+}
+
+.items-row--bound .col-index {
+  position: relative;
+}
+
+.items-row--bound .col-index::before {
+  content: '└';
+  color: var(--el-text-color-placeholder);
+  font-size: 12px;
+}
+
+.items-row--bound .col-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .col-index,

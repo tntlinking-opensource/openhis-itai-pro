@@ -278,7 +278,7 @@ public interface InpatientSettleMapper {
         String ybSetlId);
 
     /**
-     * 出院全结多退 → 退还预交金领域命令（现金退现占位明细）。
+     * 出院全结多退 → 退还预交金领域命令（现金退现占位明细；自费路径）。
      *
      * @param encounterId  就诊 ID
      * @param patientId    患者 ID
@@ -292,6 +292,25 @@ public interface InpatientSettleMapper {
         Long patientId,
         Long accountId,
         BigDecimal refundAmount,
+        Long operatorId);
+
+    /**
+     * 医保出院原路退预交金 → 退还命令（单笔，渠道取自原收款）。
+     *
+     * @param encounterId     就诊 ID
+     * @param patientId       患者 ID
+     * @param accountId       登记个人现金户 ID
+     * @param refundAmount    本笔退费金额
+     * @param payChannelCode  退费渠道码；空则收银台
+     * @param operatorId      操作员 ID
+     * @return 退还命令
+     */
+    RefundAdvanceDepositCommand toDischargeDepositRefundByChannelCommand(
+        Long encounterId,
+        Long patientId,
+        Long accountId,
+        BigDecimal refundAmount,
+        String payChannelCode,
         Long operatorId);
 
     /**

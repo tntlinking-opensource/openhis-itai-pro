@@ -1,12 +1,39 @@
 import type { ApiOptionItem } from '#/types/api-response';
 
-/** 国家医保目录 list_type（与后端 YbCatalogListType / 3301 对照一致） */
+/**
+ * 国家医保目录 list_type（与后端 {@code ListType} / 1301·1302·1305·1306 对照一致）。
+ * <p>101=西药/中成药（1301），102=中药饮片（1302，院内中草药），勿把 102 标成中成药。</p>
+ */
 export const YB_CATALOG_LIST_TYPE_OPTIONS: ApiOptionItem[] = [
-  { label: '西药', value: '101', sort: 1 },
-  { label: '中成药', value: '102', sort: 2 },
+  { label: '西药/中成药', value: '101', sort: 1 },
+  { label: '中药饮片（中草药）', value: '102', sort: 2 },
   { label: '医疗服务项目', value: '201', sort: 3 },
   { label: '医用材料', value: '301', sort: 4 },
 ];
+
+/**
+ * 医保 list_type → 院内 medication_category_code
+ * （西药 2 / 中草药 4；101 合包默认西药，中成药需人工改分类）。
+ */
+export const YB_LIST_TYPE_TO_MEDICATION_CATEGORY_CODE: Record<string, string> = {
+  '101': '2',
+  '102': '4',
+};
+
+/**
+ * 医保 list_type → 院内 fin_type_code 优先码
+ * （西药 1001 / 中草药 1003；院点字典码不一致时再按 label 兜底）。
+ */
+export const YB_LIST_TYPE_TO_FIN_TYPE_CODE: Record<string, string> = {
+  '101': '1001',
+  '102': '1003',
+};
+
+/** 财务类型下拉 label 候选（精确优先顺序） */
+export const YB_LIST_TYPE_TO_FIN_TYPE_LABELS: Record<string, string[]> = {
+  '101': ['西药费', '西药'],
+  '102': ['中草药费', '中草药', '中药饮片费', '中药饮片'],
+};
 
 const LIST_TYPE_LABEL_MAP = new Map(
   YB_CATALOG_LIST_TYPE_OPTIONS.map((item) => [item.value, item.label]),
@@ -16,6 +43,38 @@ const LIST_TYPE_LABEL_MAP = new Map(
 export function formatCatalogListType(code?: string): string {
   if (!code) return '-';
   return LIST_TYPE_LABEL_MAP.get(code) ?? code;
+}
+
+/** 药品目录选码：由 list_type 解析药品分类短码 */
+export function resolveMedicationCategoryCodeByListType(
+  listType?: string | null,
+): string | undefined {
+  const code = String(listType ?? '').trim();
+  if (!code) return undefined;
+  return YB_LIST_TYPE_TO_MEDICATION_CATEGORY_CODE[code];
+}
+
+/** 药品目录选码：由 list_type 解析财务类型优先码 */
+export function resolveFinTypeCodeByListType(listType?: string | null): string | undefined {
+  const code = String(listType ?? '').trim();
+  if (!code) return undefined;
+  return YB_LIST_TYPE_TO_FIN_TYPE_CODE[code];
+}
+
+/** 药品目录选码：财务类型下拉 label 候选 */
+export function resolveFinTypeLabelsByListType(listType?: string | null): string[] {
+  const code = String(listType ?? '').trim();
+  if (!code) return [];
+  return YB_LIST_TYPE_TO_FIN_TYPE_LABELS[code] ?? [];
+}
+
+/** 选码弹窗：按 list_type 解析本地明细回退 source_infno */
+export function resolveCatalogDetailSourceInfno(listType?: string | null): string {
+  const code = String(listType ?? '').trim();
+  if (code === '201') return '1305';
+  if (code === '301') return '1306';
+  if (code === '102') return '1302';
+  return '1301';
 }
 
 /** 收费项目等级展示 */

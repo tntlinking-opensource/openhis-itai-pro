@@ -4,6 +4,7 @@
  */
 package com.openhis.health.application.shared.financial;
 
+import com.openhis.health.application.shared.option.TerminologyOptionLoader;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
@@ -13,7 +14,9 @@ import com.openhis.health.domain.financial.paymentreconciliation.service.Payment
 import com.openhis.health.domain.financial.paymentreconciliation.service.PaymentReconciliationQueryService;
 import com.openhis.health.domain.share.constants.DailySettlementSharedConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.enums.PaymentKind;
+import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.infrastructure.integration.financial.PaymentFinTypeStaticSnapshotHook;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.util.StringUtils;
@@ -21,18 +24,19 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 结算/退费成功后写入 {@code fin_payment_rec_static}（按 fin_type 分摊本笔收费总额）。
+ * 结算/退费成功后写入 {@code fin_payment_rec_static}（按 fin_type 汇总本笔收费净额）。
  *
- * <p>金额权威为关联 {@code charge_item.total_price} 绝对值之和（日结「总收入」口径）；
- * charge_item 同时提供 fin_type 分类权重。{@code tenderedAmount}/{@code displayAmount} 仍表示
- * 患者现金应付（医保全个账可为 0），不得用作分类快照分摊基数。</p>
+ * <p>金额权威为关联 {@code charge_item.total_price} <strong>代数和</strong>（含冲正负行；日结「总收入」口径，
+ * 对齐 AS-OP-FIN-004 **BR-OP-DCL-010** / AS-IP-FIN-005 **BR-IP-DCL-002**）。
+ * <strong>禁止</strong>对行额取绝对值再汇总，否则同单退费/冲正会被当成正收入，导致日结总收入虚高。
+ * {@code tenderedAmount}/{@code displayAmount} 仍表示患者现金应付（医保全个账可为 0），
+ * 不得用作分类快照基数。</p>
  *
  * <p>实现 {@link PaymentFinTypeStaticSnapshotHook}，供落账编排同事务同步调用；
  * 领域事件 {@link PaymentFinTypeStaticSnapshotListener} 仍保留作退费/反结等非 settle 编排路径。</p>
@@ -41,36 +45,41 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class PaymentFinTypeStaticSnapshotWriter implements PaymentFinTypeStaticSnapshotHook {
 
-    private static final int MONEY_SCALE = 6;
-
     private final PaymentReconciliationQueryService paymentReconciliationQueryService;
     private final PaymentReconciliationDomainService paymentReconciliationDomainService;
     private final ChargeItemQueryService chargeItemQueryService;
     private final DailySettlementFinTypeAmountLoader dailySettlementFinTypeAmountLoader;
+    /** 写入快照时同步落 type_name，避免已结算大类名为空。 */
+    private final TerminologyOptionLoader terminologyOptionLoader;
 
     /**
      * 按支付主键重建分类快照；预交金等无收费明细的流水跳过。
      *
      * @param paymentId 支付主键
      */
+    @Override
     public void writeForPayment(Long paymentId) {
+        // Gate：空主键无支付可写
         if (paymentId == null) {
             return;
         }
         PaymentReconciliation payment = this.paymentReconciliationQueryService.findOptionalPaymentEntityById(paymentId)
             .orElse(null);
+        // Gate：支付已删或不存在则跳过，避免空写
         if (payment == null) {
             return;
         }
+        // Gate：预交金无收费明细，不参与 fin_type 快照
         if (PaymentKind.HOSPITAL_DEPOSIT.equals(payment.getKindEnum())) {
             return;
         }
         List<Long> chargeItemIds = this.parseChargeItemIds(payment.getChargeItemIds());
+        // 无收费明细时无法分类；清空旧快照避免脏数据残留抬高日结
         if (chargeItemIds.isEmpty()) {
-            // 无收费明细时无法分类；清空旧快照避免脏数据
             this.paymentReconciliationDomainService.replacePaymentRecStatics(paymentId, List.of());
             return;
         }
+        // Pre：装载本笔挂载收费行，供 fin_type 解析与净额汇总
         ChargeItemQueryCommand queryCommand = new ChargeItemQueryCommand();
         queryCommand.setIds(chargeItemIds);
         List<ChargeItem> chargeItems = this.chargeItemQueryService.loadChargeItemsByIds(queryCommand);
@@ -81,69 +90,46 @@ public class PaymentFinTypeStaticSnapshotWriter implements PaymentFinTypeStaticS
         }
         Map<Long, String> finTypeByChargeItemId =
             this.dailySettlementFinTypeAmountLoader.mapFinTypeCodeByChargeItemId(chargeItems);
-        // Pre：分摊基数取收费明细总额（非患者现金应付 tendered）
-        BigDecimal allocateAmount = this.resolveAllocateAmount(chargeItems);
+        // Pre：按 fin_type 直接 Σ 行净额（含冲正负行），非患者现金应付 tendered、非绝对值
         List<PaymentRecStaticItemCommand> staticItems =
-            this.buildStaticItems(chargeItems, finTypeByChargeItemId, allocateAmount);
+            this.buildStaticItems(chargeItems, finTypeByChargeItemId);
+        // Cmd：全量替换本笔快照，与收费挂载保持一致
         this.paymentReconciliationDomainService.replacePaymentRecStatics(paymentId, staticItems);
     }
 
     /**
-     * 本笔分摊基数：Σ|charge_item.total_price|（日结总收入权威；与现金应付 displayAmount 解耦）。
+     * 按 fin_type 汇总 charge_item.total_price 代数和（保留冲正负行）。
      *
-     * @param chargeItems 本笔支付关联收费明细
-     * @return 非负分摊总额
-     */
-    private BigDecimal resolveAllocateAmount(List<ChargeItem> chargeItems) {
-        BigDecimal total = BigDecimal.ZERO;
-        if (chargeItems == null || chargeItems.isEmpty()) {
-            return total;
-        }
-        // Loop：按收费行总额绝对值累加，空总额按 0
-        for (ChargeItem chargeItem : chargeItems) {
-            if (chargeItem == null) {
-                continue;
-            }
-            BigDecimal lineTotal = chargeItem.getTotalPrice();
-            if (lineTotal == null) {
-                continue;
-            }
-            total = total.add(lineTotal.abs());
-        }
-        return total;
-    }
-
-    /**
-     * 按 charge_item.total_price 权重将收费总额分摊到 fin_type；末行吃掉尾差。
+     * @param chargeItems           本笔支付关联收费明细
+     * @param finTypeByChargeItemId chargeItemId → fin_type_code
+     * @return 分类快照命令列表
      */
     private List<PaymentRecStaticItemCommand> buildStaticItems(
         List<ChargeItem> chargeItems,
-        Map<Long, String> finTypeByChargeItemId,
-        BigDecimal allocateAmount) {
-        Map<String, BigDecimal> weightByFinType = new LinkedHashMap<>();
+        Map<Long, String> finTypeByChargeItemId) {
+        Map<String, BigDecimal> amountByFinType = new LinkedHashMap<>();
         Map<String, StringBuilder> chargeItemIdsByFinType = new LinkedHashMap<>();
-        BigDecimal weightTotal = BigDecimal.ZERO;
         for (ChargeItem chargeItem : chargeItems) {
             if (chargeItem == null || chargeItem.getId() == null) {
                 continue;
             }
             String finTypeCode = finTypeByChargeItemId.get(chargeItem.getId());
+            // Gate：缺 fin_type 则整笔拒绝，禁止静默归入未知类抬高/压低日结
             if (StringUtils.isEmpty(finTypeCode)) {
                 throw new BusinessException(
                     ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT,
                     "收费明细无法解析财务类型，无法写入分类快照，chargeItemId=" + chargeItem.getId());
             }
-            BigDecimal lineWeight = chargeItem.getTotalPrice();
-            if (lineWeight == null) {
-                lineWeight = BigDecimal.ZERO;
+            BigDecimal lineAmount = chargeItem.getTotalPrice();
+            if (lineAmount == null) {
+                lineAmount = BigDecimal.ZERO;
             }
-            lineWeight = lineWeight.abs();
-            BigDecimal existing = weightByFinType.get(finTypeCode);
+            BigDecimal existing = amountByFinType.get(finTypeCode);
             if (existing == null) {
                 existing = BigDecimal.ZERO;
             }
-            weightByFinType.put(finTypeCode, existing.add(lineWeight));
-            weightTotal = weightTotal.add(lineWeight);
+            // 代数和：冲正负行抵减，禁止 abs 后再加
+            amountByFinType.put(finTypeCode, existing.add(lineAmount));
             StringBuilder idsBuilder = chargeItemIdsByFinType.get(finTypeCode);
             if (idsBuilder == null) {
                 idsBuilder = new StringBuilder();
@@ -154,30 +140,29 @@ public class PaymentFinTypeStaticSnapshotWriter implements PaymentFinTypeStaticS
             }
             idsBuilder.append(chargeItem.getId());
         }
-        if (weightByFinType.isEmpty()) {
+        if (amountByFinType.isEmpty()) {
             return List.of();
         }
-        List<String> orderedTypes = new ArrayList<>(weightByFinType.keySet());
+        Map<String, String> labelByCode =
+            this.terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.FIN_TYPE_CODE);
         List<PaymentRecStaticItemCommand> result = new ArrayList<>();
-        BigDecimal allocated = BigDecimal.ZERO;
-        for (int i = 0; i < orderedTypes.size(); i++) {
-            String typeCode = orderedTypes.get(i);
-            BigDecimal amount;
-            if (i == orderedTypes.size() - 1) {
-                amount = allocateAmount.subtract(allocated);
-            } else if (weightTotal.compareTo(BigDecimal.ZERO) <= 0) {
-                amount = BigDecimal.ZERO;
-            } else {
-                amount = allocateAmount
-                    .multiply(weightByFinType.get(typeCode))
-                    .divide(weightTotal, MONEY_SCALE, RoundingMode.HALF_UP);
-                allocated = allocated.add(amount);
-            }
+        for (Map.Entry<String, BigDecimal> entry : amountByFinType.entrySet()) {
             PaymentRecStaticItemCommand item = new PaymentRecStaticItemCommand();
             item.setMethodCode(DailySettlementSharedConstants.PAYMENT_REC_STATIC_METHOD_FIN_TYPE_CODE);
-            item.setTypeCode(typeCode);
-            item.setAmount(amount);
-            StringBuilder idsBuilder = chargeItemIdsByFinType.get(typeCode);
+            item.setTypeCode(entry.getKey());
+            if (labelByCode != null) {
+                String typeName = labelByCode.get(entry.getKey());
+                if (!StringUtils.isEmpty(typeName)) {
+                    item.setTypeName(typeName);
+                }
+            }
+            BigDecimal amount = entry.getValue();
+            if (amount == null) {
+                amount = BigDecimal.ZERO;
+            }
+            // 计算刻度 6 位入库，与 charge_item.total_price / BR-MON-001 一致
+            item.setAmount(MonetaryAmountSupport.scaleCalc(amount));
+            StringBuilder idsBuilder = chargeItemIdsByFinType.get(entry.getKey());
             if (idsBuilder != null) {
                 item.setChargeItemIds(idsBuilder.toString());
             }
@@ -186,6 +171,12 @@ public class PaymentFinTypeStaticSnapshotWriter implements PaymentFinTypeStaticS
         return result;
     }
 
+    /**
+     * 解析支付主表逗号分隔的收费明细主键列表；脏片段跳过。
+     *
+     * @param chargeItemIds 逗号分隔 chargeItemId 串
+     * @return 有效主键列表（可空）
+     */
     private List<Long> parseChargeItemIds(String chargeItemIds) {
         List<Long> result = new ArrayList<>();
         if (StringUtils.isEmpty(chargeItemIds)) {
@@ -199,7 +190,7 @@ public class PaymentFinTypeStaticSnapshotWriter implements PaymentFinTypeStaticS
             try {
                 result.add(Long.valueOf(part.trim()));
             } catch (NumberFormatException ignored) {
-                // 脏数据跳过
+                // 脏片段跳过，避免整笔快照失败；缺失行由后续装载校验兜底
             }
         }
         return result;

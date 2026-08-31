@@ -214,6 +214,7 @@ export async function printServiceApplyForms(options: SchedulePrintServiceApplyF
     scenarioCode,
     source,
     bizRef: {
+      scenarioCode,
       encounterId,
       patientId,
       prescriptionNo,
@@ -260,6 +261,9 @@ export async function printServiceApplyFromAdviceRows(
     const headRow = groupRows[0];
     const diagnosisSummary = str(headRow.diagnosisSummary);
     const lines = groupRows.map((row) => adviceRowToSelectedItem(row));
+    const serviceRequestIds = [
+      ...new Set(groupRows.map((row) => str(row.requestId)).filter((id) => id.length > 0)),
+    ];
     const shared: ExaminationPrintSource & TestPrintSource = {
       applyKind,
       hospitalName: str(meta.hospitalName) || resolvePrintHospitalName(),
@@ -282,10 +286,12 @@ export async function printServiceApplyFromAdviceRows(
       scenarioCode,
       source: shared,
       bizRef: {
+        scenarioCode,
         encounterId,
         patientId,
         prescriptionNo,
         performOrgId: str(headRow.performOrgId),
+        serviceRequestIds,
       },
       jobName,
       selectPrinter: 'auto',

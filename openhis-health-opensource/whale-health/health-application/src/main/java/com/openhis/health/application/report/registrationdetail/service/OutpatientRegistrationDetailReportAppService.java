@@ -336,7 +336,8 @@ public class OutpatientRegistrationDetailReportAppService {
         byte[] body = AnnotatedExcelExporter.exportToXlsxBytes(
             OutpatientRegistrationReportConstants.EXPORT_SHEET_SUMMARY,
             exportRows,
-            OutpatientRegistrationDetailSummaryRowDto.class);
+            OutpatientRegistrationDetailSummaryRowDto.class,
+            request.getExportColumns());
         String fileName = OutpatientRegistrationReportConstants.EXPORT_FILE_PREFIX_SUMMARY
             + dateFrom.format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER)
             + GeneralSharedConstants.DASH
@@ -413,7 +414,8 @@ public class OutpatientRegistrationDetailReportAppService {
         byte[] body = AnnotatedExcelExporter.exportToXlsxBytes(
             OutpatientRegistrationReportConstants.EXPORT_SHEET_DETAIL,
             exportRows,
-            OutpatientRegistrationDetailRowDto.class);
+            OutpatientRegistrationDetailRowDto.class,
+            request.getExportColumns());
         String fileName = OutpatientRegistrationReportConstants.EXPORT_FILE_PREFIX_DETAIL
             + dateFrom.format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER)
             + GeneralSharedConstants.DASH

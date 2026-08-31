@@ -13,6 +13,7 @@ import com.openhis.whale.core.application.util.StringUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -76,6 +77,35 @@ public class PeisEncounterExtQueryService {
     }
 
     /**
+     * 按团检标志过滤就诊主键（保持原顺序）。
+     *
+     * @param encounterIds 候选就诊
+     * @param groupFlag    {@code true} 仅团检；{@code false} 仅个检（非团检）
+     * @return 过滤后的主键列表
+     */
+    public List<Long> filterEncounterIdsByGroupFlag(Collection<Long> encounterIds, boolean groupFlag) {
+        if (encounterIds == null || encounterIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        Map<Long, PeisEncounterExtModel> extByEncounter = mapByEncounterIds(encounterIds);
+        List<Long> filtered = new ArrayList<>();
+        for (Long encounterId : encounterIds) {
+            if (encounterId == null) {
+                continue;
+            }
+            PeisEncounterExtModel ext = extByEncounter.get(encounterId);
+            if (ext == null) {
+                continue;
+            }
+            boolean isGroup = Boolean.TRUE.equals(ext.getGroupFlag());
+            if (groupFlag == isGroup) {
+                filtered.add(encounterId);
+            }
+        }
+        return filtered;
+    }
+
+    /**
      * 按体检流水号查询扩展。
      *
      * @param busNo 流水号
@@ -116,6 +146,8 @@ public class PeisEncounterExtQueryService {
         model.setGroupBatchId(entity.getGroupBatchId());
         model.setBookingAppointmentId(entity.getBookingAppointmentId());
         model.setBusNo(entity.getBusNo());
+        model.setReferrerName(entity.getReferrerName());
+        model.setBreakfastFlag(entity.getBreakfastFlag());
         return model;
     }
 }

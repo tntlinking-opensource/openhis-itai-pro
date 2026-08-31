@@ -3,7 +3,7 @@ import { computed } from 'vue';
 
 import { IconifyIcon } from '@vben/icons';
 
-import { fmtReportNumber } from '#/views/report/shared/report-format';
+import { fmtReportNumber, fmtReportPurchaseMoney } from '#/views/report/shared/report-format';
 
 defineOptions({ name: 'NurseWorkloadTotalsBar' });
 
@@ -123,7 +123,7 @@ const purchaseTotal = computed(() => {
         <div class="nurse-workload-stats__content">
           <span class="nurse-workload-stats__label">耗材进价</span>
           <span class="nurse-workload-stats__value nurse-workload-stats__value--amount">
-            {{ fmtReportNumber(consumableTotalPurchaseAmount, 2) }}
+            {{ fmtReportPurchaseMoney(consumableTotalPurchaseAmount) }}
           </span>
         </div>
       </div>
@@ -135,7 +135,7 @@ const purchaseTotal = computed(() => {
         <div class="nurse-workload-stats__content">
           <span class="nurse-workload-stats__label">进价合计</span>
           <span class="nurse-workload-stats__value nurse-workload-stats__value--amount-total">
-            {{ fmtReportNumber(purchaseTotal, 2) }}
+            {{ fmtReportPurchaseMoney(purchaseTotal) }}
           </span>
         </div>
       </div>

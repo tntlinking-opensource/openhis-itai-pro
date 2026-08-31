@@ -271,6 +271,8 @@ public class DeviceDefinitionQueryService {
             purchase.setCategoryCode(query.getCategoryCode());
             purchase.setActiveFlag(query.getActiveFlag());
             purchase.setSupplierId(query.getSupplierId());
+            purchase.setManufacturerId(query.getManufacturerId());
+            purchase.setManufacturerIds(query.getManufacturerIds());
             purchase.setManufacturer(query.getManufacturer());
             purchase.setKeyword(query.getKeyword());
             purchase.setPrepickedProductKeys(query.getPrepickedProductKeys());
@@ -350,9 +352,8 @@ public class DeviceDefinitionQueryService {
                 if (query.getSupplierId() != null) {
                     ands.add(cb.equal(root.get(FieldNameConstants.SUPPLY_ID), query.getSupplierId()));
                 }
-                if (StringUtils.isNotEmpty(query.getManufacturer())) {
-                    ands.add(cb.equal(root.get(FieldNameConstants.MANUFACTURER_TEXT), query.getManufacturer().trim()));
-                }
+                this.appendManufacturerIdPredicates(ands, root, cb, query.getManufacturerId(),
+                    query.getManufacturerIds(), query.getManufacturer());
                 Predicate keywordPred = this.buildPurchaseKeywordPredicate(root, cb, query.getKeyword());
                 Predicate prepPred = this.buildDevicePrepickedPredicate(root, cb, query.getPrepickedProductKeys());
                 this.appendKeywordOrPrepicked(ands, cb, keywordPred, prepPred);
@@ -620,7 +621,7 @@ public class DeviceDefinitionQueryService {
     /**
      * 批量查询库内已存在的耗材唯一键 token（同机构、未删除、未废弃）。
      *
-     * <p>token 格式：{@code trim(name) + '\\u0001' + trim(totalVolume) + '\\u0001' + trim(manufacturerText)}。</p>
+     * <p>token 格式：{@code trim(name) + '\\u0001' + trim(totalVolume) + '\\u0001' + manufacturerId字符串}。</p>
      *
      * @param orgId  机构主键
      * @param tokens 待比对 token 集合
@@ -662,7 +663,7 @@ public class DeviceDefinitionQueryService {
                 continue;
             }
             String candidateToken = this.buildDuplicateKeyToken(
-                row.getName(), row.getTotalVolume(), row.getManufacturerText());
+                row.getName(), row.getTotalVolume(), row.getManufacturerId());
             if (tokenSet.contains(candidateToken)) {
                 existing.add(candidateToken);
             }
@@ -671,14 +672,14 @@ public class DeviceDefinitionQueryService {
     }
 
     /**
-     * 构造与导入校验一致的唯一键 token。
+     * 构造与导入校验一致的唯一键 token（厂家段为 manufacturerId 字符串）。
      *
-     * @param name             耗材名称
-     * @param totalVolume      包装规格
-     * @param manufacturerText 生产厂家
+     * @param name           耗材名称
+     * @param totalVolume    包装规格
+     * @param manufacturerId 生产厂家主键；null 时厂家段为空串
      * @return token 字符串
      */
-    private String buildDuplicateKeyToken(String name, String totalVolume, String manufacturerText) {
+    private String buildDuplicateKeyToken(String name, String totalVolume, Long manufacturerId) {
         String n = "";
         if (name != null) {
             n = name.trim();
@@ -687,11 +688,89 @@ public class DeviceDefinitionQueryService {
         if (totalVolume != null) {
             v = totalVolume.trim();
         }
-        String m = "";
-        if (manufacturerText != null) {
-            m = manufacturerText.trim();
-        }
+        String m = this.manufacturerIdToken(manufacturerId);
         return n + '\u0001' + v + '\u0001' + m;
+    }
+
+    /**
+     * 将生产厂家主键转为重复键中的厂家段（null→空串）。
+     *
+     * @param manufacturerId 生产厂家主键
+     * @return 非 null 字符串
+     */
+    private String manufacturerIdToken(Long manufacturerId) {
+        if (manufacturerId == null) {
+            return "";
+        }
+        return String.valueOf(manufacturerId);
+    }
+
+    /**
+     * 追加生产厂家筛选谓词：优先主键/主键集合；兼容旧 manufacturer 字符串仅当可解析为 Long。
+     *
+     * @param predicates       外层 AND 列表（就地追加）
+     * @param root             耗材定义根
+     * @param cb               CriteriaBuilder
+     * @param manufacturerId   单值主键；可空
+     * @param manufacturerIds  主键集合；可空
+     * @param manufacturerText 兼容旧字符串入参；可空
+     */
+    private void appendManufacturerIdPredicates(
+        List<Predicate> predicates,
+        Root<DeviceDefinition> root,
+        CriteriaBuilder cb,
+        Long manufacturerId,
+        List<Long> manufacturerIds,
+        String manufacturerText
+    ) {
+        List<Long> ids = new ArrayList<>();
+        if (manufacturerId != null) {
+            ids.add(manufacturerId);
+        }
+        if (manufacturerIds != null) {
+            for (Long id : manufacturerIds) {
+                if (id != null) {
+                    ids.add(id);
+                }
+            }
+        }
+        // 旧入参仅传名称串：仅数字可当 id；名称解析留 AppService
+        if (ids.isEmpty() && StringUtils.isNotEmpty(manufacturerText)) {
+            Long parsed = this.tryParseLongId(manufacturerText.trim());
+            if (parsed != null) {
+                ids.add(parsed);
+            }
+        }
+        if (ids.isEmpty()) {
+            return;
+        }
+        if (ids.size() == 1) {
+            predicates.add(cb.equal(root.get(FieldNameConstants.MANUFACTURER_ID), ids.get(0)));
+            return;
+        }
+        predicates.add(root.get(FieldNameConstants.MANUFACTURER_ID).in(ids));
+    }
+
+    /**
+     * 尝试将纯数字字符串解析为 Long；非数字或溢出时返回 null。
+     *
+     * @param raw 已 trim 的候选串
+     * @return 解析成功的主键，或 null
+     */
+    private Long tryParseLongId(String raw) {
+        if (StringUtils.isEmpty(raw)) {
+            return null;
+        }
+        for (int i = 0; i < raw.length(); i++) {
+            if (!Character.isDigit(raw.charAt(i))) {
+                return null;
+            }
+        }
+        try {
+            return Long.valueOf(raw);
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 
     /**

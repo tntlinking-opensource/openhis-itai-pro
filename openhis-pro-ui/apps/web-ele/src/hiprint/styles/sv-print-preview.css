@@ -1,6 +1,58 @@
 /**
- * 设计器「打印预览」对话框：纸张居中、白底阴影，与设计画布样式分离
+ * 打印预览对话框：纸张居中、白底阴影。
+ * 不走 SFC scoped：ElDialog teleport 到 body，院点打包 scoped 可能丢失。
  */
+.hiprint-preview-dialog.el-dialog {
+  margin-bottom: 0;
+  overflow: hidden;
+}
+
+.hiprint-preview-dialog .el-dialog__header {
+  padding: 12px 16px 12px 20px;
+  margin-right: 0;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+
+.hiprint-preview-dialog .el-dialog__headerbtn {
+  top: 14px;
+  width: 36px;
+  height: 36px;
+}
+
+.hiprint-preview-dialog .el-dialog__body {
+  padding: 0;
+}
+
+.hiprint-preview-dialog .preview-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 36px;
+  gap: 16px;
+}
+
+.hiprint-preview-dialog .preview-dialog-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.hiprint-preview-dialog .preview-dialog-title {
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+  color: var(--el-text-color-primary);
+}
+
+.hiprint-preview-dialog .preview-wrap {
+  max-height: calc(82vh - 72px);
+  overflow: auto;
+  background:
+    radial-gradient(ellipse at top, rgb(255 255 255 / 35%), transparent 52%), var(--el-fill-color);
+}
+
 .preview-wrap .preview-content {
   display: flex;
   flex-direction: column;
@@ -8,12 +60,13 @@
   justify-content: flex-start;
   width: 100%;
   box-sizing: border-box;
+  padding: 28px 24px 40px;
 }
 
 .preview-wrap .preview-content .hiprint-printTemplate {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 28px;
   align-items: center;
   width: 100%;
 }
@@ -21,7 +74,7 @@
 .preview-wrap .preview-content .hiprint-printPanel {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 28px;
   align-items: center;
   width: 100%;
 }
@@ -30,9 +83,43 @@
   margin: 0 auto;
   overflow: hidden;
   background: #fff;
+  border: 1px solid rgb(0 0 0 / 6%);
   box-shadow:
-    0 2px 8px rgb(0 0 0 / 12%),
-    0 4px 16px rgb(0 0 0 / 8%);
+    0 1px 1px rgb(0 0 0 / 4%),
+    0 8px 24px rgb(0 0 0 / 8%),
+    0 20px 40px rgb(0 0 0 / 6%);
+}
+
+/*
+ * 针式联单：一折高度用 hiprint 内联 mm（与实物纸高一致），
+ * 折与折贴紧，分页处虚线表示齿孔。
+ */
+.preview-wrap .preview-content.is-continuous-form .hiprint-printTemplate,
+.preview-wrap .preview-content.is-continuous-form .hiprint-printPanel {
+  gap: 0;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.preview-wrap .preview-content.is-continuous-form .hiprint-printPanel {
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid rgb(0 0 0 / 6%);
+  box-shadow:
+    0 1px 1px rgb(0 0 0 / 4%),
+    0 8px 24px rgb(0 0 0 / 8%),
+    0 20px 40px rgb(0 0 0 / 6%);
+}
+
+.preview-wrap .preview-content.is-continuous-form .hiprint-printPaper {
+  flex-shrink: 0;
+  margin: 0;
+  border: none;
+  box-shadow: none;
+}
+
+.preview-wrap .preview-content.is-continuous-form .hiprint-printPaper + .hiprint-printPaper {
+  border-top: 1px dashed var(--el-text-color-secondary);
 }
 
 .preview-wrap .preview-content .hiprint-printPaper.design {

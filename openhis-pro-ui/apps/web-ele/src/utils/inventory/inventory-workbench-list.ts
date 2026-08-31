@@ -560,6 +560,32 @@ export function resolveInvDocApprovedByName(source?: null | Record<string, unkno
   return '';
 }
 
+/**
+ * 打印「制单时间」：优先实际审批时间（与侧栏卡片同字段口径），禁止用当前打印时刻冒充。
+ * 无审批时间时再回落制单/申请时间；皆无则空串。
+ */
+export function resolveInvDocPrintApplyTimeText(params?: {
+  approvalTime?: null | string;
+  applyTime?: null | string;
+  queueCardRow?: null | Record<string, unknown>;
+}): string {
+  const row = params?.queueCardRow;
+  for (const c of [
+    params?.approvalTime,
+    row?.approvalTime,
+    row?.auditTime,
+    row?.approveTime,
+    row?.reviewTime,
+    params?.applyTime,
+    row?.applyTime,
+  ]) {
+    const s = String(c ?? '').trim();
+    if (!s) continue;
+    return s.includes('T') ? s.replace('T', ' ') : s;
+  }
+  return '';
+}
+
 /** 登录用户姓名，供经手人下拉兜底展示。 */
 export function resolveLoginPractitionerLabelFromUserInfo(
   userInfo: null | Record<string, unknown> | undefined,

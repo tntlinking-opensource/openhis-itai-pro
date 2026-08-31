@@ -22,7 +22,7 @@ export interface HomepageListRow {
   /** 年龄展示文案（如 26岁） */
   ageText?: string;
   /**
-   * 床位展示名（活动床或末次已完成床；可能带「原…（未占床）」前缀）。
+   * 床位展示名（活动床或「原{房}-{床}（未占床）」）。
    */
   bedName?: string;
   /** 病区/病室展示名 */

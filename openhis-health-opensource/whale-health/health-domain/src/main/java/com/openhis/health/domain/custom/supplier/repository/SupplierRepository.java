@@ -9,6 +9,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -74,4 +75,21 @@ public interface SupplierRepository extends JpaRepository<Supplier, Long> {
      * @return 分页结果
      */
     Page<Supplier> findAllByNameContaining(String name, Pageable pageable);
+
+    /**
+     * 按主键集合批量加载（展示名解析、目录厂家回填）。
+     *
+     * @param ids 供应商标识集合
+     * @return 命中的供应商实体
+     */
+    List<Supplier> findAllByIdIn(Collection<Long> ids);
+
+    /**
+     * 按精确名称与类型查找启用/有效主数据（导入文案匹配生产厂家）。
+     *
+     * @param name 名称（须与落库一致）
+     * @param typeEnum 类型 code（生产厂家为 {@code 1}）
+     * @return 命中实体；未命中为空
+     */
+    Optional<Supplier> findFirstByNameAndTypeEnum(String name, String typeEnum);
 }

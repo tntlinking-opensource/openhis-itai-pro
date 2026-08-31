@@ -182,13 +182,15 @@ public class CreateMedicationCatalogRequest {
     private String pharmacologyCategoryCode;
 
 
-    /** 生产厂家ID。 */
+    /** 生产厂家ID（写路径落库；cus_supplier.id，type=生产厂家）。 */
     @Schema(description = "生产厂家ID", example = "50001", type = "string")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long manufacturerId;
 
-    /** 生产厂家名称。 */
-    @Schema(description = "生产厂家名称", example = "广州白云山医药集团股份有限公司")
+    /**
+     * 生产厂家名称（可选；仅导入 Excel 文本，由 AppService 解析为 {@link #manufacturerId}；不写入实体 text 列）。
+     */
+    @Schema(description = "生产厂家名称（导入解析用，不落库）", example = "广州白云山医药集团股份有限公司")
     private String manufacturerText;
 
     /**
@@ -354,6 +356,13 @@ public class CreateMedicationCatalogRequest {
     /** 是否为基本药物 1-是 0-否。 */
     @Schema(description = "是否为基本药物 1-是 0-否", example = "1", allowableValues = {"0", "1"})
     private Boolean basicFlag;
+    /** 是否国家重点监控药品；勾选=是，口径对齐基药标识。 */
+    @Schema(description = "是否国家重点监控药品 1-是 0-否", example = "0", allowableValues = {"0", "1"})
+    private Boolean nationalMonitorFlag;
+
+    /** 是否集采药品；勾选=是，口径对齐基药标识。 */
+    @Schema(description = "是否集采药品 1-是 0-否", example = "0", allowableValues = {"0", "1"})
+    private Boolean centralPurchaseFlag;
 
 
     /** 是否需要皮试 1-是 0-否。 */

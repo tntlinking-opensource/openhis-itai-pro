@@ -10,9 +10,10 @@ import lombok.Setter;
 import java.math.BigDecimal;
 
 /**
- * 医嘱开立目录用：同就诊下耗材发放预占行（候选库位 ∩ 目录耗材定义）。
+ * 医嘱开立目录用：耗材发放预占行（候选库位 ∩ 目录耗材定义）。
  *
- * <p>供 {@code DeviceDispenseQueryService#listDeviceDispensesForOrderCatalogOccupancy} 返回；状态列为字符串码，与耗材发放聚合持久化一致；候选库房全局，不限就诊。</p>
+ * <p>供 {@code DeviceDispenseQueryService#listDeviceDispensesForOrderCatalogOccupancy} 返回；
+ * 候选库房全局、不限就诊；耗材预占不过期（与药品 {@code limitTime} 窗不同），直至执行或取消释放。</p>
  */
 @Getter
 @Setter

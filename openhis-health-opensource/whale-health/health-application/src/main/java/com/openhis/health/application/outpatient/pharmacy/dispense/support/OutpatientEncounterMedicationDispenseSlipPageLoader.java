@@ -462,6 +462,7 @@ public class OutpatientEncounterMedicationDispenseSlipPageLoader {
                             distributionCategoryCode,
                             slipRow.getMedicationId(),
                             methodCode,
+                            null,
                             null);
                 } else {
                     candidateLocationIds = List.of();

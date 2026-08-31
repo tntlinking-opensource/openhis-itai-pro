@@ -39,10 +39,12 @@ import com.openhis.health.domain.medication.medicationdefinition.service.Medicat
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.chs.domain.share.enums.MedType;
+import com.openhis.chs.domain.share.constants.ChsDetailAuditConstants;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.share.query.ProductDefinitionCatalogQueryModel;
+import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
 import com.openhis.chs.bridge.catalog.ChsInsuranceContractReaderImpl;
 import com.openhis.chs.bridge.notice.CatalogNoticeComplianceAssertSupport;
 import com.openhis.chs.bridge.outpatient.assembler.InsuranceDiagnosisCodeAssembler;
@@ -63,11 +65,13 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * HIS 主数据组装 {@link IpSettleContext}（住院 bridge HIS→CHS 上下文加载）。
@@ -100,6 +104,8 @@ public class ChsInpatientInsuranceContextLoader implements IpSettleContextLoader
     private final ChsActivityPackageFeeExpandSupport activityPackageFeeExpandSupport;
     private final ChsSettlementDrugTraceRatioResolver settlementDrugTraceRatioResolver;
     private final YbNationalCatalogItemLookup nationalCatalogItemLookup;
+    /** 出院医嘱计划时间（业务出院真源）。 */
+    private final ServiceRequestQueryService serviceRequestQueryService;
 
     /** 单笔预结算上下文：加载收费项并组装完整 {@link IpSettleContext}。 */
     @Override
@@ -194,7 +200,7 @@ public class ChsInpatientInsuranceContextLoader implements IpSettleContextLoader
         // Pre：3101 patient_dtos 姓名/性别/出生日期（对齐门诊 ContextLoader）
         this.applyPatientDemographics(ctx, encounter);
         ctx.setAdmissionTime(encounter.getStartTime());
-        ctx.setDischargeTime(encounter.getEndTime());
+        ctx.setDischargeTime(this.resolveBusinessDischargeTime(encounter.getEncounterId(), encounter.getEndTime()));
         if (organization != null) {
             ctx.setAdmDeptCodg(organization.getYbNo());
             ctx.setAdmDeptName(organization.getName());
@@ -418,6 +424,8 @@ public class ChsInpatientInsuranceContextLoader implements IpSettleContextLoader
             line.setMedListCodg(SettlementTraceCountSupport.toPlatformMedListCodg(
                 product.getProductTableName(), fullYbNo));
             line.setMedinsListCodg(resolveMedinsListCodg(product, fullYbNo));
+            line.setItemName(resolveChargeItemDisplayName(
+                itemDisplayName, product, work.definitionForGate()));
             // Pre：折片后金额须与 pric×cnt 一致（2204/2301 费用分割校验；6 位单价平摊）
             line.setDetItemFeeSumamt(uploadQtyPrice.sumamtOr(slice.getDetItemFeeSumamt()));
             line.setCnt(uploadQtyPrice.cnt());
@@ -481,7 +489,7 @@ public class ChsInpatientInsuranceContextLoader implements IpSettleContextLoader
             .setPatientGender(encounter.getGenderEnum())
             .setBrdy(this.formatBirthDateFor3101(encounter))
             .setAdmissionTime(encounter.getStartTime())
-            .setDischargeTime(encounter.getEndTime())
+            .setDischargeTime(this.resolveBusinessDischargeTime(encounter.getEncounterId(), encounter.getEndTime()))
             .setSettleMode(command.getSettleMode())
             .setAdmDeptCodg(admDeptCodg)
             .setAdmDeptName(admDeptName)
@@ -514,6 +522,26 @@ public class ChsInpatientInsuranceContextLoader implements IpSettleContextLoader
             .setPsnSetlway(command.getPsnSetlway())
             .setMinpacuntDrugTracCnt(drugTracCnt)
             .setMcsTracCnt(mcsTracCnt);
+    }
+
+    /**
+     * 业务出院时间：出院医嘱计划时间优先，回落 Encounter.endTime。
+     *
+     * @param encounterId      就诊主键
+     * @param encounterEndTime 就诊 end_time；可空
+     * @return 计划出院或 endTime；皆空则 null
+     */
+    private LocalDateTime resolveBusinessDischargeTime(Long encounterId, LocalDateTime encounterEndTime) {
+        if (encounterId == null) {
+            return encounterEndTime;
+        }
+        Map<Long, LocalDateTime> planned =
+            serviceRequestQueryService.mapDischargePlannedTimeByEncounterIds(Set.of(encounterId));
+        LocalDateTime fromAdvice = planned.get(encounterId);
+        if (fromAdvice != null) {
+            return fromAdvice;
+        }
+        return encounterEndTime;
     }
 
     /**
@@ -796,5 +824,24 @@ public class ChsInpatientInsuranceContextLoader implements IpSettleContextLoader
             sb.append("，chargeItemId=").append(item.getId());
         }
         return sb.toString();
+    }
+
+    /**
+     * 解析 3101 项目展示名：切片名 → 产品名 → 定价定义名 → 占位。
+     */
+    private static String resolveChargeItemDisplayName(
+        String sliceDisplayName,
+        ProductDefinitionCatalogQueryModel product,
+        ChargeItemDefinition definition) {
+        if (isNotEmpty(sliceDisplayName)) {
+            return sliceDisplayName.trim();
+        }
+        if (product != null && isNotEmpty(product.getProductName())) {
+            return product.getProductName().trim();
+        }
+        if (definition != null && isNotEmpty(definition.getChargeName())) {
+            return definition.getChargeName().trim();
+        }
+        return ChsDetailAuditConstants.DEFAULT_SPEC;
     }
 }

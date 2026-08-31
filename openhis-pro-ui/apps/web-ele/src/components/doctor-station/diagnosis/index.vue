@@ -16,7 +16,10 @@ import { ElEmpty, ElMessage, ElMessageBox } from 'element-plus';
 import { ENSURE_CLINICAL_RECEPTION_KEY } from '#/components/doctor-station/clinical-reception-context';
 import { COMMON_DIAGNOSIS_MAINTAIN_VERSION_KEY } from '#/components/doctor-station/diagnosis/common-diagnosis-maintain.context';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
-import { resolveOpspMedicalTypeCode } from '#/utils/chronic-medical-type';
+import {
+  GENERAL_OUTPATIENT_MEDICAL_TYPE_CODE,
+  resolveOpspMedicalTypeCode,
+} from '#/utils/chronic-medical-type';
 
 import DiagnosisPickerDialog from '#/components/doctor-station/diagnosis/components/diagnosis-picker-dialog.vue';
 import DiagnosisQuickTree from './components/diagnosis-quick-tree.vue';
@@ -28,6 +31,7 @@ import {
   saveEncounterDiagnosisRows,
   saveInpatientEncounterDiagnosisIptTypeRows,
   saveInpatientEncounterDiagnosisReorder,
+  saveOutpatientEncounterDiagnosisMedicalTypeRows,
   switchMainEncounterDiagnosisRow,
   type DoctorStationDiagnosisScope,
 } from './services/encounter-diagnosis.service';
@@ -393,6 +397,58 @@ async function handleIptTypeChange(row: EncounterDiagnosisRowDto, code: string |
   }
 }
 
+/** 门诊：诊断类型（普通门诊/门诊慢病等）变更后保存 */
+async function handleMedicalTypeChange(row: EncounterDiagnosisRowDto, code: string | undefined) {
+  if (props.stationScope !== 'outpatient') {
+    return;
+  }
+  if (ensureClinicalReception) {
+    const ok = await ensureClinicalReception();
+    if (!ok) return;
+  }
+  const prevCode = String(row.medicalTypeCode ?? '').trim() || GENERAL_OUTPATIENT_MEDICAL_TYPE_CODE;
+  const nextCode = String(code ?? '').trim();
+  if (prevCode === nextCode) {
+    return;
+  }
+  const groupKey = row.tcmSyndromeGroup?.trim();
+  // 中医病证组同步医疗类别；西医只改当前行
+  const next = diagnosisRows.value.map((item) => {
+    if (groupKey && isTcmDiagnosisRow(item)) {
+      const itemGroupKey = String(item.tcmSyndromeGroup ?? '').trim();
+      const matchesGroup =
+        itemGroupKey === groupKey ||
+        item.encounterDiagnosisId === row.encounterDiagnosisId ||
+        item.conditionDefinitionId === row.conditionDefinitionId ||
+        item.conditionDefinitionId === row.syndromeDefinitionId;
+      if (!matchesGroup) {
+        return item;
+      }
+    } else if (!isSameDiagnosisRow(item, row)) {
+      return item;
+    }
+    return {
+      ...item,
+      medicalTypeCode: code ?? null,
+    };
+  });
+  if (!contextReady.value) {
+    ElMessage.warning('请先选择患者');
+    return;
+  }
+  const encounterId = props.encounterId.trim();
+  const patientId = props.patientId.trim();
+  diagnosisRows.value = next;
+  quickSaveLoading.value = true;
+  try {
+    await saveOutpatientEncounterDiagnosisMedicalTypeRows(encounterId, patientId, next);
+    ElMessage.success('诊断已保存');
+    await reload();
+  } finally {
+    quickSaveLoading.value = false;
+  }
+}
+
 /** 删除已持久化行（中医病证组走整组删除，西医走单条删除） */
 async function handleRemove(row: EncounterDiagnosisRowDto) {
   if (ensureClinicalReception) {
@@ -552,11 +608,13 @@ async function handleMove(row: EncounterDiagnosisRowDto, direction: 'down' | 'up
           :rows="displayDiagnosisRows"
           :station-scope="props.stationScope"
           :ipt-disease-type-options="businessClass?.iptDiseaseTypeOptions ?? []"
+          :medical-type-options="businessClass?.medicalTypeOptions ?? []"
           :switching-main-id="switchingMainId"
           @add-click="handleAddDiagnosisClick"
           @remove="handleRemove"
           @switch-main="handleSwitchMain"
           @ipt-type-change="handleIptTypeChange"
+          @medical-type-change="handleMedicalTypeChange"
           @move="handleMove"
         />
       </div>

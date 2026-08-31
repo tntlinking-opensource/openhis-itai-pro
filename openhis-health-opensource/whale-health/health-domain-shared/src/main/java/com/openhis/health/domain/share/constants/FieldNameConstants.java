@@ -38,6 +38,14 @@ public interface FieldNameConstants {
      * 基本目录/基本药物标识。
      */
     String BASIC_FLAG = "basicFlag";
+    /**
+     * 集采药品标识（药典勾选=是）。
+     */
+    String CENTRAL_PURCHASE_FLAG = "centralPurchaseFlag";
+    /**
+     * 国家重点监控药品标识（药典勾选=是）。
+     */
+    String NATIONAL_MONITOR_FLAG = "nationalMonitorFlag";
 /** FieldName 共享常量：id，值 {@code bedId}。 */
     String BED_ID = "bedId";
 /** FieldName 共享常量：name，值 {@code bedName}。 */
@@ -382,7 +390,11 @@ public interface FieldNameConstants {
     String LOT_NO = "lotNo";
 /** FieldName 共享常量：MANUFACTURER，值 {@code manufacturer}。 */
     String MANUFACTURER = "manufacturer";
-/** FieldName 共享常量：text，值 {@code manufacturerText}。 */
+    /**
+     * 生产厂家主键 JPA 属性名（{@code manufacturerId} / 列 {@code manufacturer_id}）。
+     */
+    String MANUFACTURER_ID = "manufacturerId";
+/** FieldName 共享常量：text，值 {@code manufacturerText}（导出列键/展示字段名，非实体持久化列）。 */
     String MANUFACTURER_TEXT = "manufacturerText";
 /** FieldName 共享常量：id，值 {@code medicationId}。 */
     String MEDICATION_ID = "medicationId";
@@ -607,6 +619,10 @@ public interface FieldNameConstants {
     String REASON = "reason";
 /** FieldName 共享常量：text，值 {@code reasonText}。 */
     String REASON_TEXT = "reasonText";
+    /**
+     * 是否合理标记（处方点评 {@code reasonable_flag}）。
+     */
+    String REASONABLE_FLAG = "reasonableFlag";
 /** FieldName 共享常量：finalized flag，值 {@code receiptFinalizedFlag}。 */
     String RECEIPT_FINALIZED_FLAG = "receiptFinalizedFlag";
 /** FieldName 共享常量：id，值 {@code receiverId}。 */
@@ -679,6 +695,14 @@ public interface FieldNameConstants {
     String REQUESTER_ID = "requesterId";
 /** FieldName 共享常量：id，值 {@code requestId}。 */
     String REQUEST_ID = "requestId";
+    /**
+     * 点评时间（处方点评 {@code reviewed_at}）。
+     */
+    String REVIEWED_AT = "reviewedAt";
+    /**
+     * 点评人标识（处方点评 {@code reviewer_id}）。
+     */
+    String REVIEWER_ID = "reviewerId";
 /** FieldName 共享常量：id，值 {@code ruleId}。 */
     String RULE_ID = "ruleId";
 /** FieldName 共享常量：name，值 {@code ruleName}。 */
@@ -733,6 +757,9 @@ public interface FieldNameConstants {
      * 排序方向（动态排序）。
      */
     String SORT_ORDER = "sortOrder";
+
+    /** 诊疗项目适用性别（{@code ActivityDefinition.permittedGenderEnum}）。 */
+    String PERMITTED_GENDER_ENUM = "permittedGenderEnum";
 /** FieldName 共享常量：location id，值 {@code sourceLocationId}。 */
     String SOURCE_LOCATION_ID = "sourceLocationId";
 /** FieldName 共享常量：type enum，值 {@code sourceTypeEnum}。 */

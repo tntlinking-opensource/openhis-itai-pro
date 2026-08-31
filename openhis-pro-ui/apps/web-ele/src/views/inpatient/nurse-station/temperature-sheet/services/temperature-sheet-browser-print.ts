@@ -67,9 +67,14 @@ const PRINT_HOST_CSS = `
     display: none !important;
   }
 
+  /* 覆盖宿主及子孙，防止其它全局 print 样式把子节点藏成空白页 */
+  body.${BODY_PRINTING_CLASS} .${HOST_CLASS},
+  body.${BODY_PRINTING_CLASS} .${HOST_CLASS} * {
+    visibility: visible !important;
+  }
+
   body.${BODY_PRINTING_CLASS} .${HOST_CLASS} {
     display: block !important;
-    visibility: visible !important;
     position: fixed !important;
     top: 4mm !important;
     left: 4mm !important;

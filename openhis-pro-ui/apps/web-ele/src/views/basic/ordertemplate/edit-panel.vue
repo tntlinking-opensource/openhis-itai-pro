@@ -77,6 +77,8 @@ const emit = defineEmits<{
 const formModel = reactive({
   orderTemplateId: '',
   bindingEnum: '',
+  objectId: '',
+  objectName: '',
   sceneEnum: '',
   templateKindEnum: '',
   name: '',
@@ -157,6 +159,10 @@ const headerSummary = computed(() => {
   const parts = [`名称：${name}`];
   if (binding) {
     parts.push(`绑定：${binding}`);
+  }
+  const ownerName = String(formModel.objectName ?? '').trim();
+  if (ownerName) {
+    parts.push(`归属：${ownerName}`);
   }
   if (scene) {
     parts.push(`场景：${scene}`);
@@ -547,6 +553,8 @@ function fillHeaderForm() {
   const row = props.formData ?? {};
   formModel.orderTemplateId = row.orderTemplateId ? String(row.orderTemplateId) : '';
   formModel.bindingEnum = row.bindingEnum ?? '';
+  formModel.objectId = preserveApiIdForRequest(row.objectId) ?? '';
+  formModel.objectName = String(row.objectName ?? '').trim();
   formModel.sceneEnum = row.sceneEnum ?? '';
   formModel.templateKindEnum = row.templateKindEnum ?? props.templateKindEnum;
   formModel.name = row.name ?? '';
@@ -562,6 +570,8 @@ function fillHeaderForm() {
 function resetHeaderForm() {
   formModel.orderTemplateId = '';
   formModel.bindingEnum = '';
+  formModel.objectId = '';
+  formModel.objectName = '';
   formModel.sceneEnum = '';
   formModel.templateKindEnum = props.templateKindEnum;
   formModel.name = '';
@@ -629,6 +639,9 @@ async function loadFormData() {
           ? String(detail.header.orderTemplateId)
           : orderTemplateId;
         formModel.bindingEnum = detail.header.bindingEnum ?? formModel.bindingEnum;
+        formModel.objectId = preserveApiIdForRequest(detail.header.objectId) ?? formModel.objectId;
+        formModel.objectName =
+          String(detail.header.objectName ?? '').trim() || formModel.objectName;
         formModel.sceneEnum = detail.header.sceneEnum ?? formModel.sceneEnum;
         formModel.templateKindEnum = detail.header.templateKindEnum ?? formModel.templateKindEnum;
         formModel.name = detail.header.name ?? formModel.name;
@@ -693,8 +706,8 @@ async function publishOrderTemplateAfterSave(orderTemplateId: string): Promise<b
   return true;
 }
 
-/** 一次保存：先头表，再明细行，最后自动发布；bindingEnum 由右上角存 XX 按钮传入 */
-async function handleSubmit(bindingEnum?: string) {
+/** 一次保存：先头表，再明细行，最后自动发布；bindingEnum/objectId 由右上角存 XX 传入 */
+async function handleSubmit(bindingEnum?: string, objectId?: string, objectName?: string) {
   if (isReadonly.value) {
     ElMessage.warning('已停用的组套不可编辑');
     return;
@@ -704,14 +717,26 @@ async function handleSubmit(bindingEnum?: string) {
     ElMessage.warning('请选择保存类型');
     return;
   }
+  const targetObjectId =
+    preserveApiIdForRequest(objectId) ?? preserveApiIdForRequest(formModel.objectId) ?? '';
   const currentBinding = String(formModel.bindingEnum ?? '').trim();
+  const currentObjectId = preserveApiIdForRequest(formModel.objectId) ?? '';
   const currentId = preserveApiIdForRequest(formModel.orderTemplateId);
-  // 绑定类型变更时按新建保存，避免误改归属
-  if (currentId && currentBinding && currentBinding !== targetBinding) {
+  // 绑定类型或归属变更时按新建保存，避免误改原组套归属
+  const ownershipChanged =
+    (currentBinding && currentBinding !== targetBinding) ||
+    (currentObjectId && targetObjectId && currentObjectId !== targetObjectId);
+  if (currentId && ownershipChanged) {
     formModel.orderTemplateId = '';
     statusEnum.value = '';
   }
   formModel.bindingEnum = targetBinding;
+  if (targetObjectId) {
+    formModel.objectId = targetObjectId;
+  }
+  if (objectName !== undefined) {
+    formModel.objectName = String(objectName ?? '').trim();
+  }
 
   if (!(await validateHeader()) || !validateAllLines()) {
     return;
@@ -721,6 +746,7 @@ async function handleSubmit(bindingEnum?: string) {
   const headerPayload: SaveOrderTemplateHeaderParams = {
     orderTemplateId: preserveApiIdForRequest(formModel.orderTemplateId),
     bindingEnum: formModel.bindingEnum,
+    objectId: preserveApiIdForRequest(formModel.objectId) || undefined,
     sceneEnum: formModel.sceneEnum,
     templateKindEnum: formModel.templateKindEnum || props.templateKindEnum,
     name: formModel.name.trim(),
@@ -868,6 +894,9 @@ onUnmounted(() => {
                   :value="item.value"
                 />
               </ElSelect>
+            </ElFormItem>
+            <ElFormItem v-if="formModel.objectName" label="归属">
+              <ElInput :model-value="formModel.objectName" disabled />
             </ElFormItem>
             <ElFormItem v-if="isTcmKind" label="默认付数" prop="defaultChineseHerbsDoseQuantity">
               <ElInputNumber

@@ -42,6 +42,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -417,7 +418,44 @@ public class DepartmentAppService {
             }
             parent.getChildren().add(node);
         }
+        this.sortDepartmentDtoTreeByDisplayOrder(roots);
         return roots;
+    }
+
+    /**
+     * 递归按 displayOrder、id 升序排列科室树同级节点（null 排序号置后）。
+     *
+     * @param nodes 当前层节点
+     */
+    private void sortDepartmentDtoTreeByDisplayOrder(List<DepartmentDto> nodes) {
+        if (nodes == null || nodes.isEmpty()) {
+            return;
+        }
+        nodes.sort(Comparator
+            .comparing(DepartmentDto::getDisplayOrder, Comparator.nullsLast(Comparator.naturalOrder()))
+            .thenComparing(DepartmentDto::getId, Comparator.nullsLast(Comparator.naturalOrder())));
+        for (DepartmentDto node : nodes) {
+            if (node.getChildren() != null && !node.getChildren().isEmpty()) {
+                this.sortDepartmentDtoTreeByDisplayOrder(node.getChildren());
+            }
+        }
+    }
+
+    /**
+     * 同级机构按 displayOrder、id 升序排序（null 排序号置后）。
+     *
+     * @param organizations 同级机构列表
+     * @return 排序副本
+     */
+    private List<Organization> sortOrganizationsByDisplayOrder(List<Organization> organizations) {
+        if (organizations == null || organizations.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Organization> sorted = new ArrayList<>(organizations);
+        sorted.sort(Comparator
+            .comparing(Organization::getDisplayOrder, Comparator.nullsLast(Comparator.naturalOrder()))
+            .thenComparing(Organization::getId, Comparator.nullsLast(Comparator.naturalOrder())));
+        return sorted;
     }
 
     /**
@@ -791,6 +829,12 @@ public class DepartmentAppService {
                 organization.getParentId(), ignored -> new ArrayList<>());
             children.add(organization);
         }
+        // 同级节点按 displayOrder 排序，供维护页上级树与各业务科室下拉一致展示。
+        for (List<Organization> siblings : childrenByParentId.values()) {
+            siblings.sort(Comparator
+                .comparing(Organization::getDisplayOrder, Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(Organization::getId, Comparator.nullsLast(Comparator.naturalOrder())));
+        }
 
         List<Organization> rootOrganizations = new ArrayList<>();
         for (Organization organization : organizations) {
@@ -802,7 +846,9 @@ public class DepartmentAppService {
                 rootOrganizations.add(organization);
             }
         }
-        return buildOrganizationOptions(rootOrganizations, childrenByParentId);
+        return buildOrganizationOptions(
+            this.sortOrganizationsByDisplayOrder(rootOrganizations),
+            childrenByParentId);
     }
 
     /**
@@ -818,7 +864,8 @@ public class DepartmentAppService {
     ) {
         List<OptionDto> result = new ArrayList<>();
         long sort = 0L;
-        for (Organization organization : organizations) {
+        List<Organization> orderedOrganizations = this.sortOrganizationsByDisplayOrder(organizations);
+        for (Organization organization : orderedOrganizations) {
             if (organization == null || organization.getId() == null) {
                 continue;
             }

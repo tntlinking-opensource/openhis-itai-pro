@@ -68,8 +68,23 @@ public class PeisReportPrintSlipAssembler {
      * @return 打印 slip
      */
     public PeisReportPrintSlipDto assemble(Long encounterId) {
-        // Gate：PE 就诊 + final DR
         DiagnosticReportModel report = requireFinalReport(encounterId);
+        return buildSlip(encounterId, report, report.getFinalizedAt());
+    }
+
+    /**
+     * 预览用 slip：允许草稿（preliminary）或定稿（final）；无报告时抛错。
+     *
+     * @param encounterId 就诊主键
+     * @return 预览 slip
+     */
+    public PeisReportPrintSlipDto assembleForPreview(Long encounterId) {
+        DiagnosticReportModel report = requirePreviewableReport(encounterId);
+        return buildSlip(encounterId, report, report.getFinalizedAt());
+    }
+
+    private PeisReportPrintSlipDto buildSlip(
+        Long encounterId, DiagnosticReportModel report, LocalDateTime checkTime) {
         encounterQueryService.requireEncounterEntityOfClass(
             encounterId,
             EncounterClass.PE.getCode(),
@@ -83,7 +98,7 @@ public class PeisReportPrintSlipAssembler {
         slip.setScenarioCode(PeisPrintScenarioConstants.REPORT_PRINT);
         slip.setSummaryText(firstNonBlank(report.getSummaryText(), ""));
         slip.setConclusionText(firstNonBlank(report.getConclusionText(), ""));
-        slip.setCheckDateText(formatCheckDateText(report.getFinalizedAt()));
+        slip.setCheckDateText(formatCheckDateText(checkTime));
         slip.setHospitalName(firstNonBlank(resolveHospitalName(), ""));
 
         Patient patient = resolvePatient(report.getPatientId());
@@ -121,6 +136,22 @@ public class PeisReportPrintSlipAssembler {
             .filter(report -> DiagnosticReportStatusConstants.STATUS_FINAL.equals(report.getStatusEnum()))
             .orElseThrow(() -> new BusinessException(
                 ErrorCodeConstants.REPORT_NOT_FINAL, "总检报告未定稿，不可打印"));
+    }
+
+    /**
+     * 预览可读草稿或定稿报告；尚无报告记录时抛错。
+     *
+     * @param encounterId 就诊主键
+     * @return 总检报告读模型
+     */
+    private DiagnosticReportModel requirePreviewableReport(Long encounterId) {
+        if (encounterId == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.DIAGNOSTIC_REPORT_INVALID_ARGUMENT, "就诊标识不能为空");
+        }
+        return diagnosticReportQueryService.getByEncounterId(encounterId)
+            .orElseThrow(() -> new BusinessException(
+                ErrorCodeConstants.DIAGNOSTIC_REPORT_INVALID_ARGUMENT, "总检报告不存在，请先保存总检综述"));
     }
 
     /**

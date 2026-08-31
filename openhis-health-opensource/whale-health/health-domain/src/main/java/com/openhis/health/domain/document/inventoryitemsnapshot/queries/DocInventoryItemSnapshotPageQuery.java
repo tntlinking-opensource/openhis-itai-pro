@@ -22,7 +22,7 @@ public class DocInventoryItemSnapshotPageQuery {
     /** 备份批次单号（接口 {@code backupBusNo}）。 */
     private String busNo;
 
-    /** 备份关键字；匹配名称/拼音/五笔/编码/商品名，不含批号（AS BR-INV-DTL-010）。 */
+    /** 备份关键字；匹配名称/拼音/五笔/编码/商品名/批号。 */
     private String keyword;
 
     /** 库房主键多选。 */
@@ -44,12 +44,12 @@ public class DocInventoryItemSnapshotPageQuery {
     private List<Integer> chrgitmLvs;
 
     /**
-     * 基药标识筛选（药典 {@code basic_flag}）；非空时仅保留药品行且 {@code item_id} 落在预解析列表。
+     * 重点药类型 code（见 {@code KeyDrugType}）；非空时仅保留药品行且 {@code item_id} 落在预解析列表。
      */
-    private Boolean basicFlag;
+    private String keyDrugType;
 
     /**
-     * 应用层按基药标识预解析的药品定义主键；与 {@link #basicFlag} 成对使用。
+     * 应用层按重点药类型预解析的药品定义主键；与 {@link #keyDrugType} 成对使用。
      */
     private List<Long> resolvedMedicationDefinitionIds;
 

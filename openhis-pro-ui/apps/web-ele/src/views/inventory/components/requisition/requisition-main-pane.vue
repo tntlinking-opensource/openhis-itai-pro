@@ -1229,8 +1229,8 @@ function resolveRequisitionPrintUnitLabel(row: RequisitionPreviewRow): string {
   return String(row.unitCodeDictText ?? row.unitCode ?? '').trim();
 }
 
-/** 打印请领单（计价流转模版） */
-async function handlePrint() {
+/** 打印或预览请领单（计价流转模版） */
+async function handlePrint(payload?: { preview?: boolean }) {
   const busNo = String(headerBusNo.value ?? '').trim();
   if (!busNo) {
     ElMessage.warning('请先保存单据后再打印');
@@ -1291,6 +1291,7 @@ async function handlePrint() {
     },
     bizRef: { busNo, docKind: 'requisition', variant: props.variant },
     jobName: documentTitle,
+    preview: payload?.preview === true,
   });
 }
 </script>

@@ -34,10 +34,22 @@ public class NurseWorkloadPageQuery extends AbstractPageQuery {
     /** 门诊/住院范围（{@link com.openhis.health.domain.share.constants.NurseWorkloadConstants}）。 */
     private String encounterScope;
 
-    /** 可选护士：诊疗取 Procedure 主执行人；耗材取 preparer_id 或 performer_id（随开关）。 */
+    /** 可选单护士：诊疗取 Procedure 主执行人；耗材取 preparer_id 或 performer_id（随开关）。优先于 {@link #practitionerIds}。 */
     private Long practitionerId;
 
-    /** 开立科室（{@code ChargeItem.requesting_org_id}）；非空时金额 enrich 仅匹配该科室账单行。 */
+    /**
+     * 默认登录科室下的护士主键集合（科室统计）。
+     *
+     * <p>{@code null} = 不按护士集合收窄；空列表 = 该科无护士，读侧须返回空结果（禁止回落全院）。
+     * 由应用层按 {@code Practitioner.org_id}（默认登录科室）解析后写入。</p>
+     */
+    private List<Long> practitionerIds;
+
+    /**
+     * 开立科室（{@code ChargeItem.requesting_org_id}）；非空时金额 enrich 仅匹配该科室账单行。
+     *
+     * <p>科室工作量按默认登录科室统计时由应用层置空，金额随执行护士归属汇总，不再按开立科室二次收窄。</p>
+     */
     private Long requestingOrgId;
 
     /** 解析后的就诊类别存储码（AMB / IMP）；由 Support 写入。 */
@@ -59,4 +71,20 @@ public class NurseWorkloadPageQuery extends AbstractPageQuery {
 
     /** {@code deviceDefId → hvcm_flag}；Support 经 {@code DeviceDefinitionQueryService} 批量 enrich。 */
     private Map<Long, Boolean> hvcmFlagByDeviceDefId;
+
+    /**
+     * 同窗内诊疗净执行事实缓存（{@code Procedure} 实体列表）。
+     *
+     * <p>由 {@link com.openhis.health.domain.clinical.procedure.service.ProcedureQueryService}
+     * 在首次加载后写入；同一次 HTTP 请求内汇总/页脚/卡片禁止重复扫库。禁止跨请求依赖。</p>
+     */
+    private transient List<?> cachedNetCompletedProceduresForRequest;
+
+    /**
+     * 同窗内耗材候选发放事实缓存（{@code DeviceDispense} 实体列表）。
+     *
+     * <p>由 {@link com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseQueryService}
+     * 写入；类型为 workflow 聚合实体，故用 {@code List<?>} 避免 clinical 包依赖 workflow 实体。</p>
+     */
+    private transient List<?> cachedNurseConsumableCandidatesForRequest;
 }

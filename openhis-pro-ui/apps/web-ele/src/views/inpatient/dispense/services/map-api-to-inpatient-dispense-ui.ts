@@ -251,6 +251,8 @@ export function mapInpatientSlipRowsToPrescriptionBlocks(
       pricingPractitionerName: headForBlock.pricingPractitionerName?.trim() || undefined,
       feeNatureLabel: headForBlock.feeNatureText?.trim() || undefined,
       visitTypeLabel: headForBlock.encounterMedicationTypeText?.trim() || undefined,
+      // 发放单号：码上放心上传键（日单取头行）
+      dispenseBusNo: headForBlock.busNo?.trim() || undefined,
       patientPhone: headForBlock.patientPhone?.trim() || undefined,
       issuedAt: issued,
       status: blockStatusFromRows(allSlipRowsForStatus),

@@ -78,6 +78,10 @@ public class CreateActivityDefinitionCommand extends BatchCommand<CreateActivity
         private String childrenJson;
         /** 是否套餐/含子项标志。 */
         private Boolean childrenFlag;
+        /** 适用性别持久化码（{@code ActivityPermittedGender}）。 */
+        private String permittedGenderEnum;
+        /** 目录展示顺序（数值越小越靠前）。 */
+        private Integer sortOrder;
     }
 
     /**

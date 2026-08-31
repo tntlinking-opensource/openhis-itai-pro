@@ -35,10 +35,14 @@ import com.openhis.health.domain.medication.medicationrequest.query.OutpatientSi
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.OutpatientSignedPrescriptionSummaryCountQueryModel;
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
+import com.openhis.health.domain.custom.prescriptionreview.queries.model.PrescriptionReviewQueryModel;
+import com.openhis.health.domain.custom.prescriptionreview.service.PrescriptionReviewQueryService;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.OutpatientPharmacyPrescriptionQueryConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
+import com.openhis.health.domain.share.enums.DispenseStatus;
+import com.openhis.health.domain.share.enums.PrescriptionReviewStatus;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.session.CurrentOperatorResolver;
@@ -103,6 +107,8 @@ public class OutpatientPharmacyPrescriptionQueryAppService {
     private final PractitionerQueryService practitionerQueryService;
     /** 开单科室主档（药嘱 org_id → 名称）。 */
     private final OrganizationQueryService organizationQueryService;
+    /** 点评读侧：点评态筛 Pre 预写有效点评处方号（B.6.4）。 */
+    private final PrescriptionReviewQueryService prescriptionReviewQueryService;
     /** 平铺行装配（含方级含输液）。 */
     private final OutpatientPharmacyPrescriptionQueryReadAssembler prescriptionQueryReadAssembler;
     /** Request/Response 与领域 Query 映射。 */
@@ -110,7 +116,8 @@ public class OutpatientPharmacyPrescriptionQueryAppService {
     /**
      * IF-OPQ-01：门诊处方查询页初始化。
      *
-     * <p>下发收费/发药状态、处方类别 355、医保类别、费用性质三档、含输液三态、开单科室，以及默认本月开方日起止。</p>
+     * <p>下发收费/发药状态、处方类别 355、医保类别、费用性质三档、含输液三态、开单科室、
+     * 点评状态、是否合理、药品类型（药典），以及默认本月开方日起止。</p>
      *
      * @param request 空体占位请求
      * @return 筛选项与默认本月开方日
@@ -141,6 +148,16 @@ public class OutpatientPharmacyPrescriptionQueryAppService {
             // Pre：开单科室（门诊启用科室）
             List<OptionDto> organizationOptions =
                 this.prescriptionQuerySupport.buildOrganizationOptions();
+            // Pre：点评状态 PENDING/REVIEWED
+            List<OptionDto> reviewStatusOptions =
+                this.prescriptionQuerySupport.buildReviewStatusOptions();
+            // Pre：是否合理
+            List<OptionDto> reasonableOptions =
+                this.prescriptionQuerySupport.buildReasonableOptions();
+            // Pre：药品类型（药典 medication_category_code）
+            List<OptionDto> medicationCategoryOptions =
+                this.terminologyOptionLoader.loadOptions(
+                    TerminologyCodeSystemNameConstants.MEDICATION_CATEGORY_CODE);
             LocalDate today = LocalDate.now();
             LocalDate monthStart = today.withDayOfMonth(1);
             LocalDate monthEnd = today.withDayOfMonth(today.lengthOfMonth());
@@ -156,7 +173,10 @@ public class OutpatientPharmacyPrescriptionQueryAppService {
                 medTypeOptions,
                 contractCategoryOptions,
                 infusionFilterOptions,
-                organizationOptions);
+                organizationOptions,
+                reviewStatusOptions,
+                reasonableOptions,
+                medicationCategoryOptions);
         } catch (RuntimeException ex) {
             log.warn("门诊处方查询页初始化失败", ex);
             throw new BusinessException(
@@ -202,20 +222,35 @@ public class OutpatientPharmacyPrescriptionQueryAppService {
                     request.getPatientKeyword(),
                     openedStart,
                     openedEnd);
-            // Pre：收费状态非空时预解析药品申请 id；空则不写 charge resolved
+            // Pre：仅收费/发药/点评筛需要窗口 med_req；默认分页不拉全窗 id，避免无谓物化
+            boolean needWindowMedReqIds = StringUtils.isNotEmpty(request.getChargeStatusEnum())
+                || StringUtils.isNotEmpty(request.getDispenseStatusEnum())
+                || StringUtils.isNotEmpty(request.getReviewStatusEnum())
+                || request.getReasonableFlag() != null;
+            List<Long> windowMedReqIds = null;
+            if (needWindowMedReqIds) {
+                windowMedReqIds =
+                    this.medicationRequestQueryService.listOutpatientSignedMedicationRequestIdsInOpenedWindow(
+                        openedStart,
+                        openedEnd,
+                        patientScope.getResolvedEncounterIds());
+            }
+            // Pre：收费状态 → 仅在窗口 med_req 内按状态收窄
             List<Long> chargeResolvedIds = null;
             if (StringUtils.isNotEmpty(request.getChargeStatusEnum())) {
                 chargeResolvedIds =
-                    this.chargeItemQueryService.listDistinctServiceIdsByStatusEnumAndServiceTable(
+                    this.chargeItemQueryService.listDistinctServiceIdsByStatusEnumAndServiceTableAndServiceIdIn(
                         request.getChargeStatusEnum().trim(),
-                        TableNameConstants.MED_MEDICATION_REQUEST);
+                        TableNameConstants.MED_MEDICATION_REQUEST,
+                        windowMedReqIds);
             }
-            // Pre：发药状态非空时预解析药品申请 id；空则跳过
+            // Pre：发药状态 → 仅在窗口 med_req 内按状态收窄
             List<Long> dispenseResolvedIds = null;
             if (StringUtils.isNotEmpty(request.getDispenseStatusEnum())) {
                 dispenseResolvedIds =
-                    this.medicationDispenseQueryService.listDistinctMedicationRequestIdsByStatusEnum(
-                        request.getDispenseStatusEnum().trim());
+                    this.medicationDispenseQueryService.listDistinctMedicationRequestIdsByStatusEnumAndMedReqIdIn(
+                        request.getDispenseStatusEnum().trim(),
+                        windowMedReqIds);
             }
             // Pre：含输液≠ALL 时拉取注射目录主键；ALL 或空则跳过
             List<Long> injectMedicationIds = null;
@@ -238,6 +273,12 @@ public class OutpatientPharmacyPrescriptionQueryAppService {
             query.setResolvedMedicationRequestIdsForDispenseStatus(dispenseResolvedIds);
             query.setResolvedMedicationIdsForInjectFlag(injectMedicationIds);
             query.setResolvedContractIdsForCategory(contractResolvedIds);
+            // Pre：含输液方号一次解析，供 Spec 多次 toPredicate 复用
+            if (injectMedicationIds != null) {
+                query.setResolvedPrescriptionNosForInfusionFilter(
+                    this.medicationRequestQueryService.listSignedPrescriptionNosByMedicationIdsInOpenedWindow(
+                        injectMedicationIds, query.getStartDate(), query.getEndDate()));
+            }
             // Pre：医保类别非空时：诊断 id（AMB 范围）→ 引用该诊断的药品申请 id
             if (StringUtils.isNotEmpty(request.getMedTypeCode())) {
                 List<Long> encounterScopeIds = query.getResolvedEncounterIds();
@@ -250,7 +291,19 @@ public class OutpatientPharmacyPrescriptionQueryAppService {
                         diagnosisIdsForMedType);
                 query.setResolvedMedicationRequestIdsForMedType(medTypeResolvedIds);
             }
-            // Pre：主事实分页（已签发、正方+退方、BR-OPQ-001～016）
+            // Pre：药品类型（药典 category_code）→ 目录主键 + 方号一次解析
+            if (StringUtils.isNotEmpty(request.getMedicationCategoryCode())) {
+                List<Long> categoryMedicationIds =
+                    this.medicationDefinitionQueryService.listIdsByCategoryCodesIn(
+                        List.of(request.getMedicationCategoryCode().trim()));
+                query.setResolvedMedicationIdsForCategory(categoryMedicationIds);
+                query.setResolvedPrescriptionNosForCategoryFilter(
+                    this.medicationRequestQueryService.listSignedPrescriptionNosByMedicationIdsInOpenedWindow(
+                        categoryMedicationIds, query.getStartDate(), query.getEndDate()));
+            }
+            // Pre：点评状态 / 是否合理 → 开立窗内 INCLUDE 方号（禁止租户全量点评/COMPLETED 扫描）
+            this.applyReviewFilterToPageQuery(request, query, windowMedReqIds);
+            // Pre：主事实分页（已签发、正方+退方、BR-OPQ-001～019）
             Page<MedicationRequestListQueryModel> page =
                 this.medicationRequestQueryService.pageOutpatientSignedPrescriptionDrugLines(query);
             // Pre：同规约轻量 COUNT DISTINCT（页脚总处方量 / 就诊人数；禁止二次拉明细）
@@ -274,6 +327,128 @@ public class OutpatientPharmacyPrescriptionQueryAppService {
                 "查询失败，请稍后重试");
         }
     }
+    /**
+     * 将点评状态 / 是否合理筛预写到领域分页 Query（开立窗内 INCLUDE，B.6.4）。
+     *
+     * <p>待点评=窗口已发药 COMPLETED 方号减去有效点评；已点评=窗口方号与有效点评交集（可再按合理）。
+     * 禁止租户全量 listActive / COMPLETED 扫描。</p>
+     *
+     * @param request         分页请求
+     * @param query           领域分页入参（就地写入）
+     * @param windowMedReqIds 开立窗+AMB 已签发药品申请 id
+     */
+    private void applyReviewFilterToPageQuery(
+        PageOutpatientPharmacyPrescriptionQueryRequest request,
+        OutpatientSignedPrescriptionDrugLinePageQuery query,
+        List<Long> windowMedReqIds) {
+        String reviewStatus = null;
+        if (StringUtils.isNotEmpty(request.getReviewStatusEnum())) {
+            reviewStatus = request.getReviewStatusEnum().trim();
+        }
+        Boolean reasonableFlag = request.getReasonableFlag();
+        // 未传点评相关筛：不写模式，领域跳过
+        if (reviewStatus == null && reasonableFlag == null) {
+            return;
+        }
+        // 待点评叠是否合理：矛盾 → 空 INCLUDE
+        if (PrescriptionReviewStatus.PENDING.getCode().equals(reviewStatus)) {
+            if (reasonableFlag != null) {
+                query.setResolvedPrescriptionNosForReview(List.of());
+                query.setReviewPrescriptionFilterMode(
+                    OutpatientPharmacyPrescriptionQueryConstants.REVIEW_PRESCRIPTION_FILTER_INCLUDE);
+                return;
+            }
+            List<String> pendingNos = this.resolvePendingReviewPrescriptionNos(windowMedReqIds);
+            query.setResolvedPrescriptionNosForReview(pendingNos);
+            query.setReviewPrescriptionFilterMode(
+                OutpatientPharmacyPrescriptionQueryConstants.REVIEW_PRESCRIPTION_FILTER_INCLUDE);
+            return;
+        }
+        // 已点评或仅传是否合理：窗口方 ∩ 有效点评（可再按合理）
+        if (reviewStatus == null
+            || PrescriptionReviewStatus.REVIEWED.getCode().equals(reviewStatus)) {
+            List<String> reviewedNos =
+                this.resolveReviewedPrescriptionNosInWindow(windowMedReqIds, reasonableFlag);
+            query.setResolvedPrescriptionNosForReview(reviewedNos);
+            query.setReviewPrescriptionFilterMode(
+                OutpatientPharmacyPrescriptionQueryConstants.REVIEW_PRESCRIPTION_FILTER_INCLUDE);
+            return;
+        }
+        // 未知点评状态码：拒查
+        query.setResolvedPrescriptionNosForReview(List.of());
+        query.setReviewPrescriptionFilterMode(
+            OutpatientPharmacyPrescriptionQueryConstants.REVIEW_PRESCRIPTION_FILTER_INCLUDE);
+    }
+
+    /**
+     * 解析开立窗内「已发药待点评」处方号：窗口 med_req ∩ COMPLETED − 有效点评。
+     *
+     * @param windowMedReqIds 开立窗已签发药品申请 id
+     * @return 待点评处方号；无命中为空列表
+     */
+    private List<String> resolvePendingReviewPrescriptionNos(List<Long> windowMedReqIds) {
+        if (windowMedReqIds == null || windowMedReqIds.isEmpty()) {
+            return List.of();
+        }
+        List<Long> completedIds =
+            this.medicationDispenseQueryService.listDistinctMedicationRequestIdsByStatusEnumAndMedReqIdIn(
+                DispenseStatus.COMPLETED.getCode(),
+                windowMedReqIds);
+        if (completedIds.isEmpty()) {
+            return List.of();
+        }
+        List<String> completedNos =
+            this.medicationRequestQueryService.listDistinctPrescriptionNosByMedicationRequestIds(completedIds);
+        if (completedNos.isEmpty()) {
+            return List.of();
+        }
+        Map<String, PrescriptionReviewQueryModel> activeMap =
+            this.prescriptionReviewQueryService.mapActiveByPrescriptionNos(completedNos);
+        List<String> pendingNos = new ArrayList<>();
+        // 已发药方号中去掉已有有效点评 → 待点评
+        for (String no : completedNos) {
+            if (!activeMap.containsKey(no)) {
+                pendingNos.add(no);
+            }
+        }
+        return pendingNos;
+    }
+
+    /**
+     * 解析开立窗内已点评处方号（可选按是否合理收窄）。
+     *
+     * @param windowMedReqIds 开立窗已签发药品申请 id
+     * @param reasonableFlag  是否合理；null=不限
+     * @return 已点评处方号
+     */
+    private List<String> resolveReviewedPrescriptionNosInWindow(
+        List<Long> windowMedReqIds,
+        Boolean reasonableFlag) {
+        if (windowMedReqIds == null || windowMedReqIds.isEmpty()) {
+            return List.of();
+        }
+        List<String> windowNos =
+            this.medicationRequestQueryService.listDistinctPrescriptionNosByMedicationRequestIds(windowMedReqIds);
+        if (windowNos.isEmpty()) {
+            return List.of();
+        }
+        Map<String, PrescriptionReviewQueryModel> activeMap =
+            this.prescriptionReviewQueryService.mapActiveByPrescriptionNos(windowNos);
+        List<String> reviewedNos = new ArrayList<>();
+        // 窗口方号 ∩ 有效点评；可再按合理结论过滤
+        for (Map.Entry<String, PrescriptionReviewQueryModel> entry : activeMap.entrySet()) {
+            if (entry.getKey() == null || entry.getValue() == null) {
+                continue;
+            }
+            if (reasonableFlag != null
+                && !reasonableFlag.equals(entry.getValue().getReasonableFlag())) {
+                continue;
+            }
+            reviewedNos.add(entry.getKey());
+        }
+        return reviewedNos;
+    }
+
     /**
      * 解析开方日；空白或格式非法抛 EX-OPQ-102。
      *
@@ -369,17 +544,9 @@ public class OutpatientPharmacyPrescriptionQueryAppService {
         // Pre：诊断名称（ids 串首位就诊诊断 → conditionDefinitionId → 名称）
         List<ConditionDefinitionBatchItemQueryModel> conditions =
             this.conditionDefinitionQueryService.getConditionDefinitionListByIds(new ArrayList<>(conditionDefinitionIds));
-        // Pre：费用性质分类（全量合同索引后按页内 id 裁剪，避免逐条 findOptional）
-        List<ContractListItemQueryModel> allContracts = this.contractQueryService.listAllContracts();
-        List<ContractListItemQueryModel> pageContracts = new ArrayList<>();
-        Map<Long, ContractListItemQueryModel> contractIndex =
-            this.prescriptionQueryReadAssembler.indexContractById(allContracts);
-        for (Long contractId : contractIds) {
-            ContractListItemQueryModel contract = contractIndex.get(contractId);
-            if (contract != null) {
-                pageContracts.add(contract);
-            }
-        }
+        // Pre：费用性质分类（仅页内合同 id，禁止 listAllContracts）
+        List<ContractListItemQueryModel> pageContracts =
+            this.contractQueryService.listContractsByIds(contractIds);
         // Pre：门诊号与患者名、电话
         List<OutpatientEncounterContextQueryModel> encounterContexts =
             this.encounterContextReader.listOutpatientContextsByEncounterIdsOrdered(

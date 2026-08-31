@@ -566,6 +566,11 @@ CREATE TABLE IF NOT EXISTS "public"."cln_observation_definition" (
 CREATE UNIQUE INDEX IF NOT EXISTS "uk_cln_obs_def_tenant_code"
     ON "public"."cln_observation_definition" ("tenant_id", "code")
     WHERE "is_deleted" = false;
+CREATE INDEX IF NOT EXISTS idx_cln_obs_def_tenant_cat_status_code
+    ON cln_observation_definition (tenant_id, category_code, status_enum, code)
+    WHERE is_deleted = FALSE;
+COMMENT ON INDEX idx_cln_obs_def_tenant_cat_status_code IS
+    '体检小项：分类+状态+编码';
 
 COMMENT ON TABLE cln_observation_definition IS '临床观察项目录（体检小项/分科结论 OD）';
 COMMENT ON COLUMN cln_observation_definition.id IS '主键';

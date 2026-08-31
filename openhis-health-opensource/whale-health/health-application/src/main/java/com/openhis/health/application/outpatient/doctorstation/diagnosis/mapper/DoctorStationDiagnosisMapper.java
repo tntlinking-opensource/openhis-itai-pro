@@ -22,6 +22,7 @@ import com.openhis.health.domain.clinical.conditiondefinition.queries.model.Doct
 import com.openhis.health.domain.clinical.conditiondefinition.queries.model.OpspDiseCodeDefinitionMatchQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
 import com.openhis.health.infrastructure.integration.insurance.benefit.ExtensionOut.InsuranceOpspFilingLineSnapshot;
+import com.openhis.whale.core.application.dto.OptionDto;
 import org.springframework.data.domain.Page;
 
 import java.util.List;
@@ -66,13 +67,15 @@ public interface DoctorStationDiagnosisMapper {
      * @param doctorCommonUseList 医生常用
      * @param userPersonalList    用户个人
      * @param organizationList    科室
+     * @param medicalTypeOptions  门诊诊断类型下拉（YbMedType 门诊向子集）
      * @return 响应
      */
     CommonDiagnosesResponse toCommonDiagnosesResponse(
         List<CommonDiagnosisRowDto> patientHistoryList,
         List<CommonDiagnosisRowDto> doctorCommonUseList,
         List<CommonDiagnosisRowDto> userPersonalList,
-        List<CommonDiagnosisRowDto> organizationList);
+        List<CommonDiagnosisRowDto> organizationList,
+        List<OptionDto> medicalTypeOptions);
 
     /**
      * 将诊断中西医维度筛选入参解析为目录 {@code sourceEnum} 字符串集合。

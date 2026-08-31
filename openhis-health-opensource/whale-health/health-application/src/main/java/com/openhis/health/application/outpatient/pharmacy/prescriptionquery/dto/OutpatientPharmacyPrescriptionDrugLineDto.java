@@ -50,6 +50,12 @@ public class OutpatientPharmacyPrescriptionDrugLineDto {
     @Schema(description = "患者姓名")
     private String patientName;
 
+    /**
+     * 患者身份证号（明文；列表展示脱敏由前端负责，便于重名区分）。
+     */
+    @Schema(description = "身份证号（明文，前端脱敏）")
+    private String idCard;
+
     /** 患者联系电话。 */
     @Schema(description = "患者联系电话")
     private String patientPhone;
@@ -153,7 +159,7 @@ public class OutpatientPharmacyPrescriptionDrugLineDto {
     @Schema(description = "规格")
     private String medicationSpec;
 
-    /** 生产厂家展示文案（目录 {@code manufacturer_text}）。 */
+    /** 生产厂家展示文案（由 AppService 按目录 manufacturerId 解析供应商名称；非实体 text 列）。 */
     @Schema(description = "生产厂家")
     private String manufacturerText;
 

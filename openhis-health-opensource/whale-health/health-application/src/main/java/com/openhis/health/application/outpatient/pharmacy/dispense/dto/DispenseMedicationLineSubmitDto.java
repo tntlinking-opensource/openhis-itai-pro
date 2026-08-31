@@ -24,4 +24,13 @@ public class DispenseMedicationLineSubmitDto {
     @Schema(description = "发放单主键", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
     private Long dispenseId;
+
+    /**
+     * 核发前最终追溯码（逗号串；可空）。
+     *
+     * <p>已配药重试时前端可能已改扫码；有值则覆盖发放行 {@code trace_no} 后再扣主档，
+     * 避免界面码与落库扣减码不一致。</p>
+     */
+    @Schema(description = "核发前最终追溯码（逗号串；可空）")
+    private String traceNo;
 }

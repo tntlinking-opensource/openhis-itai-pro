@@ -72,6 +72,14 @@ public class PeisEncounterExt implements Persistable<Long> {
     @Column(name = "bus_no")
     private String busNo;
 
+    /** 本次体检推荐人。 */
+    @Column(name = "referrer_name")
+    private String referrerName;
+
+    /** 本次体检是否提供早餐。 */
+    @Column(name = "breakfast_flag")
+    private Boolean breakfastFlag;
+
     /** 租户标识。 */
     @Column(name = "tenant_id")
     private Long tenantId;
@@ -132,12 +140,19 @@ public class PeisEncounterExt implements Persistable<Long> {
     }
 
     /**
-     * 校验团检时单位必填（BR-PE-EXT-02）。
+     * 校验团检时单位与分组必填（BR-PE-EXT-02）。
      */
     public void assertGroupCompany() {
-        if (Boolean.TRUE.equals(this.groupFlag) && this.companyId == null) {
+        if (!Boolean.TRUE.equals(this.groupFlag)) {
+            return;
+        }
+        if (this.companyId == null) {
             throw new BusinessException(
                 ErrorCodeConstants.PEIS_ENC_EXT_INVALID_ARGUMENT, "团检须指定单位");
+        }
+        if (this.groupBatchId == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.PEIS_ENC_EXT_INVALID_ARGUMENT, "团检须指定分组");
         }
     }
 

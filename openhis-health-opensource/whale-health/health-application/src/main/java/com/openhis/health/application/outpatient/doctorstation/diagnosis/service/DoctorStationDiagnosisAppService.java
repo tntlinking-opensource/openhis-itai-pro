@@ -152,8 +152,32 @@ public class DoctorStationDiagnosisAppService {
                 orgId, ConditionTemplateBinding.DEPARTMENT.getCode());
             orgRows = this.mapTemplatesToCommonRows(orgTemplates, sourceLabels);
         }
-        // 聚合四类列表为响应（仅读）。
-        return this.doctorStationDiagnosisMapper.toCommonDiagnosesResponse(history, doctorRows, personalRows, orgRows);
+        // 聚合四类列表 + 门诊诊断类型下拉（仅读）。
+        return this.doctorStationDiagnosisMapper.toCommonDiagnosesResponse(
+            history, doctorRows, personalRows, orgRows, this.buildOutpatientMedicalTypeOptions());
+    }
+
+    /**
+     * 门诊诊断表「诊断类型」下拉：YbMedType 门诊向常用码。
+     *
+     * @return 非空选项列表（value=code，label=display）
+     */
+    private List<OptionDto> buildOutpatientMedicalTypeOptions() {
+        List<YbMedType> items = new ArrayList<>();
+        items.add(YbMedType.GENERAL_OUTPATIENT);
+        items.add(YbMedType.EMERGENCY);
+        items.add(YbMedType.CHRONIC_SPECIAL_DISEASE_OUTPATIENT);
+        items.add(YbMedType.CHRONIC_DISEASE_OUTPATIENT);
+        items.add(YbMedType.SPECIAL_DISEASE_OUTPATIENT);
+        items.add(YbMedType.TRADITIONAL_CHINESE_MEDICINE_OUTPATIENT);
+        items.add(YbMedType.SPECIAL_MEDICATION);
+        items.add(YbMedType.MATERNITY_OUTPATIENT);
+        items.add(YbMedType.ACCIDENTAL_INJURY_OUTPATIENT);
+        List<OptionDto> options = new ArrayList<>();
+        for (YbMedType item : items) {
+            options.add(new OptionDto(item.getSortOrder(), item.getCode(), item.getDisplay()));
+        }
+        return options;
     }
 
     /**

@@ -124,7 +124,7 @@ const formItems = computed<FormItemConfig[]>(() => [
     type: 'input',
     prop: 'keyword',
     label: '名称关键字',
-    placeholder: '同时匹配名称/拼音',
+    placeholder: '名称 / 拼音 / 医保码',
     clearable: true,
   },
   {

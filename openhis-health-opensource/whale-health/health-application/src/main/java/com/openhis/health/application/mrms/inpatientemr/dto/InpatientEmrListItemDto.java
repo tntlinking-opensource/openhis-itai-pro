@@ -51,8 +51,24 @@ public class InpatientEmrListItemDto {
     /** 住院号。 */
     private String iptNo;
 
-    /** 性别字典码。 */
+    /** 性别字典码（AdministrativeGender code，如 MALE/FEMALE）。 */
     private String gendCode;
+
+    /**
+     * 年龄展示文案（就诊上下文 {@code ageText}，如 {@code 26岁}）。
+     * <p>供住院病例查询临床侧栏（体温单/护理记录抬头）回显。</p>
+     */
+    private String ageText;
+
+    /**
+     * 床位展示名（活动床；无活动床时为「原{房}-{床}（未占床）」）。
+     */
+    private String bedName;
+
+    /**
+     * 病区/病室展示名（就诊上下文 {@code wardName}；无活动病区时为末次已完成病区）。
+     */
+    private String wardName;
 
     /** 证件号码。 */
     private String certno;
@@ -60,7 +76,7 @@ public class InpatientEmrListItemDto {
     /** 入院时间。 */
     private LocalDateTime admTime;
 
-    /** 出院时间。 */
+    /** 出院时间（业务真源：出院医嘱计划时间；非清床/结算）。 */
     private LocalDateTime dscgTime;
 
     /** 入院科别名称。 */

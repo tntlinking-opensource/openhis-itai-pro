@@ -4,8 +4,6 @@
  */
 package com.openhis.chs.domain.catalog.support;
 
-import static com.openhis.whale.core.application.util.StringUtils.isEmpty;
-
 /** 国家目录镜像入库前字段规范化（1301 TXT / 1312 JSON 共用） */
 public final class CatalogRowFieldNormalizer {
 
@@ -30,10 +28,10 @@ public final class CatalogRowFieldNormalizer {
 
     /** 1301/1312 入库前截断至列宽；完整行仍保留在 {@code raw_json} */
     public static String truncateVarchar(String raw, int maxLen) {
-        if (isEmpty(raw)) {
+        String text = NationalCatalog1301FieldExtractor.clean(raw);
+        if (text == null) {
             return null;
         }
-        String text = raw.trim();
         if (text.length() <= maxLen) {
             return text;
         }
@@ -42,10 +40,10 @@ public final class CatalogRowFieldNormalizer {
 
     /** 收费项目等级：平台 1301 第 92 列常为「甲/乙类/丙类」或「甲」，统一为 01/02/03 */
     public static String normalizeChrgitmLv(String raw) {
-        if (isEmpty(raw)) {
+        String text = NationalCatalog1301FieldExtractor.clean(raw);
+        if (text == null) {
             return null;
         }
-        String text = raw.trim();
         return switch (text) {
             case "甲", "甲类" -> "01";
             case "乙", "乙类" -> "02";
@@ -59,10 +57,10 @@ public final class CatalogRowFieldNormalizer {
 
     /** 有效标志：保留 0/1，其它取首字符（平台偶发带说明文字） */
     public static String normalizeValiFlag(String raw) {
-        if (isEmpty(raw)) {
+        String text = NationalCatalog1301FieldExtractor.clean(raw);
+        if (text == null) {
             return null;
         }
-        String text = raw.trim();
         if ("有效".equals(text) || "1".equals(text)) {
             return "1";
         }
@@ -81,10 +79,10 @@ public final class CatalogRowFieldNormalizer {
 
     /** 限制使用标志：是/限制/否 等文案统一为 0/1 或截断 */
     public static String normalizeLmtUsedFlag(String raw) {
-        if (isEmpty(raw)) {
+        String text = NationalCatalog1301FieldExtractor.clean(raw);
+        if (text == null) {
             return null;
         }
-        String text = raw.trim();
         if ("是".equals(text) || "限制".equals(text) || "限制使用".equals(text)) {
             return "1";
         }

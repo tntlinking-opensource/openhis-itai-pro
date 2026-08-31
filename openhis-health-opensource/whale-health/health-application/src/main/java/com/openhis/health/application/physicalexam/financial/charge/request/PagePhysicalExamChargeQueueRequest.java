@@ -18,4 +18,10 @@ import lombok.experimental.Accessors;
 @Accessors(chain = true)
 @Schema(description = "分页查询体检收费队列请求")
 public class PagePhysicalExamChargeQueueRequest extends AbstractHealthPageRequest {
+
+    /**
+     * 收费类型：{@code PERSONAL} 个检、{@code GROUP} 团检；缺省按个检。
+     */
+    @Schema(description = "收费类型：PERSONAL/GROUP")
+    private String chargeKind;
 }

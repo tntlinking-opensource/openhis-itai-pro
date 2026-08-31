@@ -103,7 +103,7 @@ public final class ChsInventoryConstants {
 
     /**
      * 3503/3504 采购发票号缺省占位（业务未填 {@code invoice_no} 时上报，避免拦正常进退货）。
-     * <p>平台字段 {@code purc_invo_no}；有真实发票号时优先用库值。</p>
+     * <p>平台字段 {@code purc_invo_no}；有真实发票号时优先用库值。与库 {@code invoice_no} DEFAULT、进货 Mapper 空值落库同口径为 {@code 0}。</p>
      */
     public static final String DEFAULT_PURC_INVO_NO = "0";
 

@@ -5,7 +5,6 @@
 package com.openhis.health.application.physicalexam.financial.groupcharge.service;
 
 import com.openhis.health.application.peis.group.dto.GroupRosterRowDto;
-import com.openhis.health.application.physicalexam.financial.groupcharge.dto.GroupChargeFailureRowDto;
 import com.openhis.health.application.physicalexam.financial.groupcharge.request.ConfirmGroupBatchSettlementRequest;
 import com.openhis.health.application.physicalexam.financial.groupcharge.request.PageGroupChargeRosterRequest;
 import com.openhis.health.application.physicalexam.financial.groupcharge.request.PreSettleBatchRequest;
@@ -14,12 +13,11 @@ import com.openhis.health.application.physicalexam.financial.groupcharge.respons
 import com.openhis.health.application.physicalexam.financial.groupcharge.response.GroupChargePageInitResponse;
 import com.openhis.health.application.physicalexam.financial.groupcharge.response.PreSettleBatchResponse;
 import com.openhis.health.application.physicalexam.financial.groupcharge.response.RosterChargeStatusResponse;
-import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.health.domain.peis.group.entity.PeisGroupRoster;
 import com.openhis.health.domain.peis.group.service.PeisGroupCheckQueryService;
-import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.PeisGroupRosterConstants;
 import com.openhis.whale.core.application.dto.PagedResult;
+import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -28,23 +26,23 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
-import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
  * 团检批量收费应用服务（AS-PE-FIN-002）。
  *
- * <p>先收费后建单：结算成功后为每人创建 Encounter(PE) 并标记名册 PAID。</p>
+ * <p>写侧已冻结；主路径为筹备免收费建单 + 单位合同后结。读侧名册查询仍可用。</p>
  */
 @Service
 @Validated
 @RequiredArgsConstructor
 public class PhysicalExamGroupChargeAppService {
 
+    private static final String FROZEN_MESSAGE =
+        "团检批量收费已停用，请使用团检筹备免收费建单，单位款项在合同上后结确认";
+
     private final PeisGroupCheckQueryService peisGroupCheckQueryService;
-    private final GroupChargeSettlementExecutor groupChargeSettlementExecutor;
-    private final CurrentPractitionerResolver currentPractitionerResolver;
 
     /**
      * 团检收费页初始化（GCHG-01）。
@@ -72,42 +70,14 @@ public class PhysicalExamGroupChargeAppService {
      */
     @Transactional(readOnly = true)
     public PreSettleBatchResponse preSettleBatch(PreSettleBatchRequest request) {
-        List<PeisGroupRoster> rosters = requireUnpaidRosters(request);
-        PreSettleBatchResponse response = new PreSettleBatchResponse();
-        response.setEstimatedCount(rosters.size());
-        response.setEstimatedAmount(BigDecimal.ZERO);
-        return response;
+        throw new BusinessException("PEIS_GROUP_CHARGE_FROZEN", FROZEN_MESSAGE);
     }
 
     /**
      * 确认批量结算（GCHG-05）。
      */
     public ConfirmGroupBatchSettlementResponse confirmBatchSettlement(ConfirmGroupBatchSettlementRequest request) {
-        if (request == null || request.getRosterIds() == null || request.getRosterIds().isEmpty()) {
-            throw new ValidationException("批量收费失败：请勾选名册");
-        }
-        Long operatorId = currentPractitionerResolver.requireOperatorId(
-            ErrorCodeConstants.PEIS_REG_INVALID_ARGUMENT, "请先登录后再收费");
-        ConfirmGroupBatchSettlementResponse response = new ConfirmGroupBatchSettlementResponse();
-        int successCount = 0;
-        List<GroupChargeFailureRowDto> failures = new ArrayList<>();
-        for (Long rosterId : request.getRosterIds()) {
-            if (rosterId == null) {
-                continue;
-            }
-            try {
-                groupChargeSettlementExecutor.settleOneRoster(rosterId, request.getOrgId(), operatorId);
-                successCount++;
-            } catch (RuntimeException ex) {
-                GroupChargeFailureRowDto failure = new GroupChargeFailureRowDto();
-                failure.setRosterId(rosterId);
-                failure.setMessage(ex.getMessage() != null ? ex.getMessage() : "结算失败");
-                failures.add(failure);
-            }
-        }
-        response.setSuccessCount(successCount);
-        response.setFailures(failures);
-        return response;
+        throw new BusinessException("PEIS_GROUP_CHARGE_FROZEN", FROZEN_MESSAGE);
     }
 
     /**
@@ -122,19 +92,27 @@ public class PhysicalExamGroupChargeAppService {
         response.setRosterId(roster.getId());
         response.setPayStatusCode(roster.getPayStatusCode());
         response.setEncounterId(roster.getEncounterId());
-        response.setPaid(PeisGroupRosterConstants.PAY_PAID.equals(roster.getPayStatusCode()));
+        response.setPaid(PeisGroupRosterConstants.isEnrolled(roster.getPayStatusCode()));
         return response;
     }
 
     private PagedResult<GroupRosterRowDto> pageRosterByPayStatus(
-            PageGroupChargeRosterRequest request, String payStatusCode) {
+            PageGroupChargeRosterRequest request, String payStatusFilter) {
         if (request == null || request.getBatchId() == null) {
             throw new ValidationException("查询名册失败：批次不能为空");
+        }
+        String enrollmentFilter = null;
+        String payStatusCode = payStatusFilter;
+        if (PeisGroupRosterConstants.PAY_UNPAID.equals(payStatusFilter)) {
+            payStatusCode = null;
+            enrollmentFilter = "UNENROLLED";
         }
         PageRequest pageable = PageRequest.of(request.springPageIndex(), request.getBoundedPageSize());
         Page<PeisGroupRoster> page = peisGroupCheckQueryService.pageRoster(
             request.getBatchId(),
             payStatusCode,
+            enrollmentFilter,
+            null,
             request.getCollegeId(),
             request.getClassName(),
             pageable);
@@ -143,30 +121,6 @@ public class PhysicalExamGroupChargeAppService {
             rows.add(toRosterRowDto(entity));
         }
         return PagedResult.of(rows, page.getTotalElements(), page.getNumber() + 1, page.getSize());
-    }
-
-    private List<PeisGroupRoster> requireUnpaidRosters(PreSettleBatchRequest request) {
-        if (request == null || request.getRosterIds() == null || request.getRosterIds().isEmpty()) {
-            throw new ValidationException("预结算失败：请勾选名册");
-        }
-        List<PeisGroupRoster> rosters = peisGroupCheckQueryService.listByIds(request.getRosterIds());
-        List<PeisGroupRoster> unpaid = new ArrayList<>();
-        for (PeisGroupRoster roster : rosters) {
-            if (roster == null) {
-                continue;
-            }
-            if (PeisGroupRosterConstants.PAY_PAID.equals(roster.getPayStatusCode())) {
-                throw new ValidationException("预结算失败：存在已收费人员");
-            }
-            if (roster.getPatientId() == null) {
-                throw new ValidationException("预结算失败：请先绑定患者档案");
-            }
-            unpaid.add(roster);
-        }
-        if (unpaid.isEmpty()) {
-            throw new ValidationException("预结算失败：有效名册不能为空");
-        }
-        return unpaid;
     }
 
     private static GroupRosterRowDto toRosterRowDto(PeisGroupRoster entity) {

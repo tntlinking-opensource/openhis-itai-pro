@@ -31,7 +31,10 @@ public enum GenerateSource implements EnumInterface {
     ORDER_EXECUTE(0L, "order-execute", "医嘱执行", "医嘱执行、补记等执行侧产生。", 4L),
 
     /** 住院自动滚费产生。 */
-    AUTO_ROLL_FEES(0L, "auto-roll-fees", "自动滚费", "住院自动滚费任务产生。", 5L);
+    AUTO_ROLL_FEES(0L, "auto-roll-fees", "自动滚费", "住院自动滚费任务产生。", 5L),
+
+    /** 团检套餐懒生成挂费（AS-PE-FIN-001）。 */
+    PHYSICAL_EXAM_GROUP(0L, "physical-exam-group", "团检套餐", "团检收费页按合同/套餐懒生成。", 6L);
 
     private final Long codeSystemId;
     private final String code;

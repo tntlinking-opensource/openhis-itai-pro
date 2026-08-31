@@ -1058,6 +1058,10 @@ public class InventoryItemQueryService {
                 predicates.add(cb.isNotNull(root.get(FieldNameConstants.EXPIRATION_DATE)));
                 predicates.add(cb.lessThanOrEqualTo(root.get(FieldNameConstants.EXPIRATION_DATE), deadline));
             }
+            if (StringUtils.isNotEmpty(query.getItemTable())) {
+                // 项目类型：按药品/耗材定义表名等值收窄
+                predicates.add(cb.equal(root.get(FieldNameConstants.ITEM_TABLE), query.getItemTable().trim()));
+            }
             if (StringUtils.isNotEmpty(query.getKeyword())) {
                 String trimmed = query.getKeyword().trim();
                 String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(trimmed);
@@ -1102,8 +1106,8 @@ public class InventoryItemQueryService {
                 chrgitmOr.add(this.deviceDefinitionItemPredicate(root, cb, query.getResolvedDeviceDefinitionIds()));
                 predicates.add(cb.or(chrgitmOr.toArray(new jakarta.persistence.criteria.Predicate[0])));
             }
-            // 基药筛选：仅药品行且 item_id 落在预解析定义主键（耗材无基药标识，直接排除）
-            if (query.getBasicFlag() != null) {
+            // 重点药类型：仅药品行且 item_id 落在预解析定义主键（耗材无该标识，直接排除）
+            if (StringUtils.isNotEmpty(query.getKeyDrugType())) {
                 predicates.add(this.medicationDefinitionItemPredicate(
                     root, cb, query.getResolvedMedicationDefinitionIds()));
             }
@@ -1528,6 +1532,86 @@ public class InventoryItemQueryService {
     }
 
     /**
+     * 护士换耗材房/自动扣库前：断言目标库房下<strong>签发批号</strong>可用量足够。
+     *
+     * <p>禁止跨批 FIFO 顶替。{@code alreadyReservedInSameBatch} 为本批内同键（库房+品规+批号）
+     * 已累计待扣量，避免多行各自过闸后合计超库存。</p>
+     *
+     * @param itemTableName               物品主表名（如 {@code adm_device_definition}）
+     * @param deviceDefinitionId          耗材定义主键
+     * @param locationId                  目标耗材房库位主键
+     * @param lotNumber                   签发批号（必填）
+     * @param requiredQuantity            本行需求数量（与库存账面同单位）
+     * @param alreadyReservedInSameBatch  本批已累计待扣量；可空视为 0
+     * @param productDisplayName          耗材展示名；不足提示点名用，可空则回落「耗材」
+     * @throws BusinessException 参数缺失、无批次或库存不足时
+     */
+    public void assertSufficientForDeviceDispenseAtLocationLot(
+        String itemTableName,
+        Long deviceDefinitionId,
+        Long locationId,
+        String lotNumber,
+        BigDecimal requiredQuantity,
+        BigDecimal alreadyReservedInSameBatch,
+        String productDisplayName) {
+        // Gate：定位库存须齐备库房、品规、批号
+        if (StringUtils.isEmpty(itemTableName) || deviceDefinitionId == null || locationId == null) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "库存断言缺少耗材或库房标识");
+        }
+        if (StringUtils.isEmpty(lotNumber)) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "发放批号缺失，请医生改签后再执行");
+        }
+        if (requiredQuantity == null || requiredQuantity.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "库存断言需求数量必须大于 0");
+        }
+        // Pre：本批同键已预占量，空视为 0
+        BigDecimal reserved = alreadyReservedInSameBatch;
+        if (reserved == null) {
+            reserved = BigDecimal.ZERO;
+        }
+        BigDecimal needTotal = requiredQuantity.add(reserved);
+        List<AvailableInventoryModel> rows =
+            this.findAvailableInventories(itemTableName.trim(), deviceDefinitionId, locationId);
+        BigDecimal sum = BigDecimal.ZERO;
+        String lotTrim = lotNumber.trim();
+        for (AvailableInventoryModel row : rows) {
+            if (row == null || row.getQuantity() == null) {
+                continue;
+            }
+            String rowLot = row.getLotNumber();
+            // 分支：只累计签发批号，禁止用其它批号顶替
+            if (rowLot == null || !lotTrim.equals(rowLot.trim())) {
+                continue;
+            }
+            sum = sum.add(row.getQuantity());
+        }
+        // Gate：目标房该批可用量须覆盖本批累计需求；不足时点名耗材与批号
+        if (sum.compareTo(needTotal) < 0) {
+            throw new BusinessException(
+                ErrorCodeConstants.EX_OPP_205_STOCK_OR_LOCATION_INVALID,
+                buildDeviceDispenseInsufficientStockMessage(productDisplayName, lotTrim));
+        }
+    }
+
+    /**
+     * 组装耗材发放库存不足提示：点名品种与批号，便于护士对照侧栏耗材明细。
+     *
+     * @param productDisplayName 耗材展示名；空则回落「耗材」
+     * @param lotNumber          签发批号；可空
+     * @return 面向用户的不足文案
+     */
+    private static String buildDeviceDispenseInsufficientStockMessage(String productDisplayName, String lotNumber) {
+        String displayName = productDisplayName;
+        if (StringUtils.isEmpty(displayName)) {
+            displayName = "耗材";
+        }
+        if (StringUtils.isNotEmpty(lotNumber)) {
+            return "【" + displayName + "】批号" + lotNumber.trim() + "可用库存不足，无法执行发放";
+        }
+        return "【" + displayName + "】可用库存不足，无法执行发放";
+    }
+
+    /**
      * 发药前库存充足断言（物理库存 − 已汇总的待发预占，GAP-EXE-003）。
      *
      * <p>{@code lotNumber} 非空时本方法仅累计该批物理量；调用方传入的 {@code reserveInSplitUnit}
@@ -1868,5 +1952,42 @@ public class InventoryItemQueryService {
             Sort.Order.asc(FieldNameConstants.LOCATION_ID),
             Sort.Order.asc(FieldNameConstants.ID));
         return inventoryItemRepository.findAll(specification, sort);
+    }
+
+    /**
+     * 全院按「物品表 + 物品主键 + 批号」汇总未删库存行数量（含各库位/供应商；quantity 可为 0）。
+     *
+     * <p>仅本聚合 {@code wkf_inventory_item} Criteria（B.6.4）；供进货/期初同批号异价门禁判断是否仍有账面量（BR-WHS-IN-018）。</p>
+     *
+     * @param itemTable  物品物理表名
+     * @param itemId     物品定义主键
+     * @param lotNumber  批号字面值（trim 后等值匹配）
+     * @return 数量合计；参数不全或无行时为 {@link BigDecimal#ZERO}
+     */
+    public BigDecimal sumQuantityByItemTableAndItemIdAndLotNumber(
+        String itemTable, Long itemId, String lotNumber) {
+        // Gate：键不全无法汇总，视为无库存
+        if (StringUtils.isEmpty(itemTable) || itemId == null || StringUtils.isEmpty(lotNumber)) {
+            return BigDecimal.ZERO;
+        }
+        String lotTrim = lotNumber.trim();
+        CriteriaBuilder cb = this.entityManager.getCriteriaBuilder();
+        CriteriaQuery<BigDecimal> cq = cb.createQuery(BigDecimal.class);
+        Root<InventoryItem> root = cq.from(InventoryItem.class);
+        List<Predicate> predicates = new ArrayList<>();
+        // 未软删行全院合计（不按库位/供应商收窄）
+        predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+        predicates.add(cb.equal(root.get(FieldNameConstants.ITEM_TABLE), itemTable.trim()));
+        predicates.add(cb.equal(root.get(FieldNameConstants.ITEM_ID), itemId));
+        predicates.add(cb.equal(root.get(FieldNameConstants.LOT_NUMBER), lotTrim));
+        cq.select(cb.sum(root.get(FieldNameConstants.QUANTITY)));
+        cq.where(predicates.toArray(new Predicate[0]));
+        TypedQuery<BigDecimal> typedQuery = this.entityManager.createQuery(cq);
+        BigDecimal total = typedQuery.getSingleResult();
+        // 无行时 JPA sum 可能为 null
+        if (total == null) {
+            return BigDecimal.ZERO;
+        }
+        return total;
     }
 }

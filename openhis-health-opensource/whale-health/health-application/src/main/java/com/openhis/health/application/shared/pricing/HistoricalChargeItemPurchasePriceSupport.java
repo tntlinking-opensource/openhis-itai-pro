@@ -44,8 +44,10 @@ import lombok.RequiredArgsConstructor;
  * <p>药耗主路径：批量查当前 ACTIVE {@link PriceType#LOT_NUMBER_COST}（同批号
  * {@link PriceType#LOT_NUMBER_PRICE} 为缺进价时的回落；西药/耗材进货写价同值，中药院点加价后进售可不同）。
  * 批号来源优先级：发放单 {@code lot_number} → 收费锚点定价行 {@code lot_no}（{@code LOT_NUMBER_PRICE}/{@code LOT_NUMBER_COST}）。
- * <strong>品规无已审批调价时禁止触达任何调价历史/定价兄弟行</strong>，直接用批号进/售价。
- * 仅<strong>药耗</strong>有调价时才按业务时刻回放<strong>调前进/售价</strong>（批号须一致，禁止串批；
+ * <strong>品规+批号无已审批调价时禁止触达任何调价历史/定价兄弟行</strong>，直接用批号进/售价。
+ * 调价读路径：<strong>先单独查调价表</strong>拎出品规+批号键，再与结果行 map 匹配；
+ * 仅命中键才拉完整调价历史回放（禁止把调价表 JOIN 进主业务查询大扫）。
+ * 仅<strong>药耗</strong>同批号有调价时才按业务时刻回放<strong>调前进/售价</strong>（禁止串批；
  * 售价回放见 {@link #resolveLotSaleUnitPrice}）。
  * 诊疗/挂号目录 {@link PriceType#SALE}<strong>不回放</strong>。
  * 患者侧药耗售价优先账单；账单缺失（如取消执行逻辑删）时<strong>仅</strong>允许回落批号售价的场景：
@@ -227,9 +229,10 @@ public class HistoricalChargeItemPurchasePriceSupport {
     }
 
     /**
-     * 开启批号进/售价解析会话：一次筛有调价品规，并仅对这些品规批量预取调价历史。
+     * 开启批号进/售价解析会话：单独查调价表拎出品规+批号键（不拉完整历史）。
      *
-     * <p>无调价品规后续解析<strong>不会</strong>再查 exists/history。</p>
+     * <p>须再调 {@link #warmCurrentLotPrices}（或带 lotKeys 的重载）与结果批号 map 匹配后，
+     * 才对命中品规预取调价历史。无命中键后续解析<strong>不会</strong>再查 history。</p>
      *
      * @param itemTable 品规定义表（药/耗）
      * @param itemIds   本批品规主键
@@ -252,18 +255,32 @@ public class HistoricalChargeItemPurchasePriceSupport {
         if (distinct.isEmpty()) {
             return session;
         }
-        // Pre：仅筛有调价品规；无调价者后续直读批号价
-        session.adjustedItemIds = this.loadAdjustedItemIds(session.itemTable, distinct);
-        if (!session.adjustedItemIds.isEmpty()) {
-            session.historyByItemId.putAll(
-                this.priceAdjustmentQueryService.findApprovedHistoryByItems(
-                    session.itemTable, session.adjustedItemIds));
-        }
+        // Pre：只读调价表品规+批号键；完整历史延后到 warm 与结果批号匹配后再拉
+        session.adjustedItemLotKeys =
+            this.priceAdjustmentQueryService.listApprovedItemLotCompositeKeys(session.itemTable, distinct);
+        session.adjustedItemIds = this.extractItemIdsFromLotKeys(session.adjustedItemLotKeys);
         return session;
     }
 
     /**
-     * 批量预热会话内当前 ACTIVE 批号进/售价缓存，避免逐键 {@code List.of(key)} 查库。
+     * 开启会话并立刻按本批批号键匹配预取调价历史（发药 enrich 等未单独 warm 时的入口）。
+     *
+     * @param itemTable 品规定义表
+     * @param itemIds   本批品规主键
+     * @param lotKeys   本批结果中的品规+批号；可空（空则不预取历史）
+     * @return 可复用会话
+     */
+    public LotPriceResolveSession beginLotPriceSession(
+        String itemTable,
+        Collection<Long> itemIds,
+        Collection<ChargeItemDefinitionLotBatchKey> lotKeys) {
+        LotPriceResolveSession session = this.beginLotPriceSession(itemTable, itemIds);
+        this.warmCurrentLotPrices(session, lotKeys);
+        return session;
+    }
+
+    /**
+     * 批量预热会话内当前 ACTIVE 批号进/售价，并按批号键匹配后仅对命中品规预取调价历史。
      *
      * @param session  {@link #beginLotPriceSession} 产出；空则忽略
      * @param lotKeys  本批品规+批号键；可空
@@ -296,6 +313,8 @@ public class HistoricalChargeItemPurchasePriceSupport {
                 session.lotSaleByCompositeKey.put(composite, this.firstLotCostPrice(lotSaleByKey.get(composite)));
             }
         }
+        // Pre：结果批号 ∩ 调价键 → 仅命中品规拉完整历史
+        this.prefetchMatchedAdjustmentHistory(session, distinctKeys);
     }
 
     /**
@@ -347,8 +366,8 @@ public class HistoricalChargeItemPurchasePriceSupport {
         if (businessTime == null) {
             return currentLotCost;
         }
-        if (!this.isAdjustedInSessionOrLookup(table, instanceId, session)) {
-            // 无调价：禁止查历史，直接批号进价
+        if (!this.isAdjustedItemLotInSessionOrLookup(table, instanceId, lot, session)) {
+            // 本批号无调价：禁止查历史，直接批号进价
             return currentLotCost;
         }
         BigDecimal adjusted = this.resolvePurchaseFromAdjustmentHistory(
@@ -410,8 +429,8 @@ public class HistoricalChargeItemPurchasePriceSupport {
         if (businessTime == null) {
             return currentLotSale;
         }
-        if (!this.isAdjustedInSessionOrLookup(table, instanceId, session)) {
-            // 无调价：禁止查历史，直接批号售价
+        if (!this.isAdjustedItemLotInSessionOrLookup(table, instanceId, lot, session)) {
+            // 本批号无调价：禁止查历史，直接批号售价
             return currentLotSale;
         }
         BigDecimal adjusted = this.resolveSaleFromAdjustmentHistory(
@@ -528,11 +547,21 @@ public class HistoricalChargeItemPurchasePriceSupport {
             context.lotSaleByCompositeKey =
                 this.chargeItemDefinitionQueryService.findLotNumberPriceLinesGroupedByLotBatchKey(lotKeys);
         }
-        context.adjustedMedItemIds = this.loadAdjustedItemIds(
-            TableNameConstants.MED_MEDICATION_DEFINITION, medItemIds);
-        context.adjustedDeviceItemIds = this.loadAdjustedItemIds(
-            TableNameConstants.ADM_DEVICE_DEFINITION, deviceItemIds);
-        // Pre：仅药耗有调价品规批量预取历史；诊疗不回放、不预取
+        // Pre：单独查调价表拎出品规+批号键，与本批结果 lotKeys map 匹配；仅命中才拉完整历史
+        LinkedHashSet<String> approvedMedLotKeys =
+            this.priceAdjustmentQueryService.listApprovedItemLotCompositeKeys(
+                TableNameConstants.MED_MEDICATION_DEFINITION, medItemIds);
+        LinkedHashSet<String> approvedDeviceLotKeys =
+            this.priceAdjustmentQueryService.listApprovedItemLotCompositeKeys(
+                TableNameConstants.ADM_DEVICE_DEFINITION, deviceItemIds);
+        context.adjustedMedItemLotKeys = approvedMedLotKeys;
+        context.adjustedDeviceItemLotKeys = approvedDeviceLotKeys;
+        context.adjustedMedItemIds =
+            this.matchAdjustedItemIdsForLotKeys(
+                lotKeys, TableNameConstants.MED_MEDICATION_DEFINITION, approvedMedLotKeys);
+        context.adjustedDeviceItemIds =
+            this.matchAdjustedItemIdsForLotKeys(
+                lotKeys, TableNameConstants.ADM_DEVICE_DEFINITION, approvedDeviceLotKeys);
         this.prefetchAdjustmentHistory(
             context, TableNameConstants.MED_MEDICATION_DEFINITION, context.adjustedMedItemIds);
         this.prefetchAdjustmentHistory(
@@ -615,9 +644,9 @@ public class HistoricalChargeItemPurchasePriceSupport {
                 currentLotCost = this.firstLotCostPrice(context.lotCostByCompositeKey.get(key.compositeKey()));
                 currentLotSale = this.firstLotCostPrice(context.lotSaleByCompositeKey.get(key.compositeKey()));
             }
-            boolean adjusted = this.isItemAdjusted(table, instanceId, context);
+            boolean adjusted = this.isItemLotAdjusted(table, instanceId, lot.trim(), context);
             if (!adjusted) {
-                // 无调价：直接批号进价；缺 COST 时同批号售价回落（西药/耗材同值）；禁止目录 PURCHASE
+                // 本批号无调价：直接批号进价；缺 COST 时同批号售价回落（西药/耗材同值）；禁止目录 PURCHASE
                 if (currentLotCost != null) {
                     return currentLotCost;
                 }
@@ -863,8 +892,10 @@ public class HistoricalChargeItemPurchasePriceSupport {
             if (sessionCached != null) {
                 return sessionCached;
             }
-            // 会话已 warm 且不含该品规 → 无调价历史
-            if (session.adjustedItemIds != null && !session.adjustedItemIds.contains(itemId)) {
+            // 会话已 warm 且该品规不在命中集 → 无本批调价历史
+            if (session.historyPrefetched
+                && session.adjustedItemIds != null
+                && !session.adjustedItemIds.contains(itemId)) {
                 return List.of();
             }
         }
@@ -1008,14 +1039,105 @@ public class HistoricalChargeItemPurchasePriceSupport {
     }
 
     /**
-     * 批量筛出存在已审批调价的 itemId 集合。
+     * 从调价「品规+批号」键集抽出品规 id。
      *
-     * @param itemTable 项目表
-     * @param itemIds   候选 id
-     * @return 有调价的 id 集
+     * @param itemLotKeys {@link PriceAdjustmentQueryService#itemLotCompositeKey} 集合
+     * @return 品规 id 集
      */
-    private LinkedHashSet<Long> loadAdjustedItemIds(String itemTable, LinkedHashSet<Long> itemIds) {
-        return this.priceAdjustmentQueryService.listApprovedItemIds(itemTable, itemIds);
+    private LinkedHashSet<Long> extractItemIdsFromLotKeys(LinkedHashSet<String> itemLotKeys) {
+        LinkedHashSet<Long> itemIds = new LinkedHashSet<>();
+        if (itemLotKeys == null || itemLotKeys.isEmpty()) {
+            return itemIds;
+        }
+        for (String key : itemLotKeys) {
+            // Gate：键非法则跳过
+            if (StringUtils.isEmpty(key)) {
+                continue;
+            }
+            int sep = key.indexOf('\u0001');
+            if (sep <= 0) {
+                continue;
+            }
+            String idPart = key.substring(0, sep);
+            try {
+                itemIds.add(Long.valueOf(idPart));
+            } catch (NumberFormatException ignored) {
+                // 非数字键忽略，避免脏数据打断整批
+            }
+        }
+        return itemIds;
+    }
+
+    /**
+     * 结果批号键 ∩ 调价品规+批号键 → 需拉完整历史的品规 id。
+     *
+     * @param lotKeys           本批结果批号键
+     * @param itemTable         限定表名
+     * @param approvedLotKeys   调价表拎出的品规+批号键
+     * @return 命中品规 id
+     */
+    private LinkedHashSet<Long> matchAdjustedItemIdsForLotKeys(
+        Collection<ChargeItemDefinitionLotBatchKey> lotKeys,
+        String itemTable,
+        LinkedHashSet<String> approvedLotKeys) {
+        LinkedHashSet<Long> matched = new LinkedHashSet<>();
+        if (lotKeys == null
+            || lotKeys.isEmpty()
+            || approvedLotKeys == null
+            || approvedLotKeys.isEmpty()
+            || StringUtils.isEmpty(itemTable)) {
+            return matched;
+        }
+        String table = itemTable.trim();
+        for (ChargeItemDefinitionLotBatchKey lotKey : lotKeys) {
+            // Gate：表名不一致或键不全则不匹配
+            if (lotKey == null
+                || lotKey.getInstanceId() == null
+                || StringUtils.isEmpty(lotKey.getLotNo())
+                || !table.equals(lotKey.getInstanceTable())) {
+                continue;
+            }
+            String composite =
+                this.priceAdjustmentQueryService.itemLotCompositeKey(lotKey.getInstanceId(), lotKey.getLotNo());
+            if (composite != null && approvedLotKeys.contains(composite)) {
+                matched.add(lotKey.getInstanceId());
+            }
+        }
+        return matched;
+    }
+
+    /**
+     * 会话内按结果批号 ∩ 调价键，仅对命中品规预取完整调价历史。
+     *
+     * @param session  批号会话
+     * @param lotKeys  本批结果批号键
+     */
+    private void prefetchMatchedAdjustmentHistory(
+        LotPriceResolveSession session,
+        Collection<ChargeItemDefinitionLotBatchKey> lotKeys) {
+        if (session == null || StringUtils.isEmpty(session.itemTable)) {
+            return;
+        }
+        LinkedHashSet<Long> matched = this.matchAdjustedItemIdsForLotKeys(
+            lotKeys, session.itemTable, session.adjustedItemLotKeys);
+        // Asm：命中集覆盖会话 adjustedItemIds，供后续「未命中即无历史」判断
+        session.adjustedItemIds = matched;
+        session.historyPrefetched = true;
+        if (matched.isEmpty()) {
+            return;
+        }
+        LinkedHashSet<Long> pending = new LinkedHashSet<>();
+        for (Long itemId : matched) {
+            // 已缓存则不重复拉
+            if (itemId != null && !session.historyByItemId.containsKey(itemId)) {
+                pending.add(itemId);
+            }
+        }
+        if (pending.isEmpty()) {
+            return;
+        }
+        session.historyByItemId.putAll(
+            this.priceAdjustmentQueryService.findApprovedHistoryByItems(session.itemTable, pending));
     }
 
     /**
@@ -1030,24 +1152,59 @@ public class HistoricalChargeItemPurchasePriceSupport {
     }
 
     /**
-     * 会话内判断是否有调价；无会话时回落单次 exists。
+     * 会话内判断本批号是否有调价；无会话时回落单次品规 exists。
      *
      * @param itemTable  表名
      * @param instanceId 品规 id
+     * @param lotNumber  批号
      * @param session    批号会话；可空
      * @return 有调价为 true
      */
-    private boolean isAdjustedInSessionOrLookup(
+    private boolean isAdjustedItemLotInSessionOrLookup(
         String itemTable,
         Long instanceId,
+        String lotNumber,
         LotPriceResolveSession session) {
         if (session != null
             && session.itemTable != null
             && session.itemTable.equals(itemTable.trim())
-            && session.adjustedItemIds != null) {
-            return session.adjustedItemIds.contains(instanceId);
+            && session.adjustedItemLotKeys != null) {
+            String composite =
+                this.priceAdjustmentQueryService.itemLotCompositeKey(instanceId, lotNumber);
+            if (composite == null) {
+                return false;
+            }
+            return session.adjustedItemLotKeys.contains(composite);
         }
         return this.hasApprovedAdjustment(itemTable, instanceId);
+    }
+
+    /**
+     * 上下文内判断本批号是否出现在调价键集。
+     *
+     * @param table      表名
+     * @param instanceId 品规 id
+     * @param lotNumber  批号
+     * @param context    批量上下文
+     * @return 有调价为 true
+     */
+    private boolean isItemLotAdjusted(
+        String table,
+        Long instanceId,
+        String lotNumber,
+        PurchaseResolveContext context) {
+        String composite =
+            this.priceAdjustmentQueryService.itemLotCompositeKey(instanceId, lotNumber);
+        if (composite == null) {
+            return false;
+        }
+        if (TableNameConstants.MED_MEDICATION_DEFINITION.equals(table)) {
+            return context.adjustedMedItemLotKeys.contains(composite);
+        }
+        if (TableNameConstants.ADM_DEVICE_DEFINITION.equals(table)) {
+            return context.adjustedDeviceItemLotKeys.contains(composite);
+        }
+        return false;
     }
 
     /**
@@ -1122,28 +1279,6 @@ public class HistoricalChargeItemPurchasePriceSupport {
             session.saleByItemId.put(instanceId, sale);
         }
         return sale;
-    }
-
-    /**
-     * 上下文内判断品规是否有调价。
-     *
-     * @param table      表名
-     * @param instanceId 品规 id
-     * @param context    批量上下文
-     * @return 有调价为 true
-     */
-    private boolean isItemAdjusted(String table, Long instanceId, PurchaseResolveContext context) {
-        if (TableNameConstants.MED_MEDICATION_DEFINITION.equals(table)) {
-            return context.adjustedMedItemIds.contains(instanceId);
-        }
-        if (TableNameConstants.ADM_DEVICE_DEFINITION.equals(table)) {
-            return context.adjustedDeviceItemIds.contains(instanceId);
-        }
-        if (TableNameConstants.WKF_ACTIVITY_DEFINITION.equals(table)
-            || TableNameConstants.ADM_HEALTHCARE_SERVICE.equals(table)) {
-            return context.adjustedActivityItemIds.contains(instanceId);
-        }
-        return false;
     }
 
     /**
@@ -1448,33 +1583,45 @@ public class HistoricalChargeItemPurchasePriceSupport {
         /** 批号复合键 → ACTIVE 批号售价行（缺 COST 时回落）。 */
         private Map<String, List<ChargeItemDefinition>> lotSaleByCompositeKey = Map.of();
 
-        /** 有已审批调价的药品品规 id。 */
+        /** 调价表拎出的药品品规+批号键。 */
+        private LinkedHashSet<String> adjustedMedItemLotKeys = new LinkedHashSet<>();
+
+        /** 调价表拎出的耗材品规+批号键。 */
+        private LinkedHashSet<String> adjustedDeviceItemLotKeys = new LinkedHashSet<>();
+
+        /** 与本批结果批号命中、需拉历史的药品品规 id。 */
         private LinkedHashSet<Long> adjustedMedItemIds = new LinkedHashSet<>();
 
-        /** 有已审批调价的耗材品规 id。 */
+        /** 与本批结果批号命中、需拉历史的耗材品规 id。 */
         private LinkedHashSet<Long> adjustedDeviceItemIds = new LinkedHashSet<>();
 
-        /** 有已审批调价的诊疗/活动 id。 */
-        private LinkedHashSet<Long> adjustedActivityItemIds = new LinkedHashSet<>();
-
-        /** itemTable:itemId → 已预取调价历史（仅有调价品规）。 */
+        /** itemTable:itemId → 已预取调价历史（仅命中品规）。 */
         private final Map<String, List<PriceAdjustmentLineQueryModel>> historyByItemKey = new HashMap<>();
     }
 
     /**
-     * 批号进/售价批量解析会话（药房日结等）：先 warm 有调价集合与历史，再逐行解析。
+     * 批号进/售价批量解析会话：先单独查调价品规+批号键，warm 时与结果批号匹配后再拉历史。
      *
-     * <p>无调价品规只读 ACTIVE 批号价，不触达调价 history。</p>
+     * <p>未命中调价键的品规+批号只读 ACTIVE 批号价，不触达调价 history。</p>
      */
     public static final class LotPriceResolveSession {
 
         /** 品规定义表。 */
         private String itemTable;
 
-        /** 有已审批调价的品规 id。 */
+        /** 调价表拎出的品规+批号键（尚未与结果批号匹配）。 */
+        private LinkedHashSet<String> adjustedItemLotKeys = new LinkedHashSet<>();
+
+        /**
+         * 与结果批号命中、已预取或待预取的品规 id；
+         * {@link #historyPrefetched} 前可为调价表出现过的全部品规。
+         */
         private LinkedHashSet<Long> adjustedItemIds = new LinkedHashSet<>();
 
-        /** 品规 id → 调价历史（仅 adjusted）。 */
+        /** 是否已按结果批号完成历史预取（未 warm 时为 false）。 */
+        private boolean historyPrefetched;
+
+        /** 品规 id → 调价历史（仅命中品规）。 */
         private final Map<Long, List<PriceAdjustmentLineQueryModel>> historyByItemId = new HashMap<>();
 
         /** 批号复合键 → 当前批号进价（可含 null 占位防穿透）。 */

@@ -27,7 +27,12 @@ import {
 } from '#/utils/service-apply-form-group-display';
 
 import { formatUnitPriceYuan, terminologyLabel } from './advice-format';
+import {
+  isAdviceRowBoundConsumableFromService,
+  isAdviceRowServiceApplyFormBoundConsumable,
+} from './advice-row';
 import { normalizeCatalogUnitBands } from './medication-unit-bands';
+import { resolveServicePerExecutionQuantity } from './service-quantity-calc';
 
 /** 医嘱列表映射、成组合并、目录选品、库存展示、旧行回填 */
 
@@ -214,19 +219,31 @@ function buildAdviceDosageSummaryLine(dto: DoctorStationAdviceRowDto): string {
   });
 }
 
-/** 诊疗行剂量摘要：数量 + 单位 + 执行次数（与编辑卡收起态口径一致） */
+/** 诊疗行剂量摘要：单次执行数量 + 单位 + 执行次数（与编辑卡收起态口径一致） */
 function buildServiceAdviceDosageSummaryLine(dto: DoctorStationAdviceRowDto): string {
   const qtyRaw = dto.quantity;
   const execRaw = dto.executionCount;
   const unit = resolveAdviceQuantityUnitLabel(dto.unitName, dto.unitCode);
-  const qtyPart =
+  const totalQty =
     qtyRaw !== null && qtyRaw !== undefined && String(qtyRaw).trim() !== ''
-      ? `数量 ${qtyRaw}${unit}`
-      : '';
-  const execPart =
+      ? Number(qtyRaw)
+      : Number.NaN;
+  const execCount =
     execRaw !== null && execRaw !== undefined && String(execRaw).trim() !== ''
-      ? `执行 ${execRaw} 次`
-      : '';
+      ? Math.trunc(Number(execRaw))
+      : Number.NaN;
+  // 列表 quantity 为计费总量；展示单次量 = 总量 ÷ 次数（可整除时）
+  const perQty =
+    Number.isFinite(totalQty) && totalQty > 0 && Number.isFinite(execCount) && execCount > 0
+      ? resolveServicePerExecutionQuantity(totalQty, execCount)
+      : undefined;
+  const qtyPart =
+    perQty !== undefined
+      ? `单次数量 ${perQty}`
+      : Number.isFinite(totalQty) && totalQty > 0
+        ? `数量 ${totalQty}${unit}`
+        : '';
+  const execPart = Number.isFinite(execCount) && execCount > 0 ? `执行 ${execCount} 次` : '';
   const parts = [qtyPart, execPart].filter(Boolean);
   return parts.length > 0 ? `${parts.join('，')}。` : '';
 }
@@ -532,14 +549,24 @@ export function getSkinTestDisplayTagType(
 
 // —— 成组合并 ——
 
-/** 仅保留检验/检查申请单（AR 前缀 prescriptionNo）行 */
+/** 仅保留检验/检查申请单（AR 前缀 prescriptionNo）行；排除诊疗绑定耗材子行 */
 export function filterServiceApplyFormAdviceRows(rows: readonly AdviceRowItem[]): AdviceRowItem[] {
-  return rows.filter((row) => Boolean(row.applyFormNo?.trim()));
+  return rows.filter(
+    (row) => Boolean(row.applyFormNo?.trim()) && !isAdviceRowBoundConsumableFromService(row),
+  );
 }
 
-/** 排除检验/检查申请单行（供「开立医嘱」列表展示） */
+/** 排除检验/检查申请单行及申请单带出耗材（供「开立医嘱」列表展示） */
 export function excludeServiceApplyFormAdviceRows(rows: readonly AdviceRowItem[]): AdviceRowItem[] {
-  return rows.filter((row) => !row.applyFormNo?.trim());
+  return rows.filter((row) => {
+    if (row.applyFormNo?.trim()) {
+      return false;
+    }
+    if (isAdviceRowServiceApplyFormBoundConsumable(row, rows)) {
+      return false;
+    }
+    return true;
+  });
 }
 
 export function flattenAdviceRowsForResourceOps(rows: AdviceRowItem[]): AdviceRowItem[] {
@@ -850,12 +877,24 @@ export function buildFallbackAdviceDrugItemFromRow(
     String(row.resourceType ?? '')
       .trim()
       .toUpperCase() === 'SERVICE';
-  const serviceQty = isService
-    ? row.listQuantity !== undefined && row.listQuantity > 0
+  // 诊疗：落库总量 ÷ 执行次数 → 编辑卡单次执行数量
+  const serviceExec =
+    isService && row.listExecutionCount !== undefined && row.listExecutionCount > 0
+      ? Math.trunc(row.listExecutionCount)
+      : isService
+        ? 1
+        : undefined;
+  const serviceTotal =
+    isService && row.listQuantity !== undefined && row.listQuantity > 0
       ? row.listQuantity
-      : totalParsed.value || undefined
-    : undefined;
-  const execQty = isService ? totalParsed.value : totalParsed.value;
+      : isService
+        ? totalParsed.value || 1
+        : undefined;
+  const serviceQty =
+    isService && serviceTotal !== undefined && serviceExec !== undefined
+      ? (resolveServicePerExecutionQuantity(serviceTotal, serviceExec) ?? serviceTotal)
+      : undefined;
+  const execQty = isService ? serviceExec : totalParsed.value;
 
   return {
     orderType: (row.type.split('/')[0] || '').trim(),

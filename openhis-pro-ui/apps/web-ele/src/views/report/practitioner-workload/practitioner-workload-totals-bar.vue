@@ -5,7 +5,7 @@ import { computed } from 'vue';
 
 import { IconifyIcon } from '@vben/icons';
 
-import { fmtReportNumber } from '#/views/report/shared/report-format';
+import { fmtReportNumber, fmtReportPurchaseMoney } from '#/views/report/shared/report-format';
 
 defineOptions({ name: 'PractitionerWorkloadTotalsBar' });
 
@@ -100,7 +100,7 @@ const totals = computed(() => props.summaryTotals ?? {});
           <span
             class="practitioner-workload-stats__value practitioner-workload-stats__value--amount-total"
           >
-            {{ fmtReportNumber(totals.purchaseAmountTotal) }}
+            {{ fmtReportPurchaseMoney(totals.purchaseAmountTotal) }}
           </span>
         </div>
       </div>

@@ -4,10 +4,9 @@
  *
  * 列表按处方号方级展示；详情抽屉按处方号精确筛重载整方明细；打印走门诊发药 slip 同款场景。
  */
+import { reportPost } from '#/constants/report-request-timeout';
 import type { PageParams } from '#/types/api-response';
 
-import { publicRequestClient } from '#/api/request';
-import { reportLongRequestConfig } from '#/constants/report-request-timeout';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
 const BASE = '/outpatientPharmacyPrescriptionQuery';
@@ -31,6 +30,12 @@ export interface LoadOutpatientPrescriptionViewPageInitResponse {
   infusionFilterOptions?: OptionDto[];
   /** 开单科室下拉（value=组织主键字符串） */
   organizationOptions?: OptionDto[];
+  /** 点评状态下拉（PENDING / REVIEWED） */
+  reviewStatusOptions?: OptionDto[];
+  /** 是否合理下拉（value 为字符串化布尔） */
+  reasonableOptions?: OptionDto[];
+  /** 药品类型下拉（药典 medication_category_code） */
+  medicationCategoryOptions?: OptionDto[];
 }
 
 export interface PageOutpatientPrescriptionViewRequest extends PageParams {
@@ -49,6 +54,12 @@ export interface PageOutpatientPrescriptionViewRequest extends PageParams {
   orderingDepartmentId?: string;
   /** 处方号精确匹配（详情整方重载） */
   prescriptionNo?: string;
+  /** 点评状态 PENDING/REVIEWED；空=不限 */
+  reviewStatusEnum?: string;
+  /** 是否合理；空=不限 */
+  reasonableFlag?: boolean;
+  /** 药品类型（药典 category_code）；空=不限 */
+  medicationCategoryCode?: string;
 }
 
 export interface OutpatientPrescriptionDrugLineDto {
@@ -58,6 +69,8 @@ export interface OutpatientPrescriptionDrugLineDto {
   encounterBusNo?: string;
   patientId?: string;
   patientName?: string;
+  /** 身份证号（明文；列表展示由前端脱敏） */
+  idCard?: string;
   /** 患者联系电话 */
   patientPhone?: string;
   orderingPractitionerId?: string;
@@ -121,6 +134,8 @@ export interface OutpatientPrescriptionSummaryRow {
   encounterBusNo?: string;
   patientId?: string;
   patientName?: string;
+  /** 身份证号（明文；列表脱敏展示） */
+  idCard?: string;
   patientPhone?: string;
   diagnosisName?: string;
   chargeStatusEnum?: string;
@@ -138,6 +153,18 @@ export interface OutpatientPrescriptionSummaryRow {
   contractCategoryText?: string;
   infusionPrescriptionFlag?: boolean;
   lineCount: number;
+  /** 点评 enrichment：PENDING=无有效行；REVIEWED=已点评（逻辑用 code） */
+  reviewStatusEnum?: string;
+  /** 点评状态展示文案 */
+  reviewStatusText?: string;
+  /** 点评主键（撤销用） */
+  reviewId?: string;
+  reasonableFlag?: boolean;
+  reasonableText?: string;
+  reviewReason?: string;
+  reviewRemark?: string;
+  reviewerName?: string;
+  reviewedAt?: string;
 }
 
 export interface PageOutpatientPrescriptionViewResponse {
@@ -155,7 +182,7 @@ export interface PageOutpatientPrescriptionViewResponse {
 
 /** 页初始化：筛选项与默认本月开方日期。 */
 export async function loadOutpatientPrescriptionViewPageInitApi() {
-  return publicRequestClient.post<LoadOutpatientPrescriptionViewPageInitResponse>(
+  return reportPost<LoadOutpatientPrescriptionViewPageInitResponse>(
     `${BASE}/loadOutpatientPharmacyPrescriptionQueryPageInit`,
     {},
   );
@@ -165,10 +192,9 @@ export async function loadOutpatientPrescriptionViewPageInitApi() {
 export async function pageOutpatientPrescriptionViewApi(
   body: PageOutpatientPrescriptionViewRequest,
 ) {
-  const res = await publicRequestClient.post<PageOutpatientPrescriptionViewResponse>(
+  const res = await reportPost<PageOutpatientPrescriptionViewResponse>(
     `${BASE}/pageOutpatientPharmacyPrescriptionQuery`,
     body,
-    reportLongRequestConfig(),
   );
   const { content, totalCount } = parsePagedRowsFromApiData<OutpatientPrescriptionDrugLineDto>(res);
   return {

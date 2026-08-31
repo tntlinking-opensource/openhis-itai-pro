@@ -3,7 +3,7 @@ export const STALE_CROSS_ROLE_REFRESH_MESSAGE = '数据已变更，请刷新后�
 
 /** 后端未返回可读文案时的 errorCode 兜底（优先仍用 response.message） */
 const STALE_CROSS_ROLE_ERROR_MESSAGES: Record<string, string> = {
-  'EX-OPC-411': '费用状态已变更，无法结算，请刷新列表后重试',
+  'EX-OPC-411': '费用状态已变更，请重新预结算后重试',
   'EX-IP-ORD-103': '医嘱已有执行/发药/费用记录，无法继续操作，请刷新列表后重试',
   'EX-IP-ORD-107': '患者已办理出院或已结算，不可变更医嘱及费用，请刷新列表后重试',
   'EX-IP-CXL-202': '该计划点不可取消（可能已被取消或状态已变更），请刷新列表后重试',

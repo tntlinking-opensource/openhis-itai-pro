@@ -7,8 +7,8 @@ import { print, PRINT_SCENARIO } from './runtime';
 
 export interface PrintDailySettlementOptions {
   source: OutpatientDailySettlementPrintSource;
-  /** 打印作业业务引用（可选；非交账头表字段） */
-  bizRef?: Record<string, number | string>;
+  /** 打印作业业务引用（交账单 settlementId，或预览窗 orgId+日期+收款人） */
+  bizRef?: Record<string, unknown>;
   jobName?: string;
 }
 
@@ -23,12 +23,16 @@ export async function printDailySettlement(options: PrintDailySettlementOptions)
     scenarioCode: PRINT_SCENARIO.opDailySettlementPrint,
     source: {
       hospitalName: options.source.hospitalName?.trim() || resolvePrintHospitalName(),
+      documentTitle: options.source.documentTitle?.trim() || '门诊收费日结单',
       cashierName: options.source.cashierName,
       settlementPeriodText: options.source.settlementPeriodText,
       rows: options.source.rows,
       summary: options.source.summary,
     },
-    bizRef: options.bizRef,
+    bizRef: {
+      scenarioCode: PRINT_SCENARIO.opDailySettlementPrint,
+      ...(options.bizRef ?? {}),
+    },
     jobName: options.jobName ?? '门诊收费日结单',
   });
 

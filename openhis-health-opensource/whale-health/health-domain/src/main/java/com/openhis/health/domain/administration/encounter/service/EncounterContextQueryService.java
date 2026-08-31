@@ -22,6 +22,7 @@ import com.openhis.health.domain.custom.encounterhistory.entity.EncounterHistory
 import com.openhis.health.domain.custom.encounterhistory.service.EncounterHistoryQueryService;
 import com.openhis.health.domain.share.constants.CustomConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.enums.EncounterClass;
 import com.openhis.health.domain.share.enums.EncounterParticipantRole;
@@ -46,7 +47,11 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-/** 就诊上下文 L1 batch hydrate（门诊/住院；bridge 与 application Loader 共用）。 */
+/** 就诊上下文 L1 batch hydrate（门诊/住院；bridge 与 application Loader 共用）。
+ *
+ * <p>参与者展示：{@code listDisplayParticipantEntitiesByEncounterIds}（活动优先，无则末次 COMPLETED）。
+ * 位置展示：活动轨迹 + 无活动床时末次 COMPLETED 回落为「原{房}-{床}（未占床）」。</p>
+ */
 @Service
 @RequiredArgsConstructor
 public class EncounterContextQueryService {
@@ -210,7 +215,7 @@ public class EncounterContextQueryService {
         Map<Long, List<EncounterParticipant>> participantsByEncounterId = new HashMap<>();
         if (!encounterIds.isEmpty()) {
             for (EncounterParticipant participant :
-                encounterQueryService.listActiveParticipantEntitiesByEncounterIds(encounterIds)) {
+                encounterQueryService.listDisplayParticipantEntitiesByEncounterIds(encounterIds)) {
                 if (participant.getEncounterId() == null) {
                     continue;
                 }
@@ -381,7 +386,7 @@ public class EncounterContextQueryService {
         Map<Long, List<EncounterParticipant>> participantsByEncounterId = new HashMap<>();
         if (!encounterIds.isEmpty()) {
             for (EncounterParticipant participant :
-                encounterQueryService.listActiveParticipantEntitiesByEncounterIds(encounterIds)) {
+                encounterQueryService.listDisplayParticipantEntitiesByEncounterIds(encounterIds)) {
                 if (participant.getEncounterId() == null) {
                     continue;
                 }
@@ -437,6 +442,7 @@ public class EncounterContextQueryService {
                 }
             }
             applyActiveLocation(model, locationsByEncounterId.get(encounter.getId()), locationById);
+            // Asm：主治/责任护士优先活动参与者；清床或召回后无活动行时已含末次 COMPLETED。
             applyActiveParticipants(
                 model,
                 participantsByEncounterId.get(encounter.getId()),
@@ -444,7 +450,7 @@ public class EncounterContextQueryService {
             models.add(model);
         }
         applyLastCompletedWardForDischarged(models);
-        // Asm：无活动床时用末次已完成床回填展示「原 x 床（未占床）」（召回未占床轨）。
+        // Asm：无活动床时用末次已完成房-床回填「原{房}-{床}（未占床）」（召回/清床未占床轨）。
         applyLastCompletedBedWhenNoActiveBed(models);
         applyInpatientHoldRoutingFields(models, encounters);
         for (InpatientEncounterContextQueryModel model : models) {
@@ -589,9 +595,10 @@ public class EncounterContextQueryService {
     }
 
     /**
-     * 无活动床时回填末次已完成床，展示名格式「原{床名}（未占床）」。
+     * 无活动床时回填末次已完成床，展示名格式「原{房名}-{床名}（未占床）」。
      *
-     * <p>召回后仅有活动病区、不占物理床；列表/结算/医生站共用本投影，避免床位列空白。</p>
+     * <p>召回后仅有活动病区、不占物理床；清床离院后亦无活动床。列表/结算/医生站/病案侧栏
+     * 共用本投影。病房取床位父级 HOUSE；无房名时退化为「原{床名}（未占床）」。</p>
      *
      * @param models 住院上下文行
      */
@@ -620,6 +627,18 @@ public class EncounterContextQueryService {
         }
         LinkedHashSet<Long> bedLocationIds = new LinkedHashSet<>(bedIdByEncounterId.values());
         Map<Long, Location> bedById = locationQueryService.loadLocationEntityMapByIds(bedLocationIds);
+        LinkedHashSet<Long> houseLocationIds = new LinkedHashSet<>();
+        for (Location bed : bedById.values()) {
+            if (bed == null || bed.getParentId() == null) {
+                continue;
+            }
+            // 床位父级一般为 HOUSE，批量预取供房-床拼装。
+            houseLocationIds.add(bed.getParentId());
+        }
+        Map<Long, Location> houseById = Map.of();
+        if (!houseLocationIds.isEmpty()) {
+            houseById = locationQueryService.loadLocationEntityMapByIds(houseLocationIds);
+        }
         for (InpatientEncounterContextQueryModel model : models) {
             if (model == null || model.getEncounterId() == null || model.getBedId() != null) {
                 continue;
@@ -631,18 +650,45 @@ public class EncounterContextQueryService {
             model.setBedId(bedId);
             Location bed = bedById.get(bedId);
             String bedName = null;
+            String houseName = null;
             if (bed != null) {
                 bedName = bed.getName();
+                if (bed.getParentId() != null) {
+                    Location house = houseById.get(bed.getParentId());
+                    // 仅 HOUSE 形态计入房名，避免误把病区当病房。
+                    if (house != null
+                        && LocationForm.HOUSE.getCode().equals(house.getFormEnum())
+                        && StringUtils.isNotEmpty(house.getName())) {
+                        houseName = house.getName();
+                    }
+                }
             }
             if (StringUtils.isEmpty(bedName)) {
                 bedName = String.valueOf(bedId);
             }
-            // 展示：原 3 床（未占床）——非物理占床，仅归属信息。
-            model.setBedName(
-                InpatientNurseStationConstants.UNOCCUPIED_LAST_BED_DISPLAY_PREFIX
-                    + bedName
-                    + InpatientNurseStationConstants.UNOCCUPIED_LAST_BED_DISPLAY_SUFFIX);
+            // 展示：原201-3（未占床）——房-床归属信息，非物理占床。
+            model.setBedName(this.formatUnoccupiedLastBedDisplay(houseName, bedName));
         }
+    }
+
+    /**
+     * 拼装无活动床展示文案：有房名则「原{房}-{床}（未占床）」，否则「原{床}（未占床）」。
+     *
+     * @param houseName 病房名称；可空
+     * @param bedName   床位名称；须非空（调用方已兜底）
+     * @return 未占床展示文案
+     */
+    private String formatUnoccupiedLastBedDisplay(String houseName, String bedName) {
+        StringBuilder middle = new StringBuilder();
+        // 有病房名时按「房-床」拼中间段。
+        if (StringUtils.isNotEmpty(houseName)) {
+            middle.append(houseName.trim());
+            middle.append(GeneralSharedConstants.DASH);
+        }
+        middle.append(bedName);
+        return InpatientNurseStationConstants.UNOCCUPIED_LAST_BED_DISPLAY_PREFIX
+            + middle
+            + InpatientNurseStationConstants.UNOCCUPIED_LAST_BED_DISPLAY_SUFFIX;
     }
 
     private void applyActiveLocation(
@@ -694,6 +740,13 @@ public class EncounterContextQueryService {
         model.setWardName(wardName);
     }
 
+    /**
+     * 回填主治医生与责任护士（展示口径：活动优先，无则末次已完成）。
+     *
+     * @param model                 住院上下文行
+     * @param participants          展示参与者（见 {@code listDisplayParticipantEntitiesByEncounterIds}）
+     * @param practitionerNameById  医务人员姓名索引
+     */
     private void applyActiveParticipants(
         InpatientEncounterContextQueryModel model,
         List<EncounterParticipant> participants,

@@ -67,6 +67,10 @@ public class InpatientSettleQueueItemDto
     @Schema(description = "床号展示")
     private String bedName;
 
+    /** 主治医生姓名（上下文展示口径：活动优先，清床/召回后末次 COMPLETED）。 */
+    @Schema(description = "主治医生姓名")
+    private String attendingDoctorName;
+
     /** 就诊状态 code（{@link com.openhis.health.domain.share.enums.EncounterStatus}）。 */
     @Schema(description = "就诊状态 code", requiredMode = Schema.RequiredMode.REQUIRED)
     private String statusEnum;

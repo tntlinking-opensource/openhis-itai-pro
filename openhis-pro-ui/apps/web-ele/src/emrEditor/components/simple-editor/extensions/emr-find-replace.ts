@@ -4,6 +4,8 @@ import { Extension } from '@tiptap/core';
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 
+import { resolveFillableAt } from '../../../fillable-field';
+
 export const EMR_FIND_REPLACE_PLUGIN_KEY = new PluginKey<EmrFindReplacePluginState>(
   'emrFindReplace',
 );
@@ -26,6 +28,13 @@ const defaultPluginState = (): EmrFindReplacePluginState => ({
   matches: [],
   currentIndex: -1,
 });
+
+/** 匹配区间是否完全落在可填域正文内（固定模板下仅这些可替换） */
+function matchInsideFillable(doc: PMNode, from: number, to: number): boolean {
+  const hit = resolveFillableAt(doc, from) ?? resolveFillableAt(doc, Math.max(0, to - 1));
+  if (!hit?.editable) return false;
+  return from >= hit.innerFrom && to <= hit.innerTo;
+}
 
 /** 在 ProseMirror 文档中收集文本匹配区间（仅 text 节点） */
 export function collectEmrFindMatches(
@@ -84,8 +93,8 @@ function selectCurrentMatch(
   },
   state: EmrFindReplacePluginState,
 ) {
-  if (state.currentIndex < 0 || !state.matches[state.currentIndex]) return;
   const m = state.matches[state.currentIndex];
+  if (state.currentIndex < 0 || !m) return;
   editor.chain().focus().setTextSelection({ from: m.from, to: m.to }).scrollIntoView().run();
 }
 
@@ -190,8 +199,12 @@ export const EmrFindReplace = Extension.create({
         ({ editor, dispatch }) => {
           if (!editor.isEditable) return false;
           const prev = EMR_FIND_REPLACE_PLUGIN_KEY.getState(editor.state) ?? defaultPluginState();
-          if (prev.currentIndex < 0 || !prev.matches[prev.currentIndex]) return false;
           const m = prev.matches[prev.currentIndex];
+          if (prev.currentIndex < 0 || !m) return false;
+          const locked = Boolean(editor.storage.emrContentLock?.enabled);
+          if (locked && !matchInsideFillable(editor.state.doc, m.from, m.to)) {
+            return false;
+          }
           if (dispatch) {
             let tr = editor.state.tr.insertText(replaceWith, m.from, m.to);
             const next = buildFindState(
@@ -214,9 +227,14 @@ export const EmrFindReplace = Extension.create({
           if (!editor.isEditable) return false;
           const prev = EMR_FIND_REPLACE_PLUGIN_KEY.getState(editor.state) ?? defaultPluginState();
           if (!prev.matches.length) return false;
+          const locked = Boolean(editor.storage.emrContentLock?.enabled);
+          const targets = locked
+            ? prev.matches.filter((m) => matchInsideFillable(editor.state.doc, m.from, m.to))
+            : prev.matches;
+          if (!targets.length) return false;
           if (dispatch) {
             let tr = editor.state.tr;
-            const sorted = [...prev.matches].sort((a, b) => b.from - a.from);
+            const sorted = [...targets].sort((a, b) => b.from - a.from);
             for (const m of sorted) {
               tr = tr.insertText(replaceWith, m.from, m.to);
             }

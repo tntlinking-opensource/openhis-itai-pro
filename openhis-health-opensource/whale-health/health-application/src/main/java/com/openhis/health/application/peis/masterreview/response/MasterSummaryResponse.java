@@ -25,6 +25,24 @@ public class MasterSummaryResponse implements Serializable {
     /** 患者主键。 */
     private Long patientId;
 
+    /** 患者姓名。 */
+    private String patientName;
+
+    /** 体检流水号。 */
+    private String busNo;
+
+    /** 患者年龄（岁）。 */
+    private Integer patientAge;
+
+    /** 性别编码。 */
+    private String genderEnum;
+
+    /** 团检标志。 */
+    private Boolean groupFlag;
+
+    /** 分科完成比（如 5/5）。 */
+    private String deptCompleteRatio;
+
     /** 当前报告主键（可空）。 */
     private Long diagnosticReportId;
 

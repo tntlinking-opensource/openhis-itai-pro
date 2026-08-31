@@ -7,6 +7,7 @@ package com.openhis.health.domain.peis.servicerequestext.service;
 import com.openhis.health.domain.peis.servicerequestext.entity.PeisServiceRequestExt;
 import com.openhis.health.domain.peis.servicerequestext.queries.model.PeisServiceRequestExtModel;
 import com.openhis.health.domain.peis.servicerequestext.repository.PeisServiceRequestExtRepository;
+import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.workflow.servicerequest.entity.ServiceRequest;
 import com.openhis.health.domain.workflow.servicerequest.repository.ServiceRequestRepository;
 import lombok.RequiredArgsConstructor;
@@ -67,6 +68,12 @@ public class PeisServiceRequestExtQueryService {
         List<Long> srIds = new ArrayList<>();
         for (ServiceRequest sr : srs) {
             if (sr.getId() == null) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(sr.getIsDeleted())) {
+                continue;
+            }
+            if (RequestStatus.CANCELLED.getCode().equals(sr.getStatusEnum())) {
                 continue;
             }
             srIds.add(sr.getId());

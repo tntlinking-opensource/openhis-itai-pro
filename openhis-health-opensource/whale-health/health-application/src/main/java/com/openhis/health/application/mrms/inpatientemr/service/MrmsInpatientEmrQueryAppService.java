@@ -12,6 +12,7 @@ import com.openhis.health.application.shared.encounter.EncounterContextReader;
 import com.openhis.health.application.shared.financial.EncounterContractDisplayAssembler;
 import com.openhis.health.application.shared.financial.EncounterInsutypeDisplayAssembler;
 import com.openhis.health.application.shared.inpatient.AdmissionPrimaryDiagnosisAssembler;
+import com.openhis.health.application.shared.inpatient.BusinessDischargeTimeResolver;
 import com.openhis.health.application.shared.mrms.MrmsClinicalCaseArchiveSupport;
 import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.shared.validator.MrmsOperatorResolver;
@@ -31,8 +32,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -95,6 +98,9 @@ public class MrmsInpatientEmrQueryAppService {
     /** 临床病例归档/解档编排。 */
     private final MrmsClinicalCaseArchiveSupport clinicalCaseArchiveSupport;
 
+    /** 业务出院时间（出院医嘱计划时间优先）。 */
+    private final BusinessDischargeTimeResolver businessDischargeTimeResolver;
+
     /**
      * 分页检索住院病例（以住院就诊为行；已建档则回填病案号/状态）。
      *
@@ -133,6 +139,15 @@ public class MrmsInpatientEmrQueryAppService {
                 encounterContractDisplayAssembler.mapContractDisplayByEncounterIds(encounterIds);
         Map<Long, String> insutypeByEncounterId =
                 encounterInsutypeDisplayAssembler.mapInsutypeByEncounterIds(encounterIds);
+        // Pre：本页业务出院时间（出院医嘱计划时间优先）
+        Map<Long, LocalDateTime> endTimeByEncounter = new HashMap<>();
+        for (InpatientEncounterContextQueryModel ctx : contexts) {
+            if (ctx.getEncounterId() != null) {
+                endTimeByEncounter.put(ctx.getEncounterId(), ctx.getEndTime());
+            }
+        }
+        Map<Long, LocalDateTime> businessDscgByEncounter =
+                businessDischargeTimeResolver.mapByEncounterIds(encounterIds, endTimeByEncounter);
         String deptFilter = trimToNull(request.getAdmCatyName());
         Long attendingFilter = request.getAttendingPractitionerId();
         // Asm：就诊行 → 列表 DTO；科室/主治本页内存过滤（底层无对应下推字段）
@@ -153,6 +168,10 @@ public class MrmsInpatientEmrQueryAppService {
                     admissionPrimaryDiagnosisAssembler.resolvePrimaryDiagnosis(ctx.getDiagnosisJson());
             InpatientEmrListItemDto item =
                     inpatientEmrListMapper.fromInpatientContext(ctx, caseRecord, patient, primary);
+            // 列表出院时间：业务真源覆盖
+            if (ctx.getEncounterId() != null && businessDscgByEncounter.containsKey(ctx.getEncounterId())) {
+                item.setDscgTime(businessDscgByEncounter.get(ctx.getEncounterId()));
+            }
             // 费用性质：省市合同名 + 职工/居民（如「市医保·职工」）
             if (ctx.getEncounterId() != null) {
                 item.setInsuranceTypeText(composeInsuranceTypeText(

@@ -5,6 +5,7 @@
 package com.openhis.health.application.report.inoutdetail.support;
 
 import com.openhis.health.application.report.inoutdetail.dto.InpatientInOutDetailRowDto;
+import com.openhis.health.application.shared.inpatient.BusinessDischargeTimeResolver;
 import com.openhis.health.application.shared.report.PatientSettlementContextRow;
 import com.openhis.health.application.shared.report.ReportPatientSettlementContextAssembler;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientInOutDetailReportLineQueryModel;
@@ -15,15 +16,15 @@ import com.openhis.health.domain.administration.patient.queries.model.PatientInp
 import com.openhis.health.domain.administration.patient.service.PatientQueryService;
 import com.openhis.health.domain.share.enums.AdministrativeGender;
 import com.openhis.health.domain.share.utils.EnumUtil;
+import com.openhis.health.domain.share.utils.InpatientStayDaysCalculator;
 import com.openhis.whale.core.application.util.StringUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -48,6 +49,9 @@ public class InpatientInOutDetailReportEnricher {
 
     /** 入院身份费用性质（就诊优先账户，与挂号明细/患者卡片同口径）。 */
     private final ReportPatientSettlementContextAssembler reportPatientSettlementContextAssembler;
+
+    /** 业务出院时间（出院医嘱计划时间优先）。 */
+    private final BusinessDischargeTimeResolver businessDischargeTimeResolver;
 
     /**
      * 领域行 → 展示行；待重结或无净额 → settledFeeAmount 置 null。
@@ -118,6 +122,15 @@ public class InpatientInOutDetailReportEnricher {
         if (pendingSet == null) {
             pendingSet = new HashSet<>();
         }
+        // Pre：本页业务出院时间（出院医嘱计划时间优先，覆盖脏 end_time）
+        Map<Long, LocalDateTime> endTimeByEncounter = new HashMap<>();
+        for (InpatientInOutDetailReportLineQueryModel line : lines) {
+            if (line != null && line.getEncounterId() != null) {
+                endTimeByEncounter.put(line.getEncounterId(), line.getEndTime());
+            }
+        }
+        Map<Long, LocalDateTime> businessDscgByEncounter =
+            this.businessDischargeTimeResolver.mapByEncounterIds(encounterIds, endTimeByEncounter);
         // 第二遍：装配展示字段
         for (InpatientInOutDetailReportLineQueryModel line : lines) {
             // 跳过空投影行
@@ -129,9 +142,15 @@ public class InpatientInOutDetailReportEnricher {
             row.setBusNo(line.getBusNo());
             row.setPatientId(line.getPatientId());
             row.setStartTime(line.getStartTime());
-            row.setEndTime(line.getEndTime());
-            // Asm：住院天数（入院日计第 1 天；无出院日用当天）
-            row.setInpatientDays(this.resolveInpatientDays(line.getStartTime(), line.getEndTime()));
+            // 出院时间：业务真源（计划出院）；无计划嘱时回落 endTime
+            LocalDateTime businessEnd = line.getEndTime();
+            if (line.getEncounterId() != null && businessDscgByEncounter.containsKey(line.getEncounterId())) {
+                businessEnd = businessDscgByEncounter.get(line.getEncounterId());
+            }
+            row.setEndTime(businessEnd);
+            // Asm：住院天数（即进不计出；在院含当日）— 用业务出院日重算
+            row.setInpatientDays(
+                InpatientStayDaysCalculator.calcDisplayStayDays(line.getStartTime(), businessEnd));
             row.setTransferred(line.isTransferred());
             PatientInpatientProjectionSnapshot patient = patientById.get(line.getPatientId());
             // 人口学：有快照则回填姓名性别年龄
@@ -275,34 +294,6 @@ public class InpatientInOutDetailReportEnricher {
             first = false;
         }
         return builder.toString();
-    }
-
-    /**
-     * 住院天数：自然日差 + 1（入院日计第 1 天）；有出院日截至出院日，否则截至当天；至少 1 天。
-     *
-     * @param startTime 入院时间
-     * @param endTime 出院时间；可空
-     * @return 住院天数；无入院时间则 null
-     */
-    private Integer resolveInpatientDays(LocalDateTime startTime, LocalDateTime endTime) {
-        // 无入院时间无法计日
-        if (startTime == null) {
-            return null;
-        }
-        LocalDate startDate = startTime.toLocalDate();
-        LocalDate endDate;
-        // 已出院用出院日，在院用当天
-        if (endTime != null) {
-            endDate = endTime.toLocalDate();
-        } else {
-            endDate = LocalDate.now();
-        }
-        long days = ChronoUnit.DAYS.between(startDate, endDate) + 1L;
-        // 异常时间序仍展示至少 1 天
-        if (days < 1L) {
-            return 1;
-        }
-        return (int) days;
     }
 
     /**

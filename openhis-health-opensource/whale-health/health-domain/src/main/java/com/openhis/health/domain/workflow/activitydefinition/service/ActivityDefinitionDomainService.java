@@ -10,6 +10,7 @@ import com.openhis.health.domain.share.constants.BusinessSequenceConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.PublicationStatus;
+import com.openhis.health.domain.share.enums.ActivityPermittedGender;
 import com.openhis.health.domain.share.events.workflow.activitydefinition.ActivityDefinitionActivatedEvent;
 import com.openhis.health.domain.share.events.workflow.activitydefinition.ActivityDefinitionCreatedEvent;
 import com.openhis.health.domain.share.events.workflow.activitydefinition.ActivityDefinitionPriceUpdatedEvent;
@@ -104,6 +105,13 @@ public class ActivityDefinitionDomainService {
             definition.setChrgitmLv(item.getChrgitmLv());
             definition.setMrSettlementTypeCode(item.getMrSettlementTypeCode());
             definition.setChildrenJson(item.getChildrenJson());
+            // 适用性别：命令未传时落 BOTH，保证非空列与体检过滤语义一致
+            if (StringUtils.isNotEmpty(item.getPermittedGenderEnum())) {
+                definition.setPermittedGenderEnum(item.getPermittedGenderEnum().trim());
+            } else {
+                definition.setPermittedGenderEnum(ActivityPermittedGender.BOTH.getCode());
+            }
+            definition.setSortOrder(item.getSortOrder());
 
             // 前置校验：必填与业务编码存在性。
             definition.assertRequiredFieldsProvided();
@@ -332,6 +340,21 @@ public class ActivityDefinitionDomainService {
                     changedFields.add(FieldNameConstants.CHILDREN_JSON);
                 }
                 definition.setChildrenJson(item.getChildrenJson());
+            }
+            // 命令携带适用性别时才更新，空值表示不覆盖历史值。
+            if (item.getPermittedGenderEnum() != null) {
+                String genderCode = item.getPermittedGenderEnum().trim();
+                if (!Objects.equals(definition.getPermittedGenderEnum(), genderCode)) {
+                    changedFields.add(FieldNameConstants.PERMITTED_GENDER_ENUM);
+                }
+                definition.setPermittedGenderEnum(genderCode);
+            }
+            // 命令携带展示顺序时才更新（含显式置空语义：传 Integer 即覆盖）。
+            if (item.getSortOrder() != null) {
+                if (!Objects.equals(definition.getSortOrder(), item.getSortOrder())) {
+                    changedFields.add(FieldNameConstants.SORT_ORDER);
+                }
+                definition.setSortOrder(item.getSortOrder());
             }
 
             // 子项同步：若命令带 children，则按“全量对齐 + 逻辑删除旧行”口径执行。

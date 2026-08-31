@@ -46,10 +46,10 @@ public class WarehouseInventoryDetailPageQuery extends AbstractPageQuery {
     private List<Integer> chrgitmLvList;
 
     /**
-     * 基药标识筛选（药典 {@code basic_flag}）；非空时仅保留命中药品定义的库存行（耗材排除）。
+     * 重点药类型 code（见 {@code KeyDrugType}）；非空时仅保留命中药品定义的库存行（耗材排除）。
      * <p>定义主键由应用层 {@code InventoryCatalogFilter} 预解析写入 {@link #resolvedMedicationDefinitionIds}。</p>
      */
-    private Boolean basicFlag;
+    private String keyDrugType;
 
     /** 供应状态持久化码多选，取值域为 {@code PublicationStatus#getCode()}。 */
     private List<String> inventoryStatusEnums;
@@ -89,4 +89,9 @@ public class WarehouseInventoryDetailPageQuery extends AbstractPageQuery {
      * 关键字预解析的耗材定义主键（编码/商品名等）；由 {@code InventoryCatalogFilter#enrichKeywordDefinitionIds} 写入。
      */
     private List<Long> resolvedDeviceDefinitionIdsForKeyword;
+
+    /**
+     * 项目类型：药品/耗材定义表名（{@code item_table} 等值）；空/null 不限。
+     */
+    private String itemTable;
 }

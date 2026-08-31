@@ -28,6 +28,10 @@ export interface DailySettlementSummaryPanelSource {
   /** 医保上传差额（零售−上传；勾稽项，不入总收入） */
   chsRetailUploadDiffAmount?: string;
   depositAmount?: string;
+  /** 退预交金合计（多退；住院） */
+  depositRefundAmount?: string;
+  /** 结算补收合计（结算渠道实付；非补预交金；住院） */
+  settleSupplementAmount?: string;
   physicalExamCount?: number;
   expenseNatureSummaries?: DailySettlementExpenseNatureSummaryDto[];
   /** 后端扁平行；字段缺省时回落取「医保上传差额」 */
@@ -239,6 +243,21 @@ const channelMetrics = computed<MetricItem[]>(() => {
       key: 'depositAmount',
       label: '预交金',
       value: formatMoney(summary.depositAmount),
+    });
+  }
+  // 住院多退少补：有字段即展示（含 0.00），与预交金列同级独立
+  if (summary.depositRefundAmount !== undefined) {
+    items.push({
+      key: 'depositRefundAmount',
+      label: '退预交金',
+      value: formatMoney(summary.depositRefundAmount),
+    });
+  }
+  if (summary.settleSupplementAmount !== undefined) {
+    items.push({
+      key: 'settleSupplementAmount',
+      label: '结算补收',
+      value: formatMoney(summary.settleSupplementAmount),
     });
   }
   return items;

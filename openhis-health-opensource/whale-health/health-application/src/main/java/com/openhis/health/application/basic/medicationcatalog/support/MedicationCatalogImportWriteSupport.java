@@ -5,7 +5,11 @@
 package com.openhis.health.application.basic.medicationcatalog.support;
 
 import com.openhis.health.application.basic.medicationcatalog.request.CreateMedicationCatalogRequest;
+import com.openhis.health.domain.custom.supplier.command.RegisterSupplierCommand;
+import com.openhis.health.domain.custom.supplier.service.SupplierDomainService;
+import com.openhis.health.domain.custom.supplier.service.SupplierQueryService;
 import com.openhis.health.domain.share.constants.MedicationCatalogImportConstants;
+import com.openhis.health.domain.share.enums.SupplierType;
 import com.openhis.health.domain.share.events.medication.medicationdefinition.MedicationCatalogImportedEvent;
 import com.openhis.whale.core.application.util.StringUtils;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
@@ -13,7 +17,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 /**
  * 药品目录导入写段：事务内逐行调用创建回调并发布批次导入事件。
@@ -24,6 +31,10 @@ public class MedicationCatalogImportWriteSupport {
 
     private final IDomainEventPublisher domainEventPublisher;
     private final MedicationCatalogBusNoSequenceSync busNoSequenceSync;
+    /** 按 Excel 厂家文案精确匹配生产厂家主数据（type=1）。 */
+    private final SupplierQueryService supplierQueryService;
+    /** 未命中厂家文案时注册 type=生产厂家主数据。 */
+    private final SupplierDomainService supplierDomainService;
 
     /**
      * 写段进度回调。
@@ -64,6 +75,8 @@ public class MedicationCatalogImportWriteSupport {
         }
         // Pre：独立事务对齐 MD 序号，避免「药品业务编码冲突」
         busNoSequenceSync.syncFromExistingDefinitions();
+        // Pre：本批厂家名 → id 缓存，避免同文件同厂重复建档
+        Map<String, Long> manufacturerIdByName = new HashMap<>();
         int total = rows.size();
         int processed = 0;
         int created = 0;
@@ -76,7 +89,8 @@ public class MedicationCatalogImportWriteSupport {
                 }
                 continue;
             }
-            CreateMedicationCatalogRequest request = this.toCreateRequest(row, orgId);
+            CreateMedicationCatalogRequest request =
+                this.toCreateRequest(row, orgId, operatorId, manufacturerIdByName);
             creator.create(request);
             created = created + 1;
             processed = processed + 1;
@@ -108,13 +122,32 @@ public class MedicationCatalogImportWriteSupport {
 
     /**
      * 导入行 → 新建药品目录请求（ACTIVE 由领域创建路径保证；busNo/拼音五笔由领域采番）。
+     *
+     * <p>Excel 厂家文案精确匹配 {@code cus_supplier}（type=生产厂家）；未命中则注册新厂家后再落
+     * {@code manufacturerId}。</p>
+     *
+     * @param row                   导入行
+     * @param orgId                 机构主键
+     * @param operatorId            操作人
+     * @param manufacturerIdByName  本批厂家名缓存（就地写入）
+     * @return 创建请求
      */
-    private CreateMedicationCatalogRequest toCreateRequest(MedicationCatalogImportRow row, Long orgId) {
+    private CreateMedicationCatalogRequest toCreateRequest(
+        MedicationCatalogImportRow row,
+        Long orgId,
+        Long operatorId,
+        Map<String, Long> manufacturerIdByName
+    ) {
         CreateMedicationCatalogRequest request = new CreateMedicationCatalogRequest();
         request.setName(row.getName());
         request.setMerchandiseName(row.getMerchandiseName());
         request.setCategoryCode(row.getCategoryCode());
         request.setManufacturerText(row.getManufacturerText());
+        if (orgId != null) {
+            request.setOrgId(orgId);
+        }
+        // Pre：厂家文案 → manufacturerId（命中复用；未命中自动建 type=生产厂家）
+        this.resolveOrCreateManufacturerIdFromImportText(request, operatorId, manufacturerIdByName);
         request.setTypeCode(row.getTypeCode());
         request.setApprovalNumber(row.getApprovalNumber());
         request.setNationalDrugCode(row.getNationalDrugCode());
@@ -163,16 +196,76 @@ public class MedicationCatalogImportWriteSupport {
         request.setRestrictedFlag(row.getRestrictedFlag());
         request.setAntibioticFlag(row.getAntibioticFlag());
         request.setRxFlag(row.getRxFlag());
+        request.setNationalMonitorFlag(row.getNationalMonitorFlag());
+        request.setCentralPurchaseFlag(row.getCentralPurchaseFlag());
         request.setDefinition(this.mergeDefinition(row.getDefinitionText(), row.getLegacyCode()));
-        if (orgId != null) {
-            request.setOrgId(orgId);
-        }
         request.setSupplyId(null);
         return request;
     }
 
     /**
+     * 导入行厂家文案对齐生产厂家主数据：精确名命中则复用；未命中则注册 type=生产厂家。
+     *
+     * @param request              已写入 {@code manufacturerText}/{@code orgId} 的创建请求
+     * @param operatorId           操作人（写入供应商注册事件）
+     * @param manufacturerIdByName 本批缓存（trim 名 → id）
+     */
+    private void resolveOrCreateManufacturerIdFromImportText(
+        CreateMedicationCatalogRequest request,
+        Long operatorId,
+        Map<String, Long> manufacturerIdByName
+    ) {
+        if (request == null) {
+            return;
+        }
+        // 已有主键则不再用文案覆盖
+        if (request.getManufacturerId() != null) {
+            return;
+        }
+        String manufacturerText = request.getManufacturerText();
+        if (StringUtils.isEmpty(manufacturerText)) {
+            return;
+        }
+        String trimmedName = manufacturerText.trim();
+        // 本批已解析过同名厂家：直接复用，避免同文件重复建档
+        if (manufacturerIdByName != null && manufacturerIdByName.containsKey(trimmedName)) {
+            request.setManufacturerId(manufacturerIdByName.get(trimmedName));
+            return;
+        }
+        Optional<Long> matchedId = supplierQueryService.findManufacturerIdByExactName(trimmedName);
+        if (matchedId.isPresent()) {
+            Long id = matchedId.get();
+            request.setManufacturerId(id);
+            if (manufacturerIdByName != null) {
+                manufacturerIdByName.put(trimmedName, id);
+            }
+            return;
+        }
+        // 未命中：注册生产厂家主数据（信用代码可空；名称原样）
+        Long orgId = request.getOrgId();
+        if (orgId == null || orgId == 0L) {
+            return;
+        }
+        RegisterSupplierCommand command = new RegisterSupplierCommand();
+        command.setName(trimmedName);
+        command.setTypeEnum(SupplierType.MANUFACTURER.getCode());
+        command.setCreditCode("");
+        command.setOrgId(orgId);
+        command.setOperatorId(operatorId);
+        command.setNote("药典导入自动建档");
+        Long newId = supplierDomainService.registerSupplier(command);
+        request.setManufacturerId(newId);
+        if (manufacturerIdByName != null) {
+            manufacturerIdByName.put(trimmedName, newId);
+        }
+    }
+
+    /**
      * 合并药品说明与院内旧编码至 definition。
+     *
+     * @param definitionText 药品说明
+     * @param legacyCode     院内旧编码
+     * @return 合并后文本；皆空则 null
      */
     private String mergeDefinition(String definitionText, String legacyCode) {
         boolean hasDefinition = StringUtils.isNotEmpty(definitionText);

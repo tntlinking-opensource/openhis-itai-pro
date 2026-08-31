@@ -3,12 +3,12 @@
   财务审批族传 require-finance-approval-role：
   - 普通进入：隐藏审批/驳回，保留制单按钮；
   - 财务审批深链：仅展示审批/驳回，隐藏制单按钮（角色由后端 Gate 校验，与交账审批同口径）。
-  打印按钮在有单据时可用（printDisabled 控制）。
+  打印 / 打印预览在有单据时可用（printDisabled 控制）。
 -->
 <script setup lang="ts">
 import { computed } from 'vue';
 
-import { Check, Printer, RefreshLeft } from '@element-plus/icons-vue';
+import { Check, Printer, RefreshLeft, View } from '@element-plus/icons-vue';
 import { ElButton } from 'element-plus';
 
 import { useFromFinanceApproval } from '#/composables/use-from-finance-approval';
@@ -48,7 +48,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   approve: [];
-  print: [];
+  print: [payload: { preview?: boolean }];
   reject: [];
   removeDoc: [];
   save: [];
@@ -106,5 +106,10 @@ const showDocumentManageActions = computed(() => !financeApprovalReviewMode.valu
     <ElButton type="warning" :disabled="rejectDisabled" @click="emit('reject')">驳回</ElButton>
   </template>
   <InvActionSep />
-  <ElButton :icon="Printer" :disabled="printDisabled" @click="emit('print')">打印</ElButton>
+  <ElButton :icon="View" :disabled="printDisabled" @click="emit('print', { preview: true })">
+    打印预览
+  </ElButton>
+  <ElButton :icon="Printer" :disabled="printDisabled" @click="emit('print', { preview: false })">
+    打印
+  </ElButton>
 </template>

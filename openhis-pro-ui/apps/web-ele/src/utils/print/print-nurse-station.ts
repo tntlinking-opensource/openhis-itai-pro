@@ -50,7 +50,10 @@ export async function printTreatmentSheet(options: PrintTreatmentSheetOptions) {
   const result = await print({
     scenarioCode: PRINT_SCENARIO.opTreatmentPrint,
     source: options.source,
-    bizRef: { encounterId },
+    bizRef: {
+      scenarioCode: PRINT_SCENARIO.opTreatmentPrint,
+      encounterId,
+    },
     jobName: options.jobName ?? '门诊处置单',
   });
 
@@ -63,6 +66,8 @@ export interface PrintInfusionLabelOptions {
   jobName?: string;
   /** 默认门诊瓶签；住院护士站请传 PRINT_SCENARIO.ipInfusionLabelPrint */
   scenarioCode?: string;
+  /** 合并进每张瓶签 bizRef（如打印中心 listRowKeys） */
+  bizRefExtra?: Record<string, unknown>;
 }
 
 /**
@@ -121,6 +126,7 @@ export async function printInfusionLabel(options: PrintInfusionLabelOptions) {
             quantitySplitCount,
           },
           bizRef: {
+            scenarioCode,
             encounterId,
             groupId: group.groupId,
             medicationRequestIds,
@@ -129,6 +135,7 @@ export async function printInfusionLabel(options: PrintInfusionLabelOptions) {
             timeIndex: timeIndex + 1,
             timesPerDay,
             quantitySplitCount,
+            ...(options.bizRefExtra ?? {}),
           },
           jobName: `${options.jobName ?? '输液瓶签'}${suffix}`,
         });
@@ -209,7 +216,11 @@ export async function printSpecimenBarcode(options: PrintSpecimenBarcodeOptions)
         itemName: item.itemName,
         serviceRequestId: item.serviceRequestId,
       },
-      bizRef: { encounterId, serviceRequestId: item.serviceRequestId },
+      bizRef: {
+        scenarioCode: PRINT_SCENARIO.opSpecimenBarcodePrint,
+        encounterId,
+        serviceRequestId: item.serviceRequestId,
+      },
       jobName: `${options.jobName ?? '采血贴'}${suffix}`,
     });
     if (result.ok) {
@@ -277,6 +288,7 @@ export async function printNursePrescription(options: PrintNursePrescriptionOpti
         scenarioCode: resolveOutpatientPrescriptionPrintScenario(group),
         source: group,
         bizRef: {
+          scenarioCode: resolveOutpatientPrescriptionPrintScenario(group),
           encounterId,
           prescriptionNo: prescriptionNo || undefined,
         },

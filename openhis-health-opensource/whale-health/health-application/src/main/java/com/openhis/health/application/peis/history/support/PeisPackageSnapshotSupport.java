@@ -6,6 +6,7 @@ package com.openhis.health.application.peis.history.support;
 
 import com.openhis.health.domain.share.constants.PeisExamKindConstants;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -68,5 +69,42 @@ public final class PeisPackageSnapshotSupport {
             return null;
         }
         return m.group(1).replace("\\\"", "\"").replace("\\\\", "\\");
+    }
+
+  /**
+   * 从套餐快照解析建单时写入的套餐子项 activityId 列表。
+   *
+   * @param packageSnapshotJson 快照 JSON
+   * @return 子项 activityId；无快照时返回空列表
+   */
+    public static List<Long> extractChildActivityIds(String packageSnapshotJson) {
+        if (packageSnapshotJson == null || packageSnapshotJson.isBlank()) {
+            return List.of();
+        }
+        int start = packageSnapshotJson.indexOf("\"childActivityIds\"");
+        if (start < 0) {
+            return List.of();
+        }
+        int bracketStart = packageSnapshotJson.indexOf('[', start);
+        int bracketEnd = packageSnapshotJson.indexOf(']', bracketStart);
+        if (bracketStart < 0 || bracketEnd < 0) {
+            return List.of();
+        }
+        String body = packageSnapshotJson.substring(bracketStart + 1, bracketEnd).trim();
+        if (body.isEmpty()) {
+            return List.of();
+        }
+        List<Long> ids = new ArrayList<>();
+        for (String token : body.split(",")) {
+            if (token == null || token.isBlank()) {
+                continue;
+            }
+            try {
+                ids.add(Long.parseLong(token.trim()));
+            } catch (NumberFormatException ignored) {
+                // 脏快照行跳过
+            }
+        }
+        return ids;
     }
 }

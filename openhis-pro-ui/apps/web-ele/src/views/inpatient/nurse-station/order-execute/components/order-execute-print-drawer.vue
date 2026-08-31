@@ -66,7 +66,7 @@ const DOC_TYPE_OPTIONS: Array<{
     value: 'oral_med_label',
     label: '口服药贴',
     singlePatient: false,
-    description: '按口服药医嘱打印药贴',
+    description: '按查询日列出已校对口服医嘱，逐条打贴',
   },
   {
     value: 'oral_med_sheet',
@@ -120,7 +120,7 @@ const orderExecDateRange = ref<[string, string]>([
   dayjs().format('YYYY-MM-DD'),
   dayjs().format('YYYY-MM-DD'),
 ]);
-/** 输液贴 / 巡视卡：单日查询，每次打开或切到该类型默认当天 */
+/** 输液贴 / 巡视卡 / 口服药贴：单日查询，每次打开或切到该类型默认当天 */
 const dayQueryDate = ref(dayjs().format('YYYY-MM-DD'));
 /** 患者用药单筛选：all 全部 / infusion 输液药 / non_infusion 非输液药 */
 const oralMedInfusionFilter = ref<'all' | 'infusion' | 'non_infusion'>('all');
@@ -171,11 +171,12 @@ const isOrderExecDoc = computed(
   () => activeDocType.value === 'long_order' || activeDocType.value === 'temp_order',
 );
 
-/** 是否为单日查询单据（输液贴 / 巡视卡 / 摆药单 / 患者用药单） */
+/** 是否为单日查询单据（输液贴 / 巡视卡 / 口服药贴 / 摆药单 / 患者用药单） */
 const isDayQueryDoc = computed(
   () =>
     activeDocType.value === 'infusion_label' ||
     activeDocType.value === 'patrol_card' ||
+    activeDocType.value === 'oral_med_label' ||
     activeDocType.value === 'order_dispense_sheet' ||
     activeDocType.value === 'oral_med_sheet',
 );

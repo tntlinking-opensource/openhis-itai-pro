@@ -32,7 +32,10 @@ import {
   updateTemplateApi,
 } from '#/api/emr/template';
 import { SimpleEditor, normalizeEmrRootDoc } from '#/emrEditor';
-import { defaultEmrEditorDoc } from '#/emrEditor/components/simple-editor/editor-defaults';
+import {
+  DEFAULT_EDITOR_PAGE_MARGINS,
+  defaultEmrEditorDoc,
+} from '#/emrEditor/components/simple-editor/editor-defaults';
 import { useAuthStore } from '#/store';
 import { unwrapApiList } from '#/utils/api/unwrap-api-list';
 import {
@@ -102,12 +105,7 @@ const createScope = ref<'department' | 'personal'>('personal');
 const editName = ref('');
 const docJson = ref<JSONContent | null>(null);
 const editorKey = ref(0);
-const pageMargins = ref({
-  top: '25.4mm',
-  right: '31.8mm',
-  bottom: '25.4mm',
-  left: '31.8mm',
-});
+const pageMargins = ref({ ...DEFAULT_EDITOR_PAGE_MARGINS });
 
 /** 右侧是否处于可编辑会话（已有模板或新建草稿） */
 const hasActiveEditor = computed(() => isCreating.value || Boolean(selectedId.value));

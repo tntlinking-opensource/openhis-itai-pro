@@ -98,6 +98,31 @@ public class PatientStudentQueryService {
         });
     }
 
+    public List<String> listDistinctClassNames(Long tenantId, Long collegeId) {
+        Long resolvedTenantId = resolveTenantId(tenantId);
+        if (resolvedTenantId == null || collegeId == null) {
+            return List.of();
+        }
+        return repository.findAll((root, cq, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.get("tenantId"), resolvedTenantId));
+            predicates.add(cb.isFalse(root.get("isDeleted")));
+            predicates.add(cb.isTrue(root.get("activeFlag")));
+            predicates.add(cb.equal(root.get("collegeId"), collegeId));
+            predicates.add(cb.isNotNull(root.get("patientId")));
+            predicates.add(cb.isNotNull(root.get("className")));
+            predicates.add(cb.equal(root.get("schoolStatusEnum"),
+                com.openhis.campus.domain.shared.CampusDomainConstants.SCHOOL_STATUS_IN_SCHOOL));
+            cq.orderBy(cb.asc(root.get("className")));
+            return cb.and(predicates.toArray(new Predicate[0]));
+        }).stream()
+            .map(PatientStudent::getClassName)
+            .filter(name -> name != null && !name.isBlank())
+            .distinct()
+            .sorted()
+            .toList();
+    }
+
     private Specification<PatientStudent> buildSpec(
         Long tenantId,
         String keyword,

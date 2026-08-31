@@ -15,6 +15,7 @@ import com.openhis.health.application.shared.validator.CurrentPractitionerResolv
 import com.openhis.health.application.shared.advice.InpatientEntrustOrderGateSupport;
 import com.openhis.health.application.shared.product.ClinicalCatalogPriceResolver;
 import com.openhis.health.application.outpatient.doctorstation.advice.support.OutpatientMedicationSignChargeOrchestrator;
+import com.openhis.health.application.outpatient.doctorstation.advice.support.OutpatientSkinTestFifoDraftGateSupport;
 import com.openhis.health.application.shared.advice.AdviceSignTargetSpec;
 import com.openhis.health.application.shared.advice.SkinTestMedicationDraftSpec;
 import com.openhis.health.application.shared.advice.DoctorStationSkinTestSyncOrchestrator;
@@ -142,6 +143,7 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -206,6 +208,9 @@ public class DoctorStationAdviceAppService {
     private final BodyStructureQueryService bodyStructureQueryService;
     private final SpecimenDefinitionQueryService specimenDefinitionQueryService;
     private final OutpatientPaymentDraftLifecycleOrchestrator outpatientPaymentDraftLifecycleOrchestrator;
+    /** IF-DOR-14 皮试药 FIFO 跨批确认门控（BR-ORD-034）。 */
+    private final OutpatientSkinTestFifoDraftGateSupport outpatientSkinTestFifoDraftGateSupport;
+
     /**
      * 医嘱开立页初始化：用药频次、用法（给药途径）与费用性质（合同）下拉。
      *
@@ -510,6 +515,10 @@ public class DoctorStationAdviceAppService {
         }
         // 收集新建药品医嘱主键，供前端局部刷新
         List<Long> newMedIds = new ArrayList<>();
+        // Gate（BR-ORD-034）：皮试药保存前 FIFO 单批试算；无一单批够量须医生确认后方可暂存
+        boolean confirmCrossLotSkinTest = Boolean.TRUE.equals(request.getConfirmCrossLotSkinTest());
+        outpatientSkinTestFifoDraftGateSupport.assertDraftBatchSkinTestFifoGate(
+            orgId, request.getEncounterId(), request.getLines(), confirmCrossLotSkinTest);
         // 命令：按行操作码分发 CREATE/UPDATE/DELETE；单行失败则整批随 AppService UoW 回滚。
         for (DoctorStationAdviceDraftLineRequest line : request.getLines()) {
             String op = trimToEmpty(line.getLineOp()).toUpperCase(java.util.Locale.ROOT);
@@ -822,11 +831,13 @@ public class DoctorStationAdviceAppService {
     /**
      * 签发医嘱批次（药品批次号、处方号、诊疗外呼占位）。
      *
-     * <p>签发成功后，将本批次内各医嘱锚点下仍处于 DRAFT 的收费明细升为 PLANNED，以便门诊收费预结算通过
+     * <p>签发成功后，将本批次内各医嘱锚点下仍处于 DRAFT 的收费明细升为 PLANNED，以便门诊收费预结算通过。
+     * 皮试药 FIFO 单批优先见 BR-ORD-034；无一单批够量且未确认时抛 EX-ORD-309（整批事务回滚）。
+     * 药耗 FIFO 跨批次取用见 BR-ORD-035；多段且未确认时抛 EX-ORD-310（整批事务回滚）。</p>
      *
-     * @param request 就诊、患者、签发目标集合
+     * @param request 就诊、患者、签发目标集合；可选 {@code confirmCrossLotSkinTest} / {@code confirmCrossLotPricing}
      * @return 药品处方号映射
-     * @throws BusinessException 门控失败、产品表名不支持，或域签发/费用状态迁移失败
+     * @throws BusinessException 门控失败、产品表名不支持、需确认跨批，或域签发/费用状态迁移失败
      */
     public SignDoctorStationAdviceBatchResponse signDoctorStationAdviceBatch(SignDoctorStationAdviceBatchRequest request) {
         // 门控：加载门诊快照并校验患者上下文一致
@@ -862,6 +873,20 @@ public class DoctorStationAdviceAppService {
             this.mapMedicationListModelsByIds(signingMedicationRequestIds);
         Map<Long, MedicationRequestFifoSignContext> medicationFifoById =
             this.orderRequestFifoSignContextLoader.loadMedicationFifoSignContextsOrThrow(signingMedicationRequestIds);
+
+        // Gate：本批药品申请必须属于当前就诊/患者，防止切患者后串挂费
+        for (Long medicationRequestId : signingMedicationRequestIds) {
+            MedicationRequestListQueryModel owned = medicationListById.get(medicationRequestId);
+            if (owned == null) {
+                throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_NOT_FOUND, "药品申请不存在");
+            }
+            if (!Objects.equals(request.getEncounterId(), owned.getEncounterId())
+                || !Objects.equals(request.getPatientId(), owned.getPatientId())) {
+                throw new BusinessException(
+                    ErrorCodeConstants.MEDICATION_REQUEST_RULE_CONFLICT,
+                    "处方不属于当前患者/就诊，请刷新后重试");
+            }
+        }
         // Pre：批内挂费读缓存——同药定价/产品展示只查一次，选价规则不变
         OutpatientMedicationSignChargeOrchestrator.SignChargeReadCache signChargeReadCache =
             new OutpatientMedicationSignChargeOrchestrator.SignChargeReadCache();
@@ -891,6 +916,10 @@ public class DoctorStationAdviceAppService {
         }
         this.outpatientMedicationSignChargeOrchestrator.prefetchDeviceCatalogReads(
             signChargeReadCache, deviceDefinitionIdsForCharge);
+        // Pre（BR-ORD-034）：跨批确认已在 IF-DOR-14 保存完成；签发相位不再抛 EX-ORD-309
+        boolean confirmCrossLotSkinTest = true;
+        // Pre（BR-ORD-035）：跨批次金额确认；首次签发未传则多段 FIFO 抛 EX-ORD-310
+        boolean confirmCrossLotPricing = Boolean.TRUE.equals(request.getConfirmCrossLotPricing());
         // Cmd：按目标类型签发；诊疗分支触发外呼网关占位
         for (DoctorStationAdviceResourceKeyDto t : signTargets) {
             String pt = ProductTableNameHelper.normalize(t.getProductTableName());
@@ -922,10 +951,10 @@ public class DoctorStationAdviceAppService {
                 }
                 Long medicationAccountId = this.resolveAdviceChargeAccountId(
                     request.getEncounterId(), medicationContractId);
-                // Cmd：FIFO 发放 + 分段挂费 + PLANNED（与 IF-DOR-37 共用 Support；FIFO 仍逐条以保证库存占用正确）
+                // Cmd：FIFO 发放 + 分段挂费 + PLANNED（皮试单批优先 / 跨批金额确认见 BR-ORD-034/035）
                 outpatientMedicationSignChargeOrchestrator.replaceFifoDispenseAndPlanChargesAfterMedicationSigned(
                     request.getEncounterId(), request.getPatientId(), medicationAccountId, orgId, operatorId,
-                    t.getRequestId(), fifoMedCtx, signChargeReadCache);
+                    t.getRequestId(), fifoMedCtx, signChargeReadCache, confirmCrossLotSkinTest, confirmCrossLotPricing);
             } else if (ProductTableNameHelper.isActivity(pt)) {
                 // 诊疗：域 sign 后外呼仅占位，真实 LIS/PACS 路由待检查申请类型后替换
                 serviceRequestDomainService.signServiceRequest(
@@ -949,6 +978,22 @@ public class DoctorStationAdviceAppService {
                 List<ReplaceFifoDeviceDispenseDraftsCommand.Segment> devSegments = doctorStationAdviceFifoAllocationAssembler.allocateDeviceFifo(
                     orgId, fifoDevCtx.getEncounterId(), fifoDevCtx.getDeviceDefId(), fifoDevCtx.getCatalogCategoryCode(),
                     fifoDevCtx.getUnitCode(), fifoDevCtx.getQuantity());
+                List<BigDecimal> devQtys = new ArrayList<>();
+                List<String> devLotNumbers = new ArrayList<>();
+                for (ReplaceFifoDeviceDispenseDraftsCommand.Segment seg : devSegments) {
+                    // Pre：分段数量与 FIFO 批号等长传入挂费，禁止跨批号 priority 择优
+                    devQtys.add(seg.getQuantity());
+                    devLotNumbers.add(seg.getLotNumber());
+                }
+                // Gate（BR-ORD-035）：耗材多段 FIFO 同样须确认分段金额
+                this.outpatientMedicationSignChargeOrchestrator.assertCrossLotPricingConfirmedOrThrow(
+                    TableNameConstants.ADM_DEVICE_DEFINITION,
+                    fifoDevCtx.getDeviceDefId(),
+                    fifoDevCtx.getUnitCode(),
+                    devQtys,
+                    devLotNumbers,
+                    signChargeReadCache,
+                    confirmCrossLotPricing);
                 ReplaceFifoDeviceDispenseDraftsCommand fifoDevCmd = new ReplaceFifoDeviceDispenseDraftsCommand();
                 fifoDevCmd.setOperatorId(operatorId);
                 fifoDevCmd.setDeviceReqId(fifoDevCtx.getDeviceReqId());
@@ -958,12 +1003,11 @@ public class DoctorStationAdviceAppService {
                 fifoDevCmd.setUnitCode(fifoDevCtx.getUnitCode());
                 fifoDevCmd.setSegments(devSegments);
                 List<Long> devDispenseIds = deviceDispenseDomainService.replaceFifoDraftDispensesAfterDoctorStationSign(fifoDevCmd);
-                List<BigDecimal> devQtys = new ArrayList<>();
-                List<String> devLotNumbers = new ArrayList<>();
-                for (ReplaceFifoDeviceDispenseDraftsCommand.Segment seg : devSegments) {
-                    // Pre：分段数量与 FIFO 批号等长传入挂费，禁止跨批号 priority 择优
-                    devQtys.add(seg.getQuantity());
-                    devLotNumbers.add(seg.getLotNumber());
+                // Cmd：请求侧冗余首段签发批号，与发放行同口径（禁止空批）
+                if (!devSegments.isEmpty()) {
+                    deviceRequestDomainService.bindLotNumberAfterDoctorStationFifoSign(
+                        fifoDevCtx.getDeviceReqId(),
+                        devSegments.get(0).getLotNumber());
                 }
                 // Pre：优先复用暂存时按费用性质解析的账户；无草稿费用时回落就诊默认账户
                 this.outpatientMedicationSignChargeOrchestrator.createDispenseSegmentChargeDrafts(

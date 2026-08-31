@@ -40,12 +40,12 @@ public class BatchPerformDispositionRequest {
     private Long operatorId;
 
     /**
-     * 耗材房库位主键（BR-NUR-006 / IF-NUR-04）：护士指定时按该房强制 FIFO，回写发放行
-     * {@code location_id}/批号与请求 {@code perform_location}；未传时回落医生签发已锁 {@code location_id}。
-     * 院点可仅前端强制必选；后端不因缺省拒绝（缺库房且需 FIFO 时由编排门禁拒绝）。
+     * 耗材房库位主键（BR-NUR-006 / IF-NUR-04）：传入则就地只改发放行 {@code location_id}
+     * 与请求 {@code perform_location}；批号保持医生签发值；写前校验目标房该批库存。
+     * 未传时沿用签发库房与批号。院点可仅前端强制必选。
      */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "耗材房库位主键（传入则强制按该房 FIFO；未传回落发放单 location_id）")
+    @Schema(description = "耗材房库位主键（传入则只改 location；未传回落签发库房）")
     private Long inventoryLocationId;
 
     /**

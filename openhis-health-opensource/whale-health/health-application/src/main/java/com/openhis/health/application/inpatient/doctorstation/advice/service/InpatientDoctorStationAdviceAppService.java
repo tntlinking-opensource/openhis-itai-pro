@@ -29,6 +29,7 @@ import com.openhis.health.application.inpatient.doctorstation.advice.dto.Inpatie
 import com.openhis.health.application.inpatient.doctorstation.advice.dto.SaveInpatientMedicationAdviceDraftLinePayload;
 import com.openhis.health.application.inpatient.doctorstation.advice.dto.InpatientDoctorStationAdviceRowDto;
 import com.openhis.health.application.inpatient.doctorstation.advice.dto.StopLongTermAdviceLineRequest;
+import com.openhis.health.application.outpatient.doctorstation.advice.dto.DoctorStationAdviceDraftBindItemDto;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.ServiceRequestDetailSummaryDto;
 import com.openhis.health.application.inpatient.doctorstation.advice.mapper.InpatientDoctorStationAdviceMapper;
 import com.openhis.health.application.shared.advice.InpatientAdviceRevokeGate;
@@ -44,6 +45,7 @@ import com.openhis.health.application.inpatient.doctorstation.advice.query.Inpat
 import com.openhis.health.application.inpatient.doctorstation.advice.request.AppendSkinTestCompanionForLongTermMedicationRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.request.CancelStopLongTermInpatientDoctorStationAdviceRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.request.ChangeInpatientDoctorStationAdviceBusinessTimeRequest;
+import com.openhis.health.application.inpatient.doctorstation.advice.request.ChangeLongTermMedicationDoseInpatientDoctorStationAdviceRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.request.CreateDischargeInpatientDoctorStationAdviceRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.request.GetInpatientDoctorStationAdviceOrderBindInfoRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.request.InitInpatientDoctorStationAdviceRequest;
@@ -54,6 +56,7 @@ import com.openhis.health.application.inpatient.doctorstation.advice.request.Pag
 import com.openhis.health.application.inpatient.doctorstation.advice.request.PageInpatientDoctorStationAdviceRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.response.PageInpatientDoctorStationAdviceResponse;
 import com.openhis.health.domain.share.constants.DoctorStationAdviceScopeTab;
+import com.openhis.health.application.inpatient.doctorstation.advice.request.ResolveInpatientDoctorStationAdviceDraftBindsRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.request.SaveInpatientDoctorStationAdviceDraftBatchRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.request.SignInpatientDoctorStationAdviceBatchRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.request.StopLongTermInpatientDoctorStationAdviceRequest;
@@ -63,6 +66,7 @@ import com.openhis.health.application.inpatient.doctorstation.advice.response.Ap
 import com.openhis.health.application.inpatient.doctorstation.advice.response.ActivityExecutionLocationRuleRowDto;
 import com.openhis.health.application.inpatient.doctorstation.advice.response.CancelStopLongTermInpatientDoctorStationAdviceResponse;
 import com.openhis.health.application.inpatient.doctorstation.advice.response.ChangeInpatientDoctorStationAdviceBusinessTimeResponse;
+import com.openhis.health.application.inpatient.doctorstation.advice.response.ChangeLongTermMedicationDoseInpatientDoctorStationAdviceResponse;
 import com.openhis.health.application.inpatient.doctorstation.advice.response.CreateDischargeInpatientDoctorStationAdviceResponse;
 import com.openhis.health.application.inpatient.doctorstation.advice.response.GetInpatientDoctorStationAdviceOrderBindInfoResponse;
 import com.openhis.health.application.inpatient.doctorstation.advice.response.InitInpatientDoctorStationAdviceResponse;
@@ -80,6 +84,7 @@ import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestDetailListModel;
 import com.openhis.health.application.inpatient.doctorstation.advice.response.ListInpatientDoctorStationAdviceResponse;
 import com.openhis.health.application.inpatient.doctorstation.advice.response.PageInpatientDoctorStationAdviceCatalogResponse;
+import com.openhis.health.application.inpatient.doctorstation.advice.response.ResolveInpatientDoctorStationAdviceDraftBindsResponse;
 import com.openhis.health.application.inpatient.doctorstation.advice.response.SaveInpatientDoctorStationAdviceDraftBatchResponse;
 import com.openhis.health.application.inpatient.doctorstation.advice.response.SignInpatientDoctorStationAdviceBatchResponse;
 import com.openhis.health.application.inpatient.doctorstation.advice.response.StopLongTermInpatientDoctorStationAdviceResponse;
@@ -472,6 +477,29 @@ public class InpatientDoctorStationAdviceAppService {
     }
 
     /**
+     * IF-IP-DOR-23：暂存前解析变更行中药品/诊疗的直接绑定项（纯读；合管优先）。
+     *
+     * @param request 就诊、患者与暂存变更行
+     * @return 绑定明细及触发源 based_on 锚点
+     */
+    public ResolveInpatientDoctorStationAdviceDraftBindsResponse resolveInpatientDoctorStationAdviceDraftBinds(
+        ResolveInpatientDoctorStationAdviceDraftBindsRequest request
+    ) {
+        // Gate：住院就诊上下文与患者一致
+        InpatientEncounterContextQueryModel snapshot =
+            requireInpatientSnapshot(request.getEncounterId(), request.getPatientId(), false);
+        // Pre：合管优先解析绑定，同批同设备去重
+        List<DoctorStationAdviceDraftBindItemDto> bindItems =
+            inpatientDoctorStationAdviceOrderBindQueryService.listDraftBindItems(
+                request.getLines(), snapshot.getOrganizationId());
+        // Asm：返回绑定列表，派生行落库由前端在 IF-IP-DOR-14 前处理
+        ResolveInpatientDoctorStationAdviceDraftBindsResponse resp =
+            new ResolveInpatientDoctorStationAdviceDraftBindsResponse();
+        resp.setBindItems(bindItems);
+        return resp;
+    }
+
+    /**
      *
      * <p>写接口：按行操作码 CREATE/UPDATE/DELETE 分轨处理药品与诊疗草稿。
      * 长期/临时均仅维护 Request 草稿，不在暂存相位挂费用或发放（BR-IP-ORD-005/006）。
@@ -837,6 +865,105 @@ public class InpatientDoctorStationAdviceAppService {
         resp.setSuccess(Boolean.TRUE);
         resp.setMessage(DoctorStationAdviceConstants.RESPONSE_MESSAGE_OK);
         resp.setServiceRequestIds(serviceRequestIds);
+        return resp;
+    }
+
+    /**
+     * 长期药品改量（IF-IP-DOR-28 / BR-IP-ORD-032）：停旧（若在用）+ 同药重开草稿 + {@code based_on} 链。
+     *
+     * <p>写接口：本 IF <strong>不签发</strong>；新嘱为 DRAFT，医生再走 IF-IP-DOR-15。
+     * 口服一盒一点剩余续算依赖本链（BR-IP-EXE-038）。</p>
+     *
+     * @param request 就诊上下文、源嘱、可选停嘱时间与新嘱载荷
+     * @return 新草稿 id 与 basedOn
+     * @throws BusinessException 非长期、状态非法、换药、跨就诊或门控失败
+     */
+    public ChangeLongTermMedicationDoseInpatientDoctorStationAdviceResponse
+        changeLongTermMedicationDoseInpatientDoctorStationAdvice(
+            ChangeLongTermMedicationDoseInpatientDoctorStationAdviceRequest request
+        ) {
+        // Gate：源嘱与载荷不可空（Bean Validation 之外再兜底）
+        if (request.getSourceMedicationRequestId() == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT,
+                DoctorStationAdviceConstants.MSG_CHANGE_DOSE_SOURCE_ID_REQUIRED);
+        }
+        if (request.getMedicationPayload() == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT,
+                DoctorStationAdviceConstants.MSG_CHANGE_DOSE_PAYLOAD_REQUIRED);
+        }
+        // Gate：住院可写门控（BR-IP-ORD-027）
+        InpatientEncounterContextQueryModel snapshot =
+            requireInpatientSnapshot(request.getEncounterId(), request.getPatientId(), true);
+        // Pre：解析开嘱人与机构
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
+            ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT,
+            DoctorStationAdviceConstants.MSG_OPERATOR_NOT_RESOLVED);
+        Long orgId = snapshot.getOrganizationId();
+        // Pre：加载源嘱
+        MedicationRequest source =
+            medicationRequestQueryService.findById(request.getSourceMedicationRequestId());
+        if (source == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT,
+                DoctorStationAdviceConstants.MSG_MEDICATION_UPDATE_REQUEST_ID_REQUIRED);
+        }
+        // Gate：须同就诊
+        if (!request.getEncounterId().equals(source.getEncounterId())) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT,
+                DoctorStationAdviceConstants.MSG_CHANGE_DOSE_ENCOUNTER_MISMATCH);
+        }
+        // Gate：仅长期药品
+        if (!TherapyType.LONG_TERM.getCode().equals(source.getTherapyEnum())) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT,
+                DoctorStationAdviceConstants.MSG_CHANGE_DOSE_LONG_TERM_MED_ONLY);
+        }
+        // Gate：仅 VERIFIED 或 STOPPED
+        boolean verified = RequestStatus.VERIFIED.getCode().equals(source.getStatusEnum());
+        boolean stopped = RequestStatus.STOPPED.getCode().equals(source.getStatusEnum());
+        if (!verified && !stopped) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT,
+                DoctorStationAdviceConstants.MSG_CHANGE_DOSE_STATUS_INVALID);
+        }
+        // Gate：禁止换药（载荷若传定义须与源一致；未传则锁定源药）
+        Long payloadMedId = request.getMedicationPayload().getMedicationDefinitionId();
+        if (payloadMedId != null && !payloadMedId.equals(source.getMedicationId())) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT,
+                DoctorStationAdviceConstants.MSG_CHANGE_DOSE_MEDICATION_MISMATCH);
+        }
+        // Cmd：在用则同事务停嘱
+        if (verified) {
+            medicationRequestDomainService.stopLongTermMedicationOrder(
+                inpatientDoctorStationAdviceMapper.toStopLongTermMedicationOrderCommandForDoseChange(
+                    request, operatorId));
+        }
+        // Cmd：建长期草稿并 based_on→源
+        Long newId = medicationRequestDomainService.createMedicationOrderDraft(
+            inpatientDoctorStationAdviceMapper.toCreateMedicationOrderDraftCommandForDoseChange(
+                request, source, operatorId, orgId));
+        // Cmd：皮试标志同步 companion（与暂存 CREATE 同口径；住院不挂费）
+        doctorStationSkinTestSyncOrchestrator.syncAfterMedicationDraftLine(
+            ChargePolicy.INPATIENT,
+            request.getEncounterId(),
+            request.getPatientId(),
+            null,
+            orgId,
+            operatorId,
+            newId,
+            this.toSkinTestSpec(request.getMedicationPayload()));
+        // Asm：返回新草稿供前端刷新后签发
+        ChangeLongTermMedicationDoseInpatientDoctorStationAdviceResponse resp =
+            new ChangeLongTermMedicationDoseInpatientDoctorStationAdviceResponse();
+        resp.setSuccess(Boolean.TRUE);
+        resp.setMessage(DoctorStationAdviceConstants.RESPONSE_MESSAGE_OK);
+        resp.setNewMedicationRequestId(newId);
+        resp.setSourceMedicationRequestId(source.getId());
+        resp.setBasedOnId(source.getId());
         return resp;
     }
 

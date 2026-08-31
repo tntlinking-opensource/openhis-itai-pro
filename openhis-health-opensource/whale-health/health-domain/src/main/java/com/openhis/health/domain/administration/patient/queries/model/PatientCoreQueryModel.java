@@ -51,6 +51,8 @@ public class PatientCoreQueryModel {
     private String addressExtendJson;
     /** 民族编码。 */
     private String nationalityCode;
+    /** 学历层次字典编码（EducationLevel）。 */
+    private String educationLevelCode;
     /** 拼音码。 */
     private String pyStr;
     /** 五笔码。 */

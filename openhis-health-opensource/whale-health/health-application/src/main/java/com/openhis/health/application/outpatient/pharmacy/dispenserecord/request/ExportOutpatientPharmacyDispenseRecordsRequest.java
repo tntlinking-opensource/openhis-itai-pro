@@ -6,6 +6,7 @@ package com.openhis.health.application.outpatient.pharmacy.dispenserecord.reques
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.openhis.whale.core.application.dto.ExcelExportColumnDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
@@ -53,4 +54,10 @@ public class ExportOutpatientPharmacyDispenseRecordsRequest {
     /** 患者关键字。 */
     @Schema(description = "患者关键字")
     private String patientKeyword;
+
+    /**
+     * 前端下发的导出列；空则导出全部 {@code @Excel} 列。
+     */
+    @Schema(description = "导出列清单（页面可见列）")
+    private List<ExcelExportColumnDto> exportColumns;
 }

@@ -26,8 +26,8 @@ public class ClientScanResultDto {
     /** 可读描述。 */
     private String respMsg;
     /**
-     * 银联实付金额（分）；可选。
-     * 银行优惠时可能小于 HIS 明细 amount；settle 仅拒绝大于下单金额。
+     * 银联 POS 回传实付金额（分）；可选。
+     * 可小于 HIS 明细 amount（优惠或渠道拆分）；settle 仅拒绝大于下单金额。
      */
     private Long txnAmtFen;
 }

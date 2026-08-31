@@ -2,6 +2,7 @@ import {
   buildInvDocumentTitle,
   invPrintAmountText,
   invPrintExpiryDateText,
+  invPrintPurchaseUnitPriceText,
   invPrintQtyUnitText,
   invPrintStr,
 } from './inv-common';
@@ -107,7 +108,7 @@ function mapLine(row: InvMovementPrintLineSource, index: number): InvMovementPri
     specText: invPrintStr(row.specText),
     manufacturerText: invPrintStr(row.manufacturerText),
     qtyUnitText,
-    unitPriceText: invPrintAmountText(row.unitPrice),
+    unitPriceText: invPrintPurchaseUnitPriceText(row.unitPrice),
     amountText: invPrintAmountText(row.amount),
     lotNumber: invPrintStr(row.lotNumber),
     expiryText,

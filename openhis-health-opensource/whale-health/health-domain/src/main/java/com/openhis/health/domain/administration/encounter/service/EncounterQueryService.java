@@ -5,6 +5,7 @@
 package com.openhis.health.domain.administration.encounter.service;
 
 import com.openhis.health.domain.share.constants.EncounterConstants;
+import com.openhis.health.domain.share.constants.HealthcareServiceConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.administration.encounter.entity.Encounter;
 import com.openhis.health.domain.administration.encounter.entity.EncounterDiagnosis;
@@ -12,6 +13,7 @@ import com.openhis.health.domain.administration.encounter.entity.EncounterLocati
 import com.openhis.health.domain.administration.encounter.entity.EncounterParticipant;
 import com.openhis.health.domain.administration.encounter.queries.EncounterProjectionQuery;
 import com.openhis.health.domain.administration.encounter.queries.InpatientInOutDetailReportPageQuery;
+import com.openhis.health.domain.administration.encounter.queries.HistoricalFollowUpEligibilityQuery;
 import com.openhis.health.domain.administration.encounter.queries.OutpatientDuplicateCheckQuery;
 import com.openhis.health.domain.administration.encounter.queries.OutpatientRegistrationReportPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientAutoRollEncounterQueryModel;
@@ -130,15 +132,40 @@ public class EncounterQueryService {
      */
     public boolean existsActivePeEncounter(Long patientId) {
         if (patientId == null) {
+            // 无患者则不可能有在检占用
             return false;
         }
-        List<String> terminalStatuses = List.of(
+        return encounterRepository.existsByPatientIdAndClassEnumAndStatusEnumNotInAndIsDeletedFalse(
+            patientId, EncounterClass.PE.getCode(), this.peTerminalStatusCodes());
+    }
+
+    /**
+     * 列出患者未终态的体检就诊（在检防重同源口径）。
+     *
+     * @param patientId 患者主键
+     * @return 在检就诊，按开始时间倒序；无则空列表
+     */
+    public List<Encounter> listActivePeEncounters(Long patientId) {
+        if (patientId == null) {
+            // 无患者则不可能有在检单
+            return List.of();
+        }
+        return encounterRepository
+            .findByPatientIdAndClassEnumAndStatusEnumNotInAndIsDeletedFalseOrderByStartTimeDesc(
+                patientId, EncounterClass.PE.getCode(), this.peTerminalStatusCodes());
+    }
+
+    /**
+     * 体检视为已结束、不再占用「在检」的状态。
+     *
+     * @return 终态 code
+     */
+    private List<String> peTerminalStatusCodes() {
+        return List.of(
             EncounterStatus.CANCELLED.getCode(),
             EncounterStatus.ENTERED_IN_ERROR.getCode(),
             EncounterStatus.COMPLETED.getCode(),
             EncounterStatus.DISCHARGED.getCode());
-        return encounterRepository.existsByPatientIdAndClassEnumAndStatusEnumNotInAndIsDeletedFalse(
-            patientId, EncounterClass.PE.getCode(), terminalStatuses);
     }
 
     /**
@@ -436,22 +463,28 @@ public class EncounterQueryService {
         Long organizationId,
         LocalDateTime startDate,
         LocalDateTime endDate) {
-        Specification<Encounter> specification = (root, criteriaQuery, cb) -> {
-            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
-            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
-            predicates.add(cb.equal(root.get(FieldNameConstants.CLASS_ENUM), EncounterClass.AMB.getCode()));
-            if (organizationId != null) {
-                predicates.add(cb.equal(root.get(FieldNameConstants.ORGANIZATION_ID), organizationId));
-            }
-            if (startDate != null) {
-                predicates.add(cb.greaterThanOrEqualTo(root.get(FieldNameConstants.START_TIME), startDate));
-            }
-            if (endDate != null) {
-                predicates.add(cb.lessThanOrEqualTo(root.get(FieldNameConstants.START_TIME), endDate));
-            }
-            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
-        };
-        return this.collectEncounterIds(this.encounterRepository.findAll(specification));
+        CriteriaBuilder cb = this.entityManager.getCriteriaBuilder();
+        CriteriaQuery<Long> cq = cb.createQuery(Long.class);
+        Root<Encounter> root = cq.from(Encounter.class);
+        cq.select(root.get(FieldNameConstants.ID));
+        List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+        predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+        predicates.add(cb.equal(root.get(FieldNameConstants.CLASS_ENUM), EncounterClass.AMB.getCode()));
+        if (organizationId != null) {
+            predicates.add(cb.equal(root.get(FieldNameConstants.ORGANIZATION_ID), organizationId));
+        }
+        if (startDate != null) {
+            predicates.add(cb.greaterThanOrEqualTo(root.get(FieldNameConstants.START_TIME), startDate));
+        }
+        if (endDate != null) {
+            predicates.add(cb.lessThanOrEqualTo(root.get(FieldNameConstants.START_TIME), endDate));
+        }
+        cq.where(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        List<Long> ids = this.entityManager.createQuery(cq).getResultList();
+        if (ids == null || ids.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return IdInQueryChunkSupport.distinctNonNullIds(ids);
     }
 
     /**
@@ -472,7 +505,11 @@ public class EncounterQueryService {
     }
 
     /**
-     * 住院发药队列：在院 IMP 就诊主键，可选按病区（激活 WARD 或病区下床位）收窄。
+     * 住院药房发药/退药队列：IMP 就诊主键，可选按病区收窄。
+     *
+     * <p>可见态含在院 {@code IN_PROGRESS}/{@code ON_HOLD} 与出院轨 {@code PENDING}/{@code COMPLETED}/{@code DISCHARGED}
+     *（办理出院后仍须按患者发药/查已发；AS-IP-PHA-001 BR-IPP-001）。</p>
+     * <p>病区收窄：优先活动 WARD/BED；无活动位置的已清床就诊回落末次已完成病区/床位。</p>
      *
      * @param wardId           病区主键；{@code null} 不按病区过滤
      * @param bedIdsUnderWard  病区下启用床位主键；{@code wardId} 非空时由应用层经 Location 聚合解析
@@ -482,9 +519,7 @@ public class EncounterQueryService {
         Specification<Encounter> baseSpec = (root, criteriaQuery, cb) -> cb.and(
             cb.isFalse(root.get(FieldNameConstants.IS_DELETED)),
             cb.equal(root.get(FieldNameConstants.CLASS_ENUM), EncounterClass.IMP.getCode()),
-            root.get(FieldNameConstants.STATUS_ENUM).in(
-                EncounterStatus.IN_PROGRESS.getCode(),
-                EncounterStatus.ON_HOLD.getCode()));
+            root.get(FieldNameConstants.STATUS_ENUM).in(this.pharmacyQueueVisibleEncounterStatusCodes()));
         List<Encounter> baseRows = this.encounterRepository.findAll(baseSpec);
         if (baseRows.isEmpty()) {
             return Collections.emptyList();
@@ -492,7 +527,6 @@ public class EncounterQueryService {
         if (wardId == null) {
             return this.collectEncounterIds(baseRows);
         }
-        LinkedHashSet<Long> wardScoped = new LinkedHashSet<>();
         LinkedHashSet<Long> bedIds = new LinkedHashSet<>();
         if (bedIdsUnderWard != null) {
             for (Long bedId : bedIdsUnderWard) {
@@ -501,30 +535,40 @@ public class EncounterQueryService {
                 }
             }
         }
-        List<EncounterLocation> wardAssignments = this.locationRepository.findAllByLocationIdInAndFormEnumAndStatusEnum(
+        LinkedHashSet<Long> activeWardEncounterIds = this.collectEncounterIdsByLocationFormAndStatus(
             List.of(wardId), LocationForm.WARD.getCode(), EncounterActivityStatus.ACTIVE.getCode());
-        LinkedHashSet<Long> wardEncounterIds = new LinkedHashSet<>();
-        for (EncounterLocation row : wardAssignments) {
-            if (row != null && row.getEncounterId() != null) {
-                wardEncounterIds.add(row.getEncounterId());
-            }
-        }
-        LinkedHashSet<Long> bedEncounterIds = new LinkedHashSet<>();
+        LinkedHashSet<Long> activeBedEncounterIds = new LinkedHashSet<>();
         if (!bedIds.isEmpty()) {
-            List<EncounterLocation> bedAssignments = this.locationRepository.findAllByLocationIdInAndFormEnumAndStatusEnum(
+            activeBedEncounterIds = this.collectEncounterIdsByLocationFormAndStatus(
                 bedIds, LocationForm.BED.getCode(), EncounterActivityStatus.ACTIVE.getCode());
-            for (EncounterLocation row : bedAssignments) {
-                if (row != null && row.getEncounterId() != null) {
-                    bedEncounterIds.add(row.getEncounterId());
-                }
-            }
         }
+        LinkedHashSet<Long> activeMatched = new LinkedHashSet<>();
+        activeMatched.addAll(activeWardEncounterIds);
+        activeMatched.addAll(activeBedEncounterIds);
+        // 仅已清床（无活动床）回落末次病区/床；转科在院患者不得因历史 COMPLETED 病区误入。
+        LinkedHashSet<Long> dischargedWithoutActiveMatch = new LinkedHashSet<>();
         for (Encounter encounter : baseRows) {
             if (encounter == null || encounter.getId() == null) {
                 continue;
             }
             Long encounterId = encounter.getId();
-            if (wardEncounterIds.contains(encounterId) || bedEncounterIds.contains(encounterId)) {
+            if (activeMatched.contains(encounterId)) {
+                continue;
+            }
+            if (!EncounterStatus.DISCHARGED.getCode().equals(encounter.getStatusEnum())) {
+                continue;
+            }
+            dischargedWithoutActiveMatch.add(encounterId);
+        }
+        LinkedHashSet<Long> completedMatched = this.matchEncountersByLastCompletedWardOrBed(
+            dischargedWithoutActiveMatch, wardId, bedIds);
+        LinkedHashSet<Long> wardScoped = new LinkedHashSet<>();
+        for (Encounter encounter : baseRows) {
+            if (encounter == null || encounter.getId() == null) {
+                continue;
+            }
+            Long encounterId = encounter.getId();
+            if (activeMatched.contains(encounterId) || completedMatched.contains(encounterId)) {
                 wardScoped.add(encounterId);
             }
         }
@@ -532,7 +576,7 @@ public class EncounterQueryService {
     }
 
     /**
-     * 住院发药关键字：按激活床位 location 反查在院 IMP 就诊主键。
+     * 住院药房队列关键字：按床位 location 反查 IMP 就诊主键（活动床 + 末次已完成床）。
      *
      * @param bedLocationIds 床位 location 主键
      * @return 命中就诊主键；入参空时返回空列表
@@ -550,14 +594,12 @@ public class EncounterQueryService {
         if (distinctBeds.isEmpty()) {
             return Collections.emptyList();
         }
-        List<EncounterLocation> bedAssignments = this.locationRepository.findAllByLocationIdInAndFormEnumAndStatusEnum(
-            distinctBeds, LocationForm.BED.getCode(), EncounterActivityStatus.ACTIVE.getCode());
         LinkedHashSet<Long> candidateEncounterIds = new LinkedHashSet<>();
-        for (EncounterLocation row : bedAssignments) {
-            if (row != null && row.getEncounterId() != null) {
-                candidateEncounterIds.add(row.getEncounterId());
-            }
-        }
+        candidateEncounterIds.addAll(this.collectEncounterIdsByLocationFormAndStatus(
+            distinctBeds, LocationForm.BED.getCode(), EncounterActivityStatus.ACTIVE.getCode()));
+        // 清床后关键字按床号仍可命中：末次已完成床位轨迹。
+        candidateEncounterIds.addAll(this.collectEncounterIdsByLocationFormAndStatus(
+            distinctBeds, LocationForm.BED.getCode(), EncounterActivityStatus.COMPLETED.getCode()));
         if (candidateEncounterIds.isEmpty()) {
             return Collections.emptyList();
         }
@@ -641,7 +683,9 @@ public class EncounterQueryService {
     }
 
     /**
-     * 保留在院 IMP 就诊主键（关键字 union 后的二次过滤）。
+     * 保留住院药房队列可见 IMP 就诊主键（关键字 union 后的二次过滤）。
+     *
+     * <p>可见态同 {@link #listInpatientInHospitalEncounterIds}：在院 + 出院轨。</p>
      *
      * @param encounterIds 候选就诊主键
      * @return 过滤后列表
@@ -663,10 +707,93 @@ public class EncounterQueryService {
             root.get(FieldNameConstants.ID).in(distinct),
             cb.isFalse(root.get(FieldNameConstants.IS_DELETED)),
             cb.equal(root.get(FieldNameConstants.CLASS_ENUM), EncounterClass.IMP.getCode()),
-            root.get(FieldNameConstants.STATUS_ENUM).in(
-                EncounterStatus.IN_PROGRESS.getCode(),
-                EncounterStatus.ON_HOLD.getCode()));
+            root.get(FieldNameConstants.STATUS_ENUM).in(this.pharmacyQueueVisibleEncounterStatusCodes()));
         return this.collectEncounterIds(this.encounterRepository.findAll(specification));
+    }
+
+    /**
+     * 住院药房发药/退药队列可见的就诊状态 code（在院 + 办理出院后至清床离院）。
+     *
+     * @return 不可变状态 code 列表
+     */
+    private List<String> pharmacyQueueVisibleEncounterStatusCodes() {
+        return List.of(
+            EncounterStatus.IN_PROGRESS.getCode(),
+            EncounterStatus.ON_HOLD.getCode(),
+            EncounterStatus.PENDING.getCode(),
+            EncounterStatus.COMPLETED.getCode(),
+            EncounterStatus.DISCHARGED.getCode());
+    }
+
+    /**
+     * 按位置主键 + 形态 + 轨迹状态批量收集就诊主键。
+     *
+     * @param locationIds 位置主键
+     * @param formEnum    位置形态（WARD/BED）
+     * @param statusEnum  轨迹状态（ACTIVE/COMPLETED）
+     * @return 命中就诊主键集合
+     */
+    private LinkedHashSet<Long> collectEncounterIdsByLocationFormAndStatus(
+        Collection<Long> locationIds,
+        String formEnum,
+        String statusEnum) {
+        LinkedHashSet<Long> encounterIds = new LinkedHashSet<>();
+        if (locationIds == null || locationIds.isEmpty()) {
+            return encounterIds;
+        }
+        List<EncounterLocation> rows = this.locationRepository.findAllByLocationIdInAndFormEnumAndStatusEnum(
+            locationIds, formEnum, statusEnum);
+        for (EncounterLocation row : rows) {
+            if (row != null && row.getEncounterId() != null) {
+                encounterIds.add(row.getEncounterId());
+            }
+        }
+        return encounterIds;
+    }
+
+    /**
+     * 无活动位置的就诊：末次已完成病区等于目标病区，或末次已完成床位落在病区下床位集合。
+     *
+     * @param encounterIds 候选就诊（通常为已清床）
+     * @param wardId       目标病区
+     * @param bedIds       病区下床位主键
+     * @return 命中就诊主键
+     */
+    private LinkedHashSet<Long> matchEncountersByLastCompletedWardOrBed(
+        Collection<Long> encounterIds,
+        Long wardId,
+        Collection<Long> bedIds) {
+        LinkedHashSet<Long> matched = new LinkedHashSet<>();
+        if (encounterIds == null || encounterIds.isEmpty() || wardId == null) {
+            return matched;
+        }
+        Map<Long, Long> lastWardByEncounterId =
+            this.mapLastCompletedWardLocationIdByEncounterIds(encounterIds);
+        for (Map.Entry<Long, Long> entry : lastWardByEncounterId.entrySet()) {
+            if (wardId.equals(entry.getValue())) {
+                matched.add(entry.getKey());
+            }
+        }
+        if (bedIds == null || bedIds.isEmpty()) {
+            return matched;
+        }
+        LinkedHashSet<Long> bedIdSet = new LinkedHashSet<>();
+        for (Long bedId : bedIds) {
+            if (bedId != null) {
+                bedIdSet.add(bedId);
+            }
+        }
+        if (bedIdSet.isEmpty()) {
+            return matched;
+        }
+        Map<Long, Long> lastBedByEncounterId =
+            this.mapLastCompletedBedLocationIdByEncounterIds(encounterIds);
+        for (Map.Entry<Long, Long> entry : lastBedByEncounterId.entrySet()) {
+            if (bedIdSet.contains(entry.getValue())) {
+                matched.add(entry.getKey());
+            }
+        }
+        return matched;
     }
 
     /**
@@ -691,30 +818,23 @@ public class EncounterQueryService {
     /**
      * 列出就诊下仍处于激活状态的参与者（如当前在岗医生、护士）。
      *
+     * <p><strong>写前门禁 / 占床责任判定</strong>专用：仅 {@code ACTIVE}。
+     * 列表/卡片/病案等<strong>展示</strong>须用 {@link #listDisplayEncounterParticipants}，
+     * 否则清床离院或召回未恢复参与者后主治/责任护士会空。</p>
+     *
      * @param encounterId 就诊标识
      * @return 参与者视图列表
      */
     public List<EncounterParticipantQueryModel> listActiveEncounterParticipants(Long encounterId) {
         List<EncounterParticipant> rows = participantRepository
             .findAllByEncounterIdAndStatusEnum(encounterId, EncounterActivityStatus.ACTIVE.getCode());
-        List<EncounterParticipantQueryModel> models = new ArrayList<>();
-        // Loop：遍历参与者记录，逐条装配查询模型
-        for (EncounterParticipant row : rows) {
-            EncounterParticipantQueryModel model = new EncounterParticipantQueryModel();
-            model.setParticipantId(row.getId());
-            model.setEncounterId(row.getEncounterId());
-            model.setRoleCode(row.getRoleCode());
-            model.setPractitionerId(row.getPractitionerId());
-            model.setStatusEnum(row.getStatusEnum());
-            model.setStartTime(row.getStartTime());
-            model.setEndTime(row.getEndTime());
-            models.add(model);
-        }
-        return models;
+        return this.toParticipantQueryModels(rows);
     }
 
     /**
      * 按角色编码筛选激活参与者（如仅主治、仅麻醉师）。
+     *
+     * <p>仅 {@code ACTIVE}；展示回显见 {@link #listDisplayEncounterParticipantsByType}。</p>
      *
      * @param encounterId 就诊标识
      * @param roleCode    参与者角色编码
@@ -724,20 +844,50 @@ public class EncounterQueryService {
         List<EncounterParticipant> rows = participantRepository
             .findAllByEncounterIdAndRoleCodeAndStatusEnum(
                 encounterId, roleCode, EncounterActivityStatus.ACTIVE.getCode());
-        List<EncounterParticipantQueryModel> models = new ArrayList<>();
-        // Loop：遍历角色匹配的参与者，装配查询模型
-        for (EncounterParticipant row : rows) {
-            EncounterParticipantQueryModel model = new EncounterParticipantQueryModel();
-            model.setParticipantId(row.getId());
-            model.setEncounterId(row.getEncounterId());
-            model.setRoleCode(row.getRoleCode());
-            model.setPractitionerId(row.getPractitionerId());
-            model.setStatusEnum(row.getStatusEnum());
-            model.setStartTime(row.getStartTime());
-            model.setEndTime(row.getEndTime());
-            models.add(model);
+        return this.toParticipantQueryModels(rows);
+    }
+
+    /**
+     * 展示用参与者：优先活动行；同角色无活动时回落末次已完成行。
+     *
+     * <p>清床离院会收口全部活动参与者；出院召回不恢复参与者。结算/护士站/病案等读侧须用本方法，
+     * 禁止仅调 {@link #listActiveEncounterParticipants} 做卡片展示。</p>
+     *
+     * @param encounterId 就诊标识
+     * @return 参与者视图列表（每角色至多一条：ACTIVE 或末次 COMPLETED）
+     */
+    public List<EncounterParticipantQueryModel> listDisplayEncounterParticipants(Long encounterId) {
+        if (encounterId == null) {
+            return Collections.emptyList();
         }
-        return models;
+        return this.toParticipantQueryModels(
+            this.listDisplayParticipantEntitiesByEncounterIds(List.of(encounterId)));
+    }
+
+    /**
+     * 展示用按角色参与者：优先活动行；无活动时回落该角色末次已完成行。
+     *
+     * @param encounterId 就诊标识
+     * @param roleCode    参与者角色编码
+     * @return 参与者视图列表
+     */
+    public List<EncounterParticipantQueryModel> listDisplayEncounterParticipantsByType(
+        Long encounterId, String roleCode) {
+        if (encounterId == null || StringUtils.isEmpty(roleCode)) {
+            return Collections.emptyList();
+        }
+        List<EncounterParticipantQueryModel> all = this.listDisplayEncounterParticipants(encounterId);
+        List<EncounterParticipantQueryModel> matched = new ArrayList<>();
+        for (EncounterParticipantQueryModel row : all) {
+            if (row == null) {
+                continue;
+            }
+            // 仅保留请求角色，供门诊转住院回显接诊医生等单角色场景。
+            if (roleCode.equals(row.getRoleCode())) {
+                matched.add(row);
+            }
+        }
+        return matched;
     }
 
     /**
@@ -1402,6 +1552,45 @@ public class EncounterQueryService {
     }
 
     /**
+     * 是否存在满足「历史号复诊」资格的前次门诊就诊（BR-REG-020）。
+     *
+     * <p>口径：同一患者、同一挂号科室；状态为已接诊（在诊/暂离/完诊）；{@code reception_time} 非空且
+     * {@code receptionTime <= asOf < receptionTime + 72h}；排除指定号源类型（历史号复诊自身）。</p>
+     *
+     * @param query 资格查询入参
+     * @return 存在至少一条符合条件就诊时 {@code true}
+     */
+    public boolean existsQualifyingHistoricalFollowUpPriorVisit(HistoricalFollowUpEligibilityQuery query) {
+        if (query == null || query.getPatientId() == null || query.getOrganizationId() == null) {
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "患者标识和挂号科室必填");
+        }
+        LocalDateTime asOf = query.getAsOf();
+        if (asOf == null) {
+            asOf = LocalDateTime.now();
+        }
+        final LocalDateTime referenceAsOf = asOf;
+        LocalDateTime windowStartInclusive = referenceAsOf.minusHours(HealthcareServiceConstants.HISTORICAL_FOLLOW_UP_ELIGIBILITY_HOURS);
+        List<String> receptionStartedStatuses = EncounterStatus.outpatientReceptionStartedStatusCodes();
+        List<String> outpatientClasses = Collections.singletonList(EncounterClass.AMB.getCode());
+        Specification<Encounter> specification = (root, cq, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.get(FieldNameConstants.PATIENT_ID), query.getPatientId()));
+            predicates.add(cb.equal(root.get(FieldNameConstants.ORGANIZATION_ID), query.getOrganizationId()));
+            predicates.add(root.get(FieldNameConstants.CLASS_ENUM).in(outpatientClasses));
+            predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(receptionStartedStatuses));
+            predicates.add(cb.isNotNull(root.get(FieldNameConstants.RECEPTION_TIME)));
+            predicates.add(cb.lessThanOrEqualTo(root.get(FieldNameConstants.RECEPTION_TIME), referenceAsOf));
+            predicates.add(cb.greaterThanOrEqualTo(root.get(FieldNameConstants.RECEPTION_TIME), windowStartInclusive));
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            if (query.getExcludedServiceTypeId() != null) {
+                predicates.add(cb.notEqual(root.get(FieldNameConstants.SERVICE_TYPE_ID), query.getExcludedServiceTypeId()));
+            }
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+        return encounterRepository.count(specification) > 0;
+    }
+
+    /**
      * 同日同科室门诊防重：是否存在占用名额的就诊（与 {@link EncounterDomainService} 写侧断言口径一致）。
      *
      * @param patientId 患者主键
@@ -1910,7 +2099,9 @@ public class EncounterQueryService {
     }
 
     /**
-     * 批量加载活动态就诊参与者实体（供 querysupport 上下文组装）。
+     * 批量加载活动态就诊参与者实体（写前门禁 / 滚费责任判定等须真实在岗）。
+     *
+     * <p>展示组装见 {@link #listDisplayParticipantEntitiesByEncounterIds}。</p>
      *
      * @param encounterIds 就诊主键集合
      * @return 参与者实体列表
@@ -1925,7 +2116,70 @@ public class EncounterQueryService {
     }
 
     /**
-     * 批量加载活动态就诊位置实体（供住院上下文床位/病区展示）。
+     * 批量加载展示用参与者实体：同角色优先 {@code ACTIVE}，否则取 {@code COMPLETED} 且 {@code end_time} 最大行。
+     *
+     * <p>仅本聚合 {@code EncounterParticipantRepository}。供住院/门诊上下文、结算队列、病案自动取值等
+     * 读侧展示；不得用于「当前必须有活动责任人」类写前门禁。</p>
+     *
+     * @param encounterIds 就诊主键集合
+     * @return 参与者实体列表（每 encounter+role 至多一条）
+     */
+    public List<EncounterParticipant> listDisplayParticipantEntitiesByEncounterIds(Collection<Long> encounterIds) {
+        LinkedHashSet<Long> distinct = this.distinctNonNullIds(encounterIds);
+        if (distinct.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<EncounterParticipant> activeRows = participantRepository.findAllByEncounterIdInAndStatusEnum(
+            distinct, EncounterActivityStatus.ACTIVE.getCode());
+        Set<String> activeRoleKeys = new HashSet<>();
+        for (EncounterParticipant row : activeRows) {
+            if (row == null || row.getEncounterId() == null || StringUtils.isEmpty(row.getRoleCode())) {
+                continue;
+            }
+            activeRoleKeys.add(this.participantRoleKey(row.getEncounterId(), row.getRoleCode()));
+        }
+        List<EncounterParticipant> completedRows = participantRepository.findAllByEncounterIdInAndStatusEnum(
+            distinct, EncounterActivityStatus.COMPLETED.getCode());
+        Map<String, EncounterParticipant> lastCompletedByRoleKey = new HashMap<>();
+        for (EncounterParticipant row : completedRows) {
+            if (row == null || row.getEncounterId() == null || StringUtils.isEmpty(row.getRoleCode())) {
+                continue;
+            }
+            if (row.getPractitionerId() == null) {
+                continue;
+            }
+            String roleKey = this.participantRoleKey(row.getEncounterId(), row.getRoleCode());
+            // 同角色已有活动行则不再用历史 COMPLETED 覆盖。
+            if (activeRoleKeys.contains(roleKey)) {
+                continue;
+            }
+            EncounterParticipant previous = lastCompletedByRoleKey.get(roleKey);
+            if (previous == null) {
+                lastCompletedByRoleKey.put(roleKey, row);
+                continue;
+            }
+            // 多条已完成同角色取 end_time 最大者为末次责任人。
+            LocalDateTime rowEnd = row.getEndTime();
+            LocalDateTime previousEnd = previous.getEndTime();
+            if (rowEnd == null) {
+                continue;
+            }
+            if (previousEnd == null || rowEnd.isAfter(previousEnd)) {
+                lastCompletedByRoleKey.put(roleKey, row);
+            }
+        }
+        List<EncounterParticipant> displayRows = new ArrayList<>(activeRows.size() + lastCompletedByRoleKey.size());
+        displayRows.addAll(activeRows);
+        displayRows.addAll(lastCompletedByRoleKey.values());
+        return displayRows;
+    }
+
+    /**
+     * 批量加载活动态就诊位置实体（占床/活动病区判定与写侧 Pre）。
+     *
+     * <p>列表展示无活动床/病区时另由上下文回落末次 COMPLETED（见
+     * {@link #mapLastCompletedWardLocationIdByEncounterIds} /
+     * {@link #mapLastCompletedBedLocationIdByEncounterIds}）。</p>
      *
      * @param encounterIds 就诊主键集合
      * @return 就诊位置实体列表
@@ -1937,6 +2191,129 @@ public class EncounterQueryService {
         }
         return locationRepository.findAllByEncounterIdInAndStatusEnum(
             distinct, EncounterActivityStatus.ACTIVE.getCode());
+    }
+
+    /**
+     * 展示用病区位置：优先活动 WARD，否则末次已完成 WARD。
+     *
+     * @param encounterIds 就诊主键集合
+     * @return encounterId → 病区 location_id
+     */
+    public Map<Long, Long> mapDisplayWardLocationIdByEncounterIds(Collection<Long> encounterIds) {
+        LinkedHashSet<Long> distinct = this.distinctNonNullIds(encounterIds);
+        if (distinct.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, Long> wardByEncounterId = new HashMap<>();
+        List<EncounterLocation> activeRows = locationRepository.findAllByEncounterIdInAndStatusEnum(
+            distinct, EncounterActivityStatus.ACTIVE.getCode());
+        for (EncounterLocation row : activeRows) {
+            if (row == null || row.getEncounterId() == null || row.getLocationId() == null) {
+                continue;
+            }
+            // 仅活动病区形态计入当前展示。
+            if (!LocationForm.WARD.getCode().equals(row.getFormEnum())) {
+                continue;
+            }
+            wardByEncounterId.putIfAbsent(row.getEncounterId(), row.getLocationId());
+        }
+        LinkedHashSet<Long> missingEncounterIds = new LinkedHashSet<>();
+        for (Long encounterId : distinct) {
+            if (!wardByEncounterId.containsKey(encounterId)) {
+                missingEncounterIds.add(encounterId);
+            }
+        }
+        if (missingEncounterIds.isEmpty()) {
+            return wardByEncounterId;
+        }
+        // 无活动病区（清床/已离院）：回落末次已完成 WARD。
+        Map<Long, Long> lastCompletedWard =
+            this.mapLastCompletedWardLocationIdByEncounterIds(missingEncounterIds);
+        for (Map.Entry<Long, Long> entry : lastCompletedWard.entrySet()) {
+            wardByEncounterId.putIfAbsent(entry.getKey(), entry.getValue());
+        }
+        return wardByEncounterId;
+    }
+
+    /**
+     * 展示用床位位置：优先活动 BED，否则末次已完成 BED（不含「未占床」文案装配）。
+     *
+     * @param encounterIds 就诊主键集合
+     * @return encounterId → 床位 location_id
+     */
+    public Map<Long, Long> mapDisplayBedLocationIdByEncounterIds(Collection<Long> encounterIds) {
+        LinkedHashSet<Long> distinct = this.distinctNonNullIds(encounterIds);
+        if (distinct.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, Long> bedByEncounterId = new HashMap<>();
+        List<EncounterLocation> activeRows = locationRepository.findAllByEncounterIdInAndStatusEnum(
+            distinct, EncounterActivityStatus.ACTIVE.getCode());
+        for (EncounterLocation row : activeRows) {
+            if (row == null || row.getEncounterId() == null || row.getLocationId() == null) {
+                continue;
+            }
+            // 仅活动床形态计入当前展示。
+            if (!LocationForm.BED.getCode().equals(row.getFormEnum())) {
+                continue;
+            }
+            bedByEncounterId.putIfAbsent(row.getEncounterId(), row.getLocationId());
+        }
+        LinkedHashSet<Long> missingEncounterIds = new LinkedHashSet<>();
+        for (Long encounterId : distinct) {
+            if (!bedByEncounterId.containsKey(encounterId)) {
+                missingEncounterIds.add(encounterId);
+            }
+        }
+        if (missingEncounterIds.isEmpty()) {
+            return bedByEncounterId;
+        }
+        // 无活动床（召回未占床/已清床）：回落末次已完成 BED。
+        Map<Long, Long> lastCompletedBed =
+            this.mapLastCompletedBedLocationIdByEncounterIds(missingEncounterIds);
+        for (Map.Entry<Long, Long> entry : lastCompletedBed.entrySet()) {
+            bedByEncounterId.putIfAbsent(entry.getKey(), entry.getValue());
+        }
+        return bedByEncounterId;
+    }
+
+    /**
+     * 参与者实体 → 读模型列表。
+     *
+     * @param rows 参与者实体
+     * @return QueryModel 列表
+     */
+    private List<EncounterParticipantQueryModel> toParticipantQueryModels(List<EncounterParticipant> rows) {
+        List<EncounterParticipantQueryModel> models = new ArrayList<>();
+        if (rows == null || rows.isEmpty()) {
+            return models;
+        }
+        for (EncounterParticipant row : rows) {
+            if (row == null) {
+                continue;
+            }
+            EncounterParticipantQueryModel model = new EncounterParticipantQueryModel();
+            model.setParticipantId(row.getId());
+            model.setEncounterId(row.getEncounterId());
+            model.setRoleCode(row.getRoleCode());
+            model.setPractitionerId(row.getPractitionerId());
+            model.setStatusEnum(row.getStatusEnum());
+            model.setStartTime(row.getStartTime());
+            model.setEndTime(row.getEndTime());
+            models.add(model);
+        }
+        return models;
+    }
+
+    /**
+     * 拼装 encounterId + roleCode 唯一键，供展示参与者按角色去重。
+     *
+     * @param encounterId 就诊主键
+     * @param roleCode    角色编码
+     * @return 去重键
+     */
+    private String participantRoleKey(Long encounterId, String roleCode) {
+        return encounterId + "|" + roleCode;
     }
 
     /**
@@ -2007,10 +2384,11 @@ public class EncounterQueryService {
     }
 
     /**
-     * 批量解析就诊末次已完成床位位置主键（召回未占床轨列表展示「原床（未占床）」）。
+     * 批量解析就诊末次已完成床位位置主键（召回/清床未占床轨列表展示「原房-床（未占床）」）。
      *
      * <p>仅本聚合 {@code EncounterLocationRepository}；在 {@code COMPLETED} 轨迹中取
-     * {@code form_enum=BED} 且 {@code end_time} 最大的一行。</p>
+     * {@code form_enum=BED} 且 {@code end_time} 最大的一行。展示文案由
+     * {@code EncounterContextQueryService} 再拼病房名。</p>
      *
      * @param encounterIds 住院就诊主键集合
      * @return encounterId → 末次已完成 BED 位置主键

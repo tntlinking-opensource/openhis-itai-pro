@@ -133,6 +133,13 @@ public class MedicationCatalogMappingSuggestWorkflow {
         String aprvno = trimToNull(command.getApprovalNumber());
         String spec = trimToNull(command.getTotalVolume());
         String codeExact = trimToNull(command.getNationalDrugCode());
+        // 名称框直接输医保码：精确码过滤；关键字不再重复 ILIKE，避免双条件
+        if (codeExact == null && looksLikeHilistCode(keyword)) {
+            codeExact = keyword;
+            keyword = null;
+        } else if (codeExact != null && codeExact.equalsIgnoreCase(keyword)) {
+            keyword = null;
+        }
         List<YbNationalCatalogItem> pool = catalogQueryService.listForMedicationMatch(
             contractId,
             tenantId,
@@ -166,5 +173,29 @@ public class MedicationCatalogMappingSuggestWorkflow {
             spec,
             codeExact,
             ChsCatalogConstants.MEDICATION_MATCH_CANDIDATE_POOL);
+    }
+
+    /**
+     * 判断输入是否像医保目录编码（字母数字、长度 6～50、无中文），用于名称框直输编码。
+     */
+    private static boolean looksLikeHilistCode(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        String trimmed = value.trim();
+        int len = trimmed.length();
+        if (len < 6 || len > 50) {
+            return false;
+        }
+        for (int i = 0; i < len; i++) {
+            char c = trimmed.charAt(i);
+            boolean digit = c >= '0' && c <= '9';
+            boolean upper = c >= 'A' && c <= 'Z';
+            boolean lower = c >= 'a' && c <= 'z';
+            if (!digit && !upper && !lower) {
+                return false;
+            }
+        }
+        return true;
     }
 }

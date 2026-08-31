@@ -27,6 +27,7 @@ import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.TraceNumberConstants;
 import com.openhis.health.domain.share.enums.InHospitalStatus;
 import com.openhis.health.domain.share.enums.LocationStockStatus;
+import com.openhis.health.domain.share.enums.SupplyType;
 import com.openhis.health.domain.share.enums.TraceDirection;
 import com.openhis.health.domain.share.enums.TraceIdentityResolveStatus;
 import com.openhis.health.domain.share.enums.TraceNumberRecordOperationType;
@@ -55,6 +56,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -1461,6 +1463,74 @@ public class TraceNumberQueryService {
     }
 
     /**
+     * 按退药行已拷贝的追溯码，定位尚未被 {@code MEDICATION_RETURN_IN} 回冲的原发药 OUT 流水（id 升序）。
+     *
+     * <p>退药对冲行自带新 {@code bus_no}（BR-PHA-038 / BR-IPR-007），与原发
+     * {@code MEDICATION_DISPENSE_OUT} 单号不一致；本方法只读本聚合子表，不查正向发放单。
+     * 对每个码按时间序轧差 OUT−RETURN_IN，收集仍有未回冲量的 OUT 所属 {@code bus_no}，
+     * 再按这些单号拉取整单发药 OUT，供 {@code recordReturnInLines} 镜像（DD §5）。</p>
+     *
+     * @param traceNos 退药行追溯码集合（可含逗号展开后的多码）
+     * @return 未回冲的原发 OUT 读模型；无码或均已回冲时为空列表
+     */
+    public List<TraceNumberRecordQueryModel> listUnreturnedDispenseHospitalIoOutRecordsByTraceNos(
+        Collection<String> traceNos
+    ) {
+        List<String> codes = this.normalizeTraceCodeList(traceNos);
+        // 无有效码：无法按码回落定位原发 OUT
+        if (codes.isEmpty()) {
+            return new ArrayList<>();
+        }
+        Set<String> originBusNos = new LinkedHashSet<>();
+        for (String code : codes) {
+            Optional<String> busNo = this.findOutstandingDispenseOutBusNoByTraceNo(code);
+            // 该码仍有未回冲发药 OUT：记下原发单号
+            if (busNo.isPresent()) {
+                originBusNos.add(busNo.get());
+            }
+        }
+        // 各码均已回冲或从未发药 OUT：无镜像源
+        if (originBusNos.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<TraceNumberRecordQueryModel> merged = new ArrayList<>();
+        Set<Long> seenRecordIds = new HashSet<>();
+        for (String originBusNo : originBusNos) {
+            List<TraceNumberRecordQueryModel> outs =
+                this.listDispenseHospitalIoOutRecordsByBusNo(originBusNo);
+            for (TraceNumberRecordQueryModel out : outs) {
+                // 空行或无主键：跳过
+                if (out == null || out.getId() == null) {
+                    continue;
+                }
+                // 同单多码合并时去重，避免重复镜像
+                if (!seenRecordIds.add(out.getId())) {
+                    continue;
+                }
+                merged.add(out);
+            }
+        }
+        merged.sort((left, right) -> {
+            Long leftId = left.getId();
+            Long rightId = right.getId();
+            // 双方无主键：视为相等
+            if (leftId == null && rightId == null) {
+                return 0;
+            }
+            // 左无主键：排前
+            if (leftId == null) {
+                return -1;
+            }
+            // 右无主键：右排前
+            if (rightId == null) {
+                return 1;
+            }
+            return leftId.compareTo(rightId);
+        });
+        return merged;
+    }
+
+    /**
      * 按业务单号 + 操作类型查询 HOSPITAL_IO OUT 流水（id 升序）。
      *
      * <p>领用退领镜像：operationType 传 {@code DEPT_ISSUE}（与 SupplyType code 同字面）。</p>
@@ -1492,6 +1562,98 @@ public class TraceNumberQueryService {
     ) {
         return this.listHospitalIoRecordsByBusNoDirectionAndOperationTypes(
             busNo, TraceDirection.IN.getCode(), operationTypes);
+    }
+
+    /**
+     * 药库采购入库同意后，按 bus_no 列 HOSPITAL_IO IN 小码流水（按 trace_no 去重保序）。
+     *
+     * <p>DM-CUS-010 §6.2.12 / 码上放心 UPL-01=B：委托
+     * {@link #listHospitalIoInRecordsByBusNoAndOperationTypes}，operation=
+     * {@link TraceNumberRecordOperationType#CABINET_INBOUND_RECEIPT}。</p>
+     *
+     * @param busNo 进货单 {@code bus_no}
+     * @return 去重后的流水读模型；无单号或无流水时为空列表
+     */
+    public List<TraceNumberRecordQueryModel> listInboundSmallCodesByBusNo(String busNo) {
+        // Pre：按进货同意操作类型取 HOSPITAL_IO IN 流水
+        List<TraceNumberRecordQueryModel> flows = this.listHospitalIoInRecordsByBusNoAndOperationTypes(
+            busNo,
+            List.of(TraceNumberRecordOperationType.CABINET_INBOUND_RECEIPT.getCode())
+        );
+        // Asm：同单多行同码只保留首次出现，供码上放心上报去重
+        return this.dedupeTraceRecordsPreserveOrder(flows);
+    }
+
+    /**
+     * 药库退供应商同意后，按 bus_no 列 HOSPITAL_IO OUT 小码流水（按 trace_no 去重保序）。
+     *
+     * <p>DM-CUS-010 §6.2.12 / 码上放心 UPL-01=B：委托
+     * {@link #listHospitalIoOutRecordsByBusNoAndOperationTypes}，operation=
+     * {@link SupplyType#CABINET_RETURN_TO_SUPPLIER} 字面（与 {@code wkf_supply_request.type_enum} 对齐）。</p>
+     *
+     * @param busNo 退供应商单 {@code bus_no}
+     * @return 去重后的流水读模型；无单号或无流水时为空列表
+     */
+    public List<TraceNumberRecordQueryModel> listSupplierReturnSmallCodesByBusNo(String busNo) {
+        // Pre：按退供应商操作类型取 HOSPITAL_IO OUT 流水
+        List<TraceNumberRecordQueryModel> flows = this.listHospitalIoOutRecordsByBusNoAndOperationTypes(
+            busNo,
+            List.of(TraceNumberRecordOperationType.supplyTypeCode(SupplyType.CABINET_RETURN_TO_SUPPLIER))
+        );
+        // Asm：同单多行同码只保留首次出现，供码上放心上报去重
+        return this.dedupeTraceRecordsPreserveOrder(flows);
+    }
+
+    /**
+     * 日批发现：回看窗口内有药库进货入库小码流水的去重 bus_no（尚不判断 msfx 账）。
+     *
+     * <p>DM-CUS-010 / 码上放心 UPL 日批增强：同意入库写 HOSPITAL_IO IN 后，日批可发现未建上传账的进货单。</p>
+     *
+     * @param since 创建起点（含）
+     * @param limit 最多返回条数
+     * @return 去重保序的进货 bus_no；参数非法时为空列表
+     */
+    public List<String> listDistinctInboundReceiptBusNosSince(LocalDateTime since, int limit) {
+        // Pre：参数非法直接空
+        if (since == null || limit <= 0) {
+            return new ArrayList<>();
+        }
+        return traceNumberRecordRepository.findDistinctBusNosForHospitalIo(
+            TraceRecordCategory.HOSPITAL_IO.getCode(),
+            TraceDirection.IN.getCode(),
+            TraceNumberRecordOperationType.CABINET_INBOUND_RECEIPT.getCode(),
+            since,
+            PageRequest.of(0, limit));
+    }
+
+    /**
+     * 按 {@code trace_no} 去重并保序（首次出现优先）。
+     *
+     * @param rows 原始流水读模型；可空
+     * @return 去重后的新列表；入参空时返回空列表
+     */
+    private List<TraceNumberRecordQueryModel> dedupeTraceRecordsPreserveOrder(
+        List<TraceNumberRecordQueryModel> rows
+    ) {
+        // 无流水：直接空列表
+        if (rows == null || rows.isEmpty()) {
+            return new ArrayList<>();
+        }
+        Set<String> seen = new HashSet<>();
+        List<TraceNumberRecordQueryModel> out = new ArrayList<>(rows.size());
+        for (TraceNumberRecordQueryModel row : rows) {
+            // 空元素跳过
+            if (row == null) {
+                continue;
+            }
+            String traceNo = trimToNull(row.getTraceNo());
+            // 码空或已出现过：丢弃重复
+            if (traceNo == null || !seen.add(traceNo)) {
+                continue;
+            }
+            out.add(row);
+        }
+        return out;
     }
 
     /**
@@ -1644,6 +1806,70 @@ public class TraceNumberQueryService {
             lineQuantity
         );
         return Optional.of(totalRequiredSplit);
+    }
+
+    /**
+     * 单码轧差：发药 OUT 合计减去退药 IN 合计后仍有未回冲量时，返回最近一笔未耗尽 OUT 的 bus_no。
+     *
+     * <p>按 id 升序遍历本码 HOSPITAL_IO 流水；遇发药/多发 OUT 累加未回冲量并记下该笔 bus_no；
+     * 遇 {@code MEDICATION_RETURN_IN} 扣减未回冲量。最终未回冲量 &gt; 0 则返回最后记下的 OUT 单号。</p>
+     *
+     * @param traceNo 已归一化的单枚追溯码
+     * @return 仍有未回冲发药 OUT 时的原发 bus_no；否则 empty
+     */
+    private Optional<String> findOutstandingDispenseOutBusNoByTraceNo(String traceNo) {
+        String normalized = trimToNull(traceNo);
+        // 码空：无法轧差
+        if (normalized == null) {
+            return Optional.empty();
+        }
+        List<TraceNumberRecord> records =
+            traceNumberRecordRepository.findAllByTraceNoAndIsDeletedFalseOrderByIdAsc(normalized);
+        BigDecimal outstandingSplit = BigDecimal.ZERO;
+        String lastOutstandingOutBusNo = null;
+        for (TraceNumberRecord record : records) {
+            // 空流水或非院内出入：不参与发退轧差
+            if (record == null) {
+                continue;
+            }
+            if (!TraceRecordCategory.HOSPITAL_IO.getCode().equals(record.getRecordCategoryEnum())) {
+                continue;
+            }
+            BigDecimal split = record.getSplitQuantity();
+            // 拆零缺失或非正：跳过
+            if (split == null || split.compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            String direction = record.getRecordDirectionEnum();
+            String operationType = record.getOperationType();
+            // 发药/多发 OUT：累加未回冲并记住单号
+            if (TraceDirection.OUT.getCode().equals(direction)
+                && (TraceNumberRecordOperationType.MEDICATION_DISPENSE_OUT.getCode().equals(operationType)
+                || TraceNumberRecordOperationType.MEDICATION_EXTRA_DISPENSE_OUT.getCode().equals(operationType))) {
+                outstandingSplit = outstandingSplit.add(split);
+                String busNo = trimToNull(record.getBusNo());
+                // 有单号才可作为镜像键
+                if (busNo != null) {
+                    lastOutstandingOutBusNo = busNo;
+                }
+                continue;
+            }
+            // 退药 IN：扣减未回冲量（不低于 0）
+            if (TraceDirection.IN.getCode().equals(direction)
+                && TraceNumberRecordOperationType.MEDICATION_RETURN_IN.getCode().equals(operationType)) {
+                outstandingSplit = outstandingSplit.subtract(split);
+                // 已全部回冲：清空最近 OUT 单号，避免误指已闭环发药
+                if (outstandingSplit.compareTo(BigDecimal.ZERO) <= 0) {
+                    outstandingSplit = BigDecimal.ZERO;
+                    lastOutstandingOutBusNo = null;
+                }
+            }
+        }
+        // 无未回冲量或缺少 OUT 单号：不可镜像
+        if (outstandingSplit.compareTo(BigDecimal.ZERO) <= 0 || lastOutstandingOutBusNo == null) {
+            return Optional.empty();
+        }
+        return Optional.of(lastOutstandingOutBusNo);
     }
 
     /**
@@ -1903,7 +2129,12 @@ public class TraceNumberQueryService {
         List<TraceNumber> masters = traceNumberRepository.findAllByTraceNoInAndIsDeletedFalse(traceNos);
         Map<String, TraceNumber> map = new HashMap<>();
         for (TraceNumber master : masters) {
-            map.put(master.getTraceNo(), master);
+            // 键与反查入参同用 trim，避免库内尾空白导致 get 不到被误标 NOT_FOUND
+            String key = trimToNull(master.getTraceNo());
+            if (key == null) {
+                continue;
+            }
+            map.put(key, master);
         }
         return map;
     }

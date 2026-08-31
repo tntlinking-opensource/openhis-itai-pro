@@ -6,6 +6,7 @@ package com.openhis.health.application.outpatient.financial.feedetail.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.openhis.whale.core.application.dto.ExcelExportColumnDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
@@ -70,4 +71,10 @@ public class ExportOutpatientFeeDetailRequest {
     /** 费用性质合同业务号（{@code fin_contract.bus_no}）；空则不筛选。 */
     @Schema(description = "费用性质合同业务号")
     private String feeNatureContractNo;
+
+    /**
+     * 前端下发的导出列；空则导出全部 {@code @Excel} 列。
+     */
+    @Schema(description = "导出列清单（页面可见列）")
+    private List<ExcelExportColumnDto> exportColumns;
 }

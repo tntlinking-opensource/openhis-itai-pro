@@ -51,13 +51,17 @@ public class PageNurseConsumableWorkloadDetailRequest {
     @Schema(description = "页大小")
     private Integer pageSize;
 
-    /** 开立科室主键（可选）。 */
+    /** 开立科室主键（可选；金额二次收窄）。 */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "开立科室主键（可选）")
+    @Schema(description = "开立科室主键（可选；金额二次收窄）")
     private Long requestingOrgId;
 
-    /** 科室主键（遗留；请用 requestingOrgId）。 */
+    /**
+     * 默认登录科室主键（可选；{@code Practitioner.org_id}）。
+     *
+     * <p>未传单护士时按该科下全部护士收窄。</p>
+     */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "科室主键（遗留；请用 requestingOrgId）")
+    @Schema(description = "默认登录科室主键（可选；Practitioner.org_id）")
     private Long organizationId;
 }

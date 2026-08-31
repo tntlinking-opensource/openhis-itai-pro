@@ -24,6 +24,7 @@ import { isTenantScopeLostError, restoreLoginScopeOnce } from '#/utils/auth/rest
 import { tryHandleUnmappedYbNoComplianceError } from '#/utils/http/format-catalog-unmapped-yb-error';
 import { formatInsuranceRegisterError } from '#/utils/http/format-insurance-register-error';
 import { formatInventoryLocationError } from '#/utils/http/format-inventory-location-error';
+import { formatPersistenceConflictError } from '#/utils/http/format-persistence-error';
 import { isExpectedEmptyResponseError } from '#/utils/http/expected-empty-response-errors';
 import { formatStaleCrossRoleError } from '#/utils/http/stale-cross-role-error';
 import { showPersistentUserError } from '#/utils/http/show-persistent-user-message';
@@ -232,6 +233,12 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
         return;
       }
 
+      const persistenceConflict = formatPersistenceConflictError(displayMessage);
+      if (persistenceConflict) {
+        ElMessage.error(persistenceConflict);
+        return;
+      }
+
       const registerInsuranceError = formatInsuranceRegisterError(
         typeof errorCode === 'string' ? errorCode : undefined,
         displayMessage,
@@ -254,6 +261,11 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
       if (inventoryLocationError) {
         ElMessage.warning(inventoryLocationError);
         return;
+      }
+
+      // 门诊皮试跨批确认（EX-ORD-309）/ 跨批次金额确认（EX-ORD-310）：交给医嘱页弹确认框，避免先 toast 再弹窗
+      if (errorCode === 'EX-ORD-309' || errorCode === 'EX-ORD-310') {
+        throw error;
       }
 
       // 如果没有错误信息，则会根据状态码进行提示

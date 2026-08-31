@@ -14,7 +14,7 @@ import lombok.Getter;
  * <p>用户收银可选：{@link #CASH}、{@link #ALIPAY}、{@link #WECHAT}、{@link #BANK_CARD}、{@link #SCAN_PAY}；
  * {@link #SCAN_PAY} 仅 UI/入参，禁止落库（ADR-PAY-001）；
  * {@link #CASHIER} 仅门诊收费内部草稿落库，不可作为前端 {@code payChannelCode} 入参；
- * {@link #INSURANCE_FUND}、{@link #INSURANCE_ACCT} 由服务端在医保正式结算后写入。</p>
+ * {@link #INSURANCE_FUND}、{@link #INSURANCE_ACCT}、{@link #DEPOSIT_OFFSET} 由服务端写入。</p>
  */
 @Getter
 public enum PaymentChannel implements EnumInterface {
@@ -41,7 +41,14 @@ public enum PaymentChannel implements EnumInterface {
     INSURANCE_ACCT(0L, "INSURANCE_ACCT", "医保个账", "", 7L, false),
 
     /** 门诊收银台内部渠道（支付草稿明细默认渠道，非用户单选）。 */
-    CASHIER(0L, "CASHIER", "收银台", "", 8L, false);
+    CASHIER(0L, "CASHIER", "收银台", "", 8L, false),
+
+    /**
+     * 预交金冲抵（住院出院结算明细；非用户单选，不进日结自付渠道小计）。
+     *
+     * <p>语义见 DD「住院预交金结算口径纠错」：占用个人现金户余额，不另开 HOSPITAL_DEPOSIT 主单。</p>
+     */
+    DEPOSIT_OFFSET(0L, "DEPOSIT_OFFSET", "预交金冲抵", "", 9L, false);
 
     private final Long codeSystemId;
     private final String code;

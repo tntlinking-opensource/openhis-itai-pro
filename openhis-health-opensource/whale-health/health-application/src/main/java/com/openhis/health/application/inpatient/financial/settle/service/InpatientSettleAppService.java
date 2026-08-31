@@ -17,7 +17,11 @@ import com.openhis.health.application.shared.validator.PatientEncounterConsisten
 import com.openhis.health.application.shared.financial.PaymentChannelOptionProvider;
 import com.openhis.health.application.shared.validator.PaymentChannelGate;
 import com.openhis.health.application.shared.payment.ThirdPartyPaymentSettleOrchestrator;
+import com.openhis.health.application.shared.payment.ThirdPartyPaymentRefundOrchestrator;
+import com.openhis.health.application.outpatient.financial.refund.support.PaymentChannelRefundOrchestrator;
 import com.openhis.health.application.inpatient.financial.prepay.mapper.InpatientPrepayMapper;
+import com.openhis.health.application.inpatient.financial.settle.dto.InpatientPrepayRefundPlanItemDto;
+import com.openhis.health.application.inpatient.financial.settle.dto.InpatientSettleClientRefundItemDto;
 import com.openhis.health.application.inpatient.financial.settle.dto.InpatientSettlePaymentDetailDto;
 import com.openhis.health.application.inpatient.financial.settle.dto.InpatientSettleQueueItemDto;
 import com.openhis.health.application.inpatient.financial.settle.mapper.InpatientSettleMapper;
@@ -25,12 +29,15 @@ import com.openhis.health.application.inpatient.financial.settle.mapper.Inpatien
 import com.openhis.health.application.inpatient.financial.settle.request.ReverseInpatientSettleRequest;
 import com.openhis.health.application.inpatient.financial.settle.request.RecallInpatientDischargeRequest;
 import com.openhis.health.application.inpatient.financial.settle.request.ConfirmInpatientSettleRequest;
+import com.openhis.health.application.inpatient.financial.settle.request.CompleteInpatientDischargePrepayRefundRequest;
 import com.openhis.health.application.inpatient.financial.settle.request.LoadInpatientSettlePageInitRequest;
 import com.openhis.health.application.inpatient.financial.settle.request.LoadInpatientSettleSummaryRequest;
 import com.openhis.health.application.inpatient.financial.settle.request.LoadSettledInpatientPaymentViewRequest;
 import com.openhis.health.application.inpatient.financial.settle.request.PageInpatientSettleQueueRequest;
 import com.openhis.health.application.inpatient.financial.settle.request.PreSettleInpatientChargesRequest;
 import com.openhis.health.application.inpatient.financial.settle.request.QueryInpatientSettleChargesRequest;
+import com.openhis.health.application.inpatient.financial.settle.request.AlignInpatientPlatformVisitRequest;
+import com.openhis.health.application.inpatient.financial.settle.request.UploadInpatientFeeDetailsBatchRequest;
 import com.openhis.health.application.inpatient.financial.settle.response.ReverseInpatientSettleResponse;
 import com.openhis.health.application.inpatient.financial.settle.response.RecallInpatientDischargeResponse;
 import com.openhis.health.application.inpatient.financial.settle.response.ConfirmInpatientSettleResponse;
@@ -40,6 +47,10 @@ import com.openhis.health.application.inpatient.financial.settle.response.LoadSe
 import com.openhis.health.application.inpatient.financial.settle.response.PageInpatientSettleQueueResponse;
 import com.openhis.health.application.inpatient.financial.settle.response.PreSettleInpatientChargesResponse;
 import com.openhis.health.application.inpatient.financial.settle.response.QueryInpatientSettleChargesResponse;
+import com.openhis.health.application.inpatient.financial.settle.response.AlignInpatientPlatformVisitResponse;
+import com.openhis.health.application.inpatient.financial.settle.response.UploadInpatientFeeDetailsBatchResponse;
+import com.openhis.health.application.inpatient.financial.settle.support.InpatientDepositSettlementPlanner;
+import com.openhis.health.application.inpatient.financial.settle.support.dto.InpatientDepositSettlementPlan;
 import com.openhis.health.application.inpatient.financial.settle.support.dto.SettledPaymentBriefDto;
 import com.openhis.health.domain.administration.account.command.AdjustAdvanceDepositBalanceCommand;
 import com.openhis.health.domain.administration.account.entity.Account;
@@ -67,7 +78,6 @@ import com.openhis.health.domain.financial.contract.service.ContractQueryService
 import com.openhis.health.domain.financial.contract.queries.model.ContractDetailQueryModel;
 import com.openhis.health.domain.financial.paymentreconciliation.command.AbortPreSettlementBeforePaymentCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.CancelInpatientSettleAsRefundCommand;
-import com.openhis.health.domain.financial.paymentreconciliation.command.CollectAdvanceDepositCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.CompleteInpatientSettleCancelRefundCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.CreatePaymentDraftFromPreSettleCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.PaymentDetailItemCommand;
@@ -95,6 +105,7 @@ import com.openhis.health.domain.share.enums.InvoiceStatus;
 import com.openhis.health.domain.share.enums.PaymentChannel;
 import com.openhis.health.domain.share.enums.PaymentKind;
 import com.openhis.health.domain.share.enums.PaymentStatus;
+import com.openhis.health.domain.share.enums.PaymentType;
 import com.openhis.health.domain.share.constants.InpatientSettleConstants;
 import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.domain.workflow.servicerequest.command.RejectServiceRequestToDraftCommand;
@@ -102,22 +113,33 @@ import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestD
 import com.openhis.health.application.inpatient.financial.settle.support.InpatientReverseSettlePreOrchestrator;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
-import com.openhis.health.infrastructure.integration.insurance.inpatient.InpatientChargeInsuranceExtension;
 import com.openhis.health.infrastructure.integration.financial.orchestration.InvoiceAfterPaymentOrchestration;
 import com.openhis.health.infrastructure.integration.financial.orchestration.PaymentReconciliationSettleOrchestration;
 import com.openhis.health.infrastructure.integration.einvoice.orchestration.BossElectronicInvoiceAfterCommitOrchestration;
 import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionIn.InpatientChargeConfirmExtensionIn;
+import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionIn.InpatientChargeEncounterExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionIn.InpatientChargePreSettleExtensionIn;
+import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionIn.InpatientChargeRevokeFeeDetailExtensionIn;
+import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionIn.InpatientChargeRevokeSettleExtensionIn;
+import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionIn.InpatientChargeUploadFeeBatchExtensionIn;
+import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionIn.InpatientPlatformVisitAlignExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionOut.InpatientChargeConfirmExtensionOut;
 import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionOut.InpatientChargePreSettleExtensionOut;
+import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionOut.InpatientChargeUploadFeeBatchExtensionOut;
+import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionOut.InpatientPlatformVisitAlignExtensionOut;
+import com.openhis.health.infrastructure.integration.insurance.inpatient.InpatientChargeInsuranceExtension;
 import com.openhis.health.infrastructure.integration.insurance.inventory.InventoryThirdPartyUploadExtension;
+import com.openhis.health.infrastructure.integration.insurance.settlement.ExtensionOut.InsuranceSettlementFundLookupExtensionOut;
+import com.openhis.health.infrastructure.integration.insurance.settlement.InsuranceSettlementRecordLookupExtension;
 import com.openhis.health.infrastructure.integration.insurance.inventory.ExtensionIn.InventoryUploadAfterClearBedSummarySalesReverseExtensionIn;
 import com.openhis.health.infrastructure.integration.insurance.inventory.ExtensionIn.InventoryUploadAfterDischargeSummarySalesExtensionIn;
 import com.openhis.health.infrastructure.integration.noop.IntegrationAfterCommitSupport;
+import com.openhis.health.infrastructure.integration.payment.dto.ClientRefundResultDto;
 import com.openhis.health.infrastructure.integration.payment.dto.ClientScanResultDto;
+import com.openhis.health.infrastructure.integration.payment.ThirdPartyPaymentExtension;
+import com.openhis.whale.core.application.util.StringUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.dao.OptimisticLockingFailureException;
@@ -167,6 +189,15 @@ public class InpatientSettleAppService {
 
     private final ThirdPartyPaymentSettleOrchestrator thirdPartyPaymentSettleOrchestrator;
 
+    /** 原路退扫码段前置（医保出院退预交金）。 */
+    private final ThirdPartyPaymentRefundOrchestrator thirdPartyPaymentRefundOrchestrator;
+
+    /** 按原支付渠道判定是否可能须银联 BPC 退货。 */
+    private final PaymentChannelRefundOrchestrator paymentChannelRefundOrchestrator;
+
+    /** 第三方收单扩展（判断原预交金是否仍有 BPC SUCCESS 被扫单）。 */
+    private final ThirdPartyPaymentExtension thirdPartyPaymentExtension;
+
     private final PaymentChannelOptionProvider paymentChannelOptionProvider;
 
     /** 患者与就诊一致性门控。 */
@@ -187,8 +218,11 @@ public class InpatientSettleAppService {
     /** 就诊账户读侧。 */
     private final AccountQueryService accountQueryService;
 
-    /** 就诊账户写侧（出院多退少补收退预交金）。 */
+    /** 就诊账户写侧（出院冲抵占用 / 原路退预交金余额调整）。 */
     private final AccountDomainService accountDomainService;
+
+    /** 出院全结预交金轧差计划器（R1～R7；自费=医保）。 */
+    private final InpatientDepositSettlementPlanner inpatientDepositSettlementPlanner;
 
     /** 收费明细读侧。 */
     private final ChargeItemQueryService chargeItemQueryService;
@@ -231,6 +265,9 @@ public class InpatientSettleAppService {
 
     /** 住院第三方结算扩展（未装 Module 时为 NoOp）。 */
     private final InpatientChargeInsuranceExtension inpatientChargeInsuranceExtension;
+
+    /** 医保结算回执只读（2304 基金分项 / 全自费等，供已结算查阅回填）。 */
+    private final InsuranceSettlementRecordLookupExtension insuranceSettlementRecordLookupExtension;
 
     private final BossElectronicInvoiceAfterCommitOrchestration bossElectronicInvoiceAfterCommitOrchestration;
     private final InvoiceAfterPaymentOrchestration invoiceAfterPaymentOrchestration;
@@ -632,7 +669,7 @@ public class InpatientSettleAppService {
             PreSettleInpatientChargesResponse response =
                 inpatientSettleMapper.toPreSettleInpatientChargesResponse(paymentDraftId, receivableTotal);
             response.setSettleMode(settleMode);
-            // Cmd：医保扩展开启时走第三方预结算并刷新草稿 displayAmount（个人现金 − 预交金少补）。
+            // Cmd：医保扩展开启时走第三方预结算；自费/医保均按 R1～R7 回填 P/O/C。
             this.applyInsurancePreSettleIfNeeded(
                 request,
                 paymentDraftId,
@@ -655,6 +692,166 @@ public class InpatientSettleAppService {
                 InpatientSettleConstants.EX_IP_STL_105,
                 "重新预结算或作废草稿后再试");
         }
+    }
+
+    /**
+     * 住院费用明细单批上传（2301，最多 100 行；供前端进度条分批）。
+     *
+     * @param request 就诊、收费项与读卡字段；可选 mdtrtId 复用上批就诊号
+     * @return 本批进度
+     */
+    public UploadInpatientFeeDetailsBatchResponse uploadInpatientFeeDetailsBatch(
+            UploadInpatientFeeDetailsBatchRequest request) {
+        if (request == null
+            || request.getEncounterId() == null
+            || request.getPatientId() == null
+            || request.getChargeItemIds() == null
+            || request.getChargeItemIds().isEmpty()) {
+            throw new BusinessException(
+                InpatientSettleConstants.EX_IP_STL_001,
+                "请选择待结算费用");
+        }
+        if (!inpatientChargeInsuranceExtension.isEnabled()) {
+            throw new BusinessException(
+                InpatientSettleConstants.EX_IP_STL_001,
+                "当前未启用医保结算扩展");
+        }
+        if (StringUtils.isBlank(request.getPsnNo())) {
+            throw new BusinessException(
+                InpatientSettleConstants.EX_IP_STL_001,
+                "医保费用上传须先读卡获取人员编号");
+        }
+        if (StringUtils.isBlank(request.getSettleMode())) {
+            throw new BusinessException(
+                InpatientSettleConstants.EX_IP_STL_001,
+                "结算模式不能为空");
+        }
+        EncounterDetailQueryModel encounter = encounterQueryService.mustGetEncounterOfClass(
+            request.getEncounterId(),
+            EncounterClass.IMP.getCode(),
+            InpatientSettleConstants.EX_IP_STL_102,
+            "重新选择患者");
+        patientEncounterConsistencyGate.requireRequestPatientMatchesEncounter(
+            request.getPatientId(),
+            encounter.getPatientId(),
+            InpatientSettleConstants.EX_IP_STL_001,
+            "请选择待结算费用");
+        ChargeItemQueryCommand loadCmd = new ChargeItemQueryCommand();
+        loadCmd.setIds(request.getChargeItemIds());
+        List<ChargeItem> chargeItems = chargeItemQueryService.loadChargeItemsByIds(loadCmd);
+        this.assertChargeItemsForInpatientSettle(
+            chargeItems, request.getChargeItemIds(), request.getEncounterId());
+        PreSettleInpatientChargesRequest contractProbe = new PreSettleInpatientChargesRequest()
+            .setEncounterId(request.getEncounterId())
+            .setPatientId(request.getPatientId())
+            .setChargeItemIds(request.getChargeItemIds())
+            .setContractId(request.getContractId());
+        Long insuranceContractId =
+            this.resolveInsuranceContractId(contractProbe, chargeItems, request.getEncounterId());
+        if (insuranceContractId == null
+            || !inpatientChargeInsuranceExtension.supportsThirdPartyContract(insuranceContractId)) {
+            throw new BusinessException(
+                InpatientSettleConstants.EX_IP_STL_001,
+                "当前费用性质不支持医保费用上传");
+        }
+        InpatientChargeUploadFeeBatchExtensionIn command = new InpatientChargeUploadFeeBatchExtensionIn();
+        command.setEncounterId(request.getEncounterId());
+        command.setChargeItemIds(request.getChargeItemIds());
+        command.setContractId(insuranceContractId);
+        command.setPayerCertType(request.getYbMediumType());
+        command.setPayerCertNo(request.getYbCardInfo());
+        command.setInsuredPersonNo(request.getPsnNo());
+        command.setInsuplcAdmdvs(request.getInsuplcAdmdvs());
+        command.setInsutype(request.getInsutype());
+        command.setSettleMode(request.getSettleMode());
+        command.setAcctUsedFlag(request.getAcctUsedFlag());
+        command.setPsnSetlway(request.getPsnSetlway());
+        command.setPreferredMdtrtId(request.getMdtrtId());
+        InpatientChargeUploadFeeBatchExtensionOut ybResult =
+            inpatientChargeInsuranceExtension.uploadPendingFeeBatch(command);
+        if (ybResult == null) {
+            return new UploadInpatientFeeDetailsBatchResponse()
+                .setBatchUploaded(0)
+                .setRemainingAfter(0)
+                .setDone(true);
+        }
+        return new UploadInpatientFeeDetailsBatchResponse()
+            .setBatchUploaded(ybResult.getBatchUploaded())
+            .setRemainingAfter(ybResult.getRemainingAfter())
+            .setDone(ybResult.isDone())
+            .setMdtrtId(ybResult.getMdtrtId());
+    }
+
+    /**
+     * 诊断本地平台就诊映射与 5201 在院态是否一致。
+     */
+    public AlignInpatientPlatformVisitResponse diagnoseInpatientPlatformVisit(
+            AlignInpatientPlatformVisitRequest request) {
+        return this.toAlignResponse(this.invokePlatformVisitAlign(request, false));
+    }
+
+    /**
+     * 按诊断结果轻量修复平台在院不一致（清多余在院 / 软删死映射）。
+     */
+    public AlignInpatientPlatformVisitResponse repairInpatientPlatformVisit(
+            AlignInpatientPlatformVisitRequest request) {
+        return this.toAlignResponse(this.invokePlatformVisitAlign(request, true));
+    }
+
+    private InpatientPlatformVisitAlignExtensionOut invokePlatformVisitAlign(
+            AlignInpatientPlatformVisitRequest request,
+            boolean repair) {
+        if (request == null
+            || request.getEncounterId() == null
+            || request.getPatientId() == null
+            || request.getContractId() == null
+            || StringUtils.isBlank(request.getPsnNo())) {
+            throw new BusinessException(
+                InpatientSettleConstants.EX_IP_STL_001,
+                "请选择患者并完成读卡后再对齐平台在院态");
+        }
+        if (!inpatientChargeInsuranceExtension.isEnabled()) {
+            throw new BusinessException(
+                InpatientSettleConstants.EX_IP_STL_001,
+                "当前未启用医保结算扩展");
+        }
+        EncounterDetailQueryModel encounter = encounterQueryService.mustGetEncounterOfClass(
+            request.getEncounterId(),
+            EncounterClass.IMP.getCode(),
+            InpatientSettleConstants.EX_IP_STL_102,
+            "重新选择患者");
+        patientEncounterConsistencyGate.requireRequestPatientMatchesEncounter(
+            request.getPatientId(),
+            encounter.getPatientId(),
+            InpatientSettleConstants.EX_IP_STL_001,
+            "患者标识与就诊不一致");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
+            InpatientSettleConstants.EX_IP_STL_001,
+            "请先登录");
+        InpatientPlatformVisitAlignExtensionIn command = new InpatientPlatformVisitAlignExtensionIn();
+        command.setEncounterId(request.getEncounterId());
+        command.setContractId(request.getContractId());
+        command.setInsuredPersonNo(request.getPsnNo().trim());
+        command.setInsuplcAdmdvs(request.getInsuplcAdmdvs());
+        command.setOperatorId(operatorId);
+        if (repair) {
+            return inpatientChargeInsuranceExtension.repairPlatformVisit(command);
+        }
+        return inpatientChargeInsuranceExtension.diagnosePlatformVisit(command);
+    }
+
+    private AlignInpatientPlatformVisitResponse toAlignResponse(InpatientPlatformVisitAlignExtensionOut out) {
+        AlignInpatientPlatformVisitResponse response = new AlignInpatientPlatformVisitResponse();
+        if (out == null) {
+            return response.setMismatchCode("OK").setAdvice("无诊断结果");
+        }
+        return response
+            .setLocalMdtrtId(out.getLocalMdtrtId())
+            .setPlatformInHospitalMdtrtIds(out.getPlatformInHospitalMdtrtIds())
+            .setMismatchCode(out.getMismatchCode())
+            .setAdvice(out.getAdvice())
+            .setRepaired(out.isRepaired())
+            .setRepairSummary(out.getRepairSummary());
     }
 
     /**
@@ -742,15 +939,14 @@ public class InpatientSettleAppService {
                 InpatientSettleConstants.EX_IP_STL_106,
                 "所选费用已存在成功结算流水");
         }
-        BigDecimal expectedChannelPayable = this.resolveExpectedChannelPayable(
+        InpatientDepositSettlementPlan depositPlan = this.resolveDepositSettlementPlanForConfirm(
             request,
             payment,
             chargeItems);
+        BigDecimal expectedChannelPayable = depositPlan.channelPayable();
         BigDecimal submitTotal = this.sumPaymentDetailAmount(request.getPaymentDetails());
-        // Pre：渠道实付合计须与少补/医保现金自付一致（自费预交金充足时为 0）。
-        if (expectedChannelPayable.setScale(InpatientSettleConstants.SETTLE_AMOUNT_COMPARE_SCALE, RoundingMode.HALF_UP)
-            .compareTo(submitTotal.setScale(InpatientSettleConstants.SETTLE_AMOUNT_COMPARE_SCALE, RoundingMode.HALF_UP))
-            != 0) {
+        // Pre：渠道实付合计须与轧差计划 C 一致（C=0 时允许空明细）。
+        if (!MonetaryAmountSupport.equalsAtSettleScale(expectedChannelPayable, submitTotal)) {
             throw new BusinessException(
                 InpatientSettleConstants.EX_IP_STL_106,
                 "渠道实付合计与应收不一致");
@@ -788,7 +984,6 @@ public class InpatientSettleAppService {
             InpatientSettleConstants.EX_IP_STL_106,
             "患者标识与就诊不一致");
         BigDecimal receivableTotal = this.sumChargeItemAmount(chargeItems);
-        boolean insuranceSettleDraft = this.isInsuranceSettlePaymentDraft(payment.getId());
         // 兼容历史脏草稿：正式结算前若 payment.contract_no 仍为空，从收费项记账账户补写（BR-IP-STL-016）。
         if (StringUtils.isBlank(payment.getContractNo()) && !request.getChargeItemIds().isEmpty()) {
             String contractBusNo = this.resolvePaymentContractBusNoForPreSettle(
@@ -807,30 +1002,28 @@ public class InpatientSettleAppService {
                 inpatientSettleMapper.toSettleInpatientPaymentCommand(request, operatorId);
             if (ybConfirmResult != null) {
                 settleCommand.setYbSettlements(this.buildInpatientYbSettlementItems(ybConfirmResult));
-                // Asm：对齐门诊——支付明细写入统筹/个账/个人现金，供日结与博思开票勾稽
-                this.mergeInsurancePaymentDetailsIntoSettleCommand(
-                    settleCommand,
-                    ybConfirmResult,
-                    request.getPaymentDraftId());
             }
+            // Pre：组装结算落账明细：医保基金/个账（非患者自付）+ 冲抵 O + 渠道实付 C；主单金额保持 P。
+            List<PaymentDetailItemCommand> settleReceiptDetails = this.buildDischargeSettlePayReceiptDetails(
+                request,
+                depositPlan,
+                ybConfirmResult,
+                request.getPaymentDraftId());
+            settleCommand.setPayReceiptDetails(settleReceiptDetails);
             if (expectedChannelPayable.compareTo(BigDecimal.ZERO) > 0) {
-                // Cmd ⓪：少补——自动落收预交金流水并增账户（自费按费用合计；医保按个人现金）。
-                this.collectSettleSupplementAdvanceDeposit(
-                    request,
-                    operatorId,
-                    expectedChannelPayable,
-                    settleCommand.getBillDate(),
-                    request.getClientScanResult());
-            }
-            if (!insuranceSettleDraft) {
-                // Pre：刷新住院结算草稿为预交金冲抵占位明细（按收费项记账账户分桶，非登记户）。
-                this.refreshInpatientSettleDraftForPrepayOffset(
+                // Pre：须对「即将落库」的明细做扫码替换（SCAN_PAY→微信/支付宝/银行卡）；
+                // 禁止另拷一份 channelDetails——否则银联成功但落库仍可能残留草稿 CASHIER/SCAN_PAY。
+                thirdPartyPaymentSettleOrchestrator.applyScanBeforeSettle(
                     request.getPaymentDraftId(),
-                    request.getEncounterId(),
-                    chargeItems,
-                    receivableTotal);
+                    settleReceiptDetails,
+                    request.getClientScanResult(),
+                    operatorId,
+                    null);
+                // Gate：补收行必须已是可展示/可落库渠道（现金/微信/支付宝/银行卡），禁止 CASHIER/SCAN_PAY 进入 SUCCESS。
+                this.assertSettleSelfPayChannelsPersistable(settleReceiptDetails);
+                this.attachClientScanTradeNoToSelfPayLines(settleReceiptDetails, request.getClientScanResult());
             }
-            // Cmd ①：支付草稿推进为 SUCCESS。
+            // Cmd ①：支付草稿推进为 SUCCESS（明细覆盖为冲抵+渠道+医保基金行）。
             Long paymentId = paymentReconciliationSettleOrchestration.settleInpatientPayment(settleCommand);
             BatchChargeItemIdsCommand settleChargeCmd =
                 inpatientSettleMapper.toBatchChargeItemIdsCommand(request.getChargeItemIds(), operatorId);
@@ -840,18 +1033,13 @@ public class InpatientSettleAppService {
                 // Cmd ②：选中收费项推进为 SETTLED，并落收费人/收费时间（enterer_*）。
                 chargeItemDomainService.settleInpatientChargeItems(settleChargeCmd);
             }
-            // 医保：预交金只扣个人现金（基金/个账不走院内预交金）；自费：扣本批费用合计。
-            BigDecimal accountDeductAmount = receivableTotal;
-            if (insuranceSettleDraft) {
-                accountDeductAmount = this.resolveInsurancePatientCashPay(payment.getId());
-            }
-            if (accountDeductAmount.compareTo(BigDecimal.ZERO) > 0) {
-                // Cmd ②b：本批患者应付扣减账户余额（已结算额不再参与展示侧重复扣减）。
+            // Cmd ②b：仅冲抵额 O>0 时扣减个人现金户（占用押金，不落 HOSPITAL_DEPOSIT UN_PAY）。
+            if (depositPlan.depositOffsetAmount().compareTo(BigDecimal.ZERO) > 0) {
                 AdjustAdvanceDepositBalanceCommand deductBalanceCmd =
                     inpatientPrepayMapper.toRefundBalanceAdjustCommand(
                         request.getPatientId(),
                         request.getEncounterId(),
-                        accountDeductAmount,
+                        depositPlan.depositOffsetAmount(),
                         operatorId);
                 accountDomainService.adjustAdvanceDepositBalance(deductBalanceCmd);
             }
@@ -864,13 +1052,19 @@ public class InpatientSettleAppService {
             invoiceCommand.setOperatorId(operatorId);
             Long invoiceDraftId = invoiceAfterPaymentOrchestration.createDraftAndScheduleIssueIfPayable(invoiceCommand);
             Long advanceRefundPaymentId = null;
+            boolean prepayRefundPending = false;
+            List<InpatientPrepayRefundPlanItemDto> pendingPrepayRefundPlan = Collections.emptyList();
             if (dischargeFullSettle) {
-                // Cmd ④：出院全结多退——退库内账户余额盈余（扣本批已结后）。
-                advanceRefundPaymentId = this.refundDischargeAdvanceDepositSurplus(
-                    request.getEncounterId(),
-                    request.getPatientId(),
-                    operatorId,
-                    settleCommand.getBillDate());
+                // Cmd ④：冲抵后库内余额盈余一律现金退（不判原收款渠道、不挂 Win 第二阶段）。
+                DischargePrepayRefundOutcome refundOutcome =
+                    this.refundDischargeAdvanceDepositAsCash(
+                        request.getEncounterId(),
+                        request.getPatientId(),
+                        operatorId,
+                        settleCommand.getBillDate());
+                advanceRefundPaymentId = refundOutcome.lastRefundPaymentId();
+                prepayRefundPending = false;
+                pendingPrepayRefundPlan = Collections.emptyList();
                 LocalDateTime settlementTime = settleCommand.getBillDate();
                 CompleteInpatientFinancialSettlementCommand completeCmd =
                     inpatientSettleMapper.toCompleteInpatientFinancialSettlementCommand(
@@ -886,12 +1080,22 @@ public class InpatientSettleAppService {
                     this.scheduleClearBedSummarySalesUploadAfterCommit(request.getEncounterId());
                 }
             }
-            return inpatientSettleMapper.toConfirmInpatientSettleResponse(
+            String ybSetlId = null;
+            if (ybConfirmResult != null) {
+                ybSetlId = ybConfirmResult.getSettlementId();
+            }
+            ConfirmInpatientSettleResponse response = inpatientSettleMapper.toConfirmInpatientSettleResponse(
                 paymentId,
                 invoiceDraftId,
                 dischargeFullSettle,
                 advanceRefundPaymentId,
-                ybConfirmResult == null ? null : ybConfirmResult.getSettlementId());
+                ybSetlId);
+            response.setPrepayRefundPending(prepayRefundPending);
+            if (prepayRefundPending) {
+                response.setPrepayRefundPlan(pendingPrepayRefundPlan);
+                response.setSuccessMessageCode(InpatientSettleConstants.MESSAGE_CODE_SETTLE_SUCCESS);
+            }
+            return response;
         } catch (BusinessException ex) {
             if (ErrorCodeConstants.ENCOUNTER_INVALID_STATUS.equals(ex.getErrorCode())) {
                 throw new BusinessException(
@@ -929,7 +1133,9 @@ public class InpatientSettleAppService {
     }
 
     /**
-     * 按支付单回填医保 2303/2304 基金分项（基本统筹/个账/现金等），供已结算明细对齐门诊「本次谁付的」。
+     * 按支付单回填医保 2303/2304 基金分项（基本统筹/个账/现金/全自费等），供已结算明细对齐图一口径。
+     *
+     * <p>先取已结算预结算快照（含 settleMode / 个账现金），再以正式结算回执覆盖 hifp 等分项。</p>
      *
      * @param response 已结算查阅响应
      */
@@ -946,18 +1152,53 @@ public class InpatientSettleAppService {
             }
             InpatientChargePreSettleExtensionOut pre =
                 inpatientChargeInsuranceExtension.findSettledPreSettleByPayment(brief.getPaymentId());
-            if (pre == null) {
+            if (pre != null) {
+                brief.setInsuranceSettled(Boolean.TRUE);
+                brief.setSettleMode(pre.getSettleMode());
+                brief.setYbMedfeeSumamt(pre.getMedfeeSumamt());
+                brief.setYbFundPaySumamt(pre.getFundPaySumamt());
+                brief.setYbHifpPay(pre.getHifpPay());
+                brief.setYbOthPay(pre.getOthPay());
+                brief.setYbAcctPay(pre.getAcctPay());
+                brief.setYbPsnCashPay(pre.getPsnCashPay());
+                brief.setYbActPayDedc(pre.getActPayDedc());
+                brief.setYbCvlservPay(pre.getCvlservPay());
+                brief.setYbFulamtOwnpayAmt(pre.getFulamtOwnpayAmt());
+                brief.setYbPreselfpayAmt(pre.getPreselfpayAmt());
+                brief.setYbInscpScpAmt(pre.getInscpScpAmt());
+                brief.setYbOverlmtSelfpay(pre.getOverlmtSelfpay());
+            }
+            // Pre：正式结算回执补齐 hifp/全自费等（预结算表无 hifp 列）
+            if (!insuranceSettlementRecordLookupExtension.isEnabled()) {
                 continue;
             }
+            Optional<InsuranceSettlementFundLookupExtensionOut> fundOpt =
+                insuranceSettlementRecordLookupExtension.findFundByPaymentId(brief.getPaymentId());
+            if (fundOpt.isEmpty()) {
+                continue;
+            }
+            InsuranceSettlementFundLookupExtensionOut fund = fundOpt.get();
             brief.setInsuranceSettled(Boolean.TRUE);
-            brief.setYbMedfeeSumamt(pre.getMedfeeSumamt());
-            brief.setYbFundPaySumamt(pre.getFundPaySumamt());
-            brief.setYbHifpPay(pre.getHifpPay());
-            brief.setYbOthPay(pre.getOthPay());
-            brief.setYbAcctPay(pre.getAcctPay());
-            brief.setYbPsnCashPay(pre.getPsnCashPay());
-            brief.setYbActPayDedc(pre.getActPayDedc());
-            brief.setYbCvlservPay(pre.getCvlservPay());
+            if (fund.getMedfeeSumamt() != null) {
+                brief.setYbMedfeeSumamt(fund.getMedfeeSumamt());
+            }
+            if (fund.getFundPaySumamt() != null) {
+                brief.setYbFundPaySumamt(fund.getFundPaySumamt());
+            }
+            brief.setYbHifpPay(fund.getHifpPay());
+            brief.setYbOthPay(fund.getOthPay());
+            if (fund.getAcctPay() != null) {
+                brief.setYbAcctPay(fund.getAcctPay());
+            }
+            if (fund.getPsnCashPay() != null) {
+                brief.setYbPsnCashPay(fund.getPsnCashPay());
+            }
+            brief.setYbActPayDedc(fund.getActPayDedc());
+            brief.setYbCvlservPay(fund.getCvlservPay());
+            brief.setYbFulamtOwnpayAmt(fund.getFulamtOwnpayAmt());
+            brief.setYbPreselfpayAmt(fund.getPreselfpayAmt());
+            brief.setYbInscpScpAmt(fund.getInscpScpAmt());
+            brief.setYbOverlmtSelfpay(fund.getOverlmtSelfpay());
         }
     }
 
@@ -1186,6 +1427,11 @@ public class InpatientSettleAppService {
         }
         List<PaymentRecDetailQueryModel> paymentDetails =
             paymentReconciliationQueryService.listPaymentRecDetailsByPaymentId(request.getPaymentId());
+        // Cmd：医保正式结算须先平台撤销（2305→2405→2302），再落本地反结，避免平台仍结/仍离院。
+        this.runInsuranceRevokeBeforeReverse(
+            request.getPaymentId(),
+            request.getEncounterId(),
+            chargeItemIdsToRevert);
         CancelInpatientSettleAsRefundCommand cancelCommand =
             inpatientSettleMapper.toCancelInpatientSettleAsRefundCommand(
                 originalPayment, paymentDetails, operatorId);
@@ -1198,7 +1444,9 @@ public class InpatientSettleAppService {
                 // Cmd：为本支付单快照内源 SETTLED 行批量插入 PENDING_SETTLEMENT 再生行（refund_id 链回源行）。
                 chargeItemDomainService.revertInpatientSettledChargeItems(revertChargeCmd);
             }
-            // 出院结算（kind_enum=INPATIENT_CLINIC）反结不回冲账户余额；中途结算反结上线后按支付大类回冲本批已结扣款。
+            // 出院全结反结：有冲抵明细须按 O 回冲个人现金户，避免再结重复计收（DD §3.5）。
+            this.creditDepositOffsetOnDischargeReverseIfNeeded(originalPayment, operatorId);
+            // 中途结算反结（非 INPATIENT_CLINIC）按本批已结回冲；出院全结不再走「本批合计」回冲。
             this.creditAccountBalanceOnMidSettleReverseIfNeeded(originalPayment, chargeItemIdsToRevert, operatorId);
             // Cmd：仅 COMPLETED 未清床时回退就诊临床态 IN_PROGRESS；DISCHARGED 由召回路径处理。
             if (EncounterStatus.COMPLETED.getCode().equals(encounter.getStatusEnum())) {
@@ -1328,41 +1576,37 @@ public class InpatientSettleAppService {
     }
 
     /**
-     * 出院全结多退：库内账户余额仍有盈余时，落退预交金流水并扣减账户余额至 0。
+     * 出院全结多退：库内余额盈余一律现金退（不挂原收款、不判渠道、不挂 Win）。
      *
-     * <p>调用前须已完成本批费用 {@code SETTLED} 与账户余额扣减；退费额 = 扣减后 {@code adm_account.balance}。</p>
-     *
-     * @param encounterId         就诊 ID
-     * @param patientId           患者 ID
-     * @param operatorId          操作员 ID
-     * @param settlementBillDate  结算账单时间
-     * @return 退预交金支付单 ID；无需退费时 null
+     * @param encounterId        就诊 ID
+     * @param patientId          患者 ID
+     * @param operatorId         操作员 ID
+     * @param settlementBillDate 结算账单时间；可空
+     * @return 退款结果（永不挂起）
      */
-    private Long refundDischargeAdvanceDepositSurplus(
+    private DischargePrepayRefundOutcome refundDischargeAdvanceDepositAsCash(
         Long encounterId,
         Long patientId,
         Long operatorId,
         LocalDateTime settlementBillDate) {
         Account account = accountQueryService.getRegistrationAccount(patientId, encounterId);
         if (account == null || account.getId() == null) {
-            // Pre：出院全结多退须已有登记账户。
             throw new BusinessException(
                 InpatientSettleConstants.EX_IP_STL_103,
                 "请先完成住院登记");
         }
-        BigDecimal refundAmount = InpatientAccountBalanceDisplayAssembler.resolveAccountBalance(account)
+        BigDecimal refundTotal = InpatientAccountBalanceDisplayAssembler.resolveAccountBalance(account)
             .setScale(InpatientSettleConstants.SETTLE_AMOUNT_COMPARE_SCALE, RoundingMode.HALF_UP);
-        if (refundAmount.compareTo(BigDecimal.ZERO) <= 0) {
-            // 扣本批已结后账户无盈余，无需退预交金。
-            return null;
+        if (refundTotal.compareTo(BigDecimal.ZERO) <= 0) {
+            return DischargePrepayRefundOutcome.done(null);
         }
-        RefundAdvanceDepositCommand refundCommand = inpatientSettleMapper.toDischargeDepositRefundCommand(
-            encounterId,
-            patientId,
-            account.getId(),
-            refundAmount,
-            operatorId);
-        // Cmd：落退预交金 DRAFT（HOSPITAL_DEPOSIT / UN_PAY），与预交金工作台口径一致。
+        RefundAdvanceDepositCommand refundCommand =
+            inpatientSettleMapper.toDischargeDepositRefundCommand(
+                encounterId,
+                patientId,
+                account.getId(),
+                refundTotal,
+                operatorId);
         Long refundPaymentId = paymentReconciliationDomainService.refundAdvanceDeposit(refundCommand);
         SettleInpatientPaymentCommand refundSettleCommand =
             inpatientPrepayMapper.toSettleInpatientPaymentCommand(refundPaymentId);
@@ -1373,16 +1617,280 @@ public class InpatientSettleAppService {
         AdjustAdvanceDepositBalanceCommand balanceCmd = inpatientPrepayMapper.toRefundBalanceAdjustCommand(
             patientId,
             encounterId,
-            refundAmount,
+            refundTotal,
             operatorId);
         accountDomainService.adjustAdvanceDepositBalance(balanceCmd);
-        return refundPaymentId;
+        return DischargePrepayRefundOutcome.done(refundPaymentId);
     }
 
     /**
-     * 中途结算反结时回冲账户余额；出院全结（{@link PaymentKind#INPATIENT_CLINIC}）反结不回冲。
+     * 医保/自费出院：按原收款渠道 LIFO 原路退预交金（已废除；委托现金退）。
      *
-     * <p>本期仅有出院结算大类；中途结算支付大类上线后在本方法内按 {@code kind_enum} 分支回冲。</p>
+     * @deprecated 多退一律现金；保留签名供第二阶段完结兼容入口转调
+     */
+    @Deprecated
+    private DischargePrepayRefundOutcome refundDischargeAdvanceDepositByOriginalChannels(
+        ConfirmInpatientSettleRequest request,
+        Long operatorId,
+        LocalDateTime settlementBillDate,
+        boolean deferMissingScanRefund) {
+        if (request == null) {
+            return DischargePrepayRefundOutcome.done(null);
+        }
+        return this.refundDischargeAdvanceDepositAsCash(
+            request.getEncounterId(),
+            request.getPatientId(),
+            operatorId,
+            settlementBillDate);
+    }
+
+    /**
+     * 出院结算第二阶段：携带 Win 退货回传退清预交金并财务完结就诊（自费与医保共用）。
+     *
+     * @param request 就诊、患者与 Win 退货回传
+     * @return 与确认结算同结构的响应（prepayRefundPending=false）
+     */
+    public ConfirmInpatientSettleResponse completeInpatientDischargePrepayRefund(
+        CompleteInpatientDischargePrepayRefundRequest request) {
+        if (request == null || request.getEncounterId() == null || request.getPatientId() == null) {
+            throw new BusinessException(
+                InpatientSettleConstants.EX_IP_STL_106,
+                "就诊或患者标识不能为空");
+        }
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
+            InpatientSettleConstants.EX_IP_STL_106,
+            "重新预结算并核对");
+        EncounterDetailQueryModel encounter = encounterQueryService.mustGetEncounterOfClass(
+            request.getEncounterId(),
+            EncounterClass.IMP.getCode(),
+            InpatientSettleConstants.EX_IP_STL_106,
+            "重新预结算并核对");
+        patientEncounterConsistencyGate.requireRequestPatientMatchesEncounter(
+            request.getPatientId(),
+            encounter.getPatientId(),
+            InpatientSettleConstants.EX_IP_STL_106,
+            "患者标识与就诊不一致");
+        if (!EncounterStatus.PENDING.getCode().equals(encounter.getStatusEnum())) {
+            throw new BusinessException(
+                InpatientSettleConstants.EX_IP_STL_106,
+                "当前就诊状态不允许完结预交金原路退，请刷新后重试");
+        }
+        ConfirmInpatientSettleRequest refundRequest = new ConfirmInpatientSettleRequest();
+        refundRequest.setEncounterId(request.getEncounterId());
+        refundRequest.setPatientId(request.getPatientId());
+        refundRequest.setClientRefundResults(request.getClientRefundResults());
+        DischargePrepayRefundOutcome refundOutcome = this.refundDischargeAdvanceDepositByOriginalChannels(
+            refundRequest,
+            operatorId,
+            LocalDateTime.now(),
+            false);
+        if (refundOutcome.pending()) {
+            throw new BusinessException(
+                InpatientSettleConstants.EX_IP_STL_106,
+                "预交金原路退未完成，请确认银联退货回传后重试");
+        }
+        CompleteInpatientFinancialSettlementCommand completeCmd =
+            inpatientSettleMapper.toCompleteInpatientFinancialSettlementCommand(
+                request.getEncounterId(),
+                LocalDateTime.now(),
+                operatorId);
+        encounterDomainService.completeInpatientFinancialSettlement(completeCmd);
+        EncounterDetailQueryModel afterSettle =
+            encounterQueryService.mustGetEncounter(request.getEncounterId());
+        if (EncounterStatus.DISCHARGED.getCode().equals(afterSettle.getStatusEnum())) {
+            this.scheduleClearBedSummarySalesUploadAfterCommit(request.getEncounterId());
+        }
+        ConfirmInpatientSettleResponse response = new ConfirmInpatientSettleResponse();
+        response.setAdvanceRefundPaymentId(refundOutcome.lastRefundPaymentId());
+        response.setDischargeFullSettle(Boolean.TRUE);
+        response.setPrepayRefundPending(Boolean.FALSE);
+        response.setSuccessMessageCode(InpatientSettleConstants.MESSAGE_CODE_SETTLE_SUCCESS);
+        return response;
+    }
+
+    /**
+     * 医保出院预交金退款结果（自费原路退挂起复用同一结构）。
+     *
+     * @param lastRefundPaymentId 最后一笔退款支付单；无退款时 null
+     * @param pendingPlan         待 Win 回传后再退的计划；无挂起时为空
+     */
+    private record DischargePrepayRefundOutcome(
+        Long lastRefundPaymentId,
+        List<InpatientPrepayRefundPlanItemDto> pendingPlan) {
+
+        static DischargePrepayRefundOutcome done(Long lastRefundPaymentId) {
+            return new DischargePrepayRefundOutcome(lastRefundPaymentId, Collections.emptyList());
+        }
+
+        static DischargePrepayRefundOutcome pending(
+            Long lastRefundPaymentId,
+            List<InpatientPrepayRefundPlanItemDto> pendingPlan) {
+            return new DischargePrepayRefundOutcome(lastRefundPaymentId, pendingPlan);
+        }
+
+        boolean pending() {
+            return pendingPlan != null && !pendingPlan.isEmpty();
+        }
+    }
+
+    /**
+     * 按账户余额 LIFO 拆分预交金原路退计划（成功 HOSPITAL_DEPOSIT 收款）。
+     *
+     * @param encounterId    就诊 ID
+     * @param refundBalance  拟退总额（通常为库内余额）
+     * @return 退款计划；余额为 0 时空列表
+     */
+    private List<InpatientPrepayRefundPlanItemDto> buildPrepayRefundPlan(
+        Long encounterId,
+        BigDecimal refundBalance) {
+        BigDecimal remaining = BigDecimal.ZERO;
+        if (refundBalance != null) {
+            remaining = refundBalance.setScale(
+                InpatientSettleConstants.SETTLE_AMOUNT_COMPARE_SCALE, RoundingMode.HALF_UP);
+        }
+        if (remaining.compareTo(BigDecimal.ZERO) <= 0 || encounterId == null) {
+            return Collections.emptyList();
+        }
+        List<PaymentReconciliationQueryModel> allPayments =
+            paymentReconciliationQueryService.findPaymentsByEncounter(encounterId);
+        List<PaymentReconciliationQueryModel> collectPays = new ArrayList<>();
+        for (PaymentReconciliationQueryModel payment : allPayments) {
+            if (payment == null || payment.getId() == null) {
+                continue;
+            }
+            if (!PaymentStatus.SUCCESS.equals(payment.getStatusEnum())) {
+                continue;
+            }
+            if (payment.getKindEnum() == null || !payment.getKindEnum().allowsEmptyChargeItemIds()) {
+                continue;
+            }
+            if (!PaymentType.PAY.getCode().equals(payment.getPaymentEnum())) {
+                continue;
+            }
+            collectPays.add(payment);
+        }
+        collectPays.sort((left, right) -> {
+            LocalDateTime leftBill = left.getBillDate();
+            LocalDateTime rightBill = right.getBillDate();
+            if (leftBill == null && rightBill == null) {
+                return Long.compare(
+                    right.getId() == null ? 0L : right.getId(),
+                    left.getId() == null ? 0L : left.getId());
+            }
+            if (leftBill == null) {
+                return 1;
+            }
+            if (rightBill == null) {
+                return -1;
+            }
+            int byBill = rightBill.compareTo(leftBill);
+            if (byBill != 0) {
+                return byBill;
+            }
+            return Long.compare(
+                right.getId() == null ? 0L : right.getId(),
+                left.getId() == null ? 0L : left.getId());
+        });
+        List<Long> paymentIds = new ArrayList<>();
+        for (PaymentReconciliationQueryModel payment : collectPays) {
+            paymentIds.add(payment.getId());
+        }
+        Map<Long, String> firstPayEnumById =
+            paymentReconciliationQueryService.mapFirstPayEnumByPaymentIds(paymentIds);
+        Map<Long, List<String>> channelCodesById =
+            paymentChannelRefundOrchestrator.mapDistinctPayChannelCodesByPaymentIds(paymentIds);
+        List<InpatientPrepayRefundPlanItemDto> plan = new ArrayList<>();
+        for (PaymentReconciliationQueryModel payment : collectPays) {
+            if (remaining.compareTo(BigDecimal.ZERO) <= 0) {
+                break;
+            }
+            BigDecimal available = payment.getDisplayAmount();
+            if (available == null) {
+                available = payment.getTenderedAmount();
+            }
+            if (available == null || available.compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            BigDecimal slice = available.min(remaining).setScale(
+                InpatientSettleConstants.SETTLE_AMOUNT_COMPARE_SCALE, RoundingMode.HALF_UP);
+            if (slice.compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            String payChannel = firstPayEnumById.get(payment.getId());
+            if (StringUtils.isBlank(payChannel)) {
+                payChannel = PaymentChannel.CASHIER.getCode();
+            }
+            List<String> channelCodes = channelCodesById.getOrDefault(payment.getId(), Collections.emptyList());
+            boolean requiresClientRefund =
+                paymentChannelRefundOrchestrator.mayRequireUnionPayBpcRefund(channelCodes);
+            InpatientPrepayRefundPlanItemDto item = new InpatientPrepayRefundPlanItemDto();
+            item.setOriginalPaymentId(payment.getId());
+            item.setPayChannelCode(payChannel);
+            item.setAmount(slice);
+            item.setRequiresClientRefund(requiresClientRefund);
+            plan.add(item);
+            remaining = remaining.subtract(slice);
+        }
+        if (remaining.compareTo(BigDecimal.ZERO) > 0) {
+            // 收款流水不足以覆盖余额时，剩余按现金退现兜底。
+            InpatientPrepayRefundPlanItemDto fallback = new InpatientPrepayRefundPlanItemDto();
+            fallback.setOriginalPaymentId(null);
+            fallback.setPayChannelCode(PaymentChannel.CASHIER.getCode());
+            fallback.setAmount(remaining);
+            fallback.setRequiresClientRefund(Boolean.FALSE);
+            plan.add(fallback);
+        }
+        return plan;
+    }
+
+    /**
+     * 请求渠道明细 → 领域支付明细命令（扫码挂接用）。
+     *
+     * @param paymentDetails 确认结算渠道明细
+     * @return PaymentDetailItemCommand 列表
+     */
+    private List<PaymentDetailItemCommand> toPaymentDetailItemCommands(
+        List<InpatientSettlePaymentDetailDto> paymentDetails) {
+        List<PaymentDetailItemCommand> details = new ArrayList<>();
+        if (paymentDetails == null) {
+            return details;
+        }
+        for (InpatientSettlePaymentDetailDto row : paymentDetails) {
+            if (row == null || row.getAmount() == null) {
+                continue;
+            }
+            PaymentDetailItemCommand item = new PaymentDetailItemCommand();
+            item.setPayEnum(row.getPayChannelCode());
+            item.setAmount(row.getAmount());
+            details.add(item);
+        }
+        return details;
+    }
+
+    /**
+     * 将确认请求中的 Win 退货回传按原支付单索引。
+     *
+     * @param items 回传列表
+     * @return originalPaymentId → ClientRefundResultDto
+     */
+    private Map<Long, ClientRefundResultDto> indexClientRefundResults(
+        List<InpatientSettleClientRefundItemDto> items) {
+        if (items == null || items.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, ClientRefundResultDto> indexed = new HashMap<>();
+        for (InpatientSettleClientRefundItemDto item : items) {
+            if (item == null || item.getOriginalPaymentId() == null || item.getClientRefundResult() == null) {
+                continue;
+            }
+            indexed.put(item.getOriginalPaymentId(), item.getClientRefundResult());
+        }
+        return indexed;
+    }
+
+    /**
+     * 中途结算反结时回冲账户余额；出院全结（{@link PaymentKind#INPATIENT_CLINIC}）反结不走本方法（冲抵回冲见
+     * {@link #creditDepositOffsetOnDischargeReverseIfNeeded}）。
      *
      * @param originalPayment        正向结算支付单
      * @param revertedChargeItemIds  回退为待结算的收费项 ID
@@ -1396,7 +1904,7 @@ public class InpatientSettleAppService {
             return;
         }
         if (PaymentKind.INPATIENT_CLINIC.equals(originalPayment.getKindEnum())) {
-            // 出院全结反结：多退/少补已发生，库内余额保持 0 或欠费展示，待再结时由待结算体现。
+            // 出院全结反结：余额回冲由冲抵明细 O 驱动，禁止再按本批费用合计回冲。
             return;
         }
         if (revertedChargeItemIds == null || revertedChargeItemIds.isEmpty()) {
@@ -1418,6 +1926,65 @@ public class InpatientSettleAppService {
             revertedTotal,
             operatorId);
         accountDomainService.adjustAdvanceDepositBalance(creditCmd);
+    }
+
+    /**
+     * 出院全结反结：按结算明细冲抵额 O 回冲个人现金户（DD §3.5）。
+     *
+     * @param originalPayment 原正向出院结算单
+     * @param operatorId      操作员
+     */
+    private void creditDepositOffsetOnDischargeReverseIfNeeded(
+        PaymentReconciliationQueryModel originalPayment,
+        Long operatorId) {
+        if (originalPayment == null || originalPayment.getId() == null) {
+            return;
+        }
+        if (!PaymentKind.INPATIENT_CLINIC.equals(originalPayment.getKindEnum())) {
+            return;
+        }
+        if (originalPayment.getPatientId() == null || originalPayment.getEncounterId() == null) {
+            return;
+        }
+        BigDecimal offsetAmount = this.sumDepositOffsetAmount(originalPayment.getId());
+        if (offsetAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            // 无冲抵（R4/R5/R6/R7 或历史无冲抵行旧单）：不回冲余额。
+            return;
+        }
+        AdjustAdvanceDepositBalanceCommand creditCmd = inpatientPrepayMapper.toCollectBalanceAdjustCommand(
+            originalPayment.getPatientId(),
+            originalPayment.getEncounterId(),
+            offsetAmount,
+            operatorId);
+        accountDomainService.adjustAdvanceDepositBalance(creditCmd);
+    }
+
+    /**
+     * 汇总支付单上预交金冲抵明细金额。
+     *
+     * @param paymentId 支付主键
+     * @return 冲抵合计；无则 0
+     */
+    private BigDecimal sumDepositOffsetAmount(Long paymentId) {
+        BigDecimal sum = BigDecimal.ZERO;
+        if (paymentId == null) {
+            return sum;
+        }
+        List<PaymentRecDetailQueryModel> details =
+            paymentReconciliationQueryService.listPaymentRecDetailsByPaymentId(paymentId);
+        if (details == null || details.isEmpty()) {
+            return sum;
+        }
+        for (PaymentRecDetailQueryModel detail : details) {
+            if (detail == null || detail.getAmount() == null) {
+                continue;
+            }
+            if (!PaymentChannel.DEPOSIT_OFFSET.getCode().equals(detail.getPayEnum())) {
+                continue;
+            }
+            sum = sum.add(detail.getAmount());
+        }
+        return MonetaryAmountSupport.scaleSettle(sum);
     }
 
     /**
@@ -1610,7 +2177,7 @@ public class InpatientSettleAppService {
     }
 
     /**
-     * 医保第三方预结算（2303）：占位明细挂个人现金；displayAmount 为相对预交金的少补。
+     * 医保第三方预结算（2303）：草稿主单金额 = 个人现金 P；响应渠道实付 = 轧差计划 C（自费同公式）。
      *
      * @param request             预结算请求（含读卡/合同信息）
      * @param paymentDraftId      本地支付草稿 ID
@@ -1685,32 +2252,23 @@ public class InpatientSettleAppService {
         if (registrationAccount != null) {
             accountBalance = InpatientAccountBalanceDisplayAssembler.resolveAccountBalance(registrationAccount);
         }
-        // Asm：回传库内预交金，供预览弹窗展示「余额 → 冲抵 → 少补」。
-        response.setPrepayNetBalance(accountBalance);
-        // 渠道实付 = 个人现金超出预交金的少补；预交金充足则为 0。
-        BigDecimal channelPayable = this.calculateSettleSupplementAmount(accountBalance, psnCashPay);
-        response.setDisplayAmount(channelPayable);
+        InpatientDepositSettlementPlan plan = inpatientDepositSettlementPlanner.resolve(
+            psnCashPay,
+            accountBalance);
+        this.applyDepositSettlementPlanToPreSettleResponse(response, plan, request.getEncounterId());
         List<PaymentDetailItemCommand> draftLines = this.buildInpatientInsuranceCashPayDraftLines(
             request.getEncounterId(),
             chargeItems,
-            psnCashPay);
-        // Cmd：草稿 displayAmount=少补；占位明细金额仍挂 2303 个人现金。
+            plan.personalCashPayable());
+        // Cmd：草稿主单金额 = P；占位明细挂个人现金应付（确认时再拆冲抵+渠道）。
         paymentReconciliationDomainService.refreshPaymentDraftPreSettleAmounts(
             paymentDraftId,
-            channelPayable,
+            plan.personalCashPayable(),
             draftLines);
         // 纯医保预结算：补写医保合同 bus_no，供日结费用性质筛选。
         paymentReconciliationDomainService.backfillPaymentContractNoIfBlank(
             paymentDraftId,
             this.resolveContractBusNoById(insuranceContractId));
-        if (channelPayable.compareTo(BigDecimal.ZERO) > 0) {
-            response.setPreviewText(
-                "患者实付：" + channelPayable + " 元（医保个人现金 " + psnCashPay + "，预交金不足）");
-        } else if (psnCashPay.compareTo(BigDecimal.ZERO) > 0) {
-            response.setPreviewText("预交金冲抵医保个人现金：" + psnCashPay + " 元");
-        } else {
-            response.setPreviewText("医保已覆盖，无需补交");
-        }
     }
 
     /**
@@ -1742,7 +2300,11 @@ public class InpatientSettleAppService {
     private List<PaymentDetailItemCommand> buildInpatientPreSettlePaymentDetailDraftLines(
         Long encounterId,
         List<ChargeItem> chargeItems) {
-        Long defaultSelfPayAccountId = accountQueryService.getSelfPayAccount(encounterId);
+        Long defaultChargeAccountId = null;
+        Account defaultChargeAccount = accountQueryService.getDefaultChargeAccount(encounterId);
+        if (defaultChargeAccount != null) {
+            defaultChargeAccountId = defaultChargeAccount.getId();
+        }
         Map<Long, BigDecimal> amountByAccountId = new LinkedHashMap<>();
         for (ChargeItem chargeLine : chargeItems) {
             if (chargeLine == null) {
@@ -1750,12 +2312,12 @@ public class InpatientSettleAppService {
             }
             Long accountId = chargeLine.getAccountId();
             if (accountId == null) {
-                accountId = defaultSelfPayAccountId;
+                accountId = defaultChargeAccountId;
             }
             if (accountId == null) {
                 throw new BusinessException(
                     InpatientSettleConstants.EX_IP_STL_001,
-                    "收费项未绑定结算账户且就诊未开立默认自费账户，无法生成支付草稿");
+                    "收费项未绑定结算账户且就诊未开立默认挂账账户，无法生成支付草稿");
             }
             BigDecimal linePrice = chargeLine.getTotalPrice();
             if (linePrice == null) {
@@ -1857,8 +2419,16 @@ public class InpatientSettleAppService {
         if (contractFromRequest != null && StringUtils.isNotBlank(contractFromRequest.getBusNo())) {
             return contractFromRequest.getBusNo().trim();
         }
-        Long defaultSelfPayAccountId = accountQueryService.getSelfPayAccount(encounterId);
+        Long defaultChargeAccountId = null;
+        Account defaultChargeAccount = accountQueryService.getDefaultChargeAccount(encounterId);
+        if (defaultChargeAccount != null) {
+            defaultChargeAccountId = defaultChargeAccount.getId();
+        }
         LinkedHashSet<Long> accountIds = new LinkedHashSet<>();
+        if (defaultChargeAccountId != null) {
+            accountIds.add(defaultChargeAccountId);
+        }
+        Long defaultSelfPayAccountId = accountQueryService.getSelfPayAccount(encounterId);
         if (defaultSelfPayAccountId != null) {
             accountIds.add(defaultSelfPayAccountId);
         }
@@ -1879,7 +2449,7 @@ public class InpatientSettleAppService {
             }
             Long accountId = item.getAccountId();
             if (accountId == null) {
-                accountId = defaultSelfPayAccountId;
+                accountId = defaultChargeAccountId;
             }
             if (accountId == null) {
                 continue;
@@ -1963,6 +2533,14 @@ public class InpatientSettleAppService {
                 accountIds.add(item.getAccountId());
             }
         }
+        Long defaultChargeAccountId = null;
+        Account defaultChargeAccount = accountQueryService.getDefaultChargeAccount(encounterId);
+        if (defaultChargeAccount != null) {
+            defaultChargeAccountId = defaultChargeAccount.getId();
+        }
+        if (defaultChargeAccountId != null) {
+            accountIds.add(defaultChargeAccountId);
+        }
         Long defaultSelfPayAccountId = accountQueryService.getSelfPayAccount(encounterId);
         if (defaultSelfPayAccountId != null) {
             accountIds.add(defaultSelfPayAccountId);
@@ -1978,7 +2556,7 @@ public class InpatientSettleAppService {
             }
             Long accountId = item.getAccountId();
             if (accountId == null) {
-                accountId = defaultSelfPayAccountId;
+                accountId = defaultChargeAccountId;
             }
             Account account = accountById.get(accountId);
             if (account == null || StringUtils.isBlank(account.getContractNo())) {
@@ -2031,6 +2609,170 @@ public class InpatientSettleAppService {
     }
 
     /**
+     * 反结/召回前撤销平台正式结算：2305 →（出院全结）2405 → 2302。
+     *
+     * <p>无医保回执时跳过；平台已撤/已在院类文案幂等忽略；其它失败阻断本地反结。
+     * 半成功重试时预结算可能已 REVOKED，仍按 paymentId 走 2305 幂等并继续 2405/2302。</p>
+     *
+     * @param paymentId      原正向支付单 ID
+     * @param encounterId    就诊 ID
+     * @param chargeItemIds  本单绑定收费项（2302）
+     */
+    private void runInsuranceRevokeBeforeReverse(
+        Long paymentId,
+        Long encounterId,
+        List<Long> chargeItemIds) {
+        if (!inpatientChargeInsuranceExtension.isEnabled() || paymentId == null) {
+            return;
+        }
+        InpatientChargePreSettleExtensionOut settled =
+            inpatientChargeInsuranceExtension.findSettledPreSettleByPayment(paymentId);
+        PaymentReconciliationQueryModel paymentForYb =
+            paymentReconciliationQueryService.mustGetPayment(paymentId);
+        boolean hasYbBridge = paymentForYb.getYbSettlements() != null
+            && !paymentForYb.getYbSettlements().isEmpty();
+        Long contractId = settled == null ? null : settled.getContractId();
+        String settleMode = settled == null ? null : settled.getSettleMode();
+        String settlementId = settled == null ? null : settled.getSettlementId();
+        Long preSettleId = settled == null ? null : settled.getPreSettleId();
+        String hint = "；请用医保信息查询(5201)核对在院/结算状态后再反结或召回";
+        boolean insuranceRevokeAttempted = false;
+        try {
+            InpatientChargeRevokeSettleExtensionIn revokeSettle = new InpatientChargeRevokeSettleExtensionIn();
+            revokeSettle.setPaymentId(paymentId);
+            revokeSettle.setPreSettleId(preSettleId);
+            revokeSettle.setSettlementId(settlementId);
+            // Cmd：2305 撤销正式结算（本地已 REVOKED 时幂等）
+            inpatientChargeInsuranceExtension.revokeSettle(revokeSettle);
+            insuranceRevokeAttempted = true;
+        } catch (RuntimeException ex) {
+            if (this.isInsuranceSettlementMissingMessage(ex)) {
+                if (!hasYbBridge && settled == null) {
+                    // Pre：无平台结算回执 → 纯自费反结
+                    return;
+                }
+                // Pre：回执已撤或不存在但支付侧曾挂医保 → 继续 2405/2302
+                insuranceRevokeAttempted = true;
+            } else if (!this.isInsuranceRevokeIdempotentMessage(ex, true)) {
+                throw new BusinessException(
+                    InpatientSettleConstants.EX_IP_RVS_005,
+                    "医保结算撤销失败（2305）：" + this.safeExMessage(ex) + hint);
+            } else {
+                insuranceRevokeAttempted = true;
+            }
+        }
+        if (!insuranceRevokeAttempted && settled == null && !hasYbBridge) {
+            return;
+        }
+        if (contractId == null) {
+            contractId = this.resolveMedicalInsuranceContractIdByEncounter(encounterId);
+        }
+        boolean dischargeFull = settleMode == null
+            || InpatientSettleConstants.SETTLE_MODE_DISCHARGE_FULL.equals(settleMode);
+        if (dischargeFull && contractId != null && encounterId != null) {
+            try {
+                InpatientChargeEncounterExtensionIn revokeDischarge = new InpatientChargeEncounterExtensionIn();
+                revokeDischarge.setEncounterId(encounterId);
+                revokeDischarge.setContractId(contractId);
+                // Cmd：2405 撤销平台出院，回到在院
+                inpatientChargeInsuranceExtension.revokeDischarge(revokeDischarge);
+            } catch (RuntimeException ex) {
+                if (!this.isInsuranceRevokeIdempotentMessage(ex, false)) {
+                    throw new BusinessException(
+                        InpatientSettleConstants.EX_IP_RVS_005,
+                        "医保出院撤销失败（2405）：" + this.safeExMessage(ex) + hint);
+                }
+            }
+        }
+        if (chargeItemIds == null || chargeItemIds.isEmpty() || contractId == null || encounterId == null) {
+            return;
+        }
+        try {
+            InpatientChargeRevokeFeeDetailExtensionIn revokeFees = new InpatientChargeRevokeFeeDetailExtensionIn();
+            revokeFees.setEncounterId(encounterId);
+            revokeFees.setContractId(contractId);
+            revokeFees.setChargeItemIds(chargeItemIds);
+            // Cmd：2302 撤销本批费用明细，避免再预结撞旧 feedetl
+            inpatientChargeInsuranceExtension.revokeFeeDetails(revokeFees);
+        } catch (RuntimeException ex) {
+            if (!this.isInsuranceRevokeIdempotentMessage(ex, true)) {
+                throw new BusinessException(
+                    InpatientSettleConstants.EX_IP_RVS_005,
+                    "医保费用明细撤销失败（2302）：" + this.safeExMessage(ex) + hint);
+            }
+        }
+    }
+
+    /** 从就诊医保账户解析合同 ID（反结重试预结算已撤时兜底）。 */
+    private Long resolveMedicalInsuranceContractIdByEncounter(Long encounterId) {
+        if (encounterId == null) {
+            return null;
+        }
+        Long medicalInsuranceAccountId = accountQueryService.getMedicalInsuranceAccount(encounterId);
+        if (medicalInsuranceAccountId == null) {
+            return null;
+        }
+        Account account = accountQueryService.mapAccountsByIds(Set.of(medicalInsuranceAccountId))
+            .get(medicalInsuranceAccountId);
+        if (account == null || StringUtils.isBlank(account.getContractNo())) {
+            return null;
+        }
+        Contract contract = contractQueryService
+            .findOptionalContractEntityByBusNo(account.getContractNo().trim())
+            .orElse(null);
+        if (contract == null) {
+            return null;
+        }
+        if (!inpatientChargeInsuranceExtension.supportsThirdPartyContract(contract.getId())) {
+            return null;
+        }
+        return contract.getId();
+    }
+
+    private String safeExMessage(RuntimeException ex) {
+        if (ex == null || ex.getMessage() == null || ex.getMessage().isBlank()) {
+            return "平台返回失败";
+        }
+        return ex.getMessage().trim();
+    }
+
+    private boolean isInsuranceSettlementMissingMessage(RuntimeException ex) {
+        String msg = this.safeExMessage(ex);
+        return msg.contains("缺少 settlementRecordId")
+            || msg.contains("结算回执不存在")
+            || msg.contains("未找到结算")
+            || msg.contains("无结算回执")
+            || msg.contains("找不到结算")
+            || (msg.contains("payment") && msg.contains("结算"));
+    }
+
+    /**
+     * 平台撤销类接口是否可视为已完成（幂等）。
+     *
+     * @param ex          平台异常
+     * @param settleOrFee true=2305/2302；false=2405
+     */
+    private boolean isInsuranceRevokeIdempotentMessage(RuntimeException ex, boolean settleOrFee) {
+        String msg = this.safeExMessage(ex);
+        if (settleOrFee) {
+            if (msg.contains("已撤销") || msg.contains("已经撤销") || msg.contains("重复撤销")) {
+                return true;
+            }
+            if (msg.contains("不存在") && (msg.contains("结算") || msg.contains("明细") || msg.contains("费用"))) {
+                return true;
+            }
+            return false;
+        }
+        if (msg.contains("不是出院") || msg.contains("非出院") || msg.contains("未办理出院")) {
+            return true;
+        }
+        if (msg.contains("入院状态") || msg.contains("已经是在院") || msg.contains("已是在院")) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
      * 住院医保 confirm 后组装本地支付单关联的医保结算明细（单条 CONFIRMED）。
      *
      * @param ybResult 医保 Extension confirm 出参
@@ -2055,82 +2797,14 @@ public class InpatientSettleAppService {
     }
 
     /**
-     * 对齐门诊：正式结算明细写入医保统筹/个账 + 个人现金（覆盖草稿占位）。
-     *
-     * @param settleCommand  住院支付结算命令
-     * @param ybConfirmResult 2304 确认结果
-     * @param paymentDraftId 支付草稿 ID
-     */
-    private void mergeInsurancePaymentDetailsIntoSettleCommand(
-        SettleInpatientPaymentCommand settleCommand,
-        InpatientChargeConfirmExtensionOut ybConfirmResult,
-        Long paymentDraftId) {
-        if (settleCommand == null || ybConfirmResult == null || paymentDraftId == null) {
-            return;
-        }
-        List<PaymentRecDetailQueryModel> draftDetails =
-            paymentReconciliationQueryService.listPaymentRecDetailsByPaymentId(paymentDraftId);
-        Long accountId = null;
-        String accountCode = null;
-        for (PaymentRecDetailQueryModel draftRow : draftDetails) {
-            if (draftRow == null || draftRow.getAccountId() == null) {
-                continue;
-            }
-            accountId = draftRow.getAccountId();
-            if (StringUtils.isNotBlank(draftRow.getAccountCode())) {
-                accountCode = draftRow.getAccountCode().trim();
-            }
-            break;
-        }
-        if (accountId == null) {
-            // Gate：无账户则无法落医保支付明细，保留原草稿明细。
-            return;
-        }
-        List<PaymentDetailItemCommand> receiptLines = new ArrayList<>();
-        String outcomeEnum = settleCommand.getOutcomeEnum();
-        LocalDateTime billDate = settleCommand.getBillDate();
-        String setlId = ybConfirmResult.getSettlementId();
-        this.appendInpatientInsurancePaymentLine(
-            receiptLines,
-            PaymentChannel.INSURANCE_FUND.getCode(),
-            ybConfirmResult.getFundPaySumamt(),
-            accountId,
-            accountCode,
-            setlId,
-            billDate,
-            outcomeEnum);
-        this.appendInpatientInsurancePaymentLine(
-            receiptLines,
-            PaymentChannel.INSURANCE_ACCT.getCode(),
-            ybConfirmResult.getAcctPay(),
-            accountId,
-            accountCode,
-            setlId,
-            billDate,
-            outcomeEnum);
-        this.appendInpatientInsurancePaymentLine(
-            receiptLines,
-            PaymentChannel.CASHIER.getCode(),
-            ybConfirmResult.getPsnCashPay(),
-            accountId,
-            accountCode,
-            setlId,
-            billDate,
-            outcomeEnum);
-        if (!receiptLines.isEmpty()) {
-            settleCommand.setPayReceiptDetails(receiptLines);
-        }
-    }
-
-    /**
-     * 追加一条住院医保/现金支付明细（金额≤0 跳过）。
+     * 追加一条住院医保/现金/冲抵支付明细（金额≤0 跳过）。
      *
      * @param target      明细列表
      * @param payEnum     支付渠道枚举 code
      * @param amount      金额
      * @param accountId   账户 ID
      * @param accountCode 账户业务号
-     * @param setlId      医保结算号
+     * @param setlId      医保结算号；冲抵行可空
      * @param billDate    账单时间
      * @param outcomeEnum 结果枚举
      */
@@ -2217,22 +2891,237 @@ public class InpatientSettleAppService {
     }
 
     /**
-     * 解析正式结算渠道实付：医保/自费草稿均用 displayAmount（预交金少补；充足时为 0）。
+     * 正式结算：组装出院结算支付明细（医保基金/个账 + 冲抵 O + 渠道 C）。
      *
-     * @param request     确认结算请求
+     * <p>患者自付勾稽 {@code P = O + C}；基金/个账不属于该等式。</p>
+     *
+     * @param request          确认结算请求
+     * @param plan             轧差计划
+     * @param ybConfirmResult  医保确认结果；自费时 null
+     * @param paymentDraftId   支付草稿 ID
+     * @return 落账明细列表（可空：零元且无冲抵）
+     */
+    private List<PaymentDetailItemCommand> buildDischargeSettlePayReceiptDetails(
+        ConfirmInpatientSettleRequest request,
+        InpatientDepositSettlementPlan plan,
+        InpatientChargeConfirmExtensionOut ybConfirmResult,
+        Long paymentDraftId) {
+        List<PaymentDetailItemCommand> receiptLines = new ArrayList<>();
+        Long billingAccountId = null;
+        String billingAccountCode = null;
+        List<PaymentRecDetailQueryModel> draftDetails =
+            paymentReconciliationQueryService.listPaymentRecDetailsByPaymentId(paymentDraftId);
+        if (draftDetails != null) {
+            for (PaymentRecDetailQueryModel draftRow : draftDetails) {
+                if (draftRow == null || draftRow.getAccountId() == null) {
+                    continue;
+                }
+                billingAccountId = draftRow.getAccountId();
+                if (StringUtils.isNotBlank(draftRow.getAccountCode())) {
+                    billingAccountCode = draftRow.getAccountCode().trim();
+                }
+                break;
+            }
+        }
+        Account registrationAccount = accountQueryService.getRegistrationAccount(
+            request.getPatientId(),
+            request.getEncounterId());
+        Long depositAccountId = null;
+        String depositAccountCode = null;
+        if (registrationAccount != null) {
+            depositAccountId = registrationAccount.getId();
+            depositAccountCode = registrationAccount.getBusNo();
+        }
+        if (depositAccountId == null) {
+            depositAccountId = billingAccountId;
+            depositAccountCode = billingAccountCode;
+        }
+        String outcomeEnum = PaymentStatus.SUCCESS.getCode();
+        LocalDateTime billDate = request.getBillDate();
+        if (billDate == null) {
+            billDate = LocalDateTime.now();
+        }
+        if (ybConfirmResult != null) {
+            String setlId = ybConfirmResult.getSettlementId();
+            this.appendInpatientInsurancePaymentLine(
+                receiptLines,
+                PaymentChannel.INSURANCE_FUND.getCode(),
+                ybConfirmResult.getFundPaySumamt(),
+                billingAccountId,
+                billingAccountCode,
+                setlId,
+                billDate,
+                outcomeEnum);
+            this.appendInpatientInsurancePaymentLine(
+                receiptLines,
+                PaymentChannel.INSURANCE_ACCT.getCode(),
+                ybConfirmResult.getAcctPay(),
+                billingAccountId,
+                billingAccountCode,
+                setlId,
+                billDate,
+                outcomeEnum);
+        }
+        if (plan.depositOffsetAmount().compareTo(BigDecimal.ZERO) > 0) {
+            if (depositAccountId == null) {
+                throw new BusinessException(
+                    InpatientSettleConstants.EX_IP_STL_103,
+                    "请先完成住院登记");
+            }
+            // 冲抵占用个人现金户；禁止另开 HOSPITAL_DEPOSIT 主单。
+            this.appendInpatientInsurancePaymentLine(
+                receiptLines,
+                PaymentChannel.DEPOSIT_OFFSET.getCode(),
+                plan.depositOffsetAmount(),
+                depositAccountId,
+                depositAccountCode,
+                null,
+                billDate,
+                outcomeEnum);
+        }
+        if (plan.channelPayable().compareTo(BigDecimal.ZERO) > 0 && request.getPaymentDetails() != null) {
+            for (InpatientSettlePaymentDetailDto row : request.getPaymentDetails()) {
+                if (row == null || row.getAmount() == null
+                    || row.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                    continue;
+                }
+                PaymentDetailItemCommand line = new PaymentDetailItemCommand();
+                line.setPayEnum(row.getPayChannelCode());
+                line.setAmount(row.getAmount());
+                line.setChargeAmount(row.getAmount());
+                line.setAccountId(depositAccountId);
+                line.setAccountCode(depositAccountCode);
+                line.setResultEnum(outcomeEnum);
+                line.setPayTransDate(billDate);
+                receiptLines.add(line);
+            }
+        }
+        return receiptLines;
+    }
+
+    /**
+     * 落库前门禁：结算补收行须为可展示、可落库渠道。
+     *
+     * <p>草稿占位 {@code CASHIER} 与 UI-only {@code SCAN_PAY} 禁止进入 SUCCESS；
+     * 须先经 {@link ThirdPartyPaymentSettleOrchestrator#applyScanBeforeSettle} 将扫码行替换为
+     * 微信/支付宝/银行卡，或收银员直接选择现金等用户可选渠道。对齐 **BR-IP-STL-006a**。</p>
+     *
+     * @param settleReceiptDetails 即将写入的支付明细（已含基金/冲抵/补收行）
+     * @throws BusinessException 无补收行、仍为 CASHIER/SCAN_PAY 或渠道不可落库 → EX-IP-STL-106
+     */
+    private void assertSettleSelfPayChannelsPersistable(List<PaymentDetailItemCommand> settleReceiptDetails) {
+        // Gate：C>0 时明细集合不可空，否则补收未录入
+        if (settleReceiptDetails == null || settleReceiptDetails.isEmpty()) {
+            throw new BusinessException(
+                InpatientSettleConstants.EX_IP_STL_106,
+                "结算补收明细为空，请重新选择支付方式");
+        }
+        boolean hasSelfPayLine = false;
+        for (PaymentDetailItemCommand line : settleReceiptDetails) {
+            // Pre：跳过空行；无 pay_enum 的行不参与补收校验
+            if (line == null || StringUtils.isBlank(line.getPayEnum())) {
+                continue;
+            }
+            String payCode = line.getPayEnum().trim();
+            PaymentChannel channel = PaymentChannel.fromCode(payCode);
+            // Gate：pay_enum 须能解析为已知 PaymentChannel
+            if (channel == null) {
+                throw new BusinessException(
+                    InpatientSettleConstants.EX_IP_STL_106,
+                    "支付方式不合法");
+            }
+            // Pre：基金/个账/冲抵不属于患者补收渠道，跳过
+            if (PaymentChannel.INSURANCE_FUND.equals(channel)
+                || PaymentChannel.INSURANCE_ACCT.equals(channel)
+                || PaymentChannel.DEPOSIT_OFFSET.equals(channel)) {
+                continue;
+            }
+            // Gate：草稿占位不得进入 SUCCESS（历史脏数据根因：占位未替换）
+            if (PaymentChannel.CASHIER.equals(channel)) {
+                throw new BusinessException(
+                    InpatientSettleConstants.EX_IP_STL_106,
+                    "结算补收渠道未落成，请重新选择支付方式并完成收款");
+            }
+            // Gate：须为用户可选且可落库（拒绝 SCAN_PAY）
+            paymentChannelGate.requirePersistablePayChannelCode(
+                payCode,
+                InpatientSettleConstants.EX_IP_STL_106,
+                "支付方式不合法");
+            hasSelfPayLine = true;
+        }
+        // Gate：至少一行真实补收渠道，避免只有基金行却声称 C>0
+        if (!hasSelfPayLine) {
+            throw new BusinessException(
+                InpatientSettleConstants.EX_IP_STL_106,
+                "结算补收明细为空，请重新选择支付方式");
+        }
+    }
+
+    /**
+     * 扫码成功后把银联交易号写到患者补收行，便于 IF-IP-STL-07 查阅回显。
+     *
+     * <p>仅填充尚无 {@code payTransNo} 的补收行；基金/冲抵/占位行跳过。</p>
+     *
+     * @param settleReceiptDetails 即将落库明细
+     * @param clientScanResult     Win 被扫回传；无扫码时可空
+     */
+    private void attachClientScanTradeNoToSelfPayLines(
+        List<PaymentDetailItemCommand> settleReceiptDetails,
+        ClientScanResultDto clientScanResult) {
+        // Pre：无明细或无回传则无需挂交易号
+        if (settleReceiptDetails == null || clientScanResult == null) {
+            return;
+        }
+        String tradeNo = clientScanResult.getTradeNo();
+        // Pre：回传无交易号则跳过
+        if (StringUtils.isBlank(tradeNo)) {
+            return;
+        }
+        String trimmedTradeNo = tradeNo.trim();
+        for (PaymentDetailItemCommand line : settleReceiptDetails) {
+            // Pre：跳过空行
+            if (line == null || StringUtils.isBlank(line.getPayEnum())) {
+                continue;
+            }
+            PaymentChannel channel = PaymentChannel.fromCode(line.getPayEnum().trim());
+            // Pre：无法解析渠道码则跳过本行
+            if (channel == null) {
+                continue;
+            }
+            // Pre：基金/个账/冲抵/占位不写银联交易号
+            if (PaymentChannel.INSURANCE_FUND.equals(channel)
+                || PaymentChannel.INSURANCE_ACCT.equals(channel)
+                || PaymentChannel.DEPOSIT_OFFSET.equals(channel)
+                || PaymentChannel.CASHIER.equals(channel)) {
+                continue;
+            }
+            // Asm：仅补空交易号，避免覆盖医保 setl_id 等已有值（现金直收无 trade_no 时保持空）
+            if (StringUtils.isBlank(line.getPayTransNo())) {
+                line.setPayTransNo(trimmedTradeNo);
+            }
+        }
+    }
+
+    /**
+     * 确认结算时解析预交金轧差计划（自费 P=本批应收；医保 P=草稿个人现金）。
+     *
+     * @param request     确认请求
      * @param payment     支付草稿
      * @param chargeItems 本批收费项
-     * @return 与用户 paymentDetails 交叉校验的期望渠道实付
+     * @return 轧差计划
      */
-    private BigDecimal resolveExpectedChannelPayable(
+    private InpatientDepositSettlementPlan resolveDepositSettlementPlanForConfirm(
         ConfirmInpatientSettleRequest request,
         PaymentReconciliationQueryModel payment,
         List<ChargeItem> chargeItems) {
+        BigDecimal personalCashPayable;
         if (this.isInsuranceSettlePaymentDraft(payment.getId())) {
-            if (payment.getDisplayAmount() != null) {
-                return payment.getDisplayAmount();
+            personalCashPayable = payment.getDisplayAmount();
+            if (personalCashPayable == null) {
+                personalCashPayable = this.resolveInsurancePatientCashPay(payment.getId());
             }
-            return BigDecimal.ZERO;
+        } else {
+            personalCashPayable = this.sumChargeItemAmount(chargeItems);
         }
         Account account = accountQueryService.getRegistrationAccount(
             request.getPatientId(),
@@ -2241,9 +3130,130 @@ public class InpatientSettleAppService {
         if (account != null) {
             accountBalance = InpatientAccountBalanceDisplayAssembler.resolveAccountBalance(account);
         }
-        return this.calculateSettleSupplementAmount(
-            accountBalance,
-            this.sumChargeItemAmount(chargeItems));
+        return inpatientDepositSettlementPlanner.resolve(
+            personalCashPayable,
+            accountBalance);
+    }
+
+    /**
+     * 本就诊未退清的成功预交金收款是否含银联类渠道（多退已不依赖；保留供诊断/旧调用）。
+     *
+     * @param encounterId 就诊 ID
+     * @return 含微信/支付宝/银行卡则为 true
+     * @deprecated 多退一律现金，轧差不再判渠道
+     */
+    @Deprecated
+    private boolean hasUnionPayDepositChannels(Long encounterId) {
+        if (encounterId == null) {
+            return false;
+        }
+        List<PaymentReconciliationQueryModel> collectPays = this.listSuccessfulDepositCollectPayments(encounterId);
+        if (collectPays.isEmpty()) {
+            return false;
+        }
+        List<Long> paymentIds = new ArrayList<>();
+        for (PaymentReconciliationQueryModel payment : collectPays) {
+            paymentIds.add(payment.getId());
+        }
+        Map<Long, List<String>> channelCodesById =
+            paymentChannelRefundOrchestrator.mapDistinctPayChannelCodesByPaymentIds(paymentIds);
+        for (List<String> channelCodes : channelCodesById.values()) {
+            if (paymentChannelRefundOrchestrator.mayRequireUnionPayBpcRefund(channelCodes)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 列出就诊下成功的预交金收款主单（HOSPITAL_DEPOSIT / PAY）。
+     *
+     * @param encounterId 就诊 ID
+     * @return 收款列表；无则空表
+     */
+    private List<PaymentReconciliationQueryModel> listSuccessfulDepositCollectPayments(Long encounterId) {
+        List<PaymentReconciliationQueryModel> result = new ArrayList<>();
+        List<PaymentReconciliationQueryModel> allPayments =
+            paymentReconciliationQueryService.findPaymentsByEncounter(encounterId);
+        if (allPayments == null) {
+            return result;
+        }
+        for (PaymentReconciliationQueryModel payment : allPayments) {
+            if (payment == null || payment.getId() == null) {
+                continue;
+            }
+            if (!PaymentStatus.SUCCESS.equals(payment.getStatusEnum())) {
+                continue;
+            }
+            if (payment.getKindEnum() == null || !payment.getKindEnum().allowsEmptyChargeItemIds()) {
+                continue;
+            }
+            if (!PaymentType.PAY.getCode().equals(payment.getPaymentEnum())) {
+                continue;
+            }
+            result.add(payment);
+        }
+        return result;
+    }
+
+    /**
+     * 将轧差计划回填预结算响应（P/O/C/应退/文案；自费与医保共用）。
+     *
+     * @param response    预结算响应
+     * @param plan        轧差计划
+     * @param encounterId 就诊 ID（多退现金计划不再依赖原收款拆分）
+     */
+    private void applyDepositSettlementPlanToPreSettleResponse(
+        PreSettleInpatientChargesResponse response,
+        InpatientDepositSettlementPlan plan,
+        Long encounterId) {
+        response.setPrepayNetBalance(plan.depositBalance());
+        response.setPersonalCashPayable(plan.personalCashPayable());
+        response.setDepositOffsetAmount(plan.depositOffsetAmount());
+        response.setDisplayAmount(plan.channelPayable());
+        response.setPrepayRefundAmount(plan.prepayRefundAmount());
+        response.setPrepayFullRefund(plan.prepayFullRefund());
+        response.setDepositSettleRuleCode(plan.ruleCode());
+        boolean prepaySufficient = plan.depositBalance().compareTo(plan.personalCashPayable()) >= 0;
+        response.setPrepaySufficient(prepaySufficient);
+        // Asm：多退展示为单笔现金退；确认落账不再走原路拆分/Win
+        if (plan.prepayRefundAmount().compareTo(BigDecimal.ZERO) > 0) {
+            InpatientPrepayRefundPlanItemDto cashRefund = new InpatientPrepayRefundPlanItemDto();
+            cashRefund.setAmount(plan.prepayRefundAmount());
+            cashRefund.setPayChannelCode(PaymentChannel.CASH.getCode());
+            cashRefund.setRequiresClientRefund(Boolean.FALSE);
+            response.setPrepayRefundPlan(Collections.singletonList(cashRefund));
+        } else {
+            response.setPrepayRefundPlan(Collections.emptyList());
+        }
+        response.setPreviewText(this.buildDepositSettlementPreviewText(plan));
+    }
+
+    /**
+     * 按轧差分支生成预结算预览文案（少补冲抵补收不变；多退改现金退）。
+     *
+     * @param plan 轧差计划
+     * @return 预览文案
+     */
+    private String buildDepositSettlementPreviewText(InpatientDepositSettlementPlan plan) {
+        if (InpatientDepositSettlementPlanner.RULE_R1.equals(plan.ruleCode())) {
+            return "预交金冲抵 " + plan.depositOffsetAmount() + " 元，请再收 "
+                + plan.channelPayable() + " 元";
+        }
+        if (InpatientDepositSettlementPlanner.RULE_R2.equals(plan.ruleCode())) {
+            return "预交金刚好冲抵，无需收退；冲抵 " + plan.depositOffsetAmount() + " 元";
+        }
+        if (InpatientDepositSettlementPlanner.RULE_R3.equals(plan.ruleCode())) {
+            return "预交金冲抵 " + plan.depositOffsetAmount() + " 元，退现金 "
+                + plan.prepayRefundAmount() + " 元";
+        }
+        if (InpatientDepositSettlementPlanner.RULE_R5.equals(plan.ruleCode())) {
+            return "无预交金，请收个人现金 " + plan.channelPayable() + " 元";
+        }
+        if (InpatientDepositSettlementPlanner.RULE_R6.equals(plan.ruleCode())) {
+            return "个人应付为 0；退现金 " + plan.prepayRefundAmount() + " 元";
+        }
+        return "无需收退";
     }
 
     /**
@@ -2259,36 +3269,10 @@ public class InpatientSettleAppService {
     }
 
     /**
-     * 少补金额：本批费用超出库内账户余额的部分；无少补时 0。
-     *
-     * @param accountBalance    结算前库内账户余额（已含历史结算扣减）
-     * @param currentBatchTotal 本批费用合计
-     * @return 须由渠道实收（并落收预交金）的金额
-     */
-    private BigDecimal calculateSettleSupplementAmount(
-        BigDecimal accountBalance,
-        BigDecimal currentBatchTotal) {
-        BigDecimal balance = BigDecimal.ZERO;
-        if (accountBalance != null) {
-            balance = accountBalance;
-        }
-        BigDecimal batch = BigDecimal.ZERO;
-        if (currentBatchTotal != null) {
-            batch = currentBatchTotal;
-        }
-        BigDecimal supplement = batch.subtract(balance)
-            .setScale(InpatientSettleConstants.SETTLE_AMOUNT_COMPARE_SCALE, RoundingMode.HALF_UP);
-        if (supplement.compareTo(BigDecimal.ZERO) <= 0) {
-            return BigDecimal.ZERO;
-        }
-        return supplement;
-    }
-
-    /**
-     * 自费预结算响应回填渠道实付（少补金额；预交金充足时为 0）。
+     * 自费预结算：按本批应收与库内预交金回填轧差计划（与医保同一套 R1～R7）。
      *
      * @param encounterId     就诊 ID
-     * @param receivableTotal 本批应收合计
+     * @param receivableTotal 本批应收合计（个人现金应付 P）
      * @param account         登记账户
      * @param response        预结算响应
      */
@@ -2301,99 +3285,10 @@ public class InpatientSettleAppService {
         if (account != null) {
             accountBalance = InpatientAccountBalanceDisplayAssembler.resolveAccountBalance(account);
         }
-        // Asm：回传库内预交金，供预览弹窗展示冲抵关系。
-        response.setPrepayNetBalance(accountBalance);
-        BigDecimal channelPayable = this.calculateSettleSupplementAmount(
-            accountBalance,
-            receivableTotal);
-        response.setDisplayAmount(channelPayable);
-        if (channelPayable.compareTo(BigDecimal.ZERO) > 0) {
-            response.setPreviewText("患者实付：" + channelPayable + " 元");
-            return;
-        }
-        if (receivableTotal != null && receivableTotal.compareTo(BigDecimal.ZERO) > 0) {
-            response.setPreviewText("预交金冲抵，应收合计：" + receivableTotal + " 元");
-        }
-    }
-
-    /**
-     * 结算少补：自动收取预交金（HOSPITAL_DEPOSIT PAY），与用户渠道实付对称于出院多退。
-     *
-     * @param request          确认结算请求
-     * @param operatorId       操作员 ID
-     * @param supplementAmount 少补金额
-     * @param billDate         结算时间
-     * @return 收预交金支付单 ID
-     */
-    private Long collectSettleSupplementAdvanceDeposit(
-        ConfirmInpatientSettleRequest request,
-        Long operatorId,
-        BigDecimal supplementAmount,
-        LocalDateTime billDate,
-        ClientScanResultDto clientScanResult) {
-        Account account = accountQueryService.getRegistrationAccount(
-            request.getPatientId(),
-            request.getEncounterId());
-        if (account == null || account.getId() == null) {
-            throw new BusinessException(
-                InpatientSettleConstants.EX_IP_STL_103,
-                "请先完成住院登记");
-        }
-        CollectAdvanceDepositCommand collectCommand = inpatientSettleMapper.toSettleSupplementCollectCommand(
-            request.getEncounterId(),
-            request.getPatientId(),
-            account.getId(),
-            supplementAmount,
-            request.getPaymentDetails(),
-            operatorId);
-        Long collectPaymentId = paymentReconciliationDomainService.collectAdvanceDeposit(collectCommand);
-        thirdPartyPaymentSettleOrchestrator.applyScanBeforeSettle(
-            collectPaymentId,
-            collectCommand.getPaymentDetails(),
-            clientScanResult,
-            operatorId,
-            null);
-        paymentReconciliationDomainService.refreshPaymentDraftPreSettleAmounts(
-            collectPaymentId,
-            collectCommand.getDisplayAmount(),
-            collectCommand.getPaymentDetails());
-        SettleInpatientPaymentCommand collectSettleCommand =
-            inpatientPrepayMapper.toSettleInpatientPaymentCommand(collectPaymentId);
-        if (billDate != null) {
-            collectSettleCommand.setBillDate(billDate);
-        }
-        paymentReconciliationSettleOrchestration.settleInpatientPayment(collectSettleCommand);
-        AdjustAdvanceDepositBalanceCommand balanceCmd = inpatientPrepayMapper.toCollectBalanceAdjustCommand(
-            request.getPatientId(),
-            request.getEncounterId(),
-            supplementAmount,
-            operatorId);
-        accountDomainService.adjustAdvanceDepositBalance(balanceCmd);
-        return collectPaymentId;
-    }
-
-    /**
-     * 正式结算前刷新住院结算草稿：全额应收 + 预交金冲抵占位明细（按记账账户分桶）。
-     *
-     * @param paymentDraftId  支付草稿 ID
-     * @param encounterId     就诊 ID
-     * @param chargeItems     本批收费项
-     * @param receivableTotal 本批应收合计
-     */
-    private void refreshInpatientSettleDraftForPrepayOffset(
-        Long paymentDraftId,
-        Long encounterId,
-        List<ChargeItem> chargeItems,
-        BigDecimal receivableTotal) {
-        if (paymentDraftId == null || receivableTotal == null || chargeItems.isEmpty()) {
-            return;
-        }
-        List<PaymentDetailItemCommand> draftLines =
-            this.buildInpatientPreSettlePaymentDetailDraftLines(encounterId, chargeItems);
-        paymentReconciliationDomainService.refreshPaymentDraftPreSettleAmounts(
-            paymentDraftId,
+        InpatientDepositSettlementPlan plan = inpatientDepositSettlementPlanner.resolve(
             receivableTotal,
-            draftLines);
+            accountBalance);
+        this.applyDepositSettlementPlanToPreSettleResponse(response, plan, encounterId);
     }
 
     /**

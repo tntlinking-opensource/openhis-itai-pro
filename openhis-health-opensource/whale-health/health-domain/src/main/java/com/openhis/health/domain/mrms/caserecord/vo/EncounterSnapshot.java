@@ -28,10 +28,13 @@ public class EncounterSnapshot {
     /** 住院号（{@code adm_encounter.bus_no}）。 */
     private String iptNo;
 
-    /** 入院时间。 */
+    /** 入院时间（{@code start_time}）。 */
     private LocalDateTime admTime;
 
-    /** 出院时间。 */
+    /**
+     * 业务出院时间：优先出院医嘱计划时间 {@code occurrence_start_time}，
+     * 回落 {@code Encounter.endTime}（办理出院写入；非清床/结算时刻）。
+     */
     private LocalDateTime dscgTime;
 
     /** 入院科别编码（机构 bus_no）。 */

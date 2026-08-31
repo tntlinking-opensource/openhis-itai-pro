@@ -42,6 +42,7 @@ export async function printPeisReport(options: PrintPeisReportOptions) {
     scenarioCode: PRINT_SCENARIO.peisReportPrint,
     source: slip,
     bizRef: {
+      scenarioCode: PRINT_SCENARIO.peisReportPrint,
       encounterId: slip.encounterId ?? encounterId,
       diagnosticReportId: slip.diagnosticReportId,
     },

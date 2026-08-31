@@ -87,6 +87,9 @@ async function printOneDoctorSheet(options: {
   const sheet = withPrintHospitalName(options.sheet);
   const prescriptionNo = String(sheet.prescriptionNo ?? '').trim();
   const bizRef = {
+    scenarioCode: isDoctorSheetHerbal(sheet)
+      ? PRINT_SCENARIO.outpatientTcmRx
+      : PRINT_SCENARIO.outpatientRx,
     encounterId: options.encounterId || undefined,
     prescriptionNo: prescriptionNo || undefined,
   };

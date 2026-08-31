@@ -116,7 +116,9 @@ public class MedicationCatalogImportWorkbookParser {
      * @return 表头数组
      */
     public static String[] headersWithoutTrace(boolean injectLegacyName) {
-        String[] current = MedicationCatalogImportConstants.COLUMN_HEADERS;
+        String[] full = MedicationCatalogImportConstants.COLUMN_HEADERS;
+        // v1.7 末两列为新增标识；构造无追溯码表头时先回到 v1.6（54 列）再去掉追溯两列
+        String[] current = java.util.Arrays.copyOf(full, full.length - 2);
         String[] legacy = new String[current.length - 2];
         int out = 0;
         for (int i = 0; i < current.length; i++) {
@@ -166,6 +168,7 @@ public class MedicationCatalogImportWorkbookParser {
         String templateCode = this.readSysValue(sysSheet, SYS_KEY_TEMPLATE_CODE);
         String templateVersion = this.readSysValue(sysSheet, SYS_KEY_TEMPLATE_VERSION);
         boolean versionOk = MedicationCatalogImportConstants.TEMPLATE_VERSION.equals(templateVersion)
+            || MedicationCatalogImportConstants.TEMPLATE_VERSION_V16.equals(templateVersion)
             || MedicationCatalogImportConstants.TEMPLATE_VERSION_V15.equals(templateVersion)
             || MedicationCatalogImportConstants.TEMPLATE_VERSION_V14.equals(templateVersion);
         if (!MedicationCatalogImportConstants.TEMPLATE_CODE.equals(templateCode) || !versionOk) {
@@ -214,6 +217,10 @@ public class MedicationCatalogImportWorkbookParser {
         if (MedicationCatalogImportConstants.TEMPLATE_VERSION_V15.equals(templateVersion)) {
             return MedicationCatalogImportWorkbookParser.headersWithoutTrace(false);
         }
+        if (MedicationCatalogImportConstants.TEMPLATE_VERSION_V16.equals(templateVersion)) {
+            String[] full = MedicationCatalogImportConstants.COLUMN_HEADERS;
+            return java.util.Arrays.copyOf(full, full.length - 2);
+        }
         return MedicationCatalogImportConstants.COLUMN_HEADERS;
     }
 
@@ -238,7 +245,9 @@ public class MedicationCatalogImportWorkbookParser {
      * @param templateVersion 模板版本（决定列位移）
      */
     private List<MedicationCatalogImportRow> readDataRows(Sheet dataSheet, String templateVersion) {
-        boolean hasTraceColumns = MedicationCatalogImportConstants.TEMPLATE_VERSION.equals(templateVersion);
+        boolean hasTraceColumns = MedicationCatalogImportConstants.TEMPLATE_VERSION.equals(templateVersion)
+            || MedicationCatalogImportConstants.TEMPLATE_VERSION_V16.equals(templateVersion);
+        boolean hasNewFlags = MedicationCatalogImportConstants.TEMPLATE_VERSION.equals(templateVersion);
         List<MedicationCatalogImportRow> rows = new ArrayList<>();
         int lastRow = dataSheet.getLastRowNum();
         for (int rowIndex = MedicationCatalogImportConstants.DATA_START_ROW_INDEX; rowIndex <= lastRow; rowIndex++) {
@@ -320,7 +329,11 @@ public class MedicationCatalogImportWorkbookParser {
             importRow.setSelfFlagText(this.readCellAsString(row.getCell(col++)));
             importRow.setRestrictedFlagText(this.readCellAsString(row.getCell(col++)));
             importRow.setAntibioticFlagText(this.readCellAsString(row.getCell(col++)));
-            importRow.setRxFlagText(this.readCellAsString(row.getCell(col)));
+            importRow.setRxFlagText(this.readCellAsString(row.getCell(col++)));
+            if (hasNewFlags) {
+                importRow.setNationalMonitorFlagText(this.readCellAsString(row.getCell(col++)));
+                importRow.setCentralPurchaseFlagText(this.readCellAsString(row.getCell(col)));
+            }
             rows.add(importRow);
         }
         return rows;

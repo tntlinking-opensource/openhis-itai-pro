@@ -302,6 +302,19 @@ function buildExecuteExtensionLine(dto: NurseStationOrderExecuteRowDto): string 
   if (remark) {
     parts.push(`备注：${remark}`);
   }
+  // 口服一盒一点剩余（BR-IP-EXE-038）
+  if (dto.oralPackageBatchInventoryApplied === true) {
+    const unit = String(dto.oralPackageSplitUnitDisplay ?? '').trim() || '片';
+    const eaten = String(dto.oralPackageConsumedSplitQuantity ?? '').trim();
+    const remain = String(dto.oralPackageRemainSplitQuantity ?? '').trim();
+    const next = String(dto.oralPackageNextClaimDate ?? '').trim();
+    if (eaten !== '' || remain !== '') {
+      parts.push(`已吃${eaten || '0'}${unit}，剩余${remain || '0'}${unit}`);
+    }
+    if (next) {
+      parts.push(`预计下次领盒 ${next}`);
+    }
+  }
   return parts.join('；');
 }
 

@@ -79,6 +79,7 @@ public class PatientDomainService {
             patient.setBirthDate(item.getBirthDate());
             patient.setIdCard(this.normalizeIdCard(item.getIdCard()));
             patient.setPhone(item.getPhone());
+            patient.setEducationLevelCode(item.getEducationLevelCode());
             // 建档可选写入地址全文（挂号读卡）；仅非空时落库，不拆省市区
             if (StringUtils.isNotEmpty(item.getAddress())) {
                 Address registerAddress = new Address();
@@ -145,6 +146,7 @@ public class PatientDomainService {
             patient.setAddress(this.buildAddress(item));
             patient.setAddressExtendJson(item.getAddressExtendJson());
             patient.setNationalityCode(item.getNationalityCode());
+            patient.setEducationLevelCode(item.getEducationLevelCode());
             patient.setWorkCompany(item.getWorkCompany());
             patient.setNativePlace(item.getNativePlace());
             patient.setCountryCode(item.getCountryCode());
@@ -869,6 +871,7 @@ public class PatientDomainService {
         this.addChangedField(changed, "addressStreet", oldAddressStreet, item.getAddressStreet());
         this.addChangedField(changed, "addressExtendJson", patient.getAddressExtendJson(), item.getAddressExtendJson());
         this.addChangedField(changed, "nationalityCode", patient.getNationalityCode(), item.getNationalityCode());
+        this.addChangedField(changed, "educationLevelCode", patient.getEducationLevelCode(), item.getEducationLevelCode());
         this.addChangedField(changed, "workCompany", patient.getWorkCompany(), item.getWorkCompany());
         this.addChangedField(changed, "nativePlace", patient.getNativePlace(), item.getNativePlace());
         this.addChangedField(changed, "countryCode", patient.getCountryCode(), item.getCountryCode());

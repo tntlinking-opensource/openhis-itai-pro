@@ -3,10 +3,23 @@ import type { PrescriptionSheetData, PrescriptionSheetLine } from './prescriptio
 
 import { computed, ref } from 'vue';
 
-import { ElButton, ElCheckbox, ElEmpty, ElTable, ElTableColumn } from 'element-plus';
+import {
+  ElButton,
+  ElCheckbox,
+  ElEmpty,
+  ElOption,
+  ElSelect,
+  ElTable,
+  ElTableColumn,
+} from 'element-plus';
 
 import AppDialog from '#/components/app-dialog.vue';
 import { splitTraceNoCommaString } from '#/utils/trace';
+
+import {
+  resolveBatchNoByPick,
+  resolveRemainingStockTextByPick,
+} from '../services/dispense-lot-pick';
 
 defineOptions({
   name: 'PrescriptionSheetView',
@@ -62,6 +75,11 @@ const emit = defineEmits<{
   'update:selected': [value: boolean];
 }>();
 
+/** 行级批号选择（与列表明细同源；库房已锁定） */
+const inventoryPickByLineId = defineModel<Record<string, string>>('inventoryPickByLineId', {
+  default: () => ({}),
+});
+
 /** 追溯码弹窗 */
 const traceDialogVisible = ref(false);
 const traceDialogTitle = ref('追溯码');
@@ -73,8 +91,23 @@ const stockDialogVisible = ref(false);
 /** 是否医生站处方单版式（无药房/追溯码/批号/厂家） */
 const isDoctorRx = computed(() => props.variant === 'doctorRx');
 
-/** 当前处方可查看的库存行 */
-const stockDialogRows = computed(() => props.data.stockLines ?? []);
+/** 库存弹窗行：批号/剩余随当前选中覆盖 */
+const stockDialogRows = computed(() => {
+  const rows = props.data.stockLines ?? [];
+  return rows.map((row) => {
+    const id = row.dispenseId;
+    const pick = id ? inventoryPickByLineId.value[id] : undefined;
+    return {
+      ...row,
+      batchNo: resolveBatchNoByPick(row.lotPickOptions, pick, row.batchNo),
+      remainingStockText: resolveRemainingStockTextByPick(
+        row.lotPickOptions,
+        pick,
+        row.remainingStockText,
+      ),
+    };
+  });
+});
 
 /** 印章色：按状态区分 */
 const statusSealTone = computed(() => {
@@ -115,6 +148,46 @@ function openStockDialog() {
   stockDialogVisible.value = true;
 }
 
+/** 西药行是否可在笺面改批号 */
+function canChangeLotOnLine(line: PrescriptionSheetLine): boolean {
+  return Boolean(line.canChangeLot && line.dispenseId && line.lotPickOptions?.length);
+}
+
+/** 更新发放行批号选择 */
+function setLineLotPick(dispenseId: string, value: string) {
+  inventoryPickByLineId.value = { ...inventoryPickByLineId.value, [dispenseId]: value };
+}
+
+/** 西药笺面行改批号 */
+function onWesternLotPick(line: PrescriptionSheetLine, value: unknown) {
+  const id = line.dispenseId?.trim();
+  if (!id) return;
+  setLineLotPick(id, String(value ?? ''));
+}
+
+/** 库存弹窗行改批号 */
+function onStockLotPick(row: { dispenseId?: string }, value: unknown) {
+  const id = row.dispenseId?.trim();
+  if (!id) return;
+  setLineLotPick(id, String(value ?? ''));
+}
+
+/** 笺面西药行当前批号展示（含剩余） */
+function westernLotDisplay(line: PrescriptionSheetLine): string {
+  const id = line.dispenseId;
+  const pick = id ? inventoryPickByLineId.value[id] : undefined;
+  const batch = resolveBatchNoByPick(line.lotPickOptions, pick, line.batchNo);
+  const remaining = resolveRemainingStockTextByPick(
+    line.lotPickOptions,
+    pick,
+    line.remainingStockText,
+  );
+  if (!remaining || remaining === '—') {
+    return batch;
+  }
+  return `${batch}（余 ${remaining}）`;
+}
+
 /** 医生站：规格展示（空/占位不输出） */
 function formatDoctorRxSpec(spec: string | undefined): string {
   const text = String(spec ?? '').trim();
@@ -137,7 +210,10 @@ function formatDoctorRxUsage(usage: string | undefined): string {
   <!-- 笺面：纸质处方观感；工作站含勾选、发药、状态章 -->
   <div
     class="prescription-dialog-wrapper"
-    :class="{ 'prescription-dialog-wrapper--comfortable': props.comfortable }"
+    :class="{
+      'prescription-dialog-wrapper--comfortable': props.comfortable,
+      'prescription-dialog-wrapper--workbench': props.workbenchActions,
+    }"
   >
     <div
       class="prescription-container"
@@ -386,8 +462,32 @@ function formatDoctorRxUsage(usage: string | undefined): string {
                 </ElButton>
               </div>
               <div class="medicine-line__sub">
-                <span>单价：{{ line.amount }}</span>
-                <span>批号：{{ line.batchNo }}</span>
+                <span>单价：{{ line.unitPrice }}</span>
+                <span
+                  v-if="canChangeLotOnLine(line)"
+                  class="medicine-line__lot medicine-line__lot--editable"
+                  @click.stop
+                >
+                  批号：
+                  <ElSelect
+                    :model-value="
+                      line.dispenseId ? inventoryPickByLineId[line.dispenseId] : undefined
+                    "
+                    filterable
+                    size="small"
+                    placeholder="选择批号"
+                    class="medicine-line__lot-select"
+                    @update:model-value="(v) => onWesternLotPick(line, v)"
+                  >
+                    <ElOption
+                      v-for="opt in line.lotPickOptions"
+                      :key="opt.value"
+                      :label="opt.label"
+                      :value="opt.value"
+                    />
+                  </ElSelect>
+                </span>
+                <span v-else>批号：{{ westernLotDisplay(line) }}</span>
                 <span>厂家：{{ line.factory }}</span>
               </div>
             </div>
@@ -433,7 +533,7 @@ function formatDoctorRxUsage(usage: string | undefined): string {
     <div v-else class="sheet-trace-dialog-empty">暂无追溯码</div>
   </AppDialog>
 
-  <AppDialog v-model="stockDialogVisible" title="药品剩余库存" width="560px" destroy-on-close>
+  <AppDialog v-model="stockDialogVisible" title="药品剩余库存" width="640px" destroy-on-close>
     <ElTable
       v-if="stockDialogRows.length > 0"
       :data="stockDialogRows"
@@ -444,19 +544,32 @@ function formatDoctorRxUsage(usage: string | undefined): string {
       <ElTableColumn
         prop="itemName"
         label="药品名称"
-        min-width="180"
+        min-width="160"
         align="center"
         header-align="center"
         show-overflow-tooltip
       />
-      <ElTableColumn
-        prop="batchNo"
-        label="批号"
-        width="120"
-        align="center"
-        header-align="center"
-        show-overflow-tooltip
-      />
+      <ElTableColumn label="批号" min-width="220" align="center" header-align="center">
+        <template #default="{ row }">
+          <ElSelect
+            v-if="row.canChangeLot && row.dispenseId && row.lotPickOptions?.length"
+            :model-value="inventoryPickByLineId[row.dispenseId]"
+            filterable
+            size="small"
+            placeholder="选择批号"
+            class="!w-full"
+            @update:model-value="(v) => onStockLotPick(row, v)"
+          >
+            <ElOption
+              v-for="opt in row.lotPickOptions"
+              :key="opt.value"
+              :label="opt.label"
+              :value="opt.value"
+            />
+          </ElSelect>
+          <span v-else>{{ row.batchNo || '—' }}</span>
+        </template>
+      </ElTableColumn>
       <ElTableColumn
         prop="remainingStockText"
         label="剩余库存"
@@ -482,6 +595,13 @@ function formatDoctorRxUsage(usage: string | undefined): string {
   background-color: transparent;
 }
 
+/* 工作站：占满父级高度，供笺面 min(660px, 100%) 计算 */
+.prescription-dialog-wrapper--workbench {
+  height: 100%;
+  max-height: 100%;
+  align-items: stretch;
+}
+
 .prescription-dialog-wrapper--comfortable {
   .prescription-container {
     padding: 16px 18px 18px;
@@ -504,7 +624,7 @@ function formatDoctorRxUsage(usage: string | undefined): string {
   flex-direction: column;
   width: 500px;
   max-width: 100%;
-  /* 固定笺面高度，多张发药单视觉对齐；药品区溢出内部滚动 */
+  /* 弹窗等非工作站场景：固定笺面高度，药品区溢出内部滚动 */
   height: 660px;
   padding: 14px 16px 16px;
   overflow: hidden;
@@ -518,9 +638,17 @@ function formatDoctorRxUsage(usage: string | undefined): string {
   color: var(--rx-ink);
 }
 
+/**
+ * 发药工作站：高度随右侧可用区伸缩（≤660），避免固定高度裁切页脚；
+ * 窄屏字号/间距见 pharmacy-dispense-viewport-compact.css（勿在此写 @media）。
+ */
 .prescription-container--workbench {
   display: flex;
   flex-direction: column;
+  width: 500px;
+  max-width: 100%;
+  height: min(660px, 100%);
+  max-height: 100%;
 }
 
 .prescription-container--selectable {
@@ -992,6 +1120,18 @@ function formatDoctorRxUsage(usage: string | undefined): string {
   color: var(--rx-muted);
   overflow-wrap: anywhere;
   word-break: break-all;
+}
+
+.medicine-line__lot--editable {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  max-width: 100%;
+}
+
+.medicine-line__lot-select {
+  width: 200px;
+  max-width: min(220px, 55vw);
 }
 
 .medicine-line__main--doctor-rx {

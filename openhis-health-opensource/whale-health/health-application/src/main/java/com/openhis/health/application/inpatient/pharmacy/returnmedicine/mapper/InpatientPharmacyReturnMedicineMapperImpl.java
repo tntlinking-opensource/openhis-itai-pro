@@ -155,6 +155,7 @@ public class InpatientPharmacyReturnMedicineMapperImpl implements InpatientPharm
             dto.setRefundEnumText(row.getRefundEnumText());
             dto.setServiceTable(row.getServiceTable());
             dto.setTraceNo(row.getTraceNo());
+            dto.setBusNo(row.getBusNo());
             boolean selectable = DispenseStatus.PENDING_REFUND.getCode().equals(row.getRefundEnum());
             dto.setSelectable(selectable);
             list.add(dto);

@@ -57,10 +57,21 @@ public class OpenPdfRenderer {
             if (printConfig.getFooter().isEnabled()) {
                 footerHeightMm = printConfig.getFooter().getHeightMm();
             }
-            float marginTop = PdfUnitUtils.mmToPt(printConfig.getMargins().getTopMm())
-                    + PdfUnitUtils.mmToPt(headerHeightMm);
-            float marginBottom = PdfUnitUtils.mmToPt(printConfig.getMargins().getBottomMm())
-                    + PdfUnitUtils.mmToPt(footerHeightMm);
+            PrintConfig.MarginConfig marginCfg = printConfig.getMargins();
+            float marginTop;
+            if (marginCfg != null && marginCfg.getContentTopMm() > 0.5f) {
+                marginTop = PdfUnitUtils.mmToPt(marginCfg.getContentTopMm());
+            } else {
+                marginTop = PdfUnitUtils.mmToPt(printConfig.getMargins().getTopMm())
+                        + PdfUnitUtils.mmToPt(headerHeightMm);
+            }
+            float marginBottom;
+            if (marginCfg != null && marginCfg.getContentBottomMm() > 0.5f) {
+                marginBottom = PdfUnitUtils.mmToPt(marginCfg.getContentBottomMm());
+            } else {
+                marginBottom = PdfUnitUtils.mmToPt(printConfig.getMargins().getBottomMm())
+                        + PdfUnitUtils.mmToPt(footerHeightMm);
+            }
 
             Document document = new Document(pageSize, marginLeft, marginRight, marginTop, marginBottom);
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -72,7 +83,8 @@ public class OpenPdfRenderer {
             document.close();
 
             byte[] bytes = baos.toByteArray();
-            int pageCount = writer.getPageNumber();
+            // close 后 getPageNumber() 常为实际页数+1，以 PdfReader 为准
+            int pageCount = countPdfPages(bytes);
             return new PdfRenderResult(bytes, pageCount, truncated);
         } catch (BusinessException e) {
             throw e;
@@ -127,6 +139,24 @@ public class OpenPdfRenderer {
             return HexFormat.of().formatHex(digest);
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    /** 读取已生成 PDF 的真实页数（避免 close 后 writer.getPageNumber 多计 1） */
+    private static int countPdfPages(byte[] pdfBytes) {
+        if (pdfBytes == null || pdfBytes.length == 0) {
+            return 0;
+        }
+        PdfReader reader = null;
+        try {
+            reader = new PdfReader(pdfBytes);
+            return reader.getNumberOfPages();
+        } catch (Exception e) {
+            return 0;
+        } finally {
+            if (reader != null) {
+                reader.close();
+            }
         }
     }
 

@@ -831,7 +831,7 @@ async function handleReconcileRow(row: DailyFeeRow) {
   }
   reconciling.value = true;
   try {
-    await ensureInsuranceSignIn(requireContractBusNo());
+    await ensureInsuranceSignIn(requireContractBusNo(), { preferServerSignIn: true });
     const next = await reconcileOneRow(row);
     tableData.value = tableData.value.map((item) => (item.id === row.id ? next : item));
     emit('reconciled');
@@ -868,7 +868,7 @@ async function handleReconcileAll() {
   let unbalanced = 0;
   let failed = 0;
   try {
-    await ensureInsuranceSignIn(requireContractBusNo());
+    await ensureInsuranceSignIn(requireContractBusNo(), { preferServerSignIn: true });
     // 顺序发起，避免并发打爆医保网关
     for (const row of targets) {
       try {
@@ -972,7 +972,7 @@ async function handleDetailReconcile(row: DailyFeeRow) {
   if (row.status !== RECON_STATUS.UNBALANCED) return;
   detailReconciling.value = true;
   try {
-    await ensureInsuranceSignIn(requireContractBusNo());
+    await ensureInsuranceSignIn(requireContractBusNo(), { preferServerSignIn: true });
     const result = await reconcileDetailLedgerApi({
       contractBusNo: requireContractBusNo(),
       setlOptins: requireSetlOptins(),

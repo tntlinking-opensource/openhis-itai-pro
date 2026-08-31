@@ -172,7 +172,7 @@ public class InpatientPrepayAppService {
     /**
      * IF-IP-PREP-01：在院患者队列分页查询。
      *
-     * @param request 关键字、入院日与分页
+     * @param request 关键字、入院日、在院范围与分页
      * @return 可收退预交金患者卡片分页
      * @throws BusinessException 分页非法或查询失败时抛出 EX-IP-PREP-101
      */
@@ -183,7 +183,7 @@ public class InpatientPrepayAppService {
                 request,
                 InpatientPrepayConstants.EX_IP_PREP_101,
                 "分页参数不合法，请检查页码与每页条数");
-            // Pre：装配住院上下文分页入参（清床前可见，含 COMPLETED 待清床；收退门禁见 requirePrepayEligibleEncounterStatus）。
+            // Pre：装配住院上下文分页入参（清床前可见；stayScope 收窄在院/不在院；收退门禁见 requirePrepayEligibleEncounterStatus）。
             InpatientEncounterPageQuery query = inpatientPrepayMapper.toInpatientEncounterPageQuery(request);
             PageQueryBinder.bind(request, query);
             Page<InpatientEncounterContextQueryModel> page =
@@ -277,7 +277,7 @@ public class InpatientPrepayAppService {
             response.setRecords(Collections.emptyList());
             return response;
         }
-        // Pre：须为住院类就诊，否则无法在本页展示预交金流水（含 COMPLETED 待清床只读查阅）。
+        // Pre：须为住院类就诊，否则无法在本页展示预交金流水（含 COMPLETED/DISCHARGED 只读查阅）。
         EncounterDetailQueryModel encounter = encounterQueryService.mustGetEncounterOfClass(
             request.getEncounterId(),
             EncounterClass.IMP.getCode(),

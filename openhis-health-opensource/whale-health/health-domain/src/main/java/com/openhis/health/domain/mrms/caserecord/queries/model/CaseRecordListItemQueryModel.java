@@ -21,6 +21,9 @@ public class CaseRecordListItemQueryModel {
     /** 病案主档主键 {@code mrms_case_record.id}。 */
     private Long id;
 
+    /** 住院就诊主键 {@code mrms_case_record.encounter_id}（列表 enrich 业务出院时间用）。 */
+    private Long encounterId;
+
     /** 院内病案号 {@code medcasno}，租户内唯一。 */
     private String medcasno;
 

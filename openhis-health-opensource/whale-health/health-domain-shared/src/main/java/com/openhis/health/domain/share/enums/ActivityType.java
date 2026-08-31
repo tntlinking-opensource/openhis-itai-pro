@@ -23,7 +23,9 @@ public enum ActivityType implements EnumInterface {
     /** 手术（ActivityType，编码 {@code 4}）。 */
     OPERATION(0L, "4", "手术", "", 4L),
     /** 其他（ActivityType，编码 {@code 5}）。 */
-    OTHER(0L, "5", "其他", "", 5L);
+    OTHER(0L, "5", "其他", "", 5L),
+    /** 外检（ActivityType，编码 {@code 6}；外送检验/检查，非本院执行）。 */
+    EXTERNAL(0L, "6", "外检", "外送检验或检查，由外部机构执行", 6L);
 
     private final Long codeSystemId;
     private final String code;

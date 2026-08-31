@@ -25,8 +25,8 @@ import java.util.List;
 /**
  * 本地 boss 单据与 {@link BossInvoiceIssueResult} 的双向映射与持久化。
  *
- * <p>委托 {@link IssueOutputParser} 做字段映射；拆票时按分片落多条 {@code einv_boss_document}，
- * 保证列表页可见每一张博思票。</p>
+ * <p>委托 {@link IssueOutputParser} 做字段映射；一结算一票落一条 {@code einv_boss_document}。
+ * 历史拆票分片落库路径保留，便于兼容旧数据重试。</p>
  */
 @Slf4j
 @Component

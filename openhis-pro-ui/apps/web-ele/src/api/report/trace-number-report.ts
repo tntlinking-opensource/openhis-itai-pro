@@ -1,10 +1,10 @@
 /**
  * 追溯码查询报表 — POST /api/app/traceNumberReport/{methodName}
  */
+import { reportPost } from '#/constants/report-request-timeout';
 import type { PageParams } from '#/types/api-response';
+import type { ExcelExportColumnPayload } from '#/utils/export/build-excel-export-columns';
 
-import { publicRequestClient } from '#/api/request';
-import { reportLongRequestConfig } from '#/constants/report-request-timeout';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
 const BASE = '/traceNumberReport';
@@ -78,7 +78,10 @@ export interface PageTraceNumberReportResponse {
 export type ExportTraceNumberReportRequest = Omit<
   PageTraceNumberReportRequest,
   'pageNo' | 'pageSize'
->;
+> & {
+  /** 页面可见列 → 后端 Excel 列裁剪 */
+  exportColumns?: ExcelExportColumnPayload[];
+};
 
 export interface ExportTraceNumberReportResponse {
   fileName?: string;
@@ -134,7 +137,7 @@ export interface ListTraceRecordsResponse {
 
 /** 页面初始化：查询范围、在院态、本库态与库位下拉。 */
 export async function loadTraceNumberReportFormInitApi() {
-  return publicRequestClient.post<LoadTraceNumberReportFormInitResponse>(
+  return reportPost<LoadTraceNumberReportFormInitResponse>(
     `${BASE}/loadTraceNumberReportFormInit`,
     {},
   );
@@ -142,10 +145,9 @@ export async function loadTraceNumberReportFormInitApi() {
 
 /** 追溯码列表分页查询。 */
 export async function pageTraceNumberReportApi(body: PageTraceNumberReportRequest) {
-  const res = await publicRequestClient.post<PageTraceNumberReportResponse>(
+  const res = await reportPost<PageTraceNumberReportResponse>(
     `${BASE}/pageTraceNumberReport`,
     body,
-    reportLongRequestConfig(),
   );
   const { content, totalCount } = parsePagedRowsFromApiData<TraceNumberReportRowDto>(res);
   return {
@@ -157,22 +159,15 @@ export async function pageTraceNumberReportApi(body: PageTraceNumberReportReques
 
 /** 单码概览（详情 Drawer · 概览 Tab）。 */
 export async function getTraceNumberOverviewApi(body: GetTraceNumberOverviewRequest) {
-  return publicRequestClient.post<GetTraceNumberOverviewResponse>(
-    `${BASE}/getTraceNumberOverview`,
-    body,
-  );
+  return reportPost<GetTraceNumberOverviewResponse>(`${BASE}/getTraceNumberOverview`, body);
 }
 
 /** 单码流转明细（详情 Drawer · 明细 Tab）。 */
 export async function listTraceRecordsApi(body: ListTraceRecordsRequest) {
-  return publicRequestClient.post<ListTraceRecordsResponse>(`${BASE}/listTraceRecords`, body);
+  return reportPost<ListTraceRecordsResponse>(`${BASE}/listTraceRecords`, body);
 }
 
 /** 导出与列表同筛选的 Excel。 */
 export async function exportTraceNumberReportApi(body: ExportTraceNumberReportRequest) {
-  return publicRequestClient.post<ExportTraceNumberReportResponse>(
-    `${BASE}/exportTraceNumberReport`,
-    body,
-    reportLongRequestConfig(),
-  );
+  return reportPost<ExportTraceNumberReportResponse>(`${BASE}/exportTraceNumberReport`, body);
 }

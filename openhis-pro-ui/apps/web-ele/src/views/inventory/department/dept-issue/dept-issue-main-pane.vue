@@ -76,7 +76,7 @@ import {
   inventoryPickNumberField,
   inventoryPickStringField,
 } from '#/utils/inventory/inventory-product-pick-list';
-import { formatInventoryLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
+import { formatInventoryLineTotal, formatPurchaseMoneyDisplay } from '#/utils/format/money-scale';
 import {
   buildInventoryDocPractitionerSelectOptions,
   coercePractitionerIdForSelect,
@@ -394,6 +394,12 @@ function handleDeptIssueUnitBandChanged(row: IssuePreviewRow) {
 function mapDetailLineToGrid(ln: DeptIssueDetailLineDto, rowIdx: number): IssuePreviewRow {
   const name = String(ln.productName ?? ln.itemName ?? '').trim();
   const totalRaw = ln.totalPrice;
+  const categoryCode =
+    String(
+      (ln.productCatalog as { categoryCode?: string } | null | undefined)?.categoryCode ??
+        (ln as { categoryCode?: string }).categoryCode ??
+        '',
+    ).trim() || undefined;
   const row: IssuePreviewRow = {
     id: `ln-${ln.id ?? rowIdx}`,
     medicinePick: name
@@ -423,7 +429,7 @@ function mapDetailLineToGrid(ln: DeptIssueDetailLineDto, rowIdx: number): IssueP
     totalPrice:
       totalRaw === undefined || totalRaw === null || totalRaw === ''
         ? ''
-        : formatMoneyDisplay(totalRaw),
+        : formatPurchaseMoneyDisplay(totalRaw, categoryCode),
     lotNumber: String(ln.lotNumber ?? ''),
     expirationDate: formatIssueExpirationDisplay(ln.endTime),
     traceNo: String(ln.traceNo ?? ''),
@@ -979,8 +985,8 @@ function resolveIssuePrintUnitLabel(row: IssuePreviewRow): string {
   return String(row.unitCodeDictText ?? row.unitCode ?? '').trim();
 }
 
-/** 打印发放单（计价流转模版） */
-async function handlePrint() {
+/** 打印或预览发放单（计价流转模版） */
+async function handlePrint(payload?: { preview?: boolean }) {
   const busNo = String(headerBusNo.value ?? '').trim();
   if (!busNo) {
     ElMessage.warning('请先保存单据后再打印');
@@ -1037,6 +1043,7 @@ async function handlePrint() {
     },
     bizRef: { busNo, docKind: 'dept-issue' },
     jobName: documentTitle,
+    preview: payload?.preview === true,
   });
 }
 </script>

@@ -34,7 +34,15 @@ public class PageNurseStationPatientQueueRequest extends AbstractHealthPageReque
     private Long orgId;
 
     /**
-     * 队列类型筛选（可选）。
+     * 是否仅返回仍有待发放耗材的就诊（BR-NUR-017）。
+     *
+     * <p>{@code true}=域侧 EXISTS 在分页前收窄；空/{@code false}=不按耗材待发过滤，仍回填行内提醒。</p>
+     */
+    @Schema(description = "仅待发耗材患者（可选；空=全部）")
+    private Boolean pendingDeviceOnly;
+
+    /**
+     * 队列类型筛选（可选，预留）；当前 IF-NUR-01 不按此字段收窄。
      */
     @Schema(description = "队列类型筛选")
     private String queueType;

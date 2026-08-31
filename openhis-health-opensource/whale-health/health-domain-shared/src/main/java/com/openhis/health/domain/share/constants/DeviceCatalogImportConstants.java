@@ -7,8 +7,8 @@ package com.openhis.health.domain.share.constants;
 /**
  * 耗材目录批量导入字面量（镜像 AS-BAS-CAT-002 药品导入）。
  *
- * <p>模板 v1.3：与「新增耗材」手工表单可填字段对齐（32 列）；不含 busNo/拼音五笔/状态/医药机构目录编码。
- * 「不收费耗材」列：是→chargeableFlag=false，否→true；空白保持 false。</p>
+ * <p>模板 v1.4：与「新增耗材」手工表单可填字段对齐（32 列）；不含 busNo/拼音五笔/状态/医药机构目录编码。
+ * 「收费耗材」列与 chargeableFlag 同向：是→true，否→false；空白默认 true（与新建默认勾选一致）。</p>
  */
 public interface DeviceCatalogImportConstants {
 
@@ -16,7 +16,7 @@ public interface DeviceCatalogImportConstants {
     String TEMPLATE_CODE = "DEV_CATALOG_IMPORT";
 
     /** 当前模板版本。 */
-    String TEMPLATE_VERSION = "v1.3";
+    String TEMPLATE_VERSION = "v1.4";
 
     /** 指导页 Sheet 名。 */
     String SHEET_GUIDE = "①从这里开始";
@@ -35,6 +35,13 @@ public interface DeviceCatalogImportConstants {
 
     /** 用户数据起始行（0-based，对应 Excel 第 5 行）。 */
     int DATA_START_ROW_INDEX = 4;
+
+    /**
+     * 「③可选值一览」Sheet 中可选值数据起始行（0-based）。
+     *
+     * <p>第 0 行为各列标题；自本行起写 label 列表，供命名区域/下拉引用。</p>
+     */
+    int OPTION_DATA_START_ROW_INDEX = 1;
 
     /** 单文件有效行上限。 */
     int IMPORT_MAX_ROWS = 3000;
@@ -58,7 +65,7 @@ public interface DeviceCatalogImportConstants {
     long ERROR_FILE_MAX_BYTES = 15L * 1024L * 1024L;
 
     /** 下载模板默认文件名。 */
-    String TEMPLATE_FILE_NAME = "耗材目录导入模板_v1.3.xlsx";
+    String TEMPLATE_FILE_NAME = "耗材目录导入模板_v1.4.xlsx";
 
     /** 导出文件名时间戳格式。 */
     String EXPORT_FILE_NAME_TIME_PATTERN = "yyyyMMddHHmmss";
@@ -71,6 +78,22 @@ public interface DeviceCatalogImportConstants {
 
     /** 导出首列：系统编号（busNo）。 */
     String EXPORT_BUS_NO_HEADER = "编号";
+
+    /**
+     * 导出须写 NUMERIC 的<strong>导入表头名</strong>（倍率/价格/警戒线）。
+     *
+     * <p>导出列下标 = 导入列下标 + 1（首列「编号」偏移）；编号列禁止进此集合。</p>
+     */
+    String[] EXPORT_NUMERIC_HEADER_NAMES = {
+        "采购/拆零倍数",
+        "包装/拆零倍数",
+        "库存/拆零倍数",
+        "购入价",
+        "零售价",
+        "最高零售价",
+        "警戒线最低值",
+        "警戒线最高值"
+    };
 
     /** 单次导出最大行数。 */
     int EXPORT_MAX_ROWS = 3000;
@@ -120,7 +143,7 @@ public interface DeviceCatalogImportConstants {
         "过敏标记",
         "医保标记",
         "高值耗材标志",
-        "不收费耗材",
+        "收费耗材",
         "说明"
     };
 

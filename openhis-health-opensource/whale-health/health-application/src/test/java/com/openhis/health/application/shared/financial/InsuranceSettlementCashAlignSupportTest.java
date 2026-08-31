@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -32,12 +33,13 @@ class InsuranceSettlementCashAlignSupportTest {
     }
 
     @Test
-    void resolveTargetPatientCash_includesSelfPayWhenChargeExceedsMedfee() {
+    void resolveTargetPatientCash_threeSettlementsLiuQuanquan() {
+        // 刘泉泉：三笔 2207 psn_cash 3.09+5.60+0，medfee 8.97+8.92+9.00，收费 26.89 → 现金 8.69
         BigDecimal target = InsuranceSettlementCashAlignSupport.resolveTargetPatientCash(
-            new BigDecimal("10.00"),
-            new BigDecimal("90.00"),
-            new BigDecimal("140.00"));
-        assertEquals(new BigDecimal("60.00"), target);
+            new BigDecimal("8.69"),
+            new BigDecimal("26.89"),
+            new BigDecimal("26.89"));
+        assertEquals(new BigDecimal("8.69"), target);
     }
 
     @Test
@@ -79,13 +81,91 @@ class InsuranceSettlementCashAlignSupportTest {
     }
 
     @Test
-    void redistributeProportionally_lastRowAbsorbsRounding() {
-        List<BigDecimal> parts = InsuranceSettlementCashAlignSupport.redistributeProportionally(
-            List.of(new BigDecimal("60.00"), new BigDecimal("40.00")),
-            new BigDecimal("101.00"));
-        assertEquals(2, parts.size());
-        assertEquals(new BigDecimal("101.00"), parts.get(0).add(parts.get(1)));
-        assertTrue(parts.get(0).compareTo(BigDecimal.ZERO) > 0);
-        assertTrue(parts.get(1).compareTo(BigDecimal.ZERO) > 0);
+    void alignPatientPayLines_overridesOverstatedWechatLikeDay11Case() {
+        // 历史脏例 PMR-2026-08-110105：三笔基金 18.20 + 微信误写 14.31；权威现金应为 Σpsn_cash=8.69
+        List<PaymentDetailItemCommand> lines = new ArrayList<>();
+        PaymentDetailItemCommand fund1 = new PaymentDetailItemCommand();
+        fund1.setPayEnum(PaymentChannel.INSURANCE_FUND.getCode());
+        fund1.setAmount(new BigDecimal("1.81"));
+        lines.add(fund1);
+        PaymentDetailItemCommand fund2 = new PaymentDetailItemCommand();
+        fund2.setPayEnum(PaymentChannel.INSURANCE_FUND.getCode());
+        fund2.setAmount(new BigDecimal("5.62"));
+        lines.add(fund2);
+        PaymentDetailItemCommand fund3 = new PaymentDetailItemCommand();
+        fund3.setPayEnum(PaymentChannel.INSURANCE_FUND.getCode());
+        fund3.setAmount(new BigDecimal("10.77"));
+        lines.add(fund3);
+        PaymentDetailItemCommand wechat = new PaymentDetailItemCommand();
+        wechat.setPayEnum(PaymentChannel.WECHAT.getCode());
+        wechat.setAmount(new BigDecimal("14.31"));
+        lines.add(wechat);
+
+        BigDecimal target = InsuranceSettlementCashAlignSupport.resolveTargetPatientCash(
+            new BigDecimal("8.69"),
+            new BigDecimal("26.89"),
+            new BigDecimal("26.89"));
+        assertEquals(new BigDecimal("8.69"), target);
+
+        InsuranceSettlementCashAlignSupport.alignPatientPayLines(
+            lines,
+            target,
+            1L,
+            "ACC",
+            LocalDateTime.now(),
+            "SUCCESS");
+
+        assertEquals(new BigDecimal("8.69"), InsuranceSettlementCashAlignSupport.sumPatientLineAmounts(lines));
+        assertEquals(new BigDecimal("26.89"), InsuranceSettlementCashAlignSupport.sumLineAmounts(lines));
+        assertTrue(InsuranceSettlementCashAlignSupport.isDetailSumMatchedChargeTotal(
+            lines, new BigDecimal("26.89")));
+    }
+
+    @Test
+    void isDetailSumMatchedChargeTotal_rejectsOverstatedPatientCash() {
+        List<PaymentDetailItemCommand> lines = new ArrayList<>();
+        PaymentDetailItemCommand fund = new PaymentDetailItemCommand();
+        fund.setPayEnum(PaymentChannel.INSURANCE_FUND.getCode());
+        fund.setAmount(new BigDecimal("18.20"));
+        lines.add(fund);
+        PaymentDetailItemCommand wechat = new PaymentDetailItemCommand();
+        wechat.setPayEnum(PaymentChannel.WECHAT.getCode());
+        wechat.setAmount(new BigDecimal("14.31"));
+        lines.add(wechat);
+        assertFalse(InsuranceSettlementCashAlignSupport.isDetailSumMatchedChargeTotal(
+            lines, new BigDecimal("26.89")));
+    }
+
+    @Test
+    void isDetailSumMatchedChargeTotal_day8Style_missedSecondPsnCashFails() {
+        List<PaymentDetailItemCommand> lines = new ArrayList<>();
+        PaymentDetailItemCommand fund = new PaymentDetailItemCommand();
+        fund.setPayEnum(PaymentChannel.INSURANCE_FUND.getCode());
+        fund.setAmount(new BigDecimal("100.00"));
+        lines.add(fund);
+        PaymentDetailItemCommand cash = new PaymentDetailItemCommand();
+        cash.setPayEnum(PaymentChannel.CASH.getCode());
+        cash.setAmount(new BigDecimal("126.11"));
+        lines.add(cash);
+        assertFalse(InsuranceSettlementCashAlignSupport.isDetailSumMatchedChargeTotal(
+            lines, new BigDecimal("235.91")));
+        cash.setAmount(new BigDecimal("135.91"));
+        assertTrue(InsuranceSettlementCashAlignSupport.isDetailSumMatchedChargeTotal(
+            lines, new BigDecimal("235.91")));
+    }
+
+    @Test
+    void isDetailSumMatchedChargeTotal_selfPayUnderRecordedAlipayFails() {
+        // 历史脏例 PMR-2026-08-290043：纯自费 charge=1706，支付宝明细 1705.50
+        List<PaymentDetailItemCommand> lines = new ArrayList<>();
+        PaymentDetailItemCommand alipay = new PaymentDetailItemCommand();
+        alipay.setPayEnum(PaymentChannel.ALIPAY.getCode());
+        alipay.setAmount(new BigDecimal("1705.50"));
+        lines.add(alipay);
+        assertFalse(InsuranceSettlementCashAlignSupport.isDetailSumMatchedChargeTotal(
+            lines, new BigDecimal("1706.00")));
+        alipay.setAmount(new BigDecimal("1706.00"));
+        assertTrue(InsuranceSettlementCashAlignSupport.isDetailSumMatchedChargeTotal(
+            lines, new BigDecimal("1706.00")));
     }
 }

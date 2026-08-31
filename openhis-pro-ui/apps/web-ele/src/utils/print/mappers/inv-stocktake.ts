@@ -1,6 +1,7 @@
 import {
   buildInvDocumentTitle,
   invPrintAmountText,
+  invPrintPurchaseUnitPriceText,
   invPrintQtyUnitText,
   invPrintStr,
 } from './inv-common';
@@ -82,7 +83,7 @@ function mapLine(row: InvStocktakePrintLineSource, index: number): InvStocktakeP
     actualQtyText:
       invPrintStr(row.actualQtyText) || invPrintQtyUnitText(row.actualQty, row.unitLabel),
     diffQtyText: invPrintStr(row.diffQtyText) || invPrintQtyUnitText(row.diffQty, row.unitLabel),
-    unitPriceText: invPrintAmountText(row.unitPrice),
+    unitPriceText: invPrintPurchaseUnitPriceText(row.unitPrice),
     actualAmountText: invPrintAmountText(row.actualAmount),
     diffAmountText: invPrintAmountText(row.diffAmount),
     reasonText: invPrintStr(row.reasonText),

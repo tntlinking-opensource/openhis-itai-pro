@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -44,7 +45,7 @@ public class OrganizationQueryService {
      * @return 机构列表
      */
     public List<Organization> listOrganizationsForOutpatientRegistration() {
-        return scopeToCurrentTenant(organizationRepository.findAllByStatusEnumAndClassEnum(
+        return scopeToCurrentTenant(organizationRepository.findAllByStatusEnumAndClassEnumOrderByDisplayOrderAscIdAsc(
             PublicationStatus.ACTIVE.getCode(), OrganizationClassification.CLINIC));
     }
 
@@ -63,8 +64,21 @@ public class OrganizationQueryService {
      * @return 机构列表
      */
     public List<Organization> listOrganizationsForInpatientAdmission() {
-        return scopeToCurrentTenant(organizationRepository.findAllByStatusEnumAndClassEnum(
+        return scopeToCurrentTenant(organizationRepository.findAllByStatusEnumAndClassEnumOrderByDisplayOrderAscIdAsc(
             PublicationStatus.ACTIVE.getCode(), OrganizationClassification.INPATIENT));
+    }
+
+    /**
+     * 护士站科室下拉：启用且分类为护士站（{@link OrganizationClassification#NS}）。
+     *
+     * <p>供护士工作量「默认登录科室」等场景；含门诊注射室、采血室、疗区护士站等，
+     * <strong>禁止</strong>用挂号科/入院科冒充。</p>
+     *
+     * @return 护士站机构列表
+     */
+    public List<Organization> listOrganizationsForNurseStation() {
+        return scopeToCurrentTenant(organizationRepository.findAllByStatusEnumAndClassEnumOrderByDisplayOrderAscIdAsc(
+            PublicationStatus.ACTIVE.getCode(), OrganizationClassification.NS));
     }
 
     /**
@@ -192,7 +206,8 @@ public class OrganizationQueryService {
      */
     public List<Organization> getOrganizationTree() {
         return scopeToCurrentTenant(
-            organizationRepository.findAllByStatusEnum(PublicationStatus.ACTIVE.getCode()));
+            organizationRepository.findAllByStatusEnumOrderByDisplayOrderAscIdAsc(
+                PublicationStatus.ACTIVE.getCode()));
     }
 
     /**
@@ -304,7 +319,24 @@ public class OrganizationQueryService {
             }
             result.add(organization);
         }
-        return result;
+        return this.sortByDisplayOrder(result);
+    }
+
+    /**
+     * 机构按 displayOrder、id 升序排序（返回新列表；null 排序号置后，对齐 DM §9.1）。
+     *
+     * @param organizations 原始列表
+     * @return 排序副本；空输入返回不可变空列表
+     */
+    private List<Organization> sortByDisplayOrder(List<Organization> organizations) {
+        if (organizations == null || organizations.isEmpty()) {
+            return List.of();
+        }
+        List<Organization> sorted = new ArrayList<>(organizations);
+        sorted.sort(Comparator
+            .comparing(Organization::getDisplayOrder, Comparator.nullsLast(Comparator.naturalOrder()))
+            .thenComparing(Organization::getId, Comparator.nullsLast(Comparator.naturalOrder())));
+        return sorted;
     }
 
     /**

@@ -4,6 +4,7 @@
  */
 package com.openhis.health.application.report.practitionerworkload.dto;
 
+import com.openhis.health.domain.share.constants.ChargeItemAmountScaleConstants;
 import com.openhis.whale.core.application.annotation.Excel;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -54,13 +55,13 @@ public class PractitionerWorkloadExportRowDto {
     @Schema(description = "开立时间")
     private String enteredDate;
 
-    /** 售价。 */
-    @Excel(name = "售价", sort = 8)
+    /** 售价（展示 2 位）。 */
+    @Excel(name = "售价", sort = 8, scale = ChargeItemAmountScaleConstants.CHARGE_MONETARY_DISPLAY_SCALE)
     @Schema(description = "售价")
     private BigDecimal saleAmount;
 
-    /** 进价。 */
-    @Excel(name = "进价", sort = 9)
+    /** 进价（展示 2 位）。 */
+    @Excel(name = "进价", sort = 9, scale = ChargeItemAmountScaleConstants.CHARGE_MONETARY_DISPLAY_SCALE)
     @Schema(description = "进价")
     private BigDecimal purchaseAmount;
 }

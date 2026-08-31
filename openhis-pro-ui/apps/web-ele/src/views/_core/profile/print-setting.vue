@@ -1,11 +1,19 @@
 <script setup lang="ts">
+import type { InvFormPaperKind } from '#/utils/print/form-print-preference';
+
 import { computed, onMounted, ref } from 'vue';
 
 import { ElButton, ElMessage, ElSwitch, ElTable, ElTableColumn } from 'element-plus';
 
-import { PRINT_SCENARIO_ITEMS } from '#/utils/print/constants/print-scenario-labels';
-import { PRINT_PLUGIN_INSTALL_MESSAGE } from '#/utils/print/runtime/print-user-error';
 import PrintChromeFlagShortcut from '#/utils/print/components/print-chrome-flag-shortcut.vue';
+import { isInvPrintScenario } from '#/utils/print/constants/print-scenario';
+import { PRINT_SCENARIO_ITEMS } from '#/utils/print/constants/print-scenario-labels';
+import {
+  getFormPrintPreference,
+  INV_FORM_PAPER_KIND_LABELS,
+  INV_FORM_PRINT_PREF_KEY,
+} from '#/utils/print/form-print-preference';
+import { triggerOpenHisWinDownload } from '#/utils/print/openhis-win-download';
 import {
   clearPrinterPreference,
   getPrinterPreference,
@@ -17,7 +25,7 @@ import {
   probeHiprintClient,
   schedulePrintClientWarmup,
 } from '#/utils/print/runtime/hiprint-client';
-import { triggerOpenHisWinDownload } from '#/utils/print/openhis-win-download';
+import { PRINT_PLUGIN_INSTALL_MESSAGE } from '#/utils/print/runtime/print-user-error';
 
 defineOptions({ name: 'ProfilePrintSetting' });
 
@@ -26,22 +34,32 @@ interface PrintSettingRow {
   label: string;
   printerName: string;
   skipPrompt: boolean;
+  /** 库房单据默认纸张；其它场景为空 */
+  paperKind?: InvFormPaperKind;
 }
 
 const loading = ref(false);
 const clientReady = ref<boolean | null>(null);
 const rows = ref<PrintSettingRow[]>([]);
 
+/** 库房单据共用的默认纸张 */
+function resolveInvPaperKind(): InvFormPaperKind | undefined {
+  return getFormPrintPreference(INV_FORM_PRINT_PREF_KEY).paperKind;
+}
+
 /** 从 localStorage 刷新表格行 */
 function refreshRows(): void {
   const prefs = listPrinterPreferences();
+  const invPaperKind = resolveInvPaperKind();
   rows.value = PRINT_SCENARIO_ITEMS.map((item) => {
     const pref = prefs[item.scenarioCode] ?? getPrinterPreference(item.scenarioCode);
+    const isInv = isInvPrintScenario(item.scenarioCode);
     return {
       scenarioCode: item.scenarioCode,
       label: item.label,
       printerName: pref?.printerName?.trim() ?? '',
       skipPrompt: pref?.skipPrompt !== false,
+      paperKind: isInv ? invPaperKind : undefined,
     };
   });
 }
@@ -69,11 +87,12 @@ const clientStatusText = computed(() => {
 
 const showTroubleshootingGuide = computed(() => clientReady.value === false);
 
-/** 打开弹窗设置或修改默认打印机 */
+/** 打开弹窗设置或修改默认打印机（库房场景同时改纸张） */
 async function handleConfigure(scenarioCode: string): Promise<void> {
   const saved = await configurePrinterPreference(scenarioCode);
   if (saved) {
-    ElMessage.success('默认打印机已保存');
+    const message = isInvPrintScenario(scenarioCode) ? '纸张与打印机已保存' : '默认打印机已保存';
+    ElMessage.success(message);
     refreshRows();
   }
 }
@@ -108,10 +127,11 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="max-w-3xl">
+  <div class="max-w-4xl">
     <div class="mb-2 text-base font-medium text-[var(--el-text-color-primary)]">打印设置</div>
     <p class="mb-4 text-sm text-[var(--el-text-color-regular)]">
       默认打印机保存在本机浏览器，与当前登录用户绑定。换电脑或清除浏览器数据后需重新设置。
+      库房单据默认三联单，可在此改为 A4。
     </p>
     <p
       class="mb-4 text-sm"
@@ -147,12 +167,20 @@ onMounted(() => {
     </div>
     <ElTable v-loading="loading" :data="rows" border stripe max-height="420">
       <ElTableColumn prop="label" label="打印场景" min-width="120" />
-      <ElTableColumn label="默认打印机" min-width="200">
+      <ElTableColumn label="默认打印机" min-width="180">
         <template #default="{ row }">
           <span v-if="row.printerName" class="text-[var(--el-text-color-primary)]">
             {{ row.printerName }}
           </span>
           <span v-else class="text-[var(--el-text-color-regular)]">未设置</span>
+        </template>
+      </ElTableColumn>
+      <ElTableColumn label="默认纸张" width="100" align="center">
+        <template #default="{ row }">
+          <span v-if="row.paperKind" class="text-[var(--el-text-color-primary)]">
+            {{ INV_FORM_PAPER_KIND_LABELS[row.paperKind] }}
+          </span>
+          <span v-else class="text-[var(--el-text-color-regular)]">—</span>
         </template>
       </ElTableColumn>
       <ElTableColumn label="每次询问" width="120" align="center">

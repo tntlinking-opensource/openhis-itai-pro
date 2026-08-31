@@ -23,6 +23,10 @@ export interface OrderTemplateHeaderItem {
   templateCode?: string;
   bindingEnum?: string;
   bindingEnumText?: string;
+  /** 归属对象 id：个人=医务人员，科室/全院/协定=组织 */
+  objectId?: string;
+  /** 归属对象展示名 */
+  objectName?: string;
   sceneEnum?: string;
   sceneEnumText?: string;
   templateKindEnum?: string;

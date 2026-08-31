@@ -748,21 +748,44 @@ public class DeviceRequestDomainService {
     }
 
     /**
-     * 门诊护士指定耗材房执行时回写请求发放库房与批号。
+     * 门诊医生站耗材 FIFO 签发后回写请求 {@code lot_number}（首段签发批号摘要）。
      *
-     * <p>写入 {@code perform_location} 与 {@code lot_number}（取 FIFO 首段批号作请求侧展示/追溯；
-     * 多段拆批时权威批号仍在各 {@code DeviceDispense.lot_number}，DM-WKF-003/007）。
-     * 不变更请求状态与数量；仅注入本聚合 {@link DeviceRequestRepository}（B.6.4）。</p>
+     * <p>权威批号仍在各 {@code DeviceDispense.lot_number}；请求侧冗余首段批号供列表/排查，
+     * 禁止写空。仅注入本聚合 {@link DeviceRequestRepository}（B.6.4）。</p>
+     *
+     * @param deviceRequestId 耗材请求主键
+     * @param lotNumber       FIFO 首段真实批号
+     * @throws BusinessException 主键为空、批号为空或请求不存在时
+     */
+    public void bindLotNumberAfterDoctorStationFifoSign(Long deviceRequestId, String lotNumber) {
+        // Gate：请求主键必填
+        if (deviceRequestId == null) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "deviceRequestId 不能为空");
+        }
+        // Gate：签发批号禁止空，与发放 FIFO 门禁同口径
+        if (lotNumber == null || lotNumber.trim().isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "签发批号不能为空");
+        }
+        // Pre：加载本聚合请求行
+        DeviceRequest request = this.requireDeviceRequest(deviceRequestId);
+        // Cmd：回写请求批号摘要（多段 FIFO 时取首段）
+        request.setLotNumber(lotNumber.trim());
+        deviceRequestRepository.save(request);
+    }
+
+    /**
+     * 门诊护士指定耗材房执行时回写请求 {@code perform_location}（BR-NUR-006）。
+     *
+     * <p>只改库房，不改 {@code lot_number}、不改状态与数量。权威批号在各
+     * {@code DeviceDispense.lot_number}。仅注入本聚合 {@link DeviceRequestRepository}（B.6.4）。</p>
      *
      * @param deviceRequestId   耗材请求主键
      * @param performLocationId 护士选定的发放库房位置主键
-     * @param lotNumber         FIFO 首段批号；可空（空则不覆盖原批号）
      * @throws BusinessException 主键为空或请求不存在时
      */
-    public void rebindPerformLocationAndLotForOutpatientNurseExecute(
+    public void rebindPerformLocationForOutpatientNurseExecute(
         Long deviceRequestId,
-        Long performLocationId,
-        String lotNumber) {
+        Long performLocationId) {
         // Gate：请求主键必填，防止空锚点写库
         if (deviceRequestId == null) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "deviceRequestId 不能为空");
@@ -773,13 +796,9 @@ public class DeviceRequestDomainService {
         }
         // Pre：加载本聚合请求行
         DeviceRequest request = this.requireDeviceRequest(deviceRequestId);
-        // Cmd：回写发放耗材房；权威扣库库位在发放行
+        // Cmd：只回写发放耗材房；批号保持签发值
         request.setPerformLocation(performLocationId);
-        // Cmd：回写请求侧批号（与 FIFO 首段对齐；多段拆批以发放行为准）
-        if (lotNumber != null && !lotNumber.trim().isEmpty()) {
-            request.setLotNumber(lotNumber.trim());
-        }
-        // 持久化：本路径无领域事件，仅落库 perform_location / lot_number
+        // 持久化：本路径无领域事件，仅落库 perform_location
         deviceRequestRepository.save(request);
     }
 

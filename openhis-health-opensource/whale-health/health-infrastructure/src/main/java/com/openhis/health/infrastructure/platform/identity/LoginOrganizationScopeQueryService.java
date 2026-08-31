@@ -16,6 +16,7 @@ import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -49,12 +50,19 @@ public class LoginOrganizationScopeQueryService implements ILoginOrganizationSco
      */
     @Override
     public List<LoginOrganizationOption> listActiveHospitalOrganizations() {
-        List<LoginOrganizationOption> options = new ArrayList<>();
+        List<Organization> hospitals = new ArrayList<>();
         for (Organization organization : this.orgById().values()) {
             // 仅 ACTIVE 且 type=HOSPITAL 的节点进入登录下拉
             if (!isActiveHospital(organization)) {
                 continue;
             }
+            hospitals.add(organization);
+        }
+        hospitals.sort(Comparator
+            .comparing(Organization::getDisplayOrder, Comparator.nullsLast(Comparator.naturalOrder()))
+            .thenComparing(Organization::getId, Comparator.nullsLast(Comparator.naturalOrder())));
+        List<LoginOrganizationOption> options = new ArrayList<>(hospitals.size());
+        for (Organization organization : hospitals) {
             options.add(toOption(organization));
         }
         return options;

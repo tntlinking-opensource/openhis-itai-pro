@@ -528,6 +528,7 @@ async function handleRejectOrders() {
                         :dosage-text="row.dosage"
                         :extension="row.extension"
                         :group-items="row.groupItems"
+                        :tcm-flag="row.tcmFlag === true"
                       />
                     </div>
                     <span

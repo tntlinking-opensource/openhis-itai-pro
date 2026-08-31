@@ -643,13 +643,15 @@ public class StandingOrderPackageBatchPlanTimeResolver {
     /**
      * 按槽解析<strong>临床</strong>拆零用量（首次槽可换 firstDose；禁止抬量后再用于切批累加）。
      *
+     * <p>供一盒一点切盒与口服剩余计数（BR-IP-EXE-038）同源换算，禁止两套槽量口径。</p>
+     *
      * @param orderedPlanTimes 有序计划点
      * @param openedTime       开立时刻
      * @param measure          数量/单位
      * @param product          目录
      * @return 与计划点等长的拆零量；任一槽换算失败返回 null
      */
-    private List<BigDecimal> resolveSlotSplitQuantities(
+    public List<BigDecimal> resolveSlotSplitQuantities(
         List<LocalDateTime> orderedPlanTimes,
         LocalDateTime openedTime,
         MeasureInput measure,

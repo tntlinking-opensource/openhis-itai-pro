@@ -16,7 +16,10 @@ export const MONEY_SETTLE_DP = 2;
 /** UI 展示刻度（与 MONEY_SETTLE_DP 同为 2；仅 format） */
 export const MONEY_DISPLAY_DP = 2;
 
-/** 中药（饮片/中草药）单价 UI 展示刻度：3 位，禁止压成 2 位 */
+/**
+ * 中药（饮片/中草药）**进价** UI 展示/录入刻度：3 位，禁止压成 2 位。
+ * 售价（批号售价 / 销售参考价 / 收费）仍用 {@link MONEY_DISPLAY_DP}。
+ */
 export const MONEY_TCM_UNIT_PRICE_DP = 3;
 
 /** 与医嘱域 / 库存单据一致：medication_category_code 中草药码 */
@@ -40,16 +43,24 @@ const toMoneyDecimal = (value: MoneyInput): Decimal => {
 };
 
 /**
- * 药品目录进售价 InputNumber / 列表单价小数位：中草药 3，其余 2。
+ * 中药进价小数位：分类码为中草药 → 3，否则 2。
+ * 仅用于**进价**（药典采购参考价、批号进价、库房单价列）；售价勿用。
  *
  * @param categoryCode medication_category_code（中草药为 {@link HERBAL_MEDICATION_CATEGORY_CODE}）
  */
-export function resolveMedicationCatalogPriceDisplayDp(categoryCode: unknown): number {
+export function resolveMedicationCatalogPurchasePriceDisplayDp(categoryCode: unknown): number {
   const code = String(categoryCode ?? '').trim();
   if (code === HERBAL_MEDICATION_CATEGORY_CODE) {
     return MONEY_TCM_UNIT_PRICE_DP;
   }
   return MONEY_DISPLAY_DP;
+}
+
+/**
+ * @deprecated 语义已收窄为「仅进价」；请改用 {@link resolveMedicationCatalogPurchasePriceDisplayDp}
+ */
+export function resolveMedicationCatalogPriceDisplayDp(categoryCode: unknown): number {
+  return resolveMedicationCatalogPurchasePriceDisplayDp(categoryCode);
 }
 
 /** 计算刻度：6 位 HALF_UP，返回 number */
@@ -135,7 +146,7 @@ export function formatMoneyDisplay(value: MoneyInput): string {
 
 /**
  * 按指定小数位 format 单价（纯展示；默认 2 位）。
- * 药典中药进售价传 {@link MONEY_TCM_UNIT_PRICE_DP}，禁止一律压成两位。
+ * 中药**进价**传 {@link MONEY_TCM_UNIT_PRICE_DP}；售价勿传 3。
  */
 export function formatMoneyUnitPriceDisplay(
   value: MoneyInput,
@@ -151,6 +162,47 @@ export function formatMoneyUnitPriceDisplay(
   const dp =
     Number.isFinite(displayDp) && displayDp >= 0 ? Math.floor(displayDp) : MONEY_DISPLAY_DP;
   return toMoneyDecimal(n).toDecimalPlaces(dp, Decimal.ROUND_HALF_UP).toFixed(dp);
+}
+
+/**
+ * 进价侧金额展示（单价 / 行额 / 合计 / 盈亏共用；中药全页面进价三位）。
+ * - 有 categoryCode：中草药固定 3 位，其余 2 位
+ * - 无 categoryCode：最多 3、至少 2（第三位尾零去掉），避免中药第三位被 `formatMoneyDisplay` 压没
+ *
+ * 售价 / 支付结算请继续用 {@link formatMoneyDisplay}。
+ */
+export function formatPurchaseMoneyDisplay(value: MoneyInput, categoryCode?: unknown): string {
+  if (value === null || value === undefined || value === '') {
+    return '';
+  }
+  const n = Number(value);
+  if (!Number.isFinite(n)) {
+    return String(value).trim();
+  }
+  const code = String(categoryCode ?? '').trim();
+  if (code) {
+    return formatMoneyUnitPriceDisplay(value, resolveMedicationCatalogPurchasePriceDisplayDp(code));
+  }
+  // 无分类：先 3 位 HALF_UP，第三位为 0 则回落两位（西药仍像 10.50）
+  const rounded = toMoneyDecimal(n).toDecimalPlaces(MONEY_TCM_UNIT_PRICE_DP, Decimal.ROUND_HALF_UP);
+  const fixed3 = rounded.toFixed(MONEY_TCM_UNIT_PRICE_DP);
+  if (fixed3.endsWith('0')) {
+    return rounded.toFixed(MONEY_DISPLAY_DP);
+  }
+  return fixed3;
+}
+
+/**
+ * @deprecated 请改用 {@link formatPurchaseMoneyDisplay}（进价单价与金额同一口径）
+ */
+export function formatPurchaseUnitPriceDisplay(value: MoneyInput, categoryCode?: unknown): string {
+  return formatPurchaseMoneyDisplay(value, categoryCode);
+}
+
+/** 进价侧金额 +「元」 */
+export function formatPurchaseMoneyYuan(value: MoneyInput, categoryCode?: unknown): string {
+  const text = formatPurchaseMoneyDisplay(value, categoryCode);
+  return text ? `${text}元` : '';
 }
 
 /** 格式化为带「元」的展示文案 */
@@ -176,24 +228,30 @@ export function moneyDiffAtSettle(left: MoneyInput, right: MoneyInput): number {
     .toNumber();
 }
 
-/** 库存/单据行金额展示（6 位计算后 format 2 位）。同计量带数量×单价。 */
-export function formatInventoryLineTotal(quantity: MoneyInput, unitPrice: MoneyInput): string {
+/** 库存/单据行金额展示（6 位计算后按进价侧展示刻度）。同计量带数量×单价。 */
+export function formatInventoryLineTotal(
+  quantity: MoneyInput,
+  unitPrice: MoneyInput,
+  categoryCode?: unknown,
+): string {
   const qty = Number(quantity);
   const unit = Number(unitPrice);
   if (!Number.isFinite(qty) || !Number.isFinite(unit)) {
     return '';
   }
-  return formatMoneyDisplay(calcMoneyLineTotal(unit, qty));
+  return formatPurchaseMoneyDisplay(calcMoneyLineTotal(unit, qty), categoryCode);
 }
 
-/** 拆零数量 + 包装价行金额展示（6 位计算后 format 2 位）。 */
+/** 拆零数量 + 包装价行金额展示（6 位计算后按进价侧展示刻度）。 */
 export function formatWarehouseSplitLineTotal(
   splitQuantity: MoneyInput,
   packageUnitRatio: MoneyInput,
   packageUnitPrice: MoneyInput,
+  categoryCode?: unknown,
 ): string {
-  return formatMoneyDisplay(
+  return formatPurchaseMoneyDisplay(
     calcWarehouseSplitLineTotal(splitQuantity, packageUnitRatio, packageUnitPrice),
+    categoryCode,
   );
 }
 

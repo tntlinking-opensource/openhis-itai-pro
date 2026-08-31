@@ -28,8 +28,14 @@ const codes = computed(() => {
   return splitTraceNoCommaString(String(props.value ?? ''));
 });
 
-/** 单元格省略展示 */
-const displayText = computed(() => codes.value.join(', '));
+/** 单元格主文案：多码时个数用徽标常显，文案只留首码预览 */
+const displayText = computed(() => {
+  const n = codeCount.value;
+  if (n <= 0) return '';
+  if (n === 1) return codes.value[0] ?? '';
+  const first = codes.value[0] ?? '';
+  return first.length > 14 ? `${first.slice(0, 14)}…` : first;
+});
 
 const codeCount = computed(() => codes.value.length);
 
@@ -44,7 +50,10 @@ const hasCodes = computed(() => codeCount.value > 0);
     :show-after="200"
     popper-class="trace-code-tooltip-popper"
   >
-    <span class="trace-code-tooltip__text font-mono">{{ displayText }}</span>
+    <span class="trace-code-tooltip__text font-mono" :title="`共 ${codeCount} 个追溯码`">
+      <span v-if="codeCount > 1" class="trace-code-tooltip__badge">{{ codeCount }}</span>
+      {{ displayText }}
+    </span>
     <template #content>
       <div class="trace-code-tooltip-panel">
         <div class="trace-code-tooltip-panel__head">
@@ -68,6 +77,21 @@ const hasCodes = computed(() => codeCount.value > 0);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.trace-code-tooltip__badge {
+  display: inline-block;
+  min-width: 1.25rem;
+  padding: 0 5px;
+  margin-right: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+  color: var(--el-color-primary);
+  text-align: center;
+  background: var(--el-color-primary-light-9);
+  border-radius: 4px;
 }
 
 .trace-code-tooltip__empty {

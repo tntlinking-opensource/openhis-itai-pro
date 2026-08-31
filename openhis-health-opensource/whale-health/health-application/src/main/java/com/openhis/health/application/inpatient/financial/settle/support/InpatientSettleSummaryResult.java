@@ -52,8 +52,33 @@ public class InpatientSettleSummaryResult {
     /** 当前勾选待结算合计；未传勾选 id 时等于 pendingSettlementTotal。 */
     private BigDecimal selectedTotal;
 
-    /** 余额提示：账户余额减 selectedTotal（6 位计算刻度）。 */
+    /**
+     * 差额提示：库内余额 − 选中合计（调试保留；UI 主路径勿再当「应补/应退」）。
+     *
+     * <p>个人现金应付见 {@link #personalCashPayable}；渠道实付见 {@link #channelPayable} /
+     * 预结算 {@code displayAmount}。</p>
+     */
     private BigDecimal balanceHint;
+
+    /**
+     * 个人现金应付 P 预估（自费=选中合计；医保须预结算后取准）。
+     */
+    private BigDecimal personalCashPayable;
+
+    /** 预交金冲抵额 O 预估（自费按 R1～R7；医保须预结算）。 */
+    private BigDecimal depositOffsetAmount;
+
+    /** 渠道实付 C 预估（收银应付；自费按轧差；医保须预结算）。 */
+    private BigDecimal channelPayable;
+
+    /** 应退预交金预估（自费按轧差；医保须预结算）。 */
+    private BigDecimal prepayRefundAmount;
+
+    /** 是否全额退预交金预估。 */
+    private Boolean prepayFullRefund;
+
+    /** 轧差分支码 R1～R7（自费预估；医保预结算前可空）。 */
+    private String depositSettleRuleCode;
 
     /** 账户可用余额展示值（经 InpatientAccountBalanceDisplayAssembler 口径）。 */
     private BigDecimal displayAccountBalance;

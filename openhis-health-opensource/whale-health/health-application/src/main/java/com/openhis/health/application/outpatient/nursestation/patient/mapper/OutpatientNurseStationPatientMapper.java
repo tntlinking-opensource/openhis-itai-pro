@@ -16,7 +16,7 @@ import org.springframework.data.domain.Page;
 public interface OutpatientNurseStationPatientMapper {
 
     /**
-     * 将护士站队列分页请求映射为读模型查询入参（含可选开立科室 {@code orgId}）。
+     * 将护士站队列分页请求映射为读模型查询入参（分页窗、可选开立科室、仅待发耗材）。
      *
      * @param request HTTP 请求
      * @return 护士站队列分页查询入参

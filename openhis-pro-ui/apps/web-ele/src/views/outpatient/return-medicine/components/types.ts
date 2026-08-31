@@ -30,6 +30,8 @@ export interface ReturnMedicineDetailRow {
   refundEnumText: string;
   reqStatusText: string;
   traceNo: string;
+  /** 退药发放业务单号（码上放心 116） */
+  busNo: string;
   /** 待退药时可勾选提交 */
   selectable: boolean;
 }

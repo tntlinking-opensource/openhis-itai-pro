@@ -6,7 +6,6 @@ package com.openhis.health.application.shared.nursestation;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
-import com.openhis.health.application.shared.product.DoctorStationAdviceFifoAllocationAssembler;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.OutpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
@@ -21,12 +20,18 @@ import com.openhis.health.domain.workflow.devicedispense.command.ReplaceFifoDevi
 import com.openhis.health.domain.workflow.devicedispense.command.RevertCompletedBatchToPreparationCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.RevertPreparedBatchToPreparationCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.RollbackUndispensedDeviceDispenseCommand;
+import com.openhis.health.domain.workflow.devicedispense.command.UpdateDeviceDispenseLocationCommand;
+import com.openhis.health.application.shared.product.DoctorStationAdviceFifoAllocationAssembler;
 import com.openhis.health.domain.workflow.devicedispense.queries.model.DeviceDispenseModel;
 import com.openhis.health.domain.workflow.devicedispense.queries.model.DeviceDispenseValidationModel;
 import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseDomainService;
 import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseQueryService;
 import com.openhis.health.domain.workflow.devicerequest.queries.model.DeviceRequestListModel;
 import com.openhis.health.domain.workflow.devicerequest.queries.model.DeviceRequestQueryModel;
+import com.openhis.health.application.shared.product.DoctorStationAdviceInventoryUnitQuantityHelper;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.domain.administration.product.support.ProductDefinitionDisplaySupport;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.workflow.devicerequest.service.DeviceRequestDomainService;
 import com.openhis.health.domain.workflow.devicerequest.service.DeviceRequestQueryService;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemQueryService;
@@ -39,7 +44,7 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -47,7 +52,14 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * 护士站耗材发放编排：按「耗材是否自动扣库」开关在已配药/已发药+FIFO 扣库之间分支。
+ * 护士站耗材发放编排：门诊与住院分轨，共用「耗材是否自动扣库」开关。
+ *
+ * <ul>
+ *   <li><strong>门诊护士执行</strong>：医生站签发已 FIFO 锁定批号/库房；护士换房仅改 {@code location_id}，
+ *       禁止重跑 FIFO（BR-ORD-033 / BR-NUR-006）。</li>
+ *   <li><strong>住院临时路径</strong>（护士划价 / 绑定执行）：草稿发放无签发批号；自动扣库开时按
+ *       {@code performLocation} FIFO 定批后拣配发放（BR-IP-PRC-008 / BR-IP-PRC-019）。</li>
+ * </ul>
  *
  * <p>退耗发放确认后，对负向耗材申请（{@code refund_device_id} 非空）编排
  * {@link DeviceRequestDomainService#completeDeviceRequestAfterRefund}；其余 DeviceRequest 写路径仍不在此组件变更。</p>
@@ -66,10 +78,12 @@ public class DeviceDispenseNurseWorkflowOrchestrator {
     private final DeviceDispenseQueryService deviceDispenseQueryService;
     /** 耗材发放写侧。 */
     private final DeviceDispenseDomainService deviceDispenseDomainService;
-    /** 医生站 FIFO 分段装配器。 */
-    private final DoctorStationAdviceFifoAllocationAssembler doctorStationAdviceFifoAllocationAssembler;
     /** 库存读侧：解析 inventoryItemId 与扣减回补。 */
     private final InventoryItemQueryService inventoryItemQueryService;
+    /** 住院临时路径 FIFO 分段装配（门诊护士执行不调用）。 */
+    private final DoctorStationAdviceFifoAllocationAssembler doctorStationAdviceFifoAllocationAssembler;
+    /** 产品目录展示装配：库存不足提示点名耗材名。 */
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
 
     /**
      * 住院临时路径（护士划价/绑定执行）：草稿发放单在 promote 后按开关推进为已配药或已发药。
@@ -101,11 +115,10 @@ public class DeviceDispenseNurseWorkflowOrchestrator {
     }
 
     /**
-     * 门诊自动扣库门禁：护士已传耗材房时直接放行；未传时须每条待发发放行能解析库房
-     * （发放单已锁定 {@code location_id}，或已有真实批号无需 FIFO）。
+     * 门诊自动扣库门禁：护士已传耗材房时直接放行；未传时须每条待发发放行已锁定库房且具备真实批号。
      *
      * @param dispenseIds                勾选的发放行主键
-     * @param requestInventoryLocationId 护士指定耗材房；非空时优先，执行时强制按该房 FIFO
+     * @param requestInventoryLocationId 护士指定耗材房；非空时优先，执行时仅就地改 location_id
      */
     public void validateOutpatientAutoDeductInventoryLocation(
         List<Long> dispenseIds,
@@ -114,26 +127,25 @@ public class DeviceDispenseNurseWorkflowOrchestrator {
         if (dispenseIds == null || dispenseIds.isEmpty()) {
             return;
         }
-        // Gate：护士已指定耗材房，执行路径将强制按该房 FIFO，此处不再逐行要求锁定库房
-        if (requestInventoryLocationId != null) {
-            return;
-        }
-        // Pre：未指定耗材房时，逐行确认「需 FIFO 的行」仍能从发放单解析到库房
+        // Gate：护士已指定耗材房，执行路径只改 location_id，仍须逐行确认已有真实批号
         for (Long dispenseId : dispenseIds) {
-            // 跳过空主键，避免误查
             if (dispenseId == null) {
                 continue;
             }
             DeviceDispenseModel dispense = this.deviceDispenseQueryService.loadDeviceDispenseById(dispenseId);
-            // 发放行已不存在则跳过（并发软删等）；后续写路径会再校验
             if (dispense == null) {
                 continue;
             }
-            // 已有真实批号且未改房：无需 FIFO，允许不传耗材房
-            if (!this.needsFifoReplaceBeforeDispense(dispense, null)) {
+            // Gate：换房不改批号——签发必须已锁真实批号
+            if (!this.hasRealLotNumber(dispense)) {
+                throw new BusinessException(
+                    ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "发放批号缺失，请医生改签后再执行");
+            }
+            // 护士已选房：执行时写该房，此处不再要求原 location
+            if (requestInventoryLocationId != null) {
                 continue;
             }
-            // 需 FIFO 却解析不到库房：拒绝，提示护士选择耗材房（EX-NUR-204 语义）
+            // 未选房：须能从发放单解析库房
             if (this.resolveDispenseLocationId(dispense, null) == null) {
                 throw new BusinessException(
                     ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "请选择耗材房后再执行发放");
@@ -142,11 +154,11 @@ public class DeviceDispenseNurseWorkflowOrchestrator {
     }
 
     /**
-     * 门诊护士批量执行耗材：不自动扣库仅拣配为已配药；自动扣库则 FIFO 后发放并累计扣减量。
+     * 门诊护士批量执行耗材：不自动扣库仅拣配为已配药；自动扣库则（可选）就地改库房后发放并累计扣减量。
      *
-     * <p>护士传入 {@code nurseInventoryLocationId} 时：按该库房强制重做 FIFO、回写发放行 {@code location_id}/批号，
-     * 并回写请求 {@code perform_location} 与 {@code lot_number}（首段批号）；未传时沿用医生签发已锁库房
-     * （缺库房且需 FIFO 时由门禁拒绝）。</p>
+     * <p>护士传入 {@code nurseInventoryLocationId} 时：仅就地更新发放行 {@code location_id} 与请求
+     * {@code perform_location}，<strong>不</strong>改批号、<strong>不</strong>重跑 FIFO、禁止软删重建；
+     * 未传时沿用医生签发已锁库房与批号。</p>
      *
      * @param dispenseIds                    勾选的发放行主键（保持调用方顺序）
      * @param operatorId                     操作人
@@ -175,15 +187,10 @@ public class DeviceDispenseNurseWorkflowOrchestrator {
         // Pre：排序保证同批处理顺序稳定，利于并发冲突复现
         List<Long> sortedIds = new ArrayList<>(dispenseIds);
         Collections.sort(sortedIds);
-        // Pre：同一 DeviceRequest 在批内只 FIFO 一次；已软删的旧勾选 id 须在门禁前跳过
-        Set<Long> fifoReplacedRequestIds = new HashSet<>();
-        Set<Long> softDeletedDispenseIdsAfterFifo = new HashSet<>();
+        // Pre：同批「目标房+品规+批号」累计待扣，避免多行各自过闸后合计超库存
+        Map<String, BigDecimal> batchReservedByLocationLot = new HashMap<>();
         try {
             for (Long dispenseId : sortedIds) {
-                // 同请求 FIFO 后旧发放行已软删：跳过，避免「状态已变更」误伤同批后续勾选
-                if (softDeletedDispenseIdsAfterFifo.contains(dispenseId)) {
-                    continue;
-                }
                 // Gate：仍须为可拣配态，防止并发已发/已配后重复执行
                 DeviceDispenseValidationModel preparable =
                     this.deviceDispenseQueryService.validateDeviceDispensePreparable(dispenseId);
@@ -193,63 +200,11 @@ public class DeviceDispenseNurseWorkflowOrchestrator {
                         "耗材发放单状态已变更，请刷新后重试");
                 }
                 DeviceDispenseModel dispense = this.deviceDispenseQueryService.mustGetDeviceDispense(dispenseId);
-                // 分支：自动扣库开 → FIFO/发放+累计扣减；关 → 仅拣配为已配药
+                // 分支：自动扣库开 → 可选就地改库房后发放+累计扣减；关 → 仅拣配为已配药
                 if (this.deviceAutoInventoryDeductSettingResolver.isEnabled()) {
-                    Long deviceReqId = dispense.getDeviceReqId();
-                    // 同请求已在本批 FIFO 并处理完全部新发放行：防御性跳过
-                    if (deviceReqId != null && fifoReplacedRequestIds.contains(deviceReqId)) {
-                        continue;
-                    }
-                    // 分支：需按库房重做 FIFO（护士指定房，或缺少真实批号）
-                    if (deviceReqId != null
-                        && this.needsFifoReplaceBeforeDispense(dispense, nurseInventoryLocationId)) {
-                        DeviceRequestListModel request = this.requireDeviceRequestListModel(deviceReqId);
-                        Long locationId = this.resolveDispenseLocationId(dispense, nurseInventoryLocationId);
-                        // Gate：解析不到发放库房则拒绝（护士未选且签发未锁库房）
-                        if (locationId == null) {
-                            throw new BusinessException(
-                                ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "请选择耗材房后再执行发放");
-                        }
-                        // Pre：记录替换前发放行，供同批后续勾选跳过
-                        List<Long> idsBeforeFifo =
-                            this.deviceDispenseQueryService.listDeviceDispenseIdsByDeviceRequest(deviceReqId);
-                        // Cmd：按目标库房 FIFO 软删旧草稿/待发行并写入新分段（含 location_id / lot_number）
-                        this.replaceFifoDraftsAtLocation(request, locationId, operatorId);
-                        if (idsBeforeFifo != null) {
-                            softDeletedDispenseIdsAfterFifo.addAll(idsBeforeFifo);
-                        }
-                        // Pre：取 FIFO 后首条发放行批号，供请求侧 lot_number 回写
-                        String lotForRequest = null;
-                        List<Long> idsAfterFifo =
-                            this.deviceDispenseQueryService.listDeviceDispenseIdsByDeviceRequest(deviceReqId);
-                        if (idsAfterFifo != null && !idsAfterFifo.isEmpty()) {
-                            DeviceDispenseModel firstAfterFifo =
-                                this.deviceDispenseQueryService.mustGetDeviceDispense(idsAfterFifo.get(0));
-                            lotForRequest = firstAfterFifo.getLotNumber();
-                        }
-                        // Cmd：护士指定房时同步请求 perform_location + lot_number（扣库/回补仍以发放行为准）
-                        if (nurseInventoryLocationId != null) {
-                            this.deviceRequestDomainService.rebindPerformLocationAndLotForOutpatientNurseExecute(
-                                deviceReqId, locationId, lotForRequest);
-                        }
-                        fifoReplacedRequestIds.add(deviceReqId);
-                        // Cmd：新草稿升为待发后再逐条拣配+发放
-                        this.deviceDispenseDomainService.promoteDraftDispensesForDeviceRequests(
-                            List.of(deviceReqId), operatorId);
-                        List<Long> activeIds =
-                            this.deviceDispenseQueryService.listDeviceDispenseIdsByDeviceRequest(deviceReqId);
-                        for (Long activeId : activeIds) {
-                            this.processOutpatientAutoDeductLine(
-                                activeId,
-                                operatorId,
-                                preparerId,
-                                performerId,
-                                completedDispenseIdsOut,
-                                inventoryDecreaseAccumulator);
-                        }
-                        continue;
-                    }
-                    // Cmd：无需 FIFO 替换时，直接对当前勾选行拣配+发放
+                    // Cmd：换房只改 location；写前按目标房+签发批号断言库存
+                    this.applyInPlaceLocationIfNeeded(
+                        dispense, nurseInventoryLocationId, operatorId, batchReservedByLocationLot);
                     this.processOutpatientAutoDeductLine(
                         dispenseId,
                         operatorId,
@@ -396,6 +351,7 @@ public class DeviceDispenseNurseWorkflowOrchestrator {
      *
      * <p>可回退态：{@link DispenseStatus#PREPARED}（不自动扣库执行）、
      * {@link DispenseStatus#COMPLETED}/{@link DispenseStatus#PART_COMPLETED}（自动扣库执行）。
+     * 回退<strong>保留</strong>医生签发 {@code lot_number}（不重跑 FIFO、不置空批号）；仅清空拣配/发放操作字段。
      * DeviceRequest 状态不在此变更。</p>
      *
      * @param dispenseIds                   勾选的发放行主键
@@ -472,7 +428,9 @@ public class DeviceDispenseNurseWorkflowOrchestrator {
     }
 
     /**
-     * 自动扣库：住院请求在指定库房 FIFO 替换分段后拣配、发放并累计扣减。
+     * 自动扣库：住院临时路径按 performLocation FIFO 定批后拣配、发放并累计扣减。
+     *
+     * <p>与门诊护士执行不同：此处草稿发放行无医生签发批号，须先 FIFO 写入 {@code lot_number} 再扣库。</p>
      *
      * @param request                        耗材请求列表行
      * @param operatorId                     操作人
@@ -487,7 +445,8 @@ public class DeviceDispenseNurseWorkflowOrchestrator {
         if (request.getPerformLocation() == null) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "耗材发放库房不能为空");
         }
-        this.replaceFifoDraftsAtLocation(request, request.getPerformLocation(), operatorId);
+        // Cmd：住院临时路径——按指定库房 FIFO 软删旧草稿/待发并写入新分段（含 location_id / lot_number）
+        this.replaceFifoDraftsForInpatientTemporaryPath(request, request.getPerformLocation(), operatorId);
         this.deviceDispenseDomainService.promoteDraftDispensesForDeviceRequests(List.of(request.getId()), operatorId);
         Long performerId = dispensePerformerId;
         if (performerId == null) {
@@ -496,11 +455,18 @@ public class DeviceDispenseNurseWorkflowOrchestrator {
         List<Long> dispenseIds = this.deviceDispenseQueryService.listDeviceDispenseIdsByDeviceRequest(request.getId());
         for (Long dispenseId : dispenseIds) {
             DeviceDispenseModel dispense = this.deviceDispenseQueryService.mustGetDeviceDispense(dispenseId);
+            // Pre：FIFO 分段须已落库真实批号
+            String fifoLot = trimToNull(dispense.getLotNumber());
+            if (fifoLot == null
+                || OutpatientNurseStationConstants.OUTPATIENT_NURSE_STATION_DEVICE_LOT_PLACEHOLDER.equals(fifoLot)) {
+                throw new BusinessException(
+                    ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "耗材发放批号未锁定，请确认库存批号后重试");
+            }
             this.deviceDispenseDomainService.prepareDeviceDispense(
                 this.buildPrepareCommand(
                     dispenseId,
                     operatorId,
-                    dispense.getLotNumber(),
+                    fifoLot,
                     dispense.getQuantity(),
                     operatorId));
             this.deviceDispenseDomainService.dispenseDevice(
@@ -533,7 +499,8 @@ public class DeviceDispenseNurseWorkflowOrchestrator {
         DeviceDispenseModel dispense = this.deviceDispenseQueryService.mustGetDeviceDispense(dispenseId);
         this.deviceDispenseDomainService.matchDispenseLotNumber(
             this.buildMatchLotCommand(dispenseId, operatorId));
-        String lot = this.resolvePrepareLotNumber(dispense);
+        // Pre：自动扣库须用签发真实批号拣配，禁止占位批号覆盖签发值
+        String lot = this.requireSignedLotNumber(dispense);
         // 自动扣库：配药人沿用操作人，发放人使用执行护士，避免拣配人与发放人同人校验冲突。
         this.deviceDispenseDomainService.prepareDeviceDispense(
             this.buildPrepareCommand(
@@ -656,13 +623,90 @@ public class DeviceDispenseNurseWorkflowOrchestrator {
     }
 
     /**
-     * 按 performLocation 对请求下草稿/待发发放行做 FIFO 替换。
+     * 门诊护士执行：指定耗材房时断言目标房签发批号库存后，就地只回写 {@code location_id}。
+     *
+     * <p>仅门诊路径调用。禁止改批号、禁止 FIFO、禁止软删重建、禁止动账单。未指定房时仍按签发库房断言库存。</p>
+     *
+     * @param dispense                     发放行读模型
+     * @param nurseInventoryLocationId     护士指定耗材房；空则用签发库房
+     * @param operatorId                   操作人
+     * @param batchReservedByLocationLot   本批同键已累计待扣量（库房|品规|批号 → 数量）
+     */
+    private void applyInPlaceLocationIfNeeded(
+        DeviceDispenseModel dispense,
+        Long nurseInventoryLocationId,
+        Long operatorId,
+        Map<String, BigDecimal> batchReservedByLocationLot) {
+        // Gate：发放行与数量须有效
+        if (dispense == null || dispense.getId() == null) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "发放记录无效");
+        }
+        // Gate：换房/扣库不改批号——须已有真实签发批号
+        if (!this.hasRealLotNumber(dispense)) {
+            throw new BusinessException(
+                ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "发放批号缺失，请医生改签后再执行");
+        }
+        Long targetLocationId = this.resolveDispenseLocationId(dispense, nurseInventoryLocationId);
+        // Gate：解析不到发放库房则拒绝
+        if (targetLocationId == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "请选择耗材房后再执行发放");
+        }
+        BigDecimal lineQty = dispense.getQuantity();
+        if (lineQty == null || lineQty.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "发放数量无效");
+        }
+        String lotTrim = trimToNull(dispense.getLotNumber());
+        String reserveKey =
+            targetLocationId + "|" + dispense.getDeviceDefId() + "|" + lotTrim;
+        BigDecimal alreadyReserved = BigDecimal.ZERO;
+        // Pre：读取本批同键已预占量
+        if (batchReservedByLocationLot != null && batchReservedByLocationLot.containsKey(reserveKey)) {
+            alreadyReserved = batchReservedByLocationLot.get(reserveKey);
+        }
+        // Gate：目标耗材房下签发批号可用量须够（含本批累计）；不够点名耗材与批号
+        String deviceDisplayName = this.resolveDeviceDisplayNameForStockHint(dispense.getDeviceDefId());
+        this.inventoryItemQueryService.assertSufficientForDeviceDispenseAtLocationLot(
+            TableNameConstants.ADM_DEVICE_DEFINITION,
+            dispense.getDeviceDefId(),
+            targetLocationId,
+            lotTrim,
+            lineQty,
+            alreadyReserved,
+            deviceDisplayName);
+        // Pre：记入本批预占，供后续同行合计
+        if (batchReservedByLocationLot != null) {
+            batchReservedByLocationLot.put(reserveKey, alreadyReserved.add(lineQty));
+        }
+        // Gate：未指定新房则只校验库存，不改 location
+        if (nurseInventoryLocationId == null) {
+            return;
+        }
+        // Gate：目标房与签发房相同则无需写库
+        if (nurseInventoryLocationId.equals(dispense.getLocationId())) {
+            return;
+        }
+        UpdateDeviceDispenseLocationCommand cmd = new UpdateDeviceDispenseLocationCommand();
+        cmd.setId(dispense.getId());
+        cmd.setLocationId(nurseInventoryLocationId);
+        cmd.setOperatorId(operatorId);
+        // Cmd：领域层只落 location_id，批号保持库内原值
+        this.deviceDispenseDomainService.updateLocationForNurseExecute(cmd);
+        // Cmd：请求侧只回写 perform_location，不改 lot_number
+        if (dispense.getDeviceReqId() != null) {
+            this.deviceRequestDomainService.rebindPerformLocationForOutpatientNurseExecute(
+                dispense.getDeviceReqId(), nurseInventoryLocationId);
+        }
+    }
+
+    /**
+     * 住院临时路径：按 performLocation 对请求下草稿/待发发放行做 FIFO 替换。
      *
      * @param request            耗材请求列表行
      * @param performLocationId  执行库房位置主键
      * @param operatorId         操作人
      */
-    private void replaceFifoDraftsAtLocation(
+    private void replaceFifoDraftsForInpatientTemporaryPath(
         DeviceRequestListModel request,
         Long performLocationId,
         Long operatorId) {
@@ -685,28 +729,62 @@ public class DeviceDispenseNurseWorkflowOrchestrator {
     }
 
     /**
-     * 判断门诊发放行是否须在发放前按库房重做 FIFO。
+     * 解析库存不足提示用的耗材展示名（通用名优先）；目录缺失时回落「耗材」。
      *
-     * <p>护士已指定耗材房：一律重做（覆盖医生签发已锁批号/库房，保证从所选房扣库并回写发放行）。
-     * 未指定：仅当缺少真实批号（空或占位）时重做。</p>
-     *
-     * @param dispense                 发放行读模型
-     * @param nurseInventoryLocationId 护士指定耗材房；可空
-     * @return 需要 FIFO 替换时为 true
+     * @param deviceDefinitionId 耗材定义主键
+     * @return 非空展示名
      */
-    private boolean needsFifoReplaceBeforeDispense(DeviceDispenseModel dispense, Long nurseInventoryLocationId) {
-        // 护士点选耗材房：强制按所选房 FIFO，避免沿用医生签发库房扣错库存
-        if (nurseInventoryLocationId != null) {
-            return true;
+    private String resolveDeviceDisplayNameForStockHint(Long deviceDefinitionId) {
+        // Gate：无定义主键则无法查目录名
+        if (deviceDefinitionId == null) {
+            return "耗材";
         }
-        String lot = trimToNull(dispense.getLotNumber());
-        // 已有真实批号：沿用医生签发分段，无需再 FIFO
-        if (lot != null
-            && !OutpatientNurseStationConstants.OUTPATIENT_NURSE_STATION_DEVICE_LOT_PLACEHOLDER.equals(lot)) {
+        try {
+            // Pre：目录读模型与医生站 FIFO 点名口径一致
+            ProductDefinitionDisplayDto productRow =
+                DoctorStationAdviceInventoryUnitQuantityHelper.requireProductDefinition(
+                    this.productDefinitionDisplayTerminologyAssembler,
+                    TableNameConstants.ADM_DEVICE_DEFINITION,
+                    deviceDefinitionId);
+            return ProductDefinitionDisplaySupport.resolveProductDisplayName(productRow, "耗材");
+        } catch (BusinessException ex) {
+            // 分支：目录缺失时仍抛库存不足主因，点名回落通用「耗材」
+            return "耗材";
+        }
+    }
+
+    /**
+     * 发放行是否已有真实批号（非空且非占位）。
+     *
+     * @param dispense 发放行读模型
+     * @return 有真实批号时为 true
+     */
+    private boolean hasRealLotNumber(DeviceDispenseModel dispense) {
+        // Gate：空发放行无批号
+        if (dispense == null) {
             return false;
         }
-        // 批号为空或占位：须按可解析库房补齐 FIFO 后再扣库
-        return true;
+        String lot = trimToNull(dispense.getLotNumber());
+        if (lot == null) {
+            return false;
+        }
+        return !OutpatientNurseStationConstants.OUTPATIENT_NURSE_STATION_DEVICE_LOT_PLACEHOLDER.equals(lot);
+    }
+
+    /**
+     * 自动扣库拣配须使用医生签发真实批号；缺失则拒绝（禁止占位批号覆盖签发值）。
+     *
+     * @param dispense 发放行读模型
+     * @return 签发批号（已 trim）
+     * @throws BusinessException 批号缺失或为占位时
+     */
+    private String requireSignedLotNumber(DeviceDispenseModel dispense) {
+        // Gate：无真实批号则无法按已收费口径扣库
+        if (!this.hasRealLotNumber(dispense)) {
+            throw new BusinessException(
+                ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "发放批号缺失，请医生改签后再执行");
+        }
+        return trimToNull(dispense.getLotNumber());
     }
 
     /**
@@ -717,7 +795,7 @@ public class DeviceDispenseNurseWorkflowOrchestrator {
      * @return 库房位置主键；无法解析时返回 null
      */
     private Long resolveDispenseLocationId(DeviceDispenseModel dispense, Long nurseInventoryLocationId) {
-        // 护士指定优先：执行扣库与取消回补均落在该库房
+        // 护士指定优先
         if (nurseInventoryLocationId != null) {
             return nurseInventoryLocationId;
         }

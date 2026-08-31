@@ -27,6 +27,7 @@ import {
 
 import {
   getWriteOffDetailApi,
+  manualWriteOffAndReissueApi,
   manualWriteOffApi,
   pageWriteOffDocumentsApi,
 } from '#/api/einvoice-boss/writeoff';
@@ -63,6 +64,12 @@ const { run: runDetail, loading: detailLoading } = useRequest(getWriteOffDetailA
 const { run: runWriteOff, loading: writeOffLoading } = useRequest(manualWriteOffApi, {
   manual: true,
 });
+const { run: runWriteOffAndReissue, loading: reissueLoading } = useRequest(
+  manualWriteOffAndReissueApi,
+  {
+    manual: true,
+  },
+);
 
 const formItems = computed<FormItemConfig[]>(() => [
   {
@@ -108,7 +115,7 @@ const tableColumns = computed<TableColumn[]>(() => {
     prop: 'action',
     label: '操作',
     fixed: 'right',
-    width: 160,
+    width: 220,
     align: 'center',
     slot: 'action',
   });
@@ -225,39 +232,52 @@ async function openDetail(row: BossDocumentListItemDto) {
 }
 
 async function handleWriteOff(row: BossDocumentListItemDto) {
+  await confirmWriteOff(row, false);
+}
+
+async function handleWriteOffAndReissue(row: BossDocumentListItemDto) {
+  await confirmWriteOff(row, true);
+}
+
+async function confirmWriteOff(row: BossDocumentListItemDto, reissue: boolean) {
   if (!row.documentId) {
     return;
   }
-  writeOffReason.value = '手动冲红';
+  writeOffReason.value = reissue ? '明细纠错，冲销重开' : '手动冲红';
   try {
-    const { value } = await ElMessageBox.prompt('请输入冲红原因', '确认手动冲红', {
-      confirmButtonText: '冲红',
-      cancelButtonText: '取消',
-      inputValue: writeOffReason.value,
-      inputPlaceholder: '冲红原因',
-      type: 'warning',
-      beforeClose: (action, instance, done) => {
-        if (action === 'confirm' && !instance.inputValue?.trim()) {
-          ElMessage.warning('请填写冲红原因');
-          return;
-        }
-        done();
+    const { value } = await ElMessageBox.prompt(
+      reissue ? '将冲红后按最新明细重开蓝票，请输入原因' : '请输入冲红原因',
+      reissue ? '确认冲销重开' : '确认手动冲红',
+      {
+        confirmButtonText: reissue ? '冲销重开' : '冲红',
+        cancelButtonText: '取消',
+        inputValue: writeOffReason.value,
+        inputPlaceholder: '冲红原因',
+        type: 'warning',
+        beforeClose: (action, instance, done) => {
+          if (action === 'confirm' && !instance.inputValue?.trim()) {
+            ElMessage.warning('请填写冲红原因');
+            return;
+          }
+          done();
+        },
       },
-    });
-    const reason = (value || '').trim() || '手动冲红';
-    const result = await runWriteOff({
-      documentId: row.documentId,
-      reason,
-    });
+    );
+    const reason = (value || '').trim() || writeOffReason.value;
+    const result = reissue
+      ? await runWriteOffAndReissue({ documentId: row.documentId, reason })
+      : await runWriteOff({ documentId: row.documentId, reason });
     if (result?.success) {
       ElMessage.success(
-        result.writeOffBillNo
-          ? `冲红成功，红票号 ${result.writeOffBillNo}`
-          : result.message || '冲红成功',
+        reissue
+          ? result.message || '冲销重开已提交'
+          : result.writeOffBillNo
+            ? `冲红成功，红票号 ${result.writeOffBillNo}`
+            : result.message || '冲红成功',
       );
       await getList();
     } else {
-      ElMessage.error(result?.message || '冲红失败');
+      ElMessage.error(result?.message || (reissue ? '冲销重开失败' : '冲红失败'));
     }
   } catch {
     // 用户取消
@@ -299,7 +319,7 @@ onMounted(() => {
       :table-columns="tableColumns"
       :table-data="tableData"
       :form-items="formItems"
-      :loading="listLoading || writeOffLoading"
+      :loading="listLoading || writeOffLoading || reissueLoading"
       :total="total"
       show-pagination
       @query="handleQuery"
@@ -333,6 +353,14 @@ onMounted(() => {
       <template #action="{ row }">
         <ElButton v-if="canManualWriteOff(row)" link type="danger" @click="handleWriteOff(row)">
           冲红
+        </ElButton>
+        <ElButton
+          v-if="canManualWriteOff(row)"
+          link
+          type="warning"
+          @click="handleWriteOffAndReissue(row)"
+        >
+          冲销重开
         </ElButton>
         <ElButton link type="primary" @click="openDetail(row)">查看</ElButton>
       </template>

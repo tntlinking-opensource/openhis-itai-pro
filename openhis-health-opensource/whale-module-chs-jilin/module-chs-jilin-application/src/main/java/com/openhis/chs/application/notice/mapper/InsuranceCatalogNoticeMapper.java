@@ -8,6 +8,7 @@ import com.openhis.chs.application.notice.dto.NoticeDocRowDto;
 import com.openhis.chs.application.notice.dto.NoticeLineRowDto;
 import com.openhis.chs.application.notice.dto.NoticeScanItemDto;
 import com.openhis.chs.application.notice.response.ApplyNoticeDocResponse;
+import com.openhis.chs.application.notice.response.CheckCatalogIssuesResponse;
 import com.openhis.chs.application.notice.response.CloseNoticeTodoResponse;
 import com.openhis.chs.application.notice.response.GetComplianceReportResponse;
 import com.openhis.chs.application.notice.response.PageNoticeDocResponse;
@@ -21,6 +22,7 @@ import com.openhis.chs.application.notice.support.dto.NoticeScanSession;
 import com.openhis.chs.domain.notice.command.PersistNoticeLineCommand;
 import com.openhis.chs.domain.notice.model.ApplyNoticeDocResult;
 import com.openhis.chs.domain.notice.model.ApplyPreviewView;
+import com.openhis.chs.domain.notice.model.CatalogCheckResult;
 import com.openhis.chs.domain.notice.model.CloseNoticeTodoResult;
 import com.openhis.chs.domain.notice.model.ComplianceReportView;
 import com.openhis.chs.domain.notice.model.NoticeDocView;
@@ -137,4 +139,12 @@ public interface InsuranceCatalogNoticeMapper {
      */
     PageNoticeTodoResponse toPageTodoResponse(
         NoticeTodoSummaryView summary, NoticePageResult<NoticeTodoView> page);
+
+    /**
+     * 目录检查结果 → 响应。
+     *
+     * @param result 领域结果；可空
+     * @return HTTP 响应
+     */
+    CheckCatalogIssuesResponse toCheckCatalogResponse(CatalogCheckResult result);
 }

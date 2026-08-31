@@ -23,6 +23,7 @@ import {
   ElDrawer,
   ElImage,
   ElMessage,
+  ElMessageBox,
   ElTag,
   ElTimeline,
   ElTimelineItem,
@@ -33,6 +34,7 @@ import {
   getAccountStatusApi,
   pageDocumentsApi,
 } from '#/api/einvoice-boss/document';
+import { manualWriteOffAndReissueApi } from '#/api/einvoice-boss/writeoff';
 import { useRequest } from '#/hooks/use-request';
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
 
@@ -44,6 +46,7 @@ const router = useRouter();
 const { hasAccessByCodes } = useAccess();
 const canAdjust = computed(() => hasAccessByCodes(['einvoice-boss.document.adjust']));
 const canAccount = computed(() => hasAccessByCodes(['einvoice-boss.account.view']));
+const canWriteOff = computed(() => hasAccessByCodes(['einvoice-boss.writeoff.operate']));
 
 const tableData = ref<BossDocumentListItemDto[]>([]);
 const total = ref(0);
@@ -62,6 +65,10 @@ const { run: runDetail, loading: detailLoading } = useRequest(getDocumentByIdApi
 const { run: runAccountStatus, loading: accountLoading } = useRequest(getAccountStatusApi, {
   manual: true,
 });
+const { run: runWriteOffAndReissue, loading: reissueLoading } = useRequest(
+  manualWriteOffAndReissueApi,
+  { manual: true },
+);
 
 const formItems = computed<FormItemConfig[]>(() => [
   {
@@ -106,7 +113,7 @@ const tableColumns: TableColumn[] = [
   { prop: 'invoiceStatus', label: '发票状态', width: 100, slot: 'invoiceStatus' },
   { prop: 'writeOffStatus', label: '冲红状态', width: 110, slot: 'writeOffStatus' },
   { prop: 'issuedAt', label: '开票时间', minWidth: 150, slot: 'issuedAt' },
-  { prop: 'action', label: '操作', fixed: 'right', width: 220, align: 'center', slot: 'action' },
+  { prop: 'action', label: '操作', fixed: 'right', width: 280, align: 'center', slot: 'action' },
 ];
 
 function invoiceStatusLabel(status?: string) {
@@ -235,6 +242,42 @@ function goAdjust(row: BossDocumentListItemDto) {
   router.push(`/finance/einvoice/document/${row.documentId}/amount`);
 }
 
+async function handleWriteOffAndReissue(row: BossDocumentListItemDto) {
+  if (!row.documentId) {
+    return;
+  }
+  try {
+    const { value } = await ElMessageBox.prompt(
+      '将冲红后按最新明细重开蓝票（补齐药品单位、甲乙丙类），请输入原因',
+      '确认冲销重开',
+      {
+        confirmButtonText: '冲销重开',
+        cancelButtonText: '取消',
+        inputValue: '明细纠错，冲销重开',
+        inputPlaceholder: '冲红原因',
+        type: 'warning',
+        beforeClose: (action, instance, done) => {
+          if (action === 'confirm' && !instance.inputValue?.trim()) {
+            ElMessage.warning('请填写冲红原因');
+            return;
+          }
+          done();
+        },
+      },
+    );
+    const reason = (value || '').trim() || '明细纠错，冲销重开';
+    const result = await runWriteOffAndReissue({ documentId: row.documentId, reason });
+    if (result?.success) {
+      ElMessage.success(result.message || '冲销重开已提交');
+      await getList();
+    } else {
+      ElMessage.error(result?.message || '冲销重开失败');
+    }
+  } catch {
+    // 用户取消
+  }
+}
+
 const qrSrc = computed(() => {
   const code = drawerDetail.value?.billQrCode?.trim();
   if (!code) {
@@ -266,7 +309,7 @@ onMounted(() => {
       :table-columns="tableColumns"
       :table-data="tableData"
       :form-items="formItems"
-      :loading="listLoading"
+      :loading="listLoading || reissueLoading"
       :total="total"
       show-pagination
       @query="handleQuery"
@@ -310,6 +353,14 @@ onMounted(() => {
           @click="openQrDrawer(row)"
         >
           QR
+        </ElButton>
+        <ElButton
+          v-if="canWriteOff && row.invoiceStatus === 'ISSUED'"
+          link
+          type="warning"
+          @click="handleWriteOffAndReissue(row)"
+        >
+          冲销重开
         </ElButton>
         <ElButton
           v-if="row.invoiceStatus === 'CANCELLED'"

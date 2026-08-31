@@ -6,6 +6,7 @@ package com.openhis.health.domain.administration.healthcareservice.service;
 
 import com.openhis.health.domain.administration.healthcareservice.entity.HealthcareService;
 import com.openhis.health.domain.administration.healthcareservice.repository.HealthcareServiceRepository;
+import com.openhis.health.domain.share.constants.HealthcareServiceConstants;
 import com.openhis.health.domain.share.enums.HealthcareServiceStatus;
 import org.springframework.stereotype.Service;
 
@@ -83,5 +84,31 @@ public class HealthcareServiceQueryService {
             }
         }
         return result;
+    }
+
+    /**
+     * 判断给定号源是否为产品「历史号复诊」（按 {@code bus_no} 识别）。
+     *
+     * @param service 号源实体；为空时返回 false
+     * @return 历史号复诊返回 true
+     */
+    public boolean isHistoricalFollowUpService(HealthcareService service) {
+        if (service == null || service.getBusNo() == null) {
+            return false;
+        }
+        return HealthcareServiceConstants.BUS_NO_HISTORICAL_FOLLOW_UP.equals(service.getBusNo().trim());
+    }
+
+    /**
+     * 按业务编号加载启用中的号源（迁移种子与 Gate 解析）。
+     *
+     * @param busNo 业务编号
+     * @return 实体；不存在或未启用时 {@code null}
+     */
+    public HealthcareService findActiveHealthcareServiceByBusNo(String busNo) {
+        if (busNo == null || busNo.isBlank()) {
+            return null;
+        }
+        return repository.findByBusNoAndStatusEnum(busNo.trim(), HealthcareServiceStatus.ACTIVE.getCode()).orElse(null);
     }
 }

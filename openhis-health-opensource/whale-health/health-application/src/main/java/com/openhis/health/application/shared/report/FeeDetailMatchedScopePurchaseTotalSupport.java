@@ -106,6 +106,9 @@ public class FeeDetailMatchedScopePurchaseTotalSupport {
     /**
      * 装载命中 scope 内收费行（仅实体，不做展示 enrich）。
      *
+     * <p>优先复用 Loader / 域层已写入的 {@code preloadedChargeItemsById}（门诊费用明细同窗已全量预载），
+     * 禁止页脚进价再 {@code loadChargeItemsByIds} 打第二遍库。</p>
+     *
      * @param query 明细分页 Query
      * @return 收费行列表；无命中为空列表
      */
@@ -114,8 +117,12 @@ public class FeeDetailMatchedScopePurchaseTotalSupport {
             return List.of();
         }
         List<Long> matchedChargeItemIds = query.getResolvedFeeDetailMatchedChargeItemIds();
-        // Pre：硬筛路径已收集命中 chargeItemId 全集 → 按 id IN 装载
+        // Pre：硬筛路径已收集命中 chargeItemId 全集 → 优先预载，否则按 id IN
         if (matchedChargeItemIds != null && !matchedChargeItemIds.isEmpty()) {
+            List<ChargeItem> fromPreload = this.reusePreloadedChargeItems(query, matchedChargeItemIds);
+            if (fromPreload != null) {
+                return fromPreload;
+            }
             ChargeItemQueryCommand loadCmd = new ChargeItemQueryCommand();
             loadCmd.setIds(new ArrayList<>(matchedChargeItemIds));
             List<ChargeItem> byIds = this.chargeItemQueryService.loadChargeItemsByIds(loadCmd);
@@ -146,5 +153,37 @@ public class FeeDetailMatchedScopePurchaseTotalSupport {
             return List.of();
         }
         return byEncounter;
+    }
+
+    /**
+     * 若预载 Map 覆盖全部命中 id，则直接复用实体列表；否则返回 null 由调用方 IN 装载。
+     *
+     * @param query               费用明细查询
+     * @param matchedChargeItemIds 命中收费行主键
+     * @return 预载命中列表；覆盖不全时 null
+     */
+    private List<ChargeItem> reusePreloadedChargeItems(
+        OutpatientFeeDetailPageQuery query,
+        List<Long> matchedChargeItemIds) {
+        Map<Long, ChargeItem> preloaded = query.getPreloadedChargeItemsById();
+        if (preloaded == null || preloaded.isEmpty()) {
+            return null;
+        }
+        List<ChargeItem> reused = new ArrayList<>(matchedChargeItemIds.size());
+        for (Long chargeItemId : matchedChargeItemIds) {
+            if (chargeItemId == null) {
+                continue;
+            }
+            ChargeItem chargeItem = preloaded.get(chargeItemId);
+            // 任一命中 id 未预载 → 整批放弃，禁止半截列表导致进价漏行
+            if (chargeItem == null) {
+                return null;
+            }
+            reused.add(chargeItem);
+        }
+        if (reused.isEmpty()) {
+            return null;
+        }
+        return reused;
     }
 }

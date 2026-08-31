@@ -13,6 +13,10 @@ export interface PageNurseStationPatientQueueRequest {
    * 须经 preserveApiIdForRequest，禁止 Number()。
    */
   orgId?: null | string;
+  /**
+   * 仅返回仍有待发放耗材的患者。true=收窄；空/false=不按耗材待发过滤。
+   */
+  pendingDeviceOnly?: boolean;
   /** 1-based，与后端 AbstractPageQuery 一致（B.10.11） */
   pageNo?: number;
   pageSize?: number;
@@ -28,6 +32,11 @@ export interface NurseStationPatientQueueItemDto {
   encounterTime?: null | string;
   genderEnum?: null | string;
   genderEnumText?: null | string;
+  /**
+   * 是否仍有待发放耗材（草稿/待配药/待发药）。
+   * 供队列卡片红点提醒；与侧栏耗材 PENDING 口径一致。
+   */
+  hasPendingDevice?: boolean | null;
   patientName?: null | string;
   slipNo?: null | string;
 }
@@ -103,7 +112,13 @@ export interface NurseStationTreatmentLineDto {
   unitCode?: null | string;
   unitName?: null | string;
   unitPrice?: null | number | string;
+  /**
+   * 耗材签发批号（主发放行；占位批号后端不回传）。
+   */
+  lotNumber?: null | string;
   wbStr?: null | string;
+  /** 合管检验设备主键（采血贴分组） */
+  specimenTubeMergeDeviceId?: null | string;
 }
 
 export interface QueryEncounterTreatmentSheetResponse {

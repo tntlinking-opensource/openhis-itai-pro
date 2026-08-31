@@ -9,12 +9,13 @@ import type {
   PagePeriodBalanceDetailRequest,
 } from '#/api/report/period-balance-detail';
 import type { ApiOptionItem } from '#/types/api-response';
+import type { ReportPrintColumnDef } from '#/utils/print/print-report-list';
 
 import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
-import { Download, Refresh, Search } from '@element-plus/icons-vue';
+import { Download, Printer, Refresh, Search, Setting } from '@element-plus/icons-vue';
 import {
   ElButton,
   ElFormItem,
@@ -33,7 +34,9 @@ import {
   pagePeriodBalanceDetailApi,
 } from '#/api/report/period-balance-detail';
 import { useRequest } from '#/hooks/use-request';
+import { buildExcelExportColumns } from '#/utils/export/build-excel-export-columns';
 import { downloadBinaryExportFile } from '#/utils/export/download-binary-export';
+import { formatPurchaseMoneyDisplay } from '#/utils/format/money-scale';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import {
   REPORT_QUERY_CONTROL,
@@ -44,11 +47,15 @@ import {
   ReportListPageLayout,
   ReportListToolbar,
   ReportPageFooter,
+  ReportPrintFieldDialog,
   ReportQueryBar,
   ReportTableScroll,
+  mapReportPrintRow,
+  reportPrintFieldsOf,
+  useReportListPrint,
 } from '#/views/report/shared';
 import {
-  fmtReportNumber,
+  fmtReportPurchaseMoney,
   backupBusNoOptionsToSelectItems,
   optionDtosToSelectItems,
 } from '#/views/report/shared/report-format';
@@ -136,7 +143,64 @@ const queryParams = reactive<QueryState>({
   isBus: 'true',
 });
 
-const tableLoading = computed(() => initLoading.value || pageLoading.value || exportLoading.value);
+/** 主表可打印列目录（调价列始终入目录，无值可空）。 */
+const printColumnCatalog = computed<ReportPrintColumnDef[]>(() => [
+  { field: 'itemNo', title: '编码', align: 'center' },
+  { field: 'productName', title: '名称', align: 'center' },
+  { field: 'itemName', title: '商品名', align: 'center' },
+  { field: 'specText', title: '规格', align: 'center' },
+  { field: 'periodBusinessSummary', title: '期间业务', align: 'center' },
+  { field: 'beginCostPackageUnitPrice', title: '期初单价', align: 'right' },
+  { field: 'beginQuantity', title: '期初数量', align: 'right' },
+  { field: 'beginCostAmount', title: '期初总额', align: 'right' },
+  { field: 'endCostPackageUnitPrice', title: '期末单价', align: 'right' },
+  { field: 'endQuantity', title: '期末数量', align: 'right' },
+  { field: 'endCostAmount', title: '期末总额', align: 'right' },
+  { field: 'priceAdjustmentCostAmount', title: '调价', align: 'right' },
+  { field: 'computedEndQuantity', title: '推算数量', align: 'right' },
+  { field: 'computedEndCostAmount', title: '推算总额', align: 'right' },
+  { field: 'quantityDiff', title: '盈亏数', align: 'right' },
+  { field: 'costAmountDiff', title: '盈亏差', align: 'right' },
+  { field: 'isBalance', title: '是否账平', align: 'center' },
+]);
+
+/** 将主表一行映射为打印单元格（复用页内数量/金额格式化）。 */
+function mapPeriodBalancePrintRow(row: PeriodBalanceDetailListRowDto): Record<string, string> {
+  const fields = reportPrintFieldsOf(printColumnCatalog.value);
+  return mapReportPrintRow(row as unknown as Record<string, unknown>, fields, {
+    periodBusinessSummary: () => buildPeriodBusinessSummary(row, columnMeta.value),
+    beginCostPackageUnitPrice: () =>
+      formatPurchaseMoneyDisplay(row.beginCostPackageUnitPrice) || '',
+    beginQuantity: () => formatMinUnitQuantity(row.beginQuantity, row.minUnitCodeLabel),
+    beginCostAmount: () => fmtReportPurchaseMoney(row.beginCostAmount),
+    endCostPackageUnitPrice: () => formatPurchaseMoneyDisplay(row.endCostPackageUnitPrice) || '',
+    endQuantity: () => formatMinUnitQuantity(row.endQuantity, row.minUnitCodeLabel),
+    endCostAmount: () => fmtReportPurchaseMoney(row.endCostAmount),
+    priceAdjustmentCostAmount: () => {
+      if (!rowHasNonZeroPriceAdjustment(row)) {
+        return '';
+      }
+      return fmtReportPurchaseMoney(row.priceAdjustmentCostAmount);
+    },
+    computedEndQuantity: () => formatMinUnitQuantity(row.computedEndQuantity, row.minUnitCodeLabel),
+    computedEndCostAmount: () => fmtReportPurchaseMoney(row.computedEndCostAmount),
+    quantityDiff: () => formatMinUnitQuantity(row.quantityDiff, row.minUnitCodeLabel),
+    costAmountDiff: () => fmtReportPurchaseMoney(row.costAmountDiff),
+    isBalance: () => (row.isBalance ? '是' : '否'),
+  });
+}
+
+const { printFieldDialogRef, printSubmitting, handleOpenPrintFields, handlePrintCurrentPage } =
+  useReportListPrint({
+    getReportCode: () => 'report-period-balance-detail',
+    getColumnCatalog: () => printColumnCatalog.value,
+    getReportTitle: () => PAGE_TITLE,
+    getPrintRows: () => tableData.value.map((row) => mapPeriodBalancePrintRow(row)),
+  });
+
+const tableLoading = computed(
+  () => initLoading.value || pageLoading.value || exportLoading.value || printSubmitting.value,
+);
 
 /** 与查询区「仅显示有业务」一致：是则展开子表也过滤全 0 业务行。 */
 const hideFlowZeroRows = computed(() => {
@@ -226,7 +290,7 @@ const mainTableColumns = computed<SettlementTableColumn[]>(() => {
       headerAlign: 'right',
       className: REPORT_TABLE_COL_GROUP_START,
       labelClassName: REPORT_TABLE_COL_GROUP_START,
-      formatter: (row) => fmtReportNumber(row.beginCostPackageUnitPrice, 2),
+      formatter: (row) => formatPurchaseMoneyDisplay(row.beginCostPackageUnitPrice) || '—',
     },
     {
       prop: 'beginQuantity',
@@ -243,7 +307,7 @@ const mainTableColumns = computed<SettlementTableColumn[]>(() => {
       align: 'right',
       headerAlign: 'right',
       className: REPORT_TABLE_AMOUNT_CELL,
-      formatter: (row) => fmtReportNumber(row.beginCostAmount, 2),
+      formatter: (row) => fmtReportPurchaseMoney(row.beginCostAmount) || '—',
     },
     {
       prop: 'endCostPackageUnitPrice',
@@ -253,7 +317,7 @@ const mainTableColumns = computed<SettlementTableColumn[]>(() => {
       headerAlign: 'right',
       className: PERIOD_END_SPLIT_CLASS,
       labelClassName: PERIOD_END_SPLIT_CLASS,
-      formatter: (row) => fmtReportNumber(row.endCostPackageUnitPrice, 2),
+      formatter: (row) => formatPurchaseMoneyDisplay(row.endCostPackageUnitPrice) || '—',
     },
     {
       prop: 'endQuantity',
@@ -270,7 +334,7 @@ const mainTableColumns = computed<SettlementTableColumn[]>(() => {
       align: 'right',
       headerAlign: 'right',
       className: REPORT_TABLE_AMOUNT_CELL,
-      formatter: (row) => fmtReportNumber(row.endCostAmount, 2),
+      formatter: (row) => fmtReportPurchaseMoney(row.endCostAmount) || '—',
     },
   ];
   if (showPriceAdjustmentColumn) {
@@ -286,7 +350,7 @@ const mainTableColumns = computed<SettlementTableColumn[]>(() => {
         if (!rowHasNonZeroPriceAdjustment(row)) {
           return '—';
         }
-        return fmtReportNumber(row.priceAdjustmentCostAmount, 2);
+        return fmtReportPurchaseMoney(row.priceAdjustmentCostAmount) || '—';
       },
     });
   }
@@ -308,7 +372,7 @@ const mainTableColumns = computed<SettlementTableColumn[]>(() => {
       align: 'right',
       headerAlign: 'right',
       className: REPORT_TABLE_AMOUNT_CELL,
-      formatter: (row) => fmtReportNumber(row.computedEndCostAmount, 2),
+      formatter: (row) => fmtReportPurchaseMoney(row.computedEndCostAmount) || '—',
     },
     {
       prop: 'quantityDiff',
@@ -327,7 +391,7 @@ const mainTableColumns = computed<SettlementTableColumn[]>(() => {
       align: 'right',
       headerAlign: 'right',
       className: REPORT_TABLE_AMOUNT_CELL,
-      formatter: (row) => fmtReportNumber(row.costAmountDiff, 2),
+      formatter: (row) => fmtReportPurchaseMoney(row.costAmountDiff) || '—',
     },
     {
       prop: 'isBalance',
@@ -443,9 +507,15 @@ function handleReset() {
   void getList();
 }
 
-/** 导出 Excel。 */
+/** 导出 Excel（固定列 + 当前动态期间业务列）。 */
 async function handleExportExcel() {
   const pageReq = buildPageRequest();
+  // 固定打印列 + 服务端下发的期间业务动态列
+  const dynamicCols = (columnMeta.value ?? []).map((col) => ({
+    field: String(col.columnCode ?? ''),
+    title: String(col.columnTitle ?? col.columnCode ?? ''),
+  }));
+  const exportColumns = buildExcelExportColumns([...printColumnCatalog.value, ...dynamicCols]);
   const data = await runExport({
     locationId: pageReq.locationId,
     startBackupBusNo: pageReq.startBackupBusNo,
@@ -453,6 +523,7 @@ async function handleExportExcel() {
     keyword: pageReq.keyword,
     isBus: pageReq.isBus,
     isBalance: pageReq.isBalance,
+    exportColumns,
   });
   if (!data?.fileBytes?.trim()) {
     ElMessage.warning('导出内容为空');
@@ -592,6 +663,23 @@ onMounted(async () => {
         <ReportListToolbar :title="`${PAGE_TITLE} · 明细列表`" :total="total">
           <template #actions>
             <ElButton
+              plain
+              :icon="Setting"
+              :disabled="printSubmitting"
+              @click="handleOpenPrintFields"
+            >
+              打印设置
+            </ElButton>
+            <ElButton
+              type="primary"
+              plain
+              :icon="Printer"
+              :loading="printSubmitting"
+              @click="handlePrintCurrentPage"
+            >
+              打印
+            </ElButton>
+            <ElButton
               type="primary"
               plain
               :icon="Download"
@@ -665,6 +753,12 @@ onMounted(async () => {
         />
       </template>
     </ReportListPageLayout>
+
+    <ReportPrintFieldDialog
+      ref="printFieldDialogRef"
+      report-code="report-period-balance-detail"
+      :column-catalog="printColumnCatalog"
+    />
   </Page>
 </template>
 

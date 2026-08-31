@@ -86,6 +86,8 @@ public interface TerminologyCodeSystemNameConstants {
     String DEVICE_TYPE_CODE = "device_type_code";
     /** 器材分类术语（与 {@code adm_device_definition.category_code} 对齐）。 */
     String DEVICE_CATEGORY_CODE = "device_category_code";
+    /** 检验设备分类术语（与 {@code adm_device.category_code} 对齐）。 */
+    String ADM_DEVICE_CATEGORY_CODE = "adm_device_category_code";
     /** 入院途径（与 {@code adm_encounter.in_way_code}、医保 adm_way 1/2/3/9 对齐）。 */
     String IN_WAY_CODE = "in_way_code";
     /** 入院类型（与 {@code adm_encounter.admit_source_code} 对齐）。 */

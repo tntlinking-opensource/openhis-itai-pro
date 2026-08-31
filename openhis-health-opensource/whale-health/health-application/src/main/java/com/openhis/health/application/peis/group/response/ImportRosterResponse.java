@@ -4,8 +4,12 @@
  */
 package com.openhis.health.application.peis.group.response;
 
+import com.openhis.health.application.peis.group.dto.EnrollmentFailureRowDto;
 import lombok.Getter;
 import lombok.Setter;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 导入团检名册响应。
@@ -15,4 +19,8 @@ import lombok.Setter;
 public class ImportRosterResponse {
 
     private int importedCount;
+    private int enrolledCount;
+    private int campusSyncedCount;
+    private List<EnrollmentFailureRowDto> enrollmentFailures = new ArrayList<>();
+    private List<EnrollmentFailureRowDto> campusFailures = new ArrayList<>();
 }

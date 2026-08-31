@@ -2,7 +2,6 @@ import type { DispensePrescriptionBlock, DispenseQueuePatient } from '../compone
 
 import type {
   EncounterMedicationDispenseSlipRowDto,
-  MedicationDispenseInventoryDetailDto,
   PendingDispenseEncounterQueueRowDto,
 } from '#/api/outpatient-pharmacy-dispense/outpatient-pharmacy-dispense.types';
 
@@ -21,8 +20,11 @@ import {
 } from '#/utils/tcm-prescription-display';
 import { HERBAL_MEDICATION_CATEGORY_CODE } from '#/views/outpatient/doctor-station/advice/services/advice-tab.constants';
 
-import { formatDispenseRemainingStockFromInventoryList } from './format-dispense-remaining-stock';
-import { encodeInventoryPick } from './inventory-pick-codec';
+import {
+  buildLockedPharmacyLotPickOptions,
+  filterInventoryByLockedPharmacy,
+  formatInventoryLotRemainingText,
+} from './dispense-lot-pick';
 
 /** 接口 number/string 统一为展示用字符串 */
 function scalarToTrimmedString(value: null | number | string | undefined): string {
@@ -148,17 +150,34 @@ export function mapSlipRowsToPrescriptionBlocks(
         ? formatDateTime(head.requestOpenedTime)
         : '—';
     const items = groupRows.map((line) => {
-      const invList = line.inventoryDetailList ?? [];
+      const dispenseLocationId = String(line.dispenseLocationId ?? '').trim();
+      // 仅本发放库房下的批号；禁止模板其它候选药房进入下拉
+      const lockedInvList = filterInventoryByLockedPharmacy(
+        line.inventoryDetailList,
+        dispenseLocationId,
+      );
+      const unitCtx = {
+        unitCode: line.unitCode,
+        unitText: line.unitText,
+        packageUnitCode: line.packageUnitCode,
+        packageUnitRatio: line.packageUnitRatio,
+        splitUnitCode: line.splitUnitCode,
+        doseUnitCode: line.doseUnitCode,
+        doseUnitText: line.doseUnitText,
+      };
       const inventoryPickOptions =
-        invList.length > 0
-          ? invList.map((inv) => ({
-              value: encodeInventoryPick({
-                pharmacyOrganizationId: String(inv.pharmacyOrganizationId),
-                lotNumber: inv.lotNumber,
-              }),
-              label: formatInventoryOptionLabel(inv),
-            }))
+        dispenseLocationId && lockedInvList.length > 0
+          ? buildLockedPharmacyLotPickOptions(lockedInvList, dispenseLocationId, unitCtx)
           : undefined;
+      // 剩余库存：优先行上已锚定批号；否则取本库首个候选批
+      const anchoredLot = line.lotNumber?.trim() || '';
+      const remainingSource =
+        (anchoredLot
+          ? lockedInvList.find((inv) => (inv.lotNumber?.trim() || '') === anchoredLot)
+          : undefined) ?? lockedInvList[0];
+      const remainingStockText = remainingSource
+        ? formatInventoryLotRemainingText(remainingSource, unitCtx)
+        : '—';
       return {
         id: line.dispenseId,
         medicationId: String(line.medicationId ?? '').trim() || undefined,
@@ -176,16 +195,7 @@ export function mapSlipRowsToPrescriptionBlocks(
         traceUnitCodeText: String(line.traceUnitCodeText ?? '').trim() || undefined,
         traceUnitRatio: parseOptionalPositiveNumber(line.traceUnitRatio),
         lotHasTraceMaster: line.lotHasTraceMaster === true,
-        // 剩余库存：remainingQuantity/availableQuantity 为最小单位，汇总后换算展示
-        remainingStockText: formatDispenseRemainingStockFromInventoryList(invList, {
-          unitCode: line.unitCode,
-          unitText: line.unitText,
-          packageUnitCode: line.packageUnitCode,
-          packageUnitRatio: line.packageUnitRatio,
-          splitUnitCode: line.splitUnitCode,
-          doseUnitCode: line.doseUnitCode,
-          doseUnitText: line.doseUnitText,
-        }),
+        remainingStockText,
         spec: line.specificationText?.trim() || '—',
         traceCode: line.traceNo?.trim() || '—',
         batchNo: line.lotNumber?.trim() || '—',
@@ -195,10 +205,17 @@ export function mapSlipRowsToPrescriptionBlocks(
           scalarToTrimmedString(line.totalPrice) !== ''
             ? formatMoneyDisplay(line.totalPrice)
             : '—',
+        // 笺面「单价」须用收费折算单价，禁止再用行总价冒充
+        unitPrice:
+          line.unitPrice !== null &&
+          line.unitPrice !== undefined &&
+          scalarToTrimmedString(line.unitPrice) !== ''
+            ? formatMoneyDisplay(line.unitPrice)
+            : '—',
         pharmacy:
           line.dispenseLocationName?.trim() ||
-          (line.dispenseLocationId ? `库房 ${line.dispenseLocationId}` : '—'),
-        dispenseLocationId: String(line.dispenseLocationId ?? '').trim() || undefined,
+          (dispenseLocationId ? `库房 ${dispenseLocationId}` : '—'),
+        dispenseLocationId: dispenseLocationId || undefined,
         inventoryPickOptions,
         factory: line.manufacturerName?.trim() || '—',
         diagnosis: line.conditionSummaryText?.trim() || '—',
@@ -232,6 +249,8 @@ export function mapSlipRowsToPrescriptionBlocks(
       feeNatureLabel: head.feeNatureText?.trim() || undefined,
       // 就诊类型：绑定诊断 med_type → YbMedType 文案（一张方一种）
       visitTypeLabel: head.encounterMedicationTypeText?.trim() || undefined,
+      // 发放单号：码上放心上传键（禁止与处方号混用）
+      dispenseBusNo: head.busNo?.trim() || undefined,
       // 患者手机号（打印 enrich 回填）
       patientPhone: head.patientPhone?.trim() || undefined,
       // 方头分类：与打印 prescriptionTypeLine* 同源（慢病 med_type → 慢病处方）
@@ -312,10 +331,4 @@ function parseOptionalPositiveNumber(raw: null | number | string | undefined): n
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) return undefined;
   return n;
-}
-
-function formatInventoryOptionLabel(inv: MedicationDispenseInventoryDetailDto): string {
-  const name = inv.pharmacyDisplayName?.trim() || `库房 ${inv.pharmacyOrganizationId}`;
-  const lot = inv.lotNumber?.trim();
-  return lot ? `${name} / 批号 ${lot}` : name;
 }

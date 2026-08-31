@@ -104,6 +104,7 @@ public class NursingRecordMapperImpl implements NursingRecordMapper {
         }
         NursingRecordPaperHeaderDto header = new NursingRecordPaperHeaderDto();
         header.setAdmitAt(encounterSnapshot.getStartTime());
+        // 默认 endTime；AppService 会再用出院医嘱计划时间覆盖（防历史脏清床时刻）
         header.setDischargeAt(encounterSnapshot.getEndTime());
         header.setAge(encounterSnapshot.getAgeText());
         header.setBedNo(encounterSnapshot.getBedName());

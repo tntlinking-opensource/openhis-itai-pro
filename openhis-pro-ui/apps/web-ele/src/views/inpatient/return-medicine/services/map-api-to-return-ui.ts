@@ -51,6 +51,7 @@ export function mapInpatientReturnDetailRowToUi(
     refundEnum,
     refundEnumText: row.refundEnumText?.trim() || '—',
     traceNo: row.traceNo?.trim() || '—',
+    busNo: row.busNo?.trim() || '',
     selectable: row.selectable ?? refundEnum === 'PENDING_REFUND',
   };
 }

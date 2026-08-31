@@ -69,6 +69,10 @@ export interface InpatientDailySettlementSummaryDto {
   /** 医保上传差额合计（零售−上传；勾稽项，不入总收入） */
   chsRetailUploadDiffAmount?: string;
   depositAmount?: string;
+  /** 退预交金合计（多退；不入总收入） */
+  depositRefundAmount?: string;
+  /** 结算补收合计（结算渠道实付；非补预交金；不入总收入） */
+  settleSupplementAmount?: string;
   refundTotal?: string;
   expenseNatureSummaries?: DailySettlementExpenseNatureSummaryDto[];
   summaryRows?: DailySettlementSummaryRowDto[];

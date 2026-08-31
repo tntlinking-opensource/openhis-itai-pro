@@ -4,24 +4,32 @@
  */
 package com.openhis.health.application.physicalexam.financial.charge.service;
 
-import com.openhis.health.application.outpatient.financial.charge.support.OutpatientChargeSettlementGate;
 import com.openhis.health.application.outpatient.financial.charge.support.OutpatientPaymentDraftLifecycleOrchestrator;
+import com.openhis.health.application.outpatient.financial.refund.request.ExecuteOutpatientBillRefundByPaymentRequest;
+import com.openhis.health.application.outpatient.financial.refund.response.ExecuteOutpatientBillRefundByPaymentResponse;
+import com.openhis.health.application.outpatient.financial.refund.service.OutpatientRefundAppService;
+import com.openhis.health.application.physicalexam.financial.charge.support.PhysicalExamChargeSettlementGate;
+import com.openhis.health.application.physicalexam.financial.charge.support.PhysicalExamPlannedChargeEnsureSupport;
 import com.openhis.health.application.physicalexam.financial.charge.dto.PhysicalExamChargeQueueRowDto;
 import com.openhis.health.application.physicalexam.financial.charge.mapper.PhysicalExamChargeMapper;
+import com.openhis.health.application.physicalexam.financial.charge.request.AdjustPhysicalExamChargePricesRequest;
 import com.openhis.health.application.physicalexam.financial.charge.request.ConfirmPhysicalExamChargeSettlementRequest;
 import com.openhis.health.application.physicalexam.financial.charge.request.LoadPhysicalExamChargeItemsRequest;
 import com.openhis.health.application.physicalexam.financial.charge.request.LoadPhysicalExamChargePageInitRequest;
 import com.openhis.health.application.physicalexam.financial.charge.request.PagePhysicalExamChargeQueueRequest;
 import com.openhis.health.application.physicalexam.financial.charge.request.PreSettlePhysicalExamChargesRequest;
+import com.openhis.health.application.physicalexam.financial.charge.request.PreviewPhysicalExamRefundRequest;
 import com.openhis.health.application.physicalexam.financial.charge.request.RefreshPhysicalExamChargeStatusRequest;
+import com.openhis.health.application.physicalexam.financial.charge.request.RefundPhysicalExamChargesRequest;
 import com.openhis.health.application.physicalexam.financial.charge.response.ConfirmPhysicalExamChargeSettlementResponse;
 import com.openhis.health.application.physicalexam.financial.charge.response.LoadPhysicalExamChargeItemsResponse;
 import com.openhis.health.application.physicalexam.financial.charge.response.LoadPhysicalExamChargePageInitResponse;
 import com.openhis.health.application.physicalexam.financial.charge.response.PagePhysicalExamChargeQueueResponse;
 import com.openhis.health.application.physicalexam.financial.charge.response.PreSettlePhysicalExamChargesResponse;
+import com.openhis.health.application.physicalexam.financial.charge.response.PreviewPhysicalExamRefundResponse;
 import com.openhis.health.application.physicalexam.financial.charge.response.RefreshPhysicalExamChargeStatusResponse;
+import com.openhis.health.application.physicalexam.financial.charge.response.RefundPhysicalExamChargesResponse;
 import com.openhis.health.application.physicalexam.financial.charge.support.PhysicalExamChargeEncounterQueueLoader;
-import com.openhis.health.application.physicalexam.financial.charge.support.PhysicalExamPlannedChargeEnsureSupport;
 import com.openhis.health.application.shared.financial.PaymentChannelOptionProvider;
 import com.openhis.health.application.shared.pagination.PageQueryBinder;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
@@ -29,6 +37,7 @@ import com.openhis.health.application.shared.validator.PageWindowGate;
 import com.openhis.health.domain.administration.account.entity.Account;
 import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.administration.chargeitem.command.BatchChargeItemIdsCommand;
+import com.openhis.health.domain.administration.chargeitem.command.ManualOverridePlannedChargeItemPricesCommand;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.chargeitem.query.OutpatientChargeQueueEncounterQuery;
@@ -39,6 +48,7 @@ import com.openhis.health.domain.administration.chargeitemdefinition.service.Cha
 import com.openhis.health.domain.administration.encounter.entity.Encounter;
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDetailQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
+import com.openhis.health.domain.administration.patient.queries.model.PatientInpatientProjectionSnapshot;
 import com.openhis.health.domain.administration.patient.service.PatientQueryService;
 import com.openhis.health.domain.financial.paymentreconciliation.command.CreatePaymentDraftFromPreSettleCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.PaymentDetailItemCommand;
@@ -51,6 +61,7 @@ import com.openhis.health.domain.peis.encounterext.queries.model.PeisEncounterEx
 import com.openhis.health.domain.peis.encounterext.service.PeisEncounterExtQueryService;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.PhysicalExamChargeConstants;
+import com.openhis.health.domain.share.constants.PhysicalExamChargeKind;
 import com.openhis.health.domain.share.constants.PhysicalExamChargeQueueTab;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.ChargeItemStatus;
@@ -76,13 +87,13 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 体检收费应用服务（AS-PE-FIN-001）：PE 待收/已收队列、明细、自费预结算与正式结算。
+ * 体检收费应用服务（AS-PE-FIN-001）：PE 待收/已收队列、明细、自费预结算与正式结算、已结退费。
  *
  * <p>职责边界：</p>
  * <ul>
  *   <li>Gate：仅 {@code Encounter.class=PE}；写路径操作人由会话解析；正式结算防重与草稿一致性。</li>
  *   <li>Pre：队列经 {@link PhysicalExamChargeEncounterQueueLoader} 收敛；明细前懒生成 PLANNED（GAP-PE-CHG-02）。</li>
- *   <li>Cmd：复用门诊自费支付编排（草稿生命周期、落账、开票）；不写医保/诊断门禁/医嘱 sync。</li>
+ *   <li>Cmd：复用门诊自费支付编排（草稿生命周期、落账、开票）；已结退费先置 {@code REFUNDING} 再复用门诊账单冲正。</li>
  *   <li>Asm：经 {@link PhysicalExamChargeMapper} 装配响应，禁止 JSON 串出参。</li>
  * </ul>
  *
@@ -130,8 +141,10 @@ public class PhysicalExamChargeAppService {
     private final InvoiceAfterPaymentOrchestration invoiceAfterPaymentOrchestration;
     /** 同就诊 DRAFT 支付作废。 */
     private final OutpatientPaymentDraftLifecycleOrchestrator outpatientPaymentDraftLifecycleOrchestrator;
-    /** 正式结算前 PLANNED+锚点可收费 Gate。 */
-    private final OutpatientChargeSettlementGate outpatientChargeSettlementGate;
+    /** 正式结算前 PLANNED + 体检服务申请锚点可收费 Gate。 */
+    private final PhysicalExamChargeSettlementGate physicalExamChargeSettlementGate;
+    /** 门诊账单退费执行（资金冲正与收费收口，PE 收银员发起后退调用）。 */
+    private final OutpatientRefundAppService outpatientRefundAppService;
 
     /**
      * IF-PE-CHG-01：加载体检收费页初始化数据。
@@ -201,8 +214,9 @@ public class PhysicalExamChargeAppService {
             Long operatorId = currentPractitionerResolver.requireOperatorId(
                 ErrorCodeConstants.PRACTITIONER_INVALID_ARGUMENT,
                 "当前会话操作人不能为空");
-            // Pre：懒生成 PLANNED 收费项
-            physicalExamPlannedChargeEnsureSupport.ensureForEncounter(request.getEncounterId(), operatorId);
+            // Pre：懒生成 PLANNED 收费项（不收费项跳过；缺 SALE 收集警告不阻断）
+            List<String> pricingWarnings = physicalExamPlannedChargeEnsureSupport.ensureForEncounter(
+                request.getEncounterId(), operatorId);
             List<ChargeItem> rows = this.listBillableChargeItems(request.getEncounterId());
             Map<Long, String> itemLabels = this.buildItemLabelMap(rows);
             LoadPhysicalExamChargeItemsResponse response = new LoadPhysicalExamChargeItemsResponse();
@@ -214,6 +228,7 @@ public class PhysicalExamChargeAppService {
                 response.setPackageName(this.resolvePackageName(ext));
             }
             response.setItems(physicalExamChargeMapper.toChargeItemRows(rows, itemLabels));
+            response.setPricingWarnings(pricingWarnings);
             BigDecimal plannedTotal = BigDecimal.ZERO;
             BigDecimal settledTotal = BigDecimal.ZERO;
             for (ChargeItem row : rows) {
@@ -266,6 +281,7 @@ public class PhysicalExamChargeAppService {
         List<ChargeItem> chargeItems = chargeItemQueryService.loadChargeItemsByIds(queryCommand);
         this.assertChargeItemsLoaded(request.getChargeItemIds(), chargeItems);
         this.assertChargeItemsBelongEncounter(chargeItems, request.getEncounterId());
+        physicalExamPlannedChargeEnsureSupport.activateDraftServiceRequestsForChargeItems(chargeItems, operatorId);
         BatchChargeItemIdsCommand preSettleCommand =
             physicalExamChargeMapper.toBatchChargeItemIdsCommand(request.getChargeItemIds(), operatorId);
         // Cmd：作废遗留草稿 → 预结算 → 创建支付草稿
@@ -336,8 +352,12 @@ public class PhysicalExamChargeAppService {
         this.assertChargeItemsLoaded(request.getChargeItemIds(), chargeItems);
         this.assertChargeItemsBelongEncounter(chargeItems, request.getEncounterId());
         this.assertNotSettledChargeItems(chargeItems);
-        // Gate：PE 明细 wkf_service_request 锚点可收费
-        outpatientChargeSettlementGate.assertChargeItemsSettleable(chargeItems);
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
+            ErrorCodeConstants.PRACTITIONER_INVALID_ARGUMENT,
+            "当前会话操作人不能为空");
+        physicalExamPlannedChargeEnsureSupport.activateDraftServiceRequestsForChargeItems(chargeItems, operatorId);
+        // Gate：PE 明细 wkf_service_request 锚点可收费（不要求门诊药耗批号门禁）
+        physicalExamChargeSettlementGate.assertChargeItemsSettleable(chargeItems);
         BigDecimal expected = MonetaryAmountSupport.sumThenSettle(this.sumChargeItemAmount(chargeItems));
         this.assertDraftDetailAmountMatchesExpected(details, expected);
         BigDecimal actual = this.sumSubmitAmount(request);
@@ -346,9 +366,6 @@ public class PhysicalExamChargeAppService {
                 ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT,
                 PhysicalExamChargeConstants.MESSAGE_CODE_SETTLE_AMOUNT_MISMATCH + ": 支付金额与预结算不一致");
         }
-        Long operatorId = currentPractitionerResolver.requireOperatorId(
-            ErrorCodeConstants.PRACTITIONER_INVALID_ARGUMENT,
-            "当前会话操作人不能为空");
         SettleOutpatientPaymentCommand settleCommand = physicalExamChargeMapper.toSettleOutpatientPaymentCommand(request);
         this.attachDraftAccountsToPayReceiptDetails(settleCommand.getPayReceiptDetails(), details);
         Long paymentId = paymentReconciliationSettleOrchestration.settleOutpatientPayment(settleCommand);
@@ -363,6 +380,168 @@ public class PhysicalExamChargeAppService {
         Long invoiceId = invoiceAfterPaymentOrchestration.createDraftAndScheduleIssueIfPayable(
             physicalExamChargeMapper.toCreateDraftInvoiceCommand(payment, paymentId, operatorId, invoiceFaceAmount));
         return physicalExamChargeMapper.toConfirmSettlementResponse(paymentId, invoiceId);
+    }
+
+    /**
+     * IF-PE-CHG-08：体检项目改价（{@code wkf_service_request} 加项或 {@code wkf_activity_definition} 套餐整单，且 {@code PLANNED}）。
+     *
+     * @param request 改价请求
+     * @return 刷新后的收费明细
+     */
+    public LoadPhysicalExamChargeItemsResponse adjustChargeItemPrices(AdjustPhysicalExamChargePricesRequest request) {
+        if (request == null || request.getEncounterId() == null
+            || request.getItems() == null || request.getItems().isEmpty()) {
+            throw new BusinessException(
+                ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT,
+                PhysicalExamChargeConstants.MESSAGE_CODE_ADJUST_PRICE_FAILED + ": 改价参数不完整");
+        }
+        EncounterDetailQueryModel encounter = encounterQueryService.mustGetEncounterOfClass(
+            request.getEncounterId(),
+            EncounterClass.PE.getCode(),
+            ErrorCodeConstants.ENCOUNTER_INVALID_STATUS,
+            PhysicalExamChargeConstants.MESSAGE_CODE_ENCOUNTER_INVALID + ": 非体检就诊");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
+            ErrorCodeConstants.PRACTITIONER_INVALID_ARGUMENT,
+            "当前会话操作人不能为空");
+        List<Long> chargeItemIds = new ArrayList<>();
+        for (AdjustPhysicalExamChargePricesRequest.Item item : request.getItems()) {
+            if (item == null || item.getChargeItemId() == null) {
+                throw new BusinessException(
+                    ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT,
+                    PhysicalExamChargeConstants.MESSAGE_CODE_ADJUST_PRICE_FAILED + ": 收费明细主键不能为空");
+            }
+            chargeItemIds.add(item.getChargeItemId());
+        }
+        ChargeItemQueryCommand queryCommand = new ChargeItemQueryCommand();
+        queryCommand.setIds(chargeItemIds);
+        List<ChargeItem> chargeItems = chargeItemQueryService.loadChargeItemsByIds(queryCommand);
+        this.assertChargeItemsLoaded(chargeItemIds, chargeItems);
+        this.assertChargeItemsBelongEncounter(chargeItems, request.getEncounterId());
+        for (ChargeItem chargeItem : chargeItems) {
+            if (chargeItem == null) {
+                continue;
+            }
+            String serviceTable = chargeItem.getServiceTable();
+            boolean allowedAnchor = false;
+            // 加项锚 SR，个检套餐整单锚 AD
+            if (TableNameConstants.WKF_SERVICE_REQUEST.equals(serviceTable)) {
+                allowedAnchor = true;
+            } else if (TableNameConstants.WKF_ACTIVITY_DEFINITION.equals(serviceTable)) {
+                allowedAnchor = true;
+            }
+            if (!allowedAnchor) {
+                throw new BusinessException(
+                    ErrorCodeConstants.CHARGE_ITEM_RULE_CONFLICT,
+                    PhysicalExamChargeConstants.MESSAGE_CODE_ADJUST_PRICE_FAILED + ": 仅体检套餐或加项可改价");
+            }
+            // 已结算或非待收费不可改价
+            if (!ChargeItemStatus.PLANNED.getCode().equals(chargeItem.getStatusEnum())) {
+                throw new BusinessException(
+                    ErrorCodeConstants.CHARGE_ITEM_INVALID_STATUS,
+                    PhysicalExamChargeConstants.MESSAGE_CODE_ADJUST_PRICE_FAILED + ": 仅待收费明细可改价");
+            }
+        }
+        // Cmd：改价后作废遗留支付草稿，避免预结算金额与明细不一致
+        outpatientPaymentDraftLifecycleOrchestrator.cancelAllDraftsForEncounter(request.getEncounterId(), null);
+        ManualOverridePlannedChargeItemPricesCommand overrideCommand =
+            physicalExamChargeMapper.toManualOverridePlannedChargeItemPricesCommand(request, operatorId);
+        chargeItemDomainService.manualOverridePlannedChargeItemPrices(overrideCommand);
+        LoadPhysicalExamChargeItemsRequest reloadRequest = new LoadPhysicalExamChargeItemsRequest();
+        reloadRequest.setEncounterId(request.getEncounterId());
+        reloadRequest.setPatientId(encounter.getPatientId());
+        return this.loadChargeItems(reloadRequest);
+    }
+
+    /**
+     * IF-PE-CHG-09：预览已结收费项对应的原支付整单应退金额与渠道。
+     *
+     * @param request 预览请求
+     * @return 退费预览
+     */
+    public PreviewPhysicalExamRefundResponse previewRefundCharges(PreviewPhysicalExamRefundRequest request) {
+        // Gate：就诊与拟退行必填
+        if (request == null || request.getEncounterId() == null
+            || request.getChargeItemIds() == null || request.getChargeItemIds().isEmpty()) {
+            throw new BusinessException(
+                ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT,
+                PhysicalExamChargeConstants.MESSAGE_CODE_REFUND_FAILED + ": 请选择已收费项目");
+        }
+        encounterQueryService.mustGetEncounterOfClass(
+            request.getEncounterId(),
+            EncounterClass.PE.getCode(),
+            ErrorCodeConstants.ENCOUNTER_INVALID_STATUS,
+            PhysicalExamChargeConstants.MESSAGE_CODE_ENCOUNTER_INVALID + ": 非体检就诊或记录不存在");
+        // Pre：定位原支付并展开整单拟退行
+        PaymentReconciliationQueryModel originalPayment =
+            this.resolveOriginalPaymentForRefund(request.getEncounterId(), request.getChargeItemIds());
+        List<Long> refundingIds = this.resolveRefundingChargeItemIds(originalPayment, request.getChargeItemIds());
+        List<ChargeItem> refundingRows = this.loadRefundingChargeItems(refundingIds, request.getEncounterId());
+        this.assertChargeItemsRefundable(refundingRows);
+        Map<Long, String> itemLabels = this.buildItemLabelMap(refundingRows);
+        List<String> channelCodes = this.listOriginalPayChannelCodes(originalPayment.getId());
+        BigDecimal refundableAmount = this.resolveRefundableAmount(originalPayment, refundingRows);
+        // Asm：预览不写库
+        return physicalExamChargeMapper.toPreviewRefundResponse(
+            originalPayment.getId(),
+            refundableAmount,
+            channelCodes,
+            refundingIds,
+            physicalExamChargeMapper.toPreSettlePreviews(refundingRows, itemLabels));
+    }
+
+    /**
+     * IF-PE-CHG-10：收银员对已结体检账单整单退费（无需医生站申请）。
+     *
+     * @param request 退费请求
+     * @return 执行结果
+     */
+    public RefundPhysicalExamChargesResponse refundCharges(RefundPhysicalExamChargesRequest request) {
+        // Gate：就诊、原支付与拟退行必填
+        if (request == null || request.getEncounterId() == null
+            || request.getOriginalPaymentId() == null
+            || request.getRefundingChargeItemIds() == null
+            || request.getRefundingChargeItemIds().isEmpty()) {
+            throw new BusinessException(
+                ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT,
+                PhysicalExamChargeConstants.MESSAGE_CODE_REFUND_FAILED + ": 退费参数不完整");
+        }
+        encounterQueryService.mustGetEncounterOfClass(
+            request.getEncounterId(),
+            EncounterClass.PE.getCode(),
+            ErrorCodeConstants.ENCOUNTER_INVALID_STATUS,
+            PhysicalExamChargeConstants.MESSAGE_CODE_ENCOUNTER_INVALID + ": 非体检就诊或记录不存在");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
+            ErrorCodeConstants.PRACTITIONER_INVALID_ARGUMENT,
+            "当前会话操作人不能为空");
+        // Pre：按拟退行解析原支付，须与前端锁定的原单一致
+        PaymentReconciliationQueryModel originalPayment =
+            this.resolveOriginalPaymentForRefund(request.getEncounterId(), request.getRefundingChargeItemIds());
+        if (!request.getOriginalPaymentId().equals(originalPayment.getId())) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT,
+                PhysicalExamChargeConstants.MESSAGE_CODE_REFUND_FAILED + ": 原支付已变化，请刷新后重试");
+        }
+        List<Long> refundingIds = this.resolveRefundingChargeItemIds(originalPayment, request.getRefundingChargeItemIds());
+        this.assertRequestedRefundIdsCoverSnapshot(request.getRefundingChargeItemIds(), refundingIds);
+        List<ChargeItem> refundingRows = this.loadRefundingChargeItems(refundingIds, request.getEncounterId());
+        this.assertChargeItemsRefundable(refundingRows);
+        List<Long> settledIds = this.collectSettledChargeItemIds(refundingRows);
+        // Cmd：已结行先进入退款中，与门诊 IF-REF-05 执行前置一致；已是 REFUNDING 的行供失败重试
+        if (!settledIds.isEmpty()) {
+            chargeItemDomainService.requestOutpatientBillRefund(
+                physicalExamChargeMapper.toBatchChargeItemIdsCommand(settledIds, operatorId));
+        }
+        ExecuteOutpatientBillRefundByPaymentRequest executeRequest = new ExecuteOutpatientBillRefundByPaymentRequest();
+        executeRequest.setEncounterId(request.getEncounterId());
+        executeRequest.setOriginalPaymentId(originalPayment.getId());
+        executeRequest.setRefundingChargeItemIds(refundingIds);
+        executeRequest.setBillDate(request.getBillDate());
+        executeRequest.setClientRefundResult(request.getClientRefundResult());
+        ExecuteOutpatientBillRefundByPaymentResponse executed =
+            outpatientRefundAppService.executeOutpatientBillRefundByPayment(executeRequest);
+        // Asm：返回逆向单主键供前端清缓存
+        return physicalExamChargeMapper.toRefundChargesResponse(
+            originalPayment.getId(), executed.getReversePaymentId());
     }
 
     /**
@@ -415,6 +594,7 @@ public class PhysicalExamChargeAppService {
             OutpatientChargeQueueEncounterQuery queueQuery = new OutpatientChargeQueueEncounterQuery();
             PageQueryBinder.bind(request, queueQuery);
             queueQuery.setExcludedServiceTable(TableNameConstants.ADM_HEALTHCARE_SERVICE);
+            queueQuery.setPeGroupFlag(resolvePeGroupFlagFilter(request.getChargeKind()));
             Page<Long> encounterPage = physicalExamChargeEncounterQueueLoader.pageEncounterIdsForPhysicalExamCashierQueue(queueQuery);
             List<Long> encounterIds = encounterPage.getContent();
             Map<Long, Encounter> encounterById = new HashMap<>();
@@ -427,7 +607,8 @@ public class PhysicalExamChargeAppService {
                     }
                 }
             }
-            Map<Long, String> patientNames = patientQueryService.findPatientNamesByIds(patientIds);
+            Map<Long, PatientInpatientProjectionSnapshot> patientSnapshots =
+                patientQueryService.mapInpatientProjectionSnapshotsByIds(patientIds);
             Map<Long, PeisEncounterExtModel> extByEncounter = peisEncounterExtQueryService.mapByEncounterIds(encounterIds);
             LinkedHashSet<Long> encounterIdSet = new LinkedHashSet<>(encounterIds);
             List<ChargeItem> chargeLines = chargeItemQueryService.listOutpatientCashierChargeItemsForEncounters(
@@ -444,7 +625,7 @@ public class PhysicalExamChargeAppService {
             List<PhysicalExamChargeQueueRowDto> rows = physicalExamChargeMapper.toQueueRows(
                 encounterIds,
                 encounterById,
-                patientNames,
+                patientSnapshots,
                 extByEncounter,
                 chargeItemsByEncounter);
             this.applyDraftPaymentQueueLabels(rows);
@@ -465,6 +646,13 @@ public class PhysicalExamChargeAppService {
                 ErrorCodeConstants.ENCOUNTER_RULE_CONFLICT,
                 PhysicalExamChargeConstants.MESSAGE_CODE_QUEUE_QUERY_FAILED + ": 查询体检收费队列失败");
         }
+    }
+
+    private static Boolean resolvePeGroupFlagFilter(String chargeKind) {
+        if (PhysicalExamChargeKind.GROUP.equalsIgnoreCase(chargeKind)) {
+            return Boolean.TRUE;
+        }
+        return Boolean.FALSE;
     }
 
     /**
@@ -516,7 +704,9 @@ public class PhysicalExamChargeAppService {
     }
 
     /**
-     * 列出就诊下 PLANNED/SETTLED 明细（排除挂号锚点）。
+     * 列出就诊下 PLANNED/SETTLED/REFUNDING 明细（排除挂号锚点）。
+     *
+     * <p>含 {@code REFUNDING} 供退费半失败后收银员重试；不含 {@code REFUNDED}。</p>
      *
      * @param encounterId 就诊主键
      * @return 收费明细
@@ -525,9 +715,199 @@ public class PhysicalExamChargeAppService {
         ChargeItemQueryCommand cmd = new ChargeItemQueryCommand();
         cmd.setEncounterId(encounterId);
         cmd.setExcludedServiceTable(TableNameConstants.ADM_HEALTHCARE_SERVICE);
-        cmd.setStatusEnumIn(chargeItemQueryService.outpatientCashierBillableStatusCodes());
+        List<String> statusCodes = new ArrayList<>();
+        for (String code : chargeItemQueryService.outpatientCashierBillableStatusCodes()) {
+            statusCodes.add(code);
+        }
+        statusCodes.add(ChargeItemStatus.REFUNDING.getCode());
+        cmd.setStatusEnumIn(statusCodes);
         cmd.setExcludeSupersededSettledLines(true);
         return chargeItemQueryService.listChargeItemsByEncounterId(cmd);
+    }
+
+    /**
+     * 按拟退收费项定位唯一原支付（SUCCESS 或退款受理中）。
+     *
+     * @param encounterId   就诊主键
+     * @param chargeItemIds 拟退收费项
+     * @return 原支付读模型
+     */
+    private PaymentReconciliationQueryModel resolveOriginalPaymentForRefund(
+        Long encounterId,
+        List<Long> chargeItemIds) {
+        List<PaymentReconciliationQueryModel> overlapping =
+            paymentReconciliationQueryService.findPaySuccessOrRefundingOverlappingChargeItems(
+                encounterId, chargeItemIds);
+        PaymentReconciliationQueryModel chosen = null;
+        for (PaymentReconciliationQueryModel row : overlapping) {
+            if (row == null || row.getId() == null) {
+                continue;
+            }
+            // 逆向单不参与原支付定位
+            if (row.getRelationId() != null) {
+                continue;
+            }
+            if (chosen == null) {
+                chosen = row;
+                continue;
+            }
+            // 所选项目分属多笔支付时拒绝，避免一次冲两笔
+            if (!chosen.getId().equals(row.getId())) {
+                throw new BusinessException(
+                    ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT,
+                    PhysicalExamChargeConstants.MESSAGE_CODE_REFUND_MULTI_PAYMENT + ": 所选项目分属多笔支付，请分次退费");
+            }
+        }
+        if (chosen == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_NOT_FOUND,
+                PhysicalExamChargeConstants.MESSAGE_CODE_REFUND_NO_PAYMENT + ": 未找到可退的原支付");
+        }
+        return chosen;
+    }
+
+    /**
+     * 原支付快照展开为拟退收费项；快照为空时回落请求 id。
+     *
+     * @param originalPayment 原支付
+     * @param requestedIds    前端勾选 id
+     * @return 整单拟退 id
+     */
+    private List<Long> resolveRefundingChargeItemIds(
+        PaymentReconciliationQueryModel originalPayment,
+        List<Long> requestedIds) {
+        LinkedHashSet<Long> snapshot = this.parseChargeItemIds(originalPayment.getChargeItemIds());
+        if (snapshot.isEmpty()) {
+            if (requestedIds != null) {
+                for (Long id : requestedIds) {
+                    if (id != null) {
+                        snapshot.add(id);
+                    }
+                }
+            }
+        }
+        return new ArrayList<>(snapshot);
+    }
+
+    /**
+     * 加载拟退收费项并校验归属就诊。
+     *
+     * @param refundingIds 拟退 id
+     * @param encounterId  就诊主键
+     * @return 收费明细
+     */
+    private List<ChargeItem> loadRefundingChargeItems(List<Long> refundingIds, Long encounterId) {
+        ChargeItemQueryCommand loadCmd = new ChargeItemQueryCommand();
+        loadCmd.setIds(refundingIds);
+        List<ChargeItem> rows = chargeItemQueryService.loadChargeItemsByIds(loadCmd);
+        this.assertChargeItemsLoaded(refundingIds, rows);
+        this.assertChargeItemsBelongEncounter(rows, encounterId);
+        return rows;
+    }
+
+    /**
+     * 拟退行须为已结算或退款中；已退款拒绝重复退。
+     *
+     * @param rows 拟退收费项
+     */
+    private void assertChargeItemsRefundable(List<ChargeItem> rows) {
+        for (ChargeItem row : rows) {
+            if (row == null) {
+                continue;
+            }
+            String status = row.getStatusEnum();
+            if (ChargeItemStatus.SETTLED.getCode().equals(status)) {
+                continue;
+            }
+            if (ChargeItemStatus.REFUNDING.getCode().equals(status)) {
+                continue;
+            }
+            throw new BusinessException(
+                ErrorCodeConstants.CHARGE_ITEM_INVALID_STATUS,
+                PhysicalExamChargeConstants.MESSAGE_CODE_REFUND_STATUS_INVALID + ": 仅已收费项目可退费");
+        }
+    }
+
+    /**
+     * 前端提交的拟退 id 须覆盖原支付整单快照。
+     *
+     * @param requestedIds 请求 id
+     * @param snapshotIds  快照整单 id
+     */
+    private void assertRequestedRefundIdsCoverSnapshot(List<Long> requestedIds, List<Long> snapshotIds) {
+        LinkedHashSet<Long> requested = new LinkedHashSet<>();
+        if (requestedIds != null) {
+            for (Long id : requestedIds) {
+                if (id != null) {
+                    requested.add(id);
+                }
+            }
+        }
+        for (Long snapshotId : snapshotIds) {
+            if (snapshotId == null) {
+                continue;
+            }
+            if (!requested.contains(snapshotId)) {
+                throw new BusinessException(
+                    ErrorCodeConstants.CHARGE_ITEM_RULE_CONFLICT,
+                    PhysicalExamChargeConstants.MESSAGE_CODE_REFUND_FAILED + ": 同一笔原支付须整单退费");
+            }
+        }
+    }
+
+    /**
+     * 收集仍为已结算、需先置退款中的收费项。
+     *
+     * @param rows 拟退行
+     * @return 已结算 id
+     */
+    private List<Long> collectSettledChargeItemIds(List<ChargeItem> rows) {
+        List<Long> settledIds = new ArrayList<>();
+        for (ChargeItem row : rows) {
+            if (row == null || row.getId() == null) {
+                continue;
+            }
+            if (ChargeItemStatus.SETTLED.getCode().equals(row.getStatusEnum())) {
+                settledIds.add(row.getId());
+            }
+        }
+        return settledIds;
+    }
+
+    /**
+     * 读取原支付明细去重渠道码。
+     *
+     * @param paymentId 原支付主键
+     * @return 渠道码列表
+     */
+    private List<String> listOriginalPayChannelCodes(Long paymentId) {
+        Map<Long, List<String>> byPayment =
+            paymentReconciliationQueryService.mapDistinctPayEnumCodesByPaymentIds(List.of(paymentId));
+        List<String> codes = byPayment.get(paymentId);
+        if (codes == null) {
+            return new ArrayList<>();
+        }
+        return codes;
+    }
+
+    /**
+     * 解析应退金额：优先原支付展示额，其次实收，再次拟退行合计。
+     *
+     * @param originalPayment 原支付
+     * @param refundingRows   拟退行
+     * @return 结算 2 位金额
+     */
+    private BigDecimal resolveRefundableAmount(
+        PaymentReconciliationQueryModel originalPayment,
+        List<ChargeItem> refundingRows) {
+        BigDecimal headerAmount = originalPayment.getDisplayAmount();
+        if (headerAmount == null) {
+            headerAmount = originalPayment.getTenderedAmount();
+        }
+        if (headerAmount == null) {
+            headerAmount = MonetaryAmountSupport.sumThenSettle(this.sumChargeItemAmount(refundingRows));
+        }
+        return MonetaryAmountSupport.scaleSettle(headerAmount);
     }
 
     /**

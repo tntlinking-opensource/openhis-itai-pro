@@ -6,6 +6,11 @@ declare module 'vue-plugin-hiprint' {
     };
     PrintTemplate: new (options: Record<string, unknown>) => unknown;
     setConfig: (config: Record<string, unknown>) => void;
+    /** 按 tid 替换/修补 provider 中的元素类型（勿用 named export，Vite CJS 抽不齐） */
+    updateElementType: (
+      tid: string,
+      patch: (type: Record<string, unknown>) => Record<string, unknown>,
+    ) => Record<string, unknown> | undefined;
   };
   export const defaultElementTypeProvider: new () => unknown;
   export const disAutoConnect: () => void;

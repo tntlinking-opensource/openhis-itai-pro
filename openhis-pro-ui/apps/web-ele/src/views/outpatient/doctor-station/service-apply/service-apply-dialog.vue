@@ -50,6 +50,7 @@ import {
   formatMoneyDisplay,
   sumMoneyThenSettle,
 } from '#/utils/format/money-scale';
+import { resolveServicePreviewBillQuantity } from '../advice/services/service-quantity-calc';
 import { printServiceApplyForms } from '#/utils/print/print-service-apply';
 import { syncLineRemarkWithRehabTreatmentCourse } from '#/utils/service-apply-display';
 import { loadAllDepartmentPerformOrgOptions } from '#/views/doctor-station/advice-shared/perform-org-options.service';
@@ -68,15 +69,18 @@ import {
   catalogRowKey,
   catalogRowUnitPrice,
   detailTargetIds,
+  enrichServiceApplySelectedItemsBoundConsumables,
   filterSpecimenDefinitionOptions,
   firstTreeOptionValue,
   matchBodyStructureTreeFilterNode,
   mergeCatalogDefaultPerformOrgOptions,
+  persistServiceApplyDraftBindsAfterSign,
   pickCatalogDefaultPerformOrgId,
   pickDefaultServiceApplyEncounterDiagnosisIds,
   resolveServiceApplyDiagnosisIdsFromAdviceRow,
   resolveServiceApplyFormExecutionCount,
   resolveServiceApplyKindLabel,
+  validateServiceApplyBoundConsumablesBeforeSign,
   validateServiceApplySelectedItems,
 } from './service-apply.service';
 import * as outpatientServiceApplyApi from './service-apply.service';
@@ -229,10 +233,15 @@ const selectedCatalogRowKeys = computed(
   () => new Set(selectedItems.value.map((row) => row.catalogRowKey)),
 );
 
-/** 已选合计金额（6 位加总后 2 位展示；入账以后端为准） */
+/** 已选合计金额（单次量×整单次数×单价；入账以后端为准） */
 const selectedTotalAmount = computed(() =>
   sumMoneyThenSettle(
-    selectedItems.value.map((row) => calcMoneyLineTotal(row.unitPrice, row.quantity)),
+    selectedItems.value.map((row) =>
+      calcMoneyLineTotal(
+        row.unitPrice,
+        resolveServicePreviewBillQuantity(row.quantity, executionCount.value),
+      ),
+    ),
   ),
 );
 
@@ -513,6 +522,48 @@ function resolveOrganizationUnitId(): string | undefined {
   return String(orgRaw).trim();
 }
 
+/** 为单行补齐诊疗模板绑定的带出耗材 */
+async function enrichRowBoundConsumables(rowKey: string) {
+  const encounterId = String(props.encounterId ?? '').trim();
+  const patientId = String(props.patientId ?? '').trim();
+  if (!encounterId || !patientId) {
+    return;
+  }
+  const index = selectedItems.value.findIndex((row) => row.rowKey === rowKey);
+  if (index < 0) {
+    return;
+  }
+  const snapshot = [...selectedItems.value];
+  const enriched = await enrichServiceApplySelectedItemsBoundConsumables({
+    encounterId,
+    patientId,
+    items: snapshot,
+    stationScope: isInpatientScope.value ? 'inpatient' : 'outpatient',
+  });
+  const nextItem = enriched[index];
+  if (!nextItem) {
+    return;
+  }
+  selectedItems.value = selectedItems.value.map((row, i) => (i === index ? nextItem : row));
+}
+
+/** 从项目卡移除一条带出耗材（仅本次申请，不落库直到签发） */
+function handleRemoveBoundConsumable(rowKey: string, consumableKey: string) {
+  selectedItems.value = selectedItems.value.map((row) => {
+    if (row.rowKey !== rowKey) {
+      return row;
+    }
+    const nextConsumables = (row.boundConsumables ?? []).filter(
+      (item) => item.key !== consumableKey,
+    );
+    return {
+      ...row,
+      boundConsumables: nextConsumables,
+      boundConsumablesLoaded: true,
+    };
+  });
+}
+
 /** 点击左侧目录行：加入右侧清单 */
 async function handleAddCatalogItem(row: DoctorStationAdviceCatalogRowDto) {
   const key = catalogRowKey(row);
@@ -520,9 +571,10 @@ async function handleAddCatalogItem(row: DoctorStationAdviceCatalogRowDto) {
     ElMessage.warning('该项目已在申请清单中');
     return;
   }
-  selectedItems.value = [...selectedItems.value, buildSelectedRow(row)];
-  // 执行科室仅允许科室节点；默认值是否可用由 refreshOrgOptions 按候选集裁定
+  const selectedRow = buildSelectedRow(row);
+  selectedItems.value = [...selectedItems.value, selectedRow];
   await refreshOrgOptions();
+  await enrichRowBoundConsumables(selectedRow.rowKey);
 }
 
 /** 从右侧清单移除一行 */
@@ -597,8 +649,29 @@ async function executeSignRequests(): Promise<{
   patientId: string;
   prescriptionNo: string;
 }> {
-  const { encounterId, patientId, requestIds } = await persistApplyForm();
-  await serviceApplyApi.value.signServiceApplyRequests({ encounterId, patientId, requestIds });
+  const encounterId = String(props.encounterId ?? '').trim();
+  const patientId = String(props.patientId ?? '').trim();
+  await validateServiceApplyBoundConsumablesBeforeSign({
+    encounterId,
+    patientId,
+    stationScope: isInpatientScope.value ? 'inpatient' : 'outpatient',
+    organizationUnitId: resolveOrganizationUnitId(),
+    items: selectedItems.value,
+  });
+  const { requestIds } = await persistApplyForm();
+  await persistServiceApplyDraftBindsAfterSign({
+    encounterId,
+    patientId,
+    items: selectedItems.value,
+    requestIds,
+    stationScope: isInpatientScope.value ? 'inpatient' : 'outpatient',
+  });
+  await serviceApplyApi.value.signServiceApplyRequests({
+    encounterId,
+    patientId,
+    requestIds,
+    stationScope: isInpatientScope.value ? 'inpatient' : 'outpatient',
+  });
   return {
     encounterId,
     patientId,
@@ -729,15 +802,17 @@ function writeDetailTargetIds(row: ServiceApplySelectedItem, ids: null | string[
 /** 编辑模式：将列表行回显到右侧清单 */
 async function hydrateFromEditDocumentGroup(group: ServiceApplyDocumentGroup) {
   savedPrescriptionNo.value = group.applyFormNo;
+  // 整单执行次数：各行应一致，取首个有效值
+  executionCount.value = resolveServiceApplyFormExecutionCount(group.lines);
   selectedItems.value = buildServiceApplySelectedItemsFromAdviceRows(
     group.lines,
     effectiveApplyKind.value,
+    group.boundConsumablesByRequestId,
+    executionCount.value,
   );
   const head = group.lines[0];
   const previousOrgId = String(head?.performOrgId ?? '').trim();
   orgId.value = previousOrgId;
-  // 整单执行次数：各行应一致，取首个有效值
-  executionCount.value = resolveServiceApplyFormExecutionCount(group.lines);
   // 住院申请单不回显诊断
   if (!isInpatientScope.value) {
     const options = buildServiceApplyDiagnosisOptions(encounterDiagnosisRows.value);
@@ -772,6 +847,12 @@ async function hydrateFromEditDocumentGroup(group: ServiceApplyDocumentGroup) {
   }
   // 回显科室名后再按康复科规则补备注（编辑单可能尚未写入该文案）
   syncSelectedItemsRehabCourseRemark();
+  selectedItems.value = await enrichServiceApplySelectedItemsBoundConsumables({
+    encounterId: String(props.encounterId ?? '').trim(),
+    patientId: String(props.patientId ?? '').trim(),
+    items: selectedItems.value,
+    stationScope: isInpatientScope.value ? 'inpatient' : 'outpatient',
+  });
 }
 
 /** 弹窗打开时重置为初始态并加载数据 */
@@ -842,321 +923,376 @@ watch(orgId, () => {
 </script>
 
 <template>
-  <ServiceApplyShellWrap
-    :model-value="modelValue"
-    :shell="shell"
-    :title="dialogTitle"
-    @update:model-value="emit('update:modelValue', $event)"
-  >
-    <div class="service-apply-root" :class="shell === 'drawer' ? 'service-apply-root--drawer' : ''">
-      <div class="patient-strip">
-        <div class="patient-strip__main">
-          <span class="patient-strip__name">{{ patient.patientName }}</span>
-          <span class="patient-strip__meta">{{ patient.genderText }}</span>
-          <span class="patient-strip__meta">{{ patient.ageText }}</span>
-          <span class="patient-strip__divider">|</span>
-          <span class="patient-strip__label">就诊号</span>
-          <span class="patient-strip__value">{{ patient.encounterNo }}</span>
+  <div class="service-apply-dialog-host">
+    <ServiceApplyShellWrap
+      :model-value="modelValue"
+      :shell="shell"
+      :title="dialogTitle"
+      @update:model-value="emit('update:modelValue', $event)"
+    >
+      <div
+        class="service-apply-root"
+        :class="shell === 'drawer' ? 'service-apply-root--drawer' : ''"
+      >
+        <div class="patient-strip">
+          <div class="patient-strip__main">
+            <span class="patient-strip__name">{{ patient.patientName }}</span>
+            <span class="patient-strip__meta">{{ patient.genderText }}</span>
+            <span class="patient-strip__meta">{{ patient.ageText }}</span>
+            <span class="patient-strip__divider">|</span>
+            <span class="patient-strip__label">就诊号</span>
+            <span class="patient-strip__value">{{ patient.encounterNo }}</span>
+          </div>
+          <ElTag size="small" effect="light" type="info">{{ patient.feeNatureText }}</ElTag>
+          <ElTag v-if="isInpatientScope" size="small" effect="plain" type="warning">
+            临时医嘱
+          </ElTag>
         </div>
-        <ElTag size="small" effect="light" type="info">{{ patient.feeNatureText }}</ElTag>
-        <ElTag v-if="isInpatientScope" size="small" effect="plain" type="warning"> 临时医嘱 </ElTag>
-      </div>
 
-      <div v-if="!contextReady" class="context-hint">请先选择患者后再开立申请单</div>
+        <div v-if="!contextReady" class="context-hint">请先选择患者后再开立申请单</div>
 
-      <div v-else class="workspace-panels">
-        <section class="catalog-panel">
-          <div class="catalog-panel__toolbar">
-            <ElInput
-              v-model="keyword"
-              clearable
-              placeholder="拼音 / 名称检索"
-              :prefix-icon="Search"
-              class="catalog-panel__search"
-            />
-          </div>
-
-          <div class="catalog-panel__tabs">
-            <button
-              type="button"
-              class="catalog-tab"
-              :class="{ 'catalog-tab--active': catalogTab === 'frequent' }"
-              @click="handleCatalogTabChange('frequent')"
-            >
-              全部
-            </button>
-            <button
-              type="button"
-              class="catalog-tab"
-              :class="{ 'catalog-tab--active': catalogTab === 'category' }"
-              @click="handleCatalogTabChange('category')"
-            >
-              分类
-            </button>
-          </div>
-
-          <div v-if="catalogTab === 'category'" class="catalog-panel__categories">
-            <button
-              type="button"
-              class="category-chip"
-              :class="{ 'category-chip--active': !activeCategory }"
-              @click="activeCategory = ''"
-            >
-              全部
-            </button>
-            <button
-              v-for="cat in categoryList"
-              :key="cat"
-              type="button"
-              class="category-chip"
-              :class="{ 'category-chip--active': activeCategory === cat }"
-              @click="activeCategory = cat"
-            >
-              {{ cat }}
-            </button>
-          </div>
-
-          <div v-loading="catalogLoading" class="catalog-panel__list">
-            <button
-              v-for="item in filteredCatalog"
-              :key="catalogRowKey(item)"
-              type="button"
-              class="catalog-item"
-              :class="{ 'catalog-item--selected': selectedCatalogRowKeys.has(catalogRowKey(item)) }"
-              @click="handleAddCatalogItem(item)"
-            >
-              <div class="catalog-item__head">
-                <span class="catalog-item__name">
-                  {{ item.name }}
-                  <span v-if="catalogRowChrgitmLvText(item)" class="catalog-item__chrgitm-lv">
-                    {{ catalogRowChrgitmLvText(item) }}
-                  </span>
-                </span>
-                <span class="catalog-item__price-wrap">
-                  <span class="catalog-item__price"
-                    >¥{{ formatMoney(catalogRowUnitPrice(item)) }}</span
-                  >
-                </span>
-              </div>
-              <div class="catalog-item__sub">
-                <span>{{ catalogRowCategoryLabel(item) }}</span>
-                <span v-if="item.unitName">{{ item.unitName }}</span>
-              </div>
-            </button>
-
-            <ElEmpty
-              v-if="!catalogLoading && filteredCatalog.length === 0"
-              description="未找到匹配项目"
-              :image-size="72"
-            />
-          </div>
-        </section>
-
-        <section class="cart-panel">
-          <div class="cart-panel__header">
-            <div class="cart-panel__title">
-              申请清单
-              <span class="cart-panel__count">{{ selectedItems.length }} 项</span>
-            </div>
-            <div class="cart-panel__total">
-              合计
-              <span class="cart-panel__amount">¥{{ formatMoney(selectedTotalAmount) }}</span>
-            </div>
-          </div>
-
-          <div class="cart-panel__form-fields">
-            <div class="cart-panel__field-row">
-              <span class="cart-field__label">执行科室</span>
-              <ElSelect v-model="orgId" class="cart-panel__field-select" placeholder="请选择">
-                <ElOption
-                  v-for="org in orgOptions"
-                  :key="org.value"
-                  :label="org.label"
-                  :value="org.value"
-                />
-              </ElSelect>
-            </div>
-            <div class="cart-panel__field-row">
-              <span class="cart-field__label">执行次数</span>
-              <ElInputNumber
-                v-model="executionCount"
-                :min="1"
-                :max="99"
-                :controls="false"
-                class="cart-field__qty"
+        <div v-else class="workspace-panels">
+          <section class="catalog-panel">
+            <div class="catalog-panel__toolbar">
+              <ElInput
+                v-model="keyword"
+                clearable
+                placeholder="拼音 / 名称检索"
+                :prefix-icon="Search"
+                class="catalog-panel__search"
               />
             </div>
-            <div v-if="!isInpatientScope" class="cart-panel__field-row">
-              <span class="cart-field__label">诊断</span>
-              <div class="cart-panel__diagnosis">
-                <AdviceDiagnosisBindPanel
-                  :selected-ids="encounterDiagnosisIds"
-                  :options="diagnosisBindOptions"
-                  :encounter-id="props.encounterId"
-                  :patient-id="props.patientId"
-                  @update:selected-ids="onEncounterDiagnosisIdsChange"
-                  @add-diagnosis="openDiagnosisDialog"
-                  @deleted="() => void refreshEncounterDiagnosisOptions()"
-                  @main-switched="() => void refreshEncounterDiagnosisOptions()"
-                  @options-refreshed="onBindDiagnosisOptionsRefreshed"
-                />
+
+            <div class="catalog-panel__tabs">
+              <button
+                type="button"
+                class="catalog-tab"
+                :class="{ 'catalog-tab--active': catalogTab === 'frequent' }"
+                @click="handleCatalogTabChange('frequent')"
+              >
+                全部
+              </button>
+              <button
+                type="button"
+                class="catalog-tab"
+                :class="{ 'catalog-tab--active': catalogTab === 'category' }"
+                @click="handleCatalogTabChange('category')"
+              >
+                分类
+              </button>
+            </div>
+
+            <div v-if="catalogTab === 'category'" class="catalog-panel__categories">
+              <button
+                type="button"
+                class="category-chip"
+                :class="{ 'category-chip--active': !activeCategory }"
+                @click="activeCategory = ''"
+              >
+                全部
+              </button>
+              <button
+                v-for="cat in categoryList"
+                :key="cat"
+                type="button"
+                class="category-chip"
+                :class="{ 'category-chip--active': activeCategory === cat }"
+                @click="activeCategory = cat"
+              >
+                {{ cat }}
+              </button>
+            </div>
+
+            <div v-loading="catalogLoading" class="catalog-panel__list">
+              <button
+                v-for="item in filteredCatalog"
+                :key="catalogRowKey(item)"
+                type="button"
+                class="catalog-item"
+                :class="{
+                  'catalog-item--selected': selectedCatalogRowKeys.has(catalogRowKey(item)),
+                }"
+                @click="handleAddCatalogItem(item)"
+              >
+                <div class="catalog-item__head">
+                  <span class="catalog-item__name">
+                    {{ item.name }}
+                    <span v-if="catalogRowChrgitmLvText(item)" class="catalog-item__chrgitm-lv">
+                      {{ catalogRowChrgitmLvText(item) }}
+                    </span>
+                  </span>
+                  <span class="catalog-item__price-wrap">
+                    <span class="catalog-item__price"
+                      >¥{{ formatMoney(catalogRowUnitPrice(item)) }}</span
+                    >
+                  </span>
+                </div>
+                <div class="catalog-item__sub">
+                  <span>{{ catalogRowCategoryLabel(item) }}</span>
+                  <span v-if="item.unitName">{{ item.unitName }}</span>
+                </div>
+              </button>
+
+              <ElEmpty
+                v-if="!catalogLoading && filteredCatalog.length === 0"
+                description="未找到匹配项目"
+                :image-size="72"
+              />
+            </div>
+          </section>
+
+          <section class="cart-panel">
+            <div class="cart-panel__header">
+              <div class="cart-panel__title">
+                申请清单
+                <span class="cart-panel__count">{{ selectedItems.length }} 项</span>
+              </div>
+              <div class="cart-panel__total">
+                合计
+                <span class="cart-panel__amount">¥{{ formatMoney(selectedTotalAmount) }}</span>
               </div>
             </div>
-          </div>
 
-          <div class="cart-panel__list">
-            <div v-for="row in selectedItems" :key="row.rowKey" class="cart-item">
-              <div class="cart-item__top">
-                <div class="cart-item__info">
-                  <div class="cart-item__title-row">
-                    <span class="cart-item__name">
-                      {{ row.activityName }}
-                      <span
-                        v-if="String(row.chrgitmLvText ?? '').trim()"
-                        class="cart-item__chrgitm-lv"
-                      >
-                        {{ String(row.chrgitmLvText).trim() }}
-                      </span>
-                    </span>
-                    <span class="cart-item__price">
-                      ¥{{ formatMoney(calcMoneyLineTotal(row.unitPrice, row.quantity)) }}
-                    </span>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  class="cart-item__remove"
-                  @click="handleRemoveSelected(row.rowKey)"
-                >
-                  ×
-                </button>
+            <div class="cart-panel__form-fields">
+              <div class="cart-panel__field-row">
+                <span class="cart-field__label">执行科室</span>
+                <ElSelect v-model="orgId" class="cart-panel__field-select" placeholder="请选择">
+                  <ElOption
+                    v-for="org in orgOptions"
+                    :key="org.value"
+                    :label="org.label"
+                    :value="org.value"
+                  />
+                </ElSelect>
               </div>
-
-              <div class="cart-item__fields">
-                <span class="cart-field__label">数量</span>
+              <div class="cart-panel__field-row">
+                <span class="cart-field__label">执行次数</span>
                 <ElInputNumber
-                  v-model="row.quantity"
+                  v-model="executionCount"
                   :min="1"
                   :max="99"
                   :controls="false"
                   class="cart-field__qty"
                 />
-                <span class="cart-field__label">
-                  {{ detailFieldLabel }}
-                  <span v-if="!detailRequired" class="cart-field__optional">选填</span>
-                </span>
-                <ElSelect
-                  v-if="isLabApply"
-                  :model-value="detailTargetIds(row.detailItems)"
-                  multiple
-                  collapse-tags
-                  collapse-tags-tooltip
-                  filterable
-                  clearable
-                  :filter-method="handleSpecimenFilter"
-                  class="cart-field__detail"
-                  :placeholder="
-                    detailRequired
-                      ? `请选择${detailFieldLabel}（支持拼音）`
-                      : `选填${detailFieldLabel}（支持拼音）`
-                  "
-                  @visible-change="handleSpecimenDropdownVisible"
-                  @update:model-value="(v: string[]) => writeDetailTargetIds(row, v)"
-                >
-                  <ElOption
-                    v-for="opt in detailOptions"
-                    :key="String(opt.value ?? '')"
-                    :label="String(opt.label ?? opt.value ?? '')"
-                    :value="String(opt.value ?? '')"
-                  />
-                </ElSelect>
-                <ElTreeSelect
-                  v-else
-                  :model-value="detailTargetIds(row.detailItems)"
-                  multiple
-                  collapse-tags
-                  collapse-tags-tooltip
-                  filterable
-                  check-strictly
-                  clearable
-                  class="cart-field__detail"
-                  :data="bodyStructureOptions"
-                  :props="{ value: 'value', label: 'label', children: 'children' }"
-                  :filter-node-method="handleBodyStructureFilterNode"
-                  node-key="value"
-                  :placeholder="
-                    detailRequired
-                      ? `请选择${detailFieldLabel}（支持拼音）`
-                      : `选填${detailFieldLabel}（支持拼音）`
-                  "
-                  @update:model-value="(v: string[]) => writeDetailTargetIds(row, v)"
-                />
               </div>
-              <div class="cart-item__remark">
-                <span class="cart-field__label">备注</span>
-                <ElInput v-model="row.remark" placeholder="选填" maxlength="200" />
+              <div v-if="!isInpatientScope" class="cart-panel__field-row">
+                <span class="cart-field__label">诊断</span>
+                <div class="cart-panel__diagnosis">
+                  <AdviceDiagnosisBindPanel
+                    :selected-ids="encounterDiagnosisIds"
+                    :options="diagnosisBindOptions"
+                    :encounter-id="props.encounterId"
+                    :patient-id="props.patientId"
+                    @update:selected-ids="onEncounterDiagnosisIdsChange"
+                    @add-diagnosis="openDiagnosisDialog"
+                    @deleted="() => void refreshEncounterDiagnosisOptions()"
+                    @main-switched="() => void refreshEncounterDiagnosisOptions()"
+                    @options-refreshed="onBindDiagnosisOptionsRefreshed"
+                  />
+                </div>
               </div>
             </div>
 
-            <ElEmpty
-              v-if="selectedItems.length === 0"
-              class="cart-panel__empty"
-              :description="emptyCartHint"
-              :image-size="80"
+            <div class="cart-panel__list">
+              <div v-for="row in selectedItems" :key="row.rowKey" class="cart-item">
+                <div class="cart-item__top">
+                  <div class="cart-item__info">
+                    <div class="cart-item__title-row">
+                      <span class="cart-item__name">
+                        {{ row.activityName }}
+                        <span
+                          v-if="String(row.chrgitmLvText ?? '').trim()"
+                          class="cart-item__chrgitm-lv"
+                        >
+                          {{ String(row.chrgitmLvText).trim() }}
+                        </span>
+                      </span>
+                      <span class="cart-item__price">
+                        ¥{{
+                          formatMoney(
+                            calcMoneyLineTotal(
+                              row.unitPrice,
+                              resolveServicePreviewBillQuantity(row.quantity, executionCount),
+                            ),
+                          )
+                        }}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    class="cart-item__remove"
+                    @click="handleRemoveSelected(row.rowKey)"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <div class="cart-item__fields">
+                  <span class="cart-field__label">单次执行数量</span>
+                  <ElInputNumber
+                    v-model="row.quantity"
+                    :min="1"
+                    :max="99"
+                    :controls="false"
+                    class="cart-field__qty"
+                  />
+                  <span class="cart-field__label">
+                    {{ detailFieldLabel }}
+                    <span v-if="!detailRequired" class="cart-field__optional">选填</span>
+                  </span>
+                  <ElSelect
+                    v-if="isLabApply"
+                    :model-value="detailTargetIds(row.detailItems)"
+                    multiple
+                    collapse-tags
+                    collapse-tags-tooltip
+                    filterable
+                    clearable
+                    :filter-method="handleSpecimenFilter"
+                    class="cart-field__detail"
+                    :placeholder="
+                      detailRequired
+                        ? `请选择${detailFieldLabel}（支持拼音）`
+                        : `选填${detailFieldLabel}（支持拼音）`
+                    "
+                    @visible-change="handleSpecimenDropdownVisible"
+                    @update:model-value="(v: string[]) => writeDetailTargetIds(row, v)"
+                  >
+                    <ElOption
+                      v-for="opt in detailOptions"
+                      :key="String(opt.value ?? '')"
+                      :label="String(opt.label ?? opt.value ?? '')"
+                      :value="String(opt.value ?? '')"
+                    />
+                  </ElSelect>
+                  <ElTreeSelect
+                    v-else
+                    :model-value="detailTargetIds(row.detailItems)"
+                    multiple
+                    collapse-tags
+                    collapse-tags-tooltip
+                    filterable
+                    check-strictly
+                    clearable
+                    class="cart-field__detail"
+                    :data="bodyStructureOptions"
+                    :props="{ value: 'value', label: 'label', children: 'children' }"
+                    :filter-node-method="handleBodyStructureFilterNode"
+                    node-key="value"
+                    :placeholder="
+                      detailRequired
+                        ? `请选择${detailFieldLabel}（支持拼音）`
+                        : `选填${detailFieldLabel}（支持拼音）`
+                    "
+                    @update:model-value="(v: string[]) => writeDetailTargetIds(row, v)"
+                  />
+                </div>
+                <div class="cart-item__remark">
+                  <span class="cart-field__label">备注</span>
+                  <ElInput v-model="row.remark" placeholder="选填" maxlength="200" />
+                </div>
+                <div
+                  v-if="row.boundConsumablesLoaded && (row.boundConsumables?.length ?? 0) > 0"
+                  class="cart-item__consumables"
+                >
+                  <span class="cart-field__label">绑定耗材</span>
+                  <div class="cart-item__consumable-list">
+                    <div
+                      v-for="consumable in row.boundConsumables"
+                      :key="consumable.key"
+                      class="cart-item__consumable-row"
+                    >
+                      <span class="cart-item__consumable-name">{{
+                        consumable.targetItemName
+                      }}</span>
+                      <ElInputNumber
+                        v-model="consumable.quantity"
+                        :min="1"
+                        :max="99"
+                        :controls="false"
+                        class="cart-field__qty"
+                      />
+                      <span v-if="consumable.unitName" class="cart-item__consumable-unit">
+                        {{ consumable.unitName }}
+                      </span>
+                      <button
+                        type="button"
+                        class="cart-item__consumable-remove"
+                        @click="handleRemoveBoundConsumable(row.rowKey, consumable.key)"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <ElEmpty
+                v-if="selectedItems.length === 0"
+                class="cart-panel__empty"
+                :description="emptyCartHint"
+                :image-size="80"
+              >
+                <template #description>
+                  <p class="cart-empty-tip">点击左侧项目即可加入清单</p>
+                </template>
+              </ElEmpty>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <template #footer>
+        <div class="dialog-footer">
+          <div class="dialog-footer__left">
+            <ElButton
+              v-if="selectedItems.length > 0"
+              link
+              type="danger"
+              @click="handleClearSelected"
             >
-              <template #description>
-                <p class="cart-empty-tip">点击左侧项目即可加入清单</p>
-              </template>
-            </ElEmpty>
+              清空清单
+            </ElButton>
           </div>
-        </section>
-      </div>
-    </div>
-
-    <template #footer>
-      <div class="dialog-footer">
-        <div class="dialog-footer__left">
-          <ElButton v-if="selectedItems.length > 0" link type="danger" @click="handleClearSelected">
-            清空清单
-          </ElButton>
+          <div class="dialog-footer__right">
+            <ElButton @click="handleClose">取消</ElButton>
+            <ElButton :loading="actionLoading" :disabled="!contextReady" @click="handleSaveDraft">
+              暂存
+            </ElButton>
+            <ElButton
+              type="primary"
+              :loading="actionLoading"
+              :disabled="!contextReady"
+              @click="handleSign"
+            >
+              签发
+            </ElButton>
+            <ElButton
+              v-if="!isInpatientScope"
+              type="primary"
+              plain
+              :loading="actionLoading"
+              :disabled="!contextReady"
+              @click="handleSignAndPrint"
+            >
+              签发并打印
+            </ElButton>
+          </div>
         </div>
-        <div class="dialog-footer__right">
-          <ElButton @click="handleClose">取消</ElButton>
-          <ElButton :loading="actionLoading" :disabled="!contextReady" @click="handleSaveDraft">
-            暂存
-          </ElButton>
-          <ElButton
-            type="primary"
-            :loading="actionLoading"
-            :disabled="!contextReady"
-            @click="handleSign"
-          >
-            签发
-          </ElButton>
-          <ElButton
-            v-if="!isInpatientScope"
-            type="primary"
-            plain
-            :loading="actionLoading"
-            :disabled="!contextReady"
-            @click="handleSignAndPrint"
-          >
-            签发并打印
-          </ElButton>
-        </div>
-      </div>
-    </template>
-  </ServiceApplyShellWrap>
+      </template>
+    </ServiceApplyShellWrap>
 
-  <DiagnosisPickerDialog
-    v-if="!isInpatientScope"
-    v-model="diagnosisDialogVisible"
-    :station-scope="props.stationScope"
-    :encounter-id="encounterId"
-    :patient-id="patientId"
-    :existing-diagnosis-list="encounterDiagnosisRows"
-    @saved="handleDiagnosisPickerSaved"
-  />
+    <DiagnosisPickerDialog
+      v-if="!isInpatientScope"
+      v-model="diagnosisDialogVisible"
+      :station-scope="props.stationScope"
+      :encounter-id="encounterId"
+      :patient-id="patientId"
+      :existing-diagnosis-list="encounterDiagnosisRows"
+      @saved="handleDiagnosisPickerSaved"
+    />
+  </div>
 </template>
 
 <style scoped>
@@ -1552,6 +1688,64 @@ watch(orgId, () => {
   align-items: center;
   gap: 8px;
   margin-top: 8px;
+}
+
+.cart-item__consumables {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #e8f0fe;
+}
+
+.cart-item__consumable-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cart-item__consumable-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cart-item__consumable-name {
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--el-text-color-primary);
+  word-break: break-word;
+  white-space: normal;
+}
+
+.cart-item__consumable-unit {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  flex-shrink: 0;
+}
+
+.cart-item__consumable-remove {
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--el-text-color-secondary);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.cart-item__consumable-remove:hover {
+  background: var(--el-color-danger-light-9);
+  color: var(--el-color-danger);
 }
 
 .cart-field__label {

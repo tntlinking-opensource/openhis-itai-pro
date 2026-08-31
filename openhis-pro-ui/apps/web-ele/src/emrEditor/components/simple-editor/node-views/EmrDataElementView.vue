@@ -10,12 +10,23 @@ import { nodeViewProps, NodeViewWrapper } from '@tiptap/vue-3';
 
 import { getDataElementDef } from '../data-element-registry';
 import { isEmrDataElementWidget } from '../data-element-types';
+import { parseEmrWidgetOptions, resolveEmrWidgetOptionLabel } from '../emr-widget-options';
 import {
+  contentEditableCaretOffset,
+  clearPinnedIslandCaret,
   insertPlainTextAtCaret,
+  peekPinnedIslandCaret,
+  pinIslandCaret,
   readContentEditablePlainText,
+  setContentEditableCaretOffset,
 } from '../inline-contenteditable-caret';
 import { useEmrIslandDomEditable } from '../use-emr-editor-caps';
-import { handleInlineFieldKeydown } from '../use-inline-field-keydown';
+import {
+  captureIslandDeleteSelection,
+  handleInlineFieldKeydown,
+  handleIslandContentEditableBeforeInputDelete,
+  insertNewlineInContentEditableIsland,
+} from '../use-inline-field-keydown';
 
 const props = defineProps(nodeViewProps);
 
@@ -26,6 +37,13 @@ const fieldHint = computed(
   () => String(props.node.attrs.placeholder ?? '') || labelSnapshot.value || '填写',
 );
 const valueStr = computed(() => String(props.node.attrs.value ?? ''));
+/** type=date 只认 YYYY-MM-DD；带时刻的落库值需截断，否则控件空白却仍显 [] */
+const dateInputValue = computed(() => {
+  const raw = valueStr.value.trim();
+  if (!raw) return '';
+  const m = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  return m?.[1] ?? '';
+});
 const optionsJson = computed(() => String(props.node.attrs.optionsJson ?? '[]'));
 const editable = computed(() => props.node.attrs.editable !== false);
 
@@ -39,8 +57,11 @@ const effectiveWidget = computed((): EmrDataElementWidget => {
 });
 
 const isTextWidget = computed(() => effectiveWidget.value === 'text');
+const isSlotWidget = computed(() =>
+  ['select', 'radio', 'date', 'checkbox', 'number'].includes(effectiveWidget.value),
+);
 
-/** 文书 / 模板均贴近打印：无蓝括号，用下划线槽位辨认填写位 */
+/** 文书 / 模板：text 类贴近打印（默认无括号）；select/date/number 与自由文本同构带蓝括号 */
 const surfaceInject = inject<ComputedRef<'document' | 'template'>>('emrEditorSurface');
 const surface = computed(() => surfaceInject?.value ?? 'document');
 const printLike = computed(() => true);
@@ -49,34 +70,33 @@ const showBrackets = computed(() => false);
 /** 模板态空值不回填字段名，避免「过敏史：过敏史」；绑定信息见 title */
 const displayText = computed(() => valueStr.value);
 
-const visualPlaceholder = computed(() => (surface.value === 'template' ? '' : fieldHint.value));
+/** 模板态自由文本不回填字段名；下拉/日期等仍显示插入时配置的占位提示 */
+const visualPlaceholder = computed(() => {
+  const tip = String(props.node.attrs.placeholder ?? '').trim();
+  if (tip) return tip;
+  if (surface.value === 'template') return '';
+  return fieldHint.value;
+});
 
-function parseSelectOptions(json: string): { label: string; value: string }[] {
-  try {
-    const raw = JSON.parse(json || '[]');
-    if (!Array.isArray(raw)) return [];
-    return raw
-      .map((item: unknown) => {
-        if (typeof item === 'string') return { value: item, label: item };
-        if (item && typeof item === 'object') {
-          const o = item as Record<string, unknown>;
-          const v = String(o.value ?? o.code ?? '');
-          const l = String(o.label ?? o.value ?? o.code ?? '');
-          return { value: v || l, label: l || v };
-        }
-        return { value: '', label: '' };
-      })
-      .filter((x) => x.value || x.label);
-  } catch {
-    return [];
-  }
-}
+const selectOptions = computed(() => parseEmrWidgetOptions(optionsJson.value));
 
-const selectOptions = computed(() => parseSelectOptions(optionsJson.value));
+/** 同组 radio 的 name，避免页内多组互斥串台 */
+const radioGroupName = computed(() => {
+  const sid = String(props.node.attrs.slotId ?? '').trim();
+  if (sid) return `emr-radio-${sid}`;
+  const pos = props.getPos?.();
+  return `emr-radio-${typeof pos === 'number' ? pos : elementId.value || 'x'}`;
+});
 
 const titleTip = computed(() => {
+  const widget = effectiveWidget.value;
+  let kind = '自由文本';
+  if (widget === 'select') kind = '下拉';
+  else if (widget === 'radio') kind = '单选';
+  else if (widget === 'date') kind = '日期';
+  else if (widget === 'checkbox') kind = '复选';
   if (!elementId.value) {
-    return `自由文本（不绑定数据元）· ${fieldHint.value}`;
+    return `${kind}（模板内选项）· ${fieldHint.value}`;
   }
   const n = labelSnapshot.value || def.value?.name || elementId.value;
   const mode = editable.value ? '可编辑' : '随患者信息更新';
@@ -95,6 +115,8 @@ const domEditable = useEmrIslandDomEditable(islandWhenLocked);
 const textFieldRef = ref<HTMLElement | null>(null);
 const lineInputRef = ref<HTMLInputElement | null>(null);
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
+const selectRef = ref<HTMLSelectElement | null>(null);
+const dateInputRef = ref<HTMLInputElement | null>(null);
 
 function syncTextareaHeight() {
   nextTick(() => {
@@ -108,10 +130,15 @@ function syncTextareaHeight() {
 function syncTextFieldFromAttrs() {
   nextTick(() => {
     const el = textFieldRef.value;
-    if (!el || document.activeElement === el) return;
+    if (!el || props.editor.view?.composing) return;
     const next = valueStr.value;
-    if (readContentEditablePlainText(el) !== next) {
-      el.textContent = next;
+    if (readContentEditablePlainText(el) === next) return;
+    const focused = document.activeElement === el;
+    const pinned = peekPinnedIslandCaret(el);
+    const caret = pinned ?? (focused ? contentEditableCaretOffset(el) : -1);
+    el.textContent = next;
+    if ((focused || pinned != null) && caret >= 0) {
+      setContentEditableCaretOffset(el, Math.min(caret, next.length));
     }
   });
 }
@@ -119,6 +146,10 @@ function syncTextFieldFromAttrs() {
 function onTextFieldInput() {
   const el = textFieldRef.value;
   if (!el) return;
+  // 短钉光标：分页若刚好重挂岛屿垫片，用当前偏移恢复，避免飞文末
+  const caret = contentEditableCaretOffset(el);
+  if (caret >= 0) pinIslandCaret(el, caret, 500);
+  else clearPinnedIslandCaret(el);
   props.updateAttributes({ value: readContentEditablePlainText(el) });
 }
 
@@ -129,10 +160,33 @@ function onTextFieldPaste(e: ClipboardEvent) {
   onTextFieldInput();
 }
 
+function onTextFieldKeydownCapture(e: KeyboardEvent) {
+  if (e.key !== 'Backspace' && e.key !== 'Delete') return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  captureIslandDeleteSelection(textFieldRef.value);
+}
+
 function onTextFieldKeydown(e: KeyboardEvent) {
   const pos = props.getPos?.();
   if (typeof pos !== 'number') return;
   handleInlineFieldKeydown(props.editor, pos, e, 'contentEditable');
+}
+
+/** beforeinput：部分环境 Enter 只走 insertParagraph，不经 keydown */
+function onTextFieldBeforeInput(e: InputEvent) {
+  const pos = props.getPos?.();
+  if (typeof pos !== 'number') return;
+  const el = textFieldRef.value;
+  if (!el?.isContentEditable) return;
+  const t = e.inputType;
+  if (t !== 'insertParagraph' && t !== 'insertLineBreak') {
+    handleIslandContentEditableBeforeInputDelete(props.editor, pos, el, e);
+    return;
+  }
+  if (insertNewlineInContentEditableIsland(props.editor, pos, el)) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
 }
 
 function syncLineInputWidth() {
@@ -142,6 +196,26 @@ function syncLineInputWidth() {
     el.style.width = '1px';
     const minPx = 28;
     el.style.width = `${Math.max(minPx, el.scrollWidth)}px`;
+  });
+}
+
+/** 下拉宽度跟当前展示文案走，避免占一整行 */
+function syncSelectWidth() {
+  nextTick(() => {
+    const el = selectRef.value;
+    if (!el) return;
+    const label =
+      resolveEmrWidgetOptionLabel(selectOptions.value, valueStr.value) ||
+      fieldHint.value ||
+      '请选择';
+    const probe = document.createElement('span');
+    probe.style.cssText =
+      'position:absolute;visibility:hidden;white-space:nowrap;font:inherit;pointer-events:none';
+    probe.textContent = label;
+    document.body.append(probe);
+    const w = Math.ceil(probe.getBoundingClientRect().width) + 22;
+    probe.remove();
+    el.style.width = `${Math.max(48, Math.min(w, 220))}px`;
   });
 }
 
@@ -157,6 +231,42 @@ function onTextareaInput(e: Event) {
 
 function onSelectChange(e: Event) {
   props.updateAttributes({ value: (e.target as HTMLSelectElement).value });
+  syncSelectWidth();
+}
+
+function onDateInput(e: Event) {
+  props.updateAttributes({ value: (e.target as HTMLInputElement).value });
+}
+
+/** 点击整格直接弹出日期选择器（不必点日历图标） */
+function openDatePicker(e: Event) {
+  if (!domEditable.value) return;
+  const el = dateInputRef.value ?? (e.currentTarget as HTMLInputElement | null);
+  if (!el || el.disabled) return;
+  // 阻止编辑器抢焦点；再主动 showPicker
+  e.stopPropagation();
+  try {
+    el.focus({ preventScroll: true });
+    const picker = el as HTMLInputElement & { showPicker?: () => void };
+    if (typeof picker.showPicker === 'function') {
+      picker.showPicker();
+    }
+  } catch {
+    // 部分浏览器要求用户手势且可能抛 InvalidStateError，忽略即可
+  }
+}
+
+/** 点击整格聚焦下拉，避免编辑器抢 mousedown */
+function openSelect(e: Event) {
+  if (!domEditable.value) return;
+  const el = selectRef.value ?? (e.currentTarget as HTMLSelectElement | null);
+  if (!el || el.disabled) return;
+  e.stopPropagation();
+  el.focus({ preventScroll: true });
+}
+
+function onRadioChange(code: string) {
+  props.updateAttributes({ value: code });
 }
 
 function onCheckboxChange(e: Event) {
@@ -174,11 +284,22 @@ function keydownHandler(mode: InlineFieldNavMode) {
 
 const checkboxChecked = computed(() => valueStr.value === 'true' || valueStr.value === '1');
 
-const selectDisplayLabel = computed(() => {
-  const v = valueStr.value;
-  const hit = selectOptions.value.find((o) => o.value === v);
-  return hit?.label ?? v;
+const isRequired = computed(() => {
+  const r = props.node.attrs.required;
+  return r === true || r === '1' || r === 'true';
 });
+
+const isRequiredEmpty = computed(() => {
+  if (!isRequired.value || !editable.value) return false;
+  if (effectiveWidget.value === 'checkbox') {
+    return !checkboxChecked.value;
+  }
+  return !valueStr.value.trim();
+});
+
+const selectDisplayLabel = computed(() =>
+  resolveEmrWidgetOptionLabel(selectOptions.value, valueStr.value),
+);
 
 onMounted(() => {
   if (editable.value && isTextWidget.value) {
@@ -190,9 +311,12 @@ onMounted(() => {
   if (editable.value && effectiveWidget.value === 'multiline') {
     syncTextareaHeight();
   }
+  if (editable.value && effectiveWidget.value === 'select') {
+    syncSelectWidth();
+  }
 });
 
-watch([valueStr, effectiveWidget, editable], () => {
+watch([valueStr, effectiveWidget, editable, optionsJson], () => {
   if (editable.value && isTextWidget.value) {
     syncTextFieldFromAttrs();
   }
@@ -201,6 +325,9 @@ watch([valueStr, effectiveWidget, editable], () => {
   }
   if (editable.value && effectiveWidget.value === 'multiline') {
     syncTextareaHeight();
+  }
+  if (editable.value && effectiveWidget.value === 'select') {
+    syncSelectWidth();
   }
 });
 </script>
@@ -215,7 +342,14 @@ watch([valueStr, effectiveWidget, editable], () => {
       'emr-de--readonly': !editable,
       'emr-de--multiline': effectiveWidget === 'multiline',
       'emr-de--text': isTextWidget,
+      'emr-de--slot': isSlotWidget,
+      'emr-de--select': effectiveWidget === 'select',
+      'emr-de--radio': effectiveWidget === 'radio',
+      'emr-de--date': effectiveWidget === 'date',
+      'emr-de--checkbox': effectiveWidget === 'checkbox',
       'emr-de--print-like': printLike,
+      'emr-de--required': isRequired,
+      'emr-de--required-empty': isRequiredEmpty,
     }"
     data-node-view-wrapper=""
     :title="titleTip"
@@ -228,9 +362,30 @@ watch([valueStr, effectiveWidget, editable], () => {
       >
         {{ checkboxChecked ? '是' : '否' }}
       </span>
-      <span v-else-if="effectiveWidget === 'select'" class="emr-de__readonly-val">{{
+      <span
+        v-else-if="effectiveWidget === 'select'"
+        class="emr-de-text-bracket emr-de-slot-bracket"
+      >
+        <span class="emr-bracket-field__bracket" aria-hidden="true">[</span>
+        <span class="emr-de__readonly-val emr-de__readonly-val--slot">{{
+          selectDisplayLabel
+        }}</span>
+        <span class="emr-bracket-field__bracket" aria-hidden="true">]</span>
+      </span>
+      <span v-else-if="effectiveWidget === 'radio'" class="emr-de__readonly-val">{{
         selectDisplayLabel
       }}</span>
+      <span
+        v-else-if="effectiveWidget === 'date' || effectiveWidget === 'number'"
+        class="emr-de-text-bracket emr-de-slot-bracket"
+        :class="{ 'emr-de-text-bracket--plain': !displayText }"
+      >
+        <span v-if="displayText" class="emr-bracket-field__bracket" aria-hidden="true">[</span>
+        <span class="emr-de__readonly-val emr-de__readonly-val--slot emr-de__readonly-val--wrap">{{
+          displayText || visualPlaceholder
+        }}</span>
+        <span v-if="displayText" class="emr-bracket-field__bracket" aria-hidden="true">]</span>
+      </span>
       <span
         v-else-if="effectiveWidget === 'multiline'"
         class="emr-de__readonly-val emr-de__readonly-val--multiline"
@@ -268,51 +423,117 @@ watch([valueStr, effectiveWidget, editable], () => {
           :data-placeholder="visualPlaceholder"
           :contenteditable="domEditable ? 'true' : 'false'"
           :aria-label="titleTip"
+          @pointerdown.stop
+          @mousedown.stop
           @input="onTextFieldInput"
+          @beforeinput="onTextFieldBeforeInput"
           @paste="onTextFieldPaste"
+          @keydown.capture="onTextFieldKeydownCapture"
           @keydown="onTextFieldKeydown"
         ></span>
         <span v-if="showBrackets" class="emr-bracket-field__bracket" aria-hidden="true">]</span>
       </span>
-      <textarea
-        v-else-if="effectiveWidget === 'multiline'"
-        ref="textareaRef"
-        class="emr-de__control emr-de__control--textarea"
-        :value="valueStr"
-        :placeholder="visualPlaceholder"
-        rows="2"
-        :disabled="!domEditable"
-        :aria-label="titleTip"
-        spellcheck="false"
-        @input="onTextareaInput"
-        @keydown="keydownHandler('multiline')"
-      ></textarea>
-      <input
+      <template v-else-if="effectiveWidget === 'multiline'">
+        <textarea
+          ref="textareaRef"
+          class="emr-de__control emr-de__control--textarea"
+          :value="valueStr"
+          :placeholder="visualPlaceholder"
+          rows="2"
+          :disabled="!domEditable"
+          :aria-label="titleTip"
+          spellcheck="false"
+          @input="onTextareaInput"
+          @keydown="keydownHandler('multiline')"
+        ></textarea>
+      </template>
+      <span
         v-else-if="effectiveWidget === 'number'"
-        ref="lineInputRef"
-        class="emr-de__control emr-de__control--number"
-        type="number"
-        :value="valueStr"
-        :placeholder="visualPlaceholder"
-        :disabled="!domEditable"
-        :aria-label="titleTip"
-        @input="onNumberInput"
-        @keydown="keydownHandler('number')"
-      />
-      <select
-        v-else-if="effectiveWidget === 'select'"
-        class="emr-de__control emr-de__control--select"
-        :value="valueStr"
-        :disabled="!domEditable"
-        :aria-label="titleTip"
-        @change="onSelectChange"
-        @keydown="keydownHandler('select')"
+        class="emr-de-text-bracket emr-de-slot-bracket"
       >
-        <option v-if="selectOptions.length === 0" value="">{{ fieldHint }}</option>
-        <option v-for="opt in selectOptions" :key="opt.value" :value="opt.value">
-          {{ opt.label }}
-        </option>
-      </select>
+        <span class="emr-bracket-field__bracket" aria-hidden="true">[</span>
+        <input
+          ref="lineInputRef"
+          class="emr-de__control emr-de__control--number emr-de__slot-control"
+          type="number"
+          :value="valueStr"
+          :placeholder="visualPlaceholder"
+          :disabled="!domEditable"
+          :aria-label="titleTip"
+          @input="onNumberInput"
+          @keydown="keydownHandler('number')"
+        />
+        <span class="emr-bracket-field__bracket" aria-hidden="true">]</span>
+      </span>
+      <span
+        v-else-if="effectiveWidget === 'select'"
+        class="emr-de-text-bracket emr-de-slot-bracket"
+        @pointerdown.stop="openSelect"
+      >
+        <span class="emr-bracket-field__bracket" aria-hidden="true">[</span>
+        <select
+          ref="selectRef"
+          class="emr-de__control emr-de__control--select emr-de__slot-control"
+          :class="{ 'emr-de__slot-control--empty': !valueStr }"
+          :value="valueStr"
+          :disabled="!domEditable"
+          :aria-label="titleTip"
+          @pointerdown.stop="openSelect"
+          @change="onSelectChange"
+          @keydown="keydownHandler('select')"
+        >
+          <option value="">{{ visualPlaceholder || fieldHint || '请选择' }}</option>
+          <option v-for="opt in selectOptions" :key="opt.value" :value="opt.value">
+            {{ opt.label }}
+          </option>
+        </select>
+        <span class="emr-bracket-field__bracket" aria-hidden="true">]</span>
+      </span>
+      <span
+        v-else-if="effectiveWidget === 'radio'"
+        class="emr-de__radio-group"
+        role="radiogroup"
+        :aria-label="titleTip"
+      >
+        <span v-if="!valueStr && visualPlaceholder" class="emr-de__slot-placeholder">{{
+          visualPlaceholder
+        }}</span>
+        <label v-for="opt in selectOptions" :key="opt.value" class="emr-de__radio-item">
+          <input
+            class="emr-de__radio"
+            type="radio"
+            :name="radioGroupName"
+            :value="opt.value"
+            :checked="valueStr === opt.value"
+            :disabled="!domEditable"
+            @change="onRadioChange(opt.value)"
+            @keydown="keydownHandler('radio')"
+          />
+          <span class="emr-de__radio-label">{{ opt.label }}</span>
+        </label>
+      </span>
+      <span
+        v-else-if="effectiveWidget === 'date'"
+        class="emr-de-text-bracket emr-de-slot-bracket"
+        :class="{ 'emr-de-text-bracket--plain': !valueStr }"
+        @pointerdown.stop="openDatePicker"
+      >
+        <span v-if="valueStr" class="emr-bracket-field__bracket" aria-hidden="true">[</span>
+        <input
+          ref="dateInputRef"
+          class="emr-de__control emr-de__control--date emr-de__slot-control"
+          :class="{ 'emr-de__slot-control--empty': !valueStr }"
+          type="date"
+          :value="dateInputValue"
+          :disabled="!domEditable"
+          :aria-label="titleTip"
+          :title="valueStr ? valueStr : visualPlaceholder || fieldHint"
+          @pointerdown.stop="openDatePicker"
+          @input="onDateInput"
+          @keydown="keydownHandler('date')"
+        />
+        <span v-if="valueStr" class="emr-bracket-field__bracket" aria-hidden="true">]</span>
+      </span>
       <label v-else-if="effectiveWidget === 'checkbox'" class="emr-de__checkbox-wrap">
         <input
           class="emr-de__checkbox"
@@ -323,7 +544,7 @@ watch([valueStr, effectiveWidget, editable], () => {
           @change="onCheckboxChange"
           @keydown="keydownHandler('checkbox')"
         />
-        <span class="emr-de__checkbox-label">{{ labelSnapshot || fieldHint }}</span>
+        <span class="emr-de__checkbox-label">{{ labelSnapshot || fieldHint || '选项' }}</span>
       </label>
     </template>
   </NodeViewWrapper>
@@ -347,7 +568,8 @@ watch([valueStr, effectiveWidget, editable], () => {
   white-space: normal;
 }
 
-.emr-de--text {
+.emr-de--text,
+.emr-de--slot {
   display: inline-flex;
   align-items: baseline;
   max-width: 100%;
@@ -357,6 +579,10 @@ watch([valueStr, effectiveWidget, editable], () => {
   padding: 0;
   border: none;
   background: transparent;
+}
+
+.emr-de--radio {
+  white-space: normal;
 }
 
 .emr-de-text-bracket {
@@ -379,11 +605,19 @@ watch([valueStr, effectiveWidget, editable], () => {
   color: #64748b;
 }
 
-/* 文书态：已填值接近打印正文；可填项仍保留浅底/下划线锚点（见 simple-editor.scss surface-document） */
-.emr-de--print-like.emr-de--text {
+.emr-de__readonly-val--slot {
+  color: #111827;
+  min-width: 2ch;
+}
+
+/* 文书态：已填值接近打印正文；可填项仍保留浅底/下划线锚点 */
+.emr-de--print-like.emr-de--text,
+.emr-de--print-like.emr-de--slot {
   margin: 0;
   padding: 0;
   min-width: 2.5em;
+  border: none;
+  background: transparent;
 }
 
 .emr-de--print-like .emr-de__readonly-val {
@@ -416,24 +650,27 @@ watch([valueStr, effectiveWidget, editable], () => {
   min-height: 2.8em;
 }
 
-.emr-de--print-like .emr-de__text-field:focus {
-  box-shadow: inset 0 -1.5px 0 0 #3b82f6;
+.emr-de--print-like .emr-de__text-field:focus,
+.emr-de--print-like .emr-de__slot-control:focus {
+  box-shadow: inset 0 -1px 0 0 #0d9488;
   border-radius: 1px;
+  outline: none;
+  border-bottom-color: transparent;
 }
 
-.emr-de--free:not(.emr-de--text) {
+.emr-de--free:not(.emr-de--text):not(.emr-de--slot) {
   border: 1px dashed #cbd5e1;
   background: #f8fafc;
   color: #334155;
 }
 
-.emr-de--bound:not(.emr-de--text) {
+.emr-de--bound:not(.emr-de--text):not(.emr-de--slot) {
   border: 1px solid transparent;
   background: #f1f5f9;
   color: #1e293b;
 }
 
-.emr-de--readonly.emr-de--bound:not(.emr-de--text) {
+.emr-de--readonly.emr-de--bound:not(.emr-de--text):not(.emr-de--slot) {
   background: #e8eaf6;
   color: #283593;
 }
@@ -531,9 +768,82 @@ watch([valueStr, effectiveWidget, editable], () => {
   field-sizing: content;
 }
 
-.emr-de__control--select {
-  max-width: 240px;
+/* 下拉 / 日期 / 数字：与自由文本同构 —— 方括号 + 透明槽，无原生边框盒 */
+.emr-de-slot-bracket {
+  display: inline-flex;
+  align-items: baseline;
+  max-width: 100%;
+}
+
+.emr-de__slot-control {
+  appearance: none;
+  -webkit-appearance: none;
+  max-width: 220px;
+  min-width: 2ch;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #111827;
+  font: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  vertical-align: baseline;
   cursor: pointer;
+}
+
+.emr-de__slot-control--empty,
+.emr-de__slot-control::placeholder {
+  color: #9ca3af;
+}
+
+.emr-de__control--select.emr-de__slot-control {
+  /* 给下拉箭头留一点空间，但不画成输入框 */
+  padding-right: 0.9em;
+  background-image:
+    linear-gradient(45deg, transparent 50%, #94a3b8 50%),
+    linear-gradient(135deg, #94a3b8 50%, transparent 50%);
+  background-position:
+    calc(100% - 0.45em) 55%,
+    calc(100% - 0.15em) 55%;
+  background-size:
+    5px 5px,
+    5px 5px;
+  background-repeat: no-repeat;
+}
+
+.emr-de__control--date.emr-de__slot-control {
+  max-width: 11em;
+  min-width: 7em;
+}
+
+.emr-de__control--date.emr-de__slot-control::-webkit-calendar-picker-indicator {
+  opacity: 0.4;
+  cursor: pointer;
+  padding: 0;
+  margin: 0 0 0 2px;
+  width: 0.95em;
+  height: 0.95em;
+}
+
+.emr-de__control--number.emr-de__slot-control {
+  cursor: text;
+  /* 隐藏 number 上下箭头，观感贴近自由文本 */
+  -moz-appearance: textfield;
+}
+
+.emr-de__control--number.emr-de__slot-control::-webkit-outer-spin-button,
+.emr-de__control--number.emr-de__slot-control::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.emr-de__slot-control:focus {
+  box-shadow: inset 0 -1px 0 0 #0d9488;
+  border-radius: 1px;
+  outline: none;
 }
 
 .emr-de__control:disabled {
@@ -541,13 +851,48 @@ watch([valueStr, effectiveWidget, editable], () => {
   cursor: not-allowed;
 }
 
-.emr-de__control--number:focus {
-  box-shadow: inset 0 -1px 0 0 #0d9488;
-  border-radius: 1px;
+.emr-de--bound .emr-de__slot-control:focus {
+  box-shadow: inset 0 -1px 0 0 #5c6bc0;
+}
+.emr-de__radio-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 10px;
+  max-width: 100%;
+  vertical-align: baseline;
 }
 
-.emr-de--bound .emr-de__control--number:focus {
-  box-shadow: inset 0 -1px 0 0 #5c6bc0;
+.emr-de__radio-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+  vertical-align: baseline;
+}
+
+.emr-de__radio {
+  margin: 0;
+  flex-shrink: 0;
+  width: 0.9em;
+  height: 0.9em;
+}
+
+.emr-de__radio-label {
+  font: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  color: #111827;
+}
+
+.emr-de__slot-placeholder {
+  margin-right: 6px;
+  color: #9ca3af;
+  font: inherit;
+  font-size: inherit;
+  line-height: inherit;
 }
 
 .emr-de__checkbox-wrap {

@@ -18,6 +18,7 @@ import com.openhis.health.domain.administration.chargeitem.query.OutpatientFeeDe
 import com.openhis.health.domain.administration.chargeitem.query.OutpatientFeeDetailPageQuery;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
+import com.openhis.health.domain.financial.paymentreconciliation.queries.model.OutpatientFeeDetailChargePaymentLinkQueryModel;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.OutpatientFeeDetailPaymentContextQueryModel;
 import com.openhis.health.domain.share.constants.FeeDetailReportConstants;
 import com.openhis.health.domain.share.constants.OutpatientFeeDetailConstants;
@@ -33,10 +34,12 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 费用明细报表多维净汇总装配（AS-RPT-008/009）。
@@ -44,8 +47,8 @@ import java.util.Map;
  * <p>入口 {@link #assembleSummaryRows}：按 SUMMARY 维度分派 FIN_TYPE / DEPARTMENT / FEE_CATEGORY / ITEM。
  * FIN_TYPE：definition → fin_type enrich + 合并（委托
  * {@link DailySettlementFinTypeAmountLoader#mapFinTypeCodeByChargeItemId}）。
- * DEPARTMENT / FEE_CATEGORY / ITEM：在 {@code summarize*ByFinType} 已缓存的
- * {@code cachedChargeRows} 上按维分桶，禁止再次全窗 IN ChargeItem。</p>
+ * DEPARTMENT / FEE_CATEGORY / ITEM：按需物化 {@code cachedChargeRows} 后按维分桶，
+ * 禁止 FIN_TYPE 默认路径全窗 RowQueryModel。</p>
  *
  * <p>金额列：进价合计（历史定价）/ 售价合计（{@code total_price}）/ 实收合计（与售价同口径）。</p>
  */
@@ -98,8 +101,27 @@ public class FeeDetailReportFinTypeSummaryAssembler {
             this.fillFinTypeDimensionMeta(finTypeRows);
             return finTypeRows;
         }
+        // Pre：非 FIN_TYPE 维须物化 cachedChargeRows（FIN_TYPE 默认路径禁止全窗 RowQueryModel）
+        if (query != null
+            && (query.getCachedChargeRows() == null || query.getCachedChargeRows().isEmpty())) {
+            this.chargeItemQueryService.listOutpatientFeeDetailChargeRows(query);
+        }
         // 其它维：直接从 cachedChargeRows 分桶（summarize*ByFinType 已物化）
-        return this.assembleCachedChargeRowDimensionRows(dimension, query);
+        CachedRowPurchasePricingContext pricingContext = null;
+        List<OutpatientFeeDetailChargeRowQueryModel> cachedRows = null;
+        if (query != null) {
+            cachedRows = query.getCachedChargeRows();
+        }
+        if (cachedRows != null && !cachedRows.isEmpty()) {
+            pricingContext = this.loadPurchasePricingContextFromCachedRows(cachedRows);
+        }
+        List<FeeDetailReportSummaryRowDto> rows =
+            this.assembleCachedChargeRowDimensionRows(dimension, query, pricingContext);
+        // 展示单价仅品规维需要；禁止非 ITEM 维重复批号查价
+        if (FeeDetailReportConstants.SUMMARY_DIMENSION_ITEM.equals(dimension)) {
+            this.enrichSummaryUnitPricesFromCachedRows(rows, dimension, query, pricingContext);
+        }
+        return rows;
     }
 
     /**
@@ -181,6 +203,9 @@ public class FeeDetailReportFinTypeSummaryAssembler {
                 lineCount = row.getLineCount();
             }
             row.setLineCount(lineCount + domainRow.getLineCount());
+            row.setQuantityTotal(MonetaryAmountSupport.scaleCalc(
+                MonetaryAmountSupport.nullToZero(row.getQuantityTotal())
+                    .add(MonetaryAmountSupport.nullToZero(domainRow.getQuantityTotal()))));
         }
         result.addAll(mergedByFinType.values());
         return result;
@@ -202,6 +227,7 @@ public class FeeDetailReportFinTypeSummaryAssembler {
         BigDecimal discounted = BigDecimal.ZERO;
         BigDecimal lineAmount = BigDecimal.ZERO;
         long lineCountTotal = 0L;
+        BigDecimal quantityTotal = BigDecimal.ZERO;
         // 先按行级 6 位代数加总，再统一 scaleSettle（禁止逐行先 2 位再加）
         if (rows != null) {
             for (FeeDetailReportSummaryRowDto row : rows) {
@@ -211,6 +237,7 @@ public class FeeDetailReportFinTypeSummaryAssembler {
                 }
                 purchase = purchase.add(MonetaryAmountSupport.nullToZero(row.getPurchaseAmountTotal()));
                 sale = sale.add(MonetaryAmountSupport.nullToZero(row.getSaleAmountTotal()));
+                quantityTotal = quantityTotal.add(MonetaryAmountSupport.nullToZero(row.getQuantityTotal()));
                 actualReceived =
                     actualReceived.add(MonetaryAmountSupport.nullToZero(row.getActualReceivedAmountTotal()));
                 receivable = receivable.add(MonetaryAmountSupport.nullToZero(row.getReceivableAmountTotal()));
@@ -224,6 +251,7 @@ public class FeeDetailReportFinTypeSummaryAssembler {
         }
         footer.setPurchaseAmountTotal(MonetaryAmountSupport.scaleSettle(purchase));
         footer.setSaleAmountTotal(MonetaryAmountSupport.scaleSettle(sale));
+        footer.setQuantityTotal(MonetaryAmountSupport.scaleCalc(quantityTotal));
         footer.setActualReceivedAmountTotal(MonetaryAmountSupport.scaleSettle(actualReceived));
         footer.setReceivableAmountTotal(MonetaryAmountSupport.scaleSettle(receivable));
         footer.setDiscountedAmountTotal(MonetaryAmountSupport.scaleSettle(discounted));
@@ -276,7 +304,8 @@ public class FeeDetailReportFinTypeSummaryAssembler {
      */
     private List<FeeDetailReportSummaryRowDto> assembleCachedChargeRowDimensionRows(
         String dimension,
-        OutpatientFeeDetailPageQuery query) {
+        OutpatientFeeDetailPageQuery query,
+        CachedRowPurchasePricingContext pricingContext) {
         List<FeeDetailReportSummaryRowDto> result = new ArrayList<>();
         List<OutpatientFeeDetailChargeRowQueryModel> cachedRows = null;
         // 取 summarize 已物化的候选收费行
@@ -287,18 +316,25 @@ public class FeeDetailReportFinTypeSummaryAssembler {
         if (cachedRows == null || cachedRows.isEmpty()) {
             return result;
         }
-        // Pre：批量进价（chargeItemId → 未带符号行进价）
-        Map<Long, BigDecimal> purchaseByChargeItemId =
-            this.computePurchaseAmountByChargeItemIdFromCachedRows(cachedRows);
+        // Pre：批量进价（chargeItemId → 未带符号行进价；调用方已一次 load，禁止本方法内再查）
+        Map<Long, BigDecimal> purchaseByChargeItemId = Map.of();
+        if (pricingContext != null && pricingContext.purchaseAmountByChargeItemId != null) {
+            purchaseByChargeItemId = pricingContext.purchaseAmountByChargeItemId;
+        }
         // Pre：科室 / 品规展示名批量预取
         Map<Long, String> orgNameById = Map.of();
         Map<String, ProductDefinitionDisplayDto> productByCompositeKey = Map.of();
         // 科室维：批量预取开立科室名
         if (FeeDetailReportConstants.SUMMARY_DIMENSION_DEPARTMENT.equals(dimension)) {
             orgNameById = this.loadOrganizationNamesForCachedRows(cachedRows);
-        // 品目维：批量预取品规展示 Map
+        // 品目维：复用进价上下文中的产品 Map，避免二次 loadAsMap
         } else if (FeeDetailReportConstants.SUMMARY_DIMENSION_ITEM.equals(dimension)) {
-            productByCompositeKey = this.loadProductDisplayMapForCachedRows(cachedRows);
+            if (pricingContext != null && pricingContext.productByCompositeKey != null) {
+                productByCompositeKey = pricingContext.productByCompositeKey;
+            }
+            if (productByCompositeKey.isEmpty()) {
+                productByCompositeKey = this.loadProductDisplayMapForCachedRows(cachedRows);
+            }
         }
         Map<String, FeeDetailReportSummaryRowDto> mergedByKey = new LinkedHashMap<>();
         // Asm：按 payment 链路行展开，售价/进价同符号口径
@@ -338,6 +374,7 @@ public class FeeDetailReportFinTypeSummaryAssembler {
                 MonetaryAmountSupport.nullToZero(row.getReceivableAmountTotal()).add(signedSale)));
             row.setDiscountedAmountTotal(MonetaryAmountSupport.scaleCalc(
                 MonetaryAmountSupport.nullToZero(row.getDiscountedAmountTotal()).add(signedSale)));
+            this.addSignedQuantity(row, chargeItem.getQuantityValue(), chargeRow.getPaymentContext());
             long lineCount = 0L;
             // 累加前取已有行数，空则从 0 起算
             if (row.getLineCount() != null) {
@@ -613,51 +650,111 @@ public class FeeDetailReportFinTypeSummaryAssembler {
     }
 
     /**
-     * 从缓存行批量计算 chargeItemId → 未带符号进价（BR-MON-PKG-001）。
-     *
-     * <p>诊疗无进价按 0；不因缺进价抛错，避免脏行拖垮整单汇总。</p>
+     * 批量加载缓存收费行的批号进价与包装倍数（与明细 enrich 同路径）。
      *
      * @param cachedRows 缓存候选行
-     * @return chargeItemId → 进价行额
+     * @return 进价行额 / 批号包装单价 / 包装倍数
      */
-    private Map<Long, BigDecimal> computePurchaseAmountByChargeItemIdFromCachedRows(
+    private CachedRowPurchasePricingContext loadPurchasePricingContextFromCachedRows(
         List<OutpatientFeeDetailChargeRowQueryModel> cachedRows) {
+        CachedRowPurchasePricingContext context = new CachedRowPurchasePricingContext();
+        context.purchaseAmountByChargeItemId = Map.of();
+        context.purchasePackageUnitByChargeItemId = Map.of();
+        context.packageUnitRatioByChargeItemId = Map.of();
+        context.alignedPurchaseDisplayUnitByChargeItemId = Map.of();
+        if (cachedRows == null || cachedRows.isEmpty()) {
+            return context;
+        }
         Map<Long, ChargeItem> uniqueById = new LinkedHashMap<>();
         for (OutpatientFeeDetailChargeRowQueryModel chargeRow : cachedRows) {
-            // 缺 id 的收费行无法参与进价批量
             if (chargeRow == null || chargeRow.getChargeItem() == null
                 || chargeRow.getChargeItem().getId() == null) {
                 continue;
             }
             uniqueById.put(chargeRow.getChargeItem().getId(), chargeRow.getChargeItem());
         }
-        // 无可定价收费行 → 空进价 Map
         if (uniqueById.isEmpty()) {
-            return Map.of();
+            return context;
         }
         List<ChargeItem> pricingChargeItems = new ArrayList<>(uniqueById.values());
         LinkedHashSet<ProductDefinitionBatchLookup> productLookups = new LinkedHashSet<>();
         for (ChargeItem chargeItem : pricingChargeItems) {
             ProductDefinitionBatchLookup lookup =
                 ChargeItemProductLookupHelper.buildLookupFromChargeItem(chargeItem);
-            // 有产品锚点才入包装倍数预取集
             if (lookup != null) {
                 productLookups.add(lookup);
             }
         }
         Map<String, ProductDefinitionDisplayDto> productByCompositeKey =
             this.productDefinitionDisplayTerminologyAssembler.loadAsMap(new ArrayList<>(productLookups));
-        Map<Long, BigDecimal> packageUnitRatioByChargeItemId =
+        context.packageUnitRatioByChargeItemId =
             this.chargeItemPackageUnitRatioSupport.mapPackageUnitRatioByChargeItemId(
                 pricingChargeItems, productByCompositeKey);
-        Map<Long, BigDecimal> purchaseUnitByChargeItemId =
-            this.historicalChargeItemPurchasePriceSupport.computePurchaseUnitPriceByChargeItemId(pricingChargeItems);
-        // 必须传 product Map：操作单位已是包装时禁止走「假定拆零量」兼容分支（#4M-OP）
-        return this.historicalChargeItemPurchasePriceSupport.computePurchaseAmountFromUnitPrices(
-            pricingChargeItems,
-            purchaseUnitByChargeItemId,
-            packageUnitRatioByChargeItemId,
-            productByCompositeKey);
+        context.purchasePackageUnitByChargeItemId =
+            this.historicalChargeItemPurchasePriceSupport.computePurchaseUnitPriceByChargeItemId(
+                pricingChargeItems);
+        context.purchaseAmountByChargeItemId =
+            this.historicalChargeItemPurchasePriceSupport.computePurchaseAmountFromUnitPrices(
+                pricingChargeItems,
+                context.purchasePackageUnitByChargeItemId,
+                context.packageUnitRatioByChargeItemId,
+                productByCompositeKey);
+        context.productByCompositeKey = productByCompositeKey;
+        context.alignedPurchaseDisplayUnitByChargeItemId =
+            this.buildAlignedPurchaseDisplayUnitByChargeItemId(
+                pricingChargeItems, context, productByCompositeKey);
+        return context;
+    }
+
+    /**
+     * 预计算 chargeItemId → 与操作单位对齐的展示进价单价（汇总品规维复用，禁止逐行再查批号）。
+     *
+     * @param pricingChargeItems    去重收费行
+     * @param context               已含包装进价与倍数
+     * @param productByCompositeKey 产品展示 Map
+     * @return chargeItemId → 未带符号展示进价单价
+     */
+    private Map<Long, BigDecimal> buildAlignedPurchaseDisplayUnitByChargeItemId(
+        List<ChargeItem> pricingChargeItems,
+        CachedRowPurchasePricingContext context,
+        Map<String, ProductDefinitionDisplayDto> productByCompositeKey) {
+        if (pricingChargeItems == null || pricingChargeItems.isEmpty() || context == null) {
+            return Map.of();
+        }
+        Map<Long, BigDecimal> alignedByChargeItemId = new LinkedHashMap<>();
+        for (ChargeItem chargeItem : pricingChargeItems) {
+            if (chargeItem == null || chargeItem.getId() == null) {
+                continue;
+            }
+            BigDecimal packageUnit = context.purchasePackageUnitByChargeItemId.get(chargeItem.getId());
+            if (packageUnit == null) {
+                continue;
+            }
+            BigDecimal ratio = null;
+            if (context.packageUnitRatioByChargeItemId != null) {
+                ratio = context.packageUnitRatioByChargeItemId.get(chargeItem.getId());
+            }
+            ProductDefinitionDisplayDto product = null;
+            if (productByCompositeKey != null && !productByCompositeKey.isEmpty()) {
+                ProductDefinitionBatchLookup lookup =
+                    ChargeItemProductLookupHelper.buildLookupFromChargeItem(chargeItem);
+                if (lookup != null
+                    && lookup.getProductTableName() != null
+                    && lookup.getProductDefinitionId() != null) {
+                    String compositeKey = ProductDefinitionKeyUtil.buildCompositeKey(
+                        lookup.getProductTableName(), lookup.getProductDefinitionId());
+                    if (compositeKey != null) {
+                        product = productByCompositeKey.get(compositeKey);
+                    }
+                }
+            }
+            BigDecimal displayUnit = this.chargeItemPackageUnitRatioSupport.toChargeAlignedPurchaseDisplayUnitPrice(
+                packageUnit, ratio, chargeItem, product);
+            if (displayUnit != null) {
+                alignedByChargeItemId.put(chargeItem.getId(), displayUnit);
+            }
+        }
+        return alignedByChargeItemId;
     }
 
     /**
@@ -666,6 +763,7 @@ public class FeeDetailReportFinTypeSummaryAssembler {
      * @param row 汇总行
      */
     private void initAmountZeros(FeeDetailReportSummaryRowDto row) {
+        row.setQuantityTotal(MonetaryAmountSupport.scaleCalc(BigDecimal.ZERO));
         row.setPurchaseAmountTotal(MonetaryAmountSupport.scaleCalc(BigDecimal.ZERO));
         row.setSaleAmountTotal(MonetaryAmountSupport.scaleCalc(BigDecimal.ZERO));
         row.setActualReceivedAmountTotal(MonetaryAmountSupport.scaleCalc(BigDecimal.ZERO));
@@ -697,6 +795,168 @@ public class FeeDetailReportFinTypeSummaryAssembler {
             MonetaryAmountSupport.nullToZero(row.getActualReceivedAmountTotal()).add(saleTotal)));
         row.setLineAmountTotal(MonetaryAmountSupport.scaleCalc(
             MonetaryAmountSupport.nullToZero(row.getLineAmountTotal()).add(saleTotal)));
+    }
+
+    /**
+     * 累加带符号数量（与售价/进价同 payment 符号口径）。
+     *
+     * @param row            汇总行
+     * @param quantity       收费行数量
+     * @param paymentContext payment 上下文
+     */
+    private void addSignedQuantity(
+        FeeDetailReportSummaryRowDto row,
+        BigDecimal quantity,
+        OutpatientFeeDetailPaymentContextQueryModel paymentContext) {
+        BigDecimal signedQuantity = this.applyPaymentSign(
+            MonetaryAmountSupport.nullToZero(quantity), paymentContext);
+        row.setQuantityTotal(MonetaryAmountSupport.scaleCalc(
+            MonetaryAmountSupport.nullToZero(row.getQuantityTotal()).add(signedQuantity)));
+    }
+
+    /**
+     * 汇总行展示单价：与同桶明细一致，取批号进价 / 账单单价（禁止合计÷数量反推）。
+     *
+     * <p>仅品规维调用；{@code pricingContext} 须由调用方一次 {@link #loadPurchasePricingContextFromCachedRows} 预载。</p>
+     *
+     * @param rows               汇总行
+     * @param dimension          汇总维（须为 ITEM）
+     * @param query              须含 cachedChargeRows
+     * @param pricingContext     已预载批号进价上下文；空则跳过
+     */
+    private void enrichSummaryUnitPricesFromCachedRows(
+        List<FeeDetailReportSummaryRowDto> rows,
+        String dimension,
+        OutpatientFeeDetailPageQuery query,
+        CachedRowPurchasePricingContext pricingContext) {
+        if (rows == null || rows.isEmpty() || query == null || pricingContext == null) {
+            return;
+        }
+        List<OutpatientFeeDetailChargeRowQueryModel> cachedRows = query.getCachedChargeRows();
+        if (cachedRows == null || cachedRows.isEmpty()) {
+            return;
+        }
+        Map<String, Set<BigDecimal>> purchaseUnitsByBucket = new HashMap<>();
+        Map<String, Set<BigDecimal>> saleUnitsByBucket = new HashMap<>();
+        for (OutpatientFeeDetailChargeRowQueryModel chargeRow : cachedRows) {
+            if (chargeRow == null || chargeRow.getChargeItem() == null) {
+                continue;
+            }
+            ChargeItem chargeItem = chargeRow.getChargeItem();
+            String bucketKey = this.resolveDimensionBucketKey(dimension, chargeItem);
+            if (bucketKey == null) {
+                continue;
+            }
+            BigDecimal purchaseDisplayUnit = this.resolveChargePurchaseDisplayUnitPrice(
+                chargeItem, pricingContext, chargeRow.getPaymentContext());
+            if (purchaseDisplayUnit != null) {
+                purchaseUnitsByBucket
+                    .computeIfAbsent(bucketKey, ignored -> new LinkedHashSet<>())
+                    .add(purchaseDisplayUnit);
+            }
+            BigDecimal saleDisplayUnit = this.resolveChargeSaleDisplayUnitPrice(
+                chargeItem, chargeRow.getPaymentContext());
+            if (saleDisplayUnit != null) {
+                saleUnitsByBucket
+                    .computeIfAbsent(bucketKey, ignored -> new LinkedHashSet<>())
+                    .add(saleDisplayUnit);
+            }
+        }
+        for (FeeDetailReportSummaryRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            String bucketKey = this.resolveSummaryRowBucketKey(row, dimension);
+            if (StringUtils.isEmpty(bucketKey)) {
+                continue;
+            }
+            row.setPurchaseUnitPrice(this.resolveUniqueDisplayUnitPrice(purchaseUnitsByBucket.get(bucketKey)));
+            row.setSaleUnitPrice(this.resolveUniqueDisplayUnitPrice(saleUnitsByBucket.get(bucketKey)));
+        }
+    }
+
+    /**
+     * 解析汇总行分桶键（与 enrich 时 bucket 一致）。
+     *
+     * @param row       汇总行
+     * @param dimension 汇总维
+     * @return 分桶键
+     */
+    private String resolveSummaryRowBucketKey(FeeDetailReportSummaryRowDto row, String dimension) {
+        if (FeeDetailReportConstants.SUMMARY_DIMENSION_FIN_TYPE.equals(dimension)) {
+            if (StringUtils.isEmpty(row.getFinTypeCode())) {
+                return null;
+            }
+            return row.getFinTypeCode().trim();
+        }
+        return row.getDimensionKey();
+    }
+
+    /**
+     * 批号进价展示单价（与明细 Assembler 同路径：包装价 → 操作单位展示价）。
+     *
+     * @param chargeItem      收费行
+     * @param pricingContext  批号进价上下文
+     * @param paymentContext  payment 上下文
+     * @return 带符号展示进价单价；无进价时 null
+     */
+    private BigDecimal resolveChargePurchaseDisplayUnitPrice(
+        ChargeItem chargeItem,
+        CachedRowPurchasePricingContext pricingContext,
+        OutpatientFeeDetailPaymentContextQueryModel paymentContext) {
+        if (chargeItem == null || chargeItem.getId() == null || pricingContext == null) {
+            return null;
+        }
+        BigDecimal displayUnit = null;
+        if (pricingContext.alignedPurchaseDisplayUnitByChargeItemId != null) {
+            displayUnit = pricingContext.alignedPurchaseDisplayUnitByChargeItemId.get(chargeItem.getId());
+        }
+        if (displayUnit == null) {
+            return null;
+        }
+        return this.applyPaymentSign(displayUnit, paymentContext);
+    }
+
+    /**
+     * 账单售价展示单价（ChargeItem.unit_price；禁止 Payment / 目录价）。
+     *
+     * @param chargeItem     收费行
+     * @param paymentContext payment 上下文
+     * @return 带符号展示售价单价；无账单价时 null
+     */
+    private BigDecimal resolveChargeSaleDisplayUnitPrice(
+        ChargeItem chargeItem,
+        OutpatientFeeDetailPaymentContextQueryModel paymentContext) {
+        if (chargeItem == null || chargeItem.getUnitPrice() == null) {
+            return null;
+        }
+        return this.applyPaymentSign(
+            MonetaryAmountSupport.scaleCalc(chargeItem.getUnitPrice()), paymentContext);
+    }
+
+    /**
+     * 同桶多行批号/账单单价一致时返回该单价；不一致则 null（禁止反推加权价）。
+     *
+     * @param candidates 候选展示单价
+     * @return 唯一单价或 null
+     */
+    private BigDecimal resolveUniqueDisplayUnitPrice(Set<BigDecimal> candidates) {
+        if (candidates == null || candidates.isEmpty()) {
+            return null;
+        }
+        BigDecimal unique = null;
+        for (BigDecimal candidate : candidates) {
+            if (candidate == null) {
+                continue;
+            }
+            BigDecimal scaled = MonetaryAmountSupport.scaleCalc(candidate);
+            if (unique == null) {
+                unique = scaled;
+            } else if (unique.compareTo(scaled) != 0) {
+                return null;
+            }
+        }
+        return unique;
     }
 
     /**
@@ -756,40 +1016,42 @@ public class FeeDetailReportFinTypeSummaryAssembler {
                 purchaseUnitByChargeItemId,
                 packageUnitRatioByChargeItemId,
                 productByCompositeKey);
-        // Asm：按 payment 链路行展开进价符号（优先 cachedChargeRows；否则回落 chargeItemId 上下文）
+        // Asm：按 payment 链路行展开进价符号（与售价 summarizeFeeDetailRowsByDefinitionFromPaymentLinks 同口径）
         if (query != null && query.getCachedChargeRows() != null && !query.getCachedChargeRows().isEmpty()) {
             for (OutpatientFeeDetailChargeRowQueryModel row : query.getCachedChargeRows()) {
-                // 缺收费事实/主键的链路行不参与进价符号展开
-                if (row == null || row.getChargeItem() == null || row.getChargeItem().getId() == null) {
-                    continue;
-                }
-                ChargeItem chargeItem = row.getChargeItem();
-                // 非本批 definition 的收费行跳过
-                if (chargeItem.getDefinitionId() == null
-                    || !definitionIds.contains(chargeItem.getDefinitionId())) {
-                    continue;
-                }
-                String finTypeCode = finTypeByChargeItemId.get(chargeItem.getId());
-                // 解析到 fin_type 则写入 definition 分桶（后写覆盖同 definition）
-                if (StringUtils.isNotEmpty(finTypeCode)) {
-                    bundle.finTypeByDefinitionId.put(chargeItem.getDefinitionId(), finTypeCode.trim());
-                }
-                BigDecimal purchaseRaw = purchaseByChargeItemId.get(chargeItem.getId());
-                // 诊疗等无进价按 0，保证页脚进价列有值
-                if (purchaseRaw == null) {
-                    purchaseRaw = BigDecimal.ZERO;
-                }
-                BigDecimal signedPurchase = this.applyPaymentSign(purchaseRaw, row.getPaymentContext());
-                BigDecimal existing = bundle.purchaseByDefinitionId.get(chargeItem.getDefinitionId());
-                // 同 definition 首次累加从 0 起
-                if (existing == null) {
-                    existing = BigDecimal.ZERO;
-                }
-                bundle.purchaseByDefinitionId.put(
-                    chargeItem.getDefinitionId(),
-                    MonetaryAmountSupport.scaleCalc(existing.add(signedPurchase)));
+                this.accumulateDefinitionPurchaseFromPaymentLinkRow(
+                    bundle,
+                    definitionIds,
+                    finTypeByChargeItemId,
+                    purchaseByChargeItemId,
+                    row.getChargeItem(),
+                    row.getPaymentContext());
             }
-        // 无 cachedChargeRows：回落按定价收费行 + paymentContext Map 展开符号
+        } else if (query != null && query.getResolvedPaymentChargeItemLinks() != null
+            && !query.getResolvedPaymentChargeItemLinks().isEmpty()) {
+            // FIN_TYPE 默认路径禁止物化 cachedChargeRows；须逐条 payment link 展开收退符号
+            Map<Long, ChargeItem> chargeItemById = new LinkedHashMap<>();
+            if (query.getPreloadedChargeItemsById() != null) {
+                chargeItemById.putAll(query.getPreloadedChargeItemsById());
+            }
+            for (ChargeItem chargeItem : pricingChargeItems) {
+                if (chargeItem != null && chargeItem.getId() != null) {
+                    chargeItemById.putIfAbsent(chargeItem.getId(), chargeItem);
+                }
+            }
+            for (OutpatientFeeDetailChargePaymentLinkQueryModel link : query.getResolvedPaymentChargeItemLinks()) {
+                if (link == null || link.getChargeItemId() == null) {
+                    continue;
+                }
+                this.accumulateDefinitionPurchaseFromPaymentLinkRow(
+                    bundle,
+                    definitionIds,
+                    finTypeByChargeItemId,
+                    purchaseByChargeItemId,
+                    chargeItemById.get(link.getChargeItemId()),
+                    link.getPaymentContext());
+            }
+        // 无 payment 链路：回落按定价收费行 + paymentContext Map（单条上下文，兼容旧读路径）
         } else {
             Map<Long, OutpatientFeeDetailPaymentContextQueryModel> paymentContextByChargeItemId = Map.of();
             // 复用查询侧预载的 payment 上下文
@@ -919,6 +1181,52 @@ public class FeeDetailReportFinTypeSummaryAssembler {
     }
 
     /**
+     * 按单条 payment 链路累加 definition 进价（与域层售价分桶同收退符号）。
+     *
+     * @param bundle                   分桶中间态
+     * @param definitionIds            本批 definition 白名单
+     * @param finTypeByChargeItemId      chargeItemId → fin_type
+     * @param purchaseByChargeItemId     chargeItemId → 未带符号行进价
+     * @param chargeItem                 收费行
+     * @param paymentContext             payment 收退上下文
+     */
+    private void accumulateDefinitionPurchaseFromPaymentLinkRow(
+        FinTypeResolveBundle bundle,
+        LinkedHashSet<Long> definitionIds,
+        Map<Long, String> finTypeByChargeItemId,
+        Map<Long, BigDecimal> purchaseByChargeItemId,
+        ChargeItem chargeItem,
+        OutpatientFeeDetailPaymentContextQueryModel paymentContext) {
+        // 缺收费事实/主键的链路行不参与进价符号展开
+        if (chargeItem == null || chargeItem.getId() == null) {
+            return;
+        }
+        // 非本批 definition 的收费行跳过
+        if (chargeItem.getDefinitionId() == null || !definitionIds.contains(chargeItem.getDefinitionId())) {
+            return;
+        }
+        String finTypeCode = finTypeByChargeItemId.get(chargeItem.getId());
+        // 解析到 fin_type 则写入 definition 分桶（后写覆盖同 definition）
+        if (StringUtils.isNotEmpty(finTypeCode)) {
+            bundle.finTypeByDefinitionId.put(chargeItem.getDefinitionId(), finTypeCode.trim());
+        }
+        BigDecimal purchaseRaw = purchaseByChargeItemId.get(chargeItem.getId());
+        // 诊疗等无进价按 0，保证页脚进价列有值
+        if (purchaseRaw == null) {
+            purchaseRaw = BigDecimal.ZERO;
+        }
+        BigDecimal signedPurchase = this.applyPaymentSign(purchaseRaw, paymentContext);
+        BigDecimal existing = bundle.purchaseByDefinitionId.get(chargeItem.getDefinitionId());
+        // 同 definition 首次累加从 0 起
+        if (existing == null) {
+            existing = BigDecimal.ZERO;
+        }
+        bundle.purchaseByDefinitionId.put(
+            chargeItem.getDefinitionId(),
+            MonetaryAmountSupport.scaleCalc(existing.add(signedPurchase)));
+    }
+
+    /**
      * 退费 payment 链路进价取负（与域层汇总售价符号一致）。
      *
      * @param amount  未带符号进价
@@ -946,5 +1254,26 @@ public class FeeDetailReportFinTypeSummaryAssembler {
 
         /** definitionId → 带符号进价合计。 */
         private final Map<Long, BigDecimal> purchaseByDefinitionId = new LinkedHashMap<>();
+    }
+
+    /**
+     * 缓存收费行批号进价批量上下文（与明细 enrich 同路径）。
+     */
+    private static final class CachedRowPurchasePricingContext {
+
+        /** chargeItemId → 行进价（6 位）。 */
+        private Map<Long, BigDecimal> purchaseAmountByChargeItemId = Map.of();
+
+        /** chargeItemId → 批号包装进价单价。 */
+        private Map<Long, BigDecimal> purchasePackageUnitByChargeItemId = Map.of();
+
+        /** chargeItemId → 包装倍数。 */
+        private Map<Long, BigDecimal> packageUnitRatioByChargeItemId = Map.of();
+
+        /** 产品复合键 → 展示 DTO（进价展示单价与操作单位对齐）。 */
+        private Map<String, ProductDefinitionDisplayDto> productByCompositeKey = Map.of();
+
+        /** chargeItemId → 未带符号、与操作单位对齐的展示进价单价。 */
+        private Map<Long, BigDecimal> alignedPurchaseDisplayUnitByChargeItemId = Map.of();
     }
 }

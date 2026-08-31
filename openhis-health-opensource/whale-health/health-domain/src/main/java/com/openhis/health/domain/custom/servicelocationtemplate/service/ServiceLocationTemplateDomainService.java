@@ -65,6 +65,7 @@ public class ServiceLocationTemplateDomainService {
             row.setDistributionCategoryCode(item.getDistributionCategoryCode());
             row.setDefLocationId(item.getDefLocationId());
             row.setItemDefinitionId(item.getItemDefinitionId());
+            row.setTypeCode(item.getTypeCode());
             row.setMethodCode(item.getMethodCode());
             row.setStartTime(item.getStartTime());
             row.setEndTime(item.getEndTime());
@@ -117,6 +118,7 @@ public class ServiceLocationTemplateDomainService {
             row.setDistributionCategoryCode(item.getDistributionCategoryCode());
             row.setDefLocationId(item.getDefLocationId());
             row.setItemDefinitionId(item.getItemDefinitionId());
+            row.setTypeCode(item.getTypeCode());
             row.setMethodCode(item.getMethodCode());
             row.setStartTime(item.getStartTime());
             row.setEndTime(item.getEndTime());
@@ -131,7 +133,7 @@ public class ServiceLocationTemplateDomainService {
     }
 
     /**
-     * 校验「物品表 + 发放类别 + 具体项 + 用法 + 生效时段 + 默认发药位置」在本次提交中不重复（BR-SLT-004）。
+     * 校验「物品表 + 发放类别 + 具体项 + 种类 + 用法 + 生效时段 + 默认发药位置」在本次提交中不重复（BR-SLT-004）。
      *
      * <p>同匹配条件可指向多个药房，由 {@code priority} 排候选序；仅条件与库位全同才拒绝。</p>
      *
@@ -145,10 +147,11 @@ public class ServiceLocationTemplateDomainService {
                 + item.getItemTable() + "\u0001"
                 + item.getDistributionCategoryCode() + "\u0001"
                 + String.valueOf(item.getItemDefinitionId()) + "\u0001"
+                + String.valueOf(item.getTypeCode()) + "\u0001"
                 + String.valueOf(item.getMethodCode()) + "\u0001"
                 + this.timeWindowKey(item.getStartTime(), item.getEndTime()) + "\u0001"
                 + String.valueOf(item.getDefLocationId());
-            // 同一科室下匹配条件与默认发药位置全同视为重复行
+            // 同一科室下匹配条件（含种类）与默认发药位置全同视为重复行
             if (keys.contains(key)) {
                 throw new BusinessException(ErrorCodeConstants.SERVICE_LOCATION_TEMPLATE_INVALID_ARGUMENT, "规则配置键不可重复");
             }
@@ -180,26 +183,54 @@ public class ServiceLocationTemplateDomainService {
     }
 
     /**
-     * 校验优先级从 1 开始连续分配。
+     * 校验优先级：仅在同一匹配竞争组内须从 1 起连续（BR-SLT-005）。
+     *
+     * <p>竞争组 = 物品表 + 发放类别 + 具体项 + 种类 + 用法 + 生效时段（不含药房）。
+     * 同组多药房时 priority 表示候选序（1 先试，无库存再试 2）；不同品类/种类各自独立从 1 起，允许整科出现多个 1。</p>
      *
      * @param items 待保存规则列表
      */
     private void assertPriorityContinuous(List<SaveDistributionConfigCommand.DistributionRuleItemCommand> items) {
-        List<Integer> priorities = new ArrayList<>();
+        Map<String, List<Integer>> prioritiesByGroup = new HashMap<>();
         for (SaveDistributionConfigCommand.DistributionRuleItemCommand item : items) {
-            // 未配置优先级的规则不参与连续性校验。
+            // 未配置优先级的规则不参与连续性校验
             if (item.getPriority() == null) {
                 continue;
             }
-            priorities.add(item.getPriority());
+            String groupKey = this.priorityGroupKey(item);
+            List<Integer> groupPriorities = prioritiesByGroup.get(groupKey);
+            if (groupPriorities == null) {
+                groupPriorities = new ArrayList<>();
+                prioritiesByGroup.put(groupKey, groupPriorities);
+            }
+            groupPriorities.add(item.getPriority());
         }
-        priorities.sort(Integer::compareTo);
-        for (int i = 0; i < priorities.size(); i++) {
-            int expected = i + 1;
-            // 优先级必须从 1 连续递增，否则匹配顺序不确定。
-            if (priorities.get(i) != expected) {
-                throw new BusinessException(ErrorCodeConstants.SERVICE_LOCATION_TEMPLATE_INVALID_ARGUMENT, "优先级必须从 1 开始连续分配");
+        for (List<Integer> priorities : prioritiesByGroup.values()) {
+            priorities.sort(Integer::compareTo);
+            for (int i = 0; i < priorities.size(); i++) {
+                int expected = i + 1;
+                // 同组内须 1..N 连续，否则同条件多药房候选序不确定
+                if (priorities.get(i) != expected) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.SERVICE_LOCATION_TEMPLATE_INVALID_ARGUMENT,
+                        "同一匹配条件下优先级必须从 1 开始连续分配");
+                }
             }
         }
+    }
+
+    /**
+     * 组装优先级竞争组键（与 BR-SLT-004 匹配条件一致，不含默认发药位置）。
+     *
+     * @param item 规则行
+     * @return 组键
+     */
+    private String priorityGroupKey(SaveDistributionConfigCommand.DistributionRuleItemCommand item) {
+        return item.getItemTable() + "\u0001"
+            + item.getDistributionCategoryCode() + "\u0001"
+            + String.valueOf(item.getItemDefinitionId()) + "\u0001"
+            + String.valueOf(item.getTypeCode()) + "\u0001"
+            + String.valueOf(item.getMethodCode()) + "\u0001"
+            + this.timeWindowKey(item.getStartTime(), item.getEndTime());
     }
 }

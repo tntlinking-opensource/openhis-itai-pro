@@ -35,5 +35,13 @@ class CatalogRowFieldNormalizerTest {
     @Test
     void truncateVarchar_blankReturnsNull() {
         assertThat(CatalogRowFieldNormalizer.truncateVarchar("  ", 200)).isNull();
+        assertThat(CatalogRowFieldNormalizer.truncateVarchar("null", 200)).isNull();
+        assertThat(CatalogRowFieldNormalizer.truncateVarchar("--", 200)).isNull();
+    }
+
+    @Test
+    void normalizeChrgitmLv_placeholderReturnsNull() {
+        assertThat(CatalogRowFieldNormalizer.normalizeChrgitmLv("--")).isNull();
+        assertThat(CatalogRowFieldNormalizer.normalizeChrgitmLv("null")).isNull();
     }
 }

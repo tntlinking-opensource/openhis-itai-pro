@@ -63,6 +63,28 @@ public final class BossLegacyStatisticCode1Mapping {
     }
 
     /**
+     * 对照缺失时的「其它」大类编码（门诊/挂号 YLMZ10，住院 YLZY12），避免 FIN/DEF 散开超行。
+     *
+     * @param issueKind 票种
+     * @return 出站 chargeCode
+     */
+    public static String fallbackOtherChargeCode(String issueKind) {
+        if (needsCode1(issueKind)) {
+            return "YLMZ10";
+        }
+        return "YLZY12";
+    }
+
+    /**
+     * 对照缺失时的「其它」大类名称。
+     *
+     * @return 收费项目名称
+     */
+    public static String fallbackOtherChargeName() {
+        return "其它";
+    }
+
+    /**
      * 挂号、门诊票走 CODE1；住院/通用票走 CODE。
      *
      * @param issueKind 票种

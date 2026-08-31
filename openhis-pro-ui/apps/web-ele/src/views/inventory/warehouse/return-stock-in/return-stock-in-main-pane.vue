@@ -88,6 +88,7 @@ import { resolveLoginPractitionerIdForRequest } from '#/utils/format/preserve-ap
 import {
   resolveInvDocApprovedByName,
   resolveInvDocPreparedByName,
+  resolveInvDocPrintApplyTimeText,
 } from '#/utils/inventory/inventory-workbench-list';
 import {
   buildInventoryLocationHeadFormRules,
@@ -1070,8 +1071,8 @@ function resolveReturnStockInPrintUnitLabel(row: ReturnPreviewRow): string {
   return String(row.unitCodeDictText ?? row.unitCode ?? '').trim();
 }
 
-/** 打印退库入库单 */
-async function handlePrint() {
+/** 打印或预览退库入库单 */
+async function handlePrint(payload?: { preview?: boolean }) {
   const busNo = String(headerBusNo.value ?? '').trim();
   if (!busNo) {
     ElMessage.warning('请先保存单据后再打印');
@@ -1089,14 +1090,17 @@ async function handlePrint() {
   );
   const warehouseName = resolvePrintLocationName(props.warehouseOptions, purposeLocationId.value);
   const documentTitle = buildInvDocumentTitle(warehouseName || sourceName, '退货入库单');
-  const applyTimeText = String(headApplyTime.value ?? props.applyTime ?? '')
-    .trim()
-    .replace('T', ' ');
+  // 打印制单时间取侧栏单据实际审批时间，禁止用单头缺省「当前时刻」冒充
+  const applyTimeText = resolveInvDocPrintApplyTimeText({
+    queueCardRow: props.queueCardRow as null | Record<string, unknown>,
+  });
 
-  // 按当前网格展示值组装退货明细
+  // 按当前网格展示值组装退货明细（列对齐流转单；缺省字段由 mapper 置空）
   const lineRows = productRows.map((row) => ({
     productBusNo: resolveInvPrintProductBusNo(row as unknown as Record<string, unknown>),
     productName: String(row.productName ?? '').trim(),
+    specText: String((row as { specification?: string }).specification ?? '').trim(),
+    manufacturerText: String((row as { manufacturer?: string }).manufacturer ?? '').trim(),
     qty: row.itemQuantity,
     unitLabel: resolveReturnStockInPrintUnitLabel(row),
     lotNumber: String(row.lotNumber ?? '').trim(),
@@ -1128,6 +1132,7 @@ async function handlePrint() {
     },
     bizRef: { busNo, docKind: 'return-stock-in' },
     jobName: documentTitle,
+    preview: payload?.preview === true,
   });
 }
 </script>

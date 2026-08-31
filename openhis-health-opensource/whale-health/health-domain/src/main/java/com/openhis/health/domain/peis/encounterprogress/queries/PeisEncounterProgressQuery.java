@@ -6,6 +6,7 @@ package com.openhis.health.domain.peis.encounterprogress.queries;
 
 import com.openhis.health.domain.administration.encounter.entity.Encounter;
 import com.openhis.health.domain.administration.patient.entity.Patient;
+import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.clinical.diagnosticreport.entity.DiagnosticReport;
 import com.openhis.health.domain.peis.encounterext.entity.PeisEncounterExt;
 import com.openhis.health.domain.peis.encounterprogress.command.SignalProgressChangedCommand;
@@ -19,6 +20,8 @@ import com.openhis.health.domain.peis.servicerequestext.entity.PeisServiceReques
 import com.openhis.health.domain.share.constants.DiagnosticReportStatusConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.PeisExecStatusConstants;
+import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.enums.EncounterClass;
 import com.openhis.health.domain.share.enums.EncounterStatus;
 import com.openhis.health.domain.share.enums.RequestStatus;
@@ -42,7 +45,9 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Period;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -106,9 +111,13 @@ public class PeisEncounterProgressQuery {
             pat.get("name"),
             pee.get("busNo"),
             sr.get("id"),
+            sr.get("activityId"),
             ad.get("name"),
             ext.get("execStatusEnum"),
-            ext.get("lisDispatchEnum"));
+            ext.get("lisDispatchEnum"),
+            pat.get("birthDate"),
+            pee.get("groupFlag"),
+            enc.get("statusEnum"));
         dataQuery.where(dataPredicates.toArray(Predicate[]::new));
         dataQuery.orderBy(cb.asc(pat.get("name")), cb.asc(sr.get("id")));
 
@@ -121,15 +130,16 @@ public class PeisEncounterProgressQuery {
     }
 
     /**
-     * 总检诊台待总检列表（MAS-01 / BR-MAS-01）。
+     * 总检诊台待总检列表（MAS-01）。
      *
-     * <p>条件：PE 在检；存在未取消 SR；全部 SR ext 为 checked/abandoned；尚无 final 总检报告。</p>
+     * <p>条件：PE 在检；存在未取消 SR。不再要求分科项目全部已检/弃检，完成比仅作展示。</p>
+     * <p>总检是否定稿不在此过滤；定稿门禁在报告打印/发布（REP-001）。</p>
      *
      * @param query 过滤与分页条件
      * @return 分页待总检行
      */
     public Page<MasterReviewRowModel> searchPendingMasterReview(MasterReviewQuery query) {
-        // 构建 Criteria（分科完成 + 未定稿）→ 分页 → 组装完成比
+        // 构建 Criteria（PE 在检）→ 分页 → 组装完成比
         MasterReviewQuery safeQuery = query;
         if (safeQuery == null) {
             safeQuery = new MasterReviewQuery();
@@ -158,7 +168,11 @@ public class PeisEncounterProgressQuery {
             enc.get("id"),
             pat.get("name"),
             pee.get("busNo"),
-            enc.get("startTime"));
+            enc.get("startTime"),
+            pat.get("birthDate"),
+            pat.get("genderEnum"),
+            pee.get("groupFlag"),
+            enc.get("patientId"));
         dataQuery.where(dataPredicates.toArray(Predicate[]::new));
         dataQuery.orderBy(cb.asc(enc.get("startTime")), cb.asc(enc.get("id")));
 
@@ -180,6 +194,11 @@ public class PeisEncounterProgressQuery {
             model.setPatientName((String) row[1]);
             model.setBusNo((String) row[2]);
             model.setCheckInTime((LocalDateTime) row[3]);
+            LocalDate birthDate = (LocalDate) row[4];
+            model.setPatientAge(calcPatientAge(birthDate));
+            model.setGenderEnum((String) row[5]);
+            model.setGroupFlag((Boolean) row[6]);
+            model.setPatientId((Long) row[7]);
             String ratio = ratioByEncounter.get(encounterId);
             if (ratio == null) {
                 model.setDeptCompleteRatio("0/0");
@@ -235,7 +254,8 @@ public class PeisEncounterProgressQuery {
             pat.get("name"),
             pee.get("busNo"),
             dr.get("finalizedAt"),
-            dr.get("pdfStorageKey"));
+            dr.get("pdfStorageKey"),
+            dr.get("printCount"));
         dataQuery.where(dataPredicates.toArray(Predicate[]::new));
         dataQuery.orderBy(cb.desc(dr.get("finalizedAt")), cb.desc(dr.get("id")));
 
@@ -272,6 +292,7 @@ public class PeisEncounterProgressQuery {
             model.setBusNo((String) row[4]);
             model.setFinalizedAt((LocalDateTime) row[5]);
             model.setPdfStorageKey((String) row[6]);
+            model.setPrintCount((Integer) row[7]);
             models.add(model);
         }
         return models;
@@ -326,12 +347,24 @@ public class PeisEncounterProgressQuery {
             model.setPatientName((String) row[2]);
             model.setBusNo((String) row[3]);
             model.setServiceRequestId((Long) row[4]);
-            model.setActivityDisplay((String) row[5]);
-            model.setExecStatusEnum((String) row[6]);
-            model.setLisDispatchEnum((String) row[7]);
+            model.setActivityId((Long) row[5]);
+            model.setActivityDisplay((String) row[6]);
+            model.setExecStatusEnum((String) row[7]);
+            model.setLisDispatchEnum((String) row[8]);
+            LocalDate birthDate = (LocalDate) row[9];
+            model.setPatientAge(calcPatientAge(birthDate));
+            model.setGroupFlag((Boolean) row[10]);
+            model.setEncounterStatusEnum((String) row[11]);
             models.add(model);
         }
         return models;
+    }
+
+    private Integer calcPatientAge(LocalDate birthDate) {
+        if (birthDate == null) {
+            return null;
+        }
+        return Period.between(birthDate, LocalDate.now()).getYears();
     }
 
     private List<Predicate> buildDeptDeskPredicates(
@@ -364,6 +397,18 @@ public class PeisEncounterProgressQuery {
         predicates.add(cb.equal(enc.get("classEnum"), EncounterClass.PE.getCode()));
         predicates.add(cb.notEqual(sr.get("statusEnum"), RequestStatus.CANCELLED.getCode()));
         predicates.add(cb.equal(ext.get("execStatusEnum"), PeisExecStatusConstants.PENDING));
+
+        // 个检：仅对应收费项已 SETTLED 的 SR 进入待检列表（收费完成后才分科）
+        Subquery<Long> settledChargeItem = cb.createQuery().subquery(Long.class);
+        Root<ChargeItem> settledCi = settledChargeItem.from(ChargeItem.class);
+        settledChargeItem.select(settledCi.get("id"));
+        settledChargeItem.where(
+            cb.equal(settledCi.get("encounterId"), enc.get("id")),
+            cb.equal(settledCi.get("serviceId"), sr.get("id")),
+            cb.equal(settledCi.get("serviceTable"), TableNameConstants.WKF_SERVICE_REQUEST),
+            cb.equal(settledCi.get("statusEnum"), ChargeItemStatus.SETTLED.getCode()),
+            cb.isFalse(settledCi.get(FieldNameConstants.IS_DELETED)));
+        predicates.add(cb.or(cb.isTrue(pee.get("groupFlag")), cb.exists(settledChargeItem)));
 
         if (query != null) {
             if (query.getDeptOrgId() != null) {
@@ -413,31 +458,6 @@ public class PeisEncounterProgressQuery {
             cb.notEqual(srExists.get("statusEnum"), RequestStatus.CANCELLED.getCode()));
         predicates.add(cb.exists(hasSr));
 
-        // 不存在 pending/deferred 的未取消 SR（BR-MAS-01）
-        Subquery<Long> incomplete = cb.createQuery().subquery(Long.class);
-        Root<ServiceRequest> srInc = incomplete.from(ServiceRequest.class);
-        Root<PeisServiceRequestExt> extInc = incomplete.from(PeisServiceRequestExt.class);
-        incomplete.select(srInc.get("id"));
-        incomplete.where(
-            cb.equal(srInc.get("encounterId"), enc.get("id")),
-            cb.equal(extInc.get("serviceRequestId"), srInc.get("id")),
-            cb.isFalse(srInc.get(FieldNameConstants.IS_DELETED)),
-            cb.isFalse(extInc.get(FieldNameConstants.IS_DELETED)),
-            cb.notEqual(srInc.get("statusEnum"), RequestStatus.CANCELLED.getCode()),
-            extInc.get("execStatusEnum").in(
-                PeisExecStatusConstants.PENDING, PeisExecStatusConstants.DEFERRED));
-        predicates.add(cb.not(cb.exists(incomplete)));
-
-        // 尚无 final 总检报告
-        Subquery<Long> finalDr = cb.createQuery().subquery(Long.class);
-        Root<DiagnosticReport> dr = finalDr.from(DiagnosticReport.class);
-        finalDr.select(dr.get("id"));
-        finalDr.where(
-            cb.equal(dr.get("encounterId"), enc.get("id")),
-            cb.isFalse(dr.get(FieldNameConstants.IS_DELETED)),
-            cb.equal(dr.get("statusEnum"), DiagnosticReportStatusConstants.STATUS_FINAL));
-        predicates.add(cb.not(cb.exists(finalDr)));
-
         if (query != null) {
             LocalDateTime start = query.getStartDate();
             LocalDateTime end = query.getEndDate();
@@ -452,6 +472,9 @@ public class PeisEncounterProgressQuery {
                 predicates.add(cb.or(
                     cb.like(cb.lower(pat.get("name")), like),
                     cb.like(cb.lower(pee.get("busNo")), like)));
+            }
+            if (query.getGroupFlag() != null) {
+                predicates.add(cb.equal(pee.get("groupFlag"), query.getGroupFlag()));
             }
         }
         return predicates;

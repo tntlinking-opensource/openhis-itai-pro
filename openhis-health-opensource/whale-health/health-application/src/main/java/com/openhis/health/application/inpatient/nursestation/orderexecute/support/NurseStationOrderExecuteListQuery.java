@@ -11,7 +11,9 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 医嘱执行列表读查询（IF-IP-EXE-01），供 Loader 与 report-bridge 共用。
+ * 医嘱执行列表读查询（IF-IP-EXE-01 / 打印中心共用 Loader）。
+ *
+ * <p>{@code planTimeFrom}、开嘱日区间仅由打印中心入口赋值；医嘱执行页入口保持为空。</p>
  */
 @Data
 @Accessors(chain = true)
@@ -29,6 +31,26 @@ public class NurseStationOrderExecuteListQuery {
     /** 计划执行截止时刻（长期医嘱展开计划点的上界）。 */
     private LocalDateTime executionDeadline;
 
+    /**
+     * 计划执行日起（含）：按槽位 {@code planTime} 收窄；空表示不下界过滤。
+     */
+    private LocalDateTime planTimeFrom;
+
+    /**
+     * 开嘱日起（含）：按行 {@code reqOpenedTime} 收窄；空表示不下界过滤。
+     */
+    private LocalDateTime reqOpenedTimeFrom;
+
+    /**
+     * 开嘱日止（含）：按行 {@code reqOpenedTime} 收窄；空表示不上界过滤。
+     */
+    private LocalDateTime reqOpenedTimeTo;
+
     /** 中西药 Tab：{@code west} / {@code tcm}；空时默认 west。 */
     private String medicineCategoryTab;
+
+    /**
+     * 执行记录历史模式：true 时终态槽位按 Procedure 事实行回传（含已被对冲的 COMPLETED）。
+     */
+    private Boolean executionRecordHistory;
 }

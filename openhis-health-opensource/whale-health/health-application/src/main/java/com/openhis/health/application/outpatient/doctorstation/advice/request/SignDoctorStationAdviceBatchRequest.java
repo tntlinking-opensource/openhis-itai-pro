@@ -43,4 +43,22 @@ public class SignDoctorStationAdviceBatchRequest {
     /** 签发目标列表。 */
     @Schema(description = "签发目标列表", requiredMode = Schema.RequiredMode.REQUIRED)
     private List<DoctorStationAdviceResourceKeyDto> signTargets;
+
+    /**
+     * 医生已确认皮试药可跨批号开立（BR-ORD-034 / EX-ORD-309）。
+     *
+     * <p>皮试跨批确认已在 IF-DOR-14 暂存完成；签发相位通常忽略本字段。
+     * 未勾选皮试或已能单批覆盖时忽略本字段。</p>
+     */
+    @Schema(description = "已确认皮试药跨批号开立（应对 EX-ORD-309）")
+    private Boolean confirmCrossLotSkinTest;
+
+    /**
+     * 医生已确认药耗 FIFO 跨批次取用及分段金额（BR-ORD-035 / EX-ORD-310）。
+     *
+     * <p>首次签发若 FIFO 拆为多批则抛 EX-ORD-310（文案含各批数量与金额、合计）；
+     * 前端确认后带 {@code true} 重试，本批不再提示。单批覆盖时忽略本字段。</p>
+     */
+    @Schema(description = "已确认跨批次取用及分段金额（应对 EX-ORD-310）")
+    private Boolean confirmCrossLotPricing;
 }

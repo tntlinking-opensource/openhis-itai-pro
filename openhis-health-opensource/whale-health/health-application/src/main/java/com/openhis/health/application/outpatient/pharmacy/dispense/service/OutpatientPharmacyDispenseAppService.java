@@ -193,7 +193,7 @@ public class OutpatientPharmacyDispenseAppService {
     /**
      * 分页查询存在门诊药品发放事实的就诊队列，并回补门诊信息读模型展示字段。
      *
-     * @param request 关键字、状态子集与分页；库房范围由当前用户会话机构解析，不由调用方指定
+     * @param request 关键字、可选 {@code startDate}/{@code endDate}（就诊 {@code startTime}）、状态子集与分页；库房范围由当前用户会话机构解析，不由调用方指定
      * @return 队列总行数与行列表
      */
     public PagePendingDispenseEncounterQueueResponse pagePendingDispenseEncounterQueue(PagePendingDispenseEncounterQueueRequest request) {
@@ -208,10 +208,8 @@ public class OutpatientPharmacyDispenseAppService {
         if (!pharmacyLocationIds.isEmpty()) {
             pendingEncounterQuery.setLocationIds(pharmacyLocationIds);
         }
+        // Pre：绑定分页/关键字/就诊 startTime 时间窗（startDate/endDate）；Loader 内预解析为 resolvedEncounterScope。
         PageQueryBinder.bind(request, pendingEncounterQuery);
-        // 队列不按 status_changed_time 时间窗收敛（该字段随配药/发药变更）。
-        pendingEncounterQuery.setStartDate(null);
-        pendingEncounterQuery.setEndDate(null);
         pendingEncounterQuery.setDispenseStatusEnumIn(request.getDispenseStatusEnumIn());
         Page<Long> encounterPage = this.pharmacyEncounterQueueLoader.pageEncounterIdsForOutpatientPharmacyPending(pendingEncounterQuery);
 
@@ -409,6 +407,7 @@ public class OutpatientPharmacyDispenseAppService {
                 distributionCategoryCode,
                 dispense.getMedicationId(),
                 methodCode,
+                null,
                 null);
             if (candidateLocationIds.isEmpty()) {
                 if (!Objects.equals(dispense.getLocationId(), submitLine.getDispenseLocationId())) {
@@ -558,6 +557,55 @@ public class OutpatientPharmacyDispenseAppService {
                 productRowForStockAssert,
                 dispense.getId());
             dispensersInSubmitOrder.add(dispense);
+        }
+
+        // Pre：核发行若带了最终扫码，先覆盖发放行再扣主档（已配药重试改扫场景）
+        Map<Long, String> traceNoByDispenseIdForDispense = new HashMap<>();
+        for (DispenseMedicationLineSubmitDto lineSubmit : request.getLines()) {
+            if (lineSubmit == null || lineSubmit.getDispenseId() == null) {
+                continue;
+            }
+            if (StringUtils.isBlank(lineSubmit.getTraceNo())) {
+                continue;
+            }
+            List<String> lineTraceCodes = splitTraceCodes(lineSubmit.getTraceNo());
+            traceNumberQueryService.assertNoDuplicateTraceCodes(lineTraceCodes);
+            traceNumberQueryService.assertMasterCodesNotExhaustedForDispense(lineTraceCodes);
+            MedicationDispense dispenseForTraceCap = dispenseById.get(lineSubmit.getDispenseId());
+            if (dispenseForTraceCap != null && !lineTraceCodes.isEmpty()) {
+                BigDecimal qtyForCap = dispenseForTraceCap.getQuantity();
+                if (qtyForCap == null) {
+                    qtyForCap = dispenseForTraceCap.getDispenseQuantity();
+                }
+                if (qtyForCap != null) {
+                    int maxCodes = TraceScanCountSupport.resolveOutboundMaxCodeCount(qtyForCap);
+                    if (lineTraceCodes.size() > maxCodes) {
+                        throw new BusinessException(
+                            ErrorCodeConstants.TRACE_NUMBER_INVALID_ARGUMENT,
+                            "追溯码数量超过发药量，请减少扫码");
+                    }
+                }
+            }
+            traceNoByDispenseIdForDispense.put(lineSubmit.getDispenseId(), lineSubmit.getTraceNo().trim());
+        }
+        if (!traceNoByDispenseIdForDispense.isEmpty()) {
+            medicationDispenseDomainService.applyTraceNoBeforeDispense(traceNoByDispenseIdForDispense);
+            // Asm：改码后重载实体，保证后续扣库/写 OUT 用最新 trace_no
+            List<MedicationDispense> reloadedAfterTrace =
+                medicationDispenseQueryService.listMedicationDispensesByIds(submittedDispenseIds);
+            Map<Long, MedicationDispense> reloadedById = new HashMap<>();
+            for (MedicationDispense reloaded : reloadedAfterTrace) {
+                if (reloaded.getId() != null) {
+                    reloadedById.put(reloaded.getId(), reloaded);
+                }
+            }
+            dispensersInSubmitOrder.clear();
+            for (Long dispenseId : submittedDispenseIds) {
+                MedicationDispense reloaded = reloadedById.get(dispenseId);
+                if (reloaded != null) {
+                    dispensersInSubmitOrder.add(reloaded);
+                }
+            }
         }
 
         DispenseMedicationCommand dispenseMedicationCommand =

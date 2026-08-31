@@ -63,7 +63,14 @@ export interface ResolveDispenseRequiredTraceCountOpts {
 }
 
 /**
- * 门诊发药操作拆零量（盖住判定用；与后端 isRemainingSplitSufficientForDispenseOut 同口径）。
+ * 门诊/住院发药「盖住」用操作拆零量（与主档 remaining_split_quantity 同阶）。
+ *
+ * <p>对齐后端 {@code isRemainingSplitSufficientForDispenseOut} /
+ * {@code MedicationProductQuantityToSplitUnitConverter}：需求量必须是<strong>真拆零</strong>。
+ * 禁止在「操作单位=贴码单位=盒」时直接用操作量去比主档剩余片数（否则发 4 盒、扫 1 满盒剩 30 片会被误判已盖住、待扫变 0）。</p>
+ *
+ * <p>码倍只表示每码可盖多少拆零；当操作单位已是拆零（含中包装贴在「支」等同名拆零单位）时，
+ * 操作量即需求，不得再 × 码倍（3 支×10 → 30 的误算）。</p>
  *
  * @param row 发药行
  * @param opts 主档贴码单位/比例快照（可选）
@@ -97,20 +104,30 @@ export function resolveDispenseOperationSplitQty(
       : Number(row.traceUnitRatio);
   const hasMasterRatio = Number.isFinite(masterRatioRaw) && masterRatioRaw > 0;
 
-  // 同阶贴码单位：操作量 × 每码拆零（主档比或包装比）
-  if (opUnit && traceUnit && opUnit === traceUnit) {
-    if (hasMasterRatio) return opQty * masterRatioRaw;
-    if (hasPackageRatio && packageUnit && traceUnit === packageUnit) return opQty * packageRatio;
-    if (splitUnit && traceUnit === splitUnit) return opQty;
+  // 操作单位已是拆零：需求量=操作量（中包装贴拆零同名亦走此支，勿×码倍）
+  if (opUnit && splitUnit && opUnit === splitUnit) {
     return opQty;
   }
 
-  // 异构：先得操作拆零
-  if (opUnit && splitUnit && opUnit === splitUnit) return opQty;
-  if (opUnit && packageUnit && opUnit === packageUnit && hasPackageRatio)
+  // 操作单位是包装：×目录包装比 → 拆零（五类优先，对齐后端 converter）
+  if (opUnit && packageUnit && opUnit === packageUnit && hasPackageRatio) {
     return opQty * packageRatio;
-  if (!opUnit && splitUnit) return opQty;
-  if (hasMasterRatio) return opQty;
+  }
+
+  // 操作单位=贴码单位且非拆零、又无包装比：游离贴码，回落主档码倍
+  if (opUnit && traceUnit && opUnit === traceUnit && hasMasterRatio) {
+    return opQty * masterRatioRaw;
+  }
+
+  // 缺操作单位编码时按拆零理解展示量
+  if (!opUnit && splitUnit) {
+    return opQty;
+  }
+
+  // 仅有码倍、单位链不全：按游离贴码把操作量落到拆零
+  if (hasMasterRatio) {
+    return opQty * masterRatioRaw;
+  }
   return undefined;
 }
 
@@ -138,10 +155,16 @@ export function resolveDispenseMaxTraceCount(
 }
 
 /**
- * 门诊发药「建议应扫」个数（待扫展示 / 半扫软确认；非绑码硬上限）。
+ * 门诊发药「建议应扫」个数（半扫软确认回落；非绑码硬上限、非弹窗待扫真源）。
  *
- * <p>贴码单位/比例优先取追溯码主表快照；操作量仍用包装/拆零把业务单位换到拆零后，
- * 再 ceil(行拆零 / 主表 ratio)。硬上限见 {@link resolveDispenseMaxTraceCount}。</p>
+ * <p>贴码单位/比例优先取追溯码主表快照。</p>
+ * <ul>
+ *   <li>中包装贴在<strong>拆零同名</strong>单位（如支、码倍=10）→ ceil(操作量/码倍)</li>
+ *   <li>同阶<strong>包装</strong>单位（如盒、码倍=30 片/盒）→ ceil(操作量)；禁止 ÷ 码倍
+ *       （码倍是拆零比，不是「几盒一码」）</li>
+ *   <li>异构 → ceil(行拆零/码倍)</li>
+ * </ul>
+ * <p>硬上限见 {@link resolveDispenseMaxTraceCount}。</p>
  */
 export function resolveDispenseRequiredTraceCount(
   row: DispensePrescriptionItemRow,
@@ -174,8 +197,13 @@ export function resolveDispenseRequiredTraceCount(
 
   // 有主表比例：与后端同阶/异构口径一致
   if (hasMasterRatio) {
-    // 操作单位与主档贴码单位同阶：应扫 = ceil(操作量)
+    // 同阶：仅「拆零同名 + 码倍>1」才 ÷码倍；包装同阶（盒）用操作量
     if (opUnit && traceUnit && opUnit === traceUnit) {
+      // 中包装贴拆零同名（支×10）：建议应扫 = ceil(操作量/码倍)
+      if (splitUnit && opUnit === splitUnit && masterRatioRaw > 1) {
+        return Math.max(1, Math.ceil(opQty / masterRatioRaw));
+      }
+      // 盒等同阶包装：1 码≈1 盒，建议应扫=操作量（勿用片码倍去除）
       return (
         computeRequiredTraceCount({
           operationQty: opQty,

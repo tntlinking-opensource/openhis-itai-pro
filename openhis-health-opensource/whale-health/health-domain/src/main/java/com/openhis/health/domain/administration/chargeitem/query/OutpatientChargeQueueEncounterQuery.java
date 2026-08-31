@@ -35,4 +35,9 @@ public class OutpatientChargeQueueEncounterQuery extends AbstractPageQuery {
      * 应用层预解析的门诊 AMB 就诊主键集合；由 {@code OutpatientChargeEncounterQueueLoader} 写入后领域层仅 {@code IN} 过滤。
      */
     private List<Long> resolvedEncounterScope;
+
+    /**
+     * PE 团检过滤：{@code true} 仅团检、{@code false} 仅个检；{@code null} 不限（体检收银默认由应用层传入）。
+     */
+    private Boolean peGroupFlag;
 }

@@ -17,7 +17,7 @@ import java.math.RoundingMode;
  * 药品汇总明细数量展示：拆零持久量 → 满包整数 + 不足一包拆零余量（BR-IP-SUM-015 同族）。
  *
  * <p>供护士站汇总详情（IF-IP-SUM-03）、药房汇总核发合并行（IF-IPS-02）、库存明细
- * {@code packageStockText}，以及医生站目录可开量 {@code availableQuantityText} 共用。</p>
+ * {@code packageStockText}/{@code packageSplitRatioText}，以及医生站目录可开量 {@code availableQuantityText} 共用。</p>
  */
 public final class MedicationPackageSplitQuantityDisplayAssembler {
 
@@ -148,6 +148,48 @@ public final class MedicationPackageSplitQuantityDisplayAssembler {
         }
         String ratioText = packageRatio.stripTrailingZeros().toPlainString();
         // 临床规格装量：1片x100（前端与 totalVolume「5mg」拼成 5mg1片x100）
-        return "1" + splitUnitText + "x" + ratioText;
+        return GeneralSharedConstants.DIGIT_ONE
+            + splitUnitText
+            + GeneralSharedConstants.CLINICAL_PACKAGE_SPLIT_RATIO_MARK
+            + ratioText;
+    }
+
+    /**
+     * 库房库存明细「包装拆零比例」展示：形如 {@code 1盒/36片}（1 包装单位 / ratio 拆零单位）。
+     *
+     * <p>与临床医嘱装量后缀 {@link #buildPackageSplitRatioText}（{@code 1片x100}）口径不同，禁止混用。
+     * 包装与拆零同单位且倍数为 1 时仅展示 {@code 1支}（无换算斜杠段）。</p>
+     *
+     * @param packageUnitRatio 1 包装 = ratio 拆零；须 &gt; 0
+     * @param packageUnitLabel 包装单位展示名（如盒）
+     * @param splitUnitLabel   拆零单位展示名（如片）
+     * @return 展示文案；缺有效倍数时 {@code null}
+     */
+    public static String buildInventoryPackageSplitRatioText(
+        BigDecimal packageUnitRatio,
+        String packageUnitLabel,
+        String splitUnitLabel) {
+        if (packageUnitRatio == null || packageUnitRatio.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+        String packageLabel = trimToNull(packageUnitLabel);
+        String splitLabel = trimToNull(splitUnitLabel);
+        // 同单位且倍数为 1：无换算，仅展示 1支
+        if (packageLabel != null
+            && packageLabel.equals(splitLabel)
+            && packageUnitRatio.compareTo(BigDecimal.ONE) == 0) {
+            return GeneralSharedConstants.DIGIT_ONE + packageLabel;
+        }
+        StringBuilder text = new StringBuilder();
+        text.append(GeneralSharedConstants.DIGIT_ONE);
+        if (packageLabel != null) {
+            text.append(packageLabel);
+        }
+        text.append(GeneralSharedConstants.SLASH);
+        text.append(packageUnitRatio.stripTrailingZeros().toPlainString());
+        if (splitLabel != null) {
+            text.append(splitLabel);
+        }
+        return text.toString();
     }
 }

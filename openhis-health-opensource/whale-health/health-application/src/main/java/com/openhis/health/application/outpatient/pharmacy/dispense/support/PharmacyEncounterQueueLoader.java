@@ -33,18 +33,53 @@ public class PharmacyEncounterQueueLoader {
     /**
      * 门诊发药队列：分页返回存在门诊药品发放事实的就诊主键。
      *
-     * @param query 库房、发放状态、关键字等；{@code null} 时按空条件
+     * @param query 库房、发放状态、可选日期窗/关键字等；{@code null} 时按空条件
      * @return 就诊主键页（按发放创建时间倒序）
      */
     public Page<Long> pageEncounterIdsForOutpatientPharmacyPending(OutpatientPharmacyPendingEncounterPageQuery query) {
         if (query == null) {
             query = new OutpatientPharmacyPendingEncounterPageQuery();
         }
-        if (StringUtils.isNotEmpty(query.getKeyword())) {
-            query.setResolvedEncounterScope(this.resolveOutpatientAmbEncounterIdsByKeyword(query.getKeyword()));
-        }
+        // Pre：日期窗（就诊 startTime）∩ 关键字，与门诊收费队列同口径。
+        query.setResolvedEncounterScope(this.resolveOutpatientPharmacyEncounterScope(query));
         this.medicationDispenseSlipQueryLoader.enrichSupersededForwardMedReqIds(query);
         return this.medicationDispenseQueryService.pageEncounterIdsForOutpatientPharmacyPending(query);
+    }
+
+    /**
+     * 门诊发药队列就诊收窄：可选日期窗 AMB 基线与关键字并集求交（对齐收费 {@code OutpatientChargeEncounterQueueLoader}）。
+     *
+     * @param query 含 {@code startDate}/{@code endDate}/{@code keyword}
+     * @return 去重就诊主键；无日期且无关键字时返回 {@code null}（不额外收窄）
+     */
+    private List<Long> resolveOutpatientPharmacyEncounterScope(OutpatientPharmacyPendingEncounterPageQuery query) {
+        boolean hasDateWindow = query.getStartDate() != null || query.getEndDate() != null;
+        boolean hasKeyword = StringUtils.isNotEmpty(query.getKeyword());
+        if (!hasDateWindow && !hasKeyword) {
+            return null;
+        }
+        List<Long> dateScope = null;
+        if (hasDateWindow) {
+            // Pre：按就诊 startTime 收敛 AMB（与卡片「就诊时间」同轴）
+            dateScope = this.encounterQueryService.listOutpatientAmbEncounterIdsForCashierScope(
+                null, query.getStartDate(), query.getEndDate());
+        }
+        if (!hasKeyword) {
+            return dateScope;
+        }
+        List<Long> keywordScope = this.resolveOutpatientAmbEncounterIdsByKeyword(query.getKeyword());
+        if (dateScope == null) {
+            return keywordScope;
+        }
+        // 日期 ∩ 关键字
+        LinkedHashSet<Long> dateSet = new LinkedHashSet<>(dateScope);
+        List<Long> intersection = new ArrayList<>();
+        for (Long encounterId : keywordScope) {
+            if (encounterId != null && dateSet.contains(encounterId)) {
+                intersection.add(encounterId);
+            }
+        }
+        return intersection;
     }
 
     /**

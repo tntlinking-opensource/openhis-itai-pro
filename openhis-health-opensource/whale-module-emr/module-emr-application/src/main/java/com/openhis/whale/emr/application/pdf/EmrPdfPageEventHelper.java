@@ -29,9 +29,12 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class EmrPdfPageEventHelper extends PdfPageEventHelper {
 
-    private static final float TOTAL_TMPL_WIDTH = 36f;
+    /** 总页数槽宽：约容纳 3 位数字（9pt），过宽会导致「共 4      页」空隙 */
+    private static final float TOTAL_TMPL_WIDTH = 14f;
     private static final float TOTAL_TMPL_HEIGHT = 14f;
     private static final float FOOTER_FONT_SIZE = 9f;
+    /** 与屏上 .simple-editor__page-footer padding-top ≈ 6px 对齐 */
+    private static final float FOOTER_BAND_TOP_PAD_MM = 2f;
 
     private final PrintConfig config;
     private final PdfRenderOptions options;
@@ -39,6 +42,8 @@ public class EmrPdfPageEventHelper extends PdfPageEventHelper {
 
     /** 总页数占位模板，onCloseDocument 写入真实页数 */
     private PdfTemplate totalPagesTemplate;
+    /** 最近一次 onEndPage 的页码（关闭文档时 getPageNumber 常多 1，以此为准） */
+    private int lastEndedPageNumber;
 
     @Override
     public void onOpenDocument(PdfWriter writer, Document document) {
@@ -48,19 +53,13 @@ public class EmrPdfPageEventHelper extends PdfPageEventHelper {
     @Override
     public void onEndPage(PdfWriter writer, Document document) {
         int page = writer.getPageNumber();
+        lastEndedPageNumber = page;
         float pageWidth = document.getPageSize().getWidth();
         float pageHeight = document.getPageSize().getHeight();
         Font smallFont = fontFactory.bodyFont(FOOTER_FONT_SIZE, Font.NORMAL);
 
         if (config.getHeader().isEnabled() && hasText(config.getHeader().getTemplate())) {
-            String text = resolveTemplate(config.getHeader().getTemplate(), page, null);
-            ColumnText.showTextAligned(
-                    writer.getDirectContent(),
-                    Element.ALIGN_CENTER,
-                    new Phrase(text, smallFont),
-                    pageWidth / 2f,
-                    pageHeight - PdfUnitUtils.mmToPt(Math.max(config.getHeader().getHeightMm(), 10f) / 2f),
-                    0);
+            drawHeader(writer, document, page, smallFont);
         }
 
         if (config.getFooter().isEnabled()) {
@@ -69,8 +68,7 @@ public class EmrPdfPageEventHelper extends PdfPageEventHelper {
                 template = "第 {page} 页 (共 {total} 页)";
             }
             if (hasText(template)) {
-                float footerBandMm = Math.max(config.getFooter().getHeightMm(), 8f);
-                float y = PdfUnitUtils.mmToPt(footerBandMm);
+                float y = resolveFooterBaselineY(document);
                 if (template.contains("{total}") && totalPagesTemplate != null) {
                     drawFooterWithTotal(writer.getDirectContent(), template, page, pageWidth, y, smallFont);
                 } else {
@@ -95,8 +93,12 @@ public class EmrPdfPageEventHelper extends PdfPageEventHelper {
             return;
         }
         Font smallFont = fontFactory.bodyFont(FOOTER_FONT_SIZE, Font.NORMAL);
-        // document.close 触发时 getPageNumber 即为总页数
-        String total = String.valueOf(writer.getPageNumber());
+        // OpenPDF 在 close 时 getPageNumber() 常为「下一页号」= 实际页数+1，用末次 onEndPage 页码
+        int totalPages = lastEndedPageNumber;
+        if (totalPages <= 0) {
+            totalPages = Math.max(1, writer.getPageNumber() - 1);
+        }
+        String total = String.valueOf(totalPages);
         ColumnText.showTextAligned(
                 totalPagesTemplate,
                 Element.ALIGN_LEFT,
@@ -104,6 +106,46 @@ public class EmrPdfPageEventHelper extends PdfPageEventHelper {
                 0,
                 1,
                 0);
+    }
+
+    /**
+     * 页脚基线：落在正文底边距带顶部（屏上 justify-content:flex-start + padding-top）。
+     * 禁止用 footer.heightMm 当距纸底偏移——contentBottomMm 已含整段页脚带，旧算法会把页码画进正文区。
+     */
+    private float resolveFooterBaselineY(Document document) {
+        float marginBottomPt = document.bottomMargin();
+        PrintConfig.MarginConfig margins = config.getMargins();
+        float bandTopPt = marginBottomPt;
+        if (margins != null && margins.getContentBottomMm() > 0.5f) {
+            bandTopPt = PdfUnitUtils.mmToPt(margins.getContentBottomMm());
+        }
+        float footerTopPadPt = PdfUnitUtils.mmToPt(FOOTER_BAND_TOP_PAD_MM);
+        float baselineY = bandTopPt - footerTopPadPt - FOOTER_FONT_SIZE * 0.75f;
+        return Math.max(PdfUnitUtils.mmToPt(3f), baselineY);
+    }
+
+    /**
+     * 页眉带内多行居中绘制（支持 emrImg、span 字号与换行）。
+     */
+    private void drawHeader(PdfWriter writer, Document document, int page, Font font) {
+        String text = resolveTemplate(config.getHeader().getTemplate(), page, null);
+        if (!hasText(text)) {
+            return;
+        }
+        float pageWidth = document.getPageSize().getWidth();
+        float pageHeight = document.getPageSize().getHeight();
+        float bandMm = Math.max(config.getHeader().getHeightMm(), 10f);
+        float marginLeft = PdfUnitUtils.mmToPt(config.getMargins().getLeftMm());
+        float marginRight = PdfUnitUtils.mmToPt(config.getMargins().getRightMm());
+        EmrChromeBandPainter.drawHeaderBand(
+                writer.getDirectContent(),
+                pageWidth,
+                pageHeight,
+                marginLeft,
+                marginRight,
+                bandMm,
+                text,
+                fontFactory);
     }
 
     /**
@@ -171,6 +213,7 @@ public class EmrPdfPageEventHelper extends PdfPageEventHelper {
         String withPage = template
                 .replace("{page}", String.valueOf(page))
                 .replace("{patientName}", meta.getOrDefault("patientName", ""))
+                .replace("{inpatientNo}", meta.getOrDefault("inpatientNo", ""))
                 .replace("{gender}", meta.getOrDefault("gender", ""))
                 .replace("{age}", meta.getOrDefault("age", ""))
                 .replace("{documentTitle}", documentTitle)
@@ -178,6 +221,18 @@ public class EmrPdfPageEventHelper extends PdfPageEventHelper {
                 .replace("{orgName}", meta.getOrDefault("orgName", ""))
                 .replace("{deptName}", meta.getOrDefault("deptName", ""))
                 .replace("{printTime}", LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")));
+        // 其余元数据占位（如模板自定义 fieldKey）按 map 回填，避免打印残留 {key}
+        for (Map.Entry<String, String> entry : meta.entrySet()) {
+            String key = entry.getKey();
+            if (key == null || key.isBlank()) {
+                continue;
+            }
+            String token = "{" + key + "}";
+            if (withPage.contains(token)) {
+                String value = entry.getValue();
+                withPage = withPage.replace(token, value != null ? value : "");
+            }
+        }
         if (totalReplacement != null) {
             return withPage.replace("{total}", totalReplacement);
         }

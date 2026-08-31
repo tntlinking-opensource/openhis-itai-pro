@@ -87,6 +87,14 @@ public interface DeviceRequestRepository extends JpaRepository<DeviceRequest, Lo
     List<DeviceRequest> findByBasedOnTableAndBasedOnIdIn(String basedOnTable, Collection<Long> basedOnIds);
 
     /**
+     * 按就诊主键集合批量查询耗材请求（门诊护士站队列待发提醒；调用方须控制 IN 规模）。
+     *
+     * @param encounterIds 就诊主键集合
+     * @return 耗材请求集合
+     */
+    List<DeviceRequest> findByEncounterIdIn(Collection<Long> encounterIds);
+
+    /**
      * 判断指定器材定义是否已被有效耗材申请引用（目录编辑门控）。
      *
      * @param deviceDefId 器材定义主键 {@code device_def_id}

@@ -142,6 +142,37 @@ public class ContractQueryService {
     }
 
     /**
+     * 按主键批量加载费用性质简表（页内装配，避免 listAllContracts 全表）。
+     *
+     * @param ids 合同主键集合
+     * @return 未软删列表项；空入参为空列表
+     */
+    public List<ContractListItemQueryModel> listContractsByIds(Collection<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return Collections.emptyList();
+        }
+        LinkedHashSet<Long> distinct = new LinkedHashSet<>();
+        // Loop：去重非空合同主键
+        for (Long id : ids) {
+            if (id != null) {
+                distinct.add(id);
+            }
+        }
+        if (distinct.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<ContractListItemQueryModel> out = new ArrayList<>();
+        // Loop：页内合同主键 → 简表（跳过软删）
+        for (Contract item : contractRepository.findAllById(distinct)) {
+            if (item == null || Boolean.TRUE.equals(item.getIsDeleted())) {
+                continue;
+            }
+            out.add(this.toListItem(item));
+        }
+        return out;
+    }
+
+    /**
      * 实体 → 列表项：含通道区划与医保标记，供挂号 init 一次装配，避免按 id 回表。
      *
      * @param item 费用性质实体

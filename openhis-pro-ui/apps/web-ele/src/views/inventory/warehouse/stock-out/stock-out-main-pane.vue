@@ -1,4 +1,4 @@
-﻿<!--
+<!--
   药库出库单右侧主区：InvMainShell + InvDocActions + 单头表单 + useVbenVxeGrid；布局与进货主区同构。
 -->
 <script setup lang="ts">
@@ -63,7 +63,7 @@ import SectionTitle from '#/components/layouts/section-title.vue';
 import StockOutBatchAddDialog from '#/views/inventory/warehouse/stock-out/stock-out-batch-add-dialog.vue';
 import {
   formatInventoryLineTotal,
-  formatMoneyDisplay,
+  formatPurchaseMoneyDisplay,
   inventoryLineTotalNumber,
 } from '#/utils/format/money-scale';
 import { resolveLoginPractitionerIdForRequest } from '#/utils/format/preserve-api-id';
@@ -76,6 +76,7 @@ import {
   resolveFirstRealLocationIdFromInitOptions,
   resolveInvDocApprovedByName,
   resolveInvDocPreparedByName,
+  resolveInvDocPrintApplyTimeText,
   resolveSpecificInventoryLocationId,
   warnInventoryLocationRequired,
 } from '#/utils/inventory/inventory-workbench-list';
@@ -138,7 +139,7 @@ interface StockOutboundPreviewRow {
   itemId?: number | string;
   /** 选品库存行 id（下拉行唯一键），不落库 */
   inventoryItemId?: number | string;
-  /** 药品分类码；中药=4 时单价三位展示 */
+  /** 药品分类码；中药=4 时进价三位展示 */
   categoryCode?: string;
   spec: string;
   manufacturer: string;
@@ -556,11 +557,11 @@ function stockOutDetailLineManufacturer(ln: StockOutDetailLineDto): string {
   return String(ln.manufacturer ?? '').trim();
 }
 
-function formatStockOutDetailTotalAmount(total: unknown): string {
+function formatStockOutDetailTotalAmount(total: unknown, categoryCode?: unknown): string {
   if (total === undefined || total === null || total === '') return '';
   const n = Number(total);
   if (!Number.isFinite(n)) return String(total).trim();
-  return formatMoneyDisplay(n);
+  return formatPurchaseMoneyDisplay(n, categoryCode);
 }
 
 function mapStockOutDetailLineToGrid(
@@ -604,7 +605,7 @@ function mapStockOutDetailLineToGrid(
     unitList: [{ value: 'LEGACY', label: unitCodeStr.trim() === '' ? '单位' : unitCodeStr }],
     __prevBandKind: 'LEGACY',
     price: ln.price === undefined || ln.price === null ? 0 : Number(ln.price),
-    totalPrice: formatStockOutDetailTotalAmount(ln.totalPrice),
+    totalPrice: formatStockOutDetailTotalAmount(ln.totalPrice, catalog?.categoryCode),
     lotNumber: String(ln.lotNumber ?? '').trim(),
     traceNo: String(ln.traceNo ?? '').trim(),
     remark: String(ln.remake ?? '').trim(),
@@ -1244,8 +1245,8 @@ function resolveStockOutPrintUnitLabel(row: StockOutboundPreviewRow): string {
   return String(byCode?.label ?? byCode?.value_dictText ?? code).trim();
 }
 
-/** 打印出库单（计价流转模版） */
-async function handlePrint() {
+/** 打印或预览出库单（计价流转模版） */
+async function handlePrint(payload?: { preview?: boolean }) {
   const busNo = String(headerBusNo.value ?? '').trim();
   if (!busNo) {
     ElMessage.warning('请先保存单据后再打印');
@@ -1266,9 +1267,10 @@ async function handlePrint() {
     sourceWarehouseName,
     isDeviceStockOut ? '耗材出库单' : '出库单',
   );
-  const applyTimeText = String(headApplyTime.value ?? props.applyTime ?? '')
-    .trim()
-    .replace('T', ' ');
+  // 打印制单时间取侧栏单据实际审批时间，禁止用 occurrenceTime 缺失时的「当前时刻」冒充
+  const applyTimeText = resolveInvDocPrintApplyTimeText({
+    queueCardRow: props.queueCardRow as null | Record<string, unknown>,
+  });
 
   // 按当前网格展示值组装 PrintData（效期字段出库行无值则留空）
   const lineRows = productRows.map((row) => ({
@@ -1311,6 +1313,7 @@ async function handlePrint() {
     },
     bizRef: { busNo, docKind: 'stock-out' },
     jobName: documentTitle,
+    preview: payload?.preview === true,
   });
 }
 

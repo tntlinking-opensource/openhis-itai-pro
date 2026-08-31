@@ -7,6 +7,7 @@
 
 param(
     [string]$OutputDir,
+    [string]$NewVersion,
     [switch]$VerifyBuild,
     [switch]$Force
 )
@@ -99,6 +100,22 @@ if (-not (Test-Path $opensourceGitignore)) {
 }
 Copy-Item -LiteralPath $opensourceGitignore -Destination (Join-Path $OutputDir '.gitignore') -Force
 
+# Product VERSION file only (do not touch package.json Vben 5.x).
+if ($NewVersion) {
+    Write-Step "Set opensource VERSION = $NewVersion"
+    $versionPattern = '^\d+\.\d+\.\d+(\.\d+)?(-SNAPSHOT)?$'
+    $trimmed = $NewVersion.Trim()
+    if ($trimmed -notmatch $versionPattern) {
+        throw "Invalid NewVersion: $trimmed (expect x.y.z / x.y.z.n / optional -SNAPSHOT)"
+    }
+    # VERSION file drops -SNAPSHOT (same as VERSION.md / WhaleOps)
+    $productVersion = $trimmed -replace '-SNAPSHOT$', ''
+    $versionFile = Join-Path $OutputDir 'VERSION'
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($versionFile, ($productVersion + [Environment]::NewLine), $utf8NoBom)
+    Write-Host "  wrote $versionFile" -ForegroundColor DarkGray
+}
+
 if ($VerifyBuild) {
     Write-Step 'Verify build (product baseline build:ele, no OPENHIS_PROJECT)'
     Push-Location $OutputDir
@@ -130,7 +147,14 @@ if ($VerifyBuild) {
 Write-Host ''
 Write-Host 'Export done:' -ForegroundColor Green
 Write-Host "  $OutputDir" -ForegroundColor Green
+if ($NewVersion) {
+    $verifyVersion = (Get-Content -LiteralPath (Join-Path $OutputDir 'VERSION') -TotalCount 1).Trim()
+    Write-Host "  VERSION: $verifyVersion" -ForegroundColor Green
+}
 Write-Host ''
 Write-Host 'Build: pnpm install; pnpm run build:ele' -ForegroundColor Yellow
 Write-Host 'Manifest: tools/opensource/opensource-export-manifest.json' -ForegroundColor Yellow
 Write-Host ''
+
+# Clear robocopy's non-zero success code so callers (& / -File) see success.
+exit 0

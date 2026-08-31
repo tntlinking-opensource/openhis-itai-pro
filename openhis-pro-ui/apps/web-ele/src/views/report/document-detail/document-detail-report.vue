@@ -4,12 +4,13 @@
 <script setup lang="ts">
 import type { DocumentDetailDomainScope, DocumentDetailRowDto } from '#/api/report/document-detail';
 import type { ApiOptionItem } from '#/types/api-response';
+import type { ReportPrintColumnDef } from '#/utils/print/print-report-list';
 
 import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
-import { Download, Refresh, Search } from '@element-plus/icons-vue';
+import { Download, Printer, Refresh, Search, Setting } from '@element-plus/icons-vue';
 import {
   ElButton,
   ElDatePicker,
@@ -22,6 +23,8 @@ import {
 } from 'element-plus';
 
 import {
+  DOCUMENT_DETAIL_ITEM_TABLE_DEVICE,
+  DOCUMENT_DETAIL_ITEM_TABLE_MEDICATION,
   exportDocumentDetailsApi,
   loadDocumentDetailFormInitApi,
   pageDocumentDetailsApi,
@@ -29,6 +32,7 @@ import {
   type LoadDocumentDetailFormInitResponse,
 } from '#/api/report/document-detail';
 import { useRequest } from '#/hooks/use-request';
+import { buildExcelExportColumns } from '#/utils/export/build-excel-export-columns';
 import { downloadBinaryExportFile } from '#/utils/export/download-binary-export';
 import { decimalAdd } from '#/utils/format/decimal-util';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
@@ -44,8 +48,12 @@ import {
   ReportListPageLayout,
   ReportListToolbar,
   ReportPageFooter,
+  ReportPrintFieldDialog,
   ReportQueryBar,
   ReportTableScroll,
+  mapReportPrintRow,
+  reportPrintFieldsOf,
+  useReportListPrint,
 } from '#/views/report/shared';
 import { fmtReportNumber, optionDtosToSelectItems } from '#/views/report/shared/report-format';
 import {
@@ -67,8 +75,12 @@ interface QueryState {
   typeEnum?: string;
   sourceLocationId?: string;
   purposeLocationId?: string;
+  /** 供应商主键；空=全部 */
+  supplierId?: string;
   approvalTimeStart?: string;
   approvalTimeEnd?: string;
+  /** 项目分类：药品 / 耗材定义表名；空=全部 */
+  itemTable?: string;
   productKeyword?: string;
   lotNumberKeyword?: string;
   busNo?: string;
@@ -82,9 +94,33 @@ interface DocumentDetailTableRow extends DocumentDetailRowDto {
 const props = defineProps<Props>();
 
 /** 列表列总数；仅单据号列（下标 0）按同 busNo 纵向合并。 */
-const TABLE_COLUMN_COUNT = 18;
+const TABLE_COLUMN_COUNT = 19;
 /** 仅合并「单据号」列。 */
 const DOC_LEVEL_COLUMN_INDEXES = new Set([0]);
+
+/** 单据详情可打印列目录（含小计行展示字段）。 */
+const PRINT_COLUMNS: ReportPrintColumnDef[] = [
+  { field: 'busNo', title: '单据号', align: 'center', widthWeight: 1.2 },
+  { field: 'typeEnumText', title: '单据类型', align: 'center', widthWeight: 0.9 },
+  { field: 'sourceLocationName', title: '源库位', align: 'center', widthWeight: 1 },
+  { field: 'purposeLocationName', title: '目的库位', align: 'center', widthWeight: 1 },
+  { field: 'consumingOrganizationName', title: '领用科室', align: 'center', widthWeight: 1 },
+  { field: 'supplierName', title: '供应商', align: 'center', widthWeight: 1 },
+  { field: 'productName', title: '品名', align: 'center', widthWeight: 1.2 },
+  { field: 'productBusNo', title: '编码', align: 'center', widthWeight: 0.9 },
+  { field: 'specification', title: '规格', align: 'center', widthWeight: 0.9 },
+  { field: 'lotNumber', title: '批号', align: 'center', widthWeight: 0.8 },
+  { field: 'packageQuantityDisplay', title: '包装单位数量', align: 'right', widthWeight: 0.9 },
+  { field: 'minUnitQuantityDisplay', title: '最小单位数量', align: 'right', widthWeight: 0.9 },
+  { field: 'priceDisplay', title: '单价', align: 'right', widthWeight: 0.9 },
+  { field: 'totalPriceDisplay', title: '金额', align: 'right', widthWeight: 1 },
+  { field: 'bookQuantity', title: '账面', align: 'right', widthWeight: 0.7 },
+  { field: 'actualQuantity', title: '实盘', align: 'right', widthWeight: 0.7 },
+  { field: 'gainLossQuantity', title: '盈亏量', align: 'right', widthWeight: 0.7 },
+  { field: 'applicantName', title: '制单人', align: 'center', widthWeight: 0.8 },
+  { field: 'approverName', title: '审批人', align: 'center', widthWeight: 0.8 },
+  { field: 'approvalTime', title: '审批时间', align: 'center', widthWeight: 1 },
+];
 
 const tableData = ref<DocumentDetailTableRow[]>([]);
 /** 当前页 rowspan：matrix[row][col]，0 表示被上方单元格合并。 */
@@ -98,6 +134,7 @@ const tableScrollRef = ref<InstanceType<typeof ReportTableScroll> | null>(null);
 const typeEnumOptions = ref<ApiOptionItem[]>([]);
 const sourceLocationOptions = ref<ApiOptionItem[]>([]);
 const purposeLocationOptions = ref<ApiOptionItem[]>([]);
+const supplierOptions = ref<ApiOptionItem[]>([]);
 /** init 回包：重置/清空审批时间时回填默认当月。 */
 const pageInit = ref<LoadDocumentDetailFormInitResponse | null>(null);
 
@@ -106,15 +143,17 @@ const queryParams = reactive<QueryState>({
   pageSize: 20,
 });
 
-const tableLoading = computed(
-  () => initLoading.value || pageLoading.value || sumLoading.value || exportLoading.value,
-);
-
 const listToolbarTitle = computed(() => `${props.pageTitle} · 明细列表`);
+
+/** 项目分类下拉选项（value 为 item_table 物理表名；药库/药房/科室共用）。 */
+const itemTableSelectOptions = [
+  { label: '药品', value: DOCUMENT_DETAIL_ITEM_TABLE_MEDICATION },
+  { label: '耗材', value: DOCUMENT_DETAIL_ITEM_TABLE_DEVICE },
+];
 
 const footerSummaryItems = computed(() => [
   { label: '行数', value: sumRowCount.value },
-  { label: '数量合计', value: sumItemQuantity.value },
+  { label: '操作数量合计', value: sumItemQuantity.value },
   { label: '金额合计', value: sumTotalPrice.value, primary: true, prefix: '¥' },
 ]);
 
@@ -295,8 +334,12 @@ function buildFilterRequest() {
     purposeLocationId: queryParams.purposeLocationId
       ? preserveApiIdForRequest(queryParams.purposeLocationId)
       : undefined,
+    supplierId: queryParams.supplierId
+      ? preserveApiIdForRequest(queryParams.supplierId)
+      : undefined,
     approvalTimeStart: approvalRange.start,
     approvalTimeEnd: approvalRange.end,
+    itemTable: queryParams.itemTable?.trim() || undefined,
     productKeyword: queryParams.productKeyword?.trim() || undefined,
     lotNumberKeyword: queryParams.lotNumberKeyword?.trim() || undefined,
     busNo: queryParams.busNo?.trim() || undefined,
@@ -320,16 +363,29 @@ function formatQtyNatural(value: unknown) {
 }
 
 /** 数量 + 单位合并，如「10盒」。 */
-function formatQtyWithUnit(row: DocumentDetailTableRow) {
+function formatQtyAndUnit(qty: unknown, unitName: unknown) {
+  const qtyText = formatQtyNatural(qty);
+  const unit = String(unitName ?? '').trim();
+  if (!qtyText && !unit) return '';
+  if (!unit) return qtyText;
+  if (!qtyText) return unit;
+  return `${qtyText}${unit}`;
+}
+
+/** 包装单位数量列。 */
+function formatPackageQuantity(row: DocumentDetailTableRow) {
   if (isSubtotalRow(row)) {
     return '';
   }
-  const qty = formatQtyNatural(row.itemQuantity);
-  const unit = rowUnitText(row);
-  if (!qty && !unit) return '';
-  if (!unit) return qty;
-  if (!qty) return unit;
-  return `${qty}${unit}`;
+  return formatQtyAndUnit(row.packageQuantity, row.packageUnitName);
+}
+
+/** 最小单位数量列。 */
+function formatMinUnitQuantity(row: DocumentDetailTableRow) {
+  if (isSubtotalRow(row)) {
+    return '';
+  }
+  return formatQtyAndUnit(row.minUnitQuantity, row.minUnitName);
 }
 
 /** 单价展示：2 位小数 + 元，有操作单位时追加「/单位」。 */
@@ -396,6 +452,7 @@ const { run: runInit, loading: initLoading } = useRequest(loadDocumentDetailForm
     typeEnumOptions.value = optionDtosToSelectItems(data?.typeEnumOptions);
     sourceLocationOptions.value = optionDtosToSelectItems(data?.sourceLocationOptions);
     purposeLocationOptions.value = optionDtosToSelectItems(data?.purposeLocationOptions);
+    supplierOptions.value = optionDtosToSelectItems(data?.supplierOptions);
     // 单据类型默认空=本域全部；忽略后端 defaultTypeEnum（仅前端口径）
     applyDefaultApprovalDates();
   },
@@ -421,6 +478,72 @@ const { run: runSum, loading: sumLoading } = useRequest(summarizeDocumentDetails
 const { run: runExport, loading: exportLoading } = useRequest(exportDocumentDetailsApi, {
   manual: true,
 });
+
+/** 明细行打印文本：小计行对应列留空。 */
+function formatPrintDetailText(value: unknown, row: Record<string, unknown>): string {
+  if (isSubtotalRow(row as DocumentDetailTableRow)) {
+    return '';
+  }
+  return String(value ?? '').trim();
+}
+
+/** 品名打印：小计行保留「小计」。 */
+function formatPrintProductName(value: unknown): string {
+  return String(value ?? '').trim();
+}
+
+/** 按域区分的打印偏好键（department / pharmacy / warehouse）。 */
+const printReportCode = computed(
+  () => `report-document-detail-${String(props.domainScope).toLowerCase()}`,
+);
+
+const { printFieldDialogRef, printSubmitting, handleOpenPrintFields, handlePrintCurrentPage } =
+  useReportListPrint({
+    getReportCode: () => printReportCode.value,
+    getColumnCatalog: () => PRINT_COLUMNS,
+    getReportTitle: () => props.pageTitle,
+    getPrintRows: () =>
+      tableData.value.map((r) =>
+        mapReportPrintRow(
+          r as unknown as Record<string, unknown>,
+          reportPrintFieldsOf(PRINT_COLUMNS),
+          {
+            busNo: (v, row) => formatPrintDetailText(v, row),
+            typeEnumText: (v, row) => formatPrintDetailText(v, row),
+            sourceLocationName: (v, row) => formatPrintDetailText(v, row),
+            purposeLocationName: (v, row) => formatPrintDetailText(v, row),
+            consumingOrganizationName: (v, row) => formatPrintDetailText(v, row),
+            supplierName: (v, row) => formatPrintDetailText(v, row),
+            productName: (v) => formatPrintProductName(v),
+            productBusNo: (v, row) => formatPrintDetailText(v, row),
+            specification: (v, row) => formatPrintDetailText(v, row),
+            lotNumber: (v, row) => formatPrintDetailText(v, row),
+            packageQuantityDisplay: (_v, row) =>
+              formatPackageQuantity(row as DocumentDetailTableRow),
+            minUnitQuantityDisplay: (_v, row) =>
+              formatMinUnitQuantity(row as DocumentDetailTableRow),
+            priceDisplay: (_v, row) => formatPriceWithUnit(row as DocumentDetailTableRow),
+            totalPriceDisplay: (_v, row) => formatAmountWithUnit(row as DocumentDetailTableRow),
+            bookQuantity: (v, row) => formatQtyOrDash(v, row as DocumentDetailTableRow),
+            actualQuantity: (v, row) => formatQtyOrDash(v, row as DocumentDetailTableRow),
+            gainLossQuantity: (v, row) => formatQtyOrDash(v, row as DocumentDetailTableRow),
+            applicantName: (v, row) => formatPrintDetailText(v, row),
+            approverName: (v, row) => formatPrintDetailText(v, row),
+            approvalTime: (v, row) =>
+              formatApprovalTime(v as string | undefined, row as DocumentDetailTableRow),
+          },
+        ),
+      ),
+  });
+
+const tableLoading = computed(
+  () =>
+    initLoading.value ||
+    pageLoading.value ||
+    sumLoading.value ||
+    exportLoading.value ||
+    printSubmitting.value,
+);
 
 /** 同步拉分页与合计。 */
 async function getList() {
@@ -451,22 +574,44 @@ function handleApprovalDateChange() {
 /** 重置筛选：类型空（全部）+ 当月审批时间窗。 */
 function handleReset() {
   queryParams.typeEnum = undefined;
+  queryParams.itemTable = undefined;
   queryParams.productKeyword = undefined;
   queryParams.lotNumberKeyword = undefined;
   queryParams.busNo = undefined;
   queryParams.sourceLocationId = undefined;
   queryParams.purposeLocationId = undefined;
+  queryParams.supplierId = undefined;
   queryParams.pageNo = 1;
   void runInit({ domainScope: props.domainScope }).then(() => getList());
 }
 
-/** 导出 Excel。 */
+/** 导出 Excel（列清单与打印列目录一致）。 */
 async function handleExportExcel() {
   const filter = buildFilterRequest();
   if (!filter) {
     return;
   }
-  const data = await runExport(filter);
+  // 展示合并列展开为可求和数量 + 单位 / 金额数值字段
+  const exportColumns = buildExcelExportColumns(PRINT_COLUMNS, {
+    fieldExpand: {
+      packageQuantityDisplay: [
+        { field: 'packageQuantity', title: '包装单位数量' },
+        { field: 'packageUnitName', title: '包装单位' },
+      ],
+      minUnitQuantityDisplay: [
+        { field: 'minUnitQuantity', title: '最小单位数量' },
+        { field: 'minUnitName', title: '最小单位' },
+      ],
+    },
+    fieldAliases: {
+      priceDisplay: 'price',
+      totalPriceDisplay: 'totalPrice',
+    },
+  });
+  const data = await runExport({
+    ...filter,
+    exportColumns,
+  });
   if (!data?.fileBytes?.trim()) {
     ElMessage.warning('导出内容为空');
     return;
@@ -552,6 +697,23 @@ onMounted(async () => {
                 />
               </ElSelect>
             </ElFormItem>
+            <ElFormItem label="供应商">
+              <ElSelect
+                v-model="queryParams.supplierId"
+                clearable
+                filterable
+                placeholder="全部"
+                :class="REPORT_QUERY_CONTROL"
+                @change="handleQuery"
+              >
+                <ElOption
+                  v-for="item in toSelectOptions(supplierOptions)"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </ElSelect>
+            </ElFormItem>
             <ElFormItem label="审批时间">
               <ElDatePicker
                 v-model="approvalDateRange"
@@ -567,6 +729,22 @@ onMounted(async () => {
                 :class="[REPORT_QUERY_CONTROL, REPORT_QUERY_CONTROL_DATETIMERANGE]"
                 @change="handleApprovalDateChange"
               />
+            </ElFormItem>
+            <ElFormItem label="项目分类">
+              <ElSelect
+                v-model="queryParams.itemTable"
+                clearable
+                placeholder="全部"
+                :class="REPORT_QUERY_CONTROL"
+                @change="handleQuery"
+              >
+                <ElOption
+                  v-for="item in itemTableSelectOptions"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </ElSelect>
             </ElFormItem>
             <ElFormItem label="品名/编码">
               <ElInput
@@ -611,6 +789,23 @@ onMounted(async () => {
       <template #toolbar>
         <ReportListToolbar :title="listToolbarTitle" :total="total">
           <template #actions>
+            <ElButton
+              plain
+              :icon="Setting"
+              :disabled="printSubmitting"
+              @click="handleOpenPrintFields"
+            >
+              打印设置
+            </ElButton>
+            <ElButton
+              type="primary"
+              plain
+              :icon="Printer"
+              :loading="printSubmitting"
+              @click="handlePrintCurrentPage"
+            >
+              打印
+            </ElButton>
             <ElButton
               type="primary"
               plain
@@ -697,18 +892,29 @@ onMounted(async () => {
                 </template>
               </ElTableColumn>
               <ElTableColumn
-                label="数量"
-                min-width="96"
+                label="包装单位数量"
+                min-width="112"
                 align="right"
+                header-align="right"
                 :class-name="`${REPORT_TABLE_NUM_CELL} ${REPORT_TABLE_COL_GROUP_START}`"
                 :label-class-name="REPORT_TABLE_COL_GROUP_START"
               >
-                <template #default="{ row }">{{ formatQtyWithUnit(row) }}</template>
+                <template #default="{ row }">{{ formatPackageQuantity(row) }}</template>
+              </ElTableColumn>
+              <ElTableColumn
+                label="最小单位数量"
+                min-width="112"
+                align="right"
+                header-align="right"
+                :class-name="REPORT_TABLE_NUM_CELL"
+              >
+                <template #default="{ row }">{{ formatMinUnitQuantity(row) }}</template>
               </ElTableColumn>
               <ElTableColumn
                 label="单价"
                 min-width="96"
                 align="right"
+                header-align="right"
                 :class-name="REPORT_TABLE_NUM_CELL"
               >
                 <template #default="{ row }">{{ formatPriceWithUnit(row) }}</template>
@@ -803,6 +1009,11 @@ onMounted(async () => {
         />
       </template>
     </ReportListPageLayout>
+    <ReportPrintFieldDialog
+      ref="printFieldDialogRef"
+      :report-code="printReportCode"
+      :column-catalog="PRINT_COLUMNS"
+    />
   </Page>
 </template>
 

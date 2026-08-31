@@ -610,6 +610,8 @@ public class OrderTemplateMapperImpl implements OrderTemplateMapper {
         dto.setTemplateCode(model.getTemplateCode());
         dto.setBindingEnum(model.getBindingEnum());
         dto.setBindingEnumText(resolveEnumDisplay(OrderTemplateBinding.class, model.getBindingEnum()));
+        // 归属 id：维护树按个人/科室二次分组、保存回显依赖此字段
+        dto.setObjectId(model.getObjectId());
         if (model.getSceneEnum() != null) {
             dto.setSceneEnum(model.getSceneEnum().getCode());
         }

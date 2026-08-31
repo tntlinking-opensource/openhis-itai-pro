@@ -38,10 +38,12 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * 就诊上下文读侧统一入口（B.6.1.3）：L0 分页编排 + L1 hydrate 委托 {@link EncounterContextQueryService}，
@@ -199,6 +201,79 @@ public class EncounterContextReader {
     public Optional<InpatientEncounterContextQueryModel> getInpatientContextByEncounterId(Long encounterId) {
         return encounterContextQueryService.getInpatientContextByEncounterId(encounterId)
             .map(model -> this.applyInpatientDiagnosisSnapshot(model, true));
+    }
+
+    /**
+     * 护士站<strong>读列表</strong>可见性：优先在科队列+管辖病区；请求中未命中的就诊按主键回落。
+     *
+     * <p>供病案首页临床侧栏（出院后调阅/打印长临嘱等）与费用清单等同口径读路径使用。
+     * <strong>写路径禁止使用</strong>——校对/执行/划价等写 Gate 仍须严格在科可见。</p>
+     *
+     * @param requestedEncounterIds 前端显式传入的就诊主键（保持相对顺序）
+     * @param managedWardIds        当前操作者管辖病区；可空（空则在科队列不按病区收窄）
+     * @return 可读住院上下文；请求 id 均不存在时为空列表
+     */
+    public List<InpatientEncounterContextQueryModel> listNurseStationReadableEncounterContexts(
+        List<Long> requestedEncounterIds,
+        List<Long> managedWardIds) {
+        if (requestedEncounterIds == null || requestedEncounterIds.isEmpty()) {
+            return new ArrayList<>();
+        }
+        // Pre：去重且保序，避免同一就诊重复回落
+        List<Long> distinctRequested = new ArrayList<>();
+        Set<Long> seenRequested = new HashSet<>();
+        for (Long encounterId : requestedEncounterIds) {
+            if (encounterId == null) {
+                continue;
+            }
+            if (seenRequested.add(encounterId)) {
+                distinctRequested.add(encounterId);
+            }
+        }
+        if (distinctRequested.isEmpty()) {
+            return new ArrayList<>();
+        }
+        InpatientEncounterPageQuery queueQuery = new InpatientEncounterPageQuery();
+        queueQuery.setNurseStationQueue(Boolean.TRUE);
+        queueQuery.setEncounterIdsIn(distinctRequested);
+        if (managedWardIds != null && !managedWardIds.isEmpty()) {
+            queueQuery.setManagedWardIds(managedWardIds);
+        }
+        // Pre：优先护士站在科队列
+        List<InpatientEncounterContextQueryModel> queueRows = this.listInpatientEncounterContexts(queueQuery);
+        Map<Long, InpatientEncounterContextQueryModel> byEncounterId = new HashMap<>();
+        if (queueRows != null) {
+            for (InpatientEncounterContextQueryModel row : queueRows) {
+                if (row != null && row.getEncounterId() != null) {
+                    byEncounterId.put(row.getEncounterId(), row);
+                }
+            }
+        }
+        List<Long> missingIds = new ArrayList<>();
+        for (Long encounterId : distinctRequested) {
+            if (!byEncounterId.containsKey(encounterId)) {
+                missingIds.add(encounterId);
+            }
+        }
+        // 不在在科队列：按就诊主键回落（已出院/已结算/病案调阅）
+        if (!missingIds.isEmpty()) {
+            List<InpatientEncounterContextQueryModel> fallbackRows =
+                this.listInpatientContextsByEncounterIdsOrdered(missingIds);
+            for (InpatientEncounterContextQueryModel row : fallbackRows) {
+                if (row != null && row.getEncounterId() != null) {
+                    byEncounterId.put(row.getEncounterId(), row);
+                }
+            }
+        }
+        List<InpatientEncounterContextQueryModel> ordered = new ArrayList<>(distinctRequested.size());
+        // Asm：按请求顺序输出；仍缺失的 id（就诊不存在）跳过
+        for (Long encounterId : distinctRequested) {
+            InpatientEncounterContextQueryModel hit = byEncounterId.get(encounterId);
+            if (hit != null) {
+                ordered.add(hit);
+            }
+        }
+        return ordered;
     }
 
     /**

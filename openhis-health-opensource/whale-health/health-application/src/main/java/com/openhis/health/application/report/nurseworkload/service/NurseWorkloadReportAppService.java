@@ -132,7 +132,7 @@ public class NurseWorkloadReportAppService {
     /** 就诊读侧。 */
     private final EncounterQueryService encounterQueryService;
 
-    /** 科室主数据读侧（开立科室下拉：门诊挂号科 / 住院入院科）。 */
+    /** 科室主数据读侧（默认登录科室下拉：启用护士站分类）。 */
     private final OrganizationQueryService organizationQueryService;
 
     /** 护士岗人员加载。 */
@@ -151,9 +151,9 @@ public class NurseWorkloadReportAppService {
     private final NurseWorkloadReportMapper nurseWorkloadReportMapper;
 
     /**
-     * IF-RPT-NWL-01：页面初始化（默认门诊+当日+开立科室与护士下拉）。
+     * IF-RPT-NWL-01：页面初始化（默认门诊+当日+默认登录科室与护士下拉）。
      *
-     * @param request 可选 encounterScope（刷新开立科室下拉口径）
+     * @param request 可选 encounterScope / organizationId（刷新科室下拉与护士下拉口径）
      * @return 初始化响应
      * @throws BusinessException {@link ErrorCodeConstants#RPT_NWL_101} 初始化失败
      */
@@ -166,22 +166,29 @@ public class NurseWorkloadReportAppService {
                 "页面配置加载失败，请稍后重试");
             // Gate：租户上下文须可用（AS-RPT-002-SDD §3.2 序号 2）
             this.requireTenantId();
-            // Pre：全院激活护士岗人员，orgId=null 表示不按科室收窄（§3.2 序号 3）
+            // Pre：全院激活护士岗人员，orgId=null 表示不按岗位管辖科室收窄
             List<Practitioner> nurses = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRole(
                 WhalePlatformRoleCodeConstants.ROLE_NURSE,
                 null);
-            // Asm：默认门诊+当日、就诊范围 / 开立科室 / 护士下拉（§3.2 序号 4）
+            // Pre：已选默认登录科室时按 Practitioner.org_id 再收窄护士下拉
+            Long defaultLoginOrgId = null;
+            if (request != null) {
+                defaultLoginOrgId = request.getOrganizationId();
+            }
+            nurses = this.filterNursesByDefaultLoginOrg(nurses, defaultLoginOrgId);
+            // Asm：默认门诊+当日、就诊范围 / 默认登录科室 / 护士下拉（§3.2 序号 4）
             LoadNurseWorkloadFormInitResponse response = new LoadNurseWorkloadFormInitResponse();
             LocalDate today = LocalDate.now();
             response.setDefaultEncounterScope(NurseWorkloadConstants.ENCOUNTER_SCOPE_OUTPATIENT);
             response.setDefaultDateFrom(today);
             response.setDefaultDateTo(today);
             response.setEncounterScopeOptions(this.buildEncounterScopeOptions());
-            // Pre：开立科室随就诊范围；入参空则默认门诊（与医生工作量同构）
+            // Pre：科室下拉随就诊范围（门诊挂号科 / 住院入院科）；入参空则默认门诊
             String organizationScope = NurseWorkloadConstants.ENCOUNTER_SCOPE_OUTPATIENT;
             if (request != null && StringUtils.isNotEmpty(request.getEncounterScope())) {
                 organizationScope = request.getEncounterScope().trim();
             }
+            // Pre：默认登录科室下拉仅护士站分类（注射室/采血室/疗区护士站等）
             response.setOrganizationOptions(this.buildOrganizationOptions(organizationScope));
             response.setNurseOptions(this.buildNurseOptions(nurses));
             return response;
@@ -214,6 +221,8 @@ public class NurseWorkloadReportAppService {
             request.getDateTo());
         // Pre：Request → 领域 Query（§3.3 序号 2）
         NurseWorkloadPageQuery query = this.nurseWorkloadReportMapper.toNurseWorkloadPageQuery(request);
+        // Pre：默认登录科室 → 该科护士集合（科室合计）
+        this.applyDefaultLoginOrgNurseScope(query, request.getOrganizationId());
         // Pre：就诊 scope + SR 类目；跳过耗材 hvcm（诊疗 IF 不需要）
         this.prepareNurseWorkloadQueryScopesSafely(query, true, false);
         // Pre：按 category_enum 汇总净 COMPLETED 次数（§3.3 序号 4）
@@ -247,6 +256,8 @@ public class NurseWorkloadReportAppService {
             request.getDateTo());
         // Pre：Request → Query（含分页键；§3.4 序号 2）
         NurseWorkloadPageQuery query = this.nurseWorkloadReportMapper.toNurseWorkloadPageQuery(request);
+        // Pre：默认登录科室 → 该科护士集合；单护士明细优先
+        this.applyDefaultLoginOrgNurseScope(query, request.getOrganizationId());
         // Pre：就诊 scope + SR 类目；跳过耗材 hvcm
         this.prepareNurseWorkloadQueryScopesSafely(query, true, false);
         // Pre：净 COMPLETED 明细分页，recorded_time DESC（§3.4 序号 4）
@@ -293,6 +304,8 @@ public class NurseWorkloadReportAppService {
             request.getDateTo());
         // Pre：Request → Query（§3.5 序号 2）
         NurseWorkloadPageQuery query = this.nurseWorkloadReportMapper.toNurseWorkloadPageQuery(request);
+        // Pre：默认登录科室 → 该科护士集合（科室合计）
+        this.applyDefaultLoginOrgNurseScope(query, request.getOrganizationId());
         // Pre：就诊 scope + 耗材 hvcm；跳过 SR 类目
         this.prepareNurseWorkloadQueryScopesSafely(query, false, true);
         // Pre：按 hvcm_flag 汇总发放数量（§3.5 序号 4）
@@ -301,8 +314,10 @@ public class NurseWorkloadReportAppService {
         // Asm：汇总行 + totalQuantity 页脚合计（§3.5 序号 5～6）
         SummarizeNurseConsumableWorkloadResponse response =
             this.nurseWorkloadAssembler.buildConsumableSummaryResponse(summaries);
-        response.setTotalSaleAmount(this.sumConsumableSaleAmountForQuery(query));
-        response.setTotalPurchaseAmount(this.sumConsumablePurchaseAmountForQuery(query));
+        // Pre：售价/进价同一次事实扫描 + 分块 enrich，禁止为页脚扫库两次
+        NurseConsumableAmountTotals consumableTotals = this.sumConsumableAmountsForQuery(query);
+        response.setTotalSaleAmount(consumableTotals.saleAmount());
+        response.setTotalPurchaseAmount(consumableTotals.purchaseAmount());
         return response;
     }
 
@@ -324,8 +339,10 @@ public class NurseWorkloadReportAppService {
         query.setEncounterScope(request.getEncounterScope());
         query.setDateFrom(request.getDateFrom());
         query.setDateTo(request.getDateTo());
-        query.setRequestingOrgId(this.resolveSelectedRequestingOrgId(
-            request.getRequestingOrgId(), request.getOrganizationId()));
+        // 显式开立科室金额收窄（若前端仍传）；科室统计主路径用 organizationId→护士集合
+        query.setRequestingOrgId(request.getRequestingOrgId());
+        // Pre：默认登录科室 → 该科护士集合（卡片仅该科人员）
+        this.applyDefaultLoginOrgNurseScope(query, request.getOrganizationId());
         // Pre：两侧 enrich 一次（卡片同时需要类目与 hvcm）
         this.prepareNurseWorkloadQueryScopesSafely(query, true, true);
         // Pre：全量事实行一次加载（禁止前端翻页重复扫候选集）
@@ -356,7 +373,17 @@ public class NurseWorkloadReportAppService {
             this.buildDeviceReqIdByDispenseIdForAmountSum(consumableModels);
         this.nurseWorkloadAmountEnricher.enrichConsumableDetailAmounts(
             consumableRows, deviceReqIdByDispenseId, query.getRequestingOrgId());
-        // Asm：按护士分桶组装卡片
+        // Asm：页脚合计先于分桶（含无主执行人行，与 IF-02/04 同口径；禁止只加卡片和）
+        ListNurseWorkloadNurseCardsResponse response = new ListNurseWorkloadNurseCardsResponse();
+        response.setTotalExecutionCount((long) executionRows.size());
+        response.setTotalExecutionSaleAmount(this.nurseWorkloadAmountEnricher.sumDetailAmounts(
+            this.collectSaleAmounts(executionRows)));
+        response.setTotalConsumableQuantity(this.sumConsumableQuantities(consumableRows));
+        response.setTotalConsumableSaleAmount(this.nurseWorkloadAmountEnricher.sumDetailAmounts(
+            this.collectSaleAmountsFromConsumable(consumableRows)));
+        response.setTotalConsumablePurchaseAmount(this.sumNullableDetailAmounts(
+            this.collectPurchaseAmountsFromConsumable(consumableRows)));
+        // Asm：按护士分桶组装卡片（无 practitionerId 的行仅进页脚、不进卡片）
         Map<Long, List<NurseExecutionDetailRowDto>> executionByNurse =
             this.bucketExecutionRowsByNurse(executionRows);
         Map<Long, List<NurseConsumableDetailRowDto>> consumableByNurse =
@@ -386,7 +413,6 @@ public class NurseWorkloadReportAppService {
             card.setConsumableItemChips(this.buildConsumableItemChips(nurseConsumable));
             cards.add(card);
         }
-        ListNurseWorkloadNurseCardsResponse response = new ListNurseWorkloadNurseCardsResponse();
         response.setCards(cards);
         return response;
     }
@@ -408,6 +434,8 @@ public class NurseWorkloadReportAppService {
             request.getDateTo());
         // Pre：Request → Query（§3.6 序号 2）
         NurseWorkloadPageQuery query = this.nurseWorkloadReportMapper.toNurseWorkloadPageQuery(request);
+        // Pre：默认登录科室 → 该科护士集合；单护士明细优先
+        this.applyDefaultLoginOrgNurseScope(query, request.getOrganizationId());
         // Pre：就诊 scope + 耗材 hvcm；跳过 SR 类目
         this.prepareNurseWorkloadQueryScopesSafely(query, false, true);
         // Pre：有效发放行分页（§3.6 序号 4）
@@ -464,6 +492,8 @@ public class NurseWorkloadReportAppService {
         try {
             // Pre：导出 Query（无分页键）+ 按主 Tab 按需 enrich（§3.7 序号 2～3）
             NurseWorkloadPageQuery query = this.nurseWorkloadReportMapper.toNurseWorkloadPageQuery(request);
+            // Pre：默认登录科室 → 该科护士集合；单护士优先
+            this.applyDefaultLoginOrgNurseScope(query, request.getOrganizationId());
             boolean needExecution = NurseWorkloadConstants.MAIN_TAB_EXECUTION.equals(request.getMainTabCode());
             this.prepareNurseWorkloadQueryScopesSafely(query, needExecution, !needExecution);
             boolean truncated;
@@ -481,8 +511,9 @@ public class NurseWorkloadReportAppService {
                 for (NurseExecutionDetailRowDto row : allRows) {
                     exportRows.add(this.nurseWorkloadReportMapper.toExecutionExportRowDto(row));
                 }
-                // Asm：诊疗明细 Excel（§3.7 序号 6）
-                fileBytes = this.nurseWorkloadReportMapper.buildExecutionExcelBytes(exportRows);
+                // Asm：诊疗明细 Excel（§3.7 序号 6；前端 exportColumns 裁剪）
+                fileBytes = this.nurseWorkloadReportMapper.buildExecutionExcelBytes(
+                    exportRows, request.getExportColumns());
                 exportedRowCount = exportRows.size();
             } else {
                 // Pre：复用 IF-05 编排序列循环拉取全量耗材明细（§3.7 序号 4）
@@ -496,8 +527,9 @@ public class NurseWorkloadReportAppService {
                 for (NurseConsumableDetailRowDto row : allRows) {
                     exportRows.add(this.nurseWorkloadReportMapper.toConsumableExportRowDto(row));
                 }
-                // Asm：耗材明细 Excel（§3.7 序号 6）
-                fileBytes = this.nurseWorkloadReportMapper.buildConsumableExcelBytes(exportRows);
+                // Asm：耗材明细 Excel（§3.7 序号 6；前端 exportColumns 裁剪）
+                fileBytes = this.nurseWorkloadReportMapper.buildConsumableExcelBytes(
+                    exportRows, request.getExportColumns());
                 exportedRowCount = exportRows.size();
             }
             log.info("护士工作量导出成功 operatorId={} mainTab={} rowCount={} truncated={}",
@@ -523,60 +555,78 @@ public class NurseWorkloadReportAppService {
     }
 
     /**
-     * 汇总诊疗执行明细售价：一次拉全量事实行 + 金额 enrich，禁止按页重复扫净执行候选集。
+     * 汇总诊疗执行明细售价：一次拉全量事实行，按 IN 分块 enrich 后累加，禁止套 EXPORT_MAX 截断页脚。
      *
      * @param query 已预解析读查询
      * @return 售价合计（结算 2 位）
      */
     private BigDecimal sumExecutionSaleAmountForQuery(NurseWorkloadPageQuery query) {
+        // Pre：一次拉齐诊疗净执行事实行（禁止 EXPORT_MAX 静默截断页脚）
         List<NurseExecutionWorkloadDetailQueryModel> allModels =
             this.procedureQueryService.listNurseExecutionWorkloadDetail(query);
-        if (allModels.size() > NurseWorkloadExportConstants.EXPORT_MAX_ROWS) {
-            allModels = allModels.subList(0, NurseWorkloadExportConstants.EXPORT_MAX_ROWS);
+        if (allModels == null || allModels.isEmpty()) {
+            return this.nurseWorkloadAmountEnricher.sumDetailAmounts(List.of());
         }
-        List<NurseExecutionDetailRowDto> rows = this.mapExecutionDetailRows(allModels);
-        this.nurseWorkloadAmountEnricher.enrichExecutionDetailAmounts(rows, query.getRequestingOrgId());
-        return this.nurseWorkloadAmountEnricher.sumDetailAmounts(this.collectSaleAmounts(rows));
+        List<BigDecimal> saleAmounts = new ArrayList<>();
+        int chunkSize = GeneralSharedConstants.ID_IN_QUERY_CHUNK_SIZE;
+        int from = 0;
+        // Loop：分块装 ChargeItem，累加售价后释放本块明细 DTO
+        while (from < allModels.size()) {
+            int to = Math.min(from + chunkSize, allModels.size());
+            List<NurseExecutionWorkloadDetailQueryModel> chunk = allModels.subList(from, to);
+            List<NurseExecutionDetailRowDto> rows = this.mapExecutionDetailRows(chunk);
+            this.nurseWorkloadAmountEnricher.enrichExecutionDetailAmounts(rows, query.getRequestingOrgId());
+            saleAmounts.addAll(this.collectSaleAmounts(rows));
+            from = to;
+        }
+        return this.nurseWorkloadAmountEnricher.sumDetailAmounts(saleAmounts);
     }
 
     /**
-     * 汇总耗材使用明细售价：一次拉全量事实行 + 金额 enrich，禁止按页重复扫候选发放行。
+     * 汇总耗材使用明细进售价：一次拉齐事实行，分块 enrich 后同时得到售价与进价页脚。
+     *
+     * <p>页脚合计禁止静默截断；禁止为售价/进价各扫一次候选发放集。</p>
      *
      * @param query 已预解析读查询
-     * @return 售价合计（结算 2 位）
+     * @return 售价合计 + 进价合计（全无进价时 purchase 为 null）
      */
-    private BigDecimal sumConsumableSaleAmountForQuery(NurseWorkloadPageQuery query) {
+    private NurseConsumableAmountTotals sumConsumableAmountsForQuery(NurseWorkloadPageQuery query) {
+        // Pre：一次拉齐耗材净发放事实行
         List<NurseConsumableWorkloadDetailQueryModel> allModels =
             this.deviceDispenseQueryService.listNurseConsumableWorkloadDetail(query);
-        if (allModels.size() > NurseWorkloadExportConstants.EXPORT_MAX_ROWS) {
-            allModels = allModels.subList(0, NurseWorkloadExportConstants.EXPORT_MAX_ROWS);
+        if (allModels == null || allModels.isEmpty()) {
+            return new NurseConsumableAmountTotals(
+                this.nurseWorkloadAmountEnricher.sumDetailAmounts(List.of()), null);
         }
-        List<NurseConsumableDetailRowDto> rows = this.mapConsumableDetailRows(allModels);
-        Map<Long, Long> deviceReqIdByDispenseId =
-            this.buildDeviceReqIdByDispenseIdForAmountSum(allModels);
-        this.nurseWorkloadAmountEnricher.enrichConsumableDetailAmounts(
-            rows, deviceReqIdByDispenseId, query.getRequestingOrgId());
-        return this.nurseWorkloadAmountEnricher.sumDetailAmounts(this.collectSaleAmountsFromConsumable(rows));
+        List<BigDecimal> saleAmounts = new ArrayList<>();
+        List<BigDecimal> purchaseAmounts = new ArrayList<>();
+        int chunkSize = GeneralSharedConstants.ID_IN_QUERY_CHUNK_SIZE;
+        int from = 0;
+        // Loop：分块装锚点进售价，累加后释放本块明细
+        while (from < allModels.size()) {
+            int to = Math.min(from + chunkSize, allModels.size());
+            List<NurseConsumableWorkloadDetailQueryModel> chunk = allModels.subList(from, to);
+            List<NurseConsumableDetailRowDto> rows = this.mapConsumableDetailRows(chunk);
+            Map<Long, Long> deviceReqIdByDispenseId =
+                this.buildDeviceReqIdByDispenseIdForAmountSum(chunk);
+            this.nurseWorkloadAmountEnricher.enrichConsumableDetailAmounts(
+                rows, deviceReqIdByDispenseId, query.getRequestingOrgId());
+            saleAmounts.addAll(this.collectSaleAmountsFromConsumable(rows));
+            purchaseAmounts.addAll(this.collectPurchaseAmountsFromConsumable(rows));
+            from = to;
+        }
+        return new NurseConsumableAmountTotals(
+            this.nurseWorkloadAmountEnricher.sumDetailAmounts(saleAmounts),
+            this.sumNullableDetailAmounts(purchaseAmounts));
     }
 
     /**
-     * 汇总耗材使用明细进价：与 {@link #sumConsumableSaleAmountForQuery(NurseWorkloadPageQuery)} 同范围。
+     * 耗材汇总页脚进售价二元组。
      *
-     * @param query 已预解析读查询
-     * @return 进价合计；全无进价时为 null
+     * @param saleAmount     售价合计（结算刻度）
+     * @param purchaseAmount 进价合计；全无进价时为 null
      */
-    private BigDecimal sumConsumablePurchaseAmountForQuery(NurseWorkloadPageQuery query) {
-        List<NurseConsumableWorkloadDetailQueryModel> allModels =
-            this.deviceDispenseQueryService.listNurseConsumableWorkloadDetail(query);
-        if (allModels.size() > NurseWorkloadExportConstants.EXPORT_MAX_ROWS) {
-            allModels = allModels.subList(0, NurseWorkloadExportConstants.EXPORT_MAX_ROWS);
-        }
-        List<NurseConsumableDetailRowDto> rows = this.mapConsumableDetailRows(allModels);
-        Map<Long, Long> deviceReqIdByDispenseId =
-            this.buildDeviceReqIdByDispenseIdForAmountSum(allModels);
-        this.nurseWorkloadAmountEnricher.enrichConsumableDetailAmounts(
-            rows, deviceReqIdByDispenseId, query.getRequestingOrgId());
-        return this.sumNullableDetailAmounts(this.collectPurchaseAmountsFromConsumable(rows));
+    private record NurseConsumableAmountTotals(BigDecimal saleAmount, BigDecimal purchaseAmount) {
     }
 
     /**
@@ -1036,25 +1086,17 @@ public class NurseWorkloadReportAppService {
     }
 
     /**
-     * 按 encounterScope 构建开立科室下拉（门诊挂号科 / 住院入院科），与医生工作量同构。
+     * 构建默认登录科室下拉：仅启用「护士站」分类科室。
      *
-     * <p>门诊走 {@link OrganizationQueryService#listOrganizationsForOutpatientRegistration()}；
-     * 住院走 {@link OrganizationQueryService#listOrganizationsForInpatientAdmission()}。
-     * 跳过 id 为空的脏数据行。</p>
+     * <p>走 {@link OrganizationQueryService#listOrganizationsForNurseStation()}（{@code class_enum=NS}），
+     * 含门诊注射室、门诊采血室、疗区护士站等；与科室管理中「分类=护士站」一致。</p>
      *
-     * @param encounterScope 门诊或住院 code（{@link NurseWorkloadConstants#ENCOUNTER_SCOPE_OUTPATIENT} /
-     *                       {@link NurseWorkloadConstants#ENCOUNTER_SCOPE_INPATIENT}）
+     * @param encounterScope 门诊或住院 code（保留入参以兼容调用方；护士站列表不随就诊域收窄）
      * @return OptionDto 列表；无科室时返回空列表（非 null）
      */
     private List<OptionDto> buildOrganizationOptions(String encounterScope) {
-        List<Organization> organizations;
-        // 住院：入院科室口径
-        if (NurseWorkloadConstants.ENCOUNTER_SCOPE_INPATIENT.equals(encounterScope)) {
-            organizations = this.organizationQueryService.listOrganizationsForInpatientAdmission();
-        } else {
-            // 门诊（含未知 scope 回落）：挂号科室口径
-            organizations = this.organizationQueryService.listOrganizationsForOutpatientRegistration();
-        }
+        // Pre：只查护士站分类，避免挂号科把注射室等挤掉
+        List<Organization> organizations = this.organizationQueryService.listOrganizationsForNurseStation();
         List<OptionDto> options = new ArrayList<>();
         for (Organization organization : organizations) {
             // 无主键的科室无法作为筛选值，跳过
@@ -1307,17 +1349,83 @@ public class NurseWorkloadReportAppService {
     }
 
     /**
-     * 开立科室优先；仅传遗留 organizationId 时回填 requestingOrgId。
+     * 按默认登录科室（{@code Practitioner.org_id}）收窄护士集合写入 {@code practitionerIds}。
      *
-     * @param requestingOrgId 开立科室
-     * @param organizationId  遗留科室
-     * @return 解析后的开立科室 id
+     * <p>已选单护士时以 {@code practitionerId} 为准，不再叠加科室集合。
+     * {@code organizationId} 为空则不收窄。科室下无护士时写入空列表（领域侧返回空，禁止回落全院）。
+     * 科室统计路径清空 {@code requestingOrgId}，金额随执行护士归属汇总。</p>
+     *
+     * @param query          领域读查询（就地写入）
+     * @param organizationId 默认登录科室主键；可空
      */
-    private Long resolveSelectedRequestingOrgId(Long requestingOrgId, Long organizationId) {
-        if (requestingOrgId != null) {
-            return requestingOrgId;
+    private void applyDefaultLoginOrgNurseScope(NurseWorkloadPageQuery query, Long organizationId) {
+        if (query == null) {
+            return;
         }
-        return organizationId;
+        // 单护士明细优先：不叠加科室 IN
+        if (query.getPractitionerId() != null) {
+            return;
+        }
+        if (organizationId == null) {
+            return;
+        }
+        // Pre：解析该默认登录科室下全部护士岗人员主键
+        List<Long> nurseIds = this.resolveNurseIdsByDefaultLoginOrg(organizationId);
+        query.setPractitionerIds(nurseIds);
+        // 科室统计不再按开立科室二次过滤金额
+        query.setRequestingOrgId(null);
+    }
+
+    /**
+     * 解析默认登录科室下的护士岗人员主键（{@code Practitioner.org_id} = 科室）。
+     *
+     * <p>岗位管辖用 {@code adm_pr_assign.org_id}，与默认登录科室不同；此处禁止把科室传给
+     * {@code PractitionerRoleScopeLoader} 的 org 参数，而是先取全院护士岗再按 {@code org_id} 过滤。</p>
+     *
+     * @param defaultLoginOrgId 默认登录科室主键
+     * @return 护士主键列表；无命中时为空列表（非 null）
+     */
+    private List<Long> resolveNurseIdsByDefaultLoginOrg(Long defaultLoginOrgId) {
+        List<Practitioner> nurses = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRole(
+            WhalePlatformRoleCodeConstants.ROLE_NURSE,
+            null);
+        List<Practitioner> filtered = this.filterNursesByDefaultLoginOrg(nurses, defaultLoginOrgId);
+        List<Long> ids = new ArrayList<>();
+        for (Practitioner nurse : filtered) {
+            if (nurse != null && nurse.getId() != null) {
+                ids.add(nurse.getId());
+            }
+        }
+        return ids;
+    }
+
+    /**
+     * 按默认登录科室过滤护士实体列表。
+     *
+     * @param nurses            护士岗人员
+     * @param defaultLoginOrgId 默认登录科室；空则原样返回
+     * @return 过滤后列表
+     */
+    private List<Practitioner> filterNursesByDefaultLoginOrg(
+        List<Practitioner> nurses,
+        Long defaultLoginOrgId) {
+        if (nurses == null || nurses.isEmpty()) {
+            return List.of();
+        }
+        if (defaultLoginOrgId == null) {
+            return nurses;
+        }
+        List<Practitioner> filtered = new ArrayList<>();
+        for (Practitioner nurse : nurses) {
+            if (nurse == null) {
+                continue;
+            }
+            // 仅保留默认登录科室匹配的护士
+            if (defaultLoginOrgId.equals(nurse.getOrgId())) {
+                filtered.add(nurse);
+            }
+        }
+        return filtered;
     }
 
     /**

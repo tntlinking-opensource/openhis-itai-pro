@@ -40,8 +40,8 @@ public class PreviewOutpatientPharmacyDailySettlementResponse {
     @Schema(description = "待交账发药笔数")
     private Integer pendingCount;
 
-    /** 日结利润：主区售价合计 − 进价合计（与大类汇总同口径；可为 0 或负）。 */
-    @Schema(description = "日结利润（售价-进价）")
+    /** 售价合计：主区各大类售价总额之和（与头表 total_income / 交账审批金额同口径；退药轧差后可为负）。 */
+    @Schema(description = "售价合计")
     private BigDecimal totalIncome;
 
     /** 待交账发药明细（弹窗候选）。 */

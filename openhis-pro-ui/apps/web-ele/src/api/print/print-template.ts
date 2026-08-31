@@ -33,6 +33,8 @@ export interface PrtTemplateDto {
   version?: number;
   schemaVersion?: number;
   PrintJson?: Record<string, unknown>;
+  /** 兼容网关/序列化把 PrintJson 转成 camelCase */
+  printJson?: Record<string, unknown>;
   samplePrintData?: Record<string, unknown>;
 }
 

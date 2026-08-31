@@ -22,7 +22,6 @@ import { EMR_TEMPLATE_STATION_KIND } from '#/views/basic/emr-template/emr-templa
 import { InpatientAdviceList } from '#/views/inpatient/doctor-station/advice';
 import { useInpatientDoctorPatientStore } from '#/views/inpatient/doctor-station/doctorPatientStore';
 import { parseAgeTextToNumber } from '#/views/inpatient/nurse-station/services/map-inpatient-nurse-station-api';
-import { loadPrintPendingRows } from '#/views/inpatient/nurse-station/print-center/load-print-pending';
 import { printInpatientPrintCenter } from '#/views/inpatient/nurse-station/print-center/print-center-print';
 import { inferServiceApplyKindFromAdviceRow } from '#/views/outpatient/doctor-station/service-apply/service-apply-doc-groups';
 import ServiceApplyDialog from '#/views/outpatient/doctor-station/service-apply/service-apply-dialog.vue';
@@ -91,6 +90,28 @@ const title = computed(() => {
 const encounterId = computed(() => preserveApiIdForRequest(row.value?.encounterId) || '');
 const patientId = computed(() => preserveApiIdForRequest(row.value?.patientId) || '');
 
+/** 病历页眉本地回退：床号/病房/科室，服务端非空仍优先 */
+const emrPatientInfo = computed(() => {
+  const current = row.value;
+  if (!current) {
+    return undefined;
+  }
+  const loc = resolveEmrLocationFromListBed(current.bedName);
+  const ageRaw = (current.ageText ?? '').trim();
+  return {
+    name: current.patientName || '',
+    gender: resolveListGenderLabel(current.genderEnum),
+    age: ageRaw.replace(/岁\s*$/u, ''),
+    phone: '',
+    insurance: (current.insuranceTypeText ?? '').trim(),
+    medicalRecordNo: (current.iptNo ?? '').trim(),
+    idCard: (current.certno ?? '').trim(),
+    deptName: (current.admDeptName ?? '').trim(),
+    wardName: loc.wardName,
+    bedNo: loc.bedNo,
+  };
+});
+
 /** 医嘱门禁用的医生站患者占位 */
 const stubDoctorPatient = computed<InpatientDoctorStationPatient | null>(() => {
   const current = row.value;
@@ -128,10 +149,10 @@ const stubDoctorPatient = computed<InpatientDoctorStationPatient | null>(() => {
 });
 
 /**
- * 去掉护士站「原{床}（未占床）」包装，体温单/打印抬头只保留床名。
+ * 去掉护士站「原{房}-{床}（未占床）」包装，体温单/打印抬头只保留房-床中间段。
  *
  * @param bedName 列表回填的床位展示名
- * @return 纯床名；无法解析时原样返回
+ * @return 纯房-床名（如 `201-3`）；无法解析时原样返回
  */
 function stripUnoccupiedBedDisplay(bedName?: string): string {
   const raw = (bedName ?? '').trim();
@@ -140,11 +161,30 @@ function stripUnoccupiedBedDisplay(bedName?: string): string {
     return '';
   }
   const matched = /^原(.+)（未占床）$/.exec(raw);
-  // 召回未占床展示包装：只留中间床名供纸面抬头
+  // 召回/清床未占床展示包装：只留中间「房-床」供纸面抬头
   if (matched?.[1]) {
     return matched[1].trim();
   }
   return raw;
+}
+
+/**
+ * 列表床位展示拆成病房/床号：支持「房-床」或未占床包装后的中间段。
+ *
+ * @param bedName 列表回填的床位展示名
+ * @return 病房名与床号；无横杠时病房留空由服务端 HOUSE 补
+ */
+function resolveEmrLocationFromListBed(bedName?: string): { bedNo: string; wardName: string } {
+  const middle = stripUnoccupiedBedDisplay(bedName);
+  const dash = middle.lastIndexOf('-');
+  // 「201-3」：前段病房、后段床号
+  if (dash > 0) {
+    return {
+      wardName: middle.slice(0, dash).trim(),
+      bedNo: middle.slice(dash + 1).trim(),
+    };
+  }
+  return { wardName: '', bedNo: middle };
 }
 
 /**
@@ -375,7 +415,7 @@ async function handleServiceApplyPersisted() {
 }
 
 /**
- * 病案侧栏打印长期/临时医嘱单（开立时间正序；不影响护士站打印中心）。
+ * 病案侧栏打印长期/临时医嘱单（医生站已开立全量 + 已校对同源字段；开立时间正序）。
  *
  * @param docType long_order / temp_order
  */
@@ -400,27 +440,16 @@ async function handlePrintOrderDoc(docType: Extract<PrintDocType, 'long_order' |
   const label = docType === 'long_order' ? '长期医嘱' : '临时医嘱';
   orderPrinting.value = true;
   try {
-    const selectedRows = await loadPrintPendingRows({
-      docType,
-      patients,
-      dateFrom,
-      dateTo,
-      executionDeadline: `${dateTo} 23:59:59`,
-    });
-    // 无已校对医嘱则不调打印中心，避免空单
-    if (selectedRows.length <= 0) {
-      ElMessage.warning(`暂无「${label}」可打印数据`);
-      return;
-    }
     const result = await printInpatientPrintCenter({
       docType,
       patients,
-      selectedRows,
+      // 病案归档：全量开立 + 已校对字段合并；不勾待打行
+      selectedRows: [],
       dateFrom,
       dateTo,
       executionDeadline: `${dateTo} 23:59:59`,
-      // 病案首页：打印明细按开立时间正序
       orderOpenedTimeAsc: true,
+      orderPrintDataSource: 'doctor_advice',
     });
     // 仅成功时提示份数；失败由打印中心内部已告警
     if (result.ok) {
@@ -467,6 +496,7 @@ defineExpose({ open, close });
         :station-kind="EMR_TEMPLATE_STATION_KIND.INPATIENT"
         :encounter-id="encounterId"
         :patient-id="patientId"
+        :patient-info="emrPatientInfo"
         encounter-scoped
         :force-read-only="effectiveReadonly"
       />

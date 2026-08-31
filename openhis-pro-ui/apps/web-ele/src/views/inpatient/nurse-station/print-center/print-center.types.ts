@@ -44,8 +44,11 @@ export interface PrintDocTypeOption {
   description: string;
 }
 
-/** 待打列表行状态 code（禁止用 statusText 做分支） */
+/** 待打列表行业务状态 code（禁止用 statusText 做分支；与打印状态分离） */
 export type PrintPendingStatusCode = 'pending' | 'printed' | 'ready' | 'submitted' | 'executable';
+
+/** 待打列表行打印状态 code（审计回显；禁止与业务 statusCode 混用） */
+export type PrintPendingPrintStatusCode = 'unprinted' | 'printed';
 
 /** 待打列表行（业务接口映射） */
 export interface PrintPendingRow {
@@ -55,10 +58,14 @@ export interface PrintPendingRow {
   title: string;
   subtitle?: string;
   timeText?: string;
-  /** 状态 code，列表 Tag / 筛选用 */
+  /** 业务状态 code（已执行/待打等），列表 Tag / 业务筛选用 */
   statusCode: PrintPendingStatusCode;
-  /** 状态展示文案（仅展示） */
+  /** 业务状态展示文案（仅展示） */
   statusText: string;
+  /** 打印状态 code：未打印 / 已打印（审计 enrich） */
+  printStatusCode?: PrintPendingPrintStatusCode;
+  /** 打印状态展示文案（仅展示） */
+  printStatusText?: string;
   pageHint?: string;
   encounterId?: string;
   patientId?: string;
@@ -71,12 +78,30 @@ export interface PrintPendingRow {
   groupId?: string;
   /** 是否输液（患者用药单筛选用；标记 infusionFlag 或 用法 methodCode） */
   infusionFlag?: boolean;
+  /** 合管检验设备主键（采血贴按 device 分组） */
+  specimenTubeMergeDeviceId?: string;
 }
 
 export const PRINT_DOC_CATEGORIES: PrintDocCategoryOption[] = [
   { code: 'care', label: '护理文书' },
-  { code: 'order', label: '医嘱执行' },
-  { code: 'drug', label: '药品相关' },
+  { code: 'order', label: '医嘱/贴签' },
+  { code: 'drug', label: '药品' },
+  { code: 'fee', label: '费用' },
+];
+
+/** 打印中心导航一级（含「常用」） */
+export type PrintNavCategory = 'favorite' | PrintDocCategory;
+
+export interface PrintNavCategoryOption {
+  code: PrintNavCategory;
+  label: string;
+}
+
+export const PRINT_NAV_CATEGORIES: PrintNavCategoryOption[] = [
+  { code: 'favorite', label: '常用' },
+  { code: 'care', label: '护理文书' },
+  { code: 'order', label: '医嘱/贴签' },
+  { code: 'drug', label: '药品' },
   { code: 'fee', label: '费用' },
 ];
 
@@ -119,7 +144,7 @@ export const PRINT_DOC_TYPES: PrintDocTypeOption[] = [
     category: 'drug',
     scope: 'multiple',
     previewKind: 'label',
-    description: '按口服药医嘱打印药贴（50×30mm）',
+    description: '按查询区间列出已校对口服医嘱（含已执行/未执行）打印药贴（50×30mm）',
   },
   {
     code: 'oral_med_sheet',
@@ -212,7 +237,7 @@ export const PRINT_DOC_TYPES: PrintDocTypeOption[] = [
   },
   {
     code: 'dispense_sheet',
-    label: '摆药单',
+    label: '批次摆药单',
     category: 'drug',
     scope: 'ward',
     previewKind: 'table',
@@ -220,7 +245,7 @@ export const PRINT_DOC_TYPES: PrintDocTypeOption[] = [
   },
   {
     code: 'order_dispense_sheet',
-    label: '摆药单',
+    label: '医嘱摆药单',
     category: 'order',
     scope: 'multiple',
     previewKind: 'table',

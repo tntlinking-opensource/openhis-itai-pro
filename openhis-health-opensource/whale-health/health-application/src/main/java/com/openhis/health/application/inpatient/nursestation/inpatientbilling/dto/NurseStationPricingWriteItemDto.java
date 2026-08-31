@@ -30,8 +30,8 @@ public class NurseStationPricingWriteItemDto {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long patientId;
 
-    /** 账户主键。 */
-    @Schema(description = "账户主键", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 挂账账户主键（医保入院=医保户，否则个人现金户）。 */
+    @Schema(description = "挂账账户主键（医保优先）", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
     private Long accountId;
 

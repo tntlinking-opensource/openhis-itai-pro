@@ -12,6 +12,7 @@ import com.openhis.health.domain.custom.supplier.queries.model.SupplierListItemQ
 import com.openhis.health.domain.custom.supplier.repository.SupplierRepository;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.SupplierStatus;
+import com.openhis.health.domain.share.enums.SupplierType;
 import com.openhis.whale.core.application.exception.BusinessException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -20,9 +21,16 @@ import org.springframework.data.domain.Sort;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import com.openhis.health.domain.share.utils.IdInQueryChunkSupport;
+
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * 供应商主数据读侧查询服务。
@@ -62,6 +70,52 @@ public class SupplierQueryService {
             return Optional.empty();
         }
         return repository.findById(supplierId).map(Supplier::getName);
+    }
+
+    /**
+     * 批量解析供应商名称，供产品目录/发药等按 {@code manufacturerId} 回填展示名（A.9.1 IN 分批）。
+     *
+     * @param supplierIds 供应商标识集合；空或全 null 返回空 Map
+     * @return id → name；未命中的 id 不出现在结果中
+     */
+    public Map<Long, String> mapNamesByIds(Collection<Long> supplierIds) {
+        Map<Long, String> nameById = new HashMap<>();
+        if (supplierIds == null || supplierIds.isEmpty()) {
+            return nameById;
+        }
+        Set<Long> distinctIds = new LinkedHashSet<>();
+        for (Long supplierId : supplierIds) {
+            if (supplierId != null) {
+                distinctIds.add(supplierId);
+            }
+        }
+        if (distinctIds.isEmpty()) {
+            return nameById;
+        }
+        // Pre：主键 IN 分批，避免超长 IN 拖垮库
+        List<Supplier> suppliers = IdInQueryChunkSupport.loadByIdInChunks(
+            distinctIds,
+            chunkIds -> repository.findAllByIdIn(chunkIds));
+        for (Supplier supplier : suppliers) {
+            if (supplier.getId() != null && supplier.getName() != null) {
+                nameById.put(supplier.getId(), supplier.getName());
+            }
+        }
+        return nameById;
+    }
+
+    /**
+     * 按精确名称查找生产厂家（{@code SupplierType.MANUFACTURER}），供目录导入文案对齐主数据。
+     *
+     * @param name 厂家名称（须与落库 name 一致，调用方先 trim）
+     * @return 供应商标识；未命中为空
+     */
+    public Optional<Long> findManufacturerIdByExactName(String name) {
+        if (name == null || name.isBlank()) {
+            return Optional.empty();
+        }
+        return repository.findFirstByNameAndTypeEnum(name.trim(), SupplierType.MANUFACTURER.getCode())
+            .map(Supplier::getId);
     }
 
     /**
@@ -146,6 +200,7 @@ public class SupplierQueryService {
         model.setTypeEnum(supplier.getTypeEnum());
         model.setStatusEnum(supplier.getStatusEnum());
         model.setPyStr(supplier.getPyStr());
+        model.setWbStr(supplier.getWbStr());
         model.setAddress(supplier.getAddress());
         model.setPhone(supplier.getPhone());
         model.setEmail(supplier.getEmail());

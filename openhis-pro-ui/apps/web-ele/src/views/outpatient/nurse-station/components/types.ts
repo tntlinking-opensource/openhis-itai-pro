@@ -23,6 +23,8 @@ export interface NursePatient {
   isRegistered: boolean;
   patientType: 'outpatient';
   pendingExecuteCount: number;
+  /** 是否仍有待发放耗材（BR-NUR-017；卡片红框与「待发耗材」标签） */
+  hasPendingSupply?: boolean;
   riskHint?: string;
   paymentType?: string;
   phone?: string;
@@ -88,6 +90,8 @@ export interface NurseAdviceExecuteRow {
   serviceCategoryCode?: string;
   /** 诊疗类目展示文案 */
   serviceCategoryCodeText?: string;
+  /** 合管检验设备主键（采血贴分组） */
+  specimenTubeMergeDeviceId?: string;
 }
 
 export interface SupplyItem {
@@ -98,6 +102,10 @@ export interface SupplyItem {
   spec: string;
   usage: string;
   quantity: number;
+  /** 签发批号展示文案；无则侧栏不展示批号行 */
+  lotNumber?: string;
+  /** 单价展示文案（已格式化为元）；无则侧栏不展示单价 */
+  unitPriceText?: string;
   status: '已发放' | '已配药' | '待发放';
   /** 发放展示态 code（逻辑判断用） */
   statusCode: SupplyDispenseStatusCode;

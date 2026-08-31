@@ -40,6 +40,19 @@ public class OrderTemplateHeaderRowDto {
     @Schema(description = "绑定类型展示名")
     private String bindingEnumText;
 
+    /**
+     * 归属对象 id。
+     *
+     * <p>语义由 {@link #bindingEnum} 决定：PERSONAL → 医务人员 id；DEPARTMENT / HOSPITAL / AGREEMENT → 组织 id。</p>
+     */
+    @Schema(description = "归属对象 id（个人=医务人员，科室/全院/协定=组织）")
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long objectId;
+
+    /** 归属对象展示名（个人=姓名，科室/全院/协定=组织名称）。 */
+    @Schema(description = "归属对象展示名")
+    private String objectName;
+
     /** 适用场景 code。 */
     @Schema(description = "适用场景 code")
     private String sceneEnum;

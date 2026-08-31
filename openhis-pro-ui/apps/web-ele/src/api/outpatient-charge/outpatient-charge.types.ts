@@ -142,6 +142,8 @@ export interface ChargeSettlementSetlinfoDto {
 export interface ChargeSettlementInsuranceSummaryDto {
   acctPay?: null | number | string;
   billDate?: null | string;
+  /** 收款人姓名（支付流水 enterer_id → 医务人员姓名） */
+  cashierName?: null | string;
   /** 本支付单据关联的收费项主键 */
   chargeItemIds?: null | string[];
   /** 本支付关联收费明细（只读；可含收银台列表外的挂号费/已退费项） */
@@ -299,6 +301,7 @@ export interface ClientScanResultDto {
   respCode: string;
   respMsg: string;
   txnAmtFen?: number;
+  paidAmtFen?: number;
 }
 
 /** 银联补收准备请求（平台已 2207、支付取消、收费项仍待收） */
@@ -332,6 +335,8 @@ export interface ConfirmOutpatientInsuranceBeforeScanRequest {
 export interface ConfirmOutpatientInsuranceBeforeScanResponse {
   confirmedBatchCount?: number;
   reusedExisting?: boolean;
+  /** 全部 2207 后的权威个人现金；扫码应付以此为准 */
+  patientCashAmount?: null | number | string;
 }
 
 /** IF-OPC-07 正式结算响应 */

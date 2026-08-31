@@ -94,6 +94,31 @@ public class PeisServiceRequestExtDomainService {
     }
 
     /**
+     * 减项时软删执行扩展（与 SR 草稿删除/取消对称）。
+     *
+     * @param serviceRequestId 服务申请主键
+     * @param operatorId       操作人
+     */
+    public void removeForServiceRequest(Long serviceRequestId, Long operatorId) {
+        if (serviceRequestId == null) {
+            return;
+        }
+        PeisServiceRequestExt entity = repository
+            .findByServiceRequestIdAndIsDeletedFalse(serviceRequestId)
+            .orElse(null);
+        if (entity == null) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        entity.setIsDeleted(Boolean.TRUE);
+        entity.setDeletedAt(now);
+        entity.setDeletedBy(operatorId);
+        entity.setUpdatedAt(now);
+        entity.setUpdatedBy(operatorId);
+        repository.save(entity);
+    }
+
+    /**
      * 更新执行状态（确认/弃检/延检）。
      *
      * @param cmd 更新命令

@@ -26,4 +26,8 @@ public class AuditViolationDetailResult {
     private String volaItemType;
     /** 违规金额 */
     private BigDecimal volaAmt;
+    /**
+     * 院内回填的药品/项目名称（平台明细无此字段；按 rx_id / rxno 匹配 Snapshot 医嘱行）。
+     */
+    private String itemName;
 }

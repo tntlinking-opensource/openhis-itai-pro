@@ -60,6 +60,10 @@ const prepayBalanceText = computed(() => formatNurseStationAccountBalance(props.
   color: var(--el-text-color-primary);
 }
 
+.name-text {
+  font-weight: 700;
+}
+
 .age-text {
   color: var(--el-text-color-regular);
 }

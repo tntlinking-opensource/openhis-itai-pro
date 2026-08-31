@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { TableColumn } from '@vben-core/table-layout-ui';
 
 import type {
   PeisActivityDto,
@@ -14,6 +14,8 @@ import { TableLayout } from '@vben-core/table-layout-ui';
 
 import {
   deleteObservationDefApi,
+  listActivityByIdsApi,
+  listObservationDefByIdsApi,
   saveActivityApi,
   saveObservationDefApi,
   savePackageApi,
@@ -22,6 +24,7 @@ import {
   searchPackageApi,
 } from '#/api/peis/catalog-config';
 import { useRequest } from '#/hooks/use-request';
+import { formatMoneyDisplay } from '#/utils/format/money-scale';
 import {
   ElButton,
   ElDialog,
@@ -29,6 +32,7 @@ import {
   ElForm,
   ElFormItem,
   ElInput,
+  ElInputNumber,
   ElMessage,
   ElMessageBox,
   ElOption,
@@ -50,10 +54,14 @@ const editForm = ref<Record<string, any>>({});
 const observationOptions = ref<PeisObservationDefDto[]>([]);
 const observationOptionsLoading = ref(false);
 const odPickerKeyword = ref('');
+/** 小项穿梭全量候选是否已拉过（避免长度判断误跳过）。 */
+const observationOptionsReady = ref(false);
 /** 体检套餐编辑：子项目候选与内嵌穿梭筛选。 */
 const activityOptions = ref<PeisActivityDto[]>([]);
 const activityOptionsLoading = ref(false);
 const actPickerKeyword = ref('');
+/** 项目穿梭全量候选是否已拉过。 */
+const activityOptionsReady = ref(false);
 
 function toIdStrings(ids: unknown): string[] {
   if (!Array.isArray(ids)) {
@@ -160,7 +168,7 @@ const selectedActivityOptions = computed(() => {
 
 const editDialogWidth = computed(() => {
   if (activeTab.value === 'activity' || activeTab.value === 'package') {
-    return '860px';
+    return '920px';
   }
   return '560px';
 });
@@ -170,10 +178,6 @@ const query = reactive({
   pageSize: 20,
   keyword: '',
 });
-
-const formItems: FormItemConfig[] = [
-  { prop: 'keyword', label: '关键词', type: 'input', placeholder: '编码/名称' },
-];
 
 const statusOptions = [
   { value: 'active', label: '启用' },
@@ -187,19 +191,42 @@ const valueTypeOptions = [
   { value: 'boolean', label: '布尔' },
 ];
 
-const categoryOptions = [
+const categoryFormOptions = [
   { value: 'exam_item', label: '体检小项' },
   { value: 'vitals', label: '生命体征' },
-  { value: 'dept_conclusion', label: '分科结论' },
   { value: 'other', label: '其他' },
+];
+
+/** 项目结论落库分类码（历史值为 dept_conclusion） */
+const PROJECT_CONCLUSION_CATEGORY = 'dept_conclusion';
+
+/** 列表展示用（含系统自动创建的「项目结论」） */
+const categoryLabelOptions = [
+  ...categoryFormOptions,
+  { value: PROJECT_CONCLUSION_CATEGORY, label: '项目结论' },
 ];
 
 const typeOptions = [
   { value: '1', label: '检验' },
   { value: '2', label: '检查' },
+  { value: '3', label: '护理' },
+  { value: '4', label: '手术' },
   { value: '5', label: '其他' },
+  { value: '6', label: '外检' },
 ];
 
+const genderOptions = [
+  { value: 'BOTH', label: '不限' },
+  { value: 'MALE', label: '男' },
+  { value: 'FEMALE', label: '女' },
+];
+
+/**
+ * 将选项 code 转为展示文案；未命中时回落原值。
+ *
+ * @param options 下拉选项
+ * @param code 原始编码
+ */
 function labelOf(options: Array<{ value: string; label: string }>, code: unknown): string {
   const raw = String(code ?? '');
   const hit = options.find((o) => o.value === raw);
@@ -209,29 +236,77 @@ function labelOf(options: Array<{ value: string; label: string }>, code: unknown
   return raw || '—';
 }
 
+/**
+ * 原价/套餐价展示：空则 —，否则结算 2 位（仅展示，不反推入账）。
+ *
+ * @param value SALE 单价
+ */
+function formatSalePrice(value: unknown): string {
+  // 无定价行展示 —，与项目 tab 原价列一致
+  if (value == null || value === '') {
+    return '—';
+  }
+  const num = Number(value);
+  if (Number.isNaN(num)) {
+    return String(value);
+  }
+  return formatMoneyDisplay(num);
+}
+
+/**
+ * 是否收费展示。
+ *
+ * @param flag pricingFlag
+ */
+function formatPricingFlag(flag: unknown): string {
+  if (flag === true) {
+    return '是';
+  }
+  if (flag === false) {
+    return '否';
+  }
+  return '—';
+}
+
+/**
+ * 按当前 Tab 生成表格列。
+ *
+ * @param tab 目录页签
+ */
 function columnsForTab(tab: CatalogTab): TableColumn[] {
   if (tab === 'observation') {
     return [
       { prop: 'display', label: '名称', minWidth: 160 },
-      { prop: 'code', label: '编码', minWidth: 120 },
-      { prop: 'valueTypeEnum', label: '值类型', width: 100, slot: 'valueTypeEnum' },
-      { prop: 'categoryCode', label: '分类', width: 120, slot: 'categoryCode' },
-      { prop: 'statusEnum', label: '状态', width: 90, slot: 'statusEnum' },
+      { prop: 'code', label: '编码', minWidth: 110 },
+      { prop: 'unitCode', label: '单位', width: 80 },
+      { prop: 'valueTypeEnum', label: '值类型', width: 90, slot: 'valueTypeEnum' },
+      { prop: 'categoryCode', label: '分类', width: 110, slot: 'categoryCode' },
+      { prop: 'orgName', label: '执行科室', minWidth: 120 },
+      { prop: 'linkedActivityCount', label: '引用项目数', width: 100 },
+      { prop: 'statusEnum', label: '状态', width: 80, slot: 'statusEnum' },
       { prop: 'actions', label: '操作', width: 140, slot: 'actions' },
     ];
   }
   if (tab === 'activity') {
     return [
-      { prop: 'display', label: '名称', minWidth: 160 },
-      { prop: 'code', label: '业务号', minWidth: 120 },
-      { prop: 'typeEnum', label: '类型', width: 90, slot: 'typeEnum' },
-      { prop: 'statusEnum', label: '状态', width: 90, slot: 'statusEnum' },
-      { prop: 'actions', label: '操作', width: 100, slot: 'actions' },
+      { prop: 'sortOrder', label: '顺序', width: 70 },
+      { prop: 'display', label: '名称', minWidth: 150 },
+      { prop: 'code', label: '业务号', minWidth: 100 },
+      { prop: 'pyStr', label: '拼音', width: 90 },
+      { prop: 'typeEnum', label: '类型', width: 80, slot: 'typeEnum' },
+      { prop: 'permittedGenderEnum', label: '适用性别', width: 90, slot: 'permittedGenderEnum' },
+      { prop: 'orgName', label: '执行科室', minWidth: 110 },
+      { prop: 'salePrice', label: '原价', width: 90, slot: 'salePrice' },
+      { prop: 'pricingFlag', label: '收费', width: 70, slot: 'pricingFlag' },
+      { prop: 'observationCount', label: '小项数', width: 80 },
+      { prop: 'statusEnum', label: '状态', width: 80, slot: 'statusEnum' },
+      { prop: 'actions', label: '操作', width: 90, slot: 'actions' },
     ];
   }
   return [
     { prop: 'display', label: '套餐名称', minWidth: 160 },
     { prop: 'code', label: '业务号', minWidth: 120 },
+    { prop: 'salePrice', label: '套餐价', width: 90, slot: 'salePrice' },
     { prop: 'childCount', label: '项目数', width: 90, slot: 'childCount' },
     { prop: 'statusEnum', label: '状态', width: 90, slot: 'statusEnum' },
     { prop: 'actions', label: '操作', width: 100, slot: 'actions' },
@@ -270,6 +345,12 @@ function handleSearch() {
   void runLoad();
 }
 
+function handleReset() {
+  query.keyword = '';
+  query.pageNo = 1;
+  void runLoad();
+}
+
 function handlePagination(pagination: { limit: number; page: number }) {
   query.pageNo = pagination.page;
   query.pageSize = pagination.limit;
@@ -282,34 +363,172 @@ watch(activeTab, (tab) => {
   void runLoad();
 });
 
-async function loadObservationOptions() {
+async function loadObservationOptions(ensureIds: unknown = []) {
   observationOptionsLoading.value = true;
   try {
-    // 不按状态过滤：已绑定但停用的小项仍可回显；软删项后端默认不返回
+    const ensure = toIdStrings(ensureIds);
+    // 先补已选，对话框右侧可立即回显
+    if (ensure.length > 0) {
+      const haveNow = new Set(
+        observationOptions.value
+          .map((row) => String(row.definitionId ?? ''))
+          .filter((id) => id.length > 0),
+      );
+      const missing = ensure.filter((id) => !haveNow.has(id));
+      if (missing.length > 0) {
+        const extra = await listObservationDefByIdsApi({ definitionIds: missing });
+        if (extra?.length) {
+          observationOptions.value = [...observationOptions.value, ...extra];
+        }
+      }
+    }
+    // 候选列表已有缓存则不再全量拉取
+    if (observationOptionsReady.value) {
+      return;
+    }
+    // 轻量候选：不装引用次数/科室
     const res = await searchObservationDefApi({
       pageNo: 1,
       pageSize: 500,
+      pickerMode: true,
     });
-    observationOptions.value = res.content ?? [];
+    mergeObservationOptions(res.content ?? [], ensure);
+    observationOptionsReady.value = true;
   } finally {
     observationOptionsLoading.value = false;
   }
 }
 
-async function loadActivityOptions() {
+/**
+ * 合并小项候选，保留已选主键对应行。
+ *
+ * @param fetched 接口返回的候选
+ * @param ensureIds 须保留的已选主键
+ */
+function mergeObservationOptions(fetched: PeisObservationDefDto[], ensureIds: string[]) {
+  const byId = new Map<string, PeisObservationDefDto>();
+  for (const row of [...observationOptions.value, ...fetched]) {
+    if (row?.definitionId == null) {
+      continue;
+    }
+    byId.set(String(row.definitionId), row);
+  }
+  observationOptions.value = [...byId.values()];
+  void ensureIds;
+}
+
+async function loadActivityOptions(ensureIds: unknown = []) {
   activityOptionsLoading.value = true;
   try {
-    // 套餐子项仅体检项目（childrenFlag=false）；停用项仍可回显
+    const ensure = toIdStrings(ensureIds);
+    // 先补已选项目，套餐右侧立即有名称
+    if (ensure.length > 0) {
+      const haveNow = new Set(
+        activityOptions.value
+          .map((row) => String(row.activityId ?? ''))
+          .filter((id) => id.length > 0),
+      );
+      const missing = ensure.filter((id) => !haveNow.has(id));
+      if (missing.length > 0) {
+        const extra = await listActivityByIdsApi({ activityIds: missing });
+        if (extra?.length) {
+          activityOptions.value = [...activityOptions.value, ...extra];
+        }
+      }
+    }
+    // 候选已缓存则跳过重查询（打开编辑不再等 500 条重装）
+    if (activityOptionsReady.value) {
+      return;
+    }
     const res = await searchActivityApi({
       pageNo: 1,
       pageSize: 500,
+      pickerMode: true,
     });
-    activityOptions.value = res.content ?? [];
+    mergeActivityOptions(res.content ?? []);
+    activityOptionsReady.value = true;
   } finally {
     activityOptionsLoading.value = false;
   }
 }
 
+/**
+ * 合并体检项目候选（按 activityId 去重）。
+ *
+ * @param fetched 接口返回的候选
+ */
+function mergeActivityOptions(fetched: PeisActivityDto[]) {
+  const byId = new Map<string, PeisActivityDto>();
+  for (const row of [...activityOptions.value, ...fetched]) {
+    if (row?.activityId == null) {
+      continue;
+    }
+    byId.set(String(row.activityId), row);
+  }
+  activityOptions.value = [...byId.values()];
+}
+
+async function openCreate() {
+  if (activeTab.value === 'observation') {
+    editForm.value = {
+      statusEnum: 'active',
+      valueTypeEnum: 'string',
+      categoryCode: 'exam_item',
+    };
+    editVisible.value = true;
+    return;
+  }
+  if (activeTab.value === 'activity') {
+    editForm.value = {
+      statusEnum: 'active',
+      typeEnum: '1',
+      permittedGenderEnum: 'BOTH',
+      sortOrder: undefined,
+      observationDefinitionIds: [],
+    };
+    odPickerKeyword.value = '';
+    // 先弹窗，候选后台加载，避免点击卡住
+    editVisible.value = true;
+    void loadObservationOptions();
+    return;
+  }
+  editForm.value = { statusEnum: 'active', childActivityIds: [] };
+  actPickerKeyword.value = '';
+  editVisible.value = true;
+  void loadActivityOptions();
+}
+
+/**
+ * 打开编辑：先出对话框，再异步装穿梭候选。
+ *
+ * @param row 当前列表行
+ */
+async function openEdit(row: Record<string, any>) {
+  editForm.value = { ...row };
+  if (activeTab.value === 'activity') {
+    editForm.value.observationDefinitionIds = toIdStrings(row.observationDefinitionIds);
+    odPickerKeyword.value = '';
+    editVisible.value = true;
+    void loadObservationOptions(editForm.value.observationDefinitionIds);
+    return;
+  }
+  if (activeTab.value === 'package') {
+    editForm.value.childActivityIds = toIdStrings(row.childActivityIds);
+    actPickerKeyword.value = '';
+    // 先弹窗：已选名称随后补齐，左侧候选后台刷新
+    editVisible.value = true;
+    void loadActivityOptions(editForm.value.childActivityIds);
+    return;
+  }
+  editVisible.value = true;
+}
+
+/**
+ * 向表单数组字段追加主键（去重，保持字符串雪花）。
+ *
+ * @param field 表单字段名
+ * @param id 主键
+ */
 function appendIdToFormField(field: string, id: string | number | undefined) {
   if (id == null) {
     return;
@@ -322,10 +541,23 @@ function appendIdToFormField(field: string, id: string | number | undefined) {
   editForm.value[field] = [...current, key];
 }
 
+/**
+ * 从表单数组字段移除主键。
+ *
+ * @param field 表单字段名
+ * @param id 主键字符串
+ */
 function removeIdFromFormField(field: string, id: string) {
   editForm.value[field] = toIdStrings(editForm.value[field]).filter((x) => x !== id);
 }
 
+/**
+ * 调整表单数组字段中主键的顺序。
+ *
+ * @param field 表单字段名
+ * @param id 主键
+ * @param delta -1 上移 / 1 下移
+ */
 function moveIdInFormField(field: string, id: string, delta: number) {
   const ids = toIdStrings(editForm.value[field]);
   const index = ids.indexOf(id);
@@ -340,44 +572,6 @@ function moveIdInFormField(field: string, id: string, delta: number) {
   ids[index] = ids[target]!;
   ids[target] = tmp;
   editForm.value[field] = ids;
-}
-
-async function openCreate() {
-  if (activeTab.value === 'observation') {
-    editForm.value = {
-      statusEnum: 'active',
-      valueTypeEnum: 'string',
-      categoryCode: 'exam_item',
-    };
-  } else if (activeTab.value === 'activity') {
-    editForm.value = {
-      statusEnum: 'active',
-      typeEnum: '1',
-      observationDefinitionIds: [],
-    };
-    odPickerKeyword.value = '';
-    await loadObservationOptions();
-  } else {
-    editForm.value = { statusEnum: 'active', childActivityIds: [] };
-    actPickerKeyword.value = '';
-    await loadActivityOptions();
-  }
-  editVisible.value = true;
-}
-
-async function openEdit(row: Record<string, any>) {
-  editForm.value = { ...row };
-  if (activeTab.value === 'activity') {
-    editForm.value.observationDefinitionIds = toIdStrings(row.observationDefinitionIds);
-    odPickerKeyword.value = '';
-    await loadObservationOptions();
-  }
-  if (activeTab.value === 'package') {
-    editForm.value.childActivityIds = toIdStrings(row.childActivityIds);
-    actPickerKeyword.value = '';
-    await loadActivityOptions();
-  }
-  editVisible.value = true;
 }
 
 function addOdToPicker(id: string | number | undefined) {
@@ -452,6 +646,9 @@ async function handleSave() {
       // 必须传字符串雪花 ID；Number() 会精度丢失导致后端查不到 OD
       observationDefinitionIds: toIdStrings(form.observationDefinitionIds),
       orgId: toOptionalId(form.orgId),
+      permittedGenderEnum: form.permittedGenderEnum || 'BOTH',
+      sortOrder:
+        form.sortOrder == null || form.sortOrder === '' ? undefined : Number(form.sortOrder),
     });
   } else if (activeTab.value === 'package') {
     if (!form.display?.trim()) {
@@ -480,36 +677,57 @@ onMounted(() => {
 <template>
   <Page
     title="体检目录"
-    description="小项 / 项目 / 套餐（AS-PEIS-CFG-001；项目类型在体检项目编辑时选择）"
+    auto-content-height
+    content-class="!overflow-hidden flex h-full min-h-0 flex-col"
   >
-    <ElTabs v-model="activeTab" class="mb-3">
+    <ElTabs v-model="activeTab" class="mb-2 shrink-0">
       <ElTabPane label="体检小项" name="observation" />
       <ElTabPane label="体检项目" name="activity" />
       <ElTabPane label="体检套餐" name="package" />
     </ElTabs>
 
+    <div class="catalog-query shrink-0">
+      <span class="catalog-query__label">关键词：</span>
+      <ElInput
+        v-model="query.keyword"
+        clearable
+        class="catalog-query__input"
+        placeholder="编码/名称"
+        @keyup.enter="handleSearch"
+      />
+      <ElButton type="primary" @click="handleSearch">搜索</ElButton>
+      <ElButton @click="handleReset">重置</ElButton>
+      <ElButton type="primary" @click="openCreate">新建</ElButton>
+    </div>
+
     <TableLayout
+      class="h-full min-h-0 flex-1"
       v-model:query-params="query"
       :table-columns="columns"
       :table-data="list"
-      :form-items="formItems"
+      :show-top-query="false"
       :loading="loading"
       :total="total"
+      :toolbar-config="{ enabled: false }"
       @pagination="handlePagination"
-      @query="handleSearch"
-      @reset="handleSearch"
     >
-      <template #toolbar-actions>
-        <ElButton type="primary" @click="openCreate">新建</ElButton>
-      </template>
       <template #valueTypeEnum="{ row }">
         {{ labelOf(valueTypeOptions, row.valueTypeEnum) }}
       </template>
       <template #categoryCode="{ row }">
-        {{ labelOf(categoryOptions, row.categoryCode) }}
+        {{ labelOf(categoryLabelOptions, row.categoryCode) }}
       </template>
       <template #typeEnum="{ row }">
         {{ labelOf(typeOptions, row.typeEnum) }}
+      </template>
+      <template #permittedGenderEnum="{ row }">
+        {{ labelOf(genderOptions, row.permittedGenderEnum || 'BOTH') }}
+      </template>
+      <template #salePrice="{ row }">
+        {{ formatSalePrice(row.salePrice) }}
+      </template>
+      <template #pricingFlag="{ row }">
+        {{ formatPricingFlag(row.pricingFlag) }}
       </template>
       <template #statusEnum="{ row }">
         {{ labelOf(statusOptions, row.statusEnum) }}
@@ -550,9 +768,14 @@ onMounted(() => {
             </ElSelect>
           </ElFormItem>
           <ElFormItem label="分类" required>
-            <ElSelect v-model="editForm.categoryCode" class="w-full">
+            <ElInput
+              v-if="editForm.categoryCode === PROJECT_CONCLUSION_CATEGORY"
+              model-value="项目结论（系统自动，无需手工维护）"
+              disabled
+            />
+            <ElSelect v-else v-model="editForm.categoryCode" class="w-full">
               <ElOption
-                v-for="opt in categoryOptions"
+                v-for="opt in categoryFormOptions"
                 :key="opt.value"
                 :label="opt.label"
                 :value="opt.value"
@@ -577,6 +800,24 @@ onMounted(() => {
                   :value="opt.value"
                 />
               </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="适用性别">
+              <ElSelect v-model="editForm.permittedGenderEnum" class="w-full">
+                <ElOption
+                  v-for="opt in genderOptions"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="顺序">
+              <ElInputNumber
+                v-model="editForm.sortOrder"
+                :min="0"
+                :controls="false"
+                class="w-full"
+              />
             </ElFormItem>
             <ElFormItem label="状态">
               <ElSelect v-model="editForm.statusEnum" class="w-full">
@@ -638,8 +879,10 @@ onMounted(() => {
                     class="od-picker__row od-picker__row--selected"
                   >
                     <span class="od-picker__index">{{ index + 1 }}</span>
-                    <span class="od-picker__name">{{ opt.display }}</span>
-                    <span class="od-picker__code">{{ opt.code }}</span>
+                    <div class="od-picker__meta">
+                      <span class="od-picker__name" :title="opt.display">{{ opt.display }}</span>
+                      <span class="od-picker__code" :title="opt.code">{{ opt.code }}</span>
+                    </div>
                     <span class="od-picker__ops">
                       <ElButton
                         link
@@ -741,8 +984,10 @@ onMounted(() => {
                     class="od-picker__row od-picker__row--selected"
                   >
                     <span class="od-picker__index">{{ index + 1 }}</span>
-                    <span class="od-picker__name">{{ opt.display }}</span>
-                    <span class="od-picker__code">{{ opt.code }}</span>
+                    <div class="od-picker__meta">
+                      <span class="od-picker__name" :title="opt.display">{{ opt.display }}</span>
+                      <span class="od-picker__code" :title="opt.code">{{ opt.code }}</span>
+                    </div>
                     <span class="od-picker__ops">
                       <ElButton
                         link
@@ -799,6 +1044,25 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.catalog-query {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 0 2px;
+}
+
+.catalog-query__label {
+  color: var(--el-text-color-regular);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.catalog-query__input {
+  width: 220px;
+}
+
 .activity-edit-grid {
   display: grid;
   grid-template-columns: 1.2fr 1fr 1fr;
@@ -888,6 +1152,7 @@ onMounted(() => {
 
 .od-picker__row--selected {
   cursor: default;
+  align-items: flex-start;
 }
 
 .od-picker__row--selected:hover {
@@ -900,21 +1165,43 @@ onMounted(() => {
   color: var(--el-text-color-secondary);
   font-size: 12px;
   flex: none;
+  line-height: 22px;
+}
+
+.od-picker__meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .od-picker__name {
-  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
+  line-height: 20px;
+}
+
+.od-picker__row > .od-picker__name {
+  flex: 1;
 }
 
 .od-picker__code {
   color: var(--el-text-color-secondary);
   font-size: 12px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 18px;
+}
+
+.od-picker__row > .od-picker__code {
   flex: none;
+  max-width: 42%;
 }
 
 .od-picker__add {
@@ -925,8 +1212,11 @@ onMounted(() => {
 
 .od-picker__ops {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 2px;
   flex: none;
+  max-width: 150px;
 }
 </style>

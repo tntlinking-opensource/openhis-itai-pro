@@ -10,12 +10,17 @@ import com.openhis.health.domain.print.printlog.entity.PrtPrintEventLog;
 import com.openhis.health.domain.print.printlog.queries.PrtPrintEventLogPageQuery;
 import com.openhis.health.domain.print.printlog.repository.PrtPrintEventLogRepository;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
+import com.openhis.health.domain.share.constants.PrintConstants;
+import com.openhis.health.domain.share.enums.PrintLogStatus;
 import jakarta.persistence.criteria.Predicate;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
@@ -67,6 +72,52 @@ public class PrtPrintEventLogQueryService {
         scanQuery.setDateTo(query.getDateTo());
         Specification<PrtPrintEventLog> spec = buildFilterSpecification(scanQuery);
         return prtPrintEventLogRepository.findAll(spec, pageable);
+    }
+
+    /**
+     * 扫描指定场景 SUCCESS 日志（供业务主键回查；条数上限内按下推条件过滤）。
+     *
+     * @param tenantId     租户
+     * @param bindingCode  场景码（confirm 写入 binding_code）
+     * @param dateFrom     创建日起（含）；可空
+     * @param dateTo       创建日止（含）；可空
+     * @return SUCCESS 日志列表（按 createdAt 降序，最多 {@link PrintConstants#QUERY_PRINTED_LOG_SCAN_MAX}）
+     */
+    public List<PrtPrintEventLog> listSuccessByBindingCode(
+        Long tenantId,
+        String bindingCode,
+        LocalDate dateFrom,
+        LocalDate dateTo) {
+        if (tenantId == null || bindingCode == null || bindingCode.isBlank()) {
+            return List.of();
+        }
+        String resolvedBinding = trimToNull(bindingCode);
+        if (resolvedBinding == null) {
+            return List.of();
+        }
+        PageRequest pageable = PageRequest.of(
+            0,
+            PrintConstants.QUERY_PRINTED_LOG_SCAN_MAX,
+            Sort.by(Sort.Direction.DESC, FieldNameConstants.CREATED_AT));
+        Specification<PrtPrintEventLog> spec = (root, criteriaQuery, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.get(FieldNameConstants.TENANT_ID), tenantId));
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.STATUS), PrintLogStatus.SUCCESS.getCode()));
+            // binding_code 存 scenarioCode（confirm 写入）
+            predicates.add(cb.equal(root.get("bindingCode"), resolvedBinding));
+            if (dateFrom != null) {
+                predicates.add(cb.greaterThanOrEqualTo(
+                    root.get(FieldNameConstants.CREATED_AT), dateFrom.atStartOfDay()));
+            }
+            if (dateTo != null) {
+                predicates.add(cb.lessThan(
+                    root.get(FieldNameConstants.CREATED_AT),
+                    dateTo.plusDays(1).atStartOfDay()));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        return prtPrintEventLogRepository.findAll(spec, pageable).getContent();
     }
 
     /**

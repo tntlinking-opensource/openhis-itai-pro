@@ -23,7 +23,75 @@
   overflow: hidden;
 }
 
-/* —— 单据类型（单层浅色胶囊） —— */
+/* —— 任务条 —— */
+.print-center-task {
+  align-items: center;
+  background: var(--el-fill-color-blank);
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  justify-content: space-between;
+  padding: 8px 12px;
+}
+
+.print-center-task.is-warn {
+  background: var(--el-color-warning-light-9);
+}
+
+.print-center-task__main {
+  align-items: center;
+  color: var(--el-text-color-regular);
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  font-size: 13px;
+  gap: 6px 8px;
+}
+
+.print-center-task__label {
+  color: var(--el-text-color-secondary);
+  flex-shrink: 0;
+}
+
+.print-center-task__doc {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
+
+.print-center-task__sep {
+  color: var(--el-text-color-placeholder);
+}
+
+.print-center-task__patients {
+  color: var(--el-text-color-primary);
+  max-width: 420px;
+}
+
+.print-center-task__hint {
+  color: var(--el-color-warning-dark-2);
+  font-size: 12px;
+  max-width: 360px;
+}
+
+.print-center-task__help {
+  align-items: center;
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color);
+  border-radius: 50%;
+  color: var(--el-text-color-regular);
+  cursor: help;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 600;
+  height: 22px;
+  justify-content: center;
+  line-height: 1;
+  padding: 0;
+  width: 22px;
+}
+
+/* —— 单据类型（单层浅色胶囊，可换行平铺） —— */
 .print-center-docs {
   border-bottom: 1px solid var(--el-border-color-lighter);
   display: flex;
@@ -34,10 +102,10 @@
 
 .print-center-docs__item {
   align-items: center;
-  background: transparent;
-  border: 1px solid transparent;
+  background: #fff;
+  border: 1px solid #e6edf4;
   border-radius: 16px;
-  color: var(--el-text-color-regular);
+  color: #2c4054;
   cursor: pointer;
   display: inline-flex;
   font-size: 13px;
@@ -68,27 +136,16 @@
   white-space: nowrap;
 }
 
-.print-center-docs__badge {
-  background: var(--el-color-danger);
-  border-radius: 8px;
-  color: var(--el-color-white);
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 1;
-  min-width: 14px;
-  padding: 1px 4px;
-  text-align: center;
-}
-
 /* —— 条件工具栏 —— */
 .print-center-filters {
   align-items: center;
-  border-bottom: 1px solid var(--el-border-color-lighter);
+  background: #fafbfc;
+  border-bottom: 1px solid #eef2f6;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 12px;
+  gap: 10px 12px;
   justify-content: space-between;
-  padding: 8px 12px;
+  padding: 10px 12px;
 }
 
 .print-center-filters__left {
@@ -101,43 +158,41 @@
   font-size: 13px;
 }
 
-.print-center-filters__desc {
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-  line-height: 1.4;
+.print-center-btn.el-button {
+  border-radius: 6px;
+  font-weight: 500;
+  min-width: 72px;
 }
 
-.print-center-date-single {
-  max-width: 150px;
+.print-center-btn.el-button--default {
+  background: #fff;
+  border-color: #dce3eb;
+  color: #2c4054;
 }
 
-/* —— 主区表格 —— */
+.print-center-btn.el-button--default:hover {
+  background: #f7fafc;
+  border-color: var(--el-color-primary-light-5);
+  color: var(--el-color-primary);
+}
+
+.print-center-daterange.el-date-editor {
+  --el-date-editor-daterange-width: 280px;
+  border-radius: 6px;
+  max-width: 300px;
+  width: 280px;
+}
+
+.print-center-daterange.el-date-editor .el-range-input {
+  font-size: 13px;
+}
+
+/* —— 主区表格（对齐挂号页 RegisterStyle 视觉） —— */
 .print-center-body {
   min-height: 0;
 }
 
-.print-center-body .station-tri-pane-layout {
-  height: 100%;
-  min-height: 0;
-}
-
-/* 去掉 TriPane 额外深底与多余 padding，避免套娃空白 */
-.print-center-body .station-tri-pane-layout > .bg-background-deep {
-  background: transparent;
-}
-
-.print-center-body .station-tri-pane-layout__grid {
-  gap: 0;
-  padding: 0;
-}
-
-.print-center-body .station-tri-pane-layout__grid > section {
-  margin: 0;
-  border-radius: 0;
-}
-
 .print-center-panel {
-  height: 100%;
   min-height: 0;
   padding: 10px 12px 6px;
 }
@@ -151,12 +206,8 @@
   margin-bottom: 8px;
 }
 
-.print-center-panel__scope {
-  flex-shrink: 0;
-}
-
 .print-center-panel__count {
-  color: var(--el-text-color-secondary);
+  color: #4d6278;
   font-size: 12px;
   margin-left: auto;
 }
@@ -169,21 +220,16 @@
   min-height: 0;
 }
 
-.print-center-table .el-table__header th {
-  background: var(--el-fill-color-light) !important;
-  color: var(--el-text-color-primary);
-  font-weight: 600;
-}
-
-.print-center-table .el-table__row td {
-  color: var(--el-text-color-primary);
+.print-center-register-table {
+  min-height: 0;
 }
 
 /* —— 底栏 —— */
 .print-center-footer {
-  height: 100%;
+  background: #fafbfc;
+  border-top: 1px solid #eef2f6;
   min-width: 0;
-  padding: 0 4px;
+  padding: 10px 12px;
 }
 
 .print-center-footer__meta {
@@ -206,5 +252,40 @@
 }
 
 .print-center-footer__print {
+  border-radius: 6px;
   min-width: 96px;
+}
+
+/* —— 打印确认抽屉 —— */
+.print-center-confirm__meta {
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.print-center-confirm__meta strong {
+  color: var(--el-text-color-primary);
+}
+
+.print-center-confirm__hint {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.print-center-confirm__row {
+  border-bottom: 1px solid var(--el-border-color-extra-light);
+  padding: 8px 0;
+}
+
+.print-center-confirm__title {
+  color: var(--el-text-color-primary);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.print-center-confirm__sub {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  margin-top: 2px;
 }

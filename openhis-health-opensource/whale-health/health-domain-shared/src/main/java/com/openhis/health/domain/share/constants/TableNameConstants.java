@@ -41,6 +41,14 @@ public interface TableNameConstants {
     String DIA_VITAL_SIGN_DETAIL = "dia_vital_sign_detail";
     /** 标本定义表名（服务申请明细 target_table 锚点）。 */
     String ADM_SPECIMEN_DEFINITION = "adm_specimen_definition";
+    /** 检验/科室设备台账表名。 */
+    String ADM_DEVICE = "adm_device";
+    /** 标本合管配置表名。 */
+    String CUS_SPECIMEN_TUBE_MERGE = "cus_specimen_tube_merge";
     /** 收费明细自动生成规则表名（滚费床位长期医嘱 based_on 锚点，AS-IP-NUR-013 BR-IP-ARG-019）。 */
     String CUS_CHARGE_ITEM_AUTO_GEN = "cus_charge_item_auto_gen";
+    /** 体检就诊扩展表名（历史团检套餐锚点，方案 A 前）。 */
+    String PEIS_ENCOUNTER_EXT = "peis_encounter_ext";
+    /** 团检合同表名（团检套餐费 service 锚点，AS-PE-FIN-001 方案 A）。 */
+    String PEIS_GROUP_CONTRACT = "peis_group_contract";
 }

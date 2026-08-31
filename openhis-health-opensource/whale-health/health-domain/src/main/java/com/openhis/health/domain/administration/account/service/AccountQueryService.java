@@ -247,6 +247,71 @@ public class AccountQueryService {
     }
 
     /**
+     * 解析就诊默认挂账账户：医保入院挂医保户，纯自费挂个人现金户。
+     *
+     * <p>住院预交金余额仍读个人现金户；本方法仅供 ChargeItem {@code account_id} 与费用性质。</p>
+     *
+     * @param encounterId 就诊主键
+     * @return 挂账账户；双户均未开立时 {@code null}
+     */
+    public Account getDefaultChargeAccount(Long encounterId) {
+        // Gate：无就诊则无法解析挂账账户
+        if (encounterId == null) {
+            return null;
+        }
+        // Pre：医保入院存在 MEDICAL_INSURANCE 户时费用一律挂医保户（本期无住院转自费）
+        Account insurance = this.getYbAccount(encounterId);
+        if (insurance != null) {
+            return insurance;
+        }
+        // 纯自费入院：仅个人现金户可挂账（预交金余额亦读此户）
+        return this.getSelfAccount(encounterId);
+    }
+
+    /**
+     * 批量解析就诊默认挂账账户：有医保户则医保，否则个人现金户。
+     *
+     * <p>住院费用写路径与护士站回传 {@code accountId} 同源；余额展示仍用
+     * {@link #mapRegistrationAccountsByEncounterIds}。</p>
+     *
+     * @param encounterIds 就诊主键集合
+     * @return 就诊主键 → 挂账账户；未开立不含键
+     */
+    public Map<Long, Account> mapDefaultChargeAccountsByEncounterIds(Collection<Long> encounterIds) {
+        Map<Long, Account> insuranceByEncounterId =
+            this.mapMedicalInsuranceAccountsByEncounterIds(encounterIds);
+        Map<Long, Account> registrationByEncounterId =
+            this.mapRegistrationAccountsByEncounterIds(encounterIds);
+        LinkedHashSet<Long> unique = new LinkedHashSet<>();
+        if (encounterIds != null) {
+            for (Long id : encounterIds) {
+                if (id != null) {
+                    unique.add(id);
+                }
+            }
+        }
+        // Gate：空集合直接返回，避免无谓扫库
+        if (unique.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, Account> out = new HashMap<>(unique.size() * 2);
+        for (Long encounterId : unique) {
+            Account insuranceAccount = insuranceByEncounterId.get(encounterId);
+            // 医保入院：挂账真源为医保户
+            if (insuranceAccount != null) {
+                out.put(encounterId, insuranceAccount);
+                continue;
+            }
+            Account registrationAccount = registrationByEncounterId.get(encounterId);
+            // 纯自费：回落个人现金户
+            if (registrationAccount != null) {
+                out.put(encounterId, registrationAccount);
+            }
+        }
+        return out;
+    }
+
+    /**
      * 按就诊集合与账户类型码批量加载有效账户（同就诊同类型仅保留首条）。
      *
      * @param encounterIds 就诊主键集合

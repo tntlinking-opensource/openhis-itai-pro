@@ -33,4 +33,13 @@ public interface EinvoiceInvoiceWritebackLoader {
      * @param operatorId 操作人主键；可空
      */
     void writeoffLocalInvoice(Long invoiceId, String reason, Long operatorId);
+
+    /**
+     * 冲红后按原票重建一张 DRAFT 票据（新 busNo），供立即重开蓝票。
+     *
+     * @param writtenOffInvoiceId 已冲红/作废的原票据主键
+     * @param operatorId 操作人主键；可空
+     * @return 新草稿票据主键
+     */
+    Long createDraftInvoiceForReissue(Long writtenOffInvoiceId, Long operatorId);
 }

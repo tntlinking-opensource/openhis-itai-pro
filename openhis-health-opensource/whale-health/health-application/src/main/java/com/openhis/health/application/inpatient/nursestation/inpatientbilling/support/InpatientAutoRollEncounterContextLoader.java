@@ -23,7 +23,7 @@ import java.util.Set;
 /**
  * 住院滚费候选就诊上下文加载（AS-IP-NUR-013；B.6.4 多聚合只读编排）。
  *
- * <p>分步调 {@link EncounterQueryService} 与 {@link AccountQueryService}，合并 accountId 与责任护士。</p>
+ * <p>分步调 {@link EncounterQueryService} 与 {@link AccountQueryService}，合并挂账 accountId（医保优先）与责任护士。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -33,7 +33,9 @@ public class InpatientAutoRollEncounterContextLoader {
     private final AccountQueryService accountQueryService;
 
     /**
-     * 列出已分床且未清床的 IMP 滚费候选，并补齐默认个人现金账户 id 与责任护士 id。
+     * 列出已分床且未清床的 IMP 滚费候选，并补齐默认挂账账户 id 与责任护士 id。
+     *
+     * <p>挂账：医保入院用医保户，纯自费用个人现金户；预交金余额不在此字段。</p>
      *
      * @return 滚费候选列表；无命中时空列表
      */
@@ -52,17 +54,17 @@ public class InpatientAutoRollEncounterContextLoader {
         if (encounterIds.isEmpty()) {
             return List.of();
         }
-        Map<Long, Account> accountByEncounterId =
-            this.accountQueryService.mapRegistrationAccountsByEncounterIds(encounterIds);
+        Map<Long, Account> chargeAccountByEncounterId =
+            this.accountQueryService.mapDefaultChargeAccountsByEncounterIds(encounterIds);
         Map<Long, Long> primaryNurseIdByEncounterId = this.loadPrimaryNurseIdByEncounterId(encounterIds);
         List<InpatientAutoRollEncounterQueryModel> result = new ArrayList<>(base.size());
         for (InpatientAutoRollEncounterQueryModel row : base) {
             if (row == null || row.getEncounterId() == null) {
                 continue;
             }
-            Account account = accountByEncounterId.get(row.getEncounterId());
-            if (account != null) {
-                row.setAccountId(account.getId());
+            Account chargeAccount = chargeAccountByEncounterId.get(row.getEncounterId());
+            if (chargeAccount != null) {
+                row.setAccountId(chargeAccount.getId());
             }
             row.setPrimaryNurseId(primaryNurseIdByEncounterId.get(row.getEncounterId()));
             result.add(row);

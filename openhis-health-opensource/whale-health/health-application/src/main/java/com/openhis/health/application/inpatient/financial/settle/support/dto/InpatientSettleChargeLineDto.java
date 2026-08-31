@@ -80,4 +80,12 @@ public class InpatientSettleChargeLineDto {
     /** 收银台是否默认勾选本行。 */
     @Schema(description = "是否默认勾选", requiredMode = Schema.RequiredMode.REQUIRED)
     private Boolean selected;
+
+    /** 医保等级 code（术语 CHRGITM_LV，取自产品目录）。 */
+    @Schema(description = "医保等级 code")
+    private Integer chrgitmLv;
+
+    /** 医保等级展示名（甲类/乙类/丙类等）。 */
+    @Schema(description = "医保等级展示")
+    private String chrgitmLvText;
 }

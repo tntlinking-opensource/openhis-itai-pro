@@ -8,7 +8,13 @@ import com.openhis.health.application.shared.option.TerminologyOptionLoader;
 import com.openhis.health.application.shared.product.ClinicalCatalogPriceResolver;
 import com.openhis.health.application.shared.product.ClinicalCatalogUnitPriceQuery;
 import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.application.inpatient.doctorstation.advice.dto.InpatientDoctorStationAdviceDraftLineRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.dto.InpatientDoctorStationAdviceOrderBindRowDto;
+import com.openhis.health.application.inpatient.doctorstation.advice.dto.SaveInpatientMedicationAdviceDraftLinePayload;
+import com.openhis.health.application.inpatient.doctorstation.advice.dto.SaveInpatientServiceAdviceDraftLinePayload;
+import com.openhis.health.application.outpatient.doctorstation.advice.dto.DoctorStationAdviceDraftBindItemDto;
+import com.openhis.health.application.shared.advice.SpecimenTubeMergeBindResolveSupport;
+import com.openhis.health.domain.custom.specimentubemerge.queries.model.SpecimenTubeMergeDerivedBindQueryModel;
 import com.openhis.health.domain.custom.servicedevicetemplate.queries.model.ServiceDeviceTemplateQueryModel;
 import com.openhis.health.domain.custom.servicedevicetemplate.service.ServiceDeviceTemplateQueryService;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
@@ -63,6 +69,9 @@ public class InpatientDoctorStationAdviceOrderBindQueryService {
     /** 临床目录统一单价解析。 */
     private final ClinicalCatalogPriceResolver clinicalCatalogPriceResolver;
 
+    /** 标本合管派生绑定解析（Phase 2）。 */
+    private final SpecimenTubeMergeBindResolveSupport specimenTubeMergeBindResolveSupport;
+
     /**
      * 按绑定类型与主数据主键装载绑定行（诊疗来源等 {@code item_id} 存数字主键的场景）。
      *
@@ -109,6 +118,18 @@ public class InpatientDoctorStationAdviceOrderBindQueryService {
             return rows;
         }
         BindQueryContext context = contextOpt.get();
+        // 检验 activity 已配置合管时优先读合管派生绑定，不查 service_device_template
+        if (DoctorStationAdviceConstants.BIND_TYPE_ACTIVITY.equals(bindType)) {
+            Long activityId = this.parseNumericSourceItemId(sourceItemKey);
+            if (activityId != null) {
+                Optional<Long> mergeDeviceIdOpt =
+                    specimenTubeMergeBindResolveSupport.findMergeDeviceIdByActivityId(activityId);
+                if (mergeDeviceIdOpt.isPresent()) {
+                    return this.assembleInpatientMergeBindRows(
+                        bindType, sourceItemKey, mergeDeviceIdOpt.get(), organizationUnitId);
+                }
+            }
+        }
         // 住院医嘱/护士执行仅匹配住院范围绑定模板
         String rangeCode = ServiceDeviceTemplateRangeCode.INPATIENT.getCode();
         String itemIdKey = sourceItemKey.trim();
@@ -193,6 +214,163 @@ public class InpatientDoctorStationAdviceOrderBindQueryService {
             rows.add(row);
         }
         return rows;
+    }
+
+    /**
+     * IF-IP-DOR-23：按暂存变更行解析直接绑定（合管优先；同批同设备去重）。
+     *
+     * @param lines              暂存变更行
+     * @param organizationUnitId 机构单元
+     * @return 绑定明细
+     */
+    public List<DoctorStationAdviceDraftBindItemDto> listDraftBindItems(
+        List<InpatientDoctorStationAdviceDraftLineRequest> lines,
+        Long organizationUnitId
+    ) {
+        List<DoctorStationAdviceDraftBindItemDto> bindItems = new ArrayList<>();
+        Set<Long> emittedMergeDeviceIds = new LinkedHashSet<>();
+        if (lines == null || lines.isEmpty()) {
+            return bindItems;
+        }
+        for (int lineIndex = 0; lineIndex < lines.size(); lineIndex++) {
+            InpatientDoctorStationAdviceDraftLineRequest line = lines.get(lineIndex);
+            if (line == null) {
+                continue;
+            }
+            String lineOp = StringUtils.trimToEmpty(line.getLineOp()).toUpperCase(java.util.Locale.ROOT);
+            if (DoctorStationAdviceConstants.LINE_OP_DELETE.equals(lineOp)) {
+                continue;
+            }
+            String productTableName = StringUtils.trimToEmpty(line.getProductTableName());
+            if (TableNameConstants.MED_MEDICATION_DEFINITION.equals(productTableName)) {
+                this.appendInpatientMedicationDraftBindItems(
+                    bindItems, line, lineIndex, lineOp, organizationUnitId);
+            } else if (TableNameConstants.WKF_ACTIVITY_DEFINITION.equals(productTableName)) {
+                this.appendInpatientServiceDraftBindItems(
+                    bindItems, line, lineIndex, lineOp, organizationUnitId, emittedMergeDeviceIds);
+            }
+        }
+        return bindItems;
+    }
+
+    /**
+     * 住院药品行 USAGE 绑定解析。
+     */
+    private void appendInpatientMedicationDraftBindItems(
+        List<DoctorStationAdviceDraftBindItemDto> bindItems,
+        InpatientDoctorStationAdviceDraftLineRequest line,
+        int lineIndex,
+        String lineOp,
+        Long organizationUnitId
+    ) {
+        SaveInpatientMedicationAdviceDraftLinePayload payload = line.getMedicationPayload();
+        if (payload == null || StringUtils.isEmpty(payload.getMethodCode())) {
+            return;
+        }
+        Long definitionId = payload.getMedicationDefinitionId();
+        if (definitionId == null) {
+            return;
+        }
+        List<InpatientDoctorStationAdviceOrderBindRowDto> rows = this.listBindingsBySourceItemKey(
+            DoctorStationAdviceConstants.BIND_TYPE_USAGE,
+            payload.getMethodCode().trim(),
+            organizationUnitId
+        );
+        this.appendInpatientDraftBindItems(
+            bindItems, rows, lineIndex, lineOp,
+            TableNameConstants.MED_MEDICATION_DEFINITION, definitionId,
+            line.getRequestId(), TableNameConstants.MED_MEDICATION_REQUEST, null);
+    }
+
+    /**
+     * 住院诊疗行绑定解析（合管优先）。
+     */
+    private void appendInpatientServiceDraftBindItems(
+        List<DoctorStationAdviceDraftBindItemDto> bindItems,
+        InpatientDoctorStationAdviceDraftLineRequest line,
+        int lineIndex,
+        String lineOp,
+        Long organizationUnitId,
+        Set<Long> emittedMergeDeviceIds
+    ) {
+        SaveInpatientServiceAdviceDraftLinePayload payload = line.getServicePayload();
+        if (payload == null || payload.getActivityDefinitionId() == null) {
+            return;
+        }
+        Long activityId = payload.getActivityDefinitionId();
+        Optional<Long> mergeDeviceIdOpt = specimenTubeMergeBindResolveSupport.findMergeDeviceIdByActivityId(activityId);
+        if (mergeDeviceIdOpt.isPresent()) {
+            Long mergeDeviceId = mergeDeviceIdOpt.get();
+            if (emittedMergeDeviceIds.contains(mergeDeviceId)) {
+                return;
+            }
+            emittedMergeDeviceIds.add(mergeDeviceId);
+            List<InpatientDoctorStationAdviceOrderBindRowDto> rows = this.assembleInpatientMergeBindRows(
+                DoctorStationAdviceConstants.BIND_TYPE_ACTIVITY,
+                String.valueOf(activityId),
+                mergeDeviceId,
+                organizationUnitId
+            );
+            this.appendInpatientDraftBindItems(
+                bindItems, rows, lineIndex, lineOp,
+                TableNameConstants.WKF_ACTIVITY_DEFINITION, activityId,
+                line.getRequestId(), TableNameConstants.WKF_SERVICE_REQUEST, mergeDeviceId);
+            return;
+        }
+        List<InpatientDoctorStationAdviceOrderBindRowDto> rows = this.listBindingsBySourceItemKey(
+            DoctorStationAdviceConstants.BIND_TYPE_ACTIVITY,
+            String.valueOf(activityId),
+            organizationUnitId
+        );
+        this.appendInpatientDraftBindItems(
+            bindItems, rows, lineIndex, lineOp,
+            TableNameConstants.WKF_ACTIVITY_DEFINITION, activityId,
+            line.getRequestId(), TableNameConstants.WKF_SERVICE_REQUEST, null);
+    }
+
+    /**
+     * 住院绑定行 → IF-IP-DOR-23 明细。
+     */
+    private void appendInpatientDraftBindItems(
+        List<DoctorStationAdviceDraftBindItemDto> bindItems,
+        List<InpatientDoctorStationAdviceOrderBindRowDto> rows,
+        int lineIndex,
+        String lineOp,
+        String triggerProductTableName,
+        Long triggerDefinitionId,
+        Long triggerRequestId,
+        String basedOnTable,
+        Long specimenTubeMergeDeviceId
+    ) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        for (InpatientDoctorStationAdviceOrderBindRowDto row : rows) {
+            DoctorStationAdviceDraftBindItemDto item = new DoctorStationAdviceDraftBindItemDto();
+            item.setBindType(row.getBindType());
+            item.setSourceItemId(row.getSourceItemId());
+            item.setSourceItemName(row.getSourceItemName());
+            item.setTargetItemId(row.getTargetItemId());
+            item.setTargetItemName(row.getTargetItemName());
+            if (StringUtils.isNotEmpty(row.getTargetItemTable())) {
+                item.setTargetProductTableName(row.getTargetItemTable().trim());
+            }
+            item.setQuantityNumerator(row.getQuantityNumerator());
+            item.setQuantityDenominator(row.getQuantityDenominator());
+            item.setUnitCode(row.getUnitCode());
+            item.setUnitName(row.getUnitName());
+            item.setPriority(row.getPriority());
+            item.setActiveFlag(row.getActiveFlag());
+            item.setTriggerLineIndex(lineIndex);
+            item.setTriggerLineOp(lineOp);
+            item.setTriggerProductTableName(triggerProductTableName);
+            item.setTriggerDefinitionId(triggerDefinitionId);
+            item.setTriggerRequestId(triggerRequestId);
+            item.setBasedOnTable(basedOnTable);
+            item.setBasedOnRequestId(triggerRequestId);
+            item.setSpecimenTubeMergeDeviceId(specimenTubeMergeDeviceId);
+            bindItems.add(item);
+        }
     }
 
     /**
@@ -434,6 +612,162 @@ public class InpatientDoctorStationAdviceOrderBindQueryService {
         }
         if (StringUtils.isNotEmpty(product.getTotalVolume())) {
             return product.getTotalVolume().trim();
+        }
+        return null;
+    }
+
+    /**
+     * 合管配置派生绑定 → 住院绑定行 DTO（含零售单价 enrich）。
+     *
+     * @param bindType           绑定类型
+     * @param sourceItemKey      触发 activity 主键字符串
+     * @param mergeDeviceId      合管设备主键
+     * @param organizationUnitId 机构单元
+     * @return 绑定行列表
+     */
+    private List<InpatientDoctorStationAdviceOrderBindRowDto> assembleInpatientMergeBindRows(
+        String bindType,
+        String sourceItemKey,
+        Long mergeDeviceId,
+        Long organizationUnitId
+    ) {
+        List<InpatientDoctorStationAdviceOrderBindRowDto> rows = new ArrayList<>();
+        if (mergeDeviceId == null || StringUtils.isEmpty(sourceItemKey)) {
+            return rows;
+        }
+        Optional<BindQueryContext> contextOpt = resolveBindContext(bindType);
+        if (contextOpt.isEmpty()) {
+            return rows;
+        }
+        BindQueryContext context = contextOpt.get();
+        String sourceItemName = resolveSourceItemName(context, sourceItemKey.trim(), new HashMap<>());
+        List<SpecimenTubeMergeDerivedBindQueryModel> derived =
+            specimenTubeMergeBindResolveSupport.listDerivedBindsByDeviceId(mergeDeviceId);
+        if (derived.isEmpty()) {
+            return rows;
+        }
+        List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
+        for (SpecimenTubeMergeDerivedBindQueryModel bind : derived) {
+            if (bind == null || bind.getTargetId() == null || StringUtils.isEmpty(bind.getTargetTable())) {
+                continue;
+            }
+            ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
+            lookup.setProductTableName(bind.getTargetTable().trim());
+            lookup.setProductDefinitionId(bind.getTargetId());
+            lookups.add(lookup);
+        }
+        Map<String, ProductDefinitionDisplayDto> targetProductByKey =
+            productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
+        Map<String, List<ChargeItemDefinition>> priceByProductKey =
+            this.loadRetailPricesByProductKeys(lookups);
+        Map<String, String> unitLabelByCode =
+            terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.UNIT_CODE);
+        int priority = 1;
+        for (SpecimenTubeMergeDerivedBindQueryModel bind : derived) {
+            if (bind == null || bind.getTargetId() == null || StringUtils.isEmpty(bind.getTargetTable())) {
+                continue;
+            }
+            String targetTable = bind.getTargetTable().trim();
+            InpatientDoctorStationAdviceOrderBindRowDto row = new InpatientDoctorStationAdviceOrderBindRowDto();
+            row.setBindingId(bind.getMergeConfigLineId());
+            row.setBindType(bindType);
+            row.setSourceItemId(this.parseNumericSourceItemId(sourceItemKey));
+            row.setSourceItemName(sourceItemName);
+            row.setTargetItemId(bind.getTargetId());
+            row.setTargetItemTable(targetTable);
+            row.setTargetItemName(bind.getTargetName());
+            String productKey = ProductDefinitionKeyUtil.buildCompositeKey(targetTable, bind.getTargetId());
+            ProductDefinitionDisplayDto targetProduct = targetProductByKey.get(productKey);
+            if (targetProduct != null) {
+                row.setBusNo(targetProduct.getProductBusNo());
+                row.setSpecificationText(this.resolveSpecificationText(targetProduct));
+            }
+            List<ChargeItemDefinition> priceLines = priceByProductKey.getOrDefault(productKey, List.of());
+            String categoryCode = null;
+            if (targetProduct != null) {
+                categoryCode = targetProduct.getCategoryCode();
+            }
+            ClinicalCatalogUnitPriceQuery priceCmd = ClinicalCatalogUnitPriceQuery.builder()
+                .productTableName(targetTable)
+                .productDefinitionId(bind.getTargetId())
+                .categoryCode(categoryCode)
+                .organizationId(organizationUnitId)
+                .priceLines(priceLines)
+                .productRowForOccupancy(targetProduct)
+                .build();
+            ChargeItemDefinition selected = clinicalCatalogPriceResolver.resolveCatalogUnitPrice(priceCmd);
+            if (selected != null) {
+                row.setChargeItemDefinitionId(selected.getId());
+                row.setUnitPrice(selected.getPriceValue());
+            } else if (targetProduct != null && targetProduct.getChargeItemDefinitionId() != null) {
+                row.setChargeItemDefinitionId(targetProduct.getChargeItemDefinitionId());
+            }
+            if (bind.getQuantity() != null) {
+                row.setQuantityNumerator(bind.getQuantity());
+                row.setQuantityDenominator(BigDecimal.ONE);
+            } else {
+                row.setQuantityNumerator(BigDecimal.ONE);
+                row.setQuantityDenominator(BigDecimal.ONE);
+            }
+            row.setUnitCode(bind.getUnitCode());
+            row.setUnitName(ProductDefinitionCatalogUnitBandsAssembler.resolveUnitDisplayName(
+                unitLabelByCode, bind.getUnitCode(), targetProduct));
+            row.setPriority(priority);
+            priority = priority + 1;
+            row.setActiveFlag(Boolean.TRUE);
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    /**
+     * 批量加载目标品项零售价行。
+     *
+     * @param lookups 品项批量键
+     * @return 复合键 → 定价行列表
+     */
+    private Map<String, List<ChargeItemDefinition>> loadRetailPricesByProductKeys(
+        List<ProductDefinitionBatchLookup> lookups
+    ) {
+        Map<String, List<Long>> idsByTable = new HashMap<>();
+        for (ProductDefinitionBatchLookup lookup : lookups) {
+            if (lookup == null || lookup.getProductDefinitionId() == null
+                || StringUtils.isEmpty(lookup.getProductTableName())) {
+                continue;
+            }
+            String table = lookup.getProductTableName().trim();
+            idsByTable.computeIfAbsent(table, key -> new ArrayList<>()).add(lookup.getProductDefinitionId());
+        }
+        Map<String, List<ChargeItemDefinition>> grouped = new HashMap<>();
+        for (Map.Entry<String, List<Long>> entry : idsByTable.entrySet()) {
+            ChargeItemDefinitionQueryCommand cmd = new ChargeItemDefinitionQueryCommand();
+            cmd.setInstanceTable(entry.getKey());
+            cmd.setInstanceIds(entry.getValue());
+            List<ChargeItemDefinition> lines = chargeItemDefinitionQueryService.findPriceLinesByProjects(cmd);
+            for (ChargeItemDefinition line : lines) {
+                if (line == null) {
+                    continue;
+                }
+                String key = ProductDefinitionKeyUtil.buildCompositeKey(line.getInstanceTable(), line.getInstanceId());
+                grouped.computeIfAbsent(key, k -> new ArrayList<>()).add(line);
+            }
+        }
+        return grouped;
+    }
+
+    /**
+     * 解析数字型来源项键。
+     *
+     * @param sourceItemKey 来源键
+     * @return 数字主键；非法时 null
+     */
+    private Long parseNumericSourceItemId(String sourceItemKey) {
+        if (StringUtils.isEmpty(sourceItemKey)) {
+            return null;
+        }
+        String key = sourceItemKey.trim();
+        if (StringUtils.isNotEmpty(key) && key.chars().allMatch(Character::isDigit)) {
+            return Long.valueOf(key);
         }
         return null;
     }

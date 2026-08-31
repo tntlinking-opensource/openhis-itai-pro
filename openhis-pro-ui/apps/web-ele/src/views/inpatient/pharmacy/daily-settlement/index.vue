@@ -40,6 +40,8 @@ import {
   withdrawInpatientPharmacyDailySettlementApi,
 } from '#/api/inpatient/pharmacy-daily-settlement';
 import { useRequest } from '#/hooks/use-request';
+import { downloadPharmacyDailySettlementExcel } from '#/utils/export/pharmacy-daily-settlement-excel';
+import { formatPurchaseMoneyDisplay } from '#/utils/format/money-scale';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import { printPharmacyDailySettlement } from '#/utils/print/print-pharmacy-daily-settlement';
 import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
@@ -125,11 +127,24 @@ const gapHardBlockMessage = computed(
 
 const gapSoftWarnCount = computed(() => previewResult.value?.gapSoftWarnCount ?? 0);
 
-/** 大类汇总卡片数据。 */
-const categoryRows = computed(() => previewResult.value?.categoryRows ?? []);
+/** 取可比较金额；非法值按 0。 */
+function toComparableAmount(value: unknown): number {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : 0;
+}
 
-/** 品规汇总表数据。 */
-const productRows = computed(() => previewResult.value?.productRows ?? []);
+/** 按售价总额倒序（金额大在上）。 */
+function sortBySaleAmountDesc<T extends { saleAmount?: string | number }>(rows: T[]): T[] {
+  return [...rows].sort(
+    (a, b) => toComparableAmount(b.saleAmount) - toComparableAmount(a.saleAmount),
+  );
+}
+
+/** 大类汇总卡片数据（售价总额倒序）。 */
+const categoryRows = computed(() => sortBySaleAmountDesc(previewResult.value?.categoryRows ?? []));
+
+/** 品规汇总表数据（售价总额倒序）。 */
+const productRows = computed(() => sortBySaleAmountDesc(previewResult.value?.productRows ?? []));
 
 /** 当前选中药房名称。 */
 const selectedPharmacyLabel = computed(() => {
@@ -200,6 +215,9 @@ function formatSelectedAmountSum(
     if (Number.isFinite(num)) {
       total += num;
     }
+  }
+  if (field === 'purchaseAmount') {
+    return formatPurchaseMoneyDisplay(total) || '0.00';
   }
   return total.toFixed(2);
 }
@@ -352,7 +370,7 @@ function formatHistoryScope(row: PharmacyDailySettlementHistoryItemDto): string 
   return '—';
 }
 
-/** 金额/数量两位小数展示（空或非法为 —）。 */
+/** 金额/数量两位小数展示（空或非法为 —；售价/数量）。 */
 function formatDisplayAmount(value?: string | number): string {
   if (value === null || value === undefined || value === '') {
     return '—';
@@ -362,6 +380,19 @@ function formatDisplayAmount(value?: string | number): string {
     return String(value);
   }
   return num.toFixed(2);
+}
+
+/** 进价侧金额：中药可至三位；大类行可传 categoryCode。 */
+function formatPurchaseAmount(value?: string | number, categoryCode?: unknown): string {
+  if (value === null || value === undefined || value === '') {
+    return '—';
+  }
+  return formatPurchaseMoneyDisplay(value, categoryCode) || '—';
+}
+
+/** 进价单价展示（与进价金额同一口径）。 */
+function formatPurchaseUnitPrice(value?: string | number): string {
+  return formatPurchaseAmount(value);
 }
 
 /** 历史金额两位小数展示。 */
@@ -468,6 +499,11 @@ async function handlePrintSettlement() {
       jobName: '住院药房日结单',
       bizRef: {
         locationId: preserveApiIdForRequest(queryForm.locationId) ?? '',
+        dateFrom: queryForm.dateRange[0] ?? '',
+        dateTo: queryForm.dateRange[1] ?? '',
+        practitionerIds: queryForm.practitionerIds
+          .map((id) => preserveApiIdForRequest(id))
+          .filter((id): id is string => Boolean(id)),
       },
       source: {
         hospitalName: resolvePrintHospitalName(),
@@ -484,6 +520,29 @@ async function handlePrintSettlement() {
   } finally {
     printSubmitting.value = false;
   }
+}
+
+/** 导出当前预览的药房日结 Excel（与交账审批药房日结同口径）。 */
+function handleExportSettlement() {
+  if (!hasQueried.value) {
+    ElMessage.warning('请先查询日结汇总后再导出');
+    return;
+  }
+  if (!categoryRows.value.length && !productRows.value.length) {
+    ElMessage.warning('当前时间范围内暂无汇总，无法导出');
+    return;
+  }
+  downloadPharmacyDailySettlementExcel({
+    documentTitle: '住院药房日结',
+    pharmacyName: selectedPharmacyLabel.value,
+    settlementPeriodText: settlementPeriodText.value,
+    dispenserNamesText: selectedDispenserNamesText.value,
+    pendingCount: previewResult.value?.pendingCount ?? 0,
+    totalIncome: previewResult.value?.totalIncome,
+    categoryRows: categoryRows.value,
+    productRows: productRows.value,
+  });
+  ElMessage.success('导出成功');
 }
 
 watch(submitDialogVisible, (visible) => {
@@ -574,6 +633,7 @@ onMounted(async () => {
             <ElButton plain :loading="printSubmitting" @click="handlePrintSettlement"
               >打印</ElButton
             >
+            <ElButton plain @click="handleExportSettlement">导出 Excel</ElButton>
             <ElButton plain :loading="historyLoading" @click="openHistoryDialog">交账历史</ElButton>
             <ElButton
               type="primary"
@@ -613,7 +673,7 @@ onMounted(async () => {
               {{ hasQueried ? (previewResult?.pendingCount ?? 0) : '—' }}
             </div>
             <div>
-              <span class="text-[var(--el-text-color-regular)]">日结利润：</span>
+              <span class="text-[var(--el-text-color-regular)]">售价合计：</span>
               {{ previewResult?.totalIncome ?? '—' }}
             </div>
           </div>
@@ -635,7 +695,7 @@ onMounted(async () => {
                     <div class="pharmacy-category-summary__metric">
                       <span class="pharmacy-category-summary__label">进价总额</span>
                       <span class="pharmacy-category-summary__value">
-                        {{ formatDisplayAmount(row.purchaseAmount) }}
+                        {{ formatPurchaseAmount(row.purchaseAmount, row.categoryCode) }}
                       </span>
                     </div>
                     <div class="pharmacy-category-summary__metric">
@@ -714,7 +774,7 @@ onMounted(async () => {
                     :class-name="REPORT_TABLE_AMOUNT_CELL"
                   >
                     <template #default="{ row }">
-                      {{ formatDisplayAmount(row.purchaseUnitPrice) }}
+                      {{ formatPurchaseUnitPrice(row.purchaseUnitPrice) }}
                     </template>
                   </ElTableColumn>
                   <ElTableColumn
@@ -738,7 +798,7 @@ onMounted(async () => {
                     :class-name="REPORT_TABLE_AMOUNT_CELL"
                   >
                     <template #default="{ row }">
-                      {{ formatDisplayAmount(row.purchaseAmount) }}
+                      {{ formatPurchaseAmount(row.purchaseAmount) }}
                     </template>
                   </ElTableColumn>
                   <ElTableColumn
@@ -794,8 +854,16 @@ onMounted(async () => {
         />
         <ElTableColumn prop="dispenseQuantity" label="数量" width="80" align="right" />
         <ElTableColumn prop="unitText" label="单位" width="60" align="center" />
-        <ElTableColumn prop="purchaseAmount" label="进价" width="90" align="right" />
-        <ElTableColumn prop="saleAmount" label="售价/小计" width="100" align="right" />
+        <ElTableColumn prop="purchaseAmount" label="进价" width="90" align="right">
+          <template #default="{ row }">
+            {{ formatPurchaseAmount(row.purchaseAmount) }}
+          </template>
+        </ElTableColumn>
+        <ElTableColumn prop="saleAmount" label="售价/小计" width="100" align="right">
+          <template #default="{ row }">
+            {{ formatDisplayAmount(row.saleAmount) }}
+          </template>
+        </ElTableColumn>
       </ElTable>
       <div class="mt-2 flex flex-wrap gap-x-6 text-sm text-[var(--el-text-color-regular)]">
         <span>已选 {{ selectedDispenseIds.length }} 笔</span>
@@ -869,7 +937,7 @@ onMounted(async () => {
           align="right"
           header-align="right"
         />
-        <ElTableColumn label="日结利润" width="110" align="right" header-align="right">
+        <ElTableColumn label="售价合计" width="110" align="right" header-align="right">
           <template #default="{ row }">
             {{ formatHistoryAmount(row.totalIncome) }}
           </template>

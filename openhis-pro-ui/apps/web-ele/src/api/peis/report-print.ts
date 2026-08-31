@@ -36,6 +36,7 @@ export interface PrintableReportRowDto {
   patientId?: IdLike;
   patientName?: string;
   pdfStorageKey?: string;
+  printCount?: number;
 }
 
 export interface SearchPrintableRequest {
@@ -72,6 +73,7 @@ export interface ConfirmPrintResponse {
   accepted?: boolean;
   diagnosticReportId?: IdLike;
   message?: string;
+  printCount?: number;
 }
 
 export interface GradReportRowDto {

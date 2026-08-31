@@ -67,7 +67,7 @@ public class PaymentChannelGate {
      * 校验已落库 pay_enum（含医保统筹/个账等非用户可选渠道；仍拒绝 {@link PaymentChannel#SCAN_PAY}）。
      *
      * <p>用于退费原路返回：原支付明细可能含服务端写入的 {@link PaymentChannel#INSURANCE_FUND}/
-     * {@link PaymentChannel#INSURANCE_ACCT}，不能按用户可选门控拒绝。</p>
+     * {@link PaymentChannel#INSURANCE_ACCT}/{@link PaymentChannel#DEPOSIT_OFFSET}，不能按用户可选门控拒绝。</p>
      *
      * @param payChannelCode 支付渠道 code
      * @param errorCode      失败业务码

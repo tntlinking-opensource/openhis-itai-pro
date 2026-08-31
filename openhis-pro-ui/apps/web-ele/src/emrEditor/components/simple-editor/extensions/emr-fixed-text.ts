@@ -3,9 +3,8 @@ import type { Node as PMNode, Schema } from '@tiptap/pm/model';
 import type { EmrFixedTextSegmentJSON } from '../emr-fixed-text-types';
 
 import { mergeAttributes, Node } from '@tiptap/core';
-import { isHistoryTransaction } from '@tiptap/pm/history';
 import { Fragment, Mark } from '@tiptap/pm/model';
-import { NodeSelection, Plugin, PluginKey } from '@tiptap/pm/state';
+import { NodeSelection } from '@tiptap/pm/state';
 import { VueNodeViewRenderer } from '@tiptap/vue-3';
 
 import EmrFixedTextView from '../node-views/EmrFixedTextView.vue';
@@ -23,20 +22,10 @@ declare module '@tiptap/core' {
   }
 }
 
-/** 仅此 meta 为 true 时允许减少文档中的 emrFixedText 节点（取消固定、父组件 setContent 等） */
+/** 取消固定 / 父组件 setContent 等可打此 meta（兼容旧调用） */
 export const EMR_FIXED_TEXT_ALLOW_MUTATE_META = 'emrAllowFixedMutate';
 
 const MAX_LEN = 2000;
-
-const protectPluginKey = new PluginKey('emrFixedTextProtect');
-
-function countEmrFixedText(doc: PMNode) {
-  let n = 0;
-  doc.descendants((node) => {
-    if (node.type.name === 'emrFixedText') n += 1;
-  });
-  return n;
-}
 
 export function plainFromSegments(segments: EmrFixedTextSegmentJSON[]): string {
   return segments.map((s) => s.text).join('');
@@ -200,22 +189,6 @@ export const EmrFixedText = Node.create({
 
   addNodeView() {
     return VueNodeViewRenderer(EmrFixedTextView);
-  },
-
-  addProseMirrorPlugins() {
-    return [
-      new Plugin({
-        key: protectPluginKey,
-        filterTransaction(tr, oldState) {
-          if (!tr.docChanged) return true;
-          if (tr.getMeta(EMR_FIXED_TEXT_ALLOW_MUTATE_META) === true) return true;
-          if (isHistoryTransaction(tr)) return true;
-          const oldN = countEmrFixedText(oldState.doc);
-          const newN = countEmrFixedText(tr.doc);
-          return newN >= oldN;
-        },
-      }),
-    ];
   },
 
   addCommands() {

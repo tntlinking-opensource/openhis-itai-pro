@@ -10,10 +10,12 @@ import com.openhis.chs.bridge.inpatient.invoker.Ip2303Invoker;
 import com.openhis.chs.bridge.inpatient.invoker.Ip2401Invoker;
 import com.openhis.chs.bridge.inpatient.support.IpPlatformReadmitForSettleSupport;
 import com.openhis.chs.bridge.outpatient.mapper.SetlinfoIntegrationMapper;
+import com.openhis.chs.bridge.settlement.support.ChsFeeDetailBatchSupport;
 import com.openhis.chs.bridge.settlement.support.ChsFeeUploadNettingSupport;
 import com.openhis.chs.domain.inpatient.command.IpSettleChargeLine;
 import com.openhis.chs.domain.inpatient.command.IpSettleContext;
 import com.openhis.chs.domain.inpatient.entity.YbInpatientPreSettle;
+import com.openhis.chs.domain.inpatient.result.IpFeeUploadBatchResult;
 import com.openhis.chs.domain.inpatient.result.IpPreSettleResult;
 import com.openhis.chs.domain.inpatient.service.YbInpatientFeeUploadDomainService;
 import com.openhis.chs.domain.inpatient.service.YbInpatientFeeUploadQueryService;
@@ -21,6 +23,7 @@ import com.openhis.chs.domain.inpatient.service.YbInpatientPreSettleDomainServic
 import com.openhis.chs.domain.settlement.model.ChargeBatch;
 import com.openhis.chs.domain.settlement.model.PlatformSetlinfoFields;
 import com.openhis.chs.domain.settlement.support.ChargeItemIdsSupport;
+import com.openhis.chs.domain.share.constants.ChsErrorCodes;
 import com.openhis.chs.gateway.client.InvokeContext;
 import com.openhis.chs.gateway.client.ResultBody;
 import com.openhis.chs.gateway.observability.ChsInvokeLogContext;
@@ -32,6 +35,8 @@ import com.openhis.chs.gateway.scheme.inpatient.model.Ip2303Input;
 import com.openhis.chs.gateway.scheme.inpatient.parser.Ip2303OutputParser;
 import com.openhis.chs.gateway.scheme.inpatient.parser.IpFeeUploadResultIndexer;
 import com.openhis.chs.gateway.support.ChargeBatchInvokeLogSupport;
+import com.openhis.whale.core.application.exception.BusinessException;
+import com.openhis.whale.core.application.util.StringUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -77,6 +82,36 @@ public class IpInpatientPreSettleOrchestrator {
     }
 
     /**
+     * 上传一批待传住院费用明细（2301，最多 {@link ChsFeeDetailBatchSupport#PLATFORM_MAX_FEEDTAIL_ROWS} 行）。
+     *
+     * <p>供前端进度条分批调用；{@code preferredMdtrtId} 非空时跳过 2401 解析。</p>
+     *
+     * @param context           已 enrich 的结算上下文
+     * @param preferredMdtrtId  上批返回的 mdtrtId（可空）
+     * @return 本批进度
+     */
+    public IpFeeUploadBatchResult uploadPendingFeeBatch(IpSettleContext context, String preferredMdtrtId) {
+        InpatientSettleCommandAssembler.validatePreSettleContext(context);
+        Long tenantId = InpatientSettleCommandAssembler.resolveTenantId(context.getTenantId());
+        ChsInvokeLogContextHolder.set(new ChsInvokeLogContext()
+            .setContractId(context.getContractId())
+            .setEncounterId(context.getEncounterId())
+            .setPaymentDraftId(context.getPaymentDraftId())
+            .setTenantId(tenantId));
+        try {
+            InpatientSettleCommandAssembler.requireContractConfig(context.getContractBusNo());
+            InvokeContext invokeContext = InpatientSettleCommandAssembler.buildInvokeContext(context);
+            String mdtrtId = StringUtils.isNotEmpty(preferredMdtrtId)
+                ? preferredMdtrtId.trim()
+                : ip2401Invoker.resolveOrRegister(
+                    context.getContractBusNo(), context, invokeContext, tenantId);
+            return this.uploadOnePendingFeeBatch(context, mdtrtId, invokeContext, tenantId);
+        } finally {
+            ChsInvokeLogContextHolder.clear();
+        }
+    }
+
+    /**
      * 执行 2401→2301→2303 住院医保预结算链并落预结算快照。
      *
      * @param context 住院结算上下文
@@ -101,7 +136,15 @@ public class IpInpatientPreSettleOrchestrator {
             if (!isInvalidMdtrtOnPlatform(firstEx)) {
                 throw firstEx;
             }
-            mdtrtId = platformReadmitForSettleSupport.readmitAndReupload(context, tenantId);
+            try {
+                mdtrtId = platformReadmitForSettleSupport.readmitAndReupload(context, tenantId);
+            } catch (RuntimeException readmitEx) {
+                throw new BusinessException(
+                    ChsErrorCodes.PLATFORM_FAILED,
+                    "【死就诊】本地平台就诊号已失效且自动换号失败；请打开「平台在院对齐」软删死映射后重试预结算。原因："
+                        + (readmitEx.getMessage() == null ? firstEx.getMessage() : readmitEx.getMessage()),
+                    readmitEx);
+            }
             Ip2303Input retry2303 = IpInpatientSettleInputAssembler.assemble2303(
                 context, mdtrtId, medfeeSumamt);
             body2303 = ip2303Invoker.invoke(context.getContractBusNo(), retry2303, invokeContext);
@@ -165,43 +208,88 @@ public class IpInpatientPreSettleOrchestrator {
             String mdtrtId,
             InvokeContext invokeContext,
             Long tenantId) {
+        // Pre：预结算路径内部分批直到传完（前端未预传时兜底）
+        while (true) {
+            IpFeeUploadBatchResult batch =
+                this.uploadOnePendingFeeBatch(context, mdtrtId, invokeContext, tenantId);
+            if (batch.isDone() || batch.getBatchUploaded() <= 0) {
+                break;
+            }
+        }
+    }
+
+    /**
+     * 上传一批待传明细并返回进度；无待传时 {@code done=true, batchUploaded=0}。
+     */
+    private IpFeeUploadBatchResult uploadOnePendingFeeBatch(
+            IpSettleContext context,
+            String mdtrtId,
+            InvokeContext invokeContext,
+            Long tenantId) {
         List<IpSettleChargeLine> pendingLines = filterPendingUploadLines(context, tenantId);
-        // Pre：未上平台的冲销对只传净量；被轧差行本地记已上传
         ChsFeeUploadNettingSupport.IpNetUploadPlan netPlan =
             ChsFeeUploadNettingSupport.planIpPendingUploadLines(pendingLines);
         List<IpSettleChargeLine> uploadLines = netPlan.uploadLines();
-        if (!uploadLines.isEmpty()) {
-            Ip2301Input input2301 = IpInpatientSettleInputAssembler.assemble2301(context, mdtrtId, uploadLines);
-            try {
-                ResultBody body2301 = ip2301Invoker.invoke(
-                    context.getContractBusNo(), input2301, invokeContext);
-                inpatientFeeUploadDomainService.persistFrom2301(
-                    context.getEncounterId(),
-                    mdtrtId,
-                    uploadLines,
-                    IpFeeUploadResultIndexer.indexByFeedetlSn(body2301),
-                    body2301.getOutput(),
-                    tenantId);
-            } catch (RuntimeException ex) {
-                // Pre：平台已有同 feedetl_sn（外层回滚导致本地无 UPLOADED）→ 对齐本地后继续 2303
-                if (!isPlatformDuplicateFeeUpload(ex)) {
-                    throw ex;
-                }
-                inpatientFeeUploadDomainService.persistFrom2301(
-                    context.getEncounterId(),
-                    mdtrtId,
-                    uploadLines,
-                    Map.of(),
-                    null,
-                    tenantId);
-            }
-        }
-        // Cmd：轧差吃掉的冲销/净零原行本地记 UPLOADED，避免下次再带 init 出站
         if (!netPlan.locallyClosedLines().isEmpty()) {
             inpatientFeeUploadDomainService.persistFrom2301(
                 context.getEncounterId(),
                 mdtrtId,
                 netPlan.locallyClosedLines(),
+                Map.of(),
+                null,
+                tenantId);
+        }
+        if (uploadLines.isEmpty()) {
+            return new IpFeeUploadBatchResult()
+                .setBatchUploaded(0)
+                .setRemainingAfter(0)
+                .setDone(true)
+                .setMdtrtId(mdtrtId);
+        }
+        List<List<IpSettleChargeLine>> partitions = ChsFeeDetailBatchSupport.partition(
+            uploadLines, ChsFeeDetailBatchSupport.PLATFORM_MAX_FEEDTAIL_ROWS);
+        List<IpSettleChargeLine> batch = partitions.get(0);
+        this.invoke2301AndPersist(context, mdtrtId, invokeContext, tenantId, batch);
+        int remaining = Math.max(0, uploadLines.size() - batch.size());
+        return new IpFeeUploadBatchResult()
+            .setBatchUploaded(batch.size())
+            .setRemainingAfter(remaining)
+            .setDone(remaining == 0)
+            .setMdtrtId(mdtrtId);
+    }
+
+    /**
+     * 单批 2301 出站并落本地上传态；平台重复主键时按幂等对齐本地。
+     */
+    private void invoke2301AndPersist(
+            IpSettleContext context,
+            String mdtrtId,
+            InvokeContext invokeContext,
+            Long tenantId,
+            List<IpSettleChargeLine> batchLines) {
+        if (batchLines == null || batchLines.isEmpty()) {
+            return;
+        }
+        Ip2301Input input2301 = IpInpatientSettleInputAssembler.assemble2301(context, mdtrtId, batchLines);
+        try {
+            ResultBody body2301 = ip2301Invoker.invoke(
+                context.getContractBusNo(), input2301, invokeContext);
+            inpatientFeeUploadDomainService.persistFrom2301(
+                context.getEncounterId(),
+                mdtrtId,
+                batchLines,
+                IpFeeUploadResultIndexer.indexByFeedetlSn(body2301),
+                body2301.getOutput(),
+                tenantId);
+        } catch (RuntimeException ex) {
+            // Pre：平台已有同 feedetl_sn（外层回滚导致本地无 UPLOADED）→ 对齐本地后继续 2303
+            if (!isPlatformDuplicateFeeUpload(ex)) {
+                throw ex;
+            }
+            inpatientFeeUploadDomainService.persistFrom2301(
+                context.getEncounterId(),
+                mdtrtId,
+                batchLines,
                 Map.of(),
                 null,
                 tenantId);

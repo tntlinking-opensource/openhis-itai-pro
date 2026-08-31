@@ -4,7 +4,9 @@
  */
 package com.openhis.health.application.basic.medicationcatalog.support;
 
+import com.openhis.health.application.basic.catalog.support.CatalogExportNumericCellWriter;
 import com.openhis.health.domain.share.constants.MedicationCatalogImportConstants;
+import com.openhis.whale.core.application.dto.ExcelExportColumnDto;
 import com.openhis.whale.core.application.util.StringUtils;
 import lombok.RequiredArgsConstructor;
 import org.apache.poi.ss.usermodel.Cell;
@@ -44,7 +46,14 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class MedicationCatalogImportTemplateBuilder {
 
-    private static final int OPTION_DATA_START_ROW = 1;
+    /**
+     * 导出 NUMERIC 列下标：由 {@link MedicationCatalogImportConstants#EXPORT_NUMERIC_HEADER_NAMES} 解析，
+     * 禁止魔法数字下标；编号列不在集合内。
+     */
+    private static final Set<Integer> EXPORT_NUMERIC_COLUMNS =
+        CatalogExportNumericCellWriter.resolveExportNumericColumnIndexes(
+            MedicationCatalogImportConstants.COLUMN_HEADERS,
+            MedicationCatalogImportConstants.EXPORT_NUMERIC_HEADER_NAMES);
 
     private final MedicationCatalogImportTerminologyIndex terminologyIndex;
 
@@ -87,6 +96,17 @@ public class MedicationCatalogImportTemplateBuilder {
      * @return xlsx 字节
      */
     public byte[] buildExport(List<String[]> dataRows) {
+        return this.buildExport(dataRows, null);
+    }
+
+    /**
+     * 生成导出 xlsx；可按前端列清单裁剪列（空则全量；NUMERIC 下标随投影重映射）。
+     *
+     * @param dataRows       每行单元格文案；null 视为空列表
+     * @param exportColumns  前端自选列；null/空则全部列
+     * @return xlsx 字节
+     */
+    public byte[] buildExport(List<String[]> dataRows, List<ExcelExportColumnDto> exportColumns) {
         List<String[]> rows = dataRows;
         if (rows == null) {
             rows = List.of();
@@ -95,8 +115,14 @@ public class MedicationCatalogImportTemplateBuilder {
              ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             Sheet sheet = workbook.createSheet(MedicationCatalogImportConstants.EXPORT_SHEET_NAME);
             CellStyle headerStyle = this.createHeaderStyle(workbook, IndexedColors.GREY_25_PERCENT, false);
-            String[] exportHeaders = this.buildExportHeaders();
-            // 第 1 行：编号 + 导入同序字段表头
+            String[] fullHeaders = this.buildExportHeaders();
+            List<Integer> selectedIndexes =
+                CatalogExportNumericCellWriter.resolveSelectedExportColumnIndexes(fullHeaders, exportColumns);
+            String[] exportHeaders =
+                CatalogExportNumericCellWriter.projectExportHeaders(fullHeaders, selectedIndexes, exportColumns);
+            Set<Integer> numericColumns =
+                CatalogExportNumericCellWriter.remapNumericColumnIndexes(EXPORT_NUMERIC_COLUMNS, selectedIndexes);
+            // 第 1 行：编号 + 导入同序字段表头（或前端裁剪后列）
             Row headerRow = sheet.createRow(0);
             for (int col = 0; col < exportHeaders.length; col++) {
                 Cell cell = headerRow.createCell(col);
@@ -106,7 +132,9 @@ public class MedicationCatalogImportTemplateBuilder {
             // 第 2 行起紧挨写入数据，不留空行、不写示例
             int excelRow = 1;
             for (String[] values : rows) {
-                this.fillDataRow(sheet, excelRow, values, exportHeaders.length);
+                String[] projected =
+                    CatalogExportNumericCellWriter.projectExportRowValues(values, selectedIndexes);
+                this.fillDataRow(sheet, excelRow, projected, exportHeaders.length, numericColumns);
                 excelRow++;
             }
             this.applyColumnWidths(sheet);
@@ -225,7 +253,7 @@ public class MedicationCatalogImportTemplateBuilder {
         this.mergeAndLabel(dataSheet, groupRow, 0, 11, "基础信息");
         this.mergeAndLabel(dataSheet, groupRow, 12, 29, "临床与规格");
         this.mergeAndLabel(dataSheet, groupRow, 30, 45, "库存与单位（价格：元/包装单位）");
-        this.mergeAndLabel(dataSheet, groupRow, 46, 53, "业务信息");
+        this.mergeAndLabel(dataSheet, groupRow, 46, 55, "业务信息");
         Row headerRow = dataSheet.createRow(MedicationCatalogImportConstants.HEADER_ROW_INDEX);
         for (int col = 0; col < MedicationCatalogImportConstants.COLUMN_HEADERS.length; col++) {
             String header = MedicationCatalogImportConstants.COLUMN_HEADERS[col];
@@ -249,12 +277,18 @@ public class MedicationCatalogImportTemplateBuilder {
     /**
      * 写入导出行单元格。
      *
-     * @param sheet    目标 Sheet
-     * @param rowIndex 0-based 行号
-     * @param values   列值；可短于 colCount（缺列留空）
-     * @param colCount 写出列数（与表头一致）
+     * @param sheet         目标 Sheet
+     * @param rowIndex      0-based 行号
+     * @param values        列值；可短于 colCount（缺列留空）
+     * @param colCount      写出列数（与表头一致）
+     * @param numericColumns 须写数字的列下标（已按投影重映射）
      */
-    private void fillDataRow(Sheet sheet, int rowIndex, String[] values, int colCount) {
+    private void fillDataRow(
+        Sheet sheet,
+        int rowIndex,
+        String[] values,
+        int colCount,
+        Set<Integer> numericColumns) {
         Row row = sheet.createRow(rowIndex);
         if (values == null) {
             return;
@@ -262,9 +296,22 @@ public class MedicationCatalogImportTemplateBuilder {
         for (int col = 0; col < colCount; col++) {
             Cell cell = row.createCell(col);
             if (col < values.length && values[col] != null) {
-                cell.setCellValue(values[col]);
+                CatalogExportNumericCellWriter.write(
+                    cell, col, values[col], numericColumns);
             }
         }
+    }
+
+    /**
+     * 兼容旧调用：全量 NUMERIC 列写出导出行。
+     *
+     * @param sheet    目标 Sheet
+     * @param rowIndex 0-based 行号
+     * @param values   列值
+     * @param colCount 写出列数
+     */
+    private void fillDataRow(Sheet sheet, int rowIndex, String[] values, int colCount) {
+        this.fillDataRow(sheet, rowIndex, values, colCount, EXPORT_NUMERIC_COLUMNS);
     }
 
     private String[] exampleWestValues() {
@@ -341,7 +388,7 @@ public class MedicationCatalogImportTemplateBuilder {
             titleRow = sheet.createRow(0);
         }
         titleRow.createCell(colIndex).setCellValue(title);
-        int rowIndex = OPTION_DATA_START_ROW;
+        int rowIndex = MedicationCatalogImportConstants.OPTION_DATA_START_ROW_INDEX;
         if (labels != null) {
             for (String label : labels) {
                 if (StringUtils.isEmpty(label)) {
@@ -355,8 +402,8 @@ public class MedicationCatalogImportTemplateBuilder {
                 rowIndex++;
             }
         }
-        if (rowIndex == OPTION_DATA_START_ROW) {
-            return OPTION_DATA_START_ROW + 1;
+        if (rowIndex == MedicationCatalogImportConstants.OPTION_DATA_START_ROW_INDEX) {
+            return MedicationCatalogImportConstants.OPTION_DATA_START_ROW_INDEX + 1;
         }
         return rowIndex;
     }
@@ -403,9 +450,9 @@ public class MedicationCatalogImportTemplateBuilder {
     private int countLabels(String dictKey) {
         List<String> labels = terminologyIndex.labelsFor(dictKey);
         if (labels == null || labels.isEmpty()) {
-            return OPTION_DATA_START_ROW + 1;
+            return MedicationCatalogImportConstants.OPTION_DATA_START_ROW_INDEX + 1;
         }
-        return OPTION_DATA_START_ROW + labels.size();
+        return MedicationCatalogImportConstants.OPTION_DATA_START_ROW_INDEX + labels.size();
     }
 
     private void createNamedRange(XSSFWorkbook workbook, String name, String sheetName, int colIndex, int endRowExcel) {
@@ -448,6 +495,8 @@ public class MedicationCatalogImportTemplateBuilder {
         this.addListValidation(dataSheet, helper, firstRow, lastRow, 51, "OPT_YES_NO", "请选择限制使用");
         this.addListValidation(dataSheet, helper, firstRow, lastRow, 52, "OPT_YES_NO", "请选择抗生素");
         this.addListValidation(dataSheet, helper, firstRow, lastRow, 53, "OPT_YES_NO", "请选择处方药标志");
+        this.addListValidation(dataSheet, helper, firstRow, lastRow, 54, "OPT_YES_NO", "请选择国家重点监控药品");
+        this.addListValidation(dataSheet, helper, firstRow, lastRow, 55, "OPT_YES_NO", "请选择集采药品");
     }
 
     private void addListValidation(
@@ -568,3 +617,4 @@ public class MedicationCatalogImportTemplateBuilder {
         return builder.toString();
     }
 }
+

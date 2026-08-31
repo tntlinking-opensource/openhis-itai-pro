@@ -12,6 +12,7 @@ import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.clinical.conditiondefinition.queries.model.ConditionDefinitionBatchItemQueryModel;
+import com.openhis.health.domain.custom.supplier.service.SupplierQueryService;
 import com.openhis.health.domain.financial.contract.queries.model.ContractListItemQueryModel;
 import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
 import com.openhis.health.domain.medication.medicationdispense.entity.MedicationDispense;
@@ -31,8 +32,10 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 门诊处方查询平铺行装配（AS-OP-PHA-005 · IF-OPQ-02）。
@@ -53,6 +56,9 @@ public class OutpatientPharmacyPrescriptionQueryReadAssembler {
 
     /** 费用性质分类文案解析。 */
     private final OutpatientPharmacyPrescriptionQuerySupport prescriptionQuerySupport;
+
+    /** 生产厂家名称：按药品 {@code manufacturerId} 批量解析 cus_supplier.name。 */
+    private final SupplierQueryService supplierQueryService;
 
     /**
      * 装配平铺明细行。
@@ -101,6 +107,8 @@ public class OutpatientPharmacyPrescriptionQueryReadAssembler {
         // Pre：同处方号诊断并集文案，覆盖行方头 diagnosisName
         Map<String, String> unionDiagnosisByPrescriptionNo = this.buildUnionDiagnosisNameByPrescriptionNo(
             requestRows, conditionById, conditionDefinitionIdByEncounterDiagnosisId);
+        // Pre：页内生产厂家 id → 名称（目录已无 manufacturer_text）
+        Map<Long, String> manufacturerNameById = this.buildManufacturerNameById(medicationById);
         List<OutpatientPharmacyPrescriptionDrugLineDto> rows = new ArrayList<>(requestRows.size());
         // Loop：逐药品申请行装配方头+明细展示字段
         for (MedicationRequestListQueryModel requestRow : requestRows) {
@@ -119,6 +127,7 @@ public class OutpatientPharmacyPrescriptionQueryReadAssembler {
                 encounterContextById,
                 practitionerNameById,
                 organizationNameById,
+                manufacturerNameById,
                 rxTypeLabelByCode,
                 unitLabelByCode,
                 methodLabelByCode,
@@ -384,6 +393,7 @@ public class OutpatientPharmacyPrescriptionQueryReadAssembler {
      * @param encounterContextById     门诊就诊上下文
      * @param practitionerNameById     开单医生姓名
      * @param organizationNameById     开单科室名称
+     * @param manufacturerNameById     生产厂家 id → 名称（页内批量预热）
      * @param rxTypeLabelByCode        处方类别术语文案
      * @param unitLabelByCode          单位术语文案
      * @param methodLabelByCode        用药途径术语文案
@@ -405,6 +415,7 @@ public class OutpatientPharmacyPrescriptionQueryReadAssembler {
         Map<Long, OutpatientEncounterContextQueryModel> encounterContextById,
         Map<Long, String> practitionerNameById,
         Map<Long, String> organizationNameById,
+        Map<Long, String> manufacturerNameById,
         Map<String, String> rxTypeLabelByCode,
         Map<String, String> unitLabelByCode,
         Map<String, String> methodLabelByCode,
@@ -491,12 +502,13 @@ public class OutpatientPharmacyPrescriptionQueryReadAssembler {
         if (requestRow.getRateCode() != null && rateLabelByCode != null) {
             dto.setRateText(rateLabelByCode.get(requestRow.getRateCode()));
         }
-        // 门诊号、患者姓名、电话（就诊上下文可回落 patientId）
+        // 门诊号、患者姓名、身份证明文、电话（就诊上下文可回落 patientId；列表脱敏由前端负责）
         if (requestRow.getEncounterId() != null && encounterContextById != null) {
             OutpatientEncounterContextQueryModel context = encounterContextById.get(requestRow.getEncounterId());
             if (context != null) {
                 dto.setEncounterBusNo(context.getEncounterBusNo());
                 dto.setPatientName(context.getPatientName());
+                dto.setIdCard(context.getIdCard());
                 dto.setPatientPhone(context.getPhone());
                 if (dto.getPatientId() == null) {
                     dto.setPatientId(context.getPatientId());
@@ -546,15 +558,12 @@ public class OutpatientPharmacyPrescriptionQueryReadAssembler {
                 dto.setMedicationName(MedicationMerchandiseDisplaySupport.formatDisplayName(
                     definition.getName(), definition.getMerchandiseName()));
                 dto.setMedicationSpec(definition.getTotalVolume());
-                // 厂家与发药明细同源：目录 manufacturer_text（trim 空串当未填）
-                String manufacturerText = definition.getManufacturerText();
-                if (manufacturerText != null) {
-                    manufacturerText = manufacturerText.trim();
-                }
-                if (StringUtils.isEmpty(manufacturerText)) {
-                    dto.setManufacturerText(null);
-                } else {
-                    dto.setManufacturerText(manufacturerText);
+                // 厂家展示名：manufacturerId → cus_supplier.name（页内批量预热）
+                if (definition.getManufacturerId() != null && manufacturerNameById != null) {
+                    String manufacturerName = manufacturerNameById.get(definition.getManufacturerId());
+                    if (StringUtils.isNotEmpty(manufacturerName)) {
+                        dto.setManufacturerText(manufacturerName);
+                    }
                 }
                 dto.setInjectFlag(definition.getInjectFlag());
             }
@@ -598,6 +607,29 @@ public class OutpatientPharmacyPrescriptionQueryReadAssembler {
             }
         }
         return dto;
+    }
+
+    /**
+     * 从本页药品定义收集 {@code manufacturerId}，批量解析生产厂家名称。
+     *
+     * @param medicationById 药品定义索引；可空
+     * @return manufacturerId → supplier.name；无厂家时返回空 Map
+     */
+    private Map<Long, String> buildManufacturerNameById(Map<Long, MedicationDefinition> medicationById) {
+        if (medicationById == null || medicationById.isEmpty()) {
+            return Map.of();
+        }
+        Set<Long> manufacturerIds = new LinkedHashSet<>();
+        for (MedicationDefinition definition : medicationById.values()) {
+            if (definition == null || definition.getManufacturerId() == null) {
+                continue;
+            }
+            manufacturerIds.add(definition.getManufacturerId());
+        }
+        if (manufacturerIds.isEmpty()) {
+            return Map.of();
+        }
+        return supplierQueryService.mapNamesByIds(new ArrayList<>(manufacturerIds));
     }
 
     /**

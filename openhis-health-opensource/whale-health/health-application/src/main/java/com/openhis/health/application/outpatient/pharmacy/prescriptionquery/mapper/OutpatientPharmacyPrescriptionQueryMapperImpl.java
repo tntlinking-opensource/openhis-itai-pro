@@ -14,6 +14,7 @@ import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.domain.medication.medicationrequest.query.OutpatientSignedPrescriptionDrugLinePageQuery;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.OutpatientPharmacyPrescriptionQueryConstants;
+import com.openhis.health.domain.share.constants.PrescriptionSplitConstants;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
@@ -35,15 +36,18 @@ public class OutpatientPharmacyPrescriptionQueryMapperImpl implements Outpatient
     /**
      * 装配页初始化响应（接口方法全文说明复制于此，禁 {@code inheritDoc}）。
      *
-     * @param defaultFrom              默认开方日起
-     * @param defaultTo                默认开方日止
-     * @param chargeStatusOptions      收费状态下拉
-     * @param dispenseStatusOptions    发药状态下拉
-     * @param rxTypeOptions            处方类别下拉
-     * @param medTypeOptions           医保类别下拉
-     * @param contractCategoryOptions  费用性质分类下拉
-     * @param infusionFilterOptions    含输液三态
-     * @param organizationOptions      开单科室下拉
+     * @param defaultFrom                 默认开方日起
+     * @param defaultTo                   默认开方日止
+     * @param chargeStatusOptions         收费状态下拉
+     * @param dispenseStatusOptions       发药状态下拉
+     * @param rxTypeOptions               处方类别下拉
+     * @param medTypeOptions              医保类别下拉
+     * @param contractCategoryOptions     费用性质分类下拉
+     * @param infusionFilterOptions       含输液三态
+     * @param organizationOptions         开单科室下拉
+     * @param reviewStatusOptions         点评状态下拉
+     * @param reasonableOptions           是否合理下拉
+     * @param medicationCategoryOptions   药品类型下拉（药典）
      * @return 初始化响应
      */
     @Override
@@ -56,7 +60,10 @@ public class OutpatientPharmacyPrescriptionQueryMapperImpl implements Outpatient
         List<OptionDto> medTypeOptions,
         List<OptionDto> contractCategoryOptions,
         List<OptionDto> infusionFilterOptions,
-        List<OptionDto> organizationOptions) {
+        List<OptionDto> organizationOptions,
+        List<OptionDto> reviewStatusOptions,
+        List<OptionDto> reasonableOptions,
+        List<OptionDto> medicationCategoryOptions) {
         LoadOutpatientPharmacyPrescriptionQueryPageInitResponse response =
             new LoadOutpatientPharmacyPrescriptionQueryPageInitResponse();
         response.setDefaultOpenedDateFrom(defaultFrom);
@@ -68,6 +75,9 @@ public class OutpatientPharmacyPrescriptionQueryMapperImpl implements Outpatient
         response.setContractCategoryOptions(contractCategoryOptions);
         response.setInfusionFilterOptions(infusionFilterOptions);
         response.setOrganizationOptions(organizationOptions);
+        response.setReviewStatusOptions(reviewStatusOptions);
+        response.setReasonableOptions(reasonableOptions);
+        response.setMedicationCategoryOptions(medicationCategoryOptions);
         return response;
     }
 
@@ -97,7 +107,7 @@ public class OutpatientPharmacyPrescriptionQueryMapperImpl implements Outpatient
                 GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
             query.setEndDate(to.atTime(LocalTime.MAX));
         }
-        query.setRxTypeCode(trimToNull(request.getRxTypeCode()));
+        query.setRxTypeCode(PrescriptionSplitConstants.normalizeRxTypeCode(trimToNull(request.getRxTypeCode())));
         // 详情整方：处方号精确匹配（空则不限）
         query.setPrescriptionNo(trimToNull(request.getPrescriptionNo()));
         // 开单科室：本聚合 org_id 等值；空则不限

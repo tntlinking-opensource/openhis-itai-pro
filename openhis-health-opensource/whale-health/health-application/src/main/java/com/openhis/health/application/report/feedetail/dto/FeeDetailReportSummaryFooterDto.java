@@ -57,7 +57,16 @@ public class FeeDetailReportSummaryFooterDto {
     @Schema(description = "行金额合计（兼容）")
     private BigDecimal lineAmountTotal;
 
-    /** 命中行数合计。 */
-    @Schema(description = "行数合计")
+    /** 数量合计（带符号代数和）。 */
+    @Schema(description = "数量合计")
+    private BigDecimal quantityTotal;
+
+    /**
+     * 命中行数合计（内部统计，前端汇总 Tab 不展示）。
+     *
+     * @deprecated 汇总页脚改数量/进售合计
+     */
+    @Deprecated
+    @Schema(description = "行数合计（内部）")
     private Long lineCountTotal;
 }

@@ -182,6 +182,8 @@ export interface DoctorStationAdviceRowDto {
   /** 用药天数（展示为 (N天)） */
   dispensePerDuration?: number | string | null;
   boundConditionName?: string;
+  /** 行展示单价（元，与后端 lineDisplayUnitPrice 一致） */
+  lineDisplayUnitPrice?: number | string;
   /** 行展示总价（元，与后端展示口径一致） */
   lineDisplayTotalPrice?: number | string;
   skinTestFlagText?: string;
@@ -421,6 +423,8 @@ export interface DoctorStationAdviceDraftBindItemDto {
   triggerRequestId?: string;
   basedOnTable?: string;
   basedOnRequestId?: string;
+  /** 合管检验设备主键（同批去重） */
+  specimenTubeMergeDeviceId?: string;
 }
 
 export interface ResolveDoctorStationAdviceDraftBindsResponse {
@@ -541,6 +545,11 @@ export interface SaveDoctorStationAdviceDraftBatchRequest {
   patientId: string;
   pricingSourceCode?: string;
   lines: DoctorStationAdviceDraftLineRequest[];
+  /**
+   * 医生已确认皮试药可跨批号暂存（应对 EX-ORD-309 / BR-ORD-034 · IF-DOR-14）。
+   * 首次保存若返回 EX-ORD-309，确认后带 true 重试。
+   */
+  confirmCrossLotSkinTest?: boolean;
 }
 
 export interface SaveDoctorStationAdviceDraftBatchResponse {
@@ -560,6 +569,16 @@ export interface SignDoctorStationAdviceBatchRequest {
   patientId: string;
   signTargets: DoctorStationAdviceResourceKeyDto[];
   signBatchCode?: string;
+  /**
+   * 医生已确认皮试药可跨批号开立（应对 EX-ORD-309 / BR-ORD-034）。
+   * 皮试跨批确认已在暂存完成；签发相位通常忽略本字段。
+   */
+  confirmCrossLotSkinTest?: boolean;
+  /**
+   * 医生已确认药耗 FIFO 跨批次取用及分段金额（应对 EX-ORD-310 / BR-ORD-035）。
+   * 首次签发若返回 EX-ORD-310，确认后带 true 重试，本批不再提示。
+   */
+  confirmCrossLotPricing?: boolean;
 }
 
 export interface SignDoctorStationAdviceBatchResponse {

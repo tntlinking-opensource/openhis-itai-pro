@@ -34,4 +34,7 @@ public class ObservationDefinitionModel {
 
     /** 状态。 */
     private String statusEnum;
+
+    /** 执行科室机构主键（{@code adm_organization.id}）。 */
+    private Long orgId;
 }

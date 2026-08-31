@@ -41,6 +41,12 @@ public class CreatePeEncounterExtCommand {
     /** 体检流水号。 */
     private String busNo;
 
+    /** 本次体检推荐人。 */
+    private String referrerName;
+
+    /** 本次体检是否提供早餐。 */
+    private Boolean breakfastFlag;
+
     /** 租户标识。 */
     private Long tenantId;
 

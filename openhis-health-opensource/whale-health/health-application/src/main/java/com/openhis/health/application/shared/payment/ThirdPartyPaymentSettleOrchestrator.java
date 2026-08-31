@@ -125,6 +125,33 @@ public class ThirdPartyPaymentSettleOrchestrator {
             payEnum,
             ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
             "支付渠道不合法");
+        this.applyPaidAmountKeepingInsuranceAcct(scanLine, clientScanResult);
+    }
+
+    /**
+     * POS 实付低于院内下单时，扫码行改记实付。
+     *
+     * <p>差额已由 2207 写入 {@link PaymentChannel#INSURANCE_ACCT}（医保账户余额扣除），
+     * 禁止再记优惠或第二笔个账。</p>
+     *
+     * @param scanLine         已替换为微信/支付宝/银行卡的原扫码行
+     * @param clientScanResult Win 被扫回传
+     */
+    private void applyPaidAmountKeepingInsuranceAcct(
+        PaymentDetailItemCommand scanLine,
+        ClientScanResultDto clientScanResult) {
+        Long paidFen = clientScanResult.getTxnAmtFen();
+        if (paidFen == null || scanLine.getAmount() == null) {
+            return;
+        }
+        BigDecimal paidYuan = BigDecimal.valueOf(paidFen)
+            .divide(BigDecimal.valueOf(100L), 2, RoundingMode.HALF_UP);
+        BigDecimal orderYuan = scanLine.getAmount().setScale(2, RoundingMode.HALF_UP);
+        if (paidYuan.compareTo(orderYuan) >= 0) {
+            return;
+        }
+        scanLine.setAmount(paidYuan);
+        scanLine.setChargeAmount(paidYuan);
     }
 
     /**
@@ -164,8 +191,8 @@ public class ThirdPartyPaymentSettleOrchestrator {
     /**
      * 校验银联回传交易金额（分）相对 HIS 扫码行金额（元）合法；回传缺失时跳过。
      *
-     * <p>银行/渠道营销优惠时，持卡人实付（{@code txnAmtFen}）可小于院内下单金额；
-     * 优惠与院内应收、患者预交金入账无关，不得因此拒结算。禁止实付大于下单金额。</p>
+     * <p>POS 实付可小于院内下单（常见为医保账户余额已由 2207 扣除）；实付写入 BPC {@code paid_amt_fen}，
+     * settle 仅拒绝大于下单。院内扫码行改记实付，差额不再记优惠。</p>
      *
      * @param clientScanResult Win 被扫回传
      * @param amountYuan       待结算扫码行金额（元）
@@ -176,7 +203,7 @@ public class ThirdPartyPaymentSettleOrchestrator {
         if (txnAmtFen == null) {
             return;
         }
-        // Gate：实付分须为正；银联优惠允许实付 < 下单，禁止实付 > 下单。
+        // Gate：实付分须为正；医保账户已扣时允许实付 < 下单，禁止实付 > 下单。
         if (txnAmtFen <= 0L) {
             throw new BusinessException(
                 ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,

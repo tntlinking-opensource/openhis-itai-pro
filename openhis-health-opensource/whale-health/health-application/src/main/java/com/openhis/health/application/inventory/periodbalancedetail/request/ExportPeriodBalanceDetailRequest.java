@@ -7,10 +7,13 @@ package com.openhis.health.application.inventory.periodbalancedetail.request;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import com.openhis.health.domain.share.query.AbstractPageQuery;
+import com.openhis.whale.core.application.dto.ExcelExportColumnDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+
+import java.util.List;
 
 /**
  * 库房期初期末明细导出入参（IF-INV-SET-03）。
@@ -45,4 +48,10 @@ public class ExportPeriodBalanceDetailRequest extends AbstractPageQuery {
     /** 账平筛选：true 仅账平，false 仅不平，null 不过滤。 */
     @Schema(description = "账平筛选：true 仅账平，false 仅不平，null 不过滤")
     private Boolean isBalance;
+
+    /**
+     * 前端下发的导出列；空则导出全部动态列。
+     */
+    @Schema(description = "导出列清单（页面可见列）")
+    private List<ExcelExportColumnDto> exportColumns;
 }

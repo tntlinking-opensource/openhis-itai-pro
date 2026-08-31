@@ -35,9 +35,11 @@ import com.openhis.health.domain.share.enums.EncounterParticipantRole;
 import com.openhis.health.domain.share.enums.EncounterStatus;
 import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.RequestStatus;
+import com.openhis.health.domain.share.enums.DispenseStatus;
 import com.openhis.health.domain.share.query.AbstractPageQuery;
 import com.openhis.health.domain.share.utils.KeywordExactFirstOrderSupport;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
+import com.openhis.health.domain.workflow.devicedispense.entity.DeviceDispense;
 import com.openhis.health.domain.workflow.devicerequest.entity.DeviceRequest;
 import com.openhis.health.domain.workflow.servicerequest.entity.ServiceRequest;
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -264,9 +266,9 @@ public class EncounterContextCriteriaSupport {
     }
 
     /**
-     * 门诊护士站执行队列筛选规约（待执行医嘱/申请存在性；可选开立科室）。
+     * 门诊护士站执行队列筛选规约（BR-NUR-001 准入；可选开立科室、日期窗、仅待发耗材）。
      *
-     * @param query 分页与关键字/日期窗/开立科室；{@code null} 时使用空条件
+     * @param query 分页与关键字/日期窗/开立科室/{@code pendingDeviceOnly}；{@code null} 时使用空条件
      * @return JPA 规约
      */
     public Specification<Encounter> nurseStationOutpatientSpecification(AbstractPageQuery query) {
@@ -275,6 +277,7 @@ public class EncounterContextCriteriaSupport {
             predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
             predicates.add(this.outpatientClassEnumPredicate(root, cb));
             AbstractPageQuery effective;
+            // 空入参按无筛选壳，避免 NPE
             if (query != null) {
                 effective = query;
             } else {
@@ -286,6 +289,7 @@ public class EncounterContextCriteriaSupport {
                 predicates.add(cb.equal(
                     root.get(FieldNameConstants.ORGANIZATION_ID), nurseQuery.getOrgId()));
             }
+            // 关键字：患者姓名/拼音/五笔 EXISTS，并精确命中置顶
             if (StringUtils.isNotEmpty(effective.getKeyword())) {
                 String trimmed = effective.getKeyword().trim();
                 String pattern = SearchCodeUtil.toCaseInsensitiveLikePattern(trimmed);
@@ -297,15 +301,22 @@ public class EncounterContextCriteriaSupport {
                         cb.desc(root.get(FieldNameConstants.START_TIME)),
                         cb.desc(root.get(FieldNameConstants.ID))));
             }
+            // 就诊开始时间下界（工作台日期区间起日 00:00:00）
             if (effective.getStartDate() != null) {
                 predicates.add(cb.greaterThanOrEqualTo(
                     root.get(FieldNameConstants.START_TIME), effective.getStartDate()));
             }
+            // 就诊开始时间上界（工作台日期区间止日 23:59:59）
             if (effective.getEndDate() != null) {
                 predicates.add(cb.lessThanOrEqualTo(
                     root.get(FieldNameConstants.START_TIME), effective.getEndDate()));
             }
             predicates.add(this.buildNurseStationRequestExistsAny(root, cb, criteriaQuery));
+            // 仅待发耗材：在 BR-NUR-001 准入之上再收窄到仍有待发放耗材的就诊（分页前）
+            if (effective instanceof NurseStationOutpatientQueueQuery nursePendingQuery
+                && Boolean.TRUE.equals(nursePendingQuery.getPendingDeviceOnly())) {
+                predicates.add(this.buildNurseStationPendingDeviceExists(root, cb, criteriaQuery));
+            }
             return cb.and(predicates.toArray(new Predicate[0]));
         };
     }
@@ -690,6 +701,57 @@ public class EncounterContextCriteriaSupport {
             this.existsNurseStationChargeRefundForEncounter(root, cb, owningQuery));
     }
 
+    /**
+     * 门诊护士站：就诊下存在「已收费且仍待发放」的耗材。
+     *
+     * <p>与处置单侧栏一致：耗材请求 {@code COMPLETED}、非退单；发放单缺失或状态为草稿/待配药/待发药。</p>
+     *
+     * @param root        就诊根
+     * @param cb          Criteria 构造器
+     * @param owningQuery 外层查询
+     * @return EXISTS 谓词
+     */
+    private Predicate buildNurseStationPendingDeviceExists(
+        Root<Encounter> root,
+        jakarta.persistence.criteria.CriteriaBuilder cb,
+        jakarta.persistence.criteria.CriteriaQuery<?> owningQuery) {
+        Subquery<Long> pendingRequestSq = owningQuery.subquery(Long.class);
+        Root<DeviceRequest> deviceRequestRoot = pendingRequestSq.from(DeviceRequest.class);
+
+        // 仍为草稿/待配药/待发药的发放行（空状态不在 IN 列表，由「无发放单」分支覆盖）
+        Subquery<Long> pendingDispenseSq = owningQuery.subquery(Long.class);
+        Root<DeviceDispense> pendingDispenseRoot = pendingDispenseSq.from(DeviceDispense.class);
+        pendingDispenseSq.select(pendingDispenseRoot.get(FieldNameConstants.ID));
+        pendingDispenseSq.where(cb.and(
+            cb.equal(
+                pendingDispenseRoot.get(FieldNameConstants.DEVICE_REQ_ID),
+                deviceRequestRoot.get(FieldNameConstants.ID)),
+            cb.isFalse(pendingDispenseRoot.get(FieldNameConstants.IS_DELETED)),
+            pendingDispenseRoot.get(FieldNameConstants.STATUS_ENUM).in(
+                DispenseStatus.DRAFT.getCode(),
+                DispenseStatus.PREPARATION.getCode(),
+                DispenseStatus.IN_PROGRESS.getCode())));
+
+        // 该请求下是否已有任意未删发放单（用于「已收费但尚未生成发放」）
+        Subquery<Long> anyDispenseSq = owningQuery.subquery(Long.class);
+        Root<DeviceDispense> anyDispenseRoot = anyDispenseSq.from(DeviceDispense.class);
+        anyDispenseSq.select(anyDispenseRoot.get(FieldNameConstants.ID));
+        anyDispenseSq.where(cb.and(
+            cb.equal(
+                anyDispenseRoot.get(FieldNameConstants.DEVICE_REQ_ID),
+                deviceRequestRoot.get(FieldNameConstants.ID)),
+            cb.isFalse(anyDispenseRoot.get(FieldNameConstants.IS_DELETED))));
+
+        pendingRequestSq.select(deviceRequestRoot.get(FieldNameConstants.ID));
+        pendingRequestSq.where(cb.and(
+            cb.equal(deviceRequestRoot.get(FieldNameConstants.ENCOUNTER_ID), root.get(FieldNameConstants.ID)),
+            cb.equal(deviceRequestRoot.get(FieldNameConstants.STATUS_ENUM), RequestStatus.COMPLETED.getCode()),
+            cb.isNull(deviceRequestRoot.get(FieldNameConstants.REFUND_DEVICE_ID)),
+            cb.isFalse(deviceRequestRoot.get(FieldNameConstants.IS_DELETED)),
+            cb.or(cb.exists(pendingDispenseSq), cb.not(cb.exists(anyDispenseSq)))));
+        return cb.exists(pendingRequestSq);
+    }
+
     /** 就诊下存在退费中/已退费收费行（护士站执行队列口径之一）。 */
     private Predicate existsNurseStationChargeRefundForEncounter(
         Root<Encounter> root,
@@ -982,7 +1044,8 @@ public class EncounterContextCriteriaSupport {
                     this.applyWardScope(predicates, root, cb, criteriaQuery, query.getWardId(), effectiveLocationScope);
                 }
                 if (Boolean.TRUE.equals(query.getPrepayEligibleOnly())) {
-                    this.applyPrepayEligibleStatus(predicates, root, cb);
+                    // 预交金队列：资格态并集；若 App 传入 statusEnumIn 则与资格态求交（在院/不在院筛选）
+                    this.applyPrepayEligibleStatus(predicates, root, cb, query);
                 } else {
                     // 登记/入院列表：有筛选则映射 status；未传则查全部 IMP
                     this.applyRegistrationListStatus(predicates, root, cb, query);
@@ -1246,17 +1309,48 @@ public class EncounterContextCriteriaSupport {
         return cb.exists(sq);
     }
 
-    /** 预交金 eligible 状态并集（登记后至 COMPLETED 前各态）。 */
+    /**
+     * 预交金队列可见状态并集（在院四态 + COMPLETED 待清床 + DISCHARGED 已离院）。
+     *
+     * <p>若 {@code statusEnumIn} 非空，与可见态求交后下推；求交为空则无结果。
+     * 收退写门禁仍仅四态，与本读侧可见范围解耦。</p>
+     */
     private void applyPrepayEligibleStatus(
         List<Predicate> predicates,
         Root<Encounter> root,
-        jakarta.persistence.criteria.CriteriaBuilder cb) {
-        predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(
-            EncounterStatus.REGISTERED.getCode(),
-            EncounterStatus.IN_PROGRESS.getCode(),
-            EncounterStatus.ON_HOLD.getCode(),
-            EncounterStatus.PENDING.getCode(),
-            EncounterStatus.COMPLETED.getCode()));
+        jakarta.persistence.criteria.CriteriaBuilder cb,
+        InpatientEncounterPageQuery query) {
+        List<String> eligible = new ArrayList<>();
+        eligible.add(EncounterStatus.REGISTERED.getCode());
+        eligible.add(EncounterStatus.IN_PROGRESS.getCode());
+        eligible.add(EncounterStatus.ON_HOLD.getCode());
+        eligible.add(EncounterStatus.PENDING.getCode());
+        eligible.add(EncounterStatus.COMPLETED.getCode());
+        // 已清床离院：预交金页「不在院/全部」只读查阅流水与余额
+        eligible.add(EncounterStatus.DISCHARGED.getCode());
+        Collection<String> statusEnumIn = null;
+        if (query != null) {
+            statusEnumIn = query.getStatusEnumIn();
+        }
+        if (statusEnumIn == null || statusEnumIn.isEmpty()) {
+            predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(eligible));
+            return;
+        }
+        // 与可见态求交，避免无关状态码穿透
+        List<String> intersected = new ArrayList<>();
+        for (String code : statusEnumIn) {
+            if (StringUtils.isEmpty(code)) {
+                continue;
+            }
+            if (eligible.contains(code)) {
+                intersected.add(code);
+            }
+        }
+        if (intersected.isEmpty()) {
+            predicates.add(cb.disjunction());
+            return;
+        }
+        predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(intersected));
     }
 
     /**

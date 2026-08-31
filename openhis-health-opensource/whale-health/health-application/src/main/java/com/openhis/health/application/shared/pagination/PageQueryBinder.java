@@ -10,7 +10,7 @@ import com.openhis.health.domain.share.query.AbstractPageQuery;
  * 入站分页工具（B.10.11）：将 HTTP 分页窗口绑定到 {@link AbstractPageQuery}，与 {@link PagedResultBuilder} 对称
  * （{@code PageQueryBinder}：请求 → 查询；{@link PagedResultBuilder}：{@code Page} → 响应）。
  *
- * <p>对外 REST 分页请求体应继承嵌套类型 {@link PageQueryBinder.AbstractHealthPageRequest}；{@link #bind} / {@link #copyToPlainQuery}
+ * <p>对外 REST 分页请求体应继承 {@link AbstractHealthPageRequest}；{@link #bind} / {@link #copyToPlainQuery}
  * 仅做字段搬运，不包含门控或业务谓词。</p>
  */
 public final class PageQueryBinder {
@@ -55,12 +55,13 @@ public final class PageQueryBinder {
     }
 
     /**
-     * {@code health-application} 对外 REST 分页请求体基类（B.10.11）。
+     * 嵌套别名，兼容既有 {@code import PageQueryBinder.AbstractHealthPageRequest}。
      *
-     * <p>领域与读模型查询入参仍以 {@link AbstractPageQuery} 为语义真源（含 {@link AbstractPageQuery#springPageIndex()} 等）；
-     * 凡暴露给前端的列表请求 DTO，应继承本类型而非直接继承 {@link AbstractPageQuery}。</p>
+     * <p>新代码请直接继承顶层 {@link com.openhis.health.application.shared.pagination.AbstractHealthPageRequest}，
+     * 避免 javac 将 {@code pagination.AbstractHealthPageRequest} 解析为不存在的顶层符号。</p>
      */
-    public static abstract class AbstractHealthPageRequest extends AbstractPageQuery {
+    public static abstract class AbstractHealthPageRequest
+            extends com.openhis.health.application.shared.pagination.AbstractHealthPageRequest {
 
         /** 序列化版本号。 */
         private static final long serialVersionUID = 1L;

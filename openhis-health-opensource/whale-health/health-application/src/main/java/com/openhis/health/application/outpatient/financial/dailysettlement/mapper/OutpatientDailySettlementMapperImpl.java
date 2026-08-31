@@ -254,6 +254,7 @@ public class OutpatientDailySettlementMapperImpl implements OutpatientDailySettl
                 finTypePaymentModels,
                 staticRowsByPaymentId);
         this.mergeDeprecatedRegistrationIntoConsultation(finTypeAmounts);
+        this.removePhysicalExamFinTypeAmount(finTypeAmounts);
         Map<String, BigDecimal> channelAmounts =
             this.aggregateChannelAmounts(summaryItems, recDetailsByPaymentId);
         List<DailySettlementChannelRowDto> rows =
@@ -582,7 +583,8 @@ public class OutpatientDailySettlementMapperImpl implements OutpatientDailySettl
                     // 医保 fund/acct 渠道不在自付渠道区汇总，避免与 fin_contract 口径重复
                     continue;
                 }
-                String category = this.paymentChannelDisplayAssembler.resolvePayChannelDisplay(detail.getPayEnum(), null);
+                String category =
+                    this.paymentChannelDisplayAssembler.resolveDailySettlementSelfPayCategory(detail.getPayEnum());
                 if (StringUtils.isEmpty(category)) {
                     // 展示名缺失时回落原始 pay_enum，避免金额丢失
                     category = detail.getPayEnum();
@@ -692,6 +694,9 @@ public class OutpatientDailySettlementMapperImpl implements OutpatientDailySettl
             if (DailySettlementSharedConstants.DEPRECATED_REGISTRATION_FEE_FIN_TYPE_CODE.equals(typeCode)) {
                 continue;
             }
+            if (DailySettlementSharedConstants.PHYSICAL_EXAM_FIN_TYPE_CODE.equals(typeCode)) {
+                continue;
+            }
             BigDecimal amount = BigDecimal.ZERO;
             if (finTypeAmounts != null) {
                 BigDecimal resolved = finTypeAmounts.get(typeCode);
@@ -731,6 +736,18 @@ public class OutpatientDailySettlementMapperImpl implements OutpatientDailySettl
         finTypeAmounts.put(
             DailySettlementSharedConstants.CONSULTATION_FEE_FIN_TYPE_CODE,
             consultationAmount.add(legacyRegistrationAmount));
+    }
+
+    /**
+     * 体检 fin_type（9999）不计入门诊日结总收入与上半区。
+     *
+     * @param finTypeAmounts fin_type_code → 合计（原地修改）
+     */
+    private void removePhysicalExamFinTypeAmount(Map<String, BigDecimal> finTypeAmounts) {
+        if (finTypeAmounts == null || finTypeAmounts.isEmpty()) {
+            return;
+        }
+        finTypeAmounts.remove(DailySettlementSharedConstants.PHYSICAL_EXAM_FIN_TYPE_CODE);
     }
 
     /**
@@ -1036,6 +1053,8 @@ public class OutpatientDailySettlementMapperImpl implements OutpatientDailySettl
             insuranceCompensationText,
             insuranceAccountText,
             retailUploadDiffText,
+            null,
+            null,
             null,
             expenseNatureSummaries,
             physicalExamCount));

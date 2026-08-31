@@ -1,10 +1,9 @@
 /**
  * 库房期初期末明细 — POST /api/app/inventoryPeriodBalanceDetail/{methodName}
  */
+import { reportPost } from '#/constants/report-request-timeout';
 import type { PageParams } from '#/types/api-response';
-
-import { publicRequestClient } from '#/api/request';
-import { reportLongRequestConfig } from '#/constants/report-request-timeout';
+import type { ExcelExportColumnPayload } from '#/utils/export/build-excel-export-columns';
 
 const BASE = '/inventoryPeriodBalanceDetail';
 
@@ -86,7 +85,10 @@ export interface PagePeriodBalanceDetailResponse {
 export type ExportPeriodBalanceDetailRequest = Omit<
   PagePeriodBalanceDetailRequest,
   'pageNo' | 'pageSize'
->;
+> & {
+  /** 页面可见列 → 后端 Excel 列裁剪 */
+  exportColumns?: ExcelExportColumnPayload[];
+};
 
 export interface ExportPeriodBalanceDetailResponse {
   fileName?: string;
@@ -98,7 +100,7 @@ export interface ExportPeriodBalanceDetailResponse {
 
 /** 页面初始化：管辖库位与备份单号下拉。 */
 export async function loadPeriodBalanceDetailFormInitApi() {
-  return publicRequestClient.post<LoadPeriodBalanceDetailFormInitResponse>(
+  return reportPost<LoadPeriodBalanceDetailFormInitResponse>(
     `${BASE}/loadPeriodBalanceDetailFormInit`,
     {},
   );
@@ -106,18 +108,10 @@ export async function loadPeriodBalanceDetailFormInitApi() {
 
 /** 库房期初期末明细分页查询。 */
 export async function pagePeriodBalanceDetailApi(body: PagePeriodBalanceDetailRequest) {
-  return publicRequestClient.post<PagePeriodBalanceDetailResponse>(
-    `${BASE}/pagePeriodBalanceDetail`,
-    body,
-    reportLongRequestConfig(),
-  );
+  return reportPost<PagePeriodBalanceDetailResponse>(`${BASE}/pagePeriodBalanceDetail`, body);
 }
 
 /** 导出库房期初期末明细 Excel。 */
 export async function exportPeriodBalanceDetailApi(body: ExportPeriodBalanceDetailRequest) {
-  return publicRequestClient.post<ExportPeriodBalanceDetailResponse>(
-    `${BASE}/exportPeriodBalanceDetail`,
-    body,
-    reportLongRequestConfig(),
-  );
+  return reportPost<ExportPeriodBalanceDetailResponse>(`${BASE}/exportPeriodBalanceDetail`, body);
 }

@@ -27,7 +27,7 @@ export interface CaseRecordListItemDto {
   gendCode?: string;
   /** 年龄展示文案（如 26岁）；临床侧栏体温单抬头 */
   ageText?: string;
-  /** 床位名（出院无活动床时为末次已完成床，可能带「原…（未占床）」） */
+  /** 床位名（出院无活动床时为「原{房}-{床}（未占床）」） */
   bedName?: string;
   /** 病区/病室名（无活动病区时为末次已完成病区） */
   wardName?: string;
@@ -563,7 +563,7 @@ export interface InpatientEmrListItemDto {
   gendCode?: string;
   /** 年龄展示文案（如 26岁）；临床侧栏体温单抬头 */
   ageText?: string;
-  /** 床位名（出院无活动床时为末次已完成床，可能带「原…（未占床）」） */
+  /** 床位名（出院无活动床时为「原{房}-{床}（未占床）」） */
   bedName?: string;
   /** 病区/病室名（无活动病区时为末次已完成病区） */
   wardName?: string;

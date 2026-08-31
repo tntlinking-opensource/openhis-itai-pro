@@ -8,12 +8,11 @@ import static com.openhis.whale.core.application.util.StringUtils.isEmpty;
 
 import com.openhis.chs.domain.catalog.access.ChsInsuranceContractReader;
 import com.openhis.chs.domain.contract.ChsContractSnapshot;
-import com.openhis.chs.domain.inpatient.entity.YbInpatientPreSettle;
-import com.openhis.chs.domain.inpatient.service.YbInpatientPreSettleQueryService;
 import com.openhis.chs.domain.reconciliation.command.SummarizeClearAmountCommand;
 import com.openhis.chs.domain.reconciliation.result.ClearAmountSummaryResult;
 import com.openhis.chs.domain.reconciliation.result.ReconDetailRowResult;
 import com.openhis.chs.domain.reconciliation.support.ReconDetailRowSupport;
+import com.openhis.chs.domain.settlement.constants.ChsSettleEncounterClass;
 import com.openhis.chs.domain.settlement.entity.YbSettlementRecord;
 import com.openhis.chs.domain.settlement.entity.YbSettlementReversal;
 import com.openhis.chs.domain.settlement.service.YbSettlementRecordQueryService;
@@ -37,9 +36,10 @@ import java.util.Set;
 
 /**
  * 对账清算本地结算快照只读查询（按险种×清算类别汇总金额、明细行预览）。
- * <p>数据源仅为本院 HIS 已落库结算快照与撤销凭证；<b>不访问医保网关、不发起 3201/3202</b>。
+ * <p>数据源仅为本院 HIS 已落库结算回执与撤销凭证（门诊 2207 / 住院 2304 同一张
+ * {@code yb_settlement_record}）；<b>不访问医保网关、不发起 3201/3202</b>。
  * 平台对账由 bridge Invoker / Workflow 在用户点击「发起对账」时另行调用。</p>
- * <p>跨聚合读：经 settlement / inpatient 本模块 QueryService 装载快照，不直注他聚合 Repository。</p>
+ * <p>跨聚合读：经 settlement 本模块 QueryService 装载快照，不直注他聚合 Repository。</p>
  * <p>金额口径：正向累加、同窗撤销抵减（一收一退净 0）；笔数：正向与撤销各计 1。
  * 3202 明细含反向行。若 3201 仍不平，以 3202 差异文件为准继续核对。</p>
  * <p>日期口径：正向按平台 {@code setl_time}（空则回落创建时间）；撤销按 {@code reversed_at}。</p>
@@ -51,21 +51,21 @@ public class YbReconciliationQueryService {
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     /**
-     * 住院预结算表无 {@code clr_type} 列时，按平台住院清算类别归组。
+     * 2304 未回传 {@code clr_type} 时，按平台住院清算类别归组（与门诊已落库 clr_type 对齐）。
      */
     private static final String CLR_TYPE_INPATIENT = "21";
 
     private final YbSettlementRecordQueryService settlementRecordQueryService;
     private final YbSettlementReversalQueryService settlementReversalQueryService;
-    private final YbInpatientPreSettleQueryService inpatientPreSettleQueryService;
     private final ChsInsuranceContractReader contractReader;
 
     /**
-     * 按险种 + 清算类别汇总指定日期区间内门诊与住院结算快照金额（HIS 本地只读）。
+     * 按险种 + 清算类别汇总指定日期区间内门诊与住院结算回执金额（HIS 本地只读）。
      * <p>供日对账列表「待对账金额」、月清算预览、以及 3201/3202 出站前金额缺省补齐。
      * 本方法本身不调医保；命令中 {@code contractBusNo}/{@code contractId} 非空时仅汇总该契约结算；
      * {@code insutype}/{@code clrType} 非空时仅返回匹配维度行。</p>
-     * <p>一收一退：原结算与撤销同窗时金额正负抵净；笔数各计 1。</p>
+     * <p>一收一退：原结算与撤销同窗时金额正负抵净；笔数各计 1。
+     * 住院与门诊同一数据源，不再叠加预结算快照（叠加会导致金额/笔数翻倍、3202 重复 setl_id）。</p>
      *
      * @param command  契约、日期区间及可选维度过滤
      * @param tenantId 租户
@@ -88,7 +88,7 @@ public class YbReconciliationQueryService {
             if (!matchContractFilter(row.getContractId(), contractIdFilter)) {
                 continue;
             }
-            DimKey key = new DimKey(normalizeDim(row.getInsutype()), normalizeDim(row.getClrType()));
+            DimKey key = new DimKey(normalizeDim(row.getInsutype()), resolveClrType(row));
             // 可选过滤：仅保留请求指定的险种/清算类别
             if (!matchOptionalFilter(key, safe)) {
                 continue;
@@ -105,24 +105,6 @@ public class YbReconciliationQueryService {
         // Cmd：同窗撤销凭证按原结算险种/清算类别抵减金额，并各计 1 笔
         applyReversalsInRange(
             buckets, safe, contractIdFilter, tenantId, range.beginAt(), range.endExclusive());
-
-        // Cmd：住院已结算预结算无 clr_type，固定归入住院清算类别
-        for (YbInpatientPreSettle row : inpatientPreSettleQueryService.listSettledBetween(
-            tenantId, range.beginAt(), range.endExclusive())) {
-            if (!matchContractFilter(row.getContractId(), contractIdFilter)) {
-                continue;
-            }
-            DimKey key = new DimKey(normalizeDim(row.getInsutype()), CLR_TYPE_INPATIENT);
-            if (!matchOptionalFilter(key, safe)) {
-                continue;
-            }
-            AmountBucket bucket = buckets.computeIfAbsent(key, ignored -> new AmountBucket());
-            bucket.add(
-                nullToZero(row.getMedfeeSumamt()),
-                nullToZero(row.getFundPaySumamt()),
-                nullToZero(row.getAcctPay()),
-                nullToZero(row.getPsnCashPay()));
-        }
 
         // Asm：Map 转有序列表出参
         List<ClearAmountSummaryResult> result = new ArrayList<>(buckets.size());
@@ -220,9 +202,9 @@ public class YbReconciliationQueryService {
     }
 
     /**
-     * 加载 3202 明细对账输入文件行预览（门诊 + 住院结算快照 + 同窗撤销反向行）。
+     * 加载 3202 明细对账输入文件行预览（门诊 + 住院正式结算回执 + 同窗撤销反向行）。
      * <p>退费须同时上报正向与反向两条（平台 {@code refd_setl_flag}）；反向行来自撤销凭证。
-     * 指定契约时仅包含该契约结算及其撤销反向行。</p>
+     * 指定契约时仅包含该契约结算及其撤销反向行。住院不再叠加预结算快照，避免与 2304 回执重复。</p>
      *
      * @param command  契约与日期区间
      * @param tenantId 租户
@@ -240,23 +222,11 @@ public class YbReconciliationQueryService {
             if (!matchContractFilter(row.getContractId(), contractIdFilter)) {
                 continue;
             }
-            DimKey key = new DimKey(normalizeDim(row.getInsutype()), normalizeDim(row.getClrType()));
+            DimKey key = new DimKey(normalizeDim(row.getInsutype()), resolveClrType(row));
             if (!matchOptionalFilter(key, safe)) {
                 continue;
             }
             settlements.add(row);
-        }
-        List<YbInpatientPreSettle> inpatientRows = new ArrayList<>();
-        for (YbInpatientPreSettle row : inpatientPreSettleQueryService.listSettledBetween(
-            tenantId, range.beginAt(), range.endExclusive())) {
-            if (!matchContractFilter(row.getContractId(), contractIdFilter)) {
-                continue;
-            }
-            DimKey key = new DimKey(normalizeDim(row.getInsutype()), CLR_TYPE_INPATIENT);
-            if (!matchOptionalFilter(key, safe)) {
-                continue;
-            }
-            inpatientRows.add(row);
         }
         List<YbSettlementReversal> reversals = settlementReversalQueryService.listReversedBetween(
             tenantId, range.beginAt(), range.endExclusive());
@@ -277,7 +247,7 @@ public class YbReconciliationQueryService {
             if (origin == null || !matchContractFilter(origin.getContractId(), contractIdFilter)) {
                 continue;
             }
-            DimKey key = new DimKey(normalizeDim(origin.getInsutype()), normalizeDim(origin.getClrType()));
+            DimKey key = new DimKey(normalizeDim(origin.getInsutype()), resolveClrType(origin));
             if (!matchOptionalFilter(key, safe)) {
                 continue;
             }
@@ -285,8 +255,7 @@ public class YbReconciliationQueryService {
             reversalOriginRows.add(origin);
         }
         List<ReconDetailRowResult> rows = new ArrayList<>();
-        rows.addAll(ReconDetailRowSupport.fromOutpatientRows(settlements));
-        rows.addAll(ReconDetailRowSupport.fromInpatientRows(inpatientRows));
+        rows.addAll(ReconDetailRowSupport.fromSettlementRows(settlements));
         rows.addAll(ReconDetailRowSupport.fromReversalRows(contractReversals, reversalOriginRows));
         return rows;
     }
@@ -331,7 +300,7 @@ public class YbReconciliationQueryService {
             if (!matchContractFilter(origin.getContractId(), contractIdFilter)) {
                 continue;
             }
-            DimKey key = new DimKey(normalizeDim(origin.getInsutype()), normalizeDim(origin.getClrType()));
+            DimKey key = new DimKey(normalizeDim(origin.getInsutype()), resolveClrType(origin));
             if (!matchOptionalFilter(key, safe)) {
                 continue;
             }
@@ -419,6 +388,23 @@ public class YbReconciliationQueryService {
             return false;
         }
         return true;
+    }
+
+    /**
+     * 结算回执清算类别：已落库优先；住院缺省时归入 {@code 21}（2304 常不回传 clr_type）。
+     *
+     * @param row 结算回执
+     * @return 归一化清算类别
+     */
+    private static String resolveClrType(YbSettlementRecord row) {
+        String clrType = normalizeDim(row.getClrType());
+        if (!clrType.isEmpty()) {
+            return clrType;
+        }
+        if (ChsSettleEncounterClass.IMP.equals(row.getEncounterClass())) {
+            return CLR_TYPE_INPATIENT;
+        }
+        return clrType;
     }
 
     /**

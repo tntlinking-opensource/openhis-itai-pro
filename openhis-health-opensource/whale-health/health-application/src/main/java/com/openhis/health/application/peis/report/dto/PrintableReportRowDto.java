@@ -34,4 +34,7 @@ public class PrintableReportRowDto {
 
     /** PDF 存储键。 */
     private String pdfStorageKey;
+
+    /** 打印次数。 */
+    private Integer printCount;
 }

@@ -1,6 +1,7 @@
 import type {
   ExecuteNurseStationOrdersRequest,
   ExecuteNurseStationOrdersResponse,
+  ListNurseStationOrderExecuteForPrintRequest,
   ListNurseStationOrderExecuteRequest,
   ListNurseStationOrderExecuteResponse,
   SkipNurseStationOrderSlotsRequest,
@@ -18,6 +19,19 @@ export async function httpListNurseStationOrderExecute(
 ): Promise<ListNurseStationOrderExecuteResponse> {
   return publicRequestClient.post<ListNurseStationOrderExecuteResponse>(
     `${BASE}/listNurseStationOrderExecute`,
+    body,
+  );
+}
+
+/**
+ * 打印中心专用：医嘱执行列表（含计划点下界 / 开嘱日区间）。
+ * 与医嘱执行页 {@link httpListNurseStationOrderExecute} 契约隔离。
+ */
+export async function httpListNurseStationOrderExecuteForPrint(
+  body: ListNurseStationOrderExecuteForPrintRequest,
+): Promise<ListNurseStationOrderExecuteResponse> {
+  return publicRequestClient.post<ListNurseStationOrderExecuteResponse>(
+    `${BASE}/listNurseStationOrderExecuteForPrint`,
     body,
   );
 }

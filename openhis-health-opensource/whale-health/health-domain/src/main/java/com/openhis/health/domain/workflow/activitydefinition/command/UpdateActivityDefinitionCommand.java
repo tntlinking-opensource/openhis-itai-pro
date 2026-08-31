@@ -77,6 +77,10 @@ public class UpdateActivityDefinitionCommand extends BatchCommand<UpdateActivity
         private String childrenJson;
         /** 是否套餐/含子项标志。 */
         private Boolean childrenFlag;
+        /** 适用性别持久化码（{@code ActivityPermittedGender}）。 */
+        private String permittedGenderEnum;
+        /** 目录展示顺序（数值越小越靠前）。 */
+        private Integer sortOrder;
         /** 调价前标准价（审计/调价单用）。 */
         private BigDecimal oldStandardPrice;
         /** 调价后标准价。 */

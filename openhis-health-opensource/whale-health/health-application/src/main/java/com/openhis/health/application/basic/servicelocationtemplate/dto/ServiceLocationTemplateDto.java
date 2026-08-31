@@ -65,6 +65,16 @@ public class ServiceLocationTemplateDto {
     @Schema(description = "具体物品定义名称")
     private String itemDefinitionName;
 
+    /**
+     * 耗材种类编码（术语 device_type_code；通配为空）。
+     */
+    @Schema(description = "耗材种类编码")
+    private String typeCode;
+
+    /** 耗材种类展示名。 */
+    @Schema(description = "耗材种类展示名")
+    private String typeCode_dictText;
+
     /** 用法编码。 */
     @Schema(description = "用法编码")
     private String methodCode;

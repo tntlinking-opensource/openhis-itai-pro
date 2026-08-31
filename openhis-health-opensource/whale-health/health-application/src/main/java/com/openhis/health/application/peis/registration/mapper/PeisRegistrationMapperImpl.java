@@ -66,6 +66,10 @@ public class PeisRegistrationMapperImpl implements PeisRegistrationMapper {
         command.setBookingAppointmentId(request.getBookingAppointmentId());
         command.setOperatorId(operatorId);
         command.setExamKind(request.getExamKind());
+        command.setCompanyId(request.getCompanyId());
+        command.setGroupBatchId(request.getGroupBatchId());
+        command.setReferrerName(request.getReferrerName());
+        command.setBreakfastFlag(request.getBreakfastFlag());
         return command;
     }
 

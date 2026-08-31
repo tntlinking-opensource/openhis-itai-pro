@@ -21,6 +21,12 @@ public class DeptSummarySectionDto implements Serializable {
     /** 服务申请主键。 */
     private Long serviceRequestId;
 
+    /** 项目展示名。 */
+    private String activityDisplay;
+
+    /** 执行状态（checked/abandoned/deferred 等）。 */
+    private String execStatusEnum;
+
     /** 该 SR 下观察行（含分科结论）。 */
     private List<MasterObservationRowDto> observations = new ArrayList<>();
 }

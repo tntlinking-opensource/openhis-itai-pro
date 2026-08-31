@@ -1,10 +1,10 @@
 /**
  * 科室/医生工作量统计 — POST /api/app/practitionerWorkload/{methodName}
  */
+import { reportPost } from '#/constants/report-request-timeout';
 import type { PageParams } from '#/types/api-response';
+import type { ExcelExportColumnPayload } from '#/utils/export/build-excel-export-columns';
 
-import { publicRequestClient } from '#/api/request';
-import { reportLongRequestConfig } from '#/constants/report-request-timeout';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
 const BASE = '/practitionerWorkload';
@@ -109,7 +109,10 @@ export interface PagePractitionerWorkloadDetailResponse {
   summaryTotals?: PractitionerWorkloadSummaryTotalsDto;
 }
 
-export type ExportPractitionerWorkloadDetailRequest = PractitionerWorkloadQueryFilter;
+export interface ExportPractitionerWorkloadDetailRequest extends PractitionerWorkloadQueryFilter {
+  /** 明细表可见列 → 后端 Excel 列裁剪 */
+  exportColumns?: ExcelExportColumnPayload[];
+}
 
 export interface ExportPractitionerWorkloadDetailResponse {
   fileName?: string;
@@ -123,7 +126,7 @@ export interface ExportPractitionerWorkloadDetailResponse {
 export async function loadPractitionerWorkloadPageInitApi(
   body?: LoadPractitionerWorkloadPageInitRequest,
 ) {
-  return publicRequestClient.post<LoadPractitionerWorkloadPageInitResponse>(
+  return reportPost<LoadPractitionerWorkloadPageInitResponse>(
     `${BASE}/loadPractitionerWorkloadPageInit`,
     body ?? {},
   );
@@ -131,10 +134,9 @@ export async function loadPractitionerWorkloadPageInitApi(
 
 /** 工作量汇总查询。 */
 export async function queryPractitionerWorkloadSummaryApi(body: PractitionerWorkloadQueryFilter) {
-  return publicRequestClient.post<QueryPractitionerWorkloadSummaryResponse>(
+  return reportPost<QueryPractitionerWorkloadSummaryResponse>(
     `${BASE}/queryPractitionerWorkloadSummary`,
     body,
-    reportLongRequestConfig(),
   );
 }
 
@@ -159,10 +161,9 @@ export interface ListPractitionerWorkloadDoctorCardsResponse {
 export async function listPractitionerWorkloadDoctorCardsApi(
   body: ListPractitionerWorkloadDoctorCardsRequest,
 ) {
-  return publicRequestClient.post<ListPractitionerWorkloadDoctorCardsResponse>(
+  return reportPost<ListPractitionerWorkloadDoctorCardsResponse>(
     `${BASE}/listPractitionerWorkloadDoctorCards`,
     body,
-    reportLongRequestConfig(),
   );
 }
 
@@ -170,10 +171,9 @@ export async function listPractitionerWorkloadDoctorCardsApi(
 export async function pagePractitionerWorkloadDetailApi(
   body: PagePractitionerWorkloadDetailRequest,
 ) {
-  const res = await publicRequestClient.post<PagePractitionerWorkloadDetailResponse>(
+  const res = await reportPost<PagePractitionerWorkloadDetailResponse>(
     `${BASE}/pagePractitionerWorkloadDetail`,
     body,
-    reportLongRequestConfig(),
   );
   const { content, totalCount } = parsePagedRowsFromApiData<PractitionerWorkloadDetailLineDto>(res);
   return {
@@ -187,9 +187,8 @@ export async function pagePractitionerWorkloadDetailApi(
 export async function exportPractitionerWorkloadDetailApi(
   body: ExportPractitionerWorkloadDetailRequest,
 ) {
-  return publicRequestClient.post<ExportPractitionerWorkloadDetailResponse>(
+  return reportPost<ExportPractitionerWorkloadDetailResponse>(
     `${BASE}/exportPractitionerWorkloadDetail`,
     body,
-    reportLongRequestConfig(),
   );
 }

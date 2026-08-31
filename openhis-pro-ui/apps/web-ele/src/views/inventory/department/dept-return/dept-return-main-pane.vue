@@ -1378,8 +1378,8 @@ function resolveDeptReturnPrintUnitLabel(row: ReturnPreviewRow): string {
   return String(row.unitCodeDictText ?? row.unitCode ?? '').trim();
 }
 
-/** 打印科室退库单 */
-async function handlePrint() {
+/** 打印或预览科室退库单 */
+async function handlePrint(payload?: { preview?: boolean }) {
   const busNo = String(headerBusNo.value ?? '').trim();
   if (!busNo) {
     ElMessage.warning('请先保存单据后再打印');
@@ -1433,6 +1433,7 @@ async function handlePrint() {
     },
     bizRef: { busNo, docKind: 'dept-return' },
     jobName: documentTitle,
+    preview: payload?.preview === true,
   });
 }
 </script>

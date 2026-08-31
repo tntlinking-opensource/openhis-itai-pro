@@ -18,7 +18,9 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * 单据详情报表明细行（并集稀疏列；数量为操作单位展示值）。
+ * 单据详情报表明细行（并集稀疏列）。
+ *
+ * <p>数量口径：库内拆零持久；列表同时给出操作单位数量（与单价同口径）、包装单位数量、最小单位数量。</p>
  */
 @Getter
 @Setter
@@ -187,6 +189,22 @@ public class DocumentDetailRowDto {
     @Schema(description = "操作单位数量 itemQuantity")
     /** 操作单位数量 itemQuantity。 */
     private BigDecimal itemQuantity;
+
+    @Schema(description = "包装单位数量 packageQuantity")
+    /** 包装单位数量：拆零量按包装倍数换算。 */
+    private BigDecimal packageQuantity;
+
+    @Schema(description = "包装单位名称 packageUnitName")
+    /** 包装单位展示名（如盒）。 */
+    private String packageUnitName;
+
+    @Schema(description = "最小单位数量 minUnitQuantity")
+    /** 最小（拆零）单位数量：库内持久化拆零量。 */
+    private BigDecimal minUnitQuantity;
+
+    @Schema(description = "最小单位名称 minUnitName")
+    /** 最小单位展示名（如片、克）。 */
+    private String minUnitName;
 
     @Schema(description = "单价 price")
     /** 单价 price。 */

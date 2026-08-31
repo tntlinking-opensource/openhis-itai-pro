@@ -28,6 +28,7 @@ import com.openhis.health.domain.mrms.caserecord.repository.HomepageProcedureRep
 import com.openhis.health.domain.share.constants.MrmsErrorCodes;
 import com.openhis.health.domain.share.utils.FieldSourcesJsonUtil;
 import com.openhis.health.domain.share.utils.HomepageExtensionJsonUtil;
+import com.openhis.health.domain.share.utils.InpatientStayDaysCalculator;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -35,7 +36,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -434,14 +434,11 @@ public class CaseRecordHomepageDomainService {
         putExtensionIfAllowed(homepage, sources, "admBed", enc.getAdmBedName(), force);
         putExtensionIfAllowed(homepage, sources, "dscgWard", enc.getDscgWardName(), force);
         putExtensionIfAllowed(homepage, sources, "dscgBed", enc.getDscgBedName(), force);
-        // 出入院时间齐全时计算住院天数（4401 至少 1 天）
+        // 出入院时间齐全时计算住院天数（即进不计出：入院日计、出院日不计；同日至少 1）
         if (enc.getAdmTime() != null && enc.getDscgTime() != null) {
-            long days = ChronoUnit.DAYS.between(enc.getAdmTime().toLocalDate(), enc.getDscgTime().toLocalDate());
-            // 同日出入院按 1 天计
-            if (days < 1) {
-                days = 1;
-            }
-            putIfAllowed(homepage, sources, "ipt_days", (int) days, force);
+            Integer iptDays = InpatientStayDaysCalculator.calcDischargedStayDays(
+                    enc.getAdmTime(), enc.getDscgTime());
+            putIfAllowed(homepage, sources, "ipt_days", iptDays, force);
         }
         // 护理天数：护理级别医嘱汇总
         NursingCareDaysSnapshot nursing =

@@ -9,12 +9,13 @@ import type {
   MedicationDispenseSummaryRowDto,
 } from '#/api/report/medication-dispense';
 import type { ApiOptionItem } from '#/types/api-response';
+import type { ReportPrintColumnDef } from '#/utils/print/print-report-list';
 
 import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
-import { Download, Refresh, Search } from '@element-plus/icons-vue';
+import { Download, Printer, Refresh, Search, Setting } from '@element-plus/icons-vue';
 import {
   ElButton,
   ElDatePicker,
@@ -38,15 +39,19 @@ import {
   SOURCE_CODE_ALL,
   SOURCE_CODE_DEPT_ISSUE,
   SOURCE_CODE_PATIENT_DISPENSE,
+  SUMMARY_DIMENSION_ITEM,
   SUMMARY_DIMENSION_PHARMACY,
   summarizeMedicationDispenseReportApi,
 } from '#/api/report/medication-dispense';
 import TraceCodeTooltip from '#/components/trace/trace-code-tooltip.vue';
 import { useRequest } from '#/hooks/use-request';
 import { downloadBinaryExportFile } from '#/utils/export/download-binary-export';
-import { formatMoneyDisplay } from '#/utils/format/money-scale';
+import { buildExcelExportColumns } from '#/utils/export/build-excel-export-columns';
+import { formatMoneyDisplay, formatPurchaseMoneyDisplay } from '#/utils/format/money-scale';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import {
+  isReportRefundBySignedFields,
+  mapReportPrintRow,
   REPORT_QUERY_CONTROL,
   REPORT_QUERY_CONTROL_DATERANGE,
   REPORT_TABLE_AMOUNT_CELL,
@@ -55,14 +60,19 @@ import {
   ReportListPageLayout,
   ReportListToolbar,
   ReportPageFooter,
+  ReportPrintFieldDialog,
   ReportQueryBar,
+  reportPrintFieldsOf,
   ReportTableScroll,
+  resolveReportRefundRowClassName,
+  sumReportPurchaseCornerFromRows,
+  useReportListPrint,
 } from '#/views/report/shared';
 import {
   buildReportDateRangeShortcuts,
   normalizeReportDateRangeYmd,
 } from '#/views/report/shared/report-date-range-shortcuts';
-import { fmtReportNumber, optionDtosToSelectItems } from '#/views/report/shared/report-format';
+import { optionDtosToSelectItems } from '#/views/report/shared/report-format';
 
 defineOptions({ name: 'MedicationDispenseReportPage' });
 
@@ -181,14 +191,13 @@ const businessDateRange = computed({
 const footerSummaryItems = computed(() => {
   if (isSummaryTab.value) {
     return [
-      { label: '汇总行数', value: summaryRows.value.length },
       {
-        label: '净数量合计',
-        value: fmtReportNumber(totalQuantity.value, 2) || '—',
+        label: '数量合计',
+        value: formatQtyCell(totalQuantity.value) || '—',
       },
       {
         label: '进价合计',
-        value: formatMoneyCell(purchaseTotalAmount.value),
+        value: formatPurchaseMoneyCell(purchaseTotalAmount.value),
         prefix: '¥',
       },
       {
@@ -201,6 +210,152 @@ const footerSummaryItems = computed(() => {
   }
   return [{ label: '明细行数', value: total.value }];
 });
+
+/** 汇总 Tab 仅「品规」维展示进/售单价。 */
+const showSummaryUnitPriceColumns = computed(
+  () => queryParams.summaryDimension === SUMMARY_DIMENSION_ITEM,
+);
+
+/** 汇总 Tab 仅「品规」维展示药品编码、最小数量。 */
+const showSummaryItemExtraColumns = computed(
+  () => queryParams.summaryDimension === SUMMARY_DIMENSION_ITEM,
+);
+
+/** 汇总 Tab 可打印列（进/售单价、编码、最小数量仅品规维）。 */
+const summaryPrintColumns = computed<ReportPrintColumnDef[]>(() => {
+  const cols: ReportPrintColumnDef[] = [
+    { field: 'dimensionName', title: '维度', align: 'center', widthWeight: 1.4 },
+  ];
+  if (showSummaryItemExtraColumns.value) {
+    cols.push({ field: 'medicationCode', title: '药品编码', align: 'center', widthWeight: 1 });
+  }
+  cols.push({ field: 'netQuantity', title: '数量', align: 'right', widthWeight: 1 });
+  if (showSummaryItemExtraColumns.value) {
+    cols.push({ field: 'minUnitQuantity', title: '最小数量', align: 'right', widthWeight: 1 });
+  }
+  if (showSummaryUnitPriceColumns.value) {
+    cols.push(
+      { field: 'purchaseUnitPrice', title: '进价单价', align: 'right', widthWeight: 1 },
+      { field: 'saleUnitPrice', title: '售价单价', align: 'right', widthWeight: 1 },
+    );
+  }
+  cols.push(
+    { field: 'purchaseNetAmount', title: '进价合计', align: 'right', widthWeight: 1 },
+    { field: 'saleNetAmount', title: '售价合计', align: 'right', widthWeight: 1 },
+  );
+  return cols;
+});
+
+/** 明细 Tab 可打印列（病区/床号仅住院）。 */
+const printColumnCatalog = computed<ReportPrintColumnDef[]>(() => {
+  if (isSummaryTab.value) {
+    return summaryPrintColumns.value;
+  }
+  const cols: ReportPrintColumnDef[] = [
+    { field: 'sourceText', title: '来源', align: 'center', widthWeight: 0.9 },
+    { field: 'recordTypeText', title: '类型', align: 'center', widthWeight: 0.8 },
+    { field: 'businessTime', title: '业务时间', align: 'center', widthWeight: 1.3 },
+    { field: 'pharmacyLocationName', title: '药房', align: 'center', widthWeight: 1 },
+    { field: 'patientName', title: '患者', align: 'center', widthWeight: 0.9 },
+    { field: 'encounterNo', title: '就诊号', align: 'center', widthWeight: 1.1 },
+    { field: 'feeNatureDisplay', title: '费用性质', align: 'center', widthWeight: 0.9 },
+    { field: 'medTypeDisplay', title: '医疗类别', align: 'center', widthWeight: 0.9 },
+  ];
+  // 住院才有病区/床号列
+  if (props.scope === 'inpatient') {
+    cols.push(
+      { field: 'wardName', title: '病区', align: 'center', widthWeight: 0.9 },
+      { field: 'bedNo', title: '床号', align: 'center', widthWeight: 0.7 },
+    );
+  }
+  cols.push(
+    { field: 'medicationCode', title: '药品编码', align: 'center', widthWeight: 1 },
+    { field: 'medicationName', title: '药品名称', align: 'center', widthWeight: 1.4 },
+    { field: 'medicationSpec', title: '规格', align: 'center', widthWeight: 1 },
+    { field: 'quantityDisplay', title: '数量', align: 'right', widthWeight: 1 },
+    { field: 'purchaseUnitPrice', title: '进价单价', align: 'right', widthWeight: 0.9 },
+    { field: 'purchaseAmount', title: '进价总价', align: 'right', widthWeight: 1 },
+    { field: 'saleUnitPrice', title: '售价单价', align: 'right', widthWeight: 0.9 },
+    { field: 'saleAmount', title: '售价总价', align: 'right', widthWeight: 1 },
+    { field: 'lotNumber', title: '批号', align: 'center', widthWeight: 1 },
+    { field: 'traceNo', title: '追溯码', align: 'center', widthWeight: 1 },
+    {
+      field: 'departmentName',
+      title: departmentColumnLabel.value,
+      align: 'center',
+      widthWeight: 1,
+    },
+    { field: 'dispenserName', title: '发药人', align: 'center', widthWeight: 0.8 },
+    { field: 'busNo', title: '业务单号', align: 'center', widthWeight: 1.2 },
+    { field: 'prescriptionNo', title: '处方号', align: 'center', widthWeight: 1.1 },
+  );
+  return cols;
+});
+
+/** 打印偏好键：按 scope + 汇总/明细隔离。 */
+const printReportCode = computed(
+  () => `report-medication-dispense-${props.scope}-${isSummaryTab.value ? 'summary' : 'detail'}`,
+);
+
+/** 打印单据标题（含当前 Tab）。 */
+const printReportTitle = computed(
+  () => `${pageTitle.value} · ${isSummaryTab.value ? '汇总' : '明细'}`,
+);
+
+/** 将当前页汇总行映射为打印单元格。 */
+function mapSummaryPrintRows(): Record<string, string>[] {
+  const fields = reportPrintFieldsOf(summaryPrintColumns.value);
+  // 只打当前汇总视图行
+  return summaryRows.value.map((row) =>
+    mapReportPrintRow(row as Record<string, unknown>, fields, {
+      medicationCode: (value) => String(value ?? '').trim(),
+      netQuantity: (value, row) => formatQtyWithUnit(value, String(row?.packageUnitName ?? '')),
+      minUnitQuantity: (value, row) => formatQtyWithUnit(value, String(row?.minUnitName ?? '')),
+      purchaseUnitPrice: (value, row) => formatPurchaseMoneyCell(value, row?.categoryCode),
+      saleUnitPrice: (value) => formatMoneyCell(value),
+      purchaseNetAmount: (value) => formatPurchaseMoneyCell(value),
+      saleNetAmount: (value) => formatMoneyCell(value),
+    }),
+  );
+}
+
+/** 将当前页明细行映射为打印单元格。 */
+function mapDetailPrintRows(): Record<string, string>[] {
+  const catalog = printColumnCatalog.value;
+  const fields = reportPrintFieldsOf(catalog);
+  // 只打当前明细页行
+  return detailRows.value.map((row) =>
+    mapReportPrintRow(
+      {
+        ...row,
+        encounterNo: resolveEncounterNo(row),
+      } as Record<string, unknown>,
+      fields,
+      {
+        sourceText: (value, r) => String(value ?? r.sourceCode ?? '').trim(),
+        encounterNo: (value) => {
+          const text = String(value ?? '').trim();
+          return text === '—' ? '' : text;
+        },
+        quantityDisplay: (_value, r) =>
+          formatQtyWithUnit(r.quantity, r.unitText as string | undefined),
+        purchaseUnitPrice: (value, row) => formatPurchaseMoneyCell(value, row?.categoryCode),
+        purchaseAmount: (value, row) => formatPurchaseMoneyCell(value, row?.categoryCode),
+        saleUnitPrice: (value) => formatMoneyCell(value),
+        saleAmount: (value) => formatMoneyCell(value),
+        traceNo: (value) => (value === undefined || value === null ? '' : String(value)),
+      },
+    ),
+  );
+}
+
+const { printFieldDialogRef, printSubmitting, handleOpenPrintFields, handlePrintCurrentPage } =
+  useReportListPrint({
+    getReportCode: () => printReportCode.value,
+    getColumnCatalog: () => printColumnCatalog.value,
+    getReportTitle: () => printReportTitle.value,
+    getPrintRows: () => (isSummaryTab.value ? mapSummaryPrintRows() : mapDetailPrintRows()),
+  });
 
 const { run: runInit, loading: initLoading } = useRequest(
   () => loadMedicationDispenseReportPageInitApi(props.scope),
@@ -243,7 +398,11 @@ const { run: runSummarize, loading: summarizeLoading } = useRequest(
     onSuccess: (data) => {
       summaryRows.value = data?.rows ?? [];
       totalQuantity.value = data?.totalQuantity ?? '';
-      purchaseTotalAmount.value = data?.purchaseTotalAmount ?? '';
+      // Type B：进价列角=当次汇总行净进价加总（与查询同筛选、与表内列一致）
+      purchaseTotalAmount.value = sumReportPurchaseCornerFromRows(
+        summaryRows.value as Array<Record<string, unknown>>,
+        'purchaseNetAmount',
+      );
       saleTotalAmount.value = data?.saleTotalAmount ?? '';
       total.value = summaryRows.value.length;
     },
@@ -281,7 +440,7 @@ const { run: runExport, loading: exportLoading } = useRequest(
 );
 
 const tableLoading = computed(
-  () => initLoading.value || summarizeLoading.value || detailLoading.value,
+  () => initLoading.value || summarizeLoading.value || detailLoading.value || printSubmitting.value,
 );
 
 /** 下拉选项转为 ElSelect 结构。 */
@@ -292,7 +451,7 @@ function toSelectOptions(items: ApiOptionItem[]) {
   }));
 }
 
-/** 金额单元格：空占位，其余按展示刻度。 */
+/** 金额单元格：空占位，其余按展示刻度（售价/结算两位）。 */
 function formatMoneyCell(value: unknown): string {
   if (value === undefined || value === null || value === '') {
     return '—';
@@ -300,12 +459,27 @@ function formatMoneyCell(value: unknown): string {
   return formatMoneyDisplay(value);
 }
 
-/** 数量单元格。 */
+/** 进价侧金额：中草药三位（有分类码）或最多三位去尾零。 */
+function formatPurchaseMoneyCell(value: unknown, categoryCode?: unknown): string {
+  if (value === undefined || value === null || value === '') {
+    return '—';
+  }
+  return formatPurchaseMoneyDisplay(value, categoryCode) || '—';
+}
+
+/** 数量单元格：整数不补小数位（如 1,530）。 */
 function formatQtyCell(value: unknown): string {
   if (value === undefined || value === null || value === '') {
     return '—';
   }
-  return fmtReportNumber(value, 2) || String(value);
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n)) {
+    return String(value);
+  }
+  return n.toLocaleString('zh-CN', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  });
 }
 
 /** 数量 + 单位。 */
@@ -318,13 +492,27 @@ function formatQtyWithUnit(quantity: unknown, unit?: string): string {
   return unitText ? `${qty}${unitText}` : qty;
 }
 
-/** 负数量/金额标红。 */
-function resolveSignedNumberClass(value: unknown): string {
-  const num = Number(value);
-  if (Number.isFinite(num) && num < 0) {
-    return 'text-[var(--el-color-danger)]';
-  }
-  return '';
+/** 明细/汇总行是否退药冲减（数量或金额为负）。 */
+function isMedicationDispenseRefundRow(
+  row: MedicationDispenseDetailRowDto | MedicationDispenseSummaryRowDto,
+): boolean {
+  return isReportRefundBySignedFields(row as Record<string, unknown>, [
+    'quantity',
+    'netQuantity',
+    'purchaseAmount',
+    'saleAmount',
+    'purchaseNetAmount',
+    'saleNetAmount',
+  ]);
+}
+
+/** 退药冲减整行标红。 */
+function resolveDispenseRowClassName({
+  row,
+}: {
+  row: MedicationDispenseDetailRowDto | MedicationDispenseSummaryRowDto;
+}): string {
+  return resolveReportRefundRowClassName(isMedicationDispenseRefundRow(row));
 }
 
 /** 来源 Tag 样式（按 code，不用展示文案分支）。 */
@@ -448,18 +636,21 @@ function handleTabChange() {
   void getList();
 }
 
-/** 导出当前 Tab。 */
+/** 导出当前 Tab（列清单与页面可见列一致）。 */
 async function handleExport() {
   const filters = buildFilterPayload();
   if (!filters) {
     return;
   }
+  // 页面有什么列就导出什么；quantityDisplay/netQuantity 由 util 展开为单位分列
+  const exportColumns = buildExcelExportColumns(printColumnCatalog.value);
   await runExport({
     ...filters,
     presentationMode: queryParams.presentationMode,
     summaryDimension: isSummaryTab.value
       ? queryParams.summaryDimension || SUMMARY_DIMENSION_PHARMACY
       : undefined,
+    exportColumns,
   });
 }
 
@@ -699,6 +890,23 @@ onMounted(async () => {
               <ElRadioButton :value="PRESENTATION_MODE_SUMMARY">汇总</ElRadioButton>
               <ElRadioButton :value="PRESENTATION_MODE_DETAIL">明细</ElRadioButton>
             </ElRadioGroup>
+            <ElButton
+              plain
+              :icon="Setting"
+              :disabled="printSubmitting"
+              @click="handleOpenPrintFields"
+            >
+              打印设置
+            </ElButton>
+            <ElButton
+              type="primary"
+              plain
+              :icon="Printer"
+              :loading="printSubmitting"
+              @click="handlePrintCurrentPage"
+            >
+              打印
+            </ElButton>
             <ElButton plain :icon="Download" :loading="exportLoading" @click="handleExport">
               导出
             </ElButton>
@@ -715,6 +923,7 @@ onMounted(async () => {
               :data="summaryRows"
               :height="tableHeight"
               :row-key="resolveSummaryRowKey"
+              :row-class-name="resolveDispenseRowClassName"
             >
               <ElTableColumn
                 type="index"
@@ -732,52 +941,83 @@ onMounted(async () => {
                 show-overflow-tooltip
               />
               <ElTableColumn
-                label="净数量"
-                width="120"
-                align="right"
-                header-align="right"
-                :class-name="REPORT_TABLE_NUM_CELL"
-              >
-                <template #default="{ row }">
-                  <span :class="resolveSignedNumberClass(row.netQuantity)">
-                    {{ formatQtyCell(row.netQuantity) }}
-                  </span>
-                </template>
-              </ElTableColumn>
-              <ElTableColumn
-                label="进价净额"
-                width="110"
-                align="right"
-                header-align="right"
-                :class-name="REPORT_TABLE_AMOUNT_CELL"
-              >
-                <template #default="{ row }">
-                  <span :class="resolveSignedNumberClass(row.purchaseNetAmount)">
-                    {{ formatMoneyCell(row.purchaseNetAmount) }}
-                  </span>
-                </template>
-              </ElTableColumn>
-              <ElTableColumn
-                label="售价净额"
-                width="110"
-                align="right"
-                header-align="right"
-                :class-name="REPORT_TABLE_AMOUNT_CELL"
-              >
-                <template #default="{ row }">
-                  <span :class="resolveSignedNumberClass(row.saleNetAmount)">
-                    {{ formatMoneyCell(row.saleNetAmount) }}
-                  </span>
-                </template>
-              </ElTableColumn>
-              <ElTableColumn
-                prop="lineCount"
-                label="明细行数"
-                width="100"
-                align="right"
-                header-align="right"
-                :class-name="REPORT_TABLE_NUM_CELL"
+                v-if="showSummaryItemExtraColumns"
+                prop="medicationCode"
+                label="药品编码"
+                min-width="120"
+                align="center"
+                header-align="center"
+                show-overflow-tooltip
               />
+              <ElTableColumn
+                label="数量"
+                width="140"
+                align="right"
+                header-align="right"
+                :class-name="REPORT_TABLE_NUM_CELL"
+              >
+                <template #default="{ row }">
+                  {{ formatQtyWithUnit(row.netQuantity, row.packageUnitName) }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                v-if="showSummaryItemExtraColumns"
+                label="最小数量"
+                width="140"
+                align="right"
+                header-align="right"
+                :class-name="REPORT_TABLE_NUM_CELL"
+              >
+                <template #default="{ row }">
+                  {{ formatQtyWithUnit(row.minUnitQuantity, row.minUnitName) }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                v-if="showSummaryUnitPriceColumns"
+                label="进价单价"
+                width="110"
+                align="right"
+                header-align="right"
+                :class-name="REPORT_TABLE_AMOUNT_CELL"
+              >
+                <template #default="{ row }">
+                  {{ formatPurchaseMoneyCell(row.purchaseUnitPrice, row.categoryCode) }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                v-if="showSummaryUnitPriceColumns"
+                label="售价单价"
+                width="110"
+                align="right"
+                header-align="right"
+                :class-name="REPORT_TABLE_AMOUNT_CELL"
+              >
+                <template #default="{ row }">
+                  {{ formatMoneyCell(row.saleUnitPrice) }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                label="进价合计"
+                width="110"
+                align="right"
+                header-align="right"
+                :class-name="REPORT_TABLE_AMOUNT_CELL"
+              >
+                <template #default="{ row }">
+                  {{ formatPurchaseMoneyCell(row.purchaseNetAmount) }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                label="售价合计"
+                width="110"
+                align="right"
+                header-align="right"
+                :class-name="REPORT_TABLE_AMOUNT_CELL"
+              >
+                <template #default="{ row }">
+                  {{ formatMoneyCell(row.saleNetAmount) }}
+                </template>
+              </ElTableColumn>
             </ReportElTable>
 
             <ReportElTable
@@ -786,6 +1026,7 @@ onMounted(async () => {
               :data="detailRows"
               :height="tableHeight"
               :row-key="resolveDetailRowKey"
+              :row-class-name="resolveDispenseRowClassName"
             >
               <ElTableColumn label="来源" width="100" align="center" header-align="center">
                 <template #default="{ row }">
@@ -903,9 +1144,7 @@ onMounted(async () => {
                 :class-name="REPORT_TABLE_NUM_CELL"
               >
                 <template #default="{ row }">
-                  <span :class="resolveSignedNumberClass(row.quantity)">
-                    {{ formatQtyWithUnit(row.quantity, row.unitText) }}
-                  </span>
+                  {{ formatQtyWithUnit(row.quantity, row.unitText) }}
                 </template>
               </ElTableColumn>
               <ElTableColumn
@@ -916,7 +1155,7 @@ onMounted(async () => {
                 :class-name="REPORT_TABLE_AMOUNT_CELL"
               >
                 <template #default="{ row }">
-                  {{ formatMoneyCell(row.purchaseUnitPrice) }}
+                  {{ formatPurchaseMoneyCell(row.purchaseUnitPrice, row.categoryCode) }}
                 </template>
               </ElTableColumn>
               <ElTableColumn
@@ -927,9 +1166,7 @@ onMounted(async () => {
                 :class-name="REPORT_TABLE_AMOUNT_CELL"
               >
                 <template #default="{ row }">
-                  <span :class="resolveSignedNumberClass(row.purchaseAmount)">
-                    {{ formatMoneyCell(row.purchaseAmount) }}
-                  </span>
+                  {{ formatPurchaseMoneyCell(row.purchaseAmount, row.categoryCode) }}
                 </template>
               </ElTableColumn>
               <ElTableColumn
@@ -951,9 +1188,7 @@ onMounted(async () => {
                 :class-name="REPORT_TABLE_AMOUNT_CELL"
               >
                 <template #default="{ row }">
-                  <span :class="resolveSignedNumberClass(row.saleAmount)">
-                    {{ formatMoneyCell(row.saleAmount) }}
-                  </span>
+                  {{ formatMoneyCell(row.saleAmount) }}
                 </template>
               </ElTableColumn>
               <ElTableColumn
@@ -1018,5 +1253,10 @@ onMounted(async () => {
         />
       </template>
     </ReportListPageLayout>
+    <ReportPrintFieldDialog
+      ref="printFieldDialogRef"
+      :report-code="printReportCode"
+      :column-catalog="printColumnCatalog"
+    />
   </Page>
 </template>

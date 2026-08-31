@@ -101,9 +101,11 @@ public class TraceNumberDispenseTraceOrchestrator {
     /**
      * 批量记退药 IN 流水（IF-TRC-17 · DD §5）：按原发药 OUT 每码实扣镜像加回，禁止按当前剩余重算。
      *
-     * <p>原发未扫（无 OUT 流水）→ 不写追溯。整单退全额镜像；部分退按 OUT 落库逆序耗尽。</p>
+     * <p>定位 OUT：先按退药行 {@code bus_no}；若无流水（对冲行新单号），再按行上已拷贝
+     * {@code trace_no} 回落未回冲原发 OUT。原发未扫（无 OUT）→ 不写追溯。整单退全额镜像；
+     * 部分退按 OUT 落库逆序耗尽。写 IN 时 {@code bus_no} 仍用退药行单号（码上放心 116）。</p>
      *
-     * @param dispenses  已确认退药发放行（含原 trace_no / bus_no）
+     * @param dispenses  已确认退药发放行（含原 trace_no / 退药 bus_no）
      * @param operatorId 操作人
      * @param productByMedicationId 药品投影
      */
@@ -255,6 +257,9 @@ public class TraceNumberDispenseTraceOrchestrator {
     /**
      * 按原发药 OUT 流水构建退药 IN 每码加回量（DD §5.3）。
      *
+     * <p>优先按退药行 {@code bus_no} 取 OUT；若为空（对冲行新单号与原发 MDP 不一致），
+     * 再按行上已拷贝的 {@code trace_no} 定位尚未回冲的原发 OUT（只读追溯子表）。</p>
+     *
      * @param dispense 退药确认后的发放行
      * @param product  药品投影
      * @return 镜像每码拆零；无 OUT 或退量为 0 时为空列表
@@ -264,8 +269,8 @@ public class TraceNumberDispenseTraceOrchestrator {
         ProductDefinitionDisplayDto product
     ) {
         List<TraceNumberRecordQueryModel> outRecords =
-            traceNumberQueryService.listDispenseHospitalIoOutRecordsByBusNo(dispense.getBusNo());
-        // 原发未扫：无 OUT 流水
+            this.resolveDispenseOutRecordsForReturnMirror(dispense);
+        // 原发未扫或无法按码回落：无 OUT 流水
         if (outRecords.isEmpty()) {
             return new ArrayList<>();
         }
@@ -333,6 +338,37 @@ public class TraceNumberDispenseTraceOrchestrator {
             remain = remain.subtract(take);
         }
         return partial;
+    }
+
+    /**
+     * 解析退药镜像所需的原发药 HOSPITAL_IO OUT 流水。
+     *
+     * <p>先按退药行 {@code bus_no} 查；为空时按已拷贝 {@code trace_no} 回落未回冲原发 OUT
+     *（对冲行新单号场景，BR-PHA-038 / BR-IPR-007）。</p>
+     *
+     * @param dispense 退药发放行
+     * @return OUT 读模型；无则空列表
+     */
+    private List<TraceNumberRecordQueryModel> resolveDispenseOutRecordsForReturnMirror(
+        MedicationDispense dispense
+    ) {
+        // 空行：无镜像源
+        if (dispense == null) {
+            return new ArrayList<>();
+        }
+        List<TraceNumberRecordQueryModel> byBusNo =
+            traceNumberQueryService.listDispenseHospitalIoOutRecordsByBusNo(dispense.getBusNo());
+        // 退药行 bus_no 即原发单号（极少见同号）或历史双写：直接用
+        if (!byBusNo.isEmpty()) {
+            return byBusNo;
+        }
+        // 对冲行新 bus_no：按拷贝码定位尚未回冲的原发 OUT
+        List<String> codes = traceNumberRecordOrchestrator.splitTraceNos(dispense.getTraceNo());
+        // 行上无码：等同原发未扫，不写 IN
+        if (codes.isEmpty()) {
+            return new ArrayList<>();
+        }
+        return traceNumberQueryService.listUnreturnedDispenseHospitalIoOutRecordsByTraceNos(codes);
     }
 
     /**

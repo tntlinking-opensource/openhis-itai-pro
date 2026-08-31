@@ -190,6 +190,40 @@ const outpatientFooterLeftText = computed(() => {
   return (o.encounterId ?? '').trim() || '-';
 });
 
+/** 护士站：就诊下仍有待发放耗材时在卡片底栏点亮提醒 */
+const showPendingSupplyHint = computed(() => {
+  // 仅护士站队列展示耗材待发提醒，避免医生站/发药队列误亮
+  if (!display.value.showNurseAddon) {
+    return false;
+  }
+  return outpatient.value?.hasPendingSupply === true;
+});
+
+/** 卡片描边：待发耗材始终红框，选中时叠浅底以区分当前患者 */
+const cardFrameClass = computed(() => {
+  // 待发提醒优先于选中蓝框，避免选中后红框消失
+  if (showPendingSupplyHint.value) {
+    if (props.selected) {
+      return 'border-[var(--el-color-danger)] bg-primary/5 shadow-sm';
+    }
+    return 'border-[var(--el-color-danger)] bg-[var(--el-color-danger-light-9)] hover:border-[var(--el-color-danger)]';
+  }
+  if (props.selected) {
+    return 'border-primary bg-primary/5 shadow-sm';
+  }
+  return 'hover:border-primary/30 border-gray-200 hover:bg-gray-50/50';
+});
+
+/** 护士站就诊时间略放大，避免侧栏 12px 过小 */
+const outpatientVisitTimeClass = computed(() => {
+  // 仅护士站队列放大，医生站/发药卡片保持原字号
+  if (variantResolved.value === 'nurse') {
+    return 'text-sm';
+  }
+  return '';
+});
+
+/** 点选卡片：把当前患者抛给队列父级 */
 const handleSelect = () => {
   emit('select', props.patient);
 };
@@ -198,10 +232,7 @@ const handleSelect = () => {
 <template>
   <div
     class="group relative cursor-pointer overflow-hidden rounded-xl border bg-white transition-all duration-200"
-    :class="{
-      'border-primary bg-primary/5 shadow-sm': selected,
-      'hover:border-primary/30 border-gray-200 hover:bg-gray-50/50': !selected,
-    }"
+    :class="cardFrameClass"
     @click="handleSelect"
   >
     <div class="relative p-3">
@@ -294,9 +325,9 @@ const handleSelect = () => {
           </div>
         </template>
         <template v-else-if="outpatient">
-          <div class="flex items-center">
-            <span class="text-gray-600">就诊时间:</span>
-            <span class="ml-1.5 font-medium text-gray-800">{{
+          <div class="flex items-center" :class="outpatientVisitTimeClass">
+            <span class="text-[var(--el-text-color-regular)]">就诊时间:</span>
+            <span class="ml-1.5 font-medium text-[var(--el-text-color-primary)]">{{
               formatOutpatientVisitTime(outpatient)
             }}</span>
           </div>
@@ -337,12 +368,19 @@ const handleSelect = () => {
         </span>
         <span
           v-else-if="outpatientFooterLeftText"
-          class="min-w-0 flex-1 truncate text-xs font-medium text-gray-800"
+          class="patient-card__footer-no min-w-0 flex-1 truncate text-xs font-medium text-gray-800"
         >
           {{ outpatientFooterLeftText }}
         </span>
         <span v-else class="min-w-0 flex-1"></span>
         <div class="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-2">
+          <span
+            v-if="showPendingSupplyHint"
+            class="shrink-0 rounded-full bg-[var(--el-color-danger-light-9)] px-2.5 py-0.5 text-xs font-medium text-[var(--el-color-danger)]"
+            title="有未执行耗材"
+          >
+            待发耗材
+          </span>
           <span
             v-if="showPaymentChip"
             class="shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium"

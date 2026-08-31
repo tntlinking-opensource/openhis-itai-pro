@@ -27,6 +27,7 @@ import com.openhis.health.domain.medication.medicationdispense.query.MedicationD
 import com.openhis.health.domain.medication.medicationdispense.query.MedicationDispenseReportSummaryQuery;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.InpatientPatientMedicationUsageDispenseRow;
 import com.openhis.health.domain.medication.medicationdispense.queries.PreviewPharmacyCashierSettlementQuery;
+import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseReportSummaryBundle;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseReportSummaryRow;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.UnsettledDispensePreviewItemQueryModel;
 import com.openhis.health.domain.medication.medicationdispense.query.MedicationDispenseSlipPageQuery;
@@ -832,7 +833,7 @@ public class MedicationDispenseQueryService {
      * 护士站执行前：按药房+药品批量汇总全局待发预占（IF-IP-EXE-02 / BR-IP-EXE-014）。
      *
      * <p>状态口径见 {@link NurseStationExecutionConstants#DISPENSE_RESERVE_STATUSES_FOR_EXECUTION_GATE}；
-     * 须 {@code now &lt; limitTime}（与 IF-DOR-11 目录预减一致：草稿窗 2h、待发窗 12h，过期不再占库存）。
+     * 须 {@code now &lt; limitTime}（与 IF-DOR-11 目录预减一致：草稿窗 2h、待发窗 24h，过期不再占库存）。
      * <strong>不限就诊</strong>，统计该药房+药品下未过期未完成发药闭环占用。可用库存由
      * {@link com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemQueryService#sumAvailableInventory}
      * 汇总；FIFO dry-run 与 Gate 编排在应用层完成。</p>
@@ -891,7 +892,7 @@ public class MedicationDispenseQueryService {
      * <p>预占口径须与物理库存断言一致：入参 {@code lotNumber} 非空时仅累计<strong>同批号</strong>待发行，
      * 避免 FIFO 拆批后同方其它批号行被误计入本批净可用（物理按批、预占按品会假报不足）。
      * 批号为空时仍按库房+药品全批汇总。仅累计 {@code now &lt; limitTime} 的行
-     * （草稿约 2h、收费待发约 12h；与 {@link #listMedicationDispensesForOrderCatalogOccupancy} 一致）。</p>
+     * （草稿约 2h、收费待发约 24h；与 {@link #listMedicationDispensesForOrderCatalogOccupancy} 一致）。</p>
      *
      * @param locationId         发放库房库位主键
      * @param medicationId       药品定义主键
@@ -923,7 +924,7 @@ public class MedicationDispenseQueryService {
             predicates.add(cb.equal(root.get(FieldNameConstants.MEDICATION_ID), medicationId));
             predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(
                 NurseStationExecutionConstants.DISPENSE_RESERVE_STATUSES_FOR_EXECUTION_GATE));
-            // 预减窗：过期占用不计入（字段已按草稿 2h / 待发 12h 写入；查询侧必须过滤）
+            // 预减窗：过期占用不计入（字段已按草稿 2h / 待发 24h 写入；查询侧必须过滤）
             predicates.add(cb.greaterThan(root.get(FieldNameConstants.LIMIT_TIME), now));
             // 有批号时 DB 侧先收窄到同字面批号，内存再 trim 对齐物理断言
             if (lotFilter != null) {
@@ -1135,6 +1136,22 @@ public class MedicationDispenseQueryService {
     }
 
     /**
+     * 判断同品同批号是否存在未软删发药行（任意状态；BR-WHS-IN-018）。
+     *
+     * @param medicationId 药品定义主键
+     * @param lotNumber    批号字面值
+     * @return 存在则为 true
+     */
+    public boolean existsByMedicationIdAndLotNumber(Long medicationId, String lotNumber) {
+        // Gate：键不全视为无发放
+        if (medicationId == null || StringUtils.isEmpty(lotNumber)) {
+            return false;
+        }
+        return medicationDispenseRepository.existsByMedicationIdAndLotNumberAndIsDeletedFalse(
+            medicationId, lotNumber.trim());
+    }
+
+    /**
      * 判断药品是否存在非终态发放行（调价提交互斥 BR-PRC-SUB-003：在途发药）。
      *
      * @param medicationId 药品定义主键
@@ -1226,6 +1243,51 @@ public class MedicationDispenseQueryService {
             return List.of();
         }
         return medicationDispenseRepository.findByMedReqIdIn(medReqIds);
+    }
+
+    /**
+     * 按发放状态 + 药品申请主键范围解析去重 {@code med_req_id}（窗口化预解析，避免租户全量 COMPLETED 扫描）。
+     *
+     * <p>主键过多时按 {@link GeneralSharedConstants#ID_IN_QUERY_CHUNK_SIZE} 分批 IN。</p>
+     *
+     * @param statusEnum {@link DispenseStatus} 持久化 code；空则空列表
+     * @param medReqIds  药品申请主键范围；空则空列表
+     * @return 未软删且状态命中的去重 {@code med_req_id}
+     */
+    public List<Long> listDistinctMedicationRequestIdsByStatusEnumAndMedReqIdIn(
+        String statusEnum,
+        Collection<Long> medReqIds) {
+        String normalizedStatus = StringUtils.trimToNull(statusEnum);
+        if (normalizedStatus == null) {
+            return List.of();
+        }
+        DispenseStatus statusFilter = EnumUtil.fromCode(DispenseStatus.class, normalizedStatus);
+        // 非法状态码：拒查为空
+        if (statusFilter == null) {
+            return List.of();
+        }
+        List<Long> scopeIds = IdInQueryChunkSupport.distinctNonNullIds(medReqIds);
+        if (scopeIds.isEmpty()) {
+            return List.of();
+        }
+        List<MedicationDispense> rows = IdInQueryChunkSupport.loadByIdInChunks(
+            scopeIds,
+            chunkIds -> {
+                Specification<MedicationDispense> specification = (root, criteriaQuery, cb) -> cb.and(
+                    cb.isFalse(root.get(FieldNameConstants.IS_DELETED)),
+                    cb.equal(root.get(FieldNameConstants.STATUS_ENUM), statusFilter),
+                    cb.isNotNull(root.get(FieldNameConstants.MED_REQ_ID)),
+                    root.get(FieldNameConstants.MED_REQ_ID).in(chunkIds));
+                return medicationDispenseRepository.findAll(specification);
+            });
+        LinkedHashSet<Long> medReqIdSet = new LinkedHashSet<>();
+        // Loop：窗口内发放行 → 医嘱主键去重
+        for (MedicationDispense row : rows) {
+            if (row != null && row.getMedReqId() != null) {
+                medReqIdSet.add(row.getMedReqId());
+            }
+        }
+        return new ArrayList<>(medReqIdSet);
     }
 
     /**
@@ -1960,7 +2022,8 @@ public class MedicationDispenseQueryService {
      *
      * <p>关键字过滤关联 {@code hisrm_outpatient_info}，避免全表扫描后在内存分页。</p>
      *
-     * <p>不按 {@code status_changed_time} 时间窗筛选（该字段随配药/发药状态变更，不宜作队列收敛轴）。</p>
+     * <p>可选就诊收窄由应用层写入 {@code resolvedEncounterScope}（日期窗按就诊 {@code startTime}，与收费队列同口径）；
+     * 不按 {@code status_changed_time} 作发放行时间窗。</p>
      *
      * @param query 查询入参；{@code null} 视为空条件对象；分页未传时回落第 1 页、默认页大小（{@link GeneralSharedConstants#DEFAULT_QUERY_PAGE_SIZE}）
      * @return 就诊主键页（按本就诊下命中发放行的最近 {@code created_at} 倒序）
@@ -1998,10 +2061,10 @@ public class MedicationDispenseQueryService {
     }
 
     /**
-     * 住院发药队列：分页返回「存在药品发放事实且住院在院」的就诊主键（AS-IP-PHA-001 IF-IPP-02）。
+     * 住院发药队列：分页返回「存在药品发放事实且队列可见」的就诊主键（AS-IP-PHA-001 IF-IPP-02）。
      *
-     * <p>关键字、在院状态、可选病区过滤关联 {@code hisrm_inpatient_info}，避免全表扫描后在内存分页。</p>
-     * <p>不按 {@code status_changed_time} 时间窗筛选（该字段随配药/发药状态变更，不宜作队列收敛轴）。</p>
+     * <p>应用层预解析队列可见就诊（在院 + 出院轨）后写入 {@code resolvedEncounterScope}；
+     * 不按 {@code status_changed_time} 时间窗筛选。</p>
      *
      * @param query 查询入参；{@code null} 视为空条件对象
      * @return 就诊主键页（按本就诊下命中发放行的最近 {@code created_at} 倒序）
@@ -2193,7 +2256,7 @@ public class MedicationDispenseQueryService {
     }
 
     /**
-     * 门诊待发药就诊队列 EXISTS 谓词：门诊/临时类型、状态多选与退药收口过滤。
+     * 门诊待发药就诊队列 EXISTS 谓词：门诊/临时类型、状态多选、可选就诊收窄与退药收口过滤。
      *
      * @param md    发放根
      * @param cq    外层查询
@@ -2223,9 +2286,8 @@ public class MedicationDispenseQueryService {
         }
         List<MedicationDispenseType> outpatientTypes = List.of(MedicationDispenseType.OUTPATIENT, MedicationDispenseType.TEMPORARY);
         predicates.add(md.get(FieldNameConstants.DISPENSE_ENUM).in(outpatientTypes));
-        if (StringUtils.isNotEmpty(query.getKeyword())) {
-            this.applyEncounterScopePredicate(predicates, md, cb, query.getResolvedEncounterScope());
-        }
+        // 日期/关键字预解析的就诊收窄（null 不追加；empty → 恒假）
+        this.applyEncounterScopePredicate(predicates, md, cb, query.getResolvedEncounterScope());
         return cb.and(predicates.toArray(new Predicate[0]));
     }
 
@@ -2684,15 +2746,27 @@ public class MedicationDispenseQueryService {
      */
     public List<MedicationDispenseReportSummaryRow> summarizeMedicationDispenseReport(
         MedicationDispenseReportSummaryQuery query) {
+        return this.summarizeMedicationDispenseReportWithSlips(query).getSummaryRows();
+    }
+
+    /**
+     * 发药报表患者侧净数量汇总，并同次扫描产出 slip 事实行。
+     *
+     * <p>筛选与 {@link #summarizeMedicationDispenseReport} 一致；一次 {@code findAll} 同时分桶数量与映射 slip，
+     * 供应用层汇总进售价复用，禁止再按页二次扫描同一窗。</p>
+     *
+     * @param query 汇总入参；{@code null} 时按空筛选
+     * @return 汇总行 + 同窗 slip；无命中时两边均为空列表
+     */
+    public MedicationDispenseReportSummaryBundle summarizeMedicationDispenseReportWithSlips(
+        MedicationDispenseReportSummaryQuery query) {
+        MedicationDispenseReportSummaryBundle bundle = new MedicationDispenseReportSummaryBundle();
         if (query == null) {
             query = new MedicationDispenseReportSummaryQuery();
         }
-        // Pre：复用发退药记录规约加载候选行（日窗由应用层约束）
+        // Pre：复用发退药记录规约加载候选行（日窗由应用层约束）；汇总不分页排序，省全窗 Sort
         Specification<MedicationDispense> specification = this.buildMedicationDispenseRecordSpecification(query);
-        Sort sort = Sort.by(
-            Sort.Order.desc(FieldNameConstants.DISPENSE_TIME),
-            Sort.Order.desc(FieldNameConstants.ID));
-        List<MedicationDispense> rows = medicationDispenseRepository.findAll(specification, sort);
+        List<MedicationDispense> rows = medicationDispenseRepository.findAll(specification);
         String dimension = StringUtils.trimToNull(query.getSummaryDimension());
         // 缺省按发药药房分桶
         if (dimension == null) {
@@ -2702,8 +2776,9 @@ public class MedicationDispenseQueryService {
         if (categoryByMedicationId == null) {
             categoryByMedicationId = Map.of();
         }
-        // Asm：按维度分桶累加带符号数量（退药为负）
+        // Asm：按维度分桶累加带符号数量（退药为负）；同环映射 slip 供定价
         Map<String, MedicationDispenseReportSummaryRow> bucketByKey = new LinkedHashMap<>();
+        List<MedicationDispenseSlipQueryModel> slipRows = new ArrayList<>(rows.size());
         for (MedicationDispense row : rows) {
             if (row == null) {
                 continue;
@@ -2722,8 +2797,11 @@ public class MedicationDispenseQueryService {
             BigDecimal signedQty = this.resolveMedicationDispenseReportSignedQuantity(row);
             summary.setNetQuantity(summary.getNetQuantity().add(signedQty));
             summary.setLineCount(summary.getLineCount() + 1L);
+            slipRows.add(this.toSlipQueryModel(row));
         }
-        return new ArrayList<>(bucketByKey.values());
+        bundle.setSummaryRows(new ArrayList<>(bucketByKey.values()));
+        bundle.setSlipRows(slipRows);
+        return bundle;
     }
 
     /**

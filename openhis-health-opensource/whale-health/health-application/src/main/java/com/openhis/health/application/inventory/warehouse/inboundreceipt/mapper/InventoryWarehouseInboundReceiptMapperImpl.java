@@ -769,8 +769,8 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
                 item.setEndTime(line.getEndTime());
                 item.setReason(null);
                 item.setRemake(line.getRemake());
-                // 单头发票号写入每一行（同号多行共享）
-                item.setInvoiceNo(request.getInvoiceNo());
+                // 单头发票号写入每一行（同号多行共享）；空则占位 0（医保 3503/库 DEFAULT）
+                item.setInvoiceNo(this.resolveInvoiceNoOrDefault(request.getInvoiceNo()));
                 item.setApplicantId(applicantId);
                 item.setPractitionerId(request.getPractitionerId());
                 item.setApplyTime(null);
@@ -854,8 +854,8 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
                 item.setEndTime(line.getEndTime());
                 item.setReason(null);
                 item.setRemake(line.getRemake());
-                // 单头发票号写入每一行（同号多行共享）
-                item.setInvoiceNo(request.getInvoiceNo());
+                // 单头发票号写入每一行（同号多行共享）；空则占位 0（医保 3503/库 DEFAULT）
+                item.setInvoiceNo(this.resolveInvoiceNoOrDefault(request.getInvoiceNo()));
                 item.setApplicantId(applicantId);
                 item.setPractitionerId(request.getPractitionerId());
                 item.setApplyTime(null);
@@ -1274,6 +1274,9 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
         // 选品透出药典追溯单位+比，供前端扫码应扫数（单据不再采集）
         dto.setTraceUnitCode(pr.getTraceUnitCode());
         dto.setTraceUnitRatio(pr.getTraceUnitRatio());
+        // 拆分属性：码上放心确认生成时区分「须小码」与「可中大按包装入库」
+        dto.setPartAttributeEnum(pr.getPartAttributeEnum());
+        dto.setPartAttributeEnumDictText(pr.getPartAttributeEnumDictText());
         dto.setUnitBands(ProductDefinitionCatalogUnitBandsAssembler.buildInboundSelectionBands(pr));
         dto.setAvailableQuantity(null);
         return dto;
@@ -1321,6 +1324,25 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
             throw new IllegalArgumentException("categoryEnum 非法");
         }
         return category.getCode();
+    }
+
+    /**
+     * 采购发票号：页面选填；空白则落库占位 {@code 0}（对齐 {@code wkf_supply_request.invoice_no} DEFAULT
+     * 与进销存 3503/3504 {@code purc_invo_no}，避免医保必填拦截）。
+     *
+     * @param invoiceNo 单头传入发票号，可为 null/空白
+     * @return 非空发票号或占位 {@code 0}
+     */
+    private String resolveInvoiceNoOrDefault(String invoiceNo) {
+        // 未填或仅空白：与库 DEFAULT / CHS DEFAULT_PURC_INVO_NO 同口径
+        if (StringUtils.isEmpty(invoiceNo)) {
+            return "0";
+        }
+        String trimmed = invoiceNo.trim();
+        if (StringUtils.isEmpty(trimmed)) {
+            return "0";
+        }
+        return trimmed;
     }
 
     /**

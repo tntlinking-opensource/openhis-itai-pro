@@ -89,10 +89,8 @@ public class CreateMedicationDefinitionCommand
         private String mrSettlementTypeCode;
         /** 药理分类。 */
         private String pharmacologyCategoryCode;
-        /** 生产厂家ID。 */
+        /** 生产厂家ID（cus_supplier.id，type=生产厂家）。 */
         private Long manufacturerId;
-        /** 生产厂家文本。 */
-        private String manufacturerText;
         /**
          * 供应商标识（历史字段；目录维护写路径由应用层强制置 null）。
          */
@@ -125,6 +123,10 @@ public class CreateMedicationDefinitionCommand
         private java.math.BigDecimal itemMaxQuantity;
         /** 业务标识：是否基药。 */
         private Boolean basicFlag;
+        /** 业务标识：是否国家重点监控药品（勾选=是）。 */
+        private Boolean nationalMonitorFlag;
+        /** 业务标识：是否集采药品（勾选=是）。 */
+        private Boolean centralPurchaseFlag;
         /** 业务标识：是否需皮试。 */
         private Boolean skinTestFlag;
         /** 业务标识：是否注射剂。 */

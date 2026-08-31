@@ -143,6 +143,9 @@ public class PriceAdjustmentQueryService {
     /**
      * 批量筛出存在已审批调价的项目主键（一次 IN，避免报表逐品规 exists）。
      *
+     * <p>仅需品规级判断时用本方法；报表历史进价须用 {@link #listApprovedItemLotCompositeKeys}
+     * 再与结果批号 map 匹配，禁止无脑对全品规拉完整调价历史。</p>
+     *
      * @param itemTable 项目物理表
      * @param itemIds   项目主键集合
      * @return 有已审批调价的 itemId；空入参返回空集
@@ -174,6 +177,86 @@ public class PriceAdjustmentQueryService {
             }
         }
         return result;
+    }
+
+    /**
+     * 轻量：单独查本聚合已审批调价，拎出「品规+批号」复合键（主表 IN + 子表 IN）。
+     *
+     * <p>不组装完整 {@link PriceAdjustmentLineQueryModel}；调用方用代码与结果行批号 map 匹配后，
+     * 仅对命中品规再调 {@link #findApprovedHistoryByItems}。禁止把调价表 JOIN 进主业务大扫。</p>
+     *
+     * @param itemTable 项目物理表
+     * @param itemIds   候选品规主键；空则返回空集
+     * @return {@link #itemLotCompositeKey} 集合；无调价明细时为空
+     */
+    public LinkedHashSet<String> listApprovedItemLotCompositeKeys(
+        String itemTable,
+        Collection<Long> itemIds) {
+        LinkedHashSet<String> result = new LinkedHashSet<>();
+        if (StringUtils.isEmpty(itemTable) || itemIds == null || itemIds.isEmpty()) {
+            return result;
+        }
+        LinkedHashSet<Long> distinct = new LinkedHashSet<>();
+        for (Long itemId : itemIds) {
+            // 空主键不进 IN
+            if (itemId != null) {
+                distinct.add(itemId);
+            }
+        }
+        if (distinct.isEmpty()) {
+            return result;
+        }
+        List<PriceAdjustment> rows = this.repository.findByItemTableAndItemIdInAndStatusEnumAndIsDeletedFalse(
+            itemTable.trim(),
+            new ArrayList<>(distinct),
+            PriceAdjustmentStatus.APPROVED.getCode());
+        if (rows == null || rows.isEmpty()) {
+            return result;
+        }
+        Map<Long, Long> adjustmentIdToItemId = new LinkedHashMap<>();
+        List<Long> adjustmentIds = new ArrayList<>();
+        for (PriceAdjustment row : rows) {
+            // Gate：缺主行主键或品规 id 无法组批号键
+            if (row == null || row.getId() == null || row.getItemId() == null) {
+                continue;
+            }
+            adjustmentIdToItemId.put(row.getId(), row.getItemId());
+            adjustmentIds.add(row.getId());
+        }
+        if (adjustmentIds.isEmpty()) {
+            return result;
+        }
+        List<PriceAdjustmentDetail> details =
+            this.detailRepository.findByAdjustmentIdInAndIsDeletedFalse(adjustmentIds);
+        if (details == null || details.isEmpty()) {
+            return result;
+        }
+        for (PriceAdjustmentDetail detail : details) {
+            // Gate：明细批号空则无法与发放/账单批号匹配
+            if (detail == null || detail.getAdjustmentId() == null || StringUtils.isEmpty(detail.getLotNumber())) {
+                continue;
+            }
+            Long itemId = adjustmentIdToItemId.get(detail.getAdjustmentId());
+            if (itemId == null) {
+                continue;
+            }
+            result.add(this.itemLotCompositeKey(itemId, detail.getLotNumber()));
+        }
+        return result;
+    }
+
+    /**
+     * 组「品规+批号」复合键（SOH 分隔，与批号定价键同门禁，避免批号字面量碰撞）。
+     *
+     * @param itemId    品规主键
+     * @param lotNumber 批号（会 trim）
+     * @return 复合键；任一项非法时 {@code null}
+     */
+    public String itemLotCompositeKey(Long itemId, String lotNumber) {
+        if (itemId == null || StringUtils.isEmpty(lotNumber)) {
+            return null;
+        }
+        return itemId + "\u0001" + lotNumber.trim();
     }
 
     /**
@@ -320,7 +403,7 @@ public class PriceAdjustmentQueryService {
      * 按项目查询已生效调价历史（审批时间倒序）。
      *
      * <p>单品入口；批量报表须用 {@link #findApprovedHistoryByItems}，且须先
-     * {@link #listApprovedItemIds} 收窄——<strong>禁止</strong>对无调价品规拉历史。</p>
+     * {@link #listApprovedItemLotCompositeKeys} 与结果批号匹配收窄——<strong>禁止</strong>对无调价/未命中品规拉历史。</p>
      *
      * @param itemTable 项目物理表
      * @param itemId    项目定义主键
@@ -342,11 +425,11 @@ public class PriceAdjustmentQueryService {
     /**
      * 批量按项目加载已生效调价历史（一次主表 IN + 子表批量；审批时刻倒序）。
      *
-     * <p>调用方须先 {@link #listApprovedItemIds} 仅传入<strong>有调价</strong>的 itemId；
-     * 无调价品规不得调用本方法（直接用 ACTIVE 批号进/售价）。</p>
+     * <p>调用方须先 {@link #listApprovedItemLotCompositeKeys}（或 {@link #listApprovedItemIds}）
+     * 仅传入<strong>与结果批号命中</strong>的 itemId；无调价/未命中品规不得调用本方法（直接用 ACTIVE 批号进/售价）。</p>
      *
      * @param itemTable 项目物理表
-     * @param itemIds   已确认有调价的项目主键；空则返回空 Map
+     * @param itemIds   已确认有调价且批号命中的项目主键；空则返回空 Map
      * @return itemId → 调价主行读模型列表（含子表）；无命中品规不出现在 Map
      */
     public Map<Long, List<PriceAdjustmentLineQueryModel>> findApprovedHistoryByItems(

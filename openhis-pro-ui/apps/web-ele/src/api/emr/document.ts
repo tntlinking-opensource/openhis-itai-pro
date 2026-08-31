@@ -19,6 +19,8 @@ export interface DocumentContentDto {
   patientId?: string;
   encounterId?: string;
   documentTypeCode?: string;
+  /** 文书类型显示名（页眉 `{documentTitle}` 回退用） */
+  documentTypeName?: string;
   title?: string;
   status?: string;
   content?: Record<string, unknown> | string | null;
@@ -127,6 +129,17 @@ export interface EmrPrintMarginsMm {
   leftMm?: number;
   rightMm?: number;
   topMm?: number;
+  /** 屏上 ProseMirror padding 实测：PDF 正文区顶边距（mm），不再叠加 header 高度 */
+  contentTopMm?: number;
+  /** 屏上 ProseMirror padding 实测：PDF 正文区底边距（mm），不再叠加 footer 高度 */
+  contentBottomMm?: number;
+}
+
+export interface EmrPrintHeaderPayload {
+  enabled?: boolean;
+  heightMm?: number;
+  template?: string;
+  firstPageDifferent?: boolean;
 }
 
 export interface EmrPrintFooterPayload {
@@ -139,6 +152,7 @@ export interface EmrPrintFooterPayload {
 
 export interface EmrPrintConfigPayload {
   margins?: EmrPrintMarginsMm;
+  header?: EmrPrintHeaderPayload;
   footer?: EmrPrintFooterPayload;
 }
 

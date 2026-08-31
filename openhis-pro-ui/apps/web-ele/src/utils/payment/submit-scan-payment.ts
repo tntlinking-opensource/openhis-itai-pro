@@ -2,6 +2,7 @@ import type { ClientScanResultDto } from '#/api/payment/payment.types';
 
 import { httpPreparePrepayAdvanceDeposit } from '#/api/inpatient-prepay';
 import {
+  httpAbandonPendingScan,
   httpApplyClientScanResult,
   httpGetBpcOrdersByPayment,
   httpPrepareConsumerScan,
@@ -12,6 +13,27 @@ import { pollUnionPayOrder } from '#/utils/payment/poll-union-pay-order';
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
 
 import { cacheClientScanResult, peekCachedClientScanResult } from './scan-settle-cache';
+
+/**
+ * 关闭本笔预下单 PENDING（失败吞掉，避免盖住主错误）。
+ */
+async function abandonPendingQuietly(params: {
+  paymentId: number | string;
+  merTradeNo: string;
+  reason: string;
+  respCode: string;
+}): Promise<void> {
+  try {
+    await httpAbandonPendingScan({
+      paymentId: params.paymentId,
+      merTradeNo: params.merTradeNo,
+      reason: params.reason,
+      respCode: params.respCode,
+    });
+  } catch {
+    // 关单失败不阻断主流程提示；prepare 重试与草稿作废仍会收口
+  }
+}
 
 export interface SubmitScanPaymentParams {
   paymentDraftId: number | string;
@@ -63,6 +85,7 @@ export function toClientScanFromBpcOrder(order: BpcOrderSummaryDto): ClientScanR
     respCode: '00',
     respMsg: order.respMsg || '银联已扣款，请补结算',
     txnAmtFen: order.txnAmtFen,
+    paidAmtFen: order.paidAmtFen,
   };
 }
 
@@ -165,13 +188,36 @@ export async function submitScanPayment(
       error instanceof UnionPayWinError &&
       (error.code === 'NETWORK' || error.code === 'HTTP' || error.message.includes('超时'));
     if (!shouldPoll) {
+      await abandonPendingQuietly({
+        paymentId: paymentDraftId,
+        merTradeNo,
+        reason: 'client scan failed',
+        respCode: 'CL',
+      });
       throw error;
     }
     const polled = await pollUnionPayOrder({ merTradeNo });
     if (!polled?.success) {
+      await abandonPendingQuietly({
+        paymentId: paymentDraftId,
+        merTradeNo,
+        reason: 'query timeout unresolved',
+        respCode: 'TO',
+      });
       throw new Error('支付结果未确认，请重试或改其它支付方式');
     }
     clientScanResult = toClientScanResultDto(polled);
+  }
+
+  // 非成功回传：落 FAILED，避免 PENDING 悬挂
+  if (String(clientScanResult.respCode ?? '').trim() !== '00') {
+    await abandonPendingQuietly({
+      paymentId: paymentDraftId,
+      merTradeNo: clientScanResult.merTradeNo || merTradeNo,
+      reason: clientScanResult.respMsg || 'scan rejected',
+      respCode: 'CL',
+    });
+    throw new Error(clientScanResult.respMsg || '银联被扫失败');
   }
 
   // Cmd：Win 成功后立刻落 BPC SUCCESS，与后续 settle/2207 事务解耦。

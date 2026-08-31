@@ -49,6 +49,14 @@ public interface EinvBossDocumentRepository extends JpaRepository<EinvBossDocume
     Optional<EinvBossDocument> findFirstByPaymentIdAndIsDeletedFalseOrderByIdAsc(Long paymentId);
 
     /**
+     * 按支付主键取最新单据（冲销重开后新票 id 更大）。
+     *
+     * @param paymentId 支付主键
+     * @return 最新单据
+     */
+    Optional<EinvBossDocument> findFirstByPaymentIdAndIsDeletedFalseOrderByIdDesc(Long paymentId);
+
+    /**
      * 按业务流水号查询单据。
      *
      * @param busNo 业务流水号

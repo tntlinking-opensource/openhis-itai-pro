@@ -13,12 +13,13 @@ import type {
   PresentationModeCode,
 } from '#/api/report/fee-detail';
 import type { ApiOptionItem } from '#/types/api-response';
+import type { ReportPrintColumnDef } from '#/utils/print/print-report-list';
 
 import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
-import { Download, Refresh, Search } from '@element-plus/icons-vue';
+import { Download, Printer, Refresh, Search, Setting } from '@element-plus/icons-vue';
 import {
   ElButton,
   ElDatePicker,
@@ -45,13 +46,22 @@ import {
   SETTLEMENT_STATUS_PENDING,
   SETTLEMENT_STATUS_SETTLED,
   SUMMARY_DIMENSION_FIN_TYPE,
+  SUMMARY_DIMENSION_ITEM,
+  summarizeFeeDetailPurchaseCornerApi,
   summarizeFeeDetailReportApi,
 } from '#/api/report/fee-detail';
 import { useRequest } from '#/hooks/use-request';
+import { buildExcelExportColumns } from '#/utils/export/build-excel-export-columns';
 import { downloadBinaryExportFile } from '#/utils/export/download-binary-export';
-import { formatMoneyYuan } from '#/utils/format/money-scale';
+import {
+  formatMoneyYuan,
+  formatPurchaseMoneyYuan,
+  formatPurchaseUnitPriceDisplay,
+} from '#/utils/format/money-scale';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import {
+  isReportRefundBySignedFields,
+  mapReportPrintRow,
   REPORT_QUERY_CONTROL,
   REPORT_QUERY_CONTROL_DATERANGE,
   REPORT_TABLE_AMOUNT_CELL,
@@ -60,8 +70,13 @@ import {
   ReportListPageLayout,
   ReportListToolbar,
   ReportPageFooter,
+  ReportPrintFieldDialog,
   ReportQueryBar,
+  reportPrintFieldsOf,
   ReportTableScroll,
+  resolveReportRefundRowClassName,
+  sumReportPurchaseCornerFromRows,
+  useReportListPrint,
 } from '#/views/report/shared';
 import {
   buildReportDateRangeShortcuts,
@@ -244,20 +259,23 @@ const footerSummaryItems = computed(() => {
   if (isSummaryTab.value) {
     const footer = summaryFooter.value;
     if (!footer) {
-      return [{ label: '汇总行数', value: summaryRows.value.length }];
+      return SUMMARY_FOOTER_DISPLAY.map((item) => ({
+        label: item.label,
+        value: '—',
+      }));
     }
     return SUMMARY_FOOTER_DISPLAY.map((item) => {
       const raw = footer[item.key];
-      if (item.kind === 'count') {
+      if (item.kind === 'qty') {
         return {
           label: item.label,
-          value: raw === undefined || raw === null || raw === '' ? '—' : String(raw),
-          primary: item.key === 'lineCountTotal',
+          value: raw === undefined || raw === null || raw === '' ? '—' : formatQuantity(raw),
         };
       }
       return {
         label: item.label,
-        value: formatMoneyCell(raw),
+        value:
+          item.key === 'purchaseAmountTotal' ? formatPurchaseMoneyCell(raw) : formatMoneyCell(raw),
         primary: item.key === 'saleAmountTotal',
         prefix: '¥',
       };
@@ -269,9 +287,132 @@ const footerSummaryItems = computed(() => {
   }
   return FEE_DETAIL_SUMMARY_DISPLAY.map((item) => ({
     label: item.label,
-    value: formatMoneyCell(summary[item.key]),
+    value:
+      item.key === 'purchaseAmountTotal'
+        ? formatPurchaseMoneyCell(summary[item.key])
+        : formatMoneyCell(summary[item.key]),
   }));
 });
+
+/** 汇总 Tab 仅「品规」维展示进/售单价。 */
+const showSummaryUnitPriceColumns = computed(
+  () => queryParams.summaryDimension === SUMMARY_DIMENSION_ITEM,
+);
+
+/** 汇总 Tab 可打印列（进/售单价仅品规维）。 */
+const summaryPrintColumns = computed<ReportPrintColumnDef[]>(() => {
+  const cols: ReportPrintColumnDef[] = [
+    { field: 'dimensionName', title: '维度', align: 'center', widthWeight: 1.4 },
+    { field: 'quantityTotal', title: '数量', align: 'right', widthWeight: 0.9 },
+  ];
+  if (showSummaryUnitPriceColumns.value) {
+    cols.push(
+      { field: 'purchaseUnitPrice', title: '进价单价', align: 'right', widthWeight: 1 },
+      { field: 'saleUnitPrice', title: '售价单价', align: 'right', widthWeight: 1 },
+    );
+  }
+  cols.push(
+    { field: 'purchaseAmountTotal', title: '进价合计', align: 'right', widthWeight: 1 },
+    { field: 'saleAmountTotal', title: '售价合计', align: 'right', widthWeight: 1 },
+  );
+  return cols;
+});
+
+/** 明细 Tab 可打印列（与当前表明细列对齐）。 */
+const DETAIL_PRINT_COLUMNS = computed<ReportPrintColumnDef[]>(() => [
+  { field: 'busNo', title: '就诊号', align: 'center', widthWeight: 1.1 },
+  { field: 'patientName', title: '患者', align: 'center', widthWeight: 0.9 },
+  { field: 'registrationDepartmentName', title: '开立科室', align: 'center', widthWeight: 1 },
+  { field: 'encounterDate', title: '就诊日期', align: 'center', widthWeight: 1 },
+  { field: 'feeNatureDisplay', title: '费用性质', align: 'center', widthWeight: 0.9 },
+  { field: 'medTypeDisplay', title: '医疗类别', align: 'center', widthWeight: 0.9 },
+  { field: 'subCategoryDisplay', title: '项目类别', align: 'center', widthWeight: 0.9 },
+  { field: 'productName', title: '项目名称', align: 'center', widthWeight: 1.3 },
+  { field: 'productCode', title: '项目编码', align: 'center', widthWeight: 1 },
+  { field: 'quantityDisplay', title: '数量', align: 'right', widthWeight: 0.9 },
+  { field: 'orderingDoctorName', title: '开单医生', align: 'center', widthWeight: 0.9 },
+  { field: 'performerName', title: '执行人', align: 'center', widthWeight: 0.8 },
+  { field: 'cashierName', title: '收费人', align: 'center', widthWeight: 0.8 },
+  {
+    field: 'billDate',
+    title: props.scope === 'inpatient' ? '业务时间' : '结算时间',
+    align: 'center',
+    widthWeight: 1.2,
+  },
+  { field: 'tradeDirectionLabel', title: '来源', align: 'center', widthWeight: 0.7 },
+  { field: 'insuranceLevelDisplay', title: '医保等级', align: 'center', widthWeight: 0.8 },
+  { field: 'purchaseUnitPrice', title: '进价单价', align: 'right', widthWeight: 0.9 },
+  { field: 'purchaseAmount', title: '进价总价', align: 'right', widthWeight: 0.9 },
+  { field: 'saleUnitPrice', title: '售价单价', align: 'right', widthWeight: 0.9 },
+  { field: 'saleAmount', title: '售价总价', align: 'right', widthWeight: 0.9 },
+]);
+
+/** 当前 Tab 打印列目录。 */
+const printColumnCatalog = computed<ReportPrintColumnDef[]>(() =>
+  isSummaryTab.value ? summaryPrintColumns.value : DETAIL_PRINT_COLUMNS.value,
+);
+
+/** 打印偏好键：按 scope + 汇总/明细隔离。 */
+const printReportCode = computed(
+  () => `report-fee-detail-${props.scope}-${isSummaryTab.value ? 'summary' : 'detail'}`,
+);
+
+/** 打印单据标题（含当前 Tab）。 */
+const printReportTitle = computed(
+  () => `${pageTitle.value} · ${isSummaryTab.value ? '汇总' : '明细'}`,
+);
+
+/** 将当前汇总行映射为打印单元格。 */
+function mapSummaryPrintRows(): Record<string, string>[] {
+  const fields = reportPrintFieldsOf(summaryPrintColumns.value);
+  // 只打当前汇总视图行
+  return summaryRows.value.map((row) =>
+    mapReportPrintRow(
+      {
+        ...row,
+        dimensionName: row.dimensionName || row.finTypeDisplay || '',
+      } as Record<string, unknown>,
+      fields,
+      {
+        quantityTotal: (value) => formatQuantity(value),
+        purchaseUnitPrice: (value) => formatPurchaseMoneyCell(value),
+        saleUnitPrice: (value) => formatMoneyCell(value),
+        purchaseAmountTotal: (value) => formatPurchaseMoneyCell(value),
+        saleAmountTotal: (value) => formatMoneyCell(value),
+      },
+    ),
+  );
+}
+
+/** 将当前页明细行映射为打印单元格。 */
+function mapDetailPrintRows(): Record<string, string>[] {
+  const fields = reportPrintFieldsOf(DETAIL_PRINT_COLUMNS.value);
+  // 只打当前明细页可见行（含小计行）
+  return tableData.value.map((row) =>
+    mapReportPrintRow(row as Record<string, unknown>, fields, {
+      quantityDisplay: (_value, r) =>
+        formatQuantityWithUnit(r.quantityValue, r.quantityUnitDisplay),
+      tradeDirectionLabel: (_value, r) => {
+        if (r.rowType === 'subtotal') {
+          return '—';
+        }
+        return resolveTradeDirectionLabel(r.tradeDirection as string | undefined);
+      },
+      purchaseUnitPrice: (value) => formatPurchaseUnitPriceCell(value),
+      purchaseAmount: (value) => formatPurchaseMoneyCell(value),
+      saleUnitPrice: (value) => formatMoneyCell(value),
+      saleAmount: (value) => formatMoneyCell(value),
+    }),
+  );
+}
+
+const { printFieldDialogRef, printSubmitting, handleOpenPrintFields, handlePrintCurrentPage } =
+  useReportListPrint({
+    getReportCode: () => printReportCode.value,
+    getColumnCatalog: () => printColumnCatalog.value,
+    getReportTitle: () => printReportTitle.value,
+    getPrintRows: () => (isSummaryTab.value ? mapSummaryPrintRows() : mapDetailPrintRows()),
+  });
 
 const { run: runInit, loading: initLoading } = useRequest(
   () => loadFeeDetailReportPageInitApi(props.scope),
@@ -284,11 +425,27 @@ const { run: runSummarize, loading: summarizeLoading } = useRequest(
     manual: true,
     onSuccess: (data) => {
       summaryRows.value = data?.rows ?? [];
-      summaryFooter.value = data?.footer;
+      // Type B：页脚进价=当次汇总行加总，与表内进价同筛选同管线
+      const footer = data?.footer ? { ...data.footer } : undefined;
+      if (footer) {
+        footer.purchaseAmountTotal = sumReportPurchaseCornerFromRows(
+          summaryRows.value as Array<Record<string, unknown>>,
+          'purchaseAmountTotal',
+        );
+      }
+      summaryFooter.value = footer;
       // 汇总 Tab 独立 total，避免与明细分页 total 串扰
       summaryTotal.value = summaryRows.value.length;
     },
   },
+);
+
+/** 明细分页世代号：翻页/重查时丢弃过期进价列角回包。 */
+const detailPageGeneration = ref(0);
+
+const { run: runPurchaseCorner } = useRequest(
+  (body) => summarizeFeeDetailPurchaseCornerApi(props.scope, body),
+  { manual: true },
 );
 
 const { run: runPage, loading: pageLoading } = useRequest(
@@ -303,6 +460,7 @@ const { run: runPage, loading: pageLoading } = useRequest(
       if (data.pageNo != null && Number(data.pageNo) >= 1) {
         queryParams.pageNo = Number(data.pageNo);
       }
+      // 先展示售价列角；进价合计另 IF 异步回填（null 时页脚显示 —）
       globalSummary.value = data.summary;
     },
   },
@@ -325,7 +483,7 @@ const { run: runExport, loading: exportLoading } = useRequest(
 );
 
 const tableLoading = computed(
-  () => initLoading.value || summarizeLoading.value || pageLoading.value,
+  () => initLoading.value || summarizeLoading.value || pageLoading.value || printSubmitting.value,
 );
 
 /** 解析默认 Tab：门/住院费用明细均固定明细（忽略后端 defaultActiveTab）。 */
@@ -392,14 +550,47 @@ async function getList() {
   if (isSummaryTab.value) {
     await runSummarize(filters);
   } else {
+    // 提升世代号：丢弃上一轮未完成的进价列角
+    detailPageGeneration.value += 1;
+    const generation = detailPageGeneration.value;
     await runPage({
       ...filters,
       pageNo: queryParams.pageNo,
       pageSize: queryParams.pageSize,
     });
+    // 列表已出后再刷进价列角，不阻塞表格 loading
+    void refreshPurchaseCorner(filters, generation);
   }
   await nextTick();
   tableScrollRef.value?.updateTableHeight();
+}
+
+/**
+ * 异步回填明细页脚进价合计（与当前筛选同口径）。
+ *
+ * @param filters 当前查询筛选
+ * @param generation 发起时的明细分页世代号
+ */
+async function refreshPurchaseCorner(
+  filters: NonNullable<ReturnType<typeof buildFilterPayload>>,
+  generation: number,
+) {
+  try {
+    const corner = await runPurchaseCorner(filters);
+    // 已换筛选/翻页则丢弃过期回包
+    if (generation !== detailPageGeneration.value) {
+      return;
+    }
+    if (!globalSummary.value) {
+      globalSummary.value = {};
+    }
+    globalSummary.value = {
+      ...globalSummary.value,
+      purchaseAmountTotal: corner?.purchaseAmountTotal,
+    };
+  } catch {
+    // 列角失败不影响列表；页脚进价保持 —
+  }
 }
 
 /** 搜索按钮：回到第一页再查。 */
@@ -454,15 +645,25 @@ function handleReset() {
   void getList();
 }
 
-/** 导出当前 Tab。 */
+/** 导出当前 Tab（列清单与页面可见列一致）。 */
 async function handleExport() {
   const filters = buildFilterPayload();
   if (!filters) {
     return;
   }
+  // 明细 quantityDisplay → 可求和数量 + 单位；其余字段与导出行 DTO 同名
+  const exportColumns = buildExcelExportColumns(printColumnCatalog.value, {
+    fieldExpand: {
+      quantityDisplay: [
+        { field: 'quantityValue', title: '数量' },
+        { field: 'quantityUnitDisplay', title: '单位' },
+      ],
+    },
+  });
   await runExport({
     ...filters,
     presentationMode: queryParams.presentationMode,
+    exportColumns,
   });
 }
 
@@ -503,7 +704,7 @@ function formatQuantityWithUnit(quantity: unknown, unit: unknown): string {
   return unitText ? `${qty}${unitText}` : qty;
 }
 
-/** 金额展示：2 位小数 + 元（BR-MON-001）。 */
+/** 金额展示：2 位小数 + 元（BR-MON-001；售价/结算）。 */
 function formatMoneyCell(value: unknown): string {
   if (value === undefined || value === null || value === '') {
     return '—';
@@ -511,18 +712,22 @@ function formatMoneyCell(value: unknown): string {
   return formatMoneyYuan(value);
 }
 
-/** 判断金额是否为负数（退费行）。 */
-function isNegativeAmount(value: unknown): boolean {
+/** 进价侧金额：中药可至三位 + 元（无分类码时最多三位去尾零）。 */
+function formatPurchaseMoneyCell(value: unknown): string {
   if (value === undefined || value === null || value === '') {
-    return false;
+    return '—';
   }
-  const num = Number(value);
-  return Number.isFinite(num) && num < 0;
+  const text = formatPurchaseMoneyYuan(value);
+  return text || '—';
 }
 
-/** 金额列样式：负数标红。 */
-function resolveAmountClass(value: unknown): string {
-  return isNegativeAmount(value) ? 'text-[var(--el-color-danger)]' : '';
+/** 进价单价展示：中药可至三位（无分类码时最多三位去尾零）。 */
+function formatPurchaseUnitPriceCell(value: unknown): string {
+  if (value === undefined || value === null || value === '') {
+    return '—';
+  }
+  const text = formatPurchaseUnitPriceDisplay(value);
+  return text ? `${text}元` : '—';
 }
 
 /** 收退方向标签类型。 */
@@ -547,14 +752,37 @@ function resolveTradeDirectionLabel(tradeDirection?: string): string {
   return tradeDirection?.trim() || '—';
 }
 
-/** 行样式：按就诊块统一底色（避免合并列与斑马纹错位），小计行单独强调。 */
+/** 明细行是否退费（方向或数量/金额为负）。 */
+function isFeeDetailRefundRow(row: FeeDetailTableRow): boolean {
+  if (row.tradeDirection === 'REFUND') {
+    return true;
+  }
+  return isReportRefundBySignedFields(row as Record<string, unknown>, [
+    'quantityValue',
+    'purchaseAmount',
+    'saleAmount',
+  ]);
+}
+
+/** 汇总行是否净退（合计金额为负）。 */
+function isFeeDetailSummaryRefundRow(row: FeeDetailReportSummaryRowDto): boolean {
+  return isReportRefundBySignedFields(row as Record<string, unknown>, [
+    'purchaseAmountTotal',
+    'saleAmountTotal',
+  ]);
+}
+
+/** 明细行样式：就诊块底色 + 退费整行标红。 */
 function resolveRowClassName({ row }: { row: FeeDetailTableRow }): string {
   const blockIndex = row.encounterBlockIndex ?? 0;
   const toneClass = blockIndex % 2 === 0 ? 'fee-detail-block--even' : 'fee-detail-block--odd';
-  if (row.rowType === 'subtotal') {
-    return `${toneClass} fee-detail-subtotal-row`;
-  }
-  return toneClass;
+  const baseClass = row.rowType === 'subtotal' ? `${toneClass} fee-detail-subtotal-row` : toneClass;
+  return resolveReportRefundRowClassName(isFeeDetailRefundRow(row), baseClass);
+}
+
+/** 汇总行样式：净退整行标红。 */
+function resolveSummaryRowClassName({ row }: { row: FeeDetailReportSummaryRowDto }): string {
+  return resolveReportRefundRowClassName(isFeeDetailSummaryRefundRow(row));
 }
 
 /** 同一业务号下合并就诊头列（业务号/患者/科室/日期）。 */
@@ -822,6 +1050,23 @@ onMounted(async () => {
               <ElRadioButton :value="PRESENTATION_MODE_SUMMARY">汇总</ElRadioButton>
               <ElRadioButton :value="PRESENTATION_MODE_DETAIL">明细</ElRadioButton>
             </ElRadioGroup>
+            <ElButton
+              plain
+              :icon="Setting"
+              :disabled="printSubmitting"
+              @click="handleOpenPrintFields"
+            >
+              打印设置
+            </ElButton>
+            <ElButton
+              type="primary"
+              plain
+              :icon="Printer"
+              :loading="printSubmitting"
+              @click="handlePrintCurrentPage"
+            >
+              打印
+            </ElButton>
             <ElButton plain :icon="Download" :loading="exportLoading" @click="handleExport">
               导出
             </ElButton>
@@ -838,6 +1083,7 @@ onMounted(async () => {
               :data="summaryRows"
               :height="tableHeight"
               :row-key="resolveSummaryRowKey"
+              :row-class-name="resolveSummaryRowClassName"
             >
               <ElTableColumn
                 prop="dimensionName"
@@ -852,13 +1098,43 @@ onMounted(async () => {
                 </template>
               </ElTableColumn>
               <ElTableColumn
-                prop="lineCount"
-                label="行数"
+                label="数量"
+                prop="quantityTotal"
                 min-width="100"
                 align="right"
                 header-align="right"
                 :class-name="REPORT_TABLE_NUM_CELL"
-              />
+              >
+                <template #default="{ row }">
+                  {{ formatQuantity(row.quantityTotal) }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                v-if="showSummaryUnitPriceColumns"
+                label="进价单价"
+                prop="purchaseUnitPrice"
+                width="110"
+                align="right"
+                header-align="right"
+                :class-name="`${REPORT_TABLE_NUM_CELL} ${REPORT_TABLE_AMOUNT_CELL}`"
+              >
+                <template #default="{ row }">
+                  {{ formatPurchaseMoneyCell(row.purchaseUnitPrice) }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                v-if="showSummaryUnitPriceColumns"
+                label="售价单价"
+                prop="saleUnitPrice"
+                width="110"
+                align="right"
+                header-align="right"
+                :class-name="REPORT_TABLE_NUM_CELL"
+              >
+                <template #default="{ row }">
+                  {{ formatMoneyCell(row.saleUnitPrice) }}
+                </template>
+              </ElTableColumn>
               <ElTableColumn
                 label="进价合计"
                 prop="purchaseAmountTotal"
@@ -868,9 +1144,7 @@ onMounted(async () => {
                 :class-name="`${REPORT_TABLE_NUM_CELL} ${REPORT_TABLE_AMOUNT_CELL}`"
               >
                 <template #default="{ row }">
-                  <span :class="resolveAmountClass(row.purchaseAmountTotal)">
-                    {{ formatMoneyCell(row.purchaseAmountTotal) }}
-                  </span>
+                  {{ formatPurchaseMoneyCell(row.purchaseAmountTotal) }}
                 </template>
               </ElTableColumn>
               <ElTableColumn
@@ -882,9 +1156,7 @@ onMounted(async () => {
                 :class-name="REPORT_TABLE_NUM_CELL"
               >
                 <template #default="{ row }">
-                  <span :class="resolveAmountClass(row.saleAmountTotal)">
-                    {{ formatMoneyCell(row.saleAmountTotal) }}
-                  </span>
+                  {{ formatMoneyCell(row.saleAmountTotal) }}
                 </template>
               </ElTableColumn>
             </ReportElTable>
@@ -1054,9 +1326,7 @@ onMounted(async () => {
                 :class-name="REPORT_TABLE_NUM_CELL"
               >
                 <template #default="{ row }">
-                  <span :class="resolveAmountClass(row.purchaseUnitPrice)">
-                    {{ formatMoneyCell(row.purchaseUnitPrice) }}
-                  </span>
+                  {{ formatPurchaseUnitPriceCell(row.purchaseUnitPrice) }}
                 </template>
               </ElTableColumn>
               <ElTableColumn
@@ -1068,9 +1338,7 @@ onMounted(async () => {
                 :class-name="`${REPORT_TABLE_NUM_CELL} ${REPORT_TABLE_AMOUNT_CELL}`"
               >
                 <template #default="{ row }">
-                  <span :class="resolveAmountClass(row.purchaseAmount)">
-                    {{ formatMoneyCell(row.purchaseAmount) }}
-                  </span>
+                  {{ formatPurchaseMoneyCell(row.purchaseAmount) }}
                 </template>
               </ElTableColumn>
               <ElTableColumn
@@ -1082,9 +1350,7 @@ onMounted(async () => {
                 :class-name="REPORT_TABLE_NUM_CELL"
               >
                 <template #default="{ row }">
-                  <span :class="resolveAmountClass(row.saleUnitPrice)">
-                    {{ formatMoneyCell(row.saleUnitPrice) }}
-                  </span>
+                  {{ formatMoneyCell(row.saleUnitPrice) }}
                 </template>
               </ElTableColumn>
               <ElTableColumn
@@ -1096,9 +1362,7 @@ onMounted(async () => {
                 :class-name="REPORT_TABLE_NUM_CELL"
               >
                 <template #default="{ row }">
-                  <span :class="resolveAmountClass(row.saleAmount)">
-                    {{ formatMoneyCell(row.saleAmount) }}
-                  </span>
+                  {{ formatMoneyCell(row.saleAmount) }}
                 </template>
               </ElTableColumn>
             </ReportElTable>
@@ -1118,6 +1382,11 @@ onMounted(async () => {
         />
       </template>
     </ReportListPageLayout>
+    <ReportPrintFieldDialog
+      ref="printFieldDialogRef"
+      :report-code="printReportCode"
+      :column-catalog="printColumnCatalog"
+    />
   </Page>
 </template>
 
@@ -1143,6 +1412,29 @@ onMounted(async () => {
     color: var(--el-text-color-primary);
     background-color: var(--el-fill-color-light) !important;
     border-top: 1px solid var(--el-border-color);
+  }
+
+  /* 小计且退费：保持整行 danger 字色。 */
+  :deep(
+    .el-table__body tr.fee-detail-subtotal-row.report-list-page__refund-row > td.el-table__cell
+  ),
+  :deep(
+    .el-table__body
+      tr.fee-detail-subtotal-row.report-list-page__refund-row
+      > td.el-table-fixed-column--left
+  ),
+  :deep(
+    .el-table__body
+      tr.fee-detail-subtotal-row.report-list-page__refund-row
+      > td.el-table-fixed-column--right
+  ),
+  :deep(
+    .el-table__body
+      tr.fee-detail-subtotal-row.report-list-page__refund-row
+      > td.el-table__cell
+      .cell
+  ) {
+    color: var(--el-color-danger);
   }
 
   /* 禁用 hover 变色，保持就诊块底色。 */

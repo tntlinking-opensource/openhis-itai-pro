@@ -147,7 +147,7 @@ public class DeviceCatalogDto {
     /** 高值耗材标识枚举中文说明。 */
     private String hvcmFlag_enumText;
 
-    /** 收费耗材标记（true=收费；界面「不收费耗材」勾选对应 false）。 */
+    /** 收费耗材标记（true=收费；与界面「收费耗材」勾选同向）。 */
     private Boolean chargeableFlag;
     /** 病案结算类型编码。 */
     private String mrSettlementTypeCode;

@@ -1,4 +1,4 @@
-﻿<!--
+<!--
   药库退货单右侧主区：InvMainShell + InvDocActions + 单头 + 明细表格。
 -->
 <script setup lang="ts">
@@ -68,15 +68,19 @@ import {
   WHS_RT_LOCATION_TYPE_CABINET,
 } from '#/api/inventory/warehouse/return-to-supplier';
 import SectionTitle from '#/components/layouts/section-title.vue';
+import { MSFX_HIS_SCENE } from '#/msfx/constants';
+import MsfxUploadStatusBar from '#/msfx/components/msfx-upload-status-bar.vue';
+import { getMsfxSupplierMapBySupplierIdApi } from '#/api/msfx/supplier-map';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import {
   INV_ALL_LOCATIONS_FILTER_ID,
   INV_ALL_WAREHOUSES_LABEL,
   isSpecificInventoryLocationId,
+  resolveInvDocApprovedByName,
+  resolveInvDocPreparedByName,
+  resolveInvDocPrintApplyTimeText,
   resolveSpecificInventoryLocationId,
   warnInventoryLocationRequired,
-  resolveInvDocPreparedByName,
-  resolveInvDocApprovedByName,
 } from '#/utils/inventory/inventory-workbench-list';
 import {
   buildInventoryLocationHeadFormRules,
@@ -118,7 +122,7 @@ import {
 } from '#/utils/inventory/stock-out-doc-actions';
 import {
   formatInventoryLineTotal,
-  formatMoneyDisplay,
+  formatPurchaseMoneyDisplay,
   sumMoneyThenSettle,
 } from '#/utils/format/money-scale';
 import { resolveLoginPractitionerIdForRequest } from '#/utils/format/preserve-api-id';
@@ -147,7 +151,7 @@ interface ReturnPreviewRow {
   inboundPersistedUnitCode?: string;
   /** 包装锚进价（展示带换算后写入当前计量带单价） */
   price?: number;
-  /** 行合计金额展示（两位；详情回显后端，编辑态本地重算） */
+  /** 行合计金额展示（进价侧可至三位；详情回显后端，编辑态本地重算） */
   totalPrice?: string;
   lotNumber: string;
   traceNo: string;
@@ -229,6 +233,9 @@ const headFormRules = computed(() =>
 );
 
 const supplierId = ref<number | string | undefined>(undefined);
+/** 码上放心供应商 ent_id（202 上传必填） */
+const msfxSupplierEntId = ref('');
+const msfxSupplierEntName = ref('');
 const detailStatusEnum = ref<number | undefined>(undefined);
 const headApplyTime = ref(formatDateTime(new Date()));
 const saving = ref(false);
@@ -400,12 +407,12 @@ function createEmptyRow(): ReturnPreviewRow {
   };
 }
 
-/** 详情/预填行金额展示：后端 6 位 → 两位展示串 */
-function formatReturnDetailTotalAmount(total: unknown): string {
+/** 详情/预填行金额展示：后端落库额 → 进价侧展示串（可至三位） */
+function formatReturnDetailTotalAmount(total: unknown, categoryCode?: unknown): string {
   if (total === undefined || total === null || total === '') return '';
   const n = Number(total);
   if (!Number.isFinite(n)) return String(total).trim();
-  return formatMoneyDisplay(n);
+  return formatPurchaseMoneyDisplay(n, categoryCode);
 }
 
 /** 编辑态：同计量带数量 × 单价刷新行合计（详情回显不覆盖后端落库总额） */
@@ -447,7 +454,11 @@ function mapReturnableInboundLineToGrid(
     applyWarehouseNonInboundBandKindToRow(base, base.selectedBandKind, packagePrice);
   }
   if (ln.totalPrice !== undefined && ln.totalPrice !== null) {
-    base.totalPrice = formatReturnDetailTotalAmount(ln.totalPrice);
+    base.totalPrice = formatReturnDetailTotalAmount(
+      ln.totalPrice,
+      (ln as { productCatalog?: { categoryCode?: string }; categoryCode?: string }).productCatalog
+        ?.categoryCode ?? (ln as { categoryCode?: string }).categoryCode,
+    );
   } else {
     recalcReturnToSupplierLineTotal(base);
   }
@@ -487,7 +498,11 @@ function mapDetailLineToGrid(ln: ReturnToSupplierDetailLineDto, rowIdx: number):
     itemQuantity: ln.itemQuantity === undefined ? undefined : Number(ln.itemQuantity),
     unitCode: String(ln.unitCode ?? ''),
     price: Number.isFinite(packagePrice as number) ? (packagePrice as number) : undefined,
-    totalPrice: formatReturnDetailTotalAmount(ln.totalPrice),
+    totalPrice: formatReturnDetailTotalAmount(
+      ln.totalPrice,
+      (ln.productCatalog as { categoryCode?: string } | null | undefined)?.categoryCode ??
+        (ln as { categoryCode?: string }).categoryCode,
+    ),
     lotNumber: String(ln.lotNumber ?? ''),
     traceNo: String(ln.traceNo ?? ''),
     reason: String(ln.reason ?? ''),
@@ -724,12 +739,48 @@ watch(
   { immediate: true },
 );
 
+/** 选择 HIS 供应商时按对照表回填 ent_id（202 上传） */
+watch(
+  () => supplierId.value,
+  (id) => {
+    void hydrateMsfxSupplierEntFromMap(id);
+  },
+);
+
+async function hydrateMsfxSupplierEntFromMap(rawId: string | number | undefined | null) {
+  const id = String(rawId ?? '').trim();
+  if (!id) {
+    msfxSupplierEntId.value = '';
+    msfxSupplierEntName.value = '';
+    return;
+  }
+  if (msfxSupplierEntId.value.trim() === id) {
+    msfxSupplierEntId.value = '';
+    msfxSupplierEntName.value = '';
+  }
+  try {
+    const res = await getMsfxSupplierMapBySupplierIdApi({ supplierId: id });
+    const ent = String(res.data?.msfxEntId ?? '').trim();
+    if (ent && ent !== id) {
+      msfxSupplierEntId.value = ent;
+      const name = String(res.data?.msfxEntName ?? '').trim();
+      msfxSupplierEntName.value =
+        name && name !== ent ? name : String(res.data?.supplierName ?? '').trim();
+    } else {
+      msfxSupplierEntId.value = '';
+      msfxSupplierEntName.value = '';
+    }
+  } catch {
+    // 模块未启用：忽略
+  }
+}
+
 function collectGridRows(): ReturnPreviewRow[] {
   const g = gridApi?.grid as null | { getFullData?: () => ReturnPreviewRow[] };
   return g?.getFullData?.() ?? [];
 }
 
-/** 明细行退货金额合计（页脚展示；结算 2 位口径） */
+/** 明细行退货金额合计（页脚展示；进价侧展示刻度） */
 const documentAmountSummaryItems = computed(() => {
   void linesAmountRevision.value;
   const amounts: Array<number | string> = [];
@@ -741,7 +792,7 @@ const documentAmountSummaryItems = computed(() => {
     amounts.push(raw);
   }
   if (amounts.length === 0) return [];
-  return [{ label: '退货金额', value: formatMoneyDisplay(sumMoneyThenSettle(amounts)) }];
+  return [{ label: '退货金额', value: formatPurchaseMoneyDisplay(sumMoneyThenSettle(amounts)) }];
 });
 
 /** 页脚合计：财务审批深链优先；否则展示当前明细合计 */
@@ -1143,8 +1194,8 @@ function resolveReturnPrintUnitLabel(row: ReturnPreviewRow): string {
   return String(row.unitCodeDictText ?? row.unitCode ?? '').trim();
 }
 
-/** 打印退供应商单 */
-async function handlePrint() {
+/** 打印或预览退供应商单 */
+async function handlePrint(payload?: { preview?: boolean }) {
   const busNo = String(headerBusNo.value ?? '').trim();
   if (!busNo) {
     ElMessage.warning('请先保存单据后再打印');
@@ -1159,21 +1210,33 @@ async function handlePrint() {
   const warehouseName = resolvePrintWarehouseName(sourceLocationId.value);
   const supplierText = resolvePrintOptionLabel(props.supplierOptions, supplierId.value);
   const documentTitle = buildInvDocumentTitle(warehouseName, '退供应商单');
-  const applyTimeText = String(headApplyTime.value ?? props.applyTime ?? '')
-    .trim()
-    .replace('T', ' ');
+  // 打印制单时间取侧栏单据实际审批时间，禁止用单头缺省「当前时刻」冒充
+  const applyTimeText = resolveInvDocPrintApplyTimeText({
+    queueCardRow: props.queueCardRow as null | Record<string, unknown>,
+  });
 
-  // 按当前网格展示值组装退货明细
-  const lineRows = productRows.map((row) => ({
-    productBusNo: resolveInvPrintProductBusNo(row as unknown as Record<string, unknown>),
-    productName: String(row.productName ?? '').trim(),
-    qty: row.itemQuantity,
-    unitLabel: resolveReturnPrintUnitLabel(row),
-    unitPrice: row.price,
-    amount: row.totalPrice,
-    lotNumber: String(row.lotNumber ?? '').trim(),
-    reasonText: String(row.reason ?? '').trim(),
-  }));
+  // 按当前网格展示值组装退货明细（列对齐流转单，保留退货原因）
+  const lineRows = productRows.map((row) => {
+    const pick =
+      row.medicinePick && typeof row.medicinePick === 'object'
+        ? (row.medicinePick as Record<string, unknown>)
+        : undefined;
+    return {
+      productBusNo: resolveInvPrintProductBusNo(row as unknown as Record<string, unknown>),
+      productName: String(row.productName ?? '').trim(),
+      specText: String(pick?.specification ?? pick?.spec ?? '').trim(),
+      manufacturerText: String(pick?.manufacturer ?? '').trim(),
+      qty: row.itemQuantity,
+      unitLabel: resolveReturnPrintUnitLabel(row),
+      unitPrice: row.price,
+      amount: row.totalPrice,
+      lotNumber: String(row.lotNumber ?? '').trim(),
+      expiryDate: String(pick?.expiryDate ?? pick?.endTime ?? '')
+        .trim()
+        .slice(0, 10),
+      reasonText: String(row.reason ?? '').trim(),
+    };
+  });
 
   const preparedByName = resolveInvDocPreparedByName(
     props.queueCardRow as null | Record<string, unknown>,
@@ -1183,7 +1246,7 @@ async function handlePrint() {
   );
   const totalAmountText =
     documentAmountSummaryItems.value[0]?.value ??
-    formatMoneyDisplay(sumMoneyThenSettle(productRows.map((r) => r.totalPrice ?? 0)));
+    formatPurchaseMoneyDisplay(sumMoneyThenSettle(productRows.map((r) => r.totalPrice ?? 0)));
   await printInvDocument({
     family: 'return',
     source: {
@@ -1204,6 +1267,7 @@ async function handlePrint() {
     },
     bizRef: { busNo, docKind: 'return-to-supplier' },
     jobName: documentTitle,
+    preview: payload?.preview === true,
   });
 }
 
@@ -1502,6 +1566,13 @@ watch(
             <span class="text-sm" style="color: var(--el-text-color-primary)">{{
               headerStatusText || '—'
             }}</span>
+            <MsfxUploadStatusBar
+              :bus-no="headerBusNo"
+              :his-scene-enum="MSFX_HIS_SCENE.SUPPLIER_RETURN"
+              v-model:supplier-ent-id="msfxSupplierEntId"
+              :supplier-ent-name="msfxSupplierEntName"
+              :bill-time="headApplyTime"
+            />
           </div>
           <ElForm
             ref="headFormRef"

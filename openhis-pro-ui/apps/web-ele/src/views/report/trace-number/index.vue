@@ -8,13 +8,14 @@ import type {
   TraceNumberReportRowDto,
 } from '#/api/report/trace-number-report';
 import type { ApiOptionItem } from '#/types/api-response';
+import type { ReportPrintColumnDef } from '#/utils/print/print-report-list';
 
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
-import { Download, Refresh, Search } from '@element-plus/icons-vue';
+import { Download, Printer, Refresh, Search, Setting } from '@element-plus/icons-vue';
 import {
   ElButton,
   ElDatePicker,
@@ -36,6 +37,7 @@ import {
 } from '#/api/report/trace-number-report';
 import TraceCodeTooltip from '#/components/trace/trace-code-tooltip.vue';
 import { useRequest } from '#/hooks/use-request';
+import { buildExcelExportColumns } from '#/utils/export/build-excel-export-columns';
 import { downloadBinaryExportFile } from '#/utils/export/download-binary-export';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import {
@@ -46,8 +48,12 @@ import {
   ReportListPageLayout,
   ReportListToolbar,
   ReportPageFooter,
+  ReportPrintFieldDialog,
   ReportQueryBar,
   ReportTableScroll,
+  mapReportPrintRow,
+  reportPrintFieldsOf,
+  useReportListPrint,
 } from '#/views/report/shared';
 import {
   buildReportDateRangeShortcuts,
@@ -76,6 +82,22 @@ interface QueryState {
 }
 
 const PAGE_TITLE = '追溯码查询';
+/** 打印字段偏好键（本机记住）。 */
+const PRINT_REPORT_CODE = 'report-trace-number';
+
+/** 追溯码可打印列目录（不含操作列；库房列始终可选）。 */
+const PRINT_COLUMNS: ReportPrintColumnDef[] = [
+  { field: 'traceNo', title: '追溯码', align: 'center', widthWeight: 1.5 },
+  { field: 'currentLocationNames', title: '当前所在库房', align: 'center', widthWeight: 1.2 },
+  { field: 'medicationCode', title: '编码', align: 'center', widthWeight: 0.9 },
+  { field: 'medicationName', title: '药品名称', align: 'center', widthWeight: 1.3 },
+  { field: 'specificationText', title: '规格', align: 'center', widthWeight: 1.1 },
+  { field: 'lotNumber', title: '批号', align: 'center', widthWeight: 0.9 },
+  { field: 'inHospitalStatusLabel', title: '在院状态', align: 'center', widthWeight: 0.9 },
+  { field: 'remainingSplitQuantity', title: '拆零剩余', align: 'right', widthWeight: 0.9 },
+  { field: 'traceUnitCode', title: '追溯单位', align: 'center', widthWeight: 0.8 },
+  { field: 'lastFlowAt', title: '最近流水', align: 'center', widthWeight: 1.3 },
+];
 
 const route = useRoute();
 const router = useRouter();
@@ -96,8 +118,6 @@ const queryParams = reactive<QueryState>({
 });
 
 const isLocationScope = computed(() => queryParams.queryScope === TRACE_QUERY_SCOPE_LOCATION);
-
-const tableLoading = computed(() => initLoading.value || pageLoading.value || exportLoading.value);
 
 const dateRangeShortcuts = buildReportDateRangeShortcuts();
 
@@ -228,6 +248,36 @@ const { run: runExport, loading: exportLoading } = useRequest(exportTraceNumberR
   manual: true,
 });
 
+const { printFieldDialogRef, printSubmitting, handleOpenPrintFields, handlePrintCurrentPage } =
+  useReportListPrint({
+    getReportCode: () => PRINT_REPORT_CODE,
+    getColumnCatalog: () => PRINT_COLUMNS,
+    getReportTitle: () => PAGE_TITLE,
+    getPrintRows: () =>
+      tableData.value.map((r) =>
+        mapReportPrintRow(
+          r as unknown as Record<string, unknown>,
+          reportPrintFieldsOf(PRINT_COLUMNS),
+          {
+            traceNo: (v) => formatText(v as null | string),
+            currentLocationNames: (v) => formatText(v as null | string),
+            medicationCode: (v) => formatText(v as null | string),
+            medicationName: (v) => formatText(v as null | string),
+            specificationText: (v) => formatText(v as null | string),
+            lotNumber: (v) => formatText(v as null | string),
+            inHospitalStatusLabel: (v) => formatText(v as null | string),
+            remainingSplitQuantity: (v) => formatQuantity(v as number | string | undefined),
+            traceUnitCode: (v) => formatText(v as null | string),
+            lastFlowAt: (v) => formatDateTime(v as string | undefined),
+          },
+        ),
+      ),
+  });
+
+const tableLoading = computed(
+  () => initLoading.value || pageLoading.value || exportLoading.value || printSubmitting.value,
+);
+
 /** 拉取追溯码分页列表。 */
 async function getList() {
   if (isLocationScope.value && !queryParams.locationId) {
@@ -276,7 +326,7 @@ function handleReset() {
   void getList();
 }
 
-/** 导出 Excel。 */
+/** 导出 Excel（列清单与打印列目录一致）。 */
 async function handleExportExcel() {
   if (isLocationScope.value && !queryParams.locationId) {
     ElMessage.warning('请选择库房');
@@ -284,7 +334,17 @@ async function handleExportExcel() {
   }
   const pageReq = buildPageRequest();
   const { pageNo: _pageNo, pageSize: _pageSize, ...filter } = pageReq;
-  const data = await runExport(filter);
+  // 页面展示字段 → 导出行 DTO 字段
+  const exportColumns = buildExcelExportColumns(PRINT_COLUMNS, {
+    fieldAliases: {
+      traceUnitCode: 'traceUnitCodeLabel',
+      lastFlowAt: 'lastFlowAtLabel',
+    },
+  });
+  const data = await runExport({
+    ...filter,
+    exportColumns,
+  });
   if (!data?.body?.trim()) {
     ElMessage.warning('导出内容为空');
     return;
@@ -447,6 +507,23 @@ onMounted(async () => {
       <template #toolbar>
         <ReportListToolbar :title="`${PAGE_TITLE} · 列表`" :total="total">
           <template #actions>
+            <ElButton
+              plain
+              :icon="Setting"
+              :disabled="printSubmitting"
+              @click="handleOpenPrintFields"
+            >
+              打印设置
+            </ElButton>
+            <ElButton
+              type="primary"
+              plain
+              :icon="Printer"
+              :loading="printSubmitting"
+              @click="handlePrintCurrentPage"
+            >
+              打印
+            </ElButton>
             <ElButton
               type="primary"
               plain
@@ -617,5 +694,10 @@ onMounted(async () => {
     </ReportListPageLayout>
 
     <TraceNumberDetailDrawer ref="detailDrawerRef" />
+    <ReportPrintFieldDialog
+      ref="printFieldDialogRef"
+      :report-code="PRINT_REPORT_CODE"
+      :column-catalog="PRINT_COLUMNS"
+    />
   </Page>
 </template>

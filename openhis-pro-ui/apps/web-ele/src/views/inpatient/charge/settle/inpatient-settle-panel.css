@@ -325,6 +325,16 @@
   gap: 8px;
 }
 
+/* 底栏主操作「结算」：加大字号/高度，收费员一眼能点到 */
+.settle-page .payment-footer-settle-btn.el-button {
+  min-width: 128px;
+  height: 44px;
+  padding: 0 32px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
 .settle-history-detail-summary {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }

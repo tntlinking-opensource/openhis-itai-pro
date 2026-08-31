@@ -10,7 +10,7 @@ import { ElButton, ElDescriptions, ElDescriptionsItem, ElTag } from 'element-plu
 import AppDialog from '#/components/app-dialog.vue';
 import RegisterStyleTableLayout from '#/components/layouts/register-style-table-layout.vue';
 import SectionTitle from '#/components/layouts/section-title.vue';
-import { formatMoneyDisplay, formatMoneyYuan } from '#/utils/format/money-scale';
+import { formatMoneyDisplay } from '#/utils/format/money-scale';
 import { OUTPATIENT_CHARGE_FEE_DETAIL_FIELD_DEFS } from '#/views/outpatient/charge/charge/outpatient-charge.constants';
 
 interface InsuranceBreakdownItem {
@@ -29,10 +29,14 @@ const props = withDefaults(
     displayAmount?: number | string;
     insuranceBreakdownItems?: InsuranceBreakdownItem[];
     insurancePreSettled?: boolean;
-    /** 库内预交金余额（冲抵口径） */
+    /** 库内预交金余额 D */
     prepayNetBalance?: number | string;
-    /** 本次预交金冲抵额 */
+    /** 本次预交金冲抵额 O */
     prepayOffsetAmount?: number | string;
+    /** 是否全额退预交金 */
+    prepayFullRefund?: boolean;
+    /** 应退预交金金额 */
+    prepayRefundAmount?: number | string;
     previewText?: string;
     receivableTotal?: number | string;
   }>(),
@@ -43,6 +47,8 @@ const props = withDefaults(
     insurancePreSettled: false,
     prepayNetBalance: undefined,
     prepayOffsetAmount: undefined,
+    prepayFullRefund: false,
+    prepayRefundAmount: undefined,
     previewText: '',
     receivableTotal: 0,
   },
@@ -86,12 +92,12 @@ function formatMoney(value: null | number | string | undefined) {
   return Number.isFinite(n) ? formatMoneyDisplay(n) : '0.00';
 }
 
-/** 需补交：预结算 displayAmount（预交金充足时为 0）。 */
+/** 渠道实付 C：预结算 displayAmount。 */
 const payableDisplay = computed(() => {
   if (props.displayAmount != null && props.displayAmount !== '') {
     return formatMoney(props.displayAmount);
   }
-  return formatMoney(props.receivableTotal);
+  return formatMoney(0);
 });
 
 const showPrepayStrip = computed(() => {
@@ -101,28 +107,26 @@ const showPrepayStrip = computed(() => {
   return Number.isFinite(Number(props.prepayNetBalance));
 });
 
-/** 预结算说明文案：统一金额两位小数，兼容预交金冲抵新文案。 */
+/** 预结算说明：后端 previewText 优先原样展示。 */
 const formattedPreviewText = computed(() => {
   const text = props.previewText?.trim() ?? '';
   if (!text) {
     return '';
   }
-  if (text.startsWith('预交金冲抵医保个人现金')) {
-    return `预交金冲抵医保个人现金：${formatMoneyYuan(props.prepayOffsetAmount)}`;
-  }
-  if (text.startsWith('预交金冲抵')) {
-    return `预交金冲抵，应收合计：${formatMoneyYuan(props.receivableTotal)}`;
-  }
-  if (text.startsWith('医保已覆盖')) {
-    return '医保已覆盖，无需补交';
-  }
-  if (text.startsWith('患者实付')) {
-    return `需补交：${formatMoneyYuan(props.displayAmount)}`;
-  }
-  if (text.startsWith('应收合计')) {
-    return `应收合计：${formatMoneyYuan(props.receivableTotal)}`;
-  }
   return text;
+});
+
+/** 应退预交金展示文案。 */
+const prepayRefundDisplay = computed(() => {
+  if (props.prepayRefundAmount == null || props.prepayRefundAmount === '') {
+    return '';
+  }
+  const n = Number(props.prepayRefundAmount);
+  if (!Number.isFinite(n) || n <= 0) {
+    return '';
+  }
+  const label = props.prepayFullRefund ? '全额退现金' : '退现金';
+  return `${label} ¥${formatMoney(n)}`;
 });
 
 /**
@@ -137,11 +141,11 @@ const feeDetailDisplayRows = computed(() => {
     });
   }
   const rows: { key: string; label: string; value: number }[] = [];
-  // 个人现金之后插入预交金余额/冲抵，最后才是需补交
+  // 个人现金之后插入预交金余额/冲抵/应退，最后才是渠道实付 C
   const orderedKeys: string[] = [];
   for (const def of OUTPATIENT_CHARGE_FEE_DETAIL_FIELD_DEFS) {
     if (def.key === 'finalReceivable') {
-      orderedKeys.push('prepayBalance', 'prepayOffset', 'finalReceivable');
+      orderedKeys.push('prepayBalance', 'prepayOffset', 'prepayRefund', 'finalReceivable');
       continue;
     }
     orderedKeys.push(def.key);
@@ -161,6 +165,7 @@ const feeDetailDisplayRows = computed(() => {
       key === 'cashPay' ||
       key === 'prepayBalance' ||
       key === 'prepayOffset' ||
+      key === 'prepayRefund' ||
       key === 'finalReceivable';
     if (!alwaysShow && Math.abs(Number(value)) < 0.000001) {
       continue;
@@ -182,7 +187,8 @@ function resolveFeeDetailRowClass(item: { key: string; value: number }) {
     item.key === 'finalReceivable' ||
     item.key === 'cashPay' ||
     item.key === 'prepayBalance' ||
-    item.key === 'prepayOffset'
+    item.key === 'prepayOffset' ||
+    item.key === 'prepayRefund'
   ) {
     classes.push('is-key-row');
   }
@@ -204,10 +210,10 @@ function resolveFeeDetailRowClass(item: { key: string; value: number }) {
         {{ formattedPreviewText }}
       </p>
       <div class="clinical-pre-settle-amount">
-        <span class="text-[var(--el-text-color-regular)]">需补交</span>
+        <span class="text-[var(--el-text-color-regular)]">应付个人现金</span>
         <strong class="text-[var(--el-color-primary)]">¥{{ payableDisplay }}</strong>
         <span v-if="insurancePreSettled" class="text-xs text-[var(--el-text-color-secondary)]">
-          原价合计 ¥{{ formatMoney(receivableTotal) }}
+          费用合计 ¥{{ formatMoney(receivableTotal) }}
         </span>
       </div>
       <p
@@ -215,11 +221,12 @@ function resolveFeeDetailRowClass(item: { key: string; value: number }) {
         class="clinical-pre-settle-prepay text-sm text-[var(--el-text-color-regular)]"
       >
         预交金余额 ¥{{ formatMoney(prepayNetBalance) }}
-        <template v-if="prepayOffsetAmount != null && prepayOffsetAmount !== ''">
+        <template v-if="prepayOffsetAmount != null && Number(prepayOffsetAmount) > 0">
           · 本次冲抵 ¥{{ formatMoney(prepayOffsetAmount) }}
         </template>
+        <template v-if="prepayRefundDisplay"> · {{ prepayRefundDisplay }}</template>
         <span class="text-xs text-[var(--el-text-color-secondary)]">
-          （优先从预交金扣，不足部分需补交）
+          （冲抵后渠道实付；有余退现金）
         </span>
       </p>
 

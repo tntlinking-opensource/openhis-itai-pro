@@ -16,6 +16,7 @@ import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDetailQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
+import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentRecDetailQueryModel;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentReconciliationQueryModel;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentStaticSnapshotQueryModel;
 import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
@@ -25,6 +26,7 @@ import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.enums.EncounterStatus;
 import com.openhis.health.domain.share.enums.GenerateSource;
+import com.openhis.health.domain.share.enums.PaymentChannel;
 import com.openhis.health.domain.share.enums.PaymentKind;
 import com.openhis.health.domain.share.enums.PaymentStatus;
 import com.openhis.health.domain.share.utils.EnumUtil;
@@ -126,6 +128,9 @@ public class InpatientSettleReadAssembler {
                 dto.setSpecText(product.getTotalVolume());
                 dto.setCategoryCode(product.getCategoryCode());
                 dto.setCategoryDisplay(product.getCategoryCodeDictText());
+                // Asm：医保属性（甲/乙/丙）取产品目录 chrgitmLv，供费用明细清单展示
+                dto.setChrgitmLv(product.getChrgitmLv());
+                dto.setChrgitmLvText(product.getChrgitmLvText());
             }
             // Asm：数量单位输出中文展示名（对齐门诊收银 / 护士费用明细，避免 bottle/branch）
             dto.setQuantityUnit(this.resolveQuantityUnitDisplay(chargeItem.getQuantityUnit(), product));
@@ -219,7 +224,7 @@ public class InpatientSettleReadAssembler {
     }
 
     /**
-     * IF-IP-STL-07：历史查阅以 payment 为主，解析本批费用合计真源（优先 {@code tendered_amount}）。
+     * IF-IP-STL-07：历史查阅以 payment 为主；{@code tendered}/{@code display} 新口径为个人现金应付 P。
      *
      * @param payment 当前展示支付读模型
      * @return 结算刻度本批合计；payment 为空时 0
@@ -408,10 +413,11 @@ public class InpatientSettleReadAssembler {
     }
 
     /**
-     * 住院结算/反结历史 + 渠道展示 → 摘要 DTO（含 signedAmount、reverseEnabled）。
+     * 住院结算/反结历史 + 渠道展示 → 摘要 DTO（含 signedAmount、reverseEnabled、冲抵 O / 渠道 C）。
      *
      * @param payments                          同就诊 INPATIENT_CLINIC 流水（SUCCESS/REFUNDED）
      * @param payMethodTexts                    paymentId → 渠道展示
+     * @param detailsByPaymentId                paymentId → 明细（回填 O/C；可空）
      * @param encounter                         就诊快照（DISCHARGED 门禁）
      * @param paymentReconciliationQueryService 支付读侧（逆向关联判定）
      * @return 历史摘要行；payments 为 null 时返回空列表
@@ -419,6 +425,7 @@ public class InpatientSettleReadAssembler {
     public List<SettledPaymentBriefDto> toSettledPaymentBriefDtoList(
         List<PaymentReconciliationQueryModel> payments,
         Map<Long, String> payMethodTexts,
+        Map<Long, List<PaymentRecDetailQueryModel>> detailsByPaymentId,
         EncounterDetailQueryModel encounter,
         PaymentReconciliationQueryService paymentReconciliationQueryService) {
         List<SettledPaymentBriefDto> rows = new ArrayList<>();
@@ -439,7 +446,7 @@ public class InpatientSettleReadAssembler {
             dto.setPaymentId(payment.getId());
             dto.setPaymentNo(payment.getPaymentNo());
             dto.setSettleTime(payment.getBillDate());
-            // Pre：历史「结算金额」取本批费用合计；少补 display=0 时回落 tendered，仍为 0 则保持 0（详情页用收费项合计）
+            // Pre：本批合计优先 tendered/display（新口径=个人现金 P）
             dto.setReceivableTotal(this.resolvePaymentBatchTotal(payment));
             if (payment.getId() != null && payMethodTexts != null) {
                 dto.setPayMethodText(payMethodTexts.get(payment.getId()));
@@ -461,11 +468,14 @@ public class InpatientSettleReadAssembler {
             if (displayAmount == null) {
                 displayAmount = BigDecimal.ZERO;
             }
+            // Asm：结算金额认 P；有冲抵时渠道实收 C 单独字段，禁止用 C 冒充整单 P
+            dto.setPersonalCashPayable(MonetaryAmountSupport.scaleSettle(displayAmount));
             if (reverseRecord) {
                 dto.setSignedAmount(displayAmount.abs().negate());
             } else {
                 dto.setSignedAmount(displayAmount);
             }
+            this.fillDepositOffsetAndChannelPayable(dto, payment.getId(), detailsByPaymentId);
             boolean reverseEnabled = false;
             boolean recallEnabled = false;
             String reverseDisabledReason = null;
@@ -494,6 +504,63 @@ public class InpatientSettleReadAssembler {
             rows.add(dto);
         }
         return rows;
+    }
+
+    /**
+     * 兼容旧调用：无明细映射时 O/C 置 0。
+     *
+     * @param payments                          流水
+     * @param payMethodTexts                    渠道展示
+     * @param encounter                         就诊
+     * @param paymentReconciliationQueryService 读侧
+     * @return 摘要行
+     */
+    public List<SettledPaymentBriefDto> toSettledPaymentBriefDtoList(
+        List<PaymentReconciliationQueryModel> payments,
+        Map<Long, String> payMethodTexts,
+        EncounterDetailQueryModel encounter,
+        PaymentReconciliationQueryService paymentReconciliationQueryService) {
+        return this.toSettledPaymentBriefDtoList(
+            payments, payMethodTexts, null, encounter, paymentReconciliationQueryService);
+    }
+
+    /**
+     * 从支付明细回填冲抵 O 与用户渠道实收 C。
+     *
+     * @param dto                摘要行
+     * @param paymentId          支付主键
+     * @param detailsByPaymentId 明细映射；可空
+     */
+    private void fillDepositOffsetAndChannelPayable(
+        SettledPaymentBriefDto dto,
+        Long paymentId,
+        Map<Long, List<PaymentRecDetailQueryModel>> detailsByPaymentId) {
+        BigDecimal offset = BigDecimal.ZERO;
+        BigDecimal channel = BigDecimal.ZERO;
+        if (paymentId != null && detailsByPaymentId != null) {
+            List<PaymentRecDetailQueryModel> details = detailsByPaymentId.get(paymentId);
+            if (details != null) {
+                for (PaymentRecDetailQueryModel detail : details) {
+                    if (detail == null || detail.getAmount() == null) {
+                        continue;
+                    }
+                    String payEnum = detail.getPayEnum();
+                    if (PaymentChannel.DEPOSIT_OFFSET.getCode().equals(payEnum)) {
+                        offset = offset.add(detail.getAmount());
+                        continue;
+                    }
+                    if (PaymentChannel.INSURANCE_FUND.getCode().equals(payEnum)
+                        || PaymentChannel.INSURANCE_ACCT.getCode().equals(payEnum)
+                        || PaymentChannel.CASHIER.getCode().equals(payEnum)) {
+                        // 基金/个账/内部占位不计入患者渠道实收 C
+                        continue;
+                    }
+                    channel = channel.add(detail.getAmount());
+                }
+            }
+        }
+        dto.setDepositOffsetAmount(MonetaryAmountSupport.scaleSettle(offset));
+        dto.setChannelPayable(MonetaryAmountSupport.scaleSettle(channel));
     }
 
     /**

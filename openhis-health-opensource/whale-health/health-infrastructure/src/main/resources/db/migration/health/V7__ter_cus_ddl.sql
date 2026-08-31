@@ -787,6 +787,11 @@ CREATE TABLE IF NOT EXISTS "public"."cus_activity_observation_link" (
 CREATE UNIQUE INDEX IF NOT EXISTS "uk_aol_activity_od"
     ON "public"."cus_activity_observation_link" ("activity_definition_id", "observation_definition_id")
     WHERE "is_deleted" = false;
+CREATE INDEX IF NOT EXISTS idx_aol_od_id
+    ON cus_activity_observation_link (observation_definition_id)
+    WHERE is_deleted = FALSE;
+COMMENT ON INDEX idx_aol_od_id IS
+    'AOL：按小项反查绑定项目';
 
 COMMENT ON TABLE cus_activity_observation_link IS '体检项目 AD ↔ 小项 OD 绑定';
 COMMENT ON COLUMN cus_activity_observation_link.id IS '主键';

@@ -94,9 +94,13 @@ public class PeisDeptDeskMapperImpl implements PeisDeptDeskMapper {
             row.setPatientName(model.getPatientName());
             row.setBusNo(model.getBusNo());
             row.setServiceRequestId(model.getServiceRequestId());
+            row.setActivityId(model.getActivityId());
             row.setActivityDisplay(model.getActivityDisplay());
             row.setExecStatusEnum(model.getExecStatusEnum());
             row.setLisDispatchEnum(model.getLisDispatchEnum());
+            row.setPatientAge(model.getPatientAge());
+            row.setGroupFlag(model.getGroupFlag());
+            row.setEncounterStatusEnum(model.getEncounterStatusEnum());
             rows.add(row);
         }
         return rows;

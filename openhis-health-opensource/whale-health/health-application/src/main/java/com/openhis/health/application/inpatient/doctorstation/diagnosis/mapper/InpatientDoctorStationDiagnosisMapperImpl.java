@@ -404,7 +404,7 @@ public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDocto
             d.setDescription(child.getDiagnosisDesc());
             String medTypeCode = trimToNull(child.getMedicalTypeCode());
             if (medTypeCode == null) {
-                medTypeCode = YbMedType.GENERAL_OUTPATIENT.getCode();
+                medTypeCode = YbMedType.GENERAL_HOSPITALIZATION.getCode();
             } else if (EnumUtil.fromCode(YbMedType.class, medTypeCode) == null) {
                 throw new BusinessException(ErrorCodeConstants.CONDITION_INVALID_ARGUMENT, "请重新选择医疗类别");
             }

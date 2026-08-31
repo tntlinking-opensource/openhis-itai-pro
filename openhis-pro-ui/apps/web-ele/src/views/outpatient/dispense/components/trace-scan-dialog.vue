@@ -49,7 +49,7 @@ const scanLines = computed((): TraceBatchScanLine[] =>
       itemName: row.itemName,
       spec: row.spec,
       // 处方号回显易截断且易歧义，扫码弹窗不再展示
-      // 待扫硬上限=ceil(操作量)；码倍只进 operationSplitQty 做盖住
+      // 待扫硬上限=ceil(操作量)；盖住用真拆零（盒须×包装比，禁直接拿盒数比主档片剩余）
       requiredTraceCount: resolveDispenseRequiredTraceCount(row),
       maxTraceCount: resolveDispenseMaxTraceCount(row),
       operationSplitQty: resolveDispenseOperationSplitQty(row),

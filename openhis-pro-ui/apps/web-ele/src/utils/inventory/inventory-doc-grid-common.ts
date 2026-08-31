@@ -111,7 +111,7 @@ export type InventoryQtyUnitListRow = {
   unitList?: { label?: string; value: string; value_dictText?: string }[];
   unitBands?: InboundProductUnitBand[];
   price?: number;
-  /** 药品分类码（medication_category_code）；中药=4 时单价三位展示 */
+  /** 药品分类码（medication_category_code）；中药=4 时进价三位展示 */
   categoryCode?: string;
   productCatalog?: { categoryCode?: string; unitBands?: unknown; unitBandsJson?: unknown } | null;
 };
@@ -212,7 +212,7 @@ export interface HydratedInventoryDetailQty {
   unitCode: string;
   unitCodeDictText?: string;
   unitList?: { label: string; value: string }[];
-  /** 药品分类码（中药单价三位展示） */
+  /** 药品分类码（中药进价三位展示） */
   categoryCode?: string;
   productCatalog?: HydrateInventoryDetailLineInput['productCatalog'];
 }

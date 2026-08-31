@@ -4,7 +4,9 @@
  */
 package com.openhis.health.application.basic.servicecatalog.support;
 
+import com.openhis.health.application.basic.catalog.support.CatalogExportNumericCellWriter;
 import com.openhis.health.domain.share.constants.ServiceCatalogImportConstants;
+import com.openhis.whale.core.application.dto.ExcelExportColumnDto;
 import com.openhis.whale.core.application.util.StringUtils;
 import lombok.RequiredArgsConstructor;
 import org.apache.poi.ss.usermodel.Cell;
@@ -42,7 +44,14 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class ServiceCatalogImportTemplateBuilder {
 
-    private static final int OPTION_DATA_START_ROW = 1;
+    /**
+     * 导出 NUMERIC 列下标：由 {@link ServiceCatalogImportConstants#EXPORT_NUMERIC_HEADER_NAMES} 解析，
+     * 禁止魔法数字下标。
+     */
+    private static final Set<Integer> EXPORT_NUMERIC_COLUMNS =
+        CatalogExportNumericCellWriter.resolveExportNumericColumnIndexes(
+            ServiceCatalogImportConstants.COLUMN_HEADERS,
+            ServiceCatalogImportConstants.EXPORT_NUMERIC_HEADER_NAMES);
 
     private final ServiceCatalogImportTerminologyIndex terminologyIndex;
 
@@ -82,6 +91,17 @@ public class ServiceCatalogImportTemplateBuilder {
      * @return xlsx 字节
      */
     public byte[] buildExport(List<String[]> dataRows) {
+        return this.buildExport(dataRows, null);
+    }
+
+    /**
+     * 生成导出 xlsx；可按前端列清单裁剪列（空则全量；NUMERIC 下标随投影重映射）。
+     *
+     * @param dataRows       导出行；null 视为空
+     * @param exportColumns  前端自选列；null/空则全部列
+     * @return xlsx 字节
+     */
+    public byte[] buildExport(List<String[]> dataRows, List<ExcelExportColumnDto> exportColumns) {
         List<String[]> rows = dataRows;
         if (rows == null) {
             rows = List.of();
@@ -90,7 +110,13 @@ public class ServiceCatalogImportTemplateBuilder {
              ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             Sheet sheet = workbook.createSheet(ServiceCatalogImportConstants.EXPORT_SHEET_NAME);
             CellStyle headerStyle = this.createHeaderStyle(workbook, IndexedColors.GREY_25_PERCENT, false);
-            String[] exportHeaders = this.buildExportHeaders();
+            String[] fullHeaders = this.buildExportHeaders();
+            List<Integer> selectedIndexes =
+                CatalogExportNumericCellWriter.resolveSelectedExportColumnIndexes(fullHeaders, exportColumns);
+            String[] exportHeaders =
+                CatalogExportNumericCellWriter.projectExportHeaders(fullHeaders, selectedIndexes, exportColumns);
+            Set<Integer> numericColumns =
+                CatalogExportNumericCellWriter.remapNumericColumnIndexes(EXPORT_NUMERIC_COLUMNS, selectedIndexes);
             Row headerRow = sheet.createRow(0);
             for (int col = 0; col < exportHeaders.length; col++) {
                 Cell cell = headerRow.createCell(col);
@@ -99,7 +125,9 @@ public class ServiceCatalogImportTemplateBuilder {
             }
             int excelRow = 1;
             for (String[] values : rows) {
-                this.fillExportDataRow(sheet, excelRow, values, exportHeaders.length);
+                String[] projected =
+                    CatalogExportNumericCellWriter.projectExportRowValues(values, selectedIndexes);
+                this.fillExportDataRow(sheet, excelRow, projected, exportHeaders.length, numericColumns);
                 excelRow++;
             }
             this.applyColumnWidths(sheet);
@@ -128,12 +156,18 @@ public class ServiceCatalogImportTemplateBuilder {
     /**
      * 写入导出行。
      *
-     * @param sheet    Sheet
-     * @param rowIndex 行号
-     * @param values   值
-     * @param colCount 列数
+     * @param sheet          Sheet
+     * @param rowIndex       行号
+     * @param values         值
+     * @param colCount       列数
+     * @param numericColumns 须写数字的列下标（已按投影重映射）
      */
-    private void fillExportDataRow(Sheet sheet, int rowIndex, String[] values, int colCount) {
+    private void fillExportDataRow(
+        Sheet sheet,
+        int rowIndex,
+        String[] values,
+        int colCount,
+        Set<Integer> numericColumns) {
         Row row = sheet.createRow(rowIndex);
         if (values == null) {
             return;
@@ -141,9 +175,22 @@ public class ServiceCatalogImportTemplateBuilder {
         for (int col = 0; col < colCount; col++) {
             Cell cell = row.createCell(col);
             if (col < values.length && values[col] != null) {
-                cell.setCellValue(values[col]);
+                CatalogExportNumericCellWriter.write(
+                    cell, col, values[col], numericColumns);
             }
         }
+    }
+
+    /**
+     * 兼容旧调用：全量 NUMERIC 列写出导出行。
+     *
+     * @param sheet    Sheet
+     * @param rowIndex 行号
+     * @param values   值
+     * @param colCount 列数
+     */
+    private void fillExportDataRow(Sheet sheet, int rowIndex, String[] values, int colCount) {
+        this.fillExportDataRow(sheet, rowIndex, values, colCount, EXPORT_NUMERIC_COLUMNS);
     }
 
     /**
@@ -282,7 +329,7 @@ public class ServiceCatalogImportTemplateBuilder {
             titleRow = sheet.createRow(0);
         }
         titleRow.createCell(colIndex).setCellValue(title);
-        int rowIndex = OPTION_DATA_START_ROW;
+        int rowIndex = ServiceCatalogImportConstants.OPTION_DATA_START_ROW_INDEX;
         if (labels != null) {
             for (String label : labels) {
                 if (StringUtils.isEmpty(label)) {
@@ -296,8 +343,8 @@ public class ServiceCatalogImportTemplateBuilder {
                 rowIndex++;
             }
         }
-        if (rowIndex == OPTION_DATA_START_ROW) {
-            return OPTION_DATA_START_ROW + 1;
+        if (rowIndex == ServiceCatalogImportConstants.OPTION_DATA_START_ROW_INDEX) {
+            return ServiceCatalogImportConstants.OPTION_DATA_START_ROW_INDEX + 1;
         }
         return rowIndex;
     }
@@ -331,9 +378,9 @@ public class ServiceCatalogImportTemplateBuilder {
     private int countLabels(String dictKey) {
         List<String> labels = terminologyIndex.labelsFor(dictKey);
         if (labels == null || labels.isEmpty()) {
-            return OPTION_DATA_START_ROW + 1;
+            return ServiceCatalogImportConstants.OPTION_DATA_START_ROW_INDEX + 1;
         }
-        return OPTION_DATA_START_ROW + labels.size();
+        return ServiceCatalogImportConstants.OPTION_DATA_START_ROW_INDEX + labels.size();
     }
 
     /**

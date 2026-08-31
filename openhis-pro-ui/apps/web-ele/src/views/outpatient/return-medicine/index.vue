@@ -29,6 +29,7 @@ import { parseListItemsFromApiData } from '#/utils/api/unwrap-list-response';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { formatLocalDateYmd } from '#/utils/format/date-range-quick';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import { MSFX_HIS_SCENE } from '#/msfx/constants';
 
 import ReturnMedicineDetailCenter from './components/return-medicine-detail-center.vue';
 import ReturnMedicineQueuePanel from './components/return-medicine-queue-panel.vue';
@@ -299,6 +300,7 @@ onMounted(async () => {
           :detail-rows="detailRows"
           :refund-queue-status="refundQueueStatus"
           :selected-patient="selectedPatient"
+          :msfx-his-scene="MSFX_HIS_SCENE.OP_RETURN"
           @confirm-return="handleConfirmReturn"
         />
       </template>

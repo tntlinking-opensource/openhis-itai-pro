@@ -23,7 +23,7 @@ import {
   resolveCostDetailDisplayDateTime,
 } from '../services/map-nurse-station-cost-detail';
 
-type CostDetailQuickDay = 'today' | 'yesterday';
+type CostDetailQuickDay = '' | 'today' | 'yesterday';
 
 interface Props {
   dateRange?: string[];
@@ -56,7 +56,7 @@ const props = withDefaults(defineProps<Props>(), {
   printingDetail: false,
   presentationMode: 'DETAIL',
   presentationOptions: () => [],
-  quickDay: 'today',
+  quickDay: '',
   statusEnum: 'PENDING_SETTLEMENT',
   statusFilterOptions: () => [],
   summaryLines: () => [],
@@ -320,6 +320,11 @@ function splitRowDisplayDateTime(row: {
               {{ row.itemSpec || '—' }}
             </template>
           </ElTableColumn>
+          <ElTableColumn label="医保等级" min-width="88" align="center">
+            <template #default="{ row }">
+              {{ row.chrgitmLvText || '—' }}
+            </template>
+          </ElTableColumn>
           <ElTableColumn label="数量" min-width="88" align="center">
             <template #default="{ row }">
               {{ formatCostDetailQuantity(row) }}
@@ -438,6 +443,11 @@ function splitRowDisplayDateTime(row: {
             </template>
           </ElTableColumn>
           <ElTableColumn prop="categoryDisplay" label="分类" min-width="88" show-overflow-tooltip />
+          <ElTableColumn label="医保等级" min-width="88" align="center">
+            <template #default="{ row }">
+              {{ row.chrgitmLvText || '—' }}
+            </template>
+          </ElTableColumn>
           <ElTableColumn label="单价" min-width="96" align="right">
             <template #default="{ row }">
               <span class="cost-detail-money">{{ formatCostDetailUnitPrice(row.unitPrice) }}</span>

@@ -182,13 +182,41 @@ function isNursingLevelAdviceDto(dto: DoctorStationAdviceRowDto): boolean {
 function buildAdviceListExtensionLine(dto: DoctorStationAdviceRowDto): string {
   // 护理级别无频次展示（BR-IP-ORD-026；列表仅展示级别名称）
   const usageLine = isNursingLevelAdviceDto(dto) ? '' : buildAdviceMethodRateDurationLine(dto);
+  const oralLine = buildOralPackageRemainExtensionLine(dto);
+  const extras: string[] = [];
+  if (usageLine) extras.push(usageLine);
+  if (oralLine) extras.push(oralLine);
   return buildServiceApplyFormExtensionText(
     {
       remark: dto.remark,
       serviceRequestDetails: dto.serviceRequestDetails,
     },
-    usageLine ? [usageLine] : [],
+    extras,
   );
+}
+
+/**
+ * 口服一盒一点剩余展示行（BR-IP-EXE-038）；未命中返回空串。
+ */
+function buildOralPackageRemainExtensionLine(dto: DoctorStationAdviceRowDto): string {
+  const ip = dto as {
+    oralPackageBatchInventoryApplied?: boolean;
+    oralPackageConsumedSplitQuantity?: number | string;
+    oralPackageRemainSplitQuantity?: number | string;
+    oralPackageSplitUnitDisplay?: string;
+    oralPackageNextClaimDate?: string;
+  };
+  if (ip.oralPackageBatchInventoryApplied !== true) return '';
+  const unit = String(ip.oralPackageSplitUnitDisplay ?? '').trim() || '片';
+  const eaten = String(ip.oralPackageConsumedSplitQuantity ?? '').trim();
+  const remain = String(ip.oralPackageRemainSplitQuantity ?? '').trim();
+  const next = String(ip.oralPackageNextClaimDate ?? '').trim();
+  const parts: string[] = [];
+  if (eaten !== '' || remain !== '') {
+    parts.push(`已吃${eaten || '0'}${unit}，剩余${remain || '0'}${unit}`);
+  }
+  if (next) parts.push(`预计下次领盒 ${next}`);
+  return parts.join('；');
 }
 
 function formatAdviceRowTotalPrice(dto: DoctorStationAdviceRowDto): string {
@@ -298,6 +326,10 @@ export function mapAdviceListRowDto(dto: DoctorStationAdviceRowDto): AdviceRowIt
     skinTestOutcomeCode: String(dto.skinTestOutcomeCode ?? '').trim() || undefined,
     needAppendSkinTestFlag: Boolean(dto.needAppendSkinTestFlag),
     dosageText: dosageLine || undefined,
+    oralPackageBatchInventoryApplied: Boolean(
+      (dto as { oralPackageBatchInventoryApplied?: boolean }).oralPackageBatchInventoryApplied,
+    ),
+    oralPackageRemainText: buildOralPackageRemainExtensionLine(dto) || undefined,
     productTableName: String(dto.productTableName ?? '').trim() || undefined,
     sortNumber: normalizedListSortNumber(dto.sortNumber),
     skinTestFlag: dto.skinTestFlag,

@@ -44,6 +44,26 @@ public class PaymentChannelDisplayAssembler {
     }
 
     /**
+     * 日结自付渠道归类：银联被扫并入微信，收银台占位并入现金，避免金额进总收入却不出现在四格。
+     *
+     * @param payEnum 持久化 {@code pay_enum}
+     * @return 日结展示名；入参空白时为 {@code null}
+     */
+    public String resolveDailySettlementSelfPayCategory(String payEnum) {
+        if (StringUtils.isEmpty(payEnum)) {
+            return null;
+        }
+        PaymentChannel channel = PaymentChannel.fromCode(payEnum.trim());
+        if (PaymentChannel.SCAN_PAY.equals(channel)) {
+            return PaymentChannel.WECHAT.getDisplay();
+        }
+        if (PaymentChannel.CASHIER.equals(channel)) {
+            return PaymentChannel.CASH.getDisplay();
+        }
+        return this.resolvePayChannelDisplay(payEnum, null);
+    }
+
+    /**
      * 构建码 → 展示名索引（枚举内置 + 可选术语表）。
      *
      * @param terminologyCodeSystemName 术语体系名

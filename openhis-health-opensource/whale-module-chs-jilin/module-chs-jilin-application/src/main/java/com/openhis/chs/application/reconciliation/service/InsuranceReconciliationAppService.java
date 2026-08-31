@@ -69,7 +69,7 @@ public class InsuranceReconciliationAppService {
 
     /**
      * 本地查询：按险种 + 清算类别汇总 HIS 结算金额列表（IF-CHS-REC-R-02）。
-     * <p><b>仅读本院 HIS 结算快照</b>（门诊正式结算 + 住院已结算预结算），
+     * <p><b>仅读本院 HIS 结算回执</b>（门诊 2207 / 住院 2304 同一张 {@code yb_settlement_record}），
      * <b>不调用医保平台对账接口</b>。用于日对账表格展示「待对账本地金额」；
      * 真正对总账时走 {@link #reconcileDailyLedger}（3201）。</p>
      * <p>月清算/总额场景由调用方对列表再合计。</p>

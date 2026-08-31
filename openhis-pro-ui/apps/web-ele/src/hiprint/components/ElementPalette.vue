@@ -15,7 +15,7 @@ const paletteGroups: { items: PaletteItem[]; title: string }[] = [
     items: [
       { tid: 'defaultModule.text', label: '文本', icon: 'T' },
       { tid: 'defaultModule.longText', label: '长文', icon: '¶' },
-      { tid: 'defaultModule.table', label: '表格', icon: '▦' },
+      { tid: 'defaultModule.emptyTable', label: '表格', icon: '▦' },
       { tid: 'defaultModule.image', label: '图片', icon: '🖼' },
     ],
   },

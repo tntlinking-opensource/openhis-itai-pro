@@ -161,6 +161,7 @@ function mapCommonDiagnosesResponsePayload(payload: unknown): CommonDiagnosesRes
     organizationList: mapList(payload.organizationList) ?? payload.organizationList,
     iptDiseaseTypeOptions:
       mapOptions(payload.iptDiseaseTypeOptions) ?? payload.iptDiseaseTypeOptions,
+    medicalTypeOptions: mapOptions(payload.medicalTypeOptions) ?? payload.medicalTypeOptions,
   } as CommonDiagnosesResponse;
 }
 

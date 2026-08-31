@@ -6,9 +6,12 @@ package com.openhis.health.application.report.registrationdetail.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.openhis.whale.core.application.dto.ExcelExportColumnDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
+
+import java.util.List;
 
 /**
  * 门诊挂号明细报表导出请求（IF-RPT-ORG-04；仅当前 Tab）。
@@ -49,5 +52,11 @@ public class ExportOutpatientRegistrationDetailReportRequest {
     /** 患者姓名/门诊号关键字。 */
     @Schema(description = "患者或门诊号关键字")
     private String keyword;
+
+    /**
+     * 前端下发的导出列；空则导出全部 {@code @Excel} 列。
+     */
+    @Schema(description = "导出列清单（页面可见列）")
+    private List<ExcelExportColumnDto> exportColumns;
 }
 

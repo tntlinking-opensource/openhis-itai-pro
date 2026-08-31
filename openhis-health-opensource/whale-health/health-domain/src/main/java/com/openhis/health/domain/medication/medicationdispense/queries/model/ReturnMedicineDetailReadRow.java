@@ -52,4 +52,9 @@ public class ReturnMedicineDetailReadRow {
     private String serviceTable;
     /** 追溯码。 */
     private String traceNo;
+    /**
+     * 退药发放业务单号 {@code med_medication_dispense.bus_no}。
+     * <p>码上放心 116 上传与 TraceNumber MEDICATION_RETURN_IN 均按此键组码。</p>
+     */
+    private String busNo;
 }

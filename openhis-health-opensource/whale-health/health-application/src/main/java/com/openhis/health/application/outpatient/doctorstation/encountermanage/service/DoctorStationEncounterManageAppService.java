@@ -25,6 +25,7 @@ import com.openhis.health.domain.administration.encounter.command.MarkOutpatient
 import com.openhis.health.domain.administration.encounter.command.StartOutpatientReceptionCommand;
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterCompletionCheckQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDetailQueryModel;
+import com.openhis.health.domain.administration.encounter.queries.model.EncounterDiagnosisQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterDomainService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.application.shared.encounter.EncounterContextReader;
@@ -35,9 +36,20 @@ import com.openhis.health.domain.administration.practitioner.service.Practitione
 import com.openhis.health.domain.administration.encounter.queries.OutpatientEncounterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.OutpatientEncounterListFinancialTotals;
+import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
+import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
+import com.openhis.health.domain.share.constants.DoctorStationEncounterManageConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.enums.EncounterClass;
+import com.openhis.health.domain.share.enums.GenerateSource;
+import com.openhis.health.domain.workflow.devicerequest.queries.model.DeviceRequestListModel;
+import com.openhis.health.domain.workflow.devicerequest.service.DeviceRequestQueryService;
+import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
+import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
+import com.openhis.health.infrastructure.integration.emr.EmrDocumentExtension;
+import com.openhis.health.infrastructure.integration.emr.ExtensionIn.EmrDocumentListExtensionIn;
+import com.openhis.health.infrastructure.integration.emr.ExtensionOut.EmrDocumentQueryExtensionOut;
 import com.openhis.health.infrastructure.integration.workinjury.WorkInjuryEncounterContextExtension;
 import com.openhis.health.infrastructure.integration.workinjury.ExtensionIn.WorkInjuryEncounterContextQueryExtensionIn;
 import com.openhis.health.infrastructure.integration.workinjury.ExtensionOut.WorkInjuryEncounterContextExtensionOut;
@@ -76,6 +88,14 @@ public class DoctorStationEncounterManageAppService {
     private final PractitionerQueryService practitionerQueryService;
     /** 收费明细读侧：列表页按就诊批量汇总费用。 */
     private final ChargeItemQueryService chargeItemQueryService;
+    /** 药品申请读侧：取消接诊前校验本诊医生开立药嘱是否已删。 */
+    private final MedicationRequestQueryService medicationRequestQueryService;
+    /** 诊疗申请读侧：取消接诊前校验本诊医生开立诊疗医嘱是否已删。 */
+    private final ServiceRequestQueryService serviceRequestQueryService;
+    /** 耗材申请读侧：取消接诊前校验本诊医生开立耗材医嘱是否已删。 */
+    private final DeviceRequestQueryService deviceRequestQueryService;
+    /** EMR 文书读侧：取消接诊前校验本诊病历是否已删（未启用 EMR 时为空）。 */
+    private final EmrDocumentExtension emrDocumentExtension;
 
     /** 工伤就诊上下文（队列角标）。 */
     private final WorkInjuryEncounterContextExtension workInjuryEncounterContextExtension;
@@ -287,11 +307,12 @@ public class DoctorStationEncounterManageAppService {
     /**
      * 取消门诊接诊（IF-DOR-06）：医生同意退号，将在诊/暂离/完诊回退为已挂号待诊。
      *
-     * <p>与账单无关；窗口退号（IF-REG-09/10）在已接诊态会提示患者先来医生处取消接诊。</p>
+     * <p>与账单无关；须本诊病历、诊断与医生开立医嘱均已删除（BR-DOR-011）。
+     * 窗口退号（IF-REG-09/10）在已接诊态会提示患者先来医生处取消接诊。</p>
      *
      * @param request 取消接诊请求
      * @return 受理结果
-     * @throws BusinessException 就诊不存在、类别非门诊或当前状态不允许取消接诊
+     * @throws BusinessException 就诊不存在、类别非门诊、临床痕迹未清空或当前状态不允许取消接诊
      */
     public CancelOutpatientReceptionResponse cancelOutpatientReception(CancelOutpatientReceptionRequest request) {
         // Gate：取消接诊须绑定明确就诊与操作人，避免匿名回退接诊态。
@@ -301,6 +322,8 @@ public class DoctorStationEncounterManageAppService {
         if (!EncounterClass.AMB.getCode().equals(encounterHead.getClassEnum())) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS, "当前就诊类别不允许在此工作站取消门诊接诊");
         }
+        // Pre：本诊病历/诊断/医嘱须已删净，否则回退待诊会留下接诊痕迹（BR-DOR-011 / EX-DOR-105）。
+        this.assertCancelReceptionClinicalTracesCleared(encounterHead);
         // Cmd：领域回退状态并收口 ADMITTER，发布取消接诊事件。
         CancelOutpatientReceptionCommand command =
             this.doctorStationEncounterManageMapper.toCancelOutpatientReceptionCommand(request);
@@ -407,6 +430,82 @@ public class DoctorStationEncounterManageAppService {
         if (request.getOperatorId() == null) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "操作人不能为空");
         }
+    }
+
+    /**
+     * 取消接诊前断言本诊临床痕迹已清空（病历、就诊诊断、医生开立药/耗/诊疗医嘱）。
+     *
+     * <p>口径与医生站列表一致：医嘱仅统计 {@link GenerateSource#DOCTOR_PRESCRIPTION} 且未软删行；
+     * 已签发须先签退再删除。本方法不自动删数据，仅门禁（BR-DOR-011）。</p>
+     *
+     * @param encounterHead 门诊就诊头表读模型（须已通过 AMB 门控）
+     * @throws BusinessException 仍有未删病历、诊断或医嘱时（EX-DOR-105）
+     */
+    private void assertCancelReceptionClinicalTracesCleared(EncounterDetailQueryModel encounterHead) {
+        Long encounterId = encounterHead.getId();
+        boolean hasEmrDocuments = this.hasRemainingEmrDocuments(encounterHead.getPatientId(), encounterId);
+        List<EncounterDiagnosisQueryModel> diagnoses =
+            this.encounterQueryService.listEncounterDiagnoses(encounterId);
+        boolean hasDiagnoses = diagnoses != null && !diagnoses.isEmpty();
+        boolean hasAdviceOrders = this.hasRemainingDoctorPrescriptionOrders(encounterId);
+        // 三类痕迹均已清空才允许回退待诊，否则提示医生先手工删净。
+        if (!hasEmrDocuments && !hasDiagnoses && !hasAdviceOrders) {
+            return;
+        }
+        throw new BusinessException(
+            ErrorCodeConstants.ENCOUNTER_RULE_CONFLICT,
+            DoctorStationEncounterManageConstants.CANCEL_RECEPTION_CLINICAL_TRACES_REMAINING_MESSAGE);
+    }
+
+    /**
+     * 判断本诊是否仍有未删 EMR 文书。
+     *
+     * @param patientId   患者主键；空则无法按文书扩展入参查询，视为无文书
+     * @param encounterId 就诊主键
+     * @return 存在未软删文书时 true；EMR 未启用或入参不全时 false
+     */
+    private boolean hasRemainingEmrDocuments(Long patientId, Long encounterId) {
+        // EMR 未装配时不拦截，避免无文书模块的院点无法取消接诊。
+        if (!this.emrDocumentExtension.isEnabled()) {
+            return false;
+        }
+        // 文书扩展按患者+就诊定位；缺任一主键则无法判定，按无文书放行。
+        if (patientId == null || encounterId == null) {
+            return false;
+        }
+        EmrDocumentListExtensionIn query = new EmrDocumentListExtensionIn()
+            .setPatientId(patientId)
+            .setEncounterId(encounterId);
+        List<EmrDocumentQueryExtensionOut> documents = this.emrDocumentExtension.listByEncounter(query);
+        return documents != null && !documents.isEmpty();
+    }
+
+    /**
+     * 判断本诊是否仍有未删的医生开立医嘱（药/诊疗/耗材）。
+     *
+     * @param encounterId 就诊主键
+     * @return 任一类未软删医生开立请求存在时 true
+     */
+    private boolean hasRemainingDoctorPrescriptionOrders(Long encounterId) {
+        String doctorPrescriptionSource = GenerateSource.DOCTOR_PRESCRIPTION.getCode();
+        List<MedicationRequestListQueryModel> medicationRows =
+            this.medicationRequestQueryService.listMedicationRequestsByEncounterForDoctorStation(
+                encounterId, doctorPrescriptionSource);
+        // 仍有未软删药嘱则视为临床痕迹未清。
+        if (medicationRows != null && !medicationRows.isEmpty()) {
+            return true;
+        }
+        List<ServiceRequestListModel> serviceRows =
+            this.serviceRequestQueryService.listServiceRequestsByGenerateSource(
+                encounterId, doctorPrescriptionSource);
+        // 仍有未软删诊疗/申请单医嘱则拦截。
+        if (serviceRows != null && !serviceRows.isEmpty()) {
+            return true;
+        }
+        List<DeviceRequestListModel> deviceRows =
+            this.deviceRequestQueryService.listDeviceRequestsByEncounterForDoctorStation(
+                encounterId, doctorPrescriptionSource);
+        return deviceRows != null && !deviceRows.isEmpty();
     }
 
     /**

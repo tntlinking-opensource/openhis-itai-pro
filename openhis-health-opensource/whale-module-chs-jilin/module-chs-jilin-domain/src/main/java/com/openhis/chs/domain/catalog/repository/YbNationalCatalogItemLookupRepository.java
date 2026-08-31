@@ -55,7 +55,10 @@ public class YbNationalCatalogItemLookupRepository implements YbNationalCatalogI
         boolean excludePlatformExpired,
         Pageable pageable) {
         FilterBuilder filter = baseFilter(contractId, tenantId, listType);
-        filter.and("(? = false OR source_infno = '1312' OR source_line_no IS NULL)", picker1312Only);
+        // 不用 (? = false) 布尔绑定：部分 PG/JDBC 组合会报无法推断参数类型 → bad SQL grammar
+        if (picker1312Only) {
+            filter.andRaw("(source_infno = '1312' OR source_line_no IS NULL)");
+        }
         filter.andOptionalEq("source_infno", sourceInfno);
         filter.andOptionalEq("vali_flag", valiFlag);
         filter.andOptionalKeyword(keyword);
@@ -121,7 +124,7 @@ public class YbNationalCatalogItemLookupRepository implements YbNationalCatalogI
         filter.andOptionalKeywordNamePinyin(keyword);
         filter.andOptionalLikeLower("aprvno", aprvno);
         filter.andOptionalLikeLower("spec", spec);
-        filter.andOptionalEq("hilist_code", hilistCodeExact);
+        filter.andOptionalHilistCodeMatch(hilistCodeExact);
 
         String sql = """
             SELECT * FROM (
@@ -187,7 +190,7 @@ public class YbNationalCatalogItemLookupRepository implements YbNationalCatalogI
         filter.andOptionalKeyword(keyword);
         filter.andOptionalLikeLower("aprvno", aprvno);
         filter.andOptionalLikeLower("spec", spec);
-        filter.andOptionalEq("hilist_code", hilistCodeExact);
+        filter.andOptionalHilistCodeMatch(hilistCodeExact);
 
         String sql = """
             SELECT
@@ -448,13 +451,29 @@ public class YbNationalCatalogItemLookupRepository implements YbNationalCatalogI
             params.add(value);
         }
 
+        /**
+         * 医保码匹配：精确或包含（如输入数字段命中带字母前缀的码）。
+         *
+         * @param hilistCode 医保目录编码，null/blank 时跳过
+         */
+        void andOptionalHilistCodeMatch(String hilistCode) {
+            if (hilistCode == null || hilistCode.isBlank()) {
+                return;
+            }
+            String code = hilistCode.trim();
+            clauses.add("(hilist_code = ? OR hilist_code ILIKE ?)");
+            params.add(code);
+            params.add("%" + code + "%");
+        }
+
         /** 可选前缀匹配：prefix 为 null/blank 时跳过 */
         void andOptionalPrefix(String column, String prefix) {
             if (prefix == null || prefix.isBlank()) {
                 return;
             }
-            clauses.add(column + " LIKE CONCAT(?, '%')");
-            params.add(prefix);
+            // 完整模式作绑定参数，避免 CONCAT(?, '%') 导致 PG 无法推断 ? 类型
+            clauses.add(column + " LIKE ?");
+            params.add(prefix + "%");
         }
 
         /** 可选模糊匹配（ILIKE，可走 pg_trgm） */
@@ -462,49 +481,45 @@ public class YbNationalCatalogItemLookupRepository implements YbNationalCatalogI
             if (value == null || value.isBlank()) {
                 return;
             }
-            clauses.add(column + " ILIKE CONCAT('%', ?, '%')");
-            params.add(value);
+            clauses.add(column + " ILIKE ?");
+            params.add("%" + value + "%");
         }
 
-        /** 可选关键词：hilist_name / pinyin / hilist_code（ILIKE + gin_trgm） */
+        /** 可选关键词：hilist_name / pinyin / hilist_code（ILIKE） */
         void andOptionalKeyword(String keyword) {
             if (keyword == null || keyword.isBlank()) {
                 return;
             }
+            // 完整 '%kw%' 绑定为 text，避免 CONCAT('%', ?, '%') 触发 PG「无法推断参数类型」
+            String pattern = "%" + keyword + "%";
             clauses.add("""
                 (
-                  hilist_name ILIKE CONCAT('%', ?, '%')
-                  OR pinyin ILIKE CONCAT('%', ?, '%')
-                  OR hilist_code ILIKE CONCAT('%', ?, '%')
+                  hilist_name ILIKE ?
+                  OR pinyin ILIKE ?
+                  OR hilist_code ILIKE ?
                 )
                 """);
-            params.add(keyword);
-            params.add(keyword);
-            params.add(keyword);
-        }
-
-        /** 可选关键词：hilist_name / pinyin（药品摘要去重） */
-        void andOptionalKeywordNamePinyin(String keyword) {
-            if (keyword == null || keyword.isBlank()) {
-                return;
-            }
-            clauses.add("""
-                (
-                  hilist_name ILIKE CONCAT('%', ?, '%')
-                  OR pinyin ILIKE CONCAT('%', ?, '%')
-                )
-                """);
-            params.add(keyword);
-            params.add(keyword);
+            params.add(pattern);
+            params.add(pattern);
+            params.add(pattern);
         }
 
         /**
-         * 排除平台已过期：与 {@code NationalCatalogSelectableComposer} 一致
-         * （enddate 为空或年份≤1 视为无结束日；结束日当天仍可选）。
+         * 可选关键词：名称 / 拼音 / 医保编码（与 {@link #andOptionalKeyword} 同口径）。
+         * <p>选码 1312 去重候选也须能按 hilist_code 检索。</p>
+         */
+        void andOptionalKeywordNamePinyin(String keyword) {
+            andOptionalKeyword(keyword);
+        }
+
+        /**
+         * 排除平台已过期：与 {@code NationalCatalogSelectableComposer} / JPA Criteria 一致
+         * （enddate 空或 ≤0001-12-31 视为无结束日；结束日当天仍可选）。
+         * <p>不用 EXTRACT(?)/布尔绑定，减少 PG「无法推断参数类型」被 Spring 包成 bad SQL grammar。</p>
          */
         void andNotPlatformExpired(LocalDate asOf) {
             LocalDate day = asOf == null ? LocalDate.now() : asOf;
-            clauses.add("(enddate IS NULL OR EXTRACT(YEAR FROM enddate) <= 1 OR enddate >= ?)");
+            clauses.add("(enddate IS NULL OR enddate <= DATE '0001-12-31' OR enddate >= ?)");
             params.add(java.sql.Date.valueOf(day));
         }
     }

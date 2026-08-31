@@ -5,9 +5,16 @@
 package com.openhis.health.application.peis.history.service;
 
 import com.openhis.health.application.peis.history.dto.ExamHistoryRowDto;
+import com.openhis.health.application.peis.history.request.CancelPhysicalExamRequest;
 import com.openhis.health.application.peis.history.request.ListPatientExamHistoryRequest;
+import com.openhis.health.application.peis.history.response.CancelPhysicalExamResponse;
 import com.openhis.health.application.peis.history.response.ListPatientExamHistoryResponse;
 import com.openhis.health.application.peis.history.support.PeisPackageSnapshotSupport;
+import com.openhis.health.application.peis.history.support.PhysicalExamHistoryCancelExecutor;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
+import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
+import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
+import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.encounter.entity.Encounter;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.domain.administration.patient.service.PatientQueryService;
@@ -18,10 +25,14 @@ import com.openhis.health.domain.peis.encounterext.service.PeisEncounterExtQuery
 import com.openhis.health.domain.peis.group.entity.PeisGroupRoster;
 import com.openhis.health.domain.peis.group.repository.PeisGroupRosterRepository;
 import com.openhis.health.domain.share.constants.DiagnosticReportStatusConstants;
+import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.PeisExamHistoryConstants;
 import com.openhis.health.domain.share.constants.PeisExamKindConstants;
+import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.enums.EncounterStatus;
 import com.openhis.health.domain.share.extension.campus.PeisCampusIdentityPort;
 import com.openhis.health.domain.share.extension.campus.PeisCampusIdentityView;
+import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.whale.core.application.exception.ValidationException;
 import com.openhis.whale.core.infrastructure.multitenancy.TenantUtils;
 import jakarta.persistence.criteria.Predicate;
@@ -30,6 +41,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.util.ArrayList;
@@ -54,6 +66,9 @@ public class PeisExamHistoryAppService {
     private final PatientQueryService patientQueryService;
     private final PeisGroupRosterRepository peisGroupRosterRepository;
     private final ObjectProvider<PeisCampusIdentityPort> peisCampusIdentityPort;
+    private final ChargeItemQueryService chargeItemQueryService;
+    private final CurrentPractitionerResolver currentPractitionerResolver;
+    private final PhysicalExamHistoryCancelExecutor physicalExamHistoryCancelExecutor;
 
     /**
      * 按 patientId / 学号 / 工号列历年体检。
@@ -86,7 +101,28 @@ public class PeisExamHistoryAppService {
         }
         rows.sort(Comparator.comparing(ExamHistoryRowDto::getCreatedAt,
             Comparator.nullsLast(Comparator.reverseOrder())));
+        enrichChargeAndCancelable(rows);
         response.setRows(rows);
+        return response;
+    }
+
+    /**
+     * 取消未收费体检（对齐挂号历史未收费取消：作废就诊后列表不再展示）。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public CancelPhysicalExamResponse cancelPhysicalExam(@Valid CancelPhysicalExamRequest request) {
+        // Gate
+        if (request == null || request.getEncounterId() == null) {
+            throw new ValidationException(PeisExamHistoryConstants.MSG_ENCOUNTER_REQUIRED);
+        }
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
+            ErrorCodeConstants.PEIS_HIST_INVALID_ARGUMENT, PeisExamHistoryConstants.MSG_LOGIN);
+        // Cmd
+        physicalExamHistoryCancelExecutor.cancel(request.getEncounterId(), operatorId);
+        // Asm
+        CancelPhysicalExamResponse response = new CancelPhysicalExamResponse();
+        response.setEncounterId(request.getEncounterId());
+        response.setCancelled(Boolean.TRUE);
         return response;
     }
 
@@ -126,13 +162,17 @@ public class PeisExamHistoryAppService {
             throw new ValidationException("请提供 patientId、studentNo 或 employeeNo");
         }
         if (request.getPatientId() != null) {
-            if (patientQueryService.findOptionalPatientEntityById(request.getPatientId()).isEmpty()) {
+            var patientOpt = patientQueryService.findOptionalPatientEntityById(request.getPatientId());
+            if (patientOpt.isEmpty()) {
                 throw new ValidationException("患者不存在");
             }
             Optional<PeisCampusIdentityView> campus = resolveCampusByPatient(request.getPatientId());
-            return campus.map(ResolvedIdentity::fromCampus)
-                .orElseGet(() -> new ResolvedIdentity(
-                    request.getPatientId(), request.getStudentNo(), request.getEmployeeNo(), null, null));
+            if (campus.isPresent()) {
+                return ResolvedIdentity.fromCampus(campus.get());
+            }
+            String patientName = patientOpt.get().getName();
+            return new ResolvedIdentity(
+                request.getPatientId(), request.getStudentNo(), request.getEmployeeNo(), "PATIENT", patientName);
         }
         if (request.getStudentNo() != null && !request.getStudentNo().isBlank()) {
             String studentNo = request.getStudentNo().trim();
@@ -196,6 +236,69 @@ public class PeisExamHistoryAppService {
             }
         }
         return set;
+    }
+
+    private void enrichChargeAndCancelable(List<ExamHistoryRowDto> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        List<Long> encounterIds = new ArrayList<>();
+        for (ExamHistoryRowDto row : rows) {
+            if (row != null && row.getEncounterId() != null) {
+                encounterIds.add(row.getEncounterId());
+            }
+        }
+        Set<Long> paidEncounterIds = new HashSet<>();
+        Set<Long> blockingEncounterIds = new HashSet<>();
+        if (!encounterIds.isEmpty()) {
+            ChargeItemQueryCommand cmd = new ChargeItemQueryCommand();
+            cmd.setEncounterIds(encounterIds);
+            List<ChargeItem> items = chargeItemQueryService.listChargeItemsByEncounterIds(cmd);
+            for (ChargeItem item : items) {
+                if (item == null || item.getEncounterId() == null) {
+                    continue;
+                }
+                String status = item.getStatusEnum();
+                if (ChargeItemStatus.SETTLED.getCode().equals(status)) {
+                    paidEncounterIds.add(item.getEncounterId());
+                    blockingEncounterIds.add(item.getEncounterId());
+                }
+                if (ChargeItemStatus.PENDING_SETTLEMENT.getCode().equals(status)
+                    || ChargeItemStatus.REFUNDING.getCode().equals(status)) {
+                    blockingEncounterIds.add(item.getEncounterId());
+                }
+            }
+        }
+        for (ExamHistoryRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            boolean paid = paidEncounterIds.contains(row.getEncounterId());
+            boolean blocking = blockingEncounterIds.contains(row.getEncounterId());
+            row.setPaid(Boolean.valueOf(paid));
+            row.setStatusText(toStatusText(row.getStatusEnum()));
+            boolean inProgress = EncounterStatus.IN_PROGRESS.getCode().equals(row.getStatusEnum());
+            boolean notFinal = !Boolean.TRUE.equals(row.getFinalReport());
+            if (inProgress && !blocking && notFinal) {
+                row.setCancelable(Boolean.TRUE);
+            } else {
+                row.setCancelable(Boolean.FALSE);
+            }
+        }
+    }
+
+    private static String toStatusText(String statusEnum) {
+        if (statusEnum == null || statusEnum.isEmpty()) {
+            return "";
+        }
+        if (EncounterStatus.IN_PROGRESS.getCode().equals(statusEnum)) {
+            return PeisExamHistoryConstants.STATUS_TEXT_IN_PROGRESS;
+        }
+        EncounterStatus status = EnumUtil.fromCode(EncounterStatus.class, statusEnum);
+        if (status == null) {
+            return statusEnum;
+        }
+        return status.getDisplay();
     }
 
     private static boolean isCancelled(Encounter encounter) {

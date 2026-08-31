@@ -37,6 +37,29 @@ public final class OrderChargePricingAssembler {
     }
 
     /**
+     * 计算医嘱开立单位下行金额（与 {@link #applyOrderChargePricing} 同口径，不写命令项）。
+     *
+     * <p>供签发跨批次确认（BR-ORD-035）预览分段金额，须与落账 {@code total_price} 一致。</p>
+     *
+     * @param productRow       产品定义读模型
+     * @param priceLine        定价行
+     * @param quantity         业务计价数量
+     * @param quantityUnitCode 业务计价单位 code
+     * @return 行金额（计算刻度 6 位）
+     * @throws BusinessException 定价行、数量或单位缺失/非法
+     */
+    public static BigDecimal computeOrderChargeLineTotal(
+        ProductDefinitionDisplayDto productRow,
+        ChargeItemDefinition priceLine,
+        BigDecimal quantity,
+        String quantityUnitCode
+    ) {
+        CreateChargeItemCommand.Item previewItem = new CreateChargeItemCommand.Item();
+        applyOrderChargePricing(previewItem, productRow, priceLine, quantity, quantityUnitCode);
+        return previewItem.getTotalPrice();
+    }
+
+    /**
      * 将定价行与业务数量/单位写入 Charge 命令项金额字段。
      *
      * @param item              待写入的命令项（可已含 {@code definitionId}）

@@ -96,12 +96,9 @@ public class MedicationDefinition extends BaseAuditedEntity {
     /** 是否注射药物。 */
     @Column(name = "inject_flag")
     private Boolean injectFlag;
-    /** 生产厂家标识。 */
+    /** 生产厂家标识（cus_supplier.id，type=生产厂家）。 */
     @Column(name = "manufacturer_id")
     private Long manufacturerId;
-    /** 生产厂商文本。 */
-    @Column(name = "manufacturer_text")
-    private String manufacturerText;
     /**
      * 供应商标识（历史列；药品目录维护写路径不再写入，供应商改由进货/退供单据维护）。
      */
@@ -155,6 +152,12 @@ public class MedicationDefinition extends BaseAuditedEntity {
     /** 是否基药。 */
     @Column(name = "basic_flag")
     private Boolean basicFlag;
+    /** 是否国家重点监控药品（勾选=是，口径对齐 {@link #basicFlag}）。 */
+    @Column(name = "national_monitor_flag")
+    private Boolean nationalMonitorFlag;
+    /** 是否集采药品（勾选=是，口径对齐 {@link #basicFlag}）。 */
+    @Column(name = "central_purchase_flag")
+    private Boolean centralPurchaseFlag;
     /** 住院临时医嘱拆分属性编码。 */
     @Column(name = "tho_part_attribute_enum")
     private String thoPartAttributeEnum;

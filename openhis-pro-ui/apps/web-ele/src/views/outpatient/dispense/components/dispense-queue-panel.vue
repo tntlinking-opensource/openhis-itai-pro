@@ -25,7 +25,7 @@ defineOptions({
 const props = defineProps<Props>();
 
 const emit = defineEmits<{
-  queueDateRangeChange: [range: [string, string] | null];
+  queueDateRangeChange: [range: [Date | string, Date | string] | null];
   refresh: [];
   selectPatient: [patient: { id: string }];
 }>();
@@ -64,8 +64,8 @@ function onPatientCardSelect(card: PatientCardPatient) {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col">
-    <div class="mb-1.5 flex flex-col gap-1.5 px-2 pt-1.5">
+  <div class="dispense-queue-panel flex h-full min-h-0 flex-col">
+    <div class="dispense-queue-panel__filters mb-1.5 flex flex-col gap-1.5 px-2 pt-1.5">
       <SectionTitle title="待发药患者" />
       <ElRadioGroup
         v-model="queueScope"
@@ -86,7 +86,7 @@ function onPatientCardSelect(card: PatientCardPatient) {
           format="YYYY-MM-DD"
           value-format="YYYY-MM-DD"
           :shortcuts="dateRangeShortcuts"
-          @change="emit('queueDateRangeChange', $event as [string, string] | null)"
+          @change="emit('queueDateRangeChange', $event as [Date | string, Date | string] | null)"
         />
       </div>
       <div class="flex min-w-0 items-center gap-1.5">

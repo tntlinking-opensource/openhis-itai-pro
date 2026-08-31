@@ -75,6 +75,7 @@ public class PeisHealthArchiveAppService {
             response.setFamilyHistory(archive.getFamilyHistory());
             response.setHabitSummary(archive.getHabitSummary());
             response.setAllergySummary(archive.getAllergySummary());
+            response.setTagCode(archive.getTagCode());
             response.setRemark(archive.getRemark());
         });
         if (Boolean.TRUE.equals(request.getIncludeCompleteness())) {
@@ -100,6 +101,7 @@ public class PeisHealthArchiveAppService {
         incoming.setFamilyHistory(request.getFamilyHistory());
         incoming.setHabitSummary(request.getHabitSummary());
         incoming.setAllergySummary(request.getAllergySummary());
+        incoming.setTagCode(request.getTagCode());
         incoming.setRemark(request.getRemark());
         PeisPatientHealthArchive saved = peisHealthArchiveDomainService.upsert(incoming, operatorId);
         SaveArchiveResponse response = new SaveArchiveResponse();

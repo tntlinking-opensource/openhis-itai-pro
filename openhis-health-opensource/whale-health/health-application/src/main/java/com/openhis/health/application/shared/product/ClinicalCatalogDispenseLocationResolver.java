@@ -23,7 +23,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 临床开嘱/目录/定价共用的取药科室模板库位解析（{@code DM-CUS-006}）。
  *
  * <p>模板 {@code distribution_category_code} 与产品目录 {@code categoryCode} 对齐（药品/耗材类别）；
- * 候选库位经 calcScore（具体项 + 用法）过滤；默认库位经 {@code matchDefaultDistributionLocation} 择优。</p>
+ * 候选库位经 calcScore（具体项 + 种类 + 用法）过滤；默认库位经 {@code matchDefaultDistributionLocation} 择优。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -77,14 +77,17 @@ public class ClinicalCatalogDispenseLocationResolver {
         String productTableName;
         Long productDefinitionId;
         String methodCode;
+        String typeCode;
         if (productRow != null) {
             productTableName = productRow.getProductTableName();
             productDefinitionId = productRow.getProductDefinitionId();
             methodCode = productRow.getMethodCode();
+            typeCode = productRow.getTypeCode();
         } else {
             productTableName = null;
             productDefinitionId = null;
             methodCode = null;
+            typeCode = null;
         }
         return this.listApplicableCandidateLocationIds(
             orgId,
@@ -92,18 +95,20 @@ public class ClinicalCatalogDispenseLocationResolver {
             this.resolveDistributionCategory(productRow),
             productDefinitionId,
             methodCode,
+            typeCode,
             pharmacyLocationId
         );
     }
 
     /**
-     * 按物品表 + categoryCode + 具体项 + 用法列出适用候选库位。
+     * 按物品表 + categoryCode + 具体项 + 用法 + 种类列出适用候选库位。
      *
      * @param orgId                  开立/接诊科室
      * @param productTableName       物品主表名
      * @param categoryCode           目录 categoryCode（可空回落默认）
      * @param productDefinitionId    产品定义主键
      * @param methodCode             给药途径（耗材可空）
+     * @param typeCode               耗材种类（药品可空）
      * @param pharmacyLocationId     可选指定药房
      * @return 候选库位 id 列表
      */
@@ -113,6 +118,7 @@ public class ClinicalCatalogDispenseLocationResolver {
         String categoryCode,
         Long productDefinitionId,
         String methodCode,
+        String typeCode,
         Long pharmacyLocationId
     ) {
         if (orgId == null || StringUtils.isEmpty(productTableName)) {
@@ -130,6 +136,7 @@ public class ClinicalCatalogDispenseLocationResolver {
             distributionCategory,
             productDefinitionId,
             methodCode,
+            typeCode,
             null
         );
         return this.narrowByPharmacyLocation(locs, pharmacyLocationId);
@@ -143,6 +150,7 @@ public class ClinicalCatalogDispenseLocationResolver {
      * @param categoryCode           目录 categoryCode（可空回落默认）
      * @param productDefinitionId    产品定义主键
      * @param methodCode             给药途径
+     * @param typeCode               耗材种类
      * @param pharmacyLocationId     可选指定药房
      * @return 候选库位 id 列表
      */
@@ -152,6 +160,7 @@ public class ClinicalCatalogDispenseLocationResolver {
         String categoryCode,
         Long productDefinitionId,
         String methodCode,
+        String typeCode,
         Long pharmacyLocationId
     ) {
         if (StringUtils.isEmpty(productTableName)) {
@@ -167,6 +176,7 @@ public class ClinicalCatalogDispenseLocationResolver {
             distributionCategory,
             productDefinitionId,
             methodCode,
+            typeCode,
             null
         );
         return this.narrowByPharmacyLocation(locs, pharmacyLocationId);
@@ -207,22 +217,25 @@ public class ClinicalCatalogDispenseLocationResolver {
             this.resolveDistributionCategory(productRow),
             productRow.getProductDefinitionId(),
             productRow.getMethodCode(),
+            productRow.getTypeCode(),
             null
         );
     }
 
     /**
-     * 解析耗材默认发放库房（无用法维度）。
+     * 解析耗材默认发放库房（无用法维；种类取自目录 {@code typeCode}）。
      *
      * @param orgId               开立/接诊科室
      * @param deviceDefinitionId  耗材定义主键
      * @param categoryCode        目录 categoryCode（可空回落默认）
+     * @param typeCode            目录 typeCode（可空；空则仅命中种类通配模板）
      * @return 默认库位；无适用规则时为 null
      */
     public Long matchDefaultDeviceDispenseLocationId(
         Long orgId,
         Long deviceDefinitionId,
-        String categoryCode
+        String categoryCode,
+        String typeCode
     ) {
         if (orgId == null || deviceDefinitionId == null) {
             return null;
@@ -238,6 +251,7 @@ public class ClinicalCatalogDispenseLocationResolver {
             distributionCategory,
             deviceDefinitionId,
             null,
+            typeCode,
             null
         );
     }

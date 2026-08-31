@@ -41,6 +41,11 @@ public class CreateHerbalMedicationOrderDraftCommand {
     private String methodCode;
     /** 频次编码。 */
     private String rateCode;
+    /**
+     * 长临类型 code（{@code LONG_TERM}/{@code TEMPORARY} 等）。
+     * <p>住院方头传入；未传时领域层回落临时，兼容门诊中药创建。</p>
+     */
+    private String therapyEnum;
     /** 用药天数。 */
     private Integer dispensePerDuration;
     /** 中药扩展内容（方头与交互 key 等 JSON）。 */

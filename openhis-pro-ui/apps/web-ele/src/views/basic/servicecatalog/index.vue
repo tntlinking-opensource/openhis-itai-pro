@@ -28,6 +28,7 @@ import {
 import type { ServiceCatalogImportProgressResult } from '#/api';
 import StatusEnumTag from '#/components/status-enum-tag.vue';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import { SERVICE_CATALOG_EXPORT_COLUMNS } from '#/utils/export/catalog-excel-export-columns';
 import { downloadBinaryExportFile } from '#/utils/export/download-binary-export';
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
 
@@ -304,6 +305,7 @@ const handleExportCatalog = async () => {
     const result = await exportServiceCatalogApi({
       keyword: queryParams.value.keyword || undefined,
       categoryCode: queryParams.value.categoryCode || undefined,
+      exportColumns: SERVICE_CATALOG_EXPORT_COLUMNS,
     });
     if (!result?.fileBytes?.trim()) {
       ElMessage.warning('导出内容为空');

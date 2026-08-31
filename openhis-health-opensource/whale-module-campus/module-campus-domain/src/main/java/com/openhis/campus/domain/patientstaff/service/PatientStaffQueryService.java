@@ -73,6 +73,28 @@ public class PatientStaffQueryService {
         return repository.findByTenantIdAndPatientIdIsNullAndIsDeletedFalseOrderByIdAsc(resolvedTenantId);
     }
 
+    /**
+     * 团检名册：部门下在职且已绑定患者的教职工。
+     */
+    public List<PatientStaff> listForRoster(Long tenantId, Long departmentId) {
+        Long resolvedTenantId = resolveTenantId(tenantId);
+        if (resolvedTenantId == null || departmentId == null) {
+            return List.of();
+        }
+        return repository.findAll((root, cq, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.get("tenantId"), resolvedTenantId));
+            predicates.add(cb.isFalse(root.get("isDeleted")));
+            predicates.add(cb.isTrue(root.get("activeFlag")));
+            predicates.add(cb.equal(root.get("departmentId"), departmentId));
+            predicates.add(cb.isNotNull(root.get("patientId")));
+            predicates.add(cb.equal(root.get("jobStatusEnum"),
+                com.openhis.campus.domain.shared.CampusDomainConstants.JOB_STATUS_ACTIVE));
+            cq.orderBy(cb.asc(root.get("employeeNo")));
+            return cb.and(predicates.toArray(new Predicate[0]));
+        });
+    }
+
     private Specification<PatientStaff> buildSpec(
         Long tenantId,
         String keyword,

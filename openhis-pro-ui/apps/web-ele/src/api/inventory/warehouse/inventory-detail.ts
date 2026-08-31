@@ -3,6 +3,7 @@
  * {@code POST /api/app/inventoryWarehouseInventoryDetail/{methodName}}
  */
 import type { ApiResponse } from '#/types/api-response';
+import type { ExcelExportColumnPayload } from '#/utils/export/build-excel-export-columns';
 
 import { requestClient } from '#/api/request';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
@@ -40,18 +41,28 @@ export type InventoryWarningMode =
   | typeof INVENTORY_WARNING_MODE_EXPIRE
   | typeof INVENTORY_WARNING_MODE_LOW_STOCK;
 
+/** 项目类型：药品定义表。 */
+export const INVENTORY_DETAIL_ITEM_TABLE_MEDICATION = 'med_medication_definition' as const;
+/** 项目类型：耗材定义表。 */
+export const INVENTORY_DETAIL_ITEM_TABLE_DEVICE = 'adm_device_definition' as const;
+export type InventoryDetailItemTable =
+  | typeof INVENTORY_DETAIL_ITEM_TABLE_DEVICE
+  | typeof INVENTORY_DETAIL_ITEM_TABLE_MEDICATION;
+
 /** IF-INV-DTL-02 分页入参。 */
 export interface PageInventoryDetailCurrentRequest {
   pageNo: number;
   pageSize: number;
   keyword?: string;
+  /** 项目类型：药品/耗材定义表名；空=全部 */
+  itemTable?: InventoryDetailItemTable | string;
   medicationCategoryCodes?: string[];
   deviceCategoryCodes?: string[];
   warehouseIds?: string[];
   supplierIds?: string[];
   chrgitmLvList?: number[];
-  /** 基药标识（药典 basicFlag）；仅收窄药品行 */
-  basicFlag?: boolean;
+  /** 重点药类型（KeyDrugType code）；仅收窄药品行 */
+  keyDrugType?: string;
   zeroStockOnly?: boolean;
   expireWithinDays?: number;
   inventoryStatusEnums?: string[];
@@ -100,6 +111,8 @@ export interface InventoryDetailListRowDto {
   splitUnitName?: string;
   /** 1 包装 = ratio 拆零 */
   packageUnitRatio?: number | string | null;
+  /** 包装拆零比例展示，如 1盒/36片（服务端拼装；非临床 1片x100） */
+  packageSplitRatioText?: string | null;
   packageStockText?: string;
   splitStockText?: string;
   /** 批号进价（元/包装单位） */
@@ -137,13 +150,15 @@ export interface PageInventoryDetailCurrentResult {
 
 export interface SumInventoryDetailCurrentRequest {
   keyword?: string;
+  /** 项目类型：药品/耗材定义表名；空=全部 */
+  itemTable?: InventoryDetailItemTable | string;
   medicationCategoryCodes?: string[];
   deviceCategoryCodes?: string[];
   warehouseIds?: string[];
   supplierIds?: string[];
   chrgitmLvList?: number[];
-  /** 基药标识（药典 basicFlag）；仅收窄药品行 */
-  basicFlag?: boolean;
+  /** 重点药类型（KeyDrugType code）；仅收窄药品行 */
+  keyDrugType?: string;
   zeroStockOnly?: boolean;
   expireWithinDays?: number;
   inventoryStatusEnums?: string[];
@@ -156,7 +171,10 @@ export interface SumInventoryDetailCurrentResponse {
   truncated?: boolean;
 }
 
-export type ExportInventoryDetailCurrentRequest = SumInventoryDetailCurrentRequest;
+export interface ExportInventoryDetailCurrentRequest extends SumInventoryDetailCurrentRequest {
+  /** 页面可见列 → 后端 Excel 列裁剪 */
+  exportColumns?: ExcelExportColumnPayload[];
+}
 
 export interface ExportInventoryDetailCurrentResponse {
   fileName?: string;
@@ -195,7 +213,10 @@ export interface SumInventoryDetailBackupRequest extends SumInventoryDetailCurre
 
 export type SumInventoryDetailBackupResponse = SumInventoryDetailCurrentResponse;
 
-export type ExportInventoryDetailBackupRequest = SumInventoryDetailBackupRequest;
+export interface ExportInventoryDetailBackupRequest extends SumInventoryDetailBackupRequest {
+  /** 页面可见列 → 后端 Excel 列裁剪 */
+  exportColumns?: ExcelExportColumnPayload[];
+}
 
 export type ExportInventoryDetailBackupResponse = ExportInventoryDetailCurrentResponse;
 

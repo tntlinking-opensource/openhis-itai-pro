@@ -8,6 +8,8 @@ import com.openhis.health.domain.share.enums.AdministrativeGender;
 
 /**
  * 行政性别 code → 展示文案（打印/列表/Mapper 共用）。
+ *
+ * <p>出站对方系统码表（LIS/PACS/首页）见 {@link AdministrativeGenderOutboundUtil}，勿在此混写。</p>
  */
 public final class AdministrativeGenderDisplayUtil {
 

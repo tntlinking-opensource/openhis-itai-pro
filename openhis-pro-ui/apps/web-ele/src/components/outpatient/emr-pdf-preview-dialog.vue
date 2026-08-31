@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 
-import { ElButton, ElDialog, ElMessage } from 'element-plus';
+import { ElButton, ElDialog, ElMessage, useZIndex } from 'element-plus';
 
 import {
   pdfBase64ToBlob,
@@ -35,6 +35,17 @@ const emit = defineEmits<{
 
 const iframeRef = ref<HTMLIFrameElement | null>(null);
 const objectUrl = ref('');
+const { nextZIndex } = useZIndex();
+const dialogZIndex = ref<number | undefined>();
+
+watch(
+  () => props.modelValue,
+  (open) => {
+    if (open) {
+      dialogZIndex.value = nextZIndex();
+    }
+  },
+);
 
 const visible = computed({
   get: () => props.modelValue,
@@ -106,6 +117,8 @@ onBeforeUnmount(() => {
     :title="title"
     width="920px"
     top="4vh"
+    append-to-body
+    :z-index="dialogZIndex"
     destroy-on-close
     class="emr-pdf-preview-dialog"
   >

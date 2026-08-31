@@ -6,7 +6,7 @@ import { ref, watch } from 'vue';
 import { ElDialog, ElMessage, ElTable, ElTableColumn } from 'element-plus';
 
 import { listDeviceLotPricesApi, listMedicationLotPricesApi } from '#/api';
-import { formatMoneyDisplay } from '#/utils/format/money-scale';
+import { formatMoneyDisplay, formatPurchaseUnitPriceDisplay } from '#/utils/format/money-scale';
 
 defineOptions({ name: 'CatalogLotPriceDialog' });
 
@@ -17,12 +17,18 @@ interface Props {
   catalogType?: 'device' | 'medication';
   /** 弹窗标题附加品名 */
   itemName?: string;
+  /**
+   * 药品分类码（medication_category_code）；中草药进价三位。
+   * 耗材可空；售价列始终两位。
+   */
+  categoryCode?: string;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   itemId: '',
   catalogType: 'medication',
   itemName: '',
+  categoryCode: '',
 });
 
 const open = defineModel<boolean>({ default: false });
@@ -54,8 +60,17 @@ async function loadLotPrices() {
   }
 }
 
-/** 金额列展示 */
-function formatPrice(value: unknown): string {
+/** 批号进价展示（中药三位；无分类码时最多三位去尾零） */
+function formatCostPrice(value: unknown): string {
+  if (value === null || value === undefined || value === '') {
+    return '—';
+  }
+  const text = formatPurchaseUnitPriceDisplay(value, props.categoryCode);
+  return text || '—';
+}
+
+/** 批号售价展示（固定两位） */
+function formatSalePrice(value: unknown): string {
   if (value === null || value === undefined || value === '') {
     return '—';
   }
@@ -94,12 +109,12 @@ watch(
       <ElTableColumn prop="lotNumber" label="批号" min-width="140" show-overflow-tooltip />
       <ElTableColumn label="进价" width="120" align="right" header-align="right">
         <template #default="{ row }">
-          {{ formatPrice(row.costPrice) }}
+          {{ formatCostPrice(row.costPrice) }}
         </template>
       </ElTableColumn>
       <ElTableColumn label="售价" width="120" align="right" header-align="right">
         <template #default="{ row }">
-          {{ formatPrice(row.salePrice) }}
+          {{ formatSalePrice(row.salePrice) }}
         </template>
       </ElTableColumn>
     </ElTable>

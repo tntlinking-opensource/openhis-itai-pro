@@ -27,6 +27,7 @@ import { buildOutpatientRegisterReceiptPrintData } from './outpatient-register-r
 import { buildOutpatientSpecimenBarcodePrintData } from './outpatient-specimen-barcode';
 import { buildOutpatientTcmPrescriptionPrintData } from './outpatient-tcm-prescription';
 import { buildOutpatientTreatmentSheetPrintData } from './outpatient-treatment-sheet';
+import { buildPeisGuidePrintData } from './peis-guide-print';
 import { buildPeisReportPrintData } from './peis-report-print';
 import { buildPharmacyDailySettlementPrintData } from './pharmacy-daily-settlement';
 import { registerPrintMapper } from './registry';
@@ -70,6 +71,7 @@ registerPrintMapper(PRINT_SCENARIO.invMovementPrint, buildInvMovementPrintData);
 registerPrintMapper(PRINT_SCENARIO.invStocktakePrint, buildInvStocktakePrintData);
 registerPrintMapper(PRINT_SCENARIO.invReturnPrint, buildInvReturnPrintData);
 registerPrintMapper(PRINT_SCENARIO.peisReportPrint, buildPeisReportPrintData);
+registerPrintMapper(PRINT_SCENARIO.peisGuidePrint, buildPeisGuidePrintData);
 registerPrintMapper(PRINT_SCENARIO.finPriceAdjustmentPrint, buildFinPriceAdjustmentPrintData);
 
 export { buildExaminationPrintData } from './examination-print';
@@ -250,6 +252,8 @@ export type {
   OutpatientTreatmentSheetPrintData,
   OutpatientTreatmentSheetPrintSource,
 } from './outpatient-treatment-sheet';
+export { buildPeisGuidePrintData } from './peis-guide-print';
+export type { PeisGuideLine, PeisGuidePrintData, PeisGuidePrintSource } from './peis-guide-print';
 export { buildPeisReportPrintData } from './peis-report-print';
 export type {
   PeisReportObservationLine,

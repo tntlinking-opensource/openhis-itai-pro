@@ -34,6 +34,7 @@ import com.openhis.health.domain.workflow.devicedispense.command.MatchDispenseLo
 import com.openhis.health.domain.workflow.devicedispense.command.PrepareDeviceDispenseCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.ReplaceFifoDeviceDispenseDraftsCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.PromoteDeviceDispenseToPreparationCommand;
+import com.openhis.health.domain.workflow.devicedispense.command.UpdateDeviceDispenseLocationCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.RecallDispensedDeviceDispenseCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.RefundDispensedDeviceDispenseCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.ReleaseDeviceDispenseReserveCommand;
@@ -348,6 +349,13 @@ public class DeviceDispenseDomainService {
             if (segment.getQuantity() == null || segment.getQuantity().compareTo(BigDecimal.ZERO) <= 0) {
                 throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "FIFO 分段 quantity 必须大于 0");
             }
+            // Gate：签发锁定批号禁止空/空白，避免护士执行再报「发放批号缺失」
+            String signedLot = segment.getLotNumber();
+            if (signedLot == null || signedLot.trim().isEmpty()) {
+                throw new BusinessException(
+                    ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT,
+                    "FIFO 分段批号不能为空，请维护库存批号后再签发");
+            }
             DeviceDispense dispense = new DeviceDispense();
             dispense.setBusNo(busSeqList.get(seqIndex));
             seqIndex = seqIndex + 1;
@@ -358,7 +366,7 @@ public class DeviceDispenseDomainService {
             dispense.setQuantity(segment.getQuantity());
             dispense.setUnitCode(command.getUnitCode());
             dispense.setLocationId(segment.getLocationId());
-            dispense.setLotNumber(segment.getLotNumber());
+            dispense.setLotNumber(signedLot.trim());
             dispense.initDraft();
             created.add(dispense);
         }
@@ -370,6 +378,47 @@ public class DeviceDispenseDomainService {
                 saved.getId(), saved.getBusNo(), saved.getDeviceReqId(), saved.getStatusEnum(), command.getOperatorId()));
         }
         return createdIds;
+    }
+
+    /**
+     * 护士换耗材房：就地只回写 {@code location_id}，主键与批号不变（BR-NUR-006）。
+     *
+     * <p>医生签发已 FIFO 定价并生成发放；收费完成后禁止改批号、禁止 FIFO、禁止软删重建、禁止动账单。
+     * 库存是否够由应用层在写库前按「目标房 + 签发批号」断言。</p>
+     *
+     * @param command 发放主键、目标库房、操作人
+     * @throws BusinessException 参数缺失、记录不存在、状态不可改或原批号缺失时
+     */
+    public void updateLocationForNurseExecute(UpdateDeviceDispenseLocationCommand command) {
+        // Gate：命令与关键字段齐全
+        if (command == null || command.getId() == null) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "发放主键不能为空");
+        }
+        if (command.getLocationId() == null) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "耗材房不能为空");
+        }
+        if (command.getOperatorId() == null) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "operatorId 不能为空");
+        }
+        // Pre：按主键装载发放行
+        DeviceDispense row = deviceDispenseRepository.findById(command.getId()).orElse(null);
+        if (row == null || Boolean.TRUE.equals(row.getIsDeleted())) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_NOT_FOUND, "未命中发放记录");
+        }
+        // Gate：仅草稿/待发可就地改房，已配/已发禁止改写
+        if (!row.isDraftOrPreparation()) {
+            throw new BusinessException(
+                ErrorCodeConstants.DEVICE_DISPENSE_RULE_CONFLICT, "耗材发放单状态已变更，禁止修改库房");
+        }
+        // Gate：换房不改批号——原行须已有真实批号（签发锁定）
+        String existingLot = row.getLotNumber();
+        if (existingLot == null || existingLot.trim().isEmpty()) {
+            throw new BusinessException(
+                ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "发放批号缺失，请医生改签后再执行");
+        }
+        // Cmd：只回写库房，批号保持签发值
+        row.setLocationId(command.getLocationId());
+        deviceDispenseRepository.save(row);
     }
 
     /**
@@ -783,6 +832,8 @@ public class DeviceDispenseDomainService {
     /**
      * 批量将已完成记录回退为准备态（纠错/冲正入口，由调用方约束业务许可）。
      *
+     * <p>保留签发批号（BR-DD-009）：仅清空发放量/发放人/时间/追溯码，不置空 {@code lot_number}。</p>
+     *
      * @param command 须含非空 idList 且全部存在
      * @throws BusinessException 部分 id 不存在时
      */
@@ -797,6 +848,7 @@ public class DeviceDispenseDomainService {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_NOT_FOUND, "部分发放记录不存在");
         }
         for (DeviceDispense dispense : rows) {
+            // Cmd：回退 PREPARATION，保留签发 lot_number
             dispense.completedToPreparation();
         }
         deviceDispenseRepository.saveAll(rows);
@@ -804,6 +856,8 @@ public class DeviceDispenseDomainService {
 
     /**
      * 批量将已配药记录回退为待发（护士取消执行对称入口，由调用方约束业务许可）。
+     *
+     * <p>保留签发批号（BR-DD-009）：仅清空拣配人/时间/追溯码，不置空 {@code lot_number}。</p>
      *
      * @param command 须含非空 idList 且全部存在
      * @throws BusinessException 部分 id 不存在或状态不允许回退时
@@ -817,6 +871,7 @@ public class DeviceDispenseDomainService {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_NOT_FOUND, "部分发放记录不存在");
         }
         for (DeviceDispense dispense : rows) {
+            // Cmd：回退 PREPARATION，保留签发 lot_number
             dispense.preparedToPreparation();
         }
         deviceDispenseRepository.saveAll(rows);

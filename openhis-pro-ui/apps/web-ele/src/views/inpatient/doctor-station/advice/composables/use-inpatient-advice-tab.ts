@@ -41,6 +41,7 @@ import {
   httpCancelStopLongTermInpatientDoctorStationAdvice,
   httpChangeInpatientDoctorStationAdviceBusinessTime,
   httpAppendSkinTestCompanionForLongTermMedication,
+  httpChangeLongTermMedicationDoseInpatientDoctorStationAdvice,
   httpInitInpatientDoctorStationAdvice,
   httpListInpatientDoctorStationAdvice,
   httpPageInpatientDoctorStationAdviceCatalog,
@@ -83,20 +84,22 @@ import {
   mergeMedicationAdviceRowsForListDisplay,
 } from '../services/advice-list';
 import { buildAdviceDraftLines } from '../services/advice-medication-draft';
+import { saveInpatientAdviceDraftBatchWithManualUsageBind } from '../services/inpatient-advice-draft-save.service';
 import {
   inferAdviceLineEditorKind,
   isEntrustAdviceDrugItem,
   isInpatientDischargeMedicationTherapy,
   productTableNameForAdviceRow,
   resourceKeyFromRow,
-  rowLooksCancelStopLongTermEligible,
-  rowLooksStopChecked,
-  rowLooksStopped,
   rowLooksAppendSkinTestEligible,
+  rowLooksCancelStopLongTermEligible,
+  rowLooksChangeDoseEligible,
   rowLooksDeletable,
   rowLooksDraft,
   rowLooksDraftForSign,
+  rowLooksStopChecked,
   rowLooksStopLongTermEligible,
+  rowLooksStopped,
   rowLooksWithdrawable,
   therapyDraftFieldsFromAdviceRow,
   validateWesternEditLineItem,
@@ -161,6 +164,16 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
   const editorDirty = ref(false);
   const editorInitialGroup = ref<AdviceDrugItem[]>([]);
   const editorOpening = ref(false);
+  /** 改量模式：源长期药嘱 id；空=普通暂存编辑 */
+  const changeDoseSourceRequestId = ref('');
+  /** 改量且源嘱在用：可编辑停嘱时间（默认当前） */
+  const changeDoseStopTimeEditable = ref(false);
+  /** 改量停嘱时间（DatePicker：YYYY-MM-DD HH:mm） */
+  const changeDoseStopTime = ref('');
+  /** 改量源嘱开立时刻（校验停嘱时间用） */
+  const changeDoseSourceOpenedTimeRaw = ref('');
+  /** 是否处于改量编辑（锁定换药/类型） */
+  const changeDoseMode = computed(() => Boolean(changeDoseSourceRequestId.value.trim()));
 
   const productColumns = ADVICE_PRODUCT_COLUMNS;
 
@@ -302,6 +315,14 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     return '';
   };
 
+  /** 退出改量编辑态（不清编辑卡本身） */
+  const clearChangeDoseMode = () => {
+    changeDoseSourceRequestId.value = '';
+    changeDoseStopTimeEditable.value = false;
+    changeDoseStopTime.value = '';
+    changeDoseSourceOpenedTimeRaw.value = '';
+  };
+
   /** 打开空白西药编辑卡片 */
   const handleAdd = async () => {
     if (showEditor.value && editorDirty.value) {
@@ -312,6 +333,7 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
       const ok = await ensureClinicalReception();
       if (!ok) return;
     }
+    clearChangeDoseMode();
     editingAdviceResourceType.value = '';
     editorInitialGroup.value = [];
     showEditor.value = true;
@@ -407,6 +429,7 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
       expanded: true,
     };
     editingAdviceResourceType.value = 'SERVICE';
+    clearChangeDoseMode();
     editorInitialGroup.value = [seed];
     showEditor.value = true;
     editorForm.value = createEditForm();
@@ -731,6 +754,53 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     });
   };
 
+  /**
+   * 改量：勾选一条长期药品（VERIFIED/STOPPED），打开编辑卡改剂量频次等；
+   * 保存时走 IF-IP-DOR-28，新嘱待签发。
+   */
+  const handleChangeDose = async () => {
+    if (showEditor.value && editorDirty.value) {
+      ElMessage.warning('请先保存或关闭当前编辑卡片');
+      return;
+    }
+    const flatSel = flattenAdviceRowsForResourceOps(tableSelection.value);
+    const eligible = flatSel.filter((r) => rowLooksChangeDoseEligible(r));
+    if (eligible.length !== 1) {
+      ElMessage.warning('请勾选一条已校对或已停嘱的长期药品进行改量');
+      return;
+    }
+    const row = eligible[0];
+    if (!row) return;
+    const sourceId = String(row.requestId ?? '').trim();
+    if (!sourceId) {
+      ElMessage.warning('缺少源医嘱主键');
+      return;
+    }
+    editingAdviceResourceType.value = (row.resourceType || 'MEDICATION').trim();
+    changeDoseSourceRequestId.value = sourceId;
+    // 在用改量须传停嘱时间；已停源嘱后端忽略 stopTime
+    const sourceStopped = rowLooksStopped(row);
+    changeDoseStopTimeEditable.value = !sourceStopped;
+    changeDoseStopTime.value = sourceStopped ? '' : dayjs().format('YYYY-MM-DD HH:mm');
+    changeDoseSourceOpenedTimeRaw.value = String(row.openedTimeRaw ?? '').trim();
+    editorOpening.value = true;
+    try {
+      const hydrated = await hydrateAdviceDrugItemsForEdit([row]);
+      // 改量不可换药：清 requestId；新嘱不得继承源嘱 groupId（否则与旧嘱并组）
+      editorInitialGroup.value = hydrated.map((item, index) => ({
+        ...item,
+        medicationRequestId: undefined,
+        groupId: undefined,
+        expanded: index === 0,
+        therapyEnum: 'LONG_TERM',
+      }));
+      showEditor.value = true;
+      clearAdviceTableSelection();
+    } finally {
+      editorOpening.value = false;
+    }
+  };
+
   /** 起止时间就地改时（点时间展开 DatePicker；精确到分钟） */
   const inlineBusinessTimeEdit = reactive({
     rowKey: '',
@@ -864,7 +934,11 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     inlineBusinessTimePickerRef.value?.handleOpen?.();
   };
 
-  /** 确认提交就地改开立/停嘱时间 */
+  /**
+   * 确认提交就地改开立/停嘱时间。
+   * 成组行须展开组内全部成员逐条调 IF-IP-DOR-26（与批量改停嘱一致），
+   * 禁止只改合并行首条 requestId，否则组内其余行停嘱/开立时间不同步。
+   */
   const confirmInlineBusinessTime = async () => {
     if (!inlineBusinessTimeEdit.rowKey) {
       return;
@@ -891,7 +965,41 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
       flattenAdviceRowsForResourceOps(rows.value).find(
         (r) => r.key === inlineBusinessTimeEdit.rowKey,
       );
-    if (inlineBusinessTimeEdit.timeKind === 'OPENED') {
+    if (!editRow) {
+      ElMessage.warning('未找到当前医嘱行');
+      cancelInlineBusinessTimeEdit();
+      return;
+    }
+    // 成组：mergedAdviceRows 展开为多条；非成组：单行自身
+    const memberRows = flattenAdviceRowsForResourceOps([editRow]);
+    const timeKind = inlineBusinessTimeEdit.timeKind;
+    // 仅保留当前操作类型下可改时的成员（与批量改时口径一致）
+    const targets = memberRows
+      .filter((r) =>
+        timeKind === 'STOP' ? canEditStopBusinessTime(r) : canEditOpenedBusinessTime(r),
+      )
+      .map((r) => {
+        const requestId = String(r.requestId ?? '').trim();
+        const productTableName = productTableNameForAdviceRow(r);
+        if (!requestId || !productTableName) {
+          return null;
+        }
+        return {
+          requestId,
+          productTableName,
+          openedTimeRaw: String(r.openedTimeRaw ?? '').trim(),
+        };
+      })
+      .filter(Boolean) as Array<{
+      openedTimeRaw: string;
+      productTableName: string;
+      requestId: string;
+    }>;
+    if (targets.length === 0) {
+      ElMessage.warning(timeKind === 'STOP' ? '当前行不可改停嘱时间' : '当前行不可改开立时间');
+      return;
+    }
+    if (timeKind === 'OPENED') {
       const openedErr = validateChangeOpenedBusinessTime(newTime, {
         admissionTime,
         dischargeTime,
@@ -901,45 +1009,60 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
         return;
       }
     } else {
-      const stopErr = validateChangeStopBusinessTime(newTime, {
-        admissionTime,
-        dischargeTime,
-        openedTime: String(editRow?.openedTimeRaw ?? '').trim() || undefined,
-      });
-      if (stopErr) {
-        ElMessage.warning(stopErr);
-        return;
-      }
-    }
-    // 先快照再退出编辑，避免面板关闭事件清空提交参数
-    const requestId = inlineBusinessTimeEdit.requestId;
-    const productTableName = inlineBusinessTimeEdit.productTableName;
-    const timeKind = inlineBusinessTimeEdit.timeKind;
-    cancelInlineBusinessTimeEdit();
-    await withAdviceMutationLoading(async () => {
-      try {
-        const res = await httpChangeInpatientDoctorStationAdviceBusinessTime({
-          encounterId,
-          patientId,
-          requestId,
-          productTableName,
-          timeKind,
-          newTime,
+      // 成组逐成员校验：停嘱须晚于各自开立，且落在入出院窗内
+      for (const line of targets) {
+        const stopErr = validateChangeStopBusinessTime(newTime, {
+          admissionTime,
+          dischargeTime,
+          openedTime: line.openedTimeRaw || undefined,
         });
-        if (res.success === false) {
-          ElMessage.error(String(res.message || '').trim() || `${title}失败`);
+        if (stopErr) {
+          ElMessage.warning(stopErr);
           return;
         }
-        ElMessage.success(String(res.message || '').trim() || `${title}成功`);
-        clearAdviceTableSelection();
-        await loadAdviceList();
-      } catch (error: unknown) {
-        const msg =
-          error && typeof error === 'object' && 'message' in error
-            ? String((error as { message?: unknown }).message)
-            : `${title}失败`;
-        ElMessage.error(msg);
       }
+    }
+    // 先退出编辑再提交，避免面板关闭事件清空状态；targets 已快照
+    cancelInlineBusinessTimeEdit();
+    await withAdviceMutationLoading(async () => {
+      let failMsg = '';
+      // 后端无成组扩写；同一 newTime 对组内每条 request 逐行提交
+      for (const line of targets) {
+        try {
+          const res = await httpChangeInpatientDoctorStationAdviceBusinessTime({
+            encounterId,
+            patientId,
+            requestId: line.requestId,
+            productTableName: line.productTableName,
+            timeKind,
+            newTime,
+          });
+          if (res.success === false) {
+            failMsg = String(res.message || '').trim() || `${title}失败`;
+            break;
+          }
+        } catch (error: unknown) {
+          failMsg =
+            error && typeof error === 'object' && 'message' in error
+              ? String((error as { message?: unknown }).message)
+              : `${title}失败`;
+          break;
+        }
+      }
+      if (failMsg) {
+        ElMessage.error(failMsg);
+        await loadAdviceList();
+        return;
+      }
+      // 成组多条与单条提示区分，便于操作员确认已整组改时
+      if (targets.length > 1) {
+        const kindLabel = timeKind === 'STOP' ? '停嘱' : '开立';
+        ElMessage.success(`已将成组 ${targets.length} 条医嘱${kindLabel}时间改为同一时刻`);
+      } else {
+        ElMessage.success(`${title}成功`);
+      }
+      clearAdviceTableSelection();
+      await loadAdviceList();
     });
   };
 
@@ -1037,6 +1160,118 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
         return;
       }
       ElMessage.success(`已将 ${targets.length} 条医嘱开立时间改为同一时刻`);
+      clearAdviceTableSelection();
+      await loadAdviceList();
+    });
+  };
+
+  /**
+   * 勾选中可批量改停嘱时间的目标行（已停嘱长期且未护核）。
+   */
+  const resolveBatchStopBusinessTimeTargets = (): Array<{
+    openedTimeRaw: string;
+    productTableName: string;
+    requestId: string;
+  }> => {
+    const flatSel = flattenAdviceRowsForResourceOps(tableSelection.value);
+    return flatSel
+      .filter((r) => canEditStopBusinessTime(r))
+      .map((r) => {
+        const requestId = String(r.requestId ?? '').trim();
+        const productTableName = productTableNameForAdviceRow(r);
+        if (!requestId || !productTableName) {
+          return null;
+        }
+        return {
+          requestId,
+          productTableName,
+          openedTimeRaw: String(r.openedTimeRaw ?? '').trim(),
+        };
+      })
+      .filter(Boolean) as Array<{
+      openedTimeRaw: string;
+      productTableName: string;
+      requestId: string;
+    }>;
+  };
+
+  /**
+   * 批量改停嘱时间：勾选行统一写成同一时刻（IF-IP-DOR-26 逐行调用）。
+   * @param pickerValue DatePicker 值 YYYY-MM-DD HH:mm
+   */
+  const handleBatchChangeStopBusinessTime = async (pickerValue: string) => {
+    if (showEditor.value && editorDirty.value) {
+      ElMessage.warning('请先保存或关闭当前编辑卡片');
+      return;
+    }
+    const encounterId = props.encounterId?.trim() || '';
+    const patientId = props.patientId?.trim() || '';
+    if (!encounterId || !patientId) {
+      ElMessage.warning('缺少就诊或患者信息');
+      return;
+    }
+    const newTime = normalizeBusinessTimeInput(pickerValue);
+    if (!newTime) {
+      ElMessage.warning('请选择有效时间');
+      return;
+    }
+    const selectedPatient = doctorPatientStore.selectedPatient;
+    const admissionTime = String(
+      selectedPatient?.startTime ?? selectedPatient?.admissionTime ?? '',
+    ).trim();
+    const dischargeTime = String(selectedPatient?.endTime ?? '').trim();
+    const flatSel = flattenAdviceRowsForResourceOps(tableSelection.value);
+    const targets = resolveBatchStopBusinessTimeTargets();
+    if (targets.length === 0) {
+      ElMessage.warning('请勾选至少一条可改停嘱时间的医嘱');
+      return;
+    }
+    if (targets.length < flatSel.length) {
+      ElMessage.warning('已跳过不可改停嘱时间的行');
+    }
+    // 逐行校验：停嘱须晚于各自开立，且落在入出院窗内
+    for (const line of targets) {
+      const stopErr = validateChangeStopBusinessTime(newTime, {
+        admissionTime,
+        dischargeTime,
+        openedTime: line.openedTimeRaw || undefined,
+      });
+      if (stopErr) {
+        ElMessage.warning(stopErr);
+        return;
+      }
+    }
+    await withAdviceMutationLoading(async () => {
+      let failMsg = '';
+      // 后端无批量改时接口，同一 newTime 逐行提交
+      for (const line of targets) {
+        try {
+          const res = await httpChangeInpatientDoctorStationAdviceBusinessTime({
+            encounterId,
+            patientId,
+            requestId: line.requestId,
+            productTableName: line.productTableName,
+            timeKind: 'STOP',
+            newTime,
+          });
+          if (res.success === false) {
+            failMsg = String(res.message || '').trim() || '改停嘱时间失败';
+            break;
+          }
+        } catch (error: unknown) {
+          failMsg =
+            error && typeof error === 'object' && 'message' in error
+              ? String((error as { message?: unknown }).message)
+              : '改停嘱时间失败';
+          break;
+        }
+      }
+      if (failMsg) {
+        ElMessage.error(failMsg);
+        await loadAdviceList();
+        return;
+      }
+      ElMessage.success(`已将 ${targets.length} 条医嘱停嘱时间改为同一时刻`);
       clearAdviceTableSelection();
       await loadAdviceList();
     });
@@ -1454,6 +1689,7 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     showEditor.value = false;
     editorDirty.value = false;
     editingAdviceResourceType.value = '';
+    clearChangeDoseMode();
     editorInitialGroup.value = [];
   };
 
@@ -1487,7 +1723,7 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     adviceEscKeydownAttached = false;
   }
 
-  /** 编辑卡「保存」 */
+  /** 编辑卡「保存」：普通暂存或改量提交（IF-IP-DOR-28） */
   const handleSaveGroup = async (groupItems: AdviceDrugItem[]) => {
     if (groupItems.length === 0) return;
     const encounterId = props.encounterId?.trim() || '';
@@ -1536,6 +1772,87 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
       }
       return;
     }
+
+    // 改量：停旧+同药草稿，落待签发，不走普通暂存 UPDATE
+    const doseChangeSourceId = changeDoseSourceRequestId.value.trim();
+    if (doseChangeSourceId) {
+      const first = groupItems[0];
+      if (!first) return;
+      let lines: InpatientDoctorStationAdviceDraftLineRequest[];
+      try {
+        // 强制当新建行组包，避免带上源嘱 requestId 走 UPDATE
+        lines = buildAdviceDraftLines(
+          groupItems.map((it) => ({
+            ...it,
+            medicationRequestId: undefined,
+          })),
+        );
+      } catch (error) {
+        ElMessage.error(error instanceof Error ? error.message : '请求组包失败');
+        return;
+      }
+      const payload = lines[0]?.medicationPayload;
+      if (!payload) {
+        ElMessage.warning('改量须为药品医嘱');
+        return;
+      }
+      let stopTimeIso: string | undefined;
+      if (changeDoseStopTimeEditable.value) {
+        const normalized = normalizeBusinessTimeInput(changeDoseStopTime.value);
+        if (!normalized) {
+          ElMessage.warning('请填写原嘱停嘱时间');
+          return;
+        }
+        const selectedPatient = doctorPatientStore.selectedPatient;
+        const admissionTime = String(
+          selectedPatient?.startTime ?? selectedPatient?.admissionTime ?? '',
+        ).trim();
+        const dischargeTime = String(selectedPatient?.endTime ?? '').trim();
+        const stopErr = validateChangeStopBusinessTime(normalized, {
+          admissionTime,
+          dischargeTime,
+          openedTime: changeDoseSourceOpenedTimeRaw.value || undefined,
+        });
+        if (stopErr) {
+          ElMessage.warning(stopErr);
+          return;
+        }
+        stopTimeIso = normalized;
+      }
+      await withAdviceMutationLoading(async () => {
+        try {
+          const res = await httpChangeLongTermMedicationDoseInpatientDoctorStationAdvice({
+            encounterId,
+            patientId,
+            sourceMedicationRequestId: doseChangeSourceId,
+            medicationPayload: payload,
+            ...(stopTimeIso ? { stopTime: stopTimeIso } : {}),
+          });
+          if (res?.success === false) {
+            ElMessage.error(String(res.message || '').trim() || '改量失败');
+            return;
+          }
+          ElMessage.success(
+            String(res.message || '').trim() || '改量成功，新嘱为待签发，请签发后生效',
+          );
+          clearChangeDoseMode();
+          showEditor.value = false;
+          editorDirty.value = false;
+          editingAdviceResourceType.value = '';
+          editorInitialGroup.value = [];
+          clearAdviceTableSelection();
+          await loadAdviceList();
+        } catch (error: unknown) {
+          const msg =
+            error && typeof error === 'object' && 'message' in error
+              ? String((error as { message?: unknown }).message)
+              : '改量失败';
+          ElMessage.error(msg);
+        }
+      });
+      return;
+    }
+
     let lines: InpatientDoctorStationAdviceDraftLineRequest[];
     try {
       lines = buildAdviceDraftLines(groupItems);
@@ -1545,10 +1862,11 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     }
     await withAdviceMutationLoading(async () => {
       try {
-        const res = await httpSaveInpatientDoctorStationAdviceDraftBatch({
+        const res = await saveInpatientAdviceDraftBatchWithManualUsageBind({
           encounterId,
           patientId,
           lines,
+          existingAdviceRows: rows.value,
         });
         if (res.success === false) {
           ElMessage.error(String(res.message || '').trim() || '保存失败');
@@ -1595,6 +1913,7 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
       return;
     }
     editingAdviceResourceType.value = (row.resourceType || '').trim();
+    clearChangeDoseMode();
     const members = row.mergedAdviceRows;
     editorOpening.value = true;
     try {
@@ -1743,6 +2062,10 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     handleStopLongTerm,
     handleCancelStopLongTerm,
     handleAppendSkinTest,
+    handleChangeDose,
+    changeDoseMode,
+    changeDoseStopTime,
+    changeDoseStopTimeEditable,
     canEditOpenedBusinessTime,
     canEditStopBusinessTime,
     beginInlineBusinessTimeEdit,
@@ -1750,6 +2073,8 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     confirmInlineBusinessTime,
     handleBatchChangeOpenedBusinessTime,
     resolveBatchOpenedBusinessTimeTargets,
+    handleBatchChangeStopBusinessTime,
+    resolveBatchStopBusinessTimeTargets,
     handleInlineBusinessTimeVisible,
     inlineBusinessTimeEdit,
     isInlineBusinessTimeEditing,

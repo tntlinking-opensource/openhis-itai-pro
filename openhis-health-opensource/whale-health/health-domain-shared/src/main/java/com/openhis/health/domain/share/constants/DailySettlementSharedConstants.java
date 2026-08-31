@@ -47,7 +47,7 @@ public interface DailySettlementSharedConstants {
     /** 药品目录分类 medication_category_code：中草药。 */
     String MEDICATION_CATEGORY_HERBAL_CODE = "4";
 
-    /** 体检财务类别码（老日结单 peisCnt 锚点）。 */
+    /** 体检财务类别码；门/住院日结上半区与总收入不计入。 */
     String PHYSICAL_EXAM_FIN_TYPE_CODE = "9999";
 
     /** 优惠金额占位（本期固定 0.00）。 */

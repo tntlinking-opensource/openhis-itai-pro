@@ -93,6 +93,7 @@ export function mapMetadataFieldDtoToEmr(dto: MetadataFieldDto): EmrMetadataFiel
     fieldKey,
     label: String(dto.label ?? fieldKey).trim() || fieldKey,
     editable: dto.editableDefault !== false,
+    dataType: String(dto.dataType ?? '').trim() || undefined,
     ...(valueSource ? { valueSource } : {}),
   };
 }

@@ -24,15 +24,14 @@ import java.time.LocalDateTime;
 public class NurseStationPatientQueueItemDto {
 
     /**
-     * 就诊主键。
+     * 就诊主键 {@code adm_encounter.id}，与处置单/执行写入同一锚点。
      */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "就诊主键")
-    /** 就诊主键。 */
     private Long encounterId;
 
     /**
-     * 患者姓名。
+     * 患者姓名（来自就诊上下文读模型，供队列卡片标题）。
      */
     @Schema(description = "患者姓名")
     private String patientName;
@@ -50,15 +49,14 @@ public class NurseStationPatientQueueItemDto {
     private String genderEnumText;
 
     /**
-     * 出生日期。
+     * 出生日期（展示用），派生 {@link #ageText}。
      */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_DISPLAY_PATTERN)
     @Schema(description = "出生日期")
-    /** 出生日期。 */
     private LocalDate birthDate;
 
     /**
-     * 派生年龄展示。
+     * 由出生日期派生的年龄展示串（如「56岁」）。
      */
     @Schema(description = "派生年龄展示")
     private String ageText;
@@ -70,11 +68,10 @@ public class NurseStationPatientQueueItemDto {
     private String slipNo;
 
     /**
-     * 就诊时间（与门诊信息列表同源口径）。
+     * 就诊开始时间（与门诊信息列表 {@code startTime} 同源）。
      */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     @Schema(description = "就诊时间")
-    /** 就诊时间。 */
     private LocalDateTime encounterTime;
 
     /**
@@ -82,4 +79,13 @@ public class NurseStationPatientQueueItemDto {
      */
     @Schema(description = "费用性质/医保类型展示")
     private String contractDisplay;
+
+    /**
+     * 是否仍有待护士发放的耗材（IF-NUR-01 / BR-NUR-017）。
+     *
+     * <p>true=已收费非退单耗材请求且发放单缺失或仍为草稿/待配药/待发药；
+     * 供队列卡片红框与「待发耗材」标签，口径与处置单侧栏「待发放」一致。</p>
+     */
+    @Schema(description = "是否有未执行耗材")
+    private Boolean hasPendingDevice;
 }

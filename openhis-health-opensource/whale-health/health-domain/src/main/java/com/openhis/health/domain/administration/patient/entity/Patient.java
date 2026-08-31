@@ -123,6 +123,12 @@ public class Patient extends BaseAuditedEntity {
     private String nationalityCode;
 
     /**
+     * 学历层次字典编码（EducationLevel）。
+     */
+    @Column(name = "education_level_code")
+    private String educationLevelCode;
+
+    /**
      * 拼音码。
      */
     @Column(name = "py_str")

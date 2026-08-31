@@ -49,8 +49,25 @@ public class CaseRecordListItemDto {
     /** 住院号。 */
     private String iptNo;
 
-    /** 性别字典码。 */
+    /** 性别字典码（AdministrativeGender code，如 MALE/FEMALE）。 */
     private String gendCode;
+
+    /**
+     * 年龄展示文案（就诊上下文 {@code ageText}，如 {@code 26岁}）。
+     * <p>供病案首页临床侧栏（体温单/护理记录抬头）回显；主档分页路径可空。</p>
+     */
+    private String ageText;
+
+    /**
+     * 床位展示名（活动床；无活动床时为「原{房}-{床}（未占床）」）。
+     * <p>出院患者体温单/护理记录抬头取最近已完成就诊位置信息。</p>
+     */
+    private String bedName;
+
+    /**
+     * 病区/病室展示名（就诊上下文 {@code wardName}；无活动病区时为末次已完成病区）。
+     */
+    private String wardName;
 
     /** 证件号码。 */
     private String certno;
@@ -58,7 +75,7 @@ public class CaseRecordListItemDto {
     /** 入院时间。 */
     private LocalDateTime admTime;
 
-    /** 出院时间。 */
+    /** 出院时间（业务真源：出院医嘱计划时间；非清床/结算）。 */
     private LocalDateTime dscgTime;
 
     /** 入院科别名称。 */

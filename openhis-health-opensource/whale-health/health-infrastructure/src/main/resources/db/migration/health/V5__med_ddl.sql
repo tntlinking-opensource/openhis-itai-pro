@@ -38,7 +38,6 @@ CREATE TABLE IF NOT EXISTS "public"."med_medication_definition" (
     "skin_test_flag" bool,
     "inject_flag" bool,
     "manufacturer_id" int8,
-    "manufacturer_text" varchar(255),
     "supply_id" int8,
     "restricted_flag" bool,
     "restricted_scope" text,
@@ -56,6 +55,8 @@ CREATE TABLE IF NOT EXISTS "public"."med_medication_definition" (
     "self_flag" bool,
     "antibiotic_flag" bool,
     "basic_flag" bool,
+    "national_monitor_flag" bool,
+    "central_purchase_flag" bool,
     "tho_part_attribute_enum" varchar(255),
     "chrgitm_lv" int4,
     "mr_settlement_type_code" varchar(255),
@@ -123,8 +124,7 @@ COMMENT ON COLUMN med_medication_definition.yb_no IS '医保编码';
 COMMENT ON COLUMN med_medication_definition.pharmacology_category_code IS '药理作用分类编码';
 COMMENT ON COLUMN med_medication_definition.skin_test_flag IS '是否皮试药';
 COMMENT ON COLUMN med_medication_definition.inject_flag IS '是否注射药物';
-COMMENT ON COLUMN med_medication_definition.manufacturer_id IS '生产厂家标识';
-COMMENT ON COLUMN med_medication_definition.manufacturer_text IS '生产厂商文本';
+COMMENT ON COLUMN med_medication_definition.manufacturer_id IS '生产厂家标识（cus_supplier.id，type=生产厂家）';
 COMMENT ON COLUMN med_medication_definition.supply_id IS '供应商标识';
 COMMENT ON COLUMN med_medication_definition.restricted_flag IS '是否限制使用';
 COMMENT ON COLUMN med_medication_definition.restricted_scope IS '限制使用范围';
@@ -142,6 +142,8 @@ COMMENT ON COLUMN med_medication_definition.restricted_enum IS '权限限制枚�
 COMMENT ON COLUMN med_medication_definition.self_flag IS '是否自制';
 COMMENT ON COLUMN med_medication_definition.antibiotic_flag IS '是否抗生素';
 COMMENT ON COLUMN med_medication_definition.basic_flag IS '是否基药';
+COMMENT ON COLUMN med_medication_definition.national_monitor_flag IS '是否国家重点监控药品';
+COMMENT ON COLUMN med_medication_definition.central_purchase_flag IS '是否集采药品';
 COMMENT ON COLUMN med_medication_definition.tho_part_attribute_enum IS '住院临时医嘱拆分属性编码';
 COMMENT ON COLUMN med_medication_definition.chrgitm_lv IS '医保等级';
 COMMENT ON COLUMN med_medication_definition.mr_settlement_type_code IS '病案结算类型（术语 mr_settlement_type_code）';

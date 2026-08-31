@@ -29,18 +29,22 @@ import com.openhis.health.domain.financial.paymentreconciliation.queries.model.P
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.share.constants.InpatientPrepayConstants;
+import com.openhis.health.domain.share.constants.InpatientPrepayStayScope;
 import com.openhis.health.domain.share.enums.AdministrativeGender;
+import com.openhis.health.domain.share.enums.EncounterStatus;
 import com.openhis.health.domain.share.enums.PaymentKind;
 import com.openhis.health.domain.share.enums.PaymentStatus;
 import com.openhis.health.domain.share.enums.PaymentType;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.whale.core.application.dto.OptionDto;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
@@ -80,7 +84,42 @@ public class InpatientPrepayMapperImpl implements InpatientPrepayMapper {
         query.setPrepayEligibleOnly(Boolean.TRUE);
         // 预交金卡片不展示诊断，与 pagePrepayQueue 一致跳过 diagnosisJson enrich
         query.setIncludeDiagnosisSnapshot(Boolean.FALSE);
+        // 在院范围 → statusEnumIn（与资格态求交由读侧 applyPrepayEligibleStatus 完成）
+        query.setStatusEnumIn(this.resolveStayScopeStatusEnumIn(request.getStayScope()));
         return query;
+    }
+
+    /**
+     * 解析 stayScope 为就诊状态码集合；空/ALL/未知返回 null（读侧用全部资格态）。
+     *
+     * @param stayScope 在院范围码
+     * @return 状态码集合；null 表示不额外收窄
+     */
+    private Collection<String> resolveStayScopeStatusEnumIn(String stayScope) {
+        if (StringUtils.isEmpty(stayScope)) {
+            return null;
+        }
+        String scope = stayScope.trim();
+        if (InpatientPrepayStayScope.ALL.equals(scope)) {
+            return null;
+        }
+        if (InpatientPrepayStayScope.IN_HOSPITAL.equals(scope)) {
+            List<String> inHospital = new ArrayList<>();
+            inHospital.add(EncounterStatus.REGISTERED.getCode());
+            inHospital.add(EncounterStatus.IN_PROGRESS.getCode());
+            inHospital.add(EncounterStatus.ON_HOLD.getCode());
+            inHospital.add(EncounterStatus.PENDING.getCode());
+            return inHospital;
+        }
+        if (InpatientPrepayStayScope.NOT_IN_HOSPITAL.equals(scope)) {
+            // 待清床 + 已清床离院，供查流水/余额；收退写仍由四态门禁拦截
+            List<String> notInHospital = new ArrayList<>();
+            notInHospital.add(EncounterStatus.COMPLETED.getCode());
+            notInHospital.add(EncounterStatus.DISCHARGED.getCode());
+            return notInHospital;
+        }
+        // 未知码：按全部，避免误空列表
+        return null;
     }
 
     /**

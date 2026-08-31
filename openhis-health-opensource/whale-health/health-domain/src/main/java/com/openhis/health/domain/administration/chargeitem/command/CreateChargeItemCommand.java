@@ -82,5 +82,11 @@ public class CreateChargeItemCommand extends BatchCommand<CreateChargeItemComman
          * 绑定就诊诊断主键有序串（与上游请求同口径；挂费时可显式传入，缺省时由写侧按 service 锚点回查请求拷贝）。
          */
         private String encounterDiagnosisIds;
+        /** 改价原因码（DM override_reason_code）。 */
+        private String overrideReasonCode;
+        /** 改价原因说明（DM override_reason_text）。 */
+        private String overrideReasonText;
+        /** 手工调价后金额（DM manual_adjusted_price）。 */
+        private BigDecimal manualAdjustedPrice;
     }
 }

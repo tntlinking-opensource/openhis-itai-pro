@@ -45,6 +45,7 @@ public class PeisHealthArchiveDomainService {
         entity.setFamilyHistory(incoming.getFamilyHistory());
         entity.setHabitSummary(incoming.getHabitSummary());
         entity.setAllergySummary(incoming.getAllergySummary());
+        entity.setTagCode(incoming.getTagCode());
         entity.setRemark(incoming.getRemark());
         entity.setUpdatedAt(now);
         entity.setUpdatedBy(operatorId);

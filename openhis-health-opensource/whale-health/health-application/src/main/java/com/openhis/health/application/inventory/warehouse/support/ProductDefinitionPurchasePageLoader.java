@@ -116,7 +116,12 @@ public class ProductDefinitionPurchasePageLoader {
         this.productDefinitionDisplayTerminologyAssembler.enrichDisplayDtos(content);
     }
 
-    /** 应用层宽入参 → 领域采购分页 Query。 */
+    /**
+     * 应用层宽入参 → 领域采购分页 Query（含 manufacturerId / manufacturerIds 下推）。
+     *
+     * @param rmQuery 应用层选品分页入参；null 时返回空条件对象
+     * @return 领域采购分页查询；永不为 null
+     */
     private ProductDefinitionPurchasePageQuery toPurchaseQuery(ProductDefinitionPageQuery rmQuery) {
         ProductDefinitionPurchasePageQuery query = new ProductDefinitionPurchasePageQuery();
         if (rmQuery == null) {
@@ -126,6 +131,8 @@ public class ProductDefinitionPurchasePageLoader {
         query.setCategoryCode(rmQuery.getCategoryCode());
         query.setActiveFlag(rmQuery.getActiveFlag());
         query.setSupplierId(rmQuery.getSupplierId());
+        query.setManufacturerId(rmQuery.getManufacturerId());
+        query.setManufacturerIds(rmQuery.getManufacturerIds());
         query.setManufacturer(rmQuery.getManufacturer());
         query.setKeyword(rmQuery.getKeyword());
         query.setPrepickedProductKeys(rmQuery.getPrepickedProductKeys());

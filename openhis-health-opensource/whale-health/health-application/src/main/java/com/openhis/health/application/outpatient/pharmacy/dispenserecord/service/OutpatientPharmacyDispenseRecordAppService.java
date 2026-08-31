@@ -264,7 +264,8 @@ public class OutpatientPharmacyDispenseRecordAppService {
             byte[] body = AnnotatedExcelExporter.exportToXlsxBytes(
                 PharmacyDispenseRecordExportConstants.OUTPATIENT_SHEET_NAME,
                 exportRows,
-                PharmacyDispenseRecordExportRowDto.class);
+                PharmacyDispenseRecordExportRowDto.class,
+                request.getExportColumns());
             // Asm：装配导出响应（零行仍导出列头）
             return this.outpatientPharmacyDispenseRecordMapper.toExportResponse(body, exportRows.size(), truncated);
         } catch (BusinessException ex) {

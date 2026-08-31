@@ -91,12 +91,25 @@ public final class NationalCatalogSelectableComposer {
     }
 
     private static String platformUnselectableReason(NationalCatalogItemResult row, LocalDate asOf) {
-        String vali = trimToNull(row.getValiFlag());
+        return platformUnselectableReason(row == null ? null : row.getValiFlag(),
+            row == null ? null : row.getEnddate(), asOf);
+    }
+
+    /**
+     * 平台侧不可选原因：停用优先于过期；结束日当天仍可选。
+     *
+     * @param valiFlag 有效标志；可空
+     * @param enddate  目录结束日；可空或占位日视为无结束日
+     * @param asOf     判定日；空则当天
+     * @return {@link #REASON_PLATFORM_INVALID} / {@link #REASON_PLATFORM_EXPIRED}；仍可选则 null
+     */
+    public static String platformUnselectableReason(String valiFlag, LocalDate enddate, LocalDate asOf) {
+        LocalDate day = asOf == null ? LocalDate.now() : asOf;
+        String vali = trimToNull(valiFlag);
         if (vali != null && !ValiFlag.VALID.getCode().equals(vali)) {
             return REASON_PLATFORM_INVALID;
         }
-        LocalDate end = row.getEnddate();
-        if (end != null && end.getYear() > 1 && asOf.isAfter(end)) {
+        if (enddate != null && enddate.getYear() > 1 && day.isAfter(enddate)) {
             return REASON_PLATFORM_EXPIRED;
         }
         return null;

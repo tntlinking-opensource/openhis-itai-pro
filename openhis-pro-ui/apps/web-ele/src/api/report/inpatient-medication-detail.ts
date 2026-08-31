@@ -2,10 +2,9 @@
  * 住院用药明细（住院患者药品使用）—
  * POST /api/app/inpatientPharmacyPatientMedicationUsage/{methodName}
  */
+import { reportPost } from '#/constants/report-request-timeout';
 import type { PageParams } from '#/types/api-response';
 
-import { publicRequestClient } from '#/api/request';
-import { reportLongRequestConfig } from '#/constants/report-request-timeout';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
 const BASE = '/inpatientPharmacyPatientMedicationUsage';
@@ -123,7 +122,7 @@ export interface QueryInpatientMedicationDetailResponse {
 
 /** 页初始化：默认日期与明细/汇总、发药状态值集。 */
 export async function loadInpatientMedicationDetailPageInitApi() {
-  return publicRequestClient.post<LoadInpatientMedicationDetailPageInitResponse>(
+  return reportPost<LoadInpatientMedicationDetailPageInitResponse>(
     `${BASE}/loadInpatientPatientMedicationUsagePageInit`,
     {},
   );
@@ -133,7 +132,7 @@ export async function loadInpatientMedicationDetailPageInitApi() {
 export async function pageInpatientMedicationPatientsApi(
   body: PageInpatientMedicationPatientsRequest,
 ) {
-  const res = await publicRequestClient.post<PageInpatientMedicationPatientsResponse>(
+  const res = await reportPost<PageInpatientMedicationPatientsResponse>(
     `${BASE}/pageInpatientPatientMedicationUsagePatients`,
     body,
   );
@@ -149,9 +148,8 @@ export async function pageInpatientMedicationPatientsApi(
 export async function queryInpatientMedicationDetailApi(
   body: QueryInpatientMedicationDetailRequest,
 ) {
-  return publicRequestClient.post<QueryInpatientMedicationDetailResponse>(
+  return reportPost<QueryInpatientMedicationDetailResponse>(
     `${BASE}/queryInpatientPatientMedicationUsage`,
     body,
-    reportLongRequestConfig(),
   );
 }

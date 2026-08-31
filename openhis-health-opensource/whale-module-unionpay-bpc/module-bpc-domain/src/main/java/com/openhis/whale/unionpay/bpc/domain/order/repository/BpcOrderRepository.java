@@ -19,4 +19,7 @@ public interface BpcOrderRepository extends JpaRepository<BpcOrder, Long>, JpaSp
 
     List<BpcOrder> findByTenantIdAndPaymentIdAndIsDeletedFalseOrderByCreatedAtDesc(
             Long tenantId, Long paymentId);
+
+    /** 无租户上下文时按支付单查（草稿作废事件收口 PENDING）。 */
+    List<BpcOrder> findByPaymentIdAndIsDeletedFalseOrderByCreatedAtDesc(Long paymentId);
 }

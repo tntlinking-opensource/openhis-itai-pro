@@ -4,13 +4,17 @@
  */
 package com.openhis.chs.bridge.notice;
 
+import com.openhis.chs.domain.notice.model.HisMappedProduct;
 import com.openhis.chs.domain.notice.model.HisProductLvChange;
 import com.openhis.chs.domain.notice.port.CatalogNoticeHisProductPort;
+import com.openhis.chs.domain.share.enums.ListType;
+import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
 import com.openhis.health.domain.administration.devicedefinition.entity.DeviceDefinition;
 import com.openhis.health.domain.administration.devicedefinition.repository.DeviceDefinitionRepository;
 import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
 import com.openhis.health.domain.medication.medicationdefinition.repository.MedicationDefinitionRepository;
 import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.health.domain.workflow.activitydefinition.entity.ActivityDefinition;
 import com.openhis.health.domain.workflow.activitydefinition.repository.ActivityDefinitionRepository;
 import jakarta.persistence.criteria.Predicate;
@@ -18,9 +22,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -34,6 +40,7 @@ public class CatalogNoticeHisProductPortImpl implements CatalogNoticeHisProductP
     private final MedicationDefinitionRepository medicationDefinitionRepository;
     private final ActivityDefinitionRepository activityDefinitionRepository;
     private final DeviceDefinitionRepository deviceDefinitionRepository;
+    private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
 
     /**
      * 按 yb_no / busNo 匹配 MD/AD/DD，回写 {@code chrgitm_lv} 并返回变更明细。
@@ -188,6 +195,134 @@ public class CatalogNoticeHisProductPortImpl implements CatalogNoticeHisProductP
             return null;
         }
         return String.valueOf(lv);
+    }
+
+    /**
+     * 已启用且带医保意图的院内目录项（诊疗套餐父项除外）。
+     *
+     * @return 带 SALE 售价的院内项；无则空列表
+     */
+    @Override
+    public List<HisMappedProduct> listActiveInsuranceProducts() {
+        List<HisMappedProduct> products = new ArrayList<>();
+        appendActivities(products);
+        appendMedications(products);
+        appendDevices(products);
+        fillSalePrices(products);
+        return products;
+    }
+
+    private void appendActivities(List<HisMappedProduct> products) {
+        String active = PublicationStatus.ACTIVE.getCode();
+        Specification<ActivityDefinition> spec = (root, cq, cb) -> cb.and(
+            cb.isFalse(root.get("isDeleted")),
+            cb.equal(root.get("statusEnum"), active),
+            cb.or(cb.isTrue(root.get("ybFlag")), hasText(root, cb, "ybNo")),
+            cb.or(cb.isNull(root.get("childrenFlag")), cb.isFalse(root.get("childrenFlag"))));
+        for (ActivityDefinition row : activityDefinitionRepository.findAll(spec)) {
+            products.add(toProduct(
+                TableNameConstants.WKF_ACTIVITY_DEFINITION,
+                row.getId(),
+                row.getBusNo(),
+                row.getName(),
+                row.getYbNo(),
+                row.getChrgitmLv(),
+                ListType.MEDICAL_SERVICE.getCode(),
+                "ACTIVITY"));
+        }
+    }
+
+    private void appendMedications(List<HisMappedProduct> products) {
+        String active = PublicationStatus.ACTIVE.getCode();
+        Specification<MedicationDefinition> spec = (root, cq, cb) -> cb.and(
+            cb.isFalse(root.get("isDeleted")),
+            cb.equal(root.get("statusEnum"), active),
+            cb.or(cb.isTrue(root.get("ybMatchFlag")), hasText(root, cb, "ybNo")));
+        for (MedicationDefinition row : medicationDefinitionRepository.findAll(spec)) {
+            products.add(toProduct(
+                TableNameConstants.MED_MEDICATION_DEFINITION,
+                row.getId(),
+                row.getBusNo(),
+                row.getName(),
+                row.getYbNo(),
+                row.getChrgitmLv(),
+                ListType.WESTERN_DRUG.getCode(),
+                "MEDICATION"));
+        }
+    }
+
+    private void appendDevices(List<HisMappedProduct> products) {
+        String active = PublicationStatus.ACTIVE.getCode();
+        Specification<DeviceDefinition> spec = (root, cq, cb) -> cb.and(
+            cb.isFalse(root.get("isDeleted")),
+            cb.equal(root.get("statusEnum"), active),
+            cb.or(
+                cb.isTrue(root.get("ybFlag")),
+                cb.isTrue(root.get("ybMatchFlag")),
+                hasText(root, cb, "ybNo")));
+        for (DeviceDefinition row : deviceDefinitionRepository.findAll(spec)) {
+            products.add(toProduct(
+                TableNameConstants.ADM_DEVICE_DEFINITION,
+                row.getId(),
+                row.getBusNo(),
+                row.getName(),
+                row.getYbNo(),
+                row.getChrgitmLv(),
+                ListType.MEDICAL_CONSUMABLE.getCode(),
+                "DEVICE"));
+        }
+    }
+
+    private void fillSalePrices(List<HisMappedProduct> products) {
+        Map<String, List<Long>> idsByTable = new java.util.LinkedHashMap<>();
+        for (HisMappedProduct product : products) {
+            if (product.getProductTable() == null || product.getProductId() == null) {
+                continue;
+            }
+            idsByTable.computeIfAbsent(product.getProductTable(), key -> new ArrayList<>())
+                .add(product.getProductId());
+        }
+        Map<String, Map<Long, BigDecimal>> prices = new java.util.HashMap<>();
+        for (Map.Entry<String, List<Long>> entry : idsByTable.entrySet()) {
+            prices.put(entry.getKey(),
+                chargeItemDefinitionQueryService.mapFirstSalePriceValueByInstanceIds(
+                    entry.getKey(), entry.getValue()));
+        }
+        for (HisMappedProduct product : products) {
+            Map<Long, BigDecimal> byId = prices.get(product.getProductTable());
+            if (byId == null) {
+                continue;
+            }
+            product.setSalePrice(byId.get(product.getProductId()));
+        }
+    }
+
+    private static HisMappedProduct toProduct(
+            String table,
+            Long id,
+            String busNo,
+            String name,
+            String ybNo,
+            Integer chrgitmLv,
+            String listType,
+            String kind) {
+        HisMappedProduct product = new HisMappedProduct();
+        product.setProductTable(table);
+        product.setProductId(id);
+        product.setBusNo(busNo);
+        product.setName(name);
+        product.setYbNo(ybNo);
+        product.setChrgitmLv(chrgitmLv);
+        product.setListType(listType);
+        product.setProductKind(kind);
+        return product;
+    }
+
+    private static jakarta.persistence.criteria.Predicate hasText(
+            jakarta.persistence.criteria.Root<?> root,
+            jakarta.persistence.criteria.CriteriaBuilder cb,
+            String field) {
+        return cb.and(cb.isNotNull(root.get(field)), cb.notEqual(root.get(field), ""));
     }
 
     private Integer findFirstMedicationLv(Set<String> codes) {

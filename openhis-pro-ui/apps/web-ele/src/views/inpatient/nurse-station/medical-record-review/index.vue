@@ -36,7 +36,7 @@ const encounterId = computed(() => preserveApiIdForRequest(selectedPatient.value
 /** 患者主索引 ID */
 const patientId = computed(() => preserveApiIdForRequest(selectedPatient.value?.patientId) ?? '');
 
-/** 病历编辑器元数据条（与医生站住院病历对齐字段） */
+/** 病历编辑器元数据条（与医生站住院病历对齐字段，含页眉病房/床位） */
 const emrPatientInfo = computed(() => {
   const patient = selectedPatient.value;
   if (!patient) {
@@ -50,6 +50,9 @@ const emrPatientInfo = computed(() => {
     insurance: (patient.feeType ?? '').trim(),
     medicalRecordNo: (patient.encounterBusNo ?? '').trim(),
     idCard: '',
+    deptName: (patient.organizationName ?? '').trim(),
+    wardName: (patient.wardName ?? '').trim(),
+    bedNo: (patient.bedNo ?? '').trim(),
   };
 });
 

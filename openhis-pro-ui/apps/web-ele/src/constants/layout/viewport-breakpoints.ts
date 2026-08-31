@@ -89,6 +89,25 @@ export const INVENTORY_DOC_ASIDE_WIDTH_PX = {
   compact: 248,
 } as const;
 
+/**
+ * 门诊发药工作站左侧患者队列宽度（px）。
+ * `outpatient/dispense` 的 StationTriPaneLayout left-track 按视口取用。
+ */
+export const PHARMACY_DISPENSE_SIDEBAR_WIDTH_PX = {
+  default: 264,
+  /** 过窄会截断 EN 就诊号；与库房侧栏 compact 同档 */
+  compact: 248,
+} as const;
+
+/**
+ * 门诊发药笺面宽度（px，工作站发药单视图）。
+ * 高度仍由笺面 `min(660px, 100%)` 吃满可用区；窄屏保持纸质比例，不加宽。
+ */
+export const PHARMACY_DISPENSE_SHEET_WIDTH_PX = {
+  default: 500,
+  compact: 500,
+} as const;
+
 export type ViewportSizePreset<T> = { default: T; compact: T };
 
 /** 视口是否处于 compact 档（宽度 < 1680）。 */

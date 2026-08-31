@@ -261,6 +261,8 @@ public class ProductDefinitionCatalogPageLoader {
         query.setExcludeCategoryCodes(rmQuery.getExcludeCategoryCodes());
         query.setActiveFlag(rmQuery.getActiveFlag());
         query.setSupplierId(rmQuery.getSupplierId());
+        query.setManufacturerId(rmQuery.getManufacturerId());
+        query.setManufacturerIds(rmQuery.getManufacturerIds());
         query.setManufacturer(rmQuery.getManufacturer());
         query.setPricingFlag(rmQuery.getPricingFlag());
         query.setKeyword(rmQuery.getKeyword());

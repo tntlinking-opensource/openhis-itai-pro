@@ -1,12 +1,12 @@
 import type { JSONContent } from '@tiptap/core';
 
-/** 首行为居中段落，占位符与光标视觉居中 */
+/** 空白文档默认左对齐（打开时光标在左侧，贴近 Word） */
 export const defaultEmrEditorDoc: JSONContent = {
   type: 'doc',
   content: [
     {
       type: 'paragraph',
-      attrs: { textAlign: 'center' },
+      attrs: { textAlign: 'left' },
       content: [],
     },
   ],
@@ -48,8 +48,25 @@ export const EDITOR_LINE_HEIGHT_OPTIONS: { label: string; value: string }[] = [
 ];
 
 /**
+ * 屏上默认页边距（贴近 Word/WPS 空白观感）。
+ * 正式国标 PDF 请切工具栏「打印标准」（上/下 25.4、左/右 31.8）。
+ */
+export const DEFAULT_EDITOR_PAGE_MARGINS: {
+  bottom: string;
+  left: string;
+  right: string;
+  top: string;
+} = {
+  top: '15mm',
+  right: '15mm',
+  bottom: '15mm',
+  left: '15mm',
+};
+
+/**
  * 工具栏「页边距」预设。
- * 「打印标准」= PrintConfig 国标页边距（上/下 25.4mm，左/右 31.8mm）。
+ * 「打印标准」= PrintConfig 国标（上/下 25.4mm，左/右 31.8mm）。
+ * 文书/模板默认用 {@link DEFAULT_EDITOR_PAGE_MARGINS}，勿再硬编码 31.8mm。
  */
 export const EDITOR_PAGE_MARGIN_PRESETS: {
   label: string;
@@ -57,25 +74,42 @@ export const EDITOR_PAGE_MARGIN_PRESETS: {
 }[] = [
   {
     label: '紧凑',
-    value: { top: '15mm', right: '15mm', bottom: '15mm', left: '15mm' },
+    value: { top: '10mm', right: '10mm', bottom: '10mm', left: '10mm' },
+  },
+  {
+    label: 'Word 常用',
+    value: { ...DEFAULT_EDITOR_PAGE_MARGINS },
   },
   {
     label: '标准',
-    value: { top: '20mm', right: '20mm', bottom: '20mm', left: '20mm' },
+    value: { top: '25.4mm', right: '25.4mm', bottom: '25.4mm', left: '25.4mm' },
   },
   {
     label: '适中',
-    value: { top: '25mm', right: '25mm', bottom: '25mm', left: '25mm' },
+    value: { top: '20mm', right: '20mm', bottom: '20mm', left: '20mm' },
   },
   {
     label: '宽松',
-    value: { top: '30mm', right: '30mm', bottom: '30mm', left: '30mm' },
+    value: { top: '25mm', right: '25mm', bottom: '25mm', left: '25mm' },
   },
   {
     label: '打印标准',
     value: { top: '25.4mm', right: '31.8mm', bottom: '25.4mm', left: '31.8mm' },
   },
 ];
+
+/** 工具栏「纸张大小」：屏上 CSS 宽高，打印仍以院内 PrintConfig 为准 */
+export const EDITOR_PAPER_SIZE_PRESETS: {
+  height: string;
+  key: 'A4' | 'A5';
+  label: string;
+  width: string;
+}[] = [
+  { key: 'A4', label: 'A4（210×297mm）', width: '210mm', height: '297mm' },
+  { key: 'A5', label: 'A5（148×210mm）', width: '148mm', height: '210mm' },
+];
+
+export type EditorPaperOrientation = 'landscape' | 'portrait';
 
 /** 工具栏「首行缩进」下拉 */
 export const EDITOR_TEXT_INDENT_OPTIONS: { label: string; value: string }[] = [

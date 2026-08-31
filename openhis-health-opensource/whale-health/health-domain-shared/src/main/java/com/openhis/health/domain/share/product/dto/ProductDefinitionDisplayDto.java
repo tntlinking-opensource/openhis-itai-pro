@@ -37,6 +37,15 @@ public class ProductDefinitionDisplayDto {
     /** 产品类别展示名。 */
     private String categoryCodeDictText;
 
+    /**
+     * 耗材种类术语码（{@code adm_device_definition.type_code} / {@code device_type_code}）。
+     * 药品通常为空；取药科室模板种类维匹配依赖本字段。
+     */
+    private String typeCode;
+
+    /** 耗材种类展示名。 */
+    private String typeCodeDictText;
+
     /** 采购单位码。 */
     private String purchaseUnitCode;
 
@@ -136,8 +145,15 @@ public class ProductDefinitionDisplayDto {
     /** 目录单价（不含调价快照）。 */
     private BigDecimal price;
 
-    /** 生产厂家名称。 */
+    /**
+     * 生产厂家展示名（非目录持久化列；由应用层按 {@link #manufacturerId} 解析供应商名称回填）。
+     */
     private String manufacturer;
+
+    /**
+     * 生产厂家主键（cus_supplier.id，type=生产厂家）。
+     */
+    private Long manufacturerId;
 
     /** 默认库房/货位主键。 */
     private Long locationId;

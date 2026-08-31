@@ -8,6 +8,7 @@ import com.openhis.health.application.shared.advice.OrderCatalogDisplayAssembler
 import com.openhis.health.application.shared.option.FrequencyOptionLoader;
 import com.openhis.health.application.shared.option.TerminologyOptionLoader;
 import com.openhis.health.domain.administration.product.service.ProductDefinitionQueryService;
+import com.openhis.health.domain.custom.supplier.service.SupplierQueryService;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
@@ -19,9 +20,12 @@ import com.openhis.whale.core.application.util.StringUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 产品定义展示：术语码表预热与批量回填（B.6.1 / B.10.8.1）。
@@ -36,6 +40,8 @@ public class ProductDefinitionDisplayTerminologyAssembler {
     private final TerminologyOptionLoader terminologyOptionLoader;
     /** 频次展示码表：cus_frequency 主数据。 */
     private final FrequencyOptionLoader frequencyOptionLoader;
+    /** 生产厂家名称：按 manufacturerId 批量解析 cus_supplier.name。 */
+    private final SupplierQueryService supplierQueryService;
 
     /** 选品术语映射软缓存（短 TTL，避免每页重建十余张码表）。 */
     private volatile ProductDefinitionSelectionTerminologyMaps cachedSelectionMaps;
@@ -121,7 +127,7 @@ public class ProductDefinitionDisplayTerminologyAssembler {
     }
 
     /**
-     * 批量回填 {@link ProductDefinitionDisplayDto} 各字典展示列。
+     * 批量回填 {@link ProductDefinitionDisplayDto} 各字典展示列，以及生产厂家名称。
      *
      * @param rows 展示行集合
      */
@@ -131,6 +137,35 @@ public class ProductDefinitionDisplayTerminologyAssembler {
         }
         ProductDefinitionSelectionTerminologyMaps maps = this.loadSelectionTerminologyMaps();
         enrichDisplayTerminologyAll(rows, maps);
+        // 厂家名：目录已删 manufacturer_text，须按 manufacturerId 批量解析供应商名称
+        this.enrichManufacturerNames(rows);
+    }
+
+    /**
+     * 按行上 {@code manufacturerId} 批量回填 {@code manufacturer} 展示名。
+     *
+     * @param rows 产品展示行
+     */
+    private void enrichManufacturerNames(Collection<ProductDefinitionDisplayDto> rows) {
+        Set<Long> manufacturerIds = new LinkedHashSet<>();
+        for (ProductDefinitionDisplayDto row : rows) {
+            if (row != null && row.getManufacturerId() != null) {
+                manufacturerIds.add(row.getManufacturerId());
+            }
+        }
+        if (manufacturerIds.isEmpty()) {
+            return;
+        }
+        Map<Long, String> nameById = supplierQueryService.mapNamesByIds(new ArrayList<>(manufacturerIds));
+        for (ProductDefinitionDisplayDto row : rows) {
+            if (row == null || row.getManufacturerId() == null) {
+                continue;
+            }
+            String name = nameById.get(row.getManufacturerId());
+            if (StringUtils.isNotEmpty(name)) {
+                row.setManufacturer(name);
+            }
+        }
     }
 
     /** 遍历集合，逐行回填字典展示列。 */

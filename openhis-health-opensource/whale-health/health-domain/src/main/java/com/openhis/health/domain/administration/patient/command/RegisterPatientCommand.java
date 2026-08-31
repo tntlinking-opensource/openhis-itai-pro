@@ -52,6 +52,11 @@ public class RegisterPatientCommand extends BatchCommand<RegisterPatientCommand.
         private String idCard;
 
         /**
+         * 学历层次字典编码（EducationLevel）。
+         */
+        private String educationLevelCode;
+
+        /**
          * 联系电话。
          */
         private String phone;

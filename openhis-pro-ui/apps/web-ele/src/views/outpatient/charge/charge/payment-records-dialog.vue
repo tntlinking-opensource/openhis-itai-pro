@@ -61,7 +61,10 @@ const selectedSetlinfo = computed(
   (): ChargeSettlementSetlinfoDto | null => selectedPayment.value?.setlinfo ?? null,
 );
 
-/** 患者可读「本次谁付的」：有 setlinfo 分项优先，否则回落摘要基金总额 */
+/**
+ * 患者可读「本次谁付的」：基金分项 + 医保个账 + 个人现金实收（一行）。
+ * 禁止同时列出「医保口径个人现金」与「扫码实收」两笔同额，避免误以为记了两次。
+ */
 const patientPayCompositionRows = computed(() => {
   const payment = selectedPayment.value;
   if (!payment) {
@@ -76,6 +79,15 @@ const patientPayCompositionRows = computed(() => {
     }
     rows.push({ key, label, value: n });
   };
+  const ybCash = Number(setl?.psnCashPay ?? payment.psnCashPay ?? 0);
+  const channelCash = Number(payment.displayAmount ?? 0);
+  const sameCash =
+    Number.isFinite(ybCash) &&
+    Number.isFinite(channelCash) &&
+    ybCash > 0.001 &&
+    channelCash > 0.001 &&
+    Math.abs(ybCash - channelCash) < 0.011;
+
   if (setl) {
     pushIf('hifpPay', '基本医保统筹', setl.hifpPay);
     pushIf('othPay', '其他支出', setl.othPay);
@@ -83,13 +95,18 @@ const patientPayCompositionRows = computed(() => {
     pushIf('hifmiPay', '居民大病保险', setl.hifmiPay);
     pushIf('hifobPay', '职工大额补助', setl.hifobPay);
     pushIf('mafPay', '医疗救助', setl.mafPay);
-    pushIf('acctPay', '个人账户', setl.acctPay ?? payment.acctPay);
-    pushIf('psnCashPay', '现金', setl.psnCashPay ?? payment.psnCashPay);
-    pushIf('fundPaySumamt', '基金支付合计', setl.fundPaySumamt ?? payment.fundPaySumamt);
+    pushIf('acctPay', '医保个人账户', setl.acctPay ?? payment.acctPay);
   } else {
     pushIf('fundPaySumamt', '基金支付合计', payment.fundPaySumamt);
-    pushIf('acctPay', '个人账户', payment.acctPay);
-    pushIf('psnCashPay', '现金', payment.psnCashPay);
+    pushIf('acctPay', '医保个人账户', payment.acctPay);
+  }
+
+  // 个人现金：与扫码/微信实收同额时合并为一行（同一笔钱）
+  if (sameCash) {
+    pushIf('channelCollect', '个人现金实收（微信/扫码）', channelCash);
+  } else {
+    pushIf('psnCashPay', '个人现金（医保口径）', ybCash);
+    pushIf('channelCollect', '银联实收', channelCash);
   }
   return rows;
 });
@@ -211,11 +228,20 @@ const paymentListColumns: TableColumn[] = [
   },
   {
     prop: 'displayAmount',
-    label: '金额',
-    width: 110,
+    label: '个人现金实收',
+    width: 120,
     align: 'right',
     headerAlign: 'center',
     slot: 'paymentAmount',
+  },
+  {
+    prop: 'cashierName',
+    label: '收款人',
+    width: 100,
+    align: 'center',
+    headerAlign: 'center',
+    slot: 'cashierName',
+    showOverflowTooltip: true,
   },
   {
     prop: 'billDate',
@@ -398,6 +424,9 @@ function handleClose() {
           <template #paymentAmount="{ row }">
             ¥{{ formatMoney(resolvePaymentListAmount(row)) }}
           </template>
+          <template #cashierName="{ row }">
+            {{ String(row.cashierName ?? '').trim() || '—' }}
+          </template>
           <template #billDate="{ row }">
             {{ formatBillDate(row.billDate) }}
           </template>
@@ -417,11 +446,11 @@ function handleClose() {
             <span>¥{{ formatMoney(selectedPayment.fundPaySumamt) }}</span>
           </div>
           <div class="payment-dialog__summary-item payment-dialog__summary-item--fund">
-            <span class="payment-dialog__summary-label">个账</span>
+            <span class="payment-dialog__summary-label">医保个人账户</span>
             <span>¥{{ formatMoney(selectedPayment.acctPay) }}</span>
           </div>
           <div class="payment-dialog__summary-item">
-            <span class="payment-dialog__summary-label">自付</span>
+            <span class="payment-dialog__summary-label">个人现金（微信/扫码实收）</span>
             <span>¥{{ formatMoney(selectedPayment.psnCashPay) }}</span>
           </div>
         </div>
@@ -434,7 +463,10 @@ function handleClose() {
             v-for="row in patientPayCompositionRows"
             :key="row.key"
             class="payment-dialog__summary-item"
-            :class="{ 'payment-dialog__summary-item--fund': row.key !== 'psnCashPay' }"
+            :class="{
+              'payment-dialog__summary-item--fund':
+                row.key !== 'psnCashPay' && row.key !== 'channelCollect',
+            }"
           >
             <span class="payment-dialog__summary-label">{{ row.label }}</span>
             <span>¥{{ formatMoney(row.value) }}</span>

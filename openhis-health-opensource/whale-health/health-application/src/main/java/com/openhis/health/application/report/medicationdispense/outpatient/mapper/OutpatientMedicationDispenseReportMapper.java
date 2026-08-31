@@ -109,7 +109,7 @@ public interface OutpatientMedicationDispenseReportMapper {
         int pageSize);
 
     /**
-     * 明细行 → 导出行。
+     * 明细行 → 导出行（并集 DTO；实际列由前端 exportColumns 裁剪）。
      *
      * @param row 明细；null 返回 null
      * @return 导出行
@@ -117,7 +117,7 @@ public interface OutpatientMedicationDispenseReportMapper {
     OutpatientMedicationDispenseExportRowDto toExportRowFromDetail(OutpatientMedicationDispenseDetailRowDto row);
 
     /**
-     * 汇总行 → 导出行。
+     * 汇总行 → 导出行（并集 DTO；实际列由前端 exportColumns 裁剪）。
      *
      * @param row 汇总；null 返回 null
      * @return 导出行

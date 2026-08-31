@@ -10,6 +10,11 @@ export interface UserListParams extends PageParams {
   isActive?: string;
   /** 角色主键多选；有值时后端按「拥有任一角色」筛选 */
   roleIds?: string[];
+  /**
+   * HIS 出诊科室主键；有值时只返回在该科室挂了激活医师出诊岗的用户。
+   * 须以 string 提交，禁止 Number() 以免雪花 Long 丢精度。
+   */
+  organizationId?: string;
 }
 
 export interface UserInfo {

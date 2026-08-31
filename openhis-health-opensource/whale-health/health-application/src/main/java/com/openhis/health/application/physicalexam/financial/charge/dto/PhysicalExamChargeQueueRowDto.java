@@ -34,6 +34,18 @@ public class PhysicalExamChargeQueueRowDto {
     @Schema(description = "患者姓名")
     private String patientName;
 
+    /** 性别编码（AdministrativeGender.code）。 */
+    @Schema(description = "性别编码")
+    private String genderCode;
+
+    /** 性别展示名。 */
+    @Schema(description = "性别展示名")
+    private String genderEnumText;
+
+    /** 年龄展示文案。 */
+    @Schema(description = "年龄展示文案")
+    private String ageText;
+
     /** 体检流水号（peis_encounter_ext.bus_no）。 */
     @Schema(description = "体检流水号")
     private String busNo;
@@ -57,4 +69,8 @@ public class PhysicalExamChargeQueueRowDto {
     /** 队列页签标签编码。 */
     @Schema(description = "队列标签编码")
     private String queueLabelCode;
+
+    /** 是否团检。 */
+    @Schema(description = "是否团检")
+    private Boolean groupFlag;
 }

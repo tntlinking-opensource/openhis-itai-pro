@@ -53,7 +53,7 @@ import {
   PURCHASE_ORDER_TABLE_COL_WIDTH,
   type PurchaseOrderTableColWidthPreset,
 } from '#/constants/layout/inventory-doc-compact-presets';
-import { formatInventoryLineTotal, formatMoneyDisplay } from '#/utils/format/money-scale';
+import { formatInventoryLineTotal, formatPurchaseMoneyDisplay } from '#/utils/format/money-scale';
 import { inboundReceiptPickMedicineCell } from '#/utils/inventory/inbound-receipt-product-pick-list';
 import {
   applyInboundBandKindToRow,
@@ -172,7 +172,7 @@ interface OrderPreviewRow {
   medicinePick?: Record<string, unknown>;
   itemTable?: string;
   itemId?: number | string;
-  /** 药品分类码；中药=4 时单价三位展示 */
+  /** 药品分类码；中药=4 时进价三位展示 */
   categoryCode?: string;
   spec: string;
   manufacturer: string;
@@ -409,6 +409,9 @@ function mapDetailLineToGrid(
     },
   );
   const productBusNo = String(catalog?.productBusNo ?? '').trim();
+  const categoryCode =
+    String(catalog?.categoryCode ?? (ln as { categoryCode?: string }).categoryCode ?? '').trim() ||
+    undefined;
   return {
     id: idStr,
     medicinePick: name
@@ -433,13 +436,10 @@ function mapDetailLineToGrid(
       total === undefined || total === null
         ? ''
         : typeof total === 'number'
-          ? formatMoneyDisplay(total)
+          ? formatPurchaseMoneyDisplay(total, categoryCode)
           : String(total),
     remark: String(ln.remake ?? ''),
-    categoryCode:
-      String(
-        catalog?.categoryCode ?? (ln as { categoryCode?: string }).categoryCode ?? '',
-      ).trim() || undefined,
+    categoryCode,
   };
 }
 
@@ -1114,8 +1114,8 @@ function resolveRequestPrintUnitLabel(row: OrderPreviewRow): string {
   return String(byCode?.label ?? byCode?.value_dictText ?? code).trim();
 }
 
-/** 打印采购申请单（计价流转模版） */
-async function handlePrint() {
+/** 打印或预览采购申请单（计价流转模版） */
+async function handlePrint(payload?: { preview?: boolean }) {
   const busNo = currentPersistedBusNo();
   if (!busNo) {
     ElMessage.warning('请先保存单据后再打印');
@@ -1178,6 +1178,7 @@ async function handlePrint() {
     },
     bizRef: { busNo, docKind: 'purchase-request' },
     jobName: documentTitle,
+    preview: payload?.preview === true,
   });
 }
 </script>

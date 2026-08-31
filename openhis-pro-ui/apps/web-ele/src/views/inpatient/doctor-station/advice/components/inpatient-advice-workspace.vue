@@ -5,7 +5,7 @@ import type { InpatientAdviceQuickAction } from './inpatient-advice-quick-action
 
 import type { OrderTemplateHeaderItem } from '#/api/basic/order-template';
 
-import { h, ref } from 'vue';
+import { computed, h, ref } from 'vue';
 
 import { CaretBottom, CaretTop } from '@element-plus/icons-vue';
 import dayjs from 'dayjs';
@@ -16,6 +16,7 @@ import {
   ElMessage,
   ElMessageBox,
   ElRadio,
+  ElRadioButton,
   ElRadioGroup,
   ElTable,
   ElTableColumn,
@@ -34,6 +35,7 @@ import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import { isServiceApplyFormGroupStart } from '#/utils/service-apply-form-group-display';
 import type { AdviceRowItem as OutpatientAdviceRowItem } from '#/views/outpatient/doctor-station/advice/services/advice.types';
 import OrderTemplateSidePanel from '#/views/outpatient/doctor-station/advice/components/order-template-side-panel.vue';
+import AdviceDraftBindDialog from '#/views/outpatient/doctor-station/advice/components/advice-draft-bind-dialog.vue';
 import type { ServiceApplyDocumentGroup } from '#/views/outpatient/doctor-station/service-apply/service-apply-doc-groups';
 
 import { useInpatientAdviceTab } from '../composables/use-inpatient-advice-tab';
@@ -49,6 +51,7 @@ import {
 } from '../services/order-template-apply.service';
 import AdviceEditCard from './advice-edit-card.vue';
 import InpatientAdviceQuickActionBar from './inpatient-advice-quick-action-bar.vue';
+import SaveAsOrderTemplateDialog from './save-as-order-template-dialog.vue';
 import WesternAdviceCollapsed from './western-advice-collapsed.vue';
 import WesternAdviceDetailForm from './western-advice-detail-form.vue';
 
@@ -69,6 +72,7 @@ const emit = defineEmits<{
 const authStore = useAuthStore();
 const orderTemplateSidePanelRef = ref<InstanceType<typeof OrderTemplateSidePanel> | null>(null);
 const orderTemplateApplyLoading = ref(false);
+const saveAsOrderTemplateDialogVisible = ref(false);
 
 const {
   adviceMutationLoading,
@@ -100,6 +104,10 @@ const {
   handleStopLongTerm,
   handleCancelStopLongTerm,
   handleAppendSkinTest,
+  handleChangeDose,
+  changeDoseMode,
+  changeDoseStopTime,
+  changeDoseStopTimeEditable,
   canEditOpenedBusinessTime,
   canEditStopBusinessTime,
   beginInlineBusinessTimeEdit,
@@ -107,6 +115,8 @@ const {
   confirmInlineBusinessTime,
   handleBatchChangeOpenedBusinessTime,
   resolveBatchOpenedBusinessTimeTargets,
+  handleBatchChangeStopBusinessTime,
+  resolveBatchStopBusinessTimeTargets,
   handleInlineBusinessTimeVisible,
   inlineBusinessTimeEdit,
   isInlineBusinessTimeEditing,
@@ -127,6 +137,30 @@ const {
   timeSortOrder,
   toggleTimeSortOrder,
 } = useInpatientAdviceTab(props);
+
+/** 另存组套：当前列表非编辑行快照 */
+const saveOrderTemplateAdviceRows = computed(() => getTableRows().filter((row) => !row.isEditor));
+
+/** 另存成功后刷新侧栏（维护组套 + 另存模板合并列表） */
+function handleSaveAsOrderTemplateSaved() {
+  void orderTemplateSidePanelRef.value?.reloadTemplateList();
+}
+
+/** 打开另存为组套弹窗 */
+function handleOpenSaveAsOrderTemplateDialog() {
+  if (adviceWriteDisabled.value) {
+    return;
+  }
+  if (!(patientId.value ?? '').trim()) {
+    ElMessage.warning('请先选择患者');
+    return;
+  }
+  if (!(encounterId.value ?? '').trim()) {
+    ElMessage.warning('请先选择就诊');
+    return;
+  }
+  saveAsOrderTemplateDialogVisible.value = true;
+}
 
 /** 双击：申请单草稿弹窗编辑；其余走医嘱编辑卡 */
 async function handleRowDblclick(row: AdviceRowItem) {
@@ -254,6 +288,67 @@ async function handleToolbarBatchChangeOpenedTime() {
   await handleBatchChangeOpenedBusinessTime(picked);
 }
 
+/** 勾选批量改停嘱时间：弹窗选同一时刻 */
+async function promptBatchStopBusinessTime(): Promise<null | string> {
+  let picked = dayjs().format('YYYY-MM-DD HH:mm');
+  try {
+    await ElMessageBox({
+      title: '批量改停嘱时间',
+      message: h({
+        setup() {
+          const value = ref(picked);
+          return () =>
+            h('div', { class: 'ip-advice-batch-stop-time-prompt' }, [
+              h(
+                'p',
+                { style: 'margin: 0 0 12px; color: var(--el-text-color-regular)' },
+                '所选已停嘱长期医嘱将统一改为以下停嘱时间（须晚于开立，且不得早于入院、不得晚于出院）。',
+              ),
+              h(ElDatePicker, {
+                modelValue: value.value,
+                'onUpdate:modelValue': (v: unknown) => {
+                  const next = String(v ?? '').trim();
+                  value.value = next;
+                  picked = next;
+                },
+                type: 'datetime',
+                valueFormat: 'YYYY-MM-DD HH:mm',
+                format: 'YYYY-MM-DD HH:mm',
+                timeFormat: 'HH:mm',
+                clearable: false,
+                teleported: true,
+                style: 'width: 100%',
+                popperClass: 'ip-advice-time-picker-popper',
+              }),
+            ]);
+        },
+      }),
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      distinguishCancelAndClose: true,
+    });
+    return picked.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/** 工具栏：批量改停嘱时间为同一时刻 */
+async function handleToolbarBatchChangeStopTime() {
+  if (adviceWriteDisabled.value) {
+    return;
+  }
+  if (resolveBatchStopBusinessTimeTargets().length === 0) {
+    ElMessage.warning('请勾选至少一条可改停嘱时间的医嘱');
+    return;
+  }
+  const picked = await promptBatchStopBusinessTime();
+  if (!picked) {
+    return;
+  }
+  await handleBatchChangeStopBusinessTime(picked);
+}
+
 /** 侧栏点击组套：确认长临后预览并套用至当前就诊草稿 */
 async function handleOrderTemplateSelect(header: null | OrderTemplateHeaderItem) {
   if (!header || orderTemplateApplyLoading.value || adviceWriteDisabled.value) {
@@ -368,108 +463,113 @@ function adviceOrderingDoctorLabel(row: AdviceRowItem): string {
     />
 
     <div class="ip-advice-workspace flex h-full min-h-0 flex-col p-2">
-      <div class="mb-2 flex w-full flex-shrink-0 flex-wrap items-center gap-1">
-        <ElButton type="primary" :disabled="adviceWriteDisabled" @click="handleAdd()">
-          新增
-        </ElButton>
-        <ElButton
-          type="primary"
-          :disabled="adviceWriteDisabled"
-          :loading="adviceMutationLoading"
-          @click="handleSign()"
-        >
-          签发
-        </ElButton>
-        <ElButton
-          type="warning"
-          plain
-          :disabled="adviceWriteDisabled"
-          :loading="adviceMutationLoading"
-          @click="handleWithdraw()"
-        >
-          撤回
-        </ElButton>
-        <ElButton
-          type="warning"
-          :disabled="adviceWriteDisabled"
-          :loading="adviceMutationLoading"
-          @click="handleStopLongTerm()"
-        >
-          停嘱
-        </ElButton>
-        <ElButton
-          type="warning"
-          plain
-          :disabled="adviceWriteDisabled"
-          :loading="adviceMutationLoading"
-          @click="handleCancelStopLongTerm()"
-        >
-          取消停嘱
-        </ElButton>
-        <ElButton
-          type="primary"
-          plain
-          :disabled="adviceWriteDisabled"
-          :loading="adviceMutationLoading"
-          @click="handleToolbarBatchChangeOpenedTime()"
-        >
-          改开立时间
-        </ElButton>
-        <ElButton
-          type="primary"
-          plain
-          :disabled="adviceWriteDisabled"
-          :loading="adviceMutationLoading"
-          @click="handleAppendSkinTest()"
-        >
-          追加皮试
-        </ElButton>
-        <ElButton
-          type="danger"
-          plain
-          :disabled="adviceWriteDisabled"
-          :loading="adviceMutationLoading"
-          @click="handleDelete()"
-        >
-          删除
-        </ElButton>
-        <ElButton plain :disabled="adviceWriteDisabled" @click="handleMedicationUngroup">
-          拆组
-        </ElButton>
-        <ElButton plain :disabled="adviceWriteDisabled" @click="handleMedicationAssignGroup">
-          并组
-        </ElButton>
-        <div class="ip-advice-list-therapy-filter ml-auto flex flex-wrap items-center gap-1">
-          <span class="text-muted-foreground text-sm">类型</span>
-          <ElButton
-            size="small"
-            :type="listTherapyFilter === '' ? 'primary' : 'default'"
-            @click="setListTherapyFilter('')"
-          >
-            全部
+      <div
+        class="ip-advice-toolbar mb-2 flex w-full flex-shrink-0 flex-wrap items-center gap-x-3 gap-y-2"
+      >
+        <div class="ip-advice-toolbar__actions flex min-w-0 flex-1 flex-wrap items-center gap-1">
+          <ElButton type="primary" :disabled="adviceWriteDisabled" @click="handleAdd()">
+            新增
           </ElButton>
           <ElButton
-            size="small"
-            :type="listTherapyFilter === 'LONG_TERM' ? 'primary' : 'default'"
-            @click="setListTherapyFilter('LONG_TERM')"
+            type="primary"
+            :disabled="adviceWriteDisabled"
+            :loading="adviceMutationLoading"
+            @click="handleSign()"
           >
-            长期
+            签发
           </ElButton>
           <ElButton
-            size="small"
-            :type="listTherapyFilter === 'TEMPORARY' ? 'primary' : 'default'"
-            @click="setListTherapyFilter('TEMPORARY')"
+            type="danger"
+            plain
+            :disabled="adviceWriteDisabled"
+            :loading="adviceMutationLoading"
+            @click="handleWithdraw()"
           >
-            临时
+            撤回
           </ElButton>
           <ElButton
-            size="small"
-            :type="listTherapyFilter === 'DISCHARGE_MEDICATION' ? 'primary' : 'default'"
-            @click="setListTherapyFilter('DISCHARGE_MEDICATION')"
+            type="danger"
+            plain
+            :disabled="adviceWriteDisabled"
+            :loading="adviceMutationLoading"
+            @click="handleStopLongTerm()"
           >
-            出院带药
+            停嘱
+          </ElButton>
+          <ElButton
+            plain
+            :disabled="adviceWriteDisabled"
+            :loading="adviceMutationLoading"
+            @click="handleCancelStopLongTerm()"
+          >
+            取消停嘱
+          </ElButton>
+          <ElButton
+            type="danger"
+            plain
+            :disabled="adviceWriteDisabled"
+            :loading="adviceMutationLoading"
+            @click="handleDelete()"
+          >
+            删除
+          </ElButton>
+          <ElButton
+            plain
+            :disabled="adviceWriteDisabled"
+            :loading="adviceMutationLoading"
+            @click="handleToolbarBatchChangeOpenedTime()"
+          >
+            改开立时间
+          </ElButton>
+          <ElButton
+            plain
+            :disabled="adviceWriteDisabled"
+            :loading="adviceMutationLoading"
+            @click="handleToolbarBatchChangeStopTime()"
+          >
+            改停嘱时间
+          </ElButton>
+          <ElButton
+            plain
+            :disabled="adviceWriteDisabled"
+            :loading="adviceMutationLoading"
+            @click="handleAppendSkinTest()"
+          >
+            追加皮试
+          </ElButton>
+          <ElButton
+            plain
+            :disabled="adviceWriteDisabled"
+            :loading="adviceMutationLoading"
+            @click="handleChangeDose()"
+          >
+            改量
+          </ElButton>
+          <ElButton plain :disabled="adviceWriteDisabled" @click="handleMedicationUngroup">
+            拆组
+          </ElButton>
+          <ElButton plain :disabled="adviceWriteDisabled" @click="handleMedicationAssignGroup">
+            并组
+          </ElButton>
+          <ElButton
+            plain
+            :disabled="adviceWriteDisabled"
+            @click="handleOpenSaveAsOrderTemplateDialog"
+          >
+            另存为组套
           </ElButton>
         </div>
+        <ElRadioGroup
+          class="ip-advice-list-therapy-filter shrink-0"
+          size="small"
+          :model-value="listTherapyFilter"
+          @change="(v) => setListTherapyFilter(String(v ?? '') as '' | InpatientAdviceTherapyType)"
+        >
+          <ElRadioButton value="">全部</ElRadioButton>
+          <ElRadioButton value="LONG_TERM">长期</ElRadioButton>
+          <ElRadioButton value="TEMPORARY">临时</ElRadioButton>
+          <ElRadioButton value="DISCHARGE_MEDICATION">出院带药</ElRadioButton>
+        </ElRadioGroup>
       </div>
 
       <div
@@ -506,6 +606,9 @@ function adviceOrderingDoctorLabel(row: AdviceRowItem): string {
                 v-if="row.isEditor"
                 v-loading="editorOpening"
                 v-model="editorForm"
+                v-model:dose-change-stop-time="changeDoseStopTime"
+                :change-dose-mode="changeDoseMode"
+                :dose-change-stop-time-editable="changeDoseStopTimeEditable"
                 :fee-nature-options="feeNatureOptions"
                 :encounter-id="encounterId"
                 :medication-rate-options="medicationRateOptions"
@@ -780,6 +883,16 @@ function adviceOrderingDoctorLabel(row: AdviceRowItem): string {
       />
     </div>
   </div>
+
+  <SaveAsOrderTemplateDialog
+    v-model:open="saveAsOrderTemplateDialogVisible"
+    :patient-id="patientId"
+    :encounter-id="encounterId"
+    :advice-rows="saveOrderTemplateAdviceRows"
+    @saved="handleSaveAsOrderTemplateSaved"
+  />
+
+  <AdviceDraftBindDialog />
 </template>
 
 <style scoped>
@@ -799,6 +912,21 @@ function adviceOrderingDoctorLabel(row: AdviceRowItem): string {
   min-width: 0;
   min-height: 0;
   padding-bottom: 0;
+}
+
+.ip-advice-toolbar {
+  padding: 6px 8px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  background: var(--el-fill-color-blank);
+}
+
+.ip-advice-toolbar__actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+.ip-advice-list-therapy-filter :deep(.el-radio-button__inner) {
+  padding: 5px 10px;
 }
 
 .advice-table :deep(.el-table__header-wrapper th.el-table__cell) {

@@ -7,15 +7,20 @@ package com.openhis.health.application.physicalexam.financial.charge.mapper;
 import com.openhis.health.application.physicalexam.financial.charge.dto.PhysicalExamChargeItemRowDto;
 import com.openhis.health.application.physicalexam.financial.charge.dto.PhysicalExamChargeQueueRowDto;
 import com.openhis.health.application.physicalexam.financial.charge.dto.PhysicalExamPreSettleLinePreviewDto;
+import com.openhis.health.application.physicalexam.financial.charge.request.AdjustPhysicalExamChargePricesRequest;
 import com.openhis.health.application.physicalexam.financial.charge.request.ConfirmPhysicalExamChargeSettlementRequest;
 import com.openhis.health.application.physicalexam.financial.charge.response.ConfirmPhysicalExamChargeSettlementResponse;
 import com.openhis.health.application.physicalexam.financial.charge.response.LoadPhysicalExamChargePageInitResponse;
 import com.openhis.health.application.physicalexam.financial.charge.response.PagePhysicalExamChargeQueueResponse;
 import com.openhis.health.application.physicalexam.financial.charge.response.PreSettlePhysicalExamChargesResponse;
+import com.openhis.health.application.physicalexam.financial.charge.response.PreviewPhysicalExamRefundResponse;
+import com.openhis.health.application.physicalexam.financial.charge.response.RefundPhysicalExamChargesResponse;
 import com.openhis.health.domain.administration.chargeitem.command.BatchChargeItemIdsCommand;
+import com.openhis.health.domain.administration.chargeitem.command.ManualOverridePlannedChargeItemPricesCommand;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.encounter.entity.Encounter;
 import com.openhis.health.domain.administration.invoice.command.CreateDraftInvoiceCommand;
+import com.openhis.health.domain.administration.patient.queries.model.PatientInpatientProjectionSnapshot;
 import com.openhis.health.domain.financial.paymentreconciliation.command.CreatePaymentDraftFromPreSettleCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.SettleOutpatientPaymentCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentReconciliationQueryModel;
@@ -128,17 +133,17 @@ public interface PhysicalExamChargeMapper {
     /**
      * 装配队列行列表。
      *
-     * @param encounterIds  就诊主键（分页顺序）
-     * @param encounterById 就诊实体映射
-     * @param patientNames  患者姓名映射
-     * @param extByEncounter 体检扩展映射
+     * @param encounterIds           就诊主键（分页顺序）
+     * @param encounterById          就诊实体映射
+     * @param patientSnapshotsById   患者人口学快照（姓名/性别/年龄）
+     * @param extByEncounter         体检扩展映射
      * @param chargeItemsByEncounter 收费明细映射
      * @return 队列行
      */
     List<PhysicalExamChargeQueueRowDto> toQueueRows(
         List<Long> encounterIds,
         Map<Long, Encounter> encounterById,
-        Map<Long, String> patientNames,
+        Map<Long, PatientInpatientProjectionSnapshot> patientSnapshotsById,
         Map<Long, PeisEncounterExtModel> extByEncounter,
         Map<Long, List<ChargeItem>> chargeItemsByEncounter);
 
@@ -161,4 +166,41 @@ public interface PhysicalExamChargeMapper {
     List<PhysicalExamPreSettleLinePreviewDto> toPreSettlePreviews(
         List<ChargeItem> chargeItems,
         Map<Long, String> itemLabels);
+
+    /**
+     * 装配手工改价领域命令。
+     *
+     * @param request    改价请求
+     * @param operatorId 操作人
+     * @return 改价命令
+     */
+    ManualOverridePlannedChargeItemPricesCommand toManualOverridePlannedChargeItemPricesCommand(
+        AdjustPhysicalExamChargePricesRequest request,
+        Long operatorId);
+
+    /**
+     * 装配退费预览响应。
+     *
+     * @param originalPaymentId       原支付主键
+     * @param refundableAmount        应退金额
+     * @param originalPayChannelCodes 原支付渠道码
+     * @param refundingChargeItemIds  拟退收费项
+     * @param previews                拟退行预览
+     * @return 预览响应
+     */
+    PreviewPhysicalExamRefundResponse toPreviewRefundResponse(
+        Long originalPaymentId,
+        BigDecimal refundableAmount,
+        List<String> originalPayChannelCodes,
+        List<Long> refundingChargeItemIds,
+        List<PhysicalExamPreSettleLinePreviewDto> previews);
+
+    /**
+     * 装配退费执行响应。
+     *
+     * @param originalPaymentId 原支付主键
+     * @param reversePaymentId  逆向支付主键
+     * @return 执行响应
+     */
+    RefundPhysicalExamChargesResponse toRefundChargesResponse(Long originalPaymentId, Long reversePaymentId);
 }

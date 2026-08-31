@@ -71,4 +71,8 @@ public class ActivityDefinitionBaseQueryModel {
     private String childrenJson;
     /** children标志。 */
     private Boolean childrenFlag;
+    /** 适用性别枚举编码。 */
+    private String permittedGenderEnum;
+    /** 目录展示顺序。 */
+    private Integer sortOrder;
 }

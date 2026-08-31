@@ -297,8 +297,7 @@ public final class AuditFeeSnapshotProjector {
             o.setRxno(line.getDrordNo());
             o.setHilistCode(line.getMedListCodg());
             o.setHosplistCode(line.getMedinsListCodg());
-            // Pre：住院收费行无单独品名时用默认占位，与 mapOrderCommands / 门诊 assert 同口径
-            o.setHilistName(ChsDetailAuditConstants.DEFAULT_SPEC);
+            o.setHilistName(line.getItemName());
             o.setCnt(line.getCnt());
             o.setPric(scalePlatformMoney(line.getPric()));
             o.setSumamt(scalePlatformMoney(line.getDetItemFeeSumamt()));

@@ -18,6 +18,16 @@ public interface OutpatientPharmacyPrescriptionQueryConstants {
     /** 含输液筛：不含注射目录药品的处方。 */
     String INFUSION_FILTER_NO = "NO";
 
+    /**
+     * 点评方号筛模式：命中处方号 {@code IN}（已点评 / 按是否合理收窄）。
+     */
+    String REVIEW_PRESCRIPTION_FILTER_INCLUDE = "INCLUDE";
+
+    /**
+     * 点评方号筛模式：命中处方号 {@code NOT IN}（待点评：排除有效点评方）。
+     */
+    String REVIEW_PRESCRIPTION_FILTER_EXCLUDE = "EXCLUDE";
+
     /** 含输液筛选项文案：全部。 */
     String INFUSION_FILTER_ALL_LABEL = "全部";
 

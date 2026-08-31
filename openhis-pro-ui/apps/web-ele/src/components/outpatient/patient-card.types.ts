@@ -6,6 +6,8 @@ import type { OutpatientInfoItemDto } from '#/api/doctor-station/encounter.types
 export interface OutpatientPatientCardPayload extends OutpatientInfoItemDto {
   /** 护士站：待执行处置项数 */
   pendingExecuteCount?: number;
+  /** 护士站：是否仍有待发放耗材（红框提醒；选中态不得掩盖） */
+  hasPendingSupply?: boolean;
   /** 护士站：风险提示 */
   riskHint?: string;
 }

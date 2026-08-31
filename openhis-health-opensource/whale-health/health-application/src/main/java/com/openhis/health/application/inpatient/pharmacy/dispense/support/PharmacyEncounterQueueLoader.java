@@ -19,7 +19,9 @@ import java.util.LinkedHashSet;
 import java.util.List;
 
 /**
- * 住院药房发药患者队列：跨聚合读编排（B.6.1.3），预解析在院就诊收窄后委托 {@link MedicationDispenseQueryService}。
+ * 住院药房发药患者队列：跨聚合读编排（B.6.1.3），预解析队列可见就诊收窄后委托 {@link MedicationDispenseQueryService}。
+ *
+ * <p>可见就诊含在院与出院轨（PENDING/COMPLETED/DISCHARGED），与 AS-IP-PHA-001 BR-IPP-001 对齐。</p>
  */
 @Component("inpatientPharmacyEncounterQueueLoader")
 @RequiredArgsConstructor
@@ -31,7 +33,7 @@ public class PharmacyEncounterQueueLoader {
     private final LocationQueryService locationQueryService;
 
     /**
-     * 住院发药队列：分页返回存在药品发放事实且住院在院的就诊主键。
+     * 住院发药队列：分页返回存在药品发放事实且队列可见的就诊主键。
      *
      * @param query 库房、病区、关键字等
      * @return 就诊主键页
@@ -54,10 +56,10 @@ public class PharmacyEncounterQueueLoader {
     }
 
     /**
-     * 住院在院关键字解析就诊：就诊号、患者与床位名称并集后过滤为在院住院。
+     * 关键字解析住院队列可见就诊：就诊号、患者与床位名称并集后过滤为药房队列可见态。
      *
      * @param keyword 用户键入关键字
-     * @return 匹配的在院住院就诊主键
+     * @return 匹配的就诊主键
      */
     private List<Long> resolveInpatientEncounterIdsByKeyword(String keyword) {
         LinkedHashSet<Long> union = new LinkedHashSet<>();
@@ -74,7 +76,7 @@ public class PharmacyEncounterQueueLoader {
     /**
      * 两路就诊主键列表取交集（保持 left 顺序）；任一侧为空则返回空列表。
      *
-     * @param left  基准就诊列表（如病区在院集合）
+     * @param left  基准就诊列表（如病区队列可见集合）
      * @param right 收窄列表（如关键字命中）
      * @return 交集主键
      */

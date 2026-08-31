@@ -64,8 +64,26 @@ export const PRINT_SCENARIO = {
   invReturnPrint: 'inv-return-print',
   /** 体检总检报告 */
   peisReportPrint: 'peis-report-print',
+  /** 体检指引单 */
+  peisGuidePrint: 'peis-guide-print',
   /** 财务调价单 */
   finPriceAdjustmentPrint: 'fin-price-adjustment-print',
+  /** 通用报表列表（A4 横向壳，动态列） */
+  reportListPrint: 'report-list-print',
 } as const;
 
 export type PrintScenario = (typeof PRINT_SCENARIO)[keyof typeof PRINT_SCENARIO];
+
+/** 库房/药房/科室库存单据打印场景（纸张+打印机合一弹窗） */
+export const INV_PRINT_SCENARIO_CODES: PrintScenario[] = [
+  PRINT_SCENARIO.invMovementPrint,
+  PRINT_SCENARIO.invStocktakePrint,
+  PRINT_SCENARIO.invReturnPrint,
+];
+
+const INV_PRINT_SCENARIO_SET = new Set<string>(INV_PRINT_SCENARIO_CODES);
+
+/** 是否库房单据打印场景 */
+export function isInvPrintScenario(scenarioCode: string): boolean {
+  return INV_PRINT_SCENARIO_SET.has(scenarioCode.trim());
+}

@@ -27,9 +27,10 @@ import {
 import AppDialog from '#/components/app-dialog.vue';
 import SectionTitle from '#/components/layouts/section-title.vue';
 import { useRequest } from '#/hooks/use-request';
+import { buildExcelExportColumns } from '#/utils/export/build-excel-export-columns';
 import { downloadBinaryExportFile } from '#/utils/export/download-binary-export';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
-import { fmtReportNumber } from '#/views/report/shared/report-format';
+import { fmtReportNumber, fmtReportPurchaseMoney } from '#/views/report/shared/report-format';
 
 defineOptions({ name: 'PractitionerWorkloadDoctorDetailDialog' });
 
@@ -114,7 +115,7 @@ const financialSummaryMetrics = computed<MetricItem[]>(() => {
   const t = resolvedSummaryTotals.value;
   return [
     { label: '售价', value: fmtReportNumber(t.saleAmountTotal) },
-    { label: '进价', value: fmtReportNumber(t.purchaseAmountTotal) },
+    { label: '进价', value: fmtReportPurchaseMoney(t.purchaseAmountTotal) },
   ];
 });
 
@@ -141,7 +142,8 @@ const detailColumns: TableColumn[] = [
     label: '进价',
     minWidth: 96,
     align: 'right',
-    formatter: (row) => fmtReportNumber((row as PractitionerWorkloadDetailLineDto).purchaseAmount),
+    formatter: (row) =>
+      fmtReportPurchaseMoney((row as PractitionerWorkloadDetailLineDto).purchaseAmount),
   },
 ];
 
@@ -170,9 +172,21 @@ async function loadDetailPage() {
   });
 }
 
-/** 导出当前医生明细 Excel。 */
+/** 导出当前医生明细 Excel（列清单与明细表一致）。 */
 async function handleExportDetail() {
-  const data = await runExport(buildDoctorDetailFilter());
+  // TableColumn.prop → Excel 导出行 field
+  const exportColumns = buildExcelExportColumns(
+    detailColumns
+      .filter((col) => Boolean(col.prop))
+      .map((col) => ({
+        field: String(col.prop),
+        title: String(col.label ?? col.prop),
+      })),
+  );
+  const data = await runExport({
+    ...buildDoctorDetailFilter(),
+    exportColumns,
+  });
   if (!data?.body?.trim()) {
     ElMessage.warning('当前条件下无明细可导出');
     return;

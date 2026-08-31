@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -29,6 +30,10 @@ public class PeisPackageDto {
     /** 状态：active / inactive。 */
     private String statusEnum;
 
-    /** 子项目 AD 主键列表。 */
+    /** 原价/零售价 SALE（charge_item_definition）。 */
+    private BigDecimal salePrice;
+
+    /** 子项目 AD 主键列表（元素须按字符串序列化，避免雪花 Long 在前端丢精度）。 */
+    @JsonSerialize(contentUsing = ToStringSerializer.class)
     private List<Long> childActivityIds;
 }

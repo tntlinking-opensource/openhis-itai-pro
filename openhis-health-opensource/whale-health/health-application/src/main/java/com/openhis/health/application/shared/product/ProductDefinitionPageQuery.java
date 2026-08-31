@@ -56,7 +56,19 @@ public class ProductDefinitionPageQuery extends AbstractPageQuery {
     /** 供应商标识。 */
     private Long supplierId;
 
-    /** 厂家名称。 */
+    /**
+     * 生产厂家主键筛选（cus_supplier.id）；优先于 {@link #manufacturer}。
+     */
+    private Long manufacturerId;
+
+    /**
+     * 生产厂家主键集合筛选（IN）。
+     */
+    private List<Long> manufacturerIds;
+
+    /**
+     * 厂家名称（兼容旧入参；领域层仅在可解析为 Long 时按 id 过滤，名称→id 由调用方解析）。
+     */
     private String manufacturer;
 
     /**

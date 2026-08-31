@@ -4,6 +4,8 @@ import type {
   HistoryAdviceRowItem,
 } from '../services/history-advice.types';
 
+import type { DiagnosisItem } from '#/components/doctor-station/diagnosis';
+
 import { computed, ref, watch } from 'vue';
 
 import { Search } from '@element-plus/icons-vue';
@@ -20,9 +22,13 @@ import {
   ElTag,
 } from 'element-plus';
 
+import { mapEncounterRowToDiagnosisItem } from '#/components/doctor-station/diagnosis/services/encounter-diagnosis-select';
+import { fetchEncounterDiagnosisDisplayList } from '#/components/doctor-station/diagnosis/services/encounter-diagnosis.service';
 import AdviceOrderDisplayCell from '#/components/outpatient/advice-order-display-cell.vue';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
+import AdviceDiagnosisSummaryCell from './advice-diagnosis-summary-cell.vue';
+import { resolvePrimaryDiagnosisChronicTag } from '../services/advice-diagnosis-display';
 import { getSkinTestDisplayTagType } from '../services/advice-list';
 import {
   fetchPatientHistoryDoctorStationAdvice,
@@ -57,6 +63,8 @@ const loading = ref(false);
 const historyBundles = ref<
   Array<{ encounter: HistoryAdviceEncounterItem; rows: HistoryAdviceRowItem[] }>
 >([]);
+/** encounterId → 诊断候选项（慢病角标） */
+const diagnosisItemsByEncounterId = ref(new Map<string, DiagnosisItem[]>());
 
 /** 左栏就诊列表：按时间倒序，当前就诊置顶 */
 const encounterList = computed(() => {
@@ -69,6 +77,13 @@ const activeEncounterRows = computed(() => {
   const id = selectedEncounterId.value.trim();
   if (!id) return [];
   return historyBundles.value.find((b) => b.encounter.encounterId === id)?.rows ?? [];
+});
+
+/** 当前选中就诊诊断候选项 */
+const activeDiagnosisItems = computed(() => {
+  const id = selectedEncounterId.value.trim();
+  if (!id) return [];
+  return diagnosisItemsByEncounterId.value.get(id) ?? [];
 });
 
 /** 关键字 + 类型过滤后的表格行 */
@@ -106,22 +121,62 @@ const reusableSelectedCount = computed(() => {
   return tableSelection.value.filter((r) => r.reusable !== false).length;
 });
 
+/** 左栏就诊卡主诊慢病角标 */
+function encounterPrimaryChronicTag(encounterId: string): string {
+  const items = diagnosisItemsByEncounterId.value.get(encounterId) ?? [];
+  return resolvePrimaryDiagnosisChronicTag(items);
+}
+
+/** 并行拉取各历史就诊诊断（失败单就诊降级为空，不阻断列表） */
+async function loadHistoryDiagnosisMaps(patientId: string, encounterIds: string[]) {
+  const uniqueIds = [...new Set(encounterIds.map((id) => id.trim()).filter(Boolean))];
+  if (uniqueIds.length === 0) {
+    diagnosisItemsByEncounterId.value = new Map();
+    return;
+  }
+  const next = new Map<string, DiagnosisItem[]>();
+  await Promise.all(
+    uniqueIds.map(async (historyEncounterId) => {
+      try {
+        const displayList = await fetchEncounterDiagnosisDisplayList(
+          { encounterId: historyEncounterId, patientId },
+          'outpatient',
+        );
+        next.set(
+          historyEncounterId,
+          displayList
+            .map((row) => mapEncounterRowToDiagnosisItem(row))
+            .filter((item): item is DiagnosisItem => item !== null),
+        );
+      } catch {
+        next.set(historyEncounterId, []);
+      }
+    }),
+  );
+  diagnosisItemsByEncounterId.value = next;
+}
+
 /** 拉取患者历史医嘱（无数据或接口不可用时保持空列表） */
 async function loadHistoryAdvice() {
   const patientId = preserveApiIdForRequest(props.patientId ?? '');
   const encounterId = preserveApiIdForRequest(props.encounterId ?? '');
   if (!patientId) {
     historyBundles.value = [];
+    diagnosisItemsByEncounterId.value = new Map();
     return;
   }
   if (!encounterId) {
     historyBundles.value = [];
+    diagnosisItemsByEncounterId.value = new Map();
     ElMessage.warning('缺少当前就诊信息，无法查询历史医嘱');
     return;
   }
   loading.value = true;
   try {
     historyBundles.value = await fetchPatientHistoryDoctorStationAdvice(patientId, encounterId);
+    // 医嘱行返回后补诊断，供慢病角标（与复用落库同源）
+    const historyEncounterIds = historyBundles.value.map((b) => b.encounter.encounterId);
+    await loadHistoryDiagnosisMaps(patientId, historyEncounterIds);
   } finally {
     loading.value = false;
   }
@@ -132,6 +187,7 @@ function initSelectionOnOpen() {
   tableSelection.value = [];
   searchKeyword.value = '';
   adviceTypeFilter.value = 'ALL';
+  diagnosisItemsByEncounterId.value = new Map();
   void loadHistoryAdvice().then(() => {
     const first = encounterList.value[0];
     selectedEncounterId.value = first?.encounterId ?? '';
@@ -227,7 +283,17 @@ watch(open, (visible) => {
                 <div class="encounter-card__dept">
                   {{ item.departmentName }} · {{ item.visitTypeText }}
                 </div>
-                <div class="encounter-card__dx">{{ item.primaryDiagnosis }}</div>
+                <div class="encounter-card__dx">
+                  <span>{{ item.primaryDiagnosis }}</span>
+                  <span
+                    v-for="tag in [encounterPrimaryChronicTag(item.encounterId)]"
+                    :key="`${item.encounterId}-chronic`"
+                    v-show="tag"
+                    class="encounter-card__chronic"
+                  >
+                    {{ tag }}
+                  </span>
+                </div>
                 <div class="encounter-card__meta">
                   <span>{{ item.orderingDoctor }}</span>
                   <span>{{ item.adviceCountSummary }}</span>
@@ -304,7 +370,15 @@ watch(open, (visible) => {
                 </template>
               </ElTableColumn>
               <ElTableColumn prop="startTime" label="开立时间" width="160" align="center" />
-              <ElTableColumn prop="diagnosisSummary" label="诊断" min-width="120" align="center" />
+              <ElTableColumn prop="diagnosisSummary" label="诊断" min-width="140" align="center">
+                <template #default="{ row }">
+                  <AdviceDiagnosisSummaryCell
+                    :diagnosis-summary="row.diagnosisSummary"
+                    :encounter-diagnosis-ids="row.encounterDiagnosisIds"
+                    :diagnosis-items="activeDiagnosisItems"
+                  />
+                </template>
+              </ElTableColumn>
               <ElTableColumn prop="orderingDoctor" label="医生" width="80" align="center" />
               <ElTableColumn prop="skinTestText" label="皮试" width="72" align="center">
                 <template #default="{ row }">
@@ -466,10 +540,30 @@ watch(open, (visible) => {
 }
 
 .encounter-card__dx {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
   margin-top: 4px;
   font-size: 12px;
   line-height: 1.4;
   color: var(--el-text-color-regular);
+}
+
+.encounter-card__chronic {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border: 1.5px solid #0f766e;
+  border-radius: 3px;
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .encounter-card__meta {

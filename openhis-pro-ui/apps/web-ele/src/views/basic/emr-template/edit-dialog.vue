@@ -4,7 +4,7 @@ import type { JSONContent } from '@tiptap/core';
 import type { FormItemOption } from '@vben-core/table-layout-ui';
 
 import type { TemplateContentDto, TemplateDto } from '#/api/emr/template';
-import type { EmrPrintConfigPayload, GenerateDocumentPdfParams } from '#/api/emr/document';
+import type { GenerateDocumentPdfParams } from '#/api/emr/document';
 
 import { getOrganizationApiByLoginUser } from '#/api/core/auth';
 import { generateDocumentPdfApi } from '#/api/emr/document';
@@ -20,7 +20,7 @@ import {
   resolveLoginPractitionerIdForRequest,
 } from '#/utils/format/preserve-api-id';
 
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, nextTick, reactive, ref, watch } from 'vue';
 
 import { useUserStore } from '@vben/stores';
 
@@ -37,8 +37,24 @@ import {
 } from 'element-plus';
 
 import EmrPdfPreviewDialog from '#/components/outpatient/emr-pdf-preview-dialog.vue';
-import { SimpleEditor, useEmrMetadata } from '#/emrEditor';
-import { defaultEmrEditorDoc } from '#/emrEditor/components/simple-editor/editor-defaults';
+import { SimpleEditor, normalizeEmrRootDoc, useEmrMetadata } from '#/emrEditor';
+import {
+  DEFAULT_EDITOR_PAGE_MARGINS,
+  defaultEmrEditorDoc,
+} from '#/emrEditor/components/simple-editor/editor-defaults';
+import {
+  createDefaultEmrPageChrome,
+  type EmrPageChrome,
+} from '#/emrEditor/components/simple-editor/emr-page-chrome';
+import {
+  packEmrDocWithSidecar,
+  readEmrDocSidecar,
+  stripEmrDocSidecar,
+} from '#/emrEditor/components/simple-editor/emr-doc-sidecar';
+import {
+  buildEmrPrintConfigPayload,
+  collectScreenPrintMetricsFromDom,
+} from '#/emrEditor/components/simple-editor/emr-print-config';
 import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
 
 import {
@@ -115,13 +131,10 @@ watch(
 /** 模板正文：Tiptap JSON，与 SimpleEditor 双向绑定 */
 const docJson = ref<JSONContent | null>(null);
 
-/** 页边距（与编辑器「打印标准」一致，供 PDF 预览） */
-const pageMargins = ref({
-  top: '25.4mm',
-  right: '31.8mm',
-  bottom: '25.4mm',
-  left: '31.8mm',
-});
+/** 页边距：屏上默认贴近 Word；正式国标可切工具栏「打印标准」 */
+const pageMargins = ref({ ...DEFAULT_EDITOR_PAGE_MARGINS });
+const pageChrome = ref<EmrPageChrome>(createDefaultEmrPageChrome());
+const editorRef = ref<InstanceType<typeof SimpleEditor> | null>(null);
 
 const pdfPreviewVisible = ref(false);
 const pdfPreviewBase64 = ref('');
@@ -139,63 +152,11 @@ const documentTypeName = computed(() => {
   return String(hit?.label ?? '').trim();
 });
 
-/** 门诊病历纸质底边戒烟提示（与医生站一致） */
-const OUTPATIENT_EMR_SMOKE_FREE_FOOTER =
-  '为了您和家人的健康，请勿吸烟！如需戒烟帮助，请咨询戒烟医生。';
-
-function buildPrintConfigFromPageMargins(
-  margins: typeof pageMargins.value,
-): EmrPrintConfigPayload | undefined {
-  const parseMm = (raw: string): number | undefined => {
-    const m = String(raw ?? '')
-      .trim()
-      .match(/^([\d.]+)\s*mm$/i);
-    if (!m) return undefined;
-    const n = Number(m[1]);
-    return Number.isFinite(n) && n > 0 ? n : undefined;
-  };
-  const topMm = parseMm(margins.top);
-  const rightMm = parseMm(margins.right);
-  const bottomMm = parseMm(margins.bottom);
-  const leftMm = parseMm(margins.left);
-
-  const isOutpatientRecord = form.documentTypeCode.trim() === 'OUTPATIENT_RECORD';
-  const footer = isOutpatientRecord
-    ? {
-        enabled: true,
-        heightMm: 20,
-        template: `${OUTPATIENT_EMR_SMOKE_FREE_FOOTER}　第 {page} 页`,
-        showPageNumber: true,
-      }
-    : undefined;
-
-  if (topMm == null && rightMm == null && bottomMm == null && leftMm == null && !footer) {
-    return undefined;
-  }
-
-  let resolvedBottom = bottomMm;
-  if (isOutpatientRecord && (resolvedBottom == null || resolvedBottom < 28)) {
-    resolvedBottom = 28;
-  }
-
-  return {
-    ...(topMm != null || rightMm != null || resolvedBottom != null || leftMm != null
-      ? {
-          margins: {
-            ...(topMm != null ? { topMm } : {}),
-            ...(rightMm != null ? { rightMm } : {}),
-            ...(resolvedBottom != null ? { bottomMm: resolvedBottom } : {}),
-            ...(leftMm != null ? { leftMm } : {}),
-          },
-        }
-      : {}),
-    ...(footer ? { footer } : {}),
-  };
-}
-
 async function handlePrintPreview() {
   if (pdfLoading.value) return;
-  const content = docJson.value;
+  editorRef.value?.exitPageChromeEdit?.();
+  await nextTick();
+  const content = editorRef.value?.getJSON?.() ?? docJson.value;
   if (!content) {
     ElMessage.warning('没有可预览的内容');
     return;
@@ -209,13 +170,18 @@ async function handlePrintPreview() {
       metadata.orgName = orgName;
       metadata.hospitalName = orgName;
     }
+    const pm = editorRef.value?.getEditor?.()?.view?.dom;
+    const screenMetrics = pm instanceof HTMLElement ? collectScreenPrintMetricsFromDom(pm) : null;
     const params: GenerateDocumentPdfParams = {
       content: applyPreviewMetadataToContent(content, metadata),
       previewMode: true,
       documentTitle: (form.name.trim() || '模板').trim(),
       documentTypeName: documentTypeName.value || undefined,
       metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
-      printConfig: buildPrintConfigFromPageMargins(pageMargins.value),
+      printConfig: buildEmrPrintConfigPayload(pageMargins.value, pageChrome.value, {
+        isOutpatientRecord: form.documentTypeCode.trim() === 'OUTPATIENT_RECORD',
+        screenMetrics,
+      }),
     };
     const result = await generateDocumentPdfApi(params);
     if (!result?.pdfBase64?.trim()) {
@@ -271,56 +237,13 @@ function cloneDefaultDoc(): JSONContent {
 }
 
 function resetPageMargins() {
-  pageMargins.value = {
-    top: '25.4mm',
-    right: '31.8mm',
-    bottom: '25.4mm',
-    left: '31.8mm',
-  };
+  pageMargins.value = { ...DEFAULT_EDITOR_PAGE_MARGINS };
+  pageChrome.value = createDefaultEmrPageChrome();
 }
 
-/**
- * 将接口返回的 content 转成编辑器可用的 doc。
- * 支持 JSON 字符串或对象；解析失败或非 doc 结构时回退默认文档，避免编辑器报错。
- * ProseMirror 拒收空 text 节点，入库脏数据会导致 setContent 失败、正文空白。
- */
-function scrubEmptyTextNodes(node: unknown): unknown {
-  if (Array.isArray(node)) {
-    return node
-      .filter(
-        (item) =>
-          !(
-            item &&
-            typeof item === 'object' &&
-            (item as JSONContent).type === 'text' &&
-            (item as { text?: string }).text === ''
-          ),
-      )
-      .map((item) => scrubEmptyTextNodes(item));
-  }
-  if (node && typeof node === 'object') {
-    const n = node as JSONContent & { content?: unknown };
-    if (Array.isArray(n.content)) {
-      return { ...n, content: scrubEmptyTextNodes(n.content) };
-    }
-  }
-  return node;
-}
-
+/** 将接口返回的 content 转成编辑器可用的 doc（空 text 清洗见 normalizeEmrRootDoc） */
 function normalizeContent(raw: unknown): JSONContent {
-  if (raw === null || raw === undefined) return cloneDefaultDoc();
-  let parsed: unknown = raw;
-  if (typeof raw === 'string') {
-    try {
-      parsed = JSON.parse(raw.trim()) as JSONContent;
-    } catch {
-      return cloneDefaultDoc();
-    }
-  }
-  if (typeof parsed === 'object' && parsed !== null && (parsed as JSONContent).type === 'doc') {
-    return scrubEmptyTextNodes(parsed) as JSONContent;
-  }
-  return cloneDefaultDoc();
+  return normalizeEmrRootDoc(raw);
 }
 
 function closeDialog() {
@@ -399,8 +322,10 @@ function applyContentDto(dto: TemplateContentDto) {
   form.organizationId = preserveApiIdForRequest(dto.organizationId) ?? '';
   form.ownerPractitionerId =
     preserveApiIdForRequest(dto.ownerPractitionerId) ?? loginPractitionerId.value ?? '';
-  docJson.value = normalizeContent(dto.content);
-  resetPageMargins();
+  docJson.value = stripEmrDocSidecar(normalizeContent(dto.content));
+  const sidecar = readEmrDocSidecar(dto.content);
+  pageMargins.value = { ...sidecar.pageMargins };
+  pageChrome.value = sidecar.pageChrome;
 }
 
 /** 打开纯新建弹窗时重置表单与文档 */
@@ -540,6 +465,8 @@ async function open(options: {
 /** 提交到 whale-emr TemplateAppService（只读不保存） */
 async function handleSave() {
   if (readOnly()) return;
+  editorRef.value?.exitPageChromeEdit?.();
+  await nextTick();
   const name = form.name.trim();
   const code = form.code.trim();
   if (!name) {
@@ -550,7 +477,12 @@ async function handleSave() {
     ElMessage.warning('请填写模板编码');
     return;
   }
-  const contentJson = serializeEmrTemplateContent(docJson.value ?? cloneDefaultDoc());
+  const contentJson = serializeEmrTemplateContent(
+    packEmrDocWithSidecar(docJson.value ?? cloneDefaultDoc(), {
+      pageChrome: pageChrome.value,
+      pageMargins: pageMargins.value,
+    }),
+  );
   const documentTypeCode = form.documentTypeCode.trim() || undefined;
   const scopeLevel = form.scopeLevel.trim();
   const encounterClassCode = form.encounterClassCode.trim();
@@ -729,13 +661,18 @@ defineExpose({
         <div v-if="loadLoading" class="emr-template-editor-dialog__loading">加载模板正文…</div>
         <SimpleEditor
           v-else-if="docJson"
+          ref="editorRef"
           :key="(templateId ?? form.code) || 'new'"
           v-model="docJson"
           v-model:page-margins="pageMargins"
-          placeholder="编辑模板正文（Tiptap JSON）"
+          v-model:page-chrome="pageChrome"
+          :document-type-name="documentTypeName"
+          :document-title="(documentTypeName || form.name || '').trim()"
+          placeholder="编辑模板正文"
           surface="template"
           :read-only="readOnly()"
           :metadata-fields="templateMetadataFields"
+          @print="handlePrintPreview"
         />
       </div>
     </div>

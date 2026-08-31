@@ -13,7 +13,6 @@ import com.openhis.chs.domain.settlement.entity.YbSettlementRecord;
 import com.openhis.chs.domain.settlement.service.PaymentSettledCorrectionQueryService;
 import com.openhis.chs.domain.settlement.service.YbSettlementCorrectionDomainService;
 import com.openhis.chs.domain.settlement.service.YbSettlementRecordDomainService;
-import com.openhis.chs.domain.settlement.service.YbSettlementReversalDomainService;
 import com.openhis.chs.domain.share.constants.ChsErrorCodes;
 import com.openhis.chs.domain.invoke.service.YbInvokeLogQueryService;
 import com.openhis.chs.gateway.observability.ChsInvokeLogContext;
@@ -40,7 +39,8 @@ import java.util.List;
  * <p>命名遵循 bridge {@code *Invoker} 约定；无 Port 接口时不使用 {@code *PortImpl} 后缀。</p>
  *
  * <p>典型场景：收银落账后扫描支付单下 2207/2304 回执状态不明，
- * 逐条调用平台冲正接口，成功后标记回执 REVOKED 并写入撤销凭证。</p>
+ * 逐条调用平台冲正接口；平台成功后以独立事务写 correction 并软删结算回执
+ * （2601 冲正视同未发生，不对账写 reversal），避免外层回滚或一收一退多计笔数。</p>
  */
 @Slf4j
 @Component
@@ -51,7 +51,6 @@ public class Op2601Invoker {
     private final PaymentSettledCorrectionQueryService correctionQueryService;
     private final YbSettlementRecordDomainService settlementRecordDomainService;
     private final YbSettlementCorrectionDomainService settlementCorrectionDomainService;
-    private final YbSettlementReversalDomainService settlementReversalDomainService;
     private final YbInvokeLogQueryService invokeLogQueryService;
 
     /**
@@ -133,14 +132,24 @@ public class Op2601Invoker {
                 invokeContext);
             ChsPlatformResponseSupport.requireSuccess(body2601, ChsInfNo.TRANSACTION_CORRECT);
             Long invokeLogId = ChsInvokeLogContextSupport.currentInvokeLogId();
-            settlementCorrectionDomainService.persist(command, record, invokeLogId, tenantId);
-            // 2601 成功后标记回执 REVOKED 并写撤销凭证
-            if (record != null && !YbSettlementVoucherStatus.REVOKED.equals(record.getStatus())) {
-                settlementReversalDomainService.persist2601Correction(
-                    record,
-                    command.getOperatorId(),
-                    ChsInvokeLogContextSupport.currentInvokeLogId());
-                settlementRecordDomainService.save(record);
+            // 平台已冲正：本地独立事务软删结算（冲正≠一收一退），避免外层回滚留孤儿
+            try {
+                settlementCorrectionDomainService.persistLocalAfterPlatformSuccess(
+                    command, invokeLogId, tenantId);
+            } catch (RuntimeException ex) {
+                log.error(
+                    "2601 平台成功但本地落库失败，须运维软删结算；settlementRecordId={} omsgid={}",
+                    command.getSettlementRecordId(),
+                    command.getOmsgid(),
+                    ex);
+                throw ex;
+            }
+            // 内存实体与独立事务对齐，供调用方继续写支付桥表
+            if (record != null) {
+                if (!YbSettlementVoucherStatus.REVOKED.equals(record.getStatus())) {
+                    record.setStatus(YbSettlementVoucherStatus.REVOKED);
+                }
+                record.setIsDeleted(true);
             }
             log.info(
                 "2601 correction succeeded settlementRecordId={} oinfno={} omsgid={}",

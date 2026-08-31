@@ -33,6 +33,7 @@ import { useAdviceDrugFormKeyboard } from '../composables/use-advice-drug-form-k
 import { calcAdviceTotalFee } from '../composables/use-advice-drug-list';
 import { useAdviceFrequencyTotal } from '../composables/use-advice-frequency-total';
 import {
+  formatCollapsedDiagnosisText,
   formatNonMedicationCollapsedSummary,
   formatNonMedicationCollapsedTooltip,
   formatWesternCollapsedSummary,
@@ -610,7 +611,13 @@ function assertRowValid(item: AdviceDrugItem) {
 const collapsedTextOpts = computed(() => ({
   medicationRateOptions: props.medicationRateOptions ?? [],
   medicationRouteOptions: props.medicationRouteOptions ?? [],
+  patientDiagnoses: patientDiagnoses.value,
 }));
+
+/** 收起态诊断文案（含慢/特角标） */
+function getCollapsedDiagnosisText(item: AdviceDrugItem) {
+  return formatCollapsedDiagnosisText(item, patientDiagnoses.value);
+}
 
 const getCollapsedSummary = (item: AdviceDrugItem) => {
   const kind = inferAdviceLineEditorKind(item);
@@ -624,7 +631,7 @@ const getCollapsedTooltip = (item: AdviceDrugItem) => {
   const kind = inferAdviceLineEditorKind(item);
   if (kind === 'DEVICE' || kind === 'SERVICE') {
     const mid = formatNonMedicationCollapsedSummary(item, kind);
-    const full = `${item.diagnosis || '-'} | ${item.feeNature} | ${mid} | 总金额：${formatMoneyStrYuan(calcAdviceTotalFee(item))}`;
+    const full = `${getCollapsedDiagnosisText(item)} | ${item.feeNature} | ${mid} | 总金额：${formatMoneyStrYuan(calcAdviceTotalFee(item))}`;
     return formatNonMedicationCollapsedTooltip(item, kind, full);
   }
   return formatWesternCollapsedTooltip(item, collapsedTextOpts.value);
@@ -1244,7 +1251,7 @@ onMounted(() => {
                 }}</span
               >
               <span class="collapsed-rest">
-                | {{ item.diagnosis || '-' }} | {{ item.feeNature }} |
+                | {{ getCollapsedDiagnosisText(item) }} | {{ item.feeNature }} |
                 {{ getCollapsedSummary(item) }} | 总金额：{{
                   formatMoneyStrYuan(calcAdviceTotalFee(item))
                 }}

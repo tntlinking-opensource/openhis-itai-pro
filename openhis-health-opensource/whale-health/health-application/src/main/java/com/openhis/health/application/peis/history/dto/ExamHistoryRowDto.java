@@ -19,10 +19,16 @@ public class ExamHistoryRowDto {
     private Boolean groupFlag;
     private String statusEnum;
     private LocalDateTime createdAt;
-    /** freshman / annual / staff / other */
+    /** freshman / annual / staff / other / personal / group */
     private String examKind;
     private Integer calendarYear;
     /** 总检报告是否 final。 */
     private Boolean finalReport;
     private Long diagnosticReportId;
+    /** 就诊状态中文（在检/已完成等）。 */
+    private String statusText;
+    /** 是否存在已结算收费明细。 */
+    private Boolean paid;
+    /** 是否允许未收费取消。 */
+    private Boolean cancelable;
 }

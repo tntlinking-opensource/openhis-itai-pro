@@ -67,6 +67,7 @@ export function mapReturnDetailRowToUi(row: ReturnMedicineDetailRowDto): ReturnM
     refundEnumText: row.refundEnumText?.trim() || '—',
     reqStatusText: row.reqStatusText?.trim() || '—',
     traceNo: row.traceNo?.trim() || '—',
+    busNo: row.busNo?.trim() || '',
     selectable: refundEnum === 'PENDING_REFUND',
   };
 }

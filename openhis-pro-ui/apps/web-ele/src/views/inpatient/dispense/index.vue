@@ -63,6 +63,7 @@ import {
   loadRemainingSplitByTraceNos,
   splitTraceNoCommaString,
 } from '#/utils/trace';
+import { MSFX_HIS_SCENE } from '#/msfx/constants';
 import {
   INPATIENT_DISPENSE_DEFAULT_MODE,
   type InpatientDispenseMode,
@@ -873,8 +874,8 @@ function handleBatchTraceScan() {
 }
 
 /**
- * 发药前追溯码：可不扫；已扫但不够须确认后清码再提交（DD §7 / BR-OPP-015 同构）。
- * 住院同医嘱合并展示行：按展示行校验一次应扫量，不足时清展示行会话码。
+ * 发药前追溯码：可不扫；已扫但不够须确认后仍可提交（DD §7 / BR-OPP-015 同构）。
+ * 住院同医嘱合并展示行：按展示行校验一次应扫量；确认后保留已扫码写入底层发放行。
  *
  * @param lineIds 待发发放行 id（已展开 sourceDispenseIds）
  */
@@ -909,7 +910,6 @@ async function confirmTraceCodesBeforeDispense(lineIds: string[]): Promise<boole
   const remainingByTraceNo = await loadRemainingSplitByTraceNos(allCodes);
 
   const insufficient: string[] = [];
-  const insufficientDisplayIds: string[] = [];
   for (const row of uniqueDisplayRows) {
     const needCount = resolveDispenseRequiredTraceCount(row);
     const opSplit = resolveDispenseOperationSplitQty(row);
@@ -926,7 +926,6 @@ async function confirmTraceCodesBeforeDispense(lineIds: string[]): Promise<boole
       continue;
     }
     const boundCount = splitTraceNoCommaString(traceRaw).length;
-    insufficientDisplayIds.push(row.id);
     insufficient.push(
       `「${row.itemName}」已扫码剩余未盖住发药拆零（建议约 ${needCount} 码，当前 ${boundCount} 个）`,
     );
@@ -936,7 +935,7 @@ async function confirmTraceCodesBeforeDispense(lineIds: string[]): Promise<boole
   }
   try {
     await ElMessageBox.confirm(
-      `${insufficient.join('\n')}\n\n确认后将按「未扫够」继续发药（不足行的追溯码不提交）。`,
+      `${insufficient.join('\n')}\n\n确认后仍提交已扫追溯码并发药（覆盖可能不足，追溯账或不全）。`,
       '追溯码覆盖不足',
       {
         type: 'warning',
@@ -944,13 +943,7 @@ async function confirmTraceCodesBeforeDispense(lineIds: string[]): Promise<boole
         cancelButtonText: '返回补扫',
       },
     );
-    // 确认继续：清掉不足展示行已绑码，禁止带着盖不住码串写 OUT
-    const dropIds = new Set(insufficientDisplayIds);
-    const next: Record<string, string> = {};
-    for (const [id, code] of Object.entries(traceCodeByLineId.value)) {
-      if (!dropIds.has(id)) next[id] = code;
-    }
-    traceCodeByLineId.value = next;
+    // 确认继续：保留已扫码写入发放行，避免「扫了又被清掉」导致清床误报未分配
     return true;
   } catch {
     return false;
@@ -958,7 +951,10 @@ async function confirmTraceCodesBeforeDispense(lineIds: string[]): Promise<boole
 }
 
 /**
- * 合并展示行上的逗号追溯码按序拆到各底层 dispenseId（一码一行；码不足则后续行不带码）。
+ * 合并展示行上的逗号追溯码落到各底层 dispenseId。
+ *
+ * <p>单码：广播到全部底层行（中包装一码盖住多次执行，跨行同码合法）。
+ * 多码：按序轮询分配，避免码数少于合并行数时后续行落空。</p>
  *
  * @param displayLineId 展示行 id（扫码会话键，通常为首条 dispenseId）
  * @param sourceDispenseIds 同医嘱同日合并的发放主键（有序）
@@ -974,8 +970,10 @@ function resolveDistributedTraceNoForDispense(
   const codes = splitTraceNoCommaString(raw);
   if (codes.length === 0) return undefined;
   const idx = sourceDispenseIds.indexOf(targetDispenseId);
-  if (idx < 0 || idx >= codes.length) return undefined;
-  return codes[idx];
+  if (idx < 0) return undefined;
+  // 单码盖住整组合并行；多码轮询避免尾部行丢码
+  if (codes.length === 1) return codes[0];
+  return codes[idx % codes.length];
 }
 
 /**
@@ -1224,6 +1222,7 @@ onMounted(async () => {
           :prescription-row-count="prescriptionList.length"
           :dispenser-options="dispenserOptions"
           :rx-kind-badge-counts="rxKindBadgeCounts"
+          :msfx-his-scene="MSFX_HIS_SCENE.IP_DISPENSE"
           @batch-dispense="handleBatchDispense"
           @batch-trace-scan="handleBatchTraceScan"
           @dispense-prescription="handleSingleDaySheetDispense"

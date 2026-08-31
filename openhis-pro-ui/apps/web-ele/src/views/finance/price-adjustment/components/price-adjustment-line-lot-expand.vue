@@ -6,7 +6,7 @@ import type { PriceAdjustmentDetailRow, PriceAdjustmentLineRow } from '../types'
 
 import { computed } from 'vue';
 
-import { formatMoneyDisplay } from '#/utils/format/money-scale';
+import { formatMoneyDisplay, formatPurchaseMoneyDisplay } from '#/utils/format/money-scale';
 
 import { isLogisticsItemTable } from '../utils/price-adjustment-item-table';
 
@@ -30,12 +30,20 @@ const isLogistics = computed(() => {
 
 const detailRows = computed<PriceAdjustmentDetailRow[]>(() => props.row?.details ?? []);
 
-/** 金额展示：空值占位 */
+/** 金额展示：空值占位（售价/售价盈亏两位） */
 function formatAmount(value: unknown): string {
   if (value === undefined || value === null || value === '') return '—';
   const n = Number(value);
   if (!Number.isFinite(n)) return '—';
   return formatMoneyDisplay(n);
+}
+
+/** 进价单价/进价盈亏展示：最多三位去尾零 */
+function formatPurchaseAmount(value: unknown): string {
+  if (value === undefined || value === null || value === '') return '—';
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '—';
+  return formatPurchaseMoneyDisplay(n) || '—';
 }
 
 /** 数量展示 */
@@ -69,11 +77,11 @@ function formatQuantity(value: unknown): string {
           <td class="col-lot">{{ detail.lotNumber || '—' }}</td>
           <td class="col-qty tabular-nums">{{ formatQuantity(detail.quantity) }}</td>
           <td v-if="isLogistics" class="col-amount tabular-nums">
-            {{ formatAmount(detail.oldPurchaseAmount) }}
+            {{ formatPurchaseAmount(detail.oldPurchaseAmount) }}
           </td>
           <td class="col-amount tabular-nums">{{ formatAmount(detail.oldSellingAmount) }}</td>
           <td v-if="isLogistics" class="col-impact tabular-nums">
-            {{ formatAmount(detail.purchaseImpact) }}
+            {{ formatPurchaseAmount(detail.purchaseImpact) }}
           </td>
           <td class="col-impact tabular-nums">{{ formatAmount(detail.sellingImpact) }}</td>
         </tr>

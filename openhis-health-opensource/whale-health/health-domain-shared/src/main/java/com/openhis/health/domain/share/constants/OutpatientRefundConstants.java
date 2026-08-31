@@ -54,6 +54,11 @@ public interface OutpatientRefundConstants {
     /** 退费渠道须与原支付明细渠道及分桶金额一致（原路返回）。 */
     String MESSAGE_CODE_REFUND_CHANNEL_MUST_ORIGINAL = "EX-REF-306";
 
+    /**
+     * 原支付渠道明细合计与挂载收费项合计不一致，禁止原路冲退复制脏分桶（对齐 BR-REF-024 / BR-OPC-024）。
+     */
+    String MESSAGE_CODE_REFUND_ORIGINAL_DETAIL_UNBALANCED = "EX-REF-307";
+
 /** OutpatientRefund 共享常量：code refund success，值 {@code EX-REF-410}。 */
     String MESSAGE_CODE_REFUND_SUCCESS = "EX-REF-410";
 

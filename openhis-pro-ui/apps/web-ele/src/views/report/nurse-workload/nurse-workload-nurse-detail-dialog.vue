@@ -30,9 +30,10 @@ import {
 import AppDialog from '#/components/app-dialog.vue';
 import SectionTitle from '#/components/layouts/section-title.vue';
 import { useRequest } from '#/hooks/use-request';
+import { buildExcelExportColumns } from '#/utils/export/build-excel-export-columns';
 import { downloadBinaryExportFile } from '#/utils/export/download-binary-export';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
-import { fmtReportNumber } from '#/views/report/shared/report-format';
+import { fmtReportNumber, fmtReportPurchaseMoney } from '#/views/report/shared/report-format';
 
 import { formatChipQuantity, type NurseConsumableItemChip } from './nurse-workload-card-data';
 
@@ -87,7 +88,7 @@ const workloadMetrics = computed(() => [
   },
   {
     label: '耗材进价',
-    value: fmtReportNumber(props.consumablePurchaseAmountTotal, 2),
+    value: fmtReportPurchaseMoney(props.consumablePurchaseAmountTotal),
   },
   {
     label: '售价合计',
@@ -146,7 +147,7 @@ const executionDetailColumns: TableColumn[] = [
     label: '进价',
     minWidth: 88,
     align: 'right',
-    formatter: (row) => fmtReportNumber((row as NurseExecutionDetailRowDto).purchaseAmount, 2),
+    formatter: (row) => fmtReportPurchaseMoney((row as NurseExecutionDetailRowDto).purchaseAmount),
   },
   { prop: 'recordedTime', label: '执行时间', minWidth: 150 },
   { prop: 'encounterBusNo', label: '就诊号', minWidth: 150 },
@@ -178,7 +179,7 @@ const consumableDetailColumns: TableColumn[] = [
     label: '进价',
     minWidth: 80,
     align: 'right',
-    formatter: (row) => fmtReportNumber((row as NurseConsumableDetailRowDto).purchaseAmount, 2),
+    formatter: (row) => fmtReportPurchaseMoney((row as NurseConsumableDetailRowDto).purchaseAmount),
   },
   { prop: 'unitCodeLabel', label: '单位', minWidth: 56 },
   { prop: 'encounterBusNo', label: '就诊号', minWidth: 150 },
@@ -211,11 +212,29 @@ async function loadDetailPage() {
   });
 }
 
-/** 导出当前主 Tab 明细 Excel。 */
+/** 导出当前主 Tab 明细 Excel（列清单与当前表明细列一致）。 */
 async function handleExportDetail() {
+  const sourceColumns =
+    mainTab.value === NURSE_MAIN_TAB_EXECUTION ? executionDetailColumns : consumableDetailColumns;
+  // TableColumn.prop → Excel 导出行 field；执行时间/业务时间走 Text 别名
+  const exportColumns = buildExcelExportColumns(
+    sourceColumns
+      .filter((col) => Boolean(col.prop))
+      .map((col) => ({
+        field: String(col.prop),
+        title: String(col.label ?? col.prop),
+      })),
+    {
+      fieldAliases: {
+        recordedTime: 'recordedTimeText',
+        businessTime: 'businessTimeText',
+      },
+    },
+  );
   const data = await runExport({
     ...buildNurseDetailFilter(),
     mainTabCode: mainTab.value,
+    exportColumns,
   });
   if (!data?.fileBytes?.trim()) {
     ElMessage.warning('当前条件下无明细可导出');

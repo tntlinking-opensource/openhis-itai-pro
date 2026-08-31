@@ -37,6 +37,7 @@ import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.health.domain.share.enums.YbMedType;
 import com.openhis.health.domain.share.utils.DiagnosisKindPresentationUtil;
 import com.openhis.health.domain.share.utils.EnumUtil;
+import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.util.StringUtils;
 import lombok.RequiredArgsConstructor;
@@ -166,6 +167,7 @@ public class DoctorStationDiagnosisMapperImpl implements DoctorStationDiagnosisM
      * @param doctorCommonUseList 医生个人模板展开后的候选
      * @param userPersonalList    登录用户个人模板候选
      * @param organizationList    当前科室模板候选
+     * @param medicalTypeOptions  门诊诊断类型下拉
      * @return 聚合后的响应体
      */
     @Override
@@ -173,12 +175,14 @@ public class DoctorStationDiagnosisMapperImpl implements DoctorStationDiagnosisM
         List<CommonDiagnosisRowDto> patientHistoryList,
         List<CommonDiagnosisRowDto> doctorCommonUseList,
         List<CommonDiagnosisRowDto> userPersonalList,
-        List<CommonDiagnosisRowDto> organizationList) {
+        List<CommonDiagnosisRowDto> organizationList,
+        List<OptionDto> medicalTypeOptions) {
         CommonDiagnosesResponse response = new CommonDiagnosesResponse();
         response.setPatientHistoryList(patientHistoryList);
         response.setDoctorCommonUseList(doctorCommonUseList);
         response.setUserPersonalList(userPersonalList);
         response.setOrganizationList(organizationList);
+        response.setMedicalTypeOptions(medicalTypeOptions);
         return response;
     }
 

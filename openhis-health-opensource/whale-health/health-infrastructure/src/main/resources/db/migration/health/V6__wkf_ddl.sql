@@ -43,6 +43,8 @@ CREATE TABLE IF NOT EXISTS "public"."wkf_activity_definition" (
     "merchandise_wb_str" varchar(255),
     "def_encounter_unit_code" varchar(255),
     "def_inhospital_unit_code" varchar(255),
+    "permitted_gender_enum" varchar(32) NOT NULL DEFAULT 'BOTH',
+    "sort_order" int4,
     CONSTRAINT "wkf_activity_definition_pkey" PRIMARY KEY ("id")
 );
 COMMENT ON TABLE wkf_activity_definition IS '工作流 activity definition';
@@ -84,6 +86,19 @@ COMMENT ON COLUMN wkf_activity_definition.merchandise_py_str IS '商品名拼音
 COMMENT ON COLUMN wkf_activity_definition.merchandise_wb_str IS '商品名五笔检索码';
 COMMENT ON COLUMN wkf_activity_definition.def_encounter_unit_code IS '默认门诊/就诊单位编码';
 COMMENT ON COLUMN wkf_activity_definition.def_inhospital_unit_code IS '默认住院单位编码';
+COMMENT ON COLUMN wkf_activity_definition.permitted_gender_enum IS '适用性别：BOTH不限 / MALE男 / FEMALE女（体检登记展开可过滤）';
+COMMENT ON COLUMN wkf_activity_definition.sort_order IS '目录展示顺序（数值越小越靠前；可空）';
+
+CREATE INDEX IF NOT EXISTS idx_wkf_act_def_tenant_cat_children_status
+    ON wkf_activity_definition (tenant_id, category_code, children_flag, status_enum)
+    WHERE is_deleted = FALSE;
+CREATE INDEX IF NOT EXISTS idx_wkf_act_def_peis_sort_bus
+    ON wkf_activity_definition (tenant_id, sort_order, bus_no)
+    WHERE is_deleted = FALSE AND category_code = 'PEIS';
+COMMENT ON INDEX idx_wkf_act_def_tenant_cat_children_status IS
+    '诊疗目录/PEIS：租户+类目+套餐标记+状态';
+COMMENT ON INDEX idx_wkf_act_def_peis_sort_bus IS
+    'PEIS 目录：展示顺序+业务号';
 
 -- seed: wkf_activity_definition
 -- ----- seed sync from DB (wkf_activity_definition, 7 rows) -----

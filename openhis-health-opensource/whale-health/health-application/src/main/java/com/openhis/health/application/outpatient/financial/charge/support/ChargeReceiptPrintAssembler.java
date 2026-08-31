@@ -176,7 +176,7 @@ public class ChargeReceiptPrintAssembler {
     }
 
     /**
-     * 从支付主单回填业务号、账单时间与展示金额。
+     * 从支付主单回填业务号、账单时间、收款人与展示金额。
      *
      * @param summary   摘要 DTO
      * @param paymentId 支付主键
@@ -194,6 +194,8 @@ public class ChargeReceiptPrintAssembler {
         }
         summary.setPaymentNo(payment.getPaymentNo());
         summary.setBillDate(payment.getBillDate());
+        // 收款人：与收费小票一致，取支付流水 enterer_id 对应医务人员姓名
+        summary.setCashierName(this.resolveCashierName(payment.getEntererId()));
         BigDecimal displayAmount = payment.getDisplayAmount();
         if (displayAmount == null) {
             displayAmount = payment.getTenderedAmount();
@@ -722,8 +724,9 @@ public class ChargeReceiptPrintAssembler {
      * <p>起付线取 2207 回执 {@code act_pay_dedc}；公务员待遇/补助取回执
      * {@code cvlserv_flag}/{@code cvlserv_pay}；个账余额优先取回执 {@code balc}，
      * 再回落支付明细 {@code afterBalance}（门诊收费通常不写 afterBalance）。
-     * 「现金支付」仅取本笔 {@code CASH} 渠道；仅当本笔无微信/支付宝/银行卡时，
-     * 才回落本笔结算 {@code psn_cash_pay} 或挂号医保快照个人现金，避免扫码收费被挂号现金污染。</p>
+     * 「现金实收」仅取本笔 {@code CASH} 渠道；仅当本笔无微信/支付宝/银行卡时，
+     * 才回落本笔结算 {@code psn_cash_pay} 或挂号医保快照个人现金，避免扫码收费被挂号现金污染。
+     * 展示上须与「医保个人账户」分列，禁止把微信实收叫成个人账户。</p>
      *
      * @param slip               收费小票 DTO
      * @param payment            支付读模型
@@ -802,7 +805,7 @@ public class ChargeReceiptPrintAssembler {
         BigDecimal wechat = channelAmounts.get(PaymentChannel.WECHAT.getCode());
         BigDecimal alipay = channelAmounts.get(PaymentChannel.ALIPAY.getCode());
         BigDecimal bankCard = channelAmounts.get(PaymentChannel.BANK_CARD.getCode());
-        // 本笔已有微信/支付宝/银行卡时，禁止用挂号医保快照个人现金污染「现金支付」
+        // 本笔已有微信/支付宝/银行卡时，禁止用挂号医保快照个人现金污染「现金实收」
         // （典型误显：收费扫码 10 元，小票却带出挂号个人现金 5 元）
         if (cash == null && wechat == null && alipay == null && bankCard == null) {
             cash = firstNonNull(settlementPsnCashPay, snapshotCash);

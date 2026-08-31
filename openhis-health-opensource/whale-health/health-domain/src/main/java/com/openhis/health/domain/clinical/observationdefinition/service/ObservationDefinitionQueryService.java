@@ -95,7 +95,7 @@ public class ObservationDefinitionQueryService {
         List<ObservationDefinition> rows = repository.findByCategoryCodeAndIsDeletedFalse(categoryCode.trim());
         List<ObservationDefinitionModel> models = new ArrayList<>();
         for (ObservationDefinition row : rows) {
-            if (!ObservationDefinitionConstants.STATUS_ACTIVE.equals(row.getStatusEnum())) {
+            if (!ObservationDefinitionConstants.isActiveStatus(row.getStatusEnum())) {
                 continue;
             }
             models.add(toModel(row));
@@ -177,6 +177,12 @@ public class ObservationDefinitionQueryService {
         return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize());
     }
 
+    /**
+     * 将实体投影为读模型（含执行科室，供 PEIS 目录列表展示）。
+     *
+     * @param entity 观察定义实体
+     * @return 读模型；entity 为 null 时不应调用
+     */
     private ObservationDefinitionModel toModel(ObservationDefinition entity) {
         ObservationDefinitionModel model = new ObservationDefinitionModel();
         model.setId(entity.getId());
@@ -186,6 +192,7 @@ public class ObservationDefinitionQueryService {
         model.setUnitCode(entity.getUnitCode());
         model.setCategoryCode(entity.getCategoryCode());
         model.setStatusEnum(entity.getStatusEnum());
+        model.setOrgId(entity.getOrgId());
         return model;
     }
 }

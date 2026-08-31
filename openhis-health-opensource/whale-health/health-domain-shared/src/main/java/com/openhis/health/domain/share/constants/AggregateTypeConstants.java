@@ -215,6 +215,11 @@ public interface AggregateTypeConstants {
     String PRICE_ADJUSTMENT = "PAD";
 
     /**
+     * 处方点评聚合类型名称（{@code cus_prescription_review.bus_no} 日序前缀）。
+     */
+    String PRESCRIPTION_REVIEW = "PRV";
+
+    /**
      * 组套模板聚合类型名称。
      */
     String ORDER_TEMPLATE = "OT";
@@ -308,6 +313,11 @@ public interface AggregateTypeConstants {
      * 样本定义聚合类型名称。
      */
     String SPECIMEN_DEFINITION = "SPD";
+
+    /**
+     * 检验/科室设备台账聚合类型名称（adm_device.bus_no 前缀）。
+     */
+    String LAB_DEVICE = "LAD";
 
     /**
      * 病案主档聚合类型（领域事件 {@code aggregateType}）。

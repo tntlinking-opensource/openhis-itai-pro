@@ -1,19 +1,29 @@
 import type { TcmHerbGridDisplayRow } from '#/utils/tcm-prescription-display';
 
+import type { DispenseInventoryPickOption } from './types';
+
 /** 发药单「查看库存」弹窗一行 */
 export interface PrescriptionSheetStockLine {
+  /** 发放行主键（改批号用） */
+  dispenseId?: string;
   /** 药品名称 */
   itemName: string;
-  /** 剩余库存展示（已换算） */
+  /** 剩余库存展示（已换算；选批后可由界面覆盖） */
   remainingStockText: string;
   /** 批号（可选） */
   batchNo?: string;
+  /** 本库批号候选；有值且可发时可改批 */
+  lotPickOptions?: DispenseInventoryPickOption[];
+  /** 是否允许改批号 */
+  canChangeLot?: boolean;
 }
 
 /**
  * 发药单正文一行药品（与列表明细字段对齐；序号由组件按数组顺序生成）。
  */
 export interface PrescriptionSheetLine {
+  /** 发放行主键（改批号绑定 inventoryPick） */
+  dispenseId?: string;
   /** 项目名称 */
   itemName: string;
   /** 数量（含单位展示） */
@@ -24,14 +34,20 @@ export interface PrescriptionSheetLine {
   dosageInstructionText?: string;
   /** 批号 */
   batchNo: string;
-  /** 单价（行金额展示） */
-  amount: string;
+  /** 单价（来自 slip.unitPrice） */
+  unitPrice: string;
   /** 追溯码 */
   traceCode: string;
   /** 厂家 */
   factory: string;
   /** 用法用量文案（接在规格后、数量前），不含「用法用量」标签 */
   usage?: string;
+  /** 本库批号候选 */
+  lotPickOptions?: DispenseInventoryPickOption[];
+  /** 是否允许改批号 */
+  canChangeLot?: boolean;
+  /** 行默认剩余库存（无选中批时回落） */
+  remainingStockText?: string;
 }
 
 /** 发药单展示模型（与接口解耦，供工作站笺面复用） */

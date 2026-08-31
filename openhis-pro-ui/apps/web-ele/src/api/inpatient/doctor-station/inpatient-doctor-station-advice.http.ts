@@ -6,6 +6,8 @@ export const httpInitInpatientDoctorStationAdvice =
   inpatientAdviceHttp.httpInitInpatientDoctorStationAdvice;
 export const httpComputeInpatientMedicationFrequencyExecutions =
   inpatientAdviceHttp.httpComputeMedicationFrequencyExecutions;
+export const httpResolveInpatientDoctorStationAdviceDraftBinds =
+  inpatientAdviceHttp.httpResolveInpatientDoctorStationAdviceDraftBinds;
 export const httpListInpatientDoctorStationAdvice =
   inpatientAdviceHttp.httpListInpatientDoctorStationAdvice;
 export const httpPageInpatientDoctorStationAdviceCatalog =
@@ -30,6 +32,8 @@ export const httpChangeInpatientDoctorStationAdviceBusinessTime =
   inpatientAdviceHttp.httpChangeInpatientDoctorStationAdviceBusinessTime;
 export const httpAppendSkinTestCompanionForLongTermMedication =
   inpatientAdviceHttp.httpAppendSkinTestCompanionForLongTermMedication;
+export const httpChangeLongTermMedicationDoseInpatientDoctorStationAdvice =
+  inpatientAdviceHttp.httpChangeLongTermMedicationDoseInpatientDoctorStationAdvice;
 export const httpCreateDischargeInpatientDoctorStationAdvice =
   inpatientAdviceHttp.httpCreateDischargeInpatientDoctorStationAdvice;
 export const httpSaveInpatientDoctorStationServiceApplyForm =

@@ -273,4 +273,30 @@ public class PractitionerQueryService {
         }
         return result;
     }
+
+    /**
+     * 按医务人员主键批量取出已绑定的平台用户主键。
+     *
+     * <p>仅本聚合 {@link PractitionerRepository}；未绑定 {@code user_id} 的主档不进入结果。
+     * 供用户管理按出诊科室检索：岗位 QS 先给出 practitionerId，再在本聚合映射账号。</p>
+     *
+     * @param practitionerIds 医务人员主键集合
+     * @return 去重保序的 {@code whale_users.id}；入参空时返回空列表
+     */
+    public List<Long> listBoundUserIdsByPractitionerIds(Collection<Long> practitionerIds) {
+        if (practitionerIds == null || practitionerIds.isEmpty()) {
+            // 无岗位命中：用户管理按科室检索应得到空列表
+            return Collections.emptyList();
+        }
+        List<Practitioner> rows = this.findAllByIds(practitionerIds);
+        java.util.LinkedHashSet<Long> userIds = new java.util.LinkedHashSet<>();
+        for (Practitioner row : rows) {
+            if (row == null || row.getUserId() == null) {
+                // 未绑定系统用户：用户管理列表无法展示，跳过
+                continue;
+            }
+            userIds.add(row.getUserId());
+        }
+        return new ArrayList<>(userIds);
+    }
 }

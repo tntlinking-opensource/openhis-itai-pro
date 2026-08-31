@@ -1,4 +1,4 @@
-﻿<!--
+<!--
   损益单右侧主区：InvMainShell + InvDocActions + 单头 + 明细表格（变更原因手写）。
 -->
 <script setup lang="ts">
@@ -95,7 +95,7 @@ import {
 } from '#/utils/inventory/inventory-product-pick-list';
 import {
   formatInventoryLineTotal,
-  formatMoneyDisplay,
+  formatPurchaseMoneyDisplay,
   inventoryLineTotalNumber,
 } from '#/utils/format/money-scale';
 import {
@@ -129,9 +129,10 @@ import {
   resolveDefaultInventoryItemTableType,
   resolveDefaultPractitionerIdForSelect,
   resolveDocHeadProductPickLocationId,
-  warnInventoryLocationRequiredByLabel,
-  resolveInvDocPreparedByName,
   resolveInvDocApprovedByName,
+  resolveInvDocPreparedByName,
+  resolveInvDocPrintApplyTimeText,
+  warnInventoryLocationRequiredByLabel,
 } from '#/utils/inventory/inventory-workbench-list';
 import { buildInvDocumentTitle, printInvDocument } from '#/utils/print/print-inv-document';
 import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
@@ -165,7 +166,7 @@ interface GainLossPreviewRow {
   lotNumber: string;
   traceNo: string;
   reason: string;
-  /** 药品分类码；中药=4 时单价三位展示 */
+  /** 药品分类码；中药=4 时进价三位展示 */
   categoryCode?: string;
   price?: number;
   /** 损益金额 = 损益数量 × 单价（编辑态计算，详情回显以后端为准） */
@@ -402,11 +403,11 @@ function createEmptyRow(): GainLossPreviewRow {
   };
 }
 
-function formatGainLossDetailAmount(value: unknown): string {
+function formatGainLossDetailAmount(value: unknown, categoryCode?: unknown): string {
   if (value === undefined || value === null || value === '') return '';
   const n = Number(value);
   if (!Number.isFinite(n)) return String(value).trim();
-  return formatMoneyDisplay(n);
+  return formatPurchaseMoneyDisplay(n, categoryCode);
 }
 
 function mapDetailLineToGrid(
@@ -448,6 +449,7 @@ function mapDetailLineToGrid(
     price: ln.price === undefined ? undefined : Number(ln.price),
     gainLossAmount: formatGainLossDetailAmount(
       'gainLossAmount' in ln ? ln.gainLossAmount : undefined,
+      (catalog as { categoryCode?: string } | null | undefined)?.categoryCode,
     ),
   };
 
@@ -1262,8 +1264,8 @@ function resolveGainLossPrintUnitLabel(row: GainLossPreviewRow): string {
   return String(row.unitCodeDictText ?? row.unitCode ?? '').trim();
 }
 
-/** 打印损益单（盘点盈亏模版；损益量写入 actualQtyText） */
-async function handlePrint() {
+/** 打印或预览损益单（盘点盈亏模版；损益量写入 actualQtyText） */
+async function handlePrint(payload?: { preview?: boolean }) {
   const busNo = String(headerBusNo.value ?? '').trim();
   if (!busNo) {
     ElMessage.warning('请先保存单据后再打印');
@@ -1281,9 +1283,10 @@ async function handlePrint() {
     headItemTableType.value,
   );
   const documentTitle = buildInvDocumentTitle(locationName, '损益单');
-  const applyTimeText = String(headApplyTime.value ?? '')
-    .trim()
-    .replace('T', ' ');
+  // 打印制单时间取侧栏单据实际审批时间，禁止用单头缺省「当前时刻」冒充
+  const applyTimeText = resolveInvDocPrintApplyTimeText({
+    queueCardRow: props.queueCardRow as null | Record<string, unknown>,
+  });
 
   // 损益量写入 actualQtyText / diffQty（无账面列）
   const lineRows = productRows.map((row) => ({
@@ -1323,6 +1326,7 @@ async function handlePrint() {
     },
     bizRef: { busNo, docKind: 'gain-loss', variant: props.variant },
     jobName: documentTitle,
+    preview: payload?.preview === true,
   });
 }
 </script>

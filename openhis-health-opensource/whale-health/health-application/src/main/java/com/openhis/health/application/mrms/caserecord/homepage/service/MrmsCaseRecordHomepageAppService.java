@@ -26,6 +26,7 @@ import com.openhis.health.application.shared.encounter.EncounterContextReader;
 import com.openhis.health.application.shared.financial.EncounterContractDisplayAssembler;
 import com.openhis.health.application.shared.financial.EncounterInsutypeDisplayAssembler;
 import com.openhis.health.application.shared.inpatient.AdmissionPrimaryDiagnosisAssembler;
+import com.openhis.health.application.shared.inpatient.BusinessDischargeTimeResolver;
 import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.shared.validator.MrmsOperatorResolver;
 import com.openhis.health.application.shared.validator.PageWindowGate;
@@ -49,6 +50,7 @@ import com.openhis.health.domain.share.constants.MrmsErrorCodes;
 import com.openhis.health.domain.share.enums.CaseRecordStatus;
 import com.openhis.health.domain.share.enums.CaseRecordTransitionAction;
 import com.openhis.health.domain.share.enums.WorkflowRole;
+import com.openhis.health.domain.share.utils.InpatientStayDaysCalculator;
 import com.openhis.whale.core.application.dto.PagedResult;
 import com.openhis.whale.core.application.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
@@ -58,9 +60,11 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -93,6 +97,8 @@ public class MrmsCaseRecordHomepageAppService {
     private final PatientQueryService patientQueryService;
     private final EncounterContractDisplayAssembler encounterContractDisplayAssembler;
     private final EncounterInsutypeDisplayAssembler encounterInsutypeDisplayAssembler;
+    /** 业务出院时间（出院医嘱计划时间优先）。 */
+    private final BusinessDischargeTimeResolver businessDischargeTimeResolver;
 
     /**
      * 分页检索病案列表（首页工作台 / 质控等工作台共用）。
@@ -175,10 +181,26 @@ public class MrmsCaseRecordHomepageAppService {
         Page<CaseRecordListItemQueryModel> page = caseRecordQueryService.queryPage(
                 query,
                 PageRequest.of(pageNo - 1, pageSize, Sort.by(Sort.Direction.DESC, "dscgTime", "id")));
-        // Asm：映射列表 DTO
+        // Pre：本页业务出院时间（出院医嘱计划时间优先，覆盖主档脏 dscg_time）
+        List<Long> encounterIds = new ArrayList<>();
+        Map<Long, LocalDateTime> endTimeByEncounter = new HashMap<>();
+        for (CaseRecordListItemQueryModel row : page.getContent()) {
+            if (row == null || row.getEncounterId() == null) {
+                continue;
+            }
+            encounterIds.add(row.getEncounterId());
+            endTimeByEncounter.put(row.getEncounterId(), row.getDscgTime());
+        }
+        Map<Long, LocalDateTime> businessDscgByEncounter =
+                businessDischargeTimeResolver.mapByEncounterIds(encounterIds, endTimeByEncounter);
+        // Asm：映射列表 DTO，并覆盖业务出院时间
         List<CaseRecordListItemDto> items = new ArrayList<>();
         for (CaseRecordListItemQueryModel row : page.getContent()) {
-            items.add(caseRecordListMapper.toListItem(row));
+            CaseRecordListItemDto item = caseRecordListMapper.toListItem(row);
+            if (row.getEncounterId() != null && businessDscgByEncounter.containsKey(row.getEncounterId())) {
+                item.setDscgTime(businessDscgByEncounter.get(row.getEncounterId()));
+            }
+            items.add(item);
         }
         return PagedResultBuilder.build(new PagedResult<>(), items, page);
     }
@@ -216,6 +238,15 @@ public class MrmsCaseRecordHomepageAppService {
                 encounterContractDisplayAssembler.mapContractDisplayByEncounterIds(encounterIds);
         Map<Long, String> insutypeByEncounterId =
                 encounterInsutypeDisplayAssembler.mapInsutypeByEncounterIds(encounterIds);
+        // Pre：本页业务出院时间（出院医嘱计划时间优先，覆盖脏 end_time）
+        Map<Long, LocalDateTime> endTimeByEncounter = new HashMap<>();
+        for (InpatientEncounterContextQueryModel ctx : contexts) {
+            if (ctx.getEncounterId() != null) {
+                endTimeByEncounter.put(ctx.getEncounterId(), ctx.getEndTime());
+            }
+        }
+        Map<Long, LocalDateTime> businessDscgByEncounter =
+                businessDischargeTimeResolver.mapByEncounterIds(encounterIds, endTimeByEncounter);
         String deptFilter = trimToNull(request.getAdmCatyName());
         Long attendingFilter = request.getAttendingPractitionerId();
         String homepageUploadFilter = trimToNull(request.getChsUploadStatusCode());
@@ -245,6 +276,10 @@ public class MrmsCaseRecordHomepageAppService {
                     admissionPrimaryDiagnosisAssembler.resolvePrimaryDiagnosis(ctx.getDiagnosisJson());
             CaseRecordListItemDto item =
                     caseRecordListMapper.fromInpatientContext(ctx, caseRecord, patient, primary);
+            // 列表出院时间：业务真源覆盖（禁止展示清床/结算时刻）
+            if (ctx.getEncounterId() != null && businessDscgByEncounter.containsKey(ctx.getEncounterId())) {
+                item.setDscgTime(businessDscgByEncounter.get(ctx.getEncounterId()));
+            }
             // 费用性质：省市合同名 + 职工/居民（如「市医保·职工」）
             if (ctx.getEncounterId() != null) {
                 item.setInsuranceTypeText(composeInsuranceTypeText(
@@ -308,10 +343,13 @@ public class MrmsCaseRecordHomepageAppService {
         }
         CaseRecordHomepage homepage = caseRecordHomepageDomainService.ensureHomepage(
                 record.getId(), record.getTenantId(), operatorId);
-        // Cmd：可编辑态打开即软刷住院信息+费用（出院科别/账单；已归档/冻结只读库）
+        // Cmd：可编辑态打开刷住院+费用；其余未冻结态至少刷住院信息（校正 dscg/ipt_days）
         if (this.shouldSoftRefreshHisOnOpen(record, homepage)) {
             homepage = caseRecordHomepageDomainService.mergeAutoFillFromHis(
                     record, List.of("inpatient", "fee"), false, operatorId);
+        } else if (homepage != null && !Boolean.TRUE.equals(homepage.getFrozen())) {
+            homepage = caseRecordHomepageDomainService.mergeAutoFillFromHis(
+                    record, List.of("inpatient"), false, operatorId);
         }
         // Asm：映射主档详情与首页 DTO
         HomepagePageDto page = new HomepagePageDto();
@@ -320,7 +358,36 @@ public class MrmsCaseRecordHomepageAppService {
                 homepage,
                 caseRecordHomepageDomainService.listDiagnoses(record.getId()),
                 caseRecordHomepageDomainService.listProcedures(record.getId())));
+        // Asm：打开页展示侧校正出院时间/住院天数（计划出院优先；脏快照不误导）
+        this.overlayBusinessDischargeOnHomepageDto(page.getHomepage(), record.getEncounterId());
         return page;
+    }
+
+    /**
+     * 首页 DTO 展示侧覆盖业务出院时间与住院天数（不改库；写库仍走 softRefresh/导入）。
+     *
+     * @param homepageDto 首页 DTO；可空
+     * @param encounterId 就诊主键；可空
+     */
+    private void overlayBusinessDischargeOnHomepageDto(HomepageDto homepageDto, Long encounterId) {
+        if (homepageDto == null || encounterId == null) {
+            return;
+        }
+        // 回落优先首页已存 dscg（与 Encounter.endTime 同源冗余）；有出院嘱计划时间则覆盖
+        LocalDateTime businessDscg =
+                businessDischargeTimeResolver.resolve(encounterId, homepageDto.getDscgTime());
+        if (businessDscg != null) {
+            homepageDto.setDscgTime(businessDscg);
+        }
+        Integer iptDays = InpatientStayDaysCalculator.calcDischargedStayDays(
+                homepageDto.getAdmTime(), homepageDto.getDscgTime());
+        if (iptDays == null) {
+            iptDays = InpatientStayDaysCalculator.calcDisplayStayDays(
+                    homepageDto.getAdmTime(), homepageDto.getDscgTime());
+        }
+        if (iptDays != null) {
+            homepageDto.setIptDays(iptDays);
+        }
     }
 
     /**

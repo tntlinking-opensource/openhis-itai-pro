@@ -18,13 +18,13 @@ import type {
   SaveDoctorStationAdviceDraftBatchResponse,
 } from '#/api/doctor-station/advice.types';
 
-import {
-  httpListDoctorStationAdvice,
-  httpResolveDoctorStationAdviceDraftBinds,
-  httpSaveDoctorStationAdviceDraftBatch,
-} from '#/api/doctor-station/advice.http';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+
+import {
+  type AdviceDraftBindHttpAdapter,
+  outpatientAdviceDraftBindHttpAdapter,
+} from './advice-draft-bind-http-adapter';
 
 import {
   addAdviceBindSkipSources,
@@ -50,6 +50,10 @@ export interface SaveAdviceDraftBatchWithBindOptions {
   /** 当前就诊已有医嘱行，用于去重与 CREATE 后锚点解析 */
   existingAdviceRows?: AdviceRowItem[] | DoctorStationAdviceRowDto[];
   pricingSourceCode?: string;
+  /** 默认门诊；住院医生站 / 申请单传 inpatient 适配器 */
+  apiAdapter?: AdviceDraftBindHttpAdapter;
+  /** 主医嘱已落库（申请单签发等），仅解析并保存派生绑定行 */
+  primaryLinesAlreadyPersisted?: boolean;
 }
 
 type AdviceRowLike = AdviceRowItem | DoctorStationAdviceRowDto;
@@ -238,6 +242,11 @@ function buildBindDedupeKey(
     preserveApiIdForRequest(item.basedOnRequestId) ??
     preserveApiIdForRequest(item.triggerRequestId) ??
     `line:${item.triggerLineIndex ?? -1}`;
+
+  const mergeDeviceId = preserveApiIdForRequest(item.specimenTubeMergeDeviceId);
+  if (mergeDeviceId) {
+    return `merge:${mergeDeviceId}|${targetTable}|${targetId}`;
+  }
 
   if (lines && String(item.bindType ?? '').trim() === USAGE_BIND_TYPE) {
     const groupId = resolveMedicationLineGroupId(item.triggerLineIndex, lines);
@@ -892,6 +901,7 @@ async function buildTriggerRequestIdMapAfterPrimarySave(
   serviceRequestIdsBeforeSave: Set<string>,
   encounterId: string,
   patientId: string,
+  apiAdapter: AdviceDraftBindHttpAdapter,
 ): Promise<Map<number, string>> {
   const map = new Map<number, string>();
 
@@ -908,7 +918,7 @@ async function buildTriggerRequestIdMapAfterPrimarySave(
     return map;
   }
 
-  const listRes = await httpListDoctorStationAdvice({ encounterId, patientId });
+  const listRes = await apiAdapter.listAdvice({ encounterId, patientId });
   const { content: listRows } = parsePagedRowsFromApiData<DoctorStationAdviceRowDto>(listRes);
   const newServiceRows = listRows.filter((row) => {
     if (!isServiceAdviceRow(row)) {
@@ -937,9 +947,12 @@ async function buildTriggerRequestIdMapAfterPrimarySave(
 
 /** 调用 IF-DOR-23 解析绑定并过滤无效项 */
 async function resolveAdviceDraftBindDialogRows(
-  options: Pick<SaveAdviceDraftBatchWithBindOptions, 'encounterId' | 'lines' | 'patientId'>,
+  options: Pick<SaveAdviceDraftBatchWithBindOptions, 'encounterId' | 'lines' | 'patientId'> & {
+    apiAdapter?: AdviceDraftBindHttpAdapter;
+  },
 ): Promise<AdviceDraftBindDialogRow[]> {
-  const resolveRes = await httpResolveDoctorStationAdviceDraftBinds({
+  const apiAdapter = options.apiAdapter ?? outpatientAdviceDraftBindHttpAdapter;
+  const resolveRes = await apiAdapter.resolveDraftBinds({
     encounterId: options.encounterId,
     patientId: options.patientId,
     lines: options.lines,
@@ -954,16 +967,31 @@ async function saveAdviceDraftBatchWithConfirmedBindRows(
   options: SaveAdviceDraftBatchWithBindOptions,
   confirmedDialogRows: AdviceDraftBindDialogRow[],
 ): Promise<SaveDoctorStationAdviceDraftBatchResponse> {
-  const { encounterId, patientId, lines, existingAdviceRows = [], pricingSourceCode } = options;
+  const {
+    encounterId,
+    patientId,
+    lines,
+    existingAdviceRows = [],
+    pricingSourceCode,
+    apiAdapter = outpatientAdviceDraftBindHttpAdapter,
+    primaryLinesAlreadyPersisted = false,
+  } = options;
   const batchBody = {
     encounterId,
     patientId,
     lines,
     ...(pricingSourceCode ? { pricingSourceCode } : {}),
   };
+  const okResponse = (): SaveDoctorStationAdviceDraftBatchResponse => ({
+    success: true,
+    message: 'OK',
+  });
 
   if (confirmedDialogRows.length === 0) {
-    return httpSaveDoctorStationAdviceDraftBatch(batchBody);
+    if (primaryLinesAlreadyPersisted) {
+      return okResponse();
+    }
+    return apiAdapter.saveDraftBatch(batchBody);
   }
 
   const immediateMap = buildImmediateTriggerRequestIdMap(confirmedDialogRows, lines);
@@ -981,7 +1009,18 @@ async function saveAdviceDraftBatchWithConfirmedBindRows(
       immediateMap,
       existingAdviceRows,
     );
-    return httpSaveDoctorStationAdviceDraftBatch({
+    if (derivedLines.length === 0) {
+      return primaryLinesAlreadyPersisted ? okResponse() : apiAdapter.saveDraftBatch(batchBody);
+    }
+    if (primaryLinesAlreadyPersisted) {
+      return apiAdapter.saveDraftBatch({
+        encounterId,
+        patientId,
+        lines: derivedLines,
+        ...(pricingSourceCode ? { pricingSourceCode } : {}),
+      });
+    }
+    return apiAdapter.saveDraftBatch({
       encounterId,
       patientId,
       lines: [...lines, ...derivedLines],
@@ -989,8 +1028,26 @@ async function saveAdviceDraftBatchWithConfirmedBindRows(
     });
   }
 
+  if (primaryLinesAlreadyPersisted) {
+    const derivedLines = buildBindDerivedDraftLinesFromDialogRows(
+      confirmedDialogRows,
+      lines,
+      immediateMap,
+      existingAdviceRows,
+    );
+    if (derivedLines.length === 0) {
+      return okResponse();
+    }
+    return apiAdapter.saveDraftBatch({
+      encounterId,
+      patientId,
+      lines: derivedLines,
+      ...(pricingSourceCode ? { pricingSourceCode } : {}),
+    });
+  }
+
   const serviceIdsBeforeSave = snapshotServiceRequestIds(existingAdviceRows);
-  const primaryRes = await httpSaveDoctorStationAdviceDraftBatch(batchBody);
+  const primaryRes = await apiAdapter.saveDraftBatch(batchBody);
   if (primaryRes.success === false) {
     return primaryRes;
   }
@@ -1001,6 +1058,7 @@ async function saveAdviceDraftBatchWithConfirmedBindRows(
     serviceIdsBeforeSave,
     encounterId,
     patientId,
+    apiAdapter,
   );
   const triggerRequestIdMap = new Map<number, string>(immediateMap);
   for (const [lineIndex, requestId] of deferredTriggerRequestIdMap) {
@@ -1017,7 +1075,7 @@ async function saveAdviceDraftBatchWithConfirmedBindRows(
     return primaryRes;
   }
 
-  const bindRes = await httpSaveDoctorStationAdviceDraftBatch({
+  const bindRes = await apiAdapter.saveDraftBatch({
     encounterId,
     patientId,
     lines: derivedLines,
@@ -1037,23 +1095,36 @@ async function saveAdviceDraftBatchWithConfirmedBindRows(
 export async function saveAdviceDraftBatchWithBindResolution(
   options: SaveAdviceDraftBatchWithBindOptions,
 ): Promise<SaveDoctorStationAdviceDraftBatchResponse> {
-  const { encounterId, patientId, lines, existingAdviceRows = [], pricingSourceCode } = options;
+  const {
+    encounterId,
+    patientId,
+    lines,
+    existingAdviceRows = [],
+    pricingSourceCode,
+    apiAdapter = outpatientAdviceDraftBindHttpAdapter,
+    primaryLinesAlreadyPersisted = false,
+  } = options;
   const batchBody = {
     encounterId,
     patientId,
     lines,
     ...(pricingSourceCode ? { pricingSourceCode } : {}),
   };
+  const skipPrimarySave = (): SaveDoctorStationAdviceDraftBatchResponse => ({
+    success: true,
+    message: 'OK',
+  });
 
   // 无新建药品/诊疗行时不解析绑定（纯 UPDATE/DELETE 直接暂存）
   if (!hasBindTriggerCreateLine(lines)) {
-    return httpSaveDoctorStationAdviceDraftBatch(batchBody);
+    return primaryLinesAlreadyPersisted ? skipPrimarySave() : apiAdapter.saveDraftBatch(batchBody);
   }
 
   let dialogRowCandidates = await resolveAdviceDraftBindDialogRows({
     encounterId,
     patientId,
     lines,
+    apiAdapter,
   });
   // 只保留由本次 CREATE 药品/诊疗触发行产生的绑定项
   dialogRowCandidates = dialogRowCandidates.filter((row) =>
@@ -1061,7 +1132,7 @@ export async function saveAdviceDraftBatchWithBindResolution(
   );
 
   if (dialogRowCandidates.length === 0) {
-    return httpSaveDoctorStationAdviceDraftBatch(batchBody);
+    return primaryLinesAlreadyPersisted ? skipPrimarySave() : apiAdapter.saveDraftBatch(batchBody);
   }
 
   const resolvableRows = filterResolvableDialogRowCandidates(
@@ -1071,7 +1142,7 @@ export async function saveAdviceDraftBatchWithBindResolution(
   );
 
   if (resolvableRows.length === 0) {
-    return httpSaveDoctorStationAdviceDraftBatch(batchBody);
+    return primaryLinesAlreadyPersisted ? skipPrimarySave() : apiAdapter.saveDraftBatch(batchBody);
   }
 
   // 同用法跨组合并为弹窗一行，确认后仍按组落派生行
@@ -1089,7 +1160,9 @@ export async function saveAdviceDraftBatchWithBindResolution(
     const dialogResult = await openAdviceDraftBindDialog(promptRows, promptSourceGroups);
     if (!dialogResult) {
       // 取消绑定确认：仍暂存主医嘱，不带出绑定项
-      return httpSaveDoctorStationAdviceDraftBatch(batchBody);
+      return primaryLinesAlreadyPersisted
+        ? skipPrimarySave()
+        : apiAdapter.saveDraftBatch(batchBody);
     }
     if (dialogResult.skipSourceKeys.length > 0) {
       addAdviceBindSkipSources(dialogResult.skipSourceKeys, cacheUserId);
@@ -1097,5 +1170,49 @@ export async function saveAdviceDraftBatchWithBindResolution(
     confirmedDialogRows = [...autoRows, ...dialogResult.rows];
   }
 
+  return saveAdviceDraftBatchWithConfirmedBindRows(options, confirmedDialogRows);
+}
+
+/** 主医嘱已落库后解析并保存派生绑定（申请单签发等） */
+export async function saveAdviceDraftBindLinesAfterPrimaryPersisted(
+  options: SaveAdviceDraftBatchWithBindOptions,
+): Promise<SaveDoctorStationAdviceDraftBatchResponse> {
+  return saveAdviceDraftBatchWithBindResolution({
+    ...options,
+    primaryLinesAlreadyPersisted: true,
+  });
+}
+
+/** 仅保留耗材（adm_device_definition）绑定行 */
+export function filterDeviceBindDialogRows(
+  rows: AdviceDraftBindDialogRow[],
+): AdviceDraftBindDialogRow[] {
+  return rows.filter(
+    (row) => String(row.bindItem.targetProductTableName ?? '').trim() === DEVICE_DEFINITION_TABLE,
+  );
+}
+
+/** IF-DOR-23 绑定明细 → 弹窗可编辑行（供申请单卡内展示复用） */
+export function mapDraftBindItemsToDialogRows(
+  bindItems: DoctorStationAdviceDraftBindItemDto[],
+  lines: DoctorStationAdviceDraftLineRequest[] = [],
+): AdviceDraftBindDialogRow[] {
+  return toAdviceDraftBindDialogRows(bindItems, lines);
+}
+
+/** 按暂存变更行解析绑定并转为弹窗行（不含弹窗确认） */
+export async function resolveAdviceDraftBindDialogRowsFromLines(
+  options: Pick<SaveAdviceDraftBatchWithBindOptions, 'encounterId' | 'lines' | 'patientId'> & {
+    apiAdapter?: AdviceDraftBindHttpAdapter;
+  },
+): Promise<AdviceDraftBindDialogRow[]> {
+  return resolveAdviceDraftBindDialogRows(options);
+}
+
+/** 主医嘱已落库：按已确认绑定行直接落库（跳过绑定确认弹窗） */
+export async function persistAdviceDraftBindsWithConfirmedDialogRows(
+  options: SaveAdviceDraftBatchWithBindOptions,
+  confirmedDialogRows: AdviceDraftBindDialogRow[],
+): Promise<SaveDoctorStationAdviceDraftBatchResponse> {
   return saveAdviceDraftBatchWithConfirmedBindRows(options, confirmedDialogRows);
 }

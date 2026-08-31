@@ -27,6 +27,7 @@ import com.openhis.health.domain.administration.location.service.LocationQuerySe
 import com.openhis.health.domain.custom.supplier.queries.model.SupplierDetailQueryModel;
 import com.openhis.health.domain.custom.supplier.queries.model.SupplierListItemQueryModel;
 import com.openhis.health.domain.custom.supplier.service.SupplierQueryService;
+import com.openhis.health.domain.administration.chargeitemdefinition.command.DeactivateActivePriceLinesCommand;
 import com.openhis.health.domain.administration.chargeitemdefinition.command.SavePriceLineCommand;
 import com.openhis.health.domain.administration.chargeitemdefinition.query.ChargeItemDefinitionQueryCommand;
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.support.ChargePricingTypeCodeResolver;
@@ -46,6 +47,7 @@ import com.openhis.health.application.basic.administration.support.PractitionerR
 import com.openhis.health.domain.administration.product.support.ProductDefinitionDisplaySupport;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.application.inventory.warehouse.support.ProductDefinitionPurchasePageLoader;
+import com.openhis.health.application.shared.pricing.CatalogReferencePriceSyncSupport;
 import com.openhis.health.application.shared.pricing.LotNumberPurchasePriceConsistencyGate;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionSelectionTerminologyMaps;
@@ -136,6 +138,7 @@ public class InventoryWarehouseInboundReceiptAppService {
     private final SupplyDeliveryQueryService supplyDeliveryQueryService;
     private final ChargeItemDefinitionDomainService chargeItemDefinitionDomainService;
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
+    private final CatalogReferencePriceSyncSupport catalogReferencePriceSyncSupport;
     private final LotNumberPurchasePriceConsistencyGate lotNumberPurchasePriceConsistencyGate;
     private final TraceNumberSupplyAgreeTraceOrchestrator traceNumberSupplyAgreeTraceOrchestrator;
     private final TraceNumberQueryService traceNumberQueryService;
@@ -728,7 +731,8 @@ public class InventoryWarehouseInboundReceiptAppService {
             }
         }
 
-        // —— 6. 批号维进价/售价补录：逐行按（物品表+物品 id+批号）探测是否已存在价线，已存在则跳过，避免重复插入。——
+        // —— 6. 批号维进价/售价补录 + 目录参考价回写：同批号进价同值跳过批号写；异价（门禁已过）先停用再写；
+        // —— 无论批号是否跳过，均以本行包装进价回写 PURCHASE/SALE（下次选品默认；院点中草药加价后再抬 SALE）。——
         SupplyRequestModel head = agreedLines.get(0);
         for (SupplyRequestModel line : agreedLines) {
             if (line == null || line.getId() == null) {
@@ -738,18 +742,12 @@ public class InventoryWarehouseInboundReceiptAppService {
                 continue;
             }
             String resolvedLot = this.resolveLotNumberForInventory(line.getLotNumber());
-            ChargeItemDefinitionQueryCommand priceDedupQuery = new ChargeItemDefinitionQueryCommand();
-            priceDedupQuery.setInstanceTable(line.getItemTable().trim());
-            priceDedupQuery.setInstanceId(line.getItemId());
-            priceDedupQuery.setLotNo(resolvedLot);
-            if (chargeItemDefinitionQueryService.existsLotNumberCostOrLotNumberPriceForInstanceAndLot(priceDedupQuery)) {
-                // —— 该实例与批号已维护过批号维成本/售价：不再重复写价表，防止同意路径多次执行时堆积重复价线。——
-                continue;
-            }
             ProductDefinitionDisplayDto product = productByKey.get(
                 ProductDefinitionKeyUtil.buildCompositeKey(line.getItemTable().trim(), line.getItemId()));
             BigDecimal priceVal = ProductDefinitionCatalogUnitBandsAssembler.resolveLotNumberPackageUnitPriceForInboundAgree(
                 line.getPrice(), line.getUnitCode(), product);
+            BigDecimal existingPurchase = chargeItemDefinitionQueryService.resolveFirstLotNumberCostPriceValue(
+                line.getItemTable().trim(), line.getItemId(), resolvedLot);
             String pricingTypeCode = ChargePricingTypeCodeResolver.resolveTypeCodeForLotPriceLine(
                 line.getItemTable().trim(),
                 line.getItemId(),
@@ -763,33 +761,73 @@ public class InventoryWarehouseInboundReceiptAppService {
                         + ", itemId="
                         + line.getItemId());
             }
-            try {
-                SavePriceLineCommand costCmd = new SavePriceLineCommand();
-                costCmd.setOperatorId(operatorId);
-                SavePriceLineCommand.Item costItem = new SavePriceLineCommand.Item();
-                costItem.setInstanceTable(line.getItemTable().trim());
-                costItem.setInstanceId(line.getItemId());
-                costItem.setTypeCode(pricingTypeCode);
-                costItem.setPriceTypeCode(PriceType.LOT_NUMBER_COST.getCode());
-                costItem.setLotNo(resolvedLot);
-                costItem.setPriceValue(priceVal);
-                costCmd.setItem(costItem);
-                chargeItemDefinitionDomainService.addLotPurchasePrice(costCmd);
+            // 同批号进价已相同：跳过批号写价，仍回写目录参考价（避免参考价落后于历史进价）
+            boolean skipLotWrite = existingPurchase != null && existingPurchase.compareTo(priceVal) == 0;
+            if (!skipLotWrite) {
+                ChargeItemDefinitionQueryCommand priceDedupQuery = new ChargeItemDefinitionQueryCommand();
+                priceDedupQuery.setInstanceTable(line.getItemTable().trim());
+                priceDedupQuery.setInstanceId(line.getItemId());
+                priceDedupQuery.setLotNo(resolvedLot);
+                // 异价或仅有售价残留：先停用旧 ACTIVE LOT_NUMBER_COST / LOT_NUMBER_PRICE
+                if (chargeItemDefinitionQueryService.existsLotNumberCostOrLotNumberPriceForInstanceAndLot(priceDedupQuery)) {
+                    DeactivateActivePriceLinesCommand deactivate = new DeactivateActivePriceLinesCommand();
+                    deactivate.setOperatorId(operatorId);
+                    List<DeactivateActivePriceLinesCommand.Item> deactivateItems = new ArrayList<>();
+                    DeactivateActivePriceLinesCommand.Item costDeact = new DeactivateActivePriceLinesCommand.Item();
+                    costDeact.setInstanceTable(line.getItemTable().trim());
+                    costDeact.setInstanceId(line.getItemId());
+                    costDeact.setPriceTypeCode(PriceType.LOT_NUMBER_COST.getCode());
+                    costDeact.setLotNo(resolvedLot);
+                    deactivateItems.add(costDeact);
+                    DeactivateActivePriceLinesCommand.Item saleDeact = new DeactivateActivePriceLinesCommand.Item();
+                    saleDeact.setInstanceTable(line.getItemTable().trim());
+                    saleDeact.setInstanceId(line.getItemId());
+                    saleDeact.setPriceTypeCode(PriceType.LOT_NUMBER_PRICE.getCode());
+                    saleDeact.setLotNo(resolvedLot);
+                    deactivateItems.add(saleDeact);
+                    deactivate.setItems(deactivateItems);
+                    chargeItemDefinitionDomainService.deactivateActivePriceLinesByCommand(deactivate);
+                }
+                try {
+                    SavePriceLineCommand costCmd = new SavePriceLineCommand();
+                    costCmd.setOperatorId(operatorId);
+                    SavePriceLineCommand.Item costItem = new SavePriceLineCommand.Item();
+                    costItem.setInstanceTable(line.getItemTable().trim());
+                    costItem.setInstanceId(line.getItemId());
+                    costItem.setTypeCode(pricingTypeCode);
+                    costItem.setPriceTypeCode(PriceType.LOT_NUMBER_COST.getCode());
+                    costItem.setLotNo(resolvedLot);
+                    costItem.setPriceValue(priceVal);
+                    costCmd.setItem(costItem);
+                    chargeItemDefinitionDomainService.addLotPurchasePrice(costCmd);
 
-                // —— LOT_NUMBER_PRICE 与进价同值落库，供门诊/收费下游；库房读路径不消费。——
-                SavePriceLineCommand saleCmd = new SavePriceLineCommand();
-                saleCmd.setOperatorId(operatorId);
-                SavePriceLineCommand.Item saleItem = new SavePriceLineCommand.Item();
-                saleItem.setInstanceTable(line.getItemTable().trim());
-                saleItem.setInstanceId(line.getItemId());
-                saleItem.setTypeCode(pricingTypeCode);
-                saleItem.setPriceTypeCode(PriceType.LOT_NUMBER_PRICE.getCode());
-                saleItem.setLotNo(resolvedLot);
-                saleItem.setPriceValue(priceVal);
-                saleCmd.setItem(saleItem);
-                chargeItemDefinitionDomainService.addLotSalePrice(saleCmd);
+                    // —— LOT_NUMBER_PRICE 与进价同值落库，供门诊/收费下游；库房读路径不消费。——
+                    SavePriceLineCommand saleCmd = new SavePriceLineCommand();
+                    saleCmd.setOperatorId(operatorId);
+                    SavePriceLineCommand.Item saleItem = new SavePriceLineCommand.Item();
+                    saleItem.setInstanceTable(line.getItemTable().trim());
+                    saleItem.setInstanceId(line.getItemId());
+                    saleItem.setTypeCode(pricingTypeCode);
+                    saleItem.setPriceTypeCode(PriceType.LOT_NUMBER_PRICE.getCode());
+                    saleItem.setLotNo(resolvedLot);
+                    saleItem.setPriceValue(priceVal);
+                    saleCmd.setItem(saleItem);
+                    chargeItemDefinitionDomainService.addLotSalePrice(saleCmd);
+                } catch (BusinessException ex) {
+                    throw new BusinessException(ErrorCodeConstants.WHS_IN_104, "批号维定价补录失败：" + ex.getMessage());
+                }
+            }
+            try {
+                // Cmd：目录参考价跟本行包装进价（核心进售同值；中草药院点 after 再抬 SALE）
+                this.catalogReferencePriceSyncSupport.syncPurchaseAndSaleIfChanged(
+                    line.getItemTable().trim(),
+                    line.getItemId(),
+                    pricingTypeCode,
+                    priceVal,
+                    priceVal,
+                    operatorId);
             } catch (BusinessException ex) {
-                throw new BusinessException(ErrorCodeConstants.WHS_IN_104, "批号维定价补录失败：" + ex.getMessage());
+                throw new BusinessException(ErrorCodeConstants.WHS_IN_104, "目录参考价回写失败：" + ex.getMessage());
             }
         }
 
@@ -1134,6 +1172,8 @@ public class InventoryWarehouseInboundReceiptAppService {
                 row.setUnitBands(bands);
                 if (pr != null) {
                     row.setCategoryCodeDictText(pr.getCategoryCodeDictText());
+                    row.setPartAttributeEnum(pr.getPartAttributeEnum());
+                    row.setPartAttributeEnumDictText(pr.getPartAttributeEnumDictText());
                 }
             } else {
                 // —— 缺主键行：清空采购价，避免分页残留旧值误导。——

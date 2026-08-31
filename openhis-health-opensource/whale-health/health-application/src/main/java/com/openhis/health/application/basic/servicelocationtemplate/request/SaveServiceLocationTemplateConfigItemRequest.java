@@ -45,6 +45,13 @@ public class SaveServiceLocationTemplateConfigItemRequest {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long itemDefinitionId;
 
+    /**
+     * 耗材种类编码（术语 {@code device_type_code}）；空为通配。
+     * 建议仅耗材行使用；药品行应为空。
+     */
+    @Schema(description = "耗材种类编码")
+    private String typeCode;
+
     /** 用法编码。 */
     @Schema(description = "用法编码")
     private String methodCode;

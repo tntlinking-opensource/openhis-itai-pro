@@ -22,11 +22,13 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.financial.paymentreconciliation.support.PaymentYbSettlementSupport;
 import com.openhis.health.domain.administration.chargeitem.query.OutpatientFeeDetailPageQuery;
 import com.openhis.health.domain.administration.chargeitem.query.PractitionerWorkloadPageQuery;
+import com.openhis.health.domain.administration.encounter.entity.Encounter;
 import com.openhis.health.domain.share.constants.PractitionerWorkloadConstants;
 import com.openhis.health.domain.share.constants.OutpatientFeeDetailConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.enums.CashierSettlementType;
+import com.openhis.health.domain.share.enums.EncounterClass;
 import com.openhis.health.domain.share.enums.PaymentKind;
 import com.openhis.health.domain.share.enums.PaymentStatus;
 import com.openhis.health.domain.share.financial.DailySettlementRefundPaymentRules;
@@ -62,7 +64,8 @@ import java.util.Set;
      * <p>职责：按就诊、患者、账单日、关联单等维度查询支付事实及明细，并承担退费存在性、冲销汇总等只读编排；
      * 另含收费员交账未挂载 payment 候选预览/计数（{@code previewUnsettledPaymentsForCashierSettlement}，**BR-CS-001～006**，B.6.4）
      * 与日结展示汇总读路径（{@code previewPaymentsForCashierSettlementSummary}，含已交账）；不写库。</p>
- * <p>聚合边界：仅本聚合 {@link PaymentReconciliationRepository}、{@link PaymentRecDetailRepository}、{@link PaymentRecStaticRepository}、{@link PaymentYbSettlementRepository}。</p>
+ * <p>聚合边界：仅本聚合 {@link PaymentReconciliationRepository}、{@link PaymentRecDetailRepository}、{@link PaymentRecStaticRepository}、{@link PaymentYbSettlementRepository}。
+ * 收款日结候选另以 Criteria EXISTS 关联 {@link Encounter} 排除体检就诊，不注入 Encounter 仓储。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -745,6 +748,7 @@ public class PaymentReconciliationQueryService {
             predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
             predicates.add(cb.isNull(root.get(FieldNameConstants.CASHIER_SETTLEMENT_ID)));
             this.addCashierSettlementKindPredicate(predicates, cb, root, settlementType);
+            this.addExcludePhysicalExamEncounterPredicate(predicates, cb, root, criteriaQuery, settlementType);
             predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(allowedStatuses));
             this.addLocationIdsPredicate(predicates, cb, root, query.getLocationIds());
             jakarta.persistence.criteria.Expression<LocalDateTime> effectiveBillDate =
@@ -787,6 +791,7 @@ public class PaymentReconciliationQueryService {
             predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
             predicates.add(cb.isNull(root.get(FieldNameConstants.CASHIER_SETTLEMENT_ID)));
             this.addCashierSettlementKindPredicate(predicates, cb, root, settlementType);
+            this.addExcludePhysicalExamEncounterPredicate(predicates, cb, root, criteriaQuery, settlementType);
             predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(allowedStatuses));
             this.addLocationIdsPredicate(predicates, cb, root, query.getLocationIds());
             jakarta.persistence.criteria.Expression<LocalDateTime> effectiveBillDate =
@@ -814,6 +819,7 @@ public class PaymentReconciliationQueryService {
                 predicates.add(cb.isNull(root.get(FieldNameConstants.CASHIER_SETTLEMENT_ID)));
             }
             this.addCashierSettlementKindPredicate(predicates, cb, root, settlementType);
+            this.addExcludePhysicalExamEncounterPredicate(predicates, cb, root, criteriaQuery, settlementType);
             predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(allowedStatuses));
             this.addLocationIdsPredicate(predicates, cb, root, query.getLocationIds());
             this.addBillDateWindowPredicate(predicates, cb, root, windowStart, windowEndExclusive);
@@ -1542,6 +1548,7 @@ public class PaymentReconciliationQueryService {
                 predicates.add(cb.isNull(root.get(FieldNameConstants.CASHIER_SETTLEMENT_ID)));
             }
             this.addCashierSettlementKindPredicate(predicates, cb, root, settlementType);
+            this.addExcludePhysicalExamEncounterPredicate(predicates, cb, root, criteriaQuery, settlementType);
             predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(allowedStatuses));
             this.addLocationIdsPredicate(predicates, cb, root, query.getLocationIds());
             this.addEntererMatchPredicate(predicates, root, query.getEntererMatchIds());
@@ -1603,6 +1610,38 @@ public class PaymentReconciliationQueryService {
             return;
         }
         throw new BusinessException(ErrorCodeConstants.CASHIER_SETTLEMENT_INVALID_ARGUMENT, "交账类型不适用于支付流水候选");
+    }
+
+    /**
+     * 门/住院收款日结排除体检就诊：个检 payment 的 {@code kind_enum} 落门诊收费，
+     * 仅按 kind 过滤会把体检费用算进日结；无 encounter 的预交金保留。
+     *
+     * @param predicates     条件列表（追加）
+     * @param cb             CriteriaBuilder
+     * @param root           payment 根
+     * @param criteriaQuery  当前查询（供 EXISTS 子查询）
+     * @param settlementType 交账类型
+     */
+    private void addExcludePhysicalExamEncounterPredicate(
+        List<Predicate> predicates,
+        CriteriaBuilder cb,
+        jakarta.persistence.criteria.Root<PaymentReconciliation> root,
+        jakarta.persistence.criteria.CriteriaQuery<?> criteriaQuery,
+        CashierSettlementType settlementType) {
+        if (criteriaQuery == null) {
+            return;
+        }
+        if (!CashierSettlementType.OP_PAYMENT.equals(settlementType)
+            && !CashierSettlementType.IP_PAYMENT.equals(settlementType)) {
+            return;
+        }
+        jakarta.persistence.criteria.Subquery<Long> peEncounter = criteriaQuery.subquery(Long.class);
+        jakarta.persistence.criteria.Root<Encounter> encounterRoot = peEncounter.from(Encounter.class);
+        peEncounter.select(encounterRoot.get(FieldNameConstants.ID));
+        peEncounter.where(
+            cb.equal(encounterRoot.get(FieldNameConstants.ID), root.get(FieldNameConstants.ENCOUNTER_ID)),
+            cb.equal(encounterRoot.get(FieldNameConstants.CLASS_ENUM), EncounterClass.PE.getCode()));
+        predicates.add(cb.not(cb.exists(peEncounter)));
     }
 
     /**

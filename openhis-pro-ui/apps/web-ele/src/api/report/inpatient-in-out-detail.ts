@@ -1,11 +1,10 @@
 /**
  * 住院患者入出明细报表 — inpatientInOutDetailReport
  */
+import { reportPost } from '#/constants/report-request-timeout';
 import type { ApiOptionItem, PageParams } from '#/types/api-response';
+import type { ExcelExportColumnPayload } from '#/utils/export/build-excel-export-columns';
 import type { BinaryExportResult } from '#/utils/export/download-binary-export';
-
-import { publicRequestClient } from '#/api/request';
-import { reportLongRequestConfig } from '#/constants/report-request-timeout';
 
 const BASE = '/inpatientInOutDetailReport';
 
@@ -90,7 +89,10 @@ export interface PageInpatientInOutDetailReportResponse {
   footer?: InpatientInOutDetailFooterDto;
 }
 
-export type ExportInpatientInOutDetailReportRequest = InpatientInOutDetailQueryFilter;
+export interface ExportInpatientInOutDetailReportRequest extends InpatientInOutDetailQueryFilter {
+  /** 页面可见列 → 后端 Excel 列裁剪 */
+  exportColumns?: ExcelExportColumnPayload[];
+}
 
 export type ExportInpatientInOutDetailReportResponse = BinaryExportResult & {
   showTransferColumn?: boolean;
@@ -98,7 +100,7 @@ export type ExportInpatientInOutDetailReportResponse = BinaryExportResult & {
 
 /** 加载页初始化（默认日期窗、状态下拉、入院科室）。 */
 export async function loadInpatientInOutDetailReportPageInitApi() {
-  return publicRequestClient.post<LoadInpatientInOutDetailReportPageInitResponse>(
+  return reportPost<LoadInpatientInOutDetailReportPageInitResponse>(
     `${BASE}/loadInpatientInOutDetailReportPageInit`,
     {},
   );
@@ -108,7 +110,7 @@ export async function loadInpatientInOutDetailReportPageInitApi() {
 export async function listInpatientInOutDetailWardOptionsApi(
   body: ListInpatientInOutDetailWardOptionsRequest,
 ) {
-  return publicRequestClient.post<ListInpatientInOutDetailWardOptionsResponse>(
+  return reportPost<ListInpatientInOutDetailWardOptionsResponse>(
     `${BASE}/listInpatientInOutDetailWardOptions`,
     body,
   );
@@ -118,10 +120,9 @@ export async function listInpatientInOutDetailWardOptionsApi(
 export async function pageInpatientInOutDetailReportApi(
   body: PageInpatientInOutDetailReportRequest,
 ) {
-  return publicRequestClient.post<PageInpatientInOutDetailReportResponse>(
+  return reportPost<PageInpatientInOutDetailReportResponse>(
     `${BASE}/pageInpatientInOutDetailReport`,
     body,
-    reportLongRequestConfig(),
   );
 }
 
@@ -129,9 +130,8 @@ export async function pageInpatientInOutDetailReportApi(
 export async function exportInpatientInOutDetailReportApi(
   body: ExportInpatientInOutDetailReportRequest,
 ) {
-  return publicRequestClient.post<ExportInpatientInOutDetailReportResponse>(
+  return reportPost<ExportInpatientInOutDetailReportResponse>(
     `${BASE}/exportInpatientInOutDetailReport`,
     body,
-    reportLongRequestConfig(),
   );
 }

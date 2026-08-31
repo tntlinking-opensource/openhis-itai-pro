@@ -1,6 +1,6 @@
 import type { TraceBatchScanLine, TraceScanBindMode } from './trace-types';
 
-import { isTraceSlotEmpty } from './trace-code-parse';
+import { isNonStandardTraceDrugName, isTraceSlotEmpty } from './trace-code-parse';
 import { canAcceptMoreTraceOnLine, sumBoundRemainingSplit } from './trace-line-scan-count';
 import { traceNoCommaContains } from './trace-no-string';
 
@@ -14,6 +14,11 @@ function normLotNumber(value: string | undefined): string {
   return String(value ?? '').trim();
 }
 
+/** 按药名关键字筛选非标追溯码品行（如依洛尤单抗） */
+export function findNonStandardTraceDrugLines(lines: TraceBatchScanLine[]): TraceBatchScanLine[] {
+  return lines.filter((line) => isNonStandardTraceDrugName(line.itemName));
+}
+
 /** 按 itemId + lotNumber 筛选候选行 */
 export function findTraceMatchCandidateLines(
   lines: TraceBatchScanLine[],
@@ -22,10 +27,18 @@ export function findTraceMatchCandidateLines(
 ): TraceBatchScanLine[] {
   const wantItem = normItemId(itemId);
   const wantLot = normLotNumber(lotNumber);
-  if (!wantItem || !wantLot) return [];
-  return lines.filter((line) => {
-    return normItemId(line.itemId) === wantItem && normLotNumber(line.lotNumber) === wantLot;
-  });
+  if (!wantItem) return [];
+
+  // 优先品+批精确匹配
+  if (wantLot) {
+    const exact = lines.filter((line) => {
+      return normItemId(line.itemId) === wantItem && normLotNumber(line.lotNumber) === wantLot;
+    });
+    if (exact.length > 0) return exact;
+  }
+
+  // 自动匹配兜底：行批号空或与主档批号不一致时，同品未满行仍可绑（避免误逼用户点选）
+  return lines.filter((line) => normItemId(line.itemId) === wantItem);
 }
 
 /** 在候选行中挑选绑定目标：优先未盖住/未配满的行 */

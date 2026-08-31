@@ -1,30 +1,13 @@
 <script setup lang="ts">
 import type { HiprintPrinterItem } from '../fetch-printer-list';
+import type { InvFormPaperKind } from '../form-print-preference';
 
 import { onMounted, ref } from 'vue';
 
+import { INV_FORM_PAPER_KIND } from '../form-print-preference';
 import PrinterSelectDialog from './printer-select-dialog.vue';
 
 defineOptions({ name: 'PrinterSelectDialogHost' });
-
-const props = withDefaults(defineProps<Props>(), {
-  title: '选择打印机',
-  bindingLabel: '',
-  confirmText: '打印',
-  initialPrinterName: '',
-  initialSkipPrompt: false,
-  unavailableHint: '',
-});
-
-const emit = defineEmits<{
-  cancel: [];
-  confirm: [
-    payload: {
-      printerName: string;
-      skipPrompt: boolean;
-    },
-  ];
-}>();
 
 interface Props {
   title?: string;
@@ -34,7 +17,33 @@ interface Props {
   initialSkipPrompt?: boolean;
   unavailableHint?: string;
   loadPrinters: () => Promise<HiprintPrinterItem[]>;
+  showPaperKind?: boolean;
+  initialPaperKind?: InvFormPaperKind;
+  showSkipPrompt?: boolean;
 }
+
+const props = withDefaults(defineProps<Props>(), {
+  title: '选择打印机',
+  bindingLabel: '',
+  confirmText: '打印',
+  initialPrinterName: '',
+  initialSkipPrompt: false,
+  unavailableHint: '',
+  showPaperKind: false,
+  initialPaperKind: INV_FORM_PAPER_KIND.triple,
+  showSkipPrompt: true,
+});
+
+const emit = defineEmits<{
+  cancel: [];
+  confirm: [
+    payload: {
+      paperKind?: InvFormPaperKind;
+      printerName: string;
+      skipPrompt: boolean;
+    },
+  ];
+}>();
 
 const visible = ref(true);
 const loading = ref(true);
@@ -59,7 +68,11 @@ async function loadPrinterList(): Promise<void> {
 }
 
 /** 用户确认选择 */
-function handleConfirm(payload: { printerName: string; skipPrompt: boolean }): void {
+function handleConfirm(payload: {
+  paperKind?: InvFormPaperKind;
+  printerName: string;
+  skipPrompt: boolean;
+}): void {
   visible.value = false;
   emit('confirm', payload);
 }
@@ -87,6 +100,9 @@ onMounted(() => {
     :loading="loading"
     :load-error="loadError"
     :printers="printers"
+    :show-paper-kind="showPaperKind"
+    :initial-paper-kind="initialPaperKind"
+    :show-skip-prompt="showSkipPrompt"
     @confirm="handleConfirm"
     @cancel="handleCancel"
     @retry-load="loadPrinterList"

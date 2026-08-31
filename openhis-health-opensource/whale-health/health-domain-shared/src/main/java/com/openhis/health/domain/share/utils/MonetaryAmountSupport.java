@@ -75,12 +75,12 @@ public final class MonetaryAmountSupport {
     }
 
     /**
-     * 中药饮片/中草药单价 UI 展示刻度：3 位 HALF_UP（非入账权威，不替代 {@link #scaleCalc(BigDecimal)}）。
+     * 中药饮片/中草药<strong>进价</strong> UI 展示刻度：3 位 HALF_UP（非入账权威，不替代 {@link #scaleCalc(BigDecimal)}）。
      *
-     * <p>适用：<strong>药品目录（药典）维护页</strong>进售价回显；支付/发票总价仍用 {@link #scaleSettle(BigDecimal)}。
-     * 本方法不改写库房单据等其它消费方。</p>
+     * <p>适用：药品目录采购参考价、批号进价等回显；<strong>售价仍用 {@link #scaleDisplay(BigDecimal)}</strong>。
+     * 支付/发票总价仍用 {@link #scaleSettle(BigDecimal)}。本方法不改写库房单据等其它消费方。</p>
      *
-     * @param value 原始单价（可为 null）
+     * @param value 原始进价单价（可为 null）
      * @return 3 位展示刻度金额；null 视为 0
      */
     public static BigDecimal scaleTcmUnitPriceDisplay(BigDecimal value) {

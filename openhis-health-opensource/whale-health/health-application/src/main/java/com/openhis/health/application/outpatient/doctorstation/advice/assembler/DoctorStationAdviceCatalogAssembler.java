@@ -8,6 +8,7 @@ import com.openhis.health.application.shared.product.ClinicalCatalogInventoryPag
 import com.openhis.health.application.shared.product.ClinicalCatalogInventoryPageBatchLoader;
 import com.openhis.health.application.shared.product.ClinicalCatalogPriceResolver;
 import com.openhis.health.application.shared.product.ClinicalCatalogUnitPriceQuery;
+import com.openhis.health.application.shared.product.DoctorStationAdviceInventoryUnitQuantityHelper;
 import com.openhis.health.application.shared.product.ProductTableNameHelper;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.DoctorStationAdviceCatalogRowDto;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.DoctorStationAdviceInventoryRowDto;
@@ -125,17 +126,17 @@ public class DoctorStationAdviceCatalogAssembler {
                 List<InventoryCatalogAvailabilityRowModel> physical =
                     inventoryBatch.getPhysicalRows(productCompositeKey);
                 Map<String, BigDecimal> occ = inventoryBatch.getOccupancy(productCompositeKey);
+                // 库位级预占按批次遍历顺序消耗一次，避免同库多批重复扣整库占用。
+                Map<String, BigDecimal> remainingOcc =
+                    DoctorStationAdviceInventoryUnitQuantityHelper.copyOccupancyRemaining(occ);
                 List<DoctorStationAdviceInventoryRowDto> invDtos = new ArrayList<>();
                 BigDecimal sumNetSplit = BigDecimal.ZERO;
                 int order = 0;
                 for (InventoryCatalogAvailabilityRowModel row : physical) {
-                    String k = ProductTableNameHelper.tripleCompositeKey(row.getItemTable(), row.getItemId(), row.getLocationId());
-                    BigDecimal net = row.getQuantity();
-                    if (net == null) {
-                        net = BigDecimal.ZERO;
-                    }
-                    net = net.subtract(occ.getOrDefault(k, BigDecimal.ZERO));
+                    BigDecimal net = DoctorStationAdviceInventoryUnitQuantityHelper.consumeLocationOccupancyForLot(
+                        remainingOcc, row.getItemTable(), row.getItemId(), row.getLocationId(), row.getQuantity());
                     if (net.compareTo(BigDecimal.ZERO) <= 0) {
+                        // 本批被预占消化完，不进入可开明细
                         continue;
                     }
                     DoctorStationAdviceInventoryRowDto inv = new DoctorStationAdviceInventoryRowDto();

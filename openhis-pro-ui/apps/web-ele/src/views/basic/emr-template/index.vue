@@ -17,6 +17,7 @@ import { useRequest } from '#/hooks/use-request';
 
 import DocumentTypePanel from './document-type-panel.vue';
 import EditDialog from './edit-dialog.vue';
+import TemplateJsonDialog from './template-json-dialog.vue';
 import {
   EMR_TEMPLATE_ENCOUNTER_CLASS_OPTIONS,
   EMR_TEMPLATE_SCOPE_LEVEL_OPTIONS,
@@ -46,6 +47,9 @@ const documentTypePanelRef = ref<InstanceType<typeof DocumentTypePanel> | null>(
 
 /** 新建 / 编辑 / 查看 / 复制 弹窗 */
 const editDialogRef = ref<InstanceType<typeof EditDialog> | null>(null);
+
+/** 列表行 JSON 编辑弹窗 */
+const templateJsonDialogRef = ref<InstanceType<typeof TemplateJsonDialog> | null>(null);
 
 /** 列表 / 删除加载态 */
 const tableLoading = computed(() => listLoading.value || deleteLoading.value);
@@ -192,7 +196,7 @@ const tableColumns: TableColumn[] = [
     align: 'center',
     width: 180,
   },
-  { align: 'left', fixed: 'right', label: '操作', slot: 'actions', width: 260 },
+  { align: 'left', fixed: 'right', label: '操作', slot: 'actions', width: 300 },
 ];
 
 /**
@@ -270,6 +274,11 @@ function openView(row: TemplateDto) {
     mode: 'view',
     row,
   });
+}
+
+/** 列表直接编辑模板正文 JSON */
+function openJsonEditor(row: TemplateDto) {
+  templateJsonDialogRef.value?.open(row);
 }
 
 /**
@@ -377,6 +386,7 @@ getList();
               <template #actions="{ row }">
                 <ElButton link type="primary" @click="openView(row)">查看</ElButton>
                 <ElButton link type="primary" @click="openEdit(row)">编辑</ElButton>
+                <ElButton link type="primary" @click="openJsonEditor(row)">JSON</ElButton>
                 <ElButton link type="primary" @click="handleCopyRow(row)">复制</ElButton>
                 <ElButton link type="danger" @click="handleDelete(row)">删除</ElButton>
               </template>
@@ -392,6 +402,7 @@ getList();
       </div>
     </div>
     <EditDialog ref="editDialogRef" @success="getList" />
+    <TemplateJsonDialog ref="templateJsonDialogRef" @success="getList" />
   </Page>
 </template>
 

@@ -35,6 +35,7 @@ public class CaseRecordListMapper {
     public CaseRecordListItemDto toListItem(CaseRecordListItemQueryModel row) {
         CaseRecordListItemDto dto = new CaseRecordListItemDto();
         dto.setCaseRecordId(row.getId());
+        dto.setEncounterId(row.getEncounterId());
         dto.setMedcasno(row.getMedcasno());
         dto.setPsnName(row.getPsnName());
         dto.setIptNo(row.getIptNo());
@@ -133,6 +134,10 @@ public class CaseRecordListMapper {
         dto.setPsnName(context.getPatientName());
         dto.setIptNo(context.getEncounterBusNo());
         dto.setGendCode(context.getGenderEnum());
+        // 临床侧栏抬头：年龄/床位/病区（出院无活动床时上下文已回填末次已完成位置）
+        dto.setAgeText(context.getAgeText());
+        dto.setBedName(context.getBedName());
+        dto.setWardName(context.getWardName());
         dto.setAdmTime(context.getStartTime());
         dto.setDscgTime(context.getEndTime());
         dto.setAdmCatyName(context.getOrganizationName());
@@ -163,6 +168,7 @@ public class CaseRecordListMapper {
                 dto.setDscgCatyName(caseRecord.getDscgCatyName());
             }
             CaseRecordStatus status = caseRecord.getStatusEnum();
+            // 状态枚举可解析时写展示名，避免前端只见 code
             if (status != null) {
                 dto.setStatusLabel(status.getDisplay());
             }
@@ -187,6 +193,7 @@ public class CaseRecordListMapper {
      */
     private String resolveSettledCode(String statusEnum) {
         String code = trimToNull(statusEnum);
+        // 无状态码按未结算，避免空值被当成已结
         if (code == null) {
             return MrmsConstants.LIST_FLAG_NO;
         }

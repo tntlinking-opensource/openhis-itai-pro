@@ -174,6 +174,10 @@ const formItems = computed<FormItemConfig[]>(() => [
     label: '就诊日期',
     prop: 'encounterRange',
     type: 'daterange',
+    startPlaceholder: '开始',
+    endPlaceholder: '结束',
+    valueFormat: 'YYYY-MM-DD',
+    clearable: true,
   },
 ]);
 

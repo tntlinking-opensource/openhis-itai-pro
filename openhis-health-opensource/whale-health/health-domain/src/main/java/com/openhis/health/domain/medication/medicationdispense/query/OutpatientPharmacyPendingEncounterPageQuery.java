@@ -14,7 +14,8 @@ import java.util.List;
  * 门诊发药就诊队列分页查询（存在门诊药品发放事实的就诊主键分页）。
  *
  * <p>对齐 IF-OPP-02：可按发药库房集合（{@code MedicationDispense.location_id} ∈ 给定列表）收敛，再配合发放状态子集与关键字；
- * 不按 {@code status_changed_time} 时间窗筛选。</p>
+ * 可选日期窗由应用层预解析为 {@code resolvedEncounterScope}（就诊 {@code startTime}，与收费队列同口径）；不按发放行
+ * {@code status_changed_time} 筛选。</p>
  */
 @Getter
 @Setter

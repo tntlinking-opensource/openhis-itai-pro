@@ -40,6 +40,10 @@ public class ServiceLocationTemplateQueryModel {
      */
     private Long itemDefinitionId;
     /**
+     * 耗材种类编码（术语 device_type_code；通配为空）。
+     */
+    private String typeCode;
+    /**
      * 给药途径编码（通配为空）。
      */
     private String methodCode;

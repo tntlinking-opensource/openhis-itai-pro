@@ -492,24 +492,18 @@ const canCancelStopLongTermActivePrescription = computed(() =>
   canCancelStopLongTermTcmPrescription(activePrescription.value),
 );
 
-const productColumns = computed(() => {
-  const base = [
-    { prop: 'code', label: '项目编码', width: 108 },
-    { prop: 'name', label: '项目名称', width: 120 },
-    // 数量/金额紧挨项目名，便于选品时一眼对比可开量与价格
-    { prop: 'availableQuantity', label: '库存数量', width: 110 },
-    { prop: 'price', label: '单价', width: 64 },
-    { prop: 'manufacturer', label: '厂家', width: 200 },
-    { prop: 'category', label: '类别', width: 64 },
-    { prop: 'spec', label: '规格', width: 64 },
-    { prop: 'chrgitmLvText', label: '医保等级', width: 72 },
-  ];
-  if (isInpatientScope.value) {
-    // 住院选品不展示库存列（与院点原口径一致）
-    return base.filter((col) => col.prop !== 'availableQuantity');
-  }
-  return base;
-});
+/** 中药选品表列（门诊/住院一致：含库存数量） */
+const productColumns = [
+  { prop: 'code', label: '项目编码', width: 108 },
+  { prop: 'name', label: '项目名称', width: 120 },
+  // 数量/金额紧挨项目名，便于选品时一眼对比可开量与价格
+  { prop: 'availableQuantity', label: '库存数量', width: 110 },
+  { prop: 'price', label: '单价', width: 64 },
+  { prop: 'manufacturer', label: '厂家', width: 200 },
+  { prop: 'category', label: '类别', width: 64 },
+  { prop: 'spec', label: '规格', width: 64 },
+  { prop: 'chrgitmLvText', label: '医保等级', width: 72 },
+];
 
 const { loading: pageLoading, run: runLoadTcmTab } = useRequest(
   async () => {
@@ -766,13 +760,15 @@ async function persistActivePrescriptionDraft(options?: {
   /** 签发前仅方头变更且行 id 已齐时可跳过，由签发后统一 list */
   skipRefresh?: boolean;
 }) {
+  if (!assertTcmTabContextReadyForWrite()) {
+    return false;
+  }
   if (!activePrescription.value || isPrescriptionReadonly.value) {
     return false;
   }
   if (autoSaveDraftInFlight.value) {
     return false;
   }
-  applyInpatientTherapyRateCoupling();
   syncHeaderFormToPrescription(activePrescription.value, prescriptionForm);
   if (!hasPersistableDraftChanges(activePrescription.value)) {
     return false;
@@ -812,15 +808,13 @@ async function persistActivePrescriptionDraft(options?: {
 
 /** 批量保存：一次提交所有有变更的草稿方 */
 async function handleSaveAllDrafts() {
-  if (!contextReady.value) {
-    ElMessage.warning('请先选择患者');
+  if (!assertTcmTabContextReadyForWrite()) {
     return;
   }
   if (autoSaveDraftInFlight.value) {
     return;
   }
   if (activePrescription.value && !isPrescriptionReadonly.value) {
-    applyInpatientTherapyRateCoupling();
     syncHeaderFormToPrescription(activePrescription.value, prescriptionForm);
   }
   // 收集全部可编辑且有待提交变更的处方
@@ -862,6 +856,20 @@ const loadedTcmTabContextKey = ref('');
 /** 当前就诊上下文键（encounterId|patientId） */
 function resolveTcmTabContextKey(): string {
   return `${props.encounterId.trim()}|${props.patientId.trim()}`;
+}
+
+/** 写操作前校验：当前 props 上下文须与已拉数上下文一致，且页签已完成加载 */
+function assertTcmTabContextReadyForWrite(): boolean {
+  const currentKey = resolveTcmTabContextKey();
+  if (!contextReady.value || !currentKey) {
+    ElMessage.warning('请先选择患者');
+    return false;
+  }
+  if (!loadedTcmTabContextKey.value || loadedTcmTabContextKey.value !== currentKey) {
+    ElMessage.warning('患者已切换，请等待处方加载完成后再操作');
+    return false;
+  }
+  return true;
 }
 
 /** 是否存在未落库的本地方头/明细变更（切回页签时需保留，避免未暂存药材丢失） */
@@ -925,14 +933,13 @@ onDeactivated(() => {
 watch(
   () => [props.encounterId, props.patientId],
   () => {
-    // 换患者：先作废在途拉数并丢掉费用性质，避免新开方默认串上个就诊
-    tcmTabLoadGeneration += 1;
-    feeNatureOptions.value = [];
+    // 换患者：立即清空内存处方，避免「新就诊 + 旧处方行」脏提交窗口
     if (!isTabActive.value) {
-      // 非当前 Tab 换患者：使缓存上下文失效，下次激活强制重拉（避免脏草稿串患者）
-      loadedTcmTabContextKey.value = '';
+      // 非当前 Tab 换患者：清空内存态并使缓存上下文失效，下次激活强制重拉
+      clearTcmTabLocalState();
       return;
     }
+    clearTcmTabLocalState();
     void reload();
   },
 );
@@ -1104,31 +1111,46 @@ async function handleAddPrescription(options?: { focusSearch?: boolean }) {
   });
 }
 
-/** 住院临嘱切换时联动频次（非默认值填充） */
-function applyInpatientTherapyRateCoupling() {
-  if (!isInpatientScope.value) return;
-  const therapyCode = String(prescriptionForm.therapyEnum ?? '')
-    .trim()
-    .toUpperCase();
-  if (therapyCode === TCM_THERAPY_TEMPORARY) {
-    prescriptionForm.rateCode = INPATIENT_IMMEDIATE_RATE_CODE;
-    return;
-  }
-  if (therapyCode === TCM_THERAPY_LONG_TERM) {
-    const current = String(prescriptionForm.rateCode ?? '')
+/**
+ * 住院长临切换时联动频次（仅 therapy 变更触发，禁止在保存路径强制覆盖）。
+ * 切临时 → 保留当前频次（空时默认立即）；切长期 → 若当前是立即则清空，由用户重选。
+ */
+watch(
+  () => prescriptionForm.therapyEnum,
+  (next, prev) => {
+    if (headerFormLoadSuppressed.value) return;
+    if (!isInpatientScope.value) return;
+    if (!activePrescription.value || isPrescriptionReadonly.value) return;
+    const nextCode = String(next ?? '')
       .trim()
       .toUpperCase();
-    if (current === INPATIENT_IMMEDIATE_RATE_CODE) {
-      prescriptionForm.rateCode = '';
+    const prevCode = String(prev ?? '')
+      .trim()
+      .toUpperCase();
+    // 同值或回填载入不算切换
+    if (!nextCode || nextCode === prevCode) return;
+    if (nextCode === TCM_THERAPY_TEMPORARY) {
+      // 临嘱允许改频次：仅空频次时补默认立即，不覆盖已选值
+      if (!String(prescriptionForm.rateCode ?? '').trim()) {
+        prescriptionForm.rateCode = INPATIENT_IMMEDIATE_RATE_CODE;
+      }
+      return;
     }
-  }
-}
+    if (nextCode === TCM_THERAPY_LONG_TERM) {
+      const current = String(prescriptionForm.rateCode ?? '')
+        .trim()
+        .toUpperCase();
+      if (current === INPATIENT_IMMEDIATE_RATE_CODE) {
+        prescriptionForm.rateCode = '';
+      }
+    }
+  },
+);
 
 /** 方头表单同步到当前处方（不自动保存，点保存/签发时再提交） */
 function syncActivePrescriptionHeaderFromForm() {
   if (headerFormLoadSuppressed.value) return;
   if (!activePrescription.value || isPrescriptionReadonly.value) return;
-  applyInpatientTherapyRateCoupling();
   syncHeaderFormToPrescription(activePrescription.value, prescriptionForm);
 }
 
@@ -1254,6 +1276,9 @@ async function handleHerbEditEnd(lineKey: string) {
 
 /** 签发当前处方：有未暂存变更时先保存，再签发 */
 async function handleIssuePrescription() {
+  if (!assertTcmTabContextReadyForWrite()) {
+    return;
+  }
   if (!activePrescription.value || isPrescriptionReadonly.value) return;
   if (!validateActivePrescriptionForSave()) return;
   const ok = await ensureReceptionBeforeWrite();

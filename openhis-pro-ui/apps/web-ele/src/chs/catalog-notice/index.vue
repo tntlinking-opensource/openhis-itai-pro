@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type {
+  CatalogCheckIssueRow,
+  CheckCatalogIssuesResult,
   ComplianceIssueRow,
   GetApplyNoticeDocProgressResult,
   GetComplianceReportResult,
@@ -15,6 +17,7 @@ import type {
 } from '#/chs/api/catalog-notice';
 
 import { computed, onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
@@ -59,6 +62,7 @@ import {
   startApplyNoticeDocsApi,
   startConfirmNoticeScanImportApi,
   startScanNoticeCanonicalDirApi,
+  checkCatalogIssuesApi,
 } from '#/chs/api/catalog-notice';
 import {
   formatNoticeAction,
@@ -71,6 +75,8 @@ import {
 } from '#/chs/constants/catalog-notice-labels';
 
 defineOptions({ name: 'ChsCatalogNoticePage' });
+
+const router = useRouter();
 
 const DOC_KIND_OPTIONS = NOTICE_DOC_KIND_FILTER_OPTIONS;
 const CATEGORY_OPTIONS = NOTICE_CATEGORY_FILTER_OPTIONS;
@@ -192,7 +198,7 @@ const canBatchApply = computed(() => {
 });
 
 /** 主工作区：扫描 / 已入库 / 催办合规，避免三块纵向堆出整页滚动条 */
-const mainTab = ref<'scan' | 'docs' | 'ops'>('scan');
+const mainTab = ref<'scan' | 'docs' | 'ops' | 'check'>('scan');
 const bottomTab = ref<'todos' | 'compliance'>('todos');
 
 const todoPage = ref(1);
@@ -209,6 +215,13 @@ const closeTodoLoading = ref(false);
 const complianceLoading = ref(false);
 const complianceRerunLoading = ref(false);
 const complianceReport = ref<GetComplianceReportResult | null>(null);
+
+const checkLoading = ref(false);
+const checkQueried = ref(false);
+const checkResult = ref<CheckCatalogIssuesResult | null>(null);
+const checkKind = ref('');
+const checkIssueCode = ref('');
+const checkKeyword = ref('');
 
 const scanSummary = computed(() => {
   const r = scanResult.value;
@@ -1021,6 +1034,106 @@ function handleMainTabChange(name: string | number) {
   }
 }
 
+const CHECK_KIND_LABEL: Record<string, string> = {
+  ACTIVITY: '诊疗',
+  MEDICATION: '药品',
+  DEVICE: '耗材',
+};
+
+const checkIssues = computed<CatalogCheckIssueRow[]>(() =>
+  Array.isArray(checkResult.value?.issues) ? checkResult.value!.issues! : [],
+);
+
+const filteredCheckIssues = computed(() => {
+  const kind = checkKind.value;
+  const code = checkIssueCode.value;
+  const keyword = checkKeyword.value.trim().toLowerCase();
+  return checkIssues.value.filter((row) => {
+    if (kind && row.productKind !== kind) {
+      return false;
+    }
+    if (code && row.issueCode !== code) {
+      return false;
+    }
+    if (!keyword) {
+      return true;
+    }
+    const hay =
+      `${row.projectCode ?? ''} ${row.productName ?? ''} ${row.hilistCode ?? ''}`.toLowerCase();
+    return hay.includes(keyword);
+  });
+});
+
+function productKindLabel(kind?: string) {
+  if (!kind) {
+    return '—';
+  }
+  return CHECK_KIND_LABEL[kind] || kind;
+}
+
+function issueTagType(code?: string): 'danger' | 'warning' | 'info' {
+  if (
+    code === 'EXPIRED' ||
+    code === 'DISABLED' ||
+    code === 'NOTICE_STOP' ||
+    code === 'NOTICE_EXPIRED' ||
+    code === 'PRICE_OVER'
+  ) {
+    return 'danger';
+  }
+  if (code === 'MISSING_YB_NO' || code === 'NOTICE_NOT_EFFECTIVE') {
+    return 'warning';
+  }
+  return 'info';
+}
+
+async function handleCheckCatalog() {
+  checkLoading.value = true;
+  try {
+    checkResult.value = await checkCatalogIssuesApi({
+      productKind: checkKind.value || undefined,
+    });
+    checkQueried.value = true;
+    const count = checkResult.value.issueCount ?? 0;
+    if (count === 0) {
+      ElMessage.success('未发现问题，目录当前正常');
+    } else {
+      ElMessage.warning(`查出 ${count} 条问题，请人工处理后再次查询`);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '目录检查失败';
+    ElMessage.error(message);
+  } finally {
+    checkLoading.value = false;
+  }
+}
+
+function openCatalogFix(row: CatalogCheckIssueRow) {
+  const table = String(row.productTable ?? '');
+  const openId = String(row.productId ?? '').trim();
+  const keyword = String(row.projectCode ?? row.productName ?? '').trim();
+  const query: Record<string, string> = {};
+  if (openId) {
+    query.openId = openId;
+  }
+  if (keyword) {
+    query.keyword = keyword;
+  }
+  if (table.includes('medication')) {
+    void router.push({ path: '/basic/medicationcatalog', query });
+    return;
+  }
+  if (table.includes('device')) {
+    if (openId) {
+      void router.push({ path: `/basic/devicecatalog/${openId}` });
+      return;
+    }
+    void router.push({ path: '/basic/devicecatalog', query });
+    return;
+  }
+  void router.push({ path: '/basic/servicecatalog', query });
+}
+
 onMounted(() => {
   void loadDocs();
   void loadTodos();
@@ -1485,6 +1598,126 @@ onMounted(() => {
             </div>
           </ElTabPane>
         </ElTabs>
+      </ElTabPane>
+
+      <ElTabPane label="目录检查" name="check">
+        <div class="chs-notice-panel">
+          <ElAlert
+            class="shrink-0"
+            type="info"
+            :closable="false"
+            show-icon
+            title="对照院内已启用的医保项目与国家目录、已应用局文：有效期、是否启用、超限价、缺码。只查询不落待办；人工改完再查，查不到即表示没问题。"
+          />
+          <div class="flex shrink-0 flex-wrap items-center gap-3">
+            <ElSelect v-model="checkKind" clearable placeholder="目录类别" style="width: 140px">
+              <ElOption label="全部" value="" />
+              <ElOption label="诊疗" value="ACTIVITY" />
+              <ElOption label="药品" value="MEDICATION" />
+              <ElOption label="耗材" value="DEVICE" />
+            </ElSelect>
+            <ElSelect
+              v-model="checkIssueCode"
+              clearable
+              placeholder="问题类型"
+              style="width: 150px"
+            >
+              <ElOption label="全部" value="" />
+              <ElOption label="已过期" value="EXPIRED" />
+              <ElOption label="已停用" value="DISABLED" />
+              <ElOption label="局文停用" value="NOTICE_STOP" />
+              <ElOption label="局文过期" value="NOTICE_EXPIRED" />
+              <ElOption label="局文未生效" value="NOTICE_NOT_EFFECTIVE" />
+              <ElOption label="超限价" value="PRICE_OVER" />
+              <ElOption label="缺医保码" value="MISSING_YB_NO" />
+              <ElOption label="镜像无此码" value="NOT_IN_CATALOG" />
+            </ElSelect>
+            <ElInput
+              v-model="checkKeyword"
+              clearable
+              placeholder="编码 / 名称 / 医保码"
+              style="width: 220px"
+            />
+            <ElButton type="primary" :loading="checkLoading" @click="handleCheckCatalog">
+              查询
+            </ElButton>
+          </div>
+          <div v-if="checkQueried" class="flex shrink-0 flex-wrap items-center gap-4 text-sm">
+            <span>已扫 {{ checkResult?.scannedCount ?? 0 }} 项</span>
+            <span>镜像 {{ checkResult?.catalogItemCount ?? 0 }} 行</span>
+            <span>
+              问题
+              <strong>{{ checkResult?.issueCount ?? 0 }}</strong>
+            </span>
+            <span>过期 {{ checkResult?.expiredCount ?? 0 }}</span>
+            <span>停用 {{ checkResult?.disabledCount ?? 0 }}</span>
+            <span>局文停用 {{ checkResult?.noticeStopCount ?? 0 }}</span>
+            <span>局文过期 {{ checkResult?.noticeExpiredCount ?? 0 }}</span>
+            <span>局文未生效 {{ checkResult?.noticeNotEffectiveCount ?? 0 }}</span>
+            <span>超限价 {{ checkResult?.priceOverCount ?? 0 }}</span>
+            <span>缺码 {{ checkResult?.missingYbNoCount ?? 0 }}</span>
+            <span>无镜像 {{ checkResult?.notInCatalogCount ?? 0 }}</span>
+          </div>
+          <ElAlert
+            v-if="checkQueried && (checkResult?.catalogItemCount ?? 0) === 0"
+            class="shrink-0"
+            type="warning"
+            :closable="false"
+            show-icon
+            title="本地尚无国家目录镜像，过期/停用/限价无法核对。请先到「国家目录」下载 1301/1312；缺医保码仍会列出。"
+          />
+          <div class="chs-notice-panel__table">
+            <ElTable
+              v-loading="checkLoading"
+              height="100%"
+              :data="filteredCheckIssues"
+              border
+              stripe
+              :empty-text="checkQueried ? '未发现问题' : '点击查询开始检查'"
+            >
+              <ElTableColumn label="问题" width="110">
+                <template #default="{ row }">
+                  <ElTag :type="issueTagType(row.issueCode)" size="small">
+                    {{ row.issueLabel || row.issueCode }}
+                  </ElTag>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn label="类别" width="80">
+                <template #default="{ row }">
+                  {{ productKindLabel(row.productKind) }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                prop="projectCode"
+                label="院内编码"
+                min-width="120"
+                show-overflow-tooltip
+              />
+              <ElTableColumn
+                prop="productName"
+                label="名称"
+                min-width="160"
+                show-overflow-tooltip
+              />
+              <ElTableColumn
+                prop="hilistCode"
+                label="医保编码"
+                min-width="150"
+                show-overflow-tooltip
+              />
+              <ElTableColumn prop="enddate" label="结束日" width="110" />
+              <ElTableColumn prop="valiFlag" label="有效标志" width="90" />
+              <ElTableColumn prop="salePrice" label="售价" width="90" align="right" />
+              <ElTableColumn prop="limitAmt" label="限价" width="90" align="right" />
+              <ElTableColumn prop="message" label="说明" min-width="220" show-overflow-tooltip />
+              <ElTableColumn label="操作" width="90" fixed="right">
+                <template #default="{ row }">
+                  <ElButton link type="primary" @click="openCatalogFix(row)">去处理</ElButton>
+                </template>
+              </ElTableColumn>
+            </ElTable>
+          </div>
+        </div>
       </ElTabPane>
     </ElTabs>
 

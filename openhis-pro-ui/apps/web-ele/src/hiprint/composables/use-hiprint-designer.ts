@@ -29,13 +29,20 @@ export function useHiprintDesigner() {
   ): Promise<HiprintTemplateInstance> {
     ensureHiprintReady();
     await nextTick();
+    if ($(containers.designSelector).length === 0) {
+      await nextTick();
+    }
+    if ($(containers.designSelector).length === 0) {
+      throw new Error('设计器画布容器未就绪');
+    }
 
     $(containers.designSelector).empty();
     $(containers.settingSelector).empty();
 
-    hiprint.PrintElementTypeManager.buildByHtml(
-      $(`${containers.paletteSelector} .ep-draggable-item`),
-    );
+    const $paletteItems = $(`${containers.paletteSelector} .ep-draggable-item`);
+    if ($paletteItems.length > 0) {
+      hiprint.PrintElementTypeManager.buildByHtml($paletteItems);
+    }
 
     const normalized = normalizePrintJson(templateJson);
     const firstPanel = (normalized.panels as Record<string, unknown>[])?.[0];

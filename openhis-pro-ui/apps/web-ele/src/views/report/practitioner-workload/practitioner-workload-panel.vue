@@ -41,6 +41,7 @@ import {
   REPORT_QUERY_CONTROL,
   REPORT_QUERY_CONTROL_DATERANGE,
   ReportQueryBar,
+  sumReportPurchaseCornerFromRows,
 } from '#/views/report/shared';
 
 import PractitionerWorkloadDoctorCard from './practitioner-workload-doctor-card.vue';
@@ -260,6 +261,17 @@ async function handleQuery() {
     return;
   }
   summaryTotals.value = summaryData?.summaryTotals ?? {};
+  // Type B：进价列角=当次 fin_type 行加总，与汇总表同筛选同管线
+  const purchaseFromRows = sumReportPurchaseCornerFromRows(
+    (summaryData?.finTypeRows ?? []) as Array<Record<string, unknown>>,
+    'purchaseAmountTotal',
+  );
+  if (purchaseFromRows !== '') {
+    summaryTotals.value = {
+      ...summaryTotals.value,
+      purchaseAmountTotal: purchaseFromRows,
+    };
+  }
   if (!hasOverallWorkloadData(summaryTotals.value)) {
     doctorCards.value = buildEmptyDoctorCards();
     return;

@@ -28,6 +28,7 @@ import {
   type SupplyDispenseStatusCode,
 } from '#/utils/nurse-station/nurse-execute-status';
 import { HERBAL_MEDICATION_CATEGORY_CODE } from '#/views/outpatient/doctor-station/advice/services/advice-tab.constants';
+import { resolveServicePerExecutionQuantity } from '#/views/outpatient/doctor-station/advice/services/service-quantity-calc';
 import { buildServiceApplyFormExtensionText } from '#/utils/service-apply-display';
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -365,7 +366,16 @@ function buildDosageText(row: NurseStationTreatmentLineDto): string {
     const c = row.performCount ?? 0;
     const a = row.cancelCount ?? 0;
     if (p !== null && p !== undefined) {
-      return `计划${p}次，已完成${c}次，取消${a}次。`;
+      // quantity 为计费总量；护士站展示单次数量 = 总量 ÷ 计划次数
+      const totalQtyRaw = Number(row.quantity);
+      const totalQty = Number.isFinite(totalQtyRaw) && totalQtyRaw > 0 ? totalQtyRaw : undefined;
+      const planned = p > 0 ? Math.trunc(p) : 0;
+      const perQty =
+        totalQty !== undefined && planned > 0
+          ? (resolveServicePerExecutionQuantity(totalQty, planned) ?? totalQty)
+          : undefined;
+      const perPart = perQty !== undefined ? `单次数量 ${perQty}，` : '';
+      return `${perPart}计划${p}次，已完成${c}次，取消${a}次。`;
     }
   }
   return '';
@@ -422,6 +432,7 @@ export function mapTreatmentLineToExecuteRow(
     methodCode: (row.methodCode ?? '').trim() || undefined,
     serviceCategoryCode: (row.serviceCategoryCode ?? '').trim() || undefined,
     serviceCategoryCodeText: (row.serviceCategoryCodeText ?? '').trim() || undefined,
+    specimenTubeMergeDeviceId: preserveApiIdForRequest(row.specimenTubeMergeDeviceId) ?? undefined,
   };
 }
 
@@ -619,6 +630,26 @@ export function resolveSupplyDispenseIdForApi(item: SupplyItem): string {
   return '';
 }
 
+/** 耗材侧栏是否排除已退费收费或退费作废发放 */
+function isExcludedNurseStationDeviceSupplyRow(row: NurseStationTreatmentLineDto): boolean {
+  const charge = String(row.chargeStatusEnum ?? row.displayStatusEnum ?? '')
+    .trim()
+    .toUpperCase();
+  if (charge === 'REFUNDED' || charge === 'REFUNDING') {
+    return true;
+  }
+  const dispense = String(row.dispenseStatusEnum ?? '')
+    .trim()
+    .toUpperCase();
+  return (
+    dispense === 'DECLINED' ||
+    dispense === 'STOPPED' ||
+    dispense === 'CANCELLED' ||
+    dispense === 'REFUNDED' ||
+    dispense === 'PENDING_REFUND'
+  );
+}
+
 /** 耗材发放行映射为侧栏耗材卡片 */
 export function mapDeviceLineToSupplyItem(row: NurseStationTreatmentLineDto): SupplyItem {
   const dispenseId = String(row.dispenseId ?? '').trim();
@@ -627,6 +658,10 @@ export function mapDeviceLineToSupplyItem(row: NurseStationTreatmentLineDto): Su
   const qtyRaw = row.quantity;
   const quantity =
     typeof qtyRaw === 'number' ? qtyRaw : Number.parseFloat(String(qtyRaw ?? '0')) || 0;
+  // 批号：后端已滤占位；前端再 trim 一次
+  const lotNumber = String(row.lotNumber ?? '').trim();
+  // 单价：账单升序首条 unit_price，展示口径与中区总价一致用 formatMoneyYuan
+  const unitPriceText = formatDisplayTotalPriceYuan(row.unitPrice);
   return {
     id,
     dispenseId: dispenseId || undefined,
@@ -634,17 +669,22 @@ export function mapDeviceLineToSupplyItem(row: NurseStationTreatmentLineDto): Su
     spec: (row.specText ?? '').trim() || '—',
     usage: (row.deviceCategoryCode ?? '').trim() || '耗材',
     quantity,
+    lotNumber: lotNumber || undefined,
+    unitPriceText: unitPriceText || undefined,
     status,
     statusCode,
     canCancelExecute,
   };
 }
 
+/** 耗材行 → 侧栏卡片（剔除已退费/作废发放，对齐 BR-NUR-018） */
 export function mapDeviceLinesToSupplyItems(rows: NurseStationTreatmentLineDto[]): SupplyItem[] {
-  return rows.map((row) => mapDeviceLineToSupplyItem(row));
+  return rows
+    .filter((row) => !isExcludedNurseStationDeviceSupplyRow(row))
+    .map((row) => mapDeviceLineToSupplyItem(row));
 }
 
-/** 队列 DTO → 护士站患者卡片数据 */
+/** 队列 DTO → 护士站患者卡片数据（含待发耗材提醒） */
 export function mapQueueItemToNursePatient(
   dto: NurseStationPatientQueueItemDto,
   index: number,
@@ -665,6 +705,7 @@ export function mapQueueItemToNursePatient(
     isRegistered: true,
     patientType: 'outpatient',
     pendingExecuteCount: 0,
+    hasPendingSupply: dto.hasPendingDevice === true,
     registrationTime: encounterTime || undefined,
     paymentType: (dto.contractDisplay ?? '').trim() || undefined,
     phone: undefined,

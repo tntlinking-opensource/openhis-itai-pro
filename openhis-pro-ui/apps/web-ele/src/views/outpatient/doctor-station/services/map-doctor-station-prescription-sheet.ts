@@ -167,6 +167,14 @@ function mapAdviceRowToPrescriptionLine(row: AdviceRowForSheet): DispensePrescri
     amountRaw !== null && amountRaw !== undefined && scalarToTrimmedString(amountRaw) !== ''
       ? String(amountRaw)
       : '—';
+  // 笺面「单价」：用行展示单价，禁止回落总价
+  const unitPriceRaw = row.lineDisplayUnitPrice;
+  const unitPrice =
+    unitPriceRaw !== null &&
+    unitPriceRaw !== undefined &&
+    scalarToTrimmedString(unitPriceRaw) !== ''
+      ? String(unitPriceRaw)
+      : '—';
   const decoction = resolveDecoctionNote(row);
   return {
     id: String(row.requestId ?? row.listRowKey ?? '').trim() || `row-${Date.now()}`,
@@ -176,6 +184,7 @@ function mapAdviceRowToPrescriptionLine(row: AdviceRowForSheet): DispensePrescri
     traceCode: '—',
     batchNo: '—',
     amount,
+    unitPrice,
     pharmacy: '—',
     factory: '—',
     diagnosis:

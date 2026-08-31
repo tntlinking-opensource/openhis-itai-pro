@@ -45,6 +45,7 @@ export async function printRegistrationReceipt(options: PrintRegistrationReceipt
     scenarioCode: PRINT_SCENARIO.opRegPrint,
     source: slip,
     bizRef: {
+      scenarioCode: PRINT_SCENARIO.opRegPrint,
       encounterId: slip.encounterId ?? (encounterId || undefined),
       paymentId: paymentId || undefined,
     },

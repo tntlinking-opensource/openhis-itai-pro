@@ -1,3 +1,9 @@
+import type { InvFormPaperKind } from '../form-print-preference';
+
+export interface PrintTransformContext {
+  formPaperKind?: InvFormPaperKind;
+}
+
 export interface PrintOptions<TSource = unknown> {
   /** 业务场景码 scenarioCode */
   scenarioCode: string;
@@ -8,6 +14,11 @@ export interface PrintOptions<TSource = unknown> {
   /** 审计业务引用 */
   bizRef?: Record<string, unknown>;
   copies?: number;
+  /**
+   * 针式联单：把同一份 PrintData 连打 N 页，不用打印机驱动 copies。
+   * 避免连续纸多走纸、夹空白页。
+   */
+  repeatPrintData?: boolean;
   printer?: string;
   jobName?: string;
   /** 场景展示名（打印机弹窗） */
@@ -18,6 +29,22 @@ export interface PrintOptions<TSource = unknown> {
   selectPrinter?: 'always' | 'auto' | 'never';
   /** 伴随/静默打印：失败时不弹排查指引（默认 false） */
   background?: boolean;
+  /**
+   * prepare 拿到库模板后、送 hiprint 前改 PrintJson（如报表动态列、库房纸张）。
+   * 入参为深拷贝，可就地改；返回值作为最终 PrintJson。
+   */
+  transformPrintJson?: (
+    printJson: Record<string, unknown>,
+    ctx?: PrintTransformContext,
+  ) => Record<string, unknown>;
+  /** true 时打开屏幕预览，不走静默打印与审计 */
+  preview?: boolean;
+  /** 库房单据当前纸张（三联单 / A4） */
+  formPaperKind?: InvFormPaperKind;
+  /** 预览标题栏展示纸张切换，切换后按所选纸张重渲染 */
+  showFormPaperKind?: boolean;
+  /** 库房打印：打印机弹窗同时选纸张 */
+  showPaperKind?: boolean;
 }
 
 export interface PrintResult {

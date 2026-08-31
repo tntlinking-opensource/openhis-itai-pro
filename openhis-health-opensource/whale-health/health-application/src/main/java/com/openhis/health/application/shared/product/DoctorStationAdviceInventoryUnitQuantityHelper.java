@@ -154,6 +154,8 @@ public final class DoctorStationAdviceInventoryUnitQuantityHelper {
         if (inventoryRows == null || inventoryRows.isEmpty()) {
             return new DoctorStationAdviceFifoAllocationResult(segments, remainingSplit);
         }
+        // 库位级预占按 FIFO 批次顺序消耗一次，禁止对每一批都减整库占用。
+        Map<String, BigDecimal> remainingOccupancy = copyOccupancyRemaining(occupancyByItemLocationKey);
         for (InventoryCatalogAvailabilityRowModel row : inventoryRows) {
             if (remainingSplit.compareTo(BigDecimal.ZERO) <= 0) {
                 break;
@@ -161,19 +163,13 @@ public final class DoctorStationAdviceInventoryUnitQuantityHelper {
             if (row == null) {
                 continue;
             }
-            String occKey = ProductTableNameHelper.tripleCompositeKey(itemTable, row.getItemId(), row.getLocationId());
-            BigDecimal netSplit = row.getQuantity();
-            if (netSplit == null) {
-                netSplit = BigDecimal.ZERO;
+            // 跳过无真实批号库存行，禁止签发写入空批号发放单
+            String rowLot = row.getLotNumber();
+            if (rowLot == null || rowLot.trim().isEmpty()) {
+                continue;
             }
-            BigDecimal locked = BigDecimal.ZERO;
-            if (occupancyByItemLocationKey != null) {
-                BigDecimal lockedVal = occupancyByItemLocationKey.get(occKey);
-                if (lockedVal != null) {
-                    locked = lockedVal;
-                }
-            }
-            netSplit = netSplit.subtract(locked);
+            BigDecimal netSplit = consumeLocationOccupancyForLot(
+                remainingOccupancy, itemTable, row.getItemId(), row.getLocationId(), row.getQuantity());
             // 该库位/批次预减后无可用拆零量，尝试下一批。
             if (netSplit.compareTo(BigDecimal.ZERO) <= 0) {
                 continue;
@@ -208,6 +204,84 @@ public final class DoctorStationAdviceInventoryUnitQuantityHelper {
             remainingSplit = remainingSplit.subtract(takeSplit);
         }
         return new DoctorStationAdviceFifoAllocationResult(segments, remainingSplit);
+    }
+
+    /**
+     * 按 FIFO 序找第一个「单批净可用 ≥ 开立总量」的批次，整量落该批（门诊皮试 BR-ORD-034）。
+     *
+     * <p>更近效期但不够量的批号直接跳过；各候选独立套用库位预占（视为整量只取该批）。
+     * 找不到够量单批时返回 {@code null}，由调用方决定提示跨批或走普通 FIFO。</p>
+     *
+     * @param inventoryRows              已按模板库位序+效期排序的批次可用行
+     * @param occupancyByItemLocationKey 表+定义+库位 → 拆零预占量
+     * @param itemTable                  物品来源表名（复合键前缀）
+     * @param productRow                 产品展示 DTO
+     * @param businessUnitCode           医嘱开立单位
+     * @param totalBusinessQuantity      医嘱开立总量（业务单位）
+     * @return 单批分段草稿；无一单批够量时为 {@code null}
+     * @throws BusinessException 开立单位无法解析相对拆零倍数时
+     */
+    public static DoctorStationAdviceFifoSegmentDraft tryAllocateSingleLotCoveringTotalInDoctorBusinessUnit(
+        List<InventoryCatalogAvailabilityRowModel> inventoryRows,
+        Map<String, BigDecimal> occupancyByItemLocationKey,
+        String itemTable,
+        ProductDefinitionDisplayDto productRow,
+        String businessUnitCode,
+        BigDecimal totalBusinessQuantity
+    ) {
+        // Gate：总量非法则无法单批覆盖
+        if (totalBusinessQuantity == null || totalBusinessQuantity.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+        if (inventoryRows == null || inventoryRows.isEmpty()) {
+            return null;
+        }
+        List<ProductDefinitionCatalogUnitBandDto> bands =
+            ProductDefinitionCatalogUnitBandsAssembler.buildDoctorStationBands(productRow, null, null);
+        BigDecimal ratioToSplit = ProductDefinitionCatalogUnitBandsAssembler.resolveRatioToSplitByUnitCode(
+            bands, businessUnitCode);
+        if (ratioToSplit == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                "医嘱开立单位无法解析相对拆零倍数，无法按先进先出分配发放批次");
+        }
+        boolean allowPartialAcrossLots = ratioToSplit.compareTo(BigDecimal.ONE) == 0;
+        for (InventoryCatalogAvailabilityRowModel row : inventoryRows) {
+            // Skip：空行或无批号库存不可作为皮试单批落点
+            if (row == null) {
+                continue;
+            }
+            String rowLot = row.getLotNumber();
+            if (rowLot == null || rowLot.trim().isEmpty()) {
+                continue;
+            }
+            // Pre：每个候选批独立拷贝预占，模拟「整量只取该批」时的库位占用
+            Map<String, BigDecimal> occupancyForCandidate = copyOccupancyRemaining(occupancyByItemLocationKey);
+            BigDecimal netSplit = consumeLocationOccupancyForLot(
+                occupancyForCandidate, itemTable, row.getItemId(), row.getLocationId(), row.getQuantity());
+            // 该批预减后无可用量，继续 FIFO 下一批
+            if (netSplit.compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            BigDecimal coverableBusiness;
+            if (allowPartialAcrossLots) {
+                // 拆零开立：净拆零量即可覆盖的业务量
+                coverableBusiness = netSplit;
+            } else {
+                // 整包装开立：仅整数个开立单位计入可覆盖量
+                coverableBusiness = netSplit.divide(ratioToSplit, 0, RoundingMode.DOWN);
+            }
+            // 本批单批够量：整量落此批，不再跨批
+            if (coverableBusiness.compareTo(totalBusinessQuantity) >= 0) {
+                DoctorStationAdviceFifoSegmentDraft draft = new DoctorStationAdviceFifoSegmentDraft();
+                draft.setLocationId(row.getLocationId());
+                draft.setLotNumber(rowLot.trim());
+                draft.setQuantity(totalBusinessQuantity);
+                return draft;
+            }
+        }
+        // 无一单批够量
+        return null;
     }
 
     /**
@@ -286,6 +360,78 @@ public final class DoctorStationAdviceInventoryUnitQuantityHelper {
             acc.put(key, prev.add(splitQty));
         }
         return acc;
+    }
+
+    /**
+     * 复制库位级预占映射，供批次遍历时原地消耗，避免改到预取批次上的原值。
+     *
+     * @param occupancyByItemLocationKey 表+定义+库位 → 拆零预占；可空
+     * @return 可写副本；入参空时返回空 Map
+     */
+    public static Map<String, BigDecimal> copyOccupancyRemaining(Map<String, BigDecimal> occupancyByItemLocationKey) {
+        Map<String, BigDecimal> remaining = new HashMap<>();
+        if (occupancyByItemLocationKey == null || occupancyByItemLocationKey.isEmpty()) {
+            // 无预占可复制时返回空映射，后续批次按账面全额可用
+            return remaining;
+        }
+        remaining.putAll(occupancyByItemLocationKey);
+        return remaining;
+    }
+
+    /**
+     * 将库位级发放预占按批号行遍历顺序消耗一次，得到本批净可用拆零量。
+     *
+     * <p>占用聚合键为表+定义+库位、不含批号（AS-OP-DOR-003 规则 D / BR-ORD-011）。
+     * 同库多批时须先扣本批能消化的预占，剩余预占留给后续批次；禁止对每一批都减去整库预占，
+     * 否则账面 10+5、预占 9 会只剩 1。</p>
+     *
+     * @param occupancyRemainingByItemLocationKey 尚未被本轮批次消化的拆零预占；本方法原地扣减
+     * @param itemTable                           物品来源表名（复合键前缀）
+     * @param itemId                              物品定义主键
+     * @param locationId                          库位主键
+     * @param physicalSplitQuantity               本批账面拆零数量
+     * @return 本批扣预占后的净可用拆零量（小于 0 时按 0）
+     */
+    public static BigDecimal consumeLocationOccupancyForLot(
+        Map<String, BigDecimal> occupancyRemainingByItemLocationKey,
+        String itemTable,
+        Long itemId,
+        Long locationId,
+        BigDecimal physicalSplitQuantity
+    ) {
+        BigDecimal net = physicalSplitQuantity;
+        if (net == null) {
+            // 账面缺省按 0，避免空数量把后续预占算成负可用
+            net = BigDecimal.ZERO;
+        }
+        if (occupancyRemainingByItemLocationKey == null || occupancyRemainingByItemLocationKey.isEmpty()) {
+            // 无预占：净可用即账面；负账面视为 0
+            if (net.compareTo(BigDecimal.ZERO) < 0) {
+                return BigDecimal.ZERO;
+            }
+            return net;
+        }
+        String occKey = ProductTableNameHelper.tripleCompositeKey(itemTable, itemId, locationId);
+        BigDecimal locked = occupancyRemainingByItemLocationKey.get(occKey);
+        if (locked == null || locked.compareTo(BigDecimal.ZERO) <= 0) {
+            // 该库位预占已消化完，本批全额可用
+            if (net.compareTo(BigDecimal.ZERO) < 0) {
+                return BigDecimal.ZERO;
+            }
+            return net;
+        }
+        // 本批先消化剩余预占：能扣多少扣多少，未消化完的留给后续批次。
+        BigDecimal consume = locked.min(net);
+        if (consume.compareTo(BigDecimal.ZERO) < 0) {
+            consume = BigDecimal.ZERO;
+        }
+        occupancyRemainingByItemLocationKey.put(occKey, locked.subtract(consume));
+        net = net.subtract(consume);
+        if (net.compareTo(BigDecimal.ZERO) < 0) {
+            // 账面不足以覆盖本批消化量时，本批净可用为 0
+            return BigDecimal.ZERO;
+        }
+        return net;
     }
 
     /**

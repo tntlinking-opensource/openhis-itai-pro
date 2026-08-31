@@ -29,6 +29,9 @@ public class DeptDeskRowModel {
     /** 待检服务申请主键。 */
     private Long serviceRequestId;
 
+    /** 诊疗活动定义主键。 */
+    private Long activityId;
+
     /** 项目展示名。 */
     private String activityDisplay;
 
@@ -37,4 +40,13 @@ public class DeptDeskRowModel {
 
     /** LIS 外发状态 code。 */
     private String lisDispatchEnum;
+
+    /** 患者年龄（由出生日期推算）。 */
+    private Integer patientAge;
+
+    /** 是否团检。 */
+    private Boolean groupFlag;
+
+    /** 就诊状态 code（Encounter.statusEnum）。 */
+    private String encounterStatusEnum;
 }

@@ -108,6 +108,7 @@ export async function printInpatientPrepayReceipt(options: PrintInpatientPrepayR
     scenarioCode: PRINT_SCENARIO.ipPrepayReceiptPrint,
     source: options.source,
     bizRef: {
+      scenarioCode: PRINT_SCENARIO.ipPrepayReceiptPrint,
       encounterId: options.encounterId ?? undefined,
       paymentId: options.paymentId ?? undefined,
     },

@@ -46,6 +46,18 @@ public class NurseStationCostSummaryLineDto {
     @Schema(description = "分类展示名")
     private String categoryDisplay;
 
+    /**
+     * 医保等级 code（术语 {@code CHRGITM_LV}，取自产品目录 chrgitmLv）。
+     */
+    @Schema(description = "医保等级 code")
+    private Integer chrgitmLv;
+
+    /**
+     * 医保等级展示名（甲类/乙类/丙类等；由产品读模型 chrgitmLvText 回填）。
+     */
+    @Schema(description = "医保等级展示名")
+    private String chrgitmLvText;
+
     /** 展示单价。 */
     @Schema(description = "展示单价")
     private BigDecimal unitPrice;

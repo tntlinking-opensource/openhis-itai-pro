@@ -1238,7 +1238,9 @@ public class InpatientRegistrationAppService {
     }
 
     /**
-     * 按源门诊就诊解析活动接诊医生姓名（ADMITTER），供门诊转住院登记弹窗只读展示。
+     * 按源门诊就诊解析接诊医生姓名（ADMITTER），供门诊转住院登记弹窗只读展示。
+     *
+     * <p>展示口径：活动参与者优先，无活动行时回落末次 COMPLETED（退号收口后仍可回显）。</p>
      *
      * @param ambEncounterId 源门诊就诊 ID
      * @return 接诊医生姓名；无参与者或未维护姓名时返回 null
@@ -1248,7 +1250,7 @@ public class InpatientRegistrationAppService {
             return null;
         }
         List<EncounterParticipantQueryModel> participants =
-            encounterQueryService.listActiveEncounterParticipantsByType(
+            encounterQueryService.listDisplayEncounterParticipantsByType(
                 ambEncounterId, EncounterConstants.ROLE_ADMITTER);
         if (participants == null || participants.isEmpty()) {
             return null;

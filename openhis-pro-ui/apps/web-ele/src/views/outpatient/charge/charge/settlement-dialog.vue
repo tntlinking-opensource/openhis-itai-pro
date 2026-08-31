@@ -89,7 +89,7 @@ const props = withDefaults(
     previews: () => [],
     primaryButtonText: '确认收费',
     projectTableTitle: '收费项目',
-    receivableAmountLabel: '应收金额',
+    receivableAmountLabel: '个人现金（待收）',
     refundChannelItems: () => [],
     scanPayEnabled: false,
     scanInputLocked: false,
@@ -121,7 +121,7 @@ const showScanPaySection = computed(
 const zeroPayHint = computed(() => {
   const insurance = Number(props.summaryInsuranceAmount ?? 0);
   return Number.isFinite(insurance) && insurance > 0.001
-    ? '医保已全额覆盖，无需额外现金支付'
+    ? '医保已全额覆盖，无需个人现金实收'
     : '本单金额为 0，无需支付';
 });
 
@@ -203,7 +203,7 @@ const insuranceGroupColumns: TableColumn[] = [
   },
   {
     prop: 'acctPay',
-    label: '个账',
+    label: '医保个账',
     width: 88,
     align: 'right',
     headerAlign: 'center',
@@ -211,7 +211,7 @@ const insuranceGroupColumns: TableColumn[] = [
   },
   {
     prop: 'psnCashPay',
-    label: '现金',
+    label: '个人现金',
     width: 88,
     align: 'right',
     headerAlign: 'center',
@@ -294,9 +294,12 @@ const feeDetailDisplayRows = computed(() => {
   const rows: { key: string; label: string; value: number }[] = [];
   for (const def of OUTPATIENT_CHARGE_FEE_DETAIL_FIELD_DEFS) {
     const value = map.get(def.key) ?? 0;
-    // 常显：基金合计 / 现金 / 最终应收；其余仅非零展示，避免与「统筹」重复空行干扰
+    // 常显：基金 / 个账 / 个人现金 / 最终应收，便于个账不足时对照
     const alwaysShow =
-      def.key === 'fundPay' || def.key === 'cashPay' || def.key === 'finalReceivable';
+      def.key === 'fundPay' ||
+      def.key === 'accountPay' ||
+      def.key === 'cashPay' ||
+      def.key === 'finalReceivable';
     if (!alwaysShow && Math.abs(Number(value)) < 0.000001) {
       continue;
     }
@@ -307,6 +310,52 @@ const feeDetailDisplayRows = computed(() => {
     });
   }
   return rows;
+});
+
+/** 费用明细里的个账 / 个人现金（个账不足催收对照） */
+const accountPayAmount = computed(() => {
+  const item = props.insuranceBreakdownItems.find((row) => row.key === 'accountPay');
+  const value = Number(item?.value ?? 0);
+  return Number.isFinite(value) ? value : 0;
+});
+const personalCashPayAmount = computed(() => {
+  const item = props.insuranceBreakdownItems.find((row) => row.key === 'cashPay');
+  const fromBreakdown = Number(item?.value ?? 0);
+  if (Number.isFinite(fromBreakdown) && Math.abs(fromBreakdown) > 0.001) {
+    return fromBreakdown;
+  }
+  return displayAmountNum.value;
+});
+/** 有个人现金应付时展示对照提示（医保个账 ≠ 微信/现金实收） */
+const showPersonalCashHint = computed(
+  () => props.insuranceBreakdownItems.length > 0 && personalCashPayAmount.value > 0.001,
+);
+
+/** 所选实收渠道说明，避免与医保个账混淆 */
+function resolveChannelCollectHint(channelCode: string) {
+  const code = String(channelCode ?? '').trim();
+  if (code === 'SCAN_PAY' || code === 'WECHAT') {
+    return '（将记为微信/扫码实收，不是医保个账）';
+  }
+  if (code === 'ALIPAY') {
+    return '（将记为支付宝实收，不是医保个账）';
+  }
+  if (code === 'CASH') {
+    return '（将记为现金实收，不是医保个账）';
+  }
+  if (code === 'BANK_CARD') {
+    return '（将记为银行卡实收，不是医保个账）';
+  }
+  return '（实收渠道与医保个账不是同一笔）';
+}
+
+const personalCashHintText = computed(() => {
+  const cashText = formatMoney(personalCashPayAmount.value);
+  const channelHint = resolveChannelCollectHint(payChannelCode.value);
+  if (accountPayAmount.value > 0.001) {
+    return `医保个账 ¥${formatMoney(accountPayAmount.value)}，个人现金待收 ¥${cashText}${channelHint}`;
+  }
+  return `个人现金待收 ¥${cashText}${channelHint}`;
 });
 
 const showInsuranceGroups = computed(() => (props.insuranceGroups?.length ?? 0) > 0);
@@ -392,6 +441,9 @@ const handleCancel = () => {
               ¥{{ formatMoney(item.value) }}
             </ElDescriptionsItem>
           </ElDescriptions>
+          <p v-if="showPersonalCashHint" class="copy-personal-cash-hint">
+            {{ personalCashHintText }}
+          </p>
         </div>
 
         <!-- 右上：账户信息 + 结算操作 -->
@@ -400,7 +452,7 @@ const handleCancel = () => {
             <SectionTitle class="mb-2" title="账户信息" />
             <div class="copy-summary">
               <div v-if="showInsuranceAccountBalance" class="copy-summary-item is-balc">
-                <span>医保余额（支付前）</span>
+                <span>医保个账余额（支付前）</span>
                 <strong>{{ insuranceAccountBalanceDisplay }}</strong>
               </div>
               <div v-if="showInsuranceCvlservFlag" class="copy-summary-item">
@@ -436,6 +488,9 @@ const handleCancel = () => {
                   <span>{{ props.receivableAmountLabel }}</span>
                   <strong>¥{{ formatMoney(receivableAmount) }}</strong>
                 </div>
+                <p v-if="showPersonalCashHint" class="copy-personal-cash-hint is-compact">
+                  {{ personalCashHintText }}
+                </p>
               </div>
             </div>
 
@@ -767,6 +822,24 @@ const handleCancel = () => {
 .copy-insurance-list :deep(.el-descriptions__label.is-nonzero),
 .copy-insurance-list :deep(.el-descriptions__content.is-nonzero) {
   color: #ea580c;
+}
+
+.copy-personal-cash-hint {
+  margin: 10px 0 0;
+  border-radius: 6px;
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  padding: 8px 10px;
+  color: #c2410c;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.copy-personal-cash-hint.is-compact {
+  margin-top: 4px;
+  padding: 6px 8px;
+  font-size: 13px;
 }
 
 .copy-bottom {

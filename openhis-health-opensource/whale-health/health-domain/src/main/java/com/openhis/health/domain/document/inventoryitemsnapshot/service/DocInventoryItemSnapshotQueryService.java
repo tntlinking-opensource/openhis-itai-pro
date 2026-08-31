@@ -316,8 +316,8 @@ public class DocInventoryItemSnapshotQueryService {
             if (query.getChrgitmLvs() != null && !query.getChrgitmLvs().isEmpty()) {
                 predicates.add(root.get(FieldNameConstants.CHRGITM_LV).in(query.getChrgitmLvs()));
             }
-            // 基药筛选：静表无 basic_flag，按应用层预解析的药品定义主键收窄（耗材排除）
-            if (query.getBasicFlag() != null) {
+            // 重点药类型：静表无药典标识列，按应用层预解析的药品定义主键收窄（耗材排除）
+            if (StringUtils.isNotEmpty(query.getKeyDrugType())) {
                 List<Long> medIds = query.getResolvedMedicationDefinitionIds();
                 if (medIds == null || medIds.isEmpty()) {
                     // 无命中定义时强制空结果，避免漏筛成全量
@@ -332,12 +332,13 @@ public class DocInventoryItemSnapshotQueryService {
                 String trimmed = query.getKeyword().trim();
                 String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(trimmed);
                 List<Predicate> keywordOr = new ArrayList<>();
-                // 备份关键字：名称/拼音/五笔/编码/商品名；不含批号（BR-INV-DTL-010）
+                // 备份关键字：名称/拼音/五笔/编码/商品名/批号（与现库 IF-02 口径对齐）
                 keywordOr.add(cb.like(cb.lower(root.get(FieldNameConstants.NAME)), likeIc));
                 keywordOr.add(cb.like(cb.lower(root.get(FieldNameConstants.PY_STR)), likeIc));
                 keywordOr.add(cb.like(cb.lower(root.get(FieldNameConstants.WB_STR)), likeIc));
                 keywordOr.add(cb.like(cb.lower(root.get(FieldNameConstants.PRODUCT_BUS_NO)), likeIc));
                 keywordOr.add(cb.like(cb.lower(root.get(FieldNameConstants.MERCHANDISE_NAME)), likeIc));
+                keywordOr.add(cb.like(cb.lower(root.get(FieldNameConstants.LOT_NUMBER)), likeIc));
                 predicates.add(cb.or(keywordOr.toArray(new Predicate[0])));
                 // B.2.1：精确全等置顶，次级主键倒序
                 List<Order> secondary = List.of(cb.desc(root.get(FieldNameConstants.ID)));
@@ -350,7 +351,8 @@ public class DocInventoryItemSnapshotQueryService {
                     root.get(FieldNameConstants.PY_STR),
                     root.get(FieldNameConstants.WB_STR),
                     root.get(FieldNameConstants.PRODUCT_BUS_NO),
-                    root.get(FieldNameConstants.MERCHANDISE_NAME));
+                    root.get(FieldNameConstants.MERCHANDISE_NAME),
+                    root.get(FieldNameConstants.LOT_NUMBER));
             }
             return cb.and(predicates.toArray(new Predicate[0]));
         };

@@ -33,4 +33,7 @@ public class DeviceDispenseListModel {
      * 源发放主键（待退/已退对冲行指向原已发事实；正向行通常为空）。
      */
     private Long basedOnId;
+
+    /** 批号（FIFO/拣配后实发批号；草稿可能为空）。 */
+    private String lotNumber;
 }

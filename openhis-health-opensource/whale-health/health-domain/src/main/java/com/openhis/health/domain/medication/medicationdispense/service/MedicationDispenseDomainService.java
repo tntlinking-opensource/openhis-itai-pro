@@ -25,6 +25,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 
@@ -75,6 +76,37 @@ public class MedicationDispenseDomainService {
             preparedEvent.setTraceNo(dispense.getTraceNo());
             domainEventPublisher.publish(preparedEvent);
         }
+    }
+
+    /**
+     * 核发前覆盖待发行追溯码（不改状态）。
+     *
+     * <p>供已配药重试：界面改扫后须在扣主档前写回 {@code trace_no}，避免仍按首次配药旧码 OUT。</p>
+     *
+     * @param traceNoByDispenseId 发放行 id → 逗号串；空串/空 map 跳过
+     */
+    public void applyTraceNoBeforeDispense(Map<Long, String> traceNoByDispenseId) {
+        // 无待覆盖码：直接返回
+        if (traceNoByDispenseId == null || traceNoByDispenseId.isEmpty()) {
+            return;
+        }
+        List<MedicationDispense> toSave = new ArrayList<>();
+        for (Map.Entry<Long, String> entry : traceNoByDispenseId.entrySet()) {
+            // 无主键或空码：本行不改
+            if (entry.getKey() == null || StringUtils.isEmpty(entry.getValue())) {
+                continue;
+            }
+            MedicationDispense dispense = this.mustGet(entry.getKey());
+            // Pre：仅待发/已配/已汇总可在核发前改码
+            dispense.ensureStatusForDispense();
+            dispense.applyTraceNoOnly(entry.getValue());
+            toSave.add(dispense);
+        }
+        // 无有效变更：不落库
+        if (toSave.isEmpty()) {
+            return;
+        }
+        this.saveAllMedicationDispenses(toSave);
     }
 
     /**
@@ -265,10 +297,18 @@ public class MedicationDispenseDomainService {
             if (segment.getQuantity() == null || segment.getQuantity().compareTo(BigDecimal.ZERO) <= 0) {
                 throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "FIFO 分段 quantity 必须大于 0");
             }
+            // Gate：签发锁定批号禁止空/空白，与耗材 replaceFifo 同口径，避免挂费有批、发放无批
+            String signedLot = segment.getLotNumber();
+            if (StringUtils.isEmpty(signedLot)) {
+                throw new BusinessException(
+                    ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT,
+                    "FIFO 分段批号不能为空，请维护库存批号后再签发");
+            }
             MedicationDispense dispense = this.buildFromGenerateInput(
                 command.getMedReqId(), command.getMedicationId(), command.getEncounterId(), command.getPatientId(),
                 segment.getLocationId(), segment.getQuantity(), command.getUnitCode(), command.getDispenseEnum());
-            dispense.setLotNumber(segment.getLotNumber());
+            // Cmd：落库签发批号（已 trim）
+            dispense.setLotNumber(signedLot.trim());
             dispense.initDraft();
             created.add(dispense);
         }

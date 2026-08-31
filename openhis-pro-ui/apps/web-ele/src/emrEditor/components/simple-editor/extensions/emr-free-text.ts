@@ -1,67 +1,49 @@
 import { mergeAttributes, Node } from '@tiptap/core';
 import { VueNodeViewRenderer } from '@tiptap/vue-3';
 
-import EmrFreeTextView from '../node-views/EmrFreeTextView.vue';
+import { buildFillableNodeInsertJson } from '../emr-fillable-json';
+import { fillableNodeExtraClass } from '../node-views/fillable-field-view.shared';
+import { fillableCaretAfterInsertCommand } from '../../../fillable-field/runtime/caret-policy';
+import EmrFillableFieldView from '../node-views/EmrFillableFieldView.vue';
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
     emrFreeText: {
       insertEmrFreeText: (
-        attrs?: Partial<{ label: string; placeholder: string; value: string }>,
+        attrs?: Partial<{
+          label: string;
+          placeholder: string;
+          required?: boolean;
+          requiredMessage?: string;
+          value: string;
+        }>,
       ) => ReturnType;
     };
   }
 }
 
-/** 行内自由文本：外观类似元数据芯片，不绑 fieldKey，值仅存于文档内 */
+/**
+ * 自由文本：方案 B atom 内联节点 + NodeView 岛屿输入。
+ * 存盘 JSON：emrFreeText + attrs.value，无 content。
+ */
 export const EmrFreeText = Node.create({
   name: 'emrFreeText',
 
   group: 'inline',
   inline: true,
   atom: true,
+  content: '',
   selectable: true,
   draggable: false,
 
   addAttributes() {
     return {
-      label: {
-        default: '填写',
-        parseHTML: (el) => {
-          if (typeof el === 'string') return '填写';
-          const h = el as HTMLElement;
-          return h.dataset.label ?? h.dataset.placeholder ?? '填写';
-        },
-        renderHTML: (attrs) => ({
-          'data-label': String(attrs.label ?? attrs.placeholder ?? '填写'),
-        }),
-      },
-      placeholder: {
-        default: '填写',
-        parseHTML: (el) => {
-          if (typeof el === 'string') return '填写';
-          const h = el as HTMLElement;
-          return h.dataset.placeholder ?? h.dataset.label ?? '填写';
-        },
-        renderHTML: (attrs) => ({
-          'data-placeholder': String(attrs.placeholder ?? attrs.label ?? '填写'),
-        }),
-      },
-      value: {
-        default: '',
-        parseHTML: (el) => {
-          if (typeof el === 'string') return '';
-          const h = el as HTMLElement;
-          const body = h.querySelector('.emr-bracket-fallback__body');
-          if (body instanceof HTMLElement) {
-            return h.dataset.value ?? body.textContent?.trim() ?? '';
-          }
-          return h.dataset.value ?? h.textContent?.trim() ?? '';
-        },
-        renderHTML: (attrs) => ({
-          'data-value': String(attrs.value ?? ''),
-        }),
-      },
+      slotId: { default: '' },
+      label: { default: '填写' },
+      placeholder: { default: '填写' },
+      value: { default: '' },
+      required: { default: false },
+      requiredMessage: { default: '' },
     };
   },
 
@@ -71,17 +53,13 @@ export const EmrFreeText = Node.create({
         tag: 'span[data-emr-free-text]',
         getAttrs: (el) => {
           if (!(el instanceof HTMLElement)) return false;
-          const body = el.querySelector('.emr-bracket-fallback__body');
-          const label = el.dataset.label ?? el.dataset.placeholder ?? '填写';
-          const valueParsed =
-            el.dataset.value ??
-            (body instanceof HTMLElement
-              ? (body.textContent?.trim() ?? '')
-              : (el.textContent?.trim() ?? ''));
           return {
-            label,
-            placeholder: el.dataset.placeholder ?? el.dataset.label ?? label,
-            value: valueParsed,
+            slotId: el.dataset.slotId ?? '',
+            label: el.dataset.label ?? el.dataset.placeholder ?? '填写',
+            placeholder: el.dataset.placeholder ?? el.dataset.label ?? '填写',
+            value: el.dataset.value ?? el.textContent?.trim() ?? '',
+            required: el.dataset.required === '1',
+            requiredMessage: el.dataset.requiredMessage ?? '',
           };
         },
       },
@@ -89,51 +67,44 @@ export const EmrFreeText = Node.create({
   },
 
   renderHTML({ HTMLAttributes, node }) {
-    const v = String(node.attrs.value ?? '');
-    const label = String(node.attrs.label ?? node.attrs.placeholder ?? '填写');
-    const ph = String(node.attrs.placeholder ?? node.attrs.label ?? label);
+    const placeholder = String(HTMLAttributes.placeholder ?? HTMLAttributes.label ?? '填写');
     return [
       'span',
       mergeAttributes(HTMLAttributes, {
         'data-emr-free-text': '1',
-        'data-label': label,
-        'data-placeholder': ph,
-        'data-value': v,
-        class: 'emr-free-text emr-free-text--fallback',
-        title: '自由文本',
+        'data-placeholder': placeholder,
+        'data-value': String(node.attrs.value ?? ''),
+        class: fillableNodeExtraClass(node, 'freeText'),
       }),
-      ['span', { class: 'emr-bracket-fallback__bracket', 'aria-hidden': 'true' }, '['],
-      [
-        'span',
-        {
-          class: 'emr-bracket-fallback__body',
-          'data-placeholder': label,
-        },
-        v,
-      ],
-      ['span', { class: 'emr-bracket-fallback__bracket', 'aria-hidden': 'true' }, ']'],
+      String(node.attrs.value ?? ''),
     ];
   },
 
   addNodeView() {
-    return VueNodeViewRenderer(EmrFreeTextView);
+    return VueNodeViewRenderer(EmrFillableFieldView);
   },
 
   addCommands() {
     return {
       insertEmrFreeText:
         (attrs) =>
-        ({ commands }) => {
+        ({ chain }) => {
           const label = attrs?.label ?? attrs?.placeholder ?? '填写';
-          const placeholder = attrs?.placeholder ?? attrs?.label ?? label;
-          return commands.insertContent({
-            type: 'emrFreeText',
-            attrs: {
-              label,
-              placeholder,
-              value: attrs?.value ?? '',
-            },
-          });
+          const placeholder = attrs?.placeholder ?? label;
+          const value = attrs?.value !== undefined ? attrs.value : '';
+          return chain()
+            .insertContent(
+              buildFillableNodeInsertJson({
+                kind: 'freeText',
+                label,
+                placeholder,
+                value,
+                required: attrs?.required === true,
+                requiredMessage: attrs?.requiredMessage ?? '',
+              }),
+            )
+            .command(fillableCaretAfterInsertCommand('toolbar'))
+            .run();
         },
     };
   },

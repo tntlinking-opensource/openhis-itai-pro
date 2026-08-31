@@ -19,4 +19,6 @@ public class QueryBpcOrderResult {
     private String status;
     private String payType;
     private Long txnAmtFen;
+    /** 银联/POS 回传实付（分）。 */
+    private Long paidAmtFen;
 }

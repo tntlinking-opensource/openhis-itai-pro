@@ -38,6 +38,10 @@ public class PeisPatientHealthArchive extends BaseAuditedEntity {
     @Column(name = "allergy_summary")
     private String allergySummary;
 
+    /** 体检标签编码。 */
+    @Column(name = "tag_code")
+    private String tagCode;
+
     @Column(name = "remark")
     private String remark;
 }

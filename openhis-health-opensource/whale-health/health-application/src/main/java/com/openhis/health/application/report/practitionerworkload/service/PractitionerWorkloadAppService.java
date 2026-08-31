@@ -526,24 +526,24 @@ public class PractitionerWorkloadAppService {
             // Pre：一次加载 scope 内 charge 行（主键预解析 OK；允许全窗 charge）
             List<PractitionerWorkloadChargeRowQueryModel> adviceChargeRows =
                 this.buildWorkloadChargeRows(query, false, true);
-            // Pre：轻量展开明细读模型（不含 Request enrich）
-            List<PractitionerWorkloadRequestDetailQueryModel> allDetailRows =
-                this.chargeItemQueryService.listPractitionerWorkloadDetailFromChargeRows(adviceChargeRows);
-            // Pre：仅为排序批量回填 req_opened_time（禁止全窗展示名 enrich）
+            // Pre：批量解析开单锚点（排序键；禁止先展开全量明细再 sort）
             List<ChargeItem> adviceChargeItems = this.extractChargeItemsFromRows(adviceChargeRows);
             Map<Long, ChargeItemOrderingDoctorFromRequestSupport.OrderingDoctorAnchor> orderingAnchors =
                 this.chargeItemOrderingDoctorFromRequestSupport.mapOrderingDoctorAnchorByChargeItemId(
                     adviceChargeItems);
-            this.chargeItemOrderingDoctorFromRequestSupport.applyOpenedTimeToWorkloadDetails(
-                allDetailRows, orderingAnchors);
-            // Pre：按开立时间 DESC 排序（BR-RPT-WKL-012）
-            allDetailRows.sort(Comparator.comparing(
-                PractitionerWorkloadRequestDetailQueryModel::getEnteredDate,
+            List<PractitionerWorkloadChargeRowQueryModel> sortableChargeRows =
+                this.chargeItemQueryService.filterPractitionerWorkloadAdviceChargeRows(adviceChargeRows);
+            sortableChargeRows.sort(Comparator.comparing(
+                row -> this.resolveWorkloadChargeRowOpenedTime(row, orderingAnchors),
                 Comparator.nullsLast(Comparator.reverseOrder())));
-            // Asm：域层仅切片；total = 全窗明细条数（pageNo 已由 Mapper 写入 Query）
-            Page<PractitionerWorkloadRequestDetailQueryModel> detailPage =
-                this.chargeItemQueryService.slicePractitionerWorkloadDetailRows(allDetailRows, query);
-            List<PractitionerWorkloadRequestDetailQueryModel> pageContent = detailPage.getContent();
+            // Asm：先切片 charge 行，再仅展开当前页明细（SKILL §2.1 #9）
+            Page<PractitionerWorkloadChargeRowQueryModel> chargeRowPage =
+                this.chargeItemQueryService.slicePractitionerWorkloadChargeRows(sortableChargeRows, query);
+            List<PractitionerWorkloadRequestDetailQueryModel> pageContent =
+                this.chargeItemQueryService.buildPractitionerWorkloadDetailRowsFromChargeRows(
+                    chargeRowPage.getContent());
+            this.chargeItemOrderingDoctorFromRequestSupport.applyOpenedTimeToWorkloadDetails(
+                pageContent, orderingAnchors);
             // Pre：仅当前页回填开单医生 id（复用已解析 anchor，禁止二次全窗 Request IN）
             this.chargeItemOrderingDoctorFromRequestSupport.applyOrderingDoctorToWorkloadDetails(
                 pageContent, orderingAnchors);
@@ -559,9 +559,9 @@ public class PractitionerWorkloadAppService {
             // Asm：映射分页响应
             return this.practitionerWorkloadMapper.toPagePractitionerWorkloadDetailResponse(
                 lineDtos,
-                detailPage.getTotalElements(),
-                detailPage.getNumber() + 1,
-                detailPage.getSize(),
+                chargeRowPage.getTotalElements(),
+                chargeRowPage.getNumber() + 1,
+                chargeRowPage.getSize(),
                 null);
         } catch (BusinessException businessException) {
             throw businessException;
@@ -629,11 +629,12 @@ public class PractitionerWorkloadAppService {
                     exportRows.add(exportRow);
                 }
             }
-            // Asm：AnnotatedExcelExporter 生成 xlsx
+            // Asm：AnnotatedExcelExporter 生成 xlsx（前端 exportColumns 裁剪列）
             byte[] body = AnnotatedExcelExporter.exportToXlsxBytes(
                 PractitionerWorkloadConstants.EXPORT_SHEET_NAME,
                 exportRows,
-                PractitionerWorkloadExportRowDto.class);
+                PractitionerWorkloadExportRowDto.class,
+                request.getExportColumns());
             String fileName = "科室医生工作量明细_"
                 + GeneralSharedConstants.EXPORT_FILE_TIMESTAMP_FORMATTER.format(java.time.LocalDateTime.now())
                 + ".xlsx";
@@ -1456,6 +1457,30 @@ public class PractitionerWorkloadAppService {
             return true;
         }
         return PractitionerWorkloadConstants.CHARGE_ITEM_CONTEXT_REGISTER.equals(chargeItem.getContextEnum());
+    }
+
+    /**
+     * 解析 charge 行开立时间排序键（Request.req_opened_time；无锚点时 null 排末尾）。
+     *
+     * @param row                 charge 行
+     * @param anchorByChargeItemId chargeItemId → 开单锚点
+     * @return 开立时间；无锚点返回 null
+     */
+    private LocalDateTime resolveWorkloadChargeRowOpenedTime(
+        PractitionerWorkloadChargeRowQueryModel row,
+        Map<Long, ChargeItemOrderingDoctorFromRequestSupport.OrderingDoctorAnchor> anchorByChargeItemId) {
+        if (row == null || row.getChargeItem() == null || row.getChargeItem().getId() == null) {
+            return null;
+        }
+        if (anchorByChargeItemId == null) {
+            return null;
+        }
+        ChargeItemOrderingDoctorFromRequestSupport.OrderingDoctorAnchor anchor =
+            anchorByChargeItemId.get(row.getChargeItem().getId());
+        if (anchor == null) {
+            return null;
+        }
+        return anchor.openedTime();
     }
 
     /**

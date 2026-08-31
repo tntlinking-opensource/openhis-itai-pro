@@ -30,6 +30,7 @@ import org.springframework.stereotype.Service;
 import com.openhis.health.domain.clinical.procedure.queries.NurseWorkloadPageQuery;
 import com.openhis.health.domain.clinical.procedure.queries.model.NurseExecutionCategorySummaryQueryModel;
 import com.openhis.health.domain.clinical.procedure.queries.model.NurseExecutionWorkloadDetailQueryModel;
+import com.openhis.health.domain.clinical.procedure.support.NurseWorkloadProcedureReportCriteriaSupport;
 import com.openhis.health.domain.clinical.procedure.support.ProcedureNetExecutionFilterSupport;
 import com.openhis.health.domain.share.constants.ClinicalProcedureConstants;
 import com.openhis.health.domain.share.constants.NurseWorkloadConstants;
@@ -500,7 +501,12 @@ public class ProcedureQueryService {
                 primaryByProcedureId.put(procedureId, performer);
                 continue;
             }
-            if (!fallbackByProcedureId.containsKey(procedureId)) {
+            ProcedurePerformer existingFallback = fallbackByProcedureId.get(procedureId);
+            // 无 PRIMARY 时取 id 最小执行人，与护士报表 Criteria 子查询口径一致
+            if (existingFallback == null
+                || (performer.getId() != null
+                    && existingFallback.getId() != null
+                    && performer.getId() < existingFallback.getId())) {
                 fallbackByProcedureId.put(procedureId, performer);
             }
         }
@@ -655,24 +661,35 @@ public class ProcedureQueryService {
      */
     public Page<NurseExecutionWorkloadDetailQueryModel> pageNurseExecutionWorkloadDetail(
         NurseWorkloadPageQuery query) {
-        // Pre：净 COMPLETED 全集排序后仅物化当前页（翻页勿全量装配模型）
-        List<Procedure> netRows = this.listNurseExecutionNetCompletedProcedures(query);
-        netRows.sort(Comparator.comparing(Procedure::getRecordedTime, Comparator.nullsLast(Comparator.reverseOrder())));
         int pageSize = this.resolveNurseWorkloadPageSize(query);
         int springIndex = 0;
         if (query != null) {
             springIndex = query.springPageIndex();
         }
-        int fromIndex = springIndex * pageSize;
-        if (fromIndex >= netRows.size()) {
+        // Pre：同窗净 COMPLETED 已排序缓存则内存切片（汇总+明细分页同窗复用）
+        if (query != null && query.getCachedNetCompletedProceduresForRequest() != null) {
+            List<Procedure> netRows = this.castNetCompletedProcedureCache(query.getCachedNetCompletedProceduresForRequest());
+            int fromIndex = springIndex * pageSize;
             Pageable pageable = PageRequest.of(springIndex, pageSize);
-            return new PageImpl<>(Collections.emptyList(), pageable, netRows.size());
+            if (fromIndex >= netRows.size()) {
+                return new PageImpl<>(Collections.emptyList(), pageable, netRows.size());
+            }
+            int toIndex = Math.min(fromIndex + pageSize, netRows.size());
+            List<NurseExecutionWorkloadDetailQueryModel> pageModels =
+                this.toNurseExecutionWorkloadDetailModels(netRows.subList(fromIndex, toIndex), query);
+            return new PageImpl<>(pageModels, pageable, netRows.size());
         }
-        int toIndex = Math.min(fromIndex + pageSize, netRows.size());
+        // Pre：明细分页专用 DB 分页（NOT EXISTS 对冲 + recorded_time 倒序；禁止全窗 findAll 后 subList）
+        Pageable pageable = PageRequest.of(
+            springIndex,
+            pageSize,
+            Sort.by(Sort.Direction.DESC, "recordedTime"));
+        Specification<Procedure> specification =
+            NurseWorkloadProcedureReportCriteriaSupport.buildNetCompletedSpecification(query);
+        Page<Procedure> entityPage = this.procedureRepository.findAll(specification, pageable);
         List<NurseExecutionWorkloadDetailQueryModel> pageModels =
-            this.toNurseExecutionWorkloadDetailModels(netRows.subList(fromIndex, toIndex), query);
-        Pageable pageable = PageRequest.of(springIndex, pageSize);
-        return new PageImpl<>(pageModels, pageable, netRows.size());
+            this.toNurseExecutionWorkloadDetailModels(entityPage.getContent(), query);
+        return new PageImpl<>(pageModels, pageable, entityPage.getTotalElements());
     }
 
     /**
@@ -684,7 +701,6 @@ public class ProcedureQueryService {
     public List<NurseExecutionWorkloadDetailQueryModel> listNurseExecutionWorkloadDetail(
         NurseWorkloadPageQuery query) {
         List<Procedure> netRows = this.listNurseExecutionNetCompletedProcedures(query);
-        netRows.sort(Comparator.comparing(Procedure::getRecordedTime, Comparator.nullsLast(Comparator.reverseOrder())));
         return this.toNurseExecutionWorkloadDetailModels(netRows, query);
     }
 
@@ -734,68 +750,66 @@ public class ProcedureQueryService {
      *
      * <p>对冲规则与 §6.2.6 一致：{@code CANCEL}+{@code refund_id} 抵消对应 COMPLETED。</p>
      *
-     * @param query 预解析查询（含 resolvedEncounterScope；可选 practitionerId 收窄主执行人）
+     * @param query 预解析查询（含 resolvedEncounterScope；可选 practitionerId / practitionerIds 收窄主执行人）
      * @return 净执行记录
      */
     private List<Procedure> listNurseExecutionNetCompletedProcedures(NurseWorkloadPageQuery query) {
+        // Pre：同窗内已物化净执行事实则直接复用（汇总+页脚+卡片禁止重复扫库）
+        if (query != null && query.getCachedNetCompletedProceduresForRequest() != null) {
+            return this.castNetCompletedProcedureCache(query.getCachedNetCompletedProceduresForRequest());
+        }
         // Gate：Support 未写入 scope 或日期无效时直接空集
         if (query == null
             || query.getDateFrom() == null
             || query.getDateTo() == null
             || query.getResolvedEncounterScope() == null
             || query.getResolvedEncounterScope().isEmpty()) {
+            return this.storeNetCompletedProcedureCache(query, Collections.emptyList());
+        }
+        // Pre：与明细分页共用同一套 Criteria（汇总条数 = 明细 total；禁止 Java/SQL 双轨）
+        Specification<Procedure> specification =
+            NurseWorkloadProcedureReportCriteriaSupport.buildNetCompletedSpecification(query);
+        Sort sort = Sort.by(Sort.Direction.DESC, "recordedTime");
+        List<Procedure> netRows = this.procedureRepository.findAll(specification, sort);
+        return this.storeNetCompletedProcedureCache(query, netRows);
+    }
+
+    /**
+     * 写入同窗净执行事实缓存并返回同一列表引用。
+     *
+     * @param query  护士工作量查询
+     * @param netRows 净 COMPLETED 实体
+     * @return {@code netRows}
+     */
+    private List<Procedure> storeNetCompletedProcedureCache(
+        NurseWorkloadPageQuery query,
+        List<Procedure> netRows) {
+        List<Procedure> sortedRows = netRows;
+        // Pre：同窗缓存前按 recorded_time 倒序排好，分页/全量列表禁止重复 sort
+        if (sortedRows != null && sortedRows.size() > 1) {
+            sortedRows = new ArrayList<>(sortedRows);
+            sortedRows.sort(Comparator.comparing(
+                Procedure::getRecordedTime,
+                Comparator.nullsLast(Comparator.reverseOrder())));
+        }
+        if (query != null) {
+            query.setCachedNetCompletedProceduresForRequest(sortedRows);
+        }
+        return sortedRows;
+    }
+
+    /**
+     * 读取同窗净执行事实缓存（类型擦除安全转换）。
+     *
+     * @param cached 缓存列表
+     * @return Procedure 列表
+     */
+    @SuppressWarnings("unchecked")
+    private List<Procedure> castNetCompletedProcedureCache(List<?> cached) {
+        if (cached == null || cached.isEmpty()) {
             return Collections.emptyList();
         }
-        LocalDateTime recordedFrom = query.getDateFrom().atStartOfDay();
-        LocalDateTime recordedTo = LocalDateTime.of(query.getDateTo(), LocalTime.of(23, 59, 59, 999_999_999));
-        // Pre：按就诊 + recorded_time 闭区间加载 SR 锚点执行行
-        List<Procedure> candidates = this.procedureRepository
-            .findByEncounterIdInAndRequestTableAndRecordedTimeBetweenAndIsDeletedFalse(
-                query.getResolvedEncounterScope(),
-                TableNameConstants.WKF_SERVICE_REQUEST,
-                recordedFrom,
-                recordedTo);
-        if (candidates.isEmpty()) {
-            return Collections.emptyList();
-        }
-        LinkedHashSet<Long> completedIds = new LinkedHashSet<>();
-        for (Procedure entity : candidates) {
-            if (entity != null
-                && entity.getId() != null
-                && EventStatus.COMPLETED.getCode().equals(entity.getStatusEnum())) {
-                completedIds.add(entity.getId());
-            }
-        }
-        // Pre：加载可能对冲同窗 COMPLETED 的 CANCEL 行（可含窗外 refund 指向）
-        List<Procedure> cancelRows = Collections.emptyList();
-        if (!completedIds.isEmpty()) {
-            cancelRows = this.procedureRepository.findByRefundIdInAndRequestTableAndIsDeletedFalse(
-                completedIds,
-                TableNameConstants.WKF_SERVICE_REQUEST);
-        }
-        List<Procedure> netRows = this.procedureNetExecutionFilterSupport.filterNetCompletedServiceRequestProcedures(
-            candidates,
-            cancelRows);
-        // 未选护士：全院单块合计，不按执行人分桶
-        if (query.getPractitionerId() == null) {
-            return netRows;
-        }
-        // 已选护士：仅保留 PRIMARY 执行人匹配的行
-        List<Long> procedureIds = new ArrayList<>();
-        for (Procedure entity : netRows) {
-            if (entity != null && entity.getId() != null) {
-                procedureIds.add(entity.getId());
-            }
-        }
-        Map<Long, Long> practitionerIdByProcedureId = this.mapPrimaryPractitionerIdByProcedureIds(procedureIds);
-        List<Procedure> filtered = new ArrayList<>();
-        for (Procedure entity : netRows) {
-            Long performerId = practitionerIdByProcedureId.get(entity.getId());
-            if (query.getPractitionerId().equals(performerId)) {
-                filtered.add(entity);
-            }
-        }
-        return filtered;
+        return (List<Procedure>) cached;
     }
 
     /**

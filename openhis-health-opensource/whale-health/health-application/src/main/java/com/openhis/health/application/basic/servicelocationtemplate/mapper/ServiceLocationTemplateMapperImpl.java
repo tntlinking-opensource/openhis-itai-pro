@@ -38,6 +38,7 @@ public class ServiceLocationTemplateMapperImpl implements ServiceLocationTemplat
         dto.setDistributionCategoryCode(model.getDistributionCategoryCode());
         dto.setDefLocationId(model.getDefLocationId());
         dto.setItemDefinitionId(model.getItemDefinitionId());
+        dto.setTypeCode(model.getTypeCode());
         dto.setMethodCode(model.getMethodCode());
         dto.setStartTime(model.getStartTime());
         dto.setEndTime(model.getEndTime());
@@ -94,6 +95,7 @@ public class ServiceLocationTemplateMapperImpl implements ServiceLocationTemplat
         row.setDistributionCategoryCode(item.getDistributionCategoryCode());
         row.setDefLocationId(item.getDefLocationId());
         row.setItemDefinitionId(item.getItemDefinitionId());
+        row.setTypeCode(item.getTypeCode());
         row.setMethodCode(item.getMethodCode());
         row.setStartTime(item.getStartTime());
         row.setEndTime(item.getEndTime());

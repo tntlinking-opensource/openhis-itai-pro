@@ -774,10 +774,11 @@ public class InpatientDailySettlementMapperImpl implements InpatientDailySettlem
                 continue;
             }
             for (PaymentRecDetailQueryModel detail : details) {
-                if (detail == null || this.isInsurancePayChannel(detail.getPayEnum())) {
+                if (detail == null || this.isExcludedFromSelfPayChannelAggregate(detail.getPayEnum())) {
                     continue;
                 }
-                String category = this.paymentChannelDisplayAssembler.resolvePayChannelDisplay(detail.getPayEnum(), null);
+                String category =
+                    this.paymentChannelDisplayAssembler.resolveDailySettlementSelfPayCategory(detail.getPayEnum());
                 if (StringUtils.isEmpty(category)) {
                     category = detail.getPayEnum();
                 }
@@ -852,6 +853,22 @@ public class InpatientDailySettlementMapperImpl implements InpatientDailySettlem
     }
 
     /**
+     * 是否应从日结自付渠道小计排除（统筹/个账/预交金冲抵）。
+     *
+     * @param payEnum 支付渠道 code
+     * @return 排除为 true
+     */
+    private boolean isExcludedFromSelfPayChannelAggregate(String payEnum) {
+        if (this.isInsurancePayChannel(payEnum)) {
+            return true;
+        }
+        if (StringUtils.isEmpty(payEnum)) {
+            return false;
+        }
+        return PaymentChannel.DEPOSIT_OFFSET.getCode().equals(payEnum.trim());
+    }
+
+    /**
      * 单条支付子明细净额（amount − returnAmount）。
      *
      * @param detail 子明细
@@ -906,7 +923,9 @@ public class InpatientDailySettlementMapperImpl implements InpatientDailySettlem
     /**
      * 装配下半区固定汇总项；总收入 = fin_type 上半区代数和（**不含**预交金）。
      *
-     * <p>预交金仅在 {@code depositAmount} 独立汇总，不参与总收入、渠道、人次、医保分项等下半区加和（**BR-IP-DCL-007**）。</p>
+     * <p>预交金仅在 {@code depositAmount} 独立汇总；多退 {@code depositRefundAmount}、少补
+     * {@code settleSupplementAmount} 同为独立展示项，均不参与总收入、渠道、人次、医保分项等下半区加和
+     * （**BR-IP-DCL-007** / **BR-IP-DCL-029**）。</p>
      *
      * @param displayItems          展示过滤后的候选行
      * @param paymentById           paymentId → 支付读模型（人次去重取 patientId）
@@ -925,6 +944,8 @@ public class InpatientDailySettlementMapperImpl implements InpatientDailySettlem
         BigDecimal totalIncome = BigDecimal.ZERO;
         BigDecimal refundTotal = BigDecimal.ZERO;
         BigDecimal depositAmount = BigDecimal.ZERO;
+        BigDecimal depositRefundAmount = BigDecimal.ZERO;
+        BigDecimal settleSupplementAmount = BigDecimal.ZERO;
         Set<String> contractBusNos = this.collectContractBusNosFromPaymentItems(displayItems);
         DailySettlementExpenseNatureDetailAccumulator.PreparedMaps natureMaps =
             this.expenseNatureDetailAccumulator.prepare(contractBusNos, recDetailsByPaymentId);
@@ -944,11 +965,19 @@ public class InpatientDailySettlementMapperImpl implements InpatientDailySettlem
             if (item == null) {
                 continue;
             }
-            // 预交金仅汇总至 depositAmount，不参与下半区其余加和（BR-IP-DCL-007）
+            // 预交金仅汇总至 depositAmount；逆向再计入退预交金（多退，BR-IP-DCL-029）
             if (this.isDepositPaymentKind(item.getKindEnum())) {
-                depositAmount = depositAmount.add(this.resolveSignedPaymentNetAmount(item));
+                BigDecimal signedDeposit = this.resolveSignedPaymentNetAmount(item);
+                depositAmount = depositAmount.add(signedDeposit);
+                if (this.isReversePayment(item)) {
+                    // 退预交金列展示「退了多少」为正数；窗内各笔逆向预交金绝对值累加
+                    depositRefundAmount = depositRefundAmount.add(signedDeposit.abs());
+                }
                 continue;
             }
+            // 少补：结算单自付渠道实付代数和（现金/银联等；非补预交金；DD 的 C）
+            settleSupplementAmount = settleSupplementAmount.add(
+                this.resolveSettleSupplementLineAmount(item, recDetailsByPaymentId));
             BigDecimal netAmount = item.getNetAmount();
             if (netAmount == null) {
                 netAmount = BigDecimal.ZERO;
@@ -1028,6 +1057,8 @@ public class InpatientDailySettlementMapperImpl implements InpatientDailySettlem
         String onlineBankText = this.formatAmount(this.resolveChannelAmount(channelAmounts, PaymentChannel.BANK_CARD.getDisplay()));
         String cashText = this.formatAmount(this.resolveChannelAmount(channelAmounts, PaymentChannel.CASH.getDisplay()));
         String depositAmountText = this.formatAmount(depositAmount);
+        String depositRefundAmountText = this.formatAmount(depositRefundAmount);
+        String settleSupplementAmountText = this.formatAmount(settleSupplementAmount);
         summary.setTotalIncome(totalIncomeText);
         summary.setReceivableAmount(totalIncomeText);
         summary.setActualAmount(totalIncomeText);
@@ -1046,6 +1077,8 @@ public class InpatientDailySettlementMapperImpl implements InpatientDailySettlem
         String retailUploadDiffText = this.formatAmount(retailUploadDiffTotal);
         summary.setChsRetailUploadDiffAmount(retailUploadDiffText);
         summary.setDepositAmount(depositAmountText);
+        summary.setDepositRefundAmount(depositRefundAmountText);
+        summary.setSettleSupplementAmount(settleSupplementAmountText);
         summary.setRefundTotal(this.formatAmount(refundTotal));
         List<DailySettlementExpenseNatureSummaryDto> expenseNatureSummaries =
             DailySettlementExpenseNatureSummarySupport.toExpenseNatureSummaries(natureByContractNo);
@@ -1060,9 +1093,50 @@ public class InpatientDailySettlementMapperImpl implements InpatientDailySettlem
             insuranceAccountText,
             retailUploadDiffText,
             depositAmountText,
+            depositRefundAmountText,
+            settleSupplementAmountText,
             expenseNatureSummaries,
             null));
         return summary;
+    }
+
+    /**
+     * 结算补收行额（少补）：本笔住院结算单上自付渠道带符号净额合计（DD 的 C）。
+     *
+     * <p>少补不是补预交金，而是结算时按收银渠道实收（现金/微信/支付宝/银行卡等）；
+     * 排除统筹、个账、预交金冲抵。R2/R3 无渠道实付时为 0；逆向反结取负。</p>
+     *
+     * @param item                  住院结算候选行（非预交金 kind）
+     * @param recDetailsByPaymentId paymentId → 子明细
+     * @return 本笔结算渠道实付；无明细为 0
+     */
+    private BigDecimal resolveSettleSupplementLineAmount(
+        InpatientDailySettlementPaymentItemDto item,
+        Map<Long, List<PaymentRecDetailQueryModel>> recDetailsByPaymentId) {
+        if (item == null || item.getPaymentId() == null || recDetailsByPaymentId == null) {
+            return BigDecimal.ZERO;
+        }
+        List<PaymentRecDetailQueryModel> details = recDetailsByPaymentId.get(item.getPaymentId());
+        if (details == null || details.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal channelSum = BigDecimal.ZERO;
+        for (PaymentRecDetailQueryModel detail : details) {
+            if (detail == null) {
+                continue;
+            }
+            String payEnum = detail.getPayEnum();
+            if (StringUtils.isEmpty(payEnum)) {
+                continue;
+            }
+            String payCode = payEnum.trim();
+            // 统筹/个账/冲抵不属于结算渠道实收（少补）
+            if (this.isExcludedFromSelfPayChannelAggregate(payCode)) {
+                continue;
+            }
+            channelSum = channelSum.add(this.resolveSignedDetailNetAmount(detail, item));
+        }
+        return channelSum;
     }
 
     /**
@@ -1692,7 +1766,7 @@ public class InpatientDailySettlementMapperImpl implements InpatientDailySettlem
     }
 
     /**
-     * 剔除住院上半区不应展示的 fin_type 合计项（挂号费/诊察费为门诊号源口径）。
+     * 剔除住院上半区不应展示的 fin_type 合计项（挂号费/诊察费为门诊号源口径；体检不计入日结）。
      *
      * @param finTypeAmounts fin_type_code → 合计（原地修改）
      */
@@ -1702,10 +1776,11 @@ public class InpatientDailySettlementMapperImpl implements InpatientDailySettlem
         }
         finTypeAmounts.remove(DailySettlementSharedConstants.DEPRECATED_REGISTRATION_FEE_FIN_TYPE_CODE);
         finTypeAmounts.remove(InpatientDailySettlementConstants.INPATIENT_EXCLUDED_CONSULTATION_FEE_FIN_TYPE_CODE);
+        finTypeAmounts.remove(DailySettlementSharedConstants.PHYSICAL_EXAM_FIN_TYPE_CODE);
     }
 
     /**
-     * 是否住院日结上半区应排除的 fin_type_code（门诊号源类）。
+     * 是否住院日结上半区应排除的 fin_type_code（门诊号源类、体检）。
      *
      * @param finTypeCode fin_type_code 字典 value
      * @return 是否排除
@@ -1718,7 +1793,10 @@ public class InpatientDailySettlementMapperImpl implements InpatientDailySettlem
         if (DailySettlementSharedConstants.DEPRECATED_REGISTRATION_FEE_FIN_TYPE_CODE.equals(normalized)) {
             return true;
         }
-        return InpatientDailySettlementConstants.INPATIENT_EXCLUDED_CONSULTATION_FEE_FIN_TYPE_CODE.equals(normalized);
+        if (InpatientDailySettlementConstants.INPATIENT_EXCLUDED_CONSULTATION_FEE_FIN_TYPE_CODE.equals(normalized)) {
+            return true;
+        }
+        return DailySettlementSharedConstants.PHYSICAL_EXAM_FIN_TYPE_CODE.equals(normalized);
     }
 
     /**

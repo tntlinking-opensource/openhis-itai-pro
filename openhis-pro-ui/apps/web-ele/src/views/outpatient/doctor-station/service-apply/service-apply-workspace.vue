@@ -13,6 +13,7 @@ import { useEnsureClinicalReception } from '#/components/doctor-station';
 
 import ServiceApplyDialog from './service-apply-dialog.vue';
 import ServiceApplyFormDocument from './service-apply-form-document.vue';
+import AdviceDraftBindDialog from '../advice/components/advice-draft-bind-dialog.vue';
 import { useServiceApplyTab } from './composables/use-service-apply-tab';
 import type { ServiceApplyDocumentGroup } from './service-apply-doc-groups';
 import { inferServiceApplyKindFromAdviceRow } from './service-apply-doc-groups';
@@ -150,6 +151,8 @@ defineExpose({ reload });
     />
 
     <DetailAuditRemindDialog ref="detailAuditDialogRef" warn-type="1" />
+
+    <AdviceDraftBindDialog />
   </div>
 </template>
 

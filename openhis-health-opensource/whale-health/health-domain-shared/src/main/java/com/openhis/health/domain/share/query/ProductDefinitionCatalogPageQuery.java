@@ -40,7 +40,18 @@ public class ProductDefinitionCatalogPageQuery extends AbstractPageQuery {
     private Boolean activeFlag;
     /** 供应商主键（ProductDefinitionCatalogPageQuery）。 */
     private Long supplierId;
-    /** manufacturer（ProductDefinitionCatalogPageQuery）。 */
+    /**
+     * 生产厂家主键筛选（cus_supplier.id）；优先于 {@link #manufacturer} 字符串。
+     */
+    private Long manufacturerId;
+    /**
+     * 生产厂家主键集合筛选（IN）；非空时与 {@link #manufacturerId} 合并为 OR/IN 口径由 QueryService 决定。
+     */
+    private List<Long> manufacturerIds;
+    /**
+     * 厂家名称（兼容旧入参；QueryService 仅在可解析为 Long 时按 manufacturerId 等值过滤，
+     * 否则忽略——名称→id 解析由 AppService 负责后写入 {@link #manufacturerId}）。
+     */
     private String manufacturer;
     /** 划价目录：{@code 1} 时排除药品表（与 RM 口径一致）。 */
     private Integer pricingFlag;

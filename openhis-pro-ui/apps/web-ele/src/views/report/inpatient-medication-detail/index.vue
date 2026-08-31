@@ -9,12 +9,13 @@ import type {
   InpatientMedicationSummaryLineDto,
 } from '#/api/report/inpatient-medication-detail';
 import type { ApiOptionItem } from '#/types/api-response';
+import type { ReportPrintColumnDef } from '#/utils/print/print-report-list';
 
 import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
-import { Refresh } from '@element-plus/icons-vue';
+import { Printer, Refresh, Setting } from '@element-plus/icons-vue';
 import {
   ElButton,
   ElDatePicker,
@@ -45,8 +46,12 @@ import {
   ReportListPageLayout,
   ReportListToolbar,
   ReportPageFooter,
+  ReportPrintFieldDialog,
   ReportQueryBar,
   ReportTableScroll,
+  mapReportPrintRow,
+  reportPrintFieldsOf,
+  useReportListPrint,
 } from '#/views/report/shared';
 import {
   buildReportDateRangeShortcuts,
@@ -84,8 +89,80 @@ const PATIENT_CANDIDATE_PAGE_SIZE = 50;
 
 const isDetailMode = computed(() => queryParams.presentationMode === PRESENTATION_MODE_DETAIL);
 
+/** 当前展示模式对应的可打印列目录。 */
+const printColumnCatalog = computed<ReportPrintColumnDef[]>(() => {
+  if (isDetailMode.value) {
+    return [
+      { field: 'itemName', title: '药品名称', align: 'center' },
+      { field: 'itemSpec', title: '规格', align: 'center' },
+      { field: 'quantityDisplay', title: '数量', align: 'right' },
+      { field: 'unitPrice', title: '单价', align: 'right' },
+      { field: 'totalPrice', title: '金额', align: 'right' },
+      { field: 'usageStatusDisplay', title: '发药状态', align: 'center' },
+      { field: 'usageDisplayTime', title: '执行时间', align: 'center' },
+      { field: 'lotNumber', title: '批号', align: 'center' },
+      { field: 'summaryNo', title: '汇总单号', align: 'center' },
+    ];
+  }
+  return [
+    { field: 'itemName', title: '药品名称', align: 'center' },
+    { field: 'itemSpec', title: '规格', align: 'center' },
+    { field: 'netQtyDisplay', title: '净用量', align: 'right' },
+    { field: 'unitPrice', title: '单价', align: 'right' },
+    { field: 'lineTotalAmount', title: '净金额', align: 'right' },
+  ];
+});
+
+/** 打印偏好键：按明细/汇总分键。 */
+function resolveReportPrintCode() {
+  return `report-inpatient-medication-${isDetailMode.value ? 'detail' : 'summary'}`;
+}
+
+/** 将当前模式表格行映射为打印单元格文案。 */
+function mapCurrentPrintRows(): Record<string, string>[] {
+  const fields = reportPrintFieldsOf(printColumnCatalog.value);
+  if (isDetailMode.value) {
+    return detailLines.value.map((row) =>
+      mapReportPrintRow(
+        {
+          itemName: row.itemName,
+          itemSpec: row.itemSpec,
+          quantityDisplay: formatDetailQty(row),
+          unitPrice: fmtReportNumber(row.unitPrice, 2),
+          totalPrice: fmtReportNumber(row.totalPrice, 2),
+          usageStatusDisplay: row.usageStatusDisplay,
+          usageDisplayTime: formatDateTime(resolveUsageDisplayTime(row)),
+          lotNumber: row.lotNumber,
+          summaryNo: row.summaryNo,
+        } as Record<string, unknown>,
+        fields,
+      ),
+    );
+  }
+  return summaryLines.value.map((row) =>
+    mapReportPrintRow(
+      {
+        itemName: row.itemName,
+        itemSpec: row.itemSpec,
+        netQtyDisplay: formatSummaryQty(row),
+        unitPrice: fmtReportNumber(row.unitPrice, 2),
+        lineTotalAmount: fmtReportNumber(row.lineTotalAmount, 2),
+      } as Record<string, unknown>,
+      fields,
+    ),
+  );
+}
+
+const { printFieldDialogRef, printSubmitting, handleOpenPrintFields, handlePrintCurrentPage } =
+  useReportListPrint({
+    getReportCode: () => resolveReportPrintCode(),
+    getColumnCatalog: () => printColumnCatalog.value,
+    getReportTitle: () => PAGE_TITLE,
+    getPrintRows: () => mapCurrentPrintRows(),
+  });
+
 const tableLoading = computed(
-  () => initLoading.value || patientLoading.value || queryLoading.value,
+  () => initLoading.value || patientLoading.value || queryLoading.value || printSubmitting.value,
 );
 
 const selectedPatientLabel = computed(() => {
@@ -465,6 +542,25 @@ onMounted(async () => {
               {{ selectedPatientLabel }}
             </ElTag>
           </template>
+          <template #actions>
+            <ElButton
+              plain
+              :icon="Setting"
+              :disabled="printSubmitting"
+              @click="handleOpenPrintFields"
+            >
+              打印设置
+            </ElButton>
+            <ElButton
+              type="primary"
+              plain
+              :icon="Printer"
+              :loading="printSubmitting"
+              @click="handlePrintCurrentPage"
+            >
+              打印
+            </ElButton>
+          </template>
         </ReportListToolbar>
       </template>
 
@@ -656,5 +752,11 @@ onMounted(async () => {
         />
       </template>
     </ReportListPageLayout>
+
+    <ReportPrintFieldDialog
+      ref="printFieldDialogRef"
+      :report-code="resolveReportPrintCode()"
+      :column-catalog="printColumnCatalog"
+    />
   </Page>
 </template>

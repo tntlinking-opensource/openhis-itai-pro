@@ -20,8 +20,14 @@ public final class ObservationDefinitionConstants {
     /** 生命体征类观察项。 */
     public static final String CATEGORY_VITALS = "vitals";
 
-    /** 分科结论项（DES-04；禁止另建 peis_dept_conclusion 表）。 */
-    public static final String CATEGORY_DEPT_CONCLUSION = "dept_conclusion";
+    /** 项目结论项（DES-04；落库 category_code 为 dept_conclusion）。 */
+    public static final String CATEGORY_PROJECT_CONCLUSION = "dept_conclusion";
+
+    /**
+     * @deprecated 使用 {@link #CATEGORY_PROJECT_CONCLUSION}
+     */
+    @Deprecated
+    public static final String CATEGORY_DEPT_CONCLUSION = CATEGORY_PROJECT_CONCLUSION;
 
     /** 其他观察分类。 */
     public static final String CATEGORY_OTHER = "other";
@@ -30,7 +36,7 @@ public final class ObservationDefinitionConstants {
     public static final Set<String> ALLOWED_CATEGORY_CODES = Set.of(
         CATEGORY_EXAM_ITEM,
         CATEGORY_VITALS,
-        CATEGORY_DEPT_CONCLUSION,
+        CATEGORY_PROJECT_CONCLUSION,
         CATEGORY_OTHER
     );
 
@@ -39,4 +45,18 @@ public final class ObservationDefinitionConstants {
 
     /** 停用。 */
     public static final String STATUS_INACTIVE = "inactive";
+
+  /**
+   * 判断观察定义是否为启用态（兼容 PEIS 小写 {@code active} 与 PublicationStatus {@code ACTIVE}）。
+   *
+   * @param statusEnum 落库 status_enum
+   * @return 启用则 true
+   */
+  public static boolean isActiveStatus(String statusEnum) {
+    if (statusEnum == null || statusEnum.trim().isEmpty()) {
+      return false;
+    }
+    String normalized = statusEnum.trim();
+    return STATUS_ACTIVE.equalsIgnoreCase(normalized) || "ACTIVE".equalsIgnoreCase(normalized);
+  }
 }

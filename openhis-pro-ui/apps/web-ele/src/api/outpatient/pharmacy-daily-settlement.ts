@@ -80,7 +80,7 @@ export interface PreviewOutpatientPharmacyDailySettlementResponse {
   categoryRows?: PharmacyDailySettlementCategoryRowDto[];
   productRows?: PharmacyDailySettlementProductRowDto[];
   items?: PharmacyDailySettlementDispenseItemDto[];
-  /** 日结利润：售价合计 − 进价合计（与大类汇总同口径） */
+  /** 售价合计：各大类售价总额之和（与头表 total_income / 交账审批金额同口径） */
   totalIncome?: string | number;
   gapHardBlockEarliestAt?: string;
   gapHardBlockMessage?: string;

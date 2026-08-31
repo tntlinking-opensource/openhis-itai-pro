@@ -34,6 +34,7 @@ export interface LoadArchiveResponse {
   patientId?: IdLike;
   remark?: string;
   studentNo?: string;
+  tagCode?: string;
 }
 
 export interface SaveArchiveRequest {
@@ -44,6 +45,7 @@ export interface SaveArchiveRequest {
   pastHistory?: string;
   patientId: IdLike;
   remark?: string;
+  tagCode?: string;
 }
 
 export interface CheckArchiveCompletenessRequest {

@@ -86,7 +86,8 @@ public final class CatalogMedicationMatchScorer {
                 + candidates.get(0).getMatchScore()
                 + "），请核对后确认选用；不会自动保存。";
             case "NO_MATCH" -> "未找到可用候选（已排除平台停用/过期）。可调整关键字后再搜，"
-                + "或先到「国家目录」下载对应镜像（药品 1301/1312，诊疗 1305/1312，耗材 1306/1312）后再试。";
+                + "或先到「国家目录」下载对应镜像（西药/中成药 1301/1312，中药饮片 1302，"
+                + "诊疗 1305/1312，耗材 1306/1312）后再试。";
             default -> {
                 if (candidates == null || candidates.isEmpty()) {
                     yield "未找到可用候选，请人工检索或补库后再选。";
@@ -144,11 +145,15 @@ public final class CatalogMedicationMatchScorer {
             reasons.add("拼音匹配");
         }
         String catalogCode = trim(item.getHilistCode());
-        if (isNotEmpty(name) && isNotEmpty(catalogCode)
-            && !name.equalsIgnoreCase(catalogCode)
-            && containsNormalized(catalogCode, name)) {
-            score += SCORE_CODE_CONTAINS;
-            reasons.add("编码匹配");
+        // 名称框也可直接输医保码：精确命中等同贯标码，前缀/包含给编码分
+        if (isNotEmpty(name) && isNotEmpty(catalogCode)) {
+            if (name.equalsIgnoreCase(catalogCode)) {
+                score += SCORE_NATIONAL_CODE_EXACT;
+                reasons.add("医保编码一致");
+            } else if (containsNormalized(catalogCode, name)) {
+                score += SCORE_CODE_CONTAINS;
+                reasons.add("编码匹配");
+            }
         }
         if (score == 0 && isNotEmpty(name) && !isNotEmpty(approval) && !isNotEmpty(nationalCode)) {
             return new ScoreResult(0, "");

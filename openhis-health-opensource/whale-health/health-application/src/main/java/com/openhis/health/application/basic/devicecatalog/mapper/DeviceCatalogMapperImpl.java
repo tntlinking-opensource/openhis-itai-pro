@@ -87,7 +87,8 @@ public class DeviceCatalogMapperImpl implements DeviceCatalogMapper {
         dto.setSubstanceText(entity.getSubstanceText());
 
         dto.setManufacturerId(entity.getManufacturerId());
-        dto.setManufacturerText(entity.getManufacturerText());
+        // 展示名由 AppService 按 manufacturerId 解析供应商名称回填
+        dto.setManufacturerText(null);
         dto.setSupplyId(entity.getSupplyId());
 
         dto.setAllergenFlag(entity.getAllergenFlag());
@@ -158,7 +159,6 @@ public class DeviceCatalogMapperImpl implements DeviceCatalogMapper {
             item.setChrgitmLv(request.getChrgitmLv());
             item.setSubstanceText(request.getSubstanceText());
             item.setManufacturerId(request.getManufacturerId());
-            item.setManufacturerText(request.getManufacturerText());
             item.setSupplyId(request.getSupplyId());
             item.setAllergenFlag(DeviceCatalogMapperImpl.persistBoolAsInt(request.getAllergenFlag()));
             item.setJurisdiction(request.getJurisdiction());
@@ -229,7 +229,6 @@ public class DeviceCatalogMapperImpl implements DeviceCatalogMapper {
             item.setChrgitmLv(request.getChrgitmLv());
             item.setSubstanceText(request.getSubstanceText());
             item.setManufacturerId(request.getManufacturerId());
-            item.setManufacturerText(request.getManufacturerText());
             item.setSupplyId(request.getSupplyId());
             item.setAllergenFlag(DeviceCatalogMapperImpl.persistBoolAsInt(request.getAllergenFlag()));
             item.setJurisdiction(request.getJurisdiction());
@@ -333,9 +332,6 @@ public class DeviceCatalogMapperImpl implements DeviceCatalogMapper {
             }
             if (request.getManufacturerId() != null) {
                 changed.add("manufacturerId");
-            }
-            if (request.getManufacturerText() != null) {
-                changed.add(FieldNameConstants.MANUFACTURER_TEXT);
             }
             if (request.getSupplyId() != null) {
                 changed.add(FieldNameConstants.SUPPLY_ID);

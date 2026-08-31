@@ -8,6 +8,7 @@ import { computed, onMounted, ref } from 'vue';
 
 import { getPriceAdjustmentApprovedLineApi } from '#/api/finance/price-adjustment-detail';
 import { useRequest } from '#/hooks/use-request';
+import { formatMoneyDisplay, formatPurchaseMoneyDisplay } from '#/utils/format/money-scale';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import { formatAdjustmentAmount } from '../utils/format-amount';
@@ -23,6 +24,17 @@ const props = withDefaults(defineProps<Props>(), {
   lineId: '',
 });
 
+/** 进价侧展示（单价/盈亏） */
+function formatPurchaseSide(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '—';
+  return formatPurchaseMoneyDisplay(value as string | number) || '—';
+}
+
+/** 售价侧展示 */
+function formatSaleSide(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '—';
+  return formatMoneyDisplay(value as string | number);
+}
 const detailCache = new Map<string, GetPriceAdjustmentApprovedLineResponse>();
 
 const detailData = ref<GetPriceAdjustmentApprovedLineResponse | null>(null);
@@ -71,13 +83,13 @@ onMounted(() => {
           <span v-if="isLogistics" class="expand-panel__summary-item">
             <span class="expand-panel__summary-label">目标进价</span>
             <span class="expand-panel__summary-value tabular-nums">
-              {{ formatAdjustmentAmount(line.newPurchaseAmount) }}
+              {{ formatPurchaseSide(line.newPurchaseAmount) }}
             </span>
           </span>
           <span class="expand-panel__summary-item">
             <span class="expand-panel__summary-label">目标售价</span>
             <span class="expand-panel__summary-value tabular-nums">
-              {{ formatAdjustmentAmount(line.newSellingAmount) }}
+              {{ formatSaleSide(line.newSellingAmount) }}
             </span>
           </span>
           <span class="expand-panel__summary-item">
@@ -104,13 +116,17 @@ onMounted(() => {
                 {{ formatAdjustmentAmount(row.quantity, '') || row.quantity || '—' }}
               </td>
               <td class="col-amount tabular-nums">
-                {{ formatAdjustmentAmount(row.oldPurchaseAmount) }}
+                {{ formatPurchaseSide(row.oldPurchaseAmount) }}
               </td>
               <td class="col-amount tabular-nums">
-                {{ formatAdjustmentAmount(row.oldSellingAmount) }}
+                {{ formatSaleSide(row.oldSellingAmount) }}
               </td>
               <td class="col-impact">
-                <PriceAdjustmentImpactAmount :value="row.purchaseImpact" align="right" />
+                <PriceAdjustmentImpactAmount
+                  :value="row.purchaseImpact"
+                  money-kind="purchase"
+                  align="right"
+                />
               </td>
               <td class="col-impact">
                 <PriceAdjustmentImpactAmount :value="row.sellingImpact" align="right" />

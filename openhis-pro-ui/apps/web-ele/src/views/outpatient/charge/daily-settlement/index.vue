@@ -591,8 +591,13 @@ async function handleReprintHistory(row: OutpatientCashierSettlementHistoryItemD
     }
     await printDailySettlement({
       jobName: `门诊交账原单-${voucher.busNo ?? settlementId}`,
+      bizRef: {
+        settlementId,
+        busNo: String(voucher.busNo ?? '').trim() || undefined,
+      },
       source: {
         hospitalName: '',
+        documentTitle: '门诊收费日结单',
         cashierName: mountedVoucher.cashierName ?? '',
         settlementPeriodText: mountedVoucher.settlementPeriodText ?? '',
         rows: mountedVoucher.rows as DailySettlementChannelRowDto[] | undefined,
@@ -613,9 +618,19 @@ async function handlePrintSettlement() {
   }
   printSubmitting.value = true;
   try {
+    const [dateFrom, dateTo] = queryForm.dateRange;
     await printDailySettlement({
+      bizRef: {
+        orgId: resolveOrgIdForRequest() ?? '',
+        dateFrom: dateFrom ?? '',
+        dateTo: dateTo ?? '',
+        cashierIds: queryForm.cashierIds
+          .map((id) => preserveApiIdForRequest(id))
+          .filter((id): id is string => Boolean(id)),
+      },
       source: {
         hospitalName: '',
+        documentTitle: '门诊收费日结单',
         cashierName: selectedCashierLabel.value === '—' ? '' : selectedCashierLabel.value,
         settlementPeriodText: headerDateRangeText.value === '—' ? '' : headerDateRangeText.value,
         rows: previewResult.value.rows,

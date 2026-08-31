@@ -1,4 +1,4 @@
-import { invPrintAmountText, invPrintStr } from './inv-common';
+import { invPrintAmountText, invPrintPurchaseMoneyText, invPrintStr } from './inv-common';
 
 /** 调价单明细行（与 fin-price-adjustment-print 模板 lineRows 列一致） */
 export interface FinPriceAdjustmentPrintLineRow {
@@ -60,9 +60,22 @@ export interface FinPriceAdjustmentPrintSource {
   totalSellingImpact?: null | number | string;
 }
 
-/** 空价/空量与页面一致展示为 — */
+/** 空价/空量与页面一致展示为 —（固定两位，售价/盈亏用） */
 function displayOrDash(value: null | number | string | undefined): string {
   const text = invPrintAmountText(value);
+  if (text) {
+    return text;
+  }
+  if (value === null || value === undefined || value === '') {
+    return '—';
+  }
+  const raw = invPrintStr(value);
+  return raw || '—';
+}
+
+/** 进价单价/进价盈亏：最多三位去尾零 */
+function displayPurchaseUnitOrDash(value: null | number | string | undefined): string {
+  const text = invPrintPurchaseMoneyText(value);
   if (text) {
     return text;
   }
@@ -93,10 +106,10 @@ function mapLine(
     itemName: invPrintStr(row.itemName),
     specText: invPrintStr(row.specText),
     categoryText: invPrintStr(row.categoryText),
-    oldPurchasePriceText: displayOrDash(row.oldPurchasePrice),
+    oldPurchasePriceText: displayPurchaseUnitOrDash(row.oldPurchasePrice),
     oldSellingPriceText: displayOrDash(row.oldSellingPrice),
     quantityText: quantityText(row.quantity),
-    newPurchasePriceText: displayOrDash(row.newPurchasePrice),
+    newPurchasePriceText: displayPurchaseUnitOrDash(row.newPurchasePrice),
     newSellingPriceText: displayOrDash(row.newSellingPrice),
   };
 }
@@ -116,7 +129,7 @@ export function buildFinPriceAdjustmentPrintData(
     approvedByName: invPrintStr(source.approvedByName),
     lineRows: (source.lineRows ?? []).map((row, index) => mapLine(row, index)),
     preparedByName: invPrintStr(source.preparedByName),
-    totalPurchaseImpactText: invPrintAmountText(source.totalPurchaseImpact) || '0.00',
+    totalPurchaseImpactText: invPrintPurchaseMoneyText(source.totalPurchaseImpact) || '0.00',
     totalSellingImpactText: invPrintAmountText(source.totalSellingImpact) || '0.00',
   };
 }

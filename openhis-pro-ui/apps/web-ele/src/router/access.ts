@@ -15,6 +15,7 @@ async function generateAccess(
   const pageMap: ComponentRecordType = {
     ...import.meta.glob('../views/**/*.vue'),
     ...import.meta.glob('../chs/**/*.vue'),
+    ...import.meta.glob('../msfx/**/*.vue'),
   };
 
   const layoutMap: ComponentRecordType = {

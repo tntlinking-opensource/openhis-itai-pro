@@ -68,7 +68,6 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -228,7 +227,7 @@ public class OutpatientFeeDetailAppService {
             // Asm：SDD §3.3 步骤 3 — Request → OutpatientFeeDetailPageQuery
             OutpatientFeeDetailPageQuery query = this.outpatientFeeDetailMapper.toOutpatientFeeDetailPageQuery(request);
             this.applyEntererMatchToFeeDetailQuery(query);
-            // Pre：SDD §3.3 步骤 4 — 明细分页专路径（DB encounter 分页 + 仅本页装载）
+            // Pre：SDD §3.3 步骤 4 — Payment bill_date/收退链路预解析（与日结同轴）
             this.outpatientFeeDetailLoader.prepareOutpatientFeeDetailPageScopes(query);
             // Pre：SDD §3.3 步骤 5 — 当前页就诊块分页
             Page<OutpatientFeeDetailEncounterBlockQueryModel> blockPage =
@@ -307,11 +306,12 @@ public class OutpatientFeeDetailAppService {
                     break;
                 }
             }
-            // Asm：SDD §3.4 步骤 7 — AnnotatedExcelExporter
+            // Asm：SDD §3.4 步骤 7 — AnnotatedExcelExporter（前端 exportColumns 裁剪）
             byte[] body = AnnotatedExcelExporter.exportToXlsxBytes(
                 OutpatientFeeDetailConstants.EXPORT_SHEET_NAME,
                 exportRows,
-                OutpatientFeeDetailExportRowDto.class);
+                OutpatientFeeDetailExportRowDto.class,
+                request.getExportColumns());
             log.info("门诊费用明细导出成功 operatorId={} rowCount={} truncated={}",
                 operatorId, exportRows.size(), truncated);
             // Asm：SDD §3.4 步骤 8 — 导出响应
@@ -426,50 +426,65 @@ public class OutpatientFeeDetailAppService {
     }
 
     /**
-     * 全量命中 summary：明细分页页脚售价 + 进价合计，禁止再全窗物化 RowQueryModel。
+     * 全量命中 summary：明细分页页脚仅售价合计；进价列角由独立 IF 异步回填。
      *
      * <p>售价：优先 Loader {@code resolvedSaleAmountTotal}，否则命中就诊全集 SQL SUM。
-     * 进价：命中 scope 批量历史进价代数和（{@link FeeDetailMatchedScopePurchaseTotalSupport}），
-     * 不做就诊块/展示 enrich。</p>
+     * 进价：本方法刻意不跑 {@link FeeDetailMatchedScopePurchaseTotalSupport}（全窗历史进价是列角瓶颈）。</p>
      *
      * @param query 已预解析 scope 的查询
-     * @return 全量金额 summary（含进价合计）
+     * @return 全量金额 summary（purchaseAmountTotal 为 null 表示待刷）
      */
     private OutpatientFeeDetailAmountSummaryDto buildGlobalSummary(OutpatientFeeDetailPageQuery query) {
-        BigDecimal saleAmountTotal;
-        // Pre：行级硬筛已在 Loader 用投影算出售价时直接采用，禁止再装实体
-        if (query.getResolvedSaleAmountTotal() != null) {
-            saleAmountTotal = query.getResolvedSaleAmountTotal();
-        } else if (Boolean.TRUE.equals(query.getPageScopeOnly())) {
-            // Pre：与分页同谓词 SQL SUM（命中 encounter 全集，非仅本页）
-            LocalDateTime enteredFrom = query.getBillDateFrom().atStartOfDay();
-            LocalDateTime enteredToExclusive = query.getBillDateTo().plusDays(1).atStartOfDay();
-            List<String> statusCodes = List.of(ChargeItemStatus.SETTLED.getCode());
-            List<String> serviceTables =
-                this.chargeItemQueryService.resolveServiceTablesForFeeCategories(query.getFeeCategoryCodes());
-            List<String> serviceTableFilter = null;
-            if (serviceTables != null && !serviceTables.isEmpty()) {
-                serviceTableFilter = serviceTables;
-            }
-            saleAmountTotal = this.chargeItemQueryService.sumFeeDetailSaleTotalPriceByEnteredDateWindow(
-                enteredFrom,
-                enteredToExclusive,
-                statusCodes,
-                query.getEntererMatchIds(),
-                query.getRequestingOrgId(),
-                query.getResolvedFeeDetailMatchedEncounterIds(),
-                serviceTableFilter);
-        } else {
-            // 兼容旧全量 links 路径（导出不应走本页脚）
-            saleAmountTotal =
-                this.chargeItemQueryService.summarizeOutpatientFeeDetailSaleAmountFromPreloadedScope(query);
-        }
-        // Pre：命中 scope 批量历史进价（禁 RowQueryModel / 展示 enrich）
-        BigDecimal purchaseAmountTotal =
-            this.feeDetailMatchedScopePurchaseTotalSupport.sumPurchaseAmountForMatchedScope(query);
-        // Asm：页脚售价 + 进价
+        // Pre：Payment 链路带符号售价代数和（退费负；禁止再走 entered_date 仅 SETTLED SUM）
+        BigDecimal saleAmountTotal =
+            this.chargeItemQueryService.summarizeOutpatientFeeDetailSaleAmountFromPreloadedScope(query);
+        // Asm：仅售价；进价列角延后到 summarizeOutpatientFeeDetailPurchaseCorner
         return this.outpatientFeeDetailAssembler.assembleDetailPageFooterSaleSummary(
-            saleAmountTotal, purchaseAmountTotal);
+            saleAmountTotal, null);
+    }
+
+    /**
+     * IF-OP-FDT-05：明细分页进价列角（命中 scope 历史进价合计；与 IF-02 筛选同口径）。
+     *
+     * <p>供前端在 page 成功后异步回填页脚「进价合计」，避免阻塞列表首屏。</p>
+     *
+     * @param request 与明细分页同筛选（忽略分页）
+     * @return 进价合计（settle）；无命中为 0
+     * @throws BusinessException 参数非法或查询失败
+     */
+    public BigDecimal summarizeOutpatientFeeDetailPurchaseCorner(PageOutpatientFeeDetailRequest request) {
+        // Gate：须已登录
+        this.currentOperatorResolver.requireOperatorId(
+            OutpatientFeeDetailConstants.EX_OP_FDT_101,
+            "费用明细查询失败，请稍后重试");
+        // Gate：日期/收退合法；分页字段不参与列角，传占位避免校验拒
+        this.validateQueryWindow(
+            request.getDateFrom(),
+            request.getDateTo(),
+            request.getTradeDirection(),
+            1,
+            OutpatientFeeDetailConstants.DEFAULT_PAGE_SIZE);
+        try {
+            // Asm：Request → Query（与 IF-02 同筛选）
+            OutpatientFeeDetailPageQuery query = this.outpatientFeeDetailMapper.toOutpatientFeeDetailPageQuery(request);
+            this.applyEntererMatchToFeeDetailQuery(query);
+            // Pre：与明细分页同口径预解析命中 scope（供进价 IN / 就诊窗装载）
+            this.outpatientFeeDetailLoader.prepareOutpatientFeeDetailPageScopes(query);
+            // Asm：仅历史进价代数和，禁就诊块/展示 enrich
+            return this.feeDetailMatchedScopePurchaseTotalSupport.sumPurchaseAmountForMatchedScope(query);
+        } catch (IllegalArgumentException illegalArgumentException) {
+            log.warn("门诊费用明细进价列角数据不完整: {}", illegalArgumentException.getMessage());
+            throw new BusinessException(
+                OutpatientFeeDetailConstants.EX_OP_FDT_103,
+                "费用数据不完整，请联系管理员核对收费项目配置");
+        } catch (BusinessException businessException) {
+            throw businessException;
+        } catch (RuntimeException runtimeException) {
+            log.error("门诊费用明细进价列角失败", runtimeException);
+            throw new BusinessException(
+                OutpatientFeeDetailConstants.EX_OP_FDT_104,
+                "费用明细查询失败，请稍后重试");
+        }
     }
 
     /**
@@ -643,27 +658,28 @@ public class OutpatientFeeDetailAppService {
             }
         }
         // Asm：回填历史进价（与售价同号；缺锚点置 0）
-        this.applyPurchasePrices(lineDto, chargeItemId, bundle);
+        this.applyPurchasePrices(lineDto, row.getChargeItem(), bundle);
         return lineDto;
     }
 
     /**
      * 将批量进价回填到明细行（退费行与售价同号；诊疗无进价则留空）。
      *
-     * <p>单价按包装价折算为拆零展示价；行额为包装锚合计（已在 bundle 中算好）。</p>
+     * <p>单价与收费数量单位对齐（包装操作单位展示包装价；拆零操作单位才折展示拆零价）；行额为包装锚合计（已在 bundle 中算好）。</p>
      *
      * @param lineDto      已装配售价的明细行
-     * @param chargeItemId 收费明细主键
+     * @param chargeItem   收费明细实体
      * @param bundle       enrichment 上下文
      */
     private void applyPurchasePrices(
         OutpatientFeeDetailLineDto lineDto,
-        Long chargeItemId,
+        ChargeItem chargeItem,
         FeeDetailEnrichmentBundle bundle) {
         BigDecimal signMultiplier = BigDecimal.ONE;
         if (OutpatientFeeDetailConstants.TRADE_DIRECTION_REFUND.equals(lineDto.getTradeDirection())) {
             signMultiplier = new BigDecimal("-1");
         }
+        Long chargeItemId = chargeItem != null ? chargeItem.getId() : null;
         BigDecimal purchaseUnit = null;
         BigDecimal purchaseAmount = null;
         if (chargeItemId != null) {
@@ -680,9 +696,22 @@ public class OutpatientFeeDetailAppService {
         if (chargeItemId != null && bundle.packageUnitRatioByChargeItemId != null) {
             ratio = bundle.packageUnitRatioByChargeItemId.get(chargeItemId);
         }
-        // 展示单价：包装价 → 拆零单位（仅展示）
-        BigDecimal displayUnit =
-            this.chargeItemPackageUnitRatioSupport.toSplitUnitDisplayPrice(purchaseUnit, ratio);
+        ProductDefinitionDisplayDto product = null;
+        if (chargeItem != null && bundle.productByCompositeKey != null) {
+            ProductDefinitionBatchLookup lookup =
+                ChargeItemProductLookupHelper.buildLookupFromChargeItem(chargeItem);
+            if (lookup != null
+                && lookup.getProductTableName() != null
+                && lookup.getProductDefinitionId() != null) {
+                String compositeKey = ProductDefinitionKeyUtil.buildCompositeKey(
+                    lookup.getProductTableName(), lookup.getProductDefinitionId());
+                if (compositeKey != null) {
+                    product = bundle.productByCompositeKey.get(compositeKey);
+                }
+            }
+        }
+        BigDecimal displayUnit = this.chargeItemPackageUnitRatioSupport.toChargeAlignedPurchaseDisplayUnitPrice(
+            purchaseUnit, ratio, chargeItem, product);
         if (displayUnit != null) {
             lineDto.setPurchaseUnitPrice(
                 MonetaryAmountSupport.applySignAtCalcScale(displayUnit, signMultiplier));
@@ -742,13 +771,14 @@ public class OutpatientFeeDetailAppService {
                 if (row.getChargeItem().getRequestingOrgId() != null) {
                     bundle.organizationIds.add(row.getChargeItem().getRequestingOrgId());
                 }
-                // 收费人：仅已结 enterer_id（结算写入；合成上下文，不查 Payment）
+                // 收费人：已结/退费中/已退的 enterer_id（结算写入；合成上下文，不查 Payment）
                 if (row.getChargeItem().getEntererId() != null) {
                     String statusCode = row.getChargeItem().getStatusEnum();
-                    boolean settledOrRefunded =
+                    boolean settledRefundingOrRefunded =
                         ChargeItemStatus.SETTLED.getCode().equals(statusCode)
+                            || ChargeItemStatus.REFUNDING.getCode().equals(statusCode)
                             || ChargeItemStatus.REFUNDED.getCode().equals(statusCode);
-                    if (settledOrRefunded) {
+                    if (settledRefundingOrRefunded) {
                         practitionerIds.add(row.getChargeItem().getEntererId());
                     }
                 }

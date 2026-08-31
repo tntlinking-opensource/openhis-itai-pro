@@ -76,7 +76,6 @@ public class MedicationCatalogMapperImpl implements MedicationCatalogMapper {
         item.setMrSettlementTypeCode(request.getMrSettlementTypeCode());
         item.setPharmacologyCategoryCode(request.getPharmacologyCategoryCode());
         item.setManufacturerId(request.getManufacturerId());
-        item.setManufacturerText(request.getManufacturerText());
         // 药品目录不再维护供应商：写命令强制 supplyId=null
         item.setSupplyId(null);
         item.setApprovalNumber(request.getApprovalNumber());
@@ -95,6 +94,8 @@ public class MedicationCatalogMapperImpl implements MedicationCatalogMapper {
         item.setItemMinQuantity(request.getItemMinQuantity());
         item.setItemMaxQuantity(request.getItemMaxQuantity());
         item.setBasicFlag(request.getBasicFlag());
+        item.setNationalMonitorFlag(request.getNationalMonitorFlag());
+        item.setCentralPurchaseFlag(request.getCentralPurchaseFlag());
         item.setSkinTestFlag(request.getSkinTestFlag());
         item.setInjectFlag(request.getInjectFlag());
         item.setChildrenFlag(request.getChildrenFlag());
@@ -156,7 +157,6 @@ public class MedicationCatalogMapperImpl implements MedicationCatalogMapper {
         item.setMrSettlementTypeCode(request.getMrSettlementTypeCode());
         item.setPharmacologyCategoryCode(request.getPharmacologyCategoryCode());
         item.setManufacturerId(request.getManufacturerId());
-        item.setManufacturerText(request.getManufacturerText());
         // 药品目录不再维护供应商：写命令强制 supplyId=null
         item.setSupplyId(null);
         item.setApprovalNumber(request.getApprovalNumber());
@@ -174,6 +174,8 @@ public class MedicationCatalogMapperImpl implements MedicationCatalogMapper {
         item.setItemMinQuantity(request.getItemMinQuantity());
         item.setItemMaxQuantity(request.getItemMaxQuantity());
         item.setBasicFlag(request.getBasicFlag());
+        item.setNationalMonitorFlag(request.getNationalMonitorFlag());
+        item.setCentralPurchaseFlag(request.getCentralPurchaseFlag());
         item.setSkinTestFlag(request.getSkinTestFlag());
         item.setInjectFlag(request.getInjectFlag());
         item.setChildrenFlag(request.getChildrenFlag());
@@ -312,6 +314,7 @@ public class MedicationCatalogMapperImpl implements MedicationCatalogMapper {
         }
         dto.setLocationId(model.getLocationId());
         dto.setSupplyId(model.getSupplyId());
+        dto.setManufacturerId(model.getManufacturerId());
         dto.setManufacturerText(model.getManufacturerText());
         dto.setYbNo(model.getYbNo());
         dto.setYbMatchFlag(CatalogPresentationUtil.insuranceMatchedFlag(model.getYbNo()));
@@ -367,6 +370,8 @@ public class MedicationCatalogMapperImpl implements MedicationCatalogMapper {
         dto.setDomainEnum(model.getDomainEnum());
         dto.setApprovalNumber(model.getApprovalNumber());
         dto.setBasicFlag(Boolean.TRUE.equals(model.getBasicFlag()));
+        dto.setNationalMonitorFlag(Boolean.TRUE.equals(model.getNationalMonitorFlag()));
+        dto.setCentralPurchaseFlag(Boolean.TRUE.equals(model.getCentralPurchaseFlag()));
         dto.setSkinTestFlag(Boolean.TRUE.equals(model.getSkinTestFlag()));
         dto.setInjectFlag(Boolean.TRUE.equals(model.getInjectFlag()));
         dto.setChildrenFlag(Boolean.TRUE.equals(model.getChildrenFlag()));

@@ -1,5 +1,7 @@
 import type { JSONContent } from '@tiptap/core';
 
+import { syncFillableJsonNodeContent } from './components/simple-editor/emr-data-element-text';
+
 /** 医生站患者条等传入的片段信息，用于在接口不可用时的本地映射 */
 export interface PatientInfoForEmrMetadata {
   name?: string;
@@ -10,6 +12,12 @@ export interface PatientInfoForEmrMetadata {
   insurance?: string;
   medicalRecordNo?: string;
   idCard?: string;
+  /** 科室名称（住院就诊科室） */
+  deptName?: string;
+  /** 病房/病室展示名（页眉 {wardName}；优先 houseName） */
+  wardName?: string;
+  /** 床位/床号展示（页眉 {bedNo}） */
+  bedNo?: string;
 }
 
 const FIELD_MAP: {
@@ -29,12 +37,30 @@ const FIELD_MAP: {
     fieldKey: 'medicalRecordNo',
     from: (i) => (i.medicalRecordNo ? String(i.medicalRecordNo).trim() : undefined),
   },
+  {
+    fieldKey: 'deptName',
+    from: (i) => String(i.deptName ?? '').trim() || undefined,
+  },
+  {
+    fieldKey: 'wardName',
+    from: (i) => String(i.wardName ?? '').trim() || undefined,
+  },
+  {
+    fieldKey: 'bedNo',
+    from: (i) => String(i.bedNo ?? '').trim() || undefined,
+  },
 ];
 
 /** 患者身份绑定域：存模板须清空；套模板/复用须按当前患者强制覆盖（含可改芯片） */
-export const PATIENT_BOUND_FIELD_KEYS: ReadonlySet<string> = new Set(
-  FIELD_MAP.map((item) => item.fieldKey),
-);
+export const PATIENT_BOUND_FIELD_KEYS: ReadonlySet<string> = new Set([
+  'patientName',
+  'gender',
+  'age',
+  'phone',
+  'insuranceName',
+  'idCard',
+  'medicalRecordNo',
+]);
 
 /**
  * 会话/时间上下文域：存模板须清空；套模板/复用须强制覆盖为当前就诊解析值。
@@ -52,19 +78,66 @@ export const CONTEXT_REFRESH_FIELD_KEYS: ReadonlySet<string> = new Set([
   'talkTime',
 ]);
 
+/** 门诊病历中西医诊断元数据 fieldKey（与 metadata_field_def 种子对齐） */
+export const EMR_DIAGNOSIS_METADATA_FIELD_KEYS = ['tcmDiagnosis', 'westernDiagnosis'] as const;
+
+export type EmrDiagnosisMetadataFieldKey = (typeof EMR_DIAGNOSIS_METADATA_FIELD_KEYS)[number];
+
 /** 套模板/复用时须强制覆盖（患者身份 + 日期时间上下文） */
 function shouldForceOverwriteMetadataKey(key: string): boolean {
   return PATIENT_BOUND_FIELD_KEYS.has(key) || CONTEXT_REFRESH_FIELD_KEYS.has(key);
 }
 
-function resolveMetadataNodeKey(type: string, attrs: Record<string, unknown>): string {
-  if (type === 'emrMetadataChip') {
-    return String(attrs.fieldKey ?? '');
-  }
-  if (type === 'emrDataElement') {
-    return String(attrs.elementId ?? '');
-  }
+export interface ApplyMetadataValuesOptions {
+  /** 关闭后不对患者绑定/日期上下文域强制覆盖（诊断空槽回填用） */
+  forceOverwriteBoundKeys?: boolean;
+  /** 仅写入这些 fieldKey；默认全部命中槽 */
+  onlyKeys?: ReadonlySet<string>;
+}
+
+/** V4 门诊病历段落 attrs.name → 诊断 fieldKey（机器名，非展示文案） */
+const DIAGNOSIS_BLOCK_NAME_TO_FIELD_KEY: Record<string, EmrDiagnosisMetadataFieldKey> = {
+  impressionDiagnosis: 'tcmDiagnosis',
+  westernDiagnosis: 'westernDiagnosis',
+};
+
+/**
+ * 存量自由文本槽仅保留元数据目录中文名时的 fieldKey 对照。
+ * 对照的是 metadata_field_def.label（tcmDiagnosis/westernDiagnosis），不是字典枚举文案。
+ */
+const DIAGNOSIS_SLOT_TITLE_TO_FIELD_KEY: Record<string, EmrDiagnosisMetadataFieldKey> = {
+  中医诊断: 'tcmDiagnosis',
+  西医诊断: 'westernDiagnosis',
+};
+
+function isFillableMetadataNodeType(type: string): boolean {
+  return type === 'emrMetadataChip' || type === 'emrDataElement' || type === 'emrFreeText';
+}
+
+/** 从可填节点 attrs / 所属命名块解析元数据 fieldKey */
+export function resolveFillableMetadataKey(
+  type: string,
+  attrs: Record<string, unknown>,
+  parentBlockName?: string,
+): string {
+  const fieldKey = String(attrs.fieldKey ?? '').trim();
+  if (fieldKey) return fieldKey;
+  const elementId = String(attrs.elementId ?? '').trim();
+  if (elementId) return elementId;
+
+  const blockName = String(parentBlockName ?? '').trim();
+  const fromBlock = DIAGNOSIS_BLOCK_NAME_TO_FIELD_KEY[blockName];
+  if (fromBlock) return fromBlock;
+
+  const title = String(attrs.label ?? attrs.labelSnapshot ?? '').trim();
+  const fromTitle = DIAGNOSIS_SLOT_TITLE_TO_FIELD_KEY[title];
+  if (fromTitle) return fromTitle;
+
   return '';
+}
+
+function resolveMetadataNodeKey(type: string, attrs: Record<string, unknown>): string {
+  return resolveFillableMetadataKey(type, attrs);
 }
 
 /**
@@ -97,6 +170,7 @@ export function stripPatientBoundMetadataFromContentJson(doc: unknown): JSONCont
       const key = resolveMetadataNodeKey(type, attrs);
       if (key && shouldForceOverwriteMetadataKey(key)) {
         attrs.value = '';
+        syncFillableJsonNodeContent(node);
       }
     }
     const children = node.content;
@@ -117,7 +191,7 @@ export function stripPatientBoundMetadataFromContentJson(doc: unknown): JSONCont
 export function buildMetadataValuesFromPatientInfo(
   info: null | PatientInfoForEmrMetadata | undefined,
 ): Record<string, string> {
-  if (!info) return {};
+  if (!info) return ensureContextDateMetadataDefaults({});
   const out: Record<string, string> = {};
   for (const { fieldKey, from } of FIELD_MAP) {
     const v = from(info);
@@ -125,7 +199,11 @@ export function buildMetadataValuesFromPatientInfo(
       out[fieldKey] = v;
     }
   }
-  return out;
+  // 页眉模板常用 {inpatientNo}；患者条本地映射是 medicalRecordNo（就诊流水号）
+  if (out.medicalRecordNo && !out.inpatientNo) {
+    out.inpatientNo = out.medicalRecordNo;
+  }
+  return ensureContextDateMetadataDefaults(out);
 }
 
 /**
@@ -144,34 +222,65 @@ export function mergeEmrMetadataValues(
       out[key] = '';
     }
   }
+  if (out.medicalRecordNo && !out.inpatientNo) {
+    out.inpatientNo = out.medicalRecordNo;
+  }
+  return ensureContextDateMetadataDefaults(out);
+}
+
+/** 补齐日期时间上下文默认值（接口未返回时用当天，避免界面空 `[]`） */
+export function ensureContextDateMetadataDefaults(
+  vals: Record<string, string>,
+  now: Date = new Date(),
+): Record<string, string> {
+  const out = { ...vals };
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  // date 控件只认 YYYY-MM-DD；带时刻的字符串会导致 type=date 空白仍显 []
+  const dateOnly = `${y}-${m}-${d}`;
+
+  for (const key of CONTEXT_REFRESH_FIELD_KEYS) {
+    if (String(out[key] ?? '').trim()) continue;
+    out[key] = dateOnly;
+  }
   return out;
 }
 
 /**
  * 将元数据写入模板/文书 JSON（套模板时预填，避免编辑器 watch 竞态导致首屏空白）。
  * @param readonlyOnly 为 true 时：只读域始终写入；可改域仅在当前值为空时预填
- * （患者绑定域与日期时间上下文域始终按 vals 强制覆盖）
+ * （患者绑定域与日期时间上下文域默认按 vals 强制覆盖）
  */
 export function applyMetadataValuesToContentJson(
   doc: JSONContent,
   vals: Record<string, string>,
   readonlyOnly = true,
+  options?: ApplyMetadataValuesOptions,
 ): JSONContent {
   const cloned = cloneEmrJsonContent(doc);
+  const onlyKeys = options?.onlyKeys;
+  const allowForceOverwrite = options?.forceOverwriteBoundKeys !== false;
 
-  const visit = (node: JSONContent) => {
-    const type = node.type;
+  const visit = (node: JSONContent, parentBlockName = '') => {
+    const type = node.type ?? '';
     const attrs = node.attrs;
-    if (attrs && (type === 'emrMetadataChip' || type === 'emrDataElement')) {
-      const key = resolveMetadataNodeKey(type ?? '', attrs);
-      const forceOverwrite = Boolean(key && shouldForceOverwriteMetadataKey(key));
-      const editable = attrs.editable !== false;
-      const cur = String(attrs.value ?? '').trim();
-      if (forceOverwrite || !(readonlyOnly && editable && cur)) {
-        if (key) {
-          const nextVal = vals[key] ?? '';
-          if (String(attrs.value ?? '') !== String(nextVal)) {
-            attrs.value = nextVal;
+    const blockName = String(attrs?.name ?? '').trim() || parentBlockName;
+    if (attrs && isFillableMetadataNodeType(type)) {
+      const key = resolveFillableMetadataKey(type, attrs, blockName);
+      if (key && (!onlyKeys || onlyKeys.has(key))) {
+        const nextVal = vals[key] ?? '';
+        const skipEmptyOnlyKey = Boolean(onlyKeys) && !String(nextVal).trim();
+        if (!skipEmptyOnlyKey) {
+          const forceOverwrite =
+            allowForceOverwrite && Boolean(key && shouldForceOverwriteMetadataKey(key));
+          const editable = attrs.editable !== false;
+          const cur = String(attrs.value ?? '').trim();
+          if (forceOverwrite || !(readonlyOnly && editable && cur)) {
+            if (String(attrs.value ?? '') !== String(nextVal)) {
+              attrs.value = nextVal;
+              syncFillableJsonNodeContent(node);
+            }
           }
         }
       }
@@ -179,13 +288,24 @@ export function applyMetadataValuesToContentJson(
     const children = node.content;
     if (Array.isArray(children)) {
       for (const child of children) {
-        visit(child);
+        visit(child, blockName);
       }
     }
   };
 
   visit(cloned);
   return cloned;
+}
+
+/** 仅把已开立中/西医诊断写入对应空槽，不覆盖医生已填写内容、不改日期/患者域 */
+export function applyDiagnosisMetadataToContentJson(
+  doc: JSONContent,
+  vals: Record<string, string>,
+): JSONContent {
+  return applyMetadataValuesToContentJson(doc, vals, true, {
+    forceOverwriteBoundKeys: false,
+    onlyKeys: new Set(EMR_DIAGNOSIS_METADATA_FIELD_KEYS),
+  });
 }
 
 /** 应用模版到编辑器时由业务传入（供父组件 / 右侧列表回调使用） */

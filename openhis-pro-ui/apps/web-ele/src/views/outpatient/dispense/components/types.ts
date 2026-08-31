@@ -48,6 +48,8 @@ export interface DispensePrescriptionBlock {
    * 一张方一种类型；发药单笺面回显用，打印不消费。
    */
   visitTypeLabel?: string;
+  /** 发放单 busNo（码上放心上传键；与处方号 rxNo 不同） */
+  dispenseBusNo?: string;
   /** 患者手机号（后端 slip.patientPhone） */
   patientPhone?: string;
   /**
@@ -74,10 +76,17 @@ export interface DispensePrescriptionBlock {
   decoctionChargeQuantityLabel?: string;
 }
 
-/** 发放库房候选（一行一条选项，对应库存明细） */
+/**
+ * 批号候选（一行一条；库房已锁定为发放行库房，选项仅切换批号）。
+ * value 仍编码库房+批号，与提交 codec 兼容。
+ */
 export interface DispenseInventoryPickOption {
   value: string;
   label: string;
+  /** 该批号剩余库存展示（如 4盒6片） */
+  remainingStockText?: string;
+  /** 批号字面量（展示/回显） */
+  lotNumber?: string;
 }
 
 /** 处方内单行药品（发药列表粒度） */
@@ -106,8 +115,8 @@ export interface DispensePrescriptionLine {
   /** 拆零单位码 */
   splitUnitCode?: string;
   /**
-   * 当前药品剩余库存展示（候选库存最小单位汇总后换算，如 4盒6片）。
-   * 代煎费等非药品行可为「—」。
+   * 当前药品剩余库存展示（锚定发放库房×当前批号；如 4盒6片）。
+   * 代煎费等非药品行可为「—」。选批后由界面按选项覆盖。
    */
   remainingStockText?: string;
   /**
@@ -129,12 +138,15 @@ export interface DispensePrescriptionLine {
   spec: string;
   traceCode: string;
   batchNo: string;
+  /** 行金额（totalPrice，列表「金额」列与笺面合计用） */
   amount: string;
+  /** 单价（unitPrice；笺面「单价」；住院汇总等可不填） */
+  unitPrice?: string;
   /** 无下拉候选时的展示文案（如已发药仅展示） */
   pharmacy: string;
   /** 发放库房主键（库取追溯码、提交发药用） */
   dispenseLocationId?: string;
-  /** 待发药且有库存候选时，按行选择库房/批号 */
+  /** 待发药且本库有批号候选时，按行选择批号（不可换库房） */
   inventoryPickOptions?: DispenseInventoryPickOption[];
   factory: string;
   diagnosis: string;

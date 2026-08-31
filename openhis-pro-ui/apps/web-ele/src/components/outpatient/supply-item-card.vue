@@ -1,9 +1,16 @@
 <script setup lang="ts">
+/**
+ * 门诊护士站耗材明细卡片：勾选待发放 / 取消已执行，展示规格、批号与单价。
+ */
+import type { SupplyDispenseStatusCode } from '#/utils/nurse-station/nurse-execute-status';
+
 import { computed } from 'vue';
 
 import { ElButton, ElCheckbox, ElTag } from 'element-plus';
 
-import type { SupplyDispenseStatusCode } from '#/utils/nurse-station/nurse-execute-status';
+defineOptions({
+  name: 'SupplyItemCard',
+});
 
 export interface SupplyItem {
   id: string;
@@ -11,6 +18,10 @@ export interface SupplyItem {
   spec: string;
   usage: string;
   quantity: number;
+  /** 签发批号；空则不展示 */
+  lotNumber?: string;
+  /** 已格式化单价文案；空则不展示 */
+  unitPriceText?: string;
   status: '已发放' | '已配药' | '待发放';
   statusCode: SupplyDispenseStatusCode;
   canCancelExecute?: boolean;
@@ -59,15 +70,37 @@ const statusTagType = computed(() => {
   return 'primary';
 });
 
+/** 规格·类目·数量摘要行 */
+const metaLine = computed(() => {
+  return `${props.item.spec} · ${props.item.usage} · ×${props.item.quantity}`;
+});
+
+/** 批号与单价次行；均无则整行隐藏 */
+const detailLine = computed(() => {
+  const parts: string[] = [];
+  const lot = String(props.item.lotNumber ?? '').trim();
+  if (lot) {
+    parts.push(`批号 ${lot}`);
+  }
+  const price = String(props.item.unitPriceText ?? '').trim();
+  if (price) {
+    parts.push(`单价 ${price}`);
+  }
+  return parts.join(' · ');
+});
+
+/** 点击卡片切换勾选（已执行忽略） */
 const handleCardClick = () => {
   if (!props.selectable || isExecuted.value) return;
   emit('change', props.item.id, !props.selected);
 };
 
+/** checkbox 变更同步选中态 */
 const handleCheckboxChange = (val: boolean | number | string) => {
   emit('change', props.item.id, Boolean(val));
 };
 
+/** 取消执行（仅已配药/已发放） */
 const handleCancelClick = () => {
   emit('cancel', props.item.id);
 };
@@ -83,10 +116,18 @@ const handleCancelClick = () => {
       @click.stop
       @change="handleCheckboxChange"
     />
-    <div class="flex min-h-[2.75rem] min-w-0 flex-1 flex-col justify-center gap-1">
-      <div class="truncate text-sm font-medium text-gray-900">{{ item.name }}</div>
-      <div class="truncate text-xs leading-snug text-gray-600">
-        {{ item.spec }} · {{ item.usage }} · ×{{ item.quantity }}
+    <div class="flex min-h-[2.75rem] min-w-0 flex-1 flex-col justify-center gap-0.5">
+      <div class="truncate text-sm font-medium text-[var(--el-text-color-primary)]">
+        {{ item.name }}
+      </div>
+      <div class="truncate text-xs leading-snug text-[var(--el-text-color-regular)]">
+        {{ metaLine }}
+      </div>
+      <div
+        v-if="detailLine"
+        class="truncate text-xs leading-snug text-[var(--el-text-color-regular)]"
+      >
+        {{ detailLine }}
       </div>
     </div>
     <div class="flex shrink-0 flex-col items-end gap-1 self-center">

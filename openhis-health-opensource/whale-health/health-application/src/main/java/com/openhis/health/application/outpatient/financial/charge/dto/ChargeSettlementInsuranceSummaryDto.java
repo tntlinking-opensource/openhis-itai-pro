@@ -34,6 +34,12 @@ public class ChargeSettlementInsuranceSummaryDto {
     @Schema(description = "账单时间")
     private java.time.LocalDateTime billDate;
 
+    /**
+     * 收款人姓名（支付流水 {@code enterer_id} → 医务人员主档姓名；与收费小票口径一致）。
+     */
+    @Schema(description = "收款人姓名")
+    private String cashierName;
+
     /** 支付主单展示金额（患者应付）。 */
     @Schema(description = "支付展示金额")
     private BigDecimal displayAmount;

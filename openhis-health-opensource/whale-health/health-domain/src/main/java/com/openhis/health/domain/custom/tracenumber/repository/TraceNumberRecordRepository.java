@@ -5,9 +5,13 @@
 package com.openhis.health.domain.custom.tracenumber.repository;
 
 import com.openhis.health.domain.custom.tracenumber.entity.TraceNumberRecord;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 
@@ -56,4 +60,32 @@ public interface TraceNumberRecordRepository extends JpaRepository<TraceNumberRe
      * @return 已存在为 true
      */
     boolean existsByBusNoAndIsDeletedFalse(String busNo);
+
+    /**
+     * 按院内出入类别/方向/操作类型 + 创建起点，去重列出业务单号（日批发现未建 msfx 账用）。
+     *
+     * @param category HOSPITAL_IO
+     * @param direction IN/OUT
+     * @param operationType 如 CABINET_INBOUND_RECEIPT
+     * @param since 创建起点（含）
+     * @param pageable 限流
+     * @return 去重 busNo 列表
+     */
+    @Query("""
+            select distinct r.busNo from TraceNumberRecord r
+            where r.isDeleted = false
+              and r.recordCategoryEnum = :category
+              and r.recordDirectionEnum = :direction
+              and r.operationType = :operationType
+              and r.createdAt >= :since
+              and r.busNo is not null
+              and r.busNo <> ''
+            order by r.busNo asc
+            """)
+    List<String> findDistinctBusNosForHospitalIo(
+            @Param("category") String category,
+            @Param("direction") String direction,
+            @Param("operationType") String operationType,
+            @Param("since") LocalDateTime since,
+            Pageable pageable);
 }

@@ -39,6 +39,7 @@ import {
   totalAmountUnitDisplayLabel,
   totalUnitSelectOptions,
 } from '../services/medication-unit-bands';
+import { resolveServicePreviewBillQuantity } from '../services/service-quantity-calc';
 
 defineOptions({ name: 'AdviceDeviceServiceFormPanel' });
 
@@ -93,9 +94,10 @@ const productInfoTitle = computed(() => (props.editorKind === 'DEVICE' ? '耗材
 const calcTotalFee = computed(() => {
   const item = props.item;
   const price = Number(item.selectedDrugPrice || 0);
+  // 诊疗：单价 × 单次执行数量 × 执行次数；耗材：单价 × 数量
   const amount =
     props.editorKind === 'SERVICE'
-      ? Number(item.serviceQuantity ?? 0)
+      ? resolveServicePreviewBillQuantity(item.serviceQuantity, item.totalAmount)
       : Number(item.totalAmount ?? 0);
   if (price <= 0 || amount <= 0) {
     return '0.00';
@@ -406,7 +408,7 @@ function patchEncounterDiagnosisIds(value: unknown) {
 
     <div v-else class="drug-form-row simple-row">
       <div class="field-item service-qty-item">
-        <span class="meta-label">数量</span>
+        <span class="meta-label">单次执行数量</span>
         <div class="dose-num-with-unit">
           <ElInputNumber
             class="dose-qty-input simple-line-qty-primary"
@@ -534,7 +536,7 @@ function patchEncounterDiagnosisIds(value: unknown) {
 }
 
 .field-item > .meta-label {
-  width: 72px;
+  width: 96px;
   color: var(--el-text-color-regular);
   font-size: 14px;
   line-height: 32px;

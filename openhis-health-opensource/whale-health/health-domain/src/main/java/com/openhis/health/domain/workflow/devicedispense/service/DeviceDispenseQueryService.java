@@ -8,6 +8,7 @@ import com.openhis.health.domain.clinical.procedure.queries.NurseWorkloadPageQue
 import com.openhis.health.domain.share.constants.ConsumableUsageReportConstants;
 import com.openhis.health.domain.share.constants.DoctorStationOrderCatalogConstants;
 import com.openhis.health.domain.share.constants.NurseWorkloadConstants;
+import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.utils.KeywordExactFirstOrderSupport;
 import com.openhis.health.domain.share.utils.IdInQueryChunkSupport;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
@@ -28,10 +29,19 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
-import org.springframework.stereotype.Service;
+import com.openhis.health.domain.workflow.devicedispense.support.NurseWorkloadDeviceDispenseReportCriteriaSupport;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.TypedQuery;
+import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.CriteriaQuery;
+import jakarta.persistence.criteria.Expression;
+import jakarta.persistence.criteria.Order;
+import jakarta.persistence.criteria.Predicate;
+import jakarta.persistence.criteria.Root;
 
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -45,6 +55,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -53,6 +64,7 @@ import lombok.RequiredArgsConstructor;
  * <p>职责：发放单详情与列表、状态校验门控及工作台筛选；只读不写库。</p>
  *
  * <p>边界：仅依赖本聚合 {@link DeviceDispenseRepository}（B.6.4 仅本聚合 Repository）。
+ * {@link EntityManager} 仅用于护士耗材明细分页 coalesce 业务时间排序（AS-RPT-002）。
  * 护士工作量（AS-RPT-002）{@code hvcm_flag} 由
  * {@link com.openhis.health.application.report.nurseworkload.support.NurseWorkloadLoader} 预解析写入 query（B.6.4），
  * 见 DM-WKF-007 §6.2.20～6.2.22。</p>
@@ -66,6 +78,7 @@ import lombok.RequiredArgsConstructor;
 public class DeviceDispenseQueryService {
 
     private final DeviceDispenseRepository deviceDispenseRepository;
+    private final EntityManager entityManager;
 
 
     /**
@@ -206,7 +219,40 @@ public class DeviceDispenseQueryService {
     }
 
     /**
-     * 医嘱开立目录：候选库位与目录耗材定义交集下，处于草稿/待发且未过 {@code limitTime} 的发放数量行（IF-DOR-11 预减口径，不限就诊）。
+     * 按就诊主键集合批量加载耗材发放摘要（仅本聚合 Repository）。
+     *
+     * <p>与 {@link #listDeviceDispensesByEncounter} 同口径：不过滤状态，软删在内存剔除，
+     * 供护士站队列按「已收费请求 + 待发放/无发放单」判定红点。</p>
+     *
+     * @param encounterIds 本页就诊主键集合
+     * @return 列表模型；空入参返回空表
+     */
+    public List<DeviceDispenseListModel> listDeviceDispensesByEncounterIds(Collection<Long> encounterIds) {
+        List<DeviceDispenseListModel> result = new ArrayList<>();
+        // Gate：无就诊主键则无需查发放单
+        if (encounterIds == null || encounterIds.isEmpty()) {
+            return result;
+        }
+        List<DeviceDispense> rows = IdInQueryChunkSupport.loadByIdInChunks(
+            encounterIds,
+            chunkIds -> this.deviceDispenseRepository.findByEncounterIdIn(chunkIds));
+        // 软删发放行不进入处置单侧栏
+        for (DeviceDispense row : rows) {
+            if (row == null || Boolean.TRUE.equals(row.getIsDeleted())) {
+                continue;
+            }
+            result.add(this.toListModel(row));
+        }
+        return result;
+    }
+
+    /**
+     * 医嘱开立目录：候选库位与目录耗材定义交集下，处于草稿/待发的发放数量行（IF-DOR-11 预减口径，不限就诊）。
+     *
+     * <p><strong>与药品差异</strong>：耗材待发预占<strong>不</strong>按 {@code limitTime} 过期释放；
+     * 只要仍为 {@code DRAFT}/{@code PREPARATION} 且未逻辑删除，一直计入占用，直至护士执行推进或签退/取消释放
+     * （避免预占过期后后开患者扣光签发批号、先开未执行患者护士站报库存不足）。药品侧仍为约 24h 窗，见
+     * {@code MedicationDispenseQueryService#listMedicationDispensesForOrderCatalogOccupancy}。</p>
      *
      * @param candidateLocationIds   候选库房库位 id 列表
      * @param deviceDefinitionIds    当前页耗材定义 id 列表
@@ -215,25 +261,26 @@ public class DeviceDispenseQueryService {
     public List<DeviceDispenseOrderCatalogOccupancyModel> listDeviceDispensesForOrderCatalogOccupancy(
         List<Long> candidateLocationIds, List<Long> deviceDefinitionIds) {
         List<DeviceDispenseOrderCatalogOccupancyModel> result = new ArrayList<>();
+        // Gate：无候选库位则无预占行
         if (candidateLocationIds == null || candidateLocationIds.isEmpty()) {
             return result;
         }
+        // Gate：无耗材定义则无预占行
         if (deviceDefinitionIds == null || deviceDefinitionIds.isEmpty()) {
             return result;
         }
         List<String> occupancyStatusCodes = new ArrayList<>();
-        // Loop：遍历枚举集合，提取状态码构建IN条件
+        // Loop：遍历枚举集合，提取状态码构建 IN 条件（仅草稿/待配药）
         for (DispenseStatus statusEnum : DoctorStationOrderCatalogConstants.DISPENSE_OCCUPANCY_STATUSES_FOR_ORDER_CATALOG) {
             occupancyStatusCodes.add(statusEnum.getCode());
         }
-        LocalDateTime now = LocalDateTime.now();
+        // Pre：耗材预占不过期——故意不施加 now < limitTime（药品侧仍有该窗）
         Specification<DeviceDispense> specification = (root, cq, cb) -> {
             List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
             predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
             predicates.add(root.get(FieldNameConstants.LOCATION_ID).in(candidateLocationIds));
             predicates.add(root.get(FieldNameConstants.DEVICE_DEF_ID).in(deviceDefinitionIds));
             predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(occupancyStatusCodes));
-            predicates.add(cb.greaterThan(root.get(FieldNameConstants.LIMIT_TIME), now));
             return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
         };
         List<DeviceDispense> rows = deviceDispenseRepository.findAll(specification);
@@ -798,6 +845,8 @@ public class DeviceDispenseQueryService {
         model.setStatusEnum(row.getStatusEnum());
         model.setBusNo(row.getBusNo());
         model.setDeviceReqId(row.getDeviceReqId());
+        model.setBasedOnId(row.getBasedOnId());
+        model.setLotNumber(row.getLotNumber());
         return model;
     }
 
@@ -939,49 +988,119 @@ public class DeviceDispenseQueryService {
     }
 
     /**
+     * 判断同耗材定义同批号是否存在未软删发放行（任意状态；BR-WHS-IN-018）。
+     *
+     * @param deviceDefId 耗材定义主键
+     * @param lotNumber   批号字面值
+     * @return 存在则为 true
+     */
+    public boolean existsByDeviceDefIdAndLotNumber(Long deviceDefId, String lotNumber) {
+        // Gate：键不全视为无发放
+        if (deviceDefId == null || StringUtils.isEmpty(lotNumber)) {
+            return false;
+        }
+        return deviceDispenseRepository.existsByDeviceDefIdAndLotNumberAndIsDeletedFalse(
+            deviceDefId, lotNumber.trim());
+    }
+
+    /**
      * 护士耗材工作量候选发放行（DM-WKF-007 §6.2.20；供 Support enrich 与汇总/明细复用）。
      *
      * @param query 预解析 scope 与 {@code deviceAutoInventoryDeductEnabled}
      * @return 时间窗与护士归属过滤后的发放行
      */
     public List<DeviceDispense> listNurseConsumableWorkloadCandidateDispenses(NurseWorkloadPageQuery query) {
+        // Pre：同窗内已物化候选发放行则直接复用
+        if (query != null && query.getCachedNurseConsumableCandidatesForRequest() != null) {
+            return this.castNurseConsumableCandidateCache(query.getCachedNurseConsumableCandidatesForRequest());
+        }
         // Gate：Support 未写入 scope 或日期无效时直接空集
         if (query == null
             || query.getDateFrom() == null
             || query.getDateTo() == null
             || query.getResolvedEncounterScope() == null
             || query.getResolvedEncounterScope().isEmpty()) {
+            return this.storeNurseConsumableCandidateCache(query, Collections.emptyList());
+        }
+        // Gate：默认登录科室下无护士时直接空集，禁止回落全院
+        if (query.getPractitionerId() == null
+            && query.getPractitionerIds() != null
+            && query.getPractitionerIds().isEmpty()) {
+            return this.storeNurseConsumableCandidateCache(query, Collections.emptyList());
+        }
+        // Pre：与明细分页共用同一套 Criteria（汇总数量 = 明细 total；禁止 Java/SQL 双轨）
+        List<DeviceDispense> filtered = this.listNurseConsumableCandidateDispensesFromDatabase(query);
+        return this.storeNurseConsumableCandidateCache(query, filtered);
+    }
+
+    /**
+     * 按护士耗材报表规约加载全量候选发放行（业务时间倒序；与明细分页同口径）。
+     *
+     * @param query 预解析 scope
+     * @return 命中行；无 scope 时空列表
+     */
+    private List<DeviceDispense> listNurseConsumableCandidateDispensesFromDatabase(NurseWorkloadPageQuery query) {
+        Specification<DeviceDispense> specification =
+            NurseWorkloadDeviceDispenseReportCriteriaSupport.buildCandidateSpecification(query);
+        CriteriaBuilder cb = this.entityManager.getCriteriaBuilder();
+        CriteriaQuery<DeviceDispense> dataQuery = cb.createQuery(DeviceDispense.class);
+        Root<DeviceDispense> dataRoot = dataQuery.from(DeviceDispense.class);
+        Predicate dataPredicate = specification.toPredicate(dataRoot, dataQuery, cb);
+        if (dataPredicate != null) {
+            dataQuery.where(dataPredicate);
+        }
+        Boolean deductEnabled = null;
+        if (query != null) {
+            deductEnabled = query.getDeviceAutoInventoryDeductEnabled();
+        }
+        Expression<LocalDateTime> businessTime =
+            NurseWorkloadDeviceDispenseReportCriteriaSupport.resolveBusinessTimeExpression(
+                dataRoot, cb, deductEnabled);
+        dataQuery.orderBy(cb.desc(businessTime));
+        return this.entityManager.createQuery(dataQuery).getResultList();
+    }
+
+    /**
+     * 写入同窗耗材候选发放缓存并返回同一列表引用。
+     *
+     * @param query    护士工作量查询
+     * @param filtered 候选发放行
+     * @return {@code filtered}
+     */
+    private List<DeviceDispense> storeNurseConsumableCandidateCache(
+        NurseWorkloadPageQuery query,
+        List<DeviceDispense> filtered) {
+        List<DeviceDispense> sortedRows = filtered;
+        Boolean deviceAutoInventoryDeductEnabled = null;
+        if (query != null) {
+            deviceAutoInventoryDeductEnabled = query.getDeviceAutoInventoryDeductEnabled();
+        }
+        // Pre：同窗缓存前按业务时间倒序，分页/全量禁止重复 sort
+        if (sortedRows != null && sortedRows.size() > 1) {
+            sortedRows = new ArrayList<>(sortedRows);
+            Boolean deductFlag = deviceAutoInventoryDeductEnabled;
+            sortedRows.sort(Comparator.comparing(
+                row -> this.resolveNurseConsumableBusinessTime(row, deductFlag),
+                Comparator.nullsLast(Comparator.reverseOrder())));
+        }
+        if (query != null) {
+            query.setCachedNurseConsumableCandidatesForRequest(sortedRows);
+        }
+        return sortedRows;
+    }
+
+    /**
+     * 读取同窗耗材候选发放缓存。
+     *
+     * @param cached 缓存列表
+     * @return DeviceDispense 列表
+     */
+    @SuppressWarnings("unchecked")
+    private List<DeviceDispense> castNurseConsumableCandidateCache(List<?> cached) {
+        if (cached == null || cached.isEmpty()) {
             return Collections.emptyList();
         }
-        // Pre：按全局开关决定纳入状态（关=PREPARED，开=COMPLETED）
-        String statusCode = this.resolveNurseConsumableIncludedStatusCode(query.getDeviceAutoInventoryDeductEnabled());
-        List<DeviceDispense> rows = this.deviceDispenseRepository.findByEncounterIdInAndStatusEnumInAndIsDeletedFalse(
-            query.getResolvedEncounterScope(),
-            List.of(statusCode));
-        List<DeviceDispense> filtered = new ArrayList<>();
-        LocalDateTime windowFrom = query.getDateFrom().atStartOfDay();
-        LocalDateTime windowTo = LocalDateTime.of(query.getDateTo(), LocalTime.of(23, 59, 59, 999_999_999));
-        for (DeviceDispense row : rows) {
-            if (row == null || row.getId() == null) {
-                continue;
-            }
-            LocalDateTime businessTime = this.resolveNurseConsumableBusinessTime(row, query.getDeviceAutoInventoryDeductEnabled());
-            // 业务时间为空则无法归属统计窗，跳过
-            if (businessTime == null) {
-                continue;
-            }
-            if (businessTime.isBefore(windowFrom) || businessTime.isAfter(windowTo)) {
-                continue;
-            }
-            Long attributedPractitionerId =
-                this.resolveNurseConsumableAttributedPractitionerId(row, query.getDeviceAutoInventoryDeductEnabled());
-            // 已选护士：仅保留归属护士匹配行
-            if (query.getPractitionerId() != null && !query.getPractitionerId().equals(attributedPractitionerId)) {
-                continue;
-            }
-            filtered.add(row);
-        }
-        return filtered;
+        return (List<DeviceDispense>) cached;
     }
 
     /**
@@ -1019,26 +1138,78 @@ public class DeviceDispenseQueryService {
      * @return 明细分页；业务时间倒序
      */
     public Page<NurseConsumableWorkloadDetailQueryModel> pageNurseConsumableWorkloadDetail(NurseWorkloadPageQuery query) {
-        // Pre：候选集排序后仅物化当前页
-        List<DeviceDispense> rows = this.listNurseConsumableWorkloadCandidateDispenses(query);
-        rows.sort(Comparator.comparing(
-            row -> this.resolveNurseConsumableBusinessTime(row, query.getDeviceAutoInventoryDeductEnabled()),
-            Comparator.nullsLast(Comparator.reverseOrder())));
         int pageSize = this.resolveNurseWorkloadPageSize(query);
         int springIndex = 0;
         if (query != null) {
             springIndex = query.springPageIndex();
         }
-        int fromIndex = springIndex * pageSize;
-        if (fromIndex >= rows.size()) {
-            Pageable pageable = PageRequest.of(springIndex, pageSize);
-            return new PageImpl<>(Collections.emptyList(), pageable, rows.size());
-        }
-        int toIndex = Math.min(fromIndex + pageSize, rows.size());
-        List<NurseConsumableWorkloadDetailQueryModel> pageModels =
-            this.toNurseConsumableWorkloadDetailModels(rows.subList(fromIndex, toIndex), query);
         Pageable pageable = PageRequest.of(springIndex, pageSize);
-        return new PageImpl<>(pageModels, pageable, rows.size());
+        // Pre：同窗候选缓存命中则内存切片（汇总+明细分页同窗复用）
+        if (query != null && query.getCachedNurseConsumableCandidatesForRequest() != null) {
+            List<DeviceDispense> rows = this.castNurseConsumableCandidateCache(query.getCachedNurseConsumableCandidatesForRequest());
+            int fromIndex = springIndex * pageSize;
+            if (fromIndex >= rows.size()) {
+                return new PageImpl<>(Collections.emptyList(), pageable, rows.size());
+            }
+            int toIndex = Math.min(fromIndex + pageSize, rows.size());
+            List<NurseConsumableWorkloadDetailQueryModel> pageModels =
+                this.toNurseConsumableWorkloadDetailModels(rows.subList(fromIndex, toIndex), query);
+            return new PageImpl<>(pageModels, pageable, rows.size());
+        }
+        // Pre：明细分页 DB 真分页（业务时间 coalesce 倒序；禁止全窗 findAll 后 subList）
+        Page<DeviceDispense> entityPage = this.pageNurseConsumableCandidateDispensesAtDatabase(query, springIndex, pageSize);
+        List<NurseConsumableWorkloadDetailQueryModel> pageModels =
+            this.toNurseConsumableWorkloadDetailModels(entityPage.getContent(), query);
+        return new PageImpl<>(pageModels, pageable, entityPage.getTotalElements());
+    }
+
+    /**
+     * 护士耗材候选发放 DB 分页（coalesce 业务时间倒序 + COUNT）。
+     *
+     * @param query        预解析 scope
+     * @param springIndex  Spring 页码（0-based）
+     * @param pageSize     每页条数
+     * @return 当前页实体 + total
+     */
+    private Page<DeviceDispense> pageNurseConsumableCandidateDispensesAtDatabase(
+        NurseWorkloadPageQuery query,
+        int springIndex,
+        int pageSize) {
+        Specification<DeviceDispense> specification =
+            NurseWorkloadDeviceDispenseReportCriteriaSupport.buildCandidateSpecification(query);
+        CriteriaBuilder cb = this.entityManager.getCriteriaBuilder();
+        CriteriaQuery<Long> countQuery = cb.createQuery(Long.class);
+        Root<DeviceDispense> countRoot = countQuery.from(DeviceDispense.class);
+        Predicate countPredicate = specification.toPredicate(countRoot, countQuery, cb);
+        countQuery.select(cb.count(countRoot));
+        if (countPredicate != null) {
+            countQuery.where(countPredicate);
+        }
+        Long totalElements = this.entityManager.createQuery(countQuery).getSingleResult();
+        if (totalElements == null) {
+            totalElements = 0L;
+        }
+        CriteriaQuery<DeviceDispense> dataQuery = cb.createQuery(DeviceDispense.class);
+        Root<DeviceDispense> dataRoot = dataQuery.from(DeviceDispense.class);
+        Predicate dataPredicate = specification.toPredicate(dataRoot, dataQuery, cb);
+        if (dataPredicate != null) {
+            dataQuery.where(dataPredicate);
+        }
+        Boolean deductEnabled = null;
+        if (query != null) {
+            deductEnabled = query.getDeviceAutoInventoryDeductEnabled();
+        }
+        Expression<LocalDateTime> businessTime =
+            NurseWorkloadDeviceDispenseReportCriteriaSupport.resolveBusinessTimeExpression(
+                dataRoot, cb, deductEnabled);
+        Order orderByBusinessTime = cb.desc(businessTime);
+        dataQuery.orderBy(orderByBusinessTime);
+        TypedQuery<DeviceDispense> typedQuery = this.entityManager.createQuery(dataQuery);
+        typedQuery.setFirstResult(springIndex * pageSize);
+        typedQuery.setMaxResults(pageSize);
+        List<DeviceDispense> content = typedQuery.getResultList();
+        Pageable pageable = PageRequest.of(springIndex, pageSize);
+        return new PageImpl<>(content, pageable, totalElements);
     }
 
     /**
@@ -1049,9 +1220,6 @@ public class DeviceDispenseQueryService {
      */
     public List<NurseConsumableWorkloadDetailQueryModel> listNurseConsumableWorkloadDetail(NurseWorkloadPageQuery query) {
         List<DeviceDispense> rows = this.listNurseConsumableWorkloadCandidateDispenses(query);
-        rows.sort(Comparator.comparing(
-            row -> this.resolveNurseConsumableBusinessTime(row, query.getDeviceAutoInventoryDeductEnabled()),
-            Comparator.nullsLast(Comparator.reverseOrder())));
         return this.toNurseConsumableWorkloadDetailModels(rows, query);
     }
 
@@ -1137,6 +1305,33 @@ public class DeviceDispenseQueryService {
             return row.getPerformerId();
         }
         return row.getPreparerId();
+    }
+
+    /**
+     * 判断归属护士是否落入当前筛选（单护士优先；否则科室护士 IN；均未设则不过滤）。
+     *
+     * @param query                    护士工作量查询
+     * @param attributedPractitionerId 行归属护士主键
+     * @return {@code true} 表示计入候选
+     */
+    private boolean matchesNurseWorkloadAttributedPractitioner(
+        NurseWorkloadPageQuery query,
+        Long attributedPractitionerId) {
+        if (query.getPractitionerId() == null && query.getPractitionerIds() == null) {
+            return true;
+        }
+        if (attributedPractitionerId == null) {
+            return false;
+        }
+        if (query.getPractitionerId() != null) {
+            return query.getPractitionerId().equals(attributedPractitionerId);
+        }
+        for (Long allowedId : query.getPractitionerIds()) {
+            if (attributedPractitionerId.equals(allowedId)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -1294,17 +1489,31 @@ public class DeviceDispenseQueryService {
      */
     public List<ConsumableUsageDispenseSummaryRow> summarizeConsumableUsageDispense(
         ConsumableUsageReportPageQuery query) {
+        return this.summarizeConsumableUsageDispenseWithLines(query).getSummaryRows();
+    }
+
+    /**
+     * 耗材使用报表患者侧净数量汇总，并同次扫描产出明细事实行。
+     *
+     * <p>筛选与 {@link #summarizeConsumableUsageDispense} 一致；一次 {@code findAll} 同时分桶与映射明细行，
+     * 供应用层汇总进售价复用，禁止再按页二次扫描同一窗。</p>
+     *
+     * @param query 筛选 + summaryDimension
+     * @return 汇总行 + 同窗明细事实；无命中时两边均为空列表
+     */
+    public ConsumableUsageDispenseSummaryBundle summarizeConsumableUsageDispenseWithLines(
+        ConsumableUsageReportPageQuery query) {
+        ConsumableUsageDispenseSummaryBundle bundle = new ConsumableUsageDispenseSummaryBundle();
         if (query == null) {
             query = new ConsumableUsageReportPageQuery();
         }
         // Gate：空就诊 scope 拒查
         if (query.getResolvedEncounterScope() != null && query.getResolvedEncounterScope().isEmpty()) {
-            return Collections.emptyList();
+            return bundle;
         }
-        // Pre：全量命中行（忽略分页键）后按维分桶
+        // Pre：全量命中行（忽略分页键）后按维分桶；汇总不分页排序
         Specification<DeviceDispense> specification = this.buildConsumableUsageReportSpecification(query);
-        Sort sort = Sort.by(Sort.Order.desc(FieldNameConstants.DISPENSE_TIME));
-        List<DeviceDispense> rows = deviceDispenseRepository.findAll(specification, sort);
+        List<DeviceDispense> rows = deviceDispenseRepository.findAll(specification);
         String dimension = StringUtils.trimToNull(query.getSummaryDimension());
         // Gate：未传维回落耗材房，与 init 默认 LOCATION 一致
         if (dimension == null) {
@@ -1314,8 +1523,9 @@ public class DeviceDispenseQueryService {
         if (orgByEncounter == null) {
             orgByEncounter = Map.of();
         }
-        // Asm：退药数量取负，累加净量
+        // Asm：退药数量取负累加净量；同环映射明细行供定价
         Map<String, ConsumableUsageDispenseSummaryRow> bucketByKey = new LinkedHashMap<>();
+        List<ConsumableUsageDispenseLineQueryModel> lineRows = new ArrayList<>(rows.size());
         for (DeviceDispense row : rows) {
             if (row == null) {
                 continue;
@@ -1334,8 +1544,11 @@ public class DeviceDispenseQueryService {
             BigDecimal signedQty = this.resolveConsumableUsageSignedQuantity(row);
             summary.setNetQuantity(summary.getNetQuantity().add(signedQty));
             summary.setLineCount(summary.getLineCount() + 1L);
+            lineRows.add(this.toConsumableUsageDispenseLineModel(row));
         }
-        return new ArrayList<>(bucketByKey.values());
+        bundle.setSummaryRows(new ArrayList<>(bucketByKey.values()));
+        bundle.setLineRows(lineRows);
+        return bundle;
     }
 
     /**
@@ -1431,6 +1644,11 @@ public class DeviceDispenseQueryService {
     private ConsumableUsageDispenseLineQueryModel toConsumableUsageDispenseLineModel(DeviceDispense row) {
         ConsumableUsageDispenseLineQueryModel model = new ConsumableUsageDispenseLineQueryModel();
         model.setDispenseId(row.getId());
+        // Asm：退药行 based_on → 源发放；账单仍锚源单，供使用报表售价回挂
+        if (TableNameConstants.WKF_DEVICE_DISPENSE.equals(row.getBasedOnTable())
+            && row.getBasedOnId() != null) {
+            model.setBasedOnDispenseId(row.getBasedOnId());
+        }
         model.setDeviceReqId(row.getDeviceReqId());
         model.setDeviceDefId(row.getDeviceDefId());
         model.setEncounterId(row.getEncounterId());

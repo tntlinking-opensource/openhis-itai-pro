@@ -11,6 +11,8 @@ import com.openhis.health.application.outpatient.doctorstation.advice.dto.Doctor
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.DoctorStationAdviceOrderBindRowDto;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.SaveMedicationAdviceDraftLinePayload;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.SaveServiceAdviceDraftLinePayload;
+import com.openhis.health.application.shared.advice.SpecimenTubeMergeBindResolveSupport;
+import com.openhis.health.domain.custom.specimentubemerge.queries.model.SpecimenTubeMergeDerivedBindQueryModel;
 import com.openhis.health.domain.custom.servicedevicetemplate.queries.model.ServiceDeviceTemplateQueryModel;
 import com.openhis.health.domain.custom.servicedevicetemplate.service.ServiceDeviceTemplateQueryService;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
@@ -56,6 +58,7 @@ public class DoctorStationAdviceOrderBindQueryService {
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     private final ActivityDefinitionQueryService activityDefinitionQueryService;
     private final TerminologyOptionLoader terminologyOptionLoader;
+    private final SpecimenTubeMergeBindResolveSupport specimenTubeMergeBindResolveSupport;
 
     /**
      * 按绑定类型与主数据主键装载绑定行（诊疗来源等 {@code item_id} 存数字主键字符串的场景）。
@@ -117,6 +120,8 @@ public class DoctorStationAdviceOrderBindQueryService {
         Long organizationUnitId
     ) {
         List<DoctorStationAdviceDraftBindItemDto> bindItems = new ArrayList<>();
+        // 同批待签发：同一合管设备只解析一次派生绑定（采血费/耗材）
+        Set<Long> emittedMergeDeviceIds = new LinkedHashSet<>();
         // 空变更行集合不产生绑定解析，与 IF-DOR-14 空列表语义一致
         if (lines == null || lines.isEmpty()) {
             return bindItems;
@@ -137,8 +142,9 @@ public class DoctorStationAdviceOrderBindQueryService {
             if (TableNameConstants.MED_MEDICATION_DEFINITION.equals(productTableName)) {
                 this.appendMedicationLineBindItems(bindItems, line, lineIndex, lineOp, organizationUnitId);
             } else if (TableNameConstants.WKF_ACTIVITY_DEFINITION.equals(productTableName)) {
-                // 诊疗行：按 activityDefinitionId 查 ACTIVITY 直接绑定
-                this.appendServiceLineBindItems(bindItems, line, lineIndex, lineOp, organizationUnitId);
+                // 诊疗行：合管配置优先，否则 ACTIVITY 模板绑定
+                this.appendServiceLineBindItems(
+                    bindItems, line, lineIndex, lineOp, organizationUnitId, emittedMergeDeviceIds);
             }
         }
         return bindItems;
@@ -183,7 +189,8 @@ public class DoctorStationAdviceOrderBindQueryService {
             TableNameConstants.MED_MEDICATION_DEFINITION,
             definitionId,
             line.getRequestId(),
-            TableNameConstants.MED_MEDICATION_REQUEST
+            TableNameConstants.MED_MEDICATION_REQUEST,
+            null
         );
     }
 
@@ -195,22 +202,52 @@ public class DoctorStationAdviceOrderBindQueryService {
      * @param lineIndex            变更行在 Request.lines 中的下标
      * @param lineOp               行操作码
      * @param organizationUnitId   机构单元过滤（预留）
+     * @param emittedMergeDeviceIds 本批已输出合管派生绑定的设备 id（同批去重）
      */
     private void appendServiceLineBindItems(
         List<DoctorStationAdviceDraftBindItemDto> bindItems,
         DoctorStationAdviceDraftLineRequest line,
         int lineIndex,
         String lineOp,
-        Long organizationUnitId
+        Long organizationUnitId,
+        Set<Long> emittedMergeDeviceIds
     ) {
         SaveServiceAdviceDraftLinePayload payload = line.getServicePayload();
         if (payload == null || payload.getActivityDefinitionId() == null) {
             // 缺诊疗载荷或活动定义主键时无法解析 ACTIVITY 绑定
             return;
         }
+        Long activityId = payload.getActivityDefinitionId();
+        Optional<Long> mergeDeviceIdOpt = specimenTubeMergeBindResolveSupport.findMergeDeviceIdByActivityId(activityId);
+        if (mergeDeviceIdOpt.isPresent()) {
+            Long mergeDeviceId = mergeDeviceIdOpt.get();
+            // 同批内同一合管设备只带出一份采血费/耗材
+            if (emittedMergeDeviceIds.contains(mergeDeviceId)) {
+                return;
+            }
+            emittedMergeDeviceIds.add(mergeDeviceId);
+            List<BindAssemblyRow> assemblyRows = this.assembleMergeBindRows(
+                DoctorStationAdviceConstants.BIND_TYPE_ACTIVITY,
+                String.valueOf(activityId),
+                mergeDeviceId,
+                organizationUnitId
+            );
+            this.appendDraftBindItems(
+                bindItems,
+                assemblyRows,
+                lineIndex,
+                lineOp,
+                TableNameConstants.WKF_ACTIVITY_DEFINITION,
+                activityId,
+                line.getRequestId(),
+                TableNameConstants.WKF_SERVICE_REQUEST,
+                mergeDeviceId
+            );
+            return;
+        }
         List<BindAssemblyRow> assemblyRows = this.assembleBindRows(
             DoctorStationAdviceConstants.BIND_TYPE_ACTIVITY,
-            String.valueOf(payload.getActivityDefinitionId()),
+            String.valueOf(activityId),
             organizationUnitId
         );
         this.appendDraftBindItems(
@@ -219,9 +256,10 @@ public class DoctorStationAdviceOrderBindQueryService {
             lineIndex,
             lineOp,
             TableNameConstants.WKF_ACTIVITY_DEFINITION,
-            payload.getActivityDefinitionId(),
+            activityId,
             line.getRequestId(),
-            TableNameConstants.WKF_SERVICE_REQUEST
+            TableNameConstants.WKF_SERVICE_REQUEST,
+            null
         );
     }
 
@@ -236,6 +274,7 @@ public class DoctorStationAdviceOrderBindQueryService {
      * @param triggerDefinitionId    触发主医嘱定义主键
      * @param triggerRequestId       触发主医嘱请求主键（CREATE 可为空）
      * @param basedOnTable           派生行 based_on 表名
+     * @param specimenTubeMergeDeviceId 合管设备主键；非合管派生时为 null
      */
     private void appendDraftBindItems(
         List<DoctorStationAdviceDraftBindItemDto> bindItems,
@@ -245,7 +284,8 @@ public class DoctorStationAdviceOrderBindQueryService {
         String triggerProductTableName,
         Long triggerDefinitionId,
         Long triggerRequestId,
-        String basedOnTable
+        String basedOnTable,
+        Long specimenTubeMergeDeviceId
     ) {
         for (BindAssemblyRow assemblyRow : assemblyRows) {
             DoctorStationAdviceOrderBindRowDto row = assemblyRow.row();
@@ -269,6 +309,7 @@ public class DoctorStationAdviceOrderBindQueryService {
             item.setTriggerRequestId(triggerRequestId);
             item.setBasedOnTable(basedOnTable);
             item.setBasedOnRequestId(triggerRequestId);
+            item.setSpecimenTubeMergeDeviceId(specimenTubeMergeDeviceId);
             bindItems.add(item);
         }
     }
@@ -297,6 +338,18 @@ public class DoctorStationAdviceOrderBindQueryService {
             return rows;
         }
         BindQueryContext context = contextOpt.get();
+        // 检验 activity 已配置合管时优先读合管派生绑定，不查 service_device_template
+        if (DoctorStationAdviceConstants.BIND_TYPE_ACTIVITY.equals(bindType)) {
+            Long activityId = this.parseNumericSourceItemId(sourceItemKey);
+            if (activityId != null) {
+                Optional<Long> mergeDeviceIdOpt =
+                    specimenTubeMergeBindResolveSupport.findMergeDeviceIdByActivityId(activityId);
+                if (mergeDeviceIdOpt.isPresent()) {
+                    return this.assembleMergeBindRows(
+                        bindType, sourceItemKey, mergeDeviceIdOpt.get(), organizationUnitId);
+                }
+            }
+        }
         // 门诊医嘱仅匹配门诊范围绑定模板
         String rangeCode = ServiceDeviceTemplateRangeCode.OUTPATIENT.getCode();
         String itemIdKey = sourceItemKey.trim();
@@ -351,6 +404,82 @@ public class DoctorStationAdviceOrderBindQueryService {
             rows.add(new BindAssemblyRow(row, binding.getDevActTable().trim()));
         }
         return rows;
+    }
+
+    /**
+     * 合管配置派生绑定 → 绑定装配行（采血费 + 耗材）。
+     *
+     * @param bindType           绑定类型（ACTIVITY）
+     * @param sourceItemKey      触发检验 activity 主键字符串
+     * @param mergeDeviceId      合管设备主键
+     * @param organizationUnitId 机构单元（预留）
+     * @return 装配行列表
+     */
+    private List<BindAssemblyRow> assembleMergeBindRows(
+        String bindType,
+        String sourceItemKey,
+        Long mergeDeviceId,
+        Long organizationUnitId
+    ) {
+        List<BindAssemblyRow> rows = new ArrayList<>();
+        if (mergeDeviceId == null || StringUtils.isEmpty(sourceItemKey)) {
+            return rows;
+        }
+        Optional<BindQueryContext> contextOpt = resolveBindContext(bindType);
+        if (contextOpt.isEmpty()) {
+            return rows;
+        }
+        BindQueryContext context = contextOpt.get();
+        String sourceItemName = resolveSourceItemName(context, sourceItemKey.trim(), new HashMap<>());
+        List<SpecimenTubeMergeDerivedBindQueryModel> derived =
+            specimenTubeMergeBindResolveSupport.listDerivedBindsByDeviceId(mergeDeviceId);
+        if (derived.isEmpty()) {
+            return rows;
+        }
+        int priority = 1;
+        for (SpecimenTubeMergeDerivedBindQueryModel bind : derived) {
+            if (bind == null || bind.getTargetId() == null || StringUtils.isEmpty(bind.getTargetTable())) {
+                continue;
+            }
+            String targetTable = bind.getTargetTable().trim();
+            DoctorStationAdviceOrderBindRowDto row = new DoctorStationAdviceOrderBindRowDto();
+            row.setBindType(bindType);
+            row.setSourceItemId(this.parseNumericSourceItemId(sourceItemKey));
+            row.setSourceItemName(sourceItemName);
+            row.setTargetItemId(bind.getTargetId());
+            row.setTargetItemName(bind.getTargetName());
+            if (bind.getQuantity() != null) {
+                row.setQuantityNumerator(bind.getQuantity());
+                row.setQuantityDenominator(BigDecimal.ONE);
+            } else {
+                row.setQuantityNumerator(BigDecimal.ONE);
+                row.setQuantityDenominator(BigDecimal.ONE);
+            }
+            row.setUnitCode(bind.getUnitCode());
+            row.setUnitName(bind.getUnitName());
+            row.setPriority(priority);
+            priority = priority + 1;
+            row.setActiveFlag(Boolean.TRUE);
+            rows.add(new BindAssemblyRow(row, targetTable));
+        }
+        return rows;
+    }
+
+    /**
+     * 解析数字型来源项键为 Long。
+     *
+     * @param sourceItemKey 来源键
+     * @return 数字主键；非法时 null
+     */
+    private Long parseNumericSourceItemId(String sourceItemKey) {
+        if (StringUtils.isEmpty(sourceItemKey)) {
+            return null;
+        }
+        String key = sourceItemKey.trim();
+        if (StringUtils.isNotEmpty(key) && key.chars().allMatch(Character::isDigit)) {
+            return Long.valueOf(key);
+        }
+        return null;
     }
 
     /**

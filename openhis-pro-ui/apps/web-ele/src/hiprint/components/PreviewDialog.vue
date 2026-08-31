@@ -26,7 +26,8 @@ async function show(json: Record<string, unknown>, data: Record<string, unknown>
   await nextTick();
   try {
     previewHtml.value = renderPreviewHtml(json, data);
-  } catch {
+  } catch (error) {
+    console.warn('[print-preview] 渲染失败', error);
     previewHtml.value = '<p style="padding:16px;color:#c0392b;">预览渲染失败</p>';
   } finally {
     loading.value = false;

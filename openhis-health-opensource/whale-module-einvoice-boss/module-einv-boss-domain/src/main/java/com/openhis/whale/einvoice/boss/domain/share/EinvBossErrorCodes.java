@@ -35,6 +35,9 @@ public final class EinvBossErrorCodes {
     /** 博思平台返回非 S0000。 */
     public static final String EINV_BOSS_REJECT = "EINV_BOSS_REJECT";
 
+    /** 收费项目大类（chargeDetail）超过院点票种行数上限；医院不允许拆票。 */
+    public static final String EINV_CHARGE_DETAIL_LIMIT = "EINV_CHARGE_DETAIL_LIMIT";
+
     /** 调用博思 HTTP 超时。 */
     public static final String EINV_BOSS_TIMEOUT = "EINV_BOSS_TIMEOUT";
 

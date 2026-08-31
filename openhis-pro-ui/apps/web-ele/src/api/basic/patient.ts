@@ -26,6 +26,8 @@ export interface Patient {
   workCompany?: string;
   idCard?: string;
   nationalityCode?: string;
+  /** 学历层次字典编码（EducationLevel） */
+  educationLevelCode?: string;
   bloodAbo?: number;
   bloodAboText?: null | string;
   bloodRh?: number;
@@ -113,6 +115,8 @@ export interface CreatePatientParams {
   /** 证件与国籍 */
   idCard?: string;
   nationalityCode?: string;
+  /** 学历层次字典编码（EducationLevel） */
+  educationLevelCode?: string;
 
   /** 工作单位 */
   workCompany?: string;

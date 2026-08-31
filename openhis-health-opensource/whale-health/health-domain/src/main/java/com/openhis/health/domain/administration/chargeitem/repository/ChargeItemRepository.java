@@ -222,4 +222,12 @@ public interface ChargeItemRepository extends JpaRepository<ChargeItem, Long>, J
      */
     List<ChargeItem> findAllByEncounterIdAndProductTableAndProductId(
         Long encounterId, String productTable, Long productId);
+
+    /**
+     * 是否存在未软删收费行锚定给定定价定义主键集合（任意状态，含已退费；BR-WHS-IN-018）。
+     *
+     * @param definitionIds 定价定义主键集合
+     * @return 存在则为 true
+     */
+    boolean existsByDefinitionIdInAndIsDeletedFalse(Collection<Long> definitionIds);
 }

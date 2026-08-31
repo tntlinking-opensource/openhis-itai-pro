@@ -50,6 +50,10 @@ public class LoadInpatientSettleSummaryResponse {
     @Schema(description = "床号")
     private String bedName;
 
+    /** 主治医生姓名（上下文展示口径：活动优先，清床/召回后末次 COMPLETED）。 */
+    @Schema(description = "主治医生姓名")
+    private String attendingDoctorName;
+
     /** 就诊状态 code。 */
     @Schema(description = "就诊状态 code")
     private String statusEnum;
@@ -70,9 +74,40 @@ public class LoadInpatientSettleSummaryResponse {
     @Schema(description = "本次选中费用合计")
     private BigDecimal selectedTotal;
 
-    /** 差额提示：预交金净值 − 已结算占用 − 本次选中合计。 */
-    @Schema(description = "差额提示：预交金净值 − 已结算占用 − 本次选中合计")
+    /**
+     * 差额提示：库内余额 − 选中合计（调试保留；UI 主路径勿当应付）。
+     *
+     * <p>个人现金应付见 {@link #personalCashPayable}；渠道实付见 {@link #channelPayable} /
+     * 预结算 {@code displayAmount}。</p>
+     */
+    @Schema(description = "差额提示（调试；勿当应付）")
     private BigDecimal balanceHint;
+
+    /**
+     * 个人现金应付 P 预估（自费≈选中合计；医保以预结算为准）。
+     */
+    @Schema(description = "个人现金应付 P 预估")
+    private BigDecimal personalCashPayable;
+
+    /** 预交金冲抵额 O 预估。 */
+    @Schema(description = "预交金冲抵额 O 预估")
+    private BigDecimal depositOffsetAmount;
+
+    /** 渠道实付 C 预估（收银应付）。 */
+    @Schema(description = "渠道实付 C 预估")
+    private BigDecimal channelPayable;
+
+    /** 应退预交金预估。 */
+    @Schema(description = "应退预交金预估")
+    private BigDecimal prepayRefundAmount;
+
+    /** 是否全额退预交金预估。 */
+    @Schema(description = "是否全额退预交金预估")
+    private Boolean prepayFullRefund;
+
+    /** 轧差分支码 R1～R7。 */
+    @Schema(description = "预交金轧差分支 R1～R7")
+    private String depositSettleRuleCode;
 
     /** 展示余额：与可用余额一致（兼容）。 */
     @Schema(description = "展示余额：与可用余额一致")

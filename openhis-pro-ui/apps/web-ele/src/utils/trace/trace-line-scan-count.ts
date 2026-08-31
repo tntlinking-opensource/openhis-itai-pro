@@ -21,7 +21,7 @@ export function computeMaxTraceCount(operationQty: number | undefined | null): n
  * <p>进货硬 Gate 仍用个数；消耗/流转侧本值为「待扫」软提示，硬上限见 {@link computeMaxTraceCount}；
  * 交互优先 {@link isRemainingCoverageReached}（盖住即合法）。</p>
  *
- * - 操作单位 == 追溯单位：ceil(operationQty)（同阶不绕拆零）
+ * - 操作单位 == 追溯单位：ceil(operationQty)；若调用方已按码倍换算则自行处理
  * - 否则：ceil(operationSplitQty / perTraceSplitQty)
  * - outbound：结果至少为 1；inbound 亦 ceil（与后端 TraceScanCountSupport 同口径）
  */
@@ -100,6 +100,9 @@ export function resolveRequiredTraceCount(
 /**
  * 汇总行上已绑码的剩余拆零量（由扫码反查缓存传入）。
  *
+ * <p>须<strong>每一枚</strong>已绑码都有剩余缓存，才返回合计；缺任一码则 undefined，
+ * 避免用部分码合计去比整行拆零需求，误判「盖不住」。</p>
+ *
  * @param trace 行上逗号串或单码
  * @param remainingByTraceNo 码 → 主档剩余拆零
  */
@@ -111,14 +114,14 @@ export function sumBoundRemainingSplit(
   const codes = splitTraceNoCommaString(trace);
   if (codes.length === 0) return undefined;
   let sum = 0;
-  let any = false;
   for (const code of codes) {
+    // 缺缓存：无法判定盖住，回落调用方个数口径
+    if (!(code in remainingByTraceNo)) return undefined;
     const rem = Number(remainingByTraceNo[code]);
-    if (!Number.isFinite(rem) || rem < 0) continue;
+    if (!Number.isFinite(rem) || rem < 0) return undefined;
     sum += rem;
-    any = true;
   }
-  return any ? sum : undefined;
+  return sum;
 }
 
 /**
@@ -145,8 +148,8 @@ export function resolveMaxTraceCount(row: TraceBatchScanLine): number | null {
 /**
  * 行剩余待扫数量（弹窗「待扫」列）。
  *
- * <p>消耗/发药：硬上限=ceil(操作量)（开 2→2、开 1 盒→1）；已盖住则 0。
- * 进货无上限时回落建议应扫。码倍不参与待扫个数。</p>
+ * <p>消耗/发药：硬上限=ceil(操作量)（开 2→2、开 1 盒→1）；已盖住（真拆零需求）则 0。
+ * 进货无上限时回落建议应扫。码倍不参与待扫个数；盖住左侧 {@code operationSplitQty} 须已是拆零。</p>
  *
  * @param row 扫码行
  * @param trace 行上已绑码

@@ -38,7 +38,6 @@ import com.openhis.health.domain.share.constants.*;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.utils.EncounterDiagnosisIdsSupport;
 import com.openhis.health.domain.share.enums.RequestStatus;
-import com.openhis.health.domain.share.enums.TherapyType;
 import com.openhis.health.domain.share.enums.YbMedType;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
@@ -408,10 +407,11 @@ public class InpatientDoctorStationTcmAppService {
                         }
                     }
                     Long newId = medicationRequestDomainService.createHerbalMedicationOrderDraft(createCmd);
-                    // 非临嘱创建后补写 therapy_enum
-                    if (!TherapyType.TEMPORARY.getCode().equals(header.getTherapyEnum())) {
+                    // 创建后按方头再写一遍长临，确保与方头 therapyEnum 一致（含临时）
+                    if (StringUtils.isNotEmpty(header.getTherapyEnum())) {
                         medicationRequestDomainService.changeMedicationOrderDraft(
-                            tcmMapper.toChangeMedicationOrderDraftForTherapy(newId, header.getTherapyEnum(), operatorId));
+                            tcmMapper.toChangeMedicationOrderDraftForTherapy(
+                                newId, header.getTherapyEnum(), operatorId));
                     }
                     newIds.add(newId);
                 } else if (DoctorStationAdviceConstants.LINE_OP_UPDATE.equals(op)) {

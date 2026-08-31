@@ -22,6 +22,7 @@ import com.openhis.health.application.report.feedetail.inpatient.request.Summari
 import com.openhis.health.application.report.feedetail.inpatient.response.ExportInpatientFeeDetailReportResponse;
 import com.openhis.health.application.report.feedetail.inpatient.response.LoadInpatientFeeDetailReportPageInitResponse;
 import com.openhis.health.application.report.feedetail.inpatient.response.PageInpatientFeeDetailReportResponse;
+import com.openhis.health.application.report.feedetail.inpatient.response.SummarizeInpatientFeeDetailPurchaseCornerResponse;
 import com.openhis.health.application.report.feedetail.inpatient.response.SummarizeInpatientFeeDetailReportResponse;
 import com.openhis.health.application.report.feedetail.inpatient.support.InpatientFeeDetailReportQuerySupport;
 import com.openhis.health.application.report.feedetail.support.FeeDetailReportFinTypeSummaryAssembler;
@@ -63,12 +64,13 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 住院费用明细报表应用服务（AS-RPT-009，IF-RPT-IFD-01～04）。
+ * 住院费用明细报表应用服务（AS-RPT-009，IF-RPT-IFD-01～05）。
  *
  * <p>职责边界：</p>
  * <ul>
  *   <li>Gate：登录、日期窗、收退 Tab、呈现模式、汇总维度白名单与分页参数。</li>
- *   <li>Pre：{@link InpatientFeeDetailReportQuerySupport} scope 预解析与跨聚合 enrichment。</li>
+ *   <li>Pre：{@link InpatientFeeDetailReportQuerySupport} scope 预解析与跨聚合 enrichment；
+ *       进价列角 IF-05 独立异步回填。</li>
  *   <li>Cmd：无写库。</li>
  *   <li>Asm：多维净汇总（{@link FeeDetailReportFinTypeSummaryAssembler#assembleSummaryRows}）、就诊块明细与导出。</li>
  * </ul>
@@ -294,6 +296,59 @@ public class InpatientFeeDetailReportAppService {
     }
 
     /**
+     * IF-RPT-IFD-05：明细分页进价列角（异步回填页脚「进价合计」）。
+     *
+     * <p>与 IF-03 筛选同口径（日期/科室/收退/结算状态等；分页字段忽略）；不返回就诊块。
+     * 列表首屏应先调 IF-03（售价列角已出），再调本 IF。正确性：全命中 scope 进价代数和，
+     * 与导出全窗行进价同管线（DD §2.4 Type A / BR-RPT-PUR-CORNER-001～002）。</p>
+     *
+     * @param request 与明细分页同筛选（分页字段忽略）
+     * @return 进价合计
+     * @throws BusinessException 未登录 {@code EX-RPT-IFD-101}；日期非法 {@code EX-RPT-IFD-102}；
+     *     查询失败 {@code EX-RPT-IFD-103}
+     */
+    public SummarizeInpatientFeeDetailPurchaseCornerResponse summarizeInpatientFeeDetailPurchaseCorner(
+        PageInpatientFeeDetailReportRequest request) {
+        // Gate：须已登录
+        this.currentOperatorResolver.requireOperatorId(
+            InpatientFeeDetailReportConstants.EX_RPT_IFD_101,
+            "费用明细查询失败，请稍后重试");
+        // Gate：日期/收退合法；分页占位避免校验拒
+        this.validateQueryWindow(
+            request.getDateFrom(),
+            request.getDateTo(),
+            request.getTradeDirection(),
+            1,
+            InpatientFeeDetailReportConstants.DEFAULT_PAGE_SIZE);
+        try {
+            // Asm：Request → Query（与 IF-03 同筛选）
+            OutpatientFeeDetailPageQuery query = this.inpatientFeeDetailReportMapper.toPageQuery(request);
+            this.applyEntererMatchToFeeDetailQuery(query);
+            // Pre：明细分页专路径预解析命中 scope（与 IF-03 同口径）
+            this.inpatientFeeDetailReportQuerySupport.prepareInpatientFeeDetailPageScopes(query);
+            // Asm：仅历史进价代数和
+            BigDecimal purchaseAmountTotal =
+                this.feeDetailMatchedScopePurchaseTotalSupport.sumPurchaseAmountForMatchedScope(query);
+            SummarizeInpatientFeeDetailPurchaseCornerResponse response =
+                new SummarizeInpatientFeeDetailPurchaseCornerResponse();
+            response.setPurchaseAmountTotal(purchaseAmountTotal);
+            return response;
+        } catch (IllegalArgumentException illegalArgumentException) {
+            log.warn("住院费用明细进价列角数据不完整: {}", illegalArgumentException.getMessage());
+            throw new BusinessException(
+                InpatientFeeDetailReportConstants.EX_RPT_IFD_103,
+                "费用数据不完整，请联系管理员核对收费项目配置");
+        } catch (BusinessException businessException) {
+            throw businessException;
+        } catch (RuntimeException runtimeException) {
+            log.error("住院费用明细进价列角失败", runtimeException);
+            throw new BusinessException(
+                InpatientFeeDetailReportConstants.EX_RPT_IFD_103,
+                "费用明细查询失败，请稍后重试");
+        }
+    }
+
+    /**
      * IF-RPT-IFD-04：导出当前 Tab（仅 SUMMARY 或 DETAIL）。
      *
      * @param request 筛选 + presentationMode
@@ -335,11 +390,12 @@ public class InpatientFeeDetailReportAppService {
                     exportRows = new ArrayList<>(
                         exportRows.subList(0, InpatientFeeDetailReportConstants.EXPORT_MAX_ROWS));
                 }
-                // Asm：AnnotatedExcelExporter 按 @Excel 列导出汇总 sheet
+                // Asm：AnnotatedExcelExporter 按 @Excel 列导出汇总 sheet（前端 exportColumns 裁剪）
                 byte[] body = AnnotatedExcelExporter.exportToXlsxBytes(
                     InpatientFeeDetailReportConstants.EXPORT_SHEET_NAME_SUMMARY,
                     exportRows,
-                    FeeDetailReportSummaryRowDto.class);
+                    FeeDetailReportSummaryRowDto.class,
+                    request.getExportColumns());
                 log.info("住院费用明细报表汇总导出成功 operatorId={} rowCount={} truncated={}",
                     operatorId, exportRows.size(), truncated);
                 return this.inpatientFeeDetailReportMapper.toSummaryExportResponse(
@@ -377,7 +433,8 @@ public class InpatientFeeDetailReportAppService {
             byte[] body = AnnotatedExcelExporter.exportToXlsxBytes(
                 InpatientFeeDetailReportConstants.EXPORT_SHEET_NAME_DETAIL,
                 exportRows,
-                OutpatientFeeDetailExportRowDto.class);
+                OutpatientFeeDetailExportRowDto.class,
+                request.getExportColumns());
             log.info("住院费用明细报表明细导出成功 operatorId={} rowCount={} truncated={}",
                 operatorId, exportRows.size(), truncated);
             return this.inpatientFeeDetailReportMapper.toDetailExportResponse(
@@ -494,12 +551,13 @@ public class InpatientFeeDetailReportAppService {
     }
 
     /**
-     * 全量命中 summary：明细分页页脚仅售价合计，禁止再全窗物化 RowQueryModel。
+     * 全量命中 summary：明细分页页脚仅售价合计；进价列角由独立 IF 异步回填。
      *
-     * <p>优先 Loader 写入的 {@code resolvedSaleAmountTotal}；仅已结 pageScope 时对命中就诊全集 SQL SUM。</p>
+     * <p>优先 Loader 写入的 {@code resolvedSaleAmountTotal}；仅已结 pageScope 时对命中就诊全集 SQL SUM。
+     * 进价：本方法刻意不跑 {@link FeeDetailMatchedScopePurchaseTotalSupport}（全窗历史进价是列角瓶颈）。</p>
      *
      * @param query 已预解析 scope 的查询
-     * @return 全量金额 summary
+     * @return 全量金额 summary（purchaseAmountTotal 为 null 表示待刷）
      */
     private OutpatientFeeDetailAmountSummaryDto buildGlobalSummary(OutpatientFeeDetailPageQuery query) {
         BigDecimal saleAmountTotal;
@@ -532,11 +590,9 @@ public class InpatientFeeDetailReportAppService {
             saleAmountTotal =
                 this.chargeItemQueryService.summarizeOutpatientFeeDetailSaleAmountFromPreloadedScope(query);
         }
-        // Asm：页脚售价 + 进价（命中 scope 批量历史进价，禁 RowQueryModel）
-        BigDecimal purchaseAmountTotal =
-            this.feeDetailMatchedScopePurchaseTotalSupport.sumPurchaseAmountForMatchedScope(query);
+        // Asm：仅售价；进价列角延后到 summarizeInpatientFeeDetailPurchaseCorner
         return this.inpatientFeeDetailReportBlockAssembler.assembleDetailPageFooterSaleSummary(
-            saleAmountTotal, purchaseAmountTotal);
+            saleAmountTotal, null);
     }
 
     /**

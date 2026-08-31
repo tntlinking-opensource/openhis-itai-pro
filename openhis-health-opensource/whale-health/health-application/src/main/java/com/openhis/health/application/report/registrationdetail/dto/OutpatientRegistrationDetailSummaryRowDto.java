@@ -6,6 +6,7 @@ package com.openhis.health.application.report.registrationdetail.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.openhis.health.domain.share.constants.ChargeItemAmountScaleConstants;
 import com.openhis.whale.core.application.annotation.Excel;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -65,9 +66,9 @@ public class OutpatientRegistrationDetailSummaryRowDto {
     private Long netRegistrationCount;
 
     /**
-     * 净挂号费金额（计入净笔数就诊的号源 ChargeItem 合计；与明细挂号费同口径）。
+     * 净挂号费金额（计入净笔数就诊的号源 ChargeItem 合计；与明细挂号费同口径；展示 2 位）。
      */
-    @Excel(name = "挂号费合计", sort = 5)
+    @Excel(name = "挂号费合计", sort = 5, scale = ChargeItemAmountScaleConstants.CHARGE_MONETARY_DISPLAY_SCALE)
     @Schema(description = "净挂号费金额")
     private BigDecimal registrationFeeAmount;
 }

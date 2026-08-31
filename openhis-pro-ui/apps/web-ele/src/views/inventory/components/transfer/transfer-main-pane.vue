@@ -1,4 +1,4 @@
-﻿<!--
+<!--
   调拨入库/出库右侧主区：InvMainShell + InvDocActions + 单头 + 明细表格。
 -->
 <script setup lang="ts">
@@ -99,7 +99,7 @@ import {
 import SectionTitle from '#/components/layouts/section-title.vue';
 import {
   formatInventoryLineTotal,
-  formatMoneyDisplay,
+  formatPurchaseMoneyDisplay,
   inventoryLineTotalNumber,
 } from '#/utils/format/money-scale';
 import {
@@ -143,8 +143,9 @@ import {
   resolveDefaultPractitionerIdForSelect,
   resolveDocHeadProductPickLocationId,
   resolveFirstRealLocationIdFromInitOptions,
-  resolveInvDocPreparedByName,
   resolveInvDocApprovedByName,
+  resolveInvDocPreparedByName,
+  resolveInvDocPrintApplyTimeText,
 } from '#/utils/inventory/inventory-workbench-list';
 import {
   buildInventoryLocationHeadFormRules,
@@ -176,7 +177,7 @@ interface TransferPreviewRow {
   itemId?: number | string;
   inventoryItemId?: number | string;
   productName: string;
-  /** 药品分类码；中药=4 时单价三位展示 */
+  /** 药品分类码；中药=4 时进价三位展示 */
   categoryCode?: string;
   spec: string;
   manufacturer: string;
@@ -458,11 +459,11 @@ function resolveOccurrenceTimeForApi(): string {
   return t.includes('T') ? t.replace('T', ' ') : t;
 }
 
-function formatTransferDetailTotalAmount(total: unknown): string {
+function formatTransferDetailTotalAmount(total: unknown, categoryCode?: unknown): string {
   if (total === undefined || total === null || total === '') return '';
   const n = Number(total);
   if (!Number.isFinite(n)) return String(total).trim();
-  return formatMoneyDisplay(n);
+  return formatPurchaseMoneyDisplay(n, categoryCode);
 }
 
 /** 编辑态：按数量 × 单价刷新金额（详情 load 不重算 totalPrice）。 */
@@ -610,7 +611,7 @@ function mapDetailLineToGrid(
     unitList: [{ value: 'LEGACY', label: unitCodeStr.trim() === '' ? '单位' : unitCodeStr }],
     __prevBandKind: 'LEGACY',
     price: ln.price === undefined || ln.price === null ? 0 : Number(ln.price),
-    totalPrice: formatTransferDetailTotalAmount(ln.totalPrice),
+    totalPrice: formatTransferDetailTotalAmount(ln.totalPrice, catalog?.categoryCode),
     sourceStockQuantity: 0,
     lotNumber: String(ln.lotNumber ?? ''),
     traceNo: String(ln.traceNo ?? ''),
@@ -1447,8 +1448,8 @@ function resolveTransferPrintUnitLabel(row: TransferPreviewRow): string {
   return String(row.unitCodeDictText ?? row.unitCode ?? '').trim();
 }
 
-/** 打印调拨单（计价流转模版；入库/出库按 variant 定标题） */
-async function handlePrint() {
+/** 打印或预览调拨单（计价流转模版；入库/出库按 variant 定标题） */
+async function handlePrint(payload?: { preview?: boolean }) {
   const busNo = String(headerBusNo.value ?? '').trim();
   if (!busNo) {
     ElMessage.warning('请先保存单据后再打印');
@@ -1470,9 +1471,10 @@ async function handlePrint() {
     props.variant === 'in' ? destName || sourceName : sourceName || destName,
     props.variant === 'in' ? '调拨入库单' : '调拨出库单',
   );
-  const applyTimeText = String(headApplyTime.value ?? '')
-    .trim()
-    .replace('T', ' ');
+  // 打印制单时间取侧栏单据实际审批时间，禁止用单头缺省「当前时刻」冒充
+  const applyTimeText = resolveInvDocPrintApplyTimeText({
+    queueCardRow: props.queueCardRow as null | Record<string, unknown>,
+  });
 
   // 按当前网格展示值组装 PrintData
   const lineRows = productRows.map((row) => ({
@@ -1517,6 +1519,7 @@ async function handlePrint() {
       domain: props.domain,
     },
     jobName: documentTitle,
+    preview: payload?.preview === true,
   });
 }
 </script>

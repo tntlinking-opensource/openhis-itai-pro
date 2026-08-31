@@ -47,6 +47,12 @@ public class NurseStationTreatmentLineDto {
     private Long dispenseId;
 
     /**
+     * 耗材签发批号（主发放行 {@code wkf_device_dispense.lot_number}；药品/诊疗行可空）。
+     */
+    @Schema(description = "耗材签发批号")
+    private String lotNumber;
+
+    /**
      * 请求表语义短码（SERVICE/MEDICATION/DEVICE）。
      */
     @Schema(description = "请求表语义短码")
@@ -295,7 +301,7 @@ public class NurseStationTreatmentLineDto {
     private BigDecimal displayTotalPrice;
 
     /**
-     * 单价（可选）。
+     * 单价（可选；耗材侧栏取关联账单 {@code adm_charge_item.id} 升序首条 {@code unit_price}，与收费状态首条口径一致）。
      */
     @Schema(description = "单价（可选）")
     private BigDecimal unitPrice;
@@ -359,4 +365,14 @@ public class NurseStationTreatmentLineDto {
      */
     @Schema(description = "申请单部位/样本明细摘要")
     private List<ServiceRequestDetailSummaryDto> serviceRequestDetails;
+
+    /** 诊疗活动定义主键（检验/处置行；供合管打印分组）。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "诊疗活动定义主键")
+    private Long activityDefinitionId;
+
+    /** 合管检验设备主键；未配置合管时为 null。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "合管检验设备主键")
+    private Long specimenTubeMergeDeviceId;
 }

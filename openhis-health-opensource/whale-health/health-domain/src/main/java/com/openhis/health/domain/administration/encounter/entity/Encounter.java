@@ -323,7 +323,8 @@ public class Encounter extends BaseAuditedEntity {
      * 断言当前状态允许取消接诊（回退待诊，供窗口退号前由医生同意）。
      *
      * <p>门诊：仅 {@code IN_PROGRESS}/{@code ON_HOLD}/{@code DISCHARGED} 可取消接诊；
-     * 与账单无关，语义为「医生同意退号」。</p>
+     * 与账单无关，语义为「医生同意退号」。本诊病历/诊断/医嘱须已删净由应用层 IF-DOR-06 Pre 校验，
+     * 本方法不跨聚合断言。</p>
      */
     public void assertCancelReceptionAllowed() {
         this.assertClass(EncounterClass.AMB.getCode());
@@ -508,14 +509,21 @@ public class Encounter extends BaseAuditedEntity {
     }
 
     /**
-     * 迁移到诊毕/出院状态。
+     * 迁移到诊毕/出院状态（清床或无床全结终态）。
      *
-     * @param completedAt 完成时间
+     * <p>业务出院时间 {@code end_time} 须在护士办理出院时已写入（医生出院医嘱计划时间）。
+     * 清床/无床结算仅推进状态；<strong>已有 {@code end_time} 不得被清床/结算时刻覆盖</strong>
+     *（对齐 DM-ADM-002 §6.1.21「若尚未写入则与清床时刻对齐」）。</p>
+     *
+     * @param completedAt 清床或结算时刻；仅当 {@code end_time} 为空时回落写入
      */
     public void transitToDischarged(LocalDateTime completedAt) {
         this.assertNotTerminal();
         this.statusEnum = EncounterStatus.DISCHARGED.getCode();
-        this.endTime = completedAt;
+        // 已由办理出院写入计划出院时间：清床/结算不得改写业务出院时间
+        if (this.endTime == null) {
+            this.endTime = completedAt;
+        }
         this.assertTimeRangeLegal();
     }
 

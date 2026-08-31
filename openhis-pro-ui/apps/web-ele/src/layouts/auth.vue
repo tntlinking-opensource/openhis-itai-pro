@@ -52,13 +52,17 @@ onMounted(async () => {
 <style scoped>
 .auth-footer {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-flow: row nowrap;
+  gap: 12px;
   align-items: center;
+  justify-content: center;
+  width: 100%;
   line-height: 1.4;
+  white-space: nowrap;
 }
 
 .auth-footer__version {
+  flex-shrink: 0;
   opacity: 0.75;
   font-size: 12px;
 }

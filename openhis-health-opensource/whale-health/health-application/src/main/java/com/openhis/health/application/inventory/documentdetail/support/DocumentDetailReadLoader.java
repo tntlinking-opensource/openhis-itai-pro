@@ -16,6 +16,8 @@ import com.openhis.health.application.inventory.documentdetail.response.PageDocu
 import com.openhis.health.application.inventory.documentdetail.response.SummarizeDocumentDetailsResponse;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
+import com.openhis.health.domain.custom.supplier.queries.model.SupplierListItemQueryModel;
+import com.openhis.health.domain.custom.supplier.service.SupplierQueryService;
 import com.openhis.health.domain.share.constants.DocumentDetailExportConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.workflow.supplyrequest.queries.WarehouseDocumentDetailPageQuery;
@@ -23,6 +25,7 @@ import com.openhis.health.domain.workflow.supplyrequest.queries.model.WarehouseD
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQueryService;
 import com.openhis.health.application.shared.validator.PageWindowGate;
 import com.openhis.whale.core.application.dto.OptionDto;
+import com.openhis.whale.core.application.dto.ExcelExportColumnDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.infrastructure.multitenancy.TenantUtils;
 import lombok.RequiredArgsConstructor;
@@ -51,6 +54,8 @@ public class DocumentDetailReadLoader {
     private final SupplyRequestQueryService supplyRequestQueryService;
     /** 库位 init 下拉与行 enrich。 */
     private final LocationQueryService locationQueryService;
+    /** 供应商 init 下拉（筛选用；行 enrich 仍由 Enricher 调 QS）。 */
+    private final SupplierQueryService supplierQueryService;
     /** 各域 SupplyType 白名单；init 建议默认类型仅供前端回填。 */
     private final DocumentDetailTypeWhitelistHelper typeWhitelistSupport;
     /** Request → {@code WarehouseDocumentDetailPageQuery} 单一真源。 */
@@ -83,6 +88,8 @@ public class DocumentDetailReadLoader {
             List<OptionDto> locationOptions = this.buildActiveLocationOptions();
             response.setSourceLocationOptions(locationOptions);
             response.setPurposeLocationOptions(locationOptions);
+            // Pre：租户内全部有效供应商下拉（与库存明细 init 同源 listSuppliers）
+            response.setSupplierOptions(this.buildSupplierOptions());
             // Asm：默认审批自然月
             response.setDefaultApprovalTimeStart(this.queryAssemblySupport.defaultApprovalTimeStart());
             response.setDefaultApprovalTimeEnd(this.queryAssemblySupport.defaultApprovalTimeEnd());
@@ -211,9 +218,14 @@ public class DocumentDetailReadLoader {
             if (allRows.size() > DocumentDetailExportConstants.EXPORT_MAX_ROWS) {
                 throw new BusinessException(ErrorCodeConstants.INV_DDC_205, "导出失败，请稍后重试");
             }
-            // Asm：导出行映射 + Tabular Excel
+            // Asm：导出行映射 + Tabular Excel（前端 exportColumns 裁剪）
+            List<ExcelExportColumnDto> exportColumns = null;
+            if (request != null) {
+                exportColumns = request.getExportColumns();
+            }
             byte[] bytes = this.documentDetailMapper.buildExcelBytes(
-                this.documentDetailMapper.toExportRows(allRows));
+                this.documentDetailMapper.toExportRows(allRows),
+                exportColumns);
             String fileName = this.documentDetailMapper.buildExportFileName(scope);
             return this.documentDetailMapper.toExportDocumentDetailsResponse(fileName, bytes);
         } catch (BusinessException ex) {
@@ -344,6 +356,27 @@ public class DocumentDetailReadLoader {
             option.setValue(String.valueOf(location.getId()));
             option.setLabel(location.getName());
             option.setBusNo(location.getFormEnum());
+            options.add(option);
+        }
+        return options;
+    }
+
+    /**
+     * 租户内全部有效供应商下拉（筛选用；与库存明细 init 同源）。
+     *
+     * @return 选项列表；无供应商时为空列表
+     */
+    private List<OptionDto> buildSupplierOptions() {
+        List<OptionDto> options = new ArrayList<>();
+        List<SupplierListItemQueryModel> suppliers = this.supplierQueryService.listSuppliers();
+        for (SupplierListItemQueryModel supplier : suppliers) {
+            // 跳过无主键的脏行，避免下拉 value 为空
+            if (supplier == null || supplier.getId() == null) {
+                continue;
+            }
+            OptionDto option = new OptionDto();
+            option.setValue(String.valueOf(supplier.getId()));
+            option.setLabel(supplier.getName());
             options.add(option);
         }
         return options;

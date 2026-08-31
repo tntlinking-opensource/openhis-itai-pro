@@ -7,6 +7,7 @@ package com.openhis.health.application.inpatient.nursestation.encountermanage.se
 import com.openhis.health.application.shared.inpatient.InpatientAccountBalanceDisplayDtoApplier;
 import com.openhis.health.application.shared.inpatient.InpatientAccountBalanceDisplayAssembler;
 import com.openhis.health.application.shared.inpatient.InpatientAccountBalanceDisplayResult;
+import com.openhis.health.application.shared.inpatient.BusinessDischargeTimeResolver;
 import com.openhis.health.application.shared.inpatient.InpatientInfoQueueDisplayAssembler;
 import com.openhis.health.application.shared.option.TerminologyOptionLoader;
 import com.openhis.health.application.shared.pagination.PageQueryBinder;
@@ -36,6 +37,7 @@ import com.openhis.health.application.inpatient.nursestation.ATDManager.support.
 import com.openhis.health.application.inpatient.nursestation.ATDManager.support.dto.InpatientPatientQueueNursingLevelDisplayRow;
 import com.openhis.health.application.inpatient.nursestation.orderaudit.support.NurseStationOrderViewListAssembler;
 import com.openhis.health.application.shared.advice.LongTermFirstExecutionSlotSupport;
+import com.openhis.health.application.shared.advice.StandingOrderOralPackageInventorySupport;
 import com.openhis.health.application.shared.advice.StandingOrderPackageBatchPlanTimeResolver;
 import com.openhis.health.application.shared.advice.InpatientStandingOrderSplittableSettingResolver;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
@@ -59,6 +61,7 @@ import com.openhis.health.domain.administration.patient.queries.model.PatientDet
 import com.openhis.health.domain.administration.patient.service.PatientQueryService;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.clinical.procedure.entity.Procedure;
+import com.openhis.health.domain.clinical.procedure.queries.model.ProcedureRecordQueryModel;
 import com.openhis.health.domain.clinical.procedure.service.ProcedureQueryService;
 import com.openhis.health.domain.medication.medicationrequest.entity.MedicationRequest;
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
@@ -194,6 +197,9 @@ public class NurseStationEncounterManageAppService {
     /** 长嘱可拆/一盒一点计划点（BR-IP-EXE-035；与执行列表共用）。 */
     private final StandingOrderPackageBatchPlanTimeResolver standingOrderPackageBatchPlanTimeResolver;
 
+    /** 口服一盒一点剩余按天抑制（BR-IP-EXE-038；与 IF-IP-EXE-01 同源）。 */
+    private final StandingOrderOralPackageInventorySupport standingOrderOralPackageInventorySupport;
+
     /** 药品目录批量加载（不可拆切盒取包装拆零比）。 */
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
 
@@ -202,6 +208,9 @@ public class NurseStationEncounterManageAppService {
 
     /** 医保人员编号批量回填（SPI；未装配 Module 时为空 Map）。 */
     private final InsuranceRegisterBenefitQueryExtension insuranceRegisterBenefitQueryExtension;
+
+    /** 业务出院时间：出院医嘱计划时间优先（队列 endTime / 详情粘性条同源）。 */
+    private final BusinessDischargeTimeResolver businessDischargeTimeResolver;
 
     /**
      * IF-IP-NUR-01：病区病房树查询。
@@ -331,9 +340,11 @@ public class NurseStationEncounterManageAppService {
                     pageEncounterIds.add(row.getEncounterId());
                 }
             }
-            // Pre：当前页批量账户，禁止 N+1（BR-IP-NUR-006）。
-            Map<Long, Account> accountByEncounterId =
+            // Pre：当前页批量个人现金户（仅余额）；挂账 accountId 另取医保优先（BR：医保入院费用挂医保户）。
+            Map<Long, Account> registrationAccountByEncounterId =
                 accountQueryService.mapRegistrationAccountsByEncounterIds(pageEncounterIds);
+            Map<Long, Account> chargeAccountByEncounterId =
+                accountQueryService.mapDefaultChargeAccountsByEncounterIds(pageEncounterIds);
             // Pre：费用性质展示优先医保账户 contract_no（与医生站/门诊同口径）
             Map<Long, String> contractNoByEncounterId =
                 accountQueryService.mapPreferredContractNoByEncounterIds(pageEncounterIds);
@@ -358,18 +369,29 @@ public class NurseStationEncounterManageAppService {
             // Pre：病情术语码 → 展示名（入院状态）。
             Map<String, String> admCondLabelByCode =
                 terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.ADM_COND_CODE);
+            // Pre：本页业务出院时间（出院医嘱计划时间优先，覆盖脏 end_time）
+            Map<Long, LocalDateTime> endTimeByEncounter = new HashMap<>();
+            for (InpatientEncounterContextQueryModel row : page.getContent()) {
+                if (row != null && row.getEncounterId() != null) {
+                    endTimeByEncounter.put(row.getEncounterId(), row.getEndTime());
+                }
+            }
+            Map<Long, LocalDateTime> businessEndByEncounter =
+                businessDischargeTimeResolver.mapByEncounterIds(pageEncounterIds, endTimeByEncounter);
             List<PatientQueueItemDto> content = new ArrayList<>();
             for (InpatientEncounterContextQueryModel row : page.getContent()) {
                 if (row == null) {
                     continue;
                 }
-                Account account = null;
+                Account registrationAccount = null;
+                Account chargeAccount = null;
                 NurseStationTaskCountBundle counts = null;
                 InpatientInfoQueueDisplayAssembler.InpatientQueueDisplayOverlay rowOverlay = null;
                 NurseStationQueueDisplayEnrichment enrichment = null;
                 String priorityEnum = null;
                 if (row.getEncounterId() != null) {
-                    account = accountByEncounterId.get(row.getEncounterId());
+                    registrationAccount = registrationAccountByEncounterId.get(row.getEncounterId());
+                    chargeAccount = chargeAccountByEncounterId.get(row.getEncounterId());
                     counts = taskCounts.get(row.getEncounterId());
                     rowOverlay = displayOverlay.get(row.getEncounterId());
                     enrichment = enrichmentByEncounterId.get(row.getEncounterId());
@@ -383,13 +405,13 @@ public class NurseStationEncounterManageAppService {
                 InpatientAccountBalanceDisplayResult accountBalanceDisplay =
                     this.resolveAccountBalanceDisplay(
                         encounterId,
-                        account,
+                        registrationAccount,
                         pendingSettlementByEncounterId,
                         settledTotalByEncounterId,
                         reversedPendingResettleEncounterIds);
                 Long accountId = null;
-                if (account != null) {
-                    accountId = account.getId();
+                if (chargeAccount != null) {
+                    accountId = chargeAccount.getId();
                 }
                 PatientQueueItemDto item = nurseStationEncounterManageMapper.toPatientQueueItemDto(
                     row, counts, enrichment, rowOverlay, priorityEnum, accountId);
@@ -397,6 +419,10 @@ public class NurseStationEncounterManageAppService {
                 this.applyNursingLevelDisplay(item, nursingLevelByEncounterId.get(row.getEncounterId()));
                 if (!StringUtils.isEmpty(priorityEnum)) {
                     item.setPriorityEnumText(admCondLabelByCode.get(priorityEnum.trim()));
+                }
+                // Asm：队列 endTime 展示业务出院时间
+                if (row.getEncounterId() != null && businessEndByEncounter.containsKey(row.getEncounterId())) {
+                    item.setEndTime(businessEndByEncounter.get(row.getEncounterId()));
                 }
                 content.add(item);
             }
@@ -442,9 +468,12 @@ public class NurseStationEncounterManageAppService {
             List<Location> managedWards = managedWardLocationIdsResolver.listManagedActiveWardsOrEmpty();
             Map<String, String> houseNameByBusNo = this.buildHouseNameByBusNoIndex(managedWards);
             Set<Long> singleEncounter = Collections.singleton(encounterId);
-            Map<Long, Account> accountByEncounterId =
+            Map<Long, Account> registrationAccountByEncounterId =
                 accountQueryService.mapRegistrationAccountsByEncounterIds(singleEncounter);
-            Account account = accountByEncounterId.get(encounterId);
+            Account registrationAccount = registrationAccountByEncounterId.get(encounterId);
+            Map<Long, Account> chargeAccountByEncounterId =
+                accountQueryService.mapDefaultChargeAccountsByEncounterIds(singleEncounter);
+            Account chargeAccount = chargeAccountByEncounterId.get(encounterId);
             Map<Long, String> contractNoByEncounterId =
                 accountQueryService.mapPreferredContractNoByEncounterIds(singleEncounter);
             Map<Long, NurseStationTaskCountBundle> taskCounts =
@@ -463,7 +492,7 @@ public class NurseStationEncounterManageAppService {
             InpatientAccountBalanceDisplayResult accountBalanceDisplay =
                 this.resolveAccountBalanceDisplay(
                     encounterId,
-                    account,
+                    registrationAccount,
                     pendingSettlementByEncounterId,
                     settledTotalByEncounterId,
                     reversedPendingResettleEncounterIds);
@@ -472,8 +501,8 @@ public class NurseStationEncounterManageAppService {
                 displayOverlay.get(encounterId);
             NurseStationQueueDisplayEnrichment enrichment = enrichmentByEncounterId.get(encounterId);
             Long accountId = null;
-            if (account != null) {
-                accountId = account.getId();
+            if (chargeAccount != null) {
+                accountId = chargeAccount.getId();
             }
             PatientQueueItemDto base = nurseStationEncounterManageMapper.toPatientQueueItemDto(
                 contextRow,
@@ -483,25 +512,31 @@ public class NurseStationEncounterManageAppService {
                 encounter.getPriorityEnum(),
                 accountId);
             InpatientAccountBalanceDisplayDtoApplier.apply(base, accountBalanceDisplay);
+            // Asm：详情 endTime 展示业务出院时间（与队列同源）
+            base.setEndTime(
+                businessDischargeTimeResolver.resolve(encounterId, contextRow.getEndTime()));
             // Pre：护理级别展示（BR-IP-NUR-015；口径同列表 IF-IP-NUR-02）
             Map<Long, InpatientPatientQueueNursingLevelDisplayRow> nursingLevelByEncounterId =
                 inpatientPatientQueueNursingLevelEnrichAssembler.enrichByEncounterIds(
                     singleEncounter, LocalDate.now());
             this.applyNursingLevelDisplay(base, nursingLevelByEncounterId.get(encounterId));
-            // Pre：全角色活动参与者与患者扩展档补全详情增量字段。
+            // Pre：全角色展示参与者（活动优先，清床/召回后回落末次 COMPLETED）与患者扩展档补全详情增量字段。
             List<EncounterParticipantQueryModel> participantRows =
-                encounterQueryService.listActiveEncounterParticipants(encounterId);
+                encounterQueryService.listDisplayEncounterParticipants(encounterId);
             List<ParticipantDto> participants = this.toParticipantDtos(participantRows);
             PatientDetailQueryModel patientDetail = null;
             if (contextRow.getPatientId() != null) {
                 patientDetail = patientQueryService.loadPatientDetail(contextRow.getPatientId());
             }
             String phone = null;
-            String idCardMasked = null;
+            // 体征卡/详情展示完整证件号（与队列 IF-IP-NUR-02 同源，不脱敏）
+            String idCardNo = base.getIdCardNo();
             if (patientDetail != null && patientDetail.getPatient() != null) {
                 PatientCoreQueryModel core = patientDetail.getPatient();
                 phone = core.getPhone();
-                idCardMasked = this.maskIdCard(core.getIdCard());
+                if (StringUtils.isEmpty(idCardNo) && !StringUtils.isEmpty(core.getIdCard())) {
+                    idCardNo = core.getIdCard().trim();
+                }
             }
             GetPatientDetailResponse response = new GetPatientDetailResponse();
             AdmissionVitalSignSubmitDto admissionVitalSigns = null;
@@ -512,7 +547,7 @@ public class NurseStationEncounterManageAppService {
             }
             // Asm：列表行 + 详情增量（含 admissionVitalSigns）装配响应
             response.setDetail(nurseStationEncounterManageMapper.toPatientDetailDto(
-                base, phone, idCardMasked, participants, admissionVitalSigns));
+                base, phone, idCardNo, participants, admissionVitalSigns));
             return response;
         } catch (BusinessException ex) {
             throw ex;
@@ -1268,6 +1303,8 @@ public class NurseStationEncounterManageAppService {
             return false;
         }
         Set<LocalDateTime> planned;
+        ProductDefinitionDisplayDto product = null;
+        boolean packageBatchApplied = false;
         try {
             StandingOrderPackageBatchPlanTimeResolver.MeasureInput measure =
                 new StandingOrderPackageBatchPlanTimeResolver.MeasureInput();
@@ -1277,7 +1314,7 @@ public class NurseStationEncounterManageAppService {
             measure.setFirstDose(row.getFirstDose());
             measure.setFirstDoseUnitCode(row.getFirstDoseUnitCode());
             measure.setMethodCode(row.getMethodCode());
-            ProductDefinitionDisplayDto product = this.resolveMedicationProductForPendingExecute(
+            product = this.resolveMedicationProductForPendingExecute(
                 row.getMedicationId(), medicationProductByKey);
             // 统计日末作 selectionDeadline；含院点一盒一点与产品拆零下限切批（BR-IP-EXE-035/036）
             LocalDateTime selectionDeadline = dayEnd.minusSeconds(1);
@@ -1292,6 +1329,7 @@ public class NurseStationEncounterManageAppService {
                     product,
                     methodLabelByCode);
             planned = expand.getPlanTimes();
+            packageBatchApplied = expand.isPackageBatchApplied();
         } catch (BusinessException ex) {
             // 频次不可用：不计待执行（与历史 resolveLongTermPlannedTimesThrough 空集口径一致）
             return false;
@@ -1299,6 +1337,46 @@ public class NurseStationEncounterManageAppService {
         if (planned == null || planned.isEmpty()) {
             // 无可展计划槽（含不可拆硬顶未凑满盒 → 空）→ 不计待执行
             return false;
+        }
+        // 口服剩余按天抑制：与 IF-IP-EXE-01 pending 同源（BR-IP-EXE-038）
+        if (packageBatchApplied && product != null) {
+            Map<Long, List<ProcedureRecordQueryModel>> proceduresByRequestId = new HashMap<>();
+            List<MedicationRequest> chain =
+                standingOrderOralPackageInventorySupport.loadDoseChangeChain(row.getId());
+            for (MedicationRequest mr : chain) {
+                if (mr == null || mr.getId() == null) {
+                    continue;
+                }
+                proceduresByRequestId.put(
+                    mr.getId(),
+                    procedureQueryService.getProcedureRecords(
+                        mr.getId(), TableNameConstants.MED_MEDICATION_REQUEST));
+            }
+            // dayEnd 为统计截止（不含）：asOf 取截止前一自然日末所在日
+            LocalDate asOf = dayEnd.minusSeconds(1).toLocalDate();
+            StandingOrderOralPackageInventorySupport.OralPackageInventorySnapshot snap =
+                standingOrderOralPackageInventorySupport.compute(
+                    row,
+                    proceduresByRequestId,
+                    product,
+                    methodLabelByCode,
+                    asOf,
+                    applyStandingOrderPackageBatch);
+            Set<LocalDateTime> filtered = new LinkedHashSet<>();
+            for (LocalDateTime planTime : planned) {
+                if (planTime == null) {
+                    continue;
+                }
+                if (standingOrderOralPackageInventorySupport.shouldSuppressPending(
+                    snap, planTime.toLocalDate())) {
+                    continue;
+                }
+                filtered.add(planTime);
+            }
+            planned = filtered;
+            if (planned.isEmpty()) {
+                return false;
+            }
         }
         for (LocalDateTime planTime : planned) {
             if (planTime == null) {
@@ -1859,22 +1937,4 @@ public class NurseStationEncounterManageAppService {
         admissionVitalSignOrchestrator.saveIfPresent(context);
     }
 
-    /**
-     * 证件号展示脱敏（§6.4）。
-     *
-     * @param idCard 原始证件号
-     * @return 脱敏后证件号或 null
-     */
-    private String maskIdCard(String idCard) {
-        if (StringUtils.isEmpty(idCard)) {
-            return null;
-        }
-        String trimmed = idCard.trim();
-        if (trimmed.length() <= 8) {
-            return "****";
-        }
-        String prefix = trimmed.substring(0, 4);
-        String suffix = trimmed.substring(trimmed.length() - 4);
-        return prefix + "********" + suffix;
-    }
 }

@@ -32,9 +32,10 @@ public final class BossPayloadSupport {
     public static final DateTimeFormatter BOSS_DAY = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     /**
-     * 票种收费/清单行数上限（朝阳票据代码 22060125 等院点配置为 18；超限须拆多张）。
+     * 院点票据代码对收费项目（chargeDetail）行数上限（朝阳 22060125 为 18）。
+     * listDetail 清单不限；超限应修对照/归大类，禁止拆票。
      */
-    public static final int MAX_LINES_PER_BILL = 18;
+    public static final int MAX_CHARGE_DETAIL_ROWS = 18;
 
     /** 附录4：现金。 */
     public static final String PAY_CHANNEL_CASH = "02";
@@ -249,25 +250,6 @@ public final class BossPayloadSupport {
     }
 
     /**
-     * 按票种行数上限切分明细（保序）。
-     *
-     * @param lines 全部明细
-     * @param maxPerBill 每张上限（通常 {@link #MAX_LINES_PER_BILL}）
-     * @return 非空分片列表；入参空则空列表
-     */
-    public static List<List<EinvBossLine>> partitionLines(List<EinvBossLine> lines, int maxPerBill) {
-        List<List<EinvBossLine>> chunks = new ArrayList<>();
-        if (lines == null || lines.isEmpty()) {
-            return chunks;
-        }
-        int size = Math.max(1, maxPerBill);
-        for (int i = 0; i < lines.size(); i += size) {
-            chunks.add(List.copyOf(lines.subList(i, Math.min(i + size, lines.size()))));
-        }
-        return chunks;
-    }
-
-    /**
      * 明细金额合计（两位小数）。
      *
      * @param lines 明细
@@ -287,98 +269,10 @@ public final class BossPayloadSupport {
     }
 
     /**
-     * 按本张票金额比例缩放医保结算字段，供拆票后各张自洽。
-     *
-     * <p>非医保结算返回仅复制非金额标识的快照（{@code insuranceSettled=false}），
-     * 由 Assembler 按 document.totalAmt 走自费口径。</p>
-     *
-     * @param source 原快照
-     * @param chunkTotal 本张开票额
-     * @param fullTotal 原单据总额
-     * @return 新快照（不修改入参）
-     */
-    public static BossIssueSnapshot copyWithScaledSettlement(
-            BossIssueSnapshot source, BigDecimal chunkTotal, BigDecimal fullTotal) {
-        BossIssueSnapshot out = new BossIssueSnapshot();
-        if (source == null) {
-            return out;
-        }
-        copyNonAmountFields(source, out);
-        if (!source.isInsuranceSettled()
-                || fullTotal == null
-                || fullTotal.compareTo(BigDecimal.ZERO) <= 0) {
-            out.setInsuranceSettled(false);
-            return out;
-        }
-        BigDecimal chunk = scale2(chunkTotal);
-        BigDecimal full = scale2(fullTotal);
-        BigDecimal ratio = chunk.divide(full, 10, RoundingMode.HALF_UP);
-        out.setInsuranceSettled(true);
-        out.setAccountPay(scale2(nz(source.getAccountPay()).multiply(ratio)));
-        out.setFundPay(scale2(nz(source.getFundPay()).multiply(ratio)));
-        out.setOtherfundPay(scale2(nz(source.getOtherfundPay()).multiply(ratio)));
-        out.setOwnPay(scale2(nz(source.getOwnPay()).multiply(ratio)));
-        out.setSelfConceitedAmt(scale2(nz(source.getSelfConceitedAmt()).multiply(ratio)));
-        out.setSelfPayAmt(scale2(nz(source.getSelfPayAmt()).multiply(ratio)));
-        out.setReimbursementAmt(scale2(nz(source.getReimbursementAmt()).multiply(ratio)));
-        out.setInscpScpAmt(scale2(nz(source.getInscpScpAmt()).multiply(ratio)));
-        out.setOverlmtSelfpay(scale2(nz(source.getOverlmtSelfpay()).multiply(ratio)));
-        out.setCvlservPay(scale2(nz(source.getCvlservPay()).multiply(ratio)));
-        out.setHifesPay(scale2(nz(source.getHifesPay()).multiply(ratio)));
-        out.setHifmiPay(scale2(nz(source.getHifmiPay()).multiply(ratio)));
-        out.setHifobPay(scale2(nz(source.getHifobPay()).multiply(ratio)));
-        out.setMafPay(scale2(nz(source.getMafPay()).multiply(ratio)));
-        out.setHospPartAmt(scale2(nz(source.getHospPartAmt()).multiply(ratio)));
-        out.setOthPay(scale2(nz(source.getOthPay()).multiply(ratio)));
-        BigDecimal med = nz(out.getAccountPay()).add(nz(out.getFundPay())).add(nz(out.getOtherfundPay()));
-        BigDecimal cash = scale2(chunk.subtract(med));
-        out.setSelfCashPay(cash.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO.setScale(2) : cash);
-        return out;
-    }
-
-    private static void copyNonAmountFields(BossIssueSnapshot source, BossIssueSnapshot out) {
-        out.setInvoiceId(source.getInvoiceId());
-        out.setPaymentId(source.getPaymentId());
-        out.setPatientId(source.getPatientId());
-        out.setEncounterId(source.getEncounterId());
-        out.setTenantId(source.getTenantId());
-        out.setInvoiceTypeCode(source.getInvoiceTypeCode());
-        out.setInvoiceStatus(source.getInvoiceStatus());
-        out.setBusNo(source.getBusNo());
-        out.setPaymentAmt(source.getPaymentAmt());
-        out.setPatientName(source.getPatientName());
-        out.setGenderDisplay(source.getGenderDisplay());
-        out.setAge(source.getAge());
-        out.setIdCard(source.getIdCard());
-        out.setPhone(source.getPhone());
-        out.setEncounterBusNo(source.getEncounterBusNo());
-        out.setCaseNumber(source.getCaseNumber());
-        out.setHospitalNo(source.getHospitalNo());
-        out.setVisitNo(source.getVisitNo());
-        out.setBillDateTime(source.getBillDateTime());
-        out.setHealthBillNo(source.getHealthBillNo());
-        out.setIssuedAt(source.getIssuedAt());
-        out.setOperatorId(source.getOperatorId());
-        out.setOperatorName(source.getOperatorName());
-        out.setMedicalCareType(source.getMedicalCareType());
-        out.setMedCareTypeCode(source.getMedCareTypeCode());
-        out.setMedicalInsuranceId(source.getMedicalInsuranceId());
-        out.setPatientCategory(source.getPatientCategory());
-        out.setPatientCategoryCode(source.getPatientCategoryCode());
-        out.setInHospitalDateTime(source.getInHospitalDateTime());
-        out.setOutHospitalDateTime(source.getOutHospitalDateTime());
-        out.setChargeLines(source.getChargeLines());
-    }
-
-    private static BigDecimal nz(BigDecimal value) {
-        return value != null ? value : BigDecimal.ZERO;
-    }
-
-    /**
      * 构建 chargeDetail 收费汇总明细（含 selfAmt=0）。
      *
-     * <p>按 {@code chargeCode} 聚合：中药饮片等清单行会超过票种行数上限（如 18），
-     * 汇总层只保留统计大类；清单明细仍走 {@link #buildListDetail}。</p>
+     * <p>按 {@code chargeCode} 聚合：清单可很多行，汇总层只保留统计大类（受院点
+     * {@link #MAX_CHARGE_DETAIL_ROWS} 约束）；清单明细仍走 {@link #buildListDetail}。</p>
      *
      * @param lines boss 明细行（按 lineNo 已排序）
      * @return chargeDetail 数组
@@ -409,7 +303,7 @@ public final class BossPayloadSupport {
      * @param lines 明细行
      * @return 聚合后的收费大类列表
      */
-    static List<AggregatedChargeLine> aggregateByChargeCode(List<EinvBossLine> lines) {
+    public static List<AggregatedChargeLine> aggregateByChargeCode(List<EinvBossLine> lines) {
         Map<String, AggregatedChargeLine> byCode = new LinkedHashMap<>();
         if (lines == null) {
             return List.of();
@@ -439,7 +333,7 @@ public final class BossPayloadSupport {
     }
 
     /** chargeDetail 聚合中间结构（仅出站使用）。 */
-    static final class AggregatedChargeLine {
+    public static final class AggregatedChargeLine {
         String chargeCode;
         String chargeName;
         String unit;
@@ -474,6 +368,11 @@ public final class BossPayloadSupport {
             if (line.getListRemark() != null && !line.getListRemark().isBlank()) {
                 item.put("remark", line.getListRemark().trim());
             }
+            // 国家医保目录内项目：无论是否医保结算都须填（博思 v4 / areahis）
+            if (line.getItemCode() != null && !line.getItemCode().isBlank()) {
+                item.put("medCareItemCode", line.getItemCode().trim());
+                item.put("medCareItemName", defaultIfBlank(line.getItemName(), line.getChargeName()));
+            }
             array.add(item);
         }
         return array;
@@ -501,6 +400,10 @@ public final class BossPayloadSupport {
      * @param value 原始金额
      * @return 两位小数
      */
+    private static BigDecimal nz(BigDecimal value) {
+        return value != null ? value : BigDecimal.ZERO;
+    }
+
     public static BigDecimal scale2(BigDecimal value) {
         if (value == null) {
             return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);

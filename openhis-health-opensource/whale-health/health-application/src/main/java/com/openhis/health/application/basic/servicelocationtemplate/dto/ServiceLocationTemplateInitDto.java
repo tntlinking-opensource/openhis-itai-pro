@@ -43,4 +43,8 @@ public class ServiceLocationTemplateInitDto {
     /** 中药用法选项。 */
     @Schema(description = "中药用法选项")
     private List<OptionDto> tcmMethodCodeOptions;
+
+    /** 耗材种类选项（术语 device_type_code）。 */
+    @Schema(description = "耗材种类选项")
+    private List<OptionDto> deviceTypeCodeOptions;
 }

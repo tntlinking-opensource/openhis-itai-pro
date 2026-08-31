@@ -79,8 +79,20 @@ public interface PrescriptionSplitConstants {
     /** 处方类别码（355）：门诊西药（不含中成药；中成药见 {@link #RX_TYPE_OUTPATIENT_PATENT}）。 */
     String RX_TYPE_OUTPATIENT_WESTERN = "1";
 
-    /** 处方类别码（355）：门诊中药饮片。 */
+    /**
+     * 处方类别码（355）：中药饮片（规范码 {@code 2}；落库与筛选均以此为准）。
+     *
+     * <p>术语历史曾并存展示名「门诊中药饮片」与冗余码 {@link #RX_TYPE_HERBAL_LEGACY_ALIAS}「中药饮片」，
+     * 业务上为同一类；新写入禁止使用冗余码。</p>
+     */
     String RX_TYPE_OUTPATIENT_HERBAL = "2";
+
+    /**
+     * 处方类别码（355）历史冗余：展示名「中药饮片」，与 {@link #RX_TYPE_OUTPATIENT_HERBAL} 同义。
+     *
+     * <p>禁止新写入；查询筛选项若仍传入本码须归一为 {@link #RX_TYPE_OUTPATIENT_HERBAL}。</p>
+     */
+    String RX_TYPE_HERBAL_LEGACY_ALIAS = "9";
 
     /** 处方类别码（355）：急诊西药。 */
     String RX_TYPE_EMERGENCY_WESTERN = "3";
@@ -96,6 +108,14 @@ public interface PrescriptionSplitConstants {
 
     /** 处方类别码（355）：麻、精一。 */
     String RX_TYPE_NARCOTIC_PSYCH_ONE = "7";
+
+    /**
+     * 处方类别码（355）：精二（术语码 {@code 8}）。
+     *
+     * <p>分方仍可与同轨普通西药/中成药同方；单元内<strong>任一行</strong>药品性质为精二时，
+     * 整方 {@code rx_type_code} 固定为本码（优先于西药/中成药急诊、儿科抬升）。</p>
+     */
+    String RX_TYPE_PSYCH_TWO = "8";
 
     /**
      * 处方类别码（355）：门诊中成药（术语已有码 {@code 10}；与西药 {@link #RX_TYPE_OUTPATIENT_WESTERN} 分轨）。
@@ -131,4 +151,25 @@ public interface PrescriptionSplitConstants {
 
     /** 分方分区键分隔符（业务键不含此字符）。 */
     String PARTITION_KEY_SEPARATOR = "\u0001";
+
+    /**
+     * 归一化处方类别码：空串→null；历史冗余「中药饮片」{@code 9}→规范码 {@code 2}。
+     *
+     * @param rxTypeCode 原始码（可空）
+     * @return 可写入筛选/落库的规范码；空入参返回 null
+     */
+    static String normalizeRxTypeCode(String rxTypeCode) {
+        if (rxTypeCode == null) {
+            return null;
+        }
+        String trimmed = rxTypeCode.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        // 历史冗余码与门诊中药饮片同义，筛选/比对一律归到规范码 2
+        if (RX_TYPE_HERBAL_LEGACY_ALIAS.equals(trimmed)) {
+            return RX_TYPE_OUTPATIENT_HERBAL;
+        }
+        return trimmed;
+    }
 }

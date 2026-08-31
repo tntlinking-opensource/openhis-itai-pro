@@ -21,6 +21,7 @@ import com.openhis.health.domain.administration.encounter.command.FinishEncounte
 import com.openhis.health.domain.administration.encounter.entity.Encounter;
 import com.openhis.health.domain.administration.encounter.service.EncounterDomainService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
+import com.openhis.health.domain.administration.patient.service.PatientQueryService;
 import com.openhis.health.domain.clinical.diagnosticreport.command.CreateForEncounterCommand;
 import com.openhis.health.domain.clinical.diagnosticreport.command.FinalizeMasterCommand;
 import com.openhis.health.domain.clinical.diagnosticreport.command.SaveMasterDraftCommand;
@@ -32,6 +33,10 @@ import com.openhis.health.domain.clinical.diagnosticreportindex.command.UpsertDr
 import com.openhis.health.domain.clinical.diagnosticreportindex.service.DiagnosticReportIndexUpsertService;
 import com.openhis.health.domain.clinical.observation.queries.model.ObservationModel;
 import com.openhis.health.domain.clinical.observation.service.ObservationQueryService;
+import com.openhis.health.domain.clinical.observationdefinition.queries.model.ObservationDefinitionModel;
+import com.openhis.health.domain.clinical.observationdefinition.service.ObservationDefinitionQueryService;
+import com.openhis.health.domain.peis.encounterext.queries.model.PeisEncounterExtModel;
+import com.openhis.health.domain.peis.encounterext.service.PeisEncounterExtQueryService;
 import com.openhis.health.domain.peis.encounterprogress.command.SignalProgressChangedCommand;
 import com.openhis.health.domain.peis.encounterprogress.queries.PeisEncounterProgressQuery;
 import com.openhis.health.domain.peis.encounterprogress.queries.model.MasterReviewRowModel;
@@ -42,6 +47,8 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.PeisExecStatusConstants;
 import com.openhis.health.domain.share.enums.EncounterClass;
 import com.openhis.health.domain.share.events.custom.peismasterreview.PeisMasterReviewCompletedEvent;
+import com.openhis.health.domain.workflow.activitydefinition.entity.ActivityDefinition;
+import com.openhis.health.domain.workflow.activitydefinition.service.ActivityDefinitionQueryService;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.util.StringUtils;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
@@ -50,22 +57,28 @@ import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.time.LocalDate;
+import java.time.Period;
 
 /**
  * 总检诊台应用服务（AS-PEIS-MAS-001）：待总检列表、汇总、综述草稿、总检完成。
  *
  * <p>职责边界：</p>
  * <ul>
- *   <li>Gate：仅 PE 就诊；分页窗口合法；分科完成度（MAS-04）。</li>
+ *   <li>Gate：仅 PE 就诊；分页窗口合法。</li>
  *   <li>Pre：ProgressQuery 待总检；Observation 汇总；DR 非 final 草稿门禁。</li>
  *   <li>Cmd：DR draft/finalize → catalog index upsert → Encounter finish。</li>
  *   <li>Asm：经 {@link PeisMasterReviewMapper} 装配；发布总检完成事件。</li>
  * </ul>
  *
+ * <p>说明：待总检列表与总检完成均不强制分科项目全部已检/弃检；完成比仅作展示。</p>
  * <p>接入：{@code AppServiceControllerRegistrar} → {@code POST /api/app/peisMasterReviewDesk/{methodName}}。</p>
  */
 @Service
@@ -86,8 +99,16 @@ public class PeisMasterReviewDeskAppService {
     private final EncounterDomainService encounterDomainService;
     /** 就诊读侧（PE 门禁）。 */
     private final EncounterQueryService encounterQueryService;
-    /** 分科完成度校验。 */
+    /** 服务申请执行扩展读侧（分科完成比展示）。 */
     private final PeisServiceRequestExtQueryService peisServiceRequestExtQueryService;
+    /** PE 就诊扩展读侧。 */
+    private final PeisEncounterExtQueryService peisEncounterExtQueryService;
+    /** 患者读侧。 */
+    private final PatientQueryService patientQueryService;
+    /** 观察定义读侧。 */
+    private final ObservationDefinitionQueryService observationDefinitionQueryService;
+    /** 诊疗项目读侧。 */
+    private final ActivityDefinitionQueryService activityDefinitionQueryService;
     /** 写路径操作人。 */
     private final CurrentPractitionerResolver currentPractitionerResolver;
     /** 分页窗口门禁。 */
@@ -136,11 +157,16 @@ public class PeisMasterReviewDeskAppService {
             observationQueryService.listByEncounterId(encounter.getId());
         Optional<DiagnosticReportModel> reportOpt =
             diagnosticReportQueryService.getByEncounterId(encounter.getId());
-        // Asm：按 SR 分组
-        List<MasterObservationRowDto> obsRows = peisMasterReviewMapper.toObservationRows(observations);
-        List<DeptSummarySectionDto> sections = groupByServiceRequest(obsRows);
-        return peisMasterReviewMapper.toMasterSummaryResponse(
+        Map<Long, String> definitionDisplay = buildDefinitionDisplayMap(observations);
+        List<MasterObservationRowDto> obsRows =
+            peisMasterReviewMapper.toObservationRows(observations, definitionDisplay);
+        List<DeptSummarySectionDto> sections = enrichSections(
+            groupByServiceRequest(obsRows), encounter.getId());
+        MasterSummaryResponse response = peisMasterReviewMapper.toMasterSummaryResponse(
             encounter.getId(), encounter.getPatientId(), reportOpt, sections);
+        enrichPatientContext(response, encounter);
+        response.setDeptCompleteRatio(calcDeptCompleteRatio(encounter.getId()));
+        return response;
     }
 
     /**
@@ -206,9 +232,6 @@ public class PeisMasterReviewDeskAppService {
         Long operatorId = currentPractitionerResolver.requirePractitionerId(
             ErrorCodeConstants.DIAGNOSTIC_REPORT_INVALID_ARGUMENT, "请先登录后再完成总检");
 
-        // Pre：分科完成度（BR-MAS-01）
-        assertDeptComplete(encounter.getId());
-
         // Cmd-1：定稿 DR
         FinalizeMasterCommand finalizeCmd = new FinalizeMasterCommand();
         finalizeCmd.setEncounterId(encounter.getId());
@@ -259,24 +282,6 @@ public class PeisMasterReviewDeskAppService {
             "仅体检就诊可进入总检诊台");
     }
 
-    private void assertDeptComplete(Long encounterId) {
-        List<PeisServiceRequestExtModel> exts =
-            peisServiceRequestExtQueryService.listByEncounterId(encounterId);
-        if (exts == null || exts.isEmpty()) {
-            throw new BusinessException(
-                ErrorCodeConstants.DEPT_NOT_COMPLETE, "尚无分科项目，不可完成总检");
-        }
-        for (PeisServiceRequestExtModel ext : exts) {
-            String exec = ext.getExecStatusEnum();
-            boolean done = PeisExecStatusConstants.CHECKED.equals(exec)
-                || PeisExecStatusConstants.ABANDONED.equals(exec);
-            if (!done) {
-                throw new BusinessException(
-                    ErrorCodeConstants.DEPT_NOT_COMPLETE, "分科未全部完成，不可完成总检");
-            }
-        }
-    }
-
     private List<DeptSummarySectionDto> groupByServiceRequest(List<MasterObservationRowDto> obsRows) {
         Map<Long, DeptSummarySectionDto> sectionMap = new LinkedHashMap<>();
         List<MasterObservationRowDto> ungrouped = new ArrayList<>();
@@ -304,5 +309,114 @@ public class PeisMasterReviewDeskAppService {
             sections.add(orphan);
         }
         return sections;
+    }
+
+    private Map<Long, String> buildDefinitionDisplayMap(List<ObservationModel> observations) {
+        Map<Long, String> displayMap = new HashMap<>();
+        if (observations == null || observations.isEmpty()) {
+            return displayMap;
+        }
+        Set<Long> definitionIds = new HashSet<>();
+        for (ObservationModel model : observations) {
+            if (model != null && model.getDefinitionId() != null) {
+                definitionIds.add(model.getDefinitionId());
+            }
+        }
+        if (definitionIds.isEmpty()) {
+            return displayMap;
+        }
+        for (ObservationDefinitionModel od : observationDefinitionQueryService.listByIds(definitionIds)) {
+            if (od != null && od.getId() != null) {
+                displayMap.put(od.getId(), od.getDisplay());
+            }
+        }
+        return displayMap;
+    }
+
+    private List<DeptSummarySectionDto> enrichSections(
+        List<DeptSummarySectionDto> sections, Long encounterId) {
+        if (sections == null || sections.isEmpty()) {
+            return sections;
+        }
+        List<PeisServiceRequestExtModel> exts =
+            peisServiceRequestExtQueryService.listByEncounterId(encounterId);
+        Map<Long, PeisServiceRequestExtModel> extBySr = new HashMap<>();
+        Set<Long> activityIds = new HashSet<>();
+        if (exts != null) {
+            for (PeisServiceRequestExtModel ext : exts) {
+                if (ext == null || ext.getServiceRequestId() == null) {
+                    continue;
+                }
+                extBySr.put(ext.getServiceRequestId(), ext);
+                if (ext.getActivityId() != null) {
+                    activityIds.add(ext.getActivityId());
+                }
+            }
+        }
+        Map<Long, String> activityNameMap = new HashMap<>();
+        if (!activityIds.isEmpty()) {
+            for (ActivityDefinition ad : activityDefinitionQueryService.findAllByIds(activityIds)) {
+                if (ad != null && ad.getId() != null) {
+                    activityNameMap.put(ad.getId(), ad.getName());
+                }
+            }
+        }
+        for (DeptSummarySectionDto section : sections) {
+            if (section == null || section.getServiceRequestId() == null) {
+                continue;
+            }
+            PeisServiceRequestExtModel ext = extBySr.get(section.getServiceRequestId());
+            if (ext != null) {
+                section.setExecStatusEnum(ext.getExecStatusEnum());
+                if (ext.getActivityId() != null) {
+                    section.setActivityDisplay(activityNameMap.get(ext.getActivityId()));
+                }
+            }
+        }
+        return sections;
+    }
+
+    private void enrichPatientContext(MasterSummaryResponse response, Encounter encounter) {
+        if (response == null || encounter == null) {
+            return;
+        }
+        Optional<PeisEncounterExtModel> peeOpt =
+            peisEncounterExtQueryService.findOptionalByEncounterId(encounter.getId());
+        peeOpt.ifPresent(pee -> {
+            response.setBusNo(pee.getBusNo());
+            response.setGroupFlag(pee.getGroupFlag());
+        });
+        if (encounter.getPatientId() != null) {
+            patientQueryService.findOptionalPatientEntityById(encounter.getPatientId()).ifPresent(patient -> {
+                response.setPatientName(patient.getName());
+                response.setGenderEnum(patient.getGenderEnum());
+                response.setPatientAge(calcPatientAge(patient.getBirthDate()));
+            });
+        }
+    }
+
+    private Integer calcPatientAge(LocalDate birthDate) {
+        if (birthDate == null) {
+            return null;
+        }
+        return Period.between(birthDate, LocalDate.now()).getYears();
+    }
+
+    private String calcDeptCompleteRatio(Long encounterId) {
+        List<PeisServiceRequestExtModel> exts =
+            peisServiceRequestExtQueryService.listByEncounterId(encounterId);
+        if (exts == null || exts.isEmpty()) {
+            return "0/0";
+        }
+        int total = exts.size();
+        int done = 0;
+        for (PeisServiceRequestExtModel ext : exts) {
+            String exec = ext.getExecStatusEnum();
+            if (PeisExecStatusConstants.CHECKED.equals(exec)
+                || PeisExecStatusConstants.ABANDONED.equals(exec)) {
+                done += 1;
+            }
+        }
+        return done + "/" + total;
     }
 }

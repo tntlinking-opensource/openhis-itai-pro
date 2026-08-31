@@ -264,4 +264,37 @@ public class NurseStationOrderExecuteRowDto {
     /** 中药付数。 */
     @Schema(description = "中药付数")
     private java.math.BigDecimal chineseHerbsDoseQuantity;
+
+    /**
+     * 是否命中口服一盒一点剩余规则（BR-IP-EXE-038）；未命中为 false/null。
+     */
+    @Schema(description = "是否命中口服包装剩余规则")
+    private Boolean oralPackageBatchInventoryApplied;
+
+    /** 已吃拆零量（理论频次×剂量）。 */
+    @Schema(description = "已吃拆零量")
+    private BigDecimal oralPackageConsumedSplitQuantity;
+
+    /** 剩余拆零量。 */
+    @Schema(description = "剩余拆零量")
+    private BigDecimal oralPackageRemainSplitQuantity;
+
+    /** 拆零单位展示（目录拆零单位 code/名）。 */
+    @Schema(description = "拆零单位展示")
+    private String oralPackageSplitUnitDisplay;
+
+    /** 预计下次领盒日；无可空。 */
+    @Schema(description = "预计下次领盒日")
+    @JsonFormat(pattern = GeneralSharedConstants.DATE_DISPLAY_PATTERN)
+    private java.time.LocalDate oralPackageNextClaimDate;
+
+    /** 诊疗活动定义主键（检验行；供采血贴合管分组）。 */
+    @Schema(description = "诊疗活动定义主键")
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long activityDefinitionId;
+
+    /** 合管检验设备主键；未配置合管时为 null。 */
+    @Schema(description = "合管检验设备主键")
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long specimenTubeMergeDeviceId;
 }

@@ -9,6 +9,8 @@ import { ElButton, ElEmpty, ElTable, ElTableColumn, ElTag } from 'element-plus';
 
 import SectionTitle from '#/components/layouts/section-title.vue';
 import TraceCodeTooltip from '#/components/trace/trace-code-tooltip.vue';
+import { MSFX_HIS_SCENE } from '#/msfx/constants';
+import MsfxUploadStatusBar from '#/msfx/components/msfx-upload-status-bar.vue';
 import { formatMoneyYuanWithSymbol, sumMoneyThenSettle } from '#/utils/format/money-scale';
 
 defineOptions({
@@ -23,10 +25,13 @@ const props = withDefaults(
     /** PENDING_REFUND | REFUNDED */
     refundQueueStatus: string;
     selectedPatient: null | ReturnMedicineQueuePatient;
+    /** 码上放心场景，默认门诊退药 */
+    msfxHisScene?: string;
   }>(),
   {
     actionDisabled: false,
     detailLoading: false,
+    msfxHisScene: MSFX_HIS_SCENE.OP_RETURN,
   },
 );
 
@@ -35,6 +40,22 @@ const emit = defineEmits<{
 }>();
 
 const detailTableRef = ref<null | TableInstance>(null);
+
+/**
+ * 码上放心上传键：优先勾选行共同 busNo，否则取明细首个非空 busNo。
+ */
+const msfxBusNo = computed(() => {
+  const selected = (detailTableRef.value?.getSelectionRows() ?? []) as ReturnMedicineDetailRow[];
+  const fromSelected = selected.map((r) => String(r.busNo ?? '').trim()).filter((b) => b !== '');
+  if (fromSelected.length > 0) {
+    return fromSelected[0]!;
+  }
+  for (const row of props.detailRows) {
+    const b = String(row.busNo ?? '').trim();
+    if (b) return b;
+  }
+  return '';
+});
 
 const isPendingQueue = computed(() => props.refundQueueStatus === 'PENDING_REFUND');
 
@@ -135,9 +156,17 @@ defineExpose({
           </ElTag>
         </p>
         <div class="mb-2 flex w-full min-w-0 flex-wrap items-center justify-between gap-1">
-          <ElButton type="primary" :disabled="!canOperate" @click="emit('confirmReturn')">
-            确认退药
-          </ElButton>
+          <div class="flex flex-wrap items-center gap-2">
+            <ElButton type="primary" :disabled="!canOperate" @click="emit('confirmReturn')">
+              确认退药
+            </ElButton>
+            <MsfxUploadStatusBar
+              :bus-no="msfxBusNo"
+              :his-scene-enum="msfxHisScene"
+              :need-supplier-ent-id="false"
+              compact
+            />
+          </div>
           <div
             v-if="selectedPatient && detailTotalAmountText"
             class="return-detail-total shrink-0 text-sm"

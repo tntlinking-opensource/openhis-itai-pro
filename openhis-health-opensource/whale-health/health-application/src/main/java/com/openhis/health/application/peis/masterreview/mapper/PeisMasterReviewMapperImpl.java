@@ -23,6 +23,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -53,6 +54,7 @@ public class PeisMasterReviewMapperImpl implements PeisMasterReviewMapper {
         if (end != null) {
             query.setEndDate(end.toLocalDate().atTime(LocalTime.MAX));
         }
+        query.setGroupFlag(request.getGroupFlag());
         return query;
     }
 
@@ -75,6 +77,10 @@ public class PeisMasterReviewMapperImpl implements PeisMasterReviewMapper {
             dto.setBusNo(row.getBusNo());
             dto.setDeptCompleteRatio(row.getDeptCompleteRatio());
             dto.setCheckInTime(row.getCheckInTime());
+            dto.setPatientId(row.getPatientId());
+            dto.setPatientAge(row.getPatientAge());
+            dto.setGenderEnum(row.getGenderEnum());
+            dto.setGroupFlag(row.getGroupFlag());
             result.add(dto);
         }
         return result;
@@ -101,6 +107,12 @@ public class PeisMasterReviewMapperImpl implements PeisMasterReviewMapper {
      */
     @Override
     public List<MasterObservationRowDto> toObservationRows(List<ObservationModel> models) {
+        return toObservationRows(models, null);
+    }
+
+    @Override
+    public List<MasterObservationRowDto> toObservationRows(
+        List<ObservationModel> models, Map<Long, String> definitionDisplay) {
         List<MasterObservationRowDto> result = new ArrayList<>();
         if (models == null) {
             return result;
@@ -115,6 +127,9 @@ public class PeisMasterReviewMapperImpl implements PeisMasterReviewMapper {
             dto.setValueString(model.getValueString());
             dto.setInterpretationCode(model.getInterpretationCode());
             dto.setStatusEnum(model.getStatusEnum());
+            if (definitionDisplay != null && model.getDefinitionId() != null) {
+                dto.setDefinitionDisplay(definitionDisplay.get(model.getDefinitionId()));
+            }
             result.add(dto);
         }
         return result;

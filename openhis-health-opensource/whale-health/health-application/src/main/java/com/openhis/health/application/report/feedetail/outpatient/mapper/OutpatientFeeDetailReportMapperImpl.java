@@ -207,6 +207,8 @@ public class OutpatientFeeDetailReportMapperImpl implements OutpatientFeeDetailR
         target.setCashierId(request.getCashierId());
         target.setTradeDirection(request.getTradeDirection());
         target.setFeeNatureContractNo(request.getFeeNatureContractNo());
+        // 透传前端自选列，明细委托前身导出时裁剪列头
+        target.setExportColumns(request.getExportColumns());
         return target;
     }
 

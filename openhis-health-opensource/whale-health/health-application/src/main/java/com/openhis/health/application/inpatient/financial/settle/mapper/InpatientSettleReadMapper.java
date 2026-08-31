@@ -18,10 +18,18 @@ import com.openhis.health.application.inpatient.financial.settle.support.Settled
 import com.openhis.health.application.inpatient.financial.settle.support.SettledInpatientPaymentViewResult;
 import org.springframework.stereotype.Component;
 
-/** 住院结算读路径 Query/Result 与 HTTP Request/Response 映射。 */
+/**
+ * 住院结算读路径 Query/Result 与 HTTP Request/Response 映射（IF-IP-STL-03/04/07）。
+ */
 @Component
 public class InpatientSettleReadMapper {
 
+    /**
+     * 摘要 Request → 读 Query。
+     *
+     * @param request HTTP 请求；可空
+     * @return 摘要查询；空请求返回空 Query
+     */
     public InpatientSettleSummaryQuery toSummaryQuery(LoadInpatientSettleSummaryRequest request) {
         if (request == null) {
             return new InpatientSettleSummaryQuery();
@@ -32,6 +40,12 @@ public class InpatientSettleReadMapper {
             .setSelectedChargeItemIds(request.getSelectedChargeItemIds());
     }
 
+    /**
+     * 摘要读结果 → HTTP Response（含自费 P/O/C 预估字段）。
+     *
+     * @param result 读侧结果；可空
+     * @return 摘要响应；空结果返回空壳
+     */
     public LoadInpatientSettleSummaryResponse toSummaryResponse(InpatientSettleSummaryResult result) {
         LoadInpatientSettleSummaryResponse response = new LoadInpatientSettleSummaryResponse();
         if (result == null) {
@@ -50,6 +64,12 @@ public class InpatientSettleReadMapper {
         response.setPrepayNetBalance(result.getPrepayNetBalance());
         response.setSelectedTotal(result.getSelectedTotal());
         response.setBalanceHint(result.getBalanceHint());
+        response.setPersonalCashPayable(result.getPersonalCashPayable());
+        response.setDepositOffsetAmount(result.getDepositOffsetAmount());
+        response.setChannelPayable(result.getChannelPayable());
+        response.setPrepayRefundAmount(result.getPrepayRefundAmount());
+        response.setPrepayFullRefund(result.getPrepayFullRefund());
+        response.setDepositSettleRuleCode(result.getDepositSettleRuleCode());
         response.setDisplayAccountBalance(result.getDisplayAccountBalance());
         response.setAccountBalanceDisplayMode(result.getAccountBalanceDisplayMode());
         response.setAvailableBalance(result.getAvailableBalance());
@@ -59,6 +79,12 @@ public class InpatientSettleReadMapper {
         return response;
     }
 
+    /**
+     * 费用查询 Request → 读 Query。
+     *
+     * @param request HTTP 请求；可空
+     * @return 费用查询；空请求返回空 Query
+     */
     public InpatientSettleChargesQuery toChargesQuery(QueryInpatientSettleChargesRequest request) {
         if (request == null) {
             return new InpatientSettleChargesQuery();
@@ -71,6 +97,12 @@ public class InpatientSettleReadMapper {
             .setChargeDateTo(request.getChargeDateTo());
     }
 
+    /**
+     * 费用读结果 → HTTP Response。
+     *
+     * @param result 读侧结果；可空
+     * @return 费用响应；空结果返回空壳
+     */
     public QueryInpatientSettleChargesResponse toChargesResponse(InpatientSettleChargesResult result) {
         QueryInpatientSettleChargesResponse response = new QueryInpatientSettleChargesResponse();
         if (result == null) {
@@ -85,6 +117,12 @@ public class InpatientSettleReadMapper {
         return response;
     }
 
+    /**
+     * 已结算查阅 Request → 读 Query。
+     *
+     * @param request HTTP 请求；可空
+     * @return 查阅查询；空请求返回空 Query
+     */
     public SettledInpatientPaymentViewQuery toPaymentViewQuery(LoadSettledInpatientPaymentViewRequest request) {
         if (request == null) {
             return new SettledInpatientPaymentViewQuery();
@@ -96,6 +134,12 @@ public class InpatientSettleReadMapper {
             .setPresentationMode(request.getPresentationMode());
     }
 
+    /**
+     * 已结算查阅读结果 → HTTP Response（含 netSettleTotal）。
+     *
+     * @param result 读侧结果；可空
+     * @return 查阅响应；空结果返回空壳
+     */
     public LoadSettledInpatientPaymentViewResponse toPaymentViewResponse(SettledInpatientPaymentViewResult result) {
         LoadSettledInpatientPaymentViewResponse response = new LoadSettledInpatientPaymentViewResponse();
         if (result == null) {

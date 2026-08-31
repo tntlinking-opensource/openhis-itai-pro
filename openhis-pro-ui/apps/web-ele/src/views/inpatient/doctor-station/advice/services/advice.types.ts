@@ -240,4 +240,7 @@ export interface AdviceRowItem {
   chrgitmLv?: number | string;
   /** 医保项目等级展示（甲类/乙类/丙类） */
   chrgitmLvText?: string;
+  /** 口服一盒一点剩余文案（已吃/剩余/下次领盒） */
+  oralPackageRemainText?: string;
+  oralPackageBatchInventoryApplied?: boolean;
 }

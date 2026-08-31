@@ -50,7 +50,10 @@ import { httpListDepartments } from '#/api/outpatient-registration';
 import { usePrintClientWarmup } from '#/composables/use-print-client-warmup';
 import StationTriPaneLayout from '#/components/layouts/station-tri-pane-layout.vue';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
-import { getLocalDayRangeDateTimeStrings } from '#/utils/format/date-range-quick';
+import {
+  formatLocalDateYmd,
+  getLocalDayRangeDateTimeStrings,
+} from '#/utils/format/date-range-quick';
 import { NURSE_SUPPLY_ROOM_REQUIRED } from '#/views/outpatient/nurse-station/constants/nurse-supply-room.config';
 import {
   preserveApiIdForRequest,
@@ -110,10 +113,15 @@ function resolveEncounterIdForApi(raw: string): string {
 const userStore = useUserStore();
 
 const keyword = ref('');
-const defaultQueueListDate = new Date().toISOString().slice(0, 10);
-const selectedQueueListDate = ref(defaultQueueListDate);
+const defaultQueueListDay = formatLocalDateYmd();
+const selectedQueueListDateRange = ref<[string, string] | null>([
+  defaultQueueListDay,
+  defaultQueueListDay,
+]);
 /** 开立科室筛选：空串=全部（默认） */
 const selectedOrgId = ref('');
+/** 仅看待发耗材患者 */
+const pendingDeviceOnly = ref(false);
 /** 可挂号科室下拉（开立科室选项） */
 const orgOptions = ref<OptionDto[]>([]);
 const selectedPatientId = ref('');
@@ -353,14 +361,31 @@ async function loadOrgOptions() {
   }
 }
 
-/** 拉取护士站患者队列（可选开立科室 + 就诊日；默认全部科室） */
+/** 将队列日期范围转为接口起止时刻（起日 00:00:00～止日 23:59:59） */
+function resolveQueueDateRangeDateTimes(range: [string, string] | null): {
+  endDate: string;
+  startDate: string;
+} {
+  // 未选完整起止日时不组装接口时间窗
+  if (!range || range.length !== 2) {
+    return { endDate: '', startDate: '' };
+  }
+  const startBound = getLocalDayRangeDateTimeStrings(String(range[0] ?? '').trim());
+  const endBound = getLocalDayRangeDateTimeStrings(String(range[1] ?? '').trim());
+  return {
+    startDate: startBound.startDate,
+    endDate: endBound.endDate,
+  };
+}
+
+/** 拉取护士站患者队列（可选开立科室 + 就诊日区间 + 仅待发耗材；默认全部科室、当天起止） */
 async function loadPatientQueue() {
   queueLoading.value = true;
   try {
-    const day = selectedQueueListDate.value.trim();
-    const { startDate, endDate } = getLocalDayRangeDateTimeStrings(day);
+    const { startDate, endDate } = resolveQueueDateRangeDateTimes(selectedQueueListDateRange.value);
+    // 起止日非法（非 YYYY-MM-DD）时不请求，避免后端按空窗扫全量
     if (!startDate || !endDate) {
-      ElMessage.warning('请选择有效的就诊日期');
+      ElMessage.warning('请选择有效的就诊日期范围');
       patients.value = [];
       selectedPatientId.value = '';
       return;
@@ -372,6 +397,7 @@ async function loadPatientQueue() {
       keyword: keyword.value.trim() || undefined,
       startDate,
       endDate,
+      pendingDeviceOnly: pendingDeviceOnly.value || undefined,
       pageNo: 1,
       pageSize: 50,
     });
@@ -397,6 +423,11 @@ async function loadPatientQueue() {
 
 /** 开立科室变更：立即重拉队列 */
 function handleOrgChange() {
+  void loadPatientQueue();
+}
+
+/** 仅待发耗材开关：立即重拉队列 */
+function handlePendingDeviceOnlyChange() {
   void loadPatientQueue();
 }
 
@@ -670,9 +701,13 @@ watch(
   },
 );
 
-watch(selectedQueueListDate, () => {
-  void loadPatientQueue();
-});
+watch(
+  selectedQueueListDateRange,
+  () => {
+    void loadPatientQueue();
+  },
+  { deep: true },
+);
 
 watch(keyword, () => {
   void debouncedReloadQueueByKeyword();
@@ -763,8 +798,14 @@ const handleSelectPatient = (patient: { id: string }) => {
   selectedPatientId.value = id;
 };
 
-const handleQueueListDateChange = (date: string | undefined) => {
-  selectedQueueListDate.value = date || defaultQueueListDate;
+/** 日期范围变更：清空时回落到当天，避免队列无起止条件 */
+const handleQueueListDateRangeChange = (range: [string, string] | null) => {
+  // 清空控件时回落到当天，保持与进入页面默认一致
+  if (!range || range.length !== 2) {
+    selectedQueueListDateRange.value = [defaultQueueListDay, defaultQueueListDay];
+    return;
+  }
+  selectedQueueListDateRange.value = range;
 };
 
 const toggleSupplySelection = (id: string, checked: boolean) => {
@@ -1175,18 +1216,20 @@ async function handleCancelProcedureDialogConfirm(procedureIds: string[]) {
 </script>
 
 <template>
-  <StationTriPaneLayout class="nurse-station-page">
+  <StationTriPaneLayout class="nurse-station-page" left-track="288px" left-track-lg="288px">
     <template #left>
       <NurseQueuePanel
         v-model:keyword="keyword"
-        v-model:queue-date="selectedQueueListDate"
+        v-model:queue-date-range="selectedQueueListDateRange"
         v-model:org-id="selectedOrgId"
+        v-model:pending-device-only="pendingDeviceOnly"
         :filtered-patients="patients"
         :org-options="orgOptions"
         :queue-loading="queueLoading"
         :selected-patient-id="selectedPatientId"
         @org-change="handleOrgChange"
-        @queue-date-change="handleQueueListDateChange"
+        @pending-device-only-change="handlePendingDeviceOnlyChange"
+        @queue-date-range-change="handleQueueListDateRangeChange"
         @refresh="loadPatientQueue"
         @select-patient="handleSelectPatient"
       />

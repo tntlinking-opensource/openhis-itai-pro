@@ -17,7 +17,7 @@ import java.util.Objects;
  * <p>提供统一的分页响应构建方法，避免在 DTO/Response 类中编写业务逻辑，
  * 同时保持 Response 类的纯粹性（仅作为类型标记继承 {@link PagedResult}）。</p>
  *
- * <p>分页请求侧对称使用 {@link PageQueryBinder}（含嵌套请求基类 {@link PageQueryBinder.AbstractHealthPageRequest}）与 {@link PagedResultBuilder}（入站 / 出站）。</p>
+ * <p>分页请求侧对称使用 {@link PageQueryBinder}（请求基类 {@link AbstractHealthPageRequest}）与 {@link PagedResultBuilder}（入站 / 出站）。</p>
  */
 public final class PagedResultBuilder {
 

@@ -1,11 +1,12 @@
 /**
- * Tiptap / ProseMirror 基础排版与占位符样式。
- * 注意：本文件为 script 中 import 的全局 SCSS，不能使用 Vue 的 :deep()（浏览器不认），须写标准后代选择器。
+ * Tiptap / ProseMirror ???????????
+ * ??????? script ? import ??? SCSS????? Vue ? :deep()??????????????????
  * @see https://tiptap.dev/docs/ui-components/templates/simple-editor
  */
+@import '../../fillable-field/styles/fillable-field.scss';
 
 .simple-editor--layout-locked .simple-editor__toolbar {
-  /* 锁定后仍保留撤销/重做与部分字符格式，整体略区分即可 */
+  /* ????????/????????????????? */
   opacity: 0.98;
 }
 
@@ -16,9 +17,9 @@
 
 .simple-editor {
   /*
-   * 病历书写/打印统一版式（对齐 PrintConfig +《打印预览设计》§4.1）：
-   * A4；页边距上/下 25.4mm、左/右 31.8mm；宋体；正文 12pt；标题 16pt；行距 1.5。
-   * 依据《病历书写基本规范》第三十二条：打印病历应统一纸张、字体、字号及排版格式。
+   * ????/????????? PrintConfig +?????????4.1??
+   * A4?????/? 25.4mm??/? 31.8mm?????? 12pt??? 16pt??? 1.5?
+   * ???????????????????????????????????????
    */
   --simple-editor-border: #e5e7eb;
   --simple-editor-bg: #ffffff;
@@ -47,7 +48,7 @@
   overflow: hidden;
 }
 
-/* 查找替换高亮（ProseMirror Decoration） */
+/* ???????ProseMirror Decoration? */
 .ProseMirror .emr-find-result {
   background-color: rgb(254 240 138 / 70%);
   border-radius: 2px;
@@ -59,24 +60,1010 @@
 }
 
 .simple-editor__toolbar {
+  position: relative;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 0;
+  min-height: 0;
+  overflow: visible;
+  border-bottom: 1px solid #c8c6c4;
+  background: #f3f2f1;
+}
+
+/* ---- 文书收起：快速访问工具栏 (QAT) ---- */
+.simple-editor__qat {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  min-height: 44px;
+  gap: 2px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 36px;
+  padding: 4px 8px 4px 6px;
   overflow-x: auto;
+  overflow-y: hidden;
   white-space: nowrap;
-  border-bottom: 1px solid var(--simple-editor-border);
-  background: var(--simple-editor-toolbar-bg);
+  background: #f3f2f1;
+  scrollbar-width: thin;
+}
+
+.simple-editor__toolbar-compact-group,
+.simple-editor__qat .simple-editor__toolbar-compact-group {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 1px;
+}
+
+.simple-editor__toolbar-compact-sep,
+.simple-editor__qat .simple-editor__toolbar-compact-sep {
+  flex-shrink: 0;
+  align-self: stretch;
+  width: 1px;
+  margin: 5px 4px;
+  background: #c8c6c4;
+}
+
+.simple-editor__toolbar-compact-select {
+  flex-shrink: 0;
+}
+
+.simple-editor__qat-expand {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  margin-left: 6px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: transparent;
+  color: #323130;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.simple-editor__qat-expand:hover {
+  background: #edebe9;
+  border-color: #c8c6c4;
+}
+
+/* ---- 完整 Ribbon 外壳 ---- */
+.simple-editor__ribbon-shell {
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+}
+
+.simple-editor__ribbon-top {
+  display: flex;
+  flex-shrink: 0;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 8px 0 4px;
+  background: #f3f2f1;
+  border-bottom: 1px solid #edebe9;
+}
+
+.simple-editor__ribbon-top-right {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 2px;
+}
+
+.simple-editor__ribbon-collapse {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  color: #605e5c;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.simple-editor__ribbon-collapse:hover {
+  background: #edebe9;
+  color: #323130;
+}
+
+.simple-editor__save-status--compact {
+  flex-shrink: 0;
+}
+
+.simple-editor__ribbon-tabs {
+  display: flex;
+  flex-shrink: 0;
+  align-items: flex-end;
+  gap: 0;
+  min-height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+.simple-editor__ribbon-tab {
+  position: relative;
+  margin: 0;
+  padding: 5px 14px 6px;
+  border: none;
+  background: transparent;
+  color: #323130;
+  font-size: 12px;
+  line-height: 1.2;
+  cursor: pointer;
+  user-select: none;
+  border-radius: 0;
+}
+
+.simple-editor__ribbon-tab:hover {
+  color: #185abd;
+  background: rgb(255 255 255 / 55%);
+}
+
+.simple-editor__ribbon-tab.is-active {
+  color: #185abd;
+  font-weight: 600;
+  background: #fff;
+}
+
+.simple-editor__ribbon-tab.is-active::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: #185abd;
+}
+
+.simple-editor__ribbon {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  box-sizing: border-box;
+  width: 100%;
+  height: 94px;
+  min-height: 94px;
+  max-height: 94px;
+  padding: 4px 6px 2px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  background: #fff;
+  scrollbar-width: thin;
+}
+
+.simple-editor__ribbon-group {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0;
+  box-sizing: border-box;
+  height: 100%;
+  min-width: 0;
+  padding: 0 8px;
+}
+
+.simple-editor__ribbon-group--fill {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 240px;
+  align-items: center;
+}
+
+.simple-editor__ribbon-group--fill .simple-editor__ribbon-group-body {
+  justify-content: flex-start;
+  width: auto;
+}
+
+.simple-editor__ribbon-group-body {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  box-sizing: border-box;
+  height: 68px;
+  min-height: 68px;
+  max-height: 68px;
+}
+
+.simple-editor__ribbon-group-label {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 16px;
+  margin-top: 2px;
+  color: #605e5c;
+  font-size: 11px;
+  line-height: 16px;
+  user-select: none;
+  text-align: center;
+}
+
+.simple-editor__ribbon-sep {
+  flex-shrink: 0;
+  align-self: stretch;
+  width: 1px;
+  margin: 4px 2px 18px;
+  background: #edebe9;
+}
+
+.simple-editor__ribbon-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1px;
+  max-height: 68px;
+}
+
+.simple-editor__ribbon-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 1px;
+}
+
+.simple-editor__ribbon-select {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  min-width: 72px;
+  padding: 0 6px 0 8px;
+  border: 1px solid #8a8886;
+  border-radius: 2px;
+  background: #fff;
+  color: #323130;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.simple-editor__ribbon-select:hover:not(:disabled) {
+  border-color: #323130;
+  background: #fff;
+}
+
+.simple-editor__ribbon-select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.simple-editor__ribbon-select .el-icon {
+  margin-left: 2px;
+  font-size: 11px;
+  color: #605e5c;
+}
+
+.simple-editor__ribbon-select--sm {
+  min-width: 52px;
+}
+
+.simple-editor__ribbon-select--md {
+  min-width: 80px;
+}
+
+.simple-editor__ribbon-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  color: #323130;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.simple-editor__ribbon-icon:hover:not(:disabled) {
+  background: #edebe9;
+}
+
+.simple-editor__ribbon-icon:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.simple-editor__ribbon-icon.is-active {
+  background: #c7e0f4;
+  color: #185abd;
+}
+
+.simple-editor__ribbon-cmd {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  box-sizing: border-box;
+  min-width: 52px;
+  height: 68px;
+  max-height: 68px;
+  padding: 4px 6px;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  color: #323130;
+  font-size: 11px;
+  line-height: 1.1;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.simple-editor__ribbon-cmd:hover:not(:disabled) {
+  background: #edebe9;
+}
+
+.simple-editor__ribbon-cmd:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.simple-editor__ribbon-cmd.is-active {
+  background: #c7e0f4;
+  color: #185abd;
+}
+
+.simple-editor__ribbon-cmd .el-icon {
+  font-size: 22px;
+  color: #4b5563;
+}
+
+.simple-editor__ribbon-cmd-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px 10px;
+  align-content: center;
+  box-sizing: border-box;
+  height: 56px;
+  max-height: 56px;
+}
+
+.simple-editor__ribbon-cmd-flat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  min-width: 0;
+  padding: 0 8px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: #374151;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.simple-editor__ribbon-cmd-flat:hover:not(:disabled) {
+  background: #e8eaed;
+}
+
+.simple-editor__ribbon-cmd-flat:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.simple-editor__ribbon-cmd-flat .el-icon {
+  font-size: 16px;
+  color: #4b5563;
+}
+
+/* Word 样式库 */
+.simple-editor__style-gallery {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: stretch;
+  gap: 2px;
+  box-sizing: border-box;
+  width: auto;
+  height: 64px;
+  min-height: 64px;
+  max-height: 64px;
+  padding: 2px 3px;
+  border: 1px solid #edebe9;
+  border-radius: 2px;
+  background: #faf9f8;
+}
+
+.simple-editor__style-card {
+  display: inline-flex;
+  flex: 0 0 52px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  width: 52px;
+  min-width: 52px;
+  max-width: 52px;
+  height: 100%;
+  min-height: 0;
+  padding: 2px 3px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: #fff;
+  color: #323130;
+  cursor: pointer;
+  user-select: none;
+}
+
+.simple-editor__style-card:hover:not(:disabled) {
+  border-color: #c8c6c4;
+  background: #fff;
+}
+
+.simple-editor__style-card:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.simple-editor__style-card.is-active {
+  border-color: #185abd;
+  box-shadow: inset 0 0 0 1px #185abd;
+  background: #fff;
+}
+
+.simple-editor__style-card-title {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.15;
+  text-align: center;
+}
+
+.simple-editor__style-card--h1 .simple-editor__style-card-title {
+  font-size: 13px;
+}
+
+.simple-editor__style-card--h2 .simple-editor__style-card-title {
+  font-size: 12px;
+}
+
+.simple-editor__style-card-tag {
+  color: #a19f9d;
+  font-size: 9px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+@media (max-width: 1680px) {
+  .simple-editor__qat {
+    padding: 4px 6px;
+  }
+
+  .simple-editor__qat-expand span {
+    display: none;
+  }
+
+  .simple-editor__ribbon-group {
+    padding: 0 6px;
+  }
+
+  .simple-editor__ribbon-group--fill {
+    max-width: 210px;
+  }
+
+  .simple-editor__style-card {
+    flex-basis: 46px;
+    width: 46px;
+    min-width: 46px;
+    max-width: 46px;
+  }
+
+  .simple-editor__ribbon-cmd {
+    min-width: 46px;
+    padding: 4px 4px;
+    font-size: 10px;
+  }
 }
 
 .simple-editor__toolbar-spacer {
-  flex: 1;
-  min-width: 8px;
+  flex: 0 0 0;
+  min-width: 0;
 }
 
-/* 滚动容器：灰底工作台，与白页区分 */
+/* ---- page papers / header-footer (Word-like) ---- */
+.simple-editor {
+  --simple-editor-page-gap: 22px;
+  --simple-editor-corner-top: 25.4mm;
+  --simple-editor-corner-right: 31.8mm;
+  --simple-editor-corner-bottom: 25.4mm;
+  --simple-editor-corner-left: 31.8mm;
+}
+
+.simple-editor__papers {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 0;
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: var(--simple-editor-page-gap);
+  pointer-events: none;
+}
+
+.simple-editor__paper {
+  position: relative;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  width: 100%;
+  height: var(--simple-editor-a4-min-h);
+  pointer-events: none;
+  background-color: #fff;
+  box-shadow: 0 1px 4px rgb(15 23 42 / 12%);
+  background-image:
+    linear-gradient(#b0b8c4, #b0b8c4), linear-gradient(#b0b8c4, #b0b8c4),
+    linear-gradient(#b0b8c4, #b0b8c4), linear-gradient(#b0b8c4, #b0b8c4),
+    linear-gradient(#b0b8c4, #b0b8c4), linear-gradient(#b0b8c4, #b0b8c4),
+    linear-gradient(#b0b8c4, #b0b8c4), linear-gradient(#b0b8c4, #b0b8c4);
+  background-repeat: no-repeat;
+  background-origin: padding-box;
+  background-size:
+    16px 1px,
+    1px 16px,
+    16px 1px,
+    1px 16px,
+    16px 1px,
+    1px 16px,
+    16px 1px,
+    1px 16px;
+  background-position:
+    left calc(var(--simple-editor-corner-left) - 18px) top
+      calc(var(--simple-editor-corner-top) - 2px),
+    left calc(var(--simple-editor-corner-left) - 2px) top
+      calc(var(--simple-editor-corner-top) - 18px),
+    right calc(var(--simple-editor-corner-right) - 18px) top
+      calc(var(--simple-editor-corner-top) - 2px),
+    right calc(var(--simple-editor-corner-right) - 2px) top
+      calc(var(--simple-editor-corner-top) - 18px),
+    left calc(var(--simple-editor-corner-left) - 18px) bottom
+      calc(var(--simple-editor-corner-bottom) - 2px),
+    left calc(var(--simple-editor-corner-left) - 2px) bottom
+      calc(var(--simple-editor-corner-bottom) - 18px),
+    right calc(var(--simple-editor-corner-right) - 18px) bottom
+      calc(var(--simple-editor-corner-bottom) - 2px),
+    right calc(var(--simple-editor-corner-right) - 2px) bottom
+      calc(var(--simple-editor-corner-bottom) - 18px);
+}
+
+.simple-editor__page-header,
+.simple-editor__page-footer {
+  position: absolute;
+  left: var(--simple-editor-margin-left);
+  right: var(--simple-editor-margin-right);
+  z-index: 1;
+  overflow: visible;
+  font-size: 9pt;
+  line-height: 1.4;
+  color: #64748b;
+  text-align: center;
+  white-space: pre-wrap;
+  text-overflow: clip;
+  pointer-events: none;
+}
+
+.simple-editor__page-header {
+  top: 0;
+  height: auto;
+  min-height: var(--simple-editor-corner-top);
+  max-height: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  box-sizing: border-box;
+  padding: 8px 0 4px;
+}
+
+.simple-editor__page-footer {
+  bottom: 0;
+  height: auto;
+  min-height: var(--simple-editor-corner-bottom);
+  max-height: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  box-sizing: border-box;
+  padding: 6px 0 4px;
+}
+
+.simple-editor__page-band-inner {
+  display: flow-root;
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 1.35em;
+  outline: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  caret-color: #111827;
+}
+
+/*
+ * 页眉/页脚按行包 div：第三行姓名·病房·床位 / 住院号用 float。
+ * 子 div 若非 BFC，float 高度会被算成 0，壳高偏矮 → 正文顶边（黑线）压过页眉字（医生站有患者值时尤甚）。
+ */
+.simple-editor__page-band-inner > div {
+  display: flow-root;
+  max-width: 100%;
+}
+
+.simple-editor__page-header .simple-editor__page-band-inner [style*='float:left'],
+.simple-editor__page-header .simple-editor__page-band-inner [style*='float: left'],
+.simple-editor__page-header .simple-editor__page-band-inner [style*='float:right'],
+.simple-editor__page-header .simple-editor__page-band-inner [style*='float: right'] {
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.simple-editor--chrome-editable .simple-editor__page-header,
+.simple-editor--chrome-editable .simple-editor__page-footer {
+  cursor: text;
+}
+
+.simple-editor--chrome-editing .simple-editor__papers {
+  z-index: 2;
+  /* ??????? paper-stack::after????/???? */
+  pointer-events: none;
+}
+
+/* ?????????????????? contentEditable ?? */
+.simple-editor--chrome-editing .simple-editor__paper-stack {
+  position: relative;
+}
+
+.simple-editor--chrome-editing .simple-editor__paper-stack::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  cursor: default;
+}
+
+.simple-editor--chrome-editing .simple-editor__page-header,
+.simple-editor--chrome-editing .simple-editor__page-footer {
+  pointer-events: auto;
+  cursor: text;
+  z-index: 3;
+  left: 0;
+  right: 0;
+  overflow: visible;
+  white-space: pre-wrap;
+  text-overflow: clip;
+}
+
+.simple-editor--chrome-editing .simple-editor__page-header {
+  top: 0;
+  height: auto;
+  min-height: var(--simple-editor-corner-top);
+  max-height: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: 8px var(--simple-editor-margin-right) 8px var(--simple-editor-margin-left);
+  box-sizing: border-box;
+}
+
+.simple-editor--chrome-editing .simple-editor__page-footer {
+  bottom: 0;
+  height: auto;
+  min-height: var(--simple-editor-corner-bottom);
+  max-height: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: 8px var(--simple-editor-margin-right) 4px var(--simple-editor-margin-left);
+  box-sizing: border-box;
+}
+
+.simple-editor--chrome-editing .ProseMirror {
+  pointer-events: none;
+  opacity: 0.55;
+}
+
+.simple-editor__page-band--editing {
+  z-index: 3;
+  overflow: visible;
+  box-sizing: border-box;
+  min-height: 28px;
+  color: #111827;
+  white-space: pre-wrap;
+  text-overflow: clip;
+  outline: none;
+  border: none;
+  background: transparent;
+  caret-color: #111827;
+  pointer-events: auto;
+}
+
+.simple-editor__page-header.simple-editor__page-band--editing {
+  top: 0;
+  height: auto !important;
+  min-height: var(--simple-editor-corner-top);
+  max-height: none;
+  display: flex !important;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: 8px var(--simple-editor-margin-right) 8px var(--simple-editor-margin-left);
+  border-bottom: 1px dashed #c4c4c4;
+}
+
+.simple-editor__page-footer.simple-editor__page-band--editing {
+  bottom: 0;
+  height: auto !important;
+  min-height: var(--simple-editor-corner-bottom);
+  max-height: none;
+  display: flex !important;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: 8px var(--simple-editor-margin-right) 4px var(--simple-editor-margin-left);
+  border-top: 1px dashed #c4c4c4;
+}
+
+.simple-editor__page-band--editing::after {
+  content: attr(data-chrome-label);
+  position: absolute;
+  left: var(--simple-editor-margin-left);
+  z-index: 4;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 11px;
+  line-height: 14px;
+  color: #8c8c8c;
+  white-space: nowrap;
+  pointer-events: none;
+  letter-spacing: 0.02em;
+}
+
+.simple-editor__page-header.simple-editor__page-band--editing::after {
+  top: calc(100% + 3px);
+}
+
+.simple-editor__page-footer.simple-editor__page-band--editing::after {
+  bottom: calc(100% + 3px);
+}
+
+.simple-editor__page-band--echo {
+  opacity: 0.55;
+}
+
+.simple-editor__chrome-field {
+  display: inline-block;
+  box-sizing: border-box;
+  max-width: 100%;
+  margin: 0 1px;
+  padding: 0 4px;
+  border-radius: 2px;
+  background: #e5e7eb;
+  color: #111827;
+  font: inherit;
+  line-height: 1.35;
+  vertical-align: baseline;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.simple-editor__chrome-logo-row {
+  display: inline-block;
+  position: relative;
+  max-width: 100%;
+  overflow: visible;
+  text-align: left;
+}
+
+.simple-editor__chrome-logo-row .simple-editor__chrome-img {
+  z-index: 2;
+  margin: 0;
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.simple-editor__chrome-img {
+  display: inline-block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 2px;
+  vertical-align: middle;
+  object-fit: contain;
+  outline: 1px solid transparent;
+}
+
+.simple-editor__chrome-img:active,
+.simple-editor__chrome-img--dragging {
+  cursor: grabbing;
+  opacity: 0.55;
+}
+
+.simple-editor__chrome-img:not([width]) {
+  max-height: 48px;
+  max-width: min(60%, 200px);
+}
+
+.simple-editor__chrome-img--selected,
+.simple-editor__chrome-img:hover {
+  outline-color: var(--el-color-primary, #409eff);
+}
+
+.simple-editor__chrome-bar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #f8fafc;
+}
+
+.simple-editor__chrome-bar-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1d4ed8;
+}
+
+.simple-editor__chrome-bar-hint {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+/* ?????? + ???? */
+.simple-editor__body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  align-items: stretch;
+  overflow: hidden;
+}
+
+.simple-editor__sidebar {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 220px;
+  min-height: 0;
+  padding: 10px 10px 12px;
+  border-right: 1px solid var(--simple-editor-border);
+  background: #f8fafc;
+  overflow: auto;
+}
+
+.simple-editor__sidebar-title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.simple-editor__sidebar-hint {
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #6b7280;
+}
+
+.simple-editor__sidebar-search {
+  margin-bottom: 8px;
+}
+
+.simple-editor__sidebar-empty {
+  padding: 12px 4px;
+  font-size: 12px;
+  color: #9ca3af;
+  text-align: center;
+}
+
+.simple-editor__meta-group {
+  margin-bottom: 8px;
+}
+
+.simple-editor__meta-group-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  margin: 0;
+  padding: 4px 2px;
+  border: none;
+  background: transparent;
+  color: #374151;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.simple-editor__meta-group-caret {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.simple-editor__meta-group-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.simple-editor__meta-group-count {
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+.simple-editor__meta-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 0 4px;
+}
+
+.simple-editor__meta-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fff;
+  color: #111827;
+  font-size: 12px;
+  cursor: grab;
+  user-select: none;
+}
+
+.simple-editor__meta-chip:hover {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.simple-editor__meta-chip-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.simple-editor__meta-chip-badge {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.simple-editor__main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .simple-editor__content {
+  position: relative;
   box-sizing: border-box;
   flex: 1;
   min-height: 0;
@@ -86,17 +1073,91 @@
   border: none;
 }
 
-/* EditorContent 根 div：透明、无框，避免叠一层灰底或边框 */
-.simple-editor__content > div {
+/* 文书填写：纸面右侧空白区轻量展示 Tab / Shift+Tab 提示 */
+.simple-editor__fillable-rail-anchor {
+  position: sticky;
+  top: 24px;
+  z-index: 7;
+  width: 100%;
+  height: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.simple-editor--surface-document .simple-editor__fillable-rail-anchor > aside {
+  position: absolute;
+  top: 0;
+  left: calc(50% + var(--simple-editor-a4-w) / 2 + 16px);
+  right: auto;
+}
+
+/* ??????????????????? */
+.simple-editor__ruler {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  box-sizing: border-box;
+  width: var(--simple-editor-a4-w);
+  height: 18px;
+  margin: 0 auto 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 2px;
+  background-color: #f8fafc;
+  background-image:
+    linear-gradient(
+      to right,
+      transparent 0,
+      transparent calc(var(--simple-editor-margin-left) - 1px),
+      #60a5fa calc(var(--simple-editor-margin-left) - 1px),
+      #60a5fa var(--simple-editor-margin-left),
+      transparent var(--simple-editor-margin-left)
+    ),
+    linear-gradient(
+      to left,
+      transparent 0,
+      transparent calc(var(--simple-editor-margin-right) - 1px),
+      #60a5fa calc(var(--simple-editor-margin-right) - 1px),
+      #60a5fa var(--simple-editor-margin-right),
+      transparent var(--simple-editor-margin-right)
+    ),
+    repeating-linear-gradient(to right, #94a3b8 0, #94a3b8 1px, transparent 1px, transparent 5mm);
+  pointer-events: none;
+}
+
+/* ??????????????????? */
+.simple-editor--show-gridlines .simple-editor__paper::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, rgb(148 163 184 / 28%) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(148 163 184 / 28%) 1px, transparent 1px);
+  background-size: 5mm 5mm;
+}
+
+/* EditorContent 外包一层：纸面背景与 ProseMirror 同宽对齐 */
+.simple-editor__content > div,
+.simple-editor__paper-stack {
+  position: relative;
+  box-sizing: border-box;
+  width: var(--simple-editor-a4-w);
+  min-width: var(--simple-editor-a4-w);
+  max-width: var(--simple-editor-a4-w);
   min-height: 0;
+  margin: 0 auto 24px;
   border: none;
   outline: none;
   background: transparent;
   box-shadow: none;
 }
 
-/* A4 白纸：纯白、无描边；默认字体/字号/行距与 PrintConfig 一致 */
+/* A4 ??????????????/??/??? PrintConfig ?? */
 .simple-editor__content .ProseMirror {
+  position: relative;
+  z-index: 1;
+  pointer-events: auto;
   box-sizing: border-box;
   width: var(--simple-editor-a4-w);
   min-width: var(--simple-editor-a4-w);
@@ -107,12 +1168,13 @@
     var(--simple-editor-margin-bottom) var(--simple-editor-margin-left);
   border: none !important;
   border-radius: 0;
-  background: #fff !important;
+  /* ?????????????? .simple-editor__paper ?? */
+  background: transparent !important;
   box-shadow: none !important;
   outline: none !important;
   font-family: var(--simple-editor-font-family);
   font-size: var(--simple-editor-body-size);
-  /* 默认行高交给段落/标题块或下方 p 规则，避免盖住块级 line-height */
+  /* ????????/?????? p ????????? line-height */
   line-height: normal;
   color: #111827;
 }
@@ -123,7 +1185,7 @@
   box-shadow: none !important;
 }
 
-/* 仅整篇为空时显示编辑器级占位（勿用 p.is-empty，否则病历空填写段也会冒出引导文案） */
+/* ????????????????? p.is-empty?????????????????? */
 .simple-editor__content
   .ProseMirror
   p.is-editor-empty:first-child[style*='text-align: center']::before {
@@ -219,16 +1281,77 @@
   cursor: pointer;
 }
 
-.simple-editor__content .ProseMirror img {
+.simple-editor__content .ProseMirror img,
+.simple-editor__content .ProseMirror .emr-editor-img {
   max-width: 100%;
   height: auto;
   border-radius: 4px;
   vertical-align: middle;
 }
 
+/* ?????????????? float ??? */
+.simple-editor__content .ProseMirror .emr-img-resize {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  line-height: 0;
+  vertical-align: middle;
+  float: none;
+}
+
+.simple-editor__content .ProseMirror .emr-img-resize.emr-img--logo {
+  float: none !important;
+  margin: 0;
+  vertical-align: middle;
+}
+
+.simple-editor__content .ProseMirror .emr-img-resize__handle {
+  position: absolute;
+  z-index: 2;
+  width: 8px;
+  height: 8px;
+  box-sizing: border-box;
+  border: 1px solid #fff;
+  border-radius: 1px;
+  background: var(--el-color-primary, #409eff);
+  box-shadow: 0 0 0 1px rgb(15 23 42 / 20%);
+}
+
+.simple-editor__content .ProseMirror .emr-img-resize__handle[data-resize-handle='top-left'],
+.simple-editor__content .ProseMirror .emr-img-resize__handle[data-dir='top-left'] {
+  top: -4px;
+  left: -4px;
+  cursor: nwse-resize;
+}
+
+.simple-editor__content .ProseMirror .emr-img-resize__handle[data-resize-handle='top-right'],
+.simple-editor__content .ProseMirror .emr-img-resize__handle[data-dir='top-right'] {
+  top: -4px;
+  right: -4px;
+  cursor: nesw-resize;
+}
+
+.simple-editor__content .ProseMirror .emr-img-resize__handle[data-resize-handle='bottom-left'],
+.simple-editor__content .ProseMirror .emr-img-resize__handle[data-dir='bottom-left'] {
+  bottom: -4px;
+  left: -4px;
+  cursor: nesw-resize;
+}
+
+.simple-editor__content .ProseMirror .emr-img-resize__handle[data-resize-handle='bottom-right'],
+.simple-editor__content .ProseMirror .emr-img-resize__handle[data-dir='bottom-right'] {
+  right: -4px;
+  bottom: -4px;
+  cursor: nwse-resize;
+}
+
+.simple-editor__content .ProseMirror .emr-img-resize--active {
+  outline: 1px solid var(--el-color-primary, #409eff);
+}
+
 /*
- * 页眉院徽：与医院名作为整行 flex 居中（贴近打印 PDF 的 Chunk 同行居中）。
- * 勿依赖纯 text-align：img/NodeView 一旦脱离行内流，会出现「徽贴左、名居中」。
+ * ????????????? flex ??????? PDF ? Chunk ??????
+ * ???? text-align?img/NodeView ?????????????????????
  */
 .simple-editor__content .ProseMirror > p[data-name='hospitalTitle'] {
   display: flex;
@@ -237,7 +1360,7 @@
   justify-content: center;
   align-items: center;
   gap: 0.35em;
-  /* 贴近客户 Word 院名约 22pt */
+  /* ???? Word ??? 22pt */
   font-size: 22pt;
   font-weight: 700;
   text-align: center;
@@ -274,9 +1397,9 @@
   padding: 0 2px;
 }
 
-/* —— EMR 扩展节点 —— */
+/* ?? EMR ???? ?? */
 
-/* 行内自由文本（无 NodeView 回退）：主题色方括号 + 灰字 */
+/* ???????? NodeView ?????????? + ?? */
 .simple-editor__content .emr-free-text--fallback {
   display: inline-flex;
   align-items: baseline;
@@ -322,7 +1445,7 @@
   color: #9ca3af;
 }
 
-/* 统一数据元节点（无 NodeView 回退） */
+/* ????????? NodeView ??? */
 .simple-editor__content .emr-de--fallback {
   display: inline-block;
   max-width: 100%;
@@ -337,7 +1460,7 @@
   box-sizing: border-box;
 }
 
-/* 文本型数据元静态 HTML：与自由文本/元数据芯片一致的方括号回退 */
+/* ???????? HTML??????/????????????? */
 .simple-editor__content .emr-de--fallback:has(.emr-bracket-fallback__body) {
   display: inline-flex;
   align-items: baseline;
@@ -375,7 +1498,7 @@
   color: #9ca3af;
 }
 
-/* 粘贴/导出 HTML 等无 NodeView 时的回退样式（编辑态由 EmrMetadataChipView 控制） */
+/* ??/?? HTML ?? NodeView ??????????? EmrMetadataChipView ??? */
 .simple-editor__content .emr-metadata-chip--fallback {
   display: inline-flex;
   align-items: baseline;
@@ -421,7 +1544,7 @@
   color: #9ca3af;
 }
 
-/* 固定版式字：填写文书时无背景；制作模板时仅细线下划，贴近正文 */
+/* ?????????????????????????????? */
 .simple-editor__content .ProseMirror .emr-fixed-text {
   display: inline;
   padding: 0 1px;
@@ -449,45 +1572,74 @@
   box-shadow: inset 0 -1.5px 0 0 #6b7280;
 }
 
+/* Page break: margin-top 撑第一页留白；本体不参与点击 */
 .simple-editor__content .emr-page-break {
   position: relative;
-  margin: 16px 0;
-  height: 28px;
+  margin: 0;
+  height: 0;
+  border: none;
+  background: transparent;
+  user-select: none;
+  pointer-events: none;
+}
+
+.simple-editor__content .emr-page-soft-break {
+  display: block;
+  width: 100%;
+  pointer-events: none;
+  user-select: none;
+  vertical-align: top;
+}
+
+/* 表格行间换页垫片：无边框，避免第 1 页底留下「空表体竖线」 */
+.simple-editor__content .ProseMirror tr.emr-table-row-soft-break,
+.simple-editor__content .ProseMirror tr.emr-table-row-soft-break > td {
+  border: none !important;
+  background: transparent !important;
+  padding: 0 !important;
+  pointer-events: none !important;
+  user-select: none !important;
+}
+
+.simple-editor__content [data-emr-island-soft-break] {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  pointer-events: none;
   user-select: none;
 }
 
 .simple-editor__content .emr-page-break::before {
-  content: '分页符';
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  color: #9ca3af;
-  border: 1px dashed #d1d5db;
-  border-radius: 4px;
-  background: #f9fafb;
+  content: none;
+  display: none;
 }
 
+/*
+ * ??? Ctrl+P ??????????? PDF/OpenPDF??
+ * ????? `body * { visibility:hidden }`?SimpleEditor ??????????
+ * ???????????????? window.print ??????
+ * ?????? body.is-simple-editor-printing ?????????????
+ */
 @media print {
   @page {
     size: A4 portrait;
     margin: 0;
   }
 
-  body * {
+  body.is-simple-editor-printing * {
     visibility: hidden;
   }
 
-  body .simple-editor,
-  body .simple-editor * {
+  body.is-simple-editor-printing .simple-editor,
+  body.is-simple-editor-printing .simple-editor * {
     visibility: visible;
   }
 
-  body,
-  html,
-  #app {
+  html:has(body.is-simple-editor-printing),
+  body.is-simple-editor-printing,
+  body.is-simple-editor-printing #app {
     margin: 0 !important;
     padding: 0 !important;
     height: auto !important;
@@ -498,7 +1650,7 @@
     print-color-adjust: exact;
   }
 
-  .simple-editor {
+  body.is-simple-editor-printing .simple-editor {
     position: fixed !important;
     inset: 0 !important;
     z-index: 99999 !important;
@@ -596,7 +1748,7 @@
   }
 }
 
-/* 虚线颜色/粗细由节点行内 style 控制，此处仅保留类名与外边距回退 */
+/* ????/??????? style ???????????????? */
 .simple-editor__content .emr-horizontal-dashed {
   border: none;
   margin: 1em 0;
@@ -623,7 +1775,7 @@
   line-height: 1.5;
 }
 
-/* —— 表格 —— */
+/* ?? ?? ?? */
 
 .simple-editor__content .ProseMirror table {
   border-collapse: collapse;
@@ -654,13 +1806,217 @@
   margin: 0;
 }
 
-/* 文书标题：与 PDF titleSizePt(16) 对齐；出院诊断等若需更小可再加命名覆盖 */
+/* ========== 门诊/病历 patientHeader：三列信息表（保留格子线与默认单元格间距） ========== */
+.simple-editor__content .ProseMirror table[data-name='patientHeader'],
+.simple-editor__content .ProseMirror .tableWrapper:has(> table[data-name='patientHeader']),
+.simple-editor__content .ProseMirror .tableWrapper:has(table[data-name='patientHeader']) {
+  margin: 0.15em 0 0.5em !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow: visible !important;
+}
+
+.simple-editor__content .ProseMirror table[data-name='patientHeader'] {
+  table-layout: fixed !important;
+  border-collapse: collapse !important;
+  border-spacing: 0 !important;
+}
+
+.simple-editor__content .ProseMirror table[data-name='patientHeader'] td,
+.simple-editor__content .ProseMirror table[data-name='patientHeader'] th {
+  border: 1px solid #374151 !important;
+  background: transparent !important;
+  padding: 6px 8px !important;
+  margin: 0 !important;
+  height: auto !important;
+  min-width: 0 !important;
+  width: 33.33% !important;
+  vertical-align: middle !important;
+  text-align: left !important;
+  font-size: 12pt !important;
+  line-height: var(--simple-editor-line-height) !important;
+}
+
+.simple-editor__content .ProseMirror table[data-name='patientHeader'] td > p,
+.simple-editor__content .ProseMirror table[data-name='patientHeader'] th > p {
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: var(--simple-editor-line-height) !important;
+  text-align: left !important;
+}
+
+.simple-editor__content .ProseMirror table[data-name='patientHeader'] .emr-fillable-field__shell,
+.simple-editor__content
+  .ProseMirror
+  table[data-name='patientHeader']
+  .emr-fillable-field__shell--plain,
+.simple-editor__content .ProseMirror table[data-name='patientHeader'] .emr-fillable,
+.simple-editor__content .ProseMirror table[data-name='patientHeader'] .emr-metadata-chip {
+  white-space: nowrap !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  min-width: 0 !important;
+}
+
+.simple-editor__content
+  .ProseMirror
+  table[data-name='patientHeader']
+  .emr-fillable-field__shell::before,
+.simple-editor__content
+  .ProseMirror
+  table[data-name='patientHeader']
+  .emr-fillable-field__shell::after {
+  content: none !important;
+}
+
+.simple-editor__content .ProseMirror table[data-name='patientHeader'] .emr-fillable-field__input,
+.simple-editor__content
+  .ProseMirror
+  table[data-name='patientHeader']
+  .emr-fillable-field__readonly-text {
+  white-space: nowrap !important;
+  overflow-wrap: normal !important;
+  word-break: keep-all !important;
+  min-width: 0 !important;
+}
+
+/* ?????? PDF titleSizePt(16) ??????????????????? */
 .simple-editor__content .ProseMirror > p[data-name='formTitle'] {
   font-size: 16pt;
   font-weight: 700;
   text-align: center;
   margin: 0.1em 0 0.35em;
   line-height: var(--simple-editor-line-height);
+}
+
+/* 门诊病历段落版式：三列表头沿用 patientHeader；正文段收紧、体征防折、诊断缩进 */
+.simple-editor__content .ProseMirror > p[data-name='chiefComplaint'],
+.simple-editor__content .ProseMirror > p[data-name='presentIllness'],
+.simple-editor__content .ProseMirror > p[data-name='pastHistory'],
+.simple-editor__content .ProseMirror > p[data-name='allergyHistory'],
+.simple-editor__content .ProseMirror > p[data-name='familyHistory'],
+.simple-editor__content .ProseMirror > p[data-name='personalHistory'],
+.simple-editor__content .ProseMirror > p[data-name='auxiliaryExam'],
+.simple-editor__content .ProseMirror > p[data-name='disposal'],
+.simple-editor__content .ProseMirror > p[data-name='physicalExam'] {
+  margin: 0.1em 0;
+  line-height: 1.35;
+}
+
+.simple-editor__content .ProseMirror > p[data-name='peSection'],
+.simple-editor__content .ProseMirror > p[data-name='impressionDiagnosis'] {
+  margin: 0.28em 0 0.08em;
+  line-height: 1.3;
+  font-weight: 600;
+}
+
+.simple-editor__content .ProseMirror > p[data-name='vitals'],
+.simple-editor__content .ProseMirror > p[data-name='vitals2'] {
+  margin: 0.04em 0 0.04em 1.5em;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.simple-editor__content .ProseMirror > p[data-name='physicalExam'] {
+  margin-left: 1.5em;
+}
+
+.simple-editor__content .ProseMirror > p[data-name='tcmDiagnosis'],
+.simple-editor__content .ProseMirror > p[data-name='westernDiagnosis'] {
+  margin: 0.06em 0 0.06em 1.5em;
+  line-height: 1.35;
+}
+
+.simple-editor__content .ProseMirror > p[data-name='doctorSign'] {
+  margin: 0.45em 0 0.15em;
+  line-height: 1.35;
+}
+
+.simple-editor__content .ProseMirror > hr {
+  margin: 0.35em 0 0.4em;
+  border: none;
+  border-top: 1px solid #9ca3af;
+}
+
+/* 门诊表格版正文：左标签右内容 + 体征内嵌无边框两列 */
+.simple-editor__content .ProseMirror table[data-name='outpatientHistory'] {
+  width: 100%;
+  margin: 0.35em 0 0;
+  table-layout: fixed;
+  overflow: hidden;
+}
+
+.simple-editor__content .ProseMirror table[data-name='outpatientHistory'] td {
+  vertical-align: middle;
+  padding: 6px 8px;
+  line-height: var(--simple-editor-line-height);
+  font-size: 12pt;
+}
+
+.simple-editor__content
+  .ProseMirror
+  table[data-name='outpatientHistory']
+  td[data-name='sectionLabel'] {
+  width: 72px;
+  text-align: center;
+  font-weight: 600;
+  background: #fafafa;
+  padding: 6px 4px;
+}
+
+.simple-editor__content
+  .ProseMirror
+  table[data-name='outpatientHistory']
+  td[data-name='sectionValue'] {
+  vertical-align: middle;
+}
+
+.simple-editor__content
+  .ProseMirror
+  table[data-name='outpatientHistory']
+  td[data-name='sectionValue']
+  > p {
+  margin: 0;
+  line-height: var(--simple-editor-line-height);
+}
+
+.simple-editor__content
+  .ProseMirror
+  table[data-name='outpatientHistory']
+  .emr-fillable-field__shell,
+.simple-editor__content
+  .ProseMirror
+  table[data-name='outpatientHistory']
+  .emr-fillable-field__input,
+.simple-editor__content
+  .ProseMirror
+  table[data-name='outpatientHistory']
+  .emr-fillable-field__readonly-text {
+  line-height: var(--simple-editor-line-height) !important;
+}
+
+.simple-editor__content .ProseMirror table[data-name='outpatientVitals'] {
+  width: 100%;
+  margin: 0;
+  table-layout: fixed;
+  border: none !important;
+}
+
+.simple-editor__content .ProseMirror table[data-name='outpatientVitals'] td,
+.simple-editor__content .ProseMirror table[data-name='outpatientVitals'] th {
+  border: none !important;
+  padding: 1px 4px 1px 0 !important;
+  vertical-align: middle;
+  white-space: nowrap;
+  background: transparent !important;
+}
+
+.simple-editor__content .ProseMirror table[data-name='outpatientVitals'] td > p {
+  margin: 0 !important;
+  line-height: 1.25 !important;
+  white-space: nowrap;
 }
 
 .simple-editor__content .ProseMirror table[data-name='dischargeDiagnosisForm'],
@@ -671,7 +2027,7 @@
   overflow: hidden;
 }
 
-/* 首列统一约 5.2em：容纳「工作单位」「出院诊断」，竖排标签也用同宽（勿再 max-width:2.4em 压窄整列） */
+/* ????? 5.2em??????????????????????????? max-width:2.4em ????? */
 .simple-editor__content
   .ProseMirror
   table[data-name='dischargeDiagnosisForm']
@@ -734,7 +2090,7 @@
   field-sizing: content;
 }
 
-/* 首行：标签与值均居中（贴近 Word/打印） */
+/* ????????????? Word/??? */
 .simple-editor__content
   .ProseMirror
   table[data-name='dischargeDiagnosisForm']
@@ -819,14 +2175,14 @@
   vertical-align: middle;
   white-space: nowrap;
   font-weight: 600;
-  /* 覆盖「申请会诊目的」等 6 字标签；过窄会在 fixed 表格里被裁切 */
+  /* ??????????? 6 ???????? fixed ?????? */
   width: 6.5em;
   min-width: 6.5em;
   padding-left: 4px;
   padding-right: 4px;
 }
 
-/* 文书态标题：医院名接近打印（加粗黑字） */
+/* ??????????????????? */
 .simple-editor--surface-document
   .simple-editor__content
   .ProseMirror
@@ -880,7 +2236,7 @@
   min-height: 16mm;
 }
 
-/* 患者入院安全告知书等：标题/条款行距统一为 PrintConfig 1.5 */
+/* ?????????????/??????? PrintConfig 1.5 */
 .simple-editor__content .ProseMirror > p[data-name='formTitle'] {
   font-size: 14pt;
   font-weight: 700;
@@ -948,7 +2304,7 @@
   margin: 0.55em 0;
 }
 
-/* 自动出院/转院风险告知书：患者信息行、章节标题（行距对齐 PrintConfig 1.5） */
+/* ????/??????????????????????? PrintConfig 1.5? */
 .simple-editor__content .ProseMirror > p[data-name='riskPatientInfo'] {
   margin: 0.35em 0;
   line-height: var(--simple-editor-line-height);
@@ -972,26 +2328,154 @@
   text-align: right;
 }
 
-/* —— 门诊病历（OP_RECORD_STD）命名段落 / 表格 —— */
+/* ?? ?????OP_RECORD_STD????? / ?? ?? */
 
+/*
+ * 门诊病历患者信息：三列表（与上文边框/间距规则对齐；此处只补字段选择器）
+ */
 .simple-editor__content .ProseMirror table[data-name='patientHeader'] {
-  width: 100%;
-  margin: 0.15em 0 0.35em;
-  table-layout: fixed;
-  border: none !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 0.15em 0 0.5em !important;
+  table-layout: fixed !important;
+  border-collapse: collapse !important;
+  box-sizing: border-box;
+  overflow: visible !important;
 }
 
-.simple-editor__content .ProseMirror table[data-name='patientHeader'] td {
-  padding: 2px 4px;
-  vertical-align: middle;
-  /* 覆盖通用 td 实线框，贴近 Word 无框页眉 */
-  border: none !important;
+.simple-editor__content .ProseMirror table[data-name='patientHeader'] td,
+.simple-editor__content .ProseMirror table[data-name='patientHeader'] td[data-name='patientField'],
+.simple-editor__content .ProseMirror table[data-name='patientHeader'] td[data-name='formValue'] {
+  width: 33.33%;
+  padding: 6px 8px !important;
+  vertical-align: middle !important;
+  text-align: left !important;
+  border: 1px solid #374151 !important;
+  box-sizing: border-box;
+  font-size: 12pt;
+  line-height: var(--simple-editor-line-height) !important;
+  min-width: 0 !important;
+  background: transparent !important;
 }
 
 .simple-editor__content .ProseMirror table[data-name='patientHeader'] td > p {
-  margin: 0;
-  line-height: var(--simple-editor-line-height);
-  text-align: left;
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: var(--simple-editor-line-height) !important;
+  text-align: left !important;
+}
+
+/* 表头值：不画蓝括号 */
+.simple-editor__content .ProseMirror table[data-name='patientHeader'] .emr-bracket-field__bracket,
+.simple-editor__content .ProseMirror table[data-name='patientHeader'] .emr-fillable-bracket {
+  display: none !important;
+}
+
+.simple-editor__content .ProseMirror table[data-name='patientHeader'] .emr-metadata-chip::before,
+.simple-editor__content .ProseMirror table[data-name='patientHeader'] .emr-metadata-chip::after,
+.simple-editor__content .ProseMirror table[data-name='patientHeader'] .emr-bracket-field::before,
+.simple-editor__content .ProseMirror table[data-name='patientHeader'] .emr-bracket-field::after,
+.simple-editor__content
+  .ProseMirror
+  table[data-name='patientHeader']
+  .emr-bracket-field--node::before,
+.simple-editor__content
+  .ProseMirror
+  table[data-name='patientHeader']
+  .emr-bracket-field--node::after,
+.simple-editor__content
+  .ProseMirror
+  table[data-name='patientHeader']
+  .emr-bracket-field--css::before,
+.simple-editor__content
+  .ProseMirror
+  table[data-name='patientHeader']
+  .emr-bracket-field--css::after {
+  content: none !important;
+  display: none !important;
+}
+
+.simple-editor__content .ProseMirror table[data-name='patientHeader'] .emr-metadata-chip,
+.simple-editor__content .ProseMirror table[data-name='patientHeader'] .emr-metadata-chip__value,
+.simple-editor__content .ProseMirror table[data-name='patientHeader'] .emr-metadata-chip__text,
+.simple-editor__content .ProseMirror table[data-name='patientHeader'] .emr-bracket-field {
+  display: inline !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  white-space: nowrap !important;
+  overflow-wrap: normal !important;
+  word-break: keep-all !important;
+  line-height: inherit !important;
+}
+
+.simple-editor__content
+  .ProseMirror
+  table[data-name='patientHeader']
+  .emr-metadata-chip:not(.emr-metadata-chip--readonly) {
+  padding: 0 2px !important;
+  border-radius: 2px;
+  background: #f3f6fb !important;
+}
+
+/* 旧版段落三列兼容 */
+.simple-editor__content .ProseMirror > p[data-name='phName'],
+.simple-editor__content .ProseMirror > p[data-name='phGender'],
+.simple-editor__content .ProseMirror > p[data-name='phAge'],
+.simple-editor__content .ProseMirror > p[data-name='phInsurance'],
+.simple-editor__content .ProseMirror > p[data-name='phPhone'],
+.simple-editor__content .ProseMirror > p[data-name='phRecordNo'],
+.simple-editor__content .ProseMirror > p[data-name='phVisitTime'],
+.simple-editor__content .ProseMirror > p[data-name='phDept'],
+.simple-editor__content .ProseMirror > p[data-name='phDoctor'] {
+  display: inline-block;
+  width: 33.33%;
+  margin: 0.08em 0;
+  padding: 0 8px 0 0;
+  box-sizing: border-box;
+  vertical-align: top;
+  font-size: 10.5pt;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.simple-editor__content .ProseMirror p[data-name='vitals'],
+.simple-editor__content .ProseMirror p[data-name='vitals2'] {
+  white-space: nowrap;
+  margin: 0.15em 0 0.35em;
+}
+
+/* 生命体征行内自由文本勿 max-width:100%，否则会把后面单位挤到下一行 */
+.simple-editor__content .ProseMirror p[data-name='vitals'] .emr-free-text,
+.simple-editor__content .ProseMirror p[data-name='vitals2'] .emr-free-text {
+  display: inline;
+  max-width: none;
+  white-space: nowrap;
+}
+
+.simple-editor__content .ProseMirror p[data-name='vitals'] .emr-free-text__text,
+.simple-editor__content .ProseMirror p[data-name='vitals2'] .emr-free-text__text {
+  display: inline;
+  min-width: 2ch;
+  max-width: none;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.simple-editor__content .ProseMirror p[data-name='peSection'] {
+  margin: 0.45em 0 0.15em;
+  font-weight: 700;
+}
+
+.simple-editor__content .ProseMirror p[data-name='doctorSign'],
+.simple-editor__content .ProseMirror p[data-name='signDate'] {
+  margin: 0.2em 0;
 }
 
 .simple-editor__content .ProseMirror table[data-name='signBlock'] {
@@ -1022,7 +2506,7 @@
   line-height: var(--simple-editor-line-height);
 }
 
-/* 入院记录续页头 / 核实签名：无框 */
+/* ??????? / ??????? */
 .simple-editor__content .ProseMirror table[data-name='pageHeader'],
 .simple-editor__content .ProseMirror table[data-name='verifyBlock'] {
   width: 100%;
@@ -1056,7 +2540,7 @@
   line-height: var(--simple-editor-line-height);
 }
 
-/* 心浊音界表：保留网格（与截图一致） */
+/* ????????????????? */
 .simple-editor__content .ProseMirror table[data-name='relativeCardiacBorder'] {
   width: auto;
   max-width: 100%;
@@ -1100,6 +2584,7 @@
 .simple-editor__content .ProseMirror > p[data-name='menstrualHistory'],
 .simple-editor__content .ProseMirror > p[data-name='tcmFourExams'],
 .simple-editor__content .ProseMirror > p[data-name='vitals'],
+.simple-editor__content .ProseMirror > p[data-name='vitals2'],
 .simple-editor__content .ProseMirror > p[data-name='generalCondition'],
 .simple-editor__content .ProseMirror > p[data-name='skinMucosa'],
 .simple-editor__content .ProseMirror > p[data-name='lymphNodes'],
@@ -1153,7 +2638,7 @@
   letter-spacing: 0.02em;
 }
 
-/* 文书态 / 模板态：可填数据元保留轻量视觉锚点（打印/PDF 仍走 OpenPDF，不受此影响） */
+/* ??? / ????????????????????/PDF ?? OpenPDF??????? */
 .simple-editor--surface-document
   .simple-editor__content
   .emr-de--bound.emr-de--text:not(.emr-de--readonly),
@@ -1194,15 +2679,38 @@
   box-sizing: border-box;
 }
 
-.simple-editor--surface-document .simple-editor__content .emr-metadata-chip,
-.simple-editor--surface-template .simple-editor__content .emr-metadata-chip {
+.simple-editor--surface-document
+  .simple-editor__content
+  .emr-metadata-chip:not(.emr-metadata-chip--readonly),
+.simple-editor--surface-template
+  .simple-editor__content
+  .emr-metadata-chip:not(.emr-metadata-chip--readonly) {
   padding: 0 1px;
   border-radius: 2px;
-  box-shadow: inset 0 -1.5px 0 0 #a5b4fc;
-  background: linear-gradient(180deg, transparent 70%, rgba(224, 231, 255, 0.5) 70%);
+  background: #eff6ff;
+  box-shadow: none;
 }
 
-/* 选中单元格高亮 */
+/* NodeView 外壳同步 emr-metadata-chip 可改/只读样式 */
+.simple-editor--surface-document
+  .simple-editor__content
+  .emr-fillable.emr-metadata-chip:not(.emr-metadata-chip--readonly),
+.simple-editor--surface-template
+  .simple-editor__content
+  .emr-fillable.emr-metadata-chip:not(.emr-metadata-chip--readonly) {
+  padding: 0 1px;
+  border-radius: 2px;
+  background: #eff6ff;
+}
+
+.simple-editor--surface-document .simple-editor__content .emr-metadata-chip--readonly,
+.simple-editor--surface-template .simple-editor__content .emr-metadata-chip--readonly {
+  padding: 0 1px;
+  background: transparent;
+  cursor: default;
+}
+
+/* ??????? */
 .simple-editor__content .ProseMirror .selectedCell::after {
   content: '';
   position: absolute;
@@ -1212,7 +2720,7 @@
   z-index: 1;
 }
 
-/* 列宽拖拽手柄 */
+/* ?????? */
 .simple-editor__content .ProseMirror .column-resize-handle {
   position: absolute;
   top: 0;

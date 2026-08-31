@@ -104,4 +104,15 @@ public class ProductDefinitionItemDto {
      */
     @Schema(description = "追溯码单位→拆零倍数")
     private BigDecimal traceUnitRatio;
+
+    /**
+     * 门诊拆分属性（OrderCalcRule：1/3=拆零单位可拆，2/4=包装单位）。
+     * <p>码上放心确认生成时：拆零属性须小码入库；包装属性允许中大码按包装单位入库。</p>
+     */
+    @Schema(description = "门诊拆分属性编码")
+    private String partAttributeEnum;
+
+    /** 门诊拆分属性展示名。 */
+    @Schema(description = "门诊拆分属性展示名")
+    private String partAttributeEnumDictText;
 }

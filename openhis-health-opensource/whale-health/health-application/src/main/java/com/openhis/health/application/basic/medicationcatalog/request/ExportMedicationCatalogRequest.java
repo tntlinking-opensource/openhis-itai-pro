@@ -4,7 +4,11 @@
  */
 package com.openhis.health.application.basic.medicationcatalog.request;
 
+import com.openhis.whale.core.application.dto.ExcelExportColumnDto;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
+
+import java.util.List;
 
 /**
  * 药品目录导出请求（筛选口径与维护列表一致；不分页，受 {@code EXPORT_MAX_ROWS} 截断）。
@@ -25,7 +29,13 @@ public class ExportMedicationCatalogRequest {
     private String categoryCode;
 
     /**
-     * 基药标识筛选（对应药典 {@code basic_flag}）；{@code null} 表示不限。
+     * 重点药类型筛选（{@link com.openhis.health.domain.share.enums.KeyDrugType#getCode()}）；空/{@code null} 表示不限，非空时筛对应标识为 true 的药品。
      */
-    private Boolean basicFlag;
+    private String keyDrugType;
+
+    /**
+     * 前端下发的导出列；空则导出全部列（按表头名匹配 field/title）。
+     */
+    @Schema(description = "导出列清单（页面可见列）")
+    private List<ExcelExportColumnDto> exportColumns;
 }

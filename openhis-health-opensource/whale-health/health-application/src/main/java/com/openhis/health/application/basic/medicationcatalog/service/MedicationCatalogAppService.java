@@ -64,6 +64,8 @@ import com.openhis.health.domain.administration.chargeitemdefinition.service.Cha
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
+import com.openhis.health.domain.custom.supplier.queries.model.SupplierListItemQueryModel;
+import com.openhis.health.domain.custom.supplier.service.SupplierQueryService;
 import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
 import com.openhis.health.domain.medication.medicationdefinition.service.MedicationDefinitionDomainService;
 import com.openhis.health.domain.medication.medicationdefinition.service.MedicationDefinitionQueryService;
@@ -72,12 +74,14 @@ import com.openhis.health.domain.medication.medicationdefinition.queries.model.M
 import com.openhis.health.domain.medication.medicationdefinition.queries.model.MedicationDefinitionPageQueryModel;
 import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.OrderCalcRuleEnum;
+import com.openhis.health.domain.share.enums.SupplierType;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.share.utils.FinTypeCodeMappingSupport;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.dto.PagedResult;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.exception.ValidationException;
+import com.openhis.whale.core.infrastructure.util.ChineseConvertUtils;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import com.openhis.whale.core.application.util.StringUtils;
@@ -144,7 +148,7 @@ public class MedicationCatalogAppService {
     private final CatalogEditWriteGate catalogEditWriteGate;
     /** 导入模板生成（AS-BAS-CAT-002 IMP-01 / EXP-01 共用列骨架）。 */
     private final MedicationCatalogImportTemplateBuilder medicationCatalogImportTemplateBuilder;
-    /** 导出行：详情+维护态价 → 模板 54 列中文。 */
+    /** 导出行：详情+维护态价 → 模板 56 列中文。 */
     private final MedicationCatalogExportRowAssembler medicationCatalogExportRowAssembler;
     /** 导入 xlsx 解析。 */
     private final MedicationCatalogImportWorkbookParser medicationCatalogImportWorkbookParser;
@@ -162,18 +166,20 @@ public class MedicationCatalogAppService {
     private final MedicationCatalogImportAsyncWorkflow medicationCatalogImportAsyncWorkflow;
     /** 手工新建前对齐 MD 业务序号。 */
     private final MedicationCatalogBusNoSequenceSync medicationCatalogBusNoSequenceSync;
+    /** 生产厂家主数据：下拉与展示名解析（type=生产厂家）。 */
+    private final SupplierQueryService supplierQueryService;
 
     /**
      * 药品目录维护页初始化：返回各字典下拉项（术语编码系统）及频次、库房等选项。
      *
-     * <p>供应商改由进货/退供等业务单据维护，本初始化不再下发供应商下拉。</p>
+     * <p>生产厂家下拉取自 {@code cus_supplier}（type=生产厂家、启用）；进货供应商不在本页维护。</p>
      *
      * @return 初始化 DTO，供前端表单渲染
      */
     public MedicationManageInitDto getMedicationInit() {
         // Gate：只读页初始化，无写侧操作人
         MedicationManageInitDto dto = new MedicationManageInitDto();
-        // Pre：加载术语下拉、频次与库房选项（不含供应商）
+        // Pre：加载术语下拉、频次、库房与生产厂家选项
         dto.setMedicationCategoryCodeOptions(
             terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.MEDICATION_CATEGORY_CODE));
         dto.setStatusFlagOptions(
@@ -223,8 +229,84 @@ public class MedicationCatalogAppService {
         dto.setRateCodeOptions(frequencyOptionLoader.loadActiveRateOptions());
         // 库房/药房选项：依赖机构 id；未传入时返回空，避免误列全库点位。
         dto.setLocationOptions(this.loadLocationOptions(managedOrganizationIdsResolver.resolveOrganizationUnitIdForQuery()));
+        // 生产厂家：仅 type=1 启用主数据，与进货供应商（type=2）分离
+        dto.setManufacturerOptions(this.loadManufacturerOptions());
         // Asm：映射维护页初始化 DTO
         return dto;
+    }
+
+    /**
+     * 加载启用态生产厂家下拉（value=供应商主键字符串，避免 Long 前端精度丢失）。
+     *
+     * <p>透出 {@code pyStr}/{@code wbStr}/{@code busNo}，供前端 filterable 按拼音/五笔/编号过滤。
+     * 迁移占位拼音 {@code MFG} 按名称现场重算，避免历史行无法拼音检索。</p>
+     *
+     * @return 选项列表；无数据时为空列表
+     */
+    private List<OptionDto> loadManufacturerOptions() {
+        List<SupplierListItemQueryModel> manufacturers =
+            supplierQueryService.listSuppliersByTypeAndActive(SupplierType.MANUFACTURER.getCode());
+        List<OptionDto> options = new ArrayList<>();
+        if (manufacturers == null || manufacturers.isEmpty()) {
+            return options;
+        }
+        // Loop：装配可检索厂家选项（名称 + 拼音/五笔 + 编号）
+        for (SupplierListItemQueryModel item : manufacturers) {
+            if (item == null || item.getId() == null) {
+                continue;
+            }
+            OptionDto option = new OptionDto();
+            option.setValue(String.valueOf(item.getId()));
+            option.setLabel(item.getName());
+            option.setBusNo(item.getBusNo());
+            option.setPyStr(this.resolveManufacturerPyStr(item));
+            option.setWbStr(this.resolveManufacturerWbStr(item));
+            options.add(option);
+        }
+        return options;
+    }
+
+    /**
+     * 解析厂家拼音检索码：空或迁移占位 {@code MFG} 时按名称重算。
+     *
+     * @param item 厂家列表行
+     * @return 拼音码；名称也空时返回原值（可空）
+     */
+    private String resolveManufacturerPyStr(SupplierListItemQueryModel item) {
+        if (item == null) {
+            return null;
+        }
+        String pyStr = item.getPyStr();
+        // 正常拼音直接用；迁移脚本曾把 py 写成 MFG
+        if (StringUtils.isNotEmpty(pyStr) && !"MFG".equals(pyStr)) {
+            return pyStr;
+        }
+        String name = item.getName();
+        if (StringUtils.isEmpty(name)) {
+            return pyStr;
+        }
+        return ChineseConvertUtils.toPinyinFirstLetter(name.trim());
+    }
+
+    /**
+     * 解析厂家五笔检索码：空或迁移占位 {@code MFG} 时按名称重算。
+     *
+     * @param item 厂家列表行
+     * @return 五笔码；名称也空时返回原值（可空）
+     */
+    private String resolveManufacturerWbStr(SupplierListItemQueryModel item) {
+        if (item == null) {
+            return null;
+        }
+        String wbStr = item.getWbStr();
+        if (StringUtils.isNotEmpty(wbStr) && !"MFG".equals(wbStr)) {
+            return wbStr;
+        }
+        String name = item.getName();
+        if (StringUtils.isEmpty(name)) {
+            return wbStr;
+        }
+        return ChineseConvertUtils.toWBFirstLetter(name.trim());
     }
 
     /**
@@ -250,7 +332,7 @@ public class MedicationCatalogAppService {
         pageQuery.setPageNo(query.getPageNo());
         pageQuery.setPageSize(query.getPageSize());
         pageQuery.setCategoryCode(query.getCategoryCode());
-        pageQuery.setBasicFlag(query.getBasicFlag());
+        pageQuery.setKeyDrugType(query.getKeyDrugType());
         pageQuery.setKeyword(query.getKeyword());
         // Pre：读侧分页查询主表
         Page<MedicationDefinitionPageQueryModel> pageResult = medicationDefinitionQueryService.pageMedicationCatalog(
@@ -585,7 +667,7 @@ public class MedicationCatalogAppService {
     /**
      * 按筛选条件导出药品目录（AS-BAS-CAT-002 · IF-BAS-CAT-EXP-01）。
      *
-     * <p>列序与导入模板 v1.6 字段名一致，但版式为<strong>单 Sheet</strong>（表头 + 数据紧挨，无示例/指导页）；
+     * <p>列序与导入模板 v1.7 字段名一致，但版式为<strong>单 Sheet</strong>（表头 + 数据紧挨，无示例/指导页）；
      * 维护态价经 {@code findPriceLinesByProjects} 批量回填（§2.2.3 目录维护当前价）。
      * 触达 {@link MedicationCatalogImportConstants#EXPORT_MAX_ROWS} 时截断并标记 truncated。</p>
      *
@@ -603,7 +685,7 @@ public class MedicationCatalogAppService {
         MedicationDefinitionCatalogPageQuery pageQuery = new MedicationDefinitionCatalogPageQuery();
         pageQuery.setKeyword(safeRequest.getKeyword());
         pageQuery.setCategoryCode(safeRequest.getCategoryCode());
-        pageQuery.setBasicFlag(safeRequest.getBasicFlag());
+        pageQuery.setKeyDrugType(safeRequest.getKeyDrugType());
         int fetchLimit = MedicationCatalogImportConstants.EXPORT_MAX_ROWS + 1;
         List<MedicationDefinitionDetailQueryModel> details =
             medicationDefinitionQueryService.listMedicationCatalogForExport(pageQuery, fetchLimit);
@@ -640,7 +722,8 @@ public class MedicationCatalogAppService {
             dataRows.add(medicationCatalogExportRowAssembler.toColumnValues(
                 detail, priceLines, medicationCatalogImportTerminologyIndex));
         }
-        byte[] bytes = medicationCatalogImportTemplateBuilder.buildExport(dataRows);
+        byte[] bytes = medicationCatalogImportTemplateBuilder.buildExport(
+            dataRows, safeRequest.getExportColumns());
         String fileName = MedicationCatalogImportConstants.EXPORT_FILE_NAME_PREFIX
             + LocalDateTime.now().format(
                 DateTimeFormatter.ofPattern(MedicationCatalogImportConstants.EXPORT_FILE_NAME_TIME_PATTERN))
@@ -730,11 +813,26 @@ public class MedicationCatalogAppService {
             medicationDefinitionQueryService.getMedicationCatalog(medicationDefinitionId));
         this.enrichPriceFields(dto, this.loadPriceLines(medicationDefinitionId));
         this.enrichFinTypeCodeDictText(dto);
+        // 厂家展示名：目录已无 manufacturer_text，按 manufacturerId 解析供应商名称
+        this.enrichManufacturerTextOnDetail(dto);
         CatalogEditabilityQueryModel editability =
             catalogEditabilityResolver.resolveMedicationEditability(medicationDefinitionId);
         dto.setEditabilityCode(editability.getEditabilityCode());
         dto.setEditabilityMessage(editability.getEditabilityMessage());
         return dto;
+    }
+
+    /**
+     * 详情回填生产厂家展示名（API 仍用 manufacturerText 字段承载名称）。
+     *
+     * @param dto 药品详情；无厂家主键时跳过
+     */
+    private void enrichManufacturerTextOnDetail(MedicationDetailDto dto) {
+        if (dto == null || dto.getManufacturerId() == null) {
+            return;
+        }
+        supplierQueryService.findSupplierNameIfPresent(dto.getManufacturerId())
+            .ifPresent(dto::setManufacturerText);
     }
 
     /**
@@ -791,6 +889,35 @@ public class MedicationCatalogAppService {
             }
             this.enrichPriceFields(dto, priceMap.get(dto.getId()));
             dto.setUnitBands(this.buildMedicationCatalogUnitBands(dto, unitCodeMap));
+        }
+        // 厂家展示名：按 manufacturerId 批量解析，避免 N+1
+        this.enrichManufacturerTextOnPageRows(rows);
+    }
+
+    /**
+     * 列表行批量回填生产厂家展示名。
+     *
+     * @param rows 药品列表 DTO
+     */
+    private void enrichManufacturerTextOnPageRows(List<MedicationDto> rows) {
+        List<Long> manufacturerIds = new ArrayList<>();
+        for (MedicationDto dto : rows) {
+            if (dto != null && dto.getManufacturerId() != null) {
+                manufacturerIds.add(dto.getManufacturerId());
+            }
+        }
+        if (manufacturerIds.isEmpty()) {
+            return;
+        }
+        Map<Long, String> nameById = supplierQueryService.mapNamesByIds(manufacturerIds);
+        for (MedicationDto dto : rows) {
+            if (dto == null || dto.getManufacturerId() == null) {
+                continue;
+            }
+            String name = nameById.get(dto.getManufacturerId());
+            if (StringUtils.isNotEmpty(name)) {
+                dto.setManufacturerText(name);
+            }
         }
     }
 

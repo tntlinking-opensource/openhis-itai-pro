@@ -43,4 +43,12 @@ public class SaveDoctorStationAdviceDraftBatchRequest {
     /** 批次行。 */
     @Schema(description = "批次行", requiredMode = Schema.RequiredMode.REQUIRED)
     private List<DoctorStationAdviceDraftLineRequest> lines;
+
+    /**
+     * 医生已确认皮试药可跨批号暂存（应对 EX-ORD-309 / BR-ORD-034 · IF-DOR-14）。
+     *
+     * <p>首次保存若返回 EX-ORD-309，确认后带 {@code true} 重试；签发不再二次提示。</p>
+     */
+    @Schema(description = "皮试跨批确认标志（IF-DOR-14）")
+    private Boolean confirmCrossLotSkinTest;
 }

@@ -15,6 +15,7 @@ import com.openhis.health.domain.administration.chargeitem.command.CreateChargeI
 import com.openhis.health.domain.administration.chargeitem.command.CreateChargeItemCommand;
 import com.openhis.health.domain.administration.chargeitem.command.SwitchChargeItemAccountCommand;
 import com.openhis.health.domain.administration.chargeitem.command.DeactivateChargeByExeCommand;
+import com.openhis.health.domain.administration.chargeitem.command.ManualOverridePlannedChargeItemPricesCommand;
 import com.openhis.health.domain.administration.chargeitem.command.OffsetNursePricingChargeItemsByServiceAnchorsCommand;
 import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.domain.administration.chargeitem.command.VoidOrderExecuteChargeItemsByProcedureIdsCommand;
@@ -937,6 +938,75 @@ public class ChargeItemDomainService {
     }
 
     /**
+     * 手工改价：仅 {@code PLANNED} 明细可调整单价，并写入改价审计字段。
+     *
+     * @param cmd 批量改价命令（须含 encounterId、操作人、明细与新单价）
+     * @throws BusinessException 状态非 PLANNED、就诊不一致或单价非法时
+     */
+    public void manualOverridePlannedChargeItemPrices(ManualOverridePlannedChargeItemPricesCommand cmd) {
+        if (cmd == null || cmd.getEncounterId() == null) {
+            throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "改价失败：就诊标识不能为空");
+        }
+        List<ManualOverridePlannedChargeItemPricesCommand.Item> items = cmd.resolveItems();
+        if (items.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "改价失败：未选择收费明细");
+        }
+        List<Long> ids = new ArrayList<>();
+        for (ManualOverridePlannedChargeItemPricesCommand.Item item : items) {
+            if (item == null || item.getChargeItemId() == null) {
+                throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "改价失败：收费明细主键不能为空");
+            }
+            ids.add(item.getChargeItemId());
+        }
+        Map<Long, ChargeItem> map = this.loadMap(ids);
+        List<ChargeItem> toSave = new ArrayList<>();
+        for (ManualOverridePlannedChargeItemPricesCommand.Item item : items) {
+            ChargeItem row = require(map, item.getChargeItemId());
+            if (!cmd.getEncounterId().equals(row.getEncounterId())) {
+                throw new BusinessException(
+                    ErrorCodeConstants.CHARGE_ITEM_RULE_CONFLICT,
+                    "收费明细 " + item.getChargeItemId() + " 不属于当前就诊");
+            }
+            if (!ChargeItemStatus.PLANNED.getCode().equals(row.getStatusEnum())) {
+                throw new BusinessException(
+                    ErrorCodeConstants.CHARGE_ITEM_INVALID_STATUS,
+                    "收费明细 " + item.getChargeItemId() + " 非待收费，不可改价");
+            }
+            if (item.getUnitPrice() == null) {
+                throw new BusinessException(
+                    ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT,
+                    "收费明细 " + item.getChargeItemId() + " 单价不能为空");
+            }
+            BigDecimal unitPrice = MonetaryAmountSupport.scaleCalc(item.getUnitPrice());
+            if (unitPrice.compareTo(BigDecimal.ZERO) < 0) {
+                throw new BusinessException(
+                    ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT,
+                    "收费明细 " + item.getChargeItemId() + " 单价不能为负");
+            }
+            BigDecimal quantity = row.getQuantityValue();
+            if (quantity == null || quantity.compareTo(BigDecimal.ZERO) <= 0) {
+                quantity = BigDecimal.ONE;
+            }
+            BigDecimal totalPrice = MonetaryAmountSupport.scaleSettle(
+                MonetaryAmountSupport.lineTotal(unitPrice, quantity));
+            row.setUnitPrice(unitPrice);
+            row.setTotalPrice(totalPrice);
+            row.setDiscountAmount(totalPrice);
+            row.setManualAdjustedPrice(unitPrice);
+            if (StringUtils.isNotEmpty(item.getOverrideReasonCode())) {
+                row.setOverrideReasonCode(item.getOverrideReasonCode().trim());
+            }
+            if (StringUtils.isNotEmpty(item.getOverrideReasonText())) {
+                row.setOverrideReasonText(item.getOverrideReasonText().trim());
+            }
+            toSave.add(row);
+        }
+        if (!toSave.isEmpty()) {
+            repository.saveAll(toSave);
+        }
+    }
+
+    /**
      * 住院收费预结算快照：校验待结算明细，不改写主状态（DM-ADM-011 §6.1.9b，AS-IP-FIN-003）。
      *
      * @param cmd 批量收费明细主键命令
@@ -1210,6 +1280,15 @@ public class ChargeItemDomainService {
             }
             if (StringUtils.isNotEmpty(encounterDiagnosisIds)) {
                 row.setEncounterDiagnosisIds(encounterDiagnosisIds.trim());
+            }
+            if (StringUtils.isNotEmpty(item.getOverrideReasonCode())) {
+                row.setOverrideReasonCode(item.getOverrideReasonCode().trim());
+            }
+            if (StringUtils.isNotEmpty(item.getOverrideReasonText())) {
+                row.setOverrideReasonText(item.getOverrideReasonText().trim());
+            }
+            if (item.getManualAdjustedPrice() != null) {
+                row.setManualAdjustedPrice(item.getManualAdjustedPrice());
             }
             row.setOrgId(item.getOrgId());
             row.setRequestingOrgId(item.getRequestingOrgId());

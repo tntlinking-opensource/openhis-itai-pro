@@ -70,10 +70,43 @@ const { run: runDetailPage, loading: detailLoading } = useRequest(
   {
     manual: true,
     onSuccess: (data) => {
-      detailLines.value = annotateGroupMarks(data?.records ?? []);
+      const records = data?.records ?? [];
+      detailLines.value = annotateGroupMarks(records);
+      // 点评记录等入口仅有处方号：用首行回填方头展示字段
+      fillSummaryFromFirstLine(records[0]);
     },
   },
 );
+
+/** 方头缺患者等信息时，用明细首行补齐（不覆盖已有 enrichment）。 */
+function fillSummaryFromFirstLine(first?: OutpatientPrescriptionDrugLineDto) {
+  const head = summary.value;
+  if (!head || !first) {
+    return;
+  }
+  summary.value = {
+    ...head,
+    encounterId: head.encounterId || first.encounterId,
+    encounterBusNo: head.encounterBusNo || first.encounterBusNo,
+    patientId: head.patientId || first.patientId,
+    patientName: head.patientName || first.patientName,
+    patientPhone: head.patientPhone || first.patientPhone,
+    diagnosisName: head.diagnosisName || first.diagnosisName,
+    chargeStatusEnum: head.chargeStatusEnum || first.chargeStatusEnum,
+    chargeStatusText: head.chargeStatusText || first.chargeStatusText,
+    dispenseStatusEnum: head.dispenseStatusEnum || first.dispenseStatusEnum,
+    dispenseStatusText: head.dispenseStatusText || first.dispenseStatusText,
+    orderingPractitionerName: head.orderingPractitionerName || first.orderingPractitionerName,
+    orderingDepartmentId: head.orderingDepartmentId || first.orderingDepartmentId,
+    orderingDepartmentName: head.orderingDepartmentName || first.orderingDepartmentName,
+    reqOpenedTime: head.reqOpenedTime || first.reqOpenedTime,
+    rxTypeCode: head.rxTypeCode || first.rxTypeCode,
+    rxTypeText: head.rxTypeText || first.rxTypeText,
+    medTypeCode: head.medTypeCode || first.medTypeCode,
+    medTypeText: head.medTypeText || first.medTypeText,
+    contractCategoryText: head.contractCategoryText || first.contractCategoryText,
+  };
+}
 
 /** 开方时间展示。 */
 function formatDateTime(value?: string) {
@@ -248,6 +281,7 @@ async function handlePrint() {
       scenarioCode,
       source: group,
       bizRef: {
+        scenarioCode,
         encounterId,
         prescriptionNo: rxNo,
       },
@@ -322,6 +356,40 @@ defineExpose({ open });
         <ElDescriptionsItem label="费用性质">
           {{ summary.contractCategoryText || '—' }}
         </ElDescriptionsItem>
+        <template v-if="summary.reviewStatusEnum || summary.reviewId">
+          <ElDescriptionsItem label="点评状态">
+            <ElTag
+              v-if="summary.reviewStatusText"
+              :type="summary.reviewStatusEnum === 'REVIEWED' ? 'success' : 'info'"
+              effect="light"
+            >
+              {{ summary.reviewStatusText }}
+            </ElTag>
+            <span v-else>—</span>
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="点评结果">
+            <ElTag
+              v-if="summary.reasonableText"
+              :type="summary.reasonableFlag === false ? 'danger' : 'success'"
+              effect="light"
+            >
+              {{ summary.reasonableText }}
+            </ElTag>
+            <span v-else>—</span>
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="点评人">
+            {{ summary.reviewerName || '—' }}
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="点评时间">
+            {{ formatDateTime(summary.reviewedAt) }}
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="点评原因" :span="2">
+            {{ summary.reviewReason || '—' }}
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="点评备注">
+            {{ summary.reviewRemark || '—' }}
+          </ElDescriptionsItem>
+        </template>
       </ElDescriptions>
 
       <ElTable

@@ -1,5 +1,7 @@
 @echo off
 setlocal EnableExtensions
+REM 改版本: export-opensource.bat -Force -NewVersion 2.0.6
+REM 前后端一起: whale-sever\tools\sync-opensource\sync-to-opensource.bat
 cd /d "%~dp0..\.."
 
 echo.

@@ -19,7 +19,6 @@ import com.openhis.health.domain.administration.organization.entity.Organization
 import com.openhis.health.domain.share.constants.ConsumableUsageReportConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.whale.core.application.dto.OptionDto;
-import com.openhis.whale.core.application.util.StringUtils;
 
 /**
  * 门诊耗材使用报表映射实现（AS-RPT-005）。
@@ -104,7 +103,7 @@ public class OutpatientConsumableUsageReportMapperImpl implements OutpatientCons
     }
 
     /**
-     * 明细行 → 导出行。
+     * 明细行 → 导出行（并集 DTO；列裁剪交给 AnnotatedExcelExporter + exportColumns）。
      *
      * @param row 明细行；null 时返回 null
      * @return 导出行
@@ -115,55 +114,51 @@ public class OutpatientConsumableUsageReportMapperImpl implements OutpatientCons
             return null;
         }
         OutpatientConsumableUsageExportRowDto exportRow = new OutpatientConsumableUsageExportRowDto();
+        // 字典/枚举展示文案与前端明细列对齐
         exportRow.setSourceText(row.getSourceCode_dictText());
-        if (row.getBusinessTime() != null) {
-            exportRow.setBusinessTimeText(row.getBusinessTime().format(GeneralSharedConstants.DATE_TIME_FORMATTER));
-        }
+        exportRow.setDeviceName(row.getDeviceName());
+        exportRow.setSpecText(row.getSpecText());
         exportRow.setPatientName(row.getPatientName());
         exportRow.setEncounterBusNo(row.getEncounterBusNo());
         exportRow.setFeeNatureDisplay(row.getFeeNatureDisplay());
         exportRow.setMedTypeDisplay(row.getMedTypeDisplay());
         exportRow.setOrganizationName(row.getOrganizationName());
         exportRow.setLocationName(row.getLocationName());
-        exportRow.setDeviceName(row.getDeviceName());
-        exportRow.setSpecText(row.getSpecText());
+        exportRow.setStatusOrTypeText(row.getStatusOrTypeEnum_enumText());
         exportRow.setQuantity(row.getQuantity());
         exportRow.setUnitText(row.getUnitCode_dictText());
-        exportRow.setAmount(row.getAmount());
         exportRow.setPurchaseUnitPrice(row.getPurchaseUnitPrice());
         exportRow.setPurchaseAmount(row.getPurchaseAmount());
         exportRow.setSaleUnitPrice(row.getSaleUnitPrice());
         exportRow.setSaleAmount(row.getSaleAmount());
         exportRow.setLotNumber(row.getLotNumber());
-        exportRow.setStatusOrTypeText(row.getStatusOrTypeEnum_enumText());
         exportRow.setPerformerName(row.getPerformerName());
+        exportRow.setBusNo(row.getBusNo());
+        if (row.getBusinessTime() != null) {
+            exportRow.setBusinessTimeText(row.getBusinessTime().format(GeneralSharedConstants.DATE_TIME_FORMATTER));
+        }
         return exportRow;
     }
 
     /**
-     * 汇总行 → 导出行。
+     * 汇总行 → 导出行（并集 DTO；列裁剪交给 AnnotatedExcelExporter + exportColumns）。
      *
      * @param row 汇总行；null 时返回 null
      * @return 导出行
      */
     @Override
-    public OutpatientConsumableUsageExportRowDto toExportRowFromSummary(OutpatientConsumableUsageSummaryRowDto row) {
+    public OutpatientConsumableUsageExportRowDto toExportRowFromSummary(
+        OutpatientConsumableUsageSummaryRowDto row) {
         if (row == null) {
             return null;
         }
         OutpatientConsumableUsageExportRowDto exportRow = new OutpatientConsumableUsageExportRowDto();
-        exportRow.setPatientName(row.getPatientName());
-        exportRow.setOrganizationName(row.getOrganizationName());
-        exportRow.setLocationName(row.getLocationName());
-        exportRow.setDeviceName(row.getDeviceName());
-        // CATEGORY 等无分列主键时用统一维度名回填品名列，避免汇总导出空维度
-        if (StringUtils.isEmpty(exportRow.getDeviceName()) && StringUtils.isNotEmpty(row.getDimensionName())) {
-            exportRow.setDeviceName(row.getDimensionName());
-        }
-        exportRow.setQuantity(row.getNetQuantity());
-        exportRow.setAmount(row.getSaleNetAmount());
-        exportRow.setPurchaseAmount(row.getPurchaseNetAmount());
-        exportRow.setSaleAmount(row.getSaleNetAmount());
+        exportRow.setDimensionName(row.getDimensionName());
+        exportRow.setNetQuantity(row.getNetQuantity());
+        exportRow.setPurchaseUnitPrice(row.getPurchaseUnitPrice());
+        exportRow.setSaleUnitPrice(row.getSaleUnitPrice());
+        exportRow.setPurchaseNetAmount(row.getPurchaseNetAmount());
+        exportRow.setSaleNetAmount(row.getSaleNetAmount());
         return exportRow;
     }
 

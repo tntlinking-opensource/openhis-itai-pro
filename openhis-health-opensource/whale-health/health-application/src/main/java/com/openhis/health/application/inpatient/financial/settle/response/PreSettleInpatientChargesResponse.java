@@ -6,11 +6,13 @@ package com.openhis.health.application.inpatient.financial.settle.response;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.openhis.health.application.inpatient.financial.settle.dto.InpatientPrepayRefundPlanItemDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 /**
  * 住院预结算响应（IF-IP-STL-05）。
@@ -38,16 +40,51 @@ public class PreSettleInpatientChargesResponse {
     private Boolean insurancePreSettled;
 
     /**
-     * 渠道实付/少补预览（预交金充足时为 0）。
+     * 渠道实付 C（收银员 {@code paymentDetails} 合计须等于本字段；C=0 时可空数组）。
      *
-     * <p>自费：{@code max(0, 本批应收 − 库内预交金)}；医保：{@code max(0, 个人现金 − 库内预交金)}。</p>
+     * <p>DD 契约：本字段恒为 C，不再表示「自费少补 / 医保全额」双语义；个人现金应付见
+     * {@link #personalCashPayable}。</p>
      */
-    @Schema(description = "渠道实付/少补（预交金充足时为 0）")
+    @Schema(description = "渠道实付 C（确认结算 paymentDetails 合计须等于本值）")
     private BigDecimal displayAmount;
 
-    /** 预结算时点的库内预交金余额（登记个人现金户 balance，供前端展示冲抵）。 */
-    @Schema(description = "库内预交金余额")
+    /**
+     * 个人现金应付 P（结算 payment 主单 tendered/display 拟落金额；医保=psnCashPay，自费=本批应收）。
+     */
+    @Schema(description = "个人现金应付 P（结算主单金额）")
+    private BigDecimal personalCashPayable;
+
+    /** 预交金冲抵额 O（服务端写入冲抵明细；前端只读展示）。 */
+    @Schema(description = "预交金冲抵额 O")
+    private BigDecimal depositOffsetAmount;
+
+    /** 应退预交金金额（R3=D−P；R4/R6 含银联=D；R1/R2=0）。 */
+    @Schema(description = "应退预交金金额")
+    private BigDecimal prepayRefundAmount;
+
+    /** 是否全额退清预交金 D（R4 及 R6 含银联为 true）。 */
+    @Schema(description = "是否全额退预交金")
+    private Boolean prepayFullRefund;
+
+    /** 轧差分支码（R1～R7；调试/文案用）。 */
+    @Schema(description = "预交金轧差分支 R1～R7")
+    private String depositSettleRuleCode;
+
+    /** 预结算时点的库内预交金余额 D（登记个人现金户 balance）。 */
+    @Schema(description = "库内预交金余额 D")
     private BigDecimal prepayNetBalance;
+
+    /**
+     * 预交金是否足以覆盖个人现金（{@code D >= P}；展示口径，与分支表一致）。
+     */
+    @Schema(description = "预交金是否够用（余额≥个人现金）")
+    private Boolean prepaySufficient;
+
+    /**
+     * 出院结算后原路退预交金拆分计划（LIFO；自费与医保共用；无退时为空）。
+     */
+    @Schema(description = "预交金原路退计划")
+    private List<InpatientPrepayRefundPlanItemDto> prepayRefundPlan;
 
     /** 医保医疗费总额。 */
     @Schema(description = "医保医疗费总额")

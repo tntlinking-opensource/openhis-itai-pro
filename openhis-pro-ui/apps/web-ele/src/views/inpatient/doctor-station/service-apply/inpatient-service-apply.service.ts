@@ -9,20 +9,18 @@ import {
   httpInitInpatientDoctorStationAdvice,
   httpPageInpatientDoctorStationAdviceCatalog,
   httpSaveInpatientDoctorStationServiceApplyForm,
-  httpSignInpatientDoctorStationAdviceBatch,
 } from '#/api/inpatient/doctor-station/inpatient-doctor-station-advice.http';
 import { fetchEncounterDiagnosisDisplayList } from '#/components/doctor-station/diagnosis/services/encounter-diagnosis.service';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
-import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import { loadAllDepartmentPerformOrgOptions } from '#/views/doctor-station/advice-shared/perform-org-options.service';
 import {
   SERVICE_APPLY_ACTIVITY_TABLE,
   SERVICE_APPLY_CATALOG_PAGE_SIZE,
-  SERVICE_APPLY_SIGN_PRODUCT_TABLE,
 } from '#/views/outpatient/doctor-station/service-apply/service-apply.constants';
 import {
   isValidServiceApplyCatalogRow,
   resolveServiceApplyCategoryEnum,
+  signServiceApplyRequests as signServiceApplyRequestsShared,
 } from '#/views/outpatient/doctor-station/service-apply/service-apply.service';
 
 export {
@@ -134,17 +132,10 @@ export async function signServiceApplyRequests(params: {
   encounterId: string;
   patientId: string;
   requestIds: string[];
+  stationScope?: 'inpatient' | 'outpatient';
 }): Promise<void> {
-  const signTargets = params.requestIds.map((requestId) => ({
-    requestId: preserveApiIdForRequest(requestId) ?? requestId,
-    productTableName: SERVICE_APPLY_SIGN_PRODUCT_TABLE,
-  }));
-  const res = await httpSignInpatientDoctorStationAdviceBatch({
-    encounterId: params.encounterId,
-    patientId: params.patientId,
-    signTargets,
+  await signServiceApplyRequestsShared({
+    ...params,
+    stationScope: params.stationScope ?? 'inpatient',
   });
-  if (res.success === false) {
-    throw new Error(String(res.message ?? '').trim() || '签发失败');
-  }
 }

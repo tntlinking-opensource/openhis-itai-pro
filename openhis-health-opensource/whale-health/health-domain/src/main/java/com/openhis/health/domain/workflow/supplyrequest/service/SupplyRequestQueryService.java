@@ -19,6 +19,7 @@ import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyByOriginal
 import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyRequestIdListQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.VerifyAbleEditQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.DeptIssueReportLineQueryModel;
+import com.openhis.health.domain.workflow.supplyrequest.queries.model.DeptIssueReportSummaryBundle;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.DeptIssueReportSummaryRow;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestValidationModel;
@@ -703,17 +704,30 @@ public class SupplyRequestQueryService {
      * @return 净汇总行
      */
     public List<DeptIssueReportSummaryRow> summarizeDeptIssueReport(DeptIssueReportPageQuery query) {
+        return this.summarizeDeptIssueReportWithLines(query).getSummaryRows();
+    }
+
+    /**
+     * 科室领用/退领净汇总，并同次扫描产出明细事实行。
+     *
+     * <p>筛选与 {@link #summarizeDeptIssueReport} 一致；一次 {@code findAll} 同时分桶与映射明细行，
+     * 供应用层汇总进价复用，禁止再按页二次扫描同一窗。</p>
+     *
+     * @param query 筛选 + {@code summaryDimension}；DEPARTMENT 维须预解析组织映射
+     * @return 汇总行 + 同窗明细事实；无命中时两边均为空列表
+     */
+    public DeptIssueReportSummaryBundle summarizeDeptIssueReportWithLines(DeptIssueReportPageQuery query) {
+        DeptIssueReportSummaryBundle bundle = new DeptIssueReportSummaryBundle();
         if (query == null) {
             query = new DeptIssueReportPageQuery();
         }
         // Gate：缺品规表拒查
         if (StringUtils.isEmpty(query.getItemTable())) {
-            return Collections.emptyList();
+            return bundle;
         }
-        // Pre：全量命中后按维分桶
+        // Pre：全量命中后按维分桶；汇总不分页排序
         Specification<SupplyRequest> specification = this.buildDeptIssueReportSpecification(query);
-        Sort sort = Sort.by(Sort.Order.desc(FieldNameConstants.APPROVAL_TIME));
-        List<SupplyRequest> rows = supplyRequestRepository.findAll(specification, sort);
+        List<SupplyRequest> rows = supplyRequestRepository.findAll(specification);
         String dimension = StringUtils.trimToNull(query.getSummaryDimension());
         if (dimension == null) {
             dimension = DeptIssueReportConstants.SUMMARY_DIMENSION_DEPARTMENT;
@@ -722,8 +736,9 @@ public class SupplyRequestQueryService {
         if (orgByLocation == null) {
             orgByLocation = Map.of();
         }
-        // Asm：退领数量取负
+        // Asm：退领数量取负；同环映射明细行供定价
         Map<String, DeptIssueReportSummaryRow> bucketByKey = new LinkedHashMap<>();
+        List<DeptIssueReportLineQueryModel> lineRows = new ArrayList<>(rows.size());
         for (SupplyRequest row : rows) {
             if (row == null) {
                 continue;
@@ -742,8 +757,11 @@ public class SupplyRequestQueryService {
             BigDecimal signedQty = this.resolveDeptIssueReportSignedQuantity(row);
             summary.setNetQuantity(summary.getNetQuantity().add(signedQty));
             summary.setLineCount(summary.getLineCount() + 1L);
+            lineRows.add(this.toDeptIssueReportLineModel(row));
         }
-        return new ArrayList<>(bucketByKey.values());
+        bundle.setSummaryRows(new ArrayList<>(bucketByKey.values()));
+        bundle.setLineRows(lineRows);
+        return bundle;
     }
 
     /**

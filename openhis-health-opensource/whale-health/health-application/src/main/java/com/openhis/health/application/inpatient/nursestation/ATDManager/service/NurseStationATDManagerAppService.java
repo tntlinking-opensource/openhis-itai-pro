@@ -1340,27 +1340,18 @@ public class NurseStationATDManagerAppService {
     }
 
     /**
-     * 解析出院时刻：优先已校对出院医嘱计划时间，否则当前时刻。
+     * 解析出院时刻：优先已校对/有效出院医嘱计划时间，否则当前时刻。
+     *
+     * <p>跳过已取消出院嘱；多条有效嘱取最后一条有计划时间的。</p>
      *
      * @param encounterId 就诊主键
      * @return 出院时间
      */
     private LocalDateTime resolveDischargedAt(Long encounterId) {
-        List<ServiceRequestListModel> serviceRequests =
-            serviceRequestQueryService.listServiceRequestsByEncounter(encounterId);
-        LocalDateTime dischargedAt = null;
-        for (ServiceRequestListModel row : serviceRequests) {
-            if (row == null) {
-                continue;
-            }
-            if (!InpatientNurseStationConstants.SERVICE_CATEGORY_DISCHARGE.equals(row.getCategoryEnum())) {
-                continue;
-            }
-            if (row.getOccurrenceStartTime() != null) {
-                dischargedAt = row.getOccurrenceStartTime();
-                break;
-            }
-        }
+        Map<Long, LocalDateTime> planned =
+            serviceRequestQueryService.mapDischargePlannedTimeByEncounterIds(List.of(encounterId));
+        LocalDateTime dischargedAt = planned.get(encounterId);
+        // 无有效出院嘱计划时间时回落当前时刻（办理出院必写 end_time）
         if (dischargedAt == null) {
             dischargedAt = LocalDateTime.now();
         }

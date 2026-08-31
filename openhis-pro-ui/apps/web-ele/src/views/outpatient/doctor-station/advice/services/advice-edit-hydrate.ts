@@ -15,6 +15,7 @@ import {
   hydrateAdviceRowDoseFromBackend,
   resolveAdviceLineUnitPrice,
 } from './medication-unit-bands';
+import { resolveServicePerExecutionQuantity } from './service-quantity-calc';
 
 type AdviceDrugItemSeed = Partial<AdviceDrugItem> & {
   listDose?: number;
@@ -93,19 +94,25 @@ export function buildAdviceDrugItemSeedFromListRow(
     listDose: row.listDose,
     listDoseUnitCode: row.listDoseUnitCode,
     ...(isService
-      ? {
-          serviceQuantity: qty ?? 1,
-          totalAmount: positiveInt(row.listExecutionCount) ?? 1,
-          totalAmountUnit: unitCode,
-          ...(unitCode
-            ? {
-                totalUnitSalesCode: unitCode,
-                totalUnitSalesName: unitName || unitCode,
-              }
-            : {}),
-          performOrgId: String(row.performOrgId ?? '').trim() || undefined,
-          performOrgName: String(row.performOrgName ?? '').trim() || undefined,
-        }
+      ? (() => {
+          // 落库 quantity 为总量；编辑卡回显单次执行数量 = 总量 ÷ 执行次数
+          const execCount = positiveInt(row.listExecutionCount) ?? 1;
+          const totalQty = qty !== undefined && qty > 0 ? qty : 1;
+          const perQty = resolveServicePerExecutionQuantity(totalQty, execCount) ?? totalQty;
+          return {
+            serviceQuantity: perQty,
+            totalAmount: execCount,
+            totalAmountUnit: unitCode,
+            ...(unitCode
+              ? {
+                  totalUnitSalesCode: unitCode,
+                  totalUnitSalesName: unitName || unitCode,
+                }
+              : {}),
+            performOrgId: String(row.performOrgId ?? '').trim() || undefined,
+            performOrgName: String(row.performOrgName ?? '').trim() || undefined,
+          };
+        })()
       : {
           totalAmount: qty,
           totalAmountUnit: unitCode,

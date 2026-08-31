@@ -279,7 +279,8 @@ public class TraceNumberReportAppService {
             byte[] body = AnnotatedExcelExporter.exportToXlsxBytes(
                 TraceNumberReportExportConstants.SHEET_NAME,
                 exportRows,
-                TraceNumberReportExportRowDto.class);
+                TraceNumberReportExportRowDto.class,
+                request.getExportColumns());
             ExportTraceNumberReportResponse response = new ExportTraceNumberReportResponse();
             String fileName = TraceNumberReportExportConstants.FILE_NAME_PREFIX + "_"
                 + GeneralSharedConstants.EXPORT_FILE_TIMESTAMP_FORMATTER.format(LocalDateTime.now())

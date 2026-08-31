@@ -41,7 +41,12 @@ public class SaveDistributionConfigCommand extends BatchCommand<SaveDistribution
         private Long defLocationId;
         /** 物品定义主键（细粒度规则；与类别规则二选一或叠加）。 */
         private Long itemDefinitionId;
-        /** 发药方式字典码（窗口/配药中心等）。 */
+        /**
+         * 耗材种类编码（术语 {@code device_type_code}）；空为通配。
+         * 药品行通常为空。
+         */
+        private String typeCode;
+        /** 发药方式/给药途径字典码；空为通配。 */
         private String methodCode;
         /** 规则生效日始时刻（闭区间左端，可空表示全天）。 */
         private LocalTime startTime;

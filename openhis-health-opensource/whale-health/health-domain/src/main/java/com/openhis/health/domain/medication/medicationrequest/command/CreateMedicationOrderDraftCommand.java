@@ -76,4 +76,16 @@ public class CreateMedicationOrderDraftCommand {
      * 医嘱备注（落库 {@code med_medication_request.remark}；护士站随医嘱展示）。
      */
     private String remark;
+
+    /**
+     * 来源表名（住院长嘱改量链：{@code med_medication_request}；可空表示非改量草稿）。
+     *
+     * <p>与 {@link #basedOnId} 成对；门诊半退等其它 based_on 语义由各自命令写入，勿混用。</p>
+     */
+    private String basedOnTable;
+
+    /**
+     * 来源主键（住院改量时=源长期药嘱 id；可空）。
+     */
+    private Long basedOnId;
 }

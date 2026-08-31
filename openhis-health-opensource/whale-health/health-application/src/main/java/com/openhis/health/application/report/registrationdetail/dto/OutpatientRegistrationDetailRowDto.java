@@ -7,6 +7,7 @@ package com.openhis.health.application.report.registrationdetail.dto;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.openhis.health.domain.share.constants.ChargeItemAmountScaleConstants;
 import com.openhis.whale.core.application.annotation.Excel;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -115,8 +116,8 @@ public class OutpatientRegistrationDetailRowDto {
     @Schema(description = "医保类型展示")
     private String insuranceTypeDisplay;
 
-    /** 挂号费金额（号源锚点 chargeItem 合计）。 */
-    @Excel(name = "挂号费", sort = 10)
+    /** 挂号费金额（号源锚点 chargeItem 合计；展示 2 位）。 */
+    @Excel(name = "挂号费", sort = 10, scale = ChargeItemAmountScaleConstants.CHARGE_MONETARY_DISPLAY_SCALE)
     @Schema(description = "挂号费金额")
     private BigDecimal registrationFeeAmount;
 }

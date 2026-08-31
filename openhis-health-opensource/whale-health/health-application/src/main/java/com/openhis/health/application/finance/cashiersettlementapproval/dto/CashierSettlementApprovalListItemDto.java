@@ -82,9 +82,9 @@ public class CashierSettlementApprovalListItemDto implements CashierSettlementPa
     private Integer paymentCount;
 
     /**
-     * 列表金额：收款日结=头表总收入快照；药房日结审批展示=挂载发药售价合计（大类售价之和）。
+     * 列表金额：头表 {@code total_income} 快照（收款=总收入；药房=售价合计）；详情药房现算售价合计复核。
      */
-    @Schema(description = "列表金额（收款=总收入；药房审批展示=售价合计）")
+    @Schema(description = "列表金额（头表快照：收款=总收入；药房=售价合计）")
     private BigDecimal totalIncome;
 
     /** 提交人主键。 */

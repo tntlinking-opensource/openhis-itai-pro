@@ -118,8 +118,8 @@ function handleDiagnosisIdsUpdate(value: string[]) {
 
       <div v-if="showTherapyType" class="tcm-rx-header__therapy shrink-0">
         <ElRadioGroup v-model="model.therapyEnum" :disabled="disabled">
-          <ElRadio label="LONG_TERM">长期</ElRadio>
-          <ElRadio label="TEMPORARY">临时</ElRadio>
+          <ElRadio value="LONG_TERM">长期</ElRadio>
+          <ElRadio value="TEMPORARY">临时</ElRadio>
         </ElRadioGroup>
       </div>
 

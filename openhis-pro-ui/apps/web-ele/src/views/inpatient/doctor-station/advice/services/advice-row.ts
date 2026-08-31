@@ -257,3 +257,33 @@ export function rowLooksAppendSkinTestEligible(row: AdviceRowItem): boolean {
   if (/\bSTOPPED\b|已停嘱/.test(blob)) return false;
   return true;
 }
+
+/**
+ * 住院长期药品改量：已校对或已停嘱的药品行（IF-IP-DOR-28）。
+ * 诊疗/草稿/临嘱/出院带药不可改量。
+ */
+export function rowLooksChangeDoseEligible(row: AdviceRowItem): boolean {
+  if (row.isEditor) return false;
+  if (!resourceKeyFromRow(row)) return false;
+  if (rowLooksDraft(row)) return false;
+  const resource = String(row.resourceType ?? '')
+    .trim()
+    .toUpperCase();
+  if (resource && resource !== 'MEDICATION' && resource !== 'MED') {
+    // 仅药品
+    const pt = String(row.productTableName ?? '')
+      .trim()
+      .toLowerCase();
+    if (!pt.includes('medication')) return false;
+  }
+  const therapy = String(row.therapyTypeCode ?? '')
+    .trim()
+    .toUpperCase();
+  if (therapy && therapy !== 'LONG_TERM') return false;
+  const statusCode = String(row.statusEnum ?? '')
+    .trim()
+    .toUpperCase();
+  if (statusCode === 'VERIFIED' || statusCode === 'STOPPED') return true;
+  if (rowLooksStopped(row)) return true;
+  return false;
+}

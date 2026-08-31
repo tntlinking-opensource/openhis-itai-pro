@@ -1,10 +1,10 @@
 /**
  * 护士工作量统计 — POST /api/app/nurseWorkloadReport/{methodName}
  */
+import { reportPost } from '#/constants/report-request-timeout';
 import type { PageParams } from '#/types/api-response';
+import type { ExcelExportColumnPayload } from '#/utils/export/build-excel-export-columns';
 
-import { publicRequestClient } from '#/api/request';
-import { reportLongRequestConfig } from '#/constants/report-request-timeout';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
 const BASE = '/nurseWorkloadReport';
@@ -23,8 +23,10 @@ export interface OptionDto {
 }
 
 export interface LoadNurseWorkloadFormInitRequest {
-  /** 就诊范围；切换门诊/住院时用于刷新开立科室下拉。 */
+  /** 就诊范围；切换门诊/住院时用于刷新默认登录科室下拉。 */
   encounterScope?: EncounterScope;
+  /** 默认登录科室；已选时护士下拉仅返回该科人员。 */
+  organizationId?: string;
 }
 
 export interface LoadNurseWorkloadFormInitResponse {
@@ -33,6 +35,7 @@ export interface LoadNurseWorkloadFormInitResponse {
   defaultDateTo?: string;
   encounterScopeOptions?: OptionDto[];
   nurseOptions?: OptionDto[];
+  /** 默认登录科室下拉（对应 Practitioner.org_id）。 */
   organizationOptions?: OptionDto[];
 }
 
@@ -40,9 +43,10 @@ export interface NurseWorkloadQueryFilter {
   encounterScope: EncounterScope;
   dateFrom: string;
   dateTo: string;
-  /** 开立科室（ChargeItem.requesting_org_id）。 */
-  requestingOrgId?: string;
-  /** 遗留字段；与 requestingOrgId 同值提交。 */
+  /**
+   * 默认登录科室（Practitioner.org_id）。
+   * 已选时统计该科下全部护士工作量。
+   */
   organizationId?: string;
   practitionerId?: string;
 }
@@ -139,6 +143,8 @@ export interface PageNurseConsumableWorkloadDetailResponse {
 
 export interface ExportNurseWorkloadDetailRequest extends NurseWorkloadQueryFilter {
   mainTabCode: NurseMainTabCode;
+  /** 当前 Tab 明细可见列 → 后端 Excel 列裁剪 */
+  exportColumns?: ExcelExportColumnPayload[];
 }
 
 export interface ExportNurseWorkloadDetailResponse {
@@ -171,11 +177,21 @@ export interface NurseWorkloadNurseCardDto {
 
 export interface ListNurseWorkloadNurseCardsResponse {
   cards?: NurseWorkloadNurseCardDto[];
+  /** 诊疗执行总次数（与汇总 IF 同口径）。 */
+  totalExecutionCount?: number;
+  /** 诊疗执行售价合计。 */
+  totalExecutionSaleAmount?: number | string;
+  /** 耗材总数量。 */
+  totalConsumableQuantity?: number | string;
+  /** 耗材售价合计。 */
+  totalConsumableSaleAmount?: number | string;
+  /** 耗材进价合计；全无进价时为 null。 */
+  totalConsumablePurchaseAmount?: number | string | null;
 }
 
-/** 页面初始化：就诊范围、开立科室、护士下拉与默认日期。 */
+/** 页面初始化：就诊范围、默认登录科室、护士下拉与默认日期。 */
 export async function loadNurseWorkloadFormInitApi(body?: LoadNurseWorkloadFormInitRequest) {
-  return publicRequestClient.post<LoadNurseWorkloadFormInitResponse>(
+  return reportPost<LoadNurseWorkloadFormInitResponse>(
     `${BASE}/loadNurseWorkloadFormInit`,
     body ?? {},
   );
@@ -183,19 +199,17 @@ export async function loadNurseWorkloadFormInitApi(body?: LoadNurseWorkloadFormI
 
 /** 护士卡片墙批量查询（一次扫库按人分桶；轻量 enrich）。 */
 export async function listNurseWorkloadNurseCardsApi(body: NurseWorkloadQueryFilter) {
-  return publicRequestClient.post<ListNurseWorkloadNurseCardsResponse>(
+  return reportPost<ListNurseWorkloadNurseCardsResponse>(
     `${BASE}/listNurseWorkloadNurseCards`,
     body,
-    reportLongRequestConfig(),
   );
 }
 
 /** 诊疗执行汇总。 */
 export async function summarizeNurseExecutionWorkloadApi(body: NurseWorkloadQueryFilter) {
-  return publicRequestClient.post<SummarizeNurseExecutionWorkloadResponse>(
+  return reportPost<SummarizeNurseExecutionWorkloadResponse>(
     `${BASE}/summarizeNurseExecutionWorkload`,
     body,
-    reportLongRequestConfig(),
   );
 }
 
@@ -203,10 +217,9 @@ export async function summarizeNurseExecutionWorkloadApi(body: NurseWorkloadQuer
 export async function pageNurseExecutionWorkloadDetailApi(
   body: PageNurseExecutionWorkloadDetailRequest,
 ) {
-  const res = await publicRequestClient.post<PageNurseExecutionWorkloadDetailResponse>(
+  const res = await reportPost<PageNurseExecutionWorkloadDetailResponse>(
     `${BASE}/pageNurseExecutionWorkloadDetail`,
     body,
-    reportLongRequestConfig(),
   );
   const { content, totalCount } = parsePagedRowsFromApiData<NurseExecutionDetailRowDto>(res);
   return {
@@ -218,10 +231,9 @@ export async function pageNurseExecutionWorkloadDetailApi(
 
 /** 耗材使用汇总。 */
 export async function summarizeNurseConsumableWorkloadApi(body: NurseWorkloadQueryFilter) {
-  return publicRequestClient.post<SummarizeNurseConsumableWorkloadResponse>(
+  return reportPost<SummarizeNurseConsumableWorkloadResponse>(
     `${BASE}/summarizeNurseConsumableWorkload`,
     body,
-    reportLongRequestConfig(),
   );
 }
 
@@ -229,10 +241,9 @@ export async function summarizeNurseConsumableWorkloadApi(body: NurseWorkloadQue
 export async function pageNurseConsumableWorkloadDetailApi(
   body: PageNurseConsumableWorkloadDetailRequest,
 ) {
-  const res = await publicRequestClient.post<PageNurseConsumableWorkloadDetailResponse>(
+  const res = await reportPost<PageNurseConsumableWorkloadDetailResponse>(
     `${BASE}/pageNurseConsumableWorkloadDetail`,
     body,
-    reportLongRequestConfig(),
   );
   const { content, totalCount } = parsePagedRowsFromApiData<NurseConsumableDetailRowDto>(res);
   return {
@@ -244,9 +255,5 @@ export async function pageNurseConsumableWorkloadDetailApi(
 
 /** 导出当前主 Tab 明细 Excel。 */
 export async function exportNurseWorkloadDetailApi(body: ExportNurseWorkloadDetailRequest) {
-  return publicRequestClient.post<ExportNurseWorkloadDetailResponse>(
-    `${BASE}/exportNurseWorkloadDetail`,
-    body,
-    reportLongRequestConfig(),
-  );
+  return reportPost<ExportNurseWorkloadDetailResponse>(`${BASE}/exportNurseWorkloadDetail`, body);
 }

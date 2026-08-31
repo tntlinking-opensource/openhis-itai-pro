@@ -271,7 +271,6 @@ public class MedicationDefinitionDomainService {
         definition.setMrSettlementTypeCode(item.getMrSettlementTypeCode());
         definition.setPharmacologyCategoryCode(item.getPharmacologyCategoryCode());
         definition.setManufacturerId(item.getManufacturerId());
-        definition.setManufacturerText(item.getManufacturerText());
         // 目录维护不再采集供应商；应用层写入的 Command.supplyId 恒为 null
         definition.setSupplyId(item.getSupplyId());
         definition.setApprovalNumber(item.getApprovalNumber());
@@ -290,6 +289,8 @@ public class MedicationDefinitionDomainService {
         definition.setItemMinQuantity(item.getItemMinQuantity());
         definition.setItemMaxQuantity(item.getItemMaxQuantity());
         definition.setBasicFlag(item.getBasicFlag());
+        definition.setNationalMonitorFlag(item.getNationalMonitorFlag());
+        definition.setCentralPurchaseFlag(item.getCentralPurchaseFlag());
         definition.setSkinTestFlag(item.getSkinTestFlag());
         definition.setInjectFlag(item.getInjectFlag());
         definition.setChildrenFlag(item.getChildrenFlag());
@@ -345,7 +346,6 @@ public class MedicationDefinitionDomainService {
         definition.setMrSettlementTypeCode(item.getMrSettlementTypeCode());
         definition.setPharmacologyCategoryCode(item.getPharmacologyCategoryCode());
         definition.setManufacturerId(item.getManufacturerId());
-        definition.setManufacturerText(item.getManufacturerText());
         // 目录维护不再采集供应商；应用层写入的 Command.supplyId 恒为 null
         definition.setSupplyId(item.getSupplyId());
         definition.setApprovalNumber(item.getApprovalNumber());
@@ -364,6 +364,8 @@ public class MedicationDefinitionDomainService {
         definition.setItemMinQuantity(item.getItemMinQuantity());
         definition.setItemMaxQuantity(item.getItemMaxQuantity());
         definition.setBasicFlag(item.getBasicFlag());
+        definition.setNationalMonitorFlag(item.getNationalMonitorFlag());
+        definition.setCentralPurchaseFlag(item.getCentralPurchaseFlag());
         definition.setSkinTestFlag(item.getSkinTestFlag());
         definition.setInjectFlag(item.getInjectFlag());
         definition.setChildrenFlag(item.getChildrenFlag());

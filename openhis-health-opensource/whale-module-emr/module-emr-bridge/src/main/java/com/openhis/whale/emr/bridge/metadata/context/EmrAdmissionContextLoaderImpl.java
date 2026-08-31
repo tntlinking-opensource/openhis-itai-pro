@@ -6,7 +6,11 @@ package com.openhis.whale.emr.bridge.metadata.context;
 
 import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.administration.encounter.entity.Encounter;
+import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
+import com.openhis.health.domain.administration.encounter.service.EncounterContextQueryService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
+import com.openhis.health.domain.administration.location.entity.Location;
+import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.patient.entity.Patient;
 import com.openhis.health.domain.administration.patient.service.PatientQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
@@ -14,10 +18,14 @@ import com.openhis.health.domain.administration.practitioner.service.Practitione
 import com.openhis.health.domain.administration.organization.entity.Organization;
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
 import com.openhis.health.domain.financial.contract.service.ContractQueryService;
+import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
+import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.MaritalStatus;
 import com.openhis.health.domain.share.enums.OccupationType;
 import com.openhis.health.domain.share.enums.OrganizationType;
 import com.openhis.health.domain.share.utils.EnumUtil;
+import com.openhis.health.domain.share.utils.InpatientStayDaysCalculator;
+import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
 import com.openhis.whale.emr.domain.loader.EmrAdmissionContextLoader;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
@@ -27,7 +35,6 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.Period;
 import java.time.format.DateTimeFormatter;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -48,26 +55,35 @@ public class EmrAdmissionContextLoaderImpl implements EmrAdmissionContextLoader 
 
     private final PatientQueryService patientQueryService;
     private final EncounterQueryService encounterQueryService;
+    private final EncounterContextQueryService encounterContextQueryService;
+    private final LocationQueryService locationQueryService;
     private final PractitionerQueryService practitionerQueryService;
     private final OrganizationQueryService organizationQueryService;
     private final AccountQueryService accountQueryService;
     private final ContractQueryService contractQueryService;
+    private final ServiceRequestQueryService serviceRequestQueryService;
     private final EmrDiagnosisMetadataContributor diagnosisMetadataContributor;
 
     public EmrAdmissionContextLoaderImpl(
             PatientQueryService patientQueryService,
             EncounterQueryService encounterQueryService,
+            EncounterContextQueryService encounterContextQueryService,
+            LocationQueryService locationQueryService,
             PractitionerQueryService practitionerQueryService,
             OrganizationQueryService organizationQueryService,
             AccountQueryService accountQueryService,
             ContractQueryService contractQueryService,
+            ServiceRequestQueryService serviceRequestQueryService,
             EmrDiagnosisMetadataContributor diagnosisMetadataContributor) {
         this.patientQueryService = patientQueryService;
         this.encounterQueryService = encounterQueryService;
+        this.encounterContextQueryService = encounterContextQueryService;
+        this.locationQueryService = locationQueryService;
         this.practitionerQueryService = practitionerQueryService;
         this.organizationQueryService = organizationQueryService;
         this.accountQueryService = accountQueryService;
         this.contractQueryService = contractQueryService;
+        this.serviceRequestQueryService = serviceRequestQueryService;
         this.diagnosisMetadataContributor = diagnosisMetadataContributor;
     }
 
@@ -192,26 +208,176 @@ public class EmrAdmissionContextLoaderImpl implements EmrAdmissionContextLoader 
         put(target, "insurance.payorName", payorName);
         LocalDateTime bedAssignedAt = encounterQueryService.findFirstBedAssignedAt(encounter.getId());
         LocalDateTime bedClearedAt = encounterQueryService.findBedClearedAt(encounter.getId());
-        // 无床位轨迹时回退就诊起止时间，避免入院/出院日期空白
-        LocalDateTime admissionAt = bedAssignedAt != null ? bedAssignedAt : encounter.getStartTime();
-        LocalDateTime dischargeAt = bedClearedAt != null ? bedClearedAt : encounter.getEndTime();
+        // 入院：优先分床时刻，无床位轨迹回退就诊 start_time
+        LocalDateTime admissionAt = encounter.getStartTime();
+        if (bedAssignedAt != null) {
+            admissionAt = bedAssignedAt;
+        }
+        // 业务出院时间：出院医嘱计划时间优先；回落 Encounter.endTime；禁止用清床时刻冒充
+        LocalDateTime dischargeAt = encounter.getEndTime();
+        Map<Long, LocalDateTime> plannedByEncounter =
+            serviceRequestQueryService.mapDischargePlannedTimeByEncounterIds(Set.of(encounter.getId()));
+        LocalDateTime plannedDischarge = plannedByEncounter.get(encounter.getId());
+        if (plannedDischarge != null) {
+            dischargeAt = plannedDischarge;
+        }
         if (admissionAt != null) {
             put(target, "encounter.bedAssignedAt", admissionAt.format(DATE_FMT));
             // 入院记录「入院时间」优先床位分配时刻，格式 yyyy-MM-dd HH:mm
             put(target, "encounter.admissionDateTime", admissionAt.format(DATETIME_FMT));
             put(target, "encounter.admissionTime", admissionAt.format(DATETIME_FMT));
         }
+        // 清床日仅作元数据；与业务出院时间分离
+        if (bedClearedAt != null) {
+            put(target, "encounter.bedClearedAt", bedClearedAt.format(DATE_FMT));
+        }
         if (dischargeAt != null) {
-            put(target, "encounter.bedClearedAt", dischargeAt.format(DATE_FMT));
+            // 病历模板 dischargeDate 须绑本字段（勿绑 bedClearedAt）
+            put(target, "encounter.dischargeDate", dischargeAt.format(DATE_FMT));
+            put(target, "encounter.dischargeDateTime", dischargeAt.format(DATETIME_FMT));
         }
         if (admissionAt != null && dischargeAt != null) {
-            long days = ChronoUnit.DAYS.between(admissionAt.toLocalDate(), dischargeAt.toLocalDate());
-            put(target, "encounter.lengthOfStayDays", String.valueOf(days <= 0 ? 1 : days));
+            // 即进不计出：11 入院 13 出院 → 2 天
+            Integer days = InpatientStayDaysCalculator.calcDischargedStayDays(admissionAt, dischargeAt);
+            if (days != null) {
+                put(target, "encounter.lengthOfStayDays", String.valueOf(days));
+            }
         } else if (admissionAt != null && dischargeAt == null) {
-            // 仍在院：按入院日算至今天数，出院日留空由医生填写
-            long days = ChronoUnit.DAYS.between(admissionAt.toLocalDate(), LocalDate.now());
-            put(target, "encounter.lengthOfStayDays", String.valueOf(days <= 0 ? 1 : days));
+            // 仍在院：含当日（今日仍算住院日）
+            Integer days = InpatientStayDaysCalculator.calcDisplayStayDays(admissionAt, null);
+            if (days != null) {
+                put(target, "encounter.lengthOfStayDays", String.valueOf(days));
+            }
         }
+        // 住院床号/病房：活动床优先，无活动床用末次已完成床；供病历页眉 bedNo/wardName 带出
+        this.contributeInpatientBedAndHouse(target, encounter.getId());
+    }
+
+    /**
+     * 写入住院床号与病房名（{@code encounter.bedNo} / {@code encounter.houseName}）。
+     *
+     * <p>床号取床位 Location 名称，空则回落 busNo；去掉护士站「原房-床（未占床）」包装。
+     * 病房取床位父级 HOUSE。EMR 模板 fieldKey {@code wardName} 标签为「病房」，与 houseName 同值。</p>
+     *
+     * @param target      元数据扁平上下文
+     * @param encounterId 就诊主键
+     */
+    private void contributeInpatientBedAndHouse(Map<String, String> target, Long encounterId) {
+        if (encounterId == null) {
+            return;
+        }
+        Optional<InpatientEncounterContextQueryModel> ctxOpt =
+                encounterContextQueryService.getInpatientContextByEncounterId(encounterId);
+        if (ctxOpt.isEmpty()) {
+            return;
+        }
+        InpatientEncounterContextQueryModel ctx = ctxOpt.get();
+        Location bed = this.loadLocation(ctx.getBedId());
+        String bedNo = this.resolveLocationDisplayName(bed);
+        if (!StringUtils.hasText(bedNo)) {
+            bedNo = this.stripUnoccupiedBedDisplay(ctx.getBedName());
+        }
+        put(target, "encounter.bedNo", bedNo);
+        String houseName = this.resolveHouseDisplayName(bed);
+        if (!StringUtils.hasText(houseName)) {
+            houseName = this.extractHouseFromUnoccupiedBedDisplay(ctx.getBedName());
+        }
+        put(target, "encounter.houseName", houseName);
+        // 模板 fieldKey wardName 展示「病房」，绑 HOUSE 而非病区
+        put(target, "encounter.wardName", houseName);
+    }
+
+    /**
+     * 按主键加载位置实体。
+     *
+     * @param locationId 位置主键
+     * @return 实体；无主键或不存在时 null
+     */
+    private Location loadLocation(Long locationId) {
+        if (locationId == null) {
+            return null;
+        }
+        return locationQueryService.findOptionalById(locationId).orElse(null);
+    }
+
+    /**
+     * 位置展示名：名称优先，空则业务号。
+     *
+     * @param location 位置实体
+     * @return 展示名；皆空时 null
+     */
+    private String resolveLocationDisplayName(Location location) {
+        if (location == null) {
+            return null;
+        }
+        if (StringUtils.hasText(location.getName())) {
+            return location.getName().trim();
+        }
+        if (StringUtils.hasText(location.getBusNo())) {
+            return location.getBusNo().trim();
+        }
+        return null;
+    }
+
+    /**
+     * 从床位父级解析病房名（仅 HOUSE 形态，避免把病区当病房）。
+     *
+     * @param bed 床位位置
+     * @return 病房展示名；无父级或非 HOUSE 时 null
+     */
+    private String resolveHouseDisplayName(Location bed) {
+        if (bed == null || bed.getParentId() == null) {
+            return null;
+        }
+        Location parent = this.loadLocation(bed.getParentId());
+        if (parent == null) {
+            return null;
+        }
+        if (!LocationForm.HOUSE.getCode().equals(parent.getFormEnum())) {
+            return null;
+        }
+        return this.resolveLocationDisplayName(parent);
+    }
+
+    /**
+     * 去掉护士站「原{房}-{床}（未占床）」包装，得到中间段。
+     *
+     * @param bedDisplay 上下文床位展示文案
+     * @return 中间段；无法解析时原样 trim；空则 null
+     */
+    private String stripUnoccupiedBedDisplay(String bedDisplay) {
+        if (!StringUtils.hasText(bedDisplay)) {
+            return null;
+        }
+        String raw = bedDisplay.trim();
+        String prefix = InpatientNurseStationConstants.UNOCCUPIED_LAST_BED_DISPLAY_PREFIX;
+        String suffix = InpatientNurseStationConstants.UNOCCUPIED_LAST_BED_DISPLAY_SUFFIX;
+        if (raw.startsWith(prefix) && raw.endsWith(suffix) && raw.length() > prefix.length() + suffix.length()) {
+            return raw.substring(prefix.length(), raw.length() - suffix.length()).trim();
+        }
+        return raw;
+    }
+
+    /**
+     * 从未占床展示中间段拆病房名（「房-床」取最后一段之前）。
+     *
+     * @param bedDisplay 上下文床位展示文案
+     * @return 病房名；无横杠或无法解析时 null
+     */
+    private String extractHouseFromUnoccupiedBedDisplay(String bedDisplay) {
+        String middle = this.stripUnoccupiedBedDisplay(bedDisplay);
+        if (!StringUtils.hasText(middle)) {
+            return null;
+        }
+        int dash = middle.lastIndexOf('-');
+        if (dash <= 0) {
+            return null;
+        }
+        String house = middle.substring(0, dash).trim();
+        if (StringUtils.hasText(house)) {
+            return house;
+        }
+        return null;
     }
 
     /**

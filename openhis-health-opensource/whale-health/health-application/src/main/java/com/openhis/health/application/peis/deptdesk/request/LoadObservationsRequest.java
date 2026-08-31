@@ -19,4 +19,9 @@ public class LoadObservationsRequest {
     @Schema(description = "服务申请主键")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long serviceRequestId;
+
+    /** 体检项目 AD 主键（SR.activityId 为空时的兜底）。 */
+    @Schema(description = "体检项目 AD 主键")
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long activityId;
 }
