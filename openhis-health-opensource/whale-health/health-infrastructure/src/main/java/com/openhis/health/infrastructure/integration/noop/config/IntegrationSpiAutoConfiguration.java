@@ -9,6 +9,7 @@ import com.openhis.health.infrastructure.integration.booking.inpatient.Inpatient
 import com.openhis.health.infrastructure.integration.booking.outpatient.OutpatientBookingQueryExtension;
 import com.openhis.health.infrastructure.integration.booking.outpatient.OutpatientBookingRegistrationExtension;
 import com.openhis.health.infrastructure.integration.insurance.benefit.InsuranceRegisterBenefitQueryExtension;
+import com.openhis.health.infrastructure.integration.insurance.contract.InsuranceContractTerminalExtension;
 import com.openhis.health.infrastructure.integration.insurance.inpatient.InpatientChargeInsuranceExtension;
 import com.openhis.health.infrastructure.integration.insurance.inventory.InventoryThirdPartyUploadExtension;
 import com.openhis.health.infrastructure.integration.insurance.outpatient.OutpatientChargeInsuranceExtension;
@@ -51,6 +52,7 @@ import com.openhis.health.infrastructure.integration.noop.notification.LoggingSt
 import com.openhis.health.infrastructure.integration.noop.einvoice.NoOpBossElectronicInvoiceExtension;
 import com.openhis.health.infrastructure.integration.noop.insurance.dict.NoOpInsurancePlatformDictDisplayExtension;
 import com.openhis.health.infrastructure.integration.noop.insurance.benefit.NoOpInsuranceRegisterBenefitQueryExtension;
+import com.openhis.health.infrastructure.integration.noop.insurance.contract.NoOpInsuranceContractTerminalExtension;
 import com.openhis.health.infrastructure.integration.noop.insurance.inpatient.NoOpInpatientChargeInsuranceExtension;
 import com.openhis.health.infrastructure.integration.noop.insurance.inventory.NoOpInventoryThirdPartyUploadExtension;
 import com.openhis.health.infrastructure.integration.noop.insurance.outpatient.NoOpOutpatientChargeInsuranceExtension;
@@ -99,6 +101,17 @@ public class IntegrationSpiAutoConfiguration {
     @ConditionalOnMissingBean(InsuranceSettlementRecordLookupExtension.class)
     InsuranceSettlementRecordLookupExtension noOpInsuranceSettlementRecordLookupExtension() {
         return new NoOpInsuranceSettlementRecordLookupExtension();
+    }
+
+    /**
+     * 契约终端参数（fixmedins/adm_vs）占位（吉林覆盖为 {@code InsuranceContractTerminalExtensionImpl}）。
+     *
+     * @return {@link InsuranceContractTerminalExtension} 默认实现，{@code isEnabled()=false}
+     */
+    @Bean
+    @ConditionalOnMissingBean(InsuranceContractTerminalExtension.class)
+    InsuranceContractTerminalExtension noOpInsuranceContractTerminalExtension() {
+        return new NoOpInsuranceContractTerminalExtension();
     }
 
     /**

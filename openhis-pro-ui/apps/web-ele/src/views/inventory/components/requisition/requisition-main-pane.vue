@@ -1047,21 +1047,14 @@ async function handleWithdraw() {
 async function handleApprove() {
   const no = headerBusNo.value;
   if (!no) return;
-  const operatorId = resolveLoginPractitionerIdForRequest(
-    userStore.userInfo as null | Record<string, unknown>,
-  );
   try {
     if (isPharmacyVariant.value) {
       await agreePharmacyRequisitionApi({
         busNo: no,
-        operatorId,
-        approvalClock: nowIsoLocal(),
       });
     } else {
       await agreeDepartmentRequisitionApi({
         busNo: no,
-        operatorId,
-        approvalClock: nowIsoLocal(),
       });
     }
     ElMessage.success('审批同意');
@@ -1082,22 +1075,15 @@ async function handleReject() {
       inputPattern: /\S+/,
       inputErrorMessage: '原因不能为空',
     });
-    const operatorId = resolveLoginPractitionerIdForRequest(
-      userStore.userInfo as null | Record<string, unknown>,
-    );
     if (isPharmacyVariant.value) {
       await rejectPharmacyRequisitionApi({
         busNo: no,
         rejectReason: value,
-        operatorId,
-        approvalClock: nowIsoLocal(),
       });
     } else {
       await rejectDepartmentRequisitionApi({
         busNo: no,
         rejectReason: value,
-        operatorId,
-        approvalClock: nowIsoLocal(),
       });
     }
     ElMessage.success('已驳回');

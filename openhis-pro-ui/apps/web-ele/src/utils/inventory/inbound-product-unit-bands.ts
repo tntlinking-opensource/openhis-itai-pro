@@ -4,6 +4,10 @@
  * 药库非入库展示单价优先取目标带 `unitPrice`，缺省时以 **PACKAGE** 单价换算到展示带（见 {@link warehouseNonInboundResolveDisplayUnitPrice}）。
  * 单位下拉：仅业务四槽；同 `unitCode` 且同 `ratioToSplit` 合并为一项，选项 value 优先 **PACKAGE → SPLIT → STOCK → PURCHASE**；**TRACE 不进下拉**（追溯贴码单位仅扫码桥使用）。
  * 跨域目录单价换算见 {@link ../product-unit-band-price.ts}。
+ *
+ * **`LEGACY` / `legacyUnitCode`**：前端会话态占位，表示「当前行尚无 `unitBands`（接口未带回或选品未装配）」时的单码数量路径；
+ * **不是**库内历史双轨字段。药典 `purchase_unit_code`/`split_unit_code` 与供应请求 `unit_code` 在运行库均为齐备口径；
+ * 有带后须走四槽换算，禁止把 LEGACY 当成「旧数据兼容契约」。
  */
 
 import { decimalDiv, decimalMul } from '#/utils/format/decimal-util';
@@ -534,7 +538,7 @@ export function inferInboundBandKindFromUnitCode(
 
 /**
  * 保存时：界面数量为当前 `selectedBandKind` 下数量；持久化为 **SPLIT** 数量并带 SPLIT 的 `unitCode`。
- * `LEGACY` 或无带时保持原数量与 `legacyUnitCode`。
+ * 无 `unitBands` 或仍为会话态 `LEGACY` 时，原样保留数量与 `legacyUnitCode`（见文件头：非库内双轨）。
  */
 export function persistDisplayQtyAsSplitForBands(args: {
   bands: InboundProductUnitBand[];

@@ -59,6 +59,7 @@ import com.openhis.health.domain.medication.medicationdispense.entity.Medication
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseListQueryModel;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
+import com.openhis.health.domain.mrms.caserecord.service.CaseRecordDomainService;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -102,7 +103,7 @@ import java.util.Set;
  * <p>职责边界：</p>
  * <ul>
  *   <li>Gate/Pre：床位列表范围解析、出 Tab 占床过滤、床态与就诊状态门禁。</li>
- *   <li>Cmd：分床/换床/互换、办理出院、清床领域写 + 床位资源 occupy/release 编排；清床后 afterCommit 异步触发汇总径 3505。</li>
+ *   <li>Cmd：分床/换床/互换、办理出院、清床领域写 + 床位资源 occupy/release 编排；首次分床后幂等建病案主档；清床后 afterCommit 异步触发汇总径 3505。</li>
  *   <li>Asm：床位图、出院前待办列表与占床患者展示，与 001 列表同源装配器；缺追溯码 tip 供前端软提示。</li>
  * </ul>
  *
@@ -183,6 +184,9 @@ public class NurseStationATDManagerAppService {
 
     /** 医保进销存上报（清床汇总径 3505 / 未冲销轻门禁）。 */
     private final InventoryThirdPartyUploadExtension inventoryUploadExtension;
+
+    /** 首次分床/入科后幂等建病案主档（登记主触发失败时的兜底）。 */
+    private final CaseRecordDomainService caseRecordDomainService;
 
     /**
      * IF-IP-NUR-ATD-01：床位列表查询（位置块 + 占床患者块）。
@@ -513,6 +517,49 @@ public class NurseStationATDManagerAppService {
                 .setSubmitDto(request.getAdmissionVitalSigns());
             admissionVitalSignOrchestrator.saveIfPresent(vitalContext);
         }
+        // Cmd：分床成功后幂等建病案（登记 afterCommit 失败或未跑时兜底；已建档则 no-op）
+        this.scheduleCaseRecordBootstrapAfterCommit(request.getEncounterId(), operatorId);
+    }
+
+    /**
+     * 首次分床事务提交后幂等建病案主档与首页（病案号仍可空，首次保存首页再发号）。
+     *
+     * <p>登记提交为主触发；入科分床为兜底，失败不回滚分床。</p>
+     *
+     * @param encounterId 住院就诊主键
+     * @param operatorId  分床操作人（可为 null）
+     */
+    private void scheduleCaseRecordBootstrapAfterCommit(Long encounterId, Long operatorId) {
+        // Gate：缺就诊主键则无法建档
+        if (encounterId == null) {
+            return;
+        }
+        IntegrationAfterCommitSupport.runAfterCommit(() -> {
+            encounterQueryService.findOptionalEncounterEntityById(encounterId).ifPresent(encounter -> {
+                // Gate：就诊须带租户与患者，否则无法发病案号
+                if (encounter.getTenantId() == null || encounter.getPatientId() == null) {
+                    log.warn(
+                        "入科分床后跳过病案建档：就诊缺少 tenantId/patientId encounterId={}",
+                        encounterId);
+                    return;
+                }
+                try {
+                    // Cmd：幂等建档 + 新建时 HIS autoFill
+                    caseRecordDomainService.bootstrapIfAbsent(
+                        encounter.getTenantId(),
+                        encounter.getPatientId(),
+                        encounterId,
+                        operatorId);
+                } catch (RuntimeException ex) {
+                    // 建档失败不抛回分床链路；病案首页打开时仍可 bootstrap 兜底
+                    log.warn(
+                        "入科分床后病案建档失败 encounterId={} patientId={}",
+                        encounterId,
+                        encounter.getPatientId(),
+                        ex);
+                }
+            });
+        });
     }
 
     /**
@@ -723,6 +770,9 @@ public class NurseStationATDManagerAppService {
     /**
      * IF-IP-NUR-ATD-03：出院前待执行医嘱列表。
      *
+     * <p>{@code LONG_PENDING_SLOTS} 行回传 {@code pendingPlanTimes}（与门禁 pending 同源）；
+     * 不放宽 {@code BR-IP-ATD-011①′}。</p>
+     *
      * @param request 就诊主键
      * @return 阻塞出院的医嘱行
      * @throws BusinessException 出 Tab 不可见或加载失败时 EX-IP-ATD-103
@@ -790,6 +840,12 @@ public class NurseStationATDManagerAppService {
                     nurseStationATDManagerMapper.toDischargePendingExecutionItemFromMedication(
                         row, medicationName, doseText, blockingReason);
                 if (item != null) {
+                    item.setPendingPlanTimes(
+                        this.resolveDischargePendingPlanTimes(
+                            blockingReason,
+                            row,
+                            null,
+                            scan));
                     items.add(item);
                 }
             }
@@ -824,6 +880,12 @@ public class NurseStationATDManagerAppService {
                     nurseStationATDManagerMapper.toDischargePendingExecutionItemFromService(
                         row, activityName, doseText, blockingReason);
                 if (item != null) {
+                    item.setPendingPlanTimes(
+                        this.resolveDischargePendingPlanTimes(
+                            blockingReason,
+                            null,
+                            row,
+                            scan));
                     items.add(item);
                 }
             }
@@ -835,6 +897,35 @@ public class NurseStationATDManagerAppService {
                 InpatientNurseStationConstants.EX_IP_ATD_103,
                 "待执行医嘱加载失败");
         }
+    }
+
+    /**
+     * ATD-03：仅长期已停嘱阻塞行回传与门禁同源的 pending 计划点。
+     *
+     * @param blockingReason 阻塞原因码
+     * @param medRow         药品请求；诊疗行传 null
+     * @param svcRow         诊疗请求；药品行传 null
+     * @param scan           出院前医嘱扫描上下文
+     * @return pending planTime；非 LONG_PENDING_SLOTS 时为空列表
+     */
+    private List<LocalDateTime> resolveDischargePendingPlanTimes(
+        String blockingReason,
+        MedicationRequestListQueryModel medRow,
+        ServiceRequestListModel svcRow,
+        InpatientDischargeClinicalGate.DischargePendingExecutionScan scan) {
+        if (!InpatientNurseStationConstants.DISCHARGE_BLOCKING_LONG_PENDING_SLOTS.equals(blockingReason)) {
+            // 未停嘱/临时未完结等其它阻塞：不回传计划点，避免出 Tab 误展示日频次
+            return Collections.emptyList();
+        }
+        if (scan == null) {
+            return Collections.emptyList();
+        }
+        // Asm：时点必须与 ATD-05 / 执行列表 pending 分桶一致，禁止另算日频次点
+        return inpatientDischargeClinicalGate.listLongTermStoppedPendingPlanTimes(
+            medRow,
+            svcRow,
+            scan.getProceduresByRequestKey(),
+            scan.getExecutionDeadline());
     }
 
     /**

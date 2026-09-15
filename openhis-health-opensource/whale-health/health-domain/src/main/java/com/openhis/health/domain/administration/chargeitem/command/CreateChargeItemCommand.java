@@ -74,7 +74,11 @@ public class CreateChargeItemCommand extends BatchCommand<CreateChargeItemComman
          * 半退保留链：新行链回的源收费明细主键，对应 adm_charge_item.refund_id（BR-CHG-015）；非保留链场景留空。
          */
         private Long refundRootChargeItemId;
-        /** 处方号（中药代煎费等方级费用追溯），对应 adm_charge_item.prescription_no。 */
+        /**
+         * 结算快照处方号（对应 adm_charge_item.prescription_no）。
+         * <p>药品业务真源在 {@code MedicationRequest.prescription_no}；签发挂费草稿<strong>不应</strong>预写本字段，
+         * 由门诊结算盖章抄写。中药代煎费等方级费用可在挂费时写入以便未结算前按方定位。</p>
+         */
         private String prescriptionNo;
         /** 执行记录主键，对应 adm_charge_item.procedure_id。 */
         private Long procedureId;

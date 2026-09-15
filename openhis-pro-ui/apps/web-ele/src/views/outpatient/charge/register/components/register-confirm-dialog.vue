@@ -12,7 +12,10 @@ import {
 import AppDialog from '#/components/app-dialog.vue';
 import { isScanPayChannel } from '#/composables/payment/useUnionPayScanPay';
 import { formatMoneyDisplay } from '#/utils/format/money-scale';
-import { FALLBACK_DEFAULT_PAY_CHANNEL } from '#/utils/payment/payment-channel-options';
+import {
+  FALLBACK_DEFAULT_PAY_CHANNEL,
+  resolveCollectPayChannelCode,
+} from '#/utils/payment/payment-channel-options';
 import {
   clearCachedClientScanResult,
   hasCachedClientScanSuccess,
@@ -23,7 +26,10 @@ import {
   settleWithScanRecovery,
 } from '#/utils/payment/scan-settle-recovery';
 import { submitScanPayment } from '#/utils/payment/submit-scan-payment';
-import { schedulePrintRegistrationReceipt } from '#/utils/print/print-registration-receipt';
+import {
+  schedulePrintRegistrationReceipt,
+  shouldSkipAutoPrintRegistrationReceipt,
+} from '#/utils/print/print-registration-receipt';
 
 import { useRegisterPayChannels } from '../composables/use-register-pay-channels';
 
@@ -33,10 +39,11 @@ import {
   isEcVoucherStale,
   isInsuranceCredentialExpiredError,
 } from '../services/register-insurance-credential';
-import { DEFAULT_REGISTER_PAY_CHANNEL_CODE, payRegisterFee } from '../services/register.service';
+import { payRegisterFee } from '../services/register.service';
 
 import WorkInjuryFilingDetailAction from '#/chs/work-injury/work-injury-filing-detail-action.vue';
 import { httpWorkInjuryLoadEncounterContext } from '#/chs/work-injury/work-injury.http';
+import { isWorkInjuryUiEnabled } from '#/utils/project-optional-modules';
 
 defineOptions({
   name: 'RegisterConfirmDialog',
@@ -55,7 +62,7 @@ const visible = ref(false);
 const payLoading = ref(false);
 const refreshLoading = ref(false);
 const credentialExpiredHint = ref(false);
-const payChannelCode = ref(DEFAULT_REGISTER_PAY_CHANNEL_CODE);
+const payChannelCode = ref(FALLBACK_DEFAULT_PAY_CHANNEL);
 const scanCode = ref('');
 const scanStatusText = ref('');
 const scanCodeInputRef = ref<{ focus?: () => void } | null>(null);
@@ -141,6 +148,7 @@ const workInjuryEncounterId = computed(
 );
 const showWorkInjuryFiling = computed(
   () =>
+    isWorkInjuryUiEnabled() &&
     workInjuryRegister.value &&
     workInjuryEncounterId.value != null &&
     workInjuryEncounterId.value !== '' &&
@@ -240,10 +248,10 @@ function applyPreSettlement(pre: PreRegisterSettlementResult) {
   if (detail.value) {
     detail.value = { ...detail.value, totalAmount: Number.isFinite(cash) ? cash : 0 };
   }
-  payChannelCode.value =
-    Number.isFinite(cash) && cash > 0.001
-      ? DEFAULT_REGISTER_PAY_CHANNEL_CODE
-      : FALLBACK_DEFAULT_PAY_CHANNEL;
+  payChannelCode.value = resolveCollectPayChannelCode(
+    Number.isFinite(cash) ? cash : 0,
+    effectivePayChannelOptions.value,
+  );
   credentialExpiredHint.value = false;
 }
 
@@ -272,6 +280,7 @@ async function open(
   scanStatusText.value = '';
   applyPreSettlement(pre);
   await refreshPayChannelsForDialog();
+  applyPreSettlement(pre);
   visible.value = true;
 }
 
@@ -466,13 +475,24 @@ async function executeRegisterPayment() {
           paymentDraftId: pre.paymentDraftId,
         });
     clearCachedClientScanResult(pre.paymentDraftId);
+    // 须在关窗清空预结状态前判定：零元号才跳过；医保全报后现金 0 仍打
+    const skipAutoPrint = shouldSkipAutoPrintRegistrationReceipt({
+      chargeItems: pre.chargeItems,
+      originalFeeAmount: pre.totalAmount,
+      insurancePreSettled: pre.insurancePreSettled,
+      ybFundPaySumamt: pre.ybFundPaySumamt,
+      ybAcctPay: pre.ybAcctPay,
+      ybMedfeeSumamt: pre.ybMedfeeSumamt,
+    });
     ElMessage.success('挂号成功！');
     finishAfterPay();
-    schedulePrintRegistrationReceipt({
-      encounterId: result?.encounterId ?? pre.encounterId,
-      paymentId: result?.paymentId,
-      jobName: '挂号小票',
-    });
+    if (!skipAutoPrint) {
+      schedulePrintRegistrationReceipt({
+        encounterId: result?.encounterId ?? pre.encounterId,
+        paymentId: result?.paymentId,
+        jobName: '挂号小票',
+      });
+    }
   } catch (error) {
     if (error instanceof ScanSettleRefundedError) {
       ElMessage.warning(error.message);

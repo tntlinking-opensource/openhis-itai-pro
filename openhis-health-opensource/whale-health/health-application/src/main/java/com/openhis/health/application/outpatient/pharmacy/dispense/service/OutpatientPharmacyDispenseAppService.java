@@ -66,6 +66,7 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.MedicationCommonConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.domain.share.enums.DispenseStatus;
 import com.openhis.health.domain.share.enums.EncounterClass;
 import com.openhis.health.domain.share.enums.MedicationDispenseType;
@@ -93,7 +94,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -973,8 +973,10 @@ public class OutpatientPharmacyDispenseAppService {
     /**
      * 保存配药前金额门禁：已存在的收费明细（按发放单锚点）总价须等于「账单单价 × 发放业务单位数量」按提交行重算之和。
      *
-     * <p>单价取自锚定 {@code adm_charge_item.unit_price}（**BR-PRICE-SRC-001** / **BR-OPP-013**），同发放多行时按
-     * {@code sum(total_price)/sum(quantity_value)} 加权；**禁止**再查当前 {@code adm_charge_item_definition}，避免调价后误拒。
+     * <p>单价取自锚定 {@code adm_charge_item} 的 {@code total_price/quantity_value} 加权（**BR-PRICE-SRC-001** /
+     * **BR-OPP-013**），刻度走 {@link MonetaryAmountSupport#unitPriceFromLineTotal}（6 位）；重算行额走
+     * {@link MonetaryAmountSupport#lineTotal}；到分比对走 {@link MonetaryAmountSupport#equalsAtSettleScale}。
+     * **禁止**再查当前 {@code adm_charge_item_definition}，避免调价后误拒；**禁止** {@code divide(..., 4)} 截断拆零价。
      * 数量口径须与签发费用草稿 {@link com.openhis.health.application.outpatient.doctorstation.advice.mapper.DoctorStationAdviceMapperImpl#toCreateChargeItemDraftItemFromOrder} 一致。</p>
      *
      * <p>若就诊下尚无对应收费行（未签发计费等），跳过本校验。</p>
@@ -1017,12 +1019,12 @@ public class OutpatientPharmacyDispenseAppService {
                     ErrorCodeConstants.EX_OPP_204_QUANTITY_MISMATCH,
                     "收费明细缺少与本发放单锚点一致的账单单价，不能保存配药");
             }
+            // BR-MON-001：行额用 6 位 lineTotal，禁止裸 multiply 后再靠 2 位掩盖中间截断
             BigDecimal qtyInDispenseUnit = submitLine.getQuantity();
-            recomputedTotal = recomputedTotal.add(qtyInDispenseUnit.multiply(lotUnitPrice));
+            recomputedTotal = recomputedTotal.add(MonetaryAmountSupport.lineTotal(lotUnitPrice, qtyInDispenseUnit));
         }
-        BigDecimal baselineRounded = baselineTotal.setScale(2, RoundingMode.HALF_UP);
-        BigDecimal recomputedRounded = recomputedTotal.setScale(2, RoundingMode.HALF_UP);
-        if (baselineRounded.compareTo(recomputedRounded) != 0) {
+        // 到分比对：须先 6 位加总再 settle，与账单 total_price 口径一致
+        if (!MonetaryAmountSupport.equalsAtSettleScale(baselineTotal, recomputedTotal)) {
             throw new BusinessException(
                 ErrorCodeConstants.EX_OPP_204_QUANTITY_MISMATCH,
                 "按收费明细账单单价重算的总金额与当前收费明细不一致，不能保存配药");
@@ -1068,7 +1070,9 @@ public class OutpatientPharmacyDispenseAppService {
             Long dispenseKey = entry.getKey();
             BigDecimal qtyVal = qtyByDispense.get(dispenseKey);
             if (qtyVal != null && qtyVal.compareTo(BigDecimal.ZERO) > 0) {
-                unitPriceByDispense.put(dispenseKey, entry.getValue().divide(qtyVal, 4, RoundingMode.HALF_UP));
+                // BR-MON-001：加权单价保留计算刻度 6 位；禁止 divide(..., 4) 导致拆零价尾差误拒配药
+                unitPriceByDispense.put(
+                    dispenseKey, MonetaryAmountSupport.unitPriceFromLineTotal(entry.getValue(), qtyVal));
             }
         }
         return unitPriceByDispense;
@@ -1115,7 +1119,7 @@ public class OutpatientPharmacyDispenseAppService {
             totalPriceOut.put(dispenseKey, totalVal);
             BigDecimal qtyVal = qtyByDispense.get(dispenseKey);
             if (qtyVal != null && qtyVal.compareTo(BigDecimal.ZERO) > 0) {
-                unitPriceOut.put(dispenseKey, totalVal.divide(qtyVal, 4, RoundingMode.HALF_UP));
+                unitPriceOut.put(dispenseKey, MonetaryAmountSupport.unitPriceFromLineTotal(totalVal, qtyVal));
             }
         }
     }

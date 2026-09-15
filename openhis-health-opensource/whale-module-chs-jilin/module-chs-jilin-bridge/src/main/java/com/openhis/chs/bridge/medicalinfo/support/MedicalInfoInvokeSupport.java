@@ -54,14 +54,30 @@ public class MedicalInfoInvokeSupport {
         return contractReader.requireContractBusNo(contract);
     }
 
-    /** 构建含签到凭证的操作员出站上下文。 */
+    /** 构建含签到凭证的操作员出站上下文（无参保地，网关按交易规则回落）。 */
     public InvokeContext buildInvokeContext() {
+        return buildInvokeContext((String) null);
+    }
+
+    /**
+     * 构建含签到凭证的操作员出站上下文。
+     *
+     * @param insuplcAdmdvs 参保地医保区划；跨省查询应传 1101 参保地（对齐 2001）
+     */
+    public InvokeContext buildInvokeContext(String insuplcAdmdvs) {
         Long operatorId = currentOperatorResolver.requireOperatorId("请先登录后再查询医保信息");
         InvokeContext partial = InvokeContext.builder().operatorId(String.valueOf(operatorId)).build();
         return InvokeContext.builder()
             .operatorId(signCredentialResolver.resolveOperatorId(partial))
             .operatorName(signCredentialResolver.resolveOperatorName(partial))
+            .insuplcAdmdvs(isNotEmpty(insuplcAdmdvs) ? insuplcAdmdvs.trim() : null)
             .build();
+    }
+
+    /** 从查询命令构建出站上下文（透传 {@code insuplcAdmdvs}）。 */
+    public InvokeContext buildInvokeContext(MedicalInfoQueryBaseCommand command) {
+        String insuplc = command == null ? null : command.getInsuplcAdmdvs();
+        return buildInvokeContext(insuplc);
     }
 
     /** 校验 5201 就诊信息查询入参。 */

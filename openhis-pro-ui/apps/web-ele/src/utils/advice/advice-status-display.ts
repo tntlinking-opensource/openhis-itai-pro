@@ -74,3 +74,31 @@ export function resolveSkinTestTagTypeFromCode(
   }
   return null;
 }
+
+/** 皮试结果后缀：跟在药名规格后，如 `头孢…【1g】 【阳性】` */
+export function appendSkinTestOutcomeToMedicationTitle(
+  title: string,
+  outcomeText?: null | string,
+): string {
+  const base = String(title ?? '').trim();
+  const outcome = String(outcomeText ?? '').trim();
+  if (!outcome) {
+    return base || '—';
+  }
+  if (!base) {
+    return `— 【${outcome}】`;
+  }
+  return `${base} 【${outcome}】`;
+}
+
+/** 护士站医嘱列表皮试结果角标 CSS 类（仅认 outcomeCode） */
+export function resolveSkinTestOutcomePillClass(outcomeCode?: null | string): string {
+  const tagType = resolveSkinTestTagTypeFromCode(outcomeCode, undefined);
+  if (tagType === 'danger') {
+    return 'skin-test-outcome-pill--positive';
+  }
+  if (tagType === 'success') {
+    return 'skin-test-outcome-pill--negative';
+  }
+  return 'skin-test-outcome-pill--default';
+}

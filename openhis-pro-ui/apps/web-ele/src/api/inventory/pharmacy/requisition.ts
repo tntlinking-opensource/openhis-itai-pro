@@ -25,18 +25,7 @@ export interface PharmacyRequisitionOptionDto {
   label?: string;
 }
 
-/**
- * @deprecated 历史字段名；请使用 {@link PharmacyRequisitionOptionDto}（value/label）。
- * 仍被出库等页引用，保留兼容别名。
- */
-export interface PharmacyLocationOptionDto extends PharmacyRequisitionOptionDto {
-  locationId?: number | string;
-  displayName?: string;
-}
-
-export interface LoadPharmacyRequisitionFormInitRequest {
-  organizationId?: number;
-}
+export interface LoadPharmacyRequisitionFormInitRequest {}
 
 export interface LoadPharmacyRequisitionFormInitResponse {
   pharmacyLocationOptions: PharmacyRequisitionOptionDto[];
@@ -53,11 +42,9 @@ export interface PharmacyRequisitionListRowDto {
   purposeLocationId?: number | string;
   purposeLocationName?: string;
   applyTime?: string;
-  approvalTime?: string;
   occurrenceTime?: string;
   applicantId?: number | string;
   creatorName?: string;
-  approverId?: number | string;
   approverName?: string;
   totalAmount?: number | string;
 }
@@ -87,14 +74,12 @@ export interface WarehouseDocumentDetailRowDto {
   itemQuantity?: number;
   unitCode?: string;
   applyTime?: string;
-  approvalTime?: string;
   totalPrice?: number;
 }
 
 export interface PagePharmacyRequisitionsResponse {
   total?: number;
   totalCount?: number;
-  records?: PharmacyRequisitionListRowDto[];
   content?: PharmacyRequisitionListRowDto[];
 }
 
@@ -208,7 +193,6 @@ export interface WithdrawPharmacyRequisitionApprovalResponse {
 export interface AgreePharmacyRequisitionRequest {
   busNo: string;
   operatorId?: number;
-  approvalClock?: string;
 }
 
 export interface AgreePharmacyRequisitionResponse {
@@ -221,7 +205,6 @@ export interface RejectPharmacyRequisitionRequest {
   busNo: string;
   rejectReason?: string;
   operatorId?: number;
-  approvalClock?: string;
 }
 
 export interface RemovePharmacyRequisitionRequest {
@@ -281,15 +264,6 @@ export const PHA_REQUISITION_SOURCE_TYPE_ENUM = 'CABINET';
 export const PHA_REQUISITION_PURPOSE_TYPE_ENUM = 'PHARMACY';
 /** {@link com.openhis.health.domain.share.enums.SupplyCategory#STOCK_SUPPLY} */
 export const PHA_REQUISITION_CATEGORY_ENUM = 'STOCK_SUPPLY';
-
-/** @deprecated 使用 {@link PHA_REQUISITION_TYPE_ENUM} */
-export const PHA_QL_TYPE_ENUM = 12;
-/** @deprecated 使用 {@link PHA_REQUISITION_SOURCE_TYPE_ENUM} */
-export const PHA_QL_SOURCE_TYPE_CABINET = 11;
-/** @deprecated 使用 {@link PHA_REQUISITION_PURPOSE_TYPE_ENUM} */
-export const PHA_QL_PURPOSE_TYPE_PHARMACY = 16;
-/** @deprecated 使用 {@link PHA_REQUISITION_CATEGORY_ENUM} */
-export const PHA_QL_CATEGORY_STOCK = 1;
 
 // --- API ---
 

@@ -95,20 +95,19 @@ public class PeisPersonalRegistrationAppService {
 
     /**
      * 检索体检客户（REG-01）。
+     * 身份证/姓名均可空：空则分页拉取全部患者档案，便于浏览后点选。
      */
     public SearchCustomerResponse searchCustomer(SearchCustomerRequest request) {
-        // Gate：身份证或姓名至少一项
-        if (request == null
-            || (StringUtils.isEmpty(request.getIdCardNo()) && StringUtils.isEmpty(request.getNameKeyword()))) {
-            throw new ValidationException("检索客户失败：身份证号或姓名关键字至少填写一项");
+        if (request == null) {
+            throw new ValidationException("检索客户失败：请求不能为空");
         }
-        // Pre：分页检索患者
+        // Pre：分页检索患者（关键字可空 = 全量分页）
         PatientPagedQuery query = new PatientPagedQuery();
         query.setPageNo(request.getPageNo());
         query.setPageSize(request.getPageSize());
         if (StringUtils.isNotEmpty(request.getIdCardNo())) {
             query.setKeyword(request.getIdCardNo().trim());
-        } else {
+        } else if (StringUtils.isNotEmpty(request.getNameKeyword())) {
             query.setKeyword(request.getNameKeyword().trim());
         }
         Page<PatientPageItemQueryModel> page = patientQueryService.searchPatientsPaged(query);

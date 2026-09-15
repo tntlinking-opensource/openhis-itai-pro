@@ -98,6 +98,7 @@ import {
   preserveApiIdForRequest,
   resolveLoginPractitionerIdForRequest,
 } from '#/utils/format/preserve-api-id';
+import { formatInventoryLineTotal } from '#/utils/format/money-scale';
 import {
   applyHydratedInventoryDetailQtyToRow,
   applyInventoryRowQtyUnitList,
@@ -108,9 +109,11 @@ import {
   scheduleInventoryProductPickFocus,
 } from '#/utils/inventory/inventory-doc-grid-common';
 import {
+  applyWarehouseNonInboundBandKindToRow,
   canConvertDisplayQtyToSplitForBands,
   persistDisplayQtyAsSplitForBands,
   resolveInboundLinePersistUnitCodeForBands,
+  warehouseNonInboundResolveDisplayUnitPrice,
   type InboundProductUnitBand,
 } from '#/utils/inventory/inbound-product-unit-bands';
 import {
@@ -149,6 +152,12 @@ interface ReturnPreviewRow {
   unitList?: { label?: string; value: string; value_dictText?: string }[];
   __prevBandKind?: string;
   lotNumber: string;
+  /** 进价（选品计量带 / 详情回填；打印单价列） */
+  price?: number;
+  /** 行金额；打印金额列，缺省时按数量×单价算 */
+  totalPrice?: number | string;
+  /** 有效期 YYYY-MM-DD */
+  expiryDate?: string;
   traceNo: string;
   reason: string;
   remake: string;
@@ -390,6 +399,9 @@ function createEmptyRow(): ReturnPreviewRow {
     unitList: [{ value: 'LEGACY', label: '单位' }],
     __prevBandKind: 'LEGACY',
     lotNumber: '',
+    price: undefined,
+    totalPrice: undefined,
+    expiryDate: '',
     traceNo: '',
     reason: '',
     remake: '',
@@ -427,10 +439,14 @@ function syncRowFromReturnToWarehouseMedicinePick(
   row.manufacturer = inventoryPickStringField(pick, 'manufacturer');
   applyWarehouseNonInboundProductPickUnitsToRow(pick, row);
   row.lotNumber = inventoryPickStringField(pick, 'lotNumber');
+  row.expiryDate = (
+    inventoryPickStringField(pick, 'expirationDate') || inventoryPickStringField(pick, 'endTime')
+  ).slice(0, 10);
   const availQty = inventoryPickAvailableQtyAsStockDisplay(pick);
   row.itemQuantity = Number.isFinite(availQty) ? availQty : undefined;
 }
 
+/** 详情行 → 网格：规格/厂家优先行字段，规格可回落 productCatalog.totalVolume */
 function mapDetailLineToGrid(ln: ReturnToWarehouseDetailLineDto, rowIdx: number): ReturnPreviewRow {
   const itemIdRaw = ln.itemId;
   const idStr =
@@ -440,10 +456,10 @@ function mapDetailLineToGrid(ln: ReturnToWarehouseDetailLineDto, rowIdx: number)
         ? `ln-item-${String(itemIdRaw)}-${rowIdx}`
         : `ln-x-${rowIdx}`;
   const name = String(ln.productName ?? '').trim();
-  const productBusNo = String(
-    (ln as { productCatalog?: { productBusNo?: string } | null | undefined }).productCatalog
-      ?.productBusNo ?? '',
-  ).trim();
+  const catalog = ln.productCatalog;
+  const productBusNo = String(catalog?.productBusNo ?? '').trim();
+  const specification = String(ln.specification ?? catalog?.totalVolume ?? '').trim();
+  const manufacturer = String(ln.manufacturer ?? '').trim();
   const row: ReturnPreviewRow = {
     id: idStr,
     medicinePick: name
@@ -456,23 +472,22 @@ function mapDetailLineToGrid(ln: ReturnToWarehouseDetailLineDto, rowIdx: number)
     itemTable: ln.itemTable,
     itemId: itemIdRaw,
     productName: name,
-    specification: String(
-      (ln as { specification?: string }).specification ??
-        (ln as { productCatalog?: { totalVolume?: string } }).productCatalog?.totalVolume ??
-        '',
-    ),
-    manufacturer: String((ln as { manufacturer?: string }).manufacturer ?? ''),
+    specification,
+    manufacturer,
     itemQuantity: ln.itemQuantity === undefined ? undefined : Number(ln.itemQuantity),
     unitCode: String(ln.unitCode ?? ''),
     // 仅回填真实字典文案；裸 unitCode 交给 hydrate/计量带解析，避免数量列显示「100 9」
     unitCodeDictText: String(ln.unitCodeDictText ?? '').trim() || undefined,
     lotNumber: String(ln.lotNumber ?? ''),
+    price: ln.price,
+    totalPrice: ln.totalPrice,
+    expiryDate: String(ln.endTime ?? '')
+      .trim()
+      .slice(0, 10),
     traceNo: String(ln.traceNo ?? ''),
     reason: String(ln.reason ?? ''),
     remake: String(ln.remake ?? ''),
   };
-  const catalog = (ln as { productCatalog?: { unitBands?: unknown; unitBandsJson?: unknown } })
-    .productCatalog;
   const hydrated = hydrateInventoryDetailLineQtyForGrid({
     itemQuantity: row.itemQuantity,
     unitCode: row.unitCode,
@@ -481,6 +496,7 @@ function mapDetailLineToGrid(ln: ReturnToWarehouseDetailLineDto, rowIdx: number)
   });
   applyHydratedInventoryDetailQtyToRow(row, hydrated);
   applyInventoryRowQtyUnitList(row);
+  applyWarehouseNonInboundBandKindToRow(row, String(row.selectedBandKind ?? ''), ln.price);
   return row;
 }
 
@@ -987,14 +1003,9 @@ async function handleWithdraw() {
 async function handleApprove() {
   const no = headerBusNo.value;
   if (!no) return;
-  const approverId = resolveLoginPractitionerIdForRequest(
-    userStore.userInfo as null | Record<string, unknown>,
-  );
   try {
     await agreeReturnToWarehouseApi({
       busNo: no,
-      approverId,
-      approvalClock: nowIsoLocal(),
     });
     ElMessage.success('审批同意');
     await loadDetail(no);
@@ -1017,10 +1028,6 @@ async function handleReject() {
     await rejectReturnToWarehouseApi({
       busNo: no,
       rejectReason: value,
-      approverId: resolveLoginPractitionerIdForRequest(
-        userStore.userInfo as null | Record<string, unknown>,
-      ),
-      approvalClock: nowIsoLocal(),
     });
     ElMessage.success('已驳回');
     await loadDetail(no);
@@ -1309,6 +1316,25 @@ function resolveReturnPrintUnitLabel(row: ReturnPreviewRow): string {
   return String(row.unitCodeDictText ?? row.unitCode ?? '').trim();
 }
 
+/** 打印用日期只取 YYYY-MM-DD */
+function resolveReturnPrintExpiryDate(row: ReturnPreviewRow): string {
+  return String(row.expiryDate ?? '')
+    .trim()
+    .slice(0, 10);
+}
+
+/** 打印单价：行上已有则用，否则按当前计量带从目录价解析 */
+function resolveReturnPrintUnitPrice(row: ReturnPreviewRow): number | undefined {
+  const fromRow = Number(row.price);
+  if (Number.isFinite(fromRow)) {
+    return fromRow;
+  }
+  return warehouseNonInboundResolveDisplayUnitPrice({
+    bands: row.unitBands ?? [],
+    displayBandKind: row.selectedBandKind,
+  });
+}
+
 /** 打印或预览药房退库单 */
 async function handlePrint(payload?: { preview?: boolean }) {
   const busNo = String(headerBusNo.value ?? '').trim();
@@ -1330,16 +1356,29 @@ async function handlePrint(payload?: { preview?: boolean }) {
     .replace('T', ' ');
 
   // 按当前网格展示值组装退货明细（列对齐流转单：规格/厂家/单价金额/效期/原因）
-  const lineRows = productRows.map((row) => ({
-    productBusNo: resolveInvPrintProductBusNo(row as unknown as Record<string, unknown>),
-    productName: String(row.productName ?? '').trim(),
-    specText: String(row.specification ?? '').trim(),
-    manufacturerText: String(row.manufacturer ?? '').trim(),
-    qty: row.itemQuantity,
-    unitLabel: resolveReturnPrintUnitLabel(row),
-    lotNumber: String(row.lotNumber ?? '').trim(),
-    reasonText: String(row.reason ?? '').trim(),
-  }));
+  const lineRows = productRows.map((row) => {
+    const unitPrice = resolveReturnPrintUnitPrice(row);
+    const qty = Number(row.itemQuantity);
+    const existingAmount = String(row.totalPrice ?? '').trim();
+    const amount =
+      existingAmount ||
+      (unitPrice !== undefined && Number.isFinite(qty)
+        ? formatInventoryLineTotal(qty, unitPrice)
+        : undefined);
+    return {
+      productBusNo: resolveInvPrintProductBusNo(row as unknown as Record<string, unknown>),
+      productName: String(row.productName ?? '').trim(),
+      specText: String(row.specification ?? '').trim(),
+      manufacturerText: String(row.manufacturer ?? '').trim(),
+      qty: row.itemQuantity,
+      unitLabel: resolveReturnPrintUnitLabel(row),
+      unitPrice,
+      amount,
+      lotNumber: String(row.lotNumber ?? '').trim(),
+      expiryDate: resolveReturnPrintExpiryDate(row),
+      reasonText: String(row.reason ?? '').trim(),
+    };
+  });
 
   const preparedByName = resolveInvDocPreparedByName(
     props.queueCardRow as null | Record<string, unknown>,

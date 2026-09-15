@@ -570,6 +570,56 @@ public class ServiceRequest extends BaseAuditedEntity {
     }
 
     /**
+     * 断言当前为已停嘱，可供门诊退费申请撤销时恢复（不校验长期/停嘱校对门禁）。
+     *
+     * @throws BusinessException 非 {@link RequestStatus#STOPPED} 时
+     */
+    public void ensureStoppedForOutpatientRefundRevoke() {
+        if (!RequestStatus.STOPPED.getCode().equals(this.statusEnum)) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                "仅已停嘱的诊疗申请允许因撤销退费申请而恢复");
+        }
+    }
+
+    /**
+     * 断言本行为负向退诊疗申请（含 {@code refund_service_id}），可供门诊退费申请撤销时软删。
+     *
+     * @throws BusinessException 非负向退诊疗单时
+     */
+    public void ensureOpenRefundServiceOrderForVoid() {
+        if (this.refundServiceId == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                "非退诊疗负向申请不允许作废");
+        }
+    }
+
+    /**
+     * 断言本行可因门诊代煎费退款终态而软删：须为停嘱态（申请退费未完成路径留下的 companion）。
+     *
+     * @throws BusinessException 非 {@code STOPPED} 时
+     */
+    public void ensureStoppedForOutpatientDecoctionRefundSoftDelete() {
+        if (!RequestStatus.STOPPED.getCode().equals(this.statusEnum)) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                "仅已停嘱的代煎 companion 允许在代煎费退款后软删");
+        }
+    }
+
+    /**
+     * 逻辑删除诊疗服务申请主档（门诊退费申请撤销负向单等路径）。
+     *
+     * @param operatorId 操作人主键
+     */
+    public void markDeleted(Long operatorId) {
+        this.setIsDeleted(Boolean.TRUE);
+        this.setDeletedBy(operatorId);
+        this.setDeletedAt(LocalDateTime.now());
+    }
+
+    /**
      * 停嘱校对：仅写停嘱校对人/时间，不改 {@link RequestStatus#STOPPED}。
      *
      * @param stopPerformerCheckId 停嘱校对人

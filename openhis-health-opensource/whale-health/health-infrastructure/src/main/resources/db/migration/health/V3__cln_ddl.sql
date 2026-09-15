@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS "public"."cln_allergy_intolerance" (
     "deleted_at" timestamptz(6),
     "deleted_by" int8,
     "version" int4 NOT NULL DEFAULT 0,
-    "request_id" int8 NOT NULL,
+    "request_id" int8,
     "encounter_id" int8 NOT NULL,
     "patient_id" int8 NOT NULL,
     "medication_id" int8,
@@ -48,14 +48,14 @@ COMMENT ON COLUMN cln_allergy_intolerance.is_deleted IS '软删标记';
 COMMENT ON COLUMN cln_allergy_intolerance.deleted_at IS '删除时间';
 COMMENT ON COLUMN cln_allergy_intolerance.deleted_by IS '删除人';
 COMMENT ON COLUMN cln_allergy_intolerance.version IS '乐观锁版本号';
-COMMENT ON COLUMN cln_allergy_intolerance.request_id IS '申请标识';
+COMMENT ON COLUMN cln_allergy_intolerance.request_id IS '申请标识；皮试记录必填，主诉过敏史与无已知过敏为空';
 COMMENT ON COLUMN cln_allergy_intolerance.encounter_id IS '就诊标识';
 COMMENT ON COLUMN cln_allergy_intolerance.patient_id IS '患者标识';
 COMMENT ON COLUMN cln_allergy_intolerance.medication_id IS '药品标识';
 COMMENT ON COLUMN cln_allergy_intolerance.lot_number IS '批号';
 COMMENT ON COLUMN cln_allergy_intolerance.clinical_status_enum IS 'clinical状态枚举值';
 COMMENT ON COLUMN cln_allergy_intolerance.verification_status_enum IS 'verification状态枚举值';
-COMMENT ON COLUMN cln_allergy_intolerance.type_enum IS '类型枚举值';
+COMMENT ON COLUMN cln_allergy_intolerance.type_enum IS '来源类型：skin_test 皮试、declared 主诉登记、nkda 无已知过敏';
 COMMENT ON COLUMN cln_allergy_intolerance.category_code IS 'category编码';
 COMMENT ON COLUMN cln_allergy_intolerance.criticality_enum IS 'criticality枚举值';
 COMMENT ON COLUMN cln_allergy_intolerance.code IS '编码';
@@ -68,6 +68,9 @@ COMMENT ON COLUMN cln_allergy_intolerance.exposure_route IS '暴露途径';
 COMMENT ON COLUMN cln_allergy_intolerance.practitioner_id IS '医护人员标识';
 COMMENT ON COLUMN cln_allergy_intolerance.check_practitioner_id IS 'check医护人员标识';
 COMMENT ON COLUMN cln_allergy_intolerance.note IS '备注说明';
+
+CREATE INDEX IF NOT EXISTS idx_cln_allergy_intolerance_patient_id
+    ON cln_allergy_intolerance (patient_id);
 
 -- from V25__cln_condition.sql
 -- cln_condition（建表）
@@ -741,6 +744,7 @@ CREATE TABLE IF NOT EXISTS "public"."cln_diagnostic_report" (
     "pdf_storage_key" varchar(512),
     "finalized_at" timestamptz(6),
     "finalized_by" int8,
+    "print_count" int4,
     CONSTRAINT "cln_diagnostic_report_pkey" PRIMARY KEY ("id")
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "uk_cln_dr_encounter"
@@ -768,3 +772,23 @@ COMMENT ON COLUMN cln_diagnostic_report.result_refs_json IS '结果引用 JSON';
 COMMENT ON COLUMN cln_diagnostic_report.pdf_storage_key IS 'PDF 存储键';
 COMMENT ON COLUMN cln_diagnostic_report.finalized_at IS '定稿时间';
 COMMENT ON COLUMN cln_diagnostic_report.finalized_by IS '定稿人标识';
+COMMENT ON COLUMN cln_diagnostic_report.print_count IS '打印次数';
+
+-- =============================================================================
+-- V13 squash: cln report indexes
+-- =============================================================================
+CREATE INDEX IF NOT EXISTS idx_rpt_cln_proc_recorded
+    ON cln_procedure (recorded_time, encounter_id, request_table, status_enum)
+    WHERE is_deleted = FALSE AND recorded_time IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_cln_proc_encounter
+    ON cln_procedure (encounter_id)
+    WHERE is_deleted = FALSE AND encounter_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_cln_proc_perf_practitioner
+    ON cln_procedure_performer (practitioner_id, procedure_id)
+    WHERE is_deleted = FALSE;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_cln_proc_perf_procedure
+    ON cln_procedure_performer (procedure_id)
+    WHERE is_deleted = FALSE;

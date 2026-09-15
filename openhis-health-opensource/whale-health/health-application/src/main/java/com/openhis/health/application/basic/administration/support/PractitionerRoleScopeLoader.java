@@ -299,9 +299,9 @@ public class PractitionerRoleScopeLoader {
     /**
      * 库存单据经手人下拉：按平台角色装载在职人员。
      *
-     * <p>仅认 {@code adm_pr_assign} 岗位分配，且须挂在会话机构
-     * （{@code adm_pr_assign.org_id = organizationId}）。机构为空或该机构无命中时返回空列表，
-     * 不回退全院。</p>
+     * <p>优先认 {@code adm_pr_assign} 且 {@code org_id = organizationId} 的会话科室命中；
+     * 会话科室无命中时回退为「该角色全院激活岗位」（{@code org_id} 不收窄），
+     * 避免前端仅注入登录人导致经手人下拉只剩一项。</p>
      *
      * @param platformRoleCode {@code whale_roles.code}
      * @param organizationId   会话机构主键；空则返回空列表
@@ -313,6 +313,48 @@ public class PractitionerRoleScopeLoader {
         if (organizationId == null) {
             return Collections.emptyList();
         }
-        return listActivePractitionersForPlatformRoleInOrganization(platformRoleCode, organizationId);
+        List<Practitioner> scoped =
+            listActivePractitionersForPlatformRoleInOrganization(platformRoleCode, organizationId);
+        if (!scoped.isEmpty()) {
+            return scoped;
+        }
+        // 会话科室无岗位命中：回退角色全院激活人员，保证经手人下拉可用
+        return listActivePractitionersForPlatformRole(platformRoleCode, null);
+    }
+
+    /**
+     * 科室库存单据经手人下拉：全体在职医务人员（不按药师/库管岗位收窄）。
+     *
+     * <p>分页拉取在职主档，供科室盘点等场景下拉 + 拼音检索。</p>
+     *
+     * @return 人员列表，永不为 null
+     */
+    public List<Practitioner> listAllActivePractitionersForInventoryDocHandlerSelect() {
+        List<Practitioner> acc = new ArrayList<>();
+        int pageIndex = 0;
+        while (true) {
+            Page<Practitioner> page = practitionerQueryService.pageActivePractitionersForPosition(
+                null,
+                "",
+                PageRequest.of(
+                    pageIndex,
+                    INVENTORY_INIT_PRACTITIONER_PAGE_SIZE,
+                    Sort.by(Sort.Direction.ASC, FieldNameConstants.ID)),
+                false);
+            if (!page.hasContent()) {
+                break;
+            }
+            for (Practitioner practitioner : page.getContent()) {
+                if (practitioner == null || practitioner.getId() == null) {
+                    continue;
+                }
+                acc.add(practitioner);
+            }
+            if (!page.hasNext()) {
+                break;
+            }
+            pageIndex++;
+        }
+        return acc;
     }
 }

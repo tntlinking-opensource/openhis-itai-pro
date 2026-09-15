@@ -36,6 +36,10 @@ public class MedicationDefinitionInitQueryModel {
     private List<OptionDto> chrgitmLvOptions;
     /** 病案结算类型 options。 */
     private List<OptionDto> mrSettlementTypeCodeOptions;
+    /**
+     * 结余留用批次号 options（术语 {@code surplus_retention_batch_code}）。
+     */
+    private List<OptionDto> surplusRetentionBatchCodeOptions;
     /** system类别options。 */
     private List<OptionDto> systemCategoryOptions;
     /** medicinepropertyoptions。 */

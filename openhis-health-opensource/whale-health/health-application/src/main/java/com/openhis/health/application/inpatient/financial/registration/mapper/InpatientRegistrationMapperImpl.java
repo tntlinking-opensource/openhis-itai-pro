@@ -24,6 +24,7 @@ import com.openhis.health.application.inpatient.financial.registration.response.
 import com.openhis.health.application.inpatient.financial.registration.response.LoadWardBedCapacityResponse;
 import com.openhis.health.application.inpatient.financial.registration.response.PageRegistrationQueueResponse;
 import com.openhis.health.application.inpatient.financial.registration.response.SubmitRegistrationResponse;
+import com.openhis.health.application.inpatient.financial.registration.response.SwitchInpatientToInsuranceResponse;
 import com.openhis.health.domain.administration.encounter.command.AdmissionConditionItem;
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDetailQueryModel;
 import com.openhis.health.domain.financial.contract.queries.model.ContractListItemQueryModel;
@@ -139,6 +140,7 @@ public class InpatientRegistrationMapperImpl implements InpatientRegistrationMap
      * @param admitSourceCodeOptions 入院类型下拉
      * @param admCondCodeOptions  患者病情下拉
      * @param readOnly            是否只读查看
+     * @param switchToInsuranceEnabled 是否允许自费转医保
      * @return 上下文响应
      */
     @Override
@@ -150,7 +152,8 @@ public class InpatientRegistrationMapperImpl implements InpatientRegistrationMap
         List<OptionDto> inWayCodeOptions,
         List<OptionDto> admitSourceCodeOptions,
         List<OptionDto> admCondCodeOptions,
-        boolean readOnly) {
+        boolean readOnly,
+        boolean switchToInsuranceEnabled) {
         LoadRegistrationContextResponse response = new LoadRegistrationContextResponse();
         response.setPatient(patient);
         response.setEncounter(encounter);
@@ -160,6 +163,7 @@ public class InpatientRegistrationMapperImpl implements InpatientRegistrationMap
         response.setAdmitSourceCodeOptions(admitSourceCodeOptions);
         response.setAdmCondCodeOptions(admCondCodeOptions);
         response.setReadOnly(readOnly);
+        response.setSwitchToInsuranceEnabled(switchToInsuranceEnabled);
         return response;
     }
 
@@ -537,6 +541,7 @@ public class InpatientRegistrationMapperImpl implements InpatientRegistrationMap
         String overlayOrgName = null;
         String overlayWardName = null;
         String overlayBedName = null;
+        String overlayContractDisplay = null;
         if (overlay != null) {
             overlayBusNo = overlay.getEncounterBusNo();
             overlayPatientName = overlay.getPatientName();
@@ -544,10 +549,12 @@ public class InpatientRegistrationMapperImpl implements InpatientRegistrationMap
             overlayOrgName = overlay.getOrganizationName();
             overlayWardName = overlay.getWardName();
             overlayBedName = overlay.getBedName();
+            overlayContractDisplay = overlay.getContractDisplay();
         }
         dto.setEncounterBusNo(firstNonBlank(row.getEncounterBusNo(), overlayBusNo));
         dto.setPatientId(row.getPatientId());
         dto.setPatientName(firstNonBlank(row.getPatientName(), overlayPatientName));
+        dto.setContractDisplay(overlayContractDisplay);
         dto.setStatusEnum(row.getStatusEnum());
         dto.setStatusEnumText(firstNonBlank(row.getStatusEnumText(), overlayStatusText));
         dto.setOrganizationId(row.getOrganizationId());
@@ -668,5 +675,26 @@ public class InpatientRegistrationMapperImpl implements InpatientRegistrationMap
      */
     private Long resolveAdmissionEncounterDiagnosisId(AdmissionDiagnosisSubmitDto row) {
         return row.getEncounterDiagnosisId();
+    }
+
+    /**
+     * 自费转医保成功响应。
+     *
+     * @param ybMdtrtId               医保就诊 ID
+     * @param switchedChargeItemCount 切换行数
+     * @param insuranceAccountId      医保账户 ID
+     * @return 响应
+     */
+    @Override
+    public SwitchInpatientToInsuranceResponse toSwitchInpatientToInsuranceResponse(
+        String ybMdtrtId,
+        int switchedChargeItemCount,
+        Long insuranceAccountId) {
+        SwitchInpatientToInsuranceResponse response = new SwitchInpatientToInsuranceResponse();
+        response.setSuccess(Boolean.TRUE);
+        response.setYbMdtrtId(ybMdtrtId);
+        response.setSwitchedChargeItemCount(switchedChargeItemCount);
+        response.setInsuranceAccountId(insuranceAccountId);
+        return response;
     }
 }

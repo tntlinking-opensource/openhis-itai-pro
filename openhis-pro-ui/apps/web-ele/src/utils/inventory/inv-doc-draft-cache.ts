@@ -17,7 +17,6 @@ export const INV_DOC_DRAFT_SCENE = {
   warehousePurchaseInbound: 'warehouse-purchase-inbound',
   warehouseStockOut: 'warehouse-stock-out',
   warehouseReturnToSupplier: 'warehouse-return-to-supplier',
-  warehouseReturnStockIn: 'warehouse-return-stock-in',
   warehouseStocktake: 'warehouse-stocktake',
   warehouseGainLoss: 'warehouse-gain-loss',
   warehouseTransferOut: 'warehouse-transfer-out',

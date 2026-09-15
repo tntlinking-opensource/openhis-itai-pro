@@ -28,6 +28,20 @@ CREATE TABLE IF NOT EXISTS yb_elep_prescription (
     reptd_cnt           INT,
     vali_end_time       TIMESTAMP,
     platform_synced_at  TIMESTAMP,
+    med_type            VARCHAR(16),
+    dise_codg           VARCHAR(32),
+    dise_name           VARCHAR(256),
+    mdtrt_id            VARCHAR(30),
+    psn_no              VARCHAR(30),
+    vali_days           VARCHAR(8),
+    phar_code           VARCHAR(32),
+    phar_name           VARCHAR(64),
+    phar_dept_code      VARCHAR(32),
+    phar_dept_name      VARCHAR(128),
+    phar_profttl_codg   VARCHAR(20),
+    phar_prac_cert_no   VARCHAR(64),
+    reviewed_at         TIMESTAMP,
+    reviewed_by         BIGINT,
 
     created_at          TIMESTAMP    NOT NULL,
     updated_at          TIMESTAMP,
@@ -72,6 +86,20 @@ COMMENT ON COLUMN yb_elep_prescription.max_rept_cnt IS 'maxrept数量';
 COMMENT ON COLUMN yb_elep_prescription.reptd_cnt IS 'reptd数量';
 COMMENT ON COLUMN yb_elep_prescription.vali_end_time IS 'vali结束时间';
 COMMENT ON COLUMN yb_elep_prescription.platform_synced_at IS 'platformsynced时间';
+COMMENT ON COLUMN yb_elep_prescription.med_type IS '本方医疗类别（11/14/140104 等）；慢病不写共享 map';
+COMMENT ON COLUMN yb_elep_prescription.dise_codg IS '慢病病种编码（仅电子处方报文）';
+COMMENT ON COLUMN yb_elep_prescription.dise_name IS '慢病病种名称';
+COMMENT ON COLUMN yb_elep_prescription.mdtrt_id IS '挂号 map(11) 只读缓存的医保就诊号';
+COMMENT ON COLUMN yb_elep_prescription.psn_no IS '挂号 map(11) 只读缓存的人员编号';
+COMMENT ON COLUMN yb_elep_prescription.vali_days IS '处方有效天数';
+COMMENT ON COLUMN yb_elep_prescription.phar_code IS '审方医保药师代码';
+COMMENT ON COLUMN yb_elep_prescription.phar_name IS '审方药师姓名';
+COMMENT ON COLUMN yb_elep_prescription.phar_dept_code IS '审方药师科室医保码';
+COMMENT ON COLUMN yb_elep_prescription.phar_dept_name IS '审方药师科室名称';
+COMMENT ON COLUMN yb_elep_prescription.phar_profttl_codg IS '审方药师职称编码';
+COMMENT ON COLUMN yb_elep_prescription.phar_prac_cert_no IS '审方药师执业资格证号';
+COMMENT ON COLUMN yb_elep_prescription.reviewed_at IS '院内医保药师审方时间';
+COMMENT ON COLUMN yb_elep_prescription.reviewed_by IS '审方操作人（whale_users.id）';
 COMMENT ON COLUMN yb_elep_prescription.created_at IS '创建时间';
 COMMENT ON COLUMN yb_elep_prescription.updated_at IS '最后更新时间';
 COMMENT ON COLUMN yb_elep_prescription.created_by IS '创建人';

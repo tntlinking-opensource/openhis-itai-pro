@@ -4,8 +4,6 @@
  */
 package com.openhis.health.application.inventory.department.deptissue.request;
 
-import com.fasterxml.jackson.databind.annotation.JsonSerialize;
-import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
@@ -21,9 +19,4 @@ import lombok.experimental.Accessors;
 @Accessors(chain = true)
 @Schema(description = "科室领用页初始化 IF-DEP-IS-01")
 public class LoadDeptIssueFormInitRequest {
-
-    /** 兼容字段，服务端忽略。 */
-    @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "兼容字段，服务端忽略")
-    private Long organizationId;
 }

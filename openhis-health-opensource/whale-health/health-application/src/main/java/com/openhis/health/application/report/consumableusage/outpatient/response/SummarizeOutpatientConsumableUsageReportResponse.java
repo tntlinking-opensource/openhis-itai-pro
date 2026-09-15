@@ -29,10 +29,6 @@ public class SummarizeOutpatientConsumableUsageReportResponse {
     @Schema(description = "净数量合计")
     private BigDecimal totalNetQuantity;
 
-    /** 净金额合计（售价别名；结算 2 位）。 */
-    @Schema(description = "净金额合计")
-    private BigDecimal totalNetAmount;
-
     /** 进价净额合计（结算 2 位）。 */
     @Schema(description = "进价净额合计")
     private BigDecimal purchaseNetTotalAmount;

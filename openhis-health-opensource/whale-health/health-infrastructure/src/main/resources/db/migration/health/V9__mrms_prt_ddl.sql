@@ -169,7 +169,7 @@ CREATE TABLE IF NOT EXISTS mrms_case_record (
     tenant_id           BIGINT       NOT NULL,
     patient_id          BIGINT       NOT NULL,
     encounter_id        BIGINT       NOT NULL,
-    medcasno            VARCHAR(32)  NOT NULL,
+    medcasno            VARCHAR(32),
     status_code         VARCHAR(32)  NOT NULL,
     patn_ipt_cnt        INTEGER,
     psn_name            VARCHAR(100),
@@ -225,7 +225,8 @@ COMMENT ON COLUMN mrms_case_record.id IS '主键';
 COMMENT ON COLUMN mrms_case_record.tenant_id IS '租户标识';
 COMMENT ON COLUMN mrms_case_record.patient_id IS '患者标识';
 COMMENT ON COLUMN mrms_case_record.encounter_id IS '就诊标识';
-COMMENT ON COLUMN mrms_case_record.medcasno IS '病案号';
+COMMENT ON COLUMN mrms_case_record.medcasno IS
+    '病案号：CR+yyMM+4位年流水；主档可空，首次保存首页发号';
 COMMENT ON COLUMN mrms_case_record.status_code IS '状态编码';
 COMMENT ON COLUMN mrms_case_record.patn_ipt_cnt IS 'patnipt数量';
 COMMENT ON COLUMN mrms_case_record.psn_name IS 'psn名称';
@@ -282,11 +283,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_mrms_medcasno_seq
     ON mrms_medcasno_sequence (tenant_id, year_value)
     WHERE is_deleted = FALSE;
 
-COMMENT ON TABLE mrms_medcasno_sequence IS 'mrms病案号序号';
+COMMENT ON TABLE mrms_medcasno_sequence IS
+    'mrms病案号年度序号（后四位按年递增）';
 COMMENT ON COLUMN mrms_medcasno_sequence.id IS '主键';
 COMMENT ON COLUMN mrms_medcasno_sequence.tenant_id IS '租户标识';
 COMMENT ON COLUMN mrms_medcasno_sequence.year_value IS '年份';
-COMMENT ON COLUMN mrms_medcasno_sequence.last_seq IS '末位序号';
+COMMENT ON COLUMN mrms_medcasno_sequence.last_seq IS
+    '本年度已分配最大流水（下一号为 last_seq+1）';
 COMMENT ON COLUMN mrms_medcasno_sequence.created_at IS '创建时间';
 COMMENT ON COLUMN mrms_medcasno_sequence.updated_at IS '最后更新时间';
 COMMENT ON COLUMN mrms_medcasno_sequence.created_by IS '创建人';
@@ -307,7 +310,6 @@ CREATE TABLE IF NOT EXISTS mrms_case_record_homepage (
     frozen              BOOLEAN      NOT NULL DEFAULT FALSE,
     ipt_medcas_hmpg_sn  VARCHAR(30),
     field_sources_json  TEXT,
-    extension_json      TEXT,
     psn_name            VARCHAR(100),
     gend_code           VARCHAR(16),
     brdy                DATE,
@@ -357,7 +359,66 @@ CREATE TABLE IF NOT EXISTS mrms_case_record_homepage (
     is_deleted          BOOLEAN      NOT NULL DEFAULT FALSE,
     deleted_at          TIMESTAMP,
     deleted_by          BIGINT,
-    atddr_practitioner_id BIGINT
+    atddr_practitioner_id BIGINT,
+    -- V19 中医信息
+    clinical_path_code  VARCHAR(8),
+    tcm_prep_code       VARCHAR(8),
+    tcm_device_code     VARCHAR(8),
+    tcm_tech_code       VARCHAR(8),
+    syndrome_nurse_code VARCHAR(8),
+    -- V20 升列终态（V22 已去掉扩展 JSON 列）
+    pay_way_code        VARCHAR(16),
+    health_card_no      VARCHAR(64),
+    age_year            INTEGER,
+    age_month           INTEGER,
+    birplc_codes        TEXT,
+    napl_codes          TEXT,
+    curr_addr_codes     TEXT,
+    curr_addr_detail    VARCHAR(500),
+    curr_addr_poscode   VARCHAR(16),
+    resd_addr_codes     TEXT,
+    resd_addr_detail    VARCHAR(500),
+    resd_addr_poscode   VARCHAR(16),
+    empr_addr           VARCHAR(500),
+    empr_tel            VARCHAR(32),
+    empr_poscode        VARCHAR(16),
+    adm_ward            VARCHAR(100),
+    adm_bed             VARCHAR(32),
+    dscg_ward           VARCHAR(100),
+    dscg_bed            VARCHAR(32),
+    drug_allergy_code   VARCHAR(8),
+    allergy_drug_name   VARCHAR(200),
+    pathology_no        VARCHAR(64),
+    main_diag_cure_code VARCHAR(8),
+    rescue_count        INTEGER,
+    rescue_success_count INTEGER,
+    clinic_path_manage_code VARCHAR(8),
+    diag_match_op_dscg  VARCHAR(8),
+    diag_match_adm_dscg VARCHAR(8),
+    diag_match_pre_post VARCHAR(8),
+    diag_match_clinic_path VARCHAR(8),
+    diag_match_radio_path VARCHAR(8),
+    autopsy_code        VARCHAR(8),
+    abo_code            VARCHAR(8),
+    rh_code             VARCHAR(8),
+    train_dr_name       VARCHAR(50),
+    intn_dr_name        VARCHAR(50),
+    codr_name           VARCHAR(50),
+    medcas_qlt_code     VARCHAR(8),
+    qltctrl_date        DATE,
+    qltctrl_dr_name     VARCHAR(50),
+    qltctrl_nurs_name   VARCHAR(50),
+    acp_medins_name     VARCHAR(200),
+    acp_community_name  VARCHAR(200),
+    rinp31_flag         VARCHAR(8),
+    rinp31_purpose      VARCHAR(500),
+    -- V25 区划地名
+    birplc_name         VARCHAR(200),
+    napl_name           VARCHAR(200),
+    -- V26 费用快照
+    medfee_sumamt       NUMERIC(16, 2),
+    selfpay_amt         NUMERIC(16, 2),
+    fee_items_json      JSONB
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uk_mrms_homepage_case
@@ -372,7 +433,6 @@ COMMENT ON COLUMN mrms_case_record_homepage.version_no IS 'version编号';
 COMMENT ON COLUMN mrms_case_record_homepage.frozen IS '是否冻结';
 COMMENT ON COLUMN mrms_case_record_homepage.ipt_medcas_hmpg_sn IS '住院病案首页流水号';
 COMMENT ON COLUMN mrms_case_record_homepage.field_sources_json IS '字段sourcesJSON';
-COMMENT ON COLUMN mrms_case_record_homepage.extension_json IS '扩展字段JSON';
 COMMENT ON COLUMN mrms_case_record_homepage.psn_name IS 'psn名称';
 COMMENT ON COLUMN mrms_case_record_homepage.gend_code IS 'gend编码';
 COMMENT ON COLUMN mrms_case_record_homepage.brdy IS '字段：brdy';
@@ -423,6 +483,61 @@ COMMENT ON COLUMN mrms_case_record_homepage.is_deleted IS '软删标记';
 COMMENT ON COLUMN mrms_case_record_homepage.deleted_at IS '删除时间';
 COMMENT ON COLUMN mrms_case_record_homepage.deleted_by IS '删除人';
 COMMENT ON COLUMN mrms_case_record_homepage.atddr_practitioner_id IS 'atddr医护人员标识';
+COMMENT ON COLUMN mrms_case_record_homepage.clinical_path_code IS '实施临床路径（国标：1中医 2西医 3否；老 inpath）';
+COMMENT ON COLUMN mrms_case_record_homepage.tcm_prep_code IS '使用医疗机构中药制剂（1是 2否；老 usetczj）';
+COMMENT ON COLUMN mrms_case_record_homepage.tcm_device_code IS '使用中医诊疗设备（1是 2否；老 usetceq）';
+COMMENT ON COLUMN mrms_case_record_homepage.tcm_tech_code IS '使用中医诊疗技术（1是 2否；老 usetczl）';
+COMMENT ON COLUMN mrms_case_record_homepage.syndrome_nurse_code IS '辨证施护（1是 2否；老 isbzsf）';
+COMMENT ON COLUMN mrms_case_record_homepage.pay_way_code IS '医疗付费方式（原 extension.payWayCode）';
+COMMENT ON COLUMN mrms_case_record_homepage.health_card_no IS '健康卡号（原 extension.healthCardNo）';
+COMMENT ON COLUMN mrms_case_record_homepage.age_year IS '年龄岁（原 extension.ageYear）';
+COMMENT ON COLUMN mrms_case_record_homepage.age_month IS '不足1周岁月龄（原 extension.ageMonth）';
+COMMENT ON COLUMN mrms_case_record_homepage.birplc_codes IS '出生地省市区 codes 斜杠拼接（如 220000/220100/220102）';
+COMMENT ON COLUMN mrms_case_record_homepage.napl_codes IS '籍贯省市 codes 斜杠拼接（如 220000/220100）';
+COMMENT ON COLUMN mrms_case_record_homepage.curr_addr_codes IS '现住址省市区 codes 斜杠拼接';
+COMMENT ON COLUMN mrms_case_record_homepage.curr_addr_detail IS '现住址详细（原 extension.currAddrDetail）';
+COMMENT ON COLUMN mrms_case_record_homepage.curr_addr_poscode IS '现住址邮编（原 extension.currAddrPoscode）';
+COMMENT ON COLUMN mrms_case_record_homepage.resd_addr_codes IS '户口地址省市区 codes 斜杠拼接';
+COMMENT ON COLUMN mrms_case_record_homepage.resd_addr_detail IS '户口详细地址（原 extension.resdAddrDetail）';
+COMMENT ON COLUMN mrms_case_record_homepage.resd_addr_poscode IS '户口邮编（原 extension.resdAddrPoscode）';
+COMMENT ON COLUMN mrms_case_record_homepage.empr_addr IS '工作单位及地址（原 extension.emprAddr）';
+COMMENT ON COLUMN mrms_case_record_homepage.empr_tel IS '单位电话（原 extension.emprTel）';
+COMMENT ON COLUMN mrms_case_record_homepage.empr_poscode IS '单位邮编（原 extension.emprPoscode）';
+COMMENT ON COLUMN mrms_case_record_homepage.adm_ward IS '入院病区（原 extension.admWard）';
+COMMENT ON COLUMN mrms_case_record_homepage.adm_bed IS '入院床位（原 extension.admBed）';
+COMMENT ON COLUMN mrms_case_record_homepage.dscg_ward IS '出院病区（原 extension.dscgWard）';
+COMMENT ON COLUMN mrms_case_record_homepage.dscg_bed IS '出院床位（原 extension.dscgBed）';
+COMMENT ON COLUMN mrms_case_record_homepage.drug_allergy_code IS '药物过敏（原 extension.drugAllergyCode）';
+COMMENT ON COLUMN mrms_case_record_homepage.allergy_drug_name IS '过敏药物（原 extension.allergyDrugName）';
+COMMENT ON COLUMN mrms_case_record_homepage.pathology_no IS '病理号（原 extension.pathologyNo）';
+COMMENT ON COLUMN mrms_case_record_homepage.main_diag_cure_code IS '主要诊断治愈好转（原 extension.mainDiagCureCode）';
+COMMENT ON COLUMN mrms_case_record_homepage.rescue_count IS '抢救次数（原 extension.rescueCount）';
+COMMENT ON COLUMN mrms_case_record_homepage.rescue_success_count IS '抢救成功次数（原 extension.rescueSuccessCount）';
+COMMENT ON COLUMN mrms_case_record_homepage.clinic_path_manage_code IS '临床路径管理（原 extension.clinicPathManageCode；异于中医 clinical_path_code）';
+COMMENT ON COLUMN mrms_case_record_homepage.diag_match_op_dscg IS '诊断符合门诊与出院（原 extension.diagMatchOpDscg）';
+COMMENT ON COLUMN mrms_case_record_homepage.diag_match_adm_dscg IS '诊断符合入院与出院（原 extension.diagMatchAdmDscg）';
+COMMENT ON COLUMN mrms_case_record_homepage.diag_match_pre_post IS '诊断符合术前与术后（原 extension.diagMatchPrePost）';
+COMMENT ON COLUMN mrms_case_record_homepage.diag_match_clinic_path IS '诊断符合临床与病理（原 extension.diagMatchClinicPath）';
+COMMENT ON COLUMN mrms_case_record_homepage.diag_match_radio_path IS '诊断符合放射与病理（原 extension.diagMatchRadioPath）';
+COMMENT ON COLUMN mrms_case_record_homepage.autopsy_code IS '死亡患者尸检（原 extension.autopsyCode）';
+COMMENT ON COLUMN mrms_case_record_homepage.abo_code IS '血型 ABO（原 extension.aboCode）';
+COMMENT ON COLUMN mrms_case_record_homepage.rh_code IS 'Rh（原 extension.rhCode）';
+COMMENT ON COLUMN mrms_case_record_homepage.train_dr_name IS '进修医师（原 extension.trainDrName）';
+COMMENT ON COLUMN mrms_case_record_homepage.intn_dr_name IS '实习医师（原 extension.intnDrName）';
+COMMENT ON COLUMN mrms_case_record_homepage.codr_name IS '编码员（原 extension.codrName）';
+COMMENT ON COLUMN mrms_case_record_homepage.medcas_qlt_code IS '病案质量（原 extension.medcasQltCode）';
+COMMENT ON COLUMN mrms_case_record_homepage.qltctrl_date IS '质控日期（原 extension.qltctrlDate）';
+COMMENT ON COLUMN mrms_case_record_homepage.qltctrl_dr_name IS '质控医师（原 extension.qltctrlDrName）';
+COMMENT ON COLUMN mrms_case_record_homepage.qltctrl_nurs_name IS '质控护士（原 extension.qltctrlNursName）';
+COMMENT ON COLUMN mrms_case_record_homepage.acp_medins_name IS '拟接收医院（原 extension.acpMedinsName）';
+COMMENT ON COLUMN mrms_case_record_homepage.acp_community_name IS '拟接收社区（原 extension.acpCommunityName）';
+COMMENT ON COLUMN mrms_case_record_homepage.rinp31_flag IS '31天再住院计划（原 extension.rinp31Flag）';
+COMMENT ON COLUMN mrms_case_record_homepage.rinp31_purpose IS '再住院目的（原 extension.rinp31Purpose）';
+COMMENT ON COLUMN mrms_case_record_homepage.birplc_name IS '出生地中文地名连续文本（如吉林省长春市南关区；与 birplc_codes 同步由前端写入）';
+COMMENT ON COLUMN mrms_case_record_homepage.napl_name IS '籍贯中文地名连续文本（如吉林省长春市；与 napl_codes 同步由前端写入）';
+COMMENT ON COLUMN mrms_case_record_homepage.medfee_sumamt IS '医疗费总额快照（4401 medfee_sumamt）；首次空快照补种或「重新统计」覆盖';
+COMMENT ON COLUMN mrms_case_record_homepage.selfpay_amt IS '自付金额快照（4401 selfpay_amt）；首次空快照补种或「重新统计」覆盖';
+COMMENT ON COLUMN mrms_case_record_homepage.fee_items_json IS '费用分项快照（4401 分项键→金额 JSON）；首次空快照补种或「重新统计」覆盖';
 
 -- from V89__mrms_homepage_diagnosis.sql
 -- mrms_homepage_diagnosis（建表）
@@ -439,6 +554,12 @@ CREATE TABLE IF NOT EXISTS mrms_homepage_diagnosis (
     adm_cond_code       VARCHAR(16),
     maindiag_flag       VARCHAR(3),
     vali_flag           VARCHAR(3)   NOT NULL DEFAULT '1',
+    out_ill_status_code VARCHAR(8),
+    confirm_time        TIMESTAMP WITHOUT TIME ZONE,
+    diag_remark         VARCHAR(200),
+    confirm_dr_id       BIGINT,
+    confirm_dr_name     VARCHAR(64),
+    need_yb_up          VARCHAR(3),
     created_at          TIMESTAMP    NOT NULL,
     updated_at          TIMESTAMP,
     created_by          BIGINT,
@@ -462,6 +583,12 @@ COMMENT ON COLUMN mrms_homepage_diagnosis.diag_name IS 'diag名称';
 COMMENT ON COLUMN mrms_homepage_diagnosis.adm_cond_code IS 'admcond编码';
 COMMENT ON COLUMN mrms_homepage_diagnosis.maindiag_flag IS 'maindiag标志位';
 COMMENT ON COLUMN mrms_homepage_diagnosis.vali_flag IS 'vali标志位';
+COMMENT ON COLUMN mrms_homepage_diagnosis.out_ill_status_code IS '诊断转归/病情（结算清单；1治愈2好转3未愈4死亡9其他）';
+COMMENT ON COLUMN mrms_homepage_diagnosis.confirm_time IS '确诊时间（结算清单；手填）';
+COMMENT ON COLUMN mrms_homepage_diagnosis.diag_remark IS '说明（结算清单；手填）';
+COMMENT ON COLUMN mrms_homepage_diagnosis.confirm_dr_id IS '诊断医生 practitionerId（出院诊断下拉；对齐老 confirmDoctorId）';
+COMMENT ON COLUMN mrms_homepage_diagnosis.confirm_dr_name IS '诊断医生姓名（选下拉时冗余；对齐老 confirmDoctor 展示）';
+COMMENT ON COLUMN mrms_homepage_diagnosis.need_yb_up IS '是否上传医保（1是 0否；对齐老 needYbUp）';
 COMMENT ON COLUMN mrms_homepage_diagnosis.created_at IS '创建时间';
 COMMENT ON COLUMN mrms_homepage_diagnosis.updated_at IS '最后更新时间';
 COMMENT ON COLUMN mrms_homepage_diagnosis.created_by IS '创建人';

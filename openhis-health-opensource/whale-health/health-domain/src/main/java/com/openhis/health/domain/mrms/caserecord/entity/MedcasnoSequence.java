@@ -14,8 +14,8 @@ import lombok.Setter;
 /**
  * 病案号年度流水序列表（{@code mrms_medcasno_sequence}），租户+自然年唯一。
  *
- * <p>由 {@link com.openhis.health.domain.mrms.caserecord.support.MedcasnoGenerator} 行锁发号，
- * 格式 {@code {yyyy}{5位流水}}。</p>
+ * <p>由 {@link com.openhis.health.domain.mrms.caserecord.support.MedcasnoGenerator} 行锁发号；
+ * 号形 {@code CR}{@code yy}{@code MM}{@code ####}，后四位按年递增。</p>
  */
 @Getter
 @Setter

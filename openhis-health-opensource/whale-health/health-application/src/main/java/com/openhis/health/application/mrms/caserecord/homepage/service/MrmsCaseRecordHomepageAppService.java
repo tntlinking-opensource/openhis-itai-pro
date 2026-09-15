@@ -22,6 +22,9 @@ import com.openhis.health.application.mrms.caserecord.homepage.request.ReturnToD
 import com.openhis.health.application.mrms.caserecord.homepage.request.SaveHomepageRequest;
 import com.openhis.health.application.mrms.caserecord.homepage.request.SubmitHomepageRequest;
 import com.openhis.health.application.mrms.caserecord.homepage.support.HomepageOpenPdfRenderer;
+import com.openhis.health.application.mrms.caserecord.homepage.support.HospitalTcmInfoEnabledResolver;
+import com.openhis.health.application.mrms.upload.medcas.support.InsuranceEncounterContext;
+import com.openhis.health.application.mrms.upload.medcas.support.InsuranceEncounterLoader;
 import com.openhis.health.application.shared.encounter.EncounterContextReader;
 import com.openhis.health.application.shared.financial.EncounterContractDisplayAssembler;
 import com.openhis.health.application.shared.financial.EncounterInsutypeDisplayAssembler;
@@ -30,6 +33,8 @@ import com.openhis.health.application.shared.inpatient.BusinessDischargeTimeReso
 import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.shared.validator.MrmsOperatorResolver;
 import com.openhis.health.application.shared.validator.PageWindowGate;
+import com.openhis.health.domain.administration.account.entity.Account;
+import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.administration.patient.entity.Patient;
@@ -39,11 +44,13 @@ import com.openhis.health.domain.mrms.caserecord.command.SubmitCaseRecordCommand
 import com.openhis.health.domain.mrms.caserecord.command.TransitionCaseRecordCommand;
 import com.openhis.health.domain.mrms.caserecord.entity.CaseRecord;
 import com.openhis.health.domain.mrms.caserecord.entity.CaseRecordHomepage;
+import com.openhis.health.domain.mrms.caserecord.entity.HomepageDiagnosis;
 import com.openhis.health.domain.mrms.caserecord.queries.CaseRecordPageQuery;
 import com.openhis.health.domain.mrms.caserecord.queries.model.CaseRecordListItemQueryModel;
 import com.openhis.health.domain.mrms.caserecord.service.CaseRecordDomainService;
 import com.openhis.health.domain.mrms.caserecord.service.CaseRecordHomepageDomainService;
 import com.openhis.health.domain.mrms.caserecord.service.CaseRecordQueryService;
+import com.openhis.health.domain.mrms.caserecord.vo.FeeSummarySnapshot;
 import com.openhis.health.domain.share.constants.InpatientRegistrationConstants;
 import com.openhis.health.domain.share.constants.MrmsConstants;
 import com.openhis.health.domain.share.constants.MrmsErrorCodes;
@@ -60,21 +67,24 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
 /**
  * 病案首页应用服务（列表 / 编辑 / 医生站查档）。
  *
- * <p>入院登记成功后 {@code bootstrapIfAbsent} 建主档并发病案号；首页打开仅兜底历史未建档就诊。
- * 质控等工作台传病案状态仍查主档。路由前缀 {@code POST /api/app/mrmsCaseRecordHomepage/*}。</p>
+ * <p>入院登记成功后 {@code bootstrapIfAbsent} 建主档（病案号可空）；医生首次保存首页时发号。
+ * 首页打开仅兜底历史未建档就诊。质控等工作台传病案状态仍查主档。路由前缀 {@code POST /api/app/mrmsCaseRecordHomepage/*}。</p>
  *
  * <p>「住院病例查询」菜单独立走 {@code MrmsInpatientEmrQueryAppService}（包 {@code mrms.inpatientemr}），
  * 不经本服务；本服务 {@link #queryPage} 仅服务病案首页工作台与质控等带状态过滤的列表。</p>
@@ -90,6 +100,8 @@ public class MrmsCaseRecordHomepageAppService {
     private final CaseRecordListMapper caseRecordListMapper;
     private final HomepageMapper homepageMapper;
     private final HomepageOpenPdfRenderer homepageOpenPdfRenderer;
+    /** 医院 medins_type → 中医信息段开关。 */
+    private final HospitalTcmInfoEnabledResolver hospitalTcmInfoEnabledResolver;
     private final MrmsOperatorResolver operatorResolver;
     private final PageWindowGate pageWindowGate;
     private final EncounterContextReader encounterContextReader;
@@ -99,6 +111,9 @@ public class MrmsCaseRecordHomepageAppService {
     private final EncounterInsutypeDisplayAssembler encounterInsutypeDisplayAssembler;
     /** 业务出院时间（出院医嘱计划时间优先）。 */
     private final BusinessDischargeTimeResolver businessDischargeTimeResolver;
+    /** 医保结算上下文（列表回填 psn_no）。 */
+    private final InsuranceEncounterLoader insuranceEncounterLoader;
+    private final AccountQueryService accountQueryService;
 
     /**
      * 分页检索病案列表（首页工作台 / 质控等工作台共用）。
@@ -200,6 +215,7 @@ public class MrmsCaseRecordHomepageAppService {
             if (row.getEncounterId() != null && businessDscgByEncounter.containsKey(row.getEncounterId())) {
                 item.setDscgTime(businessDscgByEncounter.get(row.getEncounterId()));
             }
+            this.fillListPsnNo(item);
             items.add(item);
         }
         return PagedResultBuilder.build(new PagedResult<>(), items, page);
@@ -286,6 +302,7 @@ public class MrmsCaseRecordHomepageAppService {
                         contractDisplayByEncounterId.get(ctx.getEncounterId()),
                         insutypeByEncounterId.get(ctx.getEncounterId())));
             }
+            this.fillListPsnNo(item);
             items.add(item);
         }
         return PagedResultBuilder.build(new PagedResult<>(), items, page);
@@ -317,8 +334,9 @@ public class MrmsCaseRecordHomepageAppService {
      * 加载首页编辑页（主档 + 首页 + 诊断/手术子表）。
      *
      * <p>仅有 {@code encounterId} 时幂等建档（入院登记主路径已建则直接返回；含新建 autoFill）；
-     * 已有 {@code caseRecordId} 时加载已有档。草稿/退回且未冻结时打开页软刷住院信息与费用
-     * （出院科别/账单汇总等，尊重 manual），避免必须再点「导入」。</p>
+     * 已有 {@code caseRecordId} 时加载已有档。草稿/退回且未冻结时打开页软刷
+     * {@code all}（人口学/住院/医护/诊断/手术，尊重 manual；等同「全部导入」但 force=false）；
+     * 费用读首页快照列，无快照时补种一次（之后不点「重新统计」不变）。</p>
      *
      * @param request 病案主键与/或就诊主键
      * @return 页面聚合 DTO
@@ -343,24 +361,96 @@ public class MrmsCaseRecordHomepageAppService {
         }
         CaseRecordHomepage homepage = caseRecordHomepageDomainService.ensureHomepage(
                 record.getId(), record.getTenantId(), operatorId);
-        // Cmd：可编辑态打开刷住院+费用；其余未冻结态至少刷住院信息（校正 dscg/ipt_days）
+        // Cmd：打开即带出 HIS 已填信息，避免住院侧已登记内容在首页再填一遍
+        // all 含 basic/inpatient/staff/diagnosis/procedure；不含 fee（费用走快照补种）
         if (this.shouldSoftRefreshHisOnOpen(record, homepage)) {
             homepage = caseRecordHomepageDomainService.mergeAutoFillFromHis(
-                    record, List.of("inpatient", "fee"), false, operatorId);
+                    record, List.of("all"), false, operatorId);
+            // 诊断行在但编码全空：强制回填，避免空壳挡住 HIS 诊断
+            if (this.shouldSoftRefreshDiagnosisOnOpen(record.getId())) {
+                homepage = caseRecordHomepageDomainService.mergeAutoFillFromHis(
+                        record, List.of("diagnosis"), true, operatorId);
+            }
         } else if (homepage != null && !Boolean.TRUE.equals(homepage.getFrozen())) {
+            // 非草稿：只软刷标量分区，不碰诊断/手术子表（避免干扰编码/归档前态）
             homepage = caseRecordHomepageDomainService.mergeAutoFillFromHis(
-                    record, List.of("inpatient"), false, operatorId);
+                    record, List.of("basic", "inpatient", "staff"), false, operatorId);
         }
-        // Asm：映射主档详情与首页 DTO
+        // Cmd：无费用快照则按当前账单补种；已有快照不点「重新统计」不变
+        homepage = caseRecordHomepageDomainService.ensureFeeSnapshotSeeded(record, homepage, operatorId);
+        // Asm：映射主档详情与首页 DTO；入院科室供前端诊断医生下拉
         HomepagePageDto page = new HomepagePageDto();
-        page.setCaseRecord(caseRecordDetailMapper.toDetail(record));
+        CaseRecordDetailDto detail = caseRecordDetailMapper.toDetail(record);
+        this.fillOrganizationIdFromEncounter(detail, record.getEncounterId());
+        page.setCaseRecord(detail);
         page.setHomepage(homepageMapper.toDto(
                 homepage,
                 caseRecordHomepageDomainService.listDiagnoses(record.getId()),
-                caseRecordHomepageDomainService.listProcedures(record.getId())));
+                caseRecordHomepageDomainService.listProcedures(record.getId()),
+                record.getEncounterId()));
+        // Asm：首页 DTO 附带主档病案号（可空；与 caseRecord.medcasno 同值）
+        if (page.getHomepage() != null) {
+            page.getHomepage().setMedcasno(record.getMedcasno());
+        }
         // Asm：打开页展示侧校正出院时间/住院天数（计划出院优先；脏快照不误导）
         this.overlayBusinessDischargeOnHomepageDto(page.getHomepage(), record.getEncounterId());
+        // Asm：费用快照叠加到 fees
+        this.overlayFeesOnHomepageDto(page.getHomepage(), homepage);
+        // Asm：中医信息显隐由医院机构类型决定（非院点 override）
+        this.overlayTcmInfoEnabled(page);
         return page;
+    }
+
+    /**
+     * 写入 {@link HomepagePageDto#tcmInfoEnabled} 与首页 DTO 同名字段。
+     *
+     * @param page loadPage 聚合出参；可空
+     */
+    private void overlayTcmInfoEnabled(HomepagePageDto page) {
+        if (page == null) {
+            return;
+        }
+        boolean enabled = hospitalTcmInfoEnabledResolver.resolveTcmInfoEnabled();
+        page.setTcmInfoEnabled(enabled);
+        HomepageDto homepageDto = page.getHomepage();
+        if (homepageDto != null) {
+            homepageDto.setTcmInfoEnabled(enabled);
+        }
+    }
+
+    /**
+     * 仅回填首页 DTO 上的中医信息开关（save / refresh 等单 DTO 出参）。
+     *
+     * @param homepageDto 首页 DTO；可空
+     */
+    private void overlayTcmInfoEnabledOnHomepageDto(HomepageDto homepageDto) {
+        if (homepageDto == null) {
+            return;
+        }
+        homepageDto.setTcmInfoEnabled(hospitalTcmInfoEnabledResolver.resolveTcmInfoEnabled());
+    }
+
+    /**
+     * 从住院就诊上下文回填入院科室主键（诊断医生下拉 / 同科室临床门禁）。
+     *
+     * <p>主档实体无科室列；与列表行 {@code CaseRecordListItemDto.organizationId} 同口径。</p>
+     *
+     * @param detail      主档详情 DTO；可空
+     * @param encounterId 就诊主键；可空则跳过
+     */
+    private void fillOrganizationIdFromEncounter(CaseRecordDetailDto detail, Long encounterId) {
+        // 无详情或无就诊：无法解析入院科室
+        if (detail == null || encounterId == null) {
+            return;
+        }
+        // Pre：读住院上下文取 organizationId（与列表装配同源）
+        InpatientEncounterContextQueryModel context =
+                encounterContextReader.getInpatientContextByEncounterId(encounterId).orElse(null);
+        // 就诊不可见时保持 organizationId 为空，前端下拉回退全院医师
+        if (context == null) {
+            return;
+        }
+        detail.setOrganizationId(context.getOrganizationId());
     }
 
     /**
@@ -391,11 +481,48 @@ public class MrmsCaseRecordHomepageAppService {
     }
 
     /**
+     * 首页 DTO 费用快照叠加：总额/自付/分项写入 {@code fees}。
+     *
+     * <p>只读首页实体已落库快照；调用关系：loadPage / saveHomepage / refreshAutoFill / PDF 预览。
+     * 目录病案结算类型变更后须点「重新统计」才会变。</p>
+     *
+     * @param homepageDto 首页 DTO；可空
+     * @param homepage    首页实体（含费用快照列）；可空则跳过
+     */
+    private void overlayFeesOnHomepageDto(HomepageDto homepageDto, CaseRecordHomepage homepage) {
+        // 无 DTO：无法回填
+        if (homepageDto == null) {
+            return;
+        }
+        FeeSummarySnapshot fee = caseRecordHomepageDomainService.readFeeSnapshot(homepage);
+        Map<String, BigDecimal> fees = new LinkedHashMap<>();
+        // 有快照时写入 fees Map
+        if (fee != null) {
+            if (fee.getMedfeeSumamt() != null) {
+                fees.put(MrmsConstants.EXT_MEDFEE_SUMAMT, fee.getMedfeeSumamt());
+            }
+            if (fee.getSelfpayAmt() != null) {
+                fees.put(MrmsConstants.EXT_SELFPAY_AMT, fee.getSelfpayAmt());
+            }
+            Map<String, BigDecimal> items = fee.getFeeItems();
+            if (items != null) {
+                for (Map.Entry<String, BigDecimal> entry : items.entrySet()) {
+                    if (entry.getKey() == null || entry.getValue() == null) {
+                        continue;
+                    }
+                    fees.put(entry.getKey(), entry.getValue());
+                }
+            }
+        }
+        homepageDto.setFees(fees);
+    }
+
+    /**
      * 打开页是否软刷 HIS 分区：医生可编辑态（draft/returned）且首页未冻结。
      *
      * @param record   病案主档
      * @param homepage 首页快照
-     * @return true 表示应合并住院/费用等分区
+     * @return true 表示应合并 all 分区（费用快照由 ensureFeeSnapshotSeeded 单独处理）
      */
     private boolean shouldSoftRefreshHisOnOpen(CaseRecord record, CaseRecordHomepage homepage) {
         // 无首页或已冻结：只读库内快照
@@ -408,7 +535,31 @@ public class MrmsCaseRecordHomepageAppService {
     }
 
     /**
-     * 保存首页标量、扩展 JSON 与诊断/手术子表。
+     * 打开页是否软刷诊断分区：已有诊断行但诊断编码全空时回填（避免误清空后入院诊断空白）。
+     *
+     * @param caseRecordId 病案主键
+     * @return true 表示应合并 diagnosis 分区
+     */
+    private boolean shouldSoftRefreshDiagnosisOnOpen(Long caseRecordId) {
+        List<HomepageDiagnosis> diagnoses =
+                caseRecordHomepageDomainService.listDiagnoses(caseRecordId);
+        if (diagnoses == null || diagnoses.isEmpty()) {
+            return true;
+        }
+        for (HomepageDiagnosis diagnosis : diagnoses) {
+            if (diagnosis == null) {
+                continue;
+            }
+            String code = diagnosis.getDiagCode();
+            if (code != null && !code.isBlank()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * 保存首页标量与诊断/手术子表。
      *
      * <p>无 {@code caseRecordId} 时须有 {@code encounterId}，先 bootstrap 再保存。</p>
      *
@@ -431,11 +582,22 @@ public class MrmsCaseRecordHomepageAppService {
         // Cmd：领域校验可编辑态并持久化首页与子表
         CaseRecordHomepage homepage = caseRecordDomainService.saveHomepage(
                 homepageMapper.toSaveCommand(request, operatorId));
-        // Asm：重新加载子表并映射出参
-        return homepageMapper.toDto(
+        // Asm：重新加载子表并映射出参（带就诊诊断来源提示，区分国临/医保同码）
+        CaseRecord record = caseRecordDomainService.requireById(request.getCaseRecordId());
+        HomepageDto dto = homepageMapper.toDto(
                 homepage,
                 caseRecordHomepageDomainService.listDiagnoses(request.getCaseRecordId()),
-                caseRecordHomepageDomainService.listProcedures(request.getCaseRecordId()));
+                caseRecordHomepageDomainService.listProcedures(request.getCaseRecordId()),
+                record.getEncounterId());
+        // Asm：回传主档病案号（首次保存发号后前端顶栏需立即可见）
+        dto.setMedcasno(record.getMedcasno());
+        // Asm：保存后读费用快照（无则补种），保证 fees 与落库一致且不点重新统计不变
+        homepage = caseRecordHomepageDomainService.ensureFeeSnapshotSeeded(
+                record, homepage, operatorId);
+        this.overlayFeesOnHomepageDto(dto, homepage);
+        // Asm：回填中医信息开关（与 loadPage 同口径）
+        this.overlayTcmInfoEnabledOnHomepageDto(dto);
+        return dto;
     }
 
     /**
@@ -454,19 +616,76 @@ public class MrmsCaseRecordHomepageAppService {
             // 未指定刷新段则无法合并 HIS 快照
             throw new ValidationException("刷新段不能为空");
         }
+        CaseRecord record = caseRecordDomainService.requireById(request.getCaseRecordId());
+        // 仅「重新统计费用」：按当前目录结算类型重算并落库快照
+        if (this.isFeeOnlySections(request.getSections())) {
+            Long operatorId = operatorResolver.requireOperatorId();
+            CaseRecordHomepage homepage = caseRecordHomepageDomainService.ensureHomepage(
+                    record.getId(),
+                    record.getTenantId(),
+                    operatorId);
+            // Cmd：覆盖费用快照列
+            homepage = caseRecordHomepageDomainService.refreshFeeSnapshot(record, homepage, operatorId);
+            HomepageDto feeOnlyDto = homepageMapper.toDto(
+                    homepage,
+                    caseRecordHomepageDomainService.listDiagnoses(request.getCaseRecordId()),
+                    caseRecordHomepageDomainService.listProcedures(request.getCaseRecordId()),
+                    record.getEncounterId());
+            this.overlayFeesOnHomepageDto(feeOnlyDto, homepage);
+            this.overlayTcmInfoEnabledOnHomepageDto(feeOnlyDto);
+            return feeOnlyDto;
+        }
         // Pre：组装刷新命令
         RefreshAutoFillCommand command = new RefreshAutoFillCommand();
         command.setCaseRecordId(request.getCaseRecordId());
         command.setSections(request.getSections());
         command.setForceOverwrite(request.isForceOverwrite());
         command.setOperatorId(operatorResolver.requireOperatorId());
-        // Cmd：领域合并 HIS 快照写回首页
+        // Cmd：领域合并 HIS 快照写回首页（含 fee 分区时落库费用快照）
         CaseRecordHomepage homepage = caseRecordDomainService.refreshAutoFill(command);
-        // Asm：映射出参
-        return homepageMapper.toDto(
+        // Asm：映射出参（带就诊诊断来源提示）
+        HomepageDto dto = homepageMapper.toDto(
                 homepage,
                 caseRecordHomepageDomainService.listDiagnoses(request.getCaseRecordId()),
-                caseRecordHomepageDomainService.listProcedures(request.getCaseRecordId()));
+                caseRecordHomepageDomainService.listProcedures(request.getCaseRecordId()),
+                record.getEncounterId());
+        // Asm：叠加费用快照（本节未含 fee 时也不现查覆盖）
+        this.overlayFeesOnHomepageDto(dto, homepage);
+        this.overlayTcmInfoEnabledOnHomepageDto(dto);
+        return dto;
+    }
+
+    /**
+     * 是否仅为费用重新统计（sections 仅含 fee，不含 all/其它写库分区）。
+     *
+     * @param sections 刷新段
+     * @return true 表示只重算费用快照并落库
+     */
+    private boolean isFeeOnlySections(List<String> sections) {
+        if (sections == null || sections.isEmpty()) {
+            return false;
+        }
+        boolean sawFee = false;
+        for (String section : sections) {
+            if (section == null) {
+                continue;
+            }
+            String code = section.trim();
+            if (code.isEmpty()) {
+                continue;
+            }
+            // all 会带其它写库分区，不能走纯费用短路
+            if ("all".equals(code)) {
+                return false;
+            }
+            if ("fee".equals(code)) {
+                sawFee = true;
+                continue;
+            }
+            // 出现任意非 fee 段则需走领域合并
+            return false;
+        }
+        return sawFee;
     }
 
     /**
@@ -558,10 +777,21 @@ public class MrmsCaseRecordHomepageAppService {
         CaseRecord record = caseRecordDomainService.requireById(request.getCaseRecordId());
         CaseRecordHomepage homepage = caseRecordHomepageDomainService.ensureHomepage(
                 record.getId(), record.getTenantId(), operatorResolver.resolveOperatorIdOrNull());
+        // Cmd：PDF 预览无快照时补种，有快照则只读
+        Long seedOperatorId = operatorResolver.resolveOperatorIdOrNull();
+        if (seedOperatorId == null) {
+            seedOperatorId = MrmsConstants.SYSTEM_OPERATOR_ID;
+        }
+        homepage = caseRecordHomepageDomainService.ensureFeeSnapshotSeeded(record, homepage, seedOperatorId);
         HomepageDto dto = homepageMapper.toDto(
                 homepage,
                 caseRecordHomepageDomainService.listDiagnoses(record.getId()),
-                caseRecordHomepageDomainService.listProcedures(record.getId()));
+                caseRecordHomepageDomainService.listProcedures(record.getId()),
+                record.getEncounterId());
+        // Asm：PDF 预览费用读快照
+        this.overlayFeesOnHomepageDto(dto, homepage);
+        // Asm：中医信息开关与 loadPage 同口径（OpenPDF 段显隐）
+        this.overlayTcmInfoEnabledOnHomepageDto(dto);
         // Asm：渲染 PDF
         return homepageOpenPdfRenderer.render(dto);
     }
@@ -774,6 +1004,37 @@ public class MrmsCaseRecordHomepageAppService {
             }
         }
         return true;
+    }
+
+    /**
+     * 列表行回填医保人员编号 / 结算 ID（未结算/缺契约时跳过，不阻断列表）。
+     *
+     * @param item 列表行
+     */
+    private void fillListPsnNo(CaseRecordListItemDto item) {
+        if (item == null || item.getEncounterId() == null) {
+            return;
+        }
+        try {
+            Account ybAccount = accountQueryService.getYbAccount(item.getEncounterId());
+            if (ybAccount == null) {
+                return;
+            }
+            String busNo = trimToNull(ybAccount.getContractNo());
+            if (busNo == null) {
+                return;
+            }
+            Optional<InsuranceEncounterContext> ctxOpt =
+                    insuranceEncounterLoader.findContext(item.getEncounterId(), busNo);
+            if (ctxOpt.isEmpty()) {
+                return;
+            }
+            InsuranceEncounterContext ctx = ctxOpt.get();
+            item.setPsnNo(trimToNull(ctx.getPsnNo()));
+            item.setSetlId(trimToNull(ctx.getSetlId()));
+        } catch (Exception ex) {
+            // 跳过：列表仍返回上传态与证件号
+        }
     }
 
     /**

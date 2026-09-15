@@ -54,6 +54,7 @@ import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemDom
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemQueryService;
 import com.openhis.health.application.shared.inventory.InventoryItemProductSelectionPageLoader;
 import com.openhis.health.domain.workflow.inventoryitem.valueobject.InventoryMatchKey;
+import com.openhis.health.domain.workflow.supplydelivery.command.CreateStocktakingDeliveryCommand;
 import com.openhis.health.domain.workflow.supplydelivery.service.SupplyDeliveryDomainService;
 import com.openhis.health.domain.workflow.supplydelivery.service.SupplyDeliveryQueryService;
 import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyByBusNoQuery;
@@ -447,7 +448,9 @@ public class InventoryWarehouseStocktakeAppService {
     }
 
     /**
-     * 药库盘库单同意编排：领域落已同意态 → 盘点发放 → 按盈亏行增/减库存 → 可选医保进销存上报。
+     * 药库盘库单同意编排：领域落已同意态 → 盘点发放（仅非零盈亏行）→ 按盈亏行增/减库存 → 可选医保进销存上报。
+     *
+     * <p>整单明细盈亏数量均为 0 时仍同意成功：不落盘点发放、不调库存（账面无变化）。</p>
      *
      * @param request 含 busNo；须未重复同意
      * @return 同意后 busNo 与状态 code
@@ -506,13 +509,20 @@ public class InventoryWarehouseStocktakeAppService {
         if (!duplicateCompletedRequestIds.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.WHS_ST_104, "供应请求行已存在完成态发放，禁止重复同意盘点");
         }
-        // Cmd：盘点发放落库
-        try {
-            supplyDeliveryDomainService.createStocktakingDelivery(
-                stocktakeMapper.toCreateStocktakingDeliveryCommand(agreedLines, operatorId));
-        } catch (BusinessException ex) {
-            throw new BusinessException(ErrorCodeConstants.WHS_ST_104, "盘点发放落库失败：" + ex.getMessage());
+        // Cmd：盘点发放落库（仅非零盈亏行；整单盈亏均为 0 时无差异事实，跳过发放以免空 items 校验失败）
+        CreateStocktakingDeliveryCommand deliveryCmd =
+            stocktakeMapper.toCreateStocktakingDeliveryCommand(agreedLines, operatorId);
+        List<CreateStocktakingDeliveryCommand.CreateStocktakingDeliveryItemCommand> deliveryItems =
+            deliveryCmd.getItems();
+        // 有非零盈亏行：落盘点差异发放
+        if (deliveryItems != null && !deliveryItems.isEmpty()) {
+            try {
+                supplyDeliveryDomainService.createStocktakingDelivery(deliveryCmd);
+            } catch (BusinessException ex) {
+                throw new BusinessException(ErrorCodeConstants.WHS_ST_104, "盘点发放落库失败：" + ex.getMessage());
+            }
         }
+        // 整单盈亏均为 0：账面无变化，不调用发放落库
 
         // Pre：批量产品读模型，供拆零量与盘盈建库存行使用
         List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
@@ -544,9 +554,13 @@ public class InventoryWarehouseStocktakeAppService {
                 continue;
             }
             Long purposeLocationId = line.getPurposeLocationId();
-            String resolvedLot = StringUtils.isEmpty(line.getLotNumber())
-                ? GeneralSharedConstants.EMPTY_STRING
-                : line.getLotNumber().trim();
+            String resolvedLot;
+            // 批号空则落空串，与库存匹配键口径一致
+            if (StringUtils.isEmpty(line.getLotNumber())) {
+                resolvedLot = GeneralSharedConstants.EMPTY_STRING;
+            } else {
+                resolvedLot = line.getLotNumber().trim();
+            }
             InventoryMatchKey matchKey = new InventoryMatchKey();
             matchKey.setSupplierId(line.getSupplierId());
             matchKey.setLotNumber(resolvedLot);

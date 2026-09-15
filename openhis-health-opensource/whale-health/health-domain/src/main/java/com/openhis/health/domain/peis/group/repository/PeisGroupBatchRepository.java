@@ -14,5 +14,11 @@ public interface PeisGroupBatchRepository extends JpaRepository<PeisGroupBatch, 
 
     List<PeisGroupBatch> findByCompanyIdAndIsDeletedFalse(Long companyId);
 
+    List<PeisGroupBatch> findByCompanyIdInAndIsDeletedFalse(List<Long> companyIds);
+
+    List<PeisGroupBatch> findByContractIdAndIsDeletedFalse(Long contractId);
+
+    Optional<PeisGroupBatch> findByContractIdAndBatchNameAndIsDeletedFalse(Long contractId, String batchName);
+
     Optional<PeisGroupBatch> findByIdAndIsDeletedFalse(Long id);
 }

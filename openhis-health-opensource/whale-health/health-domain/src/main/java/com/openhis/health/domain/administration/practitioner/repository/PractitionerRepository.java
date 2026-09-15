@@ -86,6 +86,11 @@ public interface PractitionerRepository extends JpaRepository<Practitioner, Long
     boolean existsByBusNoAndIdNot(String busNo, Long id);
 
     /**
+     * 按院内工号查询未删记录（小程序医护绑定等）。
+     */
+    Optional<Practitioner> findFirstByBusNoAndIsDeletedFalse(String busNo);
+
+    /**
      * 按条件查询列表。
      * @param statusEnum 条件
      * @return 查询结果

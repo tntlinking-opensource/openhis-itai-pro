@@ -66,9 +66,9 @@ export function resolveInvDocLinkPickerCreator(
   return String(hit?.label ?? '').trim();
 }
 
-/** 单据金额：兼容 totalAmount / totalPrice 等聚合字段 */
+/** 单据金额：读聚合字段 totalAmount（及少量历史别名）。 */
 export function resolveInvDocLinkPickerAmount(row: Record<string, unknown>): string {
-  const keys = ['totalAmount', 'totalPrice', 'totalMoney', 'sumTotalPrice', 'amount'];
+  const keys = ['totalAmount', 'totalMoney', 'sumTotalPrice', 'amount'];
   for (const key of keys) {
     const display = formatInventoryTotalAmountDisplay(row, key);
     if (display) return display;

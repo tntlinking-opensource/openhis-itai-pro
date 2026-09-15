@@ -149,10 +149,8 @@ async function init() {
     const res = await loadDeptReturnFormInitApi();
     const data = res.data;
     // 与后端 LoadReturnToWarehouseFormInitResponse 字段对齐
-    deptRawOptions.value =
-      data?.departmentPharmacyLocationOptions ?? data?.sourceDeptLocationOptions ?? [];
-    warehouseRawOptions.value =
-      data?.warehouseLocationOptions ?? data?.purposeWarehouseOptions ?? [];
+    deptRawOptions.value = data?.departmentPharmacyLocationOptions ?? [];
+    warehouseRawOptions.value = data?.warehouseLocationOptions ?? [];
     practitionerOptions.value = mapInventoryPractitionerInitOptions(
       [data?.pharmacistOptions, data?.warehouseKeeperOptions],
       userStore.userInfo,

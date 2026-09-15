@@ -18,7 +18,7 @@ import lombok.Setter;
  *
  * <p>跨聚合收窄（患者关键字、接诊医生）由应用层预解析后写入 {@link #resolvedEncounterIds}：
  * 医生筛复用 {@code filterEncounterIdsByActiveAdmitterDoctor}
- * （活动接诊医生 ADMITTER；B.6.4）。</p>
+ * （活动接诊医生 ADMITTER；B.6.4）。可选 {@link #statusEnum} 单值收窄就诊状态。</p>
  */
 @Getter
 @Setter
@@ -47,6 +47,13 @@ public class OutpatientRegistrationReportPageQuery extends AbstractPageQuery {
      * 汇总视角：{@link OutpatientRegistrationReportConstants#SUMMARY_DIMENSION_ORGANIZATION} 等。
      */
     private String summaryDimension;
+
+    /**
+     * 就诊状态单值筛选（{@code EncounterStatus.getCode()}）；空表示不按状态收窄。
+     *
+     * <p>明细/汇总/导出同筛；页脚挂/退统计与明细分页共用本字段。</p>
+     */
+    private String statusEnum;
 
     /**
      * 分页大小：缺省 {@link OutpatientRegistrationReportConstants#DEFAULT_PAGE_SIZE}，

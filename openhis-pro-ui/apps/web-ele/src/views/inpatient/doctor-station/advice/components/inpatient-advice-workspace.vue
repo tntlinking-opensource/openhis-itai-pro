@@ -44,7 +44,7 @@ import {
   getSkinTestDisplayTagType,
   resolveAdviceTherapyTypeText,
 } from '../services/advice-list';
-import { rowLooksDraft } from '../services/advice-row';
+import { resolveDefaultInpatientAdviceTherapyType, rowLooksDraft } from '../services/advice-row';
 import {
   applyOrderTemplateToAdviceDraft,
   OrderTemplateApplyError,
@@ -62,6 +62,7 @@ const props = withDefaults(defineProps<UseInpatientAdviceTabProps>(), {
   forceWriteDisabled: false,
   patientId: '',
   defaultTimeSortOrder: undefined,
+  includeTcmPrescriptions: false,
 });
 
 const emit = defineEmits<{
@@ -85,6 +86,7 @@ const {
   editorForm,
   editorInitialGroup,
   editorOpening,
+  editorSessionNonce,
   encounterId,
   getAdviceStatusTagType,
   getCellClassName,
@@ -138,6 +140,11 @@ const {
   toggleTimeSortOrder,
 } = useInpatientAdviceTab(props);
 
+/** 开立编辑卡默认治疗类型：与列表右上角筛选一致；「全部」回落长期 */
+const defaultEditorTherapyType = computed(() =>
+  resolveDefaultInpatientAdviceTherapyType(listTherapyFilter.value),
+);
+
 /** 另存组套：当前列表非编辑行快照 */
 const saveOrderTemplateAdviceRows = computed(() => getTableRows().filter((row) => !row.isEditor));
 
@@ -186,15 +193,16 @@ defineExpose({
   reload,
   handleAddEntrust,
 });
-/** 组套套用前选择长临/出院带药类型 */
+/** 组套套用前选择长临/出院带药类型（默认与列表右上角筛选一致） */
 async function promptInpatientTemplateTherapyType(): Promise<InpatientAdviceTherapyType | null> {
-  let picked: InpatientAdviceTherapyType = 'TEMPORARY';
+  const initial = defaultEditorTherapyType.value;
+  let picked: InpatientAdviceTherapyType = initial;
   try {
     await ElMessageBox({
       title: '选择医嘱类型',
       message: h({
         setup() {
-          const selected = ref<InpatientAdviceTherapyType>('TEMPORARY');
+          const selected = ref<InpatientAdviceTherapyType>(initial);
           return () =>
             h('div', { class: 'ip-advice-template-therapy-prompt' }, [
               h('p', { style: 'margin: 0 0 12px' }, '组套套用后将以所选类型写入医嘱草稿，请确认。'),
@@ -604,10 +612,12 @@ function adviceOrderingDoctorLabel(row: AdviceRowItem): string {
             <template #default="{ row }">
               <AdviceEditCard
                 v-if="row.isEditor"
+                :key="`${editorSessionNonce}-${defaultEditorTherapyType}`"
                 v-loading="editorOpening"
                 v-model="editorForm"
                 v-model:dose-change-stop-time="changeDoseStopTime"
                 :change-dose-mode="changeDoseMode"
+                :default-therapy-type="defaultEditorTherapyType"
                 :dose-change-stop-time-editable="changeDoseStopTimeEditable"
                 :fee-nature-options="feeNatureOptions"
                 :encounter-id="encounterId"
@@ -677,6 +687,11 @@ function adviceOrderingDoctorLabel(row: AdviceRowItem): string {
                 :content="row.content"
                 :dosage-text="row.dosageText"
                 :extension="row.extension"
+                :tcm-flag="row.tcmFlag === true"
+                :tcm-prescription-title="row.tcmPrescriptionTitle"
+                :tcm-herb-lines="row.tcmHerbLines"
+                :tcm-closing-meta="row.tcmClosingMeta"
+                :tcm-decoction-text="row.tcmDecoctionText"
                 :apply-form-no="
                   isServiceApplyFormGroupStart(row, $index, getTableRows())
                     ? row.applyFormNo

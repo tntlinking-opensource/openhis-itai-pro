@@ -11,8 +11,11 @@ import lombok.experimental.Accessors;
 /**
  * 打印版式配置（与《打印预览设计》§4.1 对齐）。
  * <p>
- * 默认值落实《病历书写基本规范》第三十二条「统一纸张、字体、字号及排版格式」：
- * A4；页边距上/下 25.4mm、左/右 31.8mm；宋体；正文 12pt（小四）；标题 16pt；行距 1.5。
+ * 默认值落实《病历书写基本规范》第三十二条「统一纸张、字体、字号及排版格式」，
+ * 并按屏打对齐收敛边距：A4；页边距默认 15mm（Word 常用，避免 31.8mm 左右边把正文挤窄、多出空白页）；
+ * 宋体；正文 12pt（小四）；标题 16pt；行距倍数 1.5（中文宋体按 1.55×字号折算，小四约 28pt）。
+ * 国标 上/下 25.4mm、左/右 31.8mm 仍可通过前端工具栏「打印标准」覆盖。
+ * 每页页眉下沿、页脚上沿固定画 1 磅（1pt）实线，与屏上 --simple-editor-chrome-rule 对齐。
  * </p>
  */
 @Getter
@@ -91,10 +94,10 @@ public class PrintConfig {
     @Setter
     @Accessors(chain = true)
     public static class MarginConfig {
-        private float topMm = 25.4f;
-        private float rightMm = 31.8f;
-        private float bottomMm = 25.4f;
-        private float leftMm = 31.8f;
+        private float topMm = 15f;
+        private float rightMm = 15f;
+        private float bottomMm = 15f;
+        private float leftMm = 15f;
         /** 屏上 ProseMirror padding 实测：正文顶边距（mm），优先于 topMm+header */
         private float contentTopMm;
         /** 屏上 ProseMirror padding 实测：正文底边距（mm），优先于 bottomMm+footer */
@@ -190,6 +193,7 @@ public class PrintConfig {
         private String family = "SimSun";
         private float defaultSizePt = 12f;
         private float titleSizePt = 16f;
+        /** Word 1.5 倍行距的倍数；渲染时再乘中文单倍系数 1.55（见 EmrContentJsonRenderer）。 */
         private float lineHeight = 1.5f;
 
         public static FontConfig defaults() {

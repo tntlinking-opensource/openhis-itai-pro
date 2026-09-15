@@ -135,6 +135,7 @@ export function applyWarehouseNonInboundProductPickUnitsToRow(
     applyWarehouseNonInboundBandKindToRow(row, kind, legacyUnitPrice);
     return;
   }
+  // 选品未带回 unitBands：会话态单码路径（LEGACY），非「库内历史计量双轨」
   const fallbackCode =
     inventoryPickStringField(pick, 'minUnitCode') || inventoryPickStringField(pick, 'unitCode');
   row.selectedBandKind = 'LEGACY';

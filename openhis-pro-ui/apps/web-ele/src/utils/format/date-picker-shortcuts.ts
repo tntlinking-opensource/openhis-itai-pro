@@ -113,7 +113,38 @@ export function buildSingleDayPickerShortcuts(
   ];
 }
 
-/** 默认日期范围快捷项（今天 / 昨天 / 本周 / 本月 / 近三月 …）。 */
+/** 上一完整自然周：周一～周日。 */
+function getLastCalendarWeekRange(): [string, string] {
+  const today = new Date();
+  const day = today.getDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  const thisMonday = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate() + mondayOffset,
+  );
+  const lastMonday = new Date(
+    thisMonday.getFullYear(),
+    thisMonday.getMonth(),
+    thisMonday.getDate() - 7,
+  );
+  const lastSunday = new Date(
+    lastMonday.getFullYear(),
+    lastMonday.getMonth(),
+    lastMonday.getDate() + 6,
+  );
+  return [formatLocalDateYmd(lastMonday), formatLocalDateYmd(lastSunday)];
+}
+
+/** 上一自然月：1 号至月末。 */
+function getLastCalendarMonthRange(): [string, string] {
+  const today = new Date();
+  const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+  const end = new Date(today.getFullYear(), today.getMonth(), 0);
+  return [formatLocalDateYmd(start), formatLocalDateYmd(end)];
+}
+
+/** 默认日期范围快捷项（今天 / 昨天 / 本周 / 上周 / 本月 / 上月 / 近三月 …）。 */
 export function buildDefaultDateRangeShortcuts(): DatePickerShortcutItem[] {
   return [
     {
@@ -136,8 +167,16 @@ export function buildDefaultDateRangeShortcuts(): DatePickerShortcutItem[] {
       value: () => toDatePair(getDateRangeQuick({ strategy: 'calendar-week' })),
     },
     {
+      text: '上周',
+      value: () => toDatePair(getLastCalendarWeekRange()),
+    },
+    {
       text: '本月',
       value: () => toDatePair(getDateRangeQuick({ strategy: 'calendar-month' })),
+    },
+    {
+      text: '上月',
+      value: () => toDatePair(getLastCalendarMonthRange()),
     },
     {
       text: '近三月',
@@ -181,8 +220,16 @@ export function buildDefaultDateTimeRangeShortcuts(): DatePickerShortcutItem[] {
       value: () => toDateTimePair(getDateRangeQuick({ strategy: 'calendar-week' })),
     },
     {
+      text: '上周',
+      value: () => toDateTimePair(getLastCalendarWeekRange()),
+    },
+    {
       text: '本月',
       value: () => toDateTimePair(getDateRangeQuick({ strategy: 'calendar-month' })),
+    },
+    {
+      text: '上月',
+      value: () => toDateTimePair(getLastCalendarMonthRange()),
     },
     {
       text: '近三月',

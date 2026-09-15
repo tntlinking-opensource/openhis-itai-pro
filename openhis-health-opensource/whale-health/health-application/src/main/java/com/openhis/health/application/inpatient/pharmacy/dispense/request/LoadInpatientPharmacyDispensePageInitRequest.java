@@ -24,9 +24,4 @@ public class LoadInpatientPharmacyDispensePageInitRequest extends AbstractHealth
      */
     @Schema(description = "当前药房库位主键 adm_location.id（收窄调配药师候选）")
     private Long pharmacyLocationId;
-
-    /** @deprecated 岗位过滤改由服务端按药师岗 + 药房管辖解析，客户端传值忽略。 */
-    @Deprecated
-    @Schema(description = "已废弃；调配药师固定按药师岗与药房管辖收窄")
-    private String practitionerRoleFilterCode;
 }

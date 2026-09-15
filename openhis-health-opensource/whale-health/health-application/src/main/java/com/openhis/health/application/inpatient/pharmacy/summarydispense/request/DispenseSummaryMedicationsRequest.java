@@ -40,14 +40,4 @@ public class DispenseSummaryMedicationsRequest {
     /** 核发时补录/覆盖追溯码（可选）。 */
     @Schema(description = "核发时补录或覆盖追溯码")
     private List<SummaryDispenseTraceLineSubmitDto> traceLines;
-
-    /** @deprecated CHS 模块启用即上传，此开关不再生效。 */
-    @Deprecated
-    /** 是否上传医保进销存。 */
-    @Schema(description = "是否上传医保进销存")
-    private Boolean medicareUploadEnabled;
-
-    /** 医保契约 busNo（上传时必填）。 */
-    @Schema(description = "医保契约 busNo")
-    private String contractBusNo;
 }

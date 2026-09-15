@@ -18,6 +18,7 @@ import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.domain.administration.encounter.queries.OutpatientRegistrationReportPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientRegistrationDetailStatsQueryModel;
 import com.openhis.whale.core.application.dto.OptionDto;
+import com.openhis.whale.core.application.util.StringUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
@@ -49,6 +50,7 @@ public class OutpatientRegistrationDetailReportMapperImpl implements OutpatientR
             return query;
         }
         query.setOrganizationId(request.getOrganizationId());
+        query.setStatusEnum(StringUtils.trimToNull(request.getStatusEnum()));
         return query;
     }
 
@@ -67,6 +69,7 @@ public class OutpatientRegistrationDetailReportMapperImpl implements OutpatientR
             return query;
         }
         query.setOrganizationId(request.getOrganizationId());
+        query.setStatusEnum(StringUtils.trimToNull(request.getStatusEnum()));
         query.setPageNo(request.getPageNo());
         query.setPageSize(request.getPageSize());
         return query;
@@ -87,6 +90,7 @@ public class OutpatientRegistrationDetailReportMapperImpl implements OutpatientR
             return query;
         }
         query.setOrganizationId(request.getOrganizationId());
+        query.setStatusEnum(StringUtils.trimToNull(request.getStatusEnum()));
         return query;
     }
 
@@ -101,6 +105,7 @@ public class OutpatientRegistrationDetailReportMapperImpl implements OutpatientR
      * @param practitionerOptions   医生下拉
      * @param serviceTypeOptions    号源下拉
      * @param summaryViewOptions    汇总视角下拉
+     * @param statusOptions         就诊状态下拉
      * @return 初始化响应
      */
     @Override
@@ -112,7 +117,8 @@ public class OutpatientRegistrationDetailReportMapperImpl implements OutpatientR
         List<OptionDto> organizationOptions,
         List<OptionDto> practitionerOptions,
         List<OptionDto> serviceTypeOptions,
-        List<OptionDto> summaryViewOptions) {
+        List<OptionDto> summaryViewOptions,
+        List<OptionDto> statusOptions) {
         LoadOutpatientRegistrationDetailReportPageInitResponse response =
             new LoadOutpatientRegistrationDetailReportPageInitResponse();
         response.setDefaultDateFrom(defaultDateFrom);
@@ -123,6 +129,7 @@ public class OutpatientRegistrationDetailReportMapperImpl implements OutpatientR
         response.setPractitionerOptions(practitionerOptions);
         response.setServiceTypeOptions(serviceTypeOptions);
         response.setSummaryViewOptions(summaryViewOptions);
+        response.setStatusOptions(statusOptions);
         return response;
     }
 

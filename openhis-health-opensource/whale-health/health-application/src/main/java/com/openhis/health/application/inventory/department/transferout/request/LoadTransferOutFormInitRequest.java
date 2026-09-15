@@ -18,8 +18,4 @@ import lombok.experimental.Accessors;
 @Setter
 @Accessors(chain = true)
 public class LoadTransferOutFormInitRequest {
-
-    /** 兼容字段，服务端忽略。 */
-    @Schema(description = "兼容字段，服务端忽略")
-    private Long organizationId;
 }

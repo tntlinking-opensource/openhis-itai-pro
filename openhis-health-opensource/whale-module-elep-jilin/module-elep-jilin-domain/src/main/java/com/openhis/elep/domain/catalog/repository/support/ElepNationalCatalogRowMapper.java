@@ -25,6 +25,7 @@ public final class ElepNationalCatalogRowMapper implements RowMapper<ElepNationa
                 .setSpec(rs.getString("spec"))
                 .setDosform(rs.getString("dosform"))
                 .setAprvno(rs.getString("aprvno"))
+                .setProdentpName(rs.getString("prodentp_name"))
                 .setPinyin(rs.getString("pinyin"))
                 .setValiFlag(rs.getString("vali_flag"))
                 .setSourceInfno(rs.getString("source_infno"))

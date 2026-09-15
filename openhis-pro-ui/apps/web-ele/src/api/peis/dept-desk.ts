@@ -139,13 +139,6 @@ export async function httpSaveProjectConclusion(
   );
 }
 
-/** @deprecated 使用 {@link httpSaveProjectConclusion} */
-export async function httpSaveDeptConclusion(
-  body: SaveProjectConclusionRequest,
-): Promise<SaveObservationResponse> {
-  return httpSaveProjectConclusion(body);
-}
-
 export async function httpProjectResults(body: { serviceRequestId: string }): Promise<void> {
   return publicRequestClient.post<void>('/peisDeptExamDesk/projectResults', body);
 }

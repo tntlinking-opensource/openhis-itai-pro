@@ -14,6 +14,7 @@ import {
 } from 'element-plus';
 
 import {
+  httpCancelOutpatientRefundApplication,
   httpListRefundableChargeLinesForEncounter,
   httpSubmitOutpatientRefundApplication,
   httpVerifyConsumableExecutionBeforeRefund,
@@ -23,6 +24,13 @@ import { formatMoneyDisplay, sumMoneyThenSettle } from '#/utils/format/money-sca
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 defineOptions({ name: 'DoctorStationRefundApplicationDialog' });
+
+/** 收费明细状态 code（与后端 ChargeItemStatus 一致，禁止用文案分支） */
+const CHARGE_STATUS_SETTLED = 'SETTLED';
+const CHARGE_STATUS_REFUNDING = 'REFUNDING';
+
+/** 选中支付单操作模式：申请 / 撤销 / 混选非法 */
+type SelectionActionMode = 'apply' | 'cancel' | 'mixed' | 'empty';
 
 const props = withDefaults(
   defineProps<{
@@ -52,7 +60,7 @@ const PAYMENT_GROUP_MERGE_COL_COUNT = 2;
 
 const tableRef = ref<InstanceType<typeof ElTable> | null>(null);
 const tableRows = ref<RefundTableRow[]>([]);
-/** 表格多选：按支付单整组拟退，不支持组内半退 */
+/** 表格多选：按支付单整组拟退/拟撤，不支持组内半退/半取消 */
 const selectedRows = ref<RefundTableRow[]>([]);
 /** 程序同步勾选时跳过 selection-change，避免递归 */
 const syncingSelection = ref(false);
@@ -63,11 +71,14 @@ const verifyRequest = useRequest(httpVerifyConsumableExecutionBeforeRefund, {
   showErrorMessage: false,
 });
 const submitRequest = useRequest(httpSubmitOutpatientRefundApplication, { manual: true });
+const cancelRequest = useRequest(httpCancelOutpatientRefundApplication, { manual: true });
 
 const listLoading = computed(() => listRequest.loading.value);
-const submitLoading = computed(() => submitRequest.loading.value || verifyRequest.loading.value);
+const submitLoading = computed(
+  () => submitRequest.loading.value || verifyRequest.loading.value || cancelRequest.loading.value,
+);
 
-/** 拟退行（已选支付单下的全部账单行） */
+/** 拟退/拟撤行（已选支付单下的全部账单行） */
 const refundingRows = computed(() => selectedRows.value);
 
 /** 已选支付单数 */
@@ -76,10 +87,56 @@ const selectedPaymentGroupCount = computed(() => {
   return ids.size;
 });
 
-/** 拟退行金额合计（6 位加总后 2 位展示） */
+/** 拟退/拟撤行金额合计（6 位加总后 2 位展示） */
 const refundingAmountSum = computed(() =>
   sumMoneyThenSettle(refundingRows.value.map((row) => row.lineTotalAmount ?? 0)),
 );
+
+/** 规范化收费状态 code */
+function normalizeChargeStatus(status: null | string | undefined): string {
+  return String(status ?? '')
+    .trim()
+    .toUpperCase();
+}
+
+/**
+ * 根据已选行判定操作模式：全已结算→申请；全退款中→撤销；混选→非法。
+ */
+function resolveSelectionActionMode(rows: RefundTableRow[]): SelectionActionMode {
+  if (rows.length === 0) {
+    return 'empty';
+  }
+  let hasSettled = false;
+  let hasRefunding = false;
+  for (const row of rows) {
+    const status = normalizeChargeStatus(row.chargeItemStatusEnum);
+    if (status === CHARGE_STATUS_SETTLED) {
+      hasSettled = true;
+    } else if (status === CHARGE_STATUS_REFUNDING) {
+      hasRefunding = true;
+    } else {
+      // 其它状态不允许在本弹窗操作
+      return 'mixed';
+    }
+  }
+  if (hasSettled && hasRefunding) {
+    return 'mixed';
+  }
+  if (hasRefunding) {
+    return 'cancel';
+  }
+  return 'apply';
+}
+
+const selectionActionMode = computed(() => resolveSelectionActionMode(refundingRows.value));
+
+/** 主按钮文案随模式变化 */
+const primaryActionLabel = computed(() => {
+  if (selectionActionMode.value === 'cancel') {
+    return '撤销退费';
+  }
+  return '提交申请';
+});
 
 /** 金额格式化为两位小数（纯展示） */
 function formatMoney(value: null | number | string | undefined): string {
@@ -266,7 +323,18 @@ function buildSubmitLines() {
     }));
 }
 
-/** 拟退行收费项 id 集合 */
+/** 构建撤销体：覆盖已勾选支付单下全部退款中行 */
+function buildCancelLines() {
+  const selectedPaymentIds = new Set(refundingRows.value.map((row) => row.paymentId));
+  return tableRows.value
+    .filter((row) => selectedPaymentIds.has(row.paymentId))
+    .map((row) => ({
+      paymentId: row.paymentId,
+      chargeItemId: row.chargeItemId,
+    }));
+}
+
+/** 拟退/拟撤行收费项 id 集合 */
 function collectRefundingChargeItemIds(): string[] {
   const ids: string[] = [];
   for (const row of refundingRows.value) {
@@ -276,21 +344,21 @@ function collectRefundingChargeItemIds(): string[] {
   return ids;
 }
 
-/** 校验已选支付单均为整组勾选（防半退） */
+/** 校验已选支付单均为整组勾选（防半退/半取消） */
 function validateWholePaymentGroupSelection(): boolean {
   const selectedPaymentIds = new Set(refundingRows.value.map((row) => row.paymentId));
   for (const paymentId of selectedPaymentIds) {
     const groupRows = tableRows.value.filter((row) => row.paymentId === paymentId);
     const selectedInGroup = refundingRows.value.filter((row) => row.paymentId === paymentId);
     if (selectedInGroup.length > 0 && selectedInGroup.length < groupRows.length) {
-      ElMessage.warning('同一笔支付单须整单退费，不支持单独勾选某一项');
+      ElMessage.warning('同一笔支付单须整单操作，不支持单独勾选某一项');
       return false;
     }
   }
   return true;
 }
 
-/** 提交前耗材执行门禁 */
+/** 提交前耗材执行门禁（仅申请路径） */
 async function verifyConsumableGate(): Promise<boolean> {
   const encounterId = preserveApiIdForRequest(props.encounterId);
   const chargeItemIds = collectRefundingChargeItemIds();
@@ -309,14 +377,14 @@ async function verifyConsumableGate(): Promise<boolean> {
 }
 
 /** 确认并提交退费申请 */
-async function handleSubmit() {
+async function handleSubmitApply() {
   const encounterId = preserveApiIdForRequest(props.encounterId);
   if (!encounterId) {
     ElMessage.warning('请先选择患者');
     return;
   }
   if (tableRows.value.length === 0) {
-    ElMessage.warning('当前就诊暂无可退账单行');
+    ElMessage.warning('当前就诊暂无可操作账单行');
     return;
   }
   if (refundingRows.value.length === 0) {
@@ -351,13 +419,66 @@ async function handleSubmit() {
     closeDialog();
   }
 }
+
+/** 确认并撤销退费 */
+async function handleSubmitCancel() {
+  const encounterId = preserveApiIdForRequest(props.encounterId);
+  if (!encounterId) {
+    ElMessage.warning('请先选择患者');
+    return;
+  }
+  if (refundingRows.value.length === 0) {
+    ElMessage.warning('请至少勾选一笔退款中的支付单');
+    return;
+  }
+  if (!validateWholePaymentGroupSelection()) {
+    return;
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `确认撤销退费？将还原 ${selectedPaymentGroupCount.value} 笔支付单、${refundingRows.value.length} 项至申请前状态，合计 ¥${formatMoney(refundingAmountSum.value)}`,
+      '撤销退费',
+      { type: 'warning', confirmButtonText: '撤销退费', cancelButtonText: '取消' },
+    );
+  } catch {
+    return;
+  }
+
+  const res = await cancelRequest.run({
+    encounterId,
+    lines: buildCancelLines(),
+  });
+  if (res.success) {
+    emit('submitted');
+    closeDialog();
+  }
+}
+
+/** 主按钮：按选中模式分发申请或撤销 */
+async function handlePrimaryAction() {
+  const mode = selectionActionMode.value;
+  if (mode === 'empty') {
+    ElMessage.warning('请至少勾选一笔支付单');
+    return;
+  }
+  if (mode === 'mixed') {
+    ElMessage.warning('请勿同时勾选「可申请」与「可撤销」支付单，请分开操作');
+    return;
+  }
+  if (mode === 'cancel') {
+    await handleSubmitCancel();
+    return;
+  }
+  await handleSubmitApply();
+}
 </script>
 
 <template>
   <ElDialog
     :model-value="modelValue"
     width="960px"
-    title="申请退费"
+    title="退费"
     append-to-body
     destroy-on-close
     @update:model-value="onDialogModelValue"
@@ -381,7 +502,7 @@ async function handleSubmit() {
         stripe
         height="400"
         row-key="chargeItemId"
-        empty-text="暂无可申请退费的账单行"
+        empty-text="暂无可申请或可撤销的账单行"
         :span-method="handleRefundTableSpanMethod"
         @selection-change="handleSelectionChange"
       >
@@ -422,7 +543,7 @@ async function handleSubmit() {
       <div class="text-sm text-[var(--el-text-color-regular)]">
         已选 {{ selectedPaymentGroupCount }} 笔支付单、{{ refundingRows.length }} 项，合计 ¥{{
           formatMoney(refundingAmountSum)
-        }}；同一支付单须整单退费
+        }}；同一支付单须整单操作；请勿混选「已结算」与「退款中」
       </div>
     </div>
 
@@ -432,9 +553,9 @@ async function handleSubmit() {
         type="primary"
         :loading="submitLoading"
         :disabled="tableRows.length === 0"
-        @click="handleSubmit"
+        @click="handlePrimaryAction"
       >
-        提交申请
+        {{ primaryActionLabel }}
       </ElButton>
     </template>
   </ElDialog>

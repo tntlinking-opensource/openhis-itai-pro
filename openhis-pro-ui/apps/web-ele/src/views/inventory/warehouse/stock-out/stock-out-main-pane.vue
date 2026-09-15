@@ -5,7 +5,6 @@
 import type { TableColumn, FormItemConfig } from '@vben-core/table-layout-ui';
 
 import type { VxeGridPropTypes } from '#/adapter/vxe-table';
-import type { PharmacyLocationOptionDto } from '#/api/inventory/pharmacy/requisition';
 import type { WarehouseOptionDto } from '#/api/inventory/warehouse/stock-out';
 import type { ApiOptionItem } from '#/types/api-response';
 import type { InboundProductUnitBand } from '#/utils/inventory/inbound-product-unit-bands';
@@ -48,7 +47,7 @@ import {
   createStockOutApi,
   getLinkablePharmacyRequisitionDetailApi,
   getStockOutDetailApi,
-  pageLinkablePharmacyRequisitionsApi,
+  pageLinkableRequisitionsApi,
   rejectStockOutApi,
   removeStockOutApi,
   submitStockOutApprovalApi,
@@ -176,7 +175,7 @@ interface Props {
   sidebarSourceLocationId?: number | string;
   sidebarPurposeLocationId?: number | string;
   warehouseOptions: WarehouseOptionDto[];
-  pharmacyOptions: PharmacyLocationOptionDto[];
+  pharmacyOptions: WarehouseOptionDto[];
   /** 与进货单 init 的入库项目类型选项同构（选品 productTableName） */
   itemTableTypeOptions?: ApiOptionItem[];
   /** IF-WHS-SO-04/05 经手人 practitionerId（医务人员主键） */
@@ -1157,14 +1156,9 @@ async function handleWithdraw() {
 async function handleApprove() {
   const no = headerBusNo.value;
   if (!no) return;
-  const approverId = resolveLoginPractitionerIdForRequest(
-    userStore.userInfo as null | Record<string, unknown>,
-  );
   try {
     await agreeStockOutApi({
       busNo: no,
-      approverId,
-      approvalClock: nowIsoLocal(),
     });
     ElMessage.success('审批同意');
     await loadDetail(no);
@@ -1187,10 +1181,6 @@ async function handleReject() {
     await rejectStockOutApi({
       busNo: no,
       rejectReason: value,
-      approverId: resolveLoginPractitionerIdForRequest(
-        userStore.userInfo as null | Record<string, unknown>,
-      ),
-      approvalClock: nowIsoLocal(),
     });
     ElMessage.success('已驳回');
     await loadDetail(no);
@@ -1308,7 +1298,7 @@ async function handlePrint(payload?: { preview?: boolean }) {
       lineRows,
       preparedByName,
       approvedByName,
-      // 仅耗材出库：模板隐藏审核，展示主管领导/领用人
+      // 仅耗材出库：底部去掉审核，保留负责人/领用人/库管
       deviceStockOutSignOff: isDeviceStockOut,
     },
     bizRef: { busNo, docKind: 'stock-out' },
@@ -1416,7 +1406,7 @@ async function fetchLinkablePharmacyRequisitions() {
   );
   linkQlLoading.value = true;
   try {
-    const res = await pageLinkablePharmacyRequisitionsApi({
+    const res = await pageLinkableRequisitionsApi({
       sourceLocationId: resolveLinkQlSourceLocationIdForApi(),
       keyword: String(linkQlQueryParams.value.keyword ?? '').trim() || undefined,
       pageNo: linkQlQueryParams.value.pageNo,

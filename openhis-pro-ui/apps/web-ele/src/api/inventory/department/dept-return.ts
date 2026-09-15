@@ -22,9 +22,7 @@ export interface LocationOptionDto {
   active?: boolean;
 }
 
-export interface LoadDeptReturnFormInitRequest {
-  organizationId?: number;
-}
+export interface LoadDeptReturnFormInitRequest {}
 
 export interface PractitionerOptionDto {
   sort?: string;
@@ -37,10 +35,6 @@ export interface LoadDeptReturnFormInitResponse {
   departmentPharmacyLocationOptions?: LocationOptionDto[];
   /** 目的药库（与后端 warehouseLocationOptions 对齐） */
   warehouseLocationOptions?: LocationOptionDto[];
-  /** @deprecated 旧字段名，勿再读；保留兼容 */
-  sourceDeptLocationOptions?: LocationOptionDto[];
-  /** @deprecated 旧字段名，勿再读；保留兼容 */
-  purposeWarehouseOptions?: LocationOptionDto[];
   pharmacistOptions?: PractitionerOptionDto[];
   warehouseKeeperOptions?: PractitionerOptionDto[];
   supplierOptions?: { supplierId?: number | string; displayName?: string }[];
@@ -60,14 +54,11 @@ export interface DeptReturnListRowDto {
   itemTable?: string;
   itemQuantity?: number;
   unitCode?: string;
-  totalPrice?: number;
   totalAmount?: number;
   applicantId?: number;
   creatorName?: string;
-  approverId?: number;
   approverName?: string;
   applyTime?: string;
-  approvalTime?: string;
 }
 
 export interface PageDeptReturnsRequest {
@@ -84,7 +75,6 @@ export interface PageDeptReturnsRequest {
 export interface PageDeptReturnsResponse {
   total?: number;
   totalCount?: number;
-  records?: DeptReturnListRowDto[];
   content?: DeptReturnListRowDto[];
 }
 
@@ -201,14 +191,10 @@ export interface WithdrawDeptReturnApprovalResponse {
 
 export interface AgreeDeptReturnRequest {
   busNo: string;
-  approverId?: string;
-  approvalClock?: string;
 }
 
 export interface RejectDeptReturnRequest {
   busNo: string;
-  approverId?: string;
-  approvalClock?: string;
   rejectReason: string;
 }
 

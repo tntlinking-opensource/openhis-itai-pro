@@ -39,8 +39,12 @@ public class CaseRecord extends BaseAuditedEntity {
     @Column(name = "encounter_id", nullable = false)
     private Long encounterId;
 
-    /** 院内病案号 {@code medcasno}，租户内唯一，格式 {@code CR}{@code yyyy-MM-dd}{@code ####}（B.10.9 按日）。 */
-    @Column(name = "medcasno", nullable = false, length = 32)
+    /**
+     * 院内病案号 {@code medcasno}，租户内唯一（非空时）；格式 {@code CR}{@code yy}{@code MM}{@code ####}。
+     *
+     * <p>主档可提前建档时为空；医生首次保存首页时由发号器写入。</p>
+     */
+    @Column(name = "medcasno", length = 32)
     private String medcasno;
 
     /** 工作流状态，持久化 {@link CaseRecordStatus#getCode()}（draft/submitted/archived 等）。 */
@@ -164,12 +168,12 @@ public class CaseRecord extends BaseAuditedEntity {
     }
 
     /**
-     * 初始化新建主档默认值（状态 draft）。
+     * 初始化新建主档默认值（状态 draft；病案号可空，待首次保存首页发号）。
      *
      * @param tenantId 租户
      * @param patientId 患者
      * @param encounterId 就诊
-     * @param medcasno 病案号
+     * @param medcasno 病案号（bootstrap 传 null；已有号时传入）
      * @param patnIptCnt 住院次
      * @param operatorId 操作人
      */
@@ -183,12 +187,32 @@ public class CaseRecord extends BaseAuditedEntity {
         this.setTenantId(tenantId);
         this.patientId = patientId;
         this.encounterId = encounterId;
-        this.medcasno = medcasno;
+        this.medcasno = trimToNull(medcasno);
         this.statusEnum = CaseRecordStatus.DRAFT;
         this.patnIptCnt = patnIptCnt;
         this.setCreatedAt(LocalDateTime.now());
         this.setCreatedBy(operatorId);
         this.setIsDeleted(false);
+    }
+
+    /**
+     * 首次写入病案号（已有非空号则幂等跳过）。
+     *
+     * @param medcasno 发号器生成的病案号
+     * @param operatorId 操作人
+     */
+    public void assignMedcasnoIfAbsent(String medcasno, Long operatorId) {
+        // 已发号则不再覆盖，保证号终身稳定
+        if (trimToNull(this.medcasno) != null) {
+            return;
+        }
+        String no = trimToNull(medcasno);
+        if (no == null) {
+            throw new BusinessException(MrmsErrorCodes.MEDCASNO_GENERATE_FAILED, "病案号不能为空");
+        }
+        this.medcasno = no;
+        this.setUpdatedAt(LocalDateTime.now());
+        this.setUpdatedBy(operatorId);
     }
 
     /**

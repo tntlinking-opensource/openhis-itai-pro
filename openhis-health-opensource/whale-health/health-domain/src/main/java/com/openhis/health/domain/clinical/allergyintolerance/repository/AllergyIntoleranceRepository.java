@@ -35,4 +35,12 @@ public interface AllergyIntoleranceRepository extends JpaRepository<AllergyIntol
      * @return 查询结果
      */
     List<AllergyIntolerance> findByPatientIdAndEncounterId(Long patientId, Long encounterId);
+
+    /**
+     * 按患者加载过敏记录（软删过滤器开启时不含已删行）。
+     *
+     * @param patientId 患者主键
+     * @return 该患者全部可见记录，规模为单患者过敏条数
+     */
+    List<AllergyIntolerance> findByPatientId(Long patientId);
 }

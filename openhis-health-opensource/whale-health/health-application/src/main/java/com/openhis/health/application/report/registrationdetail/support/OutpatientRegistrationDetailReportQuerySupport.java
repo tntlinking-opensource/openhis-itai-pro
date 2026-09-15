@@ -28,7 +28,10 @@ import java.util.Set;
  *
  * <p>跨聚合只读编排；不写库。医生筛复用
  * {@link EncounterQueryService#filterEncounterIdsByActiveAdmitterDoctor}
- * （活动接诊医生 ADMITTER；B.6.4）。</p>
+ * （活动接诊医生 ADMITTER；B.6.4）。
+ * 无关键字的接诊医生候选须走
+ * {@link EncounterQueryService#listEncounterIdsForRegistrationBusinessWindow}
+ * （coalesce 挂号业务日窗，与明细/汇总规约一致；可叠 {@code statusEnum}）。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -80,9 +83,12 @@ public class OutpatientRegistrationDetailReportQuerySupport {
             if (resolvedEncounterIds != null) {
                 candidates = new ArrayList<>(resolvedEncounterIds);
             } else {
-                // 未选关键字：以科室（或全院门诊科）AMB 就诊为候选，叠业务日窗
+                // 未选关键字：以科室（或全院门诊科）AMB 就诊为候选，叠 coalesce 业务日窗 + 可选状态
                 candidates = this.listAmbEncounterCandidates(
-                    organizationId, businessTimeFrom, businessTimeTo);
+                    organizationId,
+                    businessTimeFrom,
+                    businessTimeTo,
+                    query.getStatusEnum());
             }
             Set<Long> doctorMatched = this.encounterQueryService.filterEncounterIdsByActiveAdmitterDoctor(
                 candidates, practitionerId);
@@ -152,17 +158,20 @@ public class OutpatientRegistrationDetailReportQuerySupport {
     }
 
     /**
-     * 医生筛候选：指定科室或门诊挂号科室全量下的 AMB 就诊主键（叠业务日窗，避免无界 IN）。
+     * 医生筛候选：指定科室或门诊挂号科室全量下的 AMB 就诊主键
+     * （叠 coalesce 挂号业务日窗 + 可选状态，避免无界 IN / 全状态候选）。
      *
      * @param organizationId     科室；空则全量门诊挂号科
      * @param businessTimeFrom   业务窗起（含）
      * @param businessTimeTo     业务窗止（含）
+     * @param statusEnum         就诊状态 code；空不按状态收窄
      * @return 候选就诊主键
      */
     private List<Long> listAmbEncounterCandidates(
         Long organizationId,
         LocalDateTime businessTimeFrom,
-        LocalDateTime businessTimeTo) {
+        LocalDateTime businessTimeTo,
+        String statusEnum) {
         List<Long> organizationIds = new ArrayList<>();
         // 已选科室：单科候选
         if (organizationId != null) {
@@ -183,8 +192,13 @@ public class OutpatientRegistrationDetailReportQuerySupport {
         if (organizationIds.isEmpty()) {
             return List.of();
         }
-        return this.encounterQueryService.listEncounterIdsForPractitionerWorkloadScope(
-            EncounterClass.AMB.getCode(), organizationIds, businessTimeFrom, businessTimeTo);
+        // 须与明细/汇总同 coalesce 时间轴；禁止工作量「相交日窗」口径误伤挂号业务日
+        return this.encounterQueryService.listEncounterIdsForRegistrationBusinessWindow(
+            EncounterClass.AMB.getCode(),
+            organizationIds,
+            businessTimeFrom,
+            businessTimeTo,
+            statusEnum);
     }
 }
 

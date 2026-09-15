@@ -260,6 +260,13 @@ public class InpatientDoctorStationAdviceRowDto {
     @Schema(description = "药品成组号")
     private Long groupId;
 
+    /**
+     * 是否中药饮片行（{@code med_medication_request.tcm_flag}）。
+     * <p>病案首页医嘱列表按此码把同方饮片合并为一行；禁止用展示文案判断。</p>
+     */
+    @Schema(description = "是否中药饮片行")
+    private Boolean tcmFlag;
+
     /** 中药付数。 */
     @Schema(description = "中药付数")
     private Integer chineseHerbsDoseQuantity;
@@ -488,8 +495,8 @@ public class InpatientDoctorStationAdviceRowDto {
     @Schema(description = "改量链 based_on 源嘱主键")
     private Long basedOnId;
 
-    /** 是否命中口服一盒一点剩余规则（BR-IP-EXE-038）。 */
-    @Schema(description = "是否命中口服包装剩余规则")
+    /** 是否命中单位领用剩余规则（BR-IP-EXE-038：一盒一点或拆零下限）。 */
+    @Schema(description = "是否命中单位领用剩余规则（一盒一点/拆零下限）")
     private Boolean oralPackageBatchInventoryApplied;
 
     /** 已吃拆零量。 */
@@ -504,8 +511,8 @@ public class InpatientDoctorStationAdviceRowDto {
     @Schema(description = "拆零单位展示")
     private String oralPackageSplitUnitDisplay;
 
-    /** 预计下次领盒日。 */
-    @Schema(description = "预计下次领盒日")
+    /** 预计下次领用日（下一盒/下一拆零单位）。 */
+    @Schema(description = "预计下次领用日")
     @JsonFormat(pattern = com.openhis.health.domain.share.constants.GeneralSharedConstants.DATE_DISPLAY_PATTERN)
     private java.time.LocalDate oralPackageNextClaimDate;
 }

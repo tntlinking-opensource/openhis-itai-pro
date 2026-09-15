@@ -83,6 +83,16 @@ export interface NurseStationOrderExecuteTableRow {
   methodCode?: string;
   /** 是否输液相关（与 methodCode 一并用于贴签判定） */
   infusionFlag?: boolean;
+  /**
+   * 频次 code（输液贴按每日次数拆张；禁止用 frequencyDisplay）
+   */
+  rateCode?: string;
+  /** 频次展示（口服药贴等；仅印文案，不做分流） */
+  frequencyDisplay?: string;
+  /**
+   * 单次剂量原文（后端 dosageDisplay；瓶贴用，勿用列表「一次x，每日y」）
+   */
+  perDoseDisplay?: string;
   /** 输液滴速编码（打印/回填；与 DTO speedCode 同源） */
   speedCode?: string;
   /** 输液滴速展示名（列表扩展行与瓶签打印用） */
@@ -104,6 +114,12 @@ export interface NurseStationOrderExecuteTableRow {
   groupItems?: DrugGroupDisplayItem[];
   /** 成组合并前的成员行（取消执行等需展开槽位） */
   mergedMedicationMembers?: NurseStationOrderExecuteTableRow[];
+  /** 是否皮试药 */
+  skinTestFlag?: boolean;
+  /** 皮试临床状态 code */
+  skinTestOutcomeCode?: string;
+  /** 皮试临床状态展示文案 */
+  skinTestOutcomeText?: string;
 }
 
 /** 按日期分组的槽位（用于「预计执行时点」列） */
@@ -234,7 +250,7 @@ function buildExecuteTypeLabel(dto: NurseStationOrderExecuteRowDto): string {
   return therapy === '—' ? kind || '—' : therapy;
 }
 
-/** 医嘱名称摘要：名称【5mg1片x100】；中药方折叠行仅用方级展示名 */
+/** 医嘱名称摘要：名称【5mg1片x100】；皮试结果由单元格内联角标展示 */
 function buildExecuteContentTitle(dto: NurseStationOrderExecuteRowDto): string {
   if (dto.tcmFlag === true) {
     const collapsedName = String(dto.adviceDisplayName ?? '').trim();
@@ -656,6 +672,10 @@ export function mapExecuteRowDtoToTableRow(
     stopTime: String(dto.stopTime ?? '').trim() || undefined,
     methodCode: String(dto.methodCode ?? '').trim() || undefined,
     infusionFlag: dto.infusionFlag === true ? true : dto.infusionFlag === false ? false : undefined,
+    rateCode: String(dto.rateCode ?? '').trim() || undefined,
+    frequencyDisplay: String(dto.frequencyDisplay ?? '').trim() || undefined,
+    // 瓶贴剂量用每次量原文；列表 dosage 可为长期「一次x，每日y」
+    perDoseDisplay: String(dto.dosageDisplay ?? '').trim() || undefined,
     speedCode: String(dto.speedCode ?? '').trim() || undefined,
     speedDisplay: String(dto.speedDisplay ?? '').trim() || undefined,
     planSchedules: groupSlotsByDate(
@@ -671,6 +691,9 @@ export function mapExecuteRowDtoToTableRow(
     tcmFlag: dto.tcmFlag === true ? true : undefined,
     prescriptionNo: String(dto.prescriptionNo ?? '').trim() || undefined,
     lineRequestIds: mapLineRequestIds(dto.lineRequestIds),
+    skinTestFlag: dto.skinTestFlag === true ? true : undefined,
+    skinTestOutcomeCode: String(dto.skinTestOutcomeCode ?? '').trim() || undefined,
+    skinTestOutcomeText: String(dto.skinTestOutcomeText ?? '').trim() || undefined,
   };
 }
 
@@ -694,6 +717,8 @@ function executeDtoToDrugGroupItem(dto: NurseStationOrderExecuteRowDto): DrugGro
       String(dto.specificationText ?? '').trim(),
       dto.packageSplitRatioText,
     ),
+    skinTestOutcomeCode: String(dto.skinTestOutcomeCode ?? '').trim() || undefined,
+    skinTestOutcomeText: String(dto.skinTestOutcomeText ?? '').trim() || undefined,
     pharmacy: '',
     singleDose: doseText,
     doseSubUnit: '',
@@ -705,6 +730,7 @@ function executeDtoToDrugGroupItem(dto: NurseStationOrderExecuteRowDto): DrugGro
     dosageDisplay: doseText || undefined,
     speedDisplay:
       String(dto.speedDisplay ?? '').trim() || String(dto.speedCode ?? '').trim() || undefined,
+    remark: String(dto.remark ?? '').trim() || undefined,
   };
 }
 
@@ -766,6 +792,7 @@ function mergeExecuteMedicationRowsForDisplay(
       const gid = String(headDto.groupId ?? headDto.groupNo ?? '').trim();
       const idPart = lineRequestIds.join('&');
       const groupSpeed = pickGroupSpeedFromExecuteSlice(slice);
+      const skinTestOutcomeMember = members.find((m) => String(m.skinTestOutcomeText ?? '').trim());
       const extensionDto: NurseStationOrderExecuteRowDto = {
         ...headDto,
         speedCode: groupSpeed.speedCode ?? headDto.speedCode,
@@ -779,6 +806,9 @@ function mergeExecuteMedicationRowsForDisplay(
         lineRequestIds,
         speedCode: groupSpeed.speedCode ?? firstMember.speedCode,
         speedDisplay: groupSpeed.speedDisplay ?? firstMember.speedDisplay,
+        skinTestFlag: members.some((m) => m.skinTestFlag === true) ? true : undefined,
+        skinTestOutcomeCode: skinTestOutcomeMember?.skinTestOutcomeCode,
+        skinTestOutcomeText: skinTestOutcomeMember?.skinTestOutcomeText,
         extension: buildExecuteExtensionLine(extensionDto) || undefined,
       };
     },

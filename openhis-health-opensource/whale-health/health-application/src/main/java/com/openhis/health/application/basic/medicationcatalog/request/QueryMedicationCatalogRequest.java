@@ -29,6 +29,11 @@ public class QueryMedicationCatalogRequest extends AbstractHealthPageRequest {
      */
     private String keyDrugType;
 
+    /**
+     * 发布状态筛选（{@code ACTIVE} 已启用 / {@code INACTIVE} 已停用）；空/{@code null} 表示不限。
+     */
+    private String statusEnum;
+
     {
         List<String> where = new ArrayList<>();
         this.setWhere(where);

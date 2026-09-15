@@ -28,14 +28,6 @@ public class InpatientDepositSettlementPlanner {
     /** 分支：有余，冲抵 P + 现金退 D−P。 */
     public static final String RULE_R3 = "R3";
 
-    /**
-     * 历史分支码：含银联全退+重收（已废除；多退一律现金，不再产生本码）。
-     *
-     * @deprecated 保留常量仅防旧文案/日志比对
-     */
-    @Deprecated
-    public static final String RULE_R4 = "R4";
-
     /** 分支：无预交金，仅渠道收 P。 */
     public static final String RULE_R5 = "R5";
 
@@ -128,22 +120,5 @@ public class InpatientDepositSettlementPlanner {
             BigDecimal.ZERO,
             refund,
             false);
-    }
-
-    /**
-     * 兼容旧调用：忽略含银联入参，多退一律走现金口径。
-     *
-     * @param personalCashPayable 个人现金应付 P
-     * @param depositBalance      库内预交金 D
-     * @param hasUnionPayDeposit  已忽略
-     * @return 轧差计划
-     * @deprecated 改用 {@link #resolve(BigDecimal, BigDecimal)}
-     */
-    @Deprecated
-    public InpatientDepositSettlementPlan resolve(
-        BigDecimal personalCashPayable,
-        BigDecimal depositBalance,
-        boolean hasUnionPayDeposit) {
-        return this.resolve(personalCashPayable, depositBalance);
     }
 }

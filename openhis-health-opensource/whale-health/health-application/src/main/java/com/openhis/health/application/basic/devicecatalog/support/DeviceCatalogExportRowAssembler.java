@@ -14,7 +14,9 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 耗材目录导出行组装：实体 + 维护态定价 → 导出列（首列编号 + 导入模板字段序）。
@@ -27,15 +29,17 @@ public class DeviceCatalogExportRowAssembler {
     /**
      * 将单条耗材定义与其定价行映射为导出行单元格。
      *
-     * @param entity           耗材定义实体
-     * @param priceLines       该实例维护态定价行（可为 null/空）
-     * @param terminologyIndex 已 {@link DeviceCatalogImportTerminologyIndex#load()} 的术语索引
+     * @param entity                耗材定义实体
+     * @param priceLines            该实例维护态定价行（可为 null/空）
+     * @param terminologyIndex      已 {@link DeviceCatalogImportTerminologyIndex#load()} 的术语索引
+     * @param manufacturerNameById  生产厂家 id→名称（实体已无 text 列，由导出编排批量解析后传入）
      * @return 长度 = 1（编号）+ {@link DeviceCatalogImportConstants#COLUMN_HEADERS} 的单元格文案
      */
     public String[] toColumnValues(
         DeviceDefinition entity,
         List<ChargeItemDefinition> priceLines,
-        DeviceCatalogImportTerminologyIndex terminologyIndex
+        DeviceCatalogImportTerminologyIndex terminologyIndex,
+        Map<Long, String> manufacturerNameById
     ) {
         String[] values = new String[DeviceCatalogImportConstants.COLUMN_HEADERS.length + 1];
         if (entity == null) {
@@ -43,6 +47,10 @@ public class DeviceCatalogExportRowAssembler {
         }
         PriceSnapshot prices = this.extractPrices(priceLines);
         DescriptionParts descriptionParts = this.splitDescription(entity.getDescription());
+        Map<Long, String> safeManufacturerNameById = manufacturerNameById;
+        if (safeManufacturerNameById == null) {
+            safeManufacturerNameById = Collections.emptyMap();
+        }
 
         // 导出专有：系统采番编号（导入模板无此列）
         values[0] = this.textOrEmpty(entity.getBusNo());
@@ -53,8 +61,8 @@ public class DeviceCatalogExportRowAssembler {
             terminologyIndex, DeviceCatalogImportTerminologyIndex.DICT_CATEGORY, entity.getCategoryCode());
         values[4] = this.labelOrEmpty(
             terminologyIndex, DeviceCatalogImportTerminologyIndex.DICT_DEVICE_TYPE, entity.getTypeCode());
-        values[5] = "";
-        // 厂家展示名由导出编排按 manufacturerId 解析后写入；实体已无 manufacturer_text 列
+        // 生产厂家：按 manufacturerId 取展示名（实体已无 manufacturer_text 列）
+        values[5] = this.resolveManufacturerText(entity.getManufacturerId(), safeManufacturerNameById);
         values[6] = this.labelOrEmpty(
             terminologyIndex, DeviceCatalogImportTerminologyIndex.DICT_FIN_TYPE, prices.typeCode);
         values[7] = this.textOrEmpty(entity.getTotalVolume());
@@ -97,6 +105,20 @@ public class DeviceCatalogExportRowAssembler {
         values[31] = this.yesNoLabel(entity.getChargeableFlag());
         values[32] = this.textOrEmpty(descriptionParts.descriptionText);
         return values;
+    }
+
+    /**
+     * 按生产厂家主键取展示名。
+     *
+     * @param manufacturerId       厂家主键；可空
+     * @param manufacturerNameById id→名称映射；不可为 null
+     * @return 厂家名称；无主键或未命中时为空串
+     */
+    private String resolveManufacturerText(Long manufacturerId, Map<Long, String> manufacturerNameById) {
+        if (manufacturerId == null) {
+            return "";
+        }
+        return this.textOrEmpty(manufacturerNameById.get(manufacturerId));
     }
 
     /**

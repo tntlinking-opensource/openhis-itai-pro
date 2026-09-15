@@ -9,7 +9,7 @@ package com.openhis.health.domain.share.enums;
  *
  * <p>用于 ChargeItem 写侧的 publishByType 路由分发，替代魔数。</p>
  *
- * <p>约定：1-8、16 为单条事件（逐条发布），10-15 为批量事件（首条代表批次）。</p>
+ * <p>约定：1-8、16 为单条事件（逐条发布），10-15、17 为批量事件（首条代表批次）。</p>
  */
 public enum ChargeItemEventType implements EnumInterface {
 
@@ -43,7 +43,9 @@ public enum ChargeItemEventType implements EnumInterface {
     /** 住院收费项目批量反结回退。 */
     INPATIENT_ITEMS_REVERTED(0L, "15", "住院收费项目批量反结回退", "", 15L, true),
     /** 住院滚费收费项目已创建。 */
-    AUTO_ROLL_CREATED(0L, "16", "住院滚费收费项目已创建", "", 16L, false);
+    AUTO_ROLL_CREATED(0L, "16", "住院滚费收费项目已创建", "", 16L, false),
+    /** 门诊账单退款申请撤销（退费中回已结算）。 */
+    OUTPATIENT_BILL_REFUND_CANCELLED(0L, "17", "门诊账单退款申请撤销", "", 17L, true);
 
     private final Long codeSystemId;
     private final String code;
@@ -113,7 +115,7 @@ public enum ChargeItemEventType implements EnumInterface {
     }
 
     /**
-     * 是否为批量粒度事件（10-14，不含 8）。
+     * 是否为批量粒度事件（10-15、17 等；由构造参数 {@code batchEvent} 标定）。
      *
      * @return 批量事件返回 {@code true}
      */

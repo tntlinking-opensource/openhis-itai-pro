@@ -16,11 +16,12 @@ import lombok.Data;
 @Schema(description = "疾病（病种）目录列表项")
 public class DiagnosisCatalogDto {
 
+    /** 目录主键（字符串出站，防前端雪花 Long 精度丢失）。 */
     @Schema(description = "主键ID")
     @JsonSerialize(using = ToStringSerializer.class)
-    /** 所属分类编码。 */
     private Long id;
 
+    /** 所属分类编码（{@code source_enum} 术语 code）。 */
     @Schema(description = "所属分类编码")
     private String sourceEnum;
 
@@ -64,9 +65,17 @@ public class DiagnosisCatalogDto {
     @Schema(description = "医保编码")
     private String ybNo;
 
-    /** 国家临床版诊断编码（国临码）。 */
-    @Schema(description = "国家临床版诊断编码（国临码）")
+    /** 医保诊断名称（由 ybNo 反查疾病与诊断等医保目录 name；未对码为空）。 */
+    @Schema(description = "医保诊断名称")
+    private String ybName;
+
+    /** 国家临床版诊断编码（国临码）。医保目录列表可能为一对多逗号拼接。 */
+    @Schema(description = "国家临床版诊断编码（国临码）；医保目录列表可逗号拼接多个")
     private String clinicCode;
+
+    /** 国家临床版诊断名称。医保目录列表与 clinicCode 同序逗号拼接；由国临 yb_no 反查。 */
+    @Schema(description = "国家临床版诊断名称；医保目录列表可逗号拼接多个")
+    private String clinicName;
 
     /** 医保对码标记（0/1）。 */
     @Schema(description = "医保对码标记（0/1）")

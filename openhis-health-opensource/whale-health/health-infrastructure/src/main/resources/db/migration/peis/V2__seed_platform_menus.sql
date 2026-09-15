@@ -2,7 +2,7 @@
 -- history: flyway_schema_history_peis
 -- folded: V2–V13 菜单/术语/打印 + 指引单 peis-guide-print + 团检合同对账；菜单名「体检登记」
 -- 权限挂角色 provider_key=1（与 Booking 种子一致）
--- 终态菜单序：登记(0) → 收费(1) → 目录(2) → 诊断(3) → 参数(4) / 公告(4) → 团检(5) → 分科(6) → 总检(7) → 报告打印(8) → 报告发放(9) → 复查(10) → 体检历史(11) → 团检合同对账(12)
+-- 终态菜单序：登记(0) → 收费(1) → 目录(2) → 诊断(3) → 参数(4) / 公告(4) → 团检(5) → 分科(6) → 总检(7) → 报告打印(8) → 报告发放(9) → 复查(10) → 体检记录(11) → 团检合同对账(12) → 体检日结(13)
 
 -- ========== from V2__seed_platform_menus.sql（Catalog/Diagnosis/Settings sort_order 已含 V5 终态） ==========
 
@@ -718,8 +718,8 @@ INSERT INTO whale_permissions (
     tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
 )
 VALUES
-    ('311100000000000014', 'Peis.ExamHistory.View', '体检历史', 'Peis',
-     '菜单入口: PeisExamHistory · 学生/教职工历年体检与档案完整性', NULL,
+    ('311100000000000014', 'Peis.ExamHistory.View', '体检记录', 'Peis',
+     '菜单入口: PeisExamHistory · 体检记录列表', NULL,
      TIMESTAMP '2026-07-25 00:00:00+00', TIMESTAMP '2026-07-25 00:00:00+00', 1, 1, FALSE, NULL, NULL)
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
@@ -737,9 +737,9 @@ INSERT INTO whale_menus (
     tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
 )
 VALUES
-    ('311100000000000114', 'PeisExamHistory', 'PeisExamHistory', '体检历史', 'lucide:history',
+    ('311100000000000114', 'PeisExamHistory', 'PeisExamHistory', '体检记录', 'lucide:history',
      '/peis/history', '/peis/history/index', 'Peis.ExamHistory.View', '311100000000000100', 11,
-     TRUE, FALSE, FALSE, '', 'menu', 'PeisExamHistoryAppService · 历年体检+档案完整性', NULL,
+     TRUE, FALSE, FALSE, '', 'menu', 'PeisExamHistoryAppService · 体检记录', NULL,
      TIMESTAMP '2026-07-25 00:00:00+00', TIMESTAMP '2026-07-25 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE)
 ON CONFLICT (id) DO UPDATE SET
     code = EXCLUDED.code,
@@ -875,3 +875,87 @@ ON CONFLICT ("id") DO UPDATE SET
     "scenario_code" = EXCLUDED."scenario_code",
     "version" = EXCLUDED."version",
     "updated_at" = EXCLUDED."updated_at";
+
+-- ========== folded: peis_contract_type 预置四类（原 V5） ==========
+INSERT INTO peis_contract_type (
+    id, tenant_id, type_code, type_name, sort_order, enabled_flag,
+    created_at, updated_at, created_by, updated_by, is_deleted, version
+) VALUES
+    (312000000000000001, NULL, 'STUDENT', '学生', 1, TRUE,
+     TIMESTAMP '2026-08-30 00:00:00+00', TIMESTAMP '2026-08-30 00:00:00+00', 1, 1, FALSE, 0),
+    (312000000000000002, NULL, 'STAFF', '教职工', 2, TRUE,
+     TIMESTAMP '2026-08-30 00:00:00+00', TIMESTAMP '2026-08-30 00:00:00+00', 1, 1, FALSE, 0),
+    (312000000000000003, NULL, 'ENTERPRISE', '企业', 3, TRUE,
+     TIMESTAMP '2026-08-30 00:00:00+00', TIMESTAMP '2026-08-30 00:00:00+00', 1, 1, FALSE, 0),
+    (312000000000000004, NULL, 'WALK_IN', '散客', 4, TRUE,
+     TIMESTAMP '2026-08-30 00:00:00+00', TIMESTAMP '2026-08-30 00:00:00+00', 1, 1, FALSE, 0)
+ON CONFLICT (id) DO UPDATE SET
+    type_code = EXCLUDED.type_code,
+    type_name = EXCLUDED.type_name,
+    sort_order = EXCLUDED.sort_order,
+    enabled_flag = EXCLUDED.enabled_flag,
+    is_deleted = FALSE,
+    updated_at = EXCLUDED.updated_at;
+
+-- ========== folded: 体检日结菜单（原 V3）· IDs 016/116/216 ==========
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('311100000000000016', 'Peis.DailySettlement.View', '体检日结', 'Peis',
+     '菜单入口: PhysicalExamDailySettlement · AS-PE-FIN-003', NULL,
+     TIMESTAMP '2026-08-26 00:00:00+00', TIMESTAMP '2026-08-26 00:00:00+00', 1, 1, FALSE, NULL, NULL)
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    display_name = EXCLUDED.display_name,
+    parent_name = EXCLUDED.parent_name,
+    description = EXCLUDED.description,
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES
+    ('311100000000000116', 'PhysicalExamDailySettlement', 'PhysicalExamDailySettlement', '体检日结',
+     'lucide:calendar-check',
+     '/peis/daily-settlement', '/peis/daily-settlement/index',
+     'Peis.DailySettlement.View', '311100000000000100', 13,
+     TRUE, FALSE, FALSE, '', 'menu',
+     'PhysicalExamDailySettlementAppService · AS-PE-FIN-003', NULL,
+     TIMESTAMP '2026-08-26 00:00:00+00', TIMESTAMP '2026-08-26 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE)
+ON CONFLICT (id) DO UPDATE SET
+    code = EXCLUDED.code,
+    name = EXCLUDED.name,
+    display_name = EXCLUDED.display_name,
+    icon = EXCLUDED.icon,
+    path = EXCLUDED.path,
+    component = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order,
+    is_enabled = EXCLUDED.is_enabled,
+    is_hidden = EXCLUDED.is_hidden,
+    remark = EXCLUDED.remark,
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('311100000000000216', 'Peis.DailySettlement.View', 'R', '1', NULL,
+     TIMESTAMP '2026-08-26 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-08-26 00:00:00+00';

@@ -6,6 +6,7 @@ import type {
   TemperatureSheetGridRowDto,
   TemperatureSheetGridSlotCellDto,
   TemperatureSheetDerivedMetaDto,
+  TemperatureSheetTemperaturePointDto,
   TemperatureSheetTimeSlot,
   TemperatureSheetWindowRange,
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station-temperature-sheet.types';
@@ -20,8 +21,9 @@ import {
   VITAL_ITEM_CODE,
 } from './temperature-sheet-detail-items';
 import {
+  parseDateTimeYmdHm,
   resolveAdmissionDateYmd as resolveAdmissionDateYmdFromAt,
-  resolveTemperatureSheetTimeSlotFromHm,
+  resolveTemperatureSheetChartTimeSlotFromHm,
 } from './temperature-sheet-time-format';
 
 export const TEMPERATURE_SHEET_TIME_SLOTS: TemperatureSheetTimeSlot[] = [
@@ -253,6 +255,103 @@ export function mergeTemperatureSheetGridRowsWithSkeleton(
   });
 }
 
+/**
+ * 按实际测量时分就近重排日×6 槽（09:40 → 10 时栏）。
+ * 格子无 recordTime 时保持接口原槽，兼容未升级后端。
+ */
+export function rebucketTemperatureSheetGridRowsByNearestSlot(
+  gridRows: TemperatureSheetGridRowDto[],
+): TemperatureSheetGridRowDto[] {
+  return gridRows.map((gridRow) => rebucketTemperatureSheetGridRowByNearestSlot(gridRow));
+}
+
+/** 将单日格子按 recordTime 就近落到三测时次 */
+function rebucketTemperatureSheetGridRowByNearestSlot(
+  gridRow: TemperatureSheetGridRowDto,
+): TemperatureSheetGridRowDto {
+  const sourceCells = gridRow.slotCells ?? [];
+  const hasRecordTime = sourceCells.some((cell) => (cell.recordTime ?? '').trim().length > 0);
+  if (!hasRecordTime) {
+    return gridRow;
+  }
+
+  const slotCells: TemperatureSheetGridSlotCellDto[] = TEMPERATURE_SHEET_TIME_SLOTS.map(
+    (timeSlot) => ({
+      timeSlot,
+      detailItems: [],
+    }),
+  );
+  const slotMap = new Map(slotCells.map((cell) => [cell.timeSlot, cell]));
+  const latestHmBySlot = new Map<TemperatureSheetTimeSlot, string>();
+
+  // 有真实时分的格子按就近时次落格；同槽保留较晚时分
+  for (const cell of sourceCells) {
+    const recordTime = (cell.recordTime ?? '').trim();
+    const chartSlot = recordTime
+      ? resolveTemperatureSheetChartTimeSlotFromHm(recordTime)
+      : ((cell.timeSlot ?? '').trim() as TemperatureSheetTimeSlot);
+    if (!TEMPERATURE_SHEET_TIME_SLOTS.includes(chartSlot)) {
+      continue;
+    }
+    const target = slotMap.get(chartSlot);
+    if (!target) {
+      continue;
+    }
+    const previousHm = latestHmBySlot.get(chartSlot);
+    if (previousHm && recordTime && previousHm.localeCompare(recordTime) > 0) {
+      continue;
+    }
+    if (recordTime) {
+      latestHmBySlot.set(chartSlot, recordTime);
+    }
+    target.vitalSignId = cell.vitalSignId;
+    target.detailItems = cell.detailItems ?? [];
+    target.recordTime = recordTime || undefined;
+  }
+
+  return {
+    recordDate: gridRow.recordDate,
+    slotCells,
+  };
+}
+
+/**
+ * 用曲线点 recordedAt 补格子测量时分（vitalSignId 对齐）。
+ * 旧后端格子没有 recordTime 时，仍能按真实时分就近描点。
+ */
+function attachRecordTimeFromTemperaturePoints(
+  gridRows: TemperatureSheetGridRowDto[],
+  temperaturePoints: TemperatureSheetTemperaturePointDto[] | null | undefined,
+): TemperatureSheetGridRowDto[] {
+  const hmByVitalSignId = new Map<string, string>();
+  for (const point of temperaturePoints ?? []) {
+    const vitalSignId = String(point.vitalSignId ?? '').trim();
+    const parsed = parseDateTimeYmdHm(point.recordedAt ?? undefined);
+    if (!vitalSignId || !parsed) {
+      continue;
+    }
+    hmByVitalSignId.set(vitalSignId, parsed.hm);
+  }
+  if (hmByVitalSignId.size === 0) {
+    return gridRows;
+  }
+
+  return gridRows.map((gridRow) => ({
+    ...gridRow,
+    slotCells: (gridRow.slotCells ?? []).map((cell) => {
+      if ((cell.recordTime ?? '').trim()) {
+        return cell;
+      }
+      const vitalSignId = String(cell.vitalSignId ?? '').trim();
+      const recordTime = hmByVitalSignId.get(vitalSignId);
+      if (!recordTime) {
+        return cell;
+      }
+      return { ...cell, recordTime };
+    }),
+  }));
+}
+
 /** 计算两个 YYYY-MM-DD 之间的自然日差 */
 function diffDaysBetweenYmd(fromYmd: string, toYmd: string): number {
   const fromParts = fromYmd.split('-').map((part) => Number(part));
@@ -329,14 +428,15 @@ function parseChartNumber(value?: null | string): number | undefined {
   return Number.isFinite(num) ? num : undefined;
 }
 
-/** 由网格行构建曲线展示点序列 */
+/** 由网格行构建曲线展示点序列（描点按测量时分就近落格） */
 export function buildChartPointsFromGridRows(
   gridRows: TemperatureSheetGridRowDto[],
 ): TemperatureSheetChartPoint[] {
   const points: TemperatureSheetChartPoint[] = [];
+  const chartRows = rebucketTemperatureSheetGridRowsByNearestSlot(gridRows);
 
   // 按日×6 槽展开为图表横轴点
-  for (const gridRow of gridRows) {
+  for (const gridRow of chartRows) {
     const fullDate = (gridRow.recordDate ?? '').trim();
     if (!fullDate) {
       continue;
@@ -384,6 +484,7 @@ export function buildChartPointsFromSheetData(
     gridRows = mergeTemperatureSheetGridRowsWithSkeleton(gridRows, startDate, expectedDayCount);
   }
   if (gridRows.length > 0) {
+    gridRows = attachRecordTimeFromTemperaturePoints(gridRows, response.temperaturePoints);
     return buildChartPointsFromGridRows(gridRows);
   }
 
@@ -394,14 +495,15 @@ export function buildChartPointsFromSheetData(
       continue;
     }
     const [fullDate, timeText] = recordedAt.split(' ');
-    const hour = (timeText ?? '').slice(0, 2) as TemperatureSheetTimeSlot;
-    if (!fullDate || !TEMPERATURE_SHEET_TIME_SLOTS.includes(hour)) {
+    const timeHm = (timeText ?? '').slice(0, 5);
+    if (!fullDate || !/^\d{2}:\d{2}$/.test(timeHm)) {
       continue;
     }
+    const timeSlot = resolveTemperatureSheetChartTimeSlotFromHm(timeHm);
     points.push({
       fullDate,
       date: formatTemperatureSheetDisplayDate(fullDate),
-      timeSlot: hour,
+      timeSlot,
       temp: parseChartNumber(item.temperature),
     });
   }
@@ -429,7 +531,8 @@ export function resolveMergedTemperatureSheetGridRows(
     const startDate = resolveTemperatureSheetWindowStartDate(response);
     gridRows = mergeTemperatureSheetGridRowsWithSkeleton(gridRows, startDate, expectedDayCount);
   }
-  return gridRows;
+  gridRows = attachRecordTimeFromTemperaturePoints(gridRows, response.temperaturePoints);
+  return rebucketTemperatureSheetGridRowsByNearestSlot(gridRows);
 }
 
 /** 格式化底部血压展示 */
@@ -479,10 +582,10 @@ export function buildTemperatureSheetPeekGridRowFromFillSlots(
   const slotMap = new Map(slotCells.map((cell) => [cell.timeSlot, cell]));
   const latestHmBySlot = new Map<TemperatureSheetTimeSlot, string>();
 
-  // 按实际时分归入图表槽；同槽取较晚 HH:mm 覆盖
+  // 按实际时分就近归入图表槽；同槽取较晚 HH:mm 覆盖
   for (const slot of fillSlots ?? []) {
     const recordTime = normalizeTemperatureSheetRecordTime(slot.timeSlot);
-    const chartSlot = resolveTemperatureSheetTimeSlotFromHm(recordTime);
+    const chartSlot = resolveTemperatureSheetChartTimeSlotFromHm(recordTime);
     const target = slotMap.get(chartSlot);
     if (!target) {
       continue;
@@ -574,7 +677,7 @@ export function createEmptyFillRow(
   const recordTime = timeSlot
     ? formatTemperatureSheetTimeSlotHm(timeSlot)
     : `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-  const resolvedSlot = timeSlot ?? resolveTemperatureSheetTimeSlotFromHm(recordTime);
+  const resolvedSlot = timeSlot ?? resolveTemperatureSheetChartTimeSlotFromHm(recordTime);
   return {
     rowUid: createTemperatureSheetFillRowUid(),
     recordTime,
@@ -644,9 +747,9 @@ function dayjsNowHm(): string {
   return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 }
 
-/** 按 recordTime 同步图表三测槽 */
+/** 按 recordTime 同步图表三测槽（30 分界就近落格） */
 export function syncFillRowChartTimeSlot(row: TemperatureSheetFillRowDraft): void {
-  row.timeSlot = resolveTemperatureSheetTimeSlotFromHm(row.recordTime);
+  row.timeSlot = resolveTemperatureSheetChartTimeSlotFromHm(row.recordTime);
 }
 
 /** 列出尚未占用的三测时次 */
@@ -688,10 +791,10 @@ export function applyFillSlotsToDraft(fillSlots: TemperatureSheetFillSlotDto[]):
   const extraRecord = createEmptyExtraRecord();
   const rowMap = new Map(rows.map((row) => [row.timeSlot, row]));
 
-  // 按实际时分归到图表槽回显；同槽多条取较晚的时分覆盖
+  // 按实际时分就近归到图表槽回显；同槽多条取较晚的时分覆盖
   for (const slot of fillSlots) {
     const recordTime = normalizeTemperatureSheetRecordTime(slot.timeSlot);
-    const chartSlot = resolveTemperatureSheetTimeSlotFromHm(recordTime);
+    const chartSlot = resolveTemperatureSheetChartTimeSlotFromHm(recordTime);
     const target = rowMap.get(chartSlot);
     if (!target) {
       continue;
@@ -782,7 +885,7 @@ export function collectTemperatureSheetSaveRequests(
   // 补充记录仅挂图表 22 槽：有补充内容但请求中尚无 22 槽时补提 22:00
   const hasExtraContent = Object.values(extraRecord).some((value) => value.trim().length > 0);
   const hasChartSlot22Request = requests.some((request) => {
-    const chartSlot = resolveTemperatureSheetTimeSlotFromHm(
+    const chartSlot = resolveTemperatureSheetChartTimeSlotFromHm(
       normalizeTemperatureSheetRecordTime(request.timeSlot),
     );
     return chartSlot === '22';

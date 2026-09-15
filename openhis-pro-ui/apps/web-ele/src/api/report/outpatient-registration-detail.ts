@@ -34,6 +34,8 @@ export interface LoadOutpatientRegistrationDetailReportPageInitResponse {
   practitionerOptions?: ApiOptionItem[];
   serviceTypeOptions?: ApiOptionItem[];
   summaryViewOptions?: ApiOptionItem[];
+  /** 就诊状态下拉（已挂号/在诊/退号等；value=EncounterStatus code）。 */
+  statusOptions?: ApiOptionItem[];
 }
 
 export interface OutpatientRegistrationDetailQueryFilter {
@@ -43,6 +45,8 @@ export interface OutpatientRegistrationDetailQueryFilter {
   practitionerId?: string;
   keyword?: string;
   summaryView?: SummaryViewCode | string;
+  /** 就诊状态 code；空表示不按状态收窄。 */
+  statusEnum?: string;
 }
 
 export interface OutpatientRegistrationDetailSummaryRowDto {

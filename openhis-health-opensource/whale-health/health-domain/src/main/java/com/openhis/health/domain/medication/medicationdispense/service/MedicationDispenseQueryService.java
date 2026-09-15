@@ -61,6 +61,7 @@ import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -1322,6 +1323,93 @@ public class MedicationDispenseQueryService {
     }
 
     /**
+     * 按药品申请主键集合 + 发放状态分页患者发退药行（{@code encounter_id} 非空；AS-RPT-015）。
+     *
+     * <p>排序 {@code id ASC}；仅本聚合。科室领用（无就诊）不入集。</p>
+     *
+     * @param medReqIds    药品申请主键；空则空页
+     * @param statusEnums  发放状态枚举集合；空则空页
+     * @param pageable     分页（调用方指定排序；推荐 id ASC）
+     * @return 患者发退药实体页
+     */
+    public Page<MedicationDispense> pagePatientDispensesByMedReqIdsAndStatusIn(
+        Collection<Long> medReqIds,
+        Collection<DispenseStatus> statusEnums,
+        Pageable pageable) {
+        // Gate：申请主键或状态集合空 → 空页
+        if (medReqIds == null || medReqIds.isEmpty() || statusEnums == null || statusEnums.isEmpty()) {
+            if (pageable == null) {
+                return Page.empty();
+            }
+            return Page.empty(pageable);
+        }
+        List<Long> scopeIds = IdInQueryChunkSupport.distinctNonNullIds(medReqIds);
+        // Gate：去重后仍空
+        if (scopeIds.isEmpty()) {
+            if (pageable == null) {
+                return Page.empty();
+            }
+            return Page.empty(pageable);
+        }
+        List<DispenseStatus> statusList = new ArrayList<>();
+        for (DispenseStatus status : statusEnums) {
+            if (status != null) {
+                statusList.add(status);
+            }
+        }
+        // Gate：状态过滤后仍空
+        if (statusList.isEmpty()) {
+            if (pageable == null) {
+                return Page.empty();
+            }
+            return Page.empty(pageable);
+        }
+        Pageable effectivePageable = pageable;
+        // 未传分页：回落第 1 页默认大小 + id ASC
+        if (effectivePageable == null) {
+            effectivePageable = PageRequest.of(
+                0,
+                GeneralSharedConstants.DEFAULT_QUERY_PAGE_SIZE,
+                Sort.by(Sort.Order.asc(FieldNameConstants.ID)));
+        }
+        Specification<MedicationDispense> specification = (root, criteriaQuery, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(statusList));
+            // 仅患者发退药：就诊主键非空（排除科室领用）
+            predicates.add(cb.isNotNull(root.get(FieldNameConstants.ENCOUNTER_ID)));
+            predicates.add(this.buildChunkedMedReqIdInPredicate(cb, root, scopeIds));
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        return medicationDispenseRepository.findAll(specification, effectivePageable);
+    }
+
+    /**
+     * 药品申请主键分批 IN 谓词（超大集合拆 OR，避免单 IN 超限）。
+     *
+     * @param cb       CriteriaBuilder
+     * @param root     发放根
+     * @param medReqIds 去重后的申请主键
+     * @return IN 或 OR(IN…) 谓词
+     */
+    private Predicate buildChunkedMedReqIdInPredicate(
+        CriteriaBuilder cb,
+        Root<MedicationDispense> root,
+        List<Long> medReqIds) {
+        int chunkSize = GeneralSharedConstants.ID_IN_QUERY_CHUNK_SIZE;
+        // 单批：直接 IN
+        if (medReqIds.size() <= chunkSize) {
+            return root.get(FieldNameConstants.MED_REQ_ID).in(medReqIds);
+        }
+        List<Predicate> chunkPredicates = new ArrayList<>();
+        for (int fromIndex = 0; fromIndex < medReqIds.size(); fromIndex += chunkSize) {
+            int toIndex = Math.min(fromIndex + chunkSize, medReqIds.size());
+            chunkPredicates.add(root.get(FieldNameConstants.MED_REQ_ID).in(medReqIds.subList(fromIndex, toIndex)));
+        }
+        return cb.or(chunkPredicates.toArray(new Predicate[0]));
+    }
+
+    /**
      * 按执行记录主键集合批量查询药品发放行（取消执行 Dispense 分轨定位，DM-MED-002 §6.2.14）。
      *
      * @param procedureIds 执行记录主键集合
@@ -1982,14 +2070,18 @@ public class MedicationDispenseQueryService {
     }
 
     /**
-     * 发放实体 → 发放单列表读模型（不含跨表补全，由调用方批量预热）。
+     * 发放实体 → 发放单列表读模型（不含跨表补全，由调用方批量预热；AS-RPT-015 售价补价复用）。
      *
      * @param dispense 药品发放实体
-     * @return 发放单查询模型
+     * @return 发放单查询模型；入参空时返回空模型字段未填的实例仍由调用方判空
      */
-    private MedicationDispenseSlipQueryModel toSlipQueryModel(MedicationDispense dispense) {
-        // 字段直映发放聚合，患者/药品名由应用层批量补全
+    public MedicationDispenseSlipQueryModel toSlipQueryModel(MedicationDispense dispense) {
         MedicationDispenseSlipQueryModel model = new MedicationDispenseSlipQueryModel();
+        // Gate：空实体不填字段，避免 NPE
+        if (dispense == null) {
+            return model;
+        }
+        // 字段直映发放聚合，患者/药品名由应用层批量补全
         model.setDispenseId(dispense.getId());
         model.setBusNo(dispense.getBusNo());
         model.setMedReqId(dispense.getMedReqId());

@@ -90,6 +90,8 @@ public class CampusStudentAppService {
             request.getSchoolStatus(),
             request.getActiveFlag(),
             request.getClassName(),
+            request.getEnrollTimeFrom(),
+            request.getEnrollTimeTo(),
             PageRequest.of(request.getPageNo() - 1, request.getPageSize()));
         List<CampusStudentDto> rows = new ArrayList<>();
         for (PatientStudent entity : page.getContent()) {

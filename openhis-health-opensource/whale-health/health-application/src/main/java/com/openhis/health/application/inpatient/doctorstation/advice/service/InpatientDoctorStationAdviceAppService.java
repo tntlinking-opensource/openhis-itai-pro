@@ -34,6 +34,7 @@ import com.openhis.health.application.outpatient.doctorstation.advice.dto.Servic
 import com.openhis.health.application.inpatient.doctorstation.advice.mapper.InpatientDoctorStationAdviceMapper;
 import com.openhis.health.application.shared.advice.InpatientAdviceRevokeGate;
 import com.openhis.health.application.shared.advice.InpatientEntrustOrderGateSupport;
+import com.openhis.health.application.shared.advice.InpatientMedicationAdviceGroupRateGate;
 import com.openhis.health.application.shared.advice.InpatientNursingOrderGate;
 import com.openhis.health.infrastructure.integration.lis.LisAdviceApplyExtension;
 import com.openhis.health.infrastructure.integration.lis.ExtensionIn.LisAdviceApplyExtensionIn;
@@ -200,6 +201,8 @@ public class InpatientDoctorStationAdviceAppService {
     private final InpatientNursingOrderGate inpatientNursingOrderGate;
     /** BR-IP-ORD-028/029：嘱托正文必填；出院带药禁止诊疗行。 */
     private final InpatientEntrustOrderGateSupport inpatientEntrustOrderGateSupport;
+    /** BR-IP-ORD-033：同组成组药品频次须一致。 */
+    private final InpatientMedicationAdviceGroupRateGate inpatientMedicationAdviceGroupRateGate;
     private final CaseRecordDomainService caseRecordDomainService;
     /**
      * IF-IP-DOR-22：分页查询患者住院医嘱（单接口分 Tab：当前医嘱 / 历史医嘱；全类型统一列表）。
@@ -358,9 +361,10 @@ public class InpatientDoctorStationAdviceAppService {
      * IF-IP-DOR-10：加载住院医生站医嘱统一列表。
      *
      * <p>只读接口：以 OrderInfo 读模型（Q-ORD-007）为主数据源，叠加护士执行后费用归并、术语与发放库位展示；
-     * 可按长临类型筛选；返回全量列表（非 DB 分页）。</p>
+     * 可按长临类型筛选；返回全量列表（非 DB 分页）。
+     * 病案首页医嘱侧栏传 {@code includeTcmMedication=true} 纳入饮片，与西药/诊疗同一列表。</p>
      *
-     * @param request 就诊 id、患者 id、可选 {@code therapyTypeCode} 筛选
+     * @param request 就诊 id、患者 id、可选 {@code therapyTypeCode} 筛选、可选纳入中药饮片
      * @return 医嘱统一列表行（{@code content} 承载行集合）
      * @throws BusinessException 快照、患者或列表 Gate 失败
      */
@@ -370,8 +374,16 @@ public class InpatientDoctorStationAdviceAppService {
         Long currentUserId = currentPractitionerResolver.findOperatorIdOrNull();
         List<InpatientOrderListSkeleton> orders = inpatientOrderListMergeAssembler.mergeDoctorStationOrders(
             request.getEncounterId(), request.getTherapyTypeCode());
-        List<InpatientDoctorStationAdviceRowDto> rows = inpatientDoctorStationAdviceListAssembler.assembleRows(
-            request.getEncounterId(), request.getPatientId(), orders, currentUserId);
+        // Pre：开立 Tab 默认排除饮片（中医 Tab 分域）；病案首页侧栏 includeTcmMedication=true 纳入同列表
+        boolean excludeTcmMedication = !Boolean.TRUE.equals(request.getIncludeTcmMedication());
+        List<InpatientDoctorStationAdviceRowDto> rows = inpatientDoctorStationAdviceListAssembler.assembleAdviceQueryRows(
+            request.getEncounterId(),
+            request.getPatientId(),
+            orders,
+            currentUserId,
+            null,
+            null,
+            excludeTcmMedication);
         return PagedResultBuilder.buildList(new ListInpatientDoctorStationAdviceResponse(), rows);
     }
 
@@ -477,10 +489,10 @@ public class InpatientDoctorStationAdviceAppService {
     }
 
     /**
-     * IF-IP-DOR-23：暂存前解析变更行中药品/诊疗的直接绑定项（纯读；合管优先）。
+     * IF-IP-DOR-23：暂存前解析变更行中药品/诊疗的直接绑定项（纯读；住院不自动带耗材）。
      *
      * @param request 就诊、患者与暂存变更行
-     * @return 绑定明细及触发源 based_on 锚点
+     * @return 绑定明细及触发源 based_on 锚点（不含器材定义目标）
      */
     public ResolveInpatientDoctorStationAdviceDraftBindsResponse resolveInpatientDoctorStationAdviceDraftBinds(
         ResolveInpatientDoctorStationAdviceDraftBindsRequest request
@@ -488,7 +500,7 @@ public class InpatientDoctorStationAdviceAppService {
         // Gate：住院就诊上下文与患者一致
         InpatientEncounterContextQueryModel snapshot =
             requireInpatientSnapshot(request.getEncounterId(), request.getPatientId(), false);
-        // Pre：合管优先解析绑定，同批同设备去重
+        // Pre：住院开立不带合管/耗材；同批仅保留非耗材模板绑定
         List<DoctorStationAdviceDraftBindItemDto> bindItems =
             inpatientDoctorStationAdviceOrderBindQueryService.listDraftBindItems(
                 request.getLines(), snapshot.getOrganizationId());
@@ -516,6 +528,8 @@ public class InpatientDoctorStationAdviceAppService {
         InpatientEncounterContextQueryModel snapshot = requireInpatientSnapshot(request.getEncounterId(), request.getPatientId(), true);
         Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, DoctorStationAdviceConstants.MSG_OPERATOR_NOT_RESOLVED);
         Long orgId = snapshot.getOrganizationId();
+        // Gate：同 group_id 药品频次须一致（BR-IP-ORD-033），再落库避免主药 QD、溶媒 ST 异频并组
+        this.assertMedicationDraftBatchGroupRates(request.getLines());
         List<Long> newMedIds = new ArrayList<>();
         // Cmd：按行 CREATE/UPDATE/DELETE 分轨，长临均仅维护 Request
         for (InpatientDoctorStationAdviceDraftLineRequest line : request.getLines()) {
@@ -663,28 +677,37 @@ public class InpatientDoctorStationAdviceAppService {
     }
 
     /**
+     * IF-IP-DOR-17：更新药品医嘱组号（清组/赋组）。
      *
      * <p>写接口：支持先清组再赋组，两段调用域 {@code adjustMedicationOrderGroup}；
-     * 仅作用于药品请求，不涉及诊疗或费用直接变更。</p>
+     * 仅作用于药品请求，不涉及诊疗或费用直接变更。赋组前须同组频次一致（BR-IP-ORD-033）。</p>
      *
      * @param request 待清组 id 列表、待赋组载荷与就诊上下文
      * @return 成功标记
-     * @throws BusinessException 可写态或操作人门控失败
+     * @throws BusinessException 可写态或操作人门控失败；同组频次不一致 → EX-IP-ORD-308
      */
     public UpdateInpatientDoctorStationMedicationAdviceGroupsResponse updateInpatientDoctorStationMedicationAdviceGroups(
         UpdateInpatientDoctorStationMedicationAdviceGroupsRequest request
     ) {
+        // Gate：住院可写态 + 操作人
         requireInpatientSnapshot(request.getEncounterId(), request.getPatientId(), true);
         Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, DoctorStationAdviceConstants.MSG_OPERATOR_NOT_RESOLVED);
+        // Cmd：清组（groupId 置空）
         if (request.getClearGroupIds() != null && !request.getClearGroupIds().isEmpty()) {
             medicationRequestDomainService.adjustMedicationOrderGroup(
                 inpatientDoctorStationAdviceMapper.toAdjustMedicationGroupCommand(request.getClearGroupIds(), null, operatorId));
         }
+        // Cmd：赋组；先断言频次唯一再写 group_id
         if (request.getAssignGroup() != null && request.getAssignGroup().getMedicationRequestIds() != null) {
+            // Gate：赋组前校验目标组与待并入行频次唯一（BR-IP-ORD-033）
+            inpatientMedicationAdviceGroupRateGate.assertAssignGroupConsistent(
+                request.getAssignGroup().getMedicationRequestIds(),
+                request.getAssignGroup().getGroupId());
             medicationRequestDomainService.adjustMedicationOrderGroup(
                 inpatientDoctorStationAdviceMapper.toAdjustMedicationGroupCommand(
                     request.getAssignGroup().getMedicationRequestIds(), request.getAssignGroup().getGroupId(), operatorId));
         }
+        // Asm：成功响应
         UpdateInpatientDoctorStationMedicationAdviceGroupsResponse resp = new UpdateInpatientDoctorStationMedicationAdviceGroupsResponse();
         resp.setSuccess(Boolean.TRUE);
         resp.setMessage(DoctorStationAdviceConstants.RESPONSE_MESSAGE_OK);
@@ -1318,6 +1341,70 @@ public class InpatientDoctorStationAdviceAppService {
             }
         }
         throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_NOT_FOUND, DoctorStationAdviceConstants.MSG_SERVICE_REQUEST_NOT_FOUND);
+    }
+
+    /**
+     * IF-IP-DOR-14 Gate：汇总本批药品行的组号/频次，断言同组一致（BR-IP-ORD-033）。
+     *
+     * @param lines 草稿批次行；可空
+     */
+    private void assertMedicationDraftBatchGroupRates(List<InpatientDoctorStationAdviceDraftLineRequest> lines) {
+        // 空批无需校验
+        if (lines == null || lines.isEmpty()) {
+            return;
+        }
+        Map<Long, String> batchRateByRequestId = new HashMap<>();
+        Map<Long, String> batchGroupByRequestId = new HashMap<>();
+        Map<Long, List<String>> createGroupRates = new HashMap<>();
+        List<Long> deleteRequestIds = new ArrayList<>();
+        for (InpatientDoctorStationAdviceDraftLineRequest line : lines) {
+            // 跳过空行
+            if (line == null) {
+                continue;
+            }
+            String op = trimToEmpty(line.getLineOp()).toUpperCase(java.util.Locale.ROOT);
+            SaveInpatientMedicationAdviceDraftLinePayload med = line.getMedicationPayload();
+            // 诊疗行不参与成组频次
+            if (med == null) {
+                continue;
+            }
+            // DELETE：从库内同组比对中剔除
+            if (DoctorStationAdviceConstants.LINE_OP_DELETE.equals(op)) {
+                if (line.getRequestId() != null) {
+                    deleteRequestIds.add(line.getRequestId());
+                }
+                continue;
+            }
+            Long groupId = med.getGroupId();
+            String rateCode = med.getRateCode();
+            // CREATE：尚无 requestId，仅按 groupId 聚合频次
+            if (DoctorStationAdviceConstants.LINE_OP_CREATE.equals(op)) {
+                if (groupId == null) {
+                    continue;
+                }
+                List<String> bucket = createGroupRates.get(groupId);
+                if (bucket == null) {
+                    bucket = new ArrayList<>();
+                    createGroupRates.put(groupId, bucket);
+                }
+                if (rateCode != null && !rateCode.isBlank()) {
+                    bucket.add(rateCode.trim());
+                }
+                continue;
+            }
+            // UPDATE：以 requestId 锚组号与频次
+            if (line.getRequestId() == null) {
+                continue;
+            }
+            if (groupId != null) {
+                batchGroupByRequestId.put(line.getRequestId(), String.valueOf(groupId));
+            }
+            if (rateCode != null && !rateCode.isBlank()) {
+                batchRateByRequestId.put(line.getRequestId(), rateCode.trim());
+            }
+        }
+        inpatientMedicationAdviceGroupRateGate.assertDraftBatchConsistent(
+            batchRateByRequestId, batchGroupByRequestId, createGroupRates, deleteRequestIds);
     }
 
     /**

@@ -592,9 +592,9 @@ public final class WiPlatformInputAssembler {
     }
 
     /**
-     * 【1320】总额对账。
+     * 【1320】总额对账（V2.5：本市 / 省内异地 / 全国异地三口径）。
      *
-     * @param formContext stmtBegindate / stmtEnddate / socialPoolCode
+     * @param formContext stmtBegindate / stmtEnddate / socialPoolCode / reconScope / snydSign / qgydSign
      * @return 1320 input DTO
      */
     public static Wi1320Input assemble1320(Map<String, Object> formContext) {
@@ -602,8 +602,56 @@ public final class WiPlatformInputAssembler {
         LocalDate today = LocalDate.now();
         input.setStmtBegindate(resolveString(formContext, "stmtBegindate", today.withDayOfMonth(1).format(DAY)));
         input.setStmtEnddate(resolveString(formContext, "stmtEnddate", today.format(DAY)));
+        input.setRefdSetlFlag(resolve1320RefdSetlFlag(formContext));
+        input.setOpter(trimToNull(resolveString(formContext, "opter", null)));
+
+        String snydSign = resolve1320YdSign(formContext, "snydSign", "snyd_sign");
+        String qgydSign = resolve1320YdSign(formContext, "qgydSign", "qgyd_sign");
+        if (isEmpty(snydSign) && isEmpty(qgydSign)) {
+            String[] scoped = resolve1320ScopeFlags(formContext);
+            snydSign = scoped[0];
+            qgydSign = scoped[1];
+        }
+        if (isEmpty(snydSign)) {
+            snydSign = WiPlatformConstants.YD_SIGN_NO;
+        }
+        if (isEmpty(qgydSign)) {
+            qgydSign = WiPlatformConstants.YD_SIGN_NO;
+        }
+        input.setSnydSign(snydSign);
+        input.setQgydSign(qgydSign);
         input.setSocialPoolCode(resolveString(formContext, "socialPoolCode", WiPlatformConstants.DEFAULT_SOCIAL_POOL_CODE));
         return input;
+    }
+
+    private static String resolve1320RefdSetlFlag(Map<String, Object> formContext) {
+        String value = resolveString(formContext, "refdSetlFlag", null);
+        if (isEmpty(value)) {
+            value = resolveString(formContext, "refd_setl_flag", null);
+        }
+        return isEmpty(value) ? WiPlatformConstants.REFD_SETL_FLAG_YES : value.trim();
+    }
+
+    private static String resolve1320YdSign(Map<String, Object> formContext, String camelKey, String snakeKey) {
+        String value = resolveString(formContext, camelKey, null);
+        if (isEmpty(value)) {
+            value = resolveString(formContext, snakeKey, null);
+        }
+        return isEmpty(value) ? null : value.trim();
+    }
+
+    /** reconScope：LOCAL=本市；SNYD=省内异地；QGYD=全国异地。 */
+    private static String[] resolve1320ScopeFlags(Map<String, Object> formContext) {
+        String scope = resolveString(formContext, "reconScope", "LOCAL");
+        return switch (scope.trim().toUpperCase()) {
+            case "SNYD", "PROVINCIAL" -> new String[] {
+                    WiPlatformConstants.YD_SIGN_YES, WiPlatformConstants.YD_SIGN_NO
+            };
+            case "QGYD", "NATIONAL" -> new String[] {
+                    WiPlatformConstants.YD_SIGN_NO, WiPlatformConstants.YD_SIGN_YES
+            };
+            default -> new String[] { WiPlatformConstants.YD_SIGN_NO, WiPlatformConstants.YD_SIGN_NO };
+        };
     }
 
     /**
@@ -622,6 +670,7 @@ public final class WiPlatformInputAssembler {
             throw new BusinessException(WiErrorCodes.INVALID_INVOKE_SESSION, "1321 缺少 ipt_otp_no");
         }
         input.setIptOtpNo(iptOtpNo.trim());
+        input.setMedrcdno(resolveString(formContext, "medrcdno", "0"));
         input.setSocialPoolCode(resolveString(formContext, "socialPoolCode", WiPlatformConstants.DEFAULT_SOCIAL_POOL_CODE));
         return input;
     }

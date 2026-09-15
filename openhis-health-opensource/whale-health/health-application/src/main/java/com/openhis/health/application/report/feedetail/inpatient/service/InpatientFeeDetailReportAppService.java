@@ -29,6 +29,7 @@ import com.openhis.health.application.report.feedetail.support.FeeDetailReportFi
 import com.openhis.health.application.shared.financial.PaymentEntererMatchResolver;
 import com.openhis.health.application.shared.option.TerminologyOptionLoader;
 import com.openhis.health.application.shared.report.FeeDetailMatchedScopePurchaseTotalSupport;
+import com.openhis.health.application.shared.report.ReportDateTimeWindowSupport;
 import com.openhis.health.application.shared.report.ReportPatientSettlementContextAssembler;
 import com.openhis.health.domain.administration.chargeitem.query.FeeDetailFinTypeSummaryQueryModel;
 import com.openhis.health.domain.administration.chargeitem.query.OutpatientFeeDetailChargeRowQueryModel;
@@ -40,7 +41,6 @@ import com.openhis.health.domain.administration.organization.service.Organizatio
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.share.constants.FeeDetailReportConstants;
-import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.InpatientFeeDetailReportConstants;
 import com.openhis.health.domain.share.constants.OutpatientFeeDetailConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
@@ -59,6 +59,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -140,7 +141,8 @@ public class InpatientFeeDetailReportAppService {
             "页面配置加载失败，请稍后重试");
         try {
             LocalDate today = LocalDate.now();
-            String todayText = today.format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
+            String defaultFrom = ReportDateTimeWindowSupport.formatDayStart(today);
+            String defaultTo = ReportDateTimeWindowSupport.formatDayEnd(today);
             // Pre：住院入院科室下拉（入院科室口径，供科室筛选）
             List<OptionDto> departmentOptions = this.buildDepartmentOptions();
             // Pre：收费员下拉（在职且绑定系统用户）
@@ -152,10 +154,10 @@ public class InpatientFeeDetailReportAppService {
                 this.terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.FIN_TYPE_CODE);
             List<OptionDto> feeNatureOptions = this.reportPatientSettlementContextAssembler.loadFeeNatureOptions();
             List<OptionDto> settlementStatusOptions = this.buildSettlementStatusOptions();
-            // Asm：装配 init 响应（默认今日闭区间、呈现模式、汇总维度与默认汇总 Tab）
+            // Asm：装配 init 响应（默认今日 00:00:00～23:59:59、呈现模式、汇总维度与默认汇总 Tab）
             return this.inpatientFeeDetailReportMapper.toLoadPageInitResponse(
-                todayText,
-                todayText,
+                defaultFrom,
+                defaultTo,
                 InpatientFeeDetailReportConstants.DEFAULT_PAGE_SIZE,
                 tradeDirectionOptions,
                 feeCategoryOptions,
@@ -240,9 +242,12 @@ public class InpatientFeeDetailReportAppService {
     /**
      * IF-RPT-IFD-03：住院就诊块明细分页。
      *
-     * @param request 筛选与分页
+     * <p>可选 {@code lineMergeMode=BY_DEFINITION}：仅对本页各就诊块装配后的行按
+     * {@code ChargeItem.definitionId + quantityUnit} 净合并（退费数量取负）；页脚全量 summary / 进价列角不受影响。</p>
+     *
+     * @param request 筛选与分页（含可选 lineMergeMode）
      * @return 就诊块分页 + 全量 summary
-     * @throws BusinessException 未登录 {@code EX-RPT-IFD-101}；日期/Tab/分页非法 {@code EX-RPT-IFD-102}；
+     * @throws BusinessException 未登录 {@code EX-RPT-IFD-101}；日期/Tab/分页/合并模式非法 {@code EX-RPT-IFD-102}；
      *     查询/数据不完整 {@code EX-RPT-IFD-103}
      */
     public PageInpatientFeeDetailReportResponse pageInpatientFeeDetailReport(
@@ -258,6 +263,8 @@ public class InpatientFeeDetailReportAppService {
             request.getTradeDirection(),
             request.getPageNo(),
             request.getPageSize());
+        // Gate：明细行合并模式白名单；空/LINE=不并，BY_DEFINITION=块内按 definition 并
+        boolean mergeByDefinition = this.isMergeByDefinition(request.getLineMergeMode());
         try {
             // Asm：Request → Query
             OutpatientFeeDetailPageQuery query = this.inpatientFeeDetailReportMapper.toPageQuery(request);
@@ -267,11 +274,11 @@ public class InpatientFeeDetailReportAppService {
             // Pre：域层按就诊块分页（本页块）
             Page<OutpatientFeeDetailEncounterBlockQueryModel> blockPage =
                 this.chargeItemQueryService.pageInpatientFeeDetailEncounterBlocks(query);
-            // Asm：就诊块 enrichment（患者/科室/金额列）
+            // Asm：就诊块 enrichment；可选块内按 definition 合并（不影响页脚 summary）
             List<OutpatientFeeDetailEncounterBlockDto> blockDtos =
                 this.inpatientFeeDetailReportBlockAssembler.assembleEncounterBlockDtos(
-                    blockPage.getContent(), query);
-            // Asm：页脚售价（投影合计或 SQL SUM），禁止全日窗实体
+                    blockPage.getContent(), query, mergeByDefinition);
+            // Asm：页脚售价（投影合计或 SQL SUM），禁止全日窗实体；与 lineMergeMode 无关
             OutpatientFeeDetailAmountSummaryDto summary = this.buildGlobalSummary(query);
             // Asm：包装分页响应；pageNo 回写钳制后的实际页
             PageInpatientFeeDetailReportResponse response =
@@ -351,9 +358,12 @@ public class InpatientFeeDetailReportAppService {
     /**
      * IF-RPT-IFD-04：导出当前 Tab（仅 SUMMARY 或 DETAIL）。
      *
-     * @param request 筛选 + presentationMode
+     * <p>DETAIL 且 {@code lineMergeMode=BY_DEFINITION} 时，各扫描批块内按 definition 合并后再展平行；
+     * SUMMARY 忽略合并模式。</p>
+     *
+     * @param request 筛选 + presentationMode + 可选 lineMergeMode
      * @return xlsx 字节流与行数
-     * @throws BusinessException 未登录 {@code EX-RPT-IFD-101}；日期/呈现模式非法 {@code EX-RPT-IFD-102}；
+     * @throws BusinessException 未登录 {@code EX-RPT-IFD-101}；日期/呈现模式/合并模式非法 {@code EX-RPT-IFD-102}；
      *     数据不完整 {@code EX-RPT-IFD-103}；导出失败 {@code EX-RPT-IFD-104}
      */
     public ExportInpatientFeeDetailReportResponse exportInpatientFeeDetailReport(
@@ -371,6 +381,8 @@ public class InpatientFeeDetailReportAppService {
                 InpatientFeeDetailReportConstants.EX_RPT_IFD_102,
                 "请选择有效的查询日期");
         }
+        // Gate：明细行合并模式（SUMMARY 忽略；DETAIL 在块装配时生效）
+        boolean mergeByDefinition = this.isMergeByDefinition(request.getLineMergeMode());
         try {
             // 汇总 Tab：复用 IF-02 净汇总后再落 Excel
             if (InpatientFeeDetailReportConstants.PRESENTATION_MODE_SUMMARY.equals(presentationMode)) {
@@ -406,7 +418,9 @@ public class InpatientFeeDetailReportAppService {
             OutpatientFeeDetailPageQuery query = this.inpatientFeeDetailReportMapper.toExportQuery(request);
             this.applyEntererMatchToFeeDetailQuery(query);
             this.inpatientFeeDetailReportQuerySupport.prepareInpatientFeeDetailQueryScopes(query);
-            List<OutpatientFeeDetailEncounterBlockDto> allBlocks = this.loadAllEncounterBlocks(query);
+            // Asm：按页扫描装配；BY_DEFINITION 时每批块内合并后再展平
+            List<OutpatientFeeDetailEncounterBlockDto> allBlocks =
+                this.loadAllEncounterBlocks(query, mergeByDefinition);
             List<OutpatientFeeDetailExportRowDto> exportRows = new ArrayList<>();
             boolean truncated = false;
             // 逐就诊块展平行，直至触顶或扫完
@@ -456,10 +470,12 @@ public class InpatientFeeDetailReportAppService {
     }
 
     /**
-     * Gate：结算日期闭区间、收退 Tab 与分页参数合法。
+     * Gate：结算日期/时刻闭区间、收退 Tab 与分页参数合法。
      *
-     * @param dateFrom       结算日起
-     * @param dateTo         结算日止
+     * <p>允许 {@code yyyy-MM-dd} 或 {@code yyyy-MM-dd HH:mm:ss}；仅日期时起补 00:00:00、止补 23:59:59。</p>
+     *
+     * @param dateFrom       结算日起或日起时刻
+     * @param dateTo         结算日止或日止时刻
      * @param tradeDirection 收退 Tab（汇总可 null）
      * @param pageNo         页码
      * @param pageSize       页大小
@@ -476,9 +492,18 @@ public class InpatientFeeDetailReportAppService {
                 InpatientFeeDetailReportConstants.EX_RPT_IFD_102,
                 "请选择有效的查询日期");
         }
-        LocalDate from = LocalDate.parse(dateFrom.trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
-        LocalDate to = LocalDate.parse(dateTo.trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
-        // 止日早于起日拒绝，避免负区间
+        LocalDateTime from;
+        LocalDateTime to;
+        try {
+            from = ReportDateTimeWindowSupport.parseInclusiveStart(dateFrom);
+            to = ReportDateTimeWindowSupport.parseInclusiveEnd(dateTo);
+        } catch (DateTimeParseException ex) {
+            // 格式非法按查询条件错误拒绝，避免半解析窗口
+            throw new BusinessException(
+                InpatientFeeDetailReportConstants.EX_RPT_IFD_102,
+                "请选择有效的查询日期");
+        }
+        // 止时刻早于起时刻拒绝，避免负区间
         if (to.isBefore(from)) {
             throw new BusinessException(
                 InpatientFeeDetailReportConstants.EX_RPT_IFD_102,
@@ -515,12 +540,16 @@ public class InpatientFeeDetailReportAppService {
     /**
      * 全量就诊块扫描装配（导出用）。
      *
-     * <p>先物化候选行缓存，再按页切片 enrichment，避免每页重复 IN ChargeItem。</p>
+     * <p>先物化候选行缓存，再按页切片 enrichment，避免每页重复 IN ChargeItem。
+     * {@code mergeByDefinition} 仅作用于各扫描批块内行合并，不做全窗再并。</p>
      *
-     * @param baseQuery 已预解析 scope 的查询
+     * @param baseQuery         已预解析 scope 的查询
+     * @param mergeByDefinition 是否按收费项目定义合并块内行
      * @return 全部就诊块 DTO
      */
-    private List<OutpatientFeeDetailEncounterBlockDto> loadAllEncounterBlocks(OutpatientFeeDetailPageQuery baseQuery) {
+    private List<OutpatientFeeDetailEncounterBlockDto> loadAllEncounterBlocks(
+        OutpatientFeeDetailPageQuery baseQuery,
+        boolean mergeByDefinition) {
         // Pre：同请求先物化候选行，后续翻页仅内存切片
         this.chargeItemQueryService.listOutpatientFeeDetailChargeRows(baseQuery);
         List<OutpatientFeeDetailEncounterBlockDto> allBlocks = new ArrayList<>();
@@ -537,9 +566,10 @@ public class InpatientFeeDetailReportAppService {
             if (blockPage.isEmpty()) {
                 break;
             }
+            // Asm：本扫描批块内 enrichment；可选 BY_DEFINITION 合并
             allBlocks.addAll(
                 this.inpatientFeeDetailReportBlockAssembler.assembleEncounterBlockDtos(
-                    blockPage.getContent(), pageQuery));
+                    blockPage.getContent(), pageQuery, mergeByDefinition));
             long total = blockPage.getTotalElements();
             // 已覆盖 total 则停止翻页
             if ((long) pageNo * pageSize >= total) {
@@ -566,8 +596,9 @@ public class InpatientFeeDetailReportAppService {
         } else if (Boolean.TRUE.equals(query.getPageScopeOnly())
             && query.getBillDateFrom() != null
             && query.getBillDateTo() != null) {
-            LocalDateTime enteredFrom = query.getBillDateFrom().atStartOfDay();
-            LocalDateTime enteredToExclusive = query.getBillDateTo().plusDays(1).atStartOfDay();
+            LocalDateTime enteredFrom = query.getBillDateFrom();
+            LocalDateTime enteredToExclusive =
+                ReportDateTimeWindowSupport.toExclusiveEnd(query.getBillDateTo());
             List<String> statusCodes = query.getAllowedChargeItemStatusCodes();
             if (statusCodes == null || statusCodes.isEmpty()) {
                 statusCodes = List.of(ChargeItemStatus.SETTLED.getCode());
@@ -629,7 +660,7 @@ public class InpatientFeeDetailReportAppService {
     }
 
     /**
-     * 收费人筛选写入账单 {@code enterer_id} 白名单（Practitioner 兼容；不查 Payment）。
+     * 收费人筛选写入账单 {@code enterer_id} 白名单（仅 Practitioner 主键，**BR-OPC-016**；不查 Payment）。
      *
      * @param query 费用明细 Query
      */
@@ -865,7 +896,7 @@ public class InpatientFeeDetailReportAppService {
      * @return 规范化维度 code
      */
     private String normalizeAndValidateSummaryDimension(String summaryDimension) {
-        // 空串回落默认费用类型维，兼容旧前端未传该字段
+        // 未传汇总维时回落 FIN_TYPE（非 UI 客户端可空）
         if (StringUtils.isEmpty(summaryDimension)) {
             return FeeDetailReportConstants.DEFAULT_SUMMARY_DIMENSION;
         }
@@ -917,5 +948,39 @@ public class InpatientFeeDetailReportAppService {
             return null;
         }
         return presentationMode.trim();
+    }
+
+    /**
+     * 解析明细行是否按 {@code ChargeItem.definitionId} 合并。
+     *
+     * <p>空/null/空白/{@code LINE} → false；{@code BY_DEFINITION} → true；
+     * 其它非空非法值抛 {@code EX-RPT-IFD-102}。</p>
+     *
+     * @param lineMergeMode 请求合并模式
+     * @return true 时块内按 definition 合并
+     * @throws BusinessException 非法合并模式
+     */
+    private boolean isMergeByDefinition(String lineMergeMode) {
+        // 未传或空串：保持逐行，与 LINE 等价
+        if (StringUtils.isEmpty(lineMergeMode)) {
+            return false;
+        }
+        String normalized = lineMergeMode.trim();
+        // trim 后仍空：按不合并处理
+        if (StringUtils.isEmpty(normalized)) {
+            return false;
+        }
+        // BY_DEFINITION：同就诊块内按收费项目定义合并金额
+        if (InpatientFeeDetailReportConstants.LINE_MERGE_MODE_BY_DEFINITION.equals(normalized)) {
+            return true;
+        }
+        // LINE：明确不合并
+        if (InpatientFeeDetailReportConstants.LINE_MERGE_MODE_LINE.equals(normalized)) {
+            return false;
+        }
+        // 非法 mode 拒绝，避免静默忽略导致对账口径漂移
+        throw new BusinessException(
+            InpatientFeeDetailReportConstants.EX_RPT_IFD_102,
+            "明细合并模式无效，请重新选择");
     }
 }

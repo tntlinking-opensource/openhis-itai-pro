@@ -1,12 +1,17 @@
 <script setup lang="ts">
 import type { HiprintPrinterItem } from '../fetch-printer-list';
-import type { InvFormPaperKind } from '../form-print-preference';
+import type { InvFormPaperKind, InvFormTripleSpec } from '../form-print-preference';
 
 import { computed, onMounted, ref, watch } from 'vue';
 
 import { ElAlert, ElButton, ElCheckbox, ElDialog, ElOption, ElSelect } from 'element-plus';
 
-import { INV_FORM_PAPER_KIND, normalizeInvFormPaperKind } from '../form-print-preference';
+import {
+  INV_FORM_PAPER_KIND,
+  INV_FORM_TRIPLE_SPEC,
+  normalizeInvFormPaperKind,
+  normalizeInvFormTripleSpec,
+} from '../form-print-preference';
 import { PRINT_PLUGIN_INSTALL_MESSAGE } from '../runtime/print-user-error';
 import InvFormPaperKindCards from './inv-form-paper-kind-cards.vue';
 import PrintChromeFlagShortcut from './print-chrome-flag-shortcut.vue';
@@ -27,6 +32,7 @@ interface Props {
   /** 库房单据：同窗选择三联单 / A4 */
   showPaperKind?: boolean;
   initialPaperKind?: InvFormPaperKind;
+  initialTripleSpec?: InvFormTripleSpec;
   /** 是否展示「记住本次选择，下次不再提示」 */
   showSkipPrompt?: boolean;
 }
@@ -44,6 +50,7 @@ const props = withDefaults(defineProps<Props>(), {
   loadError: '',
   showPaperKind: false,
   initialPaperKind: INV_FORM_PAPER_KIND.triple,
+  initialTripleSpec: INV_FORM_TRIPLE_SPEC.third,
   showSkipPrompt: true,
 });
 
@@ -54,6 +61,7 @@ const emit = defineEmits<{
       paperKind?: InvFormPaperKind;
       printerName: string;
       skipPrompt: boolean;
+      tripleSpec?: InvFormTripleSpec;
     },
   ];
   retryLoad: [];
@@ -63,6 +71,7 @@ const dialogVisible = ref(props.visible);
 const selectedPrinter = ref('');
 const skipPrompt = ref(true);
 const paperKind = ref<InvFormPaperKind>(normalizeInvFormPaperKind(props.initialPaperKind));
+const tripleSpec = ref<InvFormTripleSpec>(normalizeInvFormTripleSpec(props.initialTripleSpec));
 
 const dialogTitle = computed(() => {
   const label = props.bindingLabel?.trim();
@@ -73,7 +82,7 @@ const dialogTitle = computed(() => {
   return base;
 });
 
-const dialogWidth = computed(() => (props.showPaperKind ? '520px' : '480px'));
+const dialogWidth = computed(() => (props.showPaperKind ? '560px' : '480px'));
 
 const troubleshootingMessage = PRINT_PLUGIN_INSTALL_MESSAGE;
 
@@ -82,6 +91,7 @@ function syncFormFromProps(): void {
   selectedPrinter.value = props.initialPrinterName?.trim() ?? '';
   skipPrompt.value = props.initialSkipPrompt !== false;
   paperKind.value = normalizeInvFormPaperKind(props.initialPaperKind);
+  tripleSpec.value = normalizeInvFormTripleSpec(props.initialTripleSpec);
 }
 
 /** 打印机列表变化时补全默认选中项（优先沿用已保存的打印机） */
@@ -119,7 +129,13 @@ watch(
 );
 
 watch(
-  () => [props.initialPrinterName, props.initialSkipPrompt, props.initialPaperKind] as const,
+  () =>
+    [
+      props.initialPrinterName,
+      props.initialSkipPrompt,
+      props.initialPaperKind,
+      props.initialTripleSpec,
+    ] as const,
   () => {
     if (dialogVisible.value) {
       syncFormFromProps();
@@ -145,6 +161,7 @@ function handleConfirm(): void {
     printerName,
     skipPrompt: props.showSkipPrompt ? skipPrompt.value : props.initialSkipPrompt !== false,
     paperKind: props.showPaperKind ? paperKind.value : undefined,
+    tripleSpec: props.showPaperKind ? tripleSpec.value : undefined,
   });
 }
 
@@ -191,7 +208,7 @@ onMounted(() => {
       />
       <template v-if="showPaperKind">
         <div class="mb-2 text-sm text-[var(--el-text-color-regular)]">纸张</div>
-        <InvFormPaperKindCards v-model="paperKind" class="mb-4" />
+        <InvFormPaperKindCards v-model="paperKind" v-model:triple-spec="tripleSpec" class="mb-4" />
       </template>
       <div class="mb-4">
         <div class="mb-2 text-sm text-[var(--el-text-color-regular)]">打印机</div>

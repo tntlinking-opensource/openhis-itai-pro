@@ -15,7 +15,7 @@ import {
   initPurchaseInboundApi,
   pagePurchaseInboundDetailApi,
   pagePurchaseInboundListApi,
-} from '#/api/warehouse/purchase-inbound';
+} from '#/api/inventory/warehouse/purchase-inbound-workbench';
 import WarehouseDocWorkstation from '#/components/warehouse/warehouse-doc-workstation.vue';
 import { useFromFinanceApproval } from '#/composables/use-from-finance-approval';
 import {
@@ -107,7 +107,6 @@ const auditForm = ref<Record<string, any>>({
   approvalTime: undefined,
   statusEnum: undefined,
   statusEnum_enumText: undefined,
-  approverId: undefined,
 });
 
 const cabinetListOptions = ref<Record<string, any>[]>([]);
@@ -426,7 +425,6 @@ function buildEditForm(data: Record<string, any>[]) {
     approvalTime: head.approvalTime,
     statusEnum: head.statusEnum,
     statusEnum_enumText: head.statusEnum_enumText,
-    approverId: head.approverId,
   };
 }
 
@@ -489,14 +487,15 @@ watch(
   async (newQuery) => {
     const busNo = newQuery.busNo;
     if (!busNo || Array.isArray(busNo)) return;
+    const busNoText = String(busNo).trim();
+    if (!busNoText) return;
     if (tableForm.value.locationId === undefined || cabinetListOptions.value.length === 0) {
       await init();
     }
-    queryParams.value.keyword = busNo;
-    await getList();
-    const row = orderList.value.find((item) => resolvePurchaseOrderBusNo(item) === String(busNo));
-    if (!row) return;
+    // 深链有单号：直接按 busNo 拉详情，不经侧栏日期/列表过滤
+    const row = { busNo: busNoText, supplyBusNo: busNoText };
     selectedOrder.value = row;
+    isAddDisabled.value = false;
     await handleEdit(row);
   },
   { immediate: true },

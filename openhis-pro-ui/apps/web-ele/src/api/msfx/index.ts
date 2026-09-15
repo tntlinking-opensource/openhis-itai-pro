@@ -1,3 +1,4 @@
+/** Opensource stub. */
 export * from './types';
 export * from './upload';
 export * from './inbound-upstream';

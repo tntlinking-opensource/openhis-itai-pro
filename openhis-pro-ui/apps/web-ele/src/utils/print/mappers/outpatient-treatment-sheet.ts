@@ -1,4 +1,6 @@
 import type { NurseStationTreatmentLineDto } from '#/api/outpatient-nurse-station/outpatient-nurse-station.types';
+import { resolveAdviceQuantityUnitLabel } from '#/utils/doctor-station/advice-quantity-unit-display';
+import { formatMoneyDisplay } from '#/utils/format/money-scale';
 
 /** 处置单表格行（与 op-treatment-print 模板 treatmentLines 列一致） */
 export interface OutpatientTreatmentSheetLine {
@@ -44,26 +46,45 @@ function str(value: null | number | string | undefined): string {
   return String(value).trim();
 }
 
-function formatUnitPriceText(row: NurseStationTreatmentLineDto): string {
-  const unitPrice = row.unitPrice;
-  if (unitPrice === null || unitPrice === undefined || String(unitPrice).trim() === '') {
-    return '';
+function toFiniteNumber(value: null | number | string | undefined): null | number {
+  if (value === null || value === undefined || String(value).trim() === '') {
+    return null;
   }
-  const n = typeof unitPrice === 'number' ? unitPrice : Number(String(unitPrice).trim());
+  const n = typeof value === 'number' ? value : Number(String(value).trim());
   if (!Number.isFinite(n)) {
+    return null;
+  }
+  return n;
+}
+
+/** 单价：优先账单 unitPrice；缺省时用总价÷数量回推（与护士站中区总价同源） */
+function formatUnitPriceText(row: NurseStationTreatmentLineDto): string {
+  let unitPrice = toFiniteNumber(row.unitPrice);
+  if (unitPrice === null) {
+    const total = toFiniteNumber(row.displayTotalPrice);
+    const qty = toFiniteNumber(row.quantity);
+    if (total !== null && qty !== null && qty !== 0) {
+      unitPrice = total / qty;
+    }
+  }
+  if (unitPrice === null) {
     return '';
   }
-  return `${n} 元`;
+  const text = formatMoneyDisplay(unitPrice);
+  return text ? `${text} 元` : '';
 }
 
 function formatQuantityText(row: NurseStationTreatmentLineDto): string {
-  const qtyRaw = row.quantity;
-  if (qtyRaw === null || qtyRaw === undefined || String(qtyRaw).trim() === '') {
+  const qty = toFiniteNumber(row.quantity);
+  if (
+    qty === null &&
+    (row.quantity === null || row.quantity === undefined || String(row.quantity).trim() === '')
+  ) {
     return '';
   }
-  const qty = typeof qtyRaw === 'number' ? qtyRaw : Number(String(qtyRaw).trim());
-  const qtyText = Number.isFinite(qty) ? String(qty) : String(qtyRaw).trim();
-  const unit = str(row.unitName) || str(row.unitCode);
+  const qtyText = qty === null ? String(row.quantity).trim() : String(qty);
+  // 与医生站一致：unitName 优先；EA 遗留码统一展示为「次」
+  const unit = resolveAdviceQuantityUnitLabel(row.unitName, row.unitCode);
   return unit ? `${qtyText} ${unit}` : qtyText;
 }
 

@@ -100,9 +100,31 @@ public class OutpatientPharmacyPrescriptionReviewSupport {
      * @throws BusinessException EX-PRV-102 格式非法或起止颠倒
      */
     public void assertReviewedDateWindow(String reviewedDateFrom, String reviewedDateTo) {
-        boolean fromBlank = StringUtils.isBlank(reviewedDateFrom);
-        boolean toBlank = StringUtils.isBlank(reviewedDateTo);
-        // 两侧皆空：不按点评日收窄，跳过窗校验
+        this.assertYmdDateWindow(reviewedDateFrom, reviewedDateTo);
+    }
+
+    /**
+     * Gate：开方日起止均传时校验格式与 from≤to；任一侧空则跳过。
+     *
+     * @param openedDateFrom 开方日起
+     * @param openedDateTo   开方日止
+     * @throws BusinessException EX-PRV-102 格式非法或起止颠倒
+     */
+    public void assertOpenedDateWindow(String openedDateFrom, String openedDateTo) {
+        this.assertYmdDateWindow(openedDateFrom, openedDateTo);
+    }
+
+    /**
+     * Gate：yyyy-MM-dd 闭区间窗校验（两侧皆空跳过；仅一侧或非法/颠倒拒绝）。
+     *
+     * @param dateFrom 日起
+     * @param dateTo   日止
+     * @throws BusinessException EX-PRV-102
+     */
+    private void assertYmdDateWindow(String dateFrom, String dateTo) {
+        boolean fromBlank = StringUtils.isBlank(dateFrom);
+        boolean toBlank = StringUtils.isBlank(dateTo);
+        // 两侧皆空：不按该日轴收窄，跳过窗校验
         if (fromBlank && toBlank) {
             return;
         }
@@ -115,8 +137,8 @@ public class OutpatientPharmacyPrescriptionReviewSupport {
         LocalDate from;
         LocalDate to;
         try {
-            from = LocalDate.parse(reviewedDateFrom.trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
-            to = LocalDate.parse(reviewedDateTo.trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
+            from = LocalDate.parse(dateFrom.trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
+            to = LocalDate.parse(dateTo.trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
         } catch (DateTimeParseException ex) {
             throw new BusinessException(
                 OutpatientPharmacyPrescriptionReviewConstants.EX_PRV_102,

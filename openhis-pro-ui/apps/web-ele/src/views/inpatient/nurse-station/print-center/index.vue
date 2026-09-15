@@ -23,6 +23,7 @@ import {
   isDayQueryDocType,
   isPrintDocVisibleInCenter,
   listAllVisiblePrintDocs,
+  needsFrequencySplitSwitch,
   needsOralMedInfusionFilter,
   resolveDefaultPrintDocType,
   resolvePrintEmptyDescription,
@@ -32,6 +33,7 @@ import { loadPrintPendingRows } from './load-print-pending';
 import { PRINT_CENTER_WIRED_DOC_TYPES, printInpatientPrintCenter } from './print-center-print';
 import { findPrintDocType, resolvePrintScopeLabel } from './print-center.types';
 import { buildDefaultDateRangeShortcuts } from '#/utils/format/date-picker-shortcuts';
+import { resolveInfusionTimesPerDaySync } from '#/utils/print/mappers/outpatient-infusion-label';
 
 import './print-center.css';
 
@@ -71,6 +73,8 @@ const dayQueryRange = ref<[string, string]>(buildDefaultDayRange());
 const dateRangeShortcuts = buildDefaultDateRangeShortcuts();
 /** 患者用药单筛选：all 全部 / infusion 输液药 / non_infusion 非输液药 */
 const oralMedInfusionFilter = ref<'all' | 'infusion' | 'non_infusion'>('all');
+/** 巡视卡：按频次打印（默认开；关则每患者一张） */
+const patrolSplitByFrequency = ref(true);
 const copies = ref(1);
 const selectedRowIds = ref<string[]>([]);
 /** 挂号皮肤表：程序化勾选时忽略 selection-change，避免 clear 冲掉已选 */
@@ -104,21 +108,29 @@ const panelTitle = computed(() => activeDoc.value?.label ?? '待打清单');
 /** 表列（按单据语义） */
 const tableColumns = computed(() => getPrintDocColumns(activeDocType.value));
 
+/** 输液贴 / 巡视卡内容列折行（覆盖挂号表 nowrap） */
+const WRAP_TITLE_DOC_TYPES = new Set<PrintDocType>(['infusion_label', 'patrol_card']);
+
 /** 挂号皮肤列：勾选列 + 单据语义列 */
-const registerTableColumns = computed<TableColumn[]>(() => [
-  { type: 'selection', width: 48, align: 'center', headerAlign: 'center' },
-  ...tableColumns.value.map((col) => ({
-    prop: col.key,
-    label: col.label,
-    width: col.width,
-    minWidth: col.minWidth,
-    align: col.align ?? 'left',
-    headerAlign: col.align === 'left' ? 'left' : 'center',
-    showOverflowTooltip: true,
-    ...(col.key === 'statusText' ? { slot: 'statusText' } : {}),
-    ...(col.key === 'printStatusText' ? { slot: 'printStatusText' } : {}),
-  })),
-]);
+const registerTableColumns = computed<TableColumn[]>(() => {
+  const wrapTitle = WRAP_TITLE_DOC_TYPES.has(activeDocType.value);
+  // 内容列走插槽折行，其余列保持溢出提示
+  return [
+    { type: 'selection', width: 48, align: 'center', headerAlign: 'center' },
+    ...tableColumns.value.map((col) => ({
+      prop: col.key,
+      label: col.label,
+      width: col.width,
+      minWidth: col.minWidth,
+      align: col.key === 'title' && wrapTitle ? 'left' : (col.align ?? 'left'),
+      headerAlign: col.align === 'left' || (col.key === 'title' && wrapTitle) ? 'left' : 'center',
+      showOverflowTooltip: !(col.key === 'title' && wrapTitle),
+      ...(col.key === 'statusText' ? { slot: 'statusText' } : {}),
+      ...(col.key === 'printStatusText' ? { slot: 'printStatusText' } : {}),
+      ...(col.key === 'title' && wrapTitle ? { slot: 'titleText' } : {}),
+    })),
+  ];
+});
 
 /** 解析 RegisterStyle / TableLayout 透出的 vxe grid 实例 */
 function resolvePendingGrid(): null | {
@@ -235,16 +247,17 @@ const stickyPatientInfo = computed(() => {
 
 /** 列表展示行（患者用药单可按输液筛选） */
 const displayRows = computed(() => {
+  let rows = pendingRows.value;
   if (activeDocType.value === 'oral_med_sheet') {
     const filter = oralMedInfusionFilter.value;
+    // 用药单：按是否输液收窄展示行
     if (filter === 'infusion') {
-      return pendingRows.value.filter((row) => row.infusionFlag === true);
-    }
-    if (filter === 'non_infusion') {
-      return pendingRows.value.filter((row) => row.infusionFlag !== true);
+      rows = pendingRows.value.filter((row) => row.infusionFlag === true);
+    } else if (filter === 'non_infusion') {
+      rows = pendingRows.value.filter((row) => row.infusionFlag !== true);
     }
   }
-  return pendingRows.value;
+  return rows;
 });
 
 /** 已勾选行 */
@@ -252,9 +265,13 @@ const selectedRows = computed(() =>
   displayRows.value.filter((row) => selectedRowIds.value.includes(row.id)),
 );
 
-/** 预估页数 */
+/** 预估页数（巡视卡按患者成卡，再按频次出纸） */
 const estimatedPages = computed(() => {
-  const n = selectedRows.value.length || displayRows.value.length;
+  const rows = selectedRows.value.length > 0 ? selectedRows.value : displayRows.value;
+  const n = rows.length;
+  if (activeDocType.value === 'patrol_card') {
+    return estimatePatrolSheetCount(rows, patrolSplitByFrequency.value);
+  }
   if (activeDoc.value?.previewKind === 'label') {
     return Math.max(1, Math.ceil(n / 8));
   }
@@ -286,6 +303,40 @@ const emptyDescription = computed(() =>
 /** 范围引导文案 */
 const scopeGuideText = computed(() => resolveScopeGuide(activeDoc.value?.scope));
 
+/** 巡视卡预估张数：按就诊合成一张，再按频次翻倍 */
+function estimatePatrolSheetCount(rows: PrintPendingRow[], splitByFrequency: boolean): number {
+  const byEncounter = new Map<string, PrintPendingRow[]>();
+  for (const row of rows) {
+    const encounterId = String(row.encounterId ?? '').trim();
+    if (!encounterId) {
+      continue;
+    }
+    const existing = byEncounter.get(encounterId);
+    if (!existing) {
+      byEncounter.set(encounterId, [row]);
+      continue;
+    }
+    existing.push(row);
+  }
+  let sheetCount = 0;
+  for (const encounterRows of byEncounter.values()) {
+    if (!splitByFrequency) {
+      sheetCount += 1;
+      continue;
+    }
+    let maxTimes = 1;
+    // 该患者勾选组取最大每日次数（日两次打两张）
+    for (const row of encounterRows) {
+      const times = resolveInfusionTimesPerDaySync(row.rateCode, row.daySlotCount);
+      if (times > maxTimes) {
+        maxTimes = times;
+      }
+    }
+    sheetCount += maxTimes;
+  }
+  return Math.max(1, sheetCount);
+}
+
 /** 按 id 列表同步表格勾选态（挂号皮肤 vxe checkbox） */
 async function syncTableSelection(ids: string[]) {
   syncingSelection = true;
@@ -308,13 +359,22 @@ async function syncTableSelection(ids: string[]) {
   }
 }
 
-/** 默认勾选当前可见未打印行 */
-function selectDefaultPendingRows() {
+/** 勾选当前可见未打印行；无未打印则全选 */
+function selectUnprintedOrAllRows() {
   const ids = displayRows.value
     .filter((row) => row.printStatusCode !== 'printed')
     .map((row) => row.id);
   const fallbackIds = ids.length > 0 ? ids : displayRows.value.map((row) => row.id);
   void syncTableSelection(fallbackIds);
+}
+
+/** 默认勾选：巡视卡全选，其余优先未打印行 */
+function selectDefaultPendingRows() {
+  if (activeDocType.value === 'patrol_card') {
+    void syncTableSelection(displayRows.value.map((row) => row.id));
+    return;
+  }
+  selectUnprintedOrAllRows();
 }
 
 /** 拉取当前单据待打列表（无数据为空态，不弹错误） */
@@ -416,7 +476,7 @@ function handleDayQueryRangeChange(value: [string, string] | null) {
 
 /** 全选当前可见待打行 */
 function handleSelectAllPending() {
-  selectDefaultPendingRows();
+  selectUnprintedOrAllRows();
 }
 
 /** 清空勾选 */
@@ -487,6 +547,7 @@ async function handlePrint() {
       dateFrom: queryDateFrom.value,
       dateTo: queryDateTo.value,
       executionDeadline: executionDeadline.value,
+      splitByFrequency: patrolSplitByFrequency.value,
     });
     if (result.ok) {
       confirmVisible.value = false;
@@ -629,6 +690,22 @@ watch(oralMedInfusionFilter, () => {
             <ElRadio value="infusion">输液药</ElRadio>
             <ElRadio value="non_infusion">非输液药</ElRadio>
           </ElRadioGroup>
+
+          <label
+            v-if="needsFrequencySplitSwitch(activeDocType)"
+            class="print-center-freq-switch inline-flex items-center gap-1.5"
+          >
+            <span>按频次打印</span>
+            <ElSwitch v-model="patrolSplitByFrequency" />
+            <ElTooltip
+              content="开启后按医嘱频次打印：日两次打印两张，关闭后不再按频次拆开。"
+              placement="bottom"
+            >
+              <button type="button" class="print-center-task__help" aria-label="按频次打印说明">
+                ?
+              </button>
+            </ElTooltip>
+          </label>
         </div>
 
         <div class="print-center-filters__right flex shrink-0 items-center gap-2">
@@ -698,6 +775,9 @@ watch(oralMedInfusionFilter, () => {
                 :highlight-current-row="true"
                 @selection-change="handleSelectionChange"
               >
+                <template #titleText="{ row }">
+                  <span class="print-center-cell-wrap">{{ row.title }}</span>
+                </template>
                 <template #statusText="{ row }">
                   <ElTag
                     size="small"

@@ -210,6 +210,8 @@ const dddUnitCodeOptions = createOptionsComputed('dddUnitCodeOptions');
 type UnitSelectOption = { children?: UnitSelectOption[]; label: string; value: string };
 const chrgitmLvOptions = createOptionsComputed('chrgitmLvOptions');
 const mrSettlementTypeCodeOptions = createOptionsComputed('mrSettlementTypeCodeOptions');
+/** 结余留用批次号下拉（术语 surplus_retention_batch_code） */
+const surplusRetentionBatchCodeOptions = createOptionsComputed('surplusRetentionBatchCodeOptions');
 const doseFormCodeOptions = createOptionsComputed('doseFormCodeOptions');
 const methodCodeOptions = createOptionsComputed('methodCodeOptions');
 const rateCodeOptions = createOptionsComputed('rateCodeOptions');
@@ -538,6 +540,7 @@ function normalizeFormSelectValues(data: Record<string, unknown>) {
   const selectFieldNames = [
     'chrgitmLv',
     'mrSettlementTypeCode',
+    'surplusRetentionBatchCode',
     'categoryCode',
     'manufacturerId',
     'purchaseUnitCode',
@@ -1232,6 +1235,14 @@ const updateFormOptions = () => {
         componentProps: {
           options: mrSettlementTypeCodeOptions.value,
           filterable: true,
+        },
+      },
+      {
+        fieldName: 'surplusRetentionBatchCode',
+        componentProps: {
+          options: surplusRetentionBatchCodeOptions.value,
+          filterable: true,
+          clearable: true,
         },
       },
       {
@@ -1942,6 +1953,17 @@ const [Form, formApi] = useVbenForm(
         },
       },
       {
+        component: 'Select',
+        fieldName: 'surplusRetentionBatchCode',
+        label: '结余留用批次号',
+        componentProps: {
+          options: surplusRetentionBatchCodeOptions.value,
+          filterable: true,
+          clearable: true,
+          placeholder: '请选择结余留用批次号',
+        },
+      },
+      {
         component: 'CheckboxInlineGroup',
         fieldName: '__checkbox_inline_group',
         formItemClass: 'col-span-full !mb-0',
@@ -2082,8 +2104,16 @@ watch(
       initOptions.value = props.initOptionsSource;
     }
 
-    if (!initOptions.value || Object.keys(initOptions.value).length === 0) {
-      const fromSession = tryLoadInitOptionsFromSession();
+    // 列表页 init 可能是旧缓存：无结余留用批次号选项时强制重拉
+    const surplusOpts = initOptions.value?.surplusRetentionBatchCodeOptions;
+    const surplusOptionsMissing = !Array.isArray(surplusOpts) || surplusOpts.length === 0;
+
+    if (
+      !initOptions.value ||
+      Object.keys(initOptions.value).length === 0 ||
+      surplusOptionsMissing
+    ) {
+      const fromSession = !surplusOptionsMissing && tryLoadInitOptionsFromSession();
       if (!fromSession) {
         await loadInitOptions();
       }

@@ -41,7 +41,6 @@ import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.LocationStatus;
-import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
 import com.openhis.health.domain.share.enums.SupplyStatus;
 import com.openhis.health.domain.share.enums.SupplyType;
 import com.openhis.health.domain.share.utils.EnumUtil;
@@ -55,6 +54,7 @@ import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemDom
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemQueryService;
 import com.openhis.health.application.shared.inventory.InventoryItemProductSelectionPageLoader;
 import com.openhis.health.domain.workflow.inventoryitem.valueobject.InventoryMatchKey;
+import com.openhis.health.domain.workflow.supplydelivery.command.CreateStocktakingDeliveryCommand;
 import com.openhis.health.domain.workflow.supplydelivery.service.SupplyDeliveryDomainService;
 import com.openhis.health.domain.workflow.supplydelivery.service.SupplyDeliveryQueryService;
 import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyByBusNoQuery;
@@ -135,24 +135,22 @@ public class InventoryDepartmentStocktakeAppService {
      * @return 表单初始化选项集合
      */
     public LoadStocktakeFormInitResponse loadStocktakeFormInit(LoadStocktakeFormInitRequest request) {
-        // Gate：会话机构上下文须存在，否则无法按管辖收窄库位与人员
-        // Pre：拉取启用库位/人员并经管辖 Gate 收窄
-        Long resolvedOrg = managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
+        // Gate：会话机构上下文须存在，否则无法按管辖收窄库位
+        // Pre：拉取启用科室药房；经手人取全体在职医务人员（不限药师/库管）
+        managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
             ErrorCodeConstants.DEP_ST_101, "机构上下文缺失");
         try {
             List<Location> departmentPharmacies = locationQueryService.listAllActiveDepartmentPharmacies();
             List<Location> gatedDepartmentPharmacies = this.managedLocationIdsResolver.narrowActiveLocationsByManaged(departmentPharmacies);
-            List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
-                WhalePlatformRoleCodeConstants.ROLE_PHARMACIST, resolvedOrg);
-            List<Practitioner> warehouseKeepers = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
-                WhalePlatformRoleCodeConstants.ROLE_WAREHOUSE, resolvedOrg);
-            // Asm：下拉选项写入初始化响应
+            List<Practitioner> handlers =
+                this.practitionerRoleScopeLoader.listAllActivePractitionersForInventoryDocHandlerSelect();
+            // Asm：经手人写入 pharmacistOptions（前端与库管选项合并；库管位留空）
             return stocktakeMapper.toLoadStocktakeFormInitResponse(
                 stocktakeMapper.toOptionDtoListFromLocations(gatedDepartmentPharmacies),
                 stocktakeMapper.toOptionDtoListInboundItemTableTypes(),
                 stocktakeMapper.toOptionDtoListSupplyStatuses(),
-                stocktakeMapper.toOptionDtoListFromPractitioners(pharmacists),
-                stocktakeMapper.toOptionDtoListFromPractitioners(warehouseKeepers));
+                stocktakeMapper.toOptionDtoListFromPractitioners(handlers),
+                List.of());
         } catch (RuntimeException ex) {
             log.warn("loadStocktakeFormInit failed", ex);
             throw new BusinessException(ErrorCodeConstants.DEP_ST_101, "盘点页主数据加载失败");
@@ -447,7 +445,9 @@ public class InventoryDepartmentStocktakeAppService {
     }
 
     /**
-     * 科室药房盘点单同意编排：领域落已同意态 → 盘点发放 → 药房库存盈亏入账（盘盈可新建库存行）。
+     * 科室药房盘点单同意编排：领域落已同意态 → 盘点发放（仅非零盈亏行）→ 药房库存盈亏入账（盘盈可新建库存行）。
+     *
+     * <p>整单明细盈亏数量均为 0 时仍同意成功：不落盘点发放、不调库存（账面无变化）。</p>
      *
      * @param request 须含 busNo
      * @return 同意成功标志
@@ -502,12 +502,20 @@ public class InventoryDepartmentStocktakeAppService {
         if (!duplicateCompletedRequestIds.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.DEP_ST_104, "供应请求行已存在完成态发放，禁止重复同意盘点");
         }
-        try {
-            supplyDeliveryDomainService.createStocktakingDelivery(
-                stocktakeMapper.toCreateStocktakingDeliveryCommand(agreedLines, operatorId));
-        } catch (BusinessException ex) {
-            throw new BusinessException(ErrorCodeConstants.DEP_ST_104, "盘点发放落库失败：" + ex.getMessage());
+        // Cmd：盘点发放落库（仅非零盈亏行；整单盈亏均为 0 时无差异事实，跳过发放以免空 items 校验失败）
+        CreateStocktakingDeliveryCommand deliveryCmd =
+            stocktakeMapper.toCreateStocktakingDeliveryCommand(agreedLines, operatorId);
+        List<CreateStocktakingDeliveryCommand.CreateStocktakingDeliveryItemCommand> deliveryItems =
+            deliveryCmd.getItems();
+        // 有非零盈亏行：落盘点差异发放
+        if (deliveryItems != null && !deliveryItems.isEmpty()) {
+            try {
+                supplyDeliveryDomainService.createStocktakingDelivery(deliveryCmd);
+            } catch (BusinessException ex) {
+                throw new BusinessException(ErrorCodeConstants.DEP_ST_104, "盘点发放落库失败：" + ex.getMessage());
+            }
         }
+        // 整单盈亏均为 0：账面无变化，不调用发放落库
         List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
         for (SupplyRequestModel line : agreedLines) {
             if (line == null || line.getItemId() == null || StringUtils.isEmpty(line.getItemTable())) {

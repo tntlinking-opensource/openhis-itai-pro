@@ -15,6 +15,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -36,13 +37,24 @@ public class PatientStudentQueryService {
         String schoolStatus,
         Boolean activeFlag,
         String className,
+        LocalDate enrollTimeFrom,
+        LocalDate enrollTimeTo,
         Pageable pageable) {
         Long resolvedTenantId = resolveTenantId(tenantId);
         if (resolvedTenantId == null) {
             return Page.empty(pageable);
         }
         return repository.findAll(
-            buildSpec(resolvedTenantId, keyword, collegeId, campusCode, schoolStatus, activeFlag, className),
+            buildSpec(
+                resolvedTenantId,
+                keyword,
+                collegeId,
+                campusCode,
+                schoolStatus,
+                activeFlag,
+                className,
+                enrollTimeFrom,
+                enrollTimeTo),
             pageable);
     }
 
@@ -130,7 +142,9 @@ public class PatientStudentQueryService {
         String campusCode,
         String schoolStatus,
         Boolean activeFlag,
-        String className) {
+        String className,
+        LocalDate enrollTimeFrom,
+        LocalDate enrollTimeTo) {
         return (root, cq, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.equal(root.get("tenantId"), tenantId));
@@ -149,6 +163,12 @@ public class PatientStudentQueryService {
             }
             if (className != null && !className.isBlank()) {
                 predicates.add(cb.equal(root.get("className"), className.trim()));
+            }
+            if (enrollTimeFrom != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("enrollTime"), enrollTimeFrom.atStartOfDay()));
+            }
+            if (enrollTimeTo != null) {
+                predicates.add(cb.lessThan(root.get("enrollTime"), enrollTimeTo.plusDays(1).atStartOfDay()));
             }
             if (keyword != null && !keyword.isBlank()) {
                 String pattern = "%" + keyword.trim().toLowerCase() + "%";

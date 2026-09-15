@@ -9,8 +9,10 @@ export const PRINT_SCENARIO_LABELS: Record<PrintScenario, string> = {
   [PRINT_SCENARIO.opRegPrint]: '门诊挂号小票',
   [PRINT_SCENARIO.opTreatmentPrint]: '门诊处置单',
   [PRINT_SCENARIO.opInfusionLabelPrint]: '输液瓶签',
-  [PRINT_SCENARIO.opSpecimenBarcodePrint]: '采血贴',
+  [PRINT_SCENARIO.opSpecimenBarcodePrint]: '门诊采血贴',
+  [PRINT_SCENARIO.ipSpecimenBarcodePrint]: '住院采血贴',
   [PRINT_SCENARIO.opDailySettlementPrint]: '门诊费用日结单',
+  [PRINT_SCENARIO.ipDailySettlementPatientPrint]: '住院收费日结单（患者分项）',
   [PRINT_SCENARIO.pharmacyDailySettlementPrint]: '药房日结单',
   [PRINT_SCENARIO.examinationPrint]: '检查申请单',
   [PRINT_SCENARIO.testPrint]: '检验申请单',
@@ -38,6 +40,8 @@ export const PRINT_SCENARIO_LABELS: Record<PrintScenario, string> = {
   [PRINT_SCENARIO.peisGuidePrint]: '体检指引单',
   [PRINT_SCENARIO.finPriceAdjustmentPrint]: '调价单',
   [PRINT_SCENARIO.reportListPrint]: '报表列表',
+  [PRINT_SCENARIO.ipHomepageWmPrint]: '西医住院病案首页',
+  [PRINT_SCENARIO.ipHomepageTcmPrint]: '中医住院病案首页',
 };
 
 export const PRINT_SCENARIO_ITEMS: Array<{ label: string; scenarioCode: PrintScenario }> = [
@@ -72,6 +76,10 @@ export const PRINT_SCENARIO_ITEMS: Array<{ label: string; scenarioCode: PrintSce
   {
     scenarioCode: PRINT_SCENARIO.opDailySettlementPrint,
     label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.opDailySettlementPrint],
+  },
+  {
+    scenarioCode: PRINT_SCENARIO.ipDailySettlementPatientPrint,
+    label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.ipDailySettlementPatientPrint],
   },
   {
     scenarioCode: PRINT_SCENARIO.pharmacyDailySettlementPrint,
@@ -142,6 +150,10 @@ export const PRINT_SCENARIO_ITEMS: Array<{ label: string; scenarioCode: PrintSce
     label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.ipOralMedLabelPrint],
   },
   {
+    scenarioCode: PRINT_SCENARIO.ipSpecimenBarcodePrint,
+    label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.ipSpecimenBarcodePrint],
+  },
+  {
     scenarioCode: PRINT_SCENARIO.ipInfusionLabelPrint,
     label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.ipInfusionLabelPrint],
   },
@@ -180,6 +192,14 @@ export const PRINT_SCENARIO_ITEMS: Array<{ label: string; scenarioCode: PrintSce
   {
     scenarioCode: PRINT_SCENARIO.reportListPrint,
     label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.reportListPrint],
+  },
+  {
+    scenarioCode: PRINT_SCENARIO.ipHomepageWmPrint,
+    label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.ipHomepageWmPrint],
+  },
+  {
+    scenarioCode: PRINT_SCENARIO.ipHomepageTcmPrint,
+    label: PRINT_SCENARIO_LABELS[PRINT_SCENARIO.ipHomepageTcmPrint],
   },
 ];
 

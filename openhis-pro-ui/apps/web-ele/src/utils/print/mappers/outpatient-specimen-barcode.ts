@@ -1,4 +1,4 @@
-/** 采血贴 PrintData（与 op-specimenBarcode-print 模板 field 一致） */
+/** 门诊采血贴 PrintData（与 op-specimenBarcode-print 模板 field 一致；50×30mm） */
 export interface OutpatientSpecimenBarcodePrintData {
   patientName: string;
   genderEnumText: string;
@@ -18,7 +18,7 @@ export interface OutpatientSpecimenBarcodePrintSource {
   itemName?: null | string;
   /** 检验项目主键，直接作为条码内容 */
   serviceRequestId?: null | string;
-  /** 兼容显式条码；优先于 serviceRequestId */
+  /** 显式条码优先；未传时由 serviceRequestId 生成 */
   barcode?: null | string;
 }
 

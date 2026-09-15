@@ -17,6 +17,7 @@ public class ElepNationalCatalogRow {
     private String spec;
     private String dosform;
     private String aprvno;
+    private String prodentpName;
     private String pinyin;
     private String valiFlag;
     private String sourceInfno;

@@ -57,3 +57,44 @@ export function resolvePrintHospitalName(): string {
 
   return firstNonEmpty([preferences.app.name]);
 }
+
+/** 红旗医院组织机构代码（国标码；登录上下文常无此字段，院点写死） */
+const HONGQI_ORG_CODE = '12220104MB1287293C';
+
+/** 是否红旗/朝阳中医院点（中医病案首页 + 组织机构代码写死） */
+export function isHongqiHospitalSite(): boolean {
+  const hospitalName = resolvePrintHospitalName();
+  if (hospitalName.includes('红旗')) {
+    return true;
+  }
+  const projectId = String(import.meta.env.VITE_OPENHIS_PROJECT ?? '')
+    .trim()
+    .replace(/^project-/i, '');
+  return projectId === 'H22010402403';
+}
+
+/** 从登录用户扩展字段解析组织机构代码（无可用来源时返回空串） */
+export function resolvePrintOrgCode(): string {
+  // 红旗医院：写死国标组织机构代码
+  if (isHongqiHospitalSite()) {
+    return HONGQI_ORG_CODE;
+  }
+
+  const userStore = useUserStore();
+  const userInfo = userStore.userInfo as null | Record<string, unknown> | undefined;
+  const ext = (userInfo?.extraProperties ?? {}) as Record<string, unknown>;
+  return firstNonEmpty([
+    userInfo?.orgCode,
+    userInfo?.organizationCode,
+    userInfo?.creditCode,
+    userInfo?.uscc,
+    ext.orgCode,
+    ext.OrgCode,
+    ext.organizationCode,
+    ext.OrganizationCode,
+    ext.creditCode,
+    ext.CreditCode,
+    ext.uscc,
+    ext.USCC,
+  ]);
+}

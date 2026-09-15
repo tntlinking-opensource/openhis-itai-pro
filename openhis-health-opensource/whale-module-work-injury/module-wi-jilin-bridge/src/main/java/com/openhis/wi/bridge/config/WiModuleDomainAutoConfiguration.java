@@ -7,6 +7,7 @@ package com.openhis.wi.bridge.config;
 import com.openhis.wi.domain.repository.YbWiEncounterAnchorRepository;
 import com.openhis.wi.domain.repository.YbWiInvokeSessionRepository;
 import com.openhis.wi.domain.repository.YbWiPreSettleRepository;
+import com.openhis.wi.domain.repository.YbWiReconDailyRepository;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.domain.EntityScan;
 import org.springframework.context.annotation.ComponentScan;
@@ -33,7 +34,8 @@ import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 @EnableJpaRepositories(basePackageClasses = {
     YbWiPreSettleRepository.class,
     YbWiInvokeSessionRepository.class,
-    YbWiEncounterAnchorRepository.class
+    YbWiEncounterAnchorRepository.class,
+    YbWiReconDailyRepository.class
 })
 public class WiModuleDomainAutoConfiguration {
 }

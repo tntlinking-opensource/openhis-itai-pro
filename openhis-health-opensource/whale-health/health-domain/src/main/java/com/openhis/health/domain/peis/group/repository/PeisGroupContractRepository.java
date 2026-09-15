@@ -12,4 +12,8 @@ import java.util.List;
 public interface PeisGroupContractRepository extends JpaRepository<PeisGroupContract, Long> {
 
     List<PeisGroupContract> findByCompanyIdAndIsDeletedFalse(Long companyId);
+
+    List<PeisGroupContract> findByCompanyIdInAndIsDeletedFalse(List<Long> companyIds);
+
+    boolean existsByCompanyIdAndIsDeletedFalse(Long companyId);
 }

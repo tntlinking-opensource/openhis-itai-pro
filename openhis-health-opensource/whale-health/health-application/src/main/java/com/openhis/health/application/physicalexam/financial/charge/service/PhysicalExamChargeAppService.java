@@ -649,10 +649,16 @@ public class PhysicalExamChargeAppService {
     }
 
     private static Boolean resolvePeGroupFlagFilter(String chargeKind) {
+        if (StringUtils.isEmpty(chargeKind)) {
+            return null;
+        }
         if (PhysicalExamChargeKind.GROUP.equalsIgnoreCase(chargeKind)) {
             return Boolean.TRUE;
         }
-        return Boolean.FALSE;
+        if (PhysicalExamChargeKind.PERSONAL.equalsIgnoreCase(chargeKind)) {
+            return Boolean.FALSE;
+        }
+        return null;
     }
 
     /**

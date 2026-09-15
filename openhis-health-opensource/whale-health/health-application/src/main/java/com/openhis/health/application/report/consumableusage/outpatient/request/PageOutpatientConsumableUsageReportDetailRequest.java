@@ -23,12 +23,12 @@ import lombok.experimental.Accessors;
 @Schema(description = "门诊耗材使用报表明细分页请求")
 public class PageOutpatientConsumableUsageReportDetailRequest extends AbstractHealthPageRequest {
 
-    /** 业务日起（yyyy-MM-dd）；必填。 */
-    @Schema(description = "业务日起（yyyy-MM-dd）", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 业务日起（yyyy-MM-dd 或 yyyy-MM-dd HH:mm:ss；仅日期时起 00:00:00、止 23:59:59）；必填。 */
+    @Schema(description = "业务日起（yyyy-MM-dd 或 yyyy-MM-dd HH:mm:ss；仅日期时起 00:00:00、止 23:59:59）", requiredMode = Schema.RequiredMode.REQUIRED)
     private String dateFrom;
 
-    /** 业务日止（yyyy-MM-dd）；必填。 */
-    @Schema(description = "业务日止（yyyy-MM-dd）", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 业务日止（yyyy-MM-dd 或 yyyy-MM-dd HH:mm:ss；仅日期时起 00:00:00、止 23:59:59）；必填。 */
+    @Schema(description = "业务日止（yyyy-MM-dd 或 yyyy-MM-dd HH:mm:ss；仅日期时起 00:00:00、止 23:59:59）", requiredMode = Schema.RequiredMode.REQUIRED)
     private String dateTo;
 
     /**

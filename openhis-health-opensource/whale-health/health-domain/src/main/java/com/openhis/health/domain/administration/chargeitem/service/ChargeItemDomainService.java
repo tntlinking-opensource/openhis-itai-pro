@@ -13,6 +13,7 @@ import com.openhis.health.domain.administration.chargeitem.command.ActivateCharg
 import com.openhis.health.domain.administration.chargeitem.command.BatchChargeItemIdsCommand;
 import com.openhis.health.domain.administration.chargeitem.command.CreateChargeItemsLinkingRegeneratedAnchorsCommand;
 import com.openhis.health.domain.administration.chargeitem.command.CreateChargeItemCommand;
+import com.openhis.health.domain.administration.chargeitem.command.StampChargeItemPrescriptionSnapshotCommand;
 import com.openhis.health.domain.administration.chargeitem.command.SwitchChargeItemAccountCommand;
 import com.openhis.health.domain.administration.chargeitem.command.DeactivateChargeByExeCommand;
 import com.openhis.health.domain.administration.chargeitem.command.ManualOverridePlannedChargeItemPricesCommand;
@@ -815,6 +816,55 @@ public class ChargeItemDomainService {
     }
 
     /**
+     * 门诊结算盖章：将上游处方号快照写入收费行（不改状态）。
+     *
+     * <p>业务真源仍在药品/诊疗请求；本方法仅在结算前落 {@code prescription_no} 快照供账单打印与统计。</p>
+     *
+     * @param command 收费明细主键与期望处方号批次
+     */
+    public void stampPrescriptionSnapshots(StampChargeItemPrescriptionSnapshotCommand command) {
+        // 前置校验：空批直接返回。
+        if (command == null || command.resolveItems().isEmpty()) {
+            return;
+        }
+        List<Long> ids = new ArrayList<>();
+        Map<Long, String> prescriptionByChargeId = new HashMap<>();
+        for (StampChargeItemPrescriptionSnapshotCommand.Item item : command.resolveItems()) {
+            if (item == null || item.getChargeItemId() == null) {
+                continue;
+            }
+            String prescriptionNo = item.getPrescriptionNo();
+            // Pre：无上游处方号则本行不盖章。
+            if (prescriptionNo == null || prescriptionNo.trim().isEmpty()) {
+                continue;
+            }
+            ids.add(item.getChargeItemId());
+            prescriptionByChargeId.put(item.getChargeItemId(), prescriptionNo.trim());
+        }
+        if (ids.isEmpty()) {
+            return;
+        }
+        // 加载/组装：按主键装载收费明细。
+        Map<Long, ChargeItem> map = this.loadMap(ids);
+        List<ChargeItem> toSave = new ArrayList<>();
+        for (Long id : ids) {
+            ChargeItem row = require(map, id);
+            String expected = prescriptionByChargeId.get(id);
+            // Pre：已与期望一致则跳过。
+            if (expected.equals(row.getPrescriptionNo())) {
+                continue;
+            }
+            // Cmd：仅写结算快照列，不改收费状态。
+            row.setPrescriptionNo(expected);
+            toSave.add(row);
+        }
+        // 持久化：先落库；无独立事件（随后 settle 会发 SETTLED）。
+        if (!toSave.isEmpty()) {
+            repository.saveAll(toSave);
+        }
+    }
+
+    /**
      * 挂号退费，状态迁移至已退款（statusEnum=REFUNDED），覆盖收费人/收费时间并发布 REGISTRATION_REFUNDED 事件。
      *
      * @param cmd 批量收费明细主键命令（须含退费操作人；{@code billDate} 可选）
@@ -1036,6 +1086,42 @@ public class ChargeItemDomainService {
      */
     public void requestOutpatientBillRefund(BatchChargeItemIdsCommand cmd) {
         this.batchUpdateStatus(cmd, ChargeItemStatus.REFUNDING, ChargeItemEventType.OUTPATIENT_BILL_REFUND_REQUESTED);
+    }
+
+    /**
+     * 撤销门诊账单退款申请：退费中（{@code REFUNDING}）回已结算（{@code SETTLED}），并发布
+     * {@link ChargeItemEventType#OUTPATIENT_BILL_REFUND_CANCELLED} 批量事件。
+     *
+     * <p>医生站整笔支付撤销口径；任一行非退费中则整批拒绝（应用层已先做药/耗已退门禁）。</p>
+     *
+     * @param cmd 批量收费明细主键命令（拟撤销的退费中明细）
+     * @throws BusinessException 入参为空、明细不存在或状态已非退费中
+     */
+    public void cancelOutpatientBillRefund(BatchChargeItemIdsCommand cmd) {
+        // 前置校验：提取拟撤销收费明细主键，空批拒绝。
+        List<Long> ids = this.extractIds(cmd);
+        if (ids.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "收费明细批量入参不能为空");
+        }
+        // 加载/组装：按主键批量装载收费明细聚合。
+        Map<Long, ChargeItem> map = this.loadMap(ids);
+        List<ChargeItem> toSave = new ArrayList<>();
+        for (Long id : ids) {
+            ChargeItem row = require(map, id);
+            // 业务：仅退费中允许撤销申请；已结算/已退款等均拒绝整批。
+            if (!ChargeItemStatus.REFUNDING.getCode().equals(row.getStatusEnum())) {
+                throw new BusinessException(
+                    ErrorCodeConstants.CHARGE_ITEM_INVALID_STATUS,
+                    "收费明细已不在退费中，无法撤销退费申请");
+            }
+            // Cmd：退费中回已结算，恢复可再次申请或继续收费闭环。
+            row.setStatusEnum(ChargeItemStatus.SETTLED.getCode());
+            toSave.add(row);
+        }
+        // 持久化：先落库再发事件，避免投影读到旧态。
+        repository.saveAll(toSave);
+        // 发布事件：门诊账单退款申请撤销（批量，首条代表批次）。
+        this.publishByType(ChargeItemEventType.OUTPATIENT_BILL_REFUND_CANCELLED, ids.get(0), ids);
     }
 
     /**
@@ -1609,6 +1695,11 @@ public class ChargeItemDomainService {
         // Event：门诊账单退款完成事件（批量）。
         if (eventType == ChargeItemEventType.OUTPATIENT_BILL_REFUND_COMPLETED) {
             domainEventPublisher.publish(new ChargeItemDomainEvents.OutpatientBillRefundCompletedEvent(id, ids));
+            return;
+        }
+        // Event：门诊账单退款申请撤销事件（批量），退费中回已结算。
+        if (eventType == ChargeItemEventType.OUTPATIENT_BILL_REFUND_CANCELLED) {
+            domainEventPublisher.publish(new ChargeItemDomainEvents.OutpatientBillRefundCancelledEvent(id, ids));
             return;
         }
         // Event：住院收费项目批量结算事件。

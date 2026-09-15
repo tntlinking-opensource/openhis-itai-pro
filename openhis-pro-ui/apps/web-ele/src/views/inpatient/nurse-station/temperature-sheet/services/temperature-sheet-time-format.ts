@@ -115,6 +115,54 @@ export function resolveTemperatureSheetTimeSlotFromHm(hm: string): TemperatureSh
   return resolveTemperatureSheetTimeSlotFromHour(Number.isFinite(hour) ? hour : 0);
 }
 
+/** 图表落格就近整点（分小于 30 取当时，分大于等于 30 进位下一时） */
+export interface TemperatureSheetNearestHour {
+  hour: number;
+  hm: string;
+}
+
+/**
+ * 按 30 分界就近取整点，供体温/脉搏/入院等图表落格。
+ * 会跨三测时次的半点仅六个：01:30、05:30、09:30、13:30、17:30、21:30。
+ */
+export function roundTemperatureSheetHmToNearestHour(
+  hm: string,
+): TemperatureSheetNearestHour | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(hm.trim());
+  if (!match) {
+    return null;
+  }
+  let hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (
+    !Number.isFinite(hour) ||
+    !Number.isFinite(minute) ||
+    hour < 0 ||
+    hour > 23 ||
+    minute < 0 ||
+    minute > 59
+  ) {
+    return null;
+  }
+  // 半点起进位；23:30 进到 00:00 仍落当日 22 时次
+  if (minute >= 30) {
+    hour = (hour + 1) % 24;
+  }
+  return {
+    hour,
+    hm: `${String(hour).padStart(2, '0')}:00`,
+  };
+}
+
+/** 就近整点后再映射三测时次（体温/脉搏点、入院标记共用） */
+export function resolveTemperatureSheetChartTimeSlotFromHm(hm: string): TemperatureSheetTimeSlot {
+  const rounded = roundTemperatureSheetHmToNearestHour(hm);
+  if (!rounded) {
+    return resolveTemperatureSheetTimeSlotFromHm(hm);
+  }
+  return resolveTemperatureSheetTimeSlotFromHour(rounded.hour);
+}
+
 /** 时次转 HH:mm（用于事件时间默认值） */
 export function resolveDefaultEventTimeHm(timeSlot: TemperatureSheetTimeSlot): string {
   const hour = Number(timeSlot);

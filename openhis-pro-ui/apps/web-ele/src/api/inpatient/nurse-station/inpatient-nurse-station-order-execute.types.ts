@@ -10,10 +10,11 @@ export type NurseStationOrderExecuteTab = 'cancelled' | 'executed' | 'pending' |
 export type NurseStationOrderExecuteTherapyFilter = 'all' | 'long' | 'temp';
 
 /**
- * 列表接口中西药 Tab（后端单值）：west 西药+全部诊疗 / tcm 仅中药方。
+ * 列表接口中西药 Tab（后端单值）：
+ * west 西药+全部诊疗 / tcm 仅中药方 / all 西药+中药+诊疗（空选快捷筛选一次拉取）。
  * 前端「项目类型」多选见页面 map 层 NurseStationOrderExecuteProjectType，再映射到本字段拉取后本地过滤。
  */
-export type NurseStationOrderExecuteMedicineCategoryTab = 'tcm' | 'west';
+export type NurseStationOrderExecuteMedicineCategoryTab = 'all' | 'tcm' | 'west';
 
 /** 写操作锚点：药品申请 / 诊疗申请 */
 export type NurseStationOrderExecuteOrderType = 'MED_REQUEST' | 'SERVICE_REQUEST';
@@ -134,6 +135,10 @@ export interface NurseStationOrderExecuteRowDto {
   /** 是否输液/注射相关（仅药嘱 infusion_flag） */
   infusionFlag?: boolean;
   frequencyDisplay?: string;
+  /**
+   * 频次编码（药嘱/诊嘱 rate_code；输液贴按每日次数拆张用，禁止用 frequencyDisplay 推断）
+   */
+  rateCode?: string;
   /** 输液滴速编码（仅药嘱 speed_code） */
   speedCode?: string;
   /** 输液滴速展示名 */
@@ -180,6 +185,12 @@ export interface NurseStationOrderExecuteRowDto {
   activityDefinitionId?: string;
   /** 合管检验设备主键（采血贴分组） */
   specimenTubeMergeDeviceId?: string;
+  /** 是否皮试药（仅药嘱） */
+  skinTestFlag?: boolean;
+  /** 皮试临床状态 code（如 active=阳性） */
+  skinTestOutcomeCode?: string;
+  /** 皮试临床状态展示文案（如 阳性 / 阴性） */
+  skinTestOutcomeText?: string;
 }
 
 /** 按就诊分组的医嘱列表 */

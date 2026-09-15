@@ -224,6 +224,35 @@
   min-height: 0;
 }
 
+.print-center-freq-switch {
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+}
+
+.print-center-freq-switch span {
+  flex-shrink: 0;
+}
+
+/* 输液贴/巡视卡内容列：覆盖挂号表 nowrap，完整展示药名 */
+.print-center-register-table .vxe-body--row:has(.print-center-cell-wrap) {
+  height: auto;
+}
+
+.print-center-register-table .vxe-body--column .vxe-cell:has(.print-center-cell-wrap) {
+  height: auto;
+  min-height: 34px;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.print-center-cell-wrap {
+  display: block;
+  line-height: 1.4;
+  overflow: visible;
+  white-space: normal;
+  word-break: break-word;
+}
+
 /* —— 底栏 —— */
 .print-center-footer {
   background: #fafbfc;

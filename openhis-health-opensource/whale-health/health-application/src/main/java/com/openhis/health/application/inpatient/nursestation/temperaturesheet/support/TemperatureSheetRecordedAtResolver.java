@@ -22,6 +22,7 @@ import java.util.List;
  * 体温单记录时点与三测槽辅助（AS-IP-NUR-007 · BR-IP-TMP-003）。
  *
  * <p>图表仍按固定 6 槽 {@code 02/06/10/14/18/22} 分列；保存允许 {@code HH:mm} 或历史槽 code。
+ * 体温/脉搏点与入院标记落格按 30 分界就近整点（09:40 → 10 槽）。
  */
 @Component
 public class TemperatureSheetRecordedAtResolver {
@@ -61,7 +62,10 @@ public class TemperatureSheetRecordedAtResolver {
     }
 
     /**
-     * 从记录时点反推图表三测槽（按测量区间归桶）。
+     * 从记录时点反推图表三测槽（30 分界就近整点后再归桶）。
+     *
+     * <p>会跨槽的半点仅六个：01:30、05:30、09:30、13:30、17:30、21:30。
+     * 例如 09:40 落 10 槽，09:29 仍落 06 槽。
      *
      * @param recordedAt 记录时点
      * @return 槽 code；无法匹配时返回 {@code null}
@@ -70,7 +74,7 @@ public class TemperatureSheetRecordedAtResolver {
         if (recordedAt == null) {
             return null;
         }
-        return resolveChartTimeSlotFromHour(recordedAt.getHour());
+        return resolveChartTimeSlotFromClock(recordedAt.toLocalTime());
     }
 
     /**
@@ -98,13 +102,13 @@ public class TemperatureSheetRecordedAtResolver {
         }
         String normalized = currentTimeSlot.trim();
         String chartSlot = normalized;
-        // 业务分支：若传入时分，先归到图表槽再取下一槽
+        // 业务分支：若传入时分，先按就近整点归到图表槽再取下一槽
         if (!TIME_SLOTS.contains(normalized)) {
             LocalTime clock = parseClockTime(normalized);
             if (clock == null) {
                 return null;
             }
-            chartSlot = resolveChartTimeSlotFromHour(clock.getHour());
+            chartSlot = resolveChartTimeSlotFromClock(clock);
         }
         for (int index = 0; index < TIME_SLOTS.size(); index++) {
             if (TIME_SLOTS.get(index).equals(chartSlot)) {
@@ -141,7 +145,26 @@ public class TemperatureSheetRecordedAtResolver {
     }
 
     /**
-     * 小时映射到三测图表槽（与前端测量区间一致）。
+     * 按 30 分界就近整点后映射三测图表槽（与前端图表落格一致）。
+     *
+     * @param clock 时分
+     * @return 槽 code；clock 为空时返回 {@code null}
+     */
+    public String resolveChartTimeSlotFromClock(LocalTime clock) {
+        if (clock == null) {
+            return null;
+        }
+        int hour = clock.getHour();
+        int minute = clock.getMinute();
+        // 半点起进位；23:30 进到 00:00 仍落当日 22 槽
+        if (minute >= 30) {
+            hour = (hour + 1) % 24;
+        }
+        return resolveChartTimeSlotFromHour(hour);
+    }
+
+    /**
+     * 小时映射到三测图表槽（整点已就近处理后的归桶）。
      *
      * @param hour 小时 0～23
      * @return 槽 code

@@ -31,6 +31,8 @@ public class DeviceCatalogMapperImpl implements DeviceCatalogMapper {
     /**
      * 耗材定义实体转换为应用层 DTO。
      *
+     * <p>单位出站仅 {@code purchaseUnitCode}/{@code splitUnitCode}，不再双写 {@code unitCode}/{@code minUnitCode}。</p>
+     *
      * @param entity 领域实体
      * @return 耗材 DTO；为空时返回 {@code null}
      */
@@ -49,9 +51,8 @@ public class DeviceCatalogMapperImpl implements DeviceCatalogMapper {
 
         dto.setCategoryCode(entity.getCategoryCode());
         dto.setTypeCode(entity.getTypeCode());
-        String purchaseUnitCode = entity.getPurchaseUnitCode();
-        dto.setPurchaseUnitCode(purchaseUnitCode);
-        dto.setUnitCode(purchaseUnitCode);
+        // 仅出站 purchaseUnitCode/splitUnitCode，不再双写 unitCode/minUnitCode 别名
+        dto.setPurchaseUnitCode(entity.getPurchaseUnitCode());
         dto.setTotalVolume(entity.getTotalVolume());
         dto.setSpecification(entity.getTotalVolume());
         dto.setMerchandisePyStr(entity.getMerchandisePyStr());
@@ -65,9 +66,7 @@ public class DeviceCatalogMapperImpl implements DeviceCatalogMapper {
         dto.setPackageUnitRatio(entity.getPackageUnitRatio());
         dto.setTraceUnitCode(entity.getTraceUnitCode());
         dto.setTraceUnitRatio(entity.getTraceUnitRatio());
-        String splitUnitCode = entity.getSplitUnitCode();
-        dto.setSplitUnitCode(splitUnitCode);
-        dto.setMinUnitCode(splitUnitCode);
+        dto.setSplitUnitCode(entity.getSplitUnitCode());
         dto.setPackageUnitCode(entity.getPackageUnitCode());
         dto.setStockUnitCode(entity.getStockUnitCode());
         dto.setOrgId(entity.getOrgId());
@@ -111,6 +110,8 @@ public class DeviceCatalogMapperImpl implements DeviceCatalogMapper {
     /**
      * 新增耗材请求转换为领域创建命令。
      *
+     * <p>仅读取请求的 {@code purchaseUnitCode}/{@code splitUnitCode}，无 {@code unitCode}/{@code minUnitCode} 回落。</p>
+     *
      * @param request 创建请求
      * @return 创建命令
      */
@@ -130,17 +131,10 @@ public class DeviceCatalogMapperImpl implements DeviceCatalogMapper {
             item.setMerchandiseName(request.getMerchandiseName());
             item.setCategoryCode(request.getCategoryCode());
             item.setTypeCode(request.getTypeCode());
-            String purchaseUnitCode = request.getPurchaseUnitCode();
-            if (purchaseUnitCode == null || purchaseUnitCode.isBlank()) {
-                purchaseUnitCode = request.getUnitCode();
-            }
-            item.setUnitCode(purchaseUnitCode);
+            // 领域命令字段名仍为 unitCode/minUnitCode，语义=采购/拆零
+            item.setUnitCode(request.getPurchaseUnitCode());
             item.setTotalVolume(request.getTotalVolume());
-            String splitUnitCode = request.getSplitUnitCode();
-            if (splitUnitCode == null || splitUnitCode.isBlank()) {
-                splitUnitCode = request.getMinUnitCode();
-            }
-            item.setMinUnitCode(splitUnitCode);
+            item.setMinUnitCode(request.getSplitUnitCode());
             item.setDefEncounterUnitCode(request.getDefEncounterUnitCode());
             item.setDefInhospitalUnitCode(request.getDefInhospitalUnitCode());
             item.setPackageUnitCode(request.getPackageUnitCode());
@@ -181,6 +175,8 @@ public class DeviceCatalogMapperImpl implements DeviceCatalogMapper {
     /**
      * 更新耗材请求转换为领域更新命令。
      *
+     * <p>仅读取请求的 {@code purchaseUnitCode}/{@code splitUnitCode}，无 {@code unitCode}/{@code minUnitCode} 回落。</p>
+     *
      * @param request 更新请求
      * @return 更新命令
      */
@@ -200,17 +196,10 @@ public class DeviceCatalogMapperImpl implements DeviceCatalogMapper {
             item.setMerchandiseName(request.getMerchandiseName());
             item.setCategoryCode(request.getCategoryCode());
             item.setTypeCode(request.getTypeCode());
-            String purchaseUnitCode = request.getPurchaseUnitCode();
-            if (purchaseUnitCode == null || purchaseUnitCode.isBlank()) {
-                purchaseUnitCode = request.getUnitCode();
-            }
-            item.setUnitCode(purchaseUnitCode);
+            // 领域命令字段名仍为 unitCode/minUnitCode，语义=采购/拆零
+            item.setUnitCode(request.getPurchaseUnitCode());
             item.setTotalVolume(request.getTotalVolume());
-            String splitUnitCode = request.getSplitUnitCode();
-            if (splitUnitCode == null || splitUnitCode.isBlank()) {
-                splitUnitCode = request.getMinUnitCode();
-            }
-            item.setMinUnitCode(splitUnitCode);
+            item.setMinUnitCode(request.getSplitUnitCode());
             item.setDefEncounterUnitCode(request.getDefEncounterUnitCode());
             item.setDefInhospitalUnitCode(request.getDefInhospitalUnitCode());
             item.setPackageUnitCode(request.getPackageUnitCode());
@@ -267,9 +256,6 @@ public class DeviceCatalogMapperImpl implements DeviceCatalogMapper {
             if (request.getPurchaseUnitCode() != null) {
                 changed.add(FieldNameConstants.PURCHASE_UNIT_CODE);
             }
-            if (request.getUnitCode() != null) {
-                changed.add(FieldNameConstants.PURCHASE_UNIT_CODE);
-            }
             if (request.getTotalVolume() != null) {
                 changed.add(FieldNameConstants.TOTAL_VOLUME);
             }
@@ -280,9 +266,6 @@ public class DeviceCatalogMapperImpl implements DeviceCatalogMapper {
                 changed.add(FieldNameConstants.DEF_INHOSPITAL_UNIT_CODE);
             }
             if (request.getSplitUnitCode() != null) {
-                changed.add(FieldNameConstants.SPLIT_UNIT_CODE);
-            }
-            if (request.getMinUnitCode() != null) {
                 changed.add(FieldNameConstants.SPLIT_UNIT_CODE);
             }
             if (request.getPackageUnitCode() != null) {

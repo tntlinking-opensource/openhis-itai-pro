@@ -24,9 +24,7 @@ export interface StockOutFormInitOptionDto {
   children?: null | StockOutFormInitOptionDto[];
 }
 
-export interface LoadStockOutFormInitRequest {
-  organizationId?: number;
-}
+export interface LoadStockOutFormInitRequest {}
 
 export interface LoadStockOutFormInitResponse {
   warehouseLocationOptions?: StockOutFormInitOptionDto[];
@@ -56,7 +54,6 @@ export interface StockOutListRowDto {
   price?: number;
   totalPrice?: number;
   applyTime?: string;
-  approvalTime?: string;
 }
 
 export interface PageStockOutsRequest {
@@ -208,17 +205,11 @@ export interface WithdrawStockOutApprovalResponse {
 
 export interface AgreeStockOutRequest {
   busNo: string;
-  approverId?: string;
-  approvalClock?: string;
-  /** @deprecated CHS 启用即上传，请使用 contractBusNo */
-  medicareUploadEnabled?: boolean;
   contractBusNo?: string;
 }
 
 export interface RejectStockOutRequest {
   busNo: string;
-  approverId?: string;
-  approvalClock?: string;
   rejectReason?: string;
 }
 
@@ -299,7 +290,6 @@ export interface WarehouseDocumentDetailRowDto {
   unitCode?: string;
   lotNumber?: string;
   applyTime?: string;
-  approvalTime?: string;
 }
 
 export interface PageLinkableRequisitionsRequest {
@@ -329,12 +319,6 @@ export interface GetLinkablePharmacyRequisitionDetailResponse {
   practitionerId?: number | string;
   lines?: StockOutLineDto[];
 }
-
-/** @deprecated 使用 {@link PageLinkableRequisitionsRequest} */
-export type PageLinkablePharmacyRequisitionsRequest = PageLinkableRequisitionsRequest;
-
-/** @deprecated 使用 {@link PageLinkableRequisitionsResponse} */
-export type PageLinkablePharmacyRequisitionsResponse = PageLinkableRequisitionsResponse;
 
 /** 药库出库单：与 SupplyOrderType.CABINET_STOCK_OUT 枚举第二字段（name）一致 */
 export const WHS_SO_TYPE_ENUM = 'CABINET_STOCK_OUT';
@@ -421,9 +405,6 @@ export async function pageLinkableRequisitionsApi(body: PageLinkableRequisitions
     body,
   );
 }
-
-/** @deprecated 使用 {@link pageLinkableRequisitionsApi} */
-export const pageLinkablePharmacyRequisitionsApi = pageLinkableRequisitionsApi;
 
 export async function getLinkablePharmacyRequisitionDetailApi(
   body: GetLinkablePharmacyRequisitionDetailRequest,

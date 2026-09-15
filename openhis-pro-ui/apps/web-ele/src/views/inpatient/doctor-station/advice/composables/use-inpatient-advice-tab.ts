@@ -90,6 +90,8 @@ import {
   isEntrustAdviceDrugItem,
   isInpatientDischargeMedicationTherapy,
   productTableNameForAdviceRow,
+  resolveDefaultInpatientAdviceTherapyType,
+  resolveDefaultInpatientEntrustTherapyType,
   resourceKeyFromRow,
   rowLooksAppendSkinTestEligible,
   rowLooksCancelStopLongTermEligible,
@@ -112,6 +114,7 @@ import {
   INPATIENT_ENTRUST_CATEGORY_CODE,
   WESTERN_ADVICE_CATALOG_EXCLUDE_MEDICATION_CATEGORY_CODES,
 } from '../services/advice-tab.constants';
+import { isNursingLevelCatalogRow } from '../services/inpatient-advice-nursing';
 import { loadEntrustCatalogOption } from '../services/inpatient-advice-entrust';
 import { calcAdviceTotalFee } from './use-advice-drug-list';
 
@@ -128,6 +131,11 @@ export interface UseInpatientAdviceTabProps {
    * 未传时医生站默认 `desc`。
    */
   defaultTimeSortOrder?: AdviceListTimeSortOrder;
+  /**
+   * 纳入中药饮片并按方合并进同一列表（病案首页医嘱侧栏）。
+   * 开立 Tab 不传，保持与中医处方 Tab 分域。
+   */
+  includeTcmPrescriptions?: boolean;
 }
 
 /** 住院医生站「开立医嘱」页签：与门诊同构的独立实现，对接住院医嘱开立应用服务 */
@@ -164,6 +172,13 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
   const editorDirty = ref(false);
   const editorInitialGroup = ref<AdviceDrugItem[]>([]);
   const editorOpening = ref(false);
+  /** 新开编辑卡时递增，驱动卡片重挂以应用列表筛选默认治疗类型 */
+  const editorSessionNonce = ref(0);
+  /**
+   * 列表治疗类型筛选：空=全部；LONG_TERM / TEMPORARY / DISCHARGE_MEDICATION。
+   * 传给医嘱列表查询的 therapyTypeCode。
+   */
+  const listTherapyFilter = ref<'' | InpatientAdviceTherapyType>('');
   /** 改量模式：源长期药嘱 id；空=普通暂存编辑 */
   const changeDoseSourceRequestId = ref('');
   /** 改量且源嘱在用：可编辑停嘱时间（默认当前） */
@@ -194,9 +209,10 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     };
   }
 
-  /** 新开西药编辑卡时顶栏表单初始状态 */
-  const createEditForm = (): AdviceEditForm => {
+  /** 新开西药编辑卡时顶栏表单初始状态（频次随治疗类型：临时→立即） */
+  const createEditForm = (therapy?: string): AdviceEditForm => {
     const def = defaultContractSelectionRef.value;
+    const t = terminologyDefaults(therapy);
     return {
       orderType: '',
       selectedId: '',
@@ -205,8 +221,8 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
       feeNature: def.feeNature,
       pharmacy: '',
       singleDose: undefined,
-      frequency: terminologyDefaults().frequency,
-      usage: terminologyDefaults().usage,
+      frequency: t.frequency,
+      usage: t.usage,
       medicationDays: undefined,
       totalAmount: undefined,
     };
@@ -220,9 +236,10 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
   /** 递增后仅聚焦选药检索框；保存成功后配合 Enter 再展开下拉 */
   const orderSelectFocusNonce = ref(0);
 
-  /** 暂存成功后保留编辑区时的空白药品行 */
+  /** 暂存成功后保留编辑区时的空白药品行（长临默认跟列表筛选） */
   function createEmptyWesternDrugLine(): AdviceDrugItem {
-    const t = terminologyDefaults();
+    const therapy = resolveDefaultInpatientAdviceTherapyType(listTherapyFilter.value);
+    const t = terminologyDefaults(therapy);
     const def = defaultContractSelectionRef.value;
     return {
       orderType: '',
@@ -244,6 +261,7 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
       doseSubUnit: '',
       doseConvertRatio: undefined,
       totalAmountUnit: '',
+      therapyEnum: therapy,
       expanded: true,
       /** 保存后新开一行续录时使用新组，避免误入上一处方组号 */
       groupId: String(Date.now()),
@@ -337,7 +355,10 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     editingAdviceResourceType.value = '';
     editorInitialGroup.value = [];
     showEditor.value = true;
-    editorForm.value = createEditForm();
+    editorSessionNonce.value += 1;
+    editorForm.value = createEditForm(
+      resolveDefaultInpatientAdviceTherapyType(listTherapyFilter.value),
+    );
     void nextTick(() => {
       bumpOrderSelectExpand();
     });
@@ -385,7 +406,8 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
       return;
     }
     const catalogOpt = loadResult.option;
-    const t = terminologyDefaults();
+    const therapy = resolveDefaultInpatientEntrustTherapyType(listTherapyFilter.value);
+    const t = terminologyDefaults(therapy);
     const def = defaultContractSelectionRef.value;
     const catalogRate = String(catalogOpt.rateCode ?? '').trim();
     const uCode = String(catalogOpt.defaultUnitCode ?? '').trim() || '次';
@@ -401,7 +423,7 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
         productTableName:
           String(catalogOpt.productTableName ?? '').trim() || 'wkf_activity_definition',
         frequency: catalogRate || t.frequency,
-        therapyEnum: 'LONG_TERM',
+        therapyEnum: therapy,
         serviceQuantity: 1,
         totalAmount: 1,
         totalAmountUnit: uCode,
@@ -432,7 +454,8 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     clearChangeDoseMode();
     editorInitialGroup.value = [seed];
     showEditor.value = true;
-    editorForm.value = createEditForm();
+    editorSessionNonce.value += 1;
+    editorForm.value = createEditForm(therapy);
   };
 
   /** 过滤虚拟 editor 行 */
@@ -1448,6 +1471,14 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     if (meds.length < flatAg.length) {
       ElMessage.warning('已跳过非药品或非草稿的行');
     }
+    // 并组前本地校验频次唯一（与后端 BR-IP-ORD-033 / EX-IP-ORD-308 同口径）
+    const rateSet = new Set(
+      meds.map((r) => String(r.frequency ?? '').trim()).filter((c) => c !== ''),
+    );
+    if (rateSet.size > 1) {
+      ElMessage.warning('同组成组药品的用药频次须一致，请统一后再并组');
+      return;
+    }
     /** 每组并组操作使用新的毫秒时间戳，保证与近期其他并组组号不冲突 */
     const groupIdRaw = String(Date.now());
     try {
@@ -1475,12 +1506,6 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     }
   };
 
-  /**
-   * 列表治疗类型筛选：空=全部；LONG_TERM / TEMPORARY / DISCHARGE_MEDICATION。
-   * 传给 IF-IP-DOR list 的 therapyTypeCode。
-   */
-  const listTherapyFilter = ref<'' | InpatientAdviceTherapyType>('');
-
   /** 切换列表长临/出院带药筛选并重新拉数 */
   function setListTherapyFilter(code: '' | InpatientAdviceTherapyType) {
     if (listTherapyFilter.value === code) return;
@@ -1493,6 +1518,7 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     rows.value = mergeMedicationAdviceRowsForListDisplay(
       adviceListSourceDtos.value,
       timeSortOrder.value,
+      { includeTcmPrescriptions: props.includeTcmPrescriptions === true },
     );
   }
 
@@ -1519,6 +1545,7 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
         encounterId,
         patientId,
         ...(therapyTypeCode ? { therapyTypeCode } : {}),
+        ...(props.includeTcmPrescriptions === true ? { includeTcmMedication: true } : {}),
       });
       const { content: list } = parsePagedRowsFromApiData<InpatientDoctorStationAdviceRowDto>(res);
       adviceListSourceDtos.value = list;
@@ -1596,7 +1623,10 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
       });
       const { content: rawRows, totalCount } =
         parsePagedRowsFromApiData<InpatientDoctorStationAdviceCatalogRowDto>(res);
-      const content = rawRows.map((item) => mapCatalogRowToOption(item));
+      // 护理级别（category 26）仅快捷「护理」入口开立，普通选品下拉按类型过滤掉（BR-IP-ORD-026⑥）
+      const content = rawRows
+        .filter((row) => !isNursingLevelCatalogRow(row))
+        .map((item) => mapCatalogRowToOption(item));
       return { content, totalElements: totalCount };
     } catch {
       return { content: [] as AdviceProductOption[], totalElements: 0 };
@@ -1900,6 +1930,10 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
   const handleRowDblclick = async (row: AdviceRowItem) => {
     if (adviceWriteDisabled.value) return;
     if (row.isEditor) return;
+    // 中药方在中医处方 Tab 编辑，开立列表（含病案侧栏）不进西药编辑卡
+    if (row.tcmFlag === true) {
+      return;
+    }
     if (String(row.applyFormNo ?? '').trim()) {
       // 申请单编辑入口在 workspace（弹窗回显），此处不进入药品编辑卡
       return;
@@ -2041,6 +2075,7 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     editorForm,
     editorInitialGroup,
     editorOpening,
+    editorSessionNonce,
     encounterId: computed(() => props.encounterId ?? ''),
     getAdviceStatusTagType,
     getCellClassName,

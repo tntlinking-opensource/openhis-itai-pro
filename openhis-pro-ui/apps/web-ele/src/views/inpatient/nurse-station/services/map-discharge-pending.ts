@@ -2,8 +2,14 @@ import type {
   DischargePendingExecutionItemDto,
   DischargePendingMedicationItemDto,
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station-atd.types';
+import type {
+  NurseStationOrderExecuteOrderType,
+  NurseStationOrderExecuteWriteSlotDto,
+} from '#/api/inpatient/nurse-station/inpatient-nurse-station-order-execute.types';
 
 import { formatDateTime } from '@vben/utils';
+
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 type TherapyFilter = 'all' | 'long' | 'temporary';
 
@@ -58,4 +64,55 @@ export function filterDischargeExecutionRows(
 export function summarizeMedicationRows(rows: DischargePendingMedicationItemDto[]): string {
   if (rows.length === 0) return '无待发/待退药';
   return `${rows.length} 条待发/待退药`;
+}
+
+/** 是否为长期已停嘱仍有待执行时点 */
+export function isLongPendingSlotsReason(code?: string): boolean {
+  return (code ?? '').trim().includes('LONG_PENDING_SLOTS');
+}
+
+/** 待执行计划时刻列表展示（与门禁 pending 同源） */
+export function formatPendingPlanTimes(times?: string[]): string {
+  if (!times || times.length === 0) return '—';
+  const labels: string[] = [];
+  // 按接口回传顺序拼接，空时刻跳过
+  for (const raw of times) {
+    const text = (raw ?? '').trim();
+    if (!text) continue;
+    labels.push(formatDateTime(text) || text);
+  }
+  if (labels.length === 0) return '—';
+  return labels.join('、');
+}
+
+/** 出院待执行行 requestTable → 执行写路径 orderType */
+export function requestTableToExecuteOrderType(
+  requestTable?: string,
+): NurseStationOrderExecuteOrderType | null {
+  const table = (requestTable ?? '').trim().toLowerCase();
+  if (table.includes('medication_request')) return 'MED_REQUEST';
+  if (table.includes('service_request')) return 'SERVICE_REQUEST';
+  return null;
+}
+
+/** 收集 LONG_PENDING_SLOTS 行上可批量不执行的写槽位 */
+export function collectLongPendingSkipSlots(
+  rows: DischargePendingExecutionItemDto[],
+): NurseStationOrderExecuteWriteSlotDto[] {
+  const items: NurseStationOrderExecuteWriteSlotDto[] = [];
+  // 仅长期已停嘱仍 pending 的行参与 skip；其它阻塞原因禁止误 skip
+  for (const row of rows) {
+    if (!isLongPendingSlotsReason(row.blockingReason)) continue;
+    const orderType = requestTableToExecuteOrderType(row.requestTable);
+    const orderId = preserveApiIdForRequest(row.requestId);
+    if (!orderType || !orderId) continue;
+    const times = row.pendingPlanTimes ?? [];
+    // 与门禁 pending 同源的每个计划时刻各写一个 IF-IP-EXE-04 槽位
+    for (const planTime of times) {
+      const text = (planTime ?? '').trim();
+      if (!text) continue;
+      items.push({ orderId, orderType, planTime: text });
+    }
+  }
+  return items;
 }

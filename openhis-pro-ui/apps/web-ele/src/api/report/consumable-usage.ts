@@ -10,6 +10,14 @@ export const EXPORT_TAB_SUMMARY = 'SUMMARY' as const;
 export const EXPORT_TAB_DETAIL = 'DETAIL' as const;
 export type ConsumableUsageExportTab = typeof EXPORT_TAB_DETAIL | typeof EXPORT_TAB_SUMMARY;
 
+/** 明细行合并：逐条发放行（默认）。 */
+export const LINE_MERGE_MODE_LINE = 'LINE' as const;
+/** 明细行合并：同就诊+品规净合计（仅患者使用源）。 */
+export const LINE_MERGE_MODE_BY_DEFINITION = 'BY_DEFINITION' as const;
+export type ConsumableUsageLineMergeMode =
+  | typeof LINE_MERGE_MODE_BY_DEFINITION
+  | typeof LINE_MERGE_MODE_LINE;
+
 export const SUMMARY_DIMENSION_LOCATION = 'LOCATION' as const;
 export const SUMMARY_DIMENSION_ITEM = 'ITEM' as const;
 export const SUMMARY_DIMENSION_CATEGORY = 'CATEGORY' as const;
@@ -65,6 +73,11 @@ export interface ConsumableUsageReportFilter {
   patientKeyword?: string;
   /** 患者侧=开立科室；领用侧=领用科室 */
   organizationId?: string;
+  /**
+   * 明细行合并：LINE / BY_DEFINITION；仅住院明细。
+   * BY_DEFINITION = 同就诊+品规净合计（患者使用源）。
+   */
+  lineMergeMode?: ConsumableUsageLineMergeMode | string;
 }
 
 export interface SummarizeConsumableUsageReportParams extends ConsumableUsageReportFilter {
@@ -93,9 +106,6 @@ export interface ConsumableUsageSummaryRowDto {
   purchaseNetAmount?: number | string;
   /** 售价净额 */
   saleNetAmount?: number | string;
-  /** 净金额（售价别名） */
-  netAmount?: number | string;
-  lineCount?: number;
 }
 
 export interface SummarizeConsumableUsageReportResponse {
@@ -105,8 +115,6 @@ export interface SummarizeConsumableUsageReportResponse {
   purchaseNetTotalAmount?: number | string;
   /** 售价净额合计 */
   saleNetTotalAmount?: number | string;
-  /** 净金额合计（售价别名） */
-  totalNetAmount?: number | string;
 }
 
 export interface PageConsumableUsageReportDetailParams
@@ -141,6 +149,10 @@ export interface ConsumableUsageDetailRowDto {
   unitCode?: string;
   unitCode_dictText?: string;
   lotNumber?: string;
+  /** 收费锚点批号（账批质检） */
+  chargeLotNumber?: string;
+  /** 账批≠实发批（仅质检标红；金额口径不变） */
+  lotMismatch?: boolean;
   businessTime?: string;
   /** 金额（售价别名） */
   amount?: number | string;

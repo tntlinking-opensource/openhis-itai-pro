@@ -40,6 +40,7 @@ import {
   httpLoadWardBedCapacity,
   httpPageInpatientRegistrationQueue,
   httpSubmitInpatientRegistration,
+  httpSwitchInpatientToInsurance,
 } from '#/api/inpatient-registration';
 import { httpLoadAdmissionParticipantInit } from '#/api/inpatient/nurse-station/inpatient-nurse-station.http';
 import { httpPagePatientsForSelect } from '#/api/outpatient-registration';
@@ -98,9 +99,15 @@ defineOptions({
   name: 'ChargeIpRegister',
 });
 
+type RegisterDialogMode = 'register' | 'switchInsurance' | 'view';
+
 const userStore = useUserStore();
 
 const registerDialogVisible = ref(false);
+/** 登记弹窗模式：登记 / 只读查看 / 自费转医保 */
+const dialogMode = ref<RegisterDialogMode>('register');
+/** 当前上下文是否允许转医保（查看弹窗底部按钮） */
+const switchToInsuranceEnabled = ref(false);
 /** 登记弹窗 Tab：默认住院信息，避免待遇面板撑高弹窗 */
 const registerDetailTab = ref<'benefit' | 'inpatient'>('inpatient');
 const dialogReadOnly = ref(false);
@@ -386,9 +393,12 @@ const idCardFieldProps = {
   },
 };
 
-/** 无档登记时可选患者；有医生申请/只读时禁用下拉 */
+/** 无档登记时可选患者；有医生申请/只读/转医保时禁用下拉 */
 const patientSelectDisabled = computed(
-  () => dialogReadOnly.value || Boolean(preserveApiIdForRequest(dialogContext.encounterId)),
+  () =>
+    dialogReadOnly.value ||
+    dialogMode.value === 'switchInsurance' ||
+    Boolean(preserveApiIdForRequest(dialogContext.encounterId)),
 );
 
 /** 出生日期统一为登记表单 valueFormat */
@@ -612,6 +622,14 @@ const tableColumns: TableColumn[] = [
   },
   { prop: 'patientName', label: '患者姓名', minWidth: 110, align: 'center', headerAlign: 'center' },
   {
+    prop: 'contractDisplay',
+    label: '费用性质',
+    minWidth: 100,
+    align: 'center',
+    headerAlign: 'center',
+    formatter: (_row, _column, cellValue) => String(cellValue ?? '').trim() || '—',
+  },
+  {
     prop: 'statusEnumText',
     label: '登记状态',
     width: 100,
@@ -640,7 +658,15 @@ const tableColumns: TableColumn[] = [
   },
 ];
 
-const dialogTitle = computed(() => (dialogReadOnly.value ? '查看' : '登记'));
+const dialogTitle = computed(() => {
+  if (dialogMode.value === 'switchInsurance') {
+    return '转医保';
+  }
+  if (dialogReadOnly.value) {
+    return '查看';
+  }
+  return '登记';
+});
 
 const [BasicInfoForm, basicInfoFormApi] = useVbenForm(
   reactive({
@@ -1070,8 +1096,19 @@ async function alignBirthDateAndAgeBeforeSubmit() {
 }
 
 /** 将登记上下文写入弹窗表单。 */
-async function applyContextToDialog(context: LoadRegistrationContextResult) {
-  dialogReadOnly.value = Boolean(context.readOnly);
+async function applyContextToDialog(
+  context: LoadRegistrationContextResult,
+  mode: RegisterDialogMode = 'register',
+) {
+  dialogMode.value = mode;
+  switchToInsuranceEnabled.value = Boolean(context.switchToInsuranceEnabled);
+  if (mode === 'view') {
+    dialogReadOnly.value = true;
+  } else if (mode === 'switchInsurance') {
+    dialogReadOnly.value = false;
+  } else {
+    dialogReadOnly.value = Boolean(context.readOnly);
+  }
   applyContractOptionsFromList(context.contractOptions);
   applyAdmissionTerminologyOptionsFromContext(context);
   if (context.organizationOptions?.length) {
@@ -1131,6 +1168,11 @@ async function applyContextToDialog(context: LoadRegistrationContextResult) {
   await refreshAttendingDoctorOptionsSchema();
   await syncDialogFormsFromModel();
   await applyWardIdEcho(registerForm.wardId);
+  if (mode === 'switchInsurance') {
+    clearInsuranceCardState();
+    await setDialogFormsForSwitchInsurance();
+    return;
+  }
   await setDialogFormsDisabled(dialogReadOnly.value);
 }
 
@@ -1152,6 +1194,8 @@ async function resetDialogForNoRecord() {
 
 /** 清空登记弹窗 reactive model（不含 vben 控件）。 */
 function resetRegisterFormModel() {
+  dialogMode.value = 'register';
+  switchToInsuranceEnabled.value = false;
   dialogReadOnly.value = false;
   dialogContext.encounterId = undefined;
   dialogContext.patientId = undefined;
@@ -1278,7 +1322,7 @@ async function loadWesternAdmissionDiagnosisOptions() {
       pageNo: 1,
       pageSize: 500,
     });
-    westernAdmissionDiagnosisOptions.value = (res.records ?? [])
+    westernAdmissionDiagnosisOptions.value = (res.content ?? [])
       .filter((row) => row.conditionDefinitionId && row.conditionName)
       .map((row) => ({
         label: String(row.conditionName),
@@ -1382,6 +1426,27 @@ async function setDialogFormsDisabled(disabled: boolean) {
           fieldName !== 'attendingDoctorId',
       )
       .map((fieldName) => ({ fieldName, componentProps: disabledProps })),
+  ]);
+}
+
+/** 转医保模式：仅费用性质与主治医生可编辑，其余只读。 */
+async function setDialogFormsForSwitchInsurance() {
+  await setDialogFormsDisabled(true);
+  await inpatientInfoFormApi.updateSchema([
+    {
+      fieldName: 'contractId',
+      componentProps: { disabled: false },
+    },
+    {
+      fieldName: 'attendingDoctorId',
+      componentProps: {
+        disabled: false,
+        clearable: true,
+        filterable: true,
+        options: attendingDoctorOptions.value,
+        placeholder: registerForm.organizationId ? '请选择主治医生' : '请先选择入院科室',
+      },
+    },
   ]);
 }
 
@@ -1635,16 +1700,59 @@ async function handleOpenRegister(row: RegistrationQueueItemDto) {
   registerDialogVisible.value = true;
   await nextTick();
   await nextTick();
-  await applyContextToDialog(context);
+  await applyContextToDialog(context, 'register');
+}
+
+/** 打开转医保弹窗（读卡补录 + 2401）。 */
+async function handleOpenSwitchInsurance(row: RegistrationQueueItemDto) {
+  const encounterId = preserveApiIdForRequest(row.encounterId);
+  if (!encounterId) {
+    ElMessage.warning('缺少就诊标识，无法转医保');
+    return;
+  }
+  const context = await httpLoadInpatientRegistrationContext({
+    encounterId,
+    organizationId: preserveApiIdForRequest(row.organizationId),
+  });
+  if (!context.switchToInsuranceEnabled) {
+    ElMessage.warning('当前就诊不允许转医保');
+    return;
+  }
+  registerDialogVisible.value = true;
+  await nextTick();
+  await nextTick();
+  await applyContextToDialog(context, 'switchInsurance');
+  admissionDiagnosisReadonly.value = true;
+}
+
+/** 查看弹窗内进入转医保模式。 */
+async function enterSwitchInsuranceFromView() {
+  if (!switchToInsuranceEnabled.value) {
+    return;
+  }
+  dialogMode.value = 'switchInsurance';
+  dialogReadOnly.value = false;
+  clearInsuranceCardState();
+  admissionDiagnosisReadonly.value = true;
+  await setDialogFormsForSwitchInsurance();
 }
 
 /** 打开查看弹窗（只读）。 */
 async function handleOpenView(row: RegistrationQueueItemDto) {
-  await handleOpenRegister(row);
-  // 兜底：列表「查看」入口一律只读（与后端 Gate 对齐，防已结算等状态漏标 readOnly）
-  dialogReadOnly.value = true;
+  const encounterId = preserveApiIdForRequest(row.encounterId);
+  if (!encounterId) {
+    ElMessage.warning('缺少就诊标识，无法查看');
+    return;
+  }
+  const context = await httpLoadInpatientRegistrationContext({
+    encounterId,
+    organizationId: preserveApiIdForRequest(row.organizationId),
+  });
+  registerDialogVisible.value = true;
+  await nextTick();
+  await nextTick();
+  await applyContextToDialog(context, 'view');
   admissionDiagnosisReadonly.value = true;
-  await setDialogFormsDisabled(true);
 }
 
 /** 无档登记：打开空白弹窗。 */
@@ -1723,7 +1831,7 @@ async function validateRegisterDialogForms(): Promise<boolean> {
 
 /** 提交住院登记。 */
 async function handleSubmitRegister() {
-  if (dialogReadOnly.value) return;
+  if (dialogReadOnly.value || dialogMode.value === 'switchInsurance') return;
   syncPatientNameFromSearchDraft();
   await alignBirthDateAndAgeBeforeSubmit();
   const formValid = await validateRegisterDialogForms();
@@ -1816,6 +1924,104 @@ async function handleSubmitRegister() {
     await handleQuery();
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : '登记提交失败，请稍后重试';
+    if (message) {
+      ElMessage.error(message);
+    }
+  } finally {
+    dialogSubmitting.value = false;
+  }
+}
+
+/** 校验转医保弹窗：费用性质、主治医生须已选。 */
+async function validateSwitchInsuranceForms(): Promise<boolean> {
+  const contractResult = await inpatientInfoFormApi.validateField('contractId');
+  if (!contractResult.valid) {
+    return false;
+  }
+  const doctorResult = await inpatientInfoFormApi.validateField('attendingDoctorId');
+  if (!doctorResult.valid) {
+    return false;
+  }
+  if (!isInsuranceContractSelected.value) {
+    ElMessage.warning('请选择省/市医保费用性质');
+    return false;
+  }
+  return true;
+}
+
+/** 提交自费转医保（IF-IP-REG-07）。 */
+async function handleSwitchToInsurance() {
+  if (dialogMode.value !== 'switchInsurance') {
+    return;
+  }
+  await syncModelFromDialogForms();
+  const formValid = await validateSwitchInsuranceForms();
+  if (!formValid) {
+    return;
+  }
+  const operatorId = resolveOperatorId();
+  if (!operatorId) {
+    ElMessage.warning('无法获取当前操作人，请重新登录');
+    return;
+  }
+  const encounterId = preserveApiIdForRequest(dialogContext.encounterId);
+  const contractId = preserveApiIdForRequest(registerForm.contractId);
+  const attendingDoctorId = preserveApiIdForRequest(registerForm.attendingDoctorId);
+  if (!encounterId || !contractId || !attendingDoctorId) {
+    ElMessage.warning('请完善费用性质与主治医生');
+    return;
+  }
+  let insuranceFields: Record<string, string | undefined> = {};
+  try {
+    insuranceFields = await resolveInsuranceFieldsForSubmit(contractId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '医保读卡失败';
+    ElMessage.error(message.replace('医保登记', '转医保'));
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      '确认将该住院自费就诊转为医保？未结费用将挂至医保账户，预交金仍保留在个人现金户。',
+      '转医保',
+      {
+        cancelButtonText: '取消',
+        confirmButtonText: '确认转医保',
+        type: 'warning',
+      },
+    );
+  } catch {
+    return;
+  }
+  dialogSubmitting.value = true;
+  try {
+    const result = await httpSwitchInpatientToInsurance({
+      encounterId,
+      contractId,
+      attendingDoctorId,
+      operatorId,
+      psnNo: insuranceFields.psnNo ?? '',
+      insuplcAdmdvs: insuranceFields.insuplcAdmdvs,
+      insutype: insuranceFields.insutype,
+      medType: insuranceFields.medType,
+      ybCardInfo: insuranceFields.ybCardInfo,
+      ybMediumType: insuranceFields.ybMediumType,
+    });
+    if (!result.success) {
+      ElMessage.error('转医保失败，请稍后重试');
+      return;
+    }
+    let successMsg = '转医保成功';
+    if (result.ybMdtrtId) {
+      successMsg += `（医保就诊ID：${result.ybMdtrtId}）`;
+    }
+    if (result.switchedChargeItemCount != null && result.switchedChargeItemCount > 0) {
+      successMsg += `，已切换 ${result.switchedChargeItemCount} 条未结费用`;
+    }
+    ElMessage.success(successMsg);
+    registerDialogVisible.value = false;
+    await handleQuery();
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : '转医保失败，请稍后重试';
     if (message) {
       ElMessage.error(message);
     }
@@ -1981,6 +2187,14 @@ onBeforeUnmount(() => {
               查看
             </ElButton>
             <ElButton
+              v-if="row.switchToInsuranceEnabled"
+              link
+              type="primary"
+              @click="handleOpenSwitchInsurance(row)"
+            >
+              转医保
+            </ElButton>
+            <ElButton
               v-if="canShowYbInsuranceRevoke(row)"
               link
               type="danger"
@@ -2117,7 +2331,19 @@ onBeforeUnmount(() => {
           </ElTabs>
         </section>
 
-        <footer v-if="!dialogReadOnly" class="register-footer">
+        <footer v-if="dialogMode === 'switchInsurance'" class="register-footer">
+          <div class="flex w-full justify-end gap-2">
+            <ElButton @click="requestCloseRegisterDialog">取消</ElButton>
+            <ElButton
+              type="primary"
+              :loading="dialogSubmitting || benefitPanelLoading"
+              @click="handleSwitchToInsurance"
+            >
+              确认转医保
+            </ElButton>
+          </div>
+        </footer>
+        <footer v-else-if="!dialogReadOnly" class="register-footer">
           <div class="register-footer__left">
             <div class="register-footer__payment">
               <span class="register-footer__label">预交金</span>
@@ -2147,6 +2373,13 @@ onBeforeUnmount(() => {
           </div>
         </footer>
         <footer v-else class="register-footer register-footer--readonly">
+          <ElButton
+            v-if="switchToInsuranceEnabled"
+            type="primary"
+            @click="enterSwitchInsuranceFromView"
+          >
+            转医保
+          </ElButton>
           <ElButton @click="requestCloseRegisterDialog">关闭</ElButton>
         </footer>
       </div>

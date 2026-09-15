@@ -111,6 +111,12 @@ const selectedTableColumns: TableColumn[] = [
     showOverflowTooltip: true,
   },
   {
+    prop: 'purchaseSplitRatioText',
+    label: '采购最小单位换算比',
+    width: 140,
+    showOverflowTooltip: true,
+  },
+  {
     label: '操作',
     width: 72,
     align: 'center',

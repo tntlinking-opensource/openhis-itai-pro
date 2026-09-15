@@ -52,11 +52,14 @@ import com.openhis.health.domain.workflow.servicerequest.command.RejectServiceRe
 import com.openhis.health.domain.workflow.servicerequest.command.RemoveExecutedServiceRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.RemoveFromNursePricingCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.RemoveServiceRequestDraftCommand;
+import com.openhis.health.domain.workflow.servicerequest.command.ResumeStoppedServiceRequestForOutpatientRefundRevokeCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.SignServiceRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.CancelStopServiceRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.CancelVerifyStopServiceRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.ChangeServiceRequestBusinessTimeCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.StopServiceRequestCommand;
+import com.openhis.health.domain.workflow.servicerequest.command.SoftDeleteStoppedServiceRequestAfterDecoctionRefundCommand;
+import com.openhis.health.domain.workflow.servicerequest.command.VoidOpenRefundServiceOrderCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.UpsertNursingOrderCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.VerifyServiceRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.VerifyStopServiceRequestCommand;
@@ -696,6 +699,138 @@ public class ServiceRequestDomainService {
         request.changeBusinessTime(command.getTimeKind(), command.getNewTime());
         // 持久化：列更新后供读侧刷新。
         serviceRequestRepository.save(request);
+    }
+
+    /**
+     * 门诊退费申请撤销：软删未完结负向退诊疗申请（须含 {@code refund_service_id}），主档与明细同事务软删。
+     *
+     * @param command 负向申请主键集合与操作人
+     */
+    public void voidOpenRefundServiceOrder(VoidOpenRefundServiceOrderCommand command) {
+        // 前置校验：命令与主键集合不可空时方进入写路径。
+        if (command == null || command.getRefundRequestIds() == null || command.getRefundRequestIds().isEmpty()) {
+            return;
+        }
+        List<ServiceRequest> toSaveRequests = new ArrayList<>();
+        List<ServiceRequestDetail> toSaveDetails = new ArrayList<>();
+        // 加载/组装：按主键装载负向退诊疗申请并断言退诊疗链字段。
+        for (Long refundRequestId : command.getRefundRequestIds()) {
+            ServiceRequest request = this.requireServiceRequest(refundRequestId);
+            // Gate：必须是负向退诊疗单。
+            request.ensureOpenRefundServiceOrderForVoid();
+            // 业务：已软删主档跳过，避免重复写审计。
+            if (Boolean.TRUE.equals(request.getIsDeleted())) {
+                continue;
+            }
+            // Cmd：软删负向主档。
+            request.markDeleted(command.getOperatorId());
+            toSaveRequests.add(request);
+            List<ServiceRequestDetail> details = serviceRequestDetailRepository.findByServiceReqId(request.getId());
+            for (ServiceRequestDetail detail : details) {
+                // 业务：明细随主档软删，防止孤儿明细参与读侧。
+                if (Boolean.TRUE.equals(detail.getIsDeleted())) {
+                    continue;
+                }
+                detail.setIsDeleted(Boolean.TRUE);
+                toSaveDetails.add(detail);
+            }
+        }
+        // 持久化：先主档后明细；无独立撤销事件（读侧依赖软删过滤）。
+        if (!toSaveRequests.isEmpty()) {
+            serviceRequestRepository.saveAll(toSaveRequests);
+        }
+        if (!toSaveDetails.isEmpty()) {
+            serviceRequestDetailRepository.saveAll(toSaveDetails);
+        }
+    }
+
+    /**
+     * 门诊代煎费退款完成后：软删因申请退费而停嘱的代煎 companion 服务申请。
+     *
+     * <p>与 {@link #removeServiceRequestDraft} 分工：停嘱态不可回草稿再删；本方法仅允许 {@code STOPPED}
+     * 主档软删，避免医生站「有效代煎 companion」残留挡住再补充。</p>
+     *
+     * @param command 停嘱 companion 主键集合与操作人
+     */
+    public void softDeleteStoppedServiceRequestAfterDecoctionRefunded(
+        SoftDeleteStoppedServiceRequestAfterDecoctionRefundCommand command
+    ) {
+        // 前置校验：无主键时幂等返回，退费批可能不含代煎
+        if (command == null || command.getServiceRequestIds() == null || command.getServiceRequestIds().isEmpty()) {
+            return;
+        }
+        if (command.getOperatorId() == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                "代煎退款后软删停嘱 companion 时操作人不能为空");
+        }
+        List<ServiceRequest> toSaveRequests = new ArrayList<>();
+        List<ServiceRequestDetail> toSaveDetails = new ArrayList<>();
+        // 加载/组装：按主键装载并断言 STOPPED
+        for (Long serviceRequestId : command.getServiceRequestIds()) {
+            if (serviceRequestId == null) {
+                continue;
+            }
+            ServiceRequest request = this.requireServiceRequest(serviceRequestId);
+            // Gate：必须是停嘱态代煎 companion（申请退费未完成路径）
+            request.ensureStoppedForOutpatientDecoctionRefundSoftDelete();
+            // 业务：已软删主档跳过，避免重复写审计
+            if (Boolean.TRUE.equals(request.getIsDeleted())) {
+                continue;
+            }
+            // Cmd：软删主档
+            request.markDeleted(command.getOperatorId());
+            toSaveRequests.add(request);
+            List<ServiceRequestDetail> details = serviceRequestDetailRepository.findByServiceReqId(request.getId());
+            for (ServiceRequestDetail detail : details) {
+                // 业务：明细随主档软删，防止孤儿明细参与读侧
+                if (Boolean.TRUE.equals(detail.getIsDeleted())) {
+                    continue;
+                }
+                detail.setIsDeleted(Boolean.TRUE);
+                toSaveDetails.add(detail);
+            }
+        }
+        // 持久化：先主档后明细；读侧依赖软删过滤，无独立事件
+        if (!toSaveRequests.isEmpty()) {
+            serviceRequestRepository.saveAll(toSaveRequests);
+        }
+        if (!toSaveDetails.isEmpty()) {
+            serviceRequestDetailRepository.saveAll(toSaveDetails);
+        }
+    }
+
+    /**
+     * 门诊退费申请撤销：恢复因申请而停嘱的诊疗服务申请（门诊临时单可用，不走长期取消停嘱门禁）。
+     *
+     * @param command 拟恢复的诊疗申请主键集合与操作人
+     * @throws BusinessException 任一行非已停嘱时
+     */
+    public void resumeStoppedServiceRequestForOutpatientRefundRevoke(
+        ResumeStoppedServiceRequestForOutpatientRefundRevokeCommand command
+    ) {
+        // 前置校验：命令与主键集合不可空。
+        if (command == null || command.getServiceRequestIds() == null || command.getServiceRequestIds().isEmpty()) {
+            return;
+        }
+        List<ServiceRequest> toSave = new ArrayList<>();
+        // 加载/组装：按主键装载并断言 STOPPED 后恢复 ACTIVE/VERIFIED。
+        for (Long serviceRequestId : command.getServiceRequestIds()) {
+            ServiceRequest request = this.requireServiceRequest(serviceRequestId);
+            // Gate：仅已停嘱可恢复；不校验长期/停嘱校对（与住院取消停嘱门禁解耦）。
+            request.ensureStoppedForOutpatientRefundRevoke();
+            // Cmd：清空停嘱轴并按开嘱校对痕迹恢复状态。
+            request.fromStopped();
+            toSave.add(request);
+        }
+        // 持久化：先落库再发取消停嘱事件，供医技队列投影对齐。
+        if (toSave.isEmpty()) {
+            return;
+        }
+        serviceRequestRepository.saveAll(toSave);
+        for (ServiceRequest request : toSave) {
+            domainEventPublisher.publish(new ServiceRequestStopCancelledEvent(request.getId(), request.getStatusEnum()));
+        }
     }
 
     /**
@@ -1439,6 +1574,9 @@ public class ServiceRequestDomainService {
     /**
      * 由源服务申请组装半退保留链用的新头表行：字段复刻、草稿初始化、追溯锚点与新业务号。
      *
+     * <p>{@code prescription_no} 置空。代煎等 {@code based_on→药嘱} 的 companion 继续绑药嘱；
+     * 其余诊疗 {@code based_on} 指向源 SR 形成半退追溯链。</p>
+     *
      * @param source     源头表
      * @param operatorId 操作人，写入 requester
      * @return 未持久化的新实体
@@ -1482,8 +1620,16 @@ public class ServiceRequestDomainService {
         out.setRequisitionId(null);
         out.setParentId(null);
         out.setPrintCount(null);
-        out.setBasedOnTable(TableNameConstants.WKF_SERVICE_REQUEST);
-        out.setBasedOnId(source.getId());
+        // 代煎 companion：半退保留克隆继续绑原药嘱 based_on；其余诊疗走 SR→源 SR 追溯链
+        if (TableNameConstants.MED_MEDICATION_REQUEST.equals(
+                StringUtils.trimToEmpty(source.getBasedOnTable()))
+            && source.getBasedOnId() != null) {
+            out.setBasedOnTable(TableNameConstants.MED_MEDICATION_REQUEST);
+            out.setBasedOnId(source.getBasedOnId());
+        } else {
+            out.setBasedOnTable(TableNameConstants.WKF_SERVICE_REQUEST);
+            out.setBasedOnId(source.getId());
+        }
         out.setRequesterId(operatorId);
         // 复制新草稿：开立取当前；签发列待正式签发再写；停嘱列清空。
         out.setReqOpenedTime(LocalDateTime.now());
@@ -1689,6 +1835,9 @@ public class ServiceRequestDomainService {
     /**
      * 由源已完成诊疗申请组装负向退诊疗头表行。
      *
+     * <p>代煎 companion：继续拷 {@code based_on}（绑原药嘱），{@code prescription_no} 源为空则仍空（不写方号）；
+     * 申请单等源上有号时仍走 {@code T} 前缀。</p>
+     *
      * @param source         源头表
      * @param refundQuantity 拟退数量（正数，落库取反）
      * @param reason         退诊疗原因
@@ -1729,6 +1878,9 @@ public class ServiceRequestDomainService {
         refund.setRemark(source.getRemark());
         refund.setEntrustContent(source.getEntrustContent());
         refund.setRequesterId(source.getRequesterId());
+        // 代煎等 companion：负向单继承 based_on，继续绑药嘱；不另写处方号
+        refund.setBasedOnTable(source.getBasedOnTable());
+        refund.setBasedOnId(source.getBasedOnId());
         // 退费负单直建：开立与签发同落当前时刻（无草稿阶段）。
         LocalDateTime refundAuthored = LocalDateTime.now();
         refund.setReqOpenedTime(refundAuthored);
@@ -1741,6 +1893,7 @@ public class ServiceRequestDomainService {
         refund.setRefundServiceId(source.getId());
         refund.setReasonText(reason);
         refund.setIsDeleted(Boolean.FALSE);
+        // 申请单等：有源号才加 T 前缀；代煎源号为空则保持空
         refund.markAsRefundFromPrescription(source.getPrescriptionNo());
         refund.initAsRefundNegativeOrder();
         return refund;

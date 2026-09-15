@@ -54,7 +54,7 @@ const onPrint = (actionCode: NursePrintActionCode) => {
       <div class="bg-background px-2 py-1.5">
         <SectionTitle title="耗材明细" />
         <p class="mt-0.5 text-[11px] leading-snug text-gray-500">
-          勾选「待发放」随批执行；已配药/已发放可点「取消执行」回退。
+          勾选「待发放」随批执行；已配药/已发放可点「取消执行」回退；待退费/已退费仅展示不可勾选。
         </p>
         <div class="mt-1.5 flex min-w-0 items-center gap-2">
           <span class="supply-room-label shrink-0 text-sm text-gray-600">

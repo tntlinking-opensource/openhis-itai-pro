@@ -118,9 +118,25 @@ export function isNurseExecuteRowCompleted(statusCode: NurseExecuteDisplayStatus
 }
 
 /** 耗材发放展示态 code */
-export type SupplyDispenseStatusCode = 'COMPLETED' | 'PART_COMPLETED' | 'PENDING' | 'PREPARED';
+export type SupplyDispenseStatusCode =
+  | 'COMPLETED'
+  | 'PART_COMPLETED'
+  | 'PENDING'
+  | 'PREPARED'
+  | 'REFUNDING'
+  | 'REFUNDED';
 
 const SUPPLY_DISPENSE_PENDING_CODES = new Set(['DRAFT', 'IN_PROGRESS', 'PREPARATION', 'PENDING']);
+
+/** 退费作废/终止等终态：有效计费下禁止回落成「待发放」（对齐 BR-NUR-018） */
+const SUPPLY_DISPENSE_EXCLUDED_CODES = new Set([
+  'DECLINED',
+  'STOPPED',
+  'CANCELLED',
+  'REFUNDED',
+  'PENDING_REFUND',
+  'PART_REFUND',
+]);
 
 const SUPPLY_DISPENSE_DONE_HINTS = [
   'COMPLETED',
@@ -139,10 +155,25 @@ function isDispenseDoneCode(code: string): boolean {
   return SUPPLY_DISPENSE_DONE_HINTS.some((hint) => u.includes(hint));
 }
 
-/** 自发放状态枚举解析展示态 code */
+/**
+ * 自处置单行解析耗材侧栏展示态：收费退费态优先于发放态（对齐药品「待退费/已退费」）。
+ */
 export function resolveSupplyDispenseStatusCode(
-  row: Pick<NurseStationTreatmentLineDto, 'dispenseStatusEnum'>,
+  row: Pick<
+    NurseStationTreatmentLineDto,
+    'chargeStatusEnum' | 'dispenseStatusEnum' | 'displayStatusEnum'
+  >,
 ): SupplyDispenseStatusCode {
+  const charge = String(row.chargeStatusEnum ?? row.displayStatusEnum ?? '')
+    .trim()
+    .toUpperCase();
+  // 退费中/已退费：侧栏可见但不可勾选执行
+  if (charge === 'REFUNDING') {
+    return 'REFUNDING';
+  }
+  if (charge === 'REFUNDED') {
+    return 'REFUNDED';
+  }
   const code = String(row.dispenseStatusEnum ?? '')
     .trim()
     .toUpperCase();
@@ -155,6 +186,10 @@ export function resolveSupplyDispenseStatusCode(
   if (code === 'PART_COMPLETED') {
     return 'PART_COMPLETED';
   }
+  // 有效计费下的作废发放：不得显示为待发放（调用方应已过滤）
+  if (SUPPLY_DISPENSE_EXCLUDED_CODES.has(code)) {
+    return 'COMPLETED';
+  }
   if (SUPPLY_DISPENSE_PENDING_CODES.has(code)) {
     return 'PENDING';
   }
@@ -166,4 +201,9 @@ export function resolveSupplyDispenseStatusCode(
 
 export function canCancelSupplyDispense(statusCode: SupplyDispenseStatusCode): boolean {
   return statusCode === 'PREPARED' || statusCode === 'COMPLETED' || statusCode === 'PART_COMPLETED';
+}
+
+/** 侧栏是否允许勾选随批执行（仅待发放） */
+export function canSelectSupplyForBatchExecute(statusCode: SupplyDispenseStatusCode): boolean {
+  return statusCode === 'PENDING';
 }

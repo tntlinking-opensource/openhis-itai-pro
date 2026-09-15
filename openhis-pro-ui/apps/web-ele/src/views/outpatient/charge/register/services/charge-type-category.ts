@@ -90,6 +90,22 @@ export function normalizeInsuplcAdmdvs(admdvs?: string): string {
   return String(admdvs ?? '').replaceAll(/\D/g, '');
 }
 
+/** 吉林省级医保区划前缀（前两位）。 */
+export const JILIN_INSUPLC_PROVINCE_PREFIX = '22';
+
+/**
+ * 是否跨省参保（相对吉林就医地）。
+ * 口径：参保地去非数字后长度≥2 且前两位 ≠ {@link JILIN_INSUPLC_PROVINCE_PREFIX}。
+ * 无法判定（空/过短）时返回 false，不强制挂号费自费。
+ */
+export function isCrossProvinceInsuplc(insuplcAdmdvs?: string | null): boolean {
+  const digits = normalizeInsuplcAdmdvs(insuplcAdmdvs ?? '');
+  if (digits.length < 2) {
+    return false;
+  }
+  return !digits.startsWith(JILIN_INSUPLC_PROVINCE_PREFIX);
+}
+
 /** 吉林院点常用参保地医保区划 → 展示地名（未知码保留原值） */
 const INSUPLC_ADMDVS_LABEL: Array<{ label: string; prefix: string }> = [
   { prefix: '229900', label: '吉林省省本级' },

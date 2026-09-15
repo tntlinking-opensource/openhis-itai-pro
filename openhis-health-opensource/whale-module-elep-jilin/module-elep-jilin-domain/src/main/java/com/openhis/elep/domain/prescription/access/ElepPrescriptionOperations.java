@@ -33,6 +33,10 @@ import com.openhis.elep.domain.prescription.command.ElepHisproxyRevokeCommand;
 import com.openhis.elep.domain.prescription.command.ElepRevokeCommand;
 import com.openhis.elep.domain.prescription.result.ElepHisproxyRevokeResult;
 import com.openhis.elep.domain.prescription.result.ElepRevokeResult;
+import com.openhis.elep.domain.prescription.command.ElepEncounterContextQuery;
+import com.openhis.elep.domain.prescription.result.ElepEncounterContextResult;
+import com.openhis.elep.domain.prescription.command.ElepReviewCommand;
+import com.openhis.elep.domain.prescription.result.ElepReviewResult;
 import com.openhis.elep.domain.prescription.command.ElepSaveDraftCommand;
 import com.openhis.elep.domain.prescription.command.ElepSignCommand;
 import com.openhis.elep.domain.prescription.result.ElepSignResult;
@@ -78,6 +82,22 @@ public interface ElepPrescriptionOperations {
     ElepPrescriptionDraft cloneToEncounter(ElepCloneCommand command);
 
     ElepPrescriptionDraft saveDraft(ElepSaveDraftCommand command);
+
+    /**
+     * 装载当前就诊只读上下文（挂号 map(11) + 医师/科室医保码）。
+     *
+     * @param query 就诊、患者、契约
+     * @return 上下文；不允许开方时 {@code allowed=false}
+     */
+    ElepEncounterContextResult loadEncounterContext(ElepEncounterContextQuery query);
+
+    /**
+     * 院内医保药师审方（写入 phar_*，状态仍为草稿）。
+     *
+     * @param command 处方主键
+     * @return 审方结果
+     */
+    ElepReviewResult review(ElepReviewCommand command);
 
     ElepPlatformQueryResult queryPlatform(ElepPlatformQueryCommand command);
 

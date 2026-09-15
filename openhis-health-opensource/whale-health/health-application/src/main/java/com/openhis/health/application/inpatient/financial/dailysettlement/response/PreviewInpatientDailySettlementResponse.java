@@ -5,6 +5,7 @@
 package com.openhis.health.application.inpatient.financial.dailysettlement.response;
 
 import com.openhis.health.application.inpatient.financial.dailysettlement.dto.InpatientDailySettlementChannelRowDto;
+import com.openhis.health.application.inpatient.financial.dailysettlement.dto.InpatientDailySettlementPatientSummaryDto;
 import com.openhis.health.application.inpatient.financial.dailysettlement.dto.InpatientDailySettlementPaymentItemDto;
 import com.openhis.health.application.inpatient.financial.dailysettlement.dto.InpatientDailySettlementSummaryDto;
 import com.fasterxml.jackson.annotation.JsonFormat;
@@ -40,6 +41,13 @@ public class PreviewInpatientDailySettlementResponse {
     /** 收入汇总。 */
     @Schema(description = "收入汇总")
     private InpatientDailySettlementSummaryDto summary;
+
+    /**
+     * 患者分项块列表（只读统计；与 {@link #summary} 同源口径按就诊/患者拆分；
+     * 各块加总勾回合计；<strong>不</strong>影响交账提交，**BR-IP-DCL-030**）。
+     */
+    @Schema(description = "患者分项块列表（只读；不影响交账）")
+    private List<InpatientDailySettlementPatientSummaryDto> patientSummaries;
 
     /** 本次待交账合计上半区（仅未交账；BR-IP-DCL-017）。 */
     @Schema(description = "本次待交账合计上半区")

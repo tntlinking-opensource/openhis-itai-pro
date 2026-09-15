@@ -5,6 +5,7 @@
 package com.openhis.health.application.inpatient.financial.dailysettlement.mapper;
 
 import com.openhis.health.application.inpatient.financial.dailysettlement.dto.InpatientDailySettlementChannelRowDto;
+import com.openhis.health.application.inpatient.financial.dailysettlement.dto.InpatientDailySettlementPatientSummaryDto;
 import com.openhis.health.application.inpatient.financial.dailysettlement.dto.InpatientDailySettlementPaymentItemDto;
 import com.openhis.health.application.inpatient.financial.dailysettlement.dto.InpatientDailySettlementSummaryDto;
 import com.openhis.health.application.inpatient.financial.dailysettlement.request.PreviewInpatientDailySettlementRequest;
@@ -40,6 +41,7 @@ import com.openhis.health.application.shared.financial.DailySettlementExpenseNat
 import com.openhis.health.application.shared.financial.DailySettlementFinTypeAmountLoader;
 import com.openhis.health.application.shared.financial.PaymentChannelDisplayAssembler;
 import com.openhis.health.application.shared.financial.dto.DailySettlementExpenseNatureSummaryDto;
+import com.openhis.health.application.shared.financial.dto.DailySettlementSummaryRowDto;
 import com.openhis.health.domain.financial.contract.service.ContractQueryService;
 import com.openhis.health.infrastructure.integration.insurance.platformdict.InsurancePlatformDictDisplayExtension;
 import com.openhis.health.infrastructure.integration.insurance.settlement.InsuranceSettlementRecordLookupExtension;
@@ -92,17 +94,15 @@ public class InpatientDailySettlementMapperImpl implements InpatientDailySettlem
     /**
      * 装配住院日结页初始化响应。
      *
-     * @param defaultDate              默认结账日
-     * @param financialDelegateEnabled 是否允许财务代交账
-     * @param expensePropertyOptions   费用性质下拉
-     * @param cashierOptions           经办人下拉
-     * @param currentCashierId         当前经办人
+     * @param defaultDate            默认结账日
+     * @param expensePropertyOptions 费用性质下拉
+     * @param cashierOptions         经办人下拉
+     * @param currentCashierId       当前经办人
      * @return 初始化响应
      */
     @Override
     public LoadInpatientDailySettlementPageInitResponse toLoadInpatientDailySettlementPageInitResponse(
         LocalDate defaultDate,
-        boolean financialDelegateEnabled,
         List<OptionDto> expensePropertyOptions,
         List<OptionDto> cashierOptions,
         Long currentCashierId) {
@@ -113,7 +113,6 @@ public class InpatientDailySettlementMapperImpl implements InpatientDailySettlem
         response.setDefaultDateFrom(fromText);
         response.setDefaultDateTo(toText);
         response.setExpensePropertyOptions(expensePropertyOptions);
-        response.setFinancialDelegateEnabled(financialDelegateEnabled);
         response.setCashierOptions(cashierOptions);
         response.setCurrentCashierId(currentCashierId);
         return response;
@@ -195,26 +194,45 @@ public class InpatientDailySettlementMapperImpl implements InpatientDailySettlem
                 insuranceByContractBusNo,
                 paymentById,
                 encounterByEncounterId);
-        InpatientDisplayBundle mainDisplay = this.buildDisplayBundle(
-            summarySourceItems,
-            expenseProperty,
+        // Pre：合计源行只收窄一次；fin_type 快照一次装载，合计与患者分项共用
+        List<InpatientDailySettlementPaymentItemDto> mainSummaryItems =
+            this.resolveSummaryItems(summarySourceItems, expenseProperty, paymentById);
+        Map<Long, List<PaymentStaticSnapshotQueryModel>> mainStaticRowsByPaymentId =
+            this.loadStaticRowsForSummaryItems(mainSummaryItems, paymentById);
+        InpatientDisplayBundle mainDisplay = this.assembleDisplayFromSummaryItems(
+            mainSummaryItems,
             paymentById,
             recDetailsByPaymentId,
-            finTypeOptions);
+            finTypeOptions,
+            mainStaticRowsByPaymentId,
+            null);
         // 挂载现算 / 同源：main 与 handover 同口径，只算一遍
-        InpatientDisplayBundle handoverDisplay = sameSource
-            ? mainDisplay
-            : this.buildDisplayBundle(
+        InpatientDisplayBundle handoverDisplay;
+        if (sameSource) {
+            handoverDisplay = mainDisplay;
+        } else {
+            handoverDisplay = this.buildDisplayBundle(
                 unsettledItems,
                 expenseProperty,
                 paymentById,
                 recDetailsByPaymentId,
                 finTypeOptions);
+        }
+        // Asm：患者分项复用已收窄行 + 快照；enrichment 全窗一次预载（禁按患者 N 次打 Extension）
+        List<InpatientDailySettlementPatientSummaryDto> patientSummaries =
+            this.buildPatientSummariesFromResolvedItems(
+                mainSummaryItems,
+                paymentById,
+                recDetailsByPaymentId,
+                finTypeOptions,
+                mainStaticRowsByPaymentId,
+                encounterByEncounterId);
         PreviewInpatientDailySettlementResponse response = new PreviewInpatientDailySettlementResponse();
         response.setPaymentCount(paymentCount);
         response.setItems(unsettledItems);
         response.setRows(mainDisplay.rows());
         response.setSummary(mainDisplay.summary());
+        response.setPatientSummaries(patientSummaries);
         response.setHandoverRows(handoverDisplay.rows());
         response.setHandoverSummary(handoverDisplay.summary());
         return response;
@@ -236,19 +254,82 @@ public class InpatientDailySettlementMapperImpl implements InpatientDailySettlem
         Map<Long, PaymentReconciliationQueryModel> paymentById,
         Map<Long, List<PaymentRecDetailQueryModel>> recDetailsByPaymentId,
         List<OptionDto> finTypeOptions) {
+        List<InpatientDailySettlementPaymentItemDto> summaryItems =
+            this.resolveSummaryItems(sourceItems, expenseProperty, paymentById);
+        Map<Long, List<PaymentStaticSnapshotQueryModel>> staticRowsByPaymentId =
+            this.loadStaticRowsForSummaryItems(summaryItems, paymentById);
+        return this.assembleDisplayFromSummaryItems(
+            summaryItems,
+            paymentById,
+            recDetailsByPaymentId,
+            finTypeOptions,
+            staticRowsByPaymentId,
+            null);
+    }
+
+    /**
+     * 将源 payment 行收窄为日结合计口径集合（费用性质筛 + payment 作用域 + 剔除工伤）。
+     *
+     * @param sourceItems     汇总源
+     * @param expenseProperty 费用性质展示过滤
+     * @param paymentById     payment 读模型索引
+     * @return 可进入合计/患者分项的 payment 行
+     */
+    private List<InpatientDailySettlementPaymentItemDto> resolveSummaryItems(
+        List<InpatientDailySettlementPaymentItemDto> sourceItems,
+        String expenseProperty,
+        Map<Long, PaymentReconciliationQueryModel> paymentById) {
         List<InpatientDailySettlementPaymentItemDto> displayItems =
             this.filterItemsByExpenseProperty(sourceItems, expenseProperty);
         List<InpatientDailySettlementPaymentItemDto> displayItemsWithPayment =
             this.filterDisplayItemsInPaymentScope(displayItems, paymentById.keySet());
         // 工伤合同不进上半区 fin_type / 总收入 / 渠道 / 费用性质（与打印日结单口径对齐）
-        List<InpatientDailySettlementPaymentItemDto> summaryItems =
-            this.excludeWorkInjuryPaymentItems(displayItemsWithPayment);
+        return this.excludeWorkInjuryPaymentItems(displayItemsWithPayment);
+    }
+
+    /**
+     * 为合计口径行批量装载 fin_type 静态快照（一次 IO）。
+     *
+     * @param summaryItems 已收窄合计行
+     * @param paymentById  payment 读模型
+     * @return paymentId → 快照行
+     */
+    private Map<Long, List<PaymentStaticSnapshotQueryModel>> loadStaticRowsForSummaryItems(
+        List<InpatientDailySettlementPaymentItemDto> summaryItems,
+        Map<Long, PaymentReconciliationQueryModel> paymentById) {
+        List<PaymentReconciliationQueryModel> finTypePaymentModels =
+            this.resolveFinTypeAggregationPaymentModels(summaryItems, paymentById);
+        List<PaymentReconciliationQueryModel> settlementPaymentModels =
+            this.filterPaymentModelsExcludingDeposit(finTypePaymentModels);
+        return this.paymentReconciliationQueryService.mapPaymentRecStaticsByReconciliationIds(
+            this.collectPaymentIdsFromModels(settlementPaymentModels));
+    }
+
+    /**
+     * 由已收窄的 summaryItems 装配上半区/下半区。
+     *
+     * @param summaryItems              已剔除工伤等的合计口径行
+     * @param paymentById               payment 读模型索引
+     * @param recDetailsByPaymentId     自付子明细
+     * @param finTypeOptions            fin_type 字典
+     * @param staticRowsByPaymentIdAll  预加载快照（可含全窗；本批按 payment 裁剪）
+     * @param enrichment                费用性质/险种等预载；null 时 buildSummary 自行装载
+     * @return rows + summary
+     */
+    private InpatientDisplayBundle assembleDisplayFromSummaryItems(
+        List<InpatientDailySettlementPaymentItemDto> summaryItems,
+        Map<Long, PaymentReconciliationQueryModel> paymentById,
+        Map<Long, List<PaymentRecDetailQueryModel>> recDetailsByPaymentId,
+        List<OptionDto> finTypeOptions,
+        Map<Long, List<PaymentStaticSnapshotQueryModel>> staticRowsByPaymentIdAll,
+        InpatientSummaryEnrichmentCache enrichment) {
         List<PaymentReconciliationQueryModel> finTypePaymentModels =
             this.resolveFinTypeAggregationPaymentModels(summaryItems, paymentById);
         List<PaymentReconciliationQueryModel> settlementPaymentModels =
             this.filterPaymentModelsExcludingDeposit(finTypePaymentModels);
         Map<Long, List<PaymentStaticSnapshotQueryModel>> staticRowsByPaymentId =
-            this.paymentReconciliationQueryService.mapPaymentRecStaticsByReconciliationIds(
+            this.sliceStaticRowsByPaymentIds(
+                staticRowsByPaymentIdAll,
                 this.collectPaymentIdsFromModels(settlementPaymentModels));
         Map<String, BigDecimal> finTypeAmounts =
             this.dailySettlementFinTypeAmountLoader.aggregateFinTypeAmounts(
@@ -264,8 +345,328 @@ public class InpatientDailySettlementMapperImpl implements InpatientDailySettlem
             paymentById,
             channelAmounts,
             recDetailsByPaymentId,
-            finTypeAmounts);
+            finTypeAmounts,
+            enrichment);
         return new InpatientDisplayBundle(rows, summary);
+    }
+
+    /**
+     * 对已收窄合计行按患者拆块；enrichment / 快照全窗一次复用（**BR-IP-DCL-030**）。
+     *
+     * @param summaryItems              已与合计同源过滤的行
+     * @param paymentById               payment 读模型
+     * @param recDetailsByPaymentId     子明细
+     * @param finTypeOptions            fin_type 字典
+     * @param staticRowsByPaymentIdAll  与合计共用的快照
+     * @param encounterByEncounterId    就诊上下文
+     * @return 患者分项块；无流水时为空列表
+     */
+    private List<InpatientDailySettlementPatientSummaryDto> buildPatientSummariesFromResolvedItems(
+        List<InpatientDailySettlementPaymentItemDto> summaryItems,
+        Map<Long, PaymentReconciliationQueryModel> paymentById,
+        Map<Long, List<PaymentRecDetailQueryModel>> recDetailsByPaymentId,
+        List<OptionDto> finTypeOptions,
+        Map<Long, List<PaymentStaticSnapshotQueryModel>> staticRowsByPaymentIdAll,
+        Map<Long, InpatientEncounterContextQueryModel> encounterByEncounterId) {
+        List<InpatientDailySettlementPatientSummaryDto> result = new ArrayList<>();
+        if (summaryItems == null || summaryItems.isEmpty()) {
+            return result;
+        }
+        // Pre：账户/合同/险种全窗一次预载；患者分项不装上传差额（产品不展示）
+        InpatientSummaryEnrichmentCache enrichment =
+            this.loadSummaryEnrichmentCache(summaryItems, paymentById, recDetailsByPaymentId, true);
+        Map<String, List<InpatientDailySettlementPaymentItemDto>> grouped =
+            this.groupSummaryItemsByPatient(summaryItems, paymentById);
+        int seqNo = 1;
+        for (Map.Entry<String, List<InpatientDailySettlementPaymentItemDto>> entry : grouped.entrySet()) {
+            List<InpatientDailySettlementPaymentItemDto> groupItems = entry.getValue();
+            if (groupItems == null || groupItems.isEmpty()) {
+                continue;
+            }
+            InpatientDisplayBundle bundle = this.assembleDisplayFromSummaryItems(
+                groupItems,
+                paymentById,
+                recDetailsByPaymentId,
+                finTypeOptions,
+                staticRowsByPaymentIdAll,
+                enrichment);
+            InpatientDailySettlementSummaryDto patientSummary = bundle.summary();
+            // 双保险：扁平行若仍带上传差额 key 则剔除
+            this.stripRetailUploadDiffForPatientView(patientSummary);
+            InpatientDailySettlementPatientSummaryDto block =
+                this.toPatientSummaryBlock(
+                    seqNo,
+                    groupItems,
+                    paymentById,
+                    encounterByEncounterId,
+                    patientSummary);
+            result.add(block);
+            seqNo++;
+        }
+        return result;
+    }
+
+    /**
+     * 全窗一次装载 buildSummary 所需账户/险种等映射，供多患者块复用。
+     *
+     * @param summaryItems          合计口径全量行
+     * @param paymentById           读模型
+     * @param recDetailsByPaymentId 子明细
+     * @param omitRetailUploadDiff  true=不打上传差额 Extension（患者分项）
+     * @return 非空预载缓存
+     */
+    private InpatientSummaryEnrichmentCache loadSummaryEnrichmentCache(
+        List<InpatientDailySettlementPaymentItemDto> summaryItems,
+        Map<Long, PaymentReconciliationQueryModel> paymentById,
+        Map<Long, List<PaymentRecDetailQueryModel>> recDetailsByPaymentId,
+        boolean omitRetailUploadDiff) {
+        Set<String> contractBusNos = this.collectContractBusNosFromPaymentItems(summaryItems);
+        // 仅裁剪本批 payment 的子明细再 prepare，避免误扫窗外明细拉账户
+        Map<Long, List<PaymentRecDetailQueryModel>> scopedRecDetails =
+            this.sliceRecDetailsByPaymentItems(summaryItems, recDetailsByPaymentId);
+        DailySettlementExpenseNatureDetailAccumulator.PreparedMaps natureMaps =
+            this.expenseNatureDetailAccumulator.prepare(contractBusNos, scopedRecDetails);
+        Map<Long, String> insutypeBySettlementRecordId =
+            this.loadInsutypeBySettlementRecordId(summaryItems, paymentById);
+        Map<Long, String> insutypeByPaymentId =
+            this.loadInsutypeByPaymentId(summaryItems, paymentById);
+        Map<Long, BigDecimal> retailUploadDiffBySettlementRecordId;
+        Map<Long, BigDecimal> retailUploadDiffByPaymentId;
+        if (omitRetailUploadDiff) {
+            retailUploadDiffBySettlementRecordId = Map.of();
+            retailUploadDiffByPaymentId = Map.of();
+        } else {
+            retailUploadDiffBySettlementRecordId =
+                this.loadRetailUploadDiffBySettlementRecordId(summaryItems, paymentById);
+            retailUploadDiffByPaymentId =
+                this.loadRetailUploadDiffByPaymentId(summaryItems, paymentById);
+        }
+        Map<String, String> insutypeLabelByCode = this.loadInsutypeLabels(
+            this.mergeInsutypeCodes(insutypeBySettlementRecordId.values(), insutypeByPaymentId.values()));
+        return new InpatientSummaryEnrichmentCache(
+            natureMaps,
+            insutypeBySettlementRecordId,
+            insutypeByPaymentId,
+            retailUploadDiffBySettlementRecordId,
+            retailUploadDiffByPaymentId,
+            insutypeLabelByCode);
+    }
+
+    /**
+     * 按 payment 行裁剪子明细 Map（供 prepare 只扫本批账户）。
+     *
+     * @param summaryItems          本批行
+     * @param recDetailsByPaymentId 全量子明细
+     * @return 子集；无命中为空 Map
+     */
+    private Map<Long, List<PaymentRecDetailQueryModel>> sliceRecDetailsByPaymentItems(
+        List<InpatientDailySettlementPaymentItemDto> summaryItems,
+        Map<Long, List<PaymentRecDetailQueryModel>> recDetailsByPaymentId) {
+        Map<Long, List<PaymentRecDetailQueryModel>> sliced = new HashMap<>();
+        if (summaryItems == null || recDetailsByPaymentId == null || recDetailsByPaymentId.isEmpty()) {
+            return sliced;
+        }
+        for (InpatientDailySettlementPaymentItemDto item : summaryItems) {
+            if (item == null || item.getPaymentId() == null) {
+                continue;
+            }
+            List<PaymentRecDetailQueryModel> details = recDetailsByPaymentId.get(item.getPaymentId());
+            if (details != null) {
+                sliced.put(item.getPaymentId(), details);
+            }
+        }
+        return sliced;
+    }
+
+    /**
+     * buildSummary 预载缓存（账户合同桶 + 险种 + 可选上传差额）。
+     *
+     * @param natureMaps                              费用性质 prepare 结果
+     * @param insutypeBySettlementRecordId            回执 → 险种
+     * @param insutypeByPaymentId                     payment → 险种
+     * @param retailUploadDiffBySettlementRecordId    回执 → 上传差额；患者分项可为空 Map
+     * @param retailUploadDiffByPaymentId             payment → 上传差额；患者分项可为空 Map
+     * @param insutypeLabelByCode                     险种展示名
+     */
+    private record InpatientSummaryEnrichmentCache(
+        DailySettlementExpenseNatureDetailAccumulator.PreparedMaps natureMaps,
+        Map<Long, String> insutypeBySettlementRecordId,
+        Map<Long, String> insutypeByPaymentId,
+        Map<Long, BigDecimal> retailUploadDiffBySettlementRecordId,
+        Map<Long, BigDecimal> retailUploadDiffByPaymentId,
+        Map<String, String> insutypeLabelByCode) {
+    }
+
+    /**
+     * 按首次出现顺序将合计口径行分到患者桶（就诊优先，其次患者，最后单笔 payment）。
+     *
+     * @param summaryItems 合计口径行
+     * @param paymentById  payment 读模型
+     * @return 保序分组
+     */
+    private Map<String, List<InpatientDailySettlementPaymentItemDto>> groupSummaryItemsByPatient(
+        List<InpatientDailySettlementPaymentItemDto> summaryItems,
+        Map<Long, PaymentReconciliationQueryModel> paymentById) {
+        Map<String, List<InpatientDailySettlementPaymentItemDto>> grouped = new LinkedHashMap<>();
+        for (InpatientDailySettlementPaymentItemDto item : summaryItems) {
+            if (item == null) {
+                continue;
+            }
+            String groupKey = this.resolvePatientGroupKey(item, paymentById);
+            List<InpatientDailySettlementPaymentItemDto> bucket = grouped.get(groupKey);
+            if (bucket == null) {
+                bucket = new ArrayList<>();
+                grouped.put(groupKey, bucket);
+            }
+            bucket.add(item);
+        }
+        return grouped;
+    }
+
+    /**
+     * 解析患者分项分组键：优先 encounterId，其次 patientId，最后 paymentId。
+     *
+     * @param item        候选行
+     * @param paymentById 读模型索引
+     * @return 非空分组键
+     */
+    private String resolvePatientGroupKey(
+        InpatientDailySettlementPaymentItemDto item,
+        Map<Long, PaymentReconciliationQueryModel> paymentById) {
+        PaymentReconciliationQueryModel paymentModel = null;
+        if (paymentById != null && item.getPaymentId() != null) {
+            paymentModel = paymentById.get(item.getPaymentId());
+        }
+        if (paymentModel != null && paymentModel.getEncounterId() != null) {
+            return InpatientDailySettlementConstants.PATIENT_GROUP_KEY_ENCOUNTER_PREFIX
+                + paymentModel.getEncounterId();
+        }
+        if (paymentModel != null && paymentModel.getPatientId() != null) {
+            return InpatientDailySettlementConstants.PATIENT_GROUP_KEY_PATIENT_PREFIX
+                + paymentModel.getPatientId();
+        }
+        Long paymentId = item.getPaymentId();
+        if (paymentId == null) {
+            paymentId = 0L;
+        }
+        return InpatientDailySettlementConstants.PATIENT_GROUP_KEY_PAYMENT_PREFIX + paymentId;
+    }
+
+    /**
+     * 装配单患者分项块身份字段 + 汇总。
+     *
+     * @param seqNo                  分块序号
+     * @param groupItems             该患者窗内流水
+     * @param paymentById            读模型
+     * @param encounterByEncounterId 就诊上下文
+     * @param patientSummary         已剔除上传差额的下半区汇总
+     * @return 患者分项 DTO
+     */
+    private InpatientDailySettlementPatientSummaryDto toPatientSummaryBlock(
+        int seqNo,
+        List<InpatientDailySettlementPaymentItemDto> groupItems,
+        Map<Long, PaymentReconciliationQueryModel> paymentById,
+        Map<Long, InpatientEncounterContextQueryModel> encounterByEncounterId,
+        InpatientDailySettlementSummaryDto patientSummary) {
+        InpatientDailySettlementPatientSummaryDto block = new InpatientDailySettlementPatientSummaryDto();
+        block.setSeqNo(seqNo);
+        block.setSummary(patientSummary);
+        InpatientDailySettlementPaymentItemDto first = groupItems.get(0);
+        PaymentReconciliationQueryModel paymentModel = null;
+        if (paymentById != null && first != null && first.getPaymentId() != null) {
+            paymentModel = paymentById.get(first.getPaymentId());
+        }
+        Long encounterId = null;
+        Long patientId = null;
+        if (paymentModel != null) {
+            encounterId = paymentModel.getEncounterId();
+            patientId = paymentModel.getPatientId();
+        }
+        block.setEncounterId(encounterId);
+        block.setPatientId(patientId);
+        InpatientEncounterContextQueryModel encounter = null;
+        if (encounterByEncounterId != null && encounterId != null) {
+            encounter = encounterByEncounterId.get(encounterId);
+        }
+        if (encounter != null) {
+            block.setPatientName(encounter.getPatientName());
+            block.setEncounterBusNo(encounter.getEncounterBusNo());
+            block.setWardName(encounter.getWardName());
+            block.setBedName(encounter.getBedName());
+            if (block.getPatientId() == null) {
+                block.setPatientId(encounter.getPatientId());
+            }
+        }
+        if (StringUtils.isEmpty(block.getPatientName())) {
+            block.setPatientName(InpatientDailySettlementConstants.PATIENT_NAME_FALLBACK);
+        }
+        if (StringUtils.isEmpty(block.getWardName())) {
+            // 预交金行无病区时用分类标签；否则降级横杠
+            String wardFromItem = null;
+            if (first != null) {
+                wardFromItem = first.getWardName();
+            }
+            if (StringUtils.isNotEmpty(wardFromItem)) {
+                block.setWardName(wardFromItem);
+            } else {
+                block.setWardName(InpatientDailySettlementConstants.WARD_NAME_FALLBACK);
+            }
+        }
+        return block;
+    }
+
+    /**
+     * 患者分项剔除医保上传差额（字段置空并从 summaryRows 移除）。
+     *
+     * @param summary 患者下半区汇总；null 忽略
+     */
+    private void stripRetailUploadDiffForPatientView(InpatientDailySettlementSummaryDto summary) {
+        if (summary == null) {
+            return;
+        }
+        summary.setChsRetailUploadDiffAmount(null);
+        List<DailySettlementSummaryRowDto> rows = summary.getSummaryRows();
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        List<DailySettlementSummaryRowDto> kept = new ArrayList<>();
+        for (DailySettlementSummaryRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            // 勾稽项不进患者分项
+            if (InpatientDailySettlementConstants.SUMMARY_ROW_KEY_CHS_RETAIL_UPLOAD_DIFF.equals(row.getKey())) {
+                continue;
+            }
+            kept.add(row);
+        }
+        summary.setSummaryRows(kept);
+    }
+
+    /**
+     * 从全窗快照 Map 裁剪指定 payment 子集。
+     *
+     * @param allStaticRows 全窗快照
+     * @param paymentIds    本批 payment 主键
+     * @return 子集 Map；无命中为空 Map
+     */
+    private Map<Long, List<PaymentStaticSnapshotQueryModel>> sliceStaticRowsByPaymentIds(
+        Map<Long, List<PaymentStaticSnapshotQueryModel>> allStaticRows,
+        List<Long> paymentIds) {
+        Map<Long, List<PaymentStaticSnapshotQueryModel>> sliced = new HashMap<>();
+        if (allStaticRows == null || allStaticRows.isEmpty() || paymentIds == null) {
+            return sliced;
+        }
+        for (Long paymentId : paymentIds) {
+            if (paymentId == null) {
+                continue;
+            }
+            List<PaymentStaticSnapshotQueryModel> rows = allStaticRows.get(paymentId);
+            if (rows != null) {
+                sliced.put(paymentId, rows);
+            }
+        }
+        return sliced;
     }
 
     /**
@@ -932,6 +1333,7 @@ public class InpatientDailySettlementMapperImpl implements InpatientDailySettlem
      * @param channelAmounts        自付渠道带符号合计（已剔除预交金）
      * @param recDetailsByPaymentId paymentId → 自付子明细
      * @param finTypeAmounts        fin_type_code → 带符号合计
+     * @param enrichment            预载账户/险种等；null 时本方法自行装载（合计主路径）
      * @return 下半区汇总 DTO
      */
     private InpatientDailySettlementSummaryDto buildSummary(
@@ -939,26 +1341,43 @@ public class InpatientDailySettlementMapperImpl implements InpatientDailySettlem
         Map<Long, PaymentReconciliationQueryModel> paymentById,
         Map<String, BigDecimal> channelAmounts,
         Map<Long, List<PaymentRecDetailQueryModel>> recDetailsByPaymentId,
-        Map<String, BigDecimal> finTypeAmounts) {
+        Map<String, BigDecimal> finTypeAmounts,
+        InpatientSummaryEnrichmentCache enrichment) {
         InpatientDailySettlementSummaryDto summary = new InpatientDailySettlementSummaryDto();
         BigDecimal totalIncome = BigDecimal.ZERO;
         BigDecimal refundTotal = BigDecimal.ZERO;
         BigDecimal depositAmount = BigDecimal.ZERO;
         BigDecimal depositRefundAmount = BigDecimal.ZERO;
         BigDecimal settleSupplementAmount = BigDecimal.ZERO;
-        Set<String> contractBusNos = this.collectContractBusNosFromPaymentItems(displayItems);
-        DailySettlementExpenseNatureDetailAccumulator.PreparedMaps natureMaps =
-            this.expenseNatureDetailAccumulator.prepare(contractBusNos, recDetailsByPaymentId);
-        Map<Long, String> insutypeBySettlementRecordId =
-            this.loadInsutypeBySettlementRecordId(displayItems, paymentById);
-        Map<Long, String> insutypeByPaymentId =
-            this.loadInsutypeByPaymentId(displayItems, paymentById);
-        Map<Long, BigDecimal> retailUploadDiffBySettlementRecordId =
-            this.loadRetailUploadDiffBySettlementRecordId(displayItems, paymentById);
-        Map<Long, BigDecimal> retailUploadDiffByPaymentId =
-            this.loadRetailUploadDiffByPaymentId(displayItems, paymentById);
-        Map<String, String> insutypeLabelByCode = this.loadInsutypeLabels(
-            this.mergeInsutypeCodes(insutypeBySettlementRecordId.values(), insutypeByPaymentId.values()));
+        DailySettlementExpenseNatureDetailAccumulator.PreparedMaps natureMaps;
+        Map<Long, String> insutypeBySettlementRecordId;
+        Map<Long, String> insutypeByPaymentId;
+        Map<Long, BigDecimal> retailUploadDiffBySettlementRecordId;
+        Map<Long, BigDecimal> retailUploadDiffByPaymentId;
+        Map<String, String> insutypeLabelByCode;
+        if (enrichment != null) {
+            // 患者分项：复用全窗一次预载，禁止按患者重复 Extension/账户 IO
+            natureMaps = enrichment.natureMaps();
+            insutypeBySettlementRecordId = enrichment.insutypeBySettlementRecordId();
+            insutypeByPaymentId = enrichment.insutypeByPaymentId();
+            retailUploadDiffBySettlementRecordId = enrichment.retailUploadDiffBySettlementRecordId();
+            retailUploadDiffByPaymentId = enrichment.retailUploadDiffByPaymentId();
+            insutypeLabelByCode = enrichment.insutypeLabelByCode();
+        } else {
+            Set<String> contractBusNos = this.collectContractBusNosFromPaymentItems(displayItems);
+            Map<Long, List<PaymentRecDetailQueryModel>> scopedRecDetails =
+                this.sliceRecDetailsByPaymentItems(displayItems, recDetailsByPaymentId);
+            natureMaps = this.expenseNatureDetailAccumulator.prepare(contractBusNos, scopedRecDetails);
+            insutypeBySettlementRecordId =
+                this.loadInsutypeBySettlementRecordId(displayItems, paymentById);
+            insutypeByPaymentId = this.loadInsutypeByPaymentId(displayItems, paymentById);
+            retailUploadDiffBySettlementRecordId =
+                this.loadRetailUploadDiffBySettlementRecordId(displayItems, paymentById);
+            retailUploadDiffByPaymentId =
+                this.loadRetailUploadDiffByPaymentId(displayItems, paymentById);
+            insutypeLabelByCode = this.loadInsutypeLabels(
+                this.mergeInsutypeCodes(insutypeBySettlementRecordId.values(), insutypeByPaymentId.values()));
+        }
         Map<String, NatureBucket> natureByContractNo = new LinkedHashMap<>();
         BigDecimal retailUploadDiffTotal = BigDecimal.ZERO;
         for (InpatientDailySettlementPaymentItemDto item : displayItems) {

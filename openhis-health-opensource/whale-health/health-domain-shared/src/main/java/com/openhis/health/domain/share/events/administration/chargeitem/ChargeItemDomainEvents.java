@@ -146,6 +146,35 @@ public final class ChargeItemDomainEvents {
     @Getter @Setter public static class ChargeItemPreSettledEvent extends DomainEvent { private Integer size; public ChargeItemPreSettledEvent() { super(); } public ChargeItemPreSettledEvent(Long id, Integer size) { super(id, AggregateTypeConstants.CHARGE_ITEM); this.size = size; } }
     @Getter @Setter public static class OutpatientBillRefundRequestedEvent extends DomainEvent { private List<Long> ids; public OutpatientBillRefundRequestedEvent() { super(); } public OutpatientBillRefundRequestedEvent(Long id, List<Long> ids) { super(id, AggregateTypeConstants.CHARGE_ITEM); this.ids = ids; } }
     @Getter @Setter public static class OutpatientBillRefundCompletedEvent extends DomainEvent { private List<Long> ids; public OutpatientBillRefundCompletedEvent() { super(); } public OutpatientBillRefundCompletedEvent(Long id, List<Long> ids) { super(id, AggregateTypeConstants.CHARGE_ITEM); this.ids = ids; } }
+
+    /**
+     * 门诊账单退款申请撤销事件（批量）：收费明细由退费中回已结算。
+     *
+     * <p>{@code aggregateId} 取批次首条收费明细主键；{@link #ids} 为整批撤销明细主键。</p>
+     */
+    @Getter
+    @Setter
+    public static class OutpatientBillRefundCancelledEvent extends DomainEvent {
+
+        /** 本批撤销的收费明细主键列表。 */
+        private List<Long> ids;
+
+        /** 无参构造器（反序列化用）。 */
+        public OutpatientBillRefundCancelledEvent() {
+            super();
+        }
+
+        /**
+         * 构造门诊账单退款申请撤销事件。
+         *
+         * @param id  批次代表收费明细主键（通常为首条）
+         * @param ids 本批全量收费明细主键
+         */
+        public OutpatientBillRefundCancelledEvent(Long id, List<Long> ids) {
+            super(id, AggregateTypeConstants.CHARGE_ITEM);
+            this.ids = ids;
+        }
+    }
     @Getter @Setter public static class InpatientChargeItemsSettledEvent extends DomainEvent { private List<Long> ids; public InpatientChargeItemsSettledEvent() { super(); } public InpatientChargeItemsSettledEvent(Long id, List<Long> ids) { super(id, AggregateTypeConstants.CHARGE_ITEM); this.ids = ids; } }
     @Getter @Setter public static class InpatientChargeItemsRevertedEvent extends DomainEvent { private List<Long> ids; public InpatientChargeItemsRevertedEvent() { super(); } public InpatientChargeItemsRevertedEvent(Long id, List<Long> ids) { super(id, AggregateTypeConstants.CHARGE_ITEM); this.ids = ids; } }
     @Getter @Setter public static class InpatientBillRefundRequestedEvent extends DomainEvent { private List<Long> ids; public InpatientBillRefundRequestedEvent() { super(); } public InpatientBillRefundRequestedEvent(Long id, List<Long> ids) { super(id, AggregateTypeConstants.CHARGE_ITEM); this.ids = ids; } }

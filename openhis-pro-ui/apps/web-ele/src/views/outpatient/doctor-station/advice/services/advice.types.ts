@@ -168,6 +168,7 @@ export interface AdviceRowItem {
   chargeStatus: string;
   type: string;
   content: string;
+  /** 签发时间展示文案（reqAuthoredTime；未签发为空） */
   startTime: string;
   extension: string;
   lineTotalAmount: string;

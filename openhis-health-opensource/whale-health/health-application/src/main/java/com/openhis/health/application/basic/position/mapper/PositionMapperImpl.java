@@ -14,7 +14,6 @@ import com.openhis.health.domain.administration.practitionerrole.entity.Practiti
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.enums.LocationForm;
-import com.openhis.health.application.basic.position.support.PositionRoleApiCompat;
 import com.openhis.whale.identity.infrastructure.repository.RoleRepository;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.identity.application.dto.RoleDto;
@@ -107,7 +106,6 @@ public class PositionMapperImpl implements PositionMapper {
         dto.setAssignmentId(role.getId());
         dto.setPractitionerId(role.getPractitionerId());
         dto.setRoleId(role.getRoleId());
-        dto.setRoleCode(PositionRoleApiCompat.toLegacyRoleCode(role.getRoleId()));
         dto.setRoleName(resolveRoleDisplayName(role.getRoleId()));
         dto.setOrgId(role.getOrgId());
         if (role.getOrgId() != null) {

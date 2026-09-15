@@ -14,9 +14,7 @@ export interface OptionDto {
   label?: string;
 }
 
-export interface LoadInboundReceiptFormInitRequest {
-  organizationId?: number;
-}
+export interface LoadInboundReceiptFormInitRequest {}
 
 export interface LoadInboundReceiptFormInitResponse {
   pharmacyLocationOptions?: OptionDto[];
@@ -49,10 +47,8 @@ export interface InboundReceiptListRowDto {
   supplierName?: string;
   statusEnum?: string;
   creatorName?: string;
-  approverId?: number;
   approverName?: string;
   totalAmount?: number;
-  approvalTime?: string;
   applyTime?: string;
 }
 
@@ -111,7 +107,6 @@ export interface GetInboundReceiptDetailResponse {
   rowVersion?: number;
   applyTime?: string;
   applicantId?: number;
-  approvalTime?: string;
   reason?: string;
   lines: InboundReceiptDetailLineDto[];
 }
@@ -211,6 +206,11 @@ export interface InboundProductDefinitionItemDto {
   traceUnitCode?: string;
   /** 1 个追溯码单位对应的拆零数量 */
   traceUnitRatio?: number;
+  /**
+   * 采购最小单位换算比展示（服务端拼装），如 1箱/3桶。
+   * 同单位且倍数为 1 时为 1个。
+   */
+  purchaseSplitRatioText?: string;
 }
 
 export interface PageProductsForInboundReceiptResponse {
@@ -291,10 +291,14 @@ export interface SubmitInboundReceiptApprovalResponseDto {
   statusEnum?: string;
 }
 
+/** 拉单带大量追溯码时请求体较大，保存易超过默认 10s */
+const INBOUND_RECEIPT_SAVE_TIMEOUT_MS = 120_000;
+
 export async function createInboundReceiptApi(body: CreateInboundReceiptRequestBody) {
   return requestClient.post<ApiResponse<CreateInboundReceiptResponseDto>>(
     `${BASE}/createInboundReceipt`,
     body,
+    { timeout: INBOUND_RECEIPT_SAVE_TIMEOUT_MS },
   );
 }
 
@@ -302,6 +306,7 @@ export async function updateInboundReceiptApi(body: UpdateInboundReceiptRequestB
   return requestClient.post<ApiResponse<UpdateInboundReceiptResponseDto>>(
     `${BASE}/updateInboundReceipt`,
     body,
+    { timeout: INBOUND_RECEIPT_SAVE_TIMEOUT_MS },
   );
 }
 
@@ -325,10 +330,6 @@ export interface WithdrawInboundReceiptApprovalResponseDto {
 
 export interface AgreeInboundReceiptRequestBody {
   busNo: string;
-  approverId?: string;
-  approvalClock?: string;
-  /** @deprecated CHS 启用即上传，请使用 contractBusNo */
-  medicareUploadEnabled?: boolean;
   /** 医保契约 busNo（上传时必填） */
   contractBusNo?: string;
 }
@@ -339,8 +340,6 @@ export interface AgreeInboundReceiptResponseDto {
 
 export interface RejectInboundReceiptRequestBody {
   busNo: string;
-  approverId?: string;
-  approvalClock?: string;
   rejectReason: string;
 }
 
@@ -410,13 +409,11 @@ export interface LinkablePurchaseOrderListRowDto {
   totalAmount?: number;
   totalPrice?: number;
   applyTime?: string;
-  approvalTime?: string;
 }
 
 export interface PageLinkablePurchaseOrdersResponse {
   total?: number;
   totalCount?: number;
-  records?: LinkablePurchaseOrderListRowDto[];
   content?: LinkablePurchaseOrderListRowDto[];
 }
 

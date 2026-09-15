@@ -1,6 +1,6 @@
 /**
- * 朝阳中药方头（信息栏）布局。
- * 不走 SFC scoped：院点生产包会丢 scoped，表现为标签竖排、控件拉满整行。
+ * 中药方头（信息栏）布局。
+ * 不走 SFC scoped：关键栅格走外挂 css，避免生产抽 CSS 时标签竖排、控件拉满整行。
  * label 颜色/字号不覆盖，沿用 Element Plus 表单默认样式。
  */
 .tcm-rx-header__row {

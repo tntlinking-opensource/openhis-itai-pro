@@ -40,6 +40,8 @@ interface Props {
   onReloadBedBoard?: (panel: 'admission' | 'discharge') => void | Promise<void>;
   /** 出院/清床成功后刷新队列与床位图 */
   onWorkbenchRefresh?: () => void | Promise<void>;
+  /** 出 Tab 跳转医嘱执行页（保持当前出院患者选中） */
+  onGoToOrderExecute?: () => void | Promise<void>;
   /** 与左侧列表共用的拖拽启动（占床卡、列表卡） */
   onPatientDragStart: (e: DragEvent, row: PatientItem) => void;
 }
@@ -59,6 +61,7 @@ const props = withDefaults(defineProps<Props>(), {
   regionNameById: () => ({}),
   onReloadBedBoard: undefined,
   onWorkbenchRefresh: undefined,
+  onGoToOrderExecute: undefined,
 });
 
 const emit = defineEmits<{
@@ -575,6 +578,7 @@ function onDropOnBed(e: DragEvent, house: BedBoardHouseGroup, bed: BedBoardBedCe
         v-if="dischargeRegionGroups.length > 0"
         :patient="selectedDischargePatient"
         :on-refresh="handleDischargeWorkbenchRefresh"
+        :on-go-to-order-execute="props.onGoToOrderExecute"
       />
     </div>
   </div>

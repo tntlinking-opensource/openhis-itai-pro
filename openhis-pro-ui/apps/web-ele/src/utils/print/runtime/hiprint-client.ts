@@ -20,6 +20,7 @@ import {
   readFirstPanel,
   resolveHiprintPageSize,
 } from './paper-size';
+import type { HiprintDuplexMode } from './print-page-selection';
 import { PRINT_ERROR_CODE } from './types';
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 3000;
@@ -42,6 +43,8 @@ export interface HiprintPrintRequest {
   jobName?: string;
   pageSize?: HiprintPageSizeOptions['pageSize'];
   landscape?: boolean;
+  /** 双面正反：simplex / shortEdge / longEdge，透传 electron-hiprint */
+  duplexMode?: HiprintDuplexMode;
 }
 
 export interface HiprintPrintSuccess {
@@ -61,6 +64,8 @@ export type HiprintPrintResponse = HiprintPrintFailure | HiprintPrintSuccess;
 
 interface HiprintPrint2Options {
   copies?: number;
+  /** 双面正反，透传客户端 */
+  duplexMode?: HiprintDuplexMode;
   landscape?: boolean;
   pageSize?: HiprintPageSizeOptions['pageSize'];
   printer?: string;
@@ -569,6 +574,7 @@ function printOnce(
         title: options.title ?? 'OpenHIS',
         pageSize: options.pageSize,
         landscape: options.landscape,
+        duplexMode: options.duplexMode,
         styleHandler: options.styleHandler,
         copies: options.copies ?? 1,
         silent: options.silent ?? true,
@@ -596,6 +602,7 @@ function printHtmlOnce(
         title: options.title ?? 'OpenHIS',
         pageSize: options.pageSize,
         landscape: options.landscape,
+        duplexMode: options.duplexMode,
         styleHandler: options.styleHandler,
         copies: 1,
         silent: options.silent ?? true,
@@ -714,6 +721,7 @@ export async function postHiprintPrint(
     title,
     pageSize: resolvedPageOpts.pageSize,
     landscape: false,
+    duplexMode: request.duplexMode,
     styleHandler: contentHeightStyleHandler,
     copies: request.repeatPrintData === true ? 1 : copies,
     silent: request.silent ?? true,

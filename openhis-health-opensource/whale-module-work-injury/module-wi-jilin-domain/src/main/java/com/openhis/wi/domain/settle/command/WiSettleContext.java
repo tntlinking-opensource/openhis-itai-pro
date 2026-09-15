@@ -55,6 +55,8 @@ public class WiSettleContext {
     private String drName;
     /** 患者联系电话 tel。 */
     private String patientTel;
+    /** 患者姓名（HIS 展示，写 yb_settlement_record.psn_name）。 */
+    private String patientName;
 
     /** 2204 收费明细行。 */
     private List<WiSettleChargeLine> chargeLines;

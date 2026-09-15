@@ -37,6 +37,12 @@ public class DoctorStationQueueDisplayEnrichment {
     private String wubiCode;
 
     /**
+     * 身份证号：来自患者主档 {@code id_card}；读模型未投影，完整号不脱敏。
+     */
+    @Schema(description = "身份证号")
+    private String idCard;
+
+    /**
      * 险种类型码：来自就诊医保账户 {@code adm_account.insutype}（与护士站队列同口径）。
      */
     @Schema(description = "险种类型码")

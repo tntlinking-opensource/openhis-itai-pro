@@ -31,10 +31,4 @@ public class ConfirmInpatientMedicineReturnRequest implements Serializable {
     /** 退药说明，写入 support_info。 */
     @Schema(description = "退药说明，写入 support_info")
     private String reason;
-
-    /** @deprecated CHS 模块启用即上传，此开关不再生效。 */
-    @Deprecated
-    /** 退药成功后是否上传医保进销存。 */
-    @Schema(description = "退药成功后是否上传医保进销存")
-    private Boolean medicareUploadEnabled;
 }

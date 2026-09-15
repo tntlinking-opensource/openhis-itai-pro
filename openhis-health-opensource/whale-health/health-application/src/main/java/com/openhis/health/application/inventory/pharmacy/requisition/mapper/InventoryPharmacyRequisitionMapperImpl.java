@@ -621,12 +621,8 @@ public class InventoryPharmacyRequisitionMapperImpl implements InventoryPharmacy
         command.setOperatorId(operatorId);
         AgreeRequestCommand.AgreeRequestItemCommand item = new AgreeRequestCommand.AgreeRequestItemCommand();
         item.setBusNo(request.getBusNo());
-        Long approverId = request.getApproverId();
-        if (approverId == null) {
-            approverId = operatorId;
-        }
-        item.setApproverId(approverId);
-        item.setApprovalClock(request.getApprovalClock());
+        item.setApproverId(operatorId);
+        // 审批时刻由领域 agreeRequest 写入当前时间，请求体不再携带 approvalClock
         command.setItem(item);
         return command;
     }

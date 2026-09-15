@@ -21,6 +21,12 @@ export interface DrugGroupDisplayItem {
   dosageDisplay?: string;
   /** 成组共用行滴速展示（术语 speed_code 展示名） */
   speedDisplay?: string;
+  /** 医嘱备注（成组共用行展示；组内取首条非空） */
+  remark?: string;
+  /** 皮试临床状态 code（仅该行需皮试且已登记） */
+  skinTestOutcomeCode?: string;
+  /** 皮试临床状态展示（如 阳性 / 阴性） */
+  skinTestOutcomeText?: string;
   splitDose?: number | string;
   splitDoseUnitCode?: string;
   splitDoseUnitName?: string;

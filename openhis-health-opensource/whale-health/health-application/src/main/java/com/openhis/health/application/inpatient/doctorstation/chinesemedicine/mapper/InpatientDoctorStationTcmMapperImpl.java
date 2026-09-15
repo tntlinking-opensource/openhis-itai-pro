@@ -22,6 +22,7 @@ import com.openhis.health.domain.share.constants.InpatientDoctorStationTcmConsta
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.IptPatientDiseaseDiagType;
+import com.openhis.health.domain.share.enums.RequestBusinessTimeKind;
 import com.openhis.health.domain.share.enums.YbMedType;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.application.shared.validator.PatientEncounterConsistencyGate;
@@ -640,6 +641,43 @@ public class InpatientDoctorStationTcmMapperImpl implements InpatientDoctorStati
         CancelStopLongTermTcmHerbalPrescriptionResponse response = new CancelStopLongTermTcmHerbalPrescriptionResponse();
         response.setSuccess(success);
         response.setMessage(message);
+        return response;
+    }
+
+    /**
+     * 装配改开立时间领域命令（IF-IP-TCM-42）。
+     *
+     * @param requestId     药品申请主键
+     * @param newOpenedTime 新开立时间
+     * @param operatorId    操作人
+     * @return 改业务时间命令（timeKind=OPENED）
+     */
+    @Override
+    public ChangeMedicationRequestBusinessTimeCommand toChangeMedicationRequestOpenedTimeCommand(
+        Long requestId, LocalDateTime newOpenedTime, Long operatorId) {
+        ChangeMedicationRequestBusinessTimeCommand cmd = new ChangeMedicationRequestBusinessTimeCommand();
+        cmd.setId(requestId);
+        cmd.setOperatorId(operatorId);
+        cmd.setTimeKind(RequestBusinessTimeKind.OPENED.getCode());
+        cmd.setNewTime(newOpenedTime);
+        return cmd;
+    }
+
+    /**
+     * 装配 IF-IP-TCM-42 按方改开立时间响应。
+     *
+     * @param success          是否成功
+     * @param message          提示信息
+     * @param changedLineCount 改写行数
+     * @return 改开立时间响应
+     */
+    @Override
+    public ChangeTcmHerbalPrescriptionOpenedTimeResponse toChangeTcmHerbalPrescriptionOpenedTimeResponse(
+        Boolean success, String message, Integer changedLineCount) {
+        ChangeTcmHerbalPrescriptionOpenedTimeResponse response = new ChangeTcmHerbalPrescriptionOpenedTimeResponse();
+        response.setSuccess(success);
+        response.setMessage(message);
+        response.setChangedLineCount(changedLineCount);
         return response;
     }
 

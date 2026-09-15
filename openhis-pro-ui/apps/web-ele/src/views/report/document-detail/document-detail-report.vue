@@ -2,7 +2,11 @@
   单据详情报表：三域共用，由 domainScope 区分药库/药房/科室。
 -->
 <script setup lang="ts">
-import type { DocumentDetailDomainScope, DocumentDetailRowDto } from '#/api/report/document-detail';
+import type {
+  DocumentDetailDomainScope,
+  DocumentDetailItemSummaryRowDto,
+  DocumentDetailRowDto,
+} from '#/api/report/document-detail';
 import type { ApiOptionItem } from '#/types/api-response';
 import type { ReportPrintColumnDef } from '#/utils/print/print-report-list';
 
@@ -18,6 +22,8 @@ import {
   ElInput,
   ElMessage,
   ElOption,
+  ElRadioButton,
+  ElRadioGroup,
   ElSelect,
   ElTableColumn,
 } from 'element-plus';
@@ -25,6 +31,8 @@ import {
 import {
   DOCUMENT_DETAIL_ITEM_TABLE_DEVICE,
   DOCUMENT_DETAIL_ITEM_TABLE_MEDICATION,
+  DOCUMENT_DETAIL_PRESENTATION_DETAIL,
+  DOCUMENT_DETAIL_PRESENTATION_SUMMARY,
   exportDocumentDetailsApi,
   loadDocumentDetailFormInitApi,
   pageDocumentDetailsApi,
@@ -72,6 +80,8 @@ interface Props {
 interface QueryState {
   pageNo: number;
   pageSize: number;
+  /** DETAIL=明细；SUMMARY=按品规汇总 */
+  presentationMode: string;
   typeEnum?: string;
   sourceLocationId?: string;
   purposeLocationId?: string;
@@ -98,8 +108,8 @@ const TABLE_COLUMN_COUNT = 19;
 /** 仅合并「单据号」列。 */
 const DOC_LEVEL_COLUMN_INDEXES = new Set([0]);
 
-/** 单据详情可打印列目录（含小计行展示字段）。 */
-const PRINT_COLUMNS: ReportPrintColumnDef[] = [
+/** 明细可打印列目录（含小计行展示字段）。 */
+const DETAIL_PRINT_COLUMNS: ReportPrintColumnDef[] = [
   { field: 'busNo', title: '单据号', align: 'center', widthWeight: 1.2 },
   { field: 'typeEnumText', title: '单据类型', align: 'center', widthWeight: 0.9 },
   { field: 'sourceLocationName', title: '源库位', align: 'center', widthWeight: 1 },
@@ -122,7 +132,18 @@ const PRINT_COLUMNS: ReportPrintColumnDef[] = [
   { field: 'approvalTime', title: '审批时间', align: 'center', widthWeight: 1 },
 ];
 
+/** 汇总可打印列（仅进价合计；无单价/售价）。 */
+const SUMMARY_PRINT_COLUMNS: ReportPrintColumnDef[] = [
+  { field: 'dimensionName', title: '维度', align: 'center', widthWeight: 1.4 },
+  { field: 'productBusNo', title: '编码', align: 'center', widthWeight: 1 },
+  { field: 'packageQuantityDisplay', title: '数量', align: 'right', widthWeight: 1 },
+  { field: 'minUnitQuantityDisplay', title: '最小数量', align: 'right', widthWeight: 1 },
+  { field: 'totalPriceDisplay', title: '进价合计', align: 'right', widthWeight: 1 },
+];
+
 const tableData = ref<DocumentDetailTableRow[]>([]);
+/** 按品规汇总行（汇总 Tab）。 */
+const summaryRows = ref<DocumentDetailItemSummaryRowDto[]>([]);
 /** 当前页 rowspan：matrix[row][col]，0 表示被上方单元格合并。 */
 const busNoSpanMatrix = ref<number[][]>([]);
 const total = ref(0);
@@ -141,9 +162,22 @@ const pageInit = ref<LoadDocumentDetailFormInitResponse | null>(null);
 const queryParams = reactive<QueryState>({
   pageNo: 1,
   pageSize: 20,
+  presentationMode: DOCUMENT_DETAIL_PRESENTATION_DETAIL,
 });
 
-const listToolbarTitle = computed(() => `${props.pageTitle} · 明细列表`);
+/** 是否汇总 Tab。 */
+const isSummaryTab = computed(
+  () => queryParams.presentationMode === DOCUMENT_DETAIL_PRESENTATION_SUMMARY,
+);
+
+const listToolbarTitle = computed(
+  () => `${props.pageTitle} · ${isSummaryTab.value ? '汇总' : '明细'}`,
+);
+
+/** 当前 Tab 打印列目录。 */
+const printColumnCatalog = computed(() =>
+  isSummaryTab.value ? SUMMARY_PRINT_COLUMNS : DETAIL_PRINT_COLUMNS,
+);
 
 /** 项目分类下拉选项（value 为 item_table 物理表名；药库/药房/科室共用）。 */
 const itemTableSelectOptions = [
@@ -151,11 +185,20 @@ const itemTableSelectOptions = [
   { label: '耗材', value: DOCUMENT_DETAIL_ITEM_TABLE_DEVICE },
 ];
 
-const footerSummaryItems = computed(() => [
-  { label: '行数', value: sumRowCount.value },
-  { label: '操作数量合计', value: sumItemQuantity.value },
-  { label: '金额合计', value: sumTotalPrice.value, primary: true, prefix: '¥' },
-]);
+const footerSummaryItems = computed(() => {
+  if (isSummaryTab.value) {
+    return [
+      { label: '品规数', value: summaryRows.value.length },
+      { label: '明细行数', value: sumRowCount.value },
+      { label: '进价合计', value: sumTotalPrice.value, primary: true, prefix: '¥' },
+    ];
+  }
+  return [
+    { label: '行数', value: sumRowCount.value },
+    { label: '操作数量合计', value: sumItemQuantity.value },
+    { label: '金额合计', value: sumTotalPrice.value, primary: true, prefix: '¥' },
+  ];
+});
 
 const dateTimeRangeShortcuts = buildReportDateTimeRangeShortcuts();
 /** 日历点选日期时默认起 00:00:00、止 23:59:59（快捷项已自带时分秒）。 */
@@ -372,35 +415,38 @@ function formatQtyAndUnit(qty: unknown, unitName: unknown) {
   return `${qtyText}${unit}`;
 }
 
-/** 包装单位数量列。 */
-function formatPackageQuantity(row: DocumentDetailTableRow) {
-  if (isSubtotalRow(row)) {
+/** 包装单位数量列（明细/汇总共用）。 */
+function formatPackageQuantity(row: DocumentDetailTableRow | DocumentDetailItemSummaryRowDto) {
+  if ('__rowKind' in row && isSubtotalRow(row as DocumentDetailTableRow)) {
     return '';
   }
   return formatQtyAndUnit(row.packageQuantity, row.packageUnitName);
 }
 
-/** 最小单位数量列。 */
-function formatMinUnitQuantity(row: DocumentDetailTableRow) {
-  if (isSubtotalRow(row)) {
+/** 最小单位数量列（明细/汇总共用）。 */
+function formatMinUnitQuantity(row: DocumentDetailTableRow | DocumentDetailItemSummaryRowDto) {
+  if ('__rowKind' in row && isSubtotalRow(row as DocumentDetailTableRow)) {
     return '';
   }
   return formatQtyAndUnit(row.minUnitQuantity, row.minUnitName);
 }
 
-/** 单价展示：2 位小数 + 元，有操作单位时追加「/单位」。 */
-function formatPriceWithUnit(row: DocumentDetailTableRow) {
-  if (isSubtotalRow(row)) {
+/** 单价展示：2 位小数 + 元（汇总无操作单位后缀）。 */
+function formatPriceWithUnit(row: DocumentDetailTableRow | DocumentDetailItemSummaryRowDto) {
+  if ('__rowKind' in row && isSubtotalRow(row as DocumentDetailTableRow)) {
     return '';
   }
   const price = fmtReportNumber(row.price, 2);
-  const unit = rowUnitText(row);
   if (!price) return '';
-  return unit ? `${price}元/${unit}` : `${price}元`;
+  if ('unitCodeDictText' in row) {
+    const unit = rowUnitText(row as DocumentDetailTableRow);
+    return unit ? `${price}元/${unit}` : `${price}元`;
+  }
+  return `${price}元`;
 }
 
 /** 金额展示：2 位小数 + 元。 */
-function formatAmountWithUnit(row: DocumentDetailTableRow) {
+function formatAmountWithUnit(row: DocumentDetailTableRow | DocumentDetailItemSummaryRowDto) {
   const amount = fmtReportNumber(row.totalPrice, 2);
   if (!amount) return '';
   return `${amount}元`;
@@ -472,6 +518,8 @@ const { run: runSum, loading: sumLoading } = useRequest(summarizeDocumentDetails
     sumTotalPrice.value = fmtReportNumber(data?.totalPriceSum, 2);
     sumItemQuantity.value = formatQtyNatural(data?.itemQuantitySum);
     sumRowCount.value = Number(data?.rowCount ?? 0);
+    // 汇总 Tab 用同一次合计回包的品规行，避免二次请求
+    summaryRows.value = data?.records ?? [];
   },
 });
 
@@ -492,21 +540,50 @@ function formatPrintProductName(value: unknown): string {
   return String(value ?? '').trim();
 }
 
-/** 按域区分的打印偏好键（department / pharmacy / warehouse）。 */
+/** 按域 + 汇总/明细隔离的打印偏好键。 */
 const printReportCode = computed(
-  () => `report-document-detail-${String(props.domainScope).toLowerCase()}`,
+  () =>
+    `report-document-detail-${String(props.domainScope).toLowerCase()}-${
+      isSummaryTab.value ? 'summary' : 'detail'
+    }`,
 );
+
+/** 汇总行稳定 key。 */
+function resolveSummaryRowKey(row: DocumentDetailItemSummaryRowDto) {
+  return row.dimensionKey || `${row.itemTable ?? ''}|${row.itemId ?? ''}|${row.productBusNo ?? ''}`;
+}
+
+/** 将当前汇总行映射为打印单元格。 */
+function mapSummaryPrintRows() {
+  return summaryRows.value.map((r) =>
+    mapReportPrintRow(
+      r as unknown as Record<string, unknown>,
+      reportPrintFieldsOf(SUMMARY_PRINT_COLUMNS),
+      {
+        packageQuantityDisplay: (_v, row) =>
+          formatPackageQuantity(row as DocumentDetailItemSummaryRowDto),
+        minUnitQuantityDisplay: (_v, row) =>
+          formatMinUnitQuantity(row as DocumentDetailItemSummaryRowDto),
+        totalPriceDisplay: (_v, row) =>
+          formatAmountWithUnit(row as DocumentDetailItemSummaryRowDto),
+      },
+    ),
+  );
+}
 
 const { printFieldDialogRef, printSubmitting, handleOpenPrintFields, handlePrintCurrentPage } =
   useReportListPrint({
     getReportCode: () => printReportCode.value,
-    getColumnCatalog: () => PRINT_COLUMNS,
-    getReportTitle: () => props.pageTitle,
-    getPrintRows: () =>
-      tableData.value.map((r) =>
+    getColumnCatalog: () => printColumnCatalog.value,
+    getReportTitle: () => `${props.pageTitle} · ${isSummaryTab.value ? '汇总' : '明细'}`,
+    getPrintRows: () => {
+      if (isSummaryTab.value) {
+        return mapSummaryPrintRows();
+      }
+      return tableData.value.map((r) =>
         mapReportPrintRow(
           r as unknown as Record<string, unknown>,
-          reportPrintFieldsOf(PRINT_COLUMNS),
+          reportPrintFieldsOf(DETAIL_PRINT_COLUMNS),
           {
             busNo: (v, row) => formatPrintDetailText(v, row),
             typeEnumText: (v, row) => formatPrintDetailText(v, row),
@@ -533,7 +610,8 @@ const { printFieldDialogRef, printSubmitting, handleOpenPrintFields, handlePrint
               formatApprovalTime(v as string | undefined, row as DocumentDetailTableRow),
           },
         ),
-      ),
+      );
+    },
   });
 
 const tableLoading = computed(
@@ -545,16 +623,23 @@ const tableLoading = computed(
     printSubmitting.value,
 );
 
-/** 同步拉分页与合计。 */
+/** 按当前 Tab 拉列表：汇总只打合计 IF（含品规行）；明细分页+合计。 */
 async function getList() {
   const filter = buildFilterRequest();
   if (!filter) {
     return;
   }
-  await Promise.all([
-    runPage({ ...filter, pageNo: queryParams.pageNo, pageSize: queryParams.pageSize }),
-    runSum(filter),
-  ]);
+  if (isSummaryTab.value) {
+    tableData.value = [];
+    total.value = 0;
+    await runSum(filter);
+  } else {
+    summaryRows.value = [];
+    await Promise.all([
+      runPage({ ...filter, pageNo: queryParams.pageNo, pageSize: queryParams.pageSize }),
+      runSum(filter),
+    ]);
+  }
   await nextTick();
   tableScrollRef.value?.updateTableHeight();
 }
@@ -565,13 +650,19 @@ function handleQuery() {
   void getList();
 }
 
+/** 切换汇总/明细 Tab 后立即查询。 */
+function handleTabChange() {
+  queryParams.pageNo = 1;
+  void getList();
+}
+
 /** 审批时间变更：清空则回填默认当月后再查。 */
 function handleApprovalDateChange() {
   ensureApprovalDatesVisible();
   handleQuery();
 }
 
-/** 重置筛选：类型空（全部）+ 当月审批时间窗。 */
+/** 重置筛选：类型空（全部）+ 当月审批时间窗；保留当前 Tab。 */
 function handleReset() {
   queryParams.typeEnum = undefined;
   queryParams.itemTable = undefined;
@@ -585,23 +676,26 @@ function handleReset() {
   void runInit({ domainScope: props.domainScope }).then(() => getList());
 }
 
-/** 导出 Excel（列清单与打印列目录一致）。 */
+/** 导出 Excel（列清单与当前 Tab 打印列一致；汇总带 presentationMode）。 */
 async function handleExportExcel() {
   const filter = buildFilterRequest();
   if (!filter) {
     return;
   }
+  const columns = isSummaryTab.value ? SUMMARY_PRINT_COLUMNS : DETAIL_PRINT_COLUMNS;
   // 展示合并列展开为可求和数量 + 单位 / 金额数值字段
-  const exportColumns = buildExcelExportColumns(PRINT_COLUMNS, {
+  const exportColumns = buildExcelExportColumns(columns, {
     fieldExpand: {
       packageQuantityDisplay: [
-        { field: 'packageQuantity', title: '包装单位数量' },
-        { field: 'packageUnitName', title: '包装单位' },
+        { field: 'packageQuantity', title: isSummaryTab.value ? '数量' : '包装单位数量' },
+        { field: 'packageUnitName', title: isSummaryTab.value ? '单位' : '包装单位' },
       ],
       minUnitQuantityDisplay: [
-        { field: 'minUnitQuantity', title: '最小单位数量' },
-        { field: 'minUnitName', title: '最小单位' },
+        { field: 'minUnitQuantity', title: isSummaryTab.value ? '最小数量' : '最小单位数量' },
+        { field: 'minUnitName', title: isSummaryTab.value ? '最小单位' : '最小单位' },
       ],
+      // 汇总维度名落入并集 DTO 的 productName 列
+      dimensionName: [{ field: 'productName', title: '维度' }],
     },
     fieldAliases: {
       priceDisplay: 'price',
@@ -610,6 +704,9 @@ async function handleExportExcel() {
   });
   const data = await runExport({
     ...filter,
+    presentationMode: isSummaryTab.value
+      ? DOCUMENT_DETAIL_PRESENTATION_SUMMARY
+      : DOCUMENT_DETAIL_PRESENTATION_DETAIL,
     exportColumns,
   });
   if (!data?.fileBytes?.trim()) {
@@ -787,8 +884,15 @@ onMounted(async () => {
       </template>
 
       <template #toolbar>
-        <ReportListToolbar :title="listToolbarTitle" :total="total">
+        <ReportListToolbar
+          :title="listToolbarTitle"
+          :total="isSummaryTab ? summaryRows.length : total"
+        >
           <template #actions>
+            <ElRadioGroup v-model="queryParams.presentationMode" @change="handleTabChange">
+              <ElRadioButton :value="DOCUMENT_DETAIL_PRESENTATION_SUMMARY">汇总</ElRadioButton>
+              <ElRadioButton :value="DOCUMENT_DETAIL_PRESENTATION_DETAIL">明细</ElRadioButton>
+            </ElRadioGroup>
             <ElButton
               plain
               :icon="Setting"
@@ -823,6 +927,65 @@ onMounted(async () => {
         <ReportTableScroll ref="tableScrollRef">
           <template #default="{ tableHeight }">
             <ReportElTable
+              v-if="isSummaryTab"
+              :loading="tableLoading"
+              :data="summaryRows"
+              :height="tableHeight"
+              :row-key="resolveSummaryRowKey"
+            >
+              <ElTableColumn
+                type="index"
+                label="序号"
+                width="56"
+                align="center"
+                header-align="center"
+              />
+              <ElTableColumn
+                prop="dimensionName"
+                label="维度"
+                min-width="160"
+                align="center"
+                header-align="center"
+                show-overflow-tooltip
+              />
+              <ElTableColumn
+                prop="productBusNo"
+                label="编码"
+                min-width="120"
+                align="center"
+                header-align="center"
+                show-overflow-tooltip
+              />
+              <ElTableColumn
+                label="数量"
+                min-width="120"
+                align="right"
+                header-align="right"
+                :class-name="REPORT_TABLE_NUM_CELL"
+              >
+                <template #default="{ row }">{{ formatPackageQuantity(row) }}</template>
+              </ElTableColumn>
+              <ElTableColumn
+                label="最小数量"
+                min-width="120"
+                align="right"
+                header-align="right"
+                :class-name="REPORT_TABLE_NUM_CELL"
+              >
+                <template #default="{ row }">{{ formatMinUnitQuantity(row) }}</template>
+              </ElTableColumn>
+              <ElTableColumn
+                label="进价合计"
+                min-width="112"
+                align="right"
+                header-align="right"
+                :class-name="`${REPORT_TABLE_NUM_CELL} ${REPORT_TABLE_AMOUNT_CELL}`"
+              >
+                <template #default="{ row }">{{ formatAmountWithUnit(row) }}</template>
+              </ElTableColumn>
+            </ReportElTable>
+            <ReportElTable
+              v-else
               :loading="tableLoading"
               :data="tableData"
               :height="tableHeight"
@@ -1002,8 +1165,9 @@ onMounted(async () => {
         <ReportPageFooter
           :summary-items="footerSummaryItems"
           :current-page="queryParams.pageNo"
-          :page-size="queryParams.pageSize"
-          :total="total"
+          :page-size="isSummaryTab ? Math.max(summaryRows.length, 1) : queryParams.pageSize"
+          :total="isSummaryTab ? summaryRows.length : total"
+          :layout="isSummaryTab ? 'total' : 'sizes, prev, pager, next, jumper'"
           @size-change="handlePageSizeChange"
           @current-change="handleCurrentPageChange"
         />
@@ -1012,7 +1176,7 @@ onMounted(async () => {
     <ReportPrintFieldDialog
       ref="printFieldDialogRef"
       :report-code="printReportCode"
-      :column-catalog="PRINT_COLUMNS"
+      :column-catalog="printColumnCatalog"
     />
   </Page>
 </template>

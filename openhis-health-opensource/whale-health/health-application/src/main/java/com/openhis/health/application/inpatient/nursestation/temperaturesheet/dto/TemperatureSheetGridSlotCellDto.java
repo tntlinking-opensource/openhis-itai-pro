@@ -22,6 +22,10 @@ public class TemperatureSheetGridSlotCellDto {
     @Schema(description = "时点槽 code")
     private String timeSlot;
 
+    /** 实际测量时分（HH:mm），供前端就近描点；无记录时为空。 */
+    @Schema(description = "实际测量时分 HH:mm")
+    private String recordTime;
+
     /** 主表 id。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "主表 id")

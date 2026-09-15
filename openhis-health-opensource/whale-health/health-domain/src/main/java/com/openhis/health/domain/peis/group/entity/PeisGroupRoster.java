@@ -23,6 +23,10 @@ public class PeisGroupRoster extends BaseAuditedEntity {
     @Column(name = "batch_id", nullable = false)
     private Long batchId;
 
+    /** 受检者所在单位树节点。 */
+    @Column(name = "company_id")
+    private Long companyId;
+
     @Column(name = "patient_id")
     private Long patientId;
 
@@ -49,6 +53,10 @@ public class PeisGroupRoster extends BaseAuditedEntity {
 
     @Column(name = "encounter_id")
     private Long encounterId;
+
+    /** 已选定套餐 AD；建单前可为空。 */
+    @Column(name = "selected_package_activity_id")
+    private Long selectedPackageActivityId;
 
     @Column(name = "pay_status_code", nullable = false, length = 32)
     private String payStatusCode = "UNPAID";

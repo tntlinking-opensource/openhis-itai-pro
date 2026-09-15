@@ -16,6 +16,7 @@ import com.openhis.health.application.inpatient.financial.registration.response.
 import com.openhis.health.application.inpatient.financial.registration.response.LoadWardBedCapacityResponse;
 import com.openhis.health.application.inpatient.financial.registration.response.PageRegistrationQueueResponse;
 import com.openhis.health.application.inpatient.financial.registration.response.SubmitRegistrationResponse;
+import com.openhis.health.application.inpatient.financial.registration.response.SwitchInpatientToInsuranceResponse;
 import com.openhis.health.domain.administration.encounter.command.CancelInpatientAdmissionCommand;
 import com.openhis.health.domain.administration.encounter.command.RegisterInpatientEncounterCommand;
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDetailQueryModel;
@@ -85,6 +86,7 @@ public interface InpatientRegistrationMapper {
      * @param admitSourceCodeOptions 入院类型下拉
      * @param admCondCodeOptions  患者病情下拉
      * @param readOnly            是否只读查看
+     * @param switchToInsuranceEnabled 是否允许自费转医保
      * @return 上下文响应
      */
     LoadRegistrationContextResponse toLoadRegistrationContextResponse(
@@ -95,7 +97,8 @@ public interface InpatientRegistrationMapper {
         List<OptionDto> inWayCodeOptions,
         List<OptionDto> admitSourceCodeOptions,
         List<OptionDto> admCondCodeOptions,
-        boolean readOnly);
+        boolean readOnly,
+        boolean switchToInsuranceEnabled);
 
     /**
      * 患者详情 → 登记患者 DTO。
@@ -250,4 +253,17 @@ public interface InpatientRegistrationMapper {
         Long wardId,
         Long totalBedCount,
         Long vacantBedCount);
+
+    /**
+     * 自费转医保成功响应。
+     *
+     * @param ybMdtrtId               医保就诊 ID
+     * @param switchedChargeItemCount 切换行数
+     * @param insuranceAccountId      医保账户 ID
+     * @return 响应
+     */
+    SwitchInpatientToInsuranceResponse toSwitchInpatientToInsuranceResponse(
+        String ybMdtrtId,
+        int switchedChargeItemCount,
+        Long insuranceAccountId);
 }

@@ -9,7 +9,6 @@ import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.support.PatientHistoryCommonDiagnosisRow;
 import com.openhis.health.application.shared.converter.TextValueConverter;
 import com.openhis.health.application.shared.diagnosis.DiagnosisJsonSnapshotParser;
-import com.openhis.health.application.shared.diagnosis.DoctorStationWesternDiagnosisSourceSettingResolver;
 import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.dto.CommonDiagnosisRowDto;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.dto.EncounterDiagnosisRowDto;
@@ -67,9 +66,6 @@ public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDocto
 
     /** 读模型 {@code diagnosisJson} 快照解析，与 bridge 展示路径共用同一解析器。 */
     private final DiagnosisJsonSnapshotParser diagnosisJsonSnapshotParser;
-
-    /** 西医诊断检索目录来源（系统设置）。 */
-    private final DoctorStationWesternDiagnosisSourceSettingResolver westernDiagnosisSourceSettingResolver;
 
     /**
      * Gate：校验请求患者与读模型快照患者一致，防止串患者上下文。
@@ -236,23 +232,31 @@ public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDocto
     /**
      * 将诊断中西医维度筛选入参解析为目录 {@code sourceEnum} 字符串集合。
      *
-     * <p>实现要点：返回 {@code null} 表示查询层「不按 source 收敛」；与空列表不同，避免生成 {@code IN ()} 非法 SQL。</p>
+     * <p>实现要点：返回 {@code null} 表示查询层「不按 source 收敛」；与空列表不同，避免生成 {@code IN ()} 非法 SQL。
+     * 西医固定 {@link DoctorStationDiagnosisConstants#INPATIENT_WESTERN_DIAGNOSIS_SEARCH_SOURCES}（国临），
+     * 中医固定 {@link DoctorStationDiagnosisConstants#CONDITION_SOURCE_CODES_TCM}（医保中医疾病/证候目录，与国临无关），
+     * 与门诊读系统设置分流。</p>
      *
      * @param diagnosisKindCode {@code 1}（西医）/{@code 2}（中医）或空白
      * @return {@code null} 表示不按来源过滤；非 null 时为下推 SQL 的 IN 列表
      */
     @Override
     public List<String> parseDiagnosisKindSourceFilter(String diagnosisKindCode) {
+        // Gate：空白表示不按中西医来源收敛（与空 IN 列表不同）
         if (StringUtils.isEmpty(diagnosisKindCode)) {
             return null;
         }
         String trimmed = diagnosisKindCode.trim();
+        // 业务分支：住院西医固定国临；门诊 Mapper 仍读系统设置（本类仅住院）
         if (DoctorStationDiagnosisConstants.DIAGNOSIS_KIND_FILTER_WESTERN.equals(trimmed)) {
-            return westernDiagnosisSourceSettingResolver.resolveWesternSearchSources();
+            return new ArrayList<>(
+                DoctorStationDiagnosisConstants.INPATIENT_WESTERN_DIAGNOSIS_SEARCH_SOURCES);
         }
+        // 业务分支：中医疾病+证候目录
         if (DoctorStationDiagnosisConstants.DIAGNOSIS_KIND_FILTER_TCM.equals(trimmed)) {
             return new ArrayList<>(DoctorStationDiagnosisConstants.CONDITION_SOURCE_CODES_TCM);
         }
+        // 非法筛选码：不下推来源，由上层 Gate 另抛业务异常
         return null;
     }
 

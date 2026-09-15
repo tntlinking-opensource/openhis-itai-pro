@@ -48,15 +48,6 @@ public class DeviceCatalogDto {
     /** 采购单位字典展示文案。 */
     private String purchaseUnitCode_dictText;
 
-    /**
-     * 采购单位历史字段名（与 {@link #purchaseUnitCode} 同值，兼容旧前端）。
-     */
-    private String unitCode;
-    /**
-     * 采购单位历史展示字段（与 {@link #purchaseUnitCode_dictText} 同值）。
-     */
-    private String unitCode_dictText;
-
     /** 包装规格。 */
     private String totalVolume;
 
@@ -109,15 +100,6 @@ public class DeviceCatalogDto {
     private String splitUnitCode;
     /** 拆零单位字典展示文案。 */
     private String splitUnitCode_dictText;
-
-    /**
-     * 拆零单位历史字段名（与 {@link #splitUnitCode} 同值，兼容旧前端）。
-     */
-    private String minUnitCode;
-    /**
-     * 拆零单位历史展示字段（与 {@link #splitUnitCode_dictText} 同值）。
-     */
-    private String minUnitCode_dictText;
 
     /** 销售单位编码。 */
     private String packageUnitCode;

@@ -287,6 +287,95 @@ public class PeisRegistrationOrchestrator {
     }
 
     /**
+     * 团检到检前换套餐：取消原套餐展开 SR，按新 AD 重建 SR 并刷新 ext 快照（流水号不变）。
+     *
+     * @param encounterId           PE 就诊主键
+     * @param newPackageActivityId  新套餐 AD
+     * @param operatorId            操作人
+     */
+    public void rebuildGroupEncounterPackage(Long encounterId, Long newPackageActivityId, Long operatorId) {
+        if (encounterId == null || newPackageActivityId == null || operatorId == null) {
+            throw new ValidationException("换套餐失败：就诊、套餐与操作人不能为空");
+        }
+        EncounterDetailQueryModel encounter = encounterQueryService.mustGetEncounterOfClass(
+            encounterId,
+            EncounterClass.PE.getCode(),
+            ErrorCodeConstants.PEIS_REG_INVALID_ARGUMENT,
+            "非体检就诊不可换套餐");
+        if (!EncounterStatus.IN_PROGRESS.getCode().equals(encounter.getStatusEnum())) {
+            throw new BusinessException(
+                ErrorCodeConstants.PEIS_REG_ENCOUNTER_STATUS_INVALID, "就诊状态不允许换套餐");
+        }
+        PeisEncounterExtModel ext = peisEncounterExtQueryService.getByEncounterId(encounterId);
+        if (ext == null || !Boolean.TRUE.equals(ext.getGroupFlag())) {
+            throw new BusinessException(ErrorCodeConstants.PEIS_REG_INVALID_ARGUMENT, "非团检就诊不可换套餐");
+        }
+        ActivityDefinitionDetailQueryModel packageDetail =
+            activityDefinitionQueryService.getServiceCatalog(newPackageActivityId);
+        ActivityDefinitionBaseQueryModel base = packageDetail == null ? null : packageDetail.getBaseInfo();
+        if (base == null || !isActivePublication(base.getStatusEnum())) {
+            throw new BusinessException(ErrorCodeConstants.PEIS_REG_PACKAGE_INACTIVE, "套餐不存在或未启用");
+        }
+        List<ActivityDefinitionChildQueryModel> children =
+            packageDetail.getChildren() == null ? List.of() : packageDetail.getChildren();
+        Set<Long> oldBaseline = new HashSet<>(
+            PeisPackageSnapshotSupport.extractChildActivityIds(ext.getPackageSnapshotJson()));
+        if (oldBaseline.isEmpty() && ext.getPackageActivityId() != null) {
+            List<ActivityDefinitionChildQueryModel> oldChildren =
+                activityDefinitionQueryService.listChildrenByActivityId(ext.getPackageActivityId());
+            for (ActivityDefinitionChildQueryModel child : oldChildren) {
+                if (child != null && child.getChildrenId() != null) {
+                    oldBaseline.add(child.getChildrenId());
+                }
+            }
+        }
+        List<PeisServiceRequestExtModel> lines =
+            peisServiceRequestExtQueryService.listByEncounterId(encounterId);
+        for (PeisServiceRequestExtModel line : lines) {
+            if (line == null || line.getServiceRequestId() == null || line.getActivityId() == null) {
+                continue;
+            }
+            if (!oldBaseline.contains(line.getActivityId())) {
+                continue;
+            }
+            if (!PeisExecStatusConstants.PENDING.equals(line.getExecStatusEnum())) {
+                throw new BusinessException(
+                    ErrorCodeConstants.PEIS_REG_SR_ALREADY_EXECUTED, "套餐项目已执行，不可换套餐");
+            }
+            removePeServiceRequest(line.getServiceRequestId(), encounterId, operatorId);
+        }
+        List<Long> newChildActivityIds = new ArrayList<>();
+        for (ActivityDefinitionChildQueryModel child : children) {
+            if (child != null && child.getChildrenId() != null) {
+                newChildActivityIds.add(child.getChildrenId());
+            }
+        }
+        List<Long> createdSrIds = new ArrayList<>();
+        for (Long childActivityId : newChildActivityIds) {
+            createdSrIds.add(createPeServiceRequestDraft(
+                encounterId, encounter.getPatientId(), childActivityId,
+                encounter.getOrganizationId(), operatorId));
+        }
+        if (!createdSrIds.isEmpty()) {
+            InitPeisSrExtCommand initCmd = new InitPeisSrExtCommand();
+            initCmd.setServiceRequestIds(createdSrIds);
+            initCmd.setTenantId(TenantUtils.getCurrentTenantId());
+            initCmd.setOrgId(encounter.getOrganizationId());
+            peisServiceRequestExtDomainService.initForServiceRequests(initCmd);
+        }
+        String examKind = PeisPackageSnapshotSupport.extractExamKind(ext.getPackageSnapshotJson());
+        if (StringUtils.isEmpty(examKind)) {
+            examKind = PeisExamKindConstants.GROUP;
+        }
+        UpdatePePackageSnapshotCommand snapCmd = new UpdatePePackageSnapshotCommand();
+        snapCmd.setEncounterId(encounterId);
+        snapCmd.setPackageActivityId(newPackageActivityId);
+        snapCmd.setPackageSnapshotJson(PeisPackageSnapshotSupport.build(
+            newPackageActivityId, newChildActivityIds, base.getName(), examKind));
+        peisEncounterExtDomainService.updatePackageSnapshot(snapCmd);
+    }
+
+    /**
      * 登记后加/减项并刷新套餐快照。
      *
      * @param cmd 调整命令

@@ -63,6 +63,10 @@ export interface NurseStationOrderAuditTableRow {
   mergedMedicationMembers?: NurseStationOrderAuditTableRow[];
   /** 是否皮试药（true 时医嘱内容旁展示「皮试」标记） */
   skinTestFlag?: boolean;
+  /** 皮试临床状态 code（如 active=阳性） */
+  skinTestOutcomeCode?: string;
+  /** 皮试临床状态展示文案（如 阳性 / 阴性） */
+  skinTestOutcomeText?: string;
 }
 
 /** 解析写操作锚点 orderType（禁止空值默认成药品） */
@@ -125,7 +129,7 @@ function buildAuditTypeLabel(dto: NurseStationOrderAuditRowDto): string {
   return therapy || kind || '—';
 }
 
-/** 医嘱名称摘要：名称【5mg1片x100】；中药方折叠行仅用方级展示名 */
+/** 医嘱名称摘要：名称【5mg1片x100】；皮试结果由单元格内联角标展示 */
 function buildAuditContentTitle(dto: NurseStationOrderAuditRowDto): string {
   if (dto.tcmFlag === true) {
     const collapsedName = String(dto.adviceDisplayName ?? '').trim();
@@ -137,8 +141,17 @@ function buildAuditContentTitle(dto: NurseStationOrderAuditRowDto): string {
   return title || '—';
 }
 
+/** 是否护理级别医嘱（categoryEnum=26；列表只展示级别名称，不展示频次） */
+function isNursingLevelAuditDto(dto: Pick<NurseStationOrderAuditRowDto, 'categoryEnum'>): boolean {
+  return String(dto.categoryEnum ?? '').trim() === '26';
+}
+
 /** 剂量/数量：长期「一次一片，每日三片」；中药方展示各味单次量 + 付数 */
 function buildAuditDosageDisplay(dto: NurseStationOrderAuditRowDto): string {
+  // 护理级别无剂量/频次展示，内容列只留级别名称
+  if (isNursingLevelAuditDto(dto)) {
+    return '';
+  }
   if (dto.tcmFlag === true) {
     const singleDose = String(dto.dosageDisplay ?? '').trim();
     const fuCount = dto.chineseHerbsDoseQuantity;
@@ -172,19 +185,22 @@ function mapAuditLineRequestIds(
   return mapped.length > 0 ? mapped : undefined;
 }
 
-/** 用法、频次、滴速、备注拼成扩展行 */
+/** 用法、频次、滴速、备注拼成扩展行；护理级别不拼用法频次 */
 function buildAuditExtensionLine(dto: NurseStationOrderAuditRowDto): string {
   const parts: string[] = [];
   const usage = String(dto.usageDisplay ?? '').trim();
   const freq = String(dto.frequencyDisplay ?? '').trim();
   const speed = String(dto.speedDisplay ?? '').trim();
-  if (usage && freq) {
-    parts.push(`${usage}，${freq}`);
-  } else if (usage || freq) {
-    parts.push(usage || freq);
-  }
-  if (speed) {
-    parts.push(`滴速：${speed}`);
+  // 护理级别无频次展示，列表仅展示级别名称
+  if (!isNursingLevelAuditDto(dto)) {
+    if (usage && freq) {
+      parts.push(`${usage}，${freq}`);
+    } else if (usage || freq) {
+      parts.push(usage || freq);
+    }
+    if (speed) {
+      parts.push(`滴速：${speed}`);
+    }
   }
   const remark = String(dto.remark ?? '').trim();
   if (remark) {
@@ -251,6 +267,8 @@ export function mapAuditRowDtoToTableRow(
     lineRequestIds: mapAuditLineRequestIds(dto.lineRequestIds),
     groupId,
     skinTestFlag: dto.skinTestFlag === true ? true : undefined,
+    skinTestOutcomeCode: String(dto.skinTestOutcomeCode ?? '').trim() || undefined,
+    skinTestOutcomeText: String(dto.skinTestOutcomeText ?? '').trim() || undefined,
   };
 }
 
@@ -273,6 +291,8 @@ function auditDtoToDrugGroupItem(dto: NurseStationOrderAuditRowDto): DrugGroupDi
       String(dto.specificationText ?? '').trim(),
       dto.packageSplitRatioText,
     ),
+    skinTestOutcomeCode: String(dto.skinTestOutcomeCode ?? '').trim() || undefined,
+    skinTestOutcomeText: String(dto.skinTestOutcomeText ?? '').trim() || undefined,
     pharmacy: '',
     singleDose: doseText,
     doseSubUnit: '',
@@ -284,6 +304,7 @@ function auditDtoToDrugGroupItem(dto: NurseStationOrderAuditRowDto): DrugGroupDi
     dosageDisplay: doseText || undefined,
     speedDisplay:
       String(dto.speedDisplay ?? '').trim() || String(dto.speedCode ?? '').trim() || undefined,
+    remark: String(dto.remark ?? '').trim() || undefined,
   };
 }
 
@@ -344,8 +365,11 @@ function mergeAuditMedicationRowsForDisplay(
       const lineRequestIds = members.map((m) => m.requestId).filter((id) => id.length > 0);
       const gid = String(headDto.groupId ?? headDto.groupNo ?? '').trim();
       const idPart = lineRequestIds.join('&');
-      // 成组任一行需皮试则合并行展示皮试标记
+      // 成组任一行需皮试则合并行展示皮试标记；有登记结果时优先展示结果文案
       const skinTestFlag = members.some((m) => m.skinTestFlag === true) ? true : undefined;
+      const skinTestOutcomeMember = members.find((m) => String(m.skinTestOutcomeText ?? '').trim());
+      const skinTestOutcomeCode = skinTestOutcomeMember?.skinTestOutcomeCode;
+      const skinTestOutcomeText = skinTestOutcomeMember?.skinTestOutcomeText;
       const groupSpeed = pickGroupSpeedFromAuditSlice(slice);
       const extensionDto: NurseStationOrderAuditRowDto = {
         ...headDto,
@@ -359,6 +383,8 @@ function mergeAuditMedicationRowsForDisplay(
         mergedMedicationMembers: members,
         lineRequestIds,
         skinTestFlag,
+        skinTestOutcomeCode,
+        skinTestOutcomeText,
         extension: buildAuditExtensionLine(extensionDto) || undefined,
       };
     },

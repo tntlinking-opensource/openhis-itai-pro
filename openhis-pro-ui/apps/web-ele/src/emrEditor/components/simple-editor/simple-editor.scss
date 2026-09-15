@@ -3,7 +3,7 @@
  * ??????? script ? import ??? SCSS????? Vue ? :deep()??????????????????
  * @see https://tiptap.dev/docs/ui-components/templates/simple-editor
  */
-@import '../../fillable-field/styles/fillable-field.scss';
+@use '../../fillable-field/styles/fillable-field';
 
 .simple-editor--layout-locked .simple-editor__toolbar {
   /* ????????/????????????????? */
@@ -17,9 +17,9 @@
 
 .simple-editor {
   /*
-   * ????/????????? PrintConfig +?????????4.1??
-   * A4?????/? 25.4mm??/? 31.8mm?????? 12pt??? 16pt??? 1.5?
-   * ???????????????????????????????????????
+   * 屏打默认对齐 Word 常用：A4、页边距 15mm、宋体小四、标题 16pt。
+   * 行距：工具栏「1.5 倍」落地为 2.33（小四约 28pt）；CSS 写 1.5 对宋体看起来像单倍。
+   * 国标 25.4/31.8 仅工具栏「打印标准」预设。
    */
   --simple-editor-border: #e5e7eb;
   --simple-editor-bg: #ffffff;
@@ -28,14 +28,17 @@
   --simple-editor-canvas-bg: #d8dee8;
   --simple-editor-a4-w: 210mm;
   --simple-editor-a4-min-h: 297mm;
-  --simple-editor-margin-top: 25.4mm;
-  --simple-editor-margin-right: 31.8mm;
-  --simple-editor-margin-bottom: 25.4mm;
-  --simple-editor-margin-left: 31.8mm;
+  --simple-editor-margin-top: 15mm;
+  --simple-editor-margin-right: 15mm;
+  --simple-editor-margin-bottom: 15mm;
+  --simple-editor-margin-left: 15mm;
   --simple-editor-font-family: SimSun, 'Songti SC', 'Noto Serif CJK SC', 'STSong', serif;
   --simple-editor-body-size: 12pt;
   --simple-editor-title-size: 16pt;
-  --simple-editor-line-height: 1.5;
+  --simple-editor-line-height: 2.33;
+  /* 页眉下沿 / 页脚上沿：Word 1 磅实线，与 PDF setLineWidth(1pt) 对齐 */
+  --simple-editor-chrome-rule: 1pt;
+  --simple-editor-chrome-rule-color: #111;
 
   display: flex;
   min-height: 0;
@@ -687,6 +690,38 @@
   padding: 6px 0 4px;
 }
 
+/*
+ * 页眉下沿、页脚上沿 1 磅实线（病历纸面）。
+ * 不用 border 画在盒子上：编辑态会把 header 铺满纸宽，线须仍对齐正文左右边距。
+ */
+.simple-editor__page-header::before,
+.simple-editor__page-footer::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.simple-editor__page-header::before {
+  bottom: 0;
+  border-bottom: var(--simple-editor-chrome-rule) solid var(--simple-editor-chrome-rule-color);
+}
+
+.simple-editor__page-footer::before {
+  top: 0;
+  border-top: var(--simple-editor-chrome-rule) solid var(--simple-editor-chrome-rule-color);
+}
+
+.simple-editor--chrome-editing .simple-editor__page-header::before,
+.simple-editor__page-header.simple-editor__page-band--editing::before,
+.simple-editor--chrome-editing .simple-editor__page-footer::before,
+.simple-editor__page-footer.simple-editor__page-band--editing::before {
+  left: var(--simple-editor-margin-left);
+  right: var(--simple-editor-margin-right);
+}
+
 .simple-editor__page-band-inner {
   display: flow-root;
   position: relative;
@@ -806,7 +841,6 @@
   flex-direction: column;
   justify-content: flex-start;
   padding: 8px var(--simple-editor-margin-right) 8px var(--simple-editor-margin-left);
-  border-bottom: 1px dashed #c4c4c4;
 }
 
 .simple-editor__page-footer.simple-editor__page-band--editing {
@@ -818,7 +852,6 @@
   flex-direction: column;
   justify-content: flex-start;
   padding: 8px var(--simple-editor-margin-right) 4px var(--simple-editor-margin-left);
-  border-top: 1px dashed #c4c4c4;
 }
 
 .simple-editor__page-band--editing::after {
@@ -1174,8 +1207,8 @@
   outline: none !important;
   font-family: var(--simple-editor-font-family);
   font-size: var(--simple-editor-body-size);
-  /* ????????/?????? p ????????? line-height */
-  line-height: normal;
+  /* 与段落同行距，避免继承 normal 把 1.5 倍看起来像单倍 */
+  line-height: var(--simple-editor-line-height);
   color: #111827;
 }
 
@@ -1228,6 +1261,7 @@
   margin: 0.2em 0;
   font-size: var(--simple-editor-body-size);
   line-height: var(--simple-editor-line-height);
+  text-align: left;
   font-family: inherit;
 }
 
@@ -1445,6 +1479,47 @@
   color: #9ca3af;
 }
 
+/*
+ * 日期/数字控件：可见字在 span 上，原生 input 只负责点选。
+ * 不走 SFC scoped：院点包会丢 scoped，Chrome type=date 会按 2026/09/01 叠在 span 的 2026-09-01 上。
+ */
+.simple-editor__content .emr-de-date__input,
+.simple-editor__content .emr-de-number__input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: transparent;
+}
+
+.simple-editor__content .emr-de-date__input:disabled,
+.simple-editor__content .emr-de-number__input:disabled {
+  opacity: 0;
+}
+
+.simple-editor__content .emr-de-date__input::-webkit-datetime-edit,
+.simple-editor__content .emr-de-date__input::-webkit-datetime-edit-fields-wrapper,
+.simple-editor__content .emr-de-date__input::-webkit-datetime-edit-text,
+.simple-editor__content .emr-de-date__input::-webkit-datetime-edit-year-field,
+.simple-editor__content .emr-de-date__input::-webkit-datetime-edit-month-field,
+.simple-editor__content .emr-de-date__input::-webkit-datetime-edit-day-field,
+.simple-editor__content .emr-de-date__input::-webkit-calendar-picker-indicator {
+  color: transparent;
+  opacity: 0;
+}
+
+.simple-editor__content .emr-de-date__input::-webkit-datetime-edit,
+.simple-editor__content .emr-de-date__input::-webkit-datetime-edit-fields-wrapper,
+.simple-editor__content .emr-de-date__input::-webkit-datetime-edit-text,
+.simple-editor__content .emr-de-date__input::-webkit-datetime-edit-year-field,
+.simple-editor__content .emr-de-date__input::-webkit-datetime-edit-month-field,
+.simple-editor__content .emr-de-date__input::-webkit-datetime-edit-day-field,
+.simple-editor__content .emr-de-date__input::-webkit-calendar-picker-indicator {
+  color: transparent;
+  opacity: 0;
+}
+
 /* ????????? NodeView ??? */
 .simple-editor__content .emr-de--fallback {
   display: inline-block;
@@ -1591,14 +1666,42 @@
   vertical-align: top;
 }
 
-/* 表格行间换页垫片：无边框，避免第 1 页底留下「空表体竖线」 */
-.simple-editor__content .ProseMirror tr.emr-table-row-soft-break,
-.simple-editor__content .ProseMirror tr.emr-table-row-soft-break > td {
+/* 表格行间换页垫片：保持 table-row，去掉框线。勿对所有表 display:block，否则列网格会被打散 */
+.simple-editor__content .ProseMirror table tr.emr-table-row-soft-break,
+.simple-editor__content .ProseMirror table tr.emr-table-row-soft-break > td {
   border: none !important;
   background: transparent !important;
   padding: 0 !important;
   pointer-events: none !important;
   user-select: none !important;
+}
+
+/* 相对浊音界：垫片脱离 border-collapse，避免表头左边框拉穿页缝 */
+.simple-editor__content
+  .ProseMirror
+  table[data-name='relativeCardiacBorder']
+  tr.emr-table-row-soft-break,
+.simple-editor__content
+  .ProseMirror
+  table[data-name='relativeCardiacBorder']
+  tr.emr-table-row-soft-break
+  > td,
+.simple-editor__content
+  .ProseMirror
+  p[data-name='heartBorderTitle']
+  + .tableWrapper
+  table
+  tr.emr-table-row-soft-break,
+.simple-editor__content
+  .ProseMirror
+  p[data-name='heartBorderTitle']
+  + .tableWrapper
+  table
+  tr.emr-table-row-soft-break
+  > td {
+  display: block;
+  width: 100%;
+  visibility: hidden;
 }
 
 .simple-editor__content [data-emr-island-soft-break] {
@@ -1793,6 +1896,28 @@
   position: relative;
   min-width: 60px;
   box-sizing: border-box;
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+/* 普通表内数据元允许折行（.emr-de 默认 nowrap 会撑破格子） */
+.simple-editor__content .ProseMirror table:not([data-name='patientHeader']) td .emr-de,
+.simple-editor__content .ProseMirror table:not([data-name='patientHeader']) th .emr-de,
+.simple-editor__content
+  .ProseMirror
+  table:not([data-name='patientHeader'])
+  td
+  .emr-de__readonly-val,
+.simple-editor__content
+  .ProseMirror
+  table:not([data-name='patientHeader'])
+  th
+  .emr-de__readonly-val {
+  white-space: normal;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .simple-editor__content .ProseMirror th {
@@ -1806,11 +1931,11 @@
   margin: 0;
 }
 
-/* ========== 门诊/病历 patientHeader：三列信息表（保留格子线与默认单元格间距） ========== */
+/* ========== 入院/门诊 patientHeader：仅 data-name 命中；禁止 :first-child，否则病案首页/告知书首表会被 nowrap 撑乱 ========== */
 .simple-editor__content .ProseMirror table[data-name='patientHeader'],
 .simple-editor__content .ProseMirror .tableWrapper:has(> table[data-name='patientHeader']),
 .simple-editor__content .ProseMirror .tableWrapper:has(table[data-name='patientHeader']) {
-  margin: 0.15em 0 0.5em !important;
+  margin: 0.04em 0 0.2em !important;
   width: 100% !important;
   max-width: 100% !important;
   overflow: visible !important;
@@ -1824,17 +1949,19 @@
 
 .simple-editor__content .ProseMirror table[data-name='patientHeader'] td,
 .simple-editor__content .ProseMirror table[data-name='patientHeader'] th {
-  border: 1px solid #374151 !important;
+  /* 入院基础信息：编辑器也无框（与打印一致），仅作两列对齐 */
+  border: none !important;
   background: transparent !important;
-  padding: 6px 8px !important;
+  padding: 2px 6px !important;
   margin: 0 !important;
   height: auto !important;
   min-width: 0 !important;
-  width: 33.33% !important;
+  width: auto !important;
   vertical-align: middle !important;
   text-align: left !important;
   font-size: 12pt !important;
   line-height: var(--simple-editor-line-height) !important;
+  white-space: nowrap !important;
 }
 
 .simple-editor__content .ProseMirror table[data-name='patientHeader'] td > p,
@@ -1843,6 +1970,7 @@
   padding: 0 !important;
   line-height: var(--simple-editor-line-height) !important;
   text-align: left !important;
+  white-space: nowrap !important;
 }
 
 .simple-editor__content .ProseMirror table[data-name='patientHeader'] .emr-fillable-field__shell,
@@ -2027,7 +2155,7 @@
   overflow: hidden;
 }
 
-/* ????? 5.2em??????????????????????????? max-width:2.4em ????? */
+/* 出院诊断书首列；会诊申请单首列加宽避免「申请会诊目的」折行 */
 .simple-editor__content
   .ProseMirror
   table[data-name='dischargeDiagnosisForm']
@@ -2037,20 +2165,31 @@
 .simple-editor__content
   .ProseMirror
   table[data-name='dischargeDiagnosisForm']
-  > tr:first-child
-  > td:first-child,
-.simple-editor__content
-  .ProseMirror
-  table[data-name='consultRequestForm']
-  > tbody
-  > tr:first-child
-  > td:first-child,
-.simple-editor__content
-  .ProseMirror
-  table[data-name='consultRequestForm']
   > tr:first-child
   > td:first-child {
   width: 5.2em;
+}
+
+.simple-editor__content
+  .ProseMirror
+  table[data-name='consultRequestForm']
+  > tbody
+  > tr:first-child
+  > td:first-child,
+.simple-editor__content
+  .ProseMirror
+  table[data-name='consultRequestForm']
+  > tr:first-child
+  > td:first-child,
+.simple-editor__content
+  .ProseMirror
+  table[data-name='consultRequestForm']
+  td[data-name='formLabel'] {
+  width: 7.5em;
+  min-width: 7.5em;
+  white-space: nowrap !important;
+  overflow-wrap: normal !important;
+  word-break: keep-all !important;
 }
 
 .simple-editor__content .ProseMirror table[data-name='dischargeDiagnosisForm'] td,
@@ -2059,6 +2198,29 @@
   overflow-wrap: anywhere;
   word-break: break-word;
   box-sizing: border-box;
+}
+
+.simple-editor__content
+  .ProseMirror
+  table[data-name='consultRequestForm']
+  td[data-name='formLabel'] {
+  overflow: visible;
+}
+
+/* 会诊申请单：摘要/记录区加高，接近铺满一页 */
+.simple-editor__content .ProseMirror table[data-name='consultRequestForm'] td[data-name='midBody'] {
+  min-height: 48mm;
+  height: 48mm;
+  vertical-align: top;
+}
+
+.simple-editor__content
+  .ProseMirror
+  table[data-name='consultRequestForm']
+  td[data-name='tallBody'] {
+  min-height: 130mm;
+  height: 130mm;
+  vertical-align: top;
 }
 
 .simple-editor__content .ProseMirror table[data-name='dischargeDiagnosisForm'] .emr-de,
@@ -2180,6 +2342,66 @@
   min-width: 6.5em;
   padding-left: 4px;
   padding-right: 4px;
+}
+
+/*
+ * 住院病人风险评估表：不要套出院诊断书的 formValue 居中 / formLabel nowrap。
+ * 病情简介等书写区给最小行高，与 PDF applyRiskFormCellLayout 对齐。
+ */
+.simple-editor__content .ProseMirror table[data-name='riskForm'] {
+  width: 100%;
+  table-layout: fixed;
+  margin: 0.4em 0 0.6em;
+}
+
+.simple-editor__content .ProseMirror table[data-name='riskForm'] td {
+  padding: 7px 8px;
+  line-height: var(--simple-editor-line-height);
+  vertical-align: middle;
+}
+
+.simple-editor__content .ProseMirror table[data-name='riskForm'] td[data-name='formLabel'] {
+  width: 8em;
+  min-width: 8em;
+  white-space: normal;
+  font-weight: 600;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.simple-editor__content .ProseMirror table[data-name='riskForm'] td[data-name='formValue'],
+.simple-editor__content .ProseMirror table[data-name='riskForm'] td[data-name='formValue'] > p {
+  text-align: left;
+  vertical-align: top;
+}
+
+.simple-editor__content .ProseMirror table[data-name='riskForm'] td > p {
+  margin: 0;
+  line-height: var(--simple-editor-line-height);
+}
+
+.simple-editor__content .ProseMirror table[data-name='riskForm'] tr:nth-child(2) > td {
+  height: 48mm;
+  vertical-align: top;
+}
+
+.simple-editor__content .ProseMirror table[data-name='riskForm'] tr:nth-child(3) > td {
+  height: 24mm;
+  vertical-align: top;
+}
+
+.simple-editor__content .ProseMirror table[data-name='riskForm'] tr:nth-child(4) > td,
+.simple-editor__content .ProseMirror table[data-name='riskForm'] tr:nth-child(5) > td,
+.simple-editor__content .ProseMirror table[data-name='riskForm'] tr:nth-child(6) > td {
+  height: 16mm;
+  vertical-align: middle;
+}
+
+.simple-editor__content .ProseMirror table[data-name='riskForm'] .emr-de--multiline,
+.simple-editor__content .ProseMirror table[data-name='riskForm'] .emr-de__control--textarea {
+  width: 100%;
+  max-width: 100%;
+  min-height: 4em;
 }
 
 /* ??????????????????? */
@@ -2331,14 +2553,15 @@
 /* ?? ?????OP_RECORD_STD????? / ?? ?? */
 
 /*
- * 门诊病历患者信息：三列表（与上文边框/间距规则对齐；此处只补字段选择器）
+ * 入院/门诊患者信息：编辑器/打印均无框；两列对齐仍用 patientHeader（或 admPh 段落）
  */
 .simple-editor__content .ProseMirror table[data-name='patientHeader'] {
   width: 100% !important;
   max-width: 100% !important;
-  margin: 0.15em 0 0.5em !important;
+  margin: 0.04em 0 0.2em !important;
   table-layout: fixed !important;
   border-collapse: collapse !important;
+  border: none !important;
   box-sizing: border-box;
   overflow: visible !important;
 }
@@ -2346,16 +2569,17 @@
 .simple-editor__content .ProseMirror table[data-name='patientHeader'] td,
 .simple-editor__content .ProseMirror table[data-name='patientHeader'] td[data-name='patientField'],
 .simple-editor__content .ProseMirror table[data-name='patientHeader'] td[data-name='formValue'] {
-  width: 33.33%;
-  padding: 6px 8px !important;
+  width: auto;
+  padding: 2px 6px !important;
   vertical-align: middle !important;
   text-align: left !important;
-  border: 1px solid #374151 !important;
+  border: none !important;
   box-sizing: border-box;
   font-size: 12pt;
   line-height: var(--simple-editor-line-height) !important;
   min-width: 0 !important;
   background: transparent !important;
+  white-space: nowrap !important;
 }
 
 .simple-editor__content .ProseMirror table[data-name='patientHeader'] td > p {
@@ -2442,6 +2666,38 @@
   line-height: 1.2;
   white-space: nowrap;
   overflow: hidden;
+}
+
+/* 入院基础信息：段落两列（不用表格），左右各 50% */
+.simple-editor__content .ProseMirror > p[data-name^='admPh'] {
+  display: inline-block;
+  width: 50%;
+  margin: 0;
+  padding: 0 12px 0 0;
+  box-sizing: border-box;
+  vertical-align: top;
+  font-size: var(--simple-editor-body-size);
+  line-height: var(--simple-editor-line-height);
+  white-space: nowrap;
+  overflow: hidden;
+  text-align: left;
+}
+
+.simple-editor__content .ProseMirror > p[data-name^='admPh'] .emr-metadata-chip,
+.simple-editor__content .ProseMirror > p[data-name^='admPh'] .emr-free-text {
+  display: inline !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.simple-editor__content .ProseMirror > p[data-name^='admPh'] .emr-metadata-chip::before,
+.simple-editor__content .ProseMirror > p[data-name^='admPh'] .emr-metadata-chip::after,
+.simple-editor__content .ProseMirror > p[data-name^='admPh'] .emr-bracket-field::before,
+.simple-editor__content .ProseMirror > p[data-name^='admPh'] .emr-bracket-field::after {
+  content: none !important;
+  display: none !important;
 }
 
 .simple-editor__content .ProseMirror p[data-name='vitals'],
@@ -2541,18 +2797,47 @@
 }
 
 /* ????????????????? */
-.simple-editor__content .ProseMirror table[data-name='relativeCardiacBorder'] {
+/* 相对浊音界：只收单元格内边距，行距仍 1.5；TableView 常不写 data-name，用标题后邻表兜底 */
+.simple-editor__content .ProseMirror table[data-name='relativeCardiacBorder'],
+.simple-editor__content .ProseMirror p[data-name='heartBorderTitle'] + .tableWrapper table {
   width: auto;
   max-width: 100%;
   margin: 0.35em auto;
   table-layout: fixed;
 }
 
-.simple-editor__content .ProseMirror table[data-name='relativeCardiacBorder'] td {
+.simple-editor__content
+  .ProseMirror
+  table[data-name='relativeCardiacBorder']
+  tr:not(.emr-table-row-soft-break)
+  > :is(td, th),
+.simple-editor__content
+  .ProseMirror
+  p[data-name='heartBorderTitle']
+  + .tableWrapper
+  table
+  tr:not(.emr-table-row-soft-break)
+  > :is(td, th) {
   border: 1px solid #111827 !important;
-  padding: 4px 10px;
+  padding: 2px 8px;
   text-align: center;
   vertical-align: middle;
+}
+
+/* 入院记录：患者信息/核实/签名用正文段（不用表格），与 OpenPDF 命名段同行距、无框线 */
+.simple-editor__content .ProseMirror > p[data-name='patientHeader'],
+.simple-editor__content .ProseMirror > p[data-name='verifyBlock'] {
+  margin: 0.08em 0;
+  font-size: var(--simple-editor-body-size);
+  line-height: var(--simple-editor-line-height);
+  text-align: left;
+}
+
+.simple-editor__content .ProseMirror > p[data-name='signBlock'] {
+  margin: 0.12em 0;
+  font-size: var(--simple-editor-body-size);
+  line-height: var(--simple-editor-line-height);
+  text-align: right;
 }
 
 .simple-editor__content .ProseMirror > p[data-name='historyTitle'],
@@ -2607,6 +2892,13 @@
   font-size: var(--simple-editor-body-size);
   line-height: var(--simple-editor-line-height);
   min-height: calc(var(--simple-editor-body-size) * var(--simple-editor-line-height));
+}
+
+/* 中/西医初步诊断悬挂缩进：2×全角空格 + 7 字标签（含冒号）= 9em，再加 1em 给编辑器蓝括号；续行与首行诊断值左缘对齐。PDF 无括号，按实测前缀悬挂（applyDiagnosisHangingIndent）。 */
+.simple-editor__content .ProseMirror > p[data-name='tcmPreliminaryDiagnosis'],
+.simple-editor__content .ProseMirror > p[data-name='westernPreliminaryDiagnosis'] {
+  padding-left: 10em;
+  text-indent: -10em;
 }
 
 .simple-editor__content .ProseMirror > p[data-name='chiefComplaint'],

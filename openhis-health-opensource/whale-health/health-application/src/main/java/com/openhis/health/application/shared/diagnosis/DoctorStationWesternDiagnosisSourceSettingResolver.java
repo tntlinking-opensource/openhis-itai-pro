@@ -20,7 +20,8 @@ import java.util.Set;
  * 读取系统设置「医生站西医诊断检索目录来源」，供门诊/住院诊断定义分页检索下推 {@code source_enum IN}。
  *
  * <p>值约定：逗号分隔的目录来源码（如 {@code hospital_dx,general_dx}）；
- * 仅接受西医白名单内的码；空/非法回落默认两目录。中医检索不读本配置。</p>
+ * 仅接受西医白名单内的码；空/非法回落默认两目录。中医检索不读本配置。
+ * <strong>仅门诊</strong>使用；住院西医固定 {@link DoctorStationDiagnosisConstants#INPATIENT_WESTERN_DIAGNOSIS_SEARCH_SOURCES}。</p>
  */
 @Component
 @RequiredArgsConstructor

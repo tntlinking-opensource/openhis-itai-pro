@@ -22,7 +22,7 @@ export interface SupplyItem {
   lotNumber?: string;
   /** 已格式化单价文案；空则不展示 */
   unitPriceText?: string;
-  status: '已发放' | '已配药' | '待发放';
+  status: '已发放' | '已配药' | '待发放' | '待退费' | '已退费';
   statusCode: SupplyDispenseStatusCode;
   canCancelExecute?: boolean;
 }
@@ -45,16 +45,20 @@ const emit = defineEmits<{
   (e: 'cancel', id: string): void;
 }>();
 
-/** 已执行态不可再勾选随批执行 */
-const isExecuted = computed(
-  () =>
-    props.item.statusCode === 'PREPARED' ||
-    props.item.statusCode === 'COMPLETED' ||
-    props.item.statusCode === 'PART_COMPLETED',
-);
+/** 已执行 / 退费态不可再勾选随批执行 */
+const isNonSelectable = computed(() => {
+  const code = props.item.statusCode;
+  return (
+    code === 'PREPARED' ||
+    code === 'COMPLETED' ||
+    code === 'PART_COMPLETED' ||
+    code === 'REFUNDING' ||
+    code === 'REFUNDED'
+  );
+});
 
 const cardClass = computed(() => {
-  if (isExecuted.value) {
+  if (isNonSelectable.value) {
     return 'supply-item-card--dispatched';
   }
   if (props.selectable && props.selected) {
@@ -65,6 +69,8 @@ const cardClass = computed(() => {
 
 const statusTagType = computed(() => {
   const code = props.item.statusCode;
+  if (code === 'REFUNDED') return 'danger';
+  if (code === 'REFUNDING') return 'warning';
   if (code === 'COMPLETED' || code === 'PART_COMPLETED') return 'success';
   if (code === 'PREPARED') return 'warning';
   return 'primary';
@@ -89,9 +95,9 @@ const detailLine = computed(() => {
   return parts.join(' · ');
 });
 
-/** 点击卡片切换勾选（已执行忽略） */
+/** 点击卡片切换勾选（已执行/退费忽略） */
 const handleCardClick = () => {
-  if (!props.selectable || isExecuted.value) return;
+  if (!props.selectable || isNonSelectable.value) return;
   emit('change', props.item.id, !props.selected);
 };
 
@@ -112,7 +118,7 @@ const handleCancelClick = () => {
       v-if="selectable"
       class="supply-item-card__checkbox shrink-0"
       :model-value="selected"
-      :disabled="isExecuted"
+      :disabled="isNonSelectable"
       @click.stop
       @change="handleCheckboxChange"
     />

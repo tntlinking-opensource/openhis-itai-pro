@@ -361,9 +361,11 @@ public class OutpatientChargeInsuranceExtensionImpl implements OutpatientChargeI
         SettlementCorrectionCommand domainCommand = OutpatientChargeInsuranceIntegrationMapper.toCorrectionCommand(
             command, record, operatorId, tenantId);
         op2601Invoker.invoke(domainCommand);
-        // Cmd：2601 后 yb 凭证已 REVOKED，支付桥表须同态，避免日结虚增
+        // Cmd：Invoker 已同步桥表 REVOKED + 软删统筹/个账；此处幂等再标 REVOKED，防旧路径漏调
         this.paymentReconciliationDomainService.markYbSettlementsRevoked(
             record.getId(),
+            record.getSetlId());
+        this.paymentReconciliationDomainService.softDeleteInsuranceFundAcctDetailsBySetlId(
             record.getSetlId());
     }
 }

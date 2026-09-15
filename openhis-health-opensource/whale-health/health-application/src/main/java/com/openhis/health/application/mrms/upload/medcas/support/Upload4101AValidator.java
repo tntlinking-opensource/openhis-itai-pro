@@ -44,6 +44,13 @@ public final class Upload4101AValidator {
         require(errors, "ntly", s.getNtly());
         require(errors, "prfs", s.getPrfs());
         require(errors, "dscg_caty", s.getDscgCaty());
+        // 平台 FSI：出院科别长度 1–10（须为科室医保编码，非院内 bus_no）
+        if (trimToNull(s.getDscgCaty()) != null) {
+            int len = s.getDscgCaty().trim().length();
+            if (len < 1 || len > 10) {
+                errors.add("dscg_caty 长度须为1-10（请用科室医保编码）");
+            }
+        }
         require(errors, "bill_code", s.getBillCode());
         require(errors, "bill_no", s.getBillNo());
         require(errors, "biz_sn", s.getBizSn());
@@ -66,12 +73,13 @@ public final class Upload4101AValidator {
         }
         if (input.getDiseinfo() != null) {
             for (MedcasSettleListDiseInfo row : input.getDiseinfo()) {
+                // 行内五字段均须非空（adm_cond 组装侧空则默认「3」）
                 if (trimToNull(row.getDiagCode()) == null
                         || trimToNull(row.getDiagName()) == null
                         || trimToNull(row.getDiagType()) == null
                         || trimToNull(row.getMaindiagFlag()) == null
                         || trimToNull(row.getAdmCondType()) == null) {
-                    errors.add("结算清单诊断行缺必填字段");
+                    errors.add("结算清单诊断行缺少必须字段");
                     break;
                 }
             }

@@ -156,6 +156,7 @@ const currentOperationProps = computed<Record<string, unknown>>(() => {
       onExecuteDirectBed: handleExecuteDirectBed,
       onReloadBedBoard: loadBedBoard,
       onWorkbenchRefresh: handleInOutTransferRefresh,
+      onGoToOrderExecute: handleGoToOrderExecuteFromDischarge,
     };
   }
   return {};
@@ -224,6 +225,15 @@ async function handleOperationTabClick(tab: OperationTab) {
 /** 门禁空态：跳转入出转完成分床 */
 function handleGoAssignBed() {
   void handleOperationTabClick(IN_OUT_TRANSFER_TAB);
+}
+
+/** 出 Tab 跳转医嘱执行：保持当前出院患者选中，便于对照历史时点 */
+function handleGoToOrderExecuteFromDischarge() {
+  const id = String(activePatientId.value ?? '').trim();
+  if (id) {
+    setActivePatient(id);
+  }
+  void handleOperationTabClick(OPERATION_TAB.ORDER_EXECUTE);
 }
 /** 床位图点击占床：单选该患者并与左侧列表联动。 */
 function handleBedMapSelectPatient(id: string) {

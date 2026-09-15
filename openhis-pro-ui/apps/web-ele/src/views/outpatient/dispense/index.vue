@@ -18,7 +18,6 @@ import { computed, nextTick, onBeforeUnmount, onDeactivated, onMounted, ref, wat
 import { useDebounceFn } from '@vueuse/core';
 import { ElMessage, ElMessageBox } from 'element-plus';
 
-import { getChargeTypeListApi } from '#/api/core/common';
 import {
   httpDispenseOutpatientMedications,
   httpLoadPharmacyDispensePageInit,
@@ -28,10 +27,6 @@ import {
 } from '#/api/outpatient-pharmacy-dispense/outpatient-pharmacy-dispense.http';
 import { createAutoReviewAfterDispenseApi } from '#/api/pharmacy/prescription-review';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
-import {
-  filterInsuranceChargeTypes,
-  resolveDefaultInsuranceBusNo,
-} from '#/chs/constants/insurance-contract';
 import { fetchEncounterTcmDiagnosisDisplayText } from '#/components/doctor-station/diagnosis/services/fetch-encounter-tcm-diagnosis-text';
 import StationTriPaneLayout from '#/components/layouts/station-tri-pane-layout.vue';
 import { useCompactViewport } from '#/composables/use-compact-viewport';
@@ -140,8 +135,6 @@ const slipLoading = ref(false);
 const batchSubmitting = ref(false);
 const printSubmitting = ref(false);
 const initLoading = ref(false);
-/** 发药提交用默认医保契约 busNo（页面不展示选择器，进页静默取默认） */
-const insuranceContractBusNo = ref<string>();
 
 const selectedPatient = computed(() => {
   const id = selectedPatientId.value;
@@ -981,7 +974,6 @@ async function executeDispenseForLineIds(
     ];
     const res = await httpDispenseOutpatientMedications({
       encounterId: enc,
-      contractBusNo: insuranceContractBusNo.value,
       // 核发须带当前界面最终扫码：已配药跳过 savePrepare 时否则仍按旧码扣主档
       lines: dispenseIds.map((dispenseId) => {
         const row = slipById.get(dispenseId);
@@ -1088,15 +1080,6 @@ async function handleSinglePrescriptionDispense(rxId: string) {
 
 onMounted(async () => {
   await loadPageInit();
-  try {
-    const chargeTypes = await getChargeTypeListApi();
-    // 仅解析默认契约供发药请求，不再展示左上角选择器
-    insuranceContractBusNo.value = resolveDefaultInsuranceBusNo(
-      filterInsuranceChargeTypes(chargeTypes),
-    );
-  } catch {
-    insuranceContractBusNo.value = undefined;
-  }
   await reloadQueue();
 });
 </script>

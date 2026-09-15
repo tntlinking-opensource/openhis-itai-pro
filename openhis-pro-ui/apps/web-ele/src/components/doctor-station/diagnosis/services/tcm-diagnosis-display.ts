@@ -5,11 +5,6 @@ import type { TcmCatalogRole, TcmDiagnosisCatalogRowDto } from '#/api/doctor-sta
 export const TCM_CATALOG_SOURCE_DISEASE = 'tcm_dx';
 export const TCM_CATALOG_SOURCE_SYNDROME = 'tcm_syndrome';
 
-/** @deprecated 使用 {@link TCM_CATALOG_SOURCE_DISEASE} */
-export const TCM_CONDITION_SOURCE_DISEASE = 5;
-/** @deprecated 使用 {@link TCM_CATALOG_SOURCE_SYNDROME} */
-export const TCM_CONDITION_SOURCE_SYNDROME = 6;
-
 export type TcmCatalogKind = 'disease' | 'syndrome';
 
 export interface TcmDiagnosisPick {

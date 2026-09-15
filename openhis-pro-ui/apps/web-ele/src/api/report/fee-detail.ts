@@ -19,6 +19,14 @@ export type PresentationModeCode =
   | typeof PRESENTATION_MODE_DETAIL
   | typeof PRESENTATION_MODE_SUMMARY;
 
+/** 明细行合并：逐条发生行（默认）。 */
+export const LINE_MERGE_MODE_LINE = 'LINE' as const;
+/** 明细行合并：同就诊块内按收费项目定义净合计（住院按患者+品规）。 */
+export const LINE_MERGE_MODE_BY_DEFINITION = 'BY_DEFINITION' as const;
+export type FeeDetailLineMergeMode =
+  | typeof LINE_MERGE_MODE_BY_DEFINITION
+  | typeof LINE_MERGE_MODE_LINE;
+
 /** 汇总维：按费用类型（fin_type，默认）。 */
 export const SUMMARY_DIMENSION_FIN_TYPE = 'FIN_TYPE' as const;
 /** 汇总维：按开立科室。 */
@@ -92,6 +100,11 @@ export interface FeeDetailReportQueryFilter {
   settlementStatus?: string;
   /** 汇总维度；仅汇总 Tab / 汇总导出生效。 */
   summaryDimension?: string;
+  /**
+   * 明细行合并：LINE / BY_DEFINITION；仅住院明细 Tab / 明细导出。
+   * BY_DEFINITION = 同就诊内同品规净合计。
+   */
+  lineMergeMode?: FeeDetailLineMergeMode | string;
 }
 
 export interface FeeDetailReportSummaryRowDto {
@@ -110,12 +123,6 @@ export interface FeeDetailReportSummaryRowDto {
   saleUnitPrice?: number | string;
   purchaseAmountTotal?: number | string;
   saleAmountTotal?: number | string;
-  actualReceivedAmountTotal?: number | string;
-  receivableAmountTotal?: number | string;
-  discountedAmountTotal?: number | string;
-  lineAmountTotal?: number | string;
-  /** @deprecated 汇总 Tab 不展示 */
-  lineCount?: number;
 }
 
 export interface FeeDetailReportSummaryFooterDto {
@@ -123,12 +130,6 @@ export interface FeeDetailReportSummaryFooterDto {
   quantityTotal?: number | string;
   purchaseAmountTotal?: number | string;
   saleAmountTotal?: number | string;
-  actualReceivedAmountTotal?: number | string;
-  receivableAmountTotal?: number | string;
-  discountedAmountTotal?: number | string;
-  lineAmountTotal?: number | string;
-  /** @deprecated 汇总 Tab 不展示 */
-  lineCountTotal?: number;
 }
 
 export interface SummarizeFeeDetailReportResponse {
@@ -180,8 +181,6 @@ export interface FeeDetailLineDto {
   discountAmount?: number | string;
   receivableAmount?: number | string;
   discountedAmount?: number | string;
-  unitPrice?: number | string;
-  lineAmount?: number | string;
   purchaseUnitPrice?: number | string;
   purchaseAmount?: number | string;
   saleUnitPrice?: number | string;

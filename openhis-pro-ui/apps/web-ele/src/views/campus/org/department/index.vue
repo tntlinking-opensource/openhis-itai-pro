@@ -5,7 +5,7 @@ import type { CampusCollegeDto } from '#/api/campus/campus-college';
 import type { CampusDepartmentDto } from '#/api/campus/campus-department';
 import type { CampusSiteDto } from '#/api/campus/campus-site';
 
-import { onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 
 import { Page } from '@vben/common-ui';
 import { TableLayout } from '@vben-core/table-layout-ui';
@@ -53,21 +53,43 @@ const query = reactive({
   activeFlag: undefined as boolean | undefined,
 });
 
-const formItems: FormItemConfig[] = [
+const formItems = computed<FormItemConfig[]>(() => [
   { prop: 'keyword', label: '关键词', type: 'input', placeholder: '编码/名称' },
-  { prop: 'campusSiteId', label: '校区', type: 'select', clearable: true, options: [] },
-  { prop: 'collegeId', label: '学院', type: 'select', clearable: true, options: [] },
+  {
+    prop: 'campusSiteId',
+    label: '校区',
+    type: 'select',
+    clearable: true,
+    multiple: false,
+    options: campusSites.value.map((s) => ({
+      label: s.campusName || s.campusCode || '',
+      value: toIdString(s.id),
+    })),
+  },
+  {
+    prop: 'collegeId',
+    label: '学院',
+    type: 'select',
+    clearable: true,
+    multiple: false,
+    filterable: true,
+    options: collegeOptions.value.map((c) => ({
+      label: c.collegeName || c.collegeCode || '',
+      value: toIdString(c.id),
+    })),
+  },
   {
     prop: 'activeFlag',
     label: '状态',
     type: 'select',
     clearable: true,
+    multiple: false,
     options: [
       { label: '启用', value: true },
       { label: '停用', value: false },
     ],
   },
-];
+]);
 
 const columns: TableColumn[] = [
   { prop: 'departmentName', label: '部门名称', minWidth: 140 },
@@ -80,26 +102,12 @@ const columns: TableColumn[] = [
 async function loadCampusSites() {
   const res = await listActiveCampusSitesApi();
   campusSites.value = unwrapRecords(res);
-  const item = formItems.find((i) => i.prop === 'campusSiteId');
-  if (item) {
-    item.options = campusSites.value.map((s) => ({
-      label: s.campusName || s.campusCode || '',
-      value: toIdString(s.id),
-    }));
-  }
 }
 
 async function loadCollegesForFilter(campusSiteId?: string) {
   const site = campusSites.value.find((s) => toIdString(s.id) === campusSiteId);
   const res = await listActiveCollegesApi({ campusCode: site?.campusCode ?? null });
   collegeOptions.value = unwrapRecords(res);
-  const item = formItems.find((i) => i.prop === 'collegeId');
-  if (item) {
-    item.options = collegeOptions.value.map((c) => ({
-      label: c.collegeName || c.collegeCode || '',
-      value: toIdString(c.id),
-    }));
-  }
 }
 
 async function loadEditColleges(campusSiteId: string) {

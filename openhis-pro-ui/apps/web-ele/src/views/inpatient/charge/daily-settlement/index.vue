@@ -2,6 +2,7 @@
 import type {
   InpatientCashierSettlementHistoryItemDto,
   InpatientDailySettlementChannelRowDto,
+  InpatientDailySettlementPatientSummaryDto,
   InpatientDailySettlementSummaryDto,
   LoadInpatientDailySettlementPageInitResponse,
   PreviewInpatientDailySettlementResponse,
@@ -27,8 +28,10 @@ import {
   ElMessageBox,
   ElOption,
   ElSelect,
+  ElTabPane,
   ElTable,
   ElTableColumn,
+  ElTabs,
   ElTooltip,
 } from 'element-plus';
 
@@ -100,6 +103,8 @@ const pageInit = ref<LoadInpatientDailySettlementPageInitResponse | null>(null);
 const previewResult = ref<PreviewInpatientDailySettlementResponse | null>(null);
 const hasQueried = ref(false);
 const printSubmitting = ref(false);
+/** 结果区 Tab：日结合计 / 患者分项（只读统计，不影响交账） */
+const resultTab = ref<'summary' | 'patient'>('summary');
 const handoverDialogVisible = ref(false);
 const historyDialogVisible = ref(false);
 const historyItems = ref<InpatientCashierSettlementHistoryItemDto[]>([]);
@@ -232,9 +237,46 @@ const hasSummaryDisplay = computed(() => {
   );
 });
 
-const canPrintSettlement = computed(
-  () => hasSummaryDisplay.value && !queryLoading.value && !printSubmitting.value,
+/** 患者分项块（与合计同源；只读） */
+const patientSummaries = computed<InpatientDailySettlementPatientSummaryDto[]>(
+  () => previewResult.value?.patientSummaries ?? [],
 );
+
+const hasPatientSummaryDisplay = computed(
+  () => hasQueried.value && patientSummaries.value.length > 0,
+);
+
+/** 当前 Tab 可打印：合计看 summary，患者分项看 patientSummaries */
+const canPrintSettlement = computed(() => {
+  if (queryLoading.value || printSubmitting.value) {
+    return false;
+  }
+  if (resultTab.value === 'patient') {
+    return hasPatientSummaryDisplay.value;
+  }
+  return hasSummaryDisplay.value;
+});
+
+/** 组装患者分项块标题：姓名 + 住院号 + 病房-病床（不带患者序号） */
+function formatPatientBlockTitle(block: InpatientDailySettlementPatientSummaryDto): string {
+  const name = block.patientName?.trim() || '未知患者';
+  const busNo = block.encounterBusNo?.trim() || '—';
+  const ward = block.wardName?.trim() || '';
+  const bed = block.bedName?.trim() || '';
+  // 病房-病床：有病床则拼接；仅病房则只展示病房
+  let location = '';
+  if (ward && bed) {
+    location = `${ward}-${bed}`;
+  } else if (ward) {
+    location = ward;
+  } else if (bed) {
+    location = bed;
+  }
+  if (location) {
+    return `${name}　住院号：${busNo}　${location}`;
+  }
+  return `${name}　住院号：${busNo}`;
+}
 
 const headerDateRangeText = computed(() => {
   const summaryRange = resolvedSummary.value?.dateRange;
@@ -558,8 +600,26 @@ async function handleWithdrawHistory(row: InpatientCashierSettlementHistoryItemD
   }
 }
 
-/** 重打历史交账原单；后端按挂载 payment 流水现算凭证。 */
+/** 重打历史交账原单（合计）；后端按挂载 payment 流水现算凭证。 */
 async function handleReprintHistory(row: InpatientCashierSettlementHistoryItemDto) {
+  await reprintHistoryVoucher(row, 'summary');
+}
+
+/** 重打历史交账患者分项；与合计同源挂载现算。 */
+async function handleReprintHistoryPatient(row: InpatientCashierSettlementHistoryItemDto) {
+  await reprintHistoryVoucher(row, 'patient');
+}
+
+/**
+ * 加载挂载凭证并按模式打印合计或患者分项。
+ *
+ * @param row 历史行
+ * @param mode summary=日结合计单；patient=患者分项单
+ */
+async function reprintHistoryVoucher(
+  row: InpatientCashierSettlementHistoryItemDto,
+  mode: 'patient' | 'summary',
+) {
   const settlementId = preserveApiIdForRequest(row.settlementId);
   if (!settlementId) {
     return;
@@ -568,6 +628,34 @@ async function handleReprintHistory(row: InpatientCashierSettlementHistoryItemDt
   try {
     const voucher = await loadInpatientCashierSettlementVoucherApi(settlementId);
     const mountedVoucher = voucher.mountedVoucher;
+    if (mode === 'patient') {
+      const patients =
+        (mountedVoucher?.patientSummaries as
+          | InpatientDailySettlementPatientSummaryDto[]
+          | undefined) ?? [];
+      if (!patients.length) {
+        ElMessage.info('该交账单暂无患者分项可重打');
+        return;
+      }
+      await printDailySettlement({
+        jobName: `住院交账患者分项-${voucher.busNo ?? settlementId}`,
+        bizRef: {
+          settlementId,
+          busNo: String(voucher.busNo ?? '').trim() || undefined,
+          printMode: 'patient',
+        },
+        source: {
+          hospitalName: '',
+          documentTitle: '住院收费日结单（患者分项）',
+          cashierName: mountedVoucher?.cashierName ?? '',
+          settlementPeriodText: mountedVoucher?.settlementPeriodText ?? '',
+          summary: mountedVoucher?.summary as InpatientDailySettlementSummaryDto | undefined,
+          patientSummaries: patients,
+          printMode: 'patient',
+        },
+      });
+      return;
+    }
     if (!mountedVoucher?.summary) {
       ElMessage.info('凭证汇总不可用，明细需按当时挂载 payment 流水现算');
       return;
@@ -585,6 +673,7 @@ async function handleReprintHistory(row: InpatientCashierSettlementHistoryItemDt
         settlementPeriodText: mountedVoucher.settlementPeriodText ?? '',
         rows: mountedVoucher.rows as InpatientDailySettlementChannelRowDto[] | undefined,
         summary: mountedVoucher.summary as InpatientDailySettlementSummaryDto,
+        printMode: 'summary',
       },
     });
   } catch {
@@ -594,8 +683,12 @@ async function handleReprintHistory(row: InpatientCashierSettlementHistoryItemDt
   }
 }
 
-/** 打印当前查询结果的日结单。 */
+/** 打印当前 Tab：合计单或患者分项单（互不影响交账）。 */
 async function handlePrintSettlement() {
+  if (resultTab.value === 'patient') {
+    await handlePrintPatientSettlement();
+    return;
+  }
   if (!previewResult.value?.summary) {
     ElMessage.warning('请先查询日结汇总后再打印');
     return;
@@ -620,6 +713,42 @@ async function handlePrintSettlement() {
         settlementPeriodText: headerDateRangeText.value === '—' ? '' : headerDateRangeText.value,
         rows: previewResult.value.rows,
         summary: previewResult.value.summary,
+        printMode: 'summary',
+      },
+    });
+  } finally {
+    printSubmitting.value = false;
+  }
+}
+
+/** 打印患者分项日结单（与合计同源、单独一单）。 */
+async function handlePrintPatientSettlement() {
+  if (!patientSummaries.value.length) {
+    ElMessage.warning('暂无患者分项可打印');
+    return;
+  }
+  printSubmitting.value = true;
+  try {
+    const [dateFrom, dateTo] = queryForm.dateRange;
+    await printDailySettlement({
+      jobName: '住院收费日结单（患者分项）',
+      bizRef: {
+        orgId: resolveOrgIdForRequest() ?? '',
+        dateFrom: dateFrom ?? '',
+        dateTo: dateTo ?? '',
+        cashierIds: queryForm.cashierIds
+          .map((id) => preserveApiIdForRequest(id))
+          .filter((id): id is string => Boolean(id)),
+        printMode: 'patient',
+      },
+      source: {
+        hospitalName: '',
+        documentTitle: '住院收费日结单（患者分项）',
+        cashierName: selectedCashierLabel.value === '—' ? '' : selectedCashierLabel.value,
+        settlementPeriodText: headerDateRangeText.value === '—' ? '' : headerDateRangeText.value,
+        summary: previewResult.value?.summary,
+        patientSummaries: patientSummaries.value,
+        printMode: 'patient',
       },
     });
   } finally {
@@ -715,7 +844,7 @@ onMounted(async () => {
                 :disabled="!canPrintSettlement"
                 @click="handlePrintSettlement"
               >
-                打印日结单
+                {{ resultTab === 'patient' ? '打印患者分项' : '打印日结单' }}
               </ElButton>
               <ElButton
                 type="primary"
@@ -779,32 +908,75 @@ onMounted(async () => {
               </div>
             </div>
 
-            <template v-if="hasFinTypeDisplay">
-              <div class="flex flex-col gap-3 border-b border-[var(--el-border-color)] pb-4">
-                <div
-                  v-for="(row, rowIndex) in channelSummaryColumns"
-                  :key="`fin-type-${rowIndex}`"
-                  class="grid grid-cols-4 gap-x-6 gap-y-2 text-sm"
-                >
-                  <div
-                    v-for="item in row"
-                    :key="item.label"
-                    class="flex justify-between gap-2 text-[var(--el-text-color-primary)]"
-                  >
-                    <span class="text-[var(--el-text-color-regular)]">{{ item.label }}：</span>
-                    <span class="font-medium">{{ item.value }}</span>
-                  </div>
-                </div>
-              </div>
-            </template>
+            <template v-if="hasQueried">
+              <!-- 不设 flex-1：由上方 overflow-y-auto 容器统滚，避免 ElTabs 撑高后裁切翻不动 -->
+              <ElTabs v-model="resultTab" class="daily-settlement-result-tabs mt-2 shrink-0">
+                <ElTabPane label="日结合计" name="summary">
+                  <template v-if="hasFinTypeDisplay">
+                    <div class="flex flex-col gap-3 border-b border-[var(--el-border-color)] pb-4">
+                      <div
+                        v-for="(row, rowIndex) in channelSummaryColumns"
+                        :key="`fin-type-${rowIndex}`"
+                        class="grid grid-cols-4 gap-x-6 gap-y-2 text-sm"
+                      >
+                        <div
+                          v-for="item in row"
+                          :key="item.label"
+                          class="flex justify-between gap-2 text-[var(--el-text-color-primary)]"
+                        >
+                          <span class="text-[var(--el-text-color-regular)]"
+                            >{{ item.label }}：</span
+                          >
+                          <span class="font-medium">{{ item.value }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
 
-            <template v-if="hasQueried && hasSummaryDisplay">
-              <DailySettlementSummaryPanel :summary="resolvedSummary" />
+                  <template v-if="hasSummaryDisplay">
+                    <DailySettlementSummaryPanel :summary="resolvedSummary" />
+                  </template>
+
+                  <ElEmpty
+                    v-if="!queryLoading && !hasFinTypeDisplay && !hasSummaryDisplay"
+                    description="当前日结时间范围内暂无收费汇总"
+                    class="py-8"
+                  />
+                </ElTabPane>
+
+                <ElTabPane label="患者分项" name="patient">
+                  <div v-if="hasPatientSummaryDisplay" class="flex flex-col gap-3 pb-4 pr-1">
+                    <!-- 一患者一卡：标题条 + 汇总体，块间分隔清晰 -->
+                    <div
+                      v-for="block in patientSummaries"
+                      :key="`patient-${block.seqNo}-${block.encounterId ?? block.patientId ?? ''}`"
+                      class="overflow-hidden rounded-lg border border-solid border-[var(--el-border-color)] bg-[var(--el-bg-color)]"
+                    >
+                      <div
+                        class="border-b border-solid border-[var(--el-border-color-lighter)] bg-[var(--el-fill-color-light)] px-3 py-2 text-sm font-medium text-[var(--el-text-color-primary)]"
+                      >
+                        {{ formatPatientBlockTitle(block) }}
+                      </div>
+                      <div class="px-3 py-3">
+                        <DailySettlementSummaryPanel
+                          :summary="block.summary"
+                          omit-retail-upload-diff
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <ElEmpty
+                    v-else-if="!queryLoading"
+                    description="当前日结时间范围内暂无患者分项"
+                    class="py-8"
+                  />
+                </ElTabPane>
+              </ElTabs>
             </template>
 
             <ElEmpty
-              v-if="hasQueried && !queryLoading && !hasFinTypeDisplay && !hasSummaryDisplay"
-              description="当前日结时间范围内暂无收费汇总"
+              v-if="!hasQueried && !queryLoading"
+              description="请选择日结时间后查询"
               class="py-8"
             />
           </div>
@@ -883,7 +1055,7 @@ onMounted(async () => {
           </template>
         </ElTableColumn>
         <ElTableColumn prop="statusEnumText" label="状态" width="100" align="center" />
-        <ElTableColumn label="操作" width="180" fixed="right" align="center">
+        <ElTableColumn label="操作" width="260" fixed="right" align="center">
           <template #default="{ row }">
             <ElButton
               link
@@ -891,7 +1063,15 @@ onMounted(async () => {
               :loading="historyReprintLoadingId === String(row.settlementId ?? '')"
               @click="handleReprintHistory(row)"
             >
-              重打原单
+              重打合计
+            </ElButton>
+            <ElButton
+              link
+              type="primary"
+              :loading="historyReprintLoadingId === String(row.settlementId ?? '')"
+              @click="handleReprintHistoryPatient(row)"
+            >
+              重打患者分项
             </ElButton>
             <ElButton
               v-if="canWithdrawHistoryRow(row)"

@@ -161,16 +161,12 @@ public class OutpatientDailySettlementAppService {
             "页面初始化失败，请稍后重试");
         // Pre：默认收款人优先会话 practitionerId，回落 userId→Practitioner 映射
         Long currentCashierId = this.resolveCurrentCashierPractitionerId(operatorId);
-        Practitioner currentPractitioner = this.resolvePractitionerForCashierOptions(currentCashierId, operatorId);
-        boolean financialDelegateEnabled = currentCashierId != null
-            && this.isFinancialDelegateEnabled(currentCashierId);
         List<OptionDto> expensePropertyOptions = this.buildExpensePropertyOptions();
-        List<OptionDto> cashierOptions = this.buildCashierOptions(financialDelegateEnabled, currentPractitioner);
+        List<OptionDto> cashierOptions = this.buildCashierOptions();
         LocalDate today = LocalDate.now();
         // Asm：只读初始化数据装配（收款人默认勾选由前端按 preview 窗内有流水人驱动）
         return this.outpatientDailySettlementMapper.toLoadOutpatientDailySettlementPageInitResponse(
             today,
-            financialDelegateEnabled,
             expensePropertyOptions,
             cashierOptions,
             currentCashierId);
@@ -202,7 +198,7 @@ public class OutpatientDailySettlementAppService {
                 this.paymentReconciliationQueryService.findEarliestUnsettledPaymentBillTimeBeforeWindow(previewQuery);
             long gapSoftWarnCount =
                 this.paymentReconciliationQueryService.countUnsettledPaymentsAfterWindow(previewQuery);
-            // Pre：窗内 enterer 可能混有 userId，归一为 Practitioner 主键后再装配下拉
+            // Pre：窗内 enterer_id 为医务人员主键（BR-OPC-016），规范后装配收款人下拉
             List<Long> practitionerIdsInWindow =
                 this.paymentEntererMatchResolver.resolvePractitionerIdsFromEntererIds(
                     this.paymentReconciliationQueryService.listDistinctEntererIdsInCashierSettlementWindow(
@@ -645,11 +641,9 @@ public class OutpatientDailySettlementAppService {
      * <p>不含管理员岗：admin 仅当挂了财务岗，或查询后作为窗内实际收费人合并进下拉。
      * 空选表示不按人过滤。岗池直出 Option，不做 identity 用户态二次过滤。</p>
      *
-     * @param financialDelegateEnabled 保留入参兼容（岗池不再依赖代交账分支）
-     * @param currentPractitioner      保留入参兼容
      * @return 收款人 OptionDto 列表；永不为 null
      */
-    private List<OptionDto> buildCashierOptions(boolean financialDelegateEnabled, Practitioner currentPractitioner) {
+    private List<OptionDto> buildCashierOptions() {
         // Pre：仅财务岗在岗人员（adm_pr_assign + ROLE_ACCOUNTANT；不含 ROLE_ADMIN 单独入池）
         Page<Practitioner> page = this.practitionerRoleScopeLoader.pageActivePractitionersForPlatformRole(
             WhalePlatformRoleCodeConstants.ROLE_ACCOUNTANT,
@@ -672,26 +666,6 @@ public class OutpatientDailySettlementAppService {
             options.add(option);
         }
         return options;
-    }
-
-    /**
-     * 解析当前经办人实体（供收款人下拉「仅本人」分支展示名）。
-     *
-     * @param currentCashierId 已解析 Practitioner 主键，可空
-     * @param operatorUserId   当前登录用户主键
-     * @return 经办人实体；无法解析时 {@code null}
-     */
-    private Practitioner resolvePractitionerForCashierOptions(Long currentCashierId, Long operatorUserId) {
-        if (currentCashierId != null) {
-            Practitioner practitioner = this.practitionerQueryService.findById(currentCashierId);
-            if (practitioner != null && practitioner.getId() != null) {
-                return practitioner;
-            }
-        }
-        if (operatorUserId == null) {
-            return null;
-        }
-        return this.practitionerQueryService.findByUserId(operatorUserId);
     }
 
     /**

@@ -29,9 +29,12 @@ import {
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station.http';
 import { httpExecuteBedOperation } from '#/api/inpatient/nurse-station/inpatient-nurse-station-atd.http';
 import AppDialog from '#/components/app-dialog.vue';
+import PatientAllergyHistoryPanel from '#/components/clinical/patient-allergy-history-panel.vue';
 import { useRequest } from '#/hooks/use-request';
 import { formatMoneyYuan } from '#/utils/format/money-scale';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import { isStaleCrossRoleError } from '#/utils/http/stale-cross-role-error';
+import { isEncounterClinicalOrderMutationBlocked } from '#/utils/inpatient/encounter-clinical-order-gate';
 import { normalizeAdmCondTermCode } from '#/utils/terminology/resolve-adm-cond-code-label';
 import { normalizeTerminologyOptions } from '#/utils/terminology/resolve-terminology-option-label';
 import { DEFAULT_ADM_COND_CODE_GENERAL } from '#/views/inpatient/charge/register/inpatient-register.constants';
@@ -132,6 +135,29 @@ const printingWristband = ref(false);
 const printingBedCard = ref(false);
 
 const encounterId = computed(() => props.patient?.id ?? '');
+
+/** 过敏史写接口用患者主键（详情优先，列表摘要兜底） */
+const allergyPatientId = computed(
+  () => preserveApiIdForRequest(detail.value?.patientId ?? props.patient?.patientId) ?? '',
+);
+
+/** 过敏史写接口用就诊主键 */
+const allergyEncounterId = computed(() => preserveApiIdForRequest(encounterId.value) ?? '');
+
+/** 出院/待结算/已结算时过敏史只读 */
+const allergyReadOnly = computed(() =>
+  isEncounterClinicalOrderMutationBlocked(detail.value?.statusEnum ?? props.patient?.statusEnum),
+);
+
+const allergyHistoryPanelRef = ref<{ persist: (silent?: boolean) => Promise<void> } | null>(null);
+
+/** 体征卡保存时顺带提交过敏史文本 */
+async function persistAllergyHistory() {
+  if (allergyReadOnly.value) {
+    return;
+  }
+  await allergyHistoryPanelRef.value?.persist(true);
+}
 
 /** 患者姓名 */
 const patientName = computed(
@@ -831,6 +857,7 @@ async function handleSaveVitals() {
       participants: participants.length > 0 ? participants : undefined,
       admissionVitalSigns: vitalPayload,
     });
+    await persistAllergyHistory();
     if (vitalPayload) {
       ElMessage.success('已保存并带入体温单');
     } else {
@@ -874,6 +901,7 @@ async function handleAdmit() {
       participants: participants.length > 0 ? participants : undefined,
       admissionVitalSigns: assignWithBed ? undefined : vitalPayload,
     });
+    await persistAllergyHistory();
     if (op) {
       const execBody = buildExecuteBedOperationFromIntent(
         op,
@@ -995,6 +1023,19 @@ watch(visible, (open) => {
                 <ElInput v-model="vitalForm.bloodPressureLow" placeholder="请输入" />
                 <span class="admission-dialog__bp-unit">mmHg</span>
               </div>
+            </ElFormItem>
+          </div>
+          <div class="admission-dialog__row admission-dialog__row--full">
+            <ElFormItem label="过敏史">
+              <PatientAllergyHistoryPanel
+                v-if="allergyPatientId && allergyEncounterId"
+                ref="allergyHistoryPanelRef"
+                :patient-id="allergyPatientId"
+                :encounter-id="allergyEncounterId"
+                default-verification-status="UNCONFIRMED"
+                :read-only="allergyReadOnly"
+              />
+              <ElInput v-else disabled placeholder="正在加载患者信息…" />
             </ElFormItem>
           </div>
         </ElForm>
@@ -1265,6 +1306,9 @@ watch(visible, (open) => {
   display: grid;
   gap: 0 12px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.admission-dialog__row--full {
+  grid-template-columns: minmax(0, 1fr);
 }
 .admission-dialog__bp {
   align-items: center;

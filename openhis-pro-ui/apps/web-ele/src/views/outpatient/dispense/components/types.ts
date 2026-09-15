@@ -136,6 +136,11 @@ export interface DispensePrescriptionLine {
    */
   lotHasTraceMaster?: boolean;
   spec: string;
+  /**
+   * 包装最小单位换算比展示（服务端拼装），如 1盒/36片。
+   * 规格列后展示；同单位×1 为 1支。
+   */
+  packageSplitRatioText?: string;
   traceCode: string;
   batchNo: string;
   /** 行金额（totalPrice，列表「金额」列与笺面合计用） */

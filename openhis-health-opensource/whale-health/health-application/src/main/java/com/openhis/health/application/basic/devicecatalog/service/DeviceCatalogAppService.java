@@ -20,8 +20,6 @@ import com.openhis.health.application.basic.devicecatalog.dto.DeviceCatalogImpor
 import com.openhis.health.application.basic.devicecatalog.dto.DeviceCatalogImportProgressResponse;
 import com.openhis.health.application.basic.devicecatalog.dto.DeviceCatalogInitDto;
 import com.openhis.health.application.basic.devicecatalog.dto.ExportDeviceCatalogResponse;
-import com.openhis.health.application.basic.devicecatalog.dto.ImportDeviceCatalogErrorItemDto;
-import com.openhis.health.application.basic.devicecatalog.dto.ImportDeviceCatalogResponse;
 import com.openhis.health.application.basic.devicecatalog.dto.PageDeviceCatalogResponse;
 import com.openhis.health.application.basic.devicecatalog.dto.StartDeviceCatalogImportResponse;
 import com.openhis.health.application.basic.devicecatalog.mapper.DeviceCatalogMapper;
@@ -36,15 +34,10 @@ import com.openhis.health.application.basic.devicecatalog.request.UpdateDeviceCa
 import com.openhis.health.application.basic.devicecatalog.support.DeviceCatalogImportAsyncWorkflow;
 import com.openhis.health.application.basic.devicecatalog.support.DeviceCatalogBusNoSequenceSync;
 import com.openhis.health.application.basic.devicecatalog.support.DeviceCatalogExportRowAssembler;
-import com.openhis.health.application.basic.devicecatalog.support.DeviceCatalogImportConceptEnsureService;
 import com.openhis.health.application.basic.devicecatalog.support.DeviceCatalogImportErrorFileService;
 import com.openhis.health.application.basic.devicecatalog.support.DeviceCatalogImportJob;
-import com.openhis.health.application.basic.devicecatalog.support.DeviceCatalogImportRow;
-import com.openhis.health.application.basic.devicecatalog.support.DeviceCatalogImportRowValidator;
 import com.openhis.health.application.basic.devicecatalog.support.DeviceCatalogImportTemplateBuilder;
 import com.openhis.health.application.basic.devicecatalog.support.DeviceCatalogImportTerminologyIndex;
-import com.openhis.health.application.basic.devicecatalog.support.DeviceCatalogImportWorkbookParser;
-import com.openhis.health.application.basic.devicecatalog.support.DeviceCatalogImportWriteSupport;
 import com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.health.domain.share.constants.DeviceCatalogImportConstants;
@@ -82,11 +75,9 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -133,18 +124,10 @@ public class DeviceCatalogAppService {
     private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
     /** 导入模板生成。 */
     private final DeviceCatalogImportTemplateBuilder deviceCatalogImportTemplateBuilder;
-    /** 导入 xlsx 解析。 */
-    private final DeviceCatalogImportWorkbookParser deviceCatalogImportWorkbookParser;
-    /** 导入行校验。 */
-    private final DeviceCatalogImportRowValidator deviceCatalogImportRowValidator;
     /** 导入术语索引。 */
     private final DeviceCatalogImportTerminologyIndex deviceCatalogImportTerminologyIndex;
-    /** 导入前补齐缺失 unit_code。 */
-    private final DeviceCatalogImportConceptEnsureService deviceCatalogImportConceptEnsureService;
     /** 导入失败标注文件。 */
     private final DeviceCatalogImportErrorFileService deviceCatalogImportErrorFileService;
-    /** 导入事务写段。 */
-    private final DeviceCatalogImportWriteSupport deviceCatalogImportWriteSupport;
     /** 导入异步工作流。 */
     private final DeviceCatalogImportAsyncWorkflow deviceCatalogImportAsyncWorkflow;
     /** 新建/导入前对齐 DD 序号。 */
@@ -153,25 +136,19 @@ public class DeviceCatalogAppService {
     private final DeviceCatalogExportRowAssembler deviceCatalogExportRowAssembler;
 
     /**
-     * 耗材维护页初始化：单位类下拉、供应商列表、生产厂家（type=1）、耗材分类（{@code device_category_code}）、耗材种类（{@code device_type_code}）、财务类型（{@code fin_type_code}）、医保类别/等级等。
+     * 耗材维护页初始化：计量单位、供应商、生产厂家（type=1）、耗材分类/种类、财务类型、医保类别/等级等。
      *
-     * <p>返回结构中部分列表为 {@link OptionDtoLegacyRowUtil} 映射的 label/value 行，兼容旧前端表格数据源。</p>
+     * <p>下拉行经 {@link OptionDtoLegacyRowUtil} 映射为 {@code label/value}（与药品目录 init 行形状一致）。</p>
      *
-     * @return 各计量维度下拉数据聚合（若术语缺失则对应列为空列表）
+     * @return 下拉数据聚合（术语缺失时对应列为空列表）
      */
     public DeviceCatalogInitDto init() {
         // Gate：只读页初始化，无写侧操作人
         DeviceCatalogInitDto dto = DeviceCatalogInitDto.empty();
 
-        // Pre：加载计量单位、供应商/生产厂家与耗材分类/种类/财务类型下拉
-        // 计量单位统一 unit_code；剂量单独 dose_unit
-        List<Map<String, Object>> unitOptions =
-            terminologyOptionLoader.loadLegacyRows(TerminologyCodeSystemNameConstants.UNIT_CODE);
-        dto.setUnitCodeOptions(unitOptions);
-        dto.setPackUnits(unitOptions);
-        dto.setSaleUnits(unitOptions);
-        dto.setMinUnits(unitOptions);
-        dto.setStockUnits(unitOptions);
+        // Pre：计量单位统一 unit_code；剂量单独 dose_unit；再加载供应商/厂家与分类字典
+        dto.setUnitCodeOptions(
+            terminologyOptionLoader.loadLegacyRows(TerminologyCodeSystemNameConstants.UNIT_CODE));
         dto.setDoseUnits(
             terminologyOptionLoader.loadLegacyRows(TerminologyCodeSystemNameConstants.DOSE_UNIT));
 
@@ -310,14 +287,16 @@ public class DeviceCatalogAppService {
         String keyword = null;
         String categoryCode = null;
         String typeCode = null;
+        String statusEnum = null;
         if (request != null) {
             keyword = request.getKeyword();
             categoryCode = request.getCategoryCode();
             typeCode = request.getTypeCode();
+            statusEnum = request.getStatusEnum();
         }
         // Pre：读侧分页并 enrich 定价与字典文案
         Page<DeviceDefinition> page = deviceDefinitionQueryService.pageDeviceDefinition(
-            pageNo - 1, pageSize, keyword, categoryCode, typeCode);
+            pageNo - 1, pageSize, keyword, categoryCode, typeCode, statusEnum);
         List<DeviceCatalogDto> content = page.getContent().stream()
             .filter(Objects::nonNull)
             .map(deviceCatalogMapper::toDto)
@@ -609,84 +588,6 @@ public class DeviceCatalogAppService {
     }
 
     /**
-     * 批量导入耗材目录（同步；兼容旧调用。页面推荐 {@link #startImportDeviceCatalog} + 进度轮询）。
-     *
-     * @param request 含 xlsx 字节
-     * @return 成功摘要（batchNo / 成功条数）
-     */
-    public ImportDeviceCatalogResponse importDeviceCatalog(ImportDeviceCatalogRequest request) {
-        // Gate：上传字节非空且体积受限
-        if (request == null || request.getFileBytes() == null || request.getFileBytes().length == 0) {
-            throw new ValidationException("导入耗材目录失败：文件不能为空");
-        }
-        if (request.getFileBytes().length > DeviceCatalogImportConstants.ERROR_FILE_MAX_BYTES) {
-            throw new ValidationException("导入耗材目录失败：文件过大，请拆分后重试");
-        }
-        // Gate 续：写路径操作人与机构
-        Long operatorId = currentPractitionerResolver.requireOperatorId(
-            ErrorCodeConstants.DEVICE_DEFINITION_INVALID_ARGUMENT, "请先登录后再导入耗材目录");
-        Long orgId = managedOrganizationIdsResolver.requireSessionHospitalId(
-            "DEV-CAT-IMP-ORG",
-            "导入耗材目录失败：未选择医院上下文，请先登录并选择医院");
-        // Pre：解析 xlsx
-        DeviceCatalogImportWorkbookParser.ParseResult parseResult =
-            deviceCatalogImportWorkbookParser.parse(request.getFileBytes());
-        // Pre 续：按 Excel 补齐缺失 unit_code，再全量行校验（不写库）
-        deviceCatalogImportConceptEnsureService.ensureMissingConcepts(
-            parseResult.getRows(), deviceCatalogImportTerminologyIndex);
-        List<ImportDeviceCatalogErrorItemDto> errors = deviceCatalogImportRowValidator.validate(
-            parseResult.getRows(),
-            orgId,
-            deviceCatalogImportTerminologyIndex,
-            deviceDefinitionQueryService);
-        // Gate：任一行失败则生成标注文件并拒绝整批
-        if (errors != null && !errors.isEmpty()) {
-            String token = deviceCatalogImportErrorFileService.buildAndStore(
-                parseResult.getOriginalBytes(), errors);
-            Map<String, String> errorMap = new LinkedHashMap<>();
-            errorMap.put("errorFileToken", token);
-            int index = 0;
-            for (ImportDeviceCatalogErrorItemDto item : errors) {
-                String key = "e" + index;
-                StringBuilder line = new StringBuilder();
-                if (item.getExcelRowNum() != null) {
-                    line.append("第").append(item.getExcelRowNum()).append("行");
-                }
-                if (StringUtils.isNotEmpty(item.getColumnName())) {
-                    if (line.length() > 0) {
-                        line.append(" ");
-                    }
-                    line.append("[").append(item.getColumnName()).append("]");
-                }
-                if (line.length() > 0) {
-                    line.append("：");
-                }
-                line.append(item.getMessage());
-                errorMap.put(key, line.toString());
-                index = index + 1;
-            }
-            throw new ValidationException(
-                "导入失败，共 " + errors.size() + " 处错误，已全部回滚", errorMap);
-        }
-        // Cmd：事务内逐行创建（ACTIVE + 维护态价）
-        String batchNo = DeviceCatalogImportConstants.BATCH_NO_PREFIX
-            + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
-            + "-"
-            + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
-        List<DeviceCatalogImportRow> rows = parseResult.getRows();
-        deviceCatalogImportWriteSupport.importRows(
-            batchNo, operatorId, rows, this::createOneForImport);
-        log.info("耗材目录导入完成 batchNo={}, success={}", batchNo, rows.size());
-        // Asm：成功响应
-        ImportDeviceCatalogResponse response = new ImportDeviceCatalogResponse();
-        response.setBatchNo(batchNo);
-        response.setTotalCount(rows.size());
-        response.setSuccessCount(rows.size());
-        response.setFailCount(0);
-        return response;
-    }
-
-    /**
      * 下载耗材目录导入模板。
      *
      * @return xlsx 字节包装，供前端 base64 下载
@@ -724,7 +625,8 @@ public class DeviceCatalogAppService {
             fetchLimit,
             safeRequest.getKeyword(),
             safeRequest.getCategoryCode(),
-            safeRequest.getTypeCode());
+            safeRequest.getTypeCode(),
+            safeRequest.getStatusEnum());
         List<DeviceDefinition> details = page.getContent();
         boolean truncated = false;
         List<DeviceDefinition> exportDetails = details;
@@ -744,6 +646,8 @@ public class DeviceCatalogAppService {
         } else {
             priceMap = this.loadPriceMap(ids);
         }
+        // Pre 续：厂家展示名按 manufacturerId 批量解析（实体已无 manufacturer_text 列）
+        Map<Long, String> manufacturerNameById = this.mapManufacturerNamesForExport(exportDetails);
         deviceCatalogImportTerminologyIndex.load();
         List<String[]> dataRows = new ArrayList<>();
         for (DeviceDefinition detail : exportDetails) {
@@ -752,7 +656,7 @@ public class DeviceCatalogAppService {
             }
             List<ChargeItemDefinition> priceLines = priceMap.get(detail.getId());
             dataRows.add(deviceCatalogExportRowAssembler.toColumnValues(
-                detail, priceLines, deviceCatalogImportTerminologyIndex));
+                detail, priceLines, deviceCatalogImportTerminologyIndex, manufacturerNameById));
         }
         byte[] bytes = deviceCatalogImportTemplateBuilder.buildExport(
             dataRows, safeRequest.getExportColumns());
@@ -997,12 +901,10 @@ public class DeviceCatalogAppService {
             String purchaseLabel = DeviceCatalogAppService.dictLabel(unitCodeMap, dto.getPurchaseUnitCode());
             if (purchaseLabel != null) {
                 dto.setPurchaseUnitCode_dictText(purchaseLabel);
-                dto.setUnitCode_dictText(purchaseLabel);
             }
             String splitLabel = DeviceCatalogAppService.dictLabel(unitCodeMap, dto.getSplitUnitCode());
             if (splitLabel != null) {
                 dto.setSplitUnitCode_dictText(splitLabel);
-                dto.setMinUnitCode_dictText(splitLabel);
             }
             String packageLabel = DeviceCatalogAppService.dictLabel(unitCodeMap, dto.getPackageUnitCode());
             if (packageLabel != null) {
@@ -1050,7 +952,27 @@ public class DeviceCatalogAppService {
     }
 
     /**
-     * 写入前归一化五类单位字段：{@code purchaseUnitCode}/{@code splitUnitCode} 与历史 {@code unitCode}/{@code minUnitCode} 双向对齐。
+     * 导出行批量解析生产厂家展示名（与列表同口径：按 manufacturerId 查 cus_supplier.name）。
+     *
+     * @param details 导出用耗材实体
+     * @return manufacturerId → 名称；无厂家主键时返回空 Map
+     */
+    private Map<Long, String> mapManufacturerNamesForExport(List<DeviceDefinition> details) {
+        List<Long> manufacturerIds = new ArrayList<>();
+        for (DeviceDefinition detail : details) {
+            if (detail != null && detail.getManufacturerId() != null) {
+                manufacturerIds.add(detail.getManufacturerId());
+            }
+        }
+        if (manufacturerIds.isEmpty()) {
+            return new HashMap<>();
+        }
+        return supplierQueryService.mapNamesByIds(manufacturerIds);
+    }
+
+    /**
+     * 写入前归一化五类单位字段：仅 trim {@code purchaseUnitCode}/{@code splitUnitCode}/{@code packageUnitCode}/{@code stockUnitCode}/{@code doseUnitCode}，
+     * 不再与 {@code unitCode}/{@code minUnitCode} 双向回填。
      *
      * @param request 创建或更新请求（就地修改）
      */
@@ -1059,22 +981,12 @@ public class DeviceCatalogAppService {
             return;
         }
         String purchaseUnitCode = request.getPurchaseUnitCode();
-        if (purchaseUnitCode == null || purchaseUnitCode.isBlank()) {
-            purchaseUnitCode = request.getUnitCode();
-        }
         if (purchaseUnitCode != null && !purchaseUnitCode.isBlank()) {
-            String trimmed = purchaseUnitCode.trim();
-            request.setPurchaseUnitCode(trimmed);
-            request.setUnitCode(trimmed);
+            request.setPurchaseUnitCode(purchaseUnitCode.trim());
         }
         String splitUnitCode = request.getSplitUnitCode();
-        if (splitUnitCode == null || splitUnitCode.isBlank()) {
-            splitUnitCode = request.getMinUnitCode();
-        }
         if (splitUnitCode != null && !splitUnitCode.isBlank()) {
-            String trimmed = splitUnitCode.trim();
-            request.setSplitUnitCode(trimmed);
-            request.setMinUnitCode(trimmed);
+            request.setSplitUnitCode(splitUnitCode.trim());
         }
         if (request.getPackageUnitCode() != null) {
             request.setPackageUnitCode(request.getPackageUnitCode().trim());
@@ -1088,7 +1000,7 @@ public class DeviceCatalogAppService {
     }
 
     /**
-     * 剂量单位/倍数不在维护界面展示：未传时回落为拆零单位与 1，保证领域五类单位完整。
+     * 剂量单位/倍数不在维护界面展示：未传时回落为拆零单位（仅 {@code splitUnitCode}）与 1，保证领域五类单位完整。
      *
      * @param request 创建或更新请求（就地修改）
      */
@@ -1098,9 +1010,6 @@ public class DeviceCatalogAppService {
         }
         if (request.getDoseUnitCode() == null || request.getDoseUnitCode().isBlank()) {
             String splitUnitCode = request.getSplitUnitCode();
-            if (splitUnitCode == null || splitUnitCode.isBlank()) {
-                splitUnitCode = request.getMinUnitCode();
-            }
             if (splitUnitCode != null && !splitUnitCode.isBlank()) {
                 request.setDoseUnitCode(splitUnitCode.trim());
             }
@@ -1122,7 +1031,7 @@ public class DeviceCatalogAppService {
         }
         Long supplyId = request.getSupplyId();
         Long manufacturerId = request.getManufacturerId();
-        // 历史兼容：仅填了供应商时，把 supplyId 视为厂家主键写入 manufacturerId
+        // manufacturerId 优先；仅填 supplyId 时回填厂家主键（供应商与厂家同库主键场景）
         if (supplyId != null && manufacturerId == null) {
             request.setManufacturerId(supplyId);
         }

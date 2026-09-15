@@ -19,6 +19,7 @@ import com.openhis.health.domain.share.constants.AggregateTypeConstants;
 import com.openhis.health.domain.share.constants.BusinessSequenceConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+import com.openhis.health.domain.share.enums.PaymentChannel;
 import com.openhis.health.domain.share.enums.PaymentStatus;
 import com.openhis.health.domain.share.enums.PaymentType;
 import com.openhis.health.domain.share.events.financial.paymentreconciliation.*;
@@ -845,6 +846,54 @@ public class PaymentReconciliationDomainService {
         }
         if (changed > 0) {
             this.ybSettlementRepository.saveAll(rows);
+        }
+        return changed;
+    }
+
+    /**
+     * 2601 平台冲正成功后：软删该 {@code setl_id} 对应的医保统筹/个账明细（幂等）。
+     *
+     * <p>仅触碰 {@link PaymentChannel#INSURANCE_FUND}/{@link PaymentChannel#INSURANCE_ACCT}，
+     * 不改现金/微信等自付渠道，不影响正常 2208 一收一退（退费走 UN_PAY 对冲）。
+     * 日结下半区统筹/个账读 {@code fin_payment_rec_detail}；2601 视同结算未发生，须与平台净额 0 同态，
+     * 否则会出现「父行跟明细虚增、子行读不到已软删回执 insutype」的不平。</p>
+     * <p>独立事务：与 {@link #markYbSettlementsRevoked} 同口径，外层回滚不回滚本清理。</p>
+     *
+     * @param setlId 平台结算号（明细 {@code pay_trans_no}）；空则跳过
+     * @return 实际软删行数（已删不计入）
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public int softDeleteInsuranceFundAcctDetailsBySetlId(String setlId) {
+        // Gate：无 setl_id 无法定位明细，跳过以免误伤其它支付单
+        if (StringUtils.isEmpty(setlId)) {
+            return 0;
+        }
+        String trimmed = setlId.trim();
+        List<String> insurancePayEnums = List.of(
+            PaymentChannel.INSURANCE_FUND.getCode(),
+            PaymentChannel.INSURANCE_ACCT.getCode());
+        List<PaymentRecDetail> rows =
+            this.detailRepository.findAllByPayTransNoAndPayEnumInAndIsDeletedFalse(trimmed, insurancePayEnums);
+        if (rows == null || rows.isEmpty()) {
+            return 0;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        int changed = 0;
+        // Loop：仅软删统筹/个账；已软删底座过滤后仍二次防呆
+        for (PaymentRecDetail row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(row.getIsDeleted())) {
+                continue;
+            }
+            row.setIsDeleted(true);
+            row.setDeletedAt(now);
+            row.setUpdatedAt(now);
+            changed++;
+        }
+        if (changed > 0) {
+            this.detailRepository.saveAll(rows);
         }
         return changed;
     }

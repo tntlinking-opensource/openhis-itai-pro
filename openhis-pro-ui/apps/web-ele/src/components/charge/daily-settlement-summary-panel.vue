@@ -3,17 +3,28 @@ import type {
   DailySettlementExpenseNatureSummaryDto,
   DailySettlementInsuranceTypeSummaryDto,
   DailySettlementSummaryRowDto,
+  DailySettlementWorkInjurySummaryDto,
 } from '#/api/outpatient/daily-settlement';
 
 import { computed } from 'vue';
 
 import { ElTable, ElTableColumn } from 'element-plus';
 
+import { isWorkInjuryUiEnabled } from '#/utils/project-optional-modules';
+
 defineOptions({ name: 'DailySettlementSummaryPanel' });
 
-const props = defineProps<{
-  summary?: DailySettlementSummaryPanelSource | null;
-}>();
+const props = withDefaults(
+  defineProps<{
+    summary?: DailySettlementSummaryPanelSource | null;
+    /** 为 true 时不展示医保上传差额（住院患者分项口径） */
+    omitRetailUploadDiff?: boolean;
+  }>(),
+  {
+    summary: null,
+    omitRetailUploadDiff: false,
+  },
+);
 
 export interface DailySettlementSummaryPanelSource {
   totalIncome?: string;
@@ -34,6 +45,8 @@ export interface DailySettlementSummaryPanelSource {
   settleSupplementAmount?: string;
   physicalExamCount?: number;
   expenseNatureSummaries?: DailySettlementExpenseNatureSummaryDto[];
+  /** 工伤独立统计（不入总合计；院点启用工伤且有流水时展示） */
+  workInjurySummary?: DailySettlementWorkInjurySummaryDto | null;
   /** 后端扁平行；字段缺省时回落取「医保上传差额」 */
   summaryRows?: DailySettlementSummaryRowDto[];
 }
@@ -203,7 +216,7 @@ const channelMetrics = computed<MetricItem[]>(() => {
     },
   ]);
   const retailDiff = resolveRetailUploadDiffAmount(summary);
-  if (!isZeroMoney(retailDiff)) {
+  if (!props.omitRetailUploadDiff && !isZeroMoney(retailDiff)) {
     items.push(
       ...moneyMetrics([
         {
@@ -306,8 +319,60 @@ const natureListRows = computed<NatureListRow[]>(() => {
 
 const channelMetricRows = computed(() => chunkMetrics(channelMetrics.value));
 
+/** 院点启用工伤且后端返回统计时展示独立块 */
+const showWorkInjuryBlock = computed(() => {
+  return isWorkInjuryUiEnabled() && Boolean(props.summary?.workInjurySummary);
+});
+
+/** 工伤分类金额四列网格（不入总合计） */
+const workInjuryCategoryMetricRows = computed(() => {
+  const wi = props.summary?.workInjurySummary;
+  if (!wi) {
+    return [] as MetricItem[][];
+  }
+  const items = moneyMetrics([
+    {
+      key: 'wiWesternPatent',
+      label: '西药中成药',
+      value: wi.westernPatentMedicineAmount,
+    },
+    { key: 'wiTreatment', label: '诊疗', value: wi.treatmentAmount },
+    { key: 'wiConsumable', label: '耗材', value: wi.consumableAmount },
+    { key: 'wiHerbal', label: '中草药', value: wi.herbalMedicineAmount },
+    { key: 'wiConsultation', label: '诊察费', value: wi.consultationFeeAmount },
+  ]);
+  items.push({
+    key: 'wiPersonCount',
+    label: '人次',
+    value: `${formatPersonCount(wi.personCount)} 人次`,
+    emphasize: true,
+  });
+  return chunkMetrics(items);
+});
+
+/** 工伤费用性质明细一行（统筹 / 个人自付） */
+const workInjuryNatureRows = computed<NatureListRow[]>(() => {
+  const wi = props.summary?.workInjurySummary;
+  if (!wi) {
+    return [];
+  }
+  return [
+    {
+      key: 'work-injury-nature',
+      rowType: 'nature',
+      name: wi.contractName?.trim() || '工伤保险',
+      personCount: formatPersonCount(wi.personCount),
+      cashAmount: formatTableAmount(wi.cashAmount),
+      fundAmount: formatTableAmount(wi.fundAmount),
+      accountAmount: formatTableAmount(wi.accountAmount),
+      totalAmount: formatTableAmount(wi.totalAmount),
+    },
+  ];
+});
+
 const hasContent = computed(
-  () => channelMetrics.value.length > 0 || natureListRows.value.length > 0,
+  () =>
+    channelMetrics.value.length > 0 || natureListRows.value.length > 0 || showWorkInjuryBlock.value,
 );
 
 /** 表格行主键 */
@@ -382,6 +447,84 @@ defineExpose({ hasContent });
         <ElTableColumn
           prop="fundAmount"
           label="医保统筹(元)"
+          min-width="100"
+          align="right"
+          header-align="center"
+        />
+        <ElTableColumn
+          prop="accountAmount"
+          label="个人账户(元)"
+          min-width="112"
+          align="right"
+          header-align="center"
+        />
+        <ElTableColumn
+          prop="totalAmount"
+          label="总额(元)"
+          min-width="112"
+          align="right"
+          header-align="center"
+        />
+      </ElTable>
+    </div>
+
+    <div v-if="showWorkInjuryBlock" class="ds-wire-block">
+      <div class="mb-1.5 text-sm font-semibold leading-tight text-[var(--el-text-color-primary)]">
+        工伤统计（不计入总合计）
+      </div>
+      <div v-if="workInjuryCategoryMetricRows.length > 0" class="mb-2 flex flex-col gap-1.5">
+        <div
+          v-for="(row, rowIndex) in workInjuryCategoryMetricRows"
+          :key="`wi-cat-row-${rowIndex}`"
+          class="grid grid-cols-4 gap-x-5 gap-y-1 text-sm leading-snug"
+        >
+          <div
+            v-for="item in row"
+            :key="item.key"
+            class="flex justify-between gap-2 text-[var(--el-text-color-primary)]"
+          >
+            <span class="text-[var(--el-text-color-regular)]">{{ item.label }}：</span>
+            <span class="font-medium" :class="{ 'font-semibold': item.emphasize }">{{
+              item.value
+            }}</span>
+          </div>
+        </div>
+      </div>
+      <ElTable
+        v-if="workInjuryNatureRows.length > 0"
+        class="ds-wire-table"
+        :data="workInjuryNatureRows"
+        :row-key="resolveNatureRowKey"
+        :row-class-name="resolveNatureRowClassName"
+        border
+        :stripe="false"
+        empty-text="暂无数据"
+      >
+        <ElTableColumn
+          prop="name"
+          label="费用性质"
+          min-width="168"
+          align="left"
+          header-align="center"
+          show-overflow-tooltip
+        />
+        <ElTableColumn
+          prop="personCount"
+          label="人数"
+          width="72"
+          align="center"
+          header-align="center"
+        />
+        <ElTableColumn
+          prop="cashAmount"
+          label="个人自付(元)"
+          min-width="112"
+          align="right"
+          header-align="center"
+        />
+        <ElTableColumn
+          prop="fundAmount"
+          label="统筹(元)"
           min-width="100"
           align="right"
           header-align="center"

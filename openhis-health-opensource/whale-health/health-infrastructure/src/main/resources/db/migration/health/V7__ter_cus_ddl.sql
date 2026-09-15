@@ -516,6 +516,7 @@ CREATE TABLE IF NOT EXISTS "public"."cus_service_location_template" (
     "distribution_category_code" varchar(255) NOT NULL,
     "def_location_id" int8 NOT NULL,
     "item_definition_id" int8,
+    "type_code" varchar(64),
     "method_code" varchar(255),
     "start_time" time(6),
     "end_time" time(6),
@@ -540,6 +541,7 @@ COMMENT ON COLUMN cus_service_location_template.item_table IS '项table';
 COMMENT ON COLUMN cus_service_location_template.distribution_category_code IS 'distributioncategory编码';
 COMMENT ON COLUMN cus_service_location_template.def_location_id IS 'def位置标识';
 COMMENT ON COLUMN cus_service_location_template.item_definition_id IS '项定义标识';
+COMMENT ON COLUMN cus_service_location_template.type_code IS '耗材种类编码（术语 device_type_code）；空表示通配；药品行通常为空';
 COMMENT ON COLUMN cus_service_location_template.method_code IS 'method编码';
 COMMENT ON COLUMN cus_service_location_template.start_time IS '开始时间';
 COMMENT ON COLUMN cus_service_location_template.end_time IS '结束时间';
@@ -1058,3 +1060,109 @@ CREATE INDEX IF NOT EXISTS idx_cus_tn_record_bus_no
 
 CREATE INDEX IF NOT EXISTS idx_cus_tn_record_trace_no_created
     ON cus_trace_number_record (trace_no, created_at);
+
+-- =============================================================================
+-- V11/V18 squash: cus_specimen_tube_merge（终态仅保留设备内目标唯一索引）
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS "public"."cus_specimen_tube_merge" (
+    "id" int8 NOT NULL,
+    "tenant_id" int8,
+    "created_at" timestamptz(6) NOT NULL,
+    "updated_at" timestamptz(6),
+    "created_by" int8,
+    "updated_by" int8,
+    "is_deleted" bool NOT NULL DEFAULT false,
+    "deleted_at" timestamptz(6),
+    "deleted_by" int8,
+    "version" int4 NOT NULL DEFAULT 0,
+    "device_id" int8 NOT NULL,
+    "target_table" varchar(255) NOT NULL,
+    "target_id" int8 NOT NULL,
+    "quantity" numeric(18,2),
+    "unit_code" varchar(255),
+    "display_order" int4,
+    CONSTRAINT "cus_specimen_tube_merge_pkey" PRIMARY KEY ("id")
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "uk_cus_specimen_tube_merge_device_target"
+    ON "public"."cus_specimen_tube_merge" ("device_id", "target_table", "target_id")
+    WHERE "is_deleted" = false;
+
+CREATE INDEX IF NOT EXISTS "idx_cus_specimen_tube_merge_device_id"
+    ON "public"."cus_specimen_tube_merge" ("device_id");
+
+COMMENT ON TABLE cus_specimen_tube_merge IS
+    '标本合管配置（设备绑定检验项目/耗材/采血费 activity；检验项目跨设备唯一由领域校验，耗材与采血费可跨设备）';
+COMMENT ON COLUMN cus_specimen_tube_merge.device_id IS 'adm_device.id';
+COMMENT ON COLUMN cus_specimen_tube_merge.target_table IS 'wkf_activity_definition 或 adm_device_definition';
+COMMENT ON COLUMN cus_specimen_tube_merge.target_id IS '目标主键';
+
+-- =============================================================================
+-- V15 squash: cus_prescription_review
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS "public"."cus_prescription_review" (
+    "id" int8 NOT NULL,
+    "tenant_id" int8,
+    "created_at" timestamptz(6) NOT NULL,
+    "updated_at" timestamptz(6),
+    "created_by" int8,
+    "updated_by" int8,
+    "is_deleted" bool NOT NULL DEFAULT false,
+    "deleted_at" timestamptz(6),
+    "deleted_by" int8,
+    "version" int4 NOT NULL DEFAULT 0,
+    "bus_no" varchar(64) NOT NULL,
+    "prescription_no" varchar(64) NOT NULL,
+    "reviewer_id" int8 NOT NULL,
+    "reviewed_at" timestamptz(6) NOT NULL,
+    "reasonable_flag" bool NOT NULL,
+    "status_enum" varchar(32) NOT NULL,
+    "reason" varchar(1000),
+    "remark" varchar(1000),
+    CONSTRAINT "cus_prescription_review_pkey" PRIMARY KEY ("id")
+);
+
+COMMENT ON TABLE cus_prescription_review IS '处方点评（门诊方级；有效行一对一）';
+COMMENT ON COLUMN cus_prescription_review.id IS '主键';
+COMMENT ON COLUMN cus_prescription_review.tenant_id IS '租户标识';
+COMMENT ON COLUMN cus_prescription_review.created_at IS '创建时间';
+COMMENT ON COLUMN cus_prescription_review.updated_at IS '最后更新时间';
+COMMENT ON COLUMN cus_prescription_review.created_by IS '创建人';
+COMMENT ON COLUMN cus_prescription_review.updated_by IS '最后更新人';
+COMMENT ON COLUMN cus_prescription_review.is_deleted IS '软删标记';
+COMMENT ON COLUMN cus_prescription_review.deleted_at IS '删除时间';
+COMMENT ON COLUMN cus_prescription_review.deleted_by IS '删除人';
+COMMENT ON COLUMN cus_prescription_review.version IS '乐观锁版本号';
+COMMENT ON COLUMN cus_prescription_review.bus_no IS '点评业务号（本聚合日序，前缀 PRV）';
+COMMENT ON COLUMN cus_prescription_review.prescription_no IS '处方号（有效行唯一锚点）';
+COMMENT ON COLUMN cus_prescription_review.reviewer_id IS '点评人';
+COMMENT ON COLUMN cus_prescription_review.reviewed_at IS '点评时间';
+COMMENT ON COLUMN cus_prescription_review.reasonable_flag IS '是否合理';
+COMMENT ON COLUMN cus_prescription_review.status_enum IS '点评状态（有效行 REVIEWED）';
+COMMENT ON COLUMN cus_prescription_review.reason IS '原因（不合理必填）';
+COMMENT ON COLUMN cus_prescription_review.remark IS '备注';
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_cus_prescription_review_rx_active
+    ON cus_prescription_review (tenant_id, prescription_no)
+    WHERE is_deleted = false;
+
+CREATE INDEX IF NOT EXISTS idx_cus_prescription_review_reviewed_at
+    ON cus_prescription_review (reviewed_at);
+
+CREATE INDEX IF NOT EXISTS idx_cus_prescription_review_reviewer_id
+    ON cus_prescription_review (reviewer_id)
+    WHERE is_deleted = false;
+
+-- =============================================================================
+-- V13 squash: cus / doc report indexes
+-- =============================================================================
+CREATE INDEX IF NOT EXISTS idx_rpt_cus_tn_status
+    ON cus_trace_number (in_hospital_status_enum, item_table, item_id)
+    WHERE is_deleted = FALSE;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_cus_tn_record_created
+    ON cus_trace_number_record (created_at, trace_number_id);
+
+CREATE INDEX IF NOT EXISTS idx_rpt_doc_inv_snap_warehouse
+    ON doc_inventory_item_snapshot (tenant_id, warehouse_id, bus_no)
+    WHERE is_deleted = FALSE;

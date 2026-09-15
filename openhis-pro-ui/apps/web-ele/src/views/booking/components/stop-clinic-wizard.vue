@@ -49,12 +49,29 @@ const stopReason = ref('停诊');
 const preview = ref<PreviewStopClinicImpactResponse>();
 const executed = ref(false);
 
-const hasBlockingAppointments = computed(() => {
-  const count = preview.value?.appointmentCount ?? 0;
+/** 已挂号/已报到后端不自动处置，计为 pendingManual，需 defer 才能停诊。 */
+const hasSkipManualAppointments = computed(() => {
   const registered = preview.value?.registeredCount ?? 0;
   const checkedIn = preview.value?.checkedInCount ?? 0;
-  return count - registered - checkedIn > 0;
+  return registered + checkedIn > 0;
 });
+
+/**
+ * 是否需要向后端传 deferManualHandling：
+ * - MANUAL：用户已选「稍后人工」，直接放行；
+ * - TRANSFER/CANCEL：仅当仍有已挂号/已报到跳过行时，须勾选确认。
+ */
+const shouldDeferManualHandling = computed(() => {
+  if (dispositionMode.value === 'MANUAL') {
+    return true;
+  }
+  return hasSkipManualAppointments.value && deferManualHandling.value;
+});
+
+/** 转交/取消且存在跳过行时，露出勾选（MANUAL 无需二次确认）。 */
+const showDeferCheckbox = computed(
+  () => dispositionMode.value !== 'MANUAL' && hasSkipManualAppointments.value,
+);
 
 const isPartialStop = computed(() => (props.slotIds?.length ?? 0) > 0);
 
@@ -101,7 +118,7 @@ const { run: runExecute, loading: executeLoading } = useRequest(
       targetPractitionerId: targetPractitionerId.value,
       transferItems,
       reason: stopReason.value,
-      deferManualHandling: deferManualHandling.value,
+      deferManualHandling: shouldDeferManualHandling.value,
     });
   },
   {
@@ -180,7 +197,12 @@ function rowClassName({ row }: { row: { dispositionStatus?: string } }) {
   return '';
 }
 
+/** 执行前校验：转交/取消若含已挂号须先勾选「稍后人工」。 */
 async function handleExecute() {
+  if (showDeferCheckbox.value && !deferManualHandling.value) {
+    ElMessage.warning('存在已挂号/已报到患者，请勾选「确认稍后人工处理」后再停诊');
+    return;
+  }
   try {
     await runExecute();
   } catch (error) {
@@ -255,11 +277,12 @@ async function handleExecute() {
         <ElTableColumn prop="dispositionMessage" label="状态" min-width="120" />
       </ElTable>
 
-      <ElCheckbox
-        v-if="dispositionMode === 'MANUAL' && hasBlockingAppointments"
-        v-model="deferManualHandling"
-      >
-        确认稍后人工处理，仍执行停诊
+      <p v-if="hasSkipManualAppointments" class="stop-clinic-wizard__freeze-hint">
+        已挂号/已报到患者不能自动转交或取消，须另行退号或现场处理；勾选确认后仍可先完成停诊。
+      </p>
+
+      <ElCheckbox v-if="showDeferCheckbox" v-model="deferManualHandling">
+        确认稍后人工处理已挂号/已报到患者，仍执行停诊
       </ElCheckbox>
     </div>
 

@@ -225,6 +225,8 @@ export function buildPrescriptionSheetData(
           itemName: displayOrDash(line.itemName),
           quantity: displayOrDash(line.quantity),
           spec: displayOrDash(line.spec),
+          // 包装↔拆零：规格后展示（与列表明细同源）
+          packageSplitRatioText: line.packageSplitRatioText?.trim() || undefined,
           dosageInstructionText: dosage || undefined,
           batchNo: displayOrDash(line.batchNo),
           unitPrice: displayOrDash(line.unitPrice),

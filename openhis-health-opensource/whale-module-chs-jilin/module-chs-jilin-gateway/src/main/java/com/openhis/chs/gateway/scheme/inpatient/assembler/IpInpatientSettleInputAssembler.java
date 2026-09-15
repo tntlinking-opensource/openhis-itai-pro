@@ -106,6 +106,10 @@ public final class IpInpatientSettleInputAssembler {
             if (isNotEmpty(line.getDrordNo())) {
                 row.setDrordNo(line.getDrordNo());
             }
+            // Pre：中草药按处方味数传复方/单方；非中草药不传
+            if (isNotEmpty(line.getTcmdrugUsedWay())) {
+                row.setTcmdrugUsedWay(line.getTcmdrugUsedWay().trim());
+            }
             feedetail.add(row);
         }
         return new Ip2301Input().setFeedetail(feedetail);

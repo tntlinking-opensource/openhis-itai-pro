@@ -77,10 +77,4 @@ public class UpdateReturnToSupplierRequest {
     @NotEmpty(message = "明细不能为空")
     @Schema(description = "明细行 lines", requiredMode = Schema.RequiredMode.REQUIRED)
     private List<ReturnToSupplierLineDto> lines;
-
-    /**
-     * 乐观锁版本（禁止客户端传入；传入时应用层返回 {@code WHS_RT_105}）。
-     */
-    @Schema(description = "已废弃：乐观锁由服务端维护", deprecated = true)
-    private Integer rowVersion;
 }

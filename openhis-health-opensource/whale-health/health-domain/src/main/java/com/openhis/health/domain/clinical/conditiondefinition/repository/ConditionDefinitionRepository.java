@@ -69,14 +69,25 @@ public interface ConditionDefinitionRepository extends JpaRepository<ConditionDe
     List<ConditionDefinition> findBySourceEnumAndYbNo(String sourceEnum, String ybNo);
 
     /**
-     * 按国临码批量查询（4401 国临→医保映射用）。
+     * 按来源 + 医保码集合批量查询（医保目录列表反查国临对照）。
+     *
+     * @param sourceEnum 目录来源（通常 {@code clinical_v2}）
+     * @param ybNos      医保码集合
+     * @return 命中列表（同 yb_no 可多行）
+     */
+    List<ConditionDefinition> findBySourceEnumAndYbNoIn(String sourceEnum, Collection<String> ybNos);
+
+    /**
+     * 按对侧挂接字段 {@code clinic_code} 批量查询（医保目录已写国临码时的补齐路径）。
+     *
      * @param clinicCodes 国临码集合
-     * @return 命中列表
+     * @return 命中列表（可含多来源；查询侧须排除 clinical_v2 自身）
      */
     List<ConditionDefinition> findByClinicCodeIn(Collection<String> clinicCodes);
 
     /**
-     * 按诊断编码批量查询（4401 回退：condition_code=国临且已填 yb_no）。
+     * 按主码 {@code condition_code} 批量查询（中西医归类、医保名反查等同码扫描）。
+     *
      * @param conditionCodes 编码集合
      * @return 命中列表
      */

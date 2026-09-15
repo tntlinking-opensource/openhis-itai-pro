@@ -14,6 +14,7 @@ import { computed, defineAsyncComponent, nextTick, provide, ref, watch } from 'v
 
 import { ElButton, ElDialog, ElMessage } from 'element-plus';
 
+import PatientAllergyHistoryDialog from '#/components/clinical/patient-allergy-history-dialog.vue';
 import { ENSURE_CLINICAL_RECEPTION_KEY } from '#/components/doctor-station';
 import MedicalRecordForm from '#/components/outpatient/medical-record-form.vue';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
@@ -274,6 +275,7 @@ const billPreferredStatus = computed(() =>
 );
 
 const serviceApplyDialogVisible = ref(false);
+const allergyDialogVisible = ref(false);
 const serviceApplyKind = ref<ServiceApplyKind>('lab');
 const serviceApplyEditGroup = ref<null | ServiceApplyDocumentGroup>(null);
 
@@ -383,11 +385,14 @@ function handleQuickAction(action: InpatientAdviceQuickAction) {
   if (action === 'entrust') {
     return;
   }
+  if (action === 'allergy') {
+    allergyDialogVisible.value = true;
+    return;
+  }
   const pendingLabel: Partial<Record<InpatientAdviceQuickAction, string>> = {
     transfusion: '输血申请',
     pathology: '病理申请',
     surgery: '手术申请',
-    allergy: '过敏史',
   };
   const label = pendingLabel[action];
   if (label) {
@@ -528,6 +533,7 @@ defineExpose({ open, close });
           :patient-id="patientId"
           :force-write-disabled="effectiveReadonly"
           default-time-sort-order="asc"
+          include-tcm-prescriptions
           @quick-action="handleQuickAction"
           @edit-service-apply="handleEditServiceApply"
         />
@@ -555,6 +561,14 @@ defineExpose({ open, close });
       />
     </div>
   </ElDialog>
+
+  <PatientAllergyHistoryDialog
+    v-model="allergyDialogVisible"
+    :patient-id="patientId"
+    :encounter-id="encounterId"
+    default-verification-status="CONFIRMED"
+    :read-only="effectiveReadonly"
+  />
 
   <ServiceApplyDialog
     v-model="serviceApplyDialogVisible"

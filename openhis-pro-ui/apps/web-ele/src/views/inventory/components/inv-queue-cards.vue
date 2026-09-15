@@ -159,20 +159,13 @@ function formatApplyTimeForDisplay(value: unknown): string {
   return (props.formatApplyTime ?? defaultFormatQueueTime)(value);
 }
 
-/** 从行上解析总金额展示（兼容 totalPrice / totalAmount 等；两位小数 + `元`） */
+/** 从行上解析总金额展示（优先 totalAmount，两位小数 + `元`） */
 function displayTotalAmount(row: Record<string, unknown>): string {
   const fromFn = props.resolveAmountLine?.(row);
   if (fromFn !== undefined && fromFn !== null && String(fromFn).trim() !== '') {
     return String(fromFn).trim();
   }
-  const keys = [
-    'totalPrice',
-    'totalAmount',
-    'totalMoney',
-    'sumTotalPrice',
-    'amount',
-    'actualAmountSum',
-  ];
+  const keys = ['totalAmount', 'totalMoney', 'sumTotalPrice', 'amount', 'actualAmountSum'];
   for (const k of keys) {
     const raw = row[k];
     if (raw === undefined || raw === null || raw === '') continue;

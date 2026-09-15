@@ -31,9 +31,7 @@ export interface DeptIssueOptionDto {
   label?: string;
 }
 
-export interface LoadDeptIssueFormInitRequest {
-  organizationId?: number;
-}
+export interface LoadDeptIssueFormInitRequest {}
 
 export interface LoadDeptIssueFormInitResponse {
   departmentPharmacyOptions?: DeptPharmacyOptionDto[];
@@ -54,8 +52,6 @@ export interface DeptIssueListRowDto {
   applicantId?: number | string;
   applicantName?: string;
   applyTime?: string;
-  approverId?: number | string;
-  approvalTime?: string;
   /** 整单金额（侧栏总金额） */
   totalAmount?: number;
   /** 与 totalAmount 同口径 */
@@ -75,7 +71,6 @@ export interface PageDeptIssuesRequest {
 export interface PageDeptIssuesResponse {
   total?: number;
   totalCount?: number;
-  records?: DeptIssueListRowDto[];
   content?: DeptIssueListRowDto[];
 }
 
@@ -120,8 +115,6 @@ export interface GetDeptIssueDetailResponse {
   remake?: string;
   applicantId?: number | string;
   applyTime?: string;
-  approverId?: number | string;
-  approvalTime?: string;
   lines: DeptIssueDetailLineDto[];
 }
 
@@ -190,14 +183,10 @@ export interface WithdrawDeptIssueApprovalResponse {
 
 export interface AgreeDeptIssueRequest {
   busNo: string;
-  approverId?: string;
-  approvalClock?: string;
 }
 
 export interface RejectDeptIssueRequest {
   busNo: string;
-  approverId?: string;
-  approvalClock?: string;
   rejectReason?: string;
 }
 

@@ -25,9 +25,7 @@ export interface PharmacyGainLossOptionDto {
   label?: string;
 }
 
-export interface LoadPharmacyGainLossFormInitRequest {
-  organizationId?: number;
-}
+export interface LoadPharmacyGainLossFormInitRequest {}
 
 export interface LoadPharmacyGainLossFormInitResponse {
   pharmacyLocationOptions?: PharmacyGainLossOptionDto[];
@@ -51,9 +49,7 @@ export interface PharmacyGainLossListRowDto {
   applicantId?: number | string;
   applicantName?: string;
   applyTime?: string;
-  approverId?: number | string;
   approverName?: string;
-  approvalTime?: string;
   /** 驳回态侧栏回显 */
   rejectReason?: string;
 }
@@ -71,7 +67,6 @@ export interface PagePharmacyGainLosssRequest {
 export interface PagePharmacyGainLosssResponse {
   total?: number;
   totalCount?: number;
-  records?: PharmacyGainLossListRowDto[];
   content?: PharmacyGainLossListRowDto[];
 }
 
@@ -110,8 +105,6 @@ export interface GetPharmacyGainLossDetailResponse {
   practitionerId?: number | string;
   applicantId?: number | string;
   applyTime?: string;
-  approverId?: number | string;
-  approvalTime?: string;
   lines: PharmacyGainLossDetailLineDto[];
 }
 

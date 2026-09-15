@@ -1,0 +1,5 @@
+spring:
+  application:
+    name: miniapp-gateway
+  config:
+    import: optional:classpath:application-gateway.yml

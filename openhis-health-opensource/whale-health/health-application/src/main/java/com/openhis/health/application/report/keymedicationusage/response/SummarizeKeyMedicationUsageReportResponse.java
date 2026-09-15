@@ -21,20 +21,21 @@ import java.util.List;
 public class SummarizeKeyMedicationUsageReportResponse {
 
     /**
-     * 矩阵汇总行（就诊类型 × 重点药类型）。
+     * 汇总行（按就诊类型分组：各重点药类型行 + 组内合计行；门诊块在前、住院块在后）。
      */
     @Schema(description = "汇总行")
     private List<KeyMedicationUsageSummaryRowDto> rows;
 
     /**
-     * 净人次合计（各行人次之和；非去重）。
+     * 净人次合计（仅类型行相加，跳过 {@code keyDrugTypeCode=TOTAL} 以免与组内合计双计）。
      */
     @Schema(description = "净人次合计")
     private Long totalEncounterNetCount;
 
     /**
-     * 售价净额合计。
+     * 售价净额合计（仅类型行，跳过组内合计行）。
      */
     @Schema(description = "售价净额合计")
     private BigDecimal totalSaleAmount;
 }
+

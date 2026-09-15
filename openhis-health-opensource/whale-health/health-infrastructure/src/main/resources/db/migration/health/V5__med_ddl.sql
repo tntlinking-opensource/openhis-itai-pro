@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS "public"."med_medication_definition" (
     "package_unit_ratio" numeric(18,6),
     "trace_unit_code" varchar(64),
     "trace_unit_ratio" numeric(18,6),
+    "surplus_retention_batch_code" varchar(255),
     CONSTRAINT "med_medication_definition_pkey" PRIMARY KEY ("id")
 );
 COMMENT ON TABLE med_medication_definition IS '药品 medication definition';
@@ -176,6 +177,8 @@ COMMENT ON COLUMN med_medication_definition.stock_unit_ratio IS '库存单位→
 COMMENT ON COLUMN med_medication_definition.package_unit_ratio IS '销售单位→拆零单位换算倍数（拆零单位为1）';
 COMMENT ON COLUMN med_medication_definition.trace_unit_code IS '追溯码所贴包装单位（可游离于采购/包装/库存/拆零/剂量五类之外）';
 COMMENT ON COLUMN med_medication_definition.trace_unit_ratio IS '1 个追溯码单位对应的拆零数量；须 > 0';
+COMMENT ON COLUMN med_medication_definition.surplus_retention_batch_code IS
+    '结余留用批次号（术语 surplus_retention_batch_code；可选）';
 
 -- seed: med_medication_definition
 
@@ -456,3 +459,30 @@ COMMENT ON COLUMN med_medication_request.suffering_flag IS 'suffering标志位';
 COMMENT ON COLUMN med_medication_request.sort_number IS '排序号';
 COMMENT ON COLUMN med_medication_request.generate_source_enum IS 'generate来源枚举值';
 COMMENT ON COLUMN med_medication_request.remark IS '备注';
+
+-- =============================================================================
+-- V13 squash: med report indexes
+-- =============================================================================
+CREATE INDEX IF NOT EXISTS idx_rpt_med_dispense_time_loc
+    ON med_medication_dispense (dispense_time, location_id, status_enum, dispense_enum)
+    WHERE is_deleted = FALSE AND dispense_time IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_med_dispense_encounter
+    ON med_medication_dispense (encounter_id)
+    WHERE is_deleted = FALSE AND encounter_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_med_dispense_medication
+    ON med_medication_dispense (medication_id)
+    WHERE is_deleted = FALSE AND medication_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_med_dispense_med_req
+    ON med_medication_dispense (med_req_id)
+    WHERE is_deleted = FALSE AND med_req_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_med_dispense_practitioner
+    ON med_medication_dispense (practitioner_id, dispense_time)
+    WHERE is_deleted = FALSE AND practitioner_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_med_req_org
+    ON med_medication_request (org_id)
+    WHERE is_deleted = FALSE AND org_id IS NOT NULL;

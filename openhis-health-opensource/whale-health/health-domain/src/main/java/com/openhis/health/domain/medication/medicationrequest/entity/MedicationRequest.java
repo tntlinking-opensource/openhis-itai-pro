@@ -608,6 +608,19 @@ public class MedicationRequest extends BaseAuditedEntity {
     }
 
     /**
+     * 断言本行为负向退药申请（含 {@code refund_medicine_id}），可供门诊退费申请撤销时软删。
+     *
+     * @throws BusinessException 非负向退药单时
+     */
+    public void ensureOpenRefundMedicationOrderForVoid() {
+        if (this.refundMedicineId == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_RULE_CONFLICT,
+                "非退药负向申请不允许作废");
+        }
+    }
+
+    /**
      * 药房退药闭环完成：负向申请推进为已完成。
      */
     public void toCompletedAfterPharmacyRefund() {

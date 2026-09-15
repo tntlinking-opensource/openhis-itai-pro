@@ -13,6 +13,7 @@ import lombok.Data;
 import lombok.experimental.Accessors;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * IF-IP-NUR-ATD-03：出院前待执行医嘱行。
@@ -59,4 +60,14 @@ public class DischargePendingExecutionItemDto {
     /** 阻塞出院原因码。 */
     @Schema(description = "阻塞出院原因码")
     private String blockingReason;
+
+    /**
+     * 长期已停嘱仍待执行的计划时刻（与出院门禁 pending 槽同源）。
+     *
+     * <p>仅 {@code blockingReason=LONG_PENDING_SLOTS} 时有值；一盒一点/拆零下限切批后通常至多一个锚点。
+     * 其它阻塞原因回传空列表，禁止另算日频次点。</p>
+     */
+    @Schema(description = "长期已停嘱待执行计划时刻（与门禁 pending 同源）")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
+    private List<LocalDateTime> pendingPlanTimes;
 }

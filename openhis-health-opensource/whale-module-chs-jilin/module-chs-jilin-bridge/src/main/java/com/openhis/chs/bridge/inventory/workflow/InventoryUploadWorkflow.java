@@ -9,6 +9,7 @@ import static com.openhis.whale.core.application.util.StringUtils.isNotEmpty;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import com.openhis.chs.bridge.inventory.assembler.InventoryDrugTracChunkAssembler;
 import com.openhis.chs.bridge.inventory.assembler.InventoryPurchaseCompanion3502LineAssembler;
 import com.openhis.chs.bridge.inventory.assembler.InventorySaleCompanion3502LineAssembler;
 import com.openhis.chs.bridge.inventory.assembler.InventoryUploadBatchNoAssembler;
@@ -18,6 +19,8 @@ import com.openhis.chs.bridge.inventory.invoker.Inv3503Invoker;
 import com.openhis.chs.bridge.inventory.invoker.Inv3504Invoker;
 import com.openhis.chs.bridge.inventory.invoker.Inv3505Invoker;
 import com.openhis.chs.bridge.inventory.invoker.Inv3506Invoker;
+import com.openhis.chs.bridge.inventory.support.InventoryInboundDrugTracPlatformVerifySupport;
+import com.openhis.chs.bridge.inventory.support.InventorySalePaired3502ContractSupport;
 import com.openhis.chs.bridge.inventory.support.InventoryUploadSaleRequiredFieldSupport;
 import com.openhis.chs.bridge.inventory.support.InvPlatformSupport;
 import com.openhis.chs.bridge.inventory.support.InvPlatformSupport.InvContractContext;
@@ -51,6 +54,7 @@ import com.openhis.chs.gateway.scheme.inventory.assembler.InvPlatformInputAssemb
 import com.openhis.chs.gateway.scheme.inventory.parser.InvPlatformOutputParser;
 import com.openhis.chs.gateway.support.ChsCurrentOperatorResolver;
 import com.openhis.chs.gateway.support.ChsGatewayOutputSupport;
+import com.openhis.health.domain.financial.contract.entity.Contract;
 import com.openhis.whale.core.infrastructure.multitenancy.TenantUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -69,6 +73,8 @@ import java.util.Optional;
  * <p><b>采购伴生：</b>3503/3504 SUCCESS 后跟 3502（108/109；退供批次=退供单号）。</p>
  * <p><b>销售配对：</b>3505 前先试 3502(107)，再调 3505（3502 失败仍继续）；
  * 3506 SUCCESS 后再 3502(106，批次=退药单号)。</p>
+ * <p><b>入库落码核验：</b>入库类 3502 SUCCESS 且有码时 3512 核验（BR-CHS-INV-014）。</p>
+ * <p><b>销售配对契约：</b>3505/3506 跟结算平台；配对 3502 跟入库平台（BR-CHS-INV-015）。</p>
  * <p><b>迁移阶段：</b>P14</p>
  */
 @Component
@@ -85,7 +91,15 @@ public class InventoryUploadWorkflow implements InventoryUploadAccess {
     private final ChsCurrentOperatorResolver currentOperatorResolver;
     private final YbInvUploadDomainService uploadDomainService;
     private final ChsInventoryProperties inventoryProperties;
+    private final InventoryInboundDrugTracPlatformVerifySupport inboundDrugTracPlatformVerifySupport;
+    private final InventorySalePaired3502ContractSupport salePaired3502ContractSupport;
 
+    /**
+     * 【3505】商品销售上报：逐行调用平台接口。
+     *
+     * @param request 契约、来源单据、销售行
+     * @return 各行 uploadId、uploadStatus 及平台回执摘要
+     */
     public List<InvUpload3505Result> uploadSale3505(InvUpload3505Command request) {
         InvContractContext ctx = invPlatformSupport.resolveContract(request.getContractBusNo(), request.getContractId());
         Long tenantId = TenantUtils.getCurrentTenantId();
@@ -281,14 +295,11 @@ public class InventoryUploadWorkflow implements InventoryUploadAccess {
                 .setPlatformMsg(failed.getPlatformMsg());
         }
 
-        // Cmd：先试 3502 其他出库；失败仅落 3502 审计，不阻塞后续 3505
-        runPaired3502(
-            request.getContractBusNo(),
-            request.getContractId(),
+        // Cmd：先试销售配对 3502（跟入库平台，BR-015）；失败仅落 3502 审计，不阻塞 3505
+        runSalePaired3502(
             request.getSourceId(),
             request.getOperatorName(),
             InventorySaleCompanion3502LineAssembler.fromSaleOutbound(line),
-            ctx,
             tenantId,
             operatorId,
             ChsInventoryConstants.SOURCE_TYPE_DISPENSE);
@@ -352,13 +363,10 @@ public class InventoryUploadWorkflow implements InventoryUploadAccess {
         if (existing.isPresent()
             && ChsInventoryConstants.UPLOAD_STATUS_SUCCESS.equals(existing.get().getUploadStatus())) {
             YbInvUpload row = existing.get();
-            runPaired3502(
-                request.getContractBusNo(),
-                request.getContractId(),
+            runSalePaired3502(
                 request.getSourceId(),
                 request.getOperatorName(),
                 InventorySaleCompanion3502LineAssembler.fromSaleReturnInbound(line),
-                ctx,
                 tenantId,
                 operatorId,
                 ChsInventoryConstants.SOURCE_TYPE_DISPENSE);
@@ -394,13 +402,10 @@ public class InventoryUploadWorkflow implements InventoryUploadAccess {
                 .setPlatformRetRslt(outcome.retRslt()).setPlatformMsg(outcome.msgRslt());
             // 仅业务 SUCCESS 后伴生 3502；失败不回写 3506
             if (ChsInventoryConstants.UPLOAD_STATUS_SUCCESS.equals(saved.getUploadStatus())) {
-                runPaired3502(
-                    request.getContractBusNo(),
-                    request.getContractId(),
+                runSalePaired3502(
                     request.getSourceId(),
                     request.getOperatorName(),
                     InventorySaleCompanion3502LineAssembler.fromSaleReturnInbound(line),
-                    ctx,
                     tenantId,
                     operatorId,
                     ChsInventoryConstants.SOURCE_TYPE_DISPENSE);
@@ -576,6 +581,62 @@ public class InventoryUploadWorkflow implements InventoryUploadAccess {
         Long operatorId,
         String sourceType
     ) {
+        // 本系统 drugtracinfo ≤100（平台书面 500 但会静默丢码）：超限先拆批，每片独立幂等键（bchno-C01…）
+        List<InvUploadLineCommand> chunks = InventoryDrugTracChunkAssembler.splitForPlatformLimit(
+            line, ChsInventoryConstants.DRUGTRACINFO_MAX_PER_REQUEST);
+        // 多片：逐片出站；任一片非 SUCCESS 则汇总结果不得冒充全部成功
+        if (chunks.size() > 1) {
+            InvUpload3502Result last = null;
+            boolean allSuccess = true;
+            // 逐片出站：每片用独立 -C 后缀批次号
+            for (InvUploadLineCommand chunk : chunks) {
+                last = processInvChangeLine3502Single(
+                    request, chunk, ctx, tenantId, operatorId, sourceType);
+                if (last == null
+                    || !ChsInventoryConstants.UPLOAD_STATUS_SUCCESS.equals(last.getUploadStatus())) {
+                    allSuccess = false;
+                }
+            }
+            // 拆批结果异常为空：记 FAILED 便于运维按原单号排查
+            if (last == null) {
+                return new InvUpload3502Result()
+                    .setSourceLineId(line.getSourceLineId())
+                    .setFixmedinsBchno(line.getFixmedinsBchno())
+                    .setInvChgType(line.getInvChgType())
+                    .setUploadStatus(ChsInventoryConstants.UPLOAD_STATUS_FAILED)
+                    .setPlatformMsg("追溯码拆批后无有效上报片");
+            }
+            // 末片 SUCCESS 但前序有失败：降级 FAILED，提示按 -C 后缀补传
+            if (!allSuccess
+                && ChsInventoryConstants.UPLOAD_STATUS_SUCCESS.equals(last.getUploadStatus())) {
+                last.setUploadStatus(ChsInventoryConstants.UPLOAD_STATUS_FAILED);
+                last.setPlatformMsg("追溯码拆批后仍有失败片，请按 -C 后缀批次补传");
+            }
+            return last;
+        }
+        // 单片：走原幂等路径
+        return processInvChangeLine3502Single(request, line, ctx, tenantId, operatorId, sourceType);
+    }
+
+    /**
+     * 单片 3502 出站（不含追溯码再拆批）。
+     *
+     * @param request    3502 命令
+     * @param line       已是单片行
+     * @param ctx        契约上下文
+     * @param tenantId   租户
+     * @param operatorId 操作人
+     * @param sourceType 审计来源类型
+     * @return 单片结果
+     */
+    private InvUpload3502Result processInvChangeLine3502Single(
+        InvUpload3502Command request,
+        InvUploadLineCommand line,
+        InvContractContext ctx,
+        Long tenantId,
+        Long operatorId,
+        String sourceType
+    ) {
         InvUpload3502Result result = new InvUpload3502Result();
         result.setSourceLineId(line.getSourceLineId());
         result.setFixmedinsBchno(line.getFixmedinsBchno());
@@ -592,6 +653,7 @@ public class InventoryUploadWorkflow implements InventoryUploadAccess {
 
         Optional<YbInvUpload> existing = uploadDomainService.findExistingLine(
             tenantId, ChsInfNo.INVENTORY_CHANGE, line.getFixmedinsBchno(), line.getSourceLineId());
+        // Gate：同批次+来源行已 SUCCESS → 幂等短路，禁止重复出站
         if (existing.isPresent()
             && ChsInventoryConstants.UPLOAD_STATUS_SUCCESS.equals(existing.get().getUploadStatus())) {
             YbInvUpload row = existing.get();
@@ -610,6 +672,18 @@ public class InventoryUploadWorkflow implements InventoryUploadAccess {
                 request.getSourceId(), ChsInventoryConstants.UPLOAD_STATUS_SUCCESS,
                 ChsInventoryConstants.PLATFORM_RET_RSLT_SUCCESS, null, requestJson, JSON.toJSONString(body),
                 operatorId, tenantId, false);
+            // Gate：入库有码须 3512 确认落全，否则改 FAILED（BR-CHS-INV-014）
+            String incompleteMsg = inboundDrugTracPlatformVerifySupport.findIncompleteInboundTraceMessage(
+                ctx.busNo(), line, operatorId, null);
+            if (isNotEmpty(incompleteMsg)) {
+                YbInvUpload failed = uploadDomainService.upsertUploadRecord(
+                    saved, ctx.contract().id(), ctx.busNo(), ChsInfNo.INVENTORY_CHANGE, line, sourceType,
+                    request.getSourceId(), ChsInventoryConstants.UPLOAD_STATUS_FAILED,
+                    ChsInventoryConstants.PLATFORM_RET_RSLT_FAILED, incompleteMsg, requestJson,
+                    JSON.toJSONString(body), operatorId, tenantId, true);
+                return result.setUploadId(failed.getId()).setUploadStatus(failed.getUploadStatus())
+                    .setPlatformMsg(incompleteMsg);
+            }
             uploadDomainService.saveTraceRows(saved, line, tenantId);
             return result.setUploadId(saved.getId()).setUploadStatus(saved.getUploadStatus());
         } catch (RuntimeException ex) {
@@ -748,6 +822,40 @@ public class InventoryUploadWorkflow implements InventoryUploadAccess {
             tenantId,
             operatorId,
             ChsInventoryConstants.SOURCE_TYPE_INBOUND);
+    }
+
+    /**
+     * 销售配对 3502：按码的入库平台出站（市入市出、省入省出；无码市优先；BR-CHS-INV-015）。
+     *
+     * @param sourceId     来源单据
+     * @param operatorName 操作人姓名
+     * @param line3502     已组装 3502 行
+     * @param tenantId     租户
+     * @param operatorId   操作人
+     * @param sourceType   审计来源
+     * @return 是否 SUCCESS
+     */
+    private boolean runSalePaired3502(
+        Long sourceId,
+        String operatorName,
+        InvUploadLineCommand line3502,
+        Long tenantId,
+        Long operatorId,
+        String sourceType
+    ) {
+        // Gate：不跟 3505/3506 结算契约（工伤结算时 3502 不得打到工伤平台）
+        Contract stock = salePaired3502ContractSupport.resolveForSalePaired3502(tenantId, line3502);
+        InvContractContext stockCtx = invPlatformSupport.resolveContract(stock.getBusNo(), stock.getId());
+        return runPaired3502(
+            stock.getBusNo(),
+            stock.getId(),
+            sourceId,
+            operatorName,
+            line3502,
+            stockCtx,
+            tenantId,
+            operatorId,
+            sourceType);
     }
 
     /**

@@ -8,15 +8,16 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDate;
+import java.util.List;
 
 /**
- * 保存团检批次请求（GRP-03）。
+ * 保存体检分组请求（GRP-03；原批次）。
  */
 @Getter
 @Setter
 public class SaveGroupBatchRequest {
 
-    /** 批次主键（空则新建）。 */
+    /** 分组主键（空则新建）。 */
     private Long batchId;
 
     /** 单位主键。 */
@@ -25,10 +26,13 @@ public class SaveGroupBatchRequest {
     /** 合同主键。 */
     private Long contractId;
 
-    /** 批次名称。 */
+    /** 分组名称。 */
     private String batchName;
 
-    /** 套餐 ActivityDefinition 主键（可选，缺省取合同）。 */
+    /** 本组可选套餐 AD 主键列表（至少一项）。 */
+    private List<Long> packageActivityIds;
+
+    /** 兼容：单个套餐 AD（缺省 list 时使用）。 */
     private Long packageActivityId;
 
     /** 预约日期（可选）。 */

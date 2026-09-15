@@ -17,8 +17,12 @@ public class AllergyHistoryFlagQueryModel {
     private Long patientId;
     /** 就诊主键。 */
     private Long encounterId;
-    /** 历史标志。 */
+    /** 历史标志（存在有效过敏原）。 */
     private Boolean historyFlag;
-    /** 记录次数。 */
+    /** 已确认无已知过敏且无有效过敏原。 */
+    private Boolean nkdaFlag;
+    /** 有效过敏原条数。 */
     private Long recordCount;
+    /** 摘要文案：未登记 / 无 / 过敏原顿号拼接。 */
+    private String summaryText;
 }

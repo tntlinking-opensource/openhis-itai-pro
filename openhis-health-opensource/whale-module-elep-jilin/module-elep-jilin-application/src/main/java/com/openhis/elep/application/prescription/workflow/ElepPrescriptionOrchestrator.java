@@ -56,6 +56,14 @@ import com.openhis.elep.domain.prescription.repository.YbElepPrescriptionReposit
 import com.openhis.elep.domain.prescription.repository.YbElepPrescriptionSnapshotRepository;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.infrastructure.multitenancy.TenantUtils;
+import com.openhis.elep.domain.prescription.access.ElepEncounterContextAccess;
+import com.openhis.elep.application.prescription.support.ElepA0001BodyAssembler;
+import com.openhis.elep.domain.prescription.command.ElepEncounterContextQuery;
+import com.openhis.elep.domain.prescription.result.ElepEncounterContextResult;
+import com.openhis.elep.domain.prescription.command.ElepReviewCommand;
+import com.openhis.elep.domain.prescription.result.ElepReviewResult;
+import com.openhis.elep.domain.prescription.result.ElepPharmacistReviewerResult;
+import com.openhis.elep.domain.prescription.constants.ElepPrescriptionConstants;
 import com.openhis.elep.domain.prescription.command.ElepClonePrescriptionCommand;
 import com.openhis.elep.domain.prescription.command.ElepMedResultQuery;
 import com.openhis.elep.domain.prescription.result.ElepMedResultResult;
@@ -65,7 +73,6 @@ import com.openhis.elep.domain.prescription.result.ElepPatientHistoryResult;
 import com.openhis.elep.domain.prescription.result.ElepPrescriptionDraft;
 import com.openhis.elep.domain.snapshot.ElepRxNoSnapshot;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -75,12 +82,15 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
+
+import static com.openhis.whale.core.application.util.StringUtils.isEmpty;
+import static com.openhis.whale.core.application.util.StringUtils.isNotEmpty;
+import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
 /**
  * 电子处方多步编排（实现 {@link ElepPrescriptionOperations}；不对外 REST，前端经 {@code ElepPrescriptionAppService}）。
@@ -103,25 +113,103 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
     private final ElepUploadLogWriter uploadLogWriter;
     private final ElepCurrentOperatorResolver operatorResolver;
     private final ElepPrescriptionCloneService cloneService;
+    private final ElepEncounterContextAccess encounterContextAccess;
+    private final ElepA0001BodyAssembler a0001BodyAssembler;
 
     @Override
     public boolean supportsContract(Long contractId) {
         return contractId != null;
     }
 
+    /**
+     * 装载当前就诊只读上下文（挂号 map(11) + 医师/科室医保码）。
+     *
+     * @param query 就诊、患者、契约
+     * @return 上下文；不允许开方时 {@code allowed=false}
+     */
+    @Override
+    public ElepEncounterContextResult loadEncounterContext(ElepEncounterContextQuery query) {
+        return encounterContextAccess.load(query);
+    }
+
+    /**
+     * 院内医保药师审方：写入 phar_*，不新增状态；未审不得 A0001。
+     *
+     * @param command 处方主键
+     * @return 审方结果
+     */
+    @Override
+    public ElepReviewResult review(ElepReviewCommand command) {
+        // Gate：必须已有草稿主键
+        if (command.getPrescriptionId() == null) {
+            throw new BusinessException("ELEP_RX_ID_REQUIRED", "prescriptionId 不能为空");
+        }
+        Long operatorId = operatorResolver.requireOperatorId();
+        // Pre：仅草稿/失败可审；已预核验后改内容须先回草稿
+        YbElepPrescription prescription = loadActivePrescription(command.getPrescriptionId());
+        if (!ElepLocalStatus.DRAFT.equals(prescription.getLocalStatus())
+                && !ElepLocalStatus.FAILED.equals(prescription.getLocalStatus())) {
+            throw new BusinessException("ELEP_STATUS_INVALID", "仅草稿或失败状态可审方");
+        }
+        ElepPharmacistReviewerResult pharmacist = encounterContextAccess.loadCurrentPharmacist();
+        // Gate：审方人必须是当前登录药师且已维护国家医保码
+        if (!pharmacist.isAllowed()) {
+            throw new BusinessException("ELEP_REVIEWER_BLOCKED", pharmacist.getBlockReason());
+        }
+        // Cmd：审方信息只写电子处方表，不写 HIS 发药审方
+        prescription.setPharCode(pharmacist.getPharCode());
+        prescription.setPharName(pharmacist.getPharName());
+        prescription.setPharDeptCode(pharmacist.getPharDeptCode());
+        prescription.setPharDeptName(pharmacist.getPharDeptName());
+        prescription.setPharProfttlCodg(pharmacist.getPharProfttlCodg());
+        prescription.setPharPracCertNo(pharmacist.getPharPracCertNo());
+        prescription.setReviewedAt(Instant.now());
+        prescription.setReviewedBy(operatorId);
+        if (ElepLocalStatus.FAILED.equals(prescription.getLocalStatus())) {
+            prescription.setLocalStatus(ElepLocalStatus.DRAFT);
+        }
+        prescription.setUpdatedAt(LocalDateTime.now());
+        prescription.setUpdatedBy(operatorId);
+        prescriptionRepository.save(prescription);
+        return new ElepReviewResult()
+                .setSuccess(true)
+                .setPrescriptionId(prescription.getId())
+                .setPharCode(pharmacist.getPharCode())
+                .setPharName(pharmacist.getPharName())
+                .setMessage("审方通过");
+    }
+
     @Override
     public ElepPreCheckResult preCheck(ElepPreCheckCommand command) {
         validateBusNo(command.getContractBusNo());
-        if (command.getPlatformBody() == null || command.getPlatformBody().isEmpty()) {
-            throw new BusinessException("ELEP_BODY_REQUIRED", "预核验 platformBody 不能为空");
+        // Gate：必须先保存草稿；禁止前端直传完整 A0001 跳过审方
+        if (command.getPrescriptionId() == null) {
+            throw new BusinessException("ELEP_RX_ID_REQUIRED", "请先保存草稿并完成审方后再预核验");
         }
         Long operatorId = operatorResolver.requireOperatorId();
-        JSONObject body = new JSONObject(command.getPlatformBody());
-        String hospRxno = body.getString("hospRxno");
-        if (StringUtils.isBlank(hospRxno)) {
-            throw new BusinessException("ELEP_HOSP_RXNO_REQUIRED", "platformBody.hospRxno 不能为空");
+        YbElepPrescription prescription = loadActivePrescription(command.getPrescriptionId());
+        if (!ElepLocalStatus.DRAFT.equals(prescription.getLocalStatus())
+                && !ElepLocalStatus.FAILED.equals(prescription.getLocalStatus())) {
+            throw new BusinessException("ELEP_STATUS_INVALID", "仅草稿或失败状态可预核验");
         }
-        YbElepPrescription prescription = loadOrCreateDraft(command, hospRxno, operatorId);
+        // Gate：3-03 上传门禁，未审方不得出站 A0001
+        if (isEmpty(prescription.getPharCode()) || prescription.getReviewedAt() == null) {
+            throw new BusinessException("ELEP_REVIEW_REQUIRED", "请先由院内医保药师审方后再预核验");
+        }
+        // Pre：刷新挂号 map(11) 与定点机构，慢病仍只用挂号号
+        ElepEncounterContextResult context = encounterContextAccess.load(new ElepEncounterContextQuery()
+                .setEncounterId(prescription.getEncounterId())
+                .setPatientId(prescription.getPatientId())
+                .setContractBusNo(command.getContractBusNo()));
+        if (!context.isAllowed()) {
+            throw new BusinessException("ELEP_CONTEXT_BLOCKED", context.getBlockReason());
+        }
+        YbElepPrescriptionSnapshot snapshot = loadSnapshot(prescription.getId());
+        if (isEmpty(snapshot.getUploadRequestJson())) {
+            throw new BusinessException("ELEP_SNAPSHOT_REQUIRED", "缺少草稿快照，请先保存");
+        }
+        JSONObject draftBody = JSONObject.parseObject(snapshot.getUploadRequestJson());
+        JSONObject body = a0001BodyAssembler.refreshForPreCheck(prescription, context, draftBody);
         ElepPlatformInvokeResult response = a0001Invoker.invoke(command.getContractBusNo(), body);
         boolean success = response.isSuccess();
         uploadLogWriter.write(
@@ -130,7 +218,7 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
                 body,
                 response,
                 success,
-                success ? null : response.getMessage(),
+                failLogMessage(success, response),
                 operatorId);
         if (!success) {
             prescription.setLocalStatus(ElepLocalStatus.FAILED);
@@ -140,10 +228,10 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
             return new ElepPreCheckResult().setSuccess(false).setMessage(response.getMessage());
         }
         JSONObject output = JSON.parseObject(response.getBodyJson());
-        String rxTraceCode = output == null ? null : output.getString("rxTraceCode");
-        String hiRxno = output == null ? null : output.getString("hiRxno");
+        String rxTraceCode = jsonString(output, "rxTraceCode");
+        String hiRxno = jsonString(output, "hiRxno");
         prescription.setRxTraceCode(rxTraceCode);
-        if (StringUtils.isNotBlank(hiRxno)) {
+        if (isNotEmpty(hiRxno)) {
             prescription.setHiRxno(hiRxno);
         }
         prescription.setLocalStatus(ElepLocalStatus.PRE_CHECKED);
@@ -159,7 +247,7 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
                     command.getPdfInput(),
                     operatorId);
         }
-        ElepPreCheckResult result = new ElepPreCheckResult()
+        return new ElepPreCheckResult()
                 .setSuccess(true)
                 .setPrescriptionId(prescription.getId())
                 .setHospRxno(prescription.getHospRxno())
@@ -167,7 +255,6 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
                 .setHiRxno(hiRxno)
                 .setPdfFilePath(pdfFilePath)
                 .setMessage("预核验成功");
-        return result;
     }
 
     @Override
@@ -194,7 +281,7 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
                 body,
                 response,
                 success,
-                success ? null : response.getMessage(),
+                failLogMessage(success, response),
                 operatorId);
         if (!success) {
             prescription.setLocalStatus(ElepLocalStatus.FAILED);
@@ -204,7 +291,7 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
             return new ElepFileUploadResult().setSuccess(false).setMessage(response.getMessage());
         }
         JSONObject output = JSON.parseObject(response.getBodyJson());
-        String hiRxno = output == null ? null : output.getString("hiRxno");
+        String hiRxno = jsonString(output, "hiRxno");
         prescription.setHiRxno(hiRxno);
         if (output != null) {
             prescription.setRxStasCodg(output.getString("rxStasCodg"));
@@ -257,15 +344,15 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
         YbElepPrescription prescription = loadActivePrescription(command.getPrescriptionId());
         requireStatus(prescription, ElepLocalStatus.PRE_CHECKED);
         YbElepPrescriptionSnapshot snapshot = loadSnapshot(prescription.getId());
-        if (StringUtils.isBlank(snapshot.getPdfFilePath())) {
+        if (isEmpty(snapshot.getPdfFilePath())) {
             throw new BusinessException("ELEP_PDF_REQUIRED", "请先生成 PDF 后再签名");
         }
-        if (StringUtils.isBlank(snapshot.getUploadRequestJson())) {
+        if (isEmpty(snapshot.getUploadRequestJson())) {
             throw new BusinessException("ELEP_SNAPSHOT_REQUIRED", "缺少预核验快照");
         }
         ElepContractConfig config = requireConfig(command.getContractBusNo());
         String pdfBase64 = ElepPdfTemplateService.readPdfBase64(snapshot.getPdfFilePath());
-        if (StringUtils.isBlank(pdfBase64)) {
+        if (isEmpty(pdfBase64)) {
             throw new BusinessException("ELEP_PDF_READ_FAILED", "读取 PDF 文件失败");
         }
         JSONObject body = buildSignBody(command, config, snapshot, pdfBase64);
@@ -277,7 +364,7 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
                 body,
                 response,
                 success,
-                success ? null : response.getMessage(),
+                failLogMessage(success, response),
                 operatorId);
         if (!success) {
             prescription.setLocalStatus(ElepLocalStatus.FAILED);
@@ -287,8 +374,8 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
             return new ElepSignResult().setSuccess(false).setMessage(response.getMessage());
         }
         JSONObject output = JSON.parseObject(response.getBodyJson());
-        String rxFile = output == null ? null : output.getString("rxFile");
-        String signDigest = output == null ? null : output.getString("signDigest");
+        String rxFile = jsonString(output, "rxFile");
+        String signDigest = jsonString(output, "signDigest");
         ElepPdfTemplateService.writeSignedPdf(rxFile, snapshot.getPdfFilePath());
         snapshot.setSignResponseJson(response.getBodyJson());
         snapshot.setUpdatedAt(LocalDateTime.now());
@@ -336,7 +423,7 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
         if (ElepLocalStatus.REVOKED.equals(prescription.getLocalStatus())) {
             throw new BusinessException("ELEP_ALREADY_REVOKED", "电子处方已撤销");
         }
-        String contractBusNo = StringUtils.firstNonBlank(
+        String contractBusNo = firstNonEmpty(
                 command.getContractBusNo(), prescription.getContractBusNo());
         validateBusNo(contractBusNo);
         ElepContractConfig config = requireConfig(contractBusNo);
@@ -349,7 +436,7 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
                 body,
                 response,
                 success,
-                success ? null : response.getMessage(),
+                failLogMessage(success, response),
                 operatorId);
         if (!success) {
             return new com.openhis.elep.domain.prescription.result.ElepRevokeResult()
@@ -366,7 +453,7 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
     @Override
     public ElepQueryResult query(ElepQueryCommand command) {
         YbElepPrescription prescription = resolvePrescriptionForQuery(command);
-        String contractBusNo = StringUtils.firstNonBlank(command.getContractBusNo(), prescription.getContractBusNo());
+        String contractBusNo = firstNonEmpty(command.getContractBusNo(), prescription.getContractBusNo());
         validateBusNo(contractBusNo);
         ElepContractConfig config = requireConfig(contractBusNo);
         JSONObject body = buildQueryBody(command, config, prescription);
@@ -379,7 +466,7 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
                 body,
                 response,
                 success,
-                success ? null : response.getMessage(),
+                failLogMessage(success, response),
                 operatorId);
         if (!success) {
             return new ElepQueryResult().setSuccess(false).setMessage(response.getMessage());
@@ -391,8 +478,8 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
         }
         return new ElepQueryResult()
                 .setSuccess(true)
-                .setRxStasCodg(output == null ? null : output.getString("rxStasCodg"))
-                .setRxUsedStasCodg(output == null ? null : output.getString("rxUsedStasCodg"))
+                .setRxStasCodg(jsonString(output, "rxStasCodg"))
+                .setRxUsedStasCodg(jsonString(output, "rxUsedStasCodg"))
                 .setQueryJson(response.getBodyJson())
                 .setMessage("查询成功");
     }
@@ -416,18 +503,21 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
 
     @Override
     public ElepMedResultResult queryMedResult(ElepMedResultQuery query) {
-        if (StringUtils.isBlank(query.getHiRxno())) {
+        if (isEmpty(query.getHiRxno())) {
             throw new BusinessException("ELEP_HI_RXNO_REQUIRED", "hiRxno 不能为空");
         }
         String contractBusNo = query.getContractBusNo();
-        if (StringUtils.isBlank(contractBusNo)) {
+        if (isEmpty(contractBusNo)) {
             throw new BusinessException("ELEP_BUSNO_REQUIRED", "contractBusNo 不能为空");
         }
         validateBusNo(contractBusNo);
         ElepContractConfig config = requireConfig(contractBusNo);
-        JSONObject body = query.getPlatformBody() != null && !query.getPlatformBody().isEmpty()
-                ? new JSONObject(query.getPlatformBody())
-                : buildMedResultBody(query.getHiRxno(), config);
+        JSONObject body;
+        if (query.getPlatformBody() != null && !query.getPlatformBody().isEmpty()) {
+            body = new JSONObject(query.getPlatformBody());
+        } else {
+            body = buildMedResultBody(query.getHiRxno(), config);
+        }
         ElepPlatformInvokeResult response = a0006Invoker.invoke(contractBusNo, body);
         if (!response.isSuccess()) {
             return new ElepMedResultResult().setSuccess(false).setMessage(response.getMessage());
@@ -464,7 +554,7 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
 
     @Override
     public Optional<ElepRxNoSnapshot> findRxNoByPrescriptionNo(String prescriptionNo) {
-        if (StringUtils.isBlank(prescriptionNo)) {
+        if (isEmpty(prescriptionNo)) {
             return Optional.empty();
         }
         return prescriptionRepository
@@ -495,6 +585,12 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
         return items;
     }
 
+    /**
+     * 已上传方映射为收费挂接用的处方号快照。
+     *
+     * @param rx 电子处方
+     * @return hiRxno 快照
+     */
     private ElepRxNoSnapshot toRxNoSnapshot(YbElepPrescription rx) {
         return new ElepRxNoSnapshot()
                 .setHiRxno(rx.getHiRxno())
@@ -510,7 +606,10 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
                     .setPageSize(query.getPageSize());
         }
         int page = Math.max(query.getPage(), 0);
-        int pageSize = query.getPageSize() <= 0 ? 20 : query.getPageSize();
+        int pageSize = query.getPageSize();
+        if (pageSize <= 0) {
+            pageSize = 20;
+        }
         Page<YbElepPrescription> pageResult = prescriptionRepository
                 .findByPatientIdAndLocalStatusAndIsDeletedFalseOrderByPrscTimeDesc(
                         query.getPatientId(),
@@ -575,42 +674,16 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
         return cloneService.saveDraft(command, operatorResolver.requireOperatorId());
     }
 
-    private YbElepPrescription loadOrCreateDraft(ElepPreCheckCommand command, String hospRxno, Long operatorId) {
-        Long tenantId = TenantUtils.getCurrentTenantId();
-        return prescriptionRepository
-                .findByTenantIdAndContractBusNoAndHospRxnoAndIsDeletedFalse(
-                        tenantId, command.getContractBusNo(), hospRxno)
-                .orElseGet(() -> createDraft(command, hospRxno, operatorId, tenantId));
-    }
-
-    private YbElepPrescription createDraft(
-            ElepPreCheckCommand command, String hospRxno, Long operatorId, Long tenantId) {
-        JSONObject body = new JSONObject(command.getPlatformBody());
-        JSONObject mdtrtinfo = body.getJSONObject("mdtrtinfo");
-        JSONObject diseinfo = body.getJSONObject("diseinfo");
-        YbElepPrescription rx = new YbElepPrescription();
-        rx.setTenantId(tenantId);
-        rx.setPatientId(command.getPatientId());
-        rx.setEncounterId(command.getEncounterId());
-        rx.setContractBusNo(command.getContractBusNo());
-        rx.setHospRxno(hospRxno);
-        rx.setInitRxno(body.getString("initRxno"));
-        rx.setLocalStatus(ElepLocalStatus.DRAFT);
-        rx.setPrescriptionNo(body.getString("prescriptionNo"));
-        if (mdtrtinfo != null) {
-            rx.setPrscDrName(mdtrtinfo.getString("prscDrName"));
-            rx.setPrscDeptName(mdtrtinfo.getString("prscDeptName"));
-        }
-        if (diseinfo != null) {
-            rx.setMainDiagCode(diseinfo.getString("diagCode"));
-            rx.setMainDiagName(diseinfo.getString("diagName"));
-        }
-        rx.setCreatedAt(LocalDateTime.now());
-        rx.setCreatedBy(operatorId);
-        rx.setIsDeleted(false);
-        return prescriptionRepository.save(rx);
-    }
-
+    /**
+     * 写入或更新预核验快照（请求/响应 JSON）。
+     *
+     * @param prescriptionId 处方主键
+     * @param request        出站请求
+     * @param responseJson   平台响应
+     * @param signJson       签名响应，可空
+     * @param confirmJson    上传确认，可空
+     * @param operatorId     操作人
+     */
     private void saveSnapshot(
             Long prescriptionId,
             JSONObject request,
@@ -640,6 +713,13 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
         snapshotRepository.save(snapshot);
     }
 
+    /**
+     * 回写 A0003 确认 JSON。
+     *
+     * @param prescriptionId 处方主键
+     * @param confirmJson    平台确认
+     * @param operatorId     操作人
+     */
     private void updateSnapshotConfirmJson(Long prescriptionId, String confirmJson, Long operatorId) {
         snapshotRepository.findById(prescriptionId).ifPresent(snapshot -> {
             snapshot.setUploadConfirmJson(confirmJson);
@@ -649,23 +729,46 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
         });
     }
 
+    /**
+     * 契约 bus_no 不能为空（密钥只从 elep-contract 取）。
+     *
+     * @param contractBusNo 契约编号
+     */
     private static void validateBusNo(String contractBusNo) {
-        if (StringUtils.isBlank(contractBusNo)) {
+        if (isEmpty(contractBusNo)) {
             throw new BusinessException("ELEP_BUSNO_REQUIRED", "contractBusNo 不能为空");
         }
     }
 
+    /**
+     * 加载未删除的电子处方。
+     *
+     * @param prescriptionId 主键
+     * @return 主表
+     */
     private YbElepPrescription loadActivePrescription(Long prescriptionId) {
         return prescriptionRepository.findById(prescriptionId)
                 .filter(rx -> !Boolean.TRUE.equals(rx.getIsDeleted()))
                 .orElseThrow(() -> new BusinessException("ELEP_RX_NOT_FOUND", "电子处方不存在"));
     }
 
+    /**
+     * 加载处方快照。
+     *
+     * @param prescriptionId 主键
+     * @return 快照
+     */
     private YbElepPrescriptionSnapshot loadSnapshot(Long prescriptionId) {
         return snapshotRepository.findById(prescriptionId)
                 .orElseThrow(() -> new BusinessException("ELEP_SNAPSHOT_NOT_FOUND", "电子处方快照不存在"));
     }
 
+    /**
+     * 校验本地状态机，防止跳步签名/上传。
+     *
+     * @param prescription   主表
+     * @param expectedStatus 期望状态 code
+     */
     private static void requireStatus(YbElepPrescription prescription, String expectedStatus) {
         if (!expectedStatus.equals(prescription.getLocalStatus())) {
             throw new BusinessException(
@@ -674,6 +777,12 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
         }
     }
 
+    /**
+     * 读取启用中的 elep-contract 段。
+     *
+     * @param contractBusNo 契约 bus_no
+     * @return 配置
+     */
     private ElepContractConfig requireConfig(String contractBusNo) {
         ElepContractConfig config = ElepContractConfigLoader.getByBusNo(contractBusNo);
         if (config == null || !config.isEnabled()) {
@@ -682,22 +791,31 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
         return config;
     }
 
+    /**
+     * 按模板生成本地 PDF 并写入快照路径。
+     *
+     * @param contractBusNo 契约
+     * @param prescription  主表
+     * @param pdfInput      填模数据
+     * @param operatorId    操作人
+     * @return 输出文件路径
+     */
     private String doGeneratePdf(
             String contractBusNo,
             YbElepPrescription prescription,
             ElepPdfInput pdfInput,
             Long operatorId) {
         ElepContractConfig config = requireConfig(contractBusNo);
-        if (StringUtils.isBlank(config.getTemplatePath())) {
+        if (isEmpty(config.getTemplatePath())) {
             throw new BusinessException("ELEP_TEMPLATE_REQUIRED", "template_path 未配置");
         }
-        if (StringUtils.isBlank(config.getOutputPath())) {
+        if (isEmpty(config.getOutputPath())) {
             throw new BusinessException("ELEP_OUTPUT_REQUIRED", "output_path 未配置");
         }
-        if (StringUtils.isBlank(pdfInput.getRxTraceCode())) {
+        if (isEmpty(pdfInput.getRxTraceCode())) {
             pdfInput.setRxTraceCode(prescription.getRxTraceCode());
         }
-        if (StringUtils.isBlank(pdfInput.getPrescriptionNo())) {
+        if (isEmpty(pdfInput.getPrescriptionNo())) {
             pdfInput.setPrescriptionNo(prescription.getHospRxno());
         }
         String outputPath = ElepPdfPathSupport.buildOutputFilePath(config, prescription.getHospRxno());
@@ -722,6 +840,15 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
         return outputPath;
     }
 
+    /**
+     * 组装 A0002 签名体；密钥不在此出现。
+     *
+     * @param command  签名命令
+     * @param config   契约
+     * @param snapshot 含预核验 JSON 与 PDF
+     * @param pdfBase64 PDF Base64
+     * @return 出站 JSON
+     */
     private JSONObject buildSignBody(
             ElepSignCommand command,
             ElepContractConfig config,
@@ -741,6 +868,15 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
         return body;
     }
 
+    /**
+     * 组装 A0003 上传体，带上审方药师 phar_*。
+     *
+     * @param command      上传命令
+     * @param config       契约
+     * @param prescription 主表
+     * @param snapshot     快照
+     * @return 出站 JSON
+     */
     private JSONObject buildUploadBody(
             ElepFileUploadCommand command,
             ElepContractConfig config,
@@ -749,14 +885,14 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
         if (command.getPlatformBody() != null && !command.getPlatformBody().isEmpty()) {
             return new JSONObject(command.getPlatformBody());
         }
-        if (StringUtils.isBlank(snapshot.getUploadRequestJson())) {
+        if (isEmpty(snapshot.getUploadRequestJson())) {
             throw new BusinessException("ELEP_SNAPSHOT_REQUIRED", "缺少预核验快照");
         }
-        if (StringUtils.isBlank(snapshot.getPdfFilePath())) {
+        if (isEmpty(snapshot.getPdfFilePath())) {
             throw new BusinessException("ELEP_PDF_REQUIRED", "缺少签名 PDF");
         }
         String pdfBase64 = ElepPdfTemplateService.readPdfBase64(snapshot.getPdfFilePath());
-        if (StringUtils.isBlank(pdfBase64)) {
+        if (isEmpty(pdfBase64)) {
             throw new BusinessException("ELEP_PDF_READ_FAILED", "读取 PDF 文件失败");
         }
         JSONObject body = JSON.parseObject(snapshot.getUploadRequestJson());
@@ -764,23 +900,37 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
             body = new JSONObject();
         }
         body.put("rxTraceCode", prescription.getRxTraceCode());
-        if (StringUtils.isNotBlank(prescription.getHiRxno())) {
+        if (isNotEmpty(prescription.getHiRxno())) {
             body.put("hiRxno", prescription.getHiRxno());
         }
         body.put("fixmedinsCode", config.getFixmedinsCode());
-        if (StringUtils.isNotBlank(config.getFixmedinsName())) {
+        if (isNotEmpty(config.getFixmedinsName())) {
             body.put("fixmedinsName", config.getFixmedinsName());
         }
         body.put("rxFile", pdfBase64);
-        if (StringUtils.isNotBlank(snapshot.getSignResponseJson())) {
+        putIfNotEmpty(body, "pharDeptName", prescription.getPharDeptName());
+        putIfNotEmpty(body, "pharDeptCode", prescription.getPharDeptCode());
+        putIfNotEmpty(body, "pharCode", prescription.getPharCode());
+        putIfNotEmpty(body, "pharName", prescription.getPharName());
+        putIfNotEmpty(body, "pharProfttlCodg", prescription.getPharProfttlCodg());
+        putIfNotEmpty(body, "pharPracCertNo", prescription.getPharPracCertNo());
+        if (isNotEmpty(snapshot.getSignResponseJson())) {
             JSONObject signOutput = JSON.parseObject(snapshot.getSignResponseJson());
-            if (signOutput != null && StringUtils.isNotBlank(signOutput.getString("signDigest"))) {
+            if (signOutput != null && isNotEmpty(signOutput.getString("signDigest"))) {
                 body.put("signDigest", signOutput.getString("signDigest"));
             }
         }
         return body;
     }
 
+    /**
+     * 组装 A0004 撤销体。
+     *
+     * @param command      撤销命令
+     * @param config       契约
+     * @param prescription 主表
+     * @return 出站 JSON
+     */
     private JSONObject buildRevokeBody(
             com.openhis.elep.domain.prescription.command.ElepRevokeCommand command,
             ElepContractConfig config,
@@ -788,13 +938,13 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
         if (command.getPlatformBody() != null && !command.getPlatformBody().isEmpty()) {
             return new JSONObject(command.getPlatformBody());
         }
-        if (StringUtils.isBlank(command.getDrCode()) || StringUtils.isBlank(command.getUndoDrName())) {
+        if (isEmpty(command.getDrCode()) || isEmpty(command.getUndoDrName())) {
             throw new BusinessException(
                     "ELEP_REVOKE_BODY_REQUIRED",
                     "撤销需提供 platformBody，或 drCode + undoDrName");
         }
-        String hiRxno = StringUtils.firstNonBlank(command.getHiRxno(), prescription.getHiRxno());
-        if (StringUtils.isBlank(hiRxno)) {
+        String hiRxno = firstNonEmpty(command.getHiRxno(), prescription.getHiRxno());
+        if (isEmpty(hiRxno)) {
             throw new BusinessException("ELEP_HI_RXNO_REQUIRED", "hiRxno 不能为空");
         }
         JSONObject body = new JSONObject();
@@ -802,22 +952,36 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
         body.put("fixmedinsCode", config.getFixmedinsCode());
         body.put("drCode", command.getDrCode());
         body.put("undoDrName", command.getUndoDrName());
-        if (StringUtils.isNotBlank(command.getRevokeReason())) {
+        if (isNotEmpty(command.getRevokeReason())) {
             body.put("undoRea", command.getRevokeReason());
         }
         return body;
     }
 
+    /**
+     * 按处方主键定位查询对象。
+     *
+     * @param command 查询命令
+     * @return 主表
+     */
     private YbElepPrescription resolvePrescriptionForQuery(ElepQueryCommand command) {
         if (command.getPrescriptionId() != null) {
             return loadActivePrescription(command.getPrescriptionId());
         }
-        if (StringUtils.isNotBlank(command.getHiRxno())) {
+        if (isNotEmpty(command.getHiRxno())) {
             throw new BusinessException("ELEP_RX_ID_REQUIRED", "按 hiRxno 查询需提供 prescriptionId");
         }
         throw new BusinessException("ELEP_RX_ID_REQUIRED", "prescriptionId 不能为空");
     }
 
+    /**
+     * 组装 A0005 查询体。
+     *
+     * @param command      查询命令
+     * @param config       契约
+     * @param prescription 主表
+     * @return 出站 JSON
+     */
     private JSONObject buildQueryBody(
             ElepQueryCommand command,
             ElepContractConfig config,
@@ -825,8 +989,8 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
         if (command.getPlatformBody() != null && !command.getPlatformBody().isEmpty()) {
             return new JSONObject(command.getPlatformBody());
         }
-        String hiRxno = StringUtils.firstNonBlank(command.getHiRxno(), prescription.getHiRxno());
-        if (StringUtils.isBlank(hiRxno)) {
+        String hiRxno = firstNonEmpty(command.getHiRxno(), prescription.getHiRxno());
+        if (isEmpty(hiRxno)) {
             throw new BusinessException("ELEP_HI_RXNO_REQUIRED", "hiRxno 不能为空");
         }
         JSONObject body = new JSONObject();
@@ -835,6 +999,13 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
         return body;
     }
 
+    /**
+     * 组装 A0006 取药结果查询体（本期前端不做）。
+     *
+     * @param hiRxno 医保处方号
+     * @param config 契约
+     * @return 出站 JSON
+     */
     private static JSONObject buildMedResultBody(String hiRxno, ElepContractConfig config) {
         JSONObject body = new JSONObject();
         body.put("fixmedinsCode", config.getFixmedinsCode());
@@ -842,6 +1013,13 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
         return body;
     }
 
+    /**
+     * 把 A0005 平台状态码回写本地，不改 HIS。
+     *
+     * @param prescription 主表
+     * @param output       平台输出
+     * @param operatorId   操作人
+     */
     private void applyPlatformQueryFields(YbElepPrescription prescription, JSONObject output, Long operatorId) {
         if (output == null) {
             return;
@@ -866,8 +1044,14 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
         prescriptionRepository.save(prescription);
     }
 
+    /**
+     * 解析平台时间串为 Instant。
+     *
+     * @param text ISO 或 yyyy-MM-dd HH:mm:ss
+     * @return 瞬时；无法解析则空
+     */
     private static Instant parseInstant(String text) {
-        if (StringUtils.isBlank(text)) {
+        if (isEmpty(text)) {
             return null;
         }
         try {
@@ -876,7 +1060,7 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
             // continue
         }
         try {
-            return LocalDateTime.parse(text, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+            return LocalDateTime.parse(text, ElepPrescriptionConstants.PRSC_TIME_FORMATTER)
                     .atZone(ZoneId.systemDefault())
                     .toInstant();
         } catch (DateTimeParseException ignored) {
@@ -884,6 +1068,12 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
         }
     }
 
+    /**
+     * 上传成功后用报文刷新药品摘要与主诊断。
+     *
+     * @param prescription 主表
+     * @param body         A0003 报文
+     */
     private static void enrichPrescriptionSummary(YbElepPrescription prescription, JSONObject body) {
         JSONArray drugLines = body.getJSONArray("rxdrugdetail");
         if (drugLines != null) {
@@ -897,7 +1087,11 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
                 if (summary.length() > 0) {
                     summary.append("；");
                 }
-                summary.append(StringUtils.defaultString(line.getString("drugName")));
+                String drugName = line.getString("drugName");
+                if (drugName == null) {
+                    drugName = "";
+                }
+                summary.append(drugName);
                 if (line.get("drugCnt") != null) {
                     summary.append("×").append(line.getString("drugCnt"));
                 }
@@ -914,5 +1108,62 @@ public class ElepPrescriptionOrchestrator implements ElepPrescriptionOperations 
         if (prescription.getPrscTime() == null) {
             prescription.setPrscTime(Instant.now());
         }
+    }
+
+    /**
+     * 成功时日志错误字段留空，失败时记下平台提示。
+     *
+     * @param success  是否成功
+     * @param response 平台回执
+     * @return 失败原因或 null
+     */
+    private static String failLogMessage(boolean success, ElepPlatformInvokeResult response) {
+        if (success) {
+            return null;
+        }
+        return response.getMessage();
+    }
+
+    /**
+     * 空 JSON 对象上取字符串字段。
+     *
+     * @param output 平台输出
+     * @param key    字段名
+     * @return 值或 null
+     */
+    private static String jsonString(JSONObject output, String key) {
+        if (output == null) {
+            return null;
+        }
+        return output.getString(key);
+    }
+
+    /**
+     * 取第一个非空字符串。
+     *
+     * @param first  优先
+     * @param second 回落
+     * @return 非空或 null
+     */
+    private static String firstNonEmpty(String first, String second) {
+        String left = trimToNull(first);
+        if (left != null) {
+            return left;
+        }
+        return trimToNull(second);
+    }
+
+    /**
+     * 非空才写入 JSON，避免把空审方码送给平台。
+     *
+     * @param body  JSON
+     * @param key   字段
+     * @param value 值
+     */
+    private static void putIfNotEmpty(JSONObject body, String key, String value) {
+        if (isEmpty(value)) {
+            return;
+        }
+        body.put(key, value);
     }
 }

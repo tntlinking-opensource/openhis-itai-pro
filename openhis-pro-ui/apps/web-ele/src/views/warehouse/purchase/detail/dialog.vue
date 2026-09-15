@@ -3,7 +3,7 @@ import { reactive, ref } from 'vue';
 
 import { useVbenDrawer } from '@vben/common-ui';
 
-import { getPurchaseById } from '#/api';
+import { getPurchaseById } from '#/api/warehouse/purchase';
 import { useRequest } from '#/hooks/use-request';
 
 import Edit from './edit.vue';

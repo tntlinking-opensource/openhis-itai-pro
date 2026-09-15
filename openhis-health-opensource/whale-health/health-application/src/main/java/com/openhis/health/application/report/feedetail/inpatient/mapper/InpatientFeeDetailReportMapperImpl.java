@@ -16,6 +16,7 @@ import com.openhis.health.application.report.feedetail.inpatient.response.LoadIn
 import com.openhis.health.application.report.feedetail.inpatient.response.PageInpatientFeeDetailReportResponse;
 import com.openhis.health.application.report.feedetail.inpatient.response.SummarizeInpatientFeeDetailReportResponse;
 import com.openhis.health.application.shared.pagination.PageQueryBinder;
+import com.openhis.health.application.shared.report.ReportDateTimeWindowSupport;
 import com.openhis.health.domain.administration.chargeitem.query.OutpatientFeeDetailPageQuery;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.InpatientFeeDetailReportConstants;
@@ -25,7 +26,6 @@ import com.openhis.whale.core.application.util.StringUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -296,10 +296,10 @@ public class InpatientFeeDetailReportMapperImpl implements InpatientFeeDetailRep
         String feeNatureContractNo,
         String settlementStatus) {
         if (StringUtils.isNotEmpty(dateFrom)) {
-            query.setBillDateFrom(LocalDate.parse(dateFrom.trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER));
+            query.setBillDateFrom(ReportDateTimeWindowSupport.parseInclusiveStart(dateFrom));
         }
         if (StringUtils.isNotEmpty(dateTo)) {
-            query.setBillDateTo(LocalDate.parse(dateTo.trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER));
+            query.setBillDateTo(ReportDateTimeWindowSupport.parseInclusiveEnd(dateTo));
         }
         query.setRegistrationDepartmentId(registrationDepartmentId);
         query.setRequestingOrgId(requestingOrgId);

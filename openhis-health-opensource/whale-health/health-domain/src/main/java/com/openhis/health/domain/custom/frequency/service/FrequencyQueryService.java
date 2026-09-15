@@ -33,6 +33,7 @@ import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 频次读侧查询服务。
@@ -47,6 +48,11 @@ import java.util.Set;
 public class FrequencyQueryService {
 
     private final FrequencyRepository repository;
+
+    /**
+     * 频次主数据按 rateCode 进程内缓存（护士站列表/待执计数同码高频复用，禁逐行打库）。
+     */
+    private final ConcurrentHashMap<String, Frequency> frequencyByRateCodeCache = new ConcurrentHashMap<>();
 
     /**
      * 初始化频次配置页。
@@ -130,11 +136,7 @@ public class FrequencyQueryService {
         if (endTime == null || startTime == null || !endTime.isAfter(startTime)) {
             return new ArrayList<>();
         }
-        Frequency frequency = repository.findByRateCode(rateCode)
-            .orElseThrow(() -> new BusinessException(ErrorCodeConstants.FREQUENCY_NOT_FOUND, "频次不存在"));
-        if (!Boolean.TRUE.equals(frequency.getActiveFlag())) {
-            throw new BusinessException(ErrorCodeConstants.FREQUENCY_INVALID_STATUS, "频次已停用");
-        }
+        Frequency frequency = this.requireActiveFrequencyByRateCode(rateCode);
         if (FrequencyCycleType.AS_NEEDED.getCode().equals(frequency.getCycleType())) {
             return new ArrayList<>();
         }
@@ -156,6 +158,29 @@ public class FrequencyQueryService {
         }
         result.sort(Comparator.comparing(FrequencyExecutionTimePointQueryModel::getExecutionAt));
         return result;
+    }
+
+    /**
+     * 按 rateCode 加载启用中的频次主数据（进程内缓存，列表展槽禁 N+1 打库）。
+     *
+     * @param rateCode 频次编码
+     * @return 启用中的频次实体
+     */
+    private Frequency requireActiveFrequencyByRateCode(String rateCode) {
+        Frequency cached = frequencyByRateCodeCache.get(rateCode);
+        if (cached != null) {
+            if (!Boolean.TRUE.equals(cached.getActiveFlag())) {
+                throw new BusinessException(ErrorCodeConstants.FREQUENCY_INVALID_STATUS, "频次已停用");
+            }
+            return cached;
+        }
+        Frequency frequency = repository.findByRateCode(rateCode)
+            .orElseThrow(() -> new BusinessException(ErrorCodeConstants.FREQUENCY_NOT_FOUND, "频次不存在"));
+        if (!Boolean.TRUE.equals(frequency.getActiveFlag())) {
+            throw new BusinessException(ErrorCodeConstants.FREQUENCY_INVALID_STATUS, "频次已停用");
+        }
+        frequencyByRateCodeCache.put(rateCode, frequency);
+        return frequency;
     }
 
     /**

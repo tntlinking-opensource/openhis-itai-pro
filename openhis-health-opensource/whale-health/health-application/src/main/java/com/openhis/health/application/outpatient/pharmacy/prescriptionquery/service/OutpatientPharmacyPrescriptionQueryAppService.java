@@ -117,10 +117,10 @@ public class OutpatientPharmacyPrescriptionQueryAppService {
      * IF-OPQ-01：门诊处方查询页初始化。
      *
      * <p>下发收费/发药状态、处方类别 355、医保类别、费用性质三档、含输液三态、开单科室、
-     * 点评状态、是否合理、药品类型（药典），以及默认本月开方日起止。</p>
+     * 点评状态、是否合理、药品类型（药典），以及默认本年开方日起止。</p>
      *
      * @param request 空体占位请求
-     * @return 筛选项与默认本月开方日
+     * @return 筛选项与默认本年开方日
      * @throws BusinessException EX-OPQ-101 未登录或元数据加载失败
      */
     public LoadOutpatientPharmacyPrescriptionQueryPageInitResponse loadOutpatientPharmacyPrescriptionQueryPageInit(
@@ -159,11 +159,11 @@ public class OutpatientPharmacyPrescriptionQueryAppService {
                 this.terminologyOptionLoader.loadOptions(
                     TerminologyCodeSystemNameConstants.MEDICATION_CATEGORY_CODE);
             LocalDate today = LocalDate.now();
-            LocalDate monthStart = today.withDayOfMonth(1);
-            LocalDate monthEnd = today.withDayOfMonth(today.lengthOfMonth());
-            String defaultFrom = monthStart.format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
-            String defaultTo = monthEnd.format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
-            // Asm：默认本月窗 + 步骤筛选项 → 初始化响应
+            LocalDate yearStart = today.withDayOfYear(1);
+            LocalDate yearEnd = today.withDayOfYear(today.lengthOfYear());
+            String defaultFrom = yearStart.format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
+            String defaultTo = yearEnd.format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
+            // Asm：默认本年窗 + 步骤筛选项 → 初始化响应
             return this.prescriptionQueryMapper.toLoadPageInitResponse(
                 defaultFrom,
                 defaultTo,
@@ -260,7 +260,7 @@ public class OutpatientPharmacyPrescriptionQueryAppService {
                     infusionFilter.trim())) {
                 injectMedicationIds = this.medicationDefinitionQueryService.listIdsByInjectFlag(Boolean.TRUE);
             }
-            // Pre：费用性质分类非空时预解析合同 id；空则跳过
+            // Pre：费用性质分类非空时预解析合同 id（ContractCategory 与 ChargeTypeCategory 双码并查）；空则跳过
             List<Long> contractResolvedIds = null;
             if (StringUtils.isNotEmpty(request.getContractCategoryCode())) {
                 contractResolvedIds =

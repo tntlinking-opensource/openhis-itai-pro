@@ -27,7 +27,6 @@ export interface LoadInpatientDailySettlementPageInitResponse {
   defaultDateFrom?: string;
   defaultDateTo?: string;
   expensePropertyOptions?: ApiOptionItem[];
-  financialDelegateEnabled?: boolean;
   cashierOptions?: ApiOptionItem[];
   currentCashierId?: string;
 }
@@ -78,6 +77,20 @@ export interface InpatientDailySettlementSummaryDto {
   summaryRows?: DailySettlementSummaryRowDto[];
 }
 
+/**
+ * 住院日结患者分项块（只读统计；各块加总勾回合计；不影响交账）。
+ */
+export interface InpatientDailySettlementPatientSummaryDto {
+  seqNo?: number;
+  encounterId?: string;
+  patientId?: string;
+  patientName?: string;
+  encounterBusNo?: string;
+  wardName?: string;
+  bedName?: string;
+  summary?: InpatientDailySettlementSummaryDto;
+}
+
 export interface PreviewInpatientDailySettlementResponse {
   /** 待归档 payment 流水条数（含 0 元与收支抵净，不因净额排除）。 */
   paymentCount?: number;
@@ -85,6 +98,8 @@ export interface PreviewInpatientDailySettlementResponse {
   items?: DailySettlementHandoverPaymentItemDto[];
   rows?: InpatientDailySettlementChannelRowDto[];
   summary?: InpatientDailySettlementSummaryDto;
+  /** 患者分项（只读；与 summary 同源口径按就诊拆分） */
+  patientSummaries?: InpatientDailySettlementPatientSummaryDto[];
   /** 本次待交账合计上半区（仅未交账）。 */
   handoverRows?: DailySettlementHandoverChannelRowDto[];
   /** 本次待交账合计下半区（仅未交账）。 */
@@ -97,7 +112,7 @@ export interface PreviewInpatientDailySettlementResponse {
 }
 
 /**
- * 预览响应透传（仅认嵌套 summary）。
+ * 预览响应透传（仅认嵌套 summary / patientSummaries）。
  */
 export function normalizePreviewInpatientDailySettlementResponse(
   raw: PreviewInpatientDailySettlementResponse,
@@ -107,6 +122,7 @@ export function normalizePreviewInpatientDailySettlementResponse(
     items: raw.items,
     rows: raw.rows,
     summary: raw.summary,
+    patientSummaries: raw.patientSummaries,
     handoverRows: raw.handoverRows,
     handoverSummary: raw.handoverSummary,
     gapHardBlockEarliestAt: raw.gapHardBlockEarliestAt,
@@ -211,6 +227,8 @@ export interface LoadInpatientCashierSettlementVoucherResponse {
     settlementPeriodText?: string;
     rows?: InpatientDailySettlementChannelRowDto[];
     summary?: InpatientDailySettlementSummaryDto;
+    /** 患者分项（挂载现算；可空） */
+    patientSummaries?: InpatientDailySettlementPatientSummaryDto[];
     paymentIds?: string[];
   };
 }

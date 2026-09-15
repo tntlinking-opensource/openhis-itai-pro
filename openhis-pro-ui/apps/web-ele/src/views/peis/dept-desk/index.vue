@@ -540,7 +540,7 @@ async function ensureCommonResults(definitionId: string) {
     pageNo: 1,
     pageSize: 100,
   });
-  commonResultsCache.value[definitionId] = res.records ?? [];
+  commonResultsCache.value[definitionId] = res.content ?? [];
 }
 
 function focusObservationRow(bundle: ProjectObservationBundle, row: ObservationRowDto) {

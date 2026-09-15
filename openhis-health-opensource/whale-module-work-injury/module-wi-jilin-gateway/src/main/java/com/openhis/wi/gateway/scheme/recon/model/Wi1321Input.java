@@ -19,6 +19,10 @@ public class Wi1321Input {
     @JSONField(name = "ipt_otp_no")
     private String iptOtpNo;
 
+    /** 单据号（手册示例传 0）。 */
+    @JSONField(name = "medrcdno")
+    private String medrcdno;
+
     /** 统筹区编码。 */
     @JSONField(name = "social_pool_code")
     private String socialPoolCode;

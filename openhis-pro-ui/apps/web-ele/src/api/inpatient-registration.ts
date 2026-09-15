@@ -49,9 +49,13 @@ export interface RegistrationQueueItemDto {
   organizationName?: string;
   patientId: string;
   patientName: string;
+  /** 费用性质展示名（就诊优先合同名） */
+  contractDisplay?: string;
   startTime?: string;
   statusEnum: string;
   statusEnumText: string;
+  /** 是否允许自费转医保（IF-IP-REG-07） */
+  switchToInsuranceEnabled?: boolean;
   wardId?: string;
   wardName?: string;
 }
@@ -119,6 +123,8 @@ export interface LoadRegistrationContextResult {
   encounter?: RegistrationEncounterDto | null;
   patient?: RegistrationPatientDto | null;
   readOnly: boolean;
+  /** 是否允许自费转医保（IF-IP-REG-07） */
+  switchToInsuranceEnabled?: boolean;
 }
 
 /** 预交金支付明细 */
@@ -193,6 +199,29 @@ export interface CancelRegistrationResult {
   encounterId: string;
   statusEnum: string;
   success: boolean;
+}
+
+/** 住院自费转医保请求（IF-IP-REG-07） */
+export interface SwitchInpatientToInsuranceParams {
+  attendingDoctorId: string;
+  contractId: string;
+  encounterId: string;
+  insuplcAdmdvs?: string;
+  insutype?: string;
+  medType?: string;
+  operatorId: string;
+  psnNo: string;
+  ybCardInfo?: string;
+  ybMediumType?: string;
+}
+
+/** 住院自费转医保响应 */
+export interface SwitchInpatientToInsuranceResult {
+  insuranceAccountId?: string;
+  messageCode?: string;
+  success?: boolean;
+  switchedChargeItemCount?: number;
+  ybMdtrtId?: string;
 }
 
 /** 待入科医保退入院响应 */
@@ -276,6 +305,16 @@ export async function httpCancelInsuranceInpatientAdmission(
 ): Promise<CancelInsuranceInpatientAdmissionResult> {
   return publicRequestClient.post<CancelInsuranceInpatientAdmissionResult>(
     '/inpatientRegistration/cancelInsuranceInpatientAdmission',
+    body,
+  );
+}
+
+/** 住院自费转医保（IF-IP-REG-07） */
+export async function httpSwitchInpatientToInsurance(
+  body: SwitchInpatientToInsuranceParams,
+): Promise<SwitchInpatientToInsuranceResult> {
+  return publicRequestClient.post<SwitchInpatientToInsuranceResult>(
+    '/inpatientRegistration/switchEncounterToInsurance',
     body,
   );
 }

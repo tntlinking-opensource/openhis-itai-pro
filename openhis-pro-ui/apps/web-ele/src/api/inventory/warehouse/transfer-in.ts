@@ -24,9 +24,7 @@ export interface TransferInOptionDto {
   label?: string;
 }
 
-export interface LoadTransferInFormInitRequest {
-  organizationId?: number;
-}
+export interface LoadTransferInFormInitRequest {}
 
 export interface LoadTransferInFormInitResponse {
   pharmacyLocationOptions?: TransferInOptionDto[];
@@ -46,9 +44,7 @@ export interface TransferInListRowDto {
   sourceLocationName?: string;
   purposeLocationId?: number | string;
   applyTime?: string;
-  approvalTime?: string;
   applicantId?: number | string;
-  approverId?: number | string;
   /** 制单人姓名（后端 enrich） */
   creatorName?: string;
   approverName?: string;
@@ -71,7 +67,6 @@ export interface PageTransferInsRequest {
 export interface PageTransferInsResponse {
   total?: number;
   totalCount?: number;
-  records?: TransferInListRowDto[];
   content?: TransferInListRowDto[];
 }
 

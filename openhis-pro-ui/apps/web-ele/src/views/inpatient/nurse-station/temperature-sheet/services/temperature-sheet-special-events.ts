@@ -20,7 +20,7 @@ import {
   formatTemperatureSheetTimeSlotChinese,
   parseDateTimeYmdHm,
   resolveDefaultEventTimeHm,
-  resolveTemperatureSheetTimeSlotFromHm,
+  resolveTemperatureSheetChartTimeSlotFromHm,
 } from './temperature-sheet-time-format';
 
 export { formatTemperatureSheetTimeSlotChinese } from './temperature-sheet-time-format';
@@ -365,27 +365,30 @@ export function countSpecialEventInStore(
   return count;
 }
 
-/** 存储中是否已有入院事件（手录或历史数据） */
-function hasAdmissionEventInStore(store: TemperatureSheetSpecialEventStore): boolean {
-  for (const flag of Object.values(store.slotFlags)) {
-    if (flag.eventTypes.includes(SPECIAL_EVENT_ITEM_CODE.ADMISSION)) {
-      return true;
-    }
-  }
-  return false;
+/** 存储中是否已有指定特殊事件（手录或历史数据） */
+function hasSpecialEventTypeInStore(
+  store: TemperatureSheetSpecialEventStore,
+  eventType: string,
+): boolean {
+  return countSpecialEventInStore(store, eventType) > 0;
 }
 
-/** 由患者入院时间生成图表竖排「入院|几时几分」标记 */
-function buildPatientAdmissionChartMarker(
-  admissionAt: string | undefined,
+/**
+ * 由患者入院/出院时间生成图表竖排标记；落格按 30 分界就近时次。
+ * 当前窗口没有对应日列时不画（与手录标记同口径，需翻页才可见）。
+ */
+function buildPatientDatetimeChartMarker(
+  eventAt: string | undefined,
+  eventCode: string,
+  markerKeyPrefix: string,
   visiblePoints: TemperatureSheetChartPoint[],
   labelMap?: Record<string, string>,
 ): TemperatureSheetChartTextMarker | null {
-  const parsed = parseDateTimeYmdHm(admissionAt);
+  const parsed = parseDateTimeYmdHm(eventAt);
   if (!parsed) {
     return null;
   }
-  const timeSlot = resolveTemperatureSheetTimeSlotFromHm(parsed.hm);
+  const timeSlot = resolveTemperatureSheetChartTimeSlotFromHm(parsed.hm);
   const slotIndex = visiblePoints.findIndex(
     (point) => point.fullDate === parsed.dateYmd && point.timeSlot === timeSlot,
   );
@@ -393,36 +396,47 @@ function buildPatientAdmissionChartMarker(
     return null;
   }
   return {
-    key: `auto-admission-${parsed.dateYmd}|${timeSlot}`,
+    key: `${markerKeyPrefix}-${parsed.dateYmd}|${timeSlot}`,
     slotIndex,
-    displayText: formatSpecialEventDisplayText(
-      SPECIAL_EVENT_ITEM_CODE.ADMISSION,
-      timeSlot,
-      parsed.hm,
-      labelMap,
-    ),
+    displayText: formatSpecialEventDisplayText(eventCode, timeSlot, parsed.hm, labelMap),
     source: 'manual',
     stackOrder: 0,
   };
 }
 
-/** 合并手录竖排文字标记，同槽位纵向堆叠；无手录入院时由患者入院时间自动带入 */
+/** 合并手录竖排文字标记，同槽位纵向堆叠；无手录入院/出院时由患者时间自动带入 */
 export function buildChartTextMarkers(
   visiblePoints: TemperatureSheetChartPoint[],
   store: TemperatureSheetSpecialEventStore,
   labelMap?: Record<string, string>,
   patientAdmissionAt?: string,
+  patientDischargeAt?: string,
 ): TemperatureSheetChartTextMarker[] {
   const rawMarkers: TemperatureSheetChartTextMarker[] = [];
 
-  if (!hasAdmissionEventInStore(store)) {
-    const autoAdmission = buildPatientAdmissionChartMarker(
+  if (!hasSpecialEventTypeInStore(store, SPECIAL_EVENT_ITEM_CODE.ADMISSION)) {
+    const autoAdmission = buildPatientDatetimeChartMarker(
       patientAdmissionAt,
+      SPECIAL_EVENT_ITEM_CODE.ADMISSION,
+      'auto-admission',
       visiblePoints,
       labelMap,
     );
     if (autoAdmission) {
       rawMarkers.push(autoAdmission);
+    }
+  }
+
+  if (!hasSpecialEventTypeInStore(store, SPECIAL_EVENT_ITEM_CODE.DISCHARGE)) {
+    const autoDischarge = buildPatientDatetimeChartMarker(
+      patientDischargeAt,
+      SPECIAL_EVENT_ITEM_CODE.DISCHARGE,
+      'auto-discharge',
+      visiblePoints,
+      labelMap,
+    );
+    if (autoDischarge) {
+      rawMarkers.push(autoDischarge);
     }
   }
 

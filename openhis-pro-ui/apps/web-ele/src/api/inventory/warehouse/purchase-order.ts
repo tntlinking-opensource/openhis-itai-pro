@@ -15,9 +15,7 @@ export interface PurchaseOrderFormInitOptionDto {
   label?: string;
 }
 
-export interface LoadPurchaseOrderFormInitRequest {
-  organizationId?: number;
-}
+export interface LoadPurchaseOrderFormInitRequest {}
 
 export interface LoadPurchaseOrderFormInitResponse {
   warehouseLocationOptions?: PurchaseOrderFormInitOptionDto[];
@@ -48,10 +46,8 @@ export interface PurchaseOrderListRowDto {
   statusEnum?: string;
   statusEnumText?: string;
   creatorName?: string;
-  approverId?: number | string;
   approverName?: string;
   totalAmount?: number;
-  approvalTime?: string;
   applyTime?: string;
   occurrenceTime?: string;
 }
@@ -62,8 +58,6 @@ export interface PagePurchaseOrdersResponse {
   pageNo?: number;
   pageSize?: number;
   content?: PurchaseOrderListRowDto[];
-  /** 兼容旧分页字段 */
-  records?: PurchaseOrderListRowDto[];
 }
 
 export interface GetPurchaseOrderDetailRequest {
@@ -166,14 +160,10 @@ export interface WithdrawPurchaseOrderApprovalResponse {
 
 export interface AgreePurchaseOrderRequest {
   busNo: string;
-  approverId?: string;
-  approvalClock?: string;
 }
 
 export interface RejectPurchaseOrderRequest {
   busNo: string;
-  approverId?: string;
-  approvalClock?: string;
   rejectReason?: string;
 }
 
@@ -222,8 +212,6 @@ export interface PageProductsForPurchaseResponse {
   total?: number;
   totalCount?: number;
   content?: ProductDefinitionItemDto[];
-  /** 兼容旧分页字段 */
-  records?: ProductDefinitionItemDto[];
 }
 
 /** 预警筛：expire=效期 / lowStock=库存 / all=全部 */
@@ -257,7 +245,6 @@ export interface PagePurchaseWarningProductsResponse {
   pageNo?: number;
   pageSize?: number;
   content?: PurchaseWarningProductRowDto[];
-  records?: PurchaseWarningProductRowDto[];
 }
 
 /** 列表「全部药库」占位 purposeLocationId（与 init OptionDto.value 一致，字符串） */
@@ -435,10 +422,8 @@ export interface LinkableDeptPurchaseRequestListRowDto {
   statusEnum?: string;
   statusEnumText?: string;
   creatorName?: string;
-  approverId?: number | string;
   approverName?: string;
   totalAmount?: number;
-  approvalTime?: string;
   applyTime?: string;
   occurrenceTime?: string;
 }
@@ -446,7 +431,6 @@ export interface LinkableDeptPurchaseRequestListRowDto {
 export interface PageLinkableDeptPurchaseRequestsResponse {
   total?: number;
   totalCount?: number;
-  records?: LinkableDeptPurchaseRequestListRowDto[];
   content?: LinkableDeptPurchaseRequestListRowDto[];
 }
 

@@ -248,6 +248,13 @@ public interface InpatientNurseStationConstants {
     String MSG_IP_AUD_REJECT_BLOCKED =
         "该医嘱仍存在执行记录、待发/待退药或不可回退费用，无法退回";
 
+    /**
+     * 转科/出院 {@code ON_HOLD} 回滚成功后废弃对齐里程碑的原因文案（GAP-ATD-008；
+     * 写入 {@code cus_encounter_history} 废弃审计）。
+     */
+    String MSG_RETIRE_TRANSFER_DISCHARGE_MILESTONE_ON_HOLD_REVERT =
+        "转科/出院医嘱撤销后回滚待转科/待出院过渡态";
+
     /** 医嘱执行 Tab：待执行。 */
     String EXECUTE_TAB_PENDING = "pending";
 
@@ -556,6 +563,11 @@ public interface InpatientNurseStationConstants {
 
     /** 汇总领药 Tab：中药（IF-IP-SUM-01）。 */
     String MEDICINE_CATEGORY_TAB_TCM = "tcm";
+
+    /**
+     * 医嘱执行列表：中西药+诊疗一次返回（IF-IP-EXE-01；前端空选快捷筛选时用，避免 west+tcm 双请求）。
+     */
+    String MEDICINE_CATEGORY_TAB_ALL = "all";
 
     /** 汇总领药写路径单批上限（AS-IP-NUR-010 §7 NFR）。 */
     int SUMMARY_WRITE_BATCH_MAX = 500;

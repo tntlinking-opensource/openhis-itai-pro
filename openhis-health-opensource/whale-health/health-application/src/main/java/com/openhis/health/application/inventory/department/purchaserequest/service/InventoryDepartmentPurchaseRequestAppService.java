@@ -49,7 +49,6 @@ import com.openhis.health.domain.administration.practitioner.service.Practitione
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.InventoryDepartmentConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
-import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
 import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.LocationStatus;
 import com.openhis.health.domain.share.enums.SupplyStatus;
@@ -139,10 +138,10 @@ public class InventoryDepartmentPurchaseRequestAppService {
      */
     public LoadDeptPurchaseRequestFormInitResponse loadDeptPurchaseRequestFormInit(LoadDeptPurchaseRequestFormInitRequest request) {
         // Gate：会话机构上下文须存在
-        Long resolvedOrg = managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
+        managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
             ErrorCodeConstants.DEP_CPR_101, "机构上下文缺失");
         try {
-            // Pre：拉取启用科室药房并经管辖收窄；药师/库管作经手人候选
+            // Pre：拉取启用科室药房并经管辖收窄；经手人取全体在职医务人员（不限药师/库管）
             List<Location> departmentPharmacies = locationQueryService.listAllActiveDepartmentPharmacies();
             List<Location> gatedDepartmentPharmacies =
                 this.managedLocationIdsResolver.narrowActiveLocationsByManaged(departmentPharmacies);
@@ -151,17 +150,15 @@ public class InventoryDepartmentPurchaseRequestAppService {
             // —— 列表筛「全部科室药房」：value=0 与 pageDeptPurchaseRequests.purposeLocationId 约定一致，非 Location 主键
             deptOptsWithAll.add(new OptionDto(0L, "0", "全部"));
             deptOptsWithAll.addAll(deptOpts);
-            List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
-                WhalePlatformRoleCodeConstants.ROLE_PHARMACIST, resolvedOrg);
-            List<Practitioner> warehouseKeepers = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
-                WhalePlatformRoleCodeConstants.ROLE_WAREHOUSE, resolvedOrg);
-            // Asm：下拉选项写入初始化响应
+            List<Practitioner> handlers =
+                this.practitionerRoleScopeLoader.listAllActivePractitionersForInventoryDocHandlerSelect();
+            // Asm：经手人写入 pharmacistOptions（前端与库管选项合并；库管位留空）
             return purchaseRequestMapper.toLoadDeptPurchaseRequestFormInitResponse(
                 deptOptsWithAll,
                 purchaseRequestMapper.toOptionDtoListSupplyStatuses(),
                 purchaseRequestMapper.toOptionDtoListPurchaseItemTableTypes(),
-                purchaseRequestMapper.toOptionDtoListFromPractitioners(pharmacists),
-                purchaseRequestMapper.toOptionDtoListFromPractitioners(warehouseKeepers));
+                purchaseRequestMapper.toOptionDtoListFromPractitioners(handlers),
+                List.of());
         } catch (RuntimeException ex) {
             // —— 主数据加载失败时收口为 DEP_CPR_101，避免裸异常透出
             log.warn("loadDeptPurchaseRequestFormInit failed", ex);

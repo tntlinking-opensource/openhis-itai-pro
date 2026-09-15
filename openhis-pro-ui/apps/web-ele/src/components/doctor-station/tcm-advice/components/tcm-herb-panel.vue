@@ -371,7 +371,7 @@ defineExpose({ bumpAddFocus, focusDoseByLineKey });
 </script>
 
 <template>
-  <!-- 朝阳：检索挂到信息栏；药表对齐 mock 单列表 -->
+  <!-- 检索挂到信息栏；药表两列长条 -->
   <div class="tcm-herb-workspace flex min-h-0 flex-1 flex-col">
     <Teleport
       v-if="!readonly && queryProductOptions && searchHostReady"

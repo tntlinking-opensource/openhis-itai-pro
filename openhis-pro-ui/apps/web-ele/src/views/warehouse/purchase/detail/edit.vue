@@ -15,9 +15,13 @@ import { dayjs, ElButton, ElMessage, ElMessageBox } from 'element-plus';
 
 import { useVbenForm } from '#/adapter/form';
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
-import { createPurchase, initPharmacyWarehouseSuplyApi, updatePurchase } from '#/api';
+import {
+  createPurchase,
+  getPurchaseById,
+  initPharmacyWarehouseSuplyApi,
+  updatePurchase,
+} from '#/api/warehouse/purchase';
 import { getWarehouseByType } from '#/api/warehouse/common';
-import { getPurchaseById } from '#/api/warehouse/purchase';
 import { useRequest } from '#/hooks/use-request';
 
 import {

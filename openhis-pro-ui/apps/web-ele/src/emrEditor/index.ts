@@ -42,6 +42,7 @@ export {
   normalizeEmrRootDoc,
   parseEmrContentToDoc,
   scrubEmptyTextNodes,
+  stripEmrPageBreaks,
   stripLeadingEmrPageBreaks,
 } from './document-content';
 export { findTableByName, getTableCellTextByName, listNamedTableCells } from './table-by-name';
@@ -55,6 +56,7 @@ export {
   mergeEmrMetadataValues,
   PATIENT_BOUND_FIELD_KEYS,
   resolveFillableMetadataKey,
+  stripDocumentStampMetadataFromContentJson,
   stripPatientBoundMetadataFromContentJson,
 } from './emr-patient-metadata';
 export type {

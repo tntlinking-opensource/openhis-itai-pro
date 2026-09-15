@@ -17,7 +17,8 @@ import java.math.RoundingMode;
  * 药品汇总明细数量展示：拆零持久量 → 满包整数 + 不足一包拆零余量（BR-IP-SUM-015 同族）。
  *
  * <p>供护士站汇总详情（IF-IP-SUM-03）、药房汇总核发合并行（IF-IPS-02）、库存明细
- * {@code packageStockText}/{@code packageSplitRatioText}，以及医生站目录可开量 {@code availableQuantityText} 共用。</p>
+ * {@code packageStockText}/{@code packageSplitRatioText}、进货选品 {@code purchaseSplitRatioText}、
+ * 发药 slip {@code packageSplitRatioText}，以及医生站目录可开量 {@code availableQuantityText} 共用。</p>
  */
 public final class MedicationPackageSplitQuantityDisplayAssembler {
 
@@ -191,5 +192,34 @@ public final class MedicationPackageSplitQuantityDisplayAssembler {
             text.append(splitLabel);
         }
         return text.toString();
+    }
+
+    /**
+     * 从产品读模型拼装库房口径「包装↔拆零」比例文案（发药单规格旁、库存明细同源）。
+     *
+     * <p>单位展示名优先读模型字典文本，缺省回落 {@link ProductDefinitionCatalogUnitBandsAssembler}
+     * 解析名或单位码；禁止输出临床 {@code 1片x100} 装量后缀。</p>
+     *
+     * @param product 药品/耗材目录读模型
+     * @return 展示文案（如 {@code 1盒/36片}）；缺倍数或产品时 {@code null}
+     */
+    public static String buildInventoryPackageSplitRatioText(ProductDefinitionDisplayDto product) {
+        if (product == null) {
+            return null;
+        }
+        String packageUnitCode = trimToNull(product.getPackageUnitCode());
+        String splitUnitCode = trimToNull(product.getSplitUnitCode());
+        String packageUnitText = StringUtils.firstNonBlank(
+            product.getPackageUnitCodeDictText(),
+            ProductDefinitionCatalogUnitBandsAssembler.resolveUnitDisplayName(null, packageUnitCode, product),
+            packageUnitCode);
+        String splitUnitText = StringUtils.firstNonBlank(
+            product.getSplitUnitCodeDictText(),
+            ProductDefinitionCatalogUnitBandsAssembler.resolveUnitDisplayName(null, splitUnitCode, product),
+            splitUnitCode);
+        return buildInventoryPackageSplitRatioText(
+            product.getPackageUnitRatio(),
+            packageUnitText,
+            splitUnitText);
     }
 }

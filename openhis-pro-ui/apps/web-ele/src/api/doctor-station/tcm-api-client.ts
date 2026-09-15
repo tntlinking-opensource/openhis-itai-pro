@@ -1,6 +1,8 @@
 import type {
   CancelStopLongTermTcmHerbalPrescriptionRequest,
   CancelStopLongTermTcmHerbalPrescriptionResponse,
+  ChangeTcmHerbalPrescriptionOpenedTimeRequest,
+  ChangeTcmHerbalPrescriptionOpenedTimeResponse,
   DeleteTcmDiagnosisGroupRequest,
   DeleteTcmDiagnosisGroupResponse,
   InitDoctorStationTcmRequest,
@@ -80,6 +82,10 @@ export interface InpatientDoctorStationTcmHttpClient extends DoctorStationTcmHtt
   httpCancelStopLongTermTcmHerbalPrescription: (
     body: CancelStopLongTermTcmHerbalPrescriptionRequest,
   ) => Promise<CancelStopLongTermTcmHerbalPrescriptionResponse>;
+  /** 按方改开立时间（IF-IP-TCM-42） */
+  httpChangeTcmHerbalPrescriptionOpenedTime: (
+    body: ChangeTcmHerbalPrescriptionOpenedTimeRequest,
+  ) => Promise<ChangeTcmHerbalPrescriptionOpenedTimeResponse>;
 }
 
 /** 按应用服务前缀生成门诊中医 Tab HTTP 客户端 */
@@ -125,5 +131,7 @@ export function createInpatientDoctorStationTcmHttpClient(
       post('stopLongTermTcmHerbalPrescription', body),
     httpCancelStopLongTermTcmHerbalPrescription: (body) =>
       post('cancelStopLongTermTcmHerbalPrescription', body),
+    httpChangeTcmHerbalPrescriptionOpenedTime: (body) =>
+      post('changeTcmHerbalPrescriptionOpenedTime', body),
   };
 }

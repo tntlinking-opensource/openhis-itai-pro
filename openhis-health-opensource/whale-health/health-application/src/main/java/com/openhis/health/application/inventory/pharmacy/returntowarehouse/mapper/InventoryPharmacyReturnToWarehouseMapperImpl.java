@@ -252,7 +252,6 @@ public class InventoryPharmacyReturnToWarehouseMapperImpl implements InventoryPh
             dto.setSupplierId(head.getSupplierId());
             dto.setApplicantId(head.getApplicantId());
             dto.setApproverId(head.getApproverId());
-            dto.setTotalPrice(totalAmount);
             dto.setTotalAmount(totalAmount);
             if (maxApply != null) {
                 dto.setApplyTime(maxApply);
@@ -313,7 +312,6 @@ public class InventoryPharmacyReturnToWarehouseMapperImpl implements InventoryPh
         dto.setLotNumber(row.getLotNumber());
         dto.setTraceNo(row.getTraceNo());
         dto.setPrice(row.getPrice());
-        dto.setTotalPrice(row.getTotalPrice());
         dto.setApplyTime(row.getApplyTime());
         dto.setApprovalTime(row.getApprovalTime());
         return dto;
@@ -379,12 +377,14 @@ public class InventoryPharmacyReturnToWarehouseMapperImpl implements InventoryPh
         dto.setOccurrenceTime(line.getOccurrenceTime());
         dto.setReason(line.getReason());
         dto.setRemake(line.getRemake());
-        // 按产品复合键回填品名、单位展示名与计量带，供详情数量列回显
+        // 按产品复合键回填品名/规格/厂家、单位展示名与计量带，供详情列回显
         if (productByKey != null && line.getItemTable() != null && line.getItemId() != null) {
             String key = ProductDefinitionKeyUtil.buildCompositeKey(line.getItemTable(), line.getItemId());
             ProductDefinitionDisplayDto pr = productByKey.get(key);
             if (pr != null) {
                 dto.setProductName(pr.getProductName());
+                dto.setSpecification(pr.getTotalVolume());
+                dto.setManufacturer(pr.getManufacturer());
                 dto.setUnitCodeDictText(
                     ProductDefinitionCatalogUnitBandsAssembler.resolveUnitDisplayName(
                         null, line.getUnitCode(), pr));
@@ -635,12 +635,8 @@ public class InventoryPharmacyReturnToWarehouseMapperImpl implements InventoryPh
         command.setOperatorId(operatorId);
         AgreeRequestCommand.AgreeRequestItemCommand item = new AgreeRequestCommand.AgreeRequestItemCommand();
         item.setBusNo(request.getBusNo());
-        Long approverId = request.getApproverId();
-        if (approverId == null) {
-            approverId = operatorId;
-        }
-        item.setApproverId(approverId);
-        item.setApprovalClock(request.getApprovalClock());
+        // 审批人取当前操作人；审批时刻由领域 agree/reject 写 approval_time
+        item.setApproverId(operatorId);
         command.setItem(item);
         return command;
     }
@@ -896,12 +892,8 @@ public class InventoryPharmacyReturnToWarehouseMapperImpl implements InventoryPh
         command.setOperatorId(operatorId);
         RejectRequestCommand.RejectRequestItemCommand item = new RejectRequestCommand.RejectRequestItemCommand();
         item.setBusNo(request.getBusNo());
-        Long approverId = request.getApproverId();
-        if (approverId == null) {
-            approverId = operatorId;
-        }
-        item.setApproverId(approverId);
-        item.setApprovalClock(request.getApprovalClock());
+        // 审批人取当前操作人；审批时刻由领域 agree/reject 写 approval_time
+        item.setApproverId(operatorId);
         item.setChangeReasonCode(request.getRejectReason());
         command.setItem(item);
         return command;

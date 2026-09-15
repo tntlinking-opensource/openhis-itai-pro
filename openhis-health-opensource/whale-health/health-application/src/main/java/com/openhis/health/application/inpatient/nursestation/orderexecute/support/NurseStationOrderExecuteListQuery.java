@@ -46,11 +46,16 @@ public class NurseStationOrderExecuteListQuery {
      */
     private LocalDateTime reqOpenedTimeTo;
 
-    /** 中西药 Tab：{@code west} / {@code tcm}；空时默认 west。 */
+    /** 中西药 Tab：{@code west} / {@code tcm} / {@code all}；空时默认 west。 */
     private String medicineCategoryTab;
 
     /**
      * 执行记录历史模式：true 时终态槽位按 Procedure 事实行回传（含已被对冲的 COMPLETED）。
      */
     private Boolean executionRecordHistory;
+
+    /**
+     * 是否挂载检查/检验打印套餐与部位标本；医嘱执行页 false，打印中心 true。
+     */
+    private Boolean includePrintDetails;
 }

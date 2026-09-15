@@ -19,15 +19,15 @@ import com.openhis.health.application.report.feedetail.outpatient.response.LoadO
 import com.openhis.health.application.report.feedetail.outpatient.response.PageOutpatientFeeDetailReportResponse;
 import com.openhis.health.application.report.feedetail.outpatient.response.SummarizeOutpatientFeeDetailReportResponse;
 import com.openhis.health.domain.administration.chargeitem.query.OutpatientFeeDetailPageQuery;
-import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.OutpatientFeeDetailConstants;
 import com.openhis.health.domain.share.constants.OutpatientFeeDetailReportConstants;
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+import com.openhis.health.application.shared.report.ReportDateTimeWindowSupport;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.util.StringUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -60,8 +60,21 @@ public class OutpatientFeeDetailReportMapperImpl implements OutpatientFeeDetailR
             return null;
         }
         LoadOutpatientFeeDetailReportPageInitResponse response = new LoadOutpatientFeeDetailReportPageInitResponse();
-        response.setDefaultDateFrom(source.getDefaultDateFrom());
-        response.setDefaultDateTo(source.getDefaultDateTo());
+        // 前身默认多为 yyyy-MM-dd；报表筛改为时刻窗，日仅文案扩成 00:00:00～23:59:59
+        if (StringUtils.isNotEmpty(source.getDefaultDateFrom())) {
+            response.setDefaultDateFrom(
+                ReportDateTimeWindowSupport.parseInclusiveStart(source.getDefaultDateFrom())
+                    .format(GeneralSharedConstants.DATE_TIME_FORMATTER));
+        } else {
+            response.setDefaultDateFrom(source.getDefaultDateFrom());
+        }
+        if (StringUtils.isNotEmpty(source.getDefaultDateTo())) {
+            response.setDefaultDateTo(
+                ReportDateTimeWindowSupport.parseInclusiveEnd(source.getDefaultDateTo())
+                    .format(GeneralSharedConstants.DATE_TIME_FORMATTER));
+        } else {
+            response.setDefaultDateTo(source.getDefaultDateTo());
+        }
         response.setDefaultPageSize(source.getDefaultPageSize());
         response.setTradeDirectionOptions(source.getTradeDirectionOptions());
         response.setFeeCategoryOptions(source.getFeeCategoryOptions());
@@ -92,10 +105,10 @@ public class OutpatientFeeDetailReportMapperImpl implements OutpatientFeeDetailR
         query.setPageNo(1);
         query.setPageSize(OutpatientFeeDetailReportConstants.DEFAULT_PAGE_SIZE);
         if (StringUtils.isNotEmpty(request.getDateFrom())) {
-            query.setBillDateFrom(LocalDate.parse(request.getDateFrom().trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER));
+            query.setBillDateFrom(ReportDateTimeWindowSupport.parseInclusiveStart(request.getDateFrom()));
         }
         if (StringUtils.isNotEmpty(request.getDateTo())) {
-            query.setBillDateTo(LocalDate.parse(request.getDateTo().trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER));
+            query.setBillDateTo(ReportDateTimeWindowSupport.parseInclusiveEnd(request.getDateTo()));
         }
         query.setRegistrationDepartmentId(request.getRegistrationDepartmentId());
         query.setRequestingOrgId(request.getRequestingOrgId());

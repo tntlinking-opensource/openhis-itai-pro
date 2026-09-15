@@ -49,6 +49,7 @@ import RegisterBenefitPreviewPanel from './register-benefit-preview-panel.vue';
 import RegisterPatientEncounterHistory from './register-patient-encounter-history.vue';
 import WorkInjuryBenefitSummary from '#/chs/work-injury/work-injury-benefit-summary.vue';
 import WorkInjuryFilingDetailAction from '#/chs/work-injury/work-injury-filing-detail-action.vue';
+import { isWorkInjuryUiEnabled } from '#/utils/project-optional-modules';
 
 defineOptions({
   name: 'RegisterFormArea',
@@ -664,7 +665,9 @@ const hasBenefitDisplay = computed(() => {
 
 /** 选工伤费用性质即显示备案入口（不依赖待遇 kind 是否已切到 WORK_INJURY）。 */
 const showWorkInjuryFilingAction = computed(
-  () => props.workInjurySelected || benefitInfo.value.kind === 'WORK_INJURY',
+  () =>
+    isWorkInjuryUiEnabled() &&
+    (props.workInjurySelected || benefitInfo.value.kind === 'WORK_INJURY'),
 );
 
 const showContractMismatch = computed(
@@ -1144,7 +1147,10 @@ onMounted(async () => {
               </div>
             </template>
             <div
-              v-else-if="benefitInfo.kind === 'WORK_INJURY' || workInjurySelected"
+              v-else-if="
+                isWorkInjuryUiEnabled() &&
+                (benefitInfo.kind === 'WORK_INJURY' || workInjurySelected)
+              "
               class="space-y-2"
             >
               <WorkInjuryBenefitSummary
@@ -1316,7 +1322,10 @@ onMounted(async () => {
                 </div>
               </template>
               <div
-                v-else-if="benefitInfo.kind === 'WORK_INJURY' || workInjurySelected"
+                v-else-if="
+                  isWorkInjuryUiEnabled() &&
+                  (benefitInfo.kind === 'WORK_INJURY' || workInjurySelected)
+                "
                 class="space-y-2"
               >
                 <div class="flex flex-wrap items-center justify-between gap-2">

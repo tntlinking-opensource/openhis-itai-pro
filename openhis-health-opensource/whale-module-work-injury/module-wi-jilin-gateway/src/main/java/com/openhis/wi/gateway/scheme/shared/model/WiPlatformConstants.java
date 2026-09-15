@@ -51,8 +51,17 @@ public final class WiPlatformConstants {
     /** 联系电话缺省（手册允许传 0）。 */
     public static final String DEFAULT_TEL = "0";
 
-    /** 1320/1321/1322 统筹区（院点 NEUSI 220100）。 */
-    public static final String DEFAULT_SOCIAL_POOL_CODE = "220100";
+    /** 1320/1321/1322 统筹区（院点默认 220199）。 */
+    public static final String DEFAULT_SOCIAL_POOL_CODE = "220199";
+
+    /** 1320 是否包含退费：是。 */
+    public static final String REFD_SETL_FLAG_YES = "1";
+
+    /** 1320 省内/全国异地标志：否。 */
+    public static final String YD_SIGN_NO = "0";
+
+    /** 1320 省内/全国异地标志：是。 */
+    public static final String YD_SIGN_YES = "1";
 
     private WiPlatformConstants() {
     }

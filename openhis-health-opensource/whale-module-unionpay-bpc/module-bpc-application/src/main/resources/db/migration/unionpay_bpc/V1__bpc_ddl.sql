@@ -9,6 +9,7 @@ CREATE TABLE upc_bpc_order (
     trade_no          VARCHAR(64),
     tran_type         VARCHAR(8)   NOT NULL,
     txn_amt_fen       BIGINT       NOT NULL,
+    paid_amt_fen      BIGINT,
     pay_type          VARCHAR(16),
     status            VARCHAR(16)  NOT NULL,
     resp_code         VARCHAR(8),
@@ -35,7 +36,8 @@ COMMENT ON COLUMN upc_bpc_order.detail_index IS '明细index';
 COMMENT ON COLUMN upc_bpc_order.mer_trade_no IS 'mertrade编号';
 COMMENT ON COLUMN upc_bpc_order.trade_no IS 'trade编号';
 COMMENT ON COLUMN upc_bpc_order.tran_type IS 'tran类型';
-COMMENT ON COLUMN upc_bpc_order.txn_amt_fen IS '交易金额（分）';
+COMMENT ON COLUMN upc_bpc_order.txn_amt_fen IS '院内下单金额（分）；不被 POS 实付覆盖';
+COMMENT ON COLUMN upc_bpc_order.paid_amt_fen IS '银联/POS 回传实付金额（分）；可小于下单 txn_amt_fen';
 COMMENT ON COLUMN upc_bpc_order.pay_type IS '支付类型';
 COMMENT ON COLUMN upc_bpc_order.status IS '状态';
 COMMENT ON COLUMN upc_bpc_order.resp_code IS 'resp编码';

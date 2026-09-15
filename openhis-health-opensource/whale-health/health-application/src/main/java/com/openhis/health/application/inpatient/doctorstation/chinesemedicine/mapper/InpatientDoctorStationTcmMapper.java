@@ -310,4 +310,26 @@ public interface InpatientDoctorStationTcmMapper {
      */
     CancelStopLongTermTcmHerbalPrescriptionResponse toCancelStopLongTermTcmHerbalPrescriptionResponse(
         Boolean success, String message);
+
+    /**
+     * 装配改开立时间领域命令（IF-IP-TCM-42，timeKind 固定 OPENED）。
+     *
+     * @param requestId     药品申请主键
+     * @param newOpenedTime 新开立时间
+     * @param operatorId    操作人
+     * @return 改业务时间命令
+     */
+    ChangeMedicationRequestBusinessTimeCommand toChangeMedicationRequestOpenedTimeCommand(
+        Long requestId, LocalDateTime newOpenedTime, Long operatorId);
+
+    /**
+     * 装配 IF-IP-TCM-42 按方改开立时间响应。
+     *
+     * @param success           是否成功
+     * @param message           提示信息
+     * @param changedLineCount  改写行数
+     * @return 改开立时间响应
+     */
+    ChangeTcmHerbalPrescriptionOpenedTimeResponse toChangeTcmHerbalPrescriptionOpenedTimeResponse(
+        Boolean success, String message, Integer changedLineCount);
 }

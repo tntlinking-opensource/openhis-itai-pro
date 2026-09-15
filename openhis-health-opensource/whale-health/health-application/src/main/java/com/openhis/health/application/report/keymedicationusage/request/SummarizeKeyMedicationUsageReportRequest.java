@@ -35,7 +35,8 @@ public class SummarizeKeyMedicationUsageReportRequest {
     private List<String> encounterClassCodes;
 
     /**
-     * 重点药类型多选（{@code BASIC}/{@code NATIONAL_MONITOR}/{@code CENTRAL_PURCHASE}）；空/null 表示全部。
+     * 重点药类型多选（{@code BASIC}/{@code NATIONAL_MONITOR}/{@code CENTRAL_PURCHASE}/{@code ANTIBIOTIC}）；
+     * 空/null 表示全部；结果按类型<strong>拆行</strong>，组内合计行占比用全部药典药品。
      */
     @Schema(description = "重点药类型多选")
     private List<String> keyDrugTypeCodes;

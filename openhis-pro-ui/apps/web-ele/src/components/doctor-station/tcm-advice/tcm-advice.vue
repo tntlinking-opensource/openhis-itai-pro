@@ -19,10 +19,11 @@ import type {
 } from '#/components/doctor-station/diagnosis';
 import type { AdviceProductOption } from '#/views/outpatient/doctor-station/advice';
 
-import { computed, nextTick, onActivated, onDeactivated, reactive, ref, watch } from 'vue';
+import { computed, h, nextTick, onActivated, onDeactivated, reactive, ref, watch } from 'vue';
 
 import {
   ElButton,
+  ElDatePicker,
   ElEmpty,
   ElInput,
   ElMessage,
@@ -34,6 +35,7 @@ import {
   ElTooltip,
   ElTree,
 } from 'element-plus';
+import dayjs from 'dayjs';
 
 import {
   getOrderTemplateDetailApi,
@@ -94,6 +96,7 @@ import {
 import {
   applyCatalogProductToLine,
   buildCancelStopLongTermTcmRequest,
+  buildChangeTcmOpenedTimeRequest,
   buildDeleteDraftRequest,
   buildDraftSaveRequest,
   buildSignRequest,
@@ -101,6 +104,7 @@ import {
   buildWithdrawRequest,
   calcSingleDoseAmount,
   canCancelStopLongTermTcmPrescription,
+  canChangeTcmPrescriptionOpenedTime,
   canStopLongTermTcmPrescription,
   createEmptyLine,
   createEmptyPrescription,
@@ -179,7 +183,7 @@ const templateApplyLoading = ref(false);
 const diagnosisDialogVisible = ref(false);
 /** 代煎中药目录单价（勾选代煎后计入合计） */
 const decoctionUnitPrice = ref(0);
-/** 朝阳：药材工作区（检索聚焦） */
+/** 药材工作区（检索聚焦） */
 const herbPanelRef = ref<{
   bumpAddFocus?: () => void;
   focusDoseByLineKey?: (lineKey: string) => void;
@@ -492,6 +496,11 @@ const canCancelStopLongTermActivePrescription = computed(() =>
   canCancelStopLongTermTcmPrescription(activePrescription.value),
 );
 
+/** 住院：当前方是否可按方改开立时间 */
+const canChangeOpenedTimeActivePrescription = computed(
+  () => isInpatientScope.value && canChangeTcmPrescriptionOpenedTime(activePrescription.value),
+);
+
 /** 中药选品表列（门诊/住院一致：含库存数量） */
 const productColumns = [
   { prop: 'code', label: '项目编码', width: 108 },
@@ -666,6 +675,11 @@ const { loading: cancelStopLongTermLoading, run: runCancelStopLongTerm } = useRe
   { manual: true, showErrorMessage: true },
 );
 
+const { loading: changeOpenedTimeLoading, run: runChangeOpenedTime } = useRequest(
+  (body) => inpatientTcmHttp.httpChangeTcmHerbalPrescriptionOpenedTime(body),
+  { manual: true, showErrorMessage: true },
+);
+
 const mutationLoading = computed(
   () =>
     saveLoading.value ||
@@ -674,7 +688,8 @@ const mutationLoading = computed(
     voidDecoctionLoading.value ||
     supplementDecoctionLoading.value ||
     stopLongTermLoading.value ||
-    cancelStopLongTermLoading.value,
+    cancelStopLongTermLoading.value ||
+    changeOpenedTimeLoading.value,
 );
 const autoSaveDraftInFlight = ref(false);
 
@@ -1457,6 +1472,103 @@ async function handleCancelStopLongTermPrescription() {
   await refreshPrescriptionsFromServer();
 }
 
+/**
+ * 弹窗选择按方开立时间（默认当前时刻到分钟）。
+ * @returns 选中的 YYYY-MM-DD HH:mm；取消为 null
+ */
+async function promptTcmOpenedBusinessTime(): Promise<null | string> {
+  let picked = dayjs().format('YYYY-MM-DD HH:mm');
+  try {
+    await ElMessageBox({
+      title: '按方改开立时间',
+      message: h({
+        setup() {
+          const value = ref(picked);
+          return () =>
+            h('div', { class: 'tcm-change-opened-time-prompt' }, [
+              h(
+                'p',
+                { style: 'margin: 0 0 12px; color: var(--el-text-color-regular)' },
+                '当前方内全部药味将统一改为以下开立时间。',
+              ),
+              h(ElDatePicker, {
+                modelValue: value.value,
+                'onUpdate:modelValue': (v: unknown) => {
+                  const next = String(v ?? '').trim();
+                  value.value = next;
+                  picked = next;
+                },
+                type: 'datetime',
+                valueFormat: 'YYYY-MM-DD HH:mm',
+                format: 'YYYY-MM-DD HH:mm',
+                timeFormat: 'HH:mm',
+                clearable: false,
+                teleported: true,
+                style: 'width: 100%',
+              }),
+            ]);
+        },
+      }),
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      distinguishCancelAndClose: true,
+    });
+    return picked.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 将分钟精度时间规范为后端秒级字符串。
+ * @param value DatePicker 值 YYYY-MM-DD HH:mm
+ */
+function normalizeTcmOpenedTimeInput(value: string): string {
+  const raw = String(value ?? '')
+    .trim()
+    .replace('T', ' ');
+  if (!raw) return '';
+  const withSeconds = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(raw) ? `${raw}:00` : raw;
+  const d = dayjs(withSeconds);
+  if (!d.isValid()) return '';
+  return d.format('YYYY-MM-DD HH:mm:ss');
+}
+
+/** 按方改开立时间：整方各味统一写入同一时刻（IF-IP-TCM-42） */
+async function handleChangeOpenedTimePrescription() {
+  if (!activePrescription.value || !canChangeOpenedTimeActivePrescription.value) {
+    ElMessage.warning('当前处方不可改开立时间');
+    return;
+  }
+  const ok = await ensureReceptionBeforeWrite();
+  if (!ok) return;
+  const picked = await promptTcmOpenedBusinessTime();
+  if (!picked) return;
+  const newOpenedTime = normalizeTcmOpenedTimeInput(picked);
+  if (!newOpenedTime) {
+    ElMessage.warning('请选择有效时间');
+    return;
+  }
+  const body = buildChangeTcmOpenedTimeRequest(
+    props.encounterId.trim(),
+    props.patientId.trim(),
+    activePrescription.value,
+    newOpenedTime,
+  );
+  if (!body) {
+    ElMessage.warning('缺少处方号或方标识，无法改开立时间');
+    return;
+  }
+  const res = await runChangeOpenedTime(body);
+  if (res?.success === false) {
+    ElMessage.error(String(res.message || '').trim() || '改开立时间失败');
+    return;
+  }
+  const count = Number(res?.changedLineCount ?? 0);
+  ElMessage.success(count > 0 ? `已将方内 ${count} 味药开立时间改为同一时刻` : '改开立时间成功');
+  await refreshPrescriptionsFromServer();
+}
+
 /** 删除处方页签或整方草稿：仅一张时重置为空方并保留页签 */
 async function handleDeletePrescription(targetKey?: string) {
   const removeKey = targetKey ?? activePrescriptionKey.value;
@@ -2231,7 +2343,7 @@ watch(sidebarKeyword, () => {
       <ElEmpty v-if="!contextReady" class="m-auto" description="请先选择患者" />
 
       <template v-else>
-        <!-- 朝阳：页签与操作同一行，贴紧下方处方面板 -->
+        <!-- 页签与操作同一行，贴紧下方处方面板 -->
         <div class="tcm-advice-root__chrome flex min-w-0 flex-nowrap items-center gap-2">
           <ElTabs
             v-model="activePrescriptionKey"
@@ -2309,6 +2421,15 @@ watch(sidebarKeyword, () => {
               @click="handleCancelStopLongTermPrescription"
             >
               取消停嘱
+            </ElButton>
+            <ElButton
+              v-if="isInpatientScope"
+              plain
+              :loading="mutationLoading"
+              :disabled="!canChangeOpenedTimeActivePrescription"
+              @click="handleChangeOpenedTimePrescription"
+            >
+              改开立时间
             </ElButton>
             <ElButton
               type="danger"

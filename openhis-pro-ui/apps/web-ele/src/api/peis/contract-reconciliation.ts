@@ -3,10 +3,20 @@
  */
 import { publicRequestClient } from '#/api/request';
 
+export interface ContractReconciliationSelectedPackageRowDto {
+  packageActivityId?: string;
+  rosterCount?: number;
+  enrolledCount?: number;
+  arrivedCount?: number;
+}
+
 export interface ContractReconciliationBatchRowDto {
   batchId?: string;
   batchName?: string;
   packageActivityId?: string;
+  optionalPackageActivityIds?: string[];
+  unselectedCount?: number;
+  selectedPackages?: ContractReconciliationSelectedPackageRowDto[];
   bookingDate?: string;
   rosterTotal?: number;
   enrolledCount?: number;

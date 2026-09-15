@@ -332,7 +332,13 @@ public class OutpatientNurseStationTreatmentAppService {
                 }
             }
             NurseStationTreatmentLineDto line =
-                this.buildServiceLine(row, request.getEncounterId(), chargeByAnchor, catalogContext, mergeDeviceByActivityId);
+                this.buildServiceLine(
+                    row,
+                    request.getEncounterId(),
+                    chargeByAnchor,
+                    catalogContext,
+                    mergeDeviceByActivityId,
+                    medicationDisplayWarm);
             this.applyServiceApplyFormLineDisplay(line, row, applyFormDetailsByRequestId);
             List<ProcedureRecordQueryModel> procedures = this.procedureQueryService.getProcedureRecords(
                 row.getId(), TableNameConstants.WKF_SERVICE_REQUEST);
@@ -393,18 +399,22 @@ public class OutpatientNurseStationTreatmentAppService {
             }
             String deviceChargeStatus = this.resolveAggregatedChargeStatus(
                 TableNameConstants.WKF_DEVICE_REQUEST, row.getId(), chargeByAnchor);
-            // 处置单其它列表仍可展示已退费；耗材侧栏「待发放」不可再勾选已退行（BR-NUR-018）
-            if (AdviceChargeDisplayStatusAssembler.isRefundChargeStatus(deviceChargeStatus)) {
-                continue;
-            }
+            // 与中区药品一致：退费中/已退费仍返回，由前端展示「待退费/已退费」且不可勾选（BR-NUR-018）
             if (!AdviceChargeDisplayStatusAssembler.shouldIncludeNurseStationTreatmentSheetRow(
                 row.getStatusEnum(), TableNameConstants.WKF_DEVICE_REQUEST, row.getId(), deviceChargeStatus)) {
                 continue;
             }
             NurseStationTreatmentLineDto deviceLine = this.buildDeviceLine(
-                row, request.getEncounterId(), chargeByAnchor, deviceDispenses, deviceDispenseIdsByDeviceRequest, catalogContext);
-            // 退费未发作废等终态发放：前端会误落成「待发放」，侧栏一律不展示
-            if (this.isExcludedNurseStationDeviceSupplyDispenseStatus(deviceLine.getDispenseStatusEnum())) {
+                row,
+                request.getEncounterId(),
+                chargeByAnchor,
+                deviceDispenses,
+                deviceDispenseIdsByDeviceRequest,
+                catalogContext,
+                medicationDisplayWarm);
+            // 有效计费下的作废发放勿进侧栏；退费收费态下保留行以便展示待退费/已退费
+            if (AdviceChargeDisplayStatusAssembler.isActiveBillableChargeStatus(deviceChargeStatus)
+                && this.isExcludedNurseStationDeviceSupplyDispenseStatus(deviceLine.getDispenseStatusEnum())) {
                 continue;
             }
             this.finalizeNurseTreatmentLineDisplay(deviceLine);
@@ -512,18 +522,24 @@ public class OutpatientNurseStationTreatmentAppService {
             GeneralSharedConstants.SKIN_TEST_INSPECTION_ACTIVITY_NAME);
         // 判断是否存在耗材执行项
         boolean hasDevice = request.getDeviceDispenseIds() != null && !request.getDeviceDispenseIds().isEmpty();
+        // Gate：退费中/已退费耗材禁止再发放（对称 BR-NUR-018，避免侧栏脏勾选仍能执行）
+        List<Long> retainedDeviceDispenseIds = Collections.emptyList();
+        if (hasDevice) {
+            retainedDeviceDispenseIds = this.retainBillableDeviceDispenseIds(
+                request.getDeviceDispenseIds(), chargeItems);
+        }
         // 自动扣库时：护士可换耗材房（只改 location）；须有签发批号；目标房该批库存由编排断言
-        if (hasDevice && this.deviceAutoInventoryDeductSettingResolver.isEnabled()) {
+        if (!retainedDeviceDispenseIds.isEmpty() && this.deviceAutoInventoryDeductSettingResolver.isEnabled()) {
             this.deviceDispenseNurseWorkflowOrchestrator.validateOutpatientAutoDeductInventoryLocation(
-                request.getDeviceDispenseIds(),
+                retainedDeviceDispenseIds,
                 request.getInventoryLocationId());
             // Gate：护士指定房须落在登录者管辖药房白名单（与下拉同源）
             if (request.getInventoryLocationId() != null) {
                 this.assertInventoryLocationInManagedPharmacies(request.getInventoryLocationId());
             }
         }
-        // 无任何可执行项目时阻断流程
-        if (retainedServiceIds.isEmpty() && retainedMedicationIds.isEmpty() && !hasDevice) {
+        // 无任何可执行项目时阻断流程（含：仅勾选了已退费耗材）
+        if (retainedServiceIds.isEmpty() && retainedMedicationIds.isEmpty() && retainedDeviceDispenseIds.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "所选项目无已计费收费项");
         }
         List<Long> performedServiceIds = new ArrayList<>();
@@ -636,8 +652,8 @@ public class OutpatientNurseStationTreatmentAppService {
             performedMedicationIds.add(medicationRequestId);
         }
         // Cmd：耗材路径——按开关推进已配药或就地改库房后已发药（只改 location、按签发批号扣库）；DeviceRequest 状态不变
-        if (hasDevice) {
-            List<Long> sortedDispenseIds = new ArrayList<>(request.getDeviceDispenseIds());
+        if (!retainedDeviceDispenseIds.isEmpty()) {
+            List<Long> sortedDispenseIds = new ArrayList<>(retainedDeviceDispenseIds);
             Collections.sort(sortedDispenseIds);
             Map<Long, BigDecimal> inventoryIdToDecreaseQty = new HashMap<>();
             this.deviceDispenseNurseWorkflowOrchestrator.applyOutpatientNurseDeviceDispenses(
@@ -660,7 +676,7 @@ public class OutpatientNurseStationTreatmentAppService {
             request.getEncounterId(),
             request.getServiceRequestIds(),
             request.getMedicationRequestIds(),
-            request.getDeviceDispenseIds(),
+            retainedDeviceDispenseIds,
             request.getInventoryLocationId());
         BatchPerformDispositionResponse response = new BatchPerformDispositionResponse();
         response.setSuccess(Boolean.TRUE);
@@ -1370,6 +1386,49 @@ public class OutpatientNurseStationTreatmentAppService {
     }
 
     /**
+     * 耗材发放勾选：仅保留对应耗材申请仍存在有效计费（PLANNED/SETTLED）的发放行（BR-NUR-018）。
+     *
+     * <p>兼容收费锚在请求表或发放表；退费中/已退费申请下的发放一律剔除，禁止脏勾选再执行。</p>
+     *
+     * @param deviceDispenseIds 勾选发放主键
+     * @param chargeItems       就诊收费明细
+     * @return 仍允许发放的主键列表（保持入参相对顺序）
+     */
+    private List<Long> retainBillableDeviceDispenseIds(List<Long> deviceDispenseIds, List<ChargeItem> chargeItems) {
+        List<Long> retained = new ArrayList<>();
+        // Gate：未勾选则空表
+        if (deviceDispenseIds == null || deviceDispenseIds.isEmpty()) {
+            return retained;
+        }
+        // Pre：发放 id → 耗材申请 id，供与收费锚点对齐
+        Map<Long, Long> dispenseIdToRequestId =
+            this.deviceDispenseQueryService.mapDeviceDispenseIdsToDeviceReqIds(deviceDispenseIds);
+        // Pre：按请求锚点归并收费态（含发放表映射）
+        Map<String, AdviceChargeAnchorRollupHelper.RequestAnchorChargeAggregation> chargeByAnchor =
+            AdviceChargeAnchorRollupHelper.buildRequestAnchorChargeIndex(
+                chargeItems, this.medicationDispenseQueryService, this.deviceDispenseQueryService);
+        for (Long dispenseId : deviceDispenseIds) {
+            // Skip：空主键
+            if (dispenseId == null) {
+                continue;
+            }
+            Long deviceRequestId = dispenseIdToRequestId.get(dispenseId);
+            // Skip：无法回落申请锚点的发放行
+            if (deviceRequestId == null) {
+                continue;
+            }
+            String chargeStatus = this.resolveAggregatedChargeStatus(
+                TableNameConstants.WKF_DEVICE_REQUEST, deviceRequestId, chargeByAnchor);
+            // Skip：退费中/已退费或无有效计费
+            if (!AdviceChargeDisplayStatusAssembler.isActiveBillableChargeStatus(chargeStatus)) {
+                continue;
+            }
+            retained.add(dispenseId);
+        }
+        return retained;
+    }
+
+    /**
      * 计算某请求下执行记录净次数（完成 − 取消）。
      *
      * @param requestId    请求主键
@@ -1577,10 +1636,12 @@ public class OutpatientNurseStationTreatmentAppService {
     /**
      * 构建诊疗处置行（锚点、数量与计费聚合字段）。
      *
-     * @param row            诊疗申请列表行
-     * @param encounterId    就诊主键
-     * @param chargeByAnchor 计费聚合索引
-     * @param catalogContext 目录与类目展示预热上下文
+     * @param row                     诊疗申请列表行
+     * @param encounterId             就诊主键
+     * @param chargeByAnchor          计费聚合索引
+     * @param catalogContext          目录与类目展示预热上下文
+     * @param mergeDeviceByActivityId 合管设备主键索引
+     * @param medicationDisplayWarm   单位术语预热（复用步骤 8b 的 unit_code 映射，供处置单数量列展示）
      * @return 处置行 DTO
      */
     private NurseStationTreatmentLineDto buildServiceLine(
@@ -1588,7 +1649,8 @@ public class OutpatientNurseStationTreatmentAppService {
         Long encounterId,
         Map<String, AdviceChargeAnchorRollupHelper.RequestAnchorChargeAggregation> chargeByAnchor,
         OrderRequestCatalogWarmContext catalogContext,
-        Map<Long, Long> mergeDeviceByActivityId) {
+        Map<Long, Long> mergeDeviceByActivityId,
+        NurseStationMedicationDisplayWarmContext medicationDisplayWarm) {
         NurseStationTreatmentLineDto line = new NurseStationTreatmentLineDto();
         line.setEncounterId(encounterId);
         line.setRequestId(row.getId());
@@ -1642,6 +1704,13 @@ public class OutpatientNurseStationTreatmentAppService {
         line.setMedCategoryCodeText(null);
         line.setQuantity(row.getQuantity());
         line.setUnitCode(row.getUnitCode());
+        // Asm：诊疗单位展示名（术语 unit_code；无产品回落，对齐处置单打印数量列）
+        if (medicationDisplayWarm != null) {
+            line.setUnitName(ProductDefinitionCatalogUnitBandsAssembler.resolveUnitDisplayName(
+                medicationDisplayWarm.getUnitLabelByCode(), row.getUnitCode(), null));
+        } else {
+            line.setUnitName(null);
+        }
         line.setPlannedPerformCount(this.resolvePlannedServicePerformCount(row));
         line.setMedicationExecuteNum(null);
         line.setPerformCount(null);
@@ -1827,12 +1896,13 @@ public class OutpatientNurseStationTreatmentAppService {
     /**
      * 构建耗材处置行（锚点、发放态与计费聚合字段）。
      *
-     * @param row                     耗材申请列表行
-     * @param encounterId             就诊主键
-     * @param chargeByAnchor          计费聚合索引
-     * @param deviceDispenses         就诊下发放单行集合
+     * @param row                        耗材申请列表行
+     * @param encounterId                就诊主键
+     * @param chargeByAnchor             计费聚合索引
+     * @param deviceDispenses            就诊下发放单行集合
      * @param deviceDispenseIdsByRequest AS-SDD IF-NUR-02 步骤 8：{@code listDeviceDispenseIdsByDeviceRequest} 结果（主发放行取 id 最小）
      * @param catalogContext             目录与类目展示预热上下文
+     * @param medicationDisplayWarm      单位术语预热（复用步骤 8b 的 unit_code 映射，供处置单数量列展示）
      * @return 处置行 DTO
      */
     private NurseStationTreatmentLineDto buildDeviceLine(
@@ -1841,7 +1911,8 @@ public class OutpatientNurseStationTreatmentAppService {
         Map<String, AdviceChargeAnchorRollupHelper.RequestAnchorChargeAggregation> chargeByAnchor,
         List<DeviceDispenseListModel> deviceDispenses,
         Map<Long, List<Long>> deviceDispenseIdsByRequest,
-        OrderRequestCatalogWarmContext catalogContext) {
+        OrderRequestCatalogWarmContext catalogContext,
+        NurseStationMedicationDisplayWarmContext medicationDisplayWarm) {
         NurseStationTreatmentLineDto line = new NurseStationTreatmentLineDto();
         line.setEncounterId(encounterId);
         line.setRequestId(row.getId());
@@ -1893,6 +1964,13 @@ public class OutpatientNurseStationTreatmentAppService {
         line.setMedCategoryCodeText(null);
         line.setQuantity(row.getQuantity());
         line.setUnitCode(row.getUnitCode());
+        // Asm：耗材单位展示名（术语 unit_code；无产品回落，对齐处置单打印数量列）
+        if (medicationDisplayWarm != null) {
+            line.setUnitName(ProductDefinitionCatalogUnitBandsAssembler.resolveUnitDisplayName(
+                medicationDisplayWarm.getUnitLabelByCode(), row.getUnitCode(), null));
+        } else {
+            line.setUnitName(null);
+        }
         line.setPlannedPerformCount(null);
         line.setMedicationExecuteNum(null);
         line.setPerformCount(null);

@@ -21,12 +21,12 @@ import java.util.List;
 @Schema(description = "门诊费用明细报表导出请求")
 public class ExportOutpatientFeeDetailReportRequest {
 
-    /** 结算业务日起（yyyy-MM-dd，闭区间）。 */
-    @Schema(description = "结算业务日起（yyyy-MM-dd）", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 结算业务日起（yyyy-MM-dd 或 yyyy-MM-dd HH:mm:ss；仅日期时起 00:00:00、止 23:59:59，闭区间）。 */
+    @Schema(description = "结算业务日起（yyyy-MM-dd 或 yyyy-MM-dd HH:mm:ss；仅日期时起 00:00:00、止 23:59:59）", requiredMode = Schema.RequiredMode.REQUIRED)
     private String dateFrom;
 
-    /** 结算业务日止（yyyy-MM-dd，闭区间）。 */
-    @Schema(description = "结算业务日止（yyyy-MM-dd）", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 结算业务日止（yyyy-MM-dd 或 yyyy-MM-dd HH:mm:ss；仅日期时起 00:00:00、止 23:59:59，闭区间）。 */
+    @Schema(description = "结算业务日止（yyyy-MM-dd 或 yyyy-MM-dd HH:mm:ss；仅日期时起 00:00:00、止 23:59:59）", requiredMode = Schema.RequiredMode.REQUIRED)
     private String dateTo;
 
     /** 挂号科室主键（遗留；报表中心请用 {@link #requestingOrgId}）。 */

@@ -46,7 +46,6 @@ import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.LocationStatus;
 import com.openhis.health.domain.share.enums.OrganizationType;
 import com.openhis.health.domain.share.enums.PublicationStatus;
-import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
 import com.openhis.health.domain.share.enums.SupplyRequestType;
 import com.openhis.health.domain.share.enums.SupplyStatus;
 import com.openhis.health.domain.share.enums.SupplyType;
@@ -172,22 +171,22 @@ public class InventoryDepartmentDeptIssueAppService {
      * @return 表单初始化选项集合
      */
     public LoadDeptIssueFormInitResponse loadDeptIssueFormInit(LoadDeptIssueFormInitRequest request) {
-        // Gate：会话机构上下文须存在，否则无法按管辖收窄库位与人员
-        Long resolvedOrg = managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
+        // Gate：会话机构上下文须存在，否则无法按管辖收窄库位
+        managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
             ErrorCodeConstants.DEP_IS_101, "机构上下文缺失");
         try {
-            // Pre：拉取启用库位/人员并经管辖 Gate 收窄
+            // Pre：拉取启用库位并经管辖 Gate 收窄；经手人取全体在职医务人员（不限药师/库管）
             List<Location> departmentPharmacies = locationQueryService.listAllActiveDepartmentPharmacies();
             List<Location> gatedDepartmentPharmacies = this.managedLocationIdsResolver.narrowActiveLocationsByManaged(departmentPharmacies);
-            List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
-                WhalePlatformRoleCodeConstants.ROLE_PHARMACIST, resolvedOrg);
+            List<Practitioner> handlers =
+                this.practitionerRoleScopeLoader.listAllActivePractitionersForInventoryDocHandlerSelect();
             // Asm：下拉选项写入初始化响应
             return deptIssueMapper.toLoadDeptIssueFormInitResponse(
                 deptIssueMapper.toDeptPharmacyOptionDtoListFromLocations(gatedDepartmentPharmacies),
                 this.buildActiveDepartmentOrganizationOptions(),
                 deptIssueMapper.toOptionDtoListProductTableTypes(),
                 deptIssueMapper.toOptionDtoListSupplyStatuses(),
-                deptIssueMapper.toOptionDtoListFromPractitioners(pharmacists));
+                deptIssueMapper.toOptionDtoListFromPractitioners(handlers));
         } catch (RuntimeException ex) {
             log.warn("loadDeptIssueFormInit failed", ex);
             throw new BusinessException(ErrorCodeConstants.DEP_IS_101, "领用页主数据加载失败");

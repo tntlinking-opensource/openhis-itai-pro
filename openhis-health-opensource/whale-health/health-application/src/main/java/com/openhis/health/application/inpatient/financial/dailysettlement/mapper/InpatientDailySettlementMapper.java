@@ -32,16 +32,14 @@ public interface InpatientDailySettlementMapper {
     /**
      * 装配住院日结页初始化响应。
      *
-     * @param defaultDate              默认结账日
-     * @param financialDelegateEnabled 是否允许财务代交账
-     * @param expensePropertyOptions   费用性质下拉
-     * @param cashierOptions           经办人下拉
-     * @param currentCashierId         当前经办人
+     * @param defaultDate            默认结账日
+     * @param expensePropertyOptions 费用性质下拉
+     * @param cashierOptions         经办人下拉
+     * @param currentCashierId       当前经办人
      * @return 初始化响应
      */
     LoadInpatientDailySettlementPageInitResponse toLoadInpatientDailySettlementPageInitResponse(
         LocalDate defaultDate,
-        boolean financialDelegateEnabled,
         List<OptionDto> expensePropertyOptions,
         List<OptionDto> cashierOptions,
         Long currentCashierId);

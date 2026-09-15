@@ -65,6 +65,12 @@ public interface InpatientDoctorStationTcmConstants {
     /** EX-IP-TCM-213：出院/转科门禁。 */
     String MSG_CANCEL_STOP_DISCHARGE_GATE = "存在转科或出院流程，暂不可取消停嘱";
 
+    /** 按方改开立时间：处方号与方标识皆空。 */
+    String MSG_CHANGE_OPENED_TIME_SCOPE_EMPTY = "请指定处方号或方标识";
+
+    /** 按方改开立时间：扩行后无药味。 */
+    String MSG_CHANGE_OPENED_TIME_NO_LINES = "未找到可改开立时间的中药行";
+
     /** 暂存/签发成功提示。 */
     String RESPONSE_MESSAGE_OK = "操作成功";
 }

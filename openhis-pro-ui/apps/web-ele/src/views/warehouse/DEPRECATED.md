@@ -3,20 +3,25 @@
 **默认勿使用。** 仓库根目录 `.cursorignore` 已排除本目录；需要时请 @ 具体文件。
 
 - **新开发**：`src/views/inventory/**`
-- **API**：`src/api/inventory/**`（门面 `api/warehouse/*` 逐步停用）
+- **API**：`src/api/inventory/**`（进货/出库工作台适配已迁至 `api/inventory/warehouse/*-workbench.ts`；其余 `api/warehouse/*` 仅服务本目录冻结页）。`api/index.ts` **不再** barrel 再导出 `warehouse/*`，冻结页请直接 `#/api/warehouse/...`。
 - **拆解示例**：`src/inventory-workbench-kit/**`
 
-## 已迁至 inventory（本目录仅兼容壳）
+## 已迁至 inventory（兼容壳已删除）
 
-| 本目录                  | 新实现                                  |
-| ----------------------- | --------------------------------------- |
-| `purchase-inbound/`     | `inventory/warehouse/purchase-inbound/` |
-| `stock-out/`            | `inventory/warehouse/stock-out/`        |
-| `inventory-stock-list/` | `inventory/stock-list/`                 |
+| 原目录                  | 现实现                                    |
+| ----------------------- | ----------------------------------------- | ---- |
+| `purchase-inbound/`     | `inventory/warehouse/purchase-inbound/`   |
+| `stock-out/`            | `inventory/warehouse/stock-out/`          |
+| `inventory-stock-list/` | `inventory/stock-list/`                   |
+| `gain-loss/`            | `inventory/warehouse/gain-loss/`          |
+| `return-to-supplier/`   | `inventory/warehouse/return-to-supplier/` |
+| `transfer/`             | `inventory/warehouse/transfer-out         | in/` |
+
+菜单种子已指向 inventory；pro 发版后勿再恢复壳页。
 
 ## 仍在本目录的老页（冻结，不扩展）
 
-调拨、请领、采购、盘点、损溢、领用、单据审批等。
+请领、采购、盘点、损溢、领用、单据审批等（未迁完的整页实现）。
 
 ## 外部仍引用本目录（删目录前需先迁）
 

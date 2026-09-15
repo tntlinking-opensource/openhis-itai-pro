@@ -23,12 +23,12 @@ import lombok.experimental.Accessors;
 @Schema(description = "住院耗材使用报表明细分页请求")
 public class PageInpatientConsumableUsageReportDetailRequest extends AbstractHealthPageRequest {
 
-    /** 业务日起（yyyy-MM-dd）；必填。 */
-    @Schema(description = "业务日起（yyyy-MM-dd）", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 业务日起（yyyy-MM-dd 或 yyyy-MM-dd HH:mm:ss；仅日期时起 00:00:00、止 23:59:59）；必填。 */
+    @Schema(description = "业务日起（yyyy-MM-dd 或 yyyy-MM-dd HH:mm:ss；仅日期时起 00:00:00、止 23:59:59）", requiredMode = Schema.RequiredMode.REQUIRED)
     private String dateFrom;
 
-    /** 业务日止（yyyy-MM-dd）；必填。 */
-    @Schema(description = "业务日止（yyyy-MM-dd）", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 业务日止（yyyy-MM-dd 或 yyyy-MM-dd HH:mm:ss；仅日期时起 00:00:00、止 23:59:59）；必填。 */
+    @Schema(description = "业务日止（yyyy-MM-dd 或 yyyy-MM-dd HH:mm:ss；仅日期时起 00:00:00、止 23:59:59）", requiredMode = Schema.RequiredMode.REQUIRED)
     private String dateTo;
 
     /**
@@ -73,4 +73,13 @@ public class PageInpatientConsumableUsageReportDetailRequest extends AbstractHea
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "科室组织主键")
     private Long organizationId;
+
+    /**
+     * 明细行合并模式：{@code LINE}（默认按发放行平铺）/
+     * {@code BY_DEFINITION}（按就诊+耗材定义[+单位]合并净量；仅患者发放源生效）。
+     *
+     * <p>科室领用源传 {@code BY_DEFINITION} 时仍按 LINE 平铺，不抛错。</p>
+     */
+    @Schema(description = "行合并模式 LINE/BY_DEFINITION")
+    private String lineMergeMode;
 }

@@ -179,4 +179,14 @@ public class NurseStationOrderViewDisplayCore {
      * companion「皮试检查」关联皮试药展示名；已写入 {@link #adviceDisplayName} 后缀时可空。
      */
     private String skinTestLinkedMedicationName;
+
+    /**
+     * 皮试临床状态 code（仅皮试药且已登记时有值；如 {@code active}=阳性）。
+     */
+    private String skinTestOutcomeCode;
+
+    /**
+     * 皮试临床状态展示文案（如 阳性 / 阴性）；与 {@link #skinTestOutcomeCode} 同源。
+     */
+    private String skinTestOutcomeText;
 }

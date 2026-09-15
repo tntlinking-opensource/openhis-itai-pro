@@ -32,12 +32,6 @@ public class DispenseOutpatientMedicationsRequest {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long encounterId;
 
-    /** @deprecated CHS 模块启用即上传，此开关不再生效。 */
-    @Deprecated
-    /** 是否在事务成功后尝试医保/进销存上传。 */
-    @Schema(description = "是否在事务成功后尝试医保/进销存上传")
-    private Boolean medicareUploadEnabled;
-
     /** 用户勾选的待发药完成行（仅须发放单 id，数量以领域实体为准）。 */
     @NotEmpty(message = "提交行不能为空")
     @Valid

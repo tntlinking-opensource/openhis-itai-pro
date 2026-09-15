@@ -15,7 +15,7 @@ import java.math.BigDecimal;
 /**
  * 费用明细报表汇总行（AS-RPT-008/009；支持多汇总维度）。
  *
- * <p>金额列口径（2026-08 DD）：进价合计 / 售价合计；本轮不展示实收/应收。
+ * <p>金额列口径：仅进价/售价/数量；不再双写应收/实收/行金额。
  * Excel 维度列统一落在 {@link #dimensionName}，避免与遗留 fin_type 列重复。</p>
  */
 @Data
@@ -42,11 +42,11 @@ public class FeeDetailReportSummaryRowDto {
     @Schema(description = "维度展示名")
     private String dimensionName;
 
-    /** 财务类型码（fin_type_code；FIN_TYPE 维兼容字段）。 */
+    /** 财务类型码（fin_type_code；FIN_TYPE 维元数据，与 dimensionKey 同值）。 */
     @Schema(description = "财务类型码")
     private String finTypeCode;
 
-    /** 财务类型展示名（FIN_TYPE 维兼容；不参与 Excel 以免与维度列重复）。 */
+    /** 财务类型展示名（FIN_TYPE 维元数据；不参与 Excel，避免与维度列重复）。 */
     @Schema(description = "财务类型展示名")
     private String finTypeDisplay;
 
@@ -74,49 +74,4 @@ public class FeeDetailReportSummaryRowDto {
     @Excel(name = "售价合计", sort = 6, scale = ChargeItemAmountScaleConstants.CHARGE_MONETARY_DISPLAY_SCALE)
     @Schema(description = "售价合计")
     private BigDecimal saleAmountTotal;
-
-    /**
-     * 实收合计（遗留字段；本轮前端不展示）。
-     *
-     * @deprecated 报表中心仅保留进/售价
-     */
-    @Deprecated
-    @Schema(description = "实收合计（遗留）")
-    private BigDecimal actualReceivedAmountTotal;
-
-    /**
-     * 应收合计（兼容旧导出/契约；与售价合计同值时可忽略）。
-     *
-     * @deprecated 展示以 {@link #saleAmountTotal} 为准
-     */
-    @Deprecated
-    @Schema(description = "应收合计（兼容）")
-    private BigDecimal receivableAmountTotal;
-
-    /**
-     * 折后应收合计（兼容旧契约）。
-     *
-     * @deprecated 展示以 {@link #saleAmountTotal} 为准
-     */
-    @Deprecated
-    @Schema(description = "折后应收合计（兼容）")
-    private BigDecimal discountedAmountTotal;
-
-    /**
-     * 行金额合计（兼容旧契约；与售价合计同值）。
-     *
-     * @deprecated 展示以 {@link #saleAmountTotal} 为准
-     */
-    @Deprecated
-    @Schema(description = "行金额合计（兼容）")
-    private BigDecimal lineAmountTotal;
-
-    /**
-     * 命中行数（含退费行；内部统计，前端汇总 Tab 不展示）。
-     *
-     * @deprecated 汇总展示改数量/进售单价/进售合计
-     */
-    @Deprecated
-    @Schema(description = "命中行数（内部）")
-    private Long lineCount;
 }

@@ -10,7 +10,6 @@ import com.openhis.health.application.basic.diagnosiscatalog.dto.ClinicalV2Impor
 import com.openhis.health.application.basic.diagnosiscatalog.dto.DiagnosisCatalogDetailDto;
 import com.openhis.health.application.basic.diagnosiscatalog.dto.DiagnosisCatalogDto;
 import com.openhis.health.application.basic.diagnosiscatalog.dto.DiagnosisCatalogInitDto;
-import com.openhis.health.application.basic.diagnosiscatalog.dto.ImportClinicalV2CatalogResponse;
 import com.openhis.health.application.basic.diagnosiscatalog.dto.StartClinicalV2ImportResponse;
 import com.openhis.health.application.basic.diagnosiscatalog.dto.StartYbConditionImportResponse;
 import com.openhis.health.application.basic.diagnosiscatalog.dto.YbConditionImportProgressResponse;
@@ -24,16 +23,16 @@ import com.openhis.health.application.basic.diagnosiscatalog.request.StartYbCond
 import com.openhis.health.application.basic.diagnosiscatalog.request.UpdateDiagnosisCatalogRequest;
 import com.openhis.health.application.basic.diagnosiscatalog.support.ClinicalV2CatalogImportAsyncWorkflow;
 import com.openhis.health.application.basic.diagnosiscatalog.support.ClinicalV2CatalogImportJob;
-import com.openhis.health.application.basic.diagnosiscatalog.support.ClinicalV2CatalogWorkbookParser;
 import com.openhis.health.application.basic.diagnosiscatalog.support.YbConditionCatalogImportAsyncWorkflow;
 import com.openhis.health.application.basic.diagnosiscatalog.support.YbConditionCatalogImportJob;
-import com.openhis.health.domain.clinical.conditiondefinition.command.ClinicalV2ImportRowCommand;
 import com.openhis.health.domain.clinical.conditiondefinition.command.EditDiseaseStartCommand;
 import com.openhis.health.domain.clinical.conditiondefinition.command.EditDiseaseStopCommand;
 import com.openhis.health.domain.clinical.conditiondefinition.queries.DiseasePageQuery;
+import com.openhis.health.domain.clinical.conditiondefinition.queries.model.ConditionClinicBindingQueryModel;
 import com.openhis.health.domain.clinical.conditiondefinition.queries.model.DiseasePageItemQueryModel;
 import com.openhis.health.domain.clinical.conditiondefinition.service.ConditionDefinitionDomainService;
 import com.openhis.health.domain.clinical.conditiondefinition.service.ConditionDefinitionQueryService;
+import com.openhis.health.domain.share.constants.DoctorStationDiagnosisConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
@@ -45,7 +44,11 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * 基础数据「疾病（病种）目录」应用服务：对外维护 ICD/院内病种等条件定义，对内编排
@@ -70,8 +73,6 @@ public class DiagnosisCatalogAppService {
     private final DiagnosisCatalogMapper diagnosisMapper;
     /** 术语下拉：分类、医保诊断类型等初始化选项。 */
     private final CodeSystemQueryService codeSystemQueryService;
-    /** 国家临床版 2.0 Excel 解析。 */
-    private final ClinicalV2CatalogWorkbookParser clinicalV2CatalogWorkbookParser;
     /** 国家临床版 2.0 异步导入。 */
     private final ClinicalV2CatalogImportAsyncWorkflow clinicalV2CatalogImportAsyncWorkflow;
     /** 医保诊断目录异步导入。 */
@@ -106,6 +107,7 @@ public class DiagnosisCatalogAppService {
         DiseasePageQuery pageQuery = new DiseasePageQuery();
         PageQueryBinder.bind(request, pageQuery);
         pageQuery.setSourceEnum(request.getSourceEnum());
+        pageQuery.setStatusEnum(request.getStatusEnum());
 
         int pageSize;
         // 业务分支：页大小非法时回落默认 50
@@ -120,8 +122,12 @@ public class DiagnosisCatalogAppService {
         Page<DiseasePageItemQueryModel> page = conditionDefinitionQueryService.getDiseaseList(
             pageQuery,
             PageRequest.of(request.springPageIndex(), pageSize, sort));
-        // Asm：映射分页 DTO
-        return PagedResult.fromPage(page.map(diagnosisMapper::toDto));
+        // Asm：映射分页 DTO；国临按 yb_no 补医保名；医保目录反查国临对照（一对多逗号拼接）
+        Page<DiagnosisCatalogDto> dtoPage = page.map(diagnosisMapper::toDto);
+        normalizeClinicalV2CrossCodes(dtoPage.getContent());
+        fillYbNames(dtoPage.getContent());
+        fillClinicCodesFromClinicalYbBinding(dtoPage.getContent());
+        return PagedResult.fromPage(dtoPage);
     }
 
     /**
@@ -177,8 +183,198 @@ public class DiagnosisCatalogAppService {
             throw new ValidationException("查询疾病目录失败：id 不能为空");
         }
         // Pre：读侧加载详情
-        // Asm：映射详情 DTO
-        return diagnosisMapper.toDetailDto(conditionDefinitionQueryService.getDiseaseOne(id));
+        // Asm：映射详情 DTO，并补国临诊断名称
+        DiagnosisCatalogDetailDto dto = diagnosisMapper.toDetailDto(
+            conditionDefinitionQueryService.getDiseaseOne(id));
+        fillClinicNames(List.of(dto));
+        normalizeClinicalV2CrossCodes(List.of(dto));
+        fillYbNames(List.of(dto));
+        return dto;
+    }
+
+    /**
+     * 按页内 {@code clinicCode} 批量回填 {@code clinicName}（查 clinical_v2.name）。
+     * <p>详情编辑仍可能带回写字段 {@code clinic_code}；列表医保分类改走
+     * {@link #fillClinicCodesFromClinicalYbBinding}。</p>
+     *
+     * @param rows 列表/详情 DTO；空集合时直接返回
+     */
+    private void fillClinicNames(List<? extends DiagnosisCatalogDto> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        Set<String> clinicCodes = new LinkedHashSet<>();
+        for (DiagnosisCatalogDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            String clinicCode = row.getClinicCode();
+            if (clinicCode != null && !clinicCode.isBlank()) {
+                clinicCodes.add(clinicCode.trim());
+            }
+        }
+        if (clinicCodes.isEmpty()) {
+            return;
+        }
+        Map<String, String> nameByClinic = conditionDefinitionQueryService.mapNameByClinicCodes(
+            new ArrayList<>(clinicCodes));
+        for (DiagnosisCatalogDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            String clinicCode = row.getClinicCode();
+            if (clinicCode == null || clinicCode.isBlank()) {
+                continue;
+            }
+            row.setClinicName(nameByClinic.get(clinicCode.trim()));
+        }
+    }
+
+    /**
+     * 医保/其它非国临目录列表：按「国临绑医保」反查国临码，一对多逗号拼接。
+     *
+     * <p>不以本行 {@code clinic_code} 为准（那是对侧回写字段，不是列表真源）；
+     * 真源为 {@code clinical_v2.yb_no = 本行医保主码}。</p>
+     *
+     * @param rows 分页列表行
+     */
+    private void fillClinicCodesFromClinicalYbBinding(List<? extends DiagnosisCatalogDto> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        Set<String> ybKeys = new LinkedHashSet<>();
+        for (DiagnosisCatalogDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            // Gate：国临目录自身不走反查
+            if (DoctorStationDiagnosisConstants.SOURCE_CLINICAL_V2.equals(row.getSourceEnum())) {
+                continue;
+            }
+            String key = resolveYbCatalogKey(row);
+            if (key != null) {
+                ybKeys.add(key);
+            }
+            // 先清空实体带回的 clinic_code，避免无反查命中时仍显示假挂接
+            row.setClinicCode(null);
+            row.setClinicName(null);
+        }
+        if (ybKeys.isEmpty()) {
+            return;
+        }
+        Map<String, ConditionClinicBindingQueryModel> bindingByYb =
+                conditionDefinitionQueryService.mapClinicBindingsByYbNos(ybKeys);
+        for (DiagnosisCatalogDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (DoctorStationDiagnosisConstants.SOURCE_CLINICAL_V2.equals(row.getSourceEnum())) {
+                continue;
+            }
+            String key = resolveYbCatalogKey(row);
+            if (key == null) {
+                continue;
+            }
+            ConditionClinicBindingQueryModel binding = bindingByYb.get(key);
+            if (binding == null) {
+                continue;
+            }
+            row.setClinicCode(binding.getClinicCodes());
+            row.setClinicName(binding.getClinicNames());
+        }
+    }
+
+    /**
+     * 解析医保目录行用于反查的医保主码（优先 condition_code，其次 yb_no）。
+     *
+     * @param row 目录行
+     * @return 非空医保码；无法解析则 null
+     */
+    private String resolveYbCatalogKey(DiagnosisCatalogDto row) {
+        if (row == null) {
+            return null;
+        }
+        String conditionCode = row.getConditionCode();
+        if (conditionCode != null && !conditionCode.isBlank()) {
+            return conditionCode.trim();
+        }
+        String ybNo = row.getYbNo();
+        if (ybNo != null && !ybNo.isBlank()) {
+            return ybNo.trim();
+        }
+        return null;
+    }
+
+    /**
+     * 国临目录行：导入时常把 {@code clinic_code} 写成自身编码，这不是医保对照。
+     * 列表/详情出站时清掉「自身等于 clinic_code」的假对照，避免前端当成已对码。
+     *
+     * @param rows 列表或详情行
+     */
+    private void normalizeClinicalV2CrossCodes(List<? extends DiagnosisCatalogDto> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        for (DiagnosisCatalogDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            // Gate：仅处理国临目录
+            if (!DoctorStationDiagnosisConstants.SOURCE_CLINICAL_V2.equals(row.getSourceEnum())) {
+                continue;
+            }
+            String conditionCode = row.getConditionCode();
+            String clinicCode = row.getClinicCode();
+            // 业务分支：clinic_code 等于自身编码 → 非真实对侧挂接，出站清空
+            if (conditionCode != null
+                    && !conditionCode.isBlank()
+                    && clinicCode != null
+                    && conditionCode.trim().equals(clinicCode.trim())) {
+                row.setClinicCode(null);
+                row.setClinicName(null);
+            }
+            // 业务分支：无 yb_no 则医保名保持空（勿用国临名顶替）
+            String ybNo = row.getYbNo();
+            if (ybNo == null || ybNo.isBlank()) {
+                row.setYbNo(null);
+                row.setYbName(null);
+            }
+        }
+    }
+
+    /**
+     * 按页内 {@code ybNo} 批量回填 {@code ybName}（查医保目录 name；无对照不填）。
+     *
+     * @param rows 列表/详情 DTO；空集合时直接返回
+     */
+    private void fillYbNames(List<? extends DiagnosisCatalogDto> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        Set<String> ybNos = new LinkedHashSet<>();
+        for (DiagnosisCatalogDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            String ybNo = row.getYbNo();
+            if (ybNo != null && !ybNo.isBlank()) {
+                ybNos.add(ybNo.trim());
+            }
+        }
+        if (ybNos.isEmpty()) {
+            return;
+        }
+        Map<String, String> nameByYb = conditionDefinitionQueryService.mapNamesByYbNos(ybNos);
+        for (DiagnosisCatalogDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            String ybNo = row.getYbNo();
+            if (ybNo == null || ybNo.isBlank()) {
+                continue;
+            }
+            row.setYbName(nameByYb.get(ybNo.trim()));
+        }
     }
 
     /**
@@ -304,29 +500,6 @@ public class DiagnosisCatalogAppService {
         response.setProcessed(job.getProcessed());
         response.setSuccessCount(job.getSuccessCount());
         response.setMessage(job.getMessage());
-        return response;
-    }
-
-    /**
-     * 同步导入国家临床版 2.0（兼容旧调用；全量文件易超时，页面请用异步接口）。
-     *
-     * @param request 含 fileBytes 的导入请求
-     * @return 解析行数与写入条数
-     * @throws ValidationException 文件为空或无法解析时
-     */
-    public ImportClinicalV2CatalogResponse importClinicalV2Catalog(ImportClinicalV2CatalogRequest request) {
-        // Gate：上传字节非空
-        if (request == null || request.getFileBytes() == null || request.getFileBytes().length == 0) {
-            throw new ValidationException("导入国家临床版2.0失败：文件不能为空");
-        }
-        // Pre：解析 Excel
-        List<ClinicalV2ImportRowCommand> rows = clinicalV2CatalogWorkbookParser.parse(request.getFileBytes());
-        // Cmd：领域批量 upsert
-        int success = conditionDefinitionDomainService.importClinicalV2Catalog(rows);
-        // Asm：导入结果
-        ImportClinicalV2CatalogResponse response = new ImportClinicalV2CatalogResponse();
-        response.setTotalCount(rows.size());
-        response.setSuccessCount(success);
         return response;
     }
 

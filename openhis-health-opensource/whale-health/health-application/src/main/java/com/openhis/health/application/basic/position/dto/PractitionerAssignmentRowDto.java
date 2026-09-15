@@ -27,8 +27,6 @@ public class PractitionerAssignmentRowDto {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long roleId;
 
-    /** 兼容旧前端 API：1=医生 2=护士 3=药师 4=库管 6=行政(财务)。 */
-    private Integer roleCode;
     /** 角色中文说明 */
     private String roleName;
 

@@ -368,8 +368,7 @@ function syncRowFromProductPick(pick: Record<string, unknown>, row: OpeningPrevi
       displayBandKind: kind,
       legacyUnitPrice:
         inventoryPickNumberField(pick, 'purchasePrice') ||
-        inventoryPickNumberField(pick, 'purchaseUnitPrice') ||
-        inventoryPickNumberField(pick, 'referencePurchasePrice'),
+        inventoryPickNumberField(pick, 'purchaseUnitPrice'),
     });
     row.price = resolved ?? undefined;
   } else {
@@ -383,8 +382,7 @@ function syncRowFromProductPick(pick: Record<string, unknown>, row: OpeningPrevi
     applyInventoryRowQtyUnitList(row);
     const refPrice =
       inventoryPickNumberField(pick, 'purchaseUnitPrice') ||
-      inventoryPickNumberField(pick, 'purchasePrice') ||
-      inventoryPickNumberField(pick, 'referencePurchasePrice');
+      inventoryPickNumberField(pick, 'purchasePrice');
     if (refPrice > 0) {
       row.price = refPrice;
     }

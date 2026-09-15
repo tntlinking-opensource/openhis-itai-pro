@@ -10,6 +10,7 @@ import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQue
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
 import com.openhis.health.domain.administration.product.service.ProductDefinitionQueryService;
+import com.openhis.health.domain.medication.medicationdefinition.service.MedicationDefinitionQueryService;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
 import com.openhis.health.domain.medication.medicationrequest.entity.MedicationRequest;
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
@@ -48,6 +49,8 @@ class EinvoiceChargeItemContextLoaderTest {
     private ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
     @Mock
     private ProductDefinitionQueryService productDefinitionQueryService;
+    @Mock
+    private MedicationDefinitionQueryService medicationDefinitionQueryService;
     @Mock
     private BossQuantityUnitDisplayResolver quantityUnitDisplayResolver;
     @Mock

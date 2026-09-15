@@ -16,7 +16,9 @@ import java.time.LocalDateTime;
  *
  * <p>字段口径与病案首页列表行对齐，便于前端复用行映射；本包独立出参，不依赖 homepage DTO。</p>
  *
- * <p>Long 主键出参统一字符串，避免前端 Number 精度丢失（同科室门禁比对 organizationId）。</p>
+ * <p>Long 主键出参统一字符串，避免前端 Number 精度丢失：
+ * {@code organizationId}（病历/医嘱同入院科室门禁）、
+ * {@code wardId}（体温单/护理记录管辖病区门禁）。</p>
  */
 @Getter
 @Setter
@@ -70,6 +72,13 @@ public class InpatientEmrListItemDto {
      */
     private String wardName;
 
+    /**
+     * 当前/末次病区主键（就诊上下文 {@code wardId}，{@code adm_location.id}，form=WARD）。
+     * <p>前端体温单/护理记录门禁：与护士岗位管辖病区比对。</p>
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long wardId;
+
     /** 证件号码。 */
     private String certno;
 
@@ -90,7 +99,7 @@ public class InpatientEmrListItemDto {
 
     /**
      * 入院科室主键（就诊 {@code organization_id}）。
-     * <p>前端与登录所选/所属科室比对：同科室可编辑临床，其他科室只读。</p>
+     * <p>前端病历/医嘱门禁：与登录所选/所属科室比对，同科室可写；体温单/护理记录另可按 {@link #wardId} 放行。</p>
      */
     @JsonSerialize(using = ToStringSerializer.class)
     private Long organizationId;

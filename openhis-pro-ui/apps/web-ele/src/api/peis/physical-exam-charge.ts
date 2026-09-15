@@ -35,7 +35,7 @@ export interface PhysicalExamChargeQueueRowDto {
 }
 
 export interface PagePhysicalExamChargeQueueRequest {
-  /** PERSONAL 个检 / GROUP 团检 */
+  /** PERSONAL 个检 / GROUP 团检；不传则个检与团检合并 */
   chargeKind?: PhysicalExamChargeKindCode;
   endDate?: null | string;
   keyword?: string;

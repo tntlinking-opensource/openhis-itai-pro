@@ -141,6 +141,11 @@ export interface DischargePendingExecutionItemDto {
   requestTable?: string;
   statusEnum?: string;
   therapyEnum?: string;
+  /**
+   * 长期已停嘱仍待执行的计划时刻（与出院门禁 pending 同源）。
+   * 仅 blockingReason 含 LONG_PENDING_SLOTS 时有值。
+   */
+  pendingPlanTimes?: string[];
 }
 
 export interface ListDischargePendingExecutionsResponse {

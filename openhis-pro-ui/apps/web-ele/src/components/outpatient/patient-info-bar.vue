@@ -22,6 +22,7 @@ const props = withDefaults(defineProps<Props>(), {
     ageText: '',
     phone: '',
     medicalRecordNo: '',
+    idCard: '',
     address: '',
     serviceTypeName: '',
     startTime: '',
@@ -51,6 +52,9 @@ const ageDisplay = computed(() => {
   const t = (props.patient.ageText ?? '').trim();
   return t || '';
 });
+
+/** 身份证号（有值才展示） */
+const idCardDisplay = computed(() => (props.patient.idCard ?? '').trim());
 
 /** 患者地址全文（有值才展示） */
 const addressDisplay = computed(() => {
@@ -98,6 +102,11 @@ const startTimeDisplay = computed(() => {
       <div v-if="patient.medicalRecordNo" class="flex items-center gap-1.5">
         <span class="text-text-sub text-sm">病历号：</span>
         <span class="text-text-main text-sm font-medium">{{ patient.medicalRecordNo }}</span>
+      </div>
+
+      <div v-if="idCardDisplay" class="flex items-center gap-1.5">
+        <span class="text-text-sub text-sm">身份证号：</span>
+        <span class="text-text-main text-sm">{{ idCardDisplay }}</span>
       </div>
 
       <div v-if="addressDisplay" class="flex max-w-full items-start gap-1.5">

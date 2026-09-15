@@ -40,6 +40,14 @@ public interface OrganizationRepository extends JpaRepository<Organization, Long
     List<Organization> findByBusNoIn(Collection<String> busNos);
 
     /**
+     * 按医保编码批量查询（卫统 N041 科别：首页存 yb_no 时反查机构 {@code caty}）。
+     *
+     * @param ybNos 医保编码集合；调用方保证非空
+     * @return 命中的组织列表（同一 ybNo 多条时由上层择一）
+     */
+    List<Organization> findByYbNoIn(Collection<String> ybNos);
+
+    /**
      * 判断层级编码是否已被占用（BR-ORG-001）。
      *
      * @param busNo 层级编码

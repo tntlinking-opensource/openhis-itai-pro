@@ -7,6 +7,8 @@ package com.openhis.health.application.inpatient.nursestation.orderaudit.support
 import com.openhis.health.application.shared.option.FrequencyOptionLoader;
 import com.openhis.health.application.shared.option.TerminologyOptionLoader;
 import com.openhis.health.application.shared.advice.SkinTestCompanionDisplaySupport;
+import com.openhis.health.application.shared.advice.SkinTestOutcomeByMedicationRequestLoader;
+import com.openhis.health.application.shared.advice.SkinTestOutcomeSnapshot;
 import com.openhis.health.application.shared.advice.InpatientEntrustOrderGateSupport;
 import com.openhis.health.application.shared.advice.OrderCatalogDisplayAssembler;
 import com.openhis.health.application.shared.advice.OrderRequestCatalogWarmAssembler;
@@ -85,6 +87,9 @@ public class NurseStationOrderViewListAssembler {
 
     /** 嘱托医嘱展示名解析（BR-IP-ORD-028④；与住院医生站列表同源）。 */
     private final InpatientEntrustOrderGateSupport inpatientEntrustOrderGateSupport;
+
+    /** 皮试药 → 最新登记结果（companion SR → AllergyIntolerance）。 */
+    private final SkinTestOutcomeByMedicationRequestLoader skinTestOutcomeByMedicationRequestLoader;
 
     /**
      * 第一遍扫描：建立明细 id 索引并收集批量预热 id 集合。
@@ -220,6 +225,22 @@ public class NurseStationOrderViewListAssembler {
             ctx.getMedicationDefinitionById(),
             ctx.getProductByKey()));
         return ctx;
+    }
+
+    /**
+     * 批量预热皮试药最新登记结果，写入展示上下文供药嘱行回填 {@code skinTestOutcome*}。
+     *
+     * @param ctx            已由 {@link #prepareDisplayContext} 产出的上下文
+     * @param medByEncounter 就诊 → 药品明细
+     */
+    public void enrichSkinTestOutcomes(
+        NurseStationOrderViewDisplayContext ctx,
+        Map<Long, List<MedicationRequestListQueryModel>> medByEncounter) {
+        if (ctx == null) {
+            return;
+        }
+        ctx.setSkinTestOutcomeByMedicationRequestId(
+            skinTestOutcomeByMedicationRequestLoader.loadByEncounters(medByEncounter));
     }
 
     /**
@@ -455,6 +476,8 @@ public class NurseStationOrderViewListAssembler {
             core.setSortNumber(medDetail.getSortNumber());
             // 皮试药标记：校对列表提示护士需登记皮试（AS-IP-NUR-011）。
             core.setSkinTestFlag(medDetail.getSkinTestFlag());
+            // 皮试结果回填（BR-IP-ORD-016）：已登记时供列表跟在药名后展示阴/阳性
+            this.applySkinTestOutcomeToCore(core, requestId, ctx);
             // 医嘱备注（过滤套餐覆盖 JSON 误入）
             core.setRemark(this.resolveOrderRemarkForDisplay(medDetail.getRemark()));
         } else {
@@ -986,6 +1009,35 @@ public class NurseStationOrderViewListAssembler {
             return qtyText + unit;
         }
         return qtyText;
+    }
+
+    /**
+     * 皮试药行回填最新登记结果（仅 {@code skin_test_flag=true} 且 Allergy 已存在时写值）。
+     *
+     * @param core      展示内核
+     * @param requestId 药品申请主键
+     * @param ctx       预热上下文（含皮试 outcome 索引）
+     */
+    private void applySkinTestOutcomeToCore(
+        NurseStationOrderViewDisplayCore core,
+        Long requestId,
+        NurseStationOrderViewDisplayContext ctx) {
+        if (core == null || requestId == null || ctx == null) {
+            return;
+        }
+        if (!Boolean.TRUE.equals(core.getSkinTestFlag())) {
+            return;
+        }
+        Map<Long, SkinTestOutcomeSnapshot> outcomeByMedReqId = ctx.getSkinTestOutcomeByMedicationRequestId();
+        if (outcomeByMedReqId == null || outcomeByMedReqId.isEmpty()) {
+            return;
+        }
+        SkinTestOutcomeSnapshot outcome = outcomeByMedReqId.get(requestId);
+        if (outcome == null || StringUtils.isEmpty(outcome.getOutcomeCode())) {
+            return;
+        }
+        core.setSkinTestOutcomeCode(outcome.getOutcomeCode());
+        core.setSkinTestOutcomeText(outcome.getOutcomeText());
     }
 
     /**

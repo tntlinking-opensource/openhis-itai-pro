@@ -4,7 +4,7 @@ import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
 import type { CampusCollegeDto } from '#/api/campus/campus-college';
 import type { CampusSiteDto } from '#/api/campus/campus-site';
 
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 import { TableLayout } from '@vben-core/table-layout-ui';
@@ -49,26 +49,31 @@ const query = reactive({
   activeFlag: undefined as boolean | undefined,
 });
 
-const formItems: FormItemConfig[] = [
+const formItems = computed<FormItemConfig[]>(() => [
   { prop: 'keyword', label: '关键词', type: 'input', placeholder: '编码/名称' },
   {
     prop: 'campusSiteId',
     label: '校区',
     type: 'select',
     clearable: true,
-    options: [],
+    multiple: false,
+    options: campusSites.value.map((s) => ({
+      label: s.campusName || s.campusCode || '',
+      value: toIdString(s.id),
+    })),
   },
   {
     prop: 'activeFlag',
     label: '状态',
     type: 'select',
     clearable: true,
+    multiple: false,
     options: [
       { label: '启用', value: true },
       { label: '停用', value: false },
     ],
   },
-];
+]);
 
 const columns: TableColumn[] = [
   { prop: 'collegeName', label: '学院名称', minWidth: 140 },
@@ -81,13 +86,6 @@ const columns: TableColumn[] = [
 async function loadCampusSites() {
   const res = await listActiveCampusSitesApi();
   campusSites.value = unwrapRecords(res);
-  const campusItem = formItems.find((i) => i.prop === 'campusSiteId');
-  if (campusItem) {
-    campusItem.options = campusSites.value.map((s) => ({
-      label: s.campusName || s.campusCode || '',
-      value: toIdString(s.id),
-    }));
-  }
 }
 
 async function loadList() {

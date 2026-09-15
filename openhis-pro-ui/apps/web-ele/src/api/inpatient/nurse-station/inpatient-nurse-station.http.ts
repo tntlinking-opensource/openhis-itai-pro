@@ -23,11 +23,13 @@ export async function httpLoadWardTree(
   return publicRequestClient.post<LoadWardTreeResponse>(`${BASE}/loadWardTree`, body);
 }
 
-/** 分页查询在院患者队列 */
+/** 分页查询在院患者队列（任务计数 enrich 偏重，单独放宽超时） */
 export async function httpPagePatientQueue(
   body: PagePatientQueueRequest,
 ): Promise<PagePatientQueueResponse> {
-  return publicRequestClient.post<PagePatientQueueResponse>(`${BASE}/pagePatientQueue`, body);
+  return publicRequestClient.post<PagePatientQueueResponse>(`${BASE}/pagePatientQueue`, body, {
+    timeout: 60_000,
+  });
 }
 
 /** 患者详情查询 */

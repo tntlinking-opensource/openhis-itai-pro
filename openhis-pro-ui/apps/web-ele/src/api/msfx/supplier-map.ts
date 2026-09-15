@@ -1,141 +1,85 @@
-/**
- * 码上放心 · HIS 供应商对照 API — {@code POST /api/app/msfxSupplierMap/<method>}
- */
+/** Opensource stub — APIs disabled. */
 import type { ApiResponse } from '#/types/api-response';
 
-import { requestClient } from '#/api/request';
-
-const BASE = '/msfxSupplierMap';
+function disabled<T>(): Promise<ApiResponse<T>> {
+  return Promise.reject(new Error('Optional module disabled in opensource build'));
+}
 
 export interface MsfxSupplierMapItem {
   id?: number | string;
   supplierId?: number | string;
-  supplierName?: string;
   msfxEntId?: string;
-  msfxRefEntId?: string;
   msfxEntName?: string;
-  remark?: string;
-  version?: number;
+  msfxRefEntId?: string;
+  [key: string]: unknown;
 }
 
 export interface MsfxSupplierMapPageParams {
   pageNo?: number;
   pageSize?: number;
+  [key: string]: unknown;
 }
 
 export interface MsfxSupplierMapPageResult {
-  content?: MsfxSupplierMapItem[];
-  totalCount?: number;
-  totalElements?: number;
+  records?: MsfxSupplierMapItem[];
+  total?: number;
 }
 
 export interface MsfxSupplierMapInitResult {
-  supplierOptions?: Array<{ label: string; value: string }>;
+  [key: string]: unknown;
 }
 
 export interface MsfxSupplierMapSaveParams {
-  id?: number | string;
-  supplierId: number | string;
-  msfxEntId: string;
-  msfxRefEntId?: string;
-  msfxEntName?: string;
-  remark?: string;
+  [key: string]: unknown;
 }
 
 export type MsfxMapStatus = 'ALL' | 'MAPPED' | 'UNMAPPED' | '';
 
 export interface MsfxHisSupplierWorkbenchRow {
-  supplierId?: number | string;
-  supplierName?: string;
-  busNo?: string;
-  typeEnum?: string;
-  statusEnum?: string;
-  mapped?: boolean;
-  mapId?: number | string;
-  msfxEntId?: string;
-  msfxRefEntId?: string;
-  msfxEntName?: string;
+  [key: string]: unknown;
 }
 
 export interface MsfxPlatformPartnerWorkbenchRow {
-  entId?: string;
-  refEntId?: string;
-  entName?: string;
-  orgCode?: string;
-  auditFlag?: string;
-  mapped?: boolean;
-  mapId?: number | string;
-  supplierId?: number | string;
-  supplierName?: string;
+  [key: string]: unknown;
 }
 
 export interface MsfxPlatformPartnerPageResult {
-  responseSuccess?: boolean;
-  msgCode?: string;
-  msgInfo?: string;
-  totalCount?: number;
-  pageNo?: number;
-  pageSize?: number;
-  content?: MsfxPlatformPartnerWorkbenchRow[];
+  records?: MsfxPlatformPartnerWorkbenchRow[];
+  total?: number;
 }
 
 export function initMsfxSupplierMapApi() {
-  return requestClient.post<ApiResponse<MsfxSupplierMapInitResult>>(`${BASE}/init`, {});
+  return disabled<MsfxSupplierMapInitResult>();
 }
 
-export function pageMsfxSupplierMapApi(data: MsfxSupplierMapPageParams) {
-  return requestClient.post<ApiResponse<MsfxSupplierMapPageResult>>(`${BASE}/page`, data);
+export function pageMsfxSupplierMapApi(_data: MsfxSupplierMapPageParams) {
+  return disabled<MsfxSupplierMapPageResult>();
 }
 
-export function getMsfxSupplierMapApi(data: { id: number | string }) {
-  return requestClient.post<ApiResponse<MsfxSupplierMapItem>>(`${BASE}/get`, data);
+export function getMsfxSupplierMapApi(_data: { id: number | string }) {
+  return disabled<MsfxSupplierMapItem | null>();
 }
 
-export function getMsfxSupplierMapBySupplierIdApi(data: { supplierId: number | string }) {
-  return requestClient.post<ApiResponse<MsfxSupplierMapItem | null>>(
-    `${BASE}/getBySupplierId`,
-    data,
-  );
+export function getMsfxSupplierMapBySupplierIdApi(_data: { supplierId: number | string }) {
+  return disabled<MsfxSupplierMapItem | null>();
 }
 
-export function saveMsfxSupplierMapApi(data: MsfxSupplierMapSaveParams) {
-  return requestClient.post<ApiResponse<MsfxSupplierMapItem>>(`${BASE}/save`, data);
+export function saveMsfxSupplierMapApi(_data: MsfxSupplierMapSaveParams) {
+  return disabled<MsfxSupplierMapItem>();
 }
 
-export function deleteMsfxSupplierMapApi(data: { id: number | string }) {
-  return requestClient.post<ApiResponse<void>>(`${BASE}/delete`, data);
+export function deleteMsfxSupplierMapApi(_data: { id: number | string }) {
+  return disabled<void>();
 }
 
-export function pageMsfxHisSuppliersApi(data: {
-  pageNo?: number;
-  pageSize?: number;
-  keyword?: string;
-  mapStatus?: MsfxMapStatus;
-}) {
-  return requestClient.post<
-    ApiResponse<MsfxSupplierMapPageResult & { content?: MsfxHisSupplierWorkbenchRow[] }>
-  >(`${BASE}/pageHisSuppliers`, data);
+export function pageMsfxHisSuppliersApi(_data: Record<string, unknown>) {
+  return disabled<{ records?: MsfxHisSupplierWorkbenchRow[]; total?: number }>();
 }
 
-export function pageMsfxPlatformPartnersApi(data: {
-  pageNo?: number;
-  pageSize?: number;
-  entName?: string;
-  mapStatus?: MsfxMapStatus;
-}) {
-  return requestClient.post<ApiResponse<MsfxPlatformPartnerPageResult>>(
-    `${BASE}/pagePlatformPartners`,
-    data,
-  );
+export function pageMsfxPlatformPartnersApi(_data: Record<string, unknown>) {
+  return disabled<MsfxPlatformPartnerPageResult>();
 }
 
-export function pullAllMsfxPlatformPartnersApi(data: {
-  entName?: string;
-  mapStatus?: MsfxMapStatus;
-}) {
-  return requestClient.post<ApiResponse<MsfxPlatformPartnerPageResult>>(
-    `${BASE}/pullAllPlatformPartners`,
-    data,
-    { timeout: 120_000 },
-  );
+export function pullAllMsfxPlatformPartnersApi(_data: Record<string, unknown>) {
+  return disabled<MsfxPlatformPartnerPageResult>();
 }

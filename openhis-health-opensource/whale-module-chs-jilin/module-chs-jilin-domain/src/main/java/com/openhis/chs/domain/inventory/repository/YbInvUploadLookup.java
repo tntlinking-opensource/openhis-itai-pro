@@ -58,4 +58,27 @@ public interface YbInvUploadLookup {
         LocalDateTime createdTo,
         Pageable pageable
     );
+
+    /**
+     * 报文中是否至少有一条 {@code drug_trac_codg} 存在于本租户 {@code cus_trace_number} 主档。
+     *
+     * <p>用于区分「191 + 主档无码（历史挂账可隐藏）」与「191 + 主档有码（院内入过库须处理）」。</p>
+     *
+     * @param tenantId    租户主键
+     * @param requestJson 持久化 request_json；可空
+     * @return 任一码在主档为 true；无码/无主档命中为 false
+     */
+    boolean hasAnyRequestDrugTracInMaster(Long tenantId, String requestJson);
+
+    /**
+     * 按追溯码查找最近一次「入库类」成功 3502 的出站契约 bus_no（市入→市、省入→省）。
+     *
+     * <p>含已软删的 {@code yb_inv_upload_trace} 历史挂载（同码再写会软删旧归属）。
+     * 入库类 {@code inv_chg_type}：101/103/106/108/110。</p>
+     *
+     * @param tenantId       租户主键
+     * @param drugTracCodgs  本片追溯码；空则返回 null
+     * @return 契约 bus_no；未命中 null
+     */
+    String findLatestInboundStockContractBusNo(Long tenantId, List<String> drugTracCodgs);
 }

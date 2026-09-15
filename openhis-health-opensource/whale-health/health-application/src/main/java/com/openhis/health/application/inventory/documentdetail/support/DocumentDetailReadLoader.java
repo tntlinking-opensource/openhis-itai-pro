@@ -4,6 +4,8 @@
  */
 package com.openhis.health.application.inventory.documentdetail.support;
 
+import com.openhis.health.application.inventory.documentdetail.dto.DocumentDetailExportRowDto;
+import com.openhis.health.application.inventory.documentdetail.dto.DocumentDetailItemSummaryRowDto;
 import com.openhis.health.application.inventory.documentdetail.dto.DocumentDetailRowDto;
 import com.openhis.health.application.inventory.documentdetail.mapper.InventoryDocumentDetailMapper;
 import com.openhis.health.application.inventory.documentdetail.request.DocumentDetailFilterRequest;
@@ -20,6 +22,7 @@ import com.openhis.health.domain.custom.supplier.queries.model.SupplierListItemQ
 import com.openhis.health.domain.custom.supplier.service.SupplierQueryService;
 import com.openhis.health.domain.share.constants.DocumentDetailExportConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.domain.workflow.supplyrequest.queries.WarehouseDocumentDetailPageQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.WarehouseDocumentDetailQueryModel;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQueryService;
@@ -66,6 +69,8 @@ public class DocumentDetailReadLoader {
     private final DocumentDetailQuantityConversionHelper quantityConversionSupport;
     /** Response/导出行映射。 */
     private final InventoryDocumentDetailMapper documentDetailMapper;
+    /** 按品规聚合（同筛选 supply 明细行）。 */
+    private final DocumentDetailItemSummarySupport itemSummarySupport;
     /** 分页窗口 Gate（pageNo/pageSize ≥ 1）。 */
     private final PageWindowGate pageWindowGate;
 
@@ -90,9 +95,10 @@ public class DocumentDetailReadLoader {
             response.setPurposeLocationOptions(locationOptions);
             // Pre：租户内全部有效供应商下拉（与库存明细 init 同源 listSuppliers）
             response.setSupplierOptions(this.buildSupplierOptions());
-            // Asm：默认审批自然月
+            // Asm：默认审批自然月；汇总维本期仅「按品规」
             response.setDefaultApprovalTimeStart(this.queryAssemblySupport.defaultApprovalTimeStart());
             response.setDefaultApprovalTimeEnd(this.queryAssemblySupport.defaultApprovalTimeEnd());
+            response.setSummaryDimensionOptions(this.documentDetailMapper.buildSummaryDimensionOptions());
             return response;
         } catch (RuntimeException ex) {
             log.warn("单据详情 init 失败 scope={}", scope, ex);
@@ -145,11 +151,11 @@ public class DocumentDetailReadLoader {
     }
 
     /**
-     * 筛选全量合计。
+     * 筛选全量合计与按品规汇总行。
      *
      * @param scope   业务域
      * @param request 筛选请求
-     * @return 合计响应
+     * @return 页脚合计 + 品规汇总行
      * @throws BusinessException {@code INV_DDC_204}、{@code INV_DDC_206}
      */
     public SummarizeDocumentDetailsResponse summarizeDocumentDetails(
@@ -169,20 +175,23 @@ public class DocumentDetailReadLoader {
             List<DocumentDetailRowDto> allRows = this.loadAllMatchingRows(scope, filter, tenantId);
             BigDecimal totalPriceSum = BigDecimal.ZERO;
             BigDecimal itemQuantitySum = BigDecimal.ZERO;
-            // Asm：全筛选行 SUM totalPrice 与展示 itemQuantity
+            // Asm：全筛选行 SUM 进价 totalPrice 与展示 itemQuantity（金额先 scaleCalc）
             for (DocumentDetailRowDto row : allRows) {
                 if (row == null) {
                     continue;
                 }
                 if (row.getTotalPrice() != null) {
-                    totalPriceSum = totalPriceSum.add(row.getTotalPrice());
+                    totalPriceSum = totalPriceSum.add(MonetaryAmountSupport.scaleCalc(row.getTotalPrice()));
                 }
                 if (row.getItemQuantity() != null) {
                     itemQuantitySum = itemQuantitySum.add(row.getItemQuantity());
                 }
             }
+            // Asm：同批明细按品规分桶，供汇总 Tab（无售价）
+            List<DocumentDetailItemSummaryRowDto> summaryRows =
+                this.itemSummarySupport.aggregateByItem(allRows);
             return this.documentDetailMapper.toSummarizeDocumentDetailsResponse(
-                totalPriceSum, itemQuantitySum, allRows.size());
+                totalPriceSum, itemQuantitySum, allRows.size(), summaryRows);
         } catch (BusinessException ex) {
             throw ex;
         } catch (RuntimeException ex) {
@@ -220,12 +229,25 @@ public class DocumentDetailReadLoader {
             }
             // Asm：导出行映射 + Tabular Excel（前端 exportColumns 裁剪）
             List<ExcelExportColumnDto> exportColumns = null;
+            String presentationMode = null;
             if (request != null) {
                 exportColumns = request.getExportColumns();
+                presentationMode = request.getPresentationMode();
             }
-            byte[] bytes = this.documentDetailMapper.buildExcelBytes(
-                this.documentDetailMapper.toExportRows(allRows),
-                exportColumns);
+            boolean summaryExport = this.isSummaryPresentation(presentationMode);
+            List<DocumentDetailExportRowDto> exportRows;
+            String sheetName;
+            // 汇总导出：同筛选按品规聚合后再写 Excel（并集 DTO 稀疏列）
+            if (summaryExport) {
+                List<DocumentDetailItemSummaryRowDto> summaryRows =
+                    this.itemSummarySupport.aggregateByItem(allRows);
+                exportRows = this.documentDetailMapper.toSummaryExportRows(summaryRows);
+                sheetName = DocumentDetailExportConstants.SUMMARY_SHEET_NAME;
+            } else {
+                exportRows = this.documentDetailMapper.toExportRows(allRows);
+                sheetName = DocumentDetailExportConstants.SHEET_NAME;
+            }
+            byte[] bytes = this.documentDetailMapper.buildExcelBytes(exportRows, exportColumns, sheetName);
             String fileName = this.documentDetailMapper.buildExportFileName(scope);
             return this.documentDetailMapper.toExportDocumentDetailsResponse(fileName, bytes);
         } catch (BusinessException ex) {
@@ -234,6 +256,20 @@ public class DocumentDetailReadLoader {
             log.warn("单据详情导出失败 scope={}", scope, ex);
             throw new BusinessException(ErrorCodeConstants.INV_DDC_205, "导出失败，请稍后重试", ex);
         }
+    }
+
+    /**
+     * 是否按品规汇总导出/展示。
+     *
+     * @param presentationMode 请求模式；空按明细
+     * @return true=汇总
+     */
+    private boolean isSummaryPresentation(String presentationMode) {
+        String normalized = StringUtils.trimToNull(presentationMode);
+        if (normalized == null) {
+            return false;
+        }
+        return DocumentDetailExportConstants.PRESENTATION_MODE_SUMMARY.equalsIgnoreCase(normalized);
     }
 
     /**

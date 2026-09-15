@@ -49,6 +49,10 @@ import lombok.RequiredArgsConstructor;
  * 行进价合计委托 {@link ChargeItemPackageUnitRatioSupport#computePurchaseLineAmount}。
  * 科室领用侧：仅 Supply 落库进价；售价字段一律置空。</p>
  *
+ * <p><strong>账批质检</strong>（明细分页；不改正额/不改汇总）：
+ * {@link #applyChargeDispenseLotMismatch} 比对收费锚点批号与实发批号，写
+ * {@code chargeLotNumber}/{@code lotMismatch}；汇总路径禁止调用，避免全窗 definition 扫描。</p>
+ *
  * <p>DOC-CONFLICT→已按 DD-报表中心-进售价口径与开立科室-2026-08 收敛。</p>
  */
 @Component
@@ -68,11 +72,11 @@ public class MedicationDispenseReportPricingEnricher {
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
 
     /**
-     * 批量回填患者侧明细行进价/售价（保持 unitPrice/totalAmount 为售价别名）。
+     * 批量回填患者侧明细行进价/售价（仅写 saleUnitPrice/saleAmount，不再双写售价别名）。
      *
      * <p>门诊发药报表：账单缺失时仅可回落批号<strong>进价</strong>；售价仍只认账单。</p>
      *
-     * @param lines    已装配明细行；须含 dispenseId / encounterId / quantity / unitPrice / totalAmount
+     * @param lines    已装配明细行；须含 dispenseId / encounterId / quantity；售价可预填 sale* 或留空
      * @param slipRows 同批发放事实（按 dispenseId 一次批量加载 ChargeItem，禁止按就诊 N+1）
      */
     public void enrichPatientDetailPurchaseSale(
@@ -83,6 +87,10 @@ public class MedicationDispenseReportPricingEnricher {
 
     /**
      * 批量回填患者侧明细行进价/售价；住院可对账单缺失行回落批号售价（与药房日结同口径）。
+     *
+     * <p>明细分页末尾会做账批≠实发批质检（见 {@link #applyChargeDispenseLotMismatch}）；
+     * <strong>不改正额</strong>。汇总路径请用 {@link #enrichPatientDetailPurchaseSaleFromChargeItems}，
+     * 该路径不做账批质检。</p>
      *
      * @param lines                 已装配明细行
      * @param slipRows              同批发放事实
@@ -97,19 +105,24 @@ public class MedicationDispenseReportPricingEnricher {
         if (lines == null || lines.isEmpty()) {
             return;
         }
+        // Pre：本页 ChargeItem 一次加载，进价与账批质检共用，禁止二次 IN 发放锚
+        List<ChargeItem> chargeRows = this.loadChargeItemsBySlipDispenseIds(slipRows);
         Map<Long, BigDecimal> purchaseTotalByDispenseId = new HashMap<>();
         Map<Long, BigDecimal> purchaseUnitByDispenseId = new HashMap<>();
-        this.mergePatientPurchasePricingByDispenseIds(slipRows, purchaseUnitByDispenseId, purchaseTotalByDispenseId);
+        this.mergePurchasePricingFromChargeItems(
+            chargeRows, purchaseUnitByDispenseId, purchaseTotalByDispenseId);
         this.applyPurchaseSaleAliases(lines, purchaseUnitByDispenseId, purchaseTotalByDispenseId);
         // Asm：账单缺失批号进价回落；住院另可回落批号售价（正/退均落，避免取消执行删账后汇总只剩退药负额）
         this.supplementLotPricingWhenChargeMissing(
             lines, slipRows, productByMedicationId, allowInpatientLotSaleWhenChargeMissing);
+        // Asm：账批 vs 实发批质检（仅 definition IN；不改正额、不进汇总路径）
+        this.applyChargeDispenseLotMismatch(lines, chargeRows);
     }
 
     /**
      * 在调用方已批量加载的 ChargeItem 上写回进价/售价（汇总路径与售价同批复用，禁止二次打库）。
      *
-     * @param lines      已装配明细行；须含 dispenseId / quantity / unitPrice / totalAmount
+     * @param lines      已装配明细行；须含 dispenseId / quantity；售价可预填 sale* 或留空
      * @param chargeRows 同批发放锚点收费明细
      */
     public void enrichPatientDetailPurchaseSaleFromChargeItems(
@@ -266,11 +279,9 @@ public class MedicationDispenseReportPricingEnricher {
         BigDecimal purchaseAmount = MonetaryAmountSupport.scaleCalc(signedPurchaseTotal);
         line.setPurchaseUnitPrice(purchaseUnit);
         line.setPurchaseAmount(purchaseAmount);
-        // 领用侧不算售价：别名与售价列一律空
+        // 领用侧不算售价：售价列一律空
         line.setSaleUnitPrice(null);
         line.setSaleAmount(null);
-        line.setUnitPrice(null);
-        line.setTotalAmount(null);
     }
 
     /**
@@ -507,7 +518,6 @@ public class MedicationDispenseReportPricingEnricher {
             BigDecimal saleNet = this.sumThenSettleOrNull(buckets.saleAmountsByKey.get(key));
             summaryRow.setPurchaseNetAmount(purchaseNet);
             summaryRow.setSaleNetAmount(saleNet);
-            summaryRow.setNetAmount(saleNet);
             summaryRow.setPurchaseUnitPrice(
                 this.resolveUniqueDisplayUnitPrice(buckets.purchaseUnitsByKey.get(key)));
             summaryRow.setSaleUnitPrice(
@@ -612,40 +622,92 @@ public class MedicationDispenseReportPricingEnricher {
     }
 
     /**
-     * 按发放主键一次批量加载 ChargeItem 并合并进价映射（含住院待结算态，避免按就诊循环）。
+     * 按发放主键一次批量加载发药定价 ChargeItem（含住院待结算态）。
      *
-     * @param slipRows                  发放事实
-     * @param purchaseUnitByDispenseId  输出：dispenseId → 进价单价
-     * @param purchaseTotalByDispenseId 输出：dispenseId → 进价总额
+     * <p>供明细分页进价 enrich 与账批质检共用同一批 ChargeItem，禁止二次按发放 IN。</p>
+     *
+     * @param slipRows 发放事实
+     * @return 收费行；无发放主键时为空表
      */
-    private void mergePatientPurchasePricingByDispenseIds(
-        List<MedicationDispenseSlipQueryModel> slipRows,
-        Map<Long, BigDecimal> purchaseUnitByDispenseId,
-        Map<Long, BigDecimal> purchaseTotalByDispenseId) {
+    private List<ChargeItem> loadChargeItemsBySlipDispenseIds(
+        List<MedicationDispenseSlipQueryModel> slipRows) {
         if (slipRows == null || slipRows.isEmpty()) {
-            return;
+            return List.of();
         }
         LinkedHashSet<Long> dispenseIds = new LinkedHashSet<>();
+        // Pre：收集本页发放主键，跨就诊一次 IN
         for (MedicationDispenseSlipQueryModel slip : slipRows) {
             if (slip != null && slip.getDispenseId() != null) {
                 dispenseIds.add(slip.getDispenseId());
             }
         }
+        // Gate：无发放主键则无定价 ChargeItem 可拉
         if (dispenseIds.isEmpty()) {
-            return;
+            return List.of();
         }
         // Pre：跨就诊一次 IN；includePendingSettlement 覆盖住院待结算挂费
-        List<ChargeItem> chargeRows =
-            this.chargeItemQueryService.listChargeItemsForMedicationDispensePricingByDispenseIds(
-                dispenseIds, true);
-        this.mergePurchasePricingFromChargeItems(
-            chargeRows, purchaseUnitByDispenseId, purchaseTotalByDispenseId);
+        return this.chargeItemQueryService.listChargeItemsForMedicationDispensePricingByDispenseIds(
+            dispenseIds, true);
     }
 
     /**
-     * 将售价别名与进价单价/总额写回明细行。
+     * 明细分页：比对收费锚点批号与发放批号；不一致仅打标，不改正额。
      *
-     * <p>售价缺失保持 {@code null}（前端展示 —），禁止 {@code scaleCalc(null)} 编成 0.00。</p>
+     * <p>复用本页已加载 ChargeItem，额外仅一次 definitionId IN（{@link
+     * HistoricalChargeItemPurchasePriceSupport#mapChargeAnchorLotByDispenseId}）。
+     * 汇总路径禁止调用本方法，避免全窗额外 definition 扫描。
+     * 科室领用 / 无账单 / 任一侧无批号 → 不打 {@code lotMismatch}。</p>
+     *
+     * @param lines      已装配明细行（须含 lotNumber）
+     * @param chargeRows 本页收费行
+     */
+    private void applyChargeDispenseLotMismatch(
+        List<? extends MedicationDispensePurchaseSaleDetailLine> lines,
+        List<ChargeItem> chargeRows) {
+        if (lines == null || lines.isEmpty()) {
+            return;
+        }
+        Map<Long, String> chargeLotByDispenseId =
+            this.historicalChargeItemPurchasePriceSupport.mapChargeAnchorLotByDispenseId(chargeRows);
+        // Gate：本页无账批可解析则整批跳过（无账单 / 非批号价锚）
+        if (chargeLotByDispenseId.isEmpty()) {
+            return;
+        }
+        // Asm：逐行比对实发批号与账批；仅质检展示
+        for (MedicationDispensePurchaseSaleDetailLine line : lines) {
+            // Gate：空行跳过
+            if (line == null) {
+                continue;
+            }
+            // Gate：科室领用无 ChargeItem，不做账批比对
+            if (MedicationDispenseReportConstants.SOURCE_DEPT_ISSUE.equals(line.getSourceCode())) {
+                continue;
+            }
+            Long dispenseId = line.getDispenseId();
+            // Gate：无发放主键无法对齐账批 Map
+            if (dispenseId == null) {
+                continue;
+            }
+            String chargeLot = chargeLotByDispenseId.get(dispenseId);
+            String dispenseLot = line.getLotNumber();
+            // Gate：任一侧无批号则无法判定不一致（保持未标红）
+            if (StringUtils.isEmpty(chargeLot) || StringUtils.isEmpty(dispenseLot)) {
+                continue;
+            }
+            String dispenseLotTrimmed = dispenseLot.trim();
+            line.setChargeLotNumber(chargeLot);
+            // Asm：账批 ≠ 实发批 → 仅打标；金额口径不变
+            if (!chargeLot.equals(dispenseLotTrimmed)) {
+                line.setLotMismatch(Boolean.TRUE);
+            }
+        }
+    }
+
+    /**
+     * 将预填售价刻度化并回填进价单价/总额。
+     *
+     * <p>售价缺失保持 {@code null}（前端展示 —），禁止 {@code scaleCalc(null)} 编成 0.00。
+     * 调用方须已把账单售价写入 {@code saleUnitPrice}/{@code saleAmount}（或留空待批号回落）。</p>
      *
      * @param lines                       明细行
      * @param purchaseUnitByDispenseId    dispenseId → 进价单价
@@ -659,29 +721,21 @@ public class MedicationDispenseReportPricingEnricher {
             if (line == null) {
                 continue;
             }
-            // 售价：有账单价才落；null 保持空，避免假 0.00
-            if (line.getUnitPrice() != null) {
-                BigDecimal saleUnit = MonetaryAmountSupport.scaleCalc(line.getUnitPrice());
-                line.setSaleUnitPrice(saleUnit);
-                line.setUnitPrice(saleUnit);
-            } else {
-                line.setSaleUnitPrice(null);
+            // 售价：有预填才落刻度；null 保持空，避免假 0.00
+            if (line.getSaleUnitPrice() != null) {
+                line.setSaleUnitPrice(MonetaryAmountSupport.scaleCalc(line.getSaleUnitPrice()));
             }
-            if (line.getTotalAmount() != null) {
-                BigDecimal saleAmount = MonetaryAmountSupport.scaleCalc(line.getTotalAmount());
-                line.setSaleAmount(saleAmount);
-                line.setTotalAmount(saleAmount);
-            } else {
-                line.setSaleAmount(null);
+            if (line.getSaleAmount() != null) {
+                line.setSaleAmount(MonetaryAmountSupport.scaleCalc(line.getSaleAmount()));
             }
             Long dispenseId = line.getDispenseId();
             if (dispenseId != null) {
                 BigDecimal purchaseUnit = purchaseUnitByDispenseId.get(dispenseId);
                 BigDecimal purchaseAmount = purchaseTotalByDispenseId.get(dispenseId);
-                // 退药行进价总额与售价同号（ReadAssembler 售价总额已取负）
+                // 退药行进价总额与售价同号（预填售价总额已取负）
                 if (purchaseAmount != null
-                    && line.getTotalAmount() != null
-                    && line.getTotalAmount().signum() < 0
+                    && line.getSaleAmount() != null
+                    && line.getSaleAmount().signum() < 0
                     && purchaseAmount.signum() > 0) {
                     purchaseAmount = purchaseAmount.negate();
                 }
@@ -1164,16 +1218,15 @@ public class MedicationDispenseReportPricingEnricher {
                     if (displaySale != null) {
                         BigDecimal scaledSaleUnit = MonetaryAmountSupport.scaleCalc(displaySale);
                         line.setSaleUnitPrice(scaledSaleUnit);
-                        line.setUnitPrice(scaledSaleUnit);
                     }
                     if (saleLine != null) {
                         BigDecimal signedSale = saleLine;
+                        // 退药行批号售价总额取负，与账单预填同号
                         if (refundRow) {
                             signedSale = saleLine.negate();
                         }
                         BigDecimal scaledSaleAmount = MonetaryAmountSupport.scaleCalc(signedSale);
                         line.setSaleAmount(scaledSaleAmount);
-                        line.setTotalAmount(scaledSaleAmount);
                     }
                 }
             }
@@ -1464,11 +1517,12 @@ public class MedicationDispenseReportPricingEnricher {
         /** @return 科室组织主键 */
         Long getDepartmentId();
 
-        /** @return 售价别名单价 */
-        BigDecimal getUnitPrice();
-
-        /** @return 售价别名总额 */
-        BigDecimal getTotalAmount();
+        /**
+         * 实发批号（发放单 {@code lot_number}）。
+         *
+         * @return 批号；可空
+         */
+        String getLotNumber();
 
         /** @return 进价单价 */
         BigDecimal getPurchaseUnitPrice();
@@ -1482,12 +1536,6 @@ public class MedicationDispenseReportPricingEnricher {
         /** @return 售价总额 */
         BigDecimal getSaleAmount();
 
-        /** @param unitPrice 售价别名单价 */
-        void setUnitPrice(BigDecimal unitPrice);
-
-        /** @param totalAmount 售价别名总额 */
-        void setTotalAmount(BigDecimal totalAmount);
-
         /** @param purchaseUnitPrice 进价单价 */
         void setPurchaseUnitPrice(BigDecimal purchaseUnitPrice);
 
@@ -1499,6 +1547,20 @@ public class MedicationDispenseReportPricingEnricher {
 
         /** @param saleAmount 售价总额 */
         void setSaleAmount(BigDecimal saleAmount);
+
+        /**
+         * 写入收费锚点批号（质检展示；可空）。
+         *
+         * @param chargeLotNumber 账批号
+         */
+        void setChargeLotNumber(String chargeLotNumber);
+
+        /**
+         * 写入账批≠实发批标记（仅 true 时前端标红；金额口径不变）。
+         *
+         * @param lotMismatch 是否不一致
+         */
+        void setLotMismatch(Boolean lotMismatch);
     }
 
     /**
@@ -1518,17 +1580,11 @@ public class MedicationDispenseReportPricingEnricher {
         /** @return 售价净额 */
         BigDecimal getSaleNetAmount();
 
-        /** @return 售价净额别名 */
-        BigDecimal getNetAmount();
-
         /** @param purchaseNetAmount 进价净额 */
         void setPurchaseNetAmount(BigDecimal purchaseNetAmount);
 
         /** @param saleNetAmount 售价净额 */
         void setSaleNetAmount(BigDecimal saleNetAmount);
-
-        /** @param netAmount 售价净额别名 */
-        void setNetAmount(BigDecimal netAmount);
 
         /** @param purchaseUnitPrice 进价单价 */
         void setPurchaseUnitPrice(BigDecimal purchaseUnitPrice);

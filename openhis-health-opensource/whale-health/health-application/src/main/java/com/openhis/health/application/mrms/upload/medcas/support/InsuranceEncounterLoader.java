@@ -4,8 +4,6 @@
  */
 package com.openhis.health.application.mrms.upload.medcas.support;
 
-import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.JSONObject;
 import com.openhis.health.domain.administration.account.entity.Account;
 import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.administration.invoice.entity.Invoice;
@@ -16,9 +14,11 @@ import com.openhis.health.domain.financial.contract.service.ContractQueryService
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentReconciliationQueryModel;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentYbSettlementQueryModel;
 import com.openhis.health.domain.financial.paymentreconciliation.service.PaymentReconciliationQueryService;
-import com.openhis.health.domain.mrms.caserecord.entity.CaseRecordHomepage;
-import com.openhis.health.domain.mrms.caserecord.service.CaseRecordHomepageDomainService;
+import com.openhis.health.infrastructure.integration.einvoice.BossElectronicInvoiceExtension;
+import com.openhis.health.infrastructure.integration.einvoice.ExtensionOut.BossElectronicInvoiceDocumentLookupExtensionOut;
 import com.openhis.health.infrastructure.integration.insurance.benefit.InsuranceRegisterBenefitQueryExtension;
+import com.openhis.health.infrastructure.integration.insurance.contract.InsuranceContractTerminalExtension;
+import com.openhis.health.infrastructure.integration.insurance.contract.ExtensionOut.InsuranceContractTerminalQueryExtensionOut;
 import com.openhis.health.infrastructure.integration.insurance.settlement.InsuranceSettlementRecordLookupExtension;
 import com.openhis.health.infrastructure.integration.insurance.settlement.ExtensionOut.InsuranceSettlementFundLookupExtensionOut;
 import lombok.RequiredArgsConstructor;
@@ -32,9 +32,14 @@ import java.util.Optional;
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
 /**
- * 医保上报上下文解析（支付流水 + 结算回执 + 票据 + 就诊 psn_no）。
+ * 医保上报上下文解析（支付流水 + 结算回执 + 票据 + 就诊 psn_no + 契约终端参数）。
  *
- * <p>供 4401/4101A/4102 共用；不经医保网关写交易。</p>
+ * <p>供 4401/4101A/4102 共用；不经医保网关写交易。
+ * {@code bill_code} 优先博思 {@code boss_batch_code}，无批次码回落发票号（老 ifnull 口径）；
+ * 住院号兜底由 4101A Mapper 补齐。
+ * {@code fixmedins_code}/{@code fixmedins_name}/{@code adm_vs} 经
+ * {@link InsuranceContractTerminalExtension} 读 {@code chs-contract.properties}，
+ * <strong>不</strong>读 {@code fin_contract} 历史列。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -44,9 +49,10 @@ public class InsuranceEncounterLoader {
     private final ContractQueryService contractQueryService;
     private final PaymentReconciliationQueryService paymentReconciliationQueryService;
     private final InvoiceQueryService invoiceQueryService;
-    private final CaseRecordHomepageDomainService caseRecordHomepageDomainService;
+    private final BossElectronicInvoiceExtension bossElectronicInvoiceExtension;
     private final InsuranceRegisterBenefitQueryExtension insuranceRegisterBenefitQueryExtension;
     private final InsuranceSettlementRecordLookupExtension insuranceSettlementRecordLookupExtension;
+    private final InsuranceContractTerminalExtension insuranceContractTerminalExtension;
 
     /**
      * 判断就诊是否为医保住院（存在有效医保合同账户）。
@@ -65,14 +71,13 @@ public class InsuranceEncounterLoader {
     }
 
     /**
-     * 按合同业务号解析上报所需医保上下文（mdtrt_id/setl_id/psn_no/票据等）。
+     * 按合同业务号解析上报所需医保上下文（mdtrt_id/setl_id/psn_no/票据/定点机构等）。
      *
-     * @param encounterId 就诊主键
+     * @param encounterId   就诊主键
      * @param contractBusNo 合同业务号
-     * @param caseRecordId 病案主档主键（读首页 extension 票据代码），可为 null
      * @return 上下文；非医保或无 mdtrt_id/setl_id 时 empty
      */
-    public Optional<InsuranceEncounterContext> findContext(long encounterId, String contractBusNo, Long caseRecordId) {
+    public Optional<InsuranceEncounterContext> findContext(long encounterId, String contractBusNo) {
         // contractBusNo 为空无法定位合同
         if (trimToNull(contractBusNo) == null) {
             return Optional.empty();
@@ -82,7 +87,6 @@ public class InsuranceEncounterLoader {
         if (contractOpt.isEmpty() || !Boolean.TRUE.equals(contractOpt.get().getYbFlag())) {
             return Optional.empty();
         }
-        Contract contract = contractOpt.get();
         SettledYbSlice settled = resolveSettledYb(encounterId, contractBusNo);
         // 支付流水无 mdtrt_id/setl_id 时不返回上下文（未医保结算）
         if (settled == null
@@ -95,29 +99,17 @@ public class InsuranceEncounterLoader {
         ctx.setSetlId(settled.setlId);
         ctx.setPaymentId(settled.paymentId);
         ctx.setSettlementRecordId(settled.settlementRecordId);
-        ctx.setFixmedinsCode(trimToNull(contract.getFixmedinsCode()));
-        ctx.setFixmedinsName(trimToNull(contract.getFixmedinsName()));
-        ctx.setInsuplcAdmdvs(trimToNull(contract.getAdmVs()));
+        // Pre：定点机构/区划仅来自 chs-contract（经 SPI），禁止回落 fin_contract 空列
+        fillTerminalFromChsContract(ctx, contractBusNo);
         if (settled.billDate != null) {
             ctx.setSetlBegnDate(settled.billDate.toLocalDate());
             ctx.setSetlEndDate(settled.billDate.toLocalDate());
         }
         // Pre：psn_no 优先结算回执，其次就诊平台映射
         ctx.setPsnNo(resolvePsnNo(encounterId, settled.paymentId));
-        // Pre：票据三要素
-        fillInvoiceFields(ctx, settled.paymentId, caseRecordId, settled.chrgBchno);
+        // Pre：票据三要素（bill_code←博思批次码→发票号；bill_no/biz_sn←adm_invoice+博思）
+        fillInvoiceFields(ctx, settled.paymentId, settled.chrgBchno);
         return Optional.of(ctx);
-    }
-
-    /**
-     * 兼容旧调用：不读首页 extension 的票据代码。
-     *
-     * @param encounterId 就诊主键
-     * @param contractBusNo 合同业务号
-     * @return 上下文
-     */
-    public Optional<InsuranceEncounterContext> findContext(long encounterId, String contractBusNo) {
-        return findContext(encounterId, contractBusNo, null);
     }
 
     /**
@@ -157,6 +149,25 @@ public class InsuranceEncounterLoader {
     }
 
     /**
+     * 经 SPI 填充定点机构编码/名称/区划（chs-contract.properties）。
+     *
+     * @param ctx           上报上下文
+     * @param contractBusNo 契约业务号
+     */
+    private void fillTerminalFromChsContract(InsuranceEncounterContext ctx, String contractBusNo) {
+        Optional<InsuranceContractTerminalQueryExtensionOut> terminal =
+                insuranceContractTerminalExtension.findByContractBusNo(contractBusNo);
+        // 未装配 CHS 或 properties 缺段时保持 null，由上传校验报「定点医药机构编号缺失」
+        if (terminal.isEmpty()) {
+            return;
+        }
+        InsuranceContractTerminalQueryExtensionOut row = terminal.get();
+        ctx.setFixmedinsCode(trimToNull(row.getFixmedinsCode()));
+        ctx.setFixmedinsName(trimToNull(row.getFixmedinsName()));
+        ctx.setInsuplcAdmdvs(trimToNull(row.getAdmVs()));
+    }
+
+    /**
      * 解析医保人员编号：结算基金回执 → 就诊平台映射。
      *
      * @param encounterId 就诊主键
@@ -179,22 +190,20 @@ public class InsuranceEncounterLoader {
     }
 
     /**
-     * 填充 4101A 票据三要素（bill_code/bill_no/biz_sn）。
+     * 填充 4101A 票据要素（bill_code / bill_no / biz_sn）。
+     *
+     * <p>对齐老系统 {@code ifnull(ifnull(billBatchCode, INVOICE_NO), ZY_NO)}：
+     * {@code bill_code} 优先博思 {@code boss_batch_code}；无批次码时回落已解析的
+     * {@code bill_no}（发票号）。住院号兜底由 {@code CaseRecord4101AMapper} 用
+     * {@code ipt_no}/{@code medcasno} 补齐。</p>
      *
      * @param ctx 上下文
      * @param paymentId 支付单
-     * @param caseRecordId 病案（读 extension.bill_code）
      * @param chrgBchno 收费批次号（biz_sn 兜底）
      */
-    private void fillInvoiceFields(
-            InsuranceEncounterContext ctx, Long paymentId, Long caseRecordId, String chrgBchno) {
-        // 首页扩展可手工维护票据代码（电子票批次未回写到 adm_invoice 时）
-        String extBillCode = readHomepageExt(caseRecordId, "bill_code");
-        if (trimToNull(extBillCode) != null) {
-            ctx.setBillCode(trimToNull(extBillCode));
-        }
+    private void fillInvoiceFields(InsuranceEncounterContext ctx, Long paymentId, String chrgBchno) {
         if (paymentId == null) {
-            // 无支付单时仅用 extension / 收费批次兜底业务流水
+            // 无支付单时仅用收费批次兜底业务流水
             if (trimToNull(ctx.getBizSn()) == null) {
                 ctx.setBizSn(chrgBchno);
             }
@@ -210,43 +219,29 @@ public class InsuranceEncounterLoader {
         if (issued != null) {
             ctx.setBillNo(trimToNull(issued.getBillNo()));
             ctx.setBizSn(trimToNull(issued.getBusNo()));
-            // 无电子票批次列时：extension 优先；否则不造假，留给 Validator 报错
+        }
+        // Pre：博思电子票回写的票据代码（与门诊收银台同路）
+        Optional<BossElectronicInvoiceDocumentLookupExtensionOut> bossDoc =
+                bossElectronicInvoiceExtension.findDocumentByPaymentId(paymentId);
+        if (bossDoc.isPresent()) {
+            BossElectronicInvoiceDocumentLookupExtensionOut doc = bossDoc.get();
+            ctx.setBillCode(trimToNull(doc.getBillBatchCode()));
+            // adm_invoice 无票号时用博思票号补齐
+            if (trimToNull(ctx.getBillNo()) == null) {
+                ctx.setBillNo(trimToNull(doc.getBossBillNo()));
+            }
+            // adm_invoice 无流水时用博思 bus_no 补齐
+            if (trimToNull(ctx.getBizSn()) == null) {
+                ctx.setBizSn(trimToNull(doc.getBusNo()));
+            }
+        }
+        // 老口径：无 billBatchCode 时用发票号顶 bill_code（后续 Mapper 再兜住院号）
+        if (trimToNull(ctx.getBillCode()) == null) {
+            ctx.setBillCode(trimToNull(ctx.getBillNo()));
         }
         // biz_sn 仍空时用收费批次号
         if (trimToNull(ctx.getBizSn()) == null) {
             ctx.setBizSn(chrgBchno);
-        }
-    }
-
-    /**
-     * 读取首页 extension_json 字符串字段。
-     *
-     * @param caseRecordId 病案主键
-     * @param key JSON 键
-     * @return 字符串值，缺失时 null
-     */
-    private String readHomepageExt(Long caseRecordId, String key) {
-        if (caseRecordId == null || trimToNull(key) == null) {
-            return null;
-        }
-        Optional<CaseRecordHomepage> homepageOpt =
-                caseRecordHomepageDomainService.findOptionalByCaseRecordId(caseRecordId);
-        if (homepageOpt.isEmpty() || trimToNull(homepageOpt.get().getExtensionJson()) == null) {
-            return null;
-        }
-        CaseRecordHomepage homepage = homepageOpt.get();
-        try {
-            JSONObject ext = JSON.parseObject(homepage.getExtensionJson());
-            if (ext == null || !ext.containsKey(key)) {
-                return null;
-            }
-            Object val = ext.get(key);
-            if (val == null) {
-                return null;
-            }
-            return String.valueOf(val);
-        } catch (Exception ex) {
-            return null;
         }
     }
 

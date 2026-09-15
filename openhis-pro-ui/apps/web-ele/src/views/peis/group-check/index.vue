@@ -3,11 +3,13 @@ import type {
   BatchRowDto,
   CampusRosterCandidateDto,
   CampusRosterDepartmentOptionDto,
-  CompanyRowDto,
+  CompanyTreeNodeDto,
   ContractRowDto,
+  ContractTypeRowDto,
   GroupRosterRowDto,
   LoadRosterSummaryResponse,
   RosterImportRowDto,
+  RosterEnrollmentItemDto,
 } from '#/api/peis/group-check';
 import type { PeisPackageDto } from '#/api/peis/catalog-config';
 
@@ -18,20 +20,24 @@ import { useUserStore } from '@vben/stores';
 
 import { searchPackageApi, searchActivityApi } from '#/api/peis/catalog-config';
 import type { PeisActivityDto } from '#/api/peis/catalog-config';
+import { isCampusUiEnabled } from '#/utils/project-optional-modules';
 import {
   adjustRosterServiceRequestsApi,
   cancelGroupArrivalApi,
   cancelGroupEnrollmentApi,
+  changeRosterSelectedPackageApi,
   confirmBatchEnrollmentApi,
   confirmGroupArrivalApi,
+  deleteCompanyApi,
   downloadRosterImportTemplateApi,
-  importRosterApi,
+  importRosterByContractApi,
   importRosterFromCampusApi,
   importRosterFromTemplateApi,
   listCampusRosterClassNamesApi,
   listCampusRosterDepartmentsApi,
   listBatchesApi,
-  listCompaniesApi,
+  listCompanyTreeApi,
+  listContractTypesApi,
   listContractsApi,
   markContractPaidApi,
   loadRosterSummaryApi,
@@ -40,6 +46,8 @@ import {
   saveCompanyApi,
   saveContractApi,
   saveGroupBatchApi,
+  selectRosterPackageApi,
+  updateRosterBatchApi,
 } from '#/api/peis/group-check';
 import {
   getCheckOrderDetailApi,
@@ -77,6 +85,7 @@ import {
   ElCard,
   ElCheckbox,
   ElDatePicker,
+  ElDialog,
   ElDrawer,
   ElEmpty,
   ElForm,
@@ -95,6 +104,7 @@ import {
   ElTableColumn,
   ElTabs,
   ElTag,
+  ElTree,
 } from 'element-plus';
 
 defineOptions({ name: 'PeisGroupCheck' });
@@ -107,24 +117,30 @@ const orgId = computed(() => {
   return fromUser != null ? String(fromUser) : '';
 });
 
-const companies = ref<CompanyRowDto[]>([]);
+const companies = ref<CompanyTreeNodeDto[]>([]);
+const companyTreeRoots = ref<CompanyTreeNodeDto[]>([]);
 const contracts = ref<ContractRowDto[]>([]);
+const contractTypes = ref<ContractTypeRowDto[]>([]);
 const batches = ref<BatchRowDto[]>([]);
 const packages = ref<PeisPackageDto[]>([]);
 const selectedCompanyId = ref('');
+const selectedContractId = ref('');
 const selectedBatchId = ref('');
 
 const companyForm = ref({
   companyId: '',
+  parentId: '',
   name: '',
   contactName: '',
   contactPhone: '',
 });
+const companyDialogVisible = ref(false);
 
 const contractForm = ref({
   contractId: '',
   packageActivityIds: [] as string[],
   contractName: '',
+  contractTypeCode: '',
   contractAmount: undefined as number | undefined,
   validFrom: '',
   validTo: '',
@@ -134,7 +150,7 @@ const batchForm = ref({
   batchId: '',
   contractId: '',
   batchName: '',
-  packageActivityId: '',
+  packageActivityIds: [] as string[],
   bookingDate: '',
 });
 
@@ -152,8 +168,9 @@ const rosterEnrollmentFilter = ref<'' | 'ENROLLED' | 'UNENROLLED'>('');
 const rosterArrivalFilter = ref<'' | 'ARRIVED' | 'PENDING'>('');
 
 const rosterMemberKind = ref<RosterMemberKind>('ENTERPRISE');
-const importAutoEnroll = ref(true);
 const importSyncCampus = ref(true);
+/** 院点 L0：关闭校园时隐藏「从 Campus 拉取」 */
+const campusUiEnabled = isCampusUiEnabled();
 const campusPullKind = ref<'STAFF' | 'STUDENT'>('STUDENT');
 const campusDepartments = ref<CampusRosterDepartmentOptionDto[]>([]);
 const campusClassNames = ref<string[]>([]);
@@ -164,6 +181,14 @@ const campusSelectedRows = ref<CampusRosterCandidateDto[]>([]);
 const campusPullLoading = ref(false);
 const templateImportLoading = ref(false);
 const importTemplateInputRef = ref<HTMLInputElement | null>(null);
+
+const packagePickOpen = ref(false);
+const packagePickTarget = ref<GroupRosterRowDto | GroupRosterRowDto[] | null>(null);
+const packagePickValue = ref('');
+const packagePickLoading = ref(false);
+const batchChangeOpen = ref(false);
+const batchChangeTarget = ref<GroupRosterRowDto | null>(null);
+const batchChangeTargetBatchId = ref('');
 
 const adjustDrawerOpen = ref(false);
 const adjustRoster = ref<GroupRosterRowDto | null>(null);
@@ -184,8 +209,15 @@ const importForm = ref<RosterImportRowDto>({
 });
 
 const selectedCompany = computed(() =>
-  companies.value.find((item) => String(item.companyId ?? '') === selectedCompanyId.value),
+  findCompanyNode(selectedCompanyId.value, companyTreeRoots.value),
 );
+
+const flatCompanies = computed(() => flattenCompanyTree(companyTreeRoots.value));
+
+const contractBatches = computed(() => {
+  if (!selectedContractId.value) return batches.value;
+  return batches.value.filter((item) => String(item.contractId ?? '') === selectedContractId.value);
+});
 
 const selectedBatch = computed(() =>
   batches.value.find((item) => String(item.batchId ?? '') === selectedBatchId.value),
@@ -196,23 +228,50 @@ const rosterOrgUnitFieldLabel = computed(() => rosterOrgUnitLabel(rosterMemberKi
 
 const selectedBatchLabel = computed(() => {
   const batch = selectedBatch.value;
-  if (!batch) return '请先选择批次';
-  const pkg = packageLabel(String(batch.packageActivityId ?? ''), packages.value);
-  return `${batch.batchName ?? '未命名批次'} · 套餐：${pkg}`;
+  if (!batch) return '请先选择分组';
+  const pkgIds = batch.packageActivityIds?.length
+    ? batch.packageActivityIds
+    : batch.packageActivityId
+      ? [batch.packageActivityId]
+      : [];
+  const pkgText = pkgIds.length > 0 ? packageLabels(pkgIds, packages.value) : '未配置套餐';
+  return `${batch.batchName ?? '未命名分组'} · 可选套餐：${pkgText}`;
 });
 
-function requireBatchPackage() {
-  const batch = selectedBatch.value;
-  const pkgId = String(batch?.packageActivityId ?? '');
-  if (!pkgId) {
-    ElMessage.warning('当前批次未绑定套餐，请先在「合同与批次」页为批次选择套餐');
-    return null;
+function flattenCompanyTree(nodes: CompanyTreeNodeDto[]): CompanyTreeNodeDto[] {
+  const rows: CompanyTreeNodeDto[] = [];
+  for (const node of nodes) {
+    rows.push(node);
+    if (node.children?.length) {
+      rows.push(...flattenCompanyTree(node.children));
+    }
   }
-  return {
-    pkgId,
-    pkgName: packageLabel(pkgId, packages.value),
-    batchName: batch?.batchName ?? '未命名批次',
-  };
+  return rows;
+}
+
+function findCompanyNode(
+  companyId: string,
+  nodes: CompanyTreeNodeDto[],
+): CompanyTreeNodeDto | undefined {
+  if (!companyId) return undefined;
+  for (const node of nodes) {
+    if (String(node.companyId ?? '') === companyId) return node;
+    const hit = findCompanyNode(companyId, node.children ?? []);
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
+function rosterPackageOptions(row: GroupRosterRowDto) {
+  const ids = row.optionalPackageActivityIds ?? [];
+  return filterPackagesByIds(packages.value, ids);
+}
+
+function resolveDefaultPackageId(row: GroupRosterRowDto) {
+  if (row.selectedPackageActivityId) return String(row.selectedPackageActivityId);
+  const opts = row.optionalPackageActivityIds ?? [];
+  if (opts.length === 1) return String(opts[0] ?? '');
+  return '';
 }
 
 const batchContractPackages = computed(() => {
@@ -269,6 +328,7 @@ function editContract(row: ContractRowDto) {
       row.packageActivityIds ?? (row.packageActivityId ? [row.packageActivityId] : [])
     ).map((id) => String(id)),
     contractName: row.contractName ?? '',
+    contractTypeCode: row.contractTypeCode ?? '',
     contractAmount: parseContractAmount(row.contractAmount),
     validFrom: row.validFrom ?? '',
     validTo: row.validTo ?? '',
@@ -280,10 +340,16 @@ function resetContractForm() {
     contractId: '',
     packageActivityIds: [],
     contractName: '',
+    contractTypeCode: '',
     contractAmount: undefined,
     validFrom: '',
     validTo: '',
   };
+}
+
+/** 加载合同类型字典（号源分池维度）。 */
+async function loadContractTypes() {
+  contractTypes.value = (await listContractTypesApi()) ?? [];
 }
 
 async function loadPackages() {
@@ -409,7 +475,7 @@ async function addAdjustActivity() {
       addActivityIds: [addActivityId.value],
     });
     addActivityId.value = '';
-    ElMessage.success('已加项，请引导受检者到「团检加项收费」缴纳');
+    ElMessage.success('已加项，请引导受检者到「体检收费」缴纳');
     await refreshAdjustOrderDetail();
     await loadRoster();
   } finally {
@@ -418,7 +484,9 @@ async function addAdjustActivity() {
 }
 
 async function loadCompanies() {
-  companies.value = (await listCompaniesApi()) ?? [];
+  const resp = await listCompanyTreeApi(orgId.value ? { orgId: orgId.value } : undefined);
+  companyTreeRoots.value = resp?.roots ?? [];
+  companies.value = flattenCompanyTree(companyTreeRoots.value);
 }
 
 async function loadContractsAndBatches() {
@@ -429,11 +497,19 @@ async function loadContractsAndBatches() {
   }
   contracts.value = (await listContractsApi({ companyId: selectedCompanyId.value })) ?? [];
   batches.value = (await listBatchesApi({ companyId: selectedCompanyId.value })) ?? [];
+  const contractStillExists = contracts.value.some(
+    (item) => String(item.contractId ?? '') === selectedContractId.value,
+  );
+  if (!contractStillExists) {
+    selectedContractId.value =
+      contracts.value.length > 0 ? String(contracts.value[0]?.contractId ?? '') : '';
+  }
   const stillExists = batches.value.some(
     (item) => String(item.batchId ?? '') === selectedBatchId.value,
   );
   if (!stillExists) {
-    selectedBatchId.value = batches.value.length > 0 ? String(batches.value[0]?.batchId ?? '') : '';
+    const list = contractBatches.value;
+    selectedBatchId.value = list.length > 0 ? String(list[0]?.batchId ?? '') : '';
   }
 }
 
@@ -446,7 +522,7 @@ async function loadRosterSummary() {
 }
 
 async function loadRoster() {
-  if (!selectedBatchId.value) {
+  if (!selectedBatchId.value && !selectedContractId.value) {
     rosterRows.value = [];
     rosterTotal.value = 0;
     rosterSummary.value = null;
@@ -455,7 +531,8 @@ async function loadRoster() {
   rosterLoading.value = true;
   try {
     const resp = await pageRosterApi({
-      batchId: selectedBatchId.value,
+      batchId: selectedBatchId.value || undefined,
+      contractId: !selectedBatchId.value ? selectedContractId.value || undefined : undefined,
       enrollmentFilter: rosterEnrollmentFilter.value || undefined,
       arrivalStatusCode: rosterArrivalFilter.value || undefined,
       pageNo: rosterPageNo.value,
@@ -489,23 +566,57 @@ async function loadRoster() {
 function resetCompanyForm() {
   companyForm.value = {
     companyId: '',
+    parentId: '',
     name: '',
     contactName: '',
     contactPhone: '',
   };
 }
 
-function editCompany(row: CompanyRowDto) {
+function openCreateCompany() {
+  resetCompanyForm();
+  if (selectedCompanyId.value) {
+    companyForm.value.parentId = selectedCompanyId.value;
+  }
+  companyDialogVisible.value = true;
+}
+
+function editCompany(row: CompanyTreeNodeDto) {
   const companyId = String(row.companyId ?? '');
   if (companyId) {
     selectedCompanyId.value = companyId;
   }
   companyForm.value = {
     companyId,
+    parentId: String(row.parentId ?? ''),
     name: row.name ?? '',
     contactName: row.contactName ?? '',
     contactPhone: row.contactPhone ?? '',
   };
+  companyDialogVisible.value = true;
+}
+
+async function handleDeleteCompany() {
+  if (!companyForm.value.companyId) {
+    ElMessage.warning('请先选择要删除的单位');
+    return;
+  }
+  try {
+    await ElMessageBox.confirm('确认删除该单位？须无下级单位与关联合同。', '删除单位', {
+      type: 'warning',
+    });
+  } catch {
+    return;
+  }
+  await deleteCompanyApi({ companyId: companyForm.value.companyId });
+  ElMessage.success('单位已删除');
+  if (selectedCompanyId.value === companyForm.value.companyId) {
+    selectedCompanyId.value = '';
+  }
+  companyDialogVisible.value = false;
+  resetCompanyForm();
+  await loadCompanies();
+  await loadContractsAndBatches();
 }
 
 async function handleSaveCompany() {
@@ -515,6 +626,7 @@ async function handleSaveCompany() {
   }
   const resp = await saveCompanyApi({
     companyId: companyForm.value.companyId || undefined,
+    parentId: companyForm.value.parentId || undefined,
     name: companyForm.value.name,
     orgId: orgId.value,
     contactName: companyForm.value.contactName || undefined,
@@ -524,6 +636,7 @@ async function handleSaveCompany() {
   if (resp?.companyId != null) {
     selectedCompanyId.value = String(resp.companyId);
   }
+  companyDialogVisible.value = false;
   resetCompanyForm();
   await loadCompanies();
   await loadContractsAndBatches();
@@ -532,6 +645,10 @@ async function handleSaveCompany() {
 async function handleSaveContract() {
   if (!selectedCompanyId.value || contractForm.value.packageActivityIds.length === 0) {
     ElMessage.warning('请选择单位并至少选择一个套餐');
+    return;
+  }
+  if (!contractForm.value.contractTypeCode) {
+    ElMessage.warning('请选择合同类型');
     return;
   }
   if (contractForm.value.contractAmount == null || contractForm.value.contractAmount < 0) {
@@ -543,6 +660,7 @@ async function handleSaveContract() {
     companyId: selectedCompanyId.value,
     packageActivityIds: contractForm.value.packageActivityIds,
     contractName: contractForm.value.contractName || undefined,
+    contractTypeCode: contractForm.value.contractTypeCode,
     contractAmount: contractForm.value.contractAmount,
     validFrom: contractForm.value.validFrom || undefined,
     validTo: contractForm.value.validTo || undefined,
@@ -576,11 +694,11 @@ async function handleMarkContractPaid(row: ContractRowDto) {
 
 async function handleSaveBatch() {
   if (!batchForm.value.contractId || !batchForm.value.batchName) {
-    ElMessage.warning('请选择合同并填写批次名称');
+    ElMessage.warning('请选择合同并填写分组名称');
     return;
   }
-  if (!batchForm.value.packageActivityId) {
-    ElMessage.warning('请从合同可选套餐中选择本批次套餐');
+  if (batchForm.value.packageActivityIds.length === 0) {
+    ElMessage.warning('请从合同可选套餐中选择本分组套餐（可多选）');
     return;
   }
   const resp = await saveGroupBatchApi({
@@ -588,24 +706,28 @@ async function handleSaveBatch() {
     companyId: selectedCompanyId.value || undefined,
     contractId: batchForm.value.contractId,
     batchName: batchForm.value.batchName,
-    packageActivityId: batchForm.value.packageActivityId || undefined,
+    packageActivityIds: batchForm.value.packageActivityIds,
     bookingDate: batchForm.value.bookingDate || undefined,
     orgId: orgId.value || undefined,
   });
-  ElMessage.success(`批次已保存：${resp?.batchId ?? ''}`);
+  ElMessage.success(`分组已保存：${resp?.batchId ?? ''}`);
   batchForm.value = {
     batchId: '',
     contractId: '',
     batchName: '',
-    packageActivityId: '',
+    packageActivityIds: [],
     bookingDate: '',
   };
   await loadContractsAndBatches();
 }
 
 async function handleImportRoster() {
-  if (!selectedBatchId.value || !importForm.value.fullName?.trim()) {
-    ElMessage.warning('请选择批次并填写姓名');
+  if (!selectedBatchId.value || !selectedContractId.value || !selectedCompanyId.value) {
+    ElMessage.warning('请选择单位、合同与默认分组');
+    return;
+  }
+  if (!importForm.value.fullName?.trim()) {
+    ElMessage.warning('请填写姓名');
     return;
   }
   const row = importForm.value;
@@ -617,57 +739,36 @@ async function handleImportRoster() {
     ElMessage.warning(`请至少填写身份证、手机号或${noLabel}之一`);
     return;
   }
-  if (importAutoEnroll.value && !requireBatchPackage()) {
-    return;
-  }
   const payload: RosterImportRowDto = { ...importForm.value };
   if (rosterMemberKind.value === 'STUDENT') {
     payload.employeeNo = '';
   } else {
     payload.studentNo = '';
   }
-  const resp = await importRosterApi({
-    batchId: selectedBatchId.value,
+  const resp = await importRosterByContractApi({
+    contractId: selectedContractId.value,
+    defaultBatchId: selectedBatchId.value,
+    selectedCompanyId: selectedCompanyId.value,
     rows: [payload],
-    autoEnroll: importAutoEnroll.value,
     memberKind: rosterMemberKind.value,
     syncCampus: rosterMemberKind.value === 'STAFF' ? importSyncCampus.value : undefined,
   });
   const imported = resp?.importedCount ?? 0;
-  const enrolled = resp?.enrolledCount ?? 0;
-  const failCount = resp?.enrollmentFailures?.length ?? 0;
-  const campusFailCount = resp?.campusFailures?.length ?? 0;
+  const failCount = resp?.campusFailures?.length ?? 0;
   const campusSynced = resp?.campusSyncedCount ?? 0;
-  if (campusFailCount > 0) {
+  if (failCount > 0) {
     const first = resp?.campusFailures?.[0];
     ElMessage.warning(
-      `Campus 同步失败 ${campusFailCount} 人${first?.message ? `：${first.message}` : ''}`,
+      `Campus 同步失败 ${failCount} 人${first?.message ? `：${first.message}` : ''}`,
     );
     await loadRoster();
     return;
   }
-  if (importAutoEnroll.value) {
-    if (failCount > 0) {
-      const first = resp?.enrollmentFailures?.[0];
-      ElMessage.warning(
-        `导入 ${imported} 人，建单成功 ${enrolled} 人，失败 ${failCount} 人${first?.message ? `：${first.message}` : ''}`,
-      );
-    } else if (imported > 0) {
-      const campusNote =
-        rosterMemberKind.value === 'STAFF' && importSyncCampus.value && campusSynced > 0
-          ? `，Campus 同步 ${campusSynced} 人`
-          : '';
-      ElMessage.success(`导入并建单 ${enrolled} 人${campusNote}`);
-    } else {
-      ElMessage.info('该人员已在当前批次名册中');
-    }
-  } else {
-    const campusNote =
-      rosterMemberKind.value === 'STAFF' && importSyncCampus.value && campusSynced > 0
-        ? `，Campus 同步 ${campusSynced} 人`
-        : '';
-    ElMessage.success(`导入 ${imported} 人${campusNote}`);
-  }
+  const campusNote =
+    rosterMemberKind.value === 'STAFF' && importSyncCampus.value && campusSynced > 0
+      ? `，Campus 同步 ${campusSynced} 人`
+      : '';
+  ElMessage.success(imported > 0 ? `导入 ${imported} 人${campusNote}` : '该人员已在名册中');
   importForm.value = {
     fullName: '',
     genderEnum: '',
@@ -761,14 +862,11 @@ function handleCampusSelection(rows: CampusRosterCandidateDto[]) {
 
 async function handleImportCampusRoster() {
   if (!selectedBatchId.value || !selectedCompanyId.value) {
-    ElMessage.warning('请先选择单位和批次');
+    ElMessage.warning('请先选择单位和分组');
     return;
   }
   if (campusCandidates.value.length === 0) {
     ElMessage.warning('请先预览 Campus 名册');
-    return;
-  }
-  if (importAutoEnroll.value && !requireBatchPackage()) {
     return;
   }
   const targets =
@@ -788,23 +886,9 @@ async function handleImportCampusRoster() {
         campusPullKind.value === 'STUDENT' ? campusClassName.value || undefined : undefined,
       departmentId: campusPullKind.value === 'STAFF' ? campusDepartmentId.value : undefined,
       patientIds,
-      autoEnroll: importAutoEnroll.value,
     });
     const imported = resp?.importedCount ?? 0;
-    const enrolled = resp?.enrolledCount ?? 0;
-    const failCount = resp?.enrollmentFailures?.length ?? 0;
-    if (importAutoEnroll.value && failCount > 0) {
-      const first = resp?.enrollmentFailures?.[0];
-      ElMessage.warning(
-        `导入 ${imported} 人，建单成功 ${enrolled} 人，失败 ${failCount} 人${first?.message ? `：${first.message}` : ''}`,
-      );
-    } else {
-      ElMessage.success(
-        importAutoEnroll.value
-          ? `从 Campus 导入并建单 ${enrolled} 人`
-          : `从 Campus 导入 ${imported} 人`,
-      );
-    }
+    ElMessage.success(`从 Campus 导入 ${imported} 人`);
     await loadRoster();
   } catch (error) {
     console.error('从 Campus 导入失败:', error);
@@ -823,10 +907,10 @@ async function handleDownloadRosterTemplate(kind: RosterMemberKind) {
     }
     const defaultName =
       kind === 'STUDENT'
-        ? '团检名册导入模板_学生_v1.0.xlsx'
+        ? '团检名册导入模板_学生_v1.1.xlsx'
         : kind === 'STAFF'
-          ? '团检名册导入模板_教职工_v1.0.xlsx'
-          : '团检名册导入模板_企事业_v1.0.xlsx';
+          ? '团检名册导入模板_教职工_v1.1.xlsx'
+          : '团检名册导入模板_企事业_v1.1.xlsx';
     downloadBinaryExportFile(data, data.fileName ?? defaultName);
     ElMessage.success('模板已下载');
   } catch (error) {
@@ -836,11 +920,8 @@ async function handleDownloadRosterTemplate(kind: RosterMemberKind) {
 }
 
 function handleTemplateImportClick() {
-  if (!selectedBatchId.value) {
-    ElMessage.warning('请先选择批次');
-    return;
-  }
-  if (importAutoEnroll.value && !requireBatchPackage()) {
+  if (!selectedBatchId.value || !selectedContractId.value || !selectedCompanyId.value) {
+    ElMessage.warning('请先选择单位、合同与默认分组');
     return;
   }
   importTemplateInputRef.value?.click();
@@ -850,7 +931,7 @@ async function handleTemplateImportFileChange(event: Event) {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
   input.value = '';
-  if (!file || !selectedBatchId.value) {
+  if (!file || !selectedBatchId.value || !selectedContractId.value || !selectedCompanyId.value) {
     return;
   }
   if (!file.name.toLowerCase().endsWith('.xlsx')) {
@@ -861,15 +942,14 @@ async function handleTemplateImportFileChange(event: Event) {
   try {
     const fileBytes = await readFileAsBase64(file);
     const resp = await importRosterFromTemplateApi({
-      batchId: selectedBatchId.value,
+      contractId: selectedContractId.value,
+      defaultBatchId: selectedBatchId.value,
+      selectedCompanyId: selectedCompanyId.value,
       memberKind: rosterMemberKind.value,
       fileBytes,
-      autoEnroll: importAutoEnroll.value,
       syncCampus: rosterMemberKind.value === 'STAFF' ? importSyncCampus.value : undefined,
     });
     const imported = resp?.importedCount ?? 0;
-    const enrolled = resp?.enrolledCount ?? 0;
-    const failCount = resp?.enrollmentFailures?.length ?? 0;
     const campusFailCount = resp?.campusFailures?.length ?? 0;
     const campusSynced = resp?.campusSyncedCount ?? 0;
     if (campusFailCount > 0) {
@@ -880,26 +960,11 @@ async function handleTemplateImportFileChange(event: Event) {
       await loadRoster();
       return;
     }
-    if (importAutoEnroll.value) {
-      if (failCount > 0) {
-        const first = resp?.enrollmentFailures?.[0];
-        ElMessage.warning(
-          `导入 ${imported} 人，建单成功 ${enrolled} 人，失败 ${failCount} 人${first?.message ? `：${first.message}` : ''}`,
-        );
-      } else {
-        const campusNote =
-          rosterMemberKind.value === 'STAFF' && importSyncCampus.value && campusSynced > 0
-            ? `，Campus 同步 ${campusSynced} 人`
-            : '';
-        ElMessage.success(`模板导入并建单 ${enrolled} 人${campusNote}`);
-      }
-    } else {
-      const campusNote =
-        rosterMemberKind.value === 'STAFF' && importSyncCampus.value && campusSynced > 0
-          ? `，Campus 同步 ${campusSynced} 人`
-          : '';
-      ElMessage.success(`模板导入 ${imported} 人${campusNote}`);
-    }
+    const campusNote =
+      rosterMemberKind.value === 'STAFF' && importSyncCampus.value && campusSynced > 0
+        ? `，Campus 同步 ${campusSynced} 人`
+        : '';
+    ElMessage.success(`模板导入 ${imported} 人${campusNote}`);
     await loadRoster();
   } catch (error) {
     console.error('模板导入失败:', error);
@@ -913,66 +978,178 @@ function handleRosterSelection(rows: GroupRosterRowDto[]) {
   selectedRosterRows.value = rows;
 }
 
-function requireSelectedRosterIds() {
-  const ids = selectedRosterRows.value.map((row) => String(row.rosterId ?? '')).filter(Boolean);
-  if (ids.length === 0) {
-    ElMessage.warning('请先勾选名册人员');
-    return null;
+function openPackagePick(target: GroupRosterRowDto | GroupRosterRowDto[]) {
+  packagePickTarget.value = target;
+  if (Array.isArray(target)) {
+    packagePickValue.value = '';
+  } else {
+    packagePickValue.value = resolveDefaultPackageId(target);
   }
-  return ids;
+  packagePickOpen.value = true;
+}
+
+function packagePickOptions() {
+  const target = packagePickTarget.value;
+  if (!target) return packages.value;
+  if (Array.isArray(target)) {
+    const first = target[0];
+    return first ? rosterPackageOptions(first) : packages.value;
+  }
+  return rosterPackageOptions(target);
+}
+
+async function submitPackagePick() {
+  const target = packagePickTarget.value;
+  if (!target) return;
+  if (!packagePickValue.value) {
+    ElMessage.warning('请选择套餐');
+    return;
+  }
+  packagePickLoading.value = true;
+  try {
+    if (Array.isArray(target)) {
+      const items: RosterEnrollmentItemDto[] = target
+        .filter((row) => row.rosterId)
+        .map((row) => ({
+          rosterId: String(row.rosterId),
+          packageActivityId: packagePickValue.value,
+        }));
+      const resp = await confirmBatchEnrollmentApi({
+        items,
+        orgId: orgId.value || undefined,
+      });
+      const failCount = resp?.failures?.length ?? 0;
+      if (failCount > 0) {
+        const first = resp?.failures?.[0];
+        ElMessage.warning(
+          `成功 ${resp?.successCount ?? 0} 人，失败 ${failCount} 人${first?.message ? `：${first.message}` : ''}`,
+        );
+      } else {
+        ElMessage.success(`已成功建单 ${resp?.successCount ?? 0} 人`);
+      }
+      selectedRosterRows.value = [];
+    } else if (target.rosterId) {
+      if (isRosterEnrolled(target)) {
+        await changeRosterSelectedPackageApi({
+          rosterId: String(target.rosterId),
+          packageActivityId: packagePickValue.value,
+        });
+        ElMessage.success('套餐已更换');
+      } else {
+        await selectRosterPackageApi({
+          rosterId: String(target.rosterId),
+          packageActivityId: packagePickValue.value,
+          orgId: orgId.value || undefined,
+        });
+        ElMessage.success(`${target.fullName ?? ''} 已选定并建单`);
+      }
+    }
+    packagePickOpen.value = false;
+    await loadRoster();
+  } finally {
+    packagePickLoading.value = false;
+  }
+}
+
+function openBatchChange(row: GroupRosterRowDto) {
+  batchChangeTarget.value = row;
+  batchChangeTargetBatchId.value = String(row.batchId ?? '');
+  batchChangeOpen.value = true;
+}
+
+async function submitBatchChange() {
+  const row = batchChangeTarget.value;
+  if (!row?.rosterId || !batchChangeTargetBatchId.value) {
+    ElMessage.warning('请选择目标分组');
+    return;
+  }
+  try {
+    await updateRosterBatchApi({
+      rosterId: String(row.rosterId),
+      targetBatchId: batchChangeTargetBatchId.value,
+    });
+    ElMessage.success('换组成功');
+    batchChangeOpen.value = false;
+    await loadRoster();
+  } catch (error) {
+    console.error('换组失败', error);
+  }
 }
 
 async function handleBatchEnrollment() {
-  const rosterIds = requireSelectedRosterIds();
-  if (!rosterIds) return;
-  const batchPackage = requireBatchPackage();
-  if (!batchPackage) return;
-  await ElMessageBox.confirm(
-    `批次「${batchPackage.batchName}」将使用套餐「${batchPackage.pkgName}」为 ${rosterIds.length} 人免收费建单，确认？`,
-    '批量建单',
-    { type: 'warning' },
-  );
-  rosterEnrollLoading.value = true;
-  try {
-    const resp = await confirmBatchEnrollmentApi({
-      rosterIds,
-      orgId: orgId.value || undefined,
-    });
-    const failCount = resp?.failures?.length ?? 0;
-    if (failCount > 0) {
-      const first = resp?.failures?.[0];
-      ElMessage.warning(
-        `成功 ${resp?.successCount ?? 0} 人，失败 ${failCount} 人${first?.message ? `：${first.message}` : ''}`,
-      );
-    } else {
-      ElMessage.success(`已成功建单 ${resp?.successCount ?? 0} 人`);
-    }
-    selectedRosterRows.value = [];
-    await loadRoster();
-  } finally {
-    rosterEnrollLoading.value = false;
+  const rows = selectedRosterRows.value.filter((row) => !isRosterEnrolled(row) && row.rosterId);
+  if (rows.length === 0) {
+    ElMessage.warning('请勾选未建单人员');
+    return;
   }
+  const allSingleOption = rows.every((row) => (row.optionalPackageActivityIds?.length ?? 0) <= 1);
+  if (allSingleOption) {
+    const items: RosterEnrollmentItemDto[] = [];
+    for (const row of rows) {
+      const pkgId = resolveDefaultPackageId(row);
+      if (!pkgId) {
+        ElMessage.warning(`${row.fullName ?? ''} 须先维护可选套餐`);
+        return;
+      }
+      items.push({ rosterId: String(row.rosterId), packageActivityId: pkgId });
+    }
+    await ElMessageBox.confirm(`将为 ${items.length} 人选定套餐并建单，确认？`, '批量建单', {
+      type: 'warning',
+    });
+    rosterEnrollLoading.value = true;
+    try {
+      const resp = await confirmBatchEnrollmentApi({ items, orgId: orgId.value || undefined });
+      const failCount = resp?.failures?.length ?? 0;
+      if (failCount > 0) {
+        const first = resp?.failures?.[0];
+        ElMessage.warning(
+          `成功 ${resp?.successCount ?? 0} 人，失败 ${failCount} 人${first?.message ? `：${first.message}` : ''}`,
+        );
+      } else {
+        ElMessage.success(`已成功建单 ${resp?.successCount ?? 0} 人`);
+      }
+      selectedRosterRows.value = [];
+      await loadRoster();
+    } finally {
+      rosterEnrollLoading.value = false;
+    }
+    return;
+  }
+  openPackagePick(rows);
 }
 
 async function handleSingleEnrollment(row: GroupRosterRowDto) {
   if (!row.rosterId) return;
-  const batchPackage = requireBatchPackage();
-  if (!batchPackage) return;
-  await ElMessageBox.confirm(
-    `将使用批次套餐「${batchPackage.pkgName}」为 ${row.fullName ?? ''} 建单，确认？`,
-    '团检建单',
-    { type: 'warning' },
-  );
-  const resp = await confirmBatchEnrollmentApi({
-    rosterIds: [String(row.rosterId)],
-    orgId: orgId.value || undefined,
-  });
-  if ((resp?.failures?.length ?? 0) > 0) {
-    ElMessage.error(resp?.failures?.[0]?.message ?? '建单失败');
+  const defaultPkg = resolveDefaultPackageId(row);
+  if (defaultPkg && (row.optionalPackageActivityIds?.length ?? 0) <= 1) {
+    await ElMessageBox.confirm(
+      `将使用套餐「${packageLabel(defaultPkg, packages.value)}」为 ${row.fullName ?? ''} 建单，确认？`,
+      '选定建单',
+      { type: 'warning' },
+    );
+    const resp = await selectRosterPackageApi({
+      rosterId: String(row.rosterId),
+      packageActivityId: defaultPkg,
+      orgId: orgId.value || undefined,
+    });
+    if (!resp?.encounterId) {
+      ElMessage.error('建单失败');
+      return;
+    }
+    ElMessage.success(`${row.fullName ?? ''} 已建单`);
+    await loadRoster();
     return;
   }
-  ElMessage.success(`${row.fullName ?? ''} 已建单`);
-  await loadRoster();
+  openPackagePick(row);
+}
+
+async function handleChangePackage(row: GroupRosterRowDto) {
+  if (!row.rosterId || !isRosterEnrolled(row)) return;
+  if (row.arrivalStatusCode === ARRIVAL_STATUS.ARRIVED) {
+    ElMessage.warning('已到检，不可换套餐');
+    return;
+  }
+  openPackagePick(row);
 }
 
 async function handleCancelEnrollment(row: GroupRosterRowDto) {
@@ -1065,12 +1242,24 @@ function onRosterSizeChange(size: number) {
 }
 
 watch(selectedCompanyId, () => {
+  selectedContractId.value = '';
   selectedBatchId.value = '';
   rosterMemberKind.value = inferRosterMemberKind(selectedCompany.value);
   importForm.value.studentNo = '';
   importForm.value.employeeNo = '';
   void loadCampusPullOptions();
   loadContractsAndBatches();
+});
+
+watch(selectedContractId, () => {
+  const contractBatchesList = contractBatches.value;
+  const stillExists = contractBatchesList.some(
+    (item) => String(item.batchId ?? '') === selectedBatchId.value,
+  );
+  if (!stillExists) {
+    selectedBatchId.value =
+      contractBatchesList.length > 0 ? String(contractBatchesList[0]?.batchId ?? '') : '';
+  }
 });
 
 watch(rosterMemberKind, (kind) => {
@@ -1085,14 +1274,11 @@ watch(
   () => batchForm.value.contractId,
   () => {
     const allowed = batchContractPackages.value;
-    if (
-      batchForm.value.packageActivityId &&
-      !allowed.some((item) => String(item.packageActivityId) === batchForm.value.packageActivityId)
-    ) {
-      batchForm.value.packageActivityId = '';
-    }
-    if (!batchForm.value.packageActivityId && allowed.length === 1) {
-      batchForm.value.packageActivityId = String(allowed[0]?.packageActivityId ?? '');
+    batchForm.value.packageActivityIds = batchForm.value.packageActivityIds.filter((id) =>
+      allowed.some((item) => String(item.packageActivityId) === id),
+    );
+    if (batchForm.value.packageActivityIds.length === 0 && allowed.length === 1) {
+      batchForm.value.packageActivityIds = [String(allowed[0]?.packageActivityId ?? '')];
     }
   },
 );
@@ -1105,6 +1291,9 @@ watch(selectedBatchId, () => {
 });
 
 watch(activeTab, (tab) => {
+  if (tab === 'contract-batch') {
+    void loadContractTypes();
+  }
   if (tab === 'roster') {
     rosterPageNo.value = 1;
     loadRoster();
@@ -1112,7 +1301,7 @@ watch(activeTab, (tab) => {
 });
 
 onMounted(async () => {
-  await Promise.all([loadCompanies(), loadPackages(), loadActivities()]);
+  await Promise.all([loadCompanies(), loadPackages(), loadActivities(), loadContractTypes()]);
   await loadContractsAndBatches();
   await loadCampusPullOptions();
 });
@@ -1129,49 +1318,73 @@ onMounted(async () => {
 
     <ElTabs v-model="activeTab" class="group-check-tabs">
       <ElTabPane label="单位档案" name="company">
-        <div class="split-grid">
-          <ElCard shadow="never" class="panel">
-            <div class="panel__head">单位列表</div>
-            <p class="panel__hint">点击行可编辑，并设为「合同与批次 / 名册导入」的筹备单位</p>
-            <ElTable
-              :data="companies"
-              stripe
-              height="360"
-              highlight-current-row
-              @row-click="editCompany"
-            >
-              <ElTableColumn prop="name" label="单位名称" min-width="160" show-overflow-tooltip />
-              <ElTableColumn prop="contactName" label="联系人" width="100" />
-              <ElTableColumn prop="contactPhone" label="电话" width="120" />
-              <ElTableColumn label="操作" width="80" fixed="right">
-                <template #default="{ row }">
-                  <ElButton link type="primary" @click.stop="editCompany(row)">编辑</ElButton>
-                </template>
-              </ElTableColumn>
-            </ElTable>
-          </ElCard>
-
-          <ElCard shadow="never" class="panel">
-            <div class="panel__head">
-              {{ companyForm.companyId ? '编辑单位' : '新建单位' }}
+        <ElCard shadow="never" class="panel">
+          <div class="panel__head panel__head--row">
+            <div>
+              <div>单位树</div>
+              <p class="panel__hint panel__hint--inline">点击节点可编辑，并设为筹备单位</p>
             </div>
-            <ElForm label-width="88px">
-              <ElFormItem label="单位名称" required>
-                <ElInput v-model="companyForm.name" placeholder="请输入单位名称" />
-              </ElFormItem>
-              <ElFormItem label="联系人">
-                <ElInput v-model="companyForm.contactName" />
-              </ElFormItem>
-              <ElFormItem label="联系电话">
-                <ElInput v-model="companyForm.contactPhone" />
-              </ElFormItem>
-              <ElFormItem>
-                <ElButton type="primary" @click="handleSaveCompany">保存单位</ElButton>
-                <ElButton @click="resetCompanyForm">清空</ElButton>
-              </ElFormItem>
-            </ElForm>
-          </ElCard>
-        </div>
+            <ElButton type="primary" @click="openCreateCompany">新建单位</ElButton>
+          </div>
+          <ElTree
+            v-if="companyTreeRoots.length"
+            :data="companyTreeRoots"
+            node-key="companyId"
+            :props="{ label: 'name', children: 'children' }"
+            highlight-current
+            default-expand-all
+            :current-node-key="selectedCompanyId || undefined"
+            @node-click="editCompany"
+          />
+          <ElEmpty v-else description="暂无单位，请先新建">
+            <ElButton type="primary" @click="openCreateCompany">新建单位</ElButton>
+          </ElEmpty>
+        </ElCard>
+
+        <ElDialog
+          v-model="companyDialogVisible"
+          :title="companyForm.companyId ? '编辑单位' : '新建单位'"
+          width="480px"
+          destroy-on-close
+          @closed="resetCompanyForm"
+        >
+          <ElForm label-width="88px">
+            <ElFormItem label="上级单位">
+              <ElSelect
+                v-model="companyForm.parentId"
+                filterable
+                clearable
+                placeholder="空为根节点"
+                style="width: 100%"
+              >
+                <ElOption
+                  v-for="item in flatCompanies.filter(
+                    (c) => String(c.companyId) !== companyForm.companyId,
+                  )"
+                  :key="String(item.companyId)"
+                  :label="item.name"
+                  :value="String(item.companyId)"
+                />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="单位名称" required>
+              <ElInput v-model="companyForm.name" placeholder="请输入单位名称" />
+            </ElFormItem>
+            <ElFormItem label="联系人">
+              <ElInput v-model="companyForm.contactName" />
+            </ElFormItem>
+            <ElFormItem label="联系电话">
+              <ElInput v-model="companyForm.contactPhone" />
+            </ElFormItem>
+          </ElForm>
+          <template #footer>
+            <ElButton v-if="companyForm.companyId" type="danger" plain @click="handleDeleteCompany">
+              删除
+            </ElButton>
+            <ElButton @click="companyDialogVisible = false">取消</ElButton>
+            <ElButton type="primary" @click="handleSaveCompany">保存</ElButton>
+          </template>
+        </ElDialog>
       </ElTabPane>
 
       <ElTabPane label="合同与批次" name="contract-batch">
@@ -1181,11 +1394,11 @@ onMounted(async () => {
             v-model="selectedCompanyId"
             filterable
             clearable
-            placeholder="选择要维护合同/批次的单位"
+            placeholder="选择要维护合同/分组的单位"
             class="scope-bar__select scope-bar__select--company"
           >
             <ElOption
-              v-for="item in companies"
+              v-for="item in flatCompanies"
               :key="String(item.companyId)"
               :label="item.name"
               :value="String(item.companyId)"
@@ -1197,7 +1410,7 @@ onMounted(async () => {
             :disabled="!selectedCompanyId"
             @click="loadContractsAndBatches"
           >
-            刷新合同与批次
+            刷新合同与分组
           </ElButton>
         </div>
         <div v-if="!selectedCompanyId" class="empty-wrap">
@@ -1221,6 +1434,20 @@ onMounted(async () => {
                     :key="String(item.packageActivityId)"
                     :label="packageDisplayName(item)"
                     :value="String(item.packageActivityId)"
+                  />
+                </ElSelect>
+              </ElFormItem>
+              <ElFormItem label="合同类型" required>
+                <ElSelect
+                  v-model="contractForm.contractTypeCode"
+                  placeholder="选择合同类型"
+                  style="width: 100%"
+                >
+                  <ElOption
+                    v-for="item in contractTypes"
+                    :key="item.typeCode"
+                    :label="item.typeName"
+                    :value="item.typeCode!"
                   />
                 </ElSelect>
               </ElFormItem>
@@ -1284,6 +1511,7 @@ onMounted(async () => {
               @row-click="editContract"
             >
               <ElTableColumn prop="contractName" label="合同" min-width="120" />
+              <ElTableColumn prop="contractTypeName" label="合同类型" width="100" />
               <ElTableColumn label="合同金额" width="110" align="right">
                 <template #default="{ row }">
                   {{ formatContractAmount(row.contractAmount) }}
@@ -1318,7 +1546,7 @@ onMounted(async () => {
           </ElCard>
 
           <ElCard shadow="never" class="panel">
-            <div class="panel__head">批次维护</div>
+            <div class="panel__head">体检分组维护</div>
             <ElForm label-width="88px">
               <ElFormItem label="合同" required>
                 <ElSelect v-model="batchForm.contractId" placeholder="选择合同" style="width: 100%">
@@ -1330,14 +1558,15 @@ onMounted(async () => {
                   />
                 </ElSelect>
               </ElFormItem>
-              <ElFormItem label="批次名称" required>
+              <ElFormItem label="分组名称" required>
                 <ElInput v-model="batchForm.batchName" placeholder="如 第一批" />
               </ElFormItem>
-              <ElFormItem label="套餐" required>
+              <ElFormItem label="可选套餐" required>
                 <ElSelect
-                  v-model="batchForm.packageActivityId"
+                  v-model="batchForm.packageActivityIds"
+                  multiple
                   filterable
-                  placeholder="从合同可选套餐中选择"
+                  placeholder="从合同可选套餐中选择（可多选）"
                   style="width: 100%"
                   :disabled="!batchForm.contractId"
                 >
@@ -1358,14 +1587,20 @@ onMounted(async () => {
                 />
               </ElFormItem>
               <ElFormItem>
-                <ElButton type="primary" @click="handleSaveBatch">保存批次</ElButton>
+                <ElButton type="primary" @click="handleSaveBatch">保存分组</ElButton>
               </ElFormItem>
             </ElForm>
             <ElTable :data="batches" stripe class="mt-4" max-height="220">
-              <ElTableColumn prop="batchName" label="批次" min-width="120" />
-              <ElTableColumn label="套餐" min-width="160">
+              <ElTableColumn prop="batchName" label="分组" min-width="120" />
+              <ElTableColumn label="可选套餐" min-width="160">
                 <template #default="{ row }">
-                  {{ packageLabel(String(row.packageActivityId ?? ''), packages) }}
+                  {{
+                    packageLabels(
+                      row.packageActivityIds ??
+                        (row.packageActivityId ? [row.packageActivityId] : []),
+                      packages,
+                    )
+                  }}
                 </template>
               </ElTableColumn>
               <ElTableColumn prop="bookingDate" label="预约日" width="110" />
@@ -1393,23 +1628,39 @@ onMounted(async () => {
             class="scope-bar__select scope-bar__select--company"
           >
             <ElOption
-              v-for="item in companies"
+              v-for="item in flatCompanies"
               :key="String(item.companyId)"
               :label="item.name"
               :value="String(item.companyId)"
             />
           </ElSelect>
-          <span class="scope-bar__label">导入批次</span>
+          <span class="scope-bar__label">合同</span>
           <ElSelect
-            v-model="selectedBatchId"
+            v-model="selectedContractId"
             filterable
             clearable
-            placeholder="选择批次"
+            placeholder="选择合同"
             class="scope-bar__select scope-bar__select--batch"
             :disabled="!selectedCompanyId"
           >
             <ElOption
-              v-for="item in batches"
+              v-for="item in contracts"
+              :key="String(item.contractId)"
+              :label="item.contractName || String(item.contractId)"
+              :value="String(item.contractId)"
+            />
+          </ElSelect>
+          <span class="scope-bar__label">默认分组</span>
+          <ElSelect
+            v-model="selectedBatchId"
+            filterable
+            clearable
+            placeholder="选择分组"
+            class="scope-bar__select scope-bar__select--batch"
+            :disabled="!selectedContractId"
+          >
+            <ElOption
+              v-for="item in contractBatches"
               :key="String(item.batchId)"
               :label="item.batchName"
               :value="String(item.batchId)"
@@ -1417,8 +1668,8 @@ onMounted(async () => {
           </ElSelect>
           <span v-if="selectedBatchLabel" class="scope-bar__hint">{{ selectedBatchLabel }}</span>
         </div>
-        <div v-if="!selectedBatchId" class="empty-wrap">
-          <ElEmpty description="请先选择筹备单位与导入批次" />
+        <div v-if="!selectedContractId" class="empty-wrap">
+          <ElEmpty description="请先选择筹备单位与合同" />
         </div>
         <template v-else>
           <div class="stats-grid mb-4">
@@ -1467,7 +1718,7 @@ onMounted(async () => {
                 上传模板导入
               </ElButton>
               <span class="text-xs text-gray-500">
-                按上方「名册类型」选择对应模板；与手工录入共用「导入后自动建单」选项。
+                模板 v1.1 含「分组」「套餐」列；导入仅挂名册，建单须选定套餐。
               </span>
             </div>
             <input
@@ -1479,7 +1730,7 @@ onMounted(async () => {
             />
           </ElCard>
 
-          <ElCard shadow="never" class="panel mb-4">
+          <ElCard v-if="campusUiEnabled" shadow="never" class="panel mb-4">
             <div class="panel__head">从 Campus 拉取</div>
             <div class="panel__toolbar mb-2 flex flex-wrap items-center gap-2">
               <ElRadioGroup v-model="campusPullKind" size="small" @change="campusCandidates = []">
@@ -1611,7 +1862,6 @@ onMounted(async () => {
               </ElFormItem>
             </ElForm>
             <div class="panel__toolbar mb-2 flex flex-wrap items-center gap-4">
-              <ElCheckbox v-model="importAutoEnroll">导入后自动建单（使用当前批次套餐）</ElCheckbox>
               <ElCheckbox v-if="rosterMemberKind === 'STAFF'" v-model="importSyncCampus">
                 同步到 Campus 教职工档案
               </ElCheckbox>
@@ -1619,15 +1869,10 @@ onMounted(async () => {
             <div class="roster-import-hint text-xs text-gray-500">
               患者档案由系统自动匹配或创建；身份证、手机号、{{
                 rosterMemberNoFieldLabel
-              }}至少填一项。
+              }}至少填一项。导入后请在名册中选定套餐再建单。
               <template v-if="rosterMemberKind === 'STAFF' && importSyncCampus">
                 教职工类型将按工号写入 Campus 教职工表，部门须与 Campus 部门名称一致。
               </template>
-              <template v-if="importAutoEnroll"
-                >导入成功后将按批次套餐「{{
-                  packageLabel(String(selectedBatch?.packageActivityId ?? ''), packages)
-                }}」自动建单。</template
-              >
             </div>
           </ElCard>
 
@@ -1697,6 +1942,15 @@ onMounted(async () => {
                   {{ row.className || '—' }}
                 </template>
               </ElTableColumn>
+              <ElTableColumn label="选定套餐" min-width="120" show-overflow-tooltip>
+                <template #default="{ row }">
+                  {{
+                    row.selectedPackageActivityId
+                      ? packageLabel(String(row.selectedPackageActivityId), packages)
+                      : '—'
+                  }}
+                </template>
+              </ElTableColumn>
               <ElTableColumn label="建单" width="100">
                 <template #default="{ row }">
                   <ElTag :type="enrollmentTagType(row)" size="small">
@@ -1711,7 +1965,7 @@ onMounted(async () => {
                   </ElTag>
                 </template>
               </ElTableColumn>
-              <ElTableColumn label="操作" width="360" fixed="right">
+              <ElTableColumn label="操作" width="420" fixed="right">
                 <template #default="{ row }">
                   <ElButton
                     v-if="!isRosterEnrolled(row)"
@@ -1720,7 +1974,25 @@ onMounted(async () => {
                     size="small"
                     @click="handleSingleEnrollment(row)"
                   >
-                    建单
+                    选定建单
+                  </ElButton>
+                  <ElButton
+                    v-if="isRosterEnrolled(row) && row.arrivalStatusCode !== ARRIVAL_STATUS.ARRIVED"
+                    link
+                    type="primary"
+                    size="small"
+                    @click="handleChangePackage(row)"
+                  >
+                    换套餐
+                  </ElButton>
+                  <ElButton
+                    v-if="!isRosterEnrolled(row)"
+                    link
+                    type="primary"
+                    size="small"
+                    @click="openBatchChange(row)"
+                  >
+                    换组
                   </ElButton>
                   <ElButton
                     v-if="isRosterEnrolled(row)"
@@ -1794,7 +2066,7 @@ onMounted(async () => {
       <p v-if="adjustOrderDetail?.busNo" class="adjust-drawer__busno">
         流水号 {{ adjustOrderDetail.busNo }}
       </p>
-      <p class="adjust-drawer__hint">套餐内项目免收费；加项需在「团检加项收费」缴纳。</p>
+      <p class="adjust-drawer__hint">套餐内项目免收费；加项需在「体检收费」缴纳。</p>
       <div v-loading="adjustLoading" class="adjust-drawer__body">
         <div
           v-for="line in adjustOrderLines"
@@ -1835,6 +2107,53 @@ onMounted(async () => {
         </ElButton>
       </div>
     </ElDrawer>
+
+    <ElDialog
+      v-model="packagePickOpen"
+      :title="
+        Array.isArray(packagePickTarget)
+          ? '批量选定套餐'
+          : packagePickTarget && isRosterEnrolled(packagePickTarget)
+            ? '到检前换套餐'
+            : '选定套餐并建单'
+      "
+      width="420px"
+    >
+      <ElSelect v-model="packagePickValue" filterable placeholder="选择套餐" style="width: 100%">
+        <ElOption
+          v-for="item in packagePickOptions()"
+          :key="String(item.packageActivityId)"
+          :label="packageDisplayName(item)"
+          :value="String(item.packageActivityId)"
+        />
+      </ElSelect>
+      <template #footer>
+        <ElButton @click="packagePickOpen = false">取消</ElButton>
+        <ElButton type="primary" :loading="packagePickLoading" @click="submitPackagePick">
+          确认
+        </ElButton>
+      </template>
+    </ElDialog>
+
+    <ElDialog v-model="batchChangeOpen" title="换组" width="420px">
+      <ElSelect
+        v-model="batchChangeTargetBatchId"
+        filterable
+        placeholder="选择目标分组"
+        style="width: 100%"
+      >
+        <ElOption
+          v-for="item in contractBatches"
+          :key="String(item.batchId)"
+          :label="item.batchName"
+          :value="String(item.batchId)"
+        />
+      </ElSelect>
+      <template #footer>
+        <ElButton @click="batchChangeOpen = false">取消</ElButton>
+        <ElButton type="primary" @click="submitBatchChange">确认换组</ElButton>
+      </template>
+    </ElDialog>
   </Page>
 </template>
 
@@ -1895,6 +2214,17 @@ onMounted(async () => {
   margin: 0 0 12px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+
+.panel__hint--inline {
+  margin: 4px 0 0;
+}
+
+.panel__head--row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .stats-grid {

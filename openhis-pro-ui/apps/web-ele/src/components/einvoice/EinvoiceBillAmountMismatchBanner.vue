@@ -8,6 +8,7 @@ import { ElAlert, ElButton, ElMessage } from 'element-plus';
 
 import { getDocumentBriefByPaymentIdApi } from '#/api/einvoice-boss/document';
 import { formatMoneyDisplay, sumMoneyThenSettle } from '#/utils/format/money-scale';
+import { isEinvoiceUiEnabled } from '#/utils/project-optional-modules';
 
 const props = defineProps<{
   lineAmounts?: Array<number | string | null | undefined>;
@@ -21,9 +22,12 @@ const emit = defineEmits<{
 
 const router = useRouter();
 const { hasAccessByCodes } = useAccess();
+const einvoiceUiEnabled = isEinvoiceUiEnabled();
 
-const canViewEinvoice = computed(() =>
-  hasAccessByCodes(['einvoice-boss.document.view', 'einvoice-boss.document.adjust']),
+const canViewEinvoice = computed(
+  () =>
+    einvoiceUiEnabled &&
+    hasAccessByCodes(['einvoice-boss.document.view', 'einvoice-boss.document.adjust']),
 );
 
 const itemSum = computed(() => sumMoneyThenSettle(props.lineAmounts ?? []));

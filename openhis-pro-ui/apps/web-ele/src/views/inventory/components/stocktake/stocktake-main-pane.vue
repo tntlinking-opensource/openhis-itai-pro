@@ -126,6 +126,7 @@ import {
   resolveInvDocPrintApplyTimeText,
   warnInventoryLocationRequiredByLabel,
 } from '#/utils/inventory/inventory-workbench-list';
+import { matchSelectOptionKeyword } from '#/utils/select-option-keyword';
 import {
   buildInventoryLocationHeadFormRules,
   clearInventoryHeadFormValidation,
@@ -226,15 +227,39 @@ const effectivePractitionerOptions = computed(() =>
   }),
 );
 
-/** 详情经手人不在下拉时临时 pin，避免 ElSelect 只显示裸 id。 */
+/** 经手人下拉过滤关键字（名称/拼音/五笔） */
+const practitionerFilterKeyword = ref('');
+
+/** 经手人下拉：按关键字过滤后的选项 */
+const displayedPractitionerOptions = computed(() => {
+  const kw = practitionerFilterKeyword.value;
+  return effectivePractitionerOptions.value.filter((o) => matchSelectOptionKeyword(o, kw));
+});
+
+/** 经手人 ElSelect 输入过滤 */
+function handlePractitionerFilter(query: string) {
+  practitionerFilterKeyword.value = query;
+}
+
+/** 经手人下拉关闭时清空过滤，避免再次打开仍收窄 */
+function handlePractitionerDropdownVisible(open: boolean) {
+  if (!open) {
+    practitionerFilterKeyword.value = '';
+  }
+}
+
+/** 详情经手人不在下拉时临时 pin，保证回显 id 留在选项内（避免被登录人兜底覆盖）。 */
 function pinPractitionerOption(id: unknown, label?: string) {
   const v = String(id ?? '').trim();
   if (v === '') return;
-  const lbl = String(label ?? '').trim();
-  if (effectivePractitionerOptions.value.some((o) => o.value === v)) return;
-  if (lbl !== '' && lbl !== v) {
-    pinnedPractitionerOptions.value = [{ label: lbl, value: v }];
+  let lbl = String(label ?? '').trim();
+  // 无姓名时尝试从当前下拉取 label，仍没有则用 id 占位
+  if (lbl === '' || lbl === v) {
+    const hit = effectivePractitionerOptions.value.find((o) => o.value === v);
+    if (hit?.label) lbl = hit.label;
   }
+  if (effectivePractitionerOptions.value.some((o) => o.value === v)) return;
+  pinnedPractitionerOptions.value = [{ label: lbl !== '' ? lbl : v, value: v }];
 }
 
 /** 选品门禁：优先单头「盘点药库」，与侧栏「全部」筛选解耦。 */
@@ -1803,6 +1828,10 @@ watch(
   effectivePractitionerOptions,
   (opts) => {
     if (opts.length === 0) return;
+    // 已落库单据：经手人只认详情回显，禁止用登录人覆盖
+    if (!props.isDraftOrder && String(props.busNo ?? '').trim() !== '') {
+      return;
+    }
     const current = String(practitionerId.value ?? '').trim();
     if (!current || !opts.some((o) => o.value === current)) {
       practitionerId.value = resolveDefaultPractitionerIdForSelect(
@@ -1886,11 +1915,13 @@ watch(
                   class="w-full"
                   filterable
                   clearable
-                  placeholder="请选择经手人"
+                  placeholder="请选择经手人（支持拼音）"
                   :disabled="!documentEditable"
+                  :filter-method="handlePractitionerFilter"
+                  @visible-change="handlePractitionerDropdownVisible"
                 >
                   <ElOption
-                    v-for="p in effectivePractitionerOptions"
+                    v-for="p in displayedPractitionerOptions"
                     :key="String(p.value)"
                     :label="p.label"
                     :value="p.value"

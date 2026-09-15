@@ -123,9 +123,6 @@ export interface DispenseSummaryMedicationsRequest {
   receiverId: string;
   preparerPractitionerId: string;
   traceLines?: SummaryDispenseTraceLineSubmitDto[];
-  /** @deprecated CHS 启用即上传，请使用 contractBusNo */
-  medicareUploadEnabled?: boolean;
-  contractBusNo?: string;
 }
 
 export interface DispenseSummaryMedicationsResponse {

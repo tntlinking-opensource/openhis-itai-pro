@@ -35,7 +35,7 @@ import {
 } from '#/api/outpatient-registration';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
-/** 挂号收银默认支付渠道：银联扫码（可改选现金/微信等） */
+/** 挂号收银优先默认渠道：有银联则扫码，否则现金 */
 export const DEFAULT_REGISTER_PAY_CHANNEL_CODE = 'SCAN_PAY';
 
 /**

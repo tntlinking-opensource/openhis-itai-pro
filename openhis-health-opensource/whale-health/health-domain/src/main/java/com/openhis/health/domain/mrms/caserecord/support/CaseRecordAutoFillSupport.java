@@ -26,6 +26,7 @@ import com.openhis.health.domain.administration.patient.valueobject.Address;
 import com.openhis.health.domain.administration.patient.valueobject.ContactPerson;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
+import com.openhis.health.domain.clinical.conditiondefinition.queries.model.ClinicalDiagnosisPresentationQueryModel;
 import com.openhis.health.domain.clinical.conditiondefinition.queries.model.ConditionDefinitionBatchItemQueryModel;
 import com.openhis.health.domain.clinical.conditiondefinition.service.ConditionDefinitionQueryService;
 import com.openhis.health.domain.clinical.procedure.entity.Procedure;
@@ -34,6 +35,7 @@ import com.openhis.health.domain.clinical.procedure.service.ProcedureQueryServic
 import com.openhis.health.domain.custom.encounterhistory.queries.model.EncounterHistoryMilestoneQueryModel;
 import com.openhis.health.domain.custom.encounterhistory.service.EncounterHistoryQueryService;
 import com.openhis.health.domain.mrms.caserecord.resolver.AdmissionConditionResolver;
+import com.openhis.health.domain.mrms.caserecord.resolver.HomepageSelfpayAmtResolver;
 import com.openhis.health.domain.mrms.caserecord.vo.DiagnosisLineSnapshot;
 import com.openhis.health.domain.mrms.caserecord.vo.EncounterSnapshot;
 import com.openhis.health.domain.mrms.caserecord.vo.FeeSummarySnapshot;
@@ -44,6 +46,8 @@ import com.openhis.health.domain.mrms.caserecord.vo.TransferLineSnapshot;
 import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
 import com.openhis.health.domain.medication.medicationdefinition.service.MedicationDefinitionQueryService;
 import com.openhis.health.domain.share.constants.CustomConstants;
+import com.openhis.health.domain.share.constants.DoctorStationDiagnosisConstants;
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.MrmsConstants;
 import com.openhis.health.domain.share.constants.ServiceRequestCategoryConstants;
@@ -109,6 +113,8 @@ public class CaseRecordAutoFillSupport {
     private final DeviceDefinitionQueryService deviceDefinitionQueryService;
     private final ChargeItemQueryService chargeItemQueryService;
     private final Optional<AdmissionConditionResolver> admissionConditionResolver;
+
+    private final Optional<HomepageSelfpayAmtResolver> homepageSelfpayAmtResolver;
 
     /**
      * 加载患者基础信息快照（adm_patient + 地址/联系人）。
@@ -288,10 +294,11 @@ public class CaseRecordAutoFillSupport {
     }
 
     /**
-     * 按就诊收费明细汇总医疗费总额与 4401 费用分项。
+     * 按就诊收费明细汇总医疗费总额与 4401 费用分项（供费用快照重算写库）。
      *
      * <p>口径：待结算+已结算占用（与住院费用占用合计一致）；分项按目录
-     * {@code mr_settlement_type_code} 映射，未维护归入 {@code oth_fee}。</p>
+     * {@code mr_settlement_type_code} 映射，未维护归入 {@code oth_fee}。
+     * 调用方：{@code CaseRecordHomepageDomainService}「重新统计」/ 空快照补种。</p>
      *
      * @param encounterId 就诊主键
      * @return 费用快照；无费用时总额为 0、分项空
@@ -338,6 +345,9 @@ public class CaseRecordAutoFillSupport {
             feeItems.put(feeKey, MonetaryAmountSupport.scaleCalc(previous.add(row.getTotalPrice())));
         }
         snap.setFeeItems(feeItems);
+        homepageSelfpayAmtResolver
+                .map(resolver -> resolver.resolveByEncounterId(encounterId, snap.getMedfeeSumamt()))
+                .ifPresent(snap::setSelfpayAmt);
         return snap;
     }
 
@@ -473,7 +483,10 @@ public class CaseRecordAutoFillSupport {
     }
 
     /**
-     * 将机构 busNo/名称写入快照入院或出院科别字段。
+     * 将机构<strong>医保编码</strong>/名称写入快照入院或出院科别字段。
+     *
+     * <p>4401/4101A {@code adm_caty}/{@code dscg_caty} 须为科室维护的 {@code yb_no}
+     *（如 {@code A50.13}，长度 1–10），禁止写入院内 {@code bus_no}（如 {@code OR0007.OR0022}）。</p>
      *
      * @param snap       就诊快照
      * @param organization 组织实体
@@ -483,8 +496,12 @@ public class CaseRecordAutoFillSupport {
         if (organization == null) {
             return;
         }
-        String code = trimToNull(organization.getBusNo());
-        String name = trimToNull(organization.getName());
+        // 科别出站码 = 科室医保编码；无医保编码则不写 code，避免误用 bus_no 被平台拒收
+        String code = trimToNull(organization.getYbNo());
+        String name = trimToNull(organization.getYbName());
+        if (name == null) {
+            name = trimToNull(organization.getName());
+        }
         // 入院科别写入 adm_* 字段
         if (admission) {
             if (code != null) {
@@ -919,8 +936,35 @@ public class CaseRecordAutoFillSupport {
         String diagCode = null;
         String diagName = null;
         if (definition != null) {
-            diagCode = trimToNull(definition.getConditionCode());
-            diagName = trimToNull(definition.getName());
+            ClinicalDiagnosisPresentationQueryModel presentation =
+                    conditionDefinitionQueryService.resolveClinicalPresentationFromDefinition(definition);
+            if (presentation != null) {
+                diagCode = trimToNull(presentation.getClinicCode());
+                diagName = trimToNull(presentation.getClinicName());
+                boolean isTcm = DoctorStationDiagnosisConstants.DIAGNOSIS_KIND_TAG_TCM.equals(
+                        presentation.getDiagnosisKind());
+                // 中医：主列落目录码/名（兼容仅填了 yb 的旧口径）
+                if (isTcm) {
+                    if (diagCode == null) {
+                        diagCode = trimToNull(presentation.getYbCode());
+                    }
+                    if (diagName == null) {
+                        diagName = trimToNull(presentation.getYbName());
+                    }
+                } else if (diagCode == null) {
+                    // 西医医保无国临绑码：首页仅一码字段，仍落目录码，避免入院诊断被刷成空行
+                    diagCode = trimToNull(presentation.getYbCode());
+                    if (diagName == null) {
+                        diagName = trimToNull(presentation.getYbName());
+                    }
+                }
+            }
+            if (diagCode == null) {
+                diagCode = trimToNull(definition.getConditionCode());
+            }
+            if (diagName == null) {
+                diagName = trimToNull(definition.getName());
+            }
         }
         if (diagName == null) {
             diagName = trimToNull(row.getDescription());
@@ -1070,6 +1114,7 @@ public class CaseRecordAutoFillSupport {
 
     /**
      * 填充入院/出院病区床位：轨迹最早 WARD/BED + 当前活动或末次完成。
+     * 床位格写入「病房-床位」（HOUSE 父级名 + 床名），与病案首页「病房」栏口径一致。
      *
      * @param snap        就诊快照
      * @param encounterId 就诊主键
@@ -1082,7 +1127,7 @@ public class CaseRecordAutoFillSupport {
             snap.setAdmWardName(this.resolveLocationDisplayName(earliestWardId));
         }
         if (earliestBedId != null) {
-            snap.setAdmBedName(this.resolveLocationDisplayName(earliestBedId));
+            snap.setAdmBedName(this.resolveHouseBedDisplay(earliestBedId));
         }
         // 出院侧：优先当前活动上下文；无则末次完成 WARD/BED
         Optional<InpatientEncounterContextQueryModel> ctxOpt =
@@ -1090,8 +1135,8 @@ public class CaseRecordAutoFillSupport {
         if (ctxOpt.isPresent()) {
             InpatientEncounterContextQueryModel ctx = ctxOpt.get();
             String wardName = trimToNull(ctx.getWardName());
-            // 床位以 locationId 名称/业务号为准，避免把「原房-床（未占床）」写入首页床位格
-            String bedName = this.resolveLocationDisplayName(ctx.getBedId());
+            // 床位：优先按 bedId 拼「病房-床位」；无 id 时从上下文展示文案剥未占床包装
+            String bedName = this.resolveHouseBedDisplay(ctx.getBedId());
             if (bedName == null) {
                 bedName = this.stripUnoccupiedLastBedDisplay(ctx.getBedName());
             }
@@ -1107,13 +1152,13 @@ public class CaseRecordAutoFillSupport {
             encounterQueryService.findLastCompletedWardLocationIdByEncounterId(encounterId)
                     .ifPresent(wardId -> snap.setDscgWardName(this.resolveLocationDisplayName(wardId)));
         }
-        // 上下文无床位时回落末次完成 BED
+        // 上下文无床位时回落末次完成 BED（同样拼病房-床位）
         if (snap.getDscgBedName() == null) {
             Map<Long, Long> bedMap =
                     encounterQueryService.mapLastCompletedBedLocationIdByEncounterIds(List.of(encounterId));
             Long bedId = bedMap.get(encounterId);
             if (bedId != null) {
-                snap.setDscgBedName(this.resolveLocationDisplayName(bedId));
+                snap.setDscgBedName(this.resolveHouseBedDisplay(bedId));
             }
         }
         // 入院病区空时用当前/出院病区兜底（未分床前仅有当前）
@@ -1145,6 +1190,55 @@ public class CaseRecordAutoFillSupport {
             return name;
         }
         return trimToNull(location.getBusNo());
+    }
+
+    /**
+     * 病案首页床位格：父级为 HOUSE 时拼「病房-床位」，否则仅床名。
+     * 床名已含「-」时原样返回，避免重复拼接。
+     *
+     * @param bedLocationId 床位位置主键
+     * @return 展示文案；无床位实体时 null
+     */
+    private String resolveHouseBedDisplay(Long bedLocationId) {
+        if (bedLocationId == null) {
+            return null;
+        }
+        Optional<Location> bedOpt = locationQueryService.findOptionalById(bedLocationId);
+        if (bedOpt.isEmpty()) {
+            return null;
+        }
+        Location bed = bedOpt.get();
+        String bedName = trimToNull(bed.getName());
+        if (bedName == null) {
+            bedName = trimToNull(bed.getBusNo());
+        }
+        if (bedName == null) {
+            return null;
+        }
+        // 已是「房-床」形态则不再拼父级
+        if (bedName.contains(GeneralSharedConstants.DASH)) {
+            return bedName;
+        }
+        if (bed.getParentId() == null) {
+            return bedName;
+        }
+        Optional<Location> parentOpt = locationQueryService.findOptionalById(bed.getParentId());
+        if (parentOpt.isEmpty()) {
+            return bedName;
+        }
+        Location parent = parentOpt.get();
+        // 仅 HOUSE 计入病房名，避免把病区拼进床位格
+        if (!LocationForm.HOUSE.getCode().equals(parent.getFormEnum())) {
+            return bedName;
+        }
+        String houseName = trimToNull(parent.getName());
+        if (houseName == null) {
+            houseName = trimToNull(parent.getBusNo());
+        }
+        if (houseName == null) {
+            return bedName;
+        }
+        return houseName + GeneralSharedConstants.DASH + bedName;
     }
 
     /**

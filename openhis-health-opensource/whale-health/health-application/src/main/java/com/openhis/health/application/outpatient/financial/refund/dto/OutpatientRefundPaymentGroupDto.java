@@ -38,10 +38,12 @@ public class OutpatientRefundPaymentGroupDto {
     @Schema(description = "支付状态展示文案")
     private String paymentStatusEnumText;
 
-    /** 原支付录入人（收费员）系统用户主键，对应 fin_payment_reconciliation.enterer_id。 */
+    /**
+     * 原支付收款人（收费员）医务人员主键，对应 {@code fin_payment_reconciliation.enterer_id}
+     *（**BR-OPC-016**；JSON 字段名 {@code entererUserId} 为历史命名，值非 whale_users.id）。
+     */
     @JsonSerialize(using = ToStringSerializer.class)
-    /** 原支付收款人用户主键。 */
-    @Schema(description = "原支付收款人用户主键")
+    @Schema(description = "原支付收款人医务人员主键（enterer_id）")
     private Long entererUserId;
 
     /** 原支付收款人姓名（经医务人员主档解析，无法关联时为空）。 */

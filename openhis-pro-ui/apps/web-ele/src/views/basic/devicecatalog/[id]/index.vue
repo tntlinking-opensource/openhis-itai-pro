@@ -265,22 +265,14 @@ function onManufacturerSelectVisibleChange(visible: boolean) {
   }
 }
 
-/** 五类计量单位统一候选（unit_code），与药品目录一致；旧 init 无 unitCodeOptions 时回落 packUnits */
-const unitCodeOptions = computed(() => {
-  const unified = convertOptions((initOptions.value?.unitCodeOptions as OptionItem[]) || null);
-  if (unified.length > 0) {
-    return unified;
-  }
-  return convertOptions((initOptions.value?.packUnits as OptionItem[]) || null);
-});
+/** 五类计量单位统一候选（unit_code），与药品目录一致 */
+const unitCodeOptions = computed(() =>
+  convertOptions((initOptions.value?.unitCodeOptions as OptionItem[]) || null),
+);
 const financialTypes = createOptionsComputed('financialTypes');
-/** 医保类别：优先 medChrgitmTypeOptions，兼容旧 init 字段 ybCategories */
+/** 医保类别（init 字段 ybCategories） */
 const medChrgitmTypeOptions = computed(() =>
-  convertOptions(
-    (initOptions.value?.medChrgitmTypeOptions as OptionItem[] | undefined) ??
-      (initOptions.value?.ybCategories as OptionItem[] | undefined) ??
-      null,
-  ),
+  convertOptions((initOptions.value?.ybCategories as OptionItem[] | undefined) ?? null),
 );
 /** 医保等级：优先 chrgitmLvOptions，兼容旧 init 字段 ybGrades */
 const chrgitmLvOptions = computed(() =>
@@ -676,24 +668,10 @@ function mapLegacyPackageUnitFields(data: Record<string, unknown>) {
   }
 }
 
-/** 历史 unitCode/minUnitCode 与 purchaseUnitCode/splitUnitCode 对齐 */
+/** 销售单位历史字段名 salesUnit* 与后端 packageUnit* 对齐 */
 function normalizeUnitFieldNames(values: Record<string, unknown>): Record<string, unknown> {
   const normalized = { ...values };
   mapLegacyPackageUnitFields(normalized);
-  if (
-    (normalized.purchaseUnitCode === undefined || normalized.purchaseUnitCode === null) &&
-    normalized.unitCode !== undefined &&
-    normalized.unitCode !== null
-  ) {
-    normalized.purchaseUnitCode = normalized.unitCode;
-  }
-  if (
-    (normalized.splitUnitCode === undefined || normalized.splitUnitCode === null) &&
-    normalized.minUnitCode !== undefined &&
-    normalized.minUnitCode !== null
-  ) {
-    normalized.splitUnitCode = normalized.minUnitCode;
-  }
   return normalized;
 }
 
@@ -872,25 +850,21 @@ function buildUpdatePayload(submitData: Partial<DeviceCatalogItem>): UpdateDevic
   DEVICE_CATALOG_PRICE_FIELD_NAMES.forEach((field) => {
     delete updateData[field];
   });
-  updateData.purchaseUnitCode = updateData.purchaseUnitCode ?? updateData.unitCode;
-  updateData.splitUnitCode = updateData.splitUnitCode ?? updateData.minUnitCode;
   updateData.packageUnitCode =
     updateData.packageUnitCode ?? updateData.salesUnitCode ?? updateData.packageUnitCode;
   updateData.packageUnitRatio =
     updateData.packageUnitRatio ?? updateData.salesUnitRatio ?? updateData.packageUnitRatio;
   delete updateData.salesUnitCode;
   delete updateData.salesUnitRatio;
-  delete updateData.unitCode;
-  delete updateData.minUnitCode;
   updateData.editabilityCode = editabilityCode.value;
   return updateData as UpdateDeviceCatalogParams;
 }
 
 function buildCreatePayload(submitData: Partial<DeviceCatalogItem>): CreateDeviceCatalogParams {
-  const { id: _id, unitCode: _unitCode, minUnitCode: _minUnitCode, ...restData } = submitData;
+  const { id: _id, ...restData } = submitData;
   const restDataRecord = restData as Record<string, unknown>;
-  const purchaseUnitCode = String(restDataRecord.purchaseUnitCode ?? restData.unitCode ?? '');
-  const splitUnitCode = String(restDataRecord.splitUnitCode ?? restData.minUnitCode ?? '');
+  const purchaseUnitCode = String(restDataRecord.purchaseUnitCode ?? '');
+  const splitUnitCode = String(restDataRecord.splitUnitCode ?? '');
   return {
     ...restData,
     purchaseUnitCode,

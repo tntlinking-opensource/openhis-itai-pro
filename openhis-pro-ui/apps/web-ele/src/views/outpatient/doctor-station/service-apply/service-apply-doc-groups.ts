@@ -119,7 +119,7 @@ export function sumServiceApplyDocumentTotalAmount(
   return formatUnitPriceYuan(sum);
 }
 
-/** 按申请单号聚组，并按开立时间降序排列 */
+/** 按申请单号聚组，并按签发时间降序排列 */
 export function groupServiceApplyRowsByFormNo(
   rows: readonly AdviceRowItem[],
   allRowsForBind?: readonly AdviceRowItem[],

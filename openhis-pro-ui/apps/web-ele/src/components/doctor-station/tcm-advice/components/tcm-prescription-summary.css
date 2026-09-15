@@ -1,6 +1,6 @@
 /**
- * 朝阳中药处方底部合计（对齐 mock footer）。
- * 不走 SFC scoped：院点生产包丢 scoped 后左右会竖排叠放。
+ * 中药处方底部合计。
+ * 不走 SFC scoped：关键栅格走外挂 css，避免生产抽 CSS 后左右竖排叠放。
  */
 .tcm-prescription-summary {
   display: flex;

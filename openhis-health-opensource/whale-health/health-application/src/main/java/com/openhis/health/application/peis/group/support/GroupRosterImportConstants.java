@@ -12,7 +12,7 @@ public final class GroupRosterImportConstants {
     private GroupRosterImportConstants() {
     }
 
-    public static final String TEMPLATE_VERSION = "v1.0";
+    public static final String TEMPLATE_VERSION = "v1.1";
     public static final String XLSX_CONTENT_TYPE =
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
     public static final int MAX_DATA_ROWS = 5000;
@@ -25,9 +25,12 @@ public final class GroupRosterImportConstants {
     public static final String SYS_KIND = "memberKind";
     public static final String SYS_VERSION = "templateVersion";
 
-    public static final String[] STUDENT_HEADERS = {"姓名*", "性别", "身份证号", "手机号", "学号", "班级"};
-    public static final String[] STAFF_HEADERS = {"姓名*", "性别", "身份证号", "手机号", "工号", "部门"};
+    public static final String[] STUDENT_HEADERS = {"姓名*", "性别", "身份证号", "手机号", "学号", "班级", "分组", "套餐"};
+    public static final String[] STAFF_HEADERS = {"姓名*", "性别", "身份证号", "手机号", "工号", "部门", "分组", "套餐"};
     public static final String[] ENTERPRISE_HEADERS = STAFF_HEADERS;
+
+    /** v1.0 模板最少列数（不含分组/套餐）。 */
+    public static final int LEGACY_HEADER_COUNT = 6;
 
     public static final String STUDENT_TEMPLATE_FILE =
         "团检名册导入模板_学生_" + TEMPLATE_VERSION + ".xlsx";

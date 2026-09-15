@@ -68,6 +68,22 @@ export function stripLeadingEmrPageBreaks(doc: JSONContent): JSONContent {
   return { ...doc, content: doc.content.slice(i) };
 }
 
+/**
+ * 去掉正文顶层硬分页符。
+ * 历史入院记录模版用章节硬分页模拟 Word 多页；软分页上线后会把半页撑成空白。
+ * 仅套模版时调用；已保存文书保留医生 Ctrl+Enter 插入的分页符。
+ */
+export function stripEmrPageBreaks(doc: JSONContent): JSONContent {
+  if (doc.type !== 'doc' || !Array.isArray(doc.content)) {
+    return doc;
+  }
+  const content = doc.content.filter((node) => node?.type !== 'emrPageBreak');
+  if (content.length === doc.content.length) {
+    return doc;
+  }
+  return { ...doc, content };
+}
+
 /** 规范为 Tiptap 根节点 `doc`（含空 text 节点清洗） */
 export function normalizeEmrRootDoc(raw: unknown): JSONContent {
   const node = parseEmrContentToDoc(raw);

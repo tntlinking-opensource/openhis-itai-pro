@@ -12,6 +12,8 @@ import java.math.BigDecimal;
 
 /**
  * 费用明细报表汇总页脚合计（AS-RPT-008/009；结算刻度 2 位）。
+ *
+ * <p>仅进价/售价/数量合计；不再双写应收/实收/行金额与行数。</p>
  */
 @Data
 @Accessors(chain = true)
@@ -26,47 +28,7 @@ public class FeeDetailReportSummaryFooterDto {
     @Schema(description = "售价合计")
     private BigDecimal saleAmountTotal;
 
-    /** 实收合计（结算刻度）。 */
-    @Schema(description = "实收合计")
-    private BigDecimal actualReceivedAmountTotal;
-
-    /**
-     * 应收合计（兼容旧契约）。
-     *
-     * @deprecated 展示以 {@link #saleAmountTotal} 为准
-     */
-    @Deprecated
-    @Schema(description = "应收合计（兼容）")
-    private BigDecimal receivableAmountTotal;
-
-    /**
-     * 折后应收合计（兼容旧契约）。
-     *
-     * @deprecated 展示以 {@link #saleAmountTotal} 为准
-     */
-    @Deprecated
-    @Schema(description = "折后应收合计（兼容）")
-    private BigDecimal discountedAmountTotal;
-
-    /**
-     * 行金额合计（兼容旧契约）。
-     *
-     * @deprecated 展示以 {@link #saleAmountTotal} 为准
-     */
-    @Deprecated
-    @Schema(description = "行金额合计（兼容）")
-    private BigDecimal lineAmountTotal;
-
     /** 数量合计（带符号代数和）。 */
     @Schema(description = "数量合计")
     private BigDecimal quantityTotal;
-
-    /**
-     * 命中行数合计（内部统计，前端汇总 Tab 不展示）。
-     *
-     * @deprecated 汇总页脚改数量/进售合计
-     */
-    @Deprecated
-    @Schema(description = "行数合计（内部）")
-    private Long lineCountTotal;
 }

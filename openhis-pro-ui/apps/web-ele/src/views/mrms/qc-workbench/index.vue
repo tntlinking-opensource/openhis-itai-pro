@@ -396,7 +396,10 @@ function openHomepage() {
   if (!id) {
     return;
   }
-  router.push({ name: 'MrmsCaseRecordHomepage', query: { caseRecordId: id } });
+  router.push({
+    name: 'MrmsCaseRecordHomepageDetail',
+    params: { caseRecordId: id },
+  });
 }
 
 onMounted(async () => {

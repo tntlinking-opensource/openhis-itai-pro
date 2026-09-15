@@ -5,6 +5,7 @@
 package com.openhis.health.application.inventory.documentdetail.mapper;
 
 import com.openhis.health.application.inventory.documentdetail.dto.DocumentDetailExportRowDto;
+import com.openhis.health.application.inventory.documentdetail.dto.DocumentDetailItemSummaryRowDto;
 import com.openhis.health.application.inventory.documentdetail.dto.DocumentDetailRowDto;
 import com.openhis.health.application.inventory.documentdetail.request.DocumentDetailFilterRequest;
 import com.openhis.health.application.inventory.documentdetail.request.PageDocumentDetailsRequest;
@@ -13,6 +14,7 @@ import com.openhis.health.application.inventory.documentdetail.response.PageDocu
 import com.openhis.health.application.inventory.documentdetail.response.SummarizeDocumentDetailsResponse;
 import com.openhis.health.application.inventory.documentdetail.support.DocumentDetailDomainScope;
 import com.openhis.whale.core.application.dto.ExcelExportColumnDto;
+import com.openhis.whale.core.application.dto.OptionDto;
 
 import java.util.List;
 
@@ -46,18 +48,27 @@ public interface InventoryDocumentDetailMapper {
     );
 
     /**
-     * 装配合计响应。
+     * 装配合计响应（含按品规汇总行）。
      *
-     * @param totalPriceSum    金额合计
-     * @param itemQuantitySum  展示数量合计
-     * @param rowCount         行数
+     * @param totalPriceSum   金额合计
+     * @param itemQuantitySum 展示数量合计
+     * @param rowCount        明细行数
+     * @param summaryRecords  按品规汇总行
      * @return 合计响应
      */
     SummarizeDocumentDetailsResponse toSummarizeDocumentDetailsResponse(
         java.math.BigDecimal totalPriceSum,
         java.math.BigDecimal itemQuantitySum,
-        long rowCount
+        long rowCount,
+        List<DocumentDetailItemSummaryRowDto> summaryRecords
     );
+
+    /**
+     * 构建汇总维度下拉（本期仅按品规）。
+     *
+     * @return 选项列表
+     */
+    List<OptionDto> buildSummaryDimensionOptions();
 
     /**
      * 列表行 → Excel 导出行。
@@ -68,15 +79,25 @@ public interface InventoryDocumentDetailMapper {
     List<DocumentDetailExportRowDto> toExportRows(List<DocumentDetailRowDto> rows);
 
     /**
+     * 按品规汇总行 → Excel 导出行（复用并集 DTO；仅填品名/编码/数量/进价列）。
+     *
+     * @param summaryRows 汇总行
+     * @return 导出行
+     */
+    List<DocumentDetailExportRowDto> toSummaryExportRows(List<DocumentDetailItemSummaryRowDto> summaryRows);
+
+    /**
      * 写出 xlsx 字节。
      *
      * @param exportRows 导出行
      * @param columns    前端自选列；null/空则全部动态列
+     * @param sheetName  工作表名
      * @return xlsx 字节
      */
     byte[] buildExcelBytes(
         List<DocumentDetailExportRowDto> exportRows,
-        List<ExcelExportColumnDto> columns);
+        List<ExcelExportColumnDto> columns,
+        String sheetName);
 
     /**
      * 构建导出文件名（含时间戳）。

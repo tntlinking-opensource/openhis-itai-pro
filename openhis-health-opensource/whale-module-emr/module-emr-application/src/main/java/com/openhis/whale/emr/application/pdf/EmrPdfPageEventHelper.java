@@ -7,7 +7,6 @@ package com.openhis.whale.emr.application.pdf;
 import com.lowagie.text.Document;
 import com.lowagie.text.Element;
 import com.lowagie.text.Font;
-import com.lowagie.text.Phrase;
 import com.lowagie.text.pdf.BaseFont;
 import com.lowagie.text.pdf.ColumnText;
 import com.lowagie.text.pdf.PdfContentByte;
@@ -22,6 +21,8 @@ import java.awt.Color;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 页眉、页脚、水印绘制。
@@ -35,6 +36,11 @@ public class EmrPdfPageEventHelper extends PdfPageEventHelper {
     private static final float FOOTER_FONT_SIZE = 9f;
     /** 与屏上 .simple-editor__page-footer padding-top ≈ 6px 对齐 */
     private static final float FOOTER_BAND_TOP_PAD_MM = 2f;
+    /** 页眉下沿、页脚上沿线宽：Word 1 磅 = 1pt，与屏上 --simple-editor-chrome-rule 对齐 */
+    private static final float CHROME_RULE_PT = 1f;
+    /** 与 DocumentManager 创建标题后缀 yyyy-MM-dd HH:mm 对齐；打印页眉去掉该时间 */
+    private static final Pattern CREATE_TIME_SUFFIX =
+            Pattern.compile("-\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}$");
 
     private final PrintConfig config;
     private final PdfRenderOptions options;
@@ -62,6 +68,9 @@ public class EmrPdfPageEventHelper extends PdfPageEventHelper {
             drawHeader(writer, document, page, smallFont);
         }
 
+        // 页眉下沿 / 页脚上沿 1 磅线：所有病历每页都画，不依赖页眉页脚是否有文案
+        drawHeaderFooterRules(writer, document);
+
         if (config.getFooter().isEnabled()) {
             String template = config.getFooter().getTemplate();
             if (!hasText(template) && config.getFooter().isShowPageNumber()) {
@@ -76,7 +85,7 @@ public class EmrPdfPageEventHelper extends PdfPageEventHelper {
                     ColumnText.showTextAligned(
                             writer.getDirectContent(),
                             Element.ALIGN_CENTER,
-                            new Phrase(text, smallFont),
+                            fontFactory.phrase(text, smallFont),
                             pageWidth / 2f,
                             y,
                             0);
@@ -85,6 +94,31 @@ public class EmrPdfPageEventHelper extends PdfPageEventHelper {
         }
 
         drawWatermark(writer, pageWidth, pageHeight);
+    }
+
+    /**
+     * 每页正文区顶、底各画 1 磅实线（页眉下沿 / 页脚上沿），左右对齐页边距。
+     * 空页眉页脚也要画，避免入院/病程等文书纸面缺线。
+     *
+     * @param writer   当前页 PdfWriter
+     * @param document 已设正文边距的 Document
+     */
+    private void drawHeaderFooterRules(PdfWriter writer, Document document) {
+        PdfContentByte cb = writer.getDirectContent();
+        float left = document.left();
+        float right = document.right();
+        float top = document.top();
+        float bottom = document.bottom();
+        cb.saveState();
+        cb.setLineWidth(CHROME_RULE_PT);
+        cb.setColorStroke(Color.BLACK);
+        cb.moveTo(left, top);
+        cb.lineTo(right, top);
+        cb.stroke();
+        cb.moveTo(left, bottom);
+        cb.lineTo(right, bottom);
+        cb.stroke();
+        cb.restoreState();
     }
 
     @Override
@@ -102,7 +136,7 @@ public class EmrPdfPageEventHelper extends PdfPageEventHelper {
         ColumnText.showTextAligned(
                 totalPagesTemplate,
                 Element.ALIGN_LEFT,
-                new Phrase(total, smallFont),
+                fontFactory.phrase(total, smallFont),
                 0,
                 1,
                 0);
@@ -193,7 +227,7 @@ public class EmrPdfPageEventHelper extends PdfPageEventHelper {
         ColumnText.showTextAligned(
                 under,
                 Element.ALIGN_CENTER,
-                new Phrase(wm.getText(), wmFont),
+                fontFactory.phrase(wm.getText(), wmFont),
                 pageWidth / 2f,
                 pageHeight / 2f,
                 wm.getAngle());
@@ -206,6 +240,7 @@ public class EmrPdfPageEventHelper extends PdfPageEventHelper {
         if (options.getDocumentTitle() != null) {
             documentTitle = options.getDocumentTitle();
         }
+        documentTitle = stripCreateTimeSuffix(documentTitle);
         String documentTypeName = "";
         if (options.getDocumentTypeName() != null) {
             documentTypeName = options.getDocumentTypeName();
@@ -241,5 +276,33 @@ public class EmrPdfPageEventHelper extends PdfPageEventHelper {
 
     private static boolean hasText(String s) {
         return s != null && !s.isBlank();
+    }
+
+    /**
+     * 去掉创建文书时拼在标题末尾的「-yyyy-MM-dd HH:mm」，纸面只出文书名。
+     *
+     * @param title 库内文书标题（可能带创建时刻）
+     * @return 打印用标题；无时间后缀则原样
+     */
+    private static String stripCreateTimeSuffix(String title) {
+        if (title == null) {
+            return "";
+        }
+        String trimmed = title.trim();
+        Matcher matcher = CREATE_TIME_SUFFIX.matcher(trimmed);
+        String name = trimmed;
+        if (matcher.find()) {
+            String head = trimmed.substring(0, matcher.start()).trim();
+            if (!head.isEmpty()) {
+                name = head;
+            }
+        }
+        // 去掉模板变体后缀「（标准）」/「标准」，与文书类型名对齐（如入院记录）
+        name = name.replaceAll("[（(]\\s*标准\\s*[）)]", "").trim();
+        name = name.replaceAll("标准$", "").trim();
+        if (name.isEmpty()) {
+            return trimmed;
+        }
+        return name;
     }
 }

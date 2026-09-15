@@ -57,6 +57,8 @@ import {
   parseEmrContentToDoc,
   registerEmrUnsavedGuard,
   SimpleEditor,
+  stripDocumentStampMetadataFromContentJson,
+  stripEmrPageBreaks,
 } from '#/emrEditor';
 import {
   packEmrDocWithSidecar,
@@ -70,6 +72,7 @@ import {
 import {
   createDefaultEmrPageChrome,
   cloneEmrPageChrome,
+  pinOutpatientChromeHeaderTitle,
   type EmrPageChrome,
 } from '#/emrEditor/components/simple-editor/emr-page-chrome';
 import { requestEmrPaginationRelayout } from '#/emrEditor/components/simple-editor/extensions/emr-pagination';
@@ -420,14 +423,32 @@ function getActiveEditor() {
   return getEditor(activeTabKey.value);
 }
 
+/** 快照深拷贝：Vue reactive Proxy 不能 structuredClone，否则保存收尾抛 DataCloneError */
+function cloneEmrJsonForSnapshot(doc: JSONContent): JSONContent {
+  try {
+    return JSON.parse(JSON.stringify(doc)) as JSONContent;
+  } catch {
+    return structuredClone(doc);
+  }
+}
+
+/** 记下本次已保存正文，供脏检查与重置对照 */
 function captureContentSnapshot(tab: EmrOpenTab, doc: JSONContent) {
-  tab.savedContentSnapshot = structuredClone(doc);
+  tab.savedContentSnapshot = cloneEmrJsonForSnapshot(doc);
+}
+
+/** 门诊病历页眉标题钉回 `{documentTitle}`，避免复用/存盘把上次病名写进新草稿 */
+function pinOutpatientPageChrome(typeCode: string, chrome: EmrPageChrome): EmrPageChrome {
+  if (typeCode.trim() !== 'OUTPATIENT_RECORD') return chrome;
+  const next = cloneEmrPageChrome(chrome);
+  next.header.template = pinOutpatientChromeHeaderTitle(next.header.template);
+  return next;
 }
 
 /** 从接口 content 读出页眉页脚/页边距，正文去掉侧车字段 */
 function loadEmrContentIntoTab(tab: EmrOpenTab, raw: unknown): JSONContent {
   const sidecar = readEmrDocSidecar(raw);
-  tab.pageChrome = cloneEmrPageChrome(sidecar.pageChrome);
+  tab.pageChrome = pinOutpatientPageChrome(tab.documentTypeCode, sidecar.pageChrome);
   tab.pageMargins = { ...sidecar.pageMargins };
   const parsed = parseEmrContentToDoc(raw);
   const body = parsed ? stripEmrDocSidecar(parsed) : raw;
@@ -468,8 +489,10 @@ function activateTab(key: string) {
 
 /** 存盘/打印：把当前 Tab 的页眉页脚写回 content 侧车 */
 function packTabContentForSave(tab: EmrOpenTab, doc: JSONContent): JSONContent {
+  const pageChrome = pinOutpatientPageChrome(tab.documentTypeCode, tab.pageChrome);
+  tab.pageChrome = pageChrome;
   return packEmrDocWithSidecar(stripEmrDocSidecar(doc), {
-    pageChrome: tab.pageChrome,
+    pageChrome,
     pageMargins: tab.pageMargins,
   });
 }
@@ -552,22 +575,42 @@ function tabDisplayTitle(tab: EmrOpenTab): string {
   return '未命名';
 }
 
-/** 去掉后端 title 自动拼接的时间后缀 */
+/** 去掉后端 title 自动拼接的时间后缀，以及模板变体「（标准）」 */
 function stripDocumentTitleTimestamp(title: string): string {
-  return title.replace(/-\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?.*$/u, '').trim();
+  return title
+    .replace(/-\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?.*$/u, '')
+    .replace(/[（(]\s*标准\s*[）)]/g, '')
+    .replace(/标准$/u, '')
+    .trim();
 }
 
-/** 从 Tab 文书字段解析病历头（优先文书类型名） */
+/**
+ * Tab 名头：优先具体文书标题（模板名，如「沟通记录」「评估单」），
+ * 不要用文书类型名（如「告知书」），否则同类型多份病历看不出区别。
+ */
 function resolveTabDocumentHead(tab: EmrOpenTab): string {
-  const typeName = (tab.documentTypeName ?? '').trim();
-  if (typeName) return typeName;
   const title = (tab.documentTitle ?? '').trim();
   if (title && !looksLikeDocumentTypeCode(title)) {
     const stripped = stripDocumentTitleTimestamp(title);
-    return stripped || title;
+    if (stripped) return stripped;
   }
+  const typeName = (tab.documentTypeName ?? '').trim();
+  if (typeName) return stripDocumentTitleTimestamp(typeName) || typeName;
   if (tab.pendingTemplateId) return '新建文书';
   return '未命名';
+}
+
+/**
+ * 纸面/打印页眉标题。门诊病历固定用文书类型名，不用模板名、主诉或病名。
+ */
+function resolvePaperDocumentTitle(tab: EmrOpenTab): string {
+  if ((tab.documentTypeCode ?? '').trim() === 'OUTPATIENT_RECORD') {
+    const typeName = (tab.documentTypeName ?? '').trim();
+    if (typeName && !looksLikeDocumentTypeCode(typeName)) {
+      return stripDocumentTitleTimestamp(typeName) || typeName;
+    }
+  }
+  return resolveTabDocumentHead(tab);
 }
 
 function resolveLoginDoctorDisplayName(): string {
@@ -975,8 +1018,9 @@ async function applyTemplateLocallyToTab(
       serverMeta,
     );
     liveTab.serverMetadataValues = mergedMeta;
+    // 模版章节硬分页与软分页叠加会半页留白；新开文书只靠纸高软分页
     const doc = applyMetadataValuesToContentJson(
-      loadEmrContentIntoTab(liveTab, tpl.content),
+      stripEmrPageBreaks(loadEmrContentIntoTab(liveTab, tpl.content)),
       mergedMeta,
       true,
     );
@@ -1243,7 +1287,7 @@ async function requestDocumentPdf(previewMode: boolean) {
     previewMode,
     patientId: props.patientId || undefined,
     encounterId: props.encounterId || undefined,
-    documentTitle: (tab.documentTitle || tab.documentTypeName || '病历').trim(),
+    documentTitle: resolvePaperDocumentTitle(tab),
     documentTypeName: (tab.documentTypeName || '').trim() || undefined,
     metadata: mergedMeta,
     printConfig: buildEmrPrintConfigPayload(tab.pageMargins, tab.pageChrome, {
@@ -1268,7 +1312,7 @@ async function handlePrintPreview() {
     const result = await requestDocumentPdf(true);
     if (!result) return;
     pdfPreviewAutoPrint.value = false;
-    pdfPreviewTitle.value = `${(activeTab.value.documentTypeName || activeTab.value.documentTitle || '病历').trim() || '病历'} · 预览`;
+    pdfPreviewTitle.value = `${resolvePaperDocumentTitle(activeTab.value) || '病历'} · 预览`;
     pdfPreviewBase64.value = result.pdfBase64!;
     pdfPreviewPageCount.value = result.pageCount;
     pdfPreviewVisible.value = true;
@@ -1289,7 +1333,7 @@ async function handlePrint() {
     const result = await requestDocumentPdf(false);
     if (!result) return;
     pdfPreviewAutoPrint.value = true;
-    pdfPreviewTitle.value = `${(activeTab.value.documentTypeName || activeTab.value.documentTitle || '病历').trim() || '病历'} · 打印`;
+    pdfPreviewTitle.value = `${resolvePaperDocumentTitle(activeTab.value) || '病历'} · 打印`;
     pdfPreviewBase64.value = result.pdfBase64!;
     pdfPreviewPageCount.value = result.pageCount;
     pdfPreviewVisible.value = true;
@@ -1490,7 +1534,10 @@ async function handleDeleteTemplate(tpl: TemplateDto) {
   }
 }
 
-/** 手动保存：无文书时先 create，再 save。返回是否保存成功。 */
+/**
+ * 手动保存：无文书时先 create，再 save。
+ * 接口成功即提示「保存成功」并回读刷新；本地收尾/回读失败不掩盖成功反馈。
+ */
 async function handleSave(): Promise<boolean> {
   if (!canSaveDocument.value) {
     ElMessage.warning('请先在左侧选择模板');
@@ -1501,6 +1548,9 @@ async function handleSave(): Promise<boolean> {
     return false;
   }
   const tab = activeTab.value;
+  // 先退出页眉页脚编辑，保证侧车与正文一并落库
+  getActiveEditor()?.exitPageChromeEdit?.();
+  await nextTick();
   const activeEditor = getActiveEditor();
   if (activeEditor?.validateRequired && !activeEditor.validateRequired()) {
     return false;
@@ -1512,6 +1562,8 @@ async function handleSave(): Promise<boolean> {
   }
   const content = packTabContentForSave(tab, rawContent);
   saveLoading.value = true;
+  // 接口一旦成功，后续刷新失败也视为保存成功
+  let persisted = false;
   try {
     const id = await ensureDocumentCreated();
     if (!id) return false;
@@ -1519,22 +1571,29 @@ async function handleSave(): Promise<boolean> {
       documentId: id,
       content,
     });
-    captureContentSnapshot(tab, stripEmrDocSidecar(content));
-    tab.recordDoc = stripEmrDocSidecar(content);
-    getActiveEditor()?.markSaved?.();
-    await getActiveEditor()?.clearDraft?.();
-    markTabClean(tab.key);
+    persisted = true;
     ElMessage.success('保存成功');
-    tab.tabAuthorName = resolveLoginDoctorDisplayName() || tab.tabAuthorName;
-    syncTabHeader(tab);
     void historyPanelRef.value?.refreshHistory?.();
+    try {
+      const body = stripEmrDocSidecar(content);
+      captureContentSnapshot(tab, body);
+      getActiveEditor()?.markSaved?.();
+      await getActiveEditor()?.clearDraft?.();
+      markTabClean(tab.key);
+      tab.tabAuthorName = resolveLoginDoctorDisplayName() || tab.tabAuthorName;
+      syncTabHeader(tab);
+    } catch {
+      // 本地快照/草稿清理失败不阻断回读刷新
+    }
     if (isInpatientStation.value) {
       await refreshProgressNoteNavList();
     }
+    // 回读服务端正文/元数据，刷新编辑区与页签
+    await reloadCurrentDocument({ silent: true });
     return true;
   } catch {
-    // 业务/网络错误已由 request 拦截器提示
-    return false;
+    // 未落库：拦截器已提示；已落库：刷新失败不改成功结论
+    return persisted;
   } finally {
     saveLoading.value = false;
   }
@@ -1724,10 +1783,13 @@ async function handleReuseDocument(row: DocumentSummaryDto) {
       serverMeta,
     );
     const sidecar = readEmrDocSidecar(dto.content);
+    sidecar.pageChrome = pinOutpatientPageChrome(typeCode, sidecar.pageChrome);
+    const sourceDoc = normalizeEmrRootDoc(
+      stripEmrDocSidecar(parseEmrContentToDoc(dto.content) ?? (dto.content as JSONContent)),
+    );
+    // 复用是新文书：清空源落款时间后再烤当天，避免沿用旧记录时间
     const bakedDoc = applyMetadataValuesToContentJson(
-      normalizeEmrRootDoc(
-        stripEmrDocSidecar(parseEmrContentToDoc(dto.content) ?? (dto.content as JSONContent)),
-      ),
+      stripDocumentStampMetadataFromContentJson(sourceDoc),
       mergedMeta,
       true,
     );
@@ -2236,7 +2298,7 @@ defineExpose({
               v-model:page-margins="tab.pageMargins"
               v-model:page-chrome="tab.pageChrome"
               :document-type-name="tab.documentTypeName"
-              :document-title="(tab.documentTypeName || tab.documentTitle || '').trim()"
+              :document-title="resolvePaperDocumentTitle(tab)"
               class="medical-record-form__editor"
               :surface="tab.editorSurface"
               :doc-id="editorDocIdForTab(tab)"

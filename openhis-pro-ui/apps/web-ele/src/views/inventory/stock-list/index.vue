@@ -816,13 +816,23 @@ function canResumeInventoryRow(row: InventoryDetailListRowDto): boolean {
   return row.inventoryStatusEnum === PublicationStatusCode.INACTIVE;
 }
 
+/** 本期仅药品行可查本库追溯码。 */
+function canOpenTrace(row: InventoryDetailListRowDto): boolean {
+  return row.itemTable === INVENTORY_DETAIL_ITEM_TABLE_MEDICATION;
+}
+
 /** 打开本库追溯码列表弹窗。 */
 function handleOpenTrace(row: InventoryDetailListRowDto) {
+  if (!canOpenTrace(row)) {
+    ElMessage.warning('本期仅支持药品追溯码');
+    return;
+  }
   void traceCodeListDialogRef.value?.loadForInventoryRow({
     locationId: row.warehouseId ?? '',
     itemId: row.itemId ?? '',
     lotNumber: row.lotNumber ?? '',
     productName: row.name,
+    itemTable: row.itemTable,
   });
 }
 
@@ -1041,6 +1051,7 @@ watch(
                 <ElOption label="基药" value="BASIC" />
                 <ElOption label="国家重点监控药品" value="NATIONAL_MONITOR" />
                 <ElOption label="集采药品" value="CENTRAL_PURCHASE" />
+                <ElOption label="抗生素" value="ANTIBIOTIC" />
               </ElSelect>
             </ElFormItem>
             <ElFormItem label="库存范围">
@@ -1356,7 +1367,14 @@ watch(
                 fixed="right"
               >
                 <template #default="{ row }">
-                  <ElButton link type="primary" @click="handleOpenTrace(row)">追溯码</ElButton>
+                  <ElButton
+                    v-if="canOpenTrace(row)"
+                    link
+                    type="primary"
+                    @click="handleOpenTrace(row)"
+                  >
+                    追溯码
+                  </ElButton>
                   <ElButton
                     v-if="canRetireInventoryRow(row)"
                     link

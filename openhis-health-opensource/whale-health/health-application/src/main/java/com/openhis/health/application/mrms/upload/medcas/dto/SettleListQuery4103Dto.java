@@ -44,15 +44,33 @@ public class SettleListQuery4103Dto {
     /** 申报/结算时间原文。 */
     private String setlTime;
 
-    /** 医疗费总额。 */
+    /**
+     * 医疗费总额。
+     * <p>优先 {@code setlinfo.medfee_sumamt}；平台常缺该键时回落 {@code iteminfo[].amt} 合计。</p>
+     */
     private BigDecimal medfeeSumamt;
 
-    /** 平台状态摘要（有则展示）。 */
+    /**
+     * 平台审核状态码（{@code setlinfo.stas_type} 原文：0/1/2/3）。
+     * <p>前端 Tag/分支须用本字段，勿用中文文案。</p>
+     */
+    private String setlStatusCode;
+
+    /**
+     * 平台审核状态展示文案（由 stas_type 映射：未提交/已提交/审核通过/审核不通过）。
+     */
     private String setlStatusText;
 
-    /** 平台消息（失败或 warn）。 */
+    /**
+     * 平台消息：失败取网关 errMsg；成功取 {@code setlinfo.chk_cont}（审核意见，可空）。
+     */
     private String platformMsg;
 
     /** setlinfo 结构化字段（详情弹窗用）。 */
     private Map<String, Object> setlinfo;
+
+    /**
+     * 平台 output 全量节点（setlinfo + 诊断/手术/费用等子表），运维详情优先展示。
+     */
+    private Map<String, Object> platformOutput;
 }

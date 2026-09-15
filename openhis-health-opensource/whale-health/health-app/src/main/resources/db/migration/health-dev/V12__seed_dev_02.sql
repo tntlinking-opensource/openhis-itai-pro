@@ -20,7 +20,7 @@ VALUES
 ('322972377024565251', '1', '2026-06-10 05:36:55.219+00', '2026-06-10 05:36:55.219+00', '1', '1', false, NULL, NULL, 0, '322972377024565248', '322957328119180160')
 ON CONFLICT ("id") DO NOTHING;
 
--- 其余 dev 岗位批量挂上历史号复诊（与平台 V2 adm_pr_assign_service 种子同口径）
+-- 其余 dev 岗位批量挂上复诊0元号（与平台 V2 adm_pr_assign_service 种子同口径）
 INSERT INTO adm_pr_assign_service (
     id, tenant_id, created_at, updated_at, created_by, updated_by,
     is_deleted, deleted_at, deleted_by, version,

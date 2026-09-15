@@ -55,4 +55,10 @@ public class LoadDocumentDetailFormInitResponse {
     @Schema(description = "默认审批时间止")
     /** 默认审批时间止。 */
     private LocalDateTime defaultApprovalTimeEnd;
+
+    /**
+     * 汇总维度下拉；本期仅「按品规」（{@code ITEM}），供汇总 Tab 回填。
+     */
+    @Schema(description = "汇总维度下拉（本期仅按品规）")
+    private List<OptionDto> summaryDimensionOptions;
 }

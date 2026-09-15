@@ -66,12 +66,12 @@ import java.math.BigDecimal;
 import java.util.*;
 
 /**
- * 住院医生站中医 Tab 编排（IF-IP-TCM-29～41，AS-IP-DOR-006）。
+ * 住院医生站中医 Tab 编排（IF-IP-TCM-29～42，AS-IP-DOR-006）。
  *
  * <p>职责边界：</p>
  * <ul>
  *   <li>读侧：中医 Tab 初始化、病证组列表、病名/证候目录、中药处方列表与历史、饮片目录分页。</li>
- *   <li>写侧：病证组全量保存/删除、中药草稿暂存、签发、签退/删除、长期停嘱与取消停嘱。</li>
+ *   <li>写侧：病证组全量保存/删除、中药草稿暂存、签发、签退/删除、长期停嘱与取消停嘱、按方改开立时间。</li>
  * </ul>
  *
  * <p>接入：AppServiceControllerRegistrar → POST /api/app/inpatientDoctorStationTcm/{methodName}</p>
@@ -750,6 +750,54 @@ public class InpatientDoctorStationTcmAppService {
                 tcmMapper.toCancelStopLongTermMedicationOrderCommand(requestId, operatorId));
         }
         return tcmMapper.toCancelStopLongTermTcmHerbalPrescriptionResponse(Boolean.TRUE, InpatientDoctorStationTcmConstants.RESPONSE_MESSAGE_OK);
+    }
+
+    /**
+     * IF-IP-TCM-42：按方改中药开立时间。
+     *
+     * <p>按 {@code prescription_no} 和/或 {@code prescriptionGroupKey} 整方扩行后，
+     * 方内各味统一写入同一 {@code req_opened_time}（对齐西药 IF-IP-DOR-26 OPENED；不改开立人/签发时间）。</p>
+     *
+     * @param request 就诊上下文、方范围与新开立时间
+     * @return 成功标志与改写行数
+     * @throws BusinessException 范围为空、无药味行或 Gate 失败时
+     */
+    public ChangeTcmHerbalPrescriptionOpenedTimeResponse changeTcmHerbalPrescriptionOpenedTime(
+        ChangeTcmHerbalPrescriptionOpenedTimeRequest request) {
+        // Gate：新开立时间必填（Bean 校验外再防空）
+        if (request.getNewOpenedTime() == null) {
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "新开立时间不能为空");
+        }
+        boolean hasNos = request.getPrescriptionNos() != null && !request.getPrescriptionNos().isEmpty();
+        boolean hasKeys = request.getPrescriptionGroupKeys() != null && !request.getPrescriptionGroupKeys().isEmpty();
+        // Gate：须至少指定处方号或方标识之一
+        if (!hasNos && !hasKeys) {
+            throw new BusinessException(
+                ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT,
+                InpatientDoctorStationTcmConstants.MSG_CHANGE_OPENED_TIME_SCOPE_EMPTY);
+        }
+        // Pre：住院可写快照
+        requireInpatientSnapshot(request.getEncounterId(), request.getPatientId(), true);
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
+            ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, InpatientDoctorStationTcmConstants.MSG_ENCOUNTER_SNAPSHOT_FAILED);
+        // Pre：整方扩行（已签处方号 + 草稿方标识）
+        List<Long> requestIds = prescriptionExpandSupport.resolveAllTcmRequestIdsForOpenedTimeChange(
+            request.getEncounterId(), request.getPrescriptionNos(), request.getPrescriptionGroupKeys());
+        // Gate：扩行后须有可改药味
+        if (requestIds.isEmpty()) {
+            throw new BusinessException(
+                ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT,
+                InpatientDoctorStationTcmConstants.MSG_CHANGE_OPENED_TIME_NO_LINES);
+        }
+        // Cmd：方内各味统一写开立时间
+        for (Long requestId : requestIds) {
+            medicationRequestDomainService.changeMedicationRequestBusinessTime(
+                tcmMapper.toChangeMedicationRequestOpenedTimeCommand(
+                    requestId, request.getNewOpenedTime(), operatorId));
+        }
+        // Asm：返回改写行数供前端提示
+        return tcmMapper.toChangeTcmHerbalPrescriptionOpenedTimeResponse(
+            Boolean.TRUE, InpatientDoctorStationTcmConstants.RESPONSE_MESSAGE_OK, requestIds.size());
     }
 
     /**

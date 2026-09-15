@@ -12,11 +12,12 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * 朝阳中医院老 HIS（areahis）统计项 {@code CODE → CODE1} 映射。
+ * 博思电子票统计项出站映射：院内对照表 CODE → 门诊/挂号票 CODE1。
  *
- * <p>老系统门诊/挂号电子票 {@code chargeDetail.chargeCode} 取 {@code basic_code.code1}；
- * 住院电子票取 {@code basic_code.code}（YLZY*）。Whale 对照表默认存住院口径 CODE，
- * 门诊/挂号出站前再换算为 CODE1，与博思门诊票已挂项目一致。</p>
+ * <p>口径对齐 areahis：门诊/挂号票 {@code chargeDetail.chargeCode} 取 {@code basic_code.code1}；
+ * 住院票取 {@code basic_code.code}（YLZY*）。Whale 对照表默认存住院口径 CODE，
+ * 门诊/挂号出站前换算为 CODE1，与博思已挂项目一致。类名 Legacy 仅表示映射源来自 areahis 口径，
+ * 本类是现行出站规则，不是新旧双轨过渡层。</p>
  */
 public final class BossLegacyStatisticCode1Mapping {
 

@@ -4,10 +4,10 @@ import type { Editor, JSONContent } from '@tiptap/core';
 import type { EmrEditorCaps } from './use-emr-editor-caps';
 
 import {
-  CONTEXT_REFRESH_FIELD_KEYS,
   EMR_DIAGNOSIS_METADATA_FIELD_KEYS,
-  PATIENT_BOUND_FIELD_KEYS,
+  isDocumentStampMetadataKey,
   resolveFillableMetadataKey,
+  shouldForceOverwriteMetadataKey,
   type ApplyMetadataValuesOptions,
 } from '#/emrEditor/emr-patient-metadata';
 import type { EmrMetadataField } from '#/emrEditor/types';
@@ -743,8 +743,7 @@ function syncChromeEditBandLayout() {
   if (!host || !band) return;
   const hPx = measureChromeBandShellHeightPx(host);
   const m = props.pageMargins;
-  const baseMm =
-    band === 'header' ? parseCssLengthMm(m?.top, 25.4) : parseCssLengthMm(m?.bottom, 25.4);
+  const baseMm = band === 'header' ? parseCssLengthMm(m?.top, 15) : parseCssLengthMm(m?.bottom, 15);
   const basePx = (baseMm * 96) / 25.4;
   // 不低于工具栏页边距，避免编辑时正文上移、退出后又拉开
   const usePx = Math.max(Math.ceil(hPx), Math.ceil(basePx));
@@ -1065,8 +1064,8 @@ function exitChromeEdit() {
     const contentMm = pxToMm(measureChromeBandShellHeightPx(host));
     const baseMm =
       band === 'header'
-        ? parseCssLengthMm(props.pageMargins?.top, 25.4)
-        : parseCssLengthMm(props.pageMargins?.bottom, 25.4);
+        ? parseCssLengthMm(props.pageMargins?.top, 15)
+        : parseCssLengthMm(props.pageMargins?.bottom, 15);
     heightMm = Math.max(contentMm, baseMm);
     // 立刻退出 contentEditable，避免等重绘前抢焦点
     host.contentEditable = 'false';
@@ -1900,8 +1899,8 @@ const pageMarginStyle = computed(() => {
     vars['--simple-editor-margin-left'] = m.left;
   }
 
-  const topBase = parseCssLengthMm(m?.top, 25.4);
-  const bottomBase = parseCssLengthMm(m?.bottom, 25.4);
+  const topBase = parseCssLengthMm(m?.top, 15);
+  const bottomBase = parseCssLengthMm(m?.bottom, 15);
   if (localPageChrome.value.header.enabled) {
     const headerMm = resolveScreenChromeBandPaddingMm(localPageChrome.value.header, topBase);
     vars['--simple-editor-margin-top'] = `${headerMm}mm`;
@@ -1939,11 +1938,6 @@ const mergedMetaValues = computed(() => ({
   ...(props.metadataValues ?? {}),
 }));
 
-/** 患者身份或日期时间上下文域：套模板后须强制覆盖 */
-function shouldForceOverwriteMetadataKey(key: string): boolean {
-  return PATIENT_BOUND_FIELD_KEYS.has(key) || CONTEXT_REFRESH_FIELD_KEYS.has(key);
-}
-
 /** 从可填命中位置向上找命名块 attrs.name（如 westernDiagnosis） */
 function readNamedBlockNameAtPos(doc: Editor['state']['doc'], pos: number): string {
   const size = doc.content.size;
@@ -1961,7 +1955,7 @@ function readNamedBlockNameAtPos(doc: Editor['state']['doc'], pos: number): stri
  * @param ed 编辑器实例
  * @param vals fieldKey / elementId → 展示值
  * @param readonlyOnly 为 true 时：只读域始终同步；可改域仅在当前值为空时预填（保留医生已录入）
- * 患者绑定域与日期时间上下文域默认按 vals 强制覆盖，避免套用模板残留旧患者/旧日期。
+ * 患者绑定域与就诊时间默认按 vals 强制覆盖；落款时间已有值不覆盖。
  */
 function applyMetadataValuesToDocNodes(
   ed: Editor,
@@ -1990,7 +1984,9 @@ function applyMetadataValuesToDocNodes(
     const cur = hit.mark
       ? stripFillableZwsp(ed.state.doc.textBetween(hit.from, hit.to, '\n', '\n')).trim()
       : String(hit.node?.attrs.value ?? '').trim();
-    // 可改域：文书态仅预填空值；患者绑定/日期上下文域始终强制覆盖（与 ContentJson 路径同构）
+    // 落款时间已写入正文则保留（查看已有病历不得换成当天）
+    if (isDocumentStampMetadataKey(key) && cur) continue;
+    // 可改域：文书态仅预填空值；患者绑定/就诊时间始终强制覆盖（与 ContentJson 路径同构）
     if (!forceOverwrite && readonlyOnly && editable && cur) continue;
     if (cur === String(nextVal).trim()) continue;
     updates.push({ hit, nextVal });
@@ -3036,26 +3032,46 @@ function openImageFilePicker() {
   fileInputRef.value?.click();
 }
 
-/** 打印/存盘前：把仍聚焦在 contenteditable 岛屿内的字回写到 attrs.value */
-function flushActiveFillableIslandToDoc(ed: Editor) {
+const FILLABLE_ISLAND_SELECTOR =
+  '.emr-fillable-field__input, .emr-inline-text__field, .emr-de__text-field';
+
+/**
+ * 把纸面填写岛屿的 DOM 字回写到 attrs.value。
+ * 点「保存」时焦点已在按钮上，只刷 activeElement 会漏掉刚写的主诉等。
+ */
+function flushFillableIslandsToDoc(ed: Editor) {
   if (ed.isDestroyed) return;
-  const active = document.activeElement;
-  if (!(active instanceof HTMLElement)) return;
-  const input = active.closest('.emr-fillable-field__input, .emr-inline-text__field');
-  if (!(input instanceof HTMLElement)) return;
-  const text = stripFillableZwsp(readContentEditablePlainText(input));
   const { view } = ed;
-  let pos: number;
-  try {
-    pos = view.posAtDOM(input, 0);
-  } catch {
-    return;
+  const jobs: { hit: NonNullable<ReturnType<typeof resolveFillableAt>>; text: string }[] = [];
+  const islands = view.dom.querySelectorAll(FILLABLE_ISLAND_SELECTOR);
+  for (const node of islands) {
+    if (!(node instanceof HTMLElement)) continue;
+    const text = stripFillableZwsp(readContentEditablePlainText(node));
+    const wrapper = node.closest('[data-node-view-wrapper]');
+    const posTarget = wrapper instanceof HTMLElement ? wrapper : node;
+    let pos: number;
+    try {
+      // atom NodeView 内部 contenteditable 不在 PM 映射里，须从 wrapper 取 pos
+      pos = view.posAtDOM(posTarget, 0);
+    } catch {
+      continue;
+    }
+    const hit = resolveFillableAt(view.state.doc, pos);
+    if (!hit) continue;
+    const cur =
+      hit.kind === 'widget'
+        ? stripFillableZwsp(String(hit.node?.attrs.value ?? ''))
+        : stripFillableZwsp(view.state.doc.textBetween(hit.from, hit.to, '', ''));
+    if (cur === text) continue;
+    jobs.push({ hit, text });
   }
-  const hit = resolveFillableAt(view.state.doc, pos);
-  if (!hit?.node) return;
-  const cur = stripFillableZwsp(String(hit.node.attrs.value ?? ''));
-  if (cur === text) return;
-  const tr = replaceFillableHitPlainText(view.state.tr, view.state.schema, hit, text);
+  if (jobs.length === 0) return;
+  // 从后往前改，避免 mark 替换改文档长度后前面 pos 失效
+  jobs.sort((a, b) => b.hit.from - a.hit.from);
+  let tr = view.state.tr;
+  for (const job of jobs) {
+    tr = replaceFillableHitPlainText(tr, view.state.schema, job.hit, job.text);
+  }
   if (tr.docChanged) {
     tr.setMeta(EMR_SKIP_FILLABLE_RESTORE_META, true);
     view.dispatch(tr);
@@ -3065,7 +3081,7 @@ function flushActiveFillableIslandToDoc(ed: Editor) {
 function getJSON(): JSONContent | null {
   const ed = editor.value;
   if (ed && !ed.isDestroyed) {
-    flushActiveFillableIslandToDoc(ed);
+    flushFillableIslandsToDoc(ed);
   }
   const json = ed?.getJSON() ?? null;
   return json ? serializeFillableMarksToNodes(json) : null;
@@ -3082,6 +3098,7 @@ function getHTML(): string {
 function validateRequired(): boolean {
   const ed = editor.value;
   if (!ed || ed.isDestroyed) return true;
+  flushFillableIslandsToDoc(ed);
   const { ok, violations } = validateRequiredFillables(ed);
   if (ok) return true;
   const first = violations[0];

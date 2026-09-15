@@ -26,9 +26,7 @@ export interface RequisitionOptionDto {
   label?: string;
 }
 
-export interface LoadDepartmentRequisitionFormInitRequest {
-  organizationId?: number;
-}
+export interface LoadDepartmentRequisitionFormInitRequest {}
 
 export interface LoadDepartmentRequisitionFormInitResponse {
   pharmacyLocationOptions?: RequisitionOptionDto[];
@@ -47,10 +45,8 @@ export interface DepartmentRequisitionListRowDto {
   sourceLocationId?: number | string;
   purposeLocationId?: number | string;
   applyTime?: string;
-  approvalTime?: string;
   applicantId?: number | string;
   creatorName?: string;
-  approverId?: number | string;
   approverName?: string;
   totalAmount?: number | string;
 }
@@ -70,7 +66,6 @@ export interface PageDepartmentRequisitionsRequest {
 export interface PageDepartmentRequisitionsResponse {
   total?: number;
   totalCount?: number;
-  records?: DepartmentRequisitionListRowDto[];
   content?: DepartmentRequisitionListRowDto[];
 }
 
@@ -183,7 +178,6 @@ export interface WithdrawDepartmentRequisitionApprovalResponse {
 export interface AgreeDepartmentRequisitionRequest {
   busNo: string;
   operatorId?: number | string;
-  approvalClock?: string;
 }
 
 export interface AgreeDepartmentRequisitionResponse {
@@ -194,7 +188,6 @@ export interface RejectDepartmentRequisitionRequest {
   busNo: string;
   rejectReason?: string;
   operatorId?: number | string;
-  approvalClock?: string;
 }
 
 export interface RemoveDepartmentRequisitionRequest {

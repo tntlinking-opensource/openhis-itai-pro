@@ -20,9 +20,7 @@ import { pageProductsForInboundReceiptApi } from '#/api/inventory/warehouse/inbo
 import { pageProductsForWarehouseStocktakeApi } from '#/api/inventory/warehouse/stocktake';
 import { pageProductsForDeptPurchaseRequestApi } from '#/api/inventory/department/purchase-request';
 import { pageProductsForPurchaseApi } from '#/api/inventory/warehouse/purchase-order';
-import { pageProductsForReturnToSupplierApi } from '#/api/inventory/warehouse/return-to-supplier';
 import { pageProductsForReturnToWarehouseApi } from '#/api/inventory/pharmacy/return-to-warehouse';
-import { pageProductsForReturnStockInApi } from '#/api/inventory/warehouse/return-stock-in';
 import { pageProductsForStockOutApi } from '#/api/inventory/warehouse/stock-out';
 import {
   mapInventoryOpeningProductToPickRow,
@@ -71,8 +69,6 @@ type ProductPickListSource =
   | 'pharmacy-transfer-out'
   | 'purchase-order'
   | 'purchase-request'
-  | 'return-stock-in'
-  | 'return-to-supplier'
   | 'return-to-warehouse'
   | 'stock-out'
   | 'warehouse-gain-loss'
@@ -342,24 +338,6 @@ async function handleRemoteMethod(params: { keyword?: string; pageNo: number; pa
     return mapInventoryPickListResponse(res.data);
   }
 
-  if (props.listSource === 'return-to-supplier') {
-    const productTableName = (q.productTableName as string | undefined)?.trim();
-    const sourceLocationId = resolveSourceLocationId(q);
-    if (sourceLocationId === undefined || !productTableName) {
-      return { content: [], totalElements: 0 };
-    }
-    const res = await pageProductsForReturnToSupplierApi({
-      productTableName,
-      keyword: params.keyword?.trim() || undefined,
-      supplierId: q.supplierId as number | undefined,
-      includeInventory: true,
-      pageNo: params.pageNo,
-      pageSize: params.pageSize,
-      activeFlag: true,
-    });
-    return mapInventoryPickListResponse(res.data);
-  }
-
   if (props.listSource === 'return-to-warehouse' || props.listSource === 'dept-return') {
     const productTableName = (q.productTableName as string | undefined)?.trim();
     const sourceLocationId = resolveSourceLocationId(q);
@@ -378,23 +356,6 @@ async function handleRemoteMethod(params: { keyword?: string; pageNo: number; pa
       props.listSource === 'return-to-warehouse'
         ? await pageProductsForReturnToWarehouseApi(common)
         : await pageProductsForDeptReturnApi(common);
-    return mapInventoryPickListResponse(res.data);
-  }
-
-  if (props.listSource === 'return-stock-in') {
-    const productTableName = (q.productTableName as string | undefined)?.trim();
-    const sourceLocationId = resolveSourceLocationId(q);
-    if (sourceLocationId === undefined || !productTableName) {
-      return { content: [], totalElements: 0 };
-    }
-    const res = await pageProductsForReturnStockInApi({
-      productTableName,
-      keyword: params.keyword?.trim() || undefined,
-      includeInventory: true,
-      pageNo: params.pageNo,
-      pageSize: params.pageSize,
-      activeFlag: true,
-    });
     return mapInventoryPickListResponse(res.data);
   }
 

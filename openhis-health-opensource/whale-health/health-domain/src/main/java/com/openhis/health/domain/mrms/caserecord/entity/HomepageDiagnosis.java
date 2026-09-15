@@ -13,6 +13,9 @@ import lombok.Setter;
 
 /**
  * 病案首页诊断行子实体（{@code mrms_homepage_diagnosis}）。
+ *
+ * <p>国临码落本表；医保对码不落本表。出院手填扩列见 Flyway
+ * {@code V17__mrms_homepage_diagnosis_handfill_cols.sql}。</p>
  */
 @Getter
 @Setter
@@ -36,17 +39,50 @@ public class HomepageDiagnosis extends AuditedEntityBase {
     @Column(name = "sort_no", nullable = false)
     private Integer sortNo;
 
-    /** ICD-10 诊断编码（4401 diag_code）。 */
+    /** 诊断编码（西医国临 / 中医目录码；院内落库真源；上传前再解析出站码）。 */
     @Column(name = "diag_code", length = 32)
     private String diagCode;
 
-    /** ICD-10 诊断名称（4401 diag_name）。 */
+    /** 诊断名称（与 diag_code 同源目录名）。 */
     @Column(name = "diag_name", length = 200)
     private String diagName;
 
     /** 入院病情字典码（4401 adm_cond，EMR 扩展回填）。 */
     @Column(name = "adm_cond_code", length = 16)
     private String admCondCode;
+
+    /**
+     * 诊断转归/病情码（结算清单列「病情」；对齐老系统 outIllStatus：
+     * 1治愈 2好转 3未愈 4死亡 9其他）。
+     */
+    @Column(name = "out_ill_status_code", length = 8)
+    private String outIllStatusCode;
+
+    /** 确诊时间（结算清单回显；手填，对齐老 confirmDate）。 */
+    @Column(name = "confirm_time")
+    private java.time.LocalDateTime confirmTime;
+
+    /** 说明（结算清单回显；手填自由文本）。 */
+    @Column(name = "diag_remark", length = 200)
+    private String diagRemark;
+
+    /**
+     * 诊断医生主键（出院诊断下拉；对齐老系统 confirmDoctorId）。
+     */
+    @Column(name = "confirm_dr_id")
+    private Long confirmDrId;
+
+    /**
+     * 诊断医生姓名（下拉选中后冗余；对齐老系统 confirmDoctor 展示名）。
+     */
+    @Column(name = "confirm_dr_name", length = 64)
+    private String confirmDrName;
+
+    /**
+     * 是否上传医保（1是 0否；对齐老系统 needYbUp）。
+     */
+    @Column(name = "need_yb_up", length = 3)
+    private String needYbUp;
 
     /** 主诊断标记（4401 maindiag_flag）。 */
     @Column(name = "maindiag_flag", length = 3)

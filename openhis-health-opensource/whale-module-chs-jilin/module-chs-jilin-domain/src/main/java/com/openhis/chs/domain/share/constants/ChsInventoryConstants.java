@@ -119,6 +119,28 @@ public final class ChsInventoryConstants {
     public static final int LOCAL_UPLOAD_LIST_DEFAULT_LIMIT = 500;
 
     /**
+     * 结算中心书面硬限制：单次报文 {@code drugtracinfo} ≤ 500。
+     *
+     * <p>仅作对照说明；出站实际上限见 {@link #DRUGTRACINFO_MAX_PER_REQUEST}。</p>
+     */
+    public static final int DRUGTRACINFO_PLATFORM_HARD_LIMIT = 500;
+
+    /**
+     * 单次 3502/3505/3506 出站 {@code drugtracinfo} 本系统上限（须 ≤ {@link #DRUGTRACINFO_PLATFORM_HARD_LIMIT}）。
+     *
+     * <p>现场证明：平台对近 500 条大包可回 {@code infcode=0} 却<strong>静默丢码</strong>（3512 按批次查不全），
+     * 本地若信 SUCCESS 会形成「虚空入库」，后续出库带同码 → 191。故出站按 100 拆批，且入库类 SUCCESS
+     * 后须 3512 核验（BR-CHS-INV-014）。拆批批次号追加 {@code -C01}/{@code -C02}…。</p>
+     */
+    public static final int DRUGTRACINFO_MAX_PER_REQUEST = 100;
+
+    /**
+     * 入库类 3502 平台 SUCCESS 后 3512 核验发现码未落全时的失败文案前缀（运维可检索）。
+     */
+    public static final String PLATFORM_MSG_INBOUND_TRACE_VERIFY_INCOMPLETE_PREFIX =
+        "平台入库追溯未落全(3512核验)";
+
+    /**
      * 3511 查原销售流水：平台必填 begndate/enddate 的回看天数。
      *
      * <p>长春平台限制「开始日至结束日不得大于 30 天」（含首尾）。
@@ -127,12 +149,48 @@ public final class ChsInventoryConstants {
      */
     public static final long PLATFORM_SALE_QUERY_LOOKBACK_DAYS = 29L;
 
+    /**
+     * 平台失败文案特征：入库商品追溯底账缺失（{@code medinsProdInvChgDBBO_191}）。
+     *
+     * <p>仅表示平台回执类型。运维补传列表隐藏规则见 {@link #isInboundTraceMissingPlatformFailure}
+     * 与「报文追溯码均不在 {@code cus_trace_number} 主档」的合取（BR-CHS-INV-011）：
+     * <strong>主档有码（院内入过库）仍须在补传页可见并处理</strong>。</p>
+     */
+    public static final String PLATFORM_MSG_INBOUND_TRACE_MISSING_CODE = "medinsProdInvChgDBBO_191";
+
+    /**
+     * 平台失败文案特征（中文）：与 {@link #PLATFORM_MSG_INBOUND_TRACE_MISSING_CODE} 同因。
+     */
+    public static final String PLATFORM_MSG_INBOUND_TRACE_MISSING_TEXT = "入库商品追溯信息失败";
+
+    /**
+     * 判断平台回执是否为「入库追溯信息失败 / 191」类文案（不单独决定是否隐藏）。
+     *
+     * @param platformMsg {@code yb_inv_upload.platform_msg}；可空
+     * @return 命中 191 文案时 true
+     */
+    public static boolean isInboundTraceMissingPlatformFailure(String platformMsg) {
+        // 空回执无法判定 191，不按入库追溯缺失处理
+        if (platformMsg == null || platformMsg.isBlank()) {
+            return false;
+        }
+        // 平台错误码 medinsProdInvChgDBBO_191
+        if (platformMsg.contains(PLATFORM_MSG_INBOUND_TRACE_MISSING_CODE)) {
+            return true;
+        }
+        // 同因中文文案（部分网关只回中文）
+        return platformMsg.contains(PLATFORM_MSG_INBOUND_TRACE_MISSING_TEXT);
+    }
+
     /** 重试任务可捞取的本地状态：失败 + 待上报 */
     public static final List<String> RETRYABLE_UPLOAD_STATUSES = Collections.unmodifiableList(Arrays.asList(
         UPLOAD_STATUS_FAILED,
         UPLOAD_STATUS_PENDING
     ));
 
+    /**
+     * 禁止实例化：常量类仅提供静态字段与判定方法。
+     */
     private ChsInventoryConstants() {
     }
 }

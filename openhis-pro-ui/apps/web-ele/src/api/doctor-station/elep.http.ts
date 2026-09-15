@@ -1,12 +1,15 @@
 import type {
   ElepActionResultDto,
   ElepCloneRequest,
+  ElepEncounterContextDto,
+  ElepEncounterContextRequest,
   ElepGeneratePdfRequest,
   ElepHistoryDetailDto,
   ElepPatientHistoryResultDto,
   ElepPlatformQueryRequest,
   ElepPreCheckRequest,
   ElepPrescriptionDraftDto,
+  ElepReviewRequest,
   ElepRevokeRequest,
   ElepSaveDraftRequest,
   ElepSignRequest,
@@ -62,8 +65,7 @@ export async function httpElepPreCheck(body: ElepPreCheckRequest): Promise<ElepA
     contractId: body.contractId ? preserveApiIdForRequest(body.contractId) : undefined,
     encounterId: preserveApiIdForRequest(body.encounterId),
     patientId: preserveApiIdForRequest(body.patientId),
-    platformBody: body.platformBody,
-    pdfInput: body.pdfInput,
+    prescriptionId: preserveApiIdForRequest(body.prescriptionId),
   });
 }
 
@@ -129,7 +131,12 @@ export async function httpElepSaveDraft(
     encounterId: preserveApiIdForRequest(body.encounterId),
     patientId: preserveApiIdForRequest(body.patientId),
     prescriptionId: body.prescriptionId ? preserveApiIdForRequest(body.prescriptionId) : undefined,
-    platformBody: body.platformBody,
+    diseCodg: body.diseCodg,
+    diseName: body.diseName,
+    rxTypeCode: body.rxTypeCode,
+    valiDays: body.valiDays,
+    diagnosis: body.diagnosis,
+    drugLines: body.drugLines,
   });
 }
 
@@ -140,5 +147,24 @@ export async function httpElepGeneratePdf(
     contractBusNo: body.contractBusNo,
     prescriptionId: preserveApiIdForRequest(body.prescriptionId),
     pdfInput: body.pdfInput,
+  });
+}
+
+/** 装载当前就诊只读上下文（自费/无医保挂号则不允许开方） */
+export async function httpElepLoadEncounterContext(
+  body: ElepEncounterContextRequest,
+): Promise<ElepEncounterContextDto> {
+  return publicRequestClient.post<ElepEncounterContextDto>(`${PREFIX}/loadEncounterContext`, {
+    encounterId: preserveApiIdForRequest(body.encounterId),
+    patientId: preserveApiIdForRequest(body.patientId),
+    contractBusNo: body.contractBusNo,
+  });
+}
+
+/** 院内医保药师审方 */
+export async function httpElepReview(body: ElepReviewRequest): Promise<ElepActionResultDto> {
+  return publicRequestClient.post<ElepActionResultDto>(`${PREFIX}/review`, {
+    contractBusNo: body.contractBusNo,
+    prescriptionId: preserveApiIdForRequest(body.prescriptionId),
   });
 }

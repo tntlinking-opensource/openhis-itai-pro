@@ -16,6 +16,7 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -34,7 +35,7 @@ public class InpatientNurseStationTcmOrchestrator {
     /**
      * 解析中西药 Tab，非法值抛业务异常。
      *
-     * @param medicineCategoryTab west / tcm；空则默认 west
+     * @param medicineCategoryTab west / tcm / all；空则默认 west
      * @return 规范化 tab 码
      */
     public String resolveMedicineCategoryTabOrDefault(String medicineCategoryTab) {
@@ -43,16 +44,28 @@ public class InpatientNurseStationTcmOrchestrator {
             return InpatientNurseStationConstants.MEDICINE_CATEGORY_TAB_WEST;
         }
         if (InpatientNurseStationConstants.MEDICINE_CATEGORY_TAB_WEST.equals(tab)
-            || InpatientNurseStationConstants.MEDICINE_CATEGORY_TAB_TCM.equals(tab)) {
+            || InpatientNurseStationConstants.MEDICINE_CATEGORY_TAB_TCM.equals(tab)
+            || InpatientNurseStationConstants.MEDICINE_CATEGORY_TAB_ALL.equals(tab)) {
             return tab;
         }
         throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "中西药 Tab 不合法");
     }
 
     /**
+     * 是否「全部」Tab（西药+中药+诊疗一次返回）。
+     *
+     * @param medicineCategoryTab west / tcm / all
+     * @return true 表示 all
+     */
+    public boolean isAllMedicineCategoryTab(String medicineCategoryTab) {
+        return InpatientNurseStationConstants.MEDICINE_CATEGORY_TAB_ALL.equals(
+            resolveMedicineCategoryTabOrDefault(medicineCategoryTab));
+    }
+
+    /**
      * 是否中药 Tab。
      *
-     * @param medicineCategoryTab west / tcm
+     * @param medicineCategoryTab west / tcm / all
      * @return true 表示 tcm Tab
      */
     public boolean isTcmTab(String medicineCategoryTab) {
@@ -61,9 +74,9 @@ public class InpatientNurseStationTcmOrchestrator {
     }
 
     /**
-     * 中药 Tab 下是否展示诊疗医嘱（中药 Tab 仅药嘱方级行）。
+     * 中药 Tab 下是否展示诊疗医嘱（中药 Tab 仅药嘱方级行；all/west 展示诊疗）。
      *
-     * @param medicineCategoryTab west / tcm
+     * @param medicineCategoryTab west / tcm / all
      * @return true 表示可展示 SERVICE_REQUEST
      */
     public boolean includeServiceRequestOnTab(String medicineCategoryTab) {
@@ -299,7 +312,7 @@ public class InpatientNurseStationTcmOrchestrator {
         if (rows == null || rows.isEmpty()) {
             return new ArrayList<>();
         }
-        if (!isTcmTab(medicineCategoryTab)) {
+        if (!isTcmTab(medicineCategoryTab) && !isAllMedicineCategoryTab(medicineCategoryTab)) {
             return new ArrayList<>(rows);
         }
         Map<String, List<T>> bucketByPrescription = new LinkedHashMap<>();
@@ -336,7 +349,7 @@ public class InpatientNurseStationTcmOrchestrator {
             if (bucket == null || bucket.isEmpty()) {
                 continue;
             }
-            // 代表行取 sortNumber 最小或 id 最小
+            // 代表行取 sortNumber 最小或 id 最小（展示字段载体）；开立时间另取方内最晚
             T representative = bucket.stream()
                 .min(Comparator
                     .comparing(rowAccessor::getSortNumber, Comparator.nullsLast(Comparator.naturalOrder()))
@@ -350,15 +363,71 @@ public class InpatientNurseStationTcmOrchestrator {
                     lineIds.add(id);
                 }
             }
+            // 方级开立时间取最晚一味（空回落签发），使护士按展示时刻顺延即可过 BR-IP-EXE-024
+            LocalDateTime prescriptionOpenedTime =
+                this.resolveLatestTcmPrescriptionOpenedTime(bucket, medDetailById, rowAccessor);
             List<String> herbNames = this.collectTcmHerbDisplayNames(bucket, medDetailById, rowAccessor);
             List<String> herbDosages = this.collectTcmHerbDosageDisplays(bucket, medDetailById, rowAccessor);
             String displayName = buildTcmPrescriptionDisplayName(herbNames);
             String dosageDisplay = buildTcmPrescriptionDosageDisplay(herbDosages);
             rowAccessor.applyTcmPrescriptionCollapse(
-                representative, repMed, lineIds, displayName, dosageDisplay);
+                representative, repMed, lineIds, displayName, dosageDisplay, prescriptionOpenedTime);
             result.add(representative);
         }
         return result;
+    }
+
+    /**
+     * 方内各味开立轴最晚时刻：优先 {@code req_opened_time}，空回落 {@code req_authored_time}。
+     *
+     * <p>护士站折叠行展示用最晚时刻，避免按第一味较早时间执行时撞上后开药味的
+     * 「执行时间不能早于开立时间」门禁（写路径仍按各味自身开立时间校验）。</p>
+     *
+     * @param bucket          同方展示行桶
+     * @param medDetailById   药品明细索引
+     * @param rowAccessor     行访问器
+     * @param <T>             行 DTO 类型
+     * @return 方级展示开立时间；方内皆空时 null
+     */
+    private <T> LocalDateTime resolveLatestTcmPrescriptionOpenedTime(
+        List<T> bucket,
+        Map<Long, MedicationRequestListQueryModel> medDetailById,
+        TcmPrescriptionRowAccessor<T> rowAccessor) {
+        LocalDateTime latest = null;
+        if (bucket == null || bucket.isEmpty()) {
+            return null;
+        }
+        // 遍历方内各味，取开立轴最大值
+        for (T line : bucket) {
+            if (line == null) {
+                continue;
+            }
+            MedicationRequestListQueryModel med = medDetailById.get(rowAccessor.getRequestId(line));
+            LocalDateTime lineOpened = this.resolveMedOpenedTimeWithAuthoredFallback(med);
+            if (lineOpened == null) {
+                continue;
+            }
+            if (latest == null || lineOpened.isAfter(latest)) {
+                latest = lineOpened;
+            }
+        }
+        return latest;
+    }
+
+    /**
+     * 单味开立轴时刻：优先开立列，空回落签发列。
+     *
+     * @param med 药品明细；可 null
+     * @return 开立轴；皆空时 null
+     */
+    private LocalDateTime resolveMedOpenedTimeWithAuthoredFallback(MedicationRequestListQueryModel med) {
+        if (med == null) {
+            return null;
+        }
+        if (med.getReqOpenedTime() != null) {
+            return med.getReqOpenedTime();
+        }
+        return med.getReqAuthoredTime();
     }
 
     /**
@@ -498,7 +567,7 @@ public class InpatientNurseStationTcmOrchestrator {
     }
 
     /**
-     * 药嘱 Tab 过滤：TCM tab 匹配 tcmFlag=true，WESTERN 匹配非中药。
+     * 药嘱 Tab 过滤：tcm 仅中药；west 仅非中药；all 全部命中。
      *
      * @param row 药嘱行
      * @param tab Tab 码
@@ -507,6 +576,9 @@ public class InpatientNurseStationTcmOrchestrator {
     private boolean matchesMedicineCategoryTab(MedicationRequestListQueryModel row, String tab) {
         if (row == null) {
             return false;
+        }
+        if (InpatientNurseStationConstants.MEDICINE_CATEGORY_TAB_ALL.equals(tab)) {
+            return true;
         }
         boolean tcm = Boolean.TRUE.equals(row.getTcmFlag());
         if (InpatientNurseStationConstants.MEDICINE_CATEGORY_TAB_TCM.equals(tab)) {
@@ -549,17 +621,19 @@ public class InpatientNurseStationTcmOrchestrator {
         /**
          * 将方级字段写回代表行。
          *
-         * @param representative 代表行
-         * @param repMed         代表行药品明细
-         * @param lineRequestIds 方内全部 req id
-         * @param adviceDisplayName 方级展示名
-         * @param dosageDisplay 方级单次量展示（各味合并）
+         * @param representative          代表行
+         * @param repMed                  代表行药品明细
+         * @param lineRequestIds          方内全部 req id
+         * @param adviceDisplayName       方级展示名
+         * @param dosageDisplay           方级单次量展示（各味合并）
+         * @param prescriptionOpenedTime  方级展示开立时间（方内最晚；可 null）
          */
         void applyTcmPrescriptionCollapse(
             T representative,
             MedicationRequestListQueryModel repMed,
             List<Long> lineRequestIds,
             String adviceDisplayName,
-            String dosageDisplay);
+            String dosageDisplay,
+            LocalDateTime prescriptionOpenedTime);
     }
 }

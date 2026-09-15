@@ -14,7 +14,7 @@ import org.springframework.stereotype.Component;
  * 入账状态查询（{@code getEBillAccountStatus}）业务 JSON 解析。
  *
  * <p>将 {@link BossInvokeResult} 映射为 {@link BossAccountStatusResult}；
- * 兼容博思多版本字段别名（accountStatus/accStatus/state 等）。</p>
+ * 博思多版本响应字段名不一致（accountStatus/accStatus/state 等），按候选键取首个非空。</p>
  */
 @Component
 public class AccountStatusOutputParser {
@@ -42,7 +42,7 @@ public class AccountStatusOutputParser {
     }
 
     /**
-     * 按候选键顺序读取首个非空字符串（兼容博思字段命名差异）。
+     * 按候选键顺序读取首个非空字符串（博思多版本字段命名差异）。
      *
      * @param json 业务 JSON 对象
      * @param keys 候选键名（从左到右优先）

@@ -34,8 +34,6 @@ export interface NurseStationSkinTestRowDto {
   performLocationId?: null | string;
   practitionerId?: null | string;
   practitionerName?: null | string;
-  /** @deprecated 后端 v1.4 已改为 executedFlag；保留兼容旧响应 */
-  pricedFlag?: boolean | null;
   /** 已登记只读（allergyRecordId 非空） */
   readOnlyFlag?: boolean | null;
   /** 登记/开始时间（cln_allergy_intolerance.recorded_date） */

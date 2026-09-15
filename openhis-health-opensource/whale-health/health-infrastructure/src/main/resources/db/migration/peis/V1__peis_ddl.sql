@@ -279,13 +279,14 @@ COMMENT ON COLUMN peis_auto_express.rule_type_code IS '规则类型编码';
 COMMENT ON COLUMN peis_auto_express.status_enum IS '状态枚举';
 
 -- ========== folded from V6__peis_group_check_and_menu.sql (DDL only) ==========
--- PEIS V6：团检单位/合同/批次/名册
--- 主路径：名册 → AS-PE-FIN-002 批量收费建 Encounter(待检) → GRP 到检确认
+-- PEIS V6：团检单位/合同/体检分组/名册
+-- 主路径：按合同导入名册 → 选定套餐建单 → 到检 → 分科（PEIS-GRP-TREE-PKG-001）
 
 CREATE TABLE IF NOT EXISTS peis_group_company (
     id BIGINT PRIMARY KEY,
     tenant_id BIGINT NOT NULL,
     org_id BIGINT,
+    parent_id BIGINT,
     name VARCHAR(128) NOT NULL,
     campus_college_id BIGINT,
     contact_name VARCHAR(64),
@@ -300,6 +301,12 @@ CREATE TABLE IF NOT EXISTS peis_group_company (
     version INT NOT NULL DEFAULT 0
 );
 
+CREATE INDEX IF NOT EXISTS idx_peis_group_company_parent
+    ON peis_group_company (parent_id)
+    WHERE is_deleted = false;
+
+COMMENT ON COLUMN peis_group_company.parent_id IS '上级单位节点；空表示根节点';
+
 CREATE TABLE IF NOT EXISTS peis_group_contract (
     id BIGINT PRIMARY KEY,
     tenant_id BIGINT NOT NULL,
@@ -311,6 +318,7 @@ CREATE TABLE IF NOT EXISTS peis_group_contract (
     valid_to DATE,
     contract_amount NUMERIC(18, 2),
     pay_status_code VARCHAR(32) NOT NULL DEFAULT 'UNPAID',
+    contract_type_code VARCHAR(32),
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ,
     created_by BIGINT,
@@ -324,6 +332,7 @@ CREATE TABLE IF NOT EXISTS peis_group_contract (
 COMMENT ON COLUMN peis_group_contract.package_activity_id IS '兼容字段：默认套餐（取关联表第一项）';
 COMMENT ON COLUMN peis_group_contract.contract_amount IS '合同金额（元）';
 COMMENT ON COLUMN peis_group_contract.pay_status_code IS '合同支付状态：UNPAID/PAID';
+COMMENT ON COLUMN peis_group_contract.contract_type_code IS '合同类型编码，对齐 peis_contract_type.type_code；散客无合同行';
 
 CREATE TABLE IF NOT EXISTS peis_group_contract_package (
     id BIGINT PRIMARY KEY,
@@ -371,11 +380,40 @@ CREATE TABLE IF NOT EXISTS peis_group_batch (
     version INT NOT NULL DEFAULT 0
 );
 
+COMMENT ON COLUMN peis_group_batch.package_activity_id IS '兼容字段：本体检分组默认套餐（取 peis_group_batch_package 第一项）';
+
+CREATE TABLE IF NOT EXISTS peis_group_batch_package (
+    id BIGINT PRIMARY KEY,
+    tenant_id BIGINT NOT NULL,
+    batch_id BIGINT NOT NULL,
+    package_activity_id BIGINT NOT NULL,
+    sort_order INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ,
+    created_by BIGINT,
+    updated_by BIGINT,
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at TIMESTAMPTZ,
+    deleted_by BIGINT,
+    version INT NOT NULL DEFAULT 0
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_peis_group_batch_pkg
+    ON peis_group_batch_package (batch_id, package_activity_id)
+    WHERE is_deleted = false;
+
+CREATE INDEX IF NOT EXISTS idx_peis_group_batch_pkg_batch
+    ON peis_group_batch_package (batch_id)
+    WHERE is_deleted = false;
+
+COMMENT ON TABLE peis_group_batch_package IS '体检分组可选套餐（须 ⊆ 合同套餐池）';
+
 CREATE TABLE IF NOT EXISTS peis_group_roster (
     id BIGINT PRIMARY KEY,
     tenant_id BIGINT NOT NULL,
     org_id BIGINT,
     batch_id BIGINT NOT NULL,
+    company_id BIGINT,
     patient_id BIGINT,
     full_name VARCHAR(128) NOT NULL,
     id_card_no VARCHAR(32),
@@ -385,6 +423,7 @@ CREATE TABLE IF NOT EXISTS peis_group_roster (
     class_name VARCHAR(128),
     mobile_phone VARCHAR(32),
     encounter_id BIGINT,
+    selected_package_activity_id BIGINT,
     pay_status_code VARCHAR(32) NOT NULL DEFAULT 'UNPAID',
     arrival_status_code VARCHAR(32) NOT NULL DEFAULT 'PENDING',
     created_at TIMESTAMPTZ NOT NULL,
@@ -396,8 +435,39 @@ CREATE TABLE IF NOT EXISTS peis_group_roster (
     deleted_by BIGINT,
     version INT NOT NULL DEFAULT 0
 );
+
+COMMENT ON COLUMN peis_group_roster.company_id IS '受检者所在单位树节点（可与合同挂点不同）';
+COMMENT ON COLUMN peis_group_roster.selected_package_activity_id IS '已选定套餐 AD；建单前可为空';
+
+CREATE TABLE IF NOT EXISTS peis_group_roster_package (
+    id BIGINT PRIMARY KEY,
+    tenant_id BIGINT NOT NULL,
+    roster_id BIGINT NOT NULL,
+    package_activity_id BIGINT NOT NULL,
+    sort_order INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ,
+    created_by BIGINT,
+    updated_by BIGINT,
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at TIMESTAMPTZ,
+    deleted_by BIGINT,
+    version INT NOT NULL DEFAULT 0
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_peis_group_roster_pkg
+    ON peis_group_roster_package (roster_id, package_activity_id)
+    WHERE is_deleted = false;
+
+CREATE INDEX IF NOT EXISTS idx_peis_group_roster_pkg_roster
+    ON peis_group_roster_package (roster_id)
+    WHERE is_deleted = false;
+
+COMMENT ON TABLE peis_group_roster_package IS '名册可选套餐（须 ⊆ 所属分组套餐）';
+
 CREATE INDEX IF NOT EXISTS idx_peis_group_roster_batch ON peis_group_roster (batch_id) WHERE is_deleted = false;
 CREATE INDEX IF NOT EXISTS idx_peis_group_roster_pay ON peis_group_roster (batch_id, pay_status_code) WHERE is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_peis_group_roster_patient ON peis_group_roster (patient_id) WHERE is_deleted = false;
 
 -- ========== folded from V7__peis_patient_health_archive.sql ==========
 -- PEIS V7：学生健康档案（BAS-05 / AS-PEIS-ARCH-001）
@@ -455,3 +525,31 @@ CREATE INDEX IF NOT EXISTS idx_peis_recheck_task_encounter
   ON peis_recheck_task (encounter_id, is_deleted);
 
 COMMENT ON TABLE peis_recheck_task IS '体检复查任务（Peis 04 §4.5 方案 A 本地 Task 语义，待 WKF Task 迁入）';
+
+-- ========== folded from V5__contract_type_dict_and_column.sql (DDL) ==========
+CREATE TABLE IF NOT EXISTS peis_contract_type (
+    id BIGINT PRIMARY KEY,
+    tenant_id BIGINT,
+    type_code VARCHAR(32) NOT NULL,
+    type_name VARCHAR(64) NOT NULL,
+    sort_order INT NOT NULL DEFAULT 0,
+    enabled_flag BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ,
+    created_by BIGINT,
+    updated_by BIGINT,
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at TIMESTAMPTZ,
+    deleted_by BIGINT,
+    version INT NOT NULL DEFAULT 0
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_peis_contract_type_code
+    ON peis_contract_type (type_code)
+    WHERE is_deleted = FALSE;
+
+COMMENT ON TABLE peis_contract_type IS '团检合同类型字典（号源分池维度；booking 只读）';
+COMMENT ON COLUMN peis_contract_type.type_code IS '类型编码：STUDENT/STAFF/ENTERPRISE/WALK_IN 等';
+COMMENT ON COLUMN peis_contract_type.type_name IS '显示名称';
+COMMENT ON COLUMN peis_contract_type.sort_order IS '排序号，越小越靠前';
+COMMENT ON COLUMN peis_contract_type.enabled_flag IS '是否启用';

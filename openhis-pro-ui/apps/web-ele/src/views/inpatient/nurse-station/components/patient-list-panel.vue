@@ -36,6 +36,7 @@ const {
   filterPanelExpanded,
   filteredPatients,
   keyword,
+  queueLoading,
   onPatientCardDblClick,
   onPatientDragEnd,
   onPatientDragStart,
@@ -212,6 +213,7 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
           />
           <ElButton
             :icon="Refresh"
+            :loading="queueLoading"
             circle
             class="nurse-search-bar__refresh"
             title="刷新"
@@ -293,14 +295,14 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
         </div>
         <div class="nurse-content-divider"></div>
         <div class="nurse-main">
-          <div class="nurse-patient-panel">
+          <div v-loading="queueLoading" class="nurse-patient-panel">
             <div class="nurse-table">
-              <template v-if="filteredPatients.length === 0">
+              <template v-if="!queueLoading && filteredPatients.length === 0">
                 <div class="flex min-h-80 items-center justify-center">
                   <ElEmpty description="暂无符合条件的患者" />
                 </div>
               </template>
-              <template v-else>
+              <template v-else-if="filteredPatients.length > 0">
                 <div class="nurse-card-list">
                   <div
                     v-for="row in filteredPatients"
@@ -398,6 +400,10 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
                     </div>
                   </div>
                 </div>
+              </template>
+              <!-- 加载中占位：保证 v-loading 有可视区域 -->
+              <template v-else>
+                <div class="nurse-table__loading-placeholder"></div>
               </template>
             </div>
           </div>
@@ -575,6 +581,9 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
 .nurse-table {
   flex: 1;
   min-height: 0;
+}
+.nurse-table__loading-placeholder {
+  min-height: 320px;
 }
 .nurse-card-list {
   height: 100%;

@@ -17,16 +17,16 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * payment {@code enterer_id} 读侧匹配：Practitioner 主键 + 绑定用户主键（存量兼容）。
+ * payment / charge {@code enterer_id} 读侧匹配：仅 {@code adm_practitioner.id}（**BR-OPC-016**）。
  *
- * <p>挂号/收费写路径以 {@code adm_practitioner.id} 落库为主；历史或异常数据可能仍为
- * {@code whale_users.id}。日结与费用明细按经办人筛选时须同时命中两类标识。</p>
+ * <p>写路径与库内口径均为医务人员主键；漏网 {@code whale_users.id} 由 Flyway
+ * {@code V23__backfill_enterer_id_practitioner} 一次性回填，运行时<strong>不再</strong>按用户主键扩白名单。</p>
  */
 @Component
 @RequiredArgsConstructor
 public class PaymentEntererMatchResolver {
 
-    /** 医务人员读侧：解析 Practitioner 与绑定用户主键。 */
+    /** 医务人员读侧：校验 enterer 是否为有效 Practitioner 主键。 */
     private final PractitionerQueryService practitionerQueryService;
 
     /**
@@ -40,43 +40,29 @@ public class PaymentEntererMatchResolver {
     }
 
     /**
-     * 解析日结/费用明细经办人 {@code enterer_id} 白名单（Practitioner 主键 + 绑定用户 + 会话用户存量）。
+     * 解析日结/费用明细经办人 {@code enterer_id} 白名单（仅 Practitioner 主键）。
      *
-     * <p>住院登记等历史写路径曾将 {@code enterer_id} 落为 {@code whale_users.id}（前端 {@code userInfo.id}），
-     * 当 {@code sessionUserId} 映射到所选 {@code cashierPractitionerId} 时须一并纳入匹配。</p>
+     * <p>{@code sessionUserId} 保留方法签名供日结调用方透传，本方法忽略（不再按登录用户主键扩匹配）。</p>
      *
      * @param cashierPractitionerId 所选经办人 Practitioner 主键
-     * @param sessionUserId         当前登录用户主键，可空
+     * @param sessionUserId         当前登录用户主键（忽略）
      * @return 去重后的 enterer 匹配主键
      */
     public List<Long> resolveEntererMatchIds(Long cashierPractitionerId, Long sessionUserId) {
         if (cashierPractitionerId == null) {
             return List.of();
         }
-        LinkedHashSet<Long> matchIds = new LinkedHashSet<>();
-        matchIds.add(cashierPractitionerId);
-        Practitioner practitioner = this.practitionerQueryService.findById(cashierPractitionerId);
-        if (practitioner != null && practitioner.getUserId() != null) {
-            // 存量 payment.enterer_id 可能存系统用户主键
-            matchIds.add(practitioner.getUserId());
-        }
-        if (sessionUserId != null) {
-            Practitioner mappedPractitioner = this.practitionerQueryService.findByUserId(sessionUserId);
-            if (mappedPractitioner != null
-                && mappedPractitioner.getId() != null
-                && cashierPractitionerId.equals(mappedPractitioner.getId())) {
-                // 住院登记/预交金存量：enterer_id 落登录用户主键，与 practitioner.user_id 未绑定时仍须命中
-                matchIds.add(sessionUserId);
-            }
-        }
-        return new ArrayList<>(matchIds);
+        // BR-OPC-016：enterer_id 仅医务人员主键；sessionUserId 不参与白名单
+        return List.of(cashierPractitionerId);
     }
 
     /**
      * 多收款人合并 enterer 白名单（去重保序）。
      *
+     * <p>{@code sessionUserId} 保留签名，忽略。</p>
+     *
      * @param cashierPractitionerIds 经办人 Practitioner 主键集合
-     * @param sessionUserId          当前登录用户主键，可空
+     * @param sessionUserId          当前登录用户主键（忽略）
      * @return 合并后的 enterer 匹配主键
      */
     public List<Long> resolveEntererMatchIds(Collection<Long> cashierPractitionerIds, Long sessionUserId) {
@@ -88,18 +74,17 @@ public class PaymentEntererMatchResolver {
             if (cashierPractitionerId == null) {
                 continue;
             }
-            matchIds.addAll(this.resolveEntererMatchIds(cashierPractitionerId, sessionUserId));
+            matchIds.add(cashierPractitionerId);
         }
         return new ArrayList<>(matchIds);
     }
 
     /**
-     * 将窗内 {@code payment.enterer_id} 混集规范为 Practitioner 主键（供收款人下拉 value）。
+     * 将窗内 {@code payment.enterer_id} 规范为 Practitioner 主键（供收款人下拉 value）。
      *
-     * <p>先按医务人员主键命中；未命中再按绑定用户主键反查。无法解析的 enterer 丢弃，
-     * 避免把系统用户 id 直接塞进下拉导致软筛/提交对不上。</p>
+     * <p>仅保留能按医务人员主键命中的 id；无法解析的 enterer 丢弃，避免脏值进入下拉。</p>
      *
-     * @param entererIds 窗内去重后的 enterer_id（可能混有 practitioner.id / whale_users.id）
+     * @param entererIds 窗内去重后的 enterer_id（须为 practitioner.id）
      * @return Practitioner 主键列表（去重保序）；入参空则空列表
      */
     public List<Long> resolvePractitionerIdsFromEntererIds(Collection<Long> entererIds) {
@@ -115,7 +100,7 @@ public class PaymentEntererMatchResolver {
         if (distinctEntererIds.isEmpty()) {
             return List.of();
         }
-        // Pre：先按医务人员主键批量命中
+        // Pre：仅按医务人员主键批量命中（BR-OPC-016；禁止再按 userId 反查）
         List<Practitioner> byPractitionerId =
             this.practitionerQueryService.findAllByIds(distinctEntererIds);
         Map<Long, Practitioner> practitionerById = new HashMap<>();
@@ -124,32 +109,11 @@ public class PaymentEntererMatchResolver {
                 practitionerById.put(practitioner.getId(), practitioner);
             }
         }
-        List<Long> unresolvedUserIds = new ArrayList<>();
-        for (Long entererId : distinctEntererIds) {
-            if (!practitionerById.containsKey(entererId)) {
-                unresolvedUserIds.add(entererId);
-            }
-        }
-        // Pre：剩余按绑定用户主键反查（存量 enterer_id=userId；含停用主档，只要曾收费即可带出）
-        Map<Long, Practitioner> practitionerByUserId = new HashMap<>();
-        for (Long userId : unresolvedUserIds) {
-            Practitioner practitioner = this.practitionerQueryService.findByUserId(userId);
-            if (practitioner == null || practitioner.getUserId() == null || practitioner.getId() == null) {
-                continue;
-            }
-            practitionerByUserId.put(practitioner.getUserId(), practitioner);
-        }
         LinkedHashSet<Long> practitionerIds = new LinkedHashSet<>();
         for (Long entererId : distinctEntererIds) {
-            Practitioner byId = practitionerById.get(entererId);
-            if (byId != null && byId.getId() != null) {
-                practitionerIds.add(byId.getId());
-                continue;
-            }
-            Practitioner byUser = practitionerByUserId.get(entererId);
             // 无法映射到医务人员的 enterer 不进入下拉
-            if (byUser != null && byUser.getId() != null) {
-                practitionerIds.add(byUser.getId());
+            if (practitionerById.containsKey(entererId)) {
+                practitionerIds.add(entererId);
             }
         }
         return new ArrayList<>(practitionerIds);

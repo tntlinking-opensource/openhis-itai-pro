@@ -331,6 +331,30 @@ public class DeviceRequest extends BaseAuditedEntity {
     }
 
     /**
+     * 断言本行为负向退耗申请（含 {@code refund_device_id}），可供门诊退费申请撤销时软删。
+     *
+     * @throws BusinessException 非负向退耗单时
+     */
+    public void ensureOpenRefundDeviceOrderForVoid() {
+        if (this.refundDeviceId == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.DEVICE_REQUEST_RULE_CONFLICT,
+                "非退耗负向申请不允许作废");
+        }
+    }
+
+    /**
+     * 逻辑删除耗材申请（门诊退费申请撤销负向单、草稿删除等路径）。
+     *
+     * @param operatorId 操作人主键
+     */
+    public void markDeleted(Long operatorId) {
+        this.setIsDeleted(Boolean.TRUE);
+        this.setDeletedBy(operatorId);
+        this.setDeletedAt(LocalDateTime.now());
+    }
+
+    /**
      * 药房退药闭环完成：负向耗材申请推进为已完成。
      */
     public void toCompletedAfterPharmacyRefund() {

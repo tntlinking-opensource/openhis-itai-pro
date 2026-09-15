@@ -20,7 +20,7 @@ import lombok.experimental.Accessors;
 public class PagePhysicalExamChargeQueueRequest extends AbstractHealthPageRequest {
 
     /**
-     * 收费类型：{@code PERSONAL} 个检、{@code GROUP} 团检；缺省按个检。
+     * 收费类型：{@code PERSONAL} 个检、{@code GROUP} 团检；缺省或空白时个检与团检合并。
      */
     @Schema(description = "收费类型：PERSONAL/GROUP")
     private String chargeKind;

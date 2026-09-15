@@ -22,6 +22,7 @@ import com.openhis.health.application.shared.payment.ThirdPartyPaymentSettleOrch
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.health.application.outpatient.financial.charge.support.ChargeReceiptPrintAssembler;
+import com.openhis.health.application.outpatient.financial.charge.support.OutpatientChargePrescriptionSnapshotStamper;
 import com.openhis.health.application.outpatient.financial.charge.support.OutpatientChargeSettlementGate;
 import com.openhis.health.application.outpatient.financial.charge.support.OutpatientPaymentDraftLifecycleOrchestrator;
 import com.openhis.health.domain.administration.account.entity.Account;
@@ -177,6 +178,7 @@ public class OutpatientChargeAppService {
     private final ChargeReceiptPrintAssembler chargeReceiptPrintAssembler;
     private final OutpatientChargeSettlementGate outpatientChargeSettlementGate;
     private final OutpatientPaymentDraftLifecycleOrchestrator outpatientPaymentDraftLifecycleOrchestrator;
+    private final OutpatientChargePrescriptionSnapshotStamper outpatientChargePrescriptionSnapshotStamper;
 
     /**
      * IF-OPC-01：加载收费页初始化数据。
@@ -442,7 +444,7 @@ public class OutpatientChargeAppService {
             "当前会话操作人不能为空");
         BatchChargeItemIdsCommand preSettleCommand =
             outpatientChargeMapper.toBatchChargeItemIdsCommand(request.getChargeItemIds(), operatorId);
-        // 预结算前先作废同就诊遗留草稿，避免多次预结算残留 DRAFT 使 BR-OPC-012 误判为待收费。
+        // 预结算前先作废同就诊遗留草稿（BR-OPC-012）；半成功 BPC SUCCESS 草稿拒绝作废（BR-OPC-025）。
         this.outpatientPaymentDraftLifecycleOrchestrator.cancelAllDraftsForEncounter(request.getEncounterId(), null);
         // 先落收费项预结算快照，再创建支付草稿，保证“费用事实在前、支付草稿在后”的时序。
         chargeItemDomainService.preSettleChargeItems(preSettleCommand);
@@ -968,9 +970,12 @@ public class OutpatientChargeAppService {
                 outpatientChargeMapper.toBatchChargeItemIdsCommand(request.getChargeItemIds(), operatorId);
             // Cmd：收费时间与 payment.bill_date 同值写入 ChargeItem.entered_date（BR-OPC-016）
             batchChargeItemIdsCommand.setBillDate(request.getBillDate());
+            // Cmd：结算前从药品/诊疗请求抄写处方号快照（收费行非真源，避免签发挂费漂移）
+            this.outpatientChargePrescriptionSnapshotStamper.stampBeforeSettle(chargeItems, operatorId);
             chargeItemDomainService.settleChargeItems(batchChargeItemIdsCommand);
-            // 正式结算后清理同就诊其它草稿支付单，防止队列标签仍命中陈旧 DRAFT。
-            this.outpatientPaymentDraftLifecycleOrchestrator.cancelAllDraftsForEncounter(request.getEncounterId(), null);
+            // 正式结算后清理同就诊其它草稿；半成功草稿跳过保留（BR-OPC-025），避免回滚本笔已成功 settle。
+            this.outpatientPaymentDraftLifecycleOrchestrator.cancelStaleDraftsAfterSuccessfulSettle(
+                request.getEncounterId(), paymentId);
             // 收费项已结算：按锚点推进关联医嘱/申请及发放草稿，患者方可进入发药/执行后续环节。
             this.syncAdviceStatesAfterChargeSettlement(chargeItems, operatorId);
             // Cmd：票面按收费项合计开票（含医保已付）；现金 displayAmount=0 仍开票（BR-INV-008）

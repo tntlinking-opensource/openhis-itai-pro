@@ -134,6 +134,10 @@ export interface ListInpatientDoctorStationAdviceRequest {
   patientId: string;
   /** LONG_TERM / TEMPORARY / DISCHARGE_MEDICATION；空表示不过滤 */
   therapyTypeCode?: string;
+  /**
+   * 纳入中药饮片（病案首页医嘱列表为 true；开立 Tab 不传，保持与中医 Tab 分域）。
+   */
+  includeTcmMedication?: boolean;
 }
 
 export interface ListInpatientDoctorStationAdviceResponse {

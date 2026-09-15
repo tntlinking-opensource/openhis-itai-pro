@@ -210,7 +210,7 @@ public class CampusArchiveQueryAppService {
     }
 
     private Optional<PatientStudent> findStudentByIdCard(Long tenantId, String idCard) {
-        return patientStudentQueryService.page(tenantId, idCard, null, null, null, null, null, PageRequest.of(0, 20))
+        return patientStudentQueryService.page(tenantId, idCard, null, null, null, null, null, null, null, PageRequest.of(0, 20))
             .getContent().stream()
             .filter(student -> idCard.equals(student.getIdCard()))
             .findFirst();

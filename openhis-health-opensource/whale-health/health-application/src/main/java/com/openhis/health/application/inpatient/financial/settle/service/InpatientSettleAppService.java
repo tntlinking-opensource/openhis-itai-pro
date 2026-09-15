@@ -136,6 +136,7 @@ import com.openhis.health.infrastructure.integration.insurance.inventory.Extensi
 import com.openhis.health.infrastructure.integration.noop.IntegrationAfterCommitSupport;
 import com.openhis.health.infrastructure.integration.payment.dto.ClientRefundResultDto;
 import com.openhis.health.infrastructure.integration.payment.dto.ClientScanResultDto;
+import com.openhis.health.application.shared.payment.PaymentDraftHalfSuccessAbortGate;
 import com.openhis.health.infrastructure.integration.payment.ThirdPartyPaymentExtension;
 import com.openhis.whale.core.application.util.StringUtils;
 import lombok.RequiredArgsConstructor;
@@ -197,6 +198,9 @@ public class InpatientSettleAppService {
 
     /** 第三方收单扩展（判断原预交金是否仍有 BPC SUCCESS 被扫单）。 */
     private final ThirdPartyPaymentExtension thirdPartyPaymentExtension;
+
+    /** 支付草稿作废半成功门禁（重预结算清旧草稿时禁止裸作废银联已扣单）。 */
+    private final PaymentDraftHalfSuccessAbortGate paymentDraftHalfSuccessAbortGate;
 
     private final PaymentChannelOptionProvider paymentChannelOptionProvider;
 
@@ -622,7 +626,9 @@ public class InpatientSettleAppService {
         }
         try {
             // Cmd：作废旧 INPATIENT_CLINIC 草稿，避免并发预结算残留（BR-IP-STL-010）。
+            // Gate：半成功（银联已扣）禁止裸作废，与门诊 BR-OPC-025 同口径。
             for (PaymentReconciliationQueryModel draft : draftPayments) {
+                paymentDraftHalfSuccessAbortGate.assertAbortableWithoutUnreimbursedScan(draft.getId());
                 AbortPreSettlementBeforePaymentCommand abortCmd = new AbortPreSettlementBeforePaymentCommand();
                 abortCmd.setPaymentId(draft.getId());
                 paymentReconciliationDomainService.abortPreSettlementBeforePayment(abortCmd);

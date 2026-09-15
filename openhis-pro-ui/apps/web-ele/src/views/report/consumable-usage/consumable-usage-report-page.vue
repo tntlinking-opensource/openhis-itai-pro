@@ -9,7 +9,7 @@ import type {
   ConsumableUsageSummaryRowDto,
 } from '#/api/report/consumable-usage';
 import type { ApiOptionItem } from '#/types/api-response';
-import type { ReportPrintColumnDef } from '#/utils/print/print-report-list';
+import type { ReportPrintColumnDef, ReportPrintSummaryItem } from '#/utils/print/print-report-list';
 
 import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 
@@ -21,19 +21,25 @@ import {
   ElDatePicker,
   ElFormItem,
   ElInput,
+  ElLoading,
   ElMessage,
   ElOption,
   ElRadioButton,
   ElRadioGroup,
   ElSelect,
+  ElSwitch,
   ElTableColumn,
   ElTag,
 } from 'element-plus';
+
+import dayjs from 'dayjs';
 
 import {
   EXPORT_TAB_DETAIL,
   EXPORT_TAB_SUMMARY,
   exportConsumableUsageReportApi,
+  LINE_MERGE_MODE_BY_DEFINITION,
+  LINE_MERGE_MODE_LINE,
   loadConsumableUsageReportPageInitApi,
   pageConsumableUsageReportDetailApi,
   SOURCE_CODE_ALL,
@@ -46,13 +52,13 @@ import {
 import { useRequest } from '#/hooks/use-request';
 import { downloadBinaryExportFile } from '#/utils/export/download-binary-export';
 import { buildExcelExportColumns } from '#/utils/export/build-excel-export-columns';
-import { formatMoneyDisplay } from '#/utils/format/money-scale';
+import { formatMoneyDisplay, sumMoneyThenSettle } from '#/utils/format/money-scale';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import {
   isReportRefundBySignedFields,
   mapReportPrintRow,
   REPORT_QUERY_CONTROL,
-  REPORT_QUERY_CONTROL_DATERANGE,
+  REPORT_QUERY_CONTROL_DATETIMERANGE,
   REPORT_TABLE_AMOUNT_CELL,
   REPORT_TABLE_NUM_CELL,
   ReportElTable,
@@ -63,13 +69,14 @@ import {
   ReportQueryBar,
   reportPrintFieldsOf,
   ReportTableScroll,
-  resolveReportRefundRowClassName,
+  resolveReportDetailRowClassName,
   sumReportPurchaseCornerFromRows,
   useReportListPrint,
 } from '#/views/report/shared';
 import {
-  buildReportDateRangeShortcuts,
-  normalizeReportDateRangeYmd,
+  buildReportDateTimeRangeShortcuts,
+  normalizeReportDateTime,
+  toReportApiDateTimeRangePrecise,
 } from '#/views/report/shared/report-date-range-shortcuts';
 import { fmtReportNumber, optionDtosToSelectItems } from '#/views/report/shared/report-format';
 
@@ -97,6 +104,10 @@ interface QueryState {
   patientKeyword: string;
   /** 患者=开立科室；领用=领用科室 */
   organizationId?: string;
+  /**
+   * 按患者维度合并（仅住院明细·患者使用源）：true → BY_DEFINITION。
+   */
+  mergeByPatientDefinition: boolean;
 }
 
 const props = defineProps<Props>();
@@ -130,6 +141,7 @@ const queryParams = reactive<QueryState>({
   deviceKeyword: '',
   patientKeyword: '',
   organizationId: undefined,
+  mergeByPatientDefinition: false,
 });
 
 const pageTitle = computed(() =>
@@ -141,6 +153,11 @@ const defaultExportFileName = computed(() =>
 );
 
 const isSummaryTab = computed(() => queryParams.exportTabCode === EXPORT_TAB_SUMMARY);
+
+/** 住院明细且开启按患者维度合并（科室领用源后端按 LINE 忽略）。 */
+const isPatientDefinitionMerge = computed(
+  () => props.scope === 'inpatient' && !isSummaryTab.value && queryParams.mergeByPatientDefinition,
+);
 
 const encounterNoLabel = computed(() => (props.scope === 'outpatient' ? '门诊号' : '住院号'));
 
@@ -154,21 +171,26 @@ const departmentColumnLabel = computed(() =>
   queryParams.sourceCode === SOURCE_CODE_DEPT_ISSUE ? '领用科室' : '开立科室',
 );
 
-const dateRangeShortcuts = buildReportDateRangeShortcuts();
+const dateTimeRangeShortcuts = buildReportDateTimeRangeShortcuts();
+/** 日历点选日期时默认起 00:00:00、止 23:59:59（快捷项已自带时分秒）。 */
+const dateTimeDefaultTime: [Date, Date] = [
+  new Date(2000, 0, 1, 0, 0, 0),
+  new Date(2000, 0, 1, 23, 59, 59),
+];
 
-/** 业务日期与 daterange 双向绑定。 */
+/** 业务时间与 datetimerange 双向绑定（界面精确到秒）。 */
 const businessDateRange = computed({
   get() {
-    const start = normalizeReportDateRangeYmd(queryParams.dateFrom);
-    const end = normalizeReportDateRangeYmd(queryParams.dateTo);
+    const start = normalizeReportDateTime(queryParams.dateFrom, 'start');
+    const end = normalizeReportDateTime(queryParams.dateTo, 'end');
     if (start && end) {
       return [start, end] as [string, string];
     }
     return null;
   },
   set(value: [string, string] | null) {
-    queryParams.dateFrom = value?.[0] ?? '';
-    queryParams.dateTo = value?.[1] ?? '';
+    queryParams.dateFrom = value?.[0] ? normalizeReportDateTime(value[0], 'start') || '' : '';
+    queryParams.dateTo = value?.[1] ? normalizeReportDateTime(value[1], 'end') || '' : '';
   },
 });
 
@@ -226,13 +248,19 @@ const printColumnCatalog = computed<ReportPrintColumnDef[]>(() => {
   }
   const cols: ReportPrintColumnDef[] = [
     { field: 'sourceCode_dictText', title: '来源', align: 'center', widthWeight: 0.9 },
+  ];
+  // 合并态隐藏业务时间（逐条差异）
+  if (!isPatientDefinitionMerge.value) {
+    cols.push({ field: 'businessTime', title: '业务时间', align: 'center', widthWeight: 1.3 });
+  }
+  cols.push(
     { field: 'deviceName', title: '耗材名称', align: 'center', widthWeight: 2 },
     { field: 'specText', title: '规格', align: 'center', widthWeight: 1.2 },
     { field: 'patientName', title: '患者', align: 'center', widthWeight: 0.9 },
     { field: 'encounterBusNo', title: '就诊号', align: 'center', widthWeight: 1.5 },
     { field: 'feeNatureDisplay', title: '费用性质', align: 'center', widthWeight: 0.9 },
     { field: 'medTypeDisplay', title: '医疗类别', align: 'center', widthWeight: 0.9 },
-  ];
+  );
   // 住院才有病区/床号列
   if (props.scope === 'inpatient') {
     cols.push(
@@ -248,17 +276,29 @@ const printColumnCatalog = computed<ReportPrintColumnDef[]>(() => {
       widthWeight: 1.2,
     },
     { field: 'locationName', title: '耗材房', align: 'center', widthWeight: 1.4 },
-    { field: 'statusOrTypeEnum_enumText', title: '状态/类型', align: 'center', widthWeight: 0.9 },
+  );
+  if (!isPatientDefinitionMerge.value) {
+    cols.push({
+      field: 'statusOrTypeEnum_enumText',
+      title: '状态/类型',
+      align: 'center',
+      widthWeight: 0.9,
+    });
+  }
+  cols.push(
     { field: 'quantityDisplay', title: '数量', align: 'right', widthWeight: 1 },
     { field: 'purchaseUnitPrice', title: '进价单价', align: 'right', widthWeight: 0.9 },
     { field: 'purchaseAmount', title: '进价总价', align: 'right', widthWeight: 1 },
     { field: 'saleUnitPrice', title: '售价单价', align: 'right', widthWeight: 0.9 },
     { field: 'saleAmount', title: '售价总价', align: 'right', widthWeight: 1 },
-    { field: 'lotNumber', title: '批号', align: 'center', widthWeight: 1 },
-    { field: 'performerName', title: '执行人', align: 'center', widthWeight: 0.8 },
-    { field: 'busNo', title: '业务单号', align: 'center', widthWeight: 1.4 },
-    { field: 'businessTime', title: '业务时间', align: 'center', widthWeight: 1.3 },
   );
+  if (!isPatientDefinitionMerge.value) {
+    cols.push(
+      { field: 'lotNumber', title: '批号', align: 'center', widthWeight: 1 },
+      { field: 'performerName', title: '执行人', align: 'center', widthWeight: 0.8 },
+      { field: 'busNo', title: '业务单号', align: 'center', widthWeight: 1.4 },
+    );
+  }
   return cols;
 });
 
@@ -305,12 +345,49 @@ function mapDetailPrintRows(): Record<string, string>[] {
   );
 }
 
+/** 打印合计金额：空不印。 */
+function formatPrintMoney(value: unknown): string {
+  if (value === undefined || value === null || value === '') {
+    return '';
+  }
+  return formatMoneyDisplay(value);
+}
+
+/** 进价合计、售价合计有展示值才进打印。 */
+function toPrintAmountSummaryItems(
+  purchase: number | string,
+  sale: number | string,
+): ReportPrintSummaryItem[] {
+  const items: ReportPrintSummaryItem[] = [];
+  const purchaseText = formatPrintMoney(purchase);
+  if (purchaseText) {
+    items.push({ label: '进价合计', value: purchaseText });
+  }
+  const saleText = formatPrintMoney(sale);
+  if (saleText) {
+    items.push({ label: '售价合计', value: saleText });
+  }
+  return items;
+}
+
+/** 组装打印表尾金额汇总（对齐库存明细：最后一页右下角）。 */
+function buildPrintSummaryItems(): ReportPrintSummaryItem[] {
+  if (isSummaryTab.value) {
+    return toPrintAmountSummaryItems(purchaseNetTotalAmount.value, saleNetTotalAmount.value);
+  }
+  // 明细只打本页：与纸面行同源加总
+  const purchaseSum = sumMoneyThenSettle(detailRows.value.map((row) => row.purchaseAmount));
+  const saleSum = sumMoneyThenSettle(detailRows.value.map((row) => row.saleAmount));
+  return toPrintAmountSummaryItems(purchaseSum, saleSum);
+}
+
 const { printFieldDialogRef, printSubmitting, handleOpenPrintFields, handlePrintCurrentPage } =
   useReportListPrint({
     getReportCode: () => printReportCode.value,
     getColumnCatalog: () => printColumnCatalog.value,
     getReportTitle: () => printReportTitle.value,
     getPrintRows: () => (isSummaryTab.value ? mapSummaryPrintRows() : mapDetailPrintRows()),
+    getSummaryItems: () => buildPrintSummaryItems(),
   });
 
 const { run: runInit, loading: initLoading } = useRequest(
@@ -330,8 +407,11 @@ const { run: runInit, loading: initLoading } = useRequest(
       practitionerOptions.value = optionDtosToSelectItems(data?.practitionerOptions);
       recordTypeOptions.value = optionDtosToSelectItems(data?.recordTypeOptions);
       queryParams.dateFrom =
-        normalizeReportDateRangeYmd(data?.defaultDateFrom) || queryParams.dateFrom;
-      queryParams.dateTo = normalizeReportDateRangeYmd(data?.defaultDateTo) || queryParams.dateTo;
+        normalizeReportDateTime(data?.defaultDateFrom, 'start') ||
+        dayjs().startOf('day').format('YYYY-MM-DD HH:mm:ss');
+      queryParams.dateTo =
+        normalizeReportDateTime(data?.defaultDateTo, 'end') ||
+        dayjs().endOf('day').format('YYYY-MM-DD HH:mm:ss');
       const firstDim = summaryDimensionOptions.value[0]?.value;
       if (firstDim) {
         queryParams.summaryDimension = String(firstDim);
@@ -398,9 +478,29 @@ const { run: runExport, loading: exportLoading } = useRequest(
   },
 );
 
-const tableLoading = computed(
-  () => initLoading.value || summarizeLoading.value || detailLoading.value || printSubmitting.value,
+const tableLoading = computed(() => {
+  // 开合并时用全屏 ElLoading，表格 loading 关掉，避免双圈
+  if (mergeFullscreenBusy.value) {
+    return false;
+  }
+  return (
+    initLoading.value ||
+    summarizeLoading.value ||
+    detailLoading.value ||
+    printSubmitting.value ||
+    mergeQueryBusy.value
+  );
+});
+
+/** 按钮/开关忙态（含全屏合并查询）。 */
+const queryActionBusy = computed(
+  () => mergeFullscreenBusy.value || mergeQueryBusy.value || tableLoading.value,
 );
+
+/** 切换合并时先占住 loading，避免后端慢查询时界面像卡死。 */
+const mergeQueryBusy = ref(false);
+/** 开合并全屏 loading 中（与表格 loading 互斥）。 */
+const mergeFullscreenBusy = ref(false);
 
 /** 下拉选项转为 ElSelect 结构。 */
 function toSelectOptions(items: ApiOptionItem[]) {
@@ -450,13 +550,35 @@ function isConsumableUsageRefundRow(
   ]);
 }
 
-/** 退耗冲减整行标红。 */
+/**
+ * 退耗冲减整行标红；账批≠实发批加 warning 底色（金额口径不变）。
+ *
+ * @param row 明细或汇总行
+ */
 function resolveUsageRowClassName({
   row,
 }: {
   row: ConsumableUsageDetailRowDto | ConsumableUsageSummaryRowDto;
 }): string {
-  return resolveReportRefundRowClassName(isConsumableUsageRefundRow(row));
+  const detail = row as ConsumableUsageDetailRowDto;
+  return resolveReportDetailRowClassName({
+    isRefund: isConsumableUsageRefundRow(row),
+    lotMismatch: detail.lotMismatch === true,
+  });
+}
+
+/**
+ * 批号列展示：不一致时附收费批号提示（质检；不改正额）。
+ *
+ * @param row 明细分页行
+ */
+function formatLotNumberCell(row: ConsumableUsageDetailRowDto): string {
+  const dispenseLot = row.lotNumber?.trim() || '—';
+  // 账批≠实发批：主列仍是实发批，括号展示账批便于排查
+  if (row.lotMismatch === true && row.chargeLotNumber?.trim()) {
+    return `${dispenseLot}（账批 ${row.chargeLotNumber.trim()}）`;
+  }
+  return dispenseLot;
 }
 
 /** 来源 Tag 样式。 */
@@ -494,12 +616,17 @@ function resolveSummaryRowKey(row: ConsumableUsageSummaryRowDto) {
   ].join('|');
 }
 
-/** 校验日期并组装筛选体。 */
+/** 校验业务时间并组装筛选体。 */
 function buildFilterPayload() {
-  const dateFrom = normalizeReportDateRangeYmd(queryParams.dateFrom);
-  const dateTo = normalizeReportDateRangeYmd(queryParams.dateTo);
+  const dateRange = toReportApiDateTimeRangePrecise(queryParams.dateFrom, queryParams.dateTo);
+  const dateFrom = dateRange.start;
+  const dateTo = dateRange.end;
   if (!dateFrom || !dateTo) {
-    ElMessage.warning('请选择业务日期');
+    ElMessage.warning('请选择业务时间');
+    return null;
+  }
+  if (dayjs(dateFrom).isAfter(dayjs(dateTo))) {
+    ElMessage.warning('开始时间不能晚于结束时间');
     return null;
   }
   return {
@@ -517,7 +644,19 @@ function buildFilterPayload() {
     deviceKeyword: queryParams.deviceKeyword.trim() || undefined,
     patientKeyword: queryParams.patientKeyword.trim() || undefined,
     organizationId: preserveApiIdForRequest(queryParams.organizationId),
+    lineMergeMode: resolveLineMergeModeForRequest(),
   };
+}
+
+/** 住院明细组装 lineMergeMode；门诊/汇总不传。 */
+function resolveLineMergeModeForRequest(): string | undefined {
+  if (props.scope !== 'inpatient' || isSummaryTab.value) {
+    return undefined;
+  }
+  if (queryParams.mergeByPatientDefinition) {
+    return LINE_MERGE_MODE_BY_DEFINITION;
+  }
+  return LINE_MERGE_MODE_LINE;
 }
 
 /** 拉取当前 Tab 数据。 */
@@ -561,6 +700,34 @@ function handleSourceChange() {
 function handleQuery() {
   queryParams.pageNo = 1;
   void getList();
+}
+
+/**
+ * 切换「按患者维度合并」后立即查询。
+ * 开合并时额外全屏 loading，避免慢查询时像卡死。
+ */
+async function handleMergeByPatientChange(enabled: string | number | boolean) {
+  queryParams.pageNo = 1;
+  mergeQueryBusy.value = true;
+  const mergeOn = enabled === true;
+  let fullscreenLoading: ReturnType<typeof ElLoading.service> | undefined;
+  if (mergeOn) {
+    mergeFullscreenBusy.value = true;
+    fullscreenLoading = ElLoading.service({
+      lock: true,
+      text: '按患者维度合并查询中，请稍候…',
+      background: 'rgba(0, 0, 0, 0.25)',
+    });
+  }
+  // 先让 loading 画出一帧，再发请求
+  await nextTick();
+  try {
+    await getList();
+  } finally {
+    mergeQueryBusy.value = false;
+    mergeFullscreenBusy.value = false;
+    fullscreenLoading?.close();
+  }
 }
 
 /** 切换汇总/明细 Tab 后立即查询。 */
@@ -618,6 +785,7 @@ async function handleReset() {
   queryParams.deviceKeyword = '';
   queryParams.patientKeyword = '';
   queryParams.organizationId = undefined;
+  queryParams.mergeByPatientDefinition = false;
   queryParams.exportTabCode = EXPORT_TAB_DETAIL;
   await runInit();
   void getList();
@@ -652,17 +820,19 @@ onMounted(async () => {
       <template #query>
         <ReportQueryBar :model="queryParams as Record<string, unknown>">
           <template #fields>
-            <ElFormItem label="业务日期">
+            <ElFormItem label="业务时间">
               <ElDatePicker
                 v-model="businessDateRange"
-                type="daterange"
-                value-format="YYYY-MM-DD"
+                type="datetimerange"
+                value-format="YYYY-MM-DD HH:mm:ss"
+                format="YYYY-MM-DD HH:mm:ss"
                 range-separator="至"
-                start-placeholder="开始"
-                end-placeholder="结束"
+                start-placeholder="开始时间"
+                end-placeholder="结束时间"
                 :clearable="false"
-                :shortcuts="dateRangeShortcuts"
-                :class="[REPORT_QUERY_CONTROL, REPORT_QUERY_CONTROL_DATERANGE]"
+                :default-time="dateTimeDefaultTime"
+                :shortcuts="dateTimeRangeShortcuts"
+                :class="[REPORT_QUERY_CONTROL, REPORT_QUERY_CONTROL_DATETIMERANGE]"
                 @change="handleQuery"
               />
             </ElFormItem>
@@ -818,12 +988,29 @@ onMounted(async () => {
                 />
               </ElSelect>
             </ElFormItem>
+            <!-- 占查询区栅格空位；长文案放 content，避免 88px label 竖排 -->
+            <ElFormItem
+              v-if="scope === 'inpatient' && !isSummaryTab"
+              label-width="0"
+              class="report-list-page__query-switch-item"
+            >
+              <div class="report-list-page__query-switch">
+                <span>按患者维度合并</span>
+                <ElSwitch
+                  v-model="queryParams.mergeByPatientDefinition"
+                  :disabled="queryActionBusy"
+                  @change="handleMergeByPatientChange"
+                />
+              </div>
+            </ElFormItem>
           </template>
           <template #actions>
-            <ElButton type="primary" :icon="Search" :loading="tableLoading" @click="handleQuery">
+            <ElButton type="primary" :icon="Search" :loading="queryActionBusy" @click="handleQuery">
               搜索
             </ElButton>
-            <ElButton :icon="Refresh" :loading="tableLoading" @click="handleReset">重置</ElButton>
+            <ElButton :icon="Refresh" :loading="queryActionBusy" @click="handleReset"
+              >重置</ElButton
+            >
           </template>
         </ReportQueryBar>
       </template>
@@ -963,6 +1150,15 @@ onMounted(async () => {
                 </template>
               </ElTableColumn>
               <ElTableColumn
+                v-if="!isPatientDefinitionMerge"
+                prop="businessTime"
+                label="业务时间"
+                min-width="170"
+                align="center"
+                header-align="center"
+                show-overflow-tooltip
+              />
+              <ElTableColumn
                 prop="deviceName"
                 label="耗材名称"
                 min-width="240"
@@ -1045,6 +1241,7 @@ onMounted(async () => {
                 show-overflow-tooltip
               />
               <ElTableColumn
+                v-if="!isPatientDefinitionMerge"
                 prop="statusOrTypeEnum_enumText"
                 label="状态/类型"
                 min-width="100"
@@ -1108,14 +1305,21 @@ onMounted(async () => {
                 </template>
               </ElTableColumn>
               <ElTableColumn
-                prop="lotNumber"
+                v-if="!isPatientDefinitionMerge"
                 label="批号"
-                min-width="120"
+                min-width="140"
                 align="center"
                 header-align="center"
                 show-overflow-tooltip
-              />
+              >
+                <template #default="{ row }">
+                  <span :class="{ 'text-[var(--el-color-danger)]': row.lotMismatch === true }">
+                    {{ formatLotNumberCell(row) }}
+                  </span>
+                </template>
+              </ElTableColumn>
               <ElTableColumn
+                v-if="!isPatientDefinitionMerge"
                 prop="performerName"
                 label="执行人"
                 min-width="100"
@@ -1124,16 +1328,9 @@ onMounted(async () => {
                 show-overflow-tooltip
               />
               <ElTableColumn
+                v-if="!isPatientDefinitionMerge"
                 prop="busNo"
                 label="业务单号"
-                min-width="170"
-                align="center"
-                header-align="center"
-                show-overflow-tooltip
-              />
-              <ElTableColumn
-                prop="businessTime"
-                label="业务时间"
                 min-width="170"
                 align="center"
                 header-align="center"

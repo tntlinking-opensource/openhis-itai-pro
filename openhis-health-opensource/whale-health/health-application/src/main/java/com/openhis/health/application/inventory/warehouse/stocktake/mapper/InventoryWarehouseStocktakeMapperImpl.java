@@ -597,11 +597,11 @@ public class InventoryWarehouseStocktakeMapperImpl implements InventoryWarehouse
     }
 
     /**
-     * 将已同意供应请求行装配为盘点发放命令。
+     * 将已同意供应请求行装配为盘点发放命令（跳过盈亏量为零的行；若全部为零则 {@code items} 为空列表，由 AppService 跳过落库）。
      *
      * @param lines      已同意明细行
      * @param operatorId 操作人主键
-     * @return 盘点发放命令
+     * @return 盘点发放命令（可能无 items）
      */
     @Override
     public CreateStocktakingDeliveryCommand toCreateStocktakingDeliveryCommand(

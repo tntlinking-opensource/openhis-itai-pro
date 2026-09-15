@@ -31,11 +31,11 @@ public class LoadStocktakeFormInitResponse {
     @Schema(description = "状态下拉 statusOptions")
     private List<OptionDto> statusOptions;
 
-    /** 药师下拉 pharmacistOptions。 */
-    @Schema(description = "药师下拉 pharmacistOptions")
+    /** 药师/经手人下拉 pharmacistOptions（科室盘点为全体在职医务人员）。 */
+    @Schema(description = "经手人下拉 pharmacistOptions（全体在职医务人员，含拼音）")
     private List<OptionDto> pharmacistOptions;
 
-    /** 库管下拉 warehouseKeeperOptions。 */
+    /** 库管下拉 warehouseKeeperOptions（科室盘点可为空，经手人已并入 pharmacistOptions）。 */
     @Schema(description = "库管下拉 warehouseKeeperOptions")
     private List<OptionDto> warehouseKeeperOptions;
 }

@@ -20,9 +20,7 @@ export interface SupplierOptionDto {
   supplierType?: string;
 }
 
-export interface LoadGoodsReceiptFormInitRequest {
-  organizationId?: number;
-}
+export interface LoadGoodsReceiptFormInitRequest {}
 
 export interface LoadGoodsReceiptFormInitResponse {
   warehouseOptions: WarehouseOptionDto[];
@@ -49,7 +47,6 @@ export interface GoodsReceiptListRowDto {
   price?: number;
   totalPrice?: number;
   applyTime?: string;
-  approvalTime?: string;
 }
 
 export interface PageGoodsReceiptsRequest {
@@ -173,14 +170,10 @@ export interface WithdrawGoodsReceiptApprovalResponse {
 
 export interface AgreeGoodsReceiptRequest {
   busNo: string;
-  approverId?: string;
-  approvalClock?: string;
 }
 
 export interface RejectGoodsReceiptRequest {
   busNo: string;
-  approverId?: string;
-  approvalClock?: string;
   rejectReason?: string;
 }
 

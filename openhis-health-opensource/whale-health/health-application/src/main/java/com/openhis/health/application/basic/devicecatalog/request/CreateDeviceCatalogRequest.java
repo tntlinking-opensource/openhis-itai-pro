@@ -38,15 +38,6 @@ public class CreateDeviceCatalogRequest {
      */
     private String splitUnitCode;
 
-    /**
-     * 采购单位历史别名（{@code purchaseUnitCode} 为空时回落）；新接口请传 {@link #purchaseUnitCode}。
-     */
-    private String unitCode;
-    /**
-     * 拆零单位历史别名（{@code splitUnitCode} 为空时回落）；新接口请传 {@link #splitUnitCode}。
-     */
-    private String minUnitCode;
-
     /** 默认门诊/就诊单位编码。 */
     private String defEncounterUnitCode;
 

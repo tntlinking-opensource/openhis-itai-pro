@@ -13,10 +13,13 @@ import com.openhis.health.domain.administration.encounter.queries.model.Encounte
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDiagnosisQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterDomainService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
+import com.openhis.health.domain.clinical.conditiondefinition.queries.model.ConditionDefinitionBatchItemQueryModel;
+import com.openhis.health.domain.clinical.conditiondefinition.service.ConditionDefinitionQueryService;
 import com.openhis.health.domain.financial.contract.entity.Contract;
 import com.openhis.health.domain.financial.contract.service.ContractQueryService;
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
 import com.openhis.health.domain.share.constants.BusinessSequenceConstants;
+import com.openhis.health.domain.share.constants.DoctorStationDiagnosisConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.IptPatientDiseaseDiagType;
 import com.openhis.health.domain.share.enums.YbMedType;
@@ -27,13 +30,19 @@ import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * 住院登记写路径跨聚合编排：开立登记账户与入院诊断（仅 adm_encounter_diagnosis，不经 Condition）。
  *
  * <p>账户口径与门诊挂号一致：人人个人现金自费户；省/市医保或工伤另开医保户（预交金仍进个人现金户）。</p>
+ * <p>入院西医诊断：门诊医保目录若已绑多个国临，落库时一对多展开为 {@code clinical_v2}，
+ * 住院医生站自行删改；中医不展开。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -49,6 +58,8 @@ public class EncounterInpatientAdmissionOrchestrator {
     private final EncounterDomainService encounterDomainService;
     /** 就诊读侧查询（患者反查与主诊存在判定）。 */
     private final EncounterQueryService encounterQueryService;
+    /** 诊断目录读侧：门诊医保诊断 → 国临一对多展开。 */
+    private final ConditionDefinitionQueryService conditionDefinitionQueryService;
 
     /**
      * 住院登记落库后的账户开立与入院诊断写入（含有申请登记的诊断补落策略）。
@@ -97,6 +108,9 @@ public class EncounterInpatientAdmissionOrchestrator {
     /**
      * 写入入院诊断：直挂 conditionDefinitionId 维护就诊诊断关联（住院申请等场景复用）。
      *
+     * <p>西医：若提交的是门诊医保目录定义，且有国临绑码，则展开为全部 {@code clinical_v2} 行
+     *（一对多），供住院医生站自行删改；已是国临或无对照则原样落库。中医不展开。</p>
+     *
      * @param patientId 患者主键
      * @param encounterId 住院就诊主键
      * @param dxItems 入院诊断明细（可为空）
@@ -110,7 +124,10 @@ public class EncounterInpatientAdmissionOrchestrator {
         if (dxItems == null || dxItems.isEmpty()) {
             return;
         }
-        List<AdmissionConditionItem> normalizedItems = this.assignMissingTcmSyndromeGroups(dxItems);
+        // Pre：门诊医保西医 → 国临一对多展开（住院西医真源）
+        List<AdmissionConditionItem> expandedWestern =
+                this.expandWesternInsuranceDiagnosesToClinical(dxItems);
+        List<AdmissionConditionItem> normalizedItems = this.assignMissingTcmSyndromeGroups(expandedWestern);
         List<UpsertEncounterDiagnosisAssociationCommand.UpsertEncounterDiagnosisAssociationItemCommand> westernAssocItems =
             new ArrayList<>();
         List<BatchUpsertEncounterDiagnosisAssociationCommand.DiagnosisItemCommand> tcmAssocItems =
@@ -143,6 +160,130 @@ public class EncounterInpatientAdmissionOrchestrator {
             tcmCmd.setItem(batchItem);
             encounterDomainService.batchUpsertTcmEncounterDiagnosisAssociation(tcmCmd);
         }
+    }
+
+    /**
+     * 门诊西医医保目录诊断 → 国临目录一对多展开。
+     *
+     * <p>已是 {@code clinical_v2}、中医、或无国临绑码：原样保留。
+     * 有绑码：替换为全部国临行；原稿主诊落在排序后第一条，其余非主诊；
+     * 住院医生站可再删改。</p>
+     *
+     * @param dxItems 原始入院诊断项
+     * @return 展开后的入院诊断项
+     */
+    private List<AdmissionConditionItem> expandWesternInsuranceDiagnosesToClinical(
+            List<AdmissionConditionItem> dxItems) {
+        List<AdmissionConditionItem> result = new ArrayList<>();
+        if (dxItems == null || dxItems.isEmpty()) {
+            return result;
+        }
+        // Pre：批量装载目录，判定来源与医保主码
+        List<Long> defIds = new ArrayList<>();
+        for (AdmissionConditionItem item : dxItems) {
+            if (item != null && item.getConditionDefinitionId() != null) {
+                defIds.add(item.getConditionDefinitionId());
+            }
+        }
+        Map<Long, ConditionDefinitionBatchItemQueryModel> defById = new HashMap<>();
+        if (!defIds.isEmpty()) {
+            for (ConditionDefinitionBatchItemQueryModel model :
+                    conditionDefinitionQueryService.getConditionDefinitionListByIds(defIds)) {
+                if (model != null && model.getId() != null) {
+                    defById.put(model.getId(), model);
+                }
+            }
+        }
+        Set<String> ybKeys = new LinkedHashSet<>();
+        for (AdmissionConditionItem item : dxItems) {
+            if (item == null || Boolean.TRUE.equals(item.getTcmFlag())) {
+                continue;
+            }
+            ConditionDefinitionBatchItemQueryModel def = defById.get(item.getConditionDefinitionId());
+            String ybKey = this.resolveYbKeyForClinicalExpand(def);
+            if (ybKey != null) {
+                ybKeys.add(ybKey);
+            }
+        }
+        Map<String, List<Long>> clinicalIdsByYb =
+                conditionDefinitionQueryService.mapClinicalDefinitionIdsByYbNos(ybKeys);
+        Set<Long> emittedClinicalIds = new LinkedHashSet<>();
+        for (AdmissionConditionItem source : dxItems) {
+            if (source == null) {
+                continue;
+            }
+            // 业务分支：中医不走国临展开
+            if (Boolean.TRUE.equals(source.getTcmFlag())) {
+                result.add(this.copyAdmissionConditionItem(source));
+                continue;
+            }
+            ConditionDefinitionBatchItemQueryModel def = defById.get(source.getConditionDefinitionId());
+            // 业务分支：已是国临 → 原样
+            if (def != null
+                    && DoctorStationDiagnosisConstants.SOURCE_CLINICAL_V2.equals(def.getSourceEnum())) {
+                result.add(this.copyAdmissionConditionItem(source));
+                continue;
+            }
+            String ybKey = this.resolveYbKeyForClinicalExpand(def);
+            List<Long> clinicalIds = null;
+            if (ybKey != null) {
+                clinicalIds = clinicalIdsByYb.get(ybKey);
+            }
+            // 业务分支：无国临绑码 → 保留原门诊目录（医生站可改）
+            if (clinicalIds == null || clinicalIds.isEmpty()) {
+                result.add(this.copyAdmissionConditionItem(source));
+                continue;
+            }
+            boolean first = true;
+            for (Long clinicalId : clinicalIds) {
+                // 同批展开去重，避免多条门诊医保码撞同一国临
+                if (!emittedClinicalIds.add(clinicalId)) {
+                    continue;
+                }
+                AdmissionConditionItem expanded = new AdmissionConditionItem();
+                // 展开后均为新建住院线关联，不复用门诊就诊诊断主键
+                expanded.setEncounterDiagnosisId(null);
+                expanded.setConditionDefinitionId(clinicalId);
+                // 原稿主诊落第一条国临；其余非主诊，由住院医生调整
+                if (first) {
+                    expanded.setPrimaryFlag(source.getPrimaryFlag());
+                    first = false;
+                } else {
+                    expanded.setPrimaryFlag(Boolean.FALSE);
+                }
+                expanded.setDescription(source.getDescription());
+                expanded.setTcmFlag(Boolean.FALSE);
+                expanded.setTcmSyndromeGroup(null);
+                result.add(expanded);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 解析用于反查国临的医保主码；国临/中医/无法解析时返回 null（表示不展开）。
+     *
+     * @param def 目录批量行
+     * @return 医保主码或 null
+     */
+    private String resolveYbKeyForClinicalExpand(ConditionDefinitionBatchItemQueryModel def) {
+        if (def == null) {
+            return null;
+        }
+        String source = def.getSourceEnum();
+        // Gate：国临自身不展开
+        if (DoctorStationDiagnosisConstants.SOURCE_CLINICAL_V2.equals(source)) {
+            return null;
+        }
+        // Gate：中医目录不展开
+        if (source != null && DoctorStationDiagnosisConstants.CONDITION_SOURCE_CODES_TCM.contains(source)) {
+            return null;
+        }
+        String ybNo = StringUtils.trimToNull(def.getYbNo());
+        if (ybNo != null) {
+            return ybNo;
+        }
+        return StringUtils.trimToNull(def.getConditionCode());
     }
 
     /**

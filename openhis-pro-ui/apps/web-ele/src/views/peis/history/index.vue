@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { onMounted, reactive, ref } from 'vue';
 import { useRoute } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
 import {
-  ElAlert,
   ElButton,
+  ElDatePicker,
   ElDescriptions,
   ElDescriptionsItem,
   ElDrawer,
@@ -15,6 +15,7 @@ import {
   ElInput,
   ElMessage,
   ElMessageBox,
+  ElPagination,
   ElRadioButton,
   ElRadioGroup,
   ElTable,
@@ -25,42 +26,47 @@ import {
 import {
   EXAM_KIND_LABEL,
   cancelPhysicalExamApi,
-  listPatientExamHistoryApi,
+  pageExamRecordsApi,
   type ExamHistoryRowDto,
 } from '#/api/peis/exam-history';
 import {
-  checkArchiveCompletenessApi,
-  type ArchiveCompletenessDto,
-} from '#/api/peis/health-archive';
-import {
   getCheckOrderDetailApi,
-  searchCustomerApi,
   type CheckOrderDetailResponse,
-  type CustomerRowDto,
 } from '#/api/peis/personal-registration';
 import { extractRequestErrorMessage } from '#/utils/http/stale-cross-role-error';
 
-defineOptions({ name: 'PeisExamHistory' });
+defineOptions({ name: 'PeisExamRecords' });
 
-type SubjectMode = 'patient' | 'student' | 'staff';
-/** 全部 / 个人体检 / 团体体检 */
-type KindScope = 'all' | 'personal' | 'group';
+type GroupScope = 'all' | 'personal' | 'group';
 
 const route = useRoute();
-const mode = ref<SubjectMode>('patient');
-const kindScope = ref<KindScope>('all');
-const customerKeyword = ref('');
-const studentNo = ref('');
-const employeeNo = ref('');
-const patientId = ref('');
-const customerRows = ref<CustomerRowDto[]>([]);
-const selectedCustomer = ref<CustomerRowDto | null>(null);
-const customerLoading = ref(false);
+
+function defaultDateRange(): [string, string] {
+  const end = new Date();
+  const start = new Date();
+  start.setDate(end.getDate() - 90);
+  const fmt = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+  return [fmt(start), fmt(end)];
+}
+
+const query = reactive({
+  keyword: '',
+  groupScope: 'all' as GroupScope,
+  dateRange: defaultDateRange() as string[] | undefined,
+  patientId: undefined as string | undefined,
+  pageNo: 1,
+  pageSize: 20,
+});
+
 const rows = ref<ExamHistoryRowDto[]>([]);
-const subjectName = ref('');
-const subjectType = ref('');
-const completeness = ref<ArchiveCompletenessDto | null>(null);
+const total = ref(0);
 const loading = ref(false);
+
 const detailVisible = ref(false);
 const detailLoading = ref(false);
 const detailRow = ref<ExamHistoryRowDto | null>(null);
@@ -74,32 +80,9 @@ const execStatusLabel: Record<string, string> = {
   deferred: '延检',
 };
 
-const displayRows = computed(() => {
-  if (kindScope.value === 'all') return rows.value;
-  if (kindScope.value === 'group') {
-    return rows.value.filter((r) => r.groupFlag === true || r.examKind === 'group');
-  }
-  return rows.value.filter((r) => r.groupFlag !== true && r.examKind !== 'group');
-});
-
 function kindLabel(kind?: string) {
   if (!kind) return '—';
   return EXAM_KIND_LABEL[kind] || kind;
-}
-
-function subjectTypeLabel(type?: string) {
-  if (!type) return '';
-  if (type === 'STUDENT') return '学生';
-  if (type === 'STAFF') return '教职工';
-  if (type === 'PATIENT') return '客户';
-  return type;
-}
-
-function levelType(level?: string) {
-  if (level === 'block') return 'error';
-  if (level === 'warn') return 'warning';
-  if (level === 'info') return 'info';
-  return 'success';
 }
 
 function isGroupRow(row: ExamHistoryRowDto) {
@@ -120,6 +103,42 @@ function execTagType(code?: string) {
 
 function encounterKey(row?: ExamHistoryRowDto | null) {
   return row?.encounterId == null ? '' : String(row.encounterId);
+}
+
+async function loadList() {
+  loading.value = true;
+  try {
+    const range = query.dateRange;
+    const res = await pageExamRecordsApi({
+      keyword: query.keyword.trim() || undefined,
+      groupScope: query.groupScope || 'all',
+      dateFrom: range?.[0] || null,
+      dateTo: range?.[1] || null,
+      patientId: query.patientId || null,
+      pageNo: query.pageNo,
+      pageSize: query.pageSize,
+    });
+    rows.value = res.content ?? [];
+    total.value = Number(res.totalCount ?? 0);
+  } finally {
+    loading.value = false;
+  }
+}
+
+function handleSearch() {
+  query.pageNo = 1;
+  void loadList();
+}
+
+function handlePageChange(page: number) {
+  query.pageNo = page;
+  void loadList();
+}
+
+function handleSizeChange(size: number) {
+  query.pageSize = size;
+  query.pageNo = 1;
+  void loadList();
 }
 
 async function openDetail(row: ExamHistoryRowDto) {
@@ -163,7 +182,7 @@ async function cancelExam(row?: ExamHistoryRowDto | null) {
     if (detailVisible.value && encounterKey(detailRow.value) === encounterId) {
       detailVisible.value = false;
     }
-    await search();
+    await loadList();
   } catch (error) {
     ElMessage.error(extractRequestErrorMessage(error) || '取消失败');
   } finally {
@@ -171,119 +190,14 @@ async function cancelExam(row?: ExamHistoryRowDto | null) {
   }
 }
 
-async function searchCustomers() {
-  const raw = customerKeyword.value.trim();
-  if (!raw) {
-    ElMessage.warning('请输入身份证号或姓名');
-    return;
-  }
-  customerLoading.value = true;
-  try {
-    const isIdCard = /^\d{15}(\d{2}[\dXx])?$/.test(raw);
-    const res = await searchCustomerApi({
-      idCardNo: isIdCard ? raw : undefined,
-      nameKeyword: isIdCard ? undefined : raw,
-      pageNo: 1,
-      pageSize: 20,
-    });
-    customerRows.value = res.rows ?? [];
-    if (customerRows.value.length === 0) {
-      ElMessage.info('未找到客户');
-      return;
-    }
-    if (customerRows.value.length === 1) {
-      await pickCustomerAndSearch(customerRows.value[0]!);
-    }
-  } finally {
-    customerLoading.value = false;
-  }
-}
-
-async function pickCustomerAndSearch(row: CustomerRowDto) {
-  selectedCustomer.value = row;
-  patientId.value = row.patientId != null ? String(row.patientId) : '';
-  customerRows.value = [];
-  await search();
-}
-
-async function searchByForm() {
-  if (mode.value === 'patient') {
-    if (selectedCustomer.value?.patientId != null) {
-      patientId.value = String(selectedCustomer.value.patientId);
-      await search();
-      return;
-    }
-    await searchCustomers();
-    return;
-  }
-  patientId.value = '';
-  selectedCustomer.value = null;
-  await search();
-}
-
-async function search() {
-  loading.value = true;
-  completeness.value = null;
-  try {
-    let req: {
-      patientId?: string;
-      studentNo?: string;
-      employeeNo?: string;
-    };
-    if (patientId.value.trim()) {
-      req = { patientId: patientId.value.trim() };
-    } else if (mode.value === 'student') {
-      if (!studentNo.value.trim()) {
-        ElMessage.warning('请输入学号');
-        return;
-      }
-      req = { studentNo: studentNo.value.trim() };
-    } else if (mode.value === 'staff') {
-      if (!employeeNo.value.trim()) {
-        ElMessage.warning('请输入工号');
-        return;
-      }
-      req = { employeeNo: employeeNo.value.trim() };
-    } else {
-      ElMessage.warning('请先检索并选择客户');
-      return;
-    }
-    const res = await listPatientExamHistoryApi(req);
-    rows.value = res.rows || [];
-    subjectName.value = res.subjectName || selectedCustomer.value?.name || '';
-    subjectType.value = res.subjectType || '';
-    if (res.patientId != null) {
-      patientId.value = String(res.patientId);
-    }
-    if (mode.value === 'student' || res.subjectType === 'STUDENT') {
-      const check = await checkArchiveCompletenessApi({
-        patientId: res.patientId,
-        studentNo: res.studentNo || studentNo.value.trim() || undefined,
-      });
-      completeness.value = check.completeness || null;
-    }
-  } finally {
-    loading.value = false;
-  }
-}
-
 onMounted(() => {
   const qPatientId = String(route.query.patientId ?? '').trim();
-  const qStudentNo = String(route.query.studentNo ?? '').trim();
-  const qEmployeeNo = String(route.query.employeeNo ?? '').trim();
   if (qPatientId) {
-    mode.value = 'patient';
-    patientId.value = qPatientId;
-    void search();
-  } else if (qStudentNo) {
-    mode.value = 'student';
-    studentNo.value = qStudentNo;
-    void search();
-  } else if (qEmployeeNo) {
-    mode.value = 'staff';
-    employeeNo.value = qEmployeeNo;
-    void search();
+    query.patientId = qPatientId;
+    // 从登记页跳入：看该人全部历次，不限近 90 天
+    query.dateRange = undefined;
   }
+  void loadList();
 });
 </script>
 
@@ -291,96 +205,46 @@ onMounted(() => {
   <Page
     auto-content-height
     content-class="p-4"
-    title="体检历史"
-    description="按客户（身份证/姓名）、学号或工号查询历年体检；支持个人体检与团体体检"
+    title="体检记录"
+    description="按关键字、类型与日期浏览历次体检；点查看打开详情"
   >
     <ElForm inline class="mb-4">
-      <ElFormItem label="对象">
-        <ElRadioGroup v-model="mode">
-          <ElRadioButton value="patient">客户</ElRadioButton>
-          <ElRadioButton value="student">学生</ElRadioButton>
-          <ElRadioButton value="staff">教职工</ElRadioButton>
-        </ElRadioGroup>
-      </ElFormItem>
-      <ElFormItem v-if="mode === 'patient'" label="客户">
+      <ElFormItem label="关键字">
         <ElInput
-          v-model="customerKeyword"
-          placeholder="身份证号 / 姓名"
+          v-model="query.keyword"
+          placeholder="姓名 / 身份证 / 流水号"
           clearable
           style="width: 220px"
-          @keyup.enter="searchByForm"
-        />
-      </ElFormItem>
-      <ElFormItem v-else-if="mode === 'student'" label="学号">
-        <ElInput v-model="studentNo" placeholder="输入学号" clearable @keyup.enter="searchByForm" />
-      </ElFormItem>
-      <ElFormItem v-else label="工号">
-        <ElInput
-          v-model="employeeNo"
-          placeholder="输入工号"
-          clearable
-          @keyup.enter="searchByForm"
+          @keyup.enter="handleSearch"
         />
       </ElFormItem>
       <ElFormItem label="类型">
-        <ElRadioGroup v-model="kindScope">
+        <ElRadioGroup v-model="query.groupScope" @change="handleSearch">
           <ElRadioButton value="all">全部</ElRadioButton>
           <ElRadioButton value="personal">个人体检</ElRadioButton>
           <ElRadioButton value="group">团体体检</ElRadioButton>
         </ElRadioGroup>
       </ElFormItem>
+      <ElFormItem label="体检日期">
+        <ElDatePicker
+          v-model="query.dateRange"
+          type="daterange"
+          value-format="YYYY-MM-DD"
+          start-placeholder="开始"
+          end-placeholder="结束"
+          clearable
+          @change="handleSearch"
+        />
+      </ElFormItem>
       <ElFormItem>
-        <ElButton type="primary" :loading="loading || customerLoading" @click="searchByForm">
-          查询
-        </ElButton>
+        <ElButton type="primary" :loading="loading" @click="handleSearch">查询</ElButton>
       </ElFormItem>
     </ElForm>
 
-    <div
-      v-if="mode === 'patient' && customerRows.length > 0"
-      class="mb-3 max-h-40 overflow-auto rounded border border-[var(--el-border-color-lighter)]"
-    >
-      <button
-        v-for="row in customerRows"
-        :key="String(row.patientId)"
-        type="button"
-        class="flex w-full items-center gap-3 border-b border-[var(--el-border-color-extra-light)] px-3 py-2 text-left text-sm last:border-b-0 hover:bg-[var(--el-fill-color-light)]"
-        @click="pickCustomerAndSearch(row)"
-      >
-        <span class="font-medium">{{ row.name }}</span>
-        <span class="text-[var(--el-text-color-secondary)]">{{ row.idCardNo || '—' }}</span>
-        <span class="text-[var(--el-text-color-secondary)]">{{ row.phone || '' }}</span>
-      </button>
-    </div>
-
-    <div v-if="subjectName || subjectType || selectedCustomer" class="mb-3 text-sm text-gray-600">
-      {{ subjectName || selectedCustomer?.name || '—' }}
-      <ElTag v-if="subjectType || mode === 'patient'" size="small" class="ml-2">
-        {{ subjectTypeLabel(subjectType) || '客户' }}
-      </ElTag>
-      <span v-if="selectedCustomer?.idCardNo" class="ml-2 text-[var(--el-text-color-secondary)]">
-        {{ selectedCustomer.idCardNo }}
-      </span>
-    </div>
-
-    <ElAlert
-      v-if="completeness"
-      class="mb-4"
-      :type="levelType(completeness.level)"
-      :title="completeness.summary || (completeness.complete ? '档案完整' : '档案不完整')"
-      show-icon
-      :closable="false"
-    >
-      <ul v-if="completeness.missingItems?.length" class="mt-1 list-disc pl-5">
-        <li v-for="item in completeness.missingItems" :key="item.code">
-          <ElTag size="small" :type="levelType(item.level)" class="mr-1">{{ item.level }}</ElTag>
-          {{ item.message }}
-        </li>
-      </ul>
-    </ElAlert>
-
-    <ElTable :data="displayRows" border v-loading="loading" empty-text="暂无体检记录">
+    <ElTable :data="rows" border v-loading="loading" empty-text="暂无体检记录">
       <ElTableColumn prop="busNo" label="流水号" min-width="120" />
+      <ElTableColumn prop="patientName" label="姓名" min-width="90" />
+      <ElTableColumn prop="idCardNo" label="身份证" min-width="160" show-overflow-tooltip />
       <ElTableColumn label="个检/团检" width="100">
         <template #default="{ row }">
           <ElTag :type="isGroupRow(row) ? 'warning' : 'success'" size="small" effect="plain">
@@ -388,12 +252,12 @@ onMounted(() => {
           </ElTag>
         </template>
       </ElTableColumn>
-      <ElTableColumn prop="examKind" label="体检类型" width="120">
+      <ElTableColumn prop="examKind" label="体检类型" width="110">
         <template #default="{ row }">
           {{ kindLabel(row.examKind) }}
         </template>
       </ElTableColumn>
-      <ElTableColumn prop="packageName" label="套餐" min-width="140" />
+      <ElTableColumn prop="packageName" label="套餐" min-width="140" show-overflow-tooltip />
       <ElTableColumn prop="calendarYear" label="年份" width="80" />
       <ElTableColumn label="状态" width="100">
         <template #default="{ row }">
@@ -431,9 +295,28 @@ onMounted(() => {
       </ElTableColumn>
     </ElTable>
 
+    <div class="mt-3 flex justify-end">
+      <ElPagination
+        v-model:current-page="query.pageNo"
+        v-model:page-size="query.pageSize"
+        :total="total"
+        :page-sizes="[10, 20, 50]"
+        layout="total, sizes, prev, pager, next"
+        background
+        @current-change="handlePageChange"
+        @size-change="handleSizeChange"
+      />
+    </div>
+
     <ElDrawer v-model="detailVisible" title="体检详情" size="520px">
       <div v-loading="detailLoading">
         <ElDescriptions :column="1" border>
+          <ElDescriptionsItem label="姓名">
+            {{ detailRow?.patientName || '—' }}
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="身份证">
+            {{ detailRow?.idCardNo || '—' }}
+          </ElDescriptionsItem>
           <ElDescriptionsItem label="流水号">
             {{ orderDetail?.busNo || detailRow?.busNo || '—' }}
           </ElDescriptionsItem>

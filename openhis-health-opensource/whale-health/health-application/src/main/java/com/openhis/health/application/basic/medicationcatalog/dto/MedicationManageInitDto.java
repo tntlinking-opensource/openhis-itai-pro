@@ -77,6 +77,12 @@ public class MedicationManageInitDto {
     private List<OptionDto> mrSettlementTypeCodeOptions;
 
     /**
+     * 结余留用批次号下拉（术语 {@code surplus_retention_batch_code}；title=结余留用批次号）。
+     */
+    @Schema(description = "结余留用批次号字典选项")
+    private List<OptionDto> surplusRetentionBatchCodeOptions;
+
+    /**
      * 体系/系统分类选项：系统级别的分类字典列表（例如分类体系、科室体系等）
      */
     @Schema(description = "体系/系统分类字典选项")

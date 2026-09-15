@@ -13,9 +13,10 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * 药房退库单列表行（IF-PHA-RTW-02：按 {@code bus_no} 聚合展示，兼容明细行级遗留路径）。
+ * 药房退库单列表行（IF-PHA-RTW-02：按 {@code bus_no} 聚合，一行一单）。
  *
- * <p>聚合路径一行一单；{@code supplierName}/{@code creatorName}/{@code approverName} 由应用层列表查询后批量富化。</p>
+ * <p>整单合计写 {@code totalAmount}（明细行 {@code total_price} 之和）。
+ * {@code supplierName}/{@code creatorName}/{@code approverName} 由应用层列表查询后批量富化。</p>
  */
 @Getter
 @Setter
@@ -58,13 +59,7 @@ public class ReturnToWarehouseListRowDto {
     private String traceNo;
     /** 行单价（落库快照）。 */
     private BigDecimal price;
-    /**
-     * 行合计金额：聚合列表路径下为整单明细合计；明细行级路径下为行合计（落库快照）。
-     *
-     * <p>与 {@link #totalAmount} 同值写入，兼容侧栏卡片读 {@code totalPrice}/{@code totalAmount}。</p>
-     */
-    private BigDecimal totalPrice;
-    /** 单据总金额（与 totalPrice 同口径）。 */
+    /** 单据总金额（聚合列表侧栏；一行一单）。 */
     private BigDecimal totalAmount;
     /** 申请人主键。 */
     @JsonSerialize(using = ToStringSerializer.class)

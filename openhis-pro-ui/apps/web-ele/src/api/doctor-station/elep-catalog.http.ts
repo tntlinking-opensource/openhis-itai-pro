@@ -7,7 +7,7 @@ const PREFIX = '/elepCatalogSearch';
 
 function buildSearchBody(body: ElepCatalogSearchRequest) {
   return {
-    contractBusNo: body.contractBusNo,
+    contractBusNo: body.contractBusNo?.trim() || undefined,
     contractId: body.contractId ? preserveApiIdForRequest(body.contractId) : undefined,
     keyword: body.keyword?.trim() || undefined,
     aprvno: body.aprvno?.trim() || undefined,

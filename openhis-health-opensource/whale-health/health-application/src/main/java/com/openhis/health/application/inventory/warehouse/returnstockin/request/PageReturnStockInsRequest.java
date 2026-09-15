@@ -25,10 +25,6 @@ public class PageReturnStockInsRequest extends AbstractHealthPageRequest {
     @Schema(description = "目的药库 purposeLocationId")
     private Long purposeLocationId;
 
-    /** 兼容字段 sourceLocationId。 */
-    @Schema(description = "兼容字段 sourceLocationId")
-    private Long sourceLocationId;
-
     /** 单据状态 statusEnum（SupplyStatus 排序号）。 */
     @Schema(description = "单据状态 statusEnum（SupplyStatus 排序号）")
     private Integer statusEnum;

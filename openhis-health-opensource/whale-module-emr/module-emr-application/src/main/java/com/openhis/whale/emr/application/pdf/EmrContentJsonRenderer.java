@@ -13,6 +13,8 @@ import com.lowagie.text.Element;
 import com.lowagie.text.Font;
 import com.lowagie.text.Paragraph;
 import com.lowagie.text.Phrase;
+import com.lowagie.text.Rectangle;
+import com.lowagie.text.pdf.BaseFont;
 import com.lowagie.text.pdf.PdfPCell;
 import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfWriter;
@@ -47,6 +49,26 @@ public class EmrContentJsonRenderer {
     private static final String CONTENT = "content";
     private static final String TYPE = "type";
     private static final String MARKS = "marks";
+    /**
+     * 中文宋体 Word 单倍行距相对字号的系数。
+     * 工具栏 1.5 倍 × 1.55 ≈ 2.33，小四约 28pt；直接用 fontSize×1.5 会看成单倍。
+     */
+    private static final float CJK_SINGLE_SPACING_FACTOR = 1.55f;
+
+    /**
+     * 签字位常见角色 label（无「签名」二字，但落款处用于手写姓名）。
+     * 「接诊医生」仅在「医生签字/医师签名」等上下文后才清空，见 {@link #isPersonSignNameField}。
+     */
+    private static final Set<String> SIGN_ROLE_NAME_LABELS = Set.of(
+            "上级医师",
+            "主治医师",
+            "住院医师",
+            "会诊医师",
+            "申请医师",
+            "邀请医师",
+            "报告医师",
+            "经治医师",
+            "科主任");
 
     private final ObjectMapper objectMapper;
     private final EmrPdfFontFactory fontFactory;
@@ -78,12 +100,12 @@ public class EmrContentJsonRenderer {
 
         JsonNode root = objectMapper.readTree(contentJson);
         if (root == null || !root.isObject() || !TYPE_DOC.equals(root.path(TYPE).asText(null))) {
-            document.add(new Paragraph("（空文档）", bodyFont));
+            document.add(printParagraph("（空文档）", bodyFont));
             return false;
         }
         JsonNode content = root.get(CONTENT);
         if (content == null || !content.isArray() || content.isEmpty()) {
-            document.add(new Paragraph("（空文档）", bodyFont));
+            document.add(printParagraph("（空文档）", bodyFont));
             return false;
         }
         JsonNode filtered = filterByRegionNames(content, renderOptions);
@@ -126,12 +148,65 @@ public class EmrContentJsonRenderer {
         if (blocks == null || !blocks.isArray()) {
             return;
         }
-        for (JsonNode block : blocks) {
+        for (int i = 0; i < blocks.size(); i++) {
             if (checkPreviewPageLimit()) {
                 return;
             }
+            JsonNode block = blocks.get(i);
+            // 入院基础信息 admPh*：编辑器段落两列；打印时左右成对合成无框两列表
+            if (isAdmPhParagraph(block) && i + 1 < blocks.size() && isAdmPhParagraph(blocks.get(i + 1))) {
+                renderAdmPhPairAsRow(block, blocks.get(i + 1));
+                i += 1;
+                continue;
+            }
             renderNode(block);
         }
+    }
+
+    /**
+     * 是否入院基础信息段落（admPh*，编辑器 inline-block 两列）。
+     */
+    private boolean isAdmPhParagraph(JsonNode node) {
+        if (node == null || !node.isObject()) {
+            return false;
+        }
+        if (!"paragraph".equals(normalizeType(node.path(TYPE).asText(null)))) {
+            return false;
+        }
+        String name = attrText(node, "name");
+        return name != null && name.startsWith("admPh");
+    }
+
+    /**
+     * 将左右两个 admPh 段落打成一行无框两列表，保持与编辑器两列对齐。
+     */
+    private void renderAdmPhPairAsRow(JsonNode left, JsonNode right) throws Exception {
+        PdfPTable table = new PdfPTable(2);
+        table.setWidthPercentage(100f);
+        table.setWidths(new float[]{1f, 1f});
+        table.setSpacingBefore(1f);
+        table.setSpacingAfter(1f);
+        table.getDefaultCell().setBorder(Rectangle.NO_BORDER);
+        table.getDefaultCell().setPadding(1f);
+        table.getDefaultCell().setVerticalAlignment(Element.ALIGN_MIDDLE);
+        table.addCell(buildAdmPhCell(left));
+        table.addCell(buildAdmPhCell(right));
+        document.add(table);
+    }
+
+    private PdfPCell buildAdmPhCell(JsonNode para) {
+        Phrase phrase = new Phrase();
+        phrase.setLeading(bodyLeadingPt(bodyFont));
+        appendBlockTextToPhrase(phrase, para);
+        PdfPCell cell = new PdfPCell(phrase);
+        cell.setBorder(Rectangle.NO_BORDER);
+        cell.setPadding(1f);
+        cell.setPaddingLeft(0f);
+        cell.setPaddingRight(6f);
+        cell.setVerticalAlignment(Element.ALIGN_MIDDLE);
+        cell.setHorizontalAlignment(Element.ALIGN_LEFT);
+        cell.setLeading(bodyLeadingPt(bodyFont), 0f);
+        return cell;
     }
 
     private void renderNode(JsonNode node) throws Exception {
@@ -192,7 +267,7 @@ public class EmrContentJsonRenderer {
     private void renderRegion(JsonNode node) throws Exception {
         String title = attrText(node, "title");
         if (StringUtils.hasText(title)) {
-            Paragraph p = new Paragraph(title, titleFont);
+            Paragraph p = printParagraph(title, titleFont);
             p.setSpacingBefore(6f);
             p.setSpacingAfter(4f);
             document.add(p);
@@ -204,7 +279,7 @@ public class EmrContentJsonRenderer {
         String title = attrText(node, "title");
         if (StringUtils.hasText(title)) {
             Font sectionFont = fontFactory.bodyFont(printConfig.getFont().getDefaultSizePt(), Font.BOLD);
-            Paragraph p = new Paragraph(title, sectionFont);
+            Paragraph p = printParagraph(title, sectionFont);
             p.setSpacingBefore(4f);
             p.setSpacingAfter(2f);
             document.add(p);
@@ -216,13 +291,18 @@ public class EmrContentJsonRenderer {
         String type = normalizeType(node.path(TYPE).asText(null));
         if ("emrcheckboxfield".equals(type)) {
             Paragraph p = new Paragraph();
-            p.setLeading(bodyFont.getSize() * printConfig.getFont().getLineHeight());
+            p.setLeading(bodyLeadingPt(bodyFont));
             appendCheckboxChunk(p, node, bodyFont);
             document.add(p);
             return;
         }
         String label = firstNonBlank(attrText(node, "labelSnapshot"), attrText(node, "title"), attrText(node, "name"));
         String value = extractDataElementValue(node);
+        // 签字位块级数据元：只打标签+下划线，不打姓名
+        if (shouldBlankSignatureSlot(node, false)
+                || (StringUtils.hasText(label) && textHasSignCue(label))) {
+            value = "______";
+        }
         String line;
         if (StringUtils.hasText(label)) {
             line = label + "：" + nullToEmpty(value);
@@ -232,12 +312,19 @@ public class EmrContentJsonRenderer {
         if (!StringUtils.hasText(line)) {
             return;
         }
-        Paragraph p = new Paragraph(line, bodyFont);
-        p.setLeading(bodyFont.getSize() * printConfig.getFont().getLineHeight());
+        Paragraph p = printParagraph(line, bodyFont);
+        p.setLeading(bodyLeadingPt(bodyFont));
         document.add(p);
     }
 
     private void renderMetadataChipParagraph(JsonNode node) throws Exception {
+        // 签字位：预览/打印留白手写，不打姓名或签名图（块级 chip 仅按 label/fieldKey 判断）
+        if (shouldBlankSignatureSlot(node, false)) {
+            Paragraph blank = printParagraph("______", bodyFont);
+            blank.setLeading(bodyLeadingPt(bodyFont));
+            document.add(blank);
+            return;
+        }
         String value = firstNonBlank(attrText(node, "value"), attrText(node, "label"));
         if (!StringUtils.hasText(value)) {
             // 与数据元一致：空值回退 metadata（fieldKey / elementId）
@@ -252,11 +339,11 @@ public class EmrContentJsonRenderer {
             if (img != null) {
                 img.scaleToFit(120f, 48f);
                 document.add(img);
-                document.add(new Paragraph(" ", bodyFont));
+                document.add(printParagraph(" ", bodyFont));
             }
             return;
         }
-        Paragraph p = new Paragraph(trimmed, bodyFont);
+        Paragraph p = printParagraph(trimmed, bodyFont);
         document.add(p);
     }
 
@@ -277,7 +364,7 @@ public class EmrContentJsonRenderer {
             return;
         }
         if (StringUtils.hasText(text)) {
-            Paragraph p = new Paragraph(text, bodyFont);
+            Paragraph p = printParagraph(text, bodyFont);
             document.add(p);
         }
     }
@@ -290,13 +377,21 @@ public class EmrContentJsonRenderer {
             }
             return;
         }
-        // 方案 B atom：值在 attrs.value，无 content
-        String value = extractDataElementDisplay(node);
-        if (!StringUtils.hasText(value)) {
+        // 签字位 atom：预览/打印留白手写（按 label/fieldKey）
+        if (shouldBlankSignatureSlot(node, false)) {
+            Paragraph blank = printParagraph("______", bodyFont);
+            blank.setLeading(bodyLeadingPt(bodyFont));
+            document.add(blank);
             return;
         }
-        Paragraph p = new Paragraph(value, bodyFont);
-        p.setLeading(bodyFont.getSize() * printConfig.getFont().getLineHeight());
+        // 方案 B atom：值在 attrs.value，无 content
+        String value = extractDataElementDisplay(node);
+        if (value == null || value.isEmpty()) {
+            return;
+        }
+        Paragraph p = new Paragraph();
+        p.setLeading(bodyLeadingPt(bodyFont));
+        appendFieldDisplayValue(p, value, bodyFont);
         document.add(p);
     }
 
@@ -308,14 +403,22 @@ public class EmrContentJsonRenderer {
     }
 
     private void renderParagraph(JsonNode node, Font baseFont, int alignment) throws Exception {
-        Paragraph p = node.has(CONTENT)
-                ? buildParagraphFromInline(node.get(CONTENT), baseFont)
-                : new Paragraph("", baseFont);
+        // 匿名空段仍占 leading，会多挤出一页半空白；屏上同样不把文末空段撑成新纸
+        if (!StringUtils.hasText(attrText(node, "name")) && !hasPrintableInlineContent(node)) {
+            return;
+        }
+        boolean signPara = isSignParagraphName(attrText(node, "name"));
+        Paragraph p;
+        if (node.has(CONTENT)) {
+            p = buildParagraphFromInline(node.get(CONTENT), baseFont, signPara);
+        } else {
+            p = new Paragraph("", baseFont);
+        }
         if (p == null) {
             p = new Paragraph("", baseFont);
         }
         p.setAlignment(resolveTextAlign(node, alignment));
-        p.setLeading(baseFont.getSize() * printConfig.getFont().getLineHeight());
+        p.setLeading(bodyLeadingPt(baseFont));
         applyBlockLayoutAttrs(node, p, baseFont);
         applyNamedParagraphLayout(node, p, baseFont);
         document.add(p);
@@ -337,6 +440,13 @@ public class EmrContentJsonRenderer {
         document.add(p);
     }
 
+    /**
+     * 组装页眉「院徽 + 医院名」Phrase；医院名走混排字体。
+     *
+     * @param inlineNodes hospitalTitle 段 content
+     * @param titleFont   医院名字号（约 22pt 加粗）
+     * @return 可居中输出的 Phrase
+     */
     private Phrase buildHospitalTitlePhrase(JsonNode inlineNodes, Font titleFont) {
         Phrase phrase = new Phrase();
         if (inlineNodes == null || !inlineNodes.isArray()) {
@@ -350,7 +460,7 @@ public class EmrContentJsonRenderer {
             if (TYPE_TEXT.equals(type)) {
                 String text = inline.path("text").asText("");
                 if (!text.isEmpty()) {
-                    phrase.add(new Chunk(text, titleFont));
+                    addPrintText(phrase, text, titleFont);
                 }
             } else if ("image".equals(type)) {
                 Chunk logo = buildHospitalLogoChunk(inline, titleFont);
@@ -361,7 +471,7 @@ public class EmrContentJsonRenderer {
                 String v = extractDataElementDisplay(inline);
                 // 医院名空值不占位，避免预览出现空白方框感
                 if (StringUtils.hasText(v)) {
-                    phrase.add(new Chunk(v, titleFont));
+                    addPrintText(phrase, v, titleFont);
                 }
             }
         }
@@ -440,46 +550,63 @@ public class EmrContentJsonRenderer {
                     "auxiliaryExam",
                     "impressionDiagnosis",
                     "westernDiagnosis",
-                    "tcmPreliminaryDiagnosis",
-                    "westernPreliminaryDiagnosis",
                     "admissionDiagnosisStructured",
                     "disposal",
                     "diagnosis" -> {
                 p.setSpacingBefore(2f);
                 p.setSpacingAfter(2f);
-                p.setLeading(baseFont.getSize() * printConfig.getFont().getLineHeight());
+                p.setLeading(bodyLeadingPt(baseFont));
+            }
+            // 中/西医初步诊断：续行与首行诊断值左缘对齐（悬挂缩进），不用空格从页边垫位
+            case "tcmPreliminaryDiagnosis", "westernPreliminaryDiagnosis" -> {
+                p.setSpacingBefore(2f);
+                p.setSpacingAfter(2f);
+                p.setLeading(bodyLeadingPt(baseFont));
+                applyDiagnosisHangingIndent(node, p, baseFont);
             }
             case "historyTitle", "peTitle", "diagnosisTitle" -> {
                 p.setSpacingBefore(6f);
                 p.setSpacingAfter(4f);
-                p.setLeading(baseFont.getSize() * printConfig.getFont().getLineHeight());
+                p.setLeading(bodyLeadingPt(baseFont));
+            }
+            // 入院记录：表头/核实/签名已改为正文段，与编辑器 p[data-name] 同行距、无框线
+            case "patientHeader", "verifyBlock" -> {
+                p.setSpacingBefore(1f);
+                p.setSpacingAfter(1f);
+                p.setLeading(bodyLeadingPt(baseFont));
+            }
+            case "signBlock" -> {
+                p.setAlignment(Element.ALIGN_RIGHT);
+                p.setSpacingBefore(2f);
+                p.setSpacingAfter(2f);
+                p.setLeading(bodyLeadingPt(baseFont));
             }
             case "pageHeaderHint" -> {
                 p.setSpacingBefore(2f);
                 p.setSpacingAfter(6f);
-                p.setLeading(baseFont.getSize() * printConfig.getFont().getLineHeight());
+                p.setLeading(bodyLeadingPt(baseFont));
             }
             case "noticeIntro" -> {
                 p.setFirstLineIndent(baseFont.getSize() * 2f);
                 p.setSpacingBefore(4f);
                 p.setSpacingAfter(6f);
-                p.setLeading(baseFont.getSize() * printConfig.getFont().getLineHeight());
+                p.setLeading(bodyLeadingPt(baseFont));
             }
             case "noticeItem" -> {
                 p.setSpacingBefore(2f);
                 p.setSpacingAfter(2f);
-                p.setLeading(baseFont.getSize() * printConfig.getFont().getLineHeight());
+                p.setLeading(bodyLeadingPt(baseFont));
             }
             case "noticeConfirm" -> {
                 p.setFirstLineIndent(baseFont.getSize() * 2f);
                 p.setSpacingBefore(6f);
                 p.setSpacingAfter(8f);
-                p.setLeading(baseFont.getSize() * printConfig.getFont().getLineHeight());
+                p.setLeading(bodyLeadingPt(baseFont));
             }
             case "riskPatientInfo", "riskGuardianSign" -> {
                 p.setSpacingBefore(4f);
                 p.setSpacingAfter(4f);
-                p.setLeading(baseFont.getSize() * printConfig.getFont().getLineHeight());
+                p.setLeading(bodyLeadingPt(baseFont));
             }
             case "riskSectionTitle" -> {
                 p.setSpacingBefore(6f);
@@ -491,18 +618,35 @@ public class EmrContentJsonRenderer {
     }
 
     private Paragraph buildParagraphFromInline(JsonNode inlineNodes, Font baseFont) {
+        return buildParagraphFromInline(inlineNodes, baseFont, false);
+    }
+
+    /**
+     * 组装段落；{@code afterSignCue} 为真时，其后姓名类 chip/自由文本打印留白（手写签字）。
+     *
+     * @param inlineNodes 行内节点
+     * @param baseFont    正文字体
+     * @param afterSignCue 是否已处于签字上下文（命名签名段或上文含签名/签字）
+     * @return 段落
+     */
+    private Paragraph buildParagraphFromInline(JsonNode inlineNodes, Font baseFont, boolean afterSignCue) {
         if (inlineNodes == null || !inlineNodes.isArray()) {
             return new Paragraph("", baseFont);
         }
         Paragraph p = new Paragraph();
-        p.setLeading(baseFont.getSize() * printConfig.getFont().getLineHeight());
+        p.setLeading(bodyLeadingPt(baseFont));
+        boolean cue = afterSignCue;
         for (JsonNode inline : inlineNodes) {
             if (!inline.isObject()) {
                 continue;
             }
             String type = normalizeType(inline.path(TYPE).asText(null));
             if (TYPE_TEXT.equals(type)) {
+                String raw = inline.path("text").asText("");
                 appendTextNode(p, inline, baseFont);
+                if (textHasSignCue(raw)) {
+                    cue = true;
+                }
             } else if ("image".equals(type)) {
                 Chunk imgChunk = buildInlineImageChunk(inline);
                 if (imgChunk != null) {
@@ -511,22 +655,48 @@ public class EmrContentJsonRenderer {
             } else if ("emrcheckboxfield".equals(type)) {
                 appendCheckboxChunk(p, inline, baseFont);
             } else if (isInlineFieldType(type)) {
-                String v = extractDataElementDisplay(inline);
-                if (!StringUtils.hasText(v)) {
-                    String widget = inline.path(ATTRS).path("widgetOverride").asText("").trim();
-                    // 单行空值用下划线占位（贴近纸质）；多行段落留白
-                    v = "multiline".equals(widget) ? "" : "______";
-                }
-                p.add(new Chunk(v, baseFont));
+                appendInlineFieldOrBlank(p, inline, baseFont, cue);
             } else if (inline.has(CONTENT)) {
                 for (JsonNode nested : inline.get(CONTENT)) {
                     if (TYPE_TEXT.equals(nested.path(TYPE).asText(null))) {
                         appendTextNode(p, nested, baseFont);
+                        if (textHasSignCue(nested.path("text").asText(""))) {
+                            cue = true;
+                        }
                     }
                 }
             }
         }
         return p;
+    }
+
+    /**
+     * 行内可填域：签字位打印下划线占位，其它照常输出值。
+     *
+     * @param phrase       目标段落/单元格
+     * @param inline       chip / freeText / dataElement
+     * @param baseFont     字体
+     * @param afterSignCue 签字上下文
+     */
+    private void appendInlineFieldOrBlank(Phrase phrase, JsonNode inline, Font baseFont, boolean afterSignCue) {
+        if (shouldBlankSignatureSlot(inline, afterSignCue)) {
+            String widget = inline.path(ATTRS).path("widgetOverride").asText("").trim();
+            if ("multiline".equals(widget)) {
+                return;
+            }
+            addPrintText(phrase, "______", baseFont);
+            return;
+        }
+        String v = extractDataElementDisplay(inline);
+        if (v == null || v.isEmpty()) {
+            String widget = inline.path(ATTRS).path("widgetOverride").asText("").trim();
+            if ("multiline".equals(widget)) {
+                return;
+            }
+            addPrintText(phrase, "______", baseFont);
+            return;
+        }
+        appendFieldDisplayValue(phrase, v, baseFont);
     }
 
     /** 段落内院徽等 inline image → Chunk；院徽按标题字号缩放，避免 attrs 像素当 pt */
@@ -564,12 +734,24 @@ public class EmrContentJsonRenderer {
         }
     }
 
+    /**
+     * 把 text 节点（含加粗/下划线 mark）写入段落；英文走混排字体避免全角宽。
+     *
+     * @param p        目标段落
+     * @param textNode ProseMirror text 节点
+     * @param baseFont 回退字号
+     */
     private void appendTextNode(Paragraph p, JsonNode textNode, Font baseFont) {
         String text = textNode.path("text").asText("");
         if (text.isEmpty()) {
             return;
         }
         if (!renderOptions.isIncludeTrackChanges() && hasMark(textNode, "deletion")) {
+            return;
+        }
+        // 同一 text 节点内「签名：张三」去掉姓名，留标签手写
+        text = stripInlineSignNames(text);
+        if (text.isEmpty()) {
             return;
         }
         int style = Font.NORMAL;
@@ -587,7 +769,7 @@ public class EmrContentJsonRenderer {
         }
         float sizePt = resolveMarkFontSizePt(textNode, baseFont.getSize());
         Font f = fontFactory.bodyFont(sizePt, style);
-        p.add(new Chunk(text, f));
+        addPrintText(p, text, f);
     }
 
     private void renderList(JsonNode node, String type) throws Exception {
@@ -627,7 +809,7 @@ public class EmrContentJsonRenderer {
         if ("paragraph".equals(type) && block.has(CONTENT)) {
             Paragraph p = buildParagraphFromInline(block.get(CONTENT), bodyFont);
             if (p != null && prefix != null) {
-                p.add(0, new Chunk(prefix, bodyFont));
+                fontFactory.prependText(p, prefix, bodyFont);
             }
             return p;
         }
@@ -652,7 +834,7 @@ public class EmrContentJsonRenderer {
         }
         img.scaleToFit(480f, 360f);
         document.add(img);
-        document.add(new Paragraph(" ", bodyFont));
+        document.add(printParagraph(" ", bodyFont));
     }
 
     private com.lowagie.text.Image loadPdfImage(String src) throws Exception {
@@ -703,7 +885,11 @@ public class EmrContentJsonRenderer {
         table.setSplitLate(false);
         applyDischargeFormColumnWidths(table, colCount, node);
         applyAdmissionSafetySignTableLayout(table, colCount, node);
+        applyRiskFormTableLayout(table, colCount, node);
+        applyOutpatientHistoryTableLayout(table, colCount, node);
         String tableName = attrText(node, "name");
+        boolean riskForm = "riskForm".equals(tableName);
+        boolean outpatientHistory = "outpatientHistory".equals(tableName);
         boolean dischargeForm = "dischargeDiagnosisForm".equals(tableName)
                 || "consultRequestForm".equals(tableName);
         boolean safetySign = "admissionSafetySign".equals(tableName);
@@ -711,8 +897,14 @@ public class EmrContentJsonRenderer {
         boolean pageHeader = "pageHeader".equals(tableName);
         boolean verifyBlock = "verifyBlock".equals(tableName);
         boolean signBlock = "signBlock".equals(tableName);
+        boolean cardiacBorder = "relativeCardiacBorder".equals(tableName);
+        // 入院 patientHeader 打印无框（编辑器可有格子线）；续页简表/核实/签名同样无框
         boolean borderlessEmrTable = patientHeader || pageHeader || verifyBlock || signBlock;
         if (borderlessEmrTable) {
+            table.setSpacingBefore(2f);
+            table.setSpacingAfter(2f);
+        }
+        if (cardiacBorder) {
             table.setSpacingBefore(2f);
             table.setSpacingAfter(2f);
         }
@@ -735,14 +927,38 @@ public class EmrContentJsonRenderer {
                     if (colspan > remain) {
                         colspan = remain;
                     }
-                    Phrase phrase = buildCellPhrase(cell);
+                    String rowLabel = firstRowLabel(row);
+                    boolean rowSignCue = signBlock || textHasSignCue(rowLabel);
+                    Phrase phrase = buildCellPhrase(cell, rowSignCue);
                     PdfPCell pdfCell = new PdfPCell(phrase);
                     pdfCell.setPadding(5f);
+                    // 风险评估表、入院 patientHeader：格 leading 强制正文 1.5×；其它表沿用 buildCellPhrase
+                    if (riskForm || patientHeader) {
+                        pdfCell.setLeading(cellLeadingPt(cell), 0f);
+                    }
+                    if (cardiacBorder) {
+                        pdfCell.setPaddingTop(3f);
+                        pdfCell.setPaddingBottom(3f);
+                        pdfCell.setPaddingLeft(4f);
+                        pdfCell.setPaddingRight(4f);
+                        pdfCell.setHorizontalAlignment(Element.ALIGN_CENTER);
+                        pdfCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
+                    }
                     pdfCell.setColspan(colspan);
                     if (rowspan > 1) {
                         pdfCell.setRowspan(rowspan);
                     }
-                    applyNamedCellLayout(pdfCell, cell);
+                    applyNamedCellLayout(pdfCell, cell, tableName);
+                    if (outpatientHistory) {
+                        applyOutpatientHistoryCellLayout(pdfCell, cell);
+                    }
+                    if (riskForm) {
+                        applyRiskFormCellLayout(pdfCell, cell, row);
+                    }
+                    // 会诊申请单：按当前页剩余高度撑满「会诊记录」行，吃掉页底空白
+                    if ("consultRequestForm".equals(tableName) && "tallBody".equals(attrText(cell, "name"))) {
+                        applyConsultTallBodyFillPage(pdfCell);
+                    }
                     // 首行姓名/性别/年龄/住院号：标签与值居中
                     if (dischargeForm && rowIndex == 0) {
                         pdfCell.setHorizontalAlignment(Element.ALIGN_CENTER);
@@ -759,13 +975,22 @@ public class EmrContentJsonRenderer {
                             pdfCell.setHorizontalAlignment(Element.ALIGN_LEFT);
                         }
                     }
-                    // 入院/门诊页眉与签字：无框线（心浊音界等有框表不走此分支）
+                    // 入院/门诊页眉与签字：打印无框线（心浊音界等有框表不走此分支）
                     if (borderlessEmrTable) {
                         pdfCell.setBorder(PdfPCell.NO_BORDER);
-                        pdfCell.setPaddingTop(2f);
-                        pdfCell.setPaddingBottom(2f);
                         pdfCell.setPaddingLeft(2f);
                         pdfCell.setPaddingRight(2f);
+                        // 入院基础信息：行高对齐正文 1.5 倍，避免打印挤成单倍行距
+                        if (patientHeader) {
+                            float leading = cellLeadingPt(cell);
+                            pdfCell.setLeading(leading, 0f);
+                            pdfCell.setPaddingTop(3f);
+                            pdfCell.setPaddingBottom(3f);
+                            pdfCell.setMinimumHeight(leading);
+                        } else {
+                            pdfCell.setPaddingTop(2f);
+                            pdfCell.setPaddingBottom(2f);
+                        }
                         String cellName = attrText(cell, "name");
                         if (signBlock && ("signRight".equals(cellName) || "signSpacer".equals(cellName))) {
                             if ("signRight".equals(cellName)) {
@@ -818,8 +1043,13 @@ public class EmrContentJsonRenderer {
         }
         try {
             if (colCount == 8) {
-                // 首列加宽，避免「申请会诊目的」等长标签被裁切
-                table.setWidths(new float[]{2.05f, 1.95f, 1.1f, 1.05f, 1.1f, 1.0f, 1.35f, 2.2f});
+                if ("consultRequestForm".equals(tableName)) {
+                    // 会诊申请单：首列再加宽，保证「申请会诊目的」单行不折
+                    table.setWidths(new float[]{2.75f, 1.65f, 1.05f, 1.0f, 1.05f, 0.95f, 1.25f, 2.3f});
+                } else {
+                    // 出院诊断书等：首列略宽
+                    table.setWidths(new float[]{2.05f, 1.95f, 1.1f, 1.05f, 1.1f, 1.0f, 1.35f, 2.2f});
+                }
             } else {
                 float[] widths = new float[colCount];
                 widths[0] = 1.15f;
@@ -829,6 +1059,78 @@ public class EmrContentJsonRenderer {
                 }
                 table.setWidths(widths);
             }
+        } catch (Exception ignored) {
+            // 列宽失败不影响正文
+        }
+    }
+
+    /**
+     * 门诊病历表格版：左列窄标签（屏上约 72px），右列宽内容；勿与 riskForm 混用。
+     *
+     * @param table     目标表
+     * @param colCount  列数
+     * @param tableNode table 节点
+     */
+    private static void applyOutpatientHistoryTableLayout(PdfPTable table, int colCount, JsonNode tableNode) {
+        if (colCount != 2) {
+            return;
+        }
+        if (!"outpatientHistory".equals(attrText(tableNode, "name"))) {
+            return;
+        }
+        try {
+            table.setWidths(new float[]{1.15f, 8.85f});
+            table.setSpacingBefore(2f);
+            table.setSpacingAfter(2f);
+        } catch (Exception ignored) {
+            // 列宽失败不影响正文
+        }
+    }
+
+    /**
+     * 门诊 sectionLabel / sectionValue：标签居中、内容顶对齐左排。
+     *
+     * @param pdfCell 目标格
+     * @param cell    JSON 单元格
+     */
+    private static void applyOutpatientHistoryCellLayout(PdfPCell pdfCell, JsonNode cell) {
+        String name = attrText(cell, "name");
+        pdfCell.setPaddingTop(6f);
+        pdfCell.setPaddingBottom(6f);
+        pdfCell.setPaddingLeft(6f);
+        pdfCell.setPaddingRight(6f);
+        if ("sectionLabel".equals(name)) {
+            pdfCell.setHorizontalAlignment(Element.ALIGN_CENTER);
+            pdfCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
+        } else if ("sectionValue".equals(name)) {
+            pdfCell.setHorizontalAlignment(firstParagraphAlign(cell));
+            pdfCell.setVerticalAlignment(Element.ALIGN_TOP);
+        }
+    }
+
+    /**
+     * 住院病人风险评估表：首列给长标签（不良后果及预后），其余均分铺满正文宽。
+     *
+     * @param table     目标表
+     * @param colCount  列数
+     * @param tableNode table 节点
+     */
+    private static void applyRiskFormTableLayout(PdfPTable table, int colCount, JsonNode tableNode) {
+        if (colCount < 2) {
+            return;
+        }
+        if (!"riskForm".equals(attrText(tableNode, "name"))) {
+            return;
+        }
+        try {
+            float[] widths = new float[colCount];
+            widths[0] = 1.55f;
+            for (int i = 1; i < colCount; i++) {
+                widths[i] = 1f;
+            }
+            table.setWidths(widths);
+            table.setSpacingBefore(6f);
+            table.setSpacingAfter(6f);
         } catch (Exception ignored) {
             // 列宽失败不影响正文
         }
@@ -851,8 +1153,15 @@ public class EmrContentJsonRenderer {
         }
     }
 
-    /** 按单元格 data-name 控制行高/对齐，贴近纸质诊断书 */
-    private void applyNamedCellLayout(PdfPCell pdfCell, JsonNode cell) {
+    /**
+     * 按单元格 data-name 控制行高/对齐，贴近纸质诊断书。
+     * 出院诊断书的 formLabel/formValue 居中；风险评估表同名格子改走 {@link #applyRiskFormCellLayout}。
+     *
+     * @param pdfCell   目标格
+     * @param cell      JSON 单元格
+     * @param tableName table attrs.name
+     */
+    private void applyNamedCellLayout(PdfPCell pdfCell, JsonNode cell, String tableName) {
         String name = attrText(cell, "name");
         pdfCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
         if (!StringUtils.hasText(name)) {
@@ -867,18 +1176,30 @@ public class EmrContentJsonRenderer {
                 pdfCell.setMinimumHeight(mmToPt(42f));
             }
             case "formLabel", "formValue" -> {
-                pdfCell.setHorizontalAlignment(Element.ALIGN_CENTER);
-                pdfCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
+                if (!"riskForm".equals(tableName)) {
+                    pdfCell.setHorizontalAlignment(Element.ALIGN_CENTER);
+                    pdfCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
+                }
             }
             case "midBody" -> {
                 pdfCell.setVerticalAlignment(Element.ALIGN_TOP);
-                pdfCell.setMinimumHeight(mmToPt(12f));
+                // 会诊申请单摘要区加高；出院诊断书等仍用紧凑高度
+                if ("consultRequestForm".equals(tableName)) {
+                    pdfCell.setMinimumHeight(mmToPt(48f));
+                } else {
+                    pdfCell.setMinimumHeight(mmToPt(12f));
+                }
                 pdfCell.setPaddingTop(3f);
             }
             case "tallBody" -> {
                 pdfCell.setVerticalAlignment(Element.ALIGN_TOP);
-                // 压缩到约一页：摘要/指导各约 42mm（此前 62mm 易溢出第二页）
-                pdfCell.setMinimumHeight(mmToPt(42f));
+                if ("consultRequestForm".equals(tableName)) {
+                    // 初值；renderTable 内再按页剩余高度覆盖为撑满
+                    pdfCell.setMinimumHeight(mmToPt(100f));
+                } else {
+                    // 出院诊断书等压缩到约一页：摘要/指导各约 42mm
+                    pdfCell.setMinimumHeight(mmToPt(42f));
+                }
                 pdfCell.setPaddingTop(3f);
             }
             case "signBlock" -> {
@@ -894,6 +1215,184 @@ public class EmrContentJsonRenderer {
 
     private static float mmToPt(float mm) {
         return mm * 72f / 25.4f;
+    }
+
+    /**
+     * 会诊申请单「会诊记录」：用当前页剩余高度减去表内其它行估算，撑满到页脚上方。
+     * 在整表 {@code document.add} 之前调用，垂直位置仍是表前光标。
+     */
+    private void applyConsultTallBodyFillPage(PdfPCell pdfCell) {
+        if (writer == null || document == null) {
+            return;
+        }
+        float remainingPt = writer.getVerticalPosition(true) - document.bottom();
+        if (remainingPt <= 0f) {
+            return;
+        }
+        // 表内除 tallBody 外：信息两行 + 摘要48 + 目的/邀请/申请签名/末行签名
+        float otherRowsPt = mmToPt(10f + 10f + 48f + 12f + 12f + 16f + 16f);
+        float tallPt = remainingPt - otherRowsPt - mmToPt(2f);
+        if (tallPt < mmToPt(90f)) {
+            tallPt = mmToPt(90f);
+        }
+        pdfCell.setMinimumHeight(tallPt);
+        pdfCell.setFixedHeight(tallPt);
+    }
+
+    /**
+     * 风险评估表格子：值格左对齐并给病情简介等书写区最小行高，避免打印缩成纸顶一小块。
+     *
+     * @param pdfCell 目标格
+     * @param cell    JSON 单元格
+     * @param row     当前行（用首格固定文案识别行类型）
+     */
+    private void applyRiskFormCellLayout(PdfPCell pdfCell, JsonNode cell, JsonNode row) {
+        String cellName = attrText(cell, "name");
+        String rowLabel = firstRowLabel(row);
+        boolean isLabel = "formLabel".equals(cellName);
+        pdfCell.setPaddingTop(7f);
+        pdfCell.setPaddingBottom(7f);
+        pdfCell.setPaddingLeft(8f);
+        pdfCell.setPaddingRight(8f);
+        if (isLabel) {
+            pdfCell.setHorizontalAlignment(Element.ALIGN_CENTER);
+            pdfCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
+        } else {
+            pdfCell.setHorizontalAlignment(firstParagraphAlign(cell));
+            pdfCell.setVerticalAlignment(Element.ALIGN_TOP);
+        }
+        if ("病情简介".equals(rowLabel)) {
+            pdfCell.setMinimumHeight(mmToPt(48f));
+            if (!isLabel) {
+                pdfCell.setVerticalAlignment(Element.ALIGN_TOP);
+            }
+        } else if (rowLabel.contains("不良后果")) {
+            pdfCell.setMinimumHeight(mmToPt(24f));
+            if (!isLabel) {
+                pdfCell.setVerticalAlignment(Element.ALIGN_TOP);
+            }
+        } else if ("评估等级".equals(rowLabel) || rowLabel.contains("护理等级")) {
+            pdfCell.setMinimumHeight(mmToPt(16f));
+            pdfCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
+            if (!isLabel) {
+                pdfCell.setHorizontalAlignment(Element.ALIGN_LEFT);
+            }
+        } else if (rowLabel.contains("签名")) {
+            pdfCell.setMinimumHeight(mmToPt(18f));
+            pdfCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
+            pdfCell.setHorizontalAlignment(Element.ALIGN_LEFT);
+        } else if (rowLabel.contains("收集资料")) {
+            pdfCell.setMinimumHeight(mmToPt(12f));
+            pdfCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
+        } else {
+            pdfCell.setMinimumHeight(mmToPt(10f));
+            pdfCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
+            pdfCell.setHorizontalAlignment(Element.ALIGN_LEFT);
+        }
+    }
+
+    /**
+     * 单元格行距：段上有 lineHeight 则按块属性折算，否则用正文 1.5 倍。
+     *
+     * @param cell JSON 单元格
+     * @return leading（pt）
+     */
+    private float cellLeadingPt(JsonNode cell) {
+        if (cell != null && cell.has(CONTENT) && cell.get(CONTENT).isArray()) {
+            for (JsonNode block : cell.get(CONTENT)) {
+                if (!"paragraph".equals(normalizeType(block.path(TYPE).asText(null)))) {
+                    continue;
+                }
+                String raw = block.path(ATTRS).path("lineHeight").asText(null);
+                Float leading = resolveLineHeightLeading(raw, bodyFont.getSize());
+                if (leading != null && leading > 0f) {
+                    return leading;
+                }
+            }
+        }
+        return bodyLeadingPt(bodyFont);
+    }
+
+    /**
+     * 行首格固定文案（不含填写值），用来识别病情简介 / 签名等行。
+     *
+     * @param row tableRow
+     * @return 文案；无则空串
+     */
+    private static String firstRowLabel(JsonNode row) {
+        if (row == null || !row.has(CONTENT) || !row.get(CONTENT).isArray()) {
+            return "";
+        }
+        for (JsonNode cell : row.get(CONTENT)) {
+            String text = collectFixedText(cell).trim();
+            if (!text.isEmpty()) {
+                return text;
+            }
+        }
+        return "";
+    }
+
+    /**
+     * 格内首段 textAlign → OpenPDF 对齐；缺省左对齐（与模版 JSON 一致）。
+     *
+     * @param cell JSON 单元格
+     * @return ALIGN_LEFT / CENTER / RIGHT / JUSTIFIED
+     */
+    private static int firstParagraphAlign(JsonNode cell) {
+        if (cell == null || !cell.has(CONTENT) || !cell.get(CONTENT).isArray()) {
+            return Element.ALIGN_LEFT;
+        }
+        for (JsonNode block : cell.get(CONTENT)) {
+            if (!"paragraph".equals(normalizeType(block.path(TYPE).asText(null)))) {
+                continue;
+            }
+            String align = block.path(ATTRS).path("textAlign").asText("");
+            if ("center".equalsIgnoreCase(align)) {
+                return Element.ALIGN_CENTER;
+            }
+            if ("right".equalsIgnoreCase(align)) {
+                return Element.ALIGN_RIGHT;
+            }
+            if ("justify".equalsIgnoreCase(align)) {
+                return Element.ALIGN_JUSTIFIED;
+            }
+            return Element.ALIGN_LEFT;
+        }
+        return Element.ALIGN_LEFT;
+    }
+
+    /**
+     * 收集节点树里的固定 text（不含数据元填写值）。
+     *
+     * @param node 单元格或子节点
+     * @return 拼接文案
+     */
+    private static String collectFixedText(JsonNode node) {
+        StringBuilder sb = new StringBuilder();
+        appendFixedText(node, sb);
+        return sb.toString();
+    }
+
+    /**
+     * 递归追加固定 text 节点。
+     *
+     * @param node 当前节点
+     * @param sb   输出
+     */
+    private static void appendFixedText(JsonNode node, StringBuilder sb) {
+        if (node == null || !node.isObject()) {
+            return;
+        }
+        String type = normalizeType(node.path(TYPE).asText(null));
+        if (TYPE_TEXT.equals(type)) {
+            sb.append(node.path("text").asText(""));
+            return;
+        }
+        if (node.has(CONTENT) && node.get(CONTENT).isArray()) {
+            for (JsonNode child : node.get(CONTENT)) {
+                appendFixedText(child, sb);
+            }
+        }
     }
 
     /** 按 colspan 累计一行占用的列数 */
@@ -914,8 +1413,19 @@ public class EmrContentJsonRenderer {
 
     /** 单元格 Phrase：支持纯文本与行内数据元/元数据 chip */
     private Phrase buildCellPhrase(JsonNode cell) {
+        return buildCellPhrase(cell, false);
+    }
+
+    /**
+     * 单元格 Phrase。
+     *
+     * @param cell         表格单元格
+     * @param afterSignCue 行首含签名/签字或 signBlock 表时，姓名域留白
+     * @return 单元格内容
+     */
+    private Phrase buildCellPhrase(JsonNode cell, boolean afterSignCue) {
         Phrase phrase = new Phrase();
-        phrase.setLeading(bodyFont.getSize() * printConfig.getFont().getLineHeight());
+        phrase.setLeading(bodyLeadingPt(bodyFont));
         if (cell == null || !cell.has(CONTENT) || !cell.get(CONTENT).isArray()) {
             phrase.add(new Chunk("", bodyFont));
             return phrase;
@@ -926,7 +1436,8 @@ public class EmrContentJsonRenderer {
                 phrase.add(new Chunk("\n", bodyFont));
             }
             firstBlock = false;
-            appendBlockTextToPhrase(phrase, block);
+            boolean blockCue = afterSignCue || isSignParagraphName(attrText(block, "name"));
+            appendBlockTextToPhrase(phrase, block, blockCue);
         }
         if (phrase.isEmpty()) {
             phrase.add(new Chunk("", bodyFont));
@@ -935,6 +1446,10 @@ public class EmrContentJsonRenderer {
     }
 
     private void appendBlockTextToPhrase(Phrase phrase, JsonNode block) {
+        appendBlockTextToPhrase(phrase, block, false);
+    }
+
+    private void appendBlockTextToPhrase(Phrase phrase, JsonNode block, boolean afterSignCue) {
         if (block == null || !block.isObject()) {
             return;
         }
@@ -944,22 +1459,24 @@ public class EmrContentJsonRenderer {
             return;
         }
         if (isInlineFieldType(type)) {
-            String v = extractDataElementDisplay(block);
-            if (StringUtils.hasText(v)) {
-                phrase.add(new Chunk(v, bodyFont));
-            }
+            appendInlineFieldOrBlank(phrase, block, bodyFont, afterSignCue);
             return;
         }
         if (!block.has(CONTENT) || !block.get(CONTENT).isArray()) {
             return;
         }
+        boolean cue = afterSignCue || isSignParagraphName(attrText(block, "name"));
         for (JsonNode inline : block.get(CONTENT)) {
             if (!inline.isObject()) {
                 continue;
             }
             String inlineType = normalizeType(inline.path(TYPE).asText(null));
             if (TYPE_TEXT.equals(inlineType)) {
+                String raw = inline.path("text").asText("");
                 appendTextNodeToPhrase(phrase, inline);
+                if (textHasSignCue(raw)) {
+                    cue = true;
+                }
             } else if ("image".equals(inlineType)) {
                 Chunk imgChunk = buildInlineImageChunk(inline);
                 if (imgChunk != null) {
@@ -968,30 +1485,36 @@ public class EmrContentJsonRenderer {
             } else if ("emrcheckboxfield".equals(inlineType)) {
                 appendCheckboxChunk(phrase, inline, bodyFont);
             } else if (isInlineFieldType(inlineType)) {
-                String v = extractDataElementDisplay(inline);
-                if (!StringUtils.hasText(v)) {
-                    String widget = inline.path(ATTRS).path("widgetOverride").asText("").trim();
-                    v = "multiline".equals(widget) ? "" : "______";
-                }
-                if (StringUtils.hasText(v)) {
-                    phrase.add(new Chunk(v, bodyFont));
-                }
+                appendInlineFieldOrBlank(phrase, inline, bodyFont, cue);
             } else if (inline.has(CONTENT) && inline.get(CONTENT).isArray()) {
                 for (JsonNode nested : inline.get(CONTENT)) {
                     if (TYPE_TEXT.equals(normalizeType(nested.path(TYPE).asText(null)))) {
                         appendTextNodeToPhrase(phrase, nested);
+                        if (textHasSignCue(nested.path("text").asText(""))) {
+                            cue = true;
+                        }
                     }
                 }
             }
         }
     }
 
+    /**
+     * 表格单元格内的 text 节点，规则同 {@link #appendTextNode}。
+     *
+     * @param phrase   单元格 Phrase
+     * @param textNode ProseMirror text 节点
+     */
     private void appendTextNodeToPhrase(Phrase phrase, JsonNode textNode) {
         String text = textNode.path("text").asText("");
         if (text.isEmpty()) {
             return;
         }
         if (!renderOptions.isIncludeTrackChanges() && hasMark(textNode, "deletion")) {
+            return;
+        }
+        text = stripInlineSignNames(text);
+        if (text.isEmpty()) {
             return;
         }
         int style = Font.NORMAL;
@@ -1009,20 +1532,188 @@ public class EmrContentJsonRenderer {
         }
         float sizePt = resolveMarkFontSizePt(textNode, bodyFont.getSize());
         Font f = fontFactory.bodyFont(sizePt, style);
-        phrase.add(new Chunk(text, f));
+        addPrintText(phrase, text, f);
     }
 
-    /** 数据元展示值；签名图等 data URL 不进表格文本 */
+    /** 数据元展示值；签名图等 data URL 不进表格文本。保留行首空格，供自由文本缩进打印。 */
     private String extractDataElementDisplay(JsonNode node) {
         String value = extractDataElementValue(node);
-        if (!StringUtils.hasText(value)) {
+        if (value == null || value.isEmpty()) {
             return "";
         }
         String trimmed = value.trim();
         if (trimmed.startsWith("data:image/")) {
             return "";
         }
-        return trimmed;
+        return value;
+    }
+
+    /**
+     * 中/西医初步诊断悬挂缩进：续行左缘与首行诊断值对齐，而不是对齐「中/西」字。
+     * OpenPDF 的 {@code indentationLeft} 作用于每一行，{@code firstLineIndent} 为负则首行拉回段首。
+     *
+     * @param node     命名段落 JSON（须含标签文本 + 可填域）
+     * @param p        已拼好 inline 的段落
+     * @param baseFont 正文字体，用于按实际字号测前缀宽度
+     */
+    private void applyDiagnosisHangingIndent(JsonNode node, Paragraph p, Font baseFont) {
+        if (!node.has(CONTENT)) {
+            return;
+        }
+        float prefixWidth = measureInlinePrefixWidthBeforeFirstField(node.get(CONTENT), baseFont);
+        if (prefixWidth <= 0f) {
+            return;
+        }
+        p.setIndentationLeft(prefixWidth);
+        p.setFirstLineIndent(-prefixWidth);
+    }
+
+    /**
+     * 测量可填域之前的标签前缀宽度（全角缩进 +「中医/西医初步诊断：」）。
+     * 遇到第一个 dataelement / freetext 即停，其后是诊断值，不计入悬挂宽度。
+     *
+     * @param inlineNodes 段落 content
+     * @param baseFont    正文字体
+     * @return 前缀宽度（pt）；无前缀或无法测量时为 0
+     */
+    private float measureInlinePrefixWidthBeforeFirstField(JsonNode inlineNodes, Font baseFont) {
+        if (inlineNodes == null || !inlineNodes.isArray()) {
+            return 0f;
+        }
+        BaseFont bf = fontFactory.getBaseFont();
+        if (bf == null) {
+            return 0f;
+        }
+        float width = 0f;
+        float defaultSize = baseFont.getSize();
+        for (JsonNode inline : inlineNodes) {
+            if (!inline.isObject()) {
+                continue;
+            }
+            String type = normalizeType(inline.path(TYPE).asText(null));
+            if (isInlineFieldType(type)) {
+                break;
+            }
+            if (!TYPE_TEXT.equals(type)) {
+                continue;
+            }
+            if (!renderOptions.isIncludeTrackChanges() && hasMark(inline, "deletion")) {
+                continue;
+            }
+            String text = inline.path("text").asText("");
+            if (text.isEmpty()) {
+                continue;
+            }
+            float sizePt = resolveMarkFontSizePt(inline, defaultSize);
+            width += bf.getWidthPoint(text, sizePt);
+        }
+        return width;
+    }
+
+    /**
+     * 正文 Word n 倍行距（pt）：字号 × 倍数 × 中文单倍系数 1.55。
+     * 小四 12pt × 1.5 × 1.55 ≈ 28pt，与屏上 --simple-editor-line-height: 2.33 对齐。
+     *
+     * @param font 段落字体；空则用正文默认字号
+     * @return PDF Paragraph leading（基线距）
+     */
+    private float bodyLeadingPt(Font font) {
+        float size = 12f;
+        // 正文默认字号（小四 12pt）
+        if (bodyFont != null && bodyFont.getSize() > 0f) {
+            size = bodyFont.getSize();
+        }
+        // 当前段若放大/缩小，按该段字号折算 28pt 级行距
+        if (font != null && font.getSize() > 0f) {
+            size = font.getSize();
+        }
+        float multiple = 1.5f;
+        if (printConfig != null && printConfig.getFont() != null && printConfig.getFont().getLineHeight() > 0f) {
+            multiple = printConfig.getFont().getLineHeight();
+        }
+        return size * multiple * CJK_SINGLE_SPACING_FACTOR;
+    }
+
+    /**
+     * 写入可印文本。CJK CID 字体把半角英文按全角宽走字时，由字体工厂拆到 Times。
+     *
+     * @param phrase 目标段落或单元格
+     * @param text   原文
+     * @param font   当前字号与样式
+     */
+    private void addPrintText(Phrase phrase, String text, Font font) {
+        fontFactory.appendText(phrase, text, font);
+    }
+
+    /**
+     * 用混排字体建段落（leading 由调用方再设）。
+     *
+     * @param text 原文
+     * @param font 字号与样式
+     * @return 新段落
+     */
+    private Paragraph printParagraph(String text, Font font) {
+        Paragraph p = new Paragraph();
+        fontFactory.appendText(p, text, font);
+        return p;
+    }
+
+    /**
+     * 把自由文本/数据元原文写入 Phrase：保留行首缩进，按换行切段以沿用段落 leading。
+     *
+     * @param phrase 目标段落或单元格
+     * @param value  attrs.value 原文（可含换行与空格）
+     * @param font   正文字体
+     */
+    private void appendFieldDisplayValue(Phrase phrase, String value, Font font) {
+        if (value == null || value.isEmpty()) {
+            return;
+        }
+        String[] lines = value.split("\\R", -1);
+        for (int i = 0; i < lines.length; i++) {
+            if (i > 0) {
+                phrase.add(Chunk.NEWLINE);
+            }
+            String line = preserveLeadingSpacesForPdf(lines[i]);
+            if (line.isEmpty()) {
+                continue;
+            }
+            addPrintText(phrase, line, font);
+        }
+    }
+
+    /**
+     * OpenPDF 在换行后会吃掉行首半角空格；改成不换行空格以保留屏上 pre-wrap 缩进。全角空格原样保留。
+     *
+     * @param line 单行文本
+     * @return 行首半角空格已换成 NBSP 的文本
+     */
+    private static String preserveLeadingSpacesForPdf(String line) {
+        if (line == null || line.isEmpty()) {
+            return "";
+        }
+        int i = 0;
+        int n = line.length();
+        while (i < n) {
+            char c = line.charAt(i);
+            if (c != ' ' && c != '\t') {
+                break;
+            }
+            i++;
+        }
+        if (i == 0) {
+            return line;
+        }
+        StringBuilder sb = new StringBuilder(line.length());
+        for (int j = 0; j < i; j++) {
+            if (line.charAt(j) == '\t') {
+                sb.append('\u00A0').append('\u00A0').append('\u00A0').append('\u00A0');
+            } else {
+                sb.append('\u00A0');
+            }
+        }
+        sb.append(line.substring(i));
+        return sb.toString();
     }
 
     private void renderHorizontalRule(JsonNode node) throws Exception {
@@ -1193,7 +1884,13 @@ public class EmrContentJsonRenderer {
         }
     }
 
-    /** 无单位倍数 → fontSize×倍数；带单位 → 绝对 pt 行高 */
+    /**
+     * 块级 lineHeight：无单位视为 Word 倍数（再乘中文单倍 1.55）；带单位则按绝对 pt。
+     *
+     * @param raw        attrs.lineHeight，如 1.5 或 28pt
+     * @param fontSizePt 当前段字号
+     * @return leading（pt）；无法解析时 null
+     */
     private static Float resolveLineHeightLeading(String raw, float fontSizePt) {
         if (!StringUtils.hasText(raw)) {
             return null;
@@ -1201,7 +1898,8 @@ public class EmrContentJsonRenderer {
         String s = raw.trim();
         if (s.matches("^[0-9]*\\.?[0-9]+$")) {
             try {
-                return fontSizePt * Float.parseFloat(s);
+                float multiple = Float.parseFloat(s);
+                return fontSizePt * multiple * CJK_SINGLE_SPACING_FACTOR;
             } catch (NumberFormatException e) {
                 return null;
             }
@@ -1245,13 +1943,51 @@ public class EmrContentJsonRenderer {
         return false;
     }
 
+    /**
+     * 勾选框：☑/□ + 标签 + 全角空格分隔；英文标签同样走混排字体。
+     *
+     * @param phrase 目标段落或单元格
+     * @param node   checkbox 节点
+     * @param font   正文字体样式
+     */
     private void appendCheckboxChunk(Phrase phrase, JsonNode node, Font font) {
         boolean checked = node.path(ATTRS).path("checked").asBoolean(false)
                 || "true".equalsIgnoreCase(node.path(ATTRS).path("checked").asText(""));
         String label = attrText(node, "label");
-        String mark = checked ? "☑" : "□";
-        String text = StringUtils.hasText(label) ? mark + label : mark;
-        phrase.add(new Chunk(text + "　", font));
+        String mark = "□";
+        if (checked) {
+            mark = "☑";
+        }
+        String text = mark;
+        if (StringUtils.hasText(label)) {
+            text = mark + label;
+        }
+        addPrintText(phrase, text + "　", font);
+    }
+
+    /**
+     * 段内是否有可印内容。空 text 不算；填写岛屿/图片/勾选仍算，避免把空控件段误删。
+     */
+    private boolean hasPrintableInlineContent(JsonNode node) {
+        if (node == null || !node.has(CONTENT) || !node.get(CONTENT).isArray()) {
+            return false;
+        }
+        for (JsonNode inline : node.get(CONTENT)) {
+            if (!inline.isObject()) {
+                continue;
+            }
+            String type = normalizeType(inline.path(TYPE).asText(null));
+            if (TYPE_TEXT.equals(type)) {
+                if (StringUtils.hasText(inline.path("text").asText(""))) {
+                    return true;
+                }
+            } else if ("image".equals(type) || isInlineFieldType(type)) {
+                return true;
+            } else if (inline.has(CONTENT) && hasPrintableInlineContent(inline)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean isInlineFieldType(String type) {
@@ -1262,6 +1998,137 @@ public class EmrContentJsonRenderer {
                 || "emrcheckboxfield".equals(type)
                 || "emrmetadatachip".equals(type)
                 || "emrfreetext".equals(type);
+    }
+
+    /**
+     * 打印预览/正式打印：签字位姓名留白供手写。
+     * 「接诊医生」信息条（无签名/签字上下文）仍打印姓名；签字日期/时间仍打印。
+     *
+     * @param node         chip / freeText / dataElement
+     * @param afterSignCue 上文或命名段已进入签字上下文
+     * @return true 则打印下划线占位，不输出姓名/签名图
+     */
+    private boolean shouldBlankSignatureSlot(JsonNode node, boolean afterSignCue) {
+        if (node == null || !node.isObject()) {
+            return false;
+        }
+        if (isSignatureLabelSlot(node)) {
+            return true;
+        }
+        if (isSignatureImageField(node)) {
+            return true;
+        }
+        if (afterSignCue && isPersonSignNameField(node)) {
+            return true;
+        }
+        return false;
+    }
+
+    /** label 含「签名/签字」且非日期时间 → 手写姓名位 */
+    private boolean isSignatureLabelSlot(JsonNode node) {
+        String label = fieldLabel(node);
+        if (!StringUtils.hasText(label)) {
+            return false;
+        }
+        if (label.contains("日期") || label.contains("时间")) {
+            return false;
+        }
+        return label.contains("签名") || label.contains("签字");
+    }
+
+    private boolean isSignatureImageField(JsonNode node) {
+        String key = fieldKeyOf(node);
+        if (!StringUtils.hasText(key)) {
+            return false;
+        }
+        return key.toLowerCase().contains("signatureimage");
+    }
+
+    /**
+     * 签字上下文后应留白的姓名类域（含 doctorName / 接诊医生）。
+     * 无签字上下文时 doctorName 仍可作「接诊医生」信息展示。
+     */
+    private boolean isPersonSignNameField(JsonNode node) {
+        String key = fieldKeyOf(node);
+        if ("doctorName".equals(key)
+                || "attendingPhysician".equals(key)
+                || "verifierSign".equals(key)) {
+            return true;
+        }
+        String label = fieldLabel(node);
+        if (!StringUtils.hasText(label)) {
+            return false;
+        }
+        String trimmed = label.trim();
+        if (SIGN_ROLE_NAME_LABELS.contains(trimmed)) {
+            return true;
+        }
+        return "接诊医生".equals(trimmed) || "医师签名".equals(trimmed);
+    }
+
+    /** doctorSign / signLine* / noticeSign* 等落款命名段 */
+    private static boolean isSignParagraphName(String name) {
+        if (!StringUtils.hasText(name)) {
+            return false;
+        }
+        String n = name.trim();
+        if (n.startsWith("signLine") || n.startsWith("noticeSign")) {
+            return true;
+        }
+        return "doctorSign".equals(n)
+                || "riskGuardianSign".equals(n)
+                || "signBlock".equals(n)
+                || "signLine".equals(n);
+    }
+
+    /** 文案是否进入签字上下文（含会诊医师等落款角色，不含单独的「接诊医生」信息条） */
+    private static boolean textHasSignCue(String text) {
+        if (!StringUtils.hasText(text)) {
+            return false;
+        }
+        if (text.contains("签名") || text.contains("签字")) {
+            return true;
+        }
+        for (String role : SIGN_ROLE_NAME_LABELS) {
+            if (text.contains(role)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 同一 text 节点内「签名：张三」去掉姓名，保留标签供手写。
+     * 不含「请签字确认」等无冒号说明句。
+     */
+    private static String stripInlineSignNames(String text) {
+        if (!StringUtils.hasText(text)) {
+            return text;
+        }
+        if (!text.contains("签名") && !text.contains("签字")) {
+            return text;
+        }
+        return text.replaceAll("(签名|签字)([）)])?[：:]\\s*[^\\s　：:，,；;]{1,20}", "$1$2：");
+    }
+
+    private static String fieldKeyOf(JsonNode node) {
+        JsonNode attrs = node.get(ATTRS);
+        if (attrs == null) {
+            return "";
+        }
+        String key = attrs.path("fieldKey").asText("");
+        if (StringUtils.hasText(key)) {
+            return key;
+        }
+        return attrs.path("elementId").asText("");
+    }
+
+    private String fieldLabel(JsonNode node) {
+        return firstNonBlank(
+                attrText(node, "label"),
+                attrText(node, "labelSnapshot"),
+                attrText(node, "title"),
+                attrText(node, "name"));
     }
 
     private static String normalizeType(String type) {

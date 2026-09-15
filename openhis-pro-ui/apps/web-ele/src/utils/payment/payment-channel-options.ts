@@ -18,6 +18,32 @@ export const FALLBACK_PAY_CHANNEL_OPTIONS: PayChannelOption[] = [
 
 export const FALLBACK_DEFAULT_PAY_CHANNEL = 'CASH';
 
+/** 院点开启银联时的优先默认渠道 */
+export const PREFERRED_DEFAULT_PAY_CHANNEL = 'SCAN_PAY';
+
+/** 当前可选渠道含银联扫码则默认银联，否则落到现金（再否则取第一项） */
+export function resolveDefaultPayChannelCode(
+  options: PayChannelOption[],
+  preferred: string = PREFERRED_DEFAULT_PAY_CHANNEL,
+  fallback: string = FALLBACK_DEFAULT_PAY_CHANNEL,
+): string {
+  if (options.some((opt) => opt.value === preferred)) {
+    return preferred;
+  }
+  if (options.some((opt) => opt.value === fallback)) {
+    return fallback;
+  }
+  return options[0]?.value ?? fallback;
+}
+
+/** 有现金应收时走默认渠道；零元用现金占位，避免误提交扫码 */
+export function resolveCollectPayChannelCode(cashPay: number, options: PayChannelOption[]): string {
+  if (!Number.isFinite(cashPay) || cashPay <= 0.001) {
+    return FALLBACK_DEFAULT_PAY_CHANNEL;
+  }
+  return resolveDefaultPayChannelCode(options);
+}
+
 /** 非收银员可选、但退费原路展示需要的落库渠道 */
 const PERSISTED_REFUND_CHANNEL_LABELS: Record<string, string> = {
   ALIPAY: '支付宝',

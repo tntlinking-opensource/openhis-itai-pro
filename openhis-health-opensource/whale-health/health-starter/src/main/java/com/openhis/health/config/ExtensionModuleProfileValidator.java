@@ -26,6 +26,7 @@ public class ExtensionModuleProfileValidator implements ApplicationListener<Appl
             {"elep", "com.openhis.elep.application.config.ElepAutoConfiguration", "openhis.modules.elep.enabled"},
             {"booking", "com.openhis.whale.booking.application.config.BookingAutoConfiguration", "openhis.modules.booking.enabled"},
             {"campus", "com.openhis.campus.application.config.CampusAutoConfiguration", "openhis.modules.campus.enabled"},
+            {"miniapp", "com.openhis.miniapp.application.config.MiniappAutoConfiguration", "openhis.modules.miniapp.enabled"},
             {"einvoice-boss", "com.openhis.whale.einvoice.boss.application.config.EinvoiceBossAutoConfiguration", "openhis.modules.einvoice-boss.enabled"},
             {"unionpay-bpc", "com.openhis.whale.unionpay.bpc.application.config.UnionPayBpcAutoConfiguration", "openhis.modules.unionpay-bpc.enabled"},
     };

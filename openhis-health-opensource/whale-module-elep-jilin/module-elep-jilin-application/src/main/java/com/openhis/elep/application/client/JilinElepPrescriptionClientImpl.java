@@ -20,16 +20,17 @@ import com.openhis.elep.domain.prescription.result.ElepRevokeResult;
 import com.openhis.elep.domain.prescription.result.ElepUploadResult;
 import com.openhis.elep.domain.snapshot.ElepRxNoSnapshot;
 import lombok.RequiredArgsConstructor;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.Optional;
 
-/** {@link JilinElepPrescriptionClient} 实现（委托 {@link ElepPrescriptionOperations}）。 */
+/**
+ * {@link JilinElepPrescriptionClient} 实现（委托 {@link ElepPrescriptionOperations}）。
+ * <p>Operations 由 deployment.mode 选择；本 Bean 只跟模块开关，避免 AND 式 {@code @ConditionalOnBean} 导致永不注册。</p>
+ */
 @Component
 @RequiredArgsConstructor
-@ConditionalOnBean(name = {"elepPrescriptionOrchestrator", "elepPrescriptionOperationsRemoteAdapter"})
 @ConditionalOnProperty(name = "openhis.modules.elep.enabled", havingValue = "true")
 public class JilinElepPrescriptionClientImpl implements JilinElepPrescriptionClient {
 

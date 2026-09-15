@@ -17,11 +17,11 @@ import com.openhis.health.domain.administration.chargeitem.query.OutpatientFeeDe
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.OutpatientFeeDetailConstants;
 import com.openhis.health.application.shared.pagination.PageQueryBinder;
+import com.openhis.health.application.shared.report.ReportDateTimeWindowSupport;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -185,7 +185,6 @@ public class OutpatientFeeDetailMapperImpl implements OutpatientFeeDetailMapper 
         row.setCashierName(line.getCashierName());
         row.setBillDate(line.getBillDate());
         row.setInsuranceLevelDisplay(line.getInsuranceLevelDisplay());
-        row.setInsuranceTypeDisplay(line.getInsuranceTypeDisplay());
         row.setPurchaseUnitPrice(line.getPurchaseUnitPrice());
         row.setPurchaseAmount(line.getPurchaseAmount());
         row.setSaleUnitPrice(line.getSaleUnitPrice());
@@ -249,10 +248,10 @@ public class OutpatientFeeDetailMapperImpl implements OutpatientFeeDetailMapper 
         String tradeDirection,
         String feeNatureContractNo) {
         if (StringUtils.isNotEmpty(dateFrom)) {
-            query.setBillDateFrom(LocalDate.parse(dateFrom.trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER));
+            query.setBillDateFrom(ReportDateTimeWindowSupport.parseInclusiveStart(dateFrom));
         }
         if (StringUtils.isNotEmpty(dateTo)) {
-            query.setBillDateTo(LocalDate.parse(dateTo.trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER));
+            query.setBillDateTo(ReportDateTimeWindowSupport.parseInclusiveEnd(dateTo));
         }
         query.setRegistrationDepartmentId(registrationDepartmentId);
         query.setRequestingOrgId(requestingOrgId);

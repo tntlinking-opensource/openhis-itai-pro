@@ -183,13 +183,15 @@ async function handleSubmit() {
       submitData.ybFlag = yb ? 1 : 0;
       submitData.ybMatchFlag = yb && clinic ? 1 : 0;
     } else if (submitData.sourceEnum) {
+      // 医保类目录：主码即医保码；不在此维护国临挂接（真源=国临绑医保）
       const yb =
         String(submitData.ybNo ?? '').trim() || String(submitData.conditionCode ?? '').trim();
       submitData.ybNo = yb || undefined;
       submitData.ybFlag = yb ? 1 : 0;
-      // 有国临对照才算已对码
-      const clinic = String(submitData.clinicCode ?? '').trim();
-      submitData.ybMatchFlag = clinic ? 1 : 0;
+      // 保留库内已有 clinic_code（国临侧回写），避免编辑医保行时误清空
+      const originalClinic = String(originalData.value.clinicCode ?? '').trim();
+      submitData.clinicCode = originalClinic || undefined;
+      submitData.ybMatchFlag = originalClinic ? 1 : 0;
     }
 
     if (isEditMode.value) {
@@ -245,7 +247,8 @@ async function loadFormData() {
         formApi.setValues(normalizeDetailForForm(data as Record<string, unknown>));
         clinicSelectedLabel.value = String(data.clinicCode ?? '');
         ybSelectedLabel.value = String(data.ybNo ?? '');
-        if (data.sourceEnum !== SOURCE_CLINICAL_V2 && data.clinicCode) {
+        // 仅院内诊断编辑页仍展示国临选码，需回填标签
+        if (data.sourceEnum === SOURCE_HOSPITAL_DX && data.clinicCode) {
           await resolveLabel(SOURCE_CLINICAL_V2, String(data.clinicCode), (n) => {
             clinicSelectedLabel.value = n;
           });
@@ -328,7 +331,7 @@ const convertOptions = (
   }));
 };
 
-/** 对照选码区：按来源只留一边 SelectTable；院内诊断可同时挂国临/医保对照 */
+/** 对照选码区：仅国临可绑医保；院内可同时挂国临/医保；医保目录不维护国临挂接 */
 const crossCodeSchema = computed(() => {
   if (isClinicalV2.value) {
     return [
@@ -354,16 +357,7 @@ const crossCodeSchema = computed(() => {
       },
     ];
   }
-  if (isYbDiagnosisCatalog.value) {
-    return [
-      {
-        component: 'Input' as const,
-        fieldName: 'clinicCode',
-        label: '国临码',
-        formItemClass: 'col-span-2',
-      },
-    ];
-  }
+  // 医保类目录：对照真源在国临侧，编辑页不出现「绑国临码」
   return [];
 });
 
@@ -520,7 +514,11 @@ watch(
       {{
         isHospitalDx
           ? '院内诊断以院内编码为主；国临码/医保编码为可选对照，不自动回写对侧目录。'
-          : '对照请从对侧目录选择，保存后自动同步。'
+          : isClinicalV2
+            ? '对照请从疾病与诊断目录选择医保编码，保存后自动同步。'
+            : isYbDiagnosisCatalog
+              ? '医保目录仅维护本目录编码/名称；国临对照请在「国家临床版2.0」中绑定医保码。'
+              : '对照请从对侧目录选择，保存后自动同步。'
       }}
     </p>
     <Form>
@@ -543,7 +541,7 @@ watch(
         </div>
       </template>
       <template #clinicCode="slotProps">
-        <div v-if="isYbDiagnosisCatalog || isHospitalDx" class="diagnosis-form-dialog__picker">
+        <div v-if="isHospitalDx" class="diagnosis-form-dialog__picker">
           <SelectTable
             :model-value="slotProps?.value ?? undefined"
             :selected-label="clinicSelectedLabel"

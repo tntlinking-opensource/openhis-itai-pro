@@ -4,9 +4,7 @@
  */
 package com.openhis.health.application.report.consumableusage.support;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -15,6 +13,7 @@ import java.util.Map;
 
 import org.springframework.stereotype.Component;
 
+import com.openhis.health.application.shared.report.ReportDateTimeWindowSupport;
 import com.openhis.health.domain.administration.encounter.entity.Encounter;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.domain.administration.location.entity.Location;
@@ -23,7 +22,6 @@ import com.openhis.health.domain.administration.organization.entity.Organization
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
 import com.openhis.health.domain.share.constants.ConsumableUsageReportConstants;
 import com.openhis.health.domain.share.constants.DeptIssueReportConstants;
-import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.EncounterClass;
 import com.openhis.health.domain.workflow.devicedispense.query.ConsumableUsageReportPageQuery;
@@ -77,8 +75,8 @@ public class ConsumableUsageReportScopeLoader {
      *
      * @param query              患者侧领域 Query；不可为 null
      * @param encounterClassCode {@link EncounterClass#AMB} 或 {@link EncounterClass#IMP}
-     * @param dateFrom           业务日起 yyyy-MM-dd
-     * @param dateTo             业务日止 yyyy-MM-dd
+     * @param dateFrom           业务日起或日起时刻（yyyy-MM-dd 或 yyyy-MM-dd HH:mm:ss；仅日期时起 00:00:00、止 23:59:59）
+     * @param dateTo             业务日止或日止时刻（yyyy-MM-dd 或 yyyy-MM-dd HH:mm:ss；仅日期时起 00:00:00、止 23:59:59）
      * @param locationId         可选单库位筛选
      * @param summaryDimension   汇总维；可空（明细不强制）
      * @param requestingOrgId    开立/就诊科室；可空
@@ -291,24 +289,26 @@ public class ConsumableUsageReportScopeLoader {
     }
 
     /**
-     * 将 yyyy-MM-dd 转为当日 00:00:00。
+     * 日起文案 → 闭区间下界时刻。
      *
-     * @param dateText 日期文本
-     * @return 日初
+     * <p>接受 {@code yyyy-MM-dd} 或 {@code yyyy-MM-dd HH:mm:ss}；仅日期时补 00:00:00。</p>
+     *
+     * @param dateText 日起或日起时刻
+     * @return 闭区间下界
      */
     public LocalDateTime toDayStart(String dateText) {
-        LocalDate date = LocalDate.parse(dateText.trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
-        return date.atStartOfDay();
+        return ReportDateTimeWindowSupport.parseInclusiveStart(dateText);
     }
 
     /**
-     * 将 yyyy-MM-dd 转为当日 23:59:59（闭区间上界）。
+     * 日止文案 → 闭区间上界时刻。
      *
-     * @param dateText 日期文本
-     * @return 日末
+     * <p>接受 {@code yyyy-MM-dd} 或 {@code yyyy-MM-dd HH:mm:ss}；仅日期时补 23:59:59。</p>
+     *
+     * @param dateText 日止或日止时刻
+     * @return 闭区间上界
      */
     public LocalDateTime toDayEnd(String dateText) {
-        LocalDate date = LocalDate.parse(dateText.trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
-        return date.atTime(LocalTime.of(23, 59, 59));
+        return ReportDateTimeWindowSupport.parseInclusiveEnd(dateText);
     }
 }

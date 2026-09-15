@@ -17,6 +17,7 @@ import {
 import {
   defaultTotalAmountUnitCode,
   doseConvertRatioSplitToDose,
+  hydrateAdviceRowDoseFromBackend,
   resolveAdviceLineUnitPrice,
   roundMedicationQty,
   roundMedicationSplitQty,
@@ -25,6 +26,15 @@ import {
   unitNameByBandKind,
 } from './medication-unit-bands';
 import { preferredTotalUnitBandKindFromOrderCalcRule } from '#/utils/doctor-station/medication-order-total-calc';
+
+/** 目录剂量正数解析（剂量单位）。 */
+function parsePositiveCatalogDose(raw: null | number | string | undefined): number | undefined {
+  if (raw === null || raw === undefined || String(raw).trim() === '') {
+    return undefined;
+  }
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
 
 /** 编辑卡：新建行、选品回填、诊断映射、表单数值 */
 
@@ -182,6 +192,7 @@ export function buildWesternProductSelectPatch(
   const mc = row.methodCode?.trim();
   const rc = row.rateCode?.trim();
   if (mc) patch.usage = mc;
+  // 成组行保留已有频次时由调用方覆盖；此处仅在无组内频次时写入目录默认
   if (rc) patch.frequency = rc;
   // 目录注射/输液标志：驱动编辑卡「滴速」显隐
   patch.injectFlag = row.injectFlag === true;
@@ -201,7 +212,28 @@ export function buildWesternProductSelectPatch(
   const curDqRaw = Number(prevRow.doseConvertRatio);
   const curSd = Number.isFinite(curSdRaw) && curSdRaw > 0 ? curSdRaw : Number.NaN;
   const curDq = Number.isFinite(curDqRaw) && curDqRaw > 0 ? curDqRaw : Number.NaN;
-  if (ratioK !== undefined && Number.isFinite(ratioK) && ratioK > 0) {
+  const catalogDose = parsePositiveCatalogDose(row.dose);
+  const catalogMinUnit = parsePositiveCatalogDose(row.minUnit);
+  const catalogMaxUnit = parsePositiveCatalogDose(row.maxUnit);
+  patch.catalogDose = catalogDose;
+  patch.catalogMinUnit = catalogMinUnit;
+  patch.catalogMaxUnit = catalogMaxUnit;
+  const prevSelectedId = String(prevRow.selectedId ?? '').trim();
+  const nextSelectedId = String(row.id ?? '').trim();
+  const productChanged = !prevSelectedId || prevSelectedId !== nextSelectedId;
+  const hasExistingDose =
+    (Number.isFinite(curSd) && curSd > 0) || (Number.isFinite(curDq) && curDq > 0);
+  // 换品或无剂量时：优先带出目录默认单次剂量（剂量单位 → 双字段换算）
+  if (catalogDose !== undefined && (productChanged || !hasExistingDose)) {
+    Object.assign(
+      patch,
+      hydrateAdviceRowDoseFromBackend({
+        dose: catalogDose,
+        unitBands: bands,
+      }),
+    );
+    patch.dosePresetKind = 'default';
+  } else if (ratioK !== undefined && Number.isFinite(ratioK) && ratioK > 0) {
     patch.doseBandConvertK = ratioK;
     // 剂量单位是落库真源：两侧都有时优先保留剂量，再反算两位最小单位
     if (Number.isFinite(curDq) && curDq > 0) {
@@ -210,8 +242,14 @@ export function buildWesternProductSelectPatch(
     } else if (Number.isFinite(curSd) && curSd > 0) {
       patch.doseConvertRatio = roundMedicationQty(curSd * ratioK);
     }
+    if (productChanged) {
+      patch.dosePresetKind = undefined;
+    }
   } else {
     patch.doseBandConvertK = undefined;
+    if (productChanged) {
+      patch.dosePresetKind = undefined;
+    }
   }
   const splitCode = unitCodeByBandKind(bands, 'SPLIT');
   const salesCode = unitCodeByBandKind(bands, 'SALES');

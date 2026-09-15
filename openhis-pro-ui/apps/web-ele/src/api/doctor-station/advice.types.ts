@@ -152,8 +152,14 @@ export interface DoctorStationAdviceRowDto {
   packageSplitRatioText?: string | null;
   /** 是否中药饮片行（tcm_flag） */
   tcmFlag?: boolean | null;
+  /** 是否代煎（sufferingFlag；病案列表挂代煎文案用 code，禁止用展示名判断） */
+  decoctionDelegatedFlag?: boolean | null;
   /** 中药付数（方头 chinese_herbs_dose_quantity；非请求总量） */
   chineseHerbsDoseQuantity?: null | number | string;
+  /** 特殊煎法术语码（dosage_instruction） */
+  dosageInstructionCode?: null | string;
+  /** 特殊煎法展示名 */
+  dosageInstructionText?: null | string;
   /**
    * 单次剂量展示串（后端）：最小单位为主，必要时括号附计量单位，末尾带 /次；单位相同时无括号。
    * 例：`1支(2ml)/次` / `1片/次`
@@ -241,8 +247,6 @@ export interface DoctorStationAdviceRowDto {
 export interface ListDoctorStationAdviceResponse {
   /** 标准分页列表（后端 PagedResult） */
   content?: DoctorStationAdviceRowDto[];
-  /** @deprecated 兼容旧字段；实际 list 在 content */
-  rows?: DoctorStationAdviceRowDto[];
   totalCount?: number;
 }
 

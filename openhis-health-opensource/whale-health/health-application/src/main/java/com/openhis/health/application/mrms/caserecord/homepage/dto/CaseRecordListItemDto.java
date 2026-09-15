@@ -14,7 +14,9 @@ import java.time.LocalDateTime;
 /**
  * 病案检索列表行 DTO（数据源为住院就诊；主档可尚未建档）。
  *
- * <p>Long 主键出参统一字符串，供前端同科室门禁比对 {@code organizationId}。</p>
+ * <p>Long 主键出参统一字符串，供前端门禁比对：
+ * {@code organizationId}（病历/医嘱同入院科室）、
+ * {@code wardId}（体温单/护理记录管辖病区）。</p>
  */
 @Getter
 @Setter
@@ -69,8 +71,25 @@ public class CaseRecordListItemDto {
      */
     private String wardName;
 
+    /**
+     * 当前/末次病区主键（就诊上下文 {@code wardId}，{@code adm_location.id}，form=WARD）。
+     * <p>前端体温单/护理记录门禁：与护士岗位管辖病区比对。</p>
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long wardId;
+
     /** 证件号码。 */
     private String certno;
+
+    /**
+     * 医保人员编号 {@code psn_no}（已结算时从医保上下文解析；未结算可空）。
+     */
+    private String psnNo;
+
+    /**
+     * 医保结算 ID {@code setl_id}（已结算时从医保上下文解析；未结算可空）。
+     */
+    private String setlId;
 
     /** 入院时间。 */
     private LocalDateTime admTime;
@@ -89,7 +108,7 @@ public class CaseRecordListItemDto {
 
     /**
      * 入院科室主键（就诊 {@code organization_id}）。
-     * <p>前端与登录所选/所属科室比对：同科室可编辑临床，其他科室只读。</p>
+     * <p>前端病历/医嘱门禁：与登录所选/所属科室比对，同科室可写；体温单/护理记录另可按 {@link #wardId} 放行。</p>
      */
     @JsonSerialize(using = ToStringSerializer.class)
     private Long organizationId;

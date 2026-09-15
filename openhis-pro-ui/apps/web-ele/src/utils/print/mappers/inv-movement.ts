@@ -37,19 +37,29 @@ export interface InvMovementPrintData {
   invoiceNoText: string;
   lineRows: InvMovementPrintLineRow[];
   totalAmountText: string;
-  /** 制单人（单据创建人，非当前打印人） */
+  /** 单据创建人（底部默认印「负责人」，采购申请单印「采购人」；非当前打印人） */
   preparedByName: string;
   approvedByName: string;
   /**
-   * 采购申请单签批栏开关：`'1'` 时模板展示「经办人/科室责任人/业务主管院长/院长」；
-   * 其它单据传 `''`，不展示。
+   * 采购申请单签批栏开关：`'1'` 时底部印「采购人」，并展示「经办人/科室责任人/业务主管院长/院长」；
+   * 其它单据传 `''`，底部印「负责人」。
    */
   purchaseRequestSignOff: string;
   /**
-   * 耗材出库签批栏开关：`'1'` 时隐藏「审核」，展示「主管领导/领用人」；
+   * 耗材出库签批栏开关：`'1'` 时底部印「负责人/领用人/库管」，去掉「审核」；
    * 药品出库及其它单据传 `''`。
    */
   deviceStockOutSignOff: string;
+  /**
+   * 耗材进货单签批栏开关：`'1'` 时底部印「负责人/验收入库/审核」；
+   * 药品进货单及其它单据传 `''`，仍印「采购人/库管/验收人/审核」。
+   */
+  deviceInboundSignOff: string;
+  /**
+   * 耗材采购申请单签批：`'1'` 时底部去掉制单人/审核，审核改到单头制单人后；
+   * 药品采购申请单及其它单据传 `''`。
+   */
+  devicePurchaseRequestSignOff: string;
 }
 
 /** 明细行入参（展示字段，由页面组装） */
@@ -92,10 +102,14 @@ export interface InvMovementPrintSource {
   totalAmountText?: string;
   preparedByName?: string;
   approvedByName?: string;
-  /** 采购申请单签批栏：true/`'1'` 才展示；其它单据勿传 */
+  /** 采购申请单：true/`'1'` 时底部印「采购人」并展示申请签批栏；其它单据勿传 */
   purchaseRequestSignOff?: boolean | string;
   /** 耗材出库签批栏：true/`'1'` 才展示；其它单据勿传 */
   deviceStockOutSignOff?: boolean | string;
+  /** 耗材进货单签批栏：true/`'1'` 才改底部栏；药品进货单勿传 */
+  deviceInboundSignOff?: boolean | string;
+  /** 耗材采购申请单：true/`'1'` 时审核上移单头；药品申请单勿传 */
+  devicePurchaseRequestSignOff?: boolean | string;
 }
 
 function mapLine(row: InvMovementPrintLineSource, index: number): InvMovementPrintLineRow {
@@ -156,6 +170,15 @@ export function buildInvMovementPrintData(source: InvMovementPrintSource): InvMo
         : '',
     deviceStockOutSignOff:
       source.deviceStockOutSignOff === true || invPrintStr(source.deviceStockOutSignOff) === '1'
+        ? '1'
+        : '',
+    deviceInboundSignOff:
+      source.deviceInboundSignOff === true || invPrintStr(source.deviceInboundSignOff) === '1'
+        ? '1'
+        : '',
+    devicePurchaseRequestSignOff:
+      source.devicePurchaseRequestSignOff === true ||
+      invPrintStr(source.devicePurchaseRequestSignOff) === '1'
         ? '1'
         : '',
   };

@@ -1,6 +1,6 @@
 <!--
-  处方点评记录：筛选 + 点评字段列表 + 导出；详情复用门诊处方查看抽屉（仅处方信息）。
-  主类型：T2 纯展示查询列表（导出/查看）；点评与撤销仅在「门诊处方查看」页操作。
+  处方点评记录：筛选 + 工作表同列列表 + 当前页导出；详情复用门诊处方查看抽屉（仅处方信息）。
+  主类型：T2 纯展示查询列表；本页无点评/撤销写入口。
 -->
 <script setup lang="ts">
 import type {
@@ -57,27 +57,34 @@ defineOptions({ name: 'PrescriptionReviewReportPage' });
 interface QueryState {
   pageNo: number;
   pageSize: number;
-  statusEnum?: string;
   reviewedDateFrom?: string;
   reviewedDateTo?: string;
+  openedDateFrom?: string;
+  openedDateTo?: string;
   /** 筛选项 value 为 "true"/"false" 字符串；空=不限 */
   reasonableValue?: string;
-  prescriptionNoKeyword?: string;
-  busNoKeyword?: string;
+  /** 处方号或点评业务号关键字 */
+  keyword?: string;
 }
 
 const PAGE_TITLE = '处方点评记录';
 
-/** 导出列与列表展示列一致（field 须落在后端 @Excel 白名单）。 */
+/**
+ * 导出列与工作表数据列一致（无序号；field 落在后端 @Excel 白名单）。
+ */
 const EXPORT_COLUMNS = [
-  { field: 'prescriptionNo', title: '处方号' },
-  { field: 'busNo', title: '业务号' },
-  { field: 'statusText', title: '点评状态' },
-  { field: 'reasonableText', title: '是否合理' },
-  { field: 'reason', title: '原因' },
-  { field: 'remark', title: '备注' },
-  { field: 'reviewerName', title: '点评人' },
-  { field: 'reviewedAt', title: '点评时间' },
+  { field: 'prescriptionNo', title: '处方编号' },
+  { field: 'patientAgeText', title: '年龄(岁)' },
+  { field: 'diagnosisName', title: '诊断' },
+  { field: 'drugVarietyCount', title: '药品品种' },
+  { field: 'antibioticFlag', title: '抗菌药(0/1)' },
+  { field: 'injectFlag', title: '注射剂(0/1)' },
+  { field: 'basicDrugVarietyCount', title: '国家基本药物品种数' },
+  { field: 'genericNameCount', title: '药品通用名数' },
+  { field: 'prescriptionAmount', title: '处方金额(元)' },
+  { field: 'orderingPractitionerName', title: '处方医师' },
+  { field: 'reasonableFlag', title: '是否合理(0/1)' },
+  { field: 'reason', title: '存在问题' },
 ];
 
 const tableScrollRef = ref<InstanceType<typeof ReportTableScroll> | null>(null);
@@ -87,7 +94,6 @@ const detailDrawerRef = ref<InstanceType<typeof OutpatientPrescriptionViewDetail
 const tableData = ref<PrescriptionReviewListRow[]>([]);
 const total = ref(0);
 
-const statusOptions = ref<ApiOptionItem[]>([]);
 const reasonableOptions = ref<ApiOptionItem[]>([]);
 
 const queryParams = reactive<QueryState>({
@@ -115,6 +121,22 @@ const reviewedDateRange = computed({
   },
 });
 
+/** 开方日与 daterange 双向绑定。 */
+const openedDateRange = computed({
+  get() {
+    const start = normalizeReportDateRangeYmd(queryParams.openedDateFrom);
+    const end = normalizeReportDateRangeYmd(queryParams.openedDateTo);
+    if (start && end) {
+      return [start, end] as [string, string];
+    }
+    return null;
+  },
+  set(value: [string, string] | null) {
+    queryParams.openedDateFrom = value?.[0];
+    queryParams.openedDateTo = value?.[1];
+  },
+});
+
 /** 下拉选项转为 ElSelect 结构。 */
 function toSelectOptions(items: ApiOptionItem[]) {
   return items.map((item) => ({
@@ -123,18 +145,29 @@ function toSelectOptions(items: ApiOptionItem[]) {
   }));
 }
 
-/** 点评时间展示。 */
-function formatDateTime(value?: string) {
-  const text = String(value ?? '').trim();
-  if (!text) {
-    return '—';
-  }
-  return text.length >= 19 ? text.slice(0, 19) : text;
-}
-
 /** 行键。 */
 function rowKey(row: PrescriptionReviewListRow) {
   return String(row.id ?? row.prescriptionNo ?? '');
+}
+
+/** 0/1 标志展示；空为 —。 */
+function formatZeroOne(value?: number | null) {
+  if (value === 0 || value === 1) {
+    return String(value);
+  }
+  return '—';
+}
+
+/** 金额展示。 */
+function formatAmount(value?: number | string | null) {
+  if (value === null || value === undefined || value === '') {
+    return '—';
+  }
+  const num = Number(value);
+  if (Number.isNaN(num)) {
+    return String(value);
+  }
+  return num.toFixed(2);
 }
 
 /** 是否合理筛选项 → boolean | undefined。 */
@@ -152,12 +185,12 @@ function resolveReasonableFlag(): boolean | undefined {
 /** 组装筛选请求体（不含分页）。 */
 function buildFilterBody(): Omit<PagePrescriptionReviewsRequest, 'pageNo' | 'pageSize'> {
   return {
-    statusEnum: queryParams.statusEnum || undefined,
     reviewedDateFrom: queryParams.reviewedDateFrom || undefined,
     reviewedDateTo: queryParams.reviewedDateTo || undefined,
+    openedDateFrom: queryParams.openedDateFrom || undefined,
+    openedDateTo: queryParams.openedDateTo || undefined,
     reasonableFlag: resolveReasonableFlag(),
-    prescriptionNoKeyword: queryParams.prescriptionNoKeyword?.trim() || undefined,
-    busNoKeyword: queryParams.busNoKeyword?.trim() || undefined,
+    keyword: queryParams.keyword?.trim() || undefined,
   };
 }
 
@@ -177,7 +210,7 @@ const { run: runInit, loading: initLoading } = useRequest(loadPrescriptionReview
       normalizeReportDateRangeYmd(data?.defaultReviewedDateFrom) || queryParams.reviewedDateFrom;
     queryParams.reviewedDateTo =
       normalizeReportDateRangeYmd(data?.defaultReviewedDateTo) || queryParams.reviewedDateTo;
-    statusOptions.value = optionDtosToSelectItems(data?.statusOptions);
+    // 本页仅有效已点评行，不再展示点评状态筛
     reasonableOptions.value = optionDtosToSelectItems(data?.reasonableOptions);
   },
 });
@@ -209,21 +242,21 @@ function handleQuery() {
 
 /** 重置筛选并重新初始化默认日期后查询。 */
 async function handleReset() {
-  queryParams.statusEnum = undefined;
   queryParams.reasonableValue = undefined;
-  queryParams.prescriptionNoKeyword = undefined;
-  queryParams.busNoKeyword = undefined;
+  queryParams.keyword = undefined;
+  queryParams.openedDateFrom = undefined;
+  queryParams.openedDateTo = undefined;
   queryParams.pageNo = 1;
   queryParams.pageSize = 50;
   await runInit();
   await getList();
 }
 
-/** 导出与列表同列。 */
+/** 导出当前页（条数=pageSize）。 */
 async function handleExport() {
   const exportColumns = buildExcelExportColumns(EXPORT_COLUMNS);
   const data = await runExport({
-    ...buildFilterBody(),
+    ...buildPageRequest(),
     exportColumns,
   });
   if (!data?.body?.trim() && !data?.fileBytes?.trim()) {
@@ -232,7 +265,7 @@ async function handleExport() {
   }
   downloadBinaryExportFile(data, data.fileName ?? '处方点评记录.xlsx');
   if (data.truncated) {
-    ElMessage.warning('导出数据已触达行数上限，部分记录未包含在文件中');
+    ElMessage.warning('当前仅为分页导出，尚有未导出页');
   } else {
     ElMessage.success(`导出成功，共 ${data.exportedRowCount ?? 0} 行`);
   }
@@ -251,20 +284,27 @@ function handleCurrentPageChange(page: number) {
   void getList();
 }
 
-/** 按点评时间向前扩两年作开方查询窗，避免开方日早于点评日筛丢。 */
-function resolveDetailOpenedDateWindow(row: PrescriptionReviewListRow) {
+/**
+ * 详情开方日窗：优先点评筛选日，否则近两年至今天，避免筛丢。
+ */
+function resolveDetailOpenedDateWindow() {
   const today = new Date();
-  const to = normalizeReportDateRangeYmd(today.toISOString().slice(0, 10)) || '';
-  const reviewedRaw = String(row.reviewedAt ?? '').trim();
-  const anchor = reviewedRaw ? new Date(reviewedRaw.replace(' ', 'T')) : today;
-  const fromDate = Number.isNaN(anchor.getTime()) ? today : anchor;
+  const to =
+    normalizeReportDateRangeYmd(queryParams.reviewedDateTo) ||
+    normalizeReportDateRangeYmd(today.toISOString().slice(0, 10)) ||
+    '';
+  const fromFilter = normalizeReportDateRangeYmd(queryParams.reviewedDateFrom);
+  if (fromFilter) {
+    return { from: fromFilter, to };
+  }
+  const fromDate = new Date(today);
   fromDate.setFullYear(fromDate.getFullYear() - 2);
   const from = normalizeReportDateRangeYmd(fromDate.toISOString().slice(0, 10)) || to;
   return { from, to };
 }
 
 /**
- * 打开处方详情：复用门诊处方查看能力；按处方号精确筛，详情区仅展示处方信息。
+ * 打开处方详情：点评信息由列表行带入抽屉上半区；处方信息仍走门诊处方查看重载。
  */
 function handleOpenDetail(row: PrescriptionReviewListRow) {
   const rxNo = String(row.prescriptionNo ?? '').trim();
@@ -272,11 +312,21 @@ function handleOpenDetail(row: PrescriptionReviewListRow) {
     ElMessage.warning('缺少处方号');
     return;
   }
-  const { from, to } = resolveDetailOpenedDateWindow(row);
-  // 方头最小摘要；明细加载后抽屉会用首行回填患者等字段
+  const { from, to } = resolveDetailOpenedDateWindow();
+  // 方头最小摘要 + 点评字段；明细加载后抽屉会用首行回填患者等（不覆盖点评）
   const summary: OutpatientPrescriptionSummaryRow = {
     prescriptionNo: rxNo,
     lineCount: 0,
+    reviewId: row.id,
+    reviewBusNo: row.busNo,
+    reviewStatusEnum: row.statusEnum || 'REVIEWED',
+    reviewStatusText: row.statusText || '已点评',
+    reasonableFlag: row.reasonableFlag,
+    reasonableText: row.reasonableText,
+    reviewReason: row.reason,
+    reviewRemark: row.remark,
+    reviewerName: row.reviewerName,
+    reviewedAt: row.reviewedAt,
   };
   void detailDrawerRef.value?.open({
     summary,
@@ -297,26 +347,23 @@ onMounted(async () => {
       <template #query>
         <ReportQueryBar :model="queryParams as Record<string, unknown>">
           <template #fields>
-            <ElFormItem label="点评状态">
-              <ElSelect
-                v-model="queryParams.statusEnum"
-                clearable
-                filterable
-                placeholder="全部"
-                :class="REPORT_QUERY_CONTROL"
-                @change="handleQuery"
-              >
-                <ElOption
-                  v-for="item in toSelectOptions(statusOptions)"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value"
-                />
-              </ElSelect>
-            </ElFormItem>
             <ElFormItem label="点评时间">
               <ElDatePicker
                 v-model="reviewedDateRange"
+                type="daterange"
+                value-format="YYYY-MM-DD"
+                range-separator="至"
+                start-placeholder="开始"
+                end-placeholder="结束"
+                :shortcuts="dateRangeShortcuts"
+                clearable
+                :class="[REPORT_QUERY_CONTROL, REPORT_QUERY_CONTROL_DATERANGE]"
+                @change="handleQuery"
+              />
+            </ElFormItem>
+            <ElFormItem label="开方时间">
+              <ElDatePicker
+                v-model="openedDateRange"
                 type="daterange"
                 value-format="YYYY-MM-DD"
                 range-separator="至"
@@ -345,21 +392,11 @@ onMounted(async () => {
                 />
               </ElSelect>
             </ElFormItem>
-            <ElFormItem label="处方号">
+            <ElFormItem label="关键字">
               <ElInput
-                v-model="queryParams.prescriptionNoKeyword"
+                v-model="queryParams.keyword"
                 clearable
-                placeholder="模糊"
-                :class="REPORT_QUERY_CONTROL"
-                @keyup.enter="handleQuery"
-                @clear="handleQuery"
-              />
-            </ElFormItem>
-            <ElFormItem label="业务号">
-              <ElInput
-                v-model="queryParams.busNoKeyword"
-                clearable
-                placeholder="模糊"
+                placeholder="处方号/业务号"
                 :class="REPORT_QUERY_CONTROL"
                 @keyup.enter="handleQuery"
                 @clear="handleQuery"
@@ -398,55 +435,133 @@ onMounted(async () => {
             >
               <ElTableColumn
                 prop="prescriptionNo"
-                label="处方号"
-                min-width="132"
+                label="处方编号"
+                min-width="140"
                 align="center"
                 header-align="center"
                 show-overflow-tooltip
               />
               <ElTableColumn
-                prop="busNo"
-                label="业务号"
-                min-width="132"
-                align="center"
-                header-align="center"
-                show-overflow-tooltip
-              />
-              <ElTableColumn
-                prop="statusText"
-                label="点评状态"
-                min-width="88"
+                prop="patientAgeText"
+                label="年龄(岁)"
+                min-width="80"
                 align="center"
                 header-align="center"
               >
                 <template #default="{ row }">
-                  <ElTag v-if="row.statusText" type="success" effect="light">
-                    {{ row.statusText }}
-                  </ElTag>
-                  <span v-else>—</span>
+                  {{ row.patientAgeText || '—' }}
                 </template>
               </ElTableColumn>
               <ElTableColumn
-                prop="reasonableText"
-                label="是否合理"
+                prop="diagnosisName"
+                label="诊断"
+                min-width="160"
+                align="center"
+                header-align="center"
+                show-overflow-tooltip
+              >
+                <template #default="{ row }">
+                  {{ row.diagnosisName || '—' }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                prop="drugVarietyCount"
+                label="药品品种"
                 min-width="88"
+                align="right"
+                header-align="center"
+              >
+                <template #default="{ row }">
+                  {{ row.drugVarietyCount ?? '—' }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                prop="antibioticFlag"
+                label="抗菌药(0/1)"
+                min-width="100"
                 align="center"
                 header-align="center"
               >
                 <template #default="{ row }">
-                  <ElTag
-                    v-if="row.reasonableText"
-                    :type="row.reasonableFlag === false ? 'danger' : 'success'"
-                    effect="light"
-                  >
-                    {{ row.reasonableText }}
+                  {{ formatZeroOne(row.antibioticFlag) }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                prop="injectFlag"
+                label="注射剂(0/1)"
+                min-width="100"
+                align="center"
+                header-align="center"
+              >
+                <template #default="{ row }">
+                  {{ formatZeroOne(row.injectFlag) }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                prop="basicDrugVarietyCount"
+                label="国家基本药物品种数"
+                min-width="140"
+                align="right"
+                header-align="center"
+              >
+                <template #default="{ row }">
+                  {{ row.basicDrugVarietyCount ?? '—' }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                prop="genericNameCount"
+                label="药品通用名数"
+                min-width="112"
+                align="right"
+                header-align="center"
+              >
+                <template #default="{ row }">
+                  {{ row.genericNameCount ?? '—' }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                prop="prescriptionAmount"
+                label="处方金额(元)"
+                min-width="112"
+                align="right"
+                header-align="center"
+              >
+                <template #default="{ row }">
+                  {{ formatAmount(row.prescriptionAmount) }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                prop="orderingPractitionerName"
+                label="处方医师"
+                min-width="96"
+                align="center"
+                header-align="center"
+                show-overflow-tooltip
+              >
+                <template #default="{ row }">
+                  {{ row.orderingPractitionerName || '—' }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn
+                prop="reasonableFlag"
+                label="是否合理(0/1)"
+                min-width="112"
+                align="center"
+                header-align="center"
+              >
+                <template #default="{ row }">
+                  <ElTag v-if="row.reasonableFlag === true" type="success" effect="light">
+                    1
+                  </ElTag>
+                  <ElTag v-else-if="row.reasonableFlag === false" type="danger" effect="light">
+                    0
                   </ElTag>
                   <span v-else>—</span>
                 </template>
               </ElTableColumn>
               <ElTableColumn
                 prop="reason"
-                label="原因"
+                label="存在问题"
                 min-width="160"
                 align="center"
                 header-align="center"
@@ -454,42 +569,6 @@ onMounted(async () => {
               >
                 <template #default="{ row }">
                   {{ row.reason || '—' }}
-                </template>
-              </ElTableColumn>
-              <ElTableColumn
-                prop="remark"
-                label="备注"
-                min-width="120"
-                align="center"
-                header-align="center"
-                show-overflow-tooltip
-              >
-                <template #default="{ row }">
-                  {{ row.remark || '—' }}
-                </template>
-              </ElTableColumn>
-              <ElTableColumn
-                prop="reviewerName"
-                label="点评人"
-                min-width="88"
-                align="center"
-                header-align="center"
-                show-overflow-tooltip
-              >
-                <template #default="{ row }">
-                  {{ row.reviewerName || '—' }}
-                </template>
-              </ElTableColumn>
-              <ElTableColumn
-                prop="reviewedAt"
-                label="点评时间"
-                min-width="154"
-                align="center"
-                header-align="center"
-                show-overflow-tooltip
-              >
-                <template #default="{ row }">
-                  {{ formatDateTime(row.reviewedAt) }}
                 </template>
               </ElTableColumn>
               <ElTableColumn
@@ -515,7 +594,7 @@ onMounted(async () => {
           :current-page="queryParams.pageNo"
           :page-size="queryParams.pageSize"
           :total="total"
-          :page-sizes="[20, 50, 100, 200]"
+          :page-sizes="[10, 20, 50, 100, 200]"
           @size-change="handlePageSizeChange"
           @current-change="handleCurrentPageChange"
         />

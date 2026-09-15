@@ -81,13 +81,13 @@ public class DeviceDefinitionQueryService {
     public Page<DeviceDefinition> pageDeviceDefinition(int pageNum, int pageSize) {
 
         // 分页下推到仓储，调用方传入的 pageNum 须与 Spring Data 约定一致（通常为 0-based）。
-        return this.pageDeviceDefinition(pageNum, pageSize, null, null, null);
+        return this.pageDeviceDefinition(pageNum, pageSize, null, null, null, null);
     }
 
     /**
      * 分页查询器材定义（可选关键字、分类与耗材种类；未删除记录，含启用/停用全状态）。
      *
-     * <p>基础数据维护页需展示停用项以便启停操作，口径对齐诊疗/药品目录分页（不按 status 收窄）。</p>
+     * <p>基础数据维护页需展示停用项以便启停操作；可选 {@code statusEnum} 收窄启用/停用。</p>
      * <p>关键字同时匹配名称、拼音码、五笔码、业务编码、医保编码（OR）。</p>
      *
      * @param pageNum      页码（0-based）
@@ -99,9 +99,26 @@ public class DeviceDefinitionQueryService {
      */
     public Page<DeviceDefinition> pageDeviceDefinition(
         int pageNum, int pageSize, String searchKey, String categoryCode, String typeCode) {
+        return this.pageDeviceDefinition(pageNum, pageSize, searchKey, categoryCode, typeCode, null);
+    }
+
+    /**
+     * 分页查询器材定义（可选关键字、分类、种类与发布状态；未删除记录）。
+     *
+     * @param pageNum      页码（0-based）
+     * @param pageSize     每页大小
+     * @param searchKey    综合关键字，空白则不作为条件
+     * @param categoryCode 分类编码，空白则不作为条件
+     * @param typeCode     耗材种类编码（{@code device_type_code}），空白则不作为条件
+     * @param statusEnum   发布状态（{@code ACTIVE}/{@code INACTIVE}）；空白则不作为条件
+     * @return 分页结果（固定按业务号倒序，避免无排序时编辑后行位跳动）
+     */
+    public Page<DeviceDefinition> pageDeviceDefinition(
+        int pageNum, int pageSize, String searchKey, String categoryCode, String typeCode, String statusEnum) {
         String sk = trimToEmpty(searchKey);
         String cc = trimToEmpty(categoryCode);
         String tc = trimToEmpty(typeCode);
+        String normalizedStatus = this.normalizePublicationStatusFilter(statusEnum);
         // 目录列表固定按 busNo 倒序，与药品/诊疗目录维护页一致；有关键字时改由 Spec 写「精确优先 + busNo」
         Pageable pageable;
         if (sk.isEmpty()) {
@@ -109,7 +126,7 @@ public class DeviceDefinitionQueryService {
         } else {
             pageable = PageRequest.of(pageNum, pageSize);
         }
-        if (sk.isEmpty() && cc.isEmpty() && tc.isEmpty()) {
+        if (sk.isEmpty() && cc.isEmpty() && tc.isEmpty() && normalizedStatus == null) {
             Specification<DeviceDefinition> catalogPage = (root, query, cb) ->
                 DeviceDefinitionQueryService.notDeletedPredicate(root, cb);
             return repository.findAll(catalogPage, pageable);
@@ -122,6 +139,9 @@ public class DeviceDefinitionQueryService {
             }
             if (!tc.isEmpty()) {
                 ands.add(cb.equal(root.get(FieldNameConstants.TYPE_CODE), tc));
+            }
+            if (normalizedStatus != null) {
+                ands.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), normalizedStatus));
             }
             if (!sk.isEmpty()) {
                 String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(sk);
@@ -800,5 +820,26 @@ public class DeviceDefinitionQueryService {
             }
         }
         return ids;
+    }
+
+    /**
+     * 规范化目录发布状态筛选：仅 ACTIVE/INACTIVE；其余视为不筛选。
+     *
+     * @param statusEnum 请求状态码
+     * @return ACTIVE/INACTIVE；无法识别时 null
+     */
+    private String normalizePublicationStatusFilter(String statusEnum) {
+        if (StringUtils.isEmpty(statusEnum)) {
+            return null;
+        }
+        String trimmed = statusEnum.trim();
+        if (PublicationStatus.ACTIVE.getCode().equals(trimmed)) {
+            return PublicationStatus.ACTIVE.getCode();
+        }
+        if (PublicationStatus.INACTIVE.getCode().equals(trimmed)) {
+            return PublicationStatus.INACTIVE.getCode();
+        }
+        // 未知状态码：不收窄，避免误滤成空目录
+        return null;
     }
 }

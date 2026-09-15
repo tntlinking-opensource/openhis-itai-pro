@@ -86,6 +86,30 @@ public final class AdviceChargeDisplayStatusAssembler {
     }
 
     /**
+     * 收费汇总态是否仍为护士站可执行的有效计费态（待收费/已结算）。
+     *
+     * <p>退费中/已退费、空态或其它终态均视为不可再发放；供耗材侧栏 **BR-NUR-018** 与执行门禁共用。</p>
+     *
+     * @param chargeStatusEnum 收费状态码；可空
+     * @return 仍可按已计费路径执行时为 true
+     */
+    public static boolean isActiveBillableChargeStatus(String chargeStatusEnum) {
+        // 无收费锚点：护士站耗材侧栏不得当「待发放」勾选
+        if (StringUtils.isEmpty(chargeStatusEnum)) {
+            return false;
+        }
+        // 待收费：签发后尚未收银，侧栏仍可展示但执行另有门控
+        if (ChargeItemStatus.PLANNED.getCode().equals(chargeStatusEnum)) {
+            return true;
+        }
+        // 已结算：门诊护士站耗材待发主路径
+        if (ChargeItemStatus.SETTLED.getCode().equals(chargeStatusEnum)) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
      * 收费状态 → 列表展示文案（退费态使用护士站/医生站统一口语，其余走枚举 display）。
      *
      * @param chargeStatusEnum 收费状态码

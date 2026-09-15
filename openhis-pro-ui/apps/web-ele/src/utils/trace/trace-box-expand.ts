@@ -1,6 +1,7 @@
 import type { ApiResponse } from '#/types/api-response';
 
 import { requestClient } from '#/api/request';
+import { isMsfxUiEnabled } from '#/utils/project-optional-modules';
 
 import { dedupeTraceCodes } from './trace-code-parse';
 
@@ -30,13 +31,15 @@ interface ExpandTraceBoxCodesApiResponse {
 }
 
 const EXPAND_API = '/msfxBoxExpand/expandTraceBoxCodes';
+/** 与平台 relation 单批上限对齐，避免一次塞上千码把请求拖死 */
+const EXPAND_REQUEST_BATCH_SIZE = 10;
+/** 单批仍可能 20～60s；分批后按批计时，给足余量 */
+const EXPAND_TIMEOUT_MS = 180_000;
 
-/** 调用后端箱码展开（msfx query.relation 封装） */
-async function expandTraceBoxCodesByApi(codes: string[]): Promise<TraceBoxExpandItem[]> {
-  const res = await requestClient.post<ApiResponse<ExpandTraceBoxCodesApiResponse>>(EXPAND_API, {
-    traceNos: codes,
-  });
-  const apiItems = res.data?.items ?? [];
+function mapExpandApiItems(
+  codes: string[],
+  apiItems: ExpandTraceBoxCodesApiItem[],
+): TraceBoxExpandItem[] {
   return codes.map((sourceCode) => {
     const hit = apiItems.find((i) => (i.sourceTraceNo ?? '').trim() === sourceCode);
     if (!hit) {
@@ -73,11 +76,48 @@ async function expandTraceBoxCodesByApi(codes: string[]): Promise<TraceBoxExpand
   });
 }
 
+/** 调用后端箱码展开（msfx query.relation 封装）；按批请求，单批失败软降级为原码 */
+async function expandTraceBoxCodesByApi(codes: string[]): Promise<TraceBoxExpandItem[]> {
+  const out: TraceBoxExpandItem[] = [];
+  for (let from = 0; from < codes.length; from += EXPAND_REQUEST_BATCH_SIZE) {
+    const batch = codes.slice(from, from + EXPAND_REQUEST_BATCH_SIZE);
+    try {
+      const res = await requestClient.post<ApiResponse<ExpandTraceBoxCodesApiResponse>>(
+        EXPAND_API,
+        { traceNos: batch },
+        { timeout: EXPAND_TIMEOUT_MS },
+      );
+      out.push(...mapExpandApiItems(batch, res.data?.items ?? []));
+    } catch {
+      for (const sourceCode of batch) {
+        out.push({
+          sourceCode,
+          childCodes: [sourceCode],
+          ok: true,
+          softFallback: true,
+          message: '箱码展开超时或失败；本次已按原码继续',
+        });
+      }
+    }
+  }
+  return out;
+}
+
 /** 将扫码结果展开为小码列表（展开失败时软降级为原码） */
 export async function expandTraceBoxCodes(
   codes: string[],
 ): Promise<{ expanded: string[]; items: TraceBoxExpandItem[] }> {
   if (codes.length === 0) return { expanded: [], items: [] };
+
+  // 院点未开码上放心：不调 msfx 箱码展开、不产生「码上放心可后补」类提示，原码直通
+  if (!isMsfxUiEnabled()) {
+    const items = codes.map((sourceCode) => ({
+      sourceCode,
+      childCodes: [sourceCode],
+      ok: true,
+    }));
+    return { expanded: dedupeTraceCodes(codes), items };
+  }
 
   const items = await expandTraceBoxCodesByApi(codes);
 

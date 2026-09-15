@@ -9,6 +9,7 @@ import com.openhis.health.domain.mrms.caserecord.queries.CaseRecordPageQuery;
 import com.openhis.health.domain.mrms.caserecord.queries.CaseRecordUploadPageQuery;
 import com.openhis.health.domain.mrms.caserecord.queries.model.CaseRecordListItemQueryModel;
 import com.openhis.health.domain.mrms.caserecord.repository.CaseRecordRepository;
+import com.openhis.health.domain.share.constants.MrmsSettleUploadFlags;
 import com.openhis.health.domain.share.enums.CaseRecordStatus;
 import com.openhis.health.domain.share.enums.ChsUploadStatus;
 import com.openhis.health.domain.share.utils.EnumUtil;
@@ -224,9 +225,9 @@ public class CaseRecordQueryService {
     }
 
     /**
-     * 4401 上传待传列表：仅已归档病案，按 CHS 上传状态与关键字分页。
+     * 医保办上报台分页：按交易号分流 4401（归档+CHS 态）与 4101A/4102（结算上传标志）。
      *
-     * @param query 租户、上传状态、关键字（继承 {@link com.openhis.health.domain.share.query.AbstractPageQuery}）
+     * @param query 租户、交易号、上传状态、出院区间、关键字
      * @param pageable 分页排序
      * @return 病案主档分页
      */
@@ -235,24 +236,24 @@ public class CaseRecordQueryService {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.equal(root.get("isDeleted"), false));
             predicates.add(cb.equal(root.get("tenantId"), query.getTenantId()));
-            // 4401 仅已归档病案可上传
-            predicates.add(cb.equal(root.get("statusEnum"), CaseRecordStatus.ARCHIVED));
-            String uploadFilter = trimToNull(query.getChsUploadStatusCode());
-            // 按 CHS 上传状态过滤
-            if (uploadFilter != null) {
-                if (ChsUploadStatus.PENDING.getCode().equals(uploadFilter)) {
-                    // pending：未传/待传/失败可重试
-                    Predicate nullStatus = cb.isNull(root.get("chsUploadStatusCode"));
-                    Predicate pending = cb.equal(root.get("chsUploadStatusCode"), ChsUploadStatus.PENDING.getCode());
-                    Predicate failed = cb.equal(root.get("chsUploadStatusCode"), ChsUploadStatus.FAILED.getCode());
-                    predicates.add(cb.or(nullStatus, pending, failed));
-                } else {
-                    // 非 pending：按精确 status code 匹配（如 uploaded）
-                    predicates.add(cb.equal(root.get("chsUploadStatusCode"), uploadFilter));
-                }
+            String infno = trimToNull(query.getInfno());
+            boolean homepage4401 = "4401".equals(infno);
+            // 4401：仅已归档可上报；结算清单不要求归档
+            if (homepage4401) {
+                predicates.add(cb.equal(root.get("statusEnum"), CaseRecordStatus.ARCHIVED));
+                this.appendChsUploadStatusFilter(predicates, cb, root, query.getUploadStatusCode());
+            } else {
+                this.appendSettleUploadStatusFilter(predicates, cb, root, query.getUploadStatusCode(), infno);
+            }
+            // 出院时间窗口
+            if (query.getDscgTimeFrom() != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("dscgTime"), query.getDscgTimeFrom()));
+            }
+            if (query.getDscgTimeTo() != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get("dscgTime"), query.getDscgTimeTo()));
             }
             String kw = trimToNull(query.getKeyword());
-            // 关键字模糊匹配（同列表页口径）
+            // 关键字：姓名 / 住院号 / 病案号
             if (kw != null) {
                 String pattern = "%" + kw.toLowerCase() + "%";
                 Predicate nameLike = cb.like(cb.lower(root.get("psnName")), pattern);
@@ -263,6 +264,100 @@ public class CaseRecordQueryService {
             return cb.and(predicates.toArray(new Predicate[0]));
         };
         return caseRecordRepository.findAll(spec, pageable);
+    }
+
+    /**
+     * 4401 CHS 上传状态条件下推。
+     *
+     * @param predicates 谓词累加
+     * @param cb CriteriaBuilder
+     * @param root 根实体
+     * @param uploadFilter 状态 code；空不过滤
+     */
+    private void appendChsUploadStatusFilter(
+            List<Predicate> predicates,
+            jakarta.persistence.criteria.CriteriaBuilder cb,
+            jakarta.persistence.criteria.Root<CaseRecord> root,
+            String uploadFilter) {
+        String filter = trimToNull(uploadFilter);
+        if (filter == null) {
+            return;
+        }
+        if (ChsUploadStatus.PENDING.getCode().equals(filter)) {
+            // pending：未传/待传/失败可重试
+            Predicate nullStatus = cb.isNull(root.get("chsUploadStatusCode"));
+            Predicate pending = cb.equal(root.get("chsUploadStatusCode"), ChsUploadStatus.PENDING.getCode());
+            Predicate failed = cb.equal(root.get("chsUploadStatusCode"), ChsUploadStatus.FAILED.getCode());
+            predicates.add(cb.or(nullStatus, pending, failed));
+            return;
+        }
+        if (UPLOAD_STATUS_NONE.equals(filter)) {
+            Predicate nullStatus = cb.isNull(root.get("chsUploadStatusCode"));
+            Predicate emptyStatus = cb.equal(root.get("chsUploadStatusCode"), "");
+            predicates.add(cb.or(nullStatus, emptyStatus));
+            return;
+        }
+        predicates.add(cb.equal(root.get("chsUploadStatusCode"), filter));
+    }
+
+    /**
+     * 4101A/4102 结算上传标志条件下推（对齐运维台 none/failed/success/pending）。
+     *
+     * @param predicates 谓词累加
+     * @param cb CriteriaBuilder
+     * @param root 根实体
+     * @param uploadFilter 前端状态 code；空不过滤
+     * @param infno 交易号；4102 时 success 仅已提交
+     */
+    private void appendSettleUploadStatusFilter(
+            List<Predicate> predicates,
+            jakarta.persistence.criteria.CriteriaBuilder cb,
+            jakarta.persistence.criteria.Root<CaseRecord> root,
+            String uploadFilter,
+            String infno) {
+        String filter = trimToNull(uploadFilter);
+        if (filter == null) {
+            return;
+        }
+        Predicate flagNull = cb.isNull(root.get("settleUploadStatusCode"));
+        Predicate flagEmpty = cb.equal(root.get("settleUploadStatusCode"), "");
+        Predicate flagNone = cb.equal(root.get("settleUploadStatusCode"), MrmsSettleUploadFlags.NONE);
+        Predicate notUploaded = cb.or(flagNull, flagEmpty, flagNone);
+        Predicate uploaded = cb.equal(root.get("settleUploadStatusCode"), MrmsSettleUploadFlags.UPLOADED);
+        Predicate committed = cb.equal(root.get("settleUploadStatusCode"), MrmsSettleUploadFlags.COMMITTED);
+        Predicate hasError = cb.and(
+                cb.isNotNull(root.get("settleUploadError")),
+                cb.notEqual(root.get("settleUploadError"), ""));
+        if (UPLOAD_STATUS_NONE.equals(filter)) {
+            // 未上传且无失败摘要
+            predicates.add(cb.and(notUploaded, cb.not(hasError)));
+            return;
+        }
+        if (ChsUploadStatus.FAILED.getCode().equals(filter)) {
+            // 有失败摘要（无论当前标志，便于补传排查）
+            predicates.add(hasError);
+            return;
+        }
+        if (ChsUploadStatus.SUCCESS.getCode().equals(filter)) {
+            // 4102：仅已正式提交；4101A/全部：已传或已提交
+            if ("4102".equals(infno)) {
+                predicates.add(committed);
+            } else {
+                predicates.add(cb.or(uploaded, committed));
+            }
+            return;
+        }
+        if (ChsUploadStatus.PENDING.getCode().equals(filter)) {
+            // 待传：未上传，或 4102 场景下已传未提交
+            if ("4102".equals(infno)) {
+                predicates.add(uploaded);
+            } else {
+                predicates.add(cb.and(notUploaded, cb.not(hasError)));
+            }
+            return;
+        }
+        // 精确匹配 0/1/2
+        predicates.add(cb.equal(root.get("settleUploadStatusCode"), filter));
     }
 
     /**

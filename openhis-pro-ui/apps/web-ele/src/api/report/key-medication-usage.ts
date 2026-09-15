@@ -1,5 +1,8 @@
 /**
  * 重点药品使用统计 — POST /api/app/keyMedicationUsageReport/{methodName}
+ *
+ * 汇总按就诊类型分组：各重点药类型行 + 组内合计；
+ * 人次占比=类型人次/合计人次，金额占比=类型金额/合计金额。
  */
 import { reportPost } from '#/constants/report-request-timeout';
 import type { ApiOptionItem } from '#/types/api-response';
@@ -13,6 +16,7 @@ export interface KeyMedicationUsageQueryFilter {
   dateFrom: string;
   dateTo: string;
   encounterClassCodes?: string[];
+  /** 重点药类型多选；结果按类型拆行 */
   keyDrugTypeCodes?: string[];
 }
 
@@ -24,7 +28,7 @@ export interface LoadKeyMedicationUsageReportPageInitResponse {
   keyDrugTypeOptions?: ApiOptionItem[];
 }
 
-/** 汇总行。 */
+/** 汇总行（就诊类型 × 药品类型；合计行 keyDrugTypeCode=TOTAL）。 */
 export interface KeyMedicationUsageSummaryRowDto {
   encounterClassCode?: string;
   encounterClassDisplay?: string;
@@ -32,6 +36,10 @@ export interface KeyMedicationUsageSummaryRowDto {
   keyDrugTypeDisplay?: string;
   encounterNetCount?: number;
   saleAmountTotal?: number | string;
+  /** 人次占比：类型人次/组内合计人次 */
+  usageRatioPercent?: number | string | null;
+  /** 金额占比：类型金额/组内合计金额 */
+  saleAmountRatioPercent?: number | string | null;
 }
 
 /** 汇总响应。 */

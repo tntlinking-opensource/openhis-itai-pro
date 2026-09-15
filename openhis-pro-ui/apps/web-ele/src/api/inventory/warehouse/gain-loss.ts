@@ -28,9 +28,7 @@ export interface GainLossOptionDto {
   label?: string;
 }
 
-export interface LoadGainLossFormInitRequest {
-  organizationId?: number;
-}
+export interface LoadGainLossFormInitRequest {}
 
 export interface LoadGainLossFormInitResponse {
   warehouseLocationOptions?: GainLossOptionDto[];
@@ -54,9 +52,7 @@ export interface GainLossListRowDto {
   applicantId?: number | string;
   applicantName?: string;
   applyTime?: string;
-  approverId?: number | string;
   approverName?: string;
-  approvalTime?: string;
   /** 驳回态侧栏回显 */
   rejectReason?: string;
 }
@@ -74,7 +70,6 @@ export interface PageGainLosssRequest {
 export interface PageGainLosssResponse {
   total?: number;
   totalCount?: number;
-  records?: GainLossListRowDto[];
   content?: GainLossListRowDto[];
 }
 
@@ -113,8 +108,6 @@ export interface GetGainLossDetailResponse {
   practitionerId?: number | string;
   applicantId?: number | string;
   applyTime?: string;
-  approverId?: number | string;
-  approvalTime?: string;
   lines: GainLossDetailLineDto[];
 }
 

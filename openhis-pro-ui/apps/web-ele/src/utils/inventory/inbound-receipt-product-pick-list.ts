@@ -17,6 +17,8 @@ export const INBOUND_RECEIPT_PRODUCT_PICK_TABLE_COLUMNS = [
   { prop: 'packageUnitName', label: '包装单位', width: 96 },
   { prop: 'splitUnitName', label: '最小单位', width: 96 },
   { prop: 'totalVolume', label: '规格', width: 120 },
+  /** 服务端拼装：1采购单位/N拆零，如 1箱/3桶；同单位×1 为 1个 */
+  { prop: 'purchaseSplitRatioText', label: '采购最小单位换算比', width: 140 },
   { prop: 'categoryCodeDictText', label: '项目种类', width: 108 },
 ] as const;
 

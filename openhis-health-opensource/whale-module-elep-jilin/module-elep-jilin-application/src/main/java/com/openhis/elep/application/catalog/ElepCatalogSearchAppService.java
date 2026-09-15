@@ -20,8 +20,6 @@ import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.infrastructure.multitenancy.TenantUtils;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
@@ -35,22 +33,31 @@ import java.util.Optional;
 @ConditionalOnProperty(name = "openhis.elep.deployment.mode", havingValue = "embedded", matchIfMissing = true)
 public class ElepCatalogSearchAppService implements ElepCatalogSearchOperations {
 
-    private static final Logger log = LoggerFactory.getLogger(ElepCatalogSearchAppService.class);
-
     private final ElepNationalCatalogReadRepository catalogReadRepository;
     private final ElepCatalogCacheManager cacheManager;
 
+    /**
+     * 药品选品。必须带关键字，走药名 GIN / 拼音前缀；厂家仅在药名未命中时另查。
+     *
+     * @param request 检索条件，keyword 为空返回空页
+     * @return 分页目录
+     */
     @Override
     public ElepCatalogPageResult searchDrug(ElepCatalogSearchRequest request) {
         QueryContext ctx = resolveQueryContext(request);
-        warnIfCatalogEmpty(ctx);
+        // Gate：无关键字禁止扫全表。药品 OR 厂家曾把 GIN 打掉，下拉空搜会超时变空。
+        if (ctx.keyword() == null || ctx.keyword().isBlank()) {
+            return toPageResult(List.of(), 0, ctx.page(), ctx.pageSize());
+        }
         String searchKey = buildSearchKey("DRUG", ctx.keyword(), ctx.aprvno(), ctx.spec(), ctx.page(), ctx.pageSize());
+        // Pre：命中选品缓存则不再查库
         Optional<ElepCatalogPageResult> cached = cacheManager.getSearch(ctx.cache(), "DRUG", searchKey);
         if (cached.isPresent()) {
             return cached.get();
         }
         List<ElepNationalCatalogRow> rows;
         long total;
+        // Cmd：有文号/规格走 1301 明细，否则 1312 摘要（药名未中再按厂家）
         if (ElepCatalogConstants.prefers1301Detail(ctx.aprvno(), ctx.spec())) {
             rows = catalogReadRepository.page1301DetailDrug(
                     ctx.contractId(), ctx.tenantId(), ctx.keyword(), null,
@@ -65,15 +72,17 @@ public class ElepCatalogSearchAppService implements ElepCatalogSearchOperations 
             total = catalogReadRepository.countDistinctDrug(
                     ctx.contractId(), ctx.tenantId(), ctx.keyword(), null);
         }
+        // Asm：有命中才写缓存；SQL 失败时仓储返回空页，缓存空结果会把后续选品一直钉死
         ElepCatalogPageResult result = toPageResult(rows, total, ctx.page(), ctx.pageSize());
-        cacheManager.putSearch(ctx.cache(), "DRUG", searchKey, result);
+        if (!rows.isEmpty()) {
+            cacheManager.putSearch(ctx.cache(), "DRUG", searchKey, result);
+        }
         return result;
     }
 
     @Override
     public ElepCatalogPageResult searchDiagnosis(ElepCatalogSearchRequest request) {
         QueryContext ctx = resolveQueryContext(request);
-        warnIfCatalogEmpty(ctx);
         String searchKey = buildSearchKey("DIAG", ctx.keyword(), null, null, ctx.page(), ctx.pageSize());
         Optional<ElepCatalogPageResult> cached = cacheManager.getSearch(ctx.cache(), "DIAG", searchKey);
         if (cached.isPresent()) {
@@ -85,7 +94,10 @@ public class ElepCatalogSearchAppService implements ElepCatalogSearchOperations 
         long total = catalogReadRepository.countDiagnosis(
                 ctx.contractId(), ctx.tenantId(), ctx.keyword(), null);
         ElepCatalogPageResult result = toPageResult(rows, total, ctx.page(), ctx.pageSize());
-        cacheManager.putSearch(ctx.cache(), "DIAG", searchKey, result);
+        // Asm：有命中才写缓存；SQL 失败空页不可缓存
+        if (!rows.isEmpty()) {
+            cacheManager.putSearch(ctx.cache(), "DIAG", searchKey, result);
+        }
         return result;
     }
 
@@ -182,10 +194,15 @@ public class ElepCatalogSearchAppService implements ElepCatalogSearchOperations 
                 pageSize);
     }
 
+    /**
+     * 解析目录检索租户与缓存上下文。
+     * 开发阶段允许无契约主键：按租户检索目录，便于开方页下拉出数。
+     *
+     * @param contractId    费用性质主键，可空
+     * @param contractBusNo 契约 bus_no，可空
+     * @return 检索上下文
+     */
     private QueryContext resolveCodeContext(Long contractId, String contractBusNo) {
-        if (contractId == null) {
-            throw new BusinessException("ELEP_CONTRACT_REQUIRED", "contractId 不能为空");
-        }
         Long tenantId = TenantUtils.getCurrentTenantId();
         ElepCatalogCacheManager.CacheContext cache = cacheManager.resolveContext(contractId, tenantId, contractBusNo);
         return new QueryContext(contractId, tenantId, cache, null, null, null, 0, ElepCatalogConstants.DEFAULT_PAGE_SIZE);
@@ -197,14 +214,6 @@ public class ElepCatalogSearchAppService implements ElepCatalogSearchOperations 
         }
         String trimmed = keyword.trim();
         return trimmed.isEmpty() ? null : trimmed;
-    }
-
-    private void warnIfCatalogEmpty(QueryContext ctx) {
-        if (catalogReadRepository.countRows(ctx.contractId(), ctx.tenantId()) > 0) {
-            return;
-        }
-        log.warn("yb_national_catalog_item 为空或未挂载 CHS 目录，contractId={} tenantId={}；请先完成 CHS 1301/1307 下载",
-                ctx.contractId(), ctx.tenantId());
     }
 
     private static ElepCatalogPageResult toPageResult(

@@ -225,14 +225,6 @@ export interface MedicationCatalogImportFileResult {
   fileBytes?: string;
 }
 
-/** 药品目录批量导入成功响应 */
-export interface ImportMedicationCatalogResult {
-  batchNo?: string;
-  totalCount?: number;
-  successCount?: number;
-  failCount?: number;
-}
-
 /** 启动异步导入响应 */
 export interface StartMedicationCatalogImportResult {
   jobId?: string;
@@ -386,20 +378,6 @@ export async function getImportMedicationCatalogProgressApi(
 }
 
 /**
- * 批量导入药品目录（同步；兼容旧调用，页面推荐异步+进度）
- */
-export async function importMedicationCatalogApi(body: {
-  fileBytes: string;
-  fileName?: string;
-}): Promise<ImportMedicationCatalogResult> {
-  const res = await requestClient.post<ApiResponse<ImportMedicationCatalogResult>>(
-    '/medicationCatalog/importMedicationCatalog',
-    body,
-  );
-  return res.data ?? {};
-}
-
-/**
  * 下载药品目录导入错误标注文件
  */
 export async function downloadMedicationCatalogImportErrorFileApi(
@@ -417,14 +395,6 @@ export interface DeviceCatalogImportFileResult {
   fileName?: string;
   contentType?: string;
   fileBytes?: string;
-}
-
-/** 耗材目录批量导入成功响应 */
-export interface ImportDeviceCatalogResult {
-  batchNo?: string;
-  totalCount?: number;
-  successCount?: number;
-  failCount?: number;
 }
 
 /** 启动耗材异步导入响应 */
@@ -482,20 +452,6 @@ export async function getImportDeviceCatalogProgressApi(
   const res = await requestClient.post<ApiResponse<DeviceCatalogImportProgressResult>>(
     '/deviceCatalog/getImportDeviceCatalogProgress',
     { jobId },
-  );
-  return res.data ?? {};
-}
-
-/**
- * 批量导入耗材目录（同步；兼容旧调用，页面推荐异步+进度）
- */
-export async function importDeviceCatalogApi(body: {
-  fileBytes: string;
-  fileName?: string;
-}): Promise<ImportDeviceCatalogResult> {
-  const res = await requestClient.post<ApiResponse<ImportDeviceCatalogResult>>(
-    '/deviceCatalog/importDeviceCatalog',
-    body,
   );
   return res.data ?? {};
 }
@@ -753,20 +709,6 @@ export async function getImportServiceCatalogProgressApi(
 }
 
 /**
- * 批量导入诊疗目录（同步；兼容旧调用，页面推荐异步+进度）
- */
-export async function importServiceCatalogApi(body: {
-  fileBytes: string;
-  fileName?: string;
-}): Promise<ImportServiceCatalogResult> {
-  const res = await requestClient.post<ApiResponse<ImportServiceCatalogResult>>(
-    '/serviceCatalog/importServiceCatalog',
-    body,
-  );
-  return res.data ?? {};
-}
-
-/**
  * 下载诊疗目录导入错误标注文件
  */
 export async function downloadServiceCatalogImportErrorFileApi(
@@ -882,12 +824,8 @@ export interface CreateDeviceCatalogParams {
   purchaseUnitCode: string;
   /** 拆零单位（持久化 split_unit_code） */
   splitUnitCode: string;
-  /** @deprecated 请使用 purchaseUnitCode */
-  unitCode?: string;
   /** 包装规格（与药品 totalVolume 一致） */
   totalVolume?: string;
-  /** @deprecated 请使用 splitUnitCode */
-  minUnitCode?: string;
   /** 默认门诊/就诊单位（对齐 adm_device_definition.def_encounter_unit_code） */
   defEncounterUnitCode?: string;
   /** 默认住院单位（对齐 def_inhospital_unit_code） */
@@ -1042,8 +980,12 @@ export interface DiagnosisCatalogItem {
   description?: string;
   ybFlag?: number | boolean;
   ybNo?: string;
-  /** 国家临床版诊断编码（国临码） */
+  /** 国家临床版诊断编码（国临码）；医保目录列表可逗号拼接多个 */
   clinicCode?: string;
+  /** 国家临床版诊断名称；医保目录列表可逗号拼接多个 */
+  clinicName?: string;
+  /** 医保诊断名称（由 ybNo 反查；未对码为空） */
+  ybName?: string;
   ybMatchFlag?: number | boolean;
   statusEnum?: string;
   [key: string]: unknown;
@@ -1129,13 +1071,6 @@ export interface CreateDiagnosisCatalogParams {
   [key: string]: unknown;
 }
 
-/** 国家临床版 2.0 导入结果（同步兼容） */
-export interface ImportClinicalV2CatalogResult {
-  totalCount?: number;
-  successCount?: number;
-  [key: string]: unknown;
-}
-
 /** 启动异步导入 */
 export interface StartClinicalV2ImportResult {
   jobId?: string;
@@ -1202,20 +1137,6 @@ export async function getImportYbConditionCatalogProgressApi(
     { jobId },
   );
   return (res.data ?? res) as ClinicalV2ImportProgressResult;
-}
-
-/**
- * 同步导入国家临床版 2.0（易超时，仅小文件兼容）
- */
-export async function importClinicalV2CatalogApi(body: {
-  fileBytes: string;
-  fileName?: string;
-}): Promise<ImportClinicalV2CatalogResult> {
-  const res = await requestClient.post<ApiResponse<ImportClinicalV2CatalogResult>>(
-    '/diagnosisCatalog/importClinicalV2Catalog',
-    body,
-  );
-  return (res.data ?? res) as ImportClinicalV2CatalogResult;
 }
 
 /**

@@ -20,7 +20,7 @@ public class MedicationRequestFifoSignContext {
     private Long medReqId;
 
     /**
-     * 处方号（同方多味共享；签发挂费须写入 {@code ChargeItem.prescription_no}）。
+     * 处方号（同方多味共享；业务真源在本药品请求；收费行仅结算快照，签发挂费不写）。
      */
     private String prescriptionNo;
 

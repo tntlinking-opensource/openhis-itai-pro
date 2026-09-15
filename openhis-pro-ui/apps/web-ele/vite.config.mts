@@ -96,12 +96,6 @@ export default defineConfig(async () => {
           ],
         },
         proxy: {
-          // 本地 dev 打本机 Java :8081（吃 application.yml 的 datasource）。
-          // 现场培训 :8881 / 正式 :8882 勿作默认，避免误连线上。
-          '/api/health': {
-            changeOrigin: true,
-            target: 'http://localhost:8081',
-          },
           // iMEC 监护仪 API 代理（必须放在通用 /api 之前，优先匹配）
           // 前端 requestClient baseURL=/api，实际请求路径为 /api/imec/xxx
           '/api/imec': {
@@ -115,10 +109,18 @@ export default defineConfig(async () => {
             target: 'http://localhost:8081',
             ws: true,
           },
+          // 本地 dev 打本机 Java :8081。
+          // 注意：勿再单独配 `/api/health` 前缀代理——会误匹配 `/api/healthCheckup*`，
+          // 导致 AppService 打到错误路径（No static resource）。健康检查在 rewrite 中特判。
           '/api': {
             changeOrigin: true,
-            rewrite: (path: string) => path.replace(/^\/api/, ''),
-            target: 'http://localhost:8081/api/app',
+            rewrite: (path: string) => {
+              if (path === '/api/health' || path.startsWith('/api/health/')) {
+                return path;
+              }
+              return path.replace(/^\/api/, '/api/app');
+            },
+            target: 'http://localhost:8081',
             ws: true,
           },
           '/uploads': {

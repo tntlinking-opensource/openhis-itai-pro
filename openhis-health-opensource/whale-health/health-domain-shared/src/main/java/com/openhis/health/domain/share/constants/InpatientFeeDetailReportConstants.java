@@ -24,6 +24,20 @@ public interface InpatientFeeDetailReportConstants {
     /** 默认激活 Tab（汇总）。 */
     String DEFAULT_ACTIVE_TAB = PRESENTATION_MODE_SUMMARY;
 
+    /**
+     * 明细行合并模式：不合并（按收费行原样展示）。
+     *
+     * <p>空/null 与本值等价：就诊块内保持逐行。</p>
+     */
+    String LINE_MERGE_MODE_LINE = "LINE";
+
+    /**
+     * 明细行合并模式：同就诊块内按收费项目定义（{@code ChargeItem.definitionId}）合并金额。
+     *
+     * <p>仅合并当前页/当前扫描批的块内行，不做全窗物化后再并。</p>
+     */
+    String LINE_MERGE_MODE_BY_DEFINITION = "BY_DEFINITION";
+
     /** 默认分页大小（就诊块数/页）。 */
     int DEFAULT_PAGE_SIZE = 10;
 

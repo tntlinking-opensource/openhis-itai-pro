@@ -10,6 +10,8 @@ import com.openhis.health.domain.financial.contract.entity.Contract;
 import com.openhis.health.domain.financial.contract.queries.model.ContractDetailQueryModel;
 import com.openhis.health.domain.financial.contract.queries.model.ContractListItemQueryModel;
 import com.openhis.health.domain.financial.contract.repository.ContractRepository;
+import com.openhis.health.domain.share.enums.ChargeTypeCategory;
+import com.openhis.health.domain.share.enums.ContractCategory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -22,10 +24,12 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * 费用性质（合同/结算口径）主数据读侧查询服务。
@@ -286,7 +290,11 @@ public class ContractQueryService {
     /**
      * 按费用性质分类码解析合同主键集合（AS-OP-PHA-005 费用性质筛预解析，B.6.4）。
      *
-     * @param categoryEnum {@link com.openhis.health.domain.share.enums.ContractCategory} 持久化 code；空则返回空列表
+     * <p>主数据 {@code category_enum} 两套码并存：UI/契约常用 {@link ContractCategory}
+     *（如 {@code PROVINCIAL_INSURANCE}），库内常见 {@link ChargeTypeCategory} 数字码（如 {@code 3}）；
+     * 须并查，否则省/市医保筛合同 id 全空 → 列表恒无行。</p>
+     *
+     * @param categoryEnum {@link ContractCategory} 或 {@link ChargeTypeCategory} 持久化 code；空则返回空列表
      * @return 未软删且分类命中的合同主键列表
      */
     public List<Long> listIdsByCategoryEnum(String categoryEnum) {
@@ -294,17 +302,66 @@ public class ContractQueryService {
         if (normalized == null) {
             return Collections.emptyList();
         }
+        Set<String> aliases = this.expandCategoryEnumAliases(normalized);
         List<Contract> all = contractRepository.findAll();
         List<Long> ids = new ArrayList<>();
-        // Loop：全表未删合同中筛分类码；规模可控的主数据
+        // Loop：全表未删合同中筛分类码（含双码别名）；规模可控的主数据
         for (Contract contract : all) {
             if (contract == null || Boolean.TRUE.equals(contract.getIsDeleted())) {
                 continue;
             }
-            if (normalized.equals(contract.getCategoryEnum()) && contract.getId() != null) {
+            String persisted = StringUtils.trimToNull(contract.getCategoryEnum());
+            if (persisted == null || contract.getId() == null) {
+                continue;
+            }
+            if (aliases.contains(persisted)) {
                 ids.add(contract.getId());
             }
         }
         return ids;
+    }
+
+    /**
+     * UI/库内费用性质分类码 → 可匹配的 {@code category_enum} 字面量集合（含入参自身）。
+     *
+     * @param categoryEnum 已 trim 的分类码
+     * @return 别名集合（至少含入参）
+     */
+    private Set<String> expandCategoryEnumAliases(String categoryEnum) {
+        Set<String> aliases = new HashSet<>();
+        aliases.add(categoryEnum);
+        // ContractCategory（枚举名）↔ ChargeTypeCategory（数字码）
+        if (ContractCategory.SELF_CHARGE.getCode().equals(categoryEnum)
+            || ChargeTypeCategory.SELF_PAY.getCode().equals(categoryEnum)) {
+            aliases.add(ContractCategory.SELF_CHARGE.getCode());
+            aliases.add(ChargeTypeCategory.SELF_PAY.getCode());
+            return aliases;
+        }
+        if (ContractCategory.PUBLIC_CHARGE.getCode().equals(categoryEnum)
+            || ChargeTypeCategory.PUBLIC_PAY.getCode().equals(categoryEnum)) {
+            aliases.add(ContractCategory.PUBLIC_CHARGE.getCode());
+            aliases.add(ChargeTypeCategory.PUBLIC_PAY.getCode());
+            return aliases;
+        }
+        if (ContractCategory.PROVINCIAL_INSURANCE.getCode().equals(categoryEnum)
+            || ChargeTypeCategory.PROVINCIAL_INSURANCE.getCode().equals(categoryEnum)) {
+            aliases.add(ContractCategory.PROVINCIAL_INSURANCE.getCode());
+            aliases.add(ChargeTypeCategory.PROVINCIAL_INSURANCE.getCode());
+            return aliases;
+        }
+        if (ContractCategory.MUNICIPAL_INSURANCE.getCode().equals(categoryEnum)
+            || ChargeTypeCategory.MUNICIPAL_INSURANCE.getCode().equals(categoryEnum)) {
+            aliases.add(ContractCategory.MUNICIPAL_INSURANCE.getCode());
+            aliases.add(ChargeTypeCategory.MUNICIPAL_INSURANCE.getCode());
+            return aliases;
+        }
+        // 工伤：ContractCategory 名码 + 历史数字码 5
+        if (ContractCategory.WORKER_INSURANCE.getCode().equals(categoryEnum)
+            || "5".equals(categoryEnum)) {
+            aliases.add(ContractCategory.WORKER_INSURANCE.getCode());
+            aliases.add("5");
+            return aliases;
+        }
+        return aliases;
     }
 }

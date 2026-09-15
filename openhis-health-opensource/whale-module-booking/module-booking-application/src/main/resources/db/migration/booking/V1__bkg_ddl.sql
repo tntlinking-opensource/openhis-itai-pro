@@ -293,6 +293,10 @@ CREATE TABLE IF NOT EXISTS bkg_health_check_booking_ext (
     batch_id BIGINT,
     package_snapshot_json TEXT,
     estimated_amount NUMERIC(12,2),
+    contract_id BIGINT,
+    contract_type_code VARCHAR(32),
+    campus_code VARCHAR(64),
+    day_slot_id BIGINT,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ,
     created_by BIGINT,
@@ -446,6 +450,10 @@ COMMENT ON COLUMN bkg_health_check_booking_ext.package_id IS '套餐主键';
 COMMENT ON COLUMN bkg_health_check_booking_ext.batch_id IS '团检批次主键（个检为空）';
 COMMENT ON COLUMN bkg_health_check_booking_ext.package_snapshot_json IS '下单时套餐快照 JSON';
 COMMENT ON COLUMN bkg_health_check_booking_ext.estimated_amount IS '参考金额';
+COMMENT ON COLUMN bkg_health_check_booking_ext.contract_id IS '团检合同主键；散客可空';
+COMMENT ON COLUMN bkg_health_check_booking_ext.contract_type_code IS '进池合同类型编码';
+COMMENT ON COLUMN bkg_health_check_booking_ext.campus_code IS '校区编码；无校区模块可空';
+COMMENT ON COLUMN bkg_health_check_booking_ext.day_slot_id IS '占用的 bkg_hc_day_slot 主键';
 COMMENT ON COLUMN bkg_health_check_booking_ext.created_at IS '创建时间';
 COMMENT ON COLUMN bkg_health_check_booking_ext.updated_at IS '最后更新时间';
 COMMENT ON COLUMN bkg_health_check_booking_ext.created_by IS '创建人';
@@ -911,3 +919,118 @@ COMMENT ON COLUMN bkg_waitlist_entry.version IS '乐观锁版本号';
 CREATE UNIQUE INDEX IF NOT EXISTS uk_bkg_bed_reservation_ext_bed_date_active
     ON bkg_bed_reservation_ext (location_id, intended_admission_date)
     WHERE is_deleted = false;
+
+-- =============================================================================
+-- folded from V3__health_checkup_slot_calendar.sql（终态含 V6 partial unique）
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS bkg_hc_slot_template (
+    id BIGINT PRIMARY KEY,
+    tenant_id BIGINT,
+    organization_id BIGINT NOT NULL,
+    slot_minutes INT,
+    am_start TIME,
+    am_end TIME,
+    pm_start TIME,
+    pm_end TIME,
+    capacity_json TEXT,
+    rest_weekdays VARCHAR(32),
+    campus_codes_json TEXT,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ,
+    created_by BIGINT,
+    updated_by BIGINT,
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at TIMESTAMPTZ,
+    deleted_by BIGINT,
+    version INT NOT NULL DEFAULT 0
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_bkg_hc_slot_template_org
+    ON bkg_hc_slot_template (organization_id)
+    WHERE is_deleted = FALSE;
+
+COMMENT ON TABLE bkg_hc_slot_template IS '体检号源时段模板（按机构记住上次配置）';
+COMMENT ON COLUMN bkg_hc_slot_template.capacity_json IS '各合同类型默认容量 JSON，如 {"STUDENT":0,"STAFF":0}；默认全 0';
+COMMENT ON COLUMN bkg_hc_slot_template.campus_codes_json IS '生成时展开的校区编码列表 JSON；无校区模块可空';
+COMMENT ON COLUMN bkg_hc_slot_template.rest_weekdays IS '模板休息日 ISO 1-7 逗号分隔';
+
+CREATE TABLE IF NOT EXISTS bkg_hc_day_plan (
+    id BIGINT PRIMARY KEY,
+    tenant_id BIGINT,
+    organization_id BIGINT NOT NULL,
+    plan_date DATE NOT NULL,
+    rest_flag BOOLEAN NOT NULL DEFAULT FALSE,
+    remark VARCHAR(256),
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ,
+    created_by BIGINT,
+    updated_by BIGINT,
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at TIMESTAMPTZ,
+    deleted_by BIGINT,
+    version INT NOT NULL DEFAULT 0
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_bkg_hc_day_plan_org_date
+    ON bkg_hc_day_plan (organization_id, plan_date)
+    WHERE is_deleted = FALSE;
+
+COMMENT ON TABLE bkg_hc_day_plan IS '体检号源日计划';
+COMMENT ON COLUMN bkg_hc_day_plan.rest_flag IS '整日休息时所有类型不可约';
+
+CREATE TABLE IF NOT EXISTS bkg_hc_day_type (
+    id BIGINT PRIMARY KEY,
+    tenant_id BIGINT,
+    day_plan_id BIGINT NOT NULL,
+    contract_type_code VARCHAR(32) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ,
+    created_by BIGINT,
+    updated_by BIGINT,
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at TIMESTAMPTZ,
+    deleted_by BIGINT,
+    version INT NOT NULL DEFAULT 0
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_bkg_hc_day_type_plan_code
+    ON bkg_hc_day_type (day_plan_id, contract_type_code)
+    WHERE is_deleted = FALSE;
+
+COMMENT ON TABLE bkg_hc_day_type IS '日开放合同类型（含散客 WALK_IN）';
+
+CREATE TABLE IF NOT EXISTS bkg_hc_day_slot (
+    id BIGINT PRIMARY KEY,
+    tenant_id BIGINT,
+    organization_id BIGINT NOT NULL,
+    day_plan_id BIGINT NOT NULL,
+    plan_date DATE NOT NULL,
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    contract_type_code VARCHAR(32) NOT NULL,
+    campus_code VARCHAR(64),
+    capacity INT NOT NULL DEFAULT 0,
+    booked_count INT NOT NULL DEFAULT 0,
+    open_flag BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ,
+    created_by BIGINT,
+    updated_by BIGINT,
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_at TIMESTAMPTZ,
+    deleted_by BIGINT,
+    version INT NOT NULL DEFAULT 0
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_bkg_hc_day_slot_pool
+    ON bkg_hc_day_slot (organization_id, plan_date, start_time, end_time, contract_type_code, COALESCE(campus_code, ''))
+    WHERE is_deleted = FALSE;
+
+CREATE INDEX IF NOT EXISTS idx_bkg_hc_day_slot_org_date
+    ON bkg_hc_day_slot (organization_id, plan_date)
+    WHERE is_deleted = FALSE;
+
+COMMENT ON TABLE bkg_hc_day_slot IS '日时段配额：类型×校区分池；capacity=0 不可约';
+COMMENT ON COLUMN bkg_hc_day_slot.booked_count IS '已约人数（真实占号累计）';
+COMMENT ON COLUMN bkg_hc_day_slot.open_flag IS '档位是否开放';

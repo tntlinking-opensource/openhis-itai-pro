@@ -35,8 +35,4 @@ public class SummarizeOutpatientMedicationDispenseReportResponse {
     /** 页脚售价净额合计；无可价行时可为 null。 */
     @Schema(description = "售价净额合计")
     private BigDecimal saleTotalAmount;
-
-    /** 页脚净金额合计（售价别名；无可价行时可为 null）。 */
-    @Schema(description = "净金额合计")
-    private BigDecimal totalAmount;
 }

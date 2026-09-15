@@ -4,6 +4,7 @@ import { computed } from 'vue';
 import { ElTag } from 'element-plus';
 
 import DrugOrderGroupCell from '#/components/outpatient/drug-order-group-cell.vue';
+import { resolveSkinTestOutcomePillClass } from '#/utils/advice/advice-status-display';
 import {
   formatMedicationDoseDisplay,
   formatMedicationDoseSummaryLine,
@@ -11,6 +12,12 @@ import {
 import { parseTcmCollapsedHerbDisplay } from '#/utils/tcm-prescription-display';
 
 defineOptions({ name: 'AdviceOrderDisplayCell' });
+
+/** 按方合并后的一味饮片（与住院 AdviceRowItem.tcmHerbLines 同构） */
+interface TcmPrescriptionHerbLine {
+  name: string;
+  dose: string;
+}
 
 const props = withDefaults(
   defineProps<{
@@ -23,6 +30,18 @@ const props = withDefaults(
     rowKey: string;
     /** 中药方折叠行：药名+剂量改流式网格，避免横排 nowrap 挤成竖字 */
     tcmFlag?: boolean;
+    /** 单行（非成组）皮试结果 code */
+    skinTestOutcomeCode?: null | string;
+    /** 单行（非成组）皮试结果展示 */
+    skinTestOutcomeText?: null | string;
+    /** 病案首页：按方合并后的标题（如中药汤剂） */
+    tcmPrescriptionTitle?: string;
+    /** 病案首页：同方饮片行 */
+    tcmHerbLines?: TcmPrescriptionHerbLine[] | null;
+    /** 病案首页：方闭合用法/付数 */
+    tcmClosingMeta?: string;
+    /** 病案首页：代煎 companion 文案 */
+    tcmDecoctionText?: string;
   }>(),
   {
     applyFormNo: undefined,
@@ -31,6 +50,12 @@ const props = withDefaults(
     extension: undefined,
     groupItems: undefined,
     tcmFlag: false,
+    skinTestOutcomeCode: undefined,
+    skinTestOutcomeText: undefined,
+    tcmPrescriptionTitle: undefined,
+    tcmHerbLines: undefined,
+    tcmClosingMeta: undefined,
+    tcmDecoctionText: undefined,
   },
 );
 
@@ -48,9 +73,14 @@ interface AdviceDrugLineSource {
   usage?: string;
   frequency?: string;
   medicationDays?: number | string;
+  /** 医嘱备注（成组共用行与扩展行同源） */
+  remark?: string;
   dosageDisplay?: string;
   /** 成组共用行滴速展示 */
   speedDisplay?: string;
+  /** 皮试结果 code / 展示（仅皮试药且已登记） */
+  skinTestOutcomeCode?: string;
+  skinTestOutcomeText?: string;
   splitDose?: number | string;
   splitDoseUnitCode?: string;
   splitDoseUnitName?: string;
@@ -107,7 +137,29 @@ function lineParts(item: unknown) {
   return { title: formatDrugTitle(d), dose: formatDrugDose(d) };
 }
 
-/** 组内共用行：用法、频次、滴速、天数；缺省则不拼该段 */
+/** 从扩展行抽出备注正文（成组不走 fallback，需单独拼到共用行） */
+function remarkFromExtension(extension: string): string {
+  for (const part of extension.split('；')) {
+    const text = part.trim();
+    if (text.startsWith('备注：')) {
+      return text.slice('备注：'.length).trim();
+    }
+  }
+  return '';
+}
+
+/** 组内首条非空备注；缺则回落 extension 的「备注：」段 */
+function pickSharedRemark(items: readonly unknown[]): string {
+  for (const item of items) {
+    const remark = str(toLineSource(item).remark);
+    if (remark) {
+      return remark;
+    }
+  }
+  return remarkFromExtension(str(props.extension));
+}
+
+/** 组内共用行：用法、频次、滴速、天数、备注；缺省则不拼该段 */
 function formatSharedLine(items: readonly unknown[]): string {
   if (items.length === 0) return '';
   const d = toLineSource(items[0]);
@@ -132,10 +184,13 @@ function formatSharedLine(items: readonly unknown[]): string {
   if (speed) {
     parts.push(`滴速：${speed}`);
   }
-  if (parts.length === 0) {
-    return dayPart;
+  const body = parts.length === 0 ? dayPart : `${parts.join('，')}${dayPart}`;
+  const remark = pickSharedRemark(items);
+  const remarkPart = remark ? `备注：${remark}` : '';
+  if (body && remarkPart) {
+    return `${body}；${remarkPart}`;
   }
-  return `${parts.join('，')}${dayPart}`;
+  return body || remarkPart;
 }
 
 const contentTrim = computed(() => str(props.content));
@@ -148,8 +203,28 @@ const tcmCollapsed = computed(() => {
   if (props.tcmFlag !== true) {
     return null;
   }
+  if ((props.tcmHerbLines?.length ?? 0) > 0) {
+    return null;
+  }
   return parseTcmCollapsedHerbDisplay(props.content, props.dosageText);
 });
+
+/** 按方合并后的饮片明细 */
+const tcmRxHerbLines = computed(() => props.tcmHerbLines ?? []);
+
+/** 方标题（中药汤剂） */
+const tcmRxTitle = computed(() => str(props.tcmPrescriptionTitle));
+
+/** 方闭合：用法 + 付数 */
+const tcmRxClosing = computed(() => str(props.tcmClosingMeta));
+
+/** 代煎 companion 文案 */
+const tcmRxDecoction = computed(() => str(props.tcmDecoctionText));
+
+/** 病案首页按方合并块：有饮片明细时走竖排汤剂版式 */
+const showTcmPrescriptionBlock = computed(
+  () => props.tcmFlag === true && tcmRxHerbLines.value.length > 0,
+);
 
 const tcmHerbPairs = computed(() => tcmCollapsed.value?.pairs ?? []);
 
@@ -161,11 +236,13 @@ const showFallbackMain = computed(
   () => contentTrim.value.length > 0 || dosageTrim.value.length > 0,
 );
 
+/** 扩展行：申请单/折叠付数；汤剂块内已画代煎，此处不再重复 */
 const showExtensionRow = computed(
   () =>
-    extensionTrim.value.length > 0 ||
+    (extensionTrim.value.length > 0 && !showTcmPrescriptionBlock.value) ||
     applyFormNoTrim.value.length > 0 ||
-    tcmDoseCountText.value.length > 0,
+    tcmDoseCountText.value.length > 0 ||
+    (tcmRxDecoction.value.length > 0 && !showTcmPrescriptionBlock.value),
 );
 
 /** 无组或空数组时交给 DrugOrderGroupCell #fallback */
@@ -176,13 +253,35 @@ const shellItems = computed(() => {
   }
   return g;
 });
+
+/** 单行皮试结果角标（非成组 fallback 用） */
+const fallbackSkinTestOutcomeText = computed(() => str(props.skinTestOutcomeText));
+const fallbackSkinTestOutcomeCode = computed(() => str(props.skinTestOutcomeCode));
+
+/** 成组行内皮试结果角标 */
+function lineSkinTestOutcomeText(item: unknown): string {
+  return str(toLineSource(item).skinTestOutcomeText);
+}
+
+function lineSkinTestOutcomeCode(item: unknown): string {
+  return str(toLineSource(item).skinTestOutcomeCode);
+}
 </script>
 
 <template>
   <DrugOrderGroupCell :row-key="rowKey" :items="shellItems">
     <template #line="{ item }">
       <div class="advice-order-line-row">
-        <span v-if="lineParts(item).title" class="drug-main-text">{{ lineParts(item).title }}</span>
+        <span v-if="lineParts(item).title" class="drug-main-text drug-main-text--with-tag">
+          <span>{{ lineParts(item).title }}</span>
+          <span
+            v-if="lineSkinTestOutcomeText(item)"
+            class="skin-test-outcome-pill"
+            :class="resolveSkinTestOutcomePillClass(lineSkinTestOutcomeCode(item))"
+          >
+            {{ lineSkinTestOutcomeText(item) }}
+          </span>
+        </span>
         <span v-if="lineParts(item).dose" class="group-drug-dose">{{ lineParts(item).dose }}</span>
       </div>
     </template>
@@ -191,13 +290,43 @@ const shellItems = computed(() => {
     </template>
     <template #main="{ item }">
       <div class="advice-order-line-row">
-        <span v-if="lineParts(item).title" class="drug-main-text">{{ lineParts(item).title }}</span>
+        <span v-if="lineParts(item).title" class="drug-main-text drug-main-text--with-tag">
+          <span>{{ lineParts(item).title }}</span>
+          <span
+            v-if="lineSkinTestOutcomeText(item)"
+            class="skin-test-outcome-pill"
+            :class="resolveSkinTestOutcomePillClass(lineSkinTestOutcomeCode(item))"
+          >
+            {{ lineSkinTestOutcomeText(item) }}
+          </span>
+        </span>
         <span v-if="lineParts(item).dose" class="group-drug-dose">{{ lineParts(item).dose }}</span>
       </div>
     </template>
     <template #fallback>
-      <!-- 中药方：药名+剂量流式网格，避免横排 nowrap 挤成逐字竖排 -->
-      <template v-if="tcmFlag">
+      <!-- 病案首页：一张中药方一行，饮片竖排，末味后接用法/付数 -->
+      <template v-if="showTcmPrescriptionBlock">
+        <div class="tcm-rx-block">
+          <div
+            v-for="(herb, index) in tcmRxHerbLines"
+            :key="`${rowKey}-rx-${index}`"
+            class="tcm-rx-block__line"
+          >
+            <span v-if="index === 0 && tcmRxTitle" class="tcm-rx-block__title">
+              {{ tcmRxTitle }}(
+            </span>
+            <span class="tcm-rx-block__herb">
+              {{ herb.name }}<template v-if="herb.dose">:{{ herb.dose }}</template>
+            </span>
+            <span v-if="index === tcmRxHerbLines.length - 1" class="tcm-rx-block__close">
+              )<template v-if="tcmRxClosing">{{ tcmRxClosing }}</template>
+            </span>
+          </div>
+          <div v-if="tcmRxDecoction" class="tcm-rx-block__decoction">{{ tcmRxDecoction }}</div>
+        </div>
+      </template>
+      <!-- 护士站折叠中药方：药名+剂量流式网格，避免横排 nowrap 挤成逐字竖排 -->
+      <template v-else-if="tcmFlag">
         <div v-if="tcmHerbPairs.length > 0" class="tcm-herb-grid">
           <span
             v-for="(pair, index) in tcmHerbPairs"
@@ -216,12 +345,24 @@ const shellItems = computed(() => {
         </div>
       </template>
       <div v-else-if="showFallbackMain" class="advice-order-line-row">
-        <span v-if="contentTrim" class="drug-main-text">{{ contentTrim }}</span>
+        <span v-if="contentTrim" class="drug-main-text drug-main-text--with-tag">
+          <span>{{ contentTrim }}</span>
+          <span
+            v-if="fallbackSkinTestOutcomeText"
+            class="skin-test-outcome-pill"
+            :class="resolveSkinTestOutcomePillClass(fallbackSkinTestOutcomeCode)"
+          >
+            {{ fallbackSkinTestOutcomeText }}
+          </span>
+        </span>
         <span v-if="dosageTrim" class="group-drug-dose">{{ dosageTrim }}</span>
       </div>
       <div v-if="showExtensionRow" class="normal-drug-shared advice-order-extension-row">
         <span v-if="tcmDoseCountText" class="advice-order-tcm-fu">{{ tcmDoseCountText }}</span>
-        <span v-if="extensionTrim" class="advice-order-extension-text">{{ extensionTrim }}</span>
+        <span v-if="tcmRxDecoction" class="advice-order-extension-text">{{ tcmRxDecoction }}</span>
+        <span v-else-if="extensionTrim" class="advice-order-extension-text">{{
+          extensionTrim
+        }}</span>
         <ElTag
           v-if="applyFormNoTrim"
           class="advice-order-apply-form-tag"
@@ -251,6 +392,40 @@ const shellItems = computed(() => {
   flex: 1 1 auto;
   min-width: 0;
   text-align: left;
+}
+
+.drug-main-text--with-tag {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.skin-test-outcome-pill {
+  flex-shrink: 0;
+  display: inline-block;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 4px;
+  color: var(--el-color-white);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.skin-test-outcome-pill--positive {
+  background: var(--el-color-danger);
+}
+
+.skin-test-outcome-pill--negative {
+  background: var(--el-color-success);
+}
+
+.skin-test-outcome-pill--default {
+  background: var(--el-color-info);
 }
 
 .advice-order-line-row .group-drug-dose {
@@ -328,5 +503,33 @@ const shellItems = computed(() => {
 .advice-order-apply-form-tag {
   flex: 0 0 auto;
   margin-left: auto;
+}
+
+/* 病案首页：一张方竖排饮片，标题与首味同行，末味后闭合用法/付数 */
+.tcm-rx-block {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  min-width: 0;
+  line-height: 1.5;
+  color: var(--el-text-color-primary);
+  white-space: normal;
+  word-break: break-word;
+}
+
+.tcm-rx-block__line {
+  display: block;
+}
+
+.tcm-rx-block__title,
+.tcm-rx-block__herb,
+.tcm-rx-block__close,
+.tcm-rx-block__decoction {
+  font-size: 14px;
+}
+
+.tcm-rx-block__decoction {
+  margin-top: 2px;
 }
 </style>

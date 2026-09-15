@@ -49,6 +49,7 @@ export {
 export {
   printRegistrationReceipt,
   schedulePrintRegistrationReceipt,
+  shouldSkipAutoPrintRegistrationReceipt,
 } from './print-registration-receipt';
 export { printPeisGuide } from './print-peis-guide';
 export {
@@ -57,16 +58,25 @@ export {
   DEFAULT_FORM_COPIES,
   DEFAULT_FORM_PAPER_HEIGHT_MM,
   DEFAULT_INV_FORM_PAPER_KIND,
+  DEFAULT_INV_FORM_TRIPLE_SPEC,
   getFormPrintPreference,
   INV_FORM_PAPER_HEIGHT_MM,
   INV_FORM_PAPER_KIND,
   INV_FORM_PAPER_KIND_LABELS,
   INV_FORM_PRINT_PREF_KEY,
+  INV_FORM_TRIPLE_SPEC_HEIGHT_MM,
+  INV_FORM_TRIPLE_SPEC,
+  INV_FORM_TRIPLE_SPEC_LABELS,
   isInvFormTriplePaper,
   normalizeInvFormPaperKind,
+  normalizeInvFormTripleSpec,
+  resolveInvFormPaperDisplayLabel,
+  resolveInvFormTripleHeightMm,
   saveFormPrintPreference,
   type FormPrintPreference,
+  type InvFormPaperChangePayload,
   type InvFormPaperKind,
+  type InvFormTripleSpec,
 } from './form-print-preference';
 export {
   clearPrinterPreference,

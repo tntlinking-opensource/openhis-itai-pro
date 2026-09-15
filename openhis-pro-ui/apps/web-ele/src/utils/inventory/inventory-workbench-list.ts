@@ -266,7 +266,7 @@ export function enrichStockOutQueueCardRow(
   /** 侧栏制单人/审批人/金额：兼容后端 enrich 的 creatorName/approverName/totalAmount */
   const creator = row.applicantId_dictText || row.creatorName || row.applicantName || '';
   const approver = row.approverId_dictText || row.approverName || '';
-  const amount = row.totalAmount ?? row.totalPrice ?? row.actualAmountSum;
+  const amount = row.totalAmount ?? row.actualAmountSum;
   return {
     ...row,
     supplyBusNo: row.supplyBusNo ?? row.busNo,
@@ -275,7 +275,6 @@ export function enrichStockOutQueueCardRow(
     applicantId_dictText: creator,
     approverId_dictText: approver,
     totalAmount: amount,
-    totalPrice: amount ?? row.totalPrice,
     rejectReason: row.rejectReason ?? row.reason ?? '',
     sourceLocationId_dictText:
       row.sourceLocationId_dictText ??
@@ -405,14 +404,21 @@ export function filterWorkbenchListRowsByKeyword<T extends Record<string, unknow
   });
 }
 
-/** init OptionDto / ApiOptionItem → 下拉项（value 一律 string，避免 ElSelect 长整型错位）。 */
+/** init OptionDto / ApiOptionItem → 下拉项（value 一律 string，保留拼音/五笔）。 */
 export function mapInitOptionDtoToApiItems(
-  list?: { label?: string; value?: unknown }[],
-): { label: string; value: string }[] {
-  return (list ?? []).map((o) => ({
-    label: String(o.label ?? ''),
-    value: String(o.value ?? ''),
-  }));
+  list?: { label?: string; value?: unknown; pyStr?: string; wbStr?: string }[],
+): { label: string; value: string; pyStr?: string; wbStr?: string }[] {
+  return (list ?? []).map((o) => {
+    const item: { label: string; value: string; pyStr?: string; wbStr?: string } = {
+      label: String(o.label ?? ''),
+      value: String(o.value ?? ''),
+    };
+    const py = String(o.pyStr ?? '').trim();
+    const wb = String(o.wbStr ?? '').trim();
+    if (py) item.pyStr = py;
+    if (wb) item.wbStr = wb;
+    return item;
+  });
 }
 
 /** 单头已选真实库位 → 选品门禁；否则 init 首个真实库位（侧栏「全部」不参与）。 */
@@ -617,17 +623,19 @@ export function resolveLoginPractitionerLabelFromUserInfo(
 
 /** 单据单头经手人下拉：init 选项 + 详情 pin + 当前登录人（避免 ElSelect 只显示 id）。 */
 export function buildInventoryDocPractitionerSelectOptions(
-  baseOptions: { label?: string; value?: unknown }[],
+  baseOptions: { label?: string; value?: unknown; pyStr?: string; wbStr?: string }[],
   extras?: {
-    pinned?: { label?: string; value?: unknown }[];
+    pinned?: { label?: string; value?: unknown; pyStr?: string; wbStr?: string }[];
     userInfo?: null | Record<string, unknown> | undefined;
   },
-): { label: string; value: string }[] {
+): { label: string; value: string; pyStr?: string; wbStr?: string }[] {
   const loginId = resolveLoginPractitionerIdForRequest(extras?.userInfo);
   const loginLabel = resolveLoginPractitionerLabelFromUserInfo(extras?.userInfo);
   const pinnedExtras = (extras?.pinned ?? []).map((p) => ({
     id: p.value,
     label: p.label,
+    pyStr: p.pyStr,
+    wbStr: p.wbStr,
   }));
   return mergePractitionerSelectOptions(baseOptions, [
     ...pinnedExtras,
@@ -637,41 +645,55 @@ export function buildInventoryDocPractitionerSelectOptions(
 
 /** 合并经手人下拉（去重）；extras 用于注入当前登录人或详情回显 id，并可覆盖 base 中的 id 占位 label。 */
 export function mergePractitionerSelectOptions(
-  baseOptions: { label?: string; value?: unknown }[],
-  extras?: { id?: unknown; label?: string }[],
-): { label: string; value: string }[] {
-  const out: { label: string; value: string }[] = [];
+  baseOptions: { label?: string; value?: unknown; pyStr?: string; wbStr?: string }[],
+  extras?: { id?: unknown; label?: string; pyStr?: string; wbStr?: string }[],
+): { label: string; value: string; pyStr?: string; wbStr?: string }[] {
+  const out: { label: string; value: string; pyStr?: string; wbStr?: string }[] = [];
   const indexByValue = new Map<string, number>();
 
   const isWeakPractitionerLabel = (value: string, label: string) => label === '' || label === value;
 
-  const pushOrUpgrade = (value: unknown, label?: string, allowWeakLabel = true) => {
+  const pushOrUpgrade = (
+    value: unknown,
+    label?: string,
+    allowWeakLabel = true,
+    pyStr?: string,
+    wbStr?: string,
+  ) => {
     const v = String(value ?? '').trim();
     if (v === '') return;
     const lbl = String(label ?? '').trim();
     const strongLabel = lbl !== '' && lbl !== v ? lbl : '';
+    const py = String(pyStr ?? '').trim();
+    const wb = String(wbStr ?? '').trim();
     const existingIdx = indexByValue.get(v);
     if (existingIdx !== undefined) {
       const existing = out[existingIdx];
       if (isWeakPractitionerLabel(v, existing.label) && strongLabel !== '') {
         existing.label = strongLabel;
       }
+      // 补齐拼音/五笔（登录人/pin 常无码，以 init 为准）
+      if (!existing.pyStr && py) existing.pyStr = py;
+      if (!existing.wbStr && wb) existing.wbStr = wb;
       return;
     }
     if (!allowWeakLabel && strongLabel === '') return;
     indexByValue.set(v, out.length);
-    out.push({
+    const row: { label: string; value: string; pyStr?: string; wbStr?: string } = {
       label: strongLabel !== '' ? strongLabel : v,
       value: v,
-    });
+    };
+    if (py) row.pyStr = py;
+    if (wb) row.wbStr = wb;
+    out.push(row);
   };
 
   for (const o of baseOptions) {
-    pushOrUpgrade(o.value, o.label, true);
+    pushOrUpgrade(o.value, o.label, true, o.pyStr, o.wbStr);
   }
   // extras（登录人/详情 pin）允许弱 label，避免下拉整表为空
   for (const e of extras ?? []) {
-    pushOrUpgrade(e.id, e.label, true);
+    pushOrUpgrade(e.id, e.label, true, e.pyStr, e.wbStr);
   }
   return out;
 }

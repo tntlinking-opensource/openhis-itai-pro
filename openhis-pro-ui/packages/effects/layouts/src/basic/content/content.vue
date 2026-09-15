@@ -24,6 +24,9 @@ const { getCachedTabs, getExcludeCachedTabs, renderRouteView } = storeToRefs(tab
 
 /**
  * 贴边布局：去掉内容区默认留白，让页面背景铺满（住院护士站、首页工作台）。
+ *
+ * <p>非贴边页用 {@code p-2} 四边内边距（含顶距）；勿再依赖子级 {@code mt-*}，
+ * 父级 {@code overflow:hidden} 时外边距顶距会偶发裁没。</p>
  */
 const isFullBleedContentPage = computed(() => {
   const path = currentRoute.path;
@@ -120,7 +123,8 @@ function transformComponent(component: VNode, route: RouteLocationNormalizedLoad
     <div
       :class="{
         'pt-[35px]': preferences.breadcrumb.enable,
-        'px-2 pb-2': !isFullBleedContentPage,
+        /** 四边 padding；勿用仅 px/pb + 子级 mt（overflow:hidden 下顶距偶发被裁成「顶头」） */
+        'p-2': !isFullBleedContentPage,
       }"
       class="bg-background-page h-full"
     >

@@ -42,12 +42,11 @@ class InpatientDepositSettlementPlannerTest {
     }
 
     @Test
-    void resolve_r3_surplusCashRefund_ignoresUnionPayFlag() {
-        // 即便传入含银联，多退仍冲抵 P + 现金退 D−P（不走全退重收）
+    void resolve_r3_surplusCashRefund_alwaysCashRefund() {
+        // 多退一律冲抵 P + 现金退 D−P（不判原收款渠道）
         InpatientDepositSettlementPlan plan = planner.resolve(
             new BigDecimal("20.00"),
-            new BigDecimal("700.00"),
-            true);
+            new BigDecimal("700.00"));
         assertEquals(InpatientDepositSettlementPlanner.RULE_R3, plan.ruleCode());
         assertEquals(new BigDecimal("20.00"), plan.depositOffsetAmount());
         assertEquals(0, plan.channelPayable().compareTo(BigDecimal.ZERO));

@@ -129,6 +129,18 @@ export async function listIndividualPackagesApi(params: { organizationId: number
   );
 }
 
+/** 分页查询体检套餐（9.1）。 */
+export async function pageHealthCheckPackagesApi(params: {
+  organizationId?: number;
+  pageNo: number;
+  pageSize: number;
+}) {
+  return publicRequestClient.post<BookingPagedResult<HealthCheckPackageDto & { id?: number }>>(
+    '/healthCheckupBooking/pageHealthCheckPackages',
+    params,
+  );
+}
+
 export async function listIndividualBookableSlotsApi(params: {
   organizationId: number;
   packageId: number;

@@ -9,8 +9,9 @@ import lombok.Getter;
 /**
  * 重点药类型（列表筛选码）：选中某类型即筛选「该布尔标识为 true」的药品；空/未知码表示不限。
  *
- * <p>与药典 {@code basicFlag}/{@code nationalMonitorFlag}/{@code centralPurchaseFlag} 一一对应，
- * 用于药品目录与库存明细的「重点药类型」筛选项（替代原「基药是/否」）。</p>
+ * <p>与药典 {@code basicFlag}/{@code nationalMonitorFlag}/{@code centralPurchaseFlag}/
+ * {@code antibioticFlag} 一一对应，用于药品目录、库存明细与重点药品使用统计的筛选项
+ * （替代原「基药是/否」）。</p>
  */
 @Getter
 public enum KeyDrugType implements EnumInterface {
@@ -22,7 +23,10 @@ public enum KeyDrugType implements EnumInterface {
     NATIONAL_MONITOR(0L, "NATIONAL_MONITOR", "国家重点监控药品", "筛选国家重点监控标识为是的药品", 2L),
 
     /** 集采药品（{@code central_purchase_flag = true}）。 */
-    CENTRAL_PURCHASE(0L, "CENTRAL_PURCHASE", "集采药品", "筛选集采标识为是的药品", 3L);
+    CENTRAL_PURCHASE(0L, "CENTRAL_PURCHASE", "集采药品", "筛选集采标识为是的药品", 3L),
+
+    /** 抗生素（{@code antibiotic_flag = true}）。 */
+    ANTIBIOTIC(0L, "ANTIBIOTIC", "抗生素", "筛选抗生素标识为是的药品", 4L);
 
     private final Long codeSystemId;
     private final String code;

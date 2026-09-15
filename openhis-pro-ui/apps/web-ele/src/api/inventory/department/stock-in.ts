@@ -26,9 +26,7 @@ export interface StockInOptionDto {
   label?: string;
 }
 
-export interface LoadStockInFormInitRequest {
-  organizationId?: number;
-}
+export interface LoadStockInFormInitRequest {}
 
 export interface LoadStockInFormInitResponse {
   departmentPharmacyLocationOptions?: StockInOptionDto[];
@@ -47,12 +45,10 @@ export interface StockInListRowDto {
   sourceLocationName?: string;
   purposeLocationId?: number | string;
   applyTime?: string;
-  approvalTime?: string;
   originalBusNo?: string;
   applicantId?: number | string;
   /** 制单人姓名（后端 enrich，与出库列表 creatorName 同构） */
   creatorName?: string;
-  approverId?: number | string;
   approverName?: string;
   /** 同号各行 totalPrice 之和 */
   totalAmount?: number | string;
@@ -73,7 +69,6 @@ export interface PageStockInsRequest {
 export interface PageStockInsResponse {
   total?: number;
   totalCount?: number;
-  records?: StockInListRowDto[];
   content?: StockInListRowDto[];
 }
 

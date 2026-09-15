@@ -20,6 +20,7 @@ import com.openhis.health.application.shared.financial.DailySettlementExpenseNat
 import com.openhis.health.application.shared.financial.DailySettlementFinTypeAmountLoader;
 import com.openhis.health.application.shared.financial.PaymentChannelDisplayAssembler;
 import com.openhis.health.application.shared.financial.dto.DailySettlementExpenseNatureSummaryDto;
+import com.openhis.health.application.shared.financial.dto.DailySettlementWorkInjurySummaryDto;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.financial.cashiersettlement.command.SubmitCashierSettlementCommand;
 import com.openhis.health.domain.financial.cashiersettlement.queries.PreviewCashierSettlementQuery;
@@ -61,7 +62,8 @@ import java.util.Set;
  * {@link OutpatientDailySettlementMapper} 实现（AS-OP-FIN-004-SDD IF-OP-DCL-01～03）。
  *
  * <p>职责：Request/Command/Response 字段映射；候选 payment 行装配；费用性质展示过滤；
- * fin_type 上半区与 summary 下半区汇总（含逆向退费 UN_PAY 带符号净额，**BR-OP-DCL-011**）。
+ * fin_type 上半区与 summary 下半区汇总（含逆向退费 UN_PAY 带符号净额，**BR-OP-DCL-011**）；
+ * 工伤合同独立统计块（**BR-OP-DCL-030**，不入总收入）。
  * 禁止承载 Gate/权限判断与领域写编排。</p>
  */
 @Component
@@ -98,17 +100,15 @@ public class OutpatientDailySettlementMapperImpl implements OutpatientDailySettl
     /**
      * 装配门诊日结页初始化响应（IF-OP-DCL-01）。
      *
-     * @param defaultDate              默认结账日
-     * @param financialDelegateEnabled 是否允许财务代交账
-     * @param expensePropertyOptions   费用性质下拉
-     * @param cashierOptions           经办人下拉
-     * @param currentCashierId         当前经办人 Practitioner 主键
+     * @param defaultDate            默认结账日
+     * @param expensePropertyOptions 费用性质下拉
+     * @param cashierOptions         经办人下拉
+     * @param currentCashierId       当前经办人 Practitioner 主键
      * @return 初始化响应
      */
     @Override
     public LoadOutpatientDailySettlementPageInitResponse toLoadOutpatientDailySettlementPageInitResponse(
         LocalDate defaultDate,
-        boolean financialDelegateEnabled,
         List<OptionDto> expensePropertyOptions,
         List<OptionDto> cashierOptions,
         Long currentCashierId) {
@@ -119,7 +119,6 @@ public class OutpatientDailySettlementMapperImpl implements OutpatientDailySettl
         response.setDefaultDateFrom(fromText);
         response.setDefaultDateTo(toText);
         response.setExpensePropertyOptions(expensePropertyOptions);
-        response.setFinancialDelegateEnabled(financialDelegateEnabled);
         response.setCashierOptions(cashierOptions);
         response.setCurrentCashierId(currentCashierId);
         return response;
@@ -241,7 +240,9 @@ public class OutpatientDailySettlementMapperImpl implements OutpatientDailySettl
             this.filterItemsByExpenseProperty(sourceItems, expenseProperty);
         List<DailySettlementPaymentItemDto> displayItemsWithPayment =
             this.filterDisplayItemsInPaymentScope(displayItems, paymentById.keySet());
-        // 工伤合同不进上半区 fin_type / 总收入 / 渠道 / 费用性质（与打印日结单口径对齐）
+        // 工伤合同：主汇总剔除；另建独立统计块（不入总收入）
+        List<DailySettlementPaymentItemDto> workInjuryItems =
+            this.filterWorkInjuryPaymentItems(displayItemsWithPayment);
         List<DailySettlementPaymentItemDto> summaryItems =
             this.excludeWorkInjuryPaymentItems(displayItemsWithPayment);
         List<PaymentReconciliationQueryModel> finTypePaymentModels =
@@ -265,6 +266,8 @@ public class OutpatientDailySettlementMapperImpl implements OutpatientDailySettl
             channelAmounts,
             recDetailsByPaymentId,
             finTypeAmounts);
+        summary.setWorkInjurySummary(
+            this.buildWorkInjurySummary(workInjuryItems, paymentById, recDetailsByPaymentId));
         return new DailySettlementDisplayBundle(rows, summary);
     }
 
@@ -833,8 +836,11 @@ public class OutpatientDailySettlementMapperImpl implements OutpatientDailySettl
      */
     private List<DailySettlementPaymentItemDto> excludeWorkInjuryPaymentItems(
         List<DailySettlementPaymentItemDto> items) {
-        if (items == null || items.isEmpty()) {
-            return items == null ? List.of() : items;
+        if (items == null) {
+            return List.of();
+        }
+        if (items.isEmpty()) {
+            return items;
         }
         Set<String> contractBusNos = this.collectContractBusNosFromPaymentItems(items);
         Map<String, Boolean> workInjuryByBusNo =
@@ -851,6 +857,7 @@ public class OutpatientDailySettlementMapperImpl implements OutpatientDailySettl
             if (contractBusNo != null) {
                 contractBusNo = contractBusNo.trim();
             }
+            // 工伤合同整笔剔除主汇总
             if (StringUtils.isNotEmpty(contractBusNo)
                 && Boolean.TRUE.equals(workInjuryByBusNo.get(contractBusNo))) {
                 continue;
@@ -858,6 +865,196 @@ public class OutpatientDailySettlementMapperImpl implements OutpatientDailySettl
             filtered.add(item);
         }
         return filtered;
+    }
+
+    /**
+     * 仅保留工伤合同 payment（供独立统计块；与 {@link #excludeWorkInjuryPaymentItems} 互为补集）。
+     *
+     * @param items 展示行
+     * @return 工伤 payment 列表；无则空列表
+     */
+    private List<DailySettlementPaymentItemDto> filterWorkInjuryPaymentItems(
+        List<DailySettlementPaymentItemDto> items) {
+        if (items == null || items.isEmpty()) {
+            return List.of();
+        }
+        Set<String> contractBusNos = this.collectContractBusNosFromPaymentItems(items);
+        Map<String, Boolean> workInjuryByBusNo =
+            this.contractExpenseNatureAssembler.mapWorkInjuryFlagByContractBusNoIn(contractBusNos);
+        if (workInjuryByBusNo == null || workInjuryByBusNo.isEmpty()) {
+            return List.of();
+        }
+        List<DailySettlementPaymentItemDto> filtered = new ArrayList<>();
+        for (DailySettlementPaymentItemDto item : items) {
+            if (item == null) {
+                continue;
+            }
+            String contractBusNo = item.getContractNo();
+            if (contractBusNo != null) {
+                contractBusNo = contractBusNo.trim();
+            }
+            // 仅收集工伤合同 payment
+            if (StringUtils.isNotEmpty(contractBusNo)
+                && Boolean.TRUE.equals(workInjuryByBusNo.get(contractBusNo))) {
+                filtered.add(item);
+            }
+        }
+        return filtered;
+    }
+
+    /**
+     * 装配工伤独立统计：fin_type 归并四类+诊察费 + 统筹/个人自付行；无工伤 payment 时返回 null。
+     *
+     * <p>落点：IF-OP-DCL-02 / **BR-OP-DCL-030**；不入 totalIncome / 上半区 / 主费用性质块。</p>
+     *
+     * @param workInjuryItems       工伤合同 payment 行
+     * @param paymentById           payment 读模型
+     * @param recDetailsByPaymentId 自付子明细
+     * @return 工伤统计 DTO；无数据为 null
+     */
+    private DailySettlementWorkInjurySummaryDto buildWorkInjurySummary(
+        List<DailySettlementPaymentItemDto> workInjuryItems,
+        Map<Long, PaymentReconciliationQueryModel> paymentById,
+        Map<Long, List<PaymentRecDetailQueryModel>> recDetailsByPaymentId) {
+        if (workInjuryItems == null || workInjuryItems.isEmpty()) {
+            return null;
+        }
+        // Pre：工伤 payment 的 fin_type 快照汇总（与主上半区同 loader，集合互斥）
+        List<PaymentReconciliationQueryModel> finTypePaymentModels =
+            this.resolveFinTypeAggregationPaymentModels(workInjuryItems, paymentById);
+        Map<Long, List<PaymentStaticSnapshotQueryModel>> staticRowsByPaymentId =
+            this.paymentReconciliationQueryService.mapPaymentRecStaticsByReconciliationIds(
+                this.collectPaymentIdsFromModels(finTypePaymentModels));
+        Map<String, BigDecimal> finTypeAmounts =
+            this.dailySettlementFinTypeAmountLoader.aggregateFinTypeAmounts(
+                finTypePaymentModels,
+                staticRowsByPaymentId);
+        this.mergeDeprecatedRegistrationIntoConsultation(finTypeAmounts);
+        this.removePhysicalExamFinTypeAmount(finTypeAmounts);
+
+        Set<String> contractBusNos = this.collectContractBusNosFromPaymentItems(workInjuryItems);
+        DailySettlementExpenseNatureDetailAccumulator.PreparedMaps natureMaps =
+            this.expenseNatureDetailAccumulator.prepare(contractBusNos, recDetailsByPaymentId);
+        Map<String, NatureBucket> natureByContractNo = new LinkedHashMap<>();
+        for (DailySettlementPaymentItemDto item : workInjuryItems) {
+            if (item == null || item.getPaymentId() == null) {
+                continue;
+            }
+            PaymentReconciliationQueryModel paymentModel = null;
+            if (paymentById != null) {
+                paymentModel = paymentById.get(item.getPaymentId());
+            }
+            Long personKey = this.resolveSettlementPersonKey(item, paymentById);
+            List<PaymentRecDetailQueryModel> details = null;
+            if (recDetailsByPaymentId != null) {
+                details = recDetailsByPaymentId.get(item.getPaymentId());
+            }
+            Map<Long, BigDecimal> signedByDetailId = new HashMap<>();
+            if (details != null) {
+                for (PaymentRecDetailQueryModel detail : details) {
+                    if (detail == null || detail.getId() == null) {
+                        continue;
+                    }
+                    signedByDetailId.put(detail.getId(), this.resolveSignedDetailNetAmount(detail, item));
+                }
+            }
+            String contractBusNo = item.getContractNo();
+            if (contractBusNo != null) {
+                contractBusNo = contractBusNo.trim();
+            }
+            // Pre：工伤统筹/个账计入规则与医保同桥表口径（shouldCountInsuranceDetail）
+            PaymentReconciliationQueryModel finalPaymentModel = paymentModel;
+            this.expenseNatureDetailAccumulator.accumulateWorkInjuryNaturePayment(
+                natureByContractNo,
+                natureMaps,
+                contractBusNo,
+                personKey,
+                details,
+                signedByDetailId,
+                detail -> this.shouldCountInsuranceDetail(detail, finalPaymentModel, paymentById));
+        }
+        // Asm：fin_type 归并 + 统筹/自付行 → 响应 DTO
+        return this.toWorkInjurySummaryDto(finTypeAmounts, natureByContractNo);
+    }
+
+    /**
+     * fin_type 归并 + 费用性质桶 → 工伤独立统计 DTO。
+     *
+     * @param finTypeAmounts     工伤 payment 的 fin_type 代数和
+     * @param natureByContractNo 工伤统筹/自付桶
+     * @return 展示 DTO
+     */
+    private DailySettlementWorkInjurySummaryDto toWorkInjurySummaryDto(
+        Map<String, BigDecimal> finTypeAmounts,
+        Map<String, NatureBucket> natureByContractNo) {
+        BigDecimal westernPatent = BigDecimal.ZERO;
+        BigDecimal herbal = BigDecimal.ZERO;
+        BigDecimal consumable = BigDecimal.ZERO;
+        BigDecimal consultation = BigDecimal.ZERO;
+        BigDecimal treatment = BigDecimal.ZERO;
+        if (finTypeAmounts != null) {
+            for (Map.Entry<String, BigDecimal> entry : finTypeAmounts.entrySet()) {
+                if (entry == null || StringUtils.isEmpty(entry.getKey())) {
+                    continue;
+                }
+                String code = entry.getKey().trim();
+                BigDecimal amount = entry.getValue();
+                if (amount == null) {
+                    amount = BigDecimal.ZERO;
+                }
+                if (DailySettlementSharedConstants.WESTERN_MEDICINE_FIN_TYPE_CODE.equals(code)
+                    || DailySettlementSharedConstants.CHINESE_PATENT_MEDICINE_FIN_TYPE_CODE.equals(code)
+                    || DailySettlementSharedConstants.PURCHASED_MEDICINE_FIN_TYPE_CODE.equals(code)) {
+                    // 西药 + 中成药 + 外购 →「西药中成药」
+                    westernPatent = westernPatent.add(amount);
+                    continue;
+                }
+                if (DailySettlementSharedConstants.CHINESE_HERBAL_MEDICINE_FIN_TYPE_CODE.equals(code)) {
+                    herbal = herbal.add(amount);
+                    continue;
+                }
+                if (DailySettlementSharedConstants.MEDICAL_CONSUMABLE_FIN_TYPE_CODE.equals(code)) {
+                    consumable = consumable.add(amount);
+                    continue;
+                }
+                if (DailySettlementSharedConstants.CONSULTATION_FEE_FIN_TYPE_CODE.equals(code)) {
+                    consultation = consultation.add(amount);
+                    continue;
+                }
+                // 其余 fin_type（检查/检验/治疗等）归并「诊疗」
+                treatment = treatment.add(amount);
+            }
+        }
+        DailySettlementWorkInjurySummaryDto dto = new DailySettlementWorkInjurySummaryDto();
+        dto.setWesternPatentMedicineAmount(this.formatAmount(westernPatent));
+        dto.setTreatmentAmount(this.formatAmount(treatment));
+        dto.setConsumableAmount(this.formatAmount(consumable));
+        dto.setHerbalMedicineAmount(this.formatAmount(herbal));
+        dto.setConsultationFeeAmount(this.formatAmount(consultation));
+        dto.setContractName(DailySettlementSharedConstants.WORK_INJURY_NATURE_DISPLAY_NAME);
+        dto.setPersonCount(0);
+        dto.setCashAmount(this.formatAmount(BigDecimal.ZERO));
+        dto.setFundAmount(this.formatAmount(BigDecimal.ZERO));
+        dto.setAccountAmount(this.formatAmount(BigDecimal.ZERO));
+        dto.setTotalAmount(this.formatAmount(BigDecimal.ZERO));
+        if (natureByContractNo == null || natureByContractNo.isEmpty()) {
+            return dto;
+        }
+        NatureBucket bucket = natureByContractNo.get(
+            DailySettlementSharedConstants.WORK_INJURY_NATURE_BUCKET_KEY);
+        if (bucket == null) {
+            return dto;
+        }
+        if (StringUtils.isNotEmpty(bucket.getContractName())) {
+            dto.setContractName(bucket.getContractName());
+        }
+        dto.setPersonCount(bucket.getPersonKeys().size());
+        dto.setCashAmount(this.formatAmount(bucket.getCashAmount()));
+        dto.setFundAmount(this.formatAmount(bucket.getFundAmount()));
+        dto.setAccountAmount(this.formatAmount(bucket.getAccountAmount()));
+        // 总额与医保费用性质行同口径：统筹 + 个人账户（个人自付单列）
+        dto.setTotalAmount(this.formatAmount(bucket.getFundAmount().add(bucket.getAccountAmount())));
+        return dto;
     }
 
     /**
@@ -907,7 +1104,7 @@ public class OutpatientDailySettlementMapperImpl implements OutpatientDailySettl
     /**
      * 装配下半区汇总（公共头 + 费用性质动态块；BR-OP-DCL-010/011）。
      *
-     * @param displayItems            展示过滤后的候选行
+     * @param displayItems            展示过滤后的候选行（已剔除工伤）
      * @param paymentById             paymentId → 支付读模型（人次去重取 patientId）
      * @param channelAmounts          自付渠道带符号合计
      * @param recDetailsByPaymentId   paymentId → 自付子明细

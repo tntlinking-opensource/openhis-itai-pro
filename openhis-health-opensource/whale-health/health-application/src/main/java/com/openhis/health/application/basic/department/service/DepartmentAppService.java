@@ -491,6 +491,10 @@ public class DepartmentAppService {
 
     /**
      * 领域组织新建后：按 {@link OrganizationUnitLinkCode} 同步 {@link OrganizationUnit}。
+     *
+     * <p>须含软删行查找：{@code whale_organization_units.code} 唯一约束含已删行；
+     * 若仅 {@code findOptionalByCode}（软删过滤）会漏掉已删 OU，随后 INSERT 同 code 触发
+     * {@code whale_organization_units_code_key}。与 {@code OrganizationUnitLinkSyncService} 同口径。</p>
      */
     private void syncCreateOu(Organization organization) {
         if (organization == null) {
@@ -500,7 +504,9 @@ public class DepartmentAppService {
         if (code == null || code.isBlank()) {
             return;
         }
-        Optional<OrganizationUnit> existingByCode = organizationUnitAppService.findOptionalByCode(code);
+        // Pre：含软删按 code 找 OU，避免唯一键冲突后重插
+        Optional<OrganizationUnit> existingByCode =
+            organizationUnitAppService.findOptionalByCodeIncludingDeleted(code);
         if (existingByCode.isPresent()) {
             OrganizationUnit ou = existingByCode.get();
             applyOrganizationToOu(organization, ou);
@@ -529,7 +535,9 @@ public class DepartmentAppService {
         if (newCode == null || newCode.isBlank()) {
             return;
         }
-        Optional<OrganizationUnit> existingByNewCode = organizationUnitAppService.findOptionalByCode(newCode);
+        // Pre：含软删按新 code 找 OU（同 syncCreateOu，防唯一键重插）
+        Optional<OrganizationUnit> existingByNewCode =
+            organizationUnitAppService.findOptionalByCodeIncludingDeleted(newCode);
         if (existingByNewCode.isPresent()) {
             assertOuCodeOwnedByOrganization(existingByNewCode.get(), organization.getId(), newCode);
             OrganizationUnit ou = existingByNewCode.get();
@@ -541,7 +549,8 @@ public class DepartmentAppService {
         if (previousSnapshot != null) {
             String oldCode = OrganizationUnitLinkCode.fromOrganization(previousSnapshot);
             if (oldCode != null && !oldCode.isBlank() && !oldCode.equals(newCode)) {
-                Optional<OrganizationUnit> existingByOldCode = organizationUnitAppService.findOptionalByCode(oldCode);
+                Optional<OrganizationUnit> existingByOldCode =
+                    organizationUnitAppService.findOptionalByCodeIncludingDeleted(oldCode);
                 if (existingByOldCode.isPresent()) {
                     OrganizationUnit ou = existingByOldCode.get();
                     ou.setCode(newCode);

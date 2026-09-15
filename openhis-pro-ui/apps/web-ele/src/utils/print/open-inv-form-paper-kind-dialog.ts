@@ -1,21 +1,23 @@
 import type { App } from 'vue';
-import type { InvFormPaperKind } from './form-print-preference';
+import type { InvFormPaperKind, InvFormTripleSpec } from './form-print-preference';
 
 import { createApp } from 'vue';
 
 import ElementPlus from 'element-plus';
 
 import InvFormPaperKindDialogHost from './components/inv-form-paper-kind-dialog-host.vue';
-import { INV_FORM_PAPER_KIND } from './form-print-preference';
+import { INV_FORM_PAPER_KIND, INV_FORM_TRIPLE_SPEC } from './form-print-preference';
 
 export interface OpenInvFormPaperKindDialogOptions {
   initialPaperKind?: InvFormPaperKind;
+  initialTripleSpec?: InvFormTripleSpec;
   title?: string;
   confirmText?: string;
 }
 
 export interface InvFormPaperKindDialogResult {
   paperKind: InvFormPaperKind;
+  tripleSpec: InvFormTripleSpec;
 }
 
 /** 函数式打开库房单据纸张选择（打印前） */
@@ -39,6 +41,7 @@ export function openInvFormPaperKindDialog(
       title: options.title ?? '选择纸张',
       confirmText: options.confirmText ?? '确定',
       initialPaperKind: options.initialPaperKind ?? INV_FORM_PAPER_KIND.triple,
+      initialTripleSpec: options.initialTripleSpec ?? INV_FORM_TRIPLE_SPEC.third,
       onConfirm: (payload: InvFormPaperKindDialogResult) => {
         cleanup();
         resolve(payload);

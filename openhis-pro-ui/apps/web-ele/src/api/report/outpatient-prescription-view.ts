@@ -118,6 +118,11 @@ export interface OutpatientPrescriptionDrugLineDto {
   doseUnitCode?: string;
   doseUnitText?: string;
   dispensePerDuration?: number;
+  /**
+   * 中药付数（方头 chinese_herbs_dose_quantity）。
+   * 勿与 quantity（单剂×付数的请求总量）混淆。
+   */
+  chineseHerbsDoseQuantity?: null | number | string;
   dosageInstructionCode?: string;
   dosageInstructionText?: string;
   skinTestFlag?: boolean;
@@ -152,6 +157,8 @@ export interface OutpatientPrescriptionSummaryRow {
   medTypeText?: string;
   contractCategoryText?: string;
   infusionPrescriptionFlag?: boolean;
+  /** 中药付数（方头；详情展示用） */
+  chineseHerbsDoseQuantity?: null | number | string;
   lineCount: number;
   /** 点评 enrichment：PENDING=无有效行；REVIEWED=已点评（逻辑用 code） */
   reviewStatusEnum?: string;
@@ -159,6 +166,8 @@ export interface OutpatientPrescriptionSummaryRow {
   reviewStatusText?: string;
   /** 点评主键（撤销用） */
   reviewId?: string;
+  /** 点评业务号（PRV；详情「点评编号」） */
+  reviewBusNo?: string;
   reasonableFlag?: boolean;
   reasonableText?: string;
   reviewReason?: string;
@@ -172,7 +181,6 @@ export interface PageOutpatientPrescriptionViewResponse {
   totalCount?: number;
   pageNo?: number;
   pageSize?: number;
-  records?: OutpatientPrescriptionDrugLineDto[];
   content?: OutpatientPrescriptionDrugLineDto[];
   /** 总处方量：筛选窗内处方号去重（后端 COUNT DISTINCT） */
   prescriptionCount?: number;
@@ -180,7 +188,7 @@ export interface PageOutpatientPrescriptionViewResponse {
   visitPatientCount?: number;
 }
 
-/** 页初始化：筛选项与默认本月开方日期。 */
+/** 页初始化：筛选项与默认本年开方日期。 */
 export async function loadOutpatientPrescriptionViewPageInitApi() {
   return reportPost<LoadOutpatientPrescriptionViewPageInitResponse>(
     `${BASE}/loadOutpatientPharmacyPrescriptionQueryPageInit`,
@@ -199,7 +207,7 @@ export async function pageOutpatientPrescriptionViewApi(
   const { content, totalCount } = parsePagedRowsFromApiData<OutpatientPrescriptionDrugLineDto>(res);
   return {
     ...res,
-    records: content.length > 0 ? content : (res.records ?? []),
+    records: content,
     total: totalCount || Number(res.total ?? res.totalCount ?? 0),
     prescriptionCount: Number(res.prescriptionCount ?? 0),
     visitPatientCount: Number(res.visitPatientCount ?? 0),

@@ -84,7 +84,7 @@ public class TemperatureSheetGridAssembler {
             TemperatureSheetGridRowDto row = new TemperatureSheetGridRowDto();
             row.setRecordDate(cursor);
             List<TemperatureSheetGridSlotCellDto> slotCells = new ArrayList<>();
-            // 图表仍 6 列：同日落在该测量区间的记录取最晚一条
+            // 图表仍 6 列：同日就近落在该时次的记录取最晚一条
             for (String timeSlot : TemperatureSheetRecordedAtResolver.TIME_SLOTS) {
                 VitalSignHeaderQueryModel header = resolveLatestHeaderInChartSlot(cursor, timeSlot, headers);
                 slotCells.add(buildSlotCell(timeSlot, header, detailsByHeaderId));
@@ -171,7 +171,7 @@ public class TemperatureSheetGridAssembler {
     }
 
     /**
-     * 取指定日、图表槽测量区间内最晚的一条体征头。
+     * 取指定日、就近落在该图表槽的最晚一条体征头。
      *
      * @param recordDate 业务日
      * @param chartSlot  图表槽
@@ -247,6 +247,8 @@ public class TemperatureSheetGridAssembler {
             return cell;
         }
         cell.setVitalSignId(header.getId());
+        // 带出真实时分，前端描点按 30 分界就近落格，不依赖本槽 code
+        cell.setRecordTime(temperatureSheetRecordedAtResolver.formatRecordTimeHm(header.getRecordedAt()));
         cell.setDetailItems(TemperatureSheetDetailItemHelper.toItemDtos(
             detailsByHeaderId.get(header.getId()),
             header.getRemark()));

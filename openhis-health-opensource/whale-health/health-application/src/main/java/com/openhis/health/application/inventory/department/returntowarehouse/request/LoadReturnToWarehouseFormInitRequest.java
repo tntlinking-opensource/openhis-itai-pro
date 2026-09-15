@@ -13,7 +13,4 @@ import lombok.Setter;
 @Getter
 @Setter
 public class LoadReturnToWarehouseFormInitRequest {
-
-    /** 机构主键（可选；通常由服务端会话解析，前端可不传）。 */
-    private Long organizationId;
 }

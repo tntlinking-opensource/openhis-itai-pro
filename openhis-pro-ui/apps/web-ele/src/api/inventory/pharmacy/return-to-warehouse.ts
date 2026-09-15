@@ -27,9 +27,7 @@ export interface WarehouseLocationOptionDto {
   displayName?: string;
 }
 
-export interface LoadReturnToWarehouseFormInitRequest {
-  organizationId?: number;
-}
+export interface LoadReturnToWarehouseFormInitRequest {}
 
 export interface LoadReturnToWarehouseFormInitResponse {
   pharmacyLocationOptions: PharmacyLocationOptionDto[];
@@ -51,14 +49,11 @@ export interface ReturnToWarehouseListRowDto {
   itemTable?: string;
   itemQuantity?: number;
   unitCode?: string;
-  totalPrice?: number;
   totalAmount?: number;
   applicantId?: number;
   creatorName?: string;
-  approverId?: number;
   approverName?: string;
   applyTime?: string;
-  approvalTime?: string;
 }
 
 export interface PageReturnToWarehousesRequest {
@@ -74,7 +69,6 @@ export interface PageReturnToWarehousesRequest {
 export interface PageReturnToWarehousesResponse {
   total?: number;
   totalCount?: number;
-  records?: ReturnToWarehouseListRowDto[];
   content?: ReturnToWarehouseListRowDto[];
 }
 
@@ -91,12 +85,28 @@ export interface ReturnToWarehouseDetailLineDto {
   /** 计量单位展示名；无则勿用 unitCode 冒充 */
   unitCodeDictText?: string;
   lotNumber?: string;
+  /** 效期止（YYYY-MM-DD 或 datetime）；打印有效期列 */
+  endTime?: string;
+  /** 效期起；打印不用，仅对齐后端详情 */
+  startTime?: string;
   traceNo?: string;
+  occurrenceTime?: string;
+  reason?: string;
+  remake?: string;
   price?: number;
   totalPrice?: number;
   productName?: string;
-  /** 产品目录（含 unitBands，详情单位回显用） */
-  productCatalog?: { unitBands?: unknown; unitBandsJson?: unknown };
+  /** 规格（读模型 totalVolume） */
+  specification?: string;
+  /** 厂家/产地（读模型富化） */
+  manufacturer?: string;
+  /** 产品目录（含 unitBands / totalVolume，详情单位回显用） */
+  productCatalog?: {
+    unitBands?: unknown;
+    unitBandsJson?: unknown;
+    totalVolume?: string;
+    productBusNo?: string;
+  };
 }
 
 export interface GetReturnToWarehouseDetailResponse {
@@ -182,14 +192,10 @@ export interface WithdrawReturnToWarehouseApprovalResponse {
 
 export interface AgreeReturnToWarehouseRequest {
   busNo: string;
-  approverId?: string;
-  approvalClock?: string;
 }
 
 export interface RejectReturnToWarehouseRequest {
   busNo: string;
-  approverId?: string;
-  approvalClock?: string;
   rejectReason?: string;
 }
 

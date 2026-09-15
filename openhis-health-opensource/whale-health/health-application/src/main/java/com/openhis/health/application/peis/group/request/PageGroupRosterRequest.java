@@ -17,7 +17,10 @@ public class PageGroupRosterRequest extends AbstractHealthPageRequest {
 
     private static final long serialVersionUID = 1L;
 
-    /** 批次主键。 */
+    /** 合同主键（按合同查名册时必填）。 */
+    private Long contractId;
+
+    /** 体检分组主键（可选筛选）。 */
     private Long batchId;
 
     /** 支付状态过滤（可选）。 */

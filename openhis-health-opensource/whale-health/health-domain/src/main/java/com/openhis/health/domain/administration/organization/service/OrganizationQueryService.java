@@ -189,6 +189,19 @@ public class OrganizationQueryService {
     }
 
     /**
+     * 当前租户启用态医院列表（读 {@code medins_type} 等医院级属性）。
+     *
+     * <p>仅本聚合 Repository；含租户裁剪。病案首页中医信息等按医院节点机构类型判定。</p>
+     *
+     * @return 启用医院；无则空列表
+     */
+    public List<Organization> listActiveHospitals() {
+        return scopeToCurrentTenant(organizationRepository.findAllByTypeEnumAndStatusEnumIn(
+            OrganizationType.HOSPITAL.getCode(),
+            List.of(PublicationStatus.ACTIVE.getCode())));
+    }
+
+    /**
      * 判断机构是否允许作废：若仍存在启用子机构则不可作废，防止断树或遗留悬挂数据。
      *
      * @param organizationId 待判断机构主键
@@ -417,6 +430,110 @@ public class OrganizationQueryService {
             }
         }
         return idByBusNo;
+    }
+
+    /**
+     * 解析卫统 N041 入/出院科别码（机构维护 {@code caty}，对齐国基 inHosDeptype/outDeptype）。
+     *
+     * <p>首页 {@code adm_caty_code}/{@code dscg_caty_code} 常存医保 {@code yb_no}（如 A03），
+     * 直报要的是卫统科别数字码（如 04）。禁止把医保码原样写入 N041。</p>
+     *
+     * <p>解析顺序：按 yb_no 命中取 caty → 按 bus_no 命中取 caty → 入参已是纯数字卫统码则原样；
+     * 否则空串（宁可缺报，勿导错码表）。</p>
+     *
+     * @param rawHomepageCaty 首页科别码（yb_no / bus_no / 已是卫统数字码）
+     * @return 卫统科别码；无法可靠解析则空串
+     */
+    public String resolveWeistatCatyCode(String rawHomepageCaty) {
+        String raw = StringUtils.trimToNull(rawHomepageCaty);
+        if (raw == null) {
+            return "";
+        }
+        // Pre：先按医保码反查科室 caty（首页自动带入多为 yb_no）
+        List<Organization> byYb = scopeToCurrentTenant(organizationRepository.findByYbNoIn(List.of(raw)));
+        for (Organization organization : byYb) {
+            String caty = StringUtils.trimToNull(organization.getCaty());
+            if (caty != null) {
+                return caty;
+            }
+        }
+        // Pre：再按院内 bus_no 反查（误存层级码时）
+        List<Organization> byBus = scopeToCurrentTenant(organizationRepository.findByBusNoIn(List.of(raw)));
+        for (Organization organization : byBus) {
+            String caty = StringUtils.trimToNull(organization.getCaty());
+            if (caty != null) {
+                return caty;
+            }
+        }
+        // 已是卫统数字科别（国基样例 04）
+        if (looksLikeWeistatDeptCaty(raw)) {
+            return raw;
+        }
+        // 医保码等无法映射时不回落原文，避免 N041 写入 A03 这类错体系码
+        return "";
+    }
+
+    /**
+     * 是否像卫统科别数字码（1～6 位纯数字，如 {@code 04}）。
+     *
+     * @param raw 候选
+     * @return true 表示可作 N041 RYKB/CYKB 原文
+     */
+    private boolean looksLikeWeistatDeptCaty(String raw) {
+        if (raw == null || raw.isEmpty()) {
+            return false;
+        }
+        if (raw.length() > 6) {
+            return false;
+        }
+        for (int i = 0; i < raw.length(); i++) {
+            char c = raw.charAt(i);
+            if (c < '0' || c > '9') {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * 按院内 {@code bus_no} 批量取科室医保编码 {@code yb_no}（病案 4401/4101A 科别出站）。
+     *
+     * <p>仅本聚合 Repository；无 {@code yb_no} 的机构不写入映射。</p>
+     *
+     * @param busNos 院内业务号集合；空则返回空 Map
+     * @return busNo → yb_no；未命中或不含医保编码不写入
+     */
+    public Map<String, String> mapYbNoByBusNos(Collection<String> busNos) {
+        Map<String, String> ybNoByBusNo = new HashMap<>();
+        if (busNos == null || busNos.isEmpty()) {
+            return ybNoByBusNo;
+        }
+        Set<String> distinctBusNos = new LinkedHashSet<>();
+        for (String busNo : busNos) {
+            if (busNo == null || busNo.isBlank()) {
+                continue;
+            }
+            distinctBusNos.add(busNo.trim());
+        }
+        if (distinctBusNos.isEmpty()) {
+            return ybNoByBusNo;
+        }
+        for (Organization organization : scopeToCurrentTenant(organizationRepository.findByBusNoIn(distinctBusNos))) {
+            if (organization == null) {
+                continue;
+            }
+            if (organization.getBusNo() == null || organization.getBusNo().isBlank()) {
+                continue;
+            }
+            if (organization.getYbNo() == null || organization.getYbNo().isBlank()) {
+                continue;
+            }
+            String key = organization.getBusNo().trim();
+            if (!ybNoByBusNo.containsKey(key)) {
+                ybNoByBusNo.put(key, organization.getYbNo().trim());
+            }
+        }
+        return ybNoByBusNo;
     }
 
     /**

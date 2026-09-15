@@ -10,6 +10,7 @@ import { computed, ref, watch } from 'vue';
 
 import { ElMessage, ElMessageBox } from 'element-plus';
 
+import { httpSkipNurseStationOrderSlots } from '#/api/inpatient/nurse-station/inpatient-nurse-station-order-execute.http';
 import { useRequest } from '#/hooks/use-request';
 
 import { submitClearDischargedBed } from '../services/clear-discharged-bed';
@@ -24,9 +25,11 @@ import {
 } from '../services/list-missing-dispense-trace-tips';
 import {
   blockingReasonToLabel,
+  collectLongPendingSkipSlots,
   encounterStatusToDischargeLabel,
   filterDischargeExecutionRows,
   formatDischargeReqTime,
+  formatPendingPlanTimes,
   summarizeMedicationRows,
   therapyEnumToLabel,
 } from '../services/map-discharge-pending';
@@ -36,6 +39,7 @@ type TherapyFilter = 'all' | 'long' | 'temporary';
 interface Props {
   patient?: PatientItem | null;
   onRefresh?: () => void | Promise<void>;
+  onGoToOrderExecute?: () => void | Promise<void>;
 }
 
 defineOptions({
@@ -45,6 +49,7 @@ defineOptions({
 const props = withDefaults(defineProps<Props>(), {
   patient: null,
   onRefresh: undefined,
+  onGoToOrderExecute: undefined,
 });
 
 const ENCOUNTER_STATUS_ON_HOLD = 'ON_HOLD';
@@ -79,13 +84,20 @@ const clearBedRequest = useRequest(submitClearDischargedBed, {
   manual: true,
   showErrorMessage: false,
 });
+const skipPendingRequest = useRequest(httpSkipNurseStationOrderSlots, {
+  manual: true,
+  showErrorMessage: false,
+});
 
 const encounterId = computed(() => String(props.patient?.id ?? '').trim());
 const listLoading = computed(
   () => executionsRequest.loading.value || medicationsRequest.loading.value,
 );
 const actionLoading = computed(
-  () => dischargeRequest.loading.value || clearBedRequest.loading.value,
+  () =>
+    dischargeRequest.loading.value ||
+    clearBedRequest.loading.value ||
+    skipPendingRequest.loading.value,
 );
 
 /** 出 Tab 已选中床位图内患者 */
@@ -121,6 +133,14 @@ const filteredExecutionRows = computed(() =>
 );
 
 const medicationSummary = computed(() => summarizeMedicationRows(medicationRows.value));
+
+/** 与门禁同源、可批量不执行的剩余时点 */
+const longPendingSkipSlots = computed(() => collectLongPendingSkipSlots(executionRows.value));
+
+/** 待出院且仍有 LONG_PENDING_SLOTS 时允许批量不执行 */
+const skipPendingEnabled = computed(
+  () => dischargeEnabled.value && longPendingSkipSlots.value.length > 0,
+);
 
 /** 从接口错误体提取用户提示 */
 function readRequestErrorMessage(error: unknown, fallback: string): string {
@@ -226,6 +246,44 @@ async function handleClearBed() {
   }
 }
 
+/** 跳转医嘱执行页查看历史计划点 */
+function handleGoToOrderExecute() {
+  void props.onGoToOrderExecute?.();
+}
+
+/** 对本患者 LONG_PENDING_SLOTS 剩余时点批量登记不执行（复用 IF-IP-EXE-04） */
+async function handleSkipRemainingPendingSlots() {
+  if (!skipPendingEnabled.value) return;
+  const items = longPendingSkipSlots.value;
+  let statusReasonText = '';
+  try {
+    const { value } = await ElMessageBox.prompt(
+      `确认将 ${items.length} 个待执行时点登记为不执行？登记后才可办理出院。请填写不执行原因：`,
+      '批量不执行剩余时点',
+      {
+        type: 'warning',
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        inputType: 'textarea',
+        inputPlaceholder: '不执行原因',
+        inputValidator: (val) => (val?.trim() ? true : '请填写不执行原因'),
+      },
+    );
+    statusReasonText = value.trim();
+  } catch {
+    return;
+  }
+  try {
+    const res = await skipPendingRequest.run({ items, statusReasonText });
+    const n = res?.processedCount ?? items.length;
+    ElMessage.success(`已登记不执行 ${n} 个计划点`);
+    await loadDischargePending();
+  } catch {
+    // 业务错误文案由全局 HTTP 拦截器统一弹出；刷新待办避免与门禁口径不一致
+    await loadDischargePending();
+  }
+}
+
 watch(
   encounterId,
   () => {
@@ -266,6 +324,17 @@ watch(
         </div>
         <div class="discharge-toolbar__right">
           <ElButton plain @click="loadDischargePending">刷新待办</ElButton>
+          <ElButton plain :disabled="!hasDischargePatient" @click="handleGoToOrderExecute">
+            去执行
+          </ElButton>
+          <ElButton
+            type="warning"
+            plain
+            :disabled="!skipPendingEnabled"
+            @click="handleSkipRemainingPendingSlots"
+          >
+            批量不执行剩余时点
+          </ElButton>
           <ElButton type="success" :disabled="!dischargeEnabled" @click="handleDischarge">
             办理出院
           </ElButton>
@@ -308,6 +377,11 @@ watch(
             <ElTableColumn label="阻塞原因" min-width="140">
               <template #default="{ row }">
                 {{ blockingReasonToLabel(row.blockingReason) }}
+              </template>
+            </ElTableColumn>
+            <ElTableColumn label="待执行时点" min-width="200" show-overflow-tooltip>
+              <template #default="{ row }">
+                {{ formatPendingPlanTimes(row.pendingPlanTimes) }}
               </template>
             </ElTableColumn>
           </ElTable>

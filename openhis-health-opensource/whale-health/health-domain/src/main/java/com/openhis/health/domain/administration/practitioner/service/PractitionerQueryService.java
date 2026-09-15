@@ -21,6 +21,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * 医务人员读侧查询服务。
@@ -110,6 +111,17 @@ public class PractitionerQueryService {
     }
 
     /**
+     * 按院内工号加载在职医护。
+     */
+    public Optional<Practitioner> findActiveByBusNo(String busNo) {
+        if (StringUtils.isEmpty(busNo)) {
+            return Optional.empty();
+        }
+        return practitionerRepository.findFirstByBusNoAndIsDeletedFalse(busNo.trim())
+            .filter(practitioner -> PublicationStatus.ACTIVE.getCode().equals(practitioner.getStatusEnum()));
+    }
+
+    /**
      * 按绑定的系统用户主键加载医务人员主档；未绑定或已删除则返回 {@code null}。
      *
      * @param userId 系统用户主键
@@ -123,9 +135,12 @@ public class PractitionerQueryService {
     }
 
     /**
-     * 批量解析流水经办人展示名（{@code entererId} 为医务人员主键；存量数据可能仍为系统用户 ID）。
+     * 批量解析流水经办人展示名（{@code entererId} 为 {@code adm_practitioner.id}，**BR-OPC-016**）。
      *
-     * @param entererIds 支付头 {@code enterer_id} 集合
+     * <p>漏网 {@code whale_users.id} 由 Flyway {@code V23__backfill_enterer_id_practitioner} 回填；
+     * 本方法<strong>不再</strong>按绑定用户主键二次反查。</p>
+     *
+     * @param entererIds 支付头 / 收费明细 {@code enterer_id} 集合
      * @return entererId → 姓名；未命中则不写入该键
      */
     public Map<Long, String> mapDisplayNameByEntererIds(java.util.Collection<Long> entererIds) {
@@ -142,31 +157,14 @@ public class PractitionerQueryService {
             return java.util.Collections.emptyMap();
         }
         java.util.Map<Long, String> nameByEntererId = new java.util.HashMap<>(distinct.size() * 2);
-        java.util.LinkedHashSet<Long> unresolved = new java.util.LinkedHashSet<>(distinct);
-        // Pre：一次按主键批量加载，禁止 findById 循环 N+1
+        // Pre：一次按医务人员主键批量加载，禁止 findById 循环 N+1
         List<Practitioner> byPractitionerId = this.findAllByIds(distinct);
         for (Practitioner practitioner : byPractitionerId) {
             if (practitioner == null || practitioner.getId() == null) {
                 continue;
             }
-            unresolved.remove(practitioner.getId());
             if (StringUtils.isNotEmpty(practitioner.getName())) {
                 nameByEntererId.put(practitioner.getId(), practitioner.getName());
-            }
-        }
-        if (!unresolved.isEmpty()) {
-            // Pre：存量 enterer_id 可能仍为系统用户 ID，再按 userId IN 补齐
-            List<Practitioner> byUserId =
-                IdInQueryChunkSupport.loadByIdInChunks(
-                    unresolved,
-                    chunkIds -> practitionerRepository.findAllByUserIdInAndIsDeletedFalse(chunkIds));
-            for (Practitioner practitioner : byUserId) {
-                if (practitioner == null || practitioner.getUserId() == null) {
-                    continue;
-                }
-                if (StringUtils.isNotEmpty(practitioner.getName())) {
-                    nameByEntererId.put(practitioner.getUserId(), practitioner.getName());
-                }
             }
         }
         return nameByEntererId;

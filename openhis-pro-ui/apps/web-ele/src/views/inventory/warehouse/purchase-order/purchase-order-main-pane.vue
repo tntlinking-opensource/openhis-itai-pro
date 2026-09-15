@@ -1113,7 +1113,7 @@ async function handleApprove() {
   const busNo = currentPersistedBusNo();
   if (!busNo) return;
   try {
-    await agreePurchaseOrderApi({ busNo, approvalClock: nowIsoLocal() });
+    await agreePurchaseOrderApi({ busNo });
     ElMessage.success('审批同意');
     emit('documentChanged', { busNo });
   } catch {
@@ -1138,7 +1138,7 @@ async function handleReject() {
     return;
   }
   try {
-    await rejectPurchaseOrderApi({ busNo, rejectReason, approvalClock: nowIsoLocal() });
+    await rejectPurchaseOrderApi({ busNo, rejectReason });
     ElMessage.success('已驳回');
     emit('documentChanged', { busNo });
   } catch {

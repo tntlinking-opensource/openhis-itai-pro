@@ -4,6 +4,7 @@
  */
 package com.openhis.health.domain.custom.specimentubemerge.service;
 
+import com.openhis.health.domain.administration.labdevice.queries.model.LabDeviceDetailQueryModel;
 import com.openhis.health.domain.administration.labdevice.service.LabDeviceQueryService;
 import com.openhis.health.domain.custom.specimentubemerge.command.AlignSpecimenTubeMergeCommand;
 import com.openhis.health.domain.custom.specimentubemerge.command.AlignSpecimenTubeMergeLineCommand;
@@ -22,12 +23,16 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
  * 标本合管配置写侧领域服务（DM-CUS-014）。
  *
  * <p>全量对齐语义：入参集为某设备下的绑定全集；缺席旧行软删。设备存在性经 {@link LabDeviceQueryService} 校验（B.6.4）。</p>
+ *
+ * <p>BR-STM-002：仅<strong>检验项目</strong>（{@code wkf_activity_definition}，不含采血费）跨设备全局唯一；
+ * 耗材与采血费允许绑定到多台合管设备。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -56,7 +61,8 @@ public class SpecimenTubeMergeDomainService {
             items = new ArrayList<>();
         }
         Set<String> seenTargets = new HashSet<>();
-        // 前置校验：入参行内目标合法、设备内不重复、全局未被其它设备占用
+        Long bloodFeeActivityId = command.getBloodCollectionFeeActivityId();
+        // 前置校验：入参行内目标合法、设备内不重复；检验项目（非采血费）全局未被其它设备占用
         for (AlignSpecimenTubeMergeLineCommand item : items) {
             if (item == null || StringUtils.isEmpty(item.getTargetTable()) || item.getTargetId() == null) {
                 throw new BusinessException(
@@ -74,12 +80,9 @@ public class SpecimenTubeMergeDomainService {
                 item.setQuantity(null);
                 item.setUnitCode(null);
             }
-            // 全局唯一：目标已被其它设备占用则拒绝
-            if (repository.existsByTargetTableAndTargetIdAndIsDeletedFalseAndDeviceIdNot(
-                targetTable, targetId, command.getDeviceId())) {
-                throw new BusinessException(
-                    ErrorCodeConstants.SPECIMEN_TUBE_MERGE_TARGET_CONFLICT,
-                    "合管绑定目标已被其它设备占用");
+            // BR-STM-002：仅检验项目跨设备唯一；耗材、采血费可多设备复用
+            if (this.requiresGlobalUniqueTarget(targetTable, targetId, bloodFeeActivityId)) {
+                this.assertActivityNotBoundToOtherDevice(targetTable, targetId, command.getDeviceId());
             }
         }
 
@@ -159,5 +162,62 @@ public class SpecimenTubeMergeDomainService {
             row.markDeleted(command.getOperatorId());
         }
         repository.saveAll(existing);
+    }
+
+    /**
+     * 是否须做跨设备全局唯一：仅检验项目 activity，且不是采血费。
+     *
+     * @param targetTable        目标表
+     * @param targetId           目标主键
+     * @param bloodFeeActivityId 采血费 activity 主键；null 表示本批未勾选采血费
+     * @return true 须校验全局唯一
+     */
+    private boolean requiresGlobalUniqueTarget(
+        String targetTable,
+        Long targetId,
+        Long bloodFeeActivityId
+    ) {
+        if (!TableNameConstants.WKF_ACTIVITY_DEFINITION.equals(targetTable)) {
+            return false;
+        }
+        if (bloodFeeActivityId != null && Objects.equals(bloodFeeActivityId, targetId)) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * 检验项目已被其它设备占用时拒绝，并带上占用设备名称便于前端理解。
+     *
+     * @param targetTable 目标表
+     * @param targetId    目标主键
+     * @param deviceId    当前保存设备（排除自身）
+     */
+    private void assertActivityNotBoundToOtherDevice(String targetTable, Long targetId, Long deviceId) {
+        if (!repository.existsByTargetTableAndTargetIdAndIsDeletedFalseAndDeviceIdNot(
+            targetTable, targetId, deviceId)) {
+            return;
+        }
+        String occupiedBy = "其它设备";
+        // 用列表反查占用设备名，避免 Optional 单行在脏数据下 NonUnique
+        List<SpecimenTubeMerge> conflicts =
+            repository.findByTargetTableAndTargetIdInAndIsDeletedFalse(targetTable, List.of(targetId));
+        for (SpecimenTubeMerge conflict : conflicts) {
+            if (conflict == null || conflict.getDeviceId() == null) {
+                continue;
+            }
+            if (Objects.equals(conflict.getDeviceId(), deviceId)) {
+                continue;
+            }
+            LabDeviceDetailQueryModel otherDevice =
+                labDeviceQueryService.getLabDevice(conflict.getDeviceId());
+            if (otherDevice != null && StringUtils.isNotEmpty(otherDevice.getName())) {
+                occupiedBy = "设备「" + otherDevice.getName().trim() + "」";
+            }
+            break;
+        }
+        throw new BusinessException(
+            ErrorCodeConstants.SPECIMEN_TUBE_MERGE_TARGET_CONFLICT,
+            "该检验项目已绑定到" + occupiedBy + "，同一检验项目不能配置到多台合管设备");
     }
 }

@@ -49,13 +49,13 @@ import java.util.Set;
  * {@link MedicationRequestDomainService#splitPrescription} 仅回写 {@code prescription_no} 与 {@code rx_type_code}
  * （不改医嘱状态、不改收费状态）。住院路径不调用本装配器。</p>
  *
- * <p>参与集 = 本批待签发药品草稿 ∪ 本就诊已签发（ACTIVE）且未 SETTLED 的<strong>非中药饮片</strong>行，
+ * <p>参与集 = 本批待签发药品草稿 ∪ 本就诊已签发（ACTIVE）且未 SETTLED/REFUNDING/REFUNDED 的<strong>非中药饮片</strong>行，
  * 用于防止「开一个签一个」绕过分方；<b>禁止</b>给未纳入本批发签的其它 DRAFT 写处方号
- * （「签发以后才有方」）。</p>
+ * （「签发以后才有方」）。退费中/已退款与已结算同属退出重分方，避免原处方号被改写。</p>
  *
  * <p><b>中药隔离（BR-TCM-ISO / BR-ORD-023）</b>：{@code tcmFlag=true} 的中药饮片<strong>禁止</strong>进入本装配器。
  * 中药处方号由 IF-DOR-37 {@code TcmRxSignAssembler} 按方标识取号；西药签发不得改写已签发中药的
- * {@code prescription_no}，否则会与已落库收费行/代煎 companion 处方号漂移。</p>
+ * {@code prescription_no}，否则会与中药代煎 companion 等方级费用快照漂移（收费行药品号以结算盖章为准）。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -106,7 +106,7 @@ public class OutpatientPrescriptionSplitAssembler {
     /**
      * 收集参与西药/中成药分方的药品行并装配快照。
      *
-     * <p>纳入：本批发签目标中仍为 DRAFT 的非中药行；以及本就诊 ACTIVE 且未 SETTLED 的非中药行。
+     * <p>纳入：本批发签目标中仍为 DRAFT 的非中药行；以及本就诊 ACTIVE 且未 SETTLED/REFUNDING/REFUNDED 的非中药行。
      * 排除：{@code tcmFlag=true} 中药饮片（中药手动分方，禁止被西药签发改号）；
      * 未在本批发签集合内的其它 DRAFT（避免未签发却落处方号）。</p>
      *
@@ -279,7 +279,6 @@ public class OutpatientPrescriptionSplitAssembler {
         }
         Set<Long> settledRequestIds = new LinkedHashSet<>();
         Map<Long, BigDecimal> chargeTotalByRequestId = new HashMap<>();
-        String settledCode = ChargeItemStatus.SETTLED.getCode();
         for (ChargeItem chargeItem : chargeItems) {
             if (chargeItem == null || Boolean.TRUE.equals(chargeItem.getIsDeleted())) {
                 continue;
@@ -288,8 +287,8 @@ public class OutpatientPrescriptionSplitAssembler {
             if (medicationRequestId == null) {
                 continue;
             }
-            if (settledCode.equals(chargeItem.getStatusEnum())) {
-                // 任一收费行已结算则整单药品申请退出分方
+            // 已结算 / 退款中 / 已退款：退出重分方，避免退费申请窗口内被同诊再签发改写原处方号。
+            if (isChargeSettledLikeForPrescriptionSplit(chargeItem.getStatusEnum())) {
                 settledRequestIds.add(medicationRequestId);
                 continue;
             }
@@ -374,10 +373,31 @@ public class OutpatientPrescriptionSplitAssembler {
     }
 
     /**
+     * 收费行是否应按「已结算类」退出西药重分方参与集。
+     *
+     * <p>含 {@code SETTLED}、{@code REFUNDING}、{@code REFUNDED}：退费申请窗口内不得因同诊再签发改写原处方号。</p>
+     *
+     * @param statusEnum 收费明细状态码
+     * @return true 表示退出重分方
+     */
+    private static boolean isChargeSettledLikeForPrescriptionSplit(String statusEnum) {
+        if (ChargeItemStatus.SETTLED.getCode().equals(statusEnum)) {
+            return true;
+        }
+        if (ChargeItemStatus.REFUNDING.getCode().equals(statusEnum)) {
+            return true;
+        }
+        if (ChargeItemStatus.REFUNDED.getCode().equals(statusEnum)) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
      * 从收费行锚点解析药品申请主键。
      *
-     * @param chargeItem             收费行
-     * @param dispenseIdToRequestId  发放主键 → 药品申请主键
+     * @param chargeItem            收费行
+     * @param dispenseIdToRequestId 发放主键 → 药品申请主键
      * @return 药品申请主键；非药品锚点时返回 null
      */
     private static Long resolveMedicationRequestIdFromCharge(

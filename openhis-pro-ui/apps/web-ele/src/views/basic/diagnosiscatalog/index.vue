@@ -103,6 +103,8 @@ const queryParams = ref({
   pageSize: 10,
   keyword: '',
   sourceEnum: undefined as string | undefined,
+  /** 启用状态；空字符串表示「全部」 */
+  statusEnum: '' as string,
 });
 
 const tableData = ref<DiagnosisCatalogItem[]>([]);
@@ -121,62 +123,107 @@ const diagnosisCategoryList = ref<Array<{ label: string; value: number | string 
 const statusFlagOptions = ref<Array<{ label: string; value: number | string }>>([]);
 const ybDiagTypes = ref<Array<{ label: string; value: number | string }>>([]);
 
-const tableColumns: TableColumn[] = [
-  {
-    type: 'selection',
-    fixed: 'left',
-    width: 50,
-    align: 'center',
-  },
-  {
-    type: 'index',
-    label: '序号',
-    width: 60,
-  },
-  {
-    prop: 'conditionCode',
-    label: '医保编码',
-    width: 150,
-    showOverflowTooltip: true,
-  },
-  {
-    prop: 'name',
-    label: '医保诊断名称',
-    showOverflowTooltip: true,
-  },
-  {
-    prop: 'clinicCode',
-    label: '国临码',
-    width: 140,
-    showOverflowTooltip: true,
-  },
-  {
-    prop: 'ybNo',
-    label: '国临诊断名称',
-    width: 140,
-    showOverflowTooltip: true,
-  },
-  {
-    prop: 'statusEnum',
-    label: '状态',
-    width: 90,
-    slot: 'statusEnum',
-  },
-  {
-    prop: 'description',
-    label: '说明',
-    showOverflowTooltip: true,
-  },
-  {
-    prop: 'action',
-    label: '操作',
-    fixed: 'right',
-    slot: 'action',
-    width: 150,
-  },
-];
+/** 当前侧栏是否选中国家临床版 2.0（列表列改为国临主码 + 医保对照） */
+const isClinicalV2Source = computed(() => queryParams.value.sourceEnum === SOURCE_CLINICAL_V2);
 
-const formItems: FormItemConfig[] = [
+const tableColumns = computed<TableColumn[]>(() => {
+  const head: TableColumn[] = [
+    {
+      type: 'selection',
+      fixed: 'left',
+      width: 50,
+      align: 'center',
+    },
+    {
+      type: 'index',
+      label: '序号',
+      width: 60,
+    },
+  ];
+  const tail: TableColumn[] = [
+    {
+      prop: 'statusEnum',
+      label: '状态',
+      width: 90,
+      slot: 'statusEnum',
+    },
+    {
+      prop: 'description',
+      label: '说明',
+      showOverflowTooltip: true,
+    },
+    {
+      prop: 'action',
+      label: '操作',
+      fixed: 'right',
+      slot: 'action',
+      width: 150,
+    },
+  ];
+  // 国临目录：主码是国临；医保列仅展示真实 yb_no 对照（无对照留空）
+  // 名称列用 minWidth + tooltip，与医保目录国临列同口径，避免固定 width 截断
+  if (isClinicalV2Source.value) {
+    return [
+      ...head,
+      {
+        prop: 'conditionCode',
+        label: '国临码',
+        minWidth: 150,
+        showOverflowTooltip: true,
+      },
+      {
+        prop: 'name',
+        label: '国临诊断名称',
+        minWidth: 220,
+        showOverflowTooltip: true,
+      },
+      {
+        prop: 'ybNo',
+        label: '医保编码',
+        minWidth: 150,
+        showOverflowTooltip: true,
+      },
+      {
+        prop: 'ybName',
+        label: '医保诊断名称',
+        minWidth: 260,
+        showOverflowTooltip: true,
+      },
+      ...tail,
+    ];
+  }
+  // 医保/其它目录：主码是医保；国临列反查可一对多，用 minWidth + tooltip 避免截断看不全
+  return [
+    ...head,
+    {
+      prop: 'conditionCode',
+      label: '医保编码',
+      width: 150,
+      showOverflowTooltip: true,
+    },
+    {
+      prop: 'name',
+      label: '医保诊断名称',
+      minWidth: 180,
+      showOverflowTooltip: true,
+    },
+    {
+      prop: 'clinicCode',
+      label: '国临码',
+      minWidth: 220,
+      showOverflowTooltip: true,
+    },
+    {
+      prop: 'clinicName',
+      label: '国临诊断名称',
+      minWidth: 260,
+      showOverflowTooltip: true,
+    },
+    ...tail,
+  ];
+});
+
+const formItems = computed<FormItemConfig[]>(() => [
   {
     type: 'input',
     prop: 'keyword',
@@ -184,7 +231,29 @@ const formItems: FormItemConfig[] = [
     placeholder: '请输入诊断名称或编码',
     clearable: true,
   },
-];
+  {
+    type: 'select',
+    prop: 'statusEnum',
+    label: '启用状态',
+    placeholder: '全部',
+    clearable: true,
+    multiple: false,
+    options: [
+      { label: '全部', value: '' },
+      { label: '已启用', value: PublicationStatusCode.ACTIVE },
+      { label: '已停用', value: PublicationStatusCode.INACTIVE },
+    ],
+  },
+]);
+
+/** 发布状态筛选归一：空/全部 → undefined */
+function normalizeStatusEnumForApi(raw: unknown): string | undefined {
+  if (raw === undefined || raw === null) {
+    return undefined;
+  }
+  const s = String(raw).trim();
+  return s === '' ? undefined : s;
+}
 
 const handleQuery = async (params: Record<string, unknown>) => {
   queryParams.value = {
@@ -198,6 +267,7 @@ const handleQuery = async (params: Record<string, unknown>) => {
       pageSize: queryParams.value.pageSize,
       keyword: queryParams.value.keyword || undefined,
       sourceEnum: queryParams.value.sourceEnum || undefined,
+      statusEnum: normalizeStatusEnumForApi(queryParams.value.statusEnum),
     });
 
     const parsed = parsePagedRowsFromApiData<DiagnosisCatalogItem>(response.data);
@@ -374,7 +444,7 @@ const handleEditSuccess = () => {
   handleQuery(queryParams.value);
 };
 
-const showClinicalV2Import = computed(() => queryParams.value.sourceEnum === SOURCE_CLINICAL_V2);
+const showClinicalV2Import = isClinicalV2Source;
 
 const showYbImport = computed(() => {
   const source = queryParams.value.sourceEnum;

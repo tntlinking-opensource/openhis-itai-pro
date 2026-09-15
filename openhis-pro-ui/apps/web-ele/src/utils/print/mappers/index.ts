@@ -8,8 +8,13 @@ import { buildInpatientExamApplyPrintData } from './inpatient-exam-apply';
 import { buildInpatientFeeDetailPrintData } from './inpatient-fee-detail';
 import { buildInpatientFeeListPrintData } from './inpatient-fee-list';
 import { buildInpatientLabApplyPrintData } from './inpatient-lab-apply';
+import {
+  buildInpatientHomepagePrintData,
+  buildInpatientHomepageWmPrintData,
+} from './inpatient-homepage';
 import { buildInpatientNursingRecordPrintData } from './inpatient-nursing-record';
 import { buildInpatientOralMedLabelPrintData } from './inpatient-oral-med-label';
+import { buildInpatientSpecimenBarcodePrintData } from './inpatient-specimen-barcode';
 import { buildInpatientOralMedSheetPrintData } from './inpatient-oral-med-sheet';
 import { buildInpatientPatrolCardPrintData } from './inpatient-patrol-card';
 import { buildInpatientTempOrderPrintData } from './inpatient-temp-order';
@@ -43,12 +48,19 @@ registerPrintMapper(PRINT_SCENARIO.opTreatmentPrint, buildOutpatientTreatmentShe
 registerPrintMapper(PRINT_SCENARIO.opInfusionLabelPrint, buildOutpatientInfusionLabelPrintData);
 registerPrintMapper(PRINT_SCENARIO.ipInfusionLabelPrint, buildOutpatientInfusionLabelPrintData);
 registerPrintMapper(PRINT_SCENARIO.opSpecimenBarcodePrint, buildOutpatientSpecimenBarcodePrintData);
+registerPrintMapper(PRINT_SCENARIO.ipSpecimenBarcodePrint, buildInpatientSpecimenBarcodePrintData);
 registerPrintMapper(PRINT_SCENARIO.opDailySettlementPrint, buildOutpatientDailySettlementPrintData);
+registerPrintMapper(
+  PRINT_SCENARIO.ipDailySettlementPatientPrint,
+  buildOutpatientDailySettlementPrintData,
+);
 registerPrintMapper(
   PRINT_SCENARIO.pharmacyDailySettlementPrint,
   buildPharmacyDailySettlementPrintData,
 );
 registerPrintMapper(PRINT_SCENARIO.ipNursingRecordPrint, buildInpatientNursingRecordPrintData);
+registerPrintMapper(PRINT_SCENARIO.ipHomepageWmPrint, buildInpatientHomepageWmPrintData);
+registerPrintMapper(PRINT_SCENARIO.ipHomepageTcmPrint, buildInpatientHomepagePrintData);
 registerPrintMapper(PRINT_SCENARIO.ipFeeListPrint, buildInpatientFeeListPrintData);
 registerPrintMapper(PRINT_SCENARIO.ipFeeDetailPrint, buildInpatientFeeDetailPrintData);
 registerPrintMapper(PRINT_SCENARIO.ipTempOrderPrint, buildInpatientTempOrderPrintData);
@@ -131,6 +143,14 @@ export type {
   InpatientLabApplyPrintData,
   InpatientLabApplyPrintSource,
 } from './inpatient-lab-apply';
+export {
+  buildInpatientHomepagePrintData,
+  buildInpatientHomepageWmPrintData,
+} from './inpatient-homepage';
+export type {
+  InpatientHomepagePrintData,
+  InpatientHomepagePrintSource,
+} from './inpatient-homepage';
 export { buildInpatientNursingRecordPrintData } from './inpatient-nursing-record';
 export type {
   InpatientNursingRecordPrintData,
@@ -142,6 +162,11 @@ export type {
   InpatientOralMedLabelPrintData,
   InpatientOralMedLabelPrintSource,
 } from './inpatient-oral-med-label';
+export { buildInpatientSpecimenBarcodePrintData } from './inpatient-specimen-barcode';
+export type {
+  InpatientSpecimenBarcodePrintData,
+  InpatientSpecimenBarcodePrintSource,
+} from './inpatient-specimen-barcode';
 export { buildInpatientOralMedSheetPrintData } from './inpatient-oral-med-sheet';
 export type {
   InpatientOralMedSheetDrugRow,

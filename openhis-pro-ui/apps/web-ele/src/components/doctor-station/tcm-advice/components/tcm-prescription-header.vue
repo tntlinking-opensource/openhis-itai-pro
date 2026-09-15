@@ -88,7 +88,7 @@ function handleDiagnosisIdsUpdate(value: string[]) {
 </script>
 
 <template>
-  <!-- 朝阳：紧凑 meta 条；布局走外挂 css + 原子类（院点 scoped 会丢） -->
+  <!-- 紧凑 meta 条；布局走外挂 css + 原子类 -->
   <ElForm
     :model="model"
     label-width="48px"

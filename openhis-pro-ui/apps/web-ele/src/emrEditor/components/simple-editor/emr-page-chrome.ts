@@ -311,6 +311,25 @@ export function repairChromeHeaderTitlePlaceholder(template: string): string {
   return t;
 }
 
+/** 门诊页眉标题行不得绑定主诉/诊断等临床字段 */
+const OUTPATIENT_CHROME_TITLE_ALIAS_RE =
+  /\{(?:chiefComplaint|tcmDiagnosis|westernDiagnosis|diagnosisText)\}/gi;
+
+/**
+ * 门诊病历页眉 16pt 行固定为 `{documentTitle}`。
+ * 避免模板把主诉/诊断插进标题，或把病名写死后纸面标题跟着变。
+ */
+export function pinOutpatientChromeHeaderTitle(template: string): string {
+  let t = String(template ?? '');
+  if (!t.trim()) return t;
+  t = t.replace(
+    /(<span\b[^>]*\bstyle="[^"]*font-size:\s*16pt[^"]*"[^>]*>)[\s\S]*?(<\/span>)/i,
+    '$1{documentTitle}$2',
+  );
+  t = t.replace(OUTPATIENT_CHROME_TITLE_ALIAS_RE, '{documentTitle}');
+  return t;
+}
+
 /** 把整段字体样式写到页眉/页脚 DOM（编辑态与只读态共用） */
 export function applyEmrPageChromeBandDomStyle(el: HTMLElement, conf: EmrPageChromeBand) {
   const align = conf.align ?? 'center';

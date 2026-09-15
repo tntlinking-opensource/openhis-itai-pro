@@ -11,7 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 取消代煎费后回写方内饮片行代煎标志为否。
+ * 取消代煎费或代煎费退款终态后：回写方内饮片行代煎标志为否。
  */
 @Data
 @Accessors(chain = true)

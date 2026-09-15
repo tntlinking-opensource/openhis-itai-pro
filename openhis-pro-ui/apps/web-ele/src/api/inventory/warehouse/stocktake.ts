@@ -28,9 +28,7 @@ export interface StocktakeOptionDto {
   label?: string;
 }
 
-export interface LoadStocktakeFormInitRequest {
-  organizationId?: number;
-}
+export interface LoadStocktakeFormInitRequest {}
 
 export interface LoadStocktakeFormInitResponse {
   /** 药�?位置�?�?端 IF-WHS-ST-01 �?�??�?段名为 pharmacyLocationOptions�?? */
@@ -63,9 +61,7 @@ export interface StocktakeListRowDto {
   applicantId?: number | string;
   applicantName?: string;
   applyTime?: string;
-  approverId?: number | string;
   approverName?: string;
-  approvalTime?: string;
   occurrenceTime?: string;
 }
 
@@ -108,8 +104,6 @@ export interface GetStocktakeDetailResponse {
   practitionerId?: number | string;
   applicantId?: number | string;
   applyTime?: string;
-  approverId?: number | string;
-  approvalTime?: string;
   lines: StocktakeDetailLineDto[];
 }
 
@@ -165,7 +159,6 @@ export interface WithdrawStocktakeApprovalRequest {
 export interface AgreeStocktakeRequest {
   busNo: string;
   /** @deprecated CHS 启�?�即�?传�?请使�?� contractBusNo */
-  medicareUploadEnabled?: boolean;
   contractBusNo?: string;
 }
 

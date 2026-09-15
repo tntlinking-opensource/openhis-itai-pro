@@ -6,6 +6,7 @@ package com.openhis.chs.domain.settlement.repository;
 
 import com.openhis.chs.domain.settlement.entity.YbSettlementRecord;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
@@ -13,7 +14,8 @@ import java.util.List;
 import java.util.Optional;
 
 /** 医保正式结算回执仓储（门诊/住院共用） */
-public interface YbSettlementRecordRepository extends JpaRepository<YbSettlementRecord, Long> {
+public interface YbSettlementRecordRepository
+    extends JpaRepository<YbSettlementRecord, Long>, JpaSpecificationExecutor<YbSettlementRecord> {
 
     /**
      * 按主键与租户查询未删除结算回执。
@@ -92,6 +94,28 @@ public interface YbSettlementRecordRepository extends JpaRepository<YbSettlement
     List<YbSettlementRecord>
         findAllByTenantIdAndIsDeletedFalseAndSetlTimeIsNullAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
             Long tenantId,
+            LocalDateTime beginAt,
+            LocalDateTime endExclusive);
+
+    /**
+     * 按合同 + 结算模式 + {@code setl_time} 查询（工伤对账日汇总，避免拉全量医保结算）。
+     */
+    List<YbSettlementRecord>
+        findAllByTenantIdAndContractIdAndSettleModeAndIsDeletedFalseAndSetlTimeGreaterThanEqualAndSetlTimeLessThan(
+            Long tenantId,
+            Long contractId,
+            String settleMode,
+            LocalDateTime beginAt,
+            LocalDateTime endExclusive);
+
+    /**
+     * 按合同 + 结算模式 + 空 {@code setl_time} 回落创建时间窗。
+     */
+    List<YbSettlementRecord>
+        findAllByTenantIdAndContractIdAndSettleModeAndIsDeletedFalseAndSetlTimeIsNullAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+            Long tenantId,
+            Long contractId,
+            String settleMode,
             LocalDateTime beginAt,
             LocalDateTime endExclusive);
 

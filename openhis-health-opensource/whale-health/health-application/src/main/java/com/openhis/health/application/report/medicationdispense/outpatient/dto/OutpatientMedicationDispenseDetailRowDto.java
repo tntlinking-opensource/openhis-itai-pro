@@ -123,14 +123,6 @@ public class OutpatientMedicationDispenseDetailRowDto
     @Schema(description = "单位展示")
     private String unitText;
 
-    /** 单价（售价别名；兼容旧字段）。 */
-    @Schema(description = "单价")
-    private BigDecimal unitPrice;
-
-    /** 金额（售价别名；退侧为负）。 */
-    @Schema(description = "金额")
-    private BigDecimal totalAmount;
-
     /** 进价单价（6 位行刻度）。 */
     @Schema(description = "进价单价")
     private BigDecimal purchaseUnitPrice;
@@ -147,9 +139,27 @@ public class OutpatientMedicationDispenseDetailRowDto
     @Schema(description = "售价总额")
     private BigDecimal saleAmount;
 
-    /** 批号。 */
+    /** 实发批号（发放单 {@code lot_number}；明细展示主列）。 */
     @Schema(description = "批号")
     private String lotNumber;
+
+    /**
+     * 收费锚点批号（{@code ChargeItem.definitionId} → {@code LOT_NUMBER_PRICE}/{@code LOT_NUMBER_COST}
+     * 行的 {@code lot_no}）。
+     *
+     * <p>仅明细分页质检回填；与 {@link #lotNumber} 比对。不一致时 {@link #lotMismatch}=true。
+     * <strong>不改正额</strong>。</p>
+     */
+    @Schema(description = "收费锚点批号")
+    private String chargeLotNumber;
+
+    /**
+     * 账批 ≠ 实发批标记（仅质检展示；金额/汇总口径不变）。
+     *
+     * <p>{@code true}=两边均有批号且不相等；无账单/无批号/科室领用时保持 null。</p>
+     */
+    @Schema(description = "账批与实发批是否不一致")
+    private Boolean lotMismatch;
 
     /** 追溯码。 */
     @Schema(description = "追溯码")

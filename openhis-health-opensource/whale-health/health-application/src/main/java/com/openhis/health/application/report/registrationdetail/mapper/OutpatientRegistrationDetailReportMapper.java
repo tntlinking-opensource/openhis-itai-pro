@@ -65,6 +65,7 @@ public interface OutpatientRegistrationDetailReportMapper {
      * @param practitionerOptions   医生下拉
      * @param serviceTypeOptions    号源下拉
      * @param summaryViewOptions    汇总视角下拉
+     * @param statusOptions         就诊状态下拉
      * @return 初始化响应
      */
     LoadOutpatientRegistrationDetailReportPageInitResponse toLoadPageInitResponse(
@@ -75,7 +76,8 @@ public interface OutpatientRegistrationDetailReportMapper {
         List<OptionDto> organizationOptions,
         List<OptionDto> practitionerOptions,
         List<OptionDto> serviceTypeOptions,
-        List<OptionDto> summaryViewOptions);
+        List<OptionDto> summaryViewOptions,
+        List<OptionDto> statusOptions);
 
     /**
      * 汇总行 + 合计 → 汇总响应。

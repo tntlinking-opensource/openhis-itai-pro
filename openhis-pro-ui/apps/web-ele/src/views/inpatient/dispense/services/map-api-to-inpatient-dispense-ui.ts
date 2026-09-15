@@ -203,6 +203,8 @@ export function mapInpatientSlipRowsToPrescriptionBlocks(
           doseUnitText: head.doseUnitText,
         }),
         spec: head.specificationText?.trim() || '—',
+        // 包装↔拆零比例：服务端拼装，规格列后展示（与门诊发药同源）
+        packageSplitRatioText: head.packageSplitRatioText?.trim() || undefined,
         traceCode,
         batchNo: head.lotNumber?.trim() || '—',
         amount:

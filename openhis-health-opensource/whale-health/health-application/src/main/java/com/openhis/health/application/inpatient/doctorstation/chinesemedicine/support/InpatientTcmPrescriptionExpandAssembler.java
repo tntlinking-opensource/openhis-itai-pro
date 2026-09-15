@@ -26,7 +26,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * IF-IP-TCM-38/40/41：按 prescription_no 整方扩行支持。
+ * IF-IP-TCM-38/40/41/42：按 prescription_no / prescriptionGroupKey 整方扩行支持。
  */
 @Component
 @RequiredArgsConstructor
@@ -109,6 +109,73 @@ public class InpatientTcmPrescriptionExpandAssembler {
      */
     public List<Long> resolveStoppedLongTermTcmRequestIdsByPrescriptionNos(Long encounterId, List<String> prescriptionNos) {
         return resolveTcmRequestIdsByPrescriptionNos(encounterId, prescriptionNos, TherapyType.LONG_TERM.getCode(), true);
+    }
+
+    /**
+     * 按方解析全部中药行 id（改开立时间用，不限长临/状态）。
+     *
+     * <p>已签发方按 {@code prescription_no} 命中；草稿方按 {@code prescriptionGroupKey} 命中；
+     * 两侧可同时传入，结果去重保序。</p>
+     *
+     * @param encounterId            就诊主键
+     * @param prescriptionNos        已签发处方号；可空
+     * @param prescriptionGroupKeys  草稿方标识；可空
+     * @return 方内全部药品申请主键；无命中时为空列表
+     */
+    public List<Long> resolveAllTcmRequestIdsForOpenedTimeChange(
+        Long encounterId,
+        List<String> prescriptionNos,
+        List<String> prescriptionGroupKeys) {
+        Set<Long> result = new LinkedHashSet<>();
+        Set<String> targetNos = new LinkedHashSet<>();
+        if (prescriptionNos != null) {
+            for (String prescriptionNo : prescriptionNos) {
+                String trimmed = trimToNull(prescriptionNo);
+                if (trimmed != null) {
+                    targetNos.add(trimmed);
+                }
+            }
+        }
+        Set<String> targetKeys = new LinkedHashSet<>();
+        if (prescriptionGroupKeys != null) {
+            for (String groupKey : prescriptionGroupKeys) {
+                String trimmed = trimToNull(groupKey);
+                if (trimmed != null) {
+                    targetKeys.add(trimmed);
+                }
+            }
+        }
+        // 两侧皆空则无需查库
+        if (targetNos.isEmpty() && targetKeys.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<TcmHerbalPrescriptionGroupQueryModel> groups = medicationRequestQueryService.listTcmHerbalPrescriptionsByEncounter(
+            encounterId, GenerateSource.DOCTOR_PRESCRIPTION.getCode());
+        for (TcmHerbalPrescriptionGroupQueryModel group : groups) {
+            if (group == null) {
+                continue;
+            }
+            boolean matched = false;
+            String groupNo = trimToNull(group.getPrescriptionNo());
+            // 已签发方：处方号命中
+            if (groupNo != null && targetNos.contains(groupNo)) {
+                matched = true;
+            }
+            String groupKey = trimToNull(group.getPrescriptionGroupKey());
+            // 草稿方：前端方标识命中
+            if (!matched && groupKey != null && targetKeys.contains(groupKey)) {
+                matched = true;
+            }
+            if (!matched || group.getLines() == null) {
+                continue;
+            }
+            for (MedicationRequestListQueryModel line : group.getLines()) {
+                if (line != null && line.getId() != null) {
+                    result.add(line.getId());
+                }
+            }
+        }
+        return new ArrayList<>(result);
     }
 
     /**

@@ -1,4 +1,9 @@
-import type { AdviceDrugItem, AdviceProductOption, AdviceRowItem } from './advice.types';
+import type {
+  AdviceDrugItem,
+  AdviceProductOption,
+  AdviceRowItem,
+  TcmAdviceListHerbLine,
+} from './advice.types';
 
 import type {
   DoctorStationAdviceCatalogRowDto,
@@ -23,12 +28,16 @@ import {
   mergePackageSplitIntoSpec,
 } from '#/utils/doctor-station/package-split-ratio-display';
 import { convertProductUnitPriceForDisplay } from '#/utils/doctor-station/product-unit-band-price';
+import { sumMoneyThenCalc } from '#/utils/format/money-scale';
 import { buildServiceApplyFormExtensionText } from '#/utils/service-apply-display';
 import { resolveServiceApplyFormNo } from '#/utils/service-apply-form-group-display';
+import { TCM_DECOCTION_ACTIVITY_NAME } from '#/components/doctor-station/tcm-advice/services/tcm-prescription.service';
+import { simplifyTcmHerbDoseDisplay } from '#/utils/tcm-prescription-display';
 
 import { formatUnitPriceYuan } from './advice-format';
 import { isInpatientLongTermMedicationTherapy } from './advice-row';
 import {
+  HERBAL_MEDICATION_CATEGORY_CODE,
   INPATIENT_ENTRUST_ACTIVITY_NAME,
   INPATIENT_ENTRUST_CATEGORY_CODE,
   INPATIENT_NURSING_LEVEL_CATEGORY_CODE,
@@ -390,6 +399,14 @@ export function mapAdviceListRowDto(dto: DoctorStationAdviceRowDto): AdviceRowIt
     ...(String(dto.chrgitmLvText ?? '').trim()
       ? { chrgitmLvText: String(dto.chrgitmLvText).trim() }
       : {}),
+    tcmFlag: dto.tcmFlag === true ? true : undefined,
+    prescriptionNo: String(dto.prescriptionNo ?? '').trim() || undefined,
+    chineseHerbsDoseQuantity:
+      dto.chineseHerbsDoseQuantity !== null && dto.chineseHerbsDoseQuantity !== undefined
+        ? dto.chineseHerbsDoseQuantity
+        : undefined,
+    dosageInstructionText: String(dto.dosageInstructionText ?? '').trim() || undefined,
+    dosageDisplay: String(dto.dosageDisplay ?? '').trim() || undefined,
   };
 }
 
@@ -487,7 +504,25 @@ export function mapCatalogRowToOption(row: DoctorStationAdviceCatalogRowDto): Ad
     ...(String(row.dosageInstructionDictText ?? '').trim()
       ? { dosageInstructionDictText: String(row.dosageInstructionDictText).trim() }
       : {}),
+    ...pickPositiveCatalogDoseField(row.dose, 'dose'),
+    ...pickPositiveCatalogDoseField(row.minUnit, 'minUnit'),
+    ...pickPositiveCatalogDoseField(row.maxUnit, 'maxUnit'),
   };
+}
+
+/** 目录剂量字段：仅透出有限正数，避免 0/空串污染选品默认值。 */
+function pickPositiveCatalogDoseField(
+  raw: null | number | string | undefined,
+  key: 'dose' | 'maxUnit' | 'minUnit',
+): Partial<Pick<AdviceProductOption, 'dose' | 'maxUnit' | 'minUnit'>> {
+  if (raw === null || raw === undefined || String(raw).trim() === '') {
+    return {};
+  }
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) {
+    return {};
+  }
+  return { [key]: n };
 }
 
 export function getAdviceStatusTagType(
@@ -650,6 +685,8 @@ function resolveSkinTestCompanionRank(dto: DoctorStationAdviceRowDto): number {
 
 function medicationGroupMergeKey(dto: DoctorStationAdviceRowDto): DrugGroupKey {
   if (inferAdviceRowResourceType(dto) !== 'MEDICATION') return '';
+  // 中药饮片按方合并，不走西药 groupId 成组
+  if (isTcmHerbAdviceDto(dto)) return '';
   const gid = String(dto.groupId ?? '').trim();
   return gid === '' ? '' : gid;
 }
@@ -702,13 +739,15 @@ function doctorStationAdviceRowDtoToDrugGroupItem(
 }
 
 function sumSliceLinePriceY(slice: readonly DoctorStationAdviceRowDto[]): string {
-  let sum = 0;
+  const values: Array<number | string> = [];
+  // 成组/同方：各明细行展示总价加总（6 位后再 format 到元）
   for (const d of slice) {
     const v = d.lineDisplayTotalPrice ?? d.lineTotalAmount;
-    const n = typeof v === 'number' ? v : Number(String(v ?? '').trim());
-    if (Number.isFinite(n)) sum += n;
+    if (v !== null && v !== undefined && String(v).trim() !== '') {
+      values.push(v);
+    }
   }
-  return formatUnitPriceYuan(sum);
+  return formatUnitPriceYuan(sumMoneyThenCalc(values));
 }
 
 /** 成组同滴速：取组内首条非空 speed（常在加药行，溶媒首行可能为空） */
@@ -729,17 +768,335 @@ function pickGroupSpeedFromAdviceSlice(slice: readonly DoctorStationAdviceRowDto
   return {};
 }
 
+/** 病案首页医嘱列表：中药方标题（与纸质/旧系统汤剂块一致） */
+const TCM_LIST_PRESCRIPTION_TITLE = '中药汤剂';
+
+/** 病案首页医嘱列表：类型列中药文案 */
+const TCM_LIST_TYPE_LABEL = '中药';
+
+/** 是否中药饮片行（认 tcmFlag / 饮片分类码 / 付数，禁止用展示名） */
+function isTcmHerbAdviceDto(dto: DoctorStationAdviceRowDto): boolean {
+  if (dto.tcmFlag === true) {
+    return true;
+  }
+  if (String(dto.catalogCategoryCode ?? '').trim() === HERBAL_MEDICATION_CATEGORY_CODE) {
+    return true;
+  }
+  return dto.chineseHerbsDoseQuantity !== null && dto.chineseHerbsDoseQuantity !== undefined;
+}
+
+/** 去掉皮试装配误挂在代煎名上的「（关联：…）」后缀，仅用于认 companion */
+function stripAdviceLinkedHint(name: string): string {
+  const idx = name.indexOf('（关联：');
+  if (idx <= 0) {
+    return name;
+  }
+  return name.slice(0, idx).trim();
+}
+
+/** 代煎活动展示名：认常量，去掉误挂的关联后缀 */
+function decoctionCompanionDisplayName(dto: DoctorStationAdviceRowDto): string {
+  const raw = String(dto.adviceDisplayName ?? dto.contentSummary ?? '').trim();
+  const stripped = stripAdviceLinkedHint(raw);
+  if (stripped === TCM_DECOCTION_ACTIVITY_NAME) {
+    return TCM_DECOCTION_ACTIVITY_NAME;
+  }
+  return stripped || TCM_DECOCTION_ACTIVITY_NAME;
+}
+
+/** 是否药品行（代煎是诊疗 SR，禁止把西药/饮片当成 companion） */
+function isMedicationProductAdviceDto(dto: DoctorStationAdviceRowDto): boolean {
+  if (inferAdviceRowResourceType(dto) === 'MEDICATION') {
+    return true;
+  }
+  return String(dto.productTableName ?? '')
+    .toLowerCase()
+    .includes('medication');
+}
+
+/**
+ * 是否代煎 companion。
+ * 活动名对齐后端 DECOCTION_ACTIVITY_NAME；皮试 hint 会改展示名，故同时认 basedOn / 同方处方号。
+ */
+function isDecoctionCompanionDto(
+  dto: DoctorStationAdviceRowDto,
+  herbRequestIds?: ReadonlySet<string>,
+  tcmPrescriptionNos?: ReadonlySet<string>,
+): boolean {
+  if (isTcmHerbAdviceDto(dto) || isMedicationProductAdviceDto(dto)) {
+    return false;
+  }
+  const name = stripAdviceLinkedHint(
+    String(dto.adviceDisplayName ?? dto.contentSummary ?? '').trim(),
+  );
+  if (name === TCM_DECOCTION_ACTIVITY_NAME) {
+    return true;
+  }
+  const basedOn = String(dto.basedOnMedicationRequestId ?? '').trim();
+  if (basedOn && herbRequestIds?.has(basedOn)) {
+    return true;
+  }
+  const rx = String(dto.prescriptionNo ?? '').trim();
+  return Boolean(rx && tcmPrescriptionNos?.has(rx));
+}
+
+/** 单味剂量展示：优先简化 dosageDisplay，否则 dose+单位 */
+function formatTcmListHerbDose(dto: DoctorStationAdviceRowDto): string {
+  const fromDisplay = simplifyTcmHerbDoseDisplay(String(dto.dosageDisplay ?? '').trim());
+  if (fromDisplay) {
+    return fromDisplay;
+  }
+  const doseRaw = dto.dose;
+  if (doseRaw === null || doseRaw === undefined || String(doseRaw).trim() === '') {
+    return '';
+  }
+  const unit =
+    String(dto.doseUnitName ?? '').trim() ||
+    (String(dto.doseUnitCode ?? '')
+      .trim()
+      .toLowerCase() === 'g'
+      ? '克'
+      : '');
+  return unit ? `${String(doseRaw).trim()}${unit}` : String(doseRaw).trim();
+}
+
+/** 单味药名：特殊煎法进括号，如 石膏(先煎) */
+function formatTcmListHerbName(dto: DoctorStationAdviceRowDto): string {
+  const name = String(dto.adviceDisplayName ?? dto.contentSummary ?? '').trim();
+  const instruction = String(dto.dosageInstructionText ?? '').trim();
+  if (name && instruction) {
+    return `${name}(${instruction})`;
+  }
+  return name;
+}
+
+/** 同方饮片合并键：处方号优先，缺省 groupId，再回落 requestId */
+function tcmPrescriptionMergeKey(dto: DoctorStationAdviceRowDto): string {
+  const rx = String(dto.prescriptionNo ?? '').trim();
+  if (rx) {
+    return `rx:${rx}`;
+  }
+  const gid = String(dto.groupId ?? '').trim();
+  if (gid) {
+    return `gid:${gid}`;
+  }
+  const rid = String(dto.requestId ?? '').trim();
+  return rid ? `id:${rid}` : '';
+}
+
+/** 代煎索引键：处方号 + basedOn 代表药行 */
+function collectDecoctionMatchKeys(dto: DoctorStationAdviceRowDto): string[] {
+  const keys: string[] = [];
+  const rx = String(dto.prescriptionNo ?? '').trim();
+  if (rx) {
+    keys.push(`rx:${rx}`);
+  }
+  const basedOn = String(dto.basedOnMedicationRequestId ?? '').trim();
+  if (basedOn) {
+    keys.push(`basedOn:${basedOn}`);
+  }
+  return keys;
+}
+
+/** 从剩余代煎里取出挂到本方的 companion（处方号优先，其次 basedOn 方内饮片） */
+function takeDecoctionForHerbSlice(
+  slice: readonly DoctorStationAdviceRowDto[],
+  decoctionByKey: Map<string, DoctorStationAdviceRowDto>,
+): DoctorStationAdviceRowDto | undefined {
+  const tryKeys: string[] = [];
+  // 先同方号，再饮片 requestId ↔ companion.basedOn
+  for (const herb of slice) {
+    const rx = String(herb.prescriptionNo ?? '').trim();
+    if (rx) {
+      tryKeys.push(`rx:${rx}`);
+    }
+  }
+  for (const herb of slice) {
+    const rid = String(herb.requestId ?? '').trim();
+    if (rid) {
+      tryKeys.push(`basedOn:${rid}`);
+    }
+  }
+  for (const key of tryKeys) {
+    const hit = decoctionByKey.get(key);
+    if (!hit) {
+      continue;
+    }
+    for (const k of collectDecoctionMatchKeys(hit)) {
+      if (decoctionByKey.get(k) === hit) {
+        decoctionByKey.delete(k);
+      }
+    }
+    return hit;
+  }
+  return undefined;
+}
+
+/** 方内任一味勾选代煎 */
+function sliceHasDecoctionFlag(slice: readonly DoctorStationAdviceRowDto[]): boolean {
+  for (const dto of slice) {
+    if (dto.decoctionDelegatedFlag === true) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** 中药方闭合行：用法 + 付数 */
+function buildTcmClosingMeta(head: DoctorStationAdviceRowDto): string {
+  const parts: string[] = [];
+  const method = String(head.methodName ?? '').trim();
+  if (method) {
+    parts.push(method);
+  }
+  const fuRaw = head.chineseHerbsDoseQuantity;
+  if (fuRaw !== null && fuRaw !== undefined && String(fuRaw).trim() !== '') {
+    parts.push(`付数:${String(fuRaw).trim()}`);
+  }
+  return parts.join(' ');
+}
+
+/** 代煎扩展行：活动名 + 付数副 */
+function buildTcmDecoctionText(name: string, fuRaw: null | number | string | undefined): string {
+  const trimmed = String(name ?? '').trim();
+  if (!trimmed) {
+    return '';
+  }
+  if (fuRaw === null || fuRaw === undefined || String(fuRaw).trim() === '') {
+    return trimmed;
+  }
+  return `${trimmed} ${String(fuRaw).trim()}副`;
+}
+
+/** 有 companion 用其活动名；否则饮片代煎标志仍展示「代煎中药」 */
+function resolveTcmDecoctionText(
+  slice: readonly DoctorStationAdviceRowDto[],
+  decoction: DoctorStationAdviceRowDto | undefined,
+): string {
+  const fuRaw = slice[0]?.chineseHerbsDoseQuantity;
+  if (decoction) {
+    return buildTcmDecoctionText(decoctionCompanionDisplayName(decoction), fuRaw);
+  }
+  if (sliceHasDecoctionFlag(slice)) {
+    return buildTcmDecoctionText(TCM_DECOCTION_ACTIVITY_NAME, fuRaw);
+  }
+  return '';
+}
+
+/** 同方饮片 → 一张方一行 */
+function buildTcmPrescriptionListRow(
+  slice: readonly DoctorStationAdviceRowDto[],
+  decoction: DoctorStationAdviceRowDto | undefined,
+): AdviceRowItem {
+  const head = slice[0];
+  if (head === undefined) {
+    throw new Error('buildTcmPrescriptionListRow: empty slice');
+  }
+  const mapped = mapAdviceListRowDto(head);
+  const herbs: TcmAdviceListHerbLine[] = [];
+  const memberRows: AdviceRowItem[] = [];
+  // 按方内顺序拼饮片行，供竖排单元格
+  for (const dto of slice) {
+    memberRows.push(mapAdviceListRowDto(dto));
+    herbs.push({
+      name: formatTcmListHerbName(dto),
+      dose: formatTcmListHerbDose(dto),
+    });
+  }
+  const closing = buildTcmClosingMeta(head);
+  const decoctionText = resolveTcmDecoctionText(slice, decoction);
+  const idPart = slice
+    .map((d) => String(d.requestId ?? '').trim())
+    .filter(Boolean)
+    .join('&');
+  const rx = String(head.prescriptionNo ?? '').trim();
+  // 总金额 = 同方各味饮片 + 代煎 companion（禁止只用首味）
+  const amountSlice = decoction ? [...slice, decoction] : [...slice];
+  return {
+    ...mapped,
+    key: rx ? `merged-tcm-${rx}-${idPart}` : `merged-tcm-${idPart || mapped.key}`,
+    type: TCM_LIST_TYPE_LABEL,
+    tcmFlag: true,
+    tcmPrescriptionTitle: TCM_LIST_PRESCRIPTION_TITLE,
+    tcmHerbLines: herbs,
+    tcmClosingMeta: closing,
+    tcmDecoctionText: decoctionText || undefined,
+    extension: decoctionText || mapped.extension,
+    mergedAdviceRows: memberRows,
+    content: TCM_LIST_PRESCRIPTION_TITLE,
+    dosageText: undefined,
+    groupItems: undefined,
+    lineTotalAmount: sumSliceLinePriceY(amountSlice),
+  };
+}
+
+/** 按开立时间把中药方行插入西药/诊疗列表 */
+function interleaveAdviceRowsByOpenedTime(
+  western: readonly AdviceRowItem[],
+  tcmRows: readonly AdviceRowItem[],
+  timeSortOrder: AdviceListTimeSortOrder,
+): AdviceRowItem[] {
+  const merged = [...western, ...tcmRows];
+  return merged.toSorted((a, b) => {
+    const aTime = String(a.openedTimeRaw ?? a.startTime ?? '').trim();
+    const bTime = String(b.openedTimeRaw ?? b.startTime ?? '').trim();
+    if (aTime === '' && bTime !== '') return 1;
+    if (aTime !== '' && bTime === '') return -1;
+    const timeCompare =
+      timeSortOrder === 'asc' ? aTime.localeCompare(bTime) : bTime.localeCompare(aTime);
+    if (timeCompare !== 0) {
+      return timeCompare;
+    }
+    return String(a.key).localeCompare(String(b.key));
+  });
+}
+
+/**
+ * 药品成组 + 可选中药按方合并。
+ * @param includeTcmPrescriptions 病案首页为 true：饮片按处方号合成一行，代煎挂方下；开立 Tab 不传
+ */
 export function mergeMedicationAdviceRowsForListDisplay(
   rows: readonly DoctorStationAdviceRowDto[],
   timeSortOrder: AdviceListTimeSortOrder = 'desc',
+  options?: { includeTcmPrescriptions?: boolean },
 ): AdviceRowItem[] {
-  // 代煎中药为中药方 companion，费用在中药处方页展示，不进开立医嘱列表
-  const withoutDecoction = rows.filter((dto) => {
-    const name = String(dto.adviceDisplayName ?? dto.contentSummary ?? '').trim();
-    return name !== '代煎中药';
-  });
-  const sorted = sortDoctorStationAdviceRowsStable(withoutDecoction, timeSortOrder);
-  const merged = mergeConsecutiveRowsByDrugGroup(sorted, {
+  const includeTcm = options?.includeTcmPrescriptions === true;
+  const tcmDtos: DoctorStationAdviceRowDto[] = [];
+  const pendingNonHerb: DoctorStationAdviceRowDto[] = [];
+  // 先抽出饮片，再凭方号/basedOn 认代煎，避免皮试「关联」后缀导致 companion 漏挂
+  for (const dto of rows) {
+    if (includeTcm && isTcmHerbAdviceDto(dto)) {
+      tcmDtos.push(dto);
+      continue;
+    }
+    pendingNonHerb.push(dto);
+  }
+  const herbRequestIds = new Set<string>();
+  const tcmPrescriptionNos = new Set<string>();
+  for (const herb of tcmDtos) {
+    const rid = String(herb.requestId ?? '').trim();
+    if (rid) {
+      herbRequestIds.add(rid);
+    }
+    const rx = String(herb.prescriptionNo ?? '').trim();
+    if (rx) {
+      tcmPrescriptionNos.add(rx);
+    }
+  }
+  const decoctionDtos: DoctorStationAdviceRowDto[] = [];
+  const restDtos: DoctorStationAdviceRowDto[] = [];
+  for (const dto of pendingNonHerb) {
+    if (isDecoctionCompanionDto(dto, herbRequestIds, tcmPrescriptionNos)) {
+      // 代煎挂中药方下行；开立 Tab 仍不展示 companion
+      if (includeTcm) {
+        decoctionDtos.push(dto);
+      }
+      continue;
+    }
+    restDtos.push(dto);
+  }
+  const sorted = sortDoctorStationAdviceRowsStable(restDtos, timeSortOrder);
+  const westernMerged = mergeConsecutiveRowsByDrugGroup(sorted, {
     getGroupKey: medicationGroupMergeKey,
     toGroupItem: doctorStationAdviceRowDtoToDrugGroupItem,
     buildMergedRow: ({ slice, groupItems }) => {
@@ -773,7 +1130,69 @@ export function mergeMedicationAdviceRowsForListDisplay(
       };
     },
   });
-  return pinNursingLevelAdviceRowsToFirst(merged);
+  if (!includeTcm) {
+    return pinNursingLevelAdviceRowsToFirst(westernMerged);
+  }
+  const decoctionByKey = new Map<string, DoctorStationAdviceRowDto>();
+  // 代煎按处方号 / basedOn 挂到对应方
+  for (const decoction of decoctionDtos) {
+    for (const key of collectDecoctionMatchKeys(decoction)) {
+      if (!decoctionByKey.has(key)) {
+        decoctionByKey.set(key, decoction);
+      }
+    }
+  }
+  const tcmByKey = new Map<string, DoctorStationAdviceRowDto[]>();
+  const sortedTcm = sortDoctorStationAdviceRowsStable(tcmDtos, 'asc');
+  // 同处方号归入一方；无号则 requestId 各自成方
+  for (const dto of sortedTcm) {
+    const key = tcmPrescriptionMergeKey(dto) || `id:${String(dto.requestId ?? '').trim()}`;
+    const bucket = tcmByKey.get(key);
+    if (bucket) {
+      bucket.push(dto);
+    } else {
+      tcmByKey.set(key, [dto]);
+    }
+  }
+  const pendingSlices: DoctorStationAdviceRowDto[][] = [];
+  const assignedDecoction: Array<DoctorStationAdviceRowDto | undefined> = [];
+  // 各方按 sortNumber 排饮片，并摘走对应代煎 companion
+  for (const slice of tcmByKey.values()) {
+    const ordered = [...slice].toSorted((a, b) => {
+      const as = Number(a.sortNumber ?? 0);
+      const bs = Number(b.sortNumber ?? 0);
+      if (as !== bs) {
+        return as - bs;
+      }
+      return String(a.requestId ?? '').localeCompare(String(b.requestId ?? ''));
+    });
+    pendingSlices.push(ordered);
+    assignedDecoction.push(takeDecoctionForHerbSlice(ordered, decoctionByKey));
+  }
+  // 仅一方且仍有未挂代煎：无号 companion 并入该方
+  const leftoverDecoctions: DoctorStationAdviceRowDto[] = [];
+  const leftoverSeen = new Set<DoctorStationAdviceRowDto>();
+  // 同一 companion 可能有多个索引键，先去重
+  for (const leftover of decoctionByKey.values()) {
+    if (!leftoverSeen.has(leftover)) {
+      leftoverSeen.add(leftover);
+      leftoverDecoctions.push(leftover);
+    }
+  }
+  if (pendingSlices.length === 1 && leftoverDecoctions.length > 0 && !assignedDecoction[0]) {
+    assignedDecoction[0] = leftoverDecoctions[0];
+  }
+  const tcmRows: AdviceRowItem[] = [];
+  // 各方合成一行：饮片竖排 + 代煎文案 + 金额加总
+  for (let i = 0; i < pendingSlices.length; i += 1) {
+    const ordered = pendingSlices[i];
+    if (!ordered) {
+      continue;
+    }
+    tcmRows.push(buildTcmPrescriptionListRow(ordered, assignedDecoction[i]));
+  }
+  const combined = interleaveAdviceRowsByOpenedTime(westernMerged, tcmRows, timeSortOrder);
+  return pinNursingLevelAdviceRowsToFirst(combined);
 }
 
 // —— 旧行双击回填 ——

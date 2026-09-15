@@ -92,7 +92,7 @@ public class InpatientDoctorStationAdviceOrderBindQueryService {
     }
 
     /**
-     * 按绑定类型与来源项键装载绑定行。
+     * 按绑定类型与来源项键装载绑定行（合管优先，供 IF-IP-DOR-12 / 护士执行模板回落）。
      *
      * <p>用法绑定：{@code sourceItemKey} 为药嘱 {@code method_code}（术语 code），与模板表
      * {@code cus_service_device_template.item_id} 精确匹配；诊疗绑定：{@code sourceItemKey} 为
@@ -113,11 +113,6 @@ public class InpatientDoctorStationAdviceOrderBindQueryService {
         if (bindType == null || StringUtils.isEmpty(sourceItemKey)) {
             return rows;
         }
-        Optional<BindQueryContext> contextOpt = resolveBindContext(bindType);
-        if (contextOpt.isEmpty()) {
-            return rows;
-        }
-        BindQueryContext context = contextOpt.get();
         // 检验 activity 已配置合管时优先读合管派生绑定，不查 service_device_template
         if (DoctorStationAdviceConstants.BIND_TYPE_ACTIVITY.equals(bindType)) {
             Long activityId = this.parseNumericSourceItemId(sourceItemKey);
@@ -130,6 +125,33 @@ public class InpatientDoctorStationAdviceOrderBindQueryService {
                 }
             }
         }
+        return this.listTemplateBindingsBySourceItemKey(bindType, sourceItemKey, organizationUnitId);
+    }
+
+    /**
+     * 仅读住院范围 {@code cus_service_device_template}（不含合管派生）。
+     *
+     * <p>住院医生站开立自动带出耗材时用本方法，避免合管优先把试管/针头灌进 IF-IP-DOR-23。</p>
+     *
+     * @param bindType           绑定来源类型
+     * @param sourceItemKey      模板来源项键
+     * @param organizationUnitId 机构单元
+     * @return 模板绑定行；无命中为空列表
+     */
+    public List<InpatientDoctorStationAdviceOrderBindRowDto> listTemplateBindingsBySourceItemKey(
+        String bindType,
+        String sourceItemKey,
+        Long organizationUnitId
+    ) {
+        List<InpatientDoctorStationAdviceOrderBindRowDto> rows = new ArrayList<>();
+        if (bindType == null || StringUtils.isEmpty(sourceItemKey)) {
+            return rows;
+        }
+        Optional<BindQueryContext> contextOpt = resolveBindContext(bindType);
+        if (contextOpt.isEmpty()) {
+            return rows;
+        }
+        BindQueryContext context = contextOpt.get();
         // 住院医嘱/护士执行仅匹配住院范围绑定模板
         String rangeCode = ServiceDeviceTemplateRangeCode.INPATIENT.getCode();
         String itemIdKey = sourceItemKey.trim();
@@ -217,18 +239,20 @@ public class InpatientDoctorStationAdviceOrderBindQueryService {
     }
 
     /**
-     * IF-IP-DOR-23：按暂存变更行解析直接绑定（合管优先；同批同设备去重）。
+     * IF-IP-DOR-23：按暂存变更行解析直接绑定（住院<strong>不</strong>自动带耗材；合管亦不带）。
+     *
+     * <p>与门诊差异：检验合管派生绑定整段跳过；目标为 {@code adm_device_definition} 的绑定一律不带出。
+     * 采血费等诊疗→诊疗模板绑定仍可带（非耗材）。</p>
      *
      * @param lines              暂存变更行
      * @param organizationUnitId 机构单元
-     * @return 绑定明细
+     * @return 绑定明细（不含耗材）
      */
     public List<DoctorStationAdviceDraftBindItemDto> listDraftBindItems(
         List<InpatientDoctorStationAdviceDraftLineRequest> lines,
         Long organizationUnitId
     ) {
         List<DoctorStationAdviceDraftBindItemDto> bindItems = new ArrayList<>();
-        Set<Long> emittedMergeDeviceIds = new LinkedHashSet<>();
         if (lines == null || lines.isEmpty()) {
             return bindItems;
         }
@@ -247,7 +271,7 @@ public class InpatientDoctorStationAdviceOrderBindQueryService {
                     bindItems, line, lineIndex, lineOp, organizationUnitId);
             } else if (TableNameConstants.WKF_ACTIVITY_DEFINITION.equals(productTableName)) {
                 this.appendInpatientServiceDraftBindItems(
-                    bindItems, line, lineIndex, lineOp, organizationUnitId, emittedMergeDeviceIds);
+                    bindItems, line, lineIndex, lineOp, organizationUnitId);
             }
         }
         return bindItems;
@@ -283,41 +307,25 @@ public class InpatientDoctorStationAdviceOrderBindQueryService {
     }
 
     /**
-     * 住院诊疗行绑定解析（合管优先）。
+     * 住院诊疗行绑定解析（住院不走合管自动带；模板仅保留非耗材目标）。
      */
     private void appendInpatientServiceDraftBindItems(
         List<DoctorStationAdviceDraftBindItemDto> bindItems,
         InpatientDoctorStationAdviceDraftLineRequest line,
         int lineIndex,
         String lineOp,
-        Long organizationUnitId,
-        Set<Long> emittedMergeDeviceIds
+        Long organizationUnitId
     ) {
         SaveInpatientServiceAdviceDraftLinePayload payload = line.getServicePayload();
         if (payload == null || payload.getActivityDefinitionId() == null) {
             return;
         }
         Long activityId = payload.getActivityDefinitionId();
-        Optional<Long> mergeDeviceIdOpt = specimenTubeMergeBindResolveSupport.findMergeDeviceIdByActivityId(activityId);
-        if (mergeDeviceIdOpt.isPresent()) {
-            Long mergeDeviceId = mergeDeviceIdOpt.get();
-            if (emittedMergeDeviceIds.contains(mergeDeviceId)) {
-                return;
-            }
-            emittedMergeDeviceIds.add(mergeDeviceId);
-            List<InpatientDoctorStationAdviceOrderBindRowDto> rows = this.assembleInpatientMergeBindRows(
-                DoctorStationAdviceConstants.BIND_TYPE_ACTIVITY,
-                String.valueOf(activityId),
-                mergeDeviceId,
-                organizationUnitId
-            );
-            this.appendInpatientDraftBindItems(
-                bindItems, rows, lineIndex, lineOp,
-                TableNameConstants.WKF_ACTIVITY_DEFINITION, activityId,
-                line.getRequestId(), TableNameConstants.WKF_SERVICE_REQUEST, mergeDeviceId);
+        // Pre：已合管 → 开立侧不带合管耗材/采血费，亦不回落模板（AS-BAS-CFG-001 §7.7）
+        if (specimenTubeMergeBindResolveSupport.findMergeDeviceIdByActivityId(activityId).isPresent()) {
             return;
         }
-        List<InpatientDoctorStationAdviceOrderBindRowDto> rows = this.listBindingsBySourceItemKey(
+        List<InpatientDoctorStationAdviceOrderBindRowDto> rows = this.listTemplateBindingsBySourceItemKey(
             DoctorStationAdviceConstants.BIND_TYPE_ACTIVITY,
             String.valueOf(activityId),
             organizationUnitId
@@ -329,7 +337,7 @@ public class InpatientDoctorStationAdviceOrderBindQueryService {
     }
 
     /**
-     * 住院绑定行 → IF-IP-DOR-23 明细。
+     * 住院绑定行 → IF-IP-DOR-23 明细（跳过耗材目标）。
      */
     private void appendInpatientDraftBindItems(
         List<DoctorStationAdviceDraftBindItemDto> bindItems,
@@ -346,6 +354,14 @@ public class InpatientDoctorStationAdviceOrderBindQueryService {
             return;
         }
         for (InpatientDoctorStationAdviceOrderBindRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            // 住院不自动带耗材：器材定义目标一律跳过
+            if (TableNameConstants.ADM_DEVICE_DEFINITION.equals(
+                StringUtils.trimToEmpty(row.getTargetItemTable()))) {
+                continue;
+            }
             DoctorStationAdviceDraftBindItemDto item = new DoctorStationAdviceDraftBindItemDto();
             item.setBindType(row.getBindType());
             item.setSourceItemId(row.getSourceItemId());

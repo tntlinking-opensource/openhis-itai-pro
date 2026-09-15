@@ -155,8 +155,57 @@ function resolveMedSheetInfusionFlag(order: NurseStationOrderExecuteRowDto): boo
   return false;
 }
 
+/** 单日输液贴/巡视卡候选：同 listRowKey 合并 pending/executed 当日槽位 */
+interface InfusionDayOrderBucket {
+  order: NurseStationOrderExecuteRowDto;
+  pendingOnDay: NonNullable<NurseStationOrderExecuteRowDto['pendingSlots']>;
+  executedOnDay: NonNullable<NurseStationOrderExecuteRowDto['executedSlots']>;
+}
+
+/** 组内首条非空频次展示（仅展示，禁止用文案做分支） */
+function firstFrequencyDisplay(orders: Array<{ frequencyDisplay?: string }>): string {
+  for (const order of orders) {
+    const text = str(order.frequencyDisplay);
+    if (text) {
+      return text;
+    }
+  }
+  return '';
+}
+
+/** 组内首条非空频次 code（拆张用） */
+function firstRateCode(orders: Array<{ rateCode?: string }>): string {
+  for (const order of orders) {
+    const code = str(order.rateCode);
+    if (code) {
+      return code;
+    }
+  }
+  return '';
+}
+
+/** 组内查询日去重计划点数（pending/executed 同点不重复计） */
+function resolveGroupDaySlotCount(buckets: InfusionDayOrderBucket[]): number {
+  let maxCount = 0;
+  for (const bucket of buckets) {
+    const planTimes = new Set(
+      [...bucket.pendingOnDay, ...bucket.executedOnDay]
+        .map((slot) => str(slot.planTime))
+        .filter((time) => time.length > 0),
+    );
+    const count =
+      planTimes.size > 0
+        ? planTimes.size
+        : bucket.pendingOnDay.length + bucket.executedOnDay.length;
+    if (count > maxCount) {
+      maxCount = count;
+    }
+  }
+  return maxCount;
+}
+
 /**
- * 输液巡视卡待打：查询日有待执行或已执行槽位的输液药患者各一行。
+ * 输液巡视卡待打：查询日有槽位的输液组各一行，供勾选内容；打印时按就诊合成一张卡。
  * 与输液贴同源（医嘱执行双 Tab），执行过的也可打。
  */
 async function loadPatrolPending(
@@ -188,58 +237,41 @@ async function loadPatrolPending(
     httpListNurseStationOrderExecuteForPrint({ ...listBody, executeTab: 'executed' }),
   ]);
 
-  /** 按就诊归并：查询日有槽位的输液药嘱 */
-  const byEncounter = new Map<
-    string,
-    {
-      encounterId: string;
-      patientId: string;
-      groupKeys: Set<string>;
-      drugNames: string[];
-      hasPending: boolean;
-      hasExecuted: boolean;
-    }
-  >();
+  const byRowKey = new Map<string, InfusionDayOrderBucket>();
 
+  /** 把某一 Tab 的输液行并入当日桶 */
   function mergeTabOrders(
     groups: { encounterId?: string; orders?: NurseStationOrderExecuteRowDto[] }[],
     tab: 'executed' | 'pending',
   ) {
     for (const group of groups) {
-      const encounterId = str(group.encounterId);
-      if (!encounterId) {
-        continue;
-      }
       for (const order of group.orders ?? []) {
         if (!isInfusionExecuteOrder(order)) {
           continue;
         }
-        const slots = tab === 'pending' ? (order.pendingSlots ?? []) : (order.executedSlots ?? []);
-        if (!slots.some((slot) => isSlotOnQueryDate(slot, date))) {
+        const listRowKey = str(order.listRowKey) || `${str(order.orderId)}-${str(order.orderType)}`;
+        if (!listRowKey) {
           continue;
         }
-        const existing = byEncounter.get(encounterId);
-        const groupKey = str(order.groupId) || `r:${str(order.orderId)}`;
-        const drugName = str(order.adviceDisplayName);
+        const slots = tab === 'pending' ? (order.pendingSlots ?? []) : (order.executedSlots ?? []);
+        // 只保留查询日计划点
+        const onDay = slots.filter((slot) => isSlotOnQueryDate(slot, date));
+        if (onDay.length <= 0) {
+          continue;
+        }
+        const existing = byRowKey.get(listRowKey);
         if (!existing) {
-          byEncounter.set(encounterId, {
-            encounterId,
-            patientId: str(order.patientId),
-            groupKeys: new Set([groupKey]),
-            drugNames: drugName ? [drugName] : [],
-            hasPending: tab === 'pending',
-            hasExecuted: tab === 'executed',
+          byRowKey.set(listRowKey, {
+            order,
+            pendingOnDay: tab === 'pending' ? onDay : [],
+            executedOnDay: tab === 'executed' ? onDay : [],
           });
           continue;
         }
-        existing.groupKeys.add(groupKey);
-        if (drugName && !existing.drugNames.includes(drugName)) {
-          existing.drugNames.push(drugName);
-        }
         if (tab === 'pending') {
-          existing.hasPending = true;
+          existing.pendingOnDay = onDay;
         } else {
-          existing.hasExecuted = true;
+          existing.executedOnDay = onDay;
         }
       }
     }
@@ -248,28 +280,81 @@ async function loadPatrolPending(
   mergeTabOrders(pendingRes.groups ?? [], 'pending');
   mergeTabOrders(executedRes.groups ?? [], 'executed');
 
+  // 按就诊 + 组号归并（同组多药一行，与输液贴一致）
+  const byEncounterGroup = new Map<
+    string,
+    { encounterId: string; groupKey: string; buckets: InfusionDayOrderBucket[] }
+  >();
+  for (const bucket of byRowKey.values()) {
+    const encounterId = str(bucket.order.encounterId);
+    if (!encounterId) {
+      continue;
+    }
+    const groupKey = str(bucket.order.groupId) || `r:${str(bucket.order.orderId)}`;
+    const mapKey = `${encounterId}::${groupKey}`;
+    const existing = byEncounterGroup.get(mapKey);
+    if (!existing) {
+      byEncounterGroup.set(mapKey, { encounterId, groupKey, buckets: [bucket] });
+      continue;
+    }
+    existing.buckets.push(bucket);
+  }
+
   const rows: PrintPendingRow[] = [];
-  for (const bucket of byEncounter.values()) {
-    const patient = patientByEncounter(patients, bucket.encounterId);
+  // 同就诊内组序号（展示用）
+  const groupIndexByEncounter = new Map<string, number>();
+  for (const { encounterId, groupKey, buckets } of byEncounterGroup.values()) {
+    const patient = patientByEncounter(patients, encounterId);
     const meta = bedNameOf(patient);
-    const groupCount = bucket.groupKeys.size;
-    const namePreview =
-      bucket.drugNames.length > 0
-        ? `${bucket.drugNames.slice(0, 2).join('、')}${bucket.drugNames.length > 2 ? '…' : ''}`
-        : '—';
+    const groupIndex = (groupIndexByEncounter.get(encounterId) ?? 0) + 1;
+    groupIndexByEncounter.set(encounterId, groupIndex);
+
+    // 组内药名全量拼接，不再截断
+    const names = buckets.map((b) => str(b.order.adviceDisplayName)).filter(Boolean);
+    const head = buckets[0]?.order;
+    const usage = str(head?.usageDisplay) || '输液';
+    const hasPending = buckets.some((b) => b.pendingOnDay.length > 0);
+    const hasExecuted = buckets.some((b) => b.executedOnDay.length > 0);
+    let statusCode: PrintPendingRow['statusCode'] = 'pending';
+    let statusText = '未执行';
+    if (hasPending && hasExecuted) {
+      statusCode = 'pending';
+      statusText = '部分已执行';
+    } else if (hasExecuted) {
+      statusCode = 'executable';
+      statusText = '已执行';
+    }
+
+    const dayTimes = buckets
+      .flatMap((b) => [...b.pendingOnDay, ...b.executedOnDay])
+      .map((s) => str(s.planTime))
+      .filter(Boolean)
+      .slice()
+      .sort((a, b) => a.localeCompare(b));
+    const timeText = dayTimes[0] ? dayjs(dayTimes[0]).format('HH:mm') : date;
+    const listRowKey = buildInfusionPrintListRowKey(encounterId, groupKey, date);
+    // 频次 code + 当日槽位：打印时按就诊取最大每日次数
+    const rateCode = firstRateCode(buckets.map((b) => b.order));
+    const daySlotCount = resolveGroupDaySlotCount(buckets);
+
     rows.push({
-      id: `patrol-${bucket.encounterId}`,
+      id: `patrol-${encounterId}-${groupKey}-${date}`,
       bedNo: meta.bedNo,
       patientName: meta.patientName,
-      // 展示实际药品，不写「输液巡视卡」汇总标题
-      title: namePreview,
-      subtitle: `共 ${groupCount} 组`,
-      timeText: date,
-      statusCode: 'pending',
-      statusText: '待打',
-      pageHint: `${groupCount}`,
-      encounterId: bucket.encounterId,
-      patientId: bucket.patientId || str(patient?.patientId),
+      title: names.join(' + ') || str(head?.adviceDisplayName) || '输液组',
+      subtitle: `第 ${groupIndex} 组 · ${usage}`,
+      frequencyDisplay: firstFrequencyDisplay(buckets.map((b) => b.order)),
+      timeText,
+      statusCode,
+      statusText,
+      pageHint: '1页',
+      encounterId,
+      patientId: str(head?.patientId) || str(patient?.patientId),
+      groupId: str(head?.groupId) || groupKey,
+      orderId: str(head?.orderId),
+      listRowKey,
+      rateCode: rateCode || undefined,
+      daySlotCount,
     });
   }
   return rows;
@@ -757,13 +842,6 @@ function isOralSlotInQueryRange(
   return day >= dateFrom && day <= to;
 }
 
-/** 单日输液贴候选：同 listRowKey 合并 pending/executed 当日槽位 */
-interface InfusionDayOrderBucket {
-  order: NurseStationOrderExecuteRowDto;
-  pendingOnDay: NonNullable<NurseStationOrderExecuteRowDto['pendingSlots']>;
-  executedOnDay: NonNullable<NurseStationOrderExecuteRowDto['executedSlots']>;
-}
-
 /**
  * 输液贴：已校对（执行列表仅 VERIFIED）药嘱中，查询日有待执行或已执行槽位的输液组。
  * 同 encounter + groupId 合并为一张贴；无组号则按 orderId 单独成组。
@@ -896,6 +974,7 @@ async function loadInfusionPending(
       patientName: meta.patientName,
       title: names.join(' + ') || str(head?.adviceDisplayName) || '输液组',
       subtitle: `第 ${groupIndex} 组 · ${usage}`,
+      frequencyDisplay: firstFrequencyDisplay(buckets.map((b) => b.order)),
       timeText,
       statusCode,
       statusText,

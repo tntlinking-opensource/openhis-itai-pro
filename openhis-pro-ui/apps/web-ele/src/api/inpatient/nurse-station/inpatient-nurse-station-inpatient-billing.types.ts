@@ -75,10 +75,8 @@ export interface NurseStationPricingCatalogRowDto {
 /** 划价选品目录分页响应 */
 export interface PageNurseStationPricingCatalogResponse {
   total?: number;
-  records?: NurseStationPricingCatalogRowDto[];
   totalCount?: number;
   content?: NurseStationPricingCatalogRowDto[];
-  rows?: NurseStationPricingCatalogRowDto[];
 }
 
 /** 补费父锚点（直接划价禁止携带） */

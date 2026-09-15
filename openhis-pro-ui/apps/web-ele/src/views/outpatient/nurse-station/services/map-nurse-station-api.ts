@@ -600,6 +600,8 @@ const SUPPLY_STATUS_DISPLAY: Record<SupplyDispenseStatusCode, SupplyItem['status
   PREPARED: '已配药',
   COMPLETED: '已发放',
   PART_COMPLETED: '已发放',
+  REFUNDING: '待退费',
+  REFUNDED: '已退费',
 };
 
 /** 解析侧栏耗材发放展示态与是否可取消执行 */
@@ -630,12 +632,20 @@ export function resolveSupplyDispenseIdForApi(item: SupplyItem): string {
   return '';
 }
 
-/** 耗材侧栏是否排除已退费收费或退费作废发放 */
+/**
+ * 耗材侧栏是否排除行：退费镜像已由后端剔除；
+ * 有效计费下的作废发放剔除；退费中/已退费保留展示（BR-NUR-018）。
+ */
 function isExcludedNurseStationDeviceSupplyRow(row: NurseStationTreatmentLineDto): boolean {
   const charge = String(row.chargeStatusEnum ?? row.displayStatusEnum ?? '')
     .trim()
     .toUpperCase();
-  if (charge === 'REFUNDED' || charge === 'REFUNDING') {
+  // 退费中/已退费：侧栏可见，展示待退费/已退费
+  if (charge === 'REFUNDING' || charge === 'REFUNDED') {
+    return false;
+  }
+  // 非有效计费且非退费：不展示
+  if (charge !== 'PLANNED' && charge !== 'SETTLED') {
     return true;
   }
   const dispense = String(row.dispenseStatusEnum ?? '')
@@ -677,7 +687,7 @@ export function mapDeviceLineToSupplyItem(row: NurseStationTreatmentLineDto): Su
   };
 }
 
-/** 耗材行 → 侧栏卡片（剔除已退费/作废发放，对齐 BR-NUR-018） */
+/** 耗材行 → 侧栏卡片（退费态保留展示，对齐 BR-NUR-018） */
 export function mapDeviceLinesToSupplyItems(rows: NurseStationTreatmentLineDto[]): SupplyItem[] {
   return rows
     .filter((row) => !isExcludedNurseStationDeviceSupplyRow(row))

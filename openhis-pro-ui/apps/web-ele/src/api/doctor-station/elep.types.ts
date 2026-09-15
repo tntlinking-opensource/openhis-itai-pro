@@ -57,17 +57,50 @@ export interface ElepHistoryDetailDto {
   drugSummary?: string;
   pdfFilePath?: string;
   canContinuationRx?: boolean;
+  medType?: string;
+  diseCodg?: string;
+  diseName?: string;
+  valiDays?: string;
+  /** 审方药师医保码；非空表示已审方 */
+  pharCode?: string;
+  pharName?: string;
+  mdtrtId?: string;
   uploadRequest?: Record<string, unknown>;
-  drugLines?: Array<{
-    lineNo?: number;
-    medListCodg?: string;
-    drugName?: string;
-    drugSpec?: string;
-  }>;
-  diagnosis?: {
-    diagCode?: string;
-    diagName?: string;
-  };
+  drugLines?: ElepDrugFormLine[];
+  diagnosis?: ElepDiagnosisForm;
+}
+
+/** 本页诊断（医保 1307） */
+export interface ElepDiagnosisForm {
+  diagCode?: string;
+  diagName?: string;
+}
+
+/** 本页药品行（医保 1301 + 用法） */
+export interface ElepDrugFormLine {
+  lineNo?: number;
+  medListCodg?: string;
+  drugGenname?: string;
+  drugName?: string;
+  drugSpec?: string;
+  drugDosform?: string;
+  drugCnt?: string;
+  drugDosunt?: string;
+  medcWayCodg?: string;
+  medcWayDscr?: string;
+  medcDays?: string;
+  sinDoscnt?: string;
+  sinDosunt?: string;
+  usedFrquCodg?: string;
+  usedFrquName?: string;
+  /** 用药开始时间 yyyy-MM-dd HH:mm:ss */
+  medcBegntime?: string;
+  /** 用药结束时间 yyyy-MM-dd HH:mm:ss */
+  medcEndtime?: string;
+  /** 生产厂家 */
+  prdrName?: string;
+  /** 药品商品名 */
+  drugProdname?: string;
 }
 
 export interface ElepPrescriptionDraftDto {
@@ -87,6 +120,36 @@ export interface ElepActionResultDto {
   pdfFilePath?: string;
   signDigest?: string;
   rxStasCodg?: string;
+  pharCode?: string;
+  pharName?: string;
+}
+
+/** 就诊只读上下文（自费/无挂号号时 allowed=false） */
+export interface ElepEncounterContextDto {
+  allowed?: boolean;
+  blockReason?: string;
+  encounterId?: string;
+  patientId?: string;
+  encounterBusNo?: string;
+  patientName?: string;
+  genderEnum?: string;
+  gend?: string;
+  patnAge?: string;
+  idCard?: string;
+  deptName?: string;
+  deptYbNo?: string;
+  doctorName?: string;
+  doctorYbNo?: string;
+  mdtrtId?: string;
+  psnNo?: string;
+  iptOtpNo?: string;
+  mdtrtTime?: string;
+  fixmedinsCode?: string;
+  fixmedinsName?: string;
+  /** 挂号契约 bus_no；电子处方不区分省市工伤，由后端回填 */
+  contractBusNo?: string;
+  /** 挂号契约主键 */
+  contractId?: number | string;
 }
 
 export interface ListElepEncounterPrescriptionsRequest {
@@ -106,7 +169,7 @@ export interface ElepPreCheckRequest {
   contractId?: string;
   encounterId: string;
   patientId: string;
-  platformBody: Record<string, unknown>;
+  prescriptionId: string;
   pdfInput?: Record<string, unknown>;
 }
 
@@ -153,11 +216,27 @@ export interface ElepSaveDraftRequest {
   encounterId: string;
   patientId: string;
   prescriptionId?: string;
-  platformBody: Record<string, unknown>;
+  diseCodg?: string;
+  diseName?: string;
+  rxTypeCode?: string;
+  valiDays?: string;
+  diagnosis?: ElepDiagnosisForm;
+  drugLines?: ElepDrugFormLine[];
 }
 
 export interface ElepGeneratePdfRequest {
   contractBusNo: string;
   prescriptionId: string;
   pdfInput?: Record<string, unknown>;
+}
+
+export interface ElepEncounterContextRequest {
+  encounterId: string;
+  patientId: string;
+  contractBusNo?: string;
+}
+
+export interface ElepReviewRequest {
+  contractBusNo?: string;
+  prescriptionId: string;
 }

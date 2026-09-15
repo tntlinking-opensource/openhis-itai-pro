@@ -27,6 +27,11 @@ export interface EmrPageItem {
    * 有值时换页垫片画进岛屿 DOM，而非文档 decoration（atom 无法从中间切开）。
    */
   islandTextOffset?: number;
+  /**
+   * 无正文空段（仅占位）。本页放得下就排；放不下不换页，避免末页空纸。
+   * 对齐 PDF blankPagePolicy=hide。
+   */
+  filler?: boolean;
 }
 
 export interface EmrPageBreakBox {
@@ -73,6 +78,33 @@ export function clampSoftSpacersInPlan(
   return { ...plan, softSpacers };
 }
 
+function remainingAreFiller(items: readonly EmrPageItem[], fromIndex: number): boolean {
+  if (fromIndex >= items.length) return true;
+  for (let i = fromIndex; i < items.length; i++) {
+    const it = items[i]!;
+    if (it.kind === 'break') return false;
+    if (!it.filler) return false;
+  }
+  return true;
+}
+
+/** 文末连续短块（签名行等）合计高度；含更高块则不是「末页孤儿」 */
+function trailingShortRunHeightPx(
+  items: readonly EmrPageItem[],
+  fromIndex: number,
+  maxItemPx: number,
+): number | null {
+  let height = 0;
+  for (let i = fromIndex; i < items.length; i++) {
+    const it = items[i]!;
+    if (it.kind === 'break') return null;
+    if (it.filler) continue;
+    if (it.compactHeightPx > maxItemPx) return null;
+    height += it.compactHeightPx;
+  }
+  return height;
+}
+
 /**
  * 把文档顶层块按 A4 纸高排成多页。
  * 分页符：吃掉本页剩余白边 + 页缝 + 下页上边距。
@@ -100,6 +132,12 @@ export function planEmrPageLayout(
   const pageContentHeight = () => pageContentBottom() - pageContentTop();
   /** 本页已排正文高度；过小视为空段残留，硬分页仍应吞掉以免首页空白 */
   const bodyOnPagePx = () => y - pageContentTop();
+  /**
+   * 硬分页生效所需的本页最低正文占比。
+   * 入院记录模版曾用章节硬分页模拟 Word 多页；填满后符落在半空页上会撑出大片留白。
+   * 低于此值忽略该符，后文继续排；接近页底的 Ctrl+Enter 仍换页。
+   */
+  const MIN_BODY_RATIO_FOR_HARD_BREAK = 0.6;
 
   const pushToNextPage = (item: EmrPageItem) => {
     const nextContent = (pageIndex + 1) * cycle + metrics.paddingTopPx;
@@ -132,11 +170,21 @@ export function planEmrPageLayout(
     }
   };
 
-  for (const item of items) {
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]!;
+    const trailingFiller = item.filler && remainingAreFiller(items, i);
+    if (trailingFiller) {
+      const blockH = Math.max(0, item.compactHeightPx);
+      if (blockH > 0 && y + blockH <= pageContentBottom() + 0.5) {
+        y += blockH;
+      }
+      continue;
+    }
     if (item.kind === 'break') {
       syncPageIndexWithY(item);
-      // 迁移残留 / 误插：本页尚无有效正文就硬分页 → 屏上第 1 页空白、正文从第 2 页起（打印仍可能 1 页）
-      if (bodyOnPagePx() <= 40) {
+      // 本页还很空：忽略硬分页（含模版章节符），避免半页空白；仅页底附近的符才换页
+      const minBodyPx = Math.max(40, pageContentHeight() * MIN_BODY_RATIO_FOR_HARD_BREAK);
+      if (bodyOnPagePx() <= minBodyPx) {
         breakBoxes.push({ marginTopPx: 0, heightPx: 0, marginBottomPx: 0 });
         continue;
       }
@@ -160,6 +208,12 @@ export function planEmrPageLayout(
       // 可拆分块（行级）：放不下就换页；页顶也须校验（canPush 旧逻辑会漏掉换页后的首块）
       if (blockH <= maxBlockH + 0.5) {
         while (y + blockH > pageContentBottom() + 0.5) {
+          // 文末签名/空段合计不超过约 4 行时不另起一页，避免半页空白
+          const trailH = trailingShortRunHeightPx(items, i, 80);
+          const keepTrailing = trailH != null && trailH <= 140 && bodyOnPagePx() > 80;
+          if (keepTrailing) {
+            break;
+          }
           pushToNextPage(item);
         }
       } else {

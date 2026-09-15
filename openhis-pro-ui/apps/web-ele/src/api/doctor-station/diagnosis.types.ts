@@ -172,19 +172,14 @@ export interface ConditionDefinitionRowResponse {
   statusEnum?: null | number;
 }
 
-/** getConditionDefinitionMetadata：分页行与总数（兼容旧 {@code records}/{@code total} 与统一 {@code content}/{@code totalCount}） */
+/** getConditionDefinitionMetadata：分页行与总数（对齐后端 PagedResult：content / totalCount） */
 export interface ConditionDefinitionPageResponse {
-  total?: null | number | string;
+  content?: ConditionDefinitionRowResponse[] | null;
   totalCount?: null | number | string;
-  totalElements?: null | number | string;
-  pages?: null | number;
-  current?: null | number;
-  size?: null | number;
+  /** @deprecated 优先读 {@link totalCount} */
+  total?: null | number | string;
   pageNo?: null | number;
   pageSize?: null | number;
-  records?: ConditionDefinitionRowResponse[] | null;
-  content?: ConditionDefinitionRowResponse[] | null;
-  rows?: ConditionDefinitionRowResponse[] | null;
 }
 
 /** saveDoctorDiagnosis */

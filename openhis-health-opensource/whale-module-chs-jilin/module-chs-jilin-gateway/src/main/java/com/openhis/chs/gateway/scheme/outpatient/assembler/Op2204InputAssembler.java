@@ -54,6 +54,10 @@ public final class Op2204InputAssembler {
             if (isNotEmpty(line.getRxno())) {
                 row.setRxno(line.getRxno());
             }
+            // Pre：中草药按处方味数传复方/单方；非中草药不传
+            if (isNotEmpty(line.getTcmdrugUsedWay())) {
+                row.setTcmdrugUsedWay(line.getTcmdrugUsedWay().trim());
+            }
             feedetail.add(row);
         }
         Op2204Input input = new Op2204Input();

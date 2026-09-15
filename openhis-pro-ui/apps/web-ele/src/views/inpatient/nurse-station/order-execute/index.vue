@@ -1155,7 +1155,7 @@ async function loadExecuteList() {
     return;
   }
 
-  // 空选=查全部：西药 Tab（含诊疗）+ 中药 Tab 都拉；勾选再决定打哪个后端 Tab
+  // 空选=查全部：一次 medicineCategoryTab=all；勾选再决定打哪个后端 Tab（避免 west+tcm 双请求）
   const selected = selectedProjectTypes.value;
   const quickFilterOn = selected.length > 0;
   const needTcm = !quickFilterOn || selected.includes('tcm');
@@ -1171,11 +1171,16 @@ async function loadExecuteList() {
   listFetching.value = true;
   try {
     const tasks: Array<ReturnType<typeof httpListNurseStationOrderExecute>> = [];
-    if (needWest) {
-      tasks.push(httpListNurseStationOrderExecute({ ...base, medicineCategoryTab: 'west' }));
-    }
-    if (needTcm) {
-      tasks.push(httpListNurseStationOrderExecute({ ...base, medicineCategoryTab: 'tcm' }));
+    if (!quickFilterOn) {
+      // 空选：单次 all，后端折叠中药方并含诊疗
+      tasks.push(httpListNurseStationOrderExecute({ ...base, medicineCategoryTab: 'all' }));
+    } else {
+      if (needWest) {
+        tasks.push(httpListNurseStationOrderExecute({ ...base, medicineCategoryTab: 'west' }));
+      }
+      if (needTcm) {
+        tasks.push(httpListNurseStationOrderExecute({ ...base, medicineCategoryTab: 'tcm' }));
+      }
     }
     if (tasks.length === 0) {
       return;
@@ -1338,7 +1343,7 @@ async function handleContextMenuPrintLabel() {
   }
 }
 
-/** 右键打印当前行采血贴（检验医嘱，复用门诊采血贴模板） */
+/** 右键打印当前行采血贴（检验医嘱，住院 30×50mm 模板，不复用门诊） */
 async function handleContextMenuPrintSpecimenBarcode() {
   const row = slotContextMenuRow.value;
   closeSlotContextMenu();
@@ -1360,6 +1365,7 @@ async function handleContextMenuPrintSpecimenBarcode() {
   try {
     const result = await printSpecimenBarcode({
       encounterId,
+      bedNo: String(patient.bedNo ?? '').trim(),
       patientName: String(patient.name ?? '').trim(),
       genderEnumText: String(patient.gender ?? '').trim(),
       ageText: patient.age == null ? '' : `${patient.age}岁`,
@@ -1370,6 +1376,7 @@ async function handleContextMenuPrintSpecimenBarcode() {
         },
       ],
       jobName: `采血贴·${patient.bedNo}${patient.name}`,
+      scenarioCode: PRINT_SCENARIO.ipSpecimenBarcodePrint,
     });
     if (result.ok) {
       ElMessage.success(`已发送打印：采血贴，共 ${result.count} 份`);
@@ -1813,83 +1820,98 @@ onBeforeUnmount(() => {
               </ElTableColumn>
               <ElTableColumn label="医嘱内容" min-width="360">
                 <template #default="{ row }">
-                  <div class="nurse-order-content-cell">
-                    <template v-if="isExecuteMedicineOrder(row)">
+                  <div class="nurse-order-content-wrap">
+                    <div class="nurse-order-content-cell">
+                      <template v-if="isExecuteMedicineOrder(row)">
+                        <AdviceOrderDisplayCell
+                          :row-key="row.id"
+                          :content="executeOrderDisplayedContent(row)"
+                          :dosage-text="row.dosage"
+                          :extension="row.extension"
+                          :group-items="row.groupItems"
+                          :tcm-flag="row.tcmFlag === true"
+                          :skin-test-outcome-code="row.skinTestOutcomeCode"
+                          :skin-test-outcome-text="row.skinTestOutcomeText"
+                        />
+                      </template>
+                      <template v-else-if="row.bindItems?.length">
+                        <div class="advice-order-line-row">
+                          <span class="drug-main-text">
+                            {{ executeOrderDisplayedContent(row) }}
+                          </span>
+                          <span v-if="row.dosage" class="group-drug-dose">{{ row.dosage }}</span>
+                        </div>
+                        <div v-if="row.extension" class="normal-drug-shared">
+                          {{ row.extension }}
+                        </div>
+                      </template>
                       <AdviceOrderDisplayCell
+                        v-else
                         :row-key="row.id"
                         :content="executeOrderDisplayedContent(row)"
                         :dosage-text="row.dosage"
                         :extension="row.extension"
-                        :group-items="row.groupItems"
                         :tcm-flag="row.tcmFlag === true"
+                        :skin-test-outcome-code="row.skinTestOutcomeCode"
+                        :skin-test-outcome-text="row.skinTestOutcomeText"
                       />
-                    </template>
-                    <template v-else-if="row.bindItems?.length">
-                      <div class="advice-order-line-row">
-                        <span class="drug-main-text">
-                          {{ executeOrderDisplayedContent(row) }}
-                        </span>
-                        <span v-if="row.dosage" class="group-drug-dose">{{ row.dosage }}</span>
-                      </div>
-                      <div v-if="row.extension" class="normal-drug-shared">{{ row.extension }}</div>
-                    </template>
-                    <AdviceOrderDisplayCell
-                      v-else
-                      :row-key="row.id"
-                      :content="executeOrderDisplayedContent(row)"
-                      :dosage-text="row.dosage"
-                      :extension="row.extension"
-                      :tcm-flag="row.tcmFlag === true"
-                    />
-                    <div
-                      v-if="row.bindItems?.length"
-                      class="order-execute-bind-follow"
-                      :class="{ 'order-execute-bind-follow--after-extension': !!row.extension }"
-                    >
                       <div
-                        v-for="(bind, bindIndex) in row.bindItems"
-                        :key="resolveExecuteBindItemKey(bind, bindIndex)"
-                        class="order-execute-bind-attach-row"
+                        v-if="row.bindItems?.length"
+                        class="order-execute-bind-follow"
+                        :class="{ 'order-execute-bind-follow--after-extension': !!row.extension }"
                       >
-                        <span class="order-execute-bind-tag">带</span>
-                        <span
-                          class="order-execute-bind-name"
-                          :title="resolveExecuteBindItemDisplayText(bind)"
+                        <div
+                          v-for="(bind, bindIndex) in row.bindItems"
+                          :key="resolveExecuteBindItemKey(bind, bindIndex)"
+                          class="order-execute-bind-attach-row"
                         >
-                          {{ resolveExecuteBindItemDisplayText(bind) }}
-                        </span>
-                        <div class="order-execute-bind-qty-group">
-                          <ElInputNumber
-                            v-if="bindQuantityEditable"
-                            class="order-execute-bind-qty-input"
-                            :model-value="resolveExecuteBindQuantityValue(bind)"
-                            :min="0"
-                            :step="1"
-                            :precision="0"
-                            :controls="false"
-                            size="small"
-                            @update:model-value="
-                              (value) =>
-                                updateBindItemQuantity(
-                                  row.encounterId || card.patient.id,
-                                  row,
-                                  bindIndex,
-                                  value,
-                                )
-                            "
-                          />
-                          <span v-else class="order-execute-bind-qty-readonly">
-                            {{ resolveExecuteBindQuantityValue(bind) }}
-                          </span>
+                          <span class="order-execute-bind-tag">带</span>
                           <span
-                            v-if="resolveExecuteBindItemUnitLabel(bind)"
-                            class="order-execute-bind-unit"
+                            class="order-execute-bind-name"
+                            :title="resolveExecuteBindItemDisplayText(bind)"
                           >
-                            {{ resolveExecuteBindItemUnitLabel(bind) }}
+                            {{ resolveExecuteBindItemDisplayText(bind) }}
                           </span>
+                          <div class="order-execute-bind-qty-group">
+                            <ElInputNumber
+                              v-if="bindQuantityEditable"
+                              class="order-execute-bind-qty-input"
+                              :model-value="resolveExecuteBindQuantityValue(bind)"
+                              :min="0"
+                              :step="1"
+                              :precision="0"
+                              :controls="false"
+                              size="small"
+                              @update:model-value="
+                                (value) =>
+                                  updateBindItemQuantity(
+                                    row.encounterId || card.patient.id,
+                                    row,
+                                    bindIndex,
+                                    value,
+                                  )
+                              "
+                            />
+                            <span v-else class="order-execute-bind-qty-readonly">
+                              {{ resolveExecuteBindQuantityValue(bind) }}
+                            </span>
+                            <span
+                              v-if="resolveExecuteBindItemUnitLabel(bind)"
+                              class="order-execute-bind-unit"
+                            >
+                              {{ resolveExecuteBindItemUnitLabel(bind) }}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </div>
+                    <span
+                      v-if="!row.groupItems?.length && row.skinTestFlag && !row.skinTestOutcomeText"
+                      class="skin-test-pill"
+                      title="该药品需皮试，请在皮试管理登记结果"
+                    >
+                      皮试
+                    </span>
                   </div>
                 </template>
               </ElTableColumn>

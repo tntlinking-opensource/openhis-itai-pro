@@ -1,6 +1,6 @@
 /**
  * 可填域（元数据/自由文本）样式 — 与分页/页眉解耦。
- * 由 simple-editor.scss @import；改 pointer-events 须跑 fillable-field.verify.ts。
+ * 由 simple-editor.scss @use；改 pointer-events 须跑 fillable-field.verify.ts。
  */
 
 .ProseMirror .emr-bracket-field--node {
@@ -330,6 +330,33 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+/* 诊断多行值：丢掉模版垫的行首空格，换行仍保留；对齐由段落悬挂缩进承担 */
+.ProseMirror p[data-name='tcmPreliminaryDiagnosis'] .emr-fillable-field__shell,
+.ProseMirror p[data-name='westernPreliminaryDiagnosis'] .emr-fillable-field__shell {
+  /* 多行时不要在每行克隆 []，否则续行会多出左括号、无法与首行诊断值对齐 */
+  box-decoration-break: slice;
+  -webkit-box-decoration-break: slice;
+}
+
+.ProseMirror
+  p[data-name='tcmPreliminaryDiagnosis']
+  .emr-fillable-field__shell
+  .emr-fillable-field__input,
+.ProseMirror
+  p[data-name='westernPreliminaryDiagnosis']
+  .emr-fillable-field__shell
+  .emr-fillable-field__input,
+.ProseMirror
+  p[data-name='tcmPreliminaryDiagnosis']
+  .emr-fillable-field__shell
+  .emr-fillable-field__readonly-text,
+.ProseMirror
+  p[data-name='westernPreliminaryDiagnosis']
+  .emr-fillable-field__shell
+  .emr-fillable-field__readonly-text {
+  white-space: pre-line;
 }
 
 .ProseMirror .emr-fillable--active .emr-fillable-field__shell::before,

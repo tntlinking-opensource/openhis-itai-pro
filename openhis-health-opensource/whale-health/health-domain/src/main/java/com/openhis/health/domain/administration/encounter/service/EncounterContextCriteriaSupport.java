@@ -25,6 +25,7 @@ import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.InpatientRegistrationConstants;
 import com.openhis.health.domain.share.constants.InpatientSettleQueueTab;
 import com.openhis.health.domain.share.constants.RegistrationSlipConstants;
+import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.financial.paymentreconciliation.entity.PaymentReconciliation;
 import com.openhis.health.domain.share.enums.PaymentKind;
 import com.openhis.health.domain.share.enums.PaymentStatus;
@@ -742,12 +743,50 @@ public class EncounterContextCriteriaSupport {
                 deviceRequestRoot.get(FieldNameConstants.ID)),
             cb.isFalse(anyDispenseRoot.get(FieldNameConstants.IS_DELETED))));
 
+        // 有效计费：请求锚或发放锚上仍存在 PLANNED/SETTLED（排除退费后仍 PREPARATION 的脏待发，BR-NUR-018）
+        Subquery<Long> billableChargeSq = owningQuery.subquery(Long.class);
+        Root<ChargeItem> billableChargeRoot = billableChargeSq.from(ChargeItem.class);
+        Subquery<Long> requestDispenseIdsSq = owningQuery.subquery(Long.class);
+        Root<DeviceDispense> requestDispenseRoot = requestDispenseIdsSq.from(DeviceDispense.class);
+        requestDispenseIdsSq.select(requestDispenseRoot.get(FieldNameConstants.ID));
+        requestDispenseIdsSq.where(cb.and(
+            cb.equal(
+                requestDispenseRoot.get(FieldNameConstants.DEVICE_REQ_ID),
+                deviceRequestRoot.get(FieldNameConstants.ID)),
+            cb.isFalse(requestDispenseRoot.get(FieldNameConstants.IS_DELETED))));
+        billableChargeSq.select(billableChargeRoot.get(FieldNameConstants.ID));
+        billableChargeSq.where(cb.and(
+            cb.equal(billableChargeRoot.get(FieldNameConstants.ENCOUNTER_ID), root.get(FieldNameConstants.ID)),
+            cb.isFalse(billableChargeRoot.get(FieldNameConstants.IS_DELETED)),
+            billableChargeRoot.get(FieldNameConstants.STATUS_ENUM).in(
+                ChargeItemStatus.PLANNED.getCode(),
+                ChargeItemStatus.SETTLED.getCode()),
+            cb.or(
+                cb.and(
+                    cb.equal(
+                        billableChargeRoot.get(FieldNameConstants.SERVICE_TABLE),
+                        TableNameConstants.WKF_DEVICE_REQUEST),
+                    cb.equal(
+                        billableChargeRoot.get(FieldNameConstants.SERVICE_ID),
+                        deviceRequestRoot.get(FieldNameConstants.ID))),
+                cb.and(
+                    cb.equal(
+                        billableChargeRoot.get(FieldNameConstants.SERVICE_TABLE),
+                        TableNameConstants.WKF_DEVICE_DISPENSE),
+                    billableChargeRoot.get(FieldNameConstants.SERVICE_ID).in(requestDispenseIdsSq)),
+                cb.and(
+                    cb.equal(
+                        billableChargeRoot.get(FieldNameConstants.DISPENSE_TABLE),
+                        TableNameConstants.WKF_DEVICE_DISPENSE),
+                    billableChargeRoot.get(FieldNameConstants.DISPENSE_ID).in(requestDispenseIdsSq)))));
+
         pendingRequestSq.select(deviceRequestRoot.get(FieldNameConstants.ID));
         pendingRequestSq.where(cb.and(
             cb.equal(deviceRequestRoot.get(FieldNameConstants.ENCOUNTER_ID), root.get(FieldNameConstants.ID)),
             cb.equal(deviceRequestRoot.get(FieldNameConstants.STATUS_ENUM), RequestStatus.COMPLETED.getCode()),
             cb.isNull(deviceRequestRoot.get(FieldNameConstants.REFUND_DEVICE_ID)),
             cb.isFalse(deviceRequestRoot.get(FieldNameConstants.IS_DELETED)),
+            cb.exists(billableChargeSq),
             cb.or(cb.exists(pendingDispenseSq), cb.not(cb.exists(anyDispenseSq)))));
         return cb.exists(pendingRequestSq);
     }

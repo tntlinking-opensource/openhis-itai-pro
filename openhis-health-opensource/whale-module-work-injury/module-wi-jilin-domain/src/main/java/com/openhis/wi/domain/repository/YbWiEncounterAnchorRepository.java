@@ -7,6 +7,8 @@ package com.openhis.wi.domain.repository;
 import com.openhis.wi.domain.entity.YbWiEncounterAnchor;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 /** {@link YbWiEncounterAnchor} 仓储。 */
@@ -19,4 +21,12 @@ public interface YbWiEncounterAnchorRepository extends JpaRepository<YbWiEncount
      * @return 锚点
      */
     Optional<YbWiEncounterAnchor> findByEncounterId(Long encounterId);
+
+    /**
+     * 按就诊集合批量查锚点（对账明细避免 N+1）。
+     *
+     * @param encounterIds 就诊 id 集合
+     * @return 锚点列表
+     */
+    List<YbWiEncounterAnchor> findByEncounterIdIn(Collection<Long> encounterIds);
 }

@@ -32,7 +32,6 @@ import {
   deactivatePractitionerRoleApi,
   editPractitionerRoleApi,
   getLocationOptionByIdApi,
-  legacyRoleCodeToLabel,
   listLocationOptionsByOrganizationApi,
   listPractitionerAssignmentsApi,
   loadBusinessBuiltInRoleOptions,
@@ -107,40 +106,28 @@ function findRoleOption(roleId?: string): RoleOptionDto | undefined {
 }
 
 /** 医师内置角色才维护号源类型 */
-function isDoctorAssignment(roleId?: string, roleCode?: null | number): boolean {
-  const option = findRoleOption(roleId);
-  if (option?.code === PLATFORM_ROLE_CODE.DOCTOR) {
-    return true;
-  }
-  return roleCode === 1;
+function isDoctorAssignment(roleId?: string): boolean {
+  return findRoleOption(roleId)?.code === PLATFORM_ROLE_CODE.DOCTOR;
 }
 
 /** 库管角色：位置字段改为管理药库 */
-function isWarehouseRole(roleId?: string, roleCode?: null | number): boolean {
-  const option = findRoleOption(roleId);
-  if (option?.assignmentScopes?.includes('WAREHOUSE')) {
-    return true;
-  }
-  return roleCode === 4;
+function isWarehouseRole(roleId?: string): boolean {
+  return !!findRoleOption(roleId)?.assignmentScopes?.includes('WAREHOUSE');
 }
 
 /** 药师角色：位置字段改为管理药房 */
-function isPharmacyRole(roleId?: string, roleCode?: null | number): boolean {
-  const option = findRoleOption(roleId);
-  if (option?.assignmentScopes?.includes('PHARMACY')) {
-    return true;
-  }
-  return roleCode === 3;
+function isPharmacyRole(roleId?: string): boolean {
+  return !!findRoleOption(roleId)?.assignmentScopes?.includes('PHARMACY');
 }
 
 /** 库管/药师：位置字段改为库房/药房下拉，仍传 locationId */
-function usesInventoryLocation(roleId?: string, roleCode?: null | number): boolean {
-  return isWarehouseRole(roleId, roleCode) || isPharmacyRole(roleId, roleCode);
+function usesInventoryLocation(roleId?: string): boolean {
+  return isWarehouseRole(roleId) || isPharmacyRole(roleId);
 }
 
 /** 普通岗位：科室 + 物理位置 */
-function usesOrgLocation(roleId?: string, roleCode?: null | number): boolean {
-  return !usesInventoryLocation(roleId, roleCode);
+function usesOrgLocation(roleId?: string): boolean {
+  return !usesInventoryLocation(roleId);
 }
 
 const editForm = ref<AssignmentEditDraft>({});
@@ -260,12 +247,12 @@ function normalizeLocationIdList(ids: unknown): string[] {
 }
 
 /** 汇总同业务角色下已分配的库房/药房 locationId（编辑回显） */
-function collectInventoryLocationIdsForRole(roleCode?: null | number): string[] {
-  if (roleCode === undefined || roleCode === null) {
+function collectInventoryLocationIdsForRole(roleId?: string): string[] {
+  if (!roleId) {
     return [];
   }
   return rows.value
-    .filter((row) => row.roleCode === roleCode && row.activeFlag !== false)
+    .filter((row) => String(row.roleId ?? '') === String(roleId) && row.activeFlag !== false)
     .map((row) =>
       row.locationId !== undefined && row.locationId !== null && String(row.locationId) !== ''
         ? String(row.locationId)
@@ -401,7 +388,7 @@ async function startEdit(row: PractitionerAssignmentRow) {
     row.roleId !== undefined && row.roleId !== null && String(row.roleId) !== ''
       ? String(row.roleId)
       : undefined;
-  const inventory = usesInventoryLocation(roleIdFromRow, row.roleCode);
+  const inventory = usesInventoryLocation(roleIdFromRow);
   editForm.value = {
     assignmentId: id,
     roleId: roleIdFromRow,
@@ -414,7 +401,7 @@ async function startEdit(row: PractitionerAssignmentRow) {
       : row.locationId !== undefined && row.locationId !== null && String(row.locationId) !== ''
         ? String(row.locationId)
         : '',
-    locationIds: inventory ? collectInventoryLocationIdsForRole(row.roleCode) : [],
+    locationIds: inventory ? collectInventoryLocationIdsForRole(roleIdFromRow) : [],
     name: row.name ?? '',
     specialtyCode: row.specialtyCode,
     typeCode: row.typeCode ?? undefined,
@@ -437,13 +424,12 @@ async function saveEdit() {
   }
   const editingRow = rows.value.find((row) => row.assignmentId === id);
   const roleId = editForm.value.roleId;
-  const roleCode = editingRow?.roleCode;
   const orgId = toNullableOrgId(String(editForm.value.orgId ?? ''));
   const locId = toNullableLocationId(editForm.value.locationId);
   const inventoryLocIds = normalizeLocationIdList(editForm.value.locationIds);
 
   if (
-    !usesInventoryLocation(roleId, roleCode) &&
+    !usesInventoryLocation(roleId) &&
     orgId === undefined &&
     (locId === undefined || locId === null)
   ) {
@@ -461,14 +447,14 @@ async function saveEdit() {
         : Number(editForm.value.typeCode),
   };
 
-  if (usesInventoryLocation(roleId, roleCode)) {
+  if (usesInventoryLocation(roleId)) {
     payload.locationId = inventoryLocIds.join(',');
   } else {
     payload.orgId = orgId ?? null;
     payload.locationId = locId ?? null;
   }
 
-  if (isDoctorAssignment(editForm.value.roleId, editingRow?.roleCode)) {
+  if (isDoctorAssignment(editForm.value.roleId)) {
     payload.serviceIds = [...(editForm.value.serviceIds ?? [])];
   }
   try {
@@ -713,17 +699,13 @@ onMounted(async () => {
                   />
                 </ElSelect>
               </template>
-              <span v-else>{{ row.roleName ?? legacyRoleCodeToLabel(row.roleCode) }}</span>
+              <span v-else>{{ row.roleName ?? '—' }}</span>
             </template>
           </ElTableColumn>
 
           <ElTableColumn label="科室" min-width="180">
             <template #default="{ row }">
-              <template
-                v-if="
-                  editingId === row.assignmentId && usesOrgLocation(editForm.roleId, row.roleCode)
-                "
-              >
+              <template v-if="editingId === row.assignmentId && usesOrgLocation(editForm.roleId)">
                 <ElSelect
                   v-model="editForm.orgId"
                   clearable
@@ -740,7 +722,7 @@ onMounted(async () => {
                   />
                 </ElSelect>
               </template>
-              <span v-else-if="usesOrgLocation(undefined, row.roleCode)">
+              <span v-else-if="usesOrgLocation(row.roleId)">
                 {{ row.orgName ?? '—' }}
               </span>
               <span v-else>—</span>
@@ -751,7 +733,7 @@ onMounted(async () => {
             <template #default="{ row }">
               <template v-if="editingId === row.assignmentId">
                 <ElSelect
-                  v-if="usesOrgLocation(editForm.roleId, row.roleCode)"
+                  v-if="usesOrgLocation(editForm.roleId)"
                   v-model="editForm.locationId"
                   clearable
                   filterable
@@ -767,7 +749,7 @@ onMounted(async () => {
                   />
                 </ElSelect>
                 <ElSelect
-                  v-else-if="usesInventoryLocation(editForm.roleId, row.roleCode)"
+                  v-else-if="usesInventoryLocation(editForm.roleId)"
                   v-model="editForm.locationIds"
                   clearable
                   collapse-tags
@@ -801,10 +783,7 @@ onMounted(async () => {
           <ElTableColumn label="号源类型" min-width="160">
             <template #default="{ row }">
               <template
-                v-if="
-                  editingId === row.assignmentId &&
-                  isDoctorAssignment(editForm.roleId, row.roleCode)
-                "
+                v-if="editingId === row.assignmentId && isDoctorAssignment(editForm.roleId)"
               >
                 <ElSelect
                   v-model="editForm.serviceIds"

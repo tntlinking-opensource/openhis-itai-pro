@@ -8,7 +8,7 @@
     <parent>
         <groupId>com.openhis</groupId>
         <artifactId>whale-health</artifactId>
-        <version>2.0.6</version>
+        <version>2.0.7</version>
     </parent>
     
     <artifactId>health-app</artifactId>
@@ -119,15 +119,6 @@
             </dependencies>
         </profile>
         <profile>
-            <id>with-msfx</id>
-            <dependencies>
-                <dependency>
-                    <groupId>com.openhis</groupId>
-                    <artifactId>module-msfx-starter</artifactId>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
             <id>with-campus</id>
             <activation>
                 <activeByDefault>true</activeByDefault>
@@ -136,6 +127,15 @@
                 <dependency>
                     <groupId>com.openhis</groupId>
                     <artifactId>module-campus-starter</artifactId>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>with-miniapp</id>
+            <dependencies>
+                <dependency>
+                    <groupId>com.openhis</groupId>
+                    <artifactId>module-miniapp-starter</artifactId>
                 </dependency>
             </dependencies>
         </profile>

@@ -7,53 +7,73 @@ package com.openhis.health.application.peis.history.service;
 import com.openhis.health.application.peis.history.dto.ExamHistoryRowDto;
 import com.openhis.health.application.peis.history.request.CancelPhysicalExamRequest;
 import com.openhis.health.application.peis.history.request.ListPatientExamHistoryRequest;
+import com.openhis.health.application.peis.history.request.PageExamRecordsRequest;
 import com.openhis.health.application.peis.history.response.CancelPhysicalExamResponse;
 import com.openhis.health.application.peis.history.response.ListPatientExamHistoryResponse;
+import com.openhis.health.application.peis.history.response.PageExamRecordsResponse;
 import com.openhis.health.application.peis.history.support.PeisPackageSnapshotSupport;
 import com.openhis.health.application.peis.history.support.PhysicalExamHistoryCancelExecutor;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.encounter.entity.Encounter;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
+import com.openhis.health.domain.administration.patient.queries.PatientPagedQuery;
+import com.openhis.health.domain.administration.patient.queries.model.BatchPatientDetailQueryModel;
+import com.openhis.health.domain.administration.patient.queries.model.PatientCoreQueryModel;
+import com.openhis.health.domain.administration.patient.queries.model.PatientPageItemQueryModel;
 import com.openhis.health.domain.administration.patient.service.PatientQueryService;
 import com.openhis.health.domain.clinical.diagnosticreport.queries.model.DiagnosticReportModel;
 import com.openhis.health.domain.clinical.diagnosticreport.service.DiagnosticReportQueryService;
+import com.openhis.health.domain.peis.encounterext.entity.PeisEncounterExt;
 import com.openhis.health.domain.peis.encounterext.queries.model.PeisEncounterExtModel;
 import com.openhis.health.domain.peis.encounterext.service.PeisEncounterExtQueryService;
 import com.openhis.health.domain.peis.group.entity.PeisGroupRoster;
 import com.openhis.health.domain.peis.group.repository.PeisGroupRosterRepository;
 import com.openhis.health.domain.share.constants.DiagnosticReportStatusConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.PeisExamHistoryConstants;
 import com.openhis.health.domain.share.constants.PeisExamKindConstants;
 import com.openhis.health.domain.share.enums.ChargeItemStatus;
+import com.openhis.health.domain.share.enums.EncounterClass;
 import com.openhis.health.domain.share.enums.EncounterStatus;
 import com.openhis.health.domain.share.extension.campus.PeisCampusIdentityPort;
 import com.openhis.health.domain.share.extension.campus.PeisCampusIdentityView;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.whale.core.application.exception.ValidationException;
+import com.openhis.whale.core.application.util.StringUtils;
 import com.openhis.whale.core.infrastructure.multitenancy.TenantUtils;
 import jakarta.persistence.criteria.Predicate;
+import jakarta.persistence.criteria.Root;
+import jakarta.persistence.criteria.Subquery;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
 /**
- * 学生/教职工体检历史（历年 PE Encounter）。
+ * 学生/教职工体检历史与体检记录分页（历年 PE Encounter）。
  */
 @Service
 @Validated
@@ -69,6 +89,116 @@ public class PeisExamHistoryAppService {
     private final ChargeItemQueryService chargeItemQueryService;
     private final CurrentPractitionerResolver currentPractitionerResolver;
     private final PhysicalExamHistoryCancelExecutor physicalExamHistoryCancelExecutor;
+
+    /**
+     * 体检记录分页（以体检单 Encounter 为主列表）。
+     */
+    public PageExamRecordsResponse pageExamRecords(PageExamRecordsRequest request) {
+        LocalDate dateFrom = request == null ? null : request.getDateFrom();
+        LocalDate dateTo = request == null ? null : request.getDateTo();
+        Long filterPatientId = request == null ? null : request.getPatientId();
+        String keyword = request == null || request.getKeyword() == null
+            ? "" : request.getKeyword().trim();
+        String groupScope = request == null || request.getGroupScope() == null
+            ? "" : request.getGroupScope().trim();
+
+        Set<Long> keywordPatientIds = null;
+        if (StringUtils.isNotEmpty(keyword) && filterPatientId == null) {
+            keywordPatientIds = resolvePatientIdsByKeyword(keyword);
+        }
+        Set<Long> finalKeywordPatientIds = keywordPatientIds;
+
+        Specification<Encounter> spec = (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.get(FieldNameConstants.CLASS_ENUM), EncounterClass.PE.getCode()));
+            predicates.add(cb.equal(root.get(FieldNameConstants.IS_DELETED), Boolean.FALSE));
+            predicates.add(cb.notEqual(
+                root.get(FieldNameConstants.STATUS_ENUM), EncounterStatus.CANCELLED.getCode()));
+            predicates.add(cb.notEqual(
+                root.get(FieldNameConstants.STATUS_ENUM), EncounterStatus.ENTERED_IN_ERROR.getCode()));
+            if (dateFrom != null) {
+                LocalDateTime rangeStart = dateFrom.atStartOfDay();
+                predicates.add(cb.greaterThanOrEqualTo(root.get(FieldNameConstants.START_TIME), rangeStart));
+            }
+            if (dateTo != null) {
+                LocalDateTime rangeEnd = dateTo.atTime(LocalTime.MAX);
+                predicates.add(cb.lessThanOrEqualTo(root.get(FieldNameConstants.START_TIME), rangeEnd));
+            }
+            if (filterPatientId != null) {
+                predicates.add(cb.equal(root.get(FieldNameConstants.PATIENT_ID), filterPatientId));
+            }
+            if (StringUtils.isNotEmpty(keyword)) {
+                List<Predicate> keywordOr = new ArrayList<>();
+                keywordOr.add(cb.like(root.get(FieldNameConstants.BUS_NO), "%" + keyword + "%"));
+                if (finalKeywordPatientIds != null && !finalKeywordPatientIds.isEmpty()) {
+                    keywordOr.add(root.get(FieldNameConstants.PATIENT_ID).in(finalKeywordPatientIds));
+                }
+                predicates.add(cb.or(keywordOr.toArray(new Predicate[0])));
+            }
+            if ("group".equals(groupScope)) {
+                Subquery<Long> groupSub = query.subquery(Long.class);
+                Root<PeisEncounterExt> extRoot = groupSub.from(PeisEncounterExt.class);
+                groupSub.select(extRoot.get(FieldNameConstants.ENCOUNTER_ID));
+                groupSub.where(
+                    cb.equal(extRoot.get(FieldNameConstants.ENCOUNTER_ID), root.get(FieldNameConstants.ID)),
+                    cb.equal(extRoot.get(FieldNameConstants.IS_DELETED), Boolean.FALSE),
+                    cb.isTrue(extRoot.get("groupFlag")));
+                predicates.add(cb.exists(groupSub));
+            } else if ("personal".equals(groupScope)) {
+                Subquery<Long> personalSub = query.subquery(Long.class);
+                Root<PeisEncounterExt> extRoot = personalSub.from(PeisEncounterExt.class);
+                personalSub.select(extRoot.get(FieldNameConstants.ENCOUNTER_ID));
+                personalSub.where(
+                    cb.equal(extRoot.get(FieldNameConstants.ENCOUNTER_ID), root.get(FieldNameConstants.ID)),
+                    cb.equal(extRoot.get(FieldNameConstants.IS_DELETED), Boolean.FALSE),
+                    cb.or(
+                        cb.isFalse(extRoot.get("groupFlag")),
+                        cb.isNull(extRoot.get("groupFlag"))));
+                predicates.add(cb.exists(personalSub));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+
+        int pageIndex = request == null ? 0 : request.springPageIndex();
+        int pageSize = request == null ? 20 : request.getBoundedPageSize();
+        PageRequest pageable = PageRequest.of(
+            pageIndex,
+            pageSize,
+            Sort.by(Sort.Direction.DESC, FieldNameConstants.START_TIME));
+        Page<Encounter> page = encounterQueryService.pageEncounterEntities(spec, pageable);
+
+        List<ExamHistoryRowDto> rows = new ArrayList<>();
+        List<Long> patientIds = new ArrayList<>();
+        for (Encounter encounter : page.getContent()) {
+            ExamHistoryRowDto row = toRow(encounter);
+            row.setPatientId(encounter.getPatientId());
+            if (encounter.getPatientId() != null) {
+                patientIds.add(encounter.getPatientId());
+            }
+            rows.add(row);
+        }
+        if (!patientIds.isEmpty()) {
+            Map<Long, BatchPatientDetailQueryModel> patientById =
+                patientQueryService.batchLoadPatientDetails(patientIds);
+            for (ExamHistoryRowDto row : rows) {
+                if (row == null || row.getPatientId() == null) {
+                    continue;
+                }
+                BatchPatientDetailQueryModel batch = patientById.get(row.getPatientId());
+                if (batch == null
+                    || batch.getPatientDetail() == null
+                    || batch.getPatientDetail().getPatient() == null) {
+                    continue;
+                }
+                PatientCoreQueryModel core = batch.getPatientDetail().getPatient();
+                row.setPatientName(core.getName());
+                row.setIdCardNo(core.getIdCard());
+                row.setPhone(core.getPhone());
+            }
+        }
+        enrichChargeAndCancelable(rows);
+        return PagedResultBuilder.build(new PageExamRecordsResponse(), rows, page);
+    }
 
     /**
      * 按 patientId / 学号 / 工号列历年体检。
@@ -305,6 +435,21 @@ public class PeisExamHistoryAppService {
         String status = encounter.getStatusEnum();
         return EncounterStatus.CANCELLED.getCode().equals(status)
             || EncounterStatus.ENTERED_IN_ERROR.getCode().equals(status);
+    }
+
+    private Set<Long> resolvePatientIdsByKeyword(String keyword) {
+        PatientPagedQuery query = new PatientPagedQuery();
+        query.setKeyword(keyword);
+        query.setPageNo(1);
+        query.setPageSize(100);
+        Page<PatientPageItemQueryModel> page = patientQueryService.searchPatientsPaged(query);
+        Set<Long> ids = new HashSet<>();
+        for (PatientPageItemQueryModel row : page.getContent()) {
+            if (row != null && row.getId() != null) {
+                ids.add(row.getId());
+            }
+        }
+        return ids;
     }
 
     private record ResolvedIdentity(

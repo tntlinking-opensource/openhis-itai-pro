@@ -499,7 +499,7 @@ public class InpatientDoctorStationAdviceListAssembler {
     }
 
     /**
-     * 为命中一盒一点的长期药行回填剩余/已吃/下次领盒日；改量链 basedOn 回显。
+     * 为命中一盒一点或拆零下限的长期药行回填剩余/已吃/下次领用日；改量链 basedOn 回显。
      *
      * @param unifiedRows       统一行
      * @param productByKey      目录
@@ -513,9 +513,6 @@ public class InpatientDoctorStationAdviceListAssembler {
             return;
         }
         boolean applyPackageBatch = !standingOrderSplittableSettingResolver.isSplittable();
-        if (!applyPackageBatch) {
-            return;
-        }
         LocalDate asOf = LocalDate.now();
         for (InpatientDoctorStationAdviceRowDto line : unifiedRows) {
             if (line == null || line.getRequestId() == null) {
@@ -554,6 +551,7 @@ public class InpatientDoctorStationAdviceListAssembler {
                     procedureQueryService.getProcedureRecords(
                         mr.getId(), TableNameConstants.MED_MEDICATION_REQUEST));
             }
+            // 035 一盒一点优先；否则尝试 036 拆零下限剩余（与列表切批优先级一致）
             StandingOrderOralPackageInventorySupport.OralPackageInventorySnapshot snap =
                 standingOrderOralPackageInventorySupport.compute(
                     display,
@@ -561,11 +559,22 @@ public class InpatientDoctorStationAdviceListAssembler {
                     product,
                     methodLabelByCode,
                     asOf,
-                    true);
+                    StandingOrderOralPackageInventorySupport.UnitClaimMode.PACKAGE,
+                    applyPackageBatch);
+            if (!snap.isApplied()) {
+                snap = standingOrderOralPackageInventorySupport.compute(
+                    display,
+                    proceduresByRequestId,
+                    product,
+                    methodLabelByCode,
+                    asOf,
+                    StandingOrderOralPackageInventorySupport.UnitClaimMode.MIN_SPLIT,
+                    applyPackageBatch);
+            }
             if (!snap.isApplied() || !snap.isDisplayHost()) {
                 continue;
             }
-            // 从未有效领盒：不回填已吃/剩余/下次领盒（避免「已吃0/剩余0」误导）
+            // 从未有效领用：不回填已吃/剩余/下次领用（避免「已吃0/剩余0」误导）
             if (snap.getClaimedSplitQuantity() == null
                 || snap.getClaimedSplitQuantity().compareTo(BigDecimal.ZERO) <= 0) {
                 continue;
@@ -850,6 +859,7 @@ public class InpatientDoctorStationAdviceListAssembler {
                 medDetail.getEncounterDiagnosisIds(),
                 conditionDefinitionIdByEncounterDiagnosisId,
                 conditionDefinitionDisplayById));
+            line.setTcmFlag(medDetail.getTcmFlag());
             line.setDecoctionDelegatedFlag(medDetail.getSufferingFlag());
             line.setChineseHerbsDoseQuantity(toIntegerHerbDoses(medDetail.getChineseHerbsDoseQuantity(), medDetail.getTcmFlag()));
             line.setBasedOnServiceRequestId(resolveBasedOnServiceRequestId(medDetail.getBasedOnTable(), medDetail.getBasedOnId()));

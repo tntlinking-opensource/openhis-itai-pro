@@ -23,6 +23,9 @@ public class SaveCompanyRequest {
     /** 体检中心机构主键。 */
     private Long orgId;
 
+    /** 上级单位主键（空为根节点）。 */
+    private Long parentId;
+
     /** 关联校区学院主键（可选）。 */
     private Long campusCollegeId;
 

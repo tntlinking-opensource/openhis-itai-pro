@@ -3,7 +3,10 @@ import type {
   DailySettlementExpenseNatureSummaryDto,
   DailySettlementInsuranceTypeSummaryDto,
   DailySettlementSummaryDto,
+  DailySettlementWorkInjurySummaryDto,
 } from '#/api/outpatient/daily-settlement';
+
+import { isWorkInjuryUiEnabled } from '#/utils/project-optional-modules';
 
 /** 标签+金额。 */
 interface DailySettlementPrintMetric {
@@ -53,12 +56,16 @@ export interface OutpatientDailySettlementPrintData {
   finTypeRows: OutpatientDailySettlementPrintGridRow[];
   channelRows: OutpatientDailySettlementPrintGridRow[];
   natureRows: OutpatientDailySettlementPrintNatureRow[];
+  /** 工伤分类四列网格（无工伤或院点关闭时为空） */
+  workInjuryCategoryRows: OutpatientDailySettlementPrintGridRow[];
+  /** 工伤统筹/个人自付行（复用费用性质表结构） */
+  workInjuryNatureRows: OutpatientDailySettlementPrintNatureRow[];
 }
 
 /** 日结 mapper 入参（P：日结预览/凭证；C：机构名） */
 export interface OutpatientDailySettlementPrintSource {
   hospitalName?: string;
-  /** 单据标题：门诊收费日结单 / 住院收费日结单 */
+  /** 单据标题：门诊收费日结单 / 住院收费日结单 / 住院收费日结单（患者分项） */
   documentTitle?: string;
   cashierName?: string;
   settlementPeriodText?: string;
@@ -68,6 +75,19 @@ export interface OutpatientDailySettlementPrintSource {
     depositRefundAmount?: string;
     settleSupplementAmount?: string;
   };
+  /**
+   * 住院患者分项打印源；有值且 {@link printMode}=`patient` 时按患者块拼装。
+   */
+  patientSummaries?: Array<{
+    seqNo?: number;
+    patientName?: string;
+    encounterBusNo?: string;
+    wardName?: string;
+    bedName?: string;
+    summary?: OutpatientDailySettlementPrintSource['summary'];
+  }>;
+  /** 合计打印（默认）或患者分项打印 */
+  printMode?: 'summary' | 'patient';
 }
 
 const UNKNOWN_CONTRACT_NAME = '未标注费用性质';
@@ -186,6 +206,7 @@ function mapFinTypeItems(
 
 function mapChannelItems(
   summary: OutpatientDailySettlementPrintSource['summary'] | undefined,
+  options?: { omitRetailUploadDiff?: boolean },
 ): DailySettlementPrintMetric[] {
   if (!summary) {
     return [];
@@ -212,7 +233,7 @@ function mapChannelItems(
     summary.chsRetailUploadDiffAmount?.trim() ||
     (summary.summaryRows ?? []).find((row) => row?.key === 'chsRetailUploadDiffAmount')?.value ||
     '';
-  if (!isZeroMoneyText(retailDiffRaw)) {
+  if (!options?.omitRetailUploadDiff && !isZeroMoneyText(retailDiffRaw)) {
     items.push({
       labelText: '医保上传差额',
       valueText: formatMoneyText(retailDiffRaw),
@@ -253,6 +274,83 @@ function mapChannelItems(
     });
   }
   return items;
+}
+
+/** 组装患者分项身份标题文案：姓名 + 住院号 + 病房-病床（不带患者序号） */
+function formatPatientBlockTitle(block: {
+  bedName?: string;
+  encounterBusNo?: string;
+  patientName?: string;
+  wardName?: string;
+}): string {
+  const name = str(block.patientName) || '未知患者';
+  const busNo = str(block.encounterBusNo) || '—';
+  const ward = str(block.wardName);
+  const bed = str(block.bedName);
+  let location = '';
+  if (ward && bed) {
+    location = `${ward}-${bed}`;
+  } else if (ward) {
+    location = ward;
+  } else if (bed) {
+    location = bed;
+  }
+  if (location) {
+    return `${name} 住院号:${busNo} ${location}`;
+  }
+  return `${name} 住院号:${busNo}`;
+}
+
+/**
+ * 患者分项 → 渠道四列网格（每位患者先标题行，再跟合计同构金额行）。
+ */
+function mapPatientChannelRows(
+  patients: OutpatientDailySettlementPrintSource['patientSummaries'],
+): OutpatientDailySettlementPrintGridRow[] {
+  const rows: OutpatientDailySettlementPrintGridRow[] = [];
+  for (const block of patients ?? []) {
+    if (!block) {
+      continue;
+    }
+    rows.push({
+      rowType: 'grid',
+      label1: formatPatientBlockTitle(block),
+      amount1: '',
+      label2: '',
+      amount2: '',
+      label3: '',
+      amount3: '',
+      label4: '',
+      amount4: '',
+    });
+    rows.push(
+      ...chunkToGridRows(mapChannelItems(block.summary, { omitRetailUploadDiff: true }), 4),
+    );
+  }
+  return rows;
+}
+
+/**
+ * 患者分项 → 费用性质明细（名称前加患者序号，便于分块辨认）。
+ */
+function mapPatientNatureRows(
+  patients: OutpatientDailySettlementPrintSource['patientSummaries'],
+): OutpatientDailySettlementPrintNatureRow[] {
+  const rows: OutpatientDailySettlementPrintNatureRow[] = [];
+  for (const block of patients ?? []) {
+    if (!block?.summary?.expenseNatureSummaries?.length) {
+      continue;
+    }
+    const prefix = `【${str(block.patientName) || '未知患者'}】`;
+    const natureRows = mapNatureRows(block.summary.expenseNatureSummaries);
+    for (const natureRow of natureRows) {
+      rows.push({
+        ...natureRow,
+        name: `${prefix}${natureRow.name}`,
+      });
+    }
+  }
+  return rows;
 }
 
 function natureTableRow(
@@ -347,19 +445,83 @@ function mapNatureRows(
   return rows;
 }
 
+/** 工伤分类金额 → 打印四列网格 */
+function mapWorkInjuryCategoryRows(
+  wi: DailySettlementWorkInjurySummaryDto | null | undefined,
+): OutpatientDailySettlementPrintGridRow[] {
+  if (!isWorkInjuryUiEnabled() || !wi) {
+    return [];
+  }
+  const items: DailySettlementPrintMetric[] = [
+    {
+      labelText: '工伤西药中成药',
+      valueText: formatMoneyText(wi.westernPatentMedicineAmount),
+    },
+    { labelText: '工伤诊疗', valueText: formatMoneyText(wi.treatmentAmount) },
+    { labelText: '工伤耗材', valueText: formatMoneyText(wi.consumableAmount) },
+    {
+      labelText: '工伤中草药',
+      valueText: formatMoneyText(wi.herbalMedicineAmount),
+    },
+    {
+      labelText: '工伤诊察费',
+      valueText: formatMoneyText(wi.consultationFeeAmount),
+    },
+    {
+      labelText: '工伤人次',
+      valueText: `${String(wi.personCount ?? 0)}人次`,
+    },
+  ];
+  return chunkToGridRows(items, 4);
+}
+
+/** 工伤统筹/个人自付 → 打印明细表行 */
+function mapWorkInjuryNatureRows(
+  wi: DailySettlementWorkInjurySummaryDto | null | undefined,
+): OutpatientDailySettlementPrintNatureRow[] {
+  if (!isWorkInjuryUiEnabled() || !wi) {
+    return [];
+  }
+  return [
+    natureTableRow('nature', str(wi.contractName) || '工伤保险', wi.personCount, {
+      cash: wi.cashAmount,
+      fund: wi.fundAmount,
+      account: wi.accountAmount,
+      total: wi.totalAmount,
+    }),
+  ];
+}
+
 /** 日结预览/凭证 → PrintData（字段与页面展示同源） */
 export function buildOutpatientDailySettlementPrintData(
   source: OutpatientDailySettlementPrintSource,
 ): OutpatientDailySettlementPrintData {
   const summary = source.summary;
+  const workInjury = summary?.workInjurySummary;
+  // 患者分项：不上半区 fin_type，渠道/费用性质按患者块展开
+  if (source.printMode === 'patient') {
+    return {
+      hospitalName: str(source.hospitalName),
+      documentTitle: str(source.documentTitle) || '住院收费日结单（患者分项）',
+      cashierName: str(source.cashierName),
+      settlementPeriodText: str(source.settlementPeriodText) || str(summary?.dateRange),
+      finTypeRows: [],
+      channelRows: mapPatientChannelRows(source.patientSummaries),
+      natureRows: mapPatientNatureRows(source.patientSummaries),
+      workInjuryCategoryRows: [],
+      workInjuryNatureRows: [],
+    };
+  }
   return {
     hospitalName: str(source.hospitalName),
     documentTitle: str(source.documentTitle) || '门诊收费日结单',
     cashierName: str(source.cashierName),
     settlementPeriodText: str(source.settlementPeriodText) || str(summary?.dateRange),
     finTypeRows: chunkToGridRows(mapFinTypeItems(source.rows)),
-    // 渠道区保持四列一行（与财务分类同构）
     channelRows: chunkToGridRows(mapChannelItems(summary), 4),
     natureRows: mapNatureRows(summary?.expenseNatureSummaries),
+    // 工伤独立块：模板绑定 workInjury*；无工伤或院点关闭时为空数组
+    workInjuryCategoryRows: mapWorkInjuryCategoryRows(workInjury),
+    workInjuryNatureRows: mapWorkInjuryNatureRows(workInjury),
   };
 }

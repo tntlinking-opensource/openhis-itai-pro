@@ -43,7 +43,6 @@ import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.LocationStatus;
-import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
 import com.openhis.health.domain.share.enums.SupplyRequestType;
 import com.openhis.health.domain.share.enums.SupplyStatus;
 import com.openhis.health.domain.share.enums.SupplyType;
@@ -135,26 +134,24 @@ public class InventoryDepartmentTransferOutAppService {
      * @return 下拉选项与字典项
      */
     public LoadTransferOutFormInitResponse loadTransferOutFormInit(LoadTransferOutFormInitRequest request) {
-        Long resolvedOrg = managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
+        // Gate：机构会话上下文
+        managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
             ErrorCodeConstants.DEPT_TR_101, "机构上下文缺失");
         try {
-            // Gate：机构会话上下文
-            // Pre：装载管辖范围内启用位置与角色人员
+            // Pre：装载管辖范围内启用位置；经手人取全体在职医务人员（不限药师/库管）
             // Asm：Mapper 映射页初始化响应
             // —— 平级调拨：源/目的下拉均为管辖范围内启用中科室药房。——
             List<Location> departmentPharmacies = locationQueryService.listAllActiveDepartmentPharmacies();
             List<Location> gatedDepartmentPharmacies = this.managedLocationIdsResolver.narrowActiveLocationsByManaged(departmentPharmacies);
-            List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
-                WhalePlatformRoleCodeConstants.ROLE_PHARMACIST, resolvedOrg);
-            List<Practitioner> warehouseKeepers = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
-                WhalePlatformRoleCodeConstants.ROLE_WAREHOUSE, resolvedOrg);
+            List<Practitioner> handlers =
+                this.practitionerRoleScopeLoader.listAllActivePractitionersForInventoryDocHandlerSelect();
             return transferOutMapper.toLoadTransferOutFormInitResponse(
                 transferOutMapper.toOptionDtoListFromLocations(gatedDepartmentPharmacies),
                 transferOutMapper.toOptionDtoListFromLocations(gatedDepartmentPharmacies),
                 transferOutMapper.toOptionDtoListInboundItemTableTypes(),
                 transferOutMapper.toOptionDtoListSupplyStatuses(),
-                transferOutMapper.toOptionDtoListFromPractitioners(pharmacists),
-                transferOutMapper.toOptionDtoListFromPractitioners(warehouseKeepers));
+                transferOutMapper.toOptionDtoListFromPractitioners(handlers),
+                List.of());
         } catch (RuntimeException ex) {
             log.warn("loadTransferOutFormInit failed", ex);
             throw new BusinessException(ErrorCodeConstants.DEPT_TR_102, "调出页主数据加载失败");

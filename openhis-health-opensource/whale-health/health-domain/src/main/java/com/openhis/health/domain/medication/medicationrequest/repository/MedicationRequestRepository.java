@@ -45,6 +45,17 @@ public interface MedicationRequestRepository extends JpaRepository<MedicationReq
     List<MedicationRequest> findByEncounterIdAndGenerateSourceEnum(Long encounterId, String generateSourceEnum);
 
     /**
+     * 按就诊主键集合与生成来源批量过滤药品申请（护士站执行列表禁逐就诊打库）。
+     *
+     * @param encounterIds       就诊主键集合
+     * @param generateSourceEnum 生成来源持久化码
+     * @return 申请集合
+     */
+    List<MedicationRequest> findByEncounterIdInAndGenerateSourceEnum(
+        Collection<Long> encounterIds,
+        String generateSourceEnum);
+
+    /**
      * 按患者查询未删除药品申请。
      *
      * @param patientId 患者标识
@@ -67,6 +78,14 @@ public interface MedicationRequestRepository extends JpaRepository<MedicationReq
      * @return 药品申请集合
      */
     List<MedicationRequest> findByIdIn(Collection<Long> ids);
+
+    /**
+     * 按成组号集合查询未删除药品申请（成组频次一致性 Gate）。
+     *
+     * @param groupIds 成组号集合
+     * @return 药品申请集合
+     */
+    List<MedicationRequest> findByGroupIdIn(Collection<Long> groupIds);
 
     /**
      * 按患者并排除当前就诊查询历史药品申请。
@@ -125,4 +144,12 @@ public interface MedicationRequestRepository extends JpaRepository<MedicationReq
      * @return 子嘱集合
      */
     List<MedicationRequest> findByBasedOnTableAndBasedOnIdIn(String basedOnTable, Collection<Long> basedOnIds);
+
+    /**
+     * 按处方号批量查询未删除药品申请（点评记录页方级 enrichment；调用方须 IN 分批）。
+     *
+     * @param prescriptionNos 处方号集合；空集合勿调
+     * @return 药品申请行（同一处方号可多行）
+     */
+    List<MedicationRequest> findByPrescriptionNoInAndIsDeletedFalse(Collection<String> prescriptionNos);
 }

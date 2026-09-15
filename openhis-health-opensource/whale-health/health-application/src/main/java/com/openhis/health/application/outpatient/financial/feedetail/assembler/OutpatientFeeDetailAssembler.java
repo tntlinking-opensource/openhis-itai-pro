@@ -69,7 +69,6 @@ public class OutpatientFeeDetailAssembler {
         }
         // 开单医生由应用层回填；收费人仅结算写入（context.cashierId←enterer_id，待结为空）
         line.setQuantityValue(this.scaleQuantityDisplay(chargeItem.getQuantityValue()));
-        line.setUnitPrice(MonetaryAmountSupport.scaleCalc(chargeItem.getUnitPrice()));
         String feeCategoryCode = this.resolveFeeCategoryCode(chargeItem.getServiceTable());
         line.setFeeCategoryCode(feeCategoryCode);
         line.setFeeCategoryDisplay(this.resolveFeeCategoryLabel(feeCategoryCode));
@@ -77,7 +76,7 @@ public class OutpatientFeeDetailAssembler {
             line.setProductName(product.getProductName());
             line.setProductCode(product.getProductBusNo());
             line.setSpecification(this.resolveSpecification(product));
-            // 医保等级取目录甲乙类文案；医保类型列已废弃（曾误绑频次 rateCode）
+            // 医保等级取目录甲乙类文案
             line.setInsuranceLevelDisplay(product.getChrgitmLvText());
         }
         if (StringUtils.isNotEmpty(finTypeCode)) {
@@ -130,8 +129,7 @@ public class OutpatientFeeDetailAssembler {
         BigDecimal signedSaleUnit =
             MonetaryAmountSupport.applySignAtCalcScale(
                 MonetaryAmountSupport.nullToZero(chargeItem.getUnitPrice()), signMultiplier);
-        line.setLineAmount(signedSaleAmount);
-        // 售价：历史落库 ChargeItem 单价/行额（BR-PRICE-SRC-001）
+        // 售价：历史落库 ChargeItem 单价/行额（BR-PRICE-SRC-001）；退费行带符号
         line.setSaleUnitPrice(signedSaleUnit);
         line.setSaleAmount(signedSaleAmount);
         line.setActualReceivedAmount(MonetaryAmountSupport.applySignAtCalcScale(actualReceivedRaw.abs(), signMultiplier));
@@ -181,9 +179,11 @@ public class OutpatientFeeDetailAssembler {
             discountSum = discountSum.add(MonetaryAmountSupport.nullToZero(line.getDiscountAmount()));
             receivableSum = receivableSum.add(MonetaryAmountSupport.nullToZero(line.getReceivableAmount()));
             discountedSum = discountedSum.add(MonetaryAmountSupport.nullToZero(line.getDiscountedAmount()));
-            lineSum = lineSum.add(MonetaryAmountSupport.nullToZero(line.getLineAmount()));
+            // lineAmountTotal 与售价合计同口径（行 DTO 仅保留 saleAmount）
+            BigDecimal signedSale = MonetaryAmountSupport.nullToZero(line.getSaleAmount());
+            lineSum = lineSum.add(signedSale);
             purchaseSum = purchaseSum.add(MonetaryAmountSupport.nullToZero(line.getPurchaseAmount()));
-            saleSum = saleSum.add(MonetaryAmountSupport.nullToZero(line.getSaleAmount()));
+            saleSum = saleSum.add(signedSale);
             actualReceivedSum = actualReceivedSum.add(MonetaryAmountSupport.nullToZero(line.getActualReceivedAmount()));
             insuranceSum = insuranceSum.add(MonetaryAmountSupport.nullToZero(line.getInsuranceAmount()));
             selfPaySum = selfPaySum.add(MonetaryAmountSupport.nullToZero(line.getSelfPayAmount()));

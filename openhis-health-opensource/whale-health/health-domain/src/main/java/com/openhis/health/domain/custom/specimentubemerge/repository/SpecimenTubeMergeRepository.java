@@ -25,7 +25,7 @@ public interface SpecimenTubeMergeRepository extends JpaRepository<SpecimenTubeM
     List<SpecimenTubeMerge> findByDeviceIdAndIsDeletedFalse(Long deviceId);
 
     /**
-     * 判断目标是否已被其它设备占用（全局唯一约束 uk_cus_specimen_tube_merge_target）。
+     * 判断目标是否已被其它设备占用（BR-STM-002：仅检验项目写侧全局唯一）。
      *
      * @param targetTable 目标表名
      * @param targetId 目标主键

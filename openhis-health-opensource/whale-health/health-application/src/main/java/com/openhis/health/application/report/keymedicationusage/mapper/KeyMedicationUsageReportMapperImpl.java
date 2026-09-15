@@ -17,7 +17,7 @@ import java.util.List;
 /**
  * 重点药品使用统计报表 Mapper 实现（AS-RPT-011）。
  *
- * <p>仅字段搬运；矩阵编排在 Support。</p>
+ * <p>仅字段搬运；矩阵汇总编排在 Support。</p>
  */
 @Component
 public class KeyMedicationUsageReportMapperImpl implements KeyMedicationUsageReportMapper {
@@ -47,9 +47,9 @@ public class KeyMedicationUsageReportMapperImpl implements KeyMedicationUsageRep
     }
 
     /**
-     * 装配汇总响应。
+     * 装配汇总响应（页脚人次/金额；无单一总占比）。
      *
-     * @param rows                   矩阵行
+     * @param rows                   汇总行
      * @param totalEncounterNetCount 人次合计
      * @param totalSaleAmount        金额合计
      * @return 汇总响应
@@ -93,3 +93,4 @@ public class KeyMedicationUsageReportMapperImpl implements KeyMedicationUsageRep
         return response;
     }
 }
+

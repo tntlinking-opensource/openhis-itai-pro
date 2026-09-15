@@ -263,6 +263,25 @@ export function canCancelStopLongTermTcmPrescription(
   return toStr(rx.statusEnum).toUpperCase() === TCM_RX_STATUS_STOPPED;
 }
 
+/**
+ * 住院中药方是否可按方改开立时间：已落库药味且非作废态；
+ * 已签发用处方号扩行，草稿用方标识扩行。
+ */
+export function canChangeTcmPrescriptionOpenedTime(
+  rx: null | TcmPrescriptionUi | undefined,
+): boolean {
+  if (!rx) return false;
+  const status = toStr(rx.statusEnum).toUpperCase();
+  if (status === 'CANCELLED' || status === 'REVOKED' || status === 'ENTERED_IN_ERROR') {
+    return false;
+  }
+  const hasPersistedLine = (rx.lines ?? []).some(
+    (line) => !line.pendingDelete && Boolean(toStr(line.medicationRequestId)),
+  );
+  if (!hasPersistedLine) return false;
+  return Boolean(toStr(rx.prescriptionNo) || toStr(rx.prescriptionGroupKey));
+}
+
 /** 方签发态 Tag 类型（仅认 statusEnum，退费走费用状态列） */
 export function resolveTcmRxStatusTagType(
   statusEnum?: null | string,
@@ -1028,6 +1047,37 @@ export function buildCancelStopLongTermTcmRequest(
   const prescriptionNo = toStr(rx.prescriptionNo);
   if (!prescriptionNo) return null;
   return { encounterId, patientId, prescriptionNos: [prescriptionNo] };
+}
+
+/**
+ * 组装按方改开立时间请求（IF-IP-TCM-42）。
+ * 已签发优先处方号；否则用草稿方标识。
+ */
+export function buildChangeTcmOpenedTimeRequest(
+  encounterId: string,
+  patientId: string,
+  rx: TcmPrescriptionUi,
+  newOpenedTime: string,
+): import('#/api/doctor-station/tcm.types').ChangeTcmHerbalPrescriptionOpenedTimeRequest | null {
+  const time = toStr(newOpenedTime);
+  if (!time) return null;
+  const prescriptionNo = toStr(rx.prescriptionNo);
+  if (prescriptionNo) {
+    return {
+      encounterId,
+      patientId,
+      prescriptionNos: [prescriptionNo],
+      newOpenedTime: time,
+    };
+  }
+  const groupKey = toStr(rx.prescriptionGroupKey);
+  if (!groupKey) return null;
+  return {
+    encounterId,
+    patientId,
+    prescriptionGroupKeys: [groupKey],
+    newOpenedTime: time,
+  };
 }
 
 /** 方头表单字段同步回处方对象 */

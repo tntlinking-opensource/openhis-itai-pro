@@ -195,6 +195,13 @@ function formatDoctorRxSpec(spec: string | undefined): string {
   return text;
 }
 
+/** 发药笺面：包装最小单位换算比（空/占位不输出） */
+function formatPackageSplitRatio(text: string | undefined): string {
+  const ratio = String(text ?? '').trim();
+  if (!ratio || ratio === '—') return '';
+  return ratio;
+}
+
 /** 医生站：用法用量展示（顿号改空格，对齐样张） */
 function formatDoctorRxUsage(usage: string | undefined): string {
   const text = String(usage ?? '')
@@ -445,6 +452,9 @@ function formatDoctorRxUsage(usage: string | undefined): string {
                 <span class="medicine-line__title">
                   {{ line.itemName }}
                   <template v-if="line.spec && line.spec !== '—'">({{ line.spec }})</template>
+                  <template v-if="formatPackageSplitRatio(line.packageSplitRatioText)">
+                    {{ ' ' + formatPackageSplitRatio(line.packageSplitRatioText) }}
+                  </template>
                   <template v-if="line.usage"> {{ line.usage }}</template>
                   <template v-if="line.quantity && line.quantity !== '—'">
                     X{{ line.quantity }}

@@ -46,7 +46,7 @@ public class ChargeItem extends BaseAuditedEntity {
     @Column(name = "parent_id")
     private Long parentId;
 
-    /** 处方号展示/追溯（DM prescription_no）。 */
+    /** 结算快照处方号（DM prescription_no）：非业务真源；门诊药品以 MedicationRequest 为准，结算时抄写。 */
     @Column(name = "prescription_no")
     private String prescriptionNo;
 

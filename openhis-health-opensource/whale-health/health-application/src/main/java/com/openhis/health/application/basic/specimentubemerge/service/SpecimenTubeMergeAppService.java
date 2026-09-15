@@ -248,16 +248,19 @@ public class SpecimenTubeMergeAppService {
                 lines.add(line);
             }
         }
-        // Pre：勾选采血费时按名称「采血费」解析 activity 并追加一行
+        // Pre：勾选采血费时按名称「采血费」解析 activity 并追加一行（可跨设备复用，见 BR-STM-002）
+        Long bloodFeeActivityId = null;
         if (Boolean.TRUE.equals(request.getBindBloodCollectionFee())) {
-            Long bloodFeeId = this.requireBloodCollectionFeeActivityId();
+            bloodFeeActivityId = this.requireBloodCollectionFeeActivityId();
             AlignSpecimenTubeMergeLineCommand line = new AlignSpecimenTubeMergeLineCommand();
             line.setTargetTable(TableNameConstants.WKF_ACTIVITY_DEFINITION);
-            line.setTargetId(bloodFeeId);
+            line.setTargetId(bloodFeeActivityId);
             line.setDisplayOrder(displayOrder);
             displayOrder = displayOrder + 1;
             lines.add(line);
         }
+        // Pre：告知领域层采血费主键，写侧跳过其跨设备唯一校验
+        command.setBloodCollectionFeeActivityId(bloodFeeActivityId);
         // Pre：耗材定义行（数量+单位）
         if (request.getConsumableLines() != null) {
             for (SaveBindingsRequest.ConsumableLineRequest consumableLine : request.getConsumableLines()) {
@@ -478,19 +481,30 @@ public class SpecimenTubeMergeAppService {
     }
 
     /**
-     * 保存时解析采血费 activity 主键；未配置或名称不唯一时抛业务异常。
+     * 保存时解析采血费 activity 主键；未配置或名称不唯一时抛可读业务异常。
      *
      * @return 采血费 activity 主键
      */
     private Long requireBloodCollectionFeeActivityId() {
+        String feeName = SpecimenTubeMergeConstants.BLOOD_COLLECTION_FEE_ACTIVITY_NAME;
         try {
-            return activityDefinitionQueryService.requireIdByExactName(
-                SpecimenTubeMergeConstants.BLOOD_COLLECTION_FEE_ACTIVITY_NAME);
+            return activityDefinitionQueryService.requireIdByExactName(feeName);
+        } catch (BusinessException ex) {
+            String detail = ex.getMessage();
+            // 名称不唯一：提示合并/改名，避免笼统「未配置」
+            if (detail != null && detail.contains("不唯一")) {
+                throw new BusinessException(
+                    ErrorCodeConstants.SPECIMEN_TUBE_MERGE_INVALID_ARGUMENT,
+                    "勾选采血费失败：诊疗目录中名称「" + feeName + "」不唯一，请合并或改名后再保存");
+            }
+            // 未找到或其它业务失败：引导维护精确名称
+            throw new BusinessException(
+                ErrorCodeConstants.SPECIMEN_TUBE_MERGE_INVALID_ARGUMENT,
+                "勾选采血费失败：诊疗目录中未找到名称精确为「" + feeName + "」的项目，请先维护后再勾选");
         } catch (RuntimeException ex) {
             throw new BusinessException(
                 ErrorCodeConstants.SPECIMEN_TUBE_MERGE_INVALID_ARGUMENT,
-                "采血费诊疗项目未配置，请在诊疗目录维护名称「"
-                    + SpecimenTubeMergeConstants.BLOOD_COLLECTION_FEE_ACTIVITY_NAME + "」");
+                "勾选采血费失败：无法解析诊疗项目「" + feeName + "」，请检查诊疗目录后重试");
         }
     }
 

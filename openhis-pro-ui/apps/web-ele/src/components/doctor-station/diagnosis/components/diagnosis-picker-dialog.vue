@@ -117,17 +117,45 @@ const tcmSyndromePick = ref<null | TcmDiagnosisPick>(null);
 
 const isTcmMode = computed(() => medicineTypeCode.value === '2');
 
-/** 表格名称列标题 */
-const catalogNameColumnLabel = computed(() => (isTcmMode.value ? '名称' : '诊断名称'));
+/**
+ * 西医国临选码：住院医生站 + 病案首页 pickOnly（后端 inpatient 接口已收敛 clinical_v2）。
+ * 门诊西医仍走院内/医保目录。
+ */
+const isClinicalV2WesternPick = computed(
+  () => !isTcmMode.value && (props.pickOnly === true || props.stationScope === 'inpatient'),
+);
 
-/** 中医合并缓存按当前页切片到表格（不预选，避免误写入病/证） */
+/** 编码列标题：国临选码用「国临码」，门诊目录仍用「诊断编码」 */
+const catalogCodeColumnLabel = computed(() => {
+  if (isClinicalV2WesternPick.value) {
+    return '国临码';
+  }
+  return '诊断编码';
+});
+
+/** 表格名称列标题：中医「名称」；国临「国临诊断名称」；门诊「诊断名称」 */
+const catalogNameColumnLabel = computed(() => {
+  if (isTcmMode.value) {
+    return '名称';
+  }
+  if (isClinicalV2WesternPick.value) {
+    return '国临诊断名称';
+  }
+  return '诊断名称';
+});
+
+/**
+ * 中医合并缓存按当前页切片到表格（不预选，避免误写入病/证）。
+ */
 function applyTcmMergedClientPage() {
   const start = (pageNo.value - 1) * pageSize.value;
   records.value = tcmMergedCache.value.slice(start, start + pageSize.value);
   selectedRow.value = null;
 }
 
-/** 并行拉取疾病+证候目录并合并为一份缓存 */
+/**
+ * 并行拉取疾病+证候目录并合并为一份缓存（本地分页）。
+ */
 async function loadTcmMergedCatalog() {
   const kw = keyword.value.trim() || undefined;
   const [diseaseRes, syndromeRes] = await Promise.all([
@@ -162,7 +190,7 @@ async function loadTcmMergedCatalog() {
   applyTcmMergedClientPage();
 }
 
-/** 拉取当前页诊断定义目录（西医 IF-DOR-07 / 中医疾病+证候合并） */
+/** 拉取当前页诊断定义目录（住院/病案首页国临；门诊西医院内医保；中医合并） */
 async function loadDefinitionPage() {
   tableLoading.value = true;
   try {
@@ -171,14 +199,15 @@ async function loadDefinitionPage() {
       return;
     }
     tcmMergedCache.value = [];
+    // 住院站 / pickOnly 走 inpatient 前缀 → 后端仅 clinical_v2；门诊走门诊前缀
     const res = await diagnosisHttp.value.httpGetConditionDefinitionMetadata({
       diagnosisKindCode: '1',
       keyword: keyword.value.trim() || undefined,
       pageNo: pageNo.value,
       pageSize: pageSize.value,
     });
-    records.value = res.records ?? [];
-    total.value = Number(res.total ?? res.totalCount ?? 0);
+    records.value = res.content ?? [];
+    total.value = Number(res.totalCount ?? res.total ?? 0);
     // 翻页/检索后不自动选中首行，避免误入「选择结果」
     selectedRow.value = null;
   } finally {
@@ -700,7 +729,7 @@ const legacyConfirmDisabled = computed(() => {
               {{ row.sourceEnumText || (row.tcmCatalogKind === 'syndrome' ? '证候' : '疾病') }}
             </template>
           </ElTableColumn>
-          <ElTableColumn prop="conditionCode" label="诊断编码" width="160" />
+          <ElTableColumn prop="conditionCode" :label="catalogCodeColumnLabel" width="160" />
           <ElTableColumn label="医保码" width="160">
             <template #default="{ row }">
               {{ formatDiagnosisYbNoDisplay(row.ybNo) }}

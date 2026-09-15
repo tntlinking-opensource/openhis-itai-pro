@@ -60,6 +60,21 @@ public interface InpatientDailySettlementConstants {
     /** 病区名缺失时的展示降级（AS-SDD §7.4）。 */
     String WARD_NAME_FALLBACK = "—";
 
+    /** 患者分项姓名缺失时的展示降级（BR-IP-DCL-030）。 */
+    String PATIENT_NAME_FALLBACK = "未知患者";
+
+    /** 患者分项分组键前缀：按就诊。 */
+    String PATIENT_GROUP_KEY_ENCOUNTER_PREFIX = "E:";
+
+    /** 患者分项分组键前缀：按患者（无就诊时回落）。 */
+    String PATIENT_GROUP_KEY_PATIENT_PREFIX = "P:";
+
+    /** 患者分项分组键前缀：单笔 payment（无就诊/患者时回落）。 */
+    String PATIENT_GROUP_KEY_PAYMENT_PREFIX = "PAY:";
+
+    /** 下半区扁平行 key：医保上传差额（患者分项剔除用）。 */
+    String SUMMARY_ROW_KEY_CHS_RETAIL_UPLOAD_DIFF = "chsRetailUploadDiffAmount";
+
     /** 渠道汇总金额单位。 */
     String AMOUNT_UNIT_YUAN = "元";
 

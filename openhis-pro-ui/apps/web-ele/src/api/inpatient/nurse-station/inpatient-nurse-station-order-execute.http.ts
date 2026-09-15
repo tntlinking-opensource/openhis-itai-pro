@@ -13,13 +13,14 @@ import { publicRequestClient } from '#/api/request';
 /** 住院护士站 · 医嘱执行 */
 const BASE = '/nurseStationOrderExecute';
 
-/** 查询多选患者的医嘱执行列表（按 Tab、长临、截止时间筛选，无分页） */
+/** 查询多选患者的医嘱执行列表（按 Tab、长临、截止时间筛选，无分页；展槽偏重，放宽超时） */
 export async function httpListNurseStationOrderExecute(
   body: ListNurseStationOrderExecuteRequest,
 ): Promise<ListNurseStationOrderExecuteResponse> {
   return publicRequestClient.post<ListNurseStationOrderExecuteResponse>(
     `${BASE}/listNurseStationOrderExecute`,
     body,
+    { timeout: 60_000 },
   );
 }
 

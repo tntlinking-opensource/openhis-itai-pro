@@ -1738,7 +1738,8 @@ public class NurseStationOrderExecuteAppService {
             planTime,
             prescriptionNo,
             med.getSufferingFlag(),
-            med.getChineseHerbsDoseQuantity());
+            med.getChineseHerbsDoseQuantity(),
+            med);
     }
 
     /**

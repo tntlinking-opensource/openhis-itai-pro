@@ -63,19 +63,27 @@ export const PATIENT_BOUND_FIELD_KEYS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * 会话/时间上下文域：存模板须清空；套模板/复用须强制覆盖为当前就诊解析值。
- * 避免病历底部「就诊日期 / 签字日期 / 记录时间」等沿用模板中的旧日期。
+ * 病历落款时间（时间控件）：保存时写入正文。
+ * 查看已有文书不得用当天覆盖；仅空槽（套模板/复用清空后）才预填当天。
  */
-export const CONTEXT_REFRESH_FIELD_KEYS: ReadonlySet<string> = new Set([
-  'visitTime',
+export const DOCUMENT_STAMP_FIELD_KEYS: ReadonlySet<string> = new Set([
+  'recordTime',
+  'talkTime',
   'signDate',
   'patientSignDate',
   'doctorSignDate',
   'printTime',
   'staffSignAt',
   'consultAt',
-  'recordTime',
-  'talkTime',
+]);
+
+/**
+ * 会话/时间上下文域：存模板须清空。
+ * visitTime 随就诊刷新；落款时间见 DOCUMENT_STAMP_FIELD_KEYS。
+ */
+export const CONTEXT_REFRESH_FIELD_KEYS: ReadonlySet<string> = new Set([
+  'visitTime',
+  ...DOCUMENT_STAMP_FIELD_KEYS,
 ]);
 
 /** 门诊病历中西医诊断元数据 fieldKey（与 metadata_field_def 种子对齐） */
@@ -83,9 +91,22 @@ export const EMR_DIAGNOSIS_METADATA_FIELD_KEYS = ['tcmDiagnosis', 'westernDiagno
 
 export type EmrDiagnosisMetadataFieldKey = (typeof EMR_DIAGNOSIS_METADATA_FIELD_KEYS)[number];
 
-/** 套模板/复用时须强制覆盖（患者身份 + 日期时间上下文） */
-function shouldForceOverwriteMetadataKey(key: string): boolean {
+/** 存为模板时清空：患者身份 + 就诊/落款时间，避免把原患者与旧日期写入模板库 */
+export function shouldStripMetadataKeyOnSaveAsTemplate(key: string): boolean {
   return PATIENT_BOUND_FIELD_KEYS.has(key) || CONTEXT_REFRESH_FIELD_KEYS.has(key);
+}
+
+/**
+ * 套模板/打开文书时强制覆盖：仅患者身份 + 就诊时间。
+ * 落款时间（记录时间等）已有值则保留，避免查看时带入当天。
+ */
+export function shouldForceOverwriteMetadataKey(key: string): boolean {
+  return PATIENT_BOUND_FIELD_KEYS.has(key) || key === 'visitTime';
+}
+
+/** 是否为病历落款时间控件 fieldKey */
+export function isDocumentStampMetadataKey(key: string): boolean {
+  return DOCUMENT_STAMP_FIELD_KEYS.has(key);
 }
 
 export interface ApplyMetadataValuesOptions {
@@ -161,6 +182,21 @@ function cloneEmrJsonContent(doc: unknown): JSONContent {
  * 避免把原患者信息或旧就诊/签字日期写入模板库。
  */
 export function stripPatientBoundMetadataFromContentJson(doc: unknown): JSONContent {
+  return stripMetadataKeysFromContentJson(doc, (key) =>
+    shouldStripMetadataKeyOnSaveAsTemplate(key),
+  );
+}
+
+/** 复用病历前清空落款时间，使新文书按当天预填，不沿用源文书记录时间 */
+export function stripDocumentStampMetadataFromContentJson(doc: unknown): JSONContent {
+  return stripMetadataKeysFromContentJson(doc, (key) => isDocumentStampMetadataKey(key));
+}
+
+/** 按 fieldKey 谓词清空可填元数据 value */
+function stripMetadataKeysFromContentJson(
+  doc: unknown,
+  shouldStrip: (key: string) => boolean,
+): JSONContent {
   const root = cloneEmrJsonContent(doc);
 
   const visit = (node: JSONContent) => {
@@ -168,7 +204,7 @@ export function stripPatientBoundMetadataFromContentJson(doc: unknown): JSONCont
     const attrs = node.attrs;
     if (attrs && (type === 'emrMetadataChip' || type === 'emrDataElement')) {
       const key = resolveMetadataNodeKey(type, attrs);
-      if (key && shouldForceOverwriteMetadataKey(key)) {
+      if (key && shouldStrip(key)) {
         attrs.value = '';
         syncFillableJsonNodeContent(node);
       }
@@ -250,7 +286,7 @@ export function ensureContextDateMetadataDefaults(
 /**
  * 将元数据写入模板/文书 JSON（套模板时预填，避免编辑器 watch 竞态导致首屏空白）。
  * @param readonlyOnly 为 true 时：只读域始终写入；可改域仅在当前值为空时预填
- * （患者绑定域与日期时间上下文域默认按 vals 强制覆盖）
+ * （患者绑定域与就诊时间默认按 vals 强制覆盖；落款时间已有值不覆盖）
  */
 export function applyMetadataValuesToContentJson(
   doc: JSONContent,
@@ -276,7 +312,9 @@ export function applyMetadataValuesToContentJson(
             allowForceOverwrite && Boolean(key && shouldForceOverwriteMetadataKey(key));
           const editable = attrs.editable !== false;
           const cur = String(attrs.value ?? '').trim();
-          if (forceOverwrite || !(readonlyOnly && editable && cur)) {
+          // 落款时间已写入正文则保留（查看/打印不得换成当天）
+          const keepSavedStamp = isDocumentStampMetadataKey(key) && Boolean(cur);
+          if (!keepSavedStamp && (forceOverwrite || !(readonlyOnly && editable && cur))) {
             if (String(attrs.value ?? '') !== String(nextVal)) {
               attrs.value = nextVal;
               syncFillableJsonNodeContent(node);

@@ -29,6 +29,19 @@ public class OutpatientSignedPrescriptionDrugLinePageQuery extends AbstractPageQ
     private String rxTypeCode;
 
     /**
+     * 处方类别码多选（术语 355）；非空时 {@code rx_type_code IN}（逐码经
+     * {@link com.openhis.health.domain.share.constants.PrescriptionSplitConstants#normalizeRxTypeCode}）；
+     * 与单码 {@link #rxTypeCode} 同时有值时以本集合为准。
+     */
+    private List<String> rxTypeCodes;
+
+    /**
+     * 为 true 时排除退方：{@code prescription_no} 不以 {@code T} 开头（退方号 TCP…）。
+     * <p>空或 false 表示不额外排除（AS-OP-PHA-005 默认正退均含）。</p>
+     */
+    private Boolean excludeRefundPrescription;
+
+    /**
      * 含输液筛：{@link OutpatientPharmacyPrescriptionQueryConstants#INFUSION_FILTER_ALL} /
      * {@code YES} / {@code NO}；空视为 {@code ALL}。
      */

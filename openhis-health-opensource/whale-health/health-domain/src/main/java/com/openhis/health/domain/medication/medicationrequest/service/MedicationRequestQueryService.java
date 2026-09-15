@@ -123,6 +123,26 @@ public class MedicationRequestQueryService {
     }
 
     /**
+     * 按成组号集合批量加载未软删药品申请（仅本聚合 Repository；BR-IP-ORD-033）。
+     *
+     * @param groupIds 成组号集合
+     * @return 药品申请列表；入参空则空列表
+     */
+    public List<MedicationRequest> listByGroupIds(Collection<Long> groupIds) {
+        if (groupIds == null || groupIds.isEmpty()) {
+            return List.of();
+        }
+        List<MedicationRequest> rows = medicationRequestRepository.findByGroupIdIn(groupIds);
+        List<MedicationRequest> result = new ArrayList<>();
+        for (MedicationRequest row : rows) {
+            if (row != null && !Boolean.TRUE.equals(row.getIsDeleted())) {
+                result.add(row);
+            }
+        }
+        return result;
+    }
+
+    /**
      * 按 based_on 锚点查询子药品申请（住院长嘱改量链；仅本聚合 Repository）。
      *
      * @param basedOnTable 来源表名
@@ -380,6 +400,45 @@ public class MedicationRequestQueryService {
         // Loop：遍历医生站来源过滤后的药品申请，逐条转换为列表展示模型
         for (MedicationRequest request : requests) {
             result.add(this.toListModel(request));
+        }
+        return result;
+    }
+
+    /**
+     * 按就诊集合批量加载医生站来源药品申请并按就诊分组（护士站执行列表 §2.1 #9）。
+     *
+     * @param encounterIds       就诊主键集合
+     * @param generateSourceEnum 生成来源码
+     * @return encounterId → 药品明细列表
+     */
+    public Map<Long, List<MedicationRequestListQueryModel>> mapMedicationRequestsByEncounterIdsForDoctorStation(
+        Collection<Long> encounterIds,
+        String generateSourceEnum) {
+        Map<Long, List<MedicationRequestListQueryModel>> result = new HashMap<>();
+        if (encounterIds == null || encounterIds.isEmpty() || StringUtils.isEmpty(generateSourceEnum)) {
+            return result;
+        }
+        List<Long> idList = IdInQueryChunkSupport.distinctNonNullIds(encounterIds);
+        for (Long encounterId : idList) {
+            result.put(encounterId, new ArrayList<>());
+        }
+        if (idList.isEmpty()) {
+            return result;
+        }
+        List<MedicationRequest> requests = IdInQueryChunkSupport.loadByIdInChunks(
+            idList,
+            chunkIds -> medicationRequestRepository.findByEncounterIdInAndGenerateSourceEnum(
+                chunkIds, generateSourceEnum));
+        for (MedicationRequest request : requests) {
+            if (request == null || request.getEncounterId() == null) {
+                continue;
+            }
+            List<MedicationRequestListQueryModel> bucket = result.get(request.getEncounterId());
+            if (bucket == null) {
+                bucket = new ArrayList<>();
+                result.put(request.getEncounterId(), bucket);
+            }
+            bucket.add(this.toListModel(request));
         }
         return result;
     }
@@ -722,6 +781,107 @@ public class MedicationRequestQueryService {
             }
         }
         return result;
+    }
+
+    /**
+     * 按处方号批量加载列表展示模型（点评记录页方级指标 enrichment；仅本聚合 Repository）。
+     *
+     * <p>同一处方号可返回多行药嘱；空/空白方号跳过；IN 按 {@link GeneralSharedConstants#ID_IN_QUERY_CHUNK_SIZE} 分批。</p>
+     *
+     * @param prescriptionNos 处方号集合
+     * @return 列表模型；无命中时返回空列表
+     */
+    public List<MedicationRequestListQueryModel> listMedicationRequestListModelsByPrescriptionNos(
+        Collection<String> prescriptionNos) {
+        // 空入参：无方号可 enrichment，直接空列表
+        if (prescriptionNos == null || prescriptionNos.isEmpty()) {
+            return List.of();
+        }
+        List<String> cleaned = new ArrayList<>();
+        LinkedHashSet<String> seen = new LinkedHashSet<>();
+        for (String raw : prescriptionNos) {
+            // 跳过空白处方号，避免 IN 含空串
+            if (StringUtils.isEmpty(raw)) {
+                continue;
+            }
+            String trimmed = raw.trim();
+            // 同页重复方号只查一次
+            if (seen.add(trimmed)) {
+                cleaned.add(trimmed);
+            }
+        }
+        // 清洗后仍空：等同无候选
+        if (cleaned.isEmpty()) {
+            return List.of();
+        }
+        List<MedicationRequestListQueryModel> result = new ArrayList<>();
+        int chunkSize = GeneralSharedConstants.ID_IN_QUERY_CHUNK_SIZE;
+        // 方号过多时分批 IN，避免单次超长
+        for (int fromIndex = 0; fromIndex < cleaned.size(); fromIndex += chunkSize) {
+            int toIndex = Math.min(fromIndex + chunkSize, cleaned.size());
+            List<MedicationRequest> rows =
+                this.medicationRequestRepository.findByPrescriptionNoInAndIsDeletedFalse(
+                    cleaned.subList(fromIndex, toIndex));
+            for (MedicationRequest request : rows) {
+                // 空实体跳过，避免 toListModel NPE
+                if (request != null) {
+                    result.add(this.toListModel(request));
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 按开立时间窗投影已签发处方号（去重）。
+     *
+     * <p>时间轴：{@code COALESCE(req_opened_time, req_authored_time)}；仅本聚合；起止可一侧空。</p>
+     *
+     * @param openedFrom 开立日起（含）；可空
+     * @param openedTo   开立日止（含）；可空
+     * @return 处方号列表；无命中为空列表
+     */
+    public List<String> listDistinctSignedPrescriptionNosByOpenedTimeWindow(
+        LocalDateTime openedFrom,
+        LocalDateTime openedTo) {
+        // 两侧皆空：调用方应跳过本方法；此处返回空避免全表投影
+        if (openedFrom == null && openedTo == null) {
+            return List.of();
+        }
+        CriteriaBuilder cb = this.entityManager.getCriteriaBuilder();
+        CriteriaQuery<String> cq = cb.createQuery(String.class);
+        Root<MedicationRequest> root = cq.from(MedicationRequest.class);
+        cq.select(root.get(FieldNameConstants.PRESCRIPTION_NO));
+        cq.distinct(true);
+        List<Predicate> predicates = new ArrayList<>();
+        predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+        predicates.add(cb.isNotNull(root.get(FieldNameConstants.PRESCRIPTION_NO)));
+        predicates.add(cb.notEqual(root.get(FieldNameConstants.PRESCRIPTION_NO), ""));
+        jakarta.persistence.criteria.Expression<LocalDateTime> openedAxis = cb.coalesce(
+            root.get(FieldNameConstants.REQ_OPENED_TIME),
+            root.get(FieldNameConstants.REQ_AUTHORED_TIME));
+        predicates.add(cb.isNotNull(openedAxis));
+        // 开立日起
+        if (openedFrom != null) {
+            predicates.add(cb.greaterThanOrEqualTo(openedAxis, openedFrom));
+        }
+        // 开立日止
+        if (openedTo != null) {
+            predicates.add(cb.lessThanOrEqualTo(openedAxis, openedTo));
+        }
+        cq.where(predicates.toArray(new Predicate[0]));
+        List<String> nos = this.entityManager.createQuery(cq).getResultList();
+        // 无命中：空列表供点评侧拒查
+        if (nos == null || nos.isEmpty()) {
+            return List.of();
+        }
+        List<String> cleaned = new ArrayList<>();
+        for (String no : nos) {
+            if (StringUtils.isNotEmpty(no)) {
+                cleaned.add(no.trim());
+            }
+        }
+        return cleaned;
     }
 
     /**
@@ -1397,11 +1557,10 @@ public class MedicationRequestQueryService {
                 RequestStatus.ACTIVE.getCode(),
                 RequestStatus.COMPLETED.getCode()));
             this.applyReqOpenedTimeWindow(predicates, root, cb, query);
-            String rxTypeCode = PrescriptionSplitConstants.normalizeRxTypeCode(
-                StringUtils.trimToNull(query.getRxTypeCode()));
-            // 处方类别精确匹配（术语 355；中药饮片历史码 9 已归一为 2）
-            if (rxTypeCode != null) {
-                predicates.add(cb.equal(root.get(FieldNameConstants.RX_TYPE_CODE), rxTypeCode));
+            this.applyRxTypeCodeFilter(predicates, root, cb, query);
+            // 处方抽查等场景：排除退方（号以 T 开头，如 TCP…）
+            if (Boolean.TRUE.equals(query.getExcludeRefundPrescription())) {
+                predicates.add(cb.notLike(root.get(FieldNameConstants.PRESCRIPTION_NO), "T%"));
             }
             String prescriptionNo = StringUtils.trimToNull(query.getPrescriptionNo());
             // 处方号精确匹配：详情整方重载；与其它筛 AND
@@ -1448,6 +1607,47 @@ public class MedicationRequestQueryService {
         }
         if (query.getEndDate() != null) {
             predicates.add(cb.lessThanOrEqualTo(openedAxis, query.getEndDate()));
+        }
+    }
+
+    /**
+     * 处方类别筛选：多码 {@code rxTypeCodes} 优先；否则单码 {@code rxTypeCode} 等值。
+     *
+     * <p>历史饮片冗余码 {@code 9} 归一为 {@code 2}（{@link PrescriptionSplitConstants#normalizeRxTypeCode}）。</p>
+     *
+     * @param predicates 规约谓词累积
+     * @param root       药品申请根
+     * @param cb         CriteriaBuilder
+     * @param query      分页入参
+     */
+    private void applyRxTypeCodeFilter(
+        List<Predicate> predicates,
+        Root<MedicationRequest> root,
+        CriteriaBuilder cb,
+        OutpatientSignedPrescriptionDrugLinePageQuery query) {
+        List<String> multiCodes = query.getRxTypeCodes();
+        // 多码 IN：报表西药及中成药 / 饮片分组
+        if (multiCodes != null && !multiCodes.isEmpty()) {
+            LinkedHashSet<String> normalized = new LinkedHashSet<>();
+            for (String raw : multiCodes) {
+                String code = PrescriptionSplitConstants.normalizeRxTypeCode(StringUtils.trimToNull(raw));
+                if (code != null) {
+                    normalized.add(code);
+                }
+            }
+            // 归一后仍空则拒查（空 IN）
+            if (normalized.isEmpty()) {
+                predicates.add(cb.disjunction());
+                return;
+            }
+            predicates.add(root.get(FieldNameConstants.RX_TYPE_CODE).in(normalized));
+            return;
+        }
+        String rxTypeCode = PrescriptionSplitConstants.normalizeRxTypeCode(
+            StringUtils.trimToNull(query.getRxTypeCode()));
+        // 单码精确匹配（术语 355；门诊处方查询主路径）
+        if (rxTypeCode != null) {
+            predicates.add(cb.equal(root.get(FieldNameConstants.RX_TYPE_CODE), rxTypeCode));
         }
     }
 
@@ -1682,6 +1882,65 @@ public class MedicationRequestQueryService {
             return List.of();
         }
         return IdInQueryChunkSupport.distinctNonNullIds(ids);
+    }
+
+    /**
+     * 按药品定义主键集合 + 签发时间窗（{@code req_authored_time} 闭区间）投影申请主键（AS-RPT-015）。
+     *
+     * <p>仅本聚合；未删除；{@code medication_id} 分批 IN；{@code req_authored_time} 非空且落窗。</p>
+     *
+     * @param medicationIds            药品定义主键；空则空列表
+     * @param authoredStartInclusive   签发窗起（含）；空则空列表
+     * @param authoredEndInclusive     签发窗止（含）；空则空列表
+     * @return 去重药品申请主键；无命中为空列表
+     */
+    public List<Long> listIdsByMedicationIdsAndAuthoredTimeBetween(
+        Collection<Long> medicationIds,
+        LocalDateTime authoredStartInclusive,
+        LocalDateTime authoredEndInclusive) {
+        // Gate：目录主键或签发窗任一侧缺失 → 无命中
+        if (medicationIds == null
+            || medicationIds.isEmpty()
+            || authoredStartInclusive == null
+            || authoredEndInclusive == null) {
+            return List.of();
+        }
+        List<Long> medicationIdList = IdInQueryChunkSupport.distinctNonNullIds(medicationIds);
+        // Gate：去重后仍空
+        if (medicationIdList.isEmpty()) {
+            return List.of();
+        }
+        LinkedHashSet<Long> resultIds = new LinkedHashSet<>();
+        int chunkSize = GeneralSharedConstants.ID_IN_QUERY_CHUNK_SIZE;
+        // Loop：medication_id 分批 IN，投影申请主键（避免超大 IN）
+        for (int fromIndex = 0; fromIndex < medicationIdList.size(); fromIndex += chunkSize) {
+            int toIndex = Math.min(fromIndex + chunkSize, medicationIdList.size());
+            List<Long> chunk = medicationIdList.subList(fromIndex, toIndex);
+            CriteriaBuilder cb = this.entityManager.getCriteriaBuilder();
+            CriteriaQuery<Long> cq = cb.createQuery(Long.class);
+            Root<MedicationRequest> root = cq.from(MedicationRequest.class);
+            cq.select(root.get(FieldNameConstants.ID));
+            cq.distinct(true);
+            cq.where(
+                cb.isFalse(root.get(FieldNameConstants.IS_DELETED)),
+                root.get(FieldNameConstants.MEDICATION_ID).in(chunk),
+                cb.isNotNull(root.get(FieldNameConstants.REQ_AUTHORED_TIME)),
+                cb.greaterThanOrEqualTo(
+                    root.get(FieldNameConstants.REQ_AUTHORED_TIME), authoredStartInclusive),
+                cb.lessThanOrEqualTo(
+                    root.get(FieldNameConstants.REQ_AUTHORED_TIME), authoredEndInclusive));
+            List<Long> chunkIds = this.entityManager.createQuery(cq).getResultList();
+            // 本批无命中：跳过
+            if (chunkIds == null || chunkIds.isEmpty()) {
+                continue;
+            }
+            for (Long id : chunkIds) {
+                if (id != null) {
+                    resultIds.add(id);
+                }
+            }
+        }
+        return new ArrayList<>(resultIds);
     }
 
     /**

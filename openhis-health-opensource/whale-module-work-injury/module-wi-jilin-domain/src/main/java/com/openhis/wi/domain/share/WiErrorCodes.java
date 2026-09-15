@@ -25,6 +25,8 @@ public final class WiErrorCodes {
     public static final String PLATFORM_INFCODE_FAILED = "WI-007";
     /** prepare 的 step_token 与 submit 不匹配或已消费。 */
     public static final String STEP_TOKEN_MISMATCH = "WI-008";
+    /** 已有工伤结算回执与本次收费不一致，禁止复用/改绑。 */
+    public static final String SETTLEMENT_REUSE_FORBIDDEN = "WI-009";
 
     private WiErrorCodes() {
     }

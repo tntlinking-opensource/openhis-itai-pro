@@ -7,8 +7,6 @@ package com.openhis.health.application.inventory.department.returntowarehouse.re
 import lombok.Getter;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
-
 /**
  * 科室退库单同意请求（触发库存双侧调整与退库入库壳单生成）。
  */
@@ -18,8 +16,4 @@ public class AgreeReturnToWarehouseRequest {
 
     /** 科室退库业务单号。 */
     private String busNo;
-    /** 审批人主键；空时回落为当前操作人。 */
-    private Long approverId;
-    /** 审批时间；空时由领域层取服务器时钟。 */
-    private LocalDateTime approvalClock;
 }

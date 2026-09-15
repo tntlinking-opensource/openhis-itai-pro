@@ -87,20 +87,23 @@ public class HealthcareServiceQueryService {
     }
 
     /**
-     * 判断给定号源是否为产品「历史号复诊」（按 {@code bus_no} 识别）。
+     * 判断给定号源是否为产品「复诊0元号」。
+     *
+     * <p>识别真源：{@link HealthcareServiceConstants#NAME_HISTORICAL_FOLLOW_UP} 与 {@code name} trim 后精确相等；
+     * 不按 {@code bus_no}（院点编码不统一）。</p>
      *
      * @param service 号源实体；为空时返回 false
-     * @return 历史号复诊返回 true
+     * @return 复诊0元号返回 true
      */
     public boolean isHistoricalFollowUpService(HealthcareService service) {
-        if (service == null || service.getBusNo() == null) {
+        if (service == null || service.getName() == null) {
             return false;
         }
-        return HealthcareServiceConstants.BUS_NO_HISTORICAL_FOLLOW_UP.equals(service.getBusNo().trim());
+        return HealthcareServiceConstants.NAME_HISTORICAL_FOLLOW_UP.equals(service.getName().trim());
     }
 
     /**
-     * 按业务编号加载启用中的号源（迁移种子与 Gate 解析）。
+     * 按业务编号加载启用中的号源（主数据/运维按 bus_no 查询；复诊0元号资格 Gate 不依赖本方法）。
      *
      * @param busNo 业务编号
      * @return 实体；不存在或未启用时 {@code null}

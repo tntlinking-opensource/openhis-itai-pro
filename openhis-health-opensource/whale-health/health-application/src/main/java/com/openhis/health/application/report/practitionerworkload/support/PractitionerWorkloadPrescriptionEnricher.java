@@ -22,10 +22,9 @@ import com.openhis.whale.core.application.util.StringUtils;
 import lombok.RequiredArgsConstructor;
 
 /**
- * 工作量处方号 enrich：药品收费行缺 {@code ChargeItem.prescription_no} 时，
- * 批量回落 {@code MedicationRequest.prescription_no}（BR-RPT-WKL-019；只读内存补齐，不写库）。
+ * 工作量处方号 enrich：药品收费行一律以 {@code MedicationRequest.prescription_no} 为准（BR-RPT-WKL-019）。
  *
- * <p>门诊/中药签发挂费草稿历史上常未落收费行处方号，若直接按 {@code service_id} 回落会把同方多味计成多张处方。</p>
+ * <p>写入行模型旁路字段供 overview 按方去重；<strong>不</strong>读、不写收费行 {@code prescription_no} 快照。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -35,7 +34,7 @@ public class PractitionerWorkloadPrescriptionEnricher {
     private final MedicationRequestQueryService medicationRequestQueryService;
 
     /**
-     * 对 scope 候选行中「药品请求锚点且收费行无处方号」的明细，内存回填医嘱处方号。
+     * 对 scope 候选行中药品请求锚点明细，用药品申请处方号写入行旁路字段。
      *
      * @param rows 工作量候选 chargeItem 行；可为空
      */
@@ -44,8 +43,8 @@ public class PractitionerWorkloadPrescriptionEnricher {
         if (rows == null || rows.isEmpty()) {
             return;
         }
-        // Pre：仅收集药品请求锚点且收费行处方号为空的 service_id
-        Set<Long> medicationRequestIds = this.collectMedicationRequestIdsMissingPrescriptionNo(rows);
+        // Pre：收集药品请求锚点 service_id
+        Set<Long> medicationRequestIds = this.collectMedicationRequestIds(rows);
         if (medicationRequestIds.isEmpty()) {
             return;
         }
@@ -57,9 +56,6 @@ public class PractitionerWorkloadPrescriptionEnricher {
                 continue;
             }
             ChargeItem chargeItem = row.getChargeItem();
-            if (StringUtils.isNotEmpty(chargeItem.getPrescriptionNo())) {
-                continue;
-            }
             if (!TableNameConstants.MED_MEDICATION_REQUEST.equals(
                 this.trimToEmpty(chargeItem.getServiceTable()))) {
                 continue;
@@ -72,18 +68,18 @@ public class PractitionerWorkloadPrescriptionEnricher {
             if (request == null || StringUtils.isEmpty(request.getPrescriptionNo())) {
                 continue;
             }
-            // Asm：仅内存补齐，供 overview 按处方号去重；不落库
-            chargeItem.setPrescriptionNo(request.getPrescriptionNo().trim());
+            // Asm：旁路写入请求真源号；禁止 chargeItem.setPrescriptionNo
+            row.setMedicationRequestPrescriptionNo(request.getPrescriptionNo().trim());
         }
     }
 
     /**
-     * 收集需回落处方号的药品申请主键。
+     * 收集药品申请锚点主键。
      *
      * @param rows 工作量候选行
      * @return 药品申请主键集合（保序去重）
      */
-    private Set<Long> collectMedicationRequestIdsMissingPrescriptionNo(
+    private Set<Long> collectMedicationRequestIds(
         Collection<PractitionerWorkloadChargeRowQueryModel> rows) {
         LinkedHashSet<Long> medicationRequestIds = new LinkedHashSet<>();
         for (PractitionerWorkloadChargeRowQueryModel row : rows) {
@@ -91,9 +87,6 @@ public class PractitionerWorkloadPrescriptionEnricher {
                 continue;
             }
             ChargeItem chargeItem = row.getChargeItem();
-            if (StringUtils.isNotEmpty(chargeItem.getPrescriptionNo())) {
-                continue;
-            }
             if (!TableNameConstants.MED_MEDICATION_REQUEST.equals(
                 this.trimToEmpty(chargeItem.getServiceTable()))) {
                 continue;

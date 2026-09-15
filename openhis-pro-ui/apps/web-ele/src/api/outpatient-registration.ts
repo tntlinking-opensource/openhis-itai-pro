@@ -293,6 +293,8 @@ export interface PreRegisterSettlementResult {
   slotId?: null | number | string;
   totalAmount: number | string;
   insurancePreSettled?: boolean;
+  /** 医保医疗费总额（号别原价口径；预结后 totalAmount 可能已改成现金应付） */
+  ybMedfeeSumamt?: number | string;
   ybFundPaySumamt?: number | string;
   ybAcctPay?: number | string;
   ybPsnCashPay?: number | string;

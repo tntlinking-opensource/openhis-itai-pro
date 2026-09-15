@@ -25,11 +25,13 @@ import {
   ElDatePicker,
   ElFormItem,
   ElInput,
+  ElLoading,
   ElMessage,
   ElOption,
   ElRadioButton,
   ElRadioGroup,
   ElSelect,
+  ElSwitch,
   ElTableColumn,
   ElTag,
 } from 'element-plus';
@@ -38,6 +40,8 @@ import dayjs from 'dayjs';
 
 import {
   exportFeeDetailReportApi,
+  LINE_MERGE_MODE_BY_DEFINITION,
+  LINE_MERGE_MODE_LINE,
   loadFeeDetailReportPageInitApi,
   pageFeeDetailReportApi,
   PRESENTATION_MODE_DETAIL,
@@ -63,7 +67,7 @@ import {
   isReportRefundBySignedFields,
   mapReportPrintRow,
   REPORT_QUERY_CONTROL,
-  REPORT_QUERY_CONTROL_DATERANGE,
+  REPORT_QUERY_CONTROL_DATETIMERANGE,
   REPORT_TABLE_AMOUNT_CELL,
   REPORT_TABLE_NUM_CELL,
   ReportElTable,
@@ -79,12 +83,12 @@ import {
   useReportListPrint,
 } from '#/views/report/shared';
 import {
-  buildReportDateRangeShortcuts,
-  normalizeReportDateRangeYmd,
+  buildReportDateTimeRangeShortcuts,
+  normalizeReportDateTime,
+  toReportApiDateTimeRangePrecise,
 } from '#/views/report/shared/report-date-range-shortcuts';
 
 import { FEE_DETAIL_SUMMARY_DISPLAY, SUMMARY_FOOTER_DISPLAY } from './constants';
-import { resolveFeeDetailEncounterSpanMethod } from './encounter-column-merge';
 import { flattenEncounterBlocksToTableRows } from './flatten-encounter-blocks';
 
 defineOptions({ name: 'FeeDetailReportPage' });
@@ -113,6 +117,10 @@ interface QueryFormState {
   presentationMode: PresentationModeCode;
   /** 汇总维度（仅汇总 Tab）。 */
   summaryDimension: string;
+  /**
+   * 按患者维度合并（仅住院明细）：true → lineMergeMode=BY_DEFINITION。
+   */
+  mergeByPatientDefinition: boolean;
 }
 
 const props = defineProps<Props>();
@@ -146,12 +154,13 @@ const queryParams = reactive<QueryFormState>({
   /** 进入页默认明细 Tab（门/住院统一）。 */
   presentationMode: PRESENTATION_MODE_DETAIL,
   summaryDimension: SUMMARY_DIMENSION_FIN_TYPE,
+  mergeByPatientDefinition: false,
 });
 
 const pageTitle = computed(() => (props.scope === 'outpatient' ? '门诊费用明细' : '住院费用明细'));
 
-/** 住院含待结：日期轴为已结结算日 / 待结发生日；门诊仍称结算日期。 */
-const businessDateLabel = computed(() => (props.scope === 'inpatient' ? '业务日期' : '结算日期'));
+/** 住院含待结：时间轴为已结结算时 / 待结发生时；门诊仍称结算时间。 */
+const businessDateLabel = computed(() => (props.scope === 'inpatient' ? '业务时间' : '结算时间'));
 
 const defaultExportFileName = computed(() =>
   props.scope === 'outpatient' ? '门诊费用明细.xlsx' : '住院费用明细.xlsx',
@@ -169,21 +178,31 @@ const patientKeywordPlaceholder = computed(() =>
 
 const isSummaryTab = computed(() => queryParams.presentationMode === PRESENTATION_MODE_SUMMARY);
 
-const dateRangeShortcuts = buildReportDateRangeShortcuts();
+/** 住院明细且开启「按患者维度合并」。 */
+const isPatientDefinitionMerge = computed(
+  () => props.scope === 'inpatient' && !isSummaryTab.value && queryParams.mergeByPatientDefinition,
+);
 
-/** 结算日期与 daterange 双向绑定。 */
+const dateTimeRangeShortcuts = buildReportDateTimeRangeShortcuts();
+/** 日历点选日期时默认起 00:00:00、止 23:59:59（快捷项已自带时分秒）。 */
+const dateTimeDefaultTime: [Date, Date] = [
+  new Date(2000, 0, 1, 0, 0, 0),
+  new Date(2000, 0, 1, 23, 59, 59),
+];
+
+/** 结算/业务时间与 datetimerange 双向绑定（界面精确到秒）。 */
 const businessDateRange = computed({
   get() {
-    const start = normalizeReportDateRangeYmd(queryParams.dateFrom);
-    const end = normalizeReportDateRangeYmd(queryParams.dateTo);
+    const start = normalizeReportDateTime(queryParams.dateFrom, 'start');
+    const end = normalizeReportDateTime(queryParams.dateTo, 'end');
     if (start && end) {
       return [start, end] as [string, string];
     }
     return null;
   },
   set(value: [string, string] | null) {
-    queryParams.dateFrom = value?.[0] ?? '';
-    queryParams.dateTo = value?.[1] ?? '';
+    queryParams.dateFrom = value?.[0] ? normalizeReportDateTime(value[0], 'start') || '' : '';
+    queryParams.dateTo = value?.[1] ? normalizeReportDateTime(value[1], 'end') || '' : '';
   },
 });
 
@@ -318,34 +337,44 @@ const summaryPrintColumns = computed<ReportPrintColumnDef[]>(() => {
   return cols;
 });
 
-/** 明细 Tab 可打印列（与当前表明细列对齐）。 */
-const DETAIL_PRINT_COLUMNS = computed<ReportPrintColumnDef[]>(() => [
-  { field: 'busNo', title: '就诊号', align: 'center', widthWeight: 1.1 },
-  { field: 'patientName', title: '患者', align: 'center', widthWeight: 0.9 },
-  { field: 'registrationDepartmentName', title: '开立科室', align: 'center', widthWeight: 1 },
-  { field: 'encounterDate', title: '就诊日期', align: 'center', widthWeight: 1 },
-  { field: 'feeNatureDisplay', title: '费用性质', align: 'center', widthWeight: 0.9 },
-  { field: 'medTypeDisplay', title: '医疗类别', align: 'center', widthWeight: 0.9 },
-  { field: 'subCategoryDisplay', title: '项目类别', align: 'center', widthWeight: 0.9 },
-  { field: 'productName', title: '项目名称', align: 'center', widthWeight: 1.3 },
-  { field: 'productCode', title: '项目编码', align: 'center', widthWeight: 1 },
-  { field: 'quantityDisplay', title: '数量', align: 'right', widthWeight: 0.9 },
-  { field: 'orderingDoctorName', title: '开单医生', align: 'center', widthWeight: 0.9 },
-  { field: 'performerName', title: '执行人', align: 'center', widthWeight: 0.8 },
-  { field: 'cashierName', title: '收费人', align: 'center', widthWeight: 0.8 },
-  {
-    field: 'billDate',
-    title: props.scope === 'inpatient' ? '业务时间' : '结算时间',
-    align: 'center',
-    widthWeight: 1.2,
-  },
-  { field: 'tradeDirectionLabel', title: '来源', align: 'center', widthWeight: 0.7 },
-  { field: 'insuranceLevelDisplay', title: '医保等级', align: 'center', widthWeight: 0.8 },
-  { field: 'purchaseUnitPrice', title: '进价单价', align: 'right', widthWeight: 0.9 },
-  { field: 'purchaseAmount', title: '进价总价', align: 'right', widthWeight: 0.9 },
-  { field: 'saleUnitPrice', title: '售价单价', align: 'right', widthWeight: 0.9 },
-  { field: 'saleAmount', title: '售价总价', align: 'right', widthWeight: 0.9 },
-]);
+/** 明细 Tab 可打印列（与当前表明细列对齐；合并态隐藏逐条差异列）。 */
+const DETAIL_PRINT_COLUMNS = computed<ReportPrintColumnDef[]>(() => {
+  const cols: ReportPrintColumnDef[] = [
+    { field: 'busNo', title: '就诊号', align: 'center', widthWeight: 1.1 },
+    { field: 'patientName', title: '患者', align: 'center', widthWeight: 0.9 },
+    { field: 'registrationDepartmentName', title: '开立科室', align: 'center', widthWeight: 1 },
+    { field: 'encounterDate', title: '就诊日期', align: 'center', widthWeight: 1 },
+    { field: 'feeNatureDisplay', title: '费用性质', align: 'center', widthWeight: 0.9 },
+    { field: 'medTypeDisplay', title: '医疗类别', align: 'center', widthWeight: 0.9 },
+    { field: 'subCategoryDisplay', title: '项目类别', align: 'center', widthWeight: 0.9 },
+    { field: 'productName', title: '项目名称', align: 'center', widthWeight: 1.3 },
+    { field: 'productCode', title: '项目编码', align: 'center', widthWeight: 1 },
+    { field: 'quantityDisplay', title: '数量', align: 'right', widthWeight: 0.9 },
+  ];
+  // 合并态隐藏开单/执行/收费人与业务时间（逐条差异列）
+  if (!isPatientDefinitionMerge.value) {
+    cols.push(
+      { field: 'orderingDoctorName', title: '开单医生', align: 'center', widthWeight: 0.9 },
+      { field: 'performerName', title: '执行人', align: 'center', widthWeight: 0.8 },
+      { field: 'cashierName', title: '收费人', align: 'center', widthWeight: 0.8 },
+      {
+        field: 'billDate',
+        title: props.scope === 'inpatient' ? '业务时间' : '结算时间',
+        align: 'center',
+        widthWeight: 1.2,
+      },
+    );
+  }
+  cols.push(
+    { field: 'tradeDirectionLabel', title: '来源', align: 'center', widthWeight: 0.7 },
+    { field: 'insuranceLevelDisplay', title: '医保等级', align: 'center', widthWeight: 0.8 },
+    { field: 'purchaseUnitPrice', title: '进价单价', align: 'right', widthWeight: 0.9 },
+    { field: 'purchaseAmount', title: '进价总价', align: 'right', widthWeight: 0.9 },
+    { field: 'saleUnitPrice', title: '售价单价', align: 'right', widthWeight: 0.9 },
+    { field: 'saleAmount', title: '售价总价', align: 'right', widthWeight: 0.9 },
+  );
+  return cols;
+});
 
 /** 当前 Tab 打印列目录。 */
 const printColumnCatalog = computed<ReportPrintColumnDef[]>(() =>
@@ -448,12 +477,32 @@ const { run: runPurchaseCorner } = useRequest(
   { manual: true },
 );
 
+/** 本页明细行硬上限：按就诊块分页时长时段可展出数千行，超限截断防卡死。 */
+const DETAIL_TABLE_ROW_HARD_LIMIT = 500;
+
+/** 本页明细行软提示阈值：超过则提示缩窗或开启按患者维度合并。 */
+const DETAIL_TABLE_ROW_SOFT_LIMIT = 300;
+
 const { run: runPage, loading: pageLoading } = useRequest(
   (body) => pageFeeDetailReportApi(props.scope, body),
   {
     manual: true,
     onSuccess: (data) => {
-      tableData.value = flattenEncounterBlocksToTableRows(data.content ?? []);
+      const flattened = flattenEncounterBlocksToTableRows(data.content ?? []);
+      // 超硬限截断 DOM，避免浏览器假死；提示缩窗或开「按患者维度合并」
+      if (flattened.length > DETAIL_TABLE_ROW_HARD_LIMIT) {
+        tableData.value = flattened.slice(0, DETAIL_TABLE_ROW_HARD_LIMIT);
+        ElMessage.warning(
+          `本页明细约 ${flattened.length} 行，已截断展示前 ${DETAIL_TABLE_ROW_HARD_LIMIT} 行。请缩小业务时间或开启「按患者维度合并」。`,
+        );
+      } else {
+        tableData.value = flattened;
+        if (flattened.length > DETAIL_TABLE_ROW_SOFT_LIMIT) {
+          ElMessage.warning(
+            `本页明细约 ${flattened.length} 行，表格较重。建议缩小时间范围或开启「按患者维度合并」。`,
+          );
+        }
+      }
       // total 为就诊块数（非明细行数）；须 Number 化，避免字符串导致分页失效
       detailTotal.value = Number(data.totalCount ?? 0) || 0;
       // 后端钳制越界页后回写实际 pageNo，前端同步避免空页
@@ -482,9 +531,29 @@ const { run: runExport, loading: exportLoading } = useRequest(
   },
 );
 
-const tableLoading = computed(
-  () => initLoading.value || summarizeLoading.value || pageLoading.value || printSubmitting.value,
+const tableLoading = computed(() => {
+  // 开合并时用全屏 ElLoading，表格 loading 关掉，避免双圈
+  if (mergeFullscreenBusy.value) {
+    return false;
+  }
+  return (
+    initLoading.value ||
+    summarizeLoading.value ||
+    pageLoading.value ||
+    printSubmitting.value ||
+    mergeQueryBusy.value
+  );
+});
+
+/** 按钮/开关忙态（含全屏合并查询）。 */
+const queryActionBusy = computed(
+  () => mergeFullscreenBusy.value || mergeQueryBusy.value || tableLoading.value,
 );
+
+/** 切换合并时先占住 loading，避免后端慢查询时界面像卡死。 */
+const mergeQueryBusy = ref(false);
+/** 开合并全屏 loading 中（与表格 loading 互斥）。 */
+const mergeFullscreenBusy = ref(false);
 
 /** 解析默认 Tab：门/住院费用明细均固定明细（忽略后端 defaultActiveTab）。 */
 function resolveDefaultPresentationMode(
@@ -501,16 +570,17 @@ function toSelectOptions(items: ApiOptionItem[]) {
   }));
 }
 
-/** 校验日期区间并组装查询/导出请求体。 */
+/** 校验时间区间并组装查询/导出请求体。 */
 function buildFilterPayload() {
-  const dateFrom = normalizeReportDateRangeYmd(queryParams.dateFrom);
-  const dateTo = normalizeReportDateRangeYmd(queryParams.dateTo);
+  const dateRange = toReportApiDateTimeRangePrecise(queryParams.dateFrom, queryParams.dateTo);
+  const dateFrom = dateRange.start;
+  const dateTo = dateRange.end;
   if (!dateFrom || !dateTo) {
-    ElMessage.warning(props.scope === 'inpatient' ? '请选择业务日期' : '请选择结算日期');
+    ElMessage.warning(props.scope === 'inpatient' ? '请选择业务时间' : '请选择结算时间');
     return null;
   }
   if (dayjs(dateFrom).isAfter(dayjs(dateTo))) {
-    ElMessage.warning('开始日期不能晚于结束日期');
+    ElMessage.warning('开始时间不能晚于结束时间');
     return null;
   }
   return {
@@ -538,7 +608,19 @@ function buildFilterPayload() {
     summaryDimension: isSummaryTab.value
       ? queryParams.summaryDimension || SUMMARY_DIMENSION_FIN_TYPE
       : undefined,
+    lineMergeMode: resolveLineMergeModeForRequest(),
   };
+}
+
+/** 住院明细组装 lineMergeMode；门诊/汇总不传。 */
+function resolveLineMergeModeForRequest(): string | undefined {
+  if (props.scope !== 'inpatient' || isSummaryTab.value) {
+    return undefined;
+  }
+  if (queryParams.mergeByPatientDefinition) {
+    return LINE_MERGE_MODE_BY_DEFINITION;
+  }
+  return LINE_MERGE_MODE_LINE;
 }
 
 /** 拉取当前 Tab 数据。 */
@@ -599,6 +681,45 @@ function handleQuery() {
   void getList();
 }
 
+/**
+ * 切换「按患者维度合并」后立即查询（仅住院明细）。
+ * 费用明细表行数多：开关会立刻改列显隐，若仍挂着当月数据，ElTable 同步重绘会卡主线程。
+ * 先清空再出 loading，再请求。
+ */
+async function handleMergeByPatientChange(enabled: string | number | boolean) {
+  // 先卸掉当前页大表，避免「改列 + 几百行」同帧重绘卡死
+  tableData.value = [];
+  queryParams.pageNo = 1;
+  mergeQueryBusy.value = true;
+  const mergeOn = enabled === true;
+  let fullscreenLoading: ReturnType<typeof ElLoading.service> | undefined;
+  if (mergeOn) {
+    mergeFullscreenBusy.value = true;
+    fullscreenLoading = ElLoading.service({
+      lock: true,
+      text: '按患者维度合并查询中，请稍候…',
+      background: 'rgba(0, 0, 0, 0.25)',
+    });
+  }
+  // 等空表 + loading 画出后再发请求
+  await nextTick();
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
+  try {
+    await getList();
+    // 回包灌表也重，loading 多盖一帧，减少「查完又卡一下」的体感
+    await nextTick();
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => resolve());
+    });
+  } finally {
+    mergeQueryBusy.value = false;
+    mergeFullscreenBusy.value = false;
+    fullscreenLoading?.close();
+  }
+}
+
 /** 切换汇总/明细 Tab 后立即查询。 */
 function handleTabChange() {
   queryParams.pageNo = 1;
@@ -609,9 +730,11 @@ function handleTabChange() {
 function handleReset() {
   const init = pageInit.value;
   queryParams.dateFrom =
-    normalizeReportDateRangeYmd(init?.defaultDateFrom) || dayjs().format('YYYY-MM-DD');
+    normalizeReportDateTime(init?.defaultDateFrom, 'start') ||
+    dayjs().startOf('day').format('YYYY-MM-DD HH:mm:ss');
   queryParams.dateTo =
-    normalizeReportDateRangeYmd(init?.defaultDateTo) || dayjs().format('YYYY-MM-DD');
+    normalizeReportDateTime(init?.defaultDateTo, 'end') ||
+    dayjs().endOf('day').format('YYYY-MM-DD HH:mm:ss');
   queryParams.tradeDirection = 'ALL';
   if (init?.tradeDirectionOptions?.length) {
     const hasAll = init.tradeDirectionOptions.some((item) => item.value === 'ALL');
@@ -640,6 +763,7 @@ function handleReset() {
   queryParams.summaryDimension = String(
     summaryDimensionOptions.value[0]?.value ?? SUMMARY_DIMENSION_FIN_TYPE,
   );
+  queryParams.mergeByPatientDefinition = false;
   queryParams.pageNo = 1;
   queryParams.pageSize = init?.defaultPageSize ?? 10;
   void getList();
@@ -785,17 +909,6 @@ function resolveSummaryRowClassName({ row }: { row: FeeDetailReportSummaryRowDto
   return resolveReportRefundRowClassName(isFeeDetailSummaryRefundRow(row));
 }
 
-/** 同一业务号下合并就诊头列（业务号/患者/科室/日期）。 */
-function handleEncounterSpanMethod(params: {
-  column: { property?: string };
-  row: FeeDetailTableRow;
-}) {
-  return resolveFeeDetailEncounterSpanMethod({
-    row: params.row,
-    column: params.column,
-  });
-}
-
 /**
  * 汇总行稳定 key（优先 dimensionKey，兼容旧 finType*）。
  *
@@ -810,14 +923,16 @@ function resolveSummaryRowKey(row: FeeDetailReportSummaryRowDto) {
   return String(row.finTypeCode ?? row.finTypeDisplay ?? row.dimensionName ?? '');
 }
 
-/** 加载页初始化下拉与默认日期。 */
+/** 加载页初始化下拉与默认时间窗。 */
 async function loadPageInit() {
   const data = await runInit();
   pageInit.value = data;
   queryParams.dateFrom =
-    normalizeReportDateRangeYmd(data.defaultDateFrom) || dayjs().format('YYYY-MM-DD');
+    normalizeReportDateTime(data.defaultDateFrom, 'start') ||
+    dayjs().startOf('day').format('YYYY-MM-DD HH:mm:ss');
   queryParams.dateTo =
-    normalizeReportDateRangeYmd(data.defaultDateTo) || dayjs().format('YYYY-MM-DD');
+    normalizeReportDateTime(data.defaultDateTo, 'end') ||
+    dayjs().endOf('day').format('YYYY-MM-DD HH:mm:ss');
   queryParams.pageSize = data.defaultPageSize ?? 10;
   queryParams.presentationMode = resolveDefaultPresentationMode(data);
   if (data.tradeDirectionOptions?.length) {
@@ -860,14 +975,16 @@ onMounted(async () => {
             <ElFormItem :label="businessDateLabel">
               <ElDatePicker
                 v-model="businessDateRange"
-                type="daterange"
-                value-format="YYYY-MM-DD"
+                type="datetimerange"
+                value-format="YYYY-MM-DD HH:mm:ss"
+                format="YYYY-MM-DD HH:mm:ss"
                 range-separator="至"
-                start-placeholder="开始"
-                end-placeholder="结束"
+                start-placeholder="开始时间"
+                end-placeholder="结束时间"
                 :clearable="false"
-                :shortcuts="dateRangeShortcuts"
-                :class="[REPORT_QUERY_CONTROL, REPORT_QUERY_CONTROL_DATERANGE]"
+                :default-time="dateTimeDefaultTime"
+                :shortcuts="dateTimeRangeShortcuts"
+                :class="[REPORT_QUERY_CONTROL, REPORT_QUERY_CONTROL_DATETIMERANGE]"
                 @change="handleQuery"
               />
             </ElFormItem>
@@ -1030,12 +1147,29 @@ onMounted(async () => {
                 />
               </ElSelect>
             </ElFormItem>
+            <!-- 占满查询区第 4 列空位；长文案放 content，避免 88px label 竖排 -->
+            <ElFormItem
+              v-if="scope === 'inpatient' && !isSummaryTab"
+              label-width="0"
+              class="report-list-page__query-switch-item"
+            >
+              <div class="report-list-page__query-switch">
+                <span>按患者维度合并</span>
+                <ElSwitch
+                  v-model="queryParams.mergeByPatientDefinition"
+                  :disabled="queryActionBusy"
+                  @change="handleMergeByPatientChange"
+                />
+              </div>
+            </ElFormItem>
           </template>
           <template #actions>
-            <ElButton type="primary" :icon="Search" :loading="tableLoading" @click="handleQuery">
+            <ElButton type="primary" :icon="Search" :loading="queryActionBusy" @click="handleQuery">
               搜索
             </ElButton>
-            <ElButton :icon="Refresh" :loading="tableLoading" @click="handleReset">重置</ElButton>
+            <ElButton :icon="Refresh" :loading="queryActionBusy" @click="handleReset"
+              >重置</ElButton
+            >
           </template>
         </ReportQueryBar>
       </template>
@@ -1170,7 +1304,6 @@ onMounted(async () => {
               :height="tableHeight"
               row-key="rowKey"
               :row-class-name="resolveRowClassName"
-              :span-method="handleEncounterSpanMethod"
             >
               <ElTableColumn
                 prop="busNo"
@@ -1178,7 +1311,6 @@ onMounted(async () => {
                 width="120"
                 align="center"
                 header-align="center"
-                fixed="left"
                 show-overflow-tooltip
               />
               <ElTableColumn
@@ -1187,7 +1319,6 @@ onMounted(async () => {
                 width="90"
                 align="center"
                 header-align="center"
-                fixed="left"
                 show-overflow-tooltip
               />
               <ElTableColumn
@@ -1196,7 +1327,6 @@ onMounted(async () => {
                 width="100"
                 align="center"
                 header-align="center"
-                fixed="left"
                 show-overflow-tooltip
               />
               <ElTableColumn
@@ -1205,7 +1335,6 @@ onMounted(async () => {
                 width="110"
                 align="center"
                 header-align="center"
-                fixed="left"
                 show-overflow-tooltip
               />
               <ElTableColumn
@@ -1260,6 +1389,7 @@ onMounted(async () => {
                 </template>
               </ElTableColumn>
               <ElTableColumn
+                v-if="!isPatientDefinitionMerge"
                 prop="orderingDoctorName"
                 label="开单医生"
                 width="88"
@@ -1268,6 +1398,7 @@ onMounted(async () => {
                 show-overflow-tooltip
               />
               <ElTableColumn
+                v-if="!isPatientDefinitionMerge"
                 prop="performerName"
                 label="执行人"
                 width="88"
@@ -1276,6 +1407,7 @@ onMounted(async () => {
                 show-overflow-tooltip
               />
               <ElTableColumn
+                v-if="!isPatientDefinitionMerge"
                 prop="cashierName"
                 label="收费人"
                 width="88"
@@ -1284,6 +1416,7 @@ onMounted(async () => {
                 show-overflow-tooltip
               />
               <ElTableColumn
+                v-if="!isPatientDefinitionMerge"
                 prop="billDate"
                 :label="props.scope === 'inpatient' ? '业务时间' : '结算时间'"
                 width="160"

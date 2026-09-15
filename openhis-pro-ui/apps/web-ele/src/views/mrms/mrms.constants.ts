@@ -42,6 +42,44 @@ export const HOMEPAGE_DIAG_TYPES = [
 
 export type HomepageDiagTypeCode = (typeof HOMEPAGE_DIAG_TYPES)[number]['code'];
 
+/** 诊断子表分组（对齐老 EMR 入院/出院/底栏结构） */
+export type HomepageDiagGroup = 'admission' | 'discharge' | 'special';
+
+export const HOMEPAGE_DIAG_GROUP_TYPES: Record<HomepageDiagGroup, HomepageDiagTypeCode[]> = {
+  admission: ['admission_main', 'admission_other'],
+  discharge: ['discharge_main', 'discharge_other'],
+  special: ['pathology', 'injury_poison'],
+};
+
+/** 是否上传医保（对齐老 needYbUp：1是 0否） */
+export const NEED_YB_UP_OPTIONS: FormItemOption[] = [
+  { label: '是', value: '1' },
+  { label: '否', value: '0' },
+];
+
+/** 主要诊断治愈好转（老 cureStatus） */
+export const MAIN_DIAG_CURE_OPTIONS: FormItemOption[] = [
+  { label: '1.治愈', value: '1' },
+  { label: '2.好转', value: '2' },
+  { label: '3.未愈', value: '3' },
+];
+
+/** 临床路径管理（老 clinicPathStatus，异于附页「是否实施」） */
+export const CLINIC_PATH_MANAGE_OPTIONS: FormItemOption[] = [
+  { label: '1.完成', value: '1' },
+  { label: '2.变异', value: '2' },
+  { label: '3.退出', value: '3' },
+  { label: '4.未入', value: '4' },
+];
+
+/** 诊断符合情况码（0未做 1符合 2不符合 3不确定） */
+export const DIAG_MATCH_OPTIONS: FormItemOption[] = [
+  { label: '0.未做', value: '0' },
+  { label: '1.符合', value: '1' },
+  { label: '2.不符合', value: '2' },
+  { label: '3.不确定', value: '3' },
+];
+
 /** 左侧锚点 / 主分块（与首页 Tab 一致） */
 export const HOMEPAGE_ANCHOR_SECTIONS = [
   { id: 'sec-inpatient', label: '住院信息', section: 'basic' as const },
@@ -51,36 +89,53 @@ export const HOMEPAGE_ANCHOR_SECTIONS = [
   { id: 'sec-appendix', label: '病案附页', section: 'staff' as const },
 ];
 
-/** 病案结算类型 → 费用分项展示（与 4401 / 术语 900010 对齐） */
-export const HOMEPAGE_FEE_ITEM_OPTIONS: { key: string; label: string }[] = [
-  { key: 'ordn_med_servfee', label: '一般医疗服务费' },
-  { key: 'ordn_trt_oprt_fee', label: '一般治疗操作费' },
-  { key: 'nurs_fee', label: '护理费' },
-  { key: 'com_med_serv_oth_fee', label: '综合医疗服务类其他费用' },
-  { key: 'palg_diag_fee', label: '病理诊断费' },
-  { key: 'lab_diag_fee', label: '实验室诊断费' },
-  { key: 'rdhy_diag_fee', label: '影像学诊断费' },
-  { key: 'clnc_dise_fee', label: '临床诊断项目费' },
-  { key: 'nsrgtrt_item_fee', label: '非手术治疗项目费' },
-  { key: 'clnc_phys_trt_fee', label: '临床物理治疗费' },
-  { key: 'rgtrt_trt_fee', label: '手术治疗费' },
-  { key: 'anst_fee', label: '麻醉费' },
-  { key: 'rgtrt_fee', label: '手术费' },
-  { key: 'rhab_fee', label: '康复费' },
-  { key: 'tcm_trt_fee', label: '中医治疗费' },
-  { key: 'wm_fee', label: '西药费' },
-  { key: 'abtl_medn_fee', label: '抗菌药物费用' },
-  { key: 'tcmpat_fee', label: '中成药费' },
-  { key: 'tcmherb_fee', label: '中药饮片费' },
-  { key: 'blo_fee', label: '血费' },
-  { key: 'albu_fee', label: '白蛋白类制品费' },
-  { key: 'glon_fee', label: '球蛋白类制品费' },
-  { key: 'clotfac_fee', label: '凝血因子类制品费' },
-  { key: 'cyki_fee', label: '细胞因子类制品费' },
-  { key: 'exam_dspo_matl_fee', label: '检查用一次性医用材料费' },
-  { key: 'trt_dspo_matl_fee', label: '治疗用一次性医用材料费' },
-  { key: 'oprn_dspo_matl_fee', label: '手术用一次性医用材料费' },
-  { key: 'oth_fee', label: '其他费' },
+/** 病案费用大类（对齐老 EMR_SETTLE_ITEM.SETTLE_ITEM_TYPE） */
+export type HomepageFeeCategory =
+  | '综合医疗服务类'
+  | '诊断类'
+  | '治疗类'
+  | '康复类'
+  | '中医类'
+  | '西药类'
+  | '中药类'
+  | '血液和血液制品类'
+  | '耗材类'
+  | '其他类';
+
+/** 病案结算类型 → 费用分项（带大类，供费用结算表按类合并展示） */
+export const HOMEPAGE_FEE_ITEM_OPTIONS: {
+  key: string;
+  label: string;
+  category: HomepageFeeCategory;
+}[] = [
+  { key: 'ordn_med_servfee', label: '一般医疗服务费', category: '综合医疗服务类' },
+  { key: 'ordn_trt_oprt_fee', label: '一般治疗操作费', category: '综合医疗服务类' },
+  { key: 'nurs_fee', label: '护理费', category: '综合医疗服务类' },
+  { key: 'com_med_serv_oth_fee', label: '综合医疗服务类其他费用', category: '综合医疗服务类' },
+  { key: 'palg_diag_fee', label: '病理诊断费', category: '诊断类' },
+  { key: 'lab_diag_fee', label: '实验室诊断费', category: '诊断类' },
+  { key: 'rdhy_diag_fee', label: '影像学诊断费', category: '诊断类' },
+  { key: 'clnc_dise_fee', label: '临床诊断项目费', category: '诊断类' },
+  { key: 'nsrgtrt_item_fee', label: '非手术治疗项目费', category: '治疗类' },
+  { key: 'clnc_phys_trt_fee', label: '临床物理治疗费', category: '治疗类' },
+  { key: 'rgtrt_trt_fee', label: '手术治疗费', category: '治疗类' },
+  { key: 'anst_fee', label: '麻醉费', category: '治疗类' },
+  { key: 'rgtrt_fee', label: '手术费', category: '治疗类' },
+  { key: 'rhab_fee', label: '康复费', category: '康复类' },
+  { key: 'tcm_trt_fee', label: '中医治疗费', category: '中医类' },
+  { key: 'wm_fee', label: '西药费', category: '西药类' },
+  { key: 'abtl_medn_fee', label: '抗菌药物费用', category: '西药类' },
+  { key: 'tcmpat_fee', label: '中成药费', category: '中药类' },
+  { key: 'tcmherb_fee', label: '中药饮片费', category: '中药类' },
+  { key: 'blo_fee', label: '血费', category: '血液和血液制品类' },
+  { key: 'albu_fee', label: '白蛋白类制品费', category: '血液和血液制品类' },
+  { key: 'glon_fee', label: '球蛋白类制品费', category: '血液和血液制品类' },
+  { key: 'clotfac_fee', label: '凝血因子类制品费', category: '血液和血液制品类' },
+  { key: 'cyki_fee', label: '细胞因子类制品费', category: '血液和血液制品类' },
+  { key: 'exam_dspo_matl_fee', label: '检查用一次性医用材料费', category: '耗材类' },
+  { key: 'trt_dspo_matl_fee', label: '治疗用一次性医用材料费', category: '耗材类' },
+  { key: 'oprn_dspo_matl_fee', label: '手术用一次性医用材料费', category: '耗材类' },
+  { key: 'oth_fee', label: '其他费', category: '其他类' },
 ];
 
 /** 医疗付费方式 */
@@ -127,6 +182,18 @@ export const ADM_COND_OPTIONS: FormItemOption[] = [
   { label: '临床未确定', value: '2' },
   { label: '情况不明', value: '3' },
   { label: '无', value: '4' },
+];
+
+/**
+ * 诊断转归/病情（老系统 outIllStatus；落库字段 outIllStatusCode）。
+ * 1治愈 2好转 3未愈 4死亡 9其他
+ */
+export const OUT_ILL_STATUS_OPTIONS: FormItemOption[] = [
+  { label: '治愈', value: '1' },
+  { label: '好转', value: '2' },
+  { label: '未愈', value: '3' },
+  { label: '死亡', value: '4' },
+  { label: '其他', value: '9' },
 ];
 
 export const NTLY_OPTIONS: FormItemOption[] = [
@@ -181,16 +248,28 @@ export const YES_NO_12_OPTIONS: FormItemOption[] = [
   { label: '否', value: '2' },
 ];
 
+/**
+ * 实施临床路径（国标中医病案首页：1中医 2西医 3否；老 inpath）。
+ */
+export const CLINICAL_PATH_OPTIONS: FormItemOption[] = [
+  { label: '中医', value: '1' },
+  { label: '西医', value: '2' },
+  { label: '否', value: '3' },
+];
+
 /** 有无类（1无 2有） */
 export const NONE_HAS_OPTIONS: FormItemOption[] = [
   { label: '无', value: '1' },
   { label: '有', value: '2' },
 ];
 
+/** 治疗类别（国标中医病案首页 / 4401 trt_type：1西医 2中医 2.1中医 2.2民族医 3中西医） */
 export const TRT_TYPE_OPTIONS: FormItemOption[] = [
-  { label: '中医', value: '1' },
-  { label: '中西医', value: '2' },
-  { label: '西医', value: '3' },
+  { label: '1.西医', value: '1' },
+  { label: '2.中医', value: '2' },
+  { label: '2.1中医', value: '2.1' },
+  { label: '2.2民族医', value: '2.2' },
+  { label: '3.中西医', value: '3' },
 ];
 
 export const ABO_OPTIONS: FormItemOption[] = [
@@ -219,3 +298,29 @@ export const DOCTOR_EDITABLE_STATUS: CaseRecordStatusCode[] = ['draft', 'returne
 /** 病案室可操作状态 */
 export const RECORD_ROOM_RECEIVE_STATUS: CaseRecordStatusCode[] = ['submitted'];
 export const RECORD_ROOM_RETURN_STATUS: CaseRecordStatusCode[] = ['submitted', 'received'];
+
+/**
+ * 拼病案相关页签标题（前缀-姓名-住院号，缺省段省略）。
+ *
+ * @param prefix 业务前缀，如「结算清单」「病案详情」
+ * @param patientName 患者姓名
+ * @param iptNo 住院号
+ */
+export function buildMrmsPatientTabTitle(
+  prefix: string,
+  patientName?: string,
+  iptNo?: string,
+): string {
+  const name = (patientName ?? '').trim();
+  const ipt = (iptNo ?? '').trim();
+  if (name && ipt) {
+    return `${prefix}-${name}-${ipt}`;
+  }
+  if (name) {
+    return `${prefix}-${name}`;
+  }
+  if (ipt) {
+    return `${prefix}-${ipt}`;
+  }
+  return prefix;
+}

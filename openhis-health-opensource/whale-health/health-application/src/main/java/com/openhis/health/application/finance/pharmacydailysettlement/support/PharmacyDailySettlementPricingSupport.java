@@ -1069,5 +1069,20 @@ public class PharmacyDailySettlementPricingSupport {
         private BigDecimal saleAmount;
         /** 带符号发药数量（退药为负；用于品规净数量分桶）。 */
         private BigDecimal signedQuantity;
+
+        /**
+         * 实发批号占位（日结适配实现接口；日结路径不写账批质检）。
+         */
+        private String lotNumber;
+
+        /**
+         * 收费锚点批号占位（日结不写；满足 {@code MedicationDispensePurchaseSaleDetailLine} 契约）。
+         */
+        private String chargeLotNumber;
+
+        /**
+         * 账批≠实发批占位（日结不写；满足接口契约）。
+         */
+        private Boolean lotMismatch;
     }
 }

@@ -115,4 +115,13 @@ public class ProductDefinitionItemDto {
     /** 门诊拆分属性展示名。 */
     @Schema(description = "门诊拆分属性展示名")
     private String partAttributeEnumDictText;
+
+    /**
+     * 采购最小单位换算比展示（服务端拼装），形如 {@code 1箱/3桶}。
+     *
+     * <p>口径：1 采购单位 = ratio 拆零（最小）单位；与库存明细 {@code packageSplitRatioText}
+     * （包装↔拆零）同族展示算法，单位取采购槽 / 拆零槽。同单位且倍数为 1 时为 {@code 1个}。</p>
+     */
+    @Schema(description = "采购最小单位换算比展示，如 1箱/3桶")
+    private String purchaseSplitRatioText;
 }

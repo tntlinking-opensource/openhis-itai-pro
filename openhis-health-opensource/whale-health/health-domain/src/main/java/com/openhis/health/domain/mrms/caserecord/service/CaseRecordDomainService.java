@@ -13,6 +13,7 @@ import com.openhis.health.domain.mrms.caserecord.entity.HomepageDiagnosis;
 import com.openhis.health.domain.mrms.caserecord.command.HomepageSaveCommand;
 import com.openhis.health.domain.mrms.caserecord.repository.CaseRecordHomepageRepository;
 import com.openhis.health.domain.mrms.caserecord.repository.CaseRecordRepository;
+import com.openhis.health.domain.mrms.caserecord.support.CaseRecordIdempotentPersistSupport;
 import com.openhis.health.domain.mrms.caserecord.support.MedcasnoGenerator;
 import com.openhis.health.domain.share.constants.MrmsErrorCodes;
 import com.openhis.health.domain.share.enums.CaseRecordStatus;
@@ -29,6 +30,7 @@ import com.openhis.whale.core.application.exception.EntityNotFoundException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,8 +42,9 @@ import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 /**
  * 病案主档（{@code mrms_case_record}）聚合写侧领域服务。
  *
- * <p>职责：幂等建档、入院登记 bootstrap、首页保存/自动取值、医生提交、工作流状态迁移与领域事件发布。</p>
- * <p>不变量：状态迁移委托聚合根 {@link CaseRecord}；持久化先于 {@code publish} 领域事件。</p>
+ * <p>职责：幂等建档（可空病案号）、入院登记 bootstrap、首页保存时发号、自动取值、医生提交、工作流状态迁移与领域事件发布。</p>
+ * <p>不变量：状态迁移委托聚合根 {@link CaseRecord}；持久化先于 {@code publish} 领域事件；
+ * {@code medcasno} 在首次保存首页（或提交兜底）时由 {@link MedcasnoGenerator} 写入。</p>
  */
 @Slf4j
 @Service
@@ -51,11 +54,15 @@ public class CaseRecordDomainService {
     private final CaseRecordRepository caseRecordRepository;
     private final CaseRecordHomepageRepository homepageRepository;
     private final CaseRecordHomepageDomainService caseRecordHomepageDomainService;
+    private final CaseRecordIdempotentPersistSupport idempotentPersistSupport;
     private final MedcasnoGenerator medcasnoGenerator;
     private final IDomainEventPublisher domainEventPublisher;
 
     /**
-     * 幂等建档：同租户同就诊已存在则直接返回。
+     * 幂等建档：同租户同就诊已存在则直接返回；新建时不发号（medcasno 可空）。
+     *
+     * <p>并发打开首页（仅 encounterId）时两请求可能同时「未见主档」；后到者撞
+     * {@code uk_mrms_case_encounter} 后回读胜出方行，避免整事务 aborted。</p>
      *
      * @param tenantId 租户
      * @param patientId 患者
@@ -71,19 +78,30 @@ public class CaseRecordDomainService {
         if (existing.isPresent()) {
             return existing.get();
         }
-        // Cmd：初始化聚合根并生成病案号与住院次
+        // Cmd：初始化聚合根（病案号留空，首次保存首页再发号）与住院次
         CaseRecord record = new CaseRecord();
         long iptCnt = caseRecordRepository.countByTenantIdAndPatientIdAndIsDeletedFalse(tenantId, patientId);
         record.initNewRecord(
                 tenantId,
                 patientId,
                 encounterId,
-                medcasnoGenerator.nextMedcasno(tenantId),
+                null,
                 (int) iptCnt + 1,
                 operatorId);
-        // 持久化先于事件发布
-        CaseRecord saved = caseRecordRepository.save(record);
-        // 发布建档事件供 bootstrap/质控订阅
+        CaseRecord saved;
+        try {
+            // 独立事务 flush：并发撞 uk_mrms_case_encounter 时仅新建事务回滚
+            saved = idempotentPersistSupport.insertCaseRecordNew(record);
+        } catch (DataIntegrityViolationException integrityViolationException) {
+            // 另一事务已插入同就诊主档：回读；若仍空则非预期唯一键，原样抛出
+            Optional<CaseRecord> raced = caseRecordRepository
+                    .findByTenantIdAndEncounterIdAndIsDeletedFalse(tenantId, encounterId);
+            if (raced.isPresent()) {
+                return raced.get();
+            }
+            throw integrityViolationException;
+        }
+        // 发布建档事件供 bootstrap/质控订阅（此时 medcasno 可能为空；仅真正插入方发布）
         domainEventPublisher.publish(new CaseRecordCreatedEvent(
                 saved.getId(),
                 saved.getTenantId(),
@@ -97,7 +115,8 @@ public class CaseRecordDomainService {
     /**
      * 入院登记 bootstrap：幂等建档 + 懒创建首页；新建时全量 HIS 自动取值并刷新列表冗余。
      *
-     * <p>主触发：住院登记提交 afterCommit；出院医嘱/首页打开仅作历史就诊幂等兜底。</p>
+     * <p>主触发：住院登记提交 afterCommit；首次分床/入科 afterCommit 兜底；出院医嘱/首页打开作历史就诊幂等兜底。
+     * 建档阶段不发病案号；医生首次保存首页时 {@link #ensureMedcasnoAssigned} 发号。</p>
      *
      * @param tenantId 租户
      * @param patientId 患者
@@ -142,7 +161,7 @@ public class CaseRecordDomainService {
     }
 
     /**
-     * 医生保存首页：校验可编辑后委托首页领域服务并刷新主档列表冗余。
+     * 医生保存首页：缺病案号则先发号，再校验可编辑并委托首页领域服务、刷新主档列表冗余。
      *
      * @param command 首页保存命令
      * @return 保存后的首页
@@ -152,6 +171,8 @@ public class CaseRecordDomainService {
         // Pre：加载主档并断言医生可编辑（draft/returned；归档冻结后不可改）
         CaseRecord record = requireById(command.getCaseRecordId());
         record.assertEditableByDoctor();
+        // Cmd：首次保存时若病案号为空则按年流水发号
+        this.ensureMedcasnoAssigned(record, command.getOperatorId());
         // Cmd：首页写侧保存
         CaseRecordHomepage homepage = caseRecordHomepageDomainService.save(command);
         // 持久化主档冗余摘要
@@ -193,6 +214,8 @@ public class CaseRecordDomainService {
         // Pre：主档可编辑且首页满足提交校验
         CaseRecord record = requireById(command.getCaseRecordId());
         record.assertEditableByDoctor();
+        // Cmd：提交前兜底发号（未保存直接提交的历史路径）
+        this.ensureMedcasnoAssigned(record, command.getOperatorId());
         CaseRecordHomepage homepage = requireHomepage(command.getCaseRecordId());
         List<HomepageDiagnosis> diagnoses = caseRecordHomepageDomainService.listDiagnoses(command.getCaseRecordId());
         homepage.assertReadyToSubmit(diagnoses);
@@ -258,6 +281,23 @@ public class CaseRecordDomainService {
         record.refreshSummaryFrom(homepage, resolveMainDiagName(record.getId()));
         // 持久化主档冗余列
         return caseRecordRepository.save(record);
+    }
+
+    /**
+     * 病案号为空时发号并持久化主档（已有号则幂等跳过）。
+     *
+     * @param record     病案主档
+     * @param operatorId 操作人
+     */
+    private void ensureMedcasnoAssigned(CaseRecord record, Long operatorId) {
+        // 已有病案号：不再发号，避免改号
+        if (trimToNull(record.getMedcasno()) != null) {
+            return;
+        }
+        // Cmd：按年流水生成 CR+yyMM+#### 并写回主档
+        String medcasno = medcasnoGenerator.nextMedcasno(record.getTenantId());
+        record.assignMedcasnoIfAbsent(medcasno, operatorId);
+        caseRecordRepository.save(record);
     }
 
     /**

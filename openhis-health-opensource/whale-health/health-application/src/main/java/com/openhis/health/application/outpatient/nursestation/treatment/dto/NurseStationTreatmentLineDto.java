@@ -151,7 +151,7 @@ public class NurseStationTreatmentLineDto {
     private String unitCode;
 
     /**
-     * 单位展示名（**仅药品**；术语 {@code unit_code} 映射优先，未命中则回落产品字典文案，对齐 **BR-ORD-022**）。
+     * 单位展示名（术语 {@code unit_code} 映射优先；药品另可回落产品字典文案，对齐 **BR-ORD-022**；诊疗/耗材亦回填供处置单打印）。
      */
     @Schema(description = "单位展示名")
     private String unitName;

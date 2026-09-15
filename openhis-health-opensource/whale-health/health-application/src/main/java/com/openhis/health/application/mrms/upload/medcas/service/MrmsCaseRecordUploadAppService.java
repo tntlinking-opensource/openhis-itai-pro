@@ -125,7 +125,7 @@ public class MrmsCaseRecordUploadAppService {
         CaseRecord prepared = prepareForUpload(caseRecordId);
         String contractBusNo = resolveContractBusNo(prepared.getEncounterId(), request.getContractBusNo());
         Optional<InsuranceEncounterContext> insCtx = insuranceEncounterLoader.findContext(
-                prepared.getEncounterId(), contractBusNo, caseRecordId);
+                prepared.getEncounterId(), contractBusNo);
         InsuranceEncounterContext ctx = null;
         // 有结算上下文才做必填校验；无上下文仅组装预览
         if (insCtx.isPresent()) {
@@ -167,7 +167,7 @@ public class MrmsCaseRecordUploadAppService {
         // Pre：归档冻结 + 已结算上下文
         CaseRecord record = prepareForUpload(caseRecordId);
         String contractBusNo = resolveContractBusNo(record.getEncounterId(), request.getContractBusNo());
-        InsuranceEncounterContext ctx = requireSettledContext(record, contractBusNo, caseRecordId);
+        InsuranceEncounterContext ctx = requireSettledContext(record, contractBusNo);
         Long operatorId = operatorResolver.requireOperatorId();
         // Asm：组装并校验规范必填
         MedcasSettleListPayload payload = caseRecord4101AMapper.assemble(record, ctx, operatorId);
@@ -303,7 +303,7 @@ public class MrmsCaseRecordUploadAppService {
                 record = caseRecordDomainService.requireById(caseRecordId);
             }
             contractBusNo = resolveContractBusNo(record.getEncounterId(), request.getContractBusNo());
-            InsuranceEncounterContext ctx = requireSettledContext(record, contractBusNo, caseRecordId);
+            InsuranceEncounterContext ctx = requireSettledContext(record, contractBusNo);
             psnNo = ctx.getPsnNo();
             setlId = trimToNull(ctx.getSetlId());
             // 结算未落库则无法打平台 4103
@@ -350,16 +350,23 @@ public class MrmsCaseRecordUploadAppService {
                     false,
                     record.getSetlListId());
         }
-        // Asm：解析 setlinfo 摘要供运维台表格展示
+        // Asm：解析平台全量 output + setlinfo 摘要
         SettleListQuery4103Dto dto = new SettleListQuery4103Dto();
         dto.setSuccess(platform.isSuccess());
         dto.setErrMsg(platform.getErrMsg());
         dto.setInfcode(platform.getInfcode());
         dto.setPsnNo(psnNo);
         dto.setSetlId(setlId);
-        if (platform.isSuccess()) {
+        if (record != null) {
+            dto.setMedcasno(trimToNull(record.getMedcasno()));
+            dto.setPsnName(trimToNull(record.getPsnName()));
+            dto.setSetlListId(trimToNull(record.getSetlListId()));
+        }
+        // 有 output 即解析（成功展示全量；失败也可能带回包片段）
+        if (trimToNull(platform.getOutput()) != null) {
             SettleListQueryOutputSupport.fillFromOutput(dto, platform.getOutput());
-        } else {
+        }
+        if (!platform.isSuccess()) {
             dto.setPlatformMsg(platform.getErrMsg());
         }
         return dto;
@@ -379,20 +386,58 @@ public class MrmsCaseRecordUploadAppService {
         if (pageSize > 200) {
             throw new ValidationException("每页条数不能超过 200");
         }
-        // Pre：租户条件下推上传态/关键字
+        // Pre：租户 + 交易号/出院窗/状态条件下推
         CaseRecordUploadPageQuery query = new CaseRecordUploadPageQuery();
         query.setTenantId(operatorResolver.requireTenantId());
-        query.setChsUploadStatusCode(trimToNull(request.getStatusCode()));
+        query.setInfno(trimToNull(request.getInfno()));
+        query.setUploadStatusCode(trimToNull(request.getStatusCode()));
         query.setKeyword(request.getKeyword());
+        query.setDscgTimeFrom(request.getDscgTimeFrom());
+        query.setDscgTimeTo(request.getDscgTimeTo());
+        String infno = trimToNull(request.getInfno());
+        Sort sort;
+        // 4401 按归档时间；结算清单按最近结算上传/出院时间
+        if ("4401".equals(infno)) {
+            sort = Sort.by(Sort.Direction.DESC, "archivedAt", "id");
+        } else {
+            sort = Sort.by(Sort.Direction.DESC, "settleUploadAt", "dscgTime", "id");
+        }
         Page<CaseRecord> page = caseRecordQueryService.queryUploadPage(
                 query,
-                PageRequest.of(pageNo - 1, pageSize, Sort.by(Sort.Direction.DESC, "archivedAt", "id")));
-        // Asm：主档 → 摘要 DTO；分页元数据走 PagedResultBuilder
+                PageRequest.of(pageNo - 1, pageSize, sort));
+        // Asm：主档 → 摘要 DTO，并补齐医保 psn_no/setl_id 供运维可见可点查
         List<CaseRecordUploadSummaryDto> items = new ArrayList<>();
         for (CaseRecord row : page.getContent()) {
-            items.add(uploadMapper.toUploadSummaryDto(row));
+            CaseRecordUploadSummaryDto dto = uploadMapper.toUploadSummaryDto(row);
+            this.fillInsuranceKeys(dto, row);
+            items.add(dto);
         }
         return PagedResultBuilder.build(new PagedResult<>(), items, page);
+    }
+
+    /**
+     * 列表行补齐医保人员编号/结算 ID（失败不阻断列表）。
+     *
+     * @param dto 摘要行
+     * @param row 病案主档
+     */
+    private void fillInsuranceKeys(CaseRecordUploadSummaryDto dto, CaseRecord row) {
+        if (row == null || row.getEncounterId() == null) {
+            return;
+        }
+        try {
+            String busNo = resolveContractBusNo(row.getEncounterId(), null);
+            Optional<InsuranceEncounterContext> ctxOpt =
+                    insuranceEncounterLoader.findContext(row.getEncounterId(), busNo);
+            if (ctxOpt.isEmpty()) {
+                return;
+            }
+            InsuranceEncounterContext ctx = ctxOpt.get();
+            dto.setPsnNo(trimToNull(ctx.getPsnNo()));
+            dto.setSetlId(trimToNull(ctx.getSetlId()));
+        } catch (Exception ex) {
+            // 未结算/缺契约时跳过，列表仍可展示上传态
+        }
     }
 
     /**
@@ -416,7 +461,7 @@ public class MrmsCaseRecordUploadAppService {
         if (!insuranceEncounterLoader.isInsuranceInpatient(record.getEncounterId())) {
             return skippedResult(caseRecordId, operatorId);
         }
-        InsuranceEncounterContext ctx = requireSettledContext(record, contractBusNo, caseRecordId);
+        InsuranceEncounterContext ctx = requireSettledContext(record, contractBusNo);
         MedcasHomepagePayload payload = caseRecord4401Mapper.assemble(record, ctx);
         Upload4401Validator.validate(payload, true);
         String inputJson = serialize(payload, "4401");
@@ -467,7 +512,7 @@ public class MrmsCaseRecordUploadAppService {
         if (!insuranceEncounterLoader.isInsuranceInpatient(record.getEncounterId())) {
             throw new BusinessException(MrmsErrorCodes.UPLOAD_PRECONDITION, "非医保住院不可上传结算清单");
         }
-        InsuranceEncounterContext ctx = requireSettledContext(record, contractBusNo, caseRecordId);
+        InsuranceEncounterContext ctx = requireSettledContext(record, contractBusNo);
         MedcasSettleListPayload payload = caseRecord4101AMapper.assemble(record, ctx, operatorId);
         Upload4101AValidator.validate(payload);
         String inputJson = serialize(payload, "4101A");
@@ -535,7 +580,7 @@ public class MrmsCaseRecordUploadAppService {
                 && !MrmsSettleUploadFlags.COMMITTED.equals(trimToNull(record.getSettleUploadStatusCode()))) {
             throw new BusinessException(MrmsErrorCodes.UPLOAD_PRECONDITION, "结算已上传状态才能提交结算清单");
         }
-        InsuranceEncounterContext ctx = requireSettledContext(record, contractBusNo, caseRecordId);
+        InsuranceEncounterContext ctx = requireSettledContext(record, contractBusNo);
         Upload4102Validator.validate(ctx.getPsnNo(), ctx.getSetlId(), stasType);
         requireExtensionEnabled();
         MedcasSettleListStatusExtensionIn command = new MedcasSettleListStatusExtensionIn();
@@ -612,15 +657,13 @@ public class MrmsCaseRecordUploadAppService {
     /**
      * 要求已医保结算上下文。
      *
-     * @param record 主档
-     * @param contractBusNo 合同
-     * @param caseRecordId 病案
+     * @param record        主档
+     * @param contractBusNo 合同业务号
      * @return 上下文
      */
-    private InsuranceEncounterContext requireSettledContext(
-            CaseRecord record, String contractBusNo, Long caseRecordId) {
+    private InsuranceEncounterContext requireSettledContext(CaseRecord record, String contractBusNo) {
         Optional<InsuranceEncounterContext> insCtxOpt = insuranceEncounterLoader.findContext(
-                record.getEncounterId(), contractBusNo, caseRecordId);
+                record.getEncounterId(), contractBusNo);
         if (insCtxOpt.isEmpty()) {
             throw new BusinessException(
                     MrmsErrorCodes.UPLOAD_PRECONDITION, "病人确认结算后才能上报（缺 mdtrt_id/setl_id）");
@@ -628,6 +671,14 @@ public class MrmsCaseRecordUploadAppService {
         InsuranceEncounterContext ctx = insCtxOpt.get();
         if (trimToNull(ctx.getPsnNo()) == null) {
             throw new BusinessException(MrmsErrorCodes.UPLOAD_PRECONDITION, "医保 psn_no 缺失");
+        }
+        // 定点编码须来自 chs-contract；fin_contract 列常为空，缺配置时提前阻断
+        if (trimToNull(ctx.getFixmedinsCode()) == null) {
+            throw new BusinessException(
+                    MrmsErrorCodes.UPLOAD_PRECONDITION,
+                    "定点医药机构编号缺失（请检查 chs-contract.properties 中 contract."
+                            + contractBusNo
+                            + ".fixmedins_code）");
         }
         return ctx;
     }

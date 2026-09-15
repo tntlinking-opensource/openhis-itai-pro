@@ -18,13 +18,22 @@ public final class MrmsConstants {
     /** EMR 出院小结文书类型 code（入院病情解析候选）。 */
     public static final String EMR_DOC_TYPE_DISCHARGE_SUMMARY = "DISCHARGE_SUMMARY";
 
-    /** 首页扩展键：医疗费总额。 */
+    /**
+     * 费用快照键：医疗费总额（4401 medfee_sumamt）。
+     *
+     * <p>落库 {@code mrms_case_record_homepage.medfee_sumamt}；DTO.fees / 4401 / 卫统 / HQMS
+     * 读快照。写入时机：首次空快照补种或「重新统计」。</p>
+     */
     public static final String EXT_MEDFEE_SUMAMT = "medfee_sumamt";
 
-    /** 首页扩展键：自付金额。 */
+    /**
+     * 费用快照键：自付金额（4401 selfpay_amt）。
+     *
+     * <p>落库 {@code mrms_case_record_homepage.selfpay_amt}；口径同 {@link #EXT_MEDFEE_SUMAMT}。</p>
+     */
     public static final String EXT_SELFPAY_AMT = "selfpay_amt";
 
-    /** 病案结算类型术语码 → 4401 费用分项键（与 ter_concept 900010 序号 1～28 对齐）。 */
+    /** 病案结算类型术语码 → 4401 费用分项键（与 ter_concept 900010 序号 1～28 对齐；落库 fee_items_json）。 */
     public static final String[] MR_SETTLEMENT_TO_4401_FEE_KEY = {
         null,
         "ordn_med_servfee",
@@ -57,8 +66,44 @@ public final class MrmsConstants {
         "oth_fee"
     };
 
-    /** 未映射病案结算类型时归入其他费。 */
+    /** 未映射病案结算类型时归入其他费（快照键，落库 fee_items_json）。 */
     public static final String FEE_KEY_OTH = "oth_fee";
+
+    /**
+     * 费用快照键全集（总额 + 自付 + 1～28 分项）；DTO.fees / 上报读快照。
+     */
+    public static final String[] FEE_LIVE_QUERY_KEYS = {
+        EXT_MEDFEE_SUMAMT,
+        EXT_SELFPAY_AMT,
+        "ordn_med_servfee",
+        "ordn_trt_oprt_fee",
+        "nurs_fee",
+        "com_med_serv_oth_fee",
+        "palg_diag_fee",
+        "lab_diag_fee",
+        "rdhy_diag_fee",
+        "clnc_dise_fee",
+        "nsrgtrt_item_fee",
+        "clnc_phys_trt_fee",
+        "rgtrt_trt_fee",
+        "anst_fee",
+        "rgtrt_fee",
+        "rhab_fee",
+        "tcm_trt_fee",
+        "wm_fee",
+        "abtl_medn_fee",
+        "tcmpat_fee",
+        "tcmherb_fee",
+        "blo_fee",
+        "albu_fee",
+        "glon_fee",
+        "clotfac_fee",
+        "cyki_fee",
+        "exam_dspo_matl_fee",
+        "trt_dspo_matl_fee",
+        "oprn_dspo_matl_fee",
+        FEE_KEY_OTH
+    };
 
     /**
      * 病案列表筛选/行标记：否（是否出院、是否结算等 0/1 口径的「否」）。
@@ -146,10 +191,10 @@ public final class MrmsConstants {
     }
 
     /**
-     * 病案结算类型术语码（1～28）→ 4401 费用分项扩展键。
+     * 病案结算类型术语码（1～28）→ 4401 费用分项快照键。
      *
      * @param mrSettlementTypeCode 术语 code
-     * @return 扩展键；无法识别时 {@link #FEE_KEY_OTH}
+     * @return 快照键；无法识别时 {@link #FEE_KEY_OTH}
      */
     public static String to4401FeeExtensionKey(String mrSettlementTypeCode) {
         if (mrSettlementTypeCode == null || mrSettlementTypeCode.isBlank()) {

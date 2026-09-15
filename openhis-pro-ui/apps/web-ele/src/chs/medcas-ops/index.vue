@@ -40,11 +40,15 @@ import dayjs from 'dayjs';
 
 import { getChargeTypeListApi } from '#/api/core/common';
 import {
+  modifySettleListStatusApi,
   previewAssembled4401Api,
+  previewSettleListApi,
   querySettleList4103Api,
   queryUploadLogsApi,
   queryUploadPageApi,
   reportOneClickApi,
+  uploadSettleListApi,
+  type UploadResultDto,
 } from '#/chs/api/medcas-ops';
 import {
   filterInsuranceChargeTypes,
@@ -52,13 +56,19 @@ import {
   isInventoryOpsContractAll,
   resolveDefaultInsuranceBusNo,
 } from '#/chs/constants/insurance-contract';
+import { MRMS_HOMEPAGE_4401_UPLOAD_ENABLED } from '#/views/mrms/homepage/homepage-4401-upload.config';
+import MrmsSettleQuery4103Dialog from '#/views/mrms/components/mrms-settle-query-4103-dialog.vue';
+import {
+  formatFieldCodeValue,
+  stasTypeTagType,
+} from '#/views/mrms/components/mrms-settle-query-4103.util';
 
 defineOptions({ name: 'ChsInpatientMedcasOps' });
 
 /** 主 Tab：本地上报 | 平台查询 4103 */
 type MainTab = 'local' | 'platformQuery4103';
 
-/** 交易号：ALL 或具体 infno（筛选用；后端字段未齐前仅 UI 保留） */
+/** 交易号：ALL 或具体 infno（筛选项会真正下推后端） */
 type InfnoTab = 'ALL' | '4401' | '4101A' | '4102';
 
 /** 契约下拉（含「全部」） */
@@ -73,9 +83,10 @@ const chargeTypeOptions = ref<ContractOption[]>([]);
 const defaultInsuranceBusNo = ref<string>();
 const loadingChargeTypes = ref(false);
 
-const activeInfno = ref<InfnoTab>('ALL');
-/** 默认 failed：进页看待补传 */
-const uploadStatusCode = ref('failed');
+/** 4401 未开通时默认看结算清单 */
+const activeInfno = ref<InfnoTab>(MRMS_HOMEPAGE_4401_UPLOAD_ENABLED ? 'ALL' : '4101A');
+/** 默认「全部」：可查成功/失败；进页不空 */
+const uploadStatusCode = ref('');
 const keyword = ref('');
 const settleFlag = ref('');
 /** 出院时间范围（默认近 30 天） */
@@ -113,15 +124,24 @@ const query4103 = reactive({
 });
 const query4103Loading = ref(false);
 const query4103Rows = ref<SettleListQuery4103Dto[]>([]);
+/** 4103 可读摘要弹窗（替代纯 JSON） */
 const detail4103Visible = ref(false);
-const detail4103Json = ref('');
+const detail4103Result = ref<SettleListQuery4103Dto | null>(null);
 
-const infnoTabs: Array<{ label: string; value: InfnoTab }> = [
-  { label: '全部', value: 'ALL' },
-  { label: '4401 病案首页', value: '4401' },
-  { label: '4101A 结算清单', value: '4101A' },
-  { label: '4102 提交/撤回', value: '4102' },
-];
+/** 交易号 Tab：4401 未开通时隐藏 */
+const infnoTabs = computed(() => {
+  const tabs: Array<{ label: string; value: InfnoTab }> = [
+    { label: '全部', value: 'ALL' },
+    { label: '4401 病案首页', value: '4401' },
+    { label: '4101A 结算清单', value: '4101A' },
+    { label: '4102 提交/撤回', value: '4102' },
+  ];
+  if (MRMS_HOMEPAGE_4401_UPLOAD_ENABLED) {
+    return tabs;
+  }
+  // 隐藏 4401；「全部」仍表示结算口径（非 4401）
+  return tabs.filter((tab) => tab.value !== '4401');
+});
 
 const uploadStatusOptions = [
   { label: '全部', value: '' },
@@ -146,6 +166,29 @@ const UPLOAD_STATUS_LABEL: Record<string, string> = {
   skipped: '无需上传',
 };
 
+const SETTLE_FLAG_LABEL: Record<string, string> = {
+  '0': '未上传',
+  '1': '已上传',
+  '2': '已提交',
+};
+
+/**
+ * 当前是否按结算清单口径（非 4401）。
+ */
+function isSettleInfnoMode() {
+  return activeInfno.value !== '4401';
+}
+
+/**
+ * 查询用交易号：全部时不传（后端按结算口径）。
+ */
+function resolveQueryInfno(): string | undefined {
+  if (activeInfno.value === 'ALL') {
+    return undefined;
+  }
+  return activeInfno.value;
+}
+
 /**
  * 出院时间默认近 30 天。
  */
@@ -167,6 +210,44 @@ const gatewayContractBusNo = computed(() => {
 });
 
 /**
+ * 行展示用状态 code（4401 用 CHS；结算用标志+错误映射）。
+ */
+function rowDisplayStatusCode(row?: CaseRecordUploadSummaryDto | null) {
+  if (!row) return undefined;
+  if (!isSettleInfnoMode()) {
+    return row.chsUploadStatusCode;
+  }
+  const err = (row.settleUploadError || '').trim();
+  if (err) {
+    return 'failed';
+  }
+  const flag = (row.settleUploadStatusCode || '').trim();
+  if (flag === '1' || flag === '2') {
+    return 'success';
+  }
+  return 'none';
+}
+
+/**
+ * 行平台消息（按交易口径）。
+ */
+function rowPlatformMsg(row?: CaseRecordUploadSummaryDto | null) {
+  if (!row) return '—';
+  if (!isSettleInfnoMode()) {
+    return row.chsUploadError || '—';
+  }
+  return row.settleUploadError || '—';
+}
+
+/**
+ * 结算标志文案。
+ */
+function formatSettleFlag(code?: string) {
+  if (!code) return '未上传';
+  return SETTLE_FLAG_LABEL[code] ?? code;
+}
+
+/**
  * 状态 Tag 颜色（按 code）。
  */
 function uploadStatusTagType(code?: string) {
@@ -185,10 +266,22 @@ function formatUploadStatus(code?: string) {
 }
 
 /**
- * 仅 failed/pending 允许补传。
+ * 是否允许补传：结算失败/未传，或 4401 失败/待传。
  */
-function canRetryUpload(code?: string) {
-  return code === 'failed' || code === 'pending';
+function canRetryUpload(row: CaseRecordUploadSummaryDto) {
+  if (!isSettleInfnoMode()) {
+    const code = row.chsUploadStatusCode;
+    return code === 'failed' || code === 'pending';
+  }
+  const display = rowDisplayStatusCode(row);
+  if (display === 'failed' || display === 'none' || display === 'pending') {
+    return true;
+  }
+  // 4102：已上传未提交也可再提交
+  if (activeInfno.value === '4102' && row.settleUploadStatusCode === '1') {
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -210,16 +303,20 @@ function formatContractOptionLabel(item: ContractOption) {
 }
 
 /**
- * 加载本地上报分页。
+ * 加载本地上报分页（交易号/出院窗/状态真正下推）。
  */
 async function loadLocalRecords() {
   loading.value = true;
   try {
+    const range = dscgRange.value;
     const page = await queryUploadPageApi({
       pageNo: pageNo.value,
       pageSize: pageSize.value,
       statusCode: uploadStatusCode.value || undefined,
       keyword: keyword.value.trim() || undefined,
+      infno: resolveQueryInfno(),
+      dscgTimeFrom: range?.[0],
+      dscgTimeTo: range?.[1],
     });
     tableData.value = page.rows ?? [];
     total.value = page.total ?? 0;
@@ -269,11 +366,11 @@ async function onPageSizeChange(size: number) {
 }
 
 /**
- * 重置筛选为默认（近 30 天 + 失败）。
+ * 重置筛选为默认（近 30 天 + 全部状态；交易号跟 4401 开关）。
  */
 async function resetFilters() {
-  activeInfno.value = 'ALL';
-  uploadStatusCode.value = 'failed';
+  activeInfno.value = MRMS_HOMEPAGE_4401_UPLOAD_ENABLED ? 'ALL' : '4101A';
+  uploadStatusCode.value = '';
   keyword.value = '';
   settleFlag.value = '';
   dscgRange.value = defaultDscgRange();
@@ -281,12 +378,12 @@ async function resetFilters() {
 }
 
 /**
- * 批量补传：对当前页失败/待传逐条一键上报（对齐进销存批量重放）。
+ * 批量补传：当前页可补传行逐条重放（4401 关闭时只打结算清单）。
  */
 async function handleBatchRetry() {
-  const targets = tableData.value.filter((r) => canRetryUpload(r.chsUploadStatusCode));
+  const targets = tableData.value.filter((r) => canRetryUpload(r));
   if (targets.length === 0) {
-    ElMessage.warning('当前列表没有失败/待传记录');
+    ElMessage.warning('当前列表没有可补传记录');
     return;
   }
   const busNo = gatewayContractBusNo.value;
@@ -294,9 +391,15 @@ async function handleBatchRetry() {
     ElMessage.warning('请先选择医保契约');
     return;
   }
+  let actionHint = '4101A 结算清单补传';
+  if (MRMS_HOMEPAGE_4401_UPLOAD_ENABLED) {
+    actionHint = '一键补传（4401→4101A→4102）';
+  } else if (activeInfno.value === '4102') {
+    actionHint = '4102 提交审核';
+  }
   try {
     await ElMessageBox.confirm(
-      `将对当前页 ${targets.length} 条失败/待传执行一键补传（4401→4101A→4102），是否继续？`,
+      `将对当前页 ${targets.length} 条执行${actionHint}，是否继续？`,
       '批量补传',
       { type: 'warning' },
     );
@@ -314,11 +417,8 @@ async function handleBatchRetry() {
         continue;
       }
       try {
-        const result = await reportOneClickApi({
-          caseRecordId: row.caseRecordId,
-          contractBusNo: busNo,
-        });
-        if (result.allSuccess) {
+        const success = await retryRowUpload(row, busNo);
+        if (success) {
           ok += 1;
         } else {
           fail += 1;
@@ -335,11 +435,43 @@ async function handleBatchRetry() {
 }
 
 /**
- * 打开补传对话框（一键重放）。
+ * 单行补传：按当前交易号分发（不改院内首页字段）。
+ *
+ * @returns 是否业务成功
+ */
+async function retryRowUpload(row: CaseRecordUploadSummaryDto, busNo: string) {
+  if (!row.caseRecordId) {
+    return false;
+  }
+  if (MRMS_HOMEPAGE_4401_UPLOAD_ENABLED && activeInfno.value === '4401') {
+    const result = await reportOneClickApi({
+      caseRecordId: row.caseRecordId,
+      contractBusNo: busNo,
+    });
+    return Boolean(result.allSuccess);
+  }
+  if (activeInfno.value === '4102') {
+    const step = await modifySettleListStatusApi({
+      caseRecordId: row.caseRecordId,
+      contractBusNo: busNo,
+      stasType: '1',
+    });
+    return step.statusCode === 'success' || step.skipped === true;
+  }
+  // 默认 / 4101A / 全部：结算清单上传
+  const step = await uploadSettleListApi({
+    caseRecordId: row.caseRecordId,
+    contractBusNo: busNo,
+  });
+  return step.statusCode === 'success' || step.skipped === true;
+}
+
+/**
+ * 打开补传对话框。
  */
 function openUpload(row: CaseRecordUploadSummaryDto) {
-  if (!canRetryUpload(row.chsUploadStatusCode)) {
-    ElMessage.warning('仅失败/待传记录可补传');
+  if (!canRetryUpload(row)) {
+    ElMessage.warning('仅失败/待传/未上传记录可补传');
     return;
   }
   uploadRow.value = row;
@@ -348,7 +480,7 @@ function openUpload(row: CaseRecordUploadSummaryDto) {
 }
 
 /**
- * 提交单条一键补传。
+ * 提交单条补传。
  */
 async function submitUpload() {
   if (!uploadRow.value?.caseRecordId) {
@@ -361,14 +493,11 @@ async function submitUpload() {
   }
   uploadSubmitting.value = true;
   try {
-    const result = await reportOneClickApi({
-      caseRecordId: uploadRow.value.caseRecordId,
-      contractBusNo: uploadContractBusNo.value.trim(),
-    });
-    if (result.allSuccess) {
-      ElMessage.success('一键补传成功');
+    const ok = await retryRowUpload(uploadRow.value, uploadContractBusNo.value.trim());
+    if (ok) {
+      ElMessage.success('补传成功');
     } else {
-      ElMessage.warning('一键补传未全部成功，请查看上传日志');
+      ElMessage.warning('补传未成功，请查看上传日志');
     }
     uploadDialogVisible.value = false;
     await loadLocalRecords();
@@ -383,8 +512,9 @@ async function submitUpload() {
 function openPlatformQuery4103(row: CaseRecordUploadSummaryDto) {
   query4103.caseRecordId = row.caseRecordId || '';
   query4103.medcasno = row.medcasno || '';
-  query4103.psnNo = '';
-  query4103.setlId = '';
+  // 带入医保键，避免误填住院号
+  query4103.psnNo = row.psnNo || '';
+  query4103.setlId = row.setlId || '';
   query4103Rows.value = [];
   mainTab.value = 'platformQuery4103';
   void runQuery4103();
@@ -414,7 +544,7 @@ async function showLogs(row: CaseRecordUploadSummaryDto) {
 }
 
 /**
- * 4401 组装预检。
+ * 组装预检：结算口径走 4101A，否则 4401。
  */
 async function handlePreview(row: CaseRecordUploadSummaryDto) {
   const busNo = gatewayContractBusNo.value;
@@ -429,11 +559,19 @@ async function handlePreview(row: CaseRecordUploadSummaryDto) {
   previewLoading.value = true;
   previewDialogVisible.value = true;
   try {
-    const data = await previewAssembled4401Api({
-      caseRecordId: row.caseRecordId,
-      contractBusNo: busNo,
-    });
-    previewJson.value = JSON.stringify(data, null, 2);
+    if (isSettleInfnoMode()) {
+      const data = await previewSettleListApi({
+        caseRecordId: row.caseRecordId,
+        contractBusNo: busNo,
+      });
+      previewJson.value = JSON.stringify(data, null, 2);
+    } else {
+      const data = await previewAssembled4401Api({
+        caseRecordId: row.caseRecordId,
+        contractBusNo: busNo,
+      });
+      previewJson.value = JSON.stringify(data, null, 2);
+    }
   } finally {
     previewLoading.value = false;
   }
@@ -451,7 +589,12 @@ async function runQuery4103() {
   const hasPlatformKeys = Boolean(psnNo && setlId);
   const hasCaseKeys = Boolean(caseRecordId || medcasno);
   if (!hasPlatformKeys && !hasCaseKeys) {
-    ElMessage.warning('请填写 psn_no+setl_id，或病案号/病案主键');
+    ElMessage.warning('请填写病案号，或医保人员编号(psn_no)+结算ID');
+    return;
+  }
+  // 住院号/病案号误填进人员编号时平台会空回包
+  if (psnNo && looksLikeHospitalNo(psnNo)) {
+    ElMessage.warning('人员编号不是住院号。请清空人员编号，改填「病案号」让系统解析医保 psn_no');
     return;
   }
   if (!hasCaseKeys && !busNo) {
@@ -468,21 +611,51 @@ async function runQuery4103() {
       setlId: setlId || undefined,
     });
     query4103Rows.value = [row];
-    if (row.success) {
-      ElMessage.success('4103 查询成功');
-    } else {
-      ElMessage.error(row.errMsg || row.platformMsg || '4103 查询失败');
+    // 回填解析到的医保键，便于对照复制
+    if (row.psnNo) {
+      query4103.psnNo = row.psnNo;
     }
+    if (row.setlId) {
+      query4103.setlId = row.setlId;
+    }
+    if (row.medcasno) {
+      query4103.medcasno = row.medcasno;
+    }
+    if (!row.success) {
+      ElMessage.error(row.errMsg || row.platformMsg || '4103 查询失败');
+      return;
+    }
+    const output = row.platformOutput || row.setlinfo;
+    const hasPayload = Boolean(output && Object.keys(output).length > 0);
+    if (!hasPayload) {
+      ElMessage.warning('平台返回成功但内容为空：请核对 psn_no/setl_id，或改用病案号查询');
+      return;
+    }
+    ElMessage.success('4103 查询成功');
+    // 有结果时直接弹出可读摘要
+    detail4103Result.value = row;
+    detail4103Visible.value = true;
   } finally {
     query4103Loading.value = false;
   }
 }
 
 /**
- * 查看 4103 setlinfo 详情。
+ * 是否像院内住院号/病案号（误填进人员编号）。
+ */
+function looksLikeHospitalNo(value: string) {
+  const text = value.replace(/\s+/g, '');
+  if (!text) return false;
+  // 常见院内号：ZY/zy 开头，或纯短数字病案号
+  if (/^ZY/i.test(text)) return true;
+  return false;
+}
+
+/**
+ * 查看 4103 可读摘要（原文在弹窗内折叠）。
  */
 function openDetail4103(row: SettleListQuery4103Dto) {
-  detail4103Json.value = JSON.stringify(row.setlinfo ?? row, null, 2);
+  detail4103Result.value = row;
   detail4103Visible.value = true;
 }
 
@@ -523,7 +696,7 @@ onMounted(async () => {
   <Page
     auto-content-height
     title="住院业务上报"
-    description="本地查询/补传 4401·4101A·4102；平台查询 4103。日常一键上报请用「病案首页」。"
+    description="本地查询/补传 4101A·4102（4401 未开通时已隐藏）；平台查询 4103。日常上报请用「病案首页」。"
   >
     <ElCard shadow="never" class="mb-4">
       <ElForm inline>
@@ -553,7 +726,7 @@ onMounted(async () => {
             type="warning"
             :closable="false"
             class="mb-3"
-            title="按条件查本地上报流水；失败/待传点「补传」重放。日常一键请用病案首页；本页专责运维补传与排查。"
+            title="按交易号/出院时间查本地病案上报态；失败/待传点「补传」。日常上报请用病案首页；本页专责运维补传与排查。"
           />
 
           <div class="mb-3">
@@ -595,7 +768,13 @@ onMounted(async () => {
               </ElSelect>
             </ElFormItem>
             <ElFormItem label="结算">
-              <ElSelect v-model="settleFlag" clearable style="width: 120px" @change="handleQuery">
+              <ElSelect
+                v-model="settleFlag"
+                clearable
+                disabled
+                style="width: 120px"
+                placeholder="暂未接入"
+              >
                 <ElOption
                   v-for="opt in settleFlagOptions"
                   :key="opt.value || 'all-settle'"
@@ -630,6 +809,20 @@ onMounted(async () => {
               show-overflow-tooltip
             />
             <ElTableColumn prop="psnName" label="患者" width="100" align="center" />
+            <ElTableColumn
+              prop="psnNo"
+              label="人员编号"
+              min-width="160"
+              align="center"
+              show-overflow-tooltip
+            />
+            <ElTableColumn
+              prop="setlId"
+              label="结算ID"
+              min-width="130"
+              align="center"
+              show-overflow-tooltip
+            />
             <ElTableColumn label="出院时间" width="170" align="center">
               <template #default="{ row }">
                 {{ formatTime(row.dscgTime) }}
@@ -640,28 +833,27 @@ onMounted(async () => {
                 {{ formatTime(row.archivedAt) }}
               </template>
             </ElTableColumn>
+            <ElTableColumn label="结算上传" width="100" align="center">
+              <template #default="{ row }">
+                {{ formatSettleFlag(row.settleUploadStatusCode) }}
+              </template>
+            </ElTableColumn>
             <ElTableColumn label="状态" width="110" align="center">
               <template #default="{ row }">
-                <ElTag :type="uploadStatusTagType(row.chsUploadStatusCode)" size="small">
-                  {{ formatUploadStatus(row.chsUploadStatusCode) }}
+                <ElTag :type="uploadStatusTagType(rowDisplayStatusCode(row))" size="small">
+                  {{ formatUploadStatus(rowDisplayStatusCode(row)) }}
                 </ElTag>
               </template>
             </ElTableColumn>
-            <ElTableColumn
-              prop="chsUploadError"
-              label="平台消息"
-              min-width="220"
-              show-overflow-tooltip
-            />
+            <ElTableColumn label="平台消息" min-width="220" show-overflow-tooltip>
+              <template #default="{ row }">
+                {{ rowPlatformMsg(row) }}
+              </template>
+            </ElTableColumn>
             <ElTableColumn label="操作" width="320" fixed="right" align="center">
               <template #default="{ row }">
                 <ElButton link type="primary" @click="openViewDialog(row)">查看</ElButton>
-                <ElButton
-                  v-if="canRetryUpload(row.chsUploadStatusCode)"
-                  link
-                  type="primary"
-                  @click="openUpload(row)"
-                >
+                <ElButton v-if="canRetryUpload(row)" link type="primary" @click="openUpload(row)">
                   补传
                 </ElButton>
                 <ElButton link @click="showLogs(row)">日志</ElButton>
@@ -694,15 +886,15 @@ onMounted(async () => {
             type="info"
             :closable="false"
             class="mb-3"
-            title="4103 只查平台结算清单，不改院内数据。可填 psn_no+setl_id；或病案号/从本地行带入后解析。"
+            title="推荐只填「病案号」查询（系统自动解析医保 psn_no+setl_id）。人员编号=医保人员编号，不是住院号/病案号。"
           />
           <ElForm inline class="mb-3">
             <ElFormItem label="人员编号">
               <ElInput
                 v-model="query4103.psnNo"
                 clearable
-                placeholder="psn_no"
-                style="width: 180px"
+                placeholder="医保 psn_no，勿填住院号"
+                style="width: 220px"
                 @keyup.enter="runQuery4103"
               />
             </ElFormItem>
@@ -710,7 +902,7 @@ onMounted(async () => {
               <ElInput
                 v-model="query4103.setlId"
                 clearable
-                placeholder="setl_id"
+                placeholder="医保 setl_id"
                 style="width: 180px"
                 @keyup.enter="runQuery4103"
               />
@@ -719,7 +911,7 @@ onMounted(async () => {
               <ElInput
                 v-model="query4103.medcasno"
                 clearable
-                placeholder="院内病案号"
+                placeholder="院内病案号（推荐）"
                 style="width: 160px"
                 @keyup.enter="runQuery4103"
                 @clear="runQuery4103"
@@ -740,6 +932,13 @@ onMounted(async () => {
             stripe
             max-height="480"
           >
+            <ElTableColumn
+              prop="psnNo"
+              label="人员编号"
+              min-width="160"
+              align="center"
+              show-overflow-tooltip
+            />
             <ElTableColumn
               prop="setlId"
               label="结算ID"
@@ -766,13 +965,18 @@ onMounted(async () => {
                 {{ row.medfeeSumamt == null ? '—' : Number(row.medfeeSumamt).toFixed(2) }}
               </template>
             </ElTableColumn>
-            <ElTableColumn prop="setlStatusText" label="平台状态" width="120" align="center" />
-            <ElTableColumn
-              prop="platformMsg"
-              label="平台消息"
-              min-width="160"
-              show-overflow-tooltip
-            />
+            <ElTableColumn label="平台状态" width="120" align="center">
+              <template #default="{ row }">
+                <ElTag :type="stasTypeTagType(row.setlStatusCode, row.setlStatusText)" size="small">
+                  {{ formatFieldCodeValue('stas_type', row.setlStatusCode || row.setlStatusText) }}
+                </ElTag>
+              </template>
+            </ElTableColumn>
+            <ElTableColumn label="平台消息" min-width="160" show-overflow-tooltip>
+              <template #default="{ row }">
+                {{ (row.platformMsg || '').trim() || '—' }}
+              </template>
+            </ElTableColumn>
             <ElTableColumn label="操作" width="100" fixed="right" align="center">
               <template #default="{ row }">
                 <ElButton link type="primary" @click="openDetail4103(row)">详情</ElButton>
@@ -783,12 +987,12 @@ onMounted(async () => {
       </ElTabPane>
     </ElTabs>
 
-    <ElDialog v-model="uploadDialogVisible" title="补传（一键重放）" width="520px">
+    <ElDialog v-model="uploadDialogVisible" title="补传" width="520px">
       <ElAlert
         type="info"
         :closable="false"
         class="mb-3"
-        title="补传按 4401→4101A→4102 一键重放，不改院内首页字段。日常一键请回病案首页。"
+        title="按当前交易号重放（默认 4101A）；不改院内首页字段。日常上报请回病案首页。"
       />
       <ElForm label-width="110px">
         <ElFormItem label="病案号">
@@ -799,7 +1003,7 @@ onMounted(async () => {
         </ElFormItem>
         <ElFormItem label="失败原因">
           <span class="whitespace-pre-wrap break-all" style="color: var(--el-color-danger)">
-            {{ uploadRow?.chsUploadError || '—' }}
+            {{ rowPlatformMsg(uploadRow) }}
           </span>
         </ElFormItem>
         <ElFormItem label="医保契约" required>
@@ -833,13 +1037,16 @@ onMounted(async () => {
         <ElFormItem label="病案号">
           <span>{{ viewRow?.medcasno }}</span>
         </ElFormItem>
+        <ElFormItem label="结算上传">
+          <span>{{ formatSettleFlag(viewRow?.settleUploadStatusCode) }}</span>
+        </ElFormItem>
         <ElFormItem label="状态">
-          <ElTag :type="uploadStatusTagType(viewRow?.chsUploadStatusCode)" size="small">
-            {{ formatUploadStatus(viewRow?.chsUploadStatusCode) }}
+          <ElTag :type="uploadStatusTagType(rowDisplayStatusCode(viewRow))" size="small">
+            {{ formatUploadStatus(rowDisplayStatusCode(viewRow)) }}
           </ElTag>
         </ElFormItem>
         <ElFormItem label="平台消息">
-          <span class="whitespace-pre-wrap break-all">{{ viewRow?.chsUploadError || '—' }}</span>
+          <span class="whitespace-pre-wrap break-all">{{ rowPlatformMsg(viewRow) }}</span>
         </ElFormItem>
         <ElFormItem label="摘要 JSON">
           <ElInput v-model="viewPayloadJson" type="textarea" :rows="14" readonly />
@@ -869,7 +1076,7 @@ onMounted(async () => {
       </ElTable>
     </ElDialog>
 
-    <ElDialog v-model="previewDialogVisible" title="4401 预检 JSON" width="800px">
+    <ElDialog v-model="previewDialogVisible" title="组装预检 JSON" width="800px">
       <ElInput
         v-loading="previewLoading"
         :model-value="previewJson"
@@ -879,11 +1086,6 @@ onMounted(async () => {
       />
     </ElDialog>
 
-    <ElDialog v-model="detail4103Visible" title="4103 setlinfo 详情" width="800px">
-      <ElInput v-model="detail4103Json" type="textarea" :rows="22" readonly />
-      <template #footer>
-        <ElButton type="primary" @click="detail4103Visible = false">关闭</ElButton>
-      </template>
-    </ElDialog>
+    <MrmsSettleQuery4103Dialog v-model="detail4103Visible" :result="detail4103Result" />
   </Page>
 </template>

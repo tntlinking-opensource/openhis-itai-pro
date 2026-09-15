@@ -372,15 +372,29 @@ public class EncounterContextQueryService {
             }
         }
         Map<Long, Location> locationById = new HashMap<>(locationQueryService.loadLocationEntityMapByIds(locationIds));
-        Set<Long> wardParentIds = new LinkedHashSet<>();
+        Set<Long> bedParentIds = new LinkedHashSet<>();
         for (Location location : locationById.values()) {
             if (location.getParentId() != null
                 && LocationForm.BED.getCode().equals(location.getFormEnum())) {
-                wardParentIds.add(location.getParentId());
+                // 床位父级一般为 HOUSE（或少数直接挂 WARD），先批量加载
+                bedParentIds.add(location.getParentId());
             }
         }
-        if (!wardParentIds.isEmpty()) {
-            locationById.putAll(locationQueryService.loadLocationEntityMapByIds(wardParentIds));
+        if (!bedParentIds.isEmpty()) {
+            locationById.putAll(locationQueryService.loadLocationEntityMapByIds(bedParentIds));
+        }
+        Set<Long> houseParentIds = new LinkedHashSet<>();
+        for (Long bedParentId : bedParentIds) {
+            Location bedParent = locationById.get(bedParentId);
+            if (bedParent != null
+                && bedParent.getParentId() != null
+                && LocationForm.HOUSE.getCode().equals(bedParent.getFormEnum())) {
+                // HOUSE 的父级为病区，补齐后才能回填 wardName
+                houseParentIds.add(bedParent.getParentId());
+            }
+        }
+        if (!houseParentIds.isEmpty()) {
+            locationById.putAll(locationQueryService.loadLocationEntityMapByIds(houseParentIds));
         }
 
         Map<Long, List<EncounterParticipant>> participantsByEncounterId = new HashMap<>();
@@ -719,12 +733,18 @@ public class EncounterContextQueryService {
                     if (parent != null && LocationForm.WARD.getCode().equals(parent.getFormEnum())) {
                         wardId = parent.getId();
                         wardName = parent.getName();
-                    } else if (parent != null && LocationForm.HOUSE.getCode().equals(parent.getFormEnum())
-                        && parent.getParentId() != null) {
-                        Location ward = locationById.get(parent.getParentId());
-                        if (ward != null) {
-                            wardId = ward.getId();
-                            wardName = ward.getName();
+                    } else if (parent != null && LocationForm.HOUSE.getCode().equals(parent.getFormEnum())) {
+                        // 床位格展示「病房-床位」，与病案首页口径一致
+                        if (StringUtils.isNotEmpty(parent.getName()) && StringUtils.isNotEmpty(bedName)
+                            && !bedName.contains(GeneralSharedConstants.DASH)) {
+                            bedName = parent.getName().trim() + GeneralSharedConstants.DASH + bedName;
+                        }
+                        if (parent.getParentId() != null) {
+                            Location ward = locationById.get(parent.getParentId());
+                            if (ward != null) {
+                                wardId = ward.getId();
+                                wardName = ward.getName();
+                            }
                         }
                     }
                 }

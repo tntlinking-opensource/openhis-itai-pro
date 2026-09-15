@@ -7,8 +7,6 @@ package com.openhis.health.application.inventory.warehouse.purchaseorder.request
 import lombok.Getter;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
-
 /**
  *
  * <p>订货单驳回（IF-WHS-PO-09）：领域 {@code rejectRequest} 迁移审批态为已驳回；须携带驳回原因供审计。</p>
@@ -24,16 +22,6 @@ public class RejectPurchaseOrderRequest {
      * 订货业务单号；应用服务门控非空并对首尾空白 {@code trim}。
      */
     private String busNo;
-
-    /**
-     * 审批人主键；可空，空时由应用层回落为当前操作人。
-     */
-    private Long approverId;
-
-    /**
-     * 审批业务时钟；可空时由领域或命令默认值填充。
-     */
-    private LocalDateTime approvalClock;
 
     /**
      * 驳回原因；领域门控非空，供审批轨迹与前端展示。

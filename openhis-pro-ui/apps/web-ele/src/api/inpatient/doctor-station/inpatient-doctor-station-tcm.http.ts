@@ -50,3 +50,7 @@ export const httpStopLongTermTcmHerbalPrescription =
 /** 取消停嘱（长期中药方） */
 export const httpCancelStopLongTermTcmHerbalPrescription =
   inpatientTcmHttp.httpCancelStopLongTermTcmHerbalPrescription;
+
+/** 按方改开立时间（IF-IP-TCM-42） */
+export const httpChangeTcmHerbalPrescriptionOpenedTime =
+  inpatientTcmHttp.httpChangeTcmHerbalPrescriptionOpenedTime;

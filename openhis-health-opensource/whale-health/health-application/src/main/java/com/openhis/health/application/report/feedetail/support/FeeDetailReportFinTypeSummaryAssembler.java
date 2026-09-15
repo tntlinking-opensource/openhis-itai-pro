@@ -50,7 +50,7 @@ import java.util.Set;
  * DEPARTMENT / FEE_CATEGORY / ITEM：按需物化 {@code cachedChargeRows} 后按维分桶，
  * 禁止 FIN_TYPE 默认路径全窗 RowQueryModel。</p>
  *
- * <p>金额列：进价合计（历史定价）/ 售价合计（{@code total_price}）/ 实收合计（与售价同口径）。</p>
+ * <p>金额列：仅进价合计（历史定价）/ 售价合计（{@code total_price}）/ 数量；不再双写应收/实收/行金额。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -157,7 +157,7 @@ public class FeeDetailReportFinTypeSummaryAssembler {
             this.resolveFinTypeAndPurchaseByDefinition(
                 query, definitionIds, incompleteExCode, incompleteMessage);
         Map<String, FeeDetailReportSummaryRowDto> mergedByFinType = new LinkedHashMap<>();
-        // 按 fin_type 分桶：多 definition 同码合并金额与行数
+        // 按 fin_type 分桶：多 definition 同码合并售价/进价/数量
         for (FeeDetailFinTypeSummaryQueryModel domainRow : domainRows) {
             // 跳过无 definition 的脏汇总行，避免空键分桶
             if (domainRow == null || domainRow.getDefinitionId() == null) {
@@ -187,22 +187,11 @@ public class FeeDetailReportFinTypeSummaryAssembler {
                 this.initAmountZeros(row);
                 mergedByFinType.put(key, row);
             }
+            // 售价取域层行金额合计；进价取 definition 分桶累计
             BigDecimal saleTotal = MonetaryAmountSupport.nullToZero(domainRow.getLineAmountTotal());
             BigDecimal purchaseTotal = MonetaryAmountSupport.nullToZero(
                 resolveBundle.purchaseByDefinitionId.get(domainRow.getDefinitionId()));
             this.addSaleAndPurchase(row, saleTotal, purchaseTotal);
-            row.setReceivableAmountTotal(MonetaryAmountSupport.scaleCalc(
-                MonetaryAmountSupport.nullToZero(row.getReceivableAmountTotal())
-                    .add(MonetaryAmountSupport.nullToZero(domainRow.getReceivableAmountTotal()))));
-            row.setDiscountedAmountTotal(MonetaryAmountSupport.scaleCalc(
-                MonetaryAmountSupport.nullToZero(row.getDiscountedAmountTotal())
-                    .add(MonetaryAmountSupport.nullToZero(domainRow.getDiscountedAmountTotal()))));
-            long lineCount = 0L;
-            // 累加前取已有行数，空则从 0 起算
-            if (row.getLineCount() != null) {
-                lineCount = row.getLineCount();
-            }
-            row.setLineCount(lineCount + domainRow.getLineCount());
             row.setQuantityTotal(MonetaryAmountSupport.scaleCalc(
                 MonetaryAmountSupport.nullToZero(row.getQuantityTotal())
                     .add(MonetaryAmountSupport.nullToZero(domainRow.getQuantityTotal()))));
@@ -212,7 +201,7 @@ public class FeeDetailReportFinTypeSummaryAssembler {
     }
 
     /**
-     * 汇总行 → 页脚合计（结算刻度 2 位）。
+     * 汇总行 → 页脚合计（仅进价/售价/数量；结算刻度 2 位）。
      *
      * @param rows 汇总行
      * @return 页脚合计
@@ -222,11 +211,6 @@ public class FeeDetailReportFinTypeSummaryAssembler {
         FeeDetailReportSummaryFooterDto footer = new FeeDetailReportSummaryFooterDto();
         BigDecimal purchase = BigDecimal.ZERO;
         BigDecimal sale = BigDecimal.ZERO;
-        BigDecimal actualReceived = BigDecimal.ZERO;
-        BigDecimal receivable = BigDecimal.ZERO;
-        BigDecimal discounted = BigDecimal.ZERO;
-        BigDecimal lineAmount = BigDecimal.ZERO;
-        long lineCountTotal = 0L;
         BigDecimal quantityTotal = BigDecimal.ZERO;
         // 先按行级 6 位代数加总，再统一 scaleSettle（禁止逐行先 2 位再加）
         if (rows != null) {
@@ -238,25 +222,11 @@ public class FeeDetailReportFinTypeSummaryAssembler {
                 purchase = purchase.add(MonetaryAmountSupport.nullToZero(row.getPurchaseAmountTotal()));
                 sale = sale.add(MonetaryAmountSupport.nullToZero(row.getSaleAmountTotal()));
                 quantityTotal = quantityTotal.add(MonetaryAmountSupport.nullToZero(row.getQuantityTotal()));
-                actualReceived =
-                    actualReceived.add(MonetaryAmountSupport.nullToZero(row.getActualReceivedAmountTotal()));
-                receivable = receivable.add(MonetaryAmountSupport.nullToZero(row.getReceivableAmountTotal()));
-                discounted = discounted.add(MonetaryAmountSupport.nullToZero(row.getDiscountedAmountTotal()));
-                lineAmount = lineAmount.add(MonetaryAmountSupport.nullToZero(row.getLineAmountTotal()));
-                // 行数仅累加有值的汇总行
-                if (row.getLineCount() != null) {
-                    lineCountTotal = lineCountTotal + row.getLineCount();
-                }
             }
         }
         footer.setPurchaseAmountTotal(MonetaryAmountSupport.scaleSettle(purchase));
         footer.setSaleAmountTotal(MonetaryAmountSupport.scaleSettle(sale));
         footer.setQuantityTotal(MonetaryAmountSupport.scaleCalc(quantityTotal));
-        footer.setActualReceivedAmountTotal(MonetaryAmountSupport.scaleSettle(actualReceived));
-        footer.setReceivableAmountTotal(MonetaryAmountSupport.scaleSettle(receivable));
-        footer.setDiscountedAmountTotal(MonetaryAmountSupport.scaleSettle(discounted));
-        footer.setLineAmountTotal(MonetaryAmountSupport.scaleSettle(lineAmount));
-        footer.setLineCountTotal(lineCountTotal);
         return footer;
     }
 
@@ -368,19 +338,9 @@ public class FeeDetailReportFinTypeSummaryAssembler {
                 }
             }
             BigDecimal signedPurchase = this.applyPaymentSign(purchaseRaw, chargeRow.getPaymentContext());
-            // 非 FIN_TYPE：应收/折后/行金额/实收与售价同口径，保持列契约完整
+            // 非 FIN_TYPE：仅累加售价/进价与带符号数量
             this.addSaleAndPurchase(row, signedSale, signedPurchase);
-            row.setReceivableAmountTotal(MonetaryAmountSupport.scaleCalc(
-                MonetaryAmountSupport.nullToZero(row.getReceivableAmountTotal()).add(signedSale)));
-            row.setDiscountedAmountTotal(MonetaryAmountSupport.scaleCalc(
-                MonetaryAmountSupport.nullToZero(row.getDiscountedAmountTotal()).add(signedSale)));
             this.addSignedQuantity(row, chargeItem.getQuantityValue(), chargeRow.getPaymentContext());
-            long lineCount = 0L;
-            // 累加前取已有行数，空则从 0 起算
-            if (row.getLineCount() != null) {
-                lineCount = row.getLineCount();
-            }
-            row.setLineCount(lineCount + 1L);
         }
         result.addAll(mergedByKey.values());
         return result;
@@ -758,7 +718,7 @@ public class FeeDetailReportFinTypeSummaryAssembler {
     }
 
     /**
-     * 初始化金额列为 0、行数为 0。
+     * 初始化数量/进价/售价列为 0（汇总行建桶时调用）。
      *
      * @param row 汇总行
      */
@@ -766,15 +726,10 @@ public class FeeDetailReportFinTypeSummaryAssembler {
         row.setQuantityTotal(MonetaryAmountSupport.scaleCalc(BigDecimal.ZERO));
         row.setPurchaseAmountTotal(MonetaryAmountSupport.scaleCalc(BigDecimal.ZERO));
         row.setSaleAmountTotal(MonetaryAmountSupport.scaleCalc(BigDecimal.ZERO));
-        row.setActualReceivedAmountTotal(MonetaryAmountSupport.scaleCalc(BigDecimal.ZERO));
-        row.setReceivableAmountTotal(MonetaryAmountSupport.scaleCalc(BigDecimal.ZERO));
-        row.setDiscountedAmountTotal(MonetaryAmountSupport.scaleCalc(BigDecimal.ZERO));
-        row.setLineAmountTotal(MonetaryAmountSupport.scaleCalc(BigDecimal.ZERO));
-        row.setLineCount(0L);
     }
 
     /**
-     * 累加售价/进价，并将实收、行金额与售价同口径累加。
+     * 累加售价/进价（行级 6 位刻度）。
      *
      * @param row      汇总行
      * @param sale     带符号售价增量
@@ -790,11 +745,6 @@ public class FeeDetailReportFinTypeSummaryAssembler {
             MonetaryAmountSupport.nullToZero(row.getSaleAmountTotal()).add(saleTotal)));
         row.setPurchaseAmountTotal(MonetaryAmountSupport.scaleCalc(
             MonetaryAmountSupport.nullToZero(row.getPurchaseAmountTotal()).add(purchaseTotal)));
-        // 实收与售价同口径（对齐明细 Assembler：actualReceived = total_price 带符号）
-        row.setActualReceivedAmountTotal(MonetaryAmountSupport.scaleCalc(
-            MonetaryAmountSupport.nullToZero(row.getActualReceivedAmountTotal()).add(saleTotal)));
-        row.setLineAmountTotal(MonetaryAmountSupport.scaleCalc(
-            MonetaryAmountSupport.nullToZero(row.getLineAmountTotal()).add(saleTotal)));
     }
 
     /**

@@ -180,7 +180,6 @@ public class OutpatientConsumableUsageReportQuerySupport {
         response.setTotalNetQuantity(this.sumNetQuantity(rows));
         response.setSaleNetTotalAmount(this.consumableUsageReportAmountEnricher.sumSaleNetAmount(rows));
         response.setPurchaseNetTotalAmount(this.consumableUsageReportAmountEnricher.sumPurchaseNetAmount(rows));
-        response.setTotalNetAmount(response.getSaleNetTotalAmount());
         return response;
     }
 
@@ -580,7 +579,7 @@ public class OutpatientConsumableUsageReportQuerySupport {
                 patientAmountLines.add(row);
             }
         }
-        // Asm：患者侧金额经 ChargeItem；科室侧已在映射时写入
+        // Asm：患者侧金额经 ChargeItem；科室侧已在映射时写入；汇总路径不做账批质检
         this.consumableUsageReportAmountEnricher.enrichPatientDispenseAmounts(
             new ArrayList<>(patientAmountLines));
         // 退药金额随数量符号：已 enrich 的正金额在退药行取负
@@ -688,9 +687,9 @@ public class OutpatientConsumableUsageReportQuerySupport {
                 patientAmountLines.add(row);
             }
         }
-        // Asm：患者侧金额经 ChargeItem；科室侧已在映射时写入
+        // Asm：患者侧金额经 ChargeItem；科室侧已在映射时写入；明细分页开启账批质检
         this.consumableUsageReportAmountEnricher.enrichPatientDispenseAmounts(
-            new ArrayList<>(patientAmountLines));
+            new ArrayList<>(patientAmountLines), true);
         // 退药金额随数量符号：已 enrich 的正金额在退药行取负
         for (OutpatientConsumableUsageDetailRowDto row : patientAmountLines) {
             if (row.getQuantity() != null && row.getQuantity().signum() < 0) {
@@ -796,7 +795,6 @@ public class OutpatientConsumableUsageReportQuerySupport {
             row.setLocationId(summary.getLocationId());
             row.setDeviceDefId(summary.getDeviceDefId());
             row.setNetQuantity(summary.getNetQuantity());
-            row.setLineCount(summary.getLineCount());
             // 进售价由金额 enrich 回填；禁止预置 0 伪装「已算价」
             rows.add(row);
         }
@@ -828,7 +826,6 @@ public class OutpatientConsumableUsageReportQuerySupport {
             row.setLocationId(summary.getPurposeLocationId());
             row.setDeviceDefId(summary.getItemId());
             row.setNetQuantity(summary.getNetQuantity());
-            row.setLineCount(summary.getLineCount());
             // 进售价由金额 enrich 回填；禁止预置 0 伪装「已算价」
             rows.add(row);
         }
@@ -874,15 +871,6 @@ public class OutpatientConsumableUsageReportQuerySupport {
                 rightQty = BigDecimal.ZERO;
             }
             existing.setNetQuantity(leftQty.add(rightQty));
-            long leftCount = 0L;
-            if (existing.getLineCount() != null) {
-                leftCount = existing.getLineCount();
-            }
-            long rightCount = 0L;
-            if (row.getLineCount() != null) {
-                rightCount = row.getLineCount();
-            }
-            existing.setLineCount(leftCount + rightCount);
         }
     }
 
@@ -1022,7 +1010,7 @@ public class OutpatientConsumableUsageReportQuerySupport {
     }
 
     /**
-     * 汇总页脚：净金额经金额 enricher 结算刻度加总（BR-MON-001）。
+     * 汇总页脚：售价净额经金额 enricher 结算刻度加总（BR-MON-001）。
      *
      * @param rows 汇总行
      * @return 结算刻度合计
@@ -1030,10 +1018,10 @@ public class OutpatientConsumableUsageReportQuerySupport {
     private BigDecimal sumNetAmount(List<OutpatientConsumableUsageSummaryRowDto> rows) {
         List<BigDecimal> amounts = new ArrayList<>();
         for (OutpatientConsumableUsageSummaryRowDto row : rows) {
-            if (row == null || row.getNetAmount() == null) {
+            if (row == null || row.getSaleNetAmount() == null) {
                 continue;
             }
-            amounts.add(row.getNetAmount());
+            amounts.add(row.getSaleNetAmount());
         }
         return this.consumableUsageReportAmountEnricher.sumThenSettle(amounts);
     }
@@ -1208,7 +1196,6 @@ public class OutpatientConsumableUsageReportQuerySupport {
                 categoryRow.setSummaryDimension(ConsumableUsageReportConstants.SUMMARY_DIMENSION_CATEGORY);
                 categoryRow.setCategoryCode(categoryCode);
                 categoryRow.setNetQuantity(itemRow.getNetQuantity());
-                categoryRow.setLineCount(itemRow.getLineCount());
                 // 进售价由金额 enrich 回填；禁止预置 0
                 bucket.put(key, categoryRow);
                 continue;
@@ -1222,15 +1209,6 @@ public class OutpatientConsumableUsageReportQuerySupport {
                 rightQty = BigDecimal.ZERO;
             }
             existing.setNetQuantity(leftQty.add(rightQty));
-            long leftCount = 0L;
-            if (existing.getLineCount() != null) {
-                leftCount = existing.getLineCount();
-            }
-            long rightCount = 0L;
-            if (itemRow.getLineCount() != null) {
-                rightCount = itemRow.getLineCount();
-            }
-            existing.setLineCount(leftCount + rightCount);
         }
         return new ArrayList<>(bucket.values());
     }

@@ -24,14 +24,16 @@ import {
 import { patientInitApi } from '#/api/basic/patient';
 import { searchActivityApi, searchPackageApi } from '#/api/peis/catalog-config';
 import {
-  confirmBatchEnrollmentApi,
+  changeRosterSelectedPackageApi,
   confirmGroupArrivalApi,
   listBatchesApi,
   listCompaniesApi,
   lookupRosterForDeskApi,
+  selectRosterPackageApi,
   type BatchRowDto,
   type CompanyRowDto,
   type GroupRosterDeskContextDto,
+  type PackageOptionDto,
 } from '#/api/peis/group-check';
 import {
   checkArchiveCompletenessApi,
@@ -130,6 +132,7 @@ const groupRosterMatches = ref<GroupRosterDeskContextDto[]>([]);
 const groupRosterContext = ref<GroupRosterDeskContextDto | null>(null);
 const groupRosterLoading = ref(false);
 const groupDeskLoading = ref(false);
+const groupDeskPackageId = ref('');
 const archiveCompleteness = ref<ArchiveCompletenessDto | null>(null);
 const archiveDialogVisible = ref(false);
 const historyDrawerOpen = ref(false);
@@ -309,20 +312,34 @@ const isGroupRosterDesk = computed(() => groupRosterContext.value != null);
 
 const groupPackageName = computed(() => {
   const ctx = groupRosterContext.value;
-  if (!ctx?.packageActivityId) return '—';
-  const hit = packages.value.find(
-    (item) => String(item.packageActivityId) === String(ctx.packageActivityId),
-  );
-  return hit ? packageDisplayName(hit) : '团检套餐';
+  if (ctx?.packageName) return ctx.packageName;
+  if (!ctx?.packageActivityId && !ctx?.selectedPackageActivityId) return '—';
+  const pkgId = String(ctx.selectedPackageActivityId ?? ctx.packageActivityId ?? '');
+  const hit = packages.value.find((item) => String(item.packageActivityId) === pkgId);
+  if (hit) return packageDisplayName(hit);
+  const opt = ctx.optionalPackages?.find((item) => String(item.packageActivityId) === pkgId);
+  return opt?.packageName || '团检套餐';
+});
+
+const groupDeskPackageOptions = computed((): PackageOptionDto[] => {
+  const ctx = groupRosterContext.value;
+  return ctx?.optionalPackages ?? [];
+});
+
+const canGroupSelectPackage = computed(() => {
+  const ctx = groupRosterContext.value;
+  return !!ctx?.rosterId && !ctx.enrolled && !groupDeskLoading.value;
+});
+
+const canGroupChangePackage = computed(() => {
+  const ctx = groupRosterContext.value;
+  return !!ctx?.canChangePackage && !groupDeskLoading.value;
 });
 
 const canGroupEnroll = computed(() => {
   const ctx = groupRosterContext.value;
   return (
-    !!ctx?.rosterId &&
-    !ctx.enrolled &&
-    !!selectedCustomer.value?.patientId &&
-    !groupDeskLoading.value
+    canGroupSelectPackage.value && !!groupDeskPackageId.value && !!selectedCustomer.value?.patientId
   );
 });
 
@@ -359,7 +376,7 @@ const registerBlockReason = computed(() => {
     return '';
   }
   if (groupRosterMatches.value.length > 0) {
-    return '检测到团检名册，请从上方选择批次后使用「团检建单」';
+    return '检测到团检名册，请选定套餐后使用「选定建单」';
   }
   if (!selectedCustomer.value?.patientId) return '请先选择客户';
   if (!selectedPackage.value?.packageActivityId) return '请先选择体检套餐';
@@ -845,10 +862,10 @@ function applyGroupRosterContext(ctx: GroupRosterDeskContextDto) {
   if (companyId.value) {
     void loadBatches(companyId.value);
   }
-  if (ctx.packageActivityId != null) {
-    const pkg = packages.value.find(
-      (item) => String(item.packageActivityId) === String(ctx.packageActivityId),
-    );
+  const pkgId = String(ctx.selectedPackageActivityId ?? ctx.packageActivityId ?? '');
+  groupDeskPackageId.value = pkgId;
+  if (pkgId) {
+    const pkg = packages.value.find((item) => String(item.packageActivityId) === pkgId);
     if (pkg) {
       selectedPackage.value = pkg;
     }
@@ -873,22 +890,61 @@ function onGroupRosterPick(rosterId: string) {
 
 async function handleGroupEnroll() {
   const ctx = groupRosterContext.value;
-  if (!ctx?.rosterId) return;
+  if (!ctx?.rosterId || !groupDeskPackageId.value) {
+    ElMessage.warning('请先选择团检套餐');
+    return;
+  }
   groupDeskLoading.value = true;
   try {
-    const resp = await confirmBatchEnrollmentApi({
-      rosterIds: [String(ctx.rosterId)],
+    await selectRosterPackageApi({
+      rosterId: String(ctx.rosterId),
+      packageActivityId: groupDeskPackageId.value,
       orgId: defaultOrgId.value || undefined,
     });
-    if ((resp?.failures?.length ?? 0) > 0) {
-      ElMessage.error(resp?.failures?.[0]?.message ?? '团检建单失败');
-      return;
-    }
-    ElMessage.success('团检建单成功');
+    ElMessage.success('团检选定并建单成功');
     if (selectedCustomer.value?.patientId != null) {
       await resolveGroupRoster(selectedCustomer.value.patientId);
     }
     void loadHistory();
+  } catch (error) {
+    ElMessage.error(extractRequestErrorMessage(error, '团检建单失败'));
+  } finally {
+    groupDeskLoading.value = false;
+  }
+}
+
+async function handleGroupChangePackage() {
+  const ctx = groupRosterContext.value;
+  if (!ctx?.rosterId || !groupDeskPackageId.value) {
+    ElMessage.warning('请选择新套餐');
+    return;
+  }
+  if (String(ctx.selectedPackageActivityId ?? '') === groupDeskPackageId.value) {
+    ElMessage.info('已是当前选定套餐');
+    return;
+  }
+  try {
+    await ElMessageBox.confirm('到检前换套餐将重建体检项目（流水号不变），确认？', '换套餐', {
+      type: 'warning',
+    });
+  } catch {
+    return;
+  }
+  groupDeskLoading.value = true;
+  try {
+    await changeRosterSelectedPackageApi({
+      rosterId: String(ctx.rosterId),
+      packageActivityId: groupDeskPackageId.value,
+    });
+    ElMessage.success('套餐已更换');
+    if (selectedCustomer.value?.patientId != null) {
+      await resolveGroupRoster(selectedCustomer.value.patientId);
+    }
+    if (ctx.encounterId) {
+      await refreshOrderDetail(String(ctx.encounterId));
+    }
+  } catch (error) {
+    ElMessage.error(extractRequestErrorMessage(error, '换套餐失败'));
   } finally {
     groupDeskLoading.value = false;
   }
@@ -1841,6 +1897,22 @@ onMounted(() => {
 
               <div class="action-btns">
                 <template v-if="isGroupRosterDesk">
+                  <ElSelect
+                    v-if="groupDeskPackageOptions.length > 0"
+                    v-model="groupDeskPackageId"
+                    filterable
+                    clearable
+                    placeholder="选择团检套餐"
+                    class="action-btns__package"
+                    :disabled="groupDeskLoading || (!canGroupEnroll && !canGroupChangePackage)"
+                  >
+                    <ElOption
+                      v-for="item in groupDeskPackageOptions"
+                      :key="String(item.packageActivityId)"
+                      :label="item.packageName || String(item.packageActivityId)"
+                      :value="String(item.packageActivityId)"
+                    />
+                  </ElSelect>
                   <ElButton
                     type="primary"
                     class="action-btns__primary"
@@ -1848,7 +1920,16 @@ onMounted(() => {
                     :disabled="!canGroupEnroll"
                     @click="handleGroupEnroll"
                   >
-                    团检建单
+                    选定建单
+                  </ElButton>
+                  <ElButton
+                    v-if="canGroupChangePackage"
+                    class="action-btns__secondary"
+                    :loading="groupDeskLoading"
+                    :disabled="!groupDeskPackageId"
+                    @click="handleGroupChangePackage"
+                  >
+                    换套餐
                   </ElButton>
                   <ElButton
                     class="action-btns__secondary"
@@ -1953,6 +2034,25 @@ onMounted(() => {
           :title="`${groupRosterContext?.companyName || '团检单位'} · ${groupRosterContext?.batchName || '批次'}`"
         >
           <div class="reg-summary__alert-meta">套餐：{{ groupPackageName }}</div>
+          <div
+            v-if="groupDeskPackageOptions.length > 0 && !groupRosterContext?.enrolled"
+            class="reg-summary__package-pick mb-2"
+          >
+            <ElSelect
+              v-model="groupDeskPackageId"
+              filterable
+              clearable
+              placeholder="选择团检套餐"
+              class="reg-summary__full"
+            >
+              <ElOption
+                v-for="item in groupDeskPackageOptions"
+                :key="String(item.packageActivityId)"
+                :label="item.packageName || String(item.packageActivityId)"
+                :value="String(item.packageActivityId)"
+              />
+            </ElSelect>
+          </div>
           <div class="reg-summary__alert-tags">
             <ElTag size="small" :type="enrollmentTagType(groupRosterContext)">
               {{ enrollmentLabel(groupRosterContext) }}
@@ -1982,7 +2082,7 @@ onMounted(() => {
                 })
               "
             >
-              查看体检历史
+              查看体检记录
             </ElButton>
           </div>
         </ElAlert>
@@ -2086,7 +2186,13 @@ onMounted(() => {
         </section>
 
         <p v-if="isGroupRosterDesk && canGroupEnroll" class="action-hint action-hint--ok">
-          团检免收费：确认建单后可打印指引单
+          团检免收费：选定套餐并建单后可打印指引单
+        </p>
+        <p
+          v-else-if="isGroupRosterDesk && canGroupChangePackage"
+          class="action-hint action-hint--ok"
+        >
+          已到检前可更换选定套餐（流水号不变）
         </p>
         <p v-else-if="isGroupRosterDesk && canGroupArrival" class="action-hint action-hint--ok">
           已建单，请确认到检并打印指引单

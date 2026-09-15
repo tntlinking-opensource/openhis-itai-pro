@@ -7,6 +7,7 @@ package com.openhis.health.application.inpatient.pharmacy.dispense.support;
 import com.openhis.health.application.shared.advice.OrderCatalogDisplayAssembler;
 import com.openhis.health.application.shared.advice.TcmMethodCodeDisplayAssembler;
 import com.openhis.health.application.shared.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.product.MedicationPackageSplitQuantityDisplayAssembler;
 import com.openhis.health.application.inpatient.pharmacy.dispense.dto.EncounterMedicationDispenseSlipRowDto;
 import com.openhis.health.application.inpatient.pharmacy.dispense.dto.MedicationDispenseInventoryDetailDto;
 import com.openhis.health.application.inpatient.pharmacy.dispense.dto.MedicationDispenseSlipPageResult;
@@ -368,6 +369,9 @@ public class EncounterMedicationDispenseSlipReadAssembler {
             row.setPackageUnitCode(product.getPackageUnitCode());
             row.setPackageUnitRatio(product.getPackageUnitRatio());
             row.setSplitUnitCode(product.getSplitUnitCode());
+            // Asm：包装↔拆零比例文案（规格列旁展示；与库存明细 / 门诊发药同族）
+            row.setPackageSplitRatioText(
+                MedicationPackageSplitQuantityDisplayAssembler.buildInventoryPackageSplitRatioText(product));
             // 药典贴码单位/比例：主档无快照时回落；有主档时由 enricher 覆盖
             if (StringUtils.isNotEmpty(product.getTraceUnitCode())) {
                 row.setTraceUnitCode(product.getTraceUnitCode());

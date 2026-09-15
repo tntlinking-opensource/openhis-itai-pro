@@ -38,7 +38,7 @@ public class LoadKeyMedicationUsageReportPageInitResponse {
     private List<OptionDto> encounterClassOptions;
 
     /**
-     * 重点药类型选项（基药/监控/集采）。
+     * 重点药类型选项（基药/监控/集采/抗生素）。
      */
     @Schema(description = "重点药类型选项")
     private List<OptionDto> keyDrugTypeOptions;

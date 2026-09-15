@@ -5,6 +5,7 @@
 package com.openhis.health.application.outpatient.pharmacy.dispense.support;
 
 import com.openhis.health.application.outpatient.pharmacy.dispense.dto.EncounterMedicationDispenseSlipRowDto;
+import com.openhis.health.application.shared.advice.TcmDecoctionBasedOnPrescriptionResolver;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.share.constants.DoctorStationTcmConstants;
@@ -18,6 +19,7 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -28,7 +30,7 @@ import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 /**
  * 门诊发药 slip：按处方号回填同方代煎费（IF-OPP-03 展示；锚定代煎 companion ChargeItem）。
  *
- * <p>门诊一方一代煎费：回显取「当前有效」单行（已结优先于残留 PLANNED/DRAFT），禁止把同方多条费用加总导致金额/数量翻倍。</p>
+ * <p>方号经共享解析器 {@code based_on→药嘱}（负向退药嘱回原方 CP）；一方一代煎费取「当前有效」单行，禁止同方多行加总。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -36,6 +38,7 @@ public class EncounterMedicationDispenseSlipDecoctionChargeEnricher {
 
     private final ActivityDefinitionQueryService activityDefinitionQueryService;
     private final ChargeItemQueryService chargeItemQueryService;
+    private final TcmDecoctionBasedOnPrescriptionResolver tcmDecoctionBasedOnPrescriptionResolver;
 
     /**
      * 为中药 slip 行写入同处方号代煎费金额/数量（方头未代煎或无费用时仅保留 {@code sufferingFlag}）。
@@ -161,12 +164,15 @@ public class EncounterMedicationDispenseSlipDecoctionChargeEnricher {
             encounterId, TableNameConstants.WKF_ACTIVITY_DEFINITION, decoctionActivityId);
         // Pre：排除半退/反结链上已被再生叶替代的源 SETTLED，避免与再生行双计
         chargeItems = chargeItemQueryService.filterOutSupersededSettledLines(encounterId, chargeItems);
+        Map<Long, String> prescriptionByServiceRequestId = this.mapServiceRequestPrescriptionNos(chargeItems);
         Map<String, ChargeItem> preferredByPrescriptionNo = new HashMap<>();
         for (ChargeItem chargeItem : chargeItems) {
             if (!isEffectiveDecoctionChargeItem(chargeItem, decoctionActivityId)) {
                 continue;
             }
-            String prescriptionNo = trimToNull(chargeItem.getPrescriptionNo());
+            // Pre：仅经 SR.based_on→药嘱反查方号
+            String prescriptionNo = this.resolveChargeLinkedPrescriptionNo(
+                chargeItem, prescriptionByServiceRequestId);
             if (prescriptionNo == null || !herbalPrescriptionNos.contains(prescriptionNo)) {
                 continue;
             }
@@ -276,6 +282,50 @@ public class EncounterMedicationDispenseSlipDecoctionChargeEnricher {
             return true;
         }
         return false;
+    }
+
+    /**
+     * 批量反查代煎收费行关联的中药方头处方号（委托共享解析器：based_on→药嘱，负向回原方 CP）。
+     *
+     * @param chargeItems 代煎产品收费行
+     * @return serviceRequestId → prescriptionNo
+     */
+    private Map<Long, String> mapServiceRequestPrescriptionNos(List<ChargeItem> chargeItems) {
+        Set<Long> serviceRequestIds = new LinkedHashSet<>();
+        if (chargeItems != null) {
+            for (ChargeItem chargeItem : chargeItems) {
+                if (chargeItem == null || chargeItem.getServiceId() == null) {
+                    continue;
+                }
+                if (!TableNameConstants.WKF_SERVICE_REQUEST.equals(trimToEmpty(chargeItem.getServiceTable()))) {
+                    continue;
+                }
+                serviceRequestIds.add(chargeItem.getServiceId());
+            }
+        }
+        return this.tcmDecoctionBasedOnPrescriptionResolver.mapServiceRequestIdsToHerbalPrescriptionNos(
+            serviceRequestIds);
+    }
+
+    /**
+     * 解析收费行关联处方号：仅 SR.based_on→药嘱；无法反查则 {@code null}。
+     *
+     * @param chargeItem                     收费行
+     * @param prescriptionByServiceRequestId SR→方号字典
+     * @return 处方号；无法解析时 {@code null}
+     */
+    private String resolveChargeLinkedPrescriptionNo(
+        ChargeItem chargeItem,
+        Map<Long, String> prescriptionByServiceRequestId
+    ) {
+        if (chargeItem == null) {
+            return null;
+        }
+        if (!TableNameConstants.WKF_SERVICE_REQUEST.equals(trimToEmpty(chargeItem.getServiceTable()))
+            || chargeItem.getServiceId() == null) {
+            return null;
+        }
+        return prescriptionByServiceRequestId.get(chargeItem.getServiceId());
     }
 
     /**

@@ -40,7 +40,6 @@ export interface PreviewInpatientPharmacyDailySettlementRequest {
 
 export interface PreviewInpatientPharmacyDailySettlementResponse {
   pendingCount?: number;
-  unsettledCount?: number;
   categoryRows?: PharmacyDailySettlementCategoryRowDto[];
   productRows?: PharmacyDailySettlementProductRowDto[];
   items?: PharmacyDailySettlementDispenseItemDto[];
@@ -52,11 +51,11 @@ export interface PreviewInpatientPharmacyDailySettlementResponse {
   practitionerOptions?: ApiOptionItem[];
 }
 
-/** 归一化住院药房预览：待交笔数兼容 unsettledCount。 */
+/** 归一化住院药房预览：待交笔数优先 pendingCount，缺省回落 items.length。 */
 export function normalizePreviewInpatientPharmacyDailySettlementResponse(
   raw: PreviewInpatientPharmacyDailySettlementResponse,
 ): PreviewInpatientPharmacyDailySettlementResponse {
-  const pendingFromField = raw.pendingCount ?? raw.unsettledCount;
+  const pendingFromField = raw.pendingCount;
   const pendingFromItems = raw.items?.length;
   let pendingCount = pendingFromField;
   if (pendingCount == null && pendingFromItems != null) {

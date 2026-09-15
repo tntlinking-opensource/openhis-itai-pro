@@ -7,6 +7,9 @@ package com.openhis.health.application.peis.group.dto;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * 团检名册行 DTO。
  */
@@ -16,6 +19,7 @@ public class GroupRosterRowDto {
 
     private Long rosterId;
     private Long batchId;
+    private Long companyId;
     private Long patientId;
     private String fullName;
     private String genderEnum;
@@ -28,4 +32,8 @@ public class GroupRosterRowDto {
     private Long encounterId;
     private String payStatusCode;
     private String arrivalStatusCode;
+    /** 可选套餐 AD 列表。 */
+    private List<Long> optionalPackageActivityIds = new ArrayList<>();
+    /** 已选定套餐 AD。 */
+    private Long selectedPackageActivityId;
 }

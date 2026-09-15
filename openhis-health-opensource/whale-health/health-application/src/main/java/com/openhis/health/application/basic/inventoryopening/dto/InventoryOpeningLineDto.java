@@ -57,7 +57,7 @@ public class InventoryOpeningLineDto {
     private BigDecimal price;
 
     /**
-     * 已废弃：期初不再维护独立售价；同意时批号售价与进价同值写入（院点中药加价另挂）。
+     * 已废弃：期初不再维护独立售价；同意时批号售价与进价同值写入（中药 Herbal AOP 另挂）。
      * 请求体传入将被忽略。
      */
     @Schema(description = "售价（废弃，忽略）")

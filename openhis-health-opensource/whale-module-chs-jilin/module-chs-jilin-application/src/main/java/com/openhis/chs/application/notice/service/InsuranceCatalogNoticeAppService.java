@@ -4,9 +4,7 @@
  */
 package com.openhis.chs.application.notice.service;
 
-import com.openhis.chs.application.notice.dto.NoticeScanImportResultDto;
 import com.openhis.chs.application.notice.mapper.InsuranceCatalogNoticeMapper;
-import com.openhis.chs.application.notice.request.ApplyNoticeDocRequest;
 import com.openhis.chs.application.notice.request.CheckCatalogIssuesRequest;
 import com.openhis.chs.application.notice.request.CloseNoticeTodoRequest;
 import com.openhis.chs.application.notice.request.ConfirmNoticeScanImportRequest;
@@ -21,10 +19,8 @@ import com.openhis.chs.application.notice.request.PreviewNoticeApplyRequest;
 import com.openhis.chs.application.notice.request.RerunNoticeComplianceRequest;
 import com.openhis.chs.application.notice.request.ResumeConfirmNoticeScanImportRequest;
 import com.openhis.chs.application.notice.request.ScanNoticeCanonicalDirRequest;
-import com.openhis.chs.application.notice.response.ApplyNoticeDocResponse;
 import com.openhis.chs.application.notice.response.CheckCatalogIssuesResponse;
 import com.openhis.chs.application.notice.response.CloseNoticeTodoResponse;
-import com.openhis.chs.application.notice.response.ConfirmNoticeScanImportResponse;
 import com.openhis.chs.application.notice.response.DownloadNoticePackResponse;
 import com.openhis.chs.application.notice.response.GetComplianceReportResponse;
 import com.openhis.chs.application.notice.response.GetConfirmNoticeScanImportProgressResponse;
@@ -48,15 +44,12 @@ import com.openhis.chs.application.notice.support.NoticeImportWorkflow;
 import com.openhis.chs.application.notice.support.NoticeScanWorkflow;
 import com.openhis.chs.application.notice.support.dto.NoticeApplyJob;
 import com.openhis.chs.application.notice.support.dto.NoticeImportJob;
-import com.openhis.chs.application.notice.support.dto.NoticeScanCachedItem;
 import com.openhis.chs.application.notice.support.dto.NoticeScanJob;
 import com.openhis.chs.application.notice.support.dto.NoticeScanSession;
 import com.openhis.chs.domain.catalog.access.ChsInsuranceContractReader;
 import com.openhis.chs.domain.contract.ChsContractSnapshot;
-import com.openhis.chs.domain.notice.command.ApplyNoticeDocCommand;
 import com.openhis.chs.domain.notice.command.CloseNoticeTodoCommand;
 import com.openhis.chs.domain.notice.command.RunComplianceCommand;
-import com.openhis.chs.domain.notice.model.ApplyNoticeDocResult;
 import com.openhis.chs.domain.notice.model.ApplyPreviewView;
 import com.openhis.chs.domain.notice.model.CatalogCheckResult;
 import com.openhis.chs.domain.notice.model.CloseNoticeTodoResult;
@@ -79,7 +72,6 @@ import com.openhis.chs.domain.notice.queryservice.CatalogNoticeComplianceQuerySe
 import com.openhis.chs.domain.notice.queryservice.CatalogNoticeDocQueryService;
 import com.openhis.chs.domain.notice.queryservice.CatalogNoticeLineQueryService;
 import com.openhis.chs.domain.notice.queryservice.CatalogNoticeTodoQueryService;
-import com.openhis.chs.domain.notice.service.CatalogNoticeApplyDomainService;
 import com.openhis.chs.domain.notice.service.CatalogNoticeTodoDomainService;
 import com.openhis.chs.domain.share.constants.ChsErrorCodes;
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -93,20 +85,16 @@ import java.util.Locale;
 
 /**
  * 医保文件管理应用服务（POST /api/app/insuranceCatalogNotice/*）。
- * <p>对应 AS-CHS-CAT-005；覆盖 W-01~W-05 与 R-01~R-06。</p>
+ * <p>对应 AS-CHS-CAT-005；扫描/入库/应用以异步 start* + 进度轮询为准（W-01~W-03），并覆盖 W-04~W-05 与 R-01~R-06。</p>
  */
 @Service
 @RequiredArgsConstructor
 public class InsuranceCatalogNoticeAppService {
 
-    private static final String RESULT_IMPORTED = "IMPORTED";
-    private static final String RESULT_SKIPPED = "SKIPPED";
-
     private final NoticeScanWorkflow noticeScanWorkflow;
     private final NoticeImportWorkflow noticeImportWorkflow;
     private final NoticeApplyWorkflow noticeApplyWorkflow;
     private final NoticeComplianceWorkflow noticeComplianceWorkflow;
-    private final CatalogNoticeApplyDomainService catalogNoticeApplyDomainService;
     private final CatalogNoticeTodoDomainService catalogNoticeTodoDomainService;
     private final CatalogNoticeDocQueryService catalogNoticeDocQueryService;
     private final CatalogNoticeLineQueryService catalogNoticeLineQueryService;
@@ -118,28 +106,6 @@ public class InsuranceCatalogNoticeAppService {
     private final InsuranceCatalogNoticeMapper insuranceCatalogNoticeMapper;
     private final ChsInsuranceContractReader chsInsuranceContractReader;
 
-    /**
-     * 扫描配置目录下标准落地包（IF-CHS-CAT-005-W-01）。
-     * 不落库；返回 scanToken 供二次确认入库。
-     *
-     * @param request 可选 contractId / scanRoot
-     * @return 扫描令牌、计数与明细
-     */
-    public ScanNoticeCanonicalDirResponse scanNoticeCanonicalDir(ScanNoticeCanonicalDirRequest request) {
-        // Gate：请求可空；根目录空时由 resolveCanonicalRoot 校验配置
-        ScanNoticeCanonicalDirRequest safe = request;
-        if (safe == null) {
-            safe = new ScanNoticeCanonicalDirRequest();
-        }
-
-        // Pre：扫描一级子目录并判定 NEW/DUPLICATE/FAILED
-        NoticeScanSession session = noticeScanWorkflow.scanCanonicalDir(
-            safe.getScanRoot(), safe.getContractId());
-
-        // Cmd：本接口不落库，仅内存缓存 scanToken
-        // Asm：装配扫描响应
-        return insuranceCatalogNoticeMapper.toScanResponse(session);
-    }
 
     /**
      * 启动异步扫描目录（带回进度，供 UI 进度条）。
@@ -211,56 +177,6 @@ public class InsuranceCatalogNoticeAppService {
         return response;
     }
 
-    /**
-     * 确认扫描结果入库（IF-CHS-CAT-005-W-02）。
-     * 二次确认后落标准包 URI + 文件头 + 明细；重复 hash 拒绝除非 force。
-     *
-     * @param request 含 scanToken、可选 packDirs / force
-     * @return 导入/跳过/失败计数与逐包结果
-     */
-    public ConfirmNoticeScanImportResponse confirmNoticeScanImport(ConfirmNoticeScanImportRequest request) {
-        // Gate：扫描令牌必填，过期在 loadScan 抛 NOTICE_PREVIEW_EXPIRED
-        ConfirmNoticeScanImportRequest safe = request;
-        if (safe == null) {
-            safe = new ConfirmNoticeScanImportRequest();
-        }
-        if (safe.getScanToken() == null || safe.getScanToken().isBlank()) {
-            throw new BusinessException(ChsErrorCodes.NOTICE_PREVIEW_EXPIRED, "扫描令牌不能为空，请重新扫描");
-        }
-
-        // Pre：物化扫描会话与待入库目标
-        NoticeScanSession session = noticeScanWorkflow.loadScan(safe.getScanToken());
-        boolean force = false;
-        if (safe.getForce() != null && safe.getForce()) {
-            force = true;
-        }
-        List<NoticeScanCachedItem> targets = noticeScanWorkflow.resolveImportTargets(
-            session, safe.getPackDirs(), force);
-
-        ConfirmNoticeScanImportResponse response = new ConfirmNoticeScanImportResponse();
-        Long contractId = safe.getContractId();
-        if (contractId == null) {
-            contractId = session.getContractId();
-        }
-
-        // Cmd：逐包落库（PackStore → Doc → Lines）；扫描轻量缓存按盘再物化
-        Long tenantId = TenantUtils.getCurrentTenantId();
-        for (NoticeScanCachedItem item : targets) {
-            NoticeScanImportResultDto row = noticeImportWorkflow.importOneScanItem(
-                item, contractId, force, session.getScanRoot(), tenantId);
-            response.getResults().add(row);
-            if (RESULT_IMPORTED.equals(row.getStatus())) {
-                response.setImportedCount(response.getImportedCount() + 1);
-            } else if (RESULT_SKIPPED.equals(row.getStatus())) {
-                response.setSkippedCount(response.getSkippedCount() + 1);
-            } else {
-                response.setFailedCount(response.getFailedCount() + 1);
-            }
-        }
-
-        // Asm：计数已在循环中装填
-        return response;
-    }
 
     /**
      * 启动异步确认入库（带回进度，可续跑）。
@@ -429,39 +345,6 @@ public class InsuranceCatalogNoticeAppService {
         return insuranceCatalogNoticeMapper.toPreviewApplyResponse(view);
     }
 
-    /**
-     * 应用文件（IF-CHS-CAT-005-W-03）。
-     * 二次确认后写 overlay / map / 院内 lv / 未收费同步 / apply_log。
-     *
-     * @param request 含 docId、confirm（必须 true）
-     * @return 应用计数
-     */
-    public ApplyNoticeDocResponse applyNoticeDoc(ApplyNoticeDocRequest request) {
-        // Gate：confirm 必须为 true，否则拒绝应用
-        ApplyNoticeDocRequest safe = request;
-        if (safe == null) {
-            safe = new ApplyNoticeDocRequest();
-        }
-        if (safe.getDocId() == null) {
-            throw new BusinessException(ChsErrorCodes.NOTICE_DOC_NOT_FOUND, "docId 不能为空");
-        }
-        if (safe.getConfirm() == null || !safe.getConfirm()) {
-            throw new BusinessException(ChsErrorCodes.NOTICE_APPLY_DENIED, "请二次确认后再应用");
-        }
-
-        // Pre：校验文件存在
-        catalogNoticeDocQueryService.getDocById(safe.getDocId(), TenantUtils.getCurrentTenantId());
-
-        // Cmd：领域分批短事务应用
-        ApplyNoticeDocCommand command = new ApplyNoticeDocCommand();
-        command.setTenantId(TenantUtils.getCurrentTenantId());
-        command.setDocId(safe.getDocId());
-        command.setOperatorId(safe.getOperatorId());
-        ApplyNoticeDocResult result = catalogNoticeApplyDomainService.applyDoc(command);
-
-        // Asm：装配应用响应
-        return insuranceCatalogNoticeMapper.toApplyResponse(result);
-    }
 
     /**
      * 启动异步应用（推荐；带回按行进度）。

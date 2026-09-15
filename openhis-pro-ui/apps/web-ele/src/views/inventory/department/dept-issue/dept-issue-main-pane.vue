@@ -807,10 +807,6 @@ async function handleApprove() {
   if (!no) return;
   await agreeDeptIssueApi({
     busNo: no,
-    approverId: resolveLoginPractitionerIdForRequest(
-      userStore.userInfo as null | Record<string, unknown>,
-    ),
-    approvalClock: formatDateTime(new Date()).replace(' ', 'T'),
   });
   ElMessage.success('审批同意');
   await loadDetail(no);
@@ -830,10 +826,6 @@ async function handleReject() {
     await rejectDeptIssueApi({
       busNo: no,
       rejectReason: value,
-      approverId: resolveLoginPractitionerIdForRequest(
-        userStore.userInfo as null | Record<string, unknown>,
-      ),
-      approvalClock: formatDateTime(new Date()).replace(' ', 'T'),
     });
     ElMessage.success('已驳回');
     await loadDetail(no);

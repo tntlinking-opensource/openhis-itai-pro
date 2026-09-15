@@ -334,13 +334,3 @@ export function patchReportListPrintTemplate(
   }
   return printJson;
 }
-
-/**
- * @deprecated 请用 patchReportListPrintTemplate
- */
-export function patchReportListTableColumns(
-  printJson: Record<string, unknown>,
-  columns: ReportPrintTableColumn[],
-): Record<string, unknown> {
-  return patchReportListPrintTemplate(printJson, columns, 'landscape');
-}

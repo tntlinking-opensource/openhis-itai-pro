@@ -197,6 +197,8 @@ export function mapSlipRowsToPrescriptionBlocks(
         lotHasTraceMaster: line.lotHasTraceMaster === true,
         remainingStockText,
         spec: line.specificationText?.trim() || '—',
+        // 包装↔拆零比例：服务端拼装，规格列后展示
+        packageSplitRatioText: line.packageSplitRatioText?.trim() || undefined,
         traceCode: line.traceNo?.trim() || '—',
         batchNo: line.lotNumber?.trim() || '—',
         amount:

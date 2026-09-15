@@ -12,6 +12,7 @@ import com.openhis.health.domain.administration.account.entity.Account;
 import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.financial.contract.service.ContractQueryService;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentRecDetailQueryModel;
+import com.openhis.health.domain.share.constants.DailySettlementSharedConstants;
 import com.openhis.health.domain.share.enums.PaymentChannel;
 import com.openhis.whale.core.application.util.StringUtils;
 import lombok.RequiredArgsConstructor;
@@ -342,6 +343,94 @@ public class DailySettlementExpenseNatureDetailAccumulator {
                     insutypeBucket.addAccount(lineAmount);
                 }
             }
+        }
+    }
+
+    /**
+     * 工伤合同专用：按个人自付 / 统筹 / 个账口径累加（不跳过工伤；写入统一「工伤保险」桶）。
+     *
+     * <p>仅供日结工伤独立统计块使用；禁止并入主费用性质块 / 医保统筹公共头。
+     * 个人自付含现金/微信/支付宝/银行卡等自付渠道（工伤已被主渠道区剔除，须在本块回收）。</p>
+     *
+     * @param natureByContractNo         累加桶（调用方单独持有，勿与主块共用）
+     * @param maps                       {@link #prepare} 预载
+     * @param paymentContractNo          payment.contract_no（取展示名）
+     * @param personKey                  人次键；空则不计人次
+     * @param details                    子明细
+     * @param signedLineAmountByDetailId 明细带符号净额
+     * @param shouldCountInsuranceDetail 统筹/个账计入门禁
+     */
+    public void accumulateWorkInjuryNaturePayment(
+        Map<String, NatureBucket> natureByContractNo,
+        PreparedMaps maps,
+        String paymentContractNo,
+        Long personKey,
+        List<PaymentRecDetailQueryModel> details,
+        Map<Long, BigDecimal> signedLineAmountByDetailId,
+        Predicate<PaymentRecDetailQueryModel> shouldCountInsuranceDetail
+    ) {
+        if (natureByContractNo == null || maps == null) {
+            return;
+        }
+        String displayName = DailySettlementSharedConstants.WORK_INJURY_NATURE_DISPLAY_NAME;
+        String normalizedContract = trimToNull(paymentContractNo);
+        if (normalizedContract != null) {
+            String contractName = maps.contractNameByBusNo.get(normalizedContract);
+            if (StringUtils.isNotEmpty(contractName)) {
+                displayName = contractName.trim();
+            }
+        }
+        // Asm：多工伤合同并入同一展示桶，避免独立块拆多行
+        NatureBucket natureBucket = DailySettlementExpenseNatureSummarySupport.ensureNature(
+            natureByContractNo,
+            DailySettlementSharedConstants.WORK_INJURY_NATURE_BUCKET_KEY,
+            displayName,
+            true);
+        if (personKey != null) {
+            // 工伤独立块：有结算或仅账单均计人次（patientId 去重）
+            natureBucket.getPersonKeys().add(personKey);
+        }
+        if (details == null || signedLineAmountByDetailId == null) {
+            return;
+        }
+        for (PaymentRecDetailQueryModel detail : details) {
+            if (detail == null || detail.getId() == null) {
+                continue;
+            }
+            BigDecimal lineAmount = signedLineAmountByDetailId.get(detail.getId());
+            if (lineAmount == null) {
+                continue;
+            }
+            PaymentChannel channel = PaymentChannel.fromCode(detail.getPayEnum());
+            if (channel == null) {
+                continue;
+            }
+            if (PaymentChannel.DEPOSIT_OFFSET.equals(channel)) {
+                // 预交金冲抵不计入个人自付
+                continue;
+            }
+            if (PaymentChannel.INSURANCE_FUND.equals(channel)) {
+                boolean countInsurance = false;
+                if (shouldCountInsuranceDetail != null) {
+                    countInsurance = shouldCountInsuranceDetail.test(detail);
+                }
+                if (countInsurance) {
+                    natureBucket.addFund(lineAmount);
+                }
+                continue;
+            }
+            if (PaymentChannel.INSURANCE_ACCT.equals(channel)) {
+                boolean countInsurance = false;
+                if (shouldCountInsuranceDetail != null) {
+                    countInsurance = shouldCountInsuranceDetail.test(detail);
+                }
+                if (countInsurance) {
+                    natureBucket.addAccount(lineAmount);
+                }
+                continue;
+            }
+            // 现金/微信/支付宝/银行卡/收银台等自付渠道 → 个人自付
+            natureBucket.addCash(lineAmount);
         }
     }
 

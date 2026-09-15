@@ -27,11 +27,11 @@ import com.openhis.health.application.report.feedetail.outpatient.response.Summa
 import com.openhis.health.application.report.feedetail.support.FeeDetailReportFinTypeSummaryAssembler;
 import com.openhis.health.application.shared.financial.PaymentEntererMatchResolver;
 import com.openhis.health.application.shared.option.TerminologyOptionLoader;
+import com.openhis.health.application.shared.report.ReportDateTimeWindowSupport;
 import com.openhis.health.domain.administration.chargeitem.query.FeeDetailFinTypeSummaryQueryModel;
 import com.openhis.health.domain.administration.chargeitem.query.OutpatientFeeDetailPageQuery;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.share.constants.FeeDetailReportConstants;
-import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.OutpatientFeeDetailReportConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.whale.core.application.dto.OptionDto;
@@ -45,6 +45,8 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -83,7 +85,7 @@ public class OutpatientFeeDetailReportAppService {
     /** 跨聚合 scope 预解析（payment → chargeItem）。 */
     private final OutpatientFeeDetailLoader outpatientFeeDetailLoader;
 
-    /** payment enterer_id 匹配（Practitioner + 用户主键存量兼容）。 */
+    /** payment enterer_id 匹配（仅 Practitioner 主键，**BR-OPC-016**）。 */
     private final PaymentEntererMatchResolver paymentEntererMatchResolver;
 
     /** 术语下拉与 fin_type 译文。 */
@@ -114,11 +116,17 @@ public class OutpatientFeeDetailReportAppService {
                 this.outpatientFeeDetailAppService.loadOutpatientFeeDetailPageInit(
                     new LoadOutpatientFeeDetailPageInitRequest());
             // Asm：在前身选项上补呈现模式、汇总维度与默认汇总 Tab（BR-RPT-OFD-004/005）
-            return this.outpatientFeeDetailReportMapper.toLoadPageInitResponse(
-                source,
-                this.buildPresentationModeOptions(),
-                OutpatientFeeDetailReportConstants.DEFAULT_ACTIVE_TAB,
-                this.buildSummaryDimensionOptions());
+            LoadOutpatientFeeDetailReportPageInitResponse response =
+                this.outpatientFeeDetailReportMapper.toLoadPageInitResponse(
+                    source,
+                    this.buildPresentationModeOptions(),
+                    OutpatientFeeDetailReportConstants.DEFAULT_ACTIVE_TAB,
+                    this.buildSummaryDimensionOptions());
+            // Asm：默认窗改写为当日 00:00:00～23:59:59（与其它报表 init 同口径）
+            LocalDate today = LocalDate.now();
+            response.setDefaultDateFrom(ReportDateTimeWindowSupport.formatDayStart(today));
+            response.setDefaultDateTo(ReportDateTimeWindowSupport.formatDayEnd(today));
+            return response;
         } catch (BusinessException businessException) {
             // 前身业务码原样上抛，避免二次包装丢失语义
             throw businessException;
@@ -335,10 +343,12 @@ public class OutpatientFeeDetailReportAppService {
     }
 
     /**
-     * Gate：结算日期闭区间合法（BR-RPT-OFD-005）。
+     * Gate：结算日期/时刻闭区间合法（BR-RPT-OFD-005）。
      *
-     * @param dateFrom 结算日起
-     * @param dateTo   结算日止
+     * <p>允许 {@code yyyy-MM-dd} 或 {@code yyyy-MM-dd HH:mm:ss}；仅日期时起补 00:00:00、止补 23:59:59。</p>
+     *
+     * @param dateFrom 结算日起或日起时刻
+     * @param dateTo   结算日止或日止时刻
      */
     private void validateDateWindow(String dateFrom, String dateTo) {
         // 起止均须填写，否则前端未选日期即可空跑全库
@@ -347,9 +357,18 @@ public class OutpatientFeeDetailReportAppService {
                 OutpatientFeeDetailReportConstants.EX_RPT_OFD_102,
                 "请选择有效的查询日期");
         }
-        LocalDate from = LocalDate.parse(dateFrom.trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
-        LocalDate to = LocalDate.parse(dateTo.trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
-        // 止日早于起日拒绝，避免负区间
+        LocalDateTime from;
+        LocalDateTime to;
+        try {
+            from = ReportDateTimeWindowSupport.parseInclusiveStart(dateFrom);
+            to = ReportDateTimeWindowSupport.parseInclusiveEnd(dateTo);
+        } catch (DateTimeParseException ex) {
+            // 格式非法按查询条件错误拒绝，避免半解析窗口
+            throw new BusinessException(
+                OutpatientFeeDetailReportConstants.EX_RPT_OFD_102,
+                "请选择有效的查询日期");
+        }
+        // 止时刻早于起时刻拒绝，避免负区间
         if (to.isBefore(from)) {
             throw new BusinessException(
                 OutpatientFeeDetailReportConstants.EX_RPT_OFD_102,
@@ -358,7 +377,7 @@ public class OutpatientFeeDetailReportAppService {
     }
 
     /**
-     * 收费人筛选写入账单 {@code enterer_id} 白名单（Practitioner 兼容；不查 Payment）。
+     * 收费人筛选写入账单 {@code enterer_id} 白名单（仅 Practitioner 主键，**BR-OPC-016**；不查 Payment）。
      *
      * @param query 费用明细 Query
      */
@@ -470,7 +489,7 @@ public class OutpatientFeeDetailReportAppService {
      * @return 规范化维度 code
      */
     private String normalizeAndValidateSummaryDimension(String summaryDimension) {
-        // 空串回落默认费用类型维，兼容旧前端未传该字段
+        // 未传汇总维时回落 FIN_TYPE（非 UI 客户端可空）
         if (StringUtils.isEmpty(summaryDimension)) {
             return FeeDetailReportConstants.DEFAULT_SUMMARY_DIMENSION;
         }

@@ -57,6 +57,8 @@ export interface PatientInfoBarPayload {
   ageText?: null | string;
   phone?: null | string;
   medicalRecordNo?: null | string;
+  /** 身份证号（完整号；有值才展示） */
+  idCard?: null | string;
   /** 患者地址全文（主档；头部条完整展示，不截断） */
   address?: null | string;
   /** 就诊类别名称（如普通门诊），用于条上标签 */

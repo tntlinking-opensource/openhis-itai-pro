@@ -38,7 +38,11 @@ export const EDITOR_FONT_SIZE_OPTIONS: { label: string; value: string }[] = [
   { label: '小五', value: '9pt' },
 ];
 
-/** 工具栏「行距」下拉（value 为块级 CSS line-height；病历默认 1.5） */
+/**
+ * 工具栏「n 倍行距」存 JSON 的倍数（与 Word 行距名称一致）。
+ * 中文宋体单倍约 1.55×字号，故 CSS 不能直接写 1.5（12pt×1.5=18pt，看起来像单倍）。
+ * 1.5 倍 → CSS 2.33（小四约 28pt），与 PrintConfig 渲染公式同步。
+ */
 export const EDITOR_LINE_HEIGHT_OPTIONS: { label: string; value: string }[] = [
   { label: '行距 1', value: '1' },
   { label: '行距 1.15', value: '1.15' },
@@ -47,9 +51,31 @@ export const EDITOR_LINE_HEIGHT_OPTIONS: { label: string; value: string }[] = [
   { label: '行距 2.5', value: '2.5' },
 ];
 
+/** 中文宋体 Word「单倍行距」相对字号的系数（1.5 倍 × 1.55 ≈ 2.33） */
+export const EMR_CJK_SINGLE_SPACING_FACTOR = 1.55;
+
+/** 页眉下沿 / 页脚上沿线宽（Word 1 磅 = 1pt）；与 CSS --simple-editor-chrome-rule、PDF CHROME_RULE_PT 同步 */
+export const EMR_CHROME_RULE_PT = 1;
+
 /**
- * 屏上默认页边距（贴近 Word/WPS 空白观感）。
- * 正式国标 PDF 请切工具栏「打印标准」（上/下 25.4、左/右 31.8）。
+ * 工具栏倍数 → 实际 CSS line-height（无单位倍数）。
+ *
+ * @param toolbarMultiple 工具栏 value，如 `1.5`
+ * @returns CSS line-height，如 `2.33`
+ */
+export function toCssLineHeight(toolbarMultiple: string): string {
+  const key = String(toolbarMultiple ?? '').trim();
+  const n = Number(key);
+  if (!Number.isFinite(n) || n <= 0) {
+    return key;
+  }
+  const css = n * EMR_CJK_SINGLE_SPACING_FACTOR;
+  return String(Math.round(css * 100) / 100);
+}
+
+/**
+ * 屏上/打印默认页边距（Word 常用 15mm）。
+ * 国标 25.4/31.8 仅作工具栏「打印标准」预设，不再当默认——边距过大会多出空白页。
  */
 export const DEFAULT_EDITOR_PAGE_MARGINS: {
   bottom: string;

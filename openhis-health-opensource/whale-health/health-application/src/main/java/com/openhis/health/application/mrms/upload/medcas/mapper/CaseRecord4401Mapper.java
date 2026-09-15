@@ -4,28 +4,29 @@
  */
 package com.openhis.health.application.mrms.upload.medcas.mapper;
 
-import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.JSONObject;
 import com.openhis.health.application.mrms.upload.medcas.support.InsuranceEncounterContext;
+import com.openhis.health.application.shared.mrms.MedcasDualCodeResolveResult;
+import com.openhis.health.application.shared.mrms.MedcasDualCodeResolveSupport;
+import com.openhis.health.application.shared.mrms.MedcasOrgCatyOutboundSupport;
 import com.openhis.health.domain.clinical.conditiondefinition.service.ConditionDefinitionQueryService;
-import com.openhis.health.domain.clinical.proceduredefinition.service.ProcedureDefinitionQueryService;
 import com.openhis.health.domain.mrms.caserecord.entity.CaseRecord;
 import com.openhis.health.domain.mrms.caserecord.entity.CaseRecordHomepage;
 import com.openhis.health.domain.mrms.caserecord.entity.HomepageDiagnosis;
 import com.openhis.health.domain.mrms.caserecord.entity.HomepageProcedure;
 import com.openhis.health.domain.mrms.caserecord.service.CaseRecordHomepageDomainService;
+import com.openhis.health.domain.mrms.caserecord.vo.FeeSummarySnapshot;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
-import com.openhis.health.domain.share.constants.MrmsErrorCodes;
+import com.openhis.health.domain.share.constants.MrmsConstants;
 import com.openhis.health.domain.share.enums.HomepageDiagType;
 import com.openhis.health.infrastructure.integration.insurance.medcas.dto.MedcasHomepageBaseInfo;
 import com.openhis.health.infrastructure.integration.insurance.medcas.dto.MedcasHomepageDiseInfo;
 import com.openhis.health.infrastructure.integration.insurance.medcas.dto.MedcasHomepageIcuInfo;
 import com.openhis.health.infrastructure.integration.insurance.medcas.dto.MedcasHomepageOprnInfo;
 import com.openhis.health.infrastructure.integration.insurance.medcas.dto.MedcasHomepagePayload;
-import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -42,8 +43,8 @@ import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 /**
  * 病案首页 → 医保 4401 {@link MedcasHomepagePayload} 映射。
  *
- * <p>读首页/子表经 {@link CaseRecordHomepageDomainService}（B.6.4）；费用等扩展字段取自
- * {@code extensionJson}；诊断类型码在本类内映射为 4401 字典值。</p>
+ * <p>读首页/子表经 {@link CaseRecordHomepageDomainService}（B.6.4）；费用读首页费用快照列
+ * （无则补种一次）；诊断类型码在本类内映射为 4401 字典值。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -72,10 +73,14 @@ public class CaseRecord4401Mapper {
     }
 
     private final CaseRecordHomepageDomainService homepageDomainService;
-    /** 国临码 → 医保 yb_no 解析（诊断）。 */
+    /**
+     * 国临/医保双码解析（西医上传必须 yb_no；中医不对码，出站用目录码）。
+     */
+    private final MedcasDualCodeResolveSupport medcasDualCodeResolveSupport;
+    /** 入/出院科别出站：科室医保编码 yb_no（禁 bus_no）。 */
+    private final MedcasOrgCatyOutboundSupport medcasOrgCatyOutboundSupport;
+    /** 诊断目录读侧：中西医归类（上传跳过中医国临→医保门禁）。 */
     private final ConditionDefinitionQueryService conditionDefinitionQueryService;
-    /** 国临码 → 医保 yb_no 解析（手术）。 */
-    private final ProcedureDefinitionQueryService procedureDefinitionQueryService;
 
     /**
      * 组装 4401 上传载荷。
@@ -88,7 +93,6 @@ public class CaseRecord4401Mapper {
         CaseRecordHomepage homepage = homepageDomainService.requireExistingByCaseRecordId(record.getId());
         List<HomepageDiagnosis> diagnoses = homepageDomainService.listDiagnoses(record.getId());
         List<HomepageProcedure> procedures = homepageDomainService.listProcedures(record.getId());
-        JSONObject ext = parseExtension(homepage.getExtensionJson());
 
         String fixmedinsCode = null;
         if (insCtx != null) {
@@ -99,15 +103,11 @@ public class CaseRecord4401Mapper {
 
         MedcasHomepageBaseInfo base = new MedcasHomepageBaseInfo();
         base.setMdtrtSn(mdtrtSn);
-        // 医保上下文存在时上送 mdtrt_id/psn_no/定点机构
+        // 医保上下文存在时上送 mdtrt_id/psn_no/定点机构；psn_no 仅来自 InsuranceEncounterContext
         if (insCtx != null) {
             base.setMdtrtId(trimToNull(insCtx.getMdtrtId()));
             base.setPsnNo(trimToNull(insCtx.getPsnNo()));
             base.setFixmedinsCode(fixmedinsCode);
-        }
-        // 上下文无 psn_no 时从 extensionJson 回填
-        if (trimToNull(base.getPsnNo()) == null) {
-            base.setPsnNo(extGet(ext, "psn_no"));
         }
         if (record.getPatnIptCnt() != null) {
             base.setPatnIptCnt(String.valueOf(record.getPatnIptCnt()));
@@ -127,8 +127,11 @@ public class CaseRecord4401Mapper {
         base.setConerName(trimToNull(homepage.getConerName()));
         base.setConerTel(trimToNull(homepage.getConerTel()));
         base.setAdmWayCode(trimToNull(homepage.getAdmWayCode()));
-        base.setAdmCaty(trimToNull(homepage.getAdmCatyCode()));
-        base.setDscgCaty(trimToNull(homepage.getDscgCatyCode()));
+        // 入/出院科别：科室医保编码（首页若误存 bus_no 则反查 yb_no）
+        base.setAdmCaty(medcasOrgCatyOutboundSupport.resolveOutboundCaty(
+                homepage.getAdmCatyCode(), "adm_caty"));
+        base.setDscgCaty(medcasOrgCatyOutboundSupport.resolveOutboundCaty(
+                homepage.getDscgCatyCode(), "dscg_caty"));
         base.setAdmDate(formatDateTime(homepage.getAdmTime()));
         base.setDscgDate(formatDateTime(homepage.getDscgTime()));
         if (homepage.getIptDays() != null) {
@@ -140,38 +143,13 @@ public class CaseRecord4401Mapper {
         base.setAtddrName(trimToNull(homepage.getAtddrName()));
         base.setIptDrName(trimToNull(homepage.getIptDrName()));
         base.setRespNursName(trimToNull(homepage.getRespNursName()));
-        base.setMedfeeSumamt(extGet(ext, "medfee_sumamt"));
-        base.setSelfpayAmt(extGet(ext, "selfpay_amt"));
-        base.setMedfeePaymtdCode(extGet(ext, "medfee_paymtd_code"));
-        // 费用分项：extension_json 同名键 → baseinfo
-        base.setOrdnMedServfee(extGet(ext, "ordn_med_servfee"));
-        base.setOrdnTrtOprtFee(extGet(ext, "ordn_trt_oprt_fee"));
-        base.setNursFee(extGet(ext, "nurs_fee"));
-        base.setComMedServOthFee(extGet(ext, "com_med_serv_oth_fee"));
-        base.setPalgDiagFee(extGet(ext, "palg_diag_fee"));
-        base.setLabDiagFee(extGet(ext, "lab_diag_fee"));
-        base.setRdhyDiagFee(extGet(ext, "rdhy_diag_fee"));
-        base.setClncDiseFee(extGet(ext, "clnc_dise_fee"));
-        base.setNsrgtrtItemFee(extGet(ext, "nsrgtrt_item_fee"));
-        base.setClncPhysTrtFee(extGet(ext, "clnc_phys_trt_fee"));
-        base.setRgtrtTrtFee(extGet(ext, "rgtrt_trt_fee"));
-        base.setAnstFee(extGet(ext, "anst_fee"));
-        base.setRgtrtFee(extGet(ext, "rgtrt_fee"));
-        base.setRhabFee(extGet(ext, "rhab_fee"));
-        base.setTcmTrtFee(extGet(ext, "tcm_trt_fee"));
-        base.setWmFee(extGet(ext, "wm_fee"));
-        base.setAbtlMednFee(extGet(ext, "abtl_medn_fee"));
-        base.setTcmpatFee(extGet(ext, "tcmpat_fee"));
-        base.setTcmherbFee(extGet(ext, "tcmherb_fee"));
-        base.setBloFee(extGet(ext, "blo_fee"));
-        base.setAlbuFee(extGet(ext, "albu_fee"));
-        base.setGlonFee(extGet(ext, "glon_fee"));
-        base.setClotfacFee(extGet(ext, "clotfac_fee"));
-        base.setCykiFee(extGet(ext, "cyki_fee"));
-        base.setExamDspoMatlFee(extGet(ext, "exam_dspo_matl_fee"));
-        base.setTrtDspoMatlFee(extGet(ext, "trt_dspo_matl_fee"));
-        base.setOprnDspoMatlFee(extGet(ext, "oprn_dspo_matl_fee"));
-        base.setOthFee(extGet(ext, "oth_fee"));
+        // 付费方式：仅正式列 pay_way_code
+        base.setMedfeePaymtdCode(trimToNull(homepage.getPayWayCode()));
+        // 费用：读首页快照；无快照则补种（与打开页同口径，上报不另走现查）
+        CaseRecordHomepage feeHomepage =
+                homepageDomainService.ensureFeeSnapshotSeeded(record, homepage, MrmsConstants.SYSTEM_OPERATOR_ID);
+        FeeSummarySnapshot fee = homepageDomainService.readFeeSnapshot(feeHomepage);
+        applyFeeSnapshotToBase(base, fee);
         base.setValiFlag("1");
 
         MedcasHomepagePayload payload = new MedcasHomepagePayload();
@@ -183,7 +161,70 @@ public class CaseRecord4401Mapper {
     }
 
     /**
-     * 首页诊断子表 → 4401 diseinfo 行（跳过无编码行，按类型+序号排序）。
+     * 将费用快照写入 4401 baseinfo（总额/自付/分项）。
+     *
+     * @param base 4401 基本信息
+     * @param fee  首页费用快照；可空
+     */
+    private void applyFeeSnapshotToBase(MedcasHomepageBaseInfo base, FeeSummarySnapshot fee) {
+        // 无汇总时费用字段保持 null，由平台侧校验
+        if (fee == null) {
+            return;
+        }
+        base.setMedfeeSumamt(feeAmtToString(fee.getMedfeeSumamt()));
+        base.setSelfpayAmt(feeAmtToString(fee.getSelfpayAmt()));
+        Map<String, BigDecimal> items = fee.getFeeItems();
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        base.setOrdnMedServfee(feeAmtToString(items.get("ordn_med_servfee")));
+        base.setOrdnTrtOprtFee(feeAmtToString(items.get("ordn_trt_oprt_fee")));
+        base.setNursFee(feeAmtToString(items.get("nurs_fee")));
+        base.setComMedServOthFee(feeAmtToString(items.get("com_med_serv_oth_fee")));
+        base.setPalgDiagFee(feeAmtToString(items.get("palg_diag_fee")));
+        base.setLabDiagFee(feeAmtToString(items.get("lab_diag_fee")));
+        base.setRdhyDiagFee(feeAmtToString(items.get("rdhy_diag_fee")));
+        base.setClncDiseFee(feeAmtToString(items.get("clnc_dise_fee")));
+        base.setNsrgtrtItemFee(feeAmtToString(items.get("nsrgtrt_item_fee")));
+        base.setClncPhysTrtFee(feeAmtToString(items.get("clnc_phys_trt_fee")));
+        base.setRgtrtTrtFee(feeAmtToString(items.get("rgtrt_trt_fee")));
+        base.setAnstFee(feeAmtToString(items.get("anst_fee")));
+        base.setRgtrtFee(feeAmtToString(items.get("rgtrt_fee")));
+        base.setRhabFee(feeAmtToString(items.get("rhab_fee")));
+        base.setTcmTrtFee(feeAmtToString(items.get("tcm_trt_fee")));
+        base.setWmFee(feeAmtToString(items.get("wm_fee")));
+        base.setAbtlMednFee(feeAmtToString(items.get("abtl_medn_fee")));
+        base.setTcmpatFee(feeAmtToString(items.get("tcmpat_fee")));
+        base.setTcmherbFee(feeAmtToString(items.get("tcmherb_fee")));
+        base.setBloFee(feeAmtToString(items.get("blo_fee")));
+        base.setAlbuFee(feeAmtToString(items.get("albu_fee")));
+        base.setGlonFee(feeAmtToString(items.get("glon_fee")));
+        base.setClotfacFee(feeAmtToString(items.get("clotfac_fee")));
+        base.setCykiFee(feeAmtToString(items.get("cyki_fee")));
+        base.setExamDspoMatlFee(feeAmtToString(items.get("exam_dspo_matl_fee")));
+        base.setTrtDspoMatlFee(feeAmtToString(items.get("trt_dspo_matl_fee")));
+        base.setOprnDspoMatlFee(feeAmtToString(items.get("oprn_dspo_matl_fee")));
+        base.setOthFee(feeAmtToString(items.get(MrmsConstants.FEE_KEY_OTH)));
+    }
+
+    /**
+     * BigDecimal 金额转 4401 字符串；null 保持 null。
+     *
+     * @param amt 金额
+     * @return 非科学计数法字符串
+     */
+    private String feeAmtToString(BigDecimal amt) {
+        if (amt == null) {
+            return null;
+        }
+        return amt.toPlainString();
+    }
+
+    /**
+     * 首页诊断子表 → 4401 diseinfo 行。
+     *
+     * <p>跳过无编码行；{@code needYbUp=0} 不上送（与结算清单 4101A 同口径）。
+     * 西医出站须医保码；中医不对国临→医保。</p>
      *
      * @param rows 诊断实体
      * @param hmpgSn 4401 首页流水号
@@ -202,32 +243,39 @@ public class CaseRecord4401Mapper {
         List<HomepageDiagnosis> sorted = new ArrayList<>(rows);
         sorted.sort(Comparator.comparing(HomepageDiagnosis::getDiagTypeCode)
                 .thenComparing(HomepageDiagnosis::getSortNo));
-        // Pre：首页 diag_code 存国临码，4401 须输出医保 yb_no
+        // Pre：首页 diag_code 存国临/中医目录码；西医出站必须医保码；中医不对码
         Set<String> clinicCodes = new LinkedHashSet<>();
         for (HomepageDiagnosis row : sorted) {
+            // needYbUp=0：不上送，不参与双码预解析
+            if (isNeedYbUpSkipped(row)) {
+                continue;
+            }
             String clinic = trimToNull(row.getDiagCode());
             if (clinic != null) {
                 clinicCodes.add(clinic);
             }
         }
-        Map<String, String> ybByClinic = conditionDefinitionQueryService.mapYbNoByClinicCodes(clinicCodes);
+        Map<String, MedcasDualCodeResolveResult> dualByClinic =
+                medcasDualCodeResolveSupport.resolveDiagnosisBatch(clinicCodes);
+        Map<String, String> kindByCode =
+                conditionDefinitionQueryService.mapDiagnosisKindByConditionCodes(clinicCodes);
         List<MedcasHomepageDiseInfo> result = new ArrayList<>();
         for (HomepageDiagnosis row : sorted) {
-            // 无 ICD 编码行跳过，避免 4401 校验失败
+            // 首页「上传=否」：4401 diseinfo 跳过（与 4101A 同口径）
+            if (isNeedYbUpSkipped(row)) {
+                continue;
+            }
+            // 无编码行跳过，避免 4401 校验失败
             String clinicCode = trimToNull(row.getDiagCode());
             if (clinicCode == null) {
                 continue;
             }
-            String ybNo = trimToNull(ybByClinic.get(clinicCode));
-            if (ybNo == null) {
-                String hint = clinicCode;
-                if (trimToNull(row.getDiagName()) != null) {
-                    hint = clinicCode + " " + row.getDiagName().trim();
-                }
-                throw new BusinessException(
-                    MrmsErrorCodes.UPLOAD_ASSEMBLE_VALIDATION,
-                    "病案诊断未对医保码，请在诊断目录维护国临码(clinic_code)与医保编码(yb_no)对照：" + hint);
+            String hint = clinicCode;
+            if (trimToNull(row.getDiagName()) != null) {
+                hint = clinicCode + " " + row.getDiagName().trim();
             }
+            String ybNo = medcasDualCodeResolveSupport.requireDiagnosisOutbound(
+                    dualByClinic, kindByCode, clinicCode, hint);
             MedcasHomepageDiseInfo item = new MedcasHomepageDiseInfo();
             item.setIptMedcasHmpgSn(hmpgSn);
             item.setMdtrtSn(mdtrtSn);
@@ -241,6 +289,16 @@ public class CaseRecord4401Mapper {
             result.add(item);
         }
         return result;
+    }
+
+    /**
+     * 老系统 {@code needYbUp=0} 不上送病案首页诊断。
+     *
+     * @param row 诊断行
+     * @return true 表示跳过
+     */
+    private boolean isNeedYbUpSkipped(HomepageDiagnosis row) {
+        return "0".equals(trimToNull(row.getNeedYbUp()));
     }
 
     /**
@@ -262,7 +320,7 @@ public class CaseRecord4401Mapper {
         }
         List<HomepageProcedure> sorted = new ArrayList<>(rows);
         sorted.sort(Comparator.comparing(HomepageProcedure::getSortNo));
-        // Pre：首页 oprn_oprt_code 存国临码，4401 须输出医保 yb_no
+        // Pre：首页 oprn_oprt_code 存国临；出站必须医保码，无对照报错
         Set<String> clinicCodes = new LinkedHashSet<>();
         for (HomepageProcedure row : sorted) {
             String clinic = trimToNull(row.getOprnOprtCode());
@@ -270,7 +328,8 @@ public class CaseRecord4401Mapper {
                 clinicCodes.add(clinic);
             }
         }
-        Map<String, String> ybByClinic = procedureDefinitionQueryService.mapYbNoByClinicCodes(clinicCodes);
+        Map<String, MedcasDualCodeResolveResult> dualByClinic =
+                medcasDualCodeResolveSupport.resolveProcedureBatch(clinicCodes);
         List<MedcasHomepageOprnInfo> result = new ArrayList<>();
         for (HomepageProcedure row : sorted) {
             // 无手术编码行跳过
@@ -278,16 +337,11 @@ public class CaseRecord4401Mapper {
             if (clinicCode == null) {
                 continue;
             }
-            String ybNo = trimToNull(ybByClinic.get(clinicCode));
-            if (ybNo == null) {
-                String hint = clinicCode;
-                if (trimToNull(row.getOprnOprtName()) != null) {
-                    hint = clinicCode + " " + row.getOprnOprtName().trim();
-                }
-                throw new BusinessException(
-                    MrmsErrorCodes.UPLOAD_ASSEMBLE_VALIDATION,
-                    "病案手术未对医保码，请在手术目录维护国临码(clinic_code)与医保编码(yb_no)对照：" + hint);
+            String hint = clinicCode;
+            if (trimToNull(row.getOprnOprtName()) != null) {
+                hint = clinicCode + " " + row.getOprnOprtName().trim();
             }
+            String ybNo = medcasDualCodeResolveSupport.requireYbOutbound(dualByClinic, clinicCode, hint);
             MedcasHomepageOprnInfo item = new MedcasHomepageOprnInfo();
             item.setIptMedcasHmpgSn(hmpgSn);
             item.setMdtrtSn(mdtrtSn);
@@ -349,41 +403,6 @@ public class CaseRecord4401Mapper {
             return rowMainFlag;
         }
         return DIAG_MAIN_FLAG.getOrDefault(diagTypeCode, "0");
-    }
-
-    /**
-     * 解析首页 extensionJson 为 JSONObject；失败时返回空对象。
-     *
-     * @param json extension JSON 字符串
-     * @return 解析结果，永不为 null
-     */
-    private JSONObject parseExtension(String json) {
-        if (trimToNull(json) == null) {
-            return new JSONObject();
-        }
-        try {
-            return JSON.parseObject(json);
-        } catch (Exception ex) {
-            return new JSONObject();
-        }
-    }
-
-    /**
-     * 从 extension JSON 读取字符串字段。
-     *
-     * @param ext extension 对象
-     * @param key 字段键
-     * @return 字符串值，缺失时 null
-     */
-    private String extGet(JSONObject ext, String key) {
-        if (ext == null || !ext.containsKey(key)) {
-            return null;
-        }
-        Object val = ext.get(key);
-        if (val == null) {
-            return null;
-        }
-        return String.valueOf(val);
     }
 
     /**

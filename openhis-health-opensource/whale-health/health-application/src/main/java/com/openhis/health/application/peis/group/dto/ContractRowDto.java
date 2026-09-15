@@ -30,5 +30,12 @@ public class ContractRowDto {
     private BigDecimal contractAmount;
     /** 合同支付状态：UNPAID / PAID。 */
     private String payStatusCode;
+
+    /** 合同类型编码。 */
+    private String contractTypeCode;
+
+    /** 合同类型显示名（列表展示用）。 */
+    private String contractTypeName;
+
     private Long orgId;
 }

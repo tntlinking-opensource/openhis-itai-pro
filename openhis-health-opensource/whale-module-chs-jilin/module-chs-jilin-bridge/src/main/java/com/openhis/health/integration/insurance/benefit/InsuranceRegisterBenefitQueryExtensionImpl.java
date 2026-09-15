@@ -151,10 +151,11 @@ public class InsuranceRegisterBenefitQueryExtensionImpl implements InsuranceRegi
         String busNo = contractReader.requireContractBusNo(contract);
         Long contractId = contract.id();
         String psnNo = command.getPsnNo();
+        String insuplcAdmdvs = command.getInsurancePoolAreaCode();
 
         // Pre：5301 主查备案清单（失败向上抛，由调用方 warn 或转业务异常）
         LinkedHashMap<String, InsuranceOpspFilingLineSnapshot> merged = new LinkedHashMap<>();
-        MedicalInfoQueryResult filing5301 = this.invokeOpspFiling5301(contractId, busNo, psnNo);
+        MedicalInfoQueryResult filing5301 = this.invokeOpspFiling5301(contractId, busNo, psnNo, insuplcAdmdvs);
         List<Map<String, Object>> rows5301 = null;
         if (filing5301 != null) {
             rows5301 = filing5301.getRows();
@@ -166,7 +167,7 @@ public class InsuranceRegisterBenefitQueryExtensionImpl implements InsuranceRegi
             this.apply5302AMedicalTypeTags(
                 merged,
                 this.invokeOpspApproval5302A(
-                    contractId, busNo, psnNo, MedType.CHRONIC_DISEASE_OUTPATIENT.getCode()),
+                    contractId, busNo, psnNo, MedType.CHRONIC_DISEASE_OUTPATIENT.getCode(), insuplcAdmdvs),
                 MedType.CHRONIC_DISEASE_OUTPATIENT.getCode());
         } catch (RuntimeException ex) {
             log.warn("5302A 门诊慢病打标失败 contractId={} psnNo={}: {}", contractId, psnNo, ex.getMessage());
@@ -175,7 +176,7 @@ public class InsuranceRegisterBenefitQueryExtensionImpl implements InsuranceRegi
             this.apply5302AMedicalTypeTags(
                 merged,
                 this.invokeOpspApproval5302A(
-                    contractId, busNo, psnNo, MedType.SPECIAL_DISEASE_OUTPATIENT.getCode()),
+                    contractId, busNo, psnNo, MedType.SPECIAL_DISEASE_OUTPATIENT.getCode(), insuplcAdmdvs),
                 MedType.SPECIAL_DISEASE_OUTPATIENT.getCode());
         } catch (RuntimeException ex) {
             log.warn("5302A 门诊特病打标失败 contractId={} psnNo={}: {}", contractId, psnNo, ex.getMessage());
@@ -199,35 +200,40 @@ public class InsuranceRegisterBenefitQueryExtensionImpl implements InsuranceRegi
     /**
      * 调用平台【5301】人员慢特病备案查询。
      *
-     * @param contractId 合同主键
-     * @param busNo      合同 bus_no
-     * @param psnNo      人员编号
+     * @param contractId     合同主键
+     * @param busNo          合同 bus_no
+     * @param psnNo          人员编号
+     * @param insuplcAdmdvs  参保地医保区划（跨省必传）
      * @return 平台行结果
      */
-    private MedicalInfoQueryResult invokeOpspFiling5301(Long contractId, String busNo, String psnNo) {
+    private MedicalInfoQueryResult invokeOpspFiling5301(
+        Long contractId, String busNo, String psnNo, String insuplcAdmdvs) {
         QueryOpspFiling5301Command platformRequest = new QueryOpspFiling5301Command();
         platformRequest.setContractId(contractId);
         platformRequest.setContractBusNo(busNo);
         platformRequest.setPsnNo(psnNo);
+        platformRequest.setInsuplcAdmdvs(insuplcAdmdvs);
         return med5301Invoker.invoke(platformRequest);
     }
 
     /**
      * 调用平台【5302A】门诊慢特病审批查询（按 med_type 分查）。
      *
-     * @param contractId 合同主键
-     * @param busNo      合同 bus_no
-     * @param psnNo      人员编号
-     * @param medType    140104 / 140201
+     * @param contractId     合同主键
+     * @param busNo          合同 bus_no
+     * @param psnNo          人员编号
+     * @param medType        140104 / 140201
+     * @param insuplcAdmdvs  参保地医保区划（跨省必传）
      * @return 平台行结果
      */
     private MedicalInfoQueryResult invokeOpspApproval5302A(
-        Long contractId, String busNo, String psnNo, String medType) {
+        Long contractId, String busNo, String psnNo, String medType, String insuplcAdmdvs) {
         QueryOpspApproval5302ACommand platformRequest = new QueryOpspApproval5302ACommand();
         platformRequest.setContractId(contractId);
         platformRequest.setContractBusNo(busNo);
         platformRequest.setPsnNo(psnNo);
         platformRequest.setMedType(medType);
+        platformRequest.setInsuplcAdmdvs(insuplcAdmdvs);
         return med5302AInvoker.invoke(platformRequest);
     }
 
@@ -393,7 +399,7 @@ public class InsuranceRegisterBenefitQueryExtensionImpl implements InsuranceRegi
         // ① 平台就诊映射（2201 之后最完整）。
         InsuranceOpspFilingEncounterSnapshot fromMap = resolveOpspFromPlatformMap(encounterId, tenantId);
         if (fromMap != null) {
-            return fromMap;
+            return enrichOpspFilingInsuplcIfMissing(fromMap, encounterId, tenantId);
         }
         // ② 门诊预结算快照（挂号费/诊间医保预结算后）。
         InsuranceOpspFilingEncounterSnapshot fromPreSettle = resolveOpspFromPreSettle(encounterId, tenantId);
@@ -402,6 +408,26 @@ public class InsuranceRegisterBenefitQueryExtensionImpl implements InsuranceRegi
         }
         // ③ 读卡缓存：挂号读卡已写 yb_person_cache，但自费挂号费未触发 2201 时仍可查 5302A。
         return resolveOpspFromPersonCache(encounterId, tenantId);
+    }
+
+    /**
+     * 平台映射无参保地时，用预结算/读卡缓存补齐，供跨省 5301 出站。
+     */
+    private InsuranceOpspFilingEncounterSnapshot enrichOpspFilingInsuplcIfMissing(
+        InsuranceOpspFilingEncounterSnapshot snapshot, Long encounterId, Long tenantId) {
+        if (snapshot == null || isNotEmpty(snapshot.getInsurancePoolAreaCode())) {
+            return snapshot;
+        }
+        InsuranceOpspFilingEncounterSnapshot fromPreSettle = resolveOpspFromPreSettle(encounterId, tenantId);
+        if (fromPreSettle != null && isNotEmpty(fromPreSettle.getInsurancePoolAreaCode())) {
+            snapshot.setInsurancePoolAreaCode(fromPreSettle.getInsurancePoolAreaCode());
+            return snapshot;
+        }
+        InsuranceOpspFilingEncounterSnapshot fromCache = resolveOpspFromPersonCache(encounterId, tenantId);
+        if (fromCache != null && isNotEmpty(fromCache.getInsurancePoolAreaCode())) {
+            snapshot.setInsurancePoolAreaCode(fromCache.getInsurancePoolAreaCode());
+        }
+        return snapshot;
     }
 
     /**
@@ -601,7 +627,7 @@ public class InsuranceRegisterBenefitQueryExtensionImpl implements InsuranceRegi
             if (row.getContractId() == null || !isNotEmpty(row.getPsnNo())) {
                 continue;
             }
-            return toOpspFilingEncounterSnapshot(row.getContractId(), row.getPsnNo());
+            return toOpspFilingEncounterSnapshot(row.getContractId(), row.getPsnNo(), null);
         }
         return null;
     }
@@ -619,7 +645,7 @@ public class InsuranceRegisterBenefitQueryExtensionImpl implements InsuranceRegi
             if (row == null || row.getContractId() == null || !isNotEmpty(row.getPsnNo())) {
                 continue;
             }
-            return toOpspFilingEncounterSnapshot(row.getContractId(), row.getPsnNo());
+            return toOpspFilingEncounterSnapshot(row.getContractId(), row.getPsnNo(), row.getInsuplcAdmdvs());
         }
         return null;
     }
@@ -649,14 +675,17 @@ public class InsuranceRegisterBenefitQueryExtensionImpl implements InsuranceRegi
         if (cache == null || !isNotEmpty(cache.getPsnNo())) {
             return null;
         }
-        return toOpspFilingEncounterSnapshot(contract.getId(), cache.getPsnNo());
+        return toOpspFilingEncounterSnapshot(contract.getId(), cache.getPsnNo(), cache.getInsuplcAdmdvs());
     }
 
     private static InsuranceOpspFilingEncounterSnapshot toOpspFilingEncounterSnapshot(
-        Long contractId, String psnNo) {
+        Long contractId, String psnNo, String insurancePoolAreaCode) {
         InsuranceOpspFilingEncounterSnapshot snapshot = new InsuranceOpspFilingEncounterSnapshot();
         snapshot.setContractId(contractId);
         snapshot.setPsnNo(psnNo.trim());
+        if (isNotEmpty(insurancePoolAreaCode)) {
+            snapshot.setInsurancePoolAreaCode(insurancePoolAreaCode.trim());
+        }
         return snapshot;
     }
 
@@ -669,6 +698,7 @@ public class InsuranceRegisterBenefitQueryExtensionImpl implements InsuranceRegi
         platformRequest.setContractBusNo(contractReader.requireContractBusNo(contract));
         platformRequest.setPsnNo(command.getPsnNo());
         platformRequest.setCumYm(command.getCumYm());
+        platformRequest.setInsuplcAdmdvs(command.getInsurancePoolAreaCode());
         return toCumulativeResult(med5206Invoker.invoke(platformRequest));
     }
 

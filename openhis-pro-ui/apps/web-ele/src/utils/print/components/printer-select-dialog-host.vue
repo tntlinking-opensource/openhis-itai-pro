@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import type { HiprintPrinterItem } from '../fetch-printer-list';
-import type { InvFormPaperKind } from '../form-print-preference';
+import type { InvFormPaperKind, InvFormTripleSpec } from '../form-print-preference';
 
 import { onMounted, ref } from 'vue';
 
-import { INV_FORM_PAPER_KIND } from '../form-print-preference';
+import { INV_FORM_PAPER_KIND, INV_FORM_TRIPLE_SPEC } from '../form-print-preference';
 import PrinterSelectDialog from './printer-select-dialog.vue';
 
 defineOptions({ name: 'PrinterSelectDialogHost' });
@@ -19,6 +19,7 @@ interface Props {
   loadPrinters: () => Promise<HiprintPrinterItem[]>;
   showPaperKind?: boolean;
   initialPaperKind?: InvFormPaperKind;
+  initialTripleSpec?: InvFormTripleSpec;
   showSkipPrompt?: boolean;
 }
 
@@ -31,6 +32,7 @@ const props = withDefaults(defineProps<Props>(), {
   unavailableHint: '',
   showPaperKind: false,
   initialPaperKind: INV_FORM_PAPER_KIND.triple,
+  initialTripleSpec: INV_FORM_TRIPLE_SPEC.third,
   showSkipPrompt: true,
 });
 
@@ -41,6 +43,7 @@ const emit = defineEmits<{
       paperKind?: InvFormPaperKind;
       printerName: string;
       skipPrompt: boolean;
+      tripleSpec?: InvFormTripleSpec;
     },
   ];
 }>();
@@ -72,6 +75,7 @@ function handleConfirm(payload: {
   paperKind?: InvFormPaperKind;
   printerName: string;
   skipPrompt: boolean;
+  tripleSpec?: InvFormTripleSpec;
 }): void {
   visible.value = false;
   emit('confirm', payload);
@@ -102,6 +106,7 @@ onMounted(() => {
     :printers="printers"
     :show-paper-kind="showPaperKind"
     :initial-paper-kind="initialPaperKind"
+    :initial-triple-spec="initialTripleSpec"
     :show-skip-prompt="showSkipPrompt"
     @confirm="handleConfirm"
     @cancel="handleCancel"

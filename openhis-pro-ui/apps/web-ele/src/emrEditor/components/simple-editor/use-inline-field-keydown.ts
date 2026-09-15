@@ -24,6 +24,7 @@ import {
   scheduleIslandCaretRestore,
   snapshotIslandDeleteSelection,
   syncContentEditableFromValue,
+  moveContentEditableCaretHomeEnd,
 } from './inline-contenteditable-caret';
 
 /** keydown 已处理删键时，跳过同一次按键的 beforeinput，避免连删两字 */
@@ -94,9 +95,7 @@ function handleIslandUndoRedo(
     const next = String(node.attrs.value ?? '');
     const caretRaw = contentEditableCaretOffset(el);
     const caret = caretRaw >= 0 ? Math.min(caretRaw, next.length) : next.length;
-    requestAnimationFrame(() => {
-      syncContentEditableFromValue(el, next, caret);
-    });
+    syncContentEditableFromValue(el, next, caret);
   } else if (node && (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) {
     const next = String(node.attrs.value ?? '');
     el.value = next;
@@ -219,6 +218,27 @@ export function deleteIslandContentEditableChar(
     }
   }
   scheduleIslandCaretRestore(el, next, from);
+  return true;
+}
+
+/**
+ * beforeinput 普通字符（含 Shift 符号、标点）：部分环境 insertText 不更新 DOM，
+ * 或随后 attrs 回写把 DOM 盖掉；统一手插并走 input 回写。
+ */
+export function handleIslandContentEditableBeforeInputText(
+  el: HTMLElement,
+  e: InputEvent,
+  onCommitted: () => void,
+): boolean {
+  if (e.isComposing) return false;
+  const t = e.inputType;
+  if (t !== 'insertText' && t !== 'insertReplacementText') return false;
+  const data = e.data;
+  if (data == null || data === '') return false;
+  e.preventDefault();
+  e.stopPropagation();
+  insertPlainTextAtCaret(data);
+  onCommitted();
   return true;
 }
 
@@ -392,13 +412,24 @@ export function handleInlineFieldKeydown(
       return;
     }
 
+    if (e.key === 'Home' || e.key === 'End') {
+      // 原生 End 在 inline contenteditable + 垫片下常把 Range 折到文首，再打字就插到开头
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      moveContentEditableCaretHomeEnd(
+        el,
+        e.key === 'Home' ? 'home' : 'end',
+        e.ctrlKey || e.metaKey,
+      );
+      return;
+    }
+
     if (
       e.key === 'ArrowLeft' ||
       e.key === 'ArrowRight' ||
       e.key === 'ArrowUp' ||
-      e.key === 'ArrowDown' ||
-      e.key === 'Home' ||
-      e.key === 'End'
+      e.key === 'ArrowDown'
     ) {
       clearPinnedIslandCaret(el);
     }

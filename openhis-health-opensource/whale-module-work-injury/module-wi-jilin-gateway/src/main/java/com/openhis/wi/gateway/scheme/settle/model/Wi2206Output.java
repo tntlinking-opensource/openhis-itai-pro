@@ -40,4 +40,8 @@ public class Wi2206Output {
     /** 2207 出参 setl_id；2206 通常为空。 */
     @JSONField(name = "setl_id")
     private String setlId;
+
+    /** 结算时间 yyyyMMddHHmmss（2207 出参；对账按 setl_time 归日）。 */
+    @JSONField(name = "setl_time")
+    private String setlTime;
 }

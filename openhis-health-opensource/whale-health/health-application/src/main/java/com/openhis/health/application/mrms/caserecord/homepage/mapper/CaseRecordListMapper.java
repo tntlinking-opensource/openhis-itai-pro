@@ -138,10 +138,12 @@ public class CaseRecordListMapper {
         dto.setAgeText(context.getAgeText());
         dto.setBedName(context.getBedName());
         dto.setWardName(context.getWardName());
+        // 病区主键：体温单/护理记录门禁「管辖病区含患者病区可写」
+        dto.setWardId(context.getWardId());
         dto.setAdmTime(context.getStartTime());
         dto.setDscgTime(context.getEndTime());
         dto.setAdmCatyName(context.getOrganizationName());
-        // 入院科室主键：临床门禁「本科室大夫可写」
+        // 入院科室主键：病历/医嘱「本科室可写」；体温单/护理记录可改走 wardId
         dto.setOrganizationId(context.getOrganizationId());
         dto.setChfdrName(context.getAttendingDoctorName());
         // 主诊断：入院主诊断快照名称

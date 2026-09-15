@@ -44,7 +44,7 @@ public class Med5206Invoker implements Med5206QueryInvoker {
             busNo,
             ChsInfNo.PERSON_CUM_QUERY,
             MedPlatformInputAssembler.assemble5206(command),
-            medicalInfoInvokeSupport.buildInvokeContext());
+            medicalInfoInvokeSupport.buildInvokeContext(command));
         ChsPlatformResponseSupport.requireSuccess(body, ChsInfNo.PERSON_CUM_QUERY);
         return MedInfoListOutputParser.parse5206(body);
     }

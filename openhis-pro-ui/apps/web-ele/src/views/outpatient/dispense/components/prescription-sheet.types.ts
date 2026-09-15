@@ -30,6 +30,11 @@ export interface PrescriptionSheetLine {
   quantity: string;
   /** 规格 */
   spec: string;
+  /**
+   * 包装最小单位换算比展示（服务端拼装），如 1盒/36片。
+   * 笺面接在规格后、用法前。
+   */
+  packageSplitRatioText?: string;
   /** 特殊煎法（中药饮片） */
   dosageInstructionText?: string;
   /** 批号 */

@@ -31,9 +31,26 @@ public class CaseRecordUploadSummaryDto {
     /** 归档时间。 */
     private LocalDateTime archivedAt;
 
-    /** CHS 上传状态码。 */
+    /** CHS 上传状态码（4401）。 */
     private String chsUploadStatusCode;
 
-    /** CHS 上传失败原因摘要。 */
+    /** CHS 上传失败原因摘要（4401）。 */
     private String chsUploadError;
+
+    /**
+     * 结算清单上传标志：{@code 0}/{@code 1}/{@code 2}（4101A/4102）。
+     */
+    private String settleUploadStatusCode;
+
+    /** 结算清单最近上传错误摘要。 */
+    private String settleUploadError;
+
+    /** 4101A 平台清单流水号。 */
+    private String setlListId;
+
+    /** 医保人员编号 psn_no（结算上下文；未结算可空）。 */
+    private String psnNo;
+
+    /** 医保结算 ID setl_id（结算上下文；未结算可空）。 */
+    private String setlId;
 }

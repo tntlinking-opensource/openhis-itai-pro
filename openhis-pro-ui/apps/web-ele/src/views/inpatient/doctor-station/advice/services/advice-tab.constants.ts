@@ -19,6 +19,12 @@ export const INPATIENT_ADVICE_CATALOG_TABLE_NAMES = [
 /** 护理级别诊疗类目（ServiceRequest.category_enum / 活动定义 category_code，AS-IP-DOR-003 BR-IP-ORD-026） */
 export const INPATIENT_NURSING_LEVEL_CATEGORY_CODE = '26';
 
+/** 护理级别快捷开立固定频次：每日一次（cus_frequency.rate_code=QD；前端写死，后端透传） */
+export const INPATIENT_NURSING_LEVEL_RATE_CODE = 'QD';
+
+/** 护理级别快捷开立频次展示名（与 INPATIENT_NURSING_LEVEL_RATE_CODE 对应） */
+export const INPATIENT_NURSING_LEVEL_RATE_LABEL = '每日一次';
+
 /** 嘱托诊疗类目（ServiceRequest.category_enum / 活动定义 category_code，AS-IP-DOR-003 BR-IP-ORD-028） */
 export const INPATIENT_ENTRUST_CATEGORY_CODE = '52';
 

@@ -41,7 +41,6 @@ import com.openhis.health.domain.share.constants.InventoryDepartmentConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.LocationStatus;
-import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
 import com.openhis.health.domain.share.enums.SupplyStatus;
 import com.openhis.health.domain.share.enums.SupplyType;
 import com.openhis.health.domain.share.utils.EnumUtil;
@@ -136,24 +135,22 @@ public class InventoryDepartmentGainLossAppService {
      * @return 表单初始化选项集合
      */
     public LoadGainLossFormInitResponse loadGainLossFormInit(LoadGainLossFormInitRequest request) {
-        // Gate：会话机构上下文须存在，否则无法按管辖收窄库位与人员
-        // Pre：拉取启用库位/人员并经管辖 Gate 收窄
-        Long resolvedOrg = managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
+        // Gate：会话机构上下文须存在，否则无法按管辖收窄库位
+        // Pre：拉取启用库位并经管辖 Gate 收窄；经手人取全体在职医务人员（不限药师/库管）
+        managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
             ErrorCodeConstants.DEP_GL_101, "机构上下文缺失");
         try {
             List<Location> departmentPharmacies = locationQueryService.listAllActiveDepartmentPharmacies();
             List<Location> gatedDepartmentPharmacies = this.managedLocationIdsResolver.narrowActiveLocationsByManaged(departmentPharmacies);
-            List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
-                WhalePlatformRoleCodeConstants.ROLE_PHARMACIST, resolvedOrg);
-            List<Practitioner> warehouseKeepers = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
-                WhalePlatformRoleCodeConstants.ROLE_WAREHOUSE, resolvedOrg);
-            // Asm：下拉选项写入初始化响应
+            List<Practitioner> handlers =
+                this.practitionerRoleScopeLoader.listAllActivePractitionersForInventoryDocHandlerSelect();
+            // Asm：经手人写入 pharmacistOptions（前端与库管选项合并；库管位留空）
             return gainLossMapper.toLoadGainLossFormInitResponse(
                 gainLossMapper.toOptionDtoListFromLocations(gatedDepartmentPharmacies),
                 gainLossMapper.toOptionDtoListInboundItemTableTypes(),
                 gainLossMapper.toOptionDtoListSupplyStatuses(),
-                gainLossMapper.toOptionDtoListFromPractitioners(pharmacists),
-                gainLossMapper.toOptionDtoListFromPractitioners(warehouseKeepers));
+                gainLossMapper.toOptionDtoListFromPractitioners(handlers),
+                List.of());
         } catch (RuntimeException ex) {
             log.warn("loadGainLossFormInit failed", ex);
             throw new BusinessException(ErrorCodeConstants.DEP_GL_101, "损益页主数据加载失败");

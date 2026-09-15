@@ -4,6 +4,7 @@
  */
 package com.openhis.health.domain.mrms.caserecord.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openhis.health.domain.mrms.caserecord.entity.CaseRecord;
 import com.openhis.health.domain.mrms.caserecord.entity.CaseRecordHomepage;
@@ -13,6 +14,7 @@ import com.openhis.health.domain.share.enums.FieldFillSource;
 import com.openhis.health.domain.share.enums.HomepageDiagType;
 import com.openhis.health.domain.mrms.caserecord.command.HomepageSaveCommand;
 import com.openhis.health.domain.mrms.caserecord.support.CaseRecordAutoFillSupport;
+import com.openhis.health.domain.mrms.caserecord.support.CaseRecordIdempotentPersistSupport;
 import com.openhis.health.domain.mrms.caserecord.vo.DiagnosisLineSnapshot;
 import com.openhis.health.domain.mrms.caserecord.vo.EncounterSnapshot;
 import com.openhis.health.domain.mrms.caserecord.vo.FeeSummarySnapshot;
@@ -27,17 +29,19 @@ import com.openhis.health.domain.mrms.caserecord.repository.HomepageDiagnosisRep
 import com.openhis.health.domain.mrms.caserecord.repository.HomepageProcedureRepository;
 import com.openhis.health.domain.share.constants.MrmsErrorCodes;
 import com.openhis.health.domain.share.utils.FieldSourcesJsonUtil;
-import com.openhis.health.domain.share.utils.HomepageExtensionJsonUtil;
 import com.openhis.health.domain.share.utils.InpatientStayDaysCalculator;
+import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -59,10 +63,14 @@ public class CaseRecordHomepageDomainService {
     private final HomepageDiagnosisRepository diagnosisRepository;
     private final HomepageProcedureRepository procedureRepository;
     private final CaseRecordAutoFillSupport caseRecordAutoFillSupport;
+    private final CaseRecordIdempotentPersistSupport idempotentPersistSupport;
     private final ObjectMapper objectMapper;
 
     /**
      * 获取或创建首页；不存在时初始化空首页与 field_sources_json。
+     *
+     * <p>并发 bootstrap/loadPage 可能同时懒建同一 {@code case_record_id} 首页；后到者撞
+     * {@code uk_mrms_homepage_case} 后回读，避免事务 aborted。</p>
      *
      * @param caseRecordId 病案主档主键
      * @param tenantId 租户主键（创建路径必填）
@@ -71,16 +79,30 @@ public class CaseRecordHomepageDomainService {
      */
     @Transactional(rollbackFor = Exception.class)
     public CaseRecordHomepage ensureHomepage(Long caseRecordId, Long tenantId, Long operatorId) {
-        return homepageRepository.findByCaseRecordIdAndIsDeletedFalse(caseRecordId)
-                .orElseGet(() -> {
-                    // 懒创建路径须带租户
-                    if (tenantId == null) {
-                        throw new BusinessException(MrmsErrorCodes.CASE_RECORD_NOT_FOUND, "创建首页时租户不能为空");
-                    }
-                    CaseRecordHomepage homepage = new CaseRecordHomepage();
-                    homepage.initEmpty(caseRecordId, tenantId, operatorId);
-                    return homepageRepository.save(homepage);
-                });
+        // Pre：已有首页直接返回
+        Optional<CaseRecordHomepage> existing =
+                homepageRepository.findByCaseRecordIdAndIsDeletedFalse(caseRecordId);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+        // 懒创建路径须带租户
+        if (tenantId == null) {
+            throw new BusinessException(MrmsErrorCodes.CASE_RECORD_NOT_FOUND, "创建首页时租户不能为空");
+        }
+        // Cmd：空壳首页；并发撞唯一键则回读胜出方
+        CaseRecordHomepage homepage = new CaseRecordHomepage();
+        homepage.initEmpty(caseRecordId, tenantId, operatorId);
+        try {
+            // 独立事务 flush：并发撞 uk_mrms_homepage_case 时仅新建事务回滚
+            return idempotentPersistSupport.insertHomepageNew(homepage);
+        } catch (DataIntegrityViolationException integrityViolationException) {
+            Optional<CaseRecordHomepage> raced =
+                    homepageRepository.findByCaseRecordIdAndIsDeletedFalse(caseRecordId);
+            if (raced.isPresent()) {
+                return raced.get();
+            }
+            throw integrityViolationException;
+        }
     }
 
     /**
@@ -105,7 +127,7 @@ public class CaseRecordHomepageDomainService {
     }
 
     /**
-     * 保存首页标量、扩展与子表；子表非 null 时全量替换并标记 manual 来源。
+     * 保存首页标量与子表；子表非 null 时全量替换并标记 manual 来源。
      *
      * @param command 保存命令
      * @return 保存后的首页
@@ -121,7 +143,6 @@ public class CaseRecordHomepageDomainService {
         Map<String, String> sources = FieldSourcesJsonUtil.parse(objectMapper, homepage.getFieldSourcesJson());
         // Cmd：标量人工修订写入并 bump 版本
         homepage.applyManualFields(command, sources);
-        homepage.setExtensionJson(mergeExtension(homepage.getExtensionJson(), command.getExtension()));
         // 客户端传入诊断子表时标记 manual 来源，后续自动取值不得覆盖
         if (command.getDiagnoses() != null) {
             sources.put("diagnoses", FieldFillSource.MANUAL.getCode());
@@ -149,7 +170,8 @@ public class CaseRecordHomepageDomainService {
      * 从 HIS 读侧快照合并首页字段，尊重 {@code field_sources_json} 中 manual 标记。
      *
      * @param record 病案主档
-     * @param sections 合并分区（{@code all/basic/inpatient/staff/diagnosis/procedure/fee}）
+     * @param sections 合并分区（{@code all/basic/inpatient/staff/diagnosis/procedure}；
+     *                 {@code fee} 须显式传入，不包含在 {@code all} 内）
      * @param forceOverwrite 是否强制覆盖 manual 字段
      * @param operatorId 操作人
      * @return 合并后的首页
@@ -191,11 +213,138 @@ public class CaseRecordHomepageDomainService {
                 sources.put("procedures", FieldFillSource.AUTO.getCode());
             }
         }
-        // 费用：总额 + 分项写入 extension_json（ICU/输血本期不自动取值）
-        if (all || containsSection(sections, "fee")) {
+        // 费用：仅显式 fee 段重算落库；「all / 全部导入」不得覆盖费用快照（须点「重新统计」）
+        if (containsSection(sections, "fee")) {
             mergeFeeSection(record, homepage, sources, forceOverwrite);
         }
         homepage.setFieldSourcesJson(FieldSourcesJsonUtil.toJson(objectMapper, sources));
+        homepage.setUpdatedAt(LocalDateTime.now());
+        homepage.setUpdatedBy(operatorId);
+        return homepageRepository.save(homepage);
+    }
+
+    /**
+     * 首页是否已有费用快照（总额或分项 JSON 任一非空即视为已统计）。
+     *
+     * @param homepage 首页实体；可空
+     * @return true 表示打开页应只读快照、不得按目录现查覆盖
+     */
+    public boolean hasFeeSnapshot(CaseRecordHomepage homepage) {
+        if (homepage == null) {
+            return false;
+        }
+        // 总额已落库
+        if (homepage.getMedfeeSumamt() != null) {
+            return true;
+        }
+        String itemsJson = trimToNull(homepage.getFeeItemsJson());
+        // 分项 JSON 已落库
+        if (itemsJson != null) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 从首页实体还原费用快照 VO（供 DTO.fees / 4401 读侧）。
+     *
+     * @param homepage 首页实体
+     * @return 快照；无快照时 null
+     */
+    public FeeSummarySnapshot readFeeSnapshot(CaseRecordHomepage homepage) {
+        // 无实体或未统计：调用方走补种或空 fees
+        if (!this.hasFeeSnapshot(homepage)) {
+            return null;
+        }
+        FeeSummarySnapshot snap = new FeeSummarySnapshot();
+        snap.setMedfeeSumamt(homepage.getMedfeeSumamt());
+        snap.setSelfpayAmt(homepage.getSelfpayAmt());
+        Map<String, BigDecimal> items = this.parseFeeItemsJson(homepage.getFeeItemsJson());
+        snap.setFeeItems(items);
+        return snap;
+    }
+
+    /**
+     * 按当前 HIS 账单重算费用并落库（「重新统计」权威写路径）。
+     *
+     * <p>分项映射取目录<strong>当前</strong>{@code mr_settlement_type_code}；覆盖旧快照。</p>
+     *
+     * @param record     病案主档（取 encounterId）
+     * @param homepage   首页实体
+     * @param operatorId 操作人
+     * @return 保存后的首页
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public CaseRecordHomepage refreshFeeSnapshot(
+            CaseRecord record, CaseRecordHomepage homepage, Long operatorId) {
+        // Gate：主档与首页必填
+        if (record == null || homepage == null) {
+            throw new BusinessException(MrmsErrorCodes.CASE_RECORD_NOT_FOUND, "重算费用快照时病案或首页不能为空");
+        }
+        // 归档冻结后禁止改费用快照
+        homepage.assertEditable();
+        // Pre：按当前目录结算类型汇总账单
+        FeeSummarySnapshot snap = caseRecordAutoFillSupport.sumFeeSummary(record.getEncounterId());
+        // Cmd：写入实体字段
+        this.applyFeeSnapshotToEntity(homepage, snap);
+        homepage.setUpdatedAt(LocalDateTime.now());
+        homepage.setUpdatedBy(operatorId);
+        return homepageRepository.save(homepage);
+    }
+
+    /**
+     * 打开页/保存后：无费用快照时按当前账单补种；已有总额但缺自付时仅补自付（不覆盖分项）。
+     *
+     * @param record     病案主档
+     * @param homepage   首页实体
+     * @param operatorId 操作人
+     * @return 可能已补种/补自付后的首页
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public CaseRecordHomepage ensureFeeSnapshotSeeded(
+            CaseRecord record, CaseRecordHomepage homepage, Long operatorId) {
+        // 冻结首页：只读，不补种
+        if (homepage != null && Boolean.TRUE.equals(homepage.getFrozen())) {
+            return homepage;
+        }
+        // 完全无快照：全量补种
+        if (!this.hasFeeSnapshot(homepage)) {
+            return this.refreshFeeSnapshot(record, homepage, operatorId);
+        }
+        // 存量常见：有总额无自付（V26 对医保留空）→ 只补 selfpay，不改分项
+        if (homepage.getMedfeeSumamt() != null && homepage.getSelfpayAmt() == null) {
+            return this.fillMissingSelfpayAmt(record, homepage, operatorId);
+        }
+        return homepage;
+    }
+
+    /**
+     * 仅补写自付金额：按当前结算/医保回执解析；解析不到则保持空、不改其它费用列。
+     *
+     * @param record     病案主档
+     * @param homepage   已有费用快照的首页
+     * @param operatorId 操作人
+     * @return 保存后的首页
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public CaseRecordHomepage fillMissingSelfpayAmt(
+            CaseRecord record, CaseRecordHomepage homepage, Long operatorId) {
+        // Gate：主档与首页必填
+        if (record == null || homepage == null) {
+            throw new BusinessException(MrmsErrorCodes.CASE_RECORD_NOT_FOUND, "补自付时病案或首页不能为空");
+        }
+        // 已有自付：幂等
+        if (homepage.getSelfpayAmt() != null) {
+            return homepage;
+        }
+        // Pre：现查汇总（只用其 selfpay；分项/总额不覆盖）
+        FeeSummarySnapshot snap = caseRecordAutoFillSupport.sumFeeSummary(record.getEncounterId());
+        // 仍解析不到：保持空，避免误写 0
+        if (snap == null || snap.getSelfpayAmt() == null) {
+            return homepage;
+        }
+        // Cmd：只落自付列
+        homepage.setSelfpayAmt(MonetaryAmountSupport.scaleSettle(snap.getSelfpayAmt()));
         homepage.setUpdatedAt(LocalDateTime.now());
         homepage.setUpdatedBy(operatorId);
         return homepageRepository.save(homepage);
@@ -300,13 +449,21 @@ public class CaseRecordHomepageDomainService {
         homepageRepository.save(homepage);
     }
 
-    /** 人工保存路径：软删旧行后重建诊断子表。 */
+    /**
+     * 人工保存路径：软删旧诊断行后按入参全量重建（含病情/确诊/说明/诊断医生/上传扩列）。
+     *
+     * @param caseRecordId 病案主档主键
+     * @param tenantId     租户主键
+     * @param lines        入参诊断行；null/空则仅软删
+     */
     private void replaceDiagnoses(Long caseRecordId, Long tenantId, List<HomepageDiagnosis> lines) {
         softDeleteDiagnoses(caseRecordId);
+        // 无新行：仅软删后返回
         if (lines == null || lines.isEmpty()) {
             return;
         }
         List<HomepageDiagnosis> toSave = new ArrayList<>();
+        // 全量重建：不复用旧 id，避免与软删行冲突
         for (HomepageDiagnosis line : lines) {
             HomepageDiagnosis entity = new HomepageDiagnosis();
             entity.setCaseRecordId(caseRecordId);
@@ -316,6 +473,13 @@ public class CaseRecordHomepageDomainService {
             entity.setDiagCode(line.getDiagCode());
             entity.setDiagName(line.getDiagName());
             entity.setAdmCondCode(line.getAdmCondCode());
+            entity.setOutIllStatusCode(line.getOutIllStatusCode());
+            entity.setConfirmTime(line.getConfirmTime());
+            entity.setDiagRemark(line.getDiagRemark());
+            // 出院诊断扩列：诊断医生主键+姓名、是否上送医保
+            entity.setConfirmDrId(line.getConfirmDrId());
+            entity.setConfirmDrName(line.getConfirmDrName());
+            entity.setNeedYbUp(line.getNeedYbUp());
             entity.setMaindiagFlag(line.getMaindiagFlag());
             entity.setValiFlag("1");
             entity.setCreatedAt(LocalDateTime.now());
@@ -404,8 +568,8 @@ public class CaseRecordHomepageDomainService {
         putIfAllowed(homepage, sources, "naty_code", patient.getNatyCode(), force);
         putIfAllowed(homepage, sources, "mrg_stas_code", patient.getMaritalStatusCode(), force);
         putIfAllowed(homepage, sources, "prfs_code", patient.getPrfsCode(), force);
-        // 工作单位写入扩展，供前端 emprAddr 回显
-        putExtensionIfAllowed(homepage, sources, "emprAddr", patient.getWorkCompany(), force);
+        // 工作单位写入正式列 empr_addr
+        putIfAllowed(homepage, sources, "empr_addr", patient.getWorkCompany(), force);
     }
 
     /** 合并住院信息分区（adm_encounter + 转科摘要）。 */
@@ -429,11 +593,11 @@ public class CaseRecordHomepageDomainService {
         putIfAllowed(homepage, sources, "adm_caty_name", enc.getAdmCatyName(), force);
         putIfAllowed(homepage, sources, "dscg_caty_code", enc.getDscgCatyCode(), force);
         putIfAllowed(homepage, sources, "dscg_caty_name", enc.getDscgCatyName(), force);
-        // 病区床位落 extension，与前端 admWard/admBed 对齐
-        putExtensionIfAllowed(homepage, sources, "admWard", enc.getAdmWardName(), force);
-        putExtensionIfAllowed(homepage, sources, "admBed", enc.getAdmBedName(), force);
-        putExtensionIfAllowed(homepage, sources, "dscgWard", enc.getDscgWardName(), force);
-        putExtensionIfAllowed(homepage, sources, "dscgBed", enc.getDscgBedName(), force);
+        // 病区床位落正式列，与前端 admWard/admBed 对齐
+        putIfAllowed(homepage, sources, "adm_ward", enc.getAdmWardName(), force);
+        putIfAllowed(homepage, sources, "adm_bed", enc.getAdmBedName(), force);
+        putIfAllowed(homepage, sources, "dscg_ward", enc.getDscgWardName(), force);
+        putIfAllowed(homepage, sources, "dscg_bed", enc.getDscgBedName(), force);
         // 出入院时间齐全时计算住院天数（即进不计出：入院日计、出院日不计；同日至少 1）
         if (enc.getAdmTime() != null && enc.getDscgTime() != null) {
             Integer iptDays = InpatientStayDaysCalculator.calcDischargedStayDays(
@@ -487,29 +651,117 @@ public class CaseRecordHomepageDomainService {
     }
 
     /**
-     * 合并费用分区：医疗费总额与分项写入 extension_json。
+     * 费用分区：按当前账单与目录病案结算类型重算并写入首页费用快照列。
+     *
+     * <p>目录 {@code mr_settlement_type_code} 变更后，仅本分区（「重新统计」）会覆盖快照；
+     * 打开页读 {@link #readFeeSnapshot}，不点则不变。</p>
      *
      * @param record   病案
-     * @param homepage 首页
-     * @param sources  字段来源
-     * @param force    是否强制覆盖 manual
+     * @param homepage 首页（写入 medfee/selfpay/fee_items_json）
+     * @param sources  字段来源（标记 fee 段为 auto）
+     * @param force    强制覆盖标志（费用无 manual 锁，忽略）
      */
     private void mergeFeeSection(
             CaseRecord record,
             CaseRecordHomepage homepage,
             Map<String, String> sources,
             boolean force) {
-        FeeSummarySnapshot fee = caseRecordAutoFillSupport.sumFeeSummary(record.getEncounterId());
-        if (fee == null) {
+        // Pre：现查汇总（仅写库路径调用，非打开页只读）
+        FeeSummarySnapshot snap = caseRecordAutoFillSupport.sumFeeSummary(record.getEncounterId());
+        // Cmd：覆盖快照列
+        this.applyFeeSnapshotToEntity(homepage, snap);
+        // Asm：标记费用段为自动取值，便于审计
+        if (sources != null) {
+            sources.put("fee", FieldFillSource.AUTO.getCode());
+        }
+    }
+
+    /**
+     * 将费用汇总 VO 写入首页实体（结算刻度 2 位；分项 JSON）。
+     *
+     * @param homepage 首页实体
+     * @param snap     汇总；null 时清零总额并写空分项对象
+     */
+    private void applyFeeSnapshotToEntity(CaseRecordHomepage homepage, FeeSummarySnapshot snap) {
+        if (homepage == null) {
             return;
         }
-        putExtensionIfAllowed(homepage, sources, MrmsConstants.EXT_MEDFEE_SUMAMT, fee.getMedfeeSumamt(), force);
-        Map<String, java.math.BigDecimal> items = fee.getFeeItems();
-        if (items == null || items.isEmpty()) {
+        // 无汇总：总额/自付置 0，分项写齐 28 键为 0，避免 null 被当成「未统计」
+        if (snap == null) {
+            homepage.setMedfeeSumamt(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
+            homepage.setSelfpayAmt(null);
+            homepage.setFeeItemsJson(this.toFeeItemsJson(new LinkedHashMap<>()));
             return;
         }
-        for (Map.Entry<String, java.math.BigDecimal> entry : items.entrySet()) {
-            putExtensionIfAllowed(homepage, sources, entry.getKey(), entry.getValue(), force);
+        BigDecimal medfee = snap.getMedfeeSumamt();
+        if (medfee == null) {
+            medfee = BigDecimal.ZERO;
+        }
+        homepage.setMedfeeSumamt(MonetaryAmountSupport.scaleSettle(medfee));
+        // 自付可空（未结算/无回执）
+        if (snap.getSelfpayAmt() == null) {
+            homepage.setSelfpayAmt(null);
+        } else {
+            homepage.setSelfpayAmt(MonetaryAmountSupport.scaleSettle(snap.getSelfpayAmt()));
+        }
+        Map<String, BigDecimal> items = snap.getFeeItems();
+        if (items == null) {
+            items = new LinkedHashMap<>();
+        }
+        // 分项金额统一结算刻度后再序列化
+        Map<String, BigDecimal> scaled = new LinkedHashMap<>();
+        for (Map.Entry<String, BigDecimal> entry : items.entrySet()) {
+            if (entry.getKey() == null) {
+                continue;
+            }
+            BigDecimal amt = entry.getValue();
+            if (amt == null) {
+                amt = BigDecimal.ZERO;
+            }
+            scaled.put(entry.getKey(), MonetaryAmountSupport.scaleSettle(amt));
+        }
+        homepage.setFeeItemsJson(this.toFeeItemsJson(scaled));
+    }
+
+    /**
+     * 分项 Map → JSONB 文本。
+     *
+     * @param items 分项；可空
+     * @return JSON 对象文本；序列化失败时抛业务异常
+     */
+    private String toFeeItemsJson(Map<String, BigDecimal> items) {
+        try {
+            Map<String, BigDecimal> safe = items;
+            if (safe == null) {
+                safe = new LinkedHashMap<>();
+            }
+            return objectMapper.writeValueAsString(safe);
+        } catch (Exception ex) {
+            throw new BusinessException(MrmsErrorCodes.HOMEPAGE_SUBMIT_VALIDATION, "费用分项快照序列化失败");
+        }
+    }
+
+    /**
+     * JSONB 文本 → 分项 Map。
+     *
+     * @param json 列存 JSON；空白返回空 Map
+     * @return 分项 Map
+     */
+    private Map<String, BigDecimal> parseFeeItemsJson(String json) {
+        String text = trimToNull(json);
+        if (text == null) {
+            return new LinkedHashMap<>();
+        }
+        try {
+            Map<String, BigDecimal> parsed =
+                    objectMapper.readValue(text, new TypeReference<LinkedHashMap<String, BigDecimal>>() {
+                    });
+            if (parsed == null) {
+                return new LinkedHashMap<>();
+            }
+            return parsed;
+        } catch (Exception ex) {
+            throw new BusinessException(MrmsErrorCodes.HOMEPAGE_SUBMIT_VALIDATION, "费用分项快照解析失败");
         }
     }
 
@@ -757,40 +1009,14 @@ public class CaseRecordHomepageDomainService {
             case "atddr_practitioner_id" -> homepage.setAtddrPractitionerId((Long) value);
             case "ipt_dr_name" -> homepage.setIptDrName(String.valueOf(value));
             case "resp_nurs_name" -> homepage.setRespNursName(String.valueOf(value));
+            case "empr_addr" -> homepage.setEmprAddr(String.valueOf(value));
+            case "adm_ward" -> homepage.setAdmWard(String.valueOf(value));
+            case "adm_bed" -> homepage.setAdmBed(String.valueOf(value));
+            case "dscg_ward" -> homepage.setDscgWard(String.valueOf(value));
+            case "dscg_bed" -> homepage.setDscgBed(String.valueOf(value));
             default -> {
             }
         }
-    }
-
-    /**
-     * 自动取值写入扩展 JSON 键（病区床位等无独立列字段）；尊重 manual 锁。
-     *
-     * @param homepage 首页
-     * @param sources  字段来源
-     * @param extKey   extension 键（与前端 HOMEPAGE_EXTENSION_KEYS 对齐）
-     * @param newVal   新值
-     * @param force    是否强制覆盖 manual
-     */
-    private void putExtensionIfAllowed(
-            CaseRecordHomepage homepage,
-            Map<String, String> sources,
-            String extKey,
-            Object newVal,
-            boolean force) {
-        // 空值不写入扩展
-        if (newVal == null) {
-            return;
-        }
-        String sourceKey = "ext:" + extKey;
-        String source = sources.get(sourceKey);
-        // manual 锁定且非强制覆盖时保留
-        if (!force && FieldFillSource.MANUAL.getCode().equals(source)) {
-            return;
-        }
-        Map<String, Object> patch = new HashMap<>();
-        patch.put(extKey, String.valueOf(newVal));
-        homepage.setExtensionJson(mergeExtension(homepage.getExtensionJson(), patch));
-        sources.put(sourceKey, FieldFillSource.AUTO.getCode());
     }
 
     /** 判断合并请求是否包含指定分区 code。 */
@@ -804,23 +1030,5 @@ public class CaseRecordHomepageDomainService {
             }
         }
         return false;
-    }
-
-    /** 浅合并 extension_json 键值（incoming 覆盖同 key）。 */
-    private String mergeExtension(String existingJson, Map<String, Object> incoming) {
-        if (incoming == null || incoming.isEmpty()) {
-            return existingJson;
-        }
-        Map<String, Object> merged = new HashMap<>();
-        if (existingJson != null && !existingJson.isBlank()) {
-            // 扩展 JSON 损坏时以本次入参为准重建
-            merged.putAll(HomepageExtensionJsonUtil.parse(objectMapper, existingJson));
-        }
-        merged.putAll(incoming);
-        String serialized = HomepageExtensionJsonUtil.toJson(objectMapper, merged);
-        if (serialized != null) {
-            return serialized;
-        }
-        return existingJson;
     }
 }

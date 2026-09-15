@@ -50,6 +50,7 @@ import com.openhis.health.application.inventory.warehouse.support.ProductDefinit
 import com.openhis.health.application.shared.pricing.CatalogReferencePriceSyncSupport;
 import com.openhis.health.application.shared.pricing.LotNumberPurchasePriceConsistencyGate;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.application.shared.product.MedicationPackageSplitQuantityDisplayAssembler;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionSelectionTerminologyMaps;
 import com.openhis.health.application.shared.product.ProductDefinitionPageQuery;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
@@ -59,6 +60,7 @@ import com.openhis.health.domain.share.constants.InventoryWarehouseConstants;
 import com.openhis.health.application.shared.pagination.PageQueryBinder;
 import com.openhis.health.domain.share.enums.SupplierStatus;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+import com.openhis.health.domain.share.constants.ProductDefinitionCatalogUnitBandConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.PriceType;
 import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
@@ -732,7 +734,7 @@ public class InventoryWarehouseInboundReceiptAppService {
         }
 
         // —— 6. 批号维进价/售价补录 + 目录参考价回写：同批号进价同值跳过批号写；异价（门禁已过）先停用再写；
-        // —— 无论批号是否跳过，均以本行包装进价回写 PURCHASE/SALE（下次选品默认；院点中草药加价后再抬 SALE）。——
+        // —— 无论批号是否跳过，均以本行包装进价回写 PURCHASE/SALE（下次选品默认；中草药 Herbal AOP 加价后再抬 SALE）。——
         SupplyRequestModel head = agreedLines.get(0);
         for (SupplyRequestModel line : agreedLines) {
             if (line == null || line.getId() == null) {
@@ -818,7 +820,7 @@ public class InventoryWarehouseInboundReceiptAppService {
                 }
             }
             try {
-                // Cmd：目录参考价跟本行包装进价（核心进售同值；中草药院点 after 再抬 SALE）
+                // Cmd：目录参考价跟本行包装进价（核心进售同值；中草药 Herbal AOP after 再抬 SALE）
                 this.catalogReferencePriceSyncSupport.syncPurchaseAndSaleIfChanged(
                     line.getItemTable().trim(),
                     line.getItemId(),
@@ -1037,17 +1039,11 @@ public class InventoryWarehouseInboundReceiptAppService {
         }
         // —— 驳回前仍须断言目标为药库进货单，避免对其它供应类型误走本入口。——
 
-        // —— 审批人回落：与同意/提交路径一致，单岗可不传 approverId。——
         Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_IN_101, "用户未登录");
-        Long approverId = request.getApproverId();
-        if (approverId == null) {
-            approverId = operatorId;
-        }
-        request.setApproverId(approverId);
 
         // —— 领域驳回：仅供应请求状态与原因，不写发放与库存；领域码 SUPPLY_REQUEST_INVALID_ARGUMENT 经 mapSupplyWorkflowException 收口为 WHS_IN_003。——
         try {
-            // Cmd：领域驳回请求
+            // Cmd：领域驳回请求（审批人取当前操作人）
             supplyRequestDomainService.rejectRequest(inboundReceiptMapper.toRejectRequestCommand(request, operatorId));
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.WHS_IN_003);
@@ -1122,6 +1118,7 @@ public class InventoryWarehouseInboundReceiptAppService {
     }
 
     /**
+     * 进货选品分页行二次装配：定价表 {@code PURCHASE} 进价、单位四槽与采购拆零比展示文案；
      * 并保持 {@code availableQuantity} 为 {@code null}（进货选品不关联库存可用量）。
      *
      * @param rows 当前页 DTO 列表（已由 Mapper 将 {@code availableQuantity} 置空）
@@ -1170,6 +1167,8 @@ public class InventoryWarehouseInboundReceiptAppService {
                 ProductDefinitionCatalogUnitBandsAssembler.applyInboundWarehouseBandPrices(
                     bands, pr, purchasePerPackage);
                 row.setUnitBands(bands);
+                // Asm：采购↔拆零比例文案（与库存明细 packageSplitRatioText 同族算法，单位取采购/拆零槽）
+                row.setPurchaseSplitRatioText(this.buildPurchaseSplitRatioText(bands));
                 if (pr != null) {
                     row.setCategoryCodeDictText(pr.getCategoryCodeDictText());
                     row.setPartAttributeEnum(pr.getPartAttributeEnum());
@@ -1178,10 +1177,53 @@ public class InventoryWarehouseInboundReceiptAppService {
             } else {
                 // —— 缺主键行：清空采购价，避免分页残留旧值误导。——
                 row.setPurchasePrice(null);
+                row.setPurchaseSplitRatioText(null);
             }
             // —— 与「不关联库存」契约一致：字段保留于 DTO 以兼容旧客户端，值恒为空。——
             row.setAvailableQuantity(null);
         }
+    }
+
+    /**
+     * 由进货选品四槽拼装「采购最小单位换算比」展示文案（形如 {@code 1箱/3桶}）。
+     *
+     * <p>倍数取采购槽 {@code ratioToSplit}，大单位名取采购槽、小单位名取拆零槽；
+     * 与 {@link MedicationPackageSplitQuantityDisplayAssembler#buildInventoryPackageSplitRatioText}
+     * 库房展示算法同族。缺采购倍数时返回 {@code null}。</p>
+     *
+     * @param bands 已装配术语的进货单位槽（可 null）
+     * @return 展示文案；无法拼装时 {@code null}
+     */
+    private String buildPurchaseSplitRatioText(List<ProductDefinitionCatalogUnitBandDto> bands) {
+        if (bands == null || bands.isEmpty()) {
+            return null;
+        }
+        BigDecimal purchaseRatio = null;
+        String purchaseUnitName = null;
+        String splitUnitName = null;
+        for (ProductDefinitionCatalogUnitBandDto band : bands) {
+            if (band == null || StringUtils.isEmpty(band.getBandKind())) {
+                continue;
+            }
+            // 采购槽：1 采购单位 = ratio 拆零
+            if (ProductDefinitionCatalogUnitBandConstants.BAND_PURCHASE.equals(band.getBandKind())) {
+                purchaseRatio = band.getRatioToSplit();
+                if (StringUtils.isNotEmpty(band.getUnitName())) {
+                    purchaseUnitName = band.getUnitName().trim();
+                }
+                continue;
+            }
+            // 拆零槽：最小单位展示名
+            if (ProductDefinitionCatalogUnitBandConstants.BAND_SPLIT.equals(band.getBandKind())) {
+                if (StringUtils.isNotEmpty(band.getUnitName())) {
+                    splitUnitName = band.getUnitName().trim();
+                }
+            }
+        }
+        return MedicationPackageSplitQuantityDisplayAssembler.buildInventoryPackageSplitRatioText(
+            purchaseRatio,
+            purchaseUnitName,
+            splitUnitName);
     }
 
     /**

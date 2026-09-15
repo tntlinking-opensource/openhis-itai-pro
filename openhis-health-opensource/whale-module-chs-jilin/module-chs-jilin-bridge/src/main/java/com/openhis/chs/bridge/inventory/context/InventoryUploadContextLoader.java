@@ -90,10 +90,10 @@ import java.util.Set;
  *
  * <p>契约拆分（对齐 openhis 发药进销存）：</p>
  * <ul>
- *   <li><b>出站契约</b>：须为省/市等医保凭证（网关配置）；支付单为自费时回落
- *       {@code default-contract-bus-no} / 租户首条非自费医保契约</li>
- *   <li><b>结算性质</b>：跟支付单费用性质写 {@code mdtrt_setl_type}/{@code hi_feesetl_type}/
- *       {@code mdtrt_sn}（自费=2、院内就诊流水）</li>
+ *   <li><b>出站契约</b>：须为省/市等医保凭证（网关配置）；自费支付时回落
+ *       {@code resolveOrDefault}（<strong>市优先</strong>），禁止 {@code bus_no=1} 自费费别出站</li>
+ *   <li><b>结算性质</b>：跟<strong>本批发药收费项所挂支付单</strong>写 {@code mdtrt_setl_type}/
+ *       {@code hi_feesetl_type}/{@code mdtrt_sn}（自费=2、院内就诊流水）；禁止用同就诊挂号医保单冒充药费性质（BR-CHS-INV-012）</li>
  * </ul>
  */
 @Component
@@ -133,7 +133,7 @@ public class InventoryUploadContextLoader {
         Map<Long, ChargeItem> chargeByDispenseId = mapChargeItemsByDispenseId(command.getEncounterId(), command.getDispenseIds());
 
         InvUpload3505Command request = new InvUpload3505Command();
-        // 出站/审计挂医保凭证（自费支付不会写 bus_no=1）
+        // 出站/审计挂医保凭证（自费性质仍挂市优先机构契约，禁止 bus_no=1）
         request.setContractBusNo(contractReader.requireContractBusNo(contracts.gateway()));
         request.setContractId(contracts.gateway().getId());
         request.setEncounterId(command.getEncounterId());
@@ -263,10 +263,12 @@ public class InventoryUploadContextLoader {
         line.setPharName(resolvePractitionerName(dispenserId));
         line.setPharPracCertNo(resolvePharPracCertNo(dispenserId));
         Long opterId = preparerId;
+        // 退药行常无配药人：经办人回落发药/确认人，满足平台经办人必填
         if (opterId == null) {
             opterId = dispenserId;
         }
         line.setSelRetnOpterName(resolvePractitionerName(opterId));
+        // 配药人与发药人同人：预置失败文案，出站前拦截双角色冲突
         if (preparerId != null && dispenserId != null && preparerId.equals(dispenserId)) {
             line.setPreUploadFailureMessage("销售经办人须为配药人，且不得与发药人(药师)为同一人");
         }
@@ -762,6 +764,7 @@ public class InventoryUploadContextLoader {
         YbSettlementRecord settlement
     ) {
         boolean insurance = isInsuranceContract(contract);
+        // 医保契约：结算类型=医保；有结算单写 setlId/mdtrtId，否则用就诊 busNo
         if (insurance) {
             line.setMdtrtSetlType(MdtrtSetlType.INSURANCE.getCode());
             if (settlement != null) {
@@ -771,6 +774,7 @@ public class InventoryUploadContextLoader {
                 line.setMdtrtSn(encounter.getBusNo());
             }
         } else {
+            // 自费性质：结算类型=自费；mdtrt_sn 用院内就诊流水（禁止冒用挂号医保单）
             line.setMdtrtSetlType(MdtrtSetlType.SELF_PAY.getCode());
             if (encounter != null) {
                 line.setMdtrtSn(encounter.getBusNo());
@@ -941,12 +945,17 @@ public class InventoryUploadContextLoader {
     /**
      * 解析销售上报契约对：出站医保凭证 + 报文结算性质。
      *
-     * <p>对齐 openhis：自费支付单仅决定 {@code mdtrt_setl_type=2}；出站契约置空后回落省/市医保配置。</p>
+     * <p>出站凭证：须为省/市等医保机构契约（有 OAuth/签到）；自费支付时回落
+     * {@code resolveOrDefault(null,null)}（<strong>市优先</strong>，与库房默认一致），
+     * <strong>禁止</strong>用 {@code bus_no=1} 自费费别出站。
+     * 结算性质：跟本批发药收费项所挂支付单写 {@code mdtrt_setl_type}（自费=2）。</p>
+     * <p><b>注意（BR-CHS-INV-015）</b>：本方法解析的是 <strong>3505/3506</strong> 结算/出站契约（可含工伤）。
+     * 销售配对 3502 另走 {@code InventorySalePaired3502ContractSupport}（跟入库平台）。</p>
      *
      * @param contractBusNo 显式契约业务编号；可空
      * @param contractId    显式契约 ID；可空
      * @param encounterId   就诊 ID
-     * @param dispenseIds   发药行 ID 列表（预留，与历史签名兼容）
+     * @param dispenseIds   本批发药/退药行 ID；用于定位覆盖其收费项的支付单
      * @return 出站契约 + 结算性质契约
      */
     SaleContractContext resolveSaleContracts(
@@ -955,27 +964,44 @@ public class InventoryUploadContextLoader {
         Long encounterId,
         List<Long> dispenseIds
     ) {
-        Contract paymentContract = findPaymentContract(encounterId);
+        // Pre：结算性质优先跟本批发药收费项交集支付单，避免挂号医保单冒充药费性质
+        Contract paymentContract = findPaymentContract(encounterId, dispenseIds);
+        Contract gateway;
+        Contract nature;
         if (isNotEmpty(contractBusNo) || contractId != null) {
             Contract explicit = contractReader.resolveOrDefault(contractBusNo, contractId);
-            Contract gateway = explicit;
-            // 显式传入自费：不能出站，回落医保凭证
+            gateway = explicit;
+            // 显式传入自费：不能出站，回落市优先医保凭证
             if (!isInsuranceContract(explicit)) {
-                gateway = contractReader.resolveOrDefault(null, null);
+                gateway = resolveMunicipalPreferredGateway();
             }
-            Contract nature = paymentContract;
+            nature = paymentContract;
             if (nature == null) {
                 nature = explicit;
             }
-            return new SaleContractContext(gateway, nature);
+        } else if (paymentContract != null && isInsuranceContract(paymentContract)) {
+            // 药费支付为医保：出站与结算性质同一契约
+            gateway = paymentContract;
+            nature = paymentContract;
+        } else {
+            // 自费或无支付单：出站挂市优先医保凭证；性质=支付单（空则 fillSettlement 按自费）
+            gateway = resolveMunicipalPreferredGateway();
+            nature = paymentContract;
         }
-        // 支付单为医保：出站与结算性质同一契约
-        if (paymentContract != null && isInsuranceContract(paymentContract)) {
-            return new SaleContractContext(paymentContract, paymentContract);
+        // Gate：出站契约绝不可为自费费别（历史 bus_no=1 会导致「未找到契约配置」）
+        if (!isInsuranceContract(gateway)) {
+            gateway = resolveMunicipalPreferredGateway();
         }
-        // 自费或无支付单：出站回落省/市；结算性质=支付单（空则 fillSettlement 按自费）
-        Contract gateway = contractReader.resolveOrDefault(null, null);
-        return new SaleContractContext(gateway, paymentContract);
+        return new SaleContractContext(gateway, nature);
+    }
+
+    /**
+     * 进销存出站默认凭证：配置 default-contract-bus-no，否则市优先（有市用市、仅省用省）。
+     *
+     * @return 非自费医保契约实体
+     */
+    private Contract resolveMunicipalPreferredGateway() {
+        return contractReader.resolveOrDefault(null, null);
     }
 
     /**
@@ -992,15 +1018,50 @@ public class InventoryUploadContextLoader {
     }
 
     /**
-     * 从就诊成功/退费中支付单解析费用性质契约（可自费）。
+     * 解析本批销售/退货的费用性质契约（可自费）。
+     *
+     * <p>有 {@code dispenseIds} 时：先取发药行收费项，再取与其交集的 SUCCESS/退款中支付单（取 id 最大者）；
+     * 该单 {@code contract_no} 空 → 返回 null（按自费写 {@code mdtrt_setl_type=2}）。
+     * <strong>禁止</strong>再回落「就诊首条带契约号的支付单」，以免挂号医保单污染自费药费 3505。</p>
+     *
+     * <p>无发药行或收费项尚未挂支付时：回落就诊级首条有契约号支付（清床宽口径等）。</p>
      *
      * @param encounterId 就诊 ID
-     * @return 支付单 contractNo 对应契约；无则 null
+     * @param dispenseIds 本批发药/退药行 ID；可空
+     * @return 支付单 contractNo 对应契约；无契约号或无支付时 null（自费性质）
      */
-    Contract findPaymentContract(Long encounterId) {
+    Contract findPaymentContract(Long encounterId, List<Long> dispenseIds) {
         if (encounterId == null) {
             return null;
         }
+        // 有发药行：按收费项交集支付单定性质（BR-CHS-INV-012）
+        if (dispenseIds != null && !dispenseIds.isEmpty()) {
+            List<ChargeItem> chargeItems =
+                chargeItemQueryService.listChargeItemsForMedicationDispensePricing(encounterId, dispenseIds);
+            List<Long> chargeItemIds = new ArrayList<>();
+            for (ChargeItem chargeItem : chargeItems) {
+                if (chargeItem == null || chargeItem.getId() == null) {
+                    continue;
+                }
+                chargeItemIds.add(chargeItem.getId());
+            }
+            if (!chargeItemIds.isEmpty()) {
+                List<PaymentReconciliationQueryModel> overlapping =
+                    paymentReconciliationQueryService.findPaySuccessOrRefundingOverlappingChargeItems(
+                        encounterId, chargeItemIds);
+                PaymentReconciliationQueryModel chosen = pickLatestOverlappingPayment(overlapping);
+                // 收费项已能对上支付单：以该单为准；无契约号=自费，不再扫就诊级挂号单
+                if (chosen != null) {
+                    if (isEmpty(chosen.getContractNo())) {
+                        return null;
+                    }
+                    return contractReader.resolveOrDefault(chosen.getContractNo(), null);
+                }
+                // 收费项尚未挂入任何 SUCCESS 支付：宁缺毋滥，按自费，禁止用挂号医保单冒充
+                return null;
+            }
+        }
+        // 无发药行/无收费项：回落就诊级首条有契约号支付（清床等宽口径）
         List<PaymentReconciliationQueryModel> payments =
             paymentReconciliationQueryService.findPaySuccessOrRefundingByEncounter(encounterId);
         for (PaymentReconciliationQueryModel payment : payments) {
@@ -1010,6 +1071,35 @@ public class InventoryUploadContextLoader {
             return contractReader.resolveOrDefault(payment.getContractNo(), null);
         }
         return null;
+    }
+
+    /**
+     * 在与发药收费项交集的支付单中取最新一笔（雪花 id 最大）。
+     *
+     * @param overlapping 交集支付单列表；可空
+     * @return 最新一笔；列表空则 null
+     */
+    private PaymentReconciliationQueryModel pickLatestOverlappingPayment(
+        List<PaymentReconciliationQueryModel> overlapping
+    ) {
+        if (overlapping == null || overlapping.isEmpty()) {
+            return null;
+        }
+        PaymentReconciliationQueryModel best = null;
+        for (PaymentReconciliationQueryModel payment : overlapping) {
+            if (payment == null || payment.getId() == null) {
+                continue;
+            }
+            if (best == null) {
+                best = payment;
+                continue;
+            }
+            // 雪花 id 越大越新；多轮收费时取覆盖本批的最近一笔
+            if (payment.getId() > best.getId()) {
+                best = payment;
+            }
+        }
+        return best;
     }
 
     /**

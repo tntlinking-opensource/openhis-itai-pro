@@ -19,4 +19,6 @@ public class PageDeviceCatalogRequest extends AbstractHealthPageRequest {
     private String categoryCode;
     /** 耗材种类（{@code device_type_code}）过滤。 */
     private String typeCode;
+    /** 发布状态（{@code ACTIVE} 已启用 / {@code INACTIVE} 已停用）；空表示不限。 */
+    private String statusEnum;
 }

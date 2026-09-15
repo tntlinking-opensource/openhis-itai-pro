@@ -28,7 +28,7 @@ public class DailySettlementCashierScopeResolver {
      *
      * @param cashierIds                   多选收款人 Practitioner 主键；空表示不按人过滤
      * @param currentCashierPractitionerId 当前操作员 Practitioner 主键
-     * @param sessionUserId                当前登录用户主键
+     * @param sessionUserId                当前登录用户主键（透传 Resolver；BR-OPC-016 后不参与 enterer 扩白名单）
      * @param invalidExCode                参数异常码
      * @return 软筛范围；未选收款人时 entererMatchIds 为空
      */

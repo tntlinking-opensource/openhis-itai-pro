@@ -338,14 +338,14 @@ export function createDoctorStationDiagnosisHttpClient(
       );
       const unwrapped = unwrapDiagnosisPayload<unknown>(raw);
       const { content, totalCount } = parsePagedRowsFromApiData<Record<string, unknown>>(unwrapped);
-      const records = content
+      const mapped = content
         .filter(isRecord)
         .map((row) => mapConditionDefinitionMetadataApiRow(row));
       const base = isRecord(unwrapped) ? unwrapped : {};
       return {
         ...base,
-        records,
-        total: totalCount,
+        content: mapped,
+        totalCount,
       } as ConditionDefinitionPageResponse;
     },
 

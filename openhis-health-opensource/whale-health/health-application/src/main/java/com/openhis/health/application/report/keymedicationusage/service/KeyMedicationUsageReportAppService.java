@@ -2,6 +2,7 @@
  * Copyright © 2026 OpenHIS Contributors
  * SPDX-License-Identifier: LGPL-3.0-or-later
  */
+
 package com.openhis.health.application.report.keymedicationusage.service;
 
 import com.openhis.health.application.report.keymedicationusage.dto.KeyMedicationUsageSummaryRowDto;
@@ -37,29 +38,26 @@ import java.util.List;
  * <p>职责边界：</p>
  * <ul>
  *   <li>{@link CurrentOperatorResolver}：登录 Gate</li>
- *   <li>{@link KeyMedicationUsageReportQuerySupport}：日期窗、类型集合、费用明细 scope、矩阵汇总</li>
+ *   <li>{@link KeyMedicationUsageReportQuerySupport}：日期窗、类型/状态集合、费用明细 scope、类型矩阵汇总</li>
  *   <li>{@link KeyMedicationUsageReportMapper}：Request/Response 映射</li>
  *   <li>{@link AnnotatedExcelExporter}：导出</li>
  * </ul>
  * <p>接入：AppServiceControllerRegistrar →
  * {@code POST /api/app/keyMedicationUsageReport/{methodName}}；不另写 RestController。</p>
  */
+
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class KeyMedicationUsageReportAppService {
-
     /** 登录 Gate。 */
     private final CurrentOperatorResolver currentOperatorResolver;
-
-    /** 矩阵汇总与筛选项。 */
+    /** 类型矩阵汇总与筛选项。 */
     private final KeyMedicationUsageReportQuerySupport querySupport;
-
     /** Request/Response 映射。 */
     private final KeyMedicationUsageReportMapper mapper;
-
     /**
-     * IF-RPT-KDU-01：页面初始化（默认当日、就诊类型/重点药类型下拉）。
+     * IF-RPT-KDU-01：页面初始化（默认近一个月、就诊类型/重点药类型下拉）。
      *
      * @param request 空体占位
      * @return 初始化响应
@@ -73,13 +71,18 @@ public class KeyMedicationUsageReportAppService {
             "页面初始化失败，请稍后重试");
         try {
             LocalDate today = LocalDate.now();
-            String todayText = today.format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
+            LocalDate defaultFrom = today.minusMonths(KeyMedicationUsageReportConstants.DEFAULT_LOOKBACK_MONTHS);
+            String defaultFromText = defaultFrom.format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
+            String defaultToText = today.format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
             // Pre：就诊类型 / 重点药类型选项（枚举展示，不查库）
             List<OptionDto> encounterClassOptions = this.querySupport.buildEncounterClassOptions();
             List<OptionDto> keyDrugTypeOptions = this.querySupport.buildKeyDrugTypeOptions();
-            // Asm：默认当日 + 下拉（BR-RPT-KDU-001）
+            // Asm：默认近一个月闭区间 + 下拉（BR-RPT-KDU-001）
             return this.mapper.toLoadPageInitResponse(
-                todayText, todayText, encounterClassOptions, keyDrugTypeOptions);
+                defaultFromText,
+                defaultToText,
+                encounterClassOptions,
+                keyDrugTypeOptions);
         } catch (BusinessException businessException) {
             // Gate：业务异常原样上抛，避免二次包装丢码
             throw businessException;
@@ -92,12 +95,11 @@ public class KeyMedicationUsageReportAppService {
                 runtimeException);
         }
     }
-
     /**
-     * IF-RPT-KDU-02：就诊类型 × 重点药类型矩阵汇总。
+     * IF-RPT-KDU-02：按就诊类型 × 重点药类型矩阵汇总 + 各组合计行。
      *
      * @param request 日期与多选筛选
-     * @return 矩阵行与页脚合计
+     * @return 汇总行与页脚合计
      * @throws BusinessException {@link KeyMedicationUsageReportConstants#EX_RPT_KDU_102} 日期非法；
      *         {@link KeyMedicationUsageReportConstants#EX_RPT_KDU_103} 查询失败
      */
@@ -116,17 +118,22 @@ public class KeyMedicationUsageReportAppService {
         LocalDate[] dateWindow =
             this.querySupport.requireDateWindow(safeRequest.getDateFrom(), safeRequest.getDateTo());
         try {
-            // Pre：空多选 = 全部类型（BR-RPT-KDU-002）
+            // Pre：空多选 = 全部类型
             List<EncounterClass> encounterClasses =
                 this.querySupport.resolveEncounterClasses(safeRequest.getEncounterClassCodes());
             List<KeyDrugType> keyDrugTypes =
                 this.querySupport.resolveKeyDrugTypes(safeRequest.getKeyDrugTypeCodes());
-            // Pre：矩阵汇总（含 0 行；门诊/住院对齐费用明细 scope）
+            // Pre：AMB/IMP 各类型行 + 组内 TOTAL（含使用占比）
             List<KeyMedicationUsageSummaryRowDto> rows = this.querySupport.summarizeMatrixRows(
-                dateWindow[0], dateWindow[1], encounterClasses, keyDrugTypes);
-            // Asm：页脚 = 各行人次之和 + 金额代数和（跨行不去重就诊）
+                dateWindow[0],
+                dateWindow[1],
+                encounterClasses,
+                keyDrugTypes);
+            // Asm：页脚跳过 keyDrugTypeCode=TOTAL，避免与类型行双计
             return this.mapper.toSummarizeResponse(
-                rows, this.sumEncounterNetCount(rows), this.sumSaleAmount(rows));
+                rows,
+                this.sumEncounterNetCount(rows),
+                this.sumSaleAmount(rows));
         } catch (BusinessException businessException) {
             // Gate：业务异常原样上抛
             throw businessException;
@@ -139,9 +146,8 @@ public class KeyMedicationUsageReportAppService {
                 runtimeException);
         }
     }
-
     /**
-     * IF-RPT-KDU-03：导出当前筛选矩阵为 Excel。
+     * IF-RPT-KDU-03：导出当前筛选汇总为 Excel。
      *
      * @param request 与汇总同筛选
      * @return xlsx 二进制响应
@@ -168,15 +174,18 @@ public class KeyMedicationUsageReportAppService {
                 this.querySupport.resolveEncounterClasses(safeRequest.getEncounterClassCodes());
             List<KeyDrugType> keyDrugTypes =
                 this.querySupport.resolveKeyDrugTypes(safeRequest.getKeyDrugTypeCodes());
-            // Pre：复用矩阵汇总（BR-RPT-KDU-007）
+            // Pre：复用汇总行（含各组 TOTAL；BR-RPT-KDU-007）
             List<KeyMedicationUsageSummaryRowDto> rows = this.querySupport.summarizeMatrixRows(
-                dateWindow[0], dateWindow[1], encounterClasses, keyDrugTypes);
-            // Asm：xlsx 字节（矩阵 ≤6 行，truncated 恒 false）
+                dateWindow[0],
+                dateWindow[1],
+                encounterClasses,
+                keyDrugTypes);
+            // Asm：xlsx 字节（类型行+组合计，truncated 恒 false）
             byte[] body = AnnotatedExcelExporter.exportToXlsxBytes(
                 KeyMedicationUsageReportConstants.EXPORT_SHEET_NAME,
                 rows,
                 KeyMedicationUsageSummaryRowDto.class,
-                request.getExportColumns());
+                safeRequest.getExportColumns());
             String fileName = KeyMedicationUsageReportConstants.EXPORT_FILE_PREFIX
                 + LocalDateTime.now().format(GeneralSharedConstants.EXPORT_FILE_TIMESTAMP_FORMATTER)
                 + ".xlsx";
@@ -198,11 +207,10 @@ public class KeyMedicationUsageReportAppService {
                 runtimeException);
         }
     }
-
     /**
-     * 页脚净人次合计（各行相加，不去重跨行就诊）。
+     * 页脚净人次合计：累加各组「合计」行（全部药品人次）；跳过类型行以免多旗双计。
      *
-     * @param rows 矩阵行
+     * @param rows 汇总行
      * @return 合计
      */
     private long sumEncounterNetCount(List<KeyMedicationUsageSummaryRowDto> rows) {
@@ -211,10 +219,18 @@ public class KeyMedicationUsageReportAppService {
         if (rows == null) {
             return total;
         }
-        // Loop：累加各行人次
+        // Loop：只加组内合计行（AMB 并集 + IMP 并集）
         for (KeyMedicationUsageSummaryRowDto row : rows) {
-            // 跳过空行或缺人次字段
-            if (row != null && row.getEncounterNetCount() != null) {
+            // 空行跳过
+            if (row == null) {
+                continue;
+            }
+            // 仅合计行入页脚
+            if (!KeyMedicationUsageReportConstants.SUMMARY_KEY_DRUG_TYPE_TOTAL.equals(
+                row.getKeyDrugTypeCode())) {
+                continue;
+            }
+            if (row.getEncounterNetCount() != null) {
                 total = total + row.getEncounterNetCount();
             }
         }
@@ -222,9 +238,9 @@ public class KeyMedicationUsageReportAppService {
     }
 
     /**
-     * 页脚售价净额合计。
+     * 页脚售价净额合计：累加各组「合计」行（全部药品金额）；跳过类型行。
      *
-     * @param rows 矩阵行
+     * @param rows 汇总行
      * @return 结算刻度合计
      */
     private BigDecimal sumSaleAmount(List<KeyMedicationUsageSummaryRowDto> rows) {
@@ -233,10 +249,18 @@ public class KeyMedicationUsageReportAppService {
         if (rows == null) {
             return MonetaryAmountSupport.scaleSettle(total);
         }
-        // Loop：代数加总各行金额
+        // Loop：只加组内合计行金额
         for (KeyMedicationUsageSummaryRowDto row : rows) {
-            // 跳过空行或缺金额字段
-            if (row != null && row.getSaleAmountTotal() != null) {
+            // 空行跳过
+            if (row == null) {
+                continue;
+            }
+            // 仅合计行入页脚
+            if (!KeyMedicationUsageReportConstants.SUMMARY_KEY_DRUG_TYPE_TOTAL.equals(
+                row.getKeyDrugTypeCode())) {
+                continue;
+            }
+            if (row.getSaleAmountTotal() != null) {
                 total = total.add(row.getSaleAmountTotal());
             }
         }

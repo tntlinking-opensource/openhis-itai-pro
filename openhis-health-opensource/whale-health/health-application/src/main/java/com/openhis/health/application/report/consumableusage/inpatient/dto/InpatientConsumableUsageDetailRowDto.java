@@ -136,9 +136,27 @@ public class InpatientConsumableUsageDetailRowDto implements ConsumableUsageRepo
     @Schema(description = "单位展示")
     private String unitCode_dictText;
 
-    /** 批号。 */
+    /** 实发批号（发放单 {@code lot_number}；明细展示主列）。 */
     @Schema(description = "批号")
     private String lotNumber;
+
+    /**
+     * 收费锚点批号（{@code ChargeItem.definitionId} → {@code LOT_NUMBER_PRICE}/{@code LOT_NUMBER_COST}
+     * 行的 {@code lot_no}）。
+     *
+     * <p>仅明细分页质检回填；与 {@link #lotNumber} 比对。不一致时 {@link #lotMismatch}=true。
+     * 退耗可经 {@link #basedOnDispenseId} 回挂源发放账批。<strong>不改正额</strong>。</p>
+     */
+    @Schema(description = "收费锚点批号")
+    private String chargeLotNumber;
+
+    /**
+     * 账批 ≠ 实发批标记（仅质检展示；金额/汇总口径不变）。
+     *
+     * <p>{@code true}=两边均有批号且不相等；无账单/无批号/科室领用时保持 null。</p>
+     */
+    @Schema(description = "账批与实发批是否不一致")
+    private Boolean lotMismatch;
 
     /** 业务时间。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)

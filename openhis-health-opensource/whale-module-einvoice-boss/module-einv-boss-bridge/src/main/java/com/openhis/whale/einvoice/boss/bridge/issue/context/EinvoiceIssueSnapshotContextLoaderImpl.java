@@ -90,9 +90,8 @@ public class EinvoiceIssueSnapshotContextLoaderImpl implements EinvoiceIssueSnap
      *
      * <p>加载顺序：invoice → payment → patient → encounter → 费用性质/基金 → 科室 → 收费明细行。</p>
      *
-     * <p>异步 Worker（{@code @Async}）无线程租户时，用票据 {@code tenantId} 临时绑定，
-     * 否则医保基金 SPI（依赖 {@link TenantUtils}）会空返回并误走全自费回落。
-     * 若线程残留其它租户，必须覆盖为票据租户，否则产品甲乙丙/单位术语可能查空。</p>
+     * <p>异步 Worker（{@code @Async}）无线程租户时，用票据 {@code tenantId} 强制绑定，
+     * 并以该租户显式查医保基金 SPI；否则 SPI 空返回并误走全自费回落，产品甲乙丙/药名也可能查空。</p>
      */
     @Override
     public BossIssueSnapshot loadForInvoice(Long invoiceId) {
@@ -150,9 +149,10 @@ public class EinvoiceIssueSnapshotContextLoaderImpl implements EinvoiceIssueSnap
         snapshot.setOperatorId(payment.getEntererId());
         snapshot.setOperatorName(resolveOperatorName(payment.getEntererId()));
 
+        // Pre：显式传入票据租户，避免 @Async 无线程租户时基金 SPI 空返回
         Optional<InsuranceSettlementFundLookupExtensionOut> fundOpt =
-            settlementRecordLookupExtension.findFundByPaymentId(payment.getId());
-        applyFundAndMedCare(snapshot, payment.getId(), fundOpt);
+            settlementRecordLookupExtension.findFundByPaymentId(payment.getId(), invoice.getTenantId());
+        applyFundAndMedCare(snapshot, payment, fundOpt);
 
         Organization organization = organizationQueryService.loadOrganizationByIdForDisplay(encounter.getOrganizationId());
         if (organization != null) {
@@ -175,28 +175,36 @@ public class EinvoiceIssueSnapshotContextLoaderImpl implements EinvoiceIssueSnap
     }
 
     /**
-     * 将当前线程租户对齐为票据租户。
+     * 将当前线程租户强制对齐为票据租户（即便已是同一值也重新 set，避免线程池残留会话状态）。
      *
      * @param invoiceTenantId 票据租户；可空
      * @param previousTenantId 调用前线程租户；可空
      * @return true 表示本方法改写了租户，调用方须恢复 {@code previousTenantId} 或 clear
      */
     private boolean bindInvoiceTenant(Long invoiceTenantId, Long previousTenantId) {
-        if (invoiceTenantId == null || invoiceTenantId.equals(previousTenantId)) {
+        if (invoiceTenantId == null) {
             return false;
         }
+        // 强制写入：异步线程「已是同租户」时仍可能未绑定 Hibernate/SPI 可见上下文
         tenantContext.setCurrentTenantId(invoiceTenantId);
+        if (invoiceTenantId.equals(previousTenantId)) {
+            return false;
+        }
         return true;
     }
 
     /**
      * 写入基金分项与票头医保类型（省/市医保等）。
+     *
+     * @param snapshot 开票快照
+     * @param payment  支付实体（含 contractNo，费用性质兜底）
+     * @param fundOpt  结算基金；可空
      */
     private void applyFundAndMedCare(
             BossIssueSnapshot snapshot,
-            Long paymentId,
+            PaymentReconciliation payment,
             Optional<InsuranceSettlementFundLookupExtensionOut> fundOpt) {
-        BossContractCategoryMapping.MedCare medCare = resolveMedCare(paymentId, fundOpt);
+        BossContractCategoryMapping.MedCare medCare = resolveMedCare(payment, fundOpt);
         snapshot.setMedCareTypeCode(medCare.typeCode());
         snapshot.setMedicalCareType(medCare.typeName());
 
@@ -284,10 +292,14 @@ public class EinvoiceIssueSnapshotContextLoaderImpl implements EinvoiceIssueSnap
     }
 
     /**
-     * 费用性质：结算合同 → 支付桥表账户合同 → 收费行账户合同 → 自费。
+     * 费用性质：结算合同 → 支付单 contractNo → 支付桥表账户合同 → 收费行账户合同 → 自费。
+     *
+     * @param payment 支付实体
+     * @param fundOpt 结算基金
+     * @return 博思票头医保类型
      */
     private BossContractCategoryMapping.MedCare resolveMedCare(
-            Long paymentId,
+            PaymentReconciliation payment,
             Optional<InsuranceSettlementFundLookupExtensionOut> fundOpt) {
         if (fundOpt.isPresent() && fundOpt.get().getContractId() != null) {
             Optional<Contract> byId = contractQueryService.findOptionalContractEntityById(fundOpt.get().getContractId());
@@ -295,7 +307,18 @@ public class EinvoiceIssueSnapshotContextLoaderImpl implements EinvoiceIssueSnap
                 return BossContractCategoryMapping.resolve(byId.get().getCategoryEnum());
             }
         }
-        PaymentReconciliationQueryModel paymentModel = paymentQueryService.mustGetPayment(paymentId);
+        // 支付单头常直接落市医保/省医保 contract_no，优先于账户回查（账户路径偶发空）
+        if (payment != null && StringUtils.hasText(payment.getContractNo())) {
+            Optional<Contract> byPaymentContract =
+                contractQueryService.findOptionalContractEntityByBusNo(payment.getContractNo().trim());
+            if (byPaymentContract.isPresent()) {
+                return BossContractCategoryMapping.resolve(byPaymentContract.get().getCategoryEnum());
+            }
+        }
+        if (payment == null || payment.getId() == null) {
+            return BossContractCategoryMapping.resolve(null);
+        }
+        PaymentReconciliationQueryModel paymentModel = paymentQueryService.mustGetPayment(payment.getId());
         Long accountId = firstConfirmedAccountId(paymentModel);
         if (accountId == null) {
             accountId = firstChargeItemAccountId(paymentModel.getChargeItemIds());

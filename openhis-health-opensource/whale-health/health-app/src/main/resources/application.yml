@@ -37,7 +37,7 @@ spring:
   flyway:
     # 由 ModularFlywayConfiguration 按模块独立 history 表执行（见 openhis.flyway.modular）
     enabled: false
-    baseline-on-migrate: true
+    baseline-on-migrate: false
     baseline-version: 0
     out-of-order: true  # 与 ModularFlywayConfiguration 一致：V99 已落地后仍可补跑 V26+
     schemas: public
@@ -218,6 +218,8 @@ openhis:
       enabled: true
     peis:
       enabled: true
+    miniapp:
+      enabled: true
     einvoice-boss:
       enabled: true
     unionpay-bpc:
@@ -241,6 +243,14 @@ openhis:
       remote:
         base-url: http://127.0.0.1:8080
         api-key: ${ELEP_API_KEY:}
+
+  miniapp:
+    default-app-id: ${MINIAPP_APP_ID:wx-dev}
+    mock-login-enabled: true
+    session-ttl-hours: 72
+    system-operator-practitioner-id: ${MINIAPP_OPERATOR_PRACTITIONER_ID:308791351298756608}
+    wechat-app-secret: ${MINIAPP_WECHAT_SECRET:}
+    gateway-api-key: ${MINIAPP_GATEWAY_API_KEY:}
 
 whale:
   cache:

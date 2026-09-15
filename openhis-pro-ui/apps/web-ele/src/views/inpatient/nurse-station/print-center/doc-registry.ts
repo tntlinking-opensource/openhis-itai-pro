@@ -10,6 +10,7 @@ export interface PrintColumnDef {
     | 'patientName'
     | 'title'
     | 'subtitle'
+    | 'frequencyDisplay'
     | 'timeText'
     | 'statusText'
     | 'printStatusText'
@@ -35,7 +36,6 @@ const PRINT_STATUS_COLUMN: PrintColumnDef = {
 const PRINT_STATUS_ONLY_DOC_TYPES = new Set<PrintDocType>([
   'wristband',
   'bed_card',
-  'patrol_card',
   'fee_list',
   'fee_detail',
   'nursing_record',
@@ -137,6 +137,29 @@ const LABEL_COLUMNS: PrintColumnDef[] = [
   { key: 'pageHint', label: '张数', width: 80, align: 'center' },
 ];
 
+/** 输液贴 / 巡视卡：组行展示，内容可折行，带频次 */
+const INFUSION_GROUP_COLUMNS: PrintColumnDef[] = [
+  { key: 'bedNo', label: '床号', width: 80, align: 'center' },
+  { key: 'patientName', label: '患者', width: 88, align: 'center' },
+  { key: 'title', label: '标签内容', minWidth: 260 },
+  { key: 'subtitle', label: '组/规格', width: 140, align: 'center' },
+  { key: 'frequencyDisplay', label: '频次', width: 96, align: 'center' },
+  { key: 'timeText', label: '时间', width: 88, align: 'center' },
+  { key: 'statusText', label: '状态', width: 96, align: 'center' },
+  { key: 'pageHint', label: '张数', width: 72, align: 'center' },
+];
+
+const PATROL_COLUMNS: PrintColumnDef[] = [
+  { key: 'bedNo', label: '床号', width: 80, align: 'center' },
+  { key: 'patientName', label: '患者', width: 88, align: 'center' },
+  { key: 'title', label: '内容', minWidth: 260 },
+  { key: 'subtitle', label: '组/规格', width: 140, align: 'center' },
+  { key: 'frequencyDisplay', label: '频次', width: 96, align: 'center' },
+  { key: 'timeText', label: '时间', width: 88, align: 'center' },
+  { key: 'statusText', label: '状态', width: 96, align: 'center' },
+  { key: 'pageHint', label: '页/签', width: 72, align: 'center' },
+];
+
 const FEE_COLUMNS: PrintColumnDef[] = [
   { key: 'bedNo', label: '床号', width: 80, align: 'center' },
   { key: 'patientName', label: '患者', width: 96, align: 'center' },
@@ -181,7 +204,8 @@ const COLUMNS_BY_DOC: Partial<Record<PrintDocType, PrintColumnDef[]>> = {
   order_dispense_sheet: DRUG_SHEET_COLUMNS,
   dispense_sheet: DRUG_SHEET_COLUMNS,
   dispense_summary: DRUG_SHEET_COLUMNS,
-  infusion_label: LABEL_COLUMNS,
+  infusion_label: INFUSION_GROUP_COLUMNS,
+  patrol_card: PATROL_COLUMNS,
   oral_med_label: LABEL_COLUMNS,
   specimen_barcode: LABEL_COLUMNS,
   fee_list: FEE_COLUMNS,
@@ -290,6 +314,11 @@ export function isOrderExecDocType(docType: PrintDocType): boolean {
 /** 患者用药单：输液筛选 */
 export function needsOralMedInfusionFilter(docType: PrintDocType): boolean {
   return docType === 'oral_med_sheet';
+}
+
+/** 输液巡视卡：按频次拆张开关 */
+export function needsFrequencySplitSwitch(docType: PrintDocType): boolean {
+  return docType === 'patrol_card';
 }
 
 /** 取表列配置 */

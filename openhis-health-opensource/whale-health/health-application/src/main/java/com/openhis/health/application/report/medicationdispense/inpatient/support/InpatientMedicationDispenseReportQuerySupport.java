@@ -17,6 +17,7 @@ import com.openhis.health.application.shared.option.TerminologyOptionLoader;
 import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.application.shared.report.PatientSettlementContextRow;
+import com.openhis.health.application.shared.report.ReportDateTimeWindowSupport;
 import com.openhis.health.application.shared.report.ReportPatientSettlementContextAssembler;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
@@ -62,9 +63,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -175,25 +174,27 @@ public class InpatientMedicationDispenseReportQuerySupport {
     }
 
     /**
-     * 日期字符串 → 日初。
+     * 日起文案 → 闭区间下界时刻。
      *
-     * @param dateText yyyy-MM-dd
-     * @return 日初时刻
+     * <p>接受 {@code yyyy-MM-dd} 或 {@code yyyy-MM-dd HH:mm:ss}；仅日期时补 00:00:00。</p>
+     *
+     * @param dateText 日起或日起时刻
+     * @return 闭区间下界
      */
     public LocalDateTime toDayStart(String dateText) {
-        LocalDate date = LocalDate.parse(dateText.trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
-        return date.atStartOfDay();
+        return ReportDateTimeWindowSupport.parseInclusiveStart(dateText);
     }
 
     /**
-     * 日期字符串 → 日末。
+     * 日止文案 → 闭区间上界时刻。
      *
-     * @param dateText yyyy-MM-dd
-     * @return 日末时刻
+     * <p>接受 {@code yyyy-MM-dd} 或 {@code yyyy-MM-dd HH:mm:ss}；仅日期时补 23:59:59。</p>
+     *
+     * @param dateText 日止或日止时刻
+     * @return 闭区间上界
      */
     public LocalDateTime toDayEnd(String dateText) {
-        LocalDate date = LocalDate.parse(dateText.trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
-        return date.atTime(LocalTime.of(23, 59, 59));
+        return ReportDateTimeWindowSupport.parseInclusiveEnd(dateText);
     }
 
     /**
@@ -459,13 +460,11 @@ public class InpatientMedicationDispenseReportQuerySupport {
                     dto.setMedicationId(row.getMedicationId());
                     dto.setCategoryCode(row.getCategoryCode());
                     dto.setNetQuantity(BigDecimal.ZERO);
-                    dto.setLineCount(0L);
                     bucket.put(row.getDimensionKey(), dto);
                 }
                 if (row.getNetQuantity() != null) {
                     dto.setNetQuantity(dto.getNetQuantity().add(row.getNetQuantity()));
                 }
-                dto.setLineCount(dto.getLineCount() + row.getLineCount());
             }
         }
         if (deptRows != null) {
@@ -482,7 +481,6 @@ public class InpatientMedicationDispenseReportQuerySupport {
                     dto.setMedicationId(row.getItemId());
                     dto.setOrganizationId(row.getOrganizationId());
                     dto.setNetQuantity(BigDecimal.ZERO);
-                    dto.setLineCount(0L);
                     bucket.put(row.getDimensionKey(), dto);
                 }
                 if (dto.getOrganizationId() == null) {
@@ -497,7 +495,6 @@ public class InpatientMedicationDispenseReportQuerySupport {
                 if (row.getNetQuantity() != null) {
                     dto.setNetQuantity(dto.getNetQuantity().add(row.getNetQuantity()));
                 }
-                dto.setLineCount(dto.getLineCount() + row.getLineCount());
             }
         }
         List<InpatientMedicationDispenseSummaryRowDto> result = new ArrayList<>(bucket.values());
@@ -681,18 +678,18 @@ public class InpatientMedicationDispenseReportQuerySupport {
             }
             row.setQuantity(quantity);
             if (slip.getDispenseId() != null) {
-                row.setUnitPrice(chargeUnitPriceByDispenseId.get(slip.getDispenseId()));
+                // 账单售价预填至 sale*；退药总额与明细 ReadAssembler 同号取负
+                row.setSaleUnitPrice(chargeUnitPriceByDispenseId.get(slip.getDispenseId()));
                 BigDecimal totalAmount = chargeTotalPriceByDispenseId.get(slip.getDispenseId());
-                // 退药售价总额与明细 ReadAssembler 同号：补价结果为正，汇总须取负
                 if (totalAmount != null && refundRow) {
-                    row.setTotalAmount(totalAmount.negate());
+                    row.setSaleAmount(totalAmount.negate());
                 } else {
-                    row.setTotalAmount(totalAmount);
+                    row.setSaleAmount(totalAmount);
                 }
             }
             rows.add(row);
         }
-        // Asm：进价/售价别名写回；批号回落仅针对账单仍缺价行（品规按需加载，禁止全窗预热）
+        // Asm：进价/售价写回 sale*；批号回落仅针对账单仍缺价行（品规按需加载，禁止全窗预热）
         this.medicationDispenseReportPricingEnricher.enrichPatientDetailPurchaseSaleFromChargeItems(
             rows,
             chargeRows,
@@ -1260,6 +1257,12 @@ public class InpatientMedicationDispenseReportQuerySupport {
                 null, product.getSplitUnitCode(), product));
     }
 
+    /**
+     * 发退药记录查询行 → 住院发药报表明细行（账单单价/金额写入 sale*）。
+     *
+     * @param source 药房发退药平铺行
+     * @return 报表患者侧明细行
+     */
     private InpatientMedicationDispenseDetailRowDto toPatientDetailRow(PharmacyDispenseRecordQueryRowDto source) {
         InpatientMedicationDispenseDetailRowDto row = new InpatientMedicationDispenseDetailRowDto();
         row.setSourceCode(MedicationDispenseReportConstants.SOURCE_PATIENT_DISPENSE);
@@ -1287,8 +1290,9 @@ public class InpatientMedicationDispenseReportQuerySupport {
         row.setQuantity(source.getQuantity());
         row.setUnitCode(source.getUnitCode());
         row.setUnitText(source.getUnitText());
-        row.setUnitPrice(source.getUnitPrice());
-        row.setTotalAmount(source.getTotalAmount());
+        // 发退药记录单价/金额即账单售价，写入 sale* 供 enricher 刻度化
+        row.setSaleUnitPrice(source.getUnitPrice());
+        row.setSaleAmount(source.getTotalAmount());
         row.setLotNumber(source.getLotNumber());
         row.setTraceNo(source.getTraceNo());
         row.setDepartmentId(source.getOrderingDepartmentId());

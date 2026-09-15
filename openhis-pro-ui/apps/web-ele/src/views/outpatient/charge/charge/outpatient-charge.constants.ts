@@ -38,7 +38,7 @@ export function resolveOutpatientChargeSwitchAccountMessage(messageCode?: null |
   return OUTPATIENT_CHARGE_SWITCH_ACCOUNT_MESSAGE['EX-OPC-202'] ?? '账户切换失败';
 }
 
-/** 默认支付渠道（门诊收费结算弹窗）：银联扫码（可改选现金/微信等） */
+/** 默认支付渠道（门诊收费结算弹窗）：有银联则扫码，否则现金 */
 export const DEFAULT_OUTPATIENT_CHARGE_PAY_CHANNEL_CODE = 'SCAN_PAY';
 
 /** 结算弹窗可选渠道（API 不可用时的 fallback，不含 SCAN_PAY） */

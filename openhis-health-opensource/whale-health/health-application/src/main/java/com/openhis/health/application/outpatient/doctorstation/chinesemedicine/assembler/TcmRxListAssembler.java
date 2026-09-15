@@ -26,11 +26,12 @@ import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConsta
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.application.shared.advice.AdviceChargeDisplayStatusAssembler;
+import com.openhis.health.application.shared.advice.OrderCatalogDisplayAssembler;
+import com.openhis.health.application.shared.advice.TcmDecoctionBasedOnPrescriptionResolver;
 import com.openhis.health.application.shared.advice.TcmMethodCodeDisplayAssembler;
 import com.openhis.health.application.shared.financial.ContractExpenseNatureAssembler;
 import com.openhis.health.application.shared.option.FrequencyOptionLoader;
 import com.openhis.health.application.shared.option.TerminologyOptionLoader;
-import com.openhis.health.application.shared.advice.OrderCatalogDisplayAssembler;
 import com.openhis.health.application.shared.product.ClinicalCatalogPriceResolver;
 import com.openhis.health.application.shared.product.ClinicalCatalogUnitPriceQuery;
 import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
@@ -68,11 +69,15 @@ public class TcmRxListAssembler {
     private final FrequencyOptionLoader frequencyOptionLoader;
     private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     private final ClinicalCatalogPriceResolver clinicalCatalogPriceResolver;
+    private final TcmDecoctionBasedOnPrescriptionResolver tcmDecoctionBasedOnPrescriptionResolver;
     /** 合同费用性质分类文案（行级 contract_id → 自费/医保等）。 */
     private final ContractExpenseNatureAssembler contractExpenseNatureAssembler;
 
     /**
-     * 将领域按方聚合读模型 enrich 为方头+行 DTO。
+     * 将领域按方聚合读模型 enrich 为方头+行 DTO（IF-DOR-34 入口别名）。
+     *
+     * @param groups 领域层按方聚合结果
+     * @return 方头列表
      */
     public List<TcmRxHeaderDto> toPrescriptionHeaders(List<TcmHerbalPrescriptionGroupQueryModel> groups) {
         return this.enrichPrescriptionGroups(groups);
@@ -531,7 +536,9 @@ public class TcmRxListAssembler {
     }
 
     /**
-     * 按处方号归并同方代煎 companion 诊疗收费态（锚定 {@code wkf_service_request}）。
+     * 按处方号归并同方代煎 companion 诊疗收费态。
+     *
+     * <p>锚定 {@code wkf_service_request}；方号经共享解析器 {@code based_on→药嘱}（负向回原方 CP）。</p>
      */
     private Map<String, String> loadDecoctionChargeStatusByPrescriptionNo(
         Long encounterId,
@@ -557,6 +564,7 @@ public class TcmRxListAssembler {
         ChargeItemQueryCommand cmd = new ChargeItemQueryCommand();
         cmd.setEncounterId(encounterId);
         List<ChargeItem> chargeItems = chargeItemQueryService.listChargeItemsByEncounterId(cmd);
+        Set<Long> serviceRequestIds = new LinkedHashSet<>();
         for (ChargeItem chargeItem : chargeItems) {
             if (chargeItem == null || Boolean.TRUE.equals(chargeItem.getIsDeleted())) {
                 continue;
@@ -564,11 +572,22 @@ public class TcmRxListAssembler {
             if (!TableNameConstants.WKF_SERVICE_REQUEST.equals(chargeItem.getServiceTable())) {
                 continue;
             }
-            if (StringUtils.isEmpty(chargeItem.getPrescriptionNo())) {
+            if (chargeItem.getServiceId() != null) {
+                serviceRequestIds.add(chargeItem.getServiceId());
+            }
+        }
+        Map<Long, String> prescriptionByServiceRequestId =
+            this.tcmDecoctionBasedOnPrescriptionResolver.mapServiceRequestIdsToHerbalPrescriptionNos(
+                serviceRequestIds);
+        for (ChargeItem chargeItem : chargeItems) {
+            if (chargeItem == null || Boolean.TRUE.equals(chargeItem.getIsDeleted())) {
                 continue;
             }
-            String prescriptionNo = chargeItem.getPrescriptionNo().trim();
-            if (!prescriptionNos.contains(prescriptionNo)) {
+            if (!TableNameConstants.WKF_SERVICE_REQUEST.equals(chargeItem.getServiceTable())) {
+                continue;
+            }
+            String prescriptionNo = prescriptionByServiceRequestId.get(chargeItem.getServiceId());
+            if (StringUtils.isEmpty(prescriptionNo) || !prescriptionNos.contains(prescriptionNo)) {
                 continue;
             }
             String current = result.get(prescriptionNo);

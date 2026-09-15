@@ -85,6 +85,12 @@ public class DoctorStationPatientQueueItemDto implements InpatientAccountBalance
     private String ageText;
 
     /**
+     * 身份证号：读模型未投影，由患者主档批量回填；完整号不脱敏（与护士站队列同口径）。
+     */
+    @Schema(description = "身份证号")
+    private String idCard;
+
+    /**
      * 病区主键。
      */
     @Schema(description = "病区主键")

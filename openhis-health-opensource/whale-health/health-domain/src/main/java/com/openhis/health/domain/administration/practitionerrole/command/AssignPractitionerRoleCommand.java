@@ -29,10 +29,8 @@ public class AssignPractitionerRoleCommand extends BatchCommand<AssignPractition
         private Long orgId;
         /** 任职位置主键 {@code adm_location.id}（可选）。 */
         private Long locationId;
-        /** 平台角色主键 {@code whale_roles.id}；与 {@link #roleCode} 二选一，优先本字段。 */
+        /** 平台角色主键 {@code whale_roles.id}（必填）。 */
         private Long roleId;
-        /** 兼容旧前端 API：1=医生 2=护士 3=药师 4=库管 6=行政(财务)。 */
-        private Integer roleCode;
         /** 岗位展示名称（可选覆盖）。 */
         private String name;
         /** 专业/专科编码（字典）。 */

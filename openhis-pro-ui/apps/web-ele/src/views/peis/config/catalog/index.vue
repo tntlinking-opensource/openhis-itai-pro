@@ -309,7 +309,7 @@ function columnsForTab(tab: CatalogTab): TableColumn[] {
     { prop: 'salePrice', label: '套餐价', width: 90, slot: 'salePrice' },
     { prop: 'childCount', label: '项目数', width: 90, slot: 'childCount' },
     { prop: 'statusEnum', label: '状态', width: 90, slot: 'statusEnum' },
-    { prop: 'actions', label: '操作', width: 100, slot: 'actions' },
+    { prop: 'actions', label: '操作', width: 140, slot: 'actions' },
   ];
 }
 
@@ -521,6 +521,37 @@ async function openEdit(row: Record<string, any>) {
     return;
   }
   editVisible.value = true;
+}
+
+/** 复制建议名称：已含「(副本)」则不再重复追加 */
+function suggestCopyDisplay(name: unknown): string {
+  const t = String(name ?? '').trim();
+  if (!t) {
+    return '未命名 (副本)';
+  }
+  if (t.includes('(副本)')) {
+    return t;
+  }
+  return `${t} (副本)`;
+}
+
+/**
+ * 复制体检套餐：清空主键后走新建保存；业务号由后端采番。
+ *
+ * @param row 当前列表行
+ */
+async function openCopyPackage(row: Record<string, any>) {
+  editForm.value = {
+    ...row,
+    packageActivityId: undefined,
+    code: undefined,
+    display: suggestCopyDisplay(row.display),
+    statusEnum: row.statusEnum || 'active',
+    childActivityIds: toIdStrings(row.childActivityIds),
+  };
+  actPickerKeyword.value = '';
+  editVisible.value = true;
+  void loadActivityOptions(editForm.value.childActivityIds);
 }
 
 /**
@@ -737,6 +768,9 @@ onMounted(() => {
       </template>
       <template #actions="{ row }">
         <ElButton link type="primary" @click="openEdit(row)">编辑</ElButton>
+        <ElButton v-if="activeTab === 'package'" link type="primary" @click="openCopyPackage(row)">
+          复制
+        </ElButton>
         <ElButton
           v-if="activeTab === 'observation'"
           link

@@ -1,4 +1,4 @@
-/** 住院口服药贴 PrintData（与 ip-oralMedLabel-print 模板 field 一致） */
+/** 住院口服药贴 PrintData（与 ip-oralMedLabel-print 模板 field 一致；30×40mm） */
 export interface InpatientOralMedLabelPrintData {
   bedNo: string;
   patientName: string;
@@ -6,6 +6,8 @@ export interface InpatientOralMedLabelPrintData {
   drugName: string;
   specText: string;
   doseText: string;
+  /** 频次展示（如「每日一次」；来自 frequencyDisplay） */
+  freqText: string;
 }
 
 /** 住院口服药贴 mapper 入参 */
@@ -16,6 +18,7 @@ export interface InpatientOralMedLabelPrintSource {
   drugName?: string;
   specText?: string;
   doseText?: string;
+  freqText?: string;
 }
 
 function str(value: null | number | string | undefined): string {
@@ -36,5 +39,6 @@ export function buildInpatientOralMedLabelPrintData(
     drugName: str(source.drugName),
     specText: str(source.specText),
     doseText: str(source.doseText),
+    freqText: str(source.freqText),
   };
 }

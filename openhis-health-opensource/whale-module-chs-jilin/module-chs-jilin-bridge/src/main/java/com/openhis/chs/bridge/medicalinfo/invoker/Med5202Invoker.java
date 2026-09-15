@@ -44,7 +44,7 @@ public class Med5202Invoker implements Med5202QueryInvoker {
             busNo,
             ChsInfNo.DISE_QUERY,
             MedPlatformInputAssembler.assemble5202(command),
-            medicalInfoInvokeSupport.buildInvokeContext());
+            medicalInfoInvokeSupport.buildInvokeContext(command));
         ChsPlatformResponseSupport.requireSuccess(body, ChsInfNo.DISE_QUERY);
         return MedInfoListOutputParser.parse5202(body);
     }

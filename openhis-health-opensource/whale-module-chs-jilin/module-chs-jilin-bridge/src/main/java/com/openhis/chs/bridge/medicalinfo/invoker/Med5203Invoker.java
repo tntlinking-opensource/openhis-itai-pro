@@ -44,7 +44,7 @@ public class Med5203Invoker implements Med5203QueryInvoker {
             busNo,
             ChsInfNo.SETL_QUERY,
             MedPlatformInputAssembler.assemble5203(command),
-            medicalInfoInvokeSupport.buildInvokeContext());
+            medicalInfoInvokeSupport.buildInvokeContext(command));
         ChsPlatformResponseSupport.requireSuccess(body, ChsInfNo.SETL_QUERY);
         return Med5203OutputParser.parse5203(body, ChsInfNo.SETL_QUERY);
     }

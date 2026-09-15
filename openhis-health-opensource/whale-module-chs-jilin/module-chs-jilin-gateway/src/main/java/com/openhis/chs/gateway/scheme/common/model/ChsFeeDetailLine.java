@@ -74,6 +74,13 @@ public class ChsFeeDetailLine {
     @JSONField(name = "hosp_appr_flag")
     private String hospApprFlag;
 
+    /**
+     * 中药使用方式（2204/2301 {@code tcmdrug_used_way}）：1 复方 / 2 单方。
+     * <p>仅中草药行赋值；空则不上报该字段。</p>
+     */
+    @JSONField(name = "tcmdrug_used_way")
+    private String tcmdrugUsedWay;
+
     @JSONField(name = "dscg_tkdrug_flag")
     private String dscgTkdrugFlag;
 

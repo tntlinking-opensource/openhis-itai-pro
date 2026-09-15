@@ -10,7 +10,7 @@ import lombok.Setter;
 import java.time.LocalDateTime;
 
 /**
- * 历史号复诊资格校验查询入参（BR-REG-020）。
+ * 复诊0元号资格校验查询入参（BR-REG-020）。
  *
  * <p>判定同一患者、同一挂号科室下，是否存在接诊时刻落在 72 小时窗口内的已接诊门诊就诊。</p>
  */
@@ -31,7 +31,7 @@ public class HistoricalFollowUpEligibilityQuery {
     private LocalDateTime asOf;
 
     /**
-     * 排除的号源类型主键（历史号复诊自身，防止连环续挂）。
+     * 排除的号源类型主键（复诊0元号自身，防止连环续挂）。
      */
     private Long excludedServiceTypeId;
 }

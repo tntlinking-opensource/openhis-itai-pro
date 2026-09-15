@@ -1108,10 +1108,6 @@ async function handlePrint(payload?: { preview?: boolean }) {
                 if (!no) return;
                 await agreeDeptIssueReturnApi({
                   busNo: no,
-                  approverId: resolveLoginPractitionerIdForRequest(
-                    userStore.userInfo as null | Record<string, unknown>,
-                  ),
-                  approvalClock: formatDateTime(new Date()).replace(' ', 'T'),
                 });
                 ElMessage.success('审批同意');
                 await loadDetail(no);
@@ -1130,10 +1126,6 @@ async function handlePrint(payload?: { preview?: boolean }) {
                   await rejectDeptIssueReturnApi({
                     busNo: no,
                     rejectReason: value,
-                    approverId: resolveLoginPractitionerIdForRequest(
-                      userStore.userInfo as null | Record<string, unknown>,
-                    ),
-                    approvalClock: formatDateTime(new Date()).replace(' ', 'T'),
                   });
                   ElMessage.success('已驳回');
                   await loadDetail(no);

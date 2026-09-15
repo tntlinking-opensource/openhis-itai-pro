@@ -1,5 +1,5 @@
 import type { HiprintPrinterItem } from './fetch-printer-list';
-import type { InvFormPaperKind } from './form-print-preference';
+import type { InvFormPaperKind, InvFormTripleSpec } from './form-print-preference';
 import type { PrinterPreference } from './printer-preference';
 
 import { isInvPrintScenario } from './constants/print-scenario';
@@ -7,9 +7,9 @@ import { resolvePrintScenarioLabel } from './constants/print-scenario-labels';
 import { fetchHiprintPrinterList, isPrinterAvailable } from './fetch-printer-list';
 import {
   getFormPrintPreference,
-  INV_FORM_PAPER_HEIGHT_MM,
   INV_FORM_PRINT_PREF_KEY,
   normalizeInvFormPaperKind,
+  normalizeInvFormTripleSpec,
   saveFormPrintPreference,
 } from './form-print-preference';
 import { openPrinterSelectDialog } from './open-printer-select-dialog';
@@ -29,12 +29,14 @@ export interface ResolvePrinterOptions {
   /** 库房单据：同窗选择纸张 */
   showPaperKind?: boolean;
   initialPaperKind?: InvFormPaperKind;
+  initialTripleSpec?: InvFormTripleSpec;
 }
 
 export interface ResolvePrinterResult {
   printer?: string;
   cancelled: boolean;
   paperKind?: InvFormPaperKind;
+  tripleSpec?: InvFormTripleSpec;
 }
 
 interface PromptDecision {
@@ -115,6 +117,7 @@ async function promptAndSave(options: {
   dialogMode?: 'print' | 'settings';
   showPaperKind: boolean;
   initialPaperKind?: InvFormPaperKind;
+  initialTripleSpec?: InvFormTripleSpec;
   initialPrinterName?: string;
   initialSkipPrompt: boolean;
   unavailableHint: string;
@@ -129,6 +132,7 @@ async function promptAndSave(options: {
     loadPrinters: fetchHiprintPrinterList,
     showPaperKind: options.showPaperKind,
     initialPaperKind: options.initialPaperKind,
+    initialTripleSpec: options.initialTripleSpec,
   });
   if (!selected) {
     return { cancelled: true };
@@ -139,20 +143,22 @@ async function promptAndSave(options: {
     updatedAt: new Date().toISOString(),
   });
   let paperKind: InvFormPaperKind | undefined;
+  let tripleSpec: InvFormTripleSpec | undefined;
   if (options.showPaperKind) {
     paperKind = normalizeInvFormPaperKind(selected.paperKind ?? options.initialPaperKind);
-    // 设置页，或勾选「下次不再提示」时，把纸张一并写成默认
+    tripleSpec = normalizeInvFormTripleSpec(selected.tripleSpec ?? options.initialTripleSpec);
+    // 设置页，或勾选「下次不再提示」时，把纸张与规格一并写成默认
     if (options.dialogMode === 'settings' || selected.skipPrompt) {
       const formPref = getFormPrintPreference(INV_FORM_PRINT_PREF_KEY);
       saveFormPrintPreference(INV_FORM_PRINT_PREF_KEY, {
-        paperHeightMm: formPref.paperHeightMm || INV_FORM_PAPER_HEIGHT_MM,
         copies: formPref.copies,
         paperKind,
+        tripleSpec,
         persistPaperKind: true,
       });
     }
   }
-  return { printer: selected.printerName, cancelled: false, paperKind };
+  return { printer: selected.printerName, cancelled: false, paperKind, tripleSpec };
 }
 
 /** 解析本次打印应使用的打印机（必要时弹窗） */
@@ -172,6 +178,9 @@ export async function resolvePrinterForPrint(
   const paperPref = showPaperKind ? getFormPrintPreference(INV_FORM_PRINT_PREF_KEY) : undefined;
   const initialPaperKind = normalizeInvFormPaperKind(
     options.initialPaperKind ?? paperPref?.paperKind,
+  );
+  const initialTripleSpec = normalizeInvFormTripleSpec(
+    options.initialTripleSpec ?? paperPref?.tripleSpec,
   );
 
   if (selectPrinter === 'never' && !showPaperKind) {
@@ -198,6 +207,7 @@ export async function resolvePrinterForPrint(
       dialogMode: options.dialogMode,
       showPaperKind,
       initialPaperKind,
+      initialTripleSpec,
       initialPrinterName: pref?.printerName,
       initialSkipPrompt: pref?.skipPrompt !== false,
       unavailableHint: message,
@@ -212,6 +222,7 @@ export async function resolvePrinterForPrint(
       printer: decision.initialPrinterName,
       cancelled: false,
       paperKind: showPaperKind ? initialPaperKind : undefined,
+      tripleSpec: showPaperKind ? initialTripleSpec : undefined,
     };
   }
 
@@ -221,6 +232,7 @@ export async function resolvePrinterForPrint(
     dialogMode: options.dialogMode,
     showPaperKind,
     initialPaperKind,
+    initialTripleSpec,
     initialPrinterName: decision.initialPrinterName || pref?.printerName,
     initialSkipPrompt: decision.initialSkipPrompt,
     unavailableHint: decision.unavailableHint,

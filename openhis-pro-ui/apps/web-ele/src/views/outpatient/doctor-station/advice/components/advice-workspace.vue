@@ -499,7 +499,7 @@ defineExpose({
           </ElTableColumn>
           <ElTableColumn
             prop="startTime"
-            label="开立时间"
+            label="签发时间"
             :width="adviceTableColWidth.startTime"
             align="center"
           />

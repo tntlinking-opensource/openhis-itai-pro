@@ -1,5 +1,5 @@
 <!--
-  门诊处方查看 · 详情 Drawer：方头摘要 + 药品明细表 + 处方打印（与药房发药同款）。
+  门诊处方查看 · 详情 Drawer：方头摘要（点评信息在上、处方信息在下）+ 药品明细表 + 处方打印。
   分组列用括线标记（不展示 groupId）；抽屉内容铺满不设表内滚动。
 -->
 <script setup lang="ts">
@@ -26,6 +26,7 @@ import {
 
 import { httpPageEncounterMedicationDispenseSlips } from '#/api/outpatient-pharmacy-dispense/outpatient-pharmacy-dispense.http';
 import { pageOutpatientPrescriptionViewApi } from '#/api/report/outpatient-prescription-view';
+import SectionTitle from '#/components/layouts/section-title.vue';
 import { useRequest } from '#/hooks/use-request';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
@@ -61,6 +62,18 @@ const printSubmitting = ref(false);
 const drawerTitle = computed(() => {
   const rxNo = String(summary.value?.prescriptionNo ?? '').trim();
   return rxNo ? `处方详情 · ${rxNo}` : '处方详情';
+});
+
+/** 是否展示点评信息分块（有点评状态或点评记录主键）。 */
+const showReviewSection = computed(() => {
+  const head = summary.value;
+  return Boolean(head?.reviewStatusEnum || head?.reviewId);
+});
+
+/** 是否展示方头付数（有中药付数才显示，禁止用处方类别文案判断）。 */
+const showChineseHerbsDoseQuantity = computed(() => {
+  const value = summary.value?.chineseHerbsDoseQuantity;
+  return value !== null && value !== undefined && String(value).trim() !== '';
 });
 
 const drawerLoading = computed(() => detailLoading.value || printSubmitting.value);
@@ -105,7 +118,17 @@ function fillSummaryFromFirstLine(first?: OutpatientPrescriptionDrugLineDto) {
     medTypeCode: head.medTypeCode || first.medTypeCode,
     medTypeText: head.medTypeText || first.medTypeText,
     contractCategoryText: head.contractCategoryText || first.contractCategoryText,
+    // 中药付数：列表入口可能未带，用明细首行回填
+    chineseHerbsDoseQuantity: head.chineseHerbsDoseQuantity ?? first.chineseHerbsDoseQuantity,
   };
+}
+
+/** 方头付数展示文案。 */
+function formatChineseHerbsDoseQuantity(value?: null | number | string) {
+  if (value === null || value === undefined || value === '') {
+    return '—';
+  }
+  return formatNumber(value);
 }
 
 /** 开方时间展示。 */
@@ -310,87 +333,101 @@ defineExpose({ open });
         </ElButton>
       </div>
 
-      <ElDescriptions v-if="summary" class="mb-4" :column="3" border size="small">
-        <ElDescriptionsItem label="处方号">
-          {{ summary.prescriptionNo || '—' }}
-        </ElDescriptionsItem>
-        <ElDescriptionsItem label="门诊号">
-          {{ summary.encounterBusNo || '—' }}
-        </ElDescriptionsItem>
-        <ElDescriptionsItem label="患者">
-          {{ summary.patientName || '—' }}
-        </ElDescriptionsItem>
-        <ElDescriptionsItem label="电话号">
-          {{ summary.patientPhone || '—' }}
-        </ElDescriptionsItem>
-        <ElDescriptionsItem label="诊断">
-          {{ summary.diagnosisName || '—' }}
-        </ElDescriptionsItem>
-        <ElDescriptionsItem label="收费状态">
-          <ElTag v-if="summary.chargeStatusText" effect="light">
-            {{ summary.chargeStatusText }}
-          </ElTag>
-          <span v-else>—</span>
-        </ElDescriptionsItem>
-        <ElDescriptionsItem label="发药状态">
-          <ElTag v-if="summary.dispenseStatusText" type="info" effect="light">
-            {{ summary.dispenseStatusText }}
-          </ElTag>
-          <span v-else>—</span>
-        </ElDescriptionsItem>
-        <ElDescriptionsItem label="开单科室">
-          {{ summary.orderingDepartmentName || '—' }}
-        </ElDescriptionsItem>
-        <ElDescriptionsItem label="开单医生">
-          {{ summary.orderingPractitionerName || '—' }}
-        </ElDescriptionsItem>
-        <ElDescriptionsItem label="开方时间">
-          {{ formatDateTime(summary.reqOpenedTime) }}
-        </ElDescriptionsItem>
-        <ElDescriptionsItem label="处方类别">
-          {{ summary.rxTypeText || '—' }}
-        </ElDescriptionsItem>
-        <ElDescriptionsItem label="医保类别">
-          {{ summary.medTypeText || '—' }}
-        </ElDescriptionsItem>
-        <ElDescriptionsItem label="费用性质">
-          {{ summary.contractCategoryText || '—' }}
-        </ElDescriptionsItem>
-        <template v-if="summary.reviewStatusEnum || summary.reviewId">
-          <ElDescriptionsItem label="点评状态">
-            <ElTag
-              v-if="summary.reviewStatusText"
-              :type="summary.reviewStatusEnum === 'REVIEWED' ? 'success' : 'info'"
-              effect="light"
-            >
-              {{ summary.reviewStatusText }}
-            </ElTag>
-            <span v-else>—</span>
-          </ElDescriptionsItem>
-          <ElDescriptionsItem label="点评结果">
-            <ElTag
-              v-if="summary.reasonableText"
-              :type="summary.reasonableFlag === false ? 'danger' : 'success'"
-              effect="light"
-            >
-              {{ summary.reasonableText }}
-            </ElTag>
-            <span v-else>—</span>
-          </ElDescriptionsItem>
-          <ElDescriptionsItem label="点评人">
-            {{ summary.reviewerName || '—' }}
-          </ElDescriptionsItem>
-          <ElDescriptionsItem label="点评时间">
-            {{ formatDateTime(summary.reviewedAt) }}
-          </ElDescriptionsItem>
-          <ElDescriptionsItem label="点评原因" :span="2">
-            {{ summary.reviewReason || '—' }}
-          </ElDescriptionsItem>
-          <ElDescriptionsItem label="点评备注">
-            {{ summary.reviewRemark || '—' }}
-          </ElDescriptionsItem>
+      <template v-if="summary">
+        <!-- 点评在上：与下方处方头+明细形成「点评 → 处方」阅读顺序 -->
+        <template v-if="showReviewSection">
+          <SectionTitle class="mb-2" title="点评信息" />
+          <ElDescriptions class="mb-4" :column="3" border size="small">
+            <ElDescriptionsItem label="点评编号">
+              {{ summary.reviewBusNo || '—' }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="点评状态">
+              <ElTag
+                v-if="summary.reviewStatusText"
+                :type="summary.reviewStatusEnum === 'REVIEWED' ? 'success' : 'info'"
+                effect="light"
+              >
+                {{ summary.reviewStatusText }}
+              </ElTag>
+              <span v-else>—</span>
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="点评结果">
+              <ElTag
+                v-if="summary.reasonableText"
+                :type="summary.reasonableFlag === false ? 'danger' : 'success'"
+                effect="light"
+              >
+                {{ summary.reasonableText }}
+              </ElTag>
+              <span v-else>—</span>
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="点评人">
+              {{ summary.reviewerName || '—' }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="点评时间">
+              {{ formatDateTime(summary.reviewedAt) }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="点评原因" :span="2">
+              {{ summary.reviewReason || '—' }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="点评备注">
+              {{ summary.reviewRemark || '—' }}
+            </ElDescriptionsItem>
+          </ElDescriptions>
         </template>
-      </ElDescriptions>
+
+        <SectionTitle class="mb-2" title="处方信息" />
+        <ElDescriptions class="mb-4" :column="3" border size="small">
+          <ElDescriptionsItem label="处方号">
+            {{ summary.prescriptionNo || '—' }}
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="门诊号">
+            {{ summary.encounterBusNo || '—' }}
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="患者">
+            {{ summary.patientName || '—' }}
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="电话号">
+            {{ summary.patientPhone || '—' }}
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="诊断">
+            {{ summary.diagnosisName || '—' }}
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="收费状态">
+            <ElTag v-if="summary.chargeStatusText" effect="light">
+              {{ summary.chargeStatusText }}
+            </ElTag>
+            <span v-else>—</span>
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="发药状态">
+            <ElTag v-if="summary.dispenseStatusText" type="info" effect="light">
+              {{ summary.dispenseStatusText }}
+            </ElTag>
+            <span v-else>—</span>
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="开单科室">
+            {{ summary.orderingDepartmentName || '—' }}
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="开单医生">
+            {{ summary.orderingPractitionerName || '—' }}
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="开方时间">
+            {{ formatDateTime(summary.reqOpenedTime) }}
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="处方类别">
+            {{ summary.rxTypeText || '—' }}
+          </ElDescriptionsItem>
+          <ElDescriptionsItem v-if="showChineseHerbsDoseQuantity" label="付数">
+            {{ formatChineseHerbsDoseQuantity(summary.chineseHerbsDoseQuantity) }}
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="医保类别">
+            {{ summary.medTypeText || '—' }}
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="费用性质">
+            {{ summary.contractCategoryText || '—' }}
+          </ElDescriptionsItem>
+        </ElDescriptions>
+      </template>
 
       <ElTable
         v-loading="detailLoading"

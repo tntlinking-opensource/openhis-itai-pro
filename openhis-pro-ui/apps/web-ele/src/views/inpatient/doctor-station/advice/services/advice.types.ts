@@ -91,6 +91,14 @@ export interface AdviceDrugItem extends AdviceEditForm {
   remark?: string;
   /** 目录/列表注射输液标志；为 true 时编辑卡展示滴速 */
   injectFlag?: boolean;
+  /** 目录默认单次剂量（剂量单位） */
+  catalogDose?: number;
+  /** 目录单次最小剂量（剂量单位） */
+  catalogMinUnit?: number;
+  /** 目录单次最大剂量（剂量单位） */
+  catalogMaxUnit?: number;
+  /** 当前剂量快捷预设：默认 / 最大 / 最小 */
+  dosePresetKind?: 'default' | 'max' | 'min';
 }
 
 /** 住院医嘱编辑卡 · 长期/临时/出院带药（与 AS-IP-DOR-003 出院带药处方类别 code 对齐） */
@@ -143,6 +151,12 @@ export interface AdviceProductOption {
   catalogUnitPrice?: number;
   /** 门诊/住院临时医嘱拆分属性（OrderCalcRule code "1"~"4"） */
   partAttributeEnum?: string;
+  /** 默认单次剂量（剂量单位） */
+  dose?: number;
+  /** 单次最小剂量（剂量单位） */
+  minUnit?: number;
+  /** 单次最大剂量（剂量单位） */
+  maxUnit?: number;
   /** 医保等级码（CHRGITM_LV） */
   chrgitmLv?: number | string;
   /** 医保等级展示（甲类/乙类/丙类） */
@@ -151,6 +165,12 @@ export interface AdviceProductOption {
   dosageInstruction?: string;
   /** 中药特殊煎法展示名 */
   dosageInstructionDictText?: string;
+}
+
+/** 病案/开立列表中药方内一味药的展示单元 */
+export interface TcmAdviceListHerbLine {
+  name: string;
+  dose: string;
 }
 
 /** 开立页主表行（含嵌入编辑卡用的虚拟行） */
@@ -243,4 +263,22 @@ export interface AdviceRowItem {
   /** 口服一盒一点剩余文案（已吃/剩余/下次领盒） */
   oralPackageRemainText?: string;
   oralPackageBatchInventoryApplied?: boolean;
+  /** 中药饮片行（tcm_flag）；病案首页按方合并后仍为 true */
+  tcmFlag?: boolean;
+  /** 中药方号（同方合并键） */
+  prescriptionNo?: string;
+  /** 中药付数 */
+  chineseHerbsDoseQuantity?: number | string;
+  /** 特殊煎法展示名 */
+  dosageInstructionText?: string;
+  /** 单次剂量展示串（中药味剂量） */
+  dosageDisplay?: string;
+  /** 中药方折叠后的饮片行（一张方一行） */
+  tcmHerbLines?: TcmAdviceListHerbLine[];
+  /** 中药方标题（如中药汤剂） */
+  tcmPrescriptionTitle?: string;
+  /** 中药方闭合行：用法/付数 */
+  tcmClosingMeta?: string;
+  /** 代煎 companion 展示（挂在方下行） */
+  tcmDecoctionText?: string;
 }

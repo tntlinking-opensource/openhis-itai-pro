@@ -22,6 +22,14 @@ public class AlignSpecimenTubeMergeCommand {
     /** 操作人（软删审计）。 */
     private Long operatorId;
 
+    /**
+     * 采血费 activity 主键（名称精确匹配「采血费」解析结果）。
+     *
+     * <p>可空：未勾选采血费时为 null。有值时该目标<strong>不</strong>做跨设备全局唯一校验
+     * （BR-STM-002：仅检验项目全局唯一；采血费/耗材可跨设备复用）。</p>
+     */
+    private Long bloodCollectionFeeActivityId;
+
     /** 全量目标行；空列表表示清空该设备全部绑定。 */
     private List<AlignSpecimenTubeMergeLineCommand> lines = new ArrayList<>();
 }

@@ -208,6 +208,54 @@ public class MedicationDispenseDomainService {
     }
 
     /**
+     * 门诊退费申请撤销：软删待退药（{@code PENDING_REFUND}）对冲发放行；原正向已发完成行不动。
+     *
+     * @param command 待退发放主键批次与操作人
+     */
+    public void voidPendingRefundMedicationDispense(VoidPendingRefundMedicationDispenseCommand command) {
+        List<MedicationDispense> toSave = new ArrayList<>();
+        // 前置校验 / 加载：逐条装载待退对冲发放并断言 PENDING_REFUND。
+        for (VoidPendingRefundMedicationDispenseCommand.Item item : command.resolveItems()) {
+            MedicationDispense dispense = this.mustGet(item.getId());
+            // Cmd：软删待退对冲行，撤销申请后药房队列不再展示待退。
+            dispense.voidPendingRefundForApplicationRevoke(command.getOperatorId());
+            toSave.add(dispense);
+        }
+        // 持久化：先落库；本路径无独立领域事件（读侧依赖软删过滤）。
+        if (!toSave.isEmpty()) {
+            this.saveAllMedicationDispenses(toSave);
+        }
+    }
+
+    /**
+     * 门诊退费申请撤销：将因申请而 DECLINED 的未发药发放恢复为待发药（{@code PREPARATION}）。
+     *
+     * <p>期望未执行原因通常为
+     * {@link com.openhis.health.domain.share.constants.DoctorStationRefundApplicationConstants#MEDICATION_DISPENSE_NOT_PERFORMED_REASON_OUTPATIENT_REFUND_APP}，
+     * 由命令条目 {@code expectedNotPerformedReasonEnum} 传入并与行上原因比对。</p>
+     *
+     * @param command 恢复批次（含期望原因码）与操作人
+     */
+    public void restoreDeclinedMedicationDispenseAfterRefundRevoke(
+        RestoreDeclinedMedicationDispenseAfterRefundRevokeCommand command
+    ) {
+        List<MedicationDispense> toSave = new ArrayList<>();
+        // 前置校验 / 加载：逐条断言 DECLINED + 原因匹配后恢复 PREPARATION。
+        for (RestoreDeclinedMedicationDispenseAfterRefundRevokeCommand.Item item : command.resolveItems()) {
+            MedicationDispense dispense = this.mustGet(item.getId());
+            // Gate：仅门诊退费申请作废路径产生的拒绝行可恢复。
+            dispense.ensureDeclinedForOutpatientRefundRevoke(item.getExpectedNotPerformedReasonEnum());
+            // Cmd：回待发药并清空未执行原因。
+            dispense.restorePreparationAfterOutpatientRefundRevoke();
+            toSave.add(dispense);
+        }
+        // 持久化：先落库；无独立事件，药房待发队列读侧刷新即可。
+        if (!toSave.isEmpty()) {
+            this.saveAllMedicationDispenses(toSave);
+        }
+    }
+
+    /**
      * 由临时医嘱生成发放单草稿。
      *
      * @param command 临时路径生成命令

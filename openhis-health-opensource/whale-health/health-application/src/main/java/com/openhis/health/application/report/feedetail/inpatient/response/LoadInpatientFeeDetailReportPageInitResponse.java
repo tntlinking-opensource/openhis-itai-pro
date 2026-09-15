@@ -19,11 +19,11 @@ import java.util.List;
 @Schema(description = "住院费用明细报表页初始化响应")
 public class LoadInpatientFeeDetailReportPageInitResponse {
 
-    /** 默认查询日起（yyyy-MM-dd，当日）。 */
+    /** 默认查询日起（yyyy-MM-dd 或 yyyy-MM-dd HH:mm:ss；仅日期时起 00:00:00、止 23:59:59，当日）。 */
     @Schema(description = "默认查询日起")
     private String defaultDateFrom;
 
-    /** 默认查询日止（yyyy-MM-dd，当日）。 */
+    /** 默认查询日止（yyyy-MM-dd 或 yyyy-MM-dd HH:mm:ss；仅日期时起 00:00:00、止 23:59:59，当日）。 */
     @Schema(description = "默认查询日止")
     private String defaultDateTo;
 

@@ -21,12 +21,12 @@ import java.util.List;
 @Schema(description = "住院费用明细报表导出请求")
 public class ExportInpatientFeeDetailReportRequest {
 
-    /** 结算业务日起（yyyy-MM-dd，闭区间）。 */
-    @Schema(description = "结算业务日起（yyyy-MM-dd）", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 结算业务日起（yyyy-MM-dd 或 yyyy-MM-dd HH:mm:ss；仅日期时起 00:00:00、止 23:59:59，闭区间）。 */
+    @Schema(description = "结算业务日起（yyyy-MM-dd 或 yyyy-MM-dd HH:mm:ss；仅日期时起 00:00:00、止 23:59:59）", requiredMode = Schema.RequiredMode.REQUIRED)
     private String dateFrom;
 
-    /** 结算业务日止（yyyy-MM-dd，闭区间）。 */
-    @Schema(description = "结算业务日止（yyyy-MM-dd）", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 结算业务日止（yyyy-MM-dd 或 yyyy-MM-dd HH:mm:ss；仅日期时起 00:00:00、止 23:59:59，闭区间）。 */
+    @Schema(description = "结算业务日止（yyyy-MM-dd 或 yyyy-MM-dd HH:mm:ss；仅日期时起 00:00:00、止 23:59:59）", requiredMode = Schema.RequiredMode.REQUIRED)
     private String dateTo;
 
     /** 住院科室主键（遗留；报表中心请用 {@link #requestingOrgId}）。 */
@@ -93,4 +93,14 @@ public class ExportInpatientFeeDetailReportRequest {
      */
     @Schema(description = "导出列清单（页面可见列）")
     private List<ExcelExportColumnDto> exportColumns;
+
+    /**
+     * 明细行合并模式（仅 DETAIL Tab 生效）：{@code LINE}（或不传/空）= 不合并；
+     * {@code BY_DEFINITION} = 同就诊块内按 {@code ChargeItem.definitionId} 合并后再展平行。
+     * 非法非空值由 AppService Gate 抛 {@code EX-RPT-IFD-102}。
+     *
+     * <p>SUMMARY Tab 忽略本字段；合并仅发生在导出扫描的各批块装配内，不做全窗再并。</p>
+     */
+    @Schema(description = "明细行合并模式 LINE/BY_DEFINITION；空或 LINE 不合并（仅 DETAIL）")
+    private String lineMergeMode;
 }

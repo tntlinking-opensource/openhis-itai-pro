@@ -23,6 +23,11 @@ public class QueryServiceCatalogRequest extends AbstractHealthPageRequest {
     private String categoryCode;
 
     /**
+     * 发布状态筛选（{@code ACTIVE} 已启用 / {@code INACTIVE} 已停用）；空/{@code null} 表示不限。
+     */
+    private String statusEnum;
+
+    /**
      * 是否包含已被套餐引用的子诊疗行。
      *
      * <p>{@code null}：本 IF（诊疗目录）按维护语义默认含明细；

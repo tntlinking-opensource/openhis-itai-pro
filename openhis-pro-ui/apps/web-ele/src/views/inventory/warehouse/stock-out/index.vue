@@ -1,6 +1,5 @@
 <!-- 药库出库单：工作站 + 侧栏卡片队列 + 右侧明细；布局对齐进货单。 -->
 <script lang="ts" setup>
-import type { PharmacyLocationOptionDto } from '#/api/inventory/pharmacy/requisition';
 import type {
   StockOutFormInitOptionDto,
   StockOutListRowDto,
@@ -13,7 +12,10 @@ import { useRoute } from 'vue-router';
 
 import { formatDateTime } from '@vben/utils';
 
-import { initWarehouseStockOutApi, pageWarehouseStockOutListApi } from '#/api/warehouse/stock-out';
+import {
+  initWarehouseStockOutApi,
+  pageWarehouseStockOutListApi,
+} from '#/api/inventory/warehouse/stock-out-workbench';
 import WarehouseDocWorkstation from '#/components/warehouse/warehouse-doc-workstation.vue';
 import {
   INV_ALL_LOCATIONS_FILTER_ID,
@@ -82,7 +84,7 @@ const tableForm = ref<{
 const cabinetListOptions = ref<Record<string, unknown>[]>([]);
 const pharmacyCabinetListOptions = ref<Record<string, unknown>[]>([]);
 const warehouseRawOptions = ref<WarehouseOptionDto[]>([]);
-const pharmacyRawOptions = ref<PharmacyLocationOptionDto[]>([]);
+const pharmacyRawOptions = ref<WarehouseOptionDto[]>([]);
 
 function mapInitItemTableTypes(opts: StockOutFormInitOptionDto[]): ApiOptionItem[] {
   return opts.map((o) => ({

@@ -7,8 +7,10 @@ export interface InpatientTempOrderRow {
   /** 医嘱内容：药品规格一行，用法/频次/用量折行；嘱托仅展示名 */
   orderContent: string;
   orderDoctorName: string;
-  /** 开嘱侧校对人 */
+  /** 开嘱侧校对人（纸面列头「执行护士」，取值仍为校对人） */
   startCheckerName: string;
+  /** 执行时间：MM-DD HH:mm */
+  executeAtText: string;
   stopTimeText: string;
   stopDoctorName: string;
   /** 停嘱侧校对护士（stop_performer_check_id 解析名） */
@@ -65,6 +67,7 @@ function mapOrderRow(row: InpatientTempOrderRow): InpatientTempOrderRow {
     orderContent: str(row.orderContent),
     orderDoctorName: str(row.orderDoctorName),
     startCheckerName: str(row.startCheckerName),
+    executeAtText: str(row.executeAtText),
     stopTimeText: str(row.stopTimeText),
     stopDoctorName: str(row.stopDoctorName),
     stopCheckerName: str(row.stopCheckerName),

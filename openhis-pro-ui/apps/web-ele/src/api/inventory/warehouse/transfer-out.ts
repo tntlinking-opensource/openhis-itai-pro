@@ -24,9 +24,7 @@ export interface TransferOutOptionDto {
   label?: string;
 }
 
-export interface LoadTransferOutFormInitRequest {
-  organizationId?: number;
-}
+export interface LoadTransferOutFormInitRequest {}
 
 export interface LoadTransferOutFormInitResponse {
   warehouseLocationOptions?: TransferOutOptionDto[];
@@ -44,7 +42,6 @@ export interface TransferOutListRowDto {
   sourceLocationId?: number | string;
   purposeLocationId?: number | string;
   applyTime?: string;
-  approvalTime?: string;
 }
 
 export interface PageTransferOutsRequest {
@@ -62,7 +59,6 @@ export interface PageTransferOutsRequest {
 export interface PageTransferOutsResponse {
   total?: number;
   totalCount?: number;
-  records?: TransferOutListRowDto[];
   content?: TransferOutListRowDto[];
 }
 

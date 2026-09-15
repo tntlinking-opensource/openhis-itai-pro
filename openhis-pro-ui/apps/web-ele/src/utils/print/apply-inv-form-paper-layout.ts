@@ -14,6 +14,14 @@ const EDGE_GAP_PT = 4 * PT_PER_MM;
 const MIN_TABLE_HEIGHT_PT = 40;
 /** 判定「在表格设计框下方」的容差 */
 const BELOW_TABLE_SLACK_PT = 8;
+/** 院名/单据名：落在 paperHeader 之上才会每页重复，续页表也从这条线起排 */
+const TITLE_REPEAT_FIELDS = new Set(['hospitalName', 'documentTitle']);
+/** 找不到标题时续页至少留的顶距（约 6mm），避免贴顶被打印机裁表头 */
+const MIN_CONTINUATION_HEADER_PT = 18;
+/** 标题底边到页眉线的间隙 */
+const TITLE_HEADER_GAP_PT = 4;
+/** 表头行高过矮时中文列名会裁切 */
+const MIN_TABLE_HEADER_ROW_HEIGHT_PT = 24;
 
 interface PrintElementLike {
   options?: Record<string, unknown>;
@@ -44,6 +52,49 @@ function isTableElement(element: PrintElementLike): boolean {
 }
 
 /**
+ * 续页 paperHeader：院名+单据名重复，明细表从该线起排，避免第二页表头贴顶被裁。
+ * 页眉线必须低于表格 top，否则整表会被当成页眉每页重复。
+ */
+function resolveInvDocumentPaperHeaderPt(elements: unknown[], tableTopPt: number): number {
+  let titleBottomPt = 0;
+  for (const raw of elements) {
+    if (!raw || typeof raw !== 'object') {
+      continue;
+    }
+    const options = (raw as PrintElementLike).options;
+    if (!options || typeof options !== 'object') {
+      continue;
+    }
+    const field = String(options.field ?? '').trim();
+    if (!TITLE_REPEAT_FIELDS.has(field)) {
+      continue;
+    }
+    const top = readNumber(options.top);
+    const height = Math.max(readNumber(options.height), 12);
+    titleBottomPt = Math.max(titleBottomPt, top + height);
+  }
+  let headerPt =
+    titleBottomPt > 0 ? titleBottomPt + TITLE_HEADER_GAP_PT : MIN_CONTINUATION_HEADER_PT;
+  const maxSafeHeaderPt = Math.max(0, tableTopPt - BELOW_TABLE_SLACK_PT);
+  if (maxSafeHeaderPt <= 0) {
+    return 0;
+  }
+  if (headerPt > maxSafeHeaderPt) {
+    headerPt = maxSafeHeaderPt;
+  }
+  return headerPt;
+}
+
+/** 续页重复表头，并保证表头行高够印中文列名 */
+function patchInvDocumentTableHeader(tableOptions: Record<string, unknown>): void {
+  tableOptions.tableHeaderRepeat = 'page';
+  const headerRowHeight = readNumber(tableOptions.tableHeaderRowHeight);
+  if (headerRowHeight < MIN_TABLE_HEADER_ROW_HEIGHT_PT) {
+    tableOptions.tableHeaderRowHeight = MIN_TABLE_HEADER_ROW_HEIGHT_PT;
+  }
+}
+
+/**
  * 按纸高锁定一页：签批钉在纸底，表格吃掉中间剩余高度。
  * 入参为 prepare 后的深拷贝，可就地改。
  */
@@ -68,13 +119,13 @@ function applyInvDocumentPaperLayout(
     panelObj.width = layout.paperWidthMm;
   }
   panelObj.paperType = layout.paperType;
-  panelObj.paperHeader = 0;
   panelObj.paperFooter = pageHeightPt;
   panelObj.paperNumberDisabled = layout.paperNumberDisabled;
   delete panelObj.panelPageRule;
 
   const elements = panelObj.printElements;
   if (!Array.isArray(elements)) {
+    panelObj.paperHeader = MIN_CONTINUATION_HEADER_PT;
     return printJson;
   }
 
@@ -100,11 +151,14 @@ function applyInvDocumentPaperLayout(
   }
 
   if (!tableElement) {
+    panelObj.paperHeader = MIN_CONTINUATION_HEADER_PT;
     return printJson;
   }
 
   const tableOptions = ensureOptions(tableElement);
   const tableTopPt = readNumber(tableOptions.top);
+  panelObj.paperHeader = resolveInvDocumentPaperHeaderPt(elements, tableTopPt);
+  patchInvDocumentTableHeader(tableOptions);
   const footerElements: PrintElementLike[] = [];
   for (const raw of elements) {
     if (!raw || typeof raw !== 'object') {

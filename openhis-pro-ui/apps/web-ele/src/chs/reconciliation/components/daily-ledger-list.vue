@@ -156,8 +156,8 @@ function formatDateRangeLabel(begin: string, end: string): string {
   return begin === end ? begin : `${begin} 至 ${end}`;
 }
 
-/** 起止日之间的逐日列表（含首尾） */
-function daysBetween(begin: string, end: string): string[] {
+/** 起止日之间的每一天 yyyy-MM-dd（含首尾） */
+function eachDateInclusive(begin: string, end: string): string[] {
   const days: string[] = [];
   const cursor = new Date(`${begin}T00:00:00`);
   const last = new Date(`${end}T00:00:00`);
@@ -182,6 +182,14 @@ function monthsBetween(begin: string, end: string): string[] {
   return months.length > 0 ? months : [begin.replaceAll('-', '').slice(0, 6)];
 }
 
+/** 列表合计行 id（不参与对账） */
+const SUMMARY_ROW_ID = '__SUMMARY__';
+
+/** 是否为表尾合计行 */
+function isSummaryRow(row: DailyFeeRow | null | undefined): boolean {
+  return row?.id === SUMMARY_ROW_ID;
+}
+
 /** 金额两位小数展示 */
 function formatMoney(value?: number | null): string {
   if (value == null) return '—';
@@ -193,6 +201,20 @@ function toMoneyNumber(value?: number | string | null): number {
   const n = Number(value ?? 0);
   if (!Number.isFinite(n)) return 0;
   return n;
+}
+
+/** 金额列求和（保留两位） */
+function sumMoney(
+  rows: DailyFeeRow[],
+  key: 'acctPay' | 'cashPayamt' | 'fundPaySumamt' | 'medfeeSumamt',
+): number {
+  const total = rows.reduce((sum, row) => sum + toMoneyNumber(row[key]), 0);
+  return Math.round(total * 100) / 100;
+}
+
+/** 笔数求和 */
+function sumSetlCount(rows: DailyFeeRow[]): number {
+  return rows.reduce((sum, row) => sum + (Number(row.setlCount) || 0), 0);
 }
 
 /** 状态 Tag 类型（按 status code） */
@@ -255,6 +277,8 @@ const queryParams = reactive({
   })(),
   /** 默认门诊；空串表示全部 */
   clrType: props.defaultClrType ?? '11',
+  /** 汇总方式：按天（一日一行）/ 按月（整段一行） */
+  sumMode: 'day' as 'day' | 'range',
 });
 
 watch(
@@ -301,6 +325,22 @@ const formItems = computed<FormItemConfig[]>(() => [
     },
   },
   {
+    type: 'select',
+    prop: 'sumMode',
+    label: '汇总方式',
+    clearable: false,
+    multiple: false,
+    filterable: false,
+    width: '120px',
+    options: [
+      { label: '按天', value: 'day' },
+      { label: '按月', value: 'range' },
+    ],
+    onChange: () => {
+      invalidateList();
+    },
+  },
+  {
     type: 'custom',
     prop: 'reconActions',
     label: '',
@@ -313,11 +353,12 @@ const tableColumns = computed<TableColumn[]>(() => {
     // 侧栏宽度约 420～480：只保留关键列，禁止 fixed/minWidth 撑出横向滚动
     return [
       {
-        type: 'index',
+        prop: '_seq',
         label: '#',
         width: 40,
         align: 'center',
         headerAlign: 'center',
+        slot: 'seqSlot',
       },
       {
         prop: 'insutypeText',
@@ -355,16 +396,17 @@ const tableColumns = computed<TableColumn[]>(() => {
   }
   return [
     {
-      type: 'index',
+      prop: '_seq',
       label: '序号',
       minWidth: 56,
       align: 'center',
       headerAlign: 'center',
+      slot: 'seqSlot',
     },
     {
       prop: 'stmtBegndate',
       label: '对账日期',
-      minWidth: 120,
+      minWidth: 200,
       align: 'center',
       headerAlign: 'center',
       slot: 'reconDaySlot',
@@ -568,12 +610,57 @@ const unbalancedCount = computed(
   () => tableData.value.filter((row) => row.status === RECON_STATUS.UNBALANCED).length,
 );
 
+/** 查询结果 + 表尾合计行（改金额时随 data 重算） */
+const displayTableData = computed<DailyFeeRow[]>(() => {
+  if (!queried.value || tableData.value.length === 0) {
+    return [];
+  }
+  const rows = tableData.value;
+  const summary: DailyFeeRow = {
+    id: SUMMARY_ROW_ID,
+    stmtBegndate: '',
+    stmtEnddate: '',
+    insutype: '',
+    insutypeText: '合计',
+    clrType: '',
+    clrTypeText: '',
+    medfeeSumamt: sumMoney(rows, 'medfeeSumamt'),
+    fundPaySumamt: sumMoney(rows, 'fundPaySumamt'),
+    cashPayamt: sumMoney(rows, 'cashPayamt'),
+    acctPay: sumMoney(rows, 'acctPay'),
+    setlCount: sumSetlCount(rows),
+    localSetlCount: rows.reduce((sum, row) => sum + (Number(row.localSetlCount) || 0), 0),
+    status: RECON_STATUS.PENDING,
+  };
+  return [...rows, summary];
+});
+
+/** 合计行样式 */
+function summaryRowClassName({ row }: { row: DailyFeeRow }): string {
+  return isSummaryRow(row) ? 'daily-ledger-list__summary-row' : '';
+}
+
 /** 是否已对某行做过明细对账 */
 function isDetailDone(rowId: string): boolean {
   return detailDoneIds.value.has(rowId);
 }
 
-/** 匹配与对账区间完全一致的本地日账流水（优先精确起止） */
+/** 同维度多条日账中优先取最新「平」，其次最新一条 */
+function pickPreferredLocalRecord(
+  matches: LocalReconDailyRecord[],
+): LocalReconDailyRecord | undefined {
+  if (matches.length === 0) return undefined;
+  // 平优先，再按创建时间倒序
+  const sorted = [...matches].sort((a, b) => {
+    const aBalanced = isStmtBalanced(a.stmtRslt) ? 0 : 1;
+    const bBalanced = isStmtBalanced(b.stmtRslt) ? 0 : 1;
+    if (aBalanced !== bBalanced) return aBalanced - bBalanced;
+    return String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+  });
+  return sorted[0];
+}
+
+/** 匹配与当前汇总区间起止完全一致的本地日账流水（优先精确起止） */
 function findLocalDailyRecord(
   records: LocalReconDailyRecord[],
   stmtBegndate: string,
@@ -581,7 +668,8 @@ function findLocalDailyRecord(
   insutype: string,
   clrType: string,
 ): LocalReconDailyRecord | undefined {
-  const exact = records.find((record) => {
+  // 精确起止一致（按天/按月各自对上）
+  const exact = records.filter((record) => {
     const begin = (record.stmtBegndate || '').slice(0, 10);
     const end = (record.stmtEnddate || begin).slice(0, 10);
     if (!begin) return false;
@@ -590,18 +678,20 @@ function findLocalDailyRecord(
     if ((record.clrType || '') !== clrType) return false;
     return true;
   });
-  if (exact) return exact;
-  // 回落：本地单日记录落在本区间内（兼容历史一日一账）
+  const preferredExact = pickPreferredLocalRecord(exact);
+  if (preferredExact) return preferredExact;
+  // 回落：仅单日查询时，匹配「同日单日」记录；排除整月误落在起始日的区间账
   if (stmtBegndate === stmtEnddate) {
-    return records.find((record) => {
+    const dayMatches = records.filter((record) => {
       const begin = (record.stmtBegndate || '').slice(0, 10);
       const end = (record.stmtEnddate || begin).slice(0, 10);
       if (!begin) return false;
-      if (begin > stmtBegndate || end < stmtBegndate) return false;
+      if (begin !== stmtBegndate || end !== stmtBegndate) return false;
       if ((record.insutype || '') !== insutype) return false;
       if ((record.clrType || '') !== clrType) return false;
       return true;
     });
+    return pickPreferredLocalRecord(dayMatches);
   }
   return undefined;
 }
@@ -670,8 +760,7 @@ async function loadFeeList() {
   try {
     emitReconDate();
     const clrTypeFilter = (queryParams.clrType || '').trim();
-    const days = daysBetween(begin, end);
-    // 本地日账：跨月时合并多月流水，用于回显是否已对、平/不平
+    // 本地日账：跨月时合并多月流水，用于回显该区间是否已对、平/不平
     const monthList = monthsBetween(begin, end);
     const localBatches = await Promise.all(
       monthList.map((monthFilter) =>
@@ -683,6 +772,7 @@ async function loadFeeList() {
     );
     const localById = new Map<string, LocalReconDailyRecord>();
     for (const batch of localBatches) {
+      // 同 id 去重，避免跨月合并时重复
       for (const row of batch) {
         const key = String(row.id ?? `${row.stmtBegndate}-${row.insutype}-${row.clrType}`);
         localById.set(key, row);
@@ -690,25 +780,43 @@ async function loadFeeList() {
     }
     const localRecords = [...localById.values()];
 
-    // 按天拆行：选多天时每天单独汇总、单独对账（不把多天合成一笔）
-    const daySummaries = await Promise.all(
-      days.map(async (day) => {
-        const summaries = await summarizeClearAmountsApi({
-          contractBusNo: busNo,
-          begndate: day,
-          enddate: day,
-          clrType: clrTypeFilter || undefined,
-        });
-        return summaries.map((row) => mapSummaryToFeeRow(row, day, day, localRecords));
-      }),
-    );
-    tableData.value = daySummaries.flat().sort((a, b) => {
-      const byDate = a.stmtBegndate.localeCompare(b.stmtBegndate);
-      if (byDate !== 0) return byDate;
-      const byInsu = a.insutype.localeCompare(b.insutype);
-      if (byInsu !== 0) return byInsu;
-      return a.clrType.localeCompare(b.clrType);
-    });
+    // 一次拉所选区间：按险种 + 业务类型汇总金额（医保 3201 仍按这两维出站）
+    const sortRows = (rows: DailyFeeRow[]) =>
+      [...rows].sort((a, b) => {
+        const byDay = a.stmtBegndate.localeCompare(b.stmtBegndate);
+        if (byDay !== 0) return byDay;
+        const byInsu = a.insutype.localeCompare(b.insutype);
+        if (byInsu !== 0) return byInsu;
+        return a.clrType.localeCompare(b.clrType);
+      });
+
+    if (queryParams.sumMode === 'day') {
+      // 按天：区间内每日各自汇总一行（险种×业务类型）
+      const days = eachDateInclusive(begin, end);
+      const dayBatches = await Promise.all(
+        days.map(async (day) => {
+          const summaries = await summarizeClearAmountsApi({
+            contractBusNo: busNo,
+            begndate: day,
+            enddate: day,
+            clrType: clrTypeFilter || undefined,
+          });
+          return summaries.map((row) => mapSummaryToFeeRow(row, day, day, localRecords));
+        }),
+      );
+      tableData.value = sortRows(dayBatches.flat());
+    } else {
+      // 按月/整段：整段区间合成一行（险种×业务类型）
+      const summaries = await summarizeClearAmountsApi({
+        contractBusNo: busNo,
+        begndate: begin,
+        enddate: end,
+        clrType: clrTypeFilter || undefined,
+      });
+      tableData.value = sortRows(
+        summaries.map((row) => mapSummaryToFeeRow(row, begin, end, localRecords)),
+      );
+    }
     loadedForBusNo.value = busNo;
     queried.value = true;
   } catch (error) {
@@ -750,25 +858,34 @@ function handleCompactDateChange(value: string | null) {
 }
 
 /** 快捷日期：仅改区间，需再点查询 */
-function setDatePreset(preset: 'today' | 'yesterday' | 'week' | 'month') {
+function setDatePreset(preset: 'today' | 'yesterday' | 'week' | 'month' | 'lastMonth') {
   const now = new Date();
   if (preset === 'today') {
     const d = formatYmd(now);
     queryParams.dateRange = [d, d];
+    queryParams.sumMode = 'day';
   } else if (preset === 'yesterday') {
     const d = new Date(now);
     d.setDate(d.getDate() - 1);
     const y = formatYmd(d);
     queryParams.dateRange = [y, y];
+    queryParams.sumMode = 'day';
   } else if (preset === 'week') {
     const end = new Date(now);
     const begin = new Date(now);
     begin.setDate(begin.getDate() - 6);
     queryParams.dateRange = [formatYmd(begin), formatYmd(end)];
+    queryParams.sumMode = 'day';
+  } else if (preset === 'lastMonth') {
+    const begin = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const end = new Date(now.getFullYear(), now.getMonth(), 0);
+    queryParams.dateRange = [formatYmd(begin), formatYmd(end)];
+    queryParams.sumMode = 'range';
   } else {
     const begin = new Date(now.getFullYear(), now.getMonth(), 1);
     const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
     queryParams.dateRange = [formatYmd(begin), formatYmd(end)];
+    queryParams.sumMode = 'range';
   }
   emitReconDate();
   invalidateList();
@@ -784,7 +901,7 @@ function applyDailyResult(row: DailyFeeRow, result: ReconDaily3201Result): Daily
   };
 }
 
-/** 发起单行 3201 日对账（出站医保；金额由后端按契约重算） */
+/** 发起单行 3201 对账（出站医保；起止日为所选区间，金额取当前行汇总） */
 async function reconcileOneRow(row: DailyFeeRow): Promise<DailyFeeRow> {
   if (loading.value) {
     throw new Error('列表刷新中，请稍后对账');
@@ -821,7 +938,7 @@ async function handleReconcileRow(row: DailyFeeRow) {
     const orgLabel = formatClearOrgOptionLabel(orgOpt?.label, busNo);
     try {
       await ElMessageBox.confirm(
-        `当前清算机构「${orgLabel}」该日医疗费为 0，通常说明选错了机构（例如选了省医保而数据在市医保）。是否仍要对账？`,
+        `当前清算机构「${orgLabel}」该区间医疗费为 0，通常说明选错了机构（例如选了省医保而数据在市医保）。是否仍要对账？`,
         '请确认清算机构',
         { type: 'warning', confirmButtonText: '仍要对账', cancelButtonText: '取消' },
       );
@@ -1036,7 +1153,7 @@ onMounted(() => {
   >
     <TableLayout
       class="daily-ledger-list__table !p-0"
-      :table-data="queried ? tableData : []"
+      :table-data="displayTableData"
       :loading="loading || reconciling || detailReconciling"
       :total="queried ? tableData.length : 0"
       :query-params="queryParams"
@@ -1049,6 +1166,7 @@ onMounted(() => {
       :stripe="false"
       :max-height="compact ? 280 : 480"
       :size="compact ? 'small' : 'default'"
+      :row-class-name="summaryRowClassName"
       row-key="id"
       @query="handleQuery"
     >
@@ -1098,12 +1216,19 @@ onMounted(() => {
             <ElButton @click="setDatePreset('today')">今天</ElButton>
             <ElButton v-if="!compact" @click="setDatePreset('week')">近7天</ElButton>
             <ElButton v-if="!compact" @click="setDatePreset('month')">本月</ElButton>
+            <ElButton v-if="!compact" @click="setDatePreset('lastMonth')">上月</ElButton>
           </ElButtonGroup>
         </div>
       </template>
 
+      <template #seqSlot="{ row }">
+        <span v-if="isSummaryRow(row)"></span>
+        <span v-else>{{ tableData.findIndex((item) => item.id === row.id) + 1 }}</span>
+      </template>
+
       <template #reconDaySlot="{ row }">
-        {{ formatDateRangeLabel(row.stmtBegndate, row.stmtEnddate) }}
+        <span v-if="isSummaryRow(row)"></span>
+        <span v-else>{{ formatDateRangeLabel(row.stmtBegndate, row.stmtEnddate) }}</span>
       </template>
 
       <template #reconActionsSlot>
@@ -1137,8 +1262,13 @@ onMounted(() => {
       </template>
 
       <template #medfeeSlot="{ row }">
+        <template v-if="isSummaryRow(row)">
+          <span class="daily-ledger-list__amt-text daily-ledger-list__summary-amt">{{
+            formatMoney(row.medfeeSumamt)
+          }}</span>
+        </template>
         <ElInputNumber
-          v-if="compact || amountsEditable"
+          v-else-if="compact || amountsEditable"
           v-model="row.medfeeSumamt"
           :precision="2"
           :step="0.01"
@@ -1149,8 +1279,13 @@ onMounted(() => {
         <span v-else class="daily-ledger-list__amt-text">{{ formatMoney(row.medfeeSumamt) }}</span>
       </template>
       <template #fundSlot="{ row }">
+        <template v-if="isSummaryRow(row)">
+          <span class="daily-ledger-list__amt-text daily-ledger-list__summary-amt">{{
+            formatMoney(row.fundPaySumamt)
+          }}</span>
+        </template>
         <ElInputNumber
-          v-if="compact || amountsEditable"
+          v-else-if="compact || amountsEditable"
           v-model="row.fundPaySumamt"
           :precision="2"
           :step="0.01"
@@ -1161,11 +1296,20 @@ onMounted(() => {
         <span v-else class="daily-ledger-list__amt-text">{{ formatMoney(row.fundPaySumamt) }}</span>
       </template>
       <template #cashSlot="{ row }">
-        <span class="daily-ledger-list__amt-text">{{ formatMoney(row.cashPayamt) }}</span>
+        <span
+          class="daily-ledger-list__amt-text"
+          :class="{ 'daily-ledger-list__summary-amt': isSummaryRow(row) }"
+          >{{ formatMoney(row.cashPayamt) }}</span
+        >
       </template>
       <template #acctSlot="{ row }">
+        <template v-if="isSummaryRow(row)">
+          <span class="daily-ledger-list__amt-text daily-ledger-list__summary-amt">{{
+            formatMoney(row.acctPay)
+          }}</span>
+        </template>
         <ElInputNumber
-          v-if="compact || amountsEditable"
+          v-else-if="compact || amountsEditable"
           v-model="row.acctPay"
           :precision="2"
           :step="0.01"
@@ -1176,34 +1320,42 @@ onMounted(() => {
         <span v-else class="daily-ledger-list__amt-text">{{ formatMoney(row.acctPay) }}</span>
       </template>
       <template #setlCountSlot="{ row }">
-        <ElInputNumber
-          v-if="compact || amountsEditable"
-          v-model="row.setlCount"
-          :min="0"
-          :step="1"
-          :controls="false"
-          size="small"
-          class="daily-ledger-list__setl-count"
-          title="按平台明细笔数填写；本地缺收完即退测试单时可改大"
-        />
-        <span v-else class="daily-ledger-list__amt-text">{{ row.setlCount ?? '—' }}</span>
-        <div
-          v-if="row.setlCount !== row.localSetlCount"
-          class="text-xs"
-          style="color: var(--el-color-warning)"
-        >
-          本地 {{ row.localSetlCount }}
-        </div>
+        <template v-if="isSummaryRow(row)">
+          <span class="daily-ledger-list__amt-text daily-ledger-list__summary-amt">{{
+            row.setlCount
+          }}</span>
+        </template>
+        <template v-else>
+          <ElInputNumber
+            v-if="compact || amountsEditable"
+            v-model="row.setlCount"
+            :min="0"
+            :step="1"
+            :controls="false"
+            size="small"
+            class="daily-ledger-list__setl-count"
+            title="按平台明细笔数填写；本地缺收完即退测试单时可改大"
+          />
+          <span v-else class="daily-ledger-list__amt-text">{{ row.setlCount ?? '—' }}</span>
+          <div
+            v-if="row.setlCount !== row.localSetlCount"
+            class="text-xs"
+            style="color: var(--el-color-warning)"
+          >
+            本地 {{ row.localSetlCount }}
+          </div>
+        </template>
       </template>
 
       <template #statusSlot="{ row }">
-        <ElTag :type="statusTagType(row.status)" effect="light" size="small">
+        <span v-if="isSummaryRow(row)"></span>
+        <ElTag v-else :type="statusTagType(row.status)" effect="light" size="small">
           {{ formatReconStatusLabel(row.status) }}
         </ElTag>
       </template>
 
       <template #actions="{ row }">
-        <div class="daily-ledger-list__actions">
+        <div v-if="!isSummaryRow(row)" class="daily-ledger-list__actions">
           <ElButton
             v-if="row.status === RECON_STATUS.PENDING"
             type="primary"
@@ -1246,7 +1398,7 @@ onMounted(() => {
     <div v-if="!queried && !loading" class="daily-ledger-list__placeholder">
       <ElEmpty
         :image-size="compact ? 64 : 88"
-        description="请选择清算机构、对账日期与业务类型后点击「查询」；选多天时会按天拆成多行，仍按日对账"
+        description="请选择清算机构、对账日期与业务类型后点击「查询」；列表按险种汇总所选日期范围内的金额，每行可发起医保对账"
       />
     </div>
 
@@ -1896,6 +2048,19 @@ onMounted(() => {
 .daily-ledger-list__amt-text {
   font-variant-numeric: tabular-nums;
   font-size: inherit;
+}
+
+.daily-ledger-list__summary-amt {
+  font-weight: 600;
+}
+
+.daily-ledger-list__table :deep(.daily-ledger-list__summary-row) {
+  background: #f5f8fb;
+  font-weight: 600;
+}
+
+.daily-ledger-list__table :deep(.daily-ledger-list__summary-row .vxe-body--column) {
+  background: #f5f8fb;
 }
 
 .daily-ledger-list__actions {

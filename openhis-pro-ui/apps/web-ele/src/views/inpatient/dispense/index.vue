@@ -761,7 +761,6 @@ async function handleSummaryBatchDispense() {
       receiverId: preserveApiIdForRequest(receiverId) ?? receiverId,
       preparerPractitionerId: preserveApiIdForRequest(preparerId) ?? preparerId,
       traceLines: traceLines.length > 0 ? traceLines : undefined,
-      contractBusNo: insuranceContractBusNo.value,
     });
     const message = res.message?.trim() || '核对发药成功';
     if (message.includes('EX-OPP-207')) {
@@ -1071,7 +1070,6 @@ async function executeDispenseForLineIds(
     ];
     const res = await httpDispenseInpatientMedications({
       encounterId: enc,
-      contractBusNo: insuranceContractBusNo.value,
       lines: dispenseIds.map((dispenseId) => ({ dispenseId })),
     });
     const message = res.message?.trim() || '发药提交成功';

@@ -147,8 +147,12 @@ public class MedicationDefinitionDetailQueryModel {
     private String restrictedEnum;
     /** 医保等级。 */
     private Integer chrgitmLv;
-    /** 病案结算类型编码。 */
+    /** 病案结算类型编码（术语 {@code mr_settlement_type_code}）。 */
     private String mrSettlementTypeCode;
+    /**
+     * 结余留用批次号（术语 {@code surplus_retention_batch_code}；可选）。
+     */
+    private String surplusRetentionBatchCode;
     /** 药品版本号。 */
     private String version;
     /** 限制使用标志。 */

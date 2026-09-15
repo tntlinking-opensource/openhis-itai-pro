@@ -23,7 +23,8 @@ export function downloadBinaryExportFile(
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) {
-    bytes[i] = binary.codePointAt(i) ?? 0;
+    // atob 得到的是「每字符一字节」的 binary string，须用 charCodeAt，勿用 codePointAt
+    bytes[i] = binary.charCodeAt(i) & 0xff;
   }
   const blob = new Blob([bytes], {
     type: result.contentType ?? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

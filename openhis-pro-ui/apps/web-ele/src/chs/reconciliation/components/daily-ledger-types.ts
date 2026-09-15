@@ -21,9 +21,9 @@ export const RECON_STATUS_LABEL: Record<ReconStatusCode, string> = {
 /** 日对账表格行：HIS 本地金额 + 对账状态 */
 export interface DailyFeeRow {
   id: string;
-  /** 对账开始日 yyyy-MM-dd */
+  /** 对账开始日 yyyy-MM-dd（查询区间起点） */
   stmtBegndate: string;
-  /** 对账结束日 yyyy-MM-dd */
+  /** 对账结束日 yyyy-MM-dd（查询区间终点） */
   stmtEnddate: string;
   insutype: string;
   insutypeText: string;

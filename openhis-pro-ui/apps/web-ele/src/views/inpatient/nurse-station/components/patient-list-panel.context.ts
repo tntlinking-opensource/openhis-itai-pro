@@ -35,6 +35,8 @@ export interface NurseStationPatientListPanelContext {
   regionOptions: Ref<RegionItem[]>;
   availableWards: ComputedRef<WardItem[]>;
   filteredPatients: ComputedRef<PatientItem[]>;
+  /** 患者队列加载中（左侧列表小 loading） */
+  queueLoading: Ref<boolean>;
   regionNameByIdRecord: ComputedRef<Record<string, string>>;
   wardNameByIdRecord: ComputedRef<Record<string, string>>;
   changeKeyword: (value: string) => void;

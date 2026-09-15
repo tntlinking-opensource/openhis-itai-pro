@@ -24,6 +24,8 @@ export interface InpatientClinicalEditGateRow {
   organizationId?: string;
   /** 病例是否已归档（就诊下存在 LOCKED 文书） */
   clinicalArchived?: boolean;
+  /** 病区或病房位置主键（体温单/护理记录管辖病区放行） */
+  wardId?: string;
 }
 
 /** 住院临床不可编辑时的原因（用于提示） */
@@ -122,6 +124,50 @@ export function resolveInpatientClinicalEditDenial(
     return 'other_department';
   }
   return null;
+}
+
+/**
+ * 体温单/护理记录：同入院科室可写；否则登录者管辖病区包含该行病区亦可写。
+ *
+ * @param loginPractitionerId 当前登录医务人员主键
+ * @param loginOrganizationId 登录所选/所属科室主键
+ * @param managedWardIds 护士站管辖病区/病房位置主键
+ * @param row 列表行
+ * @return 不可编辑原因；可写为 null
+ */
+export function resolveInpatientNurseSheetEditDenial(
+  loginPractitionerId: null | string | undefined,
+  loginOrganizationId: null | string | undefined,
+  managedWardIds: string[],
+  row: InpatientClinicalEditGateRow,
+): InpatientClinicalEditDenialReason | null {
+  const deptDenial = resolveInpatientClinicalEditDenial(
+    loginPractitionerId,
+    loginOrganizationId,
+    row,
+  );
+  if (deptDenial === null) {
+    return null;
+  }
+  // 无身份或已归档仍只读，不因管辖病区放开
+  if (deptDenial !== 'other_department') {
+    return deptDenial;
+  }
+  const rowWardId = preserveApiIdForRequest(row.wardId);
+  if (!rowWardId) {
+    return 'other_department';
+  }
+  const managed = new Set<string>();
+  for (const raw of managedWardIds) {
+    const id = preserveApiIdForRequest(raw);
+    if (id) {
+      managed.add(id);
+    }
+  }
+  if (managed.has(rowWardId)) {
+    return null;
+  }
+  return 'other_department';
 }
 
 /**

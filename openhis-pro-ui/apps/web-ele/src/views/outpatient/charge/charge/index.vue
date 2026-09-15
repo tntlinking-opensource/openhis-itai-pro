@@ -65,6 +65,7 @@ import { sumMoneyThenSettle } from '#/utils/format/money-scale';
 import {
   FALLBACK_DEFAULT_PAY_CHANNEL,
   optionDtosToPayChannelOptions,
+  resolveCollectPayChannelCode,
 } from '#/utils/payment/payment-channel-options';
 import {
   cacheClientScanResult,
@@ -87,7 +88,6 @@ import {
 import '../charge-workbench-panel.css';
 import {
   CHARGE_ITEM_STATUS_LABEL_TAG,
-  DEFAULT_OUTPATIENT_CHARGE_PAY_CHANNEL_CODE,
   OUTPATIENT_CHARGE_PAY_CHANNEL_OPTIONS,
   OUTPATIENT_CHARGE_SETTLE_OUTCOME_COMPLETED,
   resolveOutpatientChargeSwitchAccountMessage,
@@ -284,7 +284,7 @@ const confirmSettleLoading = ref(false);
 const reprintLoading = ref(false);
 
 const paymentForm = reactive({
-  payChannelCode: DEFAULT_OUTPATIENT_CHARGE_PAY_CHANNEL_CODE,
+  payChannelCode: FALLBACK_DEFAULT_PAY_CHANNEL,
 });
 
 const payChannelOptions = ref([...OUTPATIENT_CHARGE_PAY_CHANNEL_OPTIONS]);
@@ -1394,10 +1394,10 @@ const handleOpenSettlement = async () => {
     lockedChargeItemIds.value = selectedChargeRows.value.map((r) => r.chargeItemId);
     unionPayMakeupCollectMode.value = false;
     const cashPay = Number(preSettleSnapshot.value?.displayAmount ?? 0);
-    paymentForm.payChannelCode =
-      Number.isFinite(cashPay) && cashPay > 0.001
-        ? DEFAULT_OUTPATIENT_CHARGE_PAY_CHANNEL_CODE
-        : FALLBACK_DEFAULT_PAY_CHANNEL;
+    paymentForm.payChannelCode = resolveCollectPayChannelCode(
+      cashPay,
+      settlementPayChannelOptions.value,
+    );
     // 先关进度弹窗再开结算窗，避免同 tick 双 Dialog 互相顶掉
     openSettlementAfterProgress = true;
   } catch (error: unknown) {

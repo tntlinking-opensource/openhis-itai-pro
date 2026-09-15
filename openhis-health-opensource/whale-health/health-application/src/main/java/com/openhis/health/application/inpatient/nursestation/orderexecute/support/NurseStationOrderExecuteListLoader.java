@@ -89,23 +89,32 @@ public class NurseStationOrderExecuteListLoader {
             List<InpatientOrderListSkeleton> skeleton = inpatientOrderListMergeAssembler.mergeNurseStationExecuteOrders(
                 visibleEncounterIds, therapyEnum);
             String doctorSource = GenerateSource.DOCTOR_PRESCRIPTION.getCode();
-            Map<Long, List<MedicationRequestListQueryModel>> medByEncounter = new HashMap<>();
+            // Pre：药/诊明细按就诊集合批量装载（禁逐就诊 QS，§2.1 #9）
+            Map<Long, List<MedicationRequestListQueryModel>> medByEncounter =
+                medicationRequestQueryService.mapMedicationRequestsByEncounterIdsForDoctorStation(
+                    visibleEncounterIds, doctorSource);
             Map<Long, List<ServiceRequestListModel>> svcByEncounter = new HashMap<>();
-            // Pre：逐就诊加载药/诊明细（B.6.4 分聚合 QS；tcm Tab 时收窄 SERVICE_REQUEST）
-            for (Long encounterId : visibleEncounterIds) {
-                List<MedicationRequestListQueryModel> medRows =
-                    medicationRequestQueryService.listMedicationRequestsByEncounterForDoctorStation(
-                        encounterId, doctorSource);
-                medRows = inpatientNurseStationTcmOrchestrator.filterMedRowsByMedicineCategory(medRows, medicineCategoryTab);
-                medByEncounter.put(encounterId, medRows);
-                if (inpatientNurseStationTcmOrchestrator.includeServiceRequestOnTab(medicineCategoryTab)) {
-                    svcByEncounter.put(encounterId,
-                        serviceRequestQueryService.listServiceRequestsByGenerateSource(encounterId, doctorSource));
-                } else {
+            if (inpatientNurseStationTcmOrchestrator.includeServiceRequestOnTab(medicineCategoryTab)) {
+                svcByEncounter = serviceRequestQueryService.mapServiceRequestsByEncounterIdsAndGenerateSource(
+                    visibleEncounterIds, doctorSource);
+            } else {
+                for (Long encounterId : visibleEncounterIds) {
                     // 中药 Tab 不展示诊疗嘱执行槽位
                     svcByEncounter.put(encounterId, new ArrayList<>());
                 }
             }
+            // Pre：按 Tab 收窄药品明细（all/west/tcm）
+            Map<Long, List<MedicationRequestListQueryModel>> filteredMedByEncounter = new HashMap<>();
+            for (Long encounterId : visibleEncounterIds) {
+                List<MedicationRequestListQueryModel> medRows = medByEncounter.get(encounterId);
+                if (medRows == null) {
+                    medRows = new ArrayList<>();
+                }
+                filteredMedByEncounter.put(
+                    encounterId,
+                    inpatientNurseStationTcmOrchestrator.filterMedRowsByMedicineCategory(medRows, medicineCategoryTab));
+            }
+            medByEncounter = filteredMedByEncounter;
             Map<Long, MedicationRequestListQueryModel> medDetailById =
                 inpatientNurseStationTcmOrchestrator.indexMedDetailById(medByEncounter);
             skeleton = inpatientNurseStationTcmOrchestrator.filterSkeletonByMedicineCategory(
@@ -121,7 +130,8 @@ public class NurseStationOrderExecuteListLoader {
                     encounterOrgIds,
                     medicineCategoryTab,
                     query.getPlanTimeFrom(),
-                    Boolean.TRUE.equals(query.getExecutionRecordHistory()));
+                    Boolean.TRUE.equals(query.getExecutionRecordHistory()),
+                    Boolean.TRUE.equals(query.getIncludePrintDetails()));
             // Asm：可选按开嘱日区间收窄行（打印中心检查/检验/采血贴）；两端皆空则原样返回
             groups = this.filterGroupsByReqOpenedTimeRange(
                 groups, query.getReqOpenedTimeFrom(), query.getReqOpenedTimeTo());

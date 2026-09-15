@@ -1,7 +1,9 @@
-import type { InvFormPaperKind } from '../form-print-preference';
+import type { InvFormPaperKind, InvFormTripleSpec } from '../form-print-preference';
+import type { PrintPageSelection } from './print-page-selection';
 
 export interface PrintTransformContext {
   formPaperKind?: InvFormPaperKind;
+  formTripleSpec?: InvFormTripleSpec;
 }
 
 export interface PrintOptions<TSource = unknown> {
@@ -41,10 +43,14 @@ export interface PrintOptions<TSource = unknown> {
   preview?: boolean;
   /** 库房单据当前纸张（三联单 / A4） */
   formPaperKind?: InvFormPaperKind;
-  /** 预览标题栏展示纸张切换，切换后按所选纸张重渲染 */
+  /** 库房单据三联单规格（整张 / 二等分 / 三等分） */
+  formTripleSpec?: InvFormTripleSpec;
+  /** 预览右侧展示纸张切换，切换后按所选纸张重渲染 */
   showFormPaperKind?: boolean;
   /** 库房打印：打印机弹窗同时选纸张 */
   showPaperKind?: boolean;
+  /** 预览内选择的打印页与正反（双面） */
+  pageSelection?: PrintPageSelection;
 }
 
 export interface PrintResult {

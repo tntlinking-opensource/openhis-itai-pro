@@ -15,6 +15,7 @@ import com.openhis.chs.domain.share.enums.MdtrtSetlType;
 import com.openhis.chs.domain.share.enums.MidSetlFlag;
 import com.openhis.chs.domain.share.enums.ProdGeayFlag;
 import com.openhis.chs.domain.share.enums.PsnCertType;
+import com.openhis.chs.domain.share.enums.TcmdrugUsedWay;
 import com.openhis.chs.domain.share.enums.TrdnFlag;
 import com.openhis.chs.domain.share.enums.ValiFlag;
 import org.junit.jupiter.api.Test;
@@ -77,8 +78,23 @@ class ChsPlatformShareMigrationCompletenessTest {
         assertThat(ChsInventoryConstants.PLATFORM_RET_RSLT_SUCCESS).isEqualTo("1");
         assertThat(ChsInventoryConstants.INITIALIZE_INVENTORY_DEFAULT_MAX_LINES).isEqualTo(200);
         assertThat(ChsInventoryConstants.LOCAL_UPLOAD_LIST_DEFAULT_LIMIT).isEqualTo(500);
+        assertThat(ChsInventoryConstants.DRUGTRACINFO_PLATFORM_HARD_LIMIT).isEqualTo(500);
+        assertThat(ChsInventoryConstants.DRUGTRACINFO_MAX_PER_REQUEST).isEqualTo(100);
+        assertThat(ChsInventoryConstants.PLATFORM_MSG_INBOUND_TRACE_VERIFY_INCOMPLETE_PREFIX)
+            .isEqualTo("平台入库追溯未落全(3512核验)");
+        assertThat(ChsInventoryConstants.PLATFORM_MSG_INBOUND_TRACE_MISSING_CODE)
+            .isEqualTo("medinsProdInvChgDBBO_191");
+        assertThat(ChsInventoryConstants.isInboundTraceMissingPlatformFailure(
+            "更新定点医药机构入库商品追溯信息失败 medinsProdInvChgDBBO_191")).isTrue();
+        assertThat(ChsInventoryConstants.isInboundTraceMissingPlatformFailure("其它失败")).isFalse();
         assertThat(ChsInventoryConstants.RETRYABLE_UPLOAD_STATUSES)
             .containsExactly(ChsInventoryConstants.UPLOAD_STATUS_FAILED, ChsInventoryConstants.UPLOAD_STATUS_PENDING);
+    }
+
+    @Test
+    void tcmdrugUsedWayPreservesCompoundAndSingleCodes() {
+        assertThat(TcmdrugUsedWay.COMPOUND.getCode()).isEqualTo("1");
+        assertThat(TcmdrugUsedWay.SINGLE.getCode()).isEqualTo("2");
     }
 
     @Test

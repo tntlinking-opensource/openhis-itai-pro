@@ -39,7 +39,7 @@ import {
   type TemperatureSheetSpecialEventOption,
   validateFillRowsSpecialEvents,
 } from '../services/temperature-sheet-special-events';
-import { resolveTemperatureSheetTimeSlotFromHm } from '../services/temperature-sheet-time-format';
+import { resolveTemperatureSheetChartTimeSlotFromHm } from '../services/temperature-sheet-time-format';
 import '../styles/temperature-sheet-fill-drawer.css';
 
 defineOptions({
@@ -280,7 +280,7 @@ async function openSingleFillForRow(row: TemperatureSheetBatchFillRowDraft): Pro
       admissionAt: row.admissionAt,
     },
     recordDate: recordDate.value,
-    activeTimeSlot: resolveTemperatureSheetTimeSlotFromHm(activeRecordTime.value),
+    activeTimeSlot: resolveTemperatureSheetChartTimeSlotFromHm(activeRecordTime.value),
   });
 }
 

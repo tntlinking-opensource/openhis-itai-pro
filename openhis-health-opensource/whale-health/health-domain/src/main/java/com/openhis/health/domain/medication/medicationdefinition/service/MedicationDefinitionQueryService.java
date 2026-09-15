@@ -45,7 +45,9 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -336,6 +338,10 @@ public class MedicationDefinitionQueryService {
                 String keyDrugFlagField = this.resolveKeyDrugFlagFieldName(query.getKeyDrugType());
                 if (keyDrugFlagField != null) {
                     predicates.add(cb.equal(root.get(keyDrugFlagField), Boolean.TRUE));
+                }
+                String normalizedStatus = this.normalizeKeyDrugStatusFilter(query.getStatusEnum());
+                if (normalizedStatus != null) {
+                    predicates.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), normalizedStatus));
                 }
                 if (StringUtils.isNotEmpty(query.getKeyword())) {
                     String trimmed = query.getKeyword().trim();
@@ -694,6 +700,8 @@ public class MedicationDefinitionQueryService {
         model.setRestrictedEnum(definition.getRestrictedEnum());
         model.setChrgitmLv(definition.getChrgitmLv());
         model.setMrSettlementTypeCode(definition.getMrSettlementTypeCode());
+        // 结余留用批次号：详情回显术语 code
+        model.setSurplusRetentionBatchCode(definition.getSurplusRetentionBatchCode());
         model.setVersion(definition.getVersion());
         model.setRestrictedFlag(definition.getRestrictedFlag());
         model.setRestrictedScope(definition.getRestrictedScope());
@@ -1063,30 +1071,131 @@ public class MedicationDefinitionQueryService {
     }
 
     /**
+     * 按主键批量解析重点药四旗（AS-RPT-011 性能路径：仅窗内出现的 productId，禁止全库扫目录）。
+     *
+     * @param ids 药典主键集合；空返回空 Map
+     * @return id → 四旗投影；已软删行不写入
+     */
+    public Map<Long, MedicationKeyDrugFlagQueryModel> mapKeyDrugFlagsByIds(Collection<Long> ids) {
+        Map<Long, MedicationKeyDrugFlagQueryModel> result = new LinkedHashMap<>();
+        if (ids == null || ids.isEmpty()) {
+            return result;
+        }
+        List<MedicationDefinition> rows = new ArrayList<>(IdInQueryChunkSupport.loadByIdInChunks(
+            ids,
+            chunkIds -> this.medicationDefinitionRepository.findAllById(chunkIds)));
+        // Loop：仅未删除行写入四旗，供报表按类型分桶
+        for (MedicationDefinition row : rows) {
+            if (row == null || row.getId() == null || Boolean.TRUE.equals(row.getIsDeleted())) {
+                continue;
+            }
+            MedicationKeyDrugFlagQueryModel flags = new MedicationKeyDrugFlagQueryModel();
+            flags.setId(row.getId());
+            flags.setBasicFlag(row.getBasicFlag());
+            flags.setNationalMonitorFlag(row.getNationalMonitorFlag());
+            flags.setCentralPurchaseFlag(row.getCentralPurchaseFlag());
+            flags.setAntibioticFlag(row.getAntibioticFlag());
+            result.put(row.getId(), flags);
+        }
+        return result;
+    }
+
+    /**
      * 按重点药类型解析药品定义主键（库存明细筛选预解析，B.6.4 禁止 inventory 跨包 JOIN）。
      *
-     * <p>仅收窄「对应标识为 true」的未删除药品；未知/空 code 返回空列表。</p>
+     * <p>仅收窄「对应标识为 true」的未删除药品；未知/空 code 返回空列表。不按启用/停用收窄。</p>
      *
      * @param keyDrugTypeCode {@link KeyDrugType#getCode()}；空时返回空列表
      * @return 命中的目录主键列表
      */
     public List<Long> listIdsByKeyDrugType(String keyDrugTypeCode) {
+        return this.listIdsByKeyDrugType(keyDrugTypeCode, null);
+    }
+
+    /**
+     * 按重点药类型 + 可选目录状态解析药品定义主键（AS-RPT-011 启用/停用筛选）。
+     *
+     * <p>仅收窄「对应标识为 true」的未删除药品；{@code statusEnum} 为空则不按状态收窄；
+     * 仅认 {@link PublicationStatus#ACTIVE}/{@link PublicationStatus#INACTIVE}。</p>
+     *
+     * @param keyDrugTypeCode {@link KeyDrugType#getCode()}；空时返回空列表
+     * @param statusEnum      目录状态 code；空/未知则不按状态过滤
+     * @return 命中的目录主键列表
+     */
+    public List<Long> listIdsByKeyDrugType(String keyDrugTypeCode, String statusEnum) {
         String flagField = this.resolveKeyDrugFlagFieldName(keyDrugTypeCode);
         if (flagField == null) {
             return Collections.emptyList();
         }
-        Specification<MedicationDefinition> specification = (root, criteriaQuery, cb) -> cb.and(
-            cb.isFalse(root.get(FieldNameConstants.IS_DELETED)),
-            cb.equal(root.get(flagField), Boolean.TRUE));
+        String normalizedStatus = this.normalizeKeyDrugStatusFilter(statusEnum);
+        Specification<MedicationDefinition> specification = (root, criteriaQuery, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(flagField), Boolean.TRUE));
+            // 启用/停用筛选：有合法状态码时收窄 status_enum
+            if (normalizedStatus != null) {
+                predicates.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), normalizedStatus));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
         List<MedicationDefinition> rows = this.medicationDefinitionRepository.findAll(specification);
         List<Long> ids = new ArrayList<>();
-        // Loop：收集命中重点药类型的目录主键，供库存明细 InventoryCatalogFilter 写入 resolved 字段
+        // Loop：收集命中重点药类型的目录主键，供库存明细 / 重点药品报表写入 resolved 字段
         for (MedicationDefinition row : rows) {
             if (row != null && row.getId() != null) {
                 ids.add(row.getId());
             }
         }
         return ids;
+    }
+
+    /**
+     * 按结余留用批次号精确匹配解析药品定义主键（AS-RPT-015）。
+     *
+     * <p>仅本聚合 Repository；未删除且 {@code surplusRetentionBatchCode} 等值。</p>
+     *
+     * @param surplusRetentionBatchCode 结余留用批次号；空/空白返回空列表
+     * @return 命中的目录主键列表
+     */
+    public List<Long> listIdsBySurplusRetentionBatchCode(String surplusRetentionBatchCode) {
+        String batchCode = StringUtils.trimToNull(surplusRetentionBatchCode);
+        // Gate：批次号空白则无命中，禁止全表扫描
+        if (batchCode == null) {
+            return Collections.emptyList();
+        }
+        Specification<MedicationDefinition> specification = (root, criteriaQuery, cb) -> cb.and(
+            cb.isFalse(root.get(FieldNameConstants.IS_DELETED)),
+            cb.equal(root.get(FieldNameConstants.SURPLUS_RETENTION_BATCH_CODE), batchCode));
+        List<MedicationDefinition> rows = this.medicationDefinitionRepository.findAll(specification);
+        List<Long> ids = new ArrayList<>();
+        // Loop：收集等值批次码命中的目录主键，供结余留用报表收窄申请/发放
+        for (MedicationDefinition row : rows) {
+            if (row != null && row.getId() != null) {
+                ids.add(row.getId());
+            }
+        }
+        return ids;
+    }
+
+    /**
+     * 规范化重点药品报表的目录状态筛选：仅 ACTIVE/INACTIVE；其余视为不筛选。
+     *
+     * @param statusEnum 请求状态码
+     * @return ACTIVE/INACTIVE；无法识别时 null
+     */
+    private String normalizeKeyDrugStatusFilter(String statusEnum) {
+        if (StringUtils.isEmpty(statusEnum)) {
+            return null;
+        }
+        String trimmed = statusEnum.trim();
+        if (PublicationStatus.ACTIVE.getCode().equals(trimmed)) {
+            return PublicationStatus.ACTIVE.getCode();
+        }
+        if (PublicationStatus.INACTIVE.getCode().equals(trimmed)) {
+            return PublicationStatus.INACTIVE.getCode();
+        }
+        // 未知状态码：不收窄，避免误滤成空目录
+        return null;
     }
 
     /**
@@ -1111,6 +1220,10 @@ public class MedicationDefinitionQueryService {
         }
         if (type == KeyDrugType.CENTRAL_PURCHASE) {
             return FieldNameConstants.CENTRAL_PURCHASE_FLAG;
+        }
+        // 抗生素与基药等同构：筛 antibiotic_flag = true
+        if (type == KeyDrugType.ANTIBIOTIC) {
+            return FieldNameConstants.ANTIBIOTIC_FLAG;
         }
         return null;
     }

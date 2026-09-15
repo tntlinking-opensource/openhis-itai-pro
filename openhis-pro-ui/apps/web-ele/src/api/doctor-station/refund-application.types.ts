@@ -53,3 +53,19 @@ export interface SubmitOutpatientRefundApplicationResponse {
   success: boolean;
   refundingChargeItemCount: number;
 }
+
+/** 撤销退费提交行：支付锚点 + 收费行锚点 */
+export interface CancelRefundApplicationLineItemDto {
+  paymentId: string;
+  chargeItemId: string;
+}
+
+export interface CancelOutpatientRefundApplicationRequest {
+  encounterId: string;
+  lines: CancelRefundApplicationLineItemDto[];
+}
+
+export interface CancelOutpatientRefundApplicationResponse {
+  success: boolean;
+  settledChargeItemCount: number;
+}

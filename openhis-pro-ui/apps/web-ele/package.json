@@ -19,10 +19,12 @@
     "build": "cross-env NODE_OPTIONS=--max-old-space-size=8192 pnpm vite build --mode production",
     "build:红旗医院H22010402403": "cross-env NODE_OPTIONS=--max-old-space-size=8192 node ../../scripts/openhis-project/run-web-ele.mjs --project H22010402403 -- pnpm vite build --mode production",
     "build:国基医院H22010202493": "cross-env NODE_OPTIONS=--max-old-space-size=8192 node ../../scripts/openhis-project/run-web-ele.mjs --project H22010202493 -- pnpm vite build --mode production",
+    "build:东北师大医院H22010200596": "cross-env NODE_OPTIONS=--max-old-space-size=8192 node ../../scripts/openhis-project/run-web-ele.mjs --project H22010200596 -- pnpm vite build --mode production",
     "build:analyze": "cross-env NODE_OPTIONS=--max-old-space-size=8192 pnpm vite build --mode analyze",
     "dev": "pnpm vite --mode development --port 5778",
     "dev:红旗医院H22010402403": "node ../../scripts/openhis-project/run-web-ele.mjs --project H22010402403 -- pnpm vite --mode development --port 5778",
     "dev:国基医院H22010202493": "node ../../scripts/openhis-project/run-web-ele.mjs --project H22010202493 -- pnpm vite --mode development --port 5778",
+    "dev:东北师大医院H22010200596": "node ../../scripts/openhis-project/run-web-ele.mjs --project H22010200596 -- pnpm vite --mode development --port 5778",
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit --skipLibCheck"
   },

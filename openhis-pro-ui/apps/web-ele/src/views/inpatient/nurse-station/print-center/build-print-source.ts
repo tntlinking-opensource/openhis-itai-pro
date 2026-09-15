@@ -327,6 +327,8 @@ export async function buildPatrolCardPrintSource(
   patients: NurseStationModulePatient[],
   row: PrintPendingRow,
   executionDeadline: string,
+  /** 勾选组键；空则打该患者查询日全部输液组 */
+  selectedGroupKeys?: string[],
 ): Promise<InpatientPatrolCardPrintSource> {
   const patient = resolvePatient(patients, row);
   const encounterId = preserveApiIdForRequest(row.encounterId || patient?.id);
@@ -417,6 +419,10 @@ export async function buildPatrolCardPrintSource(
   collectDaySlotInfusion(pendingRes.groups ?? [], 'pending');
   collectDaySlotInfusion(executedRes.groups ?? [], 'executed');
 
+  const selectedKeys = new Set(
+    (selectedGroupKeys ?? []).map((key) => str(key)).filter((key) => key.length > 0),
+  );
+
   // 成组补全：组内任一条有当日槽位 → 同组西药成员一并打出（避免溶媒因无槽位/infusionFlag 漏打）
   const activeGroupIds = new Set<string>();
   for (const order of byOrderId.values()) {
@@ -438,6 +444,17 @@ export async function buildPatrolCardPrintSource(
       continue;
     }
     byOrderId.set(orderId, order);
+  }
+
+  // 仅保留勾选组（组键与待打行 groupId 对齐）
+  if (selectedKeys.size > 0) {
+    for (const [orderId, order] of [...byOrderId.entries()]) {
+      const groupKey = str(order.groupId) || `r:${str(order.orderId)}`;
+      if (selectedKeys.has(groupKey) || selectedKeys.has(str(order.groupId))) {
+        continue;
+      }
+      byOrderId.delete(orderId);
+    }
   }
 
   const sortedOrders = [...byOrderId.values()].slice().sort((a, b) => {
@@ -502,6 +519,7 @@ export async function buildPatrolCardPrintSource(
 export function buildWristbandPrintSource(
   patients: NurseStationModulePatient[],
   row: PrintPendingRow,
+  allergyText?: string,
 ): InpatientWristbandPrintSource {
   const patient = resolvePatient(patients, row);
   return {
@@ -514,7 +532,7 @@ export function buildWristbandPrintSource(
     wardName: printLocationText(patient?.wardName),
     bedNo: formatWristbandBedNo(str(row.bedNo) || str(patient?.bedNo)),
     inpatientNo: str(patient?.encounterBusNo),
-    allergyText: '',
+    allergyText: str(allergyText),
     diagnosisText: str(patient?.diagnosis),
   };
 }
@@ -602,6 +620,7 @@ export async function buildOralMedLabelPrintSource(
         adviceDisplayName?: string;
         specificationText?: string;
         dosageDisplay?: string;
+        frequencyDisplay?: string;
       }
     | undefined;
 
@@ -656,6 +675,7 @@ export async function buildOralMedLabelPrintSource(
     drugName: str(matched.adviceDisplayName),
     specText: str(matched.specificationText),
     doseText: str(matched.dosageDisplay),
+    freqText: str(matched.frequencyDisplay),
   };
 }
 
@@ -1188,6 +1208,7 @@ function mapOrderLineToPrintRow(order: LongTempOrderPrintLineSource): InpatientT
     orderContent: buildLongTempOrderContentLine(order),
     orderDoctorName: str(order.requesterName),
     startCheckerName: str(order.performerCheckName),
+    executeAtText: '',
     stopTimeText: stopRaw && dayjs(stopRaw).isValid() ? dayjs(stopRaw).format('MM-DD HH:mm') : '',
     stopDoctorName: str(order.stopperName),
     // 停嘱校对护士：取 stopCheckerName（与开嘱校对 performerCheckName 并列）
@@ -1512,6 +1533,7 @@ export async function buildOrderExecutePrintSource(
       orderContent: nurseLevelFallback,
       orderDoctorName: '',
       startCheckerName: '',
+      executeAtText: '',
       stopTimeText: '',
       stopDoctorName: '',
       stopCheckerName: '',
@@ -2205,6 +2227,8 @@ export async function buildInfusionPrintSource(
         methodCode?: string;
         orderId?: string;
         orderType?: string;
+        /** 频次 code；瓶签按每日次数拆张 */
+        rateCode?: string;
         sortNumber?: number;
         specificationText?: string;
         speedCode?: string;
@@ -2212,6 +2236,8 @@ export async function buildInfusionPrintSource(
         usageDisplay?: string;
       };
       hasDaySlot: boolean;
+      /** 查询日去重后的计划时点数（rateCode 缺失时作每日次数回落） */
+      daySlotCount: number;
     }
   >();
 
@@ -2237,20 +2263,28 @@ export async function buildInfusionPrintSource(
           continue;
         }
         const slots = tab === 'pending' ? (order.pendingSlots ?? []) : (order.executedSlots ?? []);
-        const onDay = slots.some((slot) => isSlotOnQueryDate(slot, date));
-        if (!onDay) {
+        const onDay = slots.filter((slot) => isSlotOnQueryDate(slot, date));
+        if (onDay.length <= 0) {
           continue;
         }
         const orderId = str(order.orderId);
         if (!orderId) {
           continue;
         }
+        // 按 planTime 去重，避免 pending/executed 同点重复计次
+        const planTimes = new Set(
+          onDay.map((slot) => str(slot.planTime)).filter((t) => t.length > 0),
+        );
+        const daySlotCount = planTimes.size > 0 ? planTimes.size : onDay.length;
         const existing = matchedByOrderId.get(orderId);
         if (existing) {
           existing.hasDaySlot = true;
+          if (daySlotCount > existing.daySlotCount) {
+            existing.daySlotCount = daySlotCount;
+          }
           continue;
         }
-        matchedByOrderId.set(orderId, { order, hasDaySlot: true });
+        matchedByOrderId.set(orderId, { order, hasDaySlot: true, daySlotCount });
       }
     }
   }
@@ -2272,7 +2306,9 @@ export async function buildInfusionPrintSource(
       infusionFlag: true,
       methodCode: str(order.methodCode),
       methodName: str(order.usageDisplay),
-      // 住院执行列表无发药 quantity；瓶贴总量列印 dosageDisplay（与列表剂量列一致）
+      // 频次 code：与门诊瓶签相同，按每日次数拆张（如 BID → 2）
+      rateCode: str(order.rateCode) || undefined,
+      // 住院执行列表无发药 quantity；瓶贴总量列印 dosageDisplay（每次量，拆张后每张一份）
       dosageDisplay: str(order.dosageDisplay),
       unitName: '',
       sortNumber: order.sortNumber ?? medicationLines.length + 1,
@@ -2324,6 +2360,14 @@ export async function buildInfusionPrintSource(
     admissionTimeText = parsed.isValid() ? parsed.format('YYYY-MM-DD HH:mm') : admissionRaw;
   }
 
+  const hasRateCode = medicationLines.some((line) => str(line.rateCode).length > 0);
+  let maxDaySlotCount = 0;
+  for (const item of sortedOrders) {
+    if (item.daySlotCount > maxDaySlotCount) {
+      maxDaySlotCount = item.daySlotCount;
+    }
+  }
+
   return {
     patientName: str(patient?.name) || str(row.patientName),
     genderEnumText: str(patient?.gender),
@@ -2335,6 +2379,8 @@ export async function buildInfusionPrintSource(
     speedCode: speedPrintText,
     executorName: '',
     executeTimeText,
+    // 无 rateCode 时用当日槽位数回落；有 code 则走门诊同源 rateCode→dayTimes
+    timesPerDay: !hasRateCode && maxDaySlotCount > 0 ? maxDaySlotCount : undefined,
   };
 }
 

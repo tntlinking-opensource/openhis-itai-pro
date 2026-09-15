@@ -124,6 +124,10 @@ export interface EncounterMedicationDispenseSlipRowDto {
   medicationName?: null | string;
   merchandiseName?: null | string;
   specificationText?: null | string;
+  /**
+   * 包装最小单位换算比展示（服务端拼装），如 1盒/36片；规格列后展示。
+   */
+  packageSplitRatioText?: null | string;
   manufacturerName?: null | string;
   productTableName?: null | string;
   doseValue?: null | number | string;
@@ -245,9 +249,6 @@ export interface DispenseMedicationLineSubmitDto {
 
 export interface DispenseOutpatientMedicationsRequest {
   encounterId: string;
-  /** @deprecated CHS 启用即上传，请使用 contractBusNo */
-  medicareUploadEnabled?: boolean;
-  contractBusNo?: string;
   lines: DispenseMedicationLineSubmitDto[];
 }
 

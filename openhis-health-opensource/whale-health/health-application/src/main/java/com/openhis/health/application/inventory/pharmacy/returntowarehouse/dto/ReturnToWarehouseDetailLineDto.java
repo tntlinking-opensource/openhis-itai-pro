@@ -64,6 +64,12 @@ public class ReturnToWarehouseDetailLineDto {
     /** 产品展示名称（读模型富化）。 */
     @Schema(description = "产品名称 productName")
     private String productName;
+    /** 规格展示文本（来自产品定义 {@code totalVolume}）。 */
+    @Schema(description = "规格 specification")
+    private String specification;
+    /** 生产厂家名称（读模型富化）。 */
+    @Schema(description = "厂家 manufacturer")
+    private String manufacturer;
     /** 产品目录（含 unitBands，详情单位回显与计量带切换用）。 */
     @Schema(description = "产品目录 productCatalog")
     private ProductDefinitionCatalogEditorHintsDto productCatalog;

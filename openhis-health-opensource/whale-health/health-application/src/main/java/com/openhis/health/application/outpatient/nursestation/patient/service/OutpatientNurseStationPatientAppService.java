@@ -8,11 +8,18 @@ import com.openhis.health.application.outpatient.nursestation.patient.dto.NurseS
 import com.openhis.health.application.outpatient.nursestation.patient.mapper.OutpatientNurseStationPatientMapper;
 import com.openhis.health.application.outpatient.nursestation.patient.request.PageNurseStationPatientQueueRequest;
 import com.openhis.health.application.outpatient.nursestation.patient.response.PageNurseStationPatientQueueResponse;
+import com.openhis.health.application.outpatient.nursestation.treatment.support.AdviceChargeAnchorRollupHelper;
+import com.openhis.health.application.shared.advice.AdviceChargeDisplayStatusAssembler;
 import com.openhis.health.application.shared.encounter.EncounterContextReader;
 import com.openhis.health.application.shared.financial.EncounterContractDisplayAssembler;
+import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
+import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
+import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.encounter.queries.NurseStationOutpatientQueueQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
+import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.DispenseStatus;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.workflow.devicedispense.queries.model.DeviceDispenseListModel;
@@ -52,6 +59,10 @@ public class OutpatientNurseStationPatientAppService {
     private final DeviceRequestQueryService deviceRequestQueryService;
     /** 队列红点：本页耗材发放态。 */
     private final DeviceDispenseQueryService deviceDispenseQueryService;
+    /** 队列红点：本页收费明细（BR-NUR-018 排除退费态）。 */
+    private final ChargeItemQueryService chargeItemQueryService;
+    /** 队列红点：收费锚点归并时药品发放 id→申请 id（与处置单同源）。 */
+    private final MedicationDispenseQueryService medicationDispenseQueryService;
 
     /**
      * IF-NUR-01：分页查询门诊护士站患者队列。
@@ -120,8 +131,8 @@ public class OutpatientNurseStationPatientAppService {
     /**
      * 门诊护士站队列：按本页就诊批量回填 {@code hasPendingDevice}。
      *
-     * <p>口径对齐处置单侧栏待发放：已完成非退单耗材请求，且无发放单或仍有待发放态发放行；
-     * 退费作废 {@code DECLINED} 等终态不计待发（BR-NUR-017 / BR-NUR-018）。</p>
+     * <p>口径对齐处置单侧栏待发放：已完成非退单耗材请求，且收费仍为有效计费态（PLANNED/SETTLED），
+     * 且无发放单或仍有待发放态发放行；退费作废 {@code DECLINED} 等终态不计待发（BR-NUR-017 / BR-NUR-018）。</p>
      *
      * @param resp 分页响应
      */
@@ -155,18 +166,24 @@ public class OutpatientNurseStationPatientAppService {
     }
 
     /**
-     * 按已收费耗材请求 + 发放态，收集仍有待发放耗材的就诊主键。
+     * 按已收费耗材请求 + 发放态 + 有效计费态，收集仍有待发放耗材的就诊主键。
      *
      * @param encounterIds 本页就诊主键
      * @return 待发耗材就诊集合
      */
     private Set<Long> collectPendingDeviceEncounterIds(LinkedHashSet<Long> encounterIds) {
         LinkedHashSet<Long> pendingEncounterIds = new LinkedHashSet<>();
-        // Pre：本页耗材请求/发放一次 IN（分批），禁止按行 N+1
+        // Pre：本页耗材请求/发放/收费一次 IN（分批），禁止按行 N+1
         List<DeviceRequestListModel> deviceRequests =
             this.deviceRequestQueryService.listDeviceRequestsByEncounterIds(encounterIds);
         List<DeviceDispenseListModel> deviceDispenses =
             this.deviceDispenseQueryService.listDeviceDispensesByEncounterIds(encounterIds);
+        ChargeItemQueryCommand chargeCmd = new ChargeItemQueryCommand();
+        chargeCmd.setEncounterIds(encounterIds);
+        List<ChargeItem> chargeItems = this.chargeItemQueryService.listChargeItemsByEncounterIds(chargeCmd);
+        Map<String, AdviceChargeAnchorRollupHelper.RequestAnchorChargeAggregation> chargeByAnchor =
+            AdviceChargeAnchorRollupHelper.buildRequestAnchorChargeIndex(
+                chargeItems, this.medicationDispenseQueryService, this.deviceDispenseQueryService);
         Map<Long, List<DeviceDispenseListModel>> dispensesByRequestId = new HashMap<>();
         // 按耗材请求聚发放行，供后续判定该请求是否仍待发放
         for (DeviceDispenseListModel dispense : deviceDispenses) {
@@ -182,10 +199,14 @@ public class OutpatientNurseStationPatientAppService {
             }
             bucket.add(dispense);
         }
-        // 逐条已收费非退单请求：无发放或仍有待发态则点亮该就诊
+        // 逐条已收费非退单请求：须仍有效计费且无发放或仍有待发态则点亮该就诊
         for (DeviceRequestListModel request : deviceRequests) {
             // 非处置单纳入口径的请求不点亮红点
             if (!this.isNurseStationDeviceRequestEligible(request)) {
+                continue;
+            }
+            // Skip：收费已退费/无有效计费（对齐侧栏 BR-NUR-018）
+            if (!this.hasActiveBillableChargeForDeviceRequest(request.getId(), chargeByAnchor)) {
                 continue;
             }
             // 该请求下无发放或仍有待发放行则标记就诊
@@ -194,6 +215,34 @@ public class OutpatientNurseStationPatientAppService {
             }
         }
         return pendingEncounterIds;
+    }
+
+    /**
+     * 耗材请求是否仍存在护士站可执行的有效计费汇总态。
+     *
+     * @param deviceRequestId 耗材申请主键
+     * @param chargeByAnchor  收费锚点归并索引
+     * @return 有效计费时 true
+     */
+    private boolean hasActiveBillableChargeForDeviceRequest(
+        Long deviceRequestId,
+        Map<String, AdviceChargeAnchorRollupHelper.RequestAnchorChargeAggregation> chargeByAnchor) {
+        // Gate：无申请主键无法对齐收费
+        if (deviceRequestId == null || chargeByAnchor == null) {
+            return false;
+        }
+        String key = AdviceChargeAnchorRollupHelper.buildChargeAnchorKey(
+            TableNameConstants.WKF_DEVICE_REQUEST, deviceRequestId);
+        // Gate：无锚点键
+        if (key == null) {
+            return false;
+        }
+        AdviceChargeAnchorRollupHelper.RequestAnchorChargeAggregation agg = chargeByAnchor.get(key);
+        // 无收费事实：不当待发
+        if (agg == null) {
+            return false;
+        }
+        return AdviceChargeDisplayStatusAssembler.isActiveBillableChargeStatus(agg.getChargeStatusEnum());
     }
 
     /**

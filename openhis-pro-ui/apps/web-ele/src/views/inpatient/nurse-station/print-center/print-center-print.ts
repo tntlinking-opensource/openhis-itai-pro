@@ -5,12 +5,15 @@ import { ElMessage } from 'element-plus';
 import dayjs from 'dayjs';
 
 import type { NurseStationCostDetailStatusFilter } from '#/api/inpatient/nurse-station/inpatient-nurse-station-cost-detail.types';
+import { httpListPatientAllergyHistory } from '#/api/clinical/patient-allergy-history.http';
 import { resolvePrintScenarioLabel } from '#/utils/print/constants/print-scenario-labels';
 import { printInfusionLabel } from '#/utils/print/print-nurse-station';
 import { print, PRINT_SCENARIO } from '#/utils/print/runtime';
 import type { PrintResult } from '#/utils/print/runtime/types';
 import { groupPrintPendingSpecimenBarcodeRows } from '#/utils/print/nurse-station-print-targets';
 import { normalizeOralMedSheetPrintJson } from '#/utils/print/normalize-oral-med-sheet-print-json';
+import { resolveInfusionLabelPrintTimesPerDay } from '#/utils/print/mappers/outpatient-infusion-label';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import {
   buildDispenseSheetPrintSource,
@@ -57,6 +60,30 @@ export const PRINT_CENTER_WIRED_DOC_TYPES: readonly PrintDocType[] = [
   'oral_med_sheet',
 ] as const;
 
+/** 腕带过敏史：按患者缓存摘要，避免批量打印重复请求 */
+async function loadWristbandAllergyText(
+  patient: NurseStationModulePatient | undefined,
+  cache: Map<string, string>,
+): Promise<string> {
+  const patientId = preserveApiIdForRequest(patient?.patientId);
+  const encounterId = preserveApiIdForRequest(patient?.id);
+  if (!patientId || !encounterId) {
+    return '未登记';
+  }
+  const cached = cache.get(patientId);
+  if (cached) {
+    return cached;
+  }
+  try {
+    const data = await httpListPatientAllergyHistory({ patientId, encounterId });
+    const text = String(data?.summaryText ?? '').trim() || '未登记';
+    cache.set(patientId, text);
+    return text;
+  } catch {
+    return '未登记';
+  }
+}
+
 export interface PrintInpatientPrintCenterOptions {
   docType: PrintDocType;
   patients: NurseStationModulePatient[];
@@ -76,6 +103,11 @@ export interface PrintInpatientPrintCenterOptions {
    * 长/临医嘱取数：nurse_audited=护士已校对（打印中心）；doctor_advice=病案归档（医生站全量 + 已校对合并）。
    */
   orderPrintDataSource?: OrderPrintDataSource;
+  /**
+   * 输液巡视卡：是否按频次打印（默认 true）。
+   * true：同一张卡按每日次数出纸（日两次打两张）；false：每患者一张。
+   */
+  splitByFrequency?: boolean;
 }
 
 async function printOnce(options: {
@@ -113,6 +145,7 @@ export async function printInpatientPrintCenter(
     costStatusEnum = 'PENDING_SETTLEMENT',
     orderOpenedTimeAsc = false,
     orderPrintDataSource = 'nurse_audited',
+    splitByFrequency = true,
   } = options;
   const rows = selectedRows;
 
@@ -168,23 +201,49 @@ export async function printInpatientPrintCenter(
 
     if (docType === 'patrol_card') {
       let printedCount = 0;
-      for (const row of rows) {
-        const patient = resolvePatient(patients, row);
-        const source = await buildPatrolCardPrintSource(patients, row, executionDeadline);
-        const result = await printOnce({
-          scenarioCode: PRINT_SCENARIO.ipPatrolCardPrint,
-          source,
-          copies,
-          jobName: `输液巡视卡·${row.bedNo}${row.patientName}`,
-          bizRef: {
+      // 按就诊成卡：勾选组打在同一张巡视卡上，不是一组一张
+      for (const encounterRows of groupPatrolRowsByEncounter(rows).values()) {
+        const head = encounterRows[0];
+        if (!head) {
+          continue;
+        }
+        const encounterId = strBiz(head.encounterId);
+        const patient = resolvePatient(patients, head);
+        const groupKeys = collectPatrolGroupKeys(encounterRows);
+        if (groupKeys.length <= 0) {
+          continue;
+        }
+        const source = await buildPatrolCardPrintSource(
+          patients,
+          head,
+          executionDeadline,
+          groupKeys,
+        );
+        const timesPerDay = splitByFrequency
+          ? await resolvePatrolEncounterTimesPerDay(encounterRows)
+          : 1;
+        const listRowKeys = collectListRowKeys(encounterRows);
+        // 按每日次数出纸（日两次打两张同一张卡）
+        for (let timeIndex = 0; timeIndex < timesPerDay; timeIndex += 1) {
+          const suffix = timesPerDay > 1 ? ` (第${timeIndex + 1}/${timesPerDay}次)` : '';
+          const result = await printOnce({
             scenarioCode: PRINT_SCENARIO.ipPatrolCardPrint,
-            encounterId: patient?.id ?? row.encounterId,
-            encounterIds: [String(patient?.id ?? row.encounterId ?? '').trim()].filter(Boolean),
-            queryDate: resolveQueryDate(dateFrom, dateTo),
-          },
-        });
-        if (result.ok) {
-          printedCount += 1;
+            source,
+            copies,
+            jobName: `输液巡视卡·${head.bedNo}${head.patientName}${suffix}`,
+            bizRef: {
+              scenarioCode: PRINT_SCENARIO.ipPatrolCardPrint,
+              encounterId: patient?.id ?? encounterId,
+              encounterIds: [strBiz(patient?.id ?? encounterId)].filter(Boolean),
+              listRowKeys,
+              queryDate: resolveQueryDate(dateFrom, dateTo),
+              timeIndex: timeIndex + 1,
+              timesPerDay,
+            },
+          });
+          if (result.ok) {
+            printedCount += 1;
+          }
         }
       }
       if (printedCount <= 0) {
@@ -195,11 +254,13 @@ export async function printInpatientPrintCenter(
 
     if (docType === 'wristband') {
       let printedCount = 0;
+      const allergyTextByPatientId = new Map<string, string>();
       for (const row of rows) {
         const patient = resolvePatient(patients, row);
+        const allergyText = await loadWristbandAllergyText(patient, allergyTextByPatientId);
         const result = await printOnce({
           scenarioCode: PRINT_SCENARIO.ipWristbandPrint,
-          source: buildWristbandPrintSource(patients, row),
+          source: buildWristbandPrintSource(patients, row, allergyText),
           copies,
           jobName: `腕带·${row.bedNo}${row.patientName}`,
           bizRef: {
@@ -309,7 +370,7 @@ export async function printInpatientPrintCenter(
       return { ok: printedCount > 0, count: printedCount };
     }
 
-    // 采血贴：复用门诊模板 op-specimenBarcode-print，合管 device 一组一张
+    // 采血贴：住院模板 ip-specimenBarcode-print，合管 device 一组一张
     if (docType === 'specimen_barcode') {
       let printedCount = 0;
       const groupedTargets = groupPrintPendingSpecimenBarcodeRows(rows);
@@ -326,8 +387,9 @@ export async function printInpatientPrintCenter(
           continue;
         }
         const result = await printOnce({
-          scenarioCode: PRINT_SCENARIO.opSpecimenBarcodePrint,
+          scenarioCode: PRINT_SCENARIO.ipSpecimenBarcodePrint,
           source: {
+            bedNo: String(patient?.bedNo ?? target.bedNo ?? '').trim(),
             patientName: String(patient?.name ?? target.patientName ?? '').trim(),
             genderEnumText: String(patient?.gender ?? '').trim(),
             ageText: patient?.age == null ? '' : `${patient.age}岁`,
@@ -337,7 +399,7 @@ export async function printInpatientPrintCenter(
           copies,
           jobName: `采血贴·${target.bedNo ?? ''}${target.patientName ?? ''}`,
           bizRef: {
-            scenarioCode: PRINT_SCENARIO.opSpecimenBarcodePrint,
+            scenarioCode: PRINT_SCENARIO.ipSpecimenBarcodePrint,
             encounterId,
             serviceRequestId,
             serviceRequestIds: [serviceRequestId],
@@ -606,4 +668,64 @@ function collectOrderIds(rows: PrintPendingRow[]): string[] {
 
 function resolveQueryDate(dateFrom: string, dateTo: string): string {
   return dateFrom || dateTo || dayjs().format('YYYY-MM-DD');
+}
+
+/** 巡视卡勾选行按就诊归并（同一患者合成一张卡） */
+function groupPatrolRowsByEncounter(rows: PrintPendingRow[]): Map<string, PrintPendingRow[]> {
+  const byEncounter = new Map<string, PrintPendingRow[]>();
+  for (const row of rows) {
+    const encounterId = strBiz(row.encounterId);
+    if (!encounterId) {
+      continue;
+    }
+    const existing = byEncounter.get(encounterId);
+    if (!existing) {
+      byEncounter.set(encounterId, [row]);
+      continue;
+    }
+    existing.push(row);
+  }
+  return byEncounter;
+}
+
+/** 巡视卡勾选组键（与待打行 groupId 对齐） */
+function collectPatrolGroupKeys(rows: PrintPendingRow[]): string[] {
+  const keys: string[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const key = strBiz(row.groupId) || strBiz(row.orderId);
+    if (!key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    keys.push(key);
+  }
+  return keys;
+}
+
+/** 巡视卡按就诊成卡后的每日张数：勾选组里取最大频次 */
+async function resolvePatrolEncounterTimesPerDay(rows: PrintPendingRow[]): Promise<number> {
+  let maxTimes = 1;
+  for (const row of rows) {
+    const times = await resolvePatrolPrintTimesPerDay(row);
+    if (times > maxTimes) {
+      maxTimes = times;
+    }
+  }
+  return maxTimes;
+}
+
+/** 巡视卡每日次数：优先 rateCode（与输液贴同源），否则当日槽位 */
+async function resolvePatrolPrintTimesPerDay(row: PrintPendingRow): Promise<number> {
+  const rateCode = strBiz(row.rateCode);
+  if (rateCode) {
+    const times = await resolveInfusionLabelPrintTimesPerDay([
+      { rateCode } as Parameters<typeof resolveInfusionLabelPrintTimesPerDay>[0][number],
+    ]);
+    if (times > 0) {
+      return times;
+    }
+  }
+  const slots = row.daySlotCount ?? 0;
+  return slots > 0 ? slots : 1;
 }

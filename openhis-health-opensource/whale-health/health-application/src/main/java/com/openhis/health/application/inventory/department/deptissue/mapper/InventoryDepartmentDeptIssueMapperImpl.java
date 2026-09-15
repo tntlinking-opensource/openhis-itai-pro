@@ -146,7 +146,14 @@ public class InventoryDepartmentDeptIssueMapperImpl implements InventoryDepartme
             if (StringUtils.isEmpty(label)) {
                 label = String.valueOf(id);
             }
-            list.add(new OptionDto(id, String.valueOf(id), label));
+            OptionDto opt = new OptionDto(id, String.valueOf(id), label);
+            if (StringUtils.isNotEmpty(p.getPyStr())) {
+                opt.setPyStr(p.getPyStr().trim());
+            }
+            if (StringUtils.isNotEmpty(p.getWbStr())) {
+                opt.setWbStr(p.getWbStr().trim());
+            }
+            list.add(opt);
         }
         return list;
     }
@@ -305,7 +312,6 @@ public class InventoryDepartmentDeptIssueMapperImpl implements InventoryDepartme
                 }
                 totalAmount = totalAmount.add(MonetaryAmountSupport.scaleCalc(line.getTotalPrice()));
             }
-            dto.setTotalPrice(totalAmount);
             dto.setTotalAmount(totalAmount);
             out.add(dto);
         }

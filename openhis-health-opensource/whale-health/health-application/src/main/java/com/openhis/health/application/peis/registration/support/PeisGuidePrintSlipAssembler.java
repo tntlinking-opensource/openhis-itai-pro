@@ -81,8 +81,7 @@ public class PeisGuidePrintSlipAssembler {
         slip.setScenarioCode(PeisPrintScenarioConstants.GUIDE_PRINT);
         slip.setHospitalName(firstNonBlank(resolveHospitalName(), ""));
         slip.setBusNo(firstNonBlank(ext.getBusNo(), ""));
-        slip.setPackageName(firstNonBlank(
-            PeisPackageSnapshotSupport.extractPackageName(ext.getPackageSnapshotJson()), ""));
+        slip.setPackageName(firstNonBlank(resolvePackageName(ext), ""));
         slip.setRegisteredAtText(formatRegisteredAt(encounter.getStartTime()));
 
         Patient patient = resolvePatient(encounter.getPatientId());
@@ -100,6 +99,22 @@ public class PeisGuidePrintSlipAssembler {
             peisServiceRequestExtQueryService.listByEncounterId(encounterId);
         slip.setGuideLines(buildGuideLines(lines));
         return slip;
+    }
+
+    private String resolvePackageName(PeisEncounterExtModel ext) {
+        String fromSnapshot = PeisPackageSnapshotSupport.extractPackageName(ext.getPackageSnapshotJson());
+        if (StringUtils.isNotEmpty(fromSnapshot)) {
+            return fromSnapshot;
+        }
+        if (ext.getPackageActivityId() == null) {
+            return "";
+        }
+        ActivityDefinitionDetailQueryModel detail =
+            activityDefinitionQueryService.getServiceCatalog(ext.getPackageActivityId());
+        if (detail != null && detail.getBaseInfo() != null) {
+            return firstNonBlank(detail.getBaseInfo().getName(), "");
+        }
+        return "";
     }
 
     private List<PeisGuidePrintSlipDto.GuideLineDto> buildGuideLines(

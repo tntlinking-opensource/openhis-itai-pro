@@ -122,7 +122,14 @@ public class InventoryDepartmentRequisitionMapperImpl implements InventoryDepart
             if (StringUtils.isEmpty(label)) {
                 label = String.valueOf(id);
             }
-            list.add(new OptionDto(id, String.valueOf(id), label));
+            OptionDto opt = new OptionDto(id, String.valueOf(id), label);
+            if (StringUtils.isNotEmpty(p.getPyStr())) {
+                opt.setPyStr(p.getPyStr().trim());
+            }
+            if (StringUtils.isNotEmpty(p.getWbStr())) {
+                opt.setWbStr(p.getWbStr().trim());
+            }
+            list.add(opt);
         }
         return list;
     }
@@ -670,12 +677,8 @@ public class InventoryDepartmentRequisitionMapperImpl implements InventoryDepart
         command.setOperatorId(operatorId);
         AgreeRequestCommand.AgreeRequestItemCommand item = new AgreeRequestCommand.AgreeRequestItemCommand();
         item.setBusNo(request.getBusNo());
-        Long approverId = request.getApproverId();
-        if (approverId == null) {
-            approverId = operatorId;
-        }
-        item.setApproverId(approverId);
-        item.setApprovalClock(request.getApprovalClock());
+        item.setApproverId(operatorId);
+        // 审批时刻由领域 agreeRequest 写入当前时间，请求体不再携带 approvalClock
         command.setItem(item);
         return command;
     }

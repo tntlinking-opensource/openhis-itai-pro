@@ -33,16 +33,14 @@ public interface OutpatientDailySettlementMapper {
     /**
      * 装配门诊日结页初始化响应。
      *
-     * @param defaultDate           默认结账日
-     * @param financialDelegateEnabled 是否允许财务代交账
+     * @param defaultDate            默认结账日
      * @param expensePropertyOptions 费用性质下拉
-     * @param cashierOptions        经办人下拉
-     * @param currentCashierId      当前经办人 Practitioner 主键
+     * @param cashierOptions         经办人下拉
+     * @param currentCashierId       当前经办人 Practitioner 主键
      * @return 初始化响应
      */
     LoadOutpatientDailySettlementPageInitResponse toLoadOutpatientDailySettlementPageInitResponse(
         LocalDate defaultDate,
-        boolean financialDelegateEnabled,
         List<OptionDto> expensePropertyOptions,
         List<OptionDto> cashierOptions,
         Long currentCashierId);

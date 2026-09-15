@@ -1,5 +1,10 @@
 import type { App } from 'vue';
-import type { InvFormPaperKind } from './form-print-preference';
+import type {
+  InvFormPaperChangePayload,
+  InvFormPaperKind,
+  InvFormTripleSpec,
+} from './form-print-preference';
+import type { PrintPageSelection } from './runtime/print-page-selection';
 import type { PrintResult } from './runtime/types';
 
 import { createApp } from 'vue';
@@ -12,8 +17,14 @@ export interface OpenPrintPreviewDialogOptions {
   /** 已用 hiprint getHtml 渲染好的预览 HTML */
   previewHtml: string;
   /** 预览内打印：走 hiprint print2，禁止浏览器 window.print */
-  onPrint: (copies: number, formPaperKind?: InvFormPaperKind) => Promise<PrintResult>;
-  /** 当前这份单据的折数（hiprint 分页） */
+  onPrint: (
+    copies: number,
+    formPaperKind?: InvFormPaperKind,
+    tripleSpec?: InvFormTripleSpec,
+    printerName?: string,
+    pageSelection?: PrintPageSelection,
+  ) => Promise<PrintResult>;
+  /** 当前这份单据的折数/页数（hiprint 分页） */
   foldCount?: number;
   /** 整单连打份数（预览内不再改，仅传给打印） */
   copies?: number;
@@ -21,10 +32,14 @@ export interface OpenPrintPreviewDialogOptions {
   continuousForm?: boolean;
   /** 库房单据当前纸张 */
   formPaperKind?: InvFormPaperKind;
-  /** 库房单据：标题栏展示纸张切换 */
+  /** 库房单据当前三联单规格 */
+  formTripleSpec?: InvFormTripleSpec;
+  /** 库房单据：预览右侧展示选纸 */
   showFormPaperKind?: boolean;
-  /** 切换纸张后重渲染预览 HTML */
-  onFormPaperKindChange?: (kind: InvFormPaperKind) => {
+  /** 已保存的场景打印机，加载列表后优先选中 */
+  initialPrinterName?: string;
+  /** 切换纸张或规格后重渲染预览 HTML */
+  onFormPaperChange?: (payload: InvFormPaperChangePayload) => {
     foldCount: number;
     previewHtml: string;
   };
@@ -52,8 +67,10 @@ export function openPrintPreviewDialog(options: OpenPrintPreviewDialogOptions): 
       copies: options.copies,
       continuousForm: options.continuousForm,
       formPaperKind: options.formPaperKind,
+      formTripleSpec: options.formTripleSpec,
       showFormPaperKind: options.showFormPaperKind,
-      onFormPaperKindChange: options.onFormPaperKindChange,
+      initialPrinterName: options.initialPrinterName,
+      onFormPaperChange: options.onFormPaperChange,
       onPrint: options.onPrint,
       onClosed: cleanup,
     });

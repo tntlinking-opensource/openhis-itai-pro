@@ -30,6 +30,11 @@ public interface TerminologyCodeSystemNameConstants {
     String CHRGITM_LV = "chrgitm_lv";
     /** 病案结算类型（三大目录共用，术语 {@code mr_settlement_type_code}）。 */
     String MR_SETTLEMENT_TYPE_CODE = "mr_settlement_type_code";
+    /**
+     * 结余留用批次号（药典 {@code med_medication_definition.surplus_retention_batch_code}；
+     * 术语 title 与字段中文名同为「结余留用批次号」）。
+     */
+    String SURPLUS_RETENTION_BATCH_CODE = "surplus_retention_batch_code";
     /** 体系类别（药理/管理等）。 */
     String SYSTEM_CATEGORIES = "system_categories";
     /** 药品性质（术语字典）。 */

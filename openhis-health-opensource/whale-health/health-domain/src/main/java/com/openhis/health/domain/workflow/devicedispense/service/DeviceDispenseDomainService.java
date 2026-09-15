@@ -39,12 +39,14 @@ import com.openhis.health.domain.workflow.devicedispense.command.RecallDispensed
 import com.openhis.health.domain.workflow.devicedispense.command.RefundDispensedDeviceDispenseCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.ReleaseDeviceDispenseReserveCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.RemoveUndispensedDeviceDispenseCommand;
+import com.openhis.health.domain.workflow.devicedispense.command.RestoreDeclinedDeviceDispenseAfterRefundRevokeCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.RevertCompletedBatchToPreparationCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.RevertPreparedBatchToPreparationCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.RollbackUndispensedDeviceDispenseCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.StopUndispensedDeviceDispenseCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.UpdateDispenseStatusCompletedFromSummaryCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.UpdateDispenseStatusSummarizedCommand;
+import com.openhis.health.domain.workflow.devicedispense.command.VoidPendingRefundDeviceDispenseCommand;
 import com.openhis.health.domain.workflow.devicedispense.entity.DeviceDispense;
 import com.openhis.health.domain.workflow.devicedispense.repository.DeviceDispenseRepository;
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -225,6 +227,53 @@ public class DeviceDispenseDomainService {
         for (DeviceDispense dispense : toSave) {
             domainEventPublisher.publish(
                 new DeviceDispenseDeclinedEvent(dispense.getId(), dispense.getBusNo(), dispense.getNotPerformedReasonEnum(), command.getOperatorId()));
+        }
+    }
+
+    /**
+     * 门诊退费申请撤销：软删待退耗（{@code PENDING_REFUND}）对冲发放行；原正向已发完成行不动。
+     *
+     * @param command 待退发放主键批次与操作人
+     */
+    public void voidPendingRefundDeviceDispense(VoidPendingRefundDeviceDispenseCommand command) {
+        List<DeviceDispense> toSave = new ArrayList<>();
+        // 前置校验 / 加载：逐条装载待退对冲发放并断言 PENDING_REFUND。
+        for (VoidPendingRefundDeviceDispenseCommand.Item item : command.resolveItems()) {
+            DeviceDispense dispense = this.mustGetById(item.getId());
+            // Cmd：软删待退对冲行。
+            dispense.voidPendingRefundForApplicationRevoke(command.getOperatorId());
+            toSave.add(dispense);
+        }
+        // 持久化：先落库；本路径无独立领域事件。
+        if (!toSave.isEmpty()) {
+            deviceDispenseRepository.saveAll(toSave);
+        }
+    }
+
+    /**
+     * 门诊退费申请撤销：将因申请而 DECLINED 的未发耗发放恢复为待发耗（{@code PREPARATION}）。
+     *
+     * <p>期望未执行原因通常为
+     * {@link com.openhis.health.domain.share.constants.DoctorStationRefundApplicationConstants#DEVICE_DISPENSE_NOT_PERFORMED_REASON_OUTPATIENT_REFUND_APP}。</p>
+     *
+     * @param command 恢复批次（含期望原因码）与操作人
+     */
+    public void restoreDeclinedDeviceDispenseAfterRefundRevoke(
+        RestoreDeclinedDeviceDispenseAfterRefundRevokeCommand command
+    ) {
+        List<DeviceDispense> toSave = new ArrayList<>();
+        // 前置校验 / 加载：逐条断言 DECLINED + 原因匹配后恢复 PREPARATION。
+        for (RestoreDeclinedDeviceDispenseAfterRefundRevokeCommand.Item item : command.resolveItems()) {
+            DeviceDispense dispense = this.mustGetById(item.getId());
+            // Gate：仅门诊退费申请作废路径产生的拒绝行可恢复。
+            dispense.ensureDeclinedForOutpatientRefundRevoke(item.getExpectedNotPerformedReasonEnum());
+            // Cmd：回待发耗并清空未执行原因。
+            dispense.restorePreparationAfterOutpatientRefundRevoke();
+            toSave.add(dispense);
+        }
+        // 持久化：先落库。
+        if (!toSave.isEmpty()) {
+            deviceDispenseRepository.saveAll(toSave);
         }
     }
 

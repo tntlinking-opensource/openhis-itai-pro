@@ -54,6 +54,14 @@ public class ExportOutpatientRegistrationDetailReportRequest {
     private String keyword;
 
     /**
+     * 就诊状态单值筛选（{@code EncounterStatus.getCode()}）；空表示不按状态收窄。
+     *
+     * <p>非法 code 由 AppService Gate 拒绝（EX-RPT-ORG-102）。</p>
+     */
+    @Schema(description = "就诊状态 code；空不收窄")
+    private String statusEnum;
+
+    /**
      * 前端下发的导出列；空则导出全部 {@code @Excel} 列。
      */
     @Schema(description = "导出列清单（页面可见列）")

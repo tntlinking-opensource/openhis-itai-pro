@@ -74,6 +74,8 @@ public class MedicationCatalogMapperImpl implements MedicationCatalogMapper {
         item.setYbMatchFlag(request.getYbMatchFlag());
         item.setChrgitmLv(request.getChrgitmLv());
         item.setMrSettlementTypeCode(request.getMrSettlementTypeCode());
+        // 结余留用批次号：可选术语 code
+        item.setSurplusRetentionBatchCode(request.getSurplusRetentionBatchCode());
         item.setPharmacologyCategoryCode(request.getPharmacologyCategoryCode());
         item.setManufacturerId(request.getManufacturerId());
         // 药品目录不再维护供应商：写命令强制 supplyId=null
@@ -155,6 +157,8 @@ public class MedicationCatalogMapperImpl implements MedicationCatalogMapper {
         item.setYbMatchFlag(request.getYbMatchFlag());
         item.setChrgitmLv(request.getChrgitmLv());
         item.setMrSettlementTypeCode(request.getMrSettlementTypeCode());
+        // 结余留用批次号：可选术语 code
+        item.setSurplusRetentionBatchCode(request.getSurplusRetentionBatchCode());
         item.setPharmacologyCategoryCode(request.getPharmacologyCategoryCode());
         item.setManufacturerId(request.getManufacturerId());
         // 药品目录不再维护供应商：写命令强制 supplyId=null
@@ -270,6 +274,8 @@ public class MedicationCatalogMapperImpl implements MedicationCatalogMapper {
         dto.setTempOrderSplitPropertyEnumOptions(model.getTempOrderSplitPropertyOptions());
         dto.setChrgitmLvOptions(model.getChrgitmLvOptions());
         dto.setMrSettlementTypeCodeOptions(model.getMrSettlementTypeCodeOptions());
+        // 结余留用批次号：Init 术语下拉透传（应用层直装时也可直接 set）
+        dto.setSurplusRetentionBatchCodeOptions(model.getSurplusRetentionBatchCodeOptions());
         dto.setSystemCategoriesOptions(model.getSystemCategoryOptions());
         dto.setMedicinePropertiesOptions(model.getMedicinePropertyOptions());
         dto.setDoseFormCodeOptions(model.getDoseFormOptions());
@@ -423,6 +429,8 @@ public class MedicationCatalogMapperImpl implements MedicationCatalogMapper {
         dto.setRestrictedEnum(model.getRestrictedEnum());
         dto.setChrgitmLv(model.getChrgitmLv());
         dto.setMrSettlementTypeCode(model.getMrSettlementTypeCode());
+        // 结余留用批次号：详情回显
+        dto.setSurplusRetentionBatchCode(model.getSurplusRetentionBatchCode());
         dto.setVersion(model.getVersion());
         dto.setRestrictedFlag(Boolean.TRUE.equals(model.getRestrictedFlag()));
         dto.setRestrictedScope(model.getRestrictedScope());

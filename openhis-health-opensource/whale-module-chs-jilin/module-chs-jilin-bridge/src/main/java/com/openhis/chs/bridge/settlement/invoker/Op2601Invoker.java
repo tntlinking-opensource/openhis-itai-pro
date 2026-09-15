@@ -25,6 +25,7 @@ import com.openhis.chs.domain.share.constants.ChsInfNo;
 import com.openhis.chs.gateway.scheme.settlement.model.Op2601Input;
 import com.openhis.chs.gateway.scheme.settlement.assembler.Op2601InputAssembler;
 import com.openhis.chs.gateway.support.ChsPlatformResponseSupport;
+import com.openhis.health.domain.financial.paymentreconciliation.service.PaymentReconciliationDomainService;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.infrastructure.multitenancy.TenantUtils;
 import lombok.RequiredArgsConstructor;
@@ -40,7 +41,8 @@ import java.util.List;
  *
  * <p>典型场景：收银落账后扫描支付单下 2207/2304 回执状态不明，
  * 逐条调用平台冲正接口；平台成功后以独立事务写 correction 并软删结算回执
- * （2601 冲正视同未发生，不对账写 reversal），避免外层回滚或一收一退多计笔数。</p>
+ * （2601 冲正视同未发生，不对账写 reversal），并同步支付桥表 {@code REVOKED}、
+ * 软删该 {@code setl_id} 的统筹/个账明细，避免日结虚增。</p>
  */
 @Slf4j
 @Component
@@ -52,6 +54,7 @@ public class Op2601Invoker {
     private final YbSettlementRecordDomainService settlementRecordDomainService;
     private final YbSettlementCorrectionDomainService settlementCorrectionDomainService;
     private final YbInvokeLogQueryService invokeLogQueryService;
+    private final PaymentReconciliationDomainService paymentReconciliationDomainService;
 
     /**
      * 扫描支付单下平台状态不明的 2207/2304，逐条发起 2601 冲正。
@@ -144,12 +147,18 @@ public class Op2601Invoker {
                     ex);
                 throw ex;
             }
-            // 内存实体与独立事务对齐，供调用方继续写支付桥表
+            // 内存实体与独立事务对齐；桥表 REVOKED + 软删统筹/个账明细（与平台净额 0 同态）
             if (record != null) {
                 if (!YbSettlementVoucherStatus.REVOKED.equals(record.getStatus())) {
                     record.setStatus(YbSettlementVoucherStatus.REVOKED);
                 }
                 record.setIsDeleted(true);
+                this.paymentReconciliationDomainService.markYbSettlementsRevoked(
+                    record.getId(),
+                    record.getSetlId());
+                // 仅软删本 setl 的 INSURANCE_*；不碰自付渠道、不影响 2208/UN_PAY 正常退费
+                this.paymentReconciliationDomainService.softDeleteInsuranceFundAcctDetailsBySetlId(
+                    record.getSetlId());
             }
             log.info(
                 "2601 correction succeeded settlementRecordId={} oinfno={} omsgid={}",
@@ -175,7 +184,11 @@ public class Op2601Invoker {
     }
 
     /**
-     * 从同回执或同支付单 invoke 审计中回填 contractBusNo */
+     * 从同回执或同支付单 invoke 审计中回填 contractBusNo（2601 出站路由必填）。
+     *
+     * @param command  冲正命令（就地回填 contractBusNo）
+     * @param tenantId 租户 ID
+     */
     private void resolveContractBusNo(SettlementCorrectionCommand command, Long tenantId) {
         if (command.getSettlementRecordId() != null) {
             invokeLogQueryService.findFirstContractBusNoBySettlementRecordId(

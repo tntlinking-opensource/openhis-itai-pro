@@ -28,7 +28,6 @@ import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.InventoryDepartmentConstants;
-import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
 import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.LocationStatus;
 import com.openhis.health.domain.share.enums.SupplyStatus;
@@ -97,27 +96,25 @@ public class InventoryDepartmentStockInAppService {
      * @throws BusinessException {@link ErrorCodeConstants#DEPT_IN_101} 机构上下文缺失或主数据加载失败
      */
     public LoadStockInFormInitResponse loadStockInFormInit(LoadStockInFormInitRequest request) {
-        // Gate：会话机构上下文须存在，否则无法按管辖收窄库位与人员
-        // Pre：拉取启用库位/人员并经管辖 Gate 收窄
-        // Asm：Mapper 装配初始化下拉响应
-        Long resolvedOrg = managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
+        // Gate：会话机构上下文须存在，否则无法按管辖收窄库位
+        // Pre：拉取启用库位并经管辖 Gate 收窄；经手人取全体在职医务人员（不限药师/库管）
+        // Asm：经手人写入 pharmacistOptions（前端与库管选项合并；库管位留空）
+        managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
             ErrorCodeConstants.DEPT_IN_101, "机构上下文缺失");
         try {
             List<Location> departmentPharmacies = locationQueryService.listAllActiveDepartmentPharmacies();
             List<Location> warehouses = locationQueryService.listAllActiveWarehouses();
             List<Location> gatedDepartmentPharmacies = this.managedLocationIdsResolver.narrowActiveLocationsByManaged(departmentPharmacies);
             List<Location> gatedWarehouses = this.managedLocationIdsResolver.narrowActiveLocationsByManaged(warehouses);
-            List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
-                WhalePlatformRoleCodeConstants.ROLE_PHARMACIST, resolvedOrg);
-            List<Practitioner> warehouseKeepers = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
-                WhalePlatformRoleCodeConstants.ROLE_WAREHOUSE, resolvedOrg);
+            List<Practitioner> handlers =
+                this.practitionerRoleScopeLoader.listAllActivePractitionersForInventoryDocHandlerSelect();
             return stockInMapper.toLoadStockInFormInitResponse(
                 stockInMapper.toOptionDtoListFromLocations(gatedDepartmentPharmacies),
                 stockInMapper.toOptionDtoListFromLocations(gatedWarehouses),
                 stockInMapper.toOptionDtoListInboundItemTableTypes(),
                 stockInMapper.toOptionDtoListSupplyStatuses(),
-                stockInMapper.toOptionDtoListFromPractitioners(pharmacists),
-                stockInMapper.toOptionDtoListFromPractitioners(warehouseKeepers));
+                stockInMapper.toOptionDtoListFromPractitioners(handlers),
+                List.of());
         } catch (RuntimeException ex) {
             log.warn("loadStockInFormInit failed", ex);
             throw new BusinessException(ErrorCodeConstants.DEPT_IN_101, "科室入库页主数据加载失败");

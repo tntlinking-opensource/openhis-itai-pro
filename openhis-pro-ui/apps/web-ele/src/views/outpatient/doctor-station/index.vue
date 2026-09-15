@@ -17,6 +17,8 @@ import { useUserStore } from '@vben/stores';
 import { ElButton, ElMessage, ElMessageBox } from 'element-plus';
 import { storeToRefs } from 'pinia';
 
+import PatientAllergyHistoryDialog from '#/components/clinical/patient-allergy-history-dialog.vue';
+
 import {
   httpCancelOutpatientReception,
   httpCompleteOutpatientEncounter,
@@ -196,6 +198,11 @@ const DOCTOR_TABS = {
 } as const;
 
 type DoctorTab = (typeof DOCTOR_TABS)[keyof typeof DOCTOR_TABS];
+
+/** 页签展示列表。电子处方未完成，暂不露出入口，组件与映射仍保留。 */
+const visibleDoctorTabs = computed(() =>
+  Object.values(DOCTOR_TABS).filter((tab) => tab !== DOCTOR_TABS.PRESCRIPTION),
+);
 
 // 当前激活的功能标签
 const activeTab = ref<DoctorTab>(DOCTOR_TABS.MEDICAL_RECORD);
@@ -472,6 +479,7 @@ const handleAction = (_action: string) => {
 };
 
 const serviceApplyDialogVisible = ref(false);
+const allergyDialogVisible = ref(false);
 const serviceApplyKind = ref<ServiceApplyKind>('lab');
 
 /** 检验/检查申请弹窗顶部患者摘要 */
@@ -539,14 +547,17 @@ const handleQuickAction = async (
     await openServiceApplyDialog(action);
     return;
   }
+  if (action === 'allergy') {
+    allergyDialogVisible.value = true;
+    return;
+  }
   const actionTextMap: Record<
-    Exclude<typeof action, 'exam' | 'lab' | 'report' | 'treatment'>,
+    Exclude<typeof action, 'allergy' | 'exam' | 'lab' | 'report' | 'treatment'>,
     string
   > = {
     transfusion: '输血申请',
     pathology: '病理申请',
     surgery: '手术申请',
-    allergy: '过敏史',
   };
   ElMessage.info(`${actionTextMap[action]}功能待实现`);
 };
@@ -957,7 +968,7 @@ const handleAdmission = async () => {
           :patient="currentPatientInfo"
           :doctor-name="doctorDisplayName"
           :active-tab="activeTab"
-          :tabs="Object.values(DOCTOR_TABS)"
+          :tabs="visibleDoctorTabs"
           @tab-change="handleTabChange"
           @action="handleAction"
         >
@@ -1025,6 +1036,13 @@ const handleAdmission = async () => {
       :encounter-id="selectedPatient?.encounterId ?? ''"
       :patient-id="selectedPatient?.patientId ?? ''"
       :patient="selectedPatient"
+    />
+
+    <PatientAllergyHistoryDialog
+      v-model="allergyDialogVisible"
+      :patient-id="selectedPatient?.patientId ?? ''"
+      :encounter-id="selectedPatient?.encounterId ?? ''"
+      default-verification-status="CONFIRMED"
     />
 
     <ServiceApplyDialog

@@ -145,11 +145,19 @@ public interface DoctorStationRefundApplicationMapper {
     /**
      * IF-DRA-03（Asm）：装配退耗材命令（单条，数量取收费行计价数量）。
      *
-     * @param chargeItem 拟退耗材收费行
-     * @param operatorId 操作人主键
+     * <p>{@code sourceDeviceRequestId} 须为耗材<strong>申请</strong>主键（经 App 解析），
+     * 禁止直接传发放锚点下的 {@code serviceId}。</p>
+     *
+     * @param sourceDeviceRequestId 原耗材申请主键
+     * @param chargeItem            拟退耗材收费行（取退量）
+     * @param operatorId            操作人主键
      * @return 领域命令
      */
-    CreateDeviceOrderRefundCommand toCreateDeviceOrderRefundCommand(ChargeItem chargeItem, Long operatorId);
+    CreateDeviceOrderRefundCommand toCreateDeviceOrderRefundCommand(
+        Long sourceDeviceRequestId,
+        ChargeItem chargeItem,
+        Long operatorId
+    );
 
     /**
      * IF-DRA-03（Asm）：装配待退耗材发放命令（单条）。

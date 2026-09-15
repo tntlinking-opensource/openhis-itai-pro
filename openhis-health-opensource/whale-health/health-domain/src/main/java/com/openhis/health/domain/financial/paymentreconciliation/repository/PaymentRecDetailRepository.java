@@ -30,6 +30,17 @@ public interface PaymentRecDetailRepository extends JpaRepository<PaymentRecDeta
     List<PaymentRecDetail> findAllByReconciliationIdIn(Collection<Long> reconciliationIds);
 
     /**
+     * 按平台结算号查未软删的医保统筹/个账明细（2601 冲正后回滚日结虚增用）。
+     *
+     * @param payTransNo 平台 {@code setl_id}（落在 {@code pay_trans_no}）
+     * @param payEnums   渠道码集合，通常为 {@code INSURANCE_FUND}/{@code INSURANCE_ACCT}
+     * @return 未软删明细
+     */
+    List<PaymentRecDetail> findAllByPayTransNoAndPayEnumInAndIsDeletedFalse(
+        String payTransNo,
+        Collection<String> payEnums);
+
+    /**
      * 按条件删除（受软删底座约束）。
      * @param reconciliationId 条件
      */

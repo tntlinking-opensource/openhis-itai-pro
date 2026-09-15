@@ -158,9 +158,67 @@ function resolveHeaderCellStyle({
   :deep(.el-table__body tr.report-list-page__refund-row:hover > td.el-table-fixed-column--right) {
     color: var(--el-color-danger);
   }
+
+  /*
+   * 账批≠实发批：warning 底色提示（不改正额）；可与退行 danger 字色并存。
+   */
+  :deep(.el-table__body tr.report-list-page__lot-mismatch-row > td.el-table__cell),
+  :deep(.el-table__body tr.report-list-page__lot-mismatch-row > td.el-table-fixed-column--left),
+  :deep(.el-table__body tr.report-list-page__lot-mismatch-row > td.el-table-fixed-column--right) {
+    background-color: var(--el-color-warning-light-9);
+  }
+
+  :deep(.el-table__body tr.report-list-page__lot-mismatch-row:hover > td.el-table__cell),
+  :deep(
+    .el-table__body tr.report-list-page__lot-mismatch-row:hover > td.el-table-fixed-column--left
+  ),
+  :deep(
+    .el-table__body tr.report-list-page__lot-mismatch-row:hover > td.el-table-fixed-column--right
+  ) {
+    background-color: var(--el-color-warning-light-8);
+  }
 }
 </style>
 
 <style lang="scss">
 @use '../report-list-page-table-cells.scss';
+
+/*
+ * 表头字段间小竖条分割线（不满格，避免整列竖线）。
+ * 不走 SFC scoped：院点打包曾丢失 scoped，须随 REPORT_TABLE_CLASS 外挂生效。
+ */
+.report-list-page__table {
+  th.el-table__cell:not(.gutter):not(:last-child)::after {
+    position: absolute;
+    top: 50%;
+    right: 0;
+    z-index: 1;
+    width: 1px;
+    height: 14px;
+    pointer-events: none;
+    background: var(--el-color-primary-light-5);
+    content: '';
+    transform: translateY(-50%);
+  }
+
+  th.el-table__cell:has(+ .gutter)::after,
+  th.el-table__cell:has(+ .report-list-page__col-group-start)::after {
+    display: none;
+  }
+
+  /*
+   * 账批≠实发批底色（外挂双保险：院点打包可能丢 scoped）。
+   */
+  .el-table__body tr.report-list-page__lot-mismatch-row > td.el-table__cell,
+  .el-table__body tr.report-list-page__lot-mismatch-row > td.el-table-fixed-column--left,
+  .el-table__body tr.report-list-page__lot-mismatch-row > td.el-table-fixed-column--right {
+    background-color: var(--el-color-warning-light-9);
+  }
+
+  .el-table__body tr.report-list-page__lot-mismatch-row:hover > td.el-table__cell,
+  .el-table__body tr.report-list-page__lot-mismatch-row:hover > td.el-table-fixed-column--left,
+  .el-table__body tr.report-list-page__lot-mismatch-row:hover > td.el-table-fixed-column--right {
+    background-color: var(--el-color-warning-light-8);
+  }
+}
 </style>

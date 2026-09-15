@@ -167,6 +167,12 @@ public class MedicationDefinition extends BaseAuditedEntity {
     /** 病案结算类型编码（术语 {@code mr_settlement_type_code}）。 */
     @Column(name = "mr_settlement_type_code")
     private String mrSettlementTypeCode;
+    /**
+     * 结余留用批次号（术语 {@code surplus_retention_batch_code}；可选；
+     * 存概念 code，展示名与字段中文同名）。
+     */
+    @Column(name = "surplus_retention_batch_code")
+    private String surplusRetentionBatchCode;
     /** 处方药标志。 */
     @Column(name = "rx_flag")
     private Boolean rxFlag;

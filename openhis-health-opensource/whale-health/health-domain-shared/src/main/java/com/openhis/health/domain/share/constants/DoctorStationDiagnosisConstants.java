@@ -84,8 +84,21 @@ public interface DoctorStationDiagnosisConstants {
     /** 术语：肿瘤形态学目录（医保 1313）。 */
     String SOURCE_TUMOR_MORPH = "tumor_morph";
 
-    /** 术语：国家临床版 2.0（病案首页选码；不进医生站西医候选）。 */
+    /**
+     * 术语：国家临床版 2.0（国临码）。
+     *
+     * <p>病案首页与<strong>住院</strong>医生站西医选码真源；<strong>不</strong>进门诊医生站西医候选
+     * （门诊仍走 {@link #DEFAULT_WESTERN_DIAGNOSIS_SEARCH_SOURCES}）。</p>
+     */
     String SOURCE_CLINICAL_V2 = "clinical_v2";
+
+    /**
+     * 住院医生站西医诊断检索目录来源（仅国临）。
+     *
+     * <p>与门诊 {@link #DEFAULT_WESTERN_DIAGNOSIS_SEARCH_SOURCES} 刻意分流：住院落国临，
+     * 上传/结算清单再经目录对照出 {@code yb_no}。</p>
+     */
+    List<String> INPATIENT_WESTERN_DIAGNOSIS_SEARCH_SOURCES = List.of(SOURCE_CLINICAL_V2);
 
     /**
      * 术语：体检诊断（PEIS 诊断建议库；不进医生站西医/中医候选）。
@@ -94,10 +107,13 @@ public interface DoctorStationDiagnosisConstants {
     String SOURCE_PEIS_DX = "peis_dx";
 
     /**
-     * 目录来源枚举串：西医侧分组，与 {@code cln_condition_definition.source_enum} 及术语码一致。
-     * <p>用于中西医标签判定（{@link #resolveDiagnosisKindFromSource}）；医生站检索 IN 列表以系统设置
-     * {@code doctorStationWesternDiagnosisSources} 为准，默认见 {@link #DEFAULT_WESTERN_DIAGNOSIS_SEARCH_SOURCES}。
-     * {@link #SOURCE_PEIS_DX} / {@link #SOURCE_CLINICAL_V2} 均不在此集合。</p>
+     * 目录来源枚举串：西医侧分组（门诊检索白名单），与 {@code cln_condition_definition.source_enum} 及术语码一致。
+     *
+     * <p>用于中西医标签判定与门诊系统设置 {@code doctorStationWesternDiagnosisSources} 白名单；
+     * 默认见 {@link #DEFAULT_WESTERN_DIAGNOSIS_SEARCH_SOURCES}。
+     * {@link #SOURCE_PEIS_DX} 不在此集合；{@link #SOURCE_CLINICAL_V2} 另由住院检索
+     * {@link #INPATIENT_WESTERN_DIAGNOSIS_SEARCH_SOURCES} 使用，并在 {@link #resolveDiagnosisKindFromSource}
+     * 中单独判为西医。</p>
      */
     List<String> CONDITION_SOURCE_CODES_WESTERN = List.of(
         SOURCE_HOSPITAL_DX,
@@ -109,8 +125,10 @@ public interface DoctorStationDiagnosisConstants {
         SOURCE_TUMOR_MORPH);
 
     /**
-     * 医生站西医诊断检索默认目录来源（未配置或配置非法时回落）。
-     * <p>院内诊断 + 疾病与诊断目录(1307)；门诊慢特病种等需在系统设置中显式加入。</p>
+     * 门诊医生站西医诊断检索默认目录来源（未配置或配置非法时回落）。
+     *
+     * <p>院内诊断 + 疾病与诊断目录(1307)；门诊慢特病种等需在系统设置中显式加入。
+     * <strong>不含</strong> {@link #SOURCE_CLINICAL_V2}（国临仅住院/病案首页）。</p>
      */
     List<String> DEFAULT_WESTERN_DIAGNOSIS_SEARCH_SOURCES = List.of(
         SOURCE_HOSPITAL_DX,
@@ -124,19 +142,58 @@ public interface DoctorStationDiagnosisConstants {
     /**
      * 由持久化 {@code source_enum} 推导中西医维度标签。
      *
+     * <p>门诊西医白名单（{@link #CONDITION_SOURCE_CODES_WESTERN}）与住院国临
+     * （{@link #SOURCE_CLINICAL_V2}）均标 {@link #DIAGNOSIS_KIND_TAG_WESTERN}；
+     * 中医码标 {@link #DIAGNOSIS_KIND_TAG_TCM}；其余返回 {@code null}。</p>
+     *
      * @param sourceEnumRaw 目录来源码
      * @return {@link #DIAGNOSIS_KIND_TAG_WESTERN} / {@link #DIAGNOSIS_KIND_TAG_TCM} / {@code null}
      */
     static String resolveDiagnosisKindFromSource(String sourceEnumRaw) {
+        // Gate：空串无法归类
         if (sourceEnumRaw == null || sourceEnumRaw.isBlank()) {
             return null;
         }
         String trimmed = sourceEnumRaw.trim();
-        if (CONDITION_SOURCE_CODES_WESTERN.contains(trimmed)) {
+        // 业务分支：门诊西医白名单或住院国临 → WESTERN
+        if (CONDITION_SOURCE_CODES_WESTERN.contains(trimmed)
+            || SOURCE_CLINICAL_V2.equals(trimmed)) {
             return DIAGNOSIS_KIND_TAG_WESTERN;
         }
+        // 业务分支：中医疾病/证候 → TCM
         if (CONDITION_SOURCE_CODES_TCM.contains(trimmed)) {
             return DIAGNOSIS_KIND_TAG_TCM;
+        }
+        return null;
+    }
+
+    /**
+     * 西医医保目录反查国临时使用的医保主码；国临/中医/无法解析时返回 {@code null}。
+     *
+     * @param sourceEnumRaw 目录来源
+     * @param ybNoRaw       目录 {@code yb_no}
+     * @param conditionCodeRaw 目录主码 {@code condition_code}
+     * @return 医保主码或 null
+     */
+    static String resolveWesternInsuranceYbKey(
+            String sourceEnumRaw, String ybNoRaw, String conditionCodeRaw) {
+        String source = null;
+        if (sourceEnumRaw != null && !sourceEnumRaw.isBlank()) {
+            source = sourceEnumRaw.trim();
+        }
+        // Gate：国临自身不反查
+        if (SOURCE_CLINICAL_V2.equals(source)) {
+            return null;
+        }
+        // Gate：中医目录不反查
+        if (source != null && CONDITION_SOURCE_CODES_TCM.contains(source)) {
+            return null;
+        }
+        if (ybNoRaw != null && !ybNoRaw.isBlank()) {
+            return ybNoRaw.trim();
+        }
+        if (conditionCodeRaw != null && !conditionCodeRaw.isBlank()) {
+            return conditionCodeRaw.trim();
         }
         return null;
     }

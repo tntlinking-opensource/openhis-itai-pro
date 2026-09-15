@@ -90,7 +90,7 @@ public enum EncounterStatus implements EnumInterface {
         return OUTPATIENT_DUPLICATE_BLOCKING_STATUS_CODES;
     }
 
-    /** 门诊已接诊态（历史号复诊资格 BR-REG-020；不含已挂号未接诊）。 */
+    /** 门诊已接诊态（复诊0元号资格 BR-REG-020；不含已挂号未接诊）。 */
     private static final List<String> OUTPATIENT_RECEPTION_STARTED_STATUS_CODES = Collections.unmodifiableList(Arrays.asList(
         IN_PROGRESS.getCode(),
         ON_HOLD.getCode(),

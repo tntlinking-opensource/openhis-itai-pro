@@ -56,14 +56,26 @@ const coreRoutes: RouteRecordRaw[] = [
           title: '个人中心',
         },
       },
-      /** 病案首页（大融合列表+编辑；菜单 path=/mrms/homepage） */
+      /** 病案首页列表由菜单注册 /mrms/homepage；详情多开走独立隐藏路由，避免与菜单同名冲突 */
       {
-        name: 'MrmsCaseRecordHomepage',
-        path: '/mrms/homepage/:caseRecordId?',
-        component: () => import('#/views/mrms/homepage/index.vue'),
+        name: 'MrmsCaseRecordHomepageDetail',
+        path: '/mrms/homepage/detail/:caseRecordId?',
+        component: () => import('#/views/mrms/homepage/homepage-detail.vue'),
         meta: {
           hideInMenu: true,
-          title: '病案首页',
+          /** 与列表分缓存；详情身份变化时仍按 fullPath 开页签 */
+          keepAlive: true,
+          title: '病案详情',
+        },
+      },
+      /** 结算清单只读预览（列表「结算清单」入口；不嵌病案详情） */
+      {
+        name: 'MrmsSettleListPreview',
+        path: '/mrms/settle-list/:caseRecordId?',
+        component: () => import('#/views/mrms/settle-list/index.vue'),
+        meta: {
+          hideInMenu: true,
+          title: '结算清单',
         },
       },
       /** 质控工作台（菜单 component 由后台配置） */

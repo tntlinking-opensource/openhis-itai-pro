@@ -34,7 +34,7 @@ public class OutpatientFeeDetailAmountSummaryDto {
     @Schema(description = "折后金额合计")
     private BigDecimal discountedAmountTotal;
 
-    /** 行金额合计（含退单负号；兼容旧列，与售价合计同值）。 */
+    /** 行金额合计（含退单负号；与售价合计同口径填充，报表中心明细 Tab 当前仅展示进/售价）。 */
     @Schema(description = "行金额合计")
     private BigDecimal lineAmountTotal;
 

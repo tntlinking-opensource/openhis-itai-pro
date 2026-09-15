@@ -24,6 +24,11 @@ public class HomepageDto {
     /** 病案主档主键。 */
     private Long caseRecordId;
 
+    /**
+     * 院内病案号（主档冗余回传；首次保存前可空，保存发号后非空）。
+     */
+    private String medcasno;
+
     /** 首页版本号。 */
     private Integer versionNo;
 
@@ -77,6 +82,26 @@ public class HomepageDto {
 
     /** 治疗类别字典码。 */
     private String trtTypeCode;
+
+    /** 实施临床路径（国标：1中医 2西医 3否）。 */
+    private String clinicalPathCode;
+
+    /** 使用医疗机构中药制剂（1是 2否）。 */
+    private String tcmPrepCode;
+
+    /** 使用中医诊疗设备（1是 2否）。 */
+    private String tcmDeviceCode;
+
+    /** 使用中医诊疗技术（1是 2否）。 */
+    private String tcmTechCode;
+
+    /** 辨证施护（1是 2否）。 */
+    private String syndromeNurseCode;
+
+    /**
+     * 是否启用「中医信息」段（只读出参；由医院 {@code medins_type} 判定，不落库）。
+     */
+    private Boolean tcmInfoEnabled;
 
     /** 特级护理天数。 */
     private Integer spgaNurscareDays;
@@ -159,11 +184,155 @@ public class HomepageDto {
     /** 责任护士姓名。 */
     private String respNursName;
 
+    /** 医疗付费方式。 */
+    private String payWayCode;
+
+    /** 健康卡号。 */
+    private String healthCardNo;
+
+    /** 年龄岁。 */
+    private Integer ageYear;
+
+    /** 不足 1 周岁月龄。 */
+    private Integer ageMonth;
+
+    /** 出生地省市区 codes（API 为 List；库列斜杠拼接，如 220000/220100/220102）。 */
+    private List<String> birplcCodes;
+
+    /** 出生地中文地名（连续文本；卫统 CSD / HQMS A22）。 */
+    private String birplcName;
+
+    /** 籍贯省市 codes（API 为 List；库列斜杠拼接）。 */
+    private List<String> naplCodes;
+
+    /** 籍贯中文地名（连续文本；卫统 GG。HQMS A23C 用 codes→RC036，不用本字段）。 */
+    private String naplName;
+
+    /** 现住址省市区 codes（API 为 List；库列斜杠拼接）。 */
+    private List<String> currAddrCodes;
+
+    /** 现住址详细。 */
+    private String currAddrDetail;
+
+    /** 现住址邮编。 */
+    private String currAddrPoscode;
+
+    /** 户口地址省市区 codes（API 为 List；库列斜杠拼接）。 */
+    private List<String> resdAddrCodes;
+
+    /** 户口详细地址。 */
+    private String resdAddrDetail;
+
+    /** 户口邮编。 */
+    private String resdAddrPoscode;
+
+    /** 工作单位及地址。 */
+    private String emprAddr;
+
+    /** 单位电话。 */
+    private String emprTel;
+
+    /** 单位邮编。 */
+    private String emprPoscode;
+
+    /** 入院病区。 */
+    private String admWard;
+
+    /** 入院床位。 */
+    private String admBed;
+
+    /** 出院病区。 */
+    private String dscgWard;
+
+    /** 出院床位。 */
+    private String dscgBed;
+
+    /** 药物过敏。 */
+    private String drugAllergyCode;
+
+    /** 过敏药物。 */
+    private String allergyDrugName;
+
+    /** 病理号。 */
+    private String pathologyNo;
+
+    /** 主要诊断治愈好转。 */
+    private String mainDiagCureCode;
+
+    /** 抢救次数。 */
+    private Integer rescueCount;
+
+    /** 抢救成功次数。 */
+    private Integer rescueSuccessCount;
+
+    /** 临床路径管理（异于中医 clinicalPathCode）。 */
+    private String clinicPathManageCode;
+
+    /** 诊断符合门诊与出院。 */
+    private String diagMatchOpDscg;
+
+    /** 诊断符合入院与出院。 */
+    private String diagMatchAdmDscg;
+
+    /** 诊断符合术前与术后。 */
+    private String diagMatchPrePost;
+
+    /** 诊断符合临床与病理。 */
+    private String diagMatchClinicPath;
+
+    /** 诊断符合放射与病理。 */
+    private String diagMatchRadioPath;
+
+    /** 死亡患者尸检。 */
+    private String autopsyCode;
+
+    /** 血型 ABO。 */
+    private String aboCode;
+
+    /** Rh。 */
+    private String rhCode;
+
+    /** 进修医师。 */
+    private String trainDrName;
+
+    /** 实习医师。 */
+    private String intnDrName;
+
+    /** 编码员。 */
+    private String codrName;
+
+    /** 病案质量。 */
+    private String medcasQltCode;
+
+    /** 质控日期。 */
+    private LocalDate qltctrlDate;
+
+    /** 质控医师。 */
+    private String qltctrlDrName;
+
+    /** 质控护士。 */
+    private String qltctrlNursName;
+
+    /** 拟接收医院。 */
+    private String acpMedinsName;
+
+    /** 拟接收社区。 */
+    private String acpCommunityName;
+
+    /** 31 天再住院计划。 */
+    private String rinp31Flag;
+
+    /** 再住院目的。 */
+    private String rinp31Purpose;
+
     /** 字段来源映射。 */
     private Map<String, String> fieldSources = new HashMap<>();
 
-    /** 扩展字段。 */
-    private Map<String, Object> extension = new HashMap<>();
+    /**
+     * 费用快照汇总（键：{@code medfee_sumamt} / {@code selfpay_amt} / 4401 分项键）；
+     * 来自首页落库列，由 AppService 填充；仅「重新统计」或首次补种覆盖。
+     */
+    private Map<String, java.math.BigDecimal> fees = new HashMap<>();
 
     /** 诊断行列表。 */
     private List<DiagnosisLineDto> diagnoses = new ArrayList<>();

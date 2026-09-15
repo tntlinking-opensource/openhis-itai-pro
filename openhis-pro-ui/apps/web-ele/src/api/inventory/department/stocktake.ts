@@ -27,11 +27,11 @@ export interface StocktakeOptionDto {
   sort?: string;
   value?: string;
   label?: string;
+  pyStr?: string;
+  wbStr?: string;
 }
 
-export interface LoadDeptStocktakeFormInitRequest {
-  organizationId?: number;
-}
+export interface LoadDeptStocktakeFormInitRequest {}
 
 export interface LoadDeptStocktakeFormInitResponse {
   deptLocationOptions?: StocktakeOptionDto[];
@@ -65,9 +65,7 @@ export interface DeptStocktakeListRowDto {
   applicantId?: number | string;
   applicantName?: string;
   applyTime?: string;
-  approverId?: number | string;
   approverName?: string;
-  approvalTime?: string;
   occurrenceTime?: string;
 }
 
@@ -110,8 +108,6 @@ export interface GetDeptStocktakeDetailResponse {
   practitionerId?: number | string;
   applicantId?: number | string;
   applyTime?: string;
-  approverId?: number | string;
-  approvalTime?: string;
   lines: DeptStocktakeDetailLineDto[];
 }
 
@@ -166,8 +162,6 @@ export interface WithdrawDeptStocktakeApprovalRequest {
 
 export interface AgreeDeptStocktakeRequest {
   busNo: string;
-  /** @deprecated CHS 启用即上传，请使用 contractBusNo */
-  medicareUploadEnabled?: boolean;
   contractBusNo?: string;
 }
 

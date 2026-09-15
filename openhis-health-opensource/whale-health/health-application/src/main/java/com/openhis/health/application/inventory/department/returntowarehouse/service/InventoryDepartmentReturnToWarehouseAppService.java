@@ -31,7 +31,6 @@ import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.InventoryDepartmentConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
-import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
 import com.openhis.health.domain.share.enums.SupplierStatus;
 import com.openhis.health.domain.share.enums.SupplyStatus;
 import com.openhis.health.domain.share.enums.SupplyType;
@@ -165,9 +164,9 @@ public class InventoryDepartmentReturnToWarehouseAppService {
      * @return 表单初始化选项集合
      */
     public LoadReturnToWarehouseFormInitResponse loadReturnToWarehouseFormInit(LoadReturnToWarehouseFormInitRequest request) {
-        // Gate：会话机构上下文须存在，否则无法按管辖收窄库位与人员
-        // Pre：拉取启用库位/人员并经管辖 Gate 收窄
-        Long resolvedOrg = this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
+        // Gate：会话机构上下文须存在，否则无法按管辖收窄库位
+        // Pre：拉取启用库位并经管辖 Gate 收窄；经手人取全体在职医务人员（不限药师/库管）
+        this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
             ErrorCodeConstants.DEPT_RTW_101, "机构上下文缺失");
         try {
             List<Location> departmentPharmacies = this.locationQueryService.listAllActiveDepartmentPharmacies();
@@ -177,17 +176,15 @@ public class InventoryDepartmentReturnToWarehouseAppService {
             List<com.openhis.health.domain.custom.supplier.queries.model.SupplierListItemQueryModel> suppliers =
                 this.supplierQueryService.listSuppliersByTypeAndActive(
                     com.openhis.health.domain.share.enums.SupplierType.SUPPLIER.getCode());
-            List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
-                WhalePlatformRoleCodeConstants.ROLE_PHARMACIST, resolvedOrg);
-            List<Practitioner> warehouseKeepers = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
-                WhalePlatformRoleCodeConstants.ROLE_WAREHOUSE, resolvedOrg);
-            // Asm：映射页主数据下拉选项（含药师/库管）
+            List<Practitioner> handlers =
+                this.practitionerRoleScopeLoader.listAllActivePractitionersForInventoryDocHandlerSelect();
+            // Asm：经手人写入 pharmacistOptions（前端与库管选项合并；库管位留空）
             return this.returnToWarehouseMapper.toLoadReturnToWarehouseFormInitResponse(
                 this.returnToWarehouseMapper.toWarehouseOptionDtoList(gatedDepartmentPharmacies),
                 this.returnToWarehouseMapper.toWarehouseOptionDtoList(gatedWarehouses),
                 this.returnToWarehouseMapper.toSupplierOptionDtoList(suppliers),
-                this.returnToWarehouseMapper.toOptionDtoListFromPractitioners(pharmacists),
-                this.returnToWarehouseMapper.toOptionDtoListFromPractitioners(warehouseKeepers));
+                this.returnToWarehouseMapper.toOptionDtoListFromPractitioners(handlers),
+                Collections.emptyList());
         } catch (RuntimeException ex) {
             log.warn("loadReturnToWarehouseFormInit failed", ex);
             throw new BusinessException(ErrorCodeConstants.DEPT_RTW_102, "退库页主数据加载失败");

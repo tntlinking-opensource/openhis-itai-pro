@@ -154,9 +154,10 @@ public class OutpatientMedicationDispenseReportMapperImpl implements OutpatientM
     /**
      * 装配汇总响应。
      *
-     * @param rows          汇总行
-     * @param totalQuantity 净数量合计
-     * @param totalAmount   净金额合计
+     * @param rows                 汇总行
+     * @param totalQuantity        净数量合计
+     * @param purchaseTotalAmount  进价净额合计
+     * @param saleTotalAmount      售价净额合计
      * @return 汇总响应
      */
     @Override
@@ -171,7 +172,6 @@ public class OutpatientMedicationDispenseReportMapperImpl implements OutpatientM
         response.setTotalQuantity(totalQuantity);
         response.setPurchaseTotalAmount(purchaseTotalAmount);
         response.setSaleTotalAmount(saleTotalAmount);
-        response.setTotalAmount(saleTotalAmount);
         return response;
     }
 

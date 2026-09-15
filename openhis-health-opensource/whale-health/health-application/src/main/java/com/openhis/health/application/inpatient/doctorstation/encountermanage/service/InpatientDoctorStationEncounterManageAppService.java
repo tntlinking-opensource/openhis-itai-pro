@@ -251,7 +251,7 @@ public class InpatientDoctorStationEncounterManageAppService {
     }
 
     /**
-     * 为当前页读模型行构建展示增补（病房名、检索码、险种）；不拉护士站任务计数。
+     * 为当前页读模型行构建展示增补（病房名、检索码、身份证号、险种）；不拉护士站任务计数。
      *
      * @param rows         读模型行
      * @param encounterIds 当前页就诊主键（批量取医保账户）
@@ -279,14 +279,19 @@ public class InpatientDoctorStationEncounterManageAppService {
         }
         Map<Long, String> pinyinByPatientId = new HashMap<>();
         Map<Long, String> wubiByPatientId = new HashMap<>();
+        Map<Long, String> idCardByPatientId = new HashMap<>();
         for (Long patientId : patientIds) {
             PatientDetailQueryModel detail = patientQueryService.loadPatientDetail(patientId);
-            // 患者扩展档缺失时跳过，检索码保持 null。
+            // 患者扩展档缺失时跳过，检索码/身份证保持 null。
             if (detail == null || detail.getPatient() == null) {
                 continue;
             }
             pinyinByPatientId.put(patientId, detail.getPatient().getPyStr());
             wubiByPatientId.put(patientId, detail.getPatient().getWbStr());
+            // Pre：读模型未投影证件号，按当前页患者主键回填完整号（与护士站队列同口径，不脱敏）。
+            if (!StringUtils.isEmpty(detail.getPatient().getIdCard())) {
+                idCardByPatientId.put(patientId, detail.getPatient().getIdCard().trim());
+            }
         }
         Map<Long, Map<String, String>> houseNameByBusNoByWardId = new HashMap<>();
         for (Long wardId : wardIds) {
@@ -316,6 +321,7 @@ public class InpatientDoctorStationEncounterManageAppService {
             if (row.getPatientId() != null) {
                 enrichment.setPinyinCode(pinyinByPatientId.get(row.getPatientId()));
                 enrichment.setWubiCode(wubiByPatientId.get(row.getPatientId()));
+                enrichment.setIdCard(idCardByPatientId.get(row.getPatientId()));
             }
             enrichment.setInsutype(insutypeByEncounterId.get(row.getEncounterId()));
             result.put(row.getEncounterId(), enrichment);

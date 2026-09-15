@@ -20,6 +20,10 @@ public class PeisGroupCompany extends BaseAuditedEntity {
     @Column(name = "org_id")
     private Long orgId;
 
+    /** 上级单位节点；空表示根节点。 */
+    @Column(name = "parent_id")
+    private Long parentId;
+
     @Column(name = "name", nullable = false, length = 128)
     private String name;
 

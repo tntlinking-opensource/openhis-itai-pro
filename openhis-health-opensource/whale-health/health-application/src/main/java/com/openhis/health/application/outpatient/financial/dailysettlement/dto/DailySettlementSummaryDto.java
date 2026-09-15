@@ -6,6 +6,7 @@ package com.openhis.health.application.outpatient.financial.dailysettlement.dto;
 
 import com.openhis.health.application.shared.financial.dto.DailySettlementExpenseNatureSummaryDto;
 import com.openhis.health.application.shared.financial.dto.DailySettlementSummaryRowDto;
+import com.openhis.health.application.shared.financial.dto.DailySettlementWorkInjurySummaryDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
@@ -92,6 +93,12 @@ public class DailySettlementSummaryDto {
     /** 按费用性质（fin_contract）动态汇总块。 */
     @Schema(description = "费用性质汇总")
     private List<DailySettlementExpenseNatureSummaryDto> expenseNatureSummaries = new ArrayList<>();
+
+    /**
+     * 工伤独立统计（窗内有工伤合同 payment 时非空；不计入 totalIncome / 上半区 / 费用性质块）。
+     */
+    @Schema(description = "工伤独立统计")
+    private DailySettlementWorkInjurySummaryDto workInjurySummary;
 
     /** 下半区扁平展示行（前端主渲染源）。 */
     @Schema(description = "下半区展示行")

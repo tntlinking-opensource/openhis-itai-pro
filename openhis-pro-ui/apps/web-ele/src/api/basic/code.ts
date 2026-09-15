@@ -79,7 +79,7 @@ export const getConceptListApi = async (params: GetInfoParams) => {
 };
 
 export const updateConceptApi = async (params: ConceptParams & { id: string }) => {
-  return publicRequestClient.post('/code/updatyeConcept', params);
+  return publicRequestClient.post('/code/updateConcept', params);
 };
 
 export const createConceptApi = async (params: ConceptParams) => {

@@ -19,7 +19,6 @@ import com.openhis.health.domain.share.enums.PriceType;
 import com.openhis.health.application.basic.catalog.support.CatalogEditWriteGate;
 import com.openhis.health.application.basic.servicecatalog.dto.ExportServiceCatalogResponse;
 import com.openhis.health.application.basic.servicecatalog.dto.ImportServiceCatalogErrorItemDto;
-import com.openhis.health.application.basic.servicecatalog.dto.ImportServiceCatalogResponse;
 import com.openhis.health.application.basic.servicecatalog.dto.ServiceCatalogChildDto;
 import com.openhis.health.application.basic.servicecatalog.dto.ServiceCatalogDetailDto;
 import com.openhis.health.application.basic.servicecatalog.dto.ServiceCatalogDto;
@@ -201,6 +200,7 @@ public class ServiceCatalogAppService {
         // Pre：组装领域分页 Query
         ActivityDefinitionPageQuery pageQuery = new ActivityDefinitionPageQuery();
         pageQuery.setCategoryCode(query.getCategoryCode());
+        pageQuery.setStatusEnum(query.getStatusEnum());
         pageQuery.setKeyword(query.getKeyword());
         // 本 IF 主场景是目录维护：未传参时默认含明细子项；组套等复用须显式传 false
         Boolean includePackageChildren = query.getIncludeReferencedPackageChildren();
@@ -530,82 +530,6 @@ public class ServiceCatalogAppService {
         return response;
     }
 
-    /**
-     * 批量导入诊疗目录（同步；兼容旧调用。页面推荐 {@link #startImportServiceCatalog} + 进度轮询）。
-     *
-     * @param request 含 xlsx 字节
-     * @return 成功摘要（batchNo / 成功条数）
-     */
-    public ImportServiceCatalogResponse importServiceCatalog(ImportServiceCatalogRequest request) {
-        // Gate：上传字节非空且体积受限
-        if (request == null || request.getFileBytes() == null || request.getFileBytes().length == 0) {
-            throw new ValidationException("导入诊疗目录失败：文件不能为空");
-        }
-        if (request.getFileBytes().length > ServiceCatalogImportConstants.ERROR_FILE_MAX_BYTES) {
-            throw new ValidationException("导入诊疗目录失败：文件过大，请拆分后重试");
-        }
-        // Gate 续：写路径操作人与机构
-        Long operatorId = currentPractitionerResolver.requireOperatorId(
-            ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "请先登录后再导入诊疗目录");
-        Long orgId = managedOrganizationIdsResolver.requireSessionHospitalId(
-            "SVC-CAT-IMP-ORG",
-            "导入诊疗目录失败：未选择医院上下文，请先登录并选择医院");
-        // Pre：解析 xlsx
-        ServiceCatalogImportWorkbookParser.ParseResult parseResult =
-            serviceCatalogImportWorkbookParser.parse(request.getFileBytes());
-        // Pre 续：缺失计价单位补齐 unit_code 后全量行校验（不写库）
-        serviceCatalogImportConceptEnsureService.ensureMissingConcepts(
-            parseResult.getRows(), serviceCatalogImportTerminologyIndex);
-        List<ImportServiceCatalogErrorItemDto> errors = serviceCatalogImportRowValidator.validate(
-            parseResult.getRows(),
-            orgId,
-            serviceCatalogImportTerminologyIndex,
-            activityDefinitionQueryService);
-        // Gate：任一行失败则生成标注文件并拒绝整批
-        if (errors != null && !errors.isEmpty()) {
-            String token = serviceCatalogImportErrorFileService.buildAndStore(
-                parseResult.getOriginalBytes(), errors);
-            Map<String, String> errorMap = new LinkedHashMap<>();
-            errorMap.put("errorFileToken", token);
-            int index = 0;
-            for (ImportServiceCatalogErrorItemDto item : errors) {
-                String key = "e" + index;
-                StringBuilder line = new StringBuilder();
-                if (item.getExcelRowNum() != null) {
-                    line.append("第").append(item.getExcelRowNum()).append("行");
-                }
-                if (StringUtils.isNotEmpty(item.getColumnName())) {
-                    if (line.length() > 0) {
-                        line.append(" ");
-                    }
-                    line.append("[").append(item.getColumnName()).append("]");
-                }
-                if (line.length() > 0) {
-                    line.append("：");
-                }
-                line.append(item.getMessage());
-                errorMap.put(key, line.toString());
-                index = index + 1;
-            }
-            throw new ValidationException(
-                "导入失败，共 " + errors.size() + " 处错误，已全部回滚", errorMap);
-        }
-        // Cmd：事务内逐行创建（ACTIVE + 维护态价）
-        String batchNo = ServiceCatalogImportConstants.BATCH_NO_PREFIX
-            + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
-            + "-"
-            + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
-        List<ServiceCatalogImportRow> rows = parseResult.getRows();
-        serviceCatalogImportWriteSupport.importRows(
-            batchNo, operatorId, rows, this::createOneForImport);
-        // Asm：成功响应
-        ImportServiceCatalogResponse response = new ImportServiceCatalogResponse();
-        response.setBatchNo(batchNo);
-        response.setTotalCount(rows.size());
-        response.setSuccessCount(rows.size());
-        response.setFailCount(0);
-        return response;
-    }
 
     /**
      * 下载诊疗目录导入模板。
@@ -643,6 +567,7 @@ public class ServiceCatalogAppService {
         ActivityDefinitionPageQuery pageQuery = new ActivityDefinitionPageQuery();
         pageQuery.setKeyword(safeRequest.getKeyword());
         pageQuery.setCategoryCode(safeRequest.getCategoryCode());
+        pageQuery.setStatusEnum(safeRequest.getStatusEnum());
         pageQuery.setIncludeReferencedPackageChildren(Boolean.TRUE);
         int fetchLimit = ServiceCatalogImportConstants.EXPORT_MAX_ROWS + 1;
         List<ActivityDefinitionBaseQueryModel> details =

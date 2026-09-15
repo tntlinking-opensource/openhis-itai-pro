@@ -6,9 +6,12 @@ package com.openhis.wi.bridge.settle.workflow;
 
 import com.openhis.wi.bridge.invoke.support.WorkInjuryInvokeLogSupport;
 import com.openhis.wi.bridge.invoke.workflow.WorkInjuryInvokeOrchestrator;
+import com.openhis.wi.domain.share.WiErrorCodes;
 import com.openhis.wi.gateway.scheme.shared.model.WiPhase;
 import com.openhis.chs.domain.settlement.entity.YbSettlementRecord;
-import com.openhis.wi.domain.share.WiErrorCodes;
+import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
+import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
+import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.wi.domain.invoke.command.PrepareWorkInjuryInvokeRequest;
 import com.openhis.wi.domain.invoke.result.PrepareWorkInjuryInvokeResponse;
 import com.openhis.wi.domain.settle.command.ConfirmWorkInjurySettleCommand;
@@ -30,6 +33,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -53,6 +58,7 @@ public class WorkInjuryOutpatientSettleOrchestrator {
     private final YbWiSettlementDomainService settlementDomainService;
     private final YbWiPreSettleDomainService preSettleDomainService;
     private final WorkInjuryInvokeLogSupport invokeLogSupport;
+    private final ChargeItemQueryService chargeItemQueryService;
 
     /**
      * OP_SETTLE 前校验 anchor 审批资格（WI-004）。
@@ -97,12 +103,15 @@ public class WorkInjuryOutpatientSettleOrchestrator {
                 .setContext(context);
 
         // 平台 2207 已成功、本地无回执：补落单边后直接 COMPLETED，避免再撞 2203「已存在结算」
+        // 若本次收费合计与已有回执医疗费不一致，拒绝复用（防新开项目挂旧回执后补现金）
         if (invokeLogSupport.hasSuccessful2207(command.getEncounterId())) {
+            BigDecimal chargeTotal = sumChargeItemTotals(command.getChargeItemIds());
             Optional<YbSettlementRecord> recovered = settlementDomainService.recoverUnilateralFromActivePreSettle(
                     command.getEncounterId(),
                     command.getPaymentDraftId(),
                     command.getContractId(),
-                    TenantUtils.getCurrentTenantId());
+                    TenantUtils.getCurrentTenantId(),
+                    chargeTotal);
             if (recovered.isPresent()) {
                 YbSettlementRecord record = recovered.get();
                 encounterAnchorRepository.findByEncounterId(command.getEncounterId()).ifPresent(anchor ->
@@ -111,6 +120,22 @@ public class WorkInjuryOutpatientSettleOrchestrator {
             }
         }
         return invokeOperations.prepareInvoke(request);
+    }
+
+    /** 本次待结算收费项 totalPrice 合计（与 2207 medfee 对照）。 */
+    private BigDecimal sumChargeItemTotals(List<Long> chargeItemIds) {
+        ChargeItemQueryCommand query = new ChargeItemQueryCommand();
+        query.setIds(chargeItemIds);
+        List<ChargeItem> items = chargeItemQueryService.loadChargeItemsByIds(query);
+        BigDecimal total = BigDecimal.ZERO;
+        if (items != null) {
+            for (ChargeItem item : items) {
+                if (item != null && item.getTotalPrice() != null) {
+                    total = total.add(item.getTotalPrice());
+                }
+            }
+        }
+        return total.setScale(2, RoundingMode.HALF_UP);
     }
 
     /**

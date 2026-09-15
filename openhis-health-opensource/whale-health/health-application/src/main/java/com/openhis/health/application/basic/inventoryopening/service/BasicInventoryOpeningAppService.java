@@ -898,7 +898,7 @@ public class BasicInventoryOpeningAppService {
             } catch (BusinessException ex) {
                 throw new BusinessException(ErrorCodeConstants.BAS_INV_OPN_009, "库存入账失败：" + ex.getMessage());
             }
-            // 批号价：与进货核心一致，进价同时写 LOT_NUMBER_COST / LOT_NUMBER_PRICE（院点中药加价另挂 AOP）
+            // 批号价：与进货核心一致，进价同时写 LOT_NUMBER_COST / LOT_NUMBER_PRICE（中药 Herbal AOP 另挂）
             this.writeLotPricesForOpeningLine(line, product, resolvedLot, operatorId);
             // 追溯：仅 IN（裁决 5C 已拒绝在院码）；贴码单位取药典
             if (StringUtils.isNotEmpty(line.getTraceNo())
@@ -1011,7 +1011,7 @@ public class BasicInventoryOpeningAppService {
      * 按本单写/覆盖批号进价与售价，并回写目录参考价 {@code PURCHASE}/{@code SALE}。
      *
      * <p>行 {@code price} 恒为<strong>每包装单位价</strong>，与 {@code unitCode}（操作/数量单位）无关；
-     * 直接写入 {@code LOT_NUMBER_COST}/{@code LOT_NUMBER_PRICE}（同值）。中草药 ×1.25 由院点 AOP 处理后再抬 {@code SALE}。</p>
+     * 直接写入 {@code LOT_NUMBER_COST}/{@code LOT_NUMBER_PRICE}（同值）。中草药 ×1.25 由产品 {@code Herbal*} AOP 处理后再抬 {@code SALE}。</p>
      * <p>进价可空（药房/耗材房）；空则跳过写价与参考价。同批号进价同值跳过批号写，仍回写参考价；异价（门禁已过）或无价：停用旧 ACTIVE 后写入（BR-WHS-IN-018）。</p>
      *
      * @param line         供应行
@@ -1080,7 +1080,7 @@ public class BasicInventoryOpeningAppService {
             costCmd.setItem(costItem);
             chargeItemDefinitionDomainService.addLotPurchasePrice(costCmd);
 
-            // LOT_NUMBER_PRICE 与进价同值；朝阳院点同意后 AOP 再对中草药 ×1.25
+            // LOT_NUMBER_PRICE 与进价同值；产品 Herbal AOP 同意后再对中草药 ×1.25
             SavePriceLineCommand saleCmd = new SavePriceLineCommand();
             saleCmd.setOperatorId(operatorId);
             SavePriceLineCommand.Item saleItem = new SavePriceLineCommand.Item();
@@ -1093,7 +1093,7 @@ public class BasicInventoryOpeningAppService {
             saleCmd.setItem(saleItem);
             chargeItemDefinitionDomainService.addLotSalePrice(saleCmd);
         }
-        // Cmd：目录参考价跟本行包装进价（核心进售同值；中草药院点 after 再抬 SALE）
+        // Cmd：目录参考价跟本行包装进价（核心进售同值；中草药 Herbal AOP after 再抬 SALE）
         this.catalogReferencePriceSyncSupport.syncPurchaseAndSaleIfChanged(
             line.getItemTable().trim(),
             line.getItemId(),
@@ -1415,7 +1415,7 @@ public class BasicInventoryOpeningAppService {
             dto.setItemQuantity(line.getItemQuantity());
             dto.setUnitCode(line.getUnitCode());
             dto.setPrice(line.getPrice());
-            // 期初不再维护独立售价；同意时批号售价=进价（院点中药加价另挂）
+            // 期初不再维护独立售价；同意时批号售价=进价（中药 Herbal AOP 另挂）
             dto.setTotalPrice(line.getTotalPrice());
             dto.setTraceNo(line.getTraceNo());
             dto.setSupplierId(line.getSupplierId());
@@ -1803,7 +1803,6 @@ public class BasicInventoryOpeningAppService {
             if (StringUtils.isEmpty(row.getItemTable()) || row.getItemId() == null) {
                 // 缺主键行：清空进价，避免分页残留
                 row.setPurchasePrice(null);
-                row.setReferencePurchasePrice(null);
                 continue;
             }
             String table = row.getItemTable().trim();
@@ -1812,7 +1811,6 @@ public class BasicInventoryOpeningAppService {
             BigDecimal purchasePerPackage =
                 this.chargeItemDefinitionQueryService.resolveFirstPurchasePriceValue(table, defId);
             row.setPurchasePrice(purchasePerPackage);
-            row.setReferencePurchasePrice(purchasePerPackage);
             String key = ProductDefinitionKeyUtil.buildCompositeKey(table, defId);
             ProductDefinitionDisplayDto pr = products.get(key);
             List<ProductDefinitionCatalogUnitBandDto> bands =

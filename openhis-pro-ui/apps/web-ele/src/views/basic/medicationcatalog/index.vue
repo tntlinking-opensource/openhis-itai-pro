@@ -56,6 +56,8 @@ const queryParams = ref({
   categoryCode: '',
   /** 重点药类型；空字符串表示「全部」 */
   keyDrugType: '' as string,
+  /** 启用状态；空字符串表示「全部」 */
+  statusEnum: '' as string,
 });
 
 const tableData = ref<MedicationCatalogItem[]>([]);
@@ -307,6 +309,20 @@ const formItems = computed<FormItemConfig[]>(() => [
       { label: '基药', value: 'BASIC' },
       { label: '国家重点监控药品', value: 'NATIONAL_MONITOR' },
       { label: '集采药品', value: 'CENTRAL_PURCHASE' },
+      { label: '抗生素', value: 'ANTIBIOTIC' },
+    ],
+  },
+  {
+    type: 'select',
+    prop: 'statusEnum',
+    label: '启用状态',
+    placeholder: '全部',
+    clearable: true,
+    multiple: false,
+    options: [
+      { label: '全部', value: '' },
+      { label: '已启用', value: PublicationStatusCode.ACTIVE },
+      { label: '已停用', value: PublicationStatusCode.INACTIVE },
     ],
   },
 ]);
@@ -340,6 +356,15 @@ function normalizeKeyDrugTypeForApi(raw: unknown): string | undefined {
   return s;
 }
 
+/** 发布状态筛选归一：空/全部 → undefined */
+function normalizeStatusEnumForApi(raw: unknown): string | undefined {
+  if (raw === undefined || raw === null) {
+    return undefined;
+  }
+  const s = String(raw).trim();
+  return s === '' ? undefined : s;
+}
+
 const handleQuery = async (params: Record<string, unknown>) => {
   queryParams.value = {
     ...queryParams.value,
@@ -353,6 +378,7 @@ const handleQuery = async (params: Record<string, unknown>) => {
       keyword: queryParams.value.keyword || undefined,
       categoryCode: normalizeCategoryCodeForApi(queryParams.value.categoryCode),
       keyDrugType: normalizeKeyDrugTypeForApi(queryParams.value.keyDrugType),
+      statusEnum: normalizeStatusEnumForApi(queryParams.value.statusEnum),
     });
 
     const parsed = parsePagedRowsFromApiData<MedicationCatalogItem>(response.data);
@@ -464,6 +490,7 @@ const handleExportCatalog = async () => {
       keyword: queryParams.value.keyword || undefined,
       categoryCode: queryParams.value.categoryCode || undefined,
       keyDrugType: normalizeKeyDrugTypeForApi(queryParams.value.keyDrugType),
+      statusEnum: normalizeStatusEnumForApi(queryParams.value.statusEnum),
       exportColumns: MEDICATION_CATALOG_EXPORT_COLUMNS,
     });
     if (!result?.fileBytes?.trim()) {

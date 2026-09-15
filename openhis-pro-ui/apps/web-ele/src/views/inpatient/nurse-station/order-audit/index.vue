@@ -529,10 +529,12 @@ async function handleRejectOrders() {
                         :extension="row.extension"
                         :group-items="row.groupItems"
                         :tcm-flag="row.tcmFlag === true"
+                        :skin-test-outcome-code="row.skinTestOutcomeCode"
+                        :skin-test-outcome-text="row.skinTestOutcomeText"
                       />
                     </div>
                     <span
-                      v-if="row.skinTestFlag"
+                      v-if="!row.groupItems?.length && row.skinTestFlag && !row.skinTestOutcomeText"
                       class="skin-test-pill"
                       title="该药品需皮试，校对后请在皮试管理登记结果"
                     >
@@ -668,19 +670,6 @@ async function handleRejectOrders() {
   text-align: center;
   white-space: nowrap;
   font-weight: 600;
-}
-
-.skin-test-pill {
-  flex-shrink: 0;
-  height: 20px;
-  padding: 0 6px;
-  border-radius: 4px;
-  background: var(--el-color-warning);
-  color: var(--el-color-white);
-  font-size: 12px;
-  line-height: 20px;
-  text-align: center;
-  white-space: nowrap;
 }
 
 /* 开立/停嘱分行；停嘱行用危险色加粗醒目 */

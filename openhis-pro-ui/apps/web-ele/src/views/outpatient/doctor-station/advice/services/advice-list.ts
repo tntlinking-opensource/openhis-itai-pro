@@ -328,8 +328,9 @@ export function mapAdviceListRowDto(dto: DoctorStationAdviceRowDto): AdviceRowIt
       : String(dto.chargeStatusEnumText ?? '').trim() ||
         String(dto.chargeStatusEnum ?? '').trim() ||
         '—';
-  const openedRaw = String(dto.reqOpenedTime ?? '').trim();
-  const startTime = openedRaw ? formatDateTime(openedRaw) : '';
+  // 列表「签发时间」取签发时刻；草稿未签发则为空（不用保存/开立时刻）
+  const authoredRaw = String(dto.reqAuthoredTime ?? '').trim();
+  const startTime = authoredRaw ? formatDateTime(authoredRaw) : '';
   const content = buildAdviceContentTitle(dto);
   const dosageLine = buildAdviceDosageSummaryLine(dto);
   const extension = buildAdviceListExtensionLine(dto);

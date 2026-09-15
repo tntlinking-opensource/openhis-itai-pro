@@ -43,6 +43,10 @@ import lombok.RequiredArgsConstructor;
  * 匹配：仅发放精确锚（本发放 / basedOn）；无命中保持 null 禁止假 0.00。禁止请求级兼容回挂。
  * 科室领用侧：仅 Supply 落库进价；售价字段一律置空（领用非销售，禁止目录 SALE / 批号售价）。</p>
  *
+ * <p><strong>账批质检</strong>（仅明细分页 {@code checkLotMismatch=true}；不改正额）：
+ * {@link #applyChargeDispenseLotMismatch} 比对收费锚点批号与实发批号；退耗经 {@code basedOnDispenseId}
+ * 回挂源发放账批。汇总路径须传 {@code false}，避免全窗额外 definition IN。</p>
+ *
  * <p>DOC-CONFLICT→已按 DD-报表中心-进售价口径与开立科室-2026-08 收敛。</p>
  */
 @Component
@@ -101,11 +105,24 @@ public class ConsumableUsageReportAmountEnricher {
      * 回填患者发放明细行进价/售价（6 位行刻度；amount 保持售价别名）。
      *
      * <p>按发放/basedOn 精确锚匹配账单。无命中时售/进价保持 {@code null}（前端「—」），
-     * 禁止 {@code scaleCalc} 编成假 0.00；禁止请求级兼容回挂。</p>
+     * 禁止 {@code scaleCalc} 编成假 0.00；禁止请求级兼容回挂。
+     * 默认<strong>不做</strong>账批质检（汇总路径）；明细分页须传 {@code checkLotMismatch=true}。</p>
      *
      * @param lines 待 enrich 行；须已填 encounterId / dispenseId / deviceReqId / quantity
      */
     public void enrichPatientDispenseAmounts(List<PatientDispenseAmountLine> lines) {
+        this.enrichPatientDispenseAmounts(lines, false);
+    }
+
+    /**
+     * 回填患者发放明细行进价/售价；可选账批≠实发批质检。
+     *
+     * @param lines             待 enrich 行
+     * @param checkLotMismatch  true=本页明细分页质检（额外一次 definition IN）；汇总须 false
+     */
+    public void enrichPatientDispenseAmounts(
+        List<PatientDispenseAmountLine> lines,
+        boolean checkLotMismatch) {
         if (lines == null || lines.isEmpty()) {
             return;
         }
@@ -136,7 +153,9 @@ public class ConsumableUsageReportAmountEnricher {
                 productByCompositeKey);
         // Pre：跨行全局消费，避免同账单被多发放行各加一遍
         Set<Long> consumedChargeItemIds = new HashSet<>();
+        // Asm：逐行精确锚匹配账单并写回进售价
         for (PatientDispenseAmountLine line : lines) {
+            // Gate：空行跳过
             if (line == null) {
                 continue;
             }
@@ -150,6 +169,10 @@ public class ConsumableUsageReportAmountEnricher {
                 purchaseUnitByChargeItemId,
                 packageUnitRatioByChargeItemId,
                 productByCompositeKey);
+        }
+        // Asm：仅明细分页打账批质检；汇总跳过以免全窗多一次 definition IN
+        if (checkLotMismatch) {
+            this.applyChargeDispenseLotMismatch(lines, chargeItems);
         }
     }
 
@@ -269,7 +292,6 @@ public class ConsumableUsageReportAmountEnricher {
             BigDecimal saleNet = this.sumThenSettleOrNull(buckets.saleAmountsByKey.get(key));
             summaryRow.setPurchaseNetAmount(purchaseNet);
             summaryRow.setSaleNetAmount(saleNet);
-            summaryRow.setNetAmount(saleNet);
             summaryRow.setPurchaseUnitPrice(
                 this.resolveUniqueDisplayUnitPrice(buckets.purchaseUnitsByKey.get(key)));
             summaryRow.setSaleUnitPrice(
@@ -360,7 +382,7 @@ public class ConsumableUsageReportAmountEnricher {
     }
 
     /**
-     * 汇总页脚售价净额（仅累加非空行；netAmount 别名）。
+     * 汇总页脚售价净额（仅累加非空行）。
      *
      * @param rows 汇总行
      * @return 结算刻度或 null
@@ -704,6 +726,61 @@ public class ConsumableUsageReportAmountEnricher {
     }
 
     /**
+     * 明细分页：比对收费锚点批号与发放批号；不一致仅打标，不改正额。
+     *
+     * <p>复用 {@link #enrichPatientDispenseAmounts} 已加载的 ChargeItem；额外仅一次
+     * definitionId IN。科室领用不走本方法。退耗经 {@code basedOnDispenseId} 回挂源发放账批。
+     * 任一侧无批号 → 不打 {@code lotMismatch}（禁止假阳性）。</p>
+     *
+     * @param lines       患者发放行
+     * @param chargeItems 本页收费行
+     */
+    private void applyChargeDispenseLotMismatch(
+        List<? extends PatientDispenseAmountLine> lines,
+        List<ChargeItem> chargeItems) {
+        if (lines == null || lines.isEmpty()) {
+            return;
+        }
+        Map<Long, String> chargeLotByDispenseId =
+            this.historicalChargeItemPurchasePriceSupport.mapChargeAnchorLotByDispenseId(chargeItems);
+        // Gate：本页无账批可解析则整批跳过
+        if (chargeLotByDispenseId.isEmpty()) {
+            return;
+        }
+        // Asm：逐行比对实发批与账批；仅质检展示
+        for (PatientDispenseAmountLine line : lines) {
+            // Gate：空行跳过
+            if (line == null) {
+                continue;
+            }
+            // Gate：科室领用无 ChargeItem
+            if (ConsumableUsageReportConstants.SOURCE_CODE_DEPT_ISSUE.equals(line.getSourceCode())) {
+                continue;
+            }
+            String chargeLot = null;
+            // Pre：优先本发放 dispenseId 取账批
+            if (line.getDispenseId() != null) {
+                chargeLot = chargeLotByDispenseId.get(line.getDispenseId());
+            }
+            // Pre：退耗账单锚在源发放，回挂 basedOn
+            if (StringUtils.isEmpty(chargeLot) && line.getBasedOnDispenseId() != null) {
+                chargeLot = chargeLotByDispenseId.get(line.getBasedOnDispenseId());
+            }
+            String dispenseLot = line.getLotNumber();
+            // Gate：任一侧无批号则无法判定
+            if (StringUtils.isEmpty(chargeLot) || StringUtils.isEmpty(dispenseLot)) {
+                continue;
+            }
+            String dispenseLotTrimmed = dispenseLot.trim();
+            line.setChargeLotNumber(chargeLot);
+            // Asm：账批 ≠ 实发批 → 仅打标
+            if (!chargeLot.equals(dispenseLotTrimmed)) {
+                line.setLotMismatch(Boolean.TRUE);
+            }
+        }
+    }
+
+    /**
      * 明细行 → 汇总 dimensionKey。
      *
      * @param detailRow                  明细行
@@ -859,9 +936,6 @@ public class ConsumableUsageReportAmountEnricher {
                 value = row.getPurchaseNetAmount();
             } else {
                 value = row.getSaleNetAmount();
-                if (value == null) {
-                    value = row.getNetAmount();
-                }
             }
             if (value != null) {
                 amounts.add(value);
@@ -896,6 +970,20 @@ public class ConsumableUsageReportAmountEnricher {
 
         /** 写入匹配后的行售价别名 amount。 */
         void setAmount(BigDecimal amount);
+
+        /**
+         * 写入收费锚点批号（质检展示；可空）。
+         *
+         * @param chargeLotNumber 账批号
+         */
+        void setChargeLotNumber(String chargeLotNumber);
+
+        /**
+         * 写入账批≠实发批标记（仅 true 时前端标红；金额口径不变）。
+         *
+         * @param lotMismatch 是否不一致
+         */
+        void setLotMismatch(Boolean lotMismatch);
     }
 
     /**
@@ -978,17 +1066,11 @@ public class ConsumableUsageReportAmountEnricher {
         /** @return 售价净额 */
         BigDecimal getSaleNetAmount();
 
-        /** @return 售价净额别名 */
-        BigDecimal getNetAmount();
-
         /** @param purchaseNetAmount 进价净额 */
         void setPurchaseNetAmount(BigDecimal purchaseNetAmount);
 
         /** @param saleNetAmount 售价净额 */
         void setSaleNetAmount(BigDecimal saleNetAmount);
-
-        /** @param netAmount 售价净额别名 */
-        void setNetAmount(BigDecimal netAmount);
 
         /** @param purchaseUnitPrice 进价单价 */
         void setPurchaseUnitPrice(BigDecimal purchaseUnitPrice);

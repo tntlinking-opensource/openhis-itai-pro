@@ -53,6 +53,7 @@ public final class BossPayloadSupport {
      * @param properties 网关院点配置（医疗机构等级等）
      */
     public static void putMedicalEncounterFields(JSONObject body, BossIssueSnapshot snapshot, EinvoiceBossGatewayProperties properties) {
+        // 缺省自费码用「1/自费」，禁止回落历史「07/全自费」（与费用性质自费混淆，掩盖结算未带回）
         body.put("medCareTypeCode", defaultIfBlank(snapshot.getMedCareTypeCode(), "1"));
         body.put("medicalCareType", defaultIfBlank(snapshot.getMedicalCareType(), "自费"));
         body.put("medicalInstitution", defaultIfBlank(properties.getPlatform().getMedicalInstitution(), "二级甲等"));

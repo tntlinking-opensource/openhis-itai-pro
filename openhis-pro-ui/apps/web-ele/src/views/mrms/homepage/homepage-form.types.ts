@@ -2,100 +2,22 @@ import type { SaveHomepageParams } from '#/api/mrms/types';
 
 /**
  * 病案首页编辑表单模型。
- * P0 正式列字段与 SaveHomepageParams 对齐；其余国标扩展仍进 extension。
+ * 持久化字段与 SaveHomepageParams / 正式列一对一；费用为首页快照回填，仅「重新统计」覆盖。
  */
 export interface HomepageFormModel extends SaveHomepageParams {
   /** 病案号（展示/回填，主档冗余） */
   medcasno?: string;
   /** 患者主键（诊断目录弹窗等） */
   patientId?: string;
-  /** 医疗付费方式 */
-  payWayCode?: string;
-  /** 健康卡号 */
-  healthCardNo?: string;
-  /** 住院次数 */
+  /**
+   * 入院科室主键（诊断医生下拉；列表行带入，不落首页表）。
+   */
+  organizationId?: string;
+  /** 住院次数（主档 patnIptCnt 回显，不落首页列） */
   visitTimes?: number;
-  /** 年龄（岁） */
-  ageYear?: number;
-  /** 不足1周岁年龄（月） */
-  ageMonth?: number;
-  /** 出生地省市区 code */
-  birplcCodes?: string[];
-  /** 籍贯省市 code */
-  naplCodes?: string[];
-  /** 现住址省市区 */
-  currAddrCodes?: string[];
-  /** 现住址详细地址 */
-  currAddrDetail?: string;
-  /** 现住址邮编 */
-  currAddrPoscode?: string;
-  /** 户口地址省市区 */
-  resdAddrCodes?: string[];
-  /** 户口详细地址 */
-  resdAddrDetail?: string;
-  /** 户口邮编 */
-  resdAddrPoscode?: string;
-  /** 工作单位及地址 */
-  emprAddr?: string;
-  /** 单位电话 */
-  emprTel?: string;
-  /** 单位邮编 */
-  emprPoscode?: string;
-  /** 实施临床路径 1是 2否 */
-  clinicalPathCode?: string;
-  /** 使用医疗机构中药制剂 */
-  tcmPrepCode?: string;
-  /** 使用中医诊疗设备 */
-  tcmDeviceCode?: string;
-  /** 使用中医诊疗技术 */
-  tcmTechCode?: string;
-  /** 辨证施护 */
-  syndromeNurseCode?: string;
-  /** 入院病区 */
-  admWard?: string;
-  /** 入院床位 */
-  admBed?: string;
-  /** 出院病区 */
-  dscgWard?: string;
-  /** 出院床位 */
-  dscgBed?: string;
-  /** 药物过敏 1无 2有 */
-  drugAllergyCode?: string;
-  /** 过敏药物 */
-  allergyDrugName?: string;
-  /** 病理号 */
-  pathologyNo?: string;
-  /** 死亡患者尸检 1是 2否 */
-  autopsyCode?: string;
-  /** 血型 ABO */
-  aboCode?: string;
-  /** Rh */
-  rhCode?: string;
-  /** 进修医师 */
-  trainDrName?: string;
-  /** 实习医师 */
-  intnDrName?: string;
-  /** 编码员 */
-  codrName?: string;
-  /** 病案质量 */
-  medcasQltCode?: string;
-  /** 质控日期 */
-  qltctrlDate?: string;
-  /** 质控医师 */
-  qltctrlDrName?: string;
-  /** 质控护士 */
-  qltctrlNursName?: string;
-  /** 拟接收医院 */
-  acpMedinsName?: string;
-  /** 拟接收社区/卫生院 */
-  acpCommunityName?: string;
-  /** 31天再住院计划 1无 2有 */
-  rinp31Flag?: string;
-  /** 再住院目的 */
-  rinp31Purpose?: string;
-  /** 医疗费总额（extension / 4401） */
+  /** 医疗费总额（费用快照，只读） */
   medfee_sumamt?: number;
-  /** 自付金额 */
+  /** 自付金额（费用快照，只读） */
   selfpay_amt?: number;
   /** 一般医疗服务费 */
   ordn_med_servfee?: number;
@@ -156,18 +78,18 @@ export interface HomepageFormModel extends SaveHomepageParams {
 }
 
 /**
- * 仍写入 extension 的键（表无正式列的国标扩展）。
- * P0 正式列不要放这里。
+ * 曾升正式列的键名清单（保存走标量）。
+ * medcasno / visitTimes 仍以主档为准，不在此列。
  */
-export const HOMEPAGE_EXTENSION_KEYS: (keyof HomepageFormModel)[] = [
-  'medcasno',
+export const HOMEPAGE_PROMOTED_SCALAR_KEYS: (keyof HomepageFormModel)[] = [
   'payWayCode',
   'healthCardNo',
-  'visitTimes',
   'ageYear',
   'ageMonth',
   'birplcCodes',
+  'birplcName',
   'naplCodes',
+  'naplName',
   'currAddrCodes',
   'currAddrDetail',
   'currAddrPoscode',
@@ -177,11 +99,6 @@ export const HOMEPAGE_EXTENSION_KEYS: (keyof HomepageFormModel)[] = [
   'emprAddr',
   'emprTel',
   'emprPoscode',
-  'clinicalPathCode',
-  'tcmPrepCode',
-  'tcmDeviceCode',
-  'tcmTechCode',
-  'syndromeNurseCode',
   'admWard',
   'admBed',
   'dscgWard',
@@ -189,6 +106,15 @@ export const HOMEPAGE_EXTENSION_KEYS: (keyof HomepageFormModel)[] = [
   'drugAllergyCode',
   'allergyDrugName',
   'pathologyNo',
+  'mainDiagCureCode',
+  'rescueCount',
+  'rescueSuccessCount',
+  'clinicPathManageCode',
+  'diagMatchOpDscg',
+  'diagMatchAdmDscg',
+  'diagMatchPrePost',
+  'diagMatchClinicPath',
+  'diagMatchRadioPath',
   'autopsyCode',
   'aboCode',
   'rhCode',
@@ -203,39 +129,9 @@ export const HOMEPAGE_EXTENSION_KEYS: (keyof HomepageFormModel)[] = [
   'acpCommunityName',
   'rinp31Flag',
   'rinp31Purpose',
-  'medfee_sumamt',
-  'selfpay_amt',
-  'ordn_med_servfee',
-  'ordn_trt_oprt_fee',
-  'nurs_fee',
-  'com_med_serv_oth_fee',
-  'palg_diag_fee',
-  'lab_diag_fee',
-  'rdhy_diag_fee',
-  'clnc_dise_fee',
-  'nsrgtrt_item_fee',
-  'clnc_phys_trt_fee',
-  'rgtrt_trt_fee',
-  'anst_fee',
-  'rgtrt_fee',
-  'rhab_fee',
-  'tcm_trt_fee',
-  'wm_fee',
-  'abtl_medn_fee',
-  'tcmpat_fee',
-  'tcmherb_fee',
-  'blo_fee',
-  'albu_fee',
-  'glon_fee',
-  'clotfac_fee',
-  'cyki_fee',
-  'exam_dspo_matl_fee',
-  'trt_dspo_matl_fee',
-  'oprn_dspo_matl_fee',
-  'oth_fee',
 ];
 
-/** 4401 费用分项键（与术语 mr_settlement_type_code 1～28 对齐） */
+/** 4401 费用分项键（与术语 mr_settlement_type_code 1～28 对齐；快照回填） */
 export const HOMEPAGE_FEE_ITEM_KEYS = [
   'ordn_med_servfee',
   'ordn_trt_oprt_fee',
@@ -269,7 +165,7 @@ export const HOMEPAGE_FEE_ITEM_KEYS = [
 
 export type HomepageFeeItemKey = (typeof HOMEPAGE_FEE_ITEM_KEYS)[number];
 
-/** 费用金额类 extension 键（回填时转 number） */
+/** 费用金额类键（快照回填时转 number；不经 saveHomepage） */
 export const HOMEPAGE_FEE_AMOUNT_KEYS: (keyof HomepageFormModel)[] = [
   'medfee_sumamt',
   'selfpay_amt',

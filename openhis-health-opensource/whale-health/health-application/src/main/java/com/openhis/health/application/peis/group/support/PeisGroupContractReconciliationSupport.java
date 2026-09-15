@@ -6,6 +6,7 @@ package com.openhis.health.application.peis.group.support;
 
 import com.openhis.health.application.peis.group.dto.ContractReconciliationBatchRowDto;
 import com.openhis.health.application.peis.group.dto.ContractReconciliationRowDto;
+import com.openhis.health.application.peis.group.dto.ContractReconciliationSelectedPackageRowDto;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
@@ -25,6 +26,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -115,7 +117,13 @@ public class PeisGroupContractReconciliationSupport {
         ContractReconciliationBatchRowDto batchRow = new ContractReconciliationBatchRowDto();
         batchRow.setBatchId(batch.getId());
         batchRow.setBatchName(batch.getBatchName());
-        batchRow.setPackageActivityId(batch.getPackageActivityId());
+        List<Long> optionalPackageIds = peisGroupCheckQueryService.listBatchPackageIds(batch.getId());
+        batchRow.setOptionalPackageActivityIds(optionalPackageIds);
+        if (optionalPackageIds != null && !optionalPackageIds.isEmpty()) {
+            batchRow.setPackageActivityId(optionalPackageIds.get(0));
+        } else {
+            batchRow.setPackageActivityId(batch.getPackageActivityId());
+        }
         if (batch.getBookingDate() != null) {
             batchRow.setBookingDate(batch.getBookingDate().toString());
         }
@@ -125,6 +133,8 @@ public class PeisGroupContractReconciliationSupport {
         int total = rosterRows.size();
         int enrolled = 0;
         int arrived = 0;
+        int unselected = 0;
+        Map<Long, ContractReconciliationSelectedPackageRowDto> selectedByPackage = new LinkedHashMap<>();
         for (PeisGroupRoster roster : rosterRows) {
             if (roster == null) {
                 continue;
@@ -135,7 +145,31 @@ public class PeisGroupContractReconciliationSupport {
             if (PeisGroupRosterConstants.ARRIVAL_ARRIVED.equals(roster.getArrivalStatusCode())) {
                 arrived++;
             }
+            Long selectedPackageId = roster.getSelectedPackageActivityId();
+            if (selectedPackageId == null) {
+                unselected++;
+                continue;
+            }
+            ContractReconciliationSelectedPackageRowDto pkgRow =
+                selectedByPackage.computeIfAbsent(selectedPackageId, id -> {
+                    ContractReconciliationSelectedPackageRowDto row =
+                        new ContractReconciliationSelectedPackageRowDto();
+                    row.setPackageActivityId(id);
+                    row.setRosterCount(0);
+                    row.setEnrolledCount(0);
+                    row.setArrivedCount(0);
+                    return row;
+                });
+            pkgRow.setRosterCount(pkgRow.getRosterCount() + 1);
+            if (PeisGroupRosterConstants.isEnrolled(roster.getPayStatusCode())) {
+                pkgRow.setEnrolledCount(pkgRow.getEnrolledCount() + 1);
+            }
+            if (PeisGroupRosterConstants.ARRIVAL_ARRIVED.equals(roster.getArrivalStatusCode())) {
+                pkgRow.setArrivedCount(pkgRow.getArrivedCount() + 1);
+            }
         }
+        batchRow.setUnselectedCount(unselected);
+        batchRow.setSelectedPackages(new ArrayList<>(selectedByPackage.values()));
         batchRow.setRosterTotal(total);
         batchRow.setEnrolledCount(enrolled);
         batchRow.setUnenrolledCount(Math.max(0, total - enrolled));

@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import type { InvFormPaperKind } from '#/utils/print/form-print-preference';
-
 import { computed, onMounted, ref } from 'vue';
 
 import { ElButton, ElMessage, ElSwitch, ElTable, ElTableColumn } from 'element-plus';
@@ -10,8 +8,8 @@ import { isInvPrintScenario } from '#/utils/print/constants/print-scenario';
 import { PRINT_SCENARIO_ITEMS } from '#/utils/print/constants/print-scenario-labels';
 import {
   getFormPrintPreference,
-  INV_FORM_PAPER_KIND_LABELS,
   INV_FORM_PRINT_PREF_KEY,
+  resolveInvFormPaperDisplayLabel,
 } from '#/utils/print/form-print-preference';
 import { triggerOpenHisWinDownload } from '#/utils/print/openhis-win-download';
 import {
@@ -34,23 +32,24 @@ interface PrintSettingRow {
   label: string;
   printerName: string;
   skipPrompt: boolean;
-  /** 库房单据默认纸张；其它场景为空 */
-  paperKind?: InvFormPaperKind;
+  /** 库房单据默认纸张文案；其它场景为空 */
+  paperKindLabel?: string;
 }
 
 const loading = ref(false);
 const clientReady = ref<boolean | null>(null);
 const rows = ref<PrintSettingRow[]>([]);
 
-/** 库房单据共用的默认纸张 */
-function resolveInvPaperKind(): InvFormPaperKind | undefined {
-  return getFormPrintPreference(INV_FORM_PRINT_PREF_KEY).paperKind;
+/** 库房单据共用的默认纸张文案 */
+function resolveInvPaperKindLabel(): string {
+  const pref = getFormPrintPreference(INV_FORM_PRINT_PREF_KEY);
+  return resolveInvFormPaperDisplayLabel(pref.paperKind, pref.tripleSpec);
 }
 
 /** 从 localStorage 刷新表格行 */
 function refreshRows(): void {
   const prefs = listPrinterPreferences();
-  const invPaperKind = resolveInvPaperKind();
+  const invPaperKindLabel = resolveInvPaperKindLabel();
   rows.value = PRINT_SCENARIO_ITEMS.map((item) => {
     const pref = prefs[item.scenarioCode] ?? getPrinterPreference(item.scenarioCode);
     const isInv = isInvPrintScenario(item.scenarioCode);
@@ -59,7 +58,7 @@ function refreshRows(): void {
       label: item.label,
       printerName: pref?.printerName?.trim() ?? '',
       skipPrompt: pref?.skipPrompt !== false,
-      paperKind: isInv ? invPaperKind : undefined,
+      paperKindLabel: isInv ? invPaperKindLabel : undefined,
     };
   });
 }
@@ -131,7 +130,7 @@ onMounted(() => {
     <div class="mb-2 text-base font-medium text-[var(--el-text-color-primary)]">打印设置</div>
     <p class="mb-4 text-sm text-[var(--el-text-color-regular)]">
       默认打印机保存在本机浏览器，与当前登录用户绑定。换电脑或清除浏览器数据后需重新设置。
-      库房单据默认三联单，可在此改为 A4。
+      库房单据默认三联单三等分，可在此改二等分、整张或改为 A4。
     </p>
     <p
       class="mb-4 text-sm"
@@ -175,10 +174,10 @@ onMounted(() => {
           <span v-else class="text-[var(--el-text-color-regular)]">未设置</span>
         </template>
       </ElTableColumn>
-      <ElTableColumn label="默认纸张" width="100" align="center">
+      <ElTableColumn label="默认纸张" min-width="140" align="center">
         <template #default="{ row }">
-          <span v-if="row.paperKind" class="text-[var(--el-text-color-primary)]">
-            {{ INV_FORM_PAPER_KIND_LABELS[row.paperKind] }}
+          <span v-if="row.paperKindLabel" class="text-[var(--el-text-color-primary)]">
+            {{ row.paperKindLabel }}
           </span>
           <span v-else class="text-[var(--el-text-color-regular)]">—</span>
         </template>

@@ -9,24 +9,33 @@ import com.openhis.health.application.mrms.caserecord.homepage.dto.DiagnosisLine
 import com.openhis.health.application.mrms.caserecord.homepage.dto.HomepageDto;
 import com.openhis.health.application.mrms.caserecord.homepage.dto.ProcedureLineDto;
 import com.openhis.health.application.mrms.caserecord.homepage.request.SaveHomepageRequest;
+import com.openhis.health.application.shared.diagnosis.EncounterDiagnosisSourceHintResolver;
+import com.openhis.health.domain.clinical.conditiondefinition.queries.model.ClinicalDiagnosisPresentationQueryModel;
+import com.openhis.health.domain.clinical.conditiondefinition.service.ConditionDefinitionQueryService;
 import com.openhis.health.domain.mrms.caserecord.entity.CaseRecordHomepage;
 import com.openhis.health.domain.mrms.caserecord.entity.HomepageDiagnosis;
 import com.openhis.health.domain.mrms.caserecord.entity.HomepageProcedure;
 import com.openhis.health.domain.mrms.caserecord.command.HomepageSaveCommand;
+import com.openhis.health.domain.share.constants.DoctorStationDiagnosisConstants;
 import com.openhis.health.domain.share.utils.FieldSourcesJsonUtil;
-import com.openhis.health.domain.share.utils.HomepageExtensionJsonUtil;
+import com.openhis.health.domain.share.utils.HomepageRegionCodesTextUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * 病案首页实体 ↔ DTO/命令映射（homepage IF {@code mapper}）。
  *
  * <p>读路径：{@link CaseRecordHomepage} + 诊断/手术子表 → {@link HomepageDto}；
- * 写路径：{@link SaveHomepageRequest} → {@link HomepageSaveCommand}。JSON 列经
- * {@link FieldSourcesJsonUtil} / {@link HomepageExtensionJsonUtil} 解析。</p>
+ * 写路径：{@link SaveHomepageRequest} → {@link HomepageSaveCommand}。
+ * {@code field_sources_json} 经 {@link FieldSourcesJsonUtil} 解析；
+ * 省市区 codes TEXT 列经 {@link HomepageRegionCodesTextUtil} List↔斜杠拼接字符串。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -34,18 +43,24 @@ public class HomepageMapper {
 
     private final ObjectMapper objectMapper;
 
+    private final ConditionDefinitionQueryService conditionDefinitionQueryService;
+
+    private final EncounterDiagnosisSourceHintResolver encounterDiagnosisSourceHintResolver;
+
     /**
      * 首页实体与子表转 DTO。
      *
-     * @param homepage 首页实体
-     * @param diagnoses 诊断行
-     * @param procedures 手术行
+     * @param homepage     首页实体
+     * @param diagnoses    诊断行
+     * @param procedures   手术行
+     * @param encounterId  就诊主键；用于按医生实际开立目录来源区分国临/医保同码；可空
      * @return 首页 DTO
      */
     public HomepageDto toDto(
             CaseRecordHomepage homepage,
             List<HomepageDiagnosis> diagnoses,
-            List<HomepageProcedure> procedures) {
+            List<HomepageProcedure> procedures,
+            Long encounterId) {
         HomepageDto dto = new HomepageDto();
         dto.setCaseRecordId(homepage.getCaseRecordId());
         dto.setVersionNo(homepage.getVersionNo());
@@ -66,6 +81,11 @@ public class HomepageMapper {
         dto.setConerRltsCode(homepage.getConerRltsCode());
         dto.setConerAddr(homepage.getConerAddr());
         dto.setTrtTypeCode(homepage.getTrtTypeCode());
+        dto.setClinicalPathCode(homepage.getClinicalPathCode());
+        dto.setTcmPrepCode(homepage.getTcmPrepCode());
+        dto.setTcmDeviceCode(homepage.getTcmDeviceCode());
+        dto.setTcmTechCode(homepage.getTcmTechCode());
+        dto.setSyndromeNurseCode(homepage.getSyndromeNurseCode());
         dto.setSpgaNurscareDays(homepage.getSpgaNurscareDays());
         dto.setLv1NurscareDays(homepage.getLv1NurscareDays());
         dto.setScdNurscareDays(homepage.getScdNurscareDays());
@@ -93,9 +113,60 @@ public class HomepageMapper {
         dto.setAtddrName(homepage.getAtddrName());
         dto.setIptDrName(homepage.getIptDrName());
         dto.setRespNursName(homepage.getRespNursName());
+        dto.setPayWayCode(homepage.getPayWayCode());
+        dto.setHealthCardNo(homepage.getHealthCardNo());
+        dto.setAgeYear(homepage.getAgeYear());
+        dto.setAgeMonth(homepage.getAgeMonth());
+        dto.setBirplcCodes(HomepageRegionCodesTextUtil.textToStringList(homepage.getBirplcCodes()));
+        dto.setBirplcName(homepage.getBirplcName());
+        dto.setNaplCodes(HomepageRegionCodesTextUtil.textToStringList(homepage.getNaplCodes()));
+        dto.setNaplName(homepage.getNaplName());
+        dto.setCurrAddrCodes(HomepageRegionCodesTextUtil.textToStringList(homepage.getCurrAddrCodes()));
+        dto.setCurrAddrDetail(homepage.getCurrAddrDetail());
+        dto.setCurrAddrPoscode(homepage.getCurrAddrPoscode());
+        dto.setResdAddrCodes(HomepageRegionCodesTextUtil.textToStringList(homepage.getResdAddrCodes()));
+        dto.setResdAddrDetail(homepage.getResdAddrDetail());
+        dto.setResdAddrPoscode(homepage.getResdAddrPoscode());
+        dto.setEmprAddr(homepage.getEmprAddr());
+        dto.setEmprTel(homepage.getEmprTel());
+        dto.setEmprPoscode(homepage.getEmprPoscode());
+        dto.setAdmWard(homepage.getAdmWard());
+        dto.setAdmBed(homepage.getAdmBed());
+        dto.setDscgWard(homepage.getDscgWard());
+        dto.setDscgBed(homepage.getDscgBed());
+        dto.setDrugAllergyCode(homepage.getDrugAllergyCode());
+        dto.setAllergyDrugName(homepage.getAllergyDrugName());
+        dto.setPathologyNo(homepage.getPathologyNo());
+        dto.setMainDiagCureCode(homepage.getMainDiagCureCode());
+        dto.setRescueCount(homepage.getRescueCount());
+        dto.setRescueSuccessCount(homepage.getRescueSuccessCount());
+        dto.setClinicPathManageCode(homepage.getClinicPathManageCode());
+        dto.setDiagMatchOpDscg(homepage.getDiagMatchOpDscg());
+        dto.setDiagMatchAdmDscg(homepage.getDiagMatchAdmDscg());
+        dto.setDiagMatchPrePost(homepage.getDiagMatchPrePost());
+        dto.setDiagMatchClinicPath(homepage.getDiagMatchClinicPath());
+        dto.setDiagMatchRadioPath(homepage.getDiagMatchRadioPath());
+        dto.setAutopsyCode(homepage.getAutopsyCode());
+        dto.setAboCode(homepage.getAboCode());
+        dto.setRhCode(homepage.getRhCode());
+        dto.setTrainDrName(homepage.getTrainDrName());
+        dto.setIntnDrName(homepage.getIntnDrName());
+        dto.setCodrName(homepage.getCodrName());
+        dto.setMedcasQltCode(homepage.getMedcasQltCode());
+        dto.setQltctrlDate(homepage.getQltctrlDate());
+        dto.setQltctrlDrName(homepage.getQltctrlDrName());
+        dto.setQltctrlNursName(homepage.getQltctrlNursName());
+        dto.setAcpMedinsName(homepage.getAcpMedinsName());
+        dto.setAcpCommunityName(homepage.getAcpCommunityName());
+        dto.setRinp31Flag(homepage.getRinp31Flag());
+        dto.setRinp31Purpose(homepage.getRinp31Purpose());
         dto.setFieldSources(FieldSourcesJsonUtil.parse(objectMapper, homepage.getFieldSourcesJson()));
-        dto.setExtension(HomepageExtensionJsonUtil.parse(objectMapper, homepage.getExtensionJson()));
-        dto.setDiagnoses(toDiagnosisDtos(diagnoses));
+        // 费用由 AppService 从首页快照列叠加到 fees
+        dto.setFees(new HashMap<>());
+        // 中医信息只认正式列
+        Map<String, String> sourceHints =
+                encounterDiagnosisSourceHintResolver.resolveSourceHintByCode(encounterId);
+        dto.setDiagnoses(toDiagnosisDtos(diagnoses, sourceHints));
         dto.setProcedures(toProcedureDtos(procedures));
         return dto;
     }
@@ -126,6 +197,11 @@ public class HomepageMapper {
         command.setConerRltsCode(request.getConerRltsCode());
         command.setConerAddr(request.getConerAddr());
         command.setTrtTypeCode(request.getTrtTypeCode());
+        command.setClinicalPathCode(request.getClinicalPathCode());
+        command.setTcmPrepCode(request.getTcmPrepCode());
+        command.setTcmDeviceCode(request.getTcmDeviceCode());
+        command.setTcmTechCode(request.getTcmTechCode());
+        command.setSyndromeNurseCode(request.getSyndromeNurseCode());
         command.setSpgaNurscareDays(request.getSpgaNurscareDays());
         command.setLv1NurscareDays(request.getLv1NurscareDays());
         command.setScdNurscareDays(request.getScdNurscareDays());
@@ -153,7 +229,53 @@ public class HomepageMapper {
         command.setAtddrName(request.getAtddrName());
         command.setIptDrName(request.getIptDrName());
         command.setRespNursName(request.getRespNursName());
-        command.setExtension(request.getExtension());
+        command.setPayWayCode(request.getPayWayCode());
+        command.setHealthCardNo(request.getHealthCardNo());
+        command.setAgeYear(request.getAgeYear());
+        command.setAgeMonth(request.getAgeMonth());
+        command.setBirplcCodes(request.getBirplcCodes());
+        command.setBirplcName(request.getBirplcName());
+        command.setNaplCodes(request.getNaplCodes());
+        command.setNaplName(request.getNaplName());
+        command.setCurrAddrCodes(request.getCurrAddrCodes());
+        command.setCurrAddrDetail(request.getCurrAddrDetail());
+        command.setCurrAddrPoscode(request.getCurrAddrPoscode());
+        command.setResdAddrCodes(request.getResdAddrCodes());
+        command.setResdAddrDetail(request.getResdAddrDetail());
+        command.setResdAddrPoscode(request.getResdAddrPoscode());
+        command.setEmprAddr(request.getEmprAddr());
+        command.setEmprTel(request.getEmprTel());
+        command.setEmprPoscode(request.getEmprPoscode());
+        command.setAdmWard(request.getAdmWard());
+        command.setAdmBed(request.getAdmBed());
+        command.setDscgWard(request.getDscgWard());
+        command.setDscgBed(request.getDscgBed());
+        command.setDrugAllergyCode(request.getDrugAllergyCode());
+        command.setAllergyDrugName(request.getAllergyDrugName());
+        command.setPathologyNo(request.getPathologyNo());
+        command.setMainDiagCureCode(request.getMainDiagCureCode());
+        command.setRescueCount(request.getRescueCount());
+        command.setRescueSuccessCount(request.getRescueSuccessCount());
+        command.setClinicPathManageCode(request.getClinicPathManageCode());
+        command.setDiagMatchOpDscg(request.getDiagMatchOpDscg());
+        command.setDiagMatchAdmDscg(request.getDiagMatchAdmDscg());
+        command.setDiagMatchPrePost(request.getDiagMatchPrePost());
+        command.setDiagMatchClinicPath(request.getDiagMatchClinicPath());
+        command.setDiagMatchRadioPath(request.getDiagMatchRadioPath());
+        command.setAutopsyCode(request.getAutopsyCode());
+        command.setAboCode(request.getAboCode());
+        command.setRhCode(request.getRhCode());
+        command.setTrainDrName(request.getTrainDrName());
+        command.setIntnDrName(request.getIntnDrName());
+        command.setCodrName(request.getCodrName());
+        command.setMedcasQltCode(request.getMedcasQltCode());
+        command.setQltctrlDate(request.getQltctrlDate());
+        command.setQltctrlDrName(request.getQltctrlDrName());
+        command.setQltctrlNursName(request.getQltctrlNursName());
+        command.setAcpMedinsName(request.getAcpMedinsName());
+        command.setAcpCommunityName(request.getAcpCommunityName());
+        command.setRinp31Flag(request.getRinp31Flag());
+        command.setRinp31Purpose(request.getRinp31Purpose());
         command.setDiagnoses(toDiagnosisEntities(request.getDiagnoses()));
         command.setProcedures(toProcedureEntities(request.getProcedures()));
         return command;
@@ -179,6 +301,13 @@ public class HomepageMapper {
             entity.setDiagCode(line.getDiagCode());
             entity.setDiagName(line.getDiagName());
             entity.setAdmCondCode(line.getAdmCondCode());
+            entity.setOutIllStatusCode(line.getOutIllStatusCode());
+            entity.setConfirmTime(line.getConfirmTime());
+            entity.setDiagRemark(line.getDiagRemark());
+            // 出院诊断：诊断医生主键+姓名、是否上送医保
+            entity.setConfirmDrId(line.getConfirmDrId());
+            entity.setConfirmDrName(line.getConfirmDrName());
+            entity.setNeedYbUp(line.getNeedYbUp());
             entity.setMaindiagFlag(line.getMaindiagFlag());
             entity.setValiFlag(line.getValiFlag());
             result.add(entity);
@@ -220,23 +349,79 @@ public class HomepageMapper {
     /**
      * 诊断实体行转 DTO（含主键，供编辑页回显）。
      *
-     * @param rows 诊断实体列表，可为 null
+     * @param rows        诊断实体列表，可为 null
+     * @param sourceHints 就诊诊断来源提示（编码 → source_enum）；可空
      * @return DTO 列表，永不为 null
      */
-    private List<DiagnosisLineDto> toDiagnosisDtos(List<HomepageDiagnosis> rows) {
+    private List<DiagnosisLineDto> toDiagnosisDtos(
+            List<HomepageDiagnosis> rows, Map<String, String> sourceHints) {
         List<DiagnosisLineDto> result = new ArrayList<>();
+        // 无行时返回空列表，前端展示空表头
         if (rows == null) {
             return result;
         }
-        // 按库表顺序回显诊断行（含 id 供前端编辑）
+        Set<String> storedCodes = new LinkedHashSet<>();
+        for (HomepageDiagnosis row : rows) {
+            if (row == null) {
+                continue;
+            }
+            String code = row.getDiagCode();
+            if (code != null && !code.isBlank()) {
+                storedCodes.add(code.trim());
+            }
+        }
+        Map<String, ClinicalDiagnosisPresentationQueryModel> presentationByCode =
+                conditionDefinitionQueryService.mapClinicalPresentationByStoredCodes(storedCodes, sourceHints);
+        // 按库表顺序回显诊断行（含 id 供前端编辑；扩列含病情/确诊/医生/上传）
         for (HomepageDiagnosis row : rows) {
             DiagnosisLineDto dto = new DiagnosisLineDto();
             dto.setId(row.getId());
             dto.setDiagTypeCode(row.getDiagTypeCode());
             dto.setSortNo(row.getSortNo());
-            dto.setDiagCode(row.getDiagCode());
-            dto.setDiagName(row.getDiagName());
+            String storedCode = row.getDiagCode();
+            String storedName = row.getDiagName();
+            ClinicalDiagnosisPresentationQueryModel presentation = null;
+            if (storedCode != null && !storedCode.isBlank()) {
+                presentation = presentationByCode.get(storedCode.trim());
+            }
+            // 首页仅「诊断名称/编码」一列口径：有国临绑码优先回显国临；否则回显落库码/名（中医、未对照西医医保均不置空）
+            if (presentation != null) {
+                String clinicCode = presentation.getClinicCode();
+                String clinicName = presentation.getClinicName();
+                if (clinicCode != null && !clinicCode.isBlank()) {
+                    dto.setDiagCode(clinicCode);
+                    if (clinicName != null && !clinicName.isBlank()) {
+                        dto.setDiagName(clinicName);
+                    } else {
+                        dto.setDiagName(storedName);
+                    }
+                } else if (DoctorStationDiagnosisConstants.DIAGNOSIS_KIND_TAG_TCM.equals(
+                        presentation.getDiagnosisKind())
+                        && presentation.getYbCode() != null
+                        && !presentation.getYbCode().isBlank()) {
+                    // 中医：目录码/名正常落主列
+                    dto.setDiagCode(presentation.getYbCode());
+                    if (presentation.getYbName() != null && !presentation.getYbName().isBlank()) {
+                        dto.setDiagName(presentation.getYbName());
+                    } else {
+                        dto.setDiagName(storedName);
+                    }
+                } else {
+                    // 西医医保无国临绑码：首页无医保列，仍展示落库码便于改选，禁止置空
+                    dto.setDiagCode(storedCode);
+                    dto.setDiagName(storedName);
+                }
+            } else {
+                dto.setDiagCode(storedCode);
+                dto.setDiagName(storedName);
+            }
             dto.setAdmCondCode(row.getAdmCondCode());
+            dto.setOutIllStatusCode(row.getOutIllStatusCode());
+            dto.setConfirmTime(row.getConfirmTime());
+            dto.setDiagRemark(row.getDiagRemark());
+            dto.setConfirmDrId(row.getConfirmDrId());
+            dto.setConfirmDrName(row.getConfirmDrName());
+            dto.setNeedYbUp(row.getNeedYbUp());
             dto.setMaindiagFlag(row.getMaindiagFlag());
             dto.setValiFlag(row.getValiFlag());
             result.add(dto);

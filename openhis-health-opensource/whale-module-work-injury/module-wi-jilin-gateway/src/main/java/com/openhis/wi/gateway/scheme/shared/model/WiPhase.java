@@ -19,6 +19,8 @@ public enum WiPhase {
     OP_REVERSE,
     /** 总额对账 1320（与对账确认拆分，对齐老 HIS）。 */
     RECON,
+    /** 明细对账 1321（按 ipt_otp_no 逐笔）。 */
+    RECON_DETAIL,
     /** 对账确认 1322（须已结束月份）。 */
     RECON_CONFIRM;
 

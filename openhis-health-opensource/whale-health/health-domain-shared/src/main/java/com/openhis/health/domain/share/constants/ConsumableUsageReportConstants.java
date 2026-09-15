@@ -76,6 +76,18 @@ public interface ConsumableUsageReportConstants {
     /** 记录类型展示：退发。 */
     String RECORD_TYPE_REFUND_LABEL = "退发";
 
+    /**
+     * 明细分页行合并模式：按发放行平铺（默认；不合并）。
+     */
+    String LINE_MERGE_MODE_LINE = "LINE";
+
+    /**
+     * 明细分页行合并模式：按就诊+耗材定义[+单位]合并净量（仅患者发放源生效）。
+     *
+     * <p>科室领用源传此模式时应用层按 LINE 平铺，不抛错。</p>
+     */
+    String LINE_MERGE_MODE_BY_DEFINITION = "BY_DEFINITION";
+
     /** 导出 Tab：汇总。 */
     String EXPORT_TAB_SUMMARY = "SUMMARY";
 

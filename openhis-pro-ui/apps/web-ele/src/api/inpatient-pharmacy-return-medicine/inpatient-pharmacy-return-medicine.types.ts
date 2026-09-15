@@ -81,8 +81,6 @@ export interface InpatientReturnMedicineItemRequest {
 export interface ConfirmInpatientMedicineReturnRequest {
   items: InpatientReturnMedicineItemRequest[];
   reason?: string;
-  /** @deprecated CHS 启用即上传，请使用 contractBusNo */
-  medicareUploadEnabled?: boolean;
   contractBusNo?: string;
 }
 

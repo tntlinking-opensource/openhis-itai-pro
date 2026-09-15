@@ -13,6 +13,7 @@ import com.openhis.health.domain.financial.contract.service.ContractQueryService
 import com.openhis.health.domain.share.constants.OutpatientPharmacyPrescriptionQueryConstants;
 import com.openhis.health.domain.share.constants.OutpatientPharmacyPrescriptionReviewConstants;
 import com.openhis.health.domain.share.enums.ChargeItemStatus;
+import com.openhis.health.domain.share.enums.ChargeTypeCategory;
 import com.openhis.health.domain.share.enums.ContractCategory;
 import com.openhis.health.domain.share.enums.DispenseStatus;
 import com.openhis.health.domain.share.enums.PrescriptionReviewStatus;
@@ -289,37 +290,54 @@ public class OutpatientPharmacyPrescriptionQuerySupport {
     /**
      * 费用性质分类文案（列表行展示）；未知码返回 {@code null}。
      *
-     * @param categoryCode {@link ContractCategory} code
+     * <p>兼容 {@link ContractCategory} 枚举名与 {@link ChargeTypeCategory} 数字码（库内常见 1～4）。</p>
+     *
+     * @param categoryCode 合同 {@code category_enum}
      * @return 中文文案
      */
     public String resolveContractCategoryText(String categoryCode) {
         if (StringUtils.isEmpty(categoryCode)) {
             return null;
         }
-        if (ContractCategory.SELF_CHARGE.getCode().equals(categoryCode)) {
+        String code = categoryCode.trim();
+        // ChargeTypeCategory：财务维护页/种子数据数字码
+        if (ChargeTypeCategory.SELF_PAY.getCode().equals(code)) {
             return OutpatientPharmacyPrescriptionQueryConstants.CONTRACT_CATEGORY_SELF_CHARGE_LABEL;
         }
-        if (ContractCategory.PUBLIC_CHARGE.getCode().equals(categoryCode)) {
+        if (ChargeTypeCategory.PUBLIC_PAY.getCode().equals(code)) {
             return OutpatientPharmacyPrescriptionQueryConstants.CONTRACT_CATEGORY_PUBLIC_CHARGE_LABEL;
         }
-        if (ContractCategory.PROVINCIAL_INSURANCE.getCode().equals(categoryCode)) {
+        if (ChargeTypeCategory.PROVINCIAL_INSURANCE.getCode().equals(code)) {
             return OutpatientPharmacyPrescriptionQueryConstants.CONTRACT_CATEGORY_PROVINCIAL_INSURANCE_LABEL;
         }
-        if (ContractCategory.MUNICIPAL_INSURANCE.getCode().equals(categoryCode)) {
+        if (ChargeTypeCategory.MUNICIPAL_INSURANCE.getCode().equals(code)) {
             return OutpatientPharmacyPrescriptionQueryConstants.CONTRACT_CATEGORY_MUNICIPAL_INSURANCE_LABEL;
         }
-        if (ContractCategory.WORKER_INSURANCE.getCode().equals(categoryCode)) {
+        // ContractCategory：接口筛选项 / 部分域枚举名
+        if (ContractCategory.SELF_CHARGE.getCode().equals(code)) {
+            return OutpatientPharmacyPrescriptionQueryConstants.CONTRACT_CATEGORY_SELF_CHARGE_LABEL;
+        }
+        if (ContractCategory.PUBLIC_CHARGE.getCode().equals(code)) {
+            return OutpatientPharmacyPrescriptionQueryConstants.CONTRACT_CATEGORY_PUBLIC_CHARGE_LABEL;
+        }
+        if (ContractCategory.PROVINCIAL_INSURANCE.getCode().equals(code)) {
+            return OutpatientPharmacyPrescriptionQueryConstants.CONTRACT_CATEGORY_PROVINCIAL_INSURANCE_LABEL;
+        }
+        if (ContractCategory.MUNICIPAL_INSURANCE.getCode().equals(code)) {
+            return OutpatientPharmacyPrescriptionQueryConstants.CONTRACT_CATEGORY_MUNICIPAL_INSURANCE_LABEL;
+        }
+        if (ContractCategory.WORKER_INSURANCE.getCode().equals(code) || "5".equals(code)) {
             return OutpatientPharmacyPrescriptionQueryConstants.CONTRACT_CATEGORY_WORKER_INSURANCE_LABEL;
         }
         return null;
     }
 
     /**
-     * 当主数据已出现该分类、或尚无任何分类命中时，追加一类选项。
+     * 当主数据已出现该分类（含数字码别名）、或尚无任何分类命中时，追加一类选项。
      *
      * @param options           输出列表
      * @param presentCategories 合同主数据中已出现的分类
-     * @param category          枚举常量
+     * @param category          枚举常量（下拉 value 仍用 ContractCategory code）
      * @param label             展示文案
      */
     private void appendContractCategoryIfNeeded(
@@ -327,9 +345,38 @@ public class OutpatientPharmacyPrescriptionQuerySupport {
         LinkedHashSet<String> presentCategories,
         ContractCategory category,
         String label) {
-        if (presentCategories.isEmpty() || presentCategories.contains(category.getCode())) {
+        if (presentCategories.isEmpty() || this.isCategoryPresent(presentCategories, category)) {
             options.add(this.toOption(category.getCode(), label));
         }
+    }
+
+    /**
+     * 主数据是否已配置该 UI 分类（ContractCategory 与 ChargeTypeCategory 双码视为同一档）。
+     *
+     * @param presentCategories 库内已出现的 category_enum
+     * @param category          UI 分类
+     * @return 是否出现过
+     */
+    private boolean isCategoryPresent(LinkedHashSet<String> presentCategories, ContractCategory category) {
+        if (presentCategories.contains(category.getCode())) {
+            return true;
+        }
+        if (ContractCategory.SELF_CHARGE.equals(category)) {
+            return presentCategories.contains(ChargeTypeCategory.SELF_PAY.getCode());
+        }
+        if (ContractCategory.PUBLIC_CHARGE.equals(category)) {
+            return presentCategories.contains(ChargeTypeCategory.PUBLIC_PAY.getCode());
+        }
+        if (ContractCategory.PROVINCIAL_INSURANCE.equals(category)) {
+            return presentCategories.contains(ChargeTypeCategory.PROVINCIAL_INSURANCE.getCode());
+        }
+        if (ContractCategory.MUNICIPAL_INSURANCE.equals(category)) {
+            return presentCategories.contains(ChargeTypeCategory.MUNICIPAL_INSURANCE.getCode());
+        }
+        if (ContractCategory.WORKER_INSURANCE.equals(category)) {
+            return presentCategories.contains("5");
+        }
+        return false;
     }
 
     /**

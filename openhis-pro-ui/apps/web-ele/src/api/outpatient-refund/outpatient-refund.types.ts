@@ -49,8 +49,6 @@ export interface PageOutpatientRefundQueueResponse {
   content?: OutpatientRefundQueueRowDto[];
   pageNo?: number;
   pageSize?: number;
-  records?: OutpatientRefundQueueRowDto[];
-  rows?: OutpatientRefundQueueRowDto[];
   total?: number | string;
   totalCount?: number | string;
 }

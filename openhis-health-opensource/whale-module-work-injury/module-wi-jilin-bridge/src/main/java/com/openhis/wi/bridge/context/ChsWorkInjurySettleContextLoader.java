@@ -147,6 +147,9 @@ public class ChsWorkInjurySettleContextLoader implements WorkInjurySettleContext
         if (isNotEmpty(encounter.getPhone())) {
             ctx.setPatientTel(encounter.getPhone().trim());
         }
+        if (isNotEmpty(encounter.getPatientName())) {
+            ctx.setPatientName(encounter.getPatientName().trim());
+        }
 
         Organization organization = null;
         if (encounter.getOrganizationId() != null) {

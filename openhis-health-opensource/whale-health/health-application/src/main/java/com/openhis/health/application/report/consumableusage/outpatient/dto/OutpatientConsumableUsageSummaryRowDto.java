@@ -93,17 +93,4 @@ public class OutpatientConsumableUsageSummaryRowDto
     /** 售价净额（结算 2 位）。 */
     @Schema(description = "售价净额")
     private BigDecimal saleNetAmount;
-
-    /** 净金额（售价别名；6 位行加总后结算 2 位展示）。 */
-    @Schema(description = "净金额")
-    private BigDecimal netAmount;
-
-    /**
-     * 命中明细行数（内部统计，前端汇总 Tab 不展示）。
-     *
-     * @deprecated 汇总展示改数量/进售单价/进售合计
-     */
-    @Deprecated
-    @Schema(description = "命中行数（内部）")
-    private Long lineCount;
 }

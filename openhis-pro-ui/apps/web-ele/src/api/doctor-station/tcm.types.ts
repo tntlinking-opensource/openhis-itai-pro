@@ -366,3 +366,21 @@ export interface CancelStopLongTermTcmHerbalPrescriptionResponse {
   success?: boolean | null;
   message?: null | string;
 }
+
+/** changeTcmHerbalPrescriptionOpenedTime（住院 IF-IP-TCM-42） */
+export interface ChangeTcmHerbalPrescriptionOpenedTimeRequest {
+  encounterId: string;
+  patientId: string;
+  /** 已签发处方号；与 prescriptionGroupKeys 至少其一 */
+  prescriptionNos?: null | string[];
+  /** 草稿方标识；无处方号时使用 */
+  prescriptionGroupKeys?: null | string[];
+  /** 新开立时间 YYYY-MM-DD HH:mm:ss */
+  newOpenedTime: string;
+}
+
+export interface ChangeTcmHerbalPrescriptionOpenedTimeResponse {
+  success?: boolean | null;
+  message?: null | string;
+  changedLineCount?: null | number;
+}

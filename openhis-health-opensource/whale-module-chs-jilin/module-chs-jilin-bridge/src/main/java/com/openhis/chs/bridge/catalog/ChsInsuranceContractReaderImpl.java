@@ -94,15 +94,23 @@ public class ChsInsuranceContractReaderImpl implements ChsInsuranceContractReade
     }
 
     /**
-     * 解析契约：显式入参优先，否则配置 default-contract-bus-no，再回落租户首条非自费医保契约。
+     * 解析库房/运维进销存契约：显式入参优先，否则配置 default-contract-bus-no，
+     * 再回落 {@link #findFirstInsuranceContract}（市优先，仅一则用该一）。
+     *
+     * @param contractBusNo 显式契约 bus_no；可空
+     * @param contractId    显式契约主键；可空
+     * @return 非空契约实体
      */
     public Contract resolveOrDefault(String contractBusNo, Long contractId) {
+        // Gate：调用方已指定契约 → 不再走市优先默认
         if (isNotEmpty(contractBusNo) || contractId != null) {
             return requireContractEntity(contractBusNo, contractId);
         }
+        // Pre：配置项可强制指定默认 bus_no（运维覆盖市优先）
         if (isNotEmpty(inventoryProperties.getDefaultContractBusNo())) {
             return requireContractEntity(inventoryProperties.getDefaultContractBusNo().trim(), null);
         }
+        // Cmd：库房默认 — 有市用市，仅省用省，都无则其他医保
         Contract fallback = findFirstInsuranceContract();
         if (fallback != null) {
             return fallback;
@@ -122,9 +130,11 @@ public class ChsInsuranceContractReaderImpl implements ChsInsuranceContractReade
     }
 
     /**
-     * 查找库房进销存默认医保契约：有省医保优先省，仅市则市（区划跟契约 admVs）。
+     * 查找库房进销存默认医保契约：有市医保优先市，仅省则省（区划跟契约 admVs）。
      *
-     * @return 优先省医保、否则市医保、再否则首条非自费契约；未找到 null
+     * <p>仅一条非自费契约时直接用该条；省市都有时取市；都无则回落其他医保类型。</p>
+     *
+     * @return 优先市医保、否则省医保、再否则首条非自费契约；未找到 null
      */
     private Contract findFirstInsuranceContract() {
         List<ContractListItemQueryModel> contracts = contractQueryService.listAllContracts();
@@ -136,6 +146,7 @@ public class ChsInsuranceContractReaderImpl implements ChsInsuranceContractReade
                 continue;
             }
             String category = item.getCategoryEnum();
+            // 自费不参与进销存默认契约
             if (ContractCategory.SELF_CHARGE.getCode().equals(category)
                 || ChargeTypeCategory.SELF_PAY.getCode().equals(category)) {
                 continue;
@@ -145,6 +156,7 @@ public class ChsInsuranceContractReaderImpl implements ChsInsuranceContractReade
             if (entity == null) {
                 continue;
             }
+            // 分类收集：省 / 市 / 其他医保（工伤等）
             if (isProvincialCategory(category)) {
                 if (provincial == null) {
                     provincial = entity;
@@ -162,21 +174,33 @@ public class ChsInsuranceContractReaderImpl implements ChsInsuranceContractReade
                 otherInsurance = entity;
             }
         }
-        // 库房：省市都有 → 传省
-        if (provincial != null) {
-            return provincial;
-        }
+        // 库房默认：省市都有 → 市；仅一则用该一；都无 → 其他医保
         if (municipal != null) {
             return municipal;
+        }
+        if (provincial != null) {
+            return provincial;
         }
         return otherInsurance;
     }
 
+    /**
+     * 是否省医保费用性质（含 ChargeTypeCategory 镜像码）。
+     *
+     * @param categoryEnum 契约/费用性质 category 码
+     * @return 省医保 true
+     */
     private static boolean isProvincialCategory(String categoryEnum) {
         return ContractCategory.PROVINCIAL_INSURANCE.getCode().equals(categoryEnum)
             || ChargeTypeCategory.PROVINCIAL_INSURANCE.getCode().equals(categoryEnum);
     }
 
+    /**
+     * 是否市医保费用性质（含 ChargeTypeCategory 镜像码）。
+     *
+     * @param categoryEnum 契约/费用性质 category 码
+     * @return 市医保 true
+     */
     private static boolean isMunicipalCategory(String categoryEnum) {
         return ContractCategory.MUNICIPAL_INSURANCE.getCode().equals(categoryEnum)
             || ChargeTypeCategory.MUNICIPAL_INSURANCE.getCode().equals(categoryEnum);

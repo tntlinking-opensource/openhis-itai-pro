@@ -430,6 +430,60 @@ public class MedicationDispense extends BaseAuditedEntity {
     }
 
     /**
+     * 断言当前为待退药态，允许门诊退费申请撤销时作废待退对冲发放行。
+     *
+     * @throws BusinessException 非 {@link DispenseStatus#PENDING_REFUND} 时
+     */
+    public void ensurePendingRefundForVoid() {
+        if (!DispenseStatus.PENDING_REFUND.equals(this.statusEnum)) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_STATUS,
+                "仅待退药状态允许作废退费申请产生的待退发放");
+        }
+    }
+
+    /**
+     * 门诊退费申请撤销：软删本条待退药（{@code PENDING_REFUND}）对冲发放；原正向已发完成行保持不动。
+     *
+     * @param operatorId 操作人主键（写入删除审计）
+     */
+    public void voidPendingRefundForApplicationRevoke(Long operatorId) {
+        this.ensurePendingRefundForVoid();
+        this.markDeleted(operatorId);
+    }
+
+    /**
+     * 断言当前为因门诊退费申请而拒绝的未发药发放，允许撤销申请时恢复待发。
+     *
+     * @param expectedReason 期望的未执行原因码（通常为 {@code OUTPATIENT_REFUND_APPLICATION}）
+     * @throws BusinessException 状态非 DECLINED 或原因不匹配时
+     */
+    public void ensureDeclinedForOutpatientRefundRevoke(String expectedReason) {
+        if (!DispenseStatus.DECLINED.equals(this.statusEnum)) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_STATUS,
+                "仅已拒绝状态允许恢复待发药");
+        }
+        // 业务：须与申请退费时写入的未执行原因一致，避免误恢复他因拒绝行。
+        if (expectedReason == null || !expectedReason.equals(this.notPerformedReasonEnum)) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_DISPENSE_RULE_CONFLICT,
+                "未执行原因与门诊退费申请不符，无法恢复待发药");
+        }
+    }
+
+    /**
+     * 门诊退费申请撤销后：将因申请而 DECLINED 的未发药发放恢复为 {@link DispenseStatus#PREPARATION}。
+     *
+     * <p>清空 {@code not_performed_reason_enum}，并刷新 {@code status_changed_time}。</p>
+     */
+    public void restorePreparationAfterOutpatientRefundRevoke() {
+        this.statusEnum = DispenseStatus.PREPARATION;
+        this.notPerformedReasonEnum = null;
+        this.statusChangedTime = LocalDateTime.now();
+    }
+
+    /**
      * 待退药拒绝：进入已拒绝终态并记录原因与操作人时刻。
      *
      * @param declineReasonText 拒绝原因（手写）

@@ -22,17 +22,7 @@ import com.openhis.health.domain.share.events.workflow.devicerequest.NursePricin
 import com.openhis.health.domain.share.events.workflow.devicerequest.NursePricingDeviceRequestRemovedEvent;
 import com.openhis.health.domain.share.events.workflow.devicerequest.OutpatientDeviceDispenseConfirmationCancelledEvent;
 import com.openhis.health.domain.share.events.workflow.devicerequest.OutpatientDeviceDispenseConfirmedEvent;
-import com.openhis.health.domain.workflow.devicerequest.command.ChangeDeviceOrderDraftCommand;
-import com.openhis.health.domain.workflow.devicerequest.command.CloneDeviceRequestForPreservedChargeRegenerationCommand;
-import com.openhis.health.domain.workflow.devicerequest.command.CreateDeviceOrderDraftCommand;
-import com.openhis.health.domain.workflow.devicerequest.command.CreateDeviceOrderRefundCommand;
-import com.openhis.health.domain.workflow.devicerequest.command.CreateExecutedDeviceOrderCommand;
-import com.openhis.health.domain.workflow.devicerequest.command.ExecuteDeviceOrderCommand;
-import com.openhis.health.domain.workflow.devicerequest.command.RemoveDeviceOrderDraftCommand;
-import com.openhis.health.domain.workflow.devicerequest.command.RevokeDeviceOrderExecutionCommand;
-import com.openhis.health.domain.workflow.devicerequest.command.RevokeExecutedDeviceOrderCommand;
-import com.openhis.health.domain.workflow.devicerequest.command.SignDeviceOrderCommand;
-import com.openhis.health.domain.workflow.devicerequest.command.SignOffDeviceOrderCommand;
+import com.openhis.health.domain.workflow.devicerequest.command.*;
 import com.openhis.health.domain.workflow.devicerequest.entity.DeviceRequest;
 import com.openhis.health.domain.workflow.devicerequest.repository.DeviceRequestRepository;
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -284,6 +274,38 @@ public class DeviceRequestDomainService {
         request.setIsDeleted(Boolean.TRUE);
         deviceRequestRepository.save(request);
         domainEventPublisher.publish(new DeviceOrderDraftRemovedEvent(request.getId(), request.getEncounterId()));
+    }
+
+    /**
+     * 门诊退费申请撤销：软删未完结负向退耗申请（须含 {@code refund_device_id}）。
+     *
+     * <p>药房已完成物理退耗的门禁由应用层先行拦截；本方法在通过门禁后软删开放的负向单。</p>
+     *
+     * @param command 负向申请主键集合与操作人
+     */
+    public void voidOpenRefundDeviceOrder(VoidOpenRefundDeviceOrderCommand command) {
+        // 前置校验：命令与主键集合不可空。
+        if (command == null || command.getRefundRequestIds() == null || command.getRefundRequestIds().isEmpty()) {
+            return;
+        }
+        List<DeviceRequest> toSave = new ArrayList<>();
+        // 加载/组装：按主键装载负向退耗申请并断言退耗链字段。
+        for (Long refundRequestId : command.getRefundRequestIds()) {
+            DeviceRequest request = this.requireDeviceRequest(refundRequestId);
+            // Gate：必须是负向退耗单。
+            request.ensureOpenRefundDeviceOrderForVoid();
+            // 业务：已软删行跳过。
+            if (Boolean.TRUE.equals(request.getIsDeleted())) {
+                continue;
+            }
+            // Cmd：软删负向退耗申请。
+            request.markDeleted(command.getOperatorId());
+            toSave.add(request);
+        }
+        // 持久化：先落库。
+        if (!toSave.isEmpty()) {
+            deviceRequestRepository.saveAll(toSave);
+        }
     }
 
     /**

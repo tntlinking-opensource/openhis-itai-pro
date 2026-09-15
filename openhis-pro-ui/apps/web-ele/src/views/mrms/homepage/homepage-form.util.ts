@@ -12,11 +12,19 @@ import type { HomepageFormModel } from './homepage-form.types';
 import type { HomepageListRow } from './homepage-list.types';
 
 import dayjs from 'dayjs';
+import rawRegionData from 'province-city-china/dist/level.json';
 
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
-import { HOMEPAGE_EXTENSION_KEYS, HOMEPAGE_FEE_AMOUNT_KEYS } from './homepage-form.types';
+import { HOMEPAGE_FEE_AMOUNT_KEYS } from './homepage-form.types';
+import { HOMEPAGE_EMPTY_DISPLAY } from './homepage.constants';
 
+/** province-city-china level 节点 */
+interface RegionLevelItem {
+  code: string;
+  name: string;
+  children?: RegionLevelItem[];
+}
 /** 空表单骨架 */
 export function createEmptyHomepageForm(
   caseRecordId?: string,
@@ -26,6 +34,8 @@ export function createEmptyHomepageForm(
     caseRecordId: caseRecordId || '',
     encounterId: encounterId || '',
     medcasno: '',
+    patientId: undefined,
+    organizationId: '',
     payWayCode: '',
     healthCardNo: '',
     visitTimes: 1,
@@ -40,7 +50,9 @@ export function createEmptyHomepageForm(
     prfsCode: '',
     mrgStasCode: '',
     birplcCodes: [],
+    birplcName: '',
     naplCodes: [],
+    naplName: '',
     currAddrCodes: [],
     currAddrDetail: '',
     currAddrPoscode: '',
@@ -55,11 +67,11 @@ export function createEmptyHomepageForm(
     conerRltsCode: '',
     conerTel: '',
     conerAddr: '',
-    clinicalPathCode: '',
-    tcmPrepCode: '',
-    tcmDeviceCode: '',
-    tcmTechCode: '',
-    syndromeNurseCode: '',
+    clinicalPathCode: undefined,
+    tcmPrepCode: undefined,
+    tcmDeviceCode: undefined,
+    tcmTechCode: undefined,
+    syndromeNurseCode: undefined,
     iptNo: '',
     admWayCode: '',
     trtTypeCode: '',
@@ -89,6 +101,15 @@ export function createEmptyHomepageForm(
     drugAllergyCode: '1',
     allergyDrugName: '',
     pathologyNo: '',
+    mainDiagCureCode: '',
+    rescueCount: undefined,
+    rescueSuccessCount: undefined,
+    clinicPathManageCode: '',
+    diagMatchOpDscg: '',
+    diagMatchAdmDscg: '',
+    diagMatchPrePost: '',
+    diagMatchClinicPath: '',
+    diagMatchRadioPath: '',
     autopsyCode: '',
     aboCode: '',
     rhCode: '',
@@ -141,12 +162,46 @@ export function calcIptDays(admTime?: string, dscgTime?: string): number | undef
   return days < 1 ? 1 : days;
 }
 
-/** 现住址拼成 currAddr 文本（便于保存兼容） */
+/** 将现住址详址写入 currAddr 全文列（与详址字段保持一致） */
 export function syncCurrAddrText(form: HomepageFormModel) {
   const detail = form.currAddrDetail?.trim() ?? '';
   if (detail) {
     form.currAddr = detail;
   }
+}
+
+/**
+ * 按省市区 code 路径拼连续中文地名（无逗号；卫统 CSD/GG、HQMS A22）。
+ *
+ * @param codes 级联 code
+ * @returns 如「吉林省长春市南关区」；无法解析则空串
+ */
+export function joinRegionPlaceName(codes: string[] | undefined): string {
+  if (!codes?.length) {
+    return '';
+  }
+  const names: string[] = [];
+  // 沿 codes 逐级下钻 province-city-china
+  let nodes = rawRegionData as RegionLevelItem[];
+  for (const code of codes) {
+    const hit = nodes.find((n) => n.code === code);
+    if (!hit) {
+      break;
+    }
+    names.push(hit.name);
+    nodes = hit.children ?? [];
+  }
+  return names.join('');
+}
+
+/**
+ * 出生地/籍贯选区后写入中文地名列（与 codes 同步）。
+ *
+ * @param form 首页表单
+ */
+export function syncBirthNativePlaceNames(form: HomepageFormModel) {
+  form.birplcName = joinRegionPlaceName(form.birplcCodes);
+  form.naplName = joinRegionPlaceName(form.naplCodes);
 }
 
 /** HIS AdministrativeGender → 首页性别码（1男 2女） */
@@ -164,15 +219,24 @@ function normalizeHomepageGenderCode(code?: string | null): string | undefined {
   return raw;
 }
 
-/** 未知值转字符串 */
-function str(v: unknown): string | undefined {
-  if (v === null || v === undefined || v === '') {
+/**
+ * 空白码值视为未填（中医信息无系统默认值）。
+ *
+ * @param v 码或空
+ * @return trim 后非空串；否则 undefined
+ */
+function emptyToUndef(v: string | undefined): string | undefined {
+  if (v === undefined || v === null) {
     return undefined;
   }
-  return String(v);
+  const t = String(v).trim();
+  if (!t) {
+    return undefined;
+  }
+  return t;
 }
 
-/** 金额类 extension 值转 number */
+/** 金额类快照值转 number */
 function moneyNum(v: unknown): number | undefined {
   if (v === null || v === undefined || v === '') {
     return undefined;
@@ -184,30 +248,128 @@ function moneyNum(v: unknown): number | undefined {
   return n;
 }
 
-/** 从 extension 回填扩展字段 */
-function pickExtensionFields(ext: Record<string, unknown>): Partial<HomepageFormModel> {
+/**
+ * 解析省市区 codes：接口多为 string[]；列存为「码/码/码」。
+ *
+ * @param raw 接口值
+ * @returns 级联选择器用的 code 数组
+ */
+function parseRegionCodes(raw: unknown): string[] {
+  if (Array.isArray(raw)) {
+    return raw.map((x) => String(x)).filter((x) => x.length > 0);
+  }
+  if (typeof raw !== 'string' || !raw.trim()) {
+    return [];
+  }
+  return raw
+    .trim()
+    .split('/')
+    .map((x) => x.trim())
+    .filter((x) => x.length > 0);
+}
+
+/**
+ * 从 HomepageDto 正式列取升列字段。
+ *
+ * @param homepage 首页 DTO
+ * @returns 表单偏字段
+ */
+function pickPromotedScalarFields(homepage: HomepageDto): Partial<HomepageFormModel> {
+  return {
+    payWayCode: homepage.payWayCode,
+    healthCardNo: homepage.healthCardNo,
+    ageYear: homepage.ageYear,
+    ageMonth: homepage.ageMonth,
+    birplcCodes: parseRegionCodes(homepage.birplcCodes),
+    birplcName: homepage.birplcName ?? '',
+    naplCodes: parseRegionCodes(homepage.naplCodes),
+    naplName: homepage.naplName ?? '',
+    currAddrCodes: parseRegionCodes(homepage.currAddrCodes),
+    currAddrDetail: homepage.currAddrDetail,
+    currAddrPoscode: homepage.currAddrPoscode,
+    resdAddrCodes: parseRegionCodes(homepage.resdAddrCodes),
+    resdAddrDetail: homepage.resdAddrDetail,
+    resdAddrPoscode: homepage.resdAddrPoscode,
+    emprAddr: homepage.emprAddr,
+    emprTel: homepage.emprTel,
+    emprPoscode: homepage.emprPoscode,
+    admWard: homepage.admWard,
+    admBed: homepage.admBed,
+    dscgWard: homepage.dscgWard,
+    dscgBed: homepage.dscgBed,
+    drugAllergyCode: homepage.drugAllergyCode,
+    allergyDrugName: homepage.allergyDrugName,
+    pathologyNo: homepage.pathologyNo,
+    mainDiagCureCode: homepage.mainDiagCureCode,
+    rescueCount: homepage.rescueCount,
+    rescueSuccessCount: homepage.rescueSuccessCount,
+    clinicPathManageCode: homepage.clinicPathManageCode,
+    diagMatchOpDscg: homepage.diagMatchOpDscg,
+    diagMatchAdmDscg: homepage.diagMatchAdmDscg,
+    diagMatchPrePost: homepage.diagMatchPrePost,
+    diagMatchClinicPath: homepage.diagMatchClinicPath,
+    diagMatchRadioPath: homepage.diagMatchRadioPath,
+    autopsyCode: homepage.autopsyCode,
+    aboCode: homepage.aboCode,
+    rhCode: homepage.rhCode,
+    trainDrName: homepage.trainDrName,
+    intnDrName: homepage.intnDrName,
+    codrName: homepage.codrName,
+    medcasQltCode: homepage.medcasQltCode,
+    qltctrlDate: homepage.qltctrlDate,
+    qltctrlDrName: homepage.qltctrlDrName,
+    qltctrlNursName: homepage.qltctrlNursName,
+    acpMedinsName: homepage.acpMedinsName,
+    acpCommunityName: homepage.acpCommunityName,
+    rinp31Flag: homepage.rinp31Flag,
+    rinp31Purpose: homepage.rinp31Purpose,
+  };
+}
+
+/**
+ * 费用快照 Map → 表单金额字段。
+ *
+ * @param fees 后端 fees 快照结果
+ * @returns 费用偏字段
+ */
+function pickLiveFeeFields(fees?: Record<string, number>): Partial<HomepageFormModel> {
+  if (!fees) {
+    return {};
+  }
   const out: Partial<HomepageFormModel> = {};
-  const feeKeySet = new Set<string>(HOMEPAGE_FEE_AMOUNT_KEYS as string[]);
-  for (const key of HOMEPAGE_EXTENSION_KEYS) {
-    if (!(key in ext)) {
+  for (const key of HOMEPAGE_FEE_AMOUNT_KEYS) {
+    const raw = fees[key as string];
+    if (raw === undefined || raw === null) {
       continue;
     }
-    const raw = ext[key as string];
-    // 费用金额键统一转 number，便于 InputNumber 回显
-    if (feeKeySet.has(key as string)) {
-      (out as Record<string, unknown>)[key as string] = moneyNum(raw);
-      continue;
-    }
-    (out as Record<string, unknown>)[key as string] = raw;
+    (out as Record<string, unknown>)[key as string] = moneyNum(raw);
   }
   return out;
 }
 
+/**
+ * 深拷贝诊断行：Long 主键保持 string；出院 needYbUp 空值默认「是」。
+ *
+ * @param rows 源诊断行
+ * @return 新数组（永不为 null）
+ */
 function cloneDiagnoses(rows?: DiagnosisLineDto[]): DiagnosisLineDto[] {
   if (!rows?.length) {
     return [];
   }
-  return rows.map((r) => ({ ...r }));
+  // 诊断医生主键必须保持 string，禁止被 Number 抹平；出院上传默认「是」
+  return rows.map((r) => {
+    const diagType = String(r.diagTypeCode ?? '');
+    const isDischarge = diagType.startsWith('discharge');
+    const needYb = String(r.needYbUp ?? '').trim();
+    return {
+      ...r,
+      id: r.id != null && r.id !== '' ? String(r.id) : r.id,
+      confirmDrId:
+        r.confirmDrId != null && r.confirmDrId !== '' ? String(r.confirmDrId) : r.confirmDrId,
+      needYbUp: isDischarge ? needYb || '1' : needYb,
+    };
+  });
 }
 
 function cloneProcedures(rows?: ProcedureLineDto[]): ProcedureLineDto[] {
@@ -238,26 +400,33 @@ export function homepageToFormModel(
   encounterId?: string,
 ): HomepageFormModel {
   const base = createEmptyHomepageForm(String(homepage.caseRecordId ?? ''), encounterId);
-  const ext = homepage.extension ?? {};
   const form: HomepageFormModel = {
     ...base,
     caseRecordId: String(homepage.caseRecordId ?? ''),
+    // 主档病案号：saveHomepage 发号后回传；load 场景常再由 mergeCaseRecord 补全
+    medcasno: homepage.medcasno || base.medcasno,
     encounterId: encounterId || base.encounterId,
     psnName: homepage.psnName,
     gendCode: normalizeHomepageGenderCode(homepage.gendCode),
     brdy: homepage.brdy,
     certno: homepage.certno,
-    ntlyCode: homepage.ntlyCode ?? str(ext.ntlyCode) ?? base.ntlyCode,
-    natyCode: homepage.natyCode ?? str(ext.natyCode) ?? base.natyCode,
-    prfsCode: homepage.prfsCode ?? str(ext.prfsCode),
-    mrgStasCode: homepage.mrgStasCode ?? str(ext.mrgStasCode),
-    currAddr: homepage.currAddr ?? str(ext.currAddr),
-    psnTel: homepage.psnTel ?? str(ext.psnTel),
-    conerName: homepage.conerName ?? str(ext.conerName),
-    conerTel: homepage.conerTel ?? str(ext.conerTel),
-    conerRltsCode: homepage.conerRltsCode ?? str(ext.conerRltsCode),
-    conerAddr: homepage.conerAddr ?? str(ext.conerAddr),
-    trtTypeCode: homepage.trtTypeCode ?? str(ext.trtTypeCode),
+    ntlyCode: homepage.ntlyCode ?? base.ntlyCode,
+    natyCode: homepage.natyCode ?? base.natyCode,
+    prfsCode: homepage.prfsCode,
+    mrgStasCode: homepage.mrgStasCode,
+    currAddr: homepage.currAddr,
+    psnTel: homepage.psnTel,
+    conerName: homepage.conerName,
+    conerTel: homepage.conerTel,
+    conerRltsCode: homepage.conerRltsCode,
+    conerAddr: homepage.conerAddr,
+    trtTypeCode: homepage.trtTypeCode,
+    // 中医信息：只认正式列
+    clinicalPathCode: emptyToUndef(homepage.clinicalPathCode),
+    tcmPrepCode: emptyToUndef(homepage.tcmPrepCode),
+    tcmDeviceCode: emptyToUndef(homepage.tcmDeviceCode),
+    tcmTechCode: emptyToUndef(homepage.tcmTechCode),
+    syndromeNurseCode: emptyToUndef(homepage.syndromeNurseCode),
     spgaNurscareDays: homepage.spgaNurscareDays,
     lv1NurscareDays: homepage.lv1NurscareDays,
     scdNurscareDays: homepage.scdNurscareDays,
@@ -272,46 +441,54 @@ export function homepageToFormModel(
     iptNo: homepage.iptNo,
     admWayCode: sanitizeAdmWayCode(homepage.admWayCode),
     admCatyCode: homepage.admCatyCode,
-    admCatyName: homepage.admCatyName ?? str(ext.admCatyName),
+    admCatyName: homepage.admCatyName,
     dscgCatyCode: homepage.dscgCatyCode,
-    dscgCatyName: homepage.dscgCatyName ?? str(ext.dscgCatyName),
+    dscgCatyName: homepage.dscgCatyName,
     admTime: homepage.admTime,
     dscgTime: homepage.dscgTime,
     iptDays: homepage.iptDays,
     dscgWayCode: homepage.dscgWayCode,
-    transferDeptSummary: homepage.transferDeptSummary ?? str(ext.transferDeptSummary),
-    deptDirectorName: homepage.deptDirectorName ?? str(ext.deptDirectorName),
+    transferDeptSummary: homepage.transferDeptSummary,
+    deptDirectorName: homepage.deptDirectorName,
     chfdrName: homepage.chfdrName,
     atddrName: homepage.atddrName,
     iptDrName: homepage.iptDrName,
-    respNursName: homepage.respNursName ?? str(ext.respNursName),
-    extension: homepage.extension,
+    respNursName: homepage.respNursName,
     diagnoses: cloneDiagnoses(homepage.diagnoses),
     procedures: cloneProcedures(homepage.procedures),
-    ...pickExtensionFields(ext),
+    ...pickPromotedScalarFields(homepage),
+    ...pickLiveFeeFields(homepage.fees),
   };
-  // 兼容旧 extension 护理天数字段名
-  if (form.spgaNurscareDays == null && ext.nurseDaysSpecial != null) {
-    form.spgaNurscareDays = Number(ext.nurseDaysSpecial);
-  }
-  if (form.lv1NurscareDays == null && ext.nurseDaysL1 != null) {
-    form.lv1NurscareDays = Number(ext.nurseDaysL1);
-  }
-  if (form.scdNurscareDays == null && ext.nurseDaysL2 != null) {
-    form.scdNurscareDays = Number(ext.nurseDaysL2);
-  }
-  if (form.lv3NurscareDays == null && ext.nurseDaysL3 != null) {
-    form.lv3NurscareDays = Number(ext.nurseDaysL3);
-  }
   if (!form.currAddrDetail && form.currAddr) {
     form.currAddrDetail = form.currAddr;
   }
-  form.ageYear = calcAgeYear(form.brdy, form.admTime);
+  // 年龄优先用正式列；空则按出生/入院推算展示
+  if (form.ageYear == null) {
+    form.ageYear = calcAgeYear(form.brdy, form.admTime);
+  }
   return form;
 }
 
+/**
+ * 新建诊断行默认值（出院上传缺省「是」）。
+ *
+ * @param diagTypeCode HomepageDiagType code
+ * @param sortNo 排序号
+ */
 export function newDiagnosisRow(diagTypeCode: string, sortNo: number): DiagnosisLineDto {
-  return { diagTypeCode, sortNo, diagCode: '', diagName: '', admCondCode: '' };
+  return {
+    diagTypeCode,
+    sortNo,
+    diagCode: '',
+    diagName: '',
+    admCondCode: '',
+    outIllStatusCode: '',
+    confirmTime: '',
+    diagRemark: '',
+    confirmDrId: '',
+    confirmDrName: '',
+    needYbUp: diagTypeCode.startsWith('discharge') ? '1' : '',
+  };
 }
 
 export function newProcedureRow(sortNo: number): ProcedureLineDto {
@@ -329,17 +506,28 @@ export function newProcedureRow(sortNo: number): ProcedureLineDto {
 }
 
 export function sectionToRefreshCode(section: string): RefreshSectionCode {
+  const codes = sectionsToRefreshCodes(section);
+  return codes[0] ?? 'basic';
+}
+
+/**
+ * 章节导入 → 后端 refresh 分区列表。
+ * 住院信息 UI 合并了人口学+入出院，须同时刷 basic + inpatient。
+ */
+export function sectionsToRefreshCodes(section: string): RefreshSectionCode[] {
+  if (section === 'basic' || section === 'inpatient') {
+    return ['basic', 'inpatient'];
+  }
   if (
-    section === 'basic' ||
-    section === 'inpatient' ||
     section === 'diagnosis' ||
     section === 'procedure' ||
     section === 'staff' ||
-    section === 'fee'
+    section === 'fee' ||
+    section === 'all'
   ) {
-    return section;
+    return [section];
   }
-  return 'basic';
+  return ['basic', 'inpatient'];
 }
 
 /** 主档冗余补全 */
@@ -350,13 +538,36 @@ export function mergeCaseRecordIntoFormModel(
   if (!detail) {
     return form;
   }
+  // 入院科室：优先保留已有（列表带入），否则用 loadPage 回填
+  const organizationId =
+    preserveApiIdForRequest(form.organizationId) ||
+    preserveApiIdForRequest(detail.organizationId) ||
+    '';
   return {
     ...form,
     caseRecordId: form.caseRecordId || String(detail.caseRecordId ?? ''),
     medcasno: form.medcasno || detail.medcasno,
     visitTimes: form.visitTimes ?? detail.patnIptCnt,
     patientId: form.patientId || (detail.patientId ? String(detail.patientId) : undefined),
+    organizationId,
   };
+}
+
+/**
+ * 未填值展示占位（与 {@link HOMEPAGE_EMPTY_DISPLAY} 一致）。
+ *
+ * @param value 原始展示值
+ * @returns 非空 trim 后原文，否则 `-`
+ */
+export function displayHomepageEmpty(value?: null | number | string): string {
+  if (value == null) {
+    return HOMEPAGE_EMPTY_DISPLAY;
+  }
+  const text = String(value).trim();
+  if (!text) {
+    return HOMEPAGE_EMPTY_DISPLAY;
+  }
+  return text;
 }
 
 /** 深拷贝表单 */
@@ -369,20 +580,13 @@ export function cloneHomepageForm(form: HomepageFormModel): HomepageFormModel {
     resdAddrCodes: [...(form.resdAddrCodes ?? [])],
     diagnoses: cloneDiagnoses(form.diagnoses),
     procedures: cloneProcedures(form.procedures),
-    extension: form.extension ? { ...form.extension } : undefined,
   };
 }
 
-/** 组装保存请求体（P0 标量直传，其余进 extension） */
+/** 组装保存请求体（正式列标量直传；费用不提交） */
 export function toSaveHomepageParams(form: HomepageFormModel): SaveHomepageParams {
   syncCurrAddrText(form);
-  const extension: Record<string, unknown> = { ...(form.extension ?? {}) };
-  for (const key of HOMEPAGE_EXTENSION_KEYS) {
-    const value = form[key];
-    if (value !== undefined && value !== null && value !== '') {
-      extension[key as string] = value;
-    }
-  }
+  syncBirthNativePlaceNames(form);
   return {
     caseRecordId: form.caseRecordId || undefined,
     encounterId: form.encounterId || undefined,
@@ -401,6 +605,12 @@ export function toSaveHomepageParams(form: HomepageFormModel): SaveHomepageParam
     conerRltsCode: form.conerRltsCode,
     conerAddr: form.conerAddr,
     trtTypeCode: form.trtTypeCode,
+    // 中医信息无默认值；空串让后端清空列（null 会跳过写入导致清不掉）
+    clinicalPathCode: form.clinicalPathCode?.trim() ? form.clinicalPathCode.trim() : '',
+    tcmPrepCode: form.tcmPrepCode?.trim() ? form.tcmPrepCode.trim() : '',
+    tcmDeviceCode: form.tcmDeviceCode?.trim() ? form.tcmDeviceCode.trim() : '',
+    tcmTechCode: form.tcmTechCode?.trim() ? form.tcmTechCode.trim() : '',
+    syndromeNurseCode: form.syndromeNurseCode?.trim() ? form.syndromeNurseCode.trim() : '',
     spgaNurscareDays: form.spgaNurscareDays,
     lv1NurscareDays: form.lv1NurscareDays,
     scdNurscareDays: form.scdNurscareDays,
@@ -428,9 +638,55 @@ export function toSaveHomepageParams(form: HomepageFormModel): SaveHomepageParam
     atddrName: form.atddrName,
     iptDrName: form.iptDrName,
     respNursName: form.respNursName,
+    payWayCode: form.payWayCode,
+    healthCardNo: form.healthCardNo,
+    ageYear: form.ageYear,
+    ageMonth: form.ageMonth,
+    birplcCodes: form.birplcCodes,
+    birplcName: form.birplcName,
+    naplCodes: form.naplCodes,
+    naplName: form.naplName,
+    currAddrCodes: form.currAddrCodes,
+    currAddrDetail: form.currAddrDetail,
+    currAddrPoscode: form.currAddrPoscode,
+    resdAddrCodes: form.resdAddrCodes,
+    resdAddrDetail: form.resdAddrDetail,
+    resdAddrPoscode: form.resdAddrPoscode,
+    emprAddr: form.emprAddr,
+    emprTel: form.emprTel,
+    emprPoscode: form.emprPoscode,
+    admWard: form.admWard,
+    admBed: form.admBed,
+    dscgWard: form.dscgWard,
+    dscgBed: form.dscgBed,
+    drugAllergyCode: form.drugAllergyCode,
+    allergyDrugName: form.allergyDrugName,
+    pathologyNo: form.pathologyNo,
+    mainDiagCureCode: form.mainDiagCureCode,
+    rescueCount: form.rescueCount,
+    rescueSuccessCount: form.rescueSuccessCount,
+    clinicPathManageCode: form.clinicPathManageCode,
+    diagMatchOpDscg: form.diagMatchOpDscg,
+    diagMatchAdmDscg: form.diagMatchAdmDscg,
+    diagMatchPrePost: form.diagMatchPrePost,
+    diagMatchClinicPath: form.diagMatchClinicPath,
+    diagMatchRadioPath: form.diagMatchRadioPath,
+    autopsyCode: form.autopsyCode,
+    aboCode: form.aboCode,
+    rhCode: form.rhCode,
+    trainDrName: form.trainDrName,
+    intnDrName: form.intnDrName,
+    codrName: form.codrName,
+    medcasQltCode: form.medcasQltCode,
+    qltctrlDate: form.qltctrlDate,
+    qltctrlDrName: form.qltctrlDrName,
+    qltctrlNursName: form.qltctrlNursName,
+    acpMedinsName: form.acpMedinsName,
+    acpCommunityName: form.acpCommunityName,
+    rinp31Flag: form.rinp31Flag,
+    rinp31Purpose: form.rinp31Purpose,
     diagnoses: form.diagnoses,
     procedures: form.procedures,
-    extension,
   };
 }
 
@@ -441,6 +697,20 @@ function mapHomepageUploadStatus(chs?: string | null): string {
   }
   if (chs === 'success' || chs === 'failed' || chs === 'pending' || chs === 'skipped') {
     return chs;
+  }
+  return 'none';
+}
+
+/**
+ * 后端 settle_upload_status_code（0/1/2）→ 列表展示 code。
+ * 空或「0」归一为 none，便于 Tag/文案统一。
+ */
+function mapSettleUploadStatus(raw?: string | null): string {
+  if (!raw || raw === '0') {
+    return 'none';
+  }
+  if (raw === '1' || raw === '2' || raw === 'failed') {
+    return raw;
   }
   return 'none';
 }
@@ -463,6 +733,8 @@ export function mapListItemToRow(item: CaseRecordListItemDto): HomepageListRow {
     iptNo: item.iptNo ?? '',
     medcasno: item.medcasno ?? '',
     certno: item.certno,
+    psnNo: item.psnNo?.trim() || undefined,
+    setlId: item.setlId?.trim() || undefined,
     admDeptName: item.admCatyName || item.dscgCatyName,
     organizationId: preserveApiIdForRequest(item.organizationId),
     insuranceTypeText: item.insuranceTypeText?.trim() || undefined,
@@ -472,7 +744,7 @@ export function mapListItemToRow(item: CaseRecordListItemDto): HomepageListRow {
     dischargedCode: discharged,
     settledCode: item.settledCode === '1' ? '1' : '0',
     homepageUploadStatusCode: mapHomepageUploadStatus(item.chsUploadStatusCode),
-    settleUploadStatusCode: item.settleUploadStatusCode || 'none',
+    settleUploadStatusCode: mapSettleUploadStatus(item.settleUploadStatusCode),
     orderUploadStatusCode: item.orderUploadStatusCode || 'none',
     statusCode: item.statusCode,
     clinicalArchived: item.clinicalArchived === true,

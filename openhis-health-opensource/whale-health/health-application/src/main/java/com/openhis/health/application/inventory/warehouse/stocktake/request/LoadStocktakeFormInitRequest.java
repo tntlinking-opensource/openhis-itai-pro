@@ -4,8 +4,6 @@
  */
 package com.openhis.health.application.inventory.warehouse.stocktake.request;
 
-import com.fasterxml.jackson.databind.annotation.JsonSerialize;
-import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
@@ -17,9 +15,4 @@ import lombok.experimental.Accessors;
 @Accessors(chain = true)
 @Schema(description = "盘点页初始化 IF-WHS-ST-01")
 public class LoadStocktakeFormInitRequest {
-
-    /** 兼容字段，服务端忽略。 */
-    @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "兼容字段，服务端忽略")
-    private Long organizationId;
 }

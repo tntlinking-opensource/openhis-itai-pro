@@ -38,6 +38,7 @@ import com.openhis.health.domain.medication.medicationdispense.service.Medicatio
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
 import com.openhis.health.domain.medication.medicationrequest.command.CloneMedicationRequestForPreservedChargeRegenerationCommand;
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestDomainService;
+import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.ChargeItemStatus;
@@ -45,15 +46,22 @@ import com.openhis.health.domain.share.enums.DispenseStatus;
 import com.openhis.health.domain.share.enums.PaymentStatus;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.utils.GatewayIdParseUtil;
+import com.openhis.health.domain.workflow.devicedispense.entity.DeviceDispense;
 import com.openhis.health.domain.workflow.devicedispense.queries.model.DeviceDispenseListModel;
 import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseDomainService;
 import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseQueryService;
 import com.openhis.health.domain.workflow.devicerequest.command.CloneDeviceRequestForPreservedChargeRegenerationCommand;
+import com.openhis.health.domain.workflow.devicerequest.entity.DeviceRequest;
 import com.openhis.health.domain.workflow.devicerequest.service.DeviceRequestDomainService;
+import com.openhis.health.domain.workflow.devicerequest.service.DeviceRequestQueryService;
 import com.openhis.health.domain.workflow.servicerequest.command.CloneServiceRequestForPreservedChargeRegenerationCommand;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestQueryModel;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestDomainService;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
+import com.openhis.health.application.outpatient.doctorstation.refundapplication.dto.CancelRefundApplicationLineItemDto;
+import com.openhis.health.application.outpatient.doctorstation.refundapplication.request.CancelOutpatientRefundApplicationRequest;
+import com.openhis.health.application.outpatient.doctorstation.refundapplication.response.CancelOutpatientRefundApplicationResponse;
+import com.openhis.health.domain.medication.medicationrequest.entity.MedicationRequest;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -72,7 +80,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 门诊医生站「申请退费」应用服务编排（IF-DRA-01～03）。
+ * 门诊医生站「申请退费 / 撤销退费」应用服务编排（IF-DRA-01～04）。
  * <p>职责边界：</p>
  * <ul>
  *   <li>{@link EncounterQueryService}：就诊存在性门禁（Pre）。</li>
@@ -116,11 +124,15 @@ public class DoctorStationRefundApplicationAppService {
     private final ChargeItemDomainService chargeItemDomainService;
     /** 药品申请写侧（退药/重开/保留链克隆）。 */
     private final MedicationRequestDomainService medicationRequestDomainService;
-    /** 药品发放写侧（作废/待退药）。 */
+    /** 药品发放写侧（作废/待退药/撤销还原）。 */
     private final MedicationDispenseDomainService medicationDispenseDomainService;
+    /** 药品申请只读（负向退药单解析，IF-DRA-04）。 */
+    private final MedicationRequestQueryService medicationRequestQueryService;
     /** 耗材申请写侧（退耗/保留链克隆）。 */
     private final DeviceRequestDomainService deviceRequestDomainService;
-    /** 耗材发放写侧（待退/作废未发）。 */
+    /** 耗材申请只读（负向退耗单解析，IF-DRA-04）。 */
+    private final DeviceRequestQueryService deviceRequestQueryService;
+    /** 耗材发放写侧（待退/作废未发/撤销还原）。 */
     private final DeviceDispenseDomainService deviceDispenseDomainService;
     /** 诊疗申请写侧（取消/停止）。 */
     private final ServiceRequestDomainService serviceRequestDomainService;
@@ -130,13 +142,13 @@ public class DoctorStationRefundApplicationAppService {
     private final CurrentPractitionerResolver currentPractitionerResolver;
 
     /**
-     * IF-DRA-01：按就诊加载可申请退费账单行。
+     * IF-DRA-01：按就诊加载可申请（已结算）与可撤销（退款中）账单行。
      *
      * <p>不包含 {@code service_table} 为 {@link TableNameConstants#ADM_HEALTHCARE_SERVICE} 的明细（挂号费等），
      * 挂号费退费走 {@code AS-OP-FIN-001} 退号链路，与门诊收银 IF-OPC-03 排除口径一致。</p>
      *
      * @param request 就诊键
-     * @return 可退候选行（按支付分组排序）
+     * @return 可申请/可撤销候选行（按支付分组排序）
      * @throws BusinessException 就诊不存在或参数非法
      */
     public ListRefundableChargeLinesForEncounterResponse listRefundableChargeLinesForEncounter(
@@ -195,30 +207,32 @@ public class DoctorStationRefundApplicationAppService {
         chargeQuery.setIds(new ArrayList<>(allChargeItemIds));
         // Pre：批量加载收费明细实体，避免在后续装配中逐条查询（A.9.1）。
         List<ChargeItem> loaded = this.chargeItemQueryService.loadChargeItemsByIds(chargeQuery);
-        List<ChargeItem> settledForEncounter = new ArrayList<>();
+        List<ChargeItem> candidateForEncounter = new ArrayList<>();
         for (ChargeItem row : loaded) {
-            // Pre：仅保留同就诊且已结算行，作为可申请退费事实（BR-DRA-008 读侧口径）。
+            // Pre：仅保留同就诊且已结算（可申请）或退款中（可撤销）行（BR-DRA-023）。
             if (!encounterId.equals(row.getEncounterId())) {
                 continue;
             }
-            if (!ChargeItemStatus.SETTLED.getCode().equals(row.getStatusEnum())) {
+            boolean settled = ChargeItemStatus.SETTLED.getCode().equals(row.getStatusEnum());
+            boolean refunding = ChargeItemStatus.REFUNDING.getCode().equals(row.getStatusEnum());
+            if (!settled && !refunding) {
                 continue;
             }
-            // Pre：挂号费锚点不在医生站申请退费范围，须走退号（与 IF-OPC-03 排除 adm_healthcare_service 一致）。
+            // Pre：挂号费锚点不在医生站申请/撤销退费范围，须走退号（与 IF-OPC-03 排除 adm_healthcare_service 一致）。
             if (TableNameConstants.ADM_HEALTHCARE_SERVICE.equals(row.getServiceTable())) {
                 continue;
             }
-            settledForEncounter.add(row);
+            candidateForEncounter.add(row);
         }
-        // Pre：排除半退保留链已再生替代的源 SETTLED 行，避免可退列表同药双行（BR-DRA-020 / BR-REF-020）。
-        settledForEncounter = this.chargeItemQueryService.filterOutSupersededSettledLines(encounterId, settledForEncounter);
+        // Pre：排除半退保留链已再生替代的源 SETTLED 行，避免可退列表同药双行（BR-DRA-020 / BR-REF-020）；退款中行保留。
+        candidateForEncounter = this.chargeItemQueryService.filterOutSupersededSettledLines(encounterId, candidateForEncounter);
         // Pre：批量解析项目名称（与门诊收费 IF-OPC-03 同口径：目录 product_name 优先，其次定价 charge_name）。
-        Map<Long, ChargeItemDefinition> definitionMap = this.buildChargeDefinitionMapByDefinitionId(settledForEncounter);
+        Map<Long, ChargeItemDefinition> definitionMap = this.buildChargeDefinitionMapByDefinitionId(candidateForEncounter);
         Map<String, ProductDefinitionDisplayDto> productMap =
-            this.buildProductDefinitionMapByChargeItems(settledForEncounter, definitionMap);
+            this.buildProductDefinitionMapByChargeItems(candidateForEncounter, definitionMap);
         // Asm：将每条候选行装配为对外 DTO（枚举展示由 Mapper 内 EnumUtil 完成，BR-DRA-002）。
         List<RefundableChargeLineItemDto> lines = new ArrayList<>();
-        for (ChargeItem row : settledForEncounter) {
+        for (ChargeItem row : candidateForEncounter) {
             PaymentReconciliationQueryModel payment = this.resolvePaymentForChargeItem(row.getId(), idCollections, paymentById);
             if (payment == null) {
                 continue;
@@ -1076,75 +1090,157 @@ public class DoctorStationRefundApplicationAppService {
     }
 
     /**
-     * 耗材拟退分支（IF-DRA-03 步骤 16～17）。
+     * 耗材拟退分支（IF-DRA-03 步骤 16～17 / **BR-DRA-006**）。
+     *
+     * <p>申请主键与发放查询一律经 {@link #resolveDeviceRequestId}，禁止把发放锚点 {@code serviceId}
+     * 误当请求主键；未发路径须<strong>作废该请求下全部</strong>可作废发放行，避免 FIFO 多段残留「待发放」。</p>
      *
      * @param chargeItem 拟退收费行
      * @param operatorId 操作人主键
      */
     private void executeDeviceRefundBranch(ChargeItem chargeItem, Long operatorId) {
-        // Cmd：先创建退耗材负向请求（写库点 3a）。
+        // Pre：解析耗材申请主键（兼容 service 锚发放 / dispense_* 三锚点）
+        Long deviceRequestId = this.resolveDeviceRequestId(chargeItem);
+        // Gate：无法锚定耗材申请则拒绝，避免负向单挂错根或漏作废发放
+        if (deviceRequestId == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.CHARGE_ITEM_RULE_CONFLICT,
+                "拟退耗材收费明细无法解析耗材申请锚点"
+            );
+        }
+        // Cmd：先创建退耗材负向请求（写库点 3a）；幂等复用未完结负向单
         Long refundRequestId = this.deviceRequestDomainService.createDeviceOrderRefund(
-            this.doctorStationRefundApplicationMapper.toCreateDeviceOrderRefundCommand(chargeItem, operatorId)
+            this.doctorStationRefundApplicationMapper.toCreateDeviceOrderRefundCommand(
+                deviceRequestId, chargeItem, operatorId)
         );
+        // Pre：按申请主键装载全部发放行（禁止用 charge.serviceId 当 requestId）
         List<DeviceDispenseListModel> models =
-            this.deviceDispenseQueryService.selectByRequestIdList(Collections.singletonList(chargeItem.getServiceId()));
-        DeviceDispenseListModel picked = this.pickLatestDeviceDispense(models);
-        if (picked == null) {
-            // 无发放事实：负向耗单直接收口，放行 IF-REF-04 资金退费（对称未发作废路径）。
+            this.deviceDispenseQueryService.selectByRequestIdList(Collections.singletonList(deviceRequestId));
+        // 分支：无发放事实 → 负向耗单直接收口，放行 IF-REF-04
+        if (models == null || models.isEmpty()) {
             this.deviceRequestDomainService.completeDeviceRequestAfterRefund(refundRequestId);
             return;
         }
-        boolean executed = DispenseStatus.COMPLETED.getCode().equals(picked.getStatusEnum())
-            || DispenseStatus.PART_COMPLETED.getCode().equals(picked.getStatusEnum());
-        BigDecimal refundQty = chargeItem.getQuantityValue();
-        if (refundQty == null) {
-            refundQty = BigDecimal.ZERO;
-        }
-        if (executed) {
-            // Cmd：已执行/部分执行：创建待退发放并锚定负向耗单（写库点 3b 分支 A）。
+        DeviceDispenseListModel latestExecuted = this.pickLatestExecutedDeviceDispense(models);
+        // 分支：仍存在已发/部分发 → 待退实物路径（写库点 3b 分支 A）；IF-DRA-02 本应拦下，此处保底
+        if (latestExecuted != null) {
+            BigDecimal refundQty = chargeItem.getQuantityValue();
+            // 分支：收费行数量空时按 0，由领域校验
+            if (refundQty == null) {
+                refundQty = BigDecimal.ZERO;
+            }
             this.deviceDispenseDomainService.createPendingRefundDeviceDispense(
                 this.doctorStationRefundApplicationMapper.toCreatePendingRefundDeviceDispenseCommand(
-                    picked.getId(), refundQty, operatorId, refundRequestId
+                    latestExecuted.getId(), refundQty, operatorId, refundRequestId
                 )
             );
             return;
         }
-        // Cmd：未发路径：作废未发耗材发放（写库点 3b 分支 B）。
-        this.deviceDispenseDomainService.cancelUndispensedDeviceDispense(
-            this.doctorStationRefundApplicationMapper.toCancelUndispensedDeviceDispenseCommand(
-                picked.getId(),
-                DoctorStationRefundApplicationConstants.DEVICE_DISPENSE_NOT_PERFORMED_REASON_OUTPATIENT_REFUND_APP,
-                operatorId
-            )
-        );
+        // Cmd：未发路径：作废该请求下全部可作废发放（写库点 3b 分支 B），消除多段 FIFO 残留待发
+        boolean cancelledAny = false;
+        for (DeviceDispenseListModel model : models) {
+            // Skip：空行或无主键
+            if (model == null || model.getId() == null) {
+                continue;
+            }
+            // Skip：非未发可作废态（已 DECLINED 等终态）
+            if (!this.isDeviceDispenseCancellableUndispensed(model.getStatusEnum())) {
+                continue;
+            }
+            this.deviceDispenseDomainService.cancelUndispensedDeviceDispense(
+                this.doctorStationRefundApplicationMapper.toCancelUndispensedDeviceDispenseCommand(
+                    model.getId(),
+                    DoctorStationRefundApplicationConstants.DEVICE_DISPENSE_NOT_PERFORMED_REASON_OUTPATIENT_REFUND_APP,
+                    operatorId
+                )
+            );
+            cancelledAny = true;
+        }
+        // 分支：无可作废行时仍收口负向单，避免 IF-REF-04 误拦（幂等：已全部 DECLINED）
+        if (!cancelledAny) {
+            log.debug(
+                "executeDeviceRefundBranch no cancellable dispense deviceReqId={} chargeItemId={}",
+                deviceRequestId,
+                chargeItem.getId()
+            );
+        }
         // 未发作废后无实物退库，负向耗单须收口为 COMPLETED，否则 IF-REF-04 误拦 EX-REF-202。
         this.deviceRequestDomainService.completeDeviceRequestAfterRefund(refundRequestId);
     }
 
     /**
-     * 在列表模型中挑选用于编排的耗材发放行（优先最新主键）。
+     * 挑选最近一条已发/部分发耗材发放行（按主键降序）。
      *
      * @param models 发放列表模型
-     * @return 选中模型；空表返回 null
+     * @return 命中行；无已发事实时 null
      */
-    private DeviceDispenseListModel pickLatestDeviceDispense(List<DeviceDispenseListModel> models) {
+    private DeviceDispenseListModel pickLatestExecutedDeviceDispense(List<DeviceDispenseListModel> models) {
+        // Gate：空表无已发
         if (models == null || models.isEmpty()) {
             return null;
         }
-        DeviceDispenseListModel best = models.get(0);
+        DeviceDispenseListModel best = null;
         for (DeviceDispenseListModel model : models) {
-            if (model.getId() == null) {
+            // Skip：空行
+            if (model == null || model.getId() == null) {
                 continue;
             }
-            if (best.getId() == null) {
-                best = model;
+            // Skip：非已发/部分发
+            if (!this.isDeviceDispenseCompletedOrPartCompleted(model.getStatusEnum())) {
                 continue;
             }
-            if (model.getId() > best.getId()) {
+            // 分支：尚未选定或当前主键更新 → 取最新已发行
+            if (best == null || model.getId() > best.getId()) {
                 best = model;
             }
         }
         return best;
+    }
+
+    /**
+     * 耗材发放是否为已完成或部分完成（code 口径）。
+     *
+     * @param statusEnum 发放状态码
+     * @return 已发/部分发时 true
+     */
+    private boolean isDeviceDispenseCompletedOrPartCompleted(String statusEnum) {
+        // 空状态非已发
+        if (StringUtils.isEmpty(statusEnum)) {
+            return false;
+        }
+        if (DispenseStatus.COMPLETED.getCode().equals(statusEnum)) {
+            return true;
+        }
+        if (DispenseStatus.PART_COMPLETED.getCode().equals(statusEnum)) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 耗材发放是否处于未发可作废态（对齐 {@code DeviceDispense#assertCancellableUndispensed}）。
+     *
+     * @param statusEnum 发放状态码
+     * @return 可作废时 true
+     */
+    private boolean isDeviceDispenseCancellableUndispensed(String statusEnum) {
+        // 空状态不可作废
+        if (StringUtils.isEmpty(statusEnum)) {
+            return false;
+        }
+        // 已发/待退/终态：不可走未发作废
+        if (this.isDeviceDispenseCompletedOrPartCompleted(statusEnum)) {
+            return false;
+        }
+        if (DispenseStatus.REFUNDED.getCode().equals(statusEnum)
+            || DispenseStatus.DECLINED.getCode().equals(statusEnum)
+            || DispenseStatus.CANCELLED.getCode().equals(statusEnum)
+            || DispenseStatus.PENDING_REFUND.getCode().equals(statusEnum)
+            || DispenseStatus.SUMMARIZED.getCode().equals(statusEnum)) {
+            return false;
+        }
+        // 草稿/待配/已配/待发等：允许 DECLINED
+        return true;
     }
 
     /**
@@ -1325,5 +1421,523 @@ public class DoctorStationRefundApplicationAppService {
             }
         }
         return unitCode;
+    }
+
+    /**
+     * IF-DRA-04：撤销门诊退费申请（整笔支付；对称还原申请侧药/耗/诊事实后收费行回已结算）。
+     *
+     * @param request 就诊键与撤销行（须覆盖所选支付下全部退款中行）
+     * @return 撤销结果
+     * @throws BusinessException 门禁失败或领域写失败
+     */
+    public CancelOutpatientRefundApplicationResponse cancelOutpatientRefundApplication(
+        CancelOutpatientRefundApplicationRequest request
+    ) {
+        // Gate：撤销体与操作人必须齐全。
+        Long operatorId = this.validateCancelOutpatientRefundApplicationRequestAndGetOperatorId(request);
+        Long encounterId = request.getEncounterId();
+        // Pre：就诊必须存在。
+        this.encounterQueryService.mustGetEncounter(encounterId);
+        List<Long> chargeItemIds = new ArrayList<>();
+        for (CancelRefundApplicationLineItemDto line : request.getLines()) {
+            chargeItemIds.add(line.getChargeItemId());
+        }
+        ChargeItemQueryCommand loadCmd = new ChargeItemQueryCommand();
+        loadCmd.setIds(chargeItemIds);
+        // Pre：批量装载拟撤销收费行。
+        List<ChargeItem> rows = this.chargeItemQueryService.loadChargeItemsByIds(loadCmd);
+        Map<Long, ChargeItem> chargeById = new HashMap<>();
+        for (ChargeItem row : rows) {
+            chargeById.put(row.getId(), row);
+        }
+        for (CancelRefundApplicationLineItemDto line : request.getLines()) {
+            ChargeItem row = chargeById.get(line.getChargeItemId());
+            // Gate：每条提交行必须命中且属当前就诊。
+            if (row == null) {
+                throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_NOT_FOUND, "收费明细不存在");
+            }
+            if (!encounterId.equals(row.getEncounterId())) {
+                throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_RULE_CONFLICT, "收费明细不属于当前就诊");
+            }
+            // Gate：已退款不可撤销（EX-DRA-501）。
+            if (ChargeItemStatus.REFUNDED.getCode().equals(row.getStatusEnum())) {
+                throw new BusinessException(
+                    ErrorCodeConstants.CHARGE_ITEM_INVALID_STATUS,
+                    DoctorStationRefundApplicationConstants.MESSAGE_CODE_REFUND_REVOKE_NOT_ALLOWED
+                        + ": 已退款不可撤销退费，请刷新后重试"
+                );
+            }
+            // Gate：仅退款中可撤。
+            if (!ChargeItemStatus.REFUNDING.getCode().equals(row.getStatusEnum())) {
+                throw new BusinessException(
+                    ErrorCodeConstants.CHARGE_ITEM_INVALID_STATUS,
+                    DoctorStationRefundApplicationConstants.MESSAGE_CODE_REFUND_REVOKE_NOT_ALLOWED
+                        + ": 收费明细已不在退费中，无法撤销退费申请，请刷新后重试"
+                );
+            }
+            // Pre：校验支付锚点与挂载关系（BR-DRA-009）。
+            PaymentReconciliationQueryModel payment =
+                this.paymentReconciliationQueryService.mustGetPayment(line.getPaymentId());
+            if (!encounterId.equals(payment.getEncounterId())) {
+                throw new BusinessException(ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT, "支付流水不属于当前就诊");
+            }
+            List<ChargeItemIdsCollectionQueryModel> onePay =
+                this.paymentReconciliationQueryService.getChargeItemIdsByPayments(
+                    Collections.singletonList(line.getPaymentId()));
+            Set<Long> snap = new HashSet<>();
+            if (!onePay.isEmpty() && onePay.get(0).getChargeItemIds() != null) {
+                for (Long cid : onePay.get(0).getChargeItemIds()) {
+                    if (cid != null) {
+                        snap.add(cid);
+                    }
+                }
+            }
+            if (!snap.contains(line.getChargeItemId())) {
+                throw new BusinessException(
+                    ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT,
+                    "收费明细不属于所选支付流水"
+                );
+            }
+        }
+        // Gate：同一原支付须整单撤销，禁止半取消（BR-DRA-024 / EX-DRA-502）。
+        this.assertWholePaymentRefundingCovered(encounterId, request);
+        // Gate：已退药/已退耗则整笔禁止撤销（BR-DRA-025 / EX-DRA-501）。
+        this.assertNoCompletedMedicationOrDeviceReturn(rows);
+        // Cmd：对称还原药/耗/诊申请侧事实（BR-DRA-026）。
+        this.revokeMedicationSideEffects(rows, operatorId);
+        this.revokeDeviceSideEffects(rows, operatorId);
+        this.revokeServiceSideEffects(rows, operatorId);
+        // Cmd：收费明细退款中回已结算。
+        this.chargeItemDomainService.cancelOutpatientBillRefund(
+            this.doctorStationRefundApplicationMapper.toBatchChargeItemIdsCommand(chargeItemIds, operatorId)
+        );
+        // Asm：封装撤销成功响应。
+        CancelOutpatientRefundApplicationResponse response = new CancelOutpatientRefundApplicationResponse();
+        response.setSuccess(true);
+        response.setSettledChargeItemCount(chargeItemIds.size());
+        return response;
+    }
+
+    /**
+     * IF-DRA-04 Gate：校验撤销请求体字段与操作人会话。
+     *
+     * @param request 撤销请求
+     * @return 操作人主键
+     */
+    private Long validateCancelOutpatientRefundApplicationRequestAndGetOperatorId(
+        CancelOutpatientRefundApplicationRequest request
+    ) {
+        if (request == null || request.getLines() == null || request.getLines().isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "撤销退费行不能为空");
+        }
+        if (request.getEncounterId() == null) {
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "就诊标识不能为空");
+        }
+        for (CancelRefundApplicationLineItemDto line : request.getLines()) {
+            if (line.getPaymentId() == null || line.getChargeItemId() == null) {
+                throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "撤销退费行字段不完整");
+            }
+        }
+        return this.currentPractitionerResolver.requireOperatorId(
+            ErrorCodeConstants.PRACTITIONER_INVALID_ARGUMENT, "当前会话操作人不能为空");
+    }
+
+    /**
+     * IF-DRA-04 Gate：所选支付下全部退款中收费行须被本次提交覆盖（禁止半取消）。
+     *
+     * @param encounterId 就诊主键
+     * @param request     撤销请求
+     * @param chargeById  已装载收费行
+     */
+    private void assertWholePaymentRefundingCovered(
+        Long encounterId,
+        CancelOutpatientRefundApplicationRequest request
+    ) {
+        Map<Long, Set<Long>> submittedByPayment = new LinkedHashMap<>();
+        for (CancelRefundApplicationLineItemDto line : request.getLines()) {
+            submittedByPayment
+                .computeIfAbsent(line.getPaymentId(), key -> new HashSet<>())
+                .add(line.getChargeItemId());
+        }
+        for (Map.Entry<Long, Set<Long>> entry : submittedByPayment.entrySet()) {
+            Long paymentId = entry.getKey();
+            List<ChargeItemIdsCollectionQueryModel> onePay =
+                this.paymentReconciliationQueryService.getChargeItemIdsByPayments(Collections.singletonList(paymentId));
+            Set<Long> snapIds = new HashSet<>();
+            if (!onePay.isEmpty() && onePay.get(0).getChargeItemIds() != null) {
+                for (Long cid : onePay.get(0).getChargeItemIds()) {
+                    if (cid != null) {
+                        snapIds.add(cid);
+                    }
+                }
+            }
+            if (snapIds.isEmpty()) {
+                continue;
+            }
+            ChargeItemQueryCommand snapCmd = new ChargeItemQueryCommand();
+            snapCmd.setIds(new ArrayList<>(snapIds));
+            List<ChargeItem> snapRows = this.chargeItemQueryService.loadChargeItemsByIds(snapCmd);
+            Set<Long> refundingInSnap = new HashSet<>();
+            for (ChargeItem snapRow : snapRows) {
+                if (!encounterId.equals(snapRow.getEncounterId())) {
+                    continue;
+                }
+                if (ChargeItemStatus.REFUNDING.getCode().equals(snapRow.getStatusEnum())) {
+                    refundingInSnap.add(snapRow.getId());
+                }
+            }
+            // Gate：提交集合必须恰好覆盖该支付全部退款中行（EX-DRA-502）。
+            if (!entry.getValue().equals(refundingInSnap)) {
+                throw new BusinessException(
+                    ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT,
+                    DoctorStationRefundApplicationConstants.MESSAGE_CODE_HALF_CANCEL_NOT_SUPPORTED
+                        + ": 同一笔支付须整单撤销退费，不支持只撤部分行"
+                );
+            }
+        }
+    }
+
+    /**
+     * IF-DRA-04 Gate：同批若存在已退药/已退耗对冲发放则整批拒绝。
+     *
+     * @param rows 拟撤销收费行
+     */
+    private void assertNoCompletedMedicationOrDeviceReturn(List<ChargeItem> rows) {
+        Set<Long> originMedReqIds = new LinkedHashSet<>();
+        Set<Long> originDeviceReqIds = new LinkedHashSet<>();
+        for (ChargeItem row : rows) {
+            Long medReqId = this.resolveMedicationRequestId(row);
+            if (medReqId != null) {
+                originMedReqIds.add(medReqId);
+            }
+            Long deviceReqId = this.resolveDeviceRequestId(row);
+            if (deviceReqId != null) {
+                originDeviceReqIds.add(deviceReqId);
+            }
+        }
+        if (!originMedReqIds.isEmpty()) {
+            List<MedicationRequest> negatives =
+                this.medicationRequestQueryService.listByRefundMedicineIdIn(originMedReqIds);
+            Set<Long> negativeIds = new LinkedHashSet<>();
+            for (MedicationRequest negative : negatives) {
+                if (Boolean.TRUE.equals(negative.getIsDeleted())) {
+                    continue;
+                }
+                negativeIds.add(negative.getId());
+            }
+            if (!negativeIds.isEmpty()) {
+                List<MedicationDispense> refundDispenses =
+                    this.medicationDispenseQueryService.listMedicationDispensesByMedReqIds(negativeIds);
+                for (MedicationDispense dispense : refundDispenses) {
+                    // Pre：已软删对冲行不参与已退药门禁。
+                    if (Boolean.TRUE.equals(dispense.getIsDeleted())) {
+                        continue;
+                    }
+                    // Gate：已退药不可撤销（EX-DRA-501）。
+                    if (DispenseStatus.REFUNDED.equals(dispense.getStatusEnum())) {
+                        throw new BusinessException(
+                            ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_STATUS,
+                            DoctorStationRefundApplicationConstants.MESSAGE_CODE_REFUND_REVOKE_NOT_ALLOWED
+                                + ": 已退药不可撤销退费，请刷新后重试"
+                        );
+                    }
+                }
+            }
+        }
+        if (!originDeviceReqIds.isEmpty()) {
+            List<DeviceRequest> negatives =
+                this.deviceRequestQueryService.listByRefundDeviceIdIn(originDeviceReqIds);
+            Set<Long> negativeIds = new LinkedHashSet<>();
+            for (DeviceRequest negative : negatives) {
+                if (Boolean.TRUE.equals(negative.getIsDeleted())) {
+                    continue;
+                }
+                negativeIds.add(negative.getId());
+            }
+            if (!negativeIds.isEmpty()) {
+                List<DeviceDispense> refundDispenses =
+                    this.deviceDispenseQueryService.listDeviceDispensesByDeviceReqIds(negativeIds);
+                for (DeviceDispense dispense : refundDispenses) {
+                    // Pre：已软删对冲行不参与已退耗门禁。
+                    if (Boolean.TRUE.equals(dispense.getIsDeleted())) {
+                        continue;
+                    }
+                    // Gate：已退耗不可撤销（EX-DRA-501）。
+                    if (DispenseStatus.REFUNDED.getCode().equals(dispense.getStatusEnum())) {
+                        throw new BusinessException(
+                            ErrorCodeConstants.DEVICE_DISPENSE_INVALID_STATUS,
+                            DoctorStationRefundApplicationConstants.MESSAGE_CODE_REFUND_REVOKE_NOT_ALLOWED
+                                + ": 已退耗不可撤销退费，请刷新后重试"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * IF-DRA-04 Cmd：还原药品侧（作废待退对冲、恢复因申请而 DECLINED 的未发药、软删负向退药单）。
+     *
+     * @param rows       拟撤销收费行
+     * @param operatorId 操作人
+     */
+    private void revokeMedicationSideEffects(List<ChargeItem> rows, Long operatorId) {
+        Set<Long> originMedReqIds = new LinkedHashSet<>();
+        for (ChargeItem row : rows) {
+            Long medReqId = this.resolveMedicationRequestId(row);
+            if (medReqId != null) {
+                originMedReqIds.add(medReqId);
+            }
+        }
+        if (originMedReqIds.isEmpty()) {
+            return;
+        }
+        List<MedicationRequest> negatives =
+            this.medicationRequestQueryService.listByRefundMedicineIdIn(originMedReqIds);
+        Set<Long> negativeIds = new LinkedHashSet<>();
+        for (MedicationRequest negative : negatives) {
+            if (Boolean.TRUE.equals(negative.getIsDeleted())) {
+                continue;
+            }
+            negativeIds.add(negative.getId());
+        }
+        if (!negativeIds.isEmpty()) {
+            List<MedicationDispense> refundDispenses =
+                this.medicationDispenseQueryService.listMedicationDispensesByMedReqIds(negativeIds);
+            List<com.openhis.health.domain.medication.medicationdispense.command.VoidPendingRefundMedicationDispenseCommand.Item>
+                voidItems = new ArrayList<>();
+            for (MedicationDispense dispense : refundDispenses) {
+                // Pre：已软删行跳过，避免 mustGet 断言未删除失败。
+                if (Boolean.TRUE.equals(dispense.getIsDeleted())) {
+                    continue;
+                }
+                // Cmd：仅作废仍待退药的对冲行。
+                if (DispenseStatus.PENDING_REFUND.equals(dispense.getStatusEnum())) {
+                    com.openhis.health.domain.medication.medicationdispense.command.VoidPendingRefundMedicationDispenseCommand.Item
+                        item =
+                        new com.openhis.health.domain.medication.medicationdispense.command.VoidPendingRefundMedicationDispenseCommand.Item();
+                    item.setId(dispense.getId());
+                    voidItems.add(item);
+                }
+            }
+            if (!voidItems.isEmpty()) {
+                com.openhis.health.domain.medication.medicationdispense.command.VoidPendingRefundMedicationDispenseCommand
+                    voidCmd =
+                    new com.openhis.health.domain.medication.medicationdispense.command.VoidPendingRefundMedicationDispenseCommand();
+                voidCmd.setOperatorId(operatorId);
+                voidCmd.setItems(voidItems);
+                this.medicationDispenseDomainService.voidPendingRefundMedicationDispense(voidCmd);
+            }
+            com.openhis.health.domain.medication.medicationrequest.command.VoidOpenRefundMedicationOrderCommand
+                voidOrderCmd =
+                new com.openhis.health.domain.medication.medicationrequest.command.VoidOpenRefundMedicationOrderCommand();
+            voidOrderCmd.setOperatorId(operatorId);
+            voidOrderCmd.setRefundRequestIds(new ArrayList<>(negativeIds));
+            this.medicationRequestDomainService.voidOpenRefundMedicationOrder(voidOrderCmd);
+        }
+        List<MedicationDispense> originDispenses =
+            this.medicationDispenseQueryService.listMedicationDispensesByMedReqIds(originMedReqIds);
+        List<com.openhis.health.domain.medication.medicationdispense.command.RestoreDeclinedMedicationDispenseAfterRefundRevokeCommand.Item>
+            restoreItems = new ArrayList<>();
+        for (MedicationDispense dispense : originDispenses) {
+            // Pre：已软删原发放不恢复。
+            if (Boolean.TRUE.equals(dispense.getIsDeleted())) {
+                continue;
+            }
+            // Cmd：恢复申请时作废的未发药行至待发药。
+            if (!DispenseStatus.DECLINED.equals(dispense.getStatusEnum())) {
+                continue;
+            }
+            if (!DoctorStationRefundApplicationConstants.MEDICATION_DISPENSE_NOT_PERFORMED_REASON_OUTPATIENT_REFUND_APP
+                .equals(dispense.getNotPerformedReasonEnum())) {
+                continue;
+            }
+            com.openhis.health.domain.medication.medicationdispense.command.RestoreDeclinedMedicationDispenseAfterRefundRevokeCommand.Item
+                item =
+                new com.openhis.health.domain.medication.medicationdispense.command.RestoreDeclinedMedicationDispenseAfterRefundRevokeCommand.Item();
+            item.setId(dispense.getId());
+            item.setExpectedNotPerformedReasonEnum(
+                DoctorStationRefundApplicationConstants.MEDICATION_DISPENSE_NOT_PERFORMED_REASON_OUTPATIENT_REFUND_APP);
+            restoreItems.add(item);
+        }
+        if (!restoreItems.isEmpty()) {
+            com.openhis.health.domain.medication.medicationdispense.command.RestoreDeclinedMedicationDispenseAfterRefundRevokeCommand
+                restoreCmd =
+                new com.openhis.health.domain.medication.medicationdispense.command.RestoreDeclinedMedicationDispenseAfterRefundRevokeCommand();
+            restoreCmd.setOperatorId(operatorId);
+            restoreCmd.setItems(restoreItems);
+            this.medicationDispenseDomainService.restoreDeclinedMedicationDispenseAfterRefundRevoke(restoreCmd);
+        }
+        // Cmd：软删申请退费时 reopen 产生的草稿及其未发发放，避免撤销后医嘱列表残留脏草稿。
+        List<MedicationRequest> reopenDrafts = this.medicationRequestQueryService.listByBasedOnAnchors(
+            TableNameConstants.MED_MEDICATION_REQUEST, originMedReqIds);
+        for (MedicationRequest reopenDraft : reopenDrafts) {
+            if (Boolean.TRUE.equals(reopenDraft.getIsDeleted())) {
+                continue;
+            }
+            if (!RequestStatus.DRAFT.getCode().equals(reopenDraft.getStatusEnum())) {
+                continue;
+            }
+            // Cmd：释占/软删重开草稿下的草稿或待发发放。
+            com.openhis.health.domain.medication.medicationdispense.command.ReleaseDispenseReserveCommand releaseCmd =
+                new com.openhis.health.domain.medication.medicationdispense.command.ReleaseDispenseReserveCommand();
+            releaseCmd.setMedReqId(reopenDraft.getId());
+            releaseCmd.setOperatorId(operatorId);
+            this.medicationDispenseDomainService.releaseDispenseReserve(releaseCmd);
+        }
+        com.openhis.health.domain.medication.medicationrequest.command.VoidReopenedMedReqDraftCommand voidReopenCmd =
+            new com.openhis.health.domain.medication.medicationrequest.command.VoidReopenedMedReqDraftCommand();
+        voidReopenCmd.setOperatorId(operatorId);
+        voidReopenCmd.setOriginRequestIds(new ArrayList<>(originMedReqIds));
+        this.medicationRequestDomainService.voidReopenedDraftsAfterOutpatientRefundRevoke(voidReopenCmd);
+    }
+
+    /**
+     * IF-DRA-04 Cmd：还原耗材侧（作废待退对冲、恢复因申请而 DECLINED 的未发耗、软删负向退耗单）。
+     *
+     * @param rows       拟撤销收费行
+     * @param operatorId 操作人
+     */
+    private void revokeDeviceSideEffects(List<ChargeItem> rows, Long operatorId) {
+        Set<Long> originDeviceReqIds = new LinkedHashSet<>();
+        for (ChargeItem row : rows) {
+            Long deviceReqId = this.resolveDeviceRequestId(row);
+            if (deviceReqId != null) {
+                originDeviceReqIds.add(deviceReqId);
+            }
+        }
+        if (originDeviceReqIds.isEmpty()) {
+            return;
+        }
+        List<DeviceRequest> negatives =
+            this.deviceRequestQueryService.listByRefundDeviceIdIn(originDeviceReqIds);
+        Set<Long> negativeIds = new LinkedHashSet<>();
+        for (DeviceRequest negative : negatives) {
+            if (Boolean.TRUE.equals(negative.getIsDeleted())) {
+                continue;
+            }
+            negativeIds.add(negative.getId());
+        }
+        if (!negativeIds.isEmpty()) {
+            List<DeviceDispense> refundDispenses =
+                this.deviceDispenseQueryService.listDeviceDispensesByDeviceReqIds(negativeIds);
+            List<com.openhis.health.domain.workflow.devicedispense.command.VoidPendingRefundDeviceDispenseCommand.Item>
+                voidItems = new ArrayList<>();
+            for (DeviceDispense dispense : refundDispenses) {
+                // Pre：已软删行跳过。
+                if (Boolean.TRUE.equals(dispense.getIsDeleted())) {
+                    continue;
+                }
+                if (DispenseStatus.PENDING_REFUND.getCode().equals(dispense.getStatusEnum())) {
+                    com.openhis.health.domain.workflow.devicedispense.command.VoidPendingRefundDeviceDispenseCommand.Item
+                        item =
+                        new com.openhis.health.domain.workflow.devicedispense.command.VoidPendingRefundDeviceDispenseCommand.Item();
+                    item.setId(dispense.getId());
+                    voidItems.add(item);
+                }
+            }
+            if (!voidItems.isEmpty()) {
+                com.openhis.health.domain.workflow.devicedispense.command.VoidPendingRefundDeviceDispenseCommand voidCmd =
+                    new com.openhis.health.domain.workflow.devicedispense.command.VoidPendingRefundDeviceDispenseCommand();
+                voidCmd.setOperatorId(operatorId);
+                voidCmd.setItems(voidItems);
+                this.deviceDispenseDomainService.voidPendingRefundDeviceDispense(voidCmd);
+            }
+            com.openhis.health.domain.workflow.devicerequest.command.VoidOpenRefundDeviceOrderCommand voidOrderCmd =
+                new com.openhis.health.domain.workflow.devicerequest.command.VoidOpenRefundDeviceOrderCommand();
+            voidOrderCmd.setOperatorId(operatorId);
+            voidOrderCmd.setRefundRequestIds(new ArrayList<>(negativeIds));
+            this.deviceRequestDomainService.voidOpenRefundDeviceOrder(voidOrderCmd);
+        }
+        List<DeviceDispense> originDispenses =
+            this.deviceDispenseQueryService.listDeviceDispensesByDeviceReqIds(originDeviceReqIds);
+        List<com.openhis.health.domain.workflow.devicedispense.command.RestoreDeclinedDeviceDispenseAfterRefundRevokeCommand.Item>
+            restoreItems = new ArrayList<>();
+        for (DeviceDispense dispense : originDispenses) {
+            // Pre：已软删原发放不恢复。
+            if (Boolean.TRUE.equals(dispense.getIsDeleted())) {
+                continue;
+            }
+            if (!DispenseStatus.DECLINED.getCode().equals(dispense.getStatusEnum())) {
+                continue;
+            }
+            if (!DoctorStationRefundApplicationConstants.DEVICE_DISPENSE_NOT_PERFORMED_REASON_OUTPATIENT_REFUND_APP
+                .equals(dispense.getNotPerformedReasonEnum())) {
+                continue;
+            }
+            com.openhis.health.domain.workflow.devicedispense.command.RestoreDeclinedDeviceDispenseAfterRefundRevokeCommand.Item
+                item =
+                new com.openhis.health.domain.workflow.devicedispense.command.RestoreDeclinedDeviceDispenseAfterRefundRevokeCommand.Item();
+            item.setId(dispense.getId());
+            item.setExpectedNotPerformedReasonEnum(
+                DoctorStationRefundApplicationConstants.DEVICE_DISPENSE_NOT_PERFORMED_REASON_OUTPATIENT_REFUND_APP);
+            restoreItems.add(item);
+        }
+        if (!restoreItems.isEmpty()) {
+            com.openhis.health.domain.workflow.devicedispense.command.RestoreDeclinedDeviceDispenseAfterRefundRevokeCommand
+                restoreCmd =
+                new com.openhis.health.domain.workflow.devicedispense.command.RestoreDeclinedDeviceDispenseAfterRefundRevokeCommand();
+            restoreCmd.setOperatorId(operatorId);
+            restoreCmd.setItems(restoreItems);
+            this.deviceDispenseDomainService.restoreDeclinedDeviceDispenseAfterRefundRevoke(restoreCmd);
+        }
+    }
+
+    /**
+     * IF-DRA-04 Cmd：还原诊疗侧（软删负向退诊疗单；恢复因申请而停嘱的原单）。
+     *
+     * @param rows       拟撤销收费行
+     * @param operatorId 操作人
+     */
+    private void revokeServiceSideEffects(List<ChargeItem> rows, Long operatorId) {
+        Set<Long> originServiceIds = new LinkedHashSet<>();
+        for (ChargeItem row : rows) {
+            if (TableNameConstants.WKF_SERVICE_REQUEST.equals(row.getServiceTable()) && row.getServiceId() != null) {
+                originServiceIds.add(row.getServiceId());
+            }
+        }
+        if (originServiceIds.isEmpty()) {
+            return;
+        }
+        List<com.openhis.health.domain.workflow.servicerequest.entity.ServiceRequest> negatives =
+            this.serviceRequestQueryService.listByRefundServiceIdIn(originServiceIds);
+        Set<Long> negativeIds = new LinkedHashSet<>();
+        // 已建负向退诊疗单的原申请主键：申请走「已完成建负向」路径，撤销时不得误恢复原单。
+        Set<Long> originsWithNegative = new LinkedHashSet<>();
+        for (com.openhis.health.domain.workflow.servicerequest.entity.ServiceRequest negative : negatives) {
+            if (Boolean.TRUE.equals(negative.getIsDeleted())) {
+                continue;
+            }
+            negativeIds.add(negative.getId());
+            if (negative.getRefundServiceId() != null) {
+                originsWithNegative.add(negative.getRefundServiceId());
+            }
+        }
+        Set<Long> stopResumeIds = new LinkedHashSet<>();
+        for (Long originId : originServiceIds) {
+            // Cmd：仅「未完成 stop 原单」路径可恢复；有负向单说明申请时为已完成诊疗，原单应保持完成态。
+            if (originsWithNegative.contains(originId)) {
+                continue;
+            }
+            ServiceRequestQueryModel sr = this.serviceRequestQueryService.mustGetServiceRequest(originId);
+            if (RequestStatus.STOPPED.getCode().equals(sr.getStatusEnum())) {
+                stopResumeIds.add(originId);
+            }
+        }
+        if (!negativeIds.isEmpty()) {
+            com.openhis.health.domain.workflow.servicerequest.command.VoidOpenRefundServiceOrderCommand voidCmd =
+                new com.openhis.health.domain.workflow.servicerequest.command.VoidOpenRefundServiceOrderCommand();
+            voidCmd.setOperatorId(operatorId);
+            voidCmd.setRefundRequestIds(new ArrayList<>(negativeIds));
+            this.serviceRequestDomainService.voidOpenRefundServiceOrder(voidCmd);
+        }
+        if (!stopResumeIds.isEmpty()) {
+            com.openhis.health.domain.workflow.servicerequest.command.ResumeStoppedServiceRequestForOutpatientRefundRevokeCommand
+                resumeCmd =
+                new com.openhis.health.domain.workflow.servicerequest.command.ResumeStoppedServiceRequestForOutpatientRefundRevokeCommand();
+            resumeCmd.setOperatorId(operatorId);
+            resumeCmd.setServiceRequestIds(new ArrayList<>(stopResumeIds));
+            this.serviceRequestDomainService.resumeStoppedServiceRequestForOutpatientRefundRevoke(resumeCmd);
+        }
     }
 }

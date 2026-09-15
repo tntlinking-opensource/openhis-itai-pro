@@ -82,9 +82,6 @@ export interface MedicationDispenseSummaryRowDto {
   purchaseNetAmount?: number | string;
   /** 售价净额 */
   saleNetAmount?: number | string;
-  /** 净金额（售价别名） */
-  netAmount?: number | string;
-  lineCount?: number;
 }
 
 export interface SummarizeMedicationDispenseReportResponse {
@@ -94,8 +91,6 @@ export interface SummarizeMedicationDispenseReportResponse {
   purchaseTotalAmount?: number | string;
   /** 售价净额合计 */
   saleTotalAmount?: number | string;
-  /** 净金额合计（售价别名） */
-  totalAmount?: number | string;
 }
 
 export interface PageMedicationDispenseReportDetailParams
@@ -132,15 +127,15 @@ export interface MedicationDispenseDetailRowDto {
   quantity?: number | string;
   unitCode?: string;
   unitText?: string;
-  /** 单价（售价别名） */
-  unitPrice?: number | string;
-  /** 金额（售价别名） */
-  totalAmount?: number | string;
   purchaseUnitPrice?: number | string;
   purchaseAmount?: number | string;
   saleUnitPrice?: number | string;
   saleAmount?: number | string;
   lotNumber?: string;
+  /** 收费锚点批号（账批质检） */
+  chargeLotNumber?: string;
+  /** 账批≠实发批（仅质检标红；金额口径不变） */
+  lotMismatch?: boolean;
   traceNo?: string;
   departmentId?: string;
   departmentName?: string;

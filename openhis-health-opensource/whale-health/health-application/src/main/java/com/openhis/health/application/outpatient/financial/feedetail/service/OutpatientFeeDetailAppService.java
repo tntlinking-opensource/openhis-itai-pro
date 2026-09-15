@@ -51,6 +51,7 @@ import com.openhis.health.application.shared.product.ProductDefinitionDisplayTer
 import com.openhis.health.application.shared.report.PatientSettlementContextRow;
 import com.openhis.health.application.shared.report.ChargeItemOrderingDoctorFromRequestSupport;
 import com.openhis.health.application.shared.report.FeeDetailMatchedScopePurchaseTotalSupport;
+import com.openhis.health.application.shared.report.ReportDateTimeWindowSupport;
 import com.openhis.health.application.shared.report.ReportPatientSettlementContextAssembler;
 import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.domain.administration.product.support.ProductDefinitionDisplaySupport;
@@ -68,6 +69,8 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -118,7 +121,7 @@ public class OutpatientFeeDetailAppService {
     /** 号源类型（挂号费）单条回落读侧。 */
     private final HealthcareServiceQueryService healthcareServiceQueryService;
 
-    /** payment enterer_id 匹配（Practitioner + 用户主键存量兼容）。 */
+    /** payment enterer_id 匹配（仅 Practitioner 主键，**BR-OPC-016**）。 */
     private final PaymentEntererMatchResolver paymentEntererMatchResolver;
 
     /** 术语下拉与单位译文。 */
@@ -346,15 +349,24 @@ public class OutpatientFeeDetailAppService {
         String tradeDirection,
         Integer pageNo,
         Integer pageSize) {
-        // Gate：起止日期均须填写
+        // Gate：起止日期/时刻均须填写
         if (StringUtils.isEmpty(dateFrom) || StringUtils.isEmpty(dateTo)) {
             throw new BusinessException(
                 OutpatientFeeDetailConstants.EX_OP_FDT_102,
                 "请选择有效的查询日期");
         }
-        LocalDate from = LocalDate.parse(dateFrom.trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
-        LocalDate to = LocalDate.parse(dateTo.trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
-        // Gate：止日不得早于起日
+        LocalDateTime from;
+        LocalDateTime to;
+        try {
+            // 报表可传时刻；仅日历日时扩成 00:00:00～23:59:59
+            from = ReportDateTimeWindowSupport.parseInclusiveStart(dateFrom);
+            to = ReportDateTimeWindowSupport.parseInclusiveEnd(dateTo);
+        } catch (DateTimeParseException ex) {
+            throw new BusinessException(
+                OutpatientFeeDetailConstants.EX_OP_FDT_102,
+                "请选择有效的查询日期");
+        }
+        // Gate：止时刻不得早于起时刻
         if (to.isBefore(from)) {
             throw new BusinessException(
                 OutpatientFeeDetailConstants.EX_OP_FDT_102,
@@ -679,7 +691,10 @@ public class OutpatientFeeDetailAppService {
         if (OutpatientFeeDetailConstants.TRADE_DIRECTION_REFUND.equals(lineDto.getTradeDirection())) {
             signMultiplier = new BigDecimal("-1");
         }
-        Long chargeItemId = chargeItem != null ? chargeItem.getId() : null;
+        Long chargeItemId = null;
+        if (chargeItem != null) {
+            chargeItemId = chargeItem.getId();
+        }
         BigDecimal purchaseUnit = null;
         BigDecimal purchaseAmount = null;
         if (chargeItemId != null) {
@@ -819,7 +834,7 @@ public class OutpatientFeeDetailAppService {
         bundle.patientById = this.patientQueryService.loadPatientEntityMapByIds(patientIds);
         bundle.organizationNameById =
             this.organizationQueryService.findOrganizationNamesByIds(bundle.organizationIds);
-        // Pre：SDD §3.3 步骤 9 — PractitionerQueryService#findAllByIds / mapDisplayNameByEntererIds
+        // Pre：SDD §3.3 步骤 9 — PractitionerQueryService#findAllByIds（enterer 同为医务人员主键）
         bundle.practitionerNameById = this.loadPractitionerNameMap(practitionerIds);
         List<ProductDefinitionBatchLookup> lookupList = new ArrayList<>(productLookups);
         // Pre：SDD §3.3 步骤 10 — ProductDefinitionDisplayTerminologyAssembler#loadAsMap
@@ -901,9 +916,9 @@ public class OutpatientFeeDetailAppService {
     }
 
     /**
-     * 批量解析医务人员展示名（含 entererId 存量兼容）。
+     * 批量解析医务人员展示名（enterer_id / practitioner 主键，**BR-OPC-016**）。
      *
-     * @param practitionerIds 医务人员/enterer 主键集合
+     * @param practitionerIds 医务人员主键集合
      * @return id → 姓名
      */
     private Map<Long, String> loadPractitionerNameMap(Set<Long> practitionerIds) {
@@ -911,16 +926,11 @@ public class OutpatientFeeDetailAppService {
         if (practitionerIds == null || practitionerIds.isEmpty()) {
             return nameById;
         }
+        // Pre：仅按医务人员主键批量取姓名（与 mapDisplayNameByEntererIds 同口径）
         List<Practitioner> practitioners = this.practitionerQueryService.findAllByIds(practitionerIds);
         for (Practitioner practitioner : practitioners) {
             if (practitioner != null && practitioner.getId() != null && StringUtils.isNotEmpty(practitioner.getName())) {
                 nameById.put(practitioner.getId(), practitioner.getName());
-            }
-        }
-        Map<Long, String> entererNames = this.practitionerQueryService.mapDisplayNameByEntererIds(practitionerIds);
-        for (Map.Entry<Long, String> entry : entererNames.entrySet()) {
-            if (entry.getKey() != null && StringUtils.isNotEmpty(entry.getValue())) {
-                nameById.putIfAbsent(entry.getKey(), entry.getValue());
             }
         }
         return nameById;
@@ -1071,7 +1081,7 @@ public class OutpatientFeeDetailAppService {
     }
 
     /**
-     * 收费人筛选写入 payment {@code enterer_id} 白名单（Practitioner + 用户主键存量兼容）。
+     * 收费人筛选写入 payment {@code enterer_id} 白名单（仅 Practitioner 主键，**BR-OPC-016**）。
      *
      * @param query 费用明细分页/导出 Query
      */

@@ -3,6 +3,7 @@ import type { ProcedureLineDto } from '#/api/mrms/types';
 
 import { ElButton, ElDatePicker, ElInput, ElTable, ElTableColumn } from 'element-plus';
 
+import { HOMEPAGE_EMPTY_DISPLAY } from '../homepage.constants';
 import { newProcedureRow } from '../homepage-form.util';
 
 defineOptions({ name: 'HomepageProcedureGrid' });
@@ -59,6 +60,7 @@ function handleRemove(index: number) {
             v-model="row.oprnOprtCode"
             size="small"
             :disabled="props.readonly"
+            :placeholder="HOMEPAGE_EMPTY_DISPLAY"
             @change="markDirty"
           />
         </template>
@@ -69,6 +71,7 @@ function handleRemove(index: number) {
             v-model="row.oprnOprtName"
             size="small"
             :disabled="props.readonly"
+            :placeholder="HOMEPAGE_EMPTY_DISPLAY"
             @change="markDirty"
           />
         </template>
@@ -81,6 +84,7 @@ function handleRemove(index: number) {
             size="small"
             value-format="YYYY-MM-DD HH:mm:ss"
             :disabled="props.readonly"
+            :placeholder="HOMEPAGE_EMPTY_DISPLAY"
             style="width: 100%"
             @change="markDirty"
           />
@@ -92,6 +96,7 @@ function handleRemove(index: number) {
             v-model="row.oprnLevelCode"
             size="small"
             :disabled="props.readonly"
+            :placeholder="HOMEPAGE_EMPTY_DISPLAY"
             @change="markDirty"
           />
         </template>
@@ -102,6 +107,7 @@ function handleRemove(index: number) {
             v-model="row.oprnIncisionCode"
             size="small"
             :disabled="props.readonly"
+            :placeholder="HOMEPAGE_EMPTY_DISPLAY"
             @change="markDirty"
           />
         </template>
@@ -112,6 +118,7 @@ function handleRemove(index: number) {
             v-model="row.healGradeCode"
             size="small"
             :disabled="props.readonly"
+            :placeholder="HOMEPAGE_EMPTY_DISPLAY"
             @change="markDirty"
           />
         </template>
@@ -122,6 +129,7 @@ function handleRemove(index: number) {
             v-model="row.anstWayCode"
             size="small"
             :disabled="props.readonly"
+            :placeholder="HOMEPAGE_EMPTY_DISPLAY"
             @change="markDirty"
           />
         </template>
@@ -132,6 +140,7 @@ function handleRemove(index: number) {
             v-model="row.operDrName"
             size="small"
             :disabled="props.readonly"
+            :placeholder="HOMEPAGE_EMPTY_DISPLAY"
             @change="markDirty"
           />
         </template>
@@ -142,6 +151,7 @@ function handleRemove(index: number) {
             v-model="row.anstDrName"
             size="small"
             :disabled="props.readonly"
+            :placeholder="HOMEPAGE_EMPTY_DISPLAY"
             @change="markDirty"
           />
         </template>

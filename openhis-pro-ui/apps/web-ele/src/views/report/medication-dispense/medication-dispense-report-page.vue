@@ -30,6 +30,8 @@ import {
   ElTag,
 } from 'element-plus';
 
+import dayjs from 'dayjs';
+
 import {
   exportMedicationDispenseReportApi,
   loadMedicationDispenseReportPageInitApi,
@@ -53,7 +55,7 @@ import {
   isReportRefundBySignedFields,
   mapReportPrintRow,
   REPORT_QUERY_CONTROL,
-  REPORT_QUERY_CONTROL_DATERANGE,
+  REPORT_QUERY_CONTROL_DATETIMERANGE,
   REPORT_TABLE_AMOUNT_CELL,
   REPORT_TABLE_NUM_CELL,
   ReportElTable,
@@ -64,13 +66,14 @@ import {
   ReportQueryBar,
   reportPrintFieldsOf,
   ReportTableScroll,
-  resolveReportRefundRowClassName,
+  resolveReportDetailRowClassName,
   sumReportPurchaseCornerFromRows,
   useReportListPrint,
 } from '#/views/report/shared';
 import {
-  buildReportDateRangeShortcuts,
-  normalizeReportDateRangeYmd,
+  buildReportDateTimeRangeShortcuts,
+  normalizeReportDateTime,
+  toReportApiDateTimeRangePrecise,
 } from '#/views/report/shared/report-date-range-shortcuts';
 import { optionDtosToSelectItems } from '#/views/report/shared/report-format';
 
@@ -167,24 +170,29 @@ const departmentColumnLabel = computed(() =>
   queryParams.sourceCode === SOURCE_CODE_DEPT_ISSUE ? '领用科室' : '开立科室',
 );
 
-const dateRangeShortcuts = buildReportDateRangeShortcuts();
+const dateTimeRangeShortcuts = buildReportDateTimeRangeShortcuts();
+/** 日历点选日期时默认起 00:00:00、止 23:59:59（快捷项已自带时分秒）。 */
+const dateTimeDefaultTime: [Date, Date] = [
+  new Date(2000, 0, 1, 0, 0, 0),
+  new Date(2000, 0, 1, 23, 59, 59),
+];
 
 /** 查询条 model（避免模板内 as 断言触发 vue parser）。 */
 const queryBarModel = computed(() => queryParams as Record<string, unknown>);
 
-/** 业务日期与 daterange 双向绑定。 */
+/** 业务时间与 datetimerange 双向绑定（界面精确到秒）。 */
 const businessDateRange = computed({
   get() {
-    const start = normalizeReportDateRangeYmd(queryParams.dateFrom);
-    const end = normalizeReportDateRangeYmd(queryParams.dateTo);
+    const start = normalizeReportDateTime(queryParams.dateFrom, 'start');
+    const end = normalizeReportDateTime(queryParams.dateTo, 'end');
     if (start && end) {
       return [start, end] as [string, string];
     }
     return null;
   },
   set(value: [string, string] | null) {
-    queryParams.dateFrom = value?.[0] ?? '';
-    queryParams.dateTo = value?.[1] ?? '';
+    queryParams.dateFrom = value?.[0] ? normalizeReportDateTime(value[0], 'start') || '' : '';
+    queryParams.dateTo = value?.[1] ? normalizeReportDateTime(value[1], 'end') || '' : '';
   },
 });
 
@@ -371,8 +379,11 @@ const { run: runInit, loading: initLoading } = useRequest(
       organizationOptions.value = optionDtosToSelectItems(data?.organizationOptions);
       feeNatureOptions.value = optionDtosToSelectItems(data?.feeNatureOptions);
       queryParams.dateFrom =
-        normalizeReportDateRangeYmd(data?.defaultDateFrom) || queryParams.dateFrom;
-      queryParams.dateTo = normalizeReportDateRangeYmd(data?.defaultDateTo) || queryParams.dateTo;
+        normalizeReportDateTime(data?.defaultDateFrom, 'start') ||
+        dayjs().startOf('day').format('YYYY-MM-DD HH:mm:ss');
+      queryParams.dateTo =
+        normalizeReportDateTime(data?.defaultDateTo, 'end') ||
+        dayjs().endOf('day').format('YYYY-MM-DD HH:mm:ss');
       const firstDim = summaryDimensionOptions.value[0]?.value;
       if (firstDim) {
         queryParams.summaryDimension = String(firstDim);
@@ -506,13 +517,35 @@ function isMedicationDispenseRefundRow(
   ]);
 }
 
-/** 退药冲减整行标红。 */
+/**
+ * 退药冲减整行标红；账批≠实发批加 warning 底色（金额口径不变）。
+ *
+ * @param row 明细或汇总行
+ */
 function resolveDispenseRowClassName({
   row,
 }: {
   row: MedicationDispenseDetailRowDto | MedicationDispenseSummaryRowDto;
 }): string {
-  return resolveReportRefundRowClassName(isMedicationDispenseRefundRow(row));
+  const detail = row as MedicationDispenseDetailRowDto;
+  return resolveReportDetailRowClassName({
+    isRefund: isMedicationDispenseRefundRow(row),
+    lotMismatch: detail.lotMismatch === true,
+  });
+}
+
+/**
+ * 批号列展示：不一致时附收费批号提示（质检；不改正额）。
+ *
+ * @param row 明细分页行
+ */
+function formatLotNumberCell(row: MedicationDispenseDetailRowDto): string {
+  const dispenseLot = row.lotNumber?.trim() || '—';
+  // 账批≠实发批：主列仍是实发批，括号展示账批便于排查
+  if (row.lotMismatch === true && row.chargeLotNumber?.trim()) {
+    return `${dispenseLot}（账批 ${row.chargeLotNumber.trim()}）`;
+  }
+  return dispenseLot;
 }
 
 /** 来源 Tag 样式（按 code，不用展示文案分支）。 */
@@ -559,12 +592,17 @@ function resolveEncounterNo(row: MedicationDispenseDetailRowDto) {
   return row.encounterBusNo || '—';
 }
 
-/** 校验日期并组装筛选体。 */
+/** 校验业务时间并组装筛选体。 */
 function buildFilterPayload() {
-  const dispenseDateFrom = normalizeReportDateRangeYmd(queryParams.dateFrom);
-  const dispenseDateTo = normalizeReportDateRangeYmd(queryParams.dateTo);
+  const dateRange = toReportApiDateTimeRangePrecise(queryParams.dateFrom, queryParams.dateTo);
+  const dispenseDateFrom = dateRange.start;
+  const dispenseDateTo = dateRange.end;
   if (!dispenseDateFrom || !dispenseDateTo) {
-    ElMessage.warning('请选择业务日期');
+    ElMessage.warning('请选择业务时间');
+    return null;
+  }
+  if (dayjs(dispenseDateFrom).isAfter(dayjs(dispenseDateTo))) {
+    ElMessage.warning('开始时间不能晚于结束时间');
     return null;
   }
   return {
@@ -704,17 +742,19 @@ onMounted(async () => {
       <template #query>
         <ReportQueryBar :model="queryBarModel">
           <template #fields>
-            <ElFormItem label="业务日期">
+            <ElFormItem label="业务时间">
               <ElDatePicker
                 v-model="businessDateRange"
-                type="daterange"
-                value-format="YYYY-MM-DD"
+                type="datetimerange"
+                value-format="YYYY-MM-DD HH:mm:ss"
+                format="YYYY-MM-DD HH:mm:ss"
                 range-separator="至"
-                start-placeholder="开始"
-                end-placeholder="结束"
+                start-placeholder="开始时间"
+                end-placeholder="结束时间"
                 :clearable="false"
-                :shortcuts="dateRangeShortcuts"
-                :class="[REPORT_QUERY_CONTROL, REPORT_QUERY_CONTROL_DATERANGE]"
+                :default-time="dateTimeDefaultTime"
+                :shortcuts="dateTimeRangeShortcuts"
+                :class="[REPORT_QUERY_CONTROL, REPORT_QUERY_CONTROL_DATETIMERANGE]"
                 @change="handleQuery"
               />
             </ElFormItem>
@@ -1192,13 +1232,18 @@ onMounted(async () => {
                 </template>
               </ElTableColumn>
               <ElTableColumn
-                prop="lotNumber"
                 label="批号"
-                width="110"
+                width="140"
                 align="center"
                 header-align="center"
                 show-overflow-tooltip
-              />
+              >
+                <template #default="{ row }">
+                  <span :class="{ 'text-[var(--el-color-danger)]': row.lotMismatch === true }">
+                    {{ formatLotNumberCell(row) }}
+                  </span>
+                </template>
+              </ElTableColumn>
               <ElTableColumn label="追溯码" width="120" align="center" header-align="center">
                 <template #default="{ row }">
                   <TraceCodeTooltip :value="row.traceNo" />

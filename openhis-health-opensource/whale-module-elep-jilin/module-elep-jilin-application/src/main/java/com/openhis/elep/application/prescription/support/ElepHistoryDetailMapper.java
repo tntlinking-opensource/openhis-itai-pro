@@ -6,18 +6,27 @@ package com.openhis.elep.application.prescription.support;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
-import com.openhis.elep.domain.prescription.result.ElepHistoryDetail;
 import com.openhis.elep.domain.prescription.entity.YbElepPrescription;
 import com.openhis.elep.domain.prescription.entity.YbElepPrescriptionSnapshot;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.elep.domain.prescription.result.ElepHistoryDetail;
 
+import static com.openhis.whale.core.application.util.StringUtils.isEmpty;
 
+/**
+ * 电子处方详情映射：主表 + 快照结构化字段，不透出密钥。
+ */
 public final class ElepHistoryDetailMapper {
 
     private ElepHistoryDetailMapper() {
     }
 
-    @SuppressWarnings("unchecked")
+    /**
+     * 组装医生站详情（含审方、慢病与药品用法）。
+     *
+     * @param rx       主表
+     * @param snapshot 快照，可空
+     * @return 详情
+     */
     public static ElepHistoryDetail toDetail(
             YbElepPrescription rx,
             YbElepPrescriptionSnapshot snapshot) {
@@ -37,10 +46,17 @@ public final class ElepHistoryDetailMapper {
                 .setPrscDrName(rx.getPrscDrName())
                 .setMainDiagName(rx.getMainDiagName())
                 .setDrugSummary(rx.getDrugSummary())
+                .setMedType(rx.getMedType())
+                .setDiseCodg(rx.getDiseCodg())
+                .setDiseName(rx.getDiseName())
+                .setValiDays(rx.getValiDays())
+                .setPharCode(rx.getPharCode())
+                .setPharName(rx.getPharName())
+                .setMdtrtId(rx.getMdtrtId())
                 .setCanContinuationRx(ElepPrescriptionContinuationRules.canContinuation(rx));
         if (snapshot != null) {
             dto.setPdfFilePath(snapshot.getPdfFilePath());
-            if (StringUtils.isNotBlank(snapshot.getUploadRequestJson())) {
+            if (!isEmpty(snapshot.getUploadRequestJson())) {
                 JSONObject body = JSONObject.parseObject(snapshot.getUploadRequestJson());
                 dto.setUploadRequest(body);
                 parseDrugLines(body, dto);
@@ -50,6 +66,12 @@ public final class ElepHistoryDetailMapper {
         return dto;
     }
 
+    /**
+     * 从快照解析药品行用法。
+     *
+     * @param body 拟 A0001 JSON
+     * @param dto  详情
+     */
     private static void parseDrugLines(JSONObject body, ElepHistoryDetail dto) {
         JSONArray lines = body.getJSONArray("rxdrugdetail");
         if (lines == null) {
@@ -63,11 +85,31 @@ public final class ElepHistoryDetailMapper {
             dto.getDrugLines().add(new ElepHistoryDetail.DrugLine()
                     .setLineNo(i + 1)
                     .setMedListCodg(line.getString("medListCodg"))
-                    .setDrugName(line.getString("drugName"))
-                    .setDrugSpec(line.getString("drugSpec")));
+                    .setDrugName(firstNonEmpty(line.getString("drugName"), line.getString("drugGenname")))
+                    .setDrugSpec(line.getString("drugSpec"))
+                    .setDrugDosform(line.getString("drugDosform"))
+                    .setDrugCnt(line.getString("drugCnt"))
+                    .setDrugDosunt(line.getString("drugDosunt"))
+                    .setMedcWayCodg(line.getString("medcWayCodg"))
+                    .setMedcWayDscr(line.getString("medcWayDscr"))
+                    .setMedcDays(line.getString("medcDays"))
+                    .setSinDoscnt(line.getString("sinDoscnt"))
+                    .setSinDosunt(line.getString("sinDosunt"))
+                    .setUsedFrquCodg(line.getString("usedFrquCodg"))
+                    .setUsedFrquName(line.getString("usedFrquName"))
+                    .setMedcBegntime(line.getString("medcBegntime"))
+                    .setMedcEndtime(line.getString("medcEndtime"))
+                    .setPrdrName(line.getString("prdrName"))
+                    .setDrugProdname(line.getString("drugProdname")));
         }
     }
 
+    /**
+     * 从快照解析主诊断。
+     *
+     * @param body 拟 A0001 JSON
+     * @param dto  详情
+     */
     private static void parseDiagnosis(JSONObject body, ElepHistoryDetail dto) {
         JSONObject diseinfo = body.getJSONObject("diseinfo");
         if (diseinfo == null) {
@@ -76,5 +118,22 @@ public final class ElepHistoryDetailMapper {
         dto.setDiagnosis(new ElepHistoryDetail.DiagnosisInfo()
                 .setDiagCode(diseinfo.getString("diagCode"))
                 .setDiagName(diseinfo.getString("diagName")));
+    }
+
+    /**
+     * 取第一个非空串。
+     *
+     * @param first  优先
+     * @param second 回落
+     * @return 非空或 null
+     */
+    private static String firstNonEmpty(String first, String second) {
+        if (!isEmpty(first)) {
+            return first;
+        }
+        if (!isEmpty(second)) {
+            return second;
+        }
+        return null;
     }
 }

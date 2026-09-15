@@ -14,6 +14,8 @@ import lombok.experimental.Accessors;
 
 /**
  * 分页查询点评记录请求（IF-PRV-02）。
+ *
+ * <p>分页与关键字继承父类：{@code keyword} 表示处方号或点评业务号模糊（OR）。</p>
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -44,11 +46,11 @@ public class PageReviewsRequest extends AbstractHealthPageRequest {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long reviewerId;
 
-    /** 处方号模糊关键字。 */
-    @Schema(description = "处方号关键字")
-    private String prescriptionNoKeyword;
+    /** 开方日起（yyyy-MM-dd）；与止成对；空=不限。 */
+    @Schema(description = "开方日起（yyyy-MM-dd）")
+    private String openedDateFrom;
 
-    /** 业务号模糊关键字。 */
-    @Schema(description = "业务号关键字")
-    private String busNoKeyword;
+    /** 开方日止（yyyy-MM-dd）；与起成对；空=不限。 */
+    @Schema(description = "开方日止（yyyy-MM-dd）")
+    private String openedDateTo;
 }

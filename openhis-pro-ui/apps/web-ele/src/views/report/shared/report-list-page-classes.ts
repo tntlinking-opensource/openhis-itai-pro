@@ -10,6 +10,9 @@ export const REPORT_TABLE_AMOUNT_CELL = 'report-list-page__amount-cell';
 /** 退费/退药/冲减行：整行文字 danger（见 report-el-table / report-refund-row）。 */
 export const REPORT_TABLE_REFUND_ROW = 'report-list-page__refund-row';
 
+/** 账批≠实发批：整行 warning 底色（见 report-el-table；金额口径不变）。 */
+export const REPORT_TABLE_LOT_MISMATCH_ROW = 'report-list-page__lot-mismatch-row';
+
 export const REPORT_TABLE_BUSNO = 'report-list-page__busno';
 
 export const REPORT_TABLE_EMPTY_VALUE = 'report-list-page__empty-value';

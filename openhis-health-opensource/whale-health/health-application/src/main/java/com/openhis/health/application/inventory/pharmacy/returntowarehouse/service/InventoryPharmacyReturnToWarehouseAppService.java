@@ -261,7 +261,7 @@ public class InventoryPharmacyReturnToWarehouseAppService {
             log.warn("batchGetProductByIds degraded for pharmacy return to warehouse detail", ex);
             products = new HashMap<>();
         }
-        // Asm：映射详情头与明细行
+        // Asm：映射详情头与明细行（品名/规格/厂家 + productCatalog）
         return this.returnToWarehouseMapper.toGetReturnToWarehouseDetailResponse(lines, products);
     }
 

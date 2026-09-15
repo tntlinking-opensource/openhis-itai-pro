@@ -57,6 +57,8 @@ export interface PrintPendingRow {
   patientName: string;
   title: string;
   subtitle?: string;
+  /** 频次展示文案（仅展示，禁止用文案做分支） */
+  frequencyDisplay?: string;
   timeText?: string;
   /** 业务状态 code（已执行/待打等），列表 Tag / 业务筛选用 */
   statusCode: PrintPendingStatusCode;
@@ -76,6 +78,10 @@ export interface PrintPendingRow {
   orderId?: string;
   /** 输液成组号 */
   groupId?: string;
+  /** 频次 code（拆张用；禁止用 frequencyDisplay 推断） */
+  rateCode?: string;
+  /** 查询日去重计划点数（rateCode 缺失时作每日次数回落） */
+  daySlotCount?: number;
   /** 是否输液（患者用药单筛选用；标记 infusionFlag 或 用法 methodCode） */
   infusionFlag?: boolean;
   /** 合管检验设备主键（采血贴按 device 分组） */
@@ -112,7 +118,8 @@ export const PRINT_DOC_TYPES: PrintDocTypeOption[] = [
     category: 'care',
     scope: 'multiple',
     previewKind: 'paper',
-    description: '按患者、按日打印；默认当天，含待执行/已执行输液药品，无药不可打',
+    description:
+      '按日列出输液组供勾选，默认全选；按患者合成一张巡视卡。默认按频次打印：日两次打印两张，关闭后不再按频次拆开',
   },
   {
     code: 'wristband',
@@ -144,7 +151,7 @@ export const PRINT_DOC_TYPES: PrintDocTypeOption[] = [
     category: 'drug',
     scope: 'multiple',
     previewKind: 'label',
-    description: '按查询区间列出已校对口服医嘱（含已执行/未执行）打印药贴（50×30mm）',
+    description: '按查询区间列出已校对口服医嘱（含已执行/未执行）打印药贴（30×40mm）',
   },
   {
     code: 'oral_med_sheet',
@@ -177,7 +184,8 @@ export const PRINT_DOC_TYPES: PrintDocTypeOption[] = [
     category: 'order',
     scope: 'multiple',
     previewKind: 'label',
-    description: '按开嘱日查询；按检验医嘱逐张打印采血贴（categoryEnum=22，50×30mm）',
+    description:
+      '按开嘱日查询；按检验医嘱逐张打印采血贴（categoryEnum=22，30×50mm，与门诊模板分开）',
   },
   {
     code: 'temp_sheet',

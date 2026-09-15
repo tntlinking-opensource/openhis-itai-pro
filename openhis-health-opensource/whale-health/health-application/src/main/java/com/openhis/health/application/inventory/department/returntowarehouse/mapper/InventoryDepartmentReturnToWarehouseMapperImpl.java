@@ -141,7 +141,14 @@ public class InventoryDepartmentReturnToWarehouseMapperImpl implements Inventory
             if (StringUtils.isEmpty(label)) {
                 label = String.valueOf(id);
             }
-            list.add(new OptionDto(id, String.valueOf(id), label));
+            OptionDto opt = new OptionDto(id, String.valueOf(id), label);
+            if (StringUtils.isNotEmpty(p.getPyStr())) {
+                opt.setPyStr(p.getPyStr().trim());
+            }
+            if (StringUtils.isNotEmpty(p.getWbStr())) {
+                opt.setWbStr(p.getWbStr().trim());
+            }
+            list.add(opt);
         }
         return list;
     }
@@ -286,7 +293,6 @@ public class InventoryDepartmentReturnToWarehouseMapperImpl implements Inventory
             dto.setSupplierId(head.getSupplierId());
             dto.setApplicantId(head.getApplicantId());
             dto.setApproverId(head.getApproverId());
-            dto.setTotalPrice(totalAmount);
             dto.setTotalAmount(totalAmount);
             if (maxApply != null) {
                 dto.setApplyTime(maxApply);
@@ -347,7 +353,6 @@ public class InventoryDepartmentReturnToWarehouseMapperImpl implements Inventory
         dto.setLotNumber(row.getLotNumber());
         dto.setTraceNo(row.getTraceNo());
         dto.setPrice(row.getPrice());
-        dto.setTotalPrice(row.getTotalPrice());
         dto.setApplyTime(row.getApplyTime());
         dto.setApprovalTime(row.getApprovalTime());
         return dto;
@@ -692,12 +697,8 @@ public class InventoryDepartmentReturnToWarehouseMapperImpl implements Inventory
         command.setOperatorId(operatorId);
         AgreeRequestCommand.AgreeRequestItemCommand item = new AgreeRequestCommand.AgreeRequestItemCommand();
         item.setBusNo(request.getBusNo());
-        Long approverId = request.getApproverId();
-        if (approverId == null) {
-            approverId = operatorId;
-        }
-        item.setApproverId(approverId);
-        item.setApprovalClock(request.getApprovalClock());
+        // 审批人取当前操作人；审批时刻由领域 agree/reject 写 approval_time
+        item.setApproverId(operatorId);
         command.setItem(item);
         return command;
     }
@@ -952,12 +953,8 @@ public class InventoryDepartmentReturnToWarehouseMapperImpl implements Inventory
         command.setOperatorId(operatorId);
         RejectRequestCommand.RejectRequestItemCommand item = new RejectRequestCommand.RejectRequestItemCommand();
         item.setBusNo(request.getBusNo());
-        Long approverId = request.getApproverId();
-        if (approverId == null) {
-            approverId = operatorId;
-        }
-        item.setApproverId(approverId);
-        item.setApprovalClock(request.getApprovalClock());
+        // 审批人取当前操作人；审批时刻由领域 agree/reject 写 approval_time
+        item.setApproverId(operatorId);
         item.setChangeReasonCode(request.getRejectReason());
         command.setItem(item);
         return command;

@@ -66,10 +66,10 @@ public interface OutpatientPharmacyPrescriptionReviewMapper {
     PrescriptionReviewPageQuery toPageQuery(ExportReviewsRequest request);
 
     /**
-     * 读模型 → 列表行（含点评人姓名）。
+     * 读模型 → 列表行（点评字段；方级指标由 ListEnricher 后写）。
      *
      * @param model        读模型；{@code null} 时返回 {@code null}
-     * @param reviewerName 点评人姓名；可空
+     * @param reviewerName 点评人姓名（工作表列不展示；可空）
      * @return 列表行 DTO
      */
     PrescriptionReviewListRowDto toListRowDto(PrescriptionReviewQueryModel model, String reviewerName);
@@ -84,7 +84,7 @@ public interface OutpatientPharmacyPrescriptionReviewMapper {
     PageReviewsResponse toPageResponse(Page<PrescriptionReviewQueryModel> page, List<PrescriptionReviewListRowDto> rows);
 
     /**
-     * 列表行 → 导出行。
+     * 列表行 → 导出行（工作表同列；是否合理导出 0/1）。
      *
      * @param row 列表行；{@code null} 时返回 {@code null}
      * @return 导出行 DTO

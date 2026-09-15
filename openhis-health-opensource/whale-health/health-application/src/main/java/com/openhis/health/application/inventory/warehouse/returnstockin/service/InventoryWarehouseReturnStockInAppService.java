@@ -114,10 +114,7 @@ public class InventoryWarehouseReturnStockInAppService {
         }
         Long purposeLocationId = request.getPurposeLocationId();
         if (purposeLocationId == null) {
-            // 兼容旧字段：未传 purpose 时回落 sourceLocationId
-            purposeLocationId = request.getSourceLocationId();
-        }
-        if (purposeLocationId == null) {
+            // Gate：列表须指定目的药库（含 0=全部可见药库）
             throw new BusinessException(ErrorCodeConstants.WHS_RSI_001, "purposeLocationId 不能为空");
         }
         this.pageWindowGate.requireNonNullPageWindow(request, ErrorCodeConstants.WHS_RSI_001, "分页参数不能为空");

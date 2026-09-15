@@ -291,12 +291,43 @@ function resolveExecuteTimeTextForQueryDate(
   return `${queryDate} 00:00`;
 }
 
+/**
+ * 查询日计划槽位数（频次展开结果；rateCode 未回传时作每日次数回落）。
+ * 同组取各成员当日槽位的最大个数。
+ */
+function resolveTimesPerDayFromExecuteRowSlots(
+  row: NurseStationOrderExecuteTableRow,
+  queryDate: string,
+): number {
+  let maxSlots = 0;
+  const rows = [row, ...(row.mergedMedicationMembers ?? [])];
+  for (const item of rows) {
+    const schedule = (item.planSchedules ?? []).find(
+      (s) => String(s.date ?? '').trim() === queryDate,
+    );
+    const count = schedule?.slots?.length ?? 0;
+    if (count > maxSlots) {
+      maxSlots = count;
+    }
+  }
+  return maxSlots > 0 ? maxSlots : 0;
+}
+
 /** 执行行剂量展示（与列表「剂量」列同源；瓶贴总量列印此串） */
 function resolveExecuteRowDoseDisplayText(
-  row: Pick<NurseStationOrderExecuteTableRow, 'dosage'>,
+  row: Pick<NurseStationOrderExecuteTableRow, 'dosage' | 'perDoseDisplay'>,
   groupItem?: { dosageDisplay?: string; singleDose?: number | string },
-  member?: Pick<NurseStationOrderExecuteTableRow, 'dosage'>,
+  member?: Pick<NurseStationOrderExecuteTableRow, 'dosage' | 'perDoseDisplay'>,
 ): string {
+  // 瓶贴只印每次量：优先成员/行上的后端 dosageDisplay 原文
+  const fromMemberPerDose = String(member?.perDoseDisplay ?? '').trim();
+  if (fromMemberPerDose) {
+    return fromMemberPerDose;
+  }
+  const fromRowPerDose = String(row.perDoseDisplay ?? '').trim();
+  if (fromRowPerDose) {
+    return fromRowPerDose;
+  }
   const fromGroup = String(groupItem?.dosageDisplay ?? '').trim();
   if (fromGroup) {
     return fromGroup;
@@ -324,6 +355,10 @@ function buildInfusionMedicationLinesFromExecuteRow(
   const groupId = String(row.groupId ?? '').trim() || (orderId ? `r:${orderId}` : '');
   const methodCode = String(row.methodCode ?? '').trim();
   const methodName = resolveUsageDisplayText(row);
+  // 组内频次一致；取首条非空 rateCode（与门诊瓶签拆张同源）
+  const rateCode =
+    String(row.rateCode ?? '').trim() ||
+    String(row.mergedMedicationMembers?.[0]?.rateCode ?? '').trim();
   const lines: NurseStationTreatmentLineDto[] = [];
 
   const groupItems = row.groupItems ?? [];
@@ -346,8 +381,9 @@ function buildInfusionMedicationLinesFromExecuteRow(
         dosageDisplay: doseText,
         methodCode: String(member?.methodCode ?? methodCode).trim() || methodCode,
         methodName: String(item.usage ?? '').trim() || methodName,
+        rateCode: String(member?.rateCode ?? rateCode).trim() || rateCode || undefined,
         infusionFlag: true,
-        // 住院无发药 quantity；总量列走 dosageDisplay
+        // 住院无发药 quantity；总量列走 dosageDisplay（每次量，按频次拆张后每张一份）
         unitName: '',
         sortNumber: index + 1,
         // 住院执行页按选定日打一张，禁止再按用药天数展开
@@ -373,6 +409,7 @@ function buildInfusionMedicationLinesFromExecuteRow(
         dosageDisplay: doseText,
         methodCode: String(member.methodCode ?? methodCode).trim() || methodCode,
         methodName: resolveUsageDisplayText(member) || methodName,
+        rateCode: String(member.rateCode ?? rateCode).trim() || rateCode || undefined,
         infusionFlag: true,
         unitName: '',
         sortNumber: index + 1,
@@ -395,6 +432,7 @@ function buildInfusionMedicationLinesFromExecuteRow(
     dosageDisplay: doseText,
     methodCode,
     methodName,
+    rateCode: rateCode || undefined,
     infusionFlag: true,
     unitName: '',
     sortNumber: 1,
@@ -412,6 +450,8 @@ export function buildInfusionPrintSourceFromExecuteRow(
   queryDate: string,
 ): OutpatientInfusionLabelPrintSource {
   const medicationLines = buildInfusionMedicationLinesFromExecuteRow(row);
+  const hasRateCode = medicationLines.some((line) => String(line.rateCode ?? '').trim());
+  const slotTimesPerDay = resolveTimesPerDayFromExecuteRowSlots(row, queryDate);
   return {
     patientName: str(patient.name),
     genderEnumText: str(patient.gender),
@@ -424,6 +464,8 @@ export function buildInfusionPrintSourceFromExecuteRow(
     speedCode: resolveSpeedPrintTextFromExecuteRow(row),
     executorName: '',
     executeTimeText: resolveExecuteTimeTextForQueryDate(row, queryDate),
+    // 无 rateCode 时用当日槽位数回落（BID 通常 2 槽 → 2 张）；有 code 则走门诊同源解析
+    timesPerDay: !hasRateCode && slotTimesPerDay > 0 ? slotTimesPerDay : undefined,
   };
 }
 
@@ -438,6 +480,7 @@ export function buildOralMedLabelPrintSourceFromExecuteRow(
   const drugName = str(groupItem?.selectedDrugName) || str(row.content);
   const specText = str(groupItem?.selectedDrugSpec);
   const doseText = str(row.dosage) || str(groupItem?.dosageDisplay) || str(groupItem?.singleDose);
+  const freqText = str(row.frequencyDisplay) || str(groupItem?.frequency);
   return {
     bedNo: str(patient.bedNo),
     patientName: str(patient.name),
@@ -445,6 +488,7 @@ export function buildOralMedLabelPrintSourceFromExecuteRow(
     drugName,
     specText,
     doseText,
+    freqText,
   };
 }
 

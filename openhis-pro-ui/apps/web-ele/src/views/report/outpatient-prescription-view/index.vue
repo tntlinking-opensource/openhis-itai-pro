@@ -114,9 +114,19 @@ const reviewStatusOptions = ref<ApiOptionItem[]>([]);
 const reasonableOptions = ref<ApiOptionItem[]>([]);
 const medicationCategoryOptions = ref<ApiOptionItem[]>([]);
 
+/** 默认开方区间：当前自然年 1 月 1 日～12 月 31 日。 */
+function resolveCurrentYearOpenedDateRange(): Pick<QueryState, 'openedDateFrom' | 'openedDateTo'> {
+  const year = new Date().getFullYear();
+  return {
+    openedDateFrom: `${year}-01-01`,
+    openedDateTo: `${year}-12-31`,
+  };
+}
+
 const queryParams = reactive<QueryState>({
   pageNo: 1,
   pageSize: 50,
+  ...resolveCurrentYearOpenedDateRange(),
 });
 
 const tableLoading = computed(
@@ -293,6 +303,7 @@ async function enrichRowsWithActiveReviews(rows: OutpatientPrescriptionSummaryRo
     if (active) {
       const reviewId = active.id != null ? String(active.id) : undefined;
       row.reviewId = reviewId;
+      row.reviewBusNo = active.busNo;
       row.reviewStatusEnum =
         String(active.statusEnum ?? '').trim() || PRESCRIPTION_REVIEW_STATUS.REVIEWED;
       row.reviewStatusText = active.statusText || '已点评';
@@ -376,10 +387,9 @@ const { run: runInit, loading: initLoading } = useRequest(
   {
     manual: true,
     onSuccess: (data) => {
-      queryParams.openedDateFrom =
-        normalizeReportDateRangeYmd(data?.defaultOpenedDateFrom) || queryParams.openedDateFrom;
-      queryParams.openedDateTo =
-        normalizeReportDateRangeYmd(data?.defaultOpenedDateTo) || queryParams.openedDateTo;
+      const yearRange = resolveCurrentYearOpenedDateRange();
+      queryParams.openedDateFrom = yearRange.openedDateFrom;
+      queryParams.openedDateTo = yearRange.openedDateTo;
       chargeStatusOptions.value = optionDtosToSelectItems(data?.chargeStatusOptions);
       dispenseStatusOptions.value = optionDtosToSelectItems(data?.dispenseStatusOptions);
       rxTypeOptions.value = optionDtosToSelectItems(data?.rxTypeOptions);
@@ -621,6 +631,7 @@ onMounted(async () => {
                 range-separator="至"
                 start-placeholder="开始"
                 end-placeholder="结束"
+                :clearable="false"
                 :shortcuts="dateRangeShortcuts"
                 :class="[REPORT_QUERY_CONTROL, REPORT_QUERY_CONTROL_DATERANGE]"
                 @change="handleQuery"

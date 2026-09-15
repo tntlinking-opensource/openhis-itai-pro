@@ -87,6 +87,10 @@ export interface NurseStationOrderAuditRowDto {
   chineseHerbsDoseQuantity?: number | string;
   /** 是否皮试药（仅药嘱；true 时校对列表提示需皮试） */
   skinTestFlag?: boolean;
+  /** 皮试临床状态 code（如 active=阳性） */
+  skinTestOutcomeCode?: string;
+  /** 皮试临床状态展示文案（如 阳性 / 阴性） */
+  skinTestOutcomeText?: string;
 }
 
 /** 按就诊分组的医嘱列表 */

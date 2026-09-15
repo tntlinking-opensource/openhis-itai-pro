@@ -24,6 +24,7 @@ import com.openhis.health.application.outpatient.pharmacy.prescriptionreview.res
 import com.openhis.health.application.outpatient.pharmacy.prescriptionreview.response.PageReviewsResponse;
 import com.openhis.health.application.outpatient.pharmacy.prescriptionreview.response.RevokeReviewResponse;
 import com.openhis.health.application.outpatient.pharmacy.prescriptionreview.support.OutpatientPharmacyPrescriptionReviewDispenseGate;
+import com.openhis.health.application.outpatient.pharmacy.prescriptionreview.support.OutpatientPharmacyPrescriptionReviewListEnricher;
 import com.openhis.health.application.outpatient.pharmacy.prescriptionreview.support.OutpatientPharmacyPrescriptionReviewSupport;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.health.application.shared.validator.PageWindowGate;
@@ -35,18 +36,23 @@ import com.openhis.health.domain.custom.prescriptionreview.queries.PrescriptionR
 import com.openhis.health.domain.custom.prescriptionreview.queries.model.PrescriptionReviewQueryModel;
 import com.openhis.health.domain.custom.prescriptionreview.service.PrescriptionReviewDomainService;
 import com.openhis.health.domain.custom.prescriptionreview.service.PrescriptionReviewQueryService;
+import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.OutpatientPharmacyPrescriptionReviewConstants;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.util.AnnotatedExcelExporter;
+import com.openhis.whale.core.application.util.StringUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -88,11 +94,17 @@ public class OutpatientPharmacyPrescriptionReviewAppService {
     /** 点评读侧。 */
     private final PrescriptionReviewQueryService prescriptionReviewQueryService;
 
+    /** 开方日窗 → 处方号预解析（仅本聚合读）。 */
+    private final MedicationRequestQueryService medicationRequestQueryService;
+
     /** 已发药判定（只读药嘱/发放；不生成业务号）。 */
     private final OutpatientPharmacyPrescriptionReviewDispenseGate dispenseGate;
 
     /** 选项装配与入参校验。 */
     private final OutpatientPharmacyPrescriptionReviewSupport reviewSupport;
+
+    /** 列表/导出方级指标 enrichment（工作表列）。 */
+    private final OutpatientPharmacyPrescriptionReviewListEnricher listEnricher;
 
     /** Request/Command/Response 映射。 */
     private final OutpatientPharmacyPrescriptionReviewMapper reviewMapper;
@@ -153,15 +165,19 @@ public class OutpatientPharmacyPrescriptionReviewAppService {
             "请选择有效的分页或点评时间范围");
         // Gate：点评日起止均传时校验 from≤to
         this.reviewSupport.assertReviewedDateWindow(request.getReviewedDateFrom(), request.getReviewedDateTo());
+        // Gate：开方日起止均传时校验 from≤to
+        this.reviewSupport.assertOpenedDateWindow(request.getOpenedDateFrom(), request.getOpenedDateTo());
         try {
             // Pre：Request → 领域筛选（日期闭区间）
             PrescriptionReviewPageQuery query = this.reviewMapper.toPageQuery(request);
+            // Pre：开方日窗 → 处方号 IN（B.6.4 应用层编排）
+            this.applyOpenedDateFilter(query, request.getOpenedDateFrom(), request.getOpenedDateTo());
             PageRequest pageable = PageRequest.of(request.springPageIndex(), request.getBoundedPageSize());
             // Pre：有效点评分页（PENDING → 空页由领域处理）
             Page<PrescriptionReviewQueryModel> page =
                 this.prescriptionReviewQueryService.pageReviews(query, pageable);
             // Cmd：本 IF 只读，无领域写
-            // Pre+Asm：点评人姓名批量后映射列表行
+            // Pre+Asm：映射点评字段后补齐工作表方级指标
             List<PrescriptionReviewListRowDto> rows = this.mapListRows(page.getContent());
             // Asm：分页响应
             return this.reviewMapper.toPageResponse(page, rows);
@@ -176,9 +192,9 @@ public class OutpatientPharmacyPrescriptionReviewAppService {
     }
 
     /**
-     * IF-PRV-03：导出点评记录。
+     * IF-PRV-03：导出点评记录（当前页窗口，与列表 pageNo/pageSize 一致）。
      *
-     * @param request 与列表一致的筛选 + exportColumns
+     * @param request 与列表一致的筛选 + pageNo/pageSize + exportColumns
      * @return xlsx 字节与导出行数
      * @throws BusinessException EX-PRV-101/102/104
      */
@@ -193,24 +209,32 @@ public class OutpatientPharmacyPrescriptionReviewAppService {
                 OutpatientPharmacyPrescriptionReviewConstants.EX_PRV_102,
                 "请选择有效的分页或点评时间范围");
         }
+        // Gate：分页窗口与列表同源（一页 N 条即导出 N 条）
+        this.pageWindowGate.requirePositivePageWindow(
+            request,
+            OutpatientPharmacyPrescriptionReviewConstants.EX_PRV_102,
+            "请选择有效的分页或点评时间范围");
         // Gate：点评日窗（与列表同源）
         this.reviewSupport.assertReviewedDateWindow(request.getReviewedDateFrom(), request.getReviewedDateTo());
+        // Gate：开方日窗（与列表同源）
+        this.reviewSupport.assertOpenedDateWindow(request.getOpenedDateFrom(), request.getOpenedDateTo());
         try {
             // Pre：映射筛选
             PrescriptionReviewPageQuery query = this.reviewMapper.toPageQuery(request);
-            PageRequest pageable = PageRequest.of(
-                0,
-                OutpatientPharmacyPrescriptionReviewConstants.EXPORT_MAX_ROWS);
-            // Pre：导出窗分页（触顶 truncated）
+            // Pre：开方日窗 → 处方号 IN
+            this.applyOpenedDateFilter(query, request.getOpenedDateFrom(), request.getOpenedDateTo());
+            PageRequest pageable = PageRequest.of(request.springPageIndex(), request.getBoundedPageSize());
+            // Pre：当前页点评分页（非全量上限窗）
             Page<PrescriptionReviewQueryModel> page =
                 this.prescriptionReviewQueryService.pageReviews(query, pageable);
-            // Cmd：本 IF 只读，无领域写；超窗行计入 truncated 提示
-            boolean truncated =
-                page.getTotalElements() > OutpatientPharmacyPrescriptionReviewConstants.EXPORT_MAX_ROWS;
+            // Cmd：本 IF 只读；仍有未导出页时 truncated=true 提示
+            long exportedThrough =
+                (long) (request.getPageNo() - 1) * request.getPageSize() + page.getNumberOfElements();
+            boolean truncated = page.getTotalElements() > exportedThrough;
             List<PrescriptionReviewListRowDto> listRows = this.mapListRows(page.getContent());
             List<PrescriptionReviewExportRowDto> exportRows = new ArrayList<>(listRows.size());
             for (PrescriptionReviewListRowDto listRow : listRows) {
-                // Asm：列表行 → 导出行
+                // Asm：列表行 → 导出行（工作表同列）
                 exportRows.add(this.reviewMapper.toExportRowDto(listRow));
             }
             // Asm：xlsx 字节（零行仍含表头）
@@ -481,19 +505,47 @@ public class OutpatientPharmacyPrescriptionReviewAppService {
     }
 
     /**
-     * Pre+Asm：页内点评人姓名批量后映射列表行。
+     * Pre：开方日窗预解析处方号并写入点评 PageQuery（两侧皆空则跳过）。
+     *
+     * @param query          点评分页查询
+     * @param openedDateFrom 开方日起 yyyy-MM-dd
+     * @param openedDateTo   开方日止 yyyy-MM-dd
+     */
+    private void applyOpenedDateFilter(
+        PrescriptionReviewPageQuery query,
+        String openedDateFrom,
+        String openedDateTo) {
+        // 两侧皆空：不按开方日收窄
+        if (StringUtils.isBlank(openedDateFrom) && StringUtils.isBlank(openedDateTo)) {
+            return;
+        }
+        LocalDate from = LocalDate.parse(openedDateFrom.trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
+        LocalDate to = LocalDate.parse(openedDateTo.trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
+        LocalDateTime openedFrom = from.atStartOfDay();
+        LocalDateTime openedTo = to.atTime(LocalTime.MAX);
+        // Pre：药嘱聚合投影窗内已签发方号
+        List<String> prescriptionNos =
+            this.medicationRequestQueryService.listDistinctSignedPrescriptionNosByOpenedTimeWindow(
+                openedFrom,
+                openedTo);
+        // Asm：写入 IN 条件；空列表 → 点评分页空页
+        query.setPrescriptionNosIn(prescriptionNos);
+    }
+
+    /**
+     * Pre+Asm：映射点评字段（含详情用点评人/时间/业务号）并补齐工作表方级指标。
      *
      * @param models 读模型列表
      * @return 列表行；无数据时空列表
      */
     private List<PrescriptionReviewListRowDto> mapListRows(List<PrescriptionReviewQueryModel> models) {
-        // 无读模型：空列表，避免姓名批量空转
+        // 无读模型：空列表，避免 enrichment 空转
         if (models == null || models.isEmpty()) {
             return List.of();
         }
         LinkedHashSet<Long> reviewerIds = new LinkedHashSet<>();
         for (PrescriptionReviewQueryModel model : models) {
-            // 页内点评人去重，供一次 mapNamesByIds
+            // 页内点评人去重，供一次 mapNamesByIds（详情展示点评人）
             if (model != null && model.getReviewerId() != null) {
                 reviewerIds.add(model.getReviewerId());
             }
@@ -502,12 +554,18 @@ public class OutpatientPharmacyPrescriptionReviewAppService {
         List<PrescriptionReviewListRowDto> rows = new ArrayList<>(models.size());
         for (PrescriptionReviewQueryModel model : models) {
             String reviewerName = null;
-            // 有点评人则取姓名；缺失时列表姓名列可空
+            // 有点评人则取姓名；缺失时详情姓名列可空
             if (model != null && model.getReviewerId() != null) {
                 reviewerName = nameById.get(model.getReviewerId());
             }
-            rows.add(this.reviewMapper.toListRowDto(model, reviewerName));
+            PrescriptionReviewListRowDto row = this.reviewMapper.toListRowDto(model, reviewerName);
+            // 映射失败跳过，避免空行进入 enrichment
+            if (row != null) {
+                rows.add(row);
+            }
         }
+        // Pre+Asm：方级年龄/诊断/品种/金额等（跨聚合，B.6.4 在应用层）
+        this.listEnricher.enrichWorksheetColumns(rows);
         return rows;
     }
 }

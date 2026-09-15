@@ -53,6 +53,8 @@ import lombok.RequiredArgsConstructor;
  * 患者侧药耗售价优先账单；账单缺失（如取消执行逻辑删）时<strong>仅</strong>允许回落批号售价的场景：
  * <strong>药房日结</strong>、<strong>住院发药报表/药品使用明细</strong>（正/退同行，与日结轧差对齐）；其它报表/费用明细/门诊发退药等仍只认账单。
  * <strong>禁止</strong>回落目录 {@link PriceType#PURCHASE}（药典参考价不参与进价统计；有批号用批号进/售，无批号药耗跳过）。
+ * <strong>账批质检</strong>（不改正额）：{@link #mapChargeAnchorLotByDispenseId} 只读收费锚点
+ * {@code definition.lot_no}（不读发放表），供发药/耗材使用明细分页比对「挂账批号 vs 实发批号」。
  * 诊疗/挂号<strong>无真实进价</strong>：进价单价/行额解析结果为 {@code null}（不编进价；禁止用账单价冒充进价；
  * 见 {@code DD-报表中心-进售价口径与开立科室-2026-08}）。
  * <strong>禁止</strong>{@code listHistoricalDefinitionsByInstance} 无脑全量兄弟扫描。</p>
@@ -226,6 +228,65 @@ public class HistoricalChargeItemPurchasePriceSupport {
             }
         }
         return unitByChargeItemId;
+    }
+
+    /**
+     * 批量解析「收费锚点批号」：仅 {@code ChargeItem.definitionId} → 批号价行 {@code lot_no}。
+     *
+     * <p>供使用明细「账批 ≠ 实发批」质检。与进价解析中「发放批号优先」相反——本方法<strong>不读发放表</strong>，
+     * 只认挂账时写入的定价锚点批号。调用方须传入本页已加载的 {@link ChargeItem}，
+     * 本方法仅一次 {@code definitionId IN}，禁止为比对再扫发放或按行打库。</p>
+     *
+     * @param chargeItems 本页已加载收费行（可含药/耗发放锚）
+     * @return dispenseId → 账批号；无 definition / 非批号价类 / 无 lot_no 则不含该键
+     */
+    public Map<Long, String> mapChargeAnchorLotByDispenseId(Collection<ChargeItem> chargeItems) {
+        Map<Long, String> lotByDispenseId = new HashMap<>();
+        if (chargeItems == null || chargeItems.isEmpty()) {
+            return lotByDispenseId;
+        }
+        LinkedHashSet<Long> definitionIds = new LinkedHashSet<>();
+        // Pre：收集本页收费锚点 definitionId，供一次 IN（禁止按行打库）
+        for (ChargeItem chargeItem : chargeItems) {
+            if (chargeItem != null && chargeItem.getDefinitionId() != null) {
+                definitionIds.add(chargeItem.getDefinitionId());
+            }
+        }
+        // Gate：无定价锚则无法解析账批，直接空 Map（禁止兜底目录价）
+        if (definitionIds.isEmpty()) {
+            return lotByDispenseId;
+        }
+        // Pre：仅按主键批量拉 definition；与进价路径同构，不扫发放单
+        Map<Long, ChargeItemDefinition> definitionById =
+            this.chargeItemDefinitionQueryService.findAllDefinitionsByIdIn(definitionIds);
+        // Asm：按发放锚回填账批；同发放多账单保留首个非空 lot_no
+        for (ChargeItem chargeItem : chargeItems) {
+            // Gate：空行或无 definition 跳过
+            if (chargeItem == null || chargeItem.getDefinitionId() == null) {
+                continue;
+            }
+            Long dispenseKey = this.resolveMedicationDispenseId(chargeItem);
+            // Pre：药锚未命中再试耗材发放锚
+            if (dispenseKey == null) {
+                dispenseKey = this.resolveDeviceDispenseId(chargeItem);
+            }
+            // Gate：无法锚定发放主键则跳过（账单可能挂在请求等非发放锚）
+            if (dispenseKey == null) {
+                continue;
+            }
+            // Gate：同发放多账单时保留首个非空账批，禁止被后行空值覆盖
+            String existingLot = lotByDispenseId.get(dispenseKey);
+            if (StringUtils.isNotEmpty(existingLot)) {
+                continue;
+            }
+            String chargeLot =
+                this.lotNoFromLotPriceDefinition(definitionById.get(chargeItem.getDefinitionId()));
+            // Asm：仅批号价/进价类 definition 才写入 Map
+            if (StringUtils.isNotEmpty(chargeLot)) {
+                lotByDispenseId.put(dispenseKey, chargeLot);
+            }
+        }
+        return lotByDispenseId;
     }
 
     /**

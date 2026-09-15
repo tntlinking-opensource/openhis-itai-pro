@@ -267,15 +267,15 @@ public class CodeAppService {
     }
 
     /**
-     * 更新已有概念（方法名为历史路由兼容拼写 {@code updatyeConcept}）。
+     * 更新已有概念。
      *
-     * <p>对应前端：{@code POST /code/updatyeConcept}。</p>
+     * <p>对应前端：{@code POST /code/updateConcept}。</p>
      *
      * @param request 更新请求（须含概念主键）
      * @throws ValidationException 请求或概念 id 为空
      */
-    public void updatyeConcept(UpdateConceptRequest request) {
-        // Gate：请求体与概念主键非空（方法名为历史路由兼容拼写）
+    public void updateConcept(UpdateConceptRequest request) {
+        // Gate：请求体与概念主键非空
         if (request == null || request.getId() == null) {
             throw new ValidationException("更新编码失败：编码ID不能为空");
         }
@@ -283,6 +283,7 @@ public class CodeAppService {
         var command = codesystemMapper.toUpdateConceptCommand(request);
         // Cmd：领域更新概念
         com.openhis.health.domain.terminology.entity.Concept saved = codeSystemDomainService.updateConcept(command);
+        // Asm：失效该概念体系下的字典与术语选项缓存
         codeSystemQueryService.evictDictByCodeSystemId(saved.getCodeSystemId());
         terminologyOptionLoader.evictByCodeSystemId(saved.getCodeSystemId());
     }

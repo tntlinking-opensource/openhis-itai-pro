@@ -43,5 +43,13 @@ public class PageOutpatientRegistrationDetailReportDetailRequest extends Abstrac
      * 患者姓名/门诊号关键字使用基类 {@link AbstractHealthPageRequest#getKeyword()}，
      * 禁止在本类再声明同名字段（会与 {@code AbstractPageQuery#setKeyword} 冲突）。
      */
+
+    /**
+     * 就诊状态单值筛选（{@code EncounterStatus.getCode()}）；空表示不按状态收窄。
+     *
+     * <p>与汇总/导出同筛；页脚挂/退统计同口径。非法 code 由 AppService Gate 拒绝（EX-RPT-ORG-102）。</p>
+     */
+    @Schema(description = "就诊状态 code；空不收窄")
+    private String statusEnum;
 }
 

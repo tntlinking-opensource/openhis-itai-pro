@@ -70,8 +70,6 @@ export interface OutpatientFeeDetailLineDto {
   discountAmount?: number | string;
   receivableAmount?: number | string;
   discountedAmount?: number | string;
-  unitPrice?: number | string;
-  lineAmount?: number | string;
   actualReceivedAmount?: number | string;
   insuranceAmount?: number | string;
   selfPayAmount?: number | string;

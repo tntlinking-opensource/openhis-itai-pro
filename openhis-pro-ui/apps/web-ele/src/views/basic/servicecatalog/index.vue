@@ -27,6 +27,7 @@ import {
 } from '#/api';
 import type { ServiceCatalogImportProgressResult } from '#/api';
 import StatusEnumTag from '#/components/status-enum-tag.vue';
+import { PublicationStatusCode } from '#/constants/domain/publication-status';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { SERVICE_CATALOG_EXPORT_COLUMNS } from '#/utils/export/catalog-excel-export-columns';
 import { downloadBinaryExportFile } from '#/utils/export/download-binary-export';
@@ -45,6 +46,8 @@ const queryParams = ref({
   keyword: '',
   /** 目录分类筛选；空字符串表示「全部」 */
   categoryCode: '',
+  /** 启用状态；空字符串表示「全部」 */
+  statusEnum: '' as string,
 });
 
 const tableData = ref<ServiceCatalogItem[]>([]);
@@ -139,6 +142,19 @@ const formItems = computed<FormItemConfig[]>(() => [
     multiple: false,
     options: categoryCodeOptions.value,
   },
+  {
+    type: 'select',
+    prop: 'statusEnum',
+    label: '启用状态',
+    placeholder: '全部',
+    clearable: true,
+    multiple: false,
+    options: [
+      { label: '全部', value: '' },
+      { label: '已启用', value: PublicationStatusCode.ACTIVE },
+      { label: '已停用', value: PublicationStatusCode.INACTIVE },
+    ],
+  },
 ]);
 
 /** 分类筛选归一：空/数组转可提交的 string（对齐耗材目录） */
@@ -157,6 +173,15 @@ function normalizeCategoryCodeForApi(raw: unknown): string | undefined {
   return s === '' ? undefined : s;
 }
 
+/** 发布状态筛选归一：空/全部 → undefined */
+function normalizeStatusEnumForApi(raw: unknown): string | undefined {
+  if (raw === undefined || raw === null) {
+    return undefined;
+  }
+  const s = String(raw).trim();
+  return s === '' ? undefined : s;
+}
+
 const handleQuery = async (params: Record<string, unknown>) => {
   queryParams.value = {
     ...queryParams.value,
@@ -169,6 +194,7 @@ const handleQuery = async (params: Record<string, unknown>) => {
       pageSize: queryParams.value.pageSize,
       keyword: queryParams.value.keyword || undefined,
       categoryCode: normalizeCategoryCodeForApi(queryParams.value.categoryCode),
+      statusEnum: normalizeStatusEnumForApi(queryParams.value.statusEnum),
       // 目录维护须见明细子项（组套选品等默认隐藏）
       includeReferencedPackageChildren: true,
     });
@@ -305,6 +331,7 @@ const handleExportCatalog = async () => {
     const result = await exportServiceCatalogApi({
       keyword: queryParams.value.keyword || undefined,
       categoryCode: queryParams.value.categoryCode || undefined,
+      statusEnum: normalizeStatusEnumForApi(queryParams.value.statusEnum),
       exportColumns: SERVICE_CATALOG_EXPORT_COLUMNS,
     });
     if (!result?.fileBytes?.trim()) {

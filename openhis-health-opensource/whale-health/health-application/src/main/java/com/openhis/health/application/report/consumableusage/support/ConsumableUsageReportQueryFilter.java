@@ -20,10 +20,10 @@ import lombok.experimental.Accessors;
 @Accessors(chain = true)
 public class ConsumableUsageReportQueryFilter {
 
-    /** 业务日起（yyyy-MM-dd）。 */
+    /** 业务日起（yyyy-MM-dd 或 yyyy-MM-dd HH:mm:ss；仅日期时起 00:00:00、止 23:59:59）。 */
     private String dateFrom;
 
-    /** 业务日止（yyyy-MM-dd）。 */
+    /** 业务日止（yyyy-MM-dd 或 yyyy-MM-dd HH:mm:ss；仅日期时起 00:00:00、止 23:59:59）。 */
     private String dateTo;
 
     /** 汇总维；明细可空。 */
@@ -58,4 +58,11 @@ public class ConsumableUsageReportQueryFilter {
      * 领用侧=领用科室（consuming_organization_id）。
      */
     private Long organizationId;
+
+    /**
+     * 明细行合并模式：{@code LINE}（默认平铺）/ {@code BY_DEFINITION}（按就诊+品规[+单位]合并）。
+     *
+     * <p>仅患者发放源生效；科室领用源传 {@code BY_DEFINITION} 时按 LINE 处理。</p>
+     */
+    private String lineMergeMode;
 }

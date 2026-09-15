@@ -27,9 +27,7 @@ export interface SupplierOptionDto {
   supplierType?: string;
 }
 
-export interface LoadReturnToSupplierFormInitRequest {
-  organizationId?: number;
-}
+export interface LoadReturnToSupplierFormInitRequest {}
 
 export interface LoadReturnToSupplierFormInitResponse {
   warehouseOptions: WarehouseOptionDto[];
@@ -55,17 +53,14 @@ export interface ReturnToSupplierListRowDto {
   lotNumber?: string;
   traceNo?: string;
   price?: number;
-  totalPrice?: number;
-  /** 单据总金额（与 totalPrice 同口径） */
+  /** 单据总金额（聚合列表侧栏） */
   totalAmount?: number;
   applicantId?: number | string;
   /** 制单人展示名（列表富化） */
   creatorName?: string;
-  approverId?: number | string;
   /** 审批人展示名（列表富化） */
   approverName?: string;
   applyTime?: string;
-  approvalTime?: string;
 }
 
 export interface PageReturnToSuppliersRequest {
@@ -83,7 +78,6 @@ export interface PageReturnToSuppliersRequest {
 export interface PageReturnToSuppliersResponse {
   total?: number;
   totalCount?: number;
-  records?: ReturnToSupplierListRowDto[];
   content?: ReturnToSupplierListRowDto[];
 }
 
@@ -126,8 +120,6 @@ export interface GetReturnToSupplierDetailResponse {
   categoryEnum?: number;
   /** 整单退货金额合计 */
   totalAmount?: number;
-  /** 整单退货金额合计（与 totalAmount 双写） */
-  totalPrice?: number;
   lines: ReturnToSupplierDetailLineDto[];
 }
 
@@ -199,57 +191,17 @@ export interface WithdrawReturnToSupplierApprovalResponse {
 
 export interface AgreeReturnToSupplierRequest {
   busNo: string;
-  approverId?: string;
-  approvalClock?: string;
-  /** @deprecated CHS 启用即上传，请使用 contractBusNo */
-  medicareUploadEnabled?: boolean;
   /** 医保契约 busNo；上传进销存时使用 */
   contractBusNo?: string;
 }
 
 export interface RejectReturnToSupplierRequest {
   busNo: string;
-  approverId?: string;
-  approvalClock?: string;
   rejectReason?: string;
 }
 
 export interface RemoveReturnToSupplierRequest {
   busNo: string;
-}
-
-export interface PageProductsForReturnToSupplierRequest {
-  productTableName?: string;
-  keyword?: string;
-  categoryCode?: string;
-  activeFlag?: boolean;
-  supplierId?: number;
-  manufacturer?: string;
-  includeInventory?: boolean;
-  pageNo: number;
-  pageSize: number;
-  sortField?: string;
-  sortOrder?: string;
-}
-
-export interface ProductDefinitionItemDto {
-  productDefinitionId?: number;
-  productTableName?: string;
-  productName?: string;
-  merchandiseName?: string;
-  unitCode?: string;
-  minUnitCode?: string;
-  categoryCode?: string;
-  price?: number;
-  purchasePrice?: number;
-  manufacturer?: string;
-  pyStr?: string;
-  wbStr?: string;
-}
-
-export interface PageProductsForReturnToSupplierResponse {
-  total?: number;
-  records: ProductDefinitionItemDto[];
 }
 
 export interface PageLinkableGoodsReceiptsRequest {
@@ -271,7 +223,6 @@ export interface LinkableGoodsReceiptListRowDto {
   applicantId?: number | string;
   totalAmount?: number;
   applyTime?: string;
-  approvalTime?: string;
   returnable?: boolean;
 }
 
@@ -350,15 +301,6 @@ export async function rejectReturnToSupplierApi(body: RejectReturnToSupplierRequ
 export async function removeReturnToSupplierApi(body: RemoveReturnToSupplierRequest) {
   return requestClient.post<ApiResponse<{ success?: boolean }>>(
     `${BASE}/removeReturnToSupplier`,
-    body,
-  );
-}
-
-export async function pageProductsForReturnToSupplierApi(
-  body: PageProductsForReturnToSupplierRequest,
-) {
-  return requestClient.post<ApiResponse<PageProductsForReturnToSupplierResponse>>(
-    `${BASE}/pageProductsForReturnToSupplier`,
     body,
   );
 }

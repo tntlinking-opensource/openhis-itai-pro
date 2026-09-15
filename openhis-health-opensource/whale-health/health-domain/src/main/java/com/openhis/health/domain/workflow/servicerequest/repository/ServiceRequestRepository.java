@@ -61,6 +61,17 @@ public interface ServiceRequestRepository extends JpaRepository<ServiceRequest, 
     List<ServiceRequest> findByEncounterIdAndGenerateSourceEnum(Long encounterId, String generateSourceEnum);
 
     /**
+     * 按就诊主键集合与生成来源批量过滤服务申请（护士站执行列表禁逐就诊打库）。
+     *
+     * @param encounterIds       就诊主键集合
+     * @param generateSourceEnum 生成来源 code
+     * @return 申请集合
+     */
+    List<ServiceRequest> findByEncounterIdInAndGenerateSourceEnum(
+        Collection<Long> encounterIds,
+        String generateSourceEnum);
+
+    /**
      * 按条件查询。
      * @param activityId 条件
      * @return 查询结果

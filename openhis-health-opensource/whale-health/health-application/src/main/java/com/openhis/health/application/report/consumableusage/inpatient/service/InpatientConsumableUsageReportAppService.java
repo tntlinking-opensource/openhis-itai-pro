@@ -5,6 +5,8 @@
 package com.openhis.health.application.report.consumableusage.inpatient.service;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -29,6 +31,7 @@ import com.openhis.health.application.report.consumableusage.inpatient.support.I
 import com.openhis.health.application.report.consumableusage.inpatient.support.InpatientConsumableUsageSummaryResult;
 import com.openhis.health.application.report.consumableusage.support.ConsumableUsageReportQueryFilter;
 import com.openhis.health.application.shared.option.TerminologyOptionLoader;
+import com.openhis.health.application.shared.report.ReportDateTimeWindowSupport;
 import com.openhis.health.application.shared.report.ReportPatientSettlementContextAssembler;
 import com.openhis.health.application.shared.validator.PageWindowGate;
 import com.openhis.health.domain.administration.location.entity.Location;
@@ -38,7 +41,6 @@ import com.openhis.health.domain.administration.organization.service.Organizatio
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.share.constants.ConsumableUsageReportConstants;
-import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.PharmacyDispenseRecordConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.whale.core.application.dto.OptionDto;
@@ -114,7 +116,8 @@ public class InpatientConsumableUsageReportAppService {
                 this.organizationQueryService.listOrganizationsForInpatientAdmission();
             List<Location> locations = this.locationQueryService.listAllActivePharmacyPartyLocations();
             LocalDate today = LocalDate.now();
-            String defaultDate = today.format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
+            String defaultFrom = ReportDateTimeWindowSupport.formatDayStart(today);
+            String defaultTo = ReportDateTimeWindowSupport.formatDayEnd(today);
             List<OptionDto> feeNatureOptions = this.reportPatientSettlementContextAssembler.loadFeeNatureOptions();
             List<OptionDto> categoryOptions =
                 this.terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.DEVICE_CATEGORY_CODE);
@@ -144,8 +147,8 @@ public class InpatientConsumableUsageReportAppService {
                 categoryOptions,
                 practitionerOptions,
                 this.inpatientConsumableUsageReportMapper.buildRecordTypeOptions(),
-                defaultDate,
-                defaultDate);
+                defaultFrom,
+                defaultTo);
         } catch (RuntimeException ex) {
             log.warn("住院耗材使用报表页初始化失败", ex);
             throw new BusinessException(
@@ -179,7 +182,6 @@ public class InpatientConsumableUsageReportAppService {
                 new SummarizeInpatientConsumableUsageReportResponse();
             response.setRows(result.getRows());
             response.setTotalNetQuantity(result.getTotalNetQuantity());
-            response.setTotalNetAmount(result.getTotalNetAmount());
             response.setPurchaseNetTotalAmount(result.getPurchaseNetTotalAmount());
             response.setSaleNetTotalAmount(result.getSaleNetTotalAmount());
             return response;
@@ -359,7 +361,8 @@ public class InpatientConsumableUsageReportAppService {
             .setPerformerPractitionerId(request.getPerformerPractitionerId())
             .setDeviceKeyword(request.getDeviceKeyword())
             .setPatientKeyword(request.getPatientKeyword())
-            .setOrganizationId(request.getOrganizationId());
+            .setOrganizationId(request.getOrganizationId())
+            .setLineMergeMode(request.getLineMergeMode());
     }
 
     /**
@@ -382,14 +385,17 @@ public class InpatientConsumableUsageReportAppService {
             .setPerformerPractitionerId(request.getPerformerPractitionerId())
             .setDeviceKeyword(request.getDeviceKeyword())
             .setPatientKeyword(request.getPatientKeyword())
-            .setOrganizationId(request.getOrganizationId());
+            .setOrganizationId(request.getOrganizationId())
+            .setLineMergeMode(request.getLineMergeMode());
     }
 
     /**
-     * Gate：业务日闭区间合法且起止不颠倒。
+     * Gate：业务日/时刻闭区间合法且起止不颠倒。
      *
-     * @param dateFrom 日起
-     * @param dateTo   日止
+     * <p>允许 {@code yyyy-MM-dd} 或 {@code yyyy-MM-dd HH:mm:ss}；仅日期时起补 00:00:00、止补 23:59:59。</p>
+     *
+     * @param dateFrom 日起或日起时刻
+     * @param dateTo   日止或日止时刻
      */
     private void validateDateWindow(String dateFrom, String dateTo) {
         // Gate：日期必填（BR-RPT-ICU-001）
@@ -398,10 +404,19 @@ public class InpatientConsumableUsageReportAppService {
                 ConsumableUsageReportConstants.EX_RPT_ICU_102,
                 "请选择有效日期范围");
         }
-        LocalDate from = LocalDate.parse(dateFrom.trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
-        LocalDate to = LocalDate.parse(dateTo.trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
-        if (from.isAfter(to)) {
-            // Gate：结束日早于起始日时拒绝，避免空结果误导
+        LocalDateTime from;
+        LocalDateTime to;
+        try {
+            from = ReportDateTimeWindowSupport.parseInclusiveStart(dateFrom);
+            to = ReportDateTimeWindowSupport.parseInclusiveEnd(dateTo);
+        } catch (DateTimeParseException ex) {
+            // 格式非法按日期范围错误拒绝，避免半解析窗口
+            throw new BusinessException(
+                ConsumableUsageReportConstants.EX_RPT_ICU_102,
+                "请选择有效日期范围");
+        }
+        // Gate：结束时刻早于起始时刻时拒绝，避免空结果误导
+        if (to.isBefore(from)) {
             throw new BusinessException(
                 ConsumableUsageReportConstants.EX_RPT_ICU_102,
                 "请选择有效日期范围");

@@ -21,6 +21,10 @@ import com.openhis.elep.domain.prescription.command.ElepPreCheckCommand;
 import com.openhis.elep.domain.prescription.result.ElepPreCheckResult;
 import com.openhis.elep.domain.prescription.command.ElepHisproxyRevokeCommand;
 import com.openhis.elep.domain.prescription.result.ElepHisproxyRevokeResult;
+import com.openhis.elep.domain.prescription.command.ElepEncounterContextQuery;
+import com.openhis.elep.domain.prescription.result.ElepEncounterContextResult;
+import com.openhis.elep.domain.prescription.command.ElepReviewCommand;
+import com.openhis.elep.domain.prescription.result.ElepReviewResult;
 import com.openhis.elep.domain.prescription.command.ElepSaveDraftCommand;
 import com.openhis.elep.domain.prescription.command.ElepSignCommand;
 import com.openhis.elep.domain.prescription.result.ElepSignResult;
@@ -156,6 +160,28 @@ public class ElepPrescriptionOperationsRemoteClientImpl implements ElepPrescript
     @Override
     public ElepPrescriptionDraft saveDraft(ElepSaveDraftCommand command) {
         return remoteClient.post(SERVICE, "saveDraft", command, ElepPrescriptionDraft.class);
+    }
+
+    /**
+     * remote：装载就诊上下文。
+     *
+     * @param query 就诊、患者、契约
+     * @return 上下文
+     */
+    @Override
+    public ElepEncounterContextResult loadEncounterContext(ElepEncounterContextQuery query) {
+        return remoteClient.post(SERVICE, "loadEncounterContext", query, ElepEncounterContextResult.class);
+    }
+
+    /**
+     * remote：院内药师审方。
+     *
+     * @param command 处方主键
+     * @return 审方结果
+     */
+    @Override
+    public ElepReviewResult review(ElepReviewCommand command) {
+        return remoteClient.post(SERVICE, "review", command, ElepReviewResult.class);
     }
 
     @Override

@@ -50,5 +50,11 @@ public class LoadOutpatientRegistrationDetailReportPageInitResponse {
     /** 汇总视角下拉（科室/医生）。 */
     @Schema(description = "汇总视角选项")
     private List<OptionDto> summaryViewOptions;
+
+    /**
+     * 就诊状态下拉（已挂号/在诊/退号等；value=EncounterStatus code，CANCELLED 展示「退号」）。
+     */
+    @Schema(description = "就诊状态选项")
+    private List<OptionDto> statusOptions;
 }
 

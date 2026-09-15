@@ -135,8 +135,8 @@ public class FeeDetailMatchedScopePurchaseTotalSupport {
         if (matchedEncounterIds == null || matchedEncounterIds.isEmpty()) {
             return List.of();
         }
-        LocalDateTime enteredFrom = query.getBillDateFrom().atStartOfDay();
-        LocalDateTime enteredToExclusive = query.getBillDateTo().plusDays(1).atStartOfDay();
+        LocalDateTime enteredFrom = query.getBillDateFrom();
+        LocalDateTime enteredToExclusive = ReportDateTimeWindowSupport.toExclusiveEnd(query.getBillDateTo());
         List<String> statusCodes = query.getAllowedChargeItemStatusCodes();
         if (statusCodes == null || statusCodes.isEmpty()) {
             statusCodes = List.of(ChargeItemStatus.SETTLED.getCode());

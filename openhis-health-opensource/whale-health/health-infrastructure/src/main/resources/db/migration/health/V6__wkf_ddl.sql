@@ -1076,3 +1076,54 @@ CREATE INDEX IF NOT EXISTS idx_wkf_schedule_source_tpl
 CREATE UNIQUE INDEX IF NOT EXISTS uk_wkf_slot_org_time_window
     ON wkf_slot (organization_id, start_time, end_time)
     WHERE is_deleted = false;
+
+-- =============================================================================
+-- V13 squash: wkf report indexes
+-- =============================================================================
+CREATE INDEX IF NOT EXISTS idx_rpt_wkf_dev_dispense_time_loc
+    ON wkf_device_dispense (dispense_time, location_id, status_enum)
+    WHERE is_deleted = FALSE AND dispense_time IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_wkf_dev_dispense_encounter
+    ON wkf_device_dispense (encounter_id)
+    WHERE is_deleted = FALSE AND encounter_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_wkf_dev_dispense_device_def
+    ON wkf_device_dispense (device_def_id)
+    WHERE is_deleted = FALSE AND device_def_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_wkf_dev_dispense_prepare
+    ON wkf_device_dispense (prepare_time, status_enum)
+    WHERE is_deleted = FALSE AND prepare_time IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_wkf_dev_dispense_performer
+    ON wkf_device_dispense (performer_id, dispense_time)
+    WHERE is_deleted = FALSE AND performer_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_wkf_dev_dispense_preparer
+    ON wkf_device_dispense (preparer_id, prepare_time)
+    WHERE is_deleted = FALSE AND preparer_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_wkf_supply_approval
+    ON wkf_supply_request (approval_time, status_enum, type_enum, item_table)
+    WHERE is_deleted = FALSE AND approval_time IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_wkf_supply_purpose_loc
+    ON wkf_supply_request (purpose_location_id, approval_time)
+    WHERE is_deleted = FALSE AND purpose_location_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_wkf_supply_source_loc
+    ON wkf_supply_request (source_location_id, approval_time)
+    WHERE is_deleted = FALSE AND source_location_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_wkf_supply_item
+    ON wkf_supply_request (item_table, item_id)
+    WHERE is_deleted = FALSE AND item_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_wkf_supply_apply_time
+    ON wkf_supply_request (apply_time, status_enum, type_enum)
+    WHERE is_deleted = FALSE AND apply_time IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_wkf_supply_bus_no
+    ON wkf_supply_request (bus_no)
+    WHERE is_deleted = FALSE;

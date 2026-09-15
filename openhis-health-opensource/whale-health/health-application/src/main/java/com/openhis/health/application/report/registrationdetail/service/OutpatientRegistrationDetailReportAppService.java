@@ -29,8 +29,11 @@ import com.openhis.health.domain.administration.organization.entity.Organization
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+import com.openhis.health.domain.share.constants.OutpatientRegistrationConstants;
 import com.openhis.health.domain.share.constants.OutpatientRegistrationReportConstants;
 import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
+import com.openhis.health.domain.share.enums.EncounterStatus;
+import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -66,6 +69,23 @@ import java.util.List;
 @RequiredArgsConstructor
 public class OutpatientRegistrationDetailReportAppService {
 
+    /**
+     * 页初始化「状态」下拉白名单（门诊挂号生命周期；不含住院向 PRE_ADMISSION/PENDING）。
+     *
+     * <p>展示：CANCELLED→退号、ENTERED_IN_ERROR→未收费取消，其余枚举 display。</p>
+     */
+    private static final EncounterStatus[] STATUS_FILTER_OPTIONS = {
+        EncounterStatus.PLANNED,
+        EncounterStatus.REGISTERED,
+        EncounterStatus.TRIAGED,
+        EncounterStatus.IN_PROGRESS,
+        EncounterStatus.ON_HOLD,
+        EncounterStatus.DISCHARGED,
+        EncounterStatus.COMPLETED,
+        EncounterStatus.CANCELLED,
+        EncounterStatus.ENTERED_IN_ERROR
+    };
+
     /** 登录 Gate。 */
     private final CurrentOperatorResolver currentOperatorResolver;
 
@@ -91,7 +111,7 @@ public class OutpatientRegistrationDetailReportAppService {
     private final OutpatientRegistrationDetailReportMapper mapper;
 
     /**
-     * IF-RPT-ORG-01：页面初始化（默认当日、科室/医生/号源/汇总视角下拉）。
+     * IF-RPT-ORG-01：页面初始化（默认当日、科室/医生/号源/汇总视角/就诊状态下拉）。
      *
      * @param request 空体占位
      * @return 初始化响应
@@ -106,11 +126,12 @@ public class OutpatientRegistrationDetailReportAppService {
         try {
             LocalDate today = LocalDate.now();
             String todayText = today.format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
-            // Pre：门诊挂号科室 / 医生岗 / 号源类型 / 汇总视角选项
+            // Pre：门诊挂号科室 / 医生岗 / 号源类型 / 汇总视角 / 就诊状态选项
             List<OptionDto> organizationOptions = this.buildOrganizationOptions();
             List<OptionDto> practitionerOptions = this.buildPractitionerOptions();
             List<OptionDto> serviceTypeOptions = this.buildServiceTypeOptions();
             List<OptionDto> summaryViewOptions = this.buildSummaryViewOptions();
+            List<OptionDto> statusOptions = this.buildStatusOptions();
             // Asm：默认当日 + 下拉装配（BR-RPT-ORG-001 默认当日）
             return this.mapper.toLoadPageInitResponse(
                 todayText,
@@ -120,7 +141,8 @@ public class OutpatientRegistrationDetailReportAppService {
                 organizationOptions,
                 practitionerOptions,
                 serviceTypeOptions,
-                summaryViewOptions);
+                summaryViewOptions,
+                statusOptions);
         } catch (BusinessException businessException) {
             // Gate：业务异常原样抛出，不包装为 101
             throw businessException;
@@ -154,6 +176,7 @@ public class OutpatientRegistrationDetailReportAppService {
         this.assertDateRange(dateFrom, dateTo);
         String summaryDimension = this.querySupport.resolveSummaryDimension(request.getSummaryView());
         this.assertSummaryDimension(summaryDimension);
+        this.assertStatusEnumFilter(request.getStatusEnum());
         try {
             // Pre：Request → Query + 医生/关键字 scope
             OutpatientRegistrationReportPageQuery query = this.mapper.toSummarizeQuery(request);
@@ -218,6 +241,7 @@ public class OutpatientRegistrationDetailReportAppService {
         LocalDate dateTo = this.parseRequiredDate(request.getDateTo());
         this.assertDateRange(dateFrom, dateTo);
         this.assertPageWindow(request.getPageNo(), request.getPageSize());
+        this.assertStatusEnumFilter(request.getStatusEnum());
         try {
             // Pre：Request → Query + scope
             OutpatientRegistrationReportPageQuery query = this.mapper.toDetailPageQuery(request);
@@ -267,6 +291,7 @@ public class OutpatientRegistrationDetailReportAppService {
         LocalDate dateFrom = this.parseRequiredDate(request.getDateFrom());
         LocalDate dateTo = this.parseRequiredDate(request.getDateTo());
         this.assertDateRange(dateFrom, dateTo);
+        this.assertStatusEnumFilter(request.getStatusEnum());
         String presentationMode = StringUtils.trimToNull(request.getPresentationMode());
         // Gate：导出仅当前 Tab（BR-RPT-ORG-005），须为 SUMMARY 或 DETAIL
         if (!OutpatientRegistrationReportConstants.PRESENTATION_MODE_SUMMARY.equals(presentationMode)
@@ -508,6 +533,41 @@ public class OutpatientRegistrationDetailReportAppService {
     }
 
     /**
+     * 就诊状态筛选项须为空，或落在页初始化白名单（与 {@link #STATUS_FILTER_OPTIONS} 一致；BR-RPT-ORG-009）。
+     *
+     * <p>调用前归一空白；非法或住院向状态（如 PRE_ADMISSION）拒绝，避免与下拉不一致的静默筛。</p>
+     *
+     * @param statusEnum 请求状态码；空白视为不筛选
+     */
+    private void assertStatusEnumFilter(String statusEnum) {
+        String trimmed = StringUtils.trimToNull(statusEnum);
+        // 空：不按状态收窄
+        if (trimmed == null) {
+            return;
+        }
+        EncounterStatus status = EnumUtil.fromCode(EncounterStatus.class, trimmed);
+        // Gate：未知 code 拒绝
+        if (status == null) {
+            throw new BusinessException(
+                OutpatientRegistrationReportConstants.EX_RPT_ORG_102,
+                "请选择有效的就诊状态");
+        }
+        // Gate：须属于门诊报表白名单（与 IF-01 statusOptions 同源）
+        boolean allowed = false;
+        for (EncounterStatus option : STATUS_FILTER_OPTIONS) {
+            if (option.equals(status)) {
+                allowed = true;
+                break;
+            }
+        }
+        if (!allowed) {
+            throw new BusinessException(
+                OutpatientRegistrationReportConstants.EX_RPT_ORG_102,
+                "请选择有效的就诊状态");
+        }
+    }
+
+    /**
      * 门诊挂号科室 OptionDto（AS IF-01 科室下拉）。
      *
      * @return 科室选项；无主数据时为空列表
@@ -609,6 +669,45 @@ public class OutpatientRegistrationDetailReportAppService {
         doctor.setLabel("按接诊医生");
         options.add(doctor);
         return options;
+    }
+
+    /**
+     * 就诊状态 OptionDto（已挂号/在诊/退号等；与明细列展示口径一致）。
+     *
+     * @return 状态选项；未知 code 跳过
+     */
+    private List<OptionDto> buildStatusOptions() {
+        List<OptionDto> options = new ArrayList<>();
+        // 按白名单顺序装配状态下拉，与明细列展示口径一致
+        for (EncounterStatus status : STATUS_FILTER_OPTIONS) {
+            // 防御占位：白名单常量不可为 null
+            if (status == null) {
+                continue;
+            }
+            OptionDto option = new OptionDto();
+            option.setValue(status.getCode());
+            option.setLabel(this.resolveStatusOptionLabel(status));
+            options.add(option);
+        }
+        return options;
+    }
+
+    /**
+     * 状态下拉展示文案：退号/未收费取消用窗口口径，其余用枚举 display。
+     *
+     * @param status 已解析就诊状态
+     * @return 非空展示文案
+     */
+    private String resolveStatusOptionLabel(EncounterStatus status) {
+        // 已收费后退号：与明细列「退号」一致
+        if (EncounterStatus.CANCELLED.equals(status)) {
+            return OutpatientRegistrationConstants.CLINIC_REGISTER_STATUS_TEXT_REFUNDED;
+        }
+        // 未收费取消：与明细列「未收费取消」一致
+        if (EncounterStatus.ENTERED_IN_ERROR.equals(status)) {
+            return OutpatientRegistrationConstants.CLINIC_REGISTER_STATUS_TEXT_ENTERED_IN_ERROR;
+        }
+        return status.getDisplay();
     }
 }
 

@@ -196,7 +196,6 @@ export interface InventoryOpeningProductRowDto {
   categoryCode?: string;
   categoryCodeDictText?: string;
   unitCode?: string;
-  referencePurchasePrice?: number;
   purchasePrice?: number;
   manufacturer?: string;
   /** 目录单位四槽（与进货选品同结构） */
@@ -464,7 +463,7 @@ export function mapInventoryOpeningProductToPickRow(
   r: InventoryOpeningProductRowDto,
 ): Record<string, unknown> {
   const defId = r.itemId;
-  const purchase = r.purchasePrice ?? r.referencePurchasePrice;
+  const purchase = r.purchasePrice;
   return {
     ...r,
     productTableName: r.itemTable,

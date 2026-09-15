@@ -111,13 +111,16 @@ export async function queryUploadLogsApi(params: ListUploadLogsParams) {
   });
 }
 
-/** 上报台分页（待传/失败等） */
+/** 上报台分页（待传/失败/成功；按交易号分流 4401 与结算清单） */
 export async function queryUploadPageApi(params: QueryUploadPageParams) {
   const data = await publicRequestClient.post(`${BASE}/queryUploadPage`, {
     pageNo: params.pageNo ?? 1,
     pageSize: params.pageSize ?? 20,
     statusCode: params.statusCode,
     keyword: params.keyword,
+    infno: params.infno,
+    dscgTimeFrom: params.dscgTimeFrom,
+    dscgTimeTo: params.dscgTimeTo,
   });
   return parsePagedRowsFromApiData<CaseRecordUploadSummaryDto>(data);
 }

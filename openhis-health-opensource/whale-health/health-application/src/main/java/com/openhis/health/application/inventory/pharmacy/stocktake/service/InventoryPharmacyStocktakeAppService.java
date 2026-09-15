@@ -55,6 +55,7 @@ import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemDom
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemQueryService;
 import com.openhis.health.application.shared.inventory.InventoryItemProductSelectionPageLoader;
 import com.openhis.health.domain.workflow.inventoryitem.valueobject.InventoryMatchKey;
+import com.openhis.health.domain.workflow.supplydelivery.command.CreateStocktakingDeliveryCommand;
 import com.openhis.health.domain.workflow.supplydelivery.service.SupplyDeliveryDomainService;
 import com.openhis.health.domain.workflow.supplydelivery.service.SupplyDeliveryQueryService;
 import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyByBusNoQuery;
@@ -439,7 +440,9 @@ public class InventoryPharmacyStocktakeAppService {
     }
 
     /**
-     * 药房盘点单同意编排：领域落已同意态 → 盘点发放 → 药房库存盈亏入账（盘盈可新建库存行）。
+     * 药房盘点单同意编排：领域落已同意态 → 盘点发放（仅非零盈亏行）→ 药房库存盈亏入账（盘盈可新建库存行）。
+     *
+     * <p>整单明细盈亏数量均为 0 时仍同意成功：不落盘点发放、不调库存（账面无变化）。</p>
      *
      * @param request 须含 busNo
      * @return 同意成功标志
@@ -494,12 +497,20 @@ public class InventoryPharmacyStocktakeAppService {
         if (!duplicateCompletedRequestIds.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.PHA_ST_104, "供应请求行已存在完成态发放，禁止重复同意盘点");
         }
-        try {
-            supplyDeliveryDomainService.createStocktakingDelivery(
-                stocktakeMapper.toCreateStocktakingDeliveryCommand(agreedLines, operatorId));
-        } catch (BusinessException ex) {
-            throw new BusinessException(ErrorCodeConstants.PHA_ST_104, "盘点发放落库失败：" + ex.getMessage());
+        // Cmd：盘点发放落库（仅非零盈亏行；整单盈亏均为 0 时无差异事实，跳过发放以免空 items 校验失败）
+        CreateStocktakingDeliveryCommand deliveryCmd =
+            stocktakeMapper.toCreateStocktakingDeliveryCommand(agreedLines, operatorId);
+        List<CreateStocktakingDeliveryCommand.CreateStocktakingDeliveryItemCommand> deliveryItems =
+            deliveryCmd.getItems();
+        // 有非零盈亏行：落盘点差异发放
+        if (deliveryItems != null && !deliveryItems.isEmpty()) {
+            try {
+                supplyDeliveryDomainService.createStocktakingDelivery(deliveryCmd);
+            } catch (BusinessException ex) {
+                throw new BusinessException(ErrorCodeConstants.PHA_ST_104, "盘点发放落库失败：" + ex.getMessage());
+            }
         }
+        // 整单盈亏均为 0：账面无变化，不调用发放落库
         List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
         for (SupplyRequestModel line : agreedLines) {
             if (line == null || line.getItemId() == null || StringUtils.isEmpty(line.getItemTable())) {
@@ -528,9 +539,13 @@ public class InventoryPharmacyStocktakeAppService {
                 continue;
             }
             Long purposeLocationId = line.getPurposeLocationId();
-            String resolvedLot = StringUtils.isEmpty(line.getLotNumber())
-                ? GeneralSharedConstants.EMPTY_STRING
-                : line.getLotNumber().trim();
+            String resolvedLot;
+            // 批号空则落空串，与库存匹配键口径一致
+            if (StringUtils.isEmpty(line.getLotNumber())) {
+                resolvedLot = GeneralSharedConstants.EMPTY_STRING;
+            } else {
+                resolvedLot = line.getLotNumber().trim();
+            }
             InventoryMatchKey matchKey = new InventoryMatchKey();
             matchKey.setSupplierId(line.getSupplierId());
             matchKey.setLotNumber(resolvedLot);

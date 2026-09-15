@@ -24,4 +24,9 @@ public class MedicationDefinitionCatalogPageQuery extends AbstractPageQuery {
      * 重点药类型 code（可选，见 {@code KeyDrugType}）；空表示不限，非空时筛选对应标识为 {@code true} 的药品。
      */
     private String keyDrugType;
+
+    /**
+     * 发布状态 code（可选，见 {@link com.openhis.health.domain.share.enums.PublicationStatus}）；空表示不限。
+     */
+    private String statusEnum;
 }

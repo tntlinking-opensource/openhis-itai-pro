@@ -45,7 +45,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <!-- 朝阳：左摘要标签 + 右合计；布局走外挂 css（院点 scoped 会丢） -->
+  <!-- 左摘要标签 + 右合计；布局走外挂 css -->
   <div class="tcm-prescription-summary">
     <div class="tcm-prescription-summary__meta">
       <span class="tcm-prescription-summary__count">

@@ -48,4 +48,19 @@ public interface DoctorStationRefundApplicationConstants {
      * IF-DRA-03 拒绝语义码：同一原支付禁止分次退费（与 AS EX-DRA-304 对齐）。
      */
     String MESSAGE_CODE_HALF_REFUND_NOT_SUPPORTED = "EX-DRA-304";
+
+    /**
+     * IF-DRA-04：已退款或已退药不可撤销（与 AS EX-DRA-501 对齐）。
+     */
+    String MESSAGE_CODE_REFUND_REVOKE_NOT_ALLOWED = "EX-DRA-501";
+
+    /**
+     * IF-DRA-04：禁止半取消（与 AS EX-DRA-502 对齐）。
+     */
+    String MESSAGE_CODE_HALF_CANCEL_NOT_SUPPORTED = "EX-DRA-502";
+
+    /**
+     * IF-DRA-04：禁止混选可申请与可撤销支付单（与 AS EX-DRA-503 对齐）。
+     */
+    String MESSAGE_CODE_MIXED_APPLY_AND_REVOKE = "EX-DRA-503";
 }

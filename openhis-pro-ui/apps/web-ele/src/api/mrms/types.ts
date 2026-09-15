@@ -32,6 +32,10 @@ export interface CaseRecordListItemDto {
   /** 病区/病室名（无活动病区时为末次已完成病区） */
   wardName?: string;
   certno?: string;
+  /** 医保人员编号 psn_no */
+  psnNo?: string;
+  /** 医保结算 ID setl_id */
+  setlId?: string;
   admTime?: string;
   dscgTime?: string;
   admCatyName?: string;
@@ -64,6 +68,11 @@ export interface CaseRecordDetailDto {
   caseRecordId?: string;
   patientId?: string;
   encounterId?: string;
+  /**
+   * 入院科室主键（就诊 organization_id；诊断医生下拉 / 同科室门禁）。
+   * loadPage 从住院上下文回填；不写入首页表。
+   */
+  organizationId?: string;
   medcasno?: string;
   statusCode?: CaseRecordStatusCode | string;
   statusLabel?: string;
@@ -100,6 +109,8 @@ export interface QueryCaseRecordParams extends PageParams {
 
 export interface HomepageDto {
   caseRecordId?: string;
+  /** 院内病案号；首次保存发号后由 saveHomepage 回传 */
+  medcasno?: string;
   versionNo?: number;
   frozen?: boolean;
   iptMedcasHmpgSn?: string;
@@ -118,6 +129,20 @@ export interface HomepageDto {
   conerRltsCode?: string;
   conerAddr?: string;
   trtTypeCode?: string;
+  /** 实施临床路径（1中医 2西医 3否） */
+  clinicalPathCode?: string;
+  /** 使用医疗机构中药制剂（1是 2否） */
+  tcmPrepCode?: string;
+  /** 使用中医诊疗设备（1是 2否） */
+  tcmDeviceCode?: string;
+  /** 使用中医诊疗技术（1是 2否） */
+  tcmTechCode?: string;
+  /** 辨证施护（1是 2否） */
+  syndromeNurseCode?: string;
+  /**
+   * 是否启用「中医信息」段（只读；医院 medins_type 判定，不落库）
+   */
+  tcmInfoEnabled?: boolean;
   spgaNurscareDays?: number;
   lv1NurscareDays?: number;
   scdNurscareDays?: number;
@@ -145,8 +170,105 @@ export interface HomepageDto {
   atddrName?: string;
   iptDrName?: string;
   respNursName?: string;
+  /** 医疗付费方式 */
+  payWayCode?: string;
+  /** 健康卡号 */
+  healthCardNo?: string;
+  /** 年龄（岁） */
+  ageYear?: number;
+  /** 不足1周岁年龄（月） */
+  ageMonth?: number;
+  /** 出生地省市区 code（库列斜杠拼接，接口为数组） */
+  birplcCodes?: string[];
+  /** 出生地中文地名（卫统 CSD / HQMS A22） */
+  birplcName?: string;
+  /** 籍贯省市 code（库列斜杠拼接，接口为数组） */
+  naplCodes?: string[];
+  /** 籍贯中文地名（卫统 GG；HQMS A23C 用 codes→RC036） */
+  naplName?: string;
+  /** 现住址省市区 code（库列斜杠拼接，接口为数组） */
+  currAddrCodes?: string[];
+  /** 现住址详细地址 */
+  currAddrDetail?: string;
+  /** 现住址邮编 */
+  currAddrPoscode?: string;
+  /** 户口地址省市区 code（库列斜杠拼接，接口为数组） */
+  resdAddrCodes?: string[];
+  /** 户口详细地址 */
+  resdAddrDetail?: string;
+  /** 户口邮编 */
+  resdAddrPoscode?: string;
+  /** 工作单位及地址 */
+  emprAddr?: string;
+  /** 单位电话 */
+  emprTel?: string;
+  /** 单位邮编 */
+  emprPoscode?: string;
+  /** 入院病区 */
+  admWard?: string;
+  /** 入院床位 */
+  admBed?: string;
+  /** 出院病区 */
+  dscgWard?: string;
+  /** 出院床位 */
+  dscgBed?: string;
+  /** 药物过敏 1无 2有 */
+  drugAllergyCode?: string;
+  /** 过敏药物 */
+  allergyDrugName?: string;
+  /** 病理号 */
+  pathologyNo?: string;
+  /** 主要诊断治愈好转 */
+  mainDiagCureCode?: string;
+  /** 抢救次数 */
+  rescueCount?: number;
+  /** 抢救成功次数 */
+  rescueSuccessCount?: number;
+  /** 临床路径管理（异于中医 clinicalPathCode） */
+  clinicPathManageCode?: string;
+  /** 诊断符合：门诊与出院 */
+  diagMatchOpDscg?: string;
+  /** 诊断符合：入院与出院 */
+  diagMatchAdmDscg?: string;
+  /** 诊断符合：术前与术后 */
+  diagMatchPrePost?: string;
+  /** 诊断符合：临床与病理 */
+  diagMatchClinicPath?: string;
+  /** 诊断符合：放射与病理 */
+  diagMatchRadioPath?: string;
+  /** 死亡患者尸检 1是 2否 */
+  autopsyCode?: string;
+  /** 血型 ABO */
+  aboCode?: string;
+  /** Rh */
+  rhCode?: string;
+  /** 进修医师 */
+  trainDrName?: string;
+  /** 实习医师 */
+  intnDrName?: string;
+  /** 编码员 */
+  codrName?: string;
+  /** 病案质量 */
+  medcasQltCode?: string;
+  /** 质控日期 */
+  qltctrlDate?: string;
+  /** 质控医师 */
+  qltctrlDrName?: string;
+  /** 质控护士 */
+  qltctrlNursName?: string;
+  /** 拟接收医院 */
+  acpMedinsName?: string;
+  /** 拟接收社区/卫生院 */
+  acpCommunityName?: string;
+  /** 31天再住院计划 1无 2有 */
+  rinp31Flag?: string;
+  /** 再住院目的 */
+  rinp31Purpose?: string;
   fieldSources?: Record<string, string>;
-  extension?: Record<string, unknown>;
+  /**
+   * 费用现查结果（键=4401 费用参数代码，如 medfee_sumamt；不落库）。
+   */
+  fees?: Record<string, number>;
   diagnoses?: DiagnosisLineDto[];
   procedures?: ProcedureLineDto[];
 }
@@ -155,6 +277,8 @@ export interface HomepageDto {
 export interface HomepagePageDto {
   caseRecord?: CaseRecordDetailDto;
   homepage?: HomepageDto;
+  /** 是否启用中医信息（与 homepage.tcmInfoEnabled 同口径） */
+  tcmInfoEnabled?: boolean;
 }
 
 export interface DiagnosisLineDto {
@@ -164,6 +288,18 @@ export interface DiagnosisLineDto {
   diagCode?: string;
   diagName?: string;
   admCondCode?: string;
+  /** 诊断转归/病情（1治愈 2好转 3未愈 4死亡 9其他） */
+  outIllStatusCode?: string;
+  /** 确诊时间（手填，YYYY-MM-DD HH:mm:ss） */
+  confirmTime?: string;
+  /** 说明（手填） */
+  diagRemark?: string;
+  /** 诊断医生 practitionerId（出院下拉，string 防精度丢失） */
+  confirmDrId?: string;
+  /** 诊断医生姓名（下拉选中冗余） */
+  confirmDrName?: string;
+  /** 是否上传医保（1是 0否） */
+  needYbUp?: string;
 }
 
 export interface ProcedureLineDto {
@@ -202,6 +338,16 @@ export interface SaveHomepageParams {
   conerRltsCode?: string;
   conerAddr?: string;
   trtTypeCode?: string;
+  /** 实施临床路径（1中医 2西医 3否） */
+  clinicalPathCode?: string;
+  /** 使用医疗机构中药制剂（1是 2否） */
+  tcmPrepCode?: string;
+  /** 使用中医诊疗设备（1是 2否） */
+  tcmDeviceCode?: string;
+  /** 使用中医诊疗技术（1是 2否） */
+  tcmTechCode?: string;
+  /** 辨证施护（1是 2否） */
+  syndromeNurseCode?: string;
   spgaNurscareDays?: number;
   lv1NurscareDays?: number;
   scdNurscareDays?: number;
@@ -229,7 +375,100 @@ export interface SaveHomepageParams {
   atddrName?: string;
   iptDrName?: string;
   respNursName?: string;
-  extension?: Record<string, unknown>;
+  /** 医疗付费方式 */
+  payWayCode?: string;
+  /** 健康卡号 */
+  healthCardNo?: string;
+  /** 年龄（岁） */
+  ageYear?: number;
+  /** 不足1周岁年龄（月） */
+  ageMonth?: number;
+  /** 出生地省市区 code（库列斜杠拼接，接口为数组） */
+  birplcCodes?: string[];
+  /** 出生地中文地名（卫统 CSD / HQMS A22） */
+  birplcName?: string;
+  /** 籍贯省市 code（库列斜杠拼接，接口为数组） */
+  naplCodes?: string[];
+  /** 籍贯中文地名（卫统 GG；HQMS A23C 用 codes→RC036） */
+  naplName?: string;
+  /** 现住址省市区 code（库列斜杠拼接，接口为数组） */
+  currAddrCodes?: string[];
+  /** 现住址详细地址 */
+  currAddrDetail?: string;
+  /** 现住址邮编 */
+  currAddrPoscode?: string;
+  /** 户口地址省市区 code（库列斜杠拼接，接口为数组） */
+  resdAddrCodes?: string[];
+  /** 户口详细地址 */
+  resdAddrDetail?: string;
+  /** 户口邮编 */
+  resdAddrPoscode?: string;
+  /** 工作单位及地址 */
+  emprAddr?: string;
+  /** 单位电话 */
+  emprTel?: string;
+  /** 单位邮编 */
+  emprPoscode?: string;
+  /** 入院病区 */
+  admWard?: string;
+  /** 入院床位 */
+  admBed?: string;
+  /** 出院病区 */
+  dscgWard?: string;
+  /** 出院床位 */
+  dscgBed?: string;
+  /** 药物过敏 1无 2有 */
+  drugAllergyCode?: string;
+  /** 过敏药物 */
+  allergyDrugName?: string;
+  /** 病理号 */
+  pathologyNo?: string;
+  /** 主要诊断治愈好转 */
+  mainDiagCureCode?: string;
+  /** 抢救次数 */
+  rescueCount?: number;
+  /** 抢救成功次数 */
+  rescueSuccessCount?: number;
+  /** 临床路径管理（异于中医 clinicalPathCode） */
+  clinicPathManageCode?: string;
+  /** 诊断符合：门诊与出院 */
+  diagMatchOpDscg?: string;
+  /** 诊断符合：入院与出院 */
+  diagMatchAdmDscg?: string;
+  /** 诊断符合：术前与术后 */
+  diagMatchPrePost?: string;
+  /** 诊断符合：临床与病理 */
+  diagMatchClinicPath?: string;
+  /** 诊断符合：放射与病理 */
+  diagMatchRadioPath?: string;
+  /** 死亡患者尸检 1是 2否 */
+  autopsyCode?: string;
+  /** 血型 ABO */
+  aboCode?: string;
+  /** Rh */
+  rhCode?: string;
+  /** 进修医师 */
+  trainDrName?: string;
+  /** 实习医师 */
+  intnDrName?: string;
+  /** 编码员 */
+  codrName?: string;
+  /** 病案质量 */
+  medcasQltCode?: string;
+  /** 质控日期 */
+  qltctrlDate?: string;
+  /** 质控医师 */
+  qltctrlDrName?: string;
+  /** 质控护士 */
+  qltctrlNursName?: string;
+  /** 拟接收医院 */
+  acpMedinsName?: string;
+  /** 拟接收社区/卫生院 */
+  acpCommunityName?: string;
+  /** 31天再住院计划 1有 2无（与页面口径一致以后端为准） */
+  rinp31Flag?: string;
+  /** 再住院目的 */
+  rinp31Purpose?: string;
   diagnoses?: DiagnosisLineDto[];
   procedures?: ProcedureLineDto[];
 }
@@ -427,7 +666,7 @@ export interface QueryBorrowPageParams extends PageParams {
   caseRecordId?: string;
 }
 
-/** 4401 上传摘要（CaseRecordUploadSummaryDto） */
+/** 4401/结算上报摘要（CaseRecordUploadSummaryDto） */
 export interface CaseRecordUploadSummaryDto {
   caseRecordId?: string;
   medcasno?: string;
@@ -436,6 +675,14 @@ export interface CaseRecordUploadSummaryDto {
   archivedAt?: string;
   chsUploadStatusCode?: string;
   chsUploadError?: string;
+  /** 结算清单上传标志 0/1/2 */
+  settleUploadStatusCode?: string;
+  settleUploadError?: string;
+  setlListId?: string;
+  /** 医保人员编号 */
+  psnNo?: string;
+  /** 医保结算 ID */
+  setlId?: string;
 }
 
 export interface UploadResultDto {
@@ -469,9 +716,14 @@ export interface SettleListQuery4103Dto {
   psnName?: string;
   setlTime?: string;
   medfeeSumamt?: number;
+  /** 平台 stas_type 码：0未提交/1已提交/2审核通过/3审核不通过 */
+  setlStatusCode?: string;
+  /** 平台状态中文（由后端映射；展示用，勿驱动分支） */
   setlStatusText?: string;
   platformMsg?: string;
   setlinfo?: Record<string, unknown>;
+  /** 4103 平台 output 全量（含 setlinfo 及子表） */
+  platformOutput?: Record<string, unknown>;
 }
 
 export interface UploadLogDto {
@@ -504,6 +756,10 @@ export interface ListUploadLogsParams {
 export interface QueryUploadPageParams extends PageParams {
   statusCode?: string;
   keyword?: string;
+  /** 4401 / 4101A / 4102；空按结算清单口径 */
+  infno?: string;
+  dscgTimeFrom?: string;
+  dscgTimeTo?: string;
 }
 
 export interface UnarchiveCaseRecordParams {

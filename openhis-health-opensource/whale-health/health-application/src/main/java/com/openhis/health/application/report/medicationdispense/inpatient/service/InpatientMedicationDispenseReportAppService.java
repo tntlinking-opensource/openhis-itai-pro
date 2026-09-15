@@ -17,6 +17,7 @@ import com.openhis.health.application.report.medicationdispense.inpatient.respon
 import com.openhis.health.application.report.medicationdispense.inpatient.response.PageInpatientMedicationDispenseReportDetailResponse;
 import com.openhis.health.application.report.medicationdispense.inpatient.response.SummarizeInpatientMedicationDispenseReportResponse;
 import com.openhis.health.application.report.medicationdispense.inpatient.support.InpatientMedicationDispenseReportQuerySupport;
+import com.openhis.health.application.shared.report.ReportDateTimeWindowSupport;
 import com.openhis.health.application.shared.report.ReportPatientSettlementContextAssembler;
 import com.openhis.health.application.shared.option.TerminologyOptionLoader;
 import com.openhis.health.application.shared.validator.PageWindowGate;
@@ -31,7 +32,6 @@ import com.openhis.health.domain.medication.medicationdispense.queries.model.Med
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseSlipQueryModel;
 import com.openhis.health.domain.medication.medicationdispense.query.MedicationDispenseRecordPageQuery;
 import com.openhis.health.domain.medication.medicationdispense.query.MedicationDispenseReportSummaryQuery;
-import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.MedicationDispenseReportConstants;
 import com.openhis.health.domain.share.constants.InpatientMedicationDispenseReportConstants;
 import com.openhis.health.domain.share.constants.PharmacyDispenseRecordConstants;
@@ -54,6 +54,8 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -139,8 +141,8 @@ public class InpatientMedicationDispenseReportAppService {
                 practitionerOptions.add(option);
             }
             LocalDate today = LocalDate.now();
-            String defaultFrom = today.format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
-            String defaultTo = today.format(GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
+            String defaultFrom = ReportDateTimeWindowSupport.formatDayStart(today);
+            String defaultTo = ReportDateTimeWindowSupport.formatDayEnd(today);
             List<OptionDto> feeNatureOptions = this.reportPatientSettlementContextAssembler.loadFeeNatureOptions();
             List<OptionDto> organizationOptions = this.buildOrganizationOptions();
             // Asm：装配初始化响应
@@ -274,9 +276,6 @@ public class InpatientMedicationDispenseReportAppService {
                     purchaseTotalAmount = purchaseTotalAmount.add(row.getPurchaseNetAmount());
                 }
                 BigDecimal saleNet = row.getSaleNetAmount();
-                if (saleNet == null) {
-                    saleNet = row.getNetAmount();
-                }
                 if (saleNet != null) {
                     if (saleTotalAmount == null) {
                         saleTotalAmount = BigDecimal.ZERO;
@@ -531,10 +530,12 @@ public class InpatientMedicationDispenseReportAppService {
     }
 
     /**
-     * Gate：业务日闭区间合法且起止不颠倒。
+     * Gate：业务日/时刻闭区间合法且起止不颠倒。
      *
-     * @param dispenseDateFrom 日起
-     * @param dispenseDateTo   日止
+     * <p>允许 {@code yyyy-MM-dd} 或 {@code yyyy-MM-dd HH:mm:ss}；仅日期时起补 00:00:00、止补 23:59:59。</p>
+     *
+     * @param dispenseDateFrom 日起或日起时刻
+     * @param dispenseDateTo   日止或日止时刻
      */
     private void validateDispenseDateWindow(String dispenseDateFrom, String dispenseDateTo) {
         // Gate：缺日起或日止直接拒绝（BR-RPT-IMD-001）
@@ -543,10 +544,19 @@ public class InpatientMedicationDispenseReportAppService {
                 InpatientMedicationDispenseReportConstants.EX_IMD_102,
                 "请选择有效时间范围");
         }
-        LocalDate from = LocalDate.parse(dispenseDateFrom.trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
-        LocalDate to = LocalDate.parse(dispenseDateTo.trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER);
-        // Gate：结束日早于起始日时拒绝，避免空结果误导
-        if (from.isAfter(to)) {
+        LocalDateTime from;
+        LocalDateTime to;
+        try {
+            from = ReportDateTimeWindowSupport.parseInclusiveStart(dispenseDateFrom);
+            to = ReportDateTimeWindowSupport.parseInclusiveEnd(dispenseDateTo);
+        } catch (DateTimeParseException ex) {
+            // 格式非法按时间范围错误拒绝，避免半解析窗口
+            throw new BusinessException(
+                InpatientMedicationDispenseReportConstants.EX_IMD_102,
+                "请选择有效时间范围");
+        }
+        // Gate：结束时刻早于起始时刻时拒绝，避免空结果误导
+        if (to.isBefore(from)) {
             throw new BusinessException(
                 InpatientMedicationDispenseReportConstants.EX_IMD_102,
                 "请选择有效时间范围");

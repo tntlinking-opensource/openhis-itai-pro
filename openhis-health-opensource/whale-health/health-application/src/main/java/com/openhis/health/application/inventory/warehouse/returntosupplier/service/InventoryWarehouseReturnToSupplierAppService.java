@@ -324,15 +324,11 @@ public class InventoryWarehouseReturnToSupplierAppService {
      * @return 更新后的 busNo
      * @throws BusinessException {@link ErrorCodeConstants#WHS_RT_001} 参数/可退余量/源库不足；
      *                            {@link ErrorCodeConstants#WHS_RT_004} 不可编辑态；
-     *                            {@link ErrorCodeConstants#WHS_RT_105} 并发或非法 rowVersion
      */
     public UpdateReturnToSupplierResponse updateReturnToSupplier(UpdateReturnToSupplierRequest request) {
         // Gate：busNo、明细与可编辑态校验
         if (request == null || StringUtils.isEmpty(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.WHS_RT_001, "busNo 不能为空");
-        }
-        if (request.getRowVersion() != null) {
-            throw new BusinessException(ErrorCodeConstants.WHS_RT_105, "退货单不支持 rowVersion 乐观锁");
         }
         if (request.getLines() == null || request.getLines().isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.WHS_RT_001, "退货明细不能为空");
@@ -691,20 +687,6 @@ public class InventoryWarehouseReturnToSupplierAppService {
         }
         // Asm：映射删除响应
         return this.returnToSupplierMapper.toRemoveReturnToSupplierResponse(true);
-    }
-
-    /**
-     * 分页查询单据选品（已废弃：药库退货禁止自由选品，须从进货单拉明细）。
-     *
-     * @param request 选品请求
-     * @return 不再支持
-     */
-    public PageProductsForReturnToSupplierResponse pageProductsForReturnToSupplier(
-        PageProductsForReturnToSupplierRequest request) {
-        // Gate：本场景禁止目录选品，须通过 getLinkableGoodsReceiptDetail 从进货单带入明细
-        throw new BusinessException(
-            ErrorCodeConstants.WHS_RT_001,
-            "药库退货单禁止自由选品，请先选择进货单并通过 getLinkableGoodsReceiptDetail 拉取可退明细");
     }
 
     /**
@@ -1306,7 +1288,7 @@ public class InventoryWarehouseReturnToSupplierAppService {
     }
 
     /**
-     * IF-WHS-RT-03：按明细行重算整单合计并双写 {@code totalAmount}/{@code totalPrice}。
+     * IF-WHS-RT-03：按明细行重算整单合计写入 {@code totalAmount}。
      *
      * @param response 详情响应
      */
@@ -1322,7 +1304,6 @@ public class InventoryWarehouseReturnToSupplierAppService {
             totalAmount = totalAmount.add(line.getTotalPrice());
         }
         response.setTotalAmount(totalAmount);
-        response.setTotalPrice(totalAmount);
     }
 
     /**
@@ -1428,10 +1409,8 @@ public class InventoryWarehouseReturnToSupplierAppService {
             if (row == null || StringUtils.isEmpty(row.getBusNo())) {
                 continue;
             }
+            // 聚合列表仅认 totalAmount（已去掉列表行 totalPrice 双写）
             BigDecimal existing = row.getTotalAmount();
-            if (existing == null) {
-                existing = row.getTotalPrice();
-            }
             if (existing != null && existing.compareTo(BigDecimal.ZERO) != 0) {
                 // 已有非零合计：以落库快照为准，不覆盖
                 continue;
@@ -1491,7 +1470,6 @@ public class InventoryWarehouseReturnToSupplierAppService {
                 continue;
             }
             row.setTotalAmount(sum);
-            row.setTotalPrice(sum);
         }
     }
 

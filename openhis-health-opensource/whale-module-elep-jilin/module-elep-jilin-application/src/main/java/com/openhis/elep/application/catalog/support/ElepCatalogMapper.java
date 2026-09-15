@@ -22,6 +22,7 @@ public final class ElepCatalogMapper {
                 .setSpec(row.getSpec())
                 .setDosform(row.getDosform())
                 .setAprvno(row.getAprvno())
+                .setProdentpName(row.getProdentpName())
                 .setPinyin(row.getPinyin())
                 .setValiFlag(row.getValiFlag())
                 .setSourceInfno(row.getSourceInfno());

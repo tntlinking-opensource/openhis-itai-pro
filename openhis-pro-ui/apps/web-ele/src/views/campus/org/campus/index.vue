@@ -53,6 +53,7 @@ const formItems: FormItemConfig[] = [
     label: '状态',
     type: 'select',
     clearable: true,
+    multiple: false,
     options: [
       { label: '启用', value: true },
       { label: '停用', value: false },

@@ -49,28 +49,20 @@ public class OpenPdfRenderer {
             Rectangle pageSize = buildPageSize(printConfig);
             float marginLeft = PdfUnitUtils.mmToPt(printConfig.getMargins().getLeftMm());
             float marginRight = PdfUnitUtils.mmToPt(printConfig.getMargins().getRightMm());
-            float headerHeightMm = 0f;
-            if (printConfig.getHeader().isEnabled()) {
-                headerHeightMm = printConfig.getHeader().getHeightMm();
-            }
-            float footerHeightMm = 0f;
-            if (printConfig.getFooter().isEnabled()) {
-                footerHeightMm = printConfig.getFooter().getHeightMm();
-            }
             PrintConfig.MarginConfig marginCfg = printConfig.getMargins();
             float marginTop;
+            // 有屏上实测正文顶边距时与编辑器 padding 对齐；否则用页边距本身（页眉页脚画在边距带内，不再叠加 band 高度）
             if (marginCfg != null && marginCfg.getContentTopMm() > 0.5f) {
                 marginTop = PdfUnitUtils.mmToPt(marginCfg.getContentTopMm());
             } else {
-                marginTop = PdfUnitUtils.mmToPt(printConfig.getMargins().getTopMm())
-                        + PdfUnitUtils.mmToPt(headerHeightMm);
+                marginTop = PdfUnitUtils.mmToPt(printConfig.getMargins().getTopMm());
             }
             float marginBottom;
+            // 底边距同样不再叠加 footer.heightMm，页码画在 15mm 边距带内
             if (marginCfg != null && marginCfg.getContentBottomMm() > 0.5f) {
                 marginBottom = PdfUnitUtils.mmToPt(marginCfg.getContentBottomMm());
             } else {
-                marginBottom = PdfUnitUtils.mmToPt(printConfig.getMargins().getBottomMm())
-                        + PdfUnitUtils.mmToPt(footerHeightMm);
+                marginBottom = PdfUnitUtils.mmToPt(printConfig.getMargins().getBottomMm());
             }
 
             Document document = new Document(pageSize, marginLeft, marginRight, marginTop, marginBottom);

@@ -1,8 +1,12 @@
 .report-list-page {
   display: flex;
+  flex: 1;
   flex-direction: column;
+  width: 100%;
   height: 100%;
+  min-width: 0;
   min-height: 0;
+  overflow: hidden;
   padding: 0 4px 16px;
 }
 
@@ -97,12 +101,31 @@
   }
 }
 
+/** 查询区操作侧按钮组。 */
 .report-list-page__query-actions {
   display: flex;
   flex-shrink: 0;
   align-items: center;
   align-self: center;
   gap: 8px;
+}
+
+/**
+ * 查询区开关项：占满 4 列栅格空位；文案放 content（禁塞 88px label，否则竖排）。
+ */
+.report-list-page__query-switch-item {
+  .el-form-item__content {
+    justify-content: flex-start;
+  }
+}
+
+.report-list-page__query-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  color: var(--el-text-color-regular);
+  font-size: var(--el-font-size-base);
 }
 
 .report-list-page__list-toolbar {
@@ -147,6 +170,7 @@
 
 .report-list-page__table-scroll {
   flex: 1;
+  min-width: 0;
   min-height: 280px;
   overflow: hidden;
 }
@@ -162,6 +186,11 @@
   margin-top: 0;
   border-top: 1px solid var(--el-border-color-lighter);
   background: transparent;
+
+  /* 无左侧汇总时，分页仍靠右（space-between 单子项会落左边） */
+  .el-pagination {
+    margin-left: auto;
+  }
 }
 
 .report-list-page__summary {

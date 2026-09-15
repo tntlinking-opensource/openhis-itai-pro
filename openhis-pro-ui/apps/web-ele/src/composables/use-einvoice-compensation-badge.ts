@@ -2,6 +2,8 @@ import type { MenuRecordRaw } from '@vben/types';
 
 import { useAccessStore } from '@vben/stores';
 
+import { isEinvoiceUiEnabled } from '#/utils/project-optional-modules';
+
 const BADGE_MENU_CODES = new Set(['EinvoiceBossHub', 'EinvoiceCompensation', 'ChargeStation']);
 
 function patchMenuBadge(menus: MenuRecordRaw[], count: number): MenuRecordRaw[] {
@@ -25,6 +27,9 @@ function patchMenuBadge(menus: MenuRecordRaw[], count: number): MenuRecordRaw[] 
  * 刷新电子发票待补偿菜单角标。
  */
 export async function refreshEinvoiceCompensationMenuBadge(count?: number) {
+  if (!isEinvoiceUiEnabled()) {
+    return;
+  }
   const accessStore = useAccessStore();
   const menus = accessStore.accessMenus;
   if (!menus || menus.length === 0) {

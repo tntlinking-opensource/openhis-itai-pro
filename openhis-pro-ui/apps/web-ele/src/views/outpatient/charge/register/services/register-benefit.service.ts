@@ -14,11 +14,13 @@ export {
   CHARGE_TYPE_CATEGORY,
   INSURANCE_CONTRACT_CATEGORIES,
   INSURANCE_CONTRACT_CATEGORY_PRIORITY,
+  isCrossProvinceInsuplc,
   isInsuranceContractCategory,
   isNonSelfPayContractCategory,
   isPublicChargeContractCategory,
   isSelfPayContractCategory,
   isWorkInjuryContractCategory,
+  JILIN_INSUPLC_PROVINCE_PREFIX,
   PUBLIC_CHARGE_CONTRACT_CATEGORIES,
   requiresInsuranceBenefitFlow,
 } from './charge-type-category';

@@ -6,7 +6,6 @@
 import type {
   LoadPhysicalExamChargeItemsResponse,
   PhysicalExamChargeItemRowDto,
-  PhysicalExamChargeKindCode,
   PhysicalExamChargeQueueRowDto,
   PreSettlePhysicalExamChargesResponse,
   PreviewPhysicalExamRefundResponse,
@@ -32,7 +31,6 @@ import {
   ElMessage,
   ElPagination,
   ElRadio,
-  ElRadioButton,
   ElRadioGroup,
   ElTable,
   ElTableColumn,
@@ -79,18 +77,12 @@ const QUEUE_TAB = {
   COMPLETE: 'COMPLETE',
 } as const;
 
-const CHARGE_KIND = {
-  PERSONAL: 'PERSONAL',
-  GROUP: 'GROUP',
-} as const;
-
 /** 个检套餐整单 ChargeItem 锚点表名 */
 const SERVICE_TABLE_ACTIVITY_DEFINITION = 'wkf_activity_definition';
 
 const SETTLE_OUTCOME_COMPLETED = '1';
 
 const route = useRoute();
-const chargeKindTab = ref<PhysicalExamChargeKindCode>(CHARGE_KIND.PERSONAL);
 const queueTabCode = ref<string>(QUEUE_TAB.WAITING);
 const keyword = ref('');
 const dateRange = ref<[string, string] | null>(null);
@@ -176,7 +168,6 @@ const packageAdjustableItems = computed(() =>
 /** 个检、未结清、已挂套餐整单时允许套餐改价。 */
 const canAdjustPackagePrice = computed(
   () =>
-    chargeKindTab.value === CHARGE_KIND.PERSONAL &&
     selectedEncounterId.value !== '' &&
     !currentQueueRow.value?.groupFlag &&
     packageAdjustableItems.value.length > 0,
@@ -251,15 +242,15 @@ function mapToBillingPatientCard(row: PhysicalExamChargeQueueRowDto): BillingPat
   const amountText = settled
     ? `已收 ¥${formatMoney(row.settledAmount)}`
     : `待收 ¥${formatMoney(row.plannedAmount)}`;
-  const examKindLabel = row.groupFlag ? '团检' : '个检';
   return {
     id: String(row.encounterId),
     patientName: row.patientName || '—',
     gender: formatGender(row),
     ageText: (row.ageText ?? '').trim() || undefined,
+    kindBadge: row.groupFlag ? '团' : '个',
     chargeStatusCode: settled ? 'SETTLED' : 'PLANNED',
     chargeStatus: settled ? '已结算' : '待收费',
-    visitDepartment: `${examKindLabel} · ${row.packageName || '体检套餐'}`,
+    visitDepartment: row.packageName || '体检套餐',
     visitTime: formatStartTime(row.startTime),
     visitType: 'outpatient',
     insuranceType: amountText,
@@ -271,14 +262,12 @@ async function loadQueue() {
   try {
     const range = dateRange.value;
     const body: {
-      chargeKind: PhysicalExamChargeKindCode;
       endDate?: string;
       keyword: string;
       pageNo: number;
       pageSize: number;
       startDate?: string;
     } = {
-      chargeKind: chargeKindTab.value,
       pageNo: queuePager.pageNo,
       pageSize: queuePager.pageSize,
       keyword: keyword.value.trim(),
@@ -576,17 +565,6 @@ async function initPage() {
   }
 }
 
-watch(chargeKindTab, () => {
-  if (!filtersReady.value) {
-    return;
-  }
-  queuePager.pageNo = 1;
-  selectedEncounterId.value = '';
-  chargeDetail.value = null;
-  selectedChargeRows.value = [];
-  void loadQueue();
-});
-
 watch(queueTabCode, () => {
   if (!filtersReady.value) {
     return;
@@ -612,12 +590,6 @@ onMounted(async () => {
     dateRange.value = [today, today];
   }
   await initPage();
-  const routeChargeKind = String(route.query.chargeKind ?? '')
-    .trim()
-    .toUpperCase();
-  if (routeChargeKind === CHARGE_KIND.GROUP) {
-    chargeKindTab.value = CHARGE_KIND.GROUP;
-  }
   await loadQueue();
   filtersReady.value = true;
   const encounterId = String(route.query.encounterId ?? '').trim();
@@ -645,10 +617,6 @@ onMounted(async () => {
         >
           <div class="shrink-0 px-0.5 pt-0.5">
             <SectionTitle title="体检收费队列" />
-            <ElRadioGroup v-model="chargeKindTab" class="charge-kind-tabs mt-2 w-full">
-              <ElRadioButton :value="CHARGE_KIND.PERSONAL">个检收费</ElRadioButton>
-              <ElRadioButton :value="CHARGE_KIND.GROUP">团检加项收费</ElRadioButton>
-            </ElRadioGroup>
             <div class="charge-filter-toolbar mt-2">
               <div class="charge-filter-toolbar__main-col flex flex-col gap-2">
                 <SelectFuzzyInput v-model="keyword" placeholder="流水号 / 姓名" full-width />
@@ -684,7 +652,7 @@ onMounted(async () => {
           <div class="charge-patient-scroll min-h-0 flex-1 space-y-2 overflow-y-auto px-0.5 pb-1">
             <template v-if="(queueRecords ?? []).length === 0">
               <div class="py-8 text-center text-sm text-[var(--el-text-color-placeholder)]">
-                暂无{{ chargeKindTab === CHARGE_KIND.GROUP ? '团检加项' : '个检' }}收费记录
+                暂无收费记录
               </div>
             </template>
             <BillingPatientCard
@@ -992,18 +960,6 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.charge-kind-tabs :deep(.el-radio-button__inner) {
-  width: 100%;
-}
-
-.charge-kind-tabs {
-  display: flex;
-}
-
-.charge-kind-tabs :deep(.el-radio-button) {
-  flex: 1;
-}
-
 .patient-info-value--with-action {
   display: inline-flex;
   flex-wrap: wrap;

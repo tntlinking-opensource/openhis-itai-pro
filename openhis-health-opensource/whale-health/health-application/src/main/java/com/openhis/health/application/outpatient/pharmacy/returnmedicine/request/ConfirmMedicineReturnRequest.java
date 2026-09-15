@@ -30,10 +30,4 @@ public class ConfirmMedicineReturnRequest implements Serializable {
     /** 退药/拒绝原因；拒绝时必填。 */
     @Schema(description = "退药/拒绝原因；拒绝时必填")
     private String reason;
-
-    /** @deprecated CHS 模块启用即上传，此开关不再生效。 */
-    @Deprecated
-    /** 是否在退药成功后上传医保进销存。 */
-    @Schema(description = "是否在退药成功后上传医保进销存（3506）")
-    private Boolean medicareUploadEnabled;
 }

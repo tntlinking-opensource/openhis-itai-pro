@@ -1115,14 +1115,9 @@ function resolveAgreeMessage(res: unknown, fallback: string): string {
 async function handleApprove() {
   const no = headerBusNo.value;
   if (!no) return;
-  const approverId = resolveLoginPractitionerIdForRequest(
-    userStore.userInfo as null | Record<string, unknown>,
-  );
   try {
     const res = await agreeReturnToSupplierApi({
       busNo: no,
-      approverId,
-      approvalClock: nowIsoLocal(),
     });
     const message = resolveAgreeMessage(res, '审批同意');
     if (message.includes('EX-OPP-207')) {
@@ -1155,10 +1150,6 @@ async function handleReject() {
     await rejectReturnToSupplierApi({
       busNo: no,
       rejectReason: value,
-      approverId: resolveLoginPractitionerIdForRequest(
-        userStore.userInfo as null | Record<string, unknown>,
-      ),
-      approvalClock: nowIsoLocal(),
     });
     ElMessage.success('已驳回');
     await loadDetail(no);

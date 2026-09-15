@@ -1187,7 +1187,7 @@ onMounted(() => {
             输液
           </ElButton>
           <ElButton size="small" link class="card-header-btn" @click="handleAddDrug">
-            追加药品
+            追加输液药品
           </ElButton>
           <ElButton
             ref="headerSaveButtonRef"

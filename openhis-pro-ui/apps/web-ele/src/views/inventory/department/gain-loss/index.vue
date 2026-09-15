@@ -241,14 +241,13 @@ watch(
   async (newQuery) => {
     const busNo = newQuery.busNo;
     if (!busNo || Array.isArray(busNo)) return;
+    const busNoText = String(busNo).trim();
+    if (!busNoText) return;
     if (tableForm.value.purposeLocationId === undefined && cabinetListOptions.value.length === 0) {
       await init();
     }
-    queryParams.value.keyword = String(busNo);
-    await getList();
-    const row = orderList.value.find((item) => resolveBusNo(item) === String(busNo));
-    if (!row) return;
-    selectedOrder.value = row;
+    // 深链有单号：直接打开，不经侧栏日期/列表过滤
+    selectedOrder.value = { busNo: busNoText, supplyBusNo: busNoText };
     isAddDisabled.value = false;
   },
   { immediate: true },

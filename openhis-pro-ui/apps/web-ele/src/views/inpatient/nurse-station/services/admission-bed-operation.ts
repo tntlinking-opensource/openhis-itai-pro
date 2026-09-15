@@ -114,7 +114,7 @@ export function admissionBedDialogTitle(intent: AdmissionBedOperationIntent | nu
 export function admissionBedConfirmLabel(intent: AdmissionBedOperationIntent | null): string {
   if (!intent) {
     // 已入科维护：保存医护/病情并关闭；有床位意图时才显示入科/换床确认
-    return '保存入院信息';
+    return '保存并关闭';
   }
   if (intent.type === 'swap') {
     return '确认互换';

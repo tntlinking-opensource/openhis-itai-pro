@@ -18,7 +18,7 @@ withDefaults(defineProps<Props>(), {
   }),
   doctorName: '',
   activeTab: 'outpatient',
-  tabs: () => ['门诊病历', '诊断', '医嘱', '中医', '电子处方', '报告查询'],
+  tabs: () => ['门诊病历', '诊断', '医嘱', '中医', '报告查询'],
 });
 
 const emit = defineEmits<{

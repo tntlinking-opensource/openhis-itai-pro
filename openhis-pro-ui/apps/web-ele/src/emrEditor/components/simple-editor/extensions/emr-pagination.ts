@@ -196,8 +196,10 @@ function applyMeasuredChromeBands(
       ':scope > .simple-editor__paper > .simple-editor__page-header:not([hidden])',
     );
     if (headerPx > 0) {
-      // 以实测为准（可下调）；含 measure 缓冲 mm，与 CSS heightMm 同源
-      paddingTopPx = Math.max(floorTopPx, headerPx);
+      // 页眉 position:absolute，边框盒常是 min-height（页边距），float 行会溢出。
+      // 正文 padding 必须盖住视觉底边，否则姓名/病房行压住表头（gap 约 -17px）。
+      const HEADER_BODY_GAP_PX = 8;
+      paddingTopPx = Math.max(floorTopPx, headerPx + HEADER_BODY_GAP_PX);
       if (measured.headerMm != null) {
         paddingTopPx = Math.max(paddingTopPx, mmToPx(measured.headerMm));
       }
@@ -255,6 +257,18 @@ function readPageMetrics(pm: HTMLElement, chrome?: EmrPageChrome): EmrPageMetric
     paddingBottomPx = resolved.paddingBottomPx;
   }
   return { pageGapPx, pageHeightPx, paddingBottomPx, paddingTopPx };
+}
+
+/**
+ * 把实测页眉/页脚高度写到 ProseMirror padding。
+ * plan 原先只用 metrics，CSS 仍走 --simple-editor-margin-*（常是页边距 20mm），
+ * 坐标系差 20～30px → 页眉压正文，且 plan 提前换页虚增页数。
+ */
+function applyMeasuredPaddingToEditorDom(pm: HTMLElement, metrics: EmrPageMetrics) {
+  const top = `${Math.round(metrics.paddingTopPx)}px`;
+  const bottom = `${Math.round(metrics.paddingBottomPx)}px`;
+  if (pm.style.paddingTop !== top) pm.style.paddingTop = top;
+  if (pm.style.paddingBottom !== bottom) pm.style.paddingBottom = bottom;
 }
 
 /** 表格等不可从中间切开的块：整段推页（table 在 splitBlock 内单独按行处理） */
@@ -579,6 +593,27 @@ function visualLinesToPageItems(
   return items;
 }
 
+/** 无正文空段：不单独撑出新纸（对齐 PDF hide 空页） */
+function isEmptyParagraphNode(node: PMNode): boolean {
+  if (node.type.name !== 'paragraph') return false;
+  if (node.content.size === 0) return true;
+  let hasAtom = false;
+  node.descendants((child) => {
+    if (child.isAtom) {
+      hasAtom = true;
+      return false;
+    }
+    return true;
+  });
+  if (hasAtom) return false;
+  return node.textContent.trim() === '';
+}
+
+function markFillerItems(items: EmrPageItem[], filler: boolean): EmrPageItem[] {
+  if (!filler) return items;
+  return items.map((item) => ({ ...item, filler: true }));
+}
+
 function splitBlockToLineItems(
   view: EditorView,
   node: PMNode,
@@ -593,11 +628,18 @@ function splitBlockToLineItems(
     return splitTableToRowItems(view, node, pos, dom, occupied);
   }
 
+  const filler = isEmptyParagraphNode(node);
   if (isAtomicPageBlock(node)) {
-    return [{ anchorPos: pos, compactHeightPx: occupied, kind: 'block', pos }];
+    return markFillerItems(
+      [{ anchorPos: pos, compactHeightPx: occupied, kind: 'block', pos }],
+      filler,
+    );
   }
 
-  return visualLinesToPageItems(view, pos, dom, collectVisualLines(dom), occupied);
+  return markFillerItems(
+    visualLinesToPageItems(view, pos, dom, collectVisualLines(dom), occupied),
+    filler,
+  );
 }
 
 /**
@@ -1118,16 +1160,7 @@ export const EmrPagination = Extension.create({
                 chromeMeasured = pre.measured;
               }
 
-              // 测高时保留旧 soft/岛屿垫片与硬分页撑高，占用高度在 collectPageItems 内扣除，
-              // 避免每次输入「先清空垫片 → 整页窜行 → 再挂回」的闪烁。
-              const items = collectPageItems(editorView);
-              let plan = planEmrPageLayout(items, metrics);
-
               if (layer) {
-                syncPaperCount(layer, plan.pageCount);
-                syncPaperChrome(layer, plan.pageCount, chrome, context, editingBand);
-                bindChromeImageRelayout(layer, schedule);
-
                 const applyChromePadding = () => {
                   const bandResult = applyMeasuredChromeBands(pm, layer!, chrome, metrics);
                   if (bandResult.measured) {
@@ -1138,18 +1171,39 @@ export const EmrPagination = Extension.create({
                   if (guard.changed) {
                     metrics = guard.metrics;
                   }
+                  applyMeasuredPaddingToEditorDom(pm, metrics);
                 };
+                applyChromePadding();
+              } else {
+                applyMeasuredPaddingToEditorDom(pm, metrics);
+              }
+
+              // 必须先写回 padding 再测高：collect 用 CSS paddingTop 当 contentTop，
+              // 与 plan 的 metrics.paddingTopPx 必须同一套，否则会提前换页。
+              const items = collectPageItems(editorView);
+              let plan = planEmrPageLayout(items, metrics);
+
+              if (layer) {
+                syncPaperCount(layer, plan.pageCount);
+                syncPaperChrome(layer, plan.pageCount, chrome, context, editingBand);
+                bindChromeImageRelayout(layer, schedule);
 
                 const metricsBeforeChrome = metrics;
-                applyChromePadding();
+                const bandResult = applyMeasuredChromeBands(pm, layer, chrome, metrics);
+                if (bandResult.measured) {
+                  chromeMeasured = { ...chromeMeasured, ...bandResult.measured };
+                }
+                metrics = bandResult.metrics;
+                const guard = bumpMetricsForChromeShortfall(layer, metrics);
+                if (guard.changed) metrics = guard.metrics;
+                applyMeasuredPaddingToEditorDom(pm, metrics);
                 const chromePaddingGrew =
                   Math.abs(metrics.paddingTopPx - metricsBeforeChrome.paddingTopPx) > 0.5 ||
                   Math.abs(metrics.paddingBottomPx - metricsBeforeChrome.paddingBottomPx) > 0.5;
                 if (chromePaddingGrew) {
-                  plan = planEmrPageLayout(items, metrics);
+                  plan = planEmrPageLayout(collectPageItems(editorView), metrics);
                   syncPaperCount(layer, plan.pageCount);
                   syncPaperChrome(layer, plan.pageCount, chrome, context, editingBand);
-                  applyChromePadding();
                 }
               }
 

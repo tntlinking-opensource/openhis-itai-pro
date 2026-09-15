@@ -10,18 +10,22 @@ import type {
 } from './homepage.constants';
 import type { MrmsInpatientClinicalKind } from '../components/mrms-inpatient-clinical-host.vue';
 
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onActivated, onMounted, reactive, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
+import { useTabs } from '@vben/hooks';
 import { useUserStore } from '@vben/stores';
 import { formatDateTime } from '@vben/utils';
 
 import { TableLayout } from '@vben-core/table-layout-ui';
 
-import { ElMessage, ElMessageBox, ElTag, ElTooltip } from 'element-plus';
+import { ElButton, ElLoading, ElMessage, ElMessageBox, ElTag, ElTooltip } from 'element-plus';
 
 import { httpLoadInpatientRegistrationContext } from '#/api/inpatient-registration';
 import {
+  exportHqmsCsvApi,
+  exportWeistatN041CsvApi,
   loadHomepagePageApi,
   queryCaseRecordPageApi,
   refreshAutoFillApi,
@@ -35,29 +39,53 @@ import {
   upload4401Api,
   uploadSettleListApi,
   type OneClickReportResultDto,
+  type SettleListQuery4103Dto,
   type UploadResultDto,
 } from '#/chs/api/medcas-ops';
 import { useRequest } from '#/hooks/use-request';
 import { useAuthStore } from '#/store';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import { downloadBinaryExportFile } from '#/utils/export/download-binary-export';
 import {
+  preserveApiIdForRequest,
   resolveLoginOrganizationIdForRequest,
   resolveLoginPractitionerIdForRequest,
 } from '#/utils/format/preserve-api-id';
+import { PRINT_SCENARIO_LABELS } from '#/utils/print/constants/print-scenario-labels';
+import { resolveInpatientHomepagePrintScenario } from '#/utils/print/resolve-inpatient-homepage-scenario';
+import {
+  resolvePrintHospitalName,
+  resolvePrintOrgCode,
+} from '#/utils/print/resolve-print-hospital-name';
+import { print } from '#/utils/print/runtime';
 
 import MrmsInpatientClinicalHost from '../components/mrms-inpatient-clinical-host.vue';
-import { resolveInpatientClinicalEditDenial } from '../mrms-clinical-edit-gate';
+import MrmsSettleQuery4103Dialog from '../components/mrms-settle-query-4103-dialog.vue';
+import { buildMrmsPatientTabTitle } from '../mrms.constants';
+import {
+  resolveInpatientClinicalEditDenial,
+  resolveInpatientNurseSheetEditDenial,
+} from '../mrms-clinical-edit-gate';
+import { loadManagedWardLocationIds } from '../mrms-managed-ward-ids';
 import HomepageEditPanel from './components/homepage-edit-panel.vue';
 import HomepageInsUploadActions from './components/homepage-ins-upload-actions.vue';
 import HomepageRowActions from './components/homepage-row-actions.vue';
+import { MRMS_HOMEPAGE_4401_UPLOAD_ENABLED } from '#/views/mrms/homepage/homepage-4401-upload.config';
+import {
+  MRMS_HOMEPAGE_HQMS_EXPORT_ENABLED,
+  MRMS_HOMEPAGE_WEISTAT_EXPORT_ENABLED,
+} from '#/views/mrms/homepage/homepage-weistat-export.config';
 import {
   ALL_OPTION_VALUE,
   DEPT_ALL_OPTION,
   HOMEPAGE_ROW_ACTIONS,
+  SETTLE_UPLOAD_STATUS_OPTIONS,
   UPLOAD_STATUS_LABEL,
   UPLOAD_STATUS_OPTIONS,
   YES_NO_DISCHARGE_OPTIONS,
   YES_NO_SETTLE_OPTIONS,
+  settleUploadStatusLabel,
+  settleUploadStatusTagType,
   uploadStatusTagType,
 } from './homepage.constants';
 import {
@@ -65,24 +93,35 @@ import {
   homepageToFormModel,
   mapListItemToRow,
   mergeCaseRecordIntoFormModel,
-  sectionToRefreshCode,
+  sectionsToRefreshCodes,
   toSaveHomepageParams,
 } from './homepage-form.util';
 
 defineOptions({ name: 'MrmsCaseRecordHomepage' });
 
 /**
- * 主类型：T3 列表 + T4 首页表单
+ * 主类型：T3 列表（无路由主键）+ T4 详情（/mrms/homepage/:caseRecordId 多开）
  */
 
 type ViewMode = 'edit' | 'list';
 
+const route = useRoute();
+const router = useRouter();
+const { closeCurrentTab, setTabTitle } = useTabs();
 const userStore = useUserStore();
 const authStore = useAuthStore();
 const viewMode = ref<ViewMode>('list');
 const tableData = ref<HomepageListRow[]>([]);
 const total = ref(0);
 const loading = ref(false);
+/** 医保「一键上传」等行内操作中的行 id */
+const insActingRowId = ref('');
+/** 列表多选（卫统/HQMS 导出） */
+const selectedRows = ref<HomepageListRow[]>([]);
+/** 卫统 CSV 导出中 */
+const weistatExporting = ref(false);
+/** HQMS CSV 导出中 */
+const hqmsExporting = ref(false);
 
 /** 当前登录医务人员主键（临床弹层编辑门禁） */
 const loginPractitionerId = computed(() =>
@@ -104,8 +143,49 @@ const formModel = ref<HomepageFormModel | null>(null);
 const editRow = ref<HomepageListRow | null>(null);
 const formDirty = ref(false);
 const saving = ref(false);
+/** 详情页签 loadPage 中（与保存 saving 分离，避免空白闪屏） */
+const detailLoading = ref(false);
+/**
+ * 详情加载世代号：路由切换时递增，过期响应丢弃结果。
+ * 同主键 inflight 复用 Promise，避免 onMounted+watch / 双发并发 bootstrap。
+ */
+let detailLoadSeq = 0;
+let detailInflightKey: string | null = null;
+let detailInflightPromise: Promise<void> | null = null;
+const printing = ref(false);
 const editStatusCode = ref('draft');
 const returnReason = ref('');
+/** 中医信息段：医院 medins_type（loadPage 回填） */
+const tcmInfoEnabled = ref(false);
+
+/** 4103 查询结果弹窗 */
+const query4103Visible = ref(false);
+const query4103Result = ref<SettleListQuery4103Dto | null>(null);
+
+/** 路由病案主键（详情多开） */
+const routeCaseRecordId = computed(() => {
+  const fromParam = route.params.caseRecordId;
+  if (typeof fromParam === 'string' && fromParam.trim()) {
+    return fromParam.trim();
+  }
+  const fromQuery = route.query.caseRecordId;
+  if (typeof fromQuery === 'string' && fromQuery.trim()) {
+    return fromQuery.trim();
+  }
+  return '';
+});
+
+/** 路由就诊主键（未建档打开详情） */
+const routeEncounterId = computed(() => {
+  const raw = route.query.encounterId;
+  if (typeof raw === 'string' && raw.trim()) {
+    return raw.trim();
+  }
+  return '';
+});
+
+/** 当前实例是否为病案详情页签（仅认详情路由名，勿用 query 误判列表） */
+const isDetailRoute = computed(() => route.name === 'MrmsCaseRecordHomepageDetail');
 
 const queryParams = reactive<HomepageListQuery>({
   pageNo: 1,
@@ -160,21 +240,25 @@ const formItems = computed<FormItemConfig[]>(() => [
     clearable: true,
     width: '280px',
   },
-  {
-    label: '首页上传',
-    prop: 'homepageUploadStatus',
-    type: 'select',
-    options: UPLOAD_STATUS_OPTIONS,
-    clearable: true,
-    multiple: false,
-    filterable: false,
-    width: '120px',
-  },
+  ...(MRMS_HOMEPAGE_4401_UPLOAD_ENABLED
+    ? [
+        {
+          label: '首页上传',
+          prop: 'homepageUploadStatus',
+          type: 'select' as const,
+          options: UPLOAD_STATUS_OPTIONS,
+          clearable: true,
+          multiple: false,
+          filterable: false,
+          width: '120px',
+        },
+      ]
+    : []),
   {
     label: '结算上传',
     prop: 'settleUploadStatus',
     type: 'select',
-    options: UPLOAD_STATUS_OPTIONS,
+    options: SETTLE_UPLOAD_STATUS_OPTIONS,
     clearable: true,
     multiple: false,
     filterable: false,
@@ -202,126 +286,145 @@ const formItems = computed<FormItemConfig[]>(() => [
   },
 ]);
 
-const tableColumns: TableColumn[] = [
-  {
-    prop: 'patientName',
-    label: '患者',
-    width: 120,
-    fixed: 'left',
-    slot: 'patient',
-    align: 'left',
-    headerAlign: 'center',
-  },
-  {
-    prop: 'medcasno',
-    label: '病案号',
-    width: 120,
-    align: 'center',
-    headerAlign: 'center',
-    showOverflowTooltip: true,
-  },
-  {
-    prop: 'admDeptName',
-    label: '科室',
-    width: 88,
-    align: 'center',
-    headerAlign: 'center',
-  },
-  {
-    prop: 'insuranceTypeText',
-    label: '医保',
-    width: 88,
-    align: 'center',
-    headerAlign: 'center',
-    formatter: (row: HomepageListRow) => row.insuranceTypeText || '—',
-  },
-  {
-    prop: 'admTime',
-    label: '入院',
-    width: 156,
-    slot: 'admTime',
-    align: 'center',
-    headerAlign: 'center',
-  },
-  {
-    prop: 'dscgTime',
-    label: '出院',
-    width: 156,
-    slot: 'dscgTime',
-    align: 'center',
-    headerAlign: 'center',
-  },
-  {
-    prop: 'dischargeDiagnosisText',
-    label: '出院诊断',
-    minWidth: 200,
-    slot: 'diagnosis',
-    align: 'left',
-    headerAlign: 'center',
-  },
-  {
-    prop: 'dischargedCode',
-    label: '出院',
-    width: 84,
-    slot: 'discharged',
-    align: 'center',
-    headerAlign: 'center',
-  },
-  {
-    prop: 'settledCode',
-    label: '结算',
-    width: 84,
-    slot: 'settled',
-    align: 'center',
-    headerAlign: 'center',
-  },
-  {
-    prop: 'homepageUploadStatusCode',
-    label: '首页上传',
-    width: 96,
-    slot: 'homepageUpload',
-    align: 'center',
-    headerAlign: 'center',
-  },
-  {
-    prop: 'settleUploadStatusCode',
-    label: '结算上传',
-    width: 96,
-    slot: 'settleUpload',
-    align: 'center',
-    headerAlign: 'center',
-  },
-  {
-    prop: 'orderUploadStatusCode',
-    label: '医嘱上传',
-    width: 96,
-    slot: 'orderUpload',
-    align: 'center',
-    headerAlign: 'center',
-  },
-  {
-    prop: 'certno',
-    label: '证件号',
-    width: 168,
-    align: 'center',
-    headerAlign: 'center',
-  },
-  {
-    label: '医保业务',
-    width: 148,
-    slot: 'insUpload',
-    align: 'center',
-    headerAlign: 'center',
-  },
-  {
-    label: '操作',
-    width: 148,
-    fixed: 'right',
-    slot: 'rowActions',
-    align: 'center',
-    headerAlign: 'center',
-  },
-];
+const tableColumns = computed<TableColumn[]>(() => {
+  const cols: TableColumn[] = [];
+  // 卫统/HQMS 导出开启时增加多选列（仅已建档可选）
+  if (MRMS_HOMEPAGE_WEISTAT_EXPORT_ENABLED || MRMS_HOMEPAGE_HQMS_EXPORT_ENABLED) {
+    cols.push({
+      type: 'selection',
+      width: 48,
+      fixed: 'left',
+      align: 'center',
+      headerAlign: 'center',
+      selectable: (row: HomepageListRow) => Boolean(row.caseRecordId),
+    });
+  }
+  cols.push(
+    {
+      prop: 'patientName',
+      label: '患者',
+      width: 120,
+      fixed: 'left',
+      slot: 'patient',
+      align: 'left',
+      headerAlign: 'center',
+    },
+    {
+      prop: 'medcasno',
+      label: '病案号',
+      width: 130,
+      minWidth: 130,
+      align: 'center',
+      headerAlign: 'center',
+      showOverflowTooltip: false,
+    },
+    {
+      prop: 'admDeptName',
+      label: '科室',
+      width: 88,
+      align: 'center',
+      headerAlign: 'center',
+    },
+    {
+      prop: 'insuranceTypeText',
+      label: '医保',
+      width: 88,
+      align: 'center',
+      headerAlign: 'center',
+      formatter: (row: HomepageListRow) => row.insuranceTypeText || '—',
+    },
+    {
+      prop: 'admTime',
+      label: '入院',
+      width: 156,
+      slot: 'admTime',
+      align: 'center',
+      headerAlign: 'center',
+    },
+    {
+      prop: 'dscgTime',
+      label: '出院',
+      width: 156,
+      slot: 'dscgTime',
+      align: 'center',
+      headerAlign: 'center',
+    },
+    {
+      prop: 'dischargeDiagnosisText',
+      label: '出院诊断',
+      minWidth: 200,
+      slot: 'diagnosis',
+      align: 'left',
+      headerAlign: 'center',
+    },
+    {
+      prop: 'dischargedCode',
+      label: '出院',
+      width: 84,
+      slot: 'discharged',
+      align: 'center',
+      headerAlign: 'center',
+    },
+    {
+      prop: 'settledCode',
+      label: '结算',
+      width: 84,
+      slot: 'settled',
+      align: 'center',
+      headerAlign: 'center',
+    },
+  );
+  // 未开通 4401 时隐藏「首页上传」列与筛选项
+  if (MRMS_HOMEPAGE_4401_UPLOAD_ENABLED) {
+    cols.push({
+      prop: 'homepageUploadStatusCode',
+      label: '首页上传',
+      width: 96,
+      slot: 'homepageUpload',
+      align: 'center',
+      headerAlign: 'center',
+    });
+  }
+  cols.push(
+    {
+      prop: 'settleUploadStatusCode',
+      label: '结算上传',
+      width: 96,
+      slot: 'settleUpload',
+      align: 'center',
+      headerAlign: 'center',
+    },
+    // 医嘱上传列暂隐：当前无医嘱上传业务入口，恢复时加回 orderUploadStatusCode 列 + #orderUpload
+    {
+      prop: 'psnNo',
+      label: '证件/医保',
+      // 身份证 18 + psn_no ~20，须足够宽；关 tooltip 溢出否则 vxe 单行裁切导致竖排糊字
+      width: 320,
+      minWidth: 320,
+      showOverflowTooltip: false,
+      slot: 'idInsKeys',
+      align: 'left',
+      headerAlign: 'center',
+    },
+    {
+      label: '医保业务',
+      width: 148,
+      slot: 'insUpload',
+      align: 'center',
+      headerAlign: 'center',
+    },
+    {
+      label: '操作',
+      // 病案详情 + 结算清单 + 更多，勿用 148 否则会裁掉「更多」
+      width: 248,
+      fixed: 'right',
+      slot: 'rowActions',
+      align: 'center',
+      headerAlign: 'center',
+    },
+  );
+  return cols;
+});
 
 const clinicalHostRef = ref<InstanceType<typeof MrmsInpatientClinicalHost> | null>(null);
 
@@ -336,6 +439,8 @@ const { run: runPage, loading: pageLoading } = useRequest(queryCaseRecordPageApi
     const parsed = parsePagedRowsFromApiData(data);
     tableData.value = parsed.content.map(mapListItemToRow);
     total.value = parsed.totalCount;
+    // 翻页/重查后清空勾选，避免跨页脏选
+    selectedRows.value = [];
   },
 });
 
@@ -348,9 +453,12 @@ const { run: runSave, loading: saveLoading } = useRequest(saveHomepageApi, {
   onSuccess: (data) => {
     if (data && formModel.value) {
       const next = homepageToFormModel(data, formModel.value.encounterId);
-      next.medcasno = formModel.value.medcasno || next.medcasno;
+      // 优先用服务端回传病案号（首次保存刚发号）；旧值仅兜底
+      next.medcasno = data.medcasno || formModel.value.medcasno || next.medcasno;
       next.visitTimes = formModel.value.visitTimes ?? next.visitTimes;
       next.encounterId = formModel.value.encounterId || next.encounterId;
+      next.organizationId = formModel.value.organizationId || next.organizationId;
+      next.patientId = formModel.value.patientId || next.patientId;
       formModel.value = next;
       if (editRow.value && next.caseRecordId) {
         editRow.value.caseRecordId = next.caseRecordId;
@@ -360,7 +468,10 @@ const { run: runSave, loading: saveLoading } = useRequest(saveHomepageApi, {
     }
     formDirty.value = false;
     ElMessage.success('首页已保存');
-    getList();
+    syncDetailTabTitle();
+    if (!isDetailRoute.value) {
+      getList();
+    }
   },
 });
 
@@ -399,6 +510,63 @@ function buildQueryPayload() {
 /** 拉取列表 */
 async function getList() {
   await runPage(buildQueryPayload());
+}
+
+/**
+ * 同步表格多选行（卫统/HQMS 导出）。
+ *
+ * @param rows 当前勾选行
+ */
+function handleSelectionChange(rows: HomepageListRow[]) {
+  selectedRows.value = rows ?? [];
+}
+
+/**
+ * 多选导出卫统 N041 CSV（仅已建档病案）。
+ */
+async function handleExportWeistatN041() {
+  const ids = selectedRows.value
+    .map((row) => row.caseRecordId)
+    .filter((id): id is string => Boolean(id && String(id).trim()));
+  if (ids.length === 0) {
+    ElMessage.warning('请先勾选已建档的病案');
+    return;
+  }
+  weistatExporting.value = true;
+  try {
+    const result = await exportWeistatN041CsvApi({ caseRecordIds: ids });
+    downloadBinaryExportFile(result, 'N041_export.csv');
+    ElMessage.success(`已导出 ${result.exportedRowCount ?? ids.length} 条卫统 CSV`);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : '卫统导出失败';
+    ElMessage.error(msg);
+  } finally {
+    weistatExporting.value = false;
+  }
+}
+
+/**
+ * 多选导出 HQMS CSV（仅已建档病案）。
+ */
+async function handleExportHqms() {
+  const ids = selectedRows.value
+    .map((row) => row.caseRecordId)
+    .filter((id): id is string => Boolean(id && String(id).trim()));
+  if (ids.length === 0) {
+    ElMessage.warning('请先勾选已建档的病案');
+    return;
+  }
+  hqmsExporting.value = true;
+  try {
+    const result = await exportHqmsCsvApi({ caseRecordIds: ids });
+    downloadBinaryExportFile(result, 'hqmsts_export.csv');
+    ElMessage.success(`已导出 ${result.exportedRowCount ?? ids.length} 条 HQMS CSV`);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : 'HQMS 导出失败';
+    ElMessage.error(msg);
+  } finally {
+    hqmsExporting.value = false;
+  }
 }
 
 /** 重置筛选 */
@@ -455,42 +623,124 @@ function rowActionLabel(code: HomepageRowActionCode): string {
   return HOMEPAGE_ROW_ACTIONS.find((a) => a.code === code)?.label ?? code;
 }
 
-/** 打开病案首页：未建档按 encounterId 打开（服务端 bootstrap + 入院信息带出） */
-async function openHomepageForm(row: HomepageListRow) {
-  if (!row.encounterId && !row.caseRecordId) {
+/**
+ * 按表单患者刷新详情页签标题。
+ */
+function syncDetailTabTitle() {
+  const form = formModel.value;
+  const row = editRow.value;
+  void setTabTitle(
+    buildMrmsPatientTabTitle(
+      '病案详情',
+      form?.psnName || row?.patientName,
+      form?.iptNo || row?.iptNo,
+    ),
+  );
+}
+
+/**
+ * 打开病案详情：独立页签多开（带患者名/住院号标题）。
+ *
+ * @param row 列表行
+ */
+function openHomepageForm(row: HomepageListRow) {
+  const caseRecordId = (row.caseRecordId ?? '').trim();
+  const encounterId = (row.encounterId ?? '').trim();
+  if (!caseRecordId && !encounterId) {
     ElMessage.warning('缺少就诊主键，无法打开首页');
     return;
   }
-  editRow.value = row;
-  formDirty.value = false;
-  saving.value = true;
-  try {
-    const page = await loadHomepagePageApi({
-      caseRecordId: row.caseRecordId,
-      encounterId: row.encounterId,
-    });
-    const homepage = page.homepage;
-    if (!homepage) {
-      ElMessage.warning('首页数据为空');
-      return;
-    }
-    let form = homepageToFormModel(homepage, row.encounterId);
-    form = mergeCaseRecordIntoFormModel(form, page.caseRecord);
-    form.medcasno = form.medcasno || row.medcasno || page.caseRecord?.medcasno;
-    form.encounterId = row.encounterId || form.encounterId;
-    form.patientId = row.patientId || form.patientId;
-    formModel.value = cloneHomepageForm(form);
-    editStatusCode.value = page.caseRecord?.statusCode || 'draft';
-    returnReason.value = page.caseRecord?.returnReason || '';
-    if (page.caseRecord?.caseRecordId) {
-      row.caseRecordId = String(page.caseRecord.caseRecordId);
-      row.id = row.caseRecordId;
-      row.medcasno = page.caseRecord.medcasno || row.medcasno;
-    }
-    viewMode.value = 'edit';
-  } finally {
-    saving.value = false;
+  router.push({
+    name: 'MrmsCaseRecordHomepageDetail',
+    params: caseRecordId ? { caseRecordId } : {},
+    query: caseRecordId ? undefined : { encounterId },
+  });
+}
+
+/**
+ * 按路由主键加载病案详情（详情页签挂载/路由变更时）。
+ * 同 caseRecordId|encounterId 并发调用合并为一次 loadPage。
+ */
+async function loadDetailFromRoute() {
+  const caseRecordId = routeCaseRecordId.value;
+  const encounterId = routeEncounterId.value;
+  if (!caseRecordId && !encounterId) {
+    detailLoading.value = false;
+    return;
   }
+  // 同主键已在飞：等待既有请求，禁止再打 loadPage（防并发建档）
+  const loadKey = `${caseRecordId || ''}|${encounterId || ''}`;
+  if (detailInflightPromise && detailInflightKey === loadKey) {
+    await detailInflightPromise;
+    return;
+  }
+  const seq = ++detailLoadSeq;
+  formDirty.value = false;
+  detailLoading.value = true;
+  detailInflightKey = loadKey;
+  detailInflightPromise = (async () => {
+    try {
+      const page = await loadHomepagePageApi({
+        caseRecordId: caseRecordId || undefined,
+        encounterId: encounterId || undefined,
+      });
+      // 过期：用户已切到别的详情，丢弃本响应
+      if (seq !== detailLoadSeq) {
+        return;
+      }
+      const homepage = page.homepage;
+      // 无首页体：结束 loading，留空壳提示（勿闪回列表）
+      if (!homepage) {
+        ElMessage.warning('首页数据为空');
+        formModel.value = null;
+        return;
+      }
+      let form = homepageToFormModel(homepage, encounterId || undefined);
+      form = mergeCaseRecordIntoFormModel(form, page.caseRecord);
+      form.medcasno = form.medcasno || page.caseRecord?.medcasno;
+      form.encounterId = encounterId || form.encounterId;
+      formModel.value = cloneHomepageForm(form);
+      editStatusCode.value = page.caseRecord?.statusCode || 'draft';
+      returnReason.value = page.caseRecord?.returnReason || '';
+      // 中医信息：优先页级开关，回落 homepage 同名字段
+      tcmInfoEnabled.value = Boolean(page.tcmInfoEnabled ?? page.homepage?.tcmInfoEnabled);
+      const resolvedCaseId = page.caseRecord?.caseRecordId
+        ? String(page.caseRecord.caseRecordId)
+        : caseRecordId;
+      editRow.value = {
+        id: resolvedCaseId || encounterId,
+        caseRecordId: resolvedCaseId || undefined,
+        encounterId: form.encounterId || encounterId || '',
+        patientName: form.psnName || '',
+        iptNo: form.iptNo || '',
+        medcasno: form.medcasno || '',
+        patientId: form.patientId,
+        organizationId: form.organizationId,
+        dischargedCode: '0',
+        settledCode: '0',
+        homepageUploadStatusCode: 'none',
+        settleUploadStatusCode: 'none',
+        orderUploadStatusCode: 'none',
+      };
+      viewMode.value = 'edit';
+      syncDetailTabTitle();
+    } catch (error: unknown) {
+      if (seq !== detailLoadSeq) {
+        return;
+      }
+      const msg = error instanceof Error ? error.message : '加载病案首页失败';
+      ElMessage.error(msg);
+      formModel.value = null;
+    } finally {
+      // 仅最新世代清 inflight / loading，避免旧请求 finally 误关新请求
+      if (seq === detailLoadSeq) {
+        detailLoading.value = false;
+        detailInflightKey = null;
+        detailInflightPromise = null;
+      }
+    }
+  })();
+  await detailInflightPromise;
 }
 
 /** 若有未保存改动，确认后再离开编辑 */
@@ -510,34 +760,28 @@ async function confirmLeaveEdit(): Promise<boolean> {
   }
 }
 
-/** 返回列表 */
+/** 关闭当前病案详情页签（列表页签仍保留，可多开） */
 async function handleBackToList() {
   const ok = await confirmLeaveEdit();
   if (!ok) {
     return;
   }
-  viewMode.value = 'list';
-  formModel.value = null;
-  editRow.value = null;
-  formDirty.value = false;
-  getList();
+  await closeCurrentTab();
 }
 
-/** 行操作分发：病案详情进表单；病历/医嘱/体温/护理/费用清单开宿主弹层 */
-function handleRowAction(payload: { code: HomepageRowActionCode; row: HomepageListRow }) {
+/** 行操作分发：病案详情进表单；结算清单独立预览；临床宿主弹层 */
+async function handleRowAction(payload: { code: HomepageRowActionCode; row: HomepageListRow }) {
   if (payload.code === 'homepage') {
     openHomepageForm(payload.row);
     return;
   }
+  if (payload.code === 'settle-list') {
+    openSettleListPreview(payload.row);
+    return;
+  }
   const clinicalKind = toClinicalKind(payload.code);
   if (clinicalKind) {
-    // 同入院科室可写；否则静默只读（页面无保存入口，不再弹 tip）
-    const denial = resolveInpatientClinicalEditDenial(
-      loginPractitionerId.value,
-      loginOrganizationId.value,
-      payload.row,
-    );
-    const editable = denial === null;
+    const editable = await resolveClinicalEditable(clinicalKind, payload.row);
     clinicalHostRef.value?.open(clinicalKind, payload.row, { forceReadOnly: !editable });
     return;
   }
@@ -545,6 +789,54 @@ function handleRowAction(payload: { code: HomepageRowActionCode; row: HomepageLi
     type: 'info',
     message: `${rowActionLabel(payload.code)} · 待对接已有页面`,
     duration: 1600,
+  });
+}
+
+/**
+ * 临床弹层是否可写：病历/医嘱按入院科室；体温单/护理记录另放行管辖病区护士。
+ *
+ * @param kind 临床模块
+ * @param row 列表行
+ */
+async function resolveClinicalEditable(
+  kind: MrmsInpatientClinicalKind,
+  row: HomepageListRow,
+): Promise<boolean> {
+  if (kind === 'temperature' || kind === 'nursing') {
+    const managedWardIds = await loadManagedWardLocationIds();
+    const denial = resolveInpatientNurseSheetEditDenial(
+      loginPractitionerId.value,
+      loginOrganizationId.value,
+      managedWardIds,
+      row,
+    );
+    return denial === null;
+  }
+  // 同入院科室可写；否则静默只读（页面无保存入口，不再弹 tip）
+  const denial = resolveInpatientClinicalEditDenial(
+    loginPractitionerId.value,
+    loginOrganizationId.value,
+    row,
+  );
+  return denial === null;
+}
+
+/**
+ * 打开结算清单独立只读预览页（不进病案详情编辑）。
+ *
+ * @param row 列表行
+ */
+function openSettleListPreview(row: HomepageListRow) {
+  const caseRecordId = (row.caseRecordId ?? '').trim();
+  const encounterId = (row.encounterId ?? '').trim();
+  if (!caseRecordId && !encounterId) {
+    ElMessage.warning('缺少病案或就诊主键，无法打开结算清单');
+    return;
+  }
+  router.push({
+    name: 'MrmsSettleListPreview',
+    params: caseRecordId ? { caseRecordId } : {},
+    query: caseRecordId ? undefined : { encounterId },
   });
 }
 
@@ -582,8 +874,7 @@ function formatUploadStep(label: string, step?: UploadResultDto): string {
     return `${label}：已跳过（此前已成功）`;
   }
   if (step.statusCode === 'success') {
-    const extra = step.setlListId ? ` setl_list_id=${step.setlListId}` : '';
-    return `${label}：成功${extra}`;
+    return `${label}：成功`;
   }
   return `${label}：失败 ${step.errMsg || step.infcode || step.statusCode || ''}`.trim();
 }
@@ -617,6 +908,21 @@ async function handleInsAction(payload: { code: HomepageInsActionCode; row: Home
     ElMessage.warning('病人确认结算后才能上报');
     return;
   }
+  // 进行中禁止连点
+  if (insActingRowId.value) {
+    return;
+  }
+  const rowKey = payload.row.id || caseRecordId;
+  insActingRowId.value = rowKey;
+  const loadingText =
+    payload.code === 'settle-upload-commit' || payload.code === 'one-click-report'
+      ? '一键上传中…'
+      : '上报处理中…';
+  const loadingInst = ElLoading.service({
+    lock: true,
+    text: loadingText,
+    background: 'rgba(0, 0, 0, 0.25)',
+  });
   try {
     if (payload.code === 'one-click-report') {
       const result = await reportOneClickApi({ caseRecordId });
@@ -629,6 +935,32 @@ async function handleInsAction(payload: { code: HomepageInsActionCode; row: Home
       ElMessage[step.statusCode === 'success' ? 'success' : 'error'](
         formatUploadStep('4401', step),
       );
+      await runPage(buildQueryPayload());
+      return;
+    }
+    if (payload.code === 'settle-upload-commit') {
+      // 清算上传(4101A) 成功后再提交审核(4102)
+      const uploadStep = await uploadSettleListApi({ caseRecordId });
+      const uploadOk = uploadStep.statusCode === 'success' || uploadStep.skipped === true;
+      if (!uploadOk) {
+        ElMessage.error(formatUploadStep('4101A 清算上传', uploadStep));
+        await runPage(buildQueryPayload());
+        return;
+      }
+      const commitStep = await modifySettleListStatusApi({
+        caseRecordId,
+        stasType: '1',
+      });
+      const commitOk = commitStep.statusCode === 'success' || commitStep.skipped === true;
+      const lines = [
+        formatUploadStep('4101A 清算上传', uploadStep),
+        formatUploadStep('4102 提交审核', commitStep),
+      ];
+      if (commitOk) {
+        ElMessage.success(lines.join('；'));
+      } else {
+        ElMessage.error(lines.join('；'));
+      }
       await runPage(buildQueryPayload());
       return;
     }
@@ -659,9 +991,9 @@ async function handleInsAction(payload: { code: HomepageInsActionCode; row: Home
     if (payload.code === 'query-settle') {
       const row = await querySettleList4103Api({ caseRecordId });
       if (row.success) {
-        const name = row.psnName || '—';
-        const fee = row.medfeeSumamt == null ? '—' : Number(row.medfeeSumamt).toFixed(2);
-        ElMessage.success(`4103 成功：${name} / setl_id=${row.setlId || '—'} / 总额 ${fee}`);
+        // 直接弹可读摘要，不再只 toast / 甩 JSON
+        query4103Result.value = row;
+        query4103Visible.value = true;
       } else {
         ElMessage.error(row.errMsg || row.platformMsg || '4103 查询失败');
       }
@@ -671,6 +1003,9 @@ async function handleInsAction(payload: { code: HomepageInsActionCode; row: Home
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : '上报失败';
     ElMessage.error(msg);
+  } finally {
+    loadingInst.close();
+    insActingRowId.value = '';
   }
 }
 
@@ -702,6 +1037,8 @@ async function handleImportAll() {
     const next = homepageToFormModel(data, formModel.value.encounterId);
     next.medcasno = formModel.value.medcasno || next.medcasno;
     next.visitTimes = formModel.value.visitTimes ?? next.visitTimes;
+    next.organizationId = formModel.value.organizationId || next.organizationId;
+    next.patientId = formModel.value.patientId || next.patientId;
     formModel.value = next;
     formDirty.value = true;
     ElMessage.success('已导入全部章节');
@@ -710,7 +1047,7 @@ async function handleImportAll() {
   }
 }
 
-/** 导入单章 */
+/** 导入单章（费用章=重新统计：落库快照覆盖，不标脏） */
 async function handleImportSection(section: string) {
   if (!formModel.value?.caseRecordId) {
     return;
@@ -719,17 +1056,55 @@ async function handleImportSection(section: string) {
   try {
     const data = await refreshAutoFillApi({
       caseRecordId: formModel.value.caseRecordId!,
-      sections: [sectionToRefreshCode(section)],
+      // 住院信息章含人口学+入出院，须一次刷 basic+inpatient
+      sections: sectionsToRefreshCodes(section),
       forceOverwrite: false,
     });
     const next = homepageToFormModel(data, formModel.value.encounterId);
     next.medcasno = formModel.value.medcasno || next.medcasno;
     next.visitTimes = formModel.value.visitTimes ?? next.visitTimes;
+    next.organizationId = formModel.value.organizationId || next.organizationId;
+    next.patientId = formModel.value.patientId || next.patientId;
     formModel.value = next;
-    formDirty.value = true;
-    ElMessage.success(`已导入章节：${section}`);
+    // 费用只读快照：重新统计才落库覆盖，不得标脏误导用户去保存费用
+    if (section === 'fee') {
+      ElMessage.success('已重新统计费用');
+    } else {
+      formDirty.value = true;
+      ElMessage.success(`已导入章节：${section}`);
+    }
   } finally {
     saving.value = false;
+  }
+}
+
+/** 打印或预览住院病案首页（按 medins_type→tcmInfoEnabled 选中医/西医模板） */
+async function handlePrint(payload: { preview: boolean }) {
+  if (!formModel.value) {
+    ElMessage.warning('请先打开病案详情');
+    return;
+  }
+  printing.value = true;
+  try {
+    const scenarioCode = resolveInpatientHomepagePrintScenario(tcmInfoEnabled.value);
+    const variant = tcmInfoEnabled.value ? 'tcm' : 'wm';
+    await print({
+      scenarioCode,
+      scenarioLabel: PRINT_SCENARIO_LABELS[scenarioCode],
+      source: {
+        form: formModel.value,
+        hospitalName: resolvePrintHospitalName(),
+        orgCode: resolvePrintOrgCode(),
+        variant,
+      },
+      preview: payload.preview,
+      bizRef: {
+        caseRecordId: formModel.value.caseRecordId,
+        encounterId: formModel.value.encounterId,
+      },
+    });
+  } finally {
+    printing.value = false;
   }
 }
 
@@ -775,15 +1150,76 @@ async function loadDeptOptions() {
 }
 
 onMounted(() => {
+  // 详情：loading/edit 由下方 watch(immediate) 统一拉数，此处不再打 loadPage
+  if (isDetailRoute.value) {
+    detailLoading.value = true;
+    viewMode.value = 'edit';
+    return;
+  }
   void loadDeptOptions();
   getList();
 });
+
+/**
+ * KeepAlive 切回列表时恢复菜单标题，避免沿用「结算清单-患者」等脏标题。
+ */
+onActivated(() => {
+  if (isDetailRoute.value) {
+    return;
+  }
+  const menuTitle = typeof route.meta?.title === 'string' ? route.meta.title.trim() : '';
+  if (menuTitle) {
+    void setTabTitle(menuTitle);
+  }
+});
+
+/**
+ * 详情页签：immediate 首载 + 主键变化补载；与同主键 inflight 去重（见 loadDetailFromRoute）。
+ */
+watch(
+  () => [isDetailRoute.value, routeCaseRecordId.value, routeEncounterId.value] as const,
+  ([detail, caseId, encId], prev) => {
+    if (!detail) {
+      viewMode.value = 'list';
+      return;
+    }
+    const prevDetail = prev?.[0];
+    const prevCaseId = prev?.[1];
+    const prevEncId = prev?.[2];
+    const identityChanged = !prevDetail || caseId !== prevCaseId || encId !== prevEncId;
+    const needRecover = viewMode.value !== 'edit' || !formModel.value;
+    if (!identityChanged && !needRecover) {
+      return;
+    }
+    // 已在加载且主键未变：不重复入队（同主键由 loadDetailFromRoute inflight 再挡一层）
+    if (detailLoading.value && !identityChanged) {
+      return;
+    }
+    detailLoading.value = true;
+    viewMode.value = 'edit';
+    void loadDetailFromRoute();
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
   <Page auto-content-height content-class="mrms-homepage-page">
+    <!-- 详情路由：绝不渲染列表，避免 viewMode 未切 edit 时落到 TableLayout -->
+    <div
+      v-if="isDetailRoute && (detailLoading || !formModel)"
+      v-loading="detailLoading"
+      class="hp-detail-loading"
+      element-loading-text="正在加载病案首页…"
+    >
+      <div v-if="!detailLoading && !formModel" class="hp-detail-loading__empty">
+        <p>未能加载病案首页</p>
+        <ElButton type="primary" @click="handleBackToList">关闭</ElButton>
+      </div>
+    </div>
+
     <HomepageEditPanel
-      v-if="viewMode === 'edit' && formModel"
+      v-else-if="isDetailRoute && formModel"
       :form-model="formModel"
       :status-code="editStatusCode"
       :medcasno="editRow?.medcasno"
@@ -793,16 +1229,19 @@ onMounted(() => {
       :can-import="canEditForm"
       :can-submit="canEditForm"
       :saving="saving"
+      :printing="printing"
+      :tcm-info-enabled="tcmInfoEnabled"
       @back="handleBackToList"
       @dirty="handleFormDirty"
       @save="handleSave"
       @submit="handleSubmit"
       @import-all="handleImportAll"
       @import-section="handleImportSection"
+      @print="handlePrint"
     />
 
     <TableLayout
-      v-else
+      v-else-if="!isDetailRoute"
       class="mrms-homepage-table"
       :table-data="tableData"
       :loading="loading"
@@ -819,11 +1258,88 @@ onMounted(() => {
       @query="getList"
       @reset="handleReset"
       @pagination="handlePagination"
+      @selection-change="handleSelectionChange"
     >
+      <template
+        v-if="MRMS_HOMEPAGE_WEISTAT_EXPORT_ENABLED || MRMS_HOMEPAGE_HQMS_EXPORT_ENABLED"
+        #toolbar-actions
+      >
+        <ElButton
+          v-if="MRMS_HOMEPAGE_WEISTAT_EXPORT_ENABLED"
+          type="primary"
+          plain
+          :loading="weistatExporting"
+          :disabled="selectedRows.length === 0"
+          @click="handleExportWeistatN041"
+        >
+          导出卫统CSV{{ selectedRows.length > 0 ? `（${selectedRows.length}）` : '' }}
+        </ElButton>
+        <ElButton
+          v-if="MRMS_HOMEPAGE_HQMS_EXPORT_ENABLED"
+          type="primary"
+          plain
+          :loading="hqmsExporting"
+          :disabled="selectedRows.length === 0"
+          @click="handleExportHqms"
+        >
+          导出HQMS CSV{{ selectedRows.length > 0 ? `（${selectedRows.length}）` : '' }}
+        </ElButton>
+      </template>
+
       <template #patient="{ row }">
         <div class="hp-patient">
           <span class="hp-patient__name">{{ row.patientName }}</span>
           <span class="hp-patient__ipt">{{ row.iptNo }}</span>
+        </div>
+      </template>
+
+      <template #idInsKeys="{ row }">
+        <div
+          class="hp-id-ins flex min-w-[300px] flex-col gap-1 py-1"
+          style="min-width: 300px; width: 100%; box-sizing: border-box"
+        >
+          <div
+            class="flex h-[18px] min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap leading-[18px]"
+            :title="row.certno || ''"
+          >
+            <span class="w-7 shrink-0 text-[11px]" style="color: var(--el-text-color-secondary)">
+              证
+            </span>
+            <span
+              class="min-w-0 flex-1 overflow-hidden text-ellipsis text-xs"
+              style="color: var(--el-text-color-primary)"
+            >
+              {{ row.certno || '—' }}
+            </span>
+          </div>
+          <div
+            class="flex h-[18px] min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap leading-[18px]"
+            :title="row.psnNo || ''"
+          >
+            <span class="w-7 shrink-0 text-[11px]" style="color: var(--el-text-color-secondary)">
+              psn
+            </span>
+            <span
+              class="min-w-0 flex-1 overflow-hidden text-ellipsis text-xs"
+              style="color: var(--el-text-color-primary)"
+            >
+              {{ row.psnNo || '—' }}
+            </span>
+          </div>
+          <div
+            class="flex h-[18px] min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap leading-[18px]"
+            :title="row.setlId || ''"
+          >
+            <span class="w-7 shrink-0 text-[11px]" style="color: var(--el-text-color-secondary)">
+              setl
+            </span>
+            <span
+              class="min-w-0 flex-1 overflow-hidden text-ellipsis text-xs"
+              style="color: var(--el-text-color-primary)"
+            >
+              {{ row.setlId || '—' }}
+            </span>
+          </div>
         </div>
       </template>
 
@@ -878,19 +1394,21 @@ onMounted(() => {
       </template>
 
       <template #settleUpload="{ row }">
-        <ElTag size="small" effect="light" :type="uploadStatusTagType(row.settleUploadStatusCode)">
-          {{ uploadLabel(row.settleUploadStatusCode) }}
-        </ElTag>
-      </template>
-
-      <template #orderUpload="{ row }">
-        <ElTag size="small" effect="light" :type="uploadStatusTagType(row.orderUploadStatusCode)">
-          {{ uploadLabel(row.orderUploadStatusCode) }}
+        <ElTag
+          size="small"
+          effect="light"
+          :type="settleUploadStatusTagType(row.settleUploadStatusCode)"
+        >
+          {{ settleUploadStatusLabel(row.settleUploadStatusCode) }}
         </ElTag>
       </template>
 
       <template #insUpload="{ row }">
-        <HomepageInsUploadActions :row="row" @action="handleInsAction" />
+        <HomepageInsUploadActions
+          :row="row"
+          :loading="insActingRowId === row.id"
+          @action="handleInsAction"
+        />
       </template>
 
       <template #rowActions="{ row }">
@@ -899,6 +1417,7 @@ onMounted(() => {
     </TableLayout>
 
     <MrmsInpatientClinicalHost ref="clinicalHostRef" />
+    <MrmsSettleQuery4103Dialog v-model="query4103Visible" :result="query4103Result" />
   </Page>
 </template>
 
@@ -907,6 +1426,26 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+
+/* 详情页签加载占位：占满可视高度，避免空白闪屏 */
+.hp-detail-loading {
+  position: relative;
+  flex: 1;
+  min-height: 320px;
+  background: var(--el-bg-color);
+  border-radius: 6px;
+}
+
+.hp-detail-loading__empty {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 320px;
+  color: var(--el-text-color-regular);
 }
 
 .hp-patient {
@@ -924,6 +1463,11 @@ onMounted(() => {
 .hp-patient__ipt {
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+
+/* 证件/医保列：布局以模板原子类 + 内联 min-width 为准（防 scoped 丢失） */
+.hp-id-ins {
+  font-variant-numeric: tabular-nums;
 }
 
 .hp-time {

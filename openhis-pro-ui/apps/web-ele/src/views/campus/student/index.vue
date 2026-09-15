@@ -10,7 +10,7 @@ import type { CampusCollegeDto } from '#/api/campus/campus-college';
 import type { CampusSiteDto } from '#/api/campus/campus-site';
 import type { StudentDetailDto } from '#/api/campus/campus-student';
 
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 import { TableLayout } from '@vben-core/table-layout-ui';
@@ -66,30 +66,56 @@ const query = reactive({
   keyword: '',
   collegeId: undefined as string | undefined,
   campusCode: undefined as string | undefined,
+  enrollTimeRange: undefined as string[] | undefined,
   activeFlag: undefined as boolean | undefined,
 });
 
-const formItems: FormItemConfig[] = [
+const formItems = computed<FormItemConfig[]>(() => [
   { prop: 'keyword', label: '关键词', type: 'input', placeholder: '姓名/学号/身份证' },
-  { prop: 'collegeId', label: '学院', type: 'select', clearable: true, options: [] },
+  {
+    prop: 'collegeId',
+    label: '学院',
+    type: 'select',
+    clearable: true,
+    multiple: false,
+    filterable: true,
+    options: colleges.value.map((c) => ({
+      label: c.collegeName || '',
+      value: toIdString(c.id),
+    })),
+  },
   {
     prop: 'campusCode',
     label: '校区',
     type: 'select',
     clearable: true,
-    options: [],
+    multiple: false,
+    options: campusSites.value.map((s) => ({
+      label: s.campusName || s.campusCode || '',
+      value: s.campusCode || '',
+    })),
+  },
+  {
+    prop: 'enrollTimeRange',
+    label: '入学时间',
+    type: 'daterange',
+    clearable: true,
+    startPlaceholder: '开始',
+    endPlaceholder: '结束',
+    valueFormat: 'YYYY-MM-DD',
   },
   {
     prop: 'activeFlag',
     label: '状态',
     type: 'select',
     clearable: true,
+    multiple: false,
     options: [
       { label: '启用', value: true },
       { label: '停用', value: false },
     ],
   },
-];
+]);
 
 const columns: TableColumn[] = [
   { prop: 'name', label: '姓名', minWidth: 100 },
@@ -121,20 +147,6 @@ async function loadOptions() {
   ]);
   campusSites.value = unwrapRecords(sitesRes);
   colleges.value = unwrapRecords(collegesRes);
-  const collegeItem = formItems.find((i) => i.prop === 'collegeId');
-  if (collegeItem) {
-    collegeItem.options = colleges.value.map((c) => ({
-      label: c.collegeName || '',
-      value: toIdString(c.id),
-    }));
-  }
-  const campusItem = formItems.find((i) => i.prop === 'campusCode');
-  if (campusItem) {
-    campusItem.options = campusSites.value.map((s) => ({
-      label: s.campusName || s.campusCode || '',
-      value: s.campusCode || '',
-    }));
-  }
 }
 
 async function loadList() {
@@ -143,6 +155,8 @@ async function loadList() {
     collegeId: query.collegeId || null,
     campusCode: query.campusCode || null,
     activeFlag: query.activeFlag ?? null,
+    enrollTimeFrom: query.enrollTimeRange?.[0] || null,
+    enrollTimeTo: query.enrollTimeRange?.[1] || null,
     pageNo: query.pageNo,
     pageSize: query.pageSize,
   });

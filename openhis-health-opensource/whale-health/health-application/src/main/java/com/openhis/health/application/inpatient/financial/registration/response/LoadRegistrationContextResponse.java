@@ -52,4 +52,8 @@ public class LoadRegistrationContextResponse {
     /** 查看模式为 true 时不可编辑。 */
     @Schema(description = "查看模式为 true 时不可编辑")
     private Boolean readOnly;
+
+    /** 是否允许自费转医保（BR-IP-REG-019）。 */
+    @Schema(description = "是否允许自费转医保")
+    private Boolean switchToInsuranceEnabled;
 }

@@ -27,6 +27,7 @@ import {
   captureIslandDeleteSelection,
   handleInlineFieldKeydown,
   handleIslandContentEditableBeforeInputDelete,
+  handleIslandContentEditableBeforeInputText,
   insertNewlineInContentEditableIsland,
 } from '../use-inline-field-keydown';
 
@@ -97,12 +98,14 @@ function syncTextFieldFromAttrs() {
     const el = textFieldRef.value;
     if (!el || props.editor.view?.composing) return;
     const next = valueStr.value;
-    if (readContentEditablePlainText(el) === next) return;
-    const focused = document.activeElement === el;
+    const dom = readContentEditablePlainText(el);
+    if (dom === next) return;
+    // 聚焦输入中 attrs 常落后 DOM 一拍，勿用旧值覆盖（符号/快打会被吃掉）
+    if (document.activeElement === el) return;
     const pinned = peekPinnedIslandCaret(el);
-    const caret = pinned ?? (focused ? contentEditableCaretOffset(el) : -1);
+    const caret = pinned ?? -1;
     el.textContent = next;
-    if ((focused || pinned != null) && caret >= 0) {
+    if (pinned != null && caret >= 0) {
       setContentEditableCaretOffset(el, Math.min(caret, next.length));
     }
   });
@@ -147,6 +150,9 @@ function onTextFieldBeforeInput(e: InputEvent) {
   if (typeof pos !== 'number') return;
   const el = textFieldRef.value;
   if (!el?.isContentEditable) return;
+  if (handleIslandContentEditableBeforeInputText(el, e, onTextFieldInput)) {
+    return;
+  }
   const t = e.inputType;
   // 部分环境 Enter 只走 beforeinput（insertParagraph / insertLineBreak），不经 keydown 默认可插 \n
   if (t === 'insertParagraph' || t === 'insertLineBreak') {
@@ -266,6 +272,8 @@ function onTextFieldFocus() {
 
 function onTextFieldBlur() {
   focused.value = false;
+  // 点工具栏「保存」时焦点已离开，须在 blur 当帧把 DOM 字写入 attrs
+  onTextFieldInput();
 }
 
 onMounted(() => {

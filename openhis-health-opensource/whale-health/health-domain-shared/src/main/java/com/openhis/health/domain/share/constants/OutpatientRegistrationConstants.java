@@ -73,12 +73,12 @@ public interface OutpatientRegistrationConstants {
      */
     String CLINIC_REGISTER_STATUS_TEXT_ENTERED_IN_ERROR = "未收费取消";
 
-    /** 历史号复诊资格未满足（BR-REG-020）。 */
+    /** 复诊0元号资格未满足（BR-REG-020）。 */
     String REG_REASON_CODE_HISTORICAL_FOLLOW_UP_INELIGIBLE = "REG-BIZ-420";
 
     /**
-     * 历史号复诊：本科室近 72 小时内无已接诊记录时的窗口提示。
+     * 复诊0元号：本科室近 72 小时内无已接诊记录时的窗口提示。
      */
     String REG_MESSAGE_HISTORICAL_FOLLOW_UP_INELIGIBLE =
-        "该患者在本科室近72小时内无已接诊记录，不能使用历史号复诊";
+        "该患者在本科室近72小时内无已接诊记录，不能使用复诊0元号";
 }

@@ -43,6 +43,10 @@ public interface FieldNameConstants {
      */
     String CENTRAL_PURCHASE_FLAG = "centralPurchaseFlag";
     /**
+     * 结余留用批次号（药典术语 code；AS-RPT-015 筛选）。
+     */
+    String SURPLUS_RETENTION_BATCH_CODE = "surplusRetentionBatchCode";
+    /**
      * 国家重点监控药品标识（药典勾选=是）。
      */
     String NATIONAL_MONITOR_FLAG = "nationalMonitorFlag";
@@ -273,6 +277,11 @@ public interface FieldNameConstants {
 
     /** 核发发药时刻（{@code med_medication_dispense.dispense_time}）。 */
     String DISPENSE_TIME = "dispenseTime";
+
+    /**
+     * 实发数量（{@code wkf_device_dispense.dispense_quantity}；可空，空则回落 {@link #QUANTITY}）。
+     */
+    String DISPENSE_QUANTITY = "dispenseQuantity";
 
     /** 计划发药时刻（{@code med_medication_dispense.planned_dispense_time}）。 */
     String PLANNED_DISPENSE_TIME = "plannedDispenseTime";
@@ -739,6 +748,14 @@ public interface FieldNameConstants {
      * 上游业务主键锚点（收费明细 {@code adm_charge_item.service_id}）。
      */
     String SERVICE_ID = "serviceId";
+    /**
+     * 发放表锚点（收费明细 {@code adm_charge_item.dispense_table}）。
+     */
+    String DISPENSE_TABLE = "dispenseTable";
+    /**
+     * 发放主键锚点（收费明细 {@code adm_charge_item.dispense_id}）。
+     */
+    String DISPENSE_ID = "dispenseId";
 /** FieldName 共享常量：type name，值 {@code serviceTypeName}。 */
     String SERVICE_TYPE_NAME = "serviceTypeName";
 /** FieldName 共享常量：date，值 {@code settleDate}。 */

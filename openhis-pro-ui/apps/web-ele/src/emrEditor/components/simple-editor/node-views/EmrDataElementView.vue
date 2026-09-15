@@ -25,6 +25,7 @@ import {
   captureIslandDeleteSelection,
   handleInlineFieldKeydown,
   handleIslandContentEditableBeforeInputDelete,
+  handleIslandContentEditableBeforeInputText,
   insertNewlineInContentEditableIsland,
 } from '../use-inline-field-keydown';
 
@@ -132,12 +133,13 @@ function syncTextFieldFromAttrs() {
     const el = textFieldRef.value;
     if (!el || props.editor.view?.composing) return;
     const next = valueStr.value;
-    if (readContentEditablePlainText(el) === next) return;
-    const focused = document.activeElement === el;
+    const dom = readContentEditablePlainText(el);
+    if (dom === next) return;
+    if (document.activeElement === el) return;
     const pinned = peekPinnedIslandCaret(el);
-    const caret = pinned ?? (focused ? contentEditableCaretOffset(el) : -1);
+    const caret = pinned ?? -1;
     el.textContent = next;
-    if ((focused || pinned != null) && caret >= 0) {
+    if (pinned != null && caret >= 0) {
       setContentEditableCaretOffset(el, Math.min(caret, next.length));
     }
   });
@@ -178,6 +180,9 @@ function onTextFieldBeforeInput(e: InputEvent) {
   if (typeof pos !== 'number') return;
   const el = textFieldRef.value;
   if (!el?.isContentEditable) return;
+  if (handleIslandContentEditableBeforeInputText(el, e, onTextFieldInput)) {
+    return;
+  }
   const t = e.inputType;
   if (t !== 'insertParagraph' && t !== 'insertLineBreak') {
     handleIslandContentEditableBeforeInputDelete(props.editor, pos, el, e);
@@ -449,21 +454,30 @@ watch([valueStr, effectiveWidget, editable, optionsJson], () => {
       </template>
       <span
         v-else-if="effectiveWidget === 'number'"
-        class="emr-de-text-bracket emr-de-slot-bracket"
+        class="emr-de-text-bracket emr-de-slot-bracket emr-de-number"
+        :class="{ 'emr-de-text-bracket--plain': !valueStr }"
       >
-        <span class="emr-bracket-field__bracket" aria-hidden="true">[</span>
-        <input
-          ref="lineInputRef"
-          class="emr-de__control emr-de__control--number emr-de__slot-control"
-          type="number"
-          :value="valueStr"
-          :placeholder="visualPlaceholder"
-          :disabled="!domEditable"
-          :aria-label="titleTip"
-          @input="onNumberInput"
-          @keydown="keydownHandler('number')"
-        />
-        <span class="emr-bracket-field__bracket" aria-hidden="true">]</span>
+        <span v-if="valueStr" class="emr-bracket-field__bracket" aria-hidden="true">[</span>
+        <span class="emr-de-number__wrap">
+          <span class="emr-de-number__text" :class="{ 'emr-de-number__text--empty': !valueStr }">{{
+            valueStr || visualPlaceholder
+          }}</span>
+          <input
+            ref="lineInputRef"
+            class="emr-de__control emr-de__control--number emr-de__slot-control emr-de-number__input opacity-0"
+            :class="{ 'emr-de__slot-control--empty': !valueStr }"
+            type="text"
+            inputmode="decimal"
+            :value="valueStr"
+            :placeholder="visualPlaceholder"
+            :disabled="!domEditable"
+            :aria-label="titleTip"
+            :title="valueStr ? valueStr : visualPlaceholder || fieldHint"
+            @input="onNumberInput"
+            @keydown="keydownHandler('number')"
+          />
+        </span>
+        <span v-if="valueStr" class="emr-bracket-field__bracket" aria-hidden="true">]</span>
       </span>
       <span
         v-else-if="effectiveWidget === 'select'"
@@ -514,24 +528,31 @@ watch([valueStr, effectiveWidget, editable, optionsJson], () => {
       </span>
       <span
         v-else-if="effectiveWidget === 'date'"
-        class="emr-de-text-bracket emr-de-slot-bracket"
+        class="emr-de-text-bracket emr-de-slot-bracket emr-de-date"
         :class="{ 'emr-de-text-bracket--plain': !valueStr }"
         @pointerdown.stop="openDatePicker"
       >
         <span v-if="valueStr" class="emr-bracket-field__bracket" aria-hidden="true">[</span>
-        <input
-          ref="dateInputRef"
-          class="emr-de__control emr-de__control--date emr-de__slot-control"
-          :class="{ 'emr-de__slot-control--empty': !valueStr }"
-          type="date"
-          :value="dateInputValue"
-          :disabled="!domEditable"
-          :aria-label="titleTip"
-          :title="valueStr ? valueStr : visualPlaceholder || fieldHint"
-          @pointerdown.stop="openDatePicker"
-          @input="onDateInput"
-          @keydown="keydownHandler('date')"
-        />
+        <span class="emr-de-date__wrap">
+          <span
+            class="emr-de-date__text"
+            :class="{ 'emr-de-date__text--empty': !dateInputValue }"
+            >{{ dateInputValue || visualPlaceholder }}</span
+          >
+          <input
+            ref="dateInputRef"
+            class="emr-de__control emr-de__control--date emr-de__slot-control emr-de-date__input opacity-0"
+            :class="{ 'emr-de__slot-control--empty': !valueStr }"
+            type="date"
+            :value="dateInputValue"
+            :disabled="!domEditable"
+            :aria-label="titleTip"
+            :title="valueStr ? valueStr : visualPlaceholder || fieldHint"
+            @pointerdown.stop="openDatePicker"
+            @input="onDateInput"
+            @keydown="keydownHandler('date')"
+          />
+        </span>
         <span v-if="valueStr" class="emr-bracket-field__bracket" aria-hidden="true">]</span>
       </span>
       <label v-else-if="effectiveWidget === 'checkbox'" class="emr-de__checkbox-wrap">
@@ -819,13 +840,88 @@ watch([valueStr, effectiveWidget, editable, optionsJson], () => {
   min-width: 7em;
 }
 
+.emr-de-date__wrap {
+  position: relative;
+  display: inline-block;
+  min-width: 7em;
+  max-width: 11em;
+  vertical-align: baseline;
+}
+
+.emr-de-date__text {
+  font: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  color: #111827;
+  white-space: nowrap;
+}
+
+.emr-de-date__text--empty {
+  color: #9ca3af;
+}
+
+.emr-de-date__input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: transparent;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  height: 100%;
+  cursor: pointer;
+}
+
+.emr-de-date__input::-webkit-datetime-edit,
+.emr-de-date__input::-webkit-datetime-edit-fields-wrapper,
+.emr-de-date__input::-webkit-datetime-edit-text,
+.emr-de-date__input::-webkit-datetime-edit-year-field,
+.emr-de-date__input::-webkit-datetime-edit-month-field,
+.emr-de-date__input::-webkit-datetime-edit-day-field {
+  color: transparent;
+  opacity: 0;
+}
+
 .emr-de__control--date.emr-de__slot-control::-webkit-calendar-picker-indicator {
-  opacity: 0.4;
+  opacity: 0;
   cursor: pointer;
   padding: 0;
   margin: 0 0 0 2px;
   width: 0.95em;
   height: 0.95em;
+}
+
+.emr-de-number__wrap {
+  position: relative;
+  display: inline-block;
+  min-width: 2.5em;
+  max-width: 8em;
+  vertical-align: baseline;
+}
+
+.emr-de-number__text {
+  font: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  color: #111827;
+  white-space: nowrap;
+}
+
+.emr-de-number__text--empty {
+  color: #9ca3af;
+}
+
+.emr-de-number__input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  height: 100%;
+  cursor: text;
 }
 
 .emr-de__control--number.emr-de__slot-control {
@@ -849,6 +945,13 @@ watch([valueStr, effectiveWidget, editable, optionsJson], () => {
 .emr-de__control:disabled {
   opacity: 0.88;
   cursor: not-allowed;
+}
+
+/* 日期/数字展示走 span；disabled 不能抬透明度，否则 Chrome 会叠出 2026/09/01 */
+.emr-de__control.emr-de-date__input:disabled,
+.emr-de__control.emr-de-number__input:disabled {
+  opacity: 0;
+  cursor: default;
 }
 
 .emr-de--bound .emr-de__slot-control:focus {

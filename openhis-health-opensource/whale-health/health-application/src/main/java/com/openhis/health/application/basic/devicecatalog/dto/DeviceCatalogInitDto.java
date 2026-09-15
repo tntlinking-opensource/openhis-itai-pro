@@ -13,8 +13,8 @@ import java.util.Map;
 /**
  * 耗材目录维护页初始化数据。
  *
- * <p>当前 {@link com.openhis.health.application.basic.devicecatalog.service.DeviceCatalogAppService#init()}
- * 填充计量维度下拉、供应商列表、生产厂家（type=1）、耗材种类（{@code device_type_code}）等（均为 {@code label/value} 行列表，兼容旧表格数据源）。</p>
+ * <p>{@link com.openhis.health.application.basic.devicecatalog.service.DeviceCatalogAppService#init()}
+ * 填充计量单位、供应商、生产厂家（type=1）、耗材种类等下拉（{@code label/value} 行）。</p>
  */
 @Data
 public class DeviceCatalogInitDto {
@@ -24,15 +24,7 @@ public class DeviceCatalogInitDto {
      */
     private List<Map<String, Object>> unitCodeOptions;
 
-    /** 包装单位下拉（与 {@link #unitCodeOptions} 同源，旧前端字段名）。 */
-    private List<Map<String, Object>> packUnits;
-    /** 销售单位下拉（与 {@link #unitCodeOptions} 同源）。 */
-    private List<Map<String, Object>> saleUnits;
-    /** 拆零单位下拉（与 {@link #unitCodeOptions} 同源）。 */
-    private List<Map<String, Object>> minUnits;
-    /** 库存单位下拉（与 {@link #unitCodeOptions} 同源）。 */
-    private List<Map<String, Object>> stockUnits;
-    /** 剂量单位（术语 {@code dose_unit}）。 */
+    /** 剂量单位候选（术语 {@code dose_unit}；维护界面可不展示，写路径可默认回落拆零）。 */
     private List<Map<String, Object>> doseUnits;
 
     /** 耗材分类（术语体系 {@code device_category_code}）。 */
@@ -71,10 +63,6 @@ public class DeviceCatalogInitDto {
         dto.setSupplierListOptions(Collections.emptyList());
         dto.setManufacturerOptions(Collections.emptyList());
         dto.setUnitCodeOptions(Collections.emptyList());
-        dto.setPackUnits(Collections.emptyList());
-        dto.setSaleUnits(Collections.emptyList());
-        dto.setMinUnits(Collections.emptyList());
-        dto.setStockUnits(Collections.emptyList());
         dto.setDoseUnits(Collections.emptyList());
         dto.setYbCategories(Collections.emptyList());
         dto.setFinancialTypes(Collections.emptyList());

@@ -32,9 +32,7 @@ export interface DeptPurchaseRequestOptionDto {
   label?: string;
 }
 
-export interface LoadDeptPurchaseRequestFormInitRequest {
-  organizationId?: number;
-}
+export interface LoadDeptPurchaseRequestFormInitRequest {}
 
 export interface LoadDeptPurchaseRequestFormInitResponse {
   departmentPharmacyLocationOptions?: DeptPurchaseRequestOptionDto[];
@@ -63,10 +61,8 @@ export interface DeptPurchaseRequestListRowDto {
   statusEnumText?: string;
   rejectReason?: string;
   creatorName?: string;
-  approverId?: number | string;
   approverName?: string;
   totalAmount?: number;
-  approvalTime?: string;
   applyTime?: string;
   occurrenceTime?: string;
 }
@@ -77,7 +73,6 @@ export interface PageDeptPurchaseRequestsResponse {
   pageNo?: number;
   pageSize?: number;
   content?: DeptPurchaseRequestListRowDto[];
-  records?: DeptPurchaseRequestListRowDto[];
 }
 
 export interface GetDeptPurchaseRequestDetailRequest {

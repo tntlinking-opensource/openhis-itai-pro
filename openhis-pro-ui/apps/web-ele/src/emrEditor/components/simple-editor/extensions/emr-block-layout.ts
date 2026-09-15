@@ -2,6 +2,8 @@ import type { Node as PMNode, ResolvedPos } from '@tiptap/pm/model';
 
 import { Extension } from '@tiptap/core';
 
+import { toCssLineHeight } from '../editor-defaults';
+
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
     emrBlockLayout: {
@@ -69,7 +71,8 @@ export const EmrBlockLayout = Extension.create({
               if (!attributes.lineHeight) {
                 return {};
               }
-              return { style: `line-height: ${attributes.lineHeight}` };
+              const css = toCssLineHeight(String(attributes.lineHeight));
+              return { style: `line-height: ${css}` };
             },
           },
         },

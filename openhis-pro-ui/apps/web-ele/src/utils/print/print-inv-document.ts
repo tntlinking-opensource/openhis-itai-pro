@@ -1,4 +1,4 @@
-import type { InvFormPaperKind } from './form-print-preference';
+import type { InvFormPaperKind, InvFormTripleSpec } from './form-print-preference';
 import type { InvMovementPrintSource } from './mappers/inv-movement';
 import type { InvReturnPrintSource } from './mappers/inv-return';
 import type { InvStocktakePrintSource } from './mappers/inv-stocktake';
@@ -11,11 +11,13 @@ import { PRINT_SCENARIO } from './constants/print-scenario';
 import {
   DEFAULT_FORM_COPIES,
   getFormPrintPreference,
-  INV_FORM_PAPER_HEIGHT_MM,
   INV_FORM_PRINT_PREF_KEY,
   isInvFormTriplePaper,
   normalizeInvFormPaperKind,
+  normalizeInvFormTripleSpec,
+  resolveInvFormTripleHeightMm,
 } from './form-print-preference';
+import { applyInvMovementDeviceSignOffFormatters } from './normalize-inv-movement-sign-off';
 import { normalizeInvReturnPrintJson } from './normalize-inv-return-print-json';
 import { print } from './runtime';
 import { PRINT_ERROR_CODE } from './runtime/types';
@@ -46,6 +48,8 @@ export interface PrintInvDocumentOptions {
   paperHeightMm?: number;
   /** 指定则跳过打印前纸张弹窗 */
   paperKind?: InvFormPaperKind;
+  /** 指定则按该规格套三联单纸高 */
+  tripleSpec?: InvFormTripleSpec;
 }
 
 /** 按模版族打印或预览库存单据 */
@@ -62,7 +66,7 @@ export async function printInvDocument(options: PrintInvDocumentOptions): Promis
   }
   const pref = getFormPrintPreference(INV_FORM_PRINT_PREF_KEY);
   const copies = options.copies ?? (options.preview ? pref.copies : DEFAULT_FORM_COPIES);
-  const paperHeightMm = options.paperHeightMm ?? INV_FORM_PAPER_HEIGHT_MM;
+  const tripleSpec = normalizeInvFormTripleSpec(options.tripleSpec ?? pref.tripleSpec);
   const paperKind = normalizeInvFormPaperKind(options.paperKind ?? pref.paperKind);
   const isPreview = options.preview === true;
   const isTriple = isInvFormTriplePaper(paperKind);
@@ -79,15 +83,21 @@ export async function printInvDocument(options: PrintInvDocumentOptions): Promis
     copies,
     repeatPrintData: isTriple,
     formPaperKind: paperKind,
+    formTripleSpec: tripleSpec,
     showFormPaperKind: isPreview,
     // 直接打印：纸张与打印机同一弹窗；已记住则按 auto 跳过
     showPaperKind: !isPreview && options.paperKind === undefined,
     selectPrinter: 'auto',
     transformPrintJson: (printJson, ctx) => {
       const kind = normalizeInvFormPaperKind(ctx?.formPaperKind ?? paperKind);
+      const spec = normalizeInvFormTripleSpec(ctx?.formTripleSpec ?? tripleSpec);
+      const heightMm = options.paperHeightMm ?? resolveInvFormTripleHeightMm(spec);
       // 退货种子模板是迷你版，先对齐流转单版式再套纸张
-      const normalized = family === 'return' ? normalizeInvReturnPrintJson(printJson) : printJson;
-      return applyInvDocumentPaperByKind(normalized, kind, paperHeightMm);
+      const afterReturn = family === 'return' ? normalizeInvReturnPrintJson(printJson) : printJson;
+      // 耗材进货/采购申请签批与药品分流（库模板未迁时仍按 PrintData 开关改写）
+      const normalized =
+        family === 'movement' ? applyInvMovementDeviceSignOffFormatters(afterReturn) : afterReturn;
+      return applyInvDocumentPaperByKind(normalized, kind, heightMm);
     },
   });
 }

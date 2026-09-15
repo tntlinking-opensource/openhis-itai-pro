@@ -99,33 +99,12 @@ export async function loadBusinessBuiltInRoleOptions(): Promise<RoleOptionDto[]>
   }));
 }
 
-/** legacy roleCode（1/2/3/4/6）→ 展示名（读侧兼容） */
-export function legacyRoleCodeToLabel(code?: null | number | string): string {
-  if (code === undefined || code === null || code === '') {
-    return '';
-  }
-  const legacyMap: Record<number, string> = {
-    1: '医师',
-    2: '护士',
-    3: '药师',
-    4: '库管',
-    6: '行政',
-  };
-  const n = Number(code);
-  if (Number.isNaN(n)) {
-    return String(code);
-  }
-  return legacyMap[n] ?? String(code);
-}
-
 /** 岗位分配行（PractitionerAssignmentRowDto） */
 export interface PractitionerAssignmentRow {
   assignmentId?: string;
   practitionerId?: string;
   /** whale_roles.id */
   roleId?: string;
-  /** legacy 1/2/3/4/6，非 whale_roles.id */
-  roleCode?: null | number;
   roleName?: string;
   orgId?: string;
   orgName?: string;
@@ -154,10 +133,8 @@ export interface AssignPractitionerRoleItemPayload {
   practitionerId: string;
   orgId?: string | null;
   locationId?: string | null;
-  /** 推荐：whale_roles.id */
+  /** whale_roles.id（必填） */
   roleId?: string;
-  /** 兼容 legacy 1/2/3/4/6（与 roleId 二选一，后端优先 roleId） */
-  roleCode?: number;
   name?: string;
   specialtyCode?: string;
   typeCode?: number | null;

@@ -23,7 +23,6 @@ export interface LoadOutpatientDailySettlementPageInitResponse {
   defaultDateFrom?: string;
   defaultDateTo?: string;
   expensePropertyOptions?: ApiOptionItem[];
-  financialDelegateEnabled?: boolean;
   cashierOptions?: ApiOptionItem[];
   currentCashierId?: string;
 }
@@ -82,6 +81,22 @@ export interface DailySettlementExpenseNatureSummaryDto {
   insuranceTypeSummaries?: DailySettlementInsuranceTypeSummaryDto[];
 }
 
+/** 工伤独立统计（不计入总收入；有工伤模块且窗内有工伤流水时返回）。 */
+export interface DailySettlementWorkInjurySummaryDto {
+  westernPatentMedicineAmount?: string;
+  treatmentAmount?: string;
+  consumableAmount?: string;
+  herbalMedicineAmount?: string;
+  consultationFeeAmount?: string;
+  personCount?: number;
+  contractName?: string;
+  /** 个人自付（现金/微信/支付宝/银行卡等自付渠道） */
+  cashAmount?: string;
+  fundAmount?: string;
+  accountAmount?: string;
+  totalAmount?: string;
+}
+
 export interface DailySettlementSummaryDto {
   dateRange?: string;
   totalIncome?: string;
@@ -103,6 +118,8 @@ export interface DailySettlementSummaryDto {
   physicalExamCount?: number;
   refundTotal?: string;
   expenseNatureSummaries?: DailySettlementExpenseNatureSummaryDto[];
+  /** 工伤独立统计（不入总合计） */
+  workInjurySummary?: DailySettlementWorkInjurySummaryDto;
   /** 下半区主渲染源 */
   summaryRows?: DailySettlementSummaryRowDto[];
 }

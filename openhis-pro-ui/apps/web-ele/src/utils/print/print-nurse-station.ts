@@ -74,7 +74,8 @@ export interface PrintInfusionLabelOptions {
  * 护士站输液瓶签打印：
  * - 按输液组逐张（同组药品同一张）
  * - 按用药天数逐日
- * - 门诊再按用药频次每日次数拆张，总量按「天数×次数」整除到每张；住院不按频次拆
+ * - 按用药频次每日次数拆张（门诊/住院相同；如 BID 日两次 → 当日 2 张）
+ * - 有发药总量时按「天数×次数」整除到每张；住院无总量时每张印每次剂量
  */
 export async function printInfusionLabel(options: PrintInfusionLabelOptions) {
   const encounterId = String(options.encounterId ?? '').trim();
@@ -90,16 +91,27 @@ export async function printInfusionLabel(options: PrintInfusionLabelOptions) {
 
   const scenarioCode =
     String(options.scenarioCode ?? '').trim() || PRINT_SCENARIO.opInfusionLabelPrint;
-  // 住院瓶签仍按选定日一张；仅门诊按频次拆张
-  const splitByFrequency = scenarioCode === PRINT_SCENARIO.opInfusionLabelPrint;
   const baseExecuteTimeText = String(options.source.executeTimeText ?? '').trim();
+  // 入参可覆盖每日次数（住院槽位回落）；否则按组内 rateCode 解析
+  const timesPerDayOverride = (() => {
+    const raw = options.source.timesPerDay;
+    if (raw === null || raw === undefined || String(raw).trim() === '') {
+      return 0;
+    }
+    const n = typeof raw === 'number' ? raw : Number(String(raw).trim());
+    if (!Number.isFinite(n) || n <= 0) {
+      return 0;
+    }
+    return Math.trunc(n);
+  })();
   let printedCount = 0;
   for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
     const group = groups[groupIndex]!;
     const dayCount = resolveInfusionLabelPrintDayCount(group.medicationLines);
-    const timesPerDay = splitByFrequency
-      ? await resolveInfusionLabelPrintTimesPerDay(group.medicationLines)
-      : 1;
+    const timesPerDay =
+      timesPerDayOverride > 0
+        ? timesPerDayOverride
+        : await resolveInfusionLabelPrintTimesPerDay(group.medicationLines);
     const quantitySplitCount = dayCount * timesPerDay;
     const medicationRequestIds = group.medicationLines
       .map((line) => String(line.requestId ?? '').trim())
@@ -167,12 +179,16 @@ export interface PrintSpecimenBarcodeOptions {
   patientName?: string;
   genderEnumText?: string;
   ageText?: string;
+  /** 住院采血贴床号；门诊可空 */
+  bedNo?: string;
   /** 检验项目列表，每张贴一个条码 */
   items: PrintSpecimenBarcodeItem[];
   jobName?: string;
+  /** 默认门诊采血贴；住院护士站请传 PRINT_SCENARIO.ipSpecimenBarcodePrint */
+  scenarioCode?: string;
 }
 
-/** 门诊护士站采血贴：按检验项目主键逐张打印（含患者信息与项目名） */
+/** 护士站采血贴：按检验项目主键逐张打印（含患者信息与项目名） */
 export async function printSpecimenBarcode(options: PrintSpecimenBarcodeOptions) {
   const encounterId = strId(options.encounterId);
   if (!encounterId) {
@@ -199,17 +215,21 @@ export async function printSpecimenBarcode(options: PrintSpecimenBarcodeOptions)
     return { ok: false as const, count: 0 };
   }
 
+  const scenarioCode =
+    String(options.scenarioCode ?? '').trim() || PRINT_SCENARIO.opSpecimenBarcodePrint;
   const patientName = strId(options.patientName);
   const genderEnumText = strId(options.genderEnumText);
   const ageText = strId(options.ageText);
+  const bedNo = strId(options.bedNo);
 
   let printedCount = 0;
   for (let index = 0; index < items.length; index += 1) {
     const item = items[index]!;
     const suffix = items.length > 1 ? ` (${index + 1}/${items.length})` : '';
     const result = await print({
-      scenarioCode: PRINT_SCENARIO.opSpecimenBarcodePrint,
+      scenarioCode,
       source: {
+        bedNo,
         patientName,
         genderEnumText,
         ageText,
@@ -217,9 +237,10 @@ export async function printSpecimenBarcode(options: PrintSpecimenBarcodeOptions)
         serviceRequestId: item.serviceRequestId,
       },
       bizRef: {
-        scenarioCode: PRINT_SCENARIO.opSpecimenBarcodePrint,
+        scenarioCode,
         encounterId,
         serviceRequestId: item.serviceRequestId,
+        serviceRequestIds: [item.serviceRequestId],
       },
       jobName: `${options.jobName ?? '采血贴'}${suffix}`,
     });

@@ -4,152 +4,51 @@
     {
       "name": "1",
       "index": 0,
-      "width": 297,
-      "height": 210,
-      "paperType": "A4",
-      "paperFooter": 580,
-      "paperHeader": 54,
+      "width": 30,
+      "height": 40,
+      "paperType": "other",
+      "paperFooter": 113,
+      "paperHeader": 0,
       "printElements": [
         {
           "options": {
-            "top": 8,
-            "left": 15,
-            "field": "hospitalName",
-            "title": "医院",
-            "width": 810,
-            "height": 22,
-            "fontSize": 16,
-            "hideTitle": true,
-            "textAlign": "center",
-            "fontWeight": "700",
-            "textContentVerticalAlign": "middle"
-          },
-          "printElementType": {
-            "type": "text",
-            "title": "医院"
-          }
-        },
-        {
-          "options": {
-            "top": 30,
-            "left": 15,
-            "field": "reportTitle",
-            "title": "报表标题",
-            "width": 810,
-            "height": 20,
-            "fontSize": 14,
-            "hideTitle": true,
-            "textAlign": "center",
-            "fontWeight": "700",
-            "textContentVerticalAlign": "middle"
-          },
-          "printElementType": {
-            "type": "text",
-            "title": "报表标题"
-          }
-        },
-        {
-          "options": {
-            "top": 54,
-            "left": 15,
-            "field": "rows",
-            "width": 810,
-            "height": 40,
-            "columns": [
-              [
-                {
-                  "align": "center",
-                  "field": "seqNo",
-                  "title": "序号",
-                  "width": 40,
-                  "halign": "center"
-                },
-                {
-                  "align": "center",
-                  "field": "productBusNo",
-                  "title": "编码",
-                  "width": 90,
-                  "halign": "center"
-                },
-                {
-                  "align": "center",
-                  "field": "name",
-                  "title": "项目名称",
-                  "width": 140,
-                  "halign": "center"
-                },
-                {
-                  "align": "center",
-                  "field": "totalVolume",
-                  "title": "规格",
-                  "width": 90,
-                  "halign": "center"
-                },
-                {
-                  "align": "center",
-                  "field": "lotNumber",
-                  "title": "批号",
-                  "width": 80,
-                  "halign": "center"
-                },
-                {
-                  "align": "right",
-                  "field": "packageStockText",
-                  "title": "库存(包装)",
-                  "width": 80,
-                  "halign": "center"
-                },
-                {
-                  "align": "right",
-                  "field": "splitStockText",
-                  "title": "库存(最小)",
-                  "width": 80,
-                  "halign": "center"
-                },
-                {
-                  "align": "right",
-                  "field": "lotCostPrice",
-                  "title": "进价",
-                  "width": 70,
-                  "halign": "center"
-                },
-                {
-                  "align": "right",
-                  "field": "lotSalePrice",
-                  "title": "售价",
-                  "width": 70,
-                  "halign": "center"
-                },
-                {
-                  "align": "center",
-                  "field": "expirationDate",
-                  "title": "效期",
-                  "width": 80,
-                  "halign": "center"
-                },
-                {
-                  "align": "center",
-                  "field": "warehouseName",
-                  "title": "库房",
-                  "width": 90,
-                  "halign": "center"
-                }
-              ]
-            ],
+            "top": 3,
+            "left": 3,
+            "field": "labelBody",
+            "title": "口服药贴",
+            "width": 79,
+            "height": 108,
             "fontSize": 8,
-            "textAlign": "center",
-            "tableBorder": "border",
-            "tableHeaderRepeat": "page",
-            "tableHeaderBackground": "#ffffff"
+            "lineHeight": 10,
+            "formatter": "function(title,value,options,printData){var d=printData||{};function e(k){var x=d[k];return x==null?'':String(x);}function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}return '<div style=\"width:100%;height:100%;overflow:visible;position:relative;\"><div style=\"width:38mm;height:26mm;transform:rotate(90deg) translate(0,-100%);transform-origin:top left;font-family:SimHei,黑体,SimSun,宋体,sans-serif;color:#000;box-sizing:border-box;padding:0.4mm 0.6mm;font-size:8pt;line-height:10pt;\"><div style=\"font-size:8pt;font-weight:700;line-height:10pt;white-space:nowrap;\">'+esc(e('bedNo'))+'　'+esc(e('patientName'))+'　'+esc(e('ageText'))+'</div><div style=\"border-top:0.6pt solid #000;margin:1pt 0 1pt 0;height:0;\"></div><div style=\"font-size:9pt;font-weight:700;line-height:11pt;\">'+esc(e('drugName'))+'</div><div style=\"font-size:8pt;line-height:10pt;white-space:nowrap;\">规格：'+esc(e('specText'))+'　频次：'+esc(e('freqText'))+'</div><div style=\"font-size:8pt;font-weight:700;line-height:10pt;white-space:nowrap;\">用量：'+esc(e('doseText'))+'</div></div></div>';}",
+            "hideTitle": true
           },
           "printElementType": {
-            "type": "table",
-            "title": "明细表"
+            "type": "longText",
+            "title": "口服药贴"
           }
         }
       ],
-      "paperNumberContinue": true,
-      "paperNumberDisabled": false
+      "watermarkOptions": {
+        "width": 60,
+        "format": "YYYY-MM-DD HH:mm",
+        "height": 60,
+        "rotate": 25,
+        "content": "",
+        "fontSize": "10px",
+        "fillStyle": "rgba(184, 184, 184, 0.3)",
+        "timestamp": false
+      },
+      "panelLayoutOptions": {
+        "layoutType": "column",
+        "paperStyle": "",
+        "paperWidth": 0,
+        "paperHeight": 0,
+        "layoutRowGap": 0,
+        "layoutColumnGap": 0
+      },
+      "paperNumberContinue": false,
+      "paperNumberDisabled": true
     }
   ],
   "schemaVersion": 1

@@ -56,6 +56,7 @@ import com.openhis.health.domain.administration.encounter.service.EncounterQuery
 import com.openhis.health.application.shared.encounter.EncounterContextReader;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
+import com.openhis.health.domain.administration.patient.queries.model.BatchPatientDetailQueryModel;
 import com.openhis.health.domain.administration.patient.queries.model.PatientCoreQueryModel;
 import com.openhis.health.domain.administration.patient.queries.model.PatientDetailQueryModel;
 import com.openhis.health.domain.administration.patient.service.PatientQueryService;
@@ -312,6 +313,10 @@ public class NurseStationEncounterManageAppService {
             LocalDate executionDate = this.resolveNurseStationExecutionDateFromRequest(request);
             Collection<Long> encounterIdsIn = null;
             String taskFilter = taskFilterCode;
+            // Pre：任务筛选时会先对候选全集计任务数；本页可切片复用，避免二次扫医嘱（§2.1 #9）。
+            // Pre：默认「全部任务」不算待执行槽（极重）；仅 pending-execute/processed 才展开执计数。
+            Map<Long, NurseStationTaskCountBundle> taskCountsFromFilterPass = null;
+            boolean includePendingExecute = this.shouldIncludePendingExecuteCounts(taskFilter);
             if (StringUtils.isNotEmpty(taskFilter)) {
                 // Pre：任务筛选须先在同一地理范围内拉候选 encounter，再按计数收窄（BR-IP-NUR-007）。
                 InpatientEncounterPageQuery candidateQuery =
@@ -325,9 +330,9 @@ public class NurseStationEncounterManageAppService {
                         candidateIds.add(row.getEncounterId());
                     }
                 }
-                Map<Long, NurseStationTaskCountBundle> countsForCandidates =
-                    this.buildTaskCountsForEncounters(candidateIds, executionDate);
-                encounterIdsIn = this.filterEncounterIdsByTaskFilter(candidateIds, countsForCandidates, taskFilter);
+                taskCountsFromFilterPass =
+                    this.buildTaskCountsForEncounters(candidateIds, executionDate, includePendingExecute);
+                encounterIdsIn = this.filterEncounterIdsByTaskFilter(candidateIds, taskCountsFromFilterPass, taskFilter);
             }
             InpatientEncounterPageQuery pageQuery =
                 nurseStationEncounterManageMapper.toInpatientEncounterPageQuery(request, managedWardIds, encounterIdsIn);
@@ -351,8 +356,21 @@ public class NurseStationEncounterManageAppService {
             // Pre：病情优先级读模型未投影，批量查就诊主档回填列表卡片。
             Map<Long, String> priorityEnumByEncounterId =
                 encounterQueryService.mapPriorityEnumByEncounterIds(pageEncounterIds);
-            Map<Long, NurseStationTaskCountBundle> taskCounts =
-                this.buildTaskCountsForEncounters(pageEncounterIds, executionDate);
+            Map<Long, NurseStationTaskCountBundle> taskCounts;
+            if (taskCountsFromFilterPass != null) {
+                // Pre：筛选通道已对候选计过数，本页切片复用，禁止再跑一遍医嘱/执行计划扫描。
+                taskCounts = new HashMap<>();
+                for (Long encounterId : pageEncounterIds) {
+                    NurseStationTaskCountBundle fromFilter = taskCountsFromFilterPass.get(encounterId);
+                    if (fromFilter != null) {
+                        taskCounts.put(encounterId, fromFilter);
+                    }
+                }
+            } else {
+                // Pre：默认列表只算待校对；待执行明细由右侧页签按选中患者拉取（禁全员展槽）。
+                taskCounts =
+                    this.buildTaskCountsForEncounters(pageEncounterIds, executionDate, includePendingExecute);
+            }
             Map<Long, InpatientInfoQueueDisplayAssembler.InpatientQueueDisplayOverlay> displayOverlay =
                 inpatientInfoQueueDisplayAssembler.buildOverlay(page.getContent(), contractNoByEncounterId);
             Map<Long, NurseStationQueueDisplayEnrichment> enrichmentByEncounterId =
@@ -477,7 +495,7 @@ public class NurseStationEncounterManageAppService {
             Map<Long, String> contractNoByEncounterId =
                 accountQueryService.mapPreferredContractNoByEncounterIds(singleEncounter);
             Map<Long, NurseStationTaskCountBundle> taskCounts =
-                this.buildTaskCountsForEncounters(singleEncounter, LocalDate.now());
+                this.buildTaskCountsForEncounters(singleEncounter, LocalDate.now(), true);
             Map<Long, InpatientInfoQueueDisplayAssembler.InpatientQueueDisplayOverlay> displayOverlay =
                 inpatientInfoQueueDisplayAssembler.buildOverlay(
                     Collections.singletonList(contextRow), contractNoByEncounterId);
@@ -791,6 +809,8 @@ public class NurseStationEncounterManageAppService {
     /**
      * 为当前页读模型行构建展示增补（病房名、检索码、证件号、住址）。
      *
+     * <p>患者主档与床位位置均按当前页主键批量装载，禁止逐患者/逐床位查询（§2.1 #9）。</p>
+     *
      * @param rows              读模型行
      * @param houseNameByBusNo  病房 bus_no 索引
      * @return encounterId → 增补
@@ -803,9 +823,16 @@ public class NurseStationEncounterManageAppService {
             return result;
         }
         Set<Long> patientIds = new LinkedHashSet<>();
+        Set<Long> bedIds = new LinkedHashSet<>();
         for (InpatientEncounterContextQueryModel row : rows) {
-            if (row != null && row.getPatientId() != null) {
+            if (row == null) {
+                continue;
+            }
+            if (row.getPatientId() != null) {
                 patientIds.add(row.getPatientId());
+            }
+            if (row.getBedId() != null) {
+                bedIds.add(row.getBedId());
             }
         }
         Map<Long, String> pinyinByPatientId = new HashMap<>();
@@ -814,10 +841,16 @@ public class NurseStationEncounterManageAppService {
         Map<Long, String> addressByPatientId = new HashMap<>();
         Map<Long, String> phoneByPatientId = new HashMap<>();
         Map<Long, String> patientBusNoByPatientId = new HashMap<>();
-        // Pre：读模型未投影检索码/证件/住址/电话，按当前页患者主键逐条补全（页大小受 Gate 约束）。
+        // Pre：读模型未投影检索码/证件/住址/电话，当前页患者主键一次性批量补全（禁 N+1）。
+        Map<Long, BatchPatientDetailQueryModel> batchDetails =
+            patientQueryService.batchLoadPatientDetails(new ArrayList<>(patientIds));
         for (Long patientId : patientIds) {
-            PatientDetailQueryModel detail = patientQueryService.loadPatientDetail(patientId);
-            if (detail == null || detail.getPatient() == null) {
+            BatchPatientDetailQueryModel batchItem = batchDetails.get(patientId);
+            if (batchItem == null || batchItem.getPatientDetail() == null) {
+                continue;
+            }
+            PatientDetailQueryModel detail = batchItem.getPatientDetail();
+            if (detail.getPatient() == null) {
                 continue;
             }
             PatientCoreQueryModel core = detail.getPatient();
@@ -838,6 +871,8 @@ public class NurseStationEncounterManageAppService {
                 patientBusNoByPatientId.put(patientId, core.getBusNo().trim());
             }
         }
+        // Pre：当前页床位位置批量装载，供病房名前缀匹配（禁逐床 findOptionalById）。
+        Map<Long, Location> bedById = locationQueryService.loadLocationEntityMapByIds(bedIds);
         Set<Long> encounterIds = new LinkedHashSet<>();
         for (InpatientEncounterContextQueryModel row : rows) {
             if (row != null && row.getEncounterId() != null) {
@@ -858,7 +893,11 @@ public class NurseStationEncounterManageAppService {
                 continue;
             }
             NurseStationQueueDisplayEnrichment enrichment = new NurseStationQueueDisplayEnrichment();
-            enrichment.setHouseName(this.resolveHouseName(row.getBedId(), houseNameByBusNo));
+            Location bed = null;
+            if (row.getBedId() != null) {
+                bed = bedById.get(row.getBedId());
+            }
+            enrichment.setHouseName(this.resolveHouseName(bed, houseNameByBusNo));
             if (row.getPatientId() != null) {
                 enrichment.setPinyinCode(pinyinByPatientId.get(row.getPatientId()));
                 enrichment.setWubiCode(wubiByPatientId.get(row.getPatientId()));
@@ -925,18 +964,17 @@ public class NurseStationEncounterManageAppService {
     }
 
     /**
-     * 由床位 bus_no 前缀匹配病房名称。
+     * 由已装载的床位实体 bus_no 前缀匹配病房名称（调用方须批量预取床位，禁本方法内再查库）。
      *
-     * @param bedId            床位主键
+     * @param bed              床位位置实体；空则无法解析
      * @param houseNameByBusNo 病房 bus_no 索引
      * @return 病房名或 null
      */
-    private String resolveHouseName(Long bedId, Map<String, String> houseNameByBusNo) {
-        if (bedId == null || houseNameByBusNo == null || houseNameByBusNo.isEmpty()) {
+    private String resolveHouseName(Location bed, Map<String, String> houseNameByBusNo) {
+        if (bed == null || houseNameByBusNo == null || houseNameByBusNo.isEmpty()) {
             return null;
         }
-        Location bed = locationQueryService.findOptionalById(bedId).orElse(null);
-        if (bed == null || StringUtils.isEmpty(bed.getBusNo())) {
+        if (StringUtils.isEmpty(bed.getBusNo())) {
             return null;
         }
         String bedBusNo = bed.getBusNo().trim();
@@ -948,6 +986,7 @@ public class NurseStationEncounterManageAppService {
                 continue;
             }
             String prefix = houseBusNo.trim();
+            // 取最长前缀命中，避免短 bus_no 误匹配其它病房
             if (bedBusNo.startsWith(prefix) && prefix.length() > matchedPrefixLen) {
                 matchedPrefixLen = prefix.length();
                 matchedName = entry.getValue();
@@ -964,21 +1003,24 @@ public class NurseStationEncounterManageAppService {
      * （2）另计 {@code status=STOPPED}、长期、医生开立且 {@code stopPerformerCheckId == null} 的停嘱待校行；
      * 不计护士划价及其它非医生开立来源；与校对列表一致<strong>禁止用 based_on 排除</strong>
      *（BR-IP-AUD-002）。住院退药不造负向 Request；{@code refund_*_id}/负数量仅为门诊同源防御。</p>
-     * <p><b>执 pendingExecuteCount</b>：药品+诊疗中 {@code status=VERIFIED}、非停嘱、医生开立，且
+     * <p><b>执 pendingExecuteCount</b>（仅 {@code includePendingExecute=true}）：药品+诊疗中 {@code status=VERIFIED}、非停嘱、医生开立，且
      * <b>开嘱日起至统计日截止前仍有未终态计划槽</b>的医嘱行数（与待执行 Tab 对齐：含跨日未完成临时/出院带药与昨日未完成长期槽；
      * <strong>可拆</strong>长期仍按频次预计点判定（与改一盒一点前一致）；
      * <strong>仅全局不可拆且资格命中</strong>的长期药品按<strong>一盒一点盒首锚点</strong>判定（IF-IP-EXE-01 / **BR-IP-EXE-035**）；
      * 已执行与不执行均为终态，不算待执行；按行 +1 不按槽累加）；
      * 不计护士划价、床位滚费、转科/出院/护理级别；
-     * <strong>皮试检查 companion SR 与皮试药均计入</strong>（执行/计费走 AS-IP-NUR-004，结果登记见 AS-IP-NUR-011）。</p>
+     * <strong>皮试检查 companion SR 与皮试药均计入</strong>（执行/计费走 AS-IP-NUR-004，结果登记见 AS-IP-NUR-011）。
+     * 列表默认「全部任务」传 {@code false}，避免对全员展槽；待执行明细由右侧页签按选中患者拉取。</p>
      *
-     * @param encounterIds  就诊主键集合
-     * @param executionDate 待执行统计自然日
+     * @param encounterIds           就诊主键集合
+     * @param executionDate          待执行统计自然日（仅 includePendingExecute 时使用）
+     * @param includePendingExecute  是否计算待执行计数（展槽极重；默认列表应 false）
      * @return encounterId → 计数包
      */
     private Map<Long, NurseStationTaskCountBundle> buildTaskCountsForEncounters(
         Collection<Long> encounterIds,
-        LocalDate executionDate) {
+        LocalDate executionDate,
+        boolean includePendingExecute) {
         Map<Long, NurseStationTaskCountBundle> result = new HashMap<>();
         if (encounterIds == null || encounterIds.isEmpty()) {
             return result;
@@ -1088,6 +1130,13 @@ public class NurseStationEncounterManageAppService {
                 bundle.setPendingAuditCount(bundle.getPendingAuditCount() + 1);
             }
         }
+        // 默认列表 / 仅待校对筛选：不算待执行展槽，pendingExecute 保持 0。
+        if (!includePendingExecute) {
+            return result;
+        }
+        if (executionDate == null) {
+            return result;
+        }
         List<MedicationRequest> verifiedMeds =
             medicationRequestQueryService.listByEncounterIdsAndStatusEnum(idSet, verifiedCode);
         List<ServiceRequest> verifiedServices =
@@ -1120,6 +1169,27 @@ public class NurseStationEncounterManageAppService {
             proceduresByAnchor,
             result);
         return result;
+    }
+
+    /**
+     * 是否需要在列表路径计算待执行计数（展槽极重）。
+     *
+     * <p>空筛选（全部任务）与 pending-audit 不算执；pending-execute / processed 才算。</p>
+     *
+     * @param taskFilter 任务筛选 code；空表示全部任务
+     * @return true 表示须展开待执行槽并写入 pendingExecuteCount
+     */
+    private boolean shouldIncludePendingExecuteCounts(String taskFilter) {
+        if (StringUtils.isEmpty(taskFilter)) {
+            return false;
+        }
+        if (InpatientNurseStationConstants.TASK_FILTER_PENDING_EXECUTE.equals(taskFilter)) {
+            return true;
+        }
+        if (InpatientNurseStationConstants.TASK_FILTER_PROCESSED.equals(taskFilter)) {
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -1305,6 +1375,7 @@ public class NurseStationEncounterManageAppService {
         Set<LocalDateTime> planned;
         ProductDefinitionDisplayDto product = null;
         boolean packageBatchApplied = false;
+        boolean minSplitUnitBatchApplied = false;
         try {
             StandingOrderPackageBatchPlanTimeResolver.MeasureInput measure =
                 new StandingOrderPackageBatchPlanTimeResolver.MeasureInput();
@@ -1330,6 +1401,7 @@ public class NurseStationEncounterManageAppService {
                     methodLabelByCode);
             planned = expand.getPlanTimes();
             packageBatchApplied = expand.isPackageBatchApplied();
+            minSplitUnitBatchApplied = expand.isMinSplitUnitBatchApplied();
         } catch (BusinessException ex) {
             // 频次不可用：不计待执行（与历史 resolveLongTermPlannedTimesThrough 空集口径一致）
             return false;
@@ -1338,8 +1410,13 @@ public class NurseStationEncounterManageAppService {
             // 无可展计划槽（含不可拆硬顶未凑满盒 → 空）→ 不计待执行
             return false;
         }
-        // 口服剩余按天抑制：与 IF-IP-EXE-01 pending 同源（BR-IP-EXE-038）
-        if (packageBatchApplied && product != null) {
+        // 单位领用剩余按天抑制：与 IF-IP-EXE-01 pending 同源（BR-IP-EXE-038 PACKAGE / MIN_SPLIT）
+        if ((packageBatchApplied || minSplitUnitBatchApplied) && product != null) {
+            StandingOrderOralPackageInventorySupport.UnitClaimMode claimMode =
+                StandingOrderOralPackageInventorySupport.UnitClaimMode.PACKAGE;
+            if (minSplitUnitBatchApplied && !packageBatchApplied) {
+                claimMode = StandingOrderOralPackageInventorySupport.UnitClaimMode.MIN_SPLIT;
+            }
             Map<Long, List<ProcedureRecordQueryModel>> proceduresByRequestId = new HashMap<>();
             List<MedicationRequest> chain =
                 standingOrderOralPackageInventorySupport.loadDoseChangeChain(row.getId());
@@ -1361,6 +1438,7 @@ public class NurseStationEncounterManageAppService {
                     product,
                     methodLabelByCode,
                     asOf,
+                    claimMode,
                     applyStandingOrderPackageBatch);
             Set<LocalDateTime> filtered = new LinkedHashSet<>();
             for (LocalDateTime planTime : planned) {
@@ -1372,6 +1450,29 @@ public class NurseStationEncounterManageAppService {
                     continue;
                 }
                 filtered.add(planTime);
+            }
+            // 与 IF-IP-EXE-01 同源：抑制假锚点后须在预计领用日补锚，否则待执计数漏计
+            LocalDate nextClaim = snap.getNextClaimDate();
+            if (snap.getClaimedSplitQuantity() != null
+                && snap.getClaimedSplitQuantity().compareTo(BigDecimal.ZERO) > 0
+                && nextClaim != null
+                && !nextClaim.isAfter(asOf)) {
+                boolean hasOnNextClaim = false;
+                for (LocalDateTime planTime : filtered) {
+                    if (planTime != null && nextClaim.equals(planTime.toLocalDate())) {
+                        hasOnNextClaim = true;
+                        break;
+                    }
+                }
+                if (!hasOnNextClaim) {
+                    LocalDateTime anchor =
+                        standingOrderOralPackageInventorySupport.resolveNextClaimPendingPlanTime(
+                            row, nextClaim);
+                    if (anchor != null) {
+                        filtered.clear();
+                        filtered.add(anchor.withNano(0));
+                    }
+                }
             }
             planned = filtered;
             if (planned.isEmpty()) {

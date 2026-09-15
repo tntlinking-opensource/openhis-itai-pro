@@ -25,18 +25,19 @@ import com.openhis.health.infrastructure.integration.elep.ExtensionOut.ElepUploa
 import com.openhis.health.infrastructure.integration.elep.ExtensionOut.PatientElepPrescriptionSummaryQueryExtensionOut;
 import com.openhis.elep.domain.client.JilinElepPrescriptionClient;
 import lombok.RequiredArgsConstructor;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
 import java.util.Optional;
 
-/** {@link ElepPrescriptionExtension} 实现（委托 {@link JilinElepPrescriptionClient}）。省份差异由 Maven 模块隔离。 */
+/**
+ * {@link ElepPrescriptionExtension} 实现（委托 {@link JilinElepPrescriptionClient}）。省份差异由 Maven 模块隔离。
+ * <p>只跟 {@code openhis.modules.elep.enabled}；Client / Operations 由 application 侧按 deployment.mode 装配。</p>
+ */
 @Component
 @Primary
 @RequiredArgsConstructor
-@ConditionalOnBean(name = {"elepPrescriptionOrchestrator", "elepPrescriptionOperationsRemoteAdapter"})
 @ConditionalOnProperty(name = "openhis.modules.elep.enabled", havingValue = "true")
 public class ElepPrescriptionExtensionImpl implements ElepPrescriptionExtension {
 

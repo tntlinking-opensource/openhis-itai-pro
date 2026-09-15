@@ -523,11 +523,17 @@ function isDocumentOpen(node: EmrTemplateTreeNode): boolean {
   );
 }
 
-/** 卡片主行：文书类型名优先，其次标题/主诉 */
+/** 卡片主行：具体文书标题优先（与打印页眉一致），勿只用类型名（告知书会糊成一片） */
 function formatDocumentCardPrimary(doc: DocumentSummaryDto): string {
+  const rawTitle = (doc.title ?? '').trim();
+  const strippedTitle = rawTitle
+    .replace(/-\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?.*$/u, '')
+    .replace(/[（(]\s*标准\s*[）)]/g, '')
+    .replace(/标准$/u, '')
+    .trim();
   return (
+    strippedTitle ||
     (doc.documentTypeName ?? '').trim() ||
-    (doc.title ?? '').trim() ||
     (doc.chiefComplaint ?? '').trim() ||
     '病历'
   );
@@ -536,6 +542,13 @@ function formatDocumentCardPrimary(doc: DocumentSummaryDto): string {
 /** 卡片副行主诉（有类型名时才单独展示主诉） */
 function formatDocumentCardChiefComplaint(doc: DocumentSummaryDto): string {
   return (doc.chiefComplaint ?? '').trim();
+}
+
+/** 卡片第二行：优先主诉，方便树里区分历次就诊；无主诉时回退文书标题 */
+function formatDocumentCardSubline(doc: DocumentSummaryDto): string {
+  const complaint = formatDocumentCardChiefComplaint(doc);
+  if (complaint) return complaint;
+  return formatDocumentCardPrimary(doc);
 }
 
 /** 卡片时间 */
@@ -550,11 +563,7 @@ function formatDocumentCardDoctor(doc: DocumentSummaryDto): string {
 
 /** 悬停完整信息 */
 function formatDocumentCardTooltip(doc: DocumentSummaryDto): string {
-  const typeName =
-    (doc.documentTypeName ?? '').trim() ||
-    (doc.documentTypeCode ?? '').trim() ||
-    (doc.title ?? '').trim() ||
-    '病历';
+  const typeName = formatDocumentCardPrimary(doc);
   const badge = formatDocumentCardBadge(doc);
   let badgeText = '';
   if (badge === 'current') badgeText = '本次';
@@ -615,11 +624,7 @@ async function handleDocumentCommand(
       ElMessage.warning('仅创建者可删除该病历');
       return;
     }
-    const title =
-      (doc.documentTypeName ?? '').trim() ||
-      (doc.title ?? '').trim() ||
-      (doc.documentTypeCode ?? '').trim() ||
-      '病历';
+    const title = formatDocumentCardPrimary(doc);
     try {
       await ElMessageBox.confirm(`确定删除病历「${title}」吗？删除后列表不再显示。`, '提示', {
         cancelButtonText: '取消',
@@ -802,9 +807,9 @@ defineExpose({
                 </span>
                 <span
                   class="emr-template-tree__doc-complaint"
-                  :title="formatDocumentCardPrimary(data.document)"
+                  :title="formatDocumentCardSubline(data.document)"
                 >
-                  {{ formatDocumentCardPrimary(data.document) }}
+                  {{ formatDocumentCardSubline(data.document) }}
                 </span>
               </div>
             </div>

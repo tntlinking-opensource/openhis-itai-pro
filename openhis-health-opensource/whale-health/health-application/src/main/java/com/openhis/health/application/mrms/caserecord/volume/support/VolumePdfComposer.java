@@ -71,7 +71,8 @@ public class VolumePdfComposer {
             HomepageDto dto = homepageMapper.toDto(
                     homepage,
                     caseRecordHomepageDomainService.listDiagnoses(record.getId()),
-                    caseRecordHomepageDomainService.listProcedures(record.getId()));
+                    caseRecordHomepageDomainService.listProcedures(record.getId()),
+                    record.getEncounterId());
             PdfGenerateResultDto homepagePdf = homepageOpenPdfRenderer.render(dto);
             parts.add(pdfMergeUtil.decodeBase64(homepagePdf.getPdfBase64()));
         }

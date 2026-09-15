@@ -35,6 +35,17 @@ public interface DailySettlementSharedConstants {
     /** 中成药 fin_type_code（ter_concept 236/2010）。 */
     String CHINESE_PATENT_MEDICINE_FIN_TYPE_CODE = "2010";
 
+    /** 医用耗材 fin_type_code（ter_concept 236/2005）。 */
+    String MEDICAL_CONSUMABLE_FIN_TYPE_CODE = "2005";
+
+    /**
+     * 日结工伤独立统计块统一费用性质桶键（多工伤合同并入一行展示）。
+     */
+    String WORK_INJURY_NATURE_BUCKET_KEY = "__WORK_INJURY__";
+
+    /** 工伤独立统计块默认费用性质展示名（合同名缺失时回落）。 */
+    String WORK_INJURY_NATURE_DISPLAY_NAME = "工伤保险";
+
     /** 药品目录分类 medication_category_code：中成药。 */
     String MEDICATION_CATEGORY_PATENT_CHINESE_CODE = "1";
 

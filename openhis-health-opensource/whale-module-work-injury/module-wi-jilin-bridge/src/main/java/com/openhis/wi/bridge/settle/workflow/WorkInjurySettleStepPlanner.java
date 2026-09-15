@@ -45,6 +45,11 @@ public class WorkInjurySettleStepPlanner {
             WiInfnoConstants.RECON_SUMMARY
     ));
 
+    /** RECON_DETAIL：明细对账 1321（按就诊流水）。 */
+    private static final List<String> RECON_DETAIL_STEPS = Collections.unmodifiableList(List.of(
+            WiInfnoConstants.RECON_DETAIL
+    ));
+
     /** RECON_CONFIRM：对账确认仅 1322（老 HIS「对账确认」）。 */
     private static final List<String> RECON_CONFIRM_STEPS = Collections.unmodifiableList(List.of(
             WiInfnoConstants.RECON_CONFIRM
@@ -157,6 +162,9 @@ public class WorkInjurySettleStepPlanner {
         }
         if (phase == WiPhase.RECON) {
             return RECON_STEPS;
+        }
+        if (phase == WiPhase.RECON_DETAIL) {
+            return RECON_DETAIL_STEPS;
         }
         if (phase == WiPhase.RECON_CONFIRM) {
             return RECON_CONFIRM_STEPS;

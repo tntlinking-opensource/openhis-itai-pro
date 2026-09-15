@@ -23,6 +23,7 @@ import com.openhis.wi.gateway.scheme.shared.model.WiNextAction;
 import com.openhis.wi.gateway.scheme.shared.model.WiPhase;
 import com.openhis.wi.gateway.scheme.shared.model.WiPlatformConstants;
 import com.openhis.wi.gateway.scheme.shared.assembler.WiPlatformInputAssembler;
+import com.openhis.wi.gateway.scheme.shared.support.WiSetlTimeSupport;
 import com.openhis.wi.bridge.invoke.support.WorkInjuryInvokeLogSupport;
 import com.openhis.wi.bridge.settle.workflow.WorkInjurySettleStepPlanner;
 import com.openhis.chs.domain.settlement.entity.YbSettlementRecord;
@@ -51,6 +52,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -106,7 +108,7 @@ public class WorkInjuryInvokeOrchestrator {
         Long contractId = resolveContractIdForPrepare(request, session);
         WiSettleContext ctx = loadContextForPrepare(phase, request, contractId);
         YbWiEncounterAnchor anchor = null;
-        if (phase == WiPhase.RECON || phase == WiPhase.RECON_CONFIRM) {
+        if (phase == WiPhase.RECON || phase == WiPhase.RECON_DETAIL || phase == WiPhase.RECON_CONFIRM) {
             if (contractId == null) {
                 throw new BusinessException(WiErrorCodes.INVALID_INVOKE_SESSION, phase.getCode() + " 须指定 contractId");
             }
@@ -231,12 +233,14 @@ public class WorkInjuryInvokeOrchestrator {
 
         // 2203「已存在结算信息」：平台已结，补本地后结束会话，勿继续 2204
         if (success && isIdempotent2203AlreadySettled(infno, request.getErrMsg())) {
+            BigDecimal chargeTotal = ctx != null ? ctx.getMedfeeSumamt() : null;
             YbSettlementRecord recovered = settlementDomainService
                     .recoverUnilateralFromActivePreSettle(
                             session.getEncounterId(),
                             session.getPaymentDraftId(),
                             session.getContractId(),
-                            TenantUtils.getCurrentTenantId())
+                            TenantUtils.getCurrentTenantId(),
+                            chargeTotal)
                     .orElse(null);
             if (recovered == null) {
                 session.setStatus(WiInvokeSessionStatus.FAILED.getCode());
@@ -402,7 +406,7 @@ public class WorkInjuryInvokeOrchestrator {
      * @param phase      业务阶段
      * @param request    prepare 请求
      * @param contractId 已解析的合同 id（续步可能仅来自会话/锚点）
-     * @return 组装 input 用上下文；RECON 等无 encounter 时可为 null
+     * @return 组装 input 用上下文；RECON / RECON_DETAIL / RECON_CONFIRM 无 encounter 时可为 null
      */
     private WiSettleContext loadContextForPrepare(
             WiPhase phase, PrepareWorkInjuryInvokeRequest request, Long contractId) {
@@ -638,6 +642,8 @@ public class WorkInjuryInvokeOrchestrator {
                     parsed.getPsnCashPay(),
                     JSON.toJSONString(parsed),
                     request.getWinMsgid(),
+                    ctx != null ? ctx.getPatientName() : null,
+                    WiSetlTimeSupport.orNow(parsed.getSetlTime()),
                     TenantUtils.getCurrentTenantId());
             anchorDomainService.apply2207SetlId(anchor, record.getSetlId());
             anchorDomainService.markActiveFeeUpload(anchor, false);

@@ -178,7 +178,8 @@ VALUES
 ('323100000000000002', 'doctorStationWesternDiagnosisSources', 'hospital_dx,general_dx', 'G', NULL, '1', '医生站西医诊断检索目录来源（逗号分隔 source_enum）', '2026-07-18 00:00:00.000+00', '2026-07-18 00:00:00.000+00', '1', '1', false, NULL, NULL),
 ('323100000000000003', 'outpatientPrescriptionAmountLimitYuan', '1000', 'G', NULL, '1', '门诊处方金额上限（元；种子默认1000）', '2026-07-22 00:00:00.000+00', '2026-07-22 00:00:00.000+00', '1', '1', false, NULL, NULL),
 ('323100000000000004', 'inventoryExpireWarningDays', '90', 'G', NULL, '1', '库存效期预警天数（种子默认90）', '2026-07-22 00:00:00.000+00', '2026-07-22 00:00:00.000+00', '1', '1', false, NULL, NULL),
-('323100000000000005', 'inventoryMinPackageQuantityWarning', '30', 'G', NULL, '1', '库存预警包装单位数量（种子默认30）', '2026-07-22 00:00:00.000+00', '2026-07-22 00:00:00.000+00', '1', '1', false, NULL, NULL)
+('323100000000000005', 'inventoryMinPackageQuantityWarning', '30', 'G', NULL, '1', '库存预警包装单位数量（种子默认30）', '2026-07-22 00:00:00.000+00', '2026-07-22 00:00:00.000+00', '1', '1', false, NULL, NULL),
+('323100000000000006', 'inpatientStopVerifyAutoSkipPending', '0', 'G', NULL, '1', '住院停嘱校对后自动不执行剩余待执行时点（全局G；1开/0关；种子默认关闭）', '2026-09-11 00:00:00.000+00', '2026-09-11 00:00:00.000+00', '1', '1', false, NULL, NULL)
 ON CONFLICT ("id") DO NOTHING;
 
 INSERT INTO whale_roles (
@@ -4549,8 +4550,8 @@ VALUES
 ('310400000000000020', 'OutpatientDoctorStation', 'OutpatientDoctorStation', '门诊医生站', 'lucide:user-round-pen', '/outpatient/doctor-station', '/outpatient/doctor-station/index', 'Navigation.Outpatientdoctorstation', NULL, 4, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000040', 'InpatientDoctorStation', 'InpatientDoctorStation', '住院医生站', 'lucide:hospital', '/inpatient/doctor-station', '/inpatient/doctor-station/index', 'Navigation.Inpatientdoctorstation', NULL, 5, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000060', 'MedicationDispense', 'MedicationDispense', '发药管理', 'lucide:pill-bottle', '/pharmacy/dispense', '', NULL, NULL, 8, true, false, false, '', 'directory', 'HIS清单-发药管理', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
-('310400000000000061', 'DispenseOp', 'DispenseOp', '门诊发药', 'lucide:package-open', '/pharmacy/dispense/outpatient', '/pharmacy/dispense/outpatient/index', 'Navigation.Dispenseop', '310400000000000060', 1, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
-('310400000000000062', 'DispenseIp', 'DispenseIp', '住院发药', 'lucide:truck', '/pharmacy/dispense/inpatient', '/pharmacy/dispense/inpatient/index', 'Navigation.Dispenseip', '310400000000000060', 2, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000061', 'DispenseOp', 'DispenseOp', '门诊发药', 'lucide:package-open', '/outpatient/dispense', '/outpatient/dispense/index', 'Navigation.Dispenseop', '310400000000000060', 1, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000062', 'DispenseIp', 'DispenseIp', '住院发药', 'lucide:truck', '/inpatient/dispense', '/inpatient/dispense/index', 'Navigation.Dispenseip', '310400000000000060', 2, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000063', 'DispenseDoc', 'DispenseDoc', '发药单据', 'lucide:file-box', '/pharmacy/dispense/documents', '/pharmacy/dispense/documents/index', 'Navigation.Dispensedoc', '310400000000000060', 3, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000081', 'WhPurchaseOrder', 'WhPurchaseOrder', '药库订货单', 'lucide:file-spreadsheet', '/inventory/warehouse/purchase-order', '/inventory/warehouse/purchase-order/index', 'Navigation.Whpurchaseorder', '284503862625177600', 1, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000101', 'ReportHome', 'ReportHome', '首页', 'lucide:home', '/reports/home', '/reports/home/index', 'Navigation.Reporthome', '310400000000000100', 1, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
@@ -4568,8 +4569,8 @@ VALUES
 ('313234941086273536', 'WhStockOut', 'WhStockOut', '药库出库单', 'lucide:package-minus', '/inventory/warehouse/stock-out', '/inventory/warehouse/stock-out/index', 'Navigation.Whstockout', '284503862625177600', 3, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('313295483593297921', 'PhStockIn', 'PhStockIn', '药房入库单', 'lucide:package-plus', '/inventory/pharmacy/stock-in', '/inventory/pharmacy/stock-in/index', 'Navigation.Phstockin', '301696493912330240', 1, true, false, false, '', 'menu', '', '1', '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('313570119616827392', 'InvStockList', 'InvStockList', '库存明细', 'lucide:rows-3', '/inventory/stock-list', '/inventory/stock-list/index', 'Navigation.Invstocklist', '284503862625177600', 5, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
-('313945127476793344', 'MedicineReturnOp', 'MedicineReturnOp', '门诊退药', 'lucide:truck', '/pharmacy/return-medicine/outpatient', '/pharmacy/return-medicine/outpatient/index', 'Navigation.Medicinereturnop', '310400000000000060', 4, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
-('310400000000000064', 'MedicineReturnIp', 'MedicineReturnIp', '住院退药', 'lucide:undo-2', '/pharmacy/return-medicine/inpatient', '/pharmacy/return-medicine/inpatient/index', 'Navigation.Medicinereturnip', '310400000000000060', 5, true, false, false, '', 'menu', '', NULL, '2026-06-11 00:00:00.000+00', '2026-06-11 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('313945127476793344', 'MedicineReturnOp', 'MedicineReturnOp', '门诊退药', 'lucide:truck', '/outpatient/return-medicine', '/outpatient/return-medicine/index', 'Navigation.Medicinereturnop', '310400000000000060', 4, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000064', 'MedicineReturnIp', 'MedicineReturnIp', '住院退药', 'lucide:undo-2', '/inpatient/return-medicine', '/inpatient/return-medicine/index', 'Navigation.Medicinereturnip', '310400000000000060', 5, true, false, false, '', 'menu', '', NULL, '2026-06-11 00:00:00.000+00', '2026-06-11 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('315372803691384832', 'EmrTemplate', 'EmrTemplate', '病历模版', 'lucide:file-text', '/basic/emr-template', '/basic/emr-template/index', 'Navigation.Emrtemplate', '2000', 18, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('316800463887929340', 'WhStocktakeOrder', 'WhStocktakeOrder', '药库盘点单', 'lucide:clipboard-list', '/inventory/warehouse/stocktake', '/inventory/warehouse/stocktake/index', 'Navigation.Whstocktakeorder', '284503862625177600', 4, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('316800463887929341', 'PhStocktakeOrder', 'PhStocktakeOrder', '药房盘点单', 'lucide:clipboard-check', '/inventory/pharmacy/stocktake', '/inventory/pharmacy/stocktake/index', 'Navigation.Phstocktakeorder', '301696493912330240', 2, true, false, false, '', 'menu', '', '1', '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
@@ -5165,8 +5166,8 @@ VALUES
     ('310900000000000007', 'Booking.Bed.View', '床位预约', 'Booking',
      '床位预留日历', NULL,
      TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL),
-    ('310900000000000008', 'Booking.HealthCheckup.View', '体检预约', 'Booking',
-     '团检与个检预约', NULL,
+    ('310900000000000008', 'Booking.HealthCheckup.View', '体检号源日历', 'Booking',
+     '菜单入口: BookingHealthCheckup · 体检号源日历', NULL,
      TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL),
     ('310900000000000009', 'Booking.Channel.View', '渠道配置', 'Booking',
      '预约渠道与配额', NULL,
@@ -5229,9 +5230,9 @@ VALUES
      '/booking/bed', '/booking/bed/index', 'Booking.Bed.View', '310900000000000100', 8,
      TRUE, TRUE, FALSE, '', 'menu', 'BedBookingAppService', NULL,
      TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
-    ('310900000000000108', 'BookingHealthCheckup', 'BookingHealthCheckup', '体检预约', 'lucide:heart-pulse',
+    ('310900000000000108', 'BookingHealthCheckup', 'BookingHealthCheckup', '体检号源日历', 'lucide:heart-pulse',
      '/booking/health-checkup', '/booking/health-checkup/index', 'Booking.HealthCheckup.View', '310900000000000100', 9,
-     TRUE, TRUE, FALSE, '', 'menu', 'HealthCheckupBookingAppService', NULL,
+     TRUE, TRUE, FALSE, '', 'menu', 'HealthCheckupSlotCalendarAppService · 体检号源日历', NULL,
      TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
     ('310900000000000105', 'BookingPolicy', 'BookingPolicy', '预约策略', 'lucide:settings-2',
      '/booking/policy', '/booking/policy/index', 'Booking.Policy.View', '310900000000000100', 10,
@@ -12276,8 +12277,8 @@ INSERT INTO whale_menus (
 VALUES
     ('310400000000000065', 'InpatientTraceAssignment', 'InpatientTraceAssignment', '住院患者追溯码分配',
      'lucide:scan-barcode',
-     '/pharmacy/dispense/trace-assignment',
-     '/pharmacy/dispense/trace-assignment/index',
+     '/inpatient/dispense/trace-assignment',
+     '/inpatient/dispense/trace-assignment/index',
      'Navigation.InpatientTraceAssignment',
      '310400000000000060',
      7,
@@ -13226,7 +13227,7 @@ ON CONFLICT ("id") DO UPDATE SET
     "version" = EXCLUDED."version",
     "updated_at" = EXCLUDED."updated_at";
 
--- 住院口服药贴（50×30mm）
+-- 住院口服药贴（30×40mm；内容旋 90° 横读）——并入本种子，不做增量
 -- scenario_code = ip-oralMedLabel-print；bus_no = PT202607210002
 INSERT INTO "public"."prt_template" (
     "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
@@ -13240,12 +13241,65 @@ INSERT INTO "public"."prt_template" (
     'PT202607210002',
     '住院口服药贴',
     'published',
+    7,
+    $oral_json$
+{
+  "engine": "Print",
+  "panels": [
+    {
+      "name": "1",
+      "index": 0,
+      "width": 30,
+      "height": 40,
+      "paperType": "other",
+      "paperFooter": 113,
+      "paperHeader": 0,
+      "printElements": [
+        {
+          "options": {
+            "top": 3,
+            "left": 3,
+            "field": "labelBody",
+            "title": "口服药贴",
+            "width": 79,
+            "height": 108,
+            "fontSize": 8,
+            "lineHeight": 10,
+            "hideTitle": true,
+            "formatter": "function(title,value,options,printData){var d=printData||{};function e(k){var x=d[k];return x==null?'':String(x);}function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}return '<div style=\"width:100%;height:100%;overflow:visible;position:relative;\"><div style=\"width:38mm;height:26mm;transform:rotate(90deg) translate(0,-100%);transform-origin:top left;font-family:SimHei,黑体,SimSun,宋体,sans-serif;color:#000;box-sizing:border-box;padding:0.4mm 0.6mm;font-size:8pt;line-height:10pt;\"><div style=\"font-size:8pt;font-weight:700;line-height:10pt;white-space:nowrap;\">'+esc(e('bedNo'))+'　'+esc(e('patientName'))+'　'+esc(e('ageText'))+'</div><div style=\"border-top:0.6pt solid #000;margin:1pt 0 1pt 0;height:0;\"></div><div style=\"font-size:9pt;font-weight:700;line-height:11pt;\">'+esc(e('drugName'))+'</div><div style=\"font-size:8pt;line-height:10pt;white-space:nowrap;\">规格：'+esc(e('specText'))+'　频次：'+esc(e('freqText'))+'</div><div style=\"font-size:8pt;font-weight:700;line-height:10pt;white-space:nowrap;\">用量：'+esc(e('doseText'))+'</div></div></div>';}"
+          },
+          "printElementType": { "type": "longText", "title": "口服药贴" }
+        }
+      ],
+      "watermarkOptions": {
+        "width": 60,
+        "format": "YYYY-MM-DD HH:mm",
+        "height": 60,
+        "rotate": 25,
+        "content": "",
+        "fontSize": "10px",
+        "fillStyle": "rgba(184, 184, 184, 0.3)",
+        "timestamp": false
+      },
+      "panelLayoutOptions": {
+        "layoutType": "column",
+        "paperStyle": "",
+        "paperWidth": 0,
+        "paperHeight": 0,
+        "layoutRowGap": 0,
+        "layoutColumnGap": 0
+      },
+      "paperNumberContinue": false,
+      "paperNumberDisabled": true
+    }
+  ],
+  "schemaVersion": 1
+}
+$oral_json$::jsonb,
     1,
-    '{"engine":"Print","panels":[{"name":"1","index":0,"width":50,"height":30,"paperType":"other","paperFooter":80,"paperHeader":0,"printElements":[{"options":{"top":3,"left":5,"field":"bedNo","title":"床位","width":55,"height":14,"fontSize":10,"testData":"308-30","hideTitle":true,"textAlign":"left","fontWeight":"bold"},"printElementType":{"type":"text","title":"床位"}},{"options":{"top":3,"left":60,"field":"patientName","title":"姓名","width":48,"height":14,"fontSize":10,"testData":"张漫天","hideTitle":true,"textAlign":"left","fontWeight":"bold"},"printElementType":{"type":"text","title":"姓名"}},{"options":{"top":3,"left":108,"field":"ageText","title":"年龄","width":27,"height":14,"fontSize":8,"testData":"69岁","hideTitle":true,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"年龄"}},{"options":{"top":18,"left":5,"width":130,"height":1,"borderWidth":0.7},"printElementType":{"type":"hline","title":"横线"}},{"options":{"top":22,"left":5,"field":"drugName","title":"药品","width":130,"height":16,"fontSize":9,"testData":"盐酸二甲双胍缓释片","hideTitle":true,"textAlign":"left","fontWeight":"bold"},"printElementType":{"type":"text","title":"药品"}},{"options":{"top":40,"left":5,"field":"specText","title":"规格","width":130,"height":12,"fontSize":8,"testData":"0.5g*30片","hideTitle":false,"textAlign":"left","fontWeight":"normal"},"printElementType":{"type":"text","title":"规格"}},{"options":{"top":54,"left":5,"field":"doseText","title":"用量","width":130,"height":14,"fontSize":9,"testData":"2片 bid","hideTitle":false,"textAlign":"left","fontWeight":"bold"},"printElementType":{"type":"text","title":"用量"}}],"watermarkOptions":{"width":60,"format":"YYYY-MM-DD HH:mm","height":60,"rotate":25,"content":"","fontSize":"10px","fillStyle":"rgba(184, 184, 184, 0.3)","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0},"paperNumberContinue":false,"paperNumberDisabled":true}],"schemaVersion":1}'::jsonb,
-    1,
-    '{"bedNo":"308-30","ageText":"69岁","doseText":"2片 bid","drugName":"盐酸二甲双胍缓释片","specText":"0.5g*30片","patientName":"张漫天"}'::jsonb,
+    '{"bedNo":"308-30","ageText":"69岁","doseText":"2片 (1.000克) /次","freqText":"每日两次","drugName":"盐酸二甲双胍缓释片","specText":"0.5g*30片","patientName":"张漫天"}'::jsonb,
     TIMESTAMP '2026-07-22 00:00:00+08',
-    TIMESTAMP '2026-07-22 00:00:00+08',
+    TIMESTAMP '2026-09-01 12:30:00+08',
     1,
     1,
     FALSE,
@@ -13262,7 +13316,94 @@ ON CONFLICT ("id") DO UPDATE SET
     "version" = EXCLUDED."version",
     "updated_at" = EXCLUDED."updated_at";
 
--- 采血贴（50×30mm；姓名/性别/年龄/项目 + 条码，无 label）
+-- 住院采血贴（30×50mm；内容旋 90° 横读；与门诊 50×30 采血贴分开）——并入本种子，不做增量
+-- scenario_code = ip-specimenBarcode-print；bus_no = PT202608310002
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    331800190001000042,
+    1,
+    NULL,
+    'PT202608310002',
+    '住院采血贴',
+    'published',
+    2,
+    $ip_specimen_json$
+{
+  "engine": "Print",
+  "panels": [
+    {
+      "name": "1",
+      "index": 0,
+      "width": 30,
+      "height": 50,
+      "paperType": "other",
+      "paperFooter": 142,
+      "paperHeader": 0,
+      "printElements": [
+        {
+          "options": {
+            "top": 3,
+            "left": 3,
+            "field": "labelBody",
+            "title": "采血贴",
+            "width": 79,
+            "height": 136,
+            "hideTitle": true,
+            "formatter": "function(title,value,options,printData){var d=printData||{};function e(k){var x=d[k];return x==null?'':String(x);}function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}function barcodeSvg(text){var t=String(text||'');if(!t)return '';var JB=typeof JsBarcode==='function'?JsBarcode:(typeof window!=='undefined'?window.JsBarcode:undefined);if(typeof JB==='function'&&typeof document!=='undefined'){try{var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');JB(svg,t,{format:'CODE128',displayValue:false,fontSize:8,width:1.1,height:28,margin:0});svg.setAttribute('width','100%');svg.setAttribute('height','10mm');svg.setAttribute('preserveAspectRatio','none');return svg.outerHTML;}catch(err){}}var C='212222,222122,222221,121223,121322,131222,122213,122312,132212,221213,221312,231212,112232,122132,122231,113222,123122,123221,223211,221132,221231,213212,223112,312131,311222,321122,321221,312212,322112,322211,212123,212321,232121,111323,131123,131321,112313,132113,132311,211313,231113,231311,112133,112331,132131,113123,113321,133121,313121,211331,231131,213113,213311,213131,311123,311321,331121,312113,312311,332111,314111,221411,431111,111224,111422,121124,121421,141122,141221,112214,112412,122114,122411,142112,142211,241211,221114,413111,241112,134111,111242,121142,121241,114212,124112,124211,411212,421112,421211,212141,214121,412121,111143,111341,131141,114113,114311,411113,411311,113141,114131,311141,411131,211412,211214,211232,2331112'.split(',');var codes=[104];for(var i=0;i<t.length;i++){var v=t.charCodeAt(i)-32;if(v<0||v>94)v=16;codes.push(v);}var sum=104;for(var j=1;j<codes.length;j++)sum+=codes[j]*j;codes.push(sum%103);codes.push(106);var x=10,rects='',h=28;for(var k=0;k<codes.length;k++){var p=C[codes[k]]||'';for(var n=0;n<p.length;n++){var w=p.charCodeAt(n)-48;if(n%2===0)rects+='<rect x=\"'+x+'\" y=\"0\" width=\"'+w+'\" height=\"'+h+'\"/>';x+=w;}}x+=10;return '<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100%\" height=\"10mm\" viewBox=\"0 0 '+x+' '+h+'\" preserveAspectRatio=\"none\">'+rects+'</svg>';}var code=e('barcode');return '<div style=\"width:100%;height:100%;overflow:visible;position:relative;\"><div style=\"width:48mm;height:26mm;transform:rotate(90deg) translate(0,-100%);transform-origin:top left;font-family:SimHei,黑体,SimSun,宋体,sans-serif;color:#000;box-sizing:border-box;padding:1mm 1.2mm;display:flex;flex-direction:column;\"><div style=\"font-size:9pt;font-weight:700;white-space:nowrap;overflow:hidden;\">'+esc(e('bedNo'))+'　'+esc(e('patientName'))+'　'+esc(e('genderEnumText'))+'　'+esc(e('ageText'))+'</div><div style=\"font-size:8pt;font-weight:700;margin-top:0.8mm;white-space:nowrap;overflow:hidden;\">'+esc(e('itemName'))+'</div><div style=\"flex:1;min-height:12mm;display:flex;flex-direction:column;justify-content:flex-end;\">'+barcodeSvg(code)+'<div style=\"font-size:7pt;text-align:center;margin-top:0.3mm;white-space:nowrap;overflow:hidden;\">'+esc(code)+'</div></div></div></div>';}"
+          },
+          "printElementType": { "type": "longText", "title": "采血贴" }
+        }
+      ],
+      "watermarkOptions": {
+        "width": 60,
+        "format": "YYYY-MM-DD HH:mm",
+        "height": 60,
+        "rotate": 25,
+        "content": "",
+        "fontSize": "10px",
+        "fillStyle": "rgba(184, 184, 184, 0.3)",
+        "timestamp": false
+      },
+      "panelLayoutOptions": {
+        "layoutType": "column",
+        "paperStyle": "",
+        "paperWidth": 0,
+        "paperHeight": 0,
+        "layoutRowGap": 0,
+        "layoutColumnGap": 0
+      },
+      "paperNumberContinue": false,
+      "paperNumberDisabled": true
+    }
+  ],
+  "schemaVersion": 1
+}
+$ip_specimen_json$::jsonb,
+    1,
+    '{"bedNo":"308-30","patientName":"张三","genderEnumText":"男","ageText":"35岁","itemName":"血常规","barcode":"331800190001000099"}'::jsonb,
+    TIMESTAMP '2026-08-31 15:20:00+08',
+    TIMESTAMP '2026-09-01 12:30:00+08',
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'ip-specimenBarcode-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "version" = EXCLUDED."version",
+    "updated_at" = EXCLUDED."updated_at";
+
+-- 门诊采血贴（50×30mm；姓名/性别/年龄/项目 + 条码，无 label）
 -- scenario_code = op-specimenBarcode-print；bus_no = PT202607300001
 INSERT INTO "public"."prt_template" (
     "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
@@ -13317,10 +13458,10 @@ INSERT INTO "public"."prt_template" (
     'PT202607240001',
     '库存计价流转单',
     'published',
-    10,
-    '{"engine": "Print", "panels": [{"name": "1", "index": 0, "width": 210, "height": 297, "paperType": "roll", "paperFooter": 841.8897637795277, "paperHeader": 0, "printElements": [{"options": {"top": 16, "left": 24, "field": "hospitalName", "width": 546, "height": 20, "fontSize": 16, "testData": "示例医院", "hideTitle": true, "textAlign": "center", "fontWeight": "bold"}, "printElementType": {"type": "text", "title": "文本"}}, {"options": {"top": 38, "left": 24, "field": "documentTitle", "width": 546, "height": 17, "fontSize": 13, "testData": "中心药库进货单", "hideTitle": true, "textAlign": "center", "fontWeight": "bold"}, "printElementType": {"type": "text", "title": "文本"}}, {"options": {"top": 62, "left": 24, "width": 546, "height": 48, "fontSize": 9, "formatter": "function(title,value,options,printData){function esc(s){return String(s==null?'''':s).replace(/&/g,''&amp;'').replace(/</g,''&lt;'').replace(/>/g,''&gt;'').replace(/\"/g,''&quot;'');}function nz(v){return v!=null&&String(v).trim()!=='''';}var d=printData||{};var defs=[[''单据号'',d.docNo],[''审批时间'',d.applyTimeText],[''项目类型'',d.itemTypeText],[''源位置'',d.sourceLocationText],[''供应商'',d.supplierText],[''关联单'',d.linkDocText],[''目的位置'',d.destLocationText],[''发票号'',d.invoiceNoText],[''制单人'',d.preparedByName]];var items=[];for(var i=0;i<defs.length;i++){if(nz(defs[i][1]))items.push(defs[i][0]+''：''+String(defs[i][1]).trim());}if(!items.length)return '''';var cols=3;var html=''<table style=\"width:100%;border-collapse:collapse;table-layout:fixed;font-size:9pt;\">'';for(var r=0;r<items.length;r+=cols){html+=''<tr>'';for(var c=0;c<cols;c++){var t=items[r+c]||'''';html+=''<td style=\"width:33.33%;padding:1pt 4pt 1pt 0;vertical-align:top;word-break:break-all;\">''+esc(t)+''</td>'';}html+=''</tr>'';}html+=''</table>'';return html;}", "hideTitle": true, "lineHeight": 14}, "printElementType": {"type": "longText", "title": "单头信息"}}, {"options": {"top": 118, "left": 24, "field": "lineRows", "width": 546, "height": 580, "columns": [[{"align": "center", "field": "seqNo", "fixed": false, "title": "序号", "width": 36, "checked": true, "colspan": 1, "rowspan": 1, "columnId": "seqNo"}, {"align": "left", "field": "productName", "fixed": false, "title": "品名", "width": 120, "checked": true, "colspan": 1, "rowspan": 1, "columnId": "productName"}, {"align": "left", "field": "specText", "fixed": false, "title": "规格", "width": 58, "checked": true, "colspan": 1, "rowspan": 1, "columnId": "specText"}, {"align": "left", "field": "manufacturerText", "fixed": false, "title": "厂家", "width": 54, "checked": true, "colspan": 1, "rowspan": 1, "columnId": "manufacturerText"}, {"align": "center", "field": "qtyUnitText", "fixed": false, "title": "数量", "width": 52, "checked": true, "colspan": 1, "rowspan": 1, "columnId": "qtyUnitText"}, {"align": "right", "field": "unitPriceText", "fixed": false, "title": "单价", "width": 45, "checked": true, "colspan": 1, "rowspan": 1, "columnId": "unitPriceText"}, {"align": "right", "field": "amountText", "fixed": false, "title": "金额", "width": 54, "checked": true, "colspan": 1, "rowspan": 1, "columnId": "amountText"}, {"align": "center", "field": "lotNumber", "fixed": false, "title": "批号", "width": 55, "checked": true, "colspan": 1, "rowspan": 1, "columnId": "lotNumber"}, {"align": "center", "field": "expiryText", "fixed": false, "title": "有效期", "width": 72, "checked": true, "colspan": 1, "rowspan": 1, "columnId": "expiryText"}]], "fontSize": 8.5, "testData": "[{\"seqNo\":\"1\",\"productName\":\"阿莫西林胶囊\",\"specText\":\"0.25g*24粒\",\"manufacturerText\":\"某某制药\",\"qtyUnitText\":\"10盒\",\"unitPriceText\":\"12.50\",\"amountText\":\"125.00\",\"lotNumber\":\"L20260101\",\"expiryText\":\"2028-01-01\"},{\"seqNo\":\"2\",\"productName\":\"0.9%氯化钠注射液\",\"specText\":\"250ml\",\"manufacturerText\":\"某某药业\",\"qtyUnitText\":\"20袋\",\"unitPriceText\":\"3.80\",\"amountText\":\"76.00\",\"lotNumber\":\"L20260215\",\"expiryText\":\"2027-06-30\"}]", "textAlign": "center", "lineHeight": 12, "tableBorder": "border", "tableHeaderBorder": "border", "tableHeaderRepeat": "page", "tableBodyRowBorder": "border", "tableBodyRowHeight": 20, "tableBodyCellBorder": "border", "tableHeaderFontSize": 8, "tableHeaderRowHeight": 20, "tableHeaderCellBorder": "border"}, "printElementType": {"type": "table", "title": "明细", "editable": true, "columnResizable": true, "isEnableDeleteRow": true, "isEnableEditField": true, "isEnableInsertRow": true, "isEnableMergeCell": true, "columnAlignEditable": true, "columnTitleEditable": true, "isEnableContextMenu": true, "isEnableDeleteColumn": true, "isEnableInsertColumn": true, "columnDisplayEditable": true, "columnDisplayIndexEditable": true}}, {"options": {"top": 720, "left": 24, "field": "purchaseInboundSignOff", "width": 546, "height": 18, "fontSize": 9, "testData": "", "formatter": "function(title,value,options,printData){var t=String((printData&&printData.documentTitle)||'''').trim();var labels=null;if(t.indexOf(''进货单'')>=0)labels=[''负责人'',''库管'',''验收人'',''审核''];else if(t.indexOf(''出库单'')>=0)labels=[''负责人'',''领用人'',''库管'',''审核''];else return '''';function esc(s){return String(s==null?'''':s).replace(/&/g,''&amp;'').replace(/</g,''&lt;'').replace(/>/g,''&gt;'').replace(/\"/g,''&quot;'');}var total=String((printData&&printData.totalAmountText)!=null?printData.totalAmountText:'''').trim();var html=''<table style=\"width:100%;border-collapse:collapse;table-layout:fixed;font-size:9pt;\"><tr>'';for(var i=0;i<labels.length;i++){html+=''<td style=\"width:18%;padding:2pt 8pt 0 0;vertical-align:bottom;\">''+labels[i]+''：</td>'';}html+=''<td style=\"width:28%;padding:2pt 0 0 0;vertical-align:bottom;text-align:right;font-weight:bold;font-size:10pt;\">合计金额：''+esc(total)+''</td>'';html+=''</tr></table>'';return html;}", "hideTitle": true, "lineHeight": 16}, "printElementType": {"type": "longText", "title": "进货出库签批"}}, {"options": {"top": 720, "left": 210, "field": "approvedByName", "title": "审核", "width": 170, "height": 15, "fontSize": 9, "testData": "李四", "formatter": "function(title,value,options,printData){var t=String((printData&&printData.documentTitle)||'''').trim();if(t.indexOf(''进货单'')>=0||t.indexOf(''出库单'')>=0)return '''';if(String((printData&&printData.deviceStockOutSignOff)||'''').trim()===''1'')return '''';var v=value==null?'''':String(value).trim();return ''审核：''+v;}", "hideTitle": true}, "printElementType": {"type": "text", "title": "审核"}}, {"options": {"top": 720, "left": 396, "field": "totalAmountText", "title": "合计金额", "width": 174, "height": 15, "fontSize": 10, "testData": "201.00", "formatter": "function(title,value,options,printData){var t=String((printData&&printData.documentTitle)||'''').trim();if(t.indexOf(''进货单'')>=0||t.indexOf(''出库单'')>=0)return '''';var v=value==null?'''':String(value).trim();return ''合计金额：''+v;}", "hideTitle": true, "textAlign": "right", "fontWeight": "bold"}, "printElementType": {"type": "text", "title": "合计金额"}}, {"options": {"top": 720, "left": 24, "field": "preparedByName", "title": "制单人", "width": 170, "height": 15, "fontSize": 9, "testData": "张三", "formatter": "function(title,value,options,printData){var t=String((printData&&printData.documentTitle)||'''').trim();if(t.indexOf(''进货单'')>=0||t.indexOf(''出库单'')>=0)return '''';var v=value==null?'''':String(value).trim();return ''制单人：''+v;}", "hideTitle": true}, "printElementType": {"type": "text", "title": "制单人"}}, {"options": {"top": 748, "left": 24, "field": "purchaseRequestSignOff", "width": 546, "height": 22, "fontSize": 9, "testData": "", "formatter": "function(title,value,options,printData){var on=String((printData&&printData.purchaseRequestSignOff)!=null?printData.purchaseRequestSignOff:value||'''').trim();if(on!==''1'')return '''';var labels=[''经办人'',''科室责任人'',''业务主管院长'',''院长''];var html=''<table style=\"width:100%;border-collapse:collapse;table-layout:fixed;font-size:9pt;\"><tr>'';for(var i=0;i<labels.length;i++){html+=''<td style=\"width:25%;padding:2pt 6pt 2pt 0;vertical-align:bottom;\">''+labels[i]+''：</td>'';}html+=''</tr></table>'';return html;}", "hideTitle": true, "lineHeight": 16}, "printElementType": {"type": "longText", "title": "申请签批"}}, {"options": {"top": 772, "left": 24, "field": "deviceStockOutSignOff", "width": 546, "height": 22, "fontSize": 9, "testData": "", "formatter": "function(title,value,options,printData){return '''';}", "hideTitle": true, "lineHeight": 16}, "printElementType": {"type": "longText", "title": "耗材出库签收"}}], "paperNumberTop": 810, "paperNumberLeft": 280, "watermarkOptions": {"width": 200, "format": "YYYY-MM-DD HH:mm", "height": 200, "rotate": 25, "content": "", "fontSize": "14px", "fillStyle": "rgba(184, 184, 184, 0.3)", "timestamp": false}, "panelLayoutOptions": {"layoutType": "column", "paperStyle": "", "paperWidth": 0, "paperHeight": 0, "layoutRowGap": 0, "layoutColumnGap": 0}, "paperNumberContinue": true}], "schemaVersion": 1}'::jsonb,
+    12,
+    '{"engine": "Print", "panels": [{"name": "1", "index": 0, "width": 210, "height": 297, "paperType": "roll", "paperFooter": 841.8897637795277, "paperHeader": 0, "printElements": [{"options": {"top": 16, "left": 24, "field": "hospitalName", "width": 546, "height": 20, "fontSize": 16, "testData": "示例医院", "hideTitle": true, "textAlign": "center", "fontWeight": "bold"}, "printElementType": {"type": "text", "title": "文本"}}, {"options": {"top": 38, "left": 24, "field": "documentTitle", "width": 546, "height": 17, "fontSize": 13, "testData": "中心药库进货单", "hideTitle": true, "textAlign": "center", "fontWeight": "bold"}, "printElementType": {"type": "text", "title": "文本"}}, {"options": {"top": 62, "left": 24, "width": 546, "height": 48, "fontSize": 9, "formatter": "function(title,value,options,printData){function esc(s){return String(s==null?'''':s).replace(/&/g,''&amp;'').replace(/</g,''&lt;'').replace(/>/g,''&gt;'').replace(/\"/g,''&quot;'');}function nz(v){return v!=null&&String(v).trim()!=='''';}var d=printData||{};var defs=[[''单据号'',d.docNo],[''审批时间'',d.applyTimeText],[''项目类型'',d.itemTypeText],[''源位置'',d.sourceLocationText],[''供应商'',d.supplierText],[''关联单'',d.linkDocText],[''目的位置'',d.destLocationText],[''发票号'',d.invoiceNoText],[''制单人'',d.preparedByName]];var items=[];for(var i=0;i<defs.length;i++){if(nz(defs[i][1]))items.push(defs[i][0]+''：''+String(defs[i][1]).trim());}if(String((d.devicePurchaseRequestSignOff)||'''').trim()===''1''){items.push(''审核：''+String(d.approvedByName||'''').trim());}if(!items.length)return '''';var cols=3;var html=''<table style=\"width:100%;border-collapse:collapse;table-layout:fixed;font-size:9pt;\">'';for(var r=0;r<items.length;r+=cols){html+=''<tr>'';for(var c=0;c<cols;c++){var t=items[r+c]||'''';html+=''<td style=\"width:33.33%;padding:1pt 4pt 1pt 0;vertical-align:top;word-break:break-all;\">''+esc(t)+''</td>'';}html+=''</tr>'';}html+=''</table>'';return html;}", "hideTitle": true, "lineHeight": 14}, "printElementType": {"type": "longText", "title": "单头信息"}}, {"options": {"top": 118, "left": 24, "field": "lineRows", "width": 546, "height": 580, "columns": [[{"align": "center", "field": "seqNo", "fixed": false, "title": "序号", "width": 36, "checked": true, "colspan": 1, "rowspan": 1, "columnId": "seqNo"}, {"align": "left", "field": "productName", "fixed": false, "title": "品名", "width": 120, "checked": true, "colspan": 1, "rowspan": 1, "columnId": "productName"}, {"align": "left", "field": "specText", "fixed": false, "title": "规格", "width": 58, "checked": true, "colspan": 1, "rowspan": 1, "columnId": "specText"}, {"align": "left", "field": "manufacturerText", "fixed": false, "title": "厂家", "width": 54, "checked": true, "colspan": 1, "rowspan": 1, "columnId": "manufacturerText"}, {"align": "center", "field": "qtyUnitText", "fixed": false, "title": "数量", "width": 52, "checked": true, "colspan": 1, "rowspan": 1, "columnId": "qtyUnitText"}, {"align": "right", "field": "unitPriceText", "fixed": false, "title": "单价", "width": 45, "checked": true, "colspan": 1, "rowspan": 1, "columnId": "unitPriceText"}, {"align": "right", "field": "amountText", "fixed": false, "title": "金额", "width": 54, "checked": true, "colspan": 1, "rowspan": 1, "columnId": "amountText"}, {"align": "center", "field": "lotNumber", "fixed": false, "title": "批号", "width": 55, "checked": true, "colspan": 1, "rowspan": 1, "columnId": "lotNumber"}, {"align": "center", "field": "expiryText", "fixed": false, "title": "有效期", "width": 72, "checked": true, "colspan": 1, "rowspan": 1, "columnId": "expiryText"}]], "fontSize": 8.5, "testData": "[{\"seqNo\":\"1\",\"productName\":\"阿莫西林胶囊\",\"specText\":\"0.25g*24粒\",\"manufacturerText\":\"某某制药\",\"qtyUnitText\":\"10盒\",\"unitPriceText\":\"12.50\",\"amountText\":\"125.00\",\"lotNumber\":\"L20260101\",\"expiryText\":\"2028-01-01\"},{\"seqNo\":\"2\",\"productName\":\"0.9%氯化钠注射液\",\"specText\":\"250ml\",\"manufacturerText\":\"某某药业\",\"qtyUnitText\":\"20袋\",\"unitPriceText\":\"3.80\",\"amountText\":\"76.00\",\"lotNumber\":\"L20260215\",\"expiryText\":\"2027-06-30\"}]", "textAlign": "center", "lineHeight": 12, "tableBorder": "border", "tableHeaderBorder": "border", "tableHeaderRepeat": "page", "tableBodyRowBorder": "border", "tableBodyRowHeight": 20, "tableBodyCellBorder": "border", "tableHeaderFontSize": 8, "tableHeaderRowHeight": 20, "tableHeaderCellBorder": "border"}, "printElementType": {"type": "table", "title": "明细", "editable": true, "columnResizable": true, "isEnableDeleteRow": true, "isEnableEditField": true, "isEnableInsertRow": true, "isEnableMergeCell": true, "columnAlignEditable": true, "columnTitleEditable": true, "isEnableContextMenu": true, "isEnableDeleteColumn": true, "isEnableInsertColumn": true, "columnDisplayEditable": true, "columnDisplayIndexEditable": true}}, {"options": {"top": 720, "left": 24, "field": "purchaseInboundSignOff", "width": 546, "height": 18, "fontSize": 9, "testData": "", "formatter": "function(title,value,options,printData){var t=String((printData&&printData.documentTitle)||'''').trim();var labels=null;if(t.indexOf(''进货单'')>=0){if(String((printData&&printData.deviceInboundSignOff)||'''').trim()===''1''){labels=[''负责人'',''验收入库'',''审核''];}else{labels=[''采购人'',''库管'',''验收人'',''审核''];}}else if(t.indexOf(''出库单'')>=0){if(String((printData&&printData.deviceStockOutSignOff)||'''').trim()===''1''){labels=[''负责人'',''领用人'',''库管''];}else{labels=[''负责人'',''领用人'',''库管'',''审核''];}}else return '''';function esc(s){return String(s==null?'''':s).replace(/&/g,''&amp;'').replace(/</g,''&lt;'').replace(/>/g,''&gt;'').replace(/\"/g,''&quot;'');}var total=String((printData&&printData.totalAmountText)!=null?printData.totalAmountText:'''').trim();var html=''<table style=\"width:100%;border-collapse:collapse;table-layout:fixed;font-size:9pt;\"><tr>'';for(var i=0;i<labels.length;i++){html+=''<td style=\"width:18%;padding:2pt 8pt 0 0;vertical-align:bottom;\">''+labels[i]+''：</td>'';}html+=''<td style=\"width:28%;padding:2pt 0 0 0;vertical-align:bottom;text-align:right;font-weight:bold;font-size:10pt;\">合计金额：''+esc(total)+''</td>'';html+=''</tr></table>'';return html;}", "hideTitle": true, "lineHeight": 16}, "printElementType": {"type": "longText", "title": "进货出库签批"}}, {"options": {"top": 720, "left": 210, "field": "approvedByName", "title": "审核", "width": 170, "height": 15, "fontSize": 9, "testData": "李四", "formatter": "function(title,value,options,printData){var t=String((printData&&printData.documentTitle)||'''').trim();if(t.indexOf(''进货单'')>=0||t.indexOf(''出库单'')>=0)return '''';if(String((printData&&printData.devicePurchaseRequestSignOff)||'''').trim()===''1'')return '''';if(String((printData&&printData.deviceStockOutSignOff)||'''').trim()===''1'')return '''';var v=value==null?'''':String(value).trim();return ''审核：''+v;}", "hideTitle": true}, "printElementType": {"type": "text", "title": "审核"}}, {"options": {"top": 720, "left": 396, "field": "totalAmountText", "title": "合计金额", "width": 174, "height": 15, "fontSize": 10, "testData": "201.00", "formatter": "function(title,value,options,printData){var t=String((printData&&printData.documentTitle)||'''').trim();if(t.indexOf(''进货单'')>=0||t.indexOf(''出库单'')>=0)return '''';var v=value==null?'''':String(value).trim();return ''合计金额：''+v;}", "hideTitle": true, "textAlign": "right", "fontWeight": "bold"}, "printElementType": {"type": "text", "title": "合计金额"}}, {"options": {"top": 720, "left": 24, "field": "preparedByName", "title": "制单人", "width": 170, "height": 15, "fontSize": 9, "testData": "张三", "formatter": "function(title,value,options,printData){var t=String((printData&&printData.documentTitle)||'''').trim();if(t.indexOf(''进货单'')>=0||t.indexOf(''出库单'')>=0)return '''';if(String((printData&&printData.devicePurchaseRequestSignOff)||'''').trim()===''1'')return '''';var v=value==null?'''':String(value).trim();if(String((printData&&printData.purchaseRequestSignOff)||'''').trim()===''1'')return ''采购人：''+v;return ''负责人：''+v;}", "hideTitle": true}, "printElementType": {"type": "text", "title": "制单人"}}, {"options": {"top": 748, "left": 24, "field": "purchaseRequestSignOff", "width": 546, "height": 22, "fontSize": 9, "testData": "", "formatter": "function(title,value,options,printData){var on=String((printData&&printData.purchaseRequestSignOff)!=null?printData.purchaseRequestSignOff:value||'''').trim();if(on!==''1'')return '''';var labels=[''经办人'',''科室责任人'',''业务主管院长'',''院长''];var html=''<table style=\"width:100%;border-collapse:collapse;table-layout:fixed;font-size:9pt;\"><tr>'';for(var i=0;i<labels.length;i++){html+=''<td style=\"width:25%;padding:2pt 6pt 2pt 0;vertical-align:bottom;\">''+labels[i]+''：</td>'';}html+=''</tr></table>'';return html;}", "hideTitle": true, "lineHeight": 16}, "printElementType": {"type": "longText", "title": "申请签批"}}, {"options": {"top": 772, "left": 24, "field": "deviceStockOutSignOff", "width": 546, "height": 22, "fontSize": 9, "testData": "", "formatter": "function(title,value,options,printData){return '''';}", "hideTitle": true, "lineHeight": 16}, "printElementType": {"type": "longText", "title": "耗材出库签收"}}], "paperNumberTop": 810, "paperNumberLeft": 280, "watermarkOptions": {"width": 200, "format": "YYYY-MM-DD HH:mm", "height": 200, "rotate": 25, "content": "", "fontSize": "14px", "fillStyle": "rgba(184, 184, 184, 0.3)", "timestamp": false}, "panelLayoutOptions": {"layoutType": "column", "paperStyle": "", "paperWidth": 0, "paperHeight": 0, "layoutRowGap": 0, "layoutColumnGap": 0}, "paperNumberContinue": true}], "schemaVersion": 1}'::jsonb,
     1,
-    '{"hospitalName":"示例医院","documentTitle":"中心药库进货单","docNo":"PI202607240001","applyTimeText":"2026-07-24 10:30","itemTypeText":"西药","sourceLocationText":"中心药库","supplierText":"示例医药有限公司","linkDocText":"PO202607200001","destLocationText":"","invoiceNoText":"FP20260724088","lineRows":[{"seqNo":"1","productName":"阿莫西林胶囊","specText":"0.25g*24粒","manufacturerText":"某某制药","qtyUnitText":"10盒","unitPriceText":"12.50","amountText":"125.00","lotNumber":"L20260101","expiryText":"2028-01-01"},{"seqNo":"2","productName":"0.9%氯化钠注射液","specText":"250ml","manufacturerText":"某某药业","qtyUnitText":"20袋","unitPriceText":"3.80","amountText":"76.00","lotNumber":"L20260215","expiryText":"2027-06-30"}],"totalAmountText":"201.00","preparedByName":"张三","approvedByName":"李四","purchaseRequestSignOff":"","deviceStockOutSignOff":"","purchaseInboundSignOff":"1"}'::jsonb,
+    '{"hospitalName":"示例医院","documentTitle":"中心药库进货单","docNo":"PI202607240001","applyTimeText":"2026-07-24 10:30","itemTypeText":"西药","sourceLocationText":"中心药库","supplierText":"示例医药有限公司","linkDocText":"PO202607200001","destLocationText":"","invoiceNoText":"FP20260724088","lineRows":[{"seqNo":"1","productName":"阿莫西林胶囊","specText":"0.25g*24粒","manufacturerText":"某某制药","qtyUnitText":"10盒","unitPriceText":"12.50","amountText":"125.00","lotNumber":"L20260101","expiryText":"2028-01-01"},{"seqNo":"2","productName":"0.9%氯化钠注射液","specText":"250ml","manufacturerText":"某某药业","qtyUnitText":"20袋","unitPriceText":"3.80","amountText":"76.00","lotNumber":"L20260215","expiryText":"2027-06-30"}],"totalAmountText":"201.00","preparedByName":"张三","approvedByName":"李四","purchaseRequestSignOff":"","deviceStockOutSignOff":"","deviceInboundSignOff":"","devicePurchaseRequestSignOff":"","purchaseInboundSignOff":"1"}'::jsonb,
     TIMESTAMP '2026-07-24 00:00:00+08',
     TIMESTAMP '2026-07-24 19:30:00+08',
     1,
@@ -13763,48 +13904,854 @@ INSERT INTO "public"."prt_print_binding" (
 )
 ON CONFLICT ("id") DO NOTHING;
 
--- folded from V11__prt_daily_settlement_document_title.sql
--- 收费日结单标题绑定 documentTitle（门诊/住院共用 op-dailySettlement-print）
-UPDATE prt_template
-SET print_json = jsonb_set(
-        print_json,
-        '{panels,0,printElements}',
-        (
-            SELECT COALESCE(jsonb_agg(fixed_elem ORDER BY ord), '[]'::jsonb)
-            FROM (
-                SELECT
-                    t.ord,
-                    CASE
-                        WHEN COALESCE(t.elem -> 'options' ->> 'field', '') IN ('', 'documentTitle')
-                         AND (
-                             COALESCE(t.elem -> 'options' ->> 'title', '') IN (
-                                 '门诊收费日结单', '门诊费用日结单', '住院收费日结单', '单据标题'
-                             )
-                             OR COALESCE(t.elem -> 'options' ->> 'title', '') LIKE '%门诊%日结%'
-                             OR t.elem -> 'options' ->> 'field' = 'documentTitle'
-                         )
-                            THEN jsonb_set(
-                                jsonb_set(
-                                    jsonb_set(
-                                        jsonb_set(t.elem, '{options,field}', '"documentTitle"'::jsonb),
-                                        '{options,hideTitle}',
-                                        'true'::jsonb
-                                    ),
-                                    '{options,testData}',
-                                    '"门诊收费日结单"'::jsonb
-                                ),
-                                '{options,title}',
-                                '"单据标题"'::jsonb
-                            )
-                        ELSE t.elem
-                    END AS fixed_elem
-                FROM jsonb_array_elements(
-                    COALESCE(print_json -> 'panels' -> 0 -> 'printElements', '[]'::jsonb)
-                ) WITH ORDINALITY AS t(elem, ord)
-            ) s
-        )
-    ),
-    updated_at = NOW()
-WHERE COALESCE(is_deleted, false) = false
-  AND scenario_code = 'op-dailySettlement-print'
-  AND print_json -> 'panels' -> 0 -> 'printElements' IS NOT NULL;
+
+-- =============================================================================
+-- Squash 2026-09-15: seeds from V11/V15/V16/V23/V24/V27/V28/V29/V30/V31/V32
+-- (DDL already merged into V1-V9; menu path finals applied in-place above)
+-- =============================================================================
+
+-- terminology: adm_device_category_code
+INSERT INTO "ter_code_system" (
+    "id", "name", "title", "description", "version", "status", "tenant_id",
+    "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by"
+) VALUES (
+    '328000000000000901', 'adm_device_category_code', '检验设备分类', NULL, '1.0', '2', '1',
+    '2026-08-22 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL
+) ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "ter_concept" (
+    "id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order", "is_active",
+    "css_class", "list_class", "is_default", "tenant_id", "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by"
+) VALUES
+    ('328000000000000911', '328000000000000901', 'BLOOD_COLLECTION', '采血', NULL, NULL, '1', true,
+     NULL, 'default', NULL, '1', '2026-08-22 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('328000000000000912', '328000000000000901', 'BIOCHEMISTRY', '生化', NULL, NULL, '2', true,
+     NULL, 'default', NULL, '1', '2026-08-22 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('328000000000000913', '328000000000000901', 'OTHER', '其它', NULL, NULL, '9', true,
+     NULL, 'default', NULL, '1', '2026-08-22 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+) VALUES
+    ('328000000000000904', 'Navigation.LabDevice', '设备管理', 'Navigation',
+     '菜单入口: LabDevice', NULL,
+     TIMESTAMP '2026-08-22 00:00:00+00', TIMESTAMP '2026-08-22 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('328000000000000905', 'Navigation.SpecimenTubeMerge', '合管配备', 'Navigation',
+     '菜单入口: SpecimenTubeMerge', NULL,
+     TIMESTAMP '2026-08-22 00:00:00+00', TIMESTAMP '2026-08-22 00:00:00+00', 1, 1, FALSE, NULL, NULL)
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    display_name = EXCLUDED.display_name,
+    parent_name = EXCLUDED.parent_name,
+    description = EXCLUDED.description,
+    is_deleted = FALSE,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+) VALUES
+    ('328000000000000902', 'lab_device', 'LabDevice', '设备管理', 'lucide:cpu',
+     '/basic/labdevice', '/basic/labdevice/index', 'Navigation.LabDevice', '2000', 25,
+     TRUE, FALSE, FALSE, '', 'menu', '基础数据-设备管理（LabDeviceAppService）', NULL,
+     TIMESTAMP '2026-08-22 00:00:00+00', TIMESTAMP '2026-08-22 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('328000000000000903', 'specimen_tube_merge', 'SpecimenTubeMerge', '合管配备', 'lucide:git-merge',
+     '/config/specimentubemerge', '/config/specimentubemerge/index', 'Navigation.SpecimenTubeMerge', '310400000000000123', 30,
+     TRUE, FALSE, FALSE, '', 'menu', '配置管理-合管配备（SpecimenTubeMergeAppService）', NULL,
+     TIMESTAMP '2026-08-22 00:00:00+00', TIMESTAMP '2026-08-22 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE)
+ON CONFLICT (id) DO UPDATE SET
+    code = EXCLUDED.code,
+    name = EXCLUDED.name,
+    display_name = EXCLUDED.display_name,
+    icon = EXCLUDED.icon,
+    path = EXCLUDED.path,
+    component = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order,
+    is_enabled = EXCLUDED.is_enabled,
+    is_hidden = EXCLUDED.is_hidden,
+    remark = EXCLUDED.remark,
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+) VALUES
+    ('328000000000000906', 'Navigation.LabDevice', 'R', '1', NULL,
+     TIMESTAMP '2026-08-22 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('328000000000000907', 'Navigation.SpecimenTubeMerge', 'R', '1', NULL,
+     TIMESTAMP '2026-08-22 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-08-22 00:00:00+00';
+
+
+-- V15 menu seeds
+
+-- 菜单：发药管理 → 处方点评记录（AS-OP-PHA-007）
+-- ---------------------------------------------------------------------------
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('890020000000000020', 'Navigation.PrescriptionReview', '处方点评记录', 'Navigation',
+     '菜单入口: PrescriptionReview — 发药管理·门诊处方点评记录', NULL,
+     TIMESTAMP '2026-08-29 00:00:00+00', TIMESTAMP '2026-08-29 00:00:00+00', 1, 1, FALSE, NULL, NULL)
+ON CONFLICT (id) DO UPDATE SET
+    name          = EXCLUDED.name,
+    display_name  = EXCLUDED.display_name,
+    parent_name   = EXCLUDED.parent_name,
+    description   = EXCLUDED.description,
+    is_deleted    = FALSE,
+    deleted_at    = NULL,
+    deleted_by    = NULL,
+    updated_at    = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES
+    ('890010000000000020', 'PrescriptionReview', 'PrescriptionReview', '处方点评记录', 'lucide:clipboard-check',
+     '/report/prescription-review', '/report/prescription-review/index', 'Navigation.PrescriptionReview',
+     '310400000000000060', 11, TRUE, FALSE, FALSE, '', 'menu',
+     'AS-OP-PHA-007 · OutpatientPharmacyPrescriptionReviewAppService', NULL,
+     TIMESTAMP '2026-08-29 00:00:00+00', TIMESTAMP '2026-08-29 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('890030000000000036', 'Navigation.PrescriptionReview', 'R', '1', NULL,
+     TIMESTAMP '2026-08-29 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('890030000000000037', 'Navigation.PrescriptionReview', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-08-29 00:00:00+00', TIMESTAMP '2026-08-29 00:00:00+00', 1, 1, FALSE, NULL, NULL)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = EXCLUDED.updated_at;
+
+
+-- from V16__prt_report_list_print.sql
+
+-- 通用报表列表打印模板（库存明细等共用壳；列由前端按勾选覆盖）
+-- scenario_code = report-list-print；bus_no = PT202608310001
+-- 可重复执行（按 id upsert）
+
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    331800190001000041,
+    1,
+    NULL,
+    'PT202608310001',
+    '报表列表',
+    'published',
+    1,
+    $print_json$
+{
+  "engine": "Print",
+  "panels": [
+    {
+      "name": "1",
+      "index": 0,
+      "width": 297,
+      "height": 210,
+      "paperType": "A4",
+      "paperFooter": 580,
+      "paperHeader": 54,
+      "printElements": [
+        {
+          "options": {
+            "top": 8,
+            "left": 15,
+            "field": "hospitalName",
+            "title": "医院",
+            "width": 810,
+            "height": 22,
+            "fontSize": 16,
+            "hideTitle": true,
+            "textAlign": "center",
+            "fontWeight": "700",
+            "textContentVerticalAlign": "middle"
+          },
+          "printElementType": {
+            "type": "text",
+            "title": "医院"
+          }
+        },
+        {
+          "options": {
+            "top": 30,
+            "left": 15,
+            "field": "reportTitle",
+            "title": "报表标题",
+            "width": 810,
+            "height": 20,
+            "fontSize": 14,
+            "hideTitle": true,
+            "textAlign": "center",
+            "fontWeight": "700",
+            "textContentVerticalAlign": "middle"
+          },
+          "printElementType": {
+            "type": "text",
+            "title": "报表标题"
+          }
+        },
+        {
+          "options": {
+            "top": 54,
+            "left": 15,
+            "field": "rows",
+            "width": 810,
+            "height": 40,
+            "columns": [
+              [
+                {
+                  "align": "center",
+                  "field": "seqNo",
+                  "title": "序号",
+                  "width": 40,
+                  "halign": "center"
+                },
+                {
+                  "align": "center",
+                  "field": "productBusNo",
+                  "title": "编码",
+                  "width": 90,
+                  "halign": "center"
+                },
+                {
+                  "align": "center",
+                  "field": "name",
+                  "title": "项目名称",
+                  "width": 140,
+                  "halign": "center"
+                },
+                {
+                  "align": "center",
+                  "field": "totalVolume",
+                  "title": "规格",
+                  "width": 90,
+                  "halign": "center"
+                },
+                {
+                  "align": "center",
+                  "field": "lotNumber",
+                  "title": "批号",
+                  "width": 80,
+                  "halign": "center"
+                },
+                {
+                  "align": "right",
+                  "field": "packageStockText",
+                  "title": "库存(包装)",
+                  "width": 80,
+                  "halign": "center"
+                },
+                {
+                  "align": "right",
+                  "field": "splitStockText",
+                  "title": "库存(最小)",
+                  "width": 80,
+                  "halign": "center"
+                },
+                {
+                  "align": "right",
+                  "field": "lotCostPrice",
+                  "title": "进价",
+                  "width": 70,
+                  "halign": "center"
+                },
+                {
+                  "align": "right",
+                  "field": "lotSalePrice",
+                  "title": "售价",
+                  "width": 70,
+                  "halign": "center"
+                },
+                {
+                  "align": "center",
+                  "field": "expirationDate",
+                  "title": "效期",
+                  "width": 80,
+                  "halign": "center"
+                },
+                {
+                  "align": "center",
+                  "field": "warehouseName",
+                  "title": "库房",
+                  "width": 90,
+                  "halign": "center"
+                }
+              ]
+            ],
+            "fontSize": 8,
+            "textAlign": "center",
+            "tableBorder": "border",
+            "tableHeaderRepeat": "page",
+            "tableHeaderBackground": "#ffffff"
+          },
+          "printElementType": {
+            "type": "table",
+            "title": "明细表"
+          }
+        }
+      ],
+      "paperNumberContinue": true,
+      "paperNumberDisabled": false
+    }
+  ],
+  "schemaVersion": 1
+}
+$print_json$::jsonb,
+    1,
+    $sample$
+{
+  "hospitalName": "示例医院",
+  "reportTitle": "药库库存明细",
+  "rows": [
+    {
+      "seqNo": "1",
+      "productBusNo": "YP001",
+      "name": "阿莫西林胶囊",
+      "totalVolume": "0.25g*24粒",
+      "lotNumber": "L20260101",
+      "packageStockText": "10盒",
+      "splitStockText": "240片",
+      "lotCostPrice": "12.50 元/盒",
+      "lotSalePrice": "15.60 元/盒",
+      "expirationDate": "2028-01-01",
+      "warehouseName": "中心药库"
+    },
+    {
+      "seqNo": "2",
+      "productBusNo": "YP002",
+      "name": "0.9%氯化钠注射液",
+      "totalVolume": "250ml",
+      "lotNumber": "L20260215",
+      "packageStockText": "20袋",
+      "splitStockText": "20袋",
+      "lotCostPrice": "3.80 元/袋",
+      "lotSalePrice": "4.75 元/袋",
+      "expirationDate": "2027-06-30",
+      "warehouseName": "中心药库"
+    }
+  ],
+  "summaryItems": [
+    { "label": "进价合计", "value": "201.00" },
+    { "label": "售价合计", "value": "251.00" }
+  ]
+}
+$sample$::jsonb,
+    TIMESTAMP '2026-08-31 00:00:00+08',
+    TIMESTAMP '2026-08-31 09:30:00+08',
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'report-list-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "version" = EXCLUDED."version",
+    "updated_at" = EXCLUDED."updated_at";
+
+
+-- from V23__prt_ip_homepage_western_print.sql
+
+-- 病案首页打印场景码与库/前端对齐：
+--   中医 ip-homepage-tcm-print（已有定稿则不改）
+--   西医 ip-homepage-wm-print（缺失时从中医模板克隆 print_json，版式可后改）
+-- 可重复执行：西医场景已存在则跳过
+-- 说明：曾用 ip-homepage-print / ip-homepage-western-print 的草稿码已废弃，以 tcm/wm 为准
+
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+)
+SELECT
+    331800190001000091,
+    src."tenant_id",
+    src."organization_id",
+    'PT202609050001',
+    '西医住院病案首页',
+    'published',
+    1,
+    src."print_json",
+    src."schema_version",
+    src."sample_print_data",
+    NOW(),
+    NOW(),
+    src."created_by",
+    src."updated_by",
+    false,
+    NULL,
+    NULL,
+    'ip-homepage-wm-print'
+FROM "public"."prt_template" src
+WHERE src."scenario_code" = 'ip-homepage-tcm-print'
+  AND src."status" = 'published'
+  AND src."is_deleted" = false
+  AND NOT EXISTS (
+      SELECT 1
+      FROM "public"."prt_template" w
+      WHERE w."scenario_code" = 'ip-homepage-wm-print'
+        AND w."is_deleted" = false
+  )
+ORDER BY src."version" DESC, src."updated_at" DESC NULLS LAST
+LIMIT 1;
+
+
+-- from V24__prt_pharmacy_daily_settlement_print.sql
+
+-- 药房日结单打印模板（门诊/住院共用）
+-- scenario_code = pharmacy-dailySettlement-print
+-- 可重复执行：按 id upsert；已有同场景 published 时仍以本 id 为准写入
+-- PrintData 契约：hospitalName/documentTitle/pharmacyName/settlementPeriodText/
+--   dispenserNamesText/pendingCountText/totalIncomeText/categoryRows/productRows
+
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    331800190001000093,
+    1,
+    NULL,
+    'PT202609070001',
+    '药房日结单',
+    'published',
+    1,
+    '{"schemaVersion":1,"engine":"Print","panels":[{"name":"1","index":0,"width":210,"height":297,"paperType":"A4","paperHeader":0,"paperFooter":800,"paperNumberContinue":true,"paperNumberDisabled":true,"paperNumberTop":810,"paperNumberLeft":280,"printElements":[{"printElementType":{"type":"text","title":"文本"},"options":{"top":16,"left":24,"field":"hospitalName","width":546,"height":20,"fontSize":16,"hideTitle":true,"textAlign":"center","fontWeight":"bold","testData":"示例医院"}},{"printElementType":{"type":"text","title":"文本"},"options":{"top":38,"left":24,"field":"documentTitle","width":546,"height":17,"fontSize":13,"hideTitle":true,"textAlign":"center","fontWeight":"bold","testData":"药房日结单"}},{"printElementType":{"type":"text","title":"药房"},"options":{"top":62,"left":24,"field":"pharmacyName","title":"药房","width":260,"height":15,"fontSize":9,"testData":"门诊西药房"}},{"printElementType":{"type":"text","title":"日结期间"},"options":{"top":62,"left":300,"field":"settlementPeriodText","title":"日结期间","width":270,"height":15,"fontSize":9,"testData":"2026-09-01 ~ 2026-09-01"}},{"printElementType":{"type":"text","title":"发药人"},"options":{"top":82,"left":24,"field":"dispenserNamesText","title":"发药人","width":260,"height":15,"fontSize":9,"testData":"全部"}},{"printElementType":{"type":"text","title":"待交账"},"options":{"top":82,"left":300,"field":"pendingCountText","title":"待交账笔数","width":120,"height":15,"fontSize":9,"testData":"3"}},{"printElementType":{"type":"text","title":"售价合计"},"options":{"top":82,"left":430,"field":"totalIncomeText","title":"售价合计","width":140,"height":15,"fontSize":10,"fontWeight":"bold","textAlign":"right","testData":"1280.50"}},{"printElementType":{"type":"text","title":"文本"},"options":{"top":106,"left":24,"width":546,"height":14,"fontSize":10,"hideTitle":true,"fontWeight":"bold","title":"大类汇总","testData":"大类汇总"}},{"printElementType":{"type":"table","title":"大类汇总","editable":true,"columnResizable":true},"options":{"top":122,"left":24,"field":"categoryRows","width":546,"height":90,"fontSize":9,"tableHeaderFontSize":9,"lineHeight":13,"tableBorder":"border","tableHeaderBorder":"border","tableHeaderCellBorder":"border","tableHeaderRepeat":"page","tableBodyRowBorder":"border","tableBodyCellBorder":"border","tableBodyRowHeight":22,"tableHeaderRowHeight":22,"columns":[[{"align":"left","field":"categoryLabel","title":"大类","width":280,"checked":true,"columnId":"categoryLabel"},{"align":"right","field":"purchaseAmountText","title":"进价金额","width":133,"checked":true,"columnId":"purchaseAmountText"},{"align":"right","field":"saleAmountText","title":"售价金额","width":133,"checked":true,"columnId":"saleAmountText"}]],"testData":"[{\"categoryLabel\":\"西药\",\"purchaseAmountText\":\"800.00\",\"saleAmountText\":\"1000.00\"},{\"categoryLabel\":\"中成药\",\"purchaseAmountText\":\"200.00\",\"saleAmountText\":\"280.50\"}]"}},{"printElementType":{"type":"text","title":"文本"},"options":{"top":220,"left":24,"width":546,"height":14,"fontSize":10,"hideTitle":true,"fontWeight":"bold","title":"品规明细","testData":"品规明细"}},{"printElementType":{"type":"table","title":"品规明细","editable":true,"columnResizable":true},"options":{"top":236,"left":24,"field":"productRows","width":546,"height":460,"fontSize":8,"tableHeaderFontSize":8,"lineHeight":12,"tableBorder":"border","tableHeaderBorder":"border","tableHeaderCellBorder":"border","tableHeaderRepeat":"page","tableBodyRowBorder":"border","tableBodyCellBorder":"border","tableBodyRowHeight":20,"tableHeaderRowHeight":20,"columns":[[{"align":"left","field":"busNo","title":"编码","width":56,"checked":true,"columnId":"busNo"},{"align":"left","field":"medicationName","title":"品名","width":100,"checked":true,"columnId":"medicationName"},{"align":"left","field":"specification","title":"规格","width":70,"checked":true,"columnId":"specification"},{"align":"left","field":"manufacturer","title":"厂家","width":80,"checked":true,"columnId":"manufacturer"},{"align":"right","field":"netQuantityText","title":"数量","width":40,"checked":true,"columnId":"netQuantityText"},{"align":"right","field":"purchaseUnitPriceText","title":"进价","width":48,"checked":true,"columnId":"purchaseUnitPriceText"},{"align":"right","field":"saleUnitPriceText","title":"售价","width":48,"checked":true,"columnId":"saleUnitPriceText"},{"align":"right","field":"purchaseAmountText","title":"进价额","width":52,"checked":true,"columnId":"purchaseAmountText"},{"align":"right","field":"saleAmountText","title":"售价额","width":52,"checked":true,"columnId":"saleAmountText"}]],"testData":"[{\"busNo\":\"YP001\",\"medicationName\":\"阿莫西林胶囊\",\"specification\":\"0.25g*24粒\",\"manufacturer\":\"示例药业\",\"netQuantityText\":\"10.00\",\"purchaseUnitPriceText\":\"8.00\",\"saleUnitPriceText\":\"10.00\",\"purchaseAmountText\":\"80.00\",\"saleAmountText\":\"100.00\"}]"}}],"watermarkOptions":{"width":200,"height":200,"rotate":25,"content":"","fontSize":"14px","fillStyle":"rgba(184, 184, 184, 0.3)","format":"YYYY-MM-DD HH:mm","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0}}]}'::jsonb,
+    1,
+    '{"hospitalName":"示例医院","documentTitle":"药房日结单","pharmacyName":"门诊西药房","settlementPeriodText":"2026-09-01 ~ 2026-09-01","dispenserNamesText":"全部","pendingCountText":"3","totalIncomeText":"1280.50","categoryRows":[{"categoryLabel":"西药","purchaseAmountText":"800.00","saleAmountText":"1000.00"},{"categoryLabel":"中成药","purchaseAmountText":"200.00","saleAmountText":"280.50"}],"productRows":[{"busNo":"YP001","medicationName":"阿莫西林胶囊","specification":"0.25g*24粒","manufacturer":"示例药业","netQuantityText":"10.00","purchaseUnitPriceText":"8.00","saleUnitPriceText":"10.00","purchaseAmountText":"80.00","saleAmountText":"100.00"}]}'::jsonb,
+    NOW(),
+    NOW(),
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'pharmacy-dailySettlement-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "status" = EXCLUDED."status",
+    "version" = EXCLUDED."version",
+    "is_deleted" = FALSE,
+    "deleted_at" = NULL,
+    "deleted_by" = NULL,
+    "updated_at" = EXCLUDED."updated_at";
+
+
+-- from V27__menu_insurance_fee_detail_report.sql
+
+-- AS-RPT-012/013 门诊/住院医保费用明细：报表中心菜单 + Navigation 权限（幂等）。
+-- parent: ReportCenterRoot 310400000000000122
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('890020000000000030', 'Navigation.OutpatientInsuranceFeeDetail', '门诊医保费用明细', 'ReportCenter',
+     '菜单入口: OutpatientInsuranceFeeDetail — 门诊医保费用明细报表（AS-RPT-012）', NULL,
+     TIMESTAMP '2026-09-09 00:00:00+00', TIMESTAMP '2026-09-09 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('890020000000000031', 'Navigation.InpatientInsuranceFeeDetail', '住院医保费用明细', 'ReportCenter',
+     '菜单入口: InpatientInsuranceFeeDetail — 住院医保费用明细报表（AS-RPT-013）', NULL,
+     TIMESTAMP '2026-09-09 00:00:00+00', TIMESTAMP '2026-09-09 00:00:00+00', 1, 1, FALSE, NULL, NULL)
+ON CONFLICT (id) DO UPDATE SET
+    name          = EXCLUDED.name,
+    display_name  = EXCLUDED.display_name,
+    parent_name   = EXCLUDED.parent_name,
+    description   = EXCLUDED.description,
+    is_deleted    = FALSE,
+    deleted_at    = NULL,
+    deleted_by    = NULL,
+    updated_at    = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES
+    ('890010000000000030', 'OutpatientInsuranceFeeDetail', 'OutpatientInsuranceFeeDetail', '门诊医保费用明细',
+     'lucide:shield-check', '/report/insurance-fee-detail/outpatient',
+     '/report/insurance-fee-detail/outpatient/index', 'Navigation.OutpatientInsuranceFeeDetail',
+     '310400000000000122', 23, TRUE, FALSE, FALSE, '', 'menu',
+     'AS-RPT-012 · OutpatientInsuranceFeeDetailReportAppService', NULL,
+     TIMESTAMP '2026-09-09 00:00:00+00', TIMESTAMP '2026-09-09 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('890010000000000031', 'InpatientInsuranceFeeDetail', 'InpatientInsuranceFeeDetail', '住院医保费用明细',
+     'lucide:shield', '/report/insurance-fee-detail/inpatient',
+     '/report/insurance-fee-detail/inpatient/index', 'Navigation.InpatientInsuranceFeeDetail',
+     '310400000000000122', 24, TRUE, FALSE, FALSE, '', 'menu',
+     'AS-RPT-013 · InpatientInsuranceFeeDetailReportAppService', NULL,
+     TIMESTAMP '2026-09-09 00:00:00+00', TIMESTAMP '2026-09-09 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('890030000000000040', 'Navigation.OutpatientInsuranceFeeDetail', 'R', '1', NULL,
+     TIMESTAMP '2026-09-09 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('890030000000000041', 'Navigation.InpatientInsuranceFeeDetail', 'R', '1', NULL,
+     TIMESTAMP '2026-09-09 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-09-09 00:00:00+00';
+
+
+-- from V28__prt_op_daily_settlement_work_injury.sql
+
+-- 门诊/住院收费日结单：对齐前端动态 PrintData（finTypeRows/channelRows/natureRows）
+-- 并增加工伤独立块（workInjuryCategoryRows / workInjuryNatureRows，BR-OP-DCL-030）
+-- scenario_code = op-dailySettlement-print；bus_no = PT202606260003
+-- 本文件后半段：住院日结「患者分项」独立模板（BR-IP-DCL-030）
+--   scenario_code = ip-dailySettlement-patient-print；bus_no = PT202609090001
+-- 可重复执行：按 id upsert
+
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    328809238930919424,
+    1,
+    NULL,
+    'PT202606260003',
+    '门诊费用日结单',
+    'published',
+    3,
+    '{"schemaVersion":1,"engine":"Print","panels":[{"name":"1","index":0,"width":210,"height":297,"paperType":"A4","paperHeader":0,"paperFooter":800,"paperNumberContinue":true,"paperNumberDisabled":true,"paperNumberTop":810,"paperNumberLeft":280,"printElements":[{"printElementType":{"type":"text","title":"文本"},"options":{"top":16,"left":24,"field":"hospitalName","width":546,"height":20,"fontSize":16,"hideTitle":true,"textAlign":"center","fontWeight":"bold","testData":"示例医院"}},{"printElementType":{"type":"text","title":"单据标题"},"options":{"top":38,"left":24,"field":"documentTitle","width":546,"height":17,"fontSize":13,"hideTitle":true,"textAlign":"center","fontWeight":"bold","testData":"门诊收费日结单"}},{"printElementType":{"type":"text","title":"收款人"},"options":{"top":62,"left":24,"field":"cashierName","title":"收款人","width":260,"height":15,"fontSize":9,"testData":"张三"}},{"printElementType":{"type":"text","title":"时间"},"options":{"top":62,"left":300,"field":"settlementPeriodText","title":"时间","width":270,"height":15,"fontSize":9,"testData":"2026-09-09 00:00:00 ~ 2026-09-09 16:00:00"}},{"printElementType":{"type":"table","title":"财务分类","editable":true,"columnResizable":true},"options":{"top":84,"left":24,"field":"finTypeRows","width":546,"height":120,"fontSize":9,"tableHeaderFontSize":9,"lineHeight":13,"tableBorder":"noBorder","tableHeaderBorder":"noBorder","tableHeaderCellBorder":"noBorder","tableHeaderRepeat":"none","tableBodyRowBorder":"noBorder","tableBodyCellBorder":"noBorder","tableBodyRowHeight":18,"tableHeaderRowHeight":0,"columns":[[{"align":"left","field":"label1","title":"","width":70,"checked":true,"columnId":"label1"},{"align":"right","field":"amount1","title":"","width":66,"checked":true,"columnId":"amount1"},{"align":"left","field":"label2","title":"","width":70,"checked":true,"columnId":"label2"},{"align":"right","field":"amount2","title":"","width":66,"checked":true,"columnId":"amount2"},{"align":"left","field":"label3","title":"","width":70,"checked":true,"columnId":"label3"},{"align":"right","field":"amount3","title":"","width":66,"checked":true,"columnId":"amount3"},{"align":"left","field":"label4","title":"","width":70,"checked":true,"columnId":"label4"},{"align":"right","field":"amount4","title":"","width":68,"checked":true,"columnId":"amount4"}]],"testData":"[{\"label1\":\"西药：\",\"amount1\":\"100.00元\",\"label2\":\"中成药：\",\"amount2\":\"50.00元\",\"label3\":\"中草药：\",\"amount3\":\"20.00元\",\"label4\":\"诊察费：\",\"amount4\":\"10.00元\"}]"}},{"printElementType":{"type":"hline","title":"横线"},"options":{"top":210,"left":24,"width":546,"height":1,"borderWidth":1}},{"printElementType":{"type":"table","title":"渠道汇总","editable":true,"columnResizable":true},"options":{"top":218,"left":24,"field":"channelRows","width":546,"height":90,"fontSize":9,"tableHeaderFontSize":9,"lineHeight":13,"tableBorder":"noBorder","tableHeaderBorder":"noBorder","tableHeaderCellBorder":"noBorder","tableHeaderRepeat":"none","tableBodyRowBorder":"noBorder","tableBodyCellBorder":"noBorder","tableBodyRowHeight":18,"tableHeaderRowHeight":0,"columns":[[{"align":"left","field":"label1","title":"","width":70,"checked":true,"columnId":"label1"},{"align":"right","field":"amount1","title":"","width":66,"checked":true,"columnId":"amount1"},{"align":"left","field":"label2","title":"","width":70,"checked":true,"columnId":"label2"},{"align":"right","field":"amount2","title":"","width":66,"checked":true,"columnId":"amount2"},{"align":"left","field":"label3","title":"","width":70,"checked":true,"columnId":"label3"},{"align":"right","field":"amount3","title":"","width":66,"checked":true,"columnId":"amount3"},{"align":"left","field":"label4","title":"","width":70,"checked":true,"columnId":"label4"},{"align":"right","field":"amount4","title":"","width":68,"checked":true,"columnId":"amount4"}]],"testData":"[{\"label1\":\"总收入：\",\"amount1\":\"180.00元\",\"label2\":\"微信：\",\"amount2\":\"20.00元\",\"label3\":\"应交现金：\",\"amount3\":\"30.00元\",\"label4\":\"医保统筹：\",\"amount4\":\"80.00元\"}]"}},{"printElementType":{"type":"text","title":"文本"},"options":{"top":318,"left":24,"width":546,"height":14,"fontSize":10,"hideTitle":true,"fontWeight":"bold","title":"费用性质明细","testData":"费用性质明细"}},{"printElementType":{"type":"table","title":"费用性质明细","editable":true,"columnResizable":true},"options":{"top":334,"left":24,"field":"natureRows","width":546,"height":110,"fontSize":9,"tableHeaderFontSize":9,"lineHeight":13,"tableBorder":"border","tableHeaderBorder":"border","tableHeaderCellBorder":"border","tableHeaderRepeat":"page","tableBodyRowBorder":"border","tableBodyCellBorder":"border","tableBodyRowHeight":22,"tableHeaderRowHeight":22,"columns":[[{"align":"left","field":"name","title":"费用性质/险种","width":150,"checked":true,"columnId":"name"},{"align":"center","field":"personCount","title":"人数","width":54,"checked":true,"columnId":"personCount"},{"align":"right","field":"cashAmount","title":"医保现金(元)","width":86,"checked":true,"columnId":"cashAmount"},{"align":"right","field":"fundAmount","title":"医保统筹(元)","width":86,"checked":true,"columnId":"fundAmount"},{"align":"right","field":"accountAmount","title":"个人账户(元)","width":86,"checked":true,"columnId":"accountAmount"},{"align":"right","field":"totalAmount","title":"总额(元)","width":84,"checked":true,"columnId":"totalAmount"}]],"testData":"[{\"name\":\"市医保\",\"personCount\":\"2\",\"cashAmount\":\"10.00\",\"fundAmount\":\"50.00\",\"accountAmount\":\"20.00\",\"totalAmount\":\"70.00\"}]"}},{"printElementType":{"type":"text","title":"文本"},"options":{"top":456,"left":24,"width":546,"height":14,"fontSize":10,"hideTitle":true,"fontWeight":"bold","title":"工伤统计（不计入总合计）","testData":"工伤统计（不计入总合计）"}},{"printElementType":{"type":"table","title":"工伤分类","editable":true,"columnResizable":true},"options":{"top":472,"left":24,"field":"workInjuryCategoryRows","width":546,"height":54,"fontSize":9,"tableHeaderFontSize":9,"lineHeight":13,"tableBorder":"noBorder","tableHeaderBorder":"noBorder","tableHeaderCellBorder":"noBorder","tableHeaderRepeat":"none","tableBodyRowBorder":"noBorder","tableBodyCellBorder":"noBorder","tableBodyRowHeight":18,"tableHeaderRowHeight":0,"columns":[[{"align":"left","field":"label1","title":"","width":70,"checked":true,"columnId":"label1"},{"align":"right","field":"amount1","title":"","width":66,"checked":true,"columnId":"amount1"},{"align":"left","field":"label2","title":"","width":70,"checked":true,"columnId":"label2"},{"align":"right","field":"amount2","title":"","width":66,"checked":true,"columnId":"amount2"},{"align":"left","field":"label3","title":"","width":70,"checked":true,"columnId":"label3"},{"align":"right","field":"amount3","title":"","width":66,"checked":true,"columnId":"amount3"},{"align":"left","field":"label4","title":"","width":70,"checked":true,"columnId":"label4"},{"align":"right","field":"amount4","title":"","width":68,"checked":true,"columnId":"amount4"}]],"testData":"[{\"label1\":\"工伤西药中成药：\",\"amount1\":\"56.00元\",\"label2\":\"工伤诊疗：\",\"amount2\":\"100.00元\",\"label3\":\"工伤耗材：\",\"amount3\":\"10.00元\",\"label4\":\"工伤中草药：\",\"amount4\":\"0.00元\"},{\"label1\":\"工伤诊察费：\",\"amount1\":\"0.00元\",\"label2\":\"工伤人次：\",\"amount2\":\"1人次\",\"label3\":\"\",\"amount3\":\"\",\"label4\":\"\",\"amount4\":\"\"}]"}},{"printElementType":{"type":"table","title":"工伤费用性质","editable":true,"columnResizable":true},"options":{"top":534,"left":24,"field":"workInjuryNatureRows","width":546,"height":70,"fontSize":9,"tableHeaderFontSize":9,"lineHeight":13,"tableBorder":"border","tableHeaderBorder":"border","tableHeaderCellBorder":"border","tableHeaderRepeat":"page","tableBodyRowBorder":"border","tableBodyCellBorder":"border","tableBodyRowHeight":22,"tableHeaderRowHeight":22,"columns":[[{"align":"left","field":"name","title":"费用性质","width":150,"checked":true,"columnId":"name"},{"align":"center","field":"personCount","title":"人数","width":54,"checked":true,"columnId":"personCount"},{"align":"right","field":"cashAmount","title":"个人自付(元)","width":86,"checked":true,"columnId":"cashAmount"},{"align":"right","field":"fundAmount","title":"统筹(元)","width":86,"checked":true,"columnId":"fundAmount"},{"align":"right","field":"accountAmount","title":"个人账户(元)","width":86,"checked":true,"columnId":"accountAmount"},{"align":"right","field":"totalAmount","title":"总额(元)","width":84,"checked":true,"columnId":"totalAmount"}]],"testData":"[{\"name\":\"工伤保险\",\"personCount\":\"1\",\"cashAmount\":\"0.00\",\"fundAmount\":\"56.00\",\"accountAmount\":\"0.00\",\"totalAmount\":\"56.00\"}]"}}],"watermarkOptions":{"width":200,"height":200,"rotate":25,"content":"","fontSize":"14px","fillStyle":"rgba(184, 184, 184, 0.3)","format":"YYYY-MM-DD HH:mm","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0}}]}'::jsonb,
+    1,
+    '{"hospitalName":"示例医院","documentTitle":"门诊收费日结单","cashierName":"张三","settlementPeriodText":"2026-09-09 00:00:00 ~ 2026-09-09 16:00:00","finTypeRows":[{"rowType":"grid","label1":"西药：","amount1":"100.00元","label2":"中成药：","amount2":"50.00元","label3":"中草药：","amount3":"20.00元","label4":"诊察费：","amount4":"10.00元"}],"channelRows":[{"rowType":"grid","label1":"总收入：","amount1":"180.00元","label2":"微信：","amount2":"20.00元","label3":"应交现金：","amount3":"30.00元","label4":"医保统筹：","amount4":"80.00元"}],"natureRows":[{"rowType":"nature","name":"市医保","personCount":"2","cashAmount":"10.00","fundAmount":"50.00","accountAmount":"20.00","totalAmount":"70.00"}],"workInjuryCategoryRows":[{"rowType":"grid","label1":"工伤西药中成药：","amount1":"56.00元","label2":"工伤诊疗：","amount2":"100.00元","label3":"工伤耗材：","amount3":"10.00元","label4":"工伤中草药：","amount4":"0.00元"},{"rowType":"grid","label1":"工伤诊察费：","amount1":"0.00元","label2":"工伤人次：","amount2":"1人次","label3":"","amount3":"","label4":"","amount4":""}],"workInjuryNatureRows":[{"rowType":"nature","name":"工伤保险","personCount":"1","cashAmount":"0.00","fundAmount":"56.00","accountAmount":"0.00","totalAmount":"56.00"}]}'::jsonb,
+    NOW(),
+    NOW(),
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'op-dailySettlement-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "status" = EXCLUDED."status",
+    "version" = EXCLUDED."version",
+    "is_deleted" = FALSE,
+    "deleted_at" = NULL,
+    "deleted_by" = NULL,
+    "updated_at" = EXCLUDED."updated_at";
+
+-- ---------------------------------------------------------------------------
+-- 住院收费日结单（患者分项）：与合计单分别打印；PrintData 与合计同源字段子集
+-- channelRows = 患者标题行 + 各块渠道金额；natureRows = 带患者前缀的费用性质行
+-- 不含 finTypeRows / 工伤块 / 医保上传差额（BR-IP-DCL-030）
+-- ---------------------------------------------------------------------------
+INSERT INTO "public"."prt_template" (
+    "id", "tenant_id", "organization_id", "bus_no", "name", "status", "version",
+    "print_json", "schema_version", "sample_print_data",
+    "created_at", "updated_at", "created_by", "updated_by",
+    "is_deleted", "deleted_at", "deleted_by", "scenario_code"
+) VALUES (
+    328809238930919425,
+    1,
+    NULL,
+    'PT202609090001',
+    '住院收费日结单（患者分项）',
+    'published',
+    1,
+    '{"schemaVersion":1,"engine":"Print","panels":[{"name":"1","index":0,"width":210,"height":297,"paperType":"A4","paperHeader":0,"paperFooter":800,"paperNumberContinue":true,"paperNumberDisabled":true,"paperNumberTop":810,"paperNumberLeft":280,"printElements":[{"printElementType":{"type":"text","title":"文本"},"options":{"top":16,"left":24,"field":"hospitalName","width":546,"height":20,"fontSize":16,"hideTitle":true,"textAlign":"center","fontWeight":"bold","testData":"示例医院"}},{"printElementType":{"type":"text","title":"单据标题"},"options":{"top":38,"left":24,"field":"documentTitle","width":546,"height":17,"fontSize":13,"hideTitle":true,"textAlign":"center","fontWeight":"bold","testData":"住院收费日结单（患者分项）"}},{"printElementType":{"type":"text","title":"收款人"},"options":{"top":62,"left":24,"field":"cashierName","title":"收款人","width":260,"height":15,"fontSize":9,"testData":"王乐"}},{"printElementType":{"type":"text","title":"时间"},"options":{"top":62,"left":300,"field":"settlementPeriodText","title":"时间","width":270,"height":15,"fontSize":9,"testData":"2026-09-09 00:00:00 ~ 2026-09-09 16:00:00"}},{"printElementType":{"type":"table","title":"患者渠道分项","editable":true,"columnResizable":true},"options":{"top":84,"left":24,"field":"channelRows","width":546,"height":280,"fontSize":9,"tableHeaderFontSize":9,"lineHeight":13,"tableBorder":"noBorder","tableHeaderBorder":"noBorder","tableHeaderCellBorder":"noBorder","tableHeaderRepeat":"none","tableBodyRowBorder":"noBorder","tableBodyCellBorder":"noBorder","tableBodyRowHeight":18,"tableHeaderRowHeight":0,"columns":[[{"align":"left","field":"label1","title":"","width":70,"checked":true,"columnId":"label1"},{"align":"right","field":"amount1","title":"","width":66,"checked":true,"columnId":"amount1"},{"align":"left","field":"label2","title":"","width":70,"checked":true,"columnId":"label2"},{"align":"right","field":"amount2","title":"","width":66,"checked":true,"columnId":"amount2"},{"align":"left","field":"label3","title":"","width":70,"checked":true,"columnId":"label3"},{"align":"right","field":"amount3","title":"","width":66,"checked":true,"columnId":"amount3"},{"align":"left","field":"label4","title":"","width":70,"checked":true,"columnId":"label4"},{"align":"right","field":"amount4","title":"","width":68,"checked":true,"columnId":"amount4"}]],"testData":"[{\"label1\":\"张三 住院号:ZY001 内科一病区-1床\",\"amount1\":\"\",\"label2\":\"\",\"amount2\":\"\",\"label3\":\"\",\"amount3\":\"\",\"label4\":\"\",\"amount4\":\"\"},{\"label1\":\"总收入：\",\"amount1\":\"1200.00元\",\"label2\":\"微信：\",\"amount2\":\"200.00元\",\"label3\":\"应交现金：\",\"amount3\":\"50.00元\",\"label4\":\"医保统筹：\",\"amount4\":\"800.00元\"}]"}},{"printElementType":{"type":"text","title":"文本"},"options":{"top":376,"left":24,"width":546,"height":14,"fontSize":10,"hideTitle":true,"fontWeight":"bold","title":"费用性质明细（按患者）","testData":"费用性质明细（按患者）"}},{"printElementType":{"type":"table","title":"费用性质明细","editable":true,"columnResizable":true},"options":{"top":392,"left":24,"field":"natureRows","width":546,"height":320,"fontSize":9,"tableHeaderFontSize":9,"lineHeight":13,"tableBorder":"border","tableHeaderBorder":"border","tableHeaderCellBorder":"border","tableHeaderRepeat":"page","tableBodyRowBorder":"border","tableBodyCellBorder":"border","tableBodyRowHeight":22,"tableHeaderRowHeight":22,"columns":[[{"align":"left","field":"name","title":"费用性质/险种","width":150,"checked":true,"columnId":"name"},{"align":"center","field":"personCount","title":"人数","width":54,"checked":true,"columnId":"personCount"},{"align":"right","field":"cashAmount","title":"医保现金(元)","width":86,"checked":true,"columnId":"cashAmount"},{"align":"right","field":"fundAmount","title":"医保统筹(元)","width":86,"checked":true,"columnId":"fundAmount"},{"align":"right","field":"accountAmount","title":"个人账户(元)","width":86,"checked":true,"columnId":"accountAmount"},{"align":"right","field":"totalAmount","title":"总额(元)","width":84,"checked":true,"columnId":"totalAmount"}]],"testData":"[{\"name\":\"【张三】市医保\",\"personCount\":\"1\",\"cashAmount\":\"50.00\",\"fundAmount\":\"800.00\",\"accountAmount\":\"100.00\",\"totalAmount\":\"950.00\"}]"}}],"watermarkOptions":{"width":200,"height":200,"rotate":25,"content":"","fontSize":"14px","fillStyle":"rgba(184, 184, 184, 0.3)","format":"YYYY-MM-DD HH:mm","timestamp":false},"panelLayoutOptions":{"layoutType":"column","paperStyle":"","paperWidth":0,"paperHeight":0,"layoutRowGap":0,"layoutColumnGap":0}}]}'::jsonb,
+    1,
+    '{"hospitalName":"示例医院","documentTitle":"住院收费日结单（患者分项）","cashierName":"王乐","settlementPeriodText":"2026-09-09 00:00:00 ~ 2026-09-09 16:00:00","finTypeRows":[],"channelRows":[{"rowType":"grid","label1":"张三 住院号:ZY001 内科一病区-1床","amount1":"","label2":"","amount2":"","label3":"","amount3":"","label4":"","amount4":""},{"rowType":"grid","label1":"总收入：","amount1":"1200.00元","label2":"微信：","amount2":"200.00元","label3":"应交现金：","amount3":"50.00元","label4":"医保统筹：","amount4":"800.00元"},{"rowType":"grid","label1":"个人账户：","amount1":"100.00元","label2":"市医保合计：","amount2":"950.00元","label3":"省医保合计：","amount3":"0.00元","label4":"自费合计：","amount4":"50.00元"},{"rowType":"grid","label1":"预交金：","amount1":"500.00元","label2":"退预交金：","amount2":"0.00元","label3":"结算补收：","amount3":"250.00元","label4":"","amount4":""}],"natureRows":[{"rowType":"nature","name":"【张三】市医保","personCount":"1","cashAmount":"50.00","fundAmount":"800.00","accountAmount":"100.00","totalAmount":"950.00"}],"workInjuryCategoryRows":[],"workInjuryNatureRows":[]}'::jsonb,
+    NOW(),
+    NOW(),
+    1,
+    1,
+    FALSE,
+    NULL,
+    NULL,
+    'ip-dailySettlement-patient-print'
+)
+ON CONFLICT ("id") DO UPDATE SET
+    "print_json" = EXCLUDED."print_json",
+    "sample_print_data" = EXCLUDED."sample_print_data",
+    "name" = EXCLUDED."name",
+    "bus_no" = EXCLUDED."bus_no",
+    "scenario_code" = EXCLUDED."scenario_code",
+    "status" = EXCLUDED."status",
+    "version" = EXCLUDED."version",
+    "is_deleted" = FALSE,
+    "deleted_at" = NULL,
+    "deleted_by" = NULL,
+    "updated_at" = EXCLUDED."updated_at";
+
+
+-- from V29__menu_prescription_spot_check_report.sql
+
+-- AS-RPT-014 门诊处方抽查：报表中心菜单 + Navigation 权限（幂等）。
+-- parent: ReportCenterRoot 310400000000000122
+-- 注：V28 已被日结工伤打印占用，本脚本使用 V29。
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('890020000000000032', 'Navigation.PrescriptionSpotCheck', '门诊处方抽查', 'ReportCenter',
+     '菜单入口: PrescriptionSpotCheck — 门诊处方抽查报表（AS-RPT-014）', NULL,
+     TIMESTAMP '2026-09-09 00:00:00+00', TIMESTAMP '2026-09-09 00:00:00+00', 1, 1, FALSE, NULL, NULL)
+ON CONFLICT (id) DO UPDATE SET
+    name          = EXCLUDED.name,
+    display_name  = EXCLUDED.display_name,
+    parent_name   = EXCLUDED.parent_name,
+    description   = EXCLUDED.description,
+    is_deleted    = FALSE,
+    deleted_at    = NULL,
+    deleted_by    = NULL,
+    updated_at    = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES
+    ('890010000000000032', 'PrescriptionSpotCheck', 'PrescriptionSpotCheck', '门诊处方抽查',
+     'lucide:clipboard-check', '/report/prescription-spot-check',
+     '/report/prescription-spot-check/index', 'Navigation.PrescriptionSpotCheck',
+     '310400000000000122', 25, TRUE, FALSE, FALSE, '', 'menu',
+     'AS-RPT-014 · PrescriptionSpotCheckReportAppService', NULL,
+     TIMESTAMP '2026-09-09 00:00:00+00', TIMESTAMP '2026-09-09 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('890030000000000042', 'Navigation.PrescriptionSpotCheck', 'R', '1', NULL,
+     TIMESTAMP '2026-09-09 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-09-09 00:00:00+00';
+
+
+-- V30 terminology only (column already in V5)
+
+INSERT INTO "ter_code_system" (
+    "id", "name", "title", "description", "version", "status", "tenant_id",
+    "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by"
+)
+VALUES (
+    '900013', 'surplus_retention_batch_code', '结余留用批次号',
+    '药典结余留用批次号下拉（DM-MED-001）',
+    '1.0', '2', '1',
+    '2026-09-10 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL
+)
+ON CONFLICT ("name") DO UPDATE SET
+    title = EXCLUDED.title,
+    description = EXCLUDED.description,
+    status = EXCLUDED.status,
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = EXCLUDED.created_at;
+
+-- 概念挂到「按 name 解析到的」编码体系主键，避免 ON CONFLICT 后 id 不一致导致空下拉
+INSERT INTO "ter_concept" (
+    "id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order",
+    "is_active", "css_class", "list_class", "is_default", "tenant_id",
+    "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by"
+)
+SELECT v.id, cs.id, v.code, v.display, NULL, NULL, v.sort_order, true,
+       NULL, 'default', NULL, '1',
+       TIMESTAMP '2026-09-10 00:00:00+00', NULL, '1', '1', false, NULL, NULL
+FROM "ter_code_system" cs
+CROSS JOIN (
+    VALUES
+        ('900013001'::bigint, '第九批', '第九批', 1),
+        ('900013002'::bigint, '第六批', '第六批', 2),
+        ('900013003'::bigint, '第七批', '第七批', 3),
+        ('900013004'::bigint, '第十批', '第十批', 4),
+        ('900013005'::bigint, '第十一批', '第十一批', 5),
+        ('900013006'::bigint, '广东联盟常见病慢性病', '广东联盟常见病慢性病', 6),
+        ('900013007'::bigint, '国家组织接续采购(1-8批)', '国家组织接续采购(1-8批)', 7),
+        ('900013008'::bigint, '京津冀"3+N"', '京津冀"3+N"', 8),
+        ('900013009'::bigint, '全国中成药联盟第三批和首批扩围接续', '全国中成药联盟第三批和首批扩围接续', 9),
+        ('900013010'::bigint, '省际联盟金莲花胶囊等中成药', '省际联盟金莲花胶囊等中成药', 10),
+        ('900013011'::bigint, '十六省(区、兵团)联盟(河南)', '十六省(区、兵团)联盟(河南)', 11),
+        ('900013012'::bigint, '十六省(市、区)联盟(江西)', '十六省(市、区)联盟(江西)', 12),
+        ('900013013'::bigint, '双氯芬酸等药品(广东联盟)', '双氯芬酸等药品(广东联盟)', 13),
+        ('900013014'::bigint, '易短缺和急抢救', '易短缺和急抢救', 14)
+) AS v(id, code, display, sort_order)
+WHERE cs.name = 'surplus_retention_batch_code'
+ON CONFLICT ("id") DO UPDATE SET
+    code_system_id = EXCLUDED.code_system_id,
+    code = EXCLUDED.code,
+    display = EXCLUDED.display,
+    sort_order = EXCLUDED.sort_order,
+    is_active = TRUE,
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL;
+
+
+-- from V31__menu_surplus_retention_report.sql
+
+-- AS-RPT-015 药品结余留用：报表中心菜单 + Navigation 权限（幂等）。
+-- parent: ReportCenterRoot 310400000000000122
+-- 注：V30 已被药典结余留用批次号占用，本脚本使用 V31。
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('890020000000000033', 'Navigation.SurplusRetentionReport', '药品结余留用', 'ReportCenter',
+     '菜单入口: SurplusRetentionReport — 药品结余留用报表（AS-RPT-015）', NULL,
+     TIMESTAMP '2026-09-10 00:00:00+00', TIMESTAMP '2026-09-10 00:00:00+00', 1, 1, FALSE, NULL, NULL)
+ON CONFLICT (id) DO UPDATE SET
+    name          = EXCLUDED.name,
+    display_name  = EXCLUDED.display_name,
+    parent_name   = EXCLUDED.parent_name,
+    description   = EXCLUDED.description,
+    is_deleted    = FALSE,
+    deleted_at    = NULL,
+    deleted_by    = NULL,
+    updated_at    = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES
+    ('890010000000000033', 'SurplusRetentionReport', 'SurplusRetentionReport', '药品结余留用',
+     'lucide:pill', '/report/surplus-retention',
+     '/report/surplus-retention/index', 'Navigation.SurplusRetentionReport',
+     '310400000000000122', 26, TRUE, FALSE, FALSE, '', 'menu',
+     'AS-RPT-015 · SurplusRetentionReportAppService', NULL,
+     TIMESTAMP '2026-09-10 00:00:00+00', TIMESTAMP '2026-09-10 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('890030000000000043', 'Navigation.SurplusRetentionReport', 'R', '1', NULL,
+     TIMESTAMP '2026-09-10 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-09-10 00:00:00+00';

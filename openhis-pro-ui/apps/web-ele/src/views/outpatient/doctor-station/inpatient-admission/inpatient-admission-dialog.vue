@@ -19,10 +19,7 @@ import {
   ElSelect,
 } from 'element-plus';
 
-import {
-  httpGetConditionDefinitionMetadata,
-  httpGetEncounterDiagnosis,
-} from '#/api/doctor-station/diagnosis.http';
+import { httpGetEncounterDiagnosis } from '#/api/doctor-station/diagnosis.http';
 import {
   httpCheckInpatientAdmissionExistsByAmbEncounter,
   httpRequestInpatientAdmission,
@@ -178,6 +175,7 @@ function resetFormState() {
   existingLine.inpatientEncounterId = undefined;
   existingLine.statusEnum = undefined;
   wardOptions.value = [];
+  westernDiagnosisOptions.value = [];
 }
 
 /** 加载住院科室与入院方式/类型术语下拉 */
@@ -196,21 +194,6 @@ async function loadOrganizationOptions() {
     value: String(item.value),
   }));
   admCondCodeOptions.value = normalizeTerminologyOptions(context.admCondCodeOptions);
-}
-
-/** 加载西医入院诊断目录 */
-async function loadWesternDiagnosisOptions() {
-  const res = await httpGetConditionDefinitionMetadata({
-    diagnosisKindCode: '1',
-    pageNo: 1,
-    pageSize: 500,
-  });
-  westernDiagnosisOptions.value = (res.records ?? [])
-    .filter((row) => row.conditionDefinitionId && row.conditionName)
-    .map((row) => ({
-      label: String(row.conditionName),
-      value: String(row.conditionDefinitionId),
-    }));
 }
 
 /** 按入院科室刷新入院病区 */
@@ -332,11 +315,7 @@ async function loadExistingAdmissionLine() {
 async function onDialogOpen() {
   resetFormState();
   try {
-    await Promise.all([
-      loadOrganizationOptions(),
-      loadWesternDiagnosisOptions(),
-      loadExistingAdmissionLine(),
-    ]);
+    await Promise.all([loadOrganizationOptions(), loadExistingAdmissionLine()]);
     if (existingLine.exists) {
       await loadExistingAdmissionContext();
     } else {

@@ -505,6 +505,23 @@ public class EncounterQueryService {
     }
 
     /**
+     * 住院医保费用明细等：按入院科室（{@code organization_id}）收窄 IMP 就诊主键。
+     *
+     * @param organizationId 入院科室主键
+     * @return 命中就诊主键；{@code organizationId} 为空时返回空列表
+     */
+    public List<Long> listInpatientImpEncounterIdsByOrganization(Long organizationId) {
+        if (organizationId == null) {
+            return Collections.emptyList();
+        }
+        Specification<Encounter> specification = (root, criteriaQuery, cb) -> cb.and(
+            cb.isFalse(root.get(FieldNameConstants.IS_DELETED)),
+            cb.equal(root.get(FieldNameConstants.CLASS_ENUM), EncounterClass.IMP.getCode()),
+            cb.equal(root.get(FieldNameConstants.ORGANIZATION_ID), organizationId));
+        return this.collectEncounterIds(this.encounterRepository.findAll(specification));
+    }
+
+    /**
      * 住院药房发药/退药队列：IMP 就诊主键，可选按病区收窄。
      *
      * <p>可见态含在院 {@code IN_PROGRESS}/{@code ON_HOLD} 与出院轨 {@code PENDING}/{@code COMPLETED}/{@code DISCHARGED}
@@ -1552,10 +1569,10 @@ public class EncounterQueryService {
     }
 
     /**
-     * 是否存在满足「历史号复诊」资格的前次门诊就诊（BR-REG-020）。
+     * 是否存在满足「复诊0元号」资格的前次门诊就诊（BR-REG-020）。
      *
      * <p>口径：同一患者、同一挂号科室；状态为已接诊（在诊/暂离/完诊）；{@code reception_time} 非空且
-     * {@code receptionTime <= asOf < receptionTime + 72h}；排除指定号源类型（历史号复诊自身）。</p>
+     * {@code receptionTime <= asOf < receptionTime + 72h}；排除指定号源类型（复诊0元号自身，防连环续挂）。</p>
      *
      * @param query 资格查询入参
      * @return 存在至少一条符合条件就诊时 {@code true}
@@ -2834,7 +2851,8 @@ public class EncounterQueryService {
      * 门诊挂号明细报表明细分页（AS-RPT-007；DM-ADM-002 §6.2.34）。
      *
      * <p>仅 AMB；时间轴 coalesce(startTime, createdAt)；费用性质由应用层 enrich。
-     * 仅本聚合 Encounter / Participant 仓储。医生/关键字收窄须预写 {@code resolvedEncounterIds}。</p>
+     * 仅本聚合 Encounter / Participant 仓储。医生/关键字收窄须预写 {@code resolvedEncounterIds}；
+     * 可选 {@code statusEnum} 单值收窄就诊状态。</p>
      *
      * @param query 分页与筛选
      * @return 明细分页；挂号时间倒序
@@ -2875,7 +2893,7 @@ public class EncounterQueryService {
     /**
      * 门诊挂号明细报表明细页脚挂/退统计（AS-RPT-007；对齐门诊挂号当日统计口径）。
      *
-     * <p>与明细分页同 AMB/业务日/科室/resolvedEncounterIds 过滤；
+     * <p>与明细分页同 AMB/业务日/科室/resolvedEncounterIds/statusEnum 过滤；
      * 挂号排除 {@code PLANNED}/{@code ENTERED_IN_ERROR}；已退仅 {@code CANCELLED}；
      * 有效 = 挂号 − 已退（下限 0）。仅本聚合 Encounter 仓储。</p>
      *
@@ -2997,7 +3015,8 @@ public class EncounterQueryService {
     /**
      * 工作量挂号医生筛候选：按类别 / 挂号科室 / 业务日窗列出就诊主键（对齐 AS-RPT-007 时间轴）。
      *
-     * <p>仅本聚合 Encounter 仓储；供应用层再叠 {@link #filterEncounterIdsByActiveRegistrationDoctor}。</p>
+     * <p>仅本聚合 Encounter 仓储；供应用层再叠 {@link #filterEncounterIdsByActiveRegistrationDoctor}。
+     * 可选 {@code statusEnum} 单值收窄，避免接诊医生筛先拉全状态候选再丢弃。</p>
      *
      * @param encounterClassCode 就诊类别存储码（AMB / IMP）
      * @param organizationIds    挂号科室集合
@@ -3010,6 +3029,27 @@ public class EncounterQueryService {
         Collection<Long> organizationIds,
         LocalDateTime businessTimeFrom,
         LocalDateTime businessTimeTo) {
+        return this.listEncounterIdsForRegistrationBusinessWindow(
+            encounterClassCode, organizationIds, businessTimeFrom, businessTimeTo, null);
+    }
+
+    /**
+     * 同 {@link #listEncounterIdsForRegistrationBusinessWindow(String, Collection, LocalDateTime, LocalDateTime)}，
+     * 并可选按就诊状态单值收窄。
+     *
+     * @param encounterClassCode 就诊类别存储码（AMB / IMP）
+     * @param organizationIds    挂号科室集合
+     * @param businessTimeFrom   业务窗起（含）
+     * @param businessTimeTo     业务窗止（含）
+     * @param statusEnum         就诊状态 code；空不按状态收窄
+     * @return 候选就诊主键；参数无效时返回空列表
+     */
+    public List<Long> listEncounterIdsForRegistrationBusinessWindow(
+        String encounterClassCode,
+        Collection<Long> organizationIds,
+        LocalDateTime businessTimeFrom,
+        LocalDateTime businessTimeTo,
+        String statusEnum) {
         // Gate：类别与科室为空无法划定候选
         if (StringUtils.isEmpty(encounterClassCode)
             || organizationIds == null
@@ -3020,6 +3060,12 @@ public class EncounterQueryService {
         }
         Specification<Encounter> specification = this.buildPractitionerWorkloadRegistrationSpecification(
             encounterClassCode, organizationIds, businessTimeFrom, businessTimeTo, null);
+        String trimmedStatus = StringUtils.trimToNull(statusEnum);
+        // 状态单值：与报表明细规约同 equal，收窄医生筛候选体积
+        if (trimmedStatus != null) {
+            specification = specification.and((root, criteriaQuery, cb) ->
+                cb.equal(root.get(FieldNameConstants.STATUS_ENUM), trimmedStatus));
+        }
         List<Long> encounterIds = new ArrayList<>();
         for (Encounter encounter : encounterRepository.findAll(specification)) {
             if (encounter != null && encounter.getId() != null) {
@@ -3131,9 +3177,9 @@ public class EncounterQueryService {
     }
 
     /**
-     * 构建门诊挂号报表规约（AMB + 时间窗 + 科室/就诊 scope）。
+     * 构建门诊挂号报表规约（AMB + 时间窗 + 科室/就诊 scope + 可选状态）。
      *
-     * @param query 筛选；医生收窄须已写入 resolvedEncounterIds
+     * @param query 筛选；医生收窄须已写入 resolvedEncounterIds；statusEnum 空则不按状态收窄
      * @return JPA 规约
      */
     private Specification<Encounter> buildOutpatientRegistrationReportSpecification(
@@ -3160,6 +3206,11 @@ public class EncounterQueryService {
             }
             if (query.getResolvedEncounterIds() != null) {
                 predicates.add(root.get(FieldNameConstants.ID).in(query.getResolvedEncounterIds()));
+            }
+            // 就诊状态单值筛选（AS-RPT-007 类型/状态下拉；空不收窄）
+            String statusEnum = StringUtils.trimToNull(query.getStatusEnum());
+            if (statusEnum != null) {
+                predicates.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), statusEnum));
             }
             return cb.and(predicates.toArray(new Predicate[0]));
         };

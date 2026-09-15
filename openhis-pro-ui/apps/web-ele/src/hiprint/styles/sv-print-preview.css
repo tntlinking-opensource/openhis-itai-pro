@@ -38,6 +38,28 @@
   gap: 12px;
 }
 
+.hiprint-preview-dialog .preview-page-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  max-width: min(720px, 58vw);
+}
+
+.hiprint-preview-dialog .preview-page-tools-label {
+  flex: 0 0 auto;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--el-text-color-regular);
+}
+
+.hiprint-preview-dialog .preview-page-checks {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+
 .hiprint-preview-dialog .preview-dialog-title {
   min-width: 0;
   font-size: 16px;
@@ -46,11 +68,70 @@
   color: var(--el-text-color-primary);
 }
 
+.hiprint-preview-dialog .preview-body {
+  display: flex;
+  align-items: stretch;
+  max-height: calc(94vh - 64px);
+}
+
 .hiprint-preview-dialog .preview-wrap {
-  max-height: calc(82vh - 72px);
+  flex: 1 1 0;
+  min-width: 0;
+  max-height: calc(94vh - 64px);
   overflow: auto;
   background:
     radial-gradient(ellipse at top, rgb(255 255 255 / 35%), transparent 52%), var(--el-fill-color);
+}
+
+.hiprint-preview-dialog .preview-body .preview-wrap {
+  max-height: none;
+}
+
+.hiprint-preview-dialog .preview-paper-pane {
+  display: flex;
+  flex: 0 0 320px;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 16px 16px;
+  overflow: auto;
+  background: var(--el-bg-color);
+  border-left: 1px solid var(--el-border-color-lighter);
+}
+
+.hiprint-preview-dialog .preview-paper-pane-label {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--el-text-color-regular);
+}
+
+.hiprint-preview-dialog .preview-paper-pane-hint {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--el-text-color-regular);
+}
+
+.hiprint-preview-dialog .preview-paper-pane-select,
+.hiprint-preview-dialog .preview-paper-pane-select.el-select {
+  width: 100%;
+}
+
+.hiprint-preview-dialog .preview-paper-pane .inv-paper-cards {
+  grid-template-columns: 1fr;
+}
+
+.hiprint-preview-dialog .preview-paper-pane .inv-paper-spec-block {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.hiprint-preview-dialog .preview-paper-pane .inv-paper-switch {
+  width: 100%;
+}
+
+.hiprint-preview-dialog .preview-paper-pane .inv-paper-switch-item {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .preview-wrap .preview-content {

@@ -9,6 +9,7 @@ import { useAccess } from '@vben/access';
 import { ElButton, ElMessage } from 'element-plus';
 
 import { getCashierQrApi, getIssueStatusApi } from '#/api/einvoice-boss/cashier';
+import { isEinvoiceUiEnabled } from '#/utils/project-optional-modules';
 
 import EinvoiceQrPanel from './EinvoiceQrPanel.vue';
 
@@ -21,8 +22,9 @@ const POLL_TIMEOUT_MS = 120_000;
 
 const { hasAccessByCodes } = useAccess();
 const router = useRouter();
+const einvoiceUiEnabled = isEinvoiceUiEnabled();
 
-const canView = computed(() => hasAccessByCodes(['einvoice-boss.cashier.qr']));
+const canView = computed(() => einvoiceUiEnabled && hasAccessByCodes(['einvoice-boss.cashier.qr']));
 const status = ref<BossIssueStatusDto | null>(null);
 const polling = ref(false);
 const pollTimedOut = ref(false);

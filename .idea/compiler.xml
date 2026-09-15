@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="CompilerConfiguration">
+    <annotationProcessing>
+      <profile name="Annotation profile for OpenHIS All" enabled="true">
+        <sourceOutputDir name="target/generated-sources/annotations" />
+        <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
+        <outputRelativeToContentRoot value="true" />
+        <processorPath useClasspath="false">
+          <entry name="$MAVEN_REPOSITORY$/org/projectlombok/lombok/1.18.30/lombok-1.18.30.jar" />
+        </processorPath>
+        <module name="module-bpc-bridge" />
+        <module name="module-campus-bridge" />
+        <module name="module-elep-jilin-domain" />
+        <module name="module-campus-domain" />
+        <module name="whale-setting" />
+        <module name="module-elep-jilin-bridge" />
+        <module name="whale-audit" />
+        <module name="health-domain" />
+        <module name="whale-runtime" />
+        <module name="module-einv-boss-gateway" />
+        <module name="module-booking-application" />
+        <module name="module-chs-jilin-gateway" />
+        <module name="health-infrastructure" />
+        <module name="module-booking-bridge" />
+        <module name="module-booking-starter" />
+        <module name="module-booking-domain" />
+        <module name="module-chs-jilin-domain" />
+        <module name="module-campus-starter" />
+        <module name="module-wi-jilin-domain" />
+        <module name="module-bpc-gateway" />
+        <module name="module-bpc-starter" />
+        <module name="module-wi-jilin-bridge" />
+        <module name="module-chs-jilin-starter" />
+        <module name="health-domain-shared" />
+        <module name="whale-core" />
+        <module name="module-emr-application" />
+        <module name="module-einv-boss-application" />
+        <module name="module-emr-domain" />
+        <module name="module-emr-bridge" />
+        <module name="health-starter" />
+        <module name="module-chs-jilin-host" />
+        <module name="module-einv-boss-host" />
+        <module name="health-app" />
+        <module name="module-wi-jilin-gateway" />
+        <module name="module-chs-jilin-application" />
+        <module name="module-wi-jilin-starter" />
+        <module name="whale-permission" />
+        <module name="whale-web" />
+        <module name="module-elep-jilin-host" />
+        <module name="module-einv-boss-domain" />
+        <module name="module-einv-boss-bridge" />
+        <module name="module-elep-jilin-gateway" />
+        <module name="module-elep-jilin-starter" />
+        <module name="module-emr-starter" />
+        <module name="module-chs-jilin-bridge" />
+        <module name="whale-menu" />
+        <module name="health-application" />
+        <module name="whale-identity" />
+        <module name="module-bpc-application" />
+        <module name="module-campus-application" />
+        <module name="whale-job" />
+        <module name="module-einv-boss-starter" />
+        <module name="module-elep-jilin-application" />
+        <module name="module-bpc-domain" />
+        <module name="whale-tenant" />
+        <module name="module-wi-jilin-application" />
+      </profile>
+    </annotationProcessing>
+  </component>
+  <component name="JavacSettings">
+    <option name="ADDITIONAL_OPTIONS_OVERRIDE">
+      <module name="health-app" options="-parameters" />
+      <module name="health-application" options="-parameters" />
+      <module name="health-domain" options="-parameters" />
+      <module name="health-domain-shared" options="-parameters" />
+      <module name="health-infrastructure" options="-parameters" />
+      <module name="health-starter" options="-parameters" />
+      <module name="module-booking-application" options="-parameters" />
+      <module name="module-booking-bridge" options="-parameters" />
+      <module name="module-booking-domain" options="-parameters" />
+      <module name="module-booking-starter" options="-parameters" />
+      <module name="module-bpc-application" options="-parameters" />
+      <module name="module-bpc-bridge" options="-parameters" />
+      <module name="module-bpc-domain" options="-parameters" />
+      <module name="module-bpc-gateway" options="-parameters" />
+      <module name="module-bpc-starter" options="-parameters" />
+      <module name="module-campus-application" options="-parameters" />
+      <module name="module-campus-bridge" options="-parameters" />
+      <module name="module-campus-domain" options="-parameters" />
+      <module name="module-campus-starter" options="-parameters" />
+      <module name="module-chs-jilin-application" options="-parameters" />
+      <module name="module-chs-jilin-bridge" options="-parameters" />
+      <module name="module-chs-jilin-domain" options="-parameters" />
+      <module name="module-chs-jilin-gateway" options="-parameters" />
+      <module name="module-chs-jilin-host" options="-parameters" />
+      <module name="module-chs-jilin-starter" options="-parameters" />
+      <module name="module-einv-boss-application" options="-parameters" />
+      <module name="module-einv-boss-bridge" options="-parameters" />
+      <module name="module-einv-boss-domain" options="-parameters" />
+      <module name="module-einv-boss-gateway" options="-parameters" />
+      <module name="module-einv-boss-host" options="-parameters" />
+      <module name="module-einv-boss-starter" options="-parameters" />
+      <module name="module-elep-jilin-application" options="-parameters" />
+      <module name="module-elep-jilin-bridge" options="-parameters" />
+      <module name="module-elep-jilin-domain" options="-parameters" />
+      <module name="module-elep-jilin-gateway" options="-parameters" />
+      <module name="module-elep-jilin-host" options="-parameters" />
+      <module name="module-elep-jilin-starter" options="-parameters" />
+      <module name="module-emr-application" options="-parameters" />
+      <module name="module-emr-bridge" options="-parameters" />
+      <module name="module-emr-domain" options="-parameters" />
+      <module name="module-emr-starter" options="-parameters" />
+      <module name="module-wi-jilin-application" options="-parameters" />
+      <module name="module-wi-jilin-bridge" options="-parameters" />
+      <module name="module-wi-jilin-domain" options="-parameters" />
+      <module name="module-wi-jilin-gateway" options="-parameters" />
+      <module name="module-wi-jilin-starter" options="-parameters" />
+      <module name="whale-audit" options="-parameters" />
+      <module name="whale-core" options="-parameters" />
+      <module name="whale-identity" options="-parameters" />
+      <module name="whale-job" options="-parameters" />
+      <module name="whale-menu" options="-parameters" />
+      <module name="whale-module-booking" options="-parameters" />
+      <module name="whale-module-chs-jilin" options="-parameters" />
+      <module name="whale-module-elep-jilin" options="-parameters" />
+      <module name="whale-module-work-injury" options="-parameters" />
+      <module name="whale-permission" options="-parameters" />
+      <module name="whale-runtime" options="-parameters" />
+      <module name="whale-setting" options="-parameters" />
+      <module name="whale-tenant" options="-parameters" />
+      <module name="whale-web" options="-parameters" />
+    </option>
+  </component>
+</project>

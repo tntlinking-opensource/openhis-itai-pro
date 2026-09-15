@@ -33,6 +33,10 @@ export interface HomepageListRow {
   medcasno: string;
   /** 证件号 */
   certno?: string;
+  /** 医保人员编号 psn_no */
+  psnNo?: string;
+  /** 医保结算 ID setl_id */
+  setlId?: string;
   /** 科室（入院科别名） */
   admDeptName?: string;
   /** 入院科室主键（临床同科室门禁） */

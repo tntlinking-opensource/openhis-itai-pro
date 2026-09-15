@@ -69,7 +69,6 @@ export interface PageTraceNumberReportResponse {
   totalCount?: number;
   pageNo?: number;
   pageSize?: number;
-  records?: TraceNumberReportRowDto[];
   content?: TraceNumberReportRowDto[];
   prefillTraceNo?: string;
   openDetail?: boolean;
@@ -132,7 +131,6 @@ export interface TraceNumberRecordRowDto {
 
 export interface ListTraceRecordsResponse {
   traceNo?: string;
-  records?: TraceNumberRecordRowDto[];
 }
 
 /** 页面初始化：查询范围、在院态、本库态与库位下拉。 */
@@ -152,7 +150,7 @@ export async function pageTraceNumberReportApi(body: PageTraceNumberReportReques
   const { content, totalCount } = parsePagedRowsFromApiData<TraceNumberReportRowDto>(res);
   return {
     ...res,
-    records: content.length > 0 ? content : (res.records ?? []),
+    records: content,
     total: totalCount || Number(res.total ?? res.totalCount ?? 0),
   };
 }

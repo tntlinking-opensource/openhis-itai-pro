@@ -12,7 +12,7 @@ package com.openhis.whale.booking.domain.share;
  */
 public final class RegistrationWalkInSlotModeConstants {
 
-    /** 纯现场语义标识（历史兼容）；不驱动号源下拉求交。 */
+    /** 纯现场语义标识；不驱动号源下拉求交。 */
     public static final String WALK_IN_NO_SLOT = "WALK_IN_NO_SLOT";
 
     /** 先约后挂（预约转挂号；P1 菜单未开放时由院点策略显式配置）。 */

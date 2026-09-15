@@ -209,7 +209,7 @@ onMounted(async () => {
         <ElTableColumn label="加项已收" width="104" align="right">
           <template #default="{ row }">{{ formatAmount(row.addOnSettledAmount) }}</template>
         </ElTableColumn>
-        <ElTableColumn label="批次" width="72" align="center">
+        <ElTableColumn label="分组" width="72" align="center">
           <template #default="{ row }">{{ row.batchCount ?? 0 }}</template>
         </ElTableColumn>
         <ElTableColumn label="操作" width="148" fixed="right">
@@ -288,9 +288,9 @@ onMounted(async () => {
 
           <div class="detail-section">
             <div class="detail-section__head">
-              <span class="detail-section__title">批次明细</span>
+              <span class="detail-section__title">分组明细</span>
               <span class="detail-section__hint"
-                >共 {{ detailRow.batches?.length ?? 0 }} 个批次</span
+                >共 {{ detailRow.batches?.length ?? 0 }} 个分组；套餐统计按名册选定套餐</span
               >
             </div>
             <ElTable
@@ -299,10 +299,37 @@ onMounted(async () => {
               class="detail-batch-table"
               max-height="calc(100vh - 360px)"
             >
-              <ElTableColumn prop="batchName" label="批次" min-width="140" show-overflow-tooltip />
-              <ElTableColumn label="套餐" min-width="220" show-overflow-tooltip>
+              <ElTableColumn prop="batchName" label="分组" min-width="140" show-overflow-tooltip />
+              <ElTableColumn label="可选套餐" width="88" align="center">
                 <template #default="{ row }">
-                  {{ packageLabel(String(row.packageActivityId ?? ''), packages) }}
+                  {{ row.optionalPackageActivityIds?.length ?? (row.packageActivityId ? 1 : 0) }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn label="未选定" width="80" align="center">
+                <template #default="{ row }">{{ row.unselectedCount ?? 0 }}</template>
+              </ElTableColumn>
+              <ElTableColumn label="选定套餐分布" min-width="260">
+                <template #default="{ row }">
+                  <div
+                    v-if="(row.selectedPackages?.length ?? 0) === 0"
+                    class="text-xs text-[var(--el-text-color-secondary)]"
+                  >
+                    暂无选定记录
+                  </div>
+                  <div v-else class="selected-package-tags">
+                    <span
+                      v-for="pkg in row.selectedPackages ?? []"
+                      :key="String(pkg.packageActivityId)"
+                      class="selected-package-tag"
+                    >
+                      {{ packageLabel(String(pkg.packageActivityId ?? ''), packages) }}
+                      <span class="selected-package-tag__meta">
+                        {{ pkg.rosterCount ?? 0 }}人 / 建单{{ pkg.enrolledCount ?? 0 }} / 到检{{
+                          pkg.arrivedCount ?? 0
+                        }}
+                      </span>
+                    </span>
+                  </div>
                 </template>
               </ElTableColumn>
               <ElTableColumn prop="bookingDate" label="预约日" width="120" />
@@ -491,6 +518,23 @@ onMounted(async () => {
 
 .detail-batch-table {
   width: 100%;
+}
+
+.selected-package-tags {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.selected-package-tag {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.selected-package-tag__meta {
+  margin-left: 6px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 
 @media (max-width: 1200px) {

@@ -11,6 +11,7 @@ import type {
 } from './admission-diagnosis.types';
 import { createEmptyAdmissionDiagnosisFormState } from './admission-diagnosis.types';
 
+import { httpGetConditionDefinitionMetadata } from '#/api/doctor-station/diagnosis.http';
 import { httpPageTcmConditionDefinitionCatalog } from '#/api/doctor-station/tcm.http';
 import {
   formatTcmDiagnosisDisplayName,
@@ -18,12 +19,17 @@ import {
   resolveTcmCatalogRole,
   type TcmCatalogKind,
 } from '#/components/doctor-station/diagnosis/services/tcm-diagnosis-display';
+import { useRequest } from '#/hooks/use-request';
 
 defineOptions({ name: 'AdmissionDiagnosisField' });
+
+/** 西医/中医目录远程下拉每页条数（目录总量远大于此，须走关键字检索而非一次灌全） */
+const CATALOG_REMOTE_PAGE_SIZE = 50;
 
 const props = withDefaults(
   defineProps<{
     modelValue: AdmissionDiagnosisFormState;
+    /** 父级预填的西医选项（仅用于当前选中项回显，不再作为全量目录） */
     westernOptions?: OptionDto[];
     disabled?: boolean;
     readonly?: boolean;
@@ -45,15 +51,39 @@ const tcmDiseaseOptions = ref<Array<{ label: string; value: string }>>([]);
 const tcmSyndromeOptions = ref<Array<{ label: string; value: string }>>([]);
 const tcmDiseaseLoading = ref(false);
 const tcmSyndromeLoading = ref(false);
-
-const westernSelectOptions = computed(() =>
-  (props.westernOptions ?? []).map((item) => ({
-    label: item.label,
-    value: String(item.value),
-  })),
-);
+/** 西医目录远程检索结果（不含父级预填，避免把第一页误当全量） */
+const westernRemoteOptions = ref<Array<{ label: string; value: string }>>([]);
+/** 当前已选西医项缓存，检索替换列表后仍能回显 */
+const westernPickedOption = ref<{ label: string; value: string } | null>(null);
+/** 丢弃过期的西医远程检索响应 */
+const westernSearchSeq = ref(0);
 
 const isTcmMode = computed(() => props.modelValue.medicineType === 'tcm');
+
+/** 西医下拉：远程页 + 已选项 + 父级预填（仅补当前选中 ID 的 label） */
+const westernSelectOptions = computed(() => {
+  const byValue = new Map<string, { label: string; value: string }>();
+  // 远程检索页作为当前可见候选，不把父级全量第一页灌进来
+  for (const item of westernRemoteOptions.value) {
+    byValue.set(item.value, item);
+  }
+  const picked = westernPickedOption.value;
+  if (picked && !byValue.has(picked.value)) {
+    byValue.set(picked.value, picked);
+  }
+  const selectedId = props.modelValue.westernDefinitionId.trim();
+  if (selectedId && !byValue.has(selectedId)) {
+    // 仅补当前选中项的展示名，避免分页截断后 ElSelect 只显示 ID
+    const fromParent = (props.westernOptions ?? []).find(
+      (item) => String(item.value) === selectedId,
+    );
+    const label = String(fromParent?.label ?? '').trim();
+    if (label) {
+      byValue.set(selectedId, { label, value: selectedId });
+    }
+  }
+  return [...byValue.values()];
+});
 
 const readonlyText = computed(() => props.modelValue.readonlyDisplay?.trim() || '—');
 
@@ -69,9 +99,19 @@ const showTcmSummary = computed(
     Boolean(tcmSummaryText.value),
 );
 
+const { run: runWesternCatalogPage, loading: westernLoading } = useRequest(
+  httpGetConditionDefinitionMetadata,
+  { manual: true, showErrorMessage: false },
+);
+
 /** 局部更新表单状态并同步 v-model */
 function patchModelValue(patch: Partial<AdmissionDiagnosisFormState>) {
   emit('update:modelValue', { ...props.modelValue, ...patch });
+}
+
+/** 远程检索西医诊断目录 */
+function handleWesternRemoteSearch(keyword: string) {
+  void loadWesternCatalogOptions(keyword);
 }
 
 /** 远程检索中医疾病目录 */
@@ -89,7 +129,7 @@ function handleMedicineTypeRadioChange(val: string | number | boolean | undefine
   handleMedicineTypeChange(String(val) as AdmissionDiagnosisMedicineType);
 }
 
-/** 切换中西医时清空另一侧候选 */
+/** 切换中西医时清空另一侧候选（目录由 medicineType watch 重新拉取） */
 function handleMedicineTypeChange(next: AdmissionDiagnosisMedicineType) {
   patchModelValue({
     ...createEmptyAdmissionDiagnosisFormState(),
@@ -97,9 +137,38 @@ function handleMedicineTypeChange(next: AdmissionDiagnosisMedicineType) {
     diagnosisDescription: props.modelValue.diagnosisDescription,
     readonlyDisplay: props.modelValue.readonlyDisplay,
   });
-  if (next === 'tcm') {
-    void loadTcmCatalogOptions('disease', '');
-    void loadTcmCatalogOptions('syndrome', '');
+  westernPickedOption.value = null;
+  westernRemoteOptions.value = [];
+}
+
+/** 拉取西医诊断目录（关键字命中名称/编码/拼音/五笔；仅第一页，避免把分页窗口当全量） */
+async function loadWesternCatalogOptions(keyword: string) {
+  if (props.readonly) {
+    return;
+  }
+  const seq = westernSearchSeq.value + 1;
+  westernSearchSeq.value = seq;
+  try {
+    const res = await runWesternCatalogPage({
+      diagnosisKindCode: '1',
+      keyword: keyword.trim() || undefined,
+      pageNo: 1,
+      pageSize: CATALOG_REMOTE_PAGE_SIZE,
+    });
+    if (seq !== westernSearchSeq.value) {
+      return;
+    }
+    // 只保留有主键和名称的目录行，作为当前关键字下的可见候选
+    westernRemoteOptions.value = (res.content ?? [])
+      .filter((row) => row.conditionDefinitionId && row.conditionName)
+      .map((row) => ({
+        label: String(row.conditionName),
+        value: String(row.conditionDefinitionId),
+      }));
+  } catch {
+    if (seq === westernSearchSeq.value) {
+      westernRemoteOptions.value = [];
+    }
   }
 }
 
@@ -113,7 +182,7 @@ async function loadTcmCatalogOptions(catalogKind: TcmCatalogKind, keyword: strin
       catalogRole: resolveTcmCatalogRole(catalogKind),
       keyword: keyword.trim() || undefined,
       pageNo: 1,
-      pageSize: 50,
+      pageSize: CATALOG_REMOTE_PAGE_SIZE,
     });
     const loaded = (res.rows ?? [])
       .map(mapTcmCatalogRowToConditionDefinitionRow)
@@ -138,6 +207,17 @@ async function loadTcmCatalogOptions(catalogKind: TcmCatalogKind, keyword: strin
   } finally {
     loadingRef.value = false;
   }
+}
+
+/** 选中西医诊断并缓存选项，便于后续远程检索仍回显 */
+function handleWesternChange(value: string) {
+  const selectedId = value.trim();
+  const hit = westernSelectOptions.value.find((item) => item.value === selectedId);
+  westernPickedOption.value = hit ? { label: hit.label, value: hit.value } : null;
+  patchModelValue({
+    westernDefinitionId: selectedId,
+    encounterDiagnosisId: undefined,
+  });
 }
 
 /** 选中中医疾病后清空证候并刷新证候目录 */
@@ -198,10 +278,16 @@ function syncTcmPrefillOptions(state: AdmissionDiagnosisFormState) {
 watch(
   () => props.modelValue.medicineType,
   (type) => {
-    if (type === 'tcm' && !props.readonly) {
+    if (props.readonly) {
+      return;
+    }
+    if (type === 'tcm') {
       syncTcmPrefillOptions(props.modelValue);
       void loadTcmCatalogOptions('disease', '');
+      void loadTcmCatalogOptions('syndrome', '');
+      return;
     }
+    void loadWesternCatalogOptions('');
   },
   { immediate: true },
 );
@@ -254,17 +340,15 @@ watch(
         <ElSelect
           :model-value="modelValue.westernDefinitionId"
           filterable
+          remote
+          reserve-keyword
           clearable
-          placeholder="请选择西医入院诊断"
+          placeholder="输入名称、编码或拼音检索"
           class="admission-diagnosis-field__control"
           :disabled="disabled"
-          @update:model-value="
-            (val) =>
-              patchModelValue({
-                westernDefinitionId: String(val ?? ''),
-                encounterDiagnosisId: undefined,
-              })
-          "
+          :loading="westernLoading"
+          :remote-method="handleWesternRemoteSearch"
+          @update:model-value="(val) => handleWesternChange(String(val ?? ''))"
         >
           <ElOption
             v-for="item in westernSelectOptions"

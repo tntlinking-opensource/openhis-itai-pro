@@ -9,7 +9,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openhis.health.application.basic.position.dto.*;
 import com.openhis.health.application.basic.position.mapper.PositionMapper;
 import com.openhis.health.application.basic.position.support.PositionPractitionerRoleWriteGate;
-import com.openhis.health.application.basic.position.support.PositionRoleApiCompat;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.session.CurrentOperatorResolver;
 import com.openhis.health.application.shared.validator.WhaleRoleResolver;
@@ -1639,9 +1638,9 @@ public class PositionAppService {
     }
 
     /**
-     * 分配命令入参归一化：解析并回填有效 platform roleId（兼容 roleCode 入参）。
+     * 分配命令入参归一化：校验有效 platform roleId。
      *
-     * @param cmd 分配命令（就地修改 items.roleId）
+     * @param cmd 分配命令（就地校验 items.roleId）
      * @throws ValidationException 角色为空或无效
      */
     private void normalizeAssignCommandItems(AssignPractitionerRoleCommand cmd) {
@@ -1649,8 +1648,9 @@ public class PositionAppService {
             if (item == null) {
                 continue;
             }
-            Long roleId = PositionRoleApiCompat.resolveRoleId(item.getRoleId(), item.getRoleCode(), whaleRoleResolver::findRoleIdByCode);
-            if (roleId == null) {
+            Long roleId = item.getRoleId();
+            // Gate：必须传平台角色主键，且须能解析到 whale_roles.code（禁止旧数值 roleCode）
+            if (roleId == null || whaleRoleResolver.findRoleCodeById(roleId) == null) {
                 throw new ValidationException("平台角色不能为空或无效");
             }
             item.setRoleId(roleId);

@@ -1,4 +1,6 @@
 import type {
+  CancelOutpatientRefundApplicationRequest,
+  CancelOutpatientRefundApplicationResponse,
   ListRefundableChargeLinesForEncounterRequest,
   ListRefundableChargeLinesForEncounterResponse,
   SubmitOutpatientRefundApplicationRequest,
@@ -11,7 +13,7 @@ import { publicRequestClient } from '#/api/request';
 
 const BASE = '/doctorStationRefundApplication';
 
-/** 按当前就诊加载可申请退费的收费行清单 */
+/** 按当前就诊加载可申请/可撤销退费的收费行清单 */
 export async function httpListRefundableChargeLinesForEncounter(
   body: ListRefundableChargeLinesForEncounterRequest,
 ): Promise<ListRefundableChargeLinesForEncounterResponse> {
@@ -37,6 +39,16 @@ export async function httpSubmitOutpatientRefundApplication(
 ): Promise<SubmitOutpatientRefundApplicationResponse> {
   return publicRequestClient.post<SubmitOutpatientRefundApplicationResponse>(
     `${BASE}/submitOutpatientRefundApplication`,
+    body,
+  );
+}
+
+/** 撤销门诊退费申请（整笔支付） */
+export async function httpCancelOutpatientRefundApplication(
+  body: CancelOutpatientRefundApplicationRequest,
+): Promise<CancelOutpatientRefundApplicationResponse> {
+  return publicRequestClient.post<CancelOutpatientRefundApplicationResponse>(
+    `${BASE}/cancelOutpatientRefundApplication`,
     body,
   );
 }

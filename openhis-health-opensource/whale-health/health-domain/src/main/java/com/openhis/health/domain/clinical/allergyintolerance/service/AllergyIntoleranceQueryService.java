@@ -12,6 +12,7 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import com.openhis.whale.core.application.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -19,11 +20,9 @@ import java.util.List;
 /**
  * 过敏不耐受读侧查询服务。
  *
- * <p>职责：按就诊加载过敏记录列表，以及按患者+就诊派生「是否有过敏史」类标记。</p>
+ * <p>职责：按就诊加载皮试记录；按患者加载过敏史列表与「有过敏 / 无已知过敏 / 未登记」标记。</p>
  *
- * <p>边界：只读；{@code encounterId}/{@code patientId} 缺失时返回空结果或 false 标记，不抛业务异常（读侧闭包）。</p>
- *
- * <p>聚合边界：仅本聚合 {@link AllergyIntoleranceRepository}。</p>
+ * <p>边界：只读；仅本聚合 {@link AllergyIntoleranceRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -31,7 +30,7 @@ public class AllergyIntoleranceQueryService {
     private final AllergyIntoleranceRepository repository;
 
     /**
-     * 按就诊查询过敏记录并映射为读模型。
+     * 按就诊查询过敏记录并映射为读模型（皮试列表用，含阴性）。
      *
      * @param encounterId 就诊标识；{@code null} 时返回空列表
      * @return 记录视图列表
@@ -49,6 +48,42 @@ public class AllergyIntoleranceQueryService {
             }
             models.add(this.toRecordModel(entity));
         }
+        return models;
+    }
+
+    /**
+     * 按患者加载过敏史可见记录：主诉、NKDA、阳性皮试。
+     *
+     * @param patientId 患者标识；{@code null} 时返回空列表
+     * @return 过敏史读模型，按记录时间倒序
+     */
+    public List<AllergyIntoleranceRecordQueryModel> listPatientAllergyHistory(Long patientId) {
+        List<AllergyIntoleranceRecordQueryModel> models = new ArrayList<>();
+        if (patientId == null) {
+            return models;
+        }
+        List<AllergyIntolerance> entities = repository.findByPatientId(patientId);
+        for (AllergyIntolerance entity : entities) {
+            if (entity == null || Boolean.TRUE.equals(entity.getIsDeleted())) {
+                continue;
+            }
+            if (!this.isHistoryVisible(entity)) {
+                continue;
+            }
+            models.add(this.toRecordModel(entity));
+        }
+        models.sort((left, right) -> {
+            if (left.getRecordedDate() == null && right.getRecordedDate() == null) {
+                return 0;
+            }
+            if (left.getRecordedDate() == null) {
+                return 1;
+            }
+            if (right.getRecordedDate() == null) {
+                return -1;
+            }
+            return right.getRecordedDate().compareTo(left.getRecordedDate());
+        });
         return models;
     }
 
@@ -89,33 +124,118 @@ public class AllergyIntoleranceQueryService {
         model.setVerificationStatusEnum(entity.getVerificationStatusEnum());
         model.setCriticalityEnum(entity.getCriticalityEnum());
         model.setSeverityEnum(entity.getSeverityEnum());
+        model.setTypeEnum(entity.getTypeEnum());
+        model.setCategoryCode(entity.getCategoryCode());
+        model.setCode(entity.getCode());
         model.setRecordedDate(entity.getRecordedDate());
         model.setDescription(entity.getDescription());
+        model.setNote(entity.getNote());
+        model.setOnsetDateTime(entity.getOnsetDateTime());
         model.setPractitionerId(entity.getPractitionerId());
         model.setCheckPractitionerId(entity.getCheckPractitionerId());
         return model;
     }
 
     /**
-     * 派生当前就诊下是否存在过敏史（记录条数大于 0）。
+     * 按患者派生过敏史标记与摘要（跨就诊）。
      *
      * @param patientId   患者标识
-     * @param encounterId 就诊标识
-     * @return 标记模型；主键缺失时 {@code historyFlag=false} 且 {@code recordCount=0}
+     * @param encounterId 就诊标识（仅回填读模型，不参与过滤）
+     * @return 标记模型；患者缺失时 {@code historyFlag=false} 且文案为未登记
      */
     public AllergyHistoryFlagQueryModel getAllergyHistoryFlag(Long patientId, Long encounterId) {
         AllergyHistoryFlagQueryModel model = new AllergyHistoryFlagQueryModel();
         model.setPatientId(patientId);
         model.setEncounterId(encounterId);
-        // 无法唯一定位患者+就诊时，不查库，避免展示误导性「有/无过敏」。
-        if (patientId == null || encounterId == null) {
+        if (patientId == null) {
             model.setHistoryFlag(Boolean.FALSE);
+            model.setNkdaFlag(Boolean.FALSE);
             model.setRecordCount(0L);
+            model.setSummaryText("未登记");
             return model;
         }
-        long count = repository.findByPatientIdAndEncounterId(patientId, encounterId).size();
-        model.setHistoryFlag(count > 0);
-        model.setRecordCount(count);
+        List<AllergyIntolerance> entities = repository.findByPatientId(patientId);
+        long activeCount = 0L;
+        boolean hasNkda = false;
+        List<String> allergenNames = new ArrayList<>();
+        for (AllergyIntolerance entity : entities) {
+            if (entity == null || Boolean.TRUE.equals(entity.getIsDeleted())) {
+                continue;
+            }
+            if (entity.isNkdaRecord()) {
+                hasNkda = true;
+                continue;
+            }
+            if (!entity.isActiveAllergen()) {
+                continue;
+            }
+            activeCount = activeCount + 1;
+            String name = entity.getDescription();
+            if (StringUtils.isEmpty(name)) {
+                continue;
+            }
+            allergenNames.add(name.trim());
+        }
+        model.setRecordCount(activeCount);
+        if (activeCount > 0) {
+            model.setHistoryFlag(Boolean.TRUE);
+            model.setNkdaFlag(Boolean.FALSE);
+            model.setSummaryText(this.joinAllergenNames(allergenNames));
+            return model;
+        }
+        model.setHistoryFlag(Boolean.FALSE);
+        if (hasNkda) {
+            model.setNkdaFlag(Boolean.TRUE);
+            model.setSummaryText("无");
+            return model;
+        }
+        model.setNkdaFlag(Boolean.FALSE);
+        model.setSummaryText("未登记");
         return model;
+    }
+
+    /**
+     * 过敏史列表是否展示该行：主诉、NKDA、阳性皮试。
+     *
+     * @param entity 聚合根
+     * @return 可见则 true
+     */
+    private boolean isHistoryVisible(AllergyIntolerance entity) {
+        // NKDA 声明要展示，便于护士看到「已确认无过敏」
+        if (entity.isNkdaRecord()) {
+            return true;
+        }
+        // 主诉行无论是否已停用都展示，便于追溯
+        if (entity.isDeclaredRecord()) {
+            return true;
+        }
+        // 皮试只把阳性带进过敏史，阴性留在皮试页
+        if (entity.isSkinTestRecord() && entity.isActiveAllergen()) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 将过敏原名称用顿号拼接；空列表返回空串。
+     *
+     * @param names 过敏原名称
+     * @return 摘要
+     */
+    private String joinAllergenNames(List<String> names) {
+        if (names == null || names.isEmpty()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (String name : names) {
+            if (StringUtils.isEmpty(name)) {
+                continue;
+            }
+            if (builder.length() > 0) {
+                builder.append("、");
+            }
+            builder.append(name);
+        }
+        return builder.toString();
     }
 }

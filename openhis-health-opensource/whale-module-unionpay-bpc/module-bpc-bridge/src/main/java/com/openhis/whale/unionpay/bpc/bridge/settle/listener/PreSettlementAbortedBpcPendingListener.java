@@ -16,6 +16,9 @@ import org.springframework.stereotype.Component;
 /**
  * 支付草稿作废后关闭同支付下银联 PENDING，避免 CANCELLED+PENDING 悬挂。
  *
+ * <p>仅收口 PENDING；已 SUCCESS 的消费单不在此退货——作废前须由
+ * {@code PaymentDraftHalfSuccessAbortGate} / 挂号半成功门禁拦截（BR-OPC-025）。</p>
+ *
  * <p>DomainEventPublisher 在 beforeCommit 同步发布；此处用 {@link EventListener} 同线程收口，保留租户上下文。</p>
  */
 @Slf4j

@@ -21,7 +21,7 @@ import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 const BASE = '/mrmsCaseRecordHomepage';
 
-/** 组装保存请求体（标量直传，其余仍进 extension） */
+/** 组装保存请求体（正式列标量直传；费用不提交） */
 function toSaveHomepageBody(params: SaveHomepageParams) {
   return {
     caseRecordId: params.caseRecordId ? preserveApiIdForRequest(params.caseRecordId) : undefined,
@@ -41,6 +41,11 @@ function toSaveHomepageBody(params: SaveHomepageParams) {
     conerRltsCode: params.conerRltsCode,
     conerAddr: params.conerAddr,
     trtTypeCode: params.trtTypeCode,
+    clinicalPathCode: params.clinicalPathCode,
+    tcmPrepCode: params.tcmPrepCode,
+    tcmDeviceCode: params.tcmDeviceCode,
+    tcmTechCode: params.tcmTechCode,
+    syndromeNurseCode: params.syndromeNurseCode,
     spgaNurscareDays: params.spgaNurscareDays,
     lv1NurscareDays: params.lv1NurscareDays,
     scdNurscareDays: params.scdNurscareDays,
@@ -68,7 +73,53 @@ function toSaveHomepageBody(params: SaveHomepageParams) {
     atddrName: params.atddrName,
     iptDrName: params.iptDrName,
     respNursName: params.respNursName,
-    extension: params.extension,
+    payWayCode: params.payWayCode,
+    healthCardNo: params.healthCardNo,
+    ageYear: params.ageYear,
+    ageMonth: params.ageMonth,
+    birplcCodes: params.birplcCodes,
+    birplcName: params.birplcName,
+    naplCodes: params.naplCodes,
+    naplName: params.naplName,
+    currAddrCodes: params.currAddrCodes,
+    currAddrDetail: params.currAddrDetail,
+    currAddrPoscode: params.currAddrPoscode,
+    resdAddrCodes: params.resdAddrCodes,
+    resdAddrDetail: params.resdAddrDetail,
+    resdAddrPoscode: params.resdAddrPoscode,
+    emprAddr: params.emprAddr,
+    emprTel: params.emprTel,
+    emprPoscode: params.emprPoscode,
+    admWard: params.admWard,
+    admBed: params.admBed,
+    dscgWard: params.dscgWard,
+    dscgBed: params.dscgBed,
+    drugAllergyCode: params.drugAllergyCode,
+    allergyDrugName: params.allergyDrugName,
+    pathologyNo: params.pathologyNo,
+    mainDiagCureCode: params.mainDiagCureCode,
+    rescueCount: params.rescueCount,
+    rescueSuccessCount: params.rescueSuccessCount,
+    clinicPathManageCode: params.clinicPathManageCode,
+    diagMatchOpDscg: params.diagMatchOpDscg,
+    diagMatchAdmDscg: params.diagMatchAdmDscg,
+    diagMatchPrePost: params.diagMatchPrePost,
+    diagMatchClinicPath: params.diagMatchClinicPath,
+    diagMatchRadioPath: params.diagMatchRadioPath,
+    autopsyCode: params.autopsyCode,
+    aboCode: params.aboCode,
+    rhCode: params.rhCode,
+    trainDrName: params.trainDrName,
+    intnDrName: params.intnDrName,
+    codrName: params.codrName,
+    medcasQltCode: params.medcasQltCode,
+    qltctrlDate: params.qltctrlDate,
+    qltctrlDrName: params.qltctrlDrName,
+    qltctrlNursName: params.qltctrlNursName,
+    acpMedinsName: params.acpMedinsName,
+    acpCommunityName: params.acpCommunityName,
+    rinp31Flag: params.rinp31Flag,
+    rinp31Purpose: params.rinp31Purpose,
     diagnoses: params.diagnoses,
     procedures: params.procedures,
   };
@@ -83,8 +134,8 @@ export async function queryCaseRecordPageApi(params: QueryCaseRecordParams) {
 }
 
 /** 按就诊查档（医生站） */
-export async function getCaseRecordByEncounterApi(encounterId: string) {
-  return publicRequestClient.post<CaseRecordDetailDto | null>(`${BASE}/getByEncounterId`, {
+export async function lookupByEncounterApi(encounterId: string) {
+  return publicRequestClient.post<CaseRecordDetailDto>(`${BASE}/lookupByEncounter`, {
     encounterId: preserveApiIdForRequest(encounterId),
   });
 }
@@ -95,12 +146,6 @@ export async function loadHomepagePageApi(params: { caseRecordId?: string; encou
     caseRecordId: params.caseRecordId ? preserveApiIdForRequest(params.caseRecordId) : undefined,
     encounterId: params.encounterId ? preserveApiIdForRequest(params.encounterId) : undefined,
   });
-}
-
-/** @deprecated 使用 loadHomepagePageApi */
-export async function getHomepageApi(caseRecordId: string) {
-  const page = await loadHomepagePageApi({ caseRecordId });
-  return page.homepage!;
 }
 
 export async function saveHomepageApi(params: SaveHomepageParams) {
@@ -140,22 +185,4 @@ export async function generateHomepagePdfApi(caseRecordId: string) {
   });
 }
 
-/** @deprecated 使用 generateHomepagePdfApi */
-export async function generateHomepagePdfViaLookupApi(caseRecordId: string) {
-  return generateHomepagePdfApi(caseRecordId);
-}
-
-/** @deprecated 使用 receiveHomepageApi */
-export async function receiveCaseRecordApi(params: { caseRecordId: string }) {
-  return receiveHomepageApi(params.caseRecordId);
-}
-
-/** @deprecated 使用 returnHomepageApi */
-export async function returnCaseRecordApi(params: { caseRecordId: string; reason?: string }) {
-  return returnHomepageApi({
-    caseRecordId: params.caseRecordId,
-    returnReason: params.reason ?? '',
-  });
-}
-
-export type { QueryCaseRecordParams, PageParams };
+export type { PageParams };

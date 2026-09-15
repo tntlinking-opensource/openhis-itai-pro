@@ -9,7 +9,9 @@ import static com.openhis.whale.core.application.util.StringUtils.isNotEmpty;
 
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import com.openhis.chs.bridge.inventory.assembler.InventoryDrugTracJsonChunkAssembler;
 import com.openhis.chs.bridge.inventory.invoker.Inv35xxRetryInvoker;
+import com.openhis.chs.bridge.inventory.support.InventoryInboundDrugTracPlatformVerifySupport;
 import com.openhis.chs.bridge.inventory.support.InvPlatformSupport;
 import com.openhis.chs.bridge.inventory.support.InvPlatformSupport.InvContractContext;
 import com.openhis.chs.domain.inventory.access.InventoryRetryAccess;
@@ -29,6 +31,7 @@ import com.openhis.whale.core.infrastructure.multitenancy.TenantUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -39,6 +42,7 @@ import java.util.Optional;
  * <p><b>实现端口：</b>{@link com.openhis.chs.domain.inventory.access.InventoryRetryAccess}</p>
  * <p><b>调用方：</b>{@code InsuranceInventoryAppService}</p>
  * <p><b>架构边界：</b>bridge 层组装 gateway 出站上下文；application 只依赖 domain 端口。</p>
+ * <p><b>入库核验：</b>3502 重放协议成功后按 BR-CHS-INV-014 做 3512 落码核验。</p>
  * <p><b>迁移阶段：</b>P14</p>
  */
 @Component
@@ -50,21 +54,34 @@ public class InventoryRetryWorkflow implements InventoryRetryAccess {
     private final YbInvUploadDomainService uploadDomainService;
     private final ChsInventoryProperties inventoryProperties;
     private final InventoryRetryCompanionFollowUp companionFollowUp;
+    private final InventoryInboundDrugTracPlatformVerifySupport inboundDrugTracPlatformVerifySupport;
 
+    /**
+     * 批量重试：捞取到达重试时间的 FAILED/PENDING 流水并重放持久化报文。
+     *
+     * <p>开关关闭时空结果；单条 SUCCESS 后触发伴生跟传。</p>
+     *
+     * @param command 可选 batchSize；空则用配置默认
+     * @return 尝试/成功/失败/跳过计数
+     */
     public RetryPendingInvUploadsResult retry(RetryPendingInvUploadsCommand command) {
         RetryPendingInvUploadsResult result = new RetryPendingInvUploadsResult();
+        // Gate：上报总开关关闭则不捞取、不占重试次数
         if (!inventoryProperties.isUploadEnabled()) {
             return result;
         }
         Long tenantId = TenantUtils.getCurrentTenantId();
         int batchSize = inventoryProperties.getRetryWorkerBatchSize();
+        // 运维可覆盖本批条数上限
         if (command != null && command.getBatchSize() != null && command.getBatchSize() > 0) {
             batchSize = command.getBatchSize();
         }
         for (YbInvUpload row : uploadDomainService.findRetryable(tenantId, batchSize)) {
+            // 脏数据跳过，不计 attempted
             if (row == null || row.getId() == null) {
                 continue;
             }
+            // 无报文无法重放：计 skipped
             if (isEmpty(row.getRequestJson())) {
                 result.setSkipped(result.getSkipped() + 1);
                 continue;
@@ -127,6 +144,16 @@ public class InventoryRetryWorkflow implements InventoryRetryAccess {
             result.setResponseJson(row.getResponseJson());
             return result;
         }
+        // Gate：仅「191 + 主档无码」禁止补传；主档有码（入过库）允许处理
+        if (ChsInventoryConstants.isInboundTraceMissingPlatformFailure(row.getPlatformMsg())
+            && !uploadDomainService.hasAnyRequestDrugTracInMaster(row)) {
+            result.setUploadId(row.getId());
+            result.setSucceeded(false);
+            result.setUploadStatus(row.getUploadStatus());
+            result.setPlatformMsg("追溯码不在院内主档（历史未建档），原样补传无效");
+            result.setResponseJson(row.getResponseJson());
+            return result;
+        }
         if (isNotEmpty(command.getRequestJson())) {
             row = uploadDomainService.updateRequestJson(row, command.getRequestJson());
         }
@@ -154,10 +181,60 @@ public class InventoryRetryWorkflow implements InventoryRetryAccess {
     /**
      * 重放已持久化的 request_json 出站并更新流水状态。
      *
+     * <p>3502 且 {@code drugtracinfo} 超平台上限时自动拆批：首片改写本行，后续片新建 FAILED 流水并逐片出站。</p>
+     *
      * @param row 待重试的上报流水
-     * @return 重放是否成功
+     * @return 重放是否全部成功（拆批时须每片 SUCCESS）
      */
     private boolean retryStoredUpload(YbInvUpload row) {
+        if (row == null || isEmpty(row.getInfno()) || isEmpty(row.getRequestJson())) {
+            return false;
+        }
+        // Pre：3502 超本系统单次码安全上限(100) → 拆批补传（防平台大包静默丢码；书面 500 仅对照）
+        if (ChsInfNo.INVENTORY_CHANGE.equals(row.getInfno())
+            && InventoryDrugTracJsonChunkAssembler.exceedsPlatformDrugTracLimit(row.getRequestJson())) {
+            return retryStored3502WithDrugTracChunks(row);
+        }
+        return retryStoredUploadSingle(row);
+    }
+
+    /**
+     * 3502 追溯码超限拆批补传：首片落原流水，其余片新建流水后逐片重放。
+     *
+     * @param row 原 FAILED/PENDING 流水（报文未拆）
+     * @return 全部片 SUCCESS 时 true
+     */
+    private boolean retryStored3502WithDrugTracChunks(YbInvUpload row) {
+        List<String> chunkJsonList = InventoryDrugTracJsonChunkAssembler.split3502RequestJson(
+            row.getRequestJson(), ChsInventoryConstants.DRUGTRACINFO_MAX_PER_REQUEST);
+        // 拆批结果异常：退回单次重放（仍可能平台失败）
+        if (chunkJsonList.size() <= 1) {
+            return retryStoredUploadSingle(row);
+        }
+        String firstJson = chunkJsonList.get(0);
+        String firstBchno = InventoryDrugTracJsonChunkAssembler.readFixmedinsBchno(firstJson);
+        // Cmd：首片改写原行批次与报文
+        row = uploadDomainService.updateRequestJsonAndBchno(row, firstJson, firstBchno);
+        boolean allOk = retryStoredUploadSingle(row);
+        for (int i = 1; i < chunkJsonList.size(); i++) {
+            String chunkJson = chunkJsonList.get(i);
+            String chunkBchno = InventoryDrugTracJsonChunkAssembler.readFixmedinsBchno(chunkJson);
+            // Cmd：后续片独立流水，避免与首片幂等键冲突
+            YbInvUpload sibling = uploadDomainService.createSiblingChunkRow(row, chunkBchno, chunkJson);
+            if (!retryStoredUploadSingle(sibling)) {
+                allOk = false;
+            }
+        }
+        return allOk;
+    }
+
+    /**
+     * 单条报文原样重放（不再拆批）。
+     *
+     * @param row 待重试流水（request_json 已是单片）
+     * @return 是否 SUCCESS
+     */
+    private boolean retryStoredUploadSingle(YbInvUpload row) {
         if (row == null || isEmpty(row.getInfno()) || isEmpty(row.getRequestJson())) {
             return false;
         }
@@ -177,6 +254,17 @@ public class InventoryRetryWorkflow implements InventoryRetryAccess {
                 uploadStatus = biz.uploadStatus();
                 retRslt = biz.retRslt();
                 msgRslt = biz.msgRslt();
+            }
+            // Gate：入库类 3502 协议成功后仍须 3512 落码核验（BR-CHS-INV-014）
+            if (ChsInfNo.INVENTORY_CHANGE.equals(row.getInfno())
+                && ChsInventoryConstants.UPLOAD_STATUS_SUCCESS.equals(uploadStatus)) {
+                String incompleteMsg =
+                    inboundDrugTracPlatformVerifySupport.findIncompleteInboundTraceMessageFromRequestJson(
+                        ctx.busNo(), row.getRequestJson(), null, null);
+                if (isNotEmpty(incompleteMsg)) {
+                    uploadDomainService.applyRetryFailure(row, incompleteMsg);
+                    return false;
+                }
             }
             uploadDomainService.applyRetrySuccess(row, uploadStatus, retRslt, msgRslt, JSON.toJSONString(body));
             return ChsInventoryConstants.UPLOAD_STATUS_SUCCESS.equals(uploadStatus);

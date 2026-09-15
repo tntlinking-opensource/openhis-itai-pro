@@ -33,10 +33,6 @@ public class LoadInpatientDailySettlementPageInitResponse {
     @Schema(description = "费用性质筛选项")
     private List<OptionDto> expensePropertyOptions;
 
-    /** 是否允许财务代交账。 */
-    @Schema(description = "是否允许财务代交账")
-    private Boolean financialDelegateEnabled;
-
     /** 收款人下拉岗池：仅 ROLE_ACCOUNTANT；查询后再合并窗内收费人。 */
     @Schema(description = "收款人下拉")
     private List<OptionDto> cashierOptions;

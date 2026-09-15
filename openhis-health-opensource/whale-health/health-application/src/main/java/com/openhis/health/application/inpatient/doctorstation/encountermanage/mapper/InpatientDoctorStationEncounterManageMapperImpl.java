@@ -110,11 +110,13 @@ public class InpatientDoctorStationEncounterManageMapperImpl implements Inpatien
         String enrichmentHouseName = null;
         String enrichmentPinyin = null;
         String enrichmentWubi = null;
+        String enrichmentIdCard = null;
         String enrichmentInsutype = null;
         if (enrichment != null) {
             enrichmentHouseName = enrichment.getHouseName();
             enrichmentPinyin = enrichment.getPinyinCode();
             enrichmentWubi = enrichment.getWubiCode();
+            enrichmentIdCard = enrichment.getIdCard();
             enrichmentInsutype = enrichment.getInsutype();
         }
         DoctorStationPatientQueueItemDto dto = new DoctorStationPatientQueueItemDto();
@@ -138,6 +140,8 @@ public class InpatientDoctorStationEncounterManageMapperImpl implements Inpatien
             dto.setGenderEnumText(gender.getDisplay());
         }
         dto.setAgeText(row.getAgeText());
+        // 身份证号：读模型未投影，由患者主档增补回填。
+        dto.setIdCard(enrichmentIdCard);
         dto.setWardId(row.getWardId());
         dto.setWardName(firstNonBlank(row.getWardName(), overlayWardName));
         dto.setHouseName(enrichmentHouseName);

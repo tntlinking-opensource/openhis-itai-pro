@@ -59,7 +59,6 @@ export interface PageInpatientMedicationPatientsResponse {
   totalCount?: number;
   pageNo?: number;
   pageSize?: number;
-  records?: InpatientMedicationPatientRowDto[];
   content?: InpatientMedicationPatientRowDto[];
 }
 
@@ -139,7 +138,7 @@ export async function pageInpatientMedicationPatientsApi(
   const { content, totalCount } = parsePagedRowsFromApiData<InpatientMedicationPatientRowDto>(res);
   return {
     ...res,
-    records: content.length > 0 ? content : (res.records ?? []),
+    records: content,
     total: totalCount || Number(res.total ?? res.totalCount ?? 0),
   };
 }

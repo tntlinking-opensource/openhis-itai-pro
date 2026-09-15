@@ -1,5 +1,5 @@
 <!--
-  重点药品使用统计：就诊类型 × 重点药类型矩阵汇总（人次 + 金额）；可导出。
+  重点药品使用统计：就诊类型 × 重点药类型矩阵（人次 + 金额 + 占比）；组内合计；可导出。
 -->
 <script setup lang="ts">
 import type { KeyMedicationUsageSummaryRowDto } from '#/api/report/key-medication-usage';
@@ -54,6 +54,9 @@ import { optionDtosToSelectItems } from '#/views/report/shared/report-format';
 
 defineOptions({ name: 'KeyMedicationUsageReport' });
 
+/** 组内合计行药品类型码（与后端 SUMMARY_KEY_DRUG_TYPE_TOTAL 对齐）。 */
+const KEY_DRUG_TYPE_TOTAL = 'TOTAL';
+
 interface QueryState {
   dateFrom: string;
   dateTo: string;
@@ -78,6 +81,9 @@ const queryParams = reactive<QueryState>({
 
 const dateRangeShortcuts = buildReportDateRangeShortcuts();
 
+/** 查询序号：日期/筛选快速切换时丢弃过期汇总，避免乱序回写与重复报错。 */
+let querySeq = 0;
+
 /** 业务日期与 daterange 双向绑定。 */
 const businessDateRange = computed({
   get() {
@@ -97,7 +103,7 @@ const businessDateRange = computed({
 /** ReportQueryBar 需要 Record 形态的 model。 */
 const queryBarModel = computed(() => queryParams as Record<string, unknown>);
 
-/** 页脚：行数 / 人次合计 / 金额合计。 */
+/** 页脚：行数 / 人次合计 / 金额合计（合计仅为类型行，不含组内 TOTAL）。 */
 const footerSummaryItems = computed(() => [
   { label: '汇总行数', value: summaryRows.value.length },
   { label: '人次合计', value: totalEncounterNetCount.value },
@@ -109,14 +115,26 @@ const footerSummaryItems = computed(() => [
   },
 ]);
 
+/** 是否已从服务端写入默认日期窗（避免 init 晚到覆盖用户已选区间）。 */
+let defaultDatesApplied = false;
+
 const { run: runInit, loading: initLoading } = useRequest(loadKeyMedicationUsageReportPageInitApi, {
   manual: true,
   onSuccess: (data) => {
     encounterClassOptions.value = optionDtosToSelectItems(data?.encounterClassOptions);
     keyDrugTypeOptions.value = optionDtosToSelectItems(data?.keyDrugTypeOptions);
-    queryParams.dateFrom =
-      normalizeReportDateRangeYmd(data?.defaultDateFrom) || queryParams.dateFrom;
-    queryParams.dateTo = normalizeReportDateRangeYmd(data?.defaultDateTo) || queryParams.dateTo;
+    // 仅首次 init 写默认窗；用户改日期后不再被 init 回写
+    if (!defaultDatesApplied) {
+      const from = normalizeReportDateRangeYmd(data?.defaultDateFrom);
+      const to = normalizeReportDateRangeYmd(data?.defaultDateTo);
+      if (from) {
+        queryParams.dateFrom = from;
+      }
+      if (to) {
+        queryParams.dateTo = to;
+      }
+      defaultDatesApplied = true;
+    }
   },
 });
 
@@ -124,11 +142,7 @@ const { run: runSummarize, loading: summarizeLoading } = useRequest(
   summarizeKeyMedicationUsageReportApi,
   {
     manual: true,
-    onSuccess: (data) => {
-      summaryRows.value = data?.rows ?? [];
-      totalEncounterNetCount.value = Number(data?.totalEncounterNetCount ?? 0);
-      totalSaleAmount.value = data?.totalSaleAmount ?? 0;
-    },
+    showErrorMessage: false,
   },
 );
 
@@ -141,12 +155,14 @@ const { run: runExport, loading: exportLoading } = useRequest(exportKeyMedicatio
   },
 });
 
-/** 可打印列目录。 */
+/** 可打印列目录（含药品类型与人次/金额占比）。 */
 const printColumnCatalog = computed<ReportPrintColumnDef[]>(() => [
   { field: 'encounterClassDisplay', title: '就诊类型', align: 'center' },
   { field: 'keyDrugTypeDisplay', title: '药品类型', align: 'center' },
   { field: 'encounterNetCount', title: '人次', align: 'right' },
   { field: 'saleAmountTotal', title: '总金额', align: 'right' },
+  { field: 'usageRatioPercent', title: '人次占比', align: 'center' },
+  { field: 'saleAmountRatioPercent', title: '金额占比', align: 'center' },
 ]);
 
 /**
@@ -158,6 +174,8 @@ function mapCurrentPrintRows(): Record<string, string>[] {
     mapReportPrintRow(row as unknown as Record<string, unknown>, fields, {
       encounterNetCount: (value) => formatCountCell(value),
       saleAmountTotal: (value) => formatMoneyCell(value),
+      usageRatioPercent: (value) => formatRatioCell(value),
+      saleAmountRatioPercent: (value) => formatRatioCell(value),
     }),
   );
 }
@@ -175,7 +193,7 @@ const tableLoading = computed(
 );
 
 /**
- * 组装当前查询请求体（空多选不传，表示全部）。
+ * 组装当前查询请求体（空多选/空状态不传，表示全部）。
  */
 function buildQueryBody() {
   const body: {
@@ -191,7 +209,7 @@ function buildQueryBody() {
   if (queryParams.encounterClassCodes.length > 0) {
     body.encounterClassCodes = [...queryParams.encounterClassCodes];
   }
-  // 未选药品类型 = 后端按全部三类重点药
+  // 未选药品类型 = 后端按全部四类重点药拆行
   if (queryParams.keyDrugTypeCodes.length > 0) {
     body.keyDrugTypeCodes = [...queryParams.keyDrugTypeCodes];
   }
@@ -201,26 +219,45 @@ function buildQueryBody() {
 /**
  * 校验日期后触发汇总。
  */
-function handleQuery() {
+async function handleQuery() {
   if (!queryParams.dateFrom || !queryParams.dateTo) {
     ElMessage.warning('请选择有效查询日期');
     return;
   }
-  void runSummarize(buildQueryBody());
+  const seq = ++querySeq;
+  try {
+    const data = await runSummarize(buildQueryBody());
+    if (seq !== querySeq) {
+      return;
+    }
+    summaryRows.value = data?.rows ?? [];
+    totalEncounterNetCount.value = Number(data?.totalEncounterNetCount ?? 0);
+    totalSaleAmount.value = data?.totalSaleAmount ?? 0;
+  } catch (error) {
+    if (seq !== querySeq) {
+      return;
+    }
+    const msg =
+      (error as { message?: string; msg?: string }).message ||
+      (error as { message?: string; msg?: string }).msg ||
+      '查询失败，请稍后重试';
+    ElMessage.error(msg);
+  }
 }
 
 /**
- * 重置为默认当日与空筛选并查询。
+ * 重置为默认近一个月与空筛选并查询。
  */
 async function handleReset() {
   queryParams.encounterClassCodes = [];
   queryParams.keyDrugTypeCodes = [];
+  defaultDatesApplied = false;
   await runInit();
   handleQuery();
 }
 
 /**
- * 导出当前筛选矩阵（列清单与页面可见列一致）。
+ * 导出当前筛选汇总（列清单与页面可见列一致）。
  */
 function handleExport() {
   if (!queryParams.dateFrom || !queryParams.dateTo) {
@@ -255,10 +292,80 @@ function formatCountCell(value: unknown): string {
 }
 
 /**
- * 汇总行稳定主键（就诊类型 × 药品类型）。
+ * 占比单元格（百分比文案；空为 —）。
+ */
+function formatRatioCell(value: unknown): string {
+  if (value === undefined || value === null || value === '') {
+    return '—';
+  }
+  return `${value}%`;
+}
+
+/**
+ * 汇总行稳定主键（就诊类型 + 药品类型；合计行为 TOTAL）。
  */
 function resolveSummaryRowKey(row: KeyMedicationUsageSummaryRowDto) {
-  return `${row.encounterClassCode ?? ''}_${row.keyDrugTypeCode ?? ''}`;
+  return `${row.encounterClassCode ?? ''}-${row.keyDrugTypeCode ?? ''}`;
+}
+
+/**
+ * 行样式：合计行加粗底；就诊类型切换时加分区顶边。
+ */
+function resolveRowClassName({
+  row,
+  rowIndex,
+}: {
+  row: KeyMedicationUsageSummaryRowDto;
+  rowIndex: number;
+}): string {
+  const classes: string[] = [];
+  // 组内合计行：加粗/底色
+  if (row.keyDrugTypeCode === KEY_DRUG_TYPE_TOTAL) {
+    classes.push('is-total-row');
+  }
+  // 门诊块 → 住院块：首行加粗顶边分隔
+  if (rowIndex > 0) {
+    const prev = summaryRows.value[rowIndex - 1];
+    if (prev && row.encounterClassCode && prev.encounterClassCode !== row.encounterClassCode) {
+      classes.push('is-section-start');
+    }
+  }
+  return classes.join(' ');
+}
+
+/**
+ * 同就诊类型块内合并「就诊类型」列，便于视觉分组。
+ */
+function handleEncounterClassSpanMethod({
+  row,
+  column,
+  rowIndex,
+}: {
+  row: KeyMedicationUsageSummaryRowDto;
+  column: { property?: string };
+  rowIndex: number;
+}): [number, number] {
+  if (column.property !== 'encounterClassDisplay') {
+    return [1, 1];
+  }
+  const code = row.encounterClassCode ?? '';
+  // 非组首行：被上方 rowspan 吞掉
+  if (rowIndex > 0) {
+    const prev = summaryRows.value[rowIndex - 1];
+    if (prev && (prev.encounterClassCode ?? '') === code) {
+      return [0, 0];
+    }
+  }
+  // 组首：向下数连续同就诊类型行数
+  let rowspan = 1;
+  for (let i = rowIndex + 1; i < summaryRows.value.length; i += 1) {
+    if ((summaryRows.value[i]?.encounterClassCode ?? '') === code) {
+      rowspan += 1;
+    } else {
+      break;
+    }
+  }
+  return [rowspan, 1];
 }
 
 onMounted(async () => {
@@ -284,7 +391,6 @@ onMounted(async () => {
                 :clearable="false"
                 :shortcuts="dateRangeShortcuts"
                 :class="[REPORT_QUERY_CONTROL, REPORT_QUERY_CONTROL_DATERANGE]"
-                @change="handleQuery"
               />
             </ElFormItem>
             <ElFormItem label="就诊类型">
@@ -296,7 +402,6 @@ onMounted(async () => {
                 collapse-tags-tooltip
                 placeholder="全部"
                 :class="REPORT_QUERY_CONTROL"
-                @change="handleQuery"
               >
                 <ElOption
                   v-for="item in encounterClassOptions"
@@ -315,7 +420,6 @@ onMounted(async () => {
                 collapse-tags-tooltip
                 placeholder="全部"
                 :class="REPORT_QUERY_CONTROL"
-                @change="handleQuery"
               >
                 <ElOption
                   v-for="item in keyDrugTypeOptions"
@@ -360,6 +464,9 @@ onMounted(async () => {
             v-loading="tableLoading"
             :data="summaryRows"
             :row-key="resolveSummaryRowKey"
+            :row-class-name="resolveRowClassName"
+            :span-method="handleEncounterClassSpanMethod"
+            class="key-medication-usage-table"
           >
             <ElTableColumn
               prop="encounterClassDisplay"
@@ -373,7 +480,7 @@ onMounted(async () => {
               label="药品类型"
               align="center"
               header-align="center"
-              min-width="160"
+              min-width="120"
             />
             <ElTableColumn
               prop="encounterNetCount"
@@ -399,6 +506,28 @@ onMounted(async () => {
                 {{ formatMoneyCell(row.saleAmountTotal) }}
               </template>
             </ElTableColumn>
+            <ElTableColumn
+              prop="usageRatioPercent"
+              label="人次占比"
+              align="center"
+              header-align="center"
+              min-width="110"
+            >
+              <template #default="{ row }">
+                {{ formatRatioCell(row.usageRatioPercent) }}
+              </template>
+            </ElTableColumn>
+            <ElTableColumn
+              prop="saleAmountRatioPercent"
+              label="金额占比"
+              align="center"
+              header-align="center"
+              min-width="110"
+            >
+              <template #default="{ row }">
+                {{ formatRatioCell(row.saleAmountRatioPercent) }}
+              </template>
+            </ElTableColumn>
           </ReportElTable>
         </ReportTableScroll>
       </template>
@@ -411,3 +540,16 @@ onMounted(async () => {
     <ReportPrintFieldDialog ref="printFieldDialogRef" />
   </Page>
 </template>
+
+<style scoped>
+/* 住院块首行：粗顶边分隔门诊/住院 */
+:deep(.key-medication-usage-table .is-section-start > td) {
+  border-top: 3px solid var(--el-border-color-darker);
+}
+
+/* 组内合计行：加粗 + 浅底 */
+:deep(.key-medication-usage-table .is-total-row > td) {
+  font-weight: 600;
+  background-color: var(--el-fill-color-light);
+}
+</style>

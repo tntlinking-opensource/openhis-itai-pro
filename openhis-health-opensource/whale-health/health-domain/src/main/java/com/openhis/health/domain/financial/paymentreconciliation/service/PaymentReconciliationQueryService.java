@@ -1959,8 +1959,9 @@ public class PaymentReconciliationQueryService {
     private Specification<PaymentReconciliation> buildFeeDetailPaymentSpecification(
         OutpatientFeeDetailPageQuery query,
         PaymentKind paymentKind) {
-        LocalDateTime windowStart = query.getBillDateFrom().atStartOfDay();
-        LocalDateTime windowEndExclusive = query.getBillDateTo().plusDays(1).atStartOfDay();
+        // 应用层已把日/时刻规范为闭区间；开区间上界 +1 秒与全日窗次日 00:00:00 同口径
+        LocalDateTime windowStart = query.getBillDateFrom();
+        LocalDateTime windowEndExclusive = query.getBillDateTo().plusSeconds(1);
         List<PaymentStatus> allowedStatuses = this.resolveOutpatientFeeDetailPaymentStatuses(query.getTradeDirection());
         return (root, criteriaQuery, cb) -> {
             List<Predicate> predicates = new ArrayList<>();

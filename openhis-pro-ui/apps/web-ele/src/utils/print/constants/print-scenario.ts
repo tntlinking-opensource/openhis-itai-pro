@@ -12,10 +12,12 @@ export const PRINT_SCENARIO = {
   opTreatmentPrint: 'op-treatment-print',
   /** 输液瓶签（护士站） */
   opInfusionLabelPrint: 'op-infusionLabel-print',
-  /** 采血贴（护士站；50×30mm 条码） */
+  /** 门诊采血贴（护士站；50×30mm 条码） */
   opSpecimenBarcodePrint: 'op-specimenBarcode-print',
   /** 门诊费用日结单 */
   opDailySettlementPrint: 'op-dailySettlement-print',
+  /** 住院收费日结单（患者分项；与合计单分别打印） */
+  ipDailySettlementPatientPrint: 'ip-dailySettlement-patient-print',
   /** 药房日结单（门诊/住院共用） */
   pharmacyDailySettlementPrint: 'pharmacy-dailySettlement-print',
   /** 检查申请单（门诊医生站） */
@@ -48,8 +50,10 @@ export const PRINT_SCENARIO = {
   ipBedCardPrint: 'ip-bedCard-print',
   /** 住院预交金收据（收费处预交金） */
   ipPrepayReceiptPrint: 'ip-prepayReceipt-print',
-  /** 住院口服药贴（护士站打印中心） */
+  /** 住院口服药贴（护士站打印中心；30×40mm，内容旋 90° 横排） */
   ipOralMedLabelPrint: 'ip-oralMedLabel-print',
+  /** 住院采血贴（护士站打印中心；30×50mm，内容旋 90° 横排；勿复用门诊 50×30 采血贴） */
+  ipSpecimenBarcodePrint: 'ip-specimenBarcode-print',
   /** 住院输液瓶签（护士站打印中心；勿复用门诊瓶签） */
   ipInfusionLabelPrint: 'ip-infusionLabel-print',
   /** 住院检查申请单（护士站医嘱执行） */
@@ -70,6 +74,10 @@ export const PRINT_SCENARIO = {
   finPriceAdjustmentPrint: 'fin-price-adjustment-print',
   /** 通用报表列表（A4 横向壳，动态列） */
   reportListPrint: 'report-list-print',
+  /** 西医住院病案首页（国标 A4；无中医信息行；对齐库 prt_template scenario_code） */
+  ipHomepageWmPrint: 'ip-homepage-wm-print',
+  /** 中医住院病案首页（国标 A4；含中医信息行；对齐库 prt_template scenario_code） */
+  ipHomepageTcmPrint: 'ip-homepage-tcm-print',
 } as const;
 
 export type PrintScenario = (typeof PRINT_SCENARIO)[keyof typeof PRINT_SCENARIO];

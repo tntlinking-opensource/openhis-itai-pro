@@ -217,9 +217,11 @@ const displayGroups = computed<MedicalTypeGroup[]>(() => {
 });
 
 const tableColumns = computed<TableColumn[]>(() => {
+  // 住院西医落国临：列头「国临码」；门诊仍「诊断编码」
+  const codeColumnLabel = isInpatient.value ? '国临码' : '诊断编码';
   const cols: TableColumn[] = [
     { type: 'index', label: '#', width: 52, align: 'center', headerAlign: 'center' },
-    { prop: 'conditionCode', label: '诊断编码', width: 160 },
+    { prop: 'conditionCode', label: codeColumnLabel, width: 160 },
     {
       prop: 'ybNo',
       label: '医保码',

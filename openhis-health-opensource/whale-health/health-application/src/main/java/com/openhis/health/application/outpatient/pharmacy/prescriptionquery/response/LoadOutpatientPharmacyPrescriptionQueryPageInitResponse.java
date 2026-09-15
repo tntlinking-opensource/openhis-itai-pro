@@ -20,11 +20,11 @@ import lombok.experimental.Accessors;
 @Schema(description = "门诊处方查询页初始化响应")
 public class LoadOutpatientPharmacyPrescriptionQueryPageInitResponse {
 
-    /** 默认开立日起（yyyy-MM-dd，本月首日）。 */
+    /** 默认开立日起（yyyy-MM-dd，本年首日）。 */
     @Schema(description = "默认开立日起")
     private String defaultOpenedDateFrom;
 
-    /** 默认开立日止（yyyy-MM-dd，本月末日）。 */
+    /** 默认开立日止（yyyy-MM-dd，本年末日）。 */
     @Schema(description = "默认开立日止")
     private String defaultOpenedDateTo;
 

@@ -45,11 +45,13 @@ import {
   isEntrustAdviceDrugItem,
   isInpatientDischargeMedicationTherapy,
   isInpatientLongTermMedicationTherapy,
+  resolveDefaultInpatientAdviceTherapyType,
   validateWesternEditLineItem,
 } from '../services/advice-row';
 import {
   INPATIENT_ENTRUST_ACTIVITY_NAME,
   INPATIENT_ENTRUST_CATEGORY_CODE,
+  INPATIENT_NURSING_LEVEL_CATEGORY_CODE,
 } from '../services/advice-tab.constants';
 import {
   convertTotalAmountWhenUnitChanges,
@@ -69,6 +71,8 @@ const props = withDefaults(
     doseChangeStopTimeEditable?: boolean;
     /** 改量停嘱时间（YYYY-MM-DD HH:mm） */
     doseChangeStopTime?: string;
+    /** 新开空白卡时的默认治疗类型（与列表右上角筛选联动；编辑已有行仍以 initialGroup 为准） */
+    defaultTherapyType?: InpatientAdviceTherapyType;
     encounterId?: string;
     feeNatureOptions?: TerminologyOptionDto[];
     initialGroup?: AdviceDrugItem[];
@@ -95,6 +99,7 @@ const props = withDefaults(
     changeDoseMode: false,
     doseChangeStopTimeEditable: false,
     doseChangeStopTime: '',
+    defaultTherapyType: 'LONG_TERM',
     feeNatureOptions: () => [],
     encounterId: '',
     medicationRateOptions: () => [],
@@ -125,8 +130,10 @@ const doseChangeStopTimeModel = computed({
 
 const isTcm = computed(() => props.variant === 'tcm');
 
-/** 住院西药编辑卡：长期 / 临时 / 出院带药（默认长期） */
-const therapyType = ref<InpatientAdviceTherapyType>('LONG_TERM');
+/** 住院西药编辑卡：长期 / 临时 / 出院带药（新开默认对齐列表筛选） */
+const therapyType = ref<InpatientAdviceTherapyType>(
+  resolveDefaultInpatientAdviceTherapyType(props.defaultTherapyType),
+);
 
 const THERAPY_TYPE_CODES = new Set<InpatientAdviceTherapyType>([
   'DISCHARGE_MEDICATION',
@@ -134,18 +141,39 @@ const THERAPY_TYPE_CODES = new Set<InpatientAdviceTherapyType>([
   'TEMPORARY',
 ]);
 
-watch(
-  () => props.initialGroup,
-  (group) => {
-    if (!group?.length || isTcm.value) return;
+/** 从回填组或列表筛选解析开立治疗类型（空白新开跟筛选；编辑行跟组内） */
+function resolveEditorTherapyTypeFromProps(
+  group: AdviceDrugItem[] | undefined,
+): InpatientAdviceTherapyType {
+  if (group?.length) {
     const med = group.find((item) => inferAdviceLineEditorKind(item) === 'MEDICATION');
     const svc = group.find((item) => inferAdviceLineEditorKind(item) === 'SERVICE');
     const code = String((med ?? svc)?.therapyEnum ?? '').trim();
     if (THERAPY_TYPE_CODES.has(code as InpatientAdviceTherapyType)) {
-      therapyType.value = code as InpatientAdviceTherapyType;
+      return code as InpatientAdviceTherapyType;
     }
+  }
+  return resolveDefaultInpatientAdviceTherapyType(props.defaultTherapyType);
+}
+
+watch(
+  () => props.initialGroup,
+  (group) => {
+    if (isTcm.value) return;
+    // 空白新开也要重置：表格槽复用时避免沿用上一张卡的长临
+    therapyType.value = resolveEditorTherapyTypeFromProps(group);
   },
   { immediate: true },
+);
+
+watch(
+  () => props.defaultTherapyType,
+  () => {
+    if (isTcm.value || props.changeDoseMode) return;
+    // 仅空白开立跟列表筛选；已回填编辑行不覆盖
+    if (props.initialGroup?.length) return;
+    therapyType.value = resolveDefaultInpatientAdviceTherapyType(props.defaultTherapyType);
+  },
 );
 
 const { productColumns, queryProductOptions } = props;
@@ -168,7 +196,13 @@ const getInitialDrugItems = () => {
   }
   /** 西药空白卡首张：生成会话组号，后续「添加药品」沿用同一 groupId（暂存写入 medicationPayload） */
   if (props.variant !== 'tcm') {
-    return [createDrugItem({ ...props.modelValue, groupId: String(Date.now()) })];
+    return [
+      createDrugItem({
+        ...props.modelValue,
+        groupId: String(Date.now()),
+        therapyEnum: therapyType.value,
+      }),
+    ];
   }
   return [createDrugItem(props.modelValue)];
 };
@@ -218,6 +252,26 @@ const setField = <K extends keyof AdviceDrugItem>(
           continue;
         }
         next[i] = { ...row, speedCode: speed };
+      }
+    }
+  }
+  // 同组频次一致：改一条同步到同 groupId（BR-IP-ORD-033，避免主药 QD、溶媒 ST）
+  if (key === 'frequency') {
+    const gid = String(next[index]?.groupId ?? '').trim();
+    const frequency = String(value ?? '').trim();
+    if (gid && frequency) {
+      for (let i = 0; i < next.length; i += 1) {
+        if (i === index) {
+          continue;
+        }
+        const row = next[i];
+        if (!row || inferAdviceLineEditorKind(row) !== 'MEDICATION') {
+          continue;
+        }
+        if (String(row.groupId ?? '').trim() !== gid) {
+          continue;
+        }
+        next[i] = { ...row, frequency };
       }
     }
   }
@@ -463,6 +517,11 @@ const handleProductSelect = (index: number, row: AdviceProductOption) => {
     const uCode = String(row.defaultUnitCode ?? '').trim() || '次';
     const uName = String(row.defaultUnitName ?? '').trim() || uCode;
     const categoryCode = String(row.categoryCode ?? '').trim();
+    // 护理级别禁止从普通选品开立，须走顶部「护理」快捷（BR-IP-ORD-026⑥）
+    if (categoryCode === INPATIENT_NURSING_LEVEL_CATEGORY_CODE) {
+      ElMessage.warning('护理级别请通过顶部「护理」按钮开立');
+      return;
+    }
     const isEntrust =
       categoryCode === INPATIENT_ENTRUST_CATEGORY_CODE ||
       String(row.name ?? '').trim() === INPATIENT_ENTRUST_ACTIVITY_NAME;
@@ -491,6 +550,24 @@ const handleProductSelect = (index: number, row: AdviceProductOption) => {
     const catalogPatch = buildWesternProductSelectPatch(prev, row, {
       totalUnitDefaultKind: therapyType.value === 'TEMPORARY' ? undefined : 'SALES',
     });
+    // 已在成组：优先本行频次，否则取同组任一非空频次，禁止目录默认 ST 冲掉主药 QD（BR-IP-ORD-033）
+    const gid = String(prev.groupId ?? '').trim();
+    let groupFreq = String(prev.frequency ?? '').trim();
+    if (gid && !groupFreq) {
+      for (const sibling of drugItems.value) {
+        if (!sibling || String(sibling.groupId ?? '').trim() !== gid) {
+          continue;
+        }
+        const sf = String(sibling.frequency ?? '').trim();
+        if (sf) {
+          groupFreq = sf;
+          break;
+        }
+      }
+    }
+    if (gid && groupFreq) {
+      catalogPatch.frequency = groupFreq;
+    }
     const nextFreq = String(catalogPatch.frequency ?? prev.frequency ?? '').trim();
     mergeDrugRow(index, {
       ...base,
@@ -757,7 +834,7 @@ onMounted(() => {
           class="card-header-btn"
           @click="handleAddDrug"
         >
-          追加药品
+          追加输液药品
         </ElButton>
         <ElButton
           ref="headerSaveButtonRef"

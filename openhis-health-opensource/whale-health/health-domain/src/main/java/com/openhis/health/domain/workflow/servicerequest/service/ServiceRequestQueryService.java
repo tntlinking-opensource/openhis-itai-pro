@@ -11,6 +11,7 @@ import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.utils.EncounterDiagnosisIdsPredicates;
+import com.openhis.health.domain.share.utils.IdInQueryChunkSupport;
 import com.openhis.health.domain.workflow.servicerequest.entity.ServiceRequest;
 import com.openhis.health.domain.workflow.servicerequest.entity.ServiceRequestDetail;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.InpatientAutoRollNursingLevelQueryModel;
@@ -471,6 +472,44 @@ public class ServiceRequestQueryService {
             models.add(this.toListModel(request));
         }
         return models;
+    }
+
+    /**
+     * 按就诊集合批量加载指定生成来源的服务申请并按就诊分组（护士站执行列表 §2.1 #9）。
+     *
+     * @param encounterIds 就诊主键集合
+     * @param sourceEnum   生成来源码
+     * @return encounterId → 诊疗明细列表
+     */
+    public Map<Long, List<ServiceRequestListModel>> mapServiceRequestsByEncounterIdsAndGenerateSource(
+        Collection<Long> encounterIds,
+        String sourceEnum) {
+        Map<Long, List<ServiceRequestListModel>> result = new HashMap<>();
+        if (encounterIds == null || encounterIds.isEmpty() || StringUtils.isEmpty(sourceEnum)) {
+            return result;
+        }
+        List<Long> idList = IdInQueryChunkSupport.distinctNonNullIds(encounterIds);
+        for (Long encounterId : idList) {
+            result.put(encounterId, new ArrayList<>());
+        }
+        if (idList.isEmpty()) {
+            return result;
+        }
+        List<ServiceRequest> requests = IdInQueryChunkSupport.loadByIdInChunks(
+            idList,
+            chunkIds -> serviceRequestRepository.findByEncounterIdInAndGenerateSourceEnum(chunkIds, sourceEnum));
+        for (ServiceRequest request : requests) {
+            if (request == null || request.getEncounterId() == null) {
+                continue;
+            }
+            List<ServiceRequestListModel> bucket = result.get(request.getEncounterId());
+            if (bucket == null) {
+                bucket = new ArrayList<>();
+                result.put(request.getEncounterId(), bucket);
+            }
+            bucket.add(this.toListModel(request));
+        }
+        return result;
     }
 
     /**

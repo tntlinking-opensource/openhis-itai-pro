@@ -59,12 +59,6 @@ public class InventoryOpeningProductRowDto {
     @Schema(description = "单位")
     private String unitCode;
 
-    /**
-     * 参考进价（定价表 PURCHASE 实例维；与 {@link #purchasePrice} 同值，兼容旧前端字段）。
-     */
-    @Schema(description = "参考进价")
-    private BigDecimal referencePurchasePrice;
-
     /** 采购进价（与进货选品 purchasePrice 同义；每包装）。 */
     @Schema(description = "采购进价")
     private BigDecimal purchasePrice;

@@ -37,7 +37,7 @@ public class Med5302AInvoker implements Med5302AQueryInvoker {
             busNo,
             ChsInfNo.PERSON_OPSP_APPROVAL_QUERY,
             MedPlatformInputAssembler.assemble5302A(command),
-            medicalInfoInvokeSupport.buildInvokeContext());
+            medicalInfoInvokeSupport.buildInvokeContext(command));
         ChsPlatformResponseSupport.requireSuccess(body, ChsInfNo.PERSON_OPSP_APPROVAL_QUERY);
         return MedInfoListOutputParser.parse5302A(body);
     }

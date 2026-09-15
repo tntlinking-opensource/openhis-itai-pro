@@ -74,7 +74,8 @@ public class GroupRosterImportWorkbookParser {
                 "ROSTER_TEMPLATE_KIND_MISMATCH",
                 "模板导入失败：模板人员类型与当前选择不一致，请下载正确的模板");
         }
-        if (!GroupRosterImportConstants.TEMPLATE_VERSION.equals(version)) {
+        if (!GroupRosterImportConstants.TEMPLATE_VERSION.equals(version)
+            && !"v1.0".equals(version)) {
             throw new BusinessException("ROSTER_TEMPLATE_VERSION_MISMATCH", "模板导入失败：模板版本过旧，请重新下载");
         }
     }
@@ -101,7 +102,8 @@ public class GroupRosterImportWorkbookParser {
         String[] expected = memberKind == GroupRosterImportMemberKind.STUDENT
             ? GroupRosterImportConstants.STUDENT_HEADERS
             : GroupRosterImportConstants.STAFF_HEADERS;
-        for (int col = 0; col < expected.length; col++) {
+        int legacyCount = GroupRosterImportConstants.LEGACY_HEADER_COUNT;
+        for (int col = 0; col < legacyCount; col++) {
             String actual = normalizeHeader(cellString(headerRow.getCell(col)));
             String want = normalizeHeader(expected[col]);
             if (!want.equals(actual)) {
@@ -139,6 +141,8 @@ public class GroupRosterImportWorkbookParser {
                 dto.setEmployeeNo(cellString(row.getCell(4)));
                 dto.setClassName(cellString(row.getCell(5)));
             }
+            dto.setBatchNameOverride(cellString(row.getCell(6)));
+            dto.setPackageNames(cellString(row.getCell(7)));
             assertRowIdentity(dto, memberKind, rowIndex + 1);
             rows.add(dto);
             if (rows.size() > GroupRosterImportConstants.MAX_DATA_ROWS) {

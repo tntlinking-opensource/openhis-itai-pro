@@ -22,7 +22,7 @@ import java.time.LocalDateTime;
 /**
  * 预约与候诊聚合根。
  *
- * <p>对应表：wkf_appointment_queue（表名为历史兼容保留）。</p>
+ * <p>对应表：{@code wkf_appointment_queue}（表名沿用历史 wkf_ 前缀，非过渡双轨）。</p>
  *
  * <p>终态表达：采用软删 {@code isDeleted=true} + 原因字段（cancelReason/cancellationReasonCode）收口叫号/过号/取消等终态。</p>
  */

@@ -44,7 +44,7 @@ public class Med5204Invoker implements Med5204QueryInvoker {
             busNo,
             ChsInfNo.FEE_DETAIL_QUERY,
             MedPlatformInputAssembler.assemble5204(command),
-            medicalInfoInvokeSupport.buildInvokeContext());
+            medicalInfoInvokeSupport.buildInvokeContext(command));
         ChsPlatformResponseSupport.requireSuccess(body, ChsInfNo.FEE_DETAIL_QUERY);
         return MedInfoListOutputParser.parse5204(body);
     }

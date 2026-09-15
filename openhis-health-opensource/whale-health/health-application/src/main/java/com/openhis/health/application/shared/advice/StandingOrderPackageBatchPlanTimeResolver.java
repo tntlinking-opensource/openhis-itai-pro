@@ -21,6 +21,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -43,6 +44,20 @@ public class StandingOrderPackageBatchPlanTimeResolver {
 
     /** 频次时钟展开（禁止 App 写死点钟）。 */
     private final FrequencyQueryService frequencyQueryService;
+
+    /**
+     * 请求内原始频次展开缓存（rateCode|start|end → 未裁剪开立日的时点）；
+     * 护士站列表/待执计数同窗复用，避免同频次重复 CPU 展开。
+     */
+    private final ThreadLocal<Map<String, List<LocalDateTime>>> rawExpandPointsCache =
+        ThreadLocal.withInitial(HashMap::new);
+
+    /**
+     * 清空当前线程的频次展开缓存（列表/计数编排结束时调用）。
+     */
+    public void clearRawExpandPointsCache() {
+        rawExpandPointsCache.remove();
+    }
 
     /**
      * 药嘱槽量换算入参（数量/单位/用法；不依赖 Feature QueryModel）。
@@ -389,7 +404,7 @@ public class StandingOrderPackageBatchPlanTimeResolver {
             // NEED_MORE：截止落在未满盒或下一盒未展开 → 把频次窗再往后推
             probeEnd = this.advanceBatchProbeEnd(probeEnd, maxProbeEnd);
             if (!canExtendFurther) {
-                // 已触停嘱/前瞻硬顶：只收已完整盒首，禁止 FALLBACK 成整窗日点
+                // 已触停嘱/前瞻硬顶：只收已完整盒首，禁止把开嘱～停嘱日点再拆出来（BR-IP-EXE-035⑤）
                 StandingOrderPackageBatchExpandSupport.CutResult hardCapCut =
                     StandingOrderPackageBatchExpandSupport.cutThroughBatchContainingDeadline(
                         ordered,
@@ -397,19 +412,53 @@ public class StandingOrderPackageBatchPlanTimeResolver {
                         packageSplitQuantity,
                         executionDeadline,
                         false);
-                if (StandingOrderPackageBatchExpandSupport.CutKind.SUCCESS.equals(hardCapCut.getKind())) {
-                    result.setPlanTimes(
-                        StandingOrderPackageBatchExpandSupport.toLinkedPlanTimeSet(hardCapCut.getPlanTimes()));
-                    result.setPackageBatchApplied(!hardCapCut.getPlanTimes().isEmpty());
-                    result.setPackageBatchResolved(true);
-                    return result;
-                }
-                result.setPlanTimes(splittablePlanned);
-                return result;
+                return this.finishPackageBatchWhenCannotExtend(hardCapCut, splittablePlanned);
             }
         }
-        // 探测轮次耗尽：安全回落可拆
-        result.setPlanTimes(splittablePlanned);
+        // 探测轮次耗尽仍未切出完整盒：按硬顶未满盒收口为空锚点，禁止降级全日点
+        return this.emptyResolvedPackageBatch();
+    }
+
+    /**
+     * 停嘱/探测硬顶后收口一盒一点：SUCCESS 用切盒结果；无法整除才降级可拆；其余禁止日点。
+     *
+     * @param hardCapCut         硬顶下第二次切盒结果
+     * @param splittablePlanned  可拆日点（仅 BR-IP-EXE-035⑥ 无法整除时使用）
+     * @return 已结算的一盒一点结果
+     */
+    private ExpandResult finishPackageBatchWhenCannotExtend(
+        StandingOrderPackageBatchExpandSupport.CutResult hardCapCut,
+        Set<LocalDateTime> splittablePlanned) {
+        if (StandingOrderPackageBatchExpandSupport.CutKind.SUCCESS.equals(hardCapCut.getKind())) {
+            ExpandResult success = this.newEmptyExpandResult();
+            success.setPlanTimes(
+                StandingOrderPackageBatchExpandSupport.toLinkedPlanTimeSet(hardCapCut.getPlanTimes()));
+            List<LocalDateTime> hardCapPlanTimes = hardCapCut.getPlanTimes();
+            if (hardCapPlanTimes != null && !hardCapPlanTimes.isEmpty()) {
+                success.setPackageBatchApplied(true);
+            }
+            success.setPackageBatchResolved(true);
+            return success;
+        }
+        if (StandingOrderPackageBatchExpandSupport.CutKind.FALLBACK.equals(hardCapCut.getKind())) {
+            // 单槽超量或累加无法整除包装：BR-IP-EXE-035⑥ 允许降级可拆
+            ExpandResult fallback = this.newEmptyExpandResult();
+            fallback.setPlanTimes(splittablePlanned);
+            return fallback;
+        }
+        // NEED_MORE 等：硬顶未凑满当前盒，禁止 FALLBACK 成整窗日点，否则出院门禁会误拦
+        return this.emptyResolvedPackageBatch();
+    }
+
+    /**
+     * 一盒一点已得出终态但无可展盒首（停嘱硬顶未满盒 / 探测耗尽）。
+     *
+     * @return packageBatchResolved=true 且计划点为空
+     */
+    private ExpandResult emptyResolvedPackageBatch() {
+        ExpandResult result = this.newEmptyExpandResult();
+        result.setPlanTimes(new LinkedHashSet<>());
+        result.setPackageBatchResolved(true);
         return result;
     }
 
@@ -575,6 +624,19 @@ public class StandingOrderPackageBatchPlanTimeResolver {
     }
 
     /**
+     * 解析常规单次（非首日槽）临床拆零量，判定是否触发拆零下限（BR-IP-EXE-036 / 038 MIN_SPLIT）。
+     *
+     * @param measure 槽量
+     * @param product 目录
+     * @return 拆零量；失败 null
+     */
+    public BigDecimal resolveRegularClinicalSplitQuantity(
+        MeasureInput measure,
+        ProductDefinitionDisplayDto product) {
+        return this.resolveRegularSlotSplitQuantity(measure, product);
+    }
+
+    /**
      * 解析常规单次（非首日槽）临床拆零量，判定是否触发拆零下限。
      *
      * @param measure 槽量
@@ -627,14 +689,21 @@ public class StandingOrderPackageBatchPlanTimeResolver {
         if (!expandEnd.isAfter(expandStart)) {
             return planned;
         }
-        List<FrequencyExecutionTimePointQueryModel> points =
-            frequencyQueryService.computeExecutionTimePoints(rateCode, expandStart, expandEnd);
-        List<LocalDateTime> rawTimes = new ArrayList<>();
-        for (FrequencyExecutionTimePointQueryModel point : points) {
-            if (point != null && point.getExecutionAt() != null) {
-                // 秒级归一，与 Procedure occurrence 分组合并键一致
-                rawTimes.add(point.getExecutionAt().withNano(0));
+        // Pre：同 rateCode + 窗复用原始展开点，再按本嘱开立日裁首次槽
+        String cacheKey = rateCode + "|" + expandStart + "|" + expandEnd;
+        Map<String, List<LocalDateTime>> cache = rawExpandPointsCache.get();
+        List<LocalDateTime> rawTimes = cache.get(cacheKey);
+        if (rawTimes == null) {
+            List<FrequencyExecutionTimePointQueryModel> points =
+                frequencyQueryService.computeExecutionTimePoints(rateCode, expandStart, expandEnd);
+            rawTimes = new ArrayList<>();
+            for (FrequencyExecutionTimePointQueryModel point : points) {
+                if (point != null && point.getExecutionAt() != null) {
+                    // 秒级归一，与 Procedure occurrence 分组合并键一致
+                    rawTimes.add(point.getExecutionAt().withNano(0));
+                }
             }
+            cache.put(cacheKey, rawTimes);
         }
         planned.addAll(LongTermFirstExecutionSlotSupport.applyOpenedDayFirstSlotRule(rawTimes, openedTime));
         return planned;

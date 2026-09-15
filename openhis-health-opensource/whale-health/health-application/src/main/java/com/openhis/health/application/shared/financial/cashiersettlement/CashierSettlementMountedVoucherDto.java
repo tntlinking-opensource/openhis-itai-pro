@@ -46,6 +46,14 @@ public class CashierSettlementMountedVoucherDto {
     @Schema(description = "下半区汇总")
     private Object summary;
 
+    /**
+     * 患者分项块列表（交账批次口径；挂载现算；只读重打用）。
+     *
+     * <p>运行时为住院日结 PatientSummary DTO 列表；门诊挂载可为空。</p>
+     */
+    @Schema(description = "患者分项块列表（挂载现算；可空）")
+    private Object patientSummaries;
+
     /** 本次挂载 payment 主键（string 保精度）。 */
     @Schema(description = "本次挂载 payment 主键（string 保精度）")
     private List<String> paymentIds;

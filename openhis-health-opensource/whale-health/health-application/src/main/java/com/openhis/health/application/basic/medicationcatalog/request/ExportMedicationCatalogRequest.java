@@ -34,6 +34,11 @@ public class ExportMedicationCatalogRequest {
     private String keyDrugType;
 
     /**
+     * 发布状态筛选（{@code ACTIVE} 已启用 / {@code INACTIVE} 已停用）；空/{@code null} 表示不限。
+     */
+    private String statusEnum;
+
+    /**
      * 前端下发的导出列；空则导出全部列（按表头名匹配 field/title）。
      */
     @Schema(description = "导出列清单（页面可见列）")

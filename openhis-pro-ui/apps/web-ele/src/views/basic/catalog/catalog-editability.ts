@@ -3,7 +3,7 @@
  * 编辑（药/材）：先 LOCK_CLINICAL（开过）再 LOCK_INVENTORY（入库）。
  * LOCK_INVENTORY：名称/分类/业务单位/拆零/价格等不可改；临床与规格段仍可改。
  * LOCK_CLINICAL：在入库锁基础上另锁药品性质/规格/剂型/剂量单位与倍数。
- * 拆分属性、医保等级、追溯码单位/倍数两种锁定态均可改。
+ * 拆分属性、医保等级、病案结算类型、追溯码单位/倍数两种锁定态均可改。
  * 追溯码贴码单位与倍数游离于五类业务单位，与发布/业务引用锁定无关。
  * 删除：任一锁定码均整单禁删（与编辑优先级无关）。
  */
@@ -47,7 +47,6 @@ const MEDICATION_STRUCTURE_LOCKED_FIELDS = new Set([
   'packageUnitRatio',
   'purchasePrice',
   'retailPrice',
-  'mrSettlementTypeCode',
 ]);
 
 const DEVICE_STRUCTURE_LOCKED_FIELDS = new Set([
@@ -70,9 +69,6 @@ const DEVICE_STRUCTURE_LOCKED_FIELDS = new Set([
   'packageUnitRatio',
   'purchasePrice',
   'retailPrice',
-  'unitCode',
-  'minUnitCode',
-  'mrSettlementTypeCode',
 ]);
 
 const SERVICE_STRUCTURE_LOCKED_FIELDS = new Set([
@@ -84,7 +80,6 @@ const SERVICE_STRUCTURE_LOCKED_FIELDS = new Set([
   'itemTypeCode',
   'ybType',
   'retailPrice',
-  'mrSettlementTypeCode',
 ]);
 
 export const MEDICATION_CATALOG_LOCKABLE_FORM_FIELDS = [

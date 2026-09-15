@@ -1,5 +1,5 @@
 /**
- * 学生/教职工/客户体检历史 — {@code POST /peisExamHistory/<method>}
+ * 体检记录 — {@code POST /peisExamHistory/<method>}
  */
 import { publicRequestClient } from '#/api/request';
 
@@ -15,9 +15,13 @@ export interface ExamHistoryRowDto {
   examKind?: string;
   finalReport?: boolean;
   groupFlag?: boolean;
+  idCardNo?: string;
   packageActivityId?: IdLike;
   packageName?: string;
   paid?: boolean;
+  patientId?: IdLike;
+  patientName?: string;
+  phone?: string;
   statusEnum?: string;
   statusText?: string;
 }
@@ -39,9 +43,34 @@ export interface ListPatientExamHistoryResponse {
   subjectType?: string;
 }
 
+export interface PageExamRecordsRequest {
+  keyword?: string;
+  dateFrom?: string | null;
+  dateTo?: string | null;
+  patientId?: IdLike | null;
+  /** all / personal / group */
+  groupScope?: 'all' | 'personal' | 'group' | string;
+  pageNo: number;
+  pageSize: number;
+}
+
+export interface PageExamRecordsResponse {
+  content?: ExamHistoryRowDto[];
+  totalCount?: number;
+  pageNo?: number;
+  pageSize?: number;
+}
+
 export function listPatientExamHistoryApi(data: ListPatientExamHistoryRequest) {
   return publicRequestClient.post<ListPatientExamHistoryResponse>(
     '/peisExamHistory/listPatientExamHistory',
+    data,
+  );
+}
+
+export function pageExamRecordsApi(data: PageExamRecordsRequest) {
+  return publicRequestClient.post<PageExamRecordsResponse>(
+    '/peisExamHistory/pageExamRecords',
     data,
   );
 }

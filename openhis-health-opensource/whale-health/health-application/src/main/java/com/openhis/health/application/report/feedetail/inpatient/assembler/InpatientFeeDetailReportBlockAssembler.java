@@ -54,6 +54,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -106,7 +107,7 @@ public class InpatientFeeDetailReportBlockAssembler {
     private final ReportPatientSettlementContextAssembler reportPatientSettlementContextAssembler;
 
     /**
-     * 将域层就诊块批量 enrichment 并装配为 DTO。
+     * 将域层就诊块批量 enrichment 并装配为 DTO（默认不按 definition 合并行）。
      *
      * @param domainBlocks 域层就诊块
      * @param query        同批查询（含 payment 上下文）
@@ -115,6 +116,25 @@ public class InpatientFeeDetailReportBlockAssembler {
     public List<OutpatientFeeDetailEncounterBlockDto> assembleEncounterBlockDtos(
         List<OutpatientFeeDetailEncounterBlockQueryModel> domainBlocks,
         OutpatientFeeDetailPageQuery query) {
+        return this.assembleEncounterBlockDtos(domainBlocks, query, false);
+    }
+
+    /**
+     * 将域层就诊块批量 enrichment 并装配为 DTO。
+     *
+     * <p>当 {@code mergeByDefinition=true} 时，仅在本批每个就诊块装配完行 DTO 后，按
+     * {@code ChargeItem.definitionId + quantityUnit} 合并同块内行；{@code definitionId} 为空的行各自按
+     * {@code chargeItemId} 分桶，避免误并。数量按收退符号净合计。页脚/全量 summary 不走本合并。</p>
+     *
+     * @param domainBlocks      域层就诊块（本页或导出扫描的一批）
+     * @param query             同批查询（含 payment 上下文）
+     * @param mergeByDefinition 是否按收费项目定义合并块内行
+     * @return 就诊块 DTO 列表
+     */
+    public List<OutpatientFeeDetailEncounterBlockDto> assembleEncounterBlockDtos(
+        List<OutpatientFeeDetailEncounterBlockQueryModel> domainBlocks,
+        OutpatientFeeDetailPageQuery query,
+        boolean mergeByDefinition) {
         if (domainBlocks == null || domainBlocks.isEmpty()) {
             return List.of();
         }
@@ -165,13 +185,27 @@ public class InpatientFeeDetailReportBlockAssembler {
                 blockDto.setMedTypeDisplay(settlementContext.getMedTypeDisplay());
             }
             List<OutpatientFeeDetailLineDto> lineDtos = new ArrayList<>();
+            // Pre：chargeItemId → 合并锚点（definitionId + 数量单位），供块内 BY_DEFINITION 分桶
+            Map<Long, FeeDetailDefinitionMergeAnchor> mergeAnchorByChargeItemId = new HashMap<>();
             if (domainBlock.getLines() != null) {
                 for (OutpatientFeeDetailChargeRowQueryModel row : domainBlock.getLines()) {
                     OutpatientFeeDetailLineDto lineDto = this.assembleSingleLine(row, bundle, unitLabelByCode);
                     if (lineDto != null) {
                         lineDtos.add(lineDto);
                     }
+                    // 记录本行合并锚点；缺 chargeItemId 时无法参与同品规分桶
+                    if (row != null && row.getChargeItem() != null && row.getChargeItem().getId() != null) {
+                        ChargeItem chargeItem = row.getChargeItem();
+                        FeeDetailDefinitionMergeAnchor anchor = new FeeDetailDefinitionMergeAnchor();
+                        anchor.definitionId = chargeItem.getDefinitionId();
+                        anchor.quantityUnit = chargeItem.getQuantityUnit();
+                        mergeAnchorByChargeItemId.put(chargeItem.getId(), anchor);
+                    }
                 }
+            }
+            // Asm：同就诊块内按 definitionId+单位 净合并（仅当前批块，禁止全窗物化）
+            if (mergeByDefinition && !lineDtos.isEmpty()) {
+                lineDtos = this.mergeLinesByDefinition(lineDtos, mergeAnchorByChargeItemId);
             }
             if (!lineDtos.isEmpty()) {
                 OutpatientFeeDetailLineDto firstLine = lineDtos.get(0);
@@ -192,10 +226,284 @@ public class InpatientFeeDetailReportBlockAssembler {
                 }
             }
             blockDto.setLines(lineDtos);
+            // Asm：块小计在合并后重算，与展示行一致
             blockDto.setSubtotal(this.outpatientFeeDetailAssembler.assembleEncounterSubtotal(lineDtos));
             result.add(blockDto);
         }
         return result;
+    }
+
+    /**
+     * 同就诊块内按 {@code ChargeItem.definitionId + quantityUnit} 合并明细行。
+     *
+     * <p>有 definitionId 的行按「定义+数量单位」分桶并净加总金额/数量；definitionId 为空时以
+     * chargeItemId 单独成桶，避免不同无定义行被误并。事件字段（收费行/支付/结算时刻/开单人/执行人/收费人）
+     * 在合并后清空。单位入键：禁止混单位数量代数加总。</p>
+     *
+     * @param lineDtos                    已装配的块内行
+     * @param mergeAnchorByChargeItemId   chargeItemId → definitionId+单位
+     * @return 合并后的行列表（保持首次出现顺序）
+     */
+    private List<OutpatientFeeDetailLineDto> mergeLinesByDefinition(
+        List<OutpatientFeeDetailLineDto> lineDtos,
+        Map<Long, FeeDetailDefinitionMergeAnchor> mergeAnchorByChargeItemId) {
+        if (lineDtos == null || lineDtos.isEmpty()) {
+            return List.of();
+        }
+        LinkedHashMap<String, List<OutpatientFeeDetailLineDto>> buckets = new LinkedHashMap<>();
+        for (OutpatientFeeDetailLineDto lineDto : lineDtos) {
+            // 空行跳过，避免 NPE 污染分桶
+            if (lineDto == null) {
+                continue;
+            }
+            String bucketKey = this.resolveDefinitionMergeBucketKey(lineDto, mergeAnchorByChargeItemId);
+            List<OutpatientFeeDetailLineDto> bucket = buckets.get(bucketKey);
+            // 新桶：保持 Encounter 块内首次出现顺序
+            if (bucket == null) {
+                bucket = new ArrayList<>();
+                buckets.put(bucketKey, bucket);
+            }
+            bucket.add(lineDto);
+        }
+        List<OutpatientFeeDetailLineDto> merged = new ArrayList<>(buckets.size());
+        for (List<OutpatientFeeDetailLineDto> bucket : buckets.values()) {
+            // 单行桶无需合并，原样保留事件字段
+            if (bucket.size() == 1) {
+                merged.add(bucket.get(0));
+                continue;
+            }
+            merged.add(this.mergeDefinitionBucket(bucket));
+        }
+        return merged;
+    }
+
+    /**
+     * 解析块内合并分桶键：有 definitionId 用 {@code D:{id}|U:{unit}}；否则用 {@code C:{chargeItemId}}。
+     *
+     * @param lineDto                   已装配行
+     * @param mergeAnchorByChargeItemId chargeItemId → 合并锚点
+     * @return 分桶键
+     */
+    private String resolveDefinitionMergeBucketKey(
+        OutpatientFeeDetailLineDto lineDto,
+        Map<Long, FeeDetailDefinitionMergeAnchor> mergeAnchorByChargeItemId) {
+        Long chargeItemId = lineDto.getChargeItemId();
+        FeeDetailDefinitionMergeAnchor anchor = null;
+        // 有 chargeItemId 时取域层 definitionId + 数量单位
+        if (chargeItemId != null && mergeAnchorByChargeItemId != null) {
+            anchor = mergeAnchorByChargeItemId.get(chargeItemId);
+        }
+        // 有定义：同 definition+单位 可并；无定义：按收费行各自成桶
+        if (anchor != null && anchor.definitionId != null) {
+            String unitPart = anchor.quantityUnit;
+            if (unitPart == null) {
+                unitPart = "\u0000";
+            }
+            return "D:" + anchor.definitionId + "|U:" + unitPart;
+        }
+        if (chargeItemId != null) {
+            return "C:" + chargeItemId;
+        }
+        // 缺主键的脏行各自隔离，避免互相吞并
+        return "N:" + System.identityHashCode(lineDto);
+    }
+
+    /**
+     * 将同一 definition 桶内多行合并为一行：金额代数加总后 {@code scaleCalc}；
+     * 展示/品规取首样本；事件字段清空；方向/费用性质/单位仅全同保留；单价仅唯一非空值时保留。
+     *
+     * @param bucket 同桶多行（size≥2）
+     * @return 合并后的展示行
+     */
+    private OutpatientFeeDetailLineDto mergeDefinitionBucket(List<OutpatientFeeDetailLineDto> bucket) {
+        OutpatientFeeDetailLineDto first = bucket.get(0);
+        OutpatientFeeDetailLineDto merged = new OutpatientFeeDetailLineDto();
+        // Asm：品规/大类/医保展示取首样本（同 definition 预期一致）
+        merged.setFeeCategoryCode(first.getFeeCategoryCode());
+        merged.setFeeCategoryDisplay(first.getFeeCategoryDisplay());
+        merged.setSubCategoryCode(first.getSubCategoryCode());
+        merged.setSubCategoryDisplay(first.getSubCategoryDisplay());
+        merged.setProductName(first.getProductName());
+        merged.setProductCode(first.getProductCode());
+        merged.setSpecification(first.getSpecification());
+        merged.setInsuranceLevelDisplay(first.getInsuranceLevelDisplay());
+        merged.setDiscountRateDisplay(first.getDiscountRateDisplay());
+        // Asm：事件字段清空——合并后不再对应单一收费行/支付/人员
+        merged.setChargeItemId(null);
+        merged.setPaymentId(null);
+        merged.setBillDate(null);
+        merged.setOrderingDoctorId(null);
+        merged.setOrderingDoctorName(null);
+        merged.setPerformerId(null);
+        merged.setPerformerName(null);
+        merged.setCashierId(null);
+        merged.setCashierName(null);
+        // Asm：收退方向全同保留，否则置空（收退混桶不再标方向）
+        merged.setTradeDirection(this.resolveUnanimousTradeDirection(bucket));
+        // Asm：费用性质全同保留，否则置空
+        merged.setFeeNatureContractNo(this.resolveUnanimousFeeNatureContractNo(bucket));
+        merged.setFeeNatureDisplay(this.resolveUnanimousFeeNatureDisplay(bucket));
+        // Asm：数量单位全同保留，否则置空
+        merged.setQuantityUnitDisplay(this.resolveUnanimousQuantityUnitDisplay(bucket));
+        // Asm：单价仅唯一非空值时保留，禁止合计÷数量反推
+        merged.setSaleUnitPrice(this.resolveSingleDistinctUnitPrice(bucket, true));
+        merged.setPurchaseUnitPrice(this.resolveSingleDistinctUnitPrice(bucket, false));
+        // Asm：数量净合计（退费行取负，对齐汇总 Tab addSignedQuantity）；金额列已带符号直接加总
+        BigDecimal quantitySum = BigDecimal.ZERO;
+        BigDecimal baseSum = BigDecimal.ZERO;
+        BigDecimal discountSum = BigDecimal.ZERO;
+        BigDecimal receivableSum = BigDecimal.ZERO;
+        BigDecimal discountedSum = BigDecimal.ZERO;
+        BigDecimal purchaseSum = BigDecimal.ZERO;
+        BigDecimal saleSum = BigDecimal.ZERO;
+        BigDecimal actualReceivedSum = BigDecimal.ZERO;
+        BigDecimal insuranceSum = BigDecimal.ZERO;
+        BigDecimal selfPaySum = BigDecimal.ZERO;
+        for (OutpatientFeeDetailLineDto line : bucket) {
+            quantitySum = quantitySum.add(this.resolveSignedQuantityForMerge(line));
+            baseSum = baseSum.add(MonetaryAmountSupport.nullToZero(line.getBaseAmount()));
+            discountSum = discountSum.add(MonetaryAmountSupport.nullToZero(line.getDiscountAmount()));
+            receivableSum = receivableSum.add(MonetaryAmountSupport.nullToZero(line.getReceivableAmount()));
+            discountedSum = discountedSum.add(MonetaryAmountSupport.nullToZero(line.getDiscountedAmount()));
+            purchaseSum = purchaseSum.add(MonetaryAmountSupport.nullToZero(line.getPurchaseAmount()));
+            saleSum = saleSum.add(MonetaryAmountSupport.nullToZero(line.getSaleAmount()));
+            actualReceivedSum = actualReceivedSum.add(MonetaryAmountSupport.nullToZero(line.getActualReceivedAmount()));
+            insuranceSum = insuranceSum.add(MonetaryAmountSupport.nullToZero(line.getInsuranceAmount()));
+            selfPaySum = selfPaySum.add(MonetaryAmountSupport.nullToZero(line.getSelfPayAmount()));
+        }
+        merged.setQuantityValue(MonetaryAmountSupport.scaleCalc(quantitySum));
+        merged.setBaseAmount(MonetaryAmountSupport.scaleCalc(baseSum));
+        merged.setDiscountAmount(MonetaryAmountSupport.scaleCalc(discountSum));
+        merged.setReceivableAmount(MonetaryAmountSupport.scaleCalc(receivableSum));
+        merged.setDiscountedAmount(MonetaryAmountSupport.scaleCalc(discountedSum));
+        merged.setPurchaseAmount(MonetaryAmountSupport.scaleCalc(purchaseSum));
+        merged.setSaleAmount(MonetaryAmountSupport.scaleCalc(saleSum));
+        merged.setActualReceivedAmount(MonetaryAmountSupport.scaleCalc(actualReceivedSum));
+        merged.setInsuranceAmount(MonetaryAmountSupport.scaleCalc(insuranceSum));
+        merged.setSelfPayAmount(MonetaryAmountSupport.scaleCalc(selfPaySum));
+        return merged;
+    }
+
+    /**
+     * 桶内收退方向：全同则返回该值，否则 null。
+     *
+     * @param bucket 同桶行
+     * @return 一致的 tradeDirection 或 null
+     */
+    private String resolveUnanimousTradeDirection(List<OutpatientFeeDetailLineDto> bucket) {
+        String first = bucket.get(0).getTradeDirection();
+        for (int i = 1; i < bucket.size(); i++) {
+            // 任一不一致则不再标收退方向
+            if (!Objects.equals(first, bucket.get(i).getTradeDirection())) {
+                return null;
+            }
+        }
+        return first;
+    }
+
+    /**
+     * 桶内费用性质合同号：全同则保留，否则 null。
+     *
+     * @param bucket 同桶行
+     * @return 一致的 feeNatureContractNo 或 null
+     */
+    private String resolveUnanimousFeeNatureContractNo(List<OutpatientFeeDetailLineDto> bucket) {
+        String first = bucket.get(0).getFeeNatureContractNo();
+        for (int i = 1; i < bucket.size(); i++) {
+            // 混性质桶清空合同号，避免误导对账
+            if (!Objects.equals(first, bucket.get(i).getFeeNatureContractNo())) {
+                return null;
+            }
+        }
+        return first;
+    }
+
+    /**
+     * 桶内费用性质展示名：全同则保留，否则 null。
+     *
+     * @param bucket 同桶行
+     * @return 一致的 feeNatureDisplay 或 null
+     */
+    private String resolveUnanimousFeeNatureDisplay(List<OutpatientFeeDetailLineDto> bucket) {
+        String first = bucket.get(0).getFeeNatureDisplay();
+        for (int i = 1; i < bucket.size(); i++) {
+            // 混性质桶清空展示名
+            if (!Objects.equals(first, bucket.get(i).getFeeNatureDisplay())) {
+                return null;
+            }
+        }
+        return first;
+    }
+
+    /**
+     * 桶内数量单位展示：全同则保留，否则 null。
+     *
+     * @param bucket 同桶行
+     * @return 一致的 quantityUnitDisplay 或 null
+     */
+    private String resolveUnanimousQuantityUnitDisplay(List<OutpatientFeeDetailLineDto> bucket) {
+        String first = bucket.get(0).getQuantityUnitDisplay();
+        for (int i = 1; i < bucket.size(); i++) {
+            // 单位不一致时清空，禁止混单位后仍显示单一单位
+            if (!Objects.equals(first, bucket.get(i).getQuantityUnitDisplay())) {
+                return null;
+            }
+        }
+        return first;
+    }
+
+    /**
+     * 合并用符号数量：落库 quantity 为正；退费行（tradeDirection=REFUND）取负，与汇总 Tab 净数量同口径。
+     *
+     * @param line 已装配明细行
+     * @return 带符号数量（计算刻度，未再 scale）
+     */
+    private BigDecimal resolveSignedQuantityForMerge(OutpatientFeeDetailLineDto line) {
+        BigDecimal quantity = MonetaryAmountSupport.nullToZero(line.getQuantityValue());
+        // 退费行冲减净数量
+        if (OutpatientFeeDetailConstants.TRADE_DIRECTION_REFUND.equals(line.getTradeDirection())) {
+            return quantity.negate();
+        }
+        return quantity;
+    }
+
+    /**
+     * 桶内单价：仅当非空值集合按绝对值恰好一个时保留该绝对值；否则 null（禁止合计÷数量）。
+     *
+     * <p>退费行单价为负展示，合并净合计时按绝对值判同价，避免「+21 与 -21」被误判为异价清空。</p>
+     *
+     * @param bucket        同桶行
+     * @param saleUnitPrice true=售价单价；false=进价单价
+     * @return 唯一非空单价绝对值或 null
+     */
+    private BigDecimal resolveSingleDistinctUnitPrice(
+        List<OutpatientFeeDetailLineDto> bucket,
+        boolean saleUnitPrice) {
+        BigDecimal uniqueAbs = null;
+        for (OutpatientFeeDetailLineDto line : bucket) {
+            BigDecimal candidate;
+            // 售价/进价单价分列取数
+            if (saleUnitPrice) {
+                candidate = line.getSaleUnitPrice();
+            } else {
+                candidate = line.getPurchaseUnitPrice();
+            }
+            // 空单价不参与「唯一非空」判定
+            if (candidate == null) {
+                continue;
+            }
+            BigDecimal absCandidate = candidate.abs();
+            // 首次非空：记为候选
+            if (uniqueAbs == null) {
+                uniqueAbs = absCandidate;
+                continue;
+            }
+            // 与已有候选按绝对值不等 → 异价，清空
+            if (uniqueAbs.compareTo(absCandidate) != 0) {
+                return null;
+            }
+        }
+        return uniqueAbs;
     }
 
     /**
@@ -338,7 +646,11 @@ public class InpatientFeeDetailReportBlockAssembler {
         if (OutpatientFeeDetailConstants.TRADE_DIRECTION_REFUND.equals(lineDto.getTradeDirection())) {
             signMultiplier = new BigDecimal("-1");
         }
-        Long chargeItemId = chargeItem != null ? chargeItem.getId() : null;
+        Long chargeItemId = null;
+        // 有账单实体时取主键，供进价 Map 回填
+        if (chargeItem != null) {
+            chargeItemId = chargeItem.getId();
+        }
         BigDecimal purchaseUnit = null;
         BigDecimal purchaseAmount = null;
         if (chargeItemId != null) {
@@ -615,6 +927,18 @@ public class InpatientFeeDetailReportBlockAssembler {
             }
         }
         return nameById;
+    }
+
+    /**
+     * 块内 BY_DEFINITION 合并锚点：definitionId + 收费数量单位。
+     */
+    private static final class FeeDetailDefinitionMergeAnchor {
+
+        /** 收费项目定义主键；可空（空则按 chargeItemId 单桶）。 */
+        private Long definitionId;
+
+        /** 收费数量单位码；可空（空与有值分键）。 */
+        private String quantityUnit;
     }
 
     /**

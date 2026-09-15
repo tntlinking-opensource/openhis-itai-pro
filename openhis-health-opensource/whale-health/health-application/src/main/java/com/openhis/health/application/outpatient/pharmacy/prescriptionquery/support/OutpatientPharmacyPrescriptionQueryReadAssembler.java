@@ -451,6 +451,8 @@ public class OutpatientPharmacyPrescriptionQueryReadAssembler {
         dto.setDose(requestRow.getDose());
         dto.setDoseUnitCode(requestRow.getDoseUnitCode());
         dto.setDispensePerDuration(requestRow.getDispensePerDuration());
+        // 中药付数：方头字段；西药行通常为空
+        dto.setChineseHerbsDoseQuantity(requestRow.getChineseHerbsDoseQuantity());
         dto.setDosageInstructionCode(requestRow.getDosageInstruction());
         dto.setSkinTestFlag(requestRow.getSkinTestFlag());
         if (requestRow.getSkinTestFlag() != null) {

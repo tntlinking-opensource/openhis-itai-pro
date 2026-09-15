@@ -35,6 +35,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+
 /**
  * 处方点评读侧查询服务（DM-CUS-015）。
  *
@@ -242,17 +244,49 @@ public class PrescriptionReviewQueryService {
         if (query.getReviewerId() != null) {
             predicates.add(cb.equal(root.get(FieldNameConstants.REVIEWER_ID), query.getReviewerId()));
         }
-        // 处方号模糊
-        if (StringUtils.isNotEmpty(query.getPrescriptionNoKeyword())) {
-            String like = "%" + query.getPrescriptionNoKeyword().trim() + "%";
-            predicates.add(cb.like(root.get(FieldNameConstants.PRESCRIPTION_NO), like));
+        // 关键字：处方号或点评业务号模糊 OR
+        if (StringUtils.isNotEmpty(query.getKeyword())) {
+            String like = "%" + query.getKeyword().trim() + "%";
+            predicates.add(cb.or(
+                cb.like(root.get(FieldNameConstants.PRESCRIPTION_NO), like),
+                cb.like(root.get(FieldNameConstants.BUS_NO), like)));
         }
-        // 业务号模糊
-        if (StringUtils.isNotEmpty(query.getBusNoKeyword())) {
-            String like = "%" + query.getBusNoKeyword().trim() + "%";
-            predicates.add(cb.like(root.get(FieldNameConstants.BUS_NO), like));
+        // 开方日窗预解析方号：null 不限；空集合拒查；非空 IN（分批 OR）
+        if (query.getPrescriptionNosIn() != null) {
+            List<String> nos = query.getPrescriptionNosIn();
+            // 窗内无方：强制空结果，避免扫全表
+            if (nos.isEmpty()) {
+                predicates.add(cb.equal(cb.literal(1), cb.literal(0)));
+            } else {
+                predicates.add(this.buildChunkedPrescriptionNoInPredicate(cb, root, nos));
+            }
         }
         return predicates;
+    }
+
+    /**
+     * 处方号 IN 分批 OR，避免单次 IN 过长。
+     *
+     * @param cb   CriteriaBuilder
+     * @param root 点评根
+     * @param nos  处方号（调用方保证非空）
+     * @return 分批 IN 谓词
+     */
+    private Predicate buildChunkedPrescriptionNoInPredicate(
+        CriteriaBuilder cb,
+        Root<PrescriptionReview> root,
+        List<String> nos) {
+        int chunkSize = GeneralSharedConstants.ID_IN_QUERY_CHUNK_SIZE;
+        // 单批直接 IN
+        if (nos.size() <= chunkSize) {
+            return root.get(FieldNameConstants.PRESCRIPTION_NO).in(nos);
+        }
+        List<Predicate> chunkPredicates = new ArrayList<>();
+        for (int fromIndex = 0; fromIndex < nos.size(); fromIndex += chunkSize) {
+            int toIndex = Math.min(fromIndex + chunkSize, nos.size());
+            chunkPredicates.add(root.get(FieldNameConstants.PRESCRIPTION_NO).in(nos.subList(fromIndex, toIndex)));
+        }
+        return cb.or(chunkPredicates.toArray(new Predicate[0]));
     }
 
     /**

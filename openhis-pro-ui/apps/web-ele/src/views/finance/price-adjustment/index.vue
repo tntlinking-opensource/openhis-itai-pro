@@ -226,14 +226,15 @@ watch(
   async (newQuery) => {
     const busNo = newQuery.busNo;
     if (!busNo || Array.isArray(busNo)) return;
+    const busNoText = String(busNo).trim();
+    if (!busNoText) return;
     if (adjustmentReasonOptions.value.length === 0) {
       await initPage();
     }
-    queryParams.value.keyword = String(busNo);
-    await getList();
-    const row = orderList.value.find((item) => resolveBusNo(item) === String(busNo));
-    if (!row) return;
+    // 深链有单号：直接按 busNo 拉详情，不经侧栏日期/列表过滤
+    const row = { busNo: busNoText };
     selectedOrder.value = row;
+    isAddDisabled.value = false;
     await handleEdit(row);
   },
   { immediate: true },

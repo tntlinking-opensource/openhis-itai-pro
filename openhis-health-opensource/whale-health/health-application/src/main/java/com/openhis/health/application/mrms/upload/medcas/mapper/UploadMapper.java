@@ -58,6 +58,9 @@ public class UploadMapper {
         dto.setArchivedAt(row.getArchivedAt());
         dto.setChsUploadStatusCode(row.getChsUploadStatusCode());
         dto.setChsUploadError(row.getChsUploadError());
+        dto.setSettleUploadStatusCode(row.getSettleUploadStatusCode());
+        dto.setSettleUploadError(row.getSettleUploadError());
+        dto.setSetlListId(row.getSetlListId());
         return dto;
     }
 }

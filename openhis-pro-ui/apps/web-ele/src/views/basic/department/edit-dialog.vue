@@ -454,11 +454,17 @@ const formConfig = reactive({
       },
     },
     {
-      component: 'Input',
+      component: 'Select',
       fieldName: 'medinsType',
       label: '机构类型',
       componentProps: {
-        placeholder: '请输入',
+        options: [
+          { label: '中医院', value: 'TCM' },
+          { label: '西医院', value: 'WESTERN' },
+        ],
+        clearable: true,
+        filterable: true,
+        placeholder: '中医院 / 西医院（病案首页中医信息）',
       },
     },
     {

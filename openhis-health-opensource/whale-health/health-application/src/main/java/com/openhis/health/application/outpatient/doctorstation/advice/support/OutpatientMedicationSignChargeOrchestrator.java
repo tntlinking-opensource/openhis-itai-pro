@@ -420,7 +420,7 @@ public class OutpatientMedicationSignChargeOrchestrator {
      * @param segmentQuantities      各分段数量
      * @param segmentLotNumbers      各分段 FIFO 批号（与 dispenseIds 等长；落账对价键）
      * @param quantityUnit           计价单位
-     * @param prescriptionNo         药品请求处方号（同方多味共享；写入 ChargeItem 供工作量按方去重）
+     * @param prescriptionNo         药品请求处方号（调用方仍传入供 FIFO 上下文；收费行<strong>不</strong>预写，结算再抄快照）
      * @param readCache              批内挂费读缓存；null 时逐条查价
      * @throws BusinessException 分段长度不一致、批号缺失/漂移或定价缺失时
      */
@@ -454,10 +454,7 @@ public class OutpatientMedicationSignChargeOrchestrator {
         this.assertPersistedDispenseLotsMatchFifoSegments(dispenseTable, dispenseIds, segmentLotNumbers);
         ProductDefinitionDisplayDto productRow = resolveProductDisplay(productDefinitionTable, productDefinitionId, readCache);
         List<CreateChargeItemCommand.Item> draftItems = new ArrayList<>();
-        String trimmedPrescriptionNo = null;
-        if (StringUtils.isNotEmpty(prescriptionNo)) {
-            trimmedPrescriptionNo = prescriptionNo.trim();
-        }
+        // Pre：prescriptionNo 参数仅兼容调用方签名，不写入收费行（真源在药品请求；结算再抄快照）。
         // Asm：每一发放分段一行 ChargeItem，单价必须跟本段 FIFO 批号
         for (int i = 0; i < dispenseIds.size(); i++) {
             String fifoLotNumber = segmentLotNumbers.get(i);
@@ -496,10 +493,7 @@ public class OutpatientMedicationSignChargeOrchestrator {
                     segmentQuantities.get(i),
                     quantityUnit,
                     productRow);
-            // Asm：药品处方号落收费行，同方多味共享，工作量按方计 1
-            if (trimmedPrescriptionNo != null) {
-                draftItem.setPrescriptionNo(trimmedPrescriptionNo);
-            }
+            // Asm：药品收费行不预写处方号（真源在 MedicationRequest；结算时再抄快照，避免重分方漂移）。
             draftItems.add(draftItem);
         }
         CreateChargeItemCommand batchCmd = new CreateChargeItemCommand();

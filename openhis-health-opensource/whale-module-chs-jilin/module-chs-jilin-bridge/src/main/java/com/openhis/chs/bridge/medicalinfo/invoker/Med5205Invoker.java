@@ -44,7 +44,7 @@ public class Med5205Invoker implements Med5205QueryInvoker {
             busNo,
             ChsInfNo.OPSP_DRUG_QUERY,
             MedPlatformInputAssembler.assemble5205(command),
-            medicalInfoInvokeSupport.buildInvokeContext());
+            medicalInfoInvokeSupport.buildInvokeContext(command));
         ChsPlatformResponseSupport.requireSuccess(body, ChsInfNo.OPSP_DRUG_QUERY);
         return MedInfoListOutputParser.parse5205(body);
     }

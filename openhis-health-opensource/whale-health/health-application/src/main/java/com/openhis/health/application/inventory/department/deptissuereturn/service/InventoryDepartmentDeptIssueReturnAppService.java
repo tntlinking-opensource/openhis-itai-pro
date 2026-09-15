@@ -25,7 +25,6 @@ import com.openhis.health.domain.administration.product.support.ProductDefinitio
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.InventoryDepartmentConstants;
-import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
 import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.LocationStatus;
 import com.openhis.health.domain.share.enums.SupplyRequestType;
@@ -161,21 +160,21 @@ public class InventoryDepartmentDeptIssueReturnAppService {
      * @return 表单初始化选项集合
      */
     public LoadDeptIssueReturnFormInitResponse loadDeptIssueReturnFormInit(LoadDeptIssueReturnFormInitRequest request) {
-        // Gate：会话机构上下文须存在，否则无法按管辖收窄库位与人员
-        Long resolvedOrg = managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
+        // Gate：会话机构上下文须存在，否则无法按管辖收窄库位
+        managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
             ErrorCodeConstants.DEP_TL_101, "机构上下文缺失");
         try {
-            // Pre：拉取启用科室药房/药师并经管辖 Gate 收窄
+            // Pre：拉取启用科室药房并经管辖 Gate 收窄；经手人取全体在职医务人员（不限药师/库管）
             List<Location> departmentPharmacies = locationQueryService.listAllActiveDepartmentPharmacies();
             List<Location> gatedDepartmentPharmacies =
                 this.managedLocationIdsResolver.narrowActiveLocationsByManaged(departmentPharmacies);
-            List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForInventoryDocHandlerRole(
-                WhalePlatformRoleCodeConstants.ROLE_PHARMACIST, resolvedOrg);
+            List<Practitioner> handlers =
+                this.practitionerRoleScopeLoader.listAllActivePractitionersForInventoryDocHandlerSelect();
             // Asm：下拉选项写入初始化响应
             return deptIssueReturnMapper.toLoadDeptIssueReturnFormInitResponse(
                 deptIssueReturnMapper.toOptionDtoListFromLocations(gatedDepartmentPharmacies),
                 deptIssueReturnMapper.toOptionDtoListSupplyStatuses(),
-                deptIssueReturnMapper.toOptionDtoListFromPractitioners(pharmacists));
+                deptIssueReturnMapper.toOptionDtoListFromPractitioners(handlers));
         } catch (RuntimeException ex) {
             log.warn("loadDeptIssueReturnFormInit failed", ex);
             throw new BusinessException(ErrorCodeConstants.DEP_TL_101, "退领页主数据加载失败");

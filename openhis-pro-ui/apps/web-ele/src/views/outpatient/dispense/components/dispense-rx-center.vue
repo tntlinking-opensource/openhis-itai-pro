@@ -677,6 +677,20 @@ const msfxDispenseBusNo = computed(() => {
             show-overflow-tooltip
           />
           <ElTableColumn
+            prop="packageSplitRatioText"
+            label="包装最小单位换算比"
+            width="140"
+            align="center"
+            header-align="center"
+            show-overflow-tooltip
+          >
+            <template #default="{ row }">
+              <template v-if="!isSpacerRow(row)">
+                {{ row.packageSplitRatioText?.trim() || '—' }}
+              </template>
+            </template>
+          </ElTableColumn>
+          <ElTableColumn
             v-if="activeRxKind === 'herbal'"
             prop="dosageInstructionText"
             label="特殊煎法"

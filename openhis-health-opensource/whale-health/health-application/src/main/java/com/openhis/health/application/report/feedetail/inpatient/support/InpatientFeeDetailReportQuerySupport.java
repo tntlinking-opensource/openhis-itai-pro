@@ -28,6 +28,7 @@ import com.openhis.health.application.shared.financial.DailySettlementFinTypeAmo
 import com.openhis.health.application.shared.product.ChargeItemProductLookupHelper;
 import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.application.shared.report.ReportChargeBillSummarizeScopeSupport;
+import com.openhis.health.application.shared.report.ReportDateTimeWindowSupport;
 import com.openhis.health.application.shared.report.ReportPatientSettlementContextAssembler;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseQueryService;
@@ -151,8 +152,9 @@ public class InpatientFeeDetailReportQuerySupport {
     private void prepareInpatientSettledOnlyPageScopes(
         OutpatientFeeDetailPageQuery query,
         List<String> allowedStatusCodes) {
-        LocalDateTime enteredFrom = query.getBillDateFrom().atStartOfDay();
-        LocalDateTime enteredToExclusive = query.getBillDateTo().plusDays(1).atStartOfDay();
+        LocalDateTime enteredFrom = query.getBillDateFrom();
+        LocalDateTime enteredToExclusive =
+            ReportDateTimeWindowSupport.toExclusiveEnd(query.getBillDateTo());
         List<String> serviceTables =
             this.chargeItemQueryService.resolveServiceTablesForFeeCategories(query.getFeeCategoryCodes());
         List<String> serviceTableFilter = null;
@@ -285,8 +287,9 @@ public class InpatientFeeDetailReportQuerySupport {
         List<String> allowedStatusCodes,
         boolean includeSettled,
         boolean includePending) {
-        LocalDateTime windowFrom = query.getBillDateFrom().atStartOfDay();
-        LocalDateTime windowToExclusive = query.getBillDateTo().plusDays(1).atStartOfDay();
+        LocalDateTime windowFrom = query.getBillDateFrom();
+        LocalDateTime windowToExclusive =
+            ReportDateTimeWindowSupport.toExclusiveEnd(query.getBillDateTo());
         List<String> serviceTables =
             this.chargeItemQueryService.resolveServiceTablesForFeeCategories(query.getFeeCategoryCodes());
         List<String> serviceTableFilter = null;
@@ -822,8 +825,9 @@ public class InpatientFeeDetailReportQuerySupport {
         }
         List<String> allowedStatusCodes = this.resolveAllowedChargeItemStatusCodes(query);
         query.setAllowedChargeItemStatusCodes(allowedStatusCodes);
-        LocalDateTime windowFrom = query.getBillDateFrom().atStartOfDay();
-        LocalDateTime windowToExclusive = query.getBillDateTo().plusDays(1).atStartOfDay();
+        LocalDateTime windowFrom = query.getBillDateFrom();
+        LocalDateTime windowToExclusive =
+            ReportDateTimeWindowSupport.toExclusiveEnd(query.getBillDateTo());
         // Pre：已结 entered_date；待结 recorded_time / 发放展示 / 滚费 occurrence
         WindowChargeLoadResult windowLoad = this.loadInpatientFeeDetailWindowChargeItems(
             windowFrom, windowToExclusive, query.getEntererMatchIds(), allowedStatusCodes);

@@ -50,6 +50,7 @@ import com.openhis.whale.emr.domain.document.entity.DocumentVersion;
 import com.openhis.whale.emr.domain.document.model.StructureItem;
 import com.openhis.whale.emr.domain.document.service.DocumentManager;
 import com.openhis.whale.emr.domain.document.service.DocumentStructureManager;
+import com.openhis.whale.emr.domain.enums.TemplateStationKind;
 import com.openhis.whale.emr.domain.loader.EmrAdmissionContextLoader;
 import com.openhis.whale.emr.domain.loader.EmrLinkedEncounterResolver;
 import com.openhis.whale.emr.domain.template.entity.Template;
@@ -640,7 +641,7 @@ public class DocumentAppService {
                 || DocumentManager.STATUS_ARCHIVED.equals(doc.getStatus())) {
             return true;
         }
-        // 病程 / 会诊：多人可编；其余仅创建者可编
+        // 住院病历 / 病程 / 会诊：多人可编；门诊文书仍仅创建者可编
         if (allowsMultiUserEdit(doc)) {
             return false;
         }
@@ -648,19 +649,35 @@ public class DocumentAppService {
     }
 
     /**
-     * 病程记录、会诊相关文书允许多人编辑（未锁定/归档前提下）。
+     * 是否允许多人编辑（未锁定/归档前提下）。
      *
-     * <p>会诊模板已并入 {@code NOTICE} 类型，故额外按模板编码/名称、文书标题识别。</p>
+     * <p>住院就诊（{@code EncounterClass=IMP}）下的全部文书放开，含告知书、手术病历等。</p>
+     * <p>就诊类别读不到时，再按文书类型分类 INPATIENT / SURGERY 兜底。</p>
+     * <p>门诊病历不走本放行，仍仅创建者可改。</p>
+     *
+     * @param doc 已落库文书
+     * @return true 时编辑/删除均不再校验创建者
      */
     private boolean allowsMultiUserEdit(Document doc) {
         String typeCode = doc.getDocumentTypeCode();
+        // 先按文书类型编码识别病程/会诊
         if (StringUtils.hasText(typeCode)) {
             String upper = typeCode.trim().toUpperCase();
+            // 病程、会诊类型编码：多人可编
             if ("PROGRESS_NOTE".equals(upper) || upper.contains("CONSULT")) {
                 return true;
             }
         }
+        // 住院就诊下所有文书：住院医生站全员可改
+        if (isInpatientEncounterDocument(doc)) {
+            return true;
+        }
+        // HIS 未返回就诊类别时：住院/手术分类仍放开
+        if (isInpatientCategoryDocument(doc)) {
+            return true;
+        }
         Long templateId = doc.getSourceTemplateId();
+        // 会诊已并入告知书类型：用源模板编码/名称兜底识别
         if (templateId != null) {
             Optional<Template> templateOpt = documentManager.getTemplateById(templateId);
             if (templateOpt.isPresent()) {
@@ -679,16 +696,87 @@ public class DocumentAppService {
         return StringUtils.hasText(title) && title.contains("会诊");
     }
 
-    /** 当前登录用户是否为创建者（无用户上下文时放行，供系统调用） */
+    /**
+     * 文书是否挂在住院就诊上（{@code encounter.classEnum = IMP}）。
+     *
+     * <p>B.6.4：经 {@link EmrAdmissionContextLoader} 读就诊类别，不直访 health Encounter 仓储。</p>
+     * <p>读不到类别时返回 false，由 {@link #isInpatientCategoryDocument} 按类型分类兜底。</p>
+     *
+     * @param doc 已落库文书
+     * @return true 表示住院就诊，该就诊下文书全员可改
+     */
+    private boolean isInpatientEncounterDocument(Document doc) {
+        String encounterId = doc.getEncounterId();
+        // 无就诊无法判住院，不放行
+        if (!StringUtils.hasText(encounterId)) {
+            return false;
+        }
+        Map<String, String> ctx = new HashMap<>();
+        try {
+            admissionContextLoader.contributeEncounter(ctx, encounterId.trim());
+        } catch (RuntimeException ignored) {
+            // HIS 未就绪时不按就诊放开，避免误判门诊
+            return false;
+        }
+        String classEnum = ctx.get("encounter.classEnum");
+        // 上下文未带就诊类别时交给类型分类兜底
+        if (!StringUtils.hasText(classEnum)) {
+            return false;
+        }
+        return TemplateStationKind.INPATIENT.getEncounterClassCode().equalsIgnoreCase(classEnum.trim());
+    }
+
+    /**
+     * 文书类型是否属于住院侧分类（就诊类别读不到时的兜底）。
+     *
+     * <p>INPATIENT（入院/出院/病程等）与 SURGERY（手术病历）放开；告知书靠住院就诊判定，避免误开门诊告知书。</p>
+     *
+     * @param doc 已落库文书
+     * @return true 表示住院分类，允许多人编辑
+     */
+    private boolean isInpatientCategoryDocument(Document doc) {
+        String typeCode = doc.getDocumentTypeCode();
+        // 无类型编码无法判分类，不放行
+        if (!StringUtils.hasText(typeCode)) {
+            return false;
+        }
+        Optional<DocumentType> typeOpt = documentManager.getDocumentTypeByCode(typeCode.trim());
+        // 类型未配置或已删除：不按住院放开，避免误开门诊文书
+        if (typeOpt.isEmpty()) {
+            return false;
+        }
+        String category = typeOpt.get().getCategoryCode();
+        // 未配分类时不猜住院，保持创建者闸门
+        if (!StringUtils.hasText(category)) {
+            return false;
+        }
+        String normalized = category.trim();
+        // 住院病历分类（入院/出院/病程等）
+        if (TemplateStationKind.INPATIENT.getCode().equalsIgnoreCase(normalized)) {
+            return true;
+        }
+        // 手术病历挂在住院就诊下，住院医生站同样全员可改
+        return "SURGERY".equalsIgnoreCase(normalized);
+    }
+
+    /**
+     * 当前登录用户是否为创建者（无用户上下文时放行，供系统调用）。
+     *
+     * @param doc 已落库文书
+     * @return true 可按创建者身份编辑
+     */
     private boolean isEditableByCurrentUser(Document doc) {
         Long currentUserId = null;
+        // 可选注入：部分系统调用没有登录用户
         if (currentUser != null) {
             currentUserId = currentUser.getCurrentUserId();
         }
+        // 无登录上下文（系统任务）不拦编辑
         if (currentUserId == null) {
             return true;
         }
         Long createdBy = doc.getCreatedBy();
+        // 历史数据无创建人时不拦
         if (createdBy == null) {
             return true;
         }
@@ -708,12 +796,22 @@ public class DocumentAppService {
         }
     }
 
-    /** 删除闸门：锁定/归档不可删；始终仅创建者可删（不套用多人可编辑放行） */
+    /**
+     * 删除闸门：锁定/归档不可删；住院侧文书与多人可编辑同一口径，门诊仍仅创建者可删。
+     *
+     * @param doc 已落库文书
+     */
     private void assertCanDeleteDocument(Document doc) {
+        // 锁定/归档后任何人都不能删
         if (DocumentManager.STATUS_LOCKED.equals(doc.getStatus())
                 || DocumentManager.STATUS_ARCHIVED.equals(doc.getStatus())) {
             throw new ValidationException("文书已锁定或归档，不可删除");
         }
+        // 住院就诊/住院分类文书：删除也不限创建者
+        if (allowsMultiUserEdit(doc)) {
+            return;
+        }
+        // 门诊等其余类型：仍仅创建者可删
         if (!isEditableByCurrentUser(doc)) {
             throw new ValidationException("仅创建者可删除该文书");
         }

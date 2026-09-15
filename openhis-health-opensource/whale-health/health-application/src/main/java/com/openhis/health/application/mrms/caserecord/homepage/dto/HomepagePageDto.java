@@ -19,4 +19,9 @@ public class HomepagePageDto {
 
     /** 首页数据。 */
     private HomepageDto homepage;
+
+    /**
+     * 是否启用「中医信息」段（由医院节点 {@code medins_type} 判定；与 homepage.tcmInfoEnabled 同口径）。
+     */
+    private Boolean tcmInfoEnabled;
 }

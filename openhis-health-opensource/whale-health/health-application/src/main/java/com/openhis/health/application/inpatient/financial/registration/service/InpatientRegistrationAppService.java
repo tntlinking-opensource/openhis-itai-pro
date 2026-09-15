@@ -21,6 +21,7 @@ import com.openhis.health.application.inpatient.financial.registration.dto.Regis
 import com.openhis.health.application.shared.inpatient.InpatientInfoQueueDisplayAssembler;
 import com.openhis.health.application.inpatient.financial.registration.mapper.InpatientRegistrationMapper;
 import com.openhis.health.domain.administration.account.command.AdjustAdvanceDepositBalanceCommand;
+import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.account.service.AccountDomainService;
 import com.openhis.health.application.inpatient.financial.registration.request.CancelRegistrationRequest;
 import com.openhis.health.application.inpatient.financial.registration.request.ListWardsByDepartmentRequest;
@@ -29,6 +30,7 @@ import com.openhis.health.application.inpatient.financial.registration.request.L
 import com.openhis.health.application.inpatient.financial.registration.request.LoadWardBedCapacityRequest;
 import com.openhis.health.application.inpatient.financial.registration.request.PageRegistrationQueueRequest;
 import com.openhis.health.application.inpatient.financial.registration.request.SubmitRegistrationRequest;
+import com.openhis.health.application.inpatient.financial.registration.request.SwitchInpatientToInsuranceRequest;
 import com.openhis.health.application.inpatient.financial.registration.response.CancelInsuranceInpatientAdmissionResponse;
 import com.openhis.health.application.inpatient.financial.registration.response.CancelRegistrationResponse;
 import com.openhis.health.application.inpatient.financial.registration.response.ListWardsByDepartmentResponse;
@@ -37,6 +39,9 @@ import com.openhis.health.application.inpatient.financial.registration.response.
 import com.openhis.health.application.inpatient.financial.registration.response.LoadWardBedCapacityResponse;
 import com.openhis.health.application.inpatient.financial.registration.response.PageRegistrationQueueResponse;
 import com.openhis.health.application.inpatient.financial.registration.response.SubmitRegistrationResponse;
+import com.openhis.health.application.inpatient.financial.registration.response.SwitchInpatientToInsuranceResponse;
+import com.openhis.health.application.inpatient.financial.registration.support.InpatientRegistrationInsuranceSwitchSupport;
+import com.openhis.health.application.shared.financial.EncounterChargeAccountOpener;
 import com.openhis.health.application.shared.inpatient.EncounterInpatientAdmissionOrchestrator;
 import com.openhis.health.domain.administration.account.entity.Account;
 import com.openhis.health.domain.administration.account.service.AccountQueryService;
@@ -81,6 +86,7 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.enums.EncounterClass;
 import com.openhis.health.domain.share.enums.EncounterParticipantRole;
+import com.openhis.health.domain.share.enums.YbMedType;
 import com.openhis.health.domain.share.enums.EncounterStatus;
 import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.LocationStatus;
@@ -152,6 +158,15 @@ public class InpatientRegistrationAppService {
 
     private final InpatientChargeInsuranceExtension inpatientChargeInsuranceExtension;
 
+    /** 自费转医保：未结费用切医保账户。 */
+    private final InpatientRegistrationInsuranceSwitchSupport inpatientRegistrationInsuranceSwitchSupport;
+
+    /** 就诊双账户幂等开立（转医保时补开医保户）。 */
+    private final EncounterChargeAccountOpener encounterChargeAccountOpener;
+
+    /** 住院费用读侧（转医保门禁：已结算占用）。 */
+    private final ChargeItemQueryService chargeItemQueryService;
+
     /** 入院登记成功后幂等建病案主档（发号 + autoFill）。 */
     private final CaseRecordDomainService caseRecordDomainService;
 
@@ -222,8 +237,16 @@ public class InpatientRegistrationAppService {
         Page<InpatientEncounterContextQueryModel> page = EncounterContextReader.pageInpatientRegQueue(query);
         Map<Long, Long> ambEncounterIdByEncounterId =
             this.loadAmbEncounterIdIndex(page.getContent());
+        Set<Long> encounterIds = new LinkedHashSet<>();
+        for (InpatientEncounterContextQueryModel row : page.getContent()) {
+            if (row != null && row.getEncounterId() != null) {
+                encounterIds.add(row.getEncounterId());
+            }
+        }
+        Map<Long, String> contractNoByEncounterId =
+            accountQueryService.mapPreferredContractNoByEncounterIds(encounterIds);
         Map<Long, InpatientInfoQueueDisplayAssembler.InpatientQueueDisplayOverlay> displayOverlay =
-            inpatientInfoQueueDisplayAssembler.buildOverlay(page.getContent());
+            inpatientInfoQueueDisplayAssembler.buildOverlay(page.getContent(), contractNoByEncounterId);
         Map<String, String> inWayLabelByCode = this.buildTerminologyLabelByCode(
             TerminologyCodeSystemNameConstants.IN_WAY_CODE);
         // Asm：映射队列行并封装分页响应。
@@ -234,6 +257,7 @@ public class InpatientRegistrationAppService {
                 displayOverlay,
                 inWayLabelByCode);
         this.enrichRegistrationQueueInsurance(rows);
+        this.enrichRegistrationQueueSwitchToInsurance(rows);
         return inpatientRegistrationMapper.toPageRegistrationQueueResponse(rows, page);
     }
 
@@ -315,6 +339,14 @@ public class InpatientRegistrationAppService {
                 readOnly = true;
             }
         }
+        boolean switchToInsuranceEnabled = false;
+        if (request.getEncounterId() != null && encounterDto != null) {
+            switchToInsuranceEnabled = this.computeSwitchToInsuranceEnabled(
+                request.getEncounterId(),
+                encounterDto.getStatusEnum(),
+                this.isInsurancePlatformAdmitted(request.getEncounterId()),
+                null);
+        }
         // Asm：装配登记上下文响应。
         return inpatientRegistrationMapper.toLoadRegistrationContextResponse(
             patientDto,
@@ -324,7 +356,8 @@ public class InpatientRegistrationAppService {
             inWayCodeOptions,
             admitSourceCodeOptions,
             admCondCodeOptions,
-            readOnly);
+            readOnly,
+            switchToInsuranceEnabled);
     }
 
     /**
@@ -445,7 +478,7 @@ public class InpatientRegistrationAppService {
     }
 
     /**
-     * 住院登记事务提交后幂等建病案主档与首页（Whale {@code MedcasnoGenerator} 发号）。
+     * 住院登记事务提交后幂等建病案主档与首页（病案号留空，首次保存首页再发号）。
      *
      * <p>放 afterCommit：建档失败不拖垮登记；同就诊重复调用由 {@code bootstrapIfAbsent} 幂等。</p>
      *
@@ -796,6 +829,88 @@ public class InpatientRegistrationAppService {
         return new CancelInsuranceInpatientAdmissionResponse()
             .setEncounterStatus(EncounterStatus.CANCELLED.getCode())
             .setInsurancePlatformRevoked(insuranceRevoked);
+    }
+
+    /**
+     * 住院自费转医保（IF-IP-REG-07）：读卡补录、开医保户、2401 入院登记并切换未结费用。
+     *
+     * @param request 转医保请求（含读卡字段与目标合同）
+     * @return 转医保结果（含 mdtrtId 与切换行数）
+     * @throws BusinessException 门禁不满足或平台登记失败时抛出
+     */
+    public SwitchInpatientToInsuranceResponse switchEncounterToInsurance(
+        SwitchInpatientToInsuranceRequest request) {
+        // Gate：请求体与医保扩展须齐备。
+        if (request == null || request.getEncounterId() == null) {
+            throw new BusinessException(
+                InpatientRegistrationConstants.EX_IP_REG_001,
+                "住院就诊不能为空");
+        }
+        if (!inpatientChargeInsuranceExtension.isEnabled()) {
+            throw new BusinessException(
+                InpatientRegistrationConstants.EX_IP_REG_206,
+                "医保扩展未启用，无法转医保");
+        }
+        Long encounterId = request.getEncounterId();
+        EncounterDetailQueryModel encounter = encounterQueryService.mustGetEncounterOfClass(
+            encounterId,
+            EncounterClass.IMP.getCode(),
+            InpatientRegistrationConstants.EX_IP_REG_102,
+            "就诊记录不是住院类别，无法转医保");
+        // Gate：仅纯自费在院且未 2401、无已结算占用时允许转医保。
+        this.assertSwitchToInsuranceAllowed(
+            encounterId,
+            encounter.getStatusEnum(),
+            this.isInsurancePlatformAdmitted(encounterId),
+            chargeItemQueryService.sumSettledTotalPriceByEncounterId(encounterId));
+        ContractDetailQueryModel contract = contractQueryService.findContractById(request.getContractId());
+        if (contract == null || StringUtils.isBlank(contract.getBusNo())) {
+            throw new BusinessException(
+                InpatientRegistrationConstants.EX_IP_REG_002,
+                "费用性质无效，请重新选择");
+        }
+        if (!inpatientChargeInsuranceExtension.supportsThirdPartyContract(request.getContractId())) {
+            throw new BusinessException(
+                InpatientRegistrationConstants.EX_IP_REG_206,
+                "所选费用性质不支持医保入院登记");
+        }
+        if (StringUtils.isBlank(request.getPsnNo())) {
+            throw new BusinessException(
+                InpatientRegistrationConstants.EX_IP_REG_204,
+                "转医保须先读卡获取人员编号");
+        }
+        this.assertAttendingDoctorIdForInsurance(request.getAttendingDoctorId());
+        Long operatorId = this.resolveRegistrarId(request.getOperatorId());
+        Long patientId = encounter.getPatientId();
+        // Cmd：幂等开立医保挂账账户（个人现金户保留供预交金）。
+        boolean openMedicalInsurance = encounterChargeAccountOpener.needsParallelMedicalInsuranceAccount(
+            contract.getYbFlag(), contract.getCategoryEnum());
+        if (!openMedicalInsurance) {
+            throw new BusinessException(
+                InpatientRegistrationConstants.EX_IP_REG_206,
+                "所选费用性质非医保合同，无法转医保");
+        }
+        encounterChargeAccountOpener.ensureEncounterChargeAccounts(
+            patientId,
+            encounterId,
+            contract.getBusNo(),
+            true,
+            request.getInsutype(),
+            operatorId);
+        this.saveAttendingDoctorOnSwitch(request, encounterId, operatorId);
+        // Cmd：2401 入院登记，使用原入院时间（非转医保当天）。
+        String ybMdtrtId = this.runInsuranceAdmissionForSwitch(request, encounterId);
+        Long insuranceAccountId = accountQueryService.getMedicalInsuranceAccount(encounterId);
+        if (insuranceAccountId == null) {
+            throw new BusinessException(
+                InpatientRegistrationConstants.EX_IP_REG_206,
+                "医保账户开立失败，请稍后重试");
+        }
+        int switchedCount = inpatientRegistrationInsuranceSwitchSupport.switchUnsettledChargeItemsToInsuranceAccount(
+            encounterId, insuranceAccountId, operatorId);
+        // Asm：返回平台 mdtrtId 与切换行数。
+        return inpatientRegistrationMapper.toSwitchInpatientToInsuranceResponse(
+            ybMdtrtId, switchedCount, insuranceAccountId);
     }
 
     /**
@@ -1294,6 +1409,218 @@ public class InpatientRegistrationAppService {
             return Map.of();
         }
         return encounterQueryService.mapAmbEncounterIdByEncounterIds(encounterIds);
+    }
+
+    /**
+     * 队列批量回填「是否允许自费转医保」标记。
+     *
+     * @param rows 队列行
+     */
+    private void enrichRegistrationQueueSwitchToInsurance(List<RegistrationQueueItemDto> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        List<Long> encounterIds = new ArrayList<>();
+        for (RegistrationQueueItemDto row : rows) {
+            if (row != null && row.getEncounterId() != null) {
+                encounterIds.add(row.getEncounterId());
+            }
+        }
+        Map<Long, BigDecimal> settledByEncounter =
+            chargeItemQueryService.mapSettledTotalPriceByEncounterIds(encounterIds);
+        for (RegistrationQueueItemDto row : rows) {
+            if (row == null || row.getEncounterId() == null) {
+                continue;
+            }
+            boolean enabled = this.computeSwitchToInsuranceEnabled(
+                row.getEncounterId(),
+                row.getStatusEnum(),
+                row.getInsurancePlatformRegistered(),
+                settledByEncounter);
+            row.setSwitchToInsuranceEnabled(enabled);
+        }
+    }
+
+    /**
+     * 判断是否允许自费转医保（BR-IP-REG-019）。
+     *
+     * @param encounterId                 就诊 ID
+     * @param statusEnum                  就诊状态
+     * @param insurancePlatformRegistered 是否已 2401
+     * @param settledByEncounter          批量已结算汇总；单条时可 null 则现场查
+     * @return 允许时为 true
+     */
+    private boolean computeSwitchToInsuranceEnabled(
+        Long encounterId,
+        String statusEnum,
+        Boolean insurancePlatformRegistered,
+        Map<Long, BigDecimal> settledByEncounter) {
+        if (encounterId == null || !inpatientChargeInsuranceExtension.isEnabled()) {
+            return false;
+        }
+        if (!this.isSwitchableStatusForInsuranceSwitch(statusEnum)) {
+            return false;
+        }
+        if (Boolean.TRUE.equals(insurancePlatformRegistered)) {
+            return false;
+        }
+        if (accountQueryService.hasDualChargeAccounts(encounterId)) {
+            return false;
+        }
+        BigDecimal settledTotal = BigDecimal.ZERO;
+        if (settledByEncounter != null) {
+            BigDecimal cached = settledByEncounter.get(encounterId);
+            if (cached != null) {
+                settledTotal = cached;
+            }
+        } else {
+            settledTotal = chargeItemQueryService.sumSettledTotalPriceByEncounterId(encounterId);
+        }
+        if (MonetaryAmountSupport.nullToZero(settledTotal).compareTo(BigDecimal.ZERO) > 0) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * 转医保写路径门禁：不满足时抛业务异常。
+     *
+     * @param encounterId                 就诊 ID
+     * @param statusEnum                  就诊状态
+     * @param insurancePlatformAdmitted     是否已 2401
+     * @param settledTotalPrice             已结算合计
+     */
+    private void assertSwitchToInsuranceAllowed(
+        Long encounterId,
+        String statusEnum,
+        boolean insurancePlatformAdmitted,
+        BigDecimal settledTotalPrice) {
+        if (accountQueryService.hasDualChargeAccounts(encounterId)) {
+            throw new BusinessException(
+                InpatientRegistrationConstants.EX_IP_REG_201,
+                "该患者已是医保入院，无需转医保");
+        }
+        if (insurancePlatformAdmitted) {
+            throw new BusinessException(
+                InpatientRegistrationConstants.EX_IP_REG_201,
+                "该患者已在医保平台完成入院登记");
+        }
+        if (!this.isSwitchableStatusForInsuranceSwitch(statusEnum)) {
+            throw new BusinessException(
+                InpatientRegistrationConstants.EX_IP_REG_202,
+                "当前就诊状态不允许转医保");
+        }
+        if (MonetaryAmountSupport.nullToZero(settledTotalPrice).compareTo(BigDecimal.ZERO) > 0) {
+            throw new BusinessException(
+                InpatientRegistrationConstants.EX_IP_REG_203,
+                "存在已结算费用，不可转医保");
+        }
+    }
+
+    /**
+     * 允许转医保的 IMP 就诊状态：待入科、在院、待出院窗口。
+     *
+     * @param statusEnum 就诊状态码
+     * @return 允许时为 true
+     */
+    private boolean isSwitchableStatusForInsuranceSwitch(String statusEnum) {
+        if (StringUtils.isBlank(statusEnum)) {
+            return false;
+        }
+        String code = statusEnum.trim();
+        if (EncounterStatus.REGISTERED.getCode().equals(code)) {
+            return true;
+        }
+        if (EncounterStatus.IN_PROGRESS.getCode().equals(code)) {
+            return true;
+        }
+        if (EncounterStatus.ON_HOLD.getCode().equals(code)) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 医保登记门禁：须选择主治医生且医师主档含 yb_no。
+     *
+     * @param attendingDoctorId 主治医生 ID
+     * @throws BusinessException 未选医师或缺 yb_no
+     */
+    private void assertAttendingDoctorIdForInsurance(Long attendingDoctorId) {
+        if (attendingDoctorId == null) {
+            throw new BusinessException(
+                InpatientRegistrationConstants.EX_IP_REG_205,
+                "转医保须选择主治医生");
+        }
+        Practitioner doctor = practitionerQueryService.findById(attendingDoctorId);
+        if (doctor == null) {
+            throw new BusinessException(
+                InpatientRegistrationConstants.EX_IP_REG_205,
+                "主治医生无效，请重新选择");
+        }
+        if (StringUtils.isBlank(doctor.getYbNo())) {
+            throw new BusinessException(
+                InpatientRegistrationConstants.EX_IP_REG_205,
+                "主治医生缺少医保编码(yb_no): " + doctor.getName());
+        }
+    }
+
+    /**
+     * 转医保时写入或更新主治医生参与者（供 2401 atddr_no）。
+     *
+     * @param request     转医保请求
+     * @param encounterId 就诊 ID
+     * @param operatorId  操作人
+     */
+    private void saveAttendingDoctorOnSwitch(
+        SwitchInpatientToInsuranceRequest request,
+        Long encounterId,
+        Long operatorId) {
+        if (request.getAttendingDoctorId() == null) {
+            return;
+        }
+        SaveNurseStationPatientCommand command = new SaveNurseStationPatientCommand();
+        command.setOperatorId(operatorId);
+        SaveNurseStationPatientCommand.ItemCommand item = new SaveNurseStationPatientCommand.ItemCommand();
+        item.setEncounterId(encounterId);
+        SaveNurseStationPatientCommand.ParticipantLine line = new SaveNurseStationPatientCommand.ParticipantLine();
+        line.setRoleCode(EncounterParticipantRole.ATTENDING_DOCTOR.getCode());
+        line.setPractitionerId(request.getAttendingDoctorId());
+        item.setParticipants(List.of(line));
+        command.setItem(item);
+        encounterDomainService.saveNurseStationPatient(command);
+    }
+
+    /**
+     * 转医保时衔接医保入院登记（2401）。
+     *
+     * @param request     转医保请求
+     * @param encounterId 就诊 ID
+     * @return 平台 mdtrt_id
+     */
+    private String runInsuranceAdmissionForSwitch(
+        SwitchInpatientToInsuranceRequest request,
+        Long encounterId) {
+        InpatientChargeAdmissionExtensionIn command = new InpatientChargeAdmissionExtensionIn();
+        command.setEncounterId(encounterId);
+        command.setContractId(request.getContractId());
+        command.setPayerCertType(request.getYbMediumType());
+        command.setPayerCertNo(request.getYbCardInfo());
+        command.setInsuredPersonNo(request.getPsnNo());
+        command.setInsuplcAdmdvs(request.getInsuplcAdmdvs());
+        command.setInsutype(request.getInsutype());
+        String medType = request.getMedType();
+        if (StringUtils.isBlank(medType)) {
+            medType = YbMedType.GENERAL_HOSPITALIZATION.getCode();
+        }
+        command.setMedType(medType);
+        InpatientChargeAdmissionExtensionOut result = inpatientChargeInsuranceExtension.ensureAdmission(command);
+        if (result == null || StringUtils.isBlank(result.getEncounterPlatformId())) {
+            throw new BusinessException(
+                InpatientRegistrationConstants.EX_IP_REG_206,
+                "医保入院登记失败，请检查读卡信息与网络");
+        }
+        return result.getEncounterPlatformId().trim();
     }
 
 }

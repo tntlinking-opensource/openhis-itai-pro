@@ -104,6 +104,8 @@ export function pageStudentsApi(params: {
   campusCode?: string | null;
   schoolStatus?: string | null;
   activeFlag?: boolean | null;
+  enrollTimeFrom?: string | null;
+  enrollTimeTo?: string | null;
   pageNo: number;
   pageSize: number;
 }) {

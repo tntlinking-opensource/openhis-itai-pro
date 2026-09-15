@@ -31,6 +31,8 @@ export interface TemperatureSheetTemperaturePointDto {
 
 export interface TemperatureSheetGridSlotCellDto {
   detailItems?: TemperatureSheetDetailItemDto[] | null;
+  /** 实际测量时分 HH:mm，描点按此就近落格 */
+  recordTime?: null | string;
   timeSlot?: null | string;
   vitalSignId?: null | string;
 }

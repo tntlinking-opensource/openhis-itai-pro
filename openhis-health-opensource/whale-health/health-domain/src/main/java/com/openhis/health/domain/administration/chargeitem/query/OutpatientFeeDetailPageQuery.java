@@ -12,17 +12,18 @@ import com.openhis.health.domain.share.query.AbstractPageQuery;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 门诊费用明细分页读查询（DM-ADM-011 §6.2.25～6.2.26；AS-OP-FIN-005 IF-OP-FDT-02/03）。
+ * 门诊费用明细分页读查询（DM-ADM-011 §6.2.25～6.2.26；AS-OP-FIN-005 IF-OP-FDT-02/03；AS-RPT-008/009）。
  *
- * <p>时间窗 {@code billDateFrom/To} 与收费人筛选映射 Payment {@code bill_date}/{@code enterer_id}
- * （BR-OP-FDT-003；与日结同轴）。由
- * {@link com.openhis.health.application.outpatient.financial.feedetail.support.OutpatientFeeDetailLoader}
+ * <p>时间窗 {@code billDateFrom/To} 为本地时刻闭区间，映射 Payment {@code bill_date}/{@code enterer_id}
+ * （BR-OP-FDT-003；与日结同轴；报表可精确到秒）。应用层将 Request 的
+ * {@code yyyy-MM-dd} 或 {@code yyyy-MM-dd HH:mm:ss} 规范为时刻（日仅默认 00:00:00～23:59:59）。
+ * 由 {@link com.openhis.health.application.outpatient.financial.feedetail.support.OutpatientFeeDetailLoader}
  * 写入 payment→chargeItem 链路与 resolved scope。ChargeItem 状态白名单默认
  * {@code SETTLED}∪{@code REFUNDING}∪{@code REFUNDED}（写路径退费会改行态；行额符号看 payment 收退上下文）。</p>
  */
@@ -32,11 +33,11 @@ public class OutpatientFeeDetailPageQuery extends AbstractPageQuery {
 
     private static final long serialVersionUID = 1L;
 
-    /** 结算业务日起（闭区间，本地日历日）。 */
-    private LocalDate billDateFrom;
+    /** 结算业务窗起（闭区间，本地时刻；含时分秒）。 */
+    private LocalDateTime billDateFrom;
 
-    /** 结算业务日止（闭区间，本地日历日）。 */
-    private LocalDate billDateTo;
+    /** 结算业务窗止（闭区间，本地时刻；含时分秒）。 */
+    private LocalDateTime billDateTo;
 
     /** 挂号科室（Encounter.organization_id；遗留筛选项，报表中心改用 {@link #requestingOrgId}）。 */
     private Long registrationDepartmentId;

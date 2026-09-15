@@ -20,7 +20,7 @@ public class CaseRecordCreatedEvent extends DomainEvent {
     private Long patientId;
     /** 就诊主键。 */
     private Long encounterId;
-    /** 病案号。 */
+    /** 病案号（bootstrap 建档时可能为空，首次保存首页后才有值）。 */
     private String medcasno;
 
     /** 无参构造器（反序列化用）。 */
@@ -36,7 +36,7 @@ public class CaseRecordCreatedEvent extends DomainEvent {
      * @param operatorId 操作人
      * @param patientId 患者
      * @param encounterId 就诊
-     * @param medcasno 病案号
+     * @param medcasno 病案号（可空）
      */
     public CaseRecordCreatedEvent(
             Long caseRecordId,

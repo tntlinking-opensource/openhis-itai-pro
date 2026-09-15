@@ -101,7 +101,7 @@ public class InventoryDepartmentStocktakeMapperImpl implements InventoryDepartme
         return list;
     }
 
-    /** 领域实体转下拉选项。 */
+    /** 领域实体转下拉选项（含拼音/五笔，供前端 filterable）。 */
     @Override
     public List<OptionDto> toOptionDtoListFromPractitioners(List<Practitioner> practitioners) {
         List<OptionDto> list = new ArrayList<>();
@@ -117,7 +117,14 @@ public class InventoryDepartmentStocktakeMapperImpl implements InventoryDepartme
             if (StringUtils.isEmpty(label)) {
                 label = String.valueOf(id);
             }
-            list.add(new OptionDto(id, String.valueOf(id), label));
+            OptionDto opt = new OptionDto(id, String.valueOf(id), label);
+            if (StringUtils.isNotEmpty(p.getPyStr())) {
+                opt.setPyStr(p.getPyStr().trim());
+            }
+            if (StringUtils.isNotEmpty(p.getWbStr())) {
+                opt.setWbStr(p.getWbStr().trim());
+            }
+            list.add(opt);
         }
         return list;
     }
@@ -384,6 +391,8 @@ public class InventoryDepartmentStocktakeMapperImpl implements InventoryDepartme
                 item.setPrice(line.getPrice());
                 item.setTotalPrice(line.getActualAmount());
                 item.setProfitLossPrice(line.getProfitLossAmount());
+                // 经手人落库：与药库盘点一致，写入请求中的 practitionerId（勿与制单人 applicantId 混用）
+                item.setPractitionerId(request.getPractitionerId());
                 item.setApplicantId(applicantId);
                 item.setApplyTime(null);
                 items.add(item);
@@ -491,7 +500,7 @@ public class InventoryDepartmentStocktakeMapperImpl implements InventoryDepartme
         return command;
     }
 
-    /** 装配新建成功 Response。 */
+    /** 装配盘点发放命令（跳过零盈亏行；全零时 items 为空，由 AppService 跳过落库）。 */
     @Override
     public CreateStocktakingDeliveryCommand toCreateStocktakingDeliveryCommand(
         List<SupplyRequestModel> lines, Long operatorId) {

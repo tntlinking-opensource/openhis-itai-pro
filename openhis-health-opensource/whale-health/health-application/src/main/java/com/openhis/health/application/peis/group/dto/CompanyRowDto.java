@@ -16,6 +16,7 @@ public class CompanyRowDto {
 
     private Long companyId;
     private String name;
+    private Long parentId;
     private Long orgId;
     private Long campusCollegeId;
     private String contactName;

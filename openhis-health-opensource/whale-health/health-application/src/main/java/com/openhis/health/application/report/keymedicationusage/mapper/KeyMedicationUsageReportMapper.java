@@ -21,8 +21,8 @@ public interface KeyMedicationUsageReportMapper {
     /**
      * 装配页初始化响应。
      *
-     * @param defaultDateFrom       默认起日
-     * @param defaultDateTo         默认止日
+     * @param defaultDateFrom         默认起日
+     * @param defaultDateTo           默认止日
      * @param encounterClassOptions 就诊类型选项
      * @param keyDrugTypeOptions    重点药类型选项
      * @return 初始化响应
@@ -36,9 +36,9 @@ public interface KeyMedicationUsageReportMapper {
     /**
      * 装配汇总响应。
      *
-     * @param rows                   矩阵行
-     * @param totalEncounterNetCount 人次合计
-     * @param totalSaleAmount        金额合计
+     * @param rows                   汇总行（含各组 TOTAL）
+     * @param totalEncounterNetCount 人次合计（不含 TOTAL 类型行）
+     * @param totalSaleAmount        金额合计（不含 TOTAL 类型行）
      * @return 汇总响应
      */
     SummarizeKeyMedicationUsageReportResponse toSummarizeResponse(
@@ -63,3 +63,4 @@ public interface KeyMedicationUsageReportMapper {
         Integer rowCount,
         Boolean truncated);
 }
+

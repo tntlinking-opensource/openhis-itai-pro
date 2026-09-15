@@ -217,6 +217,7 @@ public class DoctorStationDiagnosisAppService {
             InsuranceOpspFilingQueryExtensionIn queryCommand = new InsuranceOpspFilingQueryExtensionIn();
             queryCommand.setContractId(filingCtx.getContractId());
             queryCommand.setPsnNo(filingCtx.getPsnNo().trim());
+            queryCommand.setInsurancePoolAreaCode(filingCtx.getInsurancePoolAreaCode());
             InsuranceOpspFilingQueryExtensionOut filingOut =
                 this.registerBenefitQueryExtension.queryOpspFiling(queryCommand);
             // 平台返回空：展示空慢病备案树，不报错。
@@ -401,6 +402,7 @@ public class DoctorStationDiagnosisAppService {
             InsuranceOpspFilingQueryExtensionIn queryCommand = new InsuranceOpspFilingQueryExtensionIn();
             queryCommand.setContractId(filingCtx.getContractId());
             queryCommand.setPsnNo(filingCtx.getPsnNo().trim());
+            queryCommand.setInsurancePoolAreaCode(filingCtx.getInsurancePoolAreaCode());
             InsuranceOpspFilingQueryExtensionOut filingOut =
                 this.registerBenefitQueryExtension.queryOpspFiling(queryCommand);
             if (filingOut != null && filingOut.getFilingLines() != null) {

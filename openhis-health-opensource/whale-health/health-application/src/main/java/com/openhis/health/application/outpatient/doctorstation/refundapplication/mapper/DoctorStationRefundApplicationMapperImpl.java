@@ -258,18 +258,25 @@ public class DoctorStationRefundApplicationMapperImpl implements DoctorStationRe
     /**
      * IF-DRA-03（Asm）：装配退耗材命令（单条，数量取收费行计价数量）。
      *
-     * @param chargeItem 拟退耗材收费行
-     * @param operatorId 操作人主键
+     * @param sourceDeviceRequestId 原耗材申请主键（禁止传入发放主键）
+     * @param chargeItem            拟退耗材收费行
+     * @param operatorId            操作人主键
      * @return 领域命令
      */
     @Override
-    public CreateDeviceOrderRefundCommand toCreateDeviceOrderRefundCommand(ChargeItem chargeItem, Long operatorId) {
+    public CreateDeviceOrderRefundCommand toCreateDeviceOrderRefundCommand(
+        Long sourceDeviceRequestId,
+        ChargeItem chargeItem,
+        Long operatorId
+    ) {
         CreateDeviceOrderRefundCommand command = new CreateDeviceOrderRefundCommand();
         command.setOperatorId(operatorId);
         CreateDeviceOrderRefundCommand.CreateDeviceOrderRefundItemCommand item =
             new CreateDeviceOrderRefundCommand.CreateDeviceOrderRefundItemCommand();
-        item.setSourceRequestId(chargeItem.getServiceId());
+        // Asm：sourceRequestId 必须是耗材申请主键，与 resolveDeviceRequestId 对齐
+        item.setSourceRequestId(sourceDeviceRequestId);
         BigDecimal qty = chargeItem.getQuantityValue();
+        // 分支：收费行数量空时按 0 写入，由领域侧校验退量
         if (qty == null) {
             qty = BigDecimal.ZERO;
         }

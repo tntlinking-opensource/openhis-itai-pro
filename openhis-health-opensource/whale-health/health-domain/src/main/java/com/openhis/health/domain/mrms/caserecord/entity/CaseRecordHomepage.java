@@ -15,7 +15,12 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
+import com.openhis.health.domain.share.utils.HomepageRegionCodesTextUtil;
+
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -55,10 +60,6 @@ public class CaseRecordHomepage extends BaseAuditedEntity {
     /** 字段来源 JSON，键=列名，值=manual/auto/mixed。 */
     @Column(name = "field_sources_json", columnDefinition = "TEXT")
     private String fieldSourcesJson;
-
-    /** 扩展字段 JSON（费用分项等）。 */
-    @Column(name = "extension_json", columnDefinition = "TEXT")
-    private String extensionJson;
 
     /** 患者姓名（4401 psn_name）。 */
     @Column(name = "psn_name", length = 100)
@@ -120,6 +121,38 @@ public class CaseRecordHomepage extends BaseAuditedEntity {
     @Column(name = "trt_type_code", length = 16)
     private String trtTypeCode;
 
+    /**
+     * 实施临床路径（中医病案首页国标；1中医 2西医 3否；老系统 inpath）。
+     *
+     * <p>列对全租户存在；仅中医院院点编辑/打印开启。</p>
+     */
+    @Column(name = "clinical_path_code", length = 8)
+    private String clinicalPathCode;
+
+    /**
+     * 使用医疗机构中药制剂（1是 2否；老系统 usetczj）。
+     */
+    @Column(name = "tcm_prep_code", length = 8)
+    private String tcmPrepCode;
+
+    /**
+     * 使用中医诊疗设备（1是 2否；老系统 usetceq）。
+     */
+    @Column(name = "tcm_device_code", length = 8)
+    private String tcmDeviceCode;
+
+    /**
+     * 使用中医诊疗技术（1是 2否；老系统 usetczl）。
+     */
+    @Column(name = "tcm_tech_code", length = 8)
+    private String tcmTechCode;
+
+    /**
+     * 辨证施护（1是 2否；老系统 isbzsf）。
+     */
+    @Column(name = "syndrome_nurse_code", length = 8)
+    private String syndromeNurseCode;
+
     /** 特级护理天数（4401 spga_nurscare_days）。 */
     @Column(name = "spga_nurscare_days")
     private Integer spgaNurscareDays;
@@ -172,11 +205,11 @@ public class CaseRecordHomepage extends BaseAuditedEntity {
     @Column(name = "adm_way_code", length = 16)
     private String admWayCode;
 
-    /** 入院科别编码（4401 adm_caty，机构 bus_no）。 */
+    /** 入院科别编码（4401/4101A：科室医保编码 yb_no，非院内 bus_no）。 */
     @Column(name = "adm_caty_code", length = 32)
     private String admCatyCode;
 
-    /** 入院科别名称（4401 adm_caty 展示名）。 */
+    /** 入院科别名称（展示名；优先科室医保名称）。 */
     @Column(name = "adm_caty_name", length = 100)
     private String admCatyName;
 
@@ -184,11 +217,11 @@ public class CaseRecordHomepage extends BaseAuditedEntity {
     @Column(name = "adm_time")
     private LocalDateTime admTime;
 
-    /** 出院科别编码（4401 dscg_caty）。 */
+    /** 出院科别编码（4401/4101A dscg_caty：科室医保编码 yb_no）。 */
     @Column(name = "dscg_caty_code", length = 32)
     private String dscgCatyCode;
 
-    /** 出院科别名称（4401 dscg_caty 展示名）。 */
+    /** 出院科别名称（展示名；优先科室医保名称）。 */
     @Column(name = "dscg_caty_name", length = 100)
     private String dscgCatyName;
 
@@ -231,6 +264,222 @@ public class CaseRecordHomepage extends BaseAuditedEntity {
     /** 责任护士姓名（4401 resp_nurs）。 */
     @Column(name = "resp_nurs_name", length = 50)
     private String respNursName;
+
+    /** 医疗付费方式（原 extension.payWayCode）。 */
+    @Column(name = "pay_way_code", length = 16)
+    private String payWayCode;
+
+    /** 健康卡号（原 extension.healthCardNo）。 */
+    @Column(name = "health_card_no", length = 64)
+    private String healthCardNo;
+
+    /** 年龄岁（原 extension.ageYear）。 */
+    @Column(name = "age_year")
+    private Integer ageYear;
+
+    /** 不足 1 周岁月龄（原 extension.ageMonth）。 */
+    @Column(name = "age_month")
+    private Integer ageMonth;
+
+    /** 出生地省市区 codes 斜杠拼接文本（如 220000/220100/220102）。 */
+    @Column(name = "birplc_codes", columnDefinition = "TEXT")
+    private String birplcCodes;
+
+    /** 出生地中文地名（连续文本，供卫统 CSD / HQMS A22；与 codes 同步由前端写入）。 */
+    @Column(name = "birplc_name", length = 200)
+    private String birplcName;
+
+    /** 籍贯省市 codes 斜杠拼接文本（如 220000/220100）。 */
+    @Column(name = "napl_codes", columnDefinition = "TEXT")
+    private String naplCodes;
+
+    /** 籍贯中文地名（连续文本，供卫统 GG；HQMS A23C 另走 RC036）。 */
+    @Column(name = "napl_name", length = 200)
+    private String naplName;
+
+    /** 现住址省市区 codes 斜杠拼接文本。 */
+    @Column(name = "curr_addr_codes", columnDefinition = "TEXT")
+    private String currAddrCodes;
+
+    /** 现住址详细（原 extension.currAddrDetail）。 */
+    @Column(name = "curr_addr_detail", length = 500)
+    private String currAddrDetail;
+
+    /** 现住址邮编（原 extension.currAddrPoscode）。 */
+    @Column(name = "curr_addr_poscode", length = 16)
+    private String currAddrPoscode;
+
+    /** 户口地址省市区 codes 斜杠拼接文本。 */
+    @Column(name = "resd_addr_codes", columnDefinition = "TEXT")
+    private String resdAddrCodes;
+
+    /** 户口详细地址（原 extension.resdAddrDetail）。 */
+    @Column(name = "resd_addr_detail", length = 500)
+    private String resdAddrDetail;
+
+    /** 户口邮编（原 extension.resdAddrPoscode）。 */
+    @Column(name = "resd_addr_poscode", length = 16)
+    private String resdAddrPoscode;
+
+    /** 工作单位及地址（原 extension.emprAddr）。 */
+    @Column(name = "empr_addr", length = 500)
+    private String emprAddr;
+
+    /** 单位电话（原 extension.emprTel）。 */
+    @Column(name = "empr_tel", length = 32)
+    private String emprTel;
+
+    /** 单位邮编（原 extension.emprPoscode）。 */
+    @Column(name = "empr_poscode", length = 16)
+    private String emprPoscode;
+
+    /** 入院病区（原 extension.admWard）。 */
+    @Column(name = "adm_ward", length = 100)
+    private String admWard;
+
+    /** 入院床位（原 extension.admBed）。 */
+    @Column(name = "adm_bed", length = 32)
+    private String admBed;
+
+    /** 出院病区（原 extension.dscgWard）。 */
+    @Column(name = "dscg_ward", length = 100)
+    private String dscgWard;
+
+    /** 出院床位（原 extension.dscgBed）。 */
+    @Column(name = "dscg_bed", length = 32)
+    private String dscgBed;
+
+    /** 药物过敏（原 extension.drugAllergyCode）。 */
+    @Column(name = "drug_allergy_code", length = 8)
+    private String drugAllergyCode;
+
+    /** 过敏药物（原 extension.allergyDrugName）。 */
+    @Column(name = "allergy_drug_name", length = 200)
+    private String allergyDrugName;
+
+    /** 病理号（原 extension.pathologyNo）。 */
+    @Column(name = "pathology_no", length = 64)
+    private String pathologyNo;
+
+    /** 主要诊断治愈好转（原 extension.mainDiagCureCode）。 */
+    @Column(name = "main_diag_cure_code", length = 8)
+    private String mainDiagCureCode;
+
+    /** 抢救次数（原 extension.rescueCount）。 */
+    @Column(name = "rescue_count")
+    private Integer rescueCount;
+
+    /** 抢救成功次数（原 extension.rescueSuccessCount）。 */
+    @Column(name = "rescue_success_count")
+    private Integer rescueSuccessCount;
+
+    /**
+     * 临床路径管理（原 extension.clinicPathManageCode；异于中医 {@link #clinicalPathCode}）。
+     */
+    @Column(name = "clinic_path_manage_code", length = 8)
+    private String clinicPathManageCode;
+
+    /** 诊断符合门诊与出院（原 extension.diagMatchOpDscg）。 */
+    @Column(name = "diag_match_op_dscg", length = 8)
+    private String diagMatchOpDscg;
+
+    /** 诊断符合入院与出院（原 extension.diagMatchAdmDscg）。 */
+    @Column(name = "diag_match_adm_dscg", length = 8)
+    private String diagMatchAdmDscg;
+
+    /** 诊断符合术前与术后（原 extension.diagMatchPrePost）。 */
+    @Column(name = "diag_match_pre_post", length = 8)
+    private String diagMatchPrePost;
+
+    /** 诊断符合临床与病理（原 extension.diagMatchClinicPath）。 */
+    @Column(name = "diag_match_clinic_path", length = 8)
+    private String diagMatchClinicPath;
+
+    /** 诊断符合放射与病理（原 extension.diagMatchRadioPath）。 */
+    @Column(name = "diag_match_radio_path", length = 8)
+    private String diagMatchRadioPath;
+
+    /** 死亡患者尸检（原 extension.autopsyCode）。 */
+    @Column(name = "autopsy_code", length = 8)
+    private String autopsyCode;
+
+    /** 血型 ABO（原 extension.aboCode）。 */
+    @Column(name = "abo_code", length = 8)
+    private String aboCode;
+
+    /** Rh（原 extension.rhCode）。 */
+    @Column(name = "rh_code", length = 8)
+    private String rhCode;
+
+    /** 进修医师（原 extension.trainDrName）。 */
+    @Column(name = "train_dr_name", length = 50)
+    private String trainDrName;
+
+    /** 实习医师（原 extension.intnDrName）。 */
+    @Column(name = "intn_dr_name", length = 50)
+    private String intnDrName;
+
+    /** 编码员（原 extension.codrName）。 */
+    @Column(name = "codr_name", length = 50)
+    private String codrName;
+
+    /** 病案质量（原 extension.medcasQltCode）。 */
+    @Column(name = "medcas_qlt_code", length = 8)
+    private String medcasQltCode;
+
+    /** 质控日期（原 extension.qltctrlDate）。 */
+    @Column(name = "qltctrl_date")
+    private LocalDate qltctrlDate;
+
+    /** 质控医师（原 extension.qltctrlDrName）。 */
+    @Column(name = "qltctrl_dr_name", length = 50)
+    private String qltctrlDrName;
+
+    /** 质控护士（原 extension.qltctrlNursName）。 */
+    @Column(name = "qltctrl_nurs_name", length = 50)
+    private String qltctrlNursName;
+
+    /** 拟接收医院（原 extension.acpMedinsName）。 */
+    @Column(name = "acp_medins_name", length = 200)
+    private String acpMedinsName;
+
+    /** 拟接收社区（原 extension.acpCommunityName）。 */
+    @Column(name = "acp_community_name", length = 200)
+    private String acpCommunityName;
+
+    /** 31 天再住院计划（原 extension.rinp31Flag）。 */
+    @Column(name = "rinp31_flag", length = 8)
+    private String rinp31Flag;
+
+    /** 再住院目的（原 extension.rinp31Purpose）。 */
+    @Column(name = "rinp31_purpose", length = 500)
+    private String rinp31Purpose;
+
+    /**
+     * 医疗费总额快照（4401 {@code medfee_sumamt}）。
+     *
+     * <p>仅「重新统计」或首次空快照补种时写入；打开页/保存其它章不按目录现查覆盖。</p>
+     */
+    @Column(name = "medfee_sumamt", precision = 16, scale = 2)
+    private BigDecimal medfeeSumamt;
+
+    /**
+     * 自付金额快照（4401 {@code selfpay_amt}）。
+     *
+     * <p>写口径同 {@link #medfeeSumamt}。</p>
+     */
+    @Column(name = "selfpay_amt", precision = 16, scale = 2)
+    private BigDecimal selfpayAmt;
+
+    /**
+     * 费用分项快照 JSON（4401 分项键→金额；如 {@code wm_fee}）。
+     *
+     * <p>写口径同 {@link #medfeeSumamt}；与 {@link com.openhis.health.domain.share.constants.MrmsConstants#FEE_LIVE_QUERY_KEYS}
+     * 分项键对齐。</p>
+     */
+    @Column(name = "fee_items_json", columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    private String feeItemsJson;
 
     /**
      * 初始化空首页。
@@ -292,7 +541,7 @@ public class CaseRecordHomepage extends BaseAuditedEntity {
     /**
      * 应用医生手工保存的标量字段，并标记字段来源为 manual。
      *
-     * @param command 保存命令（仅非 null 字段生效）
+     * @param command 保存命令（仅非 null 字段生效；可清空码字段传空白）
      * @param sources 字段来源 Map
      */
     public void applyManualFields(HomepageSaveCommand command, Map<String, String> sources) {
@@ -317,6 +566,13 @@ public class CaseRecordHomepage extends BaseAuditedEntity {
         markManualField(command.getConerRltsCode(), "coner_rlts_code", sources, v -> this.conerRltsCode = v);
         markManualField(command.getConerAddr(), "coner_addr", sources, v -> this.conerAddr = v);
         markManualField(command.getTrtTypeCode(), "trt_type_code", sources, v -> this.trtTypeCode = v);
+        // 中医信息五字段：空白字串清空列并去掉 manual 锁，便于院点改选
+        applyClearableManualCode(command.getClinicalPathCode(), "clinical_path_code", sources, v -> this.clinicalPathCode = v);
+        applyClearableManualCode(command.getTcmPrepCode(), "tcm_prep_code", sources, v -> this.tcmPrepCode = v);
+        applyClearableManualCode(command.getTcmDeviceCode(), "tcm_device_code", sources, v -> this.tcmDeviceCode = v);
+        applyClearableManualCode(command.getTcmTechCode(), "tcm_tech_code", sources, v -> this.tcmTechCode = v);
+        applyClearableManualCode(
+                command.getSyndromeNurseCode(), "syndrome_nurse_code", sources, v -> this.syndromeNurseCode = v);
         if (command.getSpgaNurscareDays() != null) {
             this.spgaNurscareDays = command.getSpgaNurscareDays();
             sources.put("spga_nurscare_days", FieldFillSource.MANUAL.getCode());
@@ -385,6 +641,92 @@ public class CaseRecordHomepage extends BaseAuditedEntity {
         markManualField(command.getAtddrName(), "atddr_name", sources, v -> this.atddrName = v);
         markManualField(command.getIptDrName(), "ipt_dr_name", sources, v -> this.iptDrName = v);
         markManualField(command.getRespNursName(), "resp_nurs_name", sources, v -> this.respNursName = v);
+        // V20 升列：可清空码/文本与 Integer/LocalDate；*Codes 列表落斜杠拼接字符串
+        applyClearableManualCode(command.getPayWayCode(), "pay_way_code", sources, v -> this.payWayCode = v);
+        applyClearableManualCode(command.getHealthCardNo(), "health_card_no", sources, v -> this.healthCardNo = v);
+        if (command.getAgeYear() != null) {
+            this.ageYear = command.getAgeYear();
+            sources.put("age_year", FieldFillSource.MANUAL.getCode());
+        }
+        if (command.getAgeMonth() != null) {
+            this.ageMonth = command.getAgeMonth();
+            sources.put("age_month", FieldFillSource.MANUAL.getCode());
+        }
+        applyManualCodesList(command.getBirplcCodes(), "birplc_codes", sources, v -> this.birplcCodes = v);
+        applyClearableManualCode(command.getBirplcName(), "birplc_name", sources, v -> this.birplcName = v);
+        applyManualCodesList(command.getNaplCodes(), "napl_codes", sources, v -> this.naplCodes = v);
+        applyClearableManualCode(command.getNaplName(), "napl_name", sources, v -> this.naplName = v);
+        applyManualCodesList(
+                command.getCurrAddrCodes(), "curr_addr_codes", sources, v -> this.currAddrCodes = v);
+        applyClearableManualCode(
+                command.getCurrAddrDetail(), "curr_addr_detail", sources, v -> this.currAddrDetail = v);
+        applyClearableManualCode(
+                command.getCurrAddrPoscode(), "curr_addr_poscode", sources, v -> this.currAddrPoscode = v);
+        applyManualCodesList(
+                command.getResdAddrCodes(), "resd_addr_codes", sources, v -> this.resdAddrCodes = v);
+        applyClearableManualCode(
+                command.getResdAddrDetail(), "resd_addr_detail", sources, v -> this.resdAddrDetail = v);
+        applyClearableManualCode(
+                command.getResdAddrPoscode(), "resd_addr_poscode", sources, v -> this.resdAddrPoscode = v);
+        applyClearableManualCode(command.getEmprAddr(), "empr_addr", sources, v -> this.emprAddr = v);
+        applyClearableManualCode(command.getEmprTel(), "empr_tel", sources, v -> this.emprTel = v);
+        applyClearableManualCode(command.getEmprPoscode(), "empr_poscode", sources, v -> this.emprPoscode = v);
+        applyClearableManualCode(command.getAdmWard(), "adm_ward", sources, v -> this.admWard = v);
+        applyClearableManualCode(command.getAdmBed(), "adm_bed", sources, v -> this.admBed = v);
+        applyClearableManualCode(command.getDscgWard(), "dscg_ward", sources, v -> this.dscgWard = v);
+        applyClearableManualCode(command.getDscgBed(), "dscg_bed", sources, v -> this.dscgBed = v);
+        applyClearableManualCode(
+                command.getDrugAllergyCode(), "drug_allergy_code", sources, v -> this.drugAllergyCode = v);
+        applyClearableManualCode(
+                command.getAllergyDrugName(), "allergy_drug_name", sources, v -> this.allergyDrugName = v);
+        applyClearableManualCode(command.getPathologyNo(), "pathology_no", sources, v -> this.pathologyNo = v);
+        applyClearableManualCode(
+                command.getMainDiagCureCode(), "main_diag_cure_code", sources, v -> this.mainDiagCureCode = v);
+        if (command.getRescueCount() != null) {
+            this.rescueCount = command.getRescueCount();
+            sources.put("rescue_count", FieldFillSource.MANUAL.getCode());
+        }
+        if (command.getRescueSuccessCount() != null) {
+            this.rescueSuccessCount = command.getRescueSuccessCount();
+            sources.put("rescue_success_count", FieldFillSource.MANUAL.getCode());
+        }
+        applyClearableManualCode(
+                command.getClinicPathManageCode(),
+                "clinic_path_manage_code",
+                sources,
+                v -> this.clinicPathManageCode = v);
+        applyClearableManualCode(
+                command.getDiagMatchOpDscg(), "diag_match_op_dscg", sources, v -> this.diagMatchOpDscg = v);
+        applyClearableManualCode(
+                command.getDiagMatchAdmDscg(), "diag_match_adm_dscg", sources, v -> this.diagMatchAdmDscg = v);
+        applyClearableManualCode(
+                command.getDiagMatchPrePost(), "diag_match_pre_post", sources, v -> this.diagMatchPrePost = v);
+        applyClearableManualCode(
+                command.getDiagMatchClinicPath(),
+                "diag_match_clinic_path",
+                sources,
+                v -> this.diagMatchClinicPath = v);
+        applyClearableManualCode(
+                command.getDiagMatchRadioPath(), "diag_match_radio_path", sources, v -> this.diagMatchRadioPath = v);
+        applyClearableManualCode(command.getAutopsyCode(), "autopsy_code", sources, v -> this.autopsyCode = v);
+        applyClearableManualCode(command.getAboCode(), "abo_code", sources, v -> this.aboCode = v);
+        applyClearableManualCode(command.getRhCode(), "rh_code", sources, v -> this.rhCode = v);
+        applyClearableManualCode(command.getTrainDrName(), "train_dr_name", sources, v -> this.trainDrName = v);
+        applyClearableManualCode(command.getIntnDrName(), "intn_dr_name", sources, v -> this.intnDrName = v);
+        applyClearableManualCode(command.getCodrName(), "codr_name", sources, v -> this.codrName = v);
+        applyClearableManualCode(command.getMedcasQltCode(), "medcas_qlt_code", sources, v -> this.medcasQltCode = v);
+        if (command.getQltctrlDate() != null) {
+            this.qltctrlDate = command.getQltctrlDate();
+            sources.put("qltctrl_date", FieldFillSource.MANUAL.getCode());
+        }
+        applyClearableManualCode(command.getQltctrlDrName(), "qltctrl_dr_name", sources, v -> this.qltctrlDrName = v);
+        applyClearableManualCode(
+                command.getQltctrlNursName(), "qltctrl_nurs_name", sources, v -> this.qltctrlNursName = v);
+        applyClearableManualCode(command.getAcpMedinsName(), "acp_medins_name", sources, v -> this.acpMedinsName = v);
+        applyClearableManualCode(
+                command.getAcpCommunityName(), "acp_community_name", sources, v -> this.acpCommunityName = v);
+        applyClearableManualCode(command.getRinp31Flag(), "rinp31_flag", sources, v -> this.rinp31Flag = v);
+        applyClearableManualCode(command.getRinp31Purpose(), "rinp31_purpose", sources, v -> this.rinp31Purpose = v);
     }
 
     /**
@@ -404,6 +746,58 @@ public class CaseRecordHomepage extends BaseAuditedEntity {
             return;
         }
         setter.accept(value);
+        sources.put(sourceKey, FieldFillSource.MANUAL.getCode());
+    }
+
+    /**
+     * 可清空码/文本手工写入：null 跳过；空白则清空列并移除来源锁。
+     *
+     * @param value     入参码值
+     * @param sourceKey field_sources 键（蛇形列名）
+     * @param sources   字段来源表
+     * @param setter    列写入器
+     */
+    private void applyClearableManualCode(
+            String value,
+            String sourceKey,
+            Map<String, String> sources,
+            java.util.function.Consumer<String> setter) {
+        if (value == null) {
+            return;
+        }
+        // 空白表示用户清空，避免空串锁死自动回填位
+        if (value.isBlank()) {
+            setter.accept(null);
+            sources.remove(sourceKey);
+            return;
+        }
+        markManualField(value, sourceKey, sources, setter);
+    }
+
+    /**
+     * 省市区 codes 列表手工写入：null 跳过；空列表清空列；否则落斜杠拼接字符串并标 manual。
+     *
+     * @param codes     入参列表
+     * @param sourceKey field_sources 键
+     * @param sources   字段来源表
+     * @param setter    列写入器（纯字符串）
+     */
+    private void applyManualCodesList(
+            List<String> codes,
+            String sourceKey,
+            Map<String, String> sources,
+            java.util.function.Consumer<String> setter) {
+        if (codes == null) {
+            return;
+        }
+        // 空数组表示用户清空省市区
+        if (codes.isEmpty()) {
+            setter.accept(null);
+            sources.remove(sourceKey);
+            return;
+        }
+        String text = HomepageRegionCodesTextUtil.stringListToText(codes);
+        setter.accept(text);
         sources.put(sourceKey, FieldFillSource.MANUAL.getCode());
     }
 

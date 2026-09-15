@@ -25,6 +25,8 @@ import { useUserStore } from '@vben/stores';
 import { ElButton, ElMessage } from 'element-plus';
 import { storeToRefs } from 'pinia';
 
+import PatientAllergyHistoryDialog from '#/components/clinical/patient-allergy-history-dialog.vue';
+
 import {
   DiagnosisList,
   ENSURE_CLINICAL_RECEPTION_KEY,
@@ -459,19 +461,23 @@ const handleQuickAction = async (
   if (action === 'entrust') {
     return;
   }
+  if (action === 'allergy') {
+    allergyDialogVisible.value = true;
+    return;
+  }
   const actionTextMap: Record<
-    Exclude<typeof action, 'entrust' | 'exam' | 'lab' | 'report' | 'treatment'>,
+    Exclude<typeof action, 'allergy' | 'entrust' | 'exam' | 'lab' | 'report' | 'treatment'>,
     string
   > = {
     transfusion: '输血申请',
     pathology: '病理申请',
     surgery: '手术申请',
-    allergy: '过敏史',
   };
   ElMessage.info(`${actionTextMap[action]}功能待实现`);
 };
 
 const serviceApplyDialogVisible = ref(false);
+const allergyDialogVisible = ref(false);
 const serviceApplyKind = ref<ServiceApplyKind>('lab');
 const serviceApplyEditGroup = ref<null | ServiceApplyDocumentGroup>(null);
 
@@ -634,6 +640,14 @@ const handleNursing = () => {
       v-model="nursingDialogVisible"
       :patient="selectedPatient"
       @success="handleNursingAdviceSuccess"
+    />
+
+    <PatientAllergyHistoryDialog
+      v-model="allergyDialogVisible"
+      :patient-id="selectedPatient?.patientId ?? ''"
+      :encounter-id="selectedPatient?.encounterId ?? ''"
+      default-verification-status="CONFIRMED"
+      :read-only="adviceWriteDisabled"
     />
 
     <ServiceApplyDialog

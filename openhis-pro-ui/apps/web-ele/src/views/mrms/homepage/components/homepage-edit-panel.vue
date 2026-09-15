@@ -3,6 +3,7 @@ import type { HomepageFormModel } from '../homepage-form.types';
 
 import { computed, nextTick, ref } from 'vue';
 
+import { Printer, View } from '@element-plus/icons-vue';
 import { ElAnchor, ElAnchorLink, ElButton, ElForm, ElTag } from 'element-plus';
 
 import SectionTitle from '#/components/layouts/section-title.vue';
@@ -12,7 +13,7 @@ import {
   CASE_RECORD_STATUS_TAG,
   HOMEPAGE_ANCHOR_SECTIONS,
 } from '../../mrms.constants';
-import HomepageDiagnosisGrid from './homepage-diagnosis-grid.vue';
+import HomepageDiagnosisSection from './homepage-diagnosis-section.vue';
 import HomepageFeeForm from './homepage-fee-form.vue';
 import HomepagePatientForm from './homepage-patient-form.vue';
 import HomepageProcedureGrid from './homepage-procedure-grid.vue';
@@ -31,6 +32,9 @@ interface Props {
   canReceive?: boolean;
   canReturn?: boolean;
   saving?: boolean;
+  printing?: boolean;
+  /** 中医信息段：由 loadPage 医院 medins_type 判定 */
+  tcmInfoEnabled?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -44,6 +48,8 @@ const props = withDefaults(defineProps<Props>(), {
   canReceive: false,
   canReturn: false,
   saving: false,
+  printing: false,
+  tcmInfoEnabled: false,
 });
 
 const emit = defineEmits<{
@@ -55,6 +61,7 @@ const emit = defineEmits<{
   return: [];
   'import-all': [];
   'import-section': [section: string];
+  print: [payload: { preview: boolean }];
 }>();
 
 const scrollRef = ref<HTMLElement | null>(null);
@@ -94,7 +101,7 @@ function handleAnchorClick(e: MouseEvent) {
   <div class="hp-edit">
     <div class="hp-edit__header">
       <div class="hp-edit__meta">
-        <ElButton link type="primary" @click="emit('back')">← 返回列表</ElButton>
+        <ElButton link type="primary" @click="emit('back')">← 关闭</ElButton>
         <span class="hp-edit__title">病案首页</span>
         <span class="hp-edit__no">病案号 {{ displayMedcasno }}</span>
         <span class="hp-edit__name">{{ formModel.psnName || '—' }}</span>
@@ -102,6 +109,23 @@ function handleAnchorClick(e: MouseEvent) {
         <span v-if="returnReason" class="hp-edit__return">退回原因：{{ returnReason }}</span>
       </div>
       <div class="hp-edit__actions">
+        <!-- 模板由医院 medins_type（tcmInfoEnabled）决定，不并列中/西按钮 -->
+        <ElButton
+          plain
+          :icon="View"
+          :disabled="saving || printing"
+          @click="emit('print', { preview: true })"
+        >
+          打印预览
+        </ElButton>
+        <ElButton
+          plain
+          :icon="Printer"
+          :disabled="saving || printing"
+          @click="emit('print', { preview: false })"
+        >
+          打印
+        </ElButton>
         <ElButton
           v-if="canImport && !readonly"
           plain
@@ -165,7 +189,7 @@ function handleAnchorClick(e: MouseEvent) {
                 link
                 type="primary"
                 size="small"
-                @click="emit('import-section', 'basic')"
+                @click="emit('import-section', 'inpatient')"
               >
                 导入本章
               </ElButton>
@@ -174,6 +198,7 @@ function handleAnchorClick(e: MouseEvent) {
               part="inpatient"
               :model-value="formModel"
               :readonly="readonly"
+              :tcm-info-enabled="tcmInfoEnabled"
               @dirty="markDirty"
             />
           </section>
@@ -192,8 +217,8 @@ function handleAnchorClick(e: MouseEvent) {
               </ElButton>
             </div>
             <div class="hp-edit__panel">
-              <HomepageDiagnosisGrid
-                v-model="formModel.diagnoses"
+              <HomepageDiagnosisSection
+                :model-value="formModel"
                 :readonly="readonly"
                 @dirty="markDirty"
               />
@@ -210,10 +235,10 @@ function handleAnchorClick(e: MouseEvent) {
                 size="small"
                 @click="emit('import-section', 'fee')"
               >
-                导入本章
+                重新统计
               </ElButton>
             </div>
-            <HomepageFeeForm :model-value="formModel" :readonly="readonly" @dirty="markDirty" />
+            <HomepageFeeForm :model-value="formModel" :readonly="true" />
           </section>
 
           <section id="sec-procedure" class="hp-edit__section">

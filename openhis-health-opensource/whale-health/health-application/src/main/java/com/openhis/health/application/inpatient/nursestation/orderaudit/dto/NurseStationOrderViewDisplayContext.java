@@ -4,6 +4,7 @@
  */
 package com.openhis.health.application.inpatient.nursestation.orderaudit.dto;
 
+import com.openhis.health.application.shared.advice.SkinTestOutcomeSnapshot;
 import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.workflow.activitydefinition.entity.ActivityDefinition;
@@ -63,4 +64,9 @@ public class NurseStationOrderViewDisplayContext {
      * 药品申请主键 → 展示名（供皮试检查 companion 追加「关联：药名」）。
      */
     private Map<Long, String> medicationAdviceNameByRequestId;
+
+    /**
+     * 皮试药 requestId → 最新护士登记结果（companion SR → AllergyIntolerance，BR-IP-ORD-016）。
+     */
+    private Map<Long, SkinTestOutcomeSnapshot> skinTestOutcomeByMedicationRequestId;
 }

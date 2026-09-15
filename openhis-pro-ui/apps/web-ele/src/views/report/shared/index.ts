@@ -10,6 +10,7 @@ export * from './report-list-page-classes';
 export {
   isReportNegativeNumber,
   isReportRefundBySignedFields,
+  resolveReportDetailRowClassName,
   resolveReportRefundRowClassName,
 } from './report-refund-row';
 export { sumReportPurchaseCornerFromRows } from './sum-report-purchase-corner';

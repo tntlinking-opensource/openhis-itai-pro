@@ -54,6 +54,8 @@ public class YbWiSettlementDomainService {
      * @param psnCashPay        个人现金
      * @param fundBreakdownJson 2207 出参 JSON
      * @param winMsgid          Win msgid（写 msgid_2207）
+     * @param psnName           患者姓名（可空）
+     * @param platformSetlTime  2207 出参 setl_time（可空，回落当前时间）
      * @param tenantId          租户 ID
      * @return 持久化后的结算回执；同 setl_id 幂等返回已有行
      */
@@ -71,6 +73,8 @@ public class YbWiSettlementDomainService {
             BigDecimal psnCashPay,
             String fundBreakdownJson,
             String winMsgid,
+            String psnName,
+            LocalDateTime platformSetlTime,
             Long tenantId) {
         if (isEmpty(setlId)) {
             // 院点 2207 出参常无 setl_id（NEUSILOGS 与 2206 同结构），用单据号作结算主键
@@ -116,8 +120,12 @@ public class YbWiSettlementDomainService {
         if (isNotEmpty(winMsgid)) {
             row.setMsgid2207(winMsgid.trim());
         }
+        if (isNotEmpty(psnName)) {
+            row.setPsnName(psnName.trim());
+        }
         row.setFundBreakdownJson(fundBreakdownJson);
         row.setTenantId(resolvedTenantId);
+        row.setSetlTime(platformSetlTime != null ? platformSetlTime : LocalDateTime.now());
         row.setCreatedAt(LocalDateTime.now());
         return settlementRecordRepository.saveAndFlush(row);
     }
@@ -125,11 +133,14 @@ public class YbWiSettlementDomainService {
     /**
      * 平台 2207 已成功、本地无回执时的单边补落。
      * <p>把就诊下带单据号的 ACTIVE 预结算挂到当前草稿，写入 settlement_record 并标 SETTLED。</p>
+     * <p>若改绑到与原回执不同的收银草稿，须 {@code currentChargeTotal} 与回执医疗费一致，
+     * 否则拒绝（防止新开收费复用旧 2207 后被收银按差额补现金）。</p>
      *
-     * @param encounterId    就诊 ID
-     * @param paymentDraftId 当前收银草稿
-     * @param contractId     合同（可空）
-     * @param tenantId       租户
+     * @param encounterId         就诊 ID
+     * @param paymentDraftId      当前收银草稿
+     * @param contractId          合同（可空）
+     * @param tenantId            租户
+     * @param currentChargeTotal  本次待结算收费项合计（可空：仅允许同草稿补落）
      * @return 补落后的回执；无可补数据时 empty
      */
     @Transactional
@@ -137,13 +148,18 @@ public class YbWiSettlementDomainService {
             Long encounterId,
             Long paymentDraftId,
             Long contractId,
-            Long tenantId) {
+            Long tenantId,
+            BigDecimal currentChargeTotal) {
         if (encounterId == null || paymentDraftId == null) {
             return Optional.empty();
         }
         Long resolvedTenantId = resolveTenantId(tenantId);
         Optional<YbSettlementRecord> already = findByPaymentDraft(paymentDraftId, null, resolvedTenantId);
         if (already.isPresent()) {
+            if (currentChargeTotal != null) {
+                assertReusableAgainstChargeTotal(
+                        already.get().getMedfeeSumamt(), currentChargeTotal, paymentDraftId);
+            }
             return already;
         }
         Optional<YbWiPreSettle> preOpt = preSettleRepository
@@ -166,12 +182,15 @@ public class YbWiSettlementDomainService {
         Optional<YbSettlementRecord> bySetl = settlementRecordRepository
                 .findFirstBySetlIdAndTenantIdAndIsDeletedFalse(mdtrtId.trim(), resolvedTenantId);
         if (bySetl.isPresent()) {
+            YbSettlementRecord existing = bySetl.get();
+            assertMayRebindDraft(pre, existing, paymentDraftId, currentChargeTotal);
             if (!paymentDraftId.equals(pre.getPaymentDraftId())) {
                 pre.setPaymentDraftId(paymentDraftId);
                 preSettleRepository.save(pre);
             }
             return bySetl;
         }
+        assertMayRebindDraft(pre, null, paymentDraftId, currentChargeTotal);
         if (!paymentDraftId.equals(pre.getPaymentDraftId())) {
             pre.setPaymentDraftId(paymentDraftId);
             preSettleRepository.save(pre);
@@ -195,10 +214,62 @@ public class YbWiSettlementDomainService {
                 pre.getPsnCashPay(),
                 pre.getSnapshotJson(),
                 null,
+                null,
+                null,
                 resolvedTenantId);
         pre.setStatus(YbPreSettleStatus.SETTLED.name());
         preSettleRepository.save(pre);
         return Optional.of(record);
+    }
+
+    /**
+     * 改绑收银草稿前校验：同草稿可补落；异草稿须本次收费合计与回执医疗费一致。
+     */
+    private void assertMayRebindDraft(
+            YbWiPreSettle pre,
+            YbSettlementRecord existing,
+            Long paymentDraftId,
+            BigDecimal currentChargeTotal) {
+        boolean sameDraft = paymentDraftId.equals(pre.getPaymentDraftId())
+                || (existing != null && paymentDraftId.equals(existing.getPaymentId()));
+        BigDecimal expected = existing != null && existing.getMedfeeSumamt() != null
+                ? existing.getMedfeeSumamt()
+                : pre.getMedfeeSumamt();
+        if (sameDraft) {
+            if (currentChargeTotal != null) {
+                assertReusableAgainstChargeTotal(expected, currentChargeTotal, paymentDraftId);
+            }
+            return;
+        }
+        if (currentChargeTotal == null) {
+            throw new BusinessException(
+                    WiErrorCodes.SETTLEMENT_REUSE_FORBIDDEN,
+                    "本就诊已有工伤结算回执，拒绝改绑到其他收银草稿（paymentDraftId="
+                            + paymentDraftId + "）。请先撤销原结算(2208)后再重新结算。");
+        }
+        assertReusableAgainstChargeTotal(expected, currentChargeTotal, paymentDraftId);
+    }
+
+    /**
+     * 本次收费合计须与已有回执医疗费一致。
+     */
+    private static void assertReusableAgainstChargeTotal(
+            BigDecimal expectedMedfee,
+            BigDecimal currentChargeTotal,
+            Long paymentDraftId) {
+        BigDecimal expected = scale2(expectedMedfee);
+        BigDecimal actual = scale2(currentChargeTotal);
+        if (expected.compareTo(actual) != 0) {
+            throw new BusinessException(
+                    WiErrorCodes.SETTLEMENT_REUSE_FORBIDDEN,
+                    "本就诊已有工伤结算回执（医疗费 " + expected + "），与本次收费合计 "
+                            + actual + " 不一致，禁止复用回执（paymentDraftId=" + paymentDraftId
+                            + "）。请先撤销原结算(2208)后再重新结算，或分次结算。");
+        }
+    }
+
+    private static BigDecimal scale2(BigDecimal value) {
+        return (value == null ? BigDecimal.ZERO : value).setScale(2, java.math.RoundingMode.HALF_UP);
     }
 
     /**

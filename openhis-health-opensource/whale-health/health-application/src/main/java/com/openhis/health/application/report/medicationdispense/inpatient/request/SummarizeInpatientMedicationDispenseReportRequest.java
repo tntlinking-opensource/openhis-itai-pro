@@ -20,12 +20,12 @@ import java.util.List;
 @Schema(description = "住院发药报表汇总查询请求")
 public class SummarizeInpatientMedicationDispenseReportRequest {
 
-    /** 业务日起（yyyy-MM-dd，闭区间）。 */
-    @Schema(description = "业务日起（yyyy-MM-dd）", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 业务日起（yyyy-MM-dd 或 yyyy-MM-dd HH:mm:ss；仅日期时起 00:00:00、止 23:59:59，闭区间）。 */
+    @Schema(description = "业务日起（yyyy-MM-dd 或 yyyy-MM-dd HH:mm:ss；仅日期时起 00:00:00、止 23:59:59）", requiredMode = Schema.RequiredMode.REQUIRED)
     private String dispenseDateFrom;
 
-    /** 业务日止（yyyy-MM-dd，闭区间）。 */
-    @Schema(description = "业务日止（yyyy-MM-dd）", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 业务日止（yyyy-MM-dd 或 yyyy-MM-dd HH:mm:ss；仅日期时起 00:00:00、止 23:59:59，闭区间）。 */
+    @Schema(description = "业务日止（yyyy-MM-dd 或 yyyy-MM-dd HH:mm:ss；仅日期时起 00:00:00、止 23:59:59）", requiredMode = Schema.RequiredMode.REQUIRED)
     private String dispenseDateTo;
 
     /** 记录类型：ALL / DISPENSE / REFUND；默认 ALL。 */

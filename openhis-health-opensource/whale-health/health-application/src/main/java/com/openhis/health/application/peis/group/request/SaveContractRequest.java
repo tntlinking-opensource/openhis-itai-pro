@@ -45,4 +45,7 @@ public class SaveContractRequest {
 
     /** 体检中心机构主键（可选）。 */
     private Long orgId;
+
+    /** 合同类型编码（STUDENT/STAFF/ENTERPRISE 等；必填）。 */
+    private String contractTypeCode;
 }

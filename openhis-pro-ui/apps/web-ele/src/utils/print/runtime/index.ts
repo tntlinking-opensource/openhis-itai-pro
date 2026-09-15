@@ -8,13 +8,20 @@ import {
   clampFormCopies,
   isInvFormTriplePaper,
   normalizeInvFormPaperKind,
+  normalizeInvFormTripleSpec,
 } from '../form-print-preference';
 import { resolvePrintData } from '../mappers/registry';
 import { openPrintPreviewDialog } from '../open-print-preview-dialog';
+import { getPrinterPreference, savePrinterPreference } from '../printer-preference';
 import { resolvePrinterForPrint } from '../resolve-printer';
 import { resolvePrintErrorMessage } from './errors';
 import { countHiprintPreviewFolds, renderHiprintPreviewHtml } from './hiprint-client';
 import { notifyPrintError } from './print-user-error';
+import {
+  filterPrintJsonByPages,
+  normalizePageIndexes,
+  resolveDuplexModeForPrint,
+} from './print-page-selection';
 import { postHiprintPrintWithRetry } from './retry';
 import { PRINT_CLIENT_TYPE, PRINT_ERROR_CODE } from './types';
 
@@ -189,6 +196,7 @@ async function resolvePreparedPrintContext<TSource>(
     try {
       printJson = options.transformPrintJson(structuredClone(sourcePrintJson), {
         formPaperKind: options.formPaperKind,
+        formTripleSpec: options.formTripleSpec,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : '打印模板列转换失败';
@@ -241,14 +249,21 @@ async function runPreview<TSource>(options: PrintOptions<TSource>): Promise<Prin
   let currentPaperKind = options.formPaperKind
     ? normalizeInvFormPaperKind(options.formPaperKind)
     : undefined;
+  let currentTripleSpec = options.formTripleSpec
+    ? normalizeInvFormTripleSpec(options.formTripleSpec)
+    : undefined;
 
-  /** 按纸张从源模板重建 PrintJson */
-  function rebuildPrintJson(kind: NonNullable<typeof currentPaperKind>): Record<string, unknown> {
+  /** 按纸张与规格从源模板重建 PrintJson */
+  function rebuildPrintJson(
+    kind: NonNullable<typeof currentPaperKind>,
+    spec?: typeof currentTripleSpec,
+  ): Record<string, unknown> {
     if (!options.transformPrintJson) {
       return structuredClone(ctx.sourcePrintJson);
     }
     return options.transformPrintJson(structuredClone(ctx.sourcePrintJson), {
       formPaperKind: kind,
+      formTripleSpec: spec,
     });
   }
 
@@ -265,6 +280,7 @@ async function runPreview<TSource>(options: PrintOptions<TSource>): Promise<Prin
 
   const previewHtml = renderPreviewHtml(ctx.printJson);
   const isTriple = currentPaperKind ? isInvFormTriplePaper(currentPaperKind) : false;
+  const printerPref = getPrinterPreference(ctx.scenarioCode);
   try {
     await openPrintPreviewDialog({
       previewHtml,
@@ -272,11 +288,14 @@ async function runPreview<TSource>(options: PrintOptions<TSource>): Promise<Prin
       copies: options.copies ?? 1,
       continuousForm: options.repeatPrintData === true || (showFormPaperKind && isTriple),
       formPaperKind: currentPaperKind,
+      formTripleSpec: currentTripleSpec,
       showFormPaperKind,
-      onFormPaperKindChange: showFormPaperKind
-        ? (kind) => {
-            currentPaperKind = kind;
-            ctx.printJson = rebuildPrintJson(kind);
+      initialPrinterName: printerPref?.printerName,
+      onFormPaperChange: showFormPaperKind
+        ? (payload) => {
+            currentPaperKind = payload.paperKind;
+            currentTripleSpec = payload.tripleSpec;
+            ctx.printJson = rebuildPrintJson(payload.paperKind, payload.tripleSpec);
             const html = renderPreviewHtml(ctx.printJson);
             return {
               previewHtml: html,
@@ -284,14 +303,24 @@ async function runPreview<TSource>(options: PrintOptions<TSource>): Promise<Prin
             };
           }
         : undefined,
-      onPrint: (copies, formPaperKind) => {
+      onPrint: (copies, formPaperKind, tripleSpec, printerName, pageSelection) => {
         const nextCopies = clampFormCopies(copies);
         const nextKind = formPaperKind
           ? normalizeInvFormPaperKind(formPaperKind)
           : currentPaperKind;
+        const nextSpec = tripleSpec ? normalizeInvFormTripleSpec(tripleSpec) : currentTripleSpec;
         const nextIsTriple = nextKind ? isInvFormTriplePaper(nextKind) : false;
         if (showFormPaperKind && nextKind) {
-          ctx.printJson = rebuildPrintJson(nextKind);
+          ctx.printJson = rebuildPrintJson(nextKind, nextSpec);
+        }
+        const printer = printerName?.trim();
+        // 预览里已选打印机：落盘偏好并跳过第二次选机弹窗
+        if (showFormPaperKind && printer) {
+          savePrinterPreference(ctx.scenarioCode, {
+            printerName: printer,
+            skipPrompt: printerPref?.skipPrompt !== false,
+            updatedAt: new Date().toISOString(),
+          });
         }
         return executePreparedPrint(
           {
@@ -299,6 +328,11 @@ async function runPreview<TSource>(options: PrintOptions<TSource>): Promise<Prin
             copies: nextCopies,
             repeatPrintData: showFormPaperKind ? nextIsTriple : options.repeatPrintData,
             formPaperKind: nextKind,
+            formTripleSpec: nextSpec,
+            printer: showFormPaperKind ? printer || options.printer : options.printer,
+            selectPrinter: showFormPaperKind ? 'never' : options.selectPrinter,
+            showPaperKind: showFormPaperKind ? false : options.showPaperKind,
+            pageSelection,
           },
           ctx,
         );
@@ -336,6 +370,7 @@ async function executePreparedPrint<TSource>(
     selectPrinter: options.selectPrinter,
     showPaperKind: options.showPaperKind,
     initialPaperKind: options.formPaperKind,
+    initialTripleSpec: options.formTripleSpec,
   });
   if (resolvedPrinter.cancelled) {
     return {
@@ -353,8 +388,25 @@ async function sendPreparedToHiprint<TSource>(
   ctx: PreparedPrintContext,
   printer?: string,
 ): Promise<PrintResult> {
+  const panelCount = Array.isArray(ctx.printJson.panels)
+    ? (ctx.printJson.panels as unknown[]).length
+    : 0;
+  const pageIndexes =
+    options.pageSelection?.pageIndexes && panelCount > 0
+      ? normalizePageIndexes(options.pageSelection.pageIndexes, panelCount)
+      : undefined;
+  const printJson =
+    pageIndexes && pageIndexes.length > 0 && pageIndexes.length < panelCount
+      ? filterPrintJsonByPages(ctx.printJson, pageIndexes)
+      : ctx.printJson;
+  const duplexMode = resolveDuplexModeForPrint(
+    pageIndexes
+      ? { pageIndexes, duplexMode: options.pageSelection?.duplexMode }
+      : options.pageSelection,
+  );
+
   const hiprintResult = await postHiprintPrintWithRetry({
-    PrintJson: ctx.printJson,
+    PrintJson: printJson,
     printData: ctx.printData,
     scenarioCode: ctx.scenarioCode,
     printer,
@@ -362,6 +414,7 @@ async function sendPreparedToHiprint<TSource>(
     silent: options.silent ?? true,
     jobName: options.jobName ?? ctx.busNo,
     repeatPrintData: options.repeatPrintData,
+    duplexMode,
   });
 
   if (hiprintResult.ok) {
@@ -427,6 +480,7 @@ async function runPrint<TSource>(options: PrintOptions<TSource>): Promise<PrintR
     selectPrinter: options.selectPrinter,
     showPaperKind: options.showPaperKind,
     initialPaperKind: options.formPaperKind,
+    initialTripleSpec: options.formTripleSpec,
   });
   if (resolvedPrinter.cancelled) {
     return {
@@ -441,6 +495,7 @@ async function runPrint<TSource>(options: PrintOptions<TSource>): Promise<PrintR
     printOptions = {
       ...options,
       formPaperKind: resolvedPrinter.paperKind,
+      formTripleSpec: resolvedPrinter.tripleSpec,
       repeatPrintData: isInvFormTriplePaper(resolvedPrinter.paperKind),
     };
   }

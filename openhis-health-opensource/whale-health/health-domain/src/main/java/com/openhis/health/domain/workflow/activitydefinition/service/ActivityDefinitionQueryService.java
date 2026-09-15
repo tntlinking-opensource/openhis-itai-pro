@@ -511,7 +511,10 @@ public class ActivityDefinitionQueryService {
                         PeisCatalogConstants.ACTIVITY_CATEGORY_PEIS));
                 }
                 if (query.getStatusEnum() != null) {
-                    predicates.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), query.getStatusEnum()));
+                    String normalizedStatus = this.normalizePublicationStatusFilter(query.getStatusEnum());
+                    if (normalizedStatus != null) {
+                        predicates.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), normalizedStatus));
+                    }
                 }
                 if (query.getTypeEnum() != null) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.TYPE_ENUM), query.getTypeEnum()));
@@ -952,5 +955,26 @@ public class ActivityDefinitionQueryService {
             c = categoryCode.trim();
         }
         return n + '\u0001' + c;
+    }
+
+    /**
+     * 规范化目录发布状态筛选：仅 ACTIVE/INACTIVE；其余视为不筛选。
+     *
+     * @param statusEnum 请求状态码
+     * @return ACTIVE/INACTIVE；无法识别时 null
+     */
+    private String normalizePublicationStatusFilter(String statusEnum) {
+        if (StringUtils.isEmpty(statusEnum)) {
+            return null;
+        }
+        String trimmed = statusEnum.trim();
+        if (PublicationStatus.ACTIVE.getCode().equals(trimmed)) {
+            return PublicationStatus.ACTIVE.getCode();
+        }
+        if (PublicationStatus.INACTIVE.getCode().equals(trimmed)) {
+            return PublicationStatus.INACTIVE.getCode();
+        }
+        // 未知状态码：不收窄，避免误滤成空目录
+        return null;
     }
 }

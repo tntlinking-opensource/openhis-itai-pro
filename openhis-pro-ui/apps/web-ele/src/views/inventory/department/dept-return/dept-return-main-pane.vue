@@ -1032,14 +1032,9 @@ async function handleWithdraw() {
 async function handleApprove() {
   const no = headerBusNo.value;
   if (!no) return;
-  const approverId = resolveLoginPractitionerIdForRequest(
-    userStore.userInfo as null | Record<string, unknown>,
-  );
   try {
     await agreeDeptReturnApi({
       busNo: no,
-      approverId,
-      approvalClock: nowIsoLocal(),
     });
     ElMessage.success('审批同意');
     await loadDetail(no);
@@ -1062,10 +1057,6 @@ async function handleReject() {
     await rejectDeptReturnApi({
       busNo: no,
       rejectReason: value,
-      approverId: resolveLoginPractitionerIdForRequest(
-        userStore.userInfo as null | Record<string, unknown>,
-      ),
-      approvalClock: nowIsoLocal(),
     });
     ElMessage.success('已驳回');
     await loadDetail(no);

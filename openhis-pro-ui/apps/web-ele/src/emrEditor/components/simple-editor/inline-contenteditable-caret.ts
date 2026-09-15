@@ -337,6 +337,100 @@ export function clearPinnedIslandCaret(el?: HTMLElement): void {
   pinnedIslandCaret = null;
 }
 
+/**
+ * 岛屿内 Home / End。
+ * 原生 End 在 inline contenteditable（尤其有换页垫片）下常把 Range 折到文首，
+ * 随后 insertText 就会插到开头。Ctrl/Meta = 整段首尾，否则当前视觉行首尾。
+ */
+export function moveContentEditableCaretHomeEnd(
+  el: HTMLElement,
+  edge: 'end' | 'home',
+  wholeIsland: boolean,
+): void {
+  const plain = readContentEditablePlainText(el);
+  if (!plain.length) {
+    setContentEditableCaret(el, edge === 'home' ? 'start' : 'end');
+    pinIslandCaret(el, 0, 400);
+    return;
+  }
+  let next = edge === 'home' ? 0 : plain.length;
+  if (!wholeIsland) {
+    const caret = contentEditableCaretOffset(el);
+    const at = caret >= 0 ? caret : edge === 'home' ? 0 : plain.length;
+    next = findVisualLineEdgeOffset(el, plain, at, edge);
+  }
+  setContentEditableCaretOffset(el, next);
+  pinIslandCaret(el, next, 400);
+}
+
+function rangeAtIslandPlainOffset(el: HTMLElement, offset: number): Range | null {
+  const clamped = Math.max(0, offset);
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (node.parentElement?.closest(EMR_ISLAND_SOFT_BREAK_SELECTOR)) {
+        return NodeFilter.FILTER_REJECT;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  let remaining = clamped;
+  let node = walker.nextNode();
+  let lastText: Node | null = null;
+  while (node) {
+    lastText = node;
+    const len = (node.textContent ?? '').replace(/\r\n/g, '\n').length;
+    if (remaining <= len) {
+      const range = document.createRange();
+      range.setStart(node, remaining);
+      range.collapse(true);
+      return range;
+    }
+    remaining -= len;
+    node = walker.nextNode();
+  }
+  if (!lastText) return null;
+  const range = document.createRange();
+  range.setStart(lastText, (lastText.textContent ?? '').length);
+  range.collapse(true);
+  return range;
+}
+
+function findVisualLineEdgeOffset(
+  el: HTMLElement,
+  plain: string,
+  caret: number,
+  edge: 'end' | 'home',
+): number {
+  const start = Math.max(0, Math.min(caret, plain.length));
+  const origin = rangeAtIslandPlainOffset(el, start);
+  if (!origin) return edge === 'home' ? 0 : plain.length;
+  const originRect = origin.getBoundingClientRect();
+  if (originRect.height < 0.5 && originRect.width < 0.5) {
+    return edge === 'home' ? 0 : plain.length;
+  }
+  const lineTop = originRect.top;
+  if (edge === 'home') {
+    let lo = 0;
+    let hi = start;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      const r = rangeAtIslandPlainOffset(el, mid);
+      if (r && Math.abs(r.getBoundingClientRect().top - lineTop) <= 2) hi = mid;
+      else lo = mid + 1;
+    }
+    return lo;
+  }
+  let lo = start;
+  let hi = plain.length;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    const r = rangeAtIslandPlainOffset(el, mid);
+    if (r && Math.abs(r.getBoundingClientRect().top - lineTop) <= 2) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo;
+}
+
 /** 将折叠选区移到纯文本指定偏移（跳过岛屿换页垫片内文本） */
 export function setContentEditableCaretOffset(el: HTMLElement, offset: number): void {
   if (offset < 0) return;

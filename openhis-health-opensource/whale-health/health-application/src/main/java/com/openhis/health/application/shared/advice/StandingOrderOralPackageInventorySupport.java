@@ -10,6 +10,7 @@ import com.openhis.health.domain.medication.medicationrequest.entity.MedicationR
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.EventStatus;
+import com.openhis.health.domain.share.enums.TherapyType;
 import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.whale.core.application.util.StringUtils;
 import lombok.RequiredArgsConstructor;
@@ -28,23 +29,45 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * 住院长嘱口服一盒一点：理论剩余计数与待执行按天抑制（BR-IP-EXE-038）。
+ * 住院长嘱「单位领用」理论剩余计数与待执行按天抑制（BR-IP-EXE-038）。
  *
- * <p>读路径实时计算，不落库；医生站列表与护士站执行列表 / 待执计数须同源调用本 Support。
- * 写路径整盒记账仍由 BR-IP-EXE-035④ 负责，本类不改 quantity。</p>
+ * <p>覆盖两类领用形态（算法同源，仅<strong>每次领入拆零量</strong>不同）：</p>
+ * <ul>
+ *   <li><strong>一盒一点（PACKAGE）</strong>：院点不可拆 + 口服包装切盒；每次净完成领入
+ *       {@code packageUnitRatio} 拆零；写路径整盒仍由 BR-IP-EXE-035④ 负责。</li>
+ *   <li><strong>拆零下限（MIN_SPLIT）</strong>：单次临床拆零 &lt; 1（如胰岛素 0.03 支、半片）；
+ *       每次净完成领入 {@code 1} 拆零；写路径抬量仍由 BR-IP-EXE-036 负责。</li>
+ * </ul>
+ *
+ * <p>读路径实时计算，不落库；医生站列表与护士站执行列表 / 待执计数 / 出院门禁 pending
+ * 须同源调用本 Support。本类不改写路径 quantity。</p>
  */
 @Component
 @RequiredArgsConstructor
 public class StandingOrderOralPackageInventorySupport {
 
-    /** 向前模拟下次领盒日的最大自然日数，避免无限循环。 */
+    /** 向前模拟下次领用日的最大自然日数，避免无限循环。 */
     private static final int NEXT_CLAIM_LOOKAHEAD_DAYS = 120;
 
     private final MedicationRequestQueryService medicationRequestQueryService;
     private final StandingOrderPackageBatchPlanTimeResolver planTimeResolver;
 
     /**
-     * 口服包装剩余快照（展示 + 抑制判定）。
+     * 单位领用模式：决定每次净完成执行计入的领入拆零量。
+     */
+    public enum UnitClaimMode {
+        /**
+         * 一盒一点：领入 = 有效领盒次数 × packageUnitRatio。
+         */
+        PACKAGE,
+        /**
+         * 拆零下限：领入 = 有效单位首槽执行次数 × 1。
+         */
+        MIN_SPLIT
+    }
+
+    /**
+     * 单位领用剩余快照（展示 + 抑制判定；字段名沿用 oralPackage* 契约）。
      */
     public static final class OralPackageInventorySnapshot {
         /** 是否命中本规则。 */
@@ -218,14 +241,17 @@ public class StandingOrderOralPackageInventorySupport {
     }
 
     /**
-     * 计算展示行口服包装剩余（未命中资格则 applied=false）。
+     * 计算展示行单位领用剩余（未命中资格则 applied=false）。
+     *
+     * <p>默认 {@link UnitClaimMode#PACKAGE}（一盒一点）；拆零下限请显式传 {@link UnitClaimMode#MIN_SPLIT}。</p>
      *
      * @param displayRequest                 当前列表行对应药嘱
      * @param proceduresByRequestId          链上各嘱 Procedure（净态判定用）
      * @param product                        药品目录
      * @param methodLabelByCode              用法展示名
-     * @param asOf                           业务截止日（含当日）
-     * @param applyStandingOrderPackageBatch 全局不可拆为 true
+     * @param asOf                           业务统计截止日（含当日）；若晚于今天则钳为今天——
+     *                                       「已吃」不得把未来尚未出现的执行点算进去
+     * @param applyStandingOrderPackageBatch 全局不可拆为 true（仅 PACKAGE 模式使用）
      * @return 快照；永不 null
      */
     public OralPackageInventorySnapshot compute(
@@ -235,27 +261,58 @@ public class StandingOrderOralPackageInventorySupport {
         Map<String, String> methodLabelByCode,
         LocalDate asOf,
         boolean applyStandingOrderPackageBatch) {
+        return this.compute(
+            displayRequest,
+            proceduresByRequestId,
+            product,
+            methodLabelByCode,
+            asOf,
+            UnitClaimMode.PACKAGE,
+            applyStandingOrderPackageBatch);
+    }
+
+    /**
+     * 按领用模式计算展示行剩余（未命中资格则 applied=false）。
+     *
+     * @param displayRequest                 当前列表行对应药嘱
+     * @param proceduresByRequestId          链上各嘱 Procedure（净态判定用）
+     * @param product                        药品目录
+     * @param methodLabelByCode              用法展示名（PACKAGE 口服判定用）
+     * @param asOf                           业务统计截止日（含当日）；晚于今天则钳为今天
+     * @param claimMode                      PACKAGE=一盒一点；MIN_SPLIT=拆零下限
+     * @param applyStandingOrderPackageBatch 全局不可拆；仅 PACKAGE 模式需要为 true
+     * @return 快照；永不 null
+     */
+    public OralPackageInventorySnapshot compute(
+        MedicationRequest displayRequest,
+        Map<Long, List<ProcedureRecordQueryModel>> proceduresByRequestId,
+        ProductDefinitionDisplayDto product,
+        Map<String, String> methodLabelByCode,
+        LocalDate asOf,
+        UnitClaimMode claimMode,
+        boolean applyStandingOrderPackageBatch) {
         OralPackageInventorySnapshot snap = new OralPackageInventorySnapshot();
         snap.setApplied(false);
         snap.setDisplayHost(false);
-        if (displayRequest == null || asOf == null) {
+        if (displayRequest == null || asOf == null || claimMode == null) {
             return snap;
         }
-        if (!applyStandingOrderPackageBatch) {
-            // 院点可拆：不启用剩余规则
-            return snap;
+        // 护士站列表截止常拉到未来以展开待执行；已吃/剩余只能算到今天，否则会出现「剩余0但领用点还没出」
+        LocalDate today = LocalDate.now();
+        LocalDate effectiveAsOf = asOf;
+        if (effectiveAsOf.isAfter(today)) {
+            effectiveAsOf = today;
         }
         StandingOrderPackageBatchPlanTimeResolver.MeasureInput measure =
             this.toMeasureInput(displayRequest);
-        if (!StandingOrderPackageBatchEligibilitySupport.isEligibleWithoutSplittableSwitch(
-            measure.getTherapyEnum(),
-            measure.getMethodCode(),
-            methodLabelByCode,
-            product)) {
-            return snap;
-        }
-        if (product.getPackageUnitRatio() == null
-            || product.getPackageUnitRatio().compareTo(BigDecimal.ZERO) <= 0) {
+        BigDecimal claimPerExecution = this.resolveClaimPerExecutionSplit(
+            claimMode,
+            applyStandingOrderPackageBatch,
+            measure,
+            product,
+            methodLabelByCode);
+        if (claimPerExecution == null) {
+            // 未命中本模式资格
             return snap;
         }
         List<MedicationRequest> chain = this.loadDoseChangeChain(displayRequest.getId());
@@ -265,7 +322,7 @@ public class StandingOrderOralPackageInventorySupport {
         MedicationRequest tip = chain.get(chain.size() - 1);
         boolean displayHost = Objects.equals(displayRequest.getId(), tip.getId());
         if (!displayHost) {
-            // 已被改量指走的旧嘱：不挂剩余展示，但仍可返回 applied=false 以免误抑制
+            // 已被改量指走的旧嘱：不挂剩余展示，返回 applied=false 以免误抑制
             snap.setDisplayHost(false);
             return snap;
         }
@@ -278,8 +335,7 @@ public class StandingOrderOralPackageInventorySupport {
             procedures = Collections.emptyMap();
         }
         List<LocalDate> claimDays = this.collectNetCompletedClaimDays(chain, procedures);
-        BigDecimal ratio = product.getPackageUnitRatio();
-        BigDecimal claimed = ratio.multiply(BigDecimal.valueOf(claimDays.size()));
+        BigDecimal claimed = claimPerExecution.multiply(BigDecimal.valueOf(claimDays.size()));
         snap.setClaimedSplitQuantity(claimed);
 
         BigDecimal consumed = BigDecimal.ZERO;
@@ -292,26 +348,78 @@ public class StandingOrderOralPackageInventorySupport {
                 }
             }
             consumed = this.sumConsumedSplit(
-                chain, product, methodLabelByCode, consumeStart, asOf);
+                chain, product, methodLabelByCode, consumeStart, effectiveAsOf);
         }
         snap.setConsumedSplitQuantity(consumed);
         BigDecimal remain = claimed.subtract(consumed);
         if (remain.compareTo(BigDecimal.ZERO) < 0) {
-            // 理论算负：按 0，且应已出现领盒点
+            // 理论算负：按 0，且应已出现领用点
             remain = BigDecimal.ZERO;
         }
         snap.setRemainSplitQuantity(remain);
 
-        // 从未有效领盒：不预估下次领盒日（第一盒由开立 pending 负责）
+        // 从未有效领用：不预估下次领用日（第一单位由开立 pending 负责）
         if (claimDays.isEmpty() || consumeStart == null) {
             snap.setNextClaimDate(null);
             return snap;
         }
-        // 下次领盒日按「领入总量自首领盒日起逐日扣」绝对推算，与 asOf 展示截止解耦，避免把「够吃到的末日」误标成领盒日
+        // 下次领用日按「领入总量自首领用日起逐日扣」绝对推算；前瞻右界用钳后 asOf，与已吃口径一致
         snap.setNextClaimDate(
             this.resolveNextClaimDate(
-                chain, product, methodLabelByCode, consumeStart, claimed, asOf));
+                chain, product, methodLabelByCode, consumeStart, claimed, effectiveAsOf));
         return snap;
+    }
+
+    /**
+     * 解析本模式每次净完成执行应计入的领入拆零量；未命中资格返回 null。
+     *
+     * @param claimMode                      领用模式
+     * @param applyStandingOrderPackageBatch 全局不可拆（PACKAGE 必填）
+     * @param measure                        槽量入参
+     * @param product                        目录
+     * @param methodLabelByCode              用法名
+     * @return 每次领入拆零；未命中 null
+     */
+    private BigDecimal resolveClaimPerExecutionSplit(
+        UnitClaimMode claimMode,
+        boolean applyStandingOrderPackageBatch,
+        StandingOrderPackageBatchPlanTimeResolver.MeasureInput measure,
+        ProductDefinitionDisplayDto product,
+        Map<String, String> methodLabelByCode) {
+        if (UnitClaimMode.PACKAGE.equals(claimMode)) {
+            if (!applyStandingOrderPackageBatch) {
+                // 院点可拆：不启用一盒一点剩余
+                return null;
+            }
+            if (!StandingOrderPackageBatchEligibilitySupport.isEligibleWithoutSplittableSwitch(
+                measure.getTherapyEnum(),
+                measure.getMethodCode(),
+                methodLabelByCode,
+                product)) {
+                return null;
+            }
+            if (product == null
+                || product.getPackageUnitRatio() == null
+                || product.getPackageUnitRatio().compareTo(BigDecimal.ZERO) <= 0) {
+                return null;
+            }
+            return product.getPackageUnitRatio();
+        }
+        if (UnitClaimMode.MIN_SPLIT.equals(claimMode)) {
+            // 拆零下限：长期 + 常规单次临床拆零严格小于 1；与院点不可拆开关正交
+            if (product == null || StringUtils.isEmpty(product.getSplitUnitCode())) {
+                return null;
+            }
+            if (!TherapyType.LONG_TERM.getCode().equals(measure.getTherapyEnum())) {
+                return null;
+            }
+            BigDecimal regularSplit = planTimeResolver.resolveRegularClinicalSplitQuantity(measure, product);
+            if (!StandingOrderMinSplitUnitBatchExpandSupport.isBelowOneSplitUnit(regularSplit)) {
+                return null;
+            }
+            return BigDecimal.ONE;
+        }
+        return null;
     }
 
     /**
@@ -340,6 +448,63 @@ public class StandingOrderOralPackageInventorySupport {
         }
         // 下次领盒日晚于本候选日 → 本日仍够，抑制
         return nextClaim.isAfter(pendingPlanDate);
+    }
+
+    /**
+     * 解析预计下次领盒日当天的第一个频次计划点（BR-IP-EXE-038 pending 锚）。
+     *
+     * <p>改量/已领盒后，包装切盒仍可能把「下一盒首」锚在新嘱开立日；抑制过早点后会出现空窗。
+     * 调用方须在下次领盒日用本方法补回可执行锚点。</p>
+     *
+     * @param displayRequest 展示宿主药嘱（链尾）
+     * @param nextClaimDate  预计下次领盒日
+     * @return 当日最早频次点；无频次/开立后无点则 null
+     */
+    public LocalDateTime resolveNextClaimPendingPlanTime(
+        MedicationRequest displayRequest,
+        LocalDate nextClaimDate) {
+        if (displayRequest == null || nextClaimDate == null) {
+            return null;
+        }
+        if (StringUtils.isEmpty(displayRequest.getRateCode()) || displayRequest.getReqOpenedTime() == null) {
+            return null;
+        }
+        LocalDate openDay = displayRequest.getReqOpenedTime().toLocalDate();
+        // 领盒日不得早于本条开立日（改量链尾）
+        if (nextClaimDate.isBefore(openDay)) {
+            return null;
+        }
+        // 已停且领盒日落在停嘱日之后：不再出待执行
+        if (displayRequest.getStopTime() != null
+            && nextClaimDate.isAfter(displayRequest.getStopTime().toLocalDate())) {
+            return null;
+        }
+        LocalDateTime dayStart = nextClaimDate.atStartOfDay();
+        LocalDateTime dayEnd = nextClaimDate.atTime(23, 59, 59);
+        Set<LocalDateTime> points = planTimeResolver.expandLongTermPlanTimes(
+            displayRequest.getRateCode(), dayStart, dayEnd, displayRequest.getReqOpenedTime());
+        if (points == null || points.isEmpty()) {
+            return null;
+        }
+        LocalDateTime earliest = null;
+        for (LocalDateTime point : points) {
+            if (point == null) {
+                continue;
+            }
+            if (!nextClaimDate.equals(point.toLocalDate())) {
+                continue;
+            }
+            // 停嘱当日：计划点不得晚于停嘱时刻
+            if (displayRequest.getStopTime() != null
+                && point.toLocalDate().equals(displayRequest.getStopTime().toLocalDate())
+                && point.isAfter(displayRequest.getStopTime())) {
+                continue;
+            }
+            if (earliest == null || point.isBefore(earliest)) {
+                earliest = point;
+            }
+        }
+        return earliest;
     }
 
     /**

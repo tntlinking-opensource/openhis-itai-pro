@@ -7,8 +7,8 @@ import { PRINT_SCENARIO } from './constants/print-scenario';
 import {
   DEFAULT_FORM_COPIES,
   getFormPrintPreference,
-  INV_FORM_PAPER_HEIGHT_MM,
   INV_FORM_PRINT_PREF_KEY,
+  resolveInvFormTripleHeightMm,
 } from './form-print-preference';
 import { print } from './runtime';
 
@@ -28,7 +28,7 @@ export async function printPriceAdjustment(
 ): Promise<PrintResult> {
   const pref = getFormPrintPreference(INV_FORM_PRINT_PREF_KEY);
   const copies = options.copies ?? (options.preview ? pref.copies : DEFAULT_FORM_COPIES);
-  const paperHeightMm = options.paperHeightMm ?? INV_FORM_PAPER_HEIGHT_MM;
+  const paperHeightMm = options.paperHeightMm ?? resolveInvFormTripleHeightMm(pref.tripleSpec);
   return print({
     scenarioCode: PRINT_SCENARIO.finPriceAdjustmentPrint,
     source: options.source,

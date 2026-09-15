@@ -24,6 +24,10 @@ import {
   mapWardTreeToWardOptions,
 } from './services/map-inpatient-nurse-station-api';
 
+/**
+ * 队列单页条数：侧栏需全量卡片，须多页拉齐；
+ * 单页过大会被任务计数 enrich 拖死超时，保持 50。
+ */
 const QUEUE_PAGE_SIZE = 50;
 /** 待入科就诊状态 code（与 DM-ADM-002 REGISTERED 一致） */
 const ENCOUNTER_STATUS_REGISTERED = 'REGISTERED';
@@ -119,26 +123,45 @@ export function useNurseStationPatientData() {
     selectedWardIds.value = [];
   }
 
-  /** 按页拉取在院患者队列直至取完当前筛选条件下的全部行。 */
-  async function fetchAllPatientQueueRows() {
+  /**
+   * 按页拉取在院患者队列直至取完；每页回写以便首屏尽早可见。
+   * 后续页失败时保留已拉到的行，避免整表空白。
+   *
+   * @param onPage 每页累计行回调（首屏渐进展示）
+   */
+  async function fetchAllPatientQueueRows(
+    onPage?: (accumulated: PatientItem[]) => void,
+  ): Promise<PatientItem[]> {
     const locationParams = resolveQueueLocationParams();
     const taskFilter = mapStatusFilterToTaskFilter(statusFilter.value);
     const rows: PatientItem[] = [];
     let pageNo = 1;
     let totalCount = 0;
     while (true) {
-      const res = await httpPagePatientQueue({
-        ...locationParams,
-        keyword: keyword.value.trim() || undefined,
-        nurseStationTaskFilter: taskFilter,
-        pageNo,
-        pageSize: QUEUE_PAGE_SIZE,
-      });
+      let res: Awaited<ReturnType<typeof httpPagePatientQueue>>;
+      try {
+        res = await httpPagePatientQueue({
+          ...locationParams,
+          keyword: keyword.value.trim() || undefined,
+          nurseStationTaskFilter: taskFilter,
+          pageNo,
+          pageSize: QUEUE_PAGE_SIZE,
+        });
+      } catch (error) {
+        // 首页失败直接抛出；后续页失败则带着已有行返回，避免侧栏全空
+        if (rows.length === 0) {
+          throw error;
+        }
+        ElMessage.warning('患者队列未全部加载，可点击刷新重试');
+        break;
+      }
       const parsed = parsePagedRowsFromApiData(res);
+      // 本页行映射为侧栏卡片模型后并入累计列表
       for (const row of parsed.content) {
         rows.push(mapQueueItemToPatientItem(row, wardOptions.value));
       }
       totalCount = parsed.totalCount;
+      onPage?.(rows.slice());
       if (rows.length >= totalCount || parsed.content.length === 0) {
         break;
       }
@@ -147,11 +170,13 @@ export function useNurseStationPatientData() {
     return rows;
   }
 
-  /** 加载在院患者队列。 */
+  /** 加载在院患者队列（带 loading；多页时首页回写后继续拉）。 */
   async function loadPatientQueue() {
     queueLoading.value = true;
     try {
-      const rows = await fetchAllPatientQueueRows();
+      const rows = await fetchAllPatientQueueRows((accumulated) => {
+        patients.value = accumulated;
+      });
       patients.value = rows;
     } catch {
       ElMessage.error('加载患者队列失败，请稍后重试');
@@ -242,6 +267,7 @@ export function useNurseStationPatientData() {
     keyword,
     pendingAuditCount,
     pendingExecuteCount,
+    queueLoading,
     refreshPatientFilters,
     regionNameByIdRecord,
     regionOptions,

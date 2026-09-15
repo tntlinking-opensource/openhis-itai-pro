@@ -238,7 +238,7 @@ function handleCardClick() {
           <dd>{{ headLine?.orderingDoctor || '—' }}</dd>
         </div>
         <div class="meta-row">
-          <dt>开立时间</dt>
+          <dt>签发时间</dt>
           <dd>{{ headLine?.startTime || '—' }}</dd>
         </div>
         <div v-if="precautionText" class="meta-row meta-row--full">

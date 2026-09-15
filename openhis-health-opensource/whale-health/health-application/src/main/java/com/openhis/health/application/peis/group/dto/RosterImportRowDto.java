@@ -25,4 +25,10 @@ public class RosterImportRowDto {
     private String className;
     private String idCardNo;
     private String mobilePhone;
+
+    /** Excel「分组」列覆盖默认分组名。 */
+    private String batchNameOverride;
+
+    /** Excel「套餐」列（顿号/逗号分隔名称）。 */
+    private String packageNames;
 }

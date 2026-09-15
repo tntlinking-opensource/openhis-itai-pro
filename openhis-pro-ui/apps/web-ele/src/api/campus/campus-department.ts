@@ -66,6 +66,7 @@ export function listDepartmentsApi(
   params: {
     campusSiteId?: IdLike | null;
     collegeId?: IdLike | null;
+    activeOnly?: boolean | null;
   } = {},
 ) {
   return publicRequestClient.post<{ records?: CampusDepartmentDto[] }>(

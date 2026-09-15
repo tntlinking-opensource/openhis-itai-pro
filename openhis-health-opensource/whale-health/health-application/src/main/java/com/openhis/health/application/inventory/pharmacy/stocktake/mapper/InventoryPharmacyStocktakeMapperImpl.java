@@ -384,6 +384,8 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
                 item.setPrice(line.getPrice());
                 item.setTotalPrice(line.getActualAmount());
                 item.setProfitLossPrice(line.getProfitLossAmount());
+                // 经手人落库：与药库盘点一致，写入请求中的 practitionerId（勿与制单人 applicantId 混用）
+                item.setPractitionerId(request.getPractitionerId());
                 item.setApplicantId(applicantId);
                 item.setApplyTime(null);
                 items.add(item);
@@ -491,7 +493,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return command;
     }
 
-    /** 装配新建成功 Response。 */
+    /** 装配盘点发放命令（跳过零盈亏行；全零时 items 为空，由 AppService 跳过落库）。 */
     @Override
     public CreateStocktakingDeliveryCommand toCreateStocktakingDeliveryCommand(
         List<SupplyRequestModel> lines, Long operatorId) {

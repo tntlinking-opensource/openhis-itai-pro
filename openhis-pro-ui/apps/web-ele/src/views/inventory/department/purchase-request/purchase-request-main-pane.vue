@@ -84,6 +84,7 @@ import {
 import {
   buildInventoryDocPractitionerSelectOptions,
   coercePractitionerIdForSelect,
+  INV_ITEM_TABLE_TYPE_DEVICE,
   resolveDefaultPractitionerIdForSelect,
   resolveFirstRealLocationIdFromInitOptions,
   resolveInvDocPreparedByName,
@@ -1132,6 +1133,8 @@ async function handlePrint(payload?: { preview?: boolean }) {
     props.itemTableTypeOptions,
     headForm.value.itemTableType,
   );
+  const isDevicePurchaseRequest =
+    String(headForm.value.itemTableType ?? '').trim() === INV_ITEM_TABLE_TYPE_DEVICE;
   const documentTitle = buildInvDocumentTitle(pharmacyName, '采购申请单');
   const applyTimeText = String(headForm.value.applyTime ?? props.applyTime ?? '')
     .trim()
@@ -1173,8 +1176,10 @@ async function handlePrint(payload?: { preview?: boolean }) {
       lineRows,
       preparedByName,
       approvedByName,
-      // 仅采购申请单：模板据此展示经办人/科室责任人/业务主管院长/院长
+      // 仅采购申请单：底部印「采购人」，并展示经办人/科室责任人/业务主管院长/院长
       purchaseRequestSignOff: true,
+      // 仅耗材申请：底部去掉制单人/审核，审核放到单头制单人后
+      devicePurchaseRequestSignOff: isDevicePurchaseRequest,
     },
     bizRef: { busNo, docKind: 'purchase-request' },
     jobName: documentTitle,

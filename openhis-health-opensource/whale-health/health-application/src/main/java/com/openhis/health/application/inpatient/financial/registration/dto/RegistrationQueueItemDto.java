@@ -40,6 +40,10 @@ public class RegistrationQueueItemDto {
     @Schema(description = "患者姓名")
     private String patientName;
 
+    /** 费用性质展示名（就诊优先合同名；与预交金/护士站队列 contractDisplay 同口径）。 */
+    @Schema(description = "费用性质展示名")
+    private String contractDisplay;
+
     /** 就诊状态 code。 */
     @Schema(description = "就诊状态 code")
     private String statusEnum;
@@ -100,4 +104,8 @@ public class RegistrationQueueItemDto {
     /** 是否已在医保平台完成入院登记（2401）。 */
     @Schema(description = "是否已在医保平台完成入院登记（2401）")
     private Boolean insurancePlatformRegistered;
+
+    /** 是否允许自费转医保（BR-IP-REG-019）。 */
+    @Schema(description = "是否允许自费转医保")
+    private Boolean switchToInsuranceEnabled;
 }

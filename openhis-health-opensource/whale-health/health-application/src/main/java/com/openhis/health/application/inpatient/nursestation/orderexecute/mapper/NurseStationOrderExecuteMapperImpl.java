@@ -62,13 +62,14 @@ public class NurseStationOrderExecuteMapperImpl implements NurseStationOrderExec
         if (request == null) {
             return new NurseStationOrderExecuteListQuery();
         }
-        // EXE-01：不下发打印专用区间；planTimeFrom / 开嘱日区间保持空
+        // EXE-01：不下发打印专用区间；planTimeFrom / 开嘱日区间保持空；列表页不挂打印 enrich
         return new NurseStationOrderExecuteListQuery()
             .setEncounterIds(request.getEncounterIds())
             .setExecuteTab(request.getExecuteTab())
             .setTherapyType(request.getTherapyType())
             .setExecutionDeadline(request.getExecutionDeadline())
-            .setMedicineCategoryTab(request.getMedicineCategoryTab());
+            .setMedicineCategoryTab(request.getMedicineCategoryTab())
+            .setIncludePrintDetails(Boolean.FALSE);
     }
 
     @Override
@@ -76,7 +77,7 @@ public class NurseStationOrderExecuteMapperImpl implements NurseStationOrderExec
         if (request == null) {
             return new NurseStationOrderExecuteListQuery();
         }
-        // 打印中心：透传计划点下界与开嘱日闭区间
+        // 打印中心：透传计划点下界与开嘱日闭区间；挂载套餐/部位标本供申请单打印
         return new NurseStationOrderExecuteListQuery()
             .setEncounterIds(request.getEncounterIds())
             .setExecuteTab(request.getExecuteTab())
@@ -86,7 +87,8 @@ public class NurseStationOrderExecuteMapperImpl implements NurseStationOrderExec
             .setReqOpenedTimeFrom(request.getReqOpenedTimeFrom())
             .setReqOpenedTimeTo(request.getReqOpenedTimeTo())
             .setMedicineCategoryTab(request.getMedicineCategoryTab())
-            .setExecutionRecordHistory(request.getExecutionRecordHistory());
+            .setExecutionRecordHistory(request.getExecutionRecordHistory())
+            .setIncludePrintDetails(Boolean.TRUE);
     }
 
     @Override

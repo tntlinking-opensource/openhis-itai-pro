@@ -23,8 +23,8 @@ import org.springframework.stereotype.Service;
 /**
  * 进销存单据详情报表编排（AS-INV-RPT-002 · IF-INV-DDC-01～04）。
  *
- * <p>职责边界：只读分页/合计/导出；药库/药房/科室由请求 {@code domainScope} 区分；
- * 默认 {@code AGREE}，期初显式类型可含 {@code APPROVAL}（BR-INV-DDC-003）。</p>
+ * <p>职责边界：只读分页/合计（含按品规汇总行）/导出；药库/药房/科室由请求 {@code domainScope} 区分；
+ * 默认 {@code AGREE}，期初显式类型可含 {@code APPROVAL}（BR-INV-DDC-003）；库房仅进价、无售价。</p>
  * <ul>
  *   <li>{@link DocumentDetailReadLoader}：租户 Gate、Query 装配、enrich、换算与 Excel</li>
  * </ul>
@@ -69,10 +69,10 @@ public class InventoryDocumentDetailAppService {
     }
 
     /**
-     * 筛选全量合计（IF-INV-DDC-03）。
+     * 筛选全量合计与按品规汇总行（IF-INV-DDC-03）。
      *
      * @param request 筛选与 {@code domainScope}
-     * @return 合计响应
+     * @return 页脚合计 + {@code records} 品规汇总行
      * @throws BusinessException {@code INV_DDC_204}、{@code INV_DDC_206}
      */
     public SummarizeDocumentDetailsResponse summarizeDocumentDetails(
@@ -80,21 +80,21 @@ public class InventoryDocumentDetailAppService {
     ) {
         // Gate：业务域须合法
         DocumentDetailDomainScope scope = DocumentDetailDomainScope.requireFromCode(request.getDomainScope());
-        // Pre/Asm：全量拉取后 SUM 金额与展示数量
+        // Pre/Asm：全量拉取后 SUM 进价与按品规分桶（无售价）
         return this.documentDetailReadLoader.summarizeDocumentDetails(scope, request);
     }
 
     /**
-     * Excel 导出（IF-INV-DDC-04）。
+     * Excel 导出（IF-INV-DDC-04）；{@code presentationMode=SUMMARY} 时导出按品规汇总行。
      *
-     * @param request 筛选与 {@code domainScope}
+     * @param request 筛选与 {@code domainScope}、可选展示模式
      * @return 导出响应
      * @throws BusinessException {@code INV_DDC_204}、{@code INV_DDC_205}
      */
     public ExportDocumentDetailsResponse exportDocumentDetails(@Valid ExportDocumentDetailsRequest request) {
         // Gate：业务域须合法
         DocumentDetailDomainScope scope = DocumentDetailDomainScope.requireFromCode(request.getDomainScope());
-        // Pre/Asm：全量拉取、行数上限校验与 Tabular Excel 写出
+        // Pre/Asm：全量拉取、可选品规聚合、行数上限与 Tabular Excel 写出
         return this.documentDetailReadLoader.exportDocumentDetails(scope, request);
     }
 }

@@ -11,6 +11,10 @@ import java.time.LocalDate;
 
 /**
  * 4401/4101A/4102 组装用医保就诊与结算上下文（由 {@link InsuranceEncounterLoader} 填充）。
+ *
+ * <p>{@code fixmedinsCode}/{@code fixmedinsName}/{@code insuplcAdmdvs} 来自
+ * {@code chs-contract.properties}（经 {@code InsuranceContractTerminalExtension}），
+ * 不是 {@code fin_contract} 表列。</p>
  */
 @Getter
 @Setter
@@ -28,13 +32,19 @@ public class InsuranceEncounterContext {
     /** 就诊流水号（mdtrt_sn，部分场景由 fixmedins+iptNo 拼接）。 */
     private String mdtrtSn;
 
-    /** 定点医药机构编号。 */
+    /**
+     * 定点医药机构编号（来自 {@code chs-contract.properties}，非 {@code fin_contract} 列）。
+     */
     private String fixmedinsCode;
 
-    /** 定点医药机构名称。 */
+    /**
+     * 定点医药机构名称（来自 {@code chs-contract.properties}）。
+     */
     private String fixmedinsName;
 
-    /** 参保地医保区划。 */
+    /**
+     * 就医地/统筹医保区划（来自 {@code chs-contract} {@code adm_vs}）。
+     */
     private String insuplcAdmdvs;
 
     /** 结算开始日期（4101A setl_begn_date）。 */
@@ -43,7 +53,12 @@ public class InsuranceEncounterContext {
     /** 结算结束日期（4101A setl_end_date）。 */
     private LocalDate setlEndDate;
 
-    /** 票据代码（4101A bill_code）。 */
+    /**
+     * 票据代码（4101A bill_code）。
+     *
+     * <p>优先博思 {@code boss_batch_code}；无批次码时 Loader 回落发票号；
+     * 仍空由 4101A Mapper 用住院号/病案号兜底（对齐老 {@code ifnull(billBatchCode, INVOICE_NO, ZY_NO)}）。</p>
+     */
     private String billCode;
 
     /** 票据号码（4101A bill_no）。 */

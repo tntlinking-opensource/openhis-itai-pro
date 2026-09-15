@@ -35,10 +35,20 @@ public class AllergyIntoleranceRecordQueryModel {
     private String criticalityEnum;
     /** 严重程度枚举编码。 */
     private String severityEnum;
+    /** 来源类型编码。 */
+    private String typeEnum;
+    /** 过敏原类别编码。 */
+    private String categoryCode;
+    /** 过敏物质编码。 */
+    private String code;
     /** 记录日期。 */
     private LocalDateTime recordedDate;
     /** 反应描述。 */
     private String description;
+    /** 备注。 */
+    private String note;
+    /** 发生时间。 */
+    private LocalDateTime onsetDateTime;
     /** 记录者（执行护士）主键。 */
     private Long practitionerId;
     /** 断言者（核对护士）主键。 */

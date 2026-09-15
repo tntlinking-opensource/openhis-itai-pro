@@ -64,14 +64,8 @@ public class DeptIssueReturnListRowDto {
     private String rejectReason;
 
     /**
-     * 整单金额合计（明细 totalPrice 之和；侧栏「总金额」）。
-     *
-     * <p>与 {@link #totalAmount} 同值写入，兼容侧栏读 {@code totalPrice}/{@code totalAmount}。</p>
+     * 整单金额合计（明细 totalPrice 之和；侧栏「总金额」读 {@code totalAmount}）。
      */
-    @Schema(description = "整单金额合计 totalPrice")
-    private BigDecimal totalPrice;
-
-    /** 整单金额合计（与 totalPrice 同口径）。 */
     @Schema(description = "整单金额合计 totalAmount")
     private BigDecimal totalAmount;
 

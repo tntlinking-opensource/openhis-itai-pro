@@ -113,7 +113,7 @@ export interface TcmCollapsedHerbDisplay {
  * 压缩护士站中药单味剂量文案：同单位重复括号与末尾「/次」去掉，便于扫读。
  * 例：`30克(30.000克)/次` → `30克`；单位不同则保留括号。
  */
-function simplifyTcmHerbDoseDisplay(dose: string): string {
+export function simplifyTcmHerbDoseDisplay(dose: string): string {
   const raw = str(dose);
   if (!raw) return '';
   const matched = raw.match(

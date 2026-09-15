@@ -412,6 +412,7 @@ const chartTextMarkers = computed(() =>
     specialEventStore.value,
     specialEventLabelMap.value,
     selectedPatient.value?.admissionAt,
+    selectedPatient.value?.dischargeAt,
   ),
 );
 const physicalCoolingChartPoints = computed(() =>

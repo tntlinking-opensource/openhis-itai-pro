@@ -49,7 +49,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="bg-background-card relative mt-2 flex h-full flex-col">
+  <div class="bg-background-card relative flex h-full flex-col">
     <div
       v-if="tagContent || $slots.tag"
       class="absolute left-0 top-0 z-10 flex gap-2 rounded-br-xl border-b border-r bg-amber-50 px-2 py-1"
@@ -67,15 +67,15 @@ onMounted(() => {
       ref="headerRef"
       :class="cn('bg-card border-border relative flex items-end border-b px-6 py-4', headerClass)"
     >
-      <div class="flex-auto">
+      <div class="flex flex-auto flex-wrap items-baseline gap-x-3 gap-y-1">
         <slot name="title">
-          <div v-if="title" class="mb-2 flex text-lg font-semibold">
+          <div v-if="title" class="text-lg font-semibold">
             {{ title }}
           </div>
         </slot>
 
         <slot name="description">
-          <p v-if="description" class="text-muted-foreground">
+          <p v-if="description" class="text-muted-foreground text-sm">
             {{ description }}
           </p>
         </slot>

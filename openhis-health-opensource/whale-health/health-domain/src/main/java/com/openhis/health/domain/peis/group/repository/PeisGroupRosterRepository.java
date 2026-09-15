@@ -25,4 +25,22 @@ public interface PeisGroupRosterRepository
     Optional<PeisGroupRoster> findByEncounterIdAndIsDeletedFalse(Long encounterId);
 
     boolean existsByBatchIdAndPatientIdAndIsDeletedFalse(Long batchId, Long patientId);
+
+    boolean existsByPatientIdAndIsDeletedFalse(Long patientId);
+
+    boolean existsByPatientIdAndIsDeletedFalseAndIdNot(Long patientId, Long excludeRosterId);
+
+    boolean existsByIdCardNoAndIsDeletedFalse(String idCardNo);
+
+    boolean existsByIdCardNoAndIsDeletedFalseAndIdNot(String idCardNo, Long excludeRosterId);
+
+    boolean existsByStudentNoAndIsDeletedFalse(String studentNo);
+
+    boolean existsByStudentNoAndIsDeletedFalseAndIdNot(String studentNo, Long excludeRosterId);
+
+    boolean existsByEmployeeNoAndIsDeletedFalse(String employeeNo);
+
+    boolean existsByEmployeeNoAndIsDeletedFalseAndIdNot(String employeeNo, Long excludeRosterId);
+
+    List<PeisGroupRoster> findByBatchIdInAndIsDeletedFalse(List<Long> batchIds);
 }

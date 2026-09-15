@@ -25,6 +25,17 @@ export type DocumentDetailItemTable =
   | typeof DOCUMENT_DETAIL_ITEM_TABLE_DEVICE
   | typeof DOCUMENT_DETAIL_ITEM_TABLE_MEDICATION;
 
+/** 展示模式：明细。 */
+export const DOCUMENT_DETAIL_PRESENTATION_DETAIL = 'DETAIL' as const;
+/** 展示模式：按品规汇总。 */
+export const DOCUMENT_DETAIL_PRESENTATION_SUMMARY = 'SUMMARY' as const;
+export type DocumentDetailPresentationMode =
+  | typeof DOCUMENT_DETAIL_PRESENTATION_DETAIL
+  | typeof DOCUMENT_DETAIL_PRESENTATION_SUMMARY;
+
+/** 汇总维度：按品规（本期仅此维）。 */
+export const DOCUMENT_DETAIL_SUMMARY_DIMENSION_ITEM = 'ITEM' as const;
+
 export interface OptionDto {
   value?: string;
   label?: string;
@@ -43,6 +54,8 @@ export interface LoadDocumentDetailFormInitResponse {
   supplierOptions?: OptionDto[];
   defaultApprovalTimeStart?: string;
   defaultApprovalTimeEnd?: string;
+  /** 汇总维度下拉；本期仅按品规 */
+  summaryDimensionOptions?: OptionDto[];
 }
 
 export interface DocumentDetailQueryFilter {
@@ -109,6 +122,27 @@ export interface DocumentDetailRowDto {
   remake?: string;
 }
 
+/** 按品规汇总行（仅进价，无售价）。 */
+export interface DocumentDetailItemSummaryRowDto {
+  dimensionKey?: string;
+  summaryDimension?: string;
+  /** 品名 */
+  dimensionName?: string;
+  itemTable?: string;
+  itemId?: string;
+  productBusNo?: string;
+  specification?: string;
+  packageQuantity?: number | string;
+  packageUnitName?: string;
+  minUnitQuantity?: number | string;
+  minUnitName?: string;
+  /** 进价单价；同桶不一致时为空 */
+  price?: number | string;
+  /** 进价合计 */
+  totalPrice?: number | string;
+  lineCount?: number;
+}
+
 export interface PageDocumentDetailsRequest
   extends Omit<DocumentDetailQueryFilter, 'pageNo' | 'pageSize'>,
     PageParams {}
@@ -124,6 +158,8 @@ export interface SummarizeDocumentDetailsResponse {
   totalPriceSum?: number | string;
   itemQuantitySum?: number | string;
   rowCount?: number;
+  /** 按品规汇总行 */
+  records?: DocumentDetailItemSummaryRowDto[];
 }
 
 export type ExportDocumentDetailsRequest = Omit<
@@ -132,6 +168,8 @@ export type ExportDocumentDetailsRequest = Omit<
 > & {
   /** 页面可见列 → 后端 Excel 列裁剪 */
   exportColumns?: ExcelExportColumnPayload[];
+  /** DETAIL=明细；SUMMARY=按品规汇总 */
+  presentationMode?: DocumentDetailPresentationMode | string;
 };
 
 export interface ExportDocumentDetailsResponse {
@@ -156,12 +194,12 @@ export async function pageDocumentDetailsApi(body: PageDocumentDetailsRequest) {
   };
 }
 
-/** 单据详情合计。 */
+/** 单据详情合计（含按品规汇总行）。 */
 export async function summarizeDocumentDetailsApi(body: ExportDocumentDetailsRequest) {
   return reportPost<SummarizeDocumentDetailsResponse>(`${BASE}/summarizeDocumentDetails`, body);
 }
 
-/** 导出单据详情 Excel。 */
+/** 导出单据详情 Excel（可按 presentationMode 导出汇总）。 */
 export async function exportDocumentDetailsApi(body: ExportDocumentDetailsRequest) {
   return reportPost<ExportDocumentDetailsResponse>(`${BASE}/exportDocumentDetails`, body);
 }

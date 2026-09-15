@@ -8,6 +8,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 处方点评分页查询入参（DM-CUS-015 §5.2）。
@@ -26,8 +27,15 @@ public class PrescriptionReviewPageQuery {
     private Boolean reasonableFlag;
     /** 点评人。 */
     private Long reviewerId;
-    /** 处方号关键字（模糊）。 */
-    private String prescriptionNoKeyword;
-    /** 业务号关键字（模糊）。 */
-    private String busNoKeyword;
+    /**
+     * 关键字模糊：命中处方号或点评业务号其一即可（OR）。
+     */
+    private String keyword;
+
+    /**
+     * 开方时间窗预解析后的处方号集合（应用层写入）。
+     *
+     * <p>{@code null}=不按开方日收窄；空列表=窗内无方，分页空结果。</p>
+     */
+    private List<String> prescriptionNosIn;
 }

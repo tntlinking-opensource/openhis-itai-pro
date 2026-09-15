@@ -7,10 +7,12 @@ package com.openhis.health.application.report.consumableusage.inpatient.support;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
@@ -42,6 +44,7 @@ import com.openhis.health.domain.share.enums.EncounterClass;
 import com.openhis.health.domain.share.enums.SupplyType;
 import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.domain.workflow.devicedispense.queries.model.ConsumableUsageDispenseLineQueryModel;
+import com.openhis.health.domain.workflow.devicedispense.queries.model.ConsumableUsageDispenseMergedGroupQueryModel;
 import com.openhis.health.domain.workflow.devicedispense.queries.model.ConsumableUsageDispenseSummaryBundle;
 import com.openhis.health.domain.workflow.devicedispense.queries.model.ConsumableUsageDispenseSummaryRow;
 import com.openhis.health.domain.workflow.devicedispense.query.ConsumableUsageReportPageQuery;
@@ -61,6 +64,9 @@ import lombok.RequiredArgsConstructor;
  *
  * <p>领域白名单（AS Gap / DM-WKF-007 §6.2.23～24、DM-WKF-006 §6.2.15）：
  * {@code pageConsumableUsageDispenseLines} / {@code listConsumableUsageDispenseLines} /
+ * {@code pageConsumableUsageDispenseMergedByEncounterAndDevice} /
+ * {@code listConsumableUsageDispenseMergedByEncounterAndDevice} /
+ * {@code listConsumableUsageDispenseLinesForMergedKeys} /
  * {@code summarizeConsumableUsageDispenseWithLines}；
  * {@code pageDeptIssueReportLines} / {@code listDeptIssueReportLines} /
  * {@code summarizeDeptIssueReportWithLines}。住院域由本 Support 预写 IMP encounter scope，明细 enrich 住院号/病区/床号。</p>
@@ -180,7 +186,6 @@ public class InpatientConsumableUsageReportQuerySupport {
         response.setTotalNetQuantity(this.sumNetQuantity(rows));
         response.setSaleNetTotalAmount(this.consumableUsageReportAmountEnricher.sumSaleNetAmount(rows));
         response.setPurchaseNetTotalAmount(this.consumableUsageReportAmountEnricher.sumPurchaseNetAmount(rows));
-        response.setTotalNetAmount(response.getSaleNetTotalAmount());
         return response;
     }
 
@@ -209,11 +214,15 @@ public class InpatientConsumableUsageReportQuerySupport {
         if (resolvedPageSize > ConsumableUsageReportConstants.MAX_PAGE_SIZE) {
             resolvedPageSize = ConsumableUsageReportConstants.MAX_PAGE_SIZE;
         }
-        // Pre：患者单源 → 领域原生分页，禁止 pageNo*pageSize 前缀物化
+        // Pre：患者单源 → 合并分组或原生分页，禁止 pageNo*pageSize 前缀物化
         if (ConsumableUsageReportConstants.SOURCE_CODE_PATIENT_DISPENSE.equals(source)) {
+            // 合并模式仅患者源生效；科室领用见下方 LINE 路径
+            if (this.isMergeByDefinition(filter)) {
+                return this.pageMergedPatient(filter, resolvedPageNo, resolvedPageSize);
+            }
             return this.pagePatientOnly(filter, resolvedPageNo, resolvedPageSize);
         }
-        // Pre：领用单源 → 领域原生分页
+        // Pre：领用单源 → 领域原生分页（BY_DEFINITION 不生效，按 LINE）
         if (ConsumableUsageReportConstants.SOURCE_CODE_DEPT_ISSUE.equals(source)) {
             return this.pageDeptOnly(filter, resolvedPageNo, resolvedPageSize);
         }
@@ -232,6 +241,10 @@ public class InpatientConsumableUsageReportQuerySupport {
     public List<InpatientConsumableUsageDetailRowDto> listDetailForExport(ConsumableUsageReportQueryFilter filter) {
         String source = this.resolveSourceCode(filter.getSourceCode());
         if (ConsumableUsageReportConstants.SOURCE_CODE_PATIENT_DISPENSE.equals(source)) {
+            // 导出合并：上限落在合并行数，禁止先物化全窗发放行再合并截断
+            if (this.isMergeByDefinition(filter)) {
+                return this.listMergedPatientDetails(filter, ConsumableUsageReportConstants.EXPORT_MAX_ROWS);
+            }
             return this.listPatientDetails(filter, ConsumableUsageReportConstants.EXPORT_MAX_ROWS);
         }
         if (ConsumableUsageReportConstants.SOURCE_CODE_DEPT_ISSUE.equals(source)) {
@@ -437,6 +450,360 @@ public class InpatientConsumableUsageReportQuerySupport {
     }
 
     /**
+     * 患者侧按就诊+品规[+单位]合并分页（领域 GROUP BY 真分页；本页回载明细刷金额）。
+     *
+     * @param filter   报表筛选
+     * @param pageNo   1 基页码
+     * @param pageSize 页大小（合并行）
+     * @return 合并后的明细分页；{@code total} 为分组条数
+     */
+    private InpatientConsumableUsageDetailPageResult pageMergedPatient(
+        ConsumableUsageReportQueryFilter filter,
+        int pageNo,
+        int pageSize) {
+        ConsumableUsageReportPageQuery query = new ConsumableUsageReportPageQuery();
+        this.preparePatientDispenseQueryWithFeeNature(
+            query, EncounterClass.IMP.getCode(), filter, null);
+        query.setPageNo(pageNo);
+        query.setPageSize(pageSize);
+        Page<ConsumableUsageDispenseMergedGroupQueryModel> page =
+            this.deviceDispenseQueryService.pageConsumableUsageDispenseMergedByEncounterAndDevice(query);
+        List<InpatientConsumableUsageDetailRowDto> mergedRows =
+            this.mapMergedGroupDetailLines(page.getContent());
+        // Pre：展示字段（姓名/品名/病区床等）；金额在页内明细回载后汇总
+        this.enrichDetailDisplay(mergedRows);
+        this.enrichMergedAmountsFromPageScopedLines(query, mergedRows);
+        InpatientConsumableUsageDetailPageResult response =
+            new InpatientConsumableUsageDetailPageResult();
+        response.setRecords(mergedRows);
+        response.setTotal(page.getTotalElements());
+        response.setPageNo(pageNo);
+        response.setPageSize(pageSize);
+        return response;
+    }
+
+    /**
+     * 患者侧按就诊+品规[+单位]合并有界列表（导出；上限落在合并行）。
+     *
+     * @param filter  报表筛选
+     * @param maxRows 合并行上限
+     * @return 合并明细
+     */
+    private List<InpatientConsumableUsageDetailRowDto> listMergedPatientDetails(
+        ConsumableUsageReportQueryFilter filter,
+        int maxRows) {
+        ConsumableUsageReportPageQuery query = new ConsumableUsageReportPageQuery();
+        this.preparePatientDispenseQueryWithFeeNature(
+            query, EncounterClass.IMP.getCode(), filter, null);
+        query.setPageSize(maxRows);
+        List<ConsumableUsageDispenseMergedGroupQueryModel> groups =
+            this.deviceDispenseQueryService.listConsumableUsageDispenseMergedByEncounterAndDevice(query);
+        List<InpatientConsumableUsageDetailRowDto> mergedRows = this.mapMergedGroupDetailLines(groups);
+        this.enrichDetailDisplay(mergedRows);
+        this.enrichMergedAmountsFromPageScopedLines(query, mergedRows);
+        return mergedRows;
+    }
+
+    /**
+     * 合并分组 → 明细 DTO：保留患者/就诊/品规/单位/净量；清空行级标识与批号/执行人/状态。
+     *
+     * @param groups 领域合并分组
+     * @return 报表明细（未展示 enrich）
+     */
+    private List<InpatientConsumableUsageDetailRowDto> mapMergedGroupDetailLines(
+        List<ConsumableUsageDispenseMergedGroupQueryModel> groups) {
+        List<InpatientConsumableUsageDetailRowDto> rows = new ArrayList<>();
+        if (groups == null) {
+            return rows;
+        }
+        for (ConsumableUsageDispenseMergedGroupQueryModel group : groups) {
+            if (group == null) {
+                continue;
+            }
+            InpatientConsumableUsageDetailRowDto row = new InpatientConsumableUsageDetailRowDto();
+            row.setSourceCode(ConsumableUsageReportConstants.SOURCE_CODE_PATIENT_DISPENSE);
+            row.setSourceCode_dictText("患者使用");
+            row.setEncounterId(group.getEncounterId());
+            row.setDeviceDefId(group.getDeviceDefId());
+            row.setPatientId(group.getPatientId());
+            row.setLocationId(group.getLocationId());
+            row.setUnitCode(group.getUnitCode());
+            BigDecimal netQuantity = group.getNetQuantity();
+            if (netQuantity == null) {
+                netQuantity = BigDecimal.ZERO;
+            }
+            row.setQuantity(netQuantity);
+            // 合并行：行级主键/时间/批号/执行人/状态一律清空
+            row.setDispenseId(null);
+            row.setBasedOnDispenseId(null);
+            row.setDeviceReqId(null);
+            row.setBusinessTime(null);
+            row.setPerformerId(null);
+            row.setPerformerName(null);
+            row.setLotNumber(null);
+            row.setChargeLotNumber(null);
+            row.setLotMismatch(null);
+            row.setStatusOrTypeEnum(null);
+            row.setStatusOrTypeEnum_enumText(null);
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    /**
+     * 对本页合并行：按 encounter/deviceDef IN 回载明细 → 定价 → 按精确键汇总金额/单价/费用性质。
+     *
+     * @param query      已预解析的患者侧查询（同窗筛选）
+     * @param mergedRows 已展示 enrich 的合并行
+     */
+    private void enrichMergedAmountsFromPageScopedLines(
+        ConsumableUsageReportPageQuery query,
+        List<InpatientConsumableUsageDetailRowDto> mergedRows) {
+        if (mergedRows == null || mergedRows.isEmpty()) {
+            return;
+        }
+        LinkedHashSet<Long> encounterIds = new LinkedHashSet<>();
+        LinkedHashSet<Long> deviceDefIds = new LinkedHashSet<>();
+        for (InpatientConsumableUsageDetailRowDto row : mergedRows) {
+            if (row == null) {
+                continue;
+            }
+            if (row.getEncounterId() != null) {
+                encounterIds.add(row.getEncounterId());
+            }
+            if (row.getDeviceDefId() != null) {
+                deviceDefIds.add(row.getDeviceDefId());
+            }
+        }
+        List<ConsumableUsageDispenseLineQueryModel> rawModels =
+            this.deviceDispenseQueryService.listConsumableUsageDispenseLinesForMergedKeys(
+                query, encounterIds, deviceDefIds);
+        // Pre：先按本页精确键过滤，禁止对 IN 笛卡尔多余行做 ChargeItem 定价（性能）
+        LinkedHashSet<String> pageMergeKeys = new LinkedHashSet<>();
+        for (InpatientConsumableUsageDetailRowDto mergedRow : mergedRows) {
+            if (mergedRow == null) {
+                continue;
+            }
+            String pageKey = this.buildMergedPatientDeviceUnitKey(
+                mergedRow.getEncounterId(), mergedRow.getDeviceDefId(), mergedRow.getUnitCode());
+            if (pageKey != null) {
+                pageMergeKeys.add(pageKey);
+            }
+        }
+        List<ConsumableUsageDispenseLineQueryModel> pageScopedModels = new ArrayList<>();
+        for (ConsumableUsageDispenseLineQueryModel rawModel : rawModels) {
+            if (rawModel == null) {
+                continue;
+            }
+            String rawKey = this.buildMergedPatientDeviceUnitKey(
+                rawModel.getEncounterId(), rawModel.getDeviceDefId(), rawModel.getUnitCode());
+            // 非本页分组合键：丢弃，避免多余定价
+            if (rawKey == null || !pageMergeKeys.contains(rawKey)) {
+                continue;
+            }
+            pageScopedModels.add(rawModel);
+        }
+        List<InpatientConsumableUsageDetailRowDto> pricedLines = this.mapPatientDetailLines(pageScopedModels);
+        // Pre：仅刷金额与费用性质，禁止账批质检（合并行无批号列）
+        this.enrichDetailAmountsOnly(pricedLines);
+        this.enrichPatientSettlementContext(pricedLines);
+        this.applyMergedAmountsFromPricedLines(mergedRows, pricedLines);
+    }
+
+    /**
+     * 将页内已定价明细按 encounter+deviceDef+unit 键汇总到合并行。
+     *
+     * <p>金额/数量符号已在明细侧处理；单价仅当组内唯一非空值时保留；费用性质异质则清空。</p>
+     *
+     * @param mergedRows  合并行
+     * @param pricedLines 页内已定价明细
+     */
+    private void applyMergedAmountsFromPricedLines(
+        List<InpatientConsumableUsageDetailRowDto> mergedRows,
+        List<InpatientConsumableUsageDetailRowDto> pricedLines) {
+        Map<String, List<InpatientConsumableUsageDetailRowDto>> linesByKey = new LinkedHashMap<>();
+        if (pricedLines != null) {
+            for (InpatientConsumableUsageDetailRowDto line : pricedLines) {
+                if (line == null) {
+                    continue;
+                }
+                String key = this.buildMergedPatientDeviceUnitKey(
+                    line.getEncounterId(), line.getDeviceDefId(), line.getUnitCode());
+                if (key == null) {
+                    continue;
+                }
+                List<InpatientConsumableUsageDetailRowDto> bucket = linesByKey.get(key);
+                if (bucket == null) {
+                    bucket = new ArrayList<>();
+                    linesByKey.put(key, bucket);
+                }
+                bucket.add(line);
+            }
+        }
+        for (InpatientConsumableUsageDetailRowDto merged : mergedRows) {
+            if (merged == null) {
+                continue;
+            }
+            String key = this.buildMergedPatientDeviceUnitKey(
+                merged.getEncounterId(), merged.getDeviceDefId(), merged.getUnitCode());
+            if (key == null) {
+                continue;
+            }
+            List<InpatientConsumableUsageDetailRowDto> bucket = linesByKey.get(key);
+            if (bucket == null || bucket.isEmpty()) {
+                continue;
+            }
+            BigDecimal purchaseSum = BigDecimal.ZERO;
+            BigDecimal saleSum = BigDecimal.ZERO;
+            BigDecimal amountSum = BigDecimal.ZERO;
+            BigDecimal quantitySum = BigDecimal.ZERO;
+            boolean hasPurchase = false;
+            boolean hasSale = false;
+            boolean hasAmount = false;
+            Set<String> purchaseUnitPriceKeys = new HashSet<>();
+            Set<String> saleUnitPriceKeys = new HashSet<>();
+            BigDecimal solePurchaseUnitPrice = null;
+            BigDecimal soleSaleUnitPrice = null;
+            Set<String> feeNatureKeys = new HashSet<>();
+            String soleFeeNatureContractNo = null;
+            String soleFeeNatureDisplay = null;
+            for (InpatientConsumableUsageDetailRowDto line : bucket) {
+                // 净量：明细侧已含退药取负，代数加总
+                if (line.getQuantity() != null) {
+                    quantitySum = quantitySum.add(line.getQuantity());
+                }
+                if (line.getPurchaseAmount() != null) {
+                    purchaseSum = purchaseSum.add(line.getPurchaseAmount());
+                    hasPurchase = true;
+                }
+                if (line.getSaleAmount() != null) {
+                    saleSum = saleSum.add(line.getSaleAmount());
+                    hasSale = true;
+                }
+                if (line.getAmount() != null) {
+                    amountSum = amountSum.add(line.getAmount());
+                    hasAmount = true;
+                }
+                if (line.getPurchaseUnitPrice() != null) {
+                    // 退药单价为负；按绝对值判同价，避免冲减行清空单价
+                    String priceKey =
+                        line.getPurchaseUnitPrice().abs().stripTrailingZeros().toPlainString();
+                    purchaseUnitPriceKeys.add(priceKey);
+                    solePurchaseUnitPrice = line.getPurchaseUnitPrice().abs();
+                }
+                if (line.getSaleUnitPrice() != null) {
+                    String priceKey =
+                        line.getSaleUnitPrice().abs().stripTrailingZeros().toPlainString();
+                    saleUnitPriceKeys.add(priceKey);
+                    soleSaleUnitPrice = line.getSaleUnitPrice().abs();
+                }
+                String feeKey = this.buildFeeNatureHomogeneityKey(
+                    line.getFeeNatureContractNo(), line.getFeeNatureDisplay());
+                feeNatureKeys.add(feeKey);
+                soleFeeNatureContractNo = line.getFeeNatureContractNo();
+                soleFeeNatureDisplay = line.getFeeNatureDisplay();
+            }
+            // 净量以页内回载明细为准（领域分组查询不再做 SQL 符号 SUM）
+            merged.setQuantity(MonetaryAmountSupport.scaleCalc(quantitySum));
+            if (hasPurchase) {
+                merged.setPurchaseAmount(MonetaryAmountSupport.scaleCalc(purchaseSum));
+            }
+            if (hasSale) {
+                merged.setSaleAmount(MonetaryAmountSupport.scaleCalc(saleSum));
+            }
+            if (hasAmount) {
+                merged.setAmount(MonetaryAmountSupport.scaleCalc(amountSum));
+            }
+            // 单价：组内唯一非空值才保留，否则置空
+            if (purchaseUnitPriceKeys.size() == 1) {
+                merged.setPurchaseUnitPrice(MonetaryAmountSupport.scaleCalc(solePurchaseUnitPrice));
+            } else {
+                merged.setPurchaseUnitPrice(null);
+            }
+            if (saleUnitPriceKeys.size() == 1) {
+                merged.setSaleUnitPrice(MonetaryAmountSupport.scaleCalc(soleSaleUnitPrice));
+            } else {
+                merged.setSaleUnitPrice(null);
+            }
+            // 费用性质：组内同质保留，异质清空
+            if (feeNatureKeys.size() == 1) {
+                merged.setFeeNatureContractNo(soleFeeNatureContractNo);
+                merged.setFeeNatureDisplay(soleFeeNatureDisplay);
+            } else {
+                merged.setFeeNatureContractNo(null);
+                merged.setFeeNatureDisplay(null);
+            }
+            // 合并行再次确保行级批号/执行人清空（展示 enrich 可能写过空名）
+            merged.setDispenseId(null);
+            merged.setBasedOnDispenseId(null);
+            merged.setDeviceReqId(null);
+            merged.setBusinessTime(null);
+            merged.setPerformerId(null);
+            merged.setPerformerName(null);
+            merged.setLotNumber(null);
+            merged.setChargeLotNumber(null);
+            merged.setLotMismatch(null);
+            merged.setStatusOrTypeEnum(null);
+            merged.setStatusOrTypeEnum_enumText(null);
+        }
+    }
+
+    /**
+     * 构建合并键字符串（encounter|deviceDef|unit）；任一主键空则返回 null。
+     *
+     * @param encounterId 就诊主键
+     * @param deviceDefId 品规主键
+     * @param unitCode    单位码；可空（空与有值分键）
+     * @return 键；不可合并时 null
+     */
+    private String buildMergedPatientDeviceUnitKey(Long encounterId, Long deviceDefId, String unitCode) {
+        if (encounterId == null || deviceDefId == null) {
+            return null;
+        }
+        String unitPart = unitCode;
+        if (unitPart == null) {
+            unitPart = "\u0000";
+        }
+        return encounterId + "|" + deviceDefId + "|" + unitPart;
+    }
+
+    /**
+     * 费用性质同质性比较键（合同号优先；皆空视为同一空桶）。
+     *
+     * @param contractNo 费用性质合同号
+     * @param display    展示名
+     * @return 比较键
+     */
+    private String buildFeeNatureHomogeneityKey(String contractNo, String display) {
+        String contract = StringUtils.trimToNull(contractNo);
+        if (contract != null) {
+            return "C:" + contract;
+        }
+        String displayText = StringUtils.trimToNull(display);
+        if (displayText != null) {
+            return "D:" + displayText;
+        }
+        return "";
+    }
+
+    /**
+     * 是否启用按定义合并（{@code BY_DEFINITION}）；空/未知视为 LINE。
+     *
+     * @param filter 报表筛选
+     * @return true 表示患者源走合并分页
+     */
+    private boolean isMergeByDefinition(ConsumableUsageReportQueryFilter filter) {
+        if (filter == null) {
+            return false;
+        }
+        String mode = StringUtils.trimToNull(filter.getLineMergeMode());
+        if (mode == null) {
+            return false;
+        }
+        return ConsumableUsageReportConstants.LINE_MERGE_MODE_BY_DEFINITION.equals(mode);
+    }
+
+    /**
      * 患者侧明细映射；退药数量取负。
      *
      * @param models 领域发放行
@@ -580,7 +947,7 @@ public class InpatientConsumableUsageReportQuerySupport {
                 patientAmountLines.add(row);
             }
         }
-        // Asm：患者侧金额经 ChargeItem；科室侧已在映射时写入
+        // Asm：患者侧金额经 ChargeItem；科室侧已在映射时写入；汇总路径不做账批质检
         this.consumableUsageReportAmountEnricher.enrichPatientDispenseAmounts(
             new ArrayList<>(patientAmountLines));
         // 退药金额随数量符号：已 enrich 的正金额在退药行取负
@@ -709,9 +1076,9 @@ public class InpatientConsumableUsageReportQuerySupport {
                 patientAmountLines.add(row);
             }
         }
-        // Asm：患者侧金额经 ChargeItem；科室侧已在映射时写入
+        // Asm：患者侧金额经 ChargeItem；科室侧已在映射时写入；明细分页开启账批质检
         this.consumableUsageReportAmountEnricher.enrichPatientDispenseAmounts(
-            new ArrayList<>(patientAmountLines));
+            new ArrayList<>(patientAmountLines), true);
         // 退药金额随数量符号：已 enrich 的正金额在退药行取负
         for (InpatientConsumableUsageDetailRowDto row : patientAmountLines) {
             if (row.getQuantity() != null && row.getQuantity().signum() < 0) {
@@ -817,7 +1184,6 @@ public class InpatientConsumableUsageReportQuerySupport {
             row.setLocationId(summary.getLocationId());
             row.setDeviceDefId(summary.getDeviceDefId());
             row.setNetQuantity(summary.getNetQuantity());
-            row.setLineCount(summary.getLineCount());
             // 进售价由金额 enrich 回填；禁止预置 0 伪装「已算价」
             rows.add(row);
         }
@@ -849,7 +1215,6 @@ public class InpatientConsumableUsageReportQuerySupport {
             row.setLocationId(summary.getPurposeLocationId());
             row.setDeviceDefId(summary.getItemId());
             row.setNetQuantity(summary.getNetQuantity());
-            row.setLineCount(summary.getLineCount());
             // 进售价由金额 enrich 回填；禁止预置 0 伪装「已算价」
             rows.add(row);
         }
@@ -895,15 +1260,6 @@ public class InpatientConsumableUsageReportQuerySupport {
                 rightQty = BigDecimal.ZERO;
             }
             existing.setNetQuantity(leftQty.add(rightQty));
-            long leftCount = 0L;
-            if (existing.getLineCount() != null) {
-                leftCount = existing.getLineCount();
-            }
-            long rightCount = 0L;
-            if (row.getLineCount() != null) {
-                rightCount = row.getLineCount();
-            }
-            existing.setLineCount(leftCount + rightCount);
         }
     }
 
@@ -1043,7 +1399,7 @@ public class InpatientConsumableUsageReportQuerySupport {
     }
 
     /**
-     * 汇总页脚：净金额经金额 enricher 结算刻度加总（BR-MON-001）。
+     * 汇总页脚：售价净额经金额 enricher 结算刻度加总（BR-MON-001）。
      *
      * @param rows 汇总行
      * @return 结算刻度合计
@@ -1051,10 +1407,10 @@ public class InpatientConsumableUsageReportQuerySupport {
     private BigDecimal sumNetAmount(List<InpatientConsumableUsageSummaryRowDto> rows) {
         List<BigDecimal> amounts = new ArrayList<>();
         for (InpatientConsumableUsageSummaryRowDto row : rows) {
-            if (row == null || row.getNetAmount() == null) {
+            if (row == null || row.getSaleNetAmount() == null) {
                 continue;
             }
-            amounts.add(row.getNetAmount());
+            amounts.add(row.getSaleNetAmount());
         }
         return this.consumableUsageReportAmountEnricher.sumThenSettle(amounts);
     }
@@ -1229,7 +1585,6 @@ public class InpatientConsumableUsageReportQuerySupport {
                 categoryRow.setSummaryDimension(ConsumableUsageReportConstants.SUMMARY_DIMENSION_CATEGORY);
                 categoryRow.setCategoryCode(categoryCode);
                 categoryRow.setNetQuantity(itemRow.getNetQuantity());
-                categoryRow.setLineCount(itemRow.getLineCount());
                 // 进售价由金额 enrich 回填；禁止预置 0
                 bucket.put(key, categoryRow);
                 continue;
@@ -1243,15 +1598,6 @@ public class InpatientConsumableUsageReportQuerySupport {
                 rightQty = BigDecimal.ZERO;
             }
             existing.setNetQuantity(leftQty.add(rightQty));
-            long leftCount = 0L;
-            if (existing.getLineCount() != null) {
-                leftCount = existing.getLineCount();
-            }
-            long rightCount = 0L;
-            if (itemRow.getLineCount() != null) {
-                rightCount = itemRow.getLineCount();
-            }
-            existing.setLineCount(leftCount + rightCount);
         }
         return new ArrayList<>(bucket.values());
     }

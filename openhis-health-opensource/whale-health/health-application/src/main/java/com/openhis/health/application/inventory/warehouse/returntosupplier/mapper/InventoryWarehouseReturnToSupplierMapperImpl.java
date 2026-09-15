@@ -132,36 +132,6 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
     }
 
     /**
-     * 库房单据读模型 → 退供应商列表行 DTO（枚举转 API sortOrder）。
-     *
-     * @param row 库房单据读模型
-     * @return 列表行 DTO
-     */
-    private ReturnToSupplierListRowDto toReturnToSupplierListRowDto(WarehouseDocumentDetailQueryModel row) {
-        ReturnToSupplierListRowDto dto = new ReturnToSupplierListRowDto();
-        dto.setId(row.getId());
-        dto.setBusNo(row.getBusNo());
-        dto.setOriginalBusNo(row.getOriginalBusNo());
-        dto.setTypeEnum(this.toApiSortSupplyType(row.getTypeEnum()));
-        dto.setStatusEnum(this.toApiSortSupplyStatus(row.getStatusEnum()));
-        dto.setCategoryEnum(this.toApiSortSupplyCategory(row.getCategoryEnum()));
-        dto.setSourceLocationId(row.getSourceLocationId());
-        dto.setPurposeLocationId(row.getPurposeLocationId());
-        dto.setSupplierId(row.getSupplierId());
-        dto.setItemId(row.getItemId());
-        dto.setItemTable(row.getItemTable());
-        dto.setItemQuantity(row.getItemQuantity());
-        dto.setUnitCode(row.getUnitCode());
-        dto.setLotNumber(row.getLotNumber());
-        dto.setTraceNo(row.getTraceNo());
-        dto.setPrice(row.getPrice());
-        dto.setTotalPrice(row.getTotalPrice());
-        dto.setApplyTime(row.getApplyTime());
-        dto.setApprovalTime(row.getApprovalTime());
-        return dto;
-    }
-
-    /**
      * 将同号供应请求明细与产品读模型装配为退供应商详情响应。
      *
      * @param lines        供应请求明细行
@@ -200,9 +170,7 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
             }
         }
         res.setLines(detailLines);
-        // —— 双写 totalAmount/totalPrice，兼容页脚与侧栏读任一字段。——
         res.setTotalAmount(totalAmount);
-        res.setTotalPrice(totalAmount);
         return res;
     }
 
@@ -497,12 +465,8 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
         command.setOperatorId(operatorId);
         AgreeRequestCommand.AgreeRequestItemCommand item = new AgreeRequestCommand.AgreeRequestItemCommand();
         item.setBusNo(request.getBusNo());
-        Long approverId = request.getApproverId();
-        if (approverId == null) {
-            approverId = operatorId;
-        }
-        item.setApproverId(approverId);
-        item.setApprovalClock(request.getApprovalClock());
+        // 审批人取当前操作人；审批时刻由领域 agree/reject 写 approval_time
+        item.setApproverId(operatorId);
         command.setItem(item);
         return command;
     }
@@ -569,12 +533,8 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
         command.setOperatorId(operatorId);
         RejectRequestCommand.RejectRequestItemCommand item = new RejectRequestCommand.RejectRequestItemCommand();
         item.setBusNo(request.getBusNo());
-        Long approverId = request.getApproverId();
-        if (approverId == null) {
-            approverId = operatorId;
-        }
-        item.setApproverId(approverId);
-        item.setApprovalClock(request.getApprovalClock());
+        // 审批人取当前操作人；审批时刻由领域 agree/reject 写 approval_time
+        item.setApproverId(operatorId);
         item.setChangeReasonCode(request.getRejectReason());
         command.setItem(item);
         return command;
@@ -782,8 +742,6 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
             // —— 制单人/审批人主键取头行；展示名由 AppService 批量富化。——
             dto.setApplicantId(head.getApplicantId());
             dto.setApproverId(head.getApproverId());
-            // —— 双写 totalPrice/totalAmount，兼容侧栏卡片字段兼容读取。——
-            dto.setTotalPrice(totalAmount);
             dto.setTotalAmount(totalAmount);
             // —— 制单时间：优先申请时刻，缺省回落业务发生时刻（与进货关联选单同构）。——
             if (maxApply != null) {

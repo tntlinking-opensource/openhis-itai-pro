@@ -6,7 +6,6 @@ package com.openhis.health.application.basic.procedurecatalog.service;
 
 import com.openhis.health.application.basic.procedurecatalog.dto.ClinicalProcV3ImportProgressResponse;
 import com.openhis.health.application.basic.procedurecatalog.dto.GeneralOpImportProgressResponse;
-import com.openhis.health.application.basic.procedurecatalog.dto.ImportClinicalProcV3CatalogResponse;
 import com.openhis.health.application.basic.procedurecatalog.dto.ProcedureCatalogDetailDto;
 import com.openhis.health.application.basic.procedurecatalog.dto.ProcedureCatalogDto;
 import com.openhis.health.application.basic.procedurecatalog.dto.ProcedureCatalogInitDto;
@@ -21,11 +20,9 @@ import com.openhis.health.application.basic.procedurecatalog.request.QueryProced
 import com.openhis.health.application.basic.procedurecatalog.request.UpdateProcedureCatalogRequest;
 import com.openhis.health.application.basic.procedurecatalog.support.ClinicalProcV3CatalogImportAsyncWorkflow;
 import com.openhis.health.application.basic.procedurecatalog.support.ClinicalProcV3CatalogImportJob;
-import com.openhis.health.application.basic.procedurecatalog.support.ClinicalProcV3CatalogWorkbookParser;
 import com.openhis.health.application.basic.procedurecatalog.support.GeneralOpCatalogImportAsyncWorkflow;
 import com.openhis.health.application.basic.procedurecatalog.support.GeneralOpCatalogImportJob;
 import com.openhis.health.application.shared.pagination.PageQueryBinder;
-import com.openhis.health.domain.clinical.proceduredefinition.command.ClinicalProcV3ImportRowCommand;
 import com.openhis.health.domain.clinical.proceduredefinition.command.EditProcedureDefinitionStartCommand;
 import com.openhis.health.domain.clinical.proceduredefinition.command.EditProcedureDefinitionStopCommand;
 import com.openhis.health.domain.clinical.proceduredefinition.queries.ProcedureDefinitionPageQuery;
@@ -60,7 +57,6 @@ public class ProcedureCatalogAppService {
     private final ProcedureDefinitionDomainService procedureDefinitionDomainService;
     private final ProcedureCatalogMapper procedureCatalogMapper;
     private final CodeSystemQueryService codeSystemQueryService;
-    private final ClinicalProcV3CatalogWorkbookParser clinicalProcV3CatalogWorkbookParser;
     private final ClinicalProcV3CatalogImportAsyncWorkflow clinicalProcV3CatalogImportAsyncWorkflow;
     private final GeneralOpCatalogImportAsyncWorkflow generalOpCatalogImportAsyncWorkflow;
 
@@ -242,28 +238,6 @@ public class ProcedureCatalogAppService {
         response.setProcessed(job.getProcessed());
         response.setSuccessCount(job.getSuccessCount());
         response.setMessage(job.getMessage());
-        return response;
-    }
-
-    /**
-     * 同步导入国家临床版手术 3.0（兼容旧调用）。
-     *
-     * @param request 含 fileBytes 的导入请求
-     * @return 解析行数与写入条数
-     */
-    public ImportClinicalProcV3CatalogResponse importClinicalProcV3Catalog(ImportClinicalProcV3CatalogRequest request) {
-        // Gate：上传字节非空
-        if (request == null || request.getFileBytes() == null || request.getFileBytes().length == 0) {
-            throw new ValidationException("导入国家临床版手术3.0失败：文件不能为空");
-        }
-        // Pre：解析 Excel
-        List<ClinicalProcV3ImportRowCommand> rows = clinicalProcV3CatalogWorkbookParser.parse(request.getFileBytes());
-        // Cmd：领域批量 upsert
-        int success = procedureDefinitionDomainService.importClinicalProcV3Catalog(rows);
-        // Asm：导入结果
-        ImportClinicalProcV3CatalogResponse response = new ImportClinicalProcV3CatalogResponse();
-        response.setTotalCount(rows.size());
-        response.setSuccessCount(success);
         return response;
     }
 

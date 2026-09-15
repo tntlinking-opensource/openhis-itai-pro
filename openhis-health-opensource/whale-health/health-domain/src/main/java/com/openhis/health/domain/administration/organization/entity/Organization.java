@@ -77,11 +77,11 @@ public class Organization extends BaseAuditedEntity {
     @Column(name = "wb_str")
     private String wbStr;
 
-    /** yb 编号。 */
+    /** yb 编号（科室医保编码；4401/4101A 入出院科别出站真源）。 */
     @Column(name = "yb_no")
     private String ybNo;
 
-    /** yb 名称。 */
+    /** yb 名称（科室医保名称）。 */
     @Column(name = "yb_name")
     private String ybName;
 

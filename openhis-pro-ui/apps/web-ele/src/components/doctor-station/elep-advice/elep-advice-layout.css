@@ -1,0 +1,347 @@
+/**
+ * 门诊电子处方页布局（对齐中药处方 Tab）。
+ * 不走 SFC scoped：院点生产包会丢 scoped，表现为下拉拉满整行、侧栏塌掉。
+ */
+.elep-advice-root {
+  --elep-sidebar-width: 240px;
+  grid-template-columns: var(--elep-sidebar-width) minmax(0, 1fr);
+  background: var(--el-bg-color-page, #f5f7fa);
+}
+
+.elep-advice-root__sidebar {
+  min-width: 0;
+  border-right: 1px solid var(--el-border-color-lighter);
+  background: #fff;
+}
+
+.elep-advice-root__sidebar-title {
+  flex-shrink: 0;
+  padding: 10px 12px 6px;
+  color: var(--el-text-color-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.elep-queue-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--el-border-color-extra-light);
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.elep-queue-item:hover {
+  background: var(--el-fill-color-light);
+}
+
+.elep-queue-item.is-active {
+  background: var(--el-color-primary-light-9);
+}
+
+.elep-queue-item__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.elep-queue-item__title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--el-text-color-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.elep-queue-item__sub {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--el-text-color-regular);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.elep-queue-item__meta {
+  color: var(--el-text-color-secondary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.elep-advice-root__chrome {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 40px;
+  margin: 0;
+  padding: 4px 12px 0;
+  border: 1px solid var(--el-border-color-lighter);
+  border-bottom: 0;
+  border-radius: 0;
+  background: #fff;
+}
+
+.elep-flow {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.elep-flow__step {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.elep-flow__step.is-done,
+.elep-flow__step.is-current {
+  color: var(--el-color-primary);
+  font-weight: 600;
+}
+
+.elep-flow__sep {
+  flex-shrink: 0;
+  margin: 0 6px;
+  color: var(--el-border-color);
+}
+
+.elep-rx-panel__status-group {
+  display: inline-flex;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.elep-rx-panel__status-label {
+  flex-shrink: 0;
+  color: var(--el-text-color-primary);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.elep-rx-panel__status.el-tag {
+  --el-tag-font-size: 12px;
+  height: 22px;
+  padding: 0 8px;
+  font-weight: 500;
+}
+
+.elep-rx-panel__toolbar {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.elep-rx-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 0;
+  background: #fff;
+}
+
+.elep-rx-panel__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #f7fafc;
+  border-top: 1px solid var(--el-border-color-extra-light);
+  border-bottom: 1px solid var(--el-border-color-extra-light);
+}
+
+.elep-rx-panel__info {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin: 0;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  background: transparent;
+}
+
+.elep-rx-header__row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+.elep-rx-header .el-form-item {
+  margin-bottom: 0;
+}
+
+.elep-rx-header .el-form-item__label {
+  white-space: nowrap;
+}
+
+.elep-rx-header__item--diagnosis {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 420px;
+}
+
+.elep-rx-header__diagnosis {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.elep-rx-header__diag-select {
+  width: 240px;
+  max-width: 100%;
+}
+
+.elep-rx-header__diag-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--el-text-color-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.elep-rx-header__diag-name.is-empty {
+  color: var(--el-text-color-placeholder);
+  font-weight: 400;
+}
+
+.elep-rx-header__item--num {
+  flex-shrink: 0;
+}
+
+.elep-rx-header__item--num .el-input {
+  width: 64px;
+}
+
+.elep-rx-header__item--disease {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.elep-rx-header__disease-select {
+  width: 200px;
+  max-width: 100%;
+}
+
+.elep-rx-panel__search {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  background: transparent;
+}
+
+.elep-rx-panel__search-input {
+  width: 320px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.elep-rx-panel__table {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+  height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+.elep-rx-panel__table .el-table {
+  flex: 1 1 auto;
+  height: 100%;
+}
+
+.elep-drug-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.elep-drug-name__main {
+  overflow: hidden;
+  color: var(--el-text-color-primary);
+  font-size: 13px;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.elep-drug-time {
+  width: 168px;
+}
+
+.elep-rx-panel__footer {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 12px;
+  background: #fff;
+}
+
+.elep-rx-panel__summary {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

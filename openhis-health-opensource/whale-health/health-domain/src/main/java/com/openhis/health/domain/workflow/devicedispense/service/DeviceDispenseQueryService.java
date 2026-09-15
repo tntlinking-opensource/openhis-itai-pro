@@ -64,7 +64,8 @@ import lombok.RequiredArgsConstructor;
  * <p>职责：发放单详情与列表、状态校验门控及工作台筛选；只读不写库。</p>
  *
  * <p>边界：仅依赖本聚合 {@link DeviceDispenseRepository}（B.6.4 仅本聚合 Repository）。
- * {@link EntityManager} 仅用于护士耗材明细分页 coalesce 业务时间排序（AS-RPT-002）。
+ * {@link EntityManager} 用于护士耗材明细分页 coalesce 业务时间排序（AS-RPT-002），
+ * 以及耗材使用报表「按就诊+品规」合并分组 Criteria（COUNT/SUM/GROUP BY 真分页）。
  * 护士工作量（AS-RPT-002）{@code hvcm_flag} 由
  * {@link com.openhis.health.application.report.nurseworkload.support.NurseWorkloadLoader} 预解析写入 query（B.6.4），
  * 见 DM-WKF-007 §6.2.20～6.2.22。</p>
@@ -1478,6 +1479,274 @@ public class DeviceDispenseQueryService {
     }
 
     /**
+     * 耗材使用报表患者侧「按就诊+品规[+单位]」合并分组分页（真分页；禁止全窗物化再 subList）。
+     *
+     * <p>筛选同 {@link #pageConsumableUsageDispenseLines}；额外要求 {@code encounter_id}/{@code device_def_id}
+     * 非空。按组 {@code MAX(dispense_time) DESC} 排序；总数为分组条数而非发放行数。
+     * 分组行 {@code netQuantity} 占位 0，由应用层页内回载明细后汇总（禁 SQL SUM(CASE)）。</p>
+     *
+     * @param query 分页与筛选；就诊 scope 空列表拒查
+     * @return 合并分组页
+     */
+    public Page<ConsumableUsageDispenseMergedGroupQueryModel> pageConsumableUsageDispenseMergedByEncounterAndDevice(
+        ConsumableUsageReportPageQuery query) {
+        if (query == null) {
+            query = new ConsumableUsageReportPageQuery();
+        }
+        int pageNo = query.springPageIndex();
+        int pageSize = query.getBoundedPageSize();
+        Pageable pageable = PageRequest.of(pageNo, pageSize);
+        // Gate：空就诊 scope 表示门诊/住院域无命中，直接空页
+        if (query.getResolvedEncounterScope() != null && query.getResolvedEncounterScope().isEmpty()) {
+            return new PageImpl<>(Collections.emptyList(), pageable, 0L);
+        }
+        CriteriaBuilder cb = this.entityManager.getCriteriaBuilder();
+        // Pre：分组总数（GROUP BY 键结果集 size；禁 countDistinct(concat)）
+        long total = this.countConsumableUsageMergedGroups(cb, query);
+        if (total == 0L) {
+            return new PageImpl<>(Collections.emptyList(), pageable, 0L);
+        }
+        // Pre：本页分组聚合行
+        List<ConsumableUsageDispenseMergedGroupQueryModel> models =
+            this.queryConsumableUsageMergedGroups(cb, query, pageNo, pageSize);
+        return new PageImpl<>(models, pageable, total);
+    }
+
+    /**
+     * 耗材使用报表患者侧「按就诊+品规[+单位]」合并分组有界列表（导出；行数受 bounded pageSize 约束）。
+     *
+     * @param query 与分页同筛选；{@code pageSize} 作为导出上限
+     * @return 合并分组行（按 max(dispense_time) 倒序）
+     */
+    public List<ConsumableUsageDispenseMergedGroupQueryModel> listConsumableUsageDispenseMergedByEncounterAndDevice(
+        ConsumableUsageReportPageQuery query) {
+        if (query == null) {
+            query = new ConsumableUsageReportPageQuery();
+        }
+        // Gate：空就诊 scope 拒查
+        if (query.getResolvedEncounterScope() != null && query.getResolvedEncounterScope().isEmpty()) {
+            return Collections.emptyList();
+        }
+        int maxRows = query.getBoundedPageSize();
+        CriteriaBuilder cb = this.entityManager.getCriteriaBuilder();
+        return this.queryConsumableUsageMergedGroups(cb, query, 0, maxRows);
+    }
+
+    /**
+     * 按本页合并键的 encounter/deviceDef 集合回载患者侧发放明细（同报表筛选 + IN 收窄）。
+     *
+     * <p>供应用层对本页分组回刷进售价后按精确键再汇总；页内 IN 交集可能带回少量非本页键行，
+     * 由应用层按 encounter+deviceDef+unit 精确归组丢弃。</p>
+     *
+     * @param query         同明细分页筛选（忽略其分页键）
+     * @param encounterIds  本页分组就诊主键；空则空列表
+     * @param deviceDefIds  本页分组品规主键；空则空列表
+     * @return 命中发放明细行
+     */
+    public List<ConsumableUsageDispenseLineQueryModel> listConsumableUsageDispenseLinesForMergedKeys(
+        ConsumableUsageReportPageQuery query,
+        Set<Long> encounterIds,
+        Set<Long> deviceDefIds) {
+        if (query == null) {
+            query = new ConsumableUsageReportPageQuery();
+        }
+        // Gate：空键集合或空就诊 scope → 无回载
+        if (encounterIds == null || encounterIds.isEmpty() || deviceDefIds == null || deviceDefIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        if (query.getResolvedEncounterScope() != null && query.getResolvedEncounterScope().isEmpty()) {
+            return Collections.emptyList();
+        }
+        LinkedHashSet<Long> encounterIdSet = new LinkedHashSet<>();
+        for (Long encounterId : encounterIds) {
+            if (encounterId != null) {
+                encounterIdSet.add(encounterId);
+            }
+        }
+        LinkedHashSet<Long> deviceDefIdSet = new LinkedHashSet<>();
+        for (Long deviceDefId : deviceDefIds) {
+            if (deviceDefId != null) {
+                deviceDefIdSet.add(deviceDefId);
+            }
+        }
+        if (encounterIdSet.isEmpty() || deviceDefIdSet.isEmpty()) {
+            return Collections.emptyList();
+        }
+        // Pre：报表规约 + 本页键 IN（页内规模，允许全取）
+        Specification<DeviceDispense> specification = this.buildConsumableUsageReportSpecification(query);
+        Specification<DeviceDispense> keySpec = (root, cq, cb) -> cb.and(
+            root.get(FieldNameConstants.ENCOUNTER_ID).in(encounterIdSet),
+            root.get(FieldNameConstants.DEVICE_DEF_ID).in(deviceDefIdSet),
+            cb.isNotNull(root.get(FieldNameConstants.ENCOUNTER_ID)),
+            cb.isNotNull(root.get(FieldNameConstants.DEVICE_DEF_ID)));
+        List<DeviceDispense> rows = this.deviceDispenseRepository.findAll(specification.and(keySpec));
+        List<ConsumableUsageDispenseLineQueryModel> models = new ArrayList<>();
+        for (DeviceDispense row : rows) {
+            models.add(this.toConsumableUsageDispenseLineModel(row));
+        }
+        return models;
+    }
+
+    /**
+     * 统计合并分组总数（encounter+deviceDef+unit 键）。
+     *
+     * <p>与 {@link #queryConsumableUsageMergedGroups} 同筛选、同 GROUP BY；用分组键结果集 size 计数，
+     * 禁止 {@code countDistinct(concat(cast...))}（PG/Hibernate 易炸连接 → Unable to rollback）。</p>
+     *
+     * @param cb    CriteriaBuilder
+     * @param query 筛选
+     * @return 分组条数
+     */
+    private long countConsumableUsageMergedGroups(CriteriaBuilder cb, ConsumableUsageReportPageQuery query) {
+        CriteriaQuery<Object[]> keyCq = cb.createQuery(Object[].class);
+        Root<DeviceDispense> root = keyCq.from(DeviceDispense.class);
+        List<Predicate> predicates = this.buildConsumableUsageReportPredicates(root, cb, query);
+        // Gate：合并键字段必非空
+        predicates.add(cb.isNotNull(root.get(FieldNameConstants.ENCOUNTER_ID)));
+        predicates.add(cb.isNotNull(root.get(FieldNameConstants.DEVICE_DEF_ID)));
+        // Asm：仅投影分组键；计数取结果条数（同 SupplyRequest 按 bus_no 分组分页口径）
+        keyCq.multiselect(
+            root.get(FieldNameConstants.ENCOUNTER_ID),
+            root.get(FieldNameConstants.DEVICE_DEF_ID),
+            root.get(FieldNameConstants.UNIT_CODE));
+        keyCq.where(cb.and(predicates.toArray(new Predicate[0])));
+        keyCq.groupBy(
+            root.get(FieldNameConstants.ENCOUNTER_ID),
+            root.get(FieldNameConstants.DEVICE_DEF_ID),
+            root.get(FieldNameConstants.UNIT_CODE));
+        List<Object[]> keyRows = this.entityManager.createQuery(keyCq).getResultList();
+        if (keyRows == null) {
+            return 0L;
+        }
+        return keyRows.size();
+    }
+
+    /**
+     * 查询一页（或有界）合并分组键行（不含符号净量；净量由应用层页内回载明细汇总）。
+     *
+     * <p>投影仅分组键 + 组内 max(patient/location/time/id) + count；禁止 SQL 侧
+     * {@code SUM(CASE 退药取负)}（Criteria CASE+SUM 在本库方言下会打挂连接）。</p>
+     *
+     * @param cb       CriteriaBuilder
+     * @param query    筛选
+     * @param pageNo   Spring 0 基页码
+     * @param pageSize 页大小/上限
+     * @return 分组读模型列表（netQuantity 先置 0，由应用层回刷）
+     */
+    private List<ConsumableUsageDispenseMergedGroupQueryModel> queryConsumableUsageMergedGroups(
+        CriteriaBuilder cb,
+        ConsumableUsageReportPageQuery query,
+        int pageNo,
+        int pageSize) {
+        CriteriaQuery<Object[]> dataCq = cb.createQuery(Object[].class);
+        Root<DeviceDispense> root = dataCq.from(DeviceDispense.class);
+        List<Predicate> predicates = this.buildConsumableUsageReportPredicates(root, cb, query);
+        predicates.add(cb.isNotNull(root.get(FieldNameConstants.ENCOUNTER_ID)));
+        predicates.add(cb.isNotNull(root.get(FieldNameConstants.DEVICE_DEF_ID)));
+        // 组内最晚发放时刻：Temporal 用 greatest（CriteriaBuilder.max 仅 Number）
+        Expression<LocalDateTime> maxDispenseTime =
+            cb.greatest(root.<LocalDateTime>get(FieldNameConstants.DISPENSE_TIME));
+        // Asm：与 SupplyRequest#listDistinctBusNoPage 同构——分组键 + 排序聚合，不做符号数量 SUM
+        dataCq.multiselect(
+            root.get(FieldNameConstants.ENCOUNTER_ID),
+            root.get(FieldNameConstants.DEVICE_DEF_ID),
+            root.get(FieldNameConstants.UNIT_CODE),
+            cb.max(root.get(FieldNameConstants.PATIENT_ID)),
+            cb.max(root.get(FieldNameConstants.LOCATION_ID)),
+            maxDispenseTime,
+            cb.max(root.get(FieldNameConstants.ID)),
+            cb.count(root.get(FieldNameConstants.ID)));
+        dataCq.where(cb.and(predicates.toArray(new Predicate[0])));
+        dataCq.groupBy(
+            root.get(FieldNameConstants.ENCOUNTER_ID),
+            root.get(FieldNameConstants.DEVICE_DEF_ID),
+            root.get(FieldNameConstants.UNIT_CODE));
+        dataCq.orderBy(cb.desc(maxDispenseTime));
+        TypedQuery<Object[]> typed = this.entityManager.createQuery(dataCq);
+        typed.setFirstResult(pageNo * pageSize);
+        typed.setMaxResults(pageSize);
+        List<Object[]> rows = typed.getResultList();
+        List<ConsumableUsageDispenseMergedGroupQueryModel> models = new ArrayList<>();
+        for (Object[] row : rows) {
+            models.add(this.toConsumableUsageMergedGroupModel(row));
+        }
+        return models;
+    }
+
+    /**
+     * 将 Criteria 聚合 Object[] 映射为合并分组读模型。
+     *
+     * @param row 聚合列：encounter / deviceDef / unit / patient / location / maxTime / maxId / lineCount
+     * @return 读模型；列不足时返回空壳；netQuantity 固定 0（应用层回刷）
+     */
+    private ConsumableUsageDispenseMergedGroupQueryModel toConsumableUsageMergedGroupModel(Object[] row) {
+        ConsumableUsageDispenseMergedGroupQueryModel model = new ConsumableUsageDispenseMergedGroupQueryModel();
+        // 净量由应用层页内明细回载后汇总；此处占位 0，避免 SQL SUM(CASE) 炸连接
+        model.setNetQuantity(BigDecimal.ZERO);
+        if (row == null || row.length < 8) {
+            model.setLineCount(0L);
+            return model;
+        }
+        // Asm：聚合驱动列类型因方言而异（Long/Integer/BigInteger），禁硬转
+        model.setEncounterId(this.toLongOrNull(row[0]));
+        model.setDeviceDefId(this.toLongOrNull(row[1]));
+        if (row[2] == null) {
+            model.setUnitCode(null);
+        } else {
+            model.setUnitCode(String.valueOf(row[2]));
+        }
+        model.setPatientId(this.toLongOrNull(row[3]));
+        model.setLocationId(this.toLongOrNull(row[4]));
+        model.setMaxDispenseTime(this.toLocalDateTimeOrNull(row[5]));
+        model.setSampleDispenseId(this.toLongOrNull(row[6]));
+        Long lineCount = this.toLongOrNull(row[7]);
+        if (lineCount == null) {
+            model.setLineCount(0L);
+        } else {
+            model.setLineCount(lineCount);
+        }
+        return model;
+    }
+
+    /**
+     * 聚合列安全转 Long（兼容 Number 子类）。
+     *
+     * @param value 驱动列
+     * @return Long；无法转换时 null
+     */
+    private Long toLongOrNull(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Long longValue) {
+            return longValue;
+        }
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        return null;
+    }
+
+    /**
+     * 聚合列安全转 LocalDateTime（兼容 Timestamp）。
+     *
+     * @param value 驱动列
+     * @return LocalDateTime；无法转换时 null
+     */
+    private LocalDateTime toLocalDateTimeOrNull(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof LocalDateTime localDateTime) {
+            return localDateTime;
+        }
+        if (value instanceof java.sql.Timestamp timestamp) {
+            return timestamp.toLocalDateTime();
+        }
+        return null;
+    }
+
+    /**
      * 耗材使用报表患者侧净汇总（按耗材房/品规/科室/患者；DM-WKF-007 §6.2.24）。
      *
      * <p>领域分桶支持 LOCATION / ITEM / DEPARTMENT / PATIENT；类型（CATEGORY）由应用层
@@ -1560,55 +1829,75 @@ public class DeviceDispenseQueryService {
     private Specification<DeviceDispense> buildConsumableUsageReportSpecification(
         ConsumableUsageReportPageQuery query) {
         return (root, cq, cb) -> {
-            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
-            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
-            // 报表事实：按记录类型收窄已发 / 已退（空或 ALL = 并集）
-            predicates.add(root.get(FieldNameConstants.STATUS_ENUM)
-                .in(this.resolveConsumableUsageStatusCodes(query.getRecordTypeCode())));
-            if (query.getBusinessTimeFrom() != null || query.getBusinessTimeTo() != null) {
-                // 有时间窗时 dispense_time 必非空
-                predicates.add(cb.isNotNull(root.get(FieldNameConstants.DISPENSE_TIME)));
-            }
-            if (query.getBusinessTimeFrom() != null) {
-                predicates.add(cb.greaterThanOrEqualTo(
-                    root.get(FieldNameConstants.DISPENSE_TIME), query.getBusinessTimeFrom()));
-            }
-            if (query.getBusinessTimeTo() != null) {
-                predicates.add(cb.lessThanOrEqualTo(
-                    root.get(FieldNameConstants.DISPENSE_TIME), query.getBusinessTimeTo()));
-            }
-            if (query.getLocationId() != null) {
-                predicates.add(cb.equal(root.get(FieldNameConstants.LOCATION_ID), query.getLocationId()));
-            } else if (query.getResolvedLocationIds() != null) {
-                // 空列表 = 关键字无命中，强制无结果
-                if (query.getResolvedLocationIds().isEmpty()) {
-                    predicates.add(cb.disjunction());
-                } else {
-                    predicates.add(root.get(FieldNameConstants.LOCATION_ID).in(query.getResolvedLocationIds()));
-                }
-            }
-            if (query.getResolvedDeviceDefIds() != null) {
-                if (query.getResolvedDeviceDefIds().isEmpty()) {
-                    predicates.add(cb.disjunction());
-                } else {
-                    predicates.add(
-                        root.get(FieldNameConstants.DEVICE_DEF_ID).in(query.getResolvedDeviceDefIds()));
-                }
-            }
-            // 执行人（发耗材人）精确筛
-            if (query.getPerformerId() != null) {
-                predicates.add(cb.equal(root.get(FieldNameConstants.PERFORMER_ID), query.getPerformerId()));
-            }
-            if (query.getResolvedEncounterScope() != null) {
-                if (query.getResolvedEncounterScope().isEmpty()) {
-                    predicates.add(cb.disjunction());
-                } else {
-                    predicates.add(
-                        root.get(FieldNameConstants.ENCOUNTER_ID).in(query.getResolvedEncounterScope()));
-                }
-            }
-            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+            List<Predicate> predicates = this.buildConsumableUsageReportPredicates(root, cb, query);
+            return cb.and(predicates.toArray(new Predicate[0]));
         };
+    }
+
+    /**
+     * 组装耗材使用报表共用筛选谓词（明细分页 / 合并分组 / 汇总复用）。
+     *
+     * @param root  发放根
+     * @param cb    CriteriaBuilder
+     * @param query 筛选；null 视为空条件
+     * @return 谓词列表（可空条件已跳过；调用方 {@code and}）
+     */
+    private List<Predicate> buildConsumableUsageReportPredicates(
+        Root<DeviceDispense> root,
+        CriteriaBuilder cb,
+        ConsumableUsageReportPageQuery query) {
+        List<Predicate> predicates = new ArrayList<>();
+        ConsumableUsageReportPageQuery safeQuery = query;
+        if (safeQuery == null) {
+            safeQuery = new ConsumableUsageReportPageQuery();
+        }
+        predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+        // 报表事实：按记录类型收窄已发 / 已退（空或 ALL = 并集）
+        predicates.add(root.get(FieldNameConstants.STATUS_ENUM)
+            .in(this.resolveConsumableUsageStatusCodes(safeQuery.getRecordTypeCode())));
+        if (safeQuery.getBusinessTimeFrom() != null || safeQuery.getBusinessTimeTo() != null) {
+            // 有时间窗时 dispense_time 必非空
+            predicates.add(cb.isNotNull(root.get(FieldNameConstants.DISPENSE_TIME)));
+        }
+        if (safeQuery.getBusinessTimeFrom() != null) {
+            predicates.add(cb.greaterThanOrEqualTo(
+                root.get(FieldNameConstants.DISPENSE_TIME), safeQuery.getBusinessTimeFrom()));
+        }
+        if (safeQuery.getBusinessTimeTo() != null) {
+            predicates.add(cb.lessThanOrEqualTo(
+                root.get(FieldNameConstants.DISPENSE_TIME), safeQuery.getBusinessTimeTo()));
+        }
+        if (safeQuery.getLocationId() != null) {
+            predicates.add(cb.equal(root.get(FieldNameConstants.LOCATION_ID), safeQuery.getLocationId()));
+        } else if (safeQuery.getResolvedLocationIds() != null) {
+            // 空列表 = 关键字无命中，强制无结果
+            if (safeQuery.getResolvedLocationIds().isEmpty()) {
+                predicates.add(cb.disjunction());
+            } else {
+                predicates.add(root.get(FieldNameConstants.LOCATION_ID).in(safeQuery.getResolvedLocationIds()));
+            }
+        }
+        if (safeQuery.getResolvedDeviceDefIds() != null) {
+            if (safeQuery.getResolvedDeviceDefIds().isEmpty()) {
+                predicates.add(cb.disjunction());
+            } else {
+                predicates.add(
+                    root.get(FieldNameConstants.DEVICE_DEF_ID).in(safeQuery.getResolvedDeviceDefIds()));
+            }
+        }
+        // 执行人（发耗材人）精确筛
+        if (safeQuery.getPerformerId() != null) {
+            predicates.add(cb.equal(root.get(FieldNameConstants.PERFORMER_ID), safeQuery.getPerformerId()));
+        }
+        if (safeQuery.getResolvedEncounterScope() != null) {
+            if (safeQuery.getResolvedEncounterScope().isEmpty()) {
+                predicates.add(cb.disjunction());
+            } else {
+                predicates.add(
+                    root.get(FieldNameConstants.ENCOUNTER_ID).in(safeQuery.getResolvedEncounterScope()));
+            }
+        }
+        return predicates;
     }
 
     /**

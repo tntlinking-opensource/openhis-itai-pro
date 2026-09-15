@@ -37,13 +37,13 @@ public class EncounterSnapshot {
      */
     private LocalDateTime dscgTime;
 
-    /** 入院科别编码（机构 bus_no）。 */
+    /** 入院科别编码（科室医保编码 yb_no）。 */
     private String admCatyCode;
 
     /** 入院科别名称。 */
     private String admCatyName;
 
-    /** 出院科别编码。 */
+    /** 出院科别编码（科室医保编码 yb_no）。 */
     private String dscgCatyCode;
 
     /** 出院科别名称。 */
@@ -55,13 +55,13 @@ public class EncounterSnapshot {
     /** 入院病区名称（最早 WARD 轨迹）。 */
     private String admWardName;
 
-    /** 入院床位名称（最早 BED 轨迹）。 */
+    /** 入院床位展示（最早 BED；HOUSE 父级存在时为「病房-床位」）。 */
     private String admBedName;
 
     /** 出院/当前病区名称（末次完成或当前活动 WARD）。 */
     private String dscgWardName;
 
-    /** 出院/当前床位名称（末次完成或当前活动 BED）。 */
+    /** 出院/当前床位展示（末次完成或当前活动 BED；HOUSE 父级存在时为「病房-床位」）。 */
     private String dscgBedName;
 
     /** 科主任姓名。 */

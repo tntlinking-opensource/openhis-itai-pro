@@ -20,11 +20,11 @@ import lombok.experimental.Accessors;
 @Schema(description = "住院耗材使用报表页初始化响应")
 public class LoadInpatientConsumableUsageReportPageInitResponse {
 
-    /** 默认业务日起（yyyy-MM-dd）。 */
+    /** 默认业务日起（yyyy-MM-dd 或 yyyy-MM-dd HH:mm:ss；仅日期时起 00:00:00、止 23:59:59）。 */
     @Schema(description = "默认业务日起")
     private String defaultDateFrom;
 
-    /** 默认业务日止（yyyy-MM-dd）。 */
+    /** 默认业务日止（yyyy-MM-dd 或 yyyy-MM-dd HH:mm:ss；仅日期时起 00:00:00、止 23:59:59）。 */
     @Schema(description = "默认业务日止")
     private String defaultDateTo;
 

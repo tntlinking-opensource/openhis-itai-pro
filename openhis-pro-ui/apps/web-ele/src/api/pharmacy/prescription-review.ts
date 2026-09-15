@@ -3,6 +3,7 @@
  * POST /api/app/outpatientPharmacyPrescriptionReview/{methodName}
  *
  * 点评记录页 init/分页/导出；门诊处方查看批量点评、撤销；发药后自动点评；方号 enrichment。
+ * 点评记录页列表/导出列与「处方点评工作表」对齐（无序号）；本页无点评/撤销写入口。
  */
 import type { ExcelExportColumnPayload } from '#/utils/export/build-excel-export-columns';
 import type { BinaryExportResult } from '#/utils/export/download-binary-export';
@@ -36,22 +37,40 @@ export interface PagePrescriptionReviewsRequest extends PageParams {
   statusEnum?: string;
   reviewedDateFrom?: string;
   reviewedDateTo?: string;
+  /** 开方日起 yyyy-MM-dd；与止成对 */
+  openedDateFrom?: string;
+  /** 开方日止 yyyy-MM-dd；与起成对 */
+  openedDateTo?: string;
   /** 是否合理；空=不限 */
   reasonableFlag?: boolean;
   /** 点评人主键（string 保精度） */
   reviewerId?: string;
-  prescriptionNoKeyword?: string;
-  busNoKeyword?: string;
+  /** 关键字：处方号或点评业务号模糊（OR） */
+  keyword?: string;
 }
 
+/** 列表行：与工作表数据列同构（字段名我方命名）；id/busNo 等供行键与详情。 */
 export interface PrescriptionReviewListRow {
   id?: string;
+  /** 点评业务号（详情「点评编号」） */
   busNo?: string;
   prescriptionNo?: string;
   statusEnum?: string;
   statusText?: string;
+  patientAgeText?: string;
+  diagnosisName?: string;
+  drugVarietyCount?: number;
+  /** 抗菌药 0/1 */
+  antibioticFlag?: number;
+  /** 注射剂 0/1 */
+  injectFlag?: number;
+  basicDrugVarietyCount?: number;
+  genericNameCount?: number;
+  prescriptionAmount?: number | string;
+  orderingPractitionerName?: string;
   reasonableFlag?: boolean;
   reasonableText?: string;
+  /** 存在问题（字段名 reason） */
   reason?: string;
   remark?: string;
   reviewerId?: string;
@@ -65,13 +84,10 @@ export interface PagePrescriptionReviewsResponse {
   totalCount?: number;
   total?: number;
   content?: PrescriptionReviewListRow[];
-  records?: PrescriptionReviewListRow[];
 }
 
-export type ExportPrescriptionReviewsRequest = Omit<
-  PagePrescriptionReviewsRequest,
-  'pageNo' | 'pageSize'
-> & {
+/** 导出：筛选 + 当前页 pageNo/pageSize + exportColumns。 */
+export type ExportPrescriptionReviewsRequest = PagePrescriptionReviewsRequest & {
   exportColumns: ExcelExportColumnPayload[];
 };
 
@@ -155,12 +171,12 @@ export async function pagePrescriptionReviewsApi(body: PagePrescriptionReviewsRe
   const { content, totalCount } = parsePagedRowsFromApiData<PrescriptionReviewListRow>(res);
   return {
     ...res,
-    records: content.length > 0 ? content : (res.records ?? []),
+    records: content,
     total: totalCount || Number(res.total ?? res.totalCount ?? 0),
   };
 }
 
-/** 导出点评记录 xlsx。 */
+/** 导出当前页点评记录 xlsx（条数=pageSize）。 */
 export async function exportPrescriptionReviewsApi(body: ExportPrescriptionReviewsRequest) {
   return publicRequestClient.post<ExportPrescriptionReviewsResponse>(`${BASE}/exportReviews`, body);
 }

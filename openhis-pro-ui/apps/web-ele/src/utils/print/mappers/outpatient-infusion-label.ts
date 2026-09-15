@@ -48,6 +48,11 @@ export interface OutpatientInfusionLabelPrintSource {
    * 缺省/≤1：总量不拆；＞1：总量按份数整除后打印到本张。
    */
   quantitySplitCount?: number;
+  /**
+   * 每日用药次数覆盖（住院可按当日执行槽位数传入；有值且＞0 时优先生效，
+   * 否则再走 rateCode → cus_frequency.dayTimes）。
+   */
+  timesPerDay?: number;
 }
 
 /** 常见日频次 rateCode → 每日次数（接口不可用时回落；禁止用中文名判断） */
@@ -234,6 +239,30 @@ function resolveTimesPerDayFallback(rateCode: string): number {
   const key = rateCode.trim().toUpperCase();
   const mapped = COMMON_DAILY_TIMES_BY_RATE_CODE[key];
   return mapped !== undefined && mapped > 0 ? mapped : 1;
+}
+
+/**
+ * 同步估算每日次数：优先 rateCode 常见表，否则当日槽位数，都无则 1。
+ * 仅用于列表张数/预估页；真正打印仍走 resolveInfusionLabelPrintTimesPerDay。
+ */
+export function resolveInfusionTimesPerDaySync(
+  rateCode?: null | string,
+  daySlotCount?: null | number,
+): number {
+  const code = str(rateCode);
+  if (code) {
+    const mapped = resolveTimesPerDayFallback(code);
+    const known = COMMON_DAILY_TIMES_BY_RATE_CODE[code.trim().toUpperCase()];
+    // 常见 code 用表内次数；未知 code 不盲默认 1，改回落槽位
+    if (known !== undefined && mapped > 0) {
+      return mapped;
+    }
+  }
+  const slots =
+    typeof daySlotCount === 'number' && Number.isFinite(daySlotCount)
+      ? Math.trunc(daySlotCount)
+      : 0;
+  return slots > 0 ? slots : 1;
 }
 
 /**

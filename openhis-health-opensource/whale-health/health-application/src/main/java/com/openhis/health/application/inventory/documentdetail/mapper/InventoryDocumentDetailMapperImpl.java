@@ -5,6 +5,7 @@
 package com.openhis.health.application.inventory.documentdetail.mapper;
 
 import com.openhis.health.application.inventory.documentdetail.dto.DocumentDetailExportRowDto;
+import com.openhis.health.application.inventory.documentdetail.dto.DocumentDetailItemSummaryRowDto;
 import com.openhis.health.application.inventory.documentdetail.dto.DocumentDetailRowDto;
 import com.openhis.health.application.inventory.documentdetail.request.DocumentDetailFilterRequest;
 import com.openhis.health.application.inventory.documentdetail.request.PageDocumentDetailsRequest;
@@ -17,6 +18,8 @@ import com.openhis.health.domain.share.constants.DocumentDetailExportConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.InventoryWarehouseDetailExportConstants;
 import com.openhis.whale.core.application.dto.ExcelExportColumnDto;
+import com.openhis.whale.core.application.dto.OptionDto;
+import com.openhis.whale.core.application.util.StringUtils;
 import com.openhis.whale.core.application.util.TabularColumnDef;
 import com.openhis.whale.core.application.util.TabularExcelExporter;
 import org.springframework.stereotype.Component;
@@ -91,24 +94,46 @@ public class InventoryDocumentDetailMapperImpl implements InventoryDocumentDetai
     }
 
     /**
-     * 装配合计响应。
+     * 装配合计响应（含按品规汇总行）。
      *
      * @param totalPriceSum   金额合计
      * @param itemQuantitySum 展示数量合计
-     * @param rowCount        行数
+     * @param rowCount        明细行数
+     * @param summaryRecords  按品规汇总行
      * @return 合计响应
      */
     @Override
     public SummarizeDocumentDetailsResponse toSummarizeDocumentDetailsResponse(
         BigDecimal totalPriceSum,
         BigDecimal itemQuantitySum,
-        long rowCount
+        long rowCount,
+        List<DocumentDetailItemSummaryRowDto> summaryRecords
     ) {
         SummarizeDocumentDetailsResponse response = new SummarizeDocumentDetailsResponse();
         response.setTotalPriceSum(totalPriceSum);
         response.setItemQuantitySum(itemQuantitySum);
         response.setRowCount(rowCount);
+        if (summaryRecords == null) {
+            response.setRecords(new ArrayList<>());
+        } else {
+            response.setRecords(summaryRecords);
+        }
         return response;
+    }
+
+    /**
+     * 构建汇总维度下拉（本期仅按品规）。
+     *
+     * @return 选项列表
+     */
+    @Override
+    public List<OptionDto> buildSummaryDimensionOptions() {
+        List<OptionDto> options = new ArrayList<>();
+        OptionDto itemOption = new OptionDto();
+        itemOption.setValue(DocumentDetailExportConstants.SUMMARY_DIMENSION_ITEM);
+        itemOption.setLabel(DocumentDetailExportConstants.SUMMARY_DIMENSION_ITEM_LABEL);
+        options.add(itemOption);
+        return options;
     }
 
     /**
@@ -166,16 +191,53 @@ public class InventoryDocumentDetailMapperImpl implements InventoryDocumentDetai
     }
 
     /**
+     * 按品规汇总行 → Excel 导出行（并集 DTO 稀疏填列；无售价）。
+     *
+     * @param summaryRows 汇总行
+     * @return 导出行
+     */
+    @Override
+    public List<DocumentDetailExportRowDto> toSummaryExportRows(
+        List<DocumentDetailItemSummaryRowDto> summaryRows
+    ) {
+        List<DocumentDetailExportRowDto> exportRows = new ArrayList<>();
+        if (summaryRows == null) {
+            return exportRows;
+        }
+        for (DocumentDetailItemSummaryRowDto summaryRow : summaryRows) {
+            if (summaryRow == null) {
+                continue;
+            }
+            DocumentDetailExportRowDto exportRow = new DocumentDetailExportRowDto();
+            // 汇总：维度名落入品名列，与页面「维度/品名」同构
+            exportRow.setProductName(summaryRow.getDimensionName());
+            exportRow.setProductBusNo(summaryRow.getProductBusNo());
+            exportRow.setSpecification(summaryRow.getSpecification());
+            exportRow.setPackageQuantity(this.toExportQuantity(summaryRow.getPackageQuantity()));
+            exportRow.setPackageUnitName(summaryRow.getPackageUnitName());
+            exportRow.setMinUnitQuantity(this.toExportQuantity(summaryRow.getMinUnitQuantity()));
+            exportRow.setMinUnitName(summaryRow.getMinUnitName());
+            // 汇总不导出单价（同品规多价无统一单价口径）
+            exportRow.setTotalPrice(this.toExportMoney(summaryRow.getTotalPrice()));
+            exportRows.add(exportRow);
+        }
+        return exportRows;
+    }
+
+    /**
      * 写出 xlsx 字节（可按前端列清单裁剪）。
      *
      * @param exportRows 导出行
      * @param columns    前端自选列；null/空则全部动态列
+     * @param sheetName  工作表名
      * @return xlsx 字节
      */
     @Override
     public byte[] buildExcelBytes(
         List<DocumentDetailExportRowDto> exportRows,
-        List<ExcelExportColumnDto> columns) {
+        List<ExcelExportColumnDto> columns,
+        String sheetName
+    ) {
         List<TabularColumnDef> tabularColumns = this.buildExportColumns();
         List<Map<String, Object>> rowMaps = new ArrayList<>();
         if (exportRows != null) {
@@ -183,8 +245,13 @@ public class InventoryDocumentDetailMapperImpl implements InventoryDocumentDetai
                 rowMaps.add(this.toRowMap(exportRow, tabularColumns));
             }
         }
+        String resolvedSheetName = sheetName;
+        // 未传表名时回落明细表名，兼容旧调用
+        if (StringUtils.isEmpty(resolvedSheetName)) {
+            resolvedSheetName = DocumentDetailExportConstants.SHEET_NAME;
+        }
         return TabularExcelExporter.exportToXlsxBytes(
-            DocumentDetailExportConstants.SHEET_NAME, tabularColumns, rowMaps, columns);
+            resolvedSheetName, tabularColumns, rowMaps, columns);
     }
 
     /**

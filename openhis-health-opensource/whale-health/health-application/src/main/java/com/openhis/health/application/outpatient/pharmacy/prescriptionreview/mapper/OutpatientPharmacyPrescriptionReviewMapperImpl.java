@@ -84,8 +84,7 @@ public class OutpatientPharmacyPrescriptionReviewMapperImpl implements Outpatien
             request.getReviewedDateTo(),
             request.getReasonableFlag(),
             request.getReviewerId(),
-            request.getPrescriptionNoKeyword(),
-            request.getBusNoKeyword());
+            request.getKeyword());
         return query;
     }
 
@@ -105,16 +104,15 @@ public class OutpatientPharmacyPrescriptionReviewMapperImpl implements Outpatien
             request.getReviewedDateTo(),
             request.getReasonableFlag(),
             request.getReviewerId(),
-            request.getPrescriptionNoKeyword(),
-            request.getBusNoKeyword());
+            request.getKeyword());
         return query;
     }
 
     /**
-     * 读模型 → 列表行（含点评人姓名）。
+     * 读模型 → 列表行（点评字段；方级指标由 Enricher 后写）。
      *
      * @param model        读模型；{@code null} 时返回 {@code null}
-     * @param reviewerName 点评人姓名；可空
+     * @param reviewerName 点评人姓名（列表工作表列不展示，保留参数兼容调用方）
      * @return 列表行 DTO
      */
     @Override
@@ -135,7 +133,7 @@ public class OutpatientPharmacyPrescriptionReviewMapperImpl implements Outpatien
         row.setRemark(model.getRemark());
         row.setReviewerId(model.getReviewerId());
         row.setReviewerName(reviewerName);
-        // 点评时间非空时格式化为展示串；空则列表列可空
+        // 点评时间非空时格式化为展示串；供详情「点评时间」
         if (model.getReviewedAt() != null) {
             row.setReviewedAt(model.getReviewedAt().format(GeneralSharedConstants.DATE_TIME_FORMATTER));
         }
@@ -157,7 +155,7 @@ public class OutpatientPharmacyPrescriptionReviewMapperImpl implements Outpatien
     }
 
     /**
-     * 列表行 → 导出行。
+     * 列表行 → 导出行（工作表同列；是否合理导出 0/1）。
      *
      * @param row 列表行；{@code null} 时返回 {@code null}
      * @return 导出行 DTO
@@ -170,13 +168,24 @@ public class OutpatientPharmacyPrescriptionReviewMapperImpl implements Outpatien
         }
         PrescriptionReviewExportRowDto exportRow = new PrescriptionReviewExportRowDto();
         exportRow.setPrescriptionNo(row.getPrescriptionNo());
-        exportRow.setBusNo(row.getBusNo());
-        exportRow.setStatusText(row.getStatusText());
-        exportRow.setReasonableText(row.getReasonableText());
+        exportRow.setPatientAgeText(row.getPatientAgeText());
+        exportRow.setDiagnosisName(row.getDiagnosisName());
+        exportRow.setDrugVarietyCount(row.getDrugVarietyCount());
+        exportRow.setAntibioticFlag(row.getAntibioticFlag());
+        exportRow.setInjectFlag(row.getInjectFlag());
+        exportRow.setBasicDrugVarietyCount(row.getBasicDrugVarietyCount());
+        exportRow.setGenericNameCount(row.getGenericNameCount());
+        exportRow.setPrescriptionAmount(row.getPrescriptionAmount());
+        exportRow.setOrderingPractitionerName(row.getOrderingPractitionerName());
+        // 是否合理：true→1、false→0、空→空（与工作表 0/1 口径）
+        if (Boolean.TRUE.equals(row.getReasonableFlag())) {
+            exportRow.setReasonableFlag(Integer.valueOf(1));
+        } else if (Boolean.FALSE.equals(row.getReasonableFlag())) {
+            exportRow.setReasonableFlag(Integer.valueOf(0));
+        } else {
+            exportRow.setReasonableFlag(null);
+        }
         exportRow.setReason(row.getReason());
-        exportRow.setRemark(row.getRemark());
-        exportRow.setReviewerName(row.getReviewerName());
-        exportRow.setReviewedAt(row.getReviewedAt());
         return exportRow;
     }
 
@@ -375,14 +384,13 @@ public class OutpatientPharmacyPrescriptionReviewMapperImpl implements Outpatien
     /**
      * 将筛选字段写入领域分页 Query（日期闭区间）。
      *
-     * @param query                  目标 Query
-     * @param statusEnum             状态
-     * @param reviewedDateFrom       日起
-     * @param reviewedDateTo         日止
-     * @param reasonableFlag         是否合理
-     * @param reviewerId             点评人
-     * @param prescriptionNoKeyword  处方号关键字
-     * @param busNoKeyword           业务号关键字
+     * @param query            目标 Query
+     * @param statusEnum       状态
+     * @param reviewedDateFrom 日起
+     * @param reviewedDateTo   日止
+     * @param reasonableFlag   是否合理
+     * @param reviewerId       点评人
+     * @param keyword          处方号/业务号关键字（OR）
      */
     private void applyFilterFields(
         PrescriptionReviewPageQuery query,
@@ -391,8 +399,7 @@ public class OutpatientPharmacyPrescriptionReviewMapperImpl implements Outpatien
         String reviewedDateTo,
         Boolean reasonableFlag,
         Long reviewerId,
-        String prescriptionNoKeyword,
-        String busNoKeyword) {
+        String keyword) {
         // 状态 code：非空则写入；PENDING 空页语义由 QueryService 处理
         if (StringUtils.isNotEmpty(statusEnum)) {
             query.setStatusEnum(statusEnum.trim());
@@ -409,13 +416,9 @@ public class OutpatientPharmacyPrescriptionReviewMapperImpl implements Outpatien
         }
         query.setReasonableFlag(reasonableFlag);
         query.setReviewerId(reviewerId);
-        // 处方号关键字 trim 后模糊
-        if (StringUtils.isNotEmpty(prescriptionNoKeyword)) {
-            query.setPrescriptionNoKeyword(prescriptionNoKeyword.trim());
-        }
-        // 业务号关键字 trim 后模糊
-        if (StringUtils.isNotEmpty(busNoKeyword)) {
-            query.setBusNoKeyword(busNoKeyword.trim());
+        // 关键字 trim 后模糊（处方号 OR 业务号）
+        if (StringUtils.isNotEmpty(keyword)) {
+            query.setKeyword(keyword.trim());
         }
     }
 

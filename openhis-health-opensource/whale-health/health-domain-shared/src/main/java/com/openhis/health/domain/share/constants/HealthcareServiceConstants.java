@@ -10,15 +10,17 @@ package com.openhis.health.domain.share.constants;
 public interface HealthcareServiceConstants {
 
     /**
-     * 「历史号复诊」业务编号（{@code bus_no}）；迁移种子与写侧 Gate 识别真源。
+     * 「复诊0元号」种子默认 {@code bus_no}（院点可改）；<strong>Gate 不按本字段识别</strong>。
      */
-    String BUS_NO_HISTORICAL_FOLLOW_UP = "HS_HIST_FOLLOW_UP";
-
-    /** 「历史号复诊」展示名称（与主数据种子一致）。 */
-    String NAME_HISTORICAL_FOLLOW_UP = "历史号复诊";
+    String BUS_NO_HISTORICAL_FOLLOW_UP = "HS00000004";
 
     /**
-     * 历史号复诊资格窗口：自前次接诊时刻起向后有效的小时数（BR-REG-020）。
+     * 「复诊0元号」展示名称；写侧 Gate / 资格识别真源（trim 精确匹配 {@code name}）。
+     */
+    String NAME_HISTORICAL_FOLLOW_UP = "复诊0元号";
+
+    /**
+     * 复诊0元号资格窗口：自前次接诊时刻起向后有效的小时数（BR-REG-020）。
      */
     int HISTORICAL_FOLLOW_UP_ELIGIBILITY_HOURS = 72;
 }

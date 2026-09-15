@@ -232,4 +232,16 @@ public class NurseStationOrderAuditRowDto {
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "皮试检查关联的皮试药 requestId")
     private Long basedOnMedicationRequestId;
+
+    /**
+     * 皮试临床状态 code（仅皮试药且护士已登记时有值；如 {@code active}=阳性）。
+     */
+    @Schema(description = "皮试临床状态 code（仅皮试药）")
+    private String skinTestOutcomeCode;
+
+    /**
+     * 皮试临床状态展示文案（如 阳性 / 阴性）；列表跟在药名后展示。
+     */
+    @Schema(description = "皮试临床状态展示文案（仅皮试药）")
+    private String skinTestOutcomeText;
 }

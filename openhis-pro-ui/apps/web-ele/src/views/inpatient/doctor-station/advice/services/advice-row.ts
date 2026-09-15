@@ -7,6 +7,27 @@ import {
   INPATIENT_ENTRUST_CATEGORY_CODE,
 } from './advice-tab.constants';
 
+/** 列表右上角筛选码 → 开立默认治疗类型；「全部」或未知回落长期。 */
+export function resolveDefaultInpatientAdviceTherapyType(
+  listFilter: '' | InpatientAdviceTherapyType | string | null | undefined,
+): InpatientAdviceTherapyType {
+  const code = String(listFilter ?? '')
+    .trim()
+    .toUpperCase();
+  if (code === 'TEMPORARY') return 'TEMPORARY';
+  if (code === 'DISCHARGE_MEDICATION') return 'DISCHARGE_MEDICATION';
+  return 'LONG_TERM';
+}
+
+/** 嘱托不可出院带药：筛选为出院带药时回落长期。 */
+export function resolveDefaultInpatientEntrustTherapyType(
+  listFilter: '' | InpatientAdviceTherapyType | string | null | undefined,
+): InpatientAdviceTherapyType {
+  const code = resolveDefaultInpatientAdviceTherapyType(listFilter);
+  if (isInpatientDischargeMedicationTherapy(code)) return 'LONG_TERM';
+  return code;
+}
+
 /** 住院西药长期医嘱：页面上不录总量，保存时 quantity/unitCode 取单次用量左侧（SPLIT）。 */
 export function isInpatientLongTermMedicationTherapy(
   therapy?: InpatientAdviceTherapyType | string | null,

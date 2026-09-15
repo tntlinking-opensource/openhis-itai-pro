@@ -1,7 +1,7 @@
 /**
- * 朝阳中药处方页布局（院点 override）。
+ * 中药处方页布局。
  * 顶栏页签+操作 / 信息栏 / 药表 / 底栏；配色走 Element Plus 变量。
- * 不走 SFC scoped：院点生产包会丢 scoped。
+ * 不走 SFC scoped：关键栅格走外挂 css，避免生产抽 CSS 时丢失。
  */
 .tcm-advice-root {
   --tcm-sidebar-width: 240px;

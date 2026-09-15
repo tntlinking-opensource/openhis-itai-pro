@@ -5,6 +5,12 @@ export interface HomepageSelectOption {
   value: string;
 }
 
+/**
+ * 未填值统一展示占位（编辑态 Select/Input placeholder、只读空串回显）。
+ * 国标纸质首页惯例：空白处印「-」。
+ */
+export const HOMEPAGE_EMPTY_DISPLAY = '-';
+
 /** 空串表示「全部」 */
 export const ALL_OPTION_VALUE = '';
 
@@ -30,6 +36,16 @@ export const UPLOAD_STATUS_OPTIONS: HomepageSelectOption[] = [
   { label: '无需上传', value: 'skipped' },
 ];
 
+/**
+ * 结算清单上传状态筛选（对齐 MrmsSettleUploadFlags：none/0/1/2）。
+ */
+export const SETTLE_UPLOAD_STATUS_OPTIONS: HomepageSelectOption[] = [
+  { label: '全部', value: ALL_OPTION_VALUE },
+  { label: '未上传', value: 'none' },
+  { label: '已上传', value: '1' },
+  { label: '已提交', value: '2' },
+];
+
 export const YES_NO_DISCHARGE_OPTIONS: HomepageSelectOption[] = [
   { label: '全部', value: ALL_OPTION_VALUE },
   { label: '已出院', value: '1' },
@@ -47,6 +63,7 @@ export type HomepageRowActionCode =
   | 'emr'
   | 'order'
   | 'homepage'
+  | 'settle-list'
   | 'bill'
   | 'temperature'
   | 'nursing'
@@ -57,9 +74,10 @@ export interface HomepageRowActionDef {
   label: string;
 }
 
-/** 主操作：仅常驻「病案详情」（打开首页编辑） */
+/** 主操作：病案详情 + 结算清单（独立预览页） */
 export const HOMEPAGE_PRIMARY_ACTIONS: HomepageRowActionDef[] = [
   { code: 'homepage', label: '病案详情' },
+  { code: 'settle-list', label: '结算清单' },
 ];
 
 /** 次要入口：全部收进「更多」，避免操作列挤爆 */
@@ -83,6 +101,8 @@ export type HomepageInsActionCode =
   | 'one-click-report'
   | 'upload-homepage'
   | 'upload-settle'
+  /** 4101A 上传 + 4102 提交审核（4401 未开通时的主入口） */
+  | 'settle-upload-commit'
   | 'settle-submit'
   | 'settle-pending'
   | 'query-settle';
@@ -94,15 +114,23 @@ export interface HomepageInsActionDef {
   infno: string;
 }
 
-/** 行内主入口：一键上报 = 4401 → 4101A → 4102 正式提交 */
+/** 行内主入口：一键上报 = 4401 → 4101A → 4102 正式提交（须 4401 已开通） */
 export const HOMEPAGE_INS_ONE_CLICK: HomepageInsActionDef = {
   code: 'one-click-report',
   label: '一键上报',
   infno: '4401→4101A→4102',
 };
 
+/** 4401 未开通时的主入口：一键上传 = 清单上传(4101A) + 提交审核(4102) */
+export const HOMEPAGE_INS_SETTLE_PRIMARY: HomepageInsActionDef = {
+  code: 'settle-upload-commit',
+  label: '一键上传',
+  infno: '4101A→4102',
+};
+
 /**
  * 医保「更多」分传（与一键并列；4102 提交/待提交、单侧 4401/4101A、4103 查询）。
+ * 展示时须按 {@link MRMS_HOMEPAGE_4401_UPLOAD_ENABLED} 过滤掉 `upload-homepage`。
  */
 export const HOMEPAGE_INS_MORE_ACTIONS: HomepageInsActionDef[] = [
   { code: 'upload-homepage', label: '首页上传', infno: '4401' },
@@ -126,7 +154,19 @@ export const UPLOAD_STATUS_LABEL: Record<string, string> = {
   skipped: '无需上传',
 };
 
-/** 上传状态 → Tag type（按 code） */
+/**
+ * 结算清单上传标志展示（对齐后端 {@code MrmsSettleUploadFlags}：0/1/2）。
+ * 禁止把裸 code 直接渲染到表格。
+ */
+export const SETTLE_UPLOAD_STATUS_LABEL: Record<string, string> = {
+  none: '未上传',
+  '0': '未上传',
+  '1': '已上传',
+  '2': '已提交',
+  failed: '上传失败',
+};
+
+/** 上传状态 → Tag type（按 code；首页 4401 ChsUploadStatus） */
 export function uploadStatusTagType(code?: string): 'danger' | 'info' | 'success' | 'warning' {
   if (code === 'success') {
     return 'success';
@@ -139,4 +179,38 @@ export function uploadStatusTagType(code?: string): 'danger' | 'info' | 'success
   }
   // none / skipped / 未知
   return 'info';
+}
+
+/**
+ * 结算上传标志 → Tag type：已传/已提交绿，失败红，未传灰。
+ *
+ * @param code 0/1/2/none/failed
+ */
+export function settleUploadStatusTagType(
+  code?: string,
+): 'danger' | 'info' | 'success' | 'warning' {
+  if (code === '1' || code === '2') {
+    return 'success';
+  }
+  if (code === 'failed') {
+    return 'danger';
+  }
+  return 'info';
+}
+
+/**
+ * 结算上传标志 → 展示文案（未知码回落「未上传」，不透出裸数字）。
+ *
+ * @param code 主档 settle_upload_status_code
+ */
+export function settleUploadStatusLabel(code?: string): string {
+  const fallback = '未上传';
+  if (!code) {
+    return fallback;
+  }
+  const label = SETTLE_UPLOAD_STATUS_LABEL[code];
+  if (label) {
+    return label;
+  }
+  return fallback;
 }

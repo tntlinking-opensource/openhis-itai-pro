@@ -54,6 +54,7 @@ import com.openhis.chs.bridge.settlement.support.ChsFeeRefundInitFeedetlSupport;
 import com.openhis.chs.bridge.settlement.support.ChsFeeUploadSlice;
 import com.openhis.chs.bridge.settlement.support.ChsSettlementDrugTraceRatioResolver;
 import com.openhis.chs.bridge.settlement.support.SettlementFeeUnitConvertSupport;
+import com.openhis.chs.bridge.settlement.support.TcmdrugUsedWayResolver;
 import com.openhis.chs.domain.catalog.repository.YbNationalCatalogItemLookup;
 import com.openhis.chs.domain.catalog.support.NationalCatalogPackHint;
 import com.openhis.chs.bridge.settlement.support.SettlementRetailUploadDiffSupport;
@@ -457,6 +458,7 @@ public class ChsOutpatientInsuranceContextLoader implements OpPreSettleContextLo
         // Pre：同处方号 ELEP hi_rxno 请求级去重
         Map<String, String> hiRxnoByPrescriptionNo = new HashMap<>();
         List<OpSettleChargeLine> lines = new ArrayList<>();
+        List<TcmdrugUsedWayResolver.HerbLine> herbMetas = new ArrayList<>();
         BigDecimal total = BigDecimal.ZERO;
         int drugTracCnt = 0;
         int mcsTracCnt = 0;
@@ -579,8 +581,25 @@ public class ChsOutpatientInsuranceContextLoader implements OpPreSettleContextLo
                 line.setBilgDrName(doctor.getName());
             }
             lines.add(line);
+            herbMetas.add(TcmdrugUsedWayResolver.of(
+                item.getPrescriptionNo(),
+                product.getProductDefinitionId(),
+                fullYbNo,
+                slice.getChargeItemId(),
+                TcmdrugUsedWayResolver.isHerbalMedication(medForFee)));
             // Pre：medfee_sumamt 与上传明细合计一致（6 位单价平摊后通常=院内合计）
             total = total.add(MonetaryAmountSupport.nullToZero(line.getDetItemFeeSumamt()));
+        }
+        // Pre：同处方中草药味数 >5 传复方，否则单方；非中草药不填
+        Map<String, String> tcmdrugUsedWayByRx =
+            TcmdrugUsedWayResolver.resolveCodeByPrescription(herbMetas);
+        for (int i = 0; i < lines.size(); i++) {
+            String usedWay = TcmdrugUsedWayResolver.codeOrNull(herbMetas.get(i), tcmdrugUsedWayByRx);
+            // 非中草药：报文不传 tcmdrug_used_way
+            if (isEmpty(usedWay)) {
+                continue;
+            }
+            lines.get(i).setTcmdrugUsedWay(usedWay);
         }
 
         Long operatorId = currentOperatorResolver.requireOperatorId(

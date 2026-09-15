@@ -417,3 +417,14 @@ COMMENT ON COLUMN fin_cashier_settlement.submitter_id IS '交账提交人';
 COMMENT ON COLUMN fin_cashier_settlement.submitted_at IS '交账提交时间';
 COMMENT ON COLUMN fin_cashier_settlement.approver_id IS '审批人';
 COMMENT ON COLUMN fin_cashier_settlement.approved_at IS '审批时间';
+
+-- =============================================================================
+-- V13 squash: fin report indexes
+-- =============================================================================
+CREATE INDEX IF NOT EXISTS idx_rpt_fin_payment_bill
+    ON fin_payment_reconciliation (kind_enum, bill_date, status_enum)
+    WHERE is_deleted = FALSE;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_fin_payment_encounter
+    ON fin_payment_reconciliation (encounter_id, bill_date)
+    WHERE is_deleted = FALSE AND encounter_id IS NOT NULL;

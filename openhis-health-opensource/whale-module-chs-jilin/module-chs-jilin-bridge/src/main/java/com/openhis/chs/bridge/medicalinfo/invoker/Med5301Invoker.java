@@ -44,7 +44,7 @@ public class Med5301Invoker implements Med5301QueryInvoker {
             busNo,
             ChsInfNo.PERSON_OPSP_FILING_QUERY,
             MedPlatformInputAssembler.assemble5301(command),
-            medicalInfoInvokeSupport.buildInvokeContext());
+            medicalInfoInvokeSupport.buildInvokeContext(command));
         ChsPlatformResponseSupport.requireSuccess(body, ChsInfNo.PERSON_OPSP_FILING_QUERY);
         return MedInfoListOutputParser.parse5301(body);
     }

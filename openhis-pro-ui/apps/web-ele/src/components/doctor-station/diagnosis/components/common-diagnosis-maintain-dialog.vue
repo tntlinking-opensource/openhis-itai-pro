@@ -67,6 +67,10 @@ const diagnosisHttp = computed(() =>
   ),
 );
 
+/** 住院西医落国临：检索/已绑列表编码列用「国临码」 */
+const isInpatient = computed(() => props.stationScope === 'inpatient');
+const catalogCodeColumnLabel = computed(() => (isInpatient.value ? '国临码' : '诊断编码'));
+
 const currentList = computed(() =>
   activeScope.value === 'personal' ? personalList.value : departmentList.value,
 );
@@ -147,8 +151,8 @@ const { run: runSearch, loading: searchLoading } = useRequest(
   {
     manual: true,
     onSuccess: (page) => {
-      records.value = page.records ?? page.content ?? [];
-      const totalRaw = page.total ?? page.totalCount ?? 0;
+      records.value = page.content ?? [];
+      const totalRaw = page.totalCount ?? page.total ?? 0;
       total.value = Number(totalRaw) || 0;
       selectedRow.value = null;
     },
@@ -297,7 +301,12 @@ watch(
           @current-change="handleCurrentChange"
           @row-dblclick="handleRowDblclick"
         >
-          <ElTableColumn prop="conditionCode" label="诊断编码" width="160" align="center" />
+          <ElTableColumn
+            prop="conditionCode"
+            :label="catalogCodeColumnLabel"
+            width="160"
+            align="center"
+          />
           <ElTableColumn label="医保码" width="160" align="center">
             <template #default="{ row }">
               {{ formatDiagnosisYbNoDisplay(row.ybNo) }}
@@ -355,7 +364,12 @@ watch(
             height="180"
             empty-text="暂无常用诊断"
           >
-            <ElTableColumn prop="conditionCode" label="诊断编码" width="140" align="center" />
+            <ElTableColumn
+              prop="conditionCode"
+              :label="catalogCodeColumnLabel"
+              width="140"
+              align="center"
+            />
             <ElTableColumn
               prop="conditionDefinitionName"
               label="诊断名称"

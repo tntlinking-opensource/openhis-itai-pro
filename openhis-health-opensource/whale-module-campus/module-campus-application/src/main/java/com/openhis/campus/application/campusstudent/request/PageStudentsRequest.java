@@ -8,6 +8,8 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.time.LocalDate;
+
 @Getter
 @Setter
 public class PageStudentsRequest {
@@ -20,6 +22,10 @@ public class PageStudentsRequest {
     /** 行政班（可选筛）。 */
     private String className;
     private Boolean activeFlag;
+    /** 入学时间起（含当日）。 */
+    private LocalDate enrollTimeFrom;
+    /** 入学时间止（含当日）。 */
+    private LocalDate enrollTimeTo;
 
     @NotNull
     private Integer pageNo;

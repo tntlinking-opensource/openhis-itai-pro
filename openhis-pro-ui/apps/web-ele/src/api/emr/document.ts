@@ -179,6 +179,23 @@ export interface GenerateDocumentPdfResult {
   url?: string;
 }
 
+/**
+ * 创建文书时 title 为「模板名-yyyy-MM-dd HH:mm」；打印页眉只出文书名。
+ * 顺带去掉模板变体后缀「（标准）」/「标准」，与文书类型名（如「入院记录」）对齐。
+ *
+ * @param title 库内文书标题（可能带创建时刻）
+ */
+export function stripEmrPrintDocumentTitle(title: string | undefined): string | undefined {
+  if (title == null) return title;
+  const trimmed = title.trim();
+  let stripped = trimmed.replace(/-\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/, '').trim();
+  stripped = stripped
+    .replace(/[（(]\s*标准\s*[）)]/g, '')
+    .replace(/标准$/u, '')
+    .trim();
+  return stripped || trimmed;
+}
+
 /** 生成文书 PDF（OpenPDF）→ POST /document/generatePdf */
 export async function generateDocumentPdfApi(params: GenerateDocumentPdfParams) {
   return publicRequestClient.post<GenerateDocumentPdfResult>('/document/generatePdf', {
@@ -190,7 +207,7 @@ export async function generateDocumentPdfApi(params: GenerateDocumentPdfParams) 
     previewMode: params.previewMode ?? true,
     patientId: params.patientId,
     encounterId: params.encounterId,
-    documentTitle: params.documentTitle,
+    documentTitle: stripEmrPrintDocumentTitle(params.documentTitle),
     documentTypeName: params.documentTypeName,
     metadata: params.metadata,
     printConfig: params.printConfig,

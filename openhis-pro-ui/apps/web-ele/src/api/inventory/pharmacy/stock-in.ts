@@ -1,6 +1,6 @@
 /**
  * 药房入库单 — 对接 Whale {@code POST /api/app/inventoryPharmacyStockIn/<method>}
- * 契约以 AS-INV-PHA-001-SDD 与领域枚举 {@code getCode()} 字符串为准；审批时刻字段与同模块进货单请求体一致（{@code approvalClock}）。
+ * 契约以 AS-INV-PHA-001-SDD 与领域枚举 {@code getCode()} 字符串为准；同意入库可选 {@code contractBusNo}（CHS 进销存）。
  */
 import type { ApiOptionItem, ApiResponse } from '#/types/api-response';
 
@@ -37,9 +37,7 @@ export interface StockInFormInitOptionDto {
   children?: null | StockInFormInitOptionDto[];
 }
 
-export interface LoadPharmacyStockInFormInitRequest {
-  organizationId?: number;
-}
+export interface LoadPharmacyStockInFormInitRequest {}
 
 export interface LoadPharmacyStockInFormInitResponse {
   pharmacyLocationOptions?: StockInFormInitOptionDto[];
@@ -81,9 +79,7 @@ export interface PharmacyStockInListRowDto {
   sourceLocationName?: string;
   purposeLocationId?: number | string;
   applyTime?: string;
-  approvalTime?: string;
   applicantId?: number | string;
-  approverId?: number | string;
   /** 制单人姓名（后端 enrich） */
   creatorName?: string;
   approverName?: string;
@@ -192,17 +188,11 @@ export interface WithdrawPharmacyStockInApprovalRequest {
 
 export interface AgreePharmacyStockInRequest {
   busNo: string;
-  approverId?: string;
-  approvalClock?: string;
-  /** @deprecated CHS 启用即上传，请使用 contractBusNo */
-  medicareUploadEnabled?: boolean;
   contractBusNo?: string;
 }
 
 export interface RejectPharmacyStockInRequest {
   busNo: string;
-  approverId?: string;
-  approvalClock?: string;
   rejectReason?: string;
 }
 

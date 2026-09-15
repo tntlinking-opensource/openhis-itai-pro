@@ -43,7 +43,7 @@ import {
 } from '#/utils/inventory/inv-doc-draft-cache';
 import {
   getLinkablePharmacyRequisitionDetailApi,
-  pageLinkablePharmacyRequisitionsApi,
+  pageLinkableRequisitionsApi,
   type StockOutDetailLineDto,
   type StockOutListRowDto,
 } from '#/api/inventory/warehouse/stock-out';
@@ -1101,14 +1101,9 @@ async function handleWithdraw() {
 async function handleApprove() {
   const no = headerBusNo.value;
   if (!no) return;
-  const approverId = resolveLoginPractitionerIdForRequest(
-    userStore.userInfo as null | Record<string, unknown>,
-  );
   try {
     await agreePharmacyStockInApi({
       busNo: no,
-      approverId,
-      approvalClock: nowIsoLocal(),
     });
     ElMessage.success('审批同意');
     await loadDetail(no);
@@ -1131,10 +1126,6 @@ async function handleReject() {
     await rejectPharmacyStockInApi({
       busNo: no,
       rejectReason: value,
-      approverId: resolveLoginPractitionerIdForRequest(
-        userStore.userInfo as null | Record<string, unknown>,
-      ),
-      approvalClock: nowIsoLocal(),
     });
     ElMessage.success('已驳回');
     await loadDetail(no);
@@ -1226,7 +1217,7 @@ async function fetchLinkablePharmacyRequisitions() {
   }
   linkQlLoading.value = true;
   try {
-    const res = await pageLinkablePharmacyRequisitionsApi({
+    const res = await pageLinkableRequisitionsApi({
       sourceLocationId: src,
       keyword: String(linkQlQueryParams.value.keyword ?? '').trim() || undefined,
       pageNo: linkQlQueryParams.value.pageNo,

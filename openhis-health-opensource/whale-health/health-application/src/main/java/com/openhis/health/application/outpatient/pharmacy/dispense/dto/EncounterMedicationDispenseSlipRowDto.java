@@ -135,6 +135,15 @@ public class EncounterMedicationDispenseSlipRowDto {
     @Schema(description = "规格")
     private String specificationText;
 
+    /**
+     * 包装最小单位换算比展示（服务端拼装），形如 {@code 1盒/36片}。
+     *
+     * <p>与库存明细 {@code packageSplitRatioText} 同族：1 包装 = ratio 拆零；同单位×1 为 {@code 1支}。
+     * 非临床装量后缀 {@code 1片x100}。</p>
+     */
+    @Schema(description = "包装最小单位换算比展示，如 1盒/36片")
+    private String packageSplitRatioText;
+
     /** 生产厂家名称。 */
     @Schema(description = "生产厂家")
     private String manufacturerName;

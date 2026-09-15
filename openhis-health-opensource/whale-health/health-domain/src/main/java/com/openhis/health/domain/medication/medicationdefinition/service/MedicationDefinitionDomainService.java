@@ -269,6 +269,8 @@ public class MedicationDefinitionDomainService {
         definition.setYbMatchFlag(item.getYbMatchFlag());
         definition.setChrgitmLv(item.getChrgitmLv());
         definition.setMrSettlementTypeCode(item.getMrSettlementTypeCode());
+        // 结余留用批次号：可选术语码，空表示未维护
+        definition.setSurplusRetentionBatchCode(item.getSurplusRetentionBatchCode());
         definition.setPharmacologyCategoryCode(item.getPharmacologyCategoryCode());
         definition.setManufacturerId(item.getManufacturerId());
         // 目录维护不再采集供应商；应用层写入的 Command.supplyId 恒为 null
@@ -344,6 +346,8 @@ public class MedicationDefinitionDomainService {
         definition.setYbMatchFlag(item.getYbMatchFlag());
         definition.setChrgitmLv(item.getChrgitmLv());
         definition.setMrSettlementTypeCode(item.getMrSettlementTypeCode());
+        // 结余留用批次号：可选术语码，空表示未维护
+        definition.setSurplusRetentionBatchCode(item.getSurplusRetentionBatchCode());
         definition.setPharmacologyCategoryCode(item.getPharmacologyCategoryCode());
         definition.setManufacturerId(item.getManufacturerId());
         // 目录维护不再采集供应商；应用层写入的 Command.supplyId 恒为 null

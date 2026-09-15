@@ -12,5 +12,6 @@ import lombok.experimental.Accessors;
 @Accessors(chain = true)
 public class ElepEncounterListQuery {
 
+    /** 当前门诊就诊主键。 */
     private Long encounterId;
 }

@@ -11,18 +11,19 @@ import type {
 import type { BookingEntityId } from '#/api/booking/booking-id';
 import type { RegisterContractMatchDto } from '#/api/outpatient-registration';
 
-import { computed, nextTick, ref } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 
 import { useLocalStorage } from '@vueuse/core';
 import { Refresh } from '@element-plus/icons-vue';
 import { todayLocalDateIso } from '#/api/booking/booking-constants';
 import { toBookingId } from '#/api/booking/booking-id';
-import { ElButton, ElCheckbox, ElMessage } from 'element-plus';
+import { ElButton, ElCheckbox, ElMessage, ElMessageBox } from 'element-plus';
 import { useRegisterBookingMode } from '../composables/use-register-booking-mode';
 import { useRegisterPatientIdentity } from '../composables/use-register-patient-identity';
 import {
   CHARGE_TYPE_CATEGORY,
   enrichInsuranceBenefitPreview,
+  isCrossProvinceInsuplc,
   isInsuranceContractCategory,
   isWorkInjuryContractCategory,
   toInsuranceBenefitDisplay,
@@ -170,6 +171,29 @@ const isInsuranceRegister = computed(() =>
 
 const isWorkInjuryRegister = computed(() =>
   isWorkInjuryContractCategory(currentContractCategory.value),
+);
+
+/** 读卡/匹配得到的参保地，供跨省挂号费门禁。 */
+const currentInsuplcAdmdvs = computed(
+  () => lastYbPreview.value?.insuplcAdmdvs || lastContractMatch.value?.patientInsuplcAdmdvs || '',
+);
+
+/**
+ * 跨省参保（前两位 ≠ 22）：强制挂号费自费，勾选灰掉。
+ * @see whale-doc/whale-module-chs-jilin/30-跨省挂号费强制自费与失败改自费.md
+ */
+const isCrossProvinceRegisterFee = computed(
+  () => isInsuranceRegister.value && isCrossProvinceInsuplc(currentInsuplcAdmdvs.value),
+);
+
+watch(
+  isCrossProvinceRegisterFee,
+  (cross) => {
+    if (cross) {
+      useYbRegisterFee.value = false;
+    }
+  },
+  { immediate: true },
 );
 
 /** 工伤预结算后保留 encounter/contract，供待遇区与确认框 2301 入口。 */
@@ -720,7 +744,13 @@ const handleSubmit = async () => {
   try {
     // 表单地址为真源（读卡默认 / 挂号员手填）；空串不上送，后端不覆盖主档（BR-REG-019）
     const addressForSubmit = String(values.patientAddress ?? '').trim();
-    const preRegisterBody = {
+    // 跨省强制自费；省内才允许勾选医保支付挂号费
+    const requestedYbRegisterFee =
+      isInsuranceRegister.value &&
+      !isCrossProvinceRegisterFee.value &&
+      Boolean(useYbRegisterFee.value);
+
+    const buildPreRegisterBody = (ybRegisterFee: boolean) => ({
       birthDate: patientBirthday,
       contractId,
       gender: patientGender,
@@ -744,8 +774,8 @@ const handleSubmit = async () => {
             insutype: lastYbPreview.value?.insutype || undefined,
             ybMediumType: lastYbMediumType.value || undefined,
             ybCardInfo: lastYbCardInfo.value || undefined,
-            ybRegisterFee: useYbRegisterFee.value,
-            ...(useYbRegisterFee.value
+            ybRegisterFee,
+            ...(ybRegisterFee
               ? {
                   ybUseAcctPay: true,
                   // 挂号费医保：med_type=11（普通门诊）；2201 仅在预结算 map miss 时触发
@@ -754,8 +784,31 @@ const handleSubmit = async () => {
               : {}),
           }
         : {}),
-    };
-    const pre: PreRegisterSettlementResult = await preRegisterSettlement(preRegisterBody);
+    });
+
+    let pre: PreRegisterSettlementResult;
+    try {
+      pre = await preRegisterSettlement(buildPreRegisterBody(requestedYbRegisterFee));
+    } catch (error) {
+      // 任意患者：挂号费医保预结算失败 → 弹窗确认后自费重试并同流程继续
+      if (!requestedYbRegisterFee) {
+        throw error;
+      }
+      const detail = error instanceof Error ? error.message : '挂号费医保预结算失败';
+      try {
+        await ElMessageBox.confirm(`${detail}\n\n是否改为自费完成挂号？`, '医保支付挂号费失败', {
+          confirmButtonText: '改自费挂号',
+          cancelButtonText: '取消',
+          type: 'warning',
+          distinguishCancelAndClose: true,
+        });
+      } catch {
+        return;
+      }
+      useYbRegisterFee.value = false;
+      pre = await preRegisterSettlement(buildPreRegisterBody(false));
+      ElMessage.success('已改为自费挂号');
+    }
     const preRaw = pre as unknown;
     const chargeItems: ChargeItemPreviewDto[] = Array.isArray(preRaw)
       ? preRaw
@@ -922,8 +975,16 @@ const handleSubmit = async () => {
         v-if="isInsuranceRegister"
         v-model="useYbRegisterFee"
         class="shrink-0 whitespace-nowrap"
+        :disabled="isCrossProvinceRegisterFee"
+        :title="isCrossProvinceRegisterFee ? '跨省挂号费仅支持自费' : undefined"
       >
         医保支付挂号费
+        <span
+          v-if="isCrossProvinceRegisterFee"
+          class="ml-1 text-xs text-[var(--el-text-color-secondary)]"
+        >
+          （跨省仅自费）
+        </span>
       </ElCheckbox>
       <ElButton
         type="primary"

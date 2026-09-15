@@ -33,9 +33,11 @@ import com.openhis.health.domain.clinical.procedure.queries.model.NurseExecution
 import com.openhis.health.domain.clinical.procedure.support.NurseWorkloadProcedureReportCriteriaSupport;
 import com.openhis.health.domain.clinical.procedure.support.ProcedureNetExecutionFilterSupport;
 import com.openhis.health.domain.share.constants.ClinicalProcedureConstants;
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.NurseWorkloadConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.domain.share.utils.IdInQueryChunkSupport;
 
 import jakarta.persistence.criteria.Predicate;
 
@@ -90,6 +92,41 @@ public class ProcedureQueryService {
             models.add(this.toRecordModel(entity));
         }
         return models;
+    }
+
+    /**
+     * 按就诊批量加载执行记录并按 request 锚点索引（护士站执行列表禁 N+1；IN 分批）。
+     *
+     * <p>锚点 = {@code requestTable + SOH + requestId}，与执行列表展槽归并口径一致。</p>
+     *
+     * @param encounterIds 就诊主键集合
+     * @return 锚点 → Procedure 读模型列表；空入参返回空 Map
+     */
+    public Map<String, List<ProcedureRecordQueryModel>> mapProcedureRecordsByRequestAnchorForEncounters(
+        Collection<Long> encounterIds) {
+        Map<String, List<ProcedureRecordQueryModel>> byAnchor = new HashMap<>();
+        List<Long> idList = IdInQueryChunkSupport.distinctNonNullIds(encounterIds);
+        if (idList.isEmpty()) {
+            return byAnchor;
+        }
+        // Pre：超大 IN 分批，避免单次参数过长
+        List<Procedure> entities = IdInQueryChunkSupport.loadByIdInChunks(
+            idList,
+            chunkIds -> procedureRepository.findByEncounterIdIn(chunkIds));
+        char separator = GeneralSharedConstants.PRODUCT_DEFINITION_COMPOSITE_KEY_SEPARATOR;
+        for (Procedure entity : entities) {
+            if (entity == null || entity.getRequestId() == null || StringUtils.isEmpty(entity.getRequestTable())) {
+                continue;
+            }
+            String anchor = entity.getRequestTable() + separator + entity.getRequestId();
+            List<ProcedureRecordQueryModel> bucket = byAnchor.get(anchor);
+            if (bucket == null) {
+                bucket = new ArrayList<>();
+                byAnchor.put(anchor, bucket);
+            }
+            bucket.add(this.toRecordModel(entity));
+        }
+        return byAnchor;
     }
 
     /**

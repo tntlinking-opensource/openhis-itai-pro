@@ -301,20 +301,7 @@ export interface CloseNoticeTodoResult {
   status?: string;
 }
 
-/** 重新扫描配置目录下标准落地包（同步，兼容保留） */
-export async function scanNoticeCanonicalDirApi(
-  params: ScanNoticeCanonicalDirParams = {},
-): Promise<ScanNoticeCanonicalDirResult> {
-  const res = await requestClient.post<ApiResponse<ScanNoticeCanonicalDirResult>>(
-    `${BASE}/scanNoticeCanonicalDir`,
-    params,
-    // 全量标准包扫描常超默认 10s
-    chsLongRequestConfig(),
-  );
-  return res.data ?? {};
-}
-
-/** 启动异步扫描（推荐；配合进度轮询） */
+/** 启动异步扫描（配合进度轮询） */
 export async function startScanNoticeCanonicalDirApi(
   params: ScanNoticeCanonicalDirParams = {},
 ): Promise<StartScanNoticeCanonicalDirResult> {
@@ -332,18 +319,6 @@ export async function getScanNoticeCanonicalDirProgressApi(
   const res = await requestClient.post<ApiResponse<GetScanNoticeCanonicalDirProgressResult>>(
     `${BASE}/getScanNoticeCanonicalDirProgress`,
     { jobId },
-  );
-  return res.data ?? {};
-}
-
-/** 二次确认入库（同步，兼容保留） */
-export async function confirmNoticeScanImportApi(
-  params: ConfirmNoticeScanImportParams,
-): Promise<ConfirmNoticeScanImportResult> {
-  const res = await requestClient.post<ApiResponse<ConfirmNoticeScanImportResult>>(
-    `${BASE}/confirmNoticeScanImport`,
-    params,
-    chsLongRequestConfig(),
   );
   return res.data ?? {};
 }
@@ -428,18 +403,6 @@ export async function previewNoticeApplyApi(
 ): Promise<PreviewNoticeApplyResult> {
   const res = await requestClient.post<ApiResponse<PreviewNoticeApplyResult>>(
     `${BASE}/previewNoticeApply`,
-    params,
-    chsLongRequestConfig(),
-  );
-  return res.data ?? {};
-}
-
-/** 二次确认后应用文件（同步，兼容保留） */
-export async function applyNoticeDocApi(
-  params: ApplyNoticeDocParams,
-): Promise<ApplyNoticeDocResult> {
-  const res = await requestClient.post<ApiResponse<ApplyNoticeDocResult>>(
-    `${BASE}/applyNoticeDoc`,
     params,
     chsLongRequestConfig(),
   );

@@ -10,6 +10,9 @@ import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQue
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
 import com.openhis.health.domain.administration.product.service.ProductDefinitionQueryService;
+import com.openhis.health.domain.administration.product.support.ProductDefinitionDisplaySupport;
+import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
+import com.openhis.health.domain.medication.medicationdefinition.service.MedicationDefinitionQueryService;
 import com.openhis.health.domain.medication.medicationdispense.entity.MedicationDispense;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
 import com.openhis.health.domain.medication.medicationrequest.entity.MedicationRequest;
@@ -51,6 +54,7 @@ public class EinvoiceChargeItemContextLoader {
     private final ChargeItemQueryService chargeItemQueryService;
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
     private final ProductDefinitionQueryService productDefinitionQueryService;
+    private final MedicationDefinitionQueryService medicationDefinitionQueryService;
     private final BossQuantityUnitDisplayResolver quantityUnitDisplayResolver;
     private final MedicationRequestQueryService medicationRequestQueryService;
     private final MedicationDispenseQueryService medicationDispenseQueryService;
@@ -91,6 +95,10 @@ public class EinvoiceChargeItemContextLoader {
                     ? definitionMap.get(row.getDefinitionId()) : null;
             snapshot.setInternalCode(resolveInternalCode(registrationFee, row, definition));
             ProductDefinitionDisplayDto product = resolveProduct(row, definition, productMap, serviceAnchors);
+            // 批量产品 Map 漏载时，按收费行 product_* 直查药品目录，避免票面只剩统计大类名
+            if (product == null) {
+                product = loadMedicationProductFallback(row);
+            }
             snapshot.setItemName(resolveItemName(definition, product));
             applyProductGrade(snapshot, product);
             snapshot.setAmount(row.getTotalPrice());
@@ -100,6 +108,35 @@ public class EinvoiceChargeItemContextLoader {
             lines.add(snapshot);
         }
         return lines;
+    }
+
+    /**
+     * 批量产品展开失败时：收费行已挂 {@code med_medication_definition} 则单条回源药名/甲乙丙。
+     *
+     * @param row 收费行
+     * @return 药品展示 DTO；非药品或未命中返回 null
+     */
+    private ProductDefinitionDisplayDto loadMedicationProductFallback(ChargeItem row) {
+        if (row == null
+                || row.getProductId() == null
+                || !isTable(row.getProductTable(), TableNameConstants.MED_MEDICATION_DEFINITION)) {
+            return null;
+        }
+        try {
+            List<MedicationDefinition> meds =
+                    medicationDefinitionQueryService.findAllByIds(List.of(row.getProductId()));
+            if (meds == null || meds.isEmpty() || meds.get(0) == null) {
+                return null;
+            }
+            return ProductDefinitionDisplaySupport.fromMedication(meds.get(0));
+        } catch (Exception ex) {
+            log.warn(
+                    "Medication product fallback failed, chargeItemId={}, productId={}",
+                    row.getId(),
+                    row.getProductId(),
+                    ex);
+            return null;
+        }
     }
 
     /**

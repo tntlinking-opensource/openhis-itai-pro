@@ -122,4 +122,22 @@ public interface InpatientRegistrationConstants {
 
     /** 就诊不存在或读模型未投影。 */
     String EX_IP_REG_102 = "EX-IP-REG-102";
+
+    /** 已是医保入院，无需转医保。 */
+    String EX_IP_REG_201 = "EX-IP-REG-201";
+
+    /** 就诊状态不允许转医保。 */
+    String EX_IP_REG_202 = "EX-IP-REG-202";
+
+    /** 存在已结算费用，不可转医保。 */
+    String EX_IP_REG_203 = "EX-IP-REG-203";
+
+    /** 转医保须先读卡获取人员编号。 */
+    String EX_IP_REG_204 = "EX-IP-REG-204";
+
+    /** 转医保须选择有医保编码的主治医生。 */
+    String EX_IP_REG_205 = "EX-IP-REG-205";
+
+    /** 医保扩展未启用或费用性质非第三方合同。 */
+    String EX_IP_REG_206 = "EX-IP-REG-206";
 }

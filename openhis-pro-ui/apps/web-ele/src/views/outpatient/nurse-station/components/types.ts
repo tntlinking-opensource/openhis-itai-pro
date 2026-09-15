@@ -106,7 +106,7 @@ export interface SupplyItem {
   lotNumber?: string;
   /** 单价展示文案（已格式化为元）；无则侧栏不展示单价 */
   unitPriceText?: string;
-  status: '已发放' | '已配药' | '待发放';
+  status: '已发放' | '已配药' | '待发放' | '待退费' | '已退费';
   /** 发放展示态 code（逻辑判断用） */
   statusCode: SupplyDispenseStatusCode;
   /** 护士执行后可取消（PREPARED / COMPLETED / PART_COMPLETED） */

@@ -495,6 +495,28 @@ public class SupplyRequest extends BaseAuditedEntity {
     }
 
     /**
+     * 门控：科室请领单（{@link SupplyType#DEPT_REQUISITION}）同号全量修订（与药房请领 PHA-QL-SDD-R-002 同构）。
+     *
+     * @param lines 同一 {@code bus_no} 下已存在的未删除行
+     */
+    public static void assertDeptRequisitionLinesRevisable(List<SupplyRequest> lines) {
+        if (lines == null || lines.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_NOT_FOUND, "科室请领单不存在，无法修订");
+        }
+        for (SupplyRequest row : lines) {
+            if (row == null) {
+                continue;
+            }
+            if (!SupplyType.DEPT_REQUISITION.getCode().equals(row.getTypeEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "非科室请领单不可按同号全量修订");
+            }
+            if (!SupplyRequest.isRevisableSupplyStatusCode(row.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核/驳回/已撤回状态允许修订科室请领明细");
+            }
+        }
+    }
+
+    /**
      * 门控：药房入库执行单（type 13）同号全量修订（PHA-IN-SDD-R-001）。
      */
     public static void assertPharmacyStockInLinesRevisable(List<SupplyRequest> lines) {
@@ -781,6 +803,50 @@ public class SupplyRequest extends BaseAuditedEntity {
             }
             if (!SupplyRequest.isRevisableSupplyStatusCode(row.getStatusEnum())) {
                 throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核/驳回/已撤回状态允许修订药库调出明细");
+            }
+        }
+    }
+
+    /**
+     * 门控：药房调出单（{@link com.openhis.health.domain.share.enums.SupplyType#PHARMACY_TRANSFER_OUT}）同号全量修订。
+     *
+     * @param lines 同一 {@code bus_no} 下已存在的未删除行
+     */
+    public static void assertPharmacyTransferOutLinesRevisable(List<SupplyRequest> lines) {
+        if (lines == null || lines.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_NOT_FOUND, "药房调出单不存在，无法修订");
+        }
+        for (SupplyRequest row : lines) {
+            if (row == null) {
+                continue;
+            }
+            if (!SupplyType.PHARMACY_TRANSFER_OUT.getCode().equals(row.getTypeEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "非药房调出单不可按同号全量修订");
+            }
+            if (!SupplyRequest.isRevisableSupplyStatusCode(row.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核/驳回/已撤回状态允许修订药房调出明细");
+            }
+        }
+    }
+
+    /**
+     * 门控：科室调出单（{@link com.openhis.health.domain.share.enums.SupplyType#DEPT_TRANSFER_OUT}）同号全量修订。
+     *
+     * @param lines 同一 {@code bus_no} 下已存在的未删除行
+     */
+    public static void assertDeptTransferOutLinesRevisable(List<SupplyRequest> lines) {
+        if (lines == null || lines.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_NOT_FOUND, "科室调出单不存在，无法修订");
+        }
+        for (SupplyRequest row : lines) {
+            if (row == null) {
+                continue;
+            }
+            if (!SupplyType.DEPT_TRANSFER_OUT.getCode().equals(row.getTypeEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "非科室调出单不可按同号全量修订");
+            }
+            if (!SupplyRequest.isRevisableSupplyStatusCode(row.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核/驳回/已撤回状态允许修订科室调出明细");
             }
         }
     }

@@ -41,4 +41,20 @@ public class HealthCheckBookingExt extends BaseAuditedEntity {
     /** 参考金额。 */
     @Column(name = "estimated_amount")
     private BigDecimal estimatedAmount;
+
+    /** 团检合同主键；散客可空。 */
+    @Column(name = "contract_id")
+    private Long contractId;
+
+    /** 进池合同类型编码。 */
+    @Column(name = "contract_type_code")
+    private String contractTypeCode;
+
+    /** 校区编码；无校区模块可空。 */
+    @Column(name = "campus_code")
+    private String campusCode;
+
+    /** 占用的 bkg_hc_day_slot 主键。 */
+    @Column(name = "day_slot_id")
+    private Long daySlotId;
 }

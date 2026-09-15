@@ -4,6 +4,7 @@ export interface ElepCatalogItemDto {
   spec?: string;
   dosform?: string;
   aprvno?: string;
+  prodentpName?: string;
   pinyin?: string;
   valiFlag?: string;
   sourceInfno?: string;
@@ -17,7 +18,7 @@ export interface ElepCatalogPageResultDto {
 }
 
 export interface ElepCatalogSearchRequest {
-  contractBusNo: string;
+  contractBusNo?: string;
   contractId?: string;
   keyword?: string;
   aprvno?: string;

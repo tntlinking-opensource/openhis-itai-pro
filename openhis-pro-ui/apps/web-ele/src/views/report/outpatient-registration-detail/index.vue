@@ -79,6 +79,8 @@ interface QueryState {
   organizationId?: string;
   practitionerId?: string;
   keyword?: string;
+  /** 就诊状态 code；空=全部。 */
+  statusEnum?: string;
   presentationMode: PresentationModeCode;
 }
 
@@ -87,6 +89,7 @@ const PAGE_TITLE = '门诊挂号明细';
 const summaryViewOptions = ref<ApiOptionItem[]>([]);
 const organizationOptions = ref<ApiOptionItem[]>([]);
 const practitionerOptions = ref<ApiOptionItem[]>([]);
+const statusOptions = ref<ApiOptionItem[]>([]);
 const summaryRows = ref<OutpatientRegistrationDetailSummaryRowDto[]>([]);
 const detailRows = ref<OutpatientRegistrationDetailRowDto[]>([]);
 const total = ref(0);
@@ -165,6 +168,7 @@ const { run: runInit, loading: initLoading } = useRequest(
       summaryViewOptions.value = optionDtosToSelectItems(data?.summaryViewOptions);
       organizationOptions.value = optionDtosToSelectItems(data?.organizationOptions);
       practitionerOptions.value = optionDtosToSelectItems(data?.practitionerOptions);
+      statusOptions.value = optionDtosToSelectItems(data?.statusOptions);
       queryParams.dateFrom =
         normalizeReportDateRangeYmd(data?.defaultDateFrom) || queryParams.dateFrom;
       queryParams.dateTo = normalizeReportDateRangeYmd(data?.defaultDateTo) || queryParams.dateTo;
@@ -390,12 +394,14 @@ function buildFilterPayload() {
     return null;
   }
   const keyword = String(queryParams.keyword ?? '').trim();
+  const statusEnum = String(queryParams.statusEnum ?? '').trim();
   return {
     dateFrom,
     dateTo,
     organizationId: preserveApiIdForRequest(queryParams.organizationId),
     practitionerId: preserveApiIdForRequest(queryParams.practitionerId),
     keyword: keyword || undefined,
+    statusEnum: statusEnum || undefined,
   };
 }
 
@@ -456,6 +462,7 @@ async function handleReset() {
   queryParams.organizationId = undefined;
   queryParams.practitionerId = undefined;
   queryParams.keyword = undefined;
+  queryParams.statusEnum = undefined;
   queryParams.presentationMode = PRESENTATION_MODE_DETAIL;
   await runInit();
   void getList();
@@ -532,6 +539,23 @@ onMounted(async () => {
               >
                 <ElOption
                   v-for="item in toSelectOptions(practitionerOptions)"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="状态">
+              <ElSelect
+                v-model="queryParams.statusEnum"
+                clearable
+                filterable
+                placeholder="全部"
+                :class="REPORT_QUERY_CONTROL"
+                @change="handleQuery"
+              >
+                <ElOption
+                  v-for="item in toSelectOptions(statusOptions)"
                   :key="item.value"
                   :label="item.label"
                   :value="item.value"

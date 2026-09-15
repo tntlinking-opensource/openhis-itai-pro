@@ -33,6 +33,7 @@ import { tagTypeByCode } from '#/utils/format/status-tag';
 import {
   buildRefundChannelDisplayItems,
   FALLBACK_DEFAULT_PAY_CHANNEL,
+  resolveCollectPayChannelCode,
 } from '#/utils/payment/payment-channel-options';
 import {
   clearCachedClientScanResult,
@@ -51,6 +52,7 @@ import {
 import {
   printRegistrationReceipt,
   schedulePrintRegistrationReceipt,
+  shouldSkipAutoPrintRegistrationReceipt,
 } from '#/utils/print/print-registration-receipt';
 
 import { useRegisterPayChannels } from '../composables/use-register-pay-channels';
@@ -58,7 +60,6 @@ import { useRegisterPayChannels } from '../composables/use-register-pay-channels
 import {
   cancelPlannedRegisterEncounter,
   cancelRegisterEncounter,
-  DEFAULT_REGISTER_PAY_CHANNEL_CODE,
   ENCOUNTER_CANCELABLE_STATUS_CODES,
   ENCOUNTER_STATUS_CODE,
   ENCOUNTER_STATUS_EL_TAG_MAP,
@@ -114,7 +115,7 @@ const historyCredentialExpiredHint = ref(false);
 const reprintLoading = ref(false);
 const reprintEncounterId = ref<null | string>(null);
 
-const payChannelCode = ref(DEFAULT_REGISTER_PAY_CHANNEL_CODE);
+const payChannelCode = ref(FALLBACK_DEFAULT_PAY_CHANNEL);
 const scanCode = ref('');
 const scanStatusText = ref('');
 const scanCodeInputRef = ref<{ focus?: () => void } | null>(null);
@@ -414,7 +415,7 @@ function onHistoryActionDialogClosed() {
   actionDialogLoading.value = false;
   historyRefreshLoading.value = false;
   historyCredentialExpiredHint.value = false;
-  payChannelCode.value = DEFAULT_REGISTER_PAY_CHANNEL_CODE;
+  payChannelCode.value = FALLBACK_DEFAULT_PAY_CHANNEL;
   scanCode.value = '';
   scanStatusText.value = '';
   cancelOriginalPayChannelCodes.value = [];
@@ -543,12 +544,11 @@ async function handleCharge(row: RegisterHistoryTableRow) {
   historyActionMode.value = 'charge';
   historyActionRow.value = row;
   const cashPay = historyPayableCashAmount(row);
-  payChannelCode.value =
-    cashPay > 0.001 ? DEFAULT_REGISTER_PAY_CHANNEL_CODE : FALLBACK_DEFAULT_PAY_CHANNEL;
   scanCode.value = '';
   scanStatusText.value = '';
   historyCredentialExpiredHint.value = false;
   await refreshPayChannelsForDialog();
+  payChannelCode.value = resolveCollectPayChannelCode(cashPay, effectivePayChannelOptions.value);
   historyActionDialogVisible.value = true;
 }
 
@@ -623,11 +623,20 @@ async function executeChargeRegister() {
     ElMessage.success('收费成功');
     await handleQuery();
     emit('recordsChanged');
-    schedulePrintRegistrationReceipt({
-      encounterId: payResult?.encounterId ?? row.encounterId,
-      paymentId: payResult?.paymentId,
-      jobName: '挂号小票',
+    // 按号别原价判定零元号；医保全报后现金 0 仍自动打小票
+    const skipAutoPrint = shouldSkipAutoPrintRegistrationReceipt({
+      originalFeeAmount: row.amount,
+      insurancePreSettled: row.insurancePreSettled,
+      ybFundPaySumamt: row.ybFundPaySumamt,
+      ybAcctPay: row.ybAcctPay,
     });
+    if (!skipAutoPrint) {
+      schedulePrintRegistrationReceipt({
+        encounterId: payResult?.encounterId ?? row.encounterId,
+        paymentId: payResult?.paymentId,
+        jobName: '挂号小票',
+      });
+    }
   } catch (error) {
     if (error instanceof ScanSettleRefundedError) {
       ElMessage.warning(error.message);

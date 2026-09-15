@@ -8,6 +8,7 @@ import com.openhis.health.application.shared.pagination.PageQueryBinder;
 import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.health.application.shared.financial.OutpatientTcmDecoctionChargeItemRecognizer;
+import com.openhis.health.application.shared.advice.OutpatientTcmDecoctionRefundDoctorStationSync;
 import com.openhis.health.application.shared.financial.PaymentChannelOptionProvider;
 import com.openhis.health.application.shared.validator.PaymentChannelGate;
 import com.openhis.health.application.outpatient.financial.refund.support.PaymentChannelRefundOrchestrator;
@@ -176,6 +177,9 @@ public class OutpatientRefundAppService {
 
     /** 门诊代煎费识别：半退保留行转账户时排除，保持自费费用性质。 */
     private final OutpatientTcmDecoctionChargeItemRecognizer outpatientTcmDecoctionChargeItemRecognizer;
+
+    /** 代煎退款终态后同步医生站方头代煎勾选与停嘱 companion。 */
+    private final OutpatientTcmDecoctionRefundDoctorStationSync outpatientTcmDecoctionRefundDoctorStationSync;
 
     /** 定价定义名称回落。 */
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
@@ -480,6 +484,9 @@ public class OutpatientRefundAppService {
             // Cmd：退费完成覆盖 ChargeItem 收费人/收费时间（与逆向 payment 同源）
             billRefundCommand.setBillDate(billDate);
             chargeItemDomainService.completeOutpatientBillRefund(billRefundCommand);
+            // Cmd：代煎费退款终态后同步医生站（清 suffering_flag + 软删 STOPPED companion；BR-TCM-RX-009 / BR-REF-025）
+            this.outpatientTcmDecoctionRefundDoctorStationSync.syncAfterDecoctionChargesRefunded(
+                request.getEncounterId(), completionIds, operatorId);
             // 资金退费成功后收口原支付关联票据：DRAFT 本地作废；ISSUED 冲红（半退再结算会另开新票）。
             this.voidOrWriteOffInvoiceLinkedToPayment(
                 request.getOriginalPaymentId(),
@@ -1116,10 +1123,10 @@ public class OutpatientRefundAppService {
     }
 
     /**
-     * 批量解析原支付收款人展示名：enterer_id（系统用户）→ 医务人员姓名。
+     * 批量解析原支付收款人展示名：{@code enterer_id}（医务人员主键，**BR-OPC-016**）→ 姓名。
      *
      * @param payments 可退原支付列表
-     * @return enterer 用户主键 → 展示名（无法关联时不放入键）
+     * @return enterer 医务人员主键 → 展示名（无法关联时不放入键）
      */
     private Map<Long, String> buildCollectorDisplayNameByEntererId(Collection<PaymentReconciliationQueryModel> payments) {
         LinkedHashSet<Long> entererIds = new LinkedHashSet<>();

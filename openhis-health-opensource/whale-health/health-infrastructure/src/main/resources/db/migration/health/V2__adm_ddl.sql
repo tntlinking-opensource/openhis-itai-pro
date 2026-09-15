@@ -227,7 +227,7 @@ COMMENT ON INDEX idx_cid_instance_price_type IS
 
 -- seed: adm_charge_item_definition
 -- ----- seed sync from DB (adm_charge_item_definition, 23 rows) -----
--- 产品种子：历史号复诊零售价 0 元（fin_type 1012 诊察费）
+-- 产品种子：复诊0元号零售价 0 元（fin_type 1012 诊察费；Gate 按 name 识别，见 BR-REG-020）
 INSERT INTO adm_charge_item_definition (
     id, tenant_id, created_at, updated_at, created_by, updated_by,
     is_deleted, deleted_at, deleted_by, version,
@@ -237,7 +237,7 @@ INSERT INTO adm_charge_item_definition (
 VALUES (
     322957328119180161, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, 1,
     false, NULL, NULL, 0,
-    'adm_healthcare_service', 322957328119180160, '历史号复诊', 'ACTIVE', NULL,
+    'adm_healthcare_service', 322957328119180160, '复诊0元号', 'ACTIVE', NULL,
     '1012', NULL, 'SALE', NULL, 0.000000, NULL
 )
 ON CONFLICT (id) DO NOTHING;
@@ -761,7 +761,7 @@ COMMENT ON COLUMN adm_healthcare_service.extra_details IS '扩展详情（JSON �
 COMMENT ON COLUMN adm_healthcare_service.contact IS '联系方式（JSON 字符串），医疗服务对外联系信息，可为空';
 
 -- seed: adm_healthcare_service
--- 产品种子：历史号复诊（BR-REG-020；写侧按 bus_no=HS_HIST_FOLLOW_UP 识别）
+-- 产品种子：复诊0元号（BR-REG-020；写侧按 name=复诊0元号 识别；bus_no 种子默认 HS00000004）
 INSERT INTO adm_healthcare_service (
     id, tenant_id, created_at, updated_at, created_by, updated_by,
     is_deleted, deleted_at, deleted_by, version,
@@ -771,8 +771,8 @@ INSERT INTO adm_healthcare_service (
 VALUES (
     322957328119180160, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1, 1,
     false, NULL, NULL, 0,
-    '历史号复诊', '4', NULL, NULL, NULL, NULL,
-    'ACTIVE', true, false, '004', 'HS_HIST_FOLLOW_UP', NULL, NULL, NULL
+    '复诊0元号', '4', NULL, NULL, NULL, NULL,
+    'ACTIVE', true, false, '004', 'HS00000004', NULL, NULL, NULL
 )
 ON CONFLICT (id) DO NOTHING;
 
@@ -1247,7 +1247,7 @@ COMMENT ON COLUMN adm_pr_assign_service.assignment_id IS '岗位服务项子实�
 COMMENT ON COLUMN adm_pr_assign_service.healthcare_service_id IS '医疗服务标识，关联 { adm_healthcare_service.id}';
 
 -- seed: adm_pr_assign_service
--- 产品种子：全部未删岗位挂上历史号复诊（BR-REG-014；新库若尚无岗位则为 0 行）
+-- 产品种子：全部未删岗位挂上复诊0元号（BR-REG-014；新库若尚无岗位则为 0 行）
 INSERT INTO adm_pr_assign_service (
     id, tenant_id, created_at, updated_at, created_by, updated_by,
     is_deleted, deleted_at, deleted_by, version,
@@ -1409,3 +1409,118 @@ COMMENT ON COLUMN adm_specimen_definition.py_str IS '拼音检索码';
 COMMENT ON COLUMN adm_specimen_definition.wb_str IS '五笔检索码';
 COMMENT ON COLUMN adm_specimen_definition.type_enum IS '标本种类（存 { SpecimenType#getCode()}）';
 COMMENT ON COLUMN adm_specimen_definition.status_enum IS '发布状态（存 { PublicationStatus#getCode()}）';
+
+-- =============================================================================
+-- V11 squash: adm_device
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS "public"."adm_device" (
+    "id" int8 NOT NULL,
+    "tenant_id" int8,
+    "created_at" timestamptz(6) NOT NULL,
+    "updated_at" timestamptz(6),
+    "created_by" int8,
+    "updated_by" int8,
+    "is_deleted" bool NOT NULL DEFAULT false,
+    "deleted_at" timestamptz(6),
+    "deleted_by" int8,
+    "version" int4 NOT NULL DEFAULT 0,
+    "bus_no" varchar(255) NOT NULL,
+    "name" varchar(255) NOT NULL,
+    "py_str" varchar(255),
+    "wb_str" varchar(255),
+    "org_id" int8,
+    "location_id" int8,
+    "status_enum" varchar(255) NOT NULL DEFAULT 'ACTIVE',
+    "category_code" varchar(255),
+    "model_number" varchar(255),
+    "serial_number" varchar(255),
+    "manufacturer_id" int8,
+    "manufacture_date" date,
+    "expiration_date" date,
+    "description" varchar(500),
+    CONSTRAINT "adm_device_pkey" PRIMARY KEY ("id")
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "uk_adm_device_bus_no"
+    ON "public"."adm_device" ("tenant_id", "bus_no")
+    WHERE "is_deleted" = false;
+
+CREATE INDEX IF NOT EXISTS "idx_adm_device_org_id"
+    ON "public"."adm_device" ("org_id");
+
+CREATE INDEX IF NOT EXISTS "idx_adm_device_status_enum"
+    ON "public"."adm_device" ("status_enum");
+
+COMMENT ON TABLE adm_device IS '管理域检验/科室设备台账（合管设备）';
+COMMENT ON COLUMN adm_device.bus_no IS '设备业务编码（BusinessSequence 生成）';
+COMMENT ON COLUMN adm_device.org_id IS '归属科室（adm_organization.id，可空）';
+COMMENT ON COLUMN adm_device.status_enum IS 'PublicationStatus.code';
+COMMENT ON COLUMN adm_device.category_code IS '设备分类（术语 adm_device_category_code）';
+COMMENT ON COLUMN adm_device.manufacturer_id IS '生产厂家（cus_supplier.id）';
+
+-- =============================================================================
+-- V13 squash: adm report indexes
+-- =============================================================================
+CREATE INDEX IF NOT EXISTS idx_rpt_adm_ci_dispense
+    ON adm_charge_item (dispense_table, dispense_id)
+    WHERE is_deleted = FALSE AND dispense_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_adm_ci_service
+    ON adm_charge_item (service_table, service_id)
+    WHERE is_deleted = FALSE AND service_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_adm_ci_entered
+    ON adm_charge_item (entered_date, status_enum)
+    WHERE is_deleted = FALSE AND entered_date IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_adm_ci_occurrence
+    ON adm_charge_item (occurrence_time, status_enum)
+    WHERE is_deleted = FALSE AND occurrence_time IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_adm_ci_encounter
+    ON adm_charge_item (encounter_id, status_enum)
+    WHERE is_deleted = FALSE AND encounter_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_adm_ci_product
+    ON adm_charge_item (product_table, product_id)
+    WHERE is_deleted = FALSE AND product_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_adm_ci_enterer
+    ON adm_charge_item (enterer_id, entered_date)
+    WHERE is_deleted = FALSE AND enterer_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_adm_ci_req_org
+    ON adm_charge_item (requesting_org_id, entered_date)
+    WHERE is_deleted = FALSE AND requesting_org_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_adm_enc_class_start
+    ON adm_encounter (class_enum, start_time, organization_id)
+    WHERE is_deleted = FALSE;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_adm_enc_class_end
+    ON adm_encounter (class_enum, end_time, organization_id)
+    WHERE is_deleted = FALSE AND end_time IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_adm_enc_org_created
+    ON adm_encounter (organization_id, created_at)
+    WHERE is_deleted = FALSE;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_adm_enc_patient
+    ON adm_encounter (patient_id)
+    WHERE is_deleted = FALSE;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_adm_enc_loc_ward
+    ON adm_encounter_location (location_id, form_enum, encounter_id)
+    WHERE is_deleted = FALSE;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_adm_enc_loc_encounter
+    ON adm_encounter_location (encounter_id)
+    WHERE is_deleted = FALSE;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_adm_enc_part_practitioner
+    ON adm_encounter_participant (practitioner_id, encounter_id)
+    WHERE is_deleted = FALSE;
+
+CREATE INDEX IF NOT EXISTS idx_rpt_adm_enc_part_encounter
+    ON adm_encounter_participant (encounter_id)
+    WHERE is_deleted = FALSE;

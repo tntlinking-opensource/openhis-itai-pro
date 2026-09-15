@@ -385,11 +385,61 @@ public class InpatientDischargeClinicalGate {
         if (proceduresByRequestKey != null) {
             procedures = proceduresByRequestKey.get(key);
         }
-        return nurseStationOrderExecuteListReadAssembler.hasLongTermStoppedPendingExecutionSlots(
-            medRow,
-            svcRow,
-            procedures,
-            executionDeadline);
+        List<LocalDateTime> pendingPlanTimes =
+            nurseStationOrderExecuteListReadAssembler.listLongTermStoppedPendingPlanTimes(
+                medRow,
+                svcRow,
+                procedures,
+                executionDeadline);
+        if (pendingPlanTimes == null || pendingPlanTimes.isEmpty()) {
+            // 与 ATD-03 pendingPlanTimes 空列表同口径：不拦出院
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * ATD-03：长期已停嘱 pending 计划点（与门禁 {@link #isLongTermStoppedWithPendingExecutionSlots} 同源）。
+     *
+     * @param medRow                 药品请求；非药嘱传 null
+     * @param svcRow                 诊疗请求；非诊嘱传 null
+     * @param proceduresByRequestKey 按 request 分组的 Procedure
+     * @param executionDeadline      截止时刻
+     * @return pending planTime；非长期已停嘱或无 pending 时为空列表
+     */
+    public List<LocalDateTime> listLongTermStoppedPendingPlanTimes(
+        MedicationRequestListQueryModel medRow,
+        ServiceRequestListModel svcRow,
+        Map<String, List<Procedure>> proceduresByRequestKey,
+        LocalDateTime executionDeadline) {
+        String requestTable = null;
+        Long requestId = null;
+        if (medRow != null) {
+            requestTable = TableNameConstants.MED_MEDICATION_REQUEST;
+            requestId = medRow.getId();
+        } else if (svcRow != null) {
+            requestTable = TableNameConstants.WKF_SERVICE_REQUEST;
+            requestId = svcRow.getId();
+        }
+        if (requestId == null || StringUtils.isBlank(requestTable)) {
+            // 无请求锚点：无法对 Procedure 分组键
+            return Collections.emptyList();
+        }
+        String key = this.buildRequestKey(requestTable, requestId);
+        List<Procedure> procedures = null;
+        if (proceduresByRequestKey != null) {
+            procedures = proceduresByRequestKey.get(key);
+        }
+        List<LocalDateTime> pendingPlanTimes =
+            nurseStationOrderExecuteListReadAssembler.listLongTermStoppedPendingPlanTimes(
+                medRow,
+                svcRow,
+                procedures,
+                executionDeadline);
+        if (pendingPlanTimes == null) {
+            return Collections.emptyList();
+        }
+        return pendingPlanTimes;
     }
 
     /**

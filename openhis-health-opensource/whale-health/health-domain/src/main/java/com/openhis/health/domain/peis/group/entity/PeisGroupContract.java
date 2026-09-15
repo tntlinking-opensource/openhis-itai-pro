@@ -45,4 +45,8 @@ public class PeisGroupContract extends BaseAuditedEntity {
     /** 合同支付状态：{@link com.openhis.health.domain.share.constants.PeisGroupContractConstants}。 */
     @Column(name = "pay_status_code", nullable = false, length = 32)
     private String payStatusCode;
+
+    /** 合同类型编码，对齐 peis_contract_type.type_code。 */
+    @Column(name = "contract_type_code", length = 32)
+    private String contractTypeCode;
 }

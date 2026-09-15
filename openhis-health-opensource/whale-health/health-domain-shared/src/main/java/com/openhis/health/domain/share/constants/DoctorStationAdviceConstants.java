@@ -339,6 +339,12 @@ public interface DoctorStationAdviceConstants {
     /** EX-IP-ORD-306：嘱托医嘱正文空/空白（IF-IP-DOR-14 · BR-IP-ORD-028）。 */
     String EX_IP_ORD_306 = "EX-IP-ORD-306";
 
+    /** EX-IP-ORD-308：同组成组药品频次不一致（IF-IP-DOR-14/17 · BR-IP-ORD-033）。 */
+    String EX_IP_ORD_308 = "EX-IP-ORD-308";
+
+    /** 同 group_id 药品须同一 rate_code（禁止主药 QD、溶媒 ST 异频次并组）。 */
+    String MSG_GROUP_RATE_CODE_INCONSISTENT = "同组成组药品的用药频次须一致，请统一后再保存或并组";
+
     /** 护理级别（category 26）仅允许开立长期医嘱。 */
     String MSG_NURSING_LEVEL_LONG_TERM_ONLY = "护理级别医嘱仅允许开立长期医嘱";
 

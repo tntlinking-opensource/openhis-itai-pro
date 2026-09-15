@@ -1,6 +1,6 @@
 /**
- * 退货入库单 — 对接 Whale {@code POST /api/app/inventoryWarehouseReturnStockIn/<method>}
- * type_enum=5 (CABINET_RETURN_STOCK_IN)
+ * 退库入库单（只读台账）— 对接 Whale {@code POST /api/app/inventoryWarehouseReturnStockIn/<method>}
+ * type_enum=5 (CABINET_RETURN_STOCK_IN)。写 IF 仅后端网关拒写，前端不封装。
  */
 import type { ApiResponse } from '#/types/api-response';
 
@@ -32,9 +32,7 @@ export interface SupplierOptionDto {
   supplierType?: string;
 }
 
-export interface LoadReturnStockInFormInitRequest {
-  organizationId?: number;
-}
+export interface LoadReturnStockInFormInitRequest {}
 
 export interface LoadReturnStockInFormInitResponse {
   warehouseOptions?: LocationOptionDto[];
@@ -61,21 +59,19 @@ export interface ReturnStockInListRowDto {
   lotNumber?: string;
   traceNo?: string;
   price?: number;
-  totalPrice?: number;
+  /** 单据总金额（聚合列表侧栏） */
   totalAmount?: number;
   applicantId?: number | string;
   creatorName?: string;
-  approverId?: number | string;
   approverName?: string;
   applyTime?: string;
-  approvalTime?: string;
 }
 
 export type WarehouseDocumentDetailRowDto = ReturnStockInListRowDto;
 
 export interface PageReturnStockInsRequest {
+  /** 目的药库；0 = 全部可见药库 */
   purposeLocationId: number | string;
-  sourceLocationId?: number | string;
   statusEnum?: number;
   keyword?: string;
   applyTimeFrom?: string;
@@ -89,7 +85,6 @@ export interface PageReturnStockInsRequest {
 export interface PageReturnStockInsResponse {
   total?: number;
   totalCount?: number;
-  records?: ReturnStockInListRowDto[];
   content?: ReturnStockInListRowDto[];
 }
 
@@ -116,7 +111,13 @@ export interface ReturnStockInDetailLineDto {
   remake?: string;
   productName?: string;
   /** 产品目录（含 unitBands，详情数量/单位回显用） */
-  productCatalog?: { unitBands?: unknown; unitBandsJson?: unknown };
+  productCatalog?: {
+    unitBands?: unknown;
+    unitBandsJson?: unknown;
+    merchandiseName?: string;
+    productName?: string;
+    productBusNo?: string;
+  };
 }
 
 export interface GetReturnStockInDetailResponse {
@@ -131,140 +132,6 @@ export interface GetReturnStockInDetailResponse {
   categoryEnum?: number;
   supplierId?: number | string;
   lines: ReturnStockInDetailLineDto[];
-}
-
-export interface ReturnStockInLineDto {
-  itemTable?: string;
-  itemId?: number | string;
-  itemQuantity?: number;
-  unitCode?: string;
-  lotNumber?: string;
-  traceNo?: string;
-  price?: number;
-  totalPrice?: number;
-  occurrenceTime?: string;
-  reason?: string;
-  remake?: string;
-}
-
-export interface CreateReturnStockInRequest {
-  /** 可选：关联发放单号（退库可关联发放单） */
-  originalBusNo?: string;
-  /** 退库来源位置（科室/药房） */
-  sourceLocationId: number | string;
-  /** 退库目的药库 */
-  purposeLocationId: number | string;
-  sourceTypeEnum?: number;
-  purposeTypeEnum?: number;
-  categoryEnum?: number;
-  supplierId?: number | string;
-  lines: ReturnStockInLineDto[];
-}
-
-export interface UpdateReturnStockInRequest {
-  busNo: string;
-  sourceLocationId: number | string;
-  purposeLocationId: number | string;
-  sourceTypeEnum?: number;
-  purposeTypeEnum?: number;
-  categoryEnum?: number;
-  supplierId?: number | string;
-  lines: ReturnStockInLineDto[];
-  /** 禁止传入；后端 SDD 约定 */
-  rowVersion?: number;
-}
-
-export interface CreateReturnStockInResponse {
-  busNo?: string;
-  statusEnum?: number;
-}
-
-export interface UpdateReturnStockInResponse {
-  busNo?: string;
-  statusEnum?: number;
-}
-
-export interface SubmitReturnStockInApprovalRequest {
-  busNo: string;
-  applyClock?: string;
-}
-
-export interface SubmitReturnStockInApprovalResponse {
-  success?: boolean;
-  statusEnum?: number;
-}
-
-export interface WithdrawReturnStockInApprovalRequest {
-  busNo: string;
-}
-
-export interface WithdrawReturnStockInApprovalResponse {
-  success?: boolean;
-  statusEnum?: number;
-}
-
-export interface AgreeReturnStockInRequest {
-  busNo: string;
-  approverId?: string;
-  approvalClock?: string;
-}
-
-export interface RejectReturnStockInRequest {
-  busNo: string;
-  approverId?: string;
-  approvalClock?: string;
-  rejectReason: string;
-}
-
-export interface RemoveReturnStockInRequest {
-  busNo: string;
-}
-
-export interface PageLinkableDeliveriesRequest {
-  /** 退库来源科室/药房 */
-  sourceLocationId: number | string;
-  keyword?: string;
-  pageNo: number;
-  pageSize: number;
-}
-
-export interface PageLinkableDeliveriesResponse {
-  total?: number;
-  records: WarehouseDocumentDetailRowDto[];
-}
-
-export interface PageProductsForReturnStockInRequest {
-  productTableName?: string;
-  keyword?: string;
-  categoryCode?: string;
-  activeFlag?: boolean;
-  supplierId?: number | string;
-  manufacturer?: string;
-  includeInventory?: boolean;
-  pageNo: number;
-  pageSize: number;
-  sortField?: string;
-  sortOrder?: string;
-}
-
-export interface ProductDefinitionItemDto {
-  productDefinitionId?: number | string;
-  productTableName?: string;
-  productName?: string;
-  merchandiseName?: string;
-  unitCode?: string;
-  minUnitCode?: string;
-  categoryCode?: string;
-  price?: number;
-  purchasePrice?: number;
-  manufacturer?: string;
-  pyStr?: string;
-  wbStr?: string;
-}
-
-export interface PageProductsForReturnStockInResponse {
-  total?: number;
-  records: ProductDefinitionItemDto[];
 }
 
 export async function loadReturnStockInFormInitApi(body?: LoadReturnStockInFormInitRequest) {
@@ -288,70 +155,8 @@ export async function getReturnStockInDetailApi(body: GetReturnStockInDetailRequ
   );
 }
 
-export async function createReturnStockInApi(body: CreateReturnStockInRequest) {
-  return requestClient.post<ApiResponse<CreateReturnStockInResponse>>(
-    `${BASE}/createReturnStockIn`,
-    body,
-  );
-}
-
-export async function updateReturnStockInApi(body: UpdateReturnStockInRequest) {
-  return requestClient.post<ApiResponse<UpdateReturnStockInResponse>>(
-    `${BASE}/updateReturnStockIn`,
-    body,
-  );
-}
-
-export async function submitReturnStockInApprovalApi(body: SubmitReturnStockInApprovalRequest) {
-  return requestClient.post<ApiResponse<SubmitReturnStockInApprovalResponse>>(
-    `${BASE}/submitReturnStockInApproval`,
-    body,
-  );
-}
-
-export async function withdrawReturnStockInApprovalApi(body: WithdrawReturnStockInApprovalRequest) {
-  return requestClient.post<ApiResponse<WithdrawReturnStockInApprovalResponse>>(
-    `${BASE}/withdrawReturnStockInApproval`,
-    body,
-  );
-}
-
-export async function agreeReturnStockInApi(body: AgreeReturnStockInRequest) {
-  return requestClient.post<ApiResponse<{ success?: boolean }>>(`${BASE}/agreeReturnStockIn`, body);
-}
-
-export async function rejectReturnStockInApi(body: RejectReturnStockInRequest) {
-  return requestClient.post<ApiResponse<{ success?: boolean }>>(
-    `${BASE}/rejectReturnStockIn`,
-    body,
-  );
-}
-
-export async function removeReturnStockInApi(body: RemoveReturnStockInRequest) {
-  return requestClient.post<ApiResponse<{ success?: boolean }>>(
-    `${BASE}/removeReturnStockIn`,
-    body,
-  );
-}
-
-export async function pageLinkableDeliveriesApi(body: PageLinkableDeliveriesRequest) {
-  return requestClient.post<ApiResponse<PageLinkableDeliveriesResponse>>(
-    `${BASE}/pageLinkableDeliveries`,
-    body,
-  );
-}
-
-export async function pageProductsForReturnStockInApi(body: PageProductsForReturnStockInRequest) {
-  return requestClient.post<ApiResponse<PageProductsForReturnStockInResponse>>(
-    `${BASE}/pageProductsForReturnStockIn`,
-    body,
-  );
-}
-
-/** typeEnum=5；退货入库单 CABINET_RETURN_STOCK_IN */
+/** typeEnum=5；退库入库单 CABINET_RETURN_STOCK_IN */
 export const WHS_RSI_TYPE_ENUM = 5;
-/** @deprecated 使用 {@link WHS_RSI_TYPE_ENUM} */
-export const WHS_RETURN_STOCK_IN_TYPE_ENUM = WHS_RSI_TYPE_ENUM;
 /** SupplyRequestType DEPARTMENT=2 */
 export const WHS_RSI_LOCATION_TYPE_DEPARTMENT = 2;
 /** SupplyRequestType PHARMACY=16 */
@@ -406,22 +211,6 @@ export async function pageReturnStockInWorkbenchListApi(params?: {
   const filtered = (params?.applyTimeBegin && params?.applyTimeEnd) || params?.keyword?.trim();
   return { records, total: filtered ? records.length : totalCount };
 }
-
-/** @deprecated 使用 {@link loadReturnStockInFormInitApi} */
-export const loadReturnFromDownstreamFormInitApi = loadReturnStockInFormInitApi;
-
-/** @deprecated 使用 {@link pageReturnStockInsApi} */
-export async function pageReturnFromDownstreamsApi(body: PageReturnStockInsRequest) {
-  return pageReturnStockInsApi(body);
-}
-
-/** @deprecated 使用 {@link getReturnStockInDetailApi} */
-export async function getReturnFromDownstreamDetailApi(body: GetReturnStockInDetailRequest) {
-  return getReturnStockInDetailApi(body);
-}
-
-/** @deprecated 使用 {@link WHS_RSI_TYPE_ENUM} */
-export const WHS_RFD_TYPE_ENUM = WHS_RSI_TYPE_ENUM;
 
 export type ReturnFromDownstreamDetailLineDto = ReturnStockInDetailLineDto;
 export type GetReturnFromDownstreamDetailResponse = GetReturnStockInDetailResponse;

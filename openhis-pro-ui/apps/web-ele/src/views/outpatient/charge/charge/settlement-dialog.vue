@@ -25,6 +25,7 @@ import AppDialog from '#/components/app-dialog.vue';
 import RegisterStyleTableLayout from '#/components/layouts/register-style-table-layout.vue';
 import SectionTitle from '#/components/layouts/section-title.vue';
 import { formatMoneyDisplay, scaleMoneySettle, sumMoneyThenCalc } from '#/utils/format/money-scale';
+import { resolveDefaultPayChannelCode } from '#/utils/payment/payment-channel-options';
 
 import { OUTPATIENT_CHARGE_FEE_DETAIL_FIELD_DEFS } from './outpatient-charge.constants';
 
@@ -129,8 +130,21 @@ watch(visible, (open) => {
   // 半成功补结算时保留状态，勿清空付款码区提示所需上下文
   if (open && !props.scanInputLocked) {
     scanCode.value = '';
+    snapPayChannelToVisibleOptions();
   }
 });
+
+/** 当前选中渠道不在可见列表（如院点关银联）时回落到现金 */
+function snapPayChannelToVisibleOptions() {
+  const options = props.payChannelOptions ?? [];
+  if (options.length === 0) {
+    return;
+  }
+  if (options.some((opt) => opt.value === payChannelCode.value)) {
+    return;
+  }
+  payChannelCode.value = resolveDefaultPayChannelCode(options);
+}
 
 function formatMoney(value: null | number | string | undefined) {
   return formatMoneyDisplay(value);

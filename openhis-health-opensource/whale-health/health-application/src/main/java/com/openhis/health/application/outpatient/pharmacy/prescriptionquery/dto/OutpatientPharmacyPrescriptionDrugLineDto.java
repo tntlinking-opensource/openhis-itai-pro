@@ -220,6 +220,14 @@ public class OutpatientPharmacyPrescriptionDrugLineDto {
     @Schema(description = "用药天数")
     private Integer dispensePerDuration;
 
+    /**
+     * 中药付数（方头 {@code chinese_herbs_dose_quantity}）。
+     *
+     * <p>中药饮片方级展示用；与 {@link #quantity}（单剂×付数的请求总量）分列，禁止用数量冒充付数。</p>
+     */
+    @Schema(description = "中药付数")
+    private BigDecimal chineseHerbsDoseQuantity;
+
     /** 用法说明 code（术语 dosage_instruction）。 */
     @Schema(description = "用法说明 code")
     private String dosageInstructionCode;

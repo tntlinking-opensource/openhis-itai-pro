@@ -8,6 +8,7 @@ import { preferences } from '@vben/preferences';
 
 import { fetchPendingCompensationStatsApi } from '#/api/einvoice-boss/compensation';
 import { refreshEinvoiceCompensationMenuBadge } from '#/composables/use-einvoice-compensation-badge';
+import { isEinvoiceUiEnabled } from '#/utils/project-optional-modules';
 
 export const EINVOICE_COMPENSATION_NOTIFICATION_ID = 'einvoice-compensation-pending';
 
@@ -24,12 +25,15 @@ export function isEinvoiceCompensationNotificationId(id: number | string) {
 export function useEinvoiceCompensationNotification() {
   const router = useRouter();
   const { hasAccessByCodes } = useAccess();
+  const einvoiceUiEnabled = isEinvoiceUiEnabled();
 
   const pendingCount = ref(0);
   const dismissedToday = ref(false);
   let timer: ReturnType<typeof setInterval> | null = null;
 
-  const canView = computed(() => hasAccessByCodes(['einvoice-boss.compensation.view']));
+  const canView = computed(
+    () => einvoiceUiEnabled && hasAccessByCodes(['einvoice-boss.compensation.view']),
+  );
 
   function readDismissedToday() {
     const saved = localStorage.getItem(DISMISS_KEY);

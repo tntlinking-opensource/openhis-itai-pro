@@ -17,9 +17,4 @@ import lombok.Setter;
 @Getter
 @Setter
 public class LoadPurchaseOrderFormInitRequest {
-
-    /**
-     * 机构标识；缺省时取当前会话组织单元，用于收窄可见药库与供应商范围。
-     */
-    private Long organizationId;
 }

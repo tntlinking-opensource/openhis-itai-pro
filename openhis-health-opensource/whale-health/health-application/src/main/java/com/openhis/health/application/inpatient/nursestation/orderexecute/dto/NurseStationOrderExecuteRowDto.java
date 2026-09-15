@@ -151,6 +151,12 @@ public class NurseStationOrderExecuteRowDto {
     private String frequencyDisplay;
 
     /**
+     * 频次编码（药嘱/诊嘱 {@code rate_code}；瓶签按每日次数拆张用，禁止前端用 frequencyDisplay 推断）。
+     */
+    @Schema(description = "频次编码（仅药/诊嘱）")
+    private String rateCode;
+
+    /**
      * 输液滴速编码（药嘱 {@code med_medication_request.speed_code}；诊嘱为 null）。
      */
     @Schema(description = "输液滴速编码（仅药嘱）")
@@ -266,9 +272,9 @@ public class NurseStationOrderExecuteRowDto {
     private java.math.BigDecimal chineseHerbsDoseQuantity;
 
     /**
-     * 是否命中口服一盒一点剩余规则（BR-IP-EXE-038）；未命中为 false/null。
+     * 是否命中单位领用剩余规则（BR-IP-EXE-038：一盒一点或拆零下限）；未命中为 false/null。
      */
-    @Schema(description = "是否命中口服包装剩余规则")
+    @Schema(description = "是否命中单位领用剩余规则（一盒一点/拆零下限）")
     private Boolean oralPackageBatchInventoryApplied;
 
     /** 已吃拆零量（理论频次×剂量）。 */
@@ -283,8 +289,8 @@ public class NurseStationOrderExecuteRowDto {
     @Schema(description = "拆零单位展示")
     private String oralPackageSplitUnitDisplay;
 
-    /** 预计下次领盒日；无可空。 */
-    @Schema(description = "预计下次领盒日")
+    /** 预计下次领用日（下一盒/下一拆零单位）；无可空。 */
+    @Schema(description = "预计下次领用日")
     @JsonFormat(pattern = GeneralSharedConstants.DATE_DISPLAY_PATTERN)
     private java.time.LocalDate oralPackageNextClaimDate;
 
@@ -297,4 +303,22 @@ public class NurseStationOrderExecuteRowDto {
     @Schema(description = "合管检验设备主键")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long specimenTubeMergeDeviceId;
+
+    /**
+     * 是否皮试药（仅药嘱；{@code med_medication_request.skin_test_flag}）。
+     */
+    @Schema(description = "是否皮试药（仅药嘱）")
+    private Boolean skinTestFlag;
+
+    /**
+     * 皮试临床状态 code（仅皮试药且护士已登记时有值；如 {@code active}=阳性）。
+     */
+    @Schema(description = "皮试临床状态 code（仅皮试药）")
+    private String skinTestOutcomeCode;
+
+    /**
+     * 皮试临床状态展示文案（如 阳性 / 阴性）；列表跟在药名后展示。
+     */
+    @Schema(description = "皮试临床状态展示文案（仅皮试药）")
+    private String skinTestOutcomeText;
 }

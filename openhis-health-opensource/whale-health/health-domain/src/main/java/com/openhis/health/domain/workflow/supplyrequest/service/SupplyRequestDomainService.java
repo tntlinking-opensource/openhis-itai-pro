@@ -1241,8 +1241,10 @@ public class SupplyRequestDomainService {
     /**
      * 创建调拨执行单多行：源库位与目的库位须不同；默认初态待审核。
      *
-     * <p><b>修订</b>：首行 {@code busNo} 非空且存量为 {@link SupplyType#CABINET_TRANSFER_OUT} 时同号全量替换（
-     * {@link SupplyRequest#assertCabinetTransferOutLinesRevisable}），不发布 Created 事件。</p>
+     * <p><b>修订</b>：首行 {@code busNo} 非空且存量为调出类型时同号全量替换，不发布 Created 事件：
+     * {@link SupplyType#CABINET_TRANSFER_OUT} → {@link SupplyRequest#assertCabinetTransferOutLinesRevisable}；
+     * {@link SupplyType#PHARMACY_TRANSFER_OUT} → {@link SupplyRequest#assertPharmacyTransferOutLinesRevisable}；
+     * {@link SupplyType#DEPT_TRANSFER_OUT} → {@link SupplyRequest#assertDeptTransferOutLinesRevisable}。</p>
      *
      * <p><b>壳单</b>：命令 {@link CreateTransferCommand#getBootstrapFinalStatusCode()} 为 {@code AGREE} 时直接落已同意态，
      * 供调出 agree 后生成对侧调入台账（库存不在此二次落账）。
@@ -1268,8 +1270,13 @@ public class SupplyRequestDomainService {
                 throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_NOT_FOUND, "调拨单不存在，无法修订");
             }
             SupplyRequest headRow = existingLines.get(0);
+            // 按存量调出 type 分派修订门控（药库/药房/科室同构；调入壳单等其它 type 仍拒绝）
             if (headRow != null && SupplyType.CABINET_TRANSFER_OUT.getCode().equals(headRow.getTypeEnum())) {
                 SupplyRequest.assertCabinetTransferOutLinesRevisable(existingLines);
+            } else if (headRow != null && SupplyType.PHARMACY_TRANSFER_OUT.getCode().equals(headRow.getTypeEnum())) {
+                SupplyRequest.assertPharmacyTransferOutLinesRevisable(existingLines);
+            } else if (headRow != null && SupplyType.DEPT_TRANSFER_OUT.getCode().equals(headRow.getTypeEnum())) {
+                SupplyRequest.assertDeptTransferOutLinesRevisable(existingLines);
             } else {
                 throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
                     "该调拨单据类型不支持通过 createTransfer 修订");
@@ -1365,10 +1372,13 @@ public class SupplyRequestDomainService {
     }
 
     /**
-     * createRequisition。
+     * 创建或修订请领申请单 / 入库执行单（{@code createRequisition}）。
      *
-     * <p>修订（PHA-QL-SDD-R-002）：首行携带既有 {@code busNo} 且存量为药房请领（{@link SupplyType#PHARMACY_REQUISITION}）时，
-     * 软删同号未删除行后按命令明细整批重插； deliberately 不发布 {@link SupplyRequestCreatedEvent}（对齐订货单修订口径）。</p>
+     * <p><b>修订</b>：首行携带既有 {@code busNo} 时同号全量替换，不发布 {@link SupplyRequestCreatedEvent}：
+     * {@link SupplyType#PHARMACY_REQUISITION} → {@link SupplyRequest#assertPharmacyRequisitionLinesRevisable}；
+     * {@link SupplyType#DEPT_REQUISITION} → {@link SupplyRequest#assertDeptRequisitionLinesRevisable}；
+     * {@link SupplyType#PHARMACY_STOCK_IN} → {@link SupplyRequest#assertPharmacyStockInLinesRevisable}。
+     * 科室入库壳单等其它 type 仍拒绝修订。</p>
      *
      * @param command 请领/入库类明细；首行 busNo 空则新开单
      * @return 业务单号
@@ -1389,8 +1399,11 @@ public class SupplyRequestDomainService {
                 throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_NOT_FOUND, "单据不存在，无法修订");
             }
             SupplyRequest headRow = existingLines.get(0);
+            // 按存量 type 分派修订门控（药房/科室请领 + 药房入库；科室入库壳单等仍拒绝）
             if (headRow != null && SupplyType.PHARMACY_REQUISITION.getCode().equals(headRow.getTypeEnum())) {
                 SupplyRequest.assertPharmacyRequisitionLinesRevisable(existingLines);
+            } else if (headRow != null && SupplyType.DEPT_REQUISITION.getCode().equals(headRow.getTypeEnum())) {
+                SupplyRequest.assertDeptRequisitionLinesRevisable(existingLines);
             } else if (headRow != null && SupplyType.PHARMACY_STOCK_IN.getCode().equals(headRow.getTypeEnum())) {
                 SupplyRequest.assertPharmacyStockInLinesRevisable(existingLines);
             } else {

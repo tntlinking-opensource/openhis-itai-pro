@@ -134,7 +134,10 @@ public class BossIssueWorkerService {
             snapshot = commonSnapshotSupport.build(document);
         } else {
             snapshot = issueSnapshotContextLoader.loadForInvoice(task.getInvoiceId());
-            if (InvoiceStatus.ISSUED.getCode().equals(snapshot.getInvoiceStatus())) {
+            // 仅当本地已有蓝票号时才把「health 已 ISSUED」视为幂等完成；
+            // 否则继续开具，避免未出站就标 SUCCESS（药名/医保类型未写入）。
+            if (InvoiceStatus.ISSUED.getCode().equals(snapshot.getInvoiceStatus())
+                    && StringUtils.isNotBlank(document.getBossBillNo())) {
                 taskStatusWriter.markSuccess(task.getId(), null);
                 BossInvoiceIssueResult result = new BossInvoiceIssueResult();
                 result.setBusNo(snapshot.getBusNo());
@@ -199,20 +202,22 @@ public class BossIssueWorkerService {
     }
 
     /**
-     * 将当前线程租户覆盖为单据租户；已是同一租户则不标记为已绑定。
+     * 将当前线程租户覆盖为单据租户；空租户不改。
+     *
+     * <p>即便已是同一租户也重新 set，保证异步线程 SPI/读模型可见。</p>
      *
      * @param documentTenantId 单据租户；空则不改
-     * @return true 表示本方法改写了租户，调用方须 {@link #restoreTenant}
+     * @return true 表示本方法改写了相对「进入本方法前」的租户，调用方须 {@link #restoreTenant}
      */
     private boolean bindDocumentTenant(Long documentTenantId) {
         if (documentTenantId == null) {
             return false;
         }
         Long current = TenantUtils.getCurrentTenantId();
+        tenantContext.setCurrentTenantId(documentTenantId);
         if (documentTenantId.equals(current)) {
             return false;
         }
-        tenantContext.setCurrentTenantId(documentTenantId);
         return true;
     }
 

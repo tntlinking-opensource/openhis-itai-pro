@@ -56,6 +56,8 @@ const selectedFrameClass = computed(() => {
     : 'border-emerald-500 bg-emerald-50/40 ring-1 ring-emerald-200/70';
 });
 
+const kindBadgeTagType = computed(() => (props.patient.kindBadge === '团' ? 'primary' : 'info'));
+
 const handleClick = () => {
   emit('select', props.patient);
 };
@@ -83,6 +85,15 @@ const handleClick = () => {
     <div class="flex min-h-0 min-w-0 flex-1 flex-col gap-1 px-2 py-1.5">
       <div class="flex min-w-0 items-start justify-between gap-2">
         <div class="min-w-0 flex-1 truncate leading-tight">
+          <ElTag
+            v-if="patient.kindBadge"
+            :type="kindBadgeTagType"
+            size="small"
+            effect="plain"
+            class="mr-1 !px-1 align-middle !font-semibold"
+          >
+            {{ patient.kindBadge }}
+          </ElTag>
           <span class="text-base font-semibold text-gray-900">{{ patient.patientName }}</span>
           <span class="ml-1 text-sm font-normal text-gray-500">
             {{ patient.gender }}·{{

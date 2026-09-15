@@ -11,7 +11,6 @@ import com.openhis.chs.application.notice.dto.NoticeDocRowDto;
 import com.openhis.chs.application.notice.dto.NoticeLineRowDto;
 import com.openhis.chs.application.notice.dto.NoticeScanItemDto;
 import com.openhis.chs.application.notice.dto.NoticeTodoRowDto;
-import com.openhis.chs.application.notice.response.ApplyNoticeDocResponse;
 import com.openhis.chs.application.notice.response.CheckCatalogIssuesResponse;
 import com.openhis.chs.application.notice.response.CloseNoticeTodoResponse;
 import com.openhis.chs.application.notice.response.GetComplianceReportResponse;
@@ -26,7 +25,6 @@ import com.openhis.chs.application.notice.support.dto.NoticePreviewContext;
 import com.openhis.chs.application.notice.support.dto.NoticeScanCachedItem;
 import com.openhis.chs.application.notice.support.dto.NoticeScanSession;
 import com.openhis.chs.domain.notice.command.PersistNoticeLineCommand;
-import com.openhis.chs.domain.notice.model.ApplyNoticeDocResult;
 import com.openhis.chs.domain.notice.model.ApplyPreviewSampleView;
 import com.openhis.chs.domain.notice.model.ApplyPreviewView;
 import com.openhis.chs.domain.notice.model.CatalogCheckIssueView;
@@ -276,31 +274,6 @@ public class InsuranceCatalogNoticeMapperImpl implements InsuranceCatalogNoticeM
         return rows;
     }
 
-    /**
-     * 应用领域结果 → W-03 响应。
-     *
-     * @param result 领域结果
-     * @return HTTP 响应；空入参返回零计数
-     */
-    @Override
-    public ApplyNoticeDocResponse toApplyResponse(ApplyNoticeDocResult result) {
-        ApplyNoticeDocResponse response = new ApplyNoticeDocResponse();
-        if (result == null) {
-            return response;
-        }
-        response.setAppliedLineCount(result.getAppliedLineCount());
-        response.setFailedLineCount(result.getFailedLineCount());
-        response.setWritebackCount(result.getWritebackCount());
-        response.setSyncedUnchargedCount(result.getSyncedUnchargedCount());
-        return response;
-    }
-
-    /**
-     * 应用预览视图 → R-06 响应。
-     *
-     * @param view 领域预览
-     * @return HTTP 响应
-     */
     @Override
     public PreviewNoticeApplyResponse toPreviewApplyResponse(ApplyPreviewView view) {
         PreviewNoticeApplyResponse response = new PreviewNoticeApplyResponse();

@@ -1,7 +1,7 @@
 /**
- * 朝阳中药药材工作区（院点 override）。
- * 检索对齐 mock 胶囊；药表对齐门诊挂号 register-style-table。
- * 不走 SFC scoped：院点生产包会丢 scoped。
+ * 中药药材工作区。
+ * 检索对齐胶囊输入；药表两列长条。
+ * 不走 SFC scoped：关键栅格走外挂 css，避免生产抽 CSS 时丢失。
  */
 .tcm-herb-workspace {
   display: flex;

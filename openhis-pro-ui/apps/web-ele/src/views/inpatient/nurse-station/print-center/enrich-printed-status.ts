@@ -58,14 +58,14 @@ const ENRICH_BY_DOC: Partial<Record<PrintDocType, PrintedEnrichSpec>> = {
     resolveKey: (row) => str(row.orderId),
   },
   specimen_barcode: {
-    scenarioCode: PRINT_SCENARIO.opSpecimenBarcodePrint,
+    scenarioCode: PRINT_SCENARIO.ipSpecimenBarcodePrint,
     keyField: 'serviceRequestIds',
     resolveKey: (row) => str(row.orderId),
   },
   patrol_card: {
     scenarioCode: PRINT_SCENARIO.ipPatrolCardPrint,
-    keyField: 'encounterIds',
-    resolveKey: (row) => str(row.encounterId),
+    keyField: 'listRowKeys',
+    resolveKey: (row) => str(row.listRowKey) || str(row.id),
     useQueryDate: true,
   },
   wristband: {

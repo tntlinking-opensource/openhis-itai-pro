@@ -344,6 +344,12 @@ public class CreateMedicationCatalogRequest {
     @Schema(description = "病案结算类型编码", example = "16", maxLength = 255)
     private String mrSettlementTypeCode;
 
+    /**
+     * 结余留用批次号（术语 surplus_retention_batch_code；可选；存概念 code）。
+     */
+    @Schema(description = "结余留用批次号", example = "第九批", maxLength = 255)
+    private String surplusRetentionBatchCode;
+
     /** 处方标志 1-处方药 2-非处方药。 */
     @Schema(description = "处方标志 1-处方药 2-非处方药", example = "1", allowableValues = {"1", "2"})
     private Boolean rxFlag;

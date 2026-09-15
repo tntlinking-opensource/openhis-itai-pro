@@ -186,11 +186,7 @@ const settlementPeriodText = computed(() => {
 });
 
 const canSubmit = computed(() => {
-  const count =
-    previewResult.value?.pendingCount ??
-    previewResult.value?.unsettledCount ??
-    previewResult.value?.items?.length ??
-    0;
+  const count = previewResult.value?.pendingCount ?? previewResult.value?.items?.length ?? 0;
   // 漏交硬栏仅提示 + 提交 Gate；不禁用「确认交账」入口与弹窗勾选
   return hasQueried.value && count > 0 && !queryLoading.value;
 });

@@ -75,8 +75,6 @@ export interface PharmacyDailySettlementDispenseItemDto {
 export interface PreviewOutpatientPharmacyDailySettlementResponse {
   /** 待交笔数（一发一退各计 1；净额为 0 仍计） */
   pendingCount?: number;
-  /** @deprecated 兼容旧字段，等同 pendingCount */
-  unsettledCount?: number;
   categoryRows?: PharmacyDailySettlementCategoryRowDto[];
   productRows?: PharmacyDailySettlementProductRowDto[];
   items?: PharmacyDailySettlementDispenseItemDto[];
@@ -88,11 +86,11 @@ export interface PreviewOutpatientPharmacyDailySettlementResponse {
   practitionerOptions?: ApiOptionItem[];
 }
 
-/** 归一化预览：待交笔数兼容 unsettledCount，并以 items.length 兜底。 */
+/** 归一化预览：待交笔数优先 pendingCount，缺省回落 items.length。 */
 export function normalizePreviewOutpatientPharmacyDailySettlementResponse(
   raw: PreviewOutpatientPharmacyDailySettlementResponse,
 ): PreviewOutpatientPharmacyDailySettlementResponse {
-  const pendingFromField = raw.pendingCount ?? raw.unsettledCount;
+  const pendingFromField = raw.pendingCount;
   const pendingFromItems = raw.items?.length;
   let pendingCount = pendingFromField;
   if (pendingCount == null && pendingFromItems != null) {

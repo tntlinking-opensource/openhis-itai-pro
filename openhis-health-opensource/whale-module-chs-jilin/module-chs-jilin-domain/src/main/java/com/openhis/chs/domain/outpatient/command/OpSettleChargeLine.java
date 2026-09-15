@@ -34,6 +34,11 @@ public class OpSettleChargeLine {
     private String bilgDeptName;
     private String bilgDrCodg;
     private String bilgDrName;
+    /**
+     * 中药使用方式（2204 {@code tcmdrug_used_way}）：复方 {@code 1} / 单方 {@code 2}。
+     * <p>仅中草药行有值；由同处方中草药味数判定（大于 5 复方，否则单方）。</p>
+     */
+    private String tcmdrugUsedWay;
 
     /**
      * 医院目录/项目名称（3101 {@code hilist_name}/{@code hosplist_name}；2204 可忽略）。

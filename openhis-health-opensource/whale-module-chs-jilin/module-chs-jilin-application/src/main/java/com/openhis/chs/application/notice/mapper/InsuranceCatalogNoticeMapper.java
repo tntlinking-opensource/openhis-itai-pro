@@ -7,7 +7,6 @@ package com.openhis.chs.application.notice.mapper;
 import com.openhis.chs.application.notice.dto.NoticeDocRowDto;
 import com.openhis.chs.application.notice.dto.NoticeLineRowDto;
 import com.openhis.chs.application.notice.dto.NoticeScanItemDto;
-import com.openhis.chs.application.notice.response.ApplyNoticeDocResponse;
 import com.openhis.chs.application.notice.response.CheckCatalogIssuesResponse;
 import com.openhis.chs.application.notice.response.CloseNoticeTodoResponse;
 import com.openhis.chs.application.notice.response.GetComplianceReportResponse;
@@ -20,7 +19,6 @@ import com.openhis.chs.application.notice.response.ScanNoticeCanonicalDirRespons
 import com.openhis.chs.application.notice.support.dto.NoticeScanCachedItem;
 import com.openhis.chs.application.notice.support.dto.NoticeScanSession;
 import com.openhis.chs.domain.notice.command.PersistNoticeLineCommand;
-import com.openhis.chs.domain.notice.model.ApplyNoticeDocResult;
 import com.openhis.chs.domain.notice.model.ApplyPreviewView;
 import com.openhis.chs.domain.notice.model.CatalogCheckResult;
 import com.openhis.chs.domain.notice.model.CloseNoticeTodoResult;
@@ -102,14 +100,6 @@ public interface InsuranceCatalogNoticeMapper {
      * @return DTO 列表
      */
     List<NoticeLineRowDto> toSampleLineDtos(List<PersistNoticeLineCommand> lines);
-
-    /**
-     * 应用结果 → 响应。
-     *
-     * @param result 领域结果
-     * @return HTTP 响应
-     */
-    ApplyNoticeDocResponse toApplyResponse(ApplyNoticeDocResult result);
 
     /**
      * 应用预览 → 响应。

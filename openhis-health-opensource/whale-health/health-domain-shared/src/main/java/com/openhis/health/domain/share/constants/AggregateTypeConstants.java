@@ -328,7 +328,7 @@ public interface AggregateTypeConstants {
     String CASE_RECORD = "case_record";
 
     /**
-     * 病案号 {@code medcasno} 发号前缀（B.10.9 按日流水：前缀 + yyyy-MM-dd + 4 位序号）。
+     * 病案号 {@code medcasno} 发号前缀（{@code CR} + yyMM + 4 位年流水，无横杠）。
      */
     String CASE_RECORD_MEDCASNO = "CR";
 }

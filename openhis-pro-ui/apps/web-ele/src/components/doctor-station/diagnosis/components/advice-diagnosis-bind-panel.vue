@@ -96,6 +96,10 @@ interface PickRow {
 }
 
 const pickOpen = ref(false);
+/** 住院西医落国临：选择弹窗编码列用「国临码」 */
+const pickCodeColumnLabel = computed(() =>
+  props.stationScope === 'inpatient' ? '国临码' : '诊断编码',
+);
 /** 弹窗内勾选快照（确定前不写回行） */
 const draftIds = ref<string[]>([]);
 const tableRef = ref<TableInstance>();
@@ -645,7 +649,12 @@ watch(
           @row-click="onPickRowClick"
         >
           <ElTableColumn type="selection" width="48" align="center" />
-          <ElTableColumn prop="code" label="诊断编码" width="160" show-overflow-tooltip />
+          <ElTableColumn
+            prop="code"
+            :label="pickCodeColumnLabel"
+            width="160"
+            show-overflow-tooltip
+          />
           <ElTableColumn label="主诊" width="72" align="center">
             <template #default="{ row }">
               <button

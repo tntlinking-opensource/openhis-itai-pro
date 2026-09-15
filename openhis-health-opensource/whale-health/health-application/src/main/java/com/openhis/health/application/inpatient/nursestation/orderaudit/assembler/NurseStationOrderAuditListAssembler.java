@@ -64,6 +64,8 @@ public class NurseStationOrderAuditListAssembler {
             orderViewListAssembler.indexEncounterDetails(skeleton, medByEncounter, svcByEncounter);
         NurseStationOrderViewDisplayContext displayContext =
             orderViewListAssembler.prepareDisplayContext(index);
+        // Pre：皮试药最新登记结果（列表药名后展示阴/阳性，与医生站 skinTestOutcome* 同源）
+        orderViewListAssembler.enrichSkinTestOutcomes(displayContext, medByEncounter);
         Map<Long, List<NurseStationOrderAuditRowDto>> rowsByEncounter = new LinkedHashMap<>();
         for (InpatientOrderListSkeleton order : skeleton) {
             if (order == null || order.getEncounterId() == null) {
@@ -138,7 +140,8 @@ public class NurseStationOrderAuditListAssembler {
             MedicationRequestListQueryModel repMed,
             List<Long> lineRequestIds,
             String adviceDisplayName,
-            String dosageDisplay) {
+            String dosageDisplay,
+            LocalDateTime prescriptionOpenedTime) {
             representative.setTcmFlag(Boolean.TRUE);
             if (repMed != null) {
                 representative.setPrescriptionNo(repMed.getPrescriptionNo());
@@ -149,6 +152,10 @@ public class NurseStationOrderAuditListAssembler {
             representative.setAdviceDisplayName(adviceDisplayName);
             representative.setSpecificationText(null);
             representative.setDosageDisplay(dosageDisplay);
+            // 方级开立时间覆盖为代表行展示用最晚时刻（BR-IP-NUR-003-TCM-002）
+            if (prescriptionOpenedTime != null) {
+                representative.setReqOpenedTime(prescriptionOpenedTime);
+            }
         }
     };
 
@@ -226,6 +233,8 @@ public class NurseStationOrderAuditListAssembler {
         line.setSortNumber(core.getSortNumber());
         line.setSkinTestFlag(core.getSkinTestFlag());
         line.setBasedOnMedicationRequestId(core.getBasedOnMedicationRequestId());
+        line.setSkinTestOutcomeCode(core.getSkinTestOutcomeCode());
+        line.setSkinTestOutcomeText(core.getSkinTestOutcomeText());
     }
 
     /**

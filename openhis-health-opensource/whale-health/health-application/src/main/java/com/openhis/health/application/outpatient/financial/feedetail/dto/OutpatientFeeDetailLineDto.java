@@ -117,15 +117,6 @@ public class OutpatientFeeDetailLineDto {
     @Schema(description = "医保等级")
     private String insuranceLevelDisplay;
 
-    /**
-     * 医保类型展示（已废弃，不再装配；保留字段避免旧客户端反序列化失败）。
-     *
-     * @deprecated 原误绑药品频次 rateCode；前端已去掉该列
-     */
-    @Deprecated
-    @Schema(description = "医保类型（已废弃）")
-    private String insuranceTypeDisplay;
-
     /** 原价。 */
     @Schema(description = "原价")
     private BigDecimal baseAmount;
@@ -141,14 +132,6 @@ public class OutpatientFeeDetailLineDto {
     /** 折后金额。 */
     @Schema(description = "折后金额")
     private BigDecimal discountedAmount;
-
-    /** 单价（兼容旧列；与售价单价同值）。 */
-    @Schema(description = "单价")
-    private BigDecimal unitPrice;
-
-    /** 行金额（退单为负；兼容旧列，与售价总价同值）。 */
-    @Schema(description = "行金额")
-    private BigDecimal lineAmount;
 
     /** 进价单价（历史定价 PURCHASE/LOT；退单为负）。 */
     @Schema(description = "进价单价")

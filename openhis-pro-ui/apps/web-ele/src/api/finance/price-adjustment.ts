@@ -55,7 +55,6 @@ export interface PriceAdjustmentDocumentListRowDto {
 
 export interface PagePriceAdjustmentDocumentResponse {
   content?: PriceAdjustmentDocumentListRowDto[];
-  records?: PriceAdjustmentDocumentListRowDto[];
   totalCount?: number;
   total?: number;
   pageNo?: number;
@@ -144,7 +143,6 @@ export interface AdjustableItemRowDto {
 
 export interface SearchAdjustableItemsResponse {
   content?: AdjustableItemRowDto[];
-  records?: AdjustableItemRowDto[];
   totalCount?: number;
   total?: number;
   pageNo?: number;

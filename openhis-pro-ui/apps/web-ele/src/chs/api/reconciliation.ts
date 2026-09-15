@@ -66,7 +66,8 @@ export interface ApplyJilinClear3203AResult {
 
 export interface QueryClearStatus3205AParams extends ReconciliationContractRequest {
   clrOptins: string;
-  clrStas: string;
+  /** 平台按状态查询；不传则由调用方按 10/20/50 分次拉取 */
+  clrStas?: string;
   clrYm?: string;
 }
 
@@ -381,13 +382,15 @@ export async function queryCrossProvinceReconFailuresApi(
   return res.data ?? [];
 }
 
-/** 工伤对账 invoke 首步（prepareInvoke；phase=RECON|RECON_CONFIRM）。 */
+/** 工伤对账 invoke 首步（prepareInvoke；phase=RECON|RECON_DETAIL|RECON_CONFIRM）。 */
 export interface StartWorkInjuryReconParams {
   contractId: string | number;
+  /** 1321 明细对账时可传就诊 id，便于后端加载上下文 */
+  encounterId?: string | number;
   operatorId?: string | number;
   formContext?: Record<string, unknown>;
-  /** RECON=1320 总额对账；RECON_CONFIRM=1322 对账确认 */
-  phase?: 'RECON' | 'RECON_CONFIRM';
+  /** RECON=1320；RECON_DETAIL=1321；RECON_CONFIRM=1322 */
+  phase?: 'RECON' | 'RECON_CONFIRM' | 'RECON_DETAIL';
 }
 
 export interface WorkInjuryReconPrepareStep {
@@ -410,9 +413,132 @@ export async function startWorkInjuryReconApi(
     {
       phase,
       contractId: params.contractId,
+      encounterId: params.encounterId,
       operatorId: params.operatorId,
       context: params.formContext,
     },
   );
   return res.data ?? {};
+}
+
+export interface WorkInjuryReconSettlementRow {
+  settlementRecordId?: number | string;
+  encounterId?: number | string;
+  iptOtpNo?: string;
+  mdtrtId?: string;
+  setlId?: string;
+  psnName?: string;
+  setlTime?: string;
+  medfeeSumamt?: number | string;
+  fundPaySumamt?: number | string;
+  psnCashPay?: number | string;
+  msgid2207?: string;
+  status?: string;
+  posted2207?: boolean;
+  /** 关联 fin_payment_reconciliation.id */
+  paymentId?: number | string;
+  paymentStatus?: string;
+  /** 收银明细汇总：charge_amount 合计 */
+  paymentMedfee?: number | string;
+  /** 收银明细：INSURANCE_FUND */
+  paymentHifp?: number | string;
+  /** 收银明细：CASH */
+  paymentCash?: number | string;
+  /** 可选 1321 平台回执（仅参考） */
+  platformMedfee?: number;
+  platformHifp?: number;
+  platformCash?: number;
+  detailStatus?: 'pending' | 'balanced' | 'unbalanced' | 'error';
+  detailErrMsg?: string;
+}
+
+/** 工伤对账按日汇总（settlement ↔ payment + 持久化覆盖层） */
+export interface WorkInjuryReconDaySummaryRow {
+  day?: string;
+  medfeeSumamt?: number | string;
+  fundPaySumamt?: number | string;
+  psnCashPay?: number | string;
+  paymentMedfee?: number | string;
+  paymentHifp?: number | string;
+  paymentCash?: number | string;
+  setlCount?: number;
+  balancedCount?: number;
+  unbalancedCount?: number;
+  /** pending / balanced / unbalanced */
+  localStatus?: string;
+  confirmed?: boolean;
+  platformMedfee?: number | string;
+  platformHifp?: number | string;
+  platformCash?: number | string;
+  reconScope?: string;
+}
+
+export async function listWorkInjuryReconSettlementsApi(params: {
+  contractId?: string | number;
+  contractBusNo?: string;
+  day: string;
+}): Promise<WorkInjuryReconSettlementRow[]> {
+  const res = await requestClient.post<ApiResponse<WorkInjuryReconSettlementRow[]>>(
+    '/workInjuryInvoke/listReconSettlementsByDay',
+    {
+      contractId: params.contractId,
+      contractBusNo: params.contractBusNo,
+      day: params.day,
+    },
+    chsLongRequestConfig(),
+  );
+  return res.data ?? [];
+}
+
+export async function summarizeWorkInjuryReconByDayRangeApi(params: {
+  contractId?: string | number;
+  contractBusNo?: string;
+  begndate: string;
+  enddate: string;
+}): Promise<WorkInjuryReconDaySummaryRow[]> {
+  const res = await requestClient.post<ApiResponse<WorkInjuryReconDaySummaryRow[]>>(
+    '/workInjuryInvoke/summarizeReconByDayRange',
+    {
+      contractId: params.contractId,
+      contractBusNo: params.contractBusNo,
+      begndate: params.begndate,
+      enddate: params.enddate,
+    },
+    chsLongRequestConfig(),
+  );
+  return res.data ?? [];
+}
+
+/** 工伤对账：确认某日账平 */
+export async function confirmWorkInjuryReconDailyBalancedApi(params: {
+  contractId?: string | number;
+  contractBusNo?: string;
+  day: string;
+}): Promise<void> {
+  await requestClient.post('/workInjuryInvoke/confirmReconDailyBalanced', {
+    contractId: params.contractId,
+    contractBusNo: params.contractBusNo,
+    day: params.day,
+  });
+}
+
+/** 工伤对账：保存某日平台 1320 金额 */
+export async function saveWorkInjuryReconDailyPlatformApi(params: {
+  contractId?: string | number;
+  contractBusNo?: string;
+  day: string;
+  platformMedfee?: number;
+  platformHifp?: number;
+  platformCash?: number;
+  reconScope?: string;
+}): Promise<void> {
+  await requestClient.post('/workInjuryInvoke/saveReconDailyPlatform', {
+    contractId: params.contractId,
+    contractBusNo: params.contractBusNo,
+    day: params.day,
+    platformMedfee: params.platformMedfee,
+    platformHifp: params.platformHifp,
+    platformCash: params.platformCash,
+    reconScope: params.reconScope,
+  });
 }

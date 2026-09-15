@@ -369,7 +369,7 @@ watch(open, (visible) => {
                   />
                 </template>
               </ElTableColumn>
-              <ElTableColumn prop="startTime" label="开立时间" width="160" align="center" />
+              <ElTableColumn prop="startTime" label="签发时间" width="160" align="center" />
               <ElTableColumn prop="diagnosisSummary" label="诊断" min-width="140" align="center">
                 <template #default="{ row }">
                   <AdviceDiagnosisSummaryCell

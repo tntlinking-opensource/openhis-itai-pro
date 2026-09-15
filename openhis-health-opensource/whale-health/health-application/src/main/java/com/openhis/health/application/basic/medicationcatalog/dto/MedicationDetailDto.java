@@ -463,6 +463,12 @@ public class MedicationDetailDto extends MedicationDto {
     private String mrSettlementTypeCode;
 
     /**
+     * 结余留用批次号（术语 surplus_retention_batch_code；可选；存概念 code）。
+     */
+    @Schema(description = "结余留用批次号", example = "第九批")
+    private String surplusRetentionBatchCode;
+
+    /**
      * 用药说明
      */
     @Schema(description = "用药说明/注意事项", example = "饭后服用，每次1粒，每日3次")

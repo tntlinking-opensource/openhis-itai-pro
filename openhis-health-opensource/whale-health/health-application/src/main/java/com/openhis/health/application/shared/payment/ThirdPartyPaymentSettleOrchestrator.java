@@ -129,29 +129,22 @@ public class ThirdPartyPaymentSettleOrchestrator {
     }
 
     /**
-     * POS 实付低于院内下单时，扫码行改记实付。
+     * POS 实付与院内下单分账说明（故意不改写 HIS 扫码行金额）。
      *
-     * <p>差额已由 2207 写入 {@link PaymentChannel#INSURANCE_ACCT}（医保账户余额扣除），
-     * 禁止再记优惠或第二笔个账。</p>
+     * <p>BPC 侧已分账：{@code txn_amt_fen}=院内下单，{@code paid_amt_fen}=POS 实付（可更小）。
+     * HIS 落账须保持扫码行=院内下单金额，才能与收费项/医保分桶勾稽（BR-OPC-024 终态）。
+     * 若此处把行金额压成 POS 实付，明细合计会小于收费项，表现为「银联已扣款、结算失败」半成功弹窗。</p>
      *
      * @param scanLine         已替换为微信/支付宝/银行卡的原扫码行
-     * @param clientScanResult Win 被扫回传
+     * @param clientScanResult Win 被扫回传（实付分仅作校验参考，不改写行额）
      */
     private void applyPaidAmountKeepingInsuranceAcct(
         PaymentDetailItemCommand scanLine,
         ClientScanResultDto clientScanResult) {
-        Long paidFen = clientScanResult.getTxnAmtFen();
-        if (paidFen == null || scanLine.getAmount() == null) {
+        // 行金额保持院内下单；POS 实付仅落 BPC.paid_amt_fen（validateTxnAmtFen 已在挂接前校验）
+        if (scanLine == null || clientScanResult == null) {
             return;
         }
-        BigDecimal paidYuan = BigDecimal.valueOf(paidFen)
-            .divide(BigDecimal.valueOf(100L), 2, RoundingMode.HALF_UP);
-        BigDecimal orderYuan = scanLine.getAmount().setScale(2, RoundingMode.HALF_UP);
-        if (paidYuan.compareTo(orderYuan) >= 0) {
-            return;
-        }
-        scanLine.setAmount(paidYuan);
-        scanLine.setChargeAmount(paidYuan);
     }
 
     /**
@@ -191,8 +184,8 @@ public class ThirdPartyPaymentSettleOrchestrator {
     /**
      * 校验银联回传交易金额（分）相对 HIS 扫码行金额（元）合法；回传缺失时跳过。
      *
-     * <p>POS 实付可小于院内下单（常见为医保账户余额已由 2207 扣除）；实付写入 BPC {@code paid_amt_fen}，
-     * settle 仅拒绝大于下单。院内扫码行改记实付，差额不再记优惠。</p>
+     * <p>POS 实付可小于院内下单（常见为渠道分账/营销）；实付写入 BPC {@code paid_amt_fen}，
+     * settle 仅拒绝大于下单。HIS 扫码行金额保持院内下单，不随实付压低。</p>
      *
      * @param clientScanResult Win 被扫回传
      * @param amountYuan       待结算扫码行金额（元）

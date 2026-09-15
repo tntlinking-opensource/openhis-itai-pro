@@ -214,7 +214,7 @@ public class OutpatientRegistrationAppService {
     private final ClinicRegistrationLoader clinicRegistrationLoader;
     /** 退号收费前置门禁（BR-REG-015；仅账单三态）。 */
     private final OutpatientRegistrationCancelGate outpatientRegistrationCancelGate;
-    /** 历史号复诊资格门禁（BR-REG-020）。 */
+    /** 复诊0元号资格门禁（BR-REG-020；按名称识别）。 */
     private final OutpatientHistoricalFollowUpRegistrationGate outpatientHistoricalFollowUpRegistrationGate;
     /** 账户写侧领域服务。 */
     private final AccountDomainService accountDomainService;
@@ -580,7 +580,7 @@ public class OutpatientRegistrationAppService {
         if (contract == null || organization == null || healthcareService == null) {
             throw new BusinessException("REG-BIZ-404", "主数据失效，请刷新");
         }
-        // Gate：历史号复诊须同科室接诊后 72 小时内（BR-REG-020）；下拉可见，写侧拦截
+        // Gate：复诊0元号须同科室接诊后 72 小时内（BR-REG-020；按名称识别）；下拉可见，写侧拦截
         outpatientHistoricalFollowUpRegistrationGate.assertEligibleForHistoricalFollowUpRegistration(
             patientId, request.getOrganizationId(), healthcareService, occurredAt);
         String contractBusNo = null;
@@ -663,8 +663,8 @@ public class OutpatientRegistrationAppService {
             openMedicalInsuranceAccount,
             request.getInsutype(),
             registrarId);
-        // Pre：挂号费挂账——勾选医保支付挂号费走医保户，否则走个人现金户
-        boolean ybRegisterFee = Boolean.TRUE.equals(request.getYbRegisterFee());
+        // Pre：挂号费挂账——勾选医保支付挂号费走医保户，否则走个人现金户；跨省强制自费
+        boolean ybRegisterFee = this.resolveYbRegisterFeeForRequest(request);
         Account registrationFeeAccount =
             encounterChargeAccountOpener.requireRegistrationFeeAccount(encounterId, ybRegisterFee);
         // TODO(ADR-CMP-001 D12)：Campus 启用且 ArchiveQueryReader 命中学生档案时，幂等开立
@@ -1097,6 +1097,7 @@ public class OutpatientRegistrationAppService {
             return;
         }
         // Gate：银联已扣款（BPC SUCCESS）但院内未落账 → 须补结算或退货，禁止当未收费取消
+        // 口径与门诊收费 BR-OPC-025 / PaymentDraftHalfSuccessAbortGate 一致（同码 CANCEL-BIZ-413）
         if (thirdPartyPaymentExtension.isEnabled()
             && thirdPartyPaymentExtension.hasSuccessfulConsumerScanOrder(paymentDraftId)) {
             throw new BusinessException(
@@ -1922,6 +1923,48 @@ public class OutpatientRegistrationAppService {
     private boolean isWorkInjuryContract(Long contractId) {
         return workInjuryModuleExtension.isEnabled()
             && workInjuryModuleExtension.supportsContract(contractId);
+    }
+
+    /** 吉林省级医保区划前缀（与定稿「跨省=前两位≠22」一致）。 */
+    private static final String JILIN_INSUPLC_PROVINCE_PREFIX = "22";
+
+    /**
+     * 参保地是否跨省（相对吉林）。空或过短无法判定时返回 false。
+     *
+     * @param insuplcAdmdvs 参保地医保区划
+     * @return true=跨省
+     */
+    private boolean isCrossProvinceInsuplc(String insuplcAdmdvs) {
+        if (StringUtils.isBlank(insuplcAdmdvs)) {
+            return false;
+        }
+        String digits = insuplcAdmdvs.replaceAll("\\D", "");
+        if (digits.length() < 2) {
+            return false;
+        }
+        return !digits.startsWith(JILIN_INSUPLC_PROVINCE_PREFIX);
+    }
+
+    /**
+     * 解析挂号费是否走医保：跨省参保强制自费并回写请求，防止前端绕过。
+     *
+     * @param request 预结算请求
+     * @return 实际是否医保挂号费
+     */
+    private boolean resolveYbRegisterFeeForRequest(PreRegisterSettlementRequest request) {
+        boolean ybRegisterFee = Boolean.TRUE.equals(request.getYbRegisterFee());
+        if (!ybRegisterFee) {
+            return false;
+        }
+        if (this.isCrossProvinceInsuplc(request.getInsuplcAdmdvs())) {
+            log.info(
+                "跨省参保强制挂号费自费 psnNo={} insuplc={}",
+                request.getPsnNo(),
+                request.getInsuplcAdmdvs());
+            request.setYbRegisterFee(Boolean.FALSE);
+            return false;
+        }
+        return true;
     }
 
     /**

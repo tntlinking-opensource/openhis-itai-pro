@@ -258,6 +258,80 @@ public class MedicationRequestDomainService {
     }
 
     /**
+     * 门诊退费申请撤销：软删未完结负向退药申请（须含 {@code refund_medicine_id}）。
+     *
+     * <p>药房已完成物理退药（发放 {@code REFUNDED}）的门禁由应用层先行拦截；本方法在通过门禁后
+     * 允许软删仍开放的负向单（含 {@code CANCELLED}/{@code COMPLETED} 等应用层判定可撤的状态）。</p>
+     *
+     * @param command 负向申请主键集合与操作人
+     */
+    public void voidOpenRefundMedicationOrder(VoidOpenRefundMedicationOrderCommand command) {
+        // 前置校验：命令与主键集合不可空。
+        if (command == null || command.getRefundRequestIds() == null || command.getRefundRequestIds().isEmpty()) {
+            return;
+        }
+        List<MedicationRequest> toSave = new ArrayList<>();
+        // 加载/组装：按主键装载负向退药申请并断言退药链字段。
+        for (Long refundRequestId : command.getRefundRequestIds()) {
+            MedicationRequest request = this.mustGet(refundRequestId);
+            // Gate：必须是负向退药单。
+            request.ensureOpenRefundMedicationOrderForVoid();
+            // 业务：已软删行跳过，避免重复写审计。
+            if (Boolean.TRUE.equals(request.getIsDeleted())) {
+                continue;
+            }
+            // Cmd：软删负向退药申请。
+            request.markDeleted(command.getOperatorId());
+            toSave.add(request);
+        }
+        // 持久化：先落库；无独立撤销事件（读侧依赖软删过滤）。
+        if (!toSave.isEmpty()) {
+            medicationRequestRepository.saveAll(toSave);
+        }
+    }
+
+    /**
+     * 门诊退费申请撤销：软删申请时重开产生的草稿（{@code based_on} 指向原正向单且仍为 DRAFT）。
+     *
+     * @param command 原正向药品申请主键集合与操作人
+     */
+    public void voidReopenedDraftsAfterOutpatientRefundRevoke(VoidReopenedMedReqDraftCommand command) {
+        // 前置校验：命令空批直接返回。
+        if (command == null || command.getOriginRequestIds() == null || command.getOriginRequestIds().isEmpty()) {
+            return;
+        }
+        LinkedHashSet<Long> originIds = new LinkedHashSet<>();
+        for (Long originId : command.getOriginRequestIds()) {
+            if (originId != null) {
+                originIds.add(originId);
+            }
+        }
+        if (originIds.isEmpty()) {
+            return;
+        }
+        List<MedicationRequest> children = medicationRequestRepository.findByBasedOnTableAndBasedOnIdIn(
+            TableNameConstants.MED_MEDICATION_REQUEST, originIds);
+        List<MedicationRequest> toSave = new ArrayList<>();
+        // 加载/组装：仅软删仍开放的重开草稿。
+        for (MedicationRequest child : children) {
+            if (Boolean.TRUE.equals(child.getIsDeleted())) {
+                continue;
+            }
+            // Gate：仅草稿；已签发重开单不在本撤销路径自动删除。
+            if (!RequestStatus.DRAFT.getCode().equals(child.getStatusEnum())) {
+                continue;
+            }
+            // Cmd：软删重开草稿。
+            child.markDeleted(command.getOperatorId());
+            toSave.add(child);
+        }
+        // 持久化：先落库；读侧依赖软删过滤。
+        if (!toSave.isEmpty()) {
+            medicationRequestRepository.saveAll(toSave);
+        }
+    }
+
+    /**
      * 签发医嘱并生成处方号。
      *
      * @param command 签发命令
@@ -671,7 +745,10 @@ public class MedicationRequestDomainService {
         reopened.setUnitCode(origin.getUnitCode());
         reopened.setMethodCode(origin.getMethodCode());
         reopened.setRateCode(origin.getRateCode());
-        // 重开新草稿：开立取当前；签发列待正式签发再写。
+        // 追溯锚点：撤销退费时可按 based_on 软删本重开草稿，避免残留脏草稿。
+        reopened.setBasedOnTable(TableNameConstants.MED_MEDICATION_REQUEST);
+        reopened.setBasedOnId(origin.getId());
+        // 重开新草稿：开立取当前；签发列待正式签发再写；处方号不预写，避免与原方并存混淆。
         reopened.setReqOpenedTime(LocalDateTime.now());
         reopened.initDraft();
         MedicationRequest saved = medicationRequestRepository.save(reopened);
@@ -713,7 +790,7 @@ public class MedicationRequestDomainService {
     }
 
     /**
-     * 取消代煎费后：将方内饮片行 {@code sufferingFlag} 置为否（允许已签发态）。
+     * 取消代煎费后 / 代煎费退款终态后：将方内饮片行 {@code sufferingFlag} 置为否（允许已签发态）。
      *
      * @param command 方内行主键与操作人
      * @throws BusinessException 行不存在或非中药路径时
